@@ -24,6 +24,7 @@ const POLL_INTERVAL = 2000; // ms between state checks
 // REPO_ROOT is resolved after parseArgs() — see initialization below.
 let REPO_ROOT;
 let BATCH_STATE_PATH;
+let BATCH_HISTORY_PATH;
 
 // ─── CLI Args ───────────────────────────────────────────────────────────────
 
@@ -373,7 +374,7 @@ function broadcastState() {
 
 // ─── Batch History API ──────────────────────────────────────────────────────
 
-const BATCH_HISTORY_PATH = path.join(REPO_ROOT, ".pi", "batch-history.json");
+// BATCH_HISTORY_PATH is initialized in main() alongside REPO_ROOT.
 
 function loadHistory() {
   try {
@@ -478,6 +479,7 @@ function main() {
   // Resolve project root: --root flag > cwd
   REPO_ROOT = path.resolve(opts.root || process.cwd());
   BATCH_STATE_PATH = path.join(REPO_ROOT, ".pi", "batch-state.json");
+  BATCH_HISTORY_PATH = path.join(REPO_ROOT, ".pi", "batch-history.json");
 
   const server = createServer(opts.port);
 
