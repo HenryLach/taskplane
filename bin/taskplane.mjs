@@ -398,13 +398,13 @@ async function getInteractiveVars(projectRoot) {
 	const detected = detectStack(projectRoot);
 
 	const project_name = await ask("Project name", dirName);
-	const integration_branch = await ask("Integration branch", "main");
+	const integration_branch = await ask("Default branch (fallback — orchestrator uses your current branch at runtime)", "main");
 	const max_lanes = parseInt(await ask("Max parallel lanes", "3")) || 3;
 	const tasks_root = await ask("Tasks directory", "taskplane-tasks");
 	const default_area = await ask("Default area name", "general");
 	const default_prefix = await ask("Task ID prefix", "TP");
-	const test_cmd = await ask("Test command", detected.test || "");
-	const build_cmd = await ask("Build command", detected.build || "");
+	const test_cmd = await ask("Test command (agents run this to verify work — blank to skip)", detected.test || "");
+	const build_cmd = await ask("Build command (agents run this after tests — blank to skip)", detected.build || "");
 
 	return {
 		project_name,
