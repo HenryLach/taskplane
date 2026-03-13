@@ -3,19 +3,12 @@ node_modules/
 dist/
 *.tgz
 
-# ── Project-local config (scaffolded by `taskplane init`) ─────────────
-# These are instance-specific. Templates live in templates/
-.pi/agents/
-.pi/task-runner.yaml
-.pi/task-orchestrator.yaml
-.pi/damage-control-rules.yaml
-.pi/batch-state.json
-
-# ── Internal docs (moved to .pi/local/) ──────────────────────────────
-docs/internal/
+# ── Project-local (config, agents, state, internal docs) ─────────────
+# Instance-specific files scaffolded by `taskplane init`.
+# Templates live in templates/
+.pi/
 
 # ── Local working directories ─────────────────────────────────────────
-.pi/local/
 .agents/
 .worktrees/
 
