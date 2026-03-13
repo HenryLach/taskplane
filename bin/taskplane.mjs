@@ -255,6 +255,42 @@ monitoring:
 // COMMANDS
 // ═════════════════════════════════════════════════════════════════════════════
 
+/** Auto-commit task files to git so they're available in orchestrator worktrees. */
+async function autoCommitTaskFiles(projectRoot, tasksRoot) {
+	// Check if we're in a git repo
+	try {
+		execSync("git rev-parse --is-inside-work-tree", { cwd: projectRoot, stdio: "pipe" });
+	} catch {
+		// Not a git repo — skip silently
+		return;
+	}
+
+	// Stage the tasks directory (not .pi/ — that's gitignored)
+	const tasksDir = path.join(projectRoot, tasksRoot);
+	if (!fs.existsSync(tasksDir)) return;
+
+	try {
+		// Check if there's anything new to commit
+		execSync(`git add "${tasksRoot}"`, { cwd: projectRoot, stdio: "pipe" });
+		const status = execSync("git diff --cached --name-only", { cwd: projectRoot, stdio: "pipe" })
+			.toString()
+			.trim();
+
+		if (!status) return; // nothing staged
+
+		execSync('git commit -m "chore: initialize taskplane tasks"', {
+			cwd: projectRoot,
+			stdio: "pipe",
+		});
+		console.log(`\n  ${c.green}git${c.reset}    committed ${tasksRoot}/ to git`);
+		console.log(`  ${c.dim}(orchestrator worktrees require committed files)${c.reset}`);
+	} catch (err) {
+		// Git commit failed — warn but don't block init
+		console.log(`\n  ${WARN} Could not auto-commit task files to git.`);
+		console.log(`  ${c.dim}Run manually before using /orch: git add ${tasksRoot} && git commit -m "add taskplane tasks"${c.reset}`);
+	}
+}
+
 // ─── init ───────────────────────────────────────────────────────────────────
 
 async function cmdInit(args) {
@@ -357,6 +393,11 @@ async function cmdInit(args) {
 				label: `${vars.tasks_root}/EXAMPLE-001-hello-world/${file}`,
 			});
 		}
+	}
+
+	// Auto-commit task files to git so they're available in worktrees
+	if (!dryRun) {
+		await autoCommitTaskFiles(projectRoot, vars.tasks_root);
 	}
 
 	// Report
