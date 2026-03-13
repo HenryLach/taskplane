@@ -11,7 +11,7 @@
     "parallel"
   ],
   "bin": {
-    "taskplane": "./bin/taskplane.mjs"
+    "taskplane": "bin/taskplane.mjs"
   },
   "pi": {
     "extensions": [
@@ -46,7 +46,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HenryLach/taskplane.git"
+    "url": "git+https://github.com/HenryLach/taskplane.git"
   },
   "homepage": "https://github.com/HenryLach/taskplane#readme",
   "bugs": {
