@@ -6,7 +6,7 @@
  * browser via Server-Sent Events. Zero external dependencies.
  *
  * Usage:
- *   node extensions/orch-dashboard-web/server.js [--port 8099] [--no-open]
+ *   node extensions/taskplane-dashboard/server.js [--port 8099] [--no-open]
  */
 
 const http = require("http");
@@ -39,7 +39,7 @@ function parseArgs() {
 Orchestrator Web Dashboard
 
 Usage:
-  node extensions/orch-dashboard-web/server.js [options]
+  node extensions/taskplane-dashboard/server.js [options]
 
 Options:
   --port <number>   Port to listen on (default: ${DEFAULT_PORT})

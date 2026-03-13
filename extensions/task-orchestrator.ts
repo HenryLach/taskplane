@@ -1,8 +1,8 @@
 /**
  * Task Orchestrator — Parallel task execution with git worktrees
  *
- * This is a thin facade that re-exports everything from the orch/ modules.
- * The actual implementation lives in extensions/orch/*.ts.
+ * This is a thin facade that re-exports everything from the taskplane/ modules.
+ * The actual implementation lives in extensions/taskplane/*.ts.
  *
  * Commands:
  *   /orch <areas|paths|all>        — Start batch execution
@@ -22,7 +22,7 @@
  */
 
 // Re-export all named exports for tests and other consumers
-export * from "./orch/index.ts";
+export * from "./taskplane/index.ts";
 
 // Re-export the default activate function for the pi extension system
-export { default } from "./orch/extension.ts";
+export { default } from "./taskplane/extension.ts";

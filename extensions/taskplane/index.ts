@@ -2,7 +2,7 @@
  * Task Orchestrator — barrel re-export
  *
  * Provides a single import point for all orchestrator modules.
- * Usage: import { executeOrchBatch, ... } from "./orch/index.ts";
+ * Usage: import { executeOrchBatch, ... } from "./taskplane/index.ts";
  */
 
 export * from "./types.ts";
