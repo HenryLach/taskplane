@@ -76,6 +76,7 @@ This scaffolds:
 - `.pi/taskplane.json`
 - `taskplane-tasks/CONTEXT.md`
 - `taskplane-tasks/EXAMPLE-001-hello-world/{PROMPT.md,STATUS.md}`
+- `taskplane-tasks/EXAMPLE-002-parallel-smoke/{PROMPT.md,STATUS.md}`
 
 ---
 
@@ -109,34 +110,52 @@ pi
 Inside pi, run:
 
 ```
-/task
 /orch
-```
-
-Both should show usage/help text (confirming command registration).
-
-You can also run:
-
-```
 /orch-plan all
 ```
 
-If you just initialized the project, this should discover the example task and show a plan.
+This confirms orchestrator commands are registered and shows a plan preview.
+
+Optional single-task check:
+
+```
+/task
+```
 
 ---
 
-## Quick Smoke Test
+## Quick Smoke Test (Orchestrator-First)
 
-Run the included example task:
+Recommended flow:
 
+1. In terminal A, launch the dashboard:
+
+```bash
+taskplane dashboard
 ```
+
+2. In terminal B (inside pi), run:
+
+```text
+/orch-plan all
+/orch all
+/orch-status
+```
+
+With a fresh init, this should run both default example tasks and show live progress in the dashboard.
+
+Expected artifacts:
+
+- `hello-taskplane.md`
+- `hello-taskplane-2.md`
+- `taskplane-tasks/EXAMPLE-001-hello-world/.DONE`
+- `taskplane-tasks/EXAMPLE-002-parallel-smoke/.DONE`
+
+Optional single-task mode:
+
+```text
 /task taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
 ```
-
-If successful, Taskplane will create:
-
-- `hello-taskplane.md` in your project root
-- `.DONE` in the example task folder
 
 ---
 
@@ -199,4 +218,4 @@ tmux is optional unless you use `spawn_mode: tmux` in orchestrator config.
 
 ## Next Step
 
-Continue to: **[Run Your First Task](run-your-first-task.md)**
+Continue to: **[Run Your First Orchestration](run-your-first-orchestration.md)**

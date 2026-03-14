@@ -93,4 +93,5 @@ node bin/taskplane.mjs doctor
 
 ## Next step
 
-- [Run Your First Task](run-your-first-task.md)
+- [Run Your First Orchestration](run-your-first-orchestration.md)
+- [Run Your First Task (Single-Task Mode)](run-your-first-task.md)

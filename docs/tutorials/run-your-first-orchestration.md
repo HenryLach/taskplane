@@ -4,16 +4,17 @@ This tutorial walks through running a batch with `/orch`, reading the execution 
 
 ## Before You Start
 
-Complete these first:
+Complete this first:
 
 - [Install Taskplane](install.md)
-- [Run Your First Task](run-your-first-task.md)
 
 You should already have:
 
 - `.pi/task-runner.yaml`
 - `.pi/task-orchestrator.yaml`
-- at least one pending task folder with `PROMPT.md` and `STATUS.md`
+- default example tasks:
+  - `taskplane-tasks/EXAMPLE-001-hello-world/`
+  - `taskplane-tasks/EXAMPLE-002-parallel-smoke/`
 
 ---
 
@@ -62,12 +63,30 @@ Use refresh mode to bypass dependency cache:
 
 ---
 
-## Step 3: Start the Batch
+## Step 3: Launch the Dashboard
 
-Run:
+In a separate terminal:
 
+```bash
+taskplane dashboard
 ```
+
+Keep it open while running `/orch` so you can watch lanes and task progress live.
+
+---
+
+## Step 4: Start the Batch
+
+Run one of these in pi:
+
+```text
 /orch all
+```
+
+or explicit task paths:
+
+```text
+/orch taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md taskplane-tasks/EXAMPLE-002-parallel-smoke/PROMPT.md
 ```
 
 What happens:
@@ -76,29 +95,26 @@ What happens:
 2. Wave computation (topological ordering)
 3. Lane allocation up to `orchestrator.max_lanes`
 4. Per-lane execution in isolated git worktrees
-5. Merge of successful lane branches into integration branch
+5. Each lane runs task-runner (`/task`) semantics for its assigned task
+6. Merge of successful lane branches into integration branch
 
 ---
 
-## Step 4: Monitor Progress
+## Step 5: Monitor Progress
 
 Use:
 
-```
+```text
 /orch-status
 ```
 
 You’ll see batch phase, wave index, task counts (succeeded/failed/skipped/blocked), and elapsed time.
 
-Optional: launch the dashboard in another terminal:
-
-```bash
-taskplane dashboard
-```
+The dashboard shows the same execution from a lane-first visual view.
 
 ---
 
-## Step 5: Pause, Resume, Abort
+## Step 6: Pause, Resume, Abort
 
 ### Pause
 

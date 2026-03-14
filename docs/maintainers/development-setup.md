@@ -111,9 +111,9 @@ Template changes affect `taskplane init` output and must be tested by running in
 2. Run tests (`cd extensions && npx vitest run`)
 3. Run pi with local extension flags
 4. Execute manual smoke flows:
-   - `/task ...`
    - `/orch-plan all`
    - `/orch all`
+   - `/task ...` (single-task mode)
    - `taskplane doctor`
 
 ---
@@ -131,8 +131,9 @@ pi
 Inside pi:
 
 ```text
-/task taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
 /orch-plan all
+/orch all
+/task taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
 ```
 
 ---

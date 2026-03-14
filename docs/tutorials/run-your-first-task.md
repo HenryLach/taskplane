@@ -1,13 +1,15 @@
-# Run Your First Task
+# Run Your First Task (Single-Task Mode)
 
-This tutorial walks through executing the built-in example task end-to-end with `/task`.
+This tutorial walks through executing one task end-to-end with `/task`.
+
+> `/task` is the single-task engine. Orchestrator lanes (`/orch`) execute tasks using this same task-runner model under the hood.
 
 ## Before You Start
 
-Make sure you already completed:
+Recommended sequence:
 
-- [Install Taskplane](install.md)
-- `taskplane init --preset full` (or interactive `taskplane init`)
+1. [Install Taskplane](install.md)
+2. [Run Your First Orchestration](run-your-first-orchestration.md)
 
 You should have this folder:
 
@@ -156,4 +158,7 @@ Use `/task-status` to inspect step progress, then `/task-pause` + `/task-resume`
 
 ## Next Step
 
-Continue to: **[Run Your First Orchestration](run-your-first-orchestration.md)**
+Continue with:
+
+- [Configure Task Runner](../how-to/configure-task-runner.md)
+- [Configure Task Orchestrator](../how-to/configure-task-orchestrator.md)

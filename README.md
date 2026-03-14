@@ -55,39 +55,9 @@ cd my-project
 taskplane init --preset full
 ```
 
-This creates config files in `.pi/`, agent prompts, and an example task.
+This creates config files in `.pi/`, agent prompts, and two example tasks.
 
-### 2. Run your first task
-
-```bash
-pi
-```
-
-Inside the pi session:
-
-```
-/task taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
-```
-
-Watch the worker agent execute each step, checkpoint its progress, and complete the task.
-
-### 3. Monitor progress
-
-```
-/task-status
-```
-
-### 4. Run parallel orchestration
-
-Once you have multiple tasks staged:
-
-```
-/orch-plan all     # Preview the execution plan (waves, lanes, dependencies)
-/orch all          # Execute all pending tasks in parallel
-/orch-status       # Monitor batch progress
-```
-
-### 5. Launch the dashboard
+### 2. Launch the dashboard (recommended)
 
 In a separate terminal:
 
@@ -96,6 +66,33 @@ taskplane dashboard
 ```
 
 Opens a live web dashboard at `http://localhost:8099` with real-time batch monitoring.
+
+### 3. Run your first orchestration
+
+```bash
+pi
+```
+
+Inside the pi session:
+
+```
+/orch-plan all     # Preview waves, lanes, and dependencies
+/orch all          # Execute all pending tasks in parallel
+/orch-status       # Monitor batch progress
+```
+
+The default scaffold includes two independent example tasks, so `/orch all` gives you an immediate orchestrator + dashboard experience.
+
+### 4. Optional: run one task directly
+
+`/task` is still useful for single-task execution and focused debugging:
+
+```
+/task taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
+/task-status
+```
+
+Orchestrator lanes execute tasks through task-runner under the hood, so `/task` and `/orch` share the same core task execution model.
 
 ## Commands
 

@@ -16,9 +16,9 @@ Taskplane has two core audiences:
 Start here if you're new to Taskplane.
 
 1. [Install Taskplane](tutorials/install.md)
-2. [Run Your First Task](tutorials/run-your-first-task.md)
-3. [Run Your First Orchestration](tutorials/run-your-first-orchestration.md)
-4. [Use the Dashboard](tutorials/use-the-dashboard.md)
+2. [Run Your First Orchestration](tutorials/run-your-first-orchestration.md)
+3. [Use the Dashboard](tutorials/use-the-dashboard.md)
+4. [Run Your First Task (Single-Task Mode)](tutorials/run-your-first-task.md)
 
 Alternative setup:
 - [Install from Source](tutorials/install-from-source.md)

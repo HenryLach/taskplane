@@ -337,6 +337,18 @@ function pruneEmptyDir(dirPath) {
 	}
 }
 
+function listExampleTaskTemplates() {
+	const tasksTemplatesDir = path.join(TEMPLATES_DIR, "tasks");
+	try {
+		return fs.readdirSync(tasksTemplatesDir, { withFileTypes: true })
+			.filter((entry) => entry.isDirectory() && /^EXAMPLE-\d+/i.test(entry.name))
+			.map((entry) => entry.name)
+			.sort();
+	} catch {
+		return [];
+	}
+}
+
 async function cmdUninstall(args) {
 	const projectRoot = process.cwd();
 	const dryRun = args.includes("--dry-run");
@@ -546,9 +558,11 @@ async function cmdInit(args) {
 		vars = await getInteractiveVars(projectRoot);
 	}
 
+	const exampleTemplateDirs = noExamples ? [] : listExampleTaskTemplates();
+
 	if (dryRun) {
 		console.log(`\n${c.bold}Dry run — files that would be created:${c.reset}\n`);
-		printFileList(vars, noExamples, preset);
+		printFileList(vars, noExamples, preset, exampleTemplateDirs);
 		return;
 	}
 
@@ -602,37 +616,41 @@ async function cmdInit(args) {
 		{ skipIfExists, label: `${vars.tasks_root}/CONTEXT.md` }
 	);
 
-	// Example task
+	// Example tasks
 	if (!noExamples) {
-		const exampleDir = path.join(TEMPLATES_DIR, "tasks", "EXAMPLE-001-hello-world");
-		const destDir = path.join(projectRoot, vars.tasks_root, "EXAMPLE-001-hello-world");
-		for (const file of ["PROMPT.md", "STATUS.md"]) {
-			const src = fs.readFileSync(path.join(exampleDir, file), "utf-8");
-			writeFile(path.join(destDir, file), interpolate(src, vars), {
-				skipIfExists,
-				label: `${vars.tasks_root}/EXAMPLE-001-hello-world/${file}`,
-			});
+		for (const exampleName of exampleTemplateDirs) {
+			const exampleDir = path.join(TEMPLATES_DIR, "tasks", exampleName);
+			const destDir = path.join(projectRoot, vars.tasks_root, exampleName);
+			for (const file of ["PROMPT.md", "STATUS.md"]) {
+				const srcPath = path.join(exampleDir, file);
+				if (!fs.existsSync(srcPath)) continue;
+				const src = fs.readFileSync(srcPath, "utf-8");
+				writeFile(path.join(destDir, file), interpolate(src, vars), {
+					skipIfExists,
+					label: `${vars.tasks_root}/${exampleName}/${file}`,
+				});
+			}
+		}
+		if (exampleTemplateDirs.length === 0) {
+			console.log(`  ${WARN} No example task templates found under templates/tasks/EXAMPLE-*`);
 		}
 	}
 
 	// Auto-commit task files to git so they're available in worktrees
-	if (!dryRun) {
-		await autoCommitTaskFiles(projectRoot, vars.tasks_root);
-	}
+	await autoCommitTaskFiles(projectRoot, vars.tasks_root);
 
 	// Report
 	console.log(`\n${OK} ${c.bold}Taskplane initialized!${c.reset}\n`);
 	console.log(`${c.bold}Quick start:${c.reset}`);
 	console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
-	if (!noExamples) {
-		console.log(
-			`  ${c.cyan}/task ${vars.tasks_root}/EXAMPLE-001-hello-world/PROMPT.md${c.reset}  # run the example task`
-		);
-	}
 	if (preset !== "runner-only") {
-		console.log(
-			`  ${c.cyan}/orch all${c.reset}                                         # orchestrate all pending tasks`
-		);
+		console.log(`  ${c.cyan}/orch-plan all${c.reset}                                   # preview waves/lanes/dependencies`);
+		console.log(`  ${c.cyan}/orch all${c.reset}                                        # run examples via orchestrator`);
+	}
+	if (!noExamples && exampleTemplateDirs.length > 0) {
+		const firstExample = exampleTemplateDirs[0];
+		console.log(`  ${c.dim}optional single-task mode:${c.reset}`);
+		console.log(`  ${c.cyan}/task ${vars.tasks_root}/${firstExample}/PROMPT.md${c.reset}`);
 	}
 	console.log();
 }
@@ -685,7 +703,7 @@ async function getInteractiveVars(projectRoot) {
 	};
 }
 
-function printFileList(vars, noExamples, preset) {
+function printFileList(vars, noExamples, preset, exampleTemplateDirs = []) {
 	const files = [
 		".pi/agents/task-worker.md",
 		".pi/agents/task-reviewer.md",
@@ -696,8 +714,10 @@ function printFileList(vars, noExamples, preset) {
 	files.push(".pi/taskplane.json");
 	files.push(`${vars.tasks_root}/CONTEXT.md`);
 	if (!noExamples) {
-		files.push(`${vars.tasks_root}/EXAMPLE-001-hello-world/PROMPT.md`);
-		files.push(`${vars.tasks_root}/EXAMPLE-001-hello-world/STATUS.md`);
+		for (const exampleName of exampleTemplateDirs) {
+			files.push(`${vars.tasks_root}/${exampleName}/PROMPT.md`);
+			files.push(`${vars.tasks_root}/${exampleName}/STATUS.md`);
+		}
 	}
 	for (const f of files) console.log(`  ${c.green}create${c.reset} ${f}`);
 	console.log();
@@ -915,7 +935,7 @@ ${c.bold}Commands:${c.reset}
 
 ${c.bold}Init options:${c.reset}
   --preset <name>   Use a preset: minimal, full, runner-only
-  --no-examples     Skip example task scaffolding
+  --no-examples     Skip example tasks scaffolding
   --force           Overwrite existing files without prompting
   --dry-run         Show what would be created without writing
 

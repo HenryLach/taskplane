@@ -45,7 +45,7 @@ Scaffolded files include:
 - `.pi/task-orchestrator.yaml`
 - `.pi/agents/*.md`
 - `taskplane-tasks/CONTEXT.md`
-- `taskplane-tasks/EXAMPLE-001-hello-world/*` (unless disabled)
+- `taskplane-tasks/EXAMPLE-*/...` example task folders (unless disabled)
 
 These files are edited per project and are part of local workflow semantics.
 
@@ -86,7 +86,7 @@ Managed by users/maintainers inside their repositories.
 
 - `templates/config/` → YAML templates
 - `templates/agents/` → worker/reviewer/merger prompts
-- `templates/tasks/` → CONTEXT + example task packet
+- `templates/tasks/` → CONTEXT + example task packets
 
 `taskplane init` copies/generates these into project-local paths.
 
