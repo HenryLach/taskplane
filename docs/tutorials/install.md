@@ -140,6 +140,39 @@ If successful, Taskplane will create:
 
 ---
 
+## Uninstall
+
+### Remove project-scaffolded Taskplane files
+
+```bash
+taskplane uninstall
+```
+
+Preview first:
+
+```bash
+taskplane uninstall --dry-run
+```
+
+### Also remove installed package (extensions, skills, dashboard)
+
+```bash
+taskplane uninstall --package
+```
+
+You can force package scope when needed:
+
+- local install: `taskplane uninstall --package --local`
+- global install: `taskplane uninstall --package --global`
+
+If you only want package removal, use:
+
+```bash
+taskplane uninstall --package-only
+```
+
+---
+
 ## Troubleshooting
 
 ### `taskplane: command not found`

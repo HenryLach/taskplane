@@ -124,6 +124,7 @@ Opens a live web dashboard at `http://localhost:8099` with real-time batch monit
 | `taskplane doctor` | Validate installation and config |
 | `taskplane version` | Show version info |
 | `taskplane dashboard` | Launch the web dashboard |
+| `taskplane uninstall` | Remove Taskplane project files and optionally uninstall package (`--package`) |
 
 ## How It Works
 

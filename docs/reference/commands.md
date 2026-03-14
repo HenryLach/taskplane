@@ -1,8 +1,11 @@
 # Commands Reference
 
-This page documents Taskplane's pi session commands.
+This page documents Taskplane command surfaces:
 
-> These commands are registered by the Taskplane extensions when loaded in pi.
+1. pi session slash commands (`/task`, `/orch*`)
+2. CLI shell commands (`taskplane ...`)
+
+> Slash commands are registered by Taskplane extensions when loaded in pi.
 
 ---
 
@@ -306,6 +309,47 @@ List active orchestrator tmux sessions.
 
 - Lists sessions matching configured orchestrator tmux prefix
 - Useful for debugging/resume/cleanup in tmux mode
+
+---
+
+## CLI Commands
+
+These are shell commands (not pi slash commands).
+
+### `taskplane init [options]`
+
+Scaffold Taskplane project files (`.pi/`, agents, task templates).
+
+### `taskplane doctor`
+
+Validate installation and project configuration.
+
+### `taskplane version`
+
+Show package and environment version details.
+
+### `taskplane dashboard [--port <n>] [--no-open]`
+
+Launch the web dashboard server.
+
+### `taskplane uninstall [options]`
+
+Uninstall Taskplane project artifacts and optionally the installed package.
+
+Common options:
+
+- `--dry-run` — preview what would be removed
+- `--yes` — skip confirmations
+- `--package` — also run `pi remove` for this scope
+- `--package-only` — remove package only, skip project cleanup
+- `--local` / `--global` — force package uninstall scope
+- `--remove-tasks` — also remove task area directories from `.pi/task-runner.yaml`
+- `--all` — equivalent to `--package --remove-tasks`
+
+Notes:
+
+- Package removal deletes Taskplane extensions, skills, and dashboard package files.
+- Project cleanup preserves task directories by default unless `--remove-tasks` is passed.
 
 ---
 

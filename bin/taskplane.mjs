@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * Taskplane CLI — Project scaffolding, diagnostics, and dashboard launcher.
+ * Taskplane CLI — Project scaffolding, diagnostics, uninstall, and dashboard launcher.
  *
  * This CLI handles what the pi package system cannot: project-local config
  * scaffolding, installation health checks, and dashboard management.
@@ -288,6 +288,226 @@ async function autoCommitTaskFiles(projectRoot, tasksRoot) {
 		// Git commit failed — warn but don't block init
 		console.log(`\n  ${WARN} Could not auto-commit task files to git.`);
 		console.log(`  ${c.dim}Run manually before using /orch: git add ${tasksRoot} && git commit -m "add taskplane tasks"${c.reset}`);
+	}
+}
+
+function discoverTaskAreaPaths(projectRoot) {
+	const runnerPath = path.join(projectRoot, ".pi", "task-runner.yaml");
+	if (!fs.existsSync(runnerPath)) return [];
+
+	const raw = readYaml(runnerPath);
+	if (!raw) return [];
+
+	const lines = raw.split(/\r?\n/);
+	let inTaskAreas = false;
+	const paths = new Set();
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+
+		if (!inTaskAreas) {
+			if (/^task_areas:\s*$/.test(trimmed)) {
+				inTaskAreas = true;
+			}
+			continue;
+		}
+
+		// End of task_areas block when we hit next top-level key
+		if (/^[A-Za-z0-9_]+\s*:\s*$/.test(line)) {
+			break;
+		}
+
+		const m = line.match(/^\s{4}path:\s*["']?([^"'\n#]+)["']?\s*(?:#.*)?$/);
+		if (m?.[1]) {
+			paths.add(m[1].trim());
+		}
+	}
+
+	return [...paths];
+}
+
+function pruneEmptyDir(dirPath) {
+	try {
+		if (!fs.existsSync(dirPath)) return false;
+		if (fs.readdirSync(dirPath).length !== 0) return false;
+		fs.rmdirSync(dirPath);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+async function cmdUninstall(args) {
+	const projectRoot = process.cwd();
+	const dryRun = args.includes("--dry-run");
+	const yes = args.includes("--yes") || args.includes("-y");
+	const removePackage = args.includes("--package") || args.includes("--all") || args.includes("--package-only");
+	const packageOnly = args.includes("--package-only");
+	const removeProject = !packageOnly;
+	const removeTasks = removeProject && (args.includes("--remove-tasks") || args.includes("--all"));
+	const local = args.includes("--local");
+	const global = args.includes("--global");
+
+	if (local && global) {
+		die("Choose either --local or --global, not both.");
+	}
+
+	console.log(`\n${c.bold}Taskplane Uninstall${c.reset}\n`);
+
+	const managedFiles = [
+		".pi/task-runner.yaml",
+		".pi/task-orchestrator.yaml",
+		".pi/taskplane.json",
+		".pi/agents/task-worker.md",
+		".pi/agents/task-reviewer.md",
+		".pi/agents/task-merger.md",
+		".pi/batch-state.json",
+		".pi/batch-history.json",
+		".pi/orch-abort-signal",
+	];
+
+	const sidecarPrefixes = [
+		"lane-state-",
+		"worker-conversation-",
+		"merge-result-",
+		"merge-request-",
+	];
+
+	const filesToDelete = managedFiles
+		.map(rel => ({ rel, abs: path.join(projectRoot, rel) }))
+		.filter(({ abs }) => fs.existsSync(abs));
+
+	const piDir = path.join(projectRoot, ".pi");
+	const sidecarsToDelete = fs.existsSync(piDir)
+		? fs.readdirSync(piDir)
+			.filter(name => sidecarPrefixes.some(prefix => name.startsWith(prefix)))
+			.map(name => ({ rel: path.join(".pi", name), abs: path.join(piDir, name) }))
+		: [];
+
+	let taskDirsToDelete = [];
+	if (removeTasks) {
+		const areaPaths = discoverTaskAreaPaths(projectRoot);
+		const rootPrefix = path.resolve(projectRoot) + path.sep;
+		taskDirsToDelete = areaPaths
+			.map(rel => ({ rel, abs: path.resolve(projectRoot, rel) }))
+			.filter(({ abs }) => abs.startsWith(rootPrefix) && fs.existsSync(abs));
+	}
+
+	const inferredInstallType = /[\\/]\.pi[\\/]/.test(PACKAGE_ROOT) ? "local" : "global";
+	const packageScope = local ? "local" : global ? "global" : inferredInstallType;
+	const piRemoveCmd = packageScope === "local"
+		? "pi remove -l npm:taskplane"
+		: "pi remove npm:taskplane";
+
+	if (!removeProject && !removePackage) {
+		console.log(`  ${WARN} Nothing to do. Use one of:`);
+		console.log(`    ${c.cyan}taskplane uninstall${c.reset}              # remove project-scaffolded files`);
+		console.log(`    ${c.cyan}taskplane uninstall --package${c.reset}    # remove installed package via pi`);
+		console.log();
+		return;
+	}
+
+	if (removeProject) {
+		console.log(`${c.bold}Project cleanup:${c.reset}`);
+		if (filesToDelete.length === 0 && sidecarsToDelete.length === 0 && taskDirsToDelete.length === 0) {
+			console.log(`  ${c.dim}No Taskplane-managed project files found.${c.reset}`);
+		}
+		for (const f of filesToDelete) console.log(`  - remove ${f.rel}`);
+		for (const f of sidecarsToDelete) console.log(`  - remove ${f.rel}`);
+		for (const d of taskDirsToDelete) console.log(`  - remove dir ${d.rel}`);
+		if (removeTasks && taskDirsToDelete.length === 0) {
+			console.log(`  ${c.dim}No task area directories found from .pi/task-runner.yaml.${c.reset}`);
+		}
+		if (!removeTasks) {
+			console.log(`  ${c.dim}Task directories are preserved by default (use --remove-tasks to delete them).${c.reset}`);
+		}
+		console.log();
+	}
+
+	if (removePackage) {
+		console.log(`${c.bold}Package cleanup:${c.reset}`);
+		console.log(`  - run ${piRemoveCmd}`);
+		console.log(`  ${c.dim}(removes extensions, skills, and dashboard files from this install scope)${c.reset}`);
+		console.log();
+	}
+
+	if (dryRun) {
+		console.log(`${INFO} Dry run complete. No files were changed.\n`);
+		return;
+	}
+
+	if (!yes) {
+		const proceed = await confirm("Proceed with uninstall?", false);
+		if (!proceed) {
+			console.log("  Aborted.");
+			return;
+		}
+		if (removeTasks) {
+			const taskConfirm = await confirm("This will delete task area directories recursively. Continue?", false);
+			if (!taskConfirm) {
+				console.log("  Aborted.");
+				return;
+			}
+		}
+	}
+
+	let removedCount = 0;
+	let failedCount = 0;
+
+	if (removeProject) {
+		for (const item of [...filesToDelete, ...sidecarsToDelete]) {
+			try {
+				fs.unlinkSync(item.abs);
+				removedCount++;
+			} catch (err) {
+				failedCount++;
+				console.log(`  ${WARN} Failed to remove ${item.rel}: ${err.message}`);
+			}
+		}
+
+		for (const dir of taskDirsToDelete) {
+			try {
+				fs.rmSync(dir.abs, { recursive: true, force: true });
+				removedCount++;
+			} catch (err) {
+				failedCount++;
+				console.log(`  ${WARN} Failed to remove directory ${dir.rel}: ${err.message}`);
+			}
+		}
+
+		// Best-effort cleanup of empty folders
+		pruneEmptyDir(path.join(projectRoot, ".pi", "agents"));
+		pruneEmptyDir(path.join(projectRoot, ".pi"));
+	}
+
+	if (removePackage) {
+		if (!commandExists("pi")) {
+			failedCount++;
+			console.log(`  ${FAIL} pi is not on PATH; could not run: ${piRemoveCmd}`);
+		} else {
+			try {
+				execSync(piRemoveCmd, { cwd: projectRoot, stdio: "inherit" });
+			} catch {
+				failedCount++;
+				console.log(`  ${FAIL} Package uninstall failed: ${piRemoveCmd}`);
+			}
+		}
+	}
+
+	console.log();
+	if (failedCount === 0) {
+		console.log(`${OK} ${c.bold}Uninstall complete.${c.reset}`);
+		if (removeProject) {
+			console.log(`  Removed ${removedCount} project artifact(s).`);
+		}
+		console.log();
+	} else {
+		console.log(`${FAIL} Uninstall completed with ${failedCount} error(s).`);
+		if (removeProject) {
+			console.log(`  Removed ${removedCount} project artifact(s).`);
+		}
+		console.log();
+		process.exit(1);
 	}
 }
 
@@ -690,6 +910,7 @@ ${c.bold}Commands:${c.reset}
   ${c.cyan}doctor${c.reset}      Validate installation and project configuration
   ${c.cyan}version${c.reset}     Show version information
   ${c.cyan}dashboard${c.reset}   Launch the web-based orchestrator dashboard
+  ${c.cyan}uninstall${c.reset}   Remove Taskplane project files and/or package install
   ${c.cyan}help${c.reset}        Show this help message
 
 ${c.bold}Init options:${c.reset}
@@ -702,13 +923,25 @@ ${c.bold}Dashboard options:${c.reset}
   --port <number>   Port to listen on (default: 8099)
   --no-open         Don't auto-open browser
 
+${c.bold}Uninstall options:${c.reset}
+  --dry-run         Show what would be removed
+  --yes, -y         Skip confirmation prompts
+  --package         Also remove installed package via pi remove
+  --package-only    Only remove installed package (skip project cleanup)
+  --local           Force package uninstall from project-local scope
+  --global          Force package uninstall from global scope
+  --remove-tasks    Also remove task area directories from task-runner.yaml
+  --all             Equivalent to --package + --remove-tasks
+
 ${c.bold}Examples:${c.reset}
-  taskplane init                    # Interactive project setup
-  taskplane init --preset full      # Quick setup with defaults
-  taskplane init --dry-run          # Preview what would be created
-  taskplane doctor                  # Check installation health
-  taskplane dashboard               # Launch web dashboard
-  taskplane dashboard --port 3000   # Dashboard on custom port
+  taskplane init                        # Interactive project setup
+  taskplane init --preset full          # Quick setup with defaults
+  taskplane init --dry-run              # Preview what would be created
+  taskplane doctor                      # Check installation health
+  taskplane dashboard                   # Launch web dashboard
+  taskplane dashboard --port 3000       # Dashboard on custom port
+  taskplane uninstall --dry-run         # Preview uninstall actions
+  taskplane uninstall --package --yes   # Remove project files + package install
 
 ${c.bold}Getting started:${c.reset}
   1. pi install npm:taskplane       # Install the pi package
@@ -737,6 +970,9 @@ switch (command) {
 		break;
 	case "dashboard":
 		cmdDashboard(args);
+		break;
+	case "uninstall":
+		await cmdUninstall(args);
 		break;
 	case "help":
 	case "--help":
