@@ -168,3 +168,10 @@ Prefer the option that best preserves:
 4. **minimal surprise** (stable commands/config/docs)
 
 If code and docs disagree, treat code as current behavior and update docs accordingly.
+
+---
+
+## Notation
+
+- `/orch*` in this document is shorthand for the orchestrator command family (`/orch`, `/orch-plan`, `/orch-status`, `/orch-pause`, `/orch-resume`, `/orch-abort`, `/orch-deps`, `/orch-sessions`).
+- It is **not** a literal command to run.
