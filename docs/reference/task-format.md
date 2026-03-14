@@ -1,0 +1,267 @@
+# Task Format Reference (`PROMPT.md` + `STATUS.md`)
+
+Taskplane tasks are file-based packets.
+
+Canonical folder:
+
+```text
+<task-folder>/
+├── PROMPT.md    # task definition
+├── STATUS.md    # execution state / memory
+├── .reviews/    # reviewer outputs (created by runner)
+└── .DONE        # completion marker
+```
+
+---
+
+## `PROMPT.md` format
+
+### Recommended top-level structure
+
+```md
+# Task: <ID> — <Name>
+
+**Created:** YYYY-MM-DD
+**Size:** S|M|L
+
+## Review Level: 0|1|2|3
+
+## Mission
+...
+
+## Dependencies
+- **None**
+# or dependency list
+
+## Context to Read First
+- `path/to/doc.md`
+
+## File Scope
+- `src/file.ts`
+
+## Steps
+### Step 0: Name
+- [ ] checklist item
+- [ ] checklist item
+
+### Step 1: Name
+- [ ] ...
+
+## Completion Criteria
+- [ ] ...
+
+---
+
+## Amendments (Added During Execution)
+```
+
+---
+
+## Required vs optional data
+
+### Required (practical)
+
+- A parseable task ID (prefer heading format)
+- At least one step in `### Step N: ...` format
+- Checkbox items (`- [ ]`) inside steps
+
+### Optional but strongly recommended
+
+- `## Review Level: N`
+- `**Size:** S|M|L`
+- `## Dependencies`
+- `## Context to Read First`
+- `## File Scope`
+- `## Completion Criteria`
+
+If omitted, parsers apply defaults in some paths (for example size/review defaults).
+
+---
+
+## Heading and ID conventions
+
+Preferred heading:
+
+```md
+# Task: AUTH-014 — Add role checks
+```
+
+Notes:
+
+- Orchestrator parser prefers `# Task: <ID> - <Name>` style and falls back to folder name ID extraction.
+- Task-runner parser is more permissive and can also parse `# <ID> - <Name>`.
+- For consistent behavior across `/task` and `/orch`, always use `# Task: <ID> — <Name>`.
+
+Folder name convention:
+
+```text
+AUTH-014-add-role-checks
+```
+
+---
+
+## Step/checklist expectations
+
+Steps must use:
+
+```md
+### Step <number>: <name>
+```
+
+Checklist items must use markdown checkbox syntax:
+
+```md
+- [ ] Do thing
+- [x] Done thing
+```
+
+Task-runner executes by scanning for the first unchecked checkbox in current scope.
+
+---
+
+## Dependency notation
+
+Use `## Dependencies` section.
+
+Accepted forms include:
+
+### None
+
+```md
+## Dependencies
+- **None**
+```
+
+### Unqualified IDs
+
+```md
+## Dependencies
+- AUTH-003
+- BIL-002
+```
+
+### Area-qualified IDs
+
+```md
+## Dependencies
+- auth/AUTH-003
+- billing/BIL-002
+```
+
+### Requires line
+
+```md
+## Dependencies
+**Requires:** AUTH-003
+**Requires:** billing/BIL-002
+```
+
+Recommendations:
+
+- Use area-qualified IDs in larger multi-area projects.
+- Keep dependency IDs canonical (`PREFIX-NNN`).
+
+---
+
+## `Context to Read First` conventions
+
+Example:
+
+```md
+## Context to Read First
+- `README.md`
+- `docs/architecture.md`
+```
+
+Use backticked file paths. Keep list minimal and task-relevant.
+
+---
+
+## `File Scope` conventions
+
+Example:
+
+```md
+## File Scope
+- `extensions/taskplane/engine.ts`
+- `.pi/task-orchestrator.yaml`
+```
+
+Describe intended modification surface to improve planning/review quality.
+
+---
+
+## `STATUS.md` format (execution memory)
+
+`STATUS.md` tracks runtime progress. It is updated continuously by task-runner.
+
+Typical header fields:
+
+```md
+**Current Step:** ...
+**Status:** ...
+**Last Updated:** ...
+**Review Level:** ...
+**Review Counter:** ...
+**Iteration:** ...
+**Size:** ...
+```
+
+Per-step sections mirror `PROMPT.md` steps and track checkbox completion.
+
+Task-runner can auto-generate `STATUS.md` from `PROMPT.md` if missing.
+
+---
+
+## Divider rule (`---`)
+
+Use a divider before amendments:
+
+```md
+---
+
+## Amendments (Added During Execution)
+```
+
+Treat content above divider as canonical task definition.
+
+---
+
+## Minimal valid example
+
+```md
+# Task: TP-001 — Add greeting endpoint
+
+**Created:** 2026-03-14
+**Size:** S
+
+## Review Level: 1
+
+## Mission
+Add a small HTTP endpoint that returns a greeting.
+
+## Dependencies
+- **None**
+
+## Steps
+### Step 0: Implement
+- [ ] Add endpoint handler
+- [ ] Register route
+
+### Step 1: Verify
+- [ ] Run unit tests
+
+## Completion Criteria
+- [ ] Endpoint responds with 200 and expected payload
+
+---
+
+## Amendments (Added During Execution)
+```
+
+---
+
+## Related
+
+- [Commands Reference](commands.md)
+- [Status Format](status-format.md)
