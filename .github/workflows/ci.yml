@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: extensions/package-lock.json
+
+      - name: Install extension dependencies
+        run: npm ci --prefix extensions
+
+      - name: Run extension regression smoke test
+        run: npm --prefix extensions exec vitest run tests/worktree-lifecycle.test.ts
+
+      - name: CLI smoke checks
+        run: |
+          node bin/taskplane.mjs help
+          node bin/taskplane.mjs version
+          node bin/taskplane.mjs init --preset full --dry-run --force
+          node bin/taskplane.mjs uninstall --dry-run --yes
+
+      - name: Verify docs relative links
+        run: |
+          python - <<'PY'
+          import re
+          from pathlib import Path
+
+          root = Path('.')
+          files = [
+              p for p in root.rglob('*.md')
+              if '.git' not in p.parts
+              and 'node_modules' not in p.parts
+              and not ('.pi' in p.parts and 'local' in p.parts)
+          ]
+
+          pattern = re.compile(r'\[[^\]]+\]\(([^)]+)\)')
+          missing = []
+
+          for file in files:
+              text = file.read_text(encoding='utf-8', errors='ignore')
+              for link in pattern.findall(text):
+                  if link.startswith(('http://', 'https://', 'mailto:', '#')):
+                      continue
+                  target = (file.parent / link.split('#', 1)[0].split('?', 1)[0]).resolve()
+                  if not target.exists():
+                      missing.append((file.as_posix(), link))
+
+          if missing:
+              print(f"Missing links: {len(missing)}")
+              for file, link in missing:
+                  print(f"{file} -> {link}")
+              raise SystemExit(1)
+
+          print('No missing relative links.')
+          PY

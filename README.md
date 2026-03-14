@@ -173,6 +173,8 @@ Start at the docs index for tutorials, how-to guides, reference docs, and archit
 
 See **[CONTRIBUTING.md](CONTRIBUTING.md)** for development setup, testing, and contribution guidelines.
 
+Maintainers: GitHub governance and branch protection guidance is in [docs/maintainers/repository-governance.md](docs/maintainers/repository-governance.md).
+
 ## License
 
 [MIT](LICENSE) © Henry Lach

@@ -9,7 +9,9 @@ Thanks for your interest in contributing! This guide covers how to set up a loca
 - [Running Tests](#running-tests)
 - [Project Structure](#project-structure)
 - [Making Changes](#making-changes)
+- [Branch Strategy](#branch-strategy)
 - [Pull Request Process](#pull-request-process)
+- [Issue Tracking and Triage](#issue-tracking-and-triage)
 - [Style Guide](#style-guide)
 - [Where to Find Things](#where-to-find-things)
 
@@ -166,13 +168,39 @@ taskplane/
 | Update scaffolding templates | `templates/config/` and `templates/tasks/` |
 | Add a skill | `skills/` |
 
+## Branch Strategy
+
+- `main` is the only long-lived branch.
+- Create short-lived topic branches from `main`:
+  - `feat/<topic>`
+  - `fix/<topic>`
+  - `docs/<topic>`
+  - `chore/<topic>`
+  - `refactor/<topic>`
+  - `test/<topic>`
+- Keep each branch scoped to one logical change.
+
+Merge policy:
+
+- Open a PR into `main`
+- Prefer squash merge
+- Delete merged branch
+
 ## Pull Request Process
 
 1. **Keep PRs focused** — one logical change per PR
-2. **Include tests** for new functionality when applicable
-3. **Update documentation** if your change affects user-facing behavior
-4. **Run all tests** before submitting
-5. **Describe what and why** in the PR description
+2. **Link an issue** (or explain why no issue is needed)
+3. **Include tests** for new functionality when applicable
+4. **Update documentation** if your change affects user-facing behavior
+5. **Run all tests** before submitting
+6. **Describe what and why** in the PR description
+
+Current protection baseline for `main`:
+
+- PR required before merge
+- CI required (`CI / ci`)
+- Conversation resolution required
+- Required approvals: `0` (solo-maintainer baseline; may increase as maintainership expands)
 
 ### Commit Message Convention
 
@@ -189,6 +217,21 @@ Examples:
 - `fix(task-runner): handle missing STATUS.md gracefully`
 - `docs: add troubleshooting guide`
 - `test(persistence): add schema validation edge cases`
+
+## Issue Tracking and Triage
+
+Taskplane uses GitHub Issues as the canonical backlog.
+
+- Use issue forms:
+  - **Bug Report** for reproducible defects
+  - **Feature Request** for new capabilities
+  - **Documentation Improvement** for docs gaps/staleness
+- Search existing issues before creating a new one.
+- For non-trivial implementation work, open an issue before coding.
+- Questions and usage help should go to GitHub Discussions.
+
+Maintainers triage with labels for type, area, priority, and status.
+See [docs/maintainers/repository-governance.md](docs/maintainers/repository-governance.md) for the current governance model and GitHub settings.
 
 ## Style Guide
 

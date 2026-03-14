@@ -1,0 +1,49 @@
+name: Documentation Improvement
+description: Report missing, unclear, or incorrect documentation
+title: "docs: <short description>"
+labels:
+  - documentation
+  - type:docs
+  - status:needs-triage
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Help us keep docs accurate and implementation-aligned.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is unclear or incorrect?
+      placeholder: Describe the problem in the current docs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Affected page(s)
+      description: Link file path(s) or URL(s)
+      placeholder: |
+        - docs/tutorials/install.md
+        - README.md
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: Proposed improvement
+      placeholder: Explain what should change and why.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I checked for duplicate documentation issues
+          required: false
+        - label: I can submit a PR for this change
+          required: false

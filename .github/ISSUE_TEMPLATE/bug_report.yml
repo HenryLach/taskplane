@@ -3,6 +3,8 @@ description: Report a reproducible problem in Taskplane
 title: "bug: <short description>"
 labels:
   - bug
+  - type:bug
+  - status:needs-triage
 body:
   - type: markdown
     attributes:

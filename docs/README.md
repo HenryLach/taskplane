@@ -73,6 +73,7 @@ Use these to understand the design and tradeoffs.
 - [Testing](maintainers/testing.md)
 - [Release Process](maintainers/release-process.md)
 - [Package Layout](maintainers/package-layout.md)
+- [Repository Governance (GitHub Setup)](maintainers/repository-governance.md)
 
 Also see root docs:
 - [CONTRIBUTING.md](../CONTRIBUTING.md)

@@ -3,6 +3,8 @@ description: Suggest an improvement or new capability for Taskplane
 title: "feat: <short description>"
 labels:
   - enhancement
+  - type:feature
+  - status:needs-triage
 body:
   - type: markdown
     attributes:

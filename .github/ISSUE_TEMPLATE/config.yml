@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Usage question or help request
+    url: https://github.com/HenryLach/taskplane/discussions
+    about: Ask questions, share workflows, and get help from maintainers/community.
+  - name: Security vulnerability report
+    url: https://github.com/HenryLach/taskplane/security/policy
+    about: Please report security vulnerabilities privately per SECURITY.md.
