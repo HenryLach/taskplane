@@ -1,0 +1,62 @@
+name: Feature Request
+description: Suggest an improvement or new capability for Taskplane
+title: "feat: <short description>"
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sharing an idea! Clear problem statements help prioritize work.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Statement
+      description: What problem are you trying to solve?
+      placeholder: Describe current pain and why existing behavior is insufficient.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed Solution
+      description: What would you like Taskplane to do?
+      placeholder: Describe the behavior, commands, or configuration you propose.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      placeholder: Other approaches you considered and why they fall short.
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: Example Workflow
+      description: Show a concrete before/after flow if possible.
+      placeholder: |
+        Before:
+        - /orch ...
+
+        After:
+        - /orch ... (new behavior)
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact
+      description: Who benefits and how often will this be used?
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues and discussions
+          required: false
+        - label: This request is scoped to Taskplane's goals (task execution/orchestration/docs/tooling)
+          required: false
