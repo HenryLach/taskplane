@@ -1,11 +1,11 @@
 # TP-001: Workspace Config and Execution Context Foundations — Status
 
-**Current Step:** Step 2: Wire orchestrator startup context
-​**Status:** ✅ Step 1 Complete
+**Current Step:** Step 3: Testing & Verification
+​**Status:** ✅ Step 2 Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -47,10 +47,19 @@
 ---
 
 ### Step 2: Wire orchestrator startup context
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Load execution context during session start in extension.ts
-- [ ] Thread execution context into engine entry points without changing repo-mode defaults
+- [x] Add module-level `execCtx` variable in extension.ts to hold the loaded ExecutionContext
+- [x] Call `buildExecutionContext(ctx.cwd, loadOrchestratorConfig, loadTaskRunnerConfig)` in `session_start` handler
+- [x] Catch `WorkspaceConfigError` in `session_start` — emit fatal notification with error code + message + actionable guidance, skip command registration
+- [x] Populate `orchConfig` and `runnerConfig` from `execCtx` fields instead of standalone calls
+- [x] Replace `ctx.cwd` usages in extension.ts with root-matrix-aware references: `execCtx.workspaceRoot` for state/.pi paths (orphan detection, batch state, abort signal), `execCtx.repoRoot` for git/engine operations
+- [x] Pass `execCtx.repoRoot` (instead of `ctx.cwd`) into `executeOrchBatch()` cwd parameter
+- [x] Pass `execCtx.repoRoot` (instead of `ctx.cwd`) into `resumeOrchBatch()` cwd parameter
+- [x] Pass `execCtx.workspaceRoot` (instead of `ctx.cwd`) into discovery, orphan detection, batch state load/delete, and abort signal paths
+- [x] Add startup guard: if `execCtx` is null (workspace config error), commands return early with "Orchestrator not initialized" notification
+- [x] Verify repo-mode parity: no workspace config file → workspaceRoot === repoRoot === cwd, behavior unchanged
+- [x] Verify all changes compile cleanly via vitest
 
 ---
 
@@ -84,6 +93,9 @@
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -122,6 +134,14 @@
 | 2026-03-15 05:51 | Review R004 | code Step 1: UNKNOWN |
 | 2026-03-15 05:51 | Step 1 complete | Implement workspace config loading |
 | 2026-03-15 05:51 | Step 2 started | Wire orchestrator startup context |
+| 2026-03-15 05:51 | Worker iter 2 | done in 492s, ctx: 31%, tools: 61 |
+| 2026-03-15 05:53 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 05:54 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 05:54 | Step 1 complete | Implement workspace config loading |
+| 2026-03-15 05:54 | Step 2 started | Wire orchestrator startup context |
+| 2026-03-15 05:56 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 05:58 | Step 2 verified | All 11 sub-items confirmed complete from prior iteration; no new ctx.cwd usages remain; vitest compilation passes with same pre-existing failures |
+| 2026-03-15 05:58 | Step 2 complete | Wire orchestrator startup context |
 
 ## Blockers
 

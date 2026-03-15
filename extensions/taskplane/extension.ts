@@ -8,6 +8,7 @@ import {
 	DEFAULT_ORCHESTRATOR_CONFIG,
 	DEFAULT_TASK_RUNNER_CONFIG,
 	ORCH_MESSAGES,
+	WorkspaceConfigError,
 	computeWaveAssignments,
 	createOrchWidget,
 	deleteBatchState,
@@ -29,8 +30,10 @@ import {
 	runDiscovery,
 	runPreflight,
 } from "./index.ts";
+import { buildExecutionContext } from "./workspace.ts";
 import type {
 	AbortMode,
+	ExecutionContext,
 	MonitorState,
 	OrchestratorConfig,
 	PersistedBatchState,
@@ -45,6 +48,13 @@ export default function (pi: ExtensionAPI) {
 	let runnerConfig: TaskRunnerConfig = { ...DEFAULT_TASK_RUNNER_CONFIG };
 	let orchWidgetCtx: ExtensionContext | undefined;
 	let latestMonitorState: MonitorState | null = null;
+
+	/**
+	 * Execution context loaded at session start. Null if startup failed
+	 * (e.g., workspace config present but invalid). Commands check this
+	 * and return early with a user-facing error when null.
+	 */
+	let execCtx: ExecutionContext | null = null;
 
 	// ── Widget Rendering ─────────────────────────────────────────────
 
@@ -61,6 +71,22 @@ export default function (pi: ExtensionAPI) {
 				prefix,
 			),
 		);
+	}
+
+	// ── Command Guard ────────────────────────────────────────────────
+
+	/**
+	 * Guard: returns true if execution context is initialized, false otherwise.
+	 * Emits a user-facing error notification when the context is missing.
+	 */
+	function requireExecCtx(ctx: ExtensionContext): boolean {
+		if (execCtx) return true;
+		ctx.ui.notify(
+			"❌ Orchestrator not initialized. Workspace configuration failed at startup.\n" +
+			"Fix the workspace config or remove it to use repo mode, then restart.",
+			"error",
+		);
+		return false;
 	}
 
 	// ── Commands ─────────────────────────────────────────────────────
@@ -81,6 +107,8 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			if (!requireExecCtx(ctx)) return;
+
 			// Prevent concurrent batch execution (merging is an active state)
 			if (orchBatchState.phase !== "idle" && orchBatchState.phase !== "completed" && orchBatchState.phase !== "failed" && orchBatchState.phase !== "stopped") {
 				ctx.ui.notify(
@@ -91,10 +119,15 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			// Root references from execution context:
+			// - workspaceRoot: state files (.pi/), orphan detection, batch state
+			// - repoRoot: git/engine operations
+			const { workspaceRoot, repoRoot } = execCtx!;
+
 			// ── Orphan detection (TS-009 Step 3) ─────────────────────
 			const orphanResult = detectOrphanSessions(
 				orchConfig.orchestrator.tmux_prefix,
-				ctx.cwd,
+				workspaceRoot,
 			);
 
 			switch (orphanResult.recommendedAction) {
@@ -107,7 +140,7 @@ export default function (pi: ExtensionAPI) {
 					const phase = orphanResult.loadedState?.phase ?? "";
 					const hasOrphans = orphanResult.orphanSessions.length > 0;
 					if (!hasOrphans && !resumablePhases.includes(phase)) {
-						try { deleteBatchState(ctx.cwd); } catch { /* best effort */ }
+						try { deleteBatchState(workspaceRoot); } catch { /* best effort */ }
 						ctx.ui.notify(
 							`🧹 Cleared non-resumable stale batch (${orphanResult.loadedState?.batchId}, phase=${phase}). Starting fresh.`,
 							"info",
@@ -127,7 +160,7 @@ export default function (pi: ExtensionAPI) {
 				case "cleanup-stale":
 					// No orphans + stale/invalid state file — auto-delete and continue
 					try {
-						deleteBatchState(ctx.cwd);
+						deleteBatchState(workspaceRoot);
 					} catch {
 						// Best-effort cleanup — proceed even if delete fails
 					}
@@ -150,7 +183,7 @@ export default function (pi: ExtensionAPI) {
 				args,
 				orchConfig,
 				runnerConfig,
-				ctx.cwd,
+				repoRoot,
 				orchBatchState,
 				(message, level) => {
 					ctx.ui.notify(message, level);
@@ -195,6 +228,8 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			if (!requireExecCtx(ctx)) return;
+
 			// Parse --refresh flag
 			const hasRefresh = /--refresh/.test(args);
 			const cleanArgs = args.replace(/--refresh/g, "").trim();
@@ -216,7 +251,7 @@ export default function (pi: ExtensionAPI) {
 			if (!preflight.passed) return;
 
 			// ── Section 2: Discovery ─────────────────────────────────
-			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, ctx.cwd, {
+			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, execCtx!.workspaceRoot, {
 				refreshDependencies: hasRefresh,
 				dependencySource: orchConfig.dependencies.source,
 				useDependencyCache: orchConfig.dependencies.cache,
@@ -311,6 +346,8 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("orch-resume", {
 		description: "Resume a paused or interrupted batch",
 		handler: async (_args, ctx) => {
+			if (!requireExecCtx(ctx)) return;
+
 			// Prevent resume if a batch is actively running
 			if (orchBatchState.phase === "executing" || orchBatchState.phase === "merging" || orchBatchState.phase === "planning") {
 				ctx.ui.notify(
@@ -328,7 +365,7 @@ export default function (pi: ExtensionAPI) {
 			await resumeOrchBatch(
 				orchConfig,
 				runnerConfig,
-				ctx.cwd,
+				execCtx!.repoRoot,
 				orchBatchState,
 				(message, level) => {
 					ctx.ui.notify(message, level);
@@ -354,6 +391,10 @@ export default function (pi: ExtensionAPI) {
 				const prefix = orchConfig.orchestrator.tmux_prefix;
 				const gracePeriodMs = orchConfig.orchestrator.abort_grace_period * 1000;
 
+				// Abort must work even if execCtx failed to load (safety-critical).
+				// Fall back to ctx.cwd if no execution context is available.
+				const stateRoot = execCtx?.workspaceRoot ?? ctx.cwd;
+
 				ctx.ui.notify(`🛑 Abort requested (${mode} mode, prefix: ${prefix})...`, "info");
 
 				// ── Step 1: Write abort signal file immediately ──────────
@@ -361,9 +402,9 @@ export default function (pi: ExtensionAPI) {
 				// loop checks for this file on every cycle, so even if this command
 				// handler runs concurrently with /orch (or is queued behind it),
 				// the signal file will be detected.
-				const abortSignalFile = join(ctx.cwd, ".pi", "orch-abort-signal");
+				const abortSignalFile = join(stateRoot, ".pi", "orch-abort-signal");
 				try {
-					mkdirSync(join(ctx.cwd, ".pi"), { recursive: true });
+					mkdirSync(join(stateRoot, ".pi"), { recursive: true });
 					writeFileSync(abortSignalFile, `abort requested at ${new Date().toISOString()} (mode: ${mode})`, "utf-8");
 					ctx.ui.notify("  ✓ Abort signal file written (.pi/orch-abort-signal)", "info");
 				} catch (err) {
@@ -386,7 +427,7 @@ export default function (pi: ExtensionAPI) {
 
 				let persistedState: PersistedBatchState | null = null;
 				try {
-					persistedState = loadBatchState(ctx.cwd);
+					persistedState = loadBatchState(stateRoot);
 				} catch {
 					// Ignore — we may still have in-memory state or orphan sessions
 				}
@@ -461,7 +502,7 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				try {
-					deleteBatchState(ctx.cwd);
+					deleteBatchState(stateRoot);
 					ctx.ui.notify("  ✓ Batch state file deleted (.pi/batch-state.json)", "info");
 				} catch (err) {
 					ctx.ui.notify(`  ⚠ Failed to delete batch state file: ${err instanceof Error ? err.message : String(err)}`, "warning");
@@ -509,6 +550,8 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
+			if (!requireExecCtx(ctx)) return;
+
 			// Parse --refresh flag
 			const hasRefresh = /--refresh/.test(args);
 
@@ -539,7 +582,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Run discovery (no preflight needed for deps view)
-			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, ctx.cwd, {
+			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, execCtx!.workspaceRoot, {
 				refreshDependencies: hasRefresh,
 				dependencySource: orchConfig.dependencies.source,
 				useDependencyCache: orchConfig.dependencies.cache,
@@ -574,18 +617,42 @@ export default function (pi: ExtensionAPI) {
 	// ── Session Lifecycle ────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
-		// Load configs
-		orchConfig = loadOrchestratorConfig(ctx.cwd);
-		runnerConfig = loadTaskRunnerConfig(ctx.cwd);
-
-		// Store widget context for dashboard updates
+		// Store widget context for dashboard updates (needed even if startup fails)
 		orchWidgetCtx = ctx;
+
+		// ── Build execution context (config + workspace mode detection) ──
+		try {
+			execCtx = buildExecutionContext(ctx.cwd, loadOrchestratorConfig, loadTaskRunnerConfig);
+		} catch (err: unknown) {
+			if (err instanceof WorkspaceConfigError) {
+				// Workspace config is present but invalid — fatal startup error.
+				// Leave execCtx null; command guard will block all commands except abort.
+				ctx.ui.notify(
+					`❌ Workspace configuration error [${err.code}]\n\n` +
+					`${err.message}\n\n` +
+					`Fix the workspace config at .pi/taskplane-workspace.yaml or remove it to use repo mode.\n` +
+					`Orchestrator commands are disabled until this is resolved.`,
+					"error",
+				);
+				ctx.ui.setStatus(
+					"task-orchestrator",
+					"🔀 Orchestrator · ❌ startup failed (workspace config error)",
+				);
+				return;
+			}
+			throw err; // Re-throw unexpected errors
+		}
+
+		// Populate module-level config refs from the loaded context
+		orchConfig = execCtx.orchestratorConfig;
+		runnerConfig = execCtx.taskRunnerConfig;
 
 		// Set status line
 		const areaCount = Object.keys(runnerConfig.task_areas).length;
+		const modeLabel = execCtx.mode === "workspace" ? "workspace" : "repo";
 		ctx.ui.setStatus(
 			"task-orchestrator",
-			`🔀 Orchestrator · ${areaCount} areas · ${orchConfig.orchestrator.max_lanes} lanes`,
+			`🔀 Orchestrator · ${modeLabel} mode · ${areaCount} areas · ${orchConfig.orchestrator.max_lanes} lanes`,
 		);
 
 		// Register initial dashboard widget (idle state)
@@ -594,6 +661,7 @@ export default function (pi: ExtensionAPI) {
 		// Notify user of available commands
 		ctx.ui.notify(
 			"Task Orchestrator ready\n\n" +
+			`Mode: ${modeLabel}\n` +
 			`Config: ${orchConfig.orchestrator.max_lanes} lanes, ` +
 			`${orchConfig.orchestrator.spawn_mode} mode, ` +
 			`${orchConfig.dependencies.source} deps\n` +
