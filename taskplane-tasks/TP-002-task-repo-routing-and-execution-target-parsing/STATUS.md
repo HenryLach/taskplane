@@ -4,7 +4,7 @@
 ​**Status:** ✅ Step 2 Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 3
 **Size:** M
 
@@ -134,12 +134,12 @@
 - [x] Add test: `formatDiscoveryResults` shows repo annotation for tasks with `resolvedRepoId`
 - [x] Add test: `formatDiscoveryResults` omits repo annotation when `resolvedRepoId` absent
 - [x] Add test: fatal routing errors produce actionable guidance text
-- [x] All existing tests still pass (51 routing + 40 workspace = 91 pass; 4 pre-existing failures in other suites unchanged)
+- [x] All existing tests still pass (68 routing + 40 workspace = 108 pass; 4 pre-existing failures in other suites unchanged)
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Unit/regression tests passing
 - [ ] Targeted tests for changed modules passing
@@ -171,6 +171,7 @@
 | R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -226,6 +227,11 @@
 | 2026-03-15 07:06 | Step 2 tests | 13 new tests (15.x config, 16.x output, 17.x guidance) — 51/51 pass |
 | 2026-03-15 07:06 | Step 2 complete | All checklist items verified and checked off |
 | 2026-03-15 07:03 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 07:07 | Worker iter 3 | done in 278s, ctx: 26%, tools: 43 |
+| 2026-03-15 07:09 | Review R006 | code Step 2: UNKNOWN |
+| 2026-03-15 07:09 | Step 2 complete | Annotate discovery outputs |
+| 2026-03-15 07:09 | Step 3 started | Testing & Verification |
+| 2026-03-15 07:10 | Step 2 verify | Iter 3: confirmed all Step 2 work committed (91fe024), 68 routing + 40 workspace = 108 tests pass |
 
 ## Blockers
 
