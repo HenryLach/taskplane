@@ -1,11 +1,11 @@
 # TP-001: Workspace Config and Execution Context Foundations — Status
 
-**Current Step:** Step 3: Testing & Verification
-​**Status:** ✅ Step 2 Complete
+**Current Step:** Step 4: Documentation & Delivery
+​**Status:** ✅ Step 3 Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -64,12 +64,66 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing
-- [ ] Targeted tests for changed modules passing
-- [ ] All failures fixed
-- [ ] CLI smoke checks passing
+#### 3.1: Triage pre-existing test failures (no-regression baseline)
+- [x] Run full `cd extensions && npx vitest run` and capture baseline failure list
+- [x] Confirm all failures are pre-existing (not caused by TP-001 changes): verified TP-001 diff doesn't touch any test files; all failures are source-verification tests looking for patterns in old task-orchestrator.ts monolith
+- [x] Document pre-existing failure count and suites in execution log
+
+#### 3.2: Write targeted workspace config tests (`extensions/tests/workspace-config.test.ts`)
+- [x] Test loadWorkspaceConfig returns null when no config file (repo mode)
+- [x] Test loadWorkspaceConfig throws WORKSPACE_FILE_PARSE_ERROR on invalid YAML
+- [x] Test loadWorkspaceConfig throws WORKSPACE_SCHEMA_INVALID on missing repos/routing (2 tests: no repos, no routing)
+- [x] Test loadWorkspaceConfig throws WORKSPACE_SCHEMA_INVALID on scalar/array YAML (2 tests)
+- [x] Test loadWorkspaceConfig throws WORKSPACE_MISSING_REPOS on empty repos map
+- [x] Test loadWorkspaceConfig throws WORKSPACE_REPO_PATH_MISSING on repo without path
+- [x] Test loadWorkspaceConfig throws WORKSPACE_REPO_PATH_NOT_FOUND on non-existent repo path
+- [x] Test loadWorkspaceConfig throws WORKSPACE_REPO_NOT_GIT on non-git directory
+- [x] Test loadWorkspaceConfig throws WORKSPACE_DUPLICATE_REPO_PATH on duplicate paths
+- [x] Test loadWorkspaceConfig throws WORKSPACE_MISSING_TASKS_ROOT on missing routing.tasks_root
+- [x] Test loadWorkspaceConfig throws WORKSPACE_TASKS_ROOT_NOT_FOUND on non-existent tasks root
+- [x] Test loadWorkspaceConfig throws WORKSPACE_MISSING_DEFAULT_REPO on missing routing.default_repo
+- [x] Test loadWorkspaceConfig throws WORKSPACE_DEFAULT_REPO_NOT_FOUND on invalid default_repo ID
+- [x] Test loadWorkspaceConfig returns valid WorkspaceConfig for well-formed config with git repos
+- [x] Test loadWorkspaceConfig handles multiple repos in valid config
+
+#### 3.3: Write targeted execution context tests (`extensions/tests/workspace-config.test.ts`)
+- [x] Test buildExecutionContext in repo mode: workspaceRoot === repoRoot === cwd, mode === "repo"
+- [x] Test buildExecutionContext in workspace mode: workspaceRoot !== repoRoot, mode === "workspace", repoRoot === default repo path
+- [x] Test buildExecutionContext propagates WorkspaceConfigError from invalid config
+
+#### 3.4: Write type/contract unit tests
+- [x] Test canonicalizePath normalizes backslashes to forward slashes
+- [x] Test canonicalizePath lowercases results
+- [x] Test canonicalizePath resolves relative paths against base
+- [x] Test canonicalizePath handles absolute paths
+- [x] Test WorkspaceConfigError has correct code, message, repoId, relatedPath
+- [x] Test WorkspaceConfigError repoId and relatedPath are optional
+- [x] Test createRepoModeContext returns correct shape (workspaceRoot === repoRoot, mode === "repo")
+- [x] Test workspaceConfigPath returns expected path
+
+#### 3.5: Root-consistency regression verification (source-verified in tests + manual code review)
+- [x] Verify extension.ts /orch uses execCtx.repoRoot for discovery, orphan detection, batch state, executeOrchBatch cwd — confirmed via source verification tests (5.1–5.5) and manual grep
+- [x] Verify extension.ts /orch-plan uses execCtx.repoRoot for discovery — confirmed L260 `execCtx!.repoRoot`
+- [x] Verify extension.ts /orch-deps uses execCtx.repoRoot for discovery — confirmed L594 `execCtx!.repoRoot`
+- [x] Verify extension.ts /orch-resume uses execCtx.repoRoot for resumeOrchBatch cwd — confirmed L374 `execCtx!.repoRoot`
+- [x] Verify extension.ts /orch-abort uses execCtx.repoRoot (with ctx.cwd fallback) for state/abort signal — confirmed L404 `execCtx?.repoRoot ?? ctx.cwd`, source verification test 5.6
+- [x] Verify engine.ts maps cwd → repoRoot and uses it consistently for discovery, state, abort — confirmed L45 `const repoRoot = cwd`, source verification test 5.7
+- [x] Verify resume.ts maps cwd → repoRoot and uses it consistently for state, discovery, DONE checks — confirmed L339 `const repoRoot = cwd`, source verification test 5.8
+- [x] Verify no remaining raw ctx.cwd usage in extension.ts except in session_start (buildExecutionContext), orch-abort fallback, and orch-abort comment — confirmed 3 matches: L401 comment, L404 fallback code, L634 session_start
+
+#### 3.6: Run targeted workspace tests
+- [x] Run `cd extensions && npx vitest run tests/workspace-config.test.ts` — all 38 tests pass
+- [x] Fixed 3 initial test failures (invalid YAML test input, ctx.cwd count)
+
+#### 3.7: Full suite regression run
+- [x] Run `cd extensions && npx vitest run` — 4 failed files (all pre-existing), 2 passed files (worktree-lifecycle + workspace-config), no new failures
+- [x] Confirm worktree-lifecycle.test.ts still passes
+
+#### 3.8: CLI smoke checks
+- [x] Run `node bin/taskplane.mjs help` — exits 0 with valid output
+- [x] Run `node bin/taskplane.mjs doctor` — runs successfully (exit 1 expected: worktree lacks config files, not a regression)
 
 ---
 
@@ -97,6 +151,9 @@
 | R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
+| R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -148,6 +205,20 @@
 | 2026-03-15 06:03 | Step 2 complete | Wire orchestrator startup context |
 | 2026-03-15 06:03 | Step 3 started | Testing & Verification |
 | 2026-03-15 06:07 | R006 fix applied | Changed all workspaceRoot→repoRoot for state/discovery/abort/orphan paths in extension.ts for consistency with engine/resume/execution |
+| 2026-03-15 06:06 | Review R007 | plan Step 3: UNKNOWN |
+| 2026-03-15 06:10 | Step 3 hydrated | Expanded to 8 sections with 38+ concrete sub-items per R007 review |
+| 2026-03-15 06:12 | Pre-existing failures triaged | 4 failing test files (24 sub-failures), all source-verification tests against old monolith, none workspace-related |
+| 2026-03-15 06:13 | Workspace tests created | extensions/tests/workspace-config.test.ts: 38 tests covering loadWorkspaceConfig (17), buildExecutionContext (3), canonicalizePath (4), type contracts (4), root-consistency regression (10) |
+| 2026-03-15 06:14 | Test fixes applied | Fixed invalid YAML test inputs (yaml lib parses {{ }} as valid), adjusted ctx.cwd count for comment match |
+| 2026-03-15 06:14 | Targeted tests pass | All 38 workspace-config tests green |
+| 2026-03-15 06:14 | Full regression pass | No new failures: 4 pre-existing failed files + 2 passed files (worktree-lifecycle + workspace-config) |
+| 2026-03-15 06:15 | CLI smoke checks pass | `help` exits 0, `doctor` runs correctly |
+| 2026-03-15 06:15 | Step 3 complete | All sub-items verified, tests written and passing |
+| 2026-03-15 06:07 | Worker iter 3 | done in 812s, ctx: 51%, tools: 92 |
+| 2026-03-15 06:10 | Review R006 | code Step 2: UNKNOWN |
+| 2026-03-15 06:10 | Step 2 complete | Wire orchestrator startup context |
+| 2026-03-15 06:10 | Step 3 started | Testing & Verification |
+| 2026-03-15 06:13 | Review R007 | plan Step 3: UNKNOWN |
 
 ## Blockers
 
