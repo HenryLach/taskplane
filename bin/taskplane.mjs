@@ -291,16 +291,17 @@ async function autoCommitTaskFiles(projectRoot, tasksRoot) {
 	}
 }
 
-function discoverTaskAreaPaths(projectRoot) {
+function discoverTaskAreaMetadata(projectRoot) {
 	const runnerPath = path.join(projectRoot, ".pi", "task-runner.yaml");
-	if (!fs.existsSync(runnerPath)) return [];
+	if (!fs.existsSync(runnerPath)) return { paths: [], contexts: [] };
 
 	const raw = readYaml(runnerPath);
-	if (!raw) return [];
+	if (!raw) return { paths: [], contexts: [] };
 
 	const lines = raw.split(/\r?\n/);
 	let inTaskAreas = false;
 	const paths = new Set();
+	const contexts = new Set();
 
 	for (const line of lines) {
 		const trimmed = line.trim();
@@ -317,13 +318,22 @@ function discoverTaskAreaPaths(projectRoot) {
 			break;
 		}
 
-		const m = line.match(/^\s{4}path:\s*["']?([^"'\n#]+)["']?\s*(?:#.*)?$/);
-		if (m?.[1]) {
-			paths.add(m[1].trim());
+		const pathMatch = line.match(/^\s{4}path:\s*["']?([^"'\n#]+)["']?\s*(?:#.*)?$/);
+		if (pathMatch?.[1]) {
+			paths.add(pathMatch[1].trim());
+		}
+
+		const contextMatch = line.match(/^\s{4}context:\s*["']?([^"'\n#]+)["']?\s*(?:#.*)?$/);
+		if (contextMatch?.[1]) {
+			contexts.add(contextMatch[1].trim());
 		}
 	}
 
-	return [...paths];
+	return { paths: [...paths], contexts: [...contexts] };
+}
+
+function discoverTaskAreaPaths(projectRoot) {
+	return discoverTaskAreaMetadata(projectRoot).paths;
 }
 
 function pruneEmptyDir(dirPath) {
@@ -825,33 +835,25 @@ function cmdDoctor() {
 	}
 
 	// Check task areas from config
-	const runnerYaml = readYaml(path.join(projectRoot, ".pi", "task-runner.yaml"));
-	if (runnerYaml) {
-		// Simple regex extraction of task area paths
-		const pathMatches = [...runnerYaml.matchAll(/^\s+path:\s*"?([^"\n]+)"?/gm)];
-		const contextMatches = [...runnerYaml.matchAll(/^\s+context:\s*"?([^"\n]+)"?/gm)];
-
-		if (pathMatches.length > 0) {
-			console.log();
-			for (const match of pathMatches) {
-				const areaPath = match[1].trim();
-				const exists = fs.existsSync(path.join(projectRoot, areaPath));
-				if (exists) {
-					console.log(`  ${OK} task area path: ${areaPath}`);
-				} else {
-					console.log(`  ${FAIL} task area path: ${areaPath} ${c.dim}(directory not found)${c.reset}`);
-					console.log(`     ${c.dim}→ Run: mkdir -p ${areaPath}${c.reset}`);
-					issues++;
-				}
+	const { paths: taskAreaPaths, contexts: taskAreaContexts } = discoverTaskAreaMetadata(projectRoot);
+	if (taskAreaPaths.length > 0) {
+		console.log();
+		for (const areaPath of taskAreaPaths) {
+			const exists = fs.existsSync(path.join(projectRoot, areaPath));
+			if (exists) {
+				console.log(`  ${OK} task area path: ${areaPath}`);
+			} else {
+				console.log(`  ${FAIL} task area path: ${areaPath} ${c.dim}(directory not found)${c.reset}`);
+				console.log(`     ${c.dim}→ Run: mkdir -p ${areaPath}${c.reset}`);
+				issues++;
 			}
-			for (const match of contextMatches) {
-				const ctxPath = match[1].trim();
-				const exists = fs.existsSync(path.join(projectRoot, ctxPath));
-				if (exists) {
-					console.log(`  ${OK} CONTEXT.md: ${ctxPath}`);
-				} else {
-					console.log(`  ${WARN} CONTEXT.md: ${ctxPath} ${c.dim}(not found)${c.reset}`);
-				}
+		}
+		for (const ctxPath of taskAreaContexts) {
+			const exists = fs.existsSync(path.join(projectRoot, ctxPath));
+			if (exists) {
+				console.log(`  ${OK} CONTEXT.md: ${ctxPath}`);
+			} else {
+				console.log(`  ${WARN} CONTEXT.md: ${ctxPath} ${c.dim}(not found)${c.reset}`);
 			}
 		}
 	}
