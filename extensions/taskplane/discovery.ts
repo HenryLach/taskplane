@@ -184,6 +184,54 @@ export function parsePromptForOrchestrator(
 		}
 	}
 
+	// ── Extract execution target (repo ID) ──────────────────────
+	// Repo ID validation: lowercase alphanumeric + hyphens, starting with alnum
+	const REPO_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
+	let promptRepoId: string | undefined;
+
+	// Priority 1: Section-based "## Execution Target" with "Repo: <id>" line
+	// Capture everything from section header to the next heading or --- divider.
+	// We avoid \n$ (which in multiline mode matches blank lines) by using a two-pass
+	// approach: find the section start, then slice to the next section boundary.
+	const execTargetHeaderIdx = content.search(/^##\s+Execution Target\s*$/m);
+	let execTargetSectionBody: string | null = null;
+	if (execTargetHeaderIdx !== -1) {
+		const afterHeader = content.indexOf("\n", execTargetHeaderIdx);
+		if (afterHeader !== -1) {
+			const rest = content.slice(afterHeader + 1);
+			const nextSectionMatch = rest.search(/^##\s|^---/m);
+			execTargetSectionBody = nextSectionMatch !== -1
+				? rest.slice(0, nextSectionMatch)
+				: rest;
+		}
+	}
+	if (execTargetSectionBody !== null) {
+		// Match "Repo: api" or "**Repo:** api" or "Repo: api" with whitespace
+		const repoLineMatch = execTargetSectionBody.match(
+			/^\s*\*?\*?Repo:?\*?\*?\s+(\S+)/mi,
+		);
+		if (repoLineMatch) {
+			const candidate = repoLineMatch[1].trim().toLowerCase();
+			if (REPO_ID_PATTERN.test(candidate)) {
+				promptRepoId = candidate;
+			}
+		}
+	}
+
+	// Priority 2 (fallback): Inline "**Repo:** <id>" anywhere in content
+	if (!promptRepoId) {
+		const inlineRepoMatch = content.match(
+			/^\*\*Repo:\*\*\s+(\S+)/m,
+		);
+		if (inlineRepoMatch) {
+			const candidate = inlineRepoMatch[1].trim().toLowerCase();
+			if (REPO_ID_PATTERN.test(candidate)) {
+				promptRepoId = candidate;
+			}
+		}
+	}
+
 	// ── Extract file scope ───────────────────────────────────────
 	const fileScope: string[] = [];
 	const fileScopeMatch = content.match(
@@ -214,6 +262,7 @@ export function parsePromptForOrchestrator(
 			promptPath: resolve(promptPath),
 			areaName,
 			status: "pending",
+			...(promptRepoId ? { promptRepoId } : {}),
 		},
 		error: null,
 	};

@@ -59,6 +59,8 @@ export interface ParsedTask {
 	promptPath: string;
 	areaName: string;
 	status: "pending" | "complete";
+	/** Repo ID declared in the PROMPT metadata (e.g., "api", "frontend"). Undefined if not declared. */
+	promptRepoId?: string;
 }
 
 /** A wave: a group of tasks whose dependencies are all satisfied */
