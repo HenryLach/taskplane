@@ -444,6 +444,7 @@ export async function resumeOrchBatch(
 	batchState.phase = "executing";
 	batchState.batchId = persistedState.batchId;
 	batchState.baseBranch = persistedState.baseBranch || "";
+	batchState.mode = persistedState.mode;
 	batchState.startedAt = persistedState.startedAt;
 	batchState.pauseSignal = { paused: false };
 	batchState.totalWaves = persistedState.totalWaves;

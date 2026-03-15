@@ -147,6 +147,11 @@ function validatePersistedState(data: unknown): any {
 	}
 
 	// v2: mode field validation
+	// mode is required in v2, absent in v1 (defaults to "repo" via upconvert).
+	if (!isV1 && obj.mode === undefined) {
+		throw new StateFileError("STATE_SCHEMA_INVALID",
+			`Missing required "mode" field in schema v2 (expected "repo" or "workspace")`);
+	}
 	if (obj.mode !== undefined && typeof obj.mode !== "string") {
 		throw new StateFileError("STATE_SCHEMA_INVALID",
 			`Invalid "mode" field (expected string, got ${typeof obj.mode})`);
@@ -319,9 +324,11 @@ function validatePersistedState(data: unknown): any {
 	}
 
 	// v1→v2 upconversion (in-memory only)
-	if (!obj.baseBranch) obj.baseBranch = "";
-	if (!obj.mode) obj.mode = "repo";
-	if (isV1) obj.schemaVersion = BATCH_STATE_SCHEMA_VERSION;
+	if (isV1) {
+		if (!obj.baseBranch) obj.baseBranch = "";
+		if (!obj.mode) obj.mode = "repo";
+		obj.schemaVersion = BATCH_STATE_SCHEMA_VERSION;
+	}
 
 	return obj;
 }
@@ -504,6 +511,112 @@ console.log("\n── 1.1: validatePersistedState ──");
 		() => validatePersistedState({ schemaVersion: "one", phase: "idle", batchId: "test" }),
 		"STATE_SCHEMA_INVALID",
 		"string schemaVersion throws STATE_SCHEMA_INVALID",
+	);
+}
+
+{
+	console.log("  ▸ rejects v2 state missing required mode field");
+	// A v2 file without mode should be rejected (mode is required in v2).
+	// v1 files are allowed to omit mode (backfilled to "repo" via upconvert).
+	const v2NoMode = {
+		schemaVersion: 2,
+		phase: "executing",
+		batchId: "20260309T010000",
+		startedAt: 1741478400000,
+		updatedAt: 1741478460000,
+		endedAt: null,
+		currentWaveIndex: 0,
+		totalWaves: 1,
+		wavePlan: [["TS-001"]],
+		lanes: [],
+		tasks: [],
+		mergeResults: [],
+		totalTasks: 1,
+		succeededTasks: 0,
+		failedTasks: 0,
+		skippedTasks: 0,
+		blockedTasks: 0,
+		blockedTaskIds: [],
+		lastError: null,
+		errors: [],
+	};
+	assertThrows(
+		() => validatePersistedState(v2NoMode),
+		"STATE_SCHEMA_INVALID",
+		"v2 state without mode throws STATE_SCHEMA_INVALID",
+	);
+}
+
+{
+	console.log("  ▸ accepts v1 state and upconverts mode to 'repo'");
+	const v1Data = loadFixtureJSON("batch-state-v1-valid.json");
+	const result = validatePersistedState(v1Data);
+	assertEqual(result.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "v1 upconverted to v2 schemaVersion");
+	assertEqual(result.mode, "repo", "v1 mode defaults to 'repo'");
+	assertEqual(result.baseBranch, "", "v1 baseBranch defaults to ''");
+	// Verify task/lane records survived upconversion intact
+	assertEqual(result.tasks.length, 3, "v1 upconvert: 3 task records preserved");
+	assertEqual(result.lanes.length, 2, "v1 upconvert: 2 lane records preserved");
+	assertEqual(result.tasks[0].taskId, "TS-001", "v1 upconvert: task TS-001 preserved");
+	assertEqual(result.tasks[0].status, "succeeded", "v1 upconvert: task status preserved");
+	// v1 tasks should not have repo fields
+	assertEqual(result.tasks[0].repoId, undefined, "v1 upconvert: task repoId is undefined");
+	assertEqual(result.tasks[0].resolvedRepoId, undefined, "v1 upconvert: task resolvedRepoId is undefined");
+	// v1 lanes should not have repoId
+	assertEqual(result.lanes[0].repoId, undefined, "v1 upconvert: lane repoId is undefined");
+}
+
+{
+	console.log("  ▸ validates v2 workspace-mode state with repo-aware fields");
+	const wsData = loadFixtureJSON("batch-state-v2-workspace.json");
+	const result = validatePersistedState(wsData);
+	assertEqual(result.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "v2 workspace: schemaVersion is 2");
+	assertEqual(result.mode, "workspace", "v2 workspace: mode is 'workspace'");
+	assertEqual(result.baseBranch, "main", "v2 workspace: baseBranch preserved");
+	// Task repo fields
+	assertEqual(result.tasks.length, 2, "v2 workspace: 2 task records");
+	assertEqual(result.tasks[0].taskId, "WS-001", "v2 workspace: task WS-001");
+	assertEqual(result.tasks[0].repoId, "api", "v2 workspace: task[0].repoId is 'api'");
+	assertEqual(result.tasks[0].resolvedRepoId, "api", "v2 workspace: task[0].resolvedRepoId is 'api'");
+	// WS-002 has no repoId but has resolvedRepoId (area/workspace default fallback)
+	assertEqual(result.tasks[1].repoId, undefined, "v2 workspace: task[1].repoId is undefined");
+	assertEqual(result.tasks[1].resolvedRepoId, "frontend", "v2 workspace: task[1].resolvedRepoId is 'frontend'");
+	// Lane repo fields
+	assertEqual(result.lanes.length, 2, "v2 workspace: 2 lane records");
+	assertEqual(result.lanes[0].repoId, "api", "v2 workspace: lane[0].repoId is 'api'");
+	assertEqual(result.lanes[1].repoId, "frontend", "v2 workspace: lane[1].repoId is 'frontend'");
+}
+
+{
+	console.log("  ▸ rejects non-string repoId on task record");
+	const validBase = JSON.parse(loadFixture("batch-state-valid.json"));
+	validBase.tasks[0].repoId = 42;
+	assertThrows(
+		() => validatePersistedState(validBase),
+		"STATE_SCHEMA_INVALID",
+		"numeric task repoId throws STATE_SCHEMA_INVALID",
+	);
+}
+
+{
+	console.log("  ▸ rejects non-string resolvedRepoId on task record");
+	const validBase = JSON.parse(loadFixture("batch-state-valid.json"));
+	validBase.tasks[0].resolvedRepoId = true;
+	assertThrows(
+		() => validatePersistedState(validBase),
+		"STATE_SCHEMA_INVALID",
+		"boolean task resolvedRepoId throws STATE_SCHEMA_INVALID",
+	);
+}
+
+{
+	console.log("  ▸ rejects non-string repoId on lane record");
+	const validBase = JSON.parse(loadFixture("batch-state-valid.json"));
+	validBase.lanes[0].repoId = 99;
+	assertThrows(
+		() => validatePersistedState(validBase),
+		"STATE_SCHEMA_INVALID",
+		"numeric lane repoId throws STATE_SCHEMA_INVALID",
 	);
 }
 

@@ -1,5 +1,6 @@
 {
   "schemaVersion": 2,
+  "mode": "repo",
   "phase": "executing",
   "batchId": "20260309T010000",
   "startedAt": 1741478400000,

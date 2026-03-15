@@ -52,6 +52,7 @@ export async function executeOrchBatch(
 	batchState.startedAt = Date.now();
 	batchState.pauseSignal = { paused: false };
 	batchState.mergeResults = [];
+	batchState.mode = workspaceConfig ? "workspace" : "repo";
 
 	// Capture the current branch as the base for worktrees and merge target
 	const detectedBranch = getCurrentBranch(repoRoot);

@@ -367,7 +367,13 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 	}
 
 	// ── v2: mode field ───────────────────────────────────────────
-	// mode is required in v2, absent in v1 (defaults to "repo").
+	// mode is required in v2, absent in v1 (defaults to "repo" via upconvert).
+	if (!isV1 && obj.mode === undefined) {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`Missing required "mode" field in schema v2 (expected "repo" or "workspace")`,
+		);
+	}
 	if (obj.mode !== undefined && typeof obj.mode !== "string") {
 		throw new StateFileError(
 			"STATE_SCHEMA_INVALID",

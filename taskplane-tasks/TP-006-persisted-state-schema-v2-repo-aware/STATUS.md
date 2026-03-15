@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -18,6 +18,9 @@
 
 - [x] Bump batch-state schema version and add repo-aware fields on lane/task records
 - [x] Document field contracts and compatibility expectations
+- [x] R002 fix: `mode` validation strict for v2 (missing mode → STATE_SCHEMA_INVALID)
+- [x] R002 fix: `mode` set from execution context in engine.ts (fresh run) and resume.ts (resume)
+- [x] R002 fix: v2 fixtures updated with `mode` field; v1 upconversion test added
 
 #### Schema v2 Contract
 
@@ -117,6 +120,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -139,6 +144,10 @@
 | 2026-03-15 18:00 | Step 0 completed | Schema v2 defined in types.ts; contract documented in STATUS.md |
 | 2026-03-15 17:58 | Worker iter 1 | done in 237s, ctx: 38%, tools: 34 |
 | 2026-03-15 18:02 | Step 0 impl updated | R001 revise feedback addressed: v1→v2 upconvert, validation, fixtures, tests |
+| 2026-03-15 18:07 | Worker iter 1 | done in 804s, ctx: 58%, tools: 112 |
+| 2026-03-15 18:09 | Review R002 | code Step 0: REVISE |
+| 2026-03-15 18:15 | Step 0 R002 fix | Strict mode validation for v2, mode set in engine/resume, fixtures+tests updated |
+| 2026-03-15 18:12 | Review R002 | code Step 0: REVISE |
 
 ## Blockers
 
