@@ -234,6 +234,118 @@ function runAllTests(): void {
 		assert(groups[2].repoId === "z-repo", "deterministic: z-repo third");
 	}
 
+	// ─── 9. Status rollup: lane-level evidence (not repo status) ─────
+	// Tests the aggregation logic pattern used in mergeWaveByRepo().
+	// This validates the fix for R002 finding #2 (all-partial misclassified as failed).
+	console.log("\n── 9. Status rollup: lane-level evidence ──");
+	{
+		// Helper: simulate the status rollup logic from mergeWaveByRepo()
+		function computeAggregateStatus(
+			laneResults: Array<{ resultStatus: string | null; error: string | null }>,
+			firstFailedLane: number | null,
+		): "succeeded" | "failed" | "partial" {
+			const anyLaneSucceeded = laneResults.some(
+				r => r.resultStatus === "SUCCESS" || r.resultStatus === "CONFLICT_RESOLVED",
+			);
+			const anyLaneFailed = firstFailedLane !== null;
+			if (!anyLaneFailed) return "succeeded";
+			if (anyLaneSucceeded) return "partial";
+			return "failed";
+		}
+
+		// Case A: All lanes succeed → succeeded
+		assert(
+			computeAggregateStatus(
+				[{ resultStatus: "SUCCESS", error: null }, { resultStatus: "SUCCESS", error: null }],
+				null,
+			) === "succeeded",
+			"rollup: all SUCCESS → succeeded",
+		);
+
+		// Case B: Some lanes succeed, some fail → partial
+		assert(
+			computeAggregateStatus(
+				[{ resultStatus: "SUCCESS", error: null }, { resultStatus: "CONFLICT_UNRESOLVED", error: null }],
+				2,
+			) === "partial",
+			"rollup: mixed SUCCESS + failure → partial",
+		);
+
+		// Case C: All lanes fail → failed
+		assert(
+			computeAggregateStatus(
+				[{ resultStatus: "CONFLICT_UNRESOLVED", error: null }, { resultStatus: "BUILD_FAILURE", error: null }],
+				1,
+			) === "failed",
+			"rollup: all failures → failed",
+		);
+
+		// Case D: All repos partial (some succeed in each repo, each has a failure)
+		// This is the edge case from R002 finding #2.
+		// Each repo is "partial" (has both succeeded and failed lanes), but globally
+		// there ARE successful merges, so aggregate should be "partial", not "failed".
+		assert(
+			computeAggregateStatus(
+				[
+					{ resultStatus: "SUCCESS", error: null },                    // repo-a lane 1
+					{ resultStatus: "CONFLICT_UNRESOLVED", error: null },        // repo-a lane 2 (failure)
+					{ resultStatus: "CONFLICT_RESOLVED", error: null },          // repo-b lane 1
+					{ resultStatus: "BUILD_FAILURE", error: null },              // repo-b lane 2 (failure)
+				],
+				2, // first failure at lane 2
+			) === "partial",
+			"rollup: all repos partial → global partial (not failed)",
+		);
+
+		// Case E: No lanes at all (vacuous) → succeeded
+		assert(
+			computeAggregateStatus([], null) === "succeeded",
+			"rollup: no lanes → succeeded (vacuous)",
+		);
+
+		// Case F: Error lanes (no result, only error) → failed
+		assert(
+			computeAggregateStatus(
+				[{ resultStatus: null, error: "spawn failed" }],
+				1,
+			) === "failed",
+			"rollup: error lane without result → failed",
+		);
+
+		// Case G: Mix of success + error → partial
+		assert(
+			computeAggregateStatus(
+				[{ resultStatus: "SUCCESS", error: null }, { resultStatus: null, error: "timeout" }],
+				2,
+			) === "partial",
+			"rollup: success + error → partial",
+		);
+	}
+
+	// ─── 10. repoId propagation on MergeLaneResult ───────────────────
+	// Validates that groupLanesByRepo preserves repoId from input lanes,
+	// ensuring merge lane results can be correctly attributed to repos.
+	console.log("\n── 10. repoId propagation through grouping ──");
+	{
+		const lanes: AllocatedLane[] = [
+			makeLane(1, ["TP-080"], { repoId: "api" }),
+			makeLane(2, ["TP-081"], { repoId: "web" }),
+			makeLane(3, ["TP-082"], { repoId: "api" }),
+		];
+
+		const groups = groupLanesByRepo(lanes);
+
+		// Verify repoId is preserved on each lane in each group
+		for (const group of groups) {
+			for (const lane of group.lanes) {
+				assert(
+					lane.repoId === group.repoId,
+					`repoId preserved: lane ${lane.laneNumber} has repoId "${lane.repoId}" matching group "${group.repoId}"`,
+				);
+			}
+		}
+	}
+
 	// ── Summary ──────────────────────────────────────────────────────
 	console.log(`\n════════════════════════════════════════════════════════════`);
 	console.log(`Test Results: ${passed} passed, ${failed} failed`);

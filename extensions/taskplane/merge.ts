@@ -648,6 +648,7 @@ export function mergeWave(
 				result: mergeResult,
 				error: null,
 				durationMs: Date.now() - laneStart,
+				repoId: lane.repoId,
 			});
 
 			// Handle merge outcome
@@ -716,6 +717,7 @@ export function mergeWave(
 				result: null,
 				error: errMsg,
 				durationMs: Date.now() - laneStart,
+				repoId: lane.repoId,
 			});
 
 			failedLane = lane.laneNumber;
@@ -985,14 +987,17 @@ export function mergeWaveByRepo(
 	}
 
 	// ── Aggregate status ─────────────────────────────────────────
-	const anyRepoSucceeded = repoOutcomes.some(r => r.status === "succeeded");
-	const anyRepoFailed = repoOutcomes.some(r => r.status === "failed" || r.status === "partial");
-	const allReposSucceeded = repoOutcomes.every(r => r.status === "succeeded");
+	// Base aggregate status on lane-level evidence (not repo-level status)
+	// to correctly classify "all repos partial" as global partial, not failed.
+	const anyLaneSucceeded = allLaneResults.some(
+		r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED",
+	);
+	const anyLaneFailed = firstFailedLane !== null;
 
 	let status: MergeWaveResult["status"];
-	if (allReposSucceeded) {
+	if (!anyLaneFailed) {
 		status = "succeeded";
-	} else if (anyRepoSucceeded && anyRepoFailed) {
+	} else if (anyLaneSucceeded) {
 		status = "partial";
 	} else {
 		status = "failed";
