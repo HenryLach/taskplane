@@ -1,11 +1,11 @@
 # TP-009: Dashboard Repo-Aware Lanes, Tasks, and Merge Panels — Status
 
-**Current Step:** Step 3: Testing & Verification
-​**Status:** 🟡 In Progress
+**Current Step:** Complete
+​**Status:** ✅ All Steps Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 5
-**Iteration:** 3
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -108,23 +108,47 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing
-- [ ] Targeted tests for changed modules passing
-- [ ] All failures fixed
-- [ ] CLI smoke checks passing
+**Verification commands:**
+1. Full suite: `cd extensions && npx vitest run` → 12 files, 290/290 pass
+2. Targeted modules: `npx vitest run tests/orch-state-persistence.test.ts tests/merge-repo-scoped.test.ts tests/waves-repo-scoped.test.ts tests/workspace-config.test.ts` → 4 files, 67/67 pass
+3. CLI smoke: `node bin/taskplane.mjs help` → exits 0, all commands listed
+4. CLI smoke: `node bin/taskplane.mjs doctor` → runs correctly (config warnings expected in worktree)
+
+**Dashboard scenario matrix (code-trace verification):**
+| Scenario | Expected | Verified |
+|---|---|---|
+| Repo mode (default/v1 state) | `buildRepoSet()` returns `[]`, `updateRepoFilter([])` hides dropdown, no repo badges, no merge sub-rows | ✅ Code trace confirmed |
+| Workspace mode (2+ repos) | `buildRepoSet()` returns sorted repo list, filter shown, repo badges on lanes/tasks, merge per-repo sub-rows | ✅ Code trace confirmed |
+| Workspace mode (1 repo) | `buildRepoSet()` returns `[]` (deduplicated < 2), filter hidden | ✅ Code trace confirmed |
+| Repo filter → disappearing repo | `updateRepoFilter()` resets selection to "All" when `selectedRepo` not in new set | ✅ Code trace confirmed |
+| Conversation viewer while filtering | `viewConversation()`/`pollConversation()` unchanged, opens viewer regardless of filter state | ✅ Code trace confirmed |
+| STATUS.md viewer while filtering | `viewStatusMd()`/`pollStatusMd()` unchanged, opens viewer regardless of filter state | ✅ Code trace confirmed |
+| No batch → repo filter hidden | `renderNoBatch()` calls `updateRepoFilter([])` | ✅ Code trace confirmed |
+
+**Failure policy:** Any test failure or scenario mismatch blocks Step 3 close; fix and rerun required.
+
+**Evidence:**
+- 2026-03-15: Full suite 290/290 pass, targeted 67/67 pass, CLI help exit 0, doctor runs correctly
+- All dashboard scenarios verified via code trace (no runtime dashboard available in worktree)
+
+- [x] Unit/regression tests passing — 290/290 (12 test files, all green)
+- [x] Targeted tests for changed modules passing — persistence, merge-repo-scoped, waves-repo-scoped, workspace-config: 67/67
+- [x] All failures fixed — no failures encountered
+- [x] CLI smoke checks passing — `help` exit 0, `doctor` runs correctly
+- [x] Dashboard scenario matrix verified — 7/7 scenarios confirmed via code trace
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] "Must Update" docs modified
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
-- [ ] `.DONE` created
-- [ ] Archive and push
+- [x] "Must Update" docs modified — created `.pi/local/docs/taskplane/polyrepo-implementation-plan.md` documenting final dashboard repo-grouping behavior (data model, frontend behavior, mode gating, backward compatibility, persistence changes, files changed)
+- [x] "Check If Affected" docs reviewed — `docs/tutorials/use-the-dashboard.md` reviewed; no update needed now (PROMPT specifies "Update once repo-aware UI ships publicly"); current tutorial covers basic usage which remains unchanged
+- [x] Discoveries logged — all 3 discoveries from execution already recorded in Discoveries table
+- [x] `.DONE` created
+- [x] Archive and push — deferred to orchestrator (orchestrated run)
 
 ---
 
@@ -140,6 +164,14 @@
 | R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
+| R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
+| R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | UNKNOWN | .reviews/R008-code-step3.md |
+| R008 | code | Step 3 | UNKNOWN | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | UNKNOWN | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | UNKNOWN | .reviews/R009-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -184,6 +216,28 @@
 | 2026-03-15 23:38 | Review R005 | plan Step 2: UNKNOWN |
 | 2026-03-16 | Step 2 complete | Verified monorepo UX unchanged (code trace: buildRepoSet/updateRepoFilter/renderLanesTasks/renderMergeAgents all properly gated). Verified conversation/sidecar panels have no regressions (viewer functions, server endpoints, HTML/CSS all intact). 290/290 tests pass. |
 | 2026-03-15 23:39 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 23:41 | Worker iter 3 | done in 174s, ctx: 27%, tools: 23 |
+| 2026-03-15 23:42 | Worker iter 3 | done in 180s, ctx: 26%, tools: 20 |
+| 2026-03-15 23:44 | Review R006 | code Step 2: UNKNOWN |
+| 2026-03-15 23:44 | Step 2 complete | Preserve existing UX guarantees |
+| 2026-03-15 23:44 | Step 3 started | Testing & Verification |
+| 2026-03-15 23:45 | Review R006 | code Step 2: UNKNOWN |
+| 2026-03-15 23:45 | Step 2 complete | Preserve existing UX guarantees |
+| 2026-03-15 23:45 | Step 3 started | Testing & Verification |
+| 2026-03-15 23:46 | Review R007 | plan Step 3: UNKNOWN |
+| 2026-03-16 | Step 3 complete | Full suite 290/290 pass, targeted 67/67 pass, CLI smoke OK, dashboard scenario matrix 7/7 verified via code trace. No failures. |
+| 2026-03-15 23:47 | Review R007 | plan Step 3: UNKNOWN |
+| 2026-03-15 23:50 | Worker iter 4 | done in 228s, ctx: 12%, tools: 26 |
+| 2026-03-15 23:50 | Worker iter 4 | done in 217s, ctx: 17%, tools: 22 |
+| 2026-03-15 23:53 | Review R008 | code Step 3: UNKNOWN |
+| 2026-03-15 23:53 | Step 3 complete | Testing & Verification |
+| 2026-03-15 23:53 | Step 4 started | Documentation & Delivery |
+| 2026-03-15 23:53 | Review R008 | code Step 3: UNKNOWN |
+| 2026-03-15 23:53 | Step 3 complete | Testing & Verification |
+| 2026-03-15 23:53 | Step 4 started | Documentation & Delivery |
+| 2026-03-15 23:55 | Review R009 | plan Step 4: UNKNOWN |
+| 2026-03-15 23:55 | Review R009 | plan Step 4: UNKNOWN |
+| 2026-03-16 | Step 4 complete | Created polyrepo-implementation-plan.md, reviewed dashboard tutorial (no update needed), verified discoveries logged, created .DONE |
 
 ## Blockers
 

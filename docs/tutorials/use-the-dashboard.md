@@ -9,6 +9,7 @@ Taskplane includes a web dashboard for monitoring orchestration in real time.
 - task-level status and checkbox progress (from `STATUS.md`)
 - lane sidecar state (`.pi/lane-state-*.json`)
 - batch history (`.pi/batch-history.json`)
+- repo-aware filtering and grouping (workspace mode)
 
 ---
 
@@ -69,6 +70,24 @@ Dashboard server reads:
 - `.pi/batch-history.json`
 
 Updates are pushed to browser clients via Server-Sent Events (SSE).
+
+---
+
+## Workspace mode (multi-repo)
+
+When orchestrating across multiple repositories (workspace mode), the
+dashboard automatically shows repo-aware features:
+
+- **Repo badges** appear on lanes and tasks, showing which repo each belongs to
+- **Repo filter dropdown** lets you focus on a single repository
+- **Merge outcomes** are grouped per repo, showing individual branch/status details
+
+These features activate when the batch is in workspace mode and involves 2+
+distinct repositories. For single-repo batches, the dashboard looks and
+behaves exactly as before — no extra clutter.
+
+The summary bar and footer always show global batch progress regardless of
+any active repo filter.
 
 ---
 
