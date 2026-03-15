@@ -1,11 +1,11 @@
 # TP-005: Repo-Scoped Merge Orchestration with Explicit Partial Outcomes — Status
 
-**Current Step:** Step 0: Partition merge flow by repo
-​**Status:** ✅ Complete
+**Current Step:** Step 1: Update outcome modeling
+**Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** L
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -33,14 +33,31 @@
 - [x] R002 fix: propagate `repoId` on `MergeLaneResult` in both success and error paths
 - [x] R002 fix: aggregate status uses lane-level evidence (not repo-level) to fix all-partial misclassification
 - [x] R002 fix: add status rollup edge case tests and repoId propagation tests (10 new assertions)
+- [x] R002 fix (iter 2): detect repo-level setup failures via anyRepoFailed flag (not just failedLane)
+- [x] R002 fix (iter 2): update test helper to use repo-level statuses, add 4 setup-failure test cases
 
 ---
 
 ### Step 1: Update outcome modeling
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Extend merge result models to include repo attribution
-- [ ] Emit explicit partial-success summaries when repos diverge in outcome
+**Contract:** Step 0 already added `repoId` on `MergeLaneResult`, `RepoMergeOutcome` type, and `repoResults` on `MergeWaveResult`. Step 1 adds explicit partial-success summary reporting when repos diverge in merge outcome.
+
+**Reporting semantics:**
+- When `mergeResult.status === "partial"` AND `repoResults` has entries with divergent statuses (some succeeded, some failed), emit a repo-attributed summary listing each repo and its outcome.
+- When `mergeResult.status === "partial"` but the cause is mixed-outcome lanes (not repo divergence), emit only the existing lane-level failure message (no misleading repo-divergence text).
+- Repo summary lines are sorted by repoId (deterministic).
+- Both engine.ts and resume.ts use the same shared formatter for parity.
+- Notification level: `"warning"` for the partial summary (since some repos succeeded).
+
+- [x] Add `formatRepoMergeSummary()` shared helper in `messages.ts`
+- [x] Add `orchMergePartialRepoSummary` template to `ORCH_MESSAGES`
+- [x] Wire partial-summary emission in `engine.ts` after merge result handling
+- [x] Wire partial-summary emission in `resume.ts` after merge result handling (parity)
+- [x] Add tests: deterministic repo partial-summary formatting
+- [x] Add tests: no repo-divergence text when partial is from mixed-outcome lanes only
+- [x] Add tests: engine vs resume message parity (same formatter used)
+- [x] Add tests: mono-repo (empty repoResults) produces no repo summary
 
 ---
 
@@ -78,6 +95,8 @@
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -105,6 +124,13 @@
 | 2026-03-15 17:12 | Worker iter 1 | done in 1233s, ctx: 72%, tools: 132 |
 | 2026-03-15 17:12 | R002 fixes committed | repoId propagation, status rollup, tests (d08694e) |
 | 2026-03-15 17:13 | Step 0 re-verified | All 207 tests pass (40 merge-repo-scoped assertions) |
+| 2026-03-15 17:14 | Worker iter 1 | done in 297s, ctx: 24%, tools: 40 |
+| 2026-03-15 17:14 | Step 0 complete | Partition merge flow by repo |
+| 2026-03-15 17:14 | Step 1 started | Update outcome modeling |
+| 2026-03-15 17:16 | Review R002 | code Step 0: REVISE |
+| 2026-03-15 17:16 | Review R003 | plan Step 1: REVISE |
+| 2026-03-15 17:19 | R002 iter2 fixes | anyRepoFailed flag + 4 setup-failure tests (f5ae458) |
+| 2026-03-15 17:19 | Step 0 re-verified | All 207 tests pass (44 merge-repo-scoped assertions) |
 
 ## Blockers
 
