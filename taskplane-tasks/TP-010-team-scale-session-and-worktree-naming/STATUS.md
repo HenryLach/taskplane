@@ -1,11 +1,11 @@
 # TP-010: Team-Scale Session and Worktree Naming Hardening — Status
 
-**Current Step:** Not Started
-​**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Apply naming contract consistently
+​**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -14,10 +14,10 @@
 ---
 
 ### Step 0: Define naming contract
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Design deterministic naming including repo slug + operator identifier + batch components
-- [ ] Document fallback rules when operator metadata is unavailable
+- [x] Design deterministic naming including repo slug + operator identifier + batch components
+- [x] Document fallback rules when operator metadata is unavailable
 
 ---
 
@@ -60,6 +60,8 @@
 
 ## Reviews
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
+| R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -70,6 +72,13 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-15 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-15 18:55 | Task started | Extension-driven execution |
+| 2026-03-15 18:55 | Step 0 started | Define naming contract |
+| 2026-03-15 18:55 | Task started | Extension-driven execution |
+| 2026-03-15 18:55 | Step 0 started | Define naming contract |
+| 2026-03-15 18:58 | Review R001 | plan Step 0: UNKNOWN |
+| 2026-03-15 19:10 | Step 0 completed | naming-contract.md created with full contract table, operator fallback matrix, parser compat plan, test plan |
+| 2026-03-15 18:59 | Review R001 | plan Step 0: UNKNOWN |
 
 ## Blockers
 
