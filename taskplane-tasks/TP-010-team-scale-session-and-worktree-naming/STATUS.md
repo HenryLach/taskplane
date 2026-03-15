@@ -1,11 +1,11 @@
 # TP-010: Team-Scale Session and Worktree Naming Hardening — Status
 
-**Current Step:** Step 2: Validate collision resistance
+**Current Step:** Step 3: Testing & Verification
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 5
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -78,12 +78,12 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing
-- [ ] Targeted tests for changed modules passing
-- [ ] All failures fixed
-- [ ] CLI smoke checks passing
+- [x] Unit/regression tests passing
+- [x] Targeted tests for changed modules passing
+- [x] All failures fixed
+- [x] CLI smoke checks passing
 
 ---
 
@@ -110,6 +110,10 @@
 | R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
+| R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -154,6 +158,16 @@
 | 2026-03-15 19:41 | Step 2 iter 4 | Hydrated Step 2 per R005 review. Created naming-collision.test.ts with 48 tests covering collision matrix (2a), ownership-safe consumers (2b), human-readability (2c), and sanitization edge cases (2d). All 255 tests passing. |
 | 2026-03-15 19:43 | Step 2 iter 5 | Rewrote naming-collision.test.ts with 83 comprehensive tests: collision matrix (2a: 20 tests), shared-env interference (2b: 28 tests), human-readability (2c: 23 tests), naming utilities (12 tests). All 290 tests passing (207 existing + 83 new). |
 | 2026-03-15 19:44 | Worker iter 4 | done in 450s, ctx: 26%, tools: 51 |
+| 2026-03-15 19:46 | Worker iter 3 | done in 495s, ctx: 46%, tools: 52 |
+| 2026-03-15 19:46 | Review R006 | code Step 2: UNKNOWN |
+| 2026-03-15 19:46 | Step 2 complete | Validate collision resistance |
+| 2026-03-15 19:46 | Step 3 started | Testing & Verification |
+| 2026-03-15 19:48 | Review R007 | plan Step 3: UNKNOWN |
+| 2026-03-15 19:50 | Step 3 iter 5 | All 290 tests passing (12 test files). Targeted: naming-collision (83), orch-pure-functions (160), waves-repo-scoped (19), worktree-lifecycle (54). CLI smoke: help + doctor OK. Zero failures. |
+| 2026-03-15 19:49 | Review R006 | code Step 2: UNKNOWN |
+| 2026-03-15 19:49 | Step 2 complete | Validate collision resistance |
+| 2026-03-15 19:49 | Step 3 started | Testing & Verification |
+| 2026-03-15 19:50 | Review R007 | plan Step 3: UNKNOWN |
 
 ## Blockers
 
