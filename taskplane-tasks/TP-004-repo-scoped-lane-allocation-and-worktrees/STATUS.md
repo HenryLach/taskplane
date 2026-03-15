@@ -163,6 +163,7 @@ _Test plan:_
 | 2026-03-15 | Tests added | 19 unit tests in waves-repo-scoped.test.ts — all passing |
 | 2026-03-15 | Full suite verified | 4 pre-existing failures, 0 new failures from TP-004 |
 | 2026-03-15 | Step 1 complete | Make worktree operations repo-scoped |
+| 2026-03-15 14:51 | Worker iter 2 | done in 397s, ctx: 45%, tools: 45 |
 
 ## Blockers
 
