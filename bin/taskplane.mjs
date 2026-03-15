@@ -765,6 +765,215 @@ function printFileList(vars, noExamples, preset, exampleTemplateDirs = []) {
 	console.log();
 }
 
+// ─── Workspace Mode Detection (for doctor) ─────────────────────────────────
+
+/**
+ * Lightweight workspace config loader for doctor diagnostics.
+ *
+ * Unlike the orchestrator's `loadWorkspaceConfig()` in workspace.ts (which
+ * throws on invalid config), this returns a result object so doctor can
+ * report errors as diagnostics and continue checking remaining items.
+ *
+ * Mode determination rules (mirrors workspace.ts):
+ * 1. No config file → { mode: "repo", config: null, error: null }
+ * 2. Config file present + valid → { mode: "workspace", config: {...}, error: null }
+ * 3. Config file present + invalid → { mode: "workspace", config: null, error: { code, message } }
+ *
+ * @param {string} projectRoot - Absolute path to the project root
+ * @returns {Promise<{ mode: string, config: object|null, error: object|null }>}
+ */
+function loadWorkspaceConfigForDoctor(projectRoot) {
+	const configFile = path.join(projectRoot, ".pi", "taskplane-workspace.yaml");
+
+	// 1. File existence — absent = repo mode
+	if (!fs.existsSync(configFile)) {
+		return { mode: "repo", config: null, error: null };
+	}
+
+	// 2. File read
+	let rawContent;
+	try {
+		rawContent = fs.readFileSync(configFile, "utf-8");
+	} catch (err) {
+		return {
+			mode: "workspace",
+			config: null,
+			error: {
+				code: "WORKSPACE_FILE_READ_ERROR",
+				message: `Cannot read workspace config file: ${err.message}`,
+			},
+		};
+	}
+
+	// 3. YAML parse using lightweight line-based extraction
+	// (avoids importing the yaml module for CLI startup speed)
+	let parsed;
+	try {
+		parsed = parseWorkspaceYaml(rawContent);
+	} catch (err) {
+		return {
+			mode: "workspace",
+			config: null,
+			error: {
+				code: "WORKSPACE_FILE_PARSE_ERROR",
+				message: `Cannot parse workspace config: ${err.message}`,
+			},
+		};
+	}
+
+	// 4. Schema validation: repos map present and non-empty
+	if (!parsed.repos || Object.keys(parsed.repos).length === 0) {
+		return {
+			mode: "workspace",
+			config: null,
+			error: {
+				code: "WORKSPACE_SCHEMA_INVALID",
+				message: "Workspace config must define at least one repo under 'repos'.",
+			},
+		};
+	}
+
+	// 5. Schema validation: routing present
+	if (!parsed.routing || (!parsed.routing.default_repo && !parsed.routing.tasks_root)) {
+		return {
+			mode: "workspace",
+			config: null,
+			error: {
+				code: "WORKSPACE_SCHEMA_INVALID",
+				message: "Workspace config must contain a 'routing' mapping with default_repo and tasks_root.",
+			},
+		};
+	}
+
+	// 6. Per-repo validation: path field present
+	const repoKeys = Object.keys(parsed.repos).sort();
+	for (const repoId of repoKeys) {
+		const repo = parsed.repos[repoId];
+		if (!repo.path) {
+			return {
+				mode: "workspace",
+				config: null,
+				error: {
+					code: "WORKSPACE_REPO_PATH_MISSING",
+					message: `Repo '${repoId}' is missing a 'path' field.`,
+				},
+			};
+		}
+	}
+
+	// 7. Routing validation
+	if (!parsed.routing.tasks_root) {
+		return {
+			mode: "workspace",
+			config: null,
+			error: {
+				code: "WORKSPACE_MISSING_TASKS_ROOT",
+				message: "Workspace config 'routing.tasks_root' is missing or empty.",
+			},
+		};
+	}
+
+	if (!parsed.routing.default_repo) {
+		return {
+			mode: "workspace",
+			config: null,
+			error: {
+				code: "WORKSPACE_MISSING_DEFAULT_REPO",
+				message: "Workspace config 'routing.default_repo' is missing or empty.",
+			},
+		};
+	}
+
+	const defaultRepoId = parsed.routing.default_repo;
+	if (!parsed.repos[defaultRepoId]) {
+		const available = Object.keys(parsed.repos).join(", ");
+		return {
+			mode: "workspace",
+			config: null,
+			error: {
+				code: "WORKSPACE_DEFAULT_REPO_NOT_FOUND",
+				message: `routing.default_repo '${defaultRepoId}' does not match any repo ID. Available: ${available}`,
+			},
+		};
+	}
+
+	// Valid workspace config — build summary for doctor display
+	return {
+		mode: "workspace",
+		config: {
+			repos: parsed.repos,
+			routing: {
+				tasksRoot: parsed.routing.tasks_root,
+				defaultRepo: defaultRepoId,
+			},
+			configPath: configFile,
+		},
+		error: null,
+	};
+}
+
+/**
+ * Lightweight YAML parser for workspace config.
+ * Extracts repos (id → { path, default_branch }) and routing fields.
+ * Does NOT handle all YAML — only the workspace config subset.
+ */
+function parseWorkspaceYaml(raw) {
+	const lines = raw.split(/\r?\n/);
+	const result = { repos: {}, routing: {} };
+	let section = null;       // "repos" | "routing" | null
+	let currentRepoId = null; // current repo being parsed
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (!trimmed || trimmed.startsWith("#")) continue;
+
+		// Top-level keys
+		if (/^repos\s*:\s*$/.test(trimmed)) {
+			section = "repos";
+			currentRepoId = null;
+			continue;
+		}
+		if (/^routing\s*:\s*$/.test(trimmed)) {
+			section = "routing";
+			currentRepoId = null;
+			continue;
+		}
+		// Any other top-level key ends current section
+		if (/^[a-z_]+\s*:/.test(line) && !line.startsWith(" ") && !line.startsWith("\t")) {
+			section = null;
+			currentRepoId = null;
+			continue;
+		}
+
+		if (section === "repos") {
+			// Repo ID line (2-space indent): "  api:"
+			const repoIdMatch = line.match(/^  ([a-z0-9][a-z0-9_-]*)\s*:\s*$/);
+			if (repoIdMatch) {
+				currentRepoId = repoIdMatch[1];
+				result.repos[currentRepoId] = {};
+				continue;
+			}
+			// Repo property lines (4-space indent): "    path: ../api-repo"
+			if (currentRepoId) {
+				const propMatch = line.match(/^\s{4}(\w+)\s*:\s*["']?([^"'\n#]+?)["']?\s*(?:#.*)?$/);
+				if (propMatch) {
+					result.repos[currentRepoId][propMatch[1]] = propMatch[2].trim();
+				}
+			}
+		}
+
+		if (section === "routing") {
+			// Routing property lines (2-space indent): "  default_repo: api"
+			const propMatch = line.match(/^\s{2}(\w+)\s*:\s*["']?([^"'\n#]+?)["']?\s*(?:#.*)?$/);
+			if (propMatch) {
+				result.routing[propMatch[1]] = propMatch[2].trim();
+			}
+		}
+	}
+
+	return result;
+}
+
 // ─── doctor ─────────────────────────────────────────────────────────────────
 
 function cmdDoctor() {
@@ -807,7 +1016,33 @@ function cmdDoctor() {
 	const installType = isProjectLocal ? "project-local" : "global";
 	console.log(`  ${OK} taskplane package installed ${c.dim}(v${pkgVersion}, ${installType})${c.reset}`);
 
-	// Check project config
+	// Detect workspace mode
+	const wsResult = loadWorkspaceConfigForDoctor(projectRoot);
+	const isWorkspaceMode = wsResult.mode === "workspace";
+
+	if (isWorkspaceMode) {
+		console.log();
+		if (wsResult.error) {
+			// Config present but invalid — report as failure
+			const codeHint = wsResult.error.code ? ` [${wsResult.error.code}]` : "";
+			console.log(`  ${FAIL} workspace mode detected but config is invalid${codeHint}`);
+			console.log(`     ${c.dim}${wsResult.error.message}${c.reset}`);
+			console.log(`     ${c.dim}→ Fix .pi/taskplane-workspace.yaml or remove it to use repo mode${c.reset}`);
+			issues++;
+		} else {
+			// Valid workspace config — show summary banner
+			const cfg = wsResult.config;
+			const repoIds = Object.keys(cfg.repos);
+			const repoCount = repoIds.length;
+			const defaultRepo = cfg.routing.defaultRepo;
+			const tasksRoot = cfg.routing.tasksRoot;
+			console.log(`  ${OK} workspace mode ${c.dim}(${repoCount} repo${repoCount !== 1 ? "s" : ""}, default: ${defaultRepo})${c.reset}`);
+			console.log(`     ${c.dim}repos: ${repoIds.join(", ")}${c.reset}`);
+			console.log(`     ${c.dim}tasks_root: ${tasksRoot}${c.reset}`);
+		}
+	}
+
+	// Check project config (common — both modes)
 	console.log();
 	const configFiles = [
 		{ path: ".pi/task-runner.yaml", required: true },
@@ -817,6 +1052,11 @@ function cmdDoctor() {
 		{ path: ".pi/agents/task-merger.md", required: true },
 		{ path: ".pi/taskplane.json", required: false },
 	];
+
+	// In workspace mode, include workspace config in the config files check
+	if (isWorkspaceMode && !wsResult.error) {
+		configFiles.push({ path: ".pi/taskplane-workspace.yaml", required: true });
+	}
 
 	for (const { path: relPath, required } of configFiles) {
 		const exists = fs.existsSync(path.join(projectRoot, relPath));
