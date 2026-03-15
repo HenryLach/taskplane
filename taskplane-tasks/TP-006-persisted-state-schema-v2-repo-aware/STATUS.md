@@ -88,6 +88,7 @@
 - [x] Add/adjust v2 validation rules for malformed repo-aware records with explicit `STATE_SCHEMA_INVALID` errors
 - [x] Add/update fixtures for malformed v2 repo-aware states
 - [x] Add/update persistence tests for checkpoint serialization and validator failures
+- [x] R004 fix: Align test reimplementations with source (mode, mergeResults, re-execute, worktreeExists)
 
 #### Step 1 Audit Notes
 
@@ -117,6 +118,14 @@
 - 14 new validation tests for malformed repo-aware records (type violations)
 - 4 new serialization checkpoint tests (allocated, repo-mode, discovery enrichment, round-trip)
 - E2E test updated for full task registry from wavePlan
+
+**R004 fixes applied (iteration 2):**
+- Serializer: `mode` uses `state.mode ?? "repo"` instead of hardcoded `"repo"`; `baseBranch` uses `state.baseBranch ?? ""`; `mergeResults` uses `state.mergeResults` with `waveIndex - 1` mapping (matches source)
+- `reconcileTaskStates`: Added `existingWorktrees` parameter and `re-execute` action (precedence 4: dead session + no .DONE + worktree exists)
+- `computeResumePoint`: Added `reExecuteTaskIds` tracking; pending-task loop uses `re-execute` (not `mark-failed`) for tasks needing re-execution
+- `analyzeOrchestratorStartupState`: Added resumable-phase awareness (`paused`/`executing`/`merging` → resume; others → `cleanup-stale`)
+- Test assertion: `mark-failed` tasks correctly route to `failedTaskIds` not `pendingTaskIds`
+- All 207 tests passing after fixes
 
 ---
 
