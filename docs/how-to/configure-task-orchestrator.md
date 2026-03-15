@@ -24,7 +24,6 @@ orchestrator:
   max_lanes: 3
   worktree_location: "subdirectory"
   worktree_prefix: "taskplane-wt"
-  integration_branch: "main"
   batch_id_format: "timestamp"
   spawn_mode: "subprocess"
   tmux_prefix: "orch"
@@ -34,7 +33,6 @@ orchestrator:
 - `worktree_location`:
   - `subdirectory` → `.worktrees/<prefix>-N`
   - `sibling` → `../<prefix>-N`
-- `integration_branch`: branch merges target
 - `spawn_mode`:
   - `subprocess`: headless, no tmux dependency
   - `tmux`: attachable sessions for deep visibility
@@ -132,7 +130,6 @@ Polling interval (seconds) for orchestrator monitoring loop.
 orchestrator:
   max_lanes: 3
   spawn_mode: "subprocess"
-  integration_branch: "main"
 
 failure:
   on_task_failure: "skip-dependents"

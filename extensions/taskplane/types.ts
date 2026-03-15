@@ -12,7 +12,6 @@ export interface OrchestratorConfig {
 		max_lanes: number;
 		worktree_location: "sibling" | "subdirectory";
 		worktree_prefix: string;
-		integration_branch: string;
 		batch_id_format: "timestamp" | "sequential";
 		spawn_mode: "tmux" | "subprocess";
 		tmux_prefix: string;
@@ -136,7 +135,6 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 		max_lanes: 3,
 		worktree_location: "subdirectory",
 		worktree_prefix: "taskplane-wt",
-		integration_branch: "main",
 		batch_id_format: "timestamp",
 		spawn_mode: "subprocess",
 		tmux_prefix: "orch",
@@ -790,6 +788,8 @@ export interface OrchBatchRuntimeState {
 	phase: OrchBatchPhase;
 	/** Unique batch identifier (timestamp format, e.g., "20260308T214300") */
 	batchId: string;
+	/** Branch that was active when /orch started — used as base for worktrees and merge target */
+	baseBranch: string;
 	/** Shared pause signal — set by /orch-pause, read by executeLane/executeWave */
 	pauseSignal: { paused: boolean };
 	/** All wave results in order (grows as waves complete) */
@@ -866,6 +866,7 @@ export function freshOrchBatchState(): OrchBatchRuntimeState {
 	return {
 		phase: "idle",
 		batchId: "",
+		baseBranch: "",
 		pauseSignal: { paused: false },
 		waveResults: [],
 		currentWaveIndex: -1,
@@ -1208,6 +1209,8 @@ export interface PersistedBatchState {
 	phase: OrchBatchPhase;
 	/** Unique batch identifier (timestamp format) */
 	batchId: string;
+	/** Branch that was active when /orch started — used as base for worktrees and merge target */
+	baseBranch: string;
 	/** Epoch ms when batch started */
 	startedAt: number;
 	/** Epoch ms when state was last written */

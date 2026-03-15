@@ -442,6 +442,7 @@ export async function resumeOrchBatch(
 	// ── 6. Reconstruct runtime state ─────────────────────────────
 	batchState.phase = "executing";
 	batchState.batchId = persistedState.batchId;
+	batchState.baseBranch = persistedState.baseBranch || "";
 	batchState.startedAt = persistedState.startedAt;
 	batchState.pauseSignal = { paused: false };
 	batchState.totalWaves = persistedState.totalWaves;
@@ -684,6 +685,7 @@ export async function resumeOrchBatch(
 				orchConfig,
 				repoRoot,
 				batchState.batchId,
+				batchState.baseBranch,
 			);
 
 			if (reExecMergeResult.status === "succeeded") {
@@ -693,7 +695,7 @@ export async function resumeOrchBatch(
 				);
 
 				// Clean up merged branches
-				const targetBranch = orchConfig.orchestrator.integration_branch;
+				const targetBranch = batchState.baseBranch;
 				for (const lr of reExecMergeResult.laneResults) {
 					if (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED") {
 						deleteBranchBestEffort(lr.sourceBranch, repoRoot);
@@ -809,6 +811,7 @@ export async function resumeOrchBatch(
 			batchState.batchId,
 			batchState.pauseSignal,
 			depGraph,
+			batchState.baseBranch,
 			handleResumeMonitorUpdate,
 			(lanes) => {
 				latestAllocatedLanes = lanes;
@@ -918,6 +921,7 @@ export async function resumeOrchBatch(
 					orchConfig,
 					repoRoot,
 					batchState.batchId,
+					batchState.baseBranch,
 				);
 				batchState.mergeResults.push(mergeResult);
 
@@ -1018,7 +1022,7 @@ export async function resumeOrchBatch(
 
 		// Post-merge: reset worktrees for next wave
 		if (mergeResult && mergeResult.status === "succeeded") {
-			const targetBranch = orchConfig.orchestrator.integration_branch;
+			const targetBranch = batchState.baseBranch;
 			for (const lr of mergeResult.laneResults) {
 				if (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED") {
 					const ancestorCheck = runGit(["merge-base", "--is-ancestor", lr.sourceBranch, targetBranch], repoRoot);
@@ -1033,7 +1037,7 @@ export async function resumeOrchBatch(
 			const wtPrefix = orchConfig.orchestrator.worktree_prefix;
 			const existingWorktrees = listWorktrees(wtPrefix, repoRoot);
 			if (existingWorktrees.length > 0) {
-				const targetBranch = orchConfig.orchestrator.integration_branch;
+				const targetBranch = batchState.baseBranch;
 				for (const wt of existingWorktrees) {
 					const resetResult = safeResetWorktree(wt, targetBranch, repoRoot);
 					if (!resetResult.success) {
@@ -1047,7 +1051,7 @@ export async function resumeOrchBatch(
 	// ── 11. Cleanup and terminal state ───────────────────────────
 	if (!preserveWorktreesForResume) {
 		const wtPrefix = orchConfig.orchestrator.worktree_prefix;
-		const targetBranch = orchConfig.orchestrator.integration_branch;
+		const targetBranch = batchState.baseBranch;
 		removeAllWorktrees(wtPrefix, repoRoot, targetBranch);
 	}
 

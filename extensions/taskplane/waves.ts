@@ -628,14 +628,6 @@ export function validateAllocationInputs(
 		);
 	}
 
-	// Validate integration branch is non-empty
-	if (!config.orchestrator.integration_branch?.trim()) {
-		return new AllocationError(
-			"ALLOC_INVALID_CONFIG",
-			`integration_branch must be a non-empty string`,
-		);
-	}
-
 	return null;
 }
 
@@ -673,6 +665,7 @@ export function validateAllocationInputs(
  * @param config    - Orchestrator configuration
  * @param repoRoot  - Absolute path to the main repository root
  * @param batchId   - Batch ID for branch/session naming (e.g., "20260308T111750")
+ * @param baseBranch - Branch to base worktrees on (captured at batch start)
  * @returns         - AllocateLanesResult with success flag and lane details
  */
 export function allocateLanes(
@@ -681,6 +674,7 @@ export function allocateLanes(
 	config: OrchestratorConfig,
 	repoRoot: string,
 	batchId: string,
+	baseBranch: string,
 ): AllocateLanesResult {
 	// ── Stage 0: Input validation ────────────────────────────────
 	const validationError = validateAllocationInputs(waveTasks, pending, config);
@@ -731,7 +725,7 @@ export function allocateLanes(
 	}
 
 	// ── Stage 3: Ensure lane worktrees exist (reuse across waves + create missing) ─
-	const worktreeResult = ensureLaneWorktrees(sortedLaneNumbers, batchId, config, repoRoot);
+	const worktreeResult = ensureLaneWorktrees(sortedLaneNumbers, batchId, config, repoRoot, baseBranch);
 
 	if (!worktreeResult.success) {
 		const failedLanes = worktreeResult.errors

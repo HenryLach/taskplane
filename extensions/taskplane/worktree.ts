@@ -1103,8 +1103,9 @@ export function escapeRegex(str: string): string {
  *
  * @param count    - Number of worktrees to create (1-indexed: lane 1..count)
  * @param batchId  - Batch ID timestamp for branch naming
- * @param config   - Orchestrator config (prefix, baseBranch extracted from it)
+ * @param config   - Orchestrator config (prefix extracted from it)
  * @param repoRoot - Absolute path to the main repository root
+ * @param baseBranch - Branch to base worktrees on (captured at batch start)
  * @returns        - CreateLaneWorktreesResult with success flag and details
  */
 export function createLaneWorktrees(
@@ -1112,9 +1113,9 @@ export function createLaneWorktrees(
 	batchId: string,
 	config: OrchestratorConfig,
 	repoRoot: string,
+	baseBranch: string,
 ): CreateLaneWorktreesResult {
 	const prefix = config.orchestrator.worktree_prefix;
-	const baseBranch = config.orchestrator.integration_branch;
 	const created: WorktreeInfo[] = [];
 	const errors: BulkWorktreeError[] = [];
 
@@ -1175,7 +1176,7 @@ export function createLaneWorktrees(
  * Ensure required lane worktrees exist for the current wave.
  *
  * Reuses existing worktrees when present (multi-wave behavior), resetting
- * them to integration HEAD before use, and only creates missing lanes.
+ * them to the base branch HEAD before use, and only creates missing lanes.
  * If creation of a missing lane fails, newly-created lanes in this call are
  * rolled back.
  *
@@ -1187,9 +1188,9 @@ export function ensureLaneWorktrees(
 	batchId: string,
 	config: OrchestratorConfig,
 	repoRoot: string,
+	baseBranch: string,
 ): CreateLaneWorktreesResult {
 	const prefix = config.orchestrator.worktree_prefix;
-	const baseBranch = config.orchestrator.integration_branch;
 
 	const existing = listWorktrees(prefix, repoRoot);
 	const existingByLane = new Map<number, WorktreeInfo>();
@@ -1205,7 +1206,7 @@ export function ensureLaneWorktrees(
 	for (const lane of needed) {
 		const reused = existingByLane.get(lane);
 		if (reused) {
-			// Reused worktrees must be reset to integration branch HEAD before use.
+			// Reused worktrees must be reset to base branch HEAD before use.
 			// This covers normal multi-wave reuse and stale leftovers from prior batches.
 			const resetResult = safeResetWorktree(reused, baseBranch, repoRoot);
 			if (resetResult.success) {

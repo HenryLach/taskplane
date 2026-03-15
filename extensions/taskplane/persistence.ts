@@ -319,6 +319,15 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		}
 	}
 
+	// ── Optional string fields (backward-compatible) ─────────────
+	// baseBranch was added after schema v1; default to empty string if missing
+	if (obj.baseBranch !== undefined && typeof obj.baseBranch !== "string") {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`Invalid "baseBranch" field (expected string, got ${typeof obj.baseBranch})`,
+		);
+	}
+
 	// ── Phase enum validation ────────────────────────────────────
 	if (!VALID_BATCH_PHASES.has(obj.phase as string)) {
 		throw new StateFileError(
@@ -520,6 +529,11 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		}
 	}
 
+	// Default baseBranch for backward compatibility with older state files
+	if (!obj.baseBranch) {
+		(obj as any).baseBranch = "";
+	}
+
 	return obj as unknown as PersistedBatchState;
 }
 
@@ -612,6 +626,7 @@ export function serializeBatchState(
 		schemaVersion: BATCH_STATE_SCHEMA_VERSION,
 		phase: state.phase,
 		batchId: state.batchId,
+		baseBranch: state.baseBranch,
 		startedAt: state.startedAt,
 		updatedAt: now,
 		endedAt: state.endedAt,

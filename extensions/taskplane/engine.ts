@@ -8,7 +8,7 @@ import { join } from "path";
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { execLog, executeWave, tmuxKillSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
-import { runGit } from "./git.ts";
+import { getCurrentBranch, runGit } from "./git.ts";
 import { mergeWave } from "./merge.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
 import { deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
@@ -50,6 +50,17 @@ export async function executeOrchBatch(
 	batchState.startedAt = Date.now();
 	batchState.pauseSignal = { paused: false };
 	batchState.mergeResults = [];
+
+	// Capture the current branch as the base for worktrees and merge target
+	const detectedBranch = getCurrentBranch(repoRoot);
+	if (!detectedBranch) {
+		batchState.phase = "failed";
+		batchState.endedAt = Date.now();
+		batchState.errors.push("Cannot determine current branch (detached HEAD or not a git repo)");
+		onNotify("❌ Cannot determine current branch. Ensure HEAD is on a branch (not detached).", "error");
+		return;
+	}
+	batchState.baseBranch = detectedBranch;
 
 	// When true, final cleanup is skipped so failed merge state is preserved
 	// for manual intervention and TS-009 resume flow.
@@ -215,6 +226,7 @@ export async function executeOrchBatch(
 			batchState.batchId,
 			batchState.pauseSignal,
 			depGraph,
+			batchState.baseBranch,
 			handleWaveMonitorUpdate,
 			(lanes) => {
 				latestAllocatedLanes = lanes;
@@ -321,6 +333,7 @@ export async function executeOrchBatch(
 					orchConfig,
 					repoRoot,
 					batchState.batchId,
+					batchState.baseBranch,
 				);
 				allMergeResults.push(mergeResult);
 				batchState.mergeResults.push(mergeResult);
@@ -474,7 +487,7 @@ export async function executeOrchBatch(
 					"info",
 				);
 
-				const targetBranch = orchConfig.orchestrator.integration_branch;
+				const targetBranch = batchState.baseBranch;
 				for (const wt of existingWorktrees) {
 					const resetResult = safeResetWorktree(wt, targetBranch, repoRoot);
 					if (!resetResult.success) {
@@ -653,8 +666,8 @@ export async function executeOrchBatch(
 			}
 		} catch { /* .pi dir may not exist */ }
 
-		// Clean up worktrees — pass integration branch to protect unmerged work
-		const targetBranch = orchConfig.orchestrator.integration_branch;
+		// Clean up worktrees — pass base branch to protect unmerged work
+		const targetBranch = batchState.baseBranch;
 		execLog("batch", batchState.batchId, "cleaning up worktrees");
 		const removeResult = removeAllWorktrees(prefix, repoRoot, targetBranch);
 

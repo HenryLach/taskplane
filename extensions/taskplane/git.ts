@@ -5,6 +5,24 @@
 import { execFileSync } from "child_process";
 
 
+// ── Branch Helpers ───────────────────────────────────────────────────
+
+/**
+ * Get the current branch name (the branch checked out in the given directory).
+ *
+ * Uses `git rev-parse --abbrev-ref HEAD`. Returns the branch name or null
+ * if HEAD is detached or git fails.
+ *
+ * @param cwd - Working directory (defaults to process.cwd())
+ */
+export function getCurrentBranch(cwd?: string): string | null {
+	const result = runGit(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
+	if (!result.ok || !result.stdout.trim() || result.stdout.trim() === "HEAD") {
+		return null;
+	}
+	return result.stdout.trim();
+}
+
 // ── Git Command Runner ───────────────────────────────────────────────
 
 /**

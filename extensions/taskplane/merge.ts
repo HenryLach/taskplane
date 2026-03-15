@@ -451,7 +451,7 @@ export function waitForMergeResult(
 }
 
 /**
- * Merge a completed wave's lane branches into the integration branch.
+ * Merge a completed wave's lane branches into the base branch.
  *
  * Orchestration flow:
  * 1. Filter to only succeeded lanes (failed lanes are not merged)
@@ -464,7 +464,7 @@ export function waitForMergeResult(
  *    e. Handle result (continue, log, or pause)
  * 4. Return MergeWaveResult
  *
- * Sequential execution is mandatory — the integration branch is a shared
+ * Sequential execution is mandatory — the base branch is a shared
  * resource, and each merge must see the prior merge's result.
  *
  * On CONFLICT_UNRESOLVED or BUILD_FAILURE: stops merging remaining lanes
@@ -479,6 +479,7 @@ export function waitForMergeResult(
  * @param config           - Orchestrator configuration
  * @param repoRoot         - Main repository root
  * @param batchId          - Batch ID for session naming
+ * @param baseBranch       - Branch to merge into (captured at batch start)
  * @returns MergeWaveResult with per-lane outcomes
  */
 export function mergeWave(
@@ -488,10 +489,11 @@ export function mergeWave(
 	config: OrchestratorConfig,
 	repoRoot: string,
 	batchId: string,
+	baseBranch: string,
 ): MergeWaveResult {
 	const startTime = Date.now();
 	const tmuxPrefix = config.orchestrator.tmux_prefix;
-	const targetBranch = config.orchestrator.integration_branch;
+	const targetBranch = baseBranch;
 	const laneResults: MergeLaneResult[] = [];
 
 	// Build lane outcome lookup for merge eligibility checks.

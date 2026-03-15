@@ -212,7 +212,6 @@ orchestrator:
   max_lanes: ${vars.max_lanes}
   worktree_location: "subdirectory"
   worktree_prefix: "${vars.worktree_prefix}"
-  integration_branch: "${vars.integration_branch}"
   batch_id_format: "timestamp"
   spawn_mode: "subprocess"
   tmux_prefix: "${vars.tmux_prefix}"
@@ -707,7 +706,6 @@ function getPresetVars(preset, projectRoot, tasksRootOverride = null) {
 	const { test: test_cmd, build: build_cmd } = detectStack(projectRoot);
 	return {
 		project_name: dirName,
-		integration_branch: "main",
 		max_lanes: 3,
 		worktree_prefix: `${slug}-wt`,
 		tmux_prefix: `${slug}-orch`,
@@ -725,7 +723,6 @@ async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 	const detected = detectStack(projectRoot);
 
 	const project_name = await ask("Project name", dirName);
-	const integration_branch = await ask("Default branch (fallback — orchestrator uses your current branch at runtime)", "main");
 	const max_lanes = parseInt(await ask("Max parallel lanes", "3")) || 3;
 	const tasks_root = tasksRootOverride || await ask("Tasks directory", "taskplane-tasks");
 	const default_area = await ask("Default area name", "general");
@@ -736,7 +733,6 @@ async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 	const slug = slugify(project_name);
 	return {
 		project_name,
-		integration_branch,
 		max_lanes,
 		worktree_prefix: `${slug}-wt`,
 		tmux_prefix: `${slug}-orch`,

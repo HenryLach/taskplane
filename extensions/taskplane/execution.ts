@@ -1403,7 +1403,7 @@ export function computeTransitiveDependents(
  *
  * This function checks each wave task's folder for untracked or modified files,
  * stages them, and creates a commit on the current branch. This must run BEFORE
- * allocateLanes() so that worktrees (which are based on the integration branch)
+ * allocateLanes() so that worktrees (which are based on the batch's base branch)
  * include the task files.
  *
  * Only task-specific folders are staged — no other working tree changes are touched.
@@ -1522,6 +1522,7 @@ export function ensureTaskFilesCommitted(
  * @param batchId           - Batch ID for naming
  * @param pauseSignal       - Shared pause signal (mutated by stop-wave policy)
  * @param dependencyGraph   - Dependency graph for computing transitive dependents
+ * @param baseBranch        - Branch to base worktrees on (captured at batch start)
  * @param onMonitorUpdate   - Optional callback for dashboard updates during monitoring
  * @param onLanesAllocated  - Optional callback fired after lane allocation succeeds
  * @returns WaveExecutionResult with outcomes and blocked task IDs
@@ -1535,6 +1536,7 @@ export async function executeWave(
 	batchId: string,
 	pauseSignal: { paused: boolean },
 	dependencyGraph: DependencyGraph,
+	baseBranch: string,
 	onMonitorUpdate?: MonitorUpdateCallback,
 	onLanesAllocated?: (lanes: AllocatedLane[]) => void,
 ): Promise<WaveExecutionResult> {
@@ -1576,7 +1578,7 @@ export async function executeWave(
 	}
 
 	// ── Stage 1: Allocate lanes ──────────────────────────────────
-	const allocResult = allocateLanes(waveTasks, pending, config, repoRoot, batchId);
+	const allocResult = allocateLanes(waveTasks, pending, config, repoRoot, batchId, baseBranch);
 
 	if (!allocResult.success) {
 		const errMsg = allocResult.error?.message || "Unknown allocation failure";

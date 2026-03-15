@@ -24,9 +24,6 @@ orchestrator:
   worktree_location: "subdirectory"
   worktree_prefix: "project-wt"
 
-  # Integration branch that lanes merge into.
-  integration_branch: "main"
-
   # Batch ID format used in branch names and logs.
   batch_id_format: "timestamp"
 

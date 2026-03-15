@@ -1087,7 +1087,6 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 				max_lanes: 3,
 				worktree_location: "sibling" as const,
 				worktree_prefix: prefix,
-				integration_branch: "develop",
 				batch_id_format: "timestamp" as const,
 				spawn_mode: "tmux" as const,
 				tmux_prefix: "orch",
@@ -1100,7 +1099,7 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 			monitoring: { poll_interval: 5 },
 		};
 
-		const result = createLaneWorktrees(3, "bulk001", config, repoDir);
+		const result = createLaneWorktrees(3, "bulk001", config, repoDir, "develop");
 
 		assertEqual(result.success, true, "should succeed");
 		assertEqual(result.worktrees.length, 3, "should have 3 worktrees");
@@ -1128,7 +1127,6 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 				max_lanes: 3,
 				worktree_location: "sibling" as const,
 				worktree_prefix: prefix,
-				integration_branch: "develop",
 				batch_id_format: "timestamp" as const,
 				spawn_mode: "tmux" as const,
 				tmux_prefix: "orch",
@@ -1141,7 +1139,7 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 			monitoring: { poll_interval: 5 },
 		};
 
-		const result = createLaneWorktrees(3, "bulkfail", config, repoDir);
+		const result = createLaneWorktrees(3, "bulkfail", config, repoDir, "develop");
 
 		assertEqual(result.success, false, "should fail");
 		assert(result.errors.length > 0, "should have errors");
