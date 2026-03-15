@@ -1,11 +1,11 @@
 # TP-003: External Task Folder .DONE and STATUS Path Resolution — Status
 
-**Current Step:** Step 0: Introduce canonical task-path resolver
-​**Status:** ✅ Complete
+**Current Step:** Step 2: Add regression coverage
+​**Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -27,10 +27,14 @@
 ---
 
 ### Step 1: Fix completion probing
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Update .DONE resolution logic to probe correct canonical locations
-- [ ] Update STATUS probing/monitor paths for external task roots
+- [x] Refactor `abort.ts::selectAbortTargetSessions` to use `resolveCanonicalTaskPaths` instead of manual repo-relative path translation (fixes invalid `taskFolderInWorktree` for external task folders)
+- [x] Verify `writeWrapUpFiles` correctly resolves wrap-up signal file paths for external task folders (dependent on `taskFolderInWorktree` fix above — uses `taskFolderInWorktree` unchanged, works correctly with canonical resolved path)
+- [x] Verify `buildLaneEnvVars` TASK_AUTOSTART handles external prompt paths correctly (uses absolute path as-is — no change needed, out of scope for completion probing)
+- [x] Acceptance: monorepo tasks still resolve `taskFolderInWorktree` to `<worktree>/<relative-path>` — verified via `resolveCanonicalTaskPaths` case 1 logic
+- [x] Acceptance: external task-root tasks resolve `taskFolderInWorktree` to absolute canonical path (not re-joined under worktree) — verified via `resolveCanonicalTaskPaths` case 2 logic
+- [x] Acceptance: archive fallback works for both repo-contained and external task folders in abort flow — `resolveCanonicalTaskPaths` handles archive fallback for both branches
 
 ---
 
@@ -67,6 +71,10 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -82,6 +90,16 @@
 | 2026-03-15 07:23 | Review R001 | plan Step 0: UNKNOWN |
 | 2026-03-15 07:27 | Step 0 complete | Hydrated checkboxes per R001; implemented `resolveCanonicalTaskPaths`; refactored 3 call sites; 3 test suites pass (no regressions) |
 | 2026-03-15 07:29 | Worker iter 1 | done in 357s, ctx: 34%, tools: 45 |
+| 2026-03-15 07:30 | Worker iter 1 | done in 413s, ctx: 36%, tools: 63 |
+| 2026-03-15 07:33 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 07:33 | Step 0 complete | Introduce canonical task-path resolver |
+| 2026-03-15 07:33 | Step 1 started | Fix completion probing |
+| 2026-03-15 07:33 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 07:33 | Step 0 complete | Introduce canonical task-path resolver |
+| 2026-03-15 07:33 | Step 1 started | Fix completion probing |
+| 2026-03-15 07:35 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 07:35 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 07:40 | Step 1 complete | Hydrated Step 1; refactored `abort.ts::selectAbortTargetSessions` to use `resolveCanonicalTaskPaths`; removed unused `resolve` import; verified monorepo + external + archive acceptance; 3 test suites pass (21 pre-existing failures unrelated) |
 
 ## Blockers
 
