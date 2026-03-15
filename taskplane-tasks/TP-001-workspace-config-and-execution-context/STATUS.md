@@ -1,11 +1,11 @@
 # TP-001: Workspace Config and Execution Context Foundations — Status
 
-**Current Step:** Step 0: Define workspace/runtime contracts
-​**Status:** ✅ Step 0 Complete
+**Current Step:** Step 2: Wire orchestrator startup context
+​**Status:** ✅ Step 1 Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -30,10 +30,19 @@
 ---
 
 ### Step 1: Implement workspace config loading
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Create extensions/taskplane/workspace.ts loader/validator for .pi/taskplane-workspace.yaml
-- [ ] Resolve canonical workspace/task roots and repo map with normalized absolute paths
+- [x] Create extensions/taskplane/workspace.ts with canonicalizePath() helper reusing worktree.ts normalizePath pattern
+- [x] Implement YAML file reading with WORKSPACE_FILE_READ_ERROR on I/O failure
+- [x] Implement YAML parsing with WORKSPACE_FILE_PARSE_ERROR on invalid YAML
+- [x] Implement top-level schema validation (repos object, routing object) with WORKSPACE_SCHEMA_INVALID
+- [x] Implement repos validation: WORKSPACE_MISSING_REPOS if no repos defined
+- [x] Implement per-repo validation: WORKSPACE_REPO_PATH_MISSING, WORKSPACE_REPO_PATH_NOT_FOUND, WORKSPACE_REPO_NOT_GIT (via git rev-parse)
+- [x] Implement duplicate repo path detection with WORKSPACE_DUPLICATE_REPO_PATH (after canonicalization)
+- [x] Implement routing.tasks_root validation: WORKSPACE_MISSING_TASKS_ROOT, WORKSPACE_TASKS_ROOT_NOT_FOUND
+- [x] Implement routing.default_repo validation: WORKSPACE_MISSING_DEFAULT_REPO, WORKSPACE_DEFAULT_REPO_NOT_FOUND
+- [x] Implement loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | null — returns null when no config file (repo mode), throws WorkspaceConfigError on present+invalid
+- [x] Verify workspace.ts compiles cleanly and exports are importable
 
 ---
 
@@ -70,6 +79,10 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -89,6 +102,20 @@
 | 2026-03-15 05:37 | Step 0 implemented | Added workspace mode types, error codes, ExecutionContext, createRepoModeContext to types.ts |
 | 2026-03-15 05:38 | Step 0 verified | All types compile cleanly, vitest loads without new failures |
 | 2026-03-15 05:34 | Review R001 | plan Step 0: UNKNOWN |
+| 2026-03-15 05:37 | Worker iter 1 | done in 255s, ctx: 33%, tools: 36 |
+| 2026-03-15 05:38 | Worker iter 1 | done in 238s, ctx: 30%, tools: 40 |
+| 2026-03-15 05:41 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 05:41 | Step 0 complete | Define workspace/runtime contracts |
+| 2026-03-15 05:41 | Step 1 started | Implement workspace config loading |
+| 2026-03-15 05:41 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 05:41 | Step 0 complete | Define workspace/runtime contracts |
+| 2026-03-15 05:41 | Step 1 started | Implement workspace config loading |
+| 2026-03-15 05:42 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 05:47 | Step 1 hydrated | Expanded to 11 concrete sub-items per R003 review |
+| 2026-03-15 05:48 | Step 1 implemented | workspace.ts: loadWorkspaceConfig, canonicalizePath, buildExecutionContext with full validation chain |
+| 2026-03-15 05:48 | Step 1 verified | Imports and compilation verified via vitest, repo mode fallback tested |
+| 2026-03-15 05:48 | Step 1 complete | Implement workspace config loading |
+| 2026-03-15 05:43 | Review R003 | plan Step 1: UNKNOWN |
 
 ## Blockers
 
