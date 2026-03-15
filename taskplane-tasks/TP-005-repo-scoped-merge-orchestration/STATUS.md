@@ -4,8 +4,8 @@
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 8
-**Iteration:** 3
+**Review Counter:** 9
+**Iteration:** 4
 **Size:** L
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -130,11 +130,18 @@
 ### Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] "Must Update" docs modified
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
-- [ ] `.DONE` created
-- [ ] Archive and push
+**Must Update:** `.pi/local/docs/taskplane/polyrepo-support-spec.md`
+**Check If Affected:** `docs/reference/commands.md`
+
+**Note:** `polyrepo-support-spec.md` is a `.pi/local/` file (gitignored, local-only). It exists at `C:\dev\taskplane\.pi\local\docs\taskplane\polyrepo-support-spec.md` in the main repo. The worktree does not have `.pi/local/`. Update is applied directly to the main repo's local docs.
+
+**R008 REVISE resolution:** R008 findings (deduped review row, CLI command format, execution log cleanup) were addressed in commit `6499df8` during Step 3 iteration. No further action needed — structural fixes already applied.
+
+- [x] 4.1 Update `polyrepo-support-spec.md` Section 9 (Merge): add per-repo merge sequencing, deterministic ordering, non-atomic outcomes, partial/failure rollup semantics as delivered by TP-005
+- [x] 4.2 Update `polyrepo-support-spec.md` Section 14 (Phase 2): mark repo-scoped merge flow as delivered (TP-005)
+- [x] 4.3 Review `docs/reference/commands.md`: **not updated** — command syntax, flags, and documented behavior are unchanged. TP-005 adds internal merge orchestration changes (repo-scoped grouping) and a new partial-success notification (`⚠️ Merge partially succeeded — repo outcomes diverged`), but this is a runtime notification in workspace mode only, not a change to command surface or documented output format. No operator-facing merge output format change that would require doc updates.
+- [x] 4.4 Log discoveries in STATUS.md Discoveries table
+- [ ] 4.5 Create `.DONE` in task folder
 
 ---
 
@@ -155,11 +162,16 @@
 | R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| `mergeWave()` status rollup used lane-level evidence only, missing repo-level setup failures (e.g., temp branch creation failure where `failedLane=null`). Fixed by introducing `anyRepoFailed` tracking flag. | Fixed (TP-005 Step 0, R002) | `merge.ts:mergeWaveByRepo()` |
+| Engine.ts and resume.ts had duplicated merge-failure policy logic (phase transitions, error messages, notification formatting). Divergence risk was high. Extracted shared `computeMergeFailurePolicy()` pure function. | Fixed (TP-005 Step 2) | `messages.ts`, `engine.ts`, `resume.ts` |
+| `ORCH_MESSAGES.orchMergeStart` had misleading hardcoded text "into develop" even after `integration_branch` was removed in favor of runtime `baseBranch`. Fixed to say "into target branch". | Fixed (TP-005 Step 0) | `messages.ts` |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -236,6 +248,11 @@
 | 2026-03-15 17:44 | Step 4 started | Documentation & Delivery |
 | 2026-03-15 17:45 | Review R008 | code Step 3: REVISE |
 | 2026-03-15 17:46 | Step 3 R008 fixes | Deduped R006 review row, fixed CLI command to exact form, cleaned duplicate execution log entries |
+| 2026-03-15 17:46 | Worker iter 3 | done in 106s, ctx: 11%, tools: 18 |
+| 2026-03-15 17:46 | Step 3 complete | Testing & Verification |
+| 2026-03-15 17:46 | Step 4 started | Documentation & Delivery |
+| 2026-03-15 17:47 | Review R009 | plan Step 4: REVISE |
+| 2026-03-15 17:48 | Review R009 | plan Step 4: REVISE |
 
 ## Blockers
 
