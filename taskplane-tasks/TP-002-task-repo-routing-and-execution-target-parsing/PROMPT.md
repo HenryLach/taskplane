@@ -49,7 +49,6 @@ Enable deterministic task-to-repo routing in workspace mode by parsing execution
 > file scope run on the same lane (serial), not in parallel.
 
 - `extensions/taskplane/discovery.ts`
-- `extensions/taskplane/types.ts`
 - `extensions/taskplane/messages.ts`
 - `extensions/tests/*discovery*`
 - `extensions/tests/*routing*`

@@ -51,7 +51,6 @@ Extend /orch-resume to reconstruct and continue polyrepo batches using repo-awar
 
 - `extensions/taskplane/resume.ts`
 - `extensions/taskplane/persistence.ts`
-- `extensions/taskplane/types.ts`
 - `extensions/tests/orch-state-persistence.test.ts`
 - `extensions/tests/orch-direct-implementation.test.ts`
 

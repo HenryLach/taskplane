@@ -51,7 +51,6 @@ Implement repo-scoped merge sequencing so completed lanes are merged in their ow
 - `extensions/taskplane/merge.ts`
 - `extensions/taskplane/engine.ts`
 - `extensions/taskplane/messages.ts`
-- `extensions/taskplane/types.ts`
 - `extensions/tests/*state-persistence*`
 - `extensions/tests/*direct-implementation*`
 

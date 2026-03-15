@@ -53,7 +53,6 @@ Refactor wave execution to allocate and manage lanes per target repo so a single
 - `extensions/taskplane/waves.ts`
 - `extensions/taskplane/worktree.ts`
 - `extensions/taskplane/engine.ts`
-- `extensions/taskplane/types.ts`
 - `extensions/taskplane/execution.ts`
 - `extensions/tests/*waves*`
 - `extensions/tests/*worktree*`

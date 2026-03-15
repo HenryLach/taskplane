@@ -50,7 +50,6 @@ Add policy controls to enforce task ownership clarity in workspace mode, reducin
 
 - `extensions/taskplane/discovery.ts`
 - `extensions/taskplane/messages.ts`
-- `extensions/taskplane/types.ts`
 - `extensions/tests/*routing*`
 
 ## Steps

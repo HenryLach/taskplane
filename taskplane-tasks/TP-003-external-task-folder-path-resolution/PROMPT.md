@@ -49,7 +49,6 @@ Make orchestrator monitoring and completion detection robust when canonical task
 > file scope run on the same lane (serial), not in parallel.
 
 - `extensions/taskplane/execution.ts`
-- `extensions/taskplane/types.ts`
 - `extensions/tests/*execution*`
 - `extensions/tests/*orchestration*`
 

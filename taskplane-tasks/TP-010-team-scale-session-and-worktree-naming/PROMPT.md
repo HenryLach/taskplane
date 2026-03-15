@@ -48,7 +48,6 @@ Implement collision-resistant lane/session/worktree naming that remains determin
 > The orchestrator uses this to avoid merge conflicts: tasks with overlapping
 > file scope run on the same lane (serial), not in parallel.
 
-- `extensions/taskplane/types.ts`
 - `extensions/taskplane/waves.ts`
 - `extensions/taskplane/execution.ts`
 - `extensions/taskplane/merge.ts`
