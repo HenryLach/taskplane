@@ -279,16 +279,45 @@ export const VALID_PERSISTED_MERGE_STATUSES: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Upconvert a v1 state object to v2 in-memory.
+ *
+ * Applied automatically by `validatePersistedState()` when a v1 file is loaded.
+ * The on-disk file is NOT rewritten — upconversion is purely in-memory.
+ *
+ * v1→v2 field defaults:
+ * - `schemaVersion`: bumped from 1 → 2
+ * - `baseBranch`: defaults to "" (was already handled in v1 validation)
+ * - `mode`: defaults to "repo" (v1 was always single-repo)
+ * - `tasks[].repoId`: remains undefined (repo mode has no repo routing)
+ * - `tasks[].resolvedRepoId`: remains undefined (same reason)
+ * - `lanes[].repoId`: preserved if present (was already serialized in v1
+ *   when workspace mode was partially implemented)
+ *
+ * This function is idempotent: calling it on an already-v2 object is a no-op.
+ *
+ * @param obj - Parsed state object (mutated in-place)
+ */
+export function upconvertV1toV2(obj: Record<string, unknown>): void {
+	if ((obj.schemaVersion as number) >= BATCH_STATE_SCHEMA_VERSION) return;
+	obj.schemaVersion = BATCH_STATE_SCHEMA_VERSION;
+	if (!obj.baseBranch) obj.baseBranch = "";
+	if (!obj.mode) obj.mode = "repo";
+	// Task and lane records: v2 optional fields default to undefined (omitted)
+	// which is already their state in v1 objects. No mutation needed.
+}
+
+/**
  * Validate a parsed JSON object as a PersistedBatchState.
  *
  * Checks:
- * 1. Schema version matches BATCH_STATE_SCHEMA_VERSION
+ * 1. Schema version is 1 (auto-upconverted to v2) or 2 (current)
  * 2. All required fields are present with correct types
  * 3. Enum fields contain valid values (phase, task statuses, merge statuses)
  * 4. Arrays contain valid sub-records
+ * 5. v2 optional fields (repoId, resolvedRepoId, mode) are valid when present
  *
  * @param data - Parsed JSON (unknown type)
- * @returns Validated PersistedBatchState
+ * @returns Validated PersistedBatchState (always v2, even if input was v1)
  * @throws StateFileError with STATE_SCHEMA_INVALID on any validation failure
  */
 export function validatePersistedState(data: unknown): PersistedBatchState {
@@ -576,20 +605,7 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 	// ── v1→v2 upconversion ───────────────────────────────────────
 	// Apply defaults for fields that may be absent in v1 state files.
 	// The on-disk file is NOT rewritten; upconversion is in-memory only.
-	if (!obj.baseBranch) {
-		(obj as any).baseBranch = "";
-	}
-	if (!obj.mode) {
-		(obj as any).mode = "repo";
-	}
-	// Bump in-memory schema version so downstream code sees v2.
-	if (isV1) {
-		(obj as any).schemaVersion = BATCH_STATE_SCHEMA_VERSION;
-	}
-	// v1 task records have no repoId/resolvedRepoId — they remain undefined
-	// (omitted from the object), which is correct for repo mode.
-	// v1 lane records may already have repoId from prior workspace-mode
-	// serialization; those are preserved as-is.
+	upconvertV1toV2(obj);
 
 	return obj as unknown as PersistedBatchState;
 }

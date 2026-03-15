@@ -14,7 +14,7 @@
 ---
 
 ### Step 0: Define schema v2
-**Status:** 🟩 Complete
+**Status:** ✅ Complete
 
 - [x] Bump batch-state schema version and add repo-aware fields on lane/task records
 - [x] Document field contracts and compatibility expectations
@@ -60,9 +60,9 @@
 **Test/fixture impact:**
 
 - `batch-state-valid.json` — Update to v2 (add `mode: "repo"`, bump `schemaVersion: 2`).
-- `batch-state-valid-v2-workspace.json` — New fixture: workspace mode with repo fields populated.
+- `batch-state-v2-workspace.json` — New fixture: workspace mode with repo fields populated.
 - `batch-state-wrong-version.json` — Keep as-is (version 99, still invalid).
-- `batch-state-valid-v1.json` — New fixture: copy of current v1 valid fixture for backward-compat tests.
+- `batch-state-v1-valid.json` — New fixture: copy of current v1 valid fixture for backward-compat tests.
 - `batch-state-bad-enums.json` — Update to v2 schemaVersion.
 - `batch-state-bad-task-status.json` — Update to v2 schemaVersion.
 - `batch-state-missing-fields.json` — Update to v2 schemaVersion.
@@ -137,6 +137,8 @@
 | 2026-03-15 17:53 | Review R001 | plan Step 0: UNKNOWN |
 | 2026-03-15 17:54 | Review R001 | plan Step 0: REVISE |
 | 2026-03-15 18:00 | Step 0 completed | Schema v2 defined in types.ts; contract documented in STATUS.md |
+| 2026-03-15 17:58 | Worker iter 1 | done in 237s, ctx: 38%, tools: 34 |
+| 2026-03-15 18:02 | Step 0 impl updated | R001 revise feedback addressed: v1→v2 upconvert, validation, fixtures, tests |
 
 ## Blockers
 

@@ -94,7 +94,7 @@ const source = sourceFiles.map(f => readFileSync(f, "utf8")).join("\n");
 // by the existing orch-pure-functions.test.ts pattern.
 
 // Schema version constant (must match source)
-const BATCH_STATE_SCHEMA_VERSION = 1;
+const BATCH_STATE_SCHEMA_VERSION = 2;
 
 // Valid enum sets (must match source)
 const VALID_BATCH_PHASES = new Set([
@@ -127,15 +127,16 @@ function validatePersistedState(data: unknown): any {
 
 	const obj = data as Record<string, unknown>;
 
-	// Schema version
+	// Schema version — accept v1 (auto-upconvert) and v2 (current)
 	if (typeof obj.schemaVersion !== "number") {
 		throw new StateFileError("STATE_SCHEMA_INVALID",
 			`Missing or invalid "schemaVersion" field (expected number, got ${typeof obj.schemaVersion})`);
 	}
-	if (obj.schemaVersion !== BATCH_STATE_SCHEMA_VERSION) {
+	if (obj.schemaVersion !== 1 && obj.schemaVersion !== BATCH_STATE_SCHEMA_VERSION) {
 		throw new StateFileError("STATE_SCHEMA_INVALID",
 			`Unsupported schema version ${obj.schemaVersion} (expected ${BATCH_STATE_SCHEMA_VERSION}). Delete .pi/batch-state.json and re-run the batch.`);
 	}
+	const isV1 = obj.schemaVersion === 1;
 
 	// Required string fields
 	for (const field of ["phase", "batchId"] as const) {
@@ -143,6 +144,16 @@ function validatePersistedState(data: unknown): any {
 			throw new StateFileError("STATE_SCHEMA_INVALID",
 				`Missing or invalid "${field}" field (expected string, got ${typeof obj[field]})`);
 		}
+	}
+
+	// v2: mode field validation
+	if (obj.mode !== undefined && typeof obj.mode !== "string") {
+		throw new StateFileError("STATE_SCHEMA_INVALID",
+			`Invalid "mode" field (expected string, got ${typeof obj.mode})`);
+	}
+	if (obj.mode !== undefined && obj.mode !== "repo" && obj.mode !== "workspace") {
+		throw new StateFileError("STATE_SCHEMA_INVALID",
+			`Invalid "mode" value "${obj.mode}" (expected "repo" or "workspace")`);
 	}
 
 	// Phase enum
@@ -223,6 +234,15 @@ function validatePersistedState(data: unknown): any {
 			throw new StateFileError("STATE_SCHEMA_INVALID",
 				`tasks[${i}].doneFileFound is missing or not a boolean`);
 		}
+		// v2 optional fields
+		if (t.repoId !== undefined && typeof t.repoId !== "string") {
+			throw new StateFileError("STATE_SCHEMA_INVALID",
+				`tasks[${i}].repoId is not a string (got ${typeof t.repoId})`);
+		}
+		if (t.resolvedRepoId !== undefined && typeof t.resolvedRepoId !== "string") {
+			throw new StateFileError("STATE_SCHEMA_INVALID",
+				`tasks[${i}].resolvedRepoId is not a string (got ${typeof t.resolvedRepoId})`);
+		}
 	}
 
 	// Validate lane records
@@ -245,6 +265,11 @@ function validatePersistedState(data: unknown): any {
 		if (!Array.isArray(l.taskIds)) {
 			throw new StateFileError("STATE_SCHEMA_INVALID",
 				`lanes[${i}].taskIds is missing or not an array`);
+		}
+		// v2 optional field
+		if (l.repoId !== undefined && typeof l.repoId !== "string") {
+			throw new StateFileError("STATE_SCHEMA_INVALID",
+				`lanes[${i}].repoId is not a string (got ${typeof l.repoId})`);
 		}
 	}
 
@@ -292,6 +317,11 @@ function validatePersistedState(data: unknown): any {
 				`errors array contains non-string value: ${typeof err}`);
 		}
 	}
+
+	// v1→v2 upconversion (in-memory only)
+	if (!obj.baseBranch) obj.baseBranch = "";
+	if (!obj.mode) obj.mode = "repo";
+	if (isV1) obj.schemaVersion = BATCH_STATE_SCHEMA_VERSION;
 
 	return obj;
 }
@@ -392,7 +422,7 @@ console.log("\n── 1.1: validatePersistedState ──");
 	console.log("  ▸ validates a well-formed state file");
 	const data = loadFixtureJSON("batch-state-valid.json");
 	const result = validatePersistedState(data);
-	assertEqual(result.schemaVersion, 1, "schemaVersion is 1");
+	assertEqual(result.schemaVersion, 2, "schemaVersion is 2");
 	assertEqual(result.phase, "executing", "phase is executing");
 	assertEqual(result.batchId, "20260309T010000", "batchId matches");
 	assertEqual(result.totalTasks, 3, "totalTasks is 3");
@@ -616,6 +646,7 @@ console.log("\n── 1.2: serializeBatchState round-trip ──");
 		schemaVersion: BATCH_STATE_SCHEMA_VERSION,
 		phase: "completed",
 		batchId: "20260309T020000",
+		mode: "repo",
 		startedAt: 900,
 		updatedAt: Date.now(), // Will be close to now
 		endedAt: 2500,
@@ -879,6 +910,7 @@ function serializeBatchState(
 		schemaVersion: BATCH_STATE_SCHEMA_VERSION,
 		phase: state.phase,
 		batchId: state.batchId,
+		mode: "repo",
 		startedAt: state.startedAt,
 		updatedAt: now,
 		endedAt: state.endedAt,
@@ -1386,7 +1418,7 @@ function analyzeOrchestratorStartupState(
 // Helper: create a minimal valid persisted batch state for testing
 function minimalPersistedState(overrides?: Partial<PersistedBatchStateForTest>): PersistedBatchStateForTest {
 	return {
-		schemaVersion: 1,
+		schemaVersion: 2,
 		phase: "executing",
 		batchId: "20260309T050000",
 		startedAt: Date.now() - 60000,
