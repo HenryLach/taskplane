@@ -4,7 +4,7 @@
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 6
+**Review Counter:** 8
 **Iteration:** 3
 **Size:** L
 
@@ -121,14 +121,14 @@
 - [x] 3.2 Targeted: `cd extensions && npx vitest run tests/orch-state-persistence.test.ts` → 1 file, 1 test passed
 - [x] 3.3 Targeted: `cd extensions && npx vitest run tests/orch-direct-implementation.test.ts` → 1 file, 1 test passed
 - [x] 3.4 Full regression: `cd extensions && npx vitest run` → 11 files, 207 tests passed, 0 failures
-- [x] 3.5 CLI smoke: `node bin/taskplane.mjs help` → exit 0, clean output, v0.1.17
+- [x] 3.5 CLI smoke: `node bin/taskplane.mjs help` — exit 0, clean output, v0.1.17
 - [x] 3.6 All failures triaged and fixed (if any) — no failures found, N/A
 - [x] 3.7 Final full regression green after any fixes — 3.4 was already the final green run (no fixes needed)
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] "Must Update" docs modified
 - [ ] "Check If Affected" docs reviewed
@@ -152,7 +152,9 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | APPROVE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
-| R006 | code | Step 2 | APPROVE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -225,11 +227,15 @@
 | 2026-03-15 17:40 | Step 3.2 | Targeted orch-state-persistence.test.ts → 1 file, 1 test passed |
 | 2026-03-15 17:40 | Step 3.3 | Targeted orch-direct-implementation.test.ts → 1 file, 1 test passed |
 | 2026-03-15 17:41 | Step 3.4 | Full regression: 11 files, 207 tests passed, 0 failures |
-| 2026-03-15 17:41 | Step 3.5 | CLI smoke: `taskplane help` → exit 0, v0.1.17 |
+| 2026-03-15 17:41 | Step 3.5 | CLI smoke: `node bin/taskplane.mjs help` → exit 0, v0.1.17 |
 | 2026-03-15 17:41 | Step 3 complete | Testing & Verification — all green, no fixes needed |
-| 2026-03-15 17:41 | Review R006 | code Step 2: APPROVE |
-| 2026-03-15 17:41 | Step 2 complete | Harden failure behavior |
-| 2026-03-15 17:41 | Step 3 started | Testing & Verification |
+| 2026-03-15 17:42 | Review R007 | plan Step 3: APPROVE |
+| 2026-03-15 17:42 | Worker iter 3 | done in 177s, ctx: 11%, tools: 23 |
+| 2026-03-15 17:44 | Review R008 | code Step 3: APPROVE |
+| 2026-03-15 17:44 | Step 3 complete | Testing & Verification |
+| 2026-03-15 17:44 | Step 4 started | Documentation & Delivery |
+| 2026-03-15 17:45 | Review R008 | code Step 3: REVISE |
+| 2026-03-15 17:46 | Step 3 R008 fixes | Deduped R006 review row, fixed CLI command to exact form, cleaned duplicate execution log entries |
 
 ## Blockers
 
