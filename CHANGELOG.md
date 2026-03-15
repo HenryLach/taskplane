@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- No unreleased changes yet.
+
+## [0.1.13] - 2026-03-15
+
+### Added
 - `taskplane init --tasks-root <relative-path>` to target an existing task directory (for example `docs/task-management`) instead of creating an alternate task area path.
 
 ### Changed
@@ -51,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.1.12...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.1.13...HEAD
+[0.1.13]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.13
 [0.1.12]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.12
 [0.1.11]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.11
