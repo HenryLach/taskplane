@@ -934,6 +934,11 @@ export function mergeWaveByRepo(
 	const repoOutcomes: RepoMergeOutcome[] = [];
 	let firstFailedLane: number | null = null;
 	let firstFailureReason: string | null = null;
+	// Track repo-level failures independently of lane-level failures.
+	// mergeWave() can return status="failed" with failedLane=null for
+	// pre-lane setup errors (temp branch creation, worktree creation).
+	// We must detect these to avoid misclassifying the aggregate as "succeeded".
+	let anyRepoFailed = false;
 
 	for (const group of repoGroups) {
 		const groupRepoRoot = resolveRepoRoot(group.repoId, repoRoot, workspaceConfig);
@@ -977,25 +982,33 @@ export function mergeWaveByRepo(
 		};
 		repoOutcomes.push(repoOutcome);
 
-		// Track first failure across repos (but continue to merge other repos)
-		if (groupResult.failedLane !== null && firstFailedLane === null) {
-			firstFailedLane = groupResult.failedLane;
-			firstFailureReason = groupResult.failureReason
-				? `[repo:${group.repoId ?? "default"}] ${groupResult.failureReason}`
-				: null;
+		// Track failures across repos (but continue to merge other repos).
+		// Check groupResult.status (not just failedLane) to catch setup failures
+		// where mergeWave() returns status="failed" with failedLane=null
+		// (e.g., temp branch creation or worktree creation failure).
+		if (groupResult.status !== "succeeded") {
+			anyRepoFailed = true;
+
+			if (firstFailureReason === null) {
+				firstFailedLane = groupResult.failedLane;
+				firstFailureReason = groupResult.failureReason
+					? `[repo:${group.repoId ?? "default"}] ${groupResult.failureReason}`
+					: `[repo:${group.repoId ?? "default"}] Merge failed (setup error)`;
+			}
 		}
 	}
 
 	// ── Aggregate status ─────────────────────────────────────────
-	// Base aggregate status on lane-level evidence (not repo-level status)
-	// to correctly classify "all repos partial" as global partial, not failed.
+	// Use both lane-level and repo-level evidence for correct classification:
+	// - anyLaneSucceeded: at least one lane merged successfully across all repos
+	// - anyRepoFailed: at least one repo had a non-succeeded status (includes
+	//   both lane-level failures AND repo setup failures with failedLane=null)
 	const anyLaneSucceeded = allLaneResults.some(
 		r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED",
 	);
-	const anyLaneFailed = firstFailedLane !== null;
 
 	let status: MergeWaveResult["status"];
-	if (!anyLaneFailed) {
+	if (!anyRepoFailed) {
 		status = "succeeded";
 	} else if (anyLaneSucceeded) {
 		status = "partial";

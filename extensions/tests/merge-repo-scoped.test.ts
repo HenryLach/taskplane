@@ -6,6 +6,7 @@
  *   2. groupLanesByRepo — mono-repo no-regression (single group)
  *   3. Deterministic failure aggregation across repos
  *   4. mergeWaveByRepo — repo-mode passthrough
+ *   5. formatRepoMergeSummary — repo-divergence partial summary (Step 1)
  *
  * Run: npx vitest run extensions/tests/merge-repo-scoped.test.ts
  */
@@ -13,12 +14,17 @@
 import {
 	groupLanesByRepo,
 	determineMergeOrder,
+	formatRepoMergeSummary,
+	ORCH_MESSAGES,
 } from "../task-orchestrator.ts";
 
 import type {
 	AllocatedLane,
 	AllocatedTask,
+	MergeLaneResult,
+	MergeWaveResult,
 	ParsedTask,
+	RepoMergeOutcome,
 } from "../task-orchestrator.ts";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -234,21 +240,28 @@ function runAllTests(): void {
 		assert(groups[2].repoId === "z-repo", "deterministic: z-repo third");
 	}
 
-	// ─── 9. Status rollup: lane-level evidence (not repo status) ─────
+	// ─── 9. Status rollup: lane-level + repo-level evidence ──────
 	// Tests the aggregation logic pattern used in mergeWaveByRepo().
-	// This validates the fix for R002 finding #2 (all-partial misclassified as failed).
-	console.log("\n── 9. Status rollup: lane-level evidence ──");
+	// Validates R002 fixes: all-partial misclassification AND setup-failure detection.
+	console.log("\n── 9. Status rollup: lane-level + repo-level evidence ──");
 	{
-		// Helper: simulate the status rollup logic from mergeWaveByRepo()
+		// Helper: simulate the status rollup logic from mergeWaveByRepo().
+		// Uses BOTH lane-level evidence (anyLaneSucceeded) and repo-level evidence
+		// (anyRepoFailed) to match the actual implementation.
+		//
+		// Parameters:
+		//   laneResults: simulated MergeLaneResult[] with result status
+		//   repoStatuses: per-repo status values from each mergeWave() call
+		//     (captures setup failures where failedLane=null but status="failed")
 		function computeAggregateStatus(
 			laneResults: Array<{ resultStatus: string | null; error: string | null }>,
-			firstFailedLane: number | null,
+			repoStatuses: Array<"succeeded" | "failed" | "partial">,
 		): "succeeded" | "failed" | "partial" {
 			const anyLaneSucceeded = laneResults.some(
 				r => r.resultStatus === "SUCCESS" || r.resultStatus === "CONFLICT_RESOLVED",
 			);
-			const anyLaneFailed = firstFailedLane !== null;
-			if (!anyLaneFailed) return "succeeded";
+			const anyRepoFailed = repoStatuses.some(s => s !== "succeeded");
+			if (!anyRepoFailed) return "succeeded";
 			if (anyLaneSucceeded) return "partial";
 			return "failed";
 		}
@@ -257,7 +270,7 @@ function runAllTests(): void {
 		assert(
 			computeAggregateStatus(
 				[{ resultStatus: "SUCCESS", error: null }, { resultStatus: "SUCCESS", error: null }],
-				null,
+				["succeeded", "succeeded"],
 			) === "succeeded",
 			"rollup: all SUCCESS → succeeded",
 		);
@@ -266,7 +279,7 @@ function runAllTests(): void {
 		assert(
 			computeAggregateStatus(
 				[{ resultStatus: "SUCCESS", error: null }, { resultStatus: "CONFLICT_UNRESOLVED", error: null }],
-				2,
+				["partial"],
 			) === "partial",
 			"rollup: mixed SUCCESS + failure → partial",
 		);
@@ -275,7 +288,7 @@ function runAllTests(): void {
 		assert(
 			computeAggregateStatus(
 				[{ resultStatus: "CONFLICT_UNRESOLVED", error: null }, { resultStatus: "BUILD_FAILURE", error: null }],
-				1,
+				["failed"],
 			) === "failed",
 			"rollup: all failures → failed",
 		);
@@ -292,14 +305,14 @@ function runAllTests(): void {
 					{ resultStatus: "CONFLICT_RESOLVED", error: null },          // repo-b lane 1
 					{ resultStatus: "BUILD_FAILURE", error: null },              // repo-b lane 2 (failure)
 				],
-				2, // first failure at lane 2
+				["partial", "partial"],
 			) === "partial",
 			"rollup: all repos partial → global partial (not failed)",
 		);
 
 		// Case E: No lanes at all (vacuous) → succeeded
 		assert(
-			computeAggregateStatus([], null) === "succeeded",
+			computeAggregateStatus([], []) === "succeeded",
 			"rollup: no lanes → succeeded (vacuous)",
 		);
 
@@ -307,7 +320,7 @@ function runAllTests(): void {
 		assert(
 			computeAggregateStatus(
 				[{ resultStatus: null, error: "spawn failed" }],
-				1,
+				["failed"],
 			) === "failed",
 			"rollup: error lane without result → failed",
 		);
@@ -316,9 +329,55 @@ function runAllTests(): void {
 		assert(
 			computeAggregateStatus(
 				[{ resultStatus: "SUCCESS", error: null }, { resultStatus: null, error: "timeout" }],
-				2,
+				["partial"],
 			) === "partial",
 			"rollup: success + error → partial",
+		);
+
+		// Case H: Repo setup failure (failedLane=null, status="failed", no lane results)
+		// This is R002 finding #1: temp branch or worktree creation fails before
+		// any lane merges. mergeWave() returns status="failed" with failedLane=null
+		// and empty laneResults. The aggregate must detect this as a failure.
+		assert(
+			computeAggregateStatus(
+				[], // no lane results (setup failed before lane merges)
+				["failed"],
+			) === "failed",
+			"rollup: repo setup failure with no lanes → failed",
+		);
+
+		// Case I: One repo setup-fails, another succeeds → partial
+		// Repo A: setup failure (no lanes merged)
+		// Repo B: all lanes merged successfully
+		assert(
+			computeAggregateStatus(
+				[{ resultStatus: "SUCCESS", error: null }], // only repo B's lanes
+				["failed", "succeeded"], // repo A failed setup, repo B succeeded
+			) === "partial",
+			"rollup: repo setup failure + other repo success → partial",
+		);
+
+		// Case J: All repos setup-fail → failed
+		assert(
+			computeAggregateStatus(
+				[], // no lane results from any repo
+				["failed", "failed"],
+			) === "failed",
+			"rollup: all repos setup failure → failed",
+		);
+
+		// Case K: One repo setup-fails, another is partial → partial
+		// Repo A: setup failure (no lanes)
+		// Repo B: partial (some lanes succeeded, some failed)
+		assert(
+			computeAggregateStatus(
+				[
+					{ resultStatus: "SUCCESS", error: null },              // repo B lane 1
+					{ resultStatus: "BUILD_FAILURE", error: null },        // repo B lane 2
+				],
+				["failed", "partial"], // repo A setup fail, repo B partial
+			) === "partial",
+			"rollup: repo setup failure + other repo partial → partial",
 		);
 	}
 
