@@ -603,3 +603,224 @@ describe("monorepo completion detection regression", () => {
 		expect(existsSync(externalResult.donePath)).toBe(true);
 	});
 });
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// 6. selectAbortTargetSessions — workspace-mode session matching (TP-004)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("selectAbortTargetSessions workspace-mode", () => {
+	it("matches workspace-mode lane sessions (<prefix>-<repoId>-lane-<N>)", () => {
+		const sessions = [
+			"orch-api-lane-1",
+			"orch-api-lane-2",
+			"orch-frontend-lane-1",
+			"unrelated-session",
+		];
+
+		const targets = selectAbortTargetSessions(
+			sessions,
+			null,
+			[],
+			repoRoot,
+			"orch",
+		);
+
+		expect(targets.length).toBe(3);
+		expect(targets.map(t => t.sessionName).sort()).toEqual([
+			"orch-api-lane-1",
+			"orch-api-lane-2",
+			"orch-frontend-lane-1",
+		]);
+	});
+
+	it("matches both repo-mode and workspace-mode sessions together", () => {
+		const sessions = [
+			"orch-lane-1",         // repo mode
+			"orch-api-lane-1",     // workspace mode
+			"orch-merge-1",        // repo mode merge
+			"orch-api-merge-1",    // workspace mode merge (hypothetical)
+			"other-session",       // unrelated
+		];
+
+		const targets = selectAbortTargetSessions(
+			sessions,
+			null,
+			[],
+			repoRoot,
+			"orch",
+		);
+
+		expect(targets.length).toBe(4);
+		expect(targets.map(t => t.sessionName).sort()).toEqual([
+			"orch-api-lane-1",
+			"orch-api-merge-1",
+			"orch-lane-1",
+			"orch-merge-1",
+		]);
+	});
+
+	it("enriches workspace-mode laneId from persisted lane records", () => {
+		const sessions = ["orch-api-lane-1"];
+
+		const persistedState = {
+			tasks: [{
+				taskId: "TP-080",
+				sessionName: "orch-api-lane-1",
+				laneNumber: 1,
+				taskFolder: join(repoRoot, "tasks", "TP-080"),
+				status: "running",
+			}],
+			lanes: [{
+				laneNumber: 1,
+				laneId: "api/lane-1",
+				tmuxSessionName: "orch-api-lane-1",
+				worktreePath: "/tmp/wt/lane-1",
+				branch: "orch-lane-1",
+				taskIds: ["TP-080"],
+				repoId: "api",
+			}],
+		};
+
+		const targets = selectAbortTargetSessions(
+			sessions,
+			persistedState as any,
+			[],
+			repoRoot,
+			"orch",
+		);
+
+		expect(targets.length).toBe(1);
+		expect(targets[0].laneId).toBe("api/lane-1");
+		expect(targets[0].taskId).toBe("TP-080");
+	});
+
+	it("falls back to lane-N when no persisted lane record exists", () => {
+		const sessions = ["orch-lane-1"];
+
+		const persistedState = {
+			tasks: [{
+				taskId: "TP-081",
+				sessionName: "orch-lane-1",
+				laneNumber: 1,
+				taskFolder: join(repoRoot, "tasks", "TP-081"),
+				status: "running",
+			}],
+			lanes: [], // no lane records
+		};
+
+		const targets = selectAbortTargetSessions(
+			sessions,
+			persistedState as any,
+			[],
+			repoRoot,
+			"orch",
+		);
+
+		expect(targets.length).toBe(1);
+		// Falls back to `lane-${laneNumber}` when no PersistedLaneRecord
+		expect(targets[0].laneId).toBe("lane-1");
+	});
+
+	it("repo-mode behavior unchanged (regression)", () => {
+		const sessions = [
+			"orch-lane-1",
+			"orch-lane-2",
+			"orch-merge-1",
+			"orch-lane-1-worker",
+		];
+
+		const persistedState = {
+			tasks: [
+				{
+					taskId: "TP-082",
+					sessionName: "orch-lane-1",
+					laneNumber: 1,
+					taskFolder: join(repoRoot, "tasks", "TP-082"),
+					status: "running",
+				},
+				{
+					taskId: "TP-083",
+					sessionName: "orch-lane-2",
+					laneNumber: 2,
+					taskFolder: join(repoRoot, "tasks", "TP-083"),
+					status: "running",
+				},
+			],
+			lanes: [
+				{
+					laneNumber: 1,
+					laneId: "lane-1",
+					tmuxSessionName: "orch-lane-1",
+					worktreePath: "/tmp/wt/lane-1",
+					branch: "orch-lane-1",
+					taskIds: ["TP-082"],
+				},
+				{
+					laneNumber: 2,
+					laneId: "lane-2",
+					tmuxSessionName: "orch-lane-2",
+					worktreePath: "/tmp/wt/lane-2",
+					branch: "orch-lane-2",
+					taskIds: ["TP-083"],
+				},
+			],
+		};
+
+		const targets = selectAbortTargetSessions(
+			sessions,
+			persistedState as any,
+			[],
+			repoRoot,
+			"orch",
+		);
+
+		// Should match lane-1, lane-2, merge-1, and lane-1-worker
+		// (worker sessions start with "lane-" so they match)
+		expect(targets.length).toBe(4);
+		
+		// Verify repo-mode laneIds are correctly resolved
+		const lane1 = targets.find(t => t.sessionName === "orch-lane-1");
+		const lane2 = targets.find(t => t.sessionName === "orch-lane-2");
+		expect(lane1?.laneId).toBe("lane-1");
+		expect(lane2?.laneId).toBe("lane-2");
+		expect(lane1?.taskId).toBe("TP-082");
+		expect(lane2?.taskId).toBe("TP-083");
+	});
+
+	it("does not match sessions with prefix but no lane/merge suffix", () => {
+		const sessions = [
+			"orch-dashboard",
+			"orch-monitor",
+			"orch-cleanup",
+		];
+
+		const targets = selectAbortTargetSessions(
+			sessions,
+			null,
+			[],
+			repoRoot,
+			"orch",
+		);
+
+		expect(targets.length).toBe(0);
+	});
+
+	it("handles hyphenated prefix in workspace mode", () => {
+		const sessions = [
+			"orch-prod-api-lane-1",
+			"orch-prod-lane-1",
+			"orch-prod-merge-1",
+		];
+
+		const targets = selectAbortTargetSessions(
+			sessions,
+			null,
+			[],
+			repoRoot,
+			"orch-prod",
+		);
+
+		expect(targets.length).toBe(3);
+	});
+});

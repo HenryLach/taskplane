@@ -8,7 +8,7 @@ import { join } from "path";
 
 import { execLog, resolveCanonicalTaskPaths, tmuxHasSession, tmuxKillSession } from "./execution.ts";
 import { deleteBatchState, parseOrchSessionNames, persistRuntimeState } from "./persistence.ts";
-import type { AbortActionStep, AbortErrorCode, AbortLaneResult, AbortMode, AbortResult, AbortTargetSession, AllocatedLane, OrchBatchRuntimeState, PersistedBatchState } from "./types.ts";
+import type { AbortActionStep, AbortErrorCode, AbortLaneResult, AbortMode, AbortResult, AbortTargetSession, AllocatedLane, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord } from "./types.ts";
 
 // ── Abort Pure Functions ─────────────────────────────────────────────
 
@@ -35,20 +35,41 @@ export function selectAbortTargetSessions(
 	prefix: string = "orch",
 ): AbortTargetSession[] {
 	// Filter to only lane and merge sessions for the exact orchestrator prefix.
+	// Handles both repo-mode (`<prefix>-lane-<N>`) and workspace-mode
+	// (`<prefix>-<repoId>-lane-<N>`) session name formats.
 	const targetNames = allSessionNames.filter(name => {
 		const prefixWithDash = `${prefix}-`;
 		if (!name.startsWith(prefixWithDash)) return false;
 		const suffix = name.slice(prefixWithDash.length);
-		return suffix.startsWith("lane-") || suffix.startsWith("merge-");
+		// Repo mode: suffix starts with "lane-" or "merge-"
+		if (suffix.startsWith("lane-") || suffix.startsWith("merge-")) return true;
+		// Workspace mode: suffix is "<repoId>-lane-<N>" — contains "-lane-"
+		// Match any suffix that contains "-lane-" or "-merge-" followed by a number
+		if (/\-lane-\d/.test(suffix) || /\-merge-\d/.test(suffix)) return true;
+		return false;
 	});
+
+	// Build lookup from persisted lane records for workspace-aware laneId resolution.
+	// Keyed by tmuxSessionName for direct session-to-lane mapping.
+	const persistedLaneLookup = new Map<string, PersistedLaneRecord>();
+	if (persistedState?.lanes) {
+		for (const lane of persistedState.lanes) {
+			persistedLaneLookup.set(lane.tmuxSessionName, lane);
+		}
+	}
 
 	// Build lookup from persisted state task records
 	const persistedLookup = new Map<string, { laneId: string; taskId: string; taskFolder: string }>();
 	if (persistedState) {
 		for (const task of persistedState.tasks) {
 			if (task.sessionName) {
+				// Source laneId from persisted lane records (workspace-aware)
+				// rather than reconstructing as `lane-${laneNumber}` which
+				// drops the repo dimension in workspace mode.
+				const laneRecord = persistedLaneLookup.get(task.sessionName);
+				const laneId = laneRecord?.laneId ?? `lane-${task.laneNumber}`;
 				persistedLookup.set(task.sessionName, {
-					laneId: `lane-${task.laneNumber}`,
+					laneId,
 					taskId: task.taskId,
 					taskFolder: task.taskFolder,
 				});

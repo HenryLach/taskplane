@@ -1,11 +1,11 @@
 # TP-004: Repo-Scoped Lane Allocation and Worktree Lifecycle — Status
 
-**Current Step:** Step 1: Make worktree operations repo-scoped
-​**Status:** ✅ Complete
+**Current Step:** Step 2: Update execution contracts
+**Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 3
-**Iteration:** 2
+**Review Counter:** 4
+**Iteration:** 3
 **Size:** L
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -97,10 +97,30 @@ _Test plan:_
 ---
 
 ### Step 2: Update execution contracts
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Thread repo-aware lane contracts through execution engine callbacks and state updates
-- [ ] Preserve single-repo behavior when workspace mode is disabled
+**2a. Thread workspaceConfig through executeWave call chain:**
+- [x] Add `workspaceConfig?: WorkspaceConfig | null` parameter to `executeWave()` (execution.ts)
+- [x] Pass `workspaceConfig` through to `allocateLanes()` call in executeWave Stage 1
+- [x] Update `executeOrchBatch()` (engine.ts) to pass `workspaceConfig` to `executeWave()`
+- [x] Update `resumeOrchBatch()` (resume.ts) to pass `workspaceConfig` to `executeWave()`
+- [x] Repo-mode backward compat: when `workspaceConfig` is null/undefined, behavior unchanged
+
+**2b. Fix abort session matching for workspace-mode lanes:**
+- [x] Update `selectAbortTargetSessions()` (abort.ts): support `<prefix>-<repoId>-lane-<N>` session names in addition to `<prefix>-lane-<N>`
+- [x] Update persisted lookup to source `laneId` from `PersistedLaneRecord` via `sessionName` mapping instead of reconstructing as `lane-${laneNumber}`
+- [x] Repo-mode backward compat: existing `<prefix>-lane-<N>` pattern still matched
+
+**2c. Multi-repo cleanup at batch end:**
+- [x] Verify `removeAllWorktrees()` in engine.ts handles workspace-mode worktrees (worktree prefix matching is repo-agnostic — all lanes share the prefix regardless of repoId)
+- [x] Verify `removeAllWorktrees()` in resume.ts handles the same
+- [x] Document: worktree cleanup is already repo-agnostic — `listWorktrees(prefix)` lists all worktrees by prefix regardless of which repo they belong to; no multi-repo-specific changes needed
+
+**2d. Tests:**
+- [x] Unit test: abort `selectAbortTargetSessions()` matches workspace-mode session names (`<prefix>-<repoId>-lane-<N>`)
+- [x] Unit test: abort `selectAbortTargetSessions()` enriches workspace-mode laneId from persisted lane records
+- [x] Unit test: abort repo-mode behavior unchanged (regression)
+- [x] Run full test suite: `cd extensions && npx vitest run` — no new failures (4 pre-existing only)
 
 ---
 
@@ -132,6 +152,9 @@ _Test plan:_
 | R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -164,6 +187,18 @@ _Test plan:_
 | 2026-03-15 | Full suite verified | 4 pre-existing failures, 0 new failures from TP-004 |
 | 2026-03-15 | Step 1 complete | Make worktree operations repo-scoped |
 | 2026-03-15 14:51 | Worker iter 2 | done in 397s, ctx: 45%, tools: 45 |
+| 2026-03-15 14:56 | Worker iter 2 | done in 817s, ctx: 47%, tools: 77 |
+| 2026-03-15 14:56 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 14:56 | Step 1 complete | Make worktree operations repo-scoped |
+| 2026-03-15 14:56 | Step 2 started | Update execution contracts |
+| 2026-03-15 15:00 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 | Step 2 implementation | Threaded workspaceConfig through executeWave call chain (execution.ts→engine.ts→resume.ts), fixed abort session matching for workspace-mode sessions, sourced laneId from persisted lane records |
+| 2026-03-15 | Tests added | 7 workspace-mode abort tests in external-task-path-resolution.test.ts — all passing |
+| 2026-03-15 | Full suite verified | 4 pre-existing failures, 0 new failures from TP-004 |
+| 2026-03-15 | Step 2 complete | Update execution contracts |
+| 2026-03-15 15:00 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 15:00 | Step 1 complete | Make worktree operations repo-scoped |
+| 2026-03-15 15:00 | Step 2 started | Update execution contracts |
 
 ## Blockers
 
