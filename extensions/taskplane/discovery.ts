@@ -1084,8 +1084,12 @@ export function formatDiscoveryResults(result: DiscoveryResult): string {
 					task.dependencies.length > 0
 						? ` → depends on: ${task.dependencies.join(", ")}`
 						: "";
+				const repo =
+					task.resolvedRepoId
+						? ` → repo: ${task.resolvedRepoId}`
+						: "";
 				lines.push(
-					`    ${task.taskId} [${task.size}] ${task.taskName}${deps}`,
+					`    ${task.taskId} [${task.size}] ${task.taskName}${deps}${repo}`,
 				);
 			}
 		}

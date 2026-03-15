@@ -109,6 +109,15 @@ export async function executeOrchBatch(
 		batchState.endedAt = Date.now();
 		batchState.errors.push("Discovery had fatal errors — cannot proceed");
 		onNotify("❌ Cannot execute due to discovery errors above.", "error");
+		const hasRoutingErrors = fatalErrors.some(
+			(e) => e.code === "TASK_REPO_UNRESOLVED" || e.code === "TASK_REPO_UNKNOWN",
+		);
+		if (hasRoutingErrors) {
+			onNotify(
+				"💡 Check PROMPT Repo: fields, area repo_id config, and routing.default_repo in workspace config.",
+				"info",
+			);
+		}
 		return;
 	}
 

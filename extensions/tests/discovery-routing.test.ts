@@ -1,8 +1,8 @@
 /**
- * Discovery Routing Tests — TP-002 Step 0 + Step 1
+ * Discovery Routing Tests — TP-002 Steps 0, 1, and 2
  *
- * Tests for execution target (repo ID) parsing from PROMPT.md metadata
- * and routing precedence chain resolution.
+ * Tests for execution target (repo ID) parsing from PROMPT.md metadata,
+ * routing precedence chain resolution, and discovery output annotation.
  *
  * Test categories:
  *   1.x — Prompt with no execution target (backward compat)
@@ -19,6 +19,9 @@
  *  12.x — Routing errors: TASK_REPO_UNKNOWN
  *  13.x — Routing errors: TASK_REPO_UNRESOLVED
  *  14.x — Routing: multiple tasks with mixed sources
+ *  15.x — Config: area repo_id parsing
+ *  16.x — Output: formatDiscoveryResults repo annotation
+ *  17.x — Actionable routing error guidance
  *
  * Run: npx vitest run tests/discovery-routing.test.ts
  */
@@ -28,7 +31,9 @@ import { mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-import { parsePromptForOrchestrator, resolveTaskRouting } from "../taskplane/discovery.ts";
+import { formatDiscoveryResults, parsePromptForOrchestrator, resolveTaskRouting, runDiscovery } from "../taskplane/discovery.ts";
+import { loadTaskRunnerConfig } from "../taskplane/config.ts";
+import { FATAL_DISCOVERY_CODES } from "../taskplane/types.ts";
 import type { DiscoveryResult, ParsedTask, TaskArea, WorkspaceConfig, WorkspaceRepoConfig } from "../taskplane/types.ts";
 
 // ── Test Fixtures ────────────────────────────────────────────────────
@@ -993,5 +998,825 @@ describe("14.x: Multiple tasks with mixed routing sources", () => {
 		expect(errors[0].taskId).toBe("TP-002");
 		expect(task1.resolvedRepoId).toBe("api"); // success
 		expect(task2.resolvedRepoId).toBeUndefined(); // failure
+	});
+});
+
+
+// ══════════════════════════════════════════════════════════════════════
+// Step 2: Annotate Discovery Outputs — Integration Tests
+// ══════════════════════════════════════════════════════════════════════
+
+// ── 15.x: formatDiscoveryResults shows repo annotation ───────────────
+
+describe("15.x: Discovery output annotation with resolved repo", () => {
+	it("15.1: workspace mode — resolved repoId appears in formatted output", () => {
+		const task = makeTask({
+			taskId: "TP-100",
+			areaName: "default",
+			taskName: "Test Task",
+			size: "M",
+			resolvedRepoId: "api",
+		});
+		const discovery = makeDiscoveryResult([task]);
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("TP-100");
+		expect(output).toContain("repo: api");
+		expect(output).toContain("Test Task");
+	});
+
+	it("15.2: repo mode — no repo annotation in formatted output", () => {
+		const task = makeTask({
+			taskId: "TP-100",
+			areaName: "default",
+			taskName: "Test Task",
+			size: "M",
+			// no resolvedRepoId — repo mode
+		});
+		const discovery = makeDiscoveryResult([task]);
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("TP-100");
+		expect(output).not.toContain("repo:");
+		expect(output).toContain("Test Task");
+	});
+
+	it("15.3: mixed tasks — only routed tasks show repo annotation", () => {
+		const task1 = makeTask({
+			taskId: "TP-001",
+			areaName: "default",
+			taskName: "Routed Task",
+			resolvedRepoId: "frontend",
+		});
+		const task2 = makeTask({
+			taskId: "TP-002",
+			areaName: "default",
+			taskName: "Unrouted Task",
+			// no resolvedRepoId
+		});
+		const discovery = makeDiscoveryResult([task1, task2]);
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("repo: frontend");
+		// Should only have one "repo:" annotation
+		const repoMatches = output.match(/repo:/g);
+		expect(repoMatches).toHaveLength(1);
+	});
+
+	it("15.4: dependencies and repo are both shown together", () => {
+		const task = makeTask({
+			taskId: "TP-100",
+			areaName: "default",
+			taskName: "Full Task",
+			size: "L",
+			dependencies: ["TP-050", "TP-051"],
+			resolvedRepoId: "api",
+		});
+		const discovery = makeDiscoveryResult([task]);
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("TP-100");
+		expect(output).toContain("[L]");
+		expect(output).toContain("repo: api");
+		expect(output).toContain("depends on: TP-050, TP-051");
+	});
+});
+
+// ── 16.x: Routing errors in formatted output ────────────────────────
+
+describe("16.x: Routing errors appear as fatal errors in formatted output", () => {
+	it("16.1: TASK_REPO_UNKNOWN appears in error section", () => {
+		const task = makeTask({ taskId: "TP-100", areaName: "default", promptRepoId: "ghost" });
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" } },
+			"api",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+
+		const discovery = makeDiscoveryResult([task]);
+		const routingErrors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+		discovery.errors.push(...routingErrors);
+
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("❌ Errors:");
+		expect(output).toContain("TASK_REPO_UNKNOWN");
+		expect(output).toContain("ghost");
+		expect(output).toContain("api"); // known repos listed
+	});
+
+	it("16.2: TASK_REPO_UNRESOLVED appears in error section with guidance", () => {
+		const repoMap = new Map<string, WorkspaceRepoConfig>();
+		repoMap.set("api", { id: "api", path: "/repos/api" });
+		const workspaceConfig: WorkspaceConfig = {
+			mode: "workspace",
+			repos: repoMap,
+			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "" },
+			configPath: "/workspace/.pi/taskplane-workspace.yaml",
+		};
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+		const routingErrors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+		discovery.errors.push(...routingErrors);
+
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("❌ Errors:");
+		expect(output).toContain("TASK_REPO_UNRESOLVED");
+		// Error should include actionable guidance
+		expect(output).toContain("Repo:");
+		expect(output).toContain("repo_id");
+		expect(output).toContain("routing.default_repo");
+	});
+
+	it("16.3: routing errors are classified as fatal (not warnings)", () => {
+		const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+		expect(fatalCodes.has("TASK_REPO_UNKNOWN")).toBe(true);
+		expect(fatalCodes.has("TASK_REPO_UNRESOLVED")).toBe(true);
+	});
+});
+
+// ── 17.x: Config loader loads area repo_id ───────────────────────────
+
+describe("17.x: Config loader maps area repo_id to TaskArea.repoId", () => {
+	it("17.1: repo_id from YAML is loaded into TaskArea.repoId", () => {
+		const configDir = makeTestDir("config-loader");
+		const piDir = join(configDir, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(
+			join(piDir, "task-runner.yaml"),
+			`task_areas:
+  api-tasks:
+    path: tasks/api
+    prefix: AP
+    context: "API tasks"
+    repo_id: api
+  ui-tasks:
+    path: tasks/ui
+    prefix: UI
+    context: "UI tasks"
+`,
+			"utf-8",
+		);
+
+		const config = loadTaskRunnerConfig(configDir);
+
+		expect(config.task_areas["api-tasks"]).toBeDefined();
+		expect(config.task_areas["api-tasks"].repoId).toBe("api");
+		expect(config.task_areas["api-tasks"].path).toBe("tasks/api");
+		expect(config.task_areas["api-tasks"].prefix).toBe("AP");
+
+		// Area without repo_id should not have repoId set
+		expect(config.task_areas["ui-tasks"]).toBeDefined();
+		expect(config.task_areas["ui-tasks"].repoId).toBeUndefined();
+	});
+
+	it("17.2: repo_id with whitespace is trimmed", () => {
+		const configDir = makeTestDir("config-trim");
+		const piDir = join(configDir, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(
+			join(piDir, "task-runner.yaml"),
+			`task_areas:
+  my-area:
+    path: tasks/my
+    prefix: MY
+    context: ""
+    repo_id: "  frontend  "
+`,
+			"utf-8",
+		);
+
+		const config = loadTaskRunnerConfig(configDir);
+		expect(config.task_areas["my-area"].repoId).toBe("frontend");
+	});
+
+	it("17.3: empty repo_id string is not loaded", () => {
+		const configDir = makeTestDir("config-empty");
+		const piDir = join(configDir, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(
+			join(piDir, "task-runner.yaml"),
+			`task_areas:
+  my-area:
+    path: tasks/my
+    prefix: MY
+    context: ""
+    repo_id: ""
+`,
+			"utf-8",
+		);
+
+		const config = loadTaskRunnerConfig(configDir);
+		expect(config.task_areas["my-area"].repoId).toBeUndefined();
+	});
+
+	it("17.4: missing repo_id key → no repoId field", () => {
+		const configDir = makeTestDir("config-missing");
+		const piDir = join(configDir, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(
+			join(piDir, "task-runner.yaml"),
+			`task_areas:
+  my-area:
+    path: tasks/my
+    prefix: MY
+    context: ""
+`,
+			"utf-8",
+		);
+
+		const config = loadTaskRunnerConfig(configDir);
+		expect(config.task_areas["my-area"].repoId).toBeUndefined();
+	});
+});
+
+// ── 18.x: runDiscovery pipeline integration with routing ─────────────
+
+describe("18.x: runDiscovery pipeline — routing end-to-end", () => {
+	it("18.1: workspace mode — runDiscovery attaches resolvedRepoId to tasks", () => {
+		// Set up a real filesystem area with a PROMPT containing execution target
+		const areaDir = makeTestDir("area-e2e");
+		const taskDir = join(areaDir, "TP-300-test-task");
+		mkdirSync(taskDir, { recursive: true });
+		writeFileSync(
+			join(taskDir, "PROMPT.md"),
+			`# Task: TP-300 - E2E Test Task
+
+**Created:** 2026-03-15
+**Size:** S
+
+## Dependencies
+
+**None**
+
+## Execution Target
+
+Repo: api
+
+## Steps
+
+### Step 0: Implement
+
+- [ ] Do it
+
+---
+`,
+			"utf-8",
+		);
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: areaDir, prefix: "TP", context: "" },
+		};
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" }, frontend: { path: "/repos/frontend" } },
+			"frontend",
+		);
+
+		const result = runDiscovery("all", taskAreas, areaDir, {
+			workspaceConfig,
+		});
+
+		expect(result.pending.size).toBe(1);
+		const task = result.pending.get("TP-300");
+		expect(task).toBeDefined();
+		expect(task!.promptRepoId).toBe("api");
+		expect(task!.resolvedRepoId).toBe("api"); // prompt repo wins over default
+	});
+
+	it("18.2: workspace mode — area repo used when prompt has no execution target", () => {
+		const areaDir = makeTestDir("area-e2e-area-fallback");
+		const taskDir = join(areaDir, "TP-301-area-routed");
+		mkdirSync(taskDir, { recursive: true });
+		writeFileSync(
+			join(taskDir, "PROMPT.md"),
+			`# Task: TP-301 - Area Routed Task
+
+**Size:** M
+
+## Dependencies
+
+**None**
+
+## Steps
+
+### Step 0: Implement
+
+- [ ] Do it
+
+---
+`,
+			"utf-8",
+		);
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: areaDir, prefix: "TP", context: "", repoId: "frontend" },
+		};
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" }, frontend: { path: "/repos/frontend" } },
+			"api",
+		);
+
+		const result = runDiscovery("all", taskAreas, areaDir, {
+			workspaceConfig,
+		});
+
+		expect(result.pending.size).toBe(1);
+		const task = result.pending.get("TP-301");
+		expect(task).toBeDefined();
+		expect(task!.promptRepoId).toBeUndefined(); // no prompt repo
+		expect(task!.resolvedRepoId).toBe("frontend"); // area fallback
+	});
+
+	it("18.3: repo mode — runDiscovery does not set resolvedRepoId", () => {
+		const areaDir = makeTestDir("area-e2e-repo-mode");
+		const taskDir = join(areaDir, "TP-302-repo-mode-task");
+		mkdirSync(taskDir, { recursive: true });
+		writeFileSync(
+			join(taskDir, "PROMPT.md"),
+			`# Task: TP-302 - Repo Mode Task
+
+**Size:** M
+
+## Dependencies
+
+**None**
+
+## Execution Target
+
+Repo: api
+
+## Steps
+
+### Step 0: Implement
+
+- [ ] Do it
+
+---
+`,
+			"utf-8",
+		);
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: areaDir, prefix: "TP", context: "" },
+		};
+
+		// No workspaceConfig = repo mode
+		const result = runDiscovery("all", taskAreas, areaDir);
+
+		expect(result.pending.size).toBe(1);
+		const task = result.pending.get("TP-302");
+		expect(task).toBeDefined();
+		expect(task!.promptRepoId).toBe("api"); // parsed but not routed
+		expect(task!.resolvedRepoId).toBeUndefined(); // no routing in repo mode
+	});
+
+	it("18.4: workspace mode — TASK_REPO_UNKNOWN is fatal and blocks planning", () => {
+		const areaDir = makeTestDir("area-e2e-unknown");
+		const taskDir = join(areaDir, "TP-303-unknown-repo");
+		mkdirSync(taskDir, { recursive: true });
+		writeFileSync(
+			join(taskDir, "PROMPT.md"),
+			`# Task: TP-303 - Unknown Repo Task
+
+**Size:** M
+
+## Dependencies
+
+**None**
+
+## Execution Target
+
+Repo: nonexistent
+
+## Steps
+
+### Step 0: Implement
+
+- [ ] Do it
+
+---
+`,
+			"utf-8",
+		);
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: areaDir, prefix: "TP", context: "" },
+		};
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" } },
+			"api",
+		);
+
+		const result = runDiscovery("all", taskAreas, areaDir, {
+			workspaceConfig,
+		});
+
+		// Verify the fatal error is present
+		const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+		const fatalErrors = result.errors.filter((e) => fatalCodes.has(e.code));
+		expect(fatalErrors.length).toBeGreaterThan(0);
+		expect(fatalErrors[0].code).toBe("TASK_REPO_UNKNOWN");
+		expect(fatalErrors[0].message).toContain("nonexistent");
+		expect(fatalErrors[0].message).toContain("api"); // known repos
+
+		// Verify formatted output shows the error as fatal
+		const output = formatDiscoveryResults(result);
+		expect(output).toContain("❌ Errors:");
+		expect(output).toContain("TASK_REPO_UNKNOWN");
+	});
+
+	it("18.5: workspace mode — TASK_REPO_UNRESOLVED is fatal and blocks planning", () => {
+		const areaDir = makeTestDir("area-e2e-unresolved");
+		const taskDir = join(areaDir, "TP-304-unresolved-repo");
+		mkdirSync(taskDir, { recursive: true });
+		writeFileSync(
+			join(taskDir, "PROMPT.md"),
+			`# Task: TP-304 - Unresolved Repo Task
+
+**Size:** M
+
+## Dependencies
+
+**None**
+
+## Steps
+
+### Step 0: Implement
+
+- [ ] Do it
+
+---
+`,
+			"utf-8",
+		);
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: areaDir, prefix: "TP", context: "" }, // no repoId
+		};
+		const repoMap = new Map<string, WorkspaceRepoConfig>();
+		repoMap.set("api", { id: "api", path: "/repos/api" });
+		const workspaceConfig: WorkspaceConfig = {
+			mode: "workspace",
+			repos: repoMap,
+			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "" }, // empty default
+			configPath: "/workspace/.pi/taskplane-workspace.yaml",
+		};
+
+		const result = runDiscovery("all", taskAreas, areaDir, {
+			workspaceConfig,
+		});
+
+		// Verify the fatal error is present
+		const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+		const fatalErrors = result.errors.filter((e) => fatalCodes.has(e.code));
+		expect(fatalErrors.length).toBeGreaterThan(0);
+		expect(fatalErrors[0].code).toBe("TASK_REPO_UNRESOLVED");
+
+		// Verify formatted output shows the error as fatal with guidance
+		const output = formatDiscoveryResults(result);
+		expect(output).toContain("❌ Errors:");
+		expect(output).toContain("TASK_REPO_UNRESOLVED");
+	});
+
+	it("18.6: config-loaded area repo_id flows through to routing resolution", () => {
+		// Full pipeline: YAML config → loadTaskRunnerConfig → runDiscovery → resolvedRepoId
+		const rootDir = makeTestDir("full-pipeline");
+		const piDir = join(rootDir, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		const areaDir = join(rootDir, "tasks");
+		mkdirSync(areaDir, { recursive: true });
+		const taskDir = join(areaDir, "TP-305-config-routed");
+		mkdirSync(taskDir, { recursive: true });
+
+		// Write task-runner.yaml with area repo_id
+		writeFileSync(
+			join(piDir, "task-runner.yaml"),
+			`task_areas:
+  default:
+    path: tasks
+    prefix: TP
+    context: ""
+    repo_id: frontend
+`,
+			"utf-8",
+		);
+
+		// Write PROMPT.md without execution target
+		writeFileSync(
+			join(taskDir, "PROMPT.md"),
+			`# Task: TP-305 - Config Routed Task
+
+**Size:** M
+
+## Dependencies
+
+**None**
+
+## Steps
+
+### Step 0: Implement
+
+- [ ] Do it
+
+---
+`,
+			"utf-8",
+		);
+
+		// Load config from YAML
+		const config = loadTaskRunnerConfig(rootDir);
+		expect(config.task_areas["default"].repoId).toBe("frontend");
+
+		// Run discovery with workspace config
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" }, frontend: { path: "/repos/frontend" } },
+			"api",
+		);
+
+		const result = runDiscovery("all", config.task_areas, rootDir, {
+			workspaceConfig,
+		});
+
+		expect(result.pending.size).toBe(1);
+		const task = result.pending.get("TP-305");
+		expect(task).toBeDefined();
+		expect(task!.resolvedRepoId).toBe("frontend"); // from area config, not default
+	});
+});
+
+
+// ── 15.x: Config: area repo_id parsing ───────────────────────────────
+
+describe("15.x: loadTaskRunnerConfig parses repo_id", () => {
+	it("15.1: repo_id from YAML is loaded into TaskArea.repoId", () => {
+		const dir = makeTestDir("config-repo-id");
+		const piDir = join(dir, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(
+			join(piDir, "task-runner.yaml"),
+			`task_areas:
+  api-tasks:
+    path: tasks/api
+    prefix: API
+    context: ""
+    repo_id: api
+  ui-tasks:
+    path: tasks/ui
+    prefix: UI
+    context: ""
+    repo_id: frontend
+`,
+			"utf-8",
+		);
+
+		const config = loadTaskRunnerConfig(dir);
+
+		expect(config.task_areas["api-tasks"]).toBeDefined();
+		expect(config.task_areas["api-tasks"].repoId).toBe("api");
+		expect(config.task_areas["ui-tasks"]).toBeDefined();
+		expect(config.task_areas["ui-tasks"].repoId).toBe("frontend");
+	});
+
+	it("15.2: missing repo_id leaves TaskArea.repoId undefined", () => {
+		const dir = makeTestDir("config-no-repo-id");
+		const piDir = join(dir, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(
+			join(piDir, "task-runner.yaml"),
+			`task_areas:
+  default:
+    path: tasks
+    prefix: TP
+    context: ""
+`,
+			"utf-8",
+		);
+
+		const config = loadTaskRunnerConfig(dir);
+
+		expect(config.task_areas["default"]).toBeDefined();
+		expect(config.task_areas["default"].repoId).toBeUndefined();
+	});
+
+	it("15.3: empty string repo_id is treated as undefined", () => {
+		const dir = makeTestDir("config-empty-repo-id");
+		const piDir = join(dir, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(
+			join(piDir, "task-runner.yaml"),
+			`task_areas:
+  default:
+    path: tasks
+    prefix: TP
+    context: ""
+    repo_id: ""
+`,
+			"utf-8",
+		);
+
+		const config = loadTaskRunnerConfig(dir);
+
+		expect(config.task_areas["default"].repoId).toBeUndefined();
+	});
+
+	it("15.4: whitespace-only repo_id is treated as undefined", () => {
+		const dir = makeTestDir("config-ws-repo-id");
+		const piDir = join(dir, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(
+			join(piDir, "task-runner.yaml"),
+			`task_areas:
+  default:
+    path: tasks
+    prefix: TP
+    context: ""
+    repo_id: "   "
+`,
+			"utf-8",
+		);
+
+		const config = loadTaskRunnerConfig(dir);
+
+		expect(config.task_areas["default"].repoId).toBeUndefined();
+	});
+
+	it("15.5: repo_id with trailing whitespace is trimmed", () => {
+		const dir = makeTestDir("config-trim-repo-id");
+		const piDir = join(dir, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(
+			join(piDir, "task-runner.yaml"),
+			`task_areas:
+  default:
+    path: tasks
+    prefix: TP
+    context: ""
+    repo_id: "api  "
+`,
+			"utf-8",
+		);
+
+		const config = loadTaskRunnerConfig(dir);
+
+		expect(config.task_areas["default"].repoId).toBe("api");
+	});
+});
+
+
+// ── 16.x: formatDiscoveryResults repo annotation ─────────────────────
+
+describe("16.x: formatDiscoveryResults repo annotation", () => {
+	it("16.1: shows repo annotation for tasks with resolvedRepoId", () => {
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		task.resolvedRepoId = "api";
+		const discovery = makeDiscoveryResult([task]);
+
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("TP-100");
+		expect(output).toContain("→ repo: api");
+	});
+
+	it("16.2: omits repo annotation when resolvedRepoId is absent", () => {
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		// no resolvedRepoId
+		const discovery = makeDiscoveryResult([task]);
+
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("TP-100");
+		expect(output).not.toContain("→ repo:");
+	});
+
+	it("16.3: shows both deps and repo on the same line", () => {
+		const task = makeTask({
+			taskId: "TP-100",
+			areaName: "default",
+			dependencies: ["TP-050"],
+		});
+		task.resolvedRepoId = "frontend";
+		const discovery = makeDiscoveryResult([task]);
+
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("→ depends on: TP-050");
+		expect(output).toContain("→ repo: frontend");
+		// deps come before repo on the same line
+		const taskLine = output.split("\n").find((l) => l.includes("TP-100"))!;
+		const depsIdx = taskLine.indexOf("→ depends on:");
+		const repoIdx = taskLine.indexOf("→ repo:");
+		expect(depsIdx).toBeLessThan(repoIdx);
+	});
+
+	it("16.4: multiple tasks with mixed annotation", () => {
+		const task1 = makeTask({ taskId: "TP-001", areaName: "default" });
+		task1.resolvedRepoId = "api";
+		const task2 = makeTask({ taskId: "TP-002", areaName: "default" });
+		// no resolvedRepoId
+		const discovery = makeDiscoveryResult([task1, task2]);
+
+		const output = formatDiscoveryResults(discovery);
+
+		const lines = output.split("\n");
+		const line1 = lines.find((l) => l.includes("TP-001"))!;
+		const line2 = lines.find((l) => l.includes("TP-002"))!;
+		expect(line1).toContain("→ repo: api");
+		expect(line2).not.toContain("→ repo:");
+	});
+});
+
+
+// ── 17.x: Actionable routing error guidance ──────────────────────────
+
+describe("17.x: Actionable routing error guidance", () => {
+	it("17.1: TASK_REPO_UNRESOLVED error includes actionable guidance text", () => {
+		const repoMap = new Map<string, WorkspaceRepoConfig>();
+		repoMap.set("api", { id: "api", path: "/repos/api" });
+		const workspaceConfig: WorkspaceConfig = {
+			mode: "workspace",
+			repos: repoMap,
+			routing: {
+				tasksRoot: "/workspace/tasks",
+				defaultRepo: "", // empty = unresolvable
+			},
+			configPath: "/workspace/.pi/taskplane-workspace.yaml",
+		};
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_REPO_UNRESOLVED");
+		// Verify the message contains actionable guidance
+		expect(errors[0].message).toContain("Add a Repo: field to the PROMPT");
+		expect(errors[0].message).toContain("set repo_id on area");
+		expect(errors[0].message).toContain("routing.default_repo");
+	});
+
+	it("17.2: TASK_REPO_UNKNOWN error includes known repos and source", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default", promptRepoId: "ghost" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_REPO_UNKNOWN");
+		expect(errors[0].message).toContain('"ghost"');
+		expect(errors[0].message).toContain("via prompt");
+		expect(errors[0].message).toContain("api");
+		expect(errors[0].message).toContain("frontend");
+	});
+
+	it("17.3: formatDiscoveryResults classifies routing errors as fatal", () => {
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+		discovery.errors.push({
+			code: "TASK_REPO_UNRESOLVED",
+			message: "Task TP-100 has no resolved repo.",
+			taskId: "TP-100",
+			taskPath: "/workspace/tasks/TP-100/PROMPT.md",
+		});
+
+		const output = formatDiscoveryResults(discovery);
+
+		// Routing errors should be in the "❌ Errors:" section (fatal), not warnings
+		expect(output).toContain("❌ Errors:");
+		expect(output).toContain("[TASK_REPO_UNRESOLVED]");
+	});
+
+	it("17.4: formatDiscoveryResults classifies TASK_REPO_UNKNOWN as fatal", () => {
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+		discovery.errors.push({
+			code: "TASK_REPO_UNKNOWN",
+			message: 'Task TP-100 resolved to repo "ghost" (via prompt), but no repo with that ID exists.',
+			taskId: "TP-100",
+			taskPath: "/workspace/tasks/TP-100/PROMPT.md",
+		});
+
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("❌ Errors:");
+		expect(output).toContain("[TASK_REPO_UNKNOWN]");
 	});
 });

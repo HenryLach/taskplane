@@ -1,11 +1,11 @@
 # TP-002: Task-to-Repo Routing and Execution Target Parsing — Status
 
-**Current Step:** Step 2: Annotate discovery outputs
-​**Status:** ✅ Step 1 Complete
+**Current Step:** Step 3: Testing & Verification
+​**Status:** ✅ Step 2 Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 3
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -109,10 +109,32 @@
 ---
 
 ### Step 2: Annotate discovery outputs
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Attach resolved repoId to parsed tasks before planning
-- [ ] Ensure routing errors fail planning with actionable messages
+**Output annotation contract:**
+- In workspace mode: each pending task line in `formatDiscoveryResults` shows `→ repo: <id>` after deps (if `resolvedRepoId` is set)
+- In repo mode: no repo annotation shown (no `resolvedRepoId` on tasks)
+- Tasks with routing errors (no `resolvedRepoId`) do not show annotation
+
+**Actionable failure contract:**
+- When fatal routing errors (`TASK_REPO_UNRESOLVED`, `TASK_REPO_UNKNOWN`) block planning/execution, show specific routing guidance after generic message
+- `/orch-plan`: append "Check PROMPT Repo: fields, area repo_id config, and routing.default_repo in workspace config."
+- `/orch`: append same guidance text
+
+**Prerequisite fix: area repo config ingestion:**
+- `loadTaskRunnerConfig()` in `config.ts` must parse `repo_id` (snake_case YAML key) into `TaskArea.repoId`
+- This is required for the area-level fallback in the routing chain to work at runtime
+
+**Checklist:**
+- [x] Parse `repo_id` from task area YAML config into `TaskArea.repoId` in `config.ts`
+- [x] Annotate pending task lines in `formatDiscoveryResults()` with `→ repo: <id>` when `resolvedRepoId` is set
+- [x] Add routing-specific guidance to `/orch-plan` fatal abort message in `extension.ts`
+- [x] Add routing-specific guidance to `/orch` fatal abort message in `engine.ts`
+- [x] Add test: `loadTaskRunnerConfig` parses `repo_id` into `TaskArea.repoId`
+- [x] Add test: `formatDiscoveryResults` shows repo annotation for tasks with `resolvedRepoId`
+- [x] Add test: `formatDiscoveryResults` omits repo annotation when `resolvedRepoId` absent
+- [x] Add test: fatal routing errors produce actionable guidance text
+- [x] All existing tests still pass (51 routing + 40 workspace = 91 pass; 4 pre-existing failures in other suites unchanged)
 
 ---
 
@@ -145,6 +167,10 @@
 | R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -184,6 +210,22 @@
 | 2026-03-15 06:54 | Step 1 tests | Full suite: 78 passing (38 routing + 40 workspace), 4 pre-existing failures in other suites |
 | 2026-03-15 06:55 | Step 1 complete | All checklist items verified and checked off |
 | 2026-03-15 06:56 | Worker iter 2 | done in 683s, ctx: 54%, tools: 106 |
+| 2026-03-15 06:58 | Worker iter 2 | done in 748s, ctx: 57%, tools: 129 |
+| 2026-03-15 06:59 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 06:59 | Step 1 complete | Implement routing precedence chain |
+| 2026-03-15 06:59 | Step 2 started | Annotate discovery outputs |
+| 2026-03-15 07:00 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 07:00 | Step 1 complete | Implement routing precedence chain |
+| 2026-03-15 07:00 | Step 2 started | Annotate discovery outputs |
+| 2026-03-15 07:02 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 07:05 | Step 2 plan | Hydrated checklist addressing R005 findings (9 items) |
+| 2026-03-15 07:05 | Step 2 impl | config.ts: parse repo_id from YAML into TaskArea.repoId |
+| 2026-03-15 07:05 | Step 2 impl | discovery.ts: annotate formatDiscoveryResults with → repo: <id> |
+| 2026-03-15 07:05 | Step 2 impl | extension.ts: routing-specific guidance on fatal abort |
+| 2026-03-15 07:05 | Step 2 impl | engine.ts: routing-specific guidance on fatal abort |
+| 2026-03-15 07:06 | Step 2 tests | 13 new tests (15.x config, 16.x output, 17.x guidance) — 51/51 pass |
+| 2026-03-15 07:06 | Step 2 complete | All checklist items verified and checked off |
+| 2026-03-15 07:03 | Review R005 | plan Step 2: UNKNOWN |
 
 ## Blockers
 

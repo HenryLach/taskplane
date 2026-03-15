@@ -272,6 +272,15 @@ export default function (pi: ExtensionAPI) {
 			const fatalErrors = discovery.errors.filter((e) => fatalCodes.has(e.code));
 			if (fatalErrors.length > 0) {
 				ctx.ui.notify("❌ Cannot compute plan due to discovery errors above.", "error");
+				const hasRoutingErrors = fatalErrors.some(
+					(e) => e.code === "TASK_REPO_UNRESOLVED" || e.code === "TASK_REPO_UNKNOWN",
+				);
+				if (hasRoutingErrors) {
+					ctx.ui.notify(
+						"💡 Check PROMPT Repo: fields, area repo_id config, and routing.default_repo in workspace config.",
+						"info",
+					);
+				}
 				return;
 			}
 

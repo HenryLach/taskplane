@@ -84,11 +84,16 @@ export function loadTaskRunnerConfig(cwd: string): TaskRunnerConfig {
 		if (loaded?.task_areas) {
 			for (const [name, area] of Object.entries(loaded.task_areas)) {
 				const a = area as any;
-				taskAreas[name] = {
+				const ta: TaskArea = {
 					path: a?.path || "",
 					prefix: a?.prefix || "",
 					context: a?.context || "",
 				};
+				// Parse repo_id (snake_case YAML key) into repoId for routing
+				if (a?.repo_id && typeof a.repo_id === "string" && a.repo_id.trim()) {
+					ta.repoId = a.repo_id.trim();
+				}
+				taskAreas[name] = ta;
 			}
 		}
 		return {
