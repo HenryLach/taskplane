@@ -1,11 +1,11 @@
 # TP-006: Persisted State Schema v2 with Repo-Aware Records — Status
 
-**Current Step:** Step 0: Define schema v2
-**Status:** 🟡 In Progress
+**Current Step:** Step 1: Implement serialization and validation
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -80,10 +80,43 @@
 ---
 
 ### Step 1: Implement serialization and validation
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Persist repo-aware fields at all state transition checkpoints
-- [ ] Validate schema v2 with explicit errors for malformed records
+- [x] Confirm all runtime write triggers route through `persistRuntimeState()` (engine, resume, abort)
+- [x] Ensure `serializeBatchState()` writes lane/task repo-aware fields for allocated tasks
+- [x] Ensure `persistRuntimeState()` enrichment writes repo-aware fields for unallocated tasks
+- [x] Add/adjust v2 validation rules for malformed repo-aware records with explicit `STATE_SCHEMA_INVALID` errors
+- [x] Add/update fixtures for malformed v2 repo-aware states
+- [x] Add/update persistence tests for checkpoint serialization and validator failures
+
+#### Step 1 Audit Notes
+
+**Checkpoint coverage confirmation:** All runtime write triggers route through `persistRuntimeState()` → `serializeBatchState()` → `saveBatchState()`. No direct `saveBatchState()` callers outside `persistence.ts`. Verified by grep across engine.ts (11 calls), resume.ts (11 calls), abort.ts (1 call).
+
+**Serialization behavior by checkpoint class:**
+- **Allocated tasks** (current wave): repo fields sourced from `AllocatedTask.task.promptRepoId` and `.resolvedRepoId` via `serializeBatchState()`.
+- **Unallocated tasks** (future waves): repo fields enriched by `persistRuntimeState()` from `discovery.pending` ParsedTask after initial serialization.
+- **Wave transitions, merge, pause, abort:** All use same `persistRuntimeState()` path — repo fields persist correctly at every checkpoint.
+
+**Validation matrix (malformed repo-aware records):**
+- `null` → rejected for task `repoId`, `resolvedRepoId`, lane `repoId` (not a string)
+- `number` → rejected for all repo fields
+- `object` → rejected for all repo fields
+- `array` → rejected for `resolvedRepoId`
+- `boolean` → rejected for `mode`
+- `""` (empty string) → accepted (structurally valid; semantic validation is mode-aware, not structural)
+- Invalid mode values → rejected ("polyrepo", numeric, boolean)
+- Missing `mode` in v2 → rejected (required in v2; optional in v1 via upconvert)
+
+**Fixtures added/verified:**
+- `batch-state-v2-bad-repo-fields.json` — New: workspace mode with non-string repo fields
+- `batch-state-v2-workspace.json` — Existing: valid workspace mode with repo fields
+- `batch-state-valid.json` — Existing: valid repo mode (no repo fields)
+
+**Test coverage added:**
+- 14 new validation tests for malformed repo-aware records (type violations)
+- 4 new serialization checkpoint tests (allocated, repo-mode, discovery enrichment, round-trip)
+- E2E test updated for full task registry from wavePlan
 
 ---
 
@@ -122,6 +155,8 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | APPROVE | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -148,6 +183,17 @@
 | 2026-03-15 18:09 | Review R002 | code Step 0: REVISE |
 | 2026-03-15 18:15 | Step 0 R002 fix | Strict mode validation for v2, mode set in engine/resume, fixtures+tests updated |
 | 2026-03-15 18:12 | Review R002 | code Step 0: REVISE |
+| 2026-03-15 18:15 | Worker iter 1 | done in 391s, ctx: 23%, tools: 68 |
+| 2026-03-15 18:15 | Step 0 complete | Define schema v2 |
+| 2026-03-15 18:15 | Step 1 started | Implement serialization and validation |
+| 2026-03-15 18:16 | Review R003 | plan Step 1: REVISE |
+| 2026-03-15 18:22 | Step 1 hydrated | Plan expanded per R003: 6 granular checkboxes |
+| 2026-03-15 18:25 | Step 1 impl | Validation + serialization + fixtures + tests added, 207 tests passing |
+| 2026-03-15 18:25 | Step 1 complete | Implement serialization and validation |
+| 2026-03-15 18:18 | Worker iter 1 | done in 336s, ctx: 20%, tools: 42 |
+| 2026-03-15 18:18 | Step 0 complete | Define schema v2 |
+| 2026-03-15 18:18 | Step 1 started | Implement serialization and validation |
+| 2026-03-15 18:19 | Review R003 | plan Step 1: APPROVE |
 
 ## Blockers
 
