@@ -7,6 +7,7 @@ import { join } from "path";
 import {
 	DEFAULT_ORCHESTRATOR_CONFIG,
 	DEFAULT_TASK_RUNNER_CONFIG,
+	FATAL_DISCOVERY_CODES,
 	ORCH_MESSAGES,
 	WorkspaceConfigError,
 	computeWaveAssignments,
@@ -205,6 +206,7 @@ export default function (pi: ExtensionAPI) {
 					latestMonitorState = monState;
 					if (changed) updateOrchWidget(); // Only refresh on actual state change
 				},
+				execCtx!.workspaceConfig,
 			);
 
 			// Final widget update after batch completes
@@ -261,20 +263,24 @@ export default function (pi: ExtensionAPI) {
 				refreshDependencies: hasRefresh,
 				dependencySource: orchConfig.dependencies.source,
 				useDependencyCache: orchConfig.dependencies.cache,
+				workspaceConfig: execCtx!.workspaceConfig,
 			});
 			ctx.ui.notify(formatDiscoveryResults(discovery), discovery.errors.length > 0 ? "warning" : "info");
 
 			// Check for fatal errors
-			const fatalErrors = discovery.errors.filter(
-				(e) =>
-					e.code === "DUPLICATE_ID" ||
-					e.code === "DEP_UNRESOLVED" ||
-					e.code === "DEP_PENDING" ||
-					e.code === "DEP_AMBIGUOUS" ||
-					e.code === "PARSE_MISSING_ID",
-			);
+			const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+			const fatalErrors = discovery.errors.filter((e) => fatalCodes.has(e.code));
 			if (fatalErrors.length > 0) {
 				ctx.ui.notify("❌ Cannot compute plan due to discovery errors above.", "error");
+				const hasRoutingErrors = fatalErrors.some(
+					(e) => e.code === "TASK_REPO_UNRESOLVED" || e.code === "TASK_REPO_UNKNOWN",
+				);
+				if (hasRoutingErrors) {
+					ctx.ui.notify(
+						"💡 Check PROMPT Repo: fields, area repo_id config, and routing.default_repo in workspace config.",
+						"info",
+					);
+				}
 				return;
 			}
 
@@ -381,6 +387,7 @@ export default function (pi: ExtensionAPI) {
 					latestMonitorState = monState;
 					updateOrchWidget();
 				},
+				execCtx!.workspaceConfig,
 			);
 
 			// Final widget update
@@ -595,6 +602,7 @@ export default function (pi: ExtensionAPI) {
 				refreshDependencies: hasRefresh,
 				dependencySource: orchConfig.dependencies.source,
 				useDependencyCache: orchConfig.dependencies.cache,
+				workspaceConfig: execCtx!.workspaceConfig,
 			});
 			ctx.ui.notify(
 				formatDiscoveryResults(discovery),

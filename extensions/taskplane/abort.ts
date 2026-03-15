@@ -4,9 +4,9 @@
  */
 import { writeFileSync, existsSync } from "fs";
 import { execSync } from "child_process";
-import { join, resolve } from "path";
+import { join } from "path";
 
-import { execLog, tmuxHasSession, tmuxKillSession } from "./execution.ts";
+import { execLog, resolveCanonicalTaskPaths, tmuxHasSession, tmuxKillSession } from "./execution.ts";
 import { deleteBatchState, parseOrchSessionNames, persistRuntimeState } from "./persistence.ts";
 import type { AbortActionStep, AbortErrorCode, AbortLaneResult, AbortMode, AbortResult, AbortTargetSession, AllocatedLane, OrchBatchRuntimeState, PersistedBatchState } from "./types.ts";
 
@@ -77,18 +77,13 @@ export function selectAbortTargetSessions(
 		const worktreePath = runtime?.worktreePath || null;
 		const taskFolder = runtime?.taskFolder || persisted?.taskFolder || null;
 
-		// Resolve task folder path within the worktree
+		// Resolve task folder path using the canonical resolver.
+		// For repo-contained tasks: translates to worktree-relative path.
+		// For external tasks: uses the absolute canonical path directly.
 		let taskFolderInWorktree: string | null = null;
 		if (taskFolder && worktreePath && repoRoot) {
-			const repoRootNorm = resolve(repoRoot).replace(/\\/g, "/");
-			const folderNorm = resolve(taskFolder).replace(/\\/g, "/");
-			let relativePath: string;
-			if (folderNorm.startsWith(repoRootNorm + "/")) {
-				relativePath = folderNorm.slice(repoRootNorm.length + 1);
-			} else {
-				relativePath = taskFolder;
-			}
-			taskFolderInWorktree = join(worktreePath, relativePath);
+			const resolved = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
+			taskFolderInWorktree = resolved.taskFolderResolved;
 		}
 
 		return {

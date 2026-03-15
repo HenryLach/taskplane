@@ -118,7 +118,8 @@ export function buildLaneEnvVars(
 	if (promptNorm.startsWith(repoRootNorm + "/")) {
 		relativePath = promptNorm.slice(repoRootNorm.length + 1);
 	} else {
-		// Fallback: use the path as-is (shouldn't happen in normal use)
+		// External task folder (workspace mode): prompt path is outside repo root.
+		// Use the absolute path as-is — task-runner accepts absolute TASK_AUTOSTART paths.
 		relativePath = promptPath;
 	}
 
@@ -300,10 +301,110 @@ export function readTaskStatusTail(
 }
 
 /**
+ * Result of canonical task-folder path resolution.
+ *
+ * Encapsulates the resolved task folder, .DONE path, and STATUS.md path
+ * so callers don't need to re-derive them with inconsistent logic.
+ */
+export interface ResolvedTaskPaths {
+	/** Absolute path to the resolved task folder (may be in worktree or external) */
+	taskFolderResolved: string;
+	/** Absolute path to the .DONE file */
+	donePath: string;
+	/** Absolute path to the STATUS.md file */
+	statusPath: string;
+}
+
+/**
+ * Canonical task-folder path resolver.
+ *
+ * Single source of truth for translating a task folder path (as stored in
+ * ParsedTask) into the correct filesystem paths for .DONE and STATUS.md
+ * probing. Handles two cases:
+ *
+ * 1. **Task folder inside repoRoot** (monorepo / repo mode):
+ *    Strip the repoRoot prefix to get a relative path, then join with
+ *    worktreePath. This is the existing behavior — worktrees mirror the
+ *    repo structure so the relative path is the same.
+ *
+ * 2. **Task folder outside repoRoot** (workspace mode with external tasks root):
+ *    The task folder is not inside the execution repo. Use the absolute
+ *    task folder path directly — the .DONE and STATUS.md files live in
+ *    the canonical task folder, not in any worktree.
+ *
+ * Both branches include archive fallback: if the primary location doesn't
+ * exist, check `<parent>/archive/<taskDirName>/` for relocated task folders.
+ *
+ * @param taskFolder   - Absolute task folder path (from ParsedTask.taskFolder)
+ * @param worktreePath - Absolute path to the lane worktree
+ * @param repoRoot     - Absolute path to the main repository root
+ * @returns Resolved paths for task folder, .DONE, and STATUS.md
+ */
+export function resolveCanonicalTaskPaths(
+	taskFolder: string,
+	worktreePath: string,
+	repoRoot: string,
+): ResolvedTaskPaths {
+	const repoRootNorm = resolve(repoRoot).replace(/\\/g, "/");
+	const folderNorm = resolve(taskFolder).replace(/\\/g, "/");
+
+	let resolvedFolder: string;
+
+	if (folderNorm.startsWith(repoRootNorm + "/")) {
+		// Case 1: Task folder is inside the repo root.
+		// Translate to equivalent path in the worktree.
+		const relativePath = folderNorm.slice(repoRootNorm.length + 1);
+		resolvedFolder = join(worktreePath, relativePath);
+	} else {
+		// Case 2: Task folder is outside the repo root (workspace mode).
+		// Use the absolute path directly — task state lives in the
+		// canonical task folder, not mirrored in any worktree.
+		resolvedFolder = resolve(taskFolder);
+	}
+
+	// Check primary location
+	const primaryDone = join(resolvedFolder, ".DONE");
+	const primaryStatus = join(resolvedFolder, "STATUS.md");
+	if (existsSync(primaryDone) || existsSync(primaryStatus)) {
+		return {
+			taskFolderResolved: resolvedFolder,
+			donePath: primaryDone,
+			statusPath: primaryStatus,
+		};
+	}
+
+	// Archive fallback: worker may have archived the task folder during the
+	// "Documentation & Delivery" step, moving it under `.../archive/TASK-ID/`.
+	const resolvedNorm = resolve(resolvedFolder).replace(/\\/g, "/");
+	const parts = resolvedNorm.split("/");
+	const taskDirName = parts[parts.length - 1];
+	const parentDir = parts.slice(0, -1).join("/");
+	const archiveFolder = join(parentDir, "archive", taskDirName);
+	const archiveDone = join(archiveFolder, ".DONE");
+	const archiveStatus = join(archiveFolder, "STATUS.md");
+
+	if (existsSync(archiveDone) || existsSync(archiveStatus)) {
+		return {
+			taskFolderResolved: archiveFolder,
+			donePath: archiveDone,
+			statusPath: archiveStatus,
+		};
+	}
+
+	// Return primary paths even if nothing exists yet (caller probes existsSync)
+	return {
+		taskFolderResolved: resolvedFolder,
+		donePath: primaryDone,
+		statusPath: primaryStatus,
+	};
+}
+
+/**
  * Resolve the path to a task's .DONE file inside a worktree.
  *
- * The task folder path from ParsedTask is absolute (main repo).
- * We need to translate it to the equivalent path in the worktree.
+ * Delegates to `resolveCanonicalTaskPaths` for consistent path resolution
+ * across repo mode (task folder inside repo) and workspace mode (external
+ * task folder).
  *
  * @param taskFolder   - Absolute task folder path (from main repo)
  * @param worktreePath - Absolute path to the lane worktree
@@ -315,29 +416,7 @@ export function resolveTaskDonePath(
 	worktreePath: string,
 	repoRoot: string,
 ): string {
-	const repoRootNorm = resolve(repoRoot).replace(/\\/g, "/");
-	const folderNorm = resolve(taskFolder).replace(/\\/g, "/");
-
-	let relativePath: string;
-	if (folderNorm.startsWith(repoRootNorm + "/")) {
-		relativePath = folderNorm.slice(repoRootNorm.length + 1);
-	} else {
-		relativePath = taskFolder;
-	}
-
-	const primaryPath = join(worktreePath, relativePath, ".DONE");
-	if (existsSync(primaryPath)) return primaryPath;
-
-	// Fallback: worker may have archived the task folder during the
-	// "Documentation & Delivery" step, moving it under `.../archive/TASK-ID/`.
-	// Check the archive sibling path.
-	const parts = relativePath.replace(/\\/g, "/").split("/");
-	const taskDirName = parts[parts.length - 1]; // e.g. "PM-011-template-seed-data-permissions"
-	const parentParts = parts.slice(0, -1);       // e.g. [..., "tasks"]
-	const archivePath = join(worktreePath, ...parentParts, "archive", taskDirName, ".DONE");
-	if (existsSync(archivePath)) return archivePath;
-
-	return primaryPath; // Return primary even if missing (caller checks existsSync)
+	return resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot).donePath;
 }
 
 /**
@@ -467,8 +546,9 @@ export async function pollUntilTaskComplete(
 ): Promise<{ status: LaneTaskStatus; exitReason: string; doneFileFound: boolean }> {
 	const sessionName = lane.tmuxSessionName;
 	const laneId = lane.laneId;
-	const donePath = resolveTaskDonePath(task.task.taskFolder, lane.worktreePath, repoRoot);
-	const statusPath = join(dirname(donePath), "STATUS.md");
+	const resolved = resolveCanonicalTaskPaths(task.task.taskFolder, lane.worktreePath, repoRoot);
+	const donePath = resolved.donePath;
+	const statusPath = resolved.statusPath;
 	const laneLogPath = resolveLaneLogPath(lane, task);
 
 	execLog(laneId, task.taskId, "polling for completion", {
@@ -788,30 +868,12 @@ export function parseWorktreeStatusMd(
 	worktreePath: string,
 	repoRoot: string,
 ): { parsed: ParsedWorktreeStatus | null; error: string | null } {
-	// Translate the task folder path from main repo to worktree
-	const repoRootNorm = resolve(repoRoot).replace(/\\/g, "/");
-	const folderNorm = resolve(taskFolder).replace(/\\/g, "/");
-
-	let relativePath: string;
-	if (folderNorm.startsWith(repoRootNorm + "/")) {
-		relativePath = folderNorm.slice(repoRootNorm.length + 1);
-	} else {
-		relativePath = taskFolder;
-	}
-
-	let statusPath = join(worktreePath, relativePath, "STATUS.md");
+	// Use canonical resolver for consistent path translation
+	const resolved = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
+	const statusPath = resolved.statusPath;
 
 	if (!existsSync(statusPath)) {
-		// Fallback: worker may have archived the task folder
-		const parts = relativePath.replace(/\\/g, "/").split("/");
-		const taskDirName = parts[parts.length - 1];
-		const parentParts = parts.slice(0, -1);
-		const archiveStatusPath = join(worktreePath, ...parentParts, "archive", taskDirName, "STATUS.md");
-		if (existsSync(archiveStatusPath)) {
-			statusPath = archiveStatusPath;
-		} else {
-			return { parsed: null, error: `STATUS.md not found at ${statusPath}` };
-		}
+		return { parsed: null, error: `STATUS.md not found at ${statusPath}` };
 	}
 
 	let content: string;

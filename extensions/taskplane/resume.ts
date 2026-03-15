@@ -14,7 +14,7 @@ import { mergeWave } from "./merge.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
 import { deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { StateFileError } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph } from "./waves.ts";
 import { deleteBranchBestEffort, listWorktrees, removeAllWorktrees, removeWorktree, safeResetWorktree } from "./worktree.ts";
 
@@ -335,6 +335,7 @@ export async function resumeOrchBatch(
 	batchState: OrchBatchRuntimeState,
 	onNotify: (message: string, level: "info" | "warning" | "error") => void,
 	onMonitorUpdate?: MonitorUpdateCallback,
+	workspaceConfig?: WorkspaceConfig | null,
 ): Promise<void> {
 	const repoRoot = cwd;
 	const prefix = orchConfig.orchestrator.tmux_prefix;
@@ -464,6 +465,7 @@ export async function resumeOrchBatch(
 		refreshDependencies: false,
 		dependencySource: orchConfig.dependencies.source,
 		useDependencyCache: orchConfig.dependencies.cache,
+		workspaceConfig: workspaceConfig ?? null,
 	});
 
 	// Build dependency graph for skip-dependents policy
