@@ -1,11 +1,11 @@
 # TP-001: Workspace Config and Execution Context Foundations — Status
 
-**Current Step:** Step 4: Documentation & Delivery
-​**Status:** ✅ Step 3 Complete
+**Current Step:** Complete
+​**Status:** ✅ All Steps Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 7
-**Iteration:** 4
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -128,13 +128,13 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] "Must Update" docs modified
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
-- [ ] `.DONE` created
-- [ ] Archive and push
+- [x] "Must Update" docs modified: Updated `polyrepo-support-spec.md` (status, §5 impl notes, §6 schema adjustments, §14 Phase 1 checklist) and `polyrepo-implementation-plan.md` (status, WS-A marked delivered, PR-1 marked delivered, readiness checklist updated)
+- [x] "Check If Affected" docs reviewed: `docs/reference/commands.md` — no user-visible command or option changes in TP-001, no update needed
+- [x] Discoveries logged
+- [x] `.DONE` created
+- [ ] Archive and push (orchestrator handles post-merge)
 
 ---
 
@@ -154,11 +154,20 @@
 | R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
 | R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | UNKNOWN | .reviews/R008-code-step3.md |
+| R008 | code | Step 3 | UNKNOWN | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | UNKNOWN | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | UNKNOWN | .reviews/R009-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Spec schema has `version`, `mode`, `workspace.root` fields not yet parsed by loader — mode inferred from file presence | Documented in polyrepo-support-spec.md §6 | workspace.ts |
+| Spec uses `integration_branch` but implementation uses `default_branch` (aligns with WorkspaceRepoConfig.defaultBranch) | Documented in polyrepo-support-spec.md §6 | types.ts, workspace.ts |
+| `routing.area_to_repo` mapping not implemented — deferred to WS-B (task routing workstream) | Documented in polyrepo-support-spec.md §6 and polyrepo-implementation-plan.md WS-A | workspace.ts |
+| `.pi/local/docs/` is gitignored and lives only in the main worktree, not accessible via git in worktrees | Noted — doc updates written directly to main worktree's .pi/local/docs/ | .gitignore |
+| Pre-existing test failures (4 files, 24 sub-failures) are all source-verification tests looking for patterns in old monolith file; not caused by TP-001 | No action needed | extensions/tests/ |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -219,6 +228,20 @@
 | 2026-03-15 06:10 | Step 2 complete | Wire orchestrator startup context |
 | 2026-03-15 06:10 | Step 3 started | Testing & Verification |
 | 2026-03-15 06:13 | Review R007 | plan Step 3: UNKNOWN |
+| 2026-03-15 06:16 | Worker iter 4 | done in 573s, ctx: 34%, tools: 66 |
+| 2026-03-15 06:17 | Worker iter 4 | done in 255s, ctx: 33%, tools: 28 |
+| 2026-03-15 06:19 | Review R008 | code Step 3: UNKNOWN |
+| 2026-03-15 06:19 | Step 3 complete | Testing & Verification |
+| 2026-03-15 06:19 | Step 4 started | Documentation & Delivery |
+| 2026-03-15 06:19 | Review R008 | code Step 3: UNKNOWN |
+| 2026-03-15 06:19 | Step 3 complete | Testing & Verification |
+| 2026-03-15 06:19 | Step 4 started | Documentation & Delivery |
+| 2026-03-15 06:22 | Review R009 | plan Step 4: UNKNOWN |
+| 2026-03-15 06:22 | Review R009 | plan Step 4: UNKNOWN |
+| 2026-03-15 06:25 | Step 4 docs updated | polyrepo-support-spec.md and polyrepo-implementation-plan.md updated with TP-001 delivery status |
+| 2026-03-15 06:25 | Step 4 review | docs/reference/commands.md checked — no user-visible changes, no update needed |
+| 2026-03-15 06:25 | Step 4 discoveries | 5 discoveries logged |
+| 2026-03-15 06:25 | .DONE created | Task complete |
 
 ## Blockers
 

@@ -630,6 +630,8 @@ export default function (pi: ExtensionAPI) {
 		orchWidgetCtx = ctx;
 
 		// ── Build execution context (config + workspace mode detection) ──
+		// Reset execCtx before loading to prevent stale state on re-init
+		execCtx = null;
 		try {
 			execCtx = buildExecutionContext(ctx.cwd, loadOrchestratorConfig, loadTaskRunnerConfig);
 		} catch (err: unknown) {

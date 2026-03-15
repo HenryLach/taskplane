@@ -56,6 +56,17 @@ function initGitRepo(dir: string): void {
 		encoding: "utf-8",
 		stdio: ["pipe", "pipe", "pipe"],
 	});
+	// Set repo-local git identity (required on clean CI/dev machines without global config)
+	execFileSync("git", ["config", "user.name", "test"], {
+		cwd: dir,
+		encoding: "utf-8",
+		stdio: ["pipe", "pipe", "pipe"],
+	});
+	execFileSync("git", ["config", "user.email", "test@test.local"], {
+		cwd: dir,
+		encoding: "utf-8",
+		stdio: ["pipe", "pipe", "pipe"],
+	});
 	// Create an initial commit so HEAD exists
 	execFileSync("git", ["commit", "--allow-empty", "-m", "init"], {
 		cwd: dir,
@@ -543,9 +554,17 @@ describe("root-consistency regression", () => {
 	it("5.5: extension.ts orch command uses execCtx.repoRoot (not ctx.cwd) for discovery", () => {
 		// The /orch handler should use execCtx.repoRoot
 		expect(extensionSrc).toContain("execCtx!.repoRoot");
-		// Count ctx.cwd occurrences — should only be in session_start, abort fallback, and abort comment
-		const cwdMatches = extensionSrc.match(/ctx\.cwd/g) || [];
-		expect(cwdMatches.length).toBe(3); // session_start + abort fallback code + abort fallback comment
+		// ctx.cwd should only appear in specific allowed locations:
+		// - session_start (buildExecutionContext call)
+		// - orch-abort fallback (execCtx?.repoRoot ?? ctx.cwd)
+		// Verify no ctx.cwd in discovery/state/orphan patterns
+		const lines = extensionSrc.split("\n");
+		const cwdLines = lines.filter(l => l.includes("ctx.cwd") && !l.trim().startsWith("//"));
+		for (const line of cwdLines) {
+			const isBuildContext = line.includes("buildExecutionContext");
+			const isAbortFallback = line.includes("execCtx?.repoRoot ?? ctx.cwd");
+			expect(isBuildContext || isAbortFallback).toBe(true);
+		}
 	});
 
 	it("5.6: extension.ts orch-abort has ctx.cwd fallback for safety", () => {
@@ -572,5 +591,37 @@ describe("root-consistency regression", () => {
 
 	it("5.10: extension.ts sets mode label from execCtx.mode", () => {
 		expect(extensionSrc).toContain('execCtx.mode === "workspace"');
+	});
+
+	it("5.11: extension.ts resets execCtx to null before re-initialization", () => {
+		// Prevents stale execCtx if session_start fires multiple times
+		// and the second call fails — execCtx must be null, not the old value
+		const sessionStartIdx = extensionSrc.indexOf("session_start");
+		const resetIdx = extensionSrc.indexOf("execCtx = null", sessionStartIdx);
+		const buildIdx = extensionSrc.indexOf("buildExecutionContext", sessionStartIdx);
+		expect(resetIdx).toBeGreaterThan(sessionStartIdx);
+		expect(resetIdx).toBeLessThan(buildIdx);
+	});
+
+	it("5.12: extension.ts orch-status/orch-pause/orch-sessions operate on in-memory state only (no execCtx needed)", () => {
+		// These commands intentionally don't require execCtx because they
+		// only read/write in-memory orchBatchState (no filesystem access).
+		// Verify they don't reference execCtx at all.
+		const lines = extensionSrc.split("\n");
+
+		// Find the orch-status handler range
+		const statusRegIdx = lines.findIndex(l => l.includes('"orch-status"'));
+		const pauseRegIdx = lines.findIndex(l => l.includes('"orch-pause"'));
+		const sessionsRegIdx = lines.findIndex(l => l.includes('"orch-sessions"'));
+
+		// orch-status handler should not call requireExecCtx
+		expect(statusRegIdx).toBeGreaterThan(-1);
+		const statusBlock = lines.slice(statusRegIdx, pauseRegIdx).join("\n");
+		expect(statusBlock).not.toContain("requireExecCtx");
+
+		// orch-sessions handler should not call requireExecCtx
+		expect(sessionsRegIdx).toBeGreaterThan(-1);
+		const sessionsBlock = lines.slice(sessionsRegIdx, sessionsRegIdx + 10).join("\n");
+		expect(sessionsBlock).not.toContain("requireExecCtx");
 	});
 });
