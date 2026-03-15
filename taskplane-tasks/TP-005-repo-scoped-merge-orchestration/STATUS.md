@@ -89,8 +89,14 @@
 | 2026-03-15 16:49 | Task started | Extension-driven execution |
 | 2026-03-15 16:49 | Step 0 started | Partition merge flow by repo |
 | 2026-03-15 16:52 | Review R001 | plan Step 0: UNKNOWN |
+| 2026-03-15 17:05 | Step 0 hydrated | Plan expanded per R001 findings |
+| 2026-03-15 17:05 | Step 0 impl | groupLanesByRepo + mergeWaveByRepo in merge.ts |
+| 2026-03-15 17:05 | Step 0 impl | engine.ts + resume.ts call sites already wired (TP-004) |
+| 2026-03-15 17:05 | Step 0 impl | messages.ts "into develop" → "into target branch" |
+| 2026-03-15 17:05 | Step 0 tests | merge-repo-scoped.test.ts — all 207 tests pass |
 | 2026-03-15 16:53 | Review R001 | plan Step 0: REVISE |
 | 2026-03-15 17:04 | Step 0 implemented | groupLanesByRepo + mergeWaveByRepo, engine/resume updated, tests pass (216/216) |
+| 2026-03-15 17:04 | Worker iter 1 | done in 672s, ctx: 46%, tools: 84 |
 
 ## Blockers
 
