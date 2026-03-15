@@ -1,10 +1,10 @@
 # TP-005: Repo-Scoped Merge Orchestration with Explicit Partial Outcomes — Status
 
-**Current Step:** Step 3: Testing & Verification
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 3
 **Size:** L
 
@@ -105,12 +105,25 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing
-- [ ] Targeted tests for changed modules passing
-- [ ] All failures fixed
-- [ ] CLI smoke checks passing
+**Verification matrix (maps to Step 0–2 contracts):**
+
+- **Step 0 contracts verified via `merge-repo-scoped.test.ts`:** repo grouping determinism, status rollup correctness, repoId propagation, setup-failure detection
+- **Step 1 contracts verified via `merge-repo-scoped.test.ts`:** repo-divergence partial summary formatting, mono-repo no-summary behavior, engine/resume parity
+- **Step 2 contracts verified via `merge-repo-scoped.test.ts`:** `computeMergeFailurePolicy()` pause/abort transitions, repo fallback labeling, engine/resume parity, preserve-worktrees contract
+
+**Failure triage policy:** If targeted suite fails → fix, rerun impacted files, then rerun full suite. Step 3 is NOT complete until full suite is green.
+
+**Evidence requirement:** Record exact commands + pass counts in Execution Log for each checkpoint.
+
+- [x] 3.1 Targeted: `cd extensions && npx vitest run tests/merge-repo-scoped.test.ts` → 1 file, 1 test passed (all 29 internal assertion groups green)
+- [x] 3.2 Targeted: `cd extensions && npx vitest run tests/orch-state-persistence.test.ts` → 1 file, 1 test passed
+- [x] 3.3 Targeted: `cd extensions && npx vitest run tests/orch-direct-implementation.test.ts` → 1 file, 1 test passed
+- [x] 3.4 Full regression: `cd extensions && npx vitest run` → 11 files, 207 tests passed, 0 failures
+- [x] 3.5 CLI smoke: `node bin/taskplane.mjs help` → exit 0, clean output, v0.1.17
+- [x] 3.6 All failures triaged and fixed (if any) — no failures found, N/A
+- [x] 3.7 Final full regression green after any fixes — 3.4 was already the final green run (no fixes needed)
 
 ---
 
@@ -137,6 +150,9 @@
 | R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | APPROVE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R006 | code | Step 2 | APPROVE | .reviews/R006-code-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -199,6 +215,21 @@
 | 2026-03-15 17:35 | Step 2 iter3 | Repo-level fallback for setup failures in computeMergeFailurePolicy() |
 | 2026-03-15 17:35 | Step 2 tests | 4 new test sections (26-29) for repo fallback + lane priority + preserve contract |
 | 2026-03-15 17:35 | Step 2 verified | All 207 tests pass (11 files) |
+| 2026-03-15 17:37 | Worker iter 3 | done in 513s, ctx: 52%, tools: 70 |
+| 2026-03-15 17:37 | Review R006 | code Step 2: APPROVE |
+| 2026-03-15 17:37 | Step 2 complete | Harden failure behavior |
+| 2026-03-15 17:37 | Step 3 started | Testing & Verification |
+| 2026-03-15 17:39 | Review R007 | plan Step 3: REVISE |
+| 2026-03-15 17:40 | Step 3 hydrated | Concrete verification matrix per R007 findings |
+| 2026-03-15 17:40 | Step 3.1 | Targeted merge-repo-scoped.test.ts → 1 file, 1 test, all assertions green |
+| 2026-03-15 17:40 | Step 3.2 | Targeted orch-state-persistence.test.ts → 1 file, 1 test passed |
+| 2026-03-15 17:40 | Step 3.3 | Targeted orch-direct-implementation.test.ts → 1 file, 1 test passed |
+| 2026-03-15 17:41 | Step 3.4 | Full regression: 11 files, 207 tests passed, 0 failures |
+| 2026-03-15 17:41 | Step 3.5 | CLI smoke: `taskplane help` → exit 0, v0.1.17 |
+| 2026-03-15 17:41 | Step 3 complete | Testing & Verification — all green, no fixes needed |
+| 2026-03-15 17:41 | Review R006 | code Step 2: APPROVE |
+| 2026-03-15 17:41 | Step 2 complete | Harden failure behavior |
+| 2026-03-15 17:41 | Step 3 started | Testing & Verification |
 
 ## Blockers
 
