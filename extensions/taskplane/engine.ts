@@ -16,7 +16,7 @@ import { listOrchSessions } from "./sessions.ts";
 import { FATAL_DISCOVERY_CODES, generateBatchId } from "./types.ts";
 import type { AllocatedLane, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, TokenCounts, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaves, validateGraph } from "./waves.ts";
-import { deleteBranchBestEffort, formatPreflightResults, listWorktrees, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
+import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 
 // ── /orch Execution Engine ───────────────────────────────────────────
 
@@ -506,10 +506,14 @@ export async function executeOrchBatch(
 							removeWorktree(wt, repoRoot);
 							execLog("batch", batchState.batchId, `removed unrecoverable worktree for lane ${wt.laneNumber}`);
 						} catch (removeErr: unknown) {
-							execLog("batch", batchState.batchId, `failed to remove unrecoverable worktree for lane ${wt.laneNumber}`, {
+							execLog("batch", batchState.batchId, `removeWorktree failed for lane ${wt.laneNumber}, attempting force cleanup`, {
 								error: removeErr instanceof Error ? removeErr.message : String(removeErr),
 								path: wt.path,
 							});
+							// Last resort: force-remove the directory and prune git worktree state.
+							// This handles cases where git has partially deregistered the worktree
+							// or undeletable files (e.g., Windows reserved names like "nul") block removal.
+							forceCleanupWorktree(wt, repoRoot, batchState.batchId);
 						}
 					} else {
 						execLog("batch", batchState.batchId, `worktree reset OK for lane ${wt.laneNumber}`);

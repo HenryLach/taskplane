@@ -36,8 +36,20 @@ export const ORCH_MESSAGES = {
 		`🔀 [Wave ${waveNum}] Merge: placeholder — Step 3 (TS-008) will replace with mergeWave()`,
 	orchWorktreeReset: (waveNum: number, lanes: number) =>
 		`🔄 Resetting ${lanes} worktree(s) to develop HEAD after wave ${waveNum}`,
-	orchBatchComplete: (batchId: string, succeeded: number, failed: number, skipped: number, blocked: number, elapsedSec: number) =>
-		`\n🏁 Batch ${batchId} complete: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped, ${blocked} blocked (${elapsedSec}s)`,
+	orchBatchComplete: (batchId: string, succeeded: number, failed: number, skipped: number, blocked: number, elapsedSec: number) => {
+		const lines = [`\n🏁 Batch ${batchId} complete: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped, ${blocked} blocked (${elapsedSec}s)`];
+		if (failed > 0 || blocked > 0) {
+			lines.push("");
+			if (blocked > 0) {
+				lines.push(`   ${blocked} task(s) were blocked because upstream tasks failed.`);
+			}
+			lines.push("   Next steps:");
+			lines.push("   • /orch-status     — review what failed and why");
+			lines.push("   • /orch-resume     — retry from the failed wave");
+			lines.push("   • /orch-abort      — clean up and start fresh");
+		}
+		return lines.join("\n");
+	},
 	orchBatchFailed: (batchId: string, reason: string) =>
 		`\n❌ Batch ${batchId} failed: ${reason}`,
 	orchBatchStopped: (batchId: string, policy: string) =>

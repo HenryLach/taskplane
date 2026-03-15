@@ -2,7 +2,7 @@
  * Worktree CRUD, bulk ops, branch protection, preflight
  * @module orch/worktree
  */
-import { existsSync, readdirSync, realpathSync } from "fs";
+import { existsSync, readdirSync, realpathSync, rmSync } from "fs";
 import { execSync } from "child_process";
 import { join, basename, resolve } from "path";
 
@@ -1595,13 +1595,36 @@ export function safeResetWorktree(
 				};
 			}
 
-			// Remove untracked files
+			// Remove untracked files.
+			// git clean may warn about files it can't delete (e.g., Windows reserved
+			// names like "nul", "con", "aux") but still clean everything else.
+			// We treat this as non-fatal: check porcelain status afterward instead
+			// of failing on the exit code.
 			const cleanResult = runGit(["clean", "-fd"], worktree.path);
 			if (!cleanResult.ok) {
-				return {
-					success: false,
-					error: `git clean -fd failed: ${cleanResult.stderr}`,
-				};
+				execLog("reset", `lane-${worktree.laneNumber}`, "git clean -fd returned non-zero (may be partial)", {
+					stderr: cleanResult.stderr.slice(0, 200),
+				});
+			}
+
+			// Check if the worktree is clean enough to proceed.
+			// If git status --porcelain shows no tracked changes, the reset can work
+			// even if some untracked files couldn't be deleted.
+			const statusCheck = runGit(["status", "--porcelain"], worktree.path);
+			if (statusCheck.ok && statusCheck.stdout.length > 0) {
+				// Still dirty after cleaning — check if only untracked files remain
+				const lines = statusCheck.stdout.split("\n").filter(l => l.trim());
+				const onlyUntracked = lines.every(l => l.startsWith("??"));
+				if (!onlyUntracked) {
+					return {
+						success: false,
+						error: `Worktree still dirty after clean: ${statusCheck.stdout.slice(0, 200)}`,
+					};
+				}
+				// Only untracked files remain (e.g., undeletable "nul") — safe to proceed
+				execLog("reset", `lane-${worktree.laneNumber}`, "untracked files remain after clean (non-blocking)", {
+					files: lines.map(l => l.slice(3)).join(", "),
+				});
 			}
 
 			// Retry reset after cleaning
@@ -1620,6 +1643,84 @@ export function safeResetWorktree(
 			success: false,
 			error: err instanceof Error ? err.message : String(err),
 		};
+	}
+}
+
+
+// ── Force Cleanup ────────────────────────────────────────────────────
+
+/**
+ * Last-resort worktree cleanup: force-remove the directory and prune git state.
+ *
+ * Used when both `safeResetWorktree()` and `removeWorktree()` fail — typically
+ * because undeletable files (e.g., Windows reserved names like "nul", "con")
+ * block `git clean` and `git worktree remove`, leaving git in an inconsistent state.
+ *
+ * Recovery steps:
+ * 1. Force-remove the worktree directory (`rm -rf` equivalent)
+ * 2. Prune stale git worktree references (`git worktree prune`)
+ * 3. Delete the lane branch if it exists (`git branch -D`)
+ *
+ * This allows the next wave to recreate the worktree from scratch.
+ *
+ * @param worktree - WorktreeInfo for the failed worktree
+ * @param repoRoot - Main repository root
+ * @param batchId  - Batch ID for logging context
+ */
+export function forceCleanupWorktree(
+	worktree: WorktreeInfo,
+	repoRoot: string,
+	batchId: string,
+): void {
+	const { path: worktreePath, branch, laneNumber } = worktree;
+
+	// Step 1: Force-remove the directory
+	if (existsSync(worktreePath)) {
+		try {
+			// On Windows, undeletable reserved-name files (nul, con, aux) need
+			// special handling. Try rmSync first, then fall back to OS-specific
+			// removal for stubborn files.
+			rmSync(worktreePath, { recursive: true, force: true });
+			execLog("cleanup", `lane-${laneNumber}`, `force-removed worktree directory`, { path: worktreePath });
+		} catch (rmErr: unknown) {
+			// If Node's rmSync fails (e.g., Windows reserved names), try platform-specific
+			const rmMsg = rmErr instanceof Error ? rmErr.message : String(rmErr);
+			execLog("cleanup", `lane-${laneNumber}`, `rmSync failed, trying OS-level removal`, { error: rmMsg });
+
+			try {
+				if (process.platform === "win32") {
+					// rd /s /q handles Windows reserved names that Node.js cannot delete
+					execSync(`rd /s /q "${worktreePath}"`, { stdio: "pipe", timeout: 30_000 });
+				} else {
+					execSync(`rm -rf "${worktreePath}"`, { stdio: "pipe", timeout: 30_000 });
+				}
+				execLog("cleanup", `lane-${laneNumber}`, `OS-level removal succeeded`, { path: worktreePath });
+			} catch (osErr: unknown) {
+				const osMsg = osErr instanceof Error ? osErr.message : String(osErr);
+				execLog("cleanup", `lane-${laneNumber}`, `OS-level removal also failed — manual cleanup needed`, {
+					path: worktreePath,
+					error: osMsg,
+				});
+			}
+		}
+	}
+
+	// Step 2: Prune stale worktree references
+	runGit(["worktree", "prune"], repoRoot);
+	execLog("cleanup", `lane-${laneNumber}`, `pruned stale worktree references`);
+
+	// Step 3: Delete the lane branch if it still exists
+	const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${branch}`], repoRoot);
+	if (branchCheck.ok) {
+		const deleteResult = runGit(["branch", "-D", branch], repoRoot);
+		if (deleteResult.ok) {
+			execLog("cleanup", `lane-${laneNumber}`, `deleted stale lane branch`, { branch });
+		} else {
+			execLog("cleanup", `lane-${laneNumber}`, `could not delete lane branch`, {
+				branch,
+				error: deleteResult.stderr,
+			});
+		}
 	}
 }
 

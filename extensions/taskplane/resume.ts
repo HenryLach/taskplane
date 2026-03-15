@@ -16,7 +16,7 @@ import { deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeStat
 import { StateFileError } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph } from "./waves.ts";
-import { deleteBranchBestEffort, listWorktrees, removeAllWorktrees, removeWorktree, safeResetWorktree } from "./worktree.ts";
+import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, removeAllWorktrees, removeWorktree, safeResetWorktree } from "./worktree.ts";
 
 // ── Resume Pure Functions ────────────────────────────────────────────
 
@@ -1043,7 +1043,11 @@ export async function resumeOrchBatch(
 				for (const wt of existingWorktrees) {
 					const resetResult = safeResetWorktree(wt, targetBranch, repoRoot);
 					if (!resetResult.success) {
-						try { removeWorktree(wt, repoRoot); } catch { /* best effort */ }
+						try {
+							removeWorktree(wt, repoRoot);
+						} catch {
+							forceCleanupWorktree(wt, repoRoot, batchState.batchId);
+						}
 					}
 				}
 			}
