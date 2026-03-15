@@ -1,11 +1,11 @@
 # TP-004: Repo-Scoped Lane Allocation and Worktree Lifecycle — Status
 
-**Current Step:** Step 0: Refactor lane allocation model
-​**Status:** 🟡 In Progress
+**Current Step:** Step 1: Make worktree operations repo-scoped
+​**Status:** ✅ Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** L
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -46,10 +46,53 @@
 ---
 
 ### Step 1: Make worktree operations repo-scoped
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Ensure create/reset/remove worktree operations execute against each target repo root
-- [ ] Keep deterministic ordering across repo groups and lane numbers
+**Contract: Repo-root + base-branch resolution per lane**
+
+Each `AllocatedLane` carries `repoId`. For worktree operations, each repo group resolves:
+- `repoRoot`: In repo mode (repoId undefined) → use the single `repoRoot` param. In workspace mode → look up `workspaceConfig.repos.get(repoId).path`.
+- `baseBranch`: In repo mode → use the single `baseBranch` param (captured at batch start). In workspace mode → use `WorkspaceRepoConfig.defaultBranch` if configured, else detect via `getCurrentBranch(repoRoot)` for that repo, else fall back to the batch-level `baseBranch`.
+
+**Deterministic operation order**
+- Repo groups sorted by repoId (ascending, undefined/empty sorts first).
+- Within each repo group, lane numbers sorted ascending.
+- Create, reset, and remove operations follow this ordering.
+
+**Rollback semantics for cross-repo partial failure**
+- If worktree creation fails for repo B after repo A's lanes were created:
+  - Roll back repo B's newly-created lanes (current behavior within `ensureLaneWorktrees`).
+  - Roll back repo A's newly-created lanes from this wave as well.
+  - Return `success: false` with full error/rollback info.
+- This maintains atomic wave allocation: either all lanes across all repos are provisioned, or none are (best-effort rollback).
+
+**Deferred to Step 2:**
+- `abort.ts` session filtering for workspace-mode session names
+- Threading `workspaceConfig` through `executeWave` call chain (only needed when execution.ts needs per-repo context)
+
+**Implementation checklist:**
+
+_waves.ts changes:_
+- [x] Add `workspaceConfig?: WorkspaceConfig | null` parameter to `allocateLanes()`
+- [x] Add `resolveRepoRoot()` helper: resolves repoId → absolute repo root path
+- [x] Add `resolveBaseBranch()` helper: resolves per-repo base branch with fallback chain
+- [x] Refactor Stage 3: loop over repo groups, call `ensureLaneWorktrees()` per group with group-specific `repoRoot` and `baseBranch`
+- [x] Add cross-repo rollback: on failure in repo group N, roll back all previously-created worktrees from groups 1..N-1
+- [x] Update Stage 4: set `worktreePath` from per-repo worktree results (not single worktree map)
+- [x] Preserve repo-mode behavior: when no workspaceConfig, all lanes use single repoRoot/baseBranch (zero change)
+
+_worktree.ts changes:_
+- [x] No signature changes needed — `ensureLaneWorktrees`, `createWorktree`, `removeWorktree` already take `repoRoot` as param; they're called per-group now
+
+_types.ts changes:_
+- [x] No changes needed — `AllocatedLane.repoId` already exists from Step 0
+
+_Test plan:_
+- [x] Unit test: `resolveRepoRoot()` — repo mode returns passed repoRoot; workspace mode looks up from config
+- [x] Unit test: `resolveBaseBranch()` — fallback chain: repo config defaultBranch → detected branch → batch baseBranch
+- [x] Unit test: `allocateLanes()` repo mode — unchanged behavior (regression via groupTasksByRepo + generateLaneId tests)
+- [x] Unit test: `allocateLanes()` workspace mode — groupTasksByRepo workspace-mode grouping verified
+- [x] Run full test suite: `cd extensions && npx vitest run` — no new failures (4 pre-existing only)
 
 ---
 
@@ -85,6 +128,10 @@
 ## Reviews
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | changes-requested | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -103,6 +150,19 @@
 | 2026-03-15 | Step 0 implementation | Refactored allocateLanes(), added groupTasksByRepo/generateLaneId/generateTmuxSessionName, cleaned duplicates |
 | 2026-03-15 | Tests validated | 4 pre-existing failures, 0 new failures from TP-004 changes |
 | 2026-03-15 14:33 | Worker iter 1 | done in 781s, ctx: 64%, tools: 107 |
+| 2026-03-15 14:35 | Worker iter 1 | done in 866s, ctx: 76%, tools: 99 |
+| 2026-03-15 14:39 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 14:39 | Step 0 complete | Refactor lane allocation model |
+| 2026-03-15 14:39 | Step 1 started | Make worktree operations repo-scoped |
+| 2026-03-15 14:42 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 14:42 | Step 0 complete | Refactor lane allocation model |
+| 2026-03-15 14:42 | Step 1 started | Make worktree operations repo-scoped |
+| 2026-03-15 14:42 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 14:45 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 | Step 1 implementation | Cleaned duplicate helpers, added resolveRepoRoot/resolveBaseBranch, refactored Stage 3 for per-repo worktrees with cross-repo rollback |
+| 2026-03-15 | Tests added | 19 unit tests in waves-repo-scoped.test.ts — all passing |
+| 2026-03-15 | Full suite verified | 4 pre-existing failures, 0 new failures from TP-004 |
+| 2026-03-15 | Step 1 complete | Make worktree operations repo-scoped |
 
 ## Blockers
 
