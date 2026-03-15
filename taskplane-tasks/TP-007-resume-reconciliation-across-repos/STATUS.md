@@ -1,11 +1,11 @@
 # TP-007: Resume Reconciliation and Continuation Across Repos — Status
 
 **Current Step:** Step 3: Testing & Verification
-​**Status:** 🟡 In Progress
+​**Status:** ✅ Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 5
-**Iteration:** 3
+**Review Counter:** 6
+**Iteration:** 4
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -147,12 +147,22 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing
-- [ ] Targeted tests for changed modules passing
-- [ ] All failures fixed
-- [ ] CLI smoke checks passing
+- [x] Unit/regression tests passing
+  - Full suite: 290/290 tests pass across 12 test files (41.85s)
+- [x] Targeted tests for changed modules passing
+  - orch-state-persistence.test.ts: 2/2 pass
+  - orch-direct-implementation.test.ts: 2/2 pass (note: only 2 tests in this file — integration-style)
+  - orch-pure-functions.test.ts: pass
+  - merge-repo-scoped.test.ts: pass
+  - waves-repo-scoped.test.ts: pass
+  - All 5 targeted files: 23/23 pass
+- [x] All failures fixed
+  - Zero failures across entire suite
+- [x] CLI smoke checks passing
+  - `taskplane help`: works correctly, shows all commands
+  - `taskplane doctor`: core checks pass (pi, node, git, tmux, package installed); config file warnings expected in worktree context
 
 ---
 
@@ -178,6 +188,9 @@
 | R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
+| R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -231,6 +244,16 @@
 | 2026-03-15 23:01 | Tests passing | 290/290 tests pass across 12 test files; 7 new Step 2 tests added |
 | 2026-03-15 23:02 | Worker iter 3 | done in 665s, ctx: 58%, tools: 75 |
 | 2026-03-15 23:05 | Step 2 impl (iter 3) | Fixed inter-wave/cleanup repo root gap with encounteredRepoRoots tracking; added collectAllRepoRoots helper; 10 new Step 2 tests; 740 total assertions; all 290 vitest tests pass |
+| 2026-03-15 23:05 | Worker iter 3 | done in 1009s, ctx: 64%, tools: 112 |
+| 2026-03-15 23:06 | Review R006 | code Step 2: UNKNOWN |
+| 2026-03-15 23:06 | Step 2 complete | Execute resumed waves safely |
+| 2026-03-15 23:06 | Step 3 started | Testing & Verification |
+| 2026-03-15 23:08 | Review R007 | plan Step 3: UNKNOWN |
+| 2026-03-15 23:10 | Step 3 tests | Full suite: 290/290 pass; targeted: 23/23 pass; CLI smoke: pass |
+| 2026-03-15 23:10 | Step 3 complete | Testing & Verification — zero failures |
+| 2026-03-15 23:08 | Review R006 | code Step 2: UNKNOWN |
+| 2026-03-15 23:08 | Step 2 complete | Execute resumed waves safely |
+| 2026-03-15 23:08 | Step 3 started | Testing & Verification |
 
 ## Blockers
 
