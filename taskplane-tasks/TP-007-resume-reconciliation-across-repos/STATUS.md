@@ -110,6 +110,7 @@
 | 2026-03-15 21:55 | Plan revised | Added identity rules, signal resolution rules, test matrix, non-goals |
 | 2026-03-15 22:03 | Step 0 impl | Code already repo-aware; added collectRepoRoots helper + 10 mixed-repo tests |
 | 2026-03-15 22:03 | Tests passing | 290/290 tests pass across 12 test files |
+| 2026-03-15 22:05 | Step 0 completed | Fixed 4 areas with per-repo resolveRepoRoot; 8 new mixed-repo reconciliation tests; all 290 tests pass |
 
 ## Blockers
 
