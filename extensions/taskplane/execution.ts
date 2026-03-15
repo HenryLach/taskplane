@@ -674,14 +674,72 @@ export async function pollUntilTaskComplete(
 	}
 }
 
+
+// ── Post-Task Commit ─────────────────────────────────────────────────
+
+/**
+ * Commit any uncommitted task artifacts to the lane branch after task completion.
+ *
+ * The task-runner creates `.DONE` and updates `STATUS.md` via `writeFileSync`,
+ * but these changes are never committed to git by the task-runner or the worker.
+ * Without this commit, these files are lost when the worktree is reset or removed,
+ * and they don't appear in the merge to the base branch.
+ *
+ * Best-effort: failures are logged but don't fail the task (the work is already done).
+ *
+ * @param lane   - Allocated lane containing the worktree path
+ * @param task   - The task that just completed
+ * @param laneId - Lane identifier for logging
+ */
+function commitTaskArtifacts(
+	lane: AllocatedLane,
+	task: AllocatedTask,
+	laneId: string,
+): void {
+	const worktreePath = lane.worktreePath;
+
+	// Check if there are any uncommitted changes in the worktree
+	const statusResult = runGit(["status", "--porcelain"], worktreePath);
+	if (!statusResult.ok || !statusResult.stdout.trim()) {
+		// Nothing to commit (worker already committed everything, or git error)
+		return;
+	}
+
+	// Stage all changes in the worktree
+	const addResult = runGit(["add", "-A"], worktreePath);
+	if (!addResult.ok) {
+		execLog(laneId, task.taskId, `post-task stage failed (non-fatal): ${addResult.stderr.slice(0, 200)}`);
+		return;
+	}
+
+	// Commit with task ID for traceability
+	const commitResult = runGit(
+		["commit", "-m", `checkpoint: ${task.taskId} task artifacts (.DONE, STATUS.md)`],
+		worktreePath,
+	);
+	if (!commitResult.ok) {
+		// "nothing to commit" is not an error — worker may have already committed
+		if (!commitResult.stderr.includes("nothing to commit")) {
+			execLog(laneId, task.taskId, `post-task commit failed (non-fatal): ${commitResult.stderr.slice(0, 200)}`);
+		}
+		return;
+	}
+
+	execLog(laneId, task.taskId, `committed task artifacts to lane branch`, {
+		commit: commitResult.stdout.trim().split("\n")[0],
+	});
+}
+
+
 /**
  * Execute all tasks in a lane sequentially.
  *
  * For each task in the lane (in order):
  * 1. Spawn a TMUX session with TASK_AUTOSTART pointing to the task's PROMPT.md
  * 2. Poll until the task completes (or fails)
- * 3. Record the outcome
- * 4. If the task failed, skip remaining tasks in the lane
+ * 3. Commit any uncommitted task artifacts (.DONE, STATUS.md) to the lane branch
+ * 4. Record the outcome
+ * 5. If the task failed, skip remaining tasks in the lane
  *
  * The lane reuses the same worktree and TMUX session name across tasks.
  * Each new task gets a fresh TMUX session (the previous one has exited).
@@ -759,6 +817,13 @@ export async function executeLane(
 				sessionName: lane.tmuxSessionName,
 				doneFileFound: pollResult.doneFileFound,
 			};
+
+			// After task succeeds, commit any uncommitted artifacts (.DONE, final
+			// STATUS.md update) to the lane branch so they survive the merge.
+			// The task-runner writes .DONE via writeFileSync but never commits it.
+			if (pollResult.status === "succeeded") {
+				commitTaskArtifacts(lane, task, laneId);
+			}
 
 			// If task failed or was paused, skip remaining tasks
 			if (pollResult.status === "failed" || pollResult.status === "stalled") {
