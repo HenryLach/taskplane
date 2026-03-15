@@ -128,4 +128,12 @@ All commits for this task MUST include the task ID for traceability:
 
 ## Amendments (Added During Execution)
 
-<!-- Workers add amendments here if issues discovered during execution. -->
+### Amendment 1: integration_branch removed — baseBranch is now runtime state
+
+The `integration_branch` config setting has been removed from `OrchestratorConfig`.
+The base branch is now captured at batch start and passed as a parameter through the
+execution pipeline (`executeWave`, `allocateLanes`, `mergeWave`, etc.).
+
+**Impact on this task:**
+- Functions in `waves.ts`, `execution.ts`, and `merge.ts` now take `baseBranch` as an explicit parameter
+- When hardening naming contracts, use `batchState.baseBranch` for any naming components that reference the target branch

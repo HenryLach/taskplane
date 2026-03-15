@@ -130,4 +130,14 @@ All commits for this task MUST include the task ID for traceability:
 
 ## Amendments (Added During Execution)
 
-<!-- Workers add amendments here if issues discovered during execution. -->
+### Amendment 1: integration_branch removed — baseBranch is now runtime state
+
+The `integration_branch` config setting has been removed from `OrchestratorConfig`.
+The orchestrator now captures the current branch at `/orch` start via `getCurrentBranch()`
+(in `git.ts`) and stores it as `baseBranch` on `OrchBatchRuntimeState` and `PersistedBatchState`.
+
+**Impact on this task:**
+- `allocateLanes()` in `waves.ts` now takes a `baseBranch: string` parameter (last arg)
+- `createLaneWorktrees()` and `ensureLaneWorktrees()` in `worktree.ts` now take a `baseBranch: string` parameter (last arg)
+- These functions no longer read `config.orchestrator.integration_branch`
+- When adding repo-scoped worktree support, pass the appropriate per-repo base branch through these functions

@@ -126,4 +126,12 @@ All commits for this task MUST include the task ID for traceability:
 
 ## Amendments (Added During Execution)
 
-<!-- Workers add amendments here if issues discovered during execution. -->
+### Amendment 1: baseBranch already added to persisted state schema
+
+The `baseBranch` field has already been added to both `OrchBatchRuntimeState` and
+`PersistedBatchState` in `types.ts`. It is serialized in `persistence.ts` and validated
+with backward compatibility (defaults to `""` if missing from older state files).
+
+**Impact on this task:**
+- When bumping to schema v2, `baseBranch` is already present — account for it in the v1→v2 migration path
+- The old `integration_branch` config field no longer exists — do not reference it in schema design

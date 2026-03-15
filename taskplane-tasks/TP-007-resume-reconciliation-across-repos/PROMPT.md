@@ -127,4 +127,12 @@ All commits for this task MUST include the task ID for traceability:
 
 ## Amendments (Added During Execution)
 
-<!-- Workers add amendments here if issues discovered during execution. -->
+### Amendment 1: integration_branch removed — baseBranch is now runtime state
+
+The `integration_branch` config setting has been removed. `resume.ts` now reads
+`baseBranch` from `persistedState.baseBranch` (with `""` fallback for older state files)
+and stores it on `batchState.baseBranch`.
+
+**Impact on this task:**
+- All resume code already uses `batchState.baseBranch` instead of `orchConfig.orchestrator.integration_branch`
+- When extending for polyrepo, per-repo base branches should be resolved from workspace config, not from the removed global setting

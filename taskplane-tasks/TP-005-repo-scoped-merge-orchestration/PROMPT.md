@@ -127,4 +127,13 @@ All commits for this task MUST include the task ID for traceability:
 
 ## Amendments (Added During Execution)
 
-<!-- Workers add amendments here if issues discovered during execution. -->
+### Amendment 1: integration_branch removed — baseBranch is now runtime state
+
+The `integration_branch` config setting has been removed from `OrchestratorConfig`.
+The orchestrator now captures the current branch at `/orch` start via `getCurrentBranch()`
+(in `git.ts`) and stores it as `baseBranch` on `OrchBatchRuntimeState` and `PersistedBatchState`.
+
+**Impact on this task:**
+- `mergeWave()` in `merge.ts` now takes a `baseBranch: string` parameter (last arg) instead of reading `config.orchestrator.integration_branch`
+- The step "Run per-repo merge loops with correct repo roots and integration branches" refers to per-repo target branches from the workspace config — not the removed global setting
+- When implementing repo-scoped merge, resolve per-repo base branches from workspace config and pass them to `mergeWave()`
