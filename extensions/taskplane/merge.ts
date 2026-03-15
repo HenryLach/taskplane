@@ -8,7 +8,8 @@ import { join } from "path";
 
 import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
-import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, WaveExecutionResult } from "./types.ts";
+import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
+import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { sleepSync } from "./worktree.ts";
 
 // ── Merge Implementation ─────────────────────────────────────────────
@@ -792,6 +793,228 @@ export function mergeWave(
 		failedLane,
 		failureReason,
 		totalDurationMs,
+	};
+}
+
+
+// ── Repo-Scoped Merge ────────────────────────────────────────────────
+
+/**
+ * Group mergeable lanes by their `repoId`.
+ *
+ * Returns groups sorted deterministically by repoId (undefined/repo-mode
+ * group sorts first as empty string). Lanes within each group preserve
+ * the input order.
+ *
+ * @param lanes - Lanes to group (already filtered for mergeability)
+ * @returns Array of { repoId, lanes } groups in deterministic order
+ */
+export function groupLanesByRepo(
+	lanes: AllocatedLane[],
+): Array<{ repoId: string | undefined; lanes: AllocatedLane[] }> {
+	const groupMap = new Map<string, AllocatedLane[]>();
+
+	for (const lane of lanes) {
+		const key = lane.repoId ?? "";
+		const existing = groupMap.get(key) || [];
+		existing.push(lane);
+		groupMap.set(key, existing);
+	}
+
+	const sortedKeys = [...groupMap.keys()].sort();
+	return sortedKeys.map(key => ({
+		repoId: key || undefined,
+		lanes: groupMap.get(key)!,
+	}));
+}
+
+/**
+ * Merge a wave's lanes partitioned by repository.
+ *
+ * In repo mode (all lanes have repoId=undefined), this produces a single
+ * repo group and delegates to `mergeWave()` exactly once — a no-op
+ * regression case that preserves existing behavior.
+ *
+ * In workspace mode, lanes are grouped by `repoId`. Each repo group gets:
+ * - Its own repo root (via `resolveRepoRoot()`)
+ * - Its own base branch (via `resolveBaseBranch()`)
+ * - An independent `mergeWave()` call with those repo-scoped parameters
+ *
+ * Repo groups are processed in deterministic order (sorted by repoId).
+ * Per-repo results are aggregated into a single `MergeWaveResult` for
+ * the existing wave-level failure policy handling in `engine.ts`.
+ *
+ * Failure semantics:
+ * - A failure in one repo does NOT stop merging in other repos.
+ * - The aggregate status is "succeeded" only if all repos succeeded.
+ * - If any repo failed and any succeeded, status is "partial".
+ * - `repoResults` field carries per-repo attribution for downstream
+ *   reporting (Step 1 will use this for explicit partial-success summaries).
+ *
+ * @param completedLanes   - Lanes that completed execution (from wave result)
+ * @param waveResult       - The wave execution result (for lane status filtering)
+ * @param waveIndex        - Wave number (1-indexed)
+ * @param config           - Orchestrator configuration
+ * @param repoRoot         - Default repository root (used in repo mode)
+ * @param batchId          - Batch ID for session naming
+ * @param baseBranch       - Default branch to merge into (captured at batch start)
+ * @param workspaceConfig  - Workspace configuration (null in repo mode)
+ * @returns MergeWaveResult with per-lane and per-repo outcomes
+ */
+export function mergeWaveByRepo(
+	completedLanes: AllocatedLane[],
+	waveResult: WaveExecutionResult,
+	waveIndex: number,
+	config: OrchestratorConfig,
+	repoRoot: string,
+	batchId: string,
+	baseBranch: string,
+	workspaceConfig?: WorkspaceConfig | null,
+): MergeWaveResult {
+	const startTime = Date.now();
+
+	// Build lane outcome lookup for merge eligibility (same logic as mergeWave).
+	const laneOutcomeByNumber = new Map<number, LaneExecutionResult>();
+	for (const laneOutcome of waveResult.laneResults) {
+		laneOutcomeByNumber.set(laneOutcome.laneNumber, laneOutcome);
+	}
+
+	// Filter to mergeable lanes (same criteria as mergeWave).
+	const mergeableLanes = completedLanes.filter(lane => {
+		const outcome = laneOutcomeByNumber.get(lane.laneNumber);
+		if (!outcome) return false;
+		const hasSucceeded = outcome.tasks.some(t => t.status === "succeeded");
+		const hasHardFailure = outcome.tasks.some(
+			t => t.status === "failed" || t.status === "stalled",
+		);
+		return hasSucceeded && !hasHardFailure;
+	});
+
+	if (mergeableLanes.length === 0) {
+		execLog("merge", `W${waveIndex}`, "no mergeable lanes (all failed or empty)");
+		return {
+			waveIndex,
+			status: "succeeded",
+			laneResults: [],
+			failedLane: null,
+			failureReason: null,
+			totalDurationMs: Date.now() - startTime,
+			repoResults: [],
+		};
+	}
+
+	// Group lanes by repo
+	const repoGroups = groupLanesByRepo(mergeableLanes);
+
+	execLog("merge", `W${waveIndex}`, `merging across ${repoGroups.length} repo group(s)`, {
+		repos: repoGroups.map(g => g.repoId ?? "(default)").join(", "),
+		totalLanes: mergeableLanes.length,
+	});
+
+	// In repo mode (single group with repoId=undefined), delegate directly
+	// to mergeWave() for zero-overhead backward compatibility.
+	if (repoGroups.length === 1 && repoGroups[0].repoId === undefined) {
+		const result = mergeWave(
+			completedLanes,
+			waveResult,
+			waveIndex,
+			config,
+			repoRoot,
+			batchId,
+			baseBranch,
+		);
+		// Attach empty repoResults for consistent shape
+		return { ...result, repoResults: [] };
+	}
+
+	// ── Workspace mode: per-repo merge loops ─────────────────────
+	const allLaneResults: MergeLaneResult[] = [];
+	const repoOutcomes: RepoMergeOutcome[] = [];
+	let firstFailedLane: number | null = null;
+	let firstFailureReason: string | null = null;
+
+	for (const group of repoGroups) {
+		const groupRepoRoot = resolveRepoRoot(group.repoId, repoRoot, workspaceConfig);
+		const groupBaseBranch = resolveBaseBranch(group.repoId, groupRepoRoot, baseBranch, workspaceConfig);
+
+		execLog("merge", `W${waveIndex}`, `merging repo group: ${group.repoId ?? "(default)"}`, {
+			repoRoot: groupRepoRoot,
+			baseBranch: groupBaseBranch,
+			laneCount: group.lanes.length,
+			lanes: group.lanes.map(l => l.laneNumber).join(","),
+		});
+
+		// Build a filtered WaveExecutionResult containing only this group's lanes.
+		const groupLaneNumbers = new Set(group.lanes.map(l => l.laneNumber));
+		const filteredWaveResult: WaveExecutionResult = {
+			...waveResult,
+			laneResults: waveResult.laneResults.filter(lr => groupLaneNumbers.has(lr.laneNumber)),
+			allocatedLanes: waveResult.allocatedLanes.filter(l => groupLaneNumbers.has(l.laneNumber)),
+		};
+
+		const groupResult = mergeWave(
+			group.lanes,
+			filteredWaveResult,
+			waveIndex,
+			config,
+			groupRepoRoot,
+			batchId,
+			groupBaseBranch,
+		);
+
+		// Accumulate lane results
+		allLaneResults.push(...groupResult.laneResults);
+
+		// Build per-repo outcome
+		const repoOutcome: RepoMergeOutcome = {
+			repoId: group.repoId,
+			status: groupResult.status,
+			laneResults: groupResult.laneResults,
+			failedLane: groupResult.failedLane,
+			failureReason: groupResult.failureReason,
+		};
+		repoOutcomes.push(repoOutcome);
+
+		// Track first failure across repos (but continue to merge other repos)
+		if (groupResult.failedLane !== null && firstFailedLane === null) {
+			firstFailedLane = groupResult.failedLane;
+			firstFailureReason = groupResult.failureReason
+				? `[repo:${group.repoId ?? "default"}] ${groupResult.failureReason}`
+				: null;
+		}
+	}
+
+	// ── Aggregate status ─────────────────────────────────────────
+	const anyRepoSucceeded = repoOutcomes.some(r => r.status === "succeeded");
+	const anyRepoFailed = repoOutcomes.some(r => r.status === "failed" || r.status === "partial");
+	const allReposSucceeded = repoOutcomes.every(r => r.status === "succeeded");
+
+	let status: MergeWaveResult["status"];
+	if (allReposSucceeded) {
+		status = "succeeded";
+	} else if (anyRepoSucceeded && anyRepoFailed) {
+		status = "partial";
+	} else {
+		status = "failed";
+	}
+
+	const totalDurationMs = Date.now() - startTime;
+
+	execLog("merge", `W${waveIndex}`, `repo-scoped wave merge complete: ${status}`, {
+		repoCount: repoOutcomes.length,
+		repoStatuses: repoOutcomes.map(r => `${r.repoId ?? "default"}:${r.status}`).join(", "),
+		mergedLanes: allLaneResults.filter(r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED").length,
+		duration: `${Math.round(totalDurationMs / 1000)}s`,
+	});
+
+	return {
+		waveIndex,
+		status,
+		laneResults: allLaneResults,
+		failedLane: firstFailedLane,
+		failureReason: firstFailureReason,
+		totalDurationMs,
+		repoResults: repoOutcomes,
 	};
 }
 

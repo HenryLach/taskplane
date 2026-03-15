@@ -971,6 +971,8 @@ export interface MergeLaneResult {
 	result: MergeResult | null;
 	error: string | null;
 	durationMs: number;
+	/** Repo ID this lane targeted (workspace mode only). Undefined in repo mode. */
+	repoId?: string;
 }
 
 /** Overall wave merge outcome. */
@@ -981,6 +983,22 @@ export interface MergeWaveResult {
 	failedLane: number | null;
 	failureReason: string | null;
 	totalDurationMs: number;
+	/** Per-repo merge outcomes (populated in workspace mode; empty in repo mode). */
+	repoResults?: RepoMergeOutcome[];
+}
+
+/** Per-repo merge outcome within a wave merge. */
+export interface RepoMergeOutcome {
+	/** Repo ID (undefined in repo mode default group). */
+	repoId: string | undefined;
+	/** Merge status for this repo. */
+	status: "succeeded" | "failed" | "partial";
+	/** Lane results belonging to this repo. */
+	laneResults: MergeLaneResult[];
+	/** Failed lane number within this repo (null if all succeeded). */
+	failedLane: number | null;
+	/** Failure reason within this repo (null if all succeeded). */
+	failureReason: string | null;
 }
 
 // ── Merge Error Types ────────────────────────────────────────────────

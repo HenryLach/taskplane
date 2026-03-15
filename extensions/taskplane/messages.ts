@@ -19,7 +19,7 @@ export const ORCH_MESSAGES = {
 	orchWaveComplete: (waveNum: number, succeeded: number, failed: number, skipped: number, elapsedSec: number) =>
 		`✅ Wave ${waveNum} complete: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped (${elapsedSec}s)`,
 	orchMergeStart: (waveNum: number, laneCount: number) =>
-		`🔀 [Wave ${waveNum}] Merging ${laneCount} lane(s) into develop...`,
+		`🔀 [Wave ${waveNum}] Merging ${laneCount} lane(s) into target branch...`,
 	orchMergeLaneSuccess: (laneNum: number, commit: string, durationSec: number) =>
 		`  ✅ Lane ${laneNum} merged (${commit.slice(0, 8)}, ${durationSec}s)`,
 	orchMergeLaneConflictResolved: (laneNum: number, conflictCount: number, durationSec: number) =>
@@ -35,7 +35,7 @@ export const ORCH_MESSAGES = {
 	orchMergePlaceholder: (waveNum: number) =>
 		`🔀 [Wave ${waveNum}] Merge: placeholder — Step 3 (TS-008) will replace with mergeWave()`,
 	orchWorktreeReset: (waveNum: number, lanes: number) =>
-		`🔄 Resetting ${lanes} worktree(s) to develop HEAD after wave ${waveNum}`,
+		`🔄 Resetting ${lanes} worktree(s) to target branch HEAD after wave ${waveNum}`,
 	orchBatchComplete: (batchId: string, succeeded: number, failed: number, skipped: number, blocked: number, elapsedSec: number) => {
 		const lines = [`\n🏁 Batch ${batchId} complete: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped, ${blocked} blocked (${elapsedSec}s)`];
 		if (failed > 0 || blocked > 0) {

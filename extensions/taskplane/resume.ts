@@ -10,12 +10,12 @@ import { executeOrchBatch } from "./engine.ts";
 import { execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { runGit } from "./git.ts";
-import { mergeWave } from "./merge.ts";
+import { mergeWaveByRepo } from "./merge.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
 import { deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { StateFileError } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
-import { buildDependencyGraph } from "./waves.ts";
+import { buildDependencyGraph, resolveRepoRoot } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, removeAllWorktrees, removeWorktree, safeResetWorktree } from "./worktree.ts";
 
 // ── Resume Pure Functions ────────────────────────────────────────────
@@ -647,7 +647,7 @@ export async function resumeOrchBatch(
 				"info",
 			);
 
-			// Build synthetic WaveExecutionResult for mergeWave()
+			// Build synthetic WaveExecutionResult for mergeWaveByRepo()
 			const syntheticLaneResults: LaneExecutionResult[] = reExecAllocatedLanes.map(lane => ({
 				laneNumber: lane.laneNumber,
 				laneId: lane.laneId,
@@ -682,7 +682,7 @@ export async function resumeOrchBatch(
 				allocatedLanes: reExecAllocatedLanes,
 			};
 
-			const reExecMergeResult = mergeWave(
+			const reExecMergeResult = mergeWaveByRepo(
 				reExecAllocatedLanes,
 				syntheticWaveResult,
 				0,
@@ -690,6 +690,7 @@ export async function resumeOrchBatch(
 				repoRoot,
 				batchState.batchId,
 				batchState.baseBranch,
+				workspaceConfig,
 			);
 
 			if (reExecMergeResult.status === "succeeded") {
@@ -698,11 +699,11 @@ export async function resumeOrchBatch(
 					"info",
 				);
 
-				// Clean up merged branches
-				const targetBranch = batchState.baseBranch;
+				// Clean up merged branches (resolve per-lane repo root for workspace mode)
 				for (const lr of reExecMergeResult.laneResults) {
 					if (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED") {
-						deleteBranchBestEffort(lr.sourceBranch, repoRoot);
+						const laneRepoRoot = resolveRepoRoot(lr.repoId, repoRoot, workspaceConfig);
+						deleteBranchBestEffort(lr.sourceBranch, laneRepoRoot);
 					}
 				}
 			} else {
@@ -919,7 +920,7 @@ export async function resumeOrchBatch(
 				persistRuntimeState("merge-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
 				onNotify(ORCH_MESSAGES.orchMergeStart(waveIdx + 1, mergeableLaneCount), "info");
 
-				mergeResult = mergeWave(
+				mergeResult = mergeWaveByRepo(
 					waveResult.allocatedLanes,
 					waveResult,
 					waveIdx + 1,
@@ -927,6 +928,7 @@ export async function resumeOrchBatch(
 					repoRoot,
 					batchState.batchId,
 					batchState.baseBranch,
+					workspaceConfig,
 				);
 				batchState.mergeResults.push(mergeResult);
 
@@ -1027,12 +1029,12 @@ export async function resumeOrchBatch(
 
 		// Post-merge: reset worktrees for next wave
 		if (mergeResult && mergeResult.status === "succeeded") {
-			const targetBranch = batchState.baseBranch;
 			for (const lr of mergeResult.laneResults) {
 				if (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED") {
-					const ancestorCheck = runGit(["merge-base", "--is-ancestor", lr.sourceBranch, targetBranch], repoRoot);
+					const laneRepoRoot = resolveRepoRoot(lr.repoId, repoRoot, workspaceConfig);
+					const ancestorCheck = runGit(["merge-base", "--is-ancestor", lr.sourceBranch, lr.targetBranch], laneRepoRoot);
 					if (ancestorCheck.ok) {
-						deleteBranchBestEffort(lr.sourceBranch, repoRoot);
+						deleteBranchBestEffort(lr.sourceBranch, laneRepoRoot);
 					}
 				}
 			}

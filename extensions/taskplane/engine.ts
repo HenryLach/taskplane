@@ -9,13 +9,13 @@ import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { execLog, executeWave, tmuxKillSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
-import { mergeWave } from "./merge.ts";
+import { mergeWaveByRepo } from "./merge.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
 import { deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
 import { FATAL_DISCOVERY_CODES, generateBatchId } from "./types.ts";
 import type { AllocatedLane, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, TokenCounts, WorkspaceConfig } from "./types.ts";
-import { buildDependencyGraph, computeWaves, validateGraph } from "./waves.ts";
+import { buildDependencyGraph, computeWaves, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 
 // ── /orch Execution Engine ───────────────────────────────────────────
@@ -344,7 +344,7 @@ export async function executeOrchBatch(
 				persistRuntimeState("merge-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, repoRoot);
 				onNotify(ORCH_MESSAGES.orchMergeStart(waveIdx + 1, mergeableLaneCount), "info");
 
-				mergeResult = mergeWave(
+				mergeResult = mergeWaveByRepo(
 					waveResult.allocatedLanes,
 					waveResult,
 					waveIdx + 1,
@@ -352,6 +352,7 @@ export async function executeOrchBatch(
 					repoRoot,
 					batchState.batchId,
 					batchState.baseBranch,
+					workspaceConfig,
 				);
 				allMergeResults.push(mergeResult);
 				batchState.mergeResults.push(mergeResult);
@@ -716,23 +717,32 @@ export async function executeOrchBatch(
 		// ── Post-worktree-removal: Clean up merged branches ──────
 		// This MUST run after worktree removal because git branch -D
 		// fails if any worktree still has the branch checked out.
+		// In workspace mode, each lane's branch lives in its owning repo,
+		// so we resolve the correct repo root per lane using repoId.
 		for (const mergeResult of allMergeResults) {
 			if (mergeResult.status === "succeeded" || mergeResult.status === "partial") {
 				for (const lr of mergeResult.laneResults) {
 					if (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED") {
+						const laneRepoRoot = resolveRepoRoot(lr.repoId, repoRoot, workspaceConfig);
 						const ancestorCheck = runGit(
-							["merge-base", "--is-ancestor", lr.sourceBranch, targetBranch],
-							repoRoot,
+							["merge-base", "--is-ancestor", lr.sourceBranch, lr.targetBranch],
+							laneRepoRoot,
 						);
 						if (ancestorCheck.ok) {
-							const deleted = deleteBranchBestEffort(lr.sourceBranch, repoRoot);
+							const deleted = deleteBranchBestEffort(lr.sourceBranch, laneRepoRoot);
 							if (deleted) {
-								execLog("batch", batchState.batchId, `deleted merged branch ${lr.sourceBranch}`);
+								execLog("batch", batchState.batchId, `deleted merged branch ${lr.sourceBranch}`, {
+									repoId: lr.repoId ?? "(default)",
+								});
 							} else {
-								execLog("batch", batchState.batchId, `warning: failed to delete merged branch ${lr.sourceBranch} — retained for manual cleanup`);
+								execLog("batch", batchState.batchId, `warning: failed to delete merged branch ${lr.sourceBranch} — retained for manual cleanup`, {
+									repoId: lr.repoId ?? "(default)",
+								});
 							}
 						} else {
-							execLog("batch", batchState.batchId, `warning: branch ${lr.sourceBranch} not fully merged into ${targetBranch} — retained`);
+							execLog("batch", batchState.batchId, `warning: branch ${lr.sourceBranch} not fully merged into ${lr.targetBranch} — retained`, {
+								repoId: lr.repoId ?? "(default)",
+							});
 						}
 					}
 				}
