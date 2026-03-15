@@ -99,7 +99,10 @@
 | 2026-03-15 07:33 | Step 1 started | Fix completion probing |
 | 2026-03-15 07:35 | Review R003 | plan Step 1: UNKNOWN |
 | 2026-03-15 07:35 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 07:40 | Step 1 implementation | abort.ts refactored to use resolveCanonicalTaskPaths (committed ce69217); buildLaneEnvVars comment clarified (committed 9ab18c9); all 6 acceptance checkboxes verified |
+| 2026-03-15 07:41 | Step 1 verified | Tests: 3 passing suites, 4 pre-existing failures (not related to TP-003 changes) |
 | 2026-03-15 07:40 | Step 1 complete | Hydrated Step 1; refactored `abort.ts::selectAbortTargetSessions` to use `resolveCanonicalTaskPaths`; removed unused `resolve` import; verified monorepo + external + archive acceptance; 3 test suites pass (21 pre-existing failures unrelated) |
+| 2026-03-15 07:40 | Worker iter 2 | done in 244s, ctx: 29%, tools: 33 |
 
 ## Blockers
 
