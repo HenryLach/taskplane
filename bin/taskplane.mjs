@@ -292,15 +292,17 @@ async function autoCommitTaskFiles(projectRoot, tasksRoot) {
 
 function discoverTaskAreaMetadata(projectRoot) {
 	const runnerPath = path.join(projectRoot, ".pi", "task-runner.yaml");
-	if (!fs.existsSync(runnerPath)) return { paths: [], contexts: [] };
+	if (!fs.existsSync(runnerPath)) return { paths: [], contexts: [], areaRepoIds: {} };
 
 	const raw = readYaml(runnerPath);
-	if (!raw) return { paths: [], contexts: [] };
+	if (!raw) return { paths: [], contexts: [], areaRepoIds: {} };
 
 	const lines = raw.split(/\r?\n/);
 	let inTaskAreas = false;
+	let currentAreaName = null;
 	const paths = new Set();
 	const contexts = new Set();
+	const areaRepoIds = {}; // area name → repo_id (only areas that declare one)
 
 	for (const line of lines) {
 		const trimmed = line.trim();
@@ -317,6 +319,13 @@ function discoverTaskAreaMetadata(projectRoot) {
 			break;
 		}
 
+		// Area name line (2-space indent): "  taskplane-tasks:"
+		const areaNameMatch = line.match(/^  ([A-Za-z0-9][A-Za-z0-9_-]*)\s*:\s*$/);
+		if (areaNameMatch) {
+			currentAreaName = areaNameMatch[1];
+			continue;
+		}
+
 		const pathMatch = line.match(/^\s{4}path:\s*["']?([^"'\n#]+)["']?\s*(?:#.*)?$/);
 		if (pathMatch?.[1]) {
 			paths.add(pathMatch[1].trim());
@@ -326,9 +335,15 @@ function discoverTaskAreaMetadata(projectRoot) {
 		if (contextMatch?.[1]) {
 			contexts.add(contextMatch[1].trim());
 		}
+
+		// Extract repo_id per area (workspace mode routing validation)
+		const repoIdMatch = line.match(/^\s{4}repo_id:\s*["']?([^"'\n#]+)["']?\s*(?:#.*)?$/);
+		if (repoIdMatch?.[1] && currentAreaName) {
+			areaRepoIds[currentAreaName] = repoIdMatch[1].trim();
+		}
 	}
 
-	return { paths: [...paths], contexts: [...contexts] };
+	return { paths: [...paths], contexts: [...contexts], areaRepoIds };
 }
 
 function discoverTaskAreaPaths(projectRoot) {
@@ -1042,6 +1057,38 @@ function cmdDoctor() {
 		}
 	}
 
+	// Step 1: Validate repo topology (workspace mode + valid config only)
+	if (isWorkspaceMode && wsResult.config) {
+		console.log();
+		const repoIds = Object.keys(wsResult.config.repos).sort();
+		for (const repoId of repoIds) {
+			const repo = wsResult.config.repos[repoId];
+			const resolvedPath = path.resolve(projectRoot, repo.path);
+
+			// Check path exists on disk
+			if (!fs.existsSync(resolvedPath)) {
+				console.log(`  ${FAIL} repo: ${repoId} — path not found: ${resolvedPath} [WORKSPACE_REPO_PATH_NOT_FOUND]`);
+				console.log(`     ${c.dim}→ Check repos.${repoId}.path in .pi/taskplane-workspace.yaml${c.reset}`);
+				issues++;
+				continue;
+			}
+
+			// Check path is a git repository
+			try {
+				execSync("git rev-parse --git-dir", {
+					cwd: resolvedPath,
+					stdio: ["pipe", "pipe", "pipe"],
+					timeout: 5000,
+				});
+				console.log(`  ${OK} repo: ${repoId} ${c.dim}(${resolvedPath})${c.reset}`);
+			} catch {
+				console.log(`  ${FAIL} repo: ${repoId} — not a git repository: ${resolvedPath} [WORKSPACE_REPO_NOT_GIT]`);
+				console.log(`     ${c.dim}→ Initialize git in the directory or fix repos.${repoId}.path${c.reset}`);
+				issues++;
+			}
+		}
+	}
+
 	// Check project config (common — both modes)
 	console.log();
 	const configFiles = [
@@ -1071,7 +1118,7 @@ function cmdDoctor() {
 	}
 
 	// Check task areas from config
-	const { paths: taskAreaPaths, contexts: taskAreaContexts } = discoverTaskAreaMetadata(projectRoot);
+	const { paths: taskAreaPaths, contexts: taskAreaContexts, areaRepoIds } = discoverTaskAreaMetadata(projectRoot);
 	if (taskAreaPaths.length > 0) {
 		console.log();
 		for (const areaPath of taskAreaPaths) {
@@ -1090,6 +1137,22 @@ function cmdDoctor() {
 				console.log(`  ${OK} CONTEXT.md: ${ctxPath}`);
 			} else {
 				console.log(`  ${WARN} CONTEXT.md: ${ctxPath} ${c.dim}(not found)${c.reset}`);
+			}
+		}
+	}
+
+	// Validate area repo_id routing targets (workspace mode + valid config only)
+	if (isWorkspaceMode && wsResult.config && Object.keys(areaRepoIds).length > 0) {
+		const knownRepoIds = Object.keys(wsResult.config.repos);
+		const areaNames = Object.keys(areaRepoIds).sort();
+		for (const areaName of areaNames) {
+			const repoId = areaRepoIds[areaName];
+			if (knownRepoIds.includes(repoId)) {
+				console.log(`  ${OK} area '${areaName}' repo_id: ${repoId}`);
+			} else {
+				console.log(`  ${FAIL} area '${areaName}' repo_id '${repoId}' does not match any workspace repo [AREA_REPO_ID_UNKNOWN]`);
+				console.log(`     ${c.dim}→ Available repos: ${knownRepoIds.join(", ")}. Fix repo_id in .pi/task-runner.yaml${c.reset}`);
+				issues++;
 			}
 		}
 	}

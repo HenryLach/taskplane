@@ -1,11 +1,11 @@
 # TP-008: Workspace-Aware Doctor Diagnostics and Validation — Status
 
 **Current Step:** Step 1: Validate repo and routing topology
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -52,10 +52,58 @@ In workspace mode, the workspace root (`cwd`) is intentionally non-git. The exis
 ---
 
 ### Step 1: Validate repo and routing topology
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Check each configured repo path exists and is a git repo
-- [ ] Validate area/default routing targets reference known repos
+#### Step 1 gating rules
+| Condition | Step 1 behavior |
+|-----------|----------------|
+| Repo mode (no workspace config) | Step 1 skipped entirely — no repo topology to validate |
+| Workspace mode + valid config (`wsResult.config` non-null) | Step 1 runs: repo checks + routing checks |
+| Workspace mode + invalid config (`wsResult.error` non-null) | Step 1 skipped — config error already reported as FAIL in Step 0 banner |
+
+#### Repo path validation behavior
+- Iterate `Object.keys(wsResult.config.repos).sort()` (deterministic, matches workspace.ts key order).
+- For each repo: resolve path relative to `projectRoot` using `path.resolve(projectRoot, repo.path)`.
+- **Existence check:** `fs.existsSync(resolvedPath)` → FAIL if missing with code `WORKSPACE_REPO_PATH_NOT_FOUND`.
+- **Git check:** `git rev-parse --git-dir` executed in `resolvedPath` → FAIL if non-zero exit with code `WORKSPACE_REPO_NOT_GIT`.
+- Subdirectory-of-repo paths do NOT fail — the lightweight doctor check validates only that the path is a git repo (not necessarily the root). The full root-vs-subdirectory check is the orchestrator's responsibility.
+- Each failed repo increments `issues` count.
+
+#### Routing-target validation behavior
+- **`routing.default_repo`:** Already validated in `loadWorkspaceConfigForDoctor()` (Step 0). No additional check needed in Step 1.
+- **Area `repo_id` values:** Extend `discoverTaskAreaMetadata()` to also extract `repo_id` fields from `task-runner.yaml`. For each area that declares a `repo_id`, validate it references a key in `wsResult.config.repos`. FAIL if unknown with code `AREA_REPO_ID_UNKNOWN`.
+- **`routing.tasks_root`:** Existence already checked in Step 0 loader. Step 1 adds no additional check.
+
+#### Doctor output shape (Step 1 section)
+When Step 1 runs, emit a new "Workspace repos" section after the workspace banner:
+```
+  ✅ repo: api (C:\path\to\api-repo)
+  ✅ repo: frontend (C:\path\to\frontend-repo)
+  ❌ repo: backend — path not found: C:\path\to\backend-repo
+     → Check repos.backend.path in .pi/taskplane-workspace.yaml
+  ❌ repo: shared — not a git repository: C:\path\to\shared
+     → Initialize git in the directory or fix repos.shared.path
+```
+
+For area routing errors:
+```
+  ❌ area 'mobile-tasks' repo_id 'mobile' does not match any workspace repo
+     → Available repos: api, frontend. Fix repo_id in .pi/task-runner.yaml
+```
+
+#### Implementation checklist
+- [x] Extend `discoverTaskAreaMetadata()` to extract `repo_id` per area from task-runner.yaml
+- [x] Add repo-path validation block in `cmdDoctor()` after workspace banner (gated on workspace mode + valid config)
+- [x] Add area `repo_id` routing validation in `cmdDoctor()` after repo checks
+- [x] Verify repo mode output is unchanged (no visible changes when no workspace config exists)
+
+#### Step 1 verification plan
+- [x] Repo mode baseline: run `node bin/taskplane.mjs doctor` without workspace config — output unchanged
+- [x] Valid workspace + all repos exist and are git repos → all repo checks pass
+- [x] Repo path missing on disk → FAIL with actionable hint
+- [x] Repo path exists but not git → FAIL with hint
+- [x] Area `repo_id` references unknown repo → FAIL with hint listing available repos
+- [x] Area with no `repo_id` → no error (falls through to default_repo at runtime)
 
 ---
 
@@ -92,6 +140,10 @@ In workspace mode, the workspace root (`cwd`) is intentionally non-git. The exis
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -111,6 +163,19 @@ In workspace mode, the workspace root (`cwd`) is intentionally non-git. The exis
 | 2026-03-15 | Step 0 implemented | loadWorkspaceConfigForDoctor + parseWorkspaceYaml added, cmdDoctor workspace branch, all 3 verification scenarios passed |
 | 2026-03-15 | Step 0 complete | All implementation and verification items checked off |
 | 2026-03-15 08:22 | Worker iter 1 | done in 749s, ctx: 40%, tools: 86 |
+| 2026-03-15 08:24 | Worker iter 1 | done in 841s, ctx: 50%, tools: 120 |
+| 2026-03-15 08:25 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 08:25 | Step 0 complete | Detect workspace mode in doctor |
+| 2026-03-15 08:25 | Step 1 started | Validate repo and routing topology |
+| 2026-03-15 08:27 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 08:27 | Step 0 complete | Detect workspace mode in doctor |
+| 2026-03-15 08:27 | Step 1 started | Validate repo and routing topology |
+| 2026-03-15 08:27 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 | Step 1 plan hydrated | Addressed R003: gating matrix, validation behavior, output shape, implementation checklist, verification plan |
+| 2026-03-15 | Step 1 implemented | discoverTaskAreaMetadata extended for repo_id, cmdDoctor repo topology validation + area routing validation added |
+| 2026-03-15 | Step 1 verified | All 6 verification scenarios passed, repo mode baseline unchanged, all workspace/routing tests pass |
+| 2026-03-15 | Step 1 complete | Validate repo and routing topology |
+| 2026-03-15 08:29 | Review R003 | plan Step 1: UNKNOWN |
 
 ## Blockers
 
