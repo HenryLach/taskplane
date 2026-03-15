@@ -14,7 +14,7 @@
 ---
 
 ### Step 0: Refactor lane allocation model
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 **Lane identity contract (R001 finding #2):**
 - [x] Add `repoId?: string` to `LaneAssignment` in types.ts
@@ -83,6 +83,10 @@
 ## Discoveries
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| engine.ts keys laneOutcomeByNumber by laneNumber — global uniqueness preserved by design | No action needed | engine.ts:306-320 |
+| resume.ts reconstructs AllocatedLane from PersistedLaneRecord — repoId propagation added | Updated in Step 0 | resume.ts:500,580 |
+| formatting.ts sorts lanes by laneNumber — unchanged, works with globally unique numbers | No action needed | formatting.ts:372,399 |
+| Pre-existing test failures in orch-state-persistence, orch-pure-functions, task-runner-orchestration, orch-direct-implementation — not related to TP-004 | Not TP-004 scope | extensions/tests/ |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -93,6 +97,7 @@
 | 2026-03-15 14:17 | Task started | Extension-driven execution |
 | 2026-03-15 14:17 | Step 0 started | Refactor lane allocation model |
 | 2026-03-15 14:20 | Review R001 | plan Step 0: UNKNOWN |
+| 2026-03-15 | Step 0 completed | All checkboxes done, tests pass (no regressions), committed |
 | 2026-03-15 14:21 | Review R001 | plan Step 0: UNKNOWN |
 
 ## Blockers
