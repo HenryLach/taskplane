@@ -821,6 +821,8 @@ export interface OrchBatchRuntimeState {
 	batchId: string;
 	/** Branch that was active when /orch started — used as base for worktrees and merge target */
 	baseBranch: string;
+	/** Workspace execution mode (v2). Defaults to "repo" for backward compatibility. */
+	mode: WorkspaceMode;
 	/** Shared pause signal — set by /orch-pause, read by executeLane/executeWave */
 	pauseSignal: { paused: boolean };
 	/** All wave results in order (grows as waves complete) */
@@ -898,6 +900,7 @@ export function freshOrchBatchState(): OrchBatchRuntimeState {
 		phase: "idle",
 		batchId: "",
 		baseBranch: "",
+		mode: "repo",
 		pauseSignal: { paused: false },
 		waveResults: [],
 		currentWaveIndex: -1,
@@ -1131,9 +1134,21 @@ export interface OrchDashboardViewModel {
 /**
  * Current schema version for batch-state.json.
  * Increment when the persisted schema changes in incompatible ways.
- * loadBatchState() rejects files with a different schemaVersion.
+ *
+ * Version history:
+ *   v1 — Original schema (TS-009). No repo-aware fields on task records.
+ *         Lane records had optional `repoId` but it was not validated.
+ *   v2 — Repo-aware records (TP-006). Adds `repoId` and `resolvedRepoId`
+ *         to task records. Formalizes `repoId` on lane records. Adds
+ *         `mode` field to top-level state.
+ *
+ * Compatibility policy:
+ *   - loadBatchState() accepts v1 files and auto-upconverts to v2 in memory
+ *     (via upconvertV1toV2()). The on-disk file is NOT rewritten.
+ *   - saveBatchState() always writes v2.
+ *   - Schema versions > 2 are rejected with STATE_SCHEMA_INVALID.
  */
-export const BATCH_STATE_SCHEMA_VERSION = 1;
+export const BATCH_STATE_SCHEMA_VERSION = 2;
 
 /**
  * Canonical file path for persisted batch state.
@@ -1178,6 +1193,25 @@ export class StateFileError extends Error {
  *
  * Contains everything `/orch-resume` needs to reconstruct
  * task progress without re-running discovery.
+ *
+ * Repo-aware fields (v2):
+ *   `repoId` and `resolvedRepoId` capture task-to-repo attribution
+ *   so resume can reconstruct repo routing without re-running discovery.
+ *
+ *   Mode semantics:
+ *   - **repo mode**: Both fields are `undefined`. Tasks implicitly target
+ *     the single repository (cwd). No repo routing needed.
+ *   - **workspace mode**: `repoId` is the repo ID declared in PROMPT.md
+ *     (may be `undefined` if the task didn't declare one). `resolvedRepoId`
+ *     is the final repo ID after applying the routing precedence chain
+ *     (prompt → area → workspace default). Always a non-empty string in
+ *     workspace mode for tasks that passed routing validation.
+ *
+ *   Source of truth:
+ *   - For allocated tasks: derived from `ParsedTask.promptRepoId` and
+ *     `ParsedTask.resolvedRepoId` via `serializeBatchState()`.
+ *   - For unallocated/pending tasks: derived from the same ParsedTask
+ *     fields via discovery enrichment in `persistRuntimeState()`.
  */
 export interface PersistedTaskRecord {
 	/** Task identifier (e.g., "TO-014") */
@@ -1198,6 +1232,17 @@ export interface PersistedTaskRecord {
 	doneFileFound: boolean;
 	/** Human-readable exit reason (if completed/failed) */
 	exitReason: string;
+	/**
+	 * Repo ID declared in the task's PROMPT.md metadata (v2).
+	 * Undefined in repo mode or if the task didn't declare a repo.
+	 */
+	repoId?: string;
+	/**
+	 * Resolved repo ID after applying routing precedence (v2).
+	 * Undefined in repo mode. In workspace mode, this is the final
+	 * repo target after prompt → area → workspace-default fallback.
+	 */
+	resolvedRepoId?: string;
 }
 
 /**
@@ -1205,6 +1250,21 @@ export interface PersistedTaskRecord {
  *
  * Captures worktree/branch assignment so `/orch-resume` can
  * reconnect to existing worktrees without re-allocation.
+ *
+ * Repo-aware contract (v2):
+ *   `repoId` captures which repository this lane targets.
+ *
+ *   Mode semantics:
+ *   - **repo mode**: `repoId` is `undefined`. The lane's worktree is
+ *     created from the single repository (cwd). All lanes share the
+ *     same repo implicitly.
+ *   - **workspace mode**: `repoId` is a non-empty string matching a
+ *     key in `WorkspaceConfig.repos`. All tasks assigned to this lane
+ *     target the same repo. Lane allocation guarantees repo affinity
+ *     (no lane mixes tasks from different repos).
+ *
+ *   Source of truth: derived from `AllocatedLane.repoId` during
+ *   serialization in `serializeBatchState()`.
  */
 export interface PersistedLaneRecord {
 	/** Lane number (1-indexed) */
@@ -1219,7 +1279,11 @@ export interface PersistedLaneRecord {
 	branch: string;
 	/** Task IDs assigned to this lane in execution order */
 	taskIds: string[];
-	/** Repo ID this lane targets (workspace mode only). Undefined in repo mode. */
+	/**
+	 * Repo ID this lane targets (v2).
+	 * Undefined in repo mode. Non-empty string in workspace mode,
+	 * matching a key in `WorkspaceConfig.repos`.
+	 */
 	repoId?: string;
 }
 
@@ -1252,9 +1316,16 @@ export interface PersistedMergeResult {
  * - Merge results are summarized (not full MergeWaveResult) for size
  * - `updatedAt` is monotonic (epoch ms) for staleness detection
  * - `lastError` captures most recent error without PII
+ *
+ * v2 additions (TP-006):
+ * - `mode` field captures workspace vs repo mode at batch start
+ * - Task records include `repoId` and `resolvedRepoId` for repo attribution
+ * - Lane records formalize `repoId` contract per mode
+ * - v1 files are auto-upconverted: `mode` defaults to "repo", task/lane
+ *   `repoId` fields default to `undefined` (omitted from JSON)
  */
 export interface PersistedBatchState {
-	/** Schema version — must equal BATCH_STATE_SCHEMA_VERSION */
+	/** Schema version — must equal BATCH_STATE_SCHEMA_VERSION (currently 2) */
 	schemaVersion: number;
 	/** Current batch execution phase */
 	phase: OrchBatchPhase;
@@ -1262,6 +1333,13 @@ export interface PersistedBatchState {
 	batchId: string;
 	/** Branch that was active when /orch started — used as base for worktrees and merge target */
 	baseBranch: string;
+	/**
+	 * Workspace execution mode at batch start (v2).
+	 * - "repo": Single-repo mode (default, backward-compatible).
+	 * - "workspace": Multi-repo workspace mode.
+	 * Defaults to "repo" when loading v1 state files.
+	 */
+	mode: WorkspaceMode;
 	/** Epoch ms when batch started */
 	startedAt: number;
 	/** Epoch ms when state was last written */
