@@ -8,7 +8,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- Public documentation rollout (tutorials, how-to guides, reference, explanation, maintainer docs)
+- No unreleased changes yet.
+
+## [0.1.12] - 2026-03-15
+
+### Added
+- `taskplane uninstall` CLI command with project cleanup + optional package uninstall scopes (`--package`, `--package-only`, `--local`, `--global`, `--remove-tasks`, `--all`, `--dry-run`).
+- Dynamic example scaffolding in `taskplane init`: all `templates/tasks/EXAMPLE-*` packets are now discovered and generated.
+- Second default example task packet: `EXAMPLE-002-parallel-smoke`.
+- GitHub governance baseline for OSS collaboration:
+  - CI workflow (`.github/workflows/ci.yml`)
+  - Dependabot config
+  - CODEOWNERS
+  - Docs improvement issue form + issue template config
+
+### Changed
+- Onboarding is now orchestrator-first (`/orch-plan all` + `/orch all` + dashboard), with `/task` documented as explicit single-task mode.
+- Docs now explicitly clarify `/task` runs in current branch/worktree while `/orch` uses isolated worktrees (recommended default even for single-task isolation).
+- `AGENTS.md` now includes branching/PR workflow and release-playbook guidance for coding agents.
+- Maintainer documentation expanded with repository governance and release mapping between GitHub releases and npm publish.
+
+### Fixed
+- CI baseline now avoids peer-dependency import failures from extension runtime-only modules in this repo context.
+- Branch protection/check naming documentation aligned with the required GitHub check context (`ci`).
 
 ## [0.1.11] - 2026-03-14
 
@@ -26,5 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.1.11...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.1.12...HEAD
+[0.1.12]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.12
 [0.1.11]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.11
