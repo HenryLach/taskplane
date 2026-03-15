@@ -476,6 +476,29 @@ describe("loadWorkspaceConfig", () => {
 			expect(e.message).toContain("routing.strict");
 		}
 	});
+
+	it("1.20: routing.strict: null (bare YAML value) throws WORKSPACE_SCHEMA_INVALID", () => {
+		const dir = makeTestDir("strict-null");
+		const repoDir = join(dir, "repo");
+		initGitRepo(repoDir);
+		const tasksDir = join(dir, "tasks");
+		mkdirSync(tasksDir, { recursive: true });
+		// In YAML, bare `strict:` or `strict: null` produces null
+		writeWorkspaceConfig(dir,
+			`repos:\n  api:\n    path: ${repoDir}\n` +
+			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: null\n`
+		);
+
+		expect(() => loadWorkspaceConfig(dir)).toThrow(WorkspaceConfigError);
+		try {
+			loadWorkspaceConfig(dir);
+		} catch (e: any) {
+			expect(e.code).toBe("WORKSPACE_SCHEMA_INVALID");
+			expect(e.message).toContain("routing.strict");
+			expect(e.message).toContain("boolean");
+			expect(e.message).toContain("null");
+		}
+	});
 });
 
 // ── 2.x: buildExecutionContext ───────────────────────────────────────

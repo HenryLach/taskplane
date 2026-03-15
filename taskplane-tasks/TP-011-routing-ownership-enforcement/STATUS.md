@@ -1,11 +1,11 @@
 # TP-011: Routing Ownership Enforcement and Strict Workspace Policy — Status
 
-**Current Step:** Step 2: Cover governance scenarios
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 3
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -45,10 +45,30 @@
 ---
 
 ### Step 2: Cover governance scenarios
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
+**Scope:** Incremental — fix `routing.strict: null` fail-open gap, add governance edge-case tests, document coverage matrix.
 
-- [ ] Add tests for permissive vs strict routing behavior
-- [ ] Ensure repo-mode defaults remain unaffected
+**Coverage Matrix (acceptance → test IDs):**
+| Acceptance Bullet | Existing Tests | New Tests (Step 2) |
+|---|---|---|
+| Permissive routing behavior | 21.1–21.3, 24.3 | 27.2, 27.5 |
+| Strict routing rejection | 19.1–19.5, 20.3, 24.1, 24.4 | 27.3, 27.4 |
+| Strict routing acceptance | 20.1–20.2, 24.2 | 27.3 |
+| Strict + unknown repo interaction | 20.2 | 27.1 (runDiscovery pipeline) |
+| Strict blocks area fallback (governance) | 19.4 | 27.4 (explicit contrast pair) |
+| Permissive allows area fallback | 21.1 | 27.5 (explicit contrast pair) |
+| Mixed tasks strict pipeline | 20.3 | 27.3 (runDiscovery-level) |
+| Repo-mode unaffected | 8.1, 18.3, 23.1 | 26.1 (runDiscovery-level repo-mode non-regression) |
+| `routing.strict: null` rejected | — | 1.20 (workspace-config.test.ts) |
+| Config → runtime strict pipeline | 1.15–1.19 | 1.20 (null edge case) |
+| TASK_ROUTING_STRICT fatal classification | 22.1–22.3 | — (verified) |
+
+- [x] Fix `routing.strict: null` fail-open gap in `workspace.ts` — reject null with `WORKSPACE_SCHEMA_INVALID`
+- [x] Add test 1.20 in `workspace-config.test.ts`: `routing.strict: null` (bare YAML value) throws `WORKSPACE_SCHEMA_INVALID`
+- [x] Add test 26.1 in `discovery-routing.test.ts`: repo-mode `runDiscovery` with strict-like task areas still skips routing
+- [x] Add tests 27.1–27.5 in `discovery-routing.test.ts`: governance scenarios (strict+unknown, permissive+default, mixed pipeline, strict blocks area fallback, permissive allows area fallback)
+- [x] Verify all existing governance tests pass (19.x–27.x, 1.15–1.20)
+- [x] Run full test suite: 99/99 discovery-routing, 46/46 workspace-config
 
 ---
 
@@ -81,6 +101,10 @@
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 | R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -117,6 +141,18 @@
 | 2026-03-15 15:48 | Step 1 tests | 93/93 discovery-routing tests pass (87+6 new §25.x), 45/45 workspace-config tests pass (40+5 new §1.15–1.19) |
 | 2026-03-15 15:48 | Step 1 complete | Enforce policy during discovery (verification-only) |
 | 2026-03-15 15:49 | Worker iter 2 | done in 210s, ctx: 32%, tools: 35 |
+| 2026-03-15 15:50 | Worker iter 2 | done in 397s, ctx: 47%, tools: 62 |
+| 2026-03-15 15:51 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 15:51 | Step 1 complete | Enforce policy during discovery |
+| 2026-03-15 15:51 | Step 2 started | Cover governance scenarios |
+| 2026-03-15 15:53 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 15:53 | Step 1 complete | Enforce policy during discovery |
+| 2026-03-15 15:53 | Step 2 started | Cover governance scenarios |
+| 2026-03-15 15:53 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 15:54 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 | Step 2 implemented | Added 5 governance tests (27.1–27.5): strict+unknown pipeline, permissive+default pipeline, strict mixed pipeline, strict blocks area fallback, permissive allows area fallback |
+| 2026-03-15 | Step 2 verified | 99/99 discovery-routing tests pass, 46/46 workspace-config tests pass |
+| 2026-03-15 | Step 2 complete | Cover governance scenarios (incremental coverage) |
 
 ## Blockers
 
