@@ -69,14 +69,10 @@ context:
 
 # Define the task areas that exist in your project.
 task_areas:
-  core:
-    path: "tasks/core"
-    prefix: "CORE"
-    context: "tasks/core/CONTEXT.md"
-  docs:
-    path: "tasks/docs"
-    prefix: "DOC"
-    context: "tasks/docs/CONTEXT.md"
+  general:
+    path: "taskplane-tasks"
+    prefix: "TP"
+    context: "taskplane-tasks/CONTEXT.md"
 
 # Reference docs available for higher-context task prompts.
 reference_docs:
