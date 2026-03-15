@@ -81,6 +81,7 @@
 | 2026-03-15 07:20 | Step 0 started | Introduce canonical task-path resolver |
 | 2026-03-15 07:23 | Review R001 | plan Step 0: UNKNOWN |
 | 2026-03-15 07:27 | Step 0 complete | Hydrated checkboxes per R001; implemented `resolveCanonicalTaskPaths`; refactored 3 call sites; 3 test suites pass (no regressions) |
+| 2026-03-15 07:29 | Worker iter 1 | done in 357s, ctx: 34%, tools: 45 |
 
 ## Blockers
 
