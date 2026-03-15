@@ -20,3 +20,4 @@ export * from "./persistence.ts";
 export * from "./engine.ts";
 export * from "./resume.ts";
 export * from "./abort.ts";
+export * from "./workspace.ts";
