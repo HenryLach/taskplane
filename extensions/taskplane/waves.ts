@@ -402,6 +402,111 @@ export function applyFileScopeAffinity(
 }
 
 
+// ── Repo-Scoped Lane Helpers ─────────────────────────────────────────
+
+/**
+ * A group of tasks targeting the same repository.
+ *
+ * In repo mode: all tasks are in one group with `repoId` undefined.
+ * In workspace mode: tasks are grouped by `resolvedRepoId`.
+ */
+export interface RepoTaskGroup {
+	/** Repo ID (undefined for repo mode / tasks without resolvedRepoId) */
+	repoId: string | undefined;
+	/** Task IDs in this group (sorted alphabetically) */
+	taskIds: string[];
+}
+
+/**
+ * Group wave tasks by their resolved repo ID.
+ *
+ * In workspace mode, tasks carry `resolvedRepoId` from the discovery/routing
+ * phase. This function groups them so each repo gets independent lane
+ * allocation (own affinity groups, own max_lanes budget).
+ *
+ * In repo mode, all tasks have `resolvedRepoId === undefined`, so they all
+ * land in a single group keyed by `""` (empty string). This preserves
+ * existing single-repo behavior exactly.
+ *
+ * Deterministic ordering guarantees:
+ * 1. Groups are sorted by repoId (undefined sorts first as empty string)
+ * 2. Task IDs within each group are sorted alphabetically
+ *
+ * @param waveTasks - Task IDs in this wave
+ * @param pending   - Full pending task map (from discovery)
+ * @returns RepoTaskGroup[] sorted by repoId then by task IDs within group
+ */
+export function groupTasksByRepo(
+	waveTasks: string[],
+	pending: Map<string, ParsedTask>,
+): RepoTaskGroup[] {
+	const groupMap = new Map<string, string[]>();
+
+	for (const taskId of waveTasks) {
+		const task = pending.get(taskId);
+		// Use resolvedRepoId or empty string as group key (undefined → "" for Map key)
+		const key = task?.resolvedRepoId ?? "";
+		const existing = groupMap.get(key) || [];
+		existing.push(taskId);
+		groupMap.set(key, existing);
+	}
+
+	// Build sorted groups
+	const groups: RepoTaskGroup[] = [];
+	const sortedKeys = [...groupMap.keys()].sort();
+	for (const key of sortedKeys) {
+		const taskIds = groupMap.get(key)!;
+		taskIds.sort(); // Deterministic task order within group
+		groups.push({
+			repoId: key || undefined, // Convert "" back to undefined for repo mode
+			taskIds,
+		});
+	}
+
+	return groups;
+}
+
+/**
+ * Generate a lane identifier string.
+ *
+ * - Repo mode (repoId undefined): `"lane-{N}"` — preserves legacy format
+ * - Workspace mode (repoId set): `"{repoId}/lane-{N}"` — collision-safe across repos
+ *
+ * The `laneLocalNumber` is the 1-indexed lane number within the repo group
+ * (NOT the global lane number). This gives operators clear per-repo context.
+ *
+ * @param laneLocalNumber - Lane number within the repo group (1-indexed)
+ * @param repoId          - Repo identifier (undefined in repo mode)
+ */
+export function generateLaneId(laneLocalNumber: number, repoId?: string): string {
+	if (repoId) {
+		return `${repoId}/lane-${laneLocalNumber}`;
+	}
+	return `lane-${laneLocalNumber}`;
+}
+
+/**
+ * Generate a TMUX session name for a lane.
+ *
+ * - Repo mode: `"{prefix}-lane-{N}"` — preserves legacy format
+ * - Workspace mode: `"{prefix}-{repoId}-lane-{N}"` — collision-safe
+ *
+ * TMUX session names must not contain periods or colons. Repo IDs are
+ * assumed to be valid identifiers (alphanumeric + hyphens) from the
+ * workspace config validation pipeline.
+ *
+ * @param tmuxPrefix      - TMUX prefix from config (e.g., "orch")
+ * @param laneLocalNumber - Lane number within the repo group (1-indexed)
+ * @param repoId          - Repo identifier (undefined in repo mode)
+ */
+export function generateTmuxSessionName(tmuxPrefix: string, laneLocalNumber: number, repoId?: string): string {
+	if (repoId) {
+		return `${tmuxPrefix}-${repoId}-lane-${laneLocalNumber}`;
+	}
+	return `${tmuxPrefix}-lane-${laneLocalNumber}`;
+}
+
+
 // ── Lane Assignment ──────────────────────────────────────────────────
 
 /**
@@ -635,30 +740,34 @@ export function validateAllocationInputs(
  * Allocate lanes for a wave: assign tasks, create worktrees, return ready-to-execute lanes.
  *
  * This is the Phase 3 implementation from §5 of the design doc.
- * It coordinates three stages:
+ * It coordinates four stages:
  *
- * 1. **Affinity grouping** — tasks with overlapping file scope are grouped
- *    together using `applyFileScopeAffinity()`. Overlap is detected from
- *    PROMPT.md's `## File Scope` section (parsed during discovery). Affinity
- *    groups have priority: they are assigned before independent tasks.
- *    Tie-breaking is deterministic (alphabetical by first task ID in group).
+ * 0. **Input validation** — config, tasks, strategy checks.
  *
- * 2. **Strategy assignment** — groups are distributed across lanes using
- *    the configured strategy via `assignTasksToLanes()`:
- *    - `affinity-first`: multi-task groups first (heaviest→lightest), then
- *      single tasks via load-balanced fill
- *    - `round-robin`: sequential assignment by group index mod lane count
- *    - `load-balanced`: heaviest group → lightest lane, repeated
+ * 1. **Repo grouping** — tasks are grouped by `resolvedRepoId` via
+ *    `groupTasksByRepo()`. In repo mode (no resolvedRepoId), all tasks
+ *    go to a single group, preserving existing behavior exactly.
  *
- * 3. **Worktree provisioning** — ensure one worktree per lane via
- *    `ensureLaneWorktrees()`.
- *    Existing lanes are reused across waves; missing lanes are created.
- *    If creating a missing lane fails, newly-created lanes in this call are
- *    rolled back.
+ * 2. **Per-repo affinity grouping + strategy assignment** — for each repo
+ *    group, `assignTasksToLanes()` runs independently with its own
+ *    max_lanes budget. Lane numbers within each group are 1-indexed.
+ *    Groups are processed in deterministic order (sorted by repoId).
+ *    Global lane numbers are assigned sequentially across repo groups
+ *    (repo A gets lanes 1..Na, repo B gets lanes Na+1..Na+Nb, etc.).
+ *
+ * 3. **Worktree provisioning** — ensure one worktree per global lane via
+ *    `ensureLaneWorktrees()`. Existing lanes are reused across waves;
+ *    missing lanes are created. If creating a missing lane fails,
+ *    newly-created lanes in this call are rolled back.
+ *
+ * 4. **Build AllocatedLane[]** — each lane gets repo-aware `laneId` and
+ *    `tmuxSessionName`. In workspace mode: `"api/lane-1"`, `"orch-api-lane-1"`.
+ *    In repo mode: `"lane-1"`, `"orch-lane-1"` (unchanged).
  *
  * **Determinism guarantee:** Given the same `waveTasks`, `pending`, and `config`,
  * this function always produces the same lane assignments and task ordering.
- * This makes debugging and retry behavior predictable.
+ * Repo group order is sorted alphabetically by repoId. Lane assignment within
+ * each group uses the configured strategy deterministically.
  *
  * @param waveTasks - Task IDs in this wave (from topological sort)
  * @param pending   - Full pending task map (from discovery)
@@ -693,22 +802,65 @@ export function allocateLanes(
 		};
 	}
 
-	// ── Stage 1+2: Affinity grouping + strategy assignment ───────
-	// assignTasksToLanes() internally calls applyFileScopeAffinity()
-	// and applies the configured strategy. It returns LaneAssignment[]
-	// with deterministic ordering.
-	const laneAssignments = assignTasksToLanes(
-		waveTasks,
-		pending,
-		config.orchestrator.max_lanes,
-		config.assignment.strategy,
-		config.assignment.size_weights,
-	);
+	// ── Stage 1: Group tasks by repo ─────────────────────────────
+	const repoGroups = groupTasksByRepo(waveTasks, pending);
 
-	// Determine actual lane count from assignments
-	const laneNumbers = new Set(laneAssignments.map((a) => a.lane));
-	const sortedLaneNumbers = [...laneNumbers].sort((a, b) => a - b);
-	const laneCount = laneNumbers.size;
+	// ── Stage 2: Per-repo affinity grouping + strategy assignment ─
+	// Each repo group gets independent lane assignment. Lane numbers
+	// within each group start at 1. We track a globalLaneOffset to
+	// produce globally unique lane numbers across all repo groups.
+	//
+	// The structure tracks: global lane number → { repoId, localLane, assignments }
+	const globalLaneEntries: Array<{
+		globalLane: number;
+		localLane: number;
+		repoId: string | undefined;
+		assignments: LaneAssignment[];
+	}> = [];
+
+	let globalLaneOffset = 0;
+
+	for (const group of repoGroups) {
+		const groupAssignments = assignTasksToLanes(
+			group.taskIds,
+			pending,
+			config.orchestrator.max_lanes,
+			config.assignment.strategy,
+			config.assignment.size_weights,
+		);
+
+		// Determine local lane numbers used in this group's assignment
+		const localLaneNumbers = new Set(groupAssignments.map((a) => a.lane));
+		const sortedLocalLanes = [...localLaneNumbers].sort((a, b) => a - b);
+
+		// Map local lane numbers to global lane numbers
+		const localToGlobal = new Map<number, number>();
+		for (let i = 0; i < sortedLocalLanes.length; i++) {
+			localToGlobal.set(sortedLocalLanes[i], globalLaneOffset + i + 1);
+		}
+
+		// Group assignments by local lane number
+		const byLocalLane = new Map<number, LaneAssignment[]>();
+		for (const a of groupAssignments) {
+			const existing = byLocalLane.get(a.lane) || [];
+			existing.push(a);
+			byLocalLane.set(a.lane, existing);
+		}
+
+		// Produce global lane entries
+		for (const localLane of sortedLocalLanes) {
+			globalLaneEntries.push({
+				globalLane: localToGlobal.get(localLane)!,
+				localLane,
+				repoId: group.repoId,
+				assignments: byLocalLane.get(localLane) || [],
+			});
+		}
+
+		globalLaneOffset += sortedLocalLanes.length;
+	}
+
+	const laneCount = globalLaneEntries.length;
 
 	if (laneCount === 0) {
 		return {
@@ -725,7 +877,8 @@ export function allocateLanes(
 	}
 
 	// ── Stage 3: Ensure lane worktrees exist (reuse across waves + create missing) ─
-	const worktreeResult = ensureLaneWorktrees(sortedLaneNumbers, batchId, config, repoRoot, baseBranch);
+	const sortedGlobalLaneNumbers = globalLaneEntries.map((e) => e.globalLane);
+	const worktreeResult = ensureLaneWorktrees(sortedGlobalLaneNumbers, batchId, config, repoRoot, baseBranch);
 
 	if (!worktreeResult.success) {
 		const failedLanes = worktreeResult.errors
@@ -757,24 +910,16 @@ export function allocateLanes(
 	const strategy = config.assignment.strategy as AllocatedLane["strategy"];
 	const sizeWeights = config.assignment.size_weights;
 
-	// Build a worktree lookup by lane number
+	// Build a worktree lookup by global lane number
 	const worktreeByLane = new Map<number, WorktreeInfo>();
 	for (const wt of worktreeResult.worktrees) {
 		worktreeByLane.set(wt.laneNumber, wt);
 	}
 
-	// Group assignments by lane number and build AllocatedLane objects
-	const laneTaskMap = new Map<number, LaneAssignment[]>();
-	for (const assignment of laneAssignments) {
-		const existing = laneTaskMap.get(assignment.lane) || [];
-		existing.push(assignment);
-		laneTaskMap.set(assignment.lane, existing);
-	}
-
 	const allocatedLanes: AllocatedLane[] = [];
 
-	for (const [laneNum, assignments] of laneTaskMap) {
-		const wt = worktreeByLane.get(laneNum);
+	for (const entry of globalLaneEntries) {
+		const wt = worktreeByLane.get(entry.globalLane);
 		if (!wt) {
 			// This should never happen if ensureLaneWorktrees and assignTasksToLanes
 			// agree on lane numbers, but handle defensively
@@ -786,7 +931,7 @@ export function allocateLanes(
 				laneCount: 0,
 				error: {
 					code: "ALLOC_WORKTREE_FAILED",
-					message: `No worktree found for lane ${laneNum} — lane count mismatch between assignment and worktree creation`,
+					message: `No worktree found for lane ${entry.globalLane} — lane count mismatch between assignment and worktree creation`,
 				},
 				rolledBack: true,
 				batchId,
@@ -794,7 +939,7 @@ export function allocateLanes(
 		}
 
 		// Build ordered task list (preserve assignment order from assignTasksToLanes)
-		const allocatedTasks: AllocatedTask[] = assignments.map((a, idx) => ({
+		const allocatedTasks: AllocatedTask[] = entry.assignments.map((a, idx) => ({
 			taskId: a.taskId,
 			order: idx,
 			task: a.task,
@@ -811,19 +956,20 @@ export function allocateLanes(
 		);
 
 		allocatedLanes.push({
-			laneNumber: laneNum,
-			laneId: `lane-${laneNum}`,
-			tmuxSessionName: `${tmuxPrefix}-lane-${laneNum}`,
+			laneNumber: entry.globalLane,
+			laneId: generateLaneId(entry.localLane, entry.repoId),
+			tmuxSessionName: generateTmuxSessionName(tmuxPrefix, entry.localLane, entry.repoId),
 			worktreePath: wt.path,
 			branch: wt.branch,
 			tasks: allocatedTasks,
 			strategy,
 			estimatedLoad,
 			estimatedMinutes,
+			repoId: entry.repoId,
 		});
 	}
 
-	// Sort by lane number for deterministic output
+	// Sort by global lane number for deterministic output
 	allocatedLanes.sort((a, b) => a.laneNumber - b.laneNumber);
 
 	return {
@@ -891,4 +1037,3 @@ export function computeWaveAssignments(
 
 	return { waves: waveAssignments, errors };
 }
-

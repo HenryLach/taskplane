@@ -76,6 +76,8 @@ export interface LaneAssignment {
 	taskId: string;
 	lane: number;
 	task: ParsedTask;
+	/** Repo ID this task targets (workspace mode only). Undefined in repo mode. */
+	repoId?: string;
 }
 
 /** Runtime state of the entire batch execution */
@@ -477,7 +479,7 @@ export interface AllocatedTask {
  * between Step 1 (allocation) and Step 2 (execution).
  */
 export interface AllocatedLane {
-	/** Lane number (1-indexed, deterministic) */
+	/** Lane number (1-indexed, deterministic, globally unique across repos) */
 	laneNumber: number;
 	/** Lane identifier for display and logging (e.g., "lane-1") */
 	laneId: string;
@@ -495,6 +497,8 @@ export interface AllocatedLane {
 	estimatedLoad: number;
 	/** Total estimated duration in minutes (sum of task durations) */
 	estimatedMinutes: number;
+	/** Repo ID this lane targets (workspace mode only). Undefined in repo mode. */
+	repoId?: string;
 }
 
 
@@ -1195,6 +1199,8 @@ export interface PersistedLaneRecord {
 	branch: string;
 	/** Task IDs assigned to this lane in execution order */
 	taskIds: string[];
+	/** Repo ID this lane targets (workspace mode only). Undefined in repo mode. */
+	repoId?: string;
 }
 
 /**

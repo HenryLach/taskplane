@@ -507,6 +507,7 @@ export async function resumeOrchBatch(
 				strategy: "round-robin",
 				estimatedLoad: 0,
 				estimatedMinutes: 0,
+				...(laneRecord.repoId !== undefined ? { repoId: laneRecord.repoId } : {}),
 			};
 
 			execLog("resume", task.taskId, "reconnecting to alive session", {
@@ -586,6 +587,7 @@ export async function resumeOrchBatch(
 				strategy: "round-robin",
 				estimatedLoad: 0,
 				estimatedMinutes: 0,
+				...(laneRecord.repoId !== undefined ? { repoId: laneRecord.repoId } : {}),
 			};
 
 			execLog("resume", task.taskId, "re-executing interrupted task in existing worktree", {

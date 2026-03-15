@@ -602,14 +602,20 @@ export function serializeBatchState(
 		});
 
 	// Build lane records
-	const laneRecords: PersistedLaneRecord[] = lanes.map((lane) => ({
-		laneNumber: lane.laneNumber,
-		laneId: lane.laneId,
-		tmuxSessionName: lane.tmuxSessionName,
-		worktreePath: lane.worktreePath,
-		branch: lane.branch,
-		taskIds: lane.tasks.map((t) => t.taskId),
-	}));
+	const laneRecords: PersistedLaneRecord[] = lanes.map((lane) => {
+		const record: PersistedLaneRecord = {
+			laneNumber: lane.laneNumber,
+			laneId: lane.laneId,
+			tmuxSessionName: lane.tmuxSessionName,
+			worktreePath: lane.worktreePath,
+			branch: lane.branch,
+			taskIds: lane.tasks.map((t) => t.taskId),
+		};
+		if (lane.repoId !== undefined) {
+			record.repoId = lane.repoId;
+		}
+		return record;
+	});
 
 	// Build merge results from actual merge outcomes (accumulated on batchState).
 	// MergeWaveResult.waveIndex is 1-based (from merge module); normalize to
