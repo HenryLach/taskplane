@@ -529,11 +529,43 @@ async function cmdInit(args) {
 	const projectRoot = process.cwd();
 	const force = args.includes("--force");
 	const dryRun = args.includes("--dry-run");
-	const noExamples = args.includes("--no-examples");
+	const noExamplesFlag = args.includes("--no-examples");
+	const includeExamples = args.includes("--include-examples");
 	const presetIdx = args.indexOf("--preset");
 	const preset = presetIdx !== -1 ? args[presetIdx + 1] : null;
+	const tasksRootIdx = args.indexOf("--tasks-root");
+	const tasksRootRaw = tasksRootIdx !== -1 ? args[tasksRootIdx + 1] : null;
+
+	if (noExamplesFlag && includeExamples) {
+		die("Choose either --no-examples or --include-examples, not both.");
+	}
+
+	if (tasksRootIdx !== -1 && (!tasksRootRaw || tasksRootRaw.startsWith("--"))) {
+		die("Missing value for --tasks-root <relative-path>.");
+	}
+
+	let tasksRootOverride = null;
+	if (tasksRootRaw) {
+		if (path.isAbsolute(tasksRootRaw)) {
+			die("--tasks-root must be relative to the project root (absolute paths are not allowed).");
+		}
+		tasksRootOverride = tasksRootRaw.trim().replace(/\\/g, "/").replace(/^\.\/+/, "").replace(/\/+$/, "");
+		if (!tasksRootOverride || tasksRootOverride === ".") {
+			die("--tasks-root must not be empty.");
+		}
+		if (tasksRootOverride === ".." || tasksRootOverride.startsWith("../")) {
+			die("--tasks-root must stay within the project root (paths starting with .. are not allowed).");
+		}
+	}
+
+	const noExamples = noExamplesFlag || (!!tasksRootOverride && !includeExamples);
 
 	console.log(`\n${c.bold}Taskplane Init${c.reset}\n`);
+
+	if (tasksRootOverride && !noExamplesFlag && !includeExamples) {
+		console.log(`  ${INFO} Using custom --tasks-root (${tasksRootOverride}); skipping example tasks by default.`);
+		console.log(`     Use --include-examples to scaffold examples into that directory.\n`);
+	}
 
 	// Check for existing config
 	const hasConfig =
@@ -552,10 +584,14 @@ async function cmdInit(args) {
 	// Gather config values
 	let vars;
 	if (preset === "minimal" || preset === "full" || preset === "runner-only") {
-		vars = getPresetVars(preset, projectRoot);
-		console.log(`  Using preset: ${c.cyan}${preset}${c.reset}\n`);
+		vars = getPresetVars(preset, projectRoot, tasksRootOverride);
+		console.log(`  Using preset: ${c.cyan}${preset}${c.reset}`);
+		if (tasksRootOverride) {
+			console.log(`  Task directory: ${c.cyan}${tasksRootOverride}${c.reset}`);
+		}
+		console.log();
 	} else {
-		vars = await getInteractiveVars(projectRoot);
+		vars = await getInteractiveVars(projectRoot, tasksRootOverride);
 	}
 
 	const exampleTemplateDirs = noExamples ? [] : listExampleTaskTemplates();
@@ -655,7 +691,7 @@ async function cmdInit(args) {
 	console.log();
 }
 
-function getPresetVars(preset, projectRoot) {
+function getPresetVars(preset, projectRoot, tasksRootOverride = null) {
 	const dirName = path.basename(projectRoot);
 	const slug = slugify(dirName);
 	const { test: test_cmd, build: build_cmd } = detectStack(projectRoot);
@@ -665,7 +701,7 @@ function getPresetVars(preset, projectRoot) {
 		max_lanes: 3,
 		worktree_prefix: `${slug}-wt`,
 		tmux_prefix: `${slug}-orch`,
-		tasks_root: "taskplane-tasks",
+		tasks_root: tasksRootOverride || "taskplane-tasks",
 		default_area: "general",
 		default_prefix: "TP",
 		test_cmd,
@@ -674,14 +710,14 @@ function getPresetVars(preset, projectRoot) {
 	};
 }
 
-async function getInteractiveVars(projectRoot) {
+async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 	const dirName = path.basename(projectRoot);
 	const detected = detectStack(projectRoot);
 
 	const project_name = await ask("Project name", dirName);
 	const integration_branch = await ask("Default branch (fallback — orchestrator uses your current branch at runtime)", "main");
 	const max_lanes = parseInt(await ask("Max parallel lanes", "3")) || 3;
-	const tasks_root = await ask("Tasks directory", "taskplane-tasks");
+	const tasks_root = tasksRootOverride || await ask("Tasks directory", "taskplane-tasks");
 	const default_area = await ask("Default area name", "general");
 	const default_prefix = await ask("Task ID prefix", "TP");
 	const test_cmd = await ask("Test command (agents run this to verify work — blank to skip)", detected.test || "");
@@ -934,10 +970,12 @@ ${c.bold}Commands:${c.reset}
   ${c.cyan}help${c.reset}        Show this help message
 
 ${c.bold}Init options:${c.reset}
-  --preset <name>   Use a preset: minimal, full, runner-only
-  --no-examples     Skip example tasks scaffolding
-  --force           Overwrite existing files without prompting
-  --dry-run         Show what would be created without writing
+  --preset <name>       Use a preset: minimal, full, runner-only
+  --tasks-root <path>   Relative tasks directory to use (e.g. docs/task-management)
+  --no-examples         Skip example tasks scaffolding
+  --include-examples    With --tasks-root, include example tasks (default is skip)
+  --force               Overwrite existing files without prompting
+  --dry-run             Show what would be created without writing
 
 ${c.bold}Dashboard options:${c.reset}
   --port <number>   Port to listen on (default: 8099)
@@ -956,6 +994,8 @@ ${c.bold}Uninstall options:${c.reset}
 ${c.bold}Examples:${c.reset}
   taskplane init                        # Interactive project setup
   taskplane init --preset full          # Quick setup with defaults
+  taskplane init --preset full --tasks-root docs/task-management
+                                        # Use existing task area path
   taskplane init --dry-run              # Preview what would be created
   taskplane doctor                      # Check installation health
   taskplane dashboard                   # Launch web dashboard
