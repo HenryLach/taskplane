@@ -119,15 +119,19 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// Root references from execution context:
-			// - workspaceRoot: state files (.pi/), orphan detection, batch state
-			// - repoRoot: git/engine operations
-			const { workspaceRoot, repoRoot } = execCtx!;
+			// Root references from execution context.
+			// Currently all .pi state, orphan detection, batch state, abort signal,
+			// and discovery operations use repoRoot for consistency with engine.ts,
+			// resume.ts, and execution.ts which all alias cwd → repoRoot.
+			// In repo mode workspaceRoot === repoRoot, so this is safe.
+			// TODO(workspace-mode): when workspace mode is fully threaded through
+			// engine/resume/execution, split state root from git root.
+			const { repoRoot } = execCtx!;
 
 			// ── Orphan detection (TS-009 Step 3) ─────────────────────
 			const orphanResult = detectOrphanSessions(
 				orchConfig.orchestrator.tmux_prefix,
-				workspaceRoot,
+				repoRoot,
 			);
 
 			switch (orphanResult.recommendedAction) {
@@ -140,7 +144,7 @@ export default function (pi: ExtensionAPI) {
 					const phase = orphanResult.loadedState?.phase ?? "";
 					const hasOrphans = orphanResult.orphanSessions.length > 0;
 					if (!hasOrphans && !resumablePhases.includes(phase)) {
-						try { deleteBatchState(workspaceRoot); } catch { /* best effort */ }
+						try { deleteBatchState(repoRoot); } catch { /* best effort */ }
 						ctx.ui.notify(
 							`🧹 Cleared non-resumable stale batch (${orphanResult.loadedState?.batchId}, phase=${phase}). Starting fresh.`,
 							"info",
@@ -160,7 +164,7 @@ export default function (pi: ExtensionAPI) {
 				case "cleanup-stale":
 					// No orphans + stale/invalid state file — auto-delete and continue
 					try {
-						deleteBatchState(workspaceRoot);
+						deleteBatchState(repoRoot);
 					} catch {
 						// Best-effort cleanup — proceed even if delete fails
 					}
@@ -251,7 +255,9 @@ export default function (pi: ExtensionAPI) {
 			if (!preflight.passed) return;
 
 			// ── Section 2: Discovery ─────────────────────────────────
-			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, execCtx!.workspaceRoot, {
+			// Discovery uses repoRoot for consistency with engine.ts and resume.ts
+			// which both call runDiscovery with their cwd (= repoRoot).
+			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, execCtx!.repoRoot, {
 				refreshDependencies: hasRefresh,
 				dependencySource: orchConfig.dependencies.source,
 				useDependencyCache: orchConfig.dependencies.cache,
@@ -393,7 +399,9 @@ export default function (pi: ExtensionAPI) {
 
 				// Abort must work even if execCtx failed to load (safety-critical).
 				// Fall back to ctx.cwd if no execution context is available.
-				const stateRoot = execCtx?.workspaceRoot ?? ctx.cwd;
+				// Uses repoRoot for consistency with engine/resume/execution
+				// which all persist state and poll abort signals from repoRoot.
+				const stateRoot = execCtx?.repoRoot ?? ctx.cwd;
 
 				ctx.ui.notify(`🛑 Abort requested (${mode} mode, prefix: ${prefix})...`, "info");
 
@@ -581,8 +589,9 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("🔄 Refresh mode: re-scanning all areas (dependency cache bypassed)", "info");
 			}
 
-			// Run discovery (no preflight needed for deps view)
-			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, execCtx!.workspaceRoot, {
+			// Run discovery (no preflight needed for deps view).
+			// Uses repoRoot for consistency with engine.ts and resume.ts.
+			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, execCtx!.repoRoot, {
 				refreshDependencies: hasRefresh,
 				dependencySource: orchConfig.dependencies.source,
 				useDependencyCache: orchConfig.dependencies.cache,
