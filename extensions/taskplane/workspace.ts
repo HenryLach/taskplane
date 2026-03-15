@@ -317,10 +317,15 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		);
 	}
 
+	// ── 12. routing.strict (optional boolean, default false) ─────
+	const rawStrict = rawRouting.strict;
+	const strict = rawStrict === true;
+
 	// ── Build routing config ─────────────────────────────────────
 	const routing: WorkspaceRoutingConfig = {
 		tasksRoot: tasksRootAbsolute,
 		defaultRepo: defaultRepoId,
+		...(strict ? { strict: true } : {}),
 	};
 
 	// ── Build and return WorkspaceConfig ─────────────────────────

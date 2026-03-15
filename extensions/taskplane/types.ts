@@ -369,7 +369,8 @@ export interface DiscoveryError {
 		| "DEP_AMBIGUOUS"
 		| "DEP_SOURCE_FALLBACK"
 		| "TASK_REPO_UNRESOLVED"
-		| "TASK_REPO_UNKNOWN";
+		| "TASK_REPO_UNKNOWN"
+		| "TASK_ROUTING_STRICT";
 	message: string;
 	taskPath?: string;
 	taskId?: string;
@@ -390,6 +391,7 @@ export const FATAL_DISCOVERY_CODES: ReadonlyArray<DiscoveryError["code"]> = [
 	"PARSE_MISSING_ID",
 	"TASK_REPO_UNRESOLVED",
 	"TASK_REPO_UNKNOWN",
+	"TASK_ROUTING_STRICT",
 ] as const;
 
 /** Result of the full discovery pipeline */
@@ -1605,6 +1607,19 @@ export interface WorkspaceRoutingConfig {
 	 * Must reference a valid key in `WorkspaceConfig.repos`.
 	 */
 	defaultRepo: string;
+	/**
+	 * When true, every task MUST declare an explicit execution target
+	 * (via `## Execution Target` section or inline `**Repo:**` in PROMPT.md).
+	 * Area-level and workspace-default fallbacks are still used for
+	 * validation (unknown-repo checks) but NOT for automatic resolution.
+	 *
+	 * This prevents accidental misrouting in large multi-team workspaces
+	 * where task authors must be intentional about which repo a task targets.
+	 *
+	 * Default: false (permissive — existing precedence chain applies).
+	 * Only meaningful in workspace mode.
+	 */
+	strict?: boolean;
 }
 
 /**

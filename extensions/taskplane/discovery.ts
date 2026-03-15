@@ -886,8 +886,32 @@ export function resolveTaskRouting(
 ): DiscoveryError[] {
 	const errors: DiscoveryError[] = [];
 	const validRepoIds = workspaceConfig.repos;
+	const strictMode = workspaceConfig.routing.strict === true;
 
 	for (const task of discovery.pending.values()) {
+		// ── Strict mode enforcement ──────────────────────────────
+		// When strict routing is enabled, every task MUST declare an
+		// explicit execution target in PROMPT.md. Area-level and
+		// workspace-default fallbacks are NOT used for resolution.
+		if (strictMode && !task.promptRepoId) {
+			errors.push({
+				code: "TASK_ROUTING_STRICT",
+				message:
+					`Task ${task.taskId} has no explicit execution target, but strict routing is enabled ` +
+					`(routing.strict: true in workspace config). ` +
+					`Add an execution target to the task's PROMPT.md:\n` +
+					`\n` +
+					`  ## Execution Target\n` +
+					`\n` +
+					`  Repo: <repo-id>\n` +
+					`\n` +
+					`Available repos: ${[...validRepoIds.keys()].join(", ")}`,
+				taskId: task.taskId,
+				taskPath: task.promptPath,
+			});
+			continue;
+		}
+
 		// Precedence 1: prompt-declared repo
 		let resolvedId = task.promptRepoId;
 		let source = "prompt";
