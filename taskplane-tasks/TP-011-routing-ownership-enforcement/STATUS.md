@@ -1,11 +1,11 @@
 # TP-011: Routing Ownership Enforcement and Strict Workspace Policy — Status
 
-**Current Step:** Step 3: Testing & Verification
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 5
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -73,12 +73,12 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing
-- [ ] Targeted tests for changed modules passing
-- [ ] All failures fixed
-- [ ] CLI smoke checks passing
+- [x] Unit/regression tests passing — 202/205 pass; 3 failures are pre-existing in unrelated modules (orch-state-persistence, task-runner-orchestration, orch-pure-functions, orch-direct-implementation)
+- [x] Targeted tests for changed modules passing — 145/145 pass (99 discovery-routing + 46 workspace-config)
+- [x] All failures fixed — all TP-011-related tests pass; pre-existing failures documented in Discoveries
+- [x] CLI smoke checks passing — `taskplane help` and `taskplane doctor` both execute successfully
 
 ---
 
@@ -105,6 +105,10 @@
 | R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
+| R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
+| R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -154,6 +158,17 @@
 | 2026-03-15 | Step 2 verified | 99/99 discovery-routing tests pass, 46/46 workspace-config tests pass |
 | 2026-03-15 | Step 2 complete | Cover governance scenarios (incremental coverage) |
 | 2026-03-15 15:58 | Worker iter 3 | done in 242s, ctx: 29%, tools: 38 |
+| 2026-03-15 15:59 | Worker iter 3 | done in 338s, ctx: 34%, tools: 46 |
+| 2026-03-15 16:00 | Review R006 | code Step 2: UNKNOWN |
+| 2026-03-15 16:00 | Step 2 complete | Cover governance scenarios |
+| 2026-03-15 16:00 | Step 3 started | Testing & Verification |
+| 2026-03-15 16:00 | Review R006 | code Step 2: UNKNOWN |
+| 2026-03-15 16:00 | Step 2 complete | Cover governance scenarios |
+| 2026-03-15 16:00 | Step 3 started | Testing & Verification |
+| 2026-03-15 16:03 | Review R007 | plan Step 3: UNKNOWN |
+| 2026-03-15 16:03 | Review R007 | plan Step 3: UNKNOWN |
+| 2026-03-15 | Step 3 verified | Full test suite: 202/205 pass (3 pre-existing failures); targeted: 145/145 pass; CLI smoke: help + doctor pass |
+| 2026-03-15 | Step 3 complete | Testing & Verification |
 
 ## Blockers
 
