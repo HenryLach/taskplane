@@ -4,7 +4,7 @@
 ​**Status:** ✅ Step 2 Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 3
 **Size:** M
 
@@ -53,10 +53,10 @@
 - [x] Call `buildExecutionContext(ctx.cwd, loadOrchestratorConfig, loadTaskRunnerConfig)` in `session_start` handler
 - [x] Catch `WorkspaceConfigError` in `session_start` — emit fatal notification with error code + message + actionable guidance, skip command registration
 - [x] Populate `orchConfig` and `runnerConfig` from `execCtx` fields instead of standalone calls
-- [x] Replace `ctx.cwd` usages in extension.ts with root-matrix-aware references: `execCtx.workspaceRoot` for state/.pi paths (orphan detection, batch state, abort signal), `execCtx.repoRoot` for git/engine operations
+- [x] Replace `ctx.cwd` usages in extension.ts with `execCtx.repoRoot` for all operations (state, discovery, orphan, abort, engine) — consistent with engine.ts/resume.ts/execution.ts root semantics
 - [x] Pass `execCtx.repoRoot` (instead of `ctx.cwd`) into `executeOrchBatch()` cwd parameter
 - [x] Pass `execCtx.repoRoot` (instead of `ctx.cwd`) into `resumeOrchBatch()` cwd parameter
-- [x] Pass `execCtx.workspaceRoot` (instead of `ctx.cwd`) into discovery, orphan detection, batch state load/delete, and abort signal paths
+- [x] Pass `execCtx.repoRoot` (instead of `ctx.cwd`) into discovery, orphan detection, batch state load/delete, and abort signal paths (R006 fix: use repoRoot not workspaceRoot for consistency with engine/resume)
 - [x] Add startup guard: if `execCtx` is null (workspace config error), commands return early with "Orchestrator not initialized" notification
 - [x] Verify repo-mode parity: no workspace config file → workspaceRoot === repoRoot === cwd, behavior unchanged
 - [x] Verify all changes compile cleanly via vitest
@@ -64,7 +64,7 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Unit/regression tests passing
 - [ ] Targeted tests for changed modules passing
@@ -96,6 +96,7 @@
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 | R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -142,6 +143,11 @@
 | 2026-03-15 05:56 | Review R005 | plan Step 2: UNKNOWN |
 | 2026-03-15 05:58 | Step 2 verified | All 11 sub-items confirmed complete from prior iteration; no new ctx.cwd usages remain; vitest compilation passes with same pre-existing failures |
 | 2026-03-15 05:58 | Step 2 complete | Wire orchestrator startup context |
+| 2026-03-15 06:00 | Worker iter 3 | done in 264s, ctx: 30%, tools: 28 |
+| 2026-03-15 06:03 | Review R006 | code Step 2: UNKNOWN |
+| 2026-03-15 06:03 | Step 2 complete | Wire orchestrator startup context |
+| 2026-03-15 06:03 | Step 3 started | Testing & Verification |
+| 2026-03-15 06:07 | R006 fix applied | Changed all workspaceRoot→repoRoot for state/discovery/abort/orphan paths in extension.ts for consistency with engine/resume/execution |
 
 ## Blockers
 
