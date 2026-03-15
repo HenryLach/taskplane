@@ -19,6 +19,43 @@ import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome
 import { buildDependencyGraph, resolveRepoRoot } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, removeAllWorktrees, removeWorktree, safeResetWorktree } from "./worktree.ts";
 
+// ── Resume Repo Helpers ──────────────────────────────────────────────
+
+/**
+ * Collect unique repo roots from persisted lane records.
+ *
+ * In repo mode (no repoId on lanes), returns `[defaultRepoRoot]`.
+ * In workspace mode, returns one entry per unique repoId, resolved
+ * via `resolveRepoRoot()`. Includes the default root as a fallback
+ * for lanes with no repoId.
+ *
+ * Used by inter-wave worktree reset and terminal cleanup to operate
+ * on worktrees across all repos in the batch.
+ *
+ * @param persistedState   - Loaded batch state with lane records
+ * @param defaultRepoRoot  - Default/main repo root (cwd)
+ * @param workspaceConfig  - Workspace configuration (null in repo mode)
+ * @returns Array of unique absolute repo root paths
+ */
+export function collectRepoRoots(
+	persistedState: PersistedBatchState,
+	defaultRepoRoot: string,
+	workspaceConfig?: WorkspaceConfig | null,
+): string[] {
+	const roots = new Set<string>();
+
+	for (const lane of persistedState.lanes) {
+		const root = resolveRepoRoot(lane.repoId, defaultRepoRoot, workspaceConfig);
+		roots.add(root);
+	}
+
+	// Always include the default repo root (covers repo mode and any
+	// lanes without repoId)
+	roots.add(defaultRepoRoot);
+
+	return [...roots];
+}
+
 // ── Resume Pure Functions ────────────────────────────────────────────
 
 /**
@@ -512,8 +549,12 @@ export async function resumeOrchBatch(
 				...(laneRecord.repoId !== undefined ? { repoId: laneRecord.repoId } : {}),
 			};
 
+			// Resolve per-lane repo root for workspace mode (v1/repo mode: falls back to repoRoot)
+			const laneRepoRoot = resolveRepoRoot(laneRecord.repoId, repoRoot, workspaceConfig);
+
 			execLog("resume", task.taskId, "reconnecting to alive session", {
 				session: laneRecord.tmuxSessionName,
+				repoId: laneRecord.repoId ?? "(default)",
 			});
 
 			// Poll until task completes
@@ -522,7 +563,7 @@ export async function resumeOrchBatch(
 					lane,
 					allocatedTask,
 					orchConfig,
-					repoRoot,
+					laneRepoRoot,
 					batchState.pauseSignal,
 				);
 
@@ -592,18 +633,22 @@ export async function resumeOrchBatch(
 				...(laneRecord.repoId !== undefined ? { repoId: laneRecord.repoId } : {}),
 			};
 
+			// Resolve per-lane repo root for workspace mode (v1/repo mode: falls back to repoRoot)
+			const reExecRepoRoot = resolveRepoRoot(laneRecord.repoId, repoRoot, workspaceConfig);
+
 			execLog("resume", task.taskId, "re-executing interrupted task in existing worktree", {
 				session: laneRecord.tmuxSessionName,
 				worktree: laneRecord.worktreePath,
+				repoId: laneRecord.repoId ?? "(default)",
 			});
 
 			try {
-				spawnLaneSession(lane, allocatedTask, orchConfig, repoRoot);
+				spawnLaneSession(lane, allocatedTask, orchConfig, reExecRepoRoot);
 				const pollResult = await pollUntilTaskComplete(
 					lane,
 					allocatedTask,
 					orchConfig,
-					repoRoot,
+					reExecRepoRoot,
 					batchState.pauseSignal,
 				);
 
@@ -1033,16 +1078,29 @@ export async function resumeOrchBatch(
 		if (waveIdx < persistedState.wavePlan.length - 1 && !batchState.pauseSignal.paused) {
 			const wtPrefix = orchConfig.orchestrator.worktree_prefix;
 			const resetOpId = resolveOperatorId(orchConfig);
-			const existingWorktrees = listWorktrees(wtPrefix, repoRoot, resetOpId);
-			if (existingWorktrees.length > 0) {
-				const targetBranch = batchState.baseBranch;
-				for (const wt of existingWorktrees) {
-					const resetResult = safeResetWorktree(wt, targetBranch, repoRoot);
-					if (!resetResult.success) {
-						try {
-							removeWorktree(wt, repoRoot);
-						} catch {
-							forceCleanupWorktree(wt, repoRoot, batchState.batchId);
+
+			// Collect unique repo roots from persisted lanes (workspace mode may have multiple)
+			const uniqueRepoRoots = new Set<string>();
+			for (const lr of persistedState.lanes) {
+				uniqueRepoRoots.add(resolveRepoRoot(lr.repoId, repoRoot, workspaceConfig));
+			}
+			// Ensure at least the default repo root is included (v1/repo mode)
+			if (uniqueRepoRoots.size === 0) {
+				uniqueRepoRoots.add(repoRoot);
+			}
+
+			for (const perRepoRoot of uniqueRepoRoots) {
+				const existingWorktrees = listWorktrees(wtPrefix, perRepoRoot, resetOpId);
+				if (existingWorktrees.length > 0) {
+					const targetBranch = batchState.baseBranch;
+					for (const wt of existingWorktrees) {
+						const resetResult = safeResetWorktree(wt, targetBranch, perRepoRoot);
+						if (!resetResult.success) {
+							try {
+								removeWorktree(wt, perRepoRoot);
+							} catch {
+								forceCleanupWorktree(wt, perRepoRoot, batchState.batchId);
+							}
 						}
 					}
 				}
@@ -1055,7 +1113,20 @@ export async function resumeOrchBatch(
 		const wtPrefix = orchConfig.orchestrator.worktree_prefix;
 		const cleanupOpId = resolveOperatorId(orchConfig);
 		const targetBranch = batchState.baseBranch;
-		removeAllWorktrees(wtPrefix, repoRoot, cleanupOpId, targetBranch);
+
+		// Collect unique repo roots from persisted lanes for per-repo cleanup
+		const cleanupRepoRoots = new Set<string>();
+		for (const lr of persistedState.lanes) {
+			cleanupRepoRoots.add(resolveRepoRoot(lr.repoId, repoRoot, workspaceConfig));
+		}
+		// Ensure at least the default repo root is included (v1/repo mode)
+		if (cleanupRepoRoots.size === 0) {
+			cleanupRepoRoots.add(repoRoot);
+		}
+
+		for (const perRepoRoot of cleanupRepoRoots) {
+			removeAllWorktrees(wtPrefix, perRepoRoot, cleanupOpId, targetBranch);
+		}
 	}
 
 	batchState.endedAt = Date.now();

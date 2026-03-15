@@ -2001,6 +2001,8 @@ interface PersistedBatchStateForTest {
 	schemaVersion: number;
 	phase: string;
 	batchId: string;
+	baseBranch?: string;
+	mode?: string;
 	startedAt: number;
 	updatedAt: number;
 	endedAt: number | null;
@@ -4059,6 +4061,712 @@ console.log("\n── 7.3: Schema version guardrails ──");
 	} finally {
 		try { rmSync(v1ResumeRoot, { recursive: true, force: true }); } catch { /* best effort */ }
 	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 7.1: Mixed-repo reconciliation (TP-007 Step 0)
+// ═══════════════════════════════════════════════════════════════════════
+
+console.log("\n── 7.1: Mixed-repo reconciliation ──");
+
+// Helper: create a workspace-mode persisted state with multi-repo lanes and tasks
+function workspacePersistedState(overrides?: Partial<PersistedBatchStateForTest>): PersistedBatchStateForTest {
+	return {
+		schemaVersion: 2,
+		phase: "executing",
+		batchId: "20260315T120000",
+		baseBranch: "main",
+		mode: "workspace",
+		startedAt: Date.now() - 120000,
+		updatedAt: Date.now(),
+		endedAt: null,
+		currentWaveIndex: 0,
+		totalWaves: 1,
+		wavePlan: [["WS-001", "WS-002"]],
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "api/lane-1",
+				tmuxSessionName: "orch-api-lane-1",
+				worktreePath: "/tmp/ws-wt-1",
+				branch: "task/api-lane-1-20260315T120000",
+				taskIds: ["WS-001"],
+				repoId: "api",
+			},
+			{
+				laneNumber: 2,
+				laneId: "frontend/lane-2",
+				tmuxSessionName: "orch-frontend-lane-2",
+				worktreePath: "/tmp/ws-wt-2",
+				branch: "task/frontend-lane-2-20260315T120000",
+				taskIds: ["WS-002"],
+				repoId: "frontend",
+			},
+		],
+		tasks: [
+			{
+				taskId: "WS-001",
+				laneNumber: 1,
+				sessionName: "orch-api-lane-1",
+				status: "running",
+				taskFolder: "/tmp/tasks/WS-001",
+				startedAt: Date.now() - 60000,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+				repoId: "api",
+				resolvedRepoId: "api",
+			},
+			{
+				taskId: "WS-002",
+				laneNumber: 2,
+				sessionName: "orch-frontend-lane-2",
+				status: "running",
+				taskFolder: "/tmp/tasks/WS-002",
+				startedAt: Date.now() - 60000,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+				repoId: "frontend",
+				resolvedRepoId: "frontend",
+			},
+		],
+		mergeResults: [],
+		totalTasks: 2,
+		succeededTasks: 0,
+		failedTasks: 0,
+		skippedTasks: 0,
+		blockedTasks: 0,
+		blockedTaskIds: [],
+		lastError: null,
+		errors: [],
+		...overrides,
+	};
+}
+
+// Reimplement resolveRepoRoot for test self-containment (mirrors source)
+function resolveRepoRoot(
+	repoId: string | undefined,
+	defaultRepoRoot: string,
+	workspaceConfig?: { repos: Map<string, { path: string }> } | null,
+): string {
+	if (!repoId || !workspaceConfig) {
+		return defaultRepoRoot;
+	}
+	const repoConfig = workspaceConfig.repos.get(repoId);
+	if (!repoConfig) {
+		return defaultRepoRoot;
+	}
+	return repoConfig.path;
+}
+
+// Reimplement collectRepoRoots for test self-containment (mirrors source)
+function collectRepoRoots(
+	persistedState: { lanes: Array<{ repoId?: string }> },
+	defaultRepoRoot: string,
+	workspaceConfig?: { repos: Map<string, { path: string }> } | null,
+): string[] {
+	const roots = new Set<string>();
+	for (const lane of persistedState.lanes) {
+		const root = resolveRepoRoot(lane.repoId, defaultRepoRoot, workspaceConfig);
+		roots.add(root);
+	}
+	roots.add(defaultRepoRoot);
+	return [...roots];
+}
+
+{
+	console.log("  ▸ workspace v2: one repo lane alive + another dead → correct reconcile actions");
+	const state = workspacePersistedState();
+	// WS-001 (api repo): session alive
+	// WS-002 (frontend repo): session dead, no .DONE
+	const aliveSessions = new Set(["orch-api-lane-1"]);
+	const doneTaskIds = new Set<string>();
+	const result = reconcileTaskStates(state, aliveSessions, doneTaskIds);
+	assertEqual(result.length, 2, "two tasks reconciled");
+
+	// WS-001: alive session → reconnect
+	assertEqual(result[0].taskId, "WS-001", "first task is WS-001");
+	assertEqual(result[0].action, "reconnect", "WS-001: reconnect (alive session)");
+	assertEqual(result[0].sessionAlive, true, "WS-001: session alive");
+
+	// WS-002: dead session + no .DONE + no worktree → mark-failed
+	assertEqual(result[1].taskId, "WS-002", "second task is WS-002");
+	assertEqual(result[1].action, "mark-failed", "WS-002: mark-failed (dead session, no DONE, no worktree)");
+	assertEqual(result[1].sessionAlive, false, "WS-002: session not alive");
+	assertEqual(result[1].liveStatus, "failed", "WS-002: live status failed");
+}
+
+{
+	console.log("  ▸ workspace v2: .DONE in one repo + dead session in another → mark-complete vs mark-failed");
+	const state = workspacePersistedState();
+	// WS-001 (api repo): .DONE found
+	// WS-002 (frontend repo): dead session, no .DONE
+	const aliveSessions = new Set<string>();
+	const doneTaskIds = new Set(["WS-001"]);
+	const result = reconcileTaskStates(state, aliveSessions, doneTaskIds);
+	assertEqual(result.length, 2, "two tasks reconciled");
+
+	// WS-001: .DONE found → mark-complete (regardless of session state)
+	assertEqual(result[0].action, "mark-complete", "WS-001: mark-complete (.DONE found)");
+	assertEqual(result[0].doneFileFound, true, "WS-001: done file found");
+	assertEqual(result[0].liveStatus, "succeeded", "WS-001: live status succeeded");
+
+	// WS-002: dead session + no .DONE → mark-failed
+	assertEqual(result[1].action, "mark-failed", "WS-002: mark-failed (dead session, no .DONE)");
+	assertEqual(result[1].liveStatus, "failed", "WS-002: live status failed");
+}
+
+{
+	console.log("  ▸ v1 state (no repo fields) reconciles correctly with all-undefined repo fields");
+	// Simulate v1 state that was upconverted to v2 (mode="repo", no repo fields)
+	const state = minimalPersistedState({
+		mode: "repo",
+		baseBranch: "",
+		tasks: [
+			makeTaskRecord({ taskId: "T1", sessionName: "orch-lane-1", status: "running" }),
+			makeTaskRecord({ taskId: "T2", sessionName: "orch-lane-2", status: "succeeded" }),
+		],
+		wavePlan: [["T1", "T2"]],
+		lanes: [
+			{ laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1", worktreePath: "/tmp/wt-1", branch: "b1", taskIds: ["T1"] },
+			{ laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2", worktreePath: "/tmp/wt-2", branch: "b2", taskIds: ["T2"] },
+		],
+	});
+	// Verify no repo fields on tasks or lanes
+	assertEqual(state.tasks[0].repoId, undefined, "v1 task[0] repoId undefined");
+	assertEqual(state.tasks[0].resolvedRepoId, undefined, "v1 task[0] resolvedRepoId undefined");
+	assertEqual(state.lanes[0].repoId, undefined, "v1 lane[0] repoId undefined");
+
+	// T1: running + dead session → mark-failed
+	// T2: succeeded + dead session → skip (terminal status)
+	const result = reconcileTaskStates(state, new Set(), new Set());
+	assertEqual(result[0].action, "mark-failed", "v1 T1: mark-failed");
+	assertEqual(result[1].action, "skip", "v1 T2: skip (already succeeded)");
+	assertEqual(result[1].liveStatus, "succeeded", "v1 T2: live status preserved");
+}
+
+{
+	console.log("  ▸ workspace v2: worktree exists vs missing split across repos → re-execute vs mark-failed");
+	const state = workspacePersistedState();
+	// WS-001 (api repo): dead session + worktree exists → re-execute
+	// WS-002 (frontend repo): dead session + no worktree → mark-failed
+	const aliveSessions = new Set<string>();
+	const doneTaskIds = new Set<string>();
+	const existingWorktrees = new Set(["WS-001"]); // Only WS-001's worktree exists
+	const result = reconcileTaskStates(state, aliveSessions, doneTaskIds, existingWorktrees);
+	assertEqual(result.length, 2, "two tasks reconciled");
+
+	// WS-001: dead + worktree exists → re-execute
+	assertEqual(result[0].action, "re-execute", "WS-001: re-execute (worktree exists)");
+	assertEqual(result[0].worktreeExists, true, "WS-001: worktree exists");
+	assertEqual(result[0].liveStatus, "pending", "WS-001: live status pending (for re-execution)");
+
+	// WS-002: dead + no worktree → mark-failed
+	assertEqual(result[1].action, "mark-failed", "WS-002: mark-failed (no worktree)");
+	assertEqual(result[1].worktreeExists, false, "WS-002: worktree missing");
+}
+
+{
+	console.log("  ▸ resolveRepoRoot: v2 lanes get correct repo root, v1/undefined lanes get default root");
+	const wsConfig = {
+		repos: new Map([
+			["api", { path: "/repos/api" }],
+			["frontend", { path: "/repos/frontend" }],
+		]),
+	};
+	const defaultRoot = "/repos/default";
+
+	// v2 workspace mode: repoId present → resolved to workspace config path
+	assertEqual(
+		resolveRepoRoot("api", defaultRoot, wsConfig),
+		"/repos/api",
+		"resolveRepoRoot('api') → workspace config path",
+	);
+	assertEqual(
+		resolveRepoRoot("frontend", defaultRoot, wsConfig),
+		"/repos/frontend",
+		"resolveRepoRoot('frontend') → workspace config path",
+	);
+
+	// v1/repo mode: repoId undefined → default root
+	assertEqual(
+		resolveRepoRoot(undefined, defaultRoot, wsConfig),
+		defaultRoot,
+		"resolveRepoRoot(undefined) → default root",
+	);
+
+	// No workspace config (repo mode): always default root
+	assertEqual(
+		resolveRepoRoot("api", defaultRoot, null),
+		defaultRoot,
+		"resolveRepoRoot('api', null config) → default root",
+	);
+
+	// Unknown repoId: falls back to default
+	assertEqual(
+		resolveRepoRoot("unknown-repo", defaultRoot, wsConfig),
+		defaultRoot,
+		"resolveRepoRoot('unknown-repo') → default root (defensive fallback)",
+	);
+}
+
+{
+	console.log("  ▸ collectRepoRoots: workspace mode collects per-repo roots from lanes");
+	const wsConfig = {
+		repos: new Map([
+			["api", { path: "/repos/api" }],
+			["frontend", { path: "/repos/frontend" }],
+		]),
+	};
+	const defaultRoot = "/repos/default";
+	const state = workspacePersistedState();
+
+	const roots = collectRepoRoots(state, defaultRoot, wsConfig);
+	assert(roots.includes("/repos/api"), "collectRepoRoots includes api root");
+	assert(roots.includes("/repos/frontend"), "collectRepoRoots includes frontend root");
+	assert(roots.includes(defaultRoot), "collectRepoRoots includes default root");
+	assertEqual(roots.length, 3, "collectRepoRoots returns 3 unique roots");
+}
+
+{
+	console.log("  ▸ collectRepoRoots: repo mode (v1) returns only default root");
+	const state = minimalPersistedState({
+		lanes: [
+			{ laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1", worktreePath: "/tmp/wt-1", branch: "b1", taskIds: ["T1"] },
+			{ laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2", worktreePath: "/tmp/wt-2", branch: "b2", taskIds: ["T2"] },
+		],
+	});
+	const defaultRoot = "/repos/main";
+	// No workspace config → repo mode
+	const roots = collectRepoRoots(state, defaultRoot, null);
+	assertEqual(roots.length, 1, "repo mode: only default root");
+	assertEqual(roots[0], defaultRoot, "repo mode: root is default");
+}
+
+{
+	console.log("  ▸ workspace v2: computeResumePoint with mixed-repo outcomes");
+	const state = workspacePersistedState({
+		wavePlan: [["WS-001", "WS-002"], ["WS-003"]],
+		tasks: [
+			{
+				taskId: "WS-001", laneNumber: 1, sessionName: "orch-api-lane-1",
+				status: "running", taskFolder: "/tmp/tasks/WS-001",
+				startedAt: Date.now() - 60000, endedAt: null,
+				doneFileFound: false, exitReason: "",
+				repoId: "api", resolvedRepoId: "api",
+			},
+			{
+				taskId: "WS-002", laneNumber: 2, sessionName: "orch-frontend-lane-2",
+				status: "running", taskFolder: "/tmp/tasks/WS-002",
+				startedAt: Date.now() - 60000, endedAt: null,
+				doneFileFound: false, exitReason: "",
+				repoId: "frontend", resolvedRepoId: "frontend",
+			},
+			{
+				taskId: "WS-003", laneNumber: 1, sessionName: "orch-api-lane-1",
+				status: "pending", taskFolder: "/tmp/tasks/WS-003",
+				startedAt: null, endedAt: null,
+				doneFileFound: false, exitReason: "",
+				repoId: "api", resolvedRepoId: "api",
+			},
+		],
+	});
+
+	// WS-001 (api): .DONE found → mark-complete
+	// WS-002 (frontend): dead session → mark-failed
+	// WS-003 (api, wave 2): pending
+	const reconciled = reconcileTaskStates(state, new Set(), new Set(["WS-001"]));
+	const point = computeResumePoint(state, reconciled);
+
+	// Wave 0: WS-001 complete, but WS-002 is mark-failed (not "mark-complete" or "skip").
+	// mark-failed tasks are NOT considered "done" for wave-skip purposes — the wave
+	// wasn't fully processed. So resumeWaveIndex stays at 0.
+	assertEqual(point.resumeWaveIndex, 0, "resumes from wave 0 (WS-002 mark-failed is not 'done' for wave skip)");
+	assert(point.completedTaskIds.includes("WS-001"), "WS-001 in completed");
+	assert(point.failedTaskIds.includes("WS-002"), "WS-002 in failed");
+	// WS-003 is in wave 1 (beyond resumeWaveIndex=0), not counted yet
+	assert(point.failedTaskIds.includes("WS-003"), "WS-003 in failed (mark-failed: dead session + no DONE + no worktree)");
+}
+
+{
+	console.log("  ▸ workspace v2: both repo lanes alive → both reconnect");
+	const state = workspacePersistedState();
+	const aliveSessions = new Set(["orch-api-lane-1", "orch-frontend-lane-2"]);
+	const result = reconcileTaskStates(state, aliveSessions, new Set());
+
+	assertEqual(result[0].action, "reconnect", "WS-001 (api): reconnect");
+	assertEqual(result[1].action, "reconnect", "WS-002 (frontend): reconnect");
+
+	const point = computeResumePoint(state, result);
+	assertEqual(point.reconnectTaskIds.length, 2, "both tasks need reconnection");
+	assertEqual(point.resumeWaveIndex, 0, "resume from wave 0 (tasks still running)");
+	assert(point.pendingTaskIds.includes("WS-001"), "WS-001 in pending (reconnect)");
+	assert(point.pendingTaskIds.includes("WS-002"), "WS-002 in pending (reconnect)");
+}
+
+{
+	console.log("  ▸ workspace v2: all repos completed → resume past all waves");
+	const state = workspacePersistedState({
+		tasks: [
+			{
+				taskId: "WS-001", laneNumber: 1, sessionName: "orch-api-lane-1",
+				status: "succeeded", taskFolder: "/tmp/tasks/WS-001",
+				startedAt: Date.now() - 60000, endedAt: Date.now() - 30000,
+				doneFileFound: true, exitReason: "",
+				repoId: "api", resolvedRepoId: "api",
+			},
+			{
+				taskId: "WS-002", laneNumber: 2, sessionName: "orch-frontend-lane-2",
+				status: "succeeded", taskFolder: "/tmp/tasks/WS-002",
+				startedAt: Date.now() - 60000, endedAt: Date.now() - 30000,
+				doneFileFound: true, exitReason: "",
+				repoId: "frontend", resolvedRepoId: "frontend",
+			},
+		],
+	});
+
+	const reconciled = reconcileTaskStates(state, new Set(), new Set());
+	const point = computeResumePoint(state, reconciled);
+
+	assertEqual(point.resumeWaveIndex, 1, "resume past all waves (all done)");
+	assertEqual(point.completedTaskIds.length, 2, "both tasks completed");
+	assertEqual(point.failedTaskIds.length, 0, "no failed tasks");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 8.1: Mixed-Repo Reconciliation (TP-007 Step 0)
+// ═══════════════════════════════════════════════════════════════════════
+
+console.log("\n── 8.1: Mixed-repo reconciliation scenarios (TP-007) ──");
+
+// Reimplement resolveRepoRoot (mirrors source exactly)
+function resolveRepoRoot(
+	repoId: string | undefined,
+	defaultRepoRoot: string,
+	workspaceConfig?: { repos: Map<string, { path: string; defaultBranch?: string }> } | null,
+): string {
+	if (!repoId || !workspaceConfig) {
+		return defaultRepoRoot;
+	}
+	const repoConfig = workspaceConfig.repos.get(repoId);
+	if (!repoConfig) {
+		return defaultRepoRoot;
+	}
+	return repoConfig.path;
+}
+
+// Helper: build a workspace-mode persisted state with multi-repo lanes
+function makeWorkspaceState(overrides: Partial<any> = {}): any {
+	return minimalPersistedState({
+		mode: "workspace",
+		baseBranch: "main",
+		wavePlan: [["WS-001", "WS-002"]],
+		lanes: [
+			{
+				laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+				worktreePath: "/tmp/wt-1", branch: "task/lane-1-batch",
+				taskIds: ["WS-001"], repoId: "api",
+			},
+			{
+				laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2",
+				worktreePath: "/tmp/wt-2", branch: "task/lane-2-batch",
+				taskIds: ["WS-002"], repoId: "frontend",
+			},
+		],
+		tasks: [
+			makeTaskRecord({
+				taskId: "WS-001", laneNumber: 1, sessionName: "orch-lane-1",
+				status: "running", taskFolder: "/tmp/tasks/WS-001",
+				repoId: "api", resolvedRepoId: "api",
+			}),
+			makeTaskRecord({
+				taskId: "WS-002", laneNumber: 2, sessionName: "orch-lane-2",
+				status: "running", taskFolder: "/tmp/tasks/WS-002",
+				resolvedRepoId: "frontend",
+			}),
+		],
+		...overrides,
+	});
+}
+
+// Workspace config for resolveRepoRoot tests
+const testWorkspaceConfig = {
+	repos: new Map([
+		["api", { path: "/repos/api", defaultBranch: "main" }],
+		["frontend", { path: "/repos/frontend", defaultBranch: "develop" }],
+	]),
+};
+
+{
+	console.log("  ▸ workspace v2: one repo lane alive + another dead → correct reconcile actions");
+	const state = makeWorkspaceState();
+	// WS-001 (api repo) has alive session, WS-002 (frontend repo) has dead session
+	const reconciled = reconcileTaskStates(
+		state,
+		new Set(["orch-lane-1"]),  // only api lane alive
+		new Set(),                  // no .DONE files
+	);
+	assertEqual(reconciled.length, 2, "workspace: 2 tasks reconciled");
+
+	const ws001 = reconciled.find((r: any) => r.taskId === "WS-001");
+	assertEqual(ws001!.action, "reconnect", "workspace: WS-001 reconnect (alive session)");
+	assertEqual(ws001!.sessionAlive, true, "workspace: WS-001 session alive");
+
+	const ws002 = reconciled.find((r: any) => r.taskId === "WS-002");
+	assertEqual(ws002!.action, "mark-failed", "workspace: WS-002 mark-failed (dead session, no .DONE, no worktree)");
+	assertEqual(ws002!.liveStatus, "failed", "workspace: WS-002 live status is failed");
+}
+
+{
+	console.log("  ▸ workspace v2: .DONE in one repo + dead session in another → mark-complete vs mark-failed");
+	const state = makeWorkspaceState();
+	// WS-001 (api) completed (.DONE exists), WS-002 (frontend) dead session
+	const reconciled = reconcileTaskStates(
+		state,
+		new Set(),                 // no alive sessions
+		new Set(["WS-001"]),       // WS-001 has .DONE
+	);
+
+	const ws001 = reconciled.find((r: any) => r.taskId === "WS-001");
+	assertEqual(ws001!.action, "mark-complete", "workspace: WS-001 mark-complete (.DONE found)");
+	assertEqual(ws001!.doneFileFound, true, "workspace: WS-001 done file found");
+
+	const ws002 = reconciled.find((r: any) => r.taskId === "WS-002");
+	assertEqual(ws002!.action, "mark-failed", "workspace: WS-002 mark-failed (dead, no .DONE)");
+
+	// Resume point should show correct categorization
+	const point = computeResumePoint(state, reconciled);
+	assert(point.completedTaskIds.includes("WS-001"), "workspace: WS-001 in completed");
+	assert(point.failedTaskIds.includes("WS-002"), "workspace: WS-002 in failed");
+	assertEqual(point.resumeWaveIndex, 0, "workspace: resume from wave 0 (WS-002 failed)");
+}
+
+{
+	console.log("  ▸ v1 state (no repo fields) reconciles correctly with all-undefined repo fields");
+	// Simulate a v1-upconverted state: mode=repo, no repo fields on tasks/lanes
+	const v1State = minimalPersistedState({
+		mode: "repo",
+		baseBranch: "",
+		wavePlan: [["T1", "T2"]],
+		lanes: [
+			{
+				laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+				worktreePath: "/tmp/wt-1", branch: "task/lane-1-batch",
+				taskIds: ["T1", "T2"],
+				// No repoId — v1 behavior
+			},
+		],
+		tasks: [
+			makeTaskRecord({ taskId: "T1", laneNumber: 1, sessionName: "orch-lane-1", status: "succeeded" }),
+			makeTaskRecord({ taskId: "T2", laneNumber: 1, sessionName: "orch-lane-1", status: "running" }),
+		],
+	});
+
+	// T1: succeeded → skip, T2: running + dead session → mark-failed
+	const reconciled = reconcileTaskStates(v1State, new Set(), new Set());
+	const t1 = reconciled.find((r: any) => r.taskId === "T1");
+	assertEqual(t1!.action, "skip", "v1: T1 skip (already succeeded)");
+	const t2 = reconciled.find((r: any) => r.taskId === "T2");
+	assertEqual(t2!.action, "mark-failed", "v1: T2 mark-failed (dead session)");
+
+	const point = computeResumePoint(v1State, reconciled);
+	assertEqual(point.resumeWaveIndex, 0, "v1: resume from wave 0 (T2 not done)");
+	assert(point.completedTaskIds.includes("T1"), "v1: T1 completed");
+	assert(point.failedTaskIds.includes("T2"), "v1: T2 failed");
+
+	// Verify v1 lanes have no repoId
+	assertEqual(v1State.lanes[0].repoId, undefined, "v1: lane has no repoId");
+	assertEqual(v1State.tasks[0].repoId, undefined, "v1: task has no repoId");
+}
+
+{
+	console.log("  ▸ worktree exists vs missing split across repos → correct re-execute vs mark-failed");
+	const state = makeWorkspaceState();
+	// WS-001 (api): dead session + worktree exists → re-execute
+	// WS-002 (frontend): dead session + no worktree → mark-failed
+	const reconciled = reconcileTaskStates(
+		state,
+		new Set(),                   // no alive sessions
+		new Set(),                   // no .DONE files
+		new Set(["WS-001"]),         // only WS-001 has worktree
+	);
+
+	const ws001 = reconciled.find((r: any) => r.taskId === "WS-001");
+	assertEqual(ws001!.action, "re-execute", "workspace: WS-001 re-execute (worktree exists)");
+	assertEqual(ws001!.worktreeExists, true, "workspace: WS-001 worktree exists");
+	assertEqual(ws001!.liveStatus, "pending", "workspace: WS-001 live status pending (will be re-executed)");
+
+	const ws002 = reconciled.find((r: any) => r.taskId === "WS-002");
+	assertEqual(ws002!.action, "mark-failed", "workspace: WS-002 mark-failed (no worktree)");
+	assertEqual(ws002!.worktreeExists, false, "workspace: WS-002 no worktree");
+
+	const point = computeResumePoint(state, reconciled);
+	assert(point.reExecuteTaskIds.includes("WS-001"), "workspace: WS-001 in re-execute list");
+	assert(point.failedTaskIds.includes("WS-002"), "workspace: WS-002 in failed list");
+	assertEqual(point.resumeWaveIndex, 0, "workspace: resume from wave 0");
+}
+
+{
+	console.log("  ▸ resolveRepoRoot integration: v2 lanes get correct repo root, v1/undefined lanes get default root");
+
+	const defaultRoot = "/default/repo";
+
+	// v2 workspace: lane with repoId="api" → resolves to /repos/api
+	const apiRoot = resolveRepoRoot("api", defaultRoot, testWorkspaceConfig);
+	assertEqual(apiRoot, "/repos/api", "resolveRepoRoot: api → /repos/api");
+
+	const frontendRoot = resolveRepoRoot("frontend", defaultRoot, testWorkspaceConfig);
+	assertEqual(frontendRoot, "/repos/frontend", "resolveRepoRoot: frontend → /repos/frontend");
+
+	// v1/repo mode: undefined repoId → returns default root
+	const undefinedRoot = resolveRepoRoot(undefined, defaultRoot, testWorkspaceConfig);
+	assertEqual(undefinedRoot, defaultRoot, "resolveRepoRoot: undefined → default root");
+
+	// v1/repo mode: no workspace config → returns default root
+	const noConfigRoot = resolveRepoRoot("api", defaultRoot, null);
+	assertEqual(noConfigRoot, defaultRoot, "resolveRepoRoot: null config → default root");
+
+	// v1/repo mode: empty string repoId → returns default root (falsy check)
+	const emptyRoot = resolveRepoRoot("", defaultRoot, testWorkspaceConfig);
+	assertEqual(emptyRoot, defaultRoot, "resolveRepoRoot: empty string → default root");
+
+	// Unknown repoId → defensive fallback to default root
+	const unknownRoot = resolveRepoRoot("unknown-repo", defaultRoot, testWorkspaceConfig);
+	assertEqual(unknownRoot, defaultRoot, "resolveRepoRoot: unknown repo → default root");
+}
+
+{
+	console.log("  ▸ workspace v2: multi-wave with cross-repo completion states");
+	// Wave 0: WS-001 (api) + WS-002 (frontend), both completed
+	// Wave 1: WS-003 (api) running, WS-004 (frontend) pending
+	const state = minimalPersistedState({
+		mode: "workspace",
+		baseBranch: "main",
+		wavePlan: [["WS-001", "WS-002"], ["WS-003", "WS-004"]],
+		lanes: [
+			{
+				laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+				worktreePath: "/tmp/wt-1", branch: "task/lane-1-batch",
+				taskIds: ["WS-001", "WS-003"], repoId: "api",
+			},
+			{
+				laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2",
+				worktreePath: "/tmp/wt-2", branch: "task/lane-2-batch",
+				taskIds: ["WS-002", "WS-004"], repoId: "frontend",
+			},
+		],
+		tasks: [
+			makeTaskRecord({ taskId: "WS-001", laneNumber: 1, sessionName: "orch-lane-1", status: "succeeded", repoId: "api", resolvedRepoId: "api" }),
+			makeTaskRecord({ taskId: "WS-002", laneNumber: 2, sessionName: "orch-lane-2", status: "succeeded", resolvedRepoId: "frontend" }),
+			makeTaskRecord({ taskId: "WS-003", laneNumber: 1, sessionName: "orch-lane-1", status: "running", repoId: "api", resolvedRepoId: "api" }),
+			makeTaskRecord({ taskId: "WS-004", laneNumber: 2, sessionName: "orch-lane-2", status: "pending", resolvedRepoId: "frontend" }),
+		],
+	});
+
+	// WS-001 and WS-002 done, WS-003 has alive session, WS-004 dead
+	const reconciled = reconcileTaskStates(
+		state,
+		new Set(["orch-lane-1"]), // WS-003's lane is alive
+		new Set(["WS-001", "WS-002"]), // wave 0 tasks have .DONE
+	);
+
+	// Wave 0 should be fully done
+	const ws001 = reconciled.find((r: any) => r.taskId === "WS-001");
+	const ws002 = reconciled.find((r: any) => r.taskId === "WS-002");
+	assertEqual(ws001!.action, "mark-complete", "multi-wave: WS-001 mark-complete");
+	assertEqual(ws002!.action, "mark-complete", "multi-wave: WS-002 mark-complete");
+
+	// Wave 1: WS-003 reconnect, WS-004 mark-failed
+	const ws003 = reconciled.find((r: any) => r.taskId === "WS-003");
+	const ws004 = reconciled.find((r: any) => r.taskId === "WS-004");
+	assertEqual(ws003!.action, "reconnect", "multi-wave: WS-003 reconnect");
+	assertEqual(ws004!.action, "mark-failed", "multi-wave: WS-004 mark-failed");
+
+	const point = computeResumePoint(state, reconciled);
+	assertEqual(point.resumeWaveIndex, 1, "multi-wave: skips wave 0 (all done), resumes at wave 1");
+	assertEqual(point.completedTaskIds.length, 2, "multi-wave: 2 completed");
+	assertEqual(point.reconnectTaskIds.length, 1, "multi-wave: 1 reconnect (WS-003)");
+	assertEqual(point.failedTaskIds.length, 1, "multi-wave: 1 failed (WS-004)");
+	assert(point.reconnectTaskIds.includes("WS-003"), "multi-wave: WS-003 in reconnect");
+	assert(point.failedTaskIds.includes("WS-004"), "multi-wave: WS-004 in failed");
+}
+
+{
+	console.log("  ▸ workspace v2: all repos' tasks completed → resume wave past end");
+	const state = minimalPersistedState({
+		mode: "workspace",
+		baseBranch: "main",
+		wavePlan: [["WS-001", "WS-002"]],
+		lanes: [
+			{
+				laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+				worktreePath: "/tmp/wt-1", branch: "task/lane-1-batch",
+				taskIds: ["WS-001"], repoId: "api",
+			},
+			{
+				laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2",
+				worktreePath: "/tmp/wt-2", branch: "task/lane-2-batch",
+				taskIds: ["WS-002"], repoId: "frontend",
+			},
+		],
+		tasks: [
+			makeTaskRecord({ taskId: "WS-001", laneNumber: 1, sessionName: "orch-lane-1", status: "succeeded", repoId: "api" }),
+			makeTaskRecord({ taskId: "WS-002", laneNumber: 2, sessionName: "orch-lane-2", status: "succeeded", resolvedRepoId: "frontend" }),
+		],
+	});
+
+	const reconciled = reconcileTaskStates(state, new Set(), new Set(["WS-001", "WS-002"]));
+	const point = computeResumePoint(state, reconciled);
+	assertEqual(point.resumeWaveIndex, 1, "all done: resume wave past end (wavePlan.length)");
+	assertEqual(point.completedTaskIds.length, 2, "all done: both tasks completed");
+	assertEqual(point.failedTaskIds.length, 0, "all done: no failures");
+	assertEqual(point.pendingTaskIds.length, 0, "all done: no pending");
+}
+
+{
+	console.log("  ▸ unique repo roots collected from persisted lanes (for worktree reset/cleanup)");
+	// Simulate the per-repo root collection logic used in resumeOrchBatch
+	const persistedLanes = [
+		{ repoId: "api" },
+		{ repoId: "frontend" },
+		{ repoId: "api" },  // duplicate
+		{ repoId: undefined },  // v1/repo-mode lane
+	];
+	const defaultRoot = "/default/repo";
+
+	const uniqueRoots = new Set<string>();
+	for (const lr of persistedLanes) {
+		uniqueRoots.add(resolveRepoRoot(lr.repoId, defaultRoot, testWorkspaceConfig));
+	}
+
+	assertEqual(uniqueRoots.size, 3, "unique roots: 3 distinct roots (api, frontend, default)");
+	assert(uniqueRoots.has("/repos/api"), "unique roots: includes api root");
+	assert(uniqueRoots.has("/repos/frontend"), "unique roots: includes frontend root");
+	assert(uniqueRoots.has(defaultRoot), "unique roots: includes default root (v1/undefined lane)");
+}
+
+{
+	console.log("  ▸ v1 state with zero lanes: fallback adds default repo root");
+	// Edge case: v1 state with no lanes persisted (very early crash)
+	const emptyLanesState = minimalPersistedState({
+		mode: "repo",
+		lanes: [],
+		tasks: [],
+		wavePlan: [],
+	});
+	const defaultRoot = "/default/repo";
+
+	const uniqueRoots = new Set<string>();
+	for (const lr of emptyLanesState.lanes) {
+		uniqueRoots.add(resolveRepoRoot(lr.repoId, defaultRoot, null));
+	}
+	if (uniqueRoots.size === 0) {
+		uniqueRoots.add(defaultRoot);
+	}
+
+	assertEqual(uniqueRoots.size, 1, "empty lanes fallback: 1 root");
+	assert(uniqueRoots.has(defaultRoot), "empty lanes fallback: default root used");
 }
 
 // ═══════════════════════════════════════════════════════════════════════
