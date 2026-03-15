@@ -1,7 +1,7 @@
 # TP-002: Task-to-Repo Routing and Execution Target Parsing — Status
 
 **Current Step:** Step 0: Parse execution target metadata
-​**Status:** 🟡 In Progress
+​**Status:** ✅ Step 0 Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
 **Review Counter:** 1
@@ -101,11 +101,13 @@
 | 2026-03-15 06:28 | Step 0 started | Parse execution target metadata |
 | 2026-03-15 06:31 | Review R001 | plan Step 0: changes requested |
 | 2026-03-15 | Step 0 plan hydrated | Addressed R001 findings, concrete checklist |
+| 2026-03-15 | Step 0 implemented | ParsedTask.promptRepoId, parser in discovery.ts, 24 tests passing |
 | 2026-03-15 06:31 | Review R001 | plan Step 0: UNKNOWN |
 | 2026-03-15 | Step 0 impl | types.ts: promptRepoId field already added by prior iter |
 | 2026-03-15 | Step 0 impl | discovery.ts: section+inline parser already added by prior iter |
 | 2026-03-15 | Step 0 tests | Created discovery-prompt-parser.test.ts — 28/28 pass |
 | 2026-03-15 | Step 0 complete | All checklist items verified and checked off |
+| 2026-03-15 06:37 | Worker iter 1 | done in 359s, ctx: 35%, tools: 51 |
 
 ## Blockers
 
