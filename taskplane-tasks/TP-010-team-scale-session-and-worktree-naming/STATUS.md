@@ -1,11 +1,11 @@
 # TP-010: Team-Scale Session and Worktree Naming Hardening — Status
 
 **Current Step:** Step 1: Apply naming contract consistently
-​**Status:** 🟡 In Progress
+​**Status:** ✅ Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 3
 **Review Counter:** 3
-**Iteration:** 2
+**Iteration:** 3
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -22,7 +22,7 @@
 ---
 
 ### Step 1: Apply naming contract consistently
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Create `naming.ts` with `resolveOperatorId()`, `sanitizeNameComponent()`, `resolveRepoSlug()`
 - [x] Add `operator_id` field to `OrchestratorConfig` and `DEFAULT_ORCHESTRATOR_CONFIG`
@@ -47,7 +47,9 @@
 - [x] Add `operator_id` to template config `task-orchestrator.yaml`
 - [x] Ensure log/sidecar file naming aligns with new identifiers (lane log inherits from session name)
 - [x] Update tests: `orch-pure-functions.test.ts` (generateWorktreePath, listWorktrees regex)
-- [ ] All 207 tests passing (verified locally, pending final wrap-up)
+- [x] All 207 vitest tests passing + 54 lifecycle tests + 160 pure function tests
+- [x] Update tests: `waves-repo-scoped.test.ts` (generateTmuxSessionName with opId)
+- [x] Update tests: `worktree-lifecycle.test.ts` (opId in createWorktree, branch names, listWorktrees, removeAllWorktrees)
 
 ---
 
@@ -114,6 +116,9 @@
 | 2026-03-15 19:06 | Step 1 started | Apply naming contract consistently |
 | 2026-03-15 19:08 | Review R003 | plan Step 1: UNKNOWN |
 | 2026-03-15 19:10 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 19:26 | Worker iter 2 | done in 1077s, ctx: 81%, tools: 122 |
+| 2026-03-15 19:27 | Worker iter 3 | done in 24s, ctx: 6%, tools: 4 |
+| 2026-03-15 19:31 | Step 1 iter 2 | Updated remaining test files (waves-repo-scoped, worktree-lifecycle) for opId. All 207+54+160 tests passing. |
 
 ## Blockers
 
