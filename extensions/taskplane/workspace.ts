@@ -319,6 +319,14 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 
 	// ── 12. routing.strict (optional boolean, default false) ─────
 	const rawStrict = rawRouting.strict;
+	if (rawStrict !== undefined && rawStrict !== null && typeof rawStrict !== "boolean") {
+		throw new WorkspaceConfigError(
+			"WORKSPACE_SCHEMA_INVALID",
+			`routing.strict must be a boolean (true/false), got ${typeof rawStrict}: ${JSON.stringify(rawStrict)}`,
+			undefined,
+			configFile,
+		);
+	}
 	const strict = rawStrict === true;
 
 	// ── Build routing config ─────────────────────────────────────

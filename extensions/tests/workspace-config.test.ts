@@ -385,6 +385,97 @@ describe("loadWorkspaceConfig", () => {
 		expect(config!.repos.has("api")).toBe(true);
 		expect(config!.repos.has("frontend")).toBe(true);
 	});
+
+	// ── 1.15+: routing.strict type validation (TP-011) ──────────
+
+	it("1.15: routing.strict: true is accepted and set on config", () => {
+		const dir = makeTestDir("strict-true");
+		const repoDir = join(dir, "repo");
+		initGitRepo(repoDir);
+		const tasksDir = join(dir, "tasks");
+		mkdirSync(tasksDir, { recursive: true });
+		writeWorkspaceConfig(dir,
+			`repos:\n  api:\n    path: ${repoDir}\n` +
+			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: true\n`
+		);
+
+		const config = loadWorkspaceConfig(dir);
+		expect(config).not.toBeNull();
+		expect(config!.routing.strict).toBe(true);
+	});
+
+	it("1.16: routing.strict: false is accepted and NOT set on config", () => {
+		const dir = makeTestDir("strict-false");
+		const repoDir = join(dir, "repo");
+		initGitRepo(repoDir);
+		const tasksDir = join(dir, "tasks");
+		mkdirSync(tasksDir, { recursive: true });
+		writeWorkspaceConfig(dir,
+			`repos:\n  api:\n    path: ${repoDir}\n` +
+			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: false\n`
+		);
+
+		const config = loadWorkspaceConfig(dir);
+		expect(config).not.toBeNull();
+		expect(config!.routing.strict).toBeUndefined();
+	});
+
+	it("1.17: routing.strict omitted defaults to permissive (no strict field)", () => {
+		const dir = makeTestDir("strict-omitted");
+		const repoDir = join(dir, "repo");
+		initGitRepo(repoDir);
+		const tasksDir = join(dir, "tasks");
+		mkdirSync(tasksDir, { recursive: true });
+		writeWorkspaceConfig(dir,
+			`repos:\n  api:\n    path: ${repoDir}\n` +
+			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n`
+		);
+
+		const config = loadWorkspaceConfig(dir);
+		expect(config).not.toBeNull();
+		expect(config!.routing.strict).toBeUndefined();
+	});
+
+	it("1.18: routing.strict with string value throws WORKSPACE_SCHEMA_INVALID", () => {
+		const dir = makeTestDir("strict-string");
+		const repoDir = join(dir, "repo");
+		initGitRepo(repoDir);
+		const tasksDir = join(dir, "tasks");
+		mkdirSync(tasksDir, { recursive: true });
+		writeWorkspaceConfig(dir,
+			`repos:\n  api:\n    path: ${repoDir}\n` +
+			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: "yes"\n`
+		);
+
+		expect(() => loadWorkspaceConfig(dir)).toThrow(WorkspaceConfigError);
+		try {
+			loadWorkspaceConfig(dir);
+		} catch (e: any) {
+			expect(e.code).toBe("WORKSPACE_SCHEMA_INVALID");
+			expect(e.message).toContain("routing.strict");
+			expect(e.message).toContain("boolean");
+		}
+	});
+
+	it("1.19: routing.strict with numeric value throws WORKSPACE_SCHEMA_INVALID", () => {
+		const dir = makeTestDir("strict-number");
+		const repoDir = join(dir, "repo");
+		initGitRepo(repoDir);
+		const tasksDir = join(dir, "tasks");
+		mkdirSync(tasksDir, { recursive: true });
+		writeWorkspaceConfig(dir,
+			`repos:\n  api:\n    path: ${repoDir}\n` +
+			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: api\n  strict: 1\n`
+		);
+
+		expect(() => loadWorkspaceConfig(dir)).toThrow(WorkspaceConfigError);
+		try {
+			loadWorkspaceConfig(dir);
+		} catch (e: any) {
+			expect(e.code).toBe("WORKSPACE_SCHEMA_INVALID");
+			expect(e.message).toContain("routing.strict");
+		}
+	});
 });
 
 // ── 2.x: buildExecutionContext ───────────────────────────────────────

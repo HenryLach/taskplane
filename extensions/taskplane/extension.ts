@@ -281,6 +281,17 @@ export default function (pi: ExtensionAPI) {
 						"info",
 					);
 				}
+				const hasStrictErrors = fatalErrors.some(
+					(e) => e.code === "TASK_ROUTING_STRICT",
+				);
+				if (hasStrictErrors) {
+					ctx.ui.notify(
+						"💡 Strict routing is enabled (routing.strict: true). Every task must declare an explicit execution target.\n" +
+						"   Add a `## Execution Target` section with `Repo: <id>` to each task's PROMPT.md.\n" +
+						"   To disable strict routing, set `routing.strict: false` in workspace config.",
+						"info",
+					);
+				}
 				return;
 			}
 

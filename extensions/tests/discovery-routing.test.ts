@@ -27,9 +27,12 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, writeFileSync, rmSync } from "fs";
-import { join } from "path";
+import { mkdirSync, writeFileSync, rmSync, readFileSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { tmpdir } from "os";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 import { formatDiscoveryResults, parsePromptForOrchestrator, resolveTaskRouting, runDiscovery } from "../taskplane/discovery.ts";
 import { loadTaskRunnerConfig } from "../taskplane/config.ts";
@@ -1823,7 +1826,7 @@ describe("17.x: Actionable routing error guidance", () => {
 
 
 // ══════════════════════════════════════════════════════════════════════
-// Strict Routing Policy Tests (TP-011)
+// Strict Routing Policy Tests (TP-011 Step 0 + Step 1)
 // ══════════════════════════════════════════════════════════════════════
 
 // ── 19.x: Strict mode — rejects tasks without promptRepoId ──────────
@@ -2333,5 +2336,73 @@ Repo: api
 		expect(output).toContain("TASK_ROUTING_STRICT");
 		expect(output).toContain("Execution Target");
 		expect(output).toContain("Repo:");
+	});
+});
+
+
+// ══════════════════════════════════════════════════════════════════════
+// Step 1: Command-Surface Remediation Hints (TP-011)
+// ══════════════════════════════════════════════════════════════════════
+
+// ── 25.x: Command surfaces handle TASK_ROUTING_STRICT ────────────────
+
+describe("25.x: Command surface TASK_ROUTING_STRICT remediation hints", () => {
+	it("25.1: extension.ts checks for TASK_ROUTING_STRICT in fatal error block", () => {
+		const extensionSrc = readFileSync(
+			join(__dirname, "..", "taskplane", "extension.ts"),
+			"utf-8",
+		);
+		expect(extensionSrc).toContain('"TASK_ROUTING_STRICT"');
+		// Verify it's part of the fatal-error hint block (not just a comment)
+		expect(extensionSrc).toContain('hasStrictErrors');
+		expect(extensionSrc).toContain('Strict routing is enabled');
+	});
+
+	it("25.2: engine.ts checks for TASK_ROUTING_STRICT in fatal error block", () => {
+		const engineSrc = readFileSync(
+			join(__dirname, "..", "taskplane", "engine.ts"),
+			"utf-8",
+		);
+		expect(engineSrc).toContain('"TASK_ROUTING_STRICT"');
+		expect(engineSrc).toContain('hasStrictErrors');
+		expect(engineSrc).toContain('Strict routing is enabled');
+	});
+
+	it("25.3: extension.ts TASK_ROUTING_STRICT hint includes remediation guidance", () => {
+		const extensionSrc = readFileSync(
+			join(__dirname, "..", "taskplane", "extension.ts"),
+			"utf-8",
+		);
+		// The hint should tell users how to fix and how to disable
+		expect(extensionSrc).toContain("Execution Target");
+		expect(extensionSrc).toContain("routing.strict: false");
+	});
+
+	it("25.4: engine.ts TASK_ROUTING_STRICT hint includes remediation guidance", () => {
+		const engineSrc = readFileSync(
+			join(__dirname, "..", "taskplane", "engine.ts"),
+			"utf-8",
+		);
+		expect(engineSrc).toContain("Execution Target");
+		expect(engineSrc).toContain("routing.strict: false");
+	});
+
+	it("25.5: extension.ts has separate handling for routing and strict errors", () => {
+		const extensionSrc = readFileSync(
+			join(__dirname, "..", "taskplane", "extension.ts"),
+			"utf-8",
+		);
+		// Both TASK_REPO_UNRESOLVED/UNKNOWN and TASK_ROUTING_STRICT should be handled
+		expect(extensionSrc).toContain("hasRoutingErrors");
+		expect(extensionSrc).toContain("hasStrictErrors");
+	});
+
+	it("25.6: engine.ts has separate handling for routing and strict errors", () => {
+		const engineSrc = readFileSync(
+			join(__dirname, "..", "taskplane", "engine.ts"),
+			"utf-8",
+		);
+		expect(engineSrc).toContain("hasRoutingErrors");
+		expect(engineSrc).toContain("hasStrictErrors");
 	});
 });
