@@ -1,11 +1,11 @@
 # TP-006: Persisted State Schema v2 with Repo-Aware Records — Status
 
-**Current Step:** Step 2: Handle schema v1 compatibility
-**Status:** ✅ Complete
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Step 3 Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 5
-**Iteration:** 3
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -142,23 +142,59 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing
-- [ ] Targeted tests for changed modules passing
-- [ ] All failures fixed
-- [ ] CLI smoke checks passing
+- [x] Run targeted persistence regression tests: `cd extensions && npx vitest run tests/orch-state-persistence.test.ts`
+- [x] If targeted tests fail, fix failures and rerun targeted tests until green
+- [x] Run full extension suite: `cd extensions && npx vitest run`
+- [x] If full suite fails, fix failures and rerun full suite until green
+- [x] Run CLI smoke from repo root: `node bin/taskplane.mjs help`
+- [x] Record exact verification evidence in STATUS.md (files/tests count, failures=0, CLI smoke pass)
+
+#### Step 3 Verification Evidence
+
+**Targeted persistence tests:**
+- Command: `cd extensions && npx vitest run tests/orch-state-persistence.test.ts --reporter=verbose`
+- Result: 1 test file, 1 test suite, **499 internal assertions passed**, 0 failed
+- Covers: validatePersistedState (36 assertions), serializeBatchState round-trip, file I/O, schema v1→v2 compatibility (8 regression tests), persistRuntimeState integration (13 tests), parseOrchSessionNames, analyzeOrchestratorStartupState, checkResumeEligibility, reconcileTaskStates, computeResumePoint, selectAbortTargetSessions, planAbortActions, mixed-outcome lane guard, cleanup suppression, parseMergeResult, end-to-end interruption scenario
+
+**Full extension suite:**
+- Command: `cd extensions && npx vitest run`
+- Result: **11 test files, 207 tests, 0 failures**
+- Duration: 47.06s
+
+**CLI smoke check:**
+- Command: `node bin/taskplane.mjs help` (from repo root)
+- Result: ✅ Clean output, all commands listed, version v0.1.17, exit code 0
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] "Must Update" docs modified
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
-- [ ] `.DONE` created
-- [ ] Archive and push
+#### 4.1 — Update "Must Update" doc: `polyrepo-implementation-plan.md`
+**Target:** `C:\dev\taskplane\.pi\local\docs\taskplane\polyrepo-implementation-plan.md` (outside worktree)
+
+- [x] Update WS-F section with final delivered v2 schema contract:
+  - Fields: `mode` (top-level), `repoId`/`resolvedRepoId` (task records), `repoId` (lane records)
+  - `BATCH_STATE_SCHEMA_VERSION` bumped from 1 → 2
+  - v1→v2 in-memory upconvert (no on-disk rewrite), v2 write-on-save
+  - Validation: strict `mode` for v2, type checks on repo fields, unsupported version rejection
+- [x] Update Section 10 (Implementation Readiness Checklist): mark "Persistence schema v2 approved" as done
+- [x] Update Section 14 (Migration Plan Phase 1): N/A — Phase 1 section is in spec, not impl plan (handled in 4.2)
+- [x] Log evidence of update in STATUS.md
+
+#### 4.2 — Review "Check If Affected" doc: `polyrepo-support-spec.md`
+**Target:** `C:\dev\taskplane\.pi\local\docs\taskplane\polyrepo-support-spec.md` (outside worktree)
+
+- [x] Review Section 11 (Persistence / Resume Schema Changes) against delivered TP-006 behavior
+- [x] Record decision: **updated**, with rationale, in STATUS.md
+
+#### 4.3 — Discoveries
+- [x] Confirm all discoveries from Steps 0–3 are logged in STATUS.md Discoveries table (5 entries total)
+
+#### 4.4 — Closeout
+- [ ] Create `.DONE` file in task folder
 
 ---
 
@@ -174,6 +210,14 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | APPROVE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R006 | code | Step 2 | APPROVE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
+| R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 |---|------|------|---------|------|
 
 #### Step 2 Audit Notes
@@ -210,6 +254,8 @@
 | TP-004 already added `repoId` to `AllocatedLane`, `ParsedTask`, `LaneAssignment`, `MergeLaneResult` runtime types — v2 persistence leverages these existing runtime contracts | Noted | `types.ts` |
 | `baseBranch` was added to v1 state with backward-compat defaulting to `""` — v2 upconversion preserves this behavior | Noted | `persistence.ts:323`, `persistence.ts:536` |
 | Polyrepo spec/backlog docs referenced in PROMPT.md context do not exist in this worktree — schema design proceeded from types.ts runtime contracts alone | Noted | `.pi/local/docs/taskplane/` |
+| Spec Section 11 listed `worktree.repoRoot` as a persisted field; TP-006 intentionally omitted it — repo roots are resolved at resume time from workspace config + repoId to keep state files portable and avoid stale path snapshots | Design decision — spec updated | `polyrepo-support-spec.md` §11 |
+| `resolvedRepoId` was added to task records beyond what spec originally listed (`repoId` only) — captures the final routing resolution distinct from prompt-declared repo | Enhancement — spec updated | `types.ts`, `persistence.ts` |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -257,6 +303,30 @@
 | 2026-03-15 18:35 | Review R005 | plan Step 2: REVISE |
 | 2026-03-15 18:39 | Worker iter 3 | done in 288s, ctx: 43%, tools: 29 |
 | 2026-03-15 18:41 | Step 2 impl (iter 3) | Added 11 regression tests in sections 7.1–7.3: v1 load path, no-rewrite, v2 repo/workspace load, version guardrails (v0/v3/v99), malformed JSON, v2 missing mode, v1 resume pipeline. 207 tests passing. |
+| 2026-03-15 18:42 | Worker iter 3 | done in 410s, ctx: 48%, tools: 50 |
+| 2026-03-15 18:43 | Review R006 | code Step 2: APPROVE |
+| 2026-03-15 18:43 | Step 2 complete | Handle schema v1 compatibility |
+| 2026-03-15 18:43 | Step 3 started | Testing & Verification |
+| 2026-03-15 18:44 | Review R007 | plan Step 3: REVISE |
+| 2026-03-15 18:45 | Step 3 hydrated | R007 feedback: 6 granular checkboxes with explicit commands and evidence requirements |
+| 2026-03-15 18:46 | Step 3 targeted tests | orch-state-persistence.test.ts: 499 assertions passed, 0 failures |
+| 2026-03-15 18:46 | Step 3 full suite | 11 test files, 207 tests, 0 failures |
+| 2026-03-15 18:46 | Step 3 CLI smoke | `node bin/taskplane.mjs help` — clean output, exit 0 |
+| 2026-03-15 18:46 | Step 3 complete | Testing & Verification |
+| 2026-03-15 18:45 | Review R006 | code Step 2: APPROVE |
+| 2026-03-15 18:45 | Step 2 complete | Handle schema v1 compatibility |
+| 2026-03-15 18:45 | Step 3 started | Testing & Verification |
+| 2026-03-15 18:45 | Review R007 | plan Step 3: APPROVE |
+| 2026-03-15 18:47 | Worker iter 4 | done in 192s, ctx: 13%, tools: 24 |
+| 2026-03-15 18:47 | Worker iter 4 | done in 112s, ctx: 10%, tools: 12 |
+| 2026-03-15 18:49 | Review R008 | code Step 3: APPROVE |
+| 2026-03-15 18:49 | Step 3 complete | Testing & Verification |
+| 2026-03-15 18:49 | Step 4 started | Documentation & Delivery |
+| 2026-03-15 18:50 | Review R008 | code Step 3: APPROVE |
+| 2026-03-15 18:50 | Step 3 complete | Testing & Verification |
+| 2026-03-15 18:50 | Step 4 started | Documentation & Delivery |
+| 2026-03-15 18:51 | Review R009 | plan Step 4: REVISE |
+| 2026-03-15 18:51 | Review R009 | plan Step 4: REVISE |
 
 ## Blockers
 
