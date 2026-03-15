@@ -718,9 +718,11 @@ export function serializeBatchState(
 	// Build merge results from actual merge outcomes (accumulated on batchState).
 	// MergeWaveResult.waveIndex is 1-based (from merge module); normalize to
 	// 0-based for PersistedMergeResult (dashboard renders as "Wave N+1").
+	// Clamp to 0 minimum: resume re-exec merges use sentinel waveIndex -1,
+	// which would produce -2 without clamping.
 	const mergeResults: PersistedMergeResult[] = (state.mergeResults || [])
 		.map((mr) => ({
-			waveIndex: mr.waveIndex - 1,
+			waveIndex: Math.max(0, mr.waveIndex - 1),
 			status: mr.status,
 			failedLane: mr.failedLane,
 			failureReason: mr.failureReason,

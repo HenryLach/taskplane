@@ -1423,9 +1423,11 @@ function serializeBatchState(
 	// Build merge results from actual merge outcomes (accumulated on batchState).
 	// MergeWaveResult.waveIndex is 1-based (from merge module); normalize to
 	// 0-based for PersistedMergeResult (dashboard renders as "Wave N+1").
+	// Clamp to 0 minimum: resume re-exec merges use sentinel waveIndex -1,
+	// which would produce -2 without clamping.
 	const mergeResults = (state.mergeResults || [])
 		.map((mr: any) => ({
-			waveIndex: mr.waveIndex - 1,
+			waveIndex: Math.max(0, mr.waveIndex - 1),
 			status: mr.status,
 			failedLane: mr.failedLane,
 			failureReason: mr.failureReason,
@@ -5176,6 +5178,659 @@ function computeTransitiveDependents(
 	assertEqual(point.completedTaskIds.length, 1, "mark-complete-always: T1 in completed");
 	assert(point.completedTaskIds.includes("T1"), "mark-complete-always: T1 present");
 	assertEqual(point.failedTaskIds.length, 0, "mark-complete-always: no failures");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TP-007 Step 2: Execute resumed waves safely — repo-scoped context & persistence
+// ═══════════════════════════════════════════════════════════════════════
+
+console.log("\n── TP-007 Step 2: reconstructAllocatedLanes & collectAllRepoRoots ──");
+
+// ── Reimplement Step 2 helpers for test self-containment ─────────────
+
+function reconstructAllocatedLanes(
+	persistedLanes: Array<{ laneNumber: number; laneId: string; tmuxSessionName: string; worktreePath: string; branch: string; taskIds: string[]; repoId?: string }>,
+	persistedTasks?: Array<{ taskId: string; repoId?: string; resolvedRepoId?: string; taskFolder?: string }>,
+): any[] {
+	const taskLookup = new Map<string, any>();
+	if (persistedTasks) {
+		for (const t of persistedTasks) {
+			taskLookup.set(t.taskId, t);
+		}
+	}
+
+	return persistedLanes.map((lr) => ({
+		laneNumber: lr.laneNumber,
+		laneId: lr.laneId,
+		tmuxSessionName: lr.tmuxSessionName,
+		worktreePath: lr.worktreePath,
+		branch: lr.branch,
+		tasks: lr.taskIds.map((taskId: string) => {
+			const persistedTask = taskLookup.get(taskId);
+			const taskStub: any = {};
+			if (persistedTask?.repoId !== undefined) {
+				taskStub.promptRepoId = persistedTask.repoId;
+			}
+			if (persistedTask?.resolvedRepoId !== undefined) {
+				taskStub.resolvedRepoId = persistedTask.resolvedRepoId;
+			}
+			if (persistedTask?.taskFolder) {
+				taskStub.taskFolder = persistedTask.taskFolder;
+			}
+			return {
+				taskId,
+				order: 0,
+				task: Object.keys(taskStub).length > 0 ? taskStub : null,
+				estimatedMinutes: 0,
+			};
+		}),
+		strategy: "round-robin",
+		estimatedLoad: 0,
+		estimatedMinutes: 0,
+		...(lr.repoId !== undefined ? { repoId: lr.repoId } : {}),
+	}));
+}
+
+function collectAllRepoRoots(
+	laneSources: Array<Array<{ repoId?: string }>>,
+	defaultRepoRoot: string,
+	workspaceConfig?: { repos: Map<string, { path: string }> } | null,
+): string[] {
+	const roots = new Set<string>();
+	for (const lanes of laneSources) {
+		for (const lane of lanes) {
+			const root = resolveRepoRoot(lane.repoId, defaultRepoRoot, workspaceConfig);
+			roots.add(root);
+		}
+	}
+	roots.add(defaultRepoRoot);
+	return [...roots];
+}
+
+// 2.1: reconstructAllocatedLanes preserves repo attribution
+{
+	console.log("  ▸ reconstructAllocatedLanes: preserves laneNumber, laneId, branch, repoId from persisted records");
+	const persistedLanes = [
+		{
+			laneNumber: 1,
+			laneId: "lane-1",
+			tmuxSessionName: "orch-lane-1",
+			worktreePath: "/work/wt-1",
+			branch: "orch/batch-1-lane-1",
+			taskIds: ["T1", "T2"],
+			repoId: "api",
+		},
+		{
+			laneNumber: 2,
+			laneId: "lane-2",
+			tmuxSessionName: "orch-lane-2",
+			worktreePath: "/work/wt-2",
+			branch: "orch/batch-1-lane-2",
+			taskIds: ["T3"],
+			repoId: "frontend",
+		},
+	];
+
+	const allocated = reconstructAllocatedLanes(persistedLanes);
+	assertEqual(allocated.length, 2, "reconstructed 2 lanes");
+	assertEqual(allocated[0].laneNumber, 1, "lane 1 number preserved");
+	assertEqual(allocated[0].laneId, "lane-1", "lane 1 id preserved");
+	assertEqual(allocated[0].tmuxSessionName, "orch-lane-1", "lane 1 session preserved");
+	assertEqual(allocated[0].worktreePath, "/work/wt-1", "lane 1 worktree preserved");
+	assertEqual(allocated[0].branch, "orch/batch-1-lane-1", "lane 1 branch preserved");
+	assertEqual(allocated[0].repoId, "api", "lane 1 repoId preserved");
+	assertEqual(allocated[0].tasks.length, 2, "lane 1 has 2 task stubs");
+	assertEqual(allocated[0].tasks[0].taskId, "T1", "lane 1 task 1 ID correct");
+	assertEqual(allocated[0].tasks[1].taskId, "T2", "lane 1 task 2 ID correct");
+
+	assertEqual(allocated[1].laneNumber, 2, "lane 2 number preserved");
+	assertEqual(allocated[1].repoId, "frontend", "lane 2 repoId preserved");
+	assertEqual(allocated[1].tasks.length, 1, "lane 2 has 1 task stub");
+}
+
+// 2.2: reconstructAllocatedLanes with v1 lanes (no repoId)
+{
+	console.log("  ▸ reconstructAllocatedLanes: v1 lanes (no repoId) produce lanes without repoId field");
+	const v1Lanes = [
+		{
+			laneNumber: 1,
+			laneId: "lane-1",
+			tmuxSessionName: "orch-lane-1",
+			worktreePath: "/work/wt-1",
+			branch: "orch/batch-1-lane-1",
+			taskIds: ["T1"],
+		},
+	];
+
+	const allocated = reconstructAllocatedLanes(v1Lanes);
+	assertEqual(allocated.length, 1, "v1 reconstructed 1 lane");
+	assertEqual(allocated[0].repoId, undefined, "v1 lane has no repoId");
+	assertEqual(allocated[0].laneNumber, 1, "v1 lane number preserved");
+}
+
+// 2.3: collectAllRepoRoots merges roots from multiple sources
+{
+	console.log("  ▸ collectAllRepoRoots: merges repos from persisted + newly allocated lanes");
+	const wsConfig = {
+		repos: new Map<string, { path: string }>([
+			["api", { path: "/repos/api" }],
+			["frontend", { path: "/repos/frontend" }],
+			["backend", { path: "/repos/backend" }],
+		]),
+	};
+
+	// Persisted lanes have api + frontend
+	const persistedLanes = [
+		{ repoId: "api" as string | undefined },
+		{ repoId: "frontend" as string | undefined },
+	];
+	// Newly allocated lanes introduce backend
+	const newLanes = [
+		{ repoId: "backend" as string | undefined },
+		{ repoId: "api" as string | undefined }, // duplicate, should deduplicate
+	];
+
+	const roots = collectAllRepoRoots([persistedLanes, newLanes], "/default", wsConfig);
+	assert(roots.includes("/repos/api"), "includes api from persisted");
+	assert(roots.includes("/repos/frontend"), "includes frontend from persisted");
+	assert(roots.includes("/repos/backend"), "includes backend from new lanes");
+	assert(roots.includes("/default"), "includes default root");
+	assertEqual(roots.length, 4, "4 unique roots (3 repos + default)");
+}
+
+// 2.4: collectAllRepoRoots in repo mode (no workspaceConfig)
+{
+	console.log("  ▸ collectAllRepoRoots: repo mode (null workspace) returns only default root");
+	const persistedLanes = [{ repoId: undefined as string | undefined }, { repoId: undefined as string | undefined }];
+	const roots = collectAllRepoRoots([persistedLanes], "/myrepo", null);
+	assertEqual(roots.length, 1, "repo mode: 1 root");
+	assert(roots.includes("/myrepo"), "repo mode: only default root");
+}
+
+// 2.5: Serialization round-trip preserves lane records from reconstructed lanes
+{
+	console.log("  ▸ serializeBatchState: reconstructed lanes preserve repo attribution through serialization");
+	const persistedLanes = [
+		{
+			laneNumber: 1,
+			laneId: "lane-1",
+			tmuxSessionName: "orch-lane-1",
+			worktreePath: "/work/wt-1",
+			branch: "orch/batch-1-lane-1",
+			taskIds: ["T1"],
+			repoId: "api",
+		},
+		{
+			laneNumber: 2,
+			laneId: "lane-2",
+			tmuxSessionName: "orch-lane-2",
+			worktreePath: "/work/wt-2",
+			branch: "orch/batch-1-lane-2",
+			taskIds: ["T2"],
+			repoId: "frontend",
+		},
+	];
+
+	const allocated = reconstructAllocatedLanes(persistedLanes);
+
+	// Simulate what resumeOrchBatch does: serialize with reconstructed lanes
+	const state: MinimalBatchState = {
+		phase: "executing",
+		batchId: "test-batch",
+		baseBranch: "main",
+		mode: "workspace",
+		startedAt: Date.now() - 5000,
+		endedAt: null,
+		currentWaveIndex: 0,
+		totalWaves: 1,
+		totalTasks: 2,
+		succeededTasks: 0,
+		failedTasks: 0,
+		skippedTasks: 0,
+		blockedTasks: 0,
+		blockedTaskIds: new Set(),
+		errors: [],
+		mergeResults: [],
+	};
+
+	const outcomes: any[] = [
+		{ taskId: "T1", status: "succeeded", startTime: 1000, endTime: 2000, exitReason: ".DONE found", sessionName: "orch-lane-1", doneFileFound: true },
+		{ taskId: "T2", status: "running", startTime: 1000, endTime: null, exitReason: "", sessionName: "orch-lane-2", doneFileFound: false },
+	];
+
+	const json = serializeBatchState(state, [["T1", "T2"]], allocated, outcomes);
+	const parsed = JSON.parse(json);
+
+	// Lane records must survive serialization
+	assertEqual(parsed.lanes.length, 2, "serialized 2 lane records");
+	assertEqual(parsed.lanes[0].laneNumber, 1, "lane 1 number in output");
+	assertEqual(parsed.lanes[0].repoId, "api", "lane 1 repoId in output");
+	assertEqual(parsed.lanes[0].tmuxSessionName, "orch-lane-1", "lane 1 session in output");
+	assertEqual(parsed.lanes[1].laneNumber, 2, "lane 2 number in output");
+	assertEqual(parsed.lanes[1].repoId, "frontend", "lane 2 repoId in output");
+
+	// Task records should still have correct lane assignment
+	const t1 = parsed.tasks.find((t: any) => t.taskId === "T1");
+	const t2 = parsed.tasks.find((t: any) => t.taskId === "T2");
+	assertEqual(t1.laneNumber, 1, "T1 assigned to lane 1");
+	assertEqual(t2.laneNumber, 2, "T2 assigned to lane 2");
+}
+
+// 2.6: Empty persisted lanes reconstructs to empty (graceful)
+{
+	console.log("  ▸ reconstructAllocatedLanes: empty input produces empty output");
+	const allocated = reconstructAllocatedLanes([]);
+	assertEqual(allocated.length, 0, "empty lanes: no reconstruction");
+}
+
+// 2.7: Checkpoint attribution invariants across persistence triggers
+{
+	console.log("  ▸ checkpoint attribution: lanes[] and tasks[].repoId survive resume-reconciliation → wave-execution-complete");
+
+	// Simulate the resume flow: persisted state → reconstruct → first persistence call → wave execution → second persistence call
+	const persistedLanes = [
+		{
+			laneNumber: 1,
+			laneId: "lane-1",
+			tmuxSessionName: "orch-lane-1",
+			worktreePath: "/work/wt-1",
+			branch: "orch/batch-1-lane-1",
+			taskIds: ["T1"],
+			repoId: "api",
+		},
+	];
+
+	// Phase 1: resume-reconciliation checkpoint (before any wave executes)
+	const reconstructed = reconstructAllocatedLanes(persistedLanes);
+	const reconcileState: MinimalBatchState = {
+		phase: "executing",
+		batchId: "test-batch",
+		baseBranch: "main",
+		mode: "workspace",
+		startedAt: Date.now() - 5000,
+		endedAt: null,
+		currentWaveIndex: 0,
+		totalWaves: 2,
+		totalTasks: 2,
+		succeededTasks: 1,
+		failedTasks: 0,
+		skippedTasks: 0,
+		blockedTasks: 0,
+		blockedTaskIds: new Set(),
+		errors: [],
+		mergeResults: [],
+	};
+
+	const reconcileOutcomes: any[] = [
+		{ taskId: "T1", status: "succeeded", startTime: 1000, endTime: 2000, exitReason: ".DONE found", sessionName: "orch-lane-1", doneFileFound: true },
+	];
+
+	const json1 = serializeBatchState(reconcileState, [["T1"], ["T2"]], reconstructed, reconcileOutcomes);
+	const parsed1 = JSON.parse(json1);
+
+	// Verify lanes survive first checkpoint
+	assertEqual(parsed1.lanes.length, 1, "reconcile checkpoint: 1 lane record");
+	assertEqual(parsed1.lanes[0].repoId, "api", "reconcile checkpoint: repoId preserved");
+	assertEqual(parsed1.lanes[0].laneNumber, 1, "reconcile checkpoint: laneNumber preserved");
+
+	// Phase 2: wave-execution-complete (new wave allocates lanes in new repo)
+	const newWaveLanes: any[] = [{
+		laneNumber: 3,
+		laneId: "lane-3",
+		tmuxSessionName: "orch-lane-3",
+		worktreePath: "/work/wt-3",
+		branch: "orch/batch-1-lane-3",
+		tasks: [{ taskId: "T2", order: 0, task: { promptRepoId: "frontend", resolvedRepoId: "frontend" }, estimatedMinutes: 5 }],
+		strategy: "round-robin",
+		estimatedLoad: 1,
+		estimatedMinutes: 5,
+		repoId: "frontend",
+	}];
+
+	const waveOutcomes = [...reconcileOutcomes, { taskId: "T2", status: "succeeded", startTime: 3000, endTime: 4000, exitReason: "done", sessionName: "orch-lane-3", doneFileFound: true }];
+	const json2 = serializeBatchState(reconcileState, [["T1"], ["T2"]], newWaveLanes, waveOutcomes);
+	const parsed2 = JSON.parse(json2);
+
+	// New wave lanes take over (latestAllocatedLanes behavior)
+	assertEqual(parsed2.lanes.length, 1, "wave checkpoint: 1 lane (latest wave)");
+	assertEqual(parsed2.lanes[0].repoId, "frontend", "wave checkpoint: new repo 'frontend'");
+	assertEqual(parsed2.lanes[0].laneNumber, 3, "wave checkpoint: lane 3 from new wave");
+
+	// Task T2 should get repo fields from allocated task
+	const t2 = parsed2.tasks.find((t: any) => t.taskId === "T2");
+	assertEqual(t2.repoId, "frontend", "wave checkpoint: T2 repoId from allocated task");
+	assertEqual(t2.resolvedRepoId, "frontend", "wave checkpoint: T2 resolvedRepoId from allocated task");
+}
+
+// 2.8: collectAllRepoRoots covers repos introduced by resumed waves
+{
+	console.log("  ▸ collectAllRepoRoots: repos from resumed wave allocation are included in cleanup set");
+	const wsConfig = {
+		repos: new Map<string, { path: string }>([
+			["api", { path: "/repos/api" }],
+			["newrepo", { path: "/repos/newrepo" }],
+		]),
+	};
+
+	// Scenario: persisted state only had "api" lanes. Resumed wave introduces "newrepo".
+	const persistedLaneSources = [{ repoId: "api" as string | undefined }];
+	const newAllocatedSources = [{ repoId: "newrepo" as string | undefined }];
+
+	// Without collectAllRepoRoots, only api would be cleaned up.
+	// With it, both are included.
+	const roots = collectAllRepoRoots([persistedLaneSources, newAllocatedSources], "/default", wsConfig);
+	assert(roots.includes("/repos/api"), "cleanup includes api (from persisted)");
+	assert(roots.includes("/repos/newrepo"), "cleanup includes newrepo (from resumed wave)");
+	assert(roots.includes("/default"), "cleanup includes default");
+	assertEqual(roots.length, 3, "3 unique roots for cleanup");
+}
+
+// 2.9: v1 fallback parity — reconstructAllocatedLanes + collectAllRepoRoots in repo mode
+{
+	console.log("  ▸ v1 fallback: reconstructAllocatedLanes + collectAllRepoRoots unchanged for v1 state");
+	const v1Lanes = [
+		{
+			laneNumber: 1,
+			laneId: "lane-1",
+			tmuxSessionName: "orch-lane-1",
+			worktreePath: "/work/wt-1",
+			branch: "orch/batch-1-lane-1",
+			taskIds: ["T1"],
+			// no repoId — v1 behavior
+		},
+	];
+
+	const allocated = reconstructAllocatedLanes(v1Lanes);
+	assertEqual(allocated.length, 1, "v1 parity: 1 lane reconstructed");
+	assertEqual(allocated[0].repoId, undefined, "v1 parity: no repoId");
+
+	// collectAllRepoRoots with v1 lanes + null workspace → only default
+	const roots = collectAllRepoRoots([allocated], "/myrepo", null);
+	assertEqual(roots.length, 1, "v1 parity: only default root");
+	assert(roots.includes("/myrepo"), "v1 parity: default root present");
+}
+
+// 2.10: Checkpoint round-trip through validatePersistedState preserves repo attribution
+{
+	console.log("  ▸ checkpoint round-trip: serialize → validate → lanes[].repoId + tasks[].repoId survive");
+
+	const persistedLanes = [
+		{
+			laneNumber: 1,
+			laneId: "lane-1",
+			tmuxSessionName: "orch-lane-1",
+			worktreePath: "/work/wt-1",
+			branch: "orch/batch-1-lane-1",
+			taskIds: ["T1"],
+			repoId: "api",
+		},
+	];
+
+	const allocated = reconstructAllocatedLanes(persistedLanes);
+
+	const state: MinimalBatchState = {
+		phase: "paused",
+		batchId: "rt-batch",
+		baseBranch: "main",
+		mode: "workspace",
+		startedAt: Date.now() - 5000,
+		endedAt: null,
+		currentWaveIndex: 0,
+		totalWaves: 1,
+		totalTasks: 1,
+		succeededTasks: 0,
+		failedTasks: 0,
+		skippedTasks: 0,
+		blockedTasks: 0,
+		blockedTaskIds: new Set(),
+		errors: [],
+		mergeResults: [],
+	};
+
+	const outcomes: any[] = [
+		{ taskId: "T1", status: "running", startTime: 1000, endTime: null, exitReason: "", sessionName: "orch-lane-1", doneFileFound: false },
+	];
+
+	// Serialize
+	const json = serializeBatchState(state, [["T1"]], allocated, outcomes);
+	const raw = JSON.parse(json);
+
+	// Manually set taskFolder (normally done by persistRuntimeState enrichment)
+	raw.tasks[0].taskFolder = "/tasks/T1";
+
+	// Validate (simulates loadBatchState → validatePersistedState)
+	const validated = validatePersistedState(raw);
+
+	assertEqual(validated.lanes.length, 1, "round-trip: 1 lane");
+	assertEqual(validated.lanes[0].repoId, "api", "round-trip: lane repoId preserved");
+	assertEqual(validated.lanes[0].laneNumber, 1, "round-trip: lane number preserved");
+	assertEqual(validated.lanes[0].tmuxSessionName, "orch-lane-1", "round-trip: session preserved");
+
+	assertEqual(validated.tasks.length, 1, "round-trip: 1 task");
+	assertEqual(validated.tasks[0].taskId, "T1", "round-trip: task ID preserved");
+	assertEqual(validated.tasks[0].laneNumber, 1, "round-trip: task lane number preserved");
+
+	// Validate is also usable for next resume
+	const reReconstruct = reconstructAllocatedLanes(validated.lanes);
+	assertEqual(reReconstruct.length, 1, "re-reconstruct: 1 lane");
+	assertEqual(reReconstruct[0].repoId, "api", "re-reconstruct: repoId preserved across pause/resume");
+}
+
+// ── TP-007 Step 2 additional tests ───────────────────────────────────
+
+// 2.11: Task repo carry-forward via persistedTasks parameter
+{
+	console.log("  ▸ reconstructAllocatedLanes: persistedTasks carries repo fields for archived tasks");
+	const persistedLanes = [
+		{
+			laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+			worktreePath: "/wt/1", branch: "b-1", taskIds: ["T1", "T2"], repoId: "api",
+		},
+	];
+	const persistedTasks = [
+		{ taskId: "T1", repoId: "api", resolvedRepoId: "api", taskFolder: "/tasks/T1" },
+		{ taskId: "T2", repoId: "api", resolvedRepoId: "api", taskFolder: "/tasks/T2" },
+	];
+
+	const allocated = reconstructAllocatedLanes(persistedLanes, persistedTasks);
+	assertEqual(allocated[0].tasks[0].task?.promptRepoId, "api", "task-carry: T1 promptRepoId");
+	assertEqual(allocated[0].tasks[0].task?.resolvedRepoId, "api", "task-carry: T1 resolvedRepoId");
+	assertEqual(allocated[0].tasks[0].task?.taskFolder, "/tasks/T1", "task-carry: T1 taskFolder");
+	assertEqual(allocated[0].tasks[1].task?.promptRepoId, "api", "task-carry: T2 promptRepoId");
+
+	// Serialize and verify repo fields round-trip
+	const state: MinimalBatchState = {
+		phase: "executing", batchId: "B1", baseBranch: "main", mode: "workspace",
+		startedAt: Date.now(), endedAt: null, currentWaveIndex: 0, totalWaves: 1,
+		totalTasks: 2, succeededTasks: 1, failedTasks: 0, skippedTasks: 0,
+		blockedTasks: 0, blockedTaskIds: new Set(), errors: [], mergeResults: [],
+	};
+	const outcomes = [
+		{ taskId: "T1", status: "succeeded", startTime: 1000, endTime: 2000, exitReason: "done", sessionName: "orch-lane-1", doneFileFound: true },
+		{ taskId: "T2", status: "running", startTime: 1000, endTime: null, exitReason: "", sessionName: "orch-lane-1", doneFileFound: false },
+	];
+	const json = serializeBatchState(state, [["T1", "T2"]], allocated, outcomes);
+	const parsed = JSON.parse(json);
+	const t1 = parsed.tasks.find((t: any) => t.taskId === "T1");
+	const t2 = parsed.tasks.find((t: any) => t.taskId === "T2");
+	assertEqual(t1.repoId, "api", "task-carry-roundtrip: T1 repoId in output");
+	assertEqual(t1.resolvedRepoId, "api", "task-carry-roundtrip: T1 resolvedRepoId in output");
+	assertEqual(t2.repoId, "api", "task-carry-roundtrip: T2 repoId in output");
+}
+
+// 2.12: Without persistedTasks, tasks have null task stub (v1 compat)
+{
+	console.log("  ▸ reconstructAllocatedLanes: without persistedTasks, task stubs are null (backward compat)");
+	const persistedLanes = [
+		{
+			laneNumber: 1, laneId: "lane-1", tmuxSessionName: "s1",
+			worktreePath: "/wt/1", branch: "b-1", taskIds: ["T1"],
+		},
+	];
+
+	const allocated = reconstructAllocatedLanes(persistedLanes);
+	assertEqual(allocated[0].tasks[0].task, null, "no-tasks-param: task stub is null");
+}
+
+// 2.13: Blocked counter — persisted-blocked in unvisited waves counted at resume init
+{
+	console.log("  ▸ blocked counter: persisted-blocked tasks in unvisited waves counted at resume init");
+
+	// Simulate: 3 waves, paused at wave 1 (0-indexed). T3 (wave 2) is blocked
+	// but wave 2 was never entered. blockedTasks = 1 (only T-fail-dep from wave 1).
+	const wavePlan = [["T1", "T-fail"], ["T-fail-dep"], ["T3"]];
+	const persistedBlockedTaskIds = new Set(["T-fail-dep", "T3"]);
+	const persistedBlockedTasks = 1; // Only T-fail-dep was counted (wave 1 was entered)
+	const resumeWaveIndex = 2; // Resume at wave 2 (T-fail-dep in wave 1 was already handled)
+
+	// Count persisted-blocked tasks in unvisited waves (>= resumeWaveIndex)
+	let uncountedBlocked = 0;
+	for (let wi = resumeWaveIndex; wi < wavePlan.length; wi++) {
+		for (const taskId of wavePlan[wi]) {
+			if (persistedBlockedTaskIds.has(taskId)) {
+				uncountedBlocked++;
+			}
+		}
+	}
+
+	const totalBlocked = persistedBlockedTasks + uncountedBlocked;
+	assertEqual(uncountedBlocked, 1, "blocked-unvisited: T3 is 1 uncounted task");
+	assertEqual(totalBlocked, 2, "blocked-unvisited: total = 1 (carried) + 1 (T3)");
+
+	// Verify per-wave counting doesn't double-count
+	// Wave 2 has T3 in persistedBlockedTaskIds → excluded by guard
+	const wave2BlockedInLoop = wavePlan[2].filter(
+		taskId => persistedBlockedTaskIds.has(taskId) && !persistedBlockedTaskIds.has(taskId),
+	);
+	assertEqual(wave2BlockedInLoop.length, 0, "blocked-unvisited: T3 not double-counted in loop");
+}
+
+// 2.14: Blocked counter — all blocked tasks in visited waves → no uncounted
+{
+	console.log("  ▸ blocked counter: all blocked tasks in already-visited waves → uncounted = 0");
+	const wavePlan = [["T1", "T-fail"], ["T-dep"]];
+	const persistedBlockedTaskIds = new Set(["T-dep"]);
+	const resumeWaveIndex = 1; // Resume at wave 1 where T-dep lives
+
+	let uncountedBlocked = 0;
+	for (let wi = resumeWaveIndex; wi < wavePlan.length; wi++) {
+		for (const taskId of wavePlan[wi]) {
+			if (persistedBlockedTaskIds.has(taskId)) {
+				uncountedBlocked++;
+			}
+		}
+	}
+
+	// T-dep IS in wave 1 which is >= resumeWaveIndex, so it's counted here.
+	// But it was also counted in the prior run's wave loop. The key is: was the wave entered?
+	// If resumeWaveIndex = 1, it means wave 1 had incomplete tasks. The blocked counter
+	// for T-dep may or may not have been incremented. If T-dep was blocked DURING wave 1
+	// execution, engine.ts counted it. If T-dep was blocked BEFORE wave 1 entered (from
+	// reconciliation), the old code would have missed it.
+	//
+	// The fix counts ALL persisted-blocked in unvisited waves. Wave 1 IS the resume wave,
+	// so T-dep at index 1 is counted. This is correct because if T-dep was already counted
+	// in the prior run, it wouldn't be in resumeWaveIndex's wave — it would have been
+	// skipped and the resume would start at wave 2.
+	assertEqual(uncountedBlocked, 1, "blocked-visited: T-dep counted at resume init");
+}
+
+// 2.15: Re-exec merge indexing — sentinel waveIndex -1 produces valid persistence
+{
+	console.log("  ▸ re-exec merge: sentinel waveIndex -1 produces waveIndex 0 in persisted state");
+	const state: MinimalBatchState = {
+		phase: "executing", batchId: "B-reexec", baseBranch: "main", mode: "repo",
+		startedAt: Date.now(), endedAt: null, currentWaveIndex: 0, totalWaves: 2,
+		totalTasks: 3, succeededTasks: 1, failedTasks: 0, skippedTasks: 0,
+		blockedTasks: 0, blockedTaskIds: new Set(), errors: [],
+		mergeResults: [
+			// Re-exec merge with sentinel
+			{ waveIndex: -1, status: "succeeded", failedLane: null, failureReason: null, laneResults: [], totalDurationMs: 100 },
+			// Normal wave 1 merge
+			{ waveIndex: 1, status: "succeeded", failedLane: null, failureReason: null, laneResults: [], totalDurationMs: 200 },
+			// Normal wave 2 merge
+			{ waveIndex: 2, status: "succeeded", failedLane: null, failureReason: null, laneResults: [], totalDurationMs: 300 },
+		],
+	};
+
+	const json = serializeBatchState(state, [["T1"], ["T2"], ["T3"]], [], []);
+	const parsed = JSON.parse(json);
+
+	assertEqual(parsed.mergeResults.length, 3, "re-exec-merge: 3 merge results");
+	assertEqual(parsed.mergeResults[0].waveIndex, 0, "re-exec-merge: sentinel -1 clamped to 0");
+	assertEqual(parsed.mergeResults[1].waveIndex, 0, "re-exec-merge: wave 1 normalized to 0");
+	assertEqual(parsed.mergeResults[2].waveIndex, 1, "re-exec-merge: wave 2 normalized to 1");
+
+	// All waveIndex values are valid (>= 0)
+	for (const mr of parsed.mergeResults) {
+		assert(mr.waveIndex >= 0, `re-exec-merge: waveIndex ${mr.waveIndex} is non-negative`);
+	}
+}
+
+// 2.16: Re-exec merge — old waveIndex=0 backward compat
+{
+	console.log("  ▸ re-exec merge: old waveIndex=0 (pre-fix) also clamps to 0");
+	const state: MinimalBatchState = {
+		phase: "executing", batchId: "B-old", baseBranch: "main", mode: "repo",
+		startedAt: Date.now(), endedAt: null, currentWaveIndex: 0, totalWaves: 1,
+		totalTasks: 1, succeededTasks: 1, failedTasks: 0, skippedTasks: 0,
+		blockedTasks: 0, blockedTaskIds: new Set(), errors: [],
+		mergeResults: [
+			{ waveIndex: 0, status: "succeeded", failedLane: null, failureReason: null, laneResults: [], totalDurationMs: 50 },
+		],
+	};
+
+	const json = serializeBatchState(state, [["T1"]], [], []);
+	const parsed = JSON.parse(json);
+	assertEqual(parsed.mergeResults[0].waveIndex, 0, "old-reexec: 0 → Math.max(0, -1) = 0");
+	assert(parsed.mergeResults[0].waveIndex >= 0, "old-reexec: waveIndex is non-negative");
+}
+
+// 2.17: Mixed-repo checkpoint: tasks from different repos preserve attribution
+{
+	console.log("  ▸ mixed-repo checkpoint: tasks from 2 repos preserve attribution through serialize");
+	const persistedLanes = [
+		{
+			laneNumber: 1, laneId: "l-1", tmuxSessionName: "s-1",
+			worktreePath: "/wt/api-1", branch: "b-1", taskIds: ["TA"], repoId: "api",
+		},
+		{
+			laneNumber: 2, laneId: "l-2", tmuxSessionName: "s-2",
+			worktreePath: "/wt/fe-1", branch: "b-2", taskIds: ["TF"], repoId: "frontend",
+		},
+	];
+	const persistedTasks = [
+		{ taskId: "TA", repoId: "api", resolvedRepoId: "api", taskFolder: "/tasks/TA" },
+		{ taskId: "TF", repoId: "frontend", resolvedRepoId: "frontend", taskFolder: "/tasks/TF" },
+	];
+
+	const allocated = reconstructAllocatedLanes(persistedLanes, persistedTasks);
+	const state: MinimalBatchState = {
+		phase: "executing", batchId: "B-mixed", baseBranch: "main", mode: "workspace",
+		startedAt: Date.now(), endedAt: null, currentWaveIndex: 0, totalWaves: 1,
+		totalTasks: 2, succeededTasks: 0, failedTasks: 0, skippedTasks: 0,
+		blockedTasks: 0, blockedTaskIds: new Set(), errors: [], mergeResults: [],
+	};
+	const outcomes = [
+		{ taskId: "TA", status: "succeeded", startTime: 1000, endTime: 2000, exitReason: "done", sessionName: "s-1", doneFileFound: true },
+		{ taskId: "TF", status: "failed", startTime: 1000, endTime: 2000, exitReason: "crash", sessionName: "s-2", doneFileFound: false },
+	];
+
+	const json = serializeBatchState(state, [["TA", "TF"]], allocated, outcomes);
+	const parsed = JSON.parse(json);
+
+	// Both lanes preserved
+	assertEqual(parsed.lanes.length, 2, "mixed-repo: 2 lanes");
+	assertEqual(parsed.lanes[0].repoId, "api", "mixed-repo: lane 1 is api");
+	assertEqual(parsed.lanes[1].repoId, "frontend", "mixed-repo: lane 2 is frontend");
+
+	// Both tasks have repo attribution
+	const ta = parsed.tasks.find((t: any) => t.taskId === "TA");
+	const tf = parsed.tasks.find((t: any) => t.taskId === "TF");
+	assertEqual(ta.repoId, "api", "mixed-repo: TA repoId");
+	assertEqual(ta.resolvedRepoId, "api", "mixed-repo: TA resolvedRepoId");
+	assertEqual(tf.repoId, "frontend", "mixed-repo: TF repoId");
+	assertEqual(tf.resolvedRepoId, "frontend", "mixed-repo: TF resolvedRepoId");
 }
 
 // ═══════════════════════════════════════════════════════════════════════

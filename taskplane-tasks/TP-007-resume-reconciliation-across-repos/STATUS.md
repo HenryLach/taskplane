@@ -1,11 +1,11 @@
 # TP-007: Resume Reconciliation and Continuation Across Repos — Status
 
-**Current Step:** Step 2: Execute resumed waves safely
+**Current Step:** Step 3: Testing & Verification
 ​**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 3
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -99,10 +99,38 @@
 ---
 
 ### Step 2: Execute resumed waves safely
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Run resumed allocation/execution/merge using repo-scoped context
-- [ ] Persist reconciliation and continuation checkpoints with repo attribution
+**Blocked counter contract across pause/resume:**
+- `batchState.blockedTasks` is initialized from `persistedState.blockedTasks` (carried from prior run).
+- `persistedBlockedTaskIds` tracks the set of IDs already counted in that carried value.
+- Per-wave counting: count tasks in the wave that are in `blockedTaskIds` BUT NOT in `persistedBlockedTaskIds`.
+- Problem: tasks newly blocked from reconciliation (section 9b) ARE added to `blockedTaskIds` but ARE NOT in `persistedBlockedTaskIds`. When their wave is reached, they ARE correctly counted (not excluded). ✅
+- Problem: tasks blocked in a prior run but whose wave was never entered (prior pause happened before reaching that wave) — they ARE in `persistedBlockedTaskIds` so they ARE excluded from counting. But they were already counted in `persistedState.blockedTasks` since the prior run added them per-wave. So they should NOT be counted again. ✅
+- Actual gap: if a task was persisted as blocked but its wave was never reached in the prior run, `persistedState.blockedTasks` would NOT have counted it (it's counted per-wave in engine.ts). But it IS in `persistedBlockedTaskIds`, so it's excluded from counting on resume. This means it's NEVER counted. Fix: on resume init, count persisted blocked IDs whose waves are >= resumeWaveIndex (they were blocked but their wave was never entered, so they were never counted).
+
+**Metadata preservation strategy for resume checkpoints:**
+- On resume, `latestAllocatedLanes` starts empty → first persist loses all lane records.
+- Fix: reconstruct `AllocatedLane[]` from `persistedState.lanes` + discovery metadata at resume init.
+- This preserves lane→task assignment, worktreePath, branch, repoId, and sessionName across resume checkpoints.
+- For task repo attribution: `persistRuntimeState` already enriches from discovery. But tasks NOT in `discovery.pending` (completed/failed) lose repo fields. Fix: carry forward `repoId`/`resolvedRepoId` from persisted task records when not available from discovery or allocated lanes.
+
+**Re-exec merge indexing:**
+- Re-exec merge uses synthetic `waveIndex: 0` → `mergeWaveByRepo(..., 0, ...)`.
+- Persistence normalizes: `waveIndex: mr.waveIndex - 1` → produces `-1`.
+- Fix: use sentinel `waveIndex: -1` for re-exec merge (semantically "pre-wave-loop merge").
+- Persistence: clamp with `Math.max(0, mr.waveIndex - 1)` to prevent negative indices.
+- Dashboard: `-1` → displayed as "Re-executed" (or wave index 0 after clamping).
+
+**Duplicated per-repo root collection:**
+- Replace inline loops at inter-wave reset and terminal cleanup with `collectRepoRoots()` helper.
+
+- [x] Reconstruct `AllocatedLane[]` from persisted lanes + discovery at resume init to preserve lane/task metadata across checkpoints
+- [x] Carry forward task repo attribution (`repoId`, `resolvedRepoId`, `taskFolder`) from persisted task records for non-pending tasks
+- [x] Fix blocked counter: count persisted-blocked-but-never-wave-entered tasks at resume init
+- [x] Fix re-exec merge indexing: use sentinel value and clamp persistence normalization
+- [x] Replace duplicated per-repo root loops with `collectRepoRoots()` helper
+- [x] Add tests: checkpoint round-trip, blocked counter pause/resume, re-exec merge persistence, metadata preservation
 
 ---
 
@@ -134,6 +162,10 @@
 | R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -145,6 +177,10 @@
 | `computeResumePoint` missing `"pending"` reconciliation action for never-started tasks (pending + no session) — all such tasks were incorrectly mark-failed | Fixed + added action type | extensions/taskplane/resume.ts:241, types.ts:1438 |
 | Reconciled failures did not seed `blockedTaskIds` before wave loop (dependents of reconciled mark-failed tasks could execute under skip-dependents) | Fixed: added `computeTransitiveDependents` call in section 9b | extensions/taskplane/resume.ts:833 |
 | `mark-failed` treated as terminal for wave-skip (semantic change: waves with all-failed tasks now skipped, reducing no-op loop iterations) | Intentional change + updated 15+ test expectations | extensions/taskplane/resume.ts:341 |
+| Re-exec merge used `waveIndex: 0` → persistence normalization `waveIndex - 1` produced `-1` (invalid) | Fixed: sentinel `waveIndex: -1`, persistence clamps with `Math.max(0, ...)` | extensions/taskplane/resume.ts:825, persistence.ts:723 |
+| Resume checkpoints lost lane/task repo attribution when `latestAllocatedLanes` was empty | Fixed: `reconstructAllocatedLanes(lanes, tasks)` carries repo fields from persisted task records | extensions/taskplane/resume.ts:74,915 |
+| Blocked counter undercounted: persisted-blocked tasks in unvisited waves never counted | Fixed: count persisted-blocked IDs in waves >= resumeWaveIndex at resume init | extensions/taskplane/resume.ts:597 |
+| Resume inter-wave/cleanup loops duplicated `collectRepoRoots()` logic inline | Fixed: replaced with `collectRepoRoots()` helper call | extensions/taskplane/resume.ts:920 |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -169,6 +205,17 @@
 | 2026-03-15 22:13 | Review R003 | plan Step 1: UNKNOWN |
 | 2026-03-15 22:38 | Worker iter 2 | done in 1530s, ctx: 72%, tools: 191 |
 | 2026-03-15 22:40 | Step 1 completed | computeResumePoint: mark-failed terminal, pending action, blocked seeding, skipped semantics; 8 new tests; 290/290 passing |
+| 2026-03-15 22:43 | Worker iter 2 | done in 1827s, ctx: 77%, tools: 214 |
+| 2026-03-15 22:44 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 22:44 | Step 1 complete | Compute repo-aware resume point |
+| 2026-03-15 22:44 | Step 2 started | Execute resumed waves safely |
+| 2026-03-15 22:47 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 22:47 | Step 1 complete | Compute repo-aware resume point |
+| 2026-03-15 22:47 | Step 2 started | Execute resumed waves safely |
+| 2026-03-15 22:48 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 22:51 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 23:01 | Step 2 impl | Fixed 5 issues: re-exec merge indexing, blocked counter gap, repo attribution carry-forward, collectRepoRoots helper usage, reconstructAllocatedLanes with persistedTasks |
+| 2026-03-15 23:01 | Tests passing | 290/290 tests pass across 12 test files; 7 new Step 2 tests added |
 
 ## Blockers
 

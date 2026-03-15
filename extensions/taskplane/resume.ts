@@ -15,7 +15,7 @@ import { computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from
 import { resolveOperatorId } from "./naming.ts";
 import { deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { StateFileError } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, PersistedLaneRecord, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, resolveRepoRoot } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, removeAllWorktrees, removeWorktree, safeResetWorktree } from "./worktree.ts";
 
@@ -47,6 +47,104 @@ export function collectRepoRoots(
 	for (const lane of persistedState.lanes) {
 		const root = resolveRepoRoot(lane.repoId, defaultRepoRoot, workspaceConfig);
 		roots.add(root);
+	}
+
+	// Always include the default repo root (covers repo mode and any
+	// lanes without repoId)
+	roots.add(defaultRepoRoot);
+
+	return [...roots];
+}
+
+/**
+ * Reconstruct AllocatedLane[] from persisted lane records.
+ *
+ * Used during resume to preserve lane metadata (worktreePath, branch, repoId)
+ * across persistence checkpoints. Without this, the first resume checkpoint
+ * would serialize empty lanes, losing all lane context.
+ *
+ * When `persistedTasks` is provided, repo attribution fields (repoId,
+ * resolvedRepoId, taskFolder) are carried forward onto the reconstructed
+ * ParsedTask stubs. This ensures `serializeBatchState()` can emit repo
+ * fields for tasks not in `discovery.pending` (e.g., completed/failed tasks
+ * that have been archived).
+ *
+ * @param persistedLanes - Persisted lane records
+ * @param persistedTasks - Optional persisted task records for repo field carry-forward
+ * @returns Reconstructed AllocatedLane array with repo attribution preserved
+ */
+export function reconstructAllocatedLanes(
+	persistedLanes: PersistedLaneRecord[],
+	persistedTasks?: PersistedBatchState["tasks"],
+): AllocatedLane[] {
+	// Build task lookup for repo field carry-forward
+	const taskLookup = new Map<string, PersistedBatchState["tasks"][0]>();
+	if (persistedTasks) {
+		for (const t of persistedTasks) {
+			taskLookup.set(t.taskId, t);
+		}
+	}
+
+	return persistedLanes.map((lr) => ({
+		laneNumber: lr.laneNumber,
+		laneId: lr.laneId,
+		tmuxSessionName: lr.tmuxSessionName,
+		worktreePath: lr.worktreePath,
+		branch: lr.branch,
+		tasks: lr.taskIds.map((taskId) => {
+			const persistedTask = taskLookup.get(taskId);
+			// Build a minimal ParsedTask stub that carries repo attribution
+			// from the persisted record. This ensures serializeBatchState()
+			// can emit repoId/resolvedRepoId for tasks not in discovery.
+			const taskStub: Partial<ParsedTask> = {};
+			if (persistedTask?.repoId !== undefined) {
+				taskStub.promptRepoId = persistedTask.repoId;
+			}
+			if (persistedTask?.resolvedRepoId !== undefined) {
+				taskStub.resolvedRepoId = persistedTask.resolvedRepoId;
+			}
+			if (persistedTask?.taskFolder) {
+				taskStub.taskFolder = persistedTask.taskFolder;
+			}
+			return {
+				taskId,
+				order: 0,
+				task: (Object.keys(taskStub).length > 0 ? taskStub : null) as unknown as ParsedTask,
+				estimatedMinutes: 0,
+			};
+		}),
+		strategy: "round-robin" as const,
+		estimatedLoad: 0,
+		estimatedMinutes: 0,
+		...(lr.repoId !== undefined ? { repoId: lr.repoId } : {}),
+	}));
+}
+
+/**
+ * Collect unique repo roots from a combination of sources.
+ *
+ * Unlike `collectRepoRoots()` which only reads from persistedState.lanes,
+ * this variant merges repo roots from multiple lane sources. This is
+ * important during resumed execution where new waves may allocate lanes
+ * in repos not present in the original persisted state.
+ *
+ * @param laneSources   - Array of lane arrays to collect repo roots from
+ * @param defaultRepoRoot - Default/main repo root (cwd)
+ * @param workspaceConfig - Workspace configuration (null in repo mode)
+ * @returns Array of unique absolute repo root paths
+ */
+export function collectAllRepoRoots(
+	laneSources: Array<{ repoId?: string }[]>,
+	defaultRepoRoot: string,
+	workspaceConfig?: WorkspaceConfig | null,
+): string[] {
+	const roots = new Set<string>();
+
+	for (const lanes of laneSources) {
+		for (const lane of lanes) {
+			const root = resolveRepoRoot(lane.repoId, defaultRepoRoot, workspaceConfig);
+			roots.add(root);
+		}
 	}
 
 	// Always include the default repo root (covers repo mode and any
@@ -520,8 +618,32 @@ export async function resumeOrchBatch(
 	batchState.blockedTasks = persistedState.blockedTasks;
 	batchState.blockedTaskIds = new Set(persistedState.blockedTaskIds);
 	// Track persisted blocked IDs separately to avoid double-counting in wave loop.
-	// These were already counted in persistedState.blockedTasks.
+	// Engine.ts counts blocked tasks per-wave when a wave is entered. If the prior
+	// run paused before reaching a wave, tasks blocked for that wave are in
+	// `blockedTaskIds` but NOT yet counted in `blockedTasks`. On resume, the
+	// per-wave counting loop excludes `persistedBlockedTaskIds`, so those tasks
+	// would never be counted. Fix: count persisted blocked tasks in future waves
+	// (waves >= resumeWaveIndex) that were not yet counted.
 	const persistedBlockedTaskIds = new Set(persistedState.blockedTaskIds);
+
+	// Count persisted-blocked tasks in unvisited waves (wave >= resumeWaveIndex).
+	// These were added to blockedTaskIds in the prior run but their wave was never
+	// entered, so they were never counted in blockedTasks.
+	if (persistedBlockedTaskIds.size > 0) {
+		let uncountedBlocked = 0;
+		for (let wi = resumePoint.resumeWaveIndex; wi < persistedState.wavePlan.length; wi++) {
+			for (const taskId of persistedState.wavePlan[wi]) {
+				if (persistedBlockedTaskIds.has(taskId)) {
+					uncountedBlocked++;
+				}
+			}
+		}
+		if (uncountedBlocked > 0) {
+			batchState.blockedTasks += uncountedBlocked;
+			execLog("resume", persistedState.batchId, `blocked counter fix: ${uncountedBlocked} persisted-blocked task(s) in unvisited waves added to blockedTasks`);
+		}
+	}
+
 	batchState.errors = [...persistedState.errors];
 	batchState.endedAt = null;
 	batchState.currentWaveIndex = resumePoint.resumeWaveIndex;
@@ -742,8 +864,16 @@ export async function resumeOrchBatch(
 				endTime: Date.now(),
 			}));
 
+			// Use waveIndex -1 as a sentinel for "pre-wave-loop re-exec merge".
+			// mergeWaveByRepo expects 1-indexed waveIndex; persistence normalizes
+			// to 0-based via `mr.waveIndex - 1`. By passing -1 here:
+			//   - mergeWaveByRepo logs it as "W-1" (harmless)
+			//   - persistence normalizes to `Math.max(0, -1 - 1)` = 0 (valid)
+			//   - semantically distinguishes re-exec merges from wave 1 merges
+			const RE_EXEC_WAVE_INDEX = -1;
+
 			const syntheticWaveResult: WaveExecutionResult = {
-				waveIndex: 0,
+				waveIndex: RE_EXEC_WAVE_INDEX,
 				startedAt: Date.now(),
 				endedAt: Date.now(),
 				laneResults: syntheticLaneResults,
@@ -762,7 +892,7 @@ export async function resumeOrchBatch(
 			const reExecMergeResult = mergeWaveByRepo(
 				reExecAllocatedLanes,
 				syntheticWaveResult,
-				0,
+				RE_EXEC_WAVE_INDEX,
 				orchConfig,
 				repoRoot,
 				batchState.batchId,
@@ -798,7 +928,21 @@ export async function resumeOrchBatch(
 	// Track state for persistence
 	const wavePlan = persistedState.wavePlan;
 	const allTaskOutcomes: LaneTaskOutcome[] = [];
-	let latestAllocatedLanes: AllocatedLane[] = [];
+
+	// Initialize latestAllocatedLanes from persisted lane records so that
+	// early persistence calls (before the first resumed wave) retain lane
+	// records with repo attribution (laneNumber, laneId, branch, repoId).
+	// Without this, the `resume-reconciliation` checkpoint would serialize
+	// empty lanes[], losing all lane context until a new wave allocates.
+	let latestAllocatedLanes: AllocatedLane[] = reconstructAllocatedLanes(persistedState.lanes, persistedState.tasks);
+
+	// Track all repo roots encountered during execution (persisted + newly allocated).
+	// Used by inter-wave reset and terminal cleanup to cover repos introduced
+	// after resume starts (not present in persisted lanes).
+	// Initialized from collectRepoRoots() helper for parity with other callers.
+	const encounteredRepoRoots = new Set(
+		collectRepoRoots(persistedState, repoRoot, workspaceConfig),
+	);
 
 	// Build outcomes from reconciled tasks
 	for (const task of reconciledTasks) {
@@ -919,6 +1063,10 @@ export async function resumeOrchBatch(
 			(lanes) => {
 				latestAllocatedLanes = lanes;
 				batchState.currentLanes = lanes;
+				// Track repos from newly allocated lanes for cleanup coverage
+				for (const lane of lanes) {
+					encounteredRepoRoots.add(resolveRepoRoot(lane.repoId, repoRoot, workspaceConfig));
+				}
 				if (seedPendingOutcomesForAllocatedLanes(lanes, allTaskOutcomes)) {
 					persistRuntimeState("wave-lanes-allocated", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
 				}
@@ -1130,17 +1278,10 @@ export async function resumeOrchBatch(
 			const wtPrefix = orchConfig.orchestrator.worktree_prefix;
 			const resetOpId = resolveOperatorId(orchConfig);
 
-			// Collect unique repo roots from persisted lanes (workspace mode may have multiple)
-			const uniqueRepoRoots = new Set<string>();
-			for (const lr of persistedState.lanes) {
-				uniqueRepoRoots.add(resolveRepoRoot(lr.repoId, repoRoot, workspaceConfig));
-			}
-			// Ensure at least the default repo root is included (v1/repo mode)
-			if (uniqueRepoRoots.size === 0) {
-				uniqueRepoRoots.add(repoRoot);
-			}
-
-			for (const perRepoRoot of uniqueRepoRoots) {
+			// Use encounteredRepoRoots which includes both persisted lanes
+			// AND newly allocated lanes from resumed waves, ensuring repos
+			// introduced after resume starts are covered.
+			for (const perRepoRoot of encounteredRepoRoots) {
 				const existingWorktrees = listWorktrees(wtPrefix, perRepoRoot, resetOpId);
 				if (existingWorktrees.length > 0) {
 					const targetBranch = batchState.baseBranch;
@@ -1165,17 +1306,10 @@ export async function resumeOrchBatch(
 		const cleanupOpId = resolveOperatorId(orchConfig);
 		const targetBranch = batchState.baseBranch;
 
-		// Collect unique repo roots from persisted lanes for per-repo cleanup
-		const cleanupRepoRoots = new Set<string>();
-		for (const lr of persistedState.lanes) {
-			cleanupRepoRoots.add(resolveRepoRoot(lr.repoId, repoRoot, workspaceConfig));
-		}
-		// Ensure at least the default repo root is included (v1/repo mode)
-		if (cleanupRepoRoots.size === 0) {
-			cleanupRepoRoots.add(repoRoot);
-		}
-
-		for (const perRepoRoot of cleanupRepoRoots) {
+		// Use encounteredRepoRoots which includes both persisted lanes
+		// AND newly allocated lanes from resumed waves, ensuring repos
+		// introduced after resume starts are cleaned up.
+		for (const perRepoRoot of encounteredRepoRoots) {
 			removeAllWorktrees(wtPrefix, perRepoRoot, cleanupOpId, targetBranch);
 		}
 	}
