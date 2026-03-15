@@ -63,11 +63,20 @@ function assertEqual<T>(actual: T, expected: T, message: string): void {
 
 // ── Extract pure functions from source ───────────────────────────────
 
-// Read the source file and extract the pure functions we need to test.
+// Read the source files and extract the pure functions we need to test.
 // This avoids needing to resolve @mariozechner/pi-tui at import time.
+// Functions were refactored from the monolith task-orchestrator.ts into
+// separate modules under taskplane/.
 
-const sourceFile = join(__dirname, "..", "task-orchestrator.ts");
-const source = readFileSync(sourceFile, "utf8");
+const sourceFiles = [
+	join(__dirname, "..", "taskplane", "formatting.ts"),
+	join(__dirname, "..", "taskplane", "execution.ts"),
+	join(__dirname, "..", "taskplane", "worktree.ts"),
+	join(__dirname, "..", "taskplane", "messages.ts"),
+	join(__dirname, "..", "taskplane", "waves.ts"),
+	join(__dirname, "..", "taskplane", "types.ts"),
+];
+const source = sourceFiles.map(f => readFileSync(f, "utf8")).join("\n");
 
 /**
  * Extract a function body from the source by searching for its definition.

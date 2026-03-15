@@ -10,6 +10,9 @@ import {
 	hasTaskDoneMarker,
 } from "../task-orchestrator.ts";
 
+// Detect vitest: if present, wrap everything in a describe/it block
+const isVitest = typeof globalThis.vi !== "undefined" || !!process.env.VITEST;
+
 let passed = 0;
 let failed = 0;
 
@@ -22,7 +25,7 @@ function assert(condition: boolean, message: string): void {
 	passed++;
 }
 
-function run(): void {
+function runAllTests(): void {
 	console.log("\n── direct implementation checks (TS-009 remediation) ──");
 
 	// 1) serializeBatchState keeps full task registry from wave plan, even without outcomes.
@@ -91,7 +94,25 @@ function run(): void {
 	}
 
 	console.log(`\nResults: ${passed} passed, ${failed} failed`);
-	if (failed > 0) process.exit(1);
-}
+	if (failed > 0) throw new Error(`${failed} test(s) failed`);
+} // end runAllTests
 
-run();
+// ── Dual-mode execution ──────────────────────────────────────────────
+// Under vitest: register as a proper test suite
+// Standalone (npx tsx): run directly with process.exit
+if (isVitest) {
+	const { describe, it } = await import("vitest");
+	describe("Orchestrator Direct Implementation", () => {
+		it("passes all assertions", () => {
+			runAllTests();
+		});
+	});
+} else {
+	try {
+		runAllTests();
+		process.exit(0);
+	} catch (e) {
+		console.error("Test run failed:", e);
+		process.exit(1);
+	}
+}

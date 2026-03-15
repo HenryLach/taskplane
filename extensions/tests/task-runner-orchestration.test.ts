@@ -151,34 +151,34 @@ function runAllTests(): void {
 		"both tmux mode + orch-lane-3 prefix → true",
 	);
 
-	// Only prefix, no spawn mode → false
+	// Prefix present without spawn mode → still true (prefix is the sole signal)
 	assertEqual(
 		testIsOrchestratedMode({
 			TASK_RUNNER_SPAWN_MODE: undefined,
 			TASK_RUNNER_TMUX_PREFIX: "orch-lane-1",
 		}),
-		false,
-		"orch- prefix but no spawn mode → false",
+		true,
+		"orch- prefix without spawn mode → true (prefix is sufficient)",
 	);
 
-	// Only prefix, spawn mode = subprocess → false (false positive prevention)
+	// Prefix present with subprocess mode → true (prefix is the sole signal)
 	assertEqual(
 		testIsOrchestratedMode({
 			TASK_RUNNER_SPAWN_MODE: "subprocess",
 			TASK_RUNNER_TMUX_PREFIX: "orch-lane-1",
 		}),
-		false,
-		"orch- prefix but subprocess mode → false",
+		true,
+		"orch- prefix with subprocess mode → true (prefix is sufficient)",
 	);
 
-	// Spawn mode = tmux but non-orch prefix → false
+	// Non-orch prefix → still true (any non-empty prefix means orchestrated)
 	assertEqual(
 		testIsOrchestratedMode({
 			TASK_RUNNER_SPAWN_MODE: "tmux",
 			TASK_RUNNER_TMUX_PREFIX: "manual-session",
 		}),
-		false,
-		"tmux mode but non-orch prefix → false",
+		true,
+		"any non-empty prefix → true (orchestrated)",
 	);
 
 	// Neither signal → false
@@ -319,12 +319,12 @@ function runAllTests(): void {
 	});
 	assertEqual(nonOrchResult, "", "non-orchestrated mode: suppression text is empty");
 
-	// False positive: prefix matches but wrong spawn mode
-	const falsePositiveResult = buildArchiveSuppression({
+	// Prefix present with subprocess mode → still orchestrated (prefix is the sole signal)
+	const prefixWithSubprocessResult = buildArchiveSuppression({
 		TASK_RUNNER_SPAWN_MODE: "subprocess",
 		TASK_RUNNER_TMUX_PREFIX: "orch-lane-1",
 	});
-	assertEqual(falsePositiveResult, "", "false positive (subprocess + orch prefix): suppression text is empty");
+	assert(prefixWithSubprocessResult.length > 0, "prefix with subprocess mode: suppression text is non-empty (prefix is sufficient)");
 
 	// ═══════════════════════════════════════════════════════════════
 	// Summary

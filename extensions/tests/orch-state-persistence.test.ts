@@ -72,9 +72,22 @@ function assertThrows(fn: () => void, expectedCode: string, message: string): vo
 
 // ── Extract/Reimplement pure functions from source ───────────────────
 
-// Read the source file
-const sourceFile = join(__dirname, "..", "task-orchestrator.ts");
-const source = readFileSync(sourceFile, "utf8");
+// Read the source files. Functions were refactored from the monolith
+// task-orchestrator.ts into separate modules under taskplane/.
+const sourceFiles = [
+	join(__dirname, "..", "taskplane", "formatting.ts"),
+	join(__dirname, "..", "taskplane", "execution.ts"),
+	join(__dirname, "..", "taskplane", "engine.ts"),
+	join(__dirname, "..", "taskplane", "worktree.ts"),
+	join(__dirname, "..", "taskplane", "messages.ts"),
+	join(__dirname, "..", "taskplane", "waves.ts"),
+	join(__dirname, "..", "taskplane", "persistence.ts"),
+	join(__dirname, "..", "taskplane", "resume.ts"),
+	join(__dirname, "..", "taskplane", "types.ts"),
+	join(__dirname, "..", "taskplane", "abort.ts"),
+	join(__dirname, "..", "taskplane", "merge.ts"),
+];
+const source = sourceFiles.map(f => readFileSync(f, "utf8")).join("\n");
 
 // Since pi imports prevent direct import, we reimplement the pure functions
 // by testing with the same logic as the source. This approach is validated
