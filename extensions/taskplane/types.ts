@@ -1519,3 +1519,215 @@ export interface BatchHistorySummary {
 /** Max number of batch history entries to retain. */
 export const BATCH_HISTORY_MAX_ENTRIES = 100;
 
+
+// ── Workspace Mode Types ─────────────────────────────────────────────
+
+/**
+ * Workspace execution mode.
+ *
+ * Mode behavior contract:
+ * - **"repo"** (default): No workspace config file present. The orchestrator
+ *   treats `cwd` as both the workspace root and the single repo root.
+ *   All existing monorepo behavior is preserved unchanged.
+ * - **"workspace"**: A `.pi/taskplane-workspace.yaml` file is present and
+ *   valid. The orchestrator runs from a non-git workspace root that
+ *   coordinates multiple repos and a shared task root.
+ *
+ * Mode determination rules:
+ * 1. No workspace config file → repo mode (non-fatal default, silent).
+ * 2. Workspace config file present + invalid → fatal error with actionable
+ *    `WorkspaceConfigError` (never silently falls back to repo mode).
+ * 3. Workspace config file present + valid → workspace mode.
+ */
+export type WorkspaceMode = "repo" | "workspace";
+
+/**
+ * Configuration for a single repository within a workspace.
+ *
+ * Each repo is identified by a stable ID (e.g., "api", "frontend")
+ * that is used for routing tasks to repos and for display purposes.
+ */
+export interface WorkspaceRepoConfig {
+	/** Stable identifier for this repo (e.g., "api", "frontend") */
+	id: string;
+	/** Absolute filesystem path to the repo root (must be a git repo) */
+	path: string;
+	/** Optional default branch override (e.g., "develop", "main"). Falls back to repo HEAD. */
+	defaultBranch?: string;
+}
+
+/**
+ * Routing configuration for workspace mode.
+ *
+ * Controls where tasks are discovered and which repo receives
+ * unqualified operations.
+ */
+export interface WorkspaceRoutingConfig {
+	/**
+	 * Absolute path to the shared tasks root directory.
+	 * All task areas are resolved relative to this path.
+	 * Must exist on disk.
+	 */
+	tasksRoot: string;
+	/**
+	 * Default repo ID for operations that don't specify a repo.
+	 * Must reference a valid key in `WorkspaceConfig.repos`.
+	 */
+	defaultRepo: string;
+}
+
+/**
+ * Top-level workspace configuration.
+ *
+ * Loaded from `.pi/taskplane-workspace.yaml` when present.
+ * Immutable after initial validation — never mutated at runtime.
+ */
+export interface WorkspaceConfig {
+	/** Active workspace mode */
+	mode: WorkspaceMode;
+	/** Map of repo ID → repo configuration. At least one repo required in workspace mode. */
+	repos: Map<string, WorkspaceRepoConfig>;
+	/** Routing configuration (tasks root, default repo) */
+	routing: WorkspaceRoutingConfig;
+	/** Absolute path to the workspace config file that was loaded */
+	configPath: string;
+}
+
+/**
+ * Canonical execution context for the orchestrator.
+ *
+ * This is the primary runtime context threaded through orchestrator
+ * entry points. It replaces the previous pattern of passing raw `cwd`
+ * as the sole repo root.
+ *
+ * In repo mode, `workspaceRoot` and `repoRoot` are the same directory.
+ * In workspace mode, `workspaceRoot` is the non-git coordination root
+ * and `repoRoot` is the default repo from the workspace config.
+ *
+ * Design rationale:
+ * - Step 2 (wire orchestrator startup) will construct this from config
+ *   loading results and thread it into `executeOrchBatch()` and friends.
+ * - `repoRoot` is always a git repository, preserving the invariant
+ *   that git operations (worktree, branch, merge) have a valid target.
+ * - `workspaceConfig` is null in repo mode (no workspace file loaded).
+ */
+export interface ExecutionContext {
+	/** Absolute path to the workspace root (cwd in repo mode, workspace dir in workspace mode) */
+	workspaceRoot: string;
+	/** Absolute path to the default/primary git repo root */
+	repoRoot: string;
+	/** Active workspace mode */
+	mode: WorkspaceMode;
+	/** Workspace configuration (null in repo mode) */
+	workspaceConfig: WorkspaceConfig | null;
+	/** Loaded task runner configuration */
+	taskRunnerConfig: TaskRunnerConfig;
+	/** Loaded orchestrator configuration */
+	orchestratorConfig: OrchestratorConfig;
+}
+
+
+// ── Workspace Validation Error Types ─────────────────────────────────
+
+/**
+ * Error codes for workspace configuration validation failures.
+ *
+ * Each code maps to a deterministic validation rule from the workspace
+ * config loading pipeline. Codes are stable and machine-branchable.
+ *
+ * - WORKSPACE_FILE_READ_ERROR: Config file exists but cannot be read (permissions, encoding)
+ * - WORKSPACE_FILE_PARSE_ERROR: Config file contains invalid YAML
+ * - WORKSPACE_MISSING_REPOS: No repos defined in workspace config (at least one required)
+ * - WORKSPACE_REPO_PATH_MISSING: A repo entry has no `path` field
+ * - WORKSPACE_REPO_PATH_NOT_FOUND: A repo's `path` does not exist on disk
+ * - WORKSPACE_REPO_NOT_GIT: A repo's `path` exists but is not a git repository
+ * - WORKSPACE_MISSING_TASKS_ROOT: `routing.tasks_root` is missing or empty
+ * - WORKSPACE_TASKS_ROOT_NOT_FOUND: `routing.tasks_root` path does not exist on disk
+ * - WORKSPACE_MISSING_DEFAULT_REPO: `routing.default_repo` is missing or empty
+ * - WORKSPACE_DEFAULT_REPO_NOT_FOUND: `routing.default_repo` references a repo ID not in the repos map
+ * - WORKSPACE_DUPLICATE_REPO_PATH: Two or more repos share the same filesystem path
+ * - WORKSPACE_SCHEMA_INVALID: Config file has valid YAML but missing/invalid top-level structure
+ */
+export type WorkspaceConfigErrorCode =
+	| "WORKSPACE_FILE_READ_ERROR"
+	| "WORKSPACE_FILE_PARSE_ERROR"
+	| "WORKSPACE_MISSING_REPOS"
+	| "WORKSPACE_REPO_PATH_MISSING"
+	| "WORKSPACE_REPO_PATH_NOT_FOUND"
+	| "WORKSPACE_REPO_NOT_GIT"
+	| "WORKSPACE_MISSING_TASKS_ROOT"
+	| "WORKSPACE_TASKS_ROOT_NOT_FOUND"
+	| "WORKSPACE_MISSING_DEFAULT_REPO"
+	| "WORKSPACE_DEFAULT_REPO_NOT_FOUND"
+	| "WORKSPACE_DUPLICATE_REPO_PATH"
+	| "WORKSPACE_SCHEMA_INVALID";
+
+/**
+ * Typed error class for workspace configuration failures.
+ *
+ * Thrown during workspace config loading/validation when the config file
+ * is present but invalid. Never thrown when no config file exists (that
+ * case silently falls back to repo mode).
+ *
+ * Follows the established pattern of typed error classes in this module
+ * (WorktreeError, ExecutionError, MergeError, StateFileError, ResumeError).
+ */
+export class WorkspaceConfigError extends Error {
+	code: WorkspaceConfigErrorCode;
+	/** Optional repo ID that triggered the error (for repo-specific validation failures) */
+	repoId?: string;
+	/** Optional filesystem path related to the error */
+	relatedPath?: string;
+
+	constructor(code: WorkspaceConfigErrorCode, message: string, repoId?: string, relatedPath?: string) {
+		super(message);
+		this.name = "WorkspaceConfigError";
+		this.code = code;
+		this.repoId = repoId;
+		this.relatedPath = relatedPath;
+	}
+}
+
+
+// ── Workspace Defaults ───────────────────────────────────────────────
+
+/**
+ * Canonical filename for workspace configuration.
+ * Resolved relative to workspace root: `.pi/taskplane-workspace.yaml`
+ */
+export const WORKSPACE_CONFIG_FILENAME = "taskplane-workspace.yaml";
+
+/**
+ * Resolve the absolute path to the workspace config file.
+ * @param workspaceRoot - Absolute path to the workspace root
+ */
+export function workspaceConfigPath(workspaceRoot: string): string {
+	return join(workspaceRoot, ".pi", WORKSPACE_CONFIG_FILENAME);
+}
+
+/**
+ * Create a default ExecutionContext for repo mode.
+ *
+ * Used when no workspace config file is present. The workspace root
+ * and repo root are the same directory (cwd), preserving existing
+ * monorepo behavior exactly.
+ *
+ * @param cwd - Current working directory (treated as both workspace and repo root)
+ * @param taskRunnerConfig - Loaded task runner config (or defaults)
+ * @param orchestratorConfig - Loaded orchestrator config (or defaults)
+ */
+export function createRepoModeContext(
+	cwd: string,
+	taskRunnerConfig: TaskRunnerConfig,
+	orchestratorConfig: OrchestratorConfig,
+): ExecutionContext {
+	return {
+		workspaceRoot: cwd,
+		repoRoot: cwd,
+		mode: "repo",
+		workspaceConfig: null,
+		taskRunnerConfig,
+		orchestratorConfig,
+	};
+}
+
