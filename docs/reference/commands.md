@@ -328,6 +328,20 @@ These are shell commands (not pi slash commands).
 
 Scaffold Taskplane project files (`.pi/`, agents, task templates).
 
+**Common options**
+
+- `--preset <name>` — use `minimal`, `full`, or `runner-only`
+- `--tasks-root <relative-path>` — use an existing task directory (for example `docs/task-management`)
+- `--no-examples` — skip example task scaffolding
+- `--include-examples` — when `--tasks-root` is used, include examples in that directory (default is skip)
+- `--force` — overwrite existing files
+- `--dry-run` — preview files without writing
+
+**Notes**
+
+- `--tasks-root` must be relative to project root.
+- When `--tasks-root` is passed, Taskplane skips sample tasks by default to avoid polluting an existing task area.
+
 ### `taskplane doctor`
 
 Validate installation and project configuration.

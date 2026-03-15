@@ -57,6 +57,14 @@ taskplane init --preset full
 
 This creates config files in `.pi/`, agent prompts, and two example tasks.
 
+Already have a task folder (for example `docs/task-management`)? Use:
+
+```bash
+taskplane init --preset full --tasks-root docs/task-management
+```
+
+When `--tasks-root` is provided, example task packets are skipped by default. Add `--include-examples` if you explicitly want examples in that folder.
+
 ### 2. Launch the dashboard (recommended)
 
 In a separate terminal:

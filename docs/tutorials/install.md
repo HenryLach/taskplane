@@ -66,6 +66,14 @@ For a non-interactive default setup:
 taskplane init --preset full
 ```
 
+If your project already has a task folder, point init at it:
+
+```bash
+taskplane init --preset full --tasks-root docs/task-management
+```
+
+When `--tasks-root` is provided, Taskplane skips sample task packets by default to avoid polluting an existing task area. Add `--include-examples` if you explicitly want them.
+
 This scaffolds:
 
 - `.pi/task-runner.yaml`
