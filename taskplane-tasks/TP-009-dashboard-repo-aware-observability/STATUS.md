@@ -1,11 +1,11 @@
 # TP-009: Dashboard Repo-Aware Lanes, Tasks, and Merge Panels — Status
 
-**Current Step:** Step 2: Preserve existing UX guarantees
+**Current Step:** Step 3: Testing & Verification
 ​**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 3
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -80,10 +80,30 @@
 ---
 
 ### Step 2: Preserve existing UX guarantees
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Ensure monorepo views remain clear and unchanged by default
-- [ ] Verify no regressions in conversation/sidecar panels
+**Verification approach:** Code trace + test suite confirmation.
+
+**Monorepo UX guarantee verification:**
+- `buildRepoSet()` returns `[]` when `mode !== "workspace"` (default is `"repo"`)
+- `updateRepoFilter([])` hides repo dropdown and resets selection to "All"
+- `renderLanesTasks()`: `showRepos` is `false` → no repo badges, no repo filtering
+- `renderMergeAgents()`: `showRepos` is `false` → no per-repo sub-rows, no merge filtering
+- `renderSummary()`: No repo-related changes — always shows full batch progress
+- `server.cjs`: `mode` field defaults to `"repo"` for v1 state files (additive only)
+- `renderNoBatch()`: calls `updateRepoFilter([])` to hide filter when no batch
+
+**Conversation/sidecar panel regression check:**
+- `viewConversation()`, `pollConversation()`: unchanged, still opens viewer for lane session
+- `viewStatusMd()`, `pollStatusMd()`: unchanged, still opens STATUS.md viewer for task
+- `closeViewer()`: unchanged, still properly cleans up viewer state
+- Server endpoints `/api/conversation/:prefix` and `/api/status-md/:taskId`: unchanged
+- HTML structure: `terminal-panel`, `terminal-title`, `terminal-body`, `terminal-close`, `auto-scroll-checkbox` all present
+- CSS styles for `.conv-*`, `.status-md-*`, `.terminal-panel`, `.viewer-eye-btn`: all intact
+- 290/290 tests pass
+
+- [x] Ensure monorepo views remain clear and unchanged by default
+- [x] Verify no regressions in conversation/sidecar panels
 
 ---
 
@@ -116,6 +136,10 @@
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 | R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -149,6 +173,17 @@
 | 2026-03-15 23:30 | Step 0 complete | Extend dashboard data model |
 | 2026-03-15 23:30 | Step 1 started | Implement repo-aware UI |
 | 2026-03-15 23:31 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 23:34 | Worker iter 2 | done in 390s, ctx: 36%, tools: 48 |
+| 2026-03-15 23:35 | Worker iter 2 | done in 250s, ctx: 27%, tools: 23 |
+| 2026-03-15 23:37 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 23:37 | Step 1 complete | Implement repo-aware UI |
+| 2026-03-15 23:37 | Step 2 started | Preserve existing UX guarantees |
+| 2026-03-15 23:38 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 23:38 | Step 1 complete | Implement repo-aware UI |
+| 2026-03-15 23:38 | Step 2 started | Preserve existing UX guarantees |
+| 2026-03-15 23:38 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-16 | Step 2 complete | Verified monorepo UX unchanged (code trace: buildRepoSet/updateRepoFilter/renderLanesTasks/renderMergeAgents all properly gated). Verified conversation/sidecar panels have no regressions (viewer functions, server endpoints, HTML/CSS all intact). 290/290 tests pass. |
+| 2026-03-15 23:39 | Review R005 | plan Step 2: UNKNOWN |
 
 ## Blockers
 
