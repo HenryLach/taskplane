@@ -10,7 +10,7 @@ import { execLog, executeWave, tmuxKillSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
-import { ORCH_MESSAGES } from "./messages.ts";
+import { formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import { deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
 import { FATAL_DISCOVERY_CODES, generateBatchId } from "./types.ts";
@@ -405,6 +405,14 @@ export async function executeOrchBatch(
 						ORCH_MESSAGES.orchMergeFailed(waveIdx + 1, mergeResult.failedLane ?? 0, mergeResult.failureReason || "unknown"),
 						"error",
 					);
+
+					// Emit repo-divergence summary when partial is caused by cross-repo outcome differences
+					if (mergeResult.status === "partial") {
+						const repoSummary = formatRepoMergeSummary(mergeResult);
+						if (repoSummary) {
+							onNotify(repoSummary, "warning");
+						}
+					}
 				}
 
 				// Restore phase to executing (may be overridden below by failure handling)

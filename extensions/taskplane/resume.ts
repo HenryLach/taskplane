@@ -11,7 +11,7 @@ import { execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasS
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
-import { ORCH_MESSAGES } from "./messages.ts";
+import { formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import { deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { StateFileError } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
@@ -966,6 +966,14 @@ export async function resumeOrchBatch(
 						ORCH_MESSAGES.orchMergeFailed(waveIdx + 1, mergeResult.failedLane ?? 0, mergeResult.failureReason || "unknown"),
 						"error",
 					);
+
+					// Emit repo-divergence summary when partial is caused by cross-repo outcome differences
+					if (mergeResult.status === "partial") {
+						const repoSummary = formatRepoMergeSummary(mergeResult);
+						if (repoSummary) {
+							onNotify(repoSummary, "warning");
+						}
+					}
 				}
 
 				batchState.phase = "executing";

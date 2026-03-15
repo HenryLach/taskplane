@@ -131,6 +131,9 @@
 | 2026-03-15 17:16 | Review R003 | plan Step 1: REVISE |
 | 2026-03-15 17:19 | R002 iter2 fixes | anyRepoFailed flag + 4 setup-failure tests (f5ae458) |
 | 2026-03-15 17:19 | Step 0 re-verified | All 207 tests pass (44 merge-repo-scoped assertions) |
+| 2026-03-15 17:21 | Worker iter 1 | done in 277s, ctx: 24%, tools: 31 |
+| 2026-03-15 17:21 | Step 0 complete | Partition merge flow by repo |
+| 2026-03-15 17:21 | Step 1 started | Update outcome modeling |
 
 ## Blockers
 

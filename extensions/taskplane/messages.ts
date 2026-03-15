@@ -2,7 +2,7 @@
  * User-facing message templates (ORCH_MESSAGES)
  * @module orch/messages
  */
-import type { AbortMode } from "./types.ts";
+import type { AbortMode, MergeWaveResult, RepoMergeOutcome } from "./types.ts";
 
 // ── Message Templates ────────────────────────────────────────────────
 
@@ -117,7 +117,81 @@ export const ORCH_MESSAGES = {
 		`No active batch to abort. Use /orch <areas|all> to start a batch.`,
 	abortComplete: (mode: AbortMode, sessionsKilled: number) =>
 		`🏁 Abort (${mode}) complete: ${sessionsKilled} session(s) terminated. Worktrees and branches preserved.`,
+	// /orch merge — repo-scoped partial summary (TP-005 Step 1)
+	orchMergePartialRepoSummary: (waveNum: number, repoLines: string[]) =>
+		`⚠️ [Wave ${waveNum}] Merge partially succeeded — repo outcomes diverged:\n${repoLines.join("\n")}`,
 } as const;
+
+
+// ── Repo-Scoped Merge Summary (TP-005) ──────────────────────────────
+
+/**
+ * Status emoji for repo merge outcome.
+ */
+function repoStatusIcon(status: RepoMergeOutcome["status"]): string {
+	switch (status) {
+		case "succeeded": return "✅";
+		case "partial": return "⚠️";
+		case "failed": return "❌";
+		default: return "❓";
+	}
+}
+
+/**
+ * Format a repo-divergence summary for a partial merge wave result.
+ *
+ * Returns null if:
+ * - repoResults is empty or undefined (mono-repo mode)
+ * - all repos have the same status (no divergence)
+ * - there is only one repo group (divergence is meaningless)
+ *
+ * When the partial result is caused by mixed-outcome lanes within
+ * a single repo (not repo divergence), this returns null to avoid
+ * misleading "cross-repo divergence" messaging.
+ *
+ * The returned string is a complete, ready-to-emit message.
+ *
+ * @param mergeResult - The MergeWaveResult with status "partial"
+ * @returns Formatted summary string, or null if no repo-divergence summary applies
+ */
+export function formatRepoMergeSummary(mergeResult: MergeWaveResult): string | null {
+	const repoResults = mergeResult.repoResults;
+
+	// No repo attribution → mono-repo mode, no summary
+	if (!repoResults || repoResults.length === 0) {
+		return null;
+	}
+
+	// Single repo group → divergence is meaningless (partial is lane-level)
+	if (repoResults.length < 2) {
+		return null;
+	}
+
+	// Check for actual divergence: are there different statuses across repos?
+	const statuses = new Set(repoResults.map(r => r.status));
+	if (statuses.size < 2) {
+		// All repos have the same status (e.g., all "partial") —
+		// the partial is from within-repo lane failures, not cross-repo divergence
+		return null;
+	}
+
+	// Build per-repo summary lines (sorted by repoId, which repoResults already is)
+	const repoLines = repoResults.map(r => {
+		const repoLabel = r.repoId ?? "(default)";
+		const icon = repoStatusIcon(r.status);
+		const mergedCount = r.laneResults.filter(
+			lr => lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED",
+		).length;
+		const totalCount = r.laneResults.length;
+		let detail = `${mergedCount}/${totalCount} lane(s) merged`;
+		if (r.failureReason) {
+			detail += ` — ${r.failureReason.slice(0, 150)}`;
+		}
+		return `   ${icon} ${repoLabel}: ${detail}`;
+	});
+
+	return ORCH_MESSAGES.orchMergePartialRepoSummary(mergeResult.waveIndex, repoLines);
+}
 
 
 // ── Resume ORCH_MESSAGES ─────────────────────────────────────────────

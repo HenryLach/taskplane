@@ -405,6 +405,253 @@ function runAllTests(): void {
 		}
 	}
 
+	// ─── 11. formatRepoMergeSummary: repo-divergence partial ─────────
+	console.log("\n── 11. formatRepoMergeSummary: repo-divergence partial ──");
+	{
+		// Two repos: api succeeded, frontend failed → should emit repo summary
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 1,
+			status: "partial",
+			laneResults: [
+				{
+					laneNumber: 1, laneId: "api/lane-1", sourceBranch: "task/lane-1",
+					targetBranch: "main", result: { status: "SUCCESS", source_branch: "task/lane-1", target_branch: "main", merge_commit: "abc1234", conflicts: [], verification: { ran: true, passed: true, output: "" } },
+					error: null, durationMs: 5000, repoId: "api",
+				},
+				{
+					laneNumber: 2, laneId: "frontend/lane-2", sourceBranch: "task/lane-2",
+					targetBranch: "main", result: { status: "CONFLICT_UNRESOLVED", source_branch: "task/lane-2", target_branch: "main", merge_commit: "", conflicts: [{ file: "index.ts", type: "content", resolved: false }], verification: { ran: false, passed: false, output: "" } },
+					error: null, durationMs: 3000, repoId: "frontend",
+				},
+			],
+			failedLane: 2,
+			failureReason: "Unresolved merge conflicts in lane 2: index.ts",
+			totalDurationMs: 8000,
+			repoResults: [
+				{
+					repoId: "api",
+					status: "succeeded",
+					laneResults: [{
+						laneNumber: 1, laneId: "api/lane-1", sourceBranch: "task/lane-1",
+						targetBranch: "main", result: { status: "SUCCESS", source_branch: "task/lane-1", target_branch: "main", merge_commit: "abc1234", conflicts: [], verification: { ran: true, passed: true, output: "" } },
+						error: null, durationMs: 5000, repoId: "api",
+					}],
+					failedLane: null,
+					failureReason: null,
+				},
+				{
+					repoId: "frontend",
+					status: "failed",
+					laneResults: [{
+						laneNumber: 2, laneId: "frontend/lane-2", sourceBranch: "task/lane-2",
+						targetBranch: "main", result: { status: "CONFLICT_UNRESOLVED", source_branch: "task/lane-2", target_branch: "main", merge_commit: "", conflicts: [{ file: "index.ts", type: "content", resolved: false }], verification: { ran: false, passed: false, output: "" } },
+						error: null, durationMs: 3000, repoId: "frontend",
+					}],
+					failedLane: 2,
+					failureReason: "Unresolved merge conflicts in lane 2: index.ts",
+				},
+			],
+		};
+
+		const summary = formatRepoMergeSummary(mergeResult);
+		assert(summary !== null, "repo-divergence: produces summary when repos diverge");
+		assert(summary!.includes("api"), "repo-divergence: summary mentions api repo");
+		assert(summary!.includes("frontend"), "repo-divergence: summary mentions frontend repo");
+		assert(summary!.includes("✅"), "repo-divergence: summary has success icon for api");
+		assert(summary!.includes("❌"), "repo-divergence: summary has failure icon for frontend");
+		assert(summary!.includes("1/1"), "repo-divergence: api shows 1/1 lanes merged");
+		assert(summary!.includes("0/1"), "repo-divergence: frontend shows 0/1 lanes merged");
+		assert(summary!.includes("Wave 1"), "repo-divergence: includes wave number");
+	}
+
+	// ─── 12. formatRepoMergeSummary: no summary for mono-repo ────────
+	console.log("\n── 12. formatRepoMergeSummary: mono-repo → no summary ──");
+	{
+		// Mono-repo: partial but no repoResults
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 2,
+			status: "partial",
+			laneResults: [
+				{
+					laneNumber: 1, laneId: "lane-1", sourceBranch: "task/lane-1",
+					targetBranch: "main", result: { status: "SUCCESS", source_branch: "task/lane-1", target_branch: "main", merge_commit: "abc", conflicts: [], verification: { ran: true, passed: true, output: "" } },
+					error: null, durationMs: 5000,
+				},
+			],
+			failedLane: 2,
+			failureReason: "some error",
+			totalDurationMs: 5000,
+			repoResults: [],  // Empty = mono-repo mode
+		};
+
+		const summary = formatRepoMergeSummary(mergeResult);
+		assert(summary === null, "mono-repo: formatRepoMergeSummary returns null when repoResults is empty");
+	}
+
+	// ─── 13. formatRepoMergeSummary: no summary when undefined ───────
+	console.log("\n── 13. formatRepoMergeSummary: undefined repoResults → no summary ──");
+	{
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 1,
+			status: "partial",
+			laneResults: [],
+			failedLane: 1,
+			failureReason: "error",
+			totalDurationMs: 1000,
+			// repoResults not set (undefined)
+		};
+
+		const summary = formatRepoMergeSummary(mergeResult);
+		assert(summary === null, "undefined repoResults: returns null");
+	}
+
+	// ─── 14. formatRepoMergeSummary: no summary when all repos same status ──
+	console.log("\n── 14. formatRepoMergeSummary: all repos same status → no summary ──");
+	{
+		// Both repos are partial (same status) → no divergence summary
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 1,
+			status: "partial",
+			laneResults: [],
+			failedLane: 2,
+			failureReason: "error",
+			totalDurationMs: 1000,
+			repoResults: [
+				{
+					repoId: "api", status: "partial",
+					laneResults: [], failedLane: 1, failureReason: "err1",
+				},
+				{
+					repoId: "web", status: "partial",
+					laneResults: [], failedLane: 2, failureReason: "err2",
+				},
+			],
+		};
+
+		const summary = formatRepoMergeSummary(mergeResult);
+		assert(summary === null, "all-same-status: returns null (no divergence)");
+	}
+
+	// ─── 15. formatRepoMergeSummary: single repo group → no summary ──
+	console.log("\n── 15. formatRepoMergeSummary: single repo group → no summary ──");
+	{
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 1,
+			status: "partial",
+			laneResults: [],
+			failedLane: 2,
+			failureReason: "error",
+			totalDurationMs: 1000,
+			repoResults: [
+				{
+					repoId: "api", status: "partial",
+					laneResults: [], failedLane: 2, failureReason: "err",
+				},
+			],
+		};
+
+		const summary = formatRepoMergeSummary(mergeResult);
+		assert(summary === null, "single-repo-group: returns null");
+	}
+
+	// ─── 16. formatRepoMergeSummary: deterministic ordering ──────────
+	console.log("\n── 16. formatRepoMergeSummary: deterministic ordering ──");
+	{
+		// 3 repos with different statuses — verify order matches repoId sort
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 3,
+			status: "partial",
+			laneResults: [],
+			failedLane: 4,
+			failureReason: "err",
+			totalDurationMs: 1000,
+			repoResults: [
+				{
+					repoId: "alpha", status: "succeeded",
+					laneResults: [{
+						laneNumber: 1, laneId: "alpha/lane-1", sourceBranch: "b1", targetBranch: "main",
+						result: { status: "SUCCESS", source_branch: "b1", target_branch: "main", merge_commit: "a", conflicts: [], verification: { ran: true, passed: true, output: "" } },
+						error: null, durationMs: 1000, repoId: "alpha",
+					}],
+					failedLane: null, failureReason: null,
+				},
+				{
+					repoId: "beta", status: "failed",
+					laneResults: [{
+						laneNumber: 2, laneId: "beta/lane-2", sourceBranch: "b2", targetBranch: "main",
+						result: { status: "BUILD_FAILURE", source_branch: "b2", target_branch: "main", merge_commit: "", conflicts: [], verification: { ran: true, passed: false, output: "tests failed" } },
+						error: null, durationMs: 2000, repoId: "beta",
+					}],
+					failedLane: 2, failureReason: "build fail",
+				},
+				{
+					repoId: "gamma", status: "succeeded",
+					laneResults: [{
+						laneNumber: 3, laneId: "gamma/lane-3", sourceBranch: "b3", targetBranch: "main",
+						result: { status: "CONFLICT_RESOLVED", source_branch: "b3", target_branch: "main", merge_commit: "g", conflicts: [{ file: "x.ts", type: "content", resolved: true }], verification: { ran: true, passed: true, output: "" } },
+						error: null, durationMs: 1500, repoId: "gamma",
+					}],
+					failedLane: null, failureReason: null,
+				},
+			],
+		};
+
+		const summary = formatRepoMergeSummary(mergeResult);
+		assert(summary !== null, "3-repo-divergence: produces summary");
+
+		// Verify alpha comes before beta, beta before gamma (repoId alphabetical)
+		const alphaIdx = summary!.indexOf("alpha");
+		const betaIdx = summary!.indexOf("beta");
+		const gammaIdx = summary!.indexOf("gamma");
+		assert(alphaIdx < betaIdx, "3-repo: alpha appears before beta");
+		assert(betaIdx < gammaIdx, "3-repo: beta appears before gamma");
+
+		// Verify deterministic across runs
+		const summary2 = formatRepoMergeSummary(mergeResult);
+		assert(summary === summary2, "3-repo: identical output across 2 calls");
+	}
+
+	// ─── 17. formatRepoMergeSummary: uses ORCH_MESSAGES template ─────
+	console.log("\n── 17. formatRepoMergeSummary: uses ORCH_MESSAGES template ──");
+	{
+		// Verify the template function exists and produces the expected prefix
+		const lines = ["   ✅ api: 1/1 lane(s) merged", "   ❌ web: 0/1 lane(s) merged"];
+		const templateOutput = ORCH_MESSAGES.orchMergePartialRepoSummary(2, lines);
+		assert(templateOutput.includes("Wave 2"), "template: includes wave number");
+		assert(templateOutput.includes("partially succeeded"), "template: includes 'partially succeeded'");
+		assert(templateOutput.includes("repo outcomes diverged"), "template: includes 'repo outcomes diverged'");
+		assert(templateOutput.includes("api"), "template: includes repo lines");
+		assert(templateOutput.includes("web"), "template: includes repo lines");
+	}
+
+	// ─── 18. formatRepoMergeSummary: mixed-outcome-lane partial (no repo divergence) ──
+	console.log("\n── 18. formatRepoMergeSummary: mixed-outcome-lane partial → no repo summary ──");
+	{
+		// Partial caused by mixed-outcome lanes within a single repo, both repos ended up "partial"
+		// This should NOT produce a repo-divergence summary because no repos diverge
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 1,
+			status: "partial",
+			laneResults: [],
+			failedLane: 1,
+			failureReason: "Lane(s) lane-1 contain both succeeded and failed tasks.",
+			totalDurationMs: 1000,
+			repoResults: [
+				{
+					repoId: "api", status: "partial",
+					laneResults: [], failedLane: 1, failureReason: "mixed lanes",
+				},
+				{
+					repoId: "web", status: "partial",
+					laneResults: [], failedLane: 3, failureReason: "mixed lanes",
+				},
+			],
+		};
+
+		const summary = formatRepoMergeSummary(mergeResult);
+		assert(summary === null, "mixed-outcome-lanes: no repo summary when all repos partial (same status)");
+	}
+
 	// ── Summary ──────────────────────────────────────────────────────
 	console.log(`\n════════════════════════════════════════════════════════════`);
 	console.log(`Test Results: ${passed} passed, ${failed} failed`);

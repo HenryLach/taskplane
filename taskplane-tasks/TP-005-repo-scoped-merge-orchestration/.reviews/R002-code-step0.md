@@ -2,73 +2,55 @@
 
 ## Verdict: REVISE
 
-Step 0 is close, but there are correctness issues in repo-scoped merge result propagation and status aggregation that should be fixed before approval.
+Repo-scoped merge partitioning is largely in place, but there is still a correctness gap in aggregate failure detection for repo-level setup failures.
 
 ## What I reviewed
 
 - Diff range: `git diff 42aa159..HEAD`
-- Changed files:
+- Changed code files:
   - `extensions/taskplane/engine.ts`
   - `extensions/taskplane/merge.ts`
   - `extensions/taskplane/messages.ts`
   - `extensions/taskplane/resume.ts`
   - `extensions/taskplane/types.ts`
   - `extensions/tests/merge-repo-scoped.test.ts`
-- Neighboring consistency checks:
-  - `extensions/taskplane/waves.ts` (repo root/base branch resolution helpers)
-  - `extensions/taskplane/index.ts` and `extensions/task-orchestrator.ts` (exports)
-  - `extensions/tests/waves-repo-scoped.test.ts` (test style and scope)
+- Neighboring consistency check:
+  - `extensions/taskplane/waves.ts` (`resolveRepoRoot`, `resolveBaseBranch` patterns)
 
 ## Findings
 
-### 1) Missing `repoId` propagation in `MergeLaneResult` breaks per-repo cleanup routing
+### 1) Repo-level merge setup failures can be misclassified as global `succeeded`
 **Severity:** High
 
-`engine.ts` and `resume.ts` now resolve cleanup repo roots from `lr.repoId`:
-- `extensions/taskplane/engine.ts:726`
-- `extensions/taskplane/resume.ts:705`
-- `extensions/taskplane/resume.ts:1034`
+`mergeWaveByRepo()` determines aggregate failure via `firstFailedLane !== null`:
+- `extensions/taskplane/merge.ts:995`
 
-But `mergeWave()` never sets `repoId` when pushing lane results:
-- `extensions/taskplane/merge.ts:643`
-- `extensions/taskplane/merge.ts:711`
+But `mergeWave()` can return `status: "failed"` with `failedLane: null` for pre-lane setup failures:
+- temp branch creation failure: `extensions/taskplane/merge.ts:566-570`
+- merge worktree creation failure: `extensions/taskplane/merge.ts:578-582`
 
-So in workspace mode, aggregated lane results from `mergeWaveByRepo()` carry `repoId = undefined`, and cleanup falls back to default `repoRoot` instead of each lane’s owning repo. This causes incorrect/ineffective branch cleanup and can produce misleading ancestor checks.
+In that case, `mergeWaveByRepo()` currently does **not** record failure (`firstFailedLane` stays `null`), so aggregate status can incorrectly become `"succeeded"` even when a repo failed before lane merges.
 
-**Recommended fix:** Ensure `repoId` is populated on every `MergeLaneResult` (either directly in `mergeWave()` via `repoId: lane.repoId`, or patched in `mergeWaveByRepo()` before aggregation).
+**Impact:** Wrong wave status, incorrect failure-policy routing in engine/resume, and misleading operator output.
 
----
-
-### 2) Aggregate wave status misclassifies “all repos partial” as `failed`
-**Severity:** Medium
-
-In `mergeWaveByRepo()`, status rollup logic treats only `status === "succeeded"` as success:
-- `extensions/taskplane/merge.ts:988-997`
-
-Current logic:
-- `anyRepoSucceeded = repoOutcomes.some(r => r.status === "succeeded")`
-- `anyRepoFailed = repoOutcomes.some(r => r.status === "failed" || r.status === "partial")`
-
-If every repo is `partial` (i.e., some merges succeeded in each repo but each had a failure), aggregate status becomes `failed`, not `partial`.
-
-That conflicts with the Step 0 contract in `STATUS.md` (“if SOME fail → `partial`; if ALL fail → `failed`”).
-
-**Recommended fix:** Base aggregate status on global merge success/failure evidence (e.g., any merged lanes vs any failures), or treat per-repo `partial` as both success and failure for rollup purposes.
+**Recommended fix:** Track failure independently of `failedLane` (e.g., `groupResult.status !== "succeeded"` or explicit `anyFailure` flag). Keep lane-level success detection for partial-vs-failed, but include repo setup failures in failure evidence and first failure reason attribution.
 
 ---
 
-### 3) Test coverage does not validate the new multi-repo merge aggregator behavior
+### 2) Tests still do not exercise `mergeWaveByRepo()` real behavior
 **Severity:** Medium
 
-`extensions/tests/merge-repo-scoped.test.ts` only exercises `groupLanesByRepo()` + `determineMergeOrder()`. It does not test:
-- `mergeWaveByRepo()` aggregation behavior
-- failure rollup edge cases (including all-partial)
-- propagation of `repoId` into merged lane outputs used by cleanup
+`extensions/tests/merge-repo-scoped.test.ts` validates grouping and a simulated rollup helper, but it does not execute `mergeWaveByRepo()` itself (`extensions/tests/merge-repo-scoped.test.ts:242-254`).
 
-Given the above defects slipped through, targeted tests for `mergeWaveByRepo` rollup semantics are needed.
+Because of that, the setup-failure misclassification above is not caught.
 
-## Validation run
+**Recommended fix:** Add focused tests around `mergeWaveByRepo()` aggregation paths, especially:
+- repo setup failure with no lane-level failed lane
+- mixed success + repo setup failure => `partial`
+- all repos setup-fail => `failed`
 
-- `cd extensions && npx vitest run` ✅ (207/207 passed)
+## Validation
 
-Passing tests are good, but they currently miss critical Step 0 merge aggregation semantics.
+- `cd extensions && npx vitest run tests/merge-repo-scoped.test.ts` ✅
+- `cd extensions && npx vitest run` ✅ (207 passed)
+
