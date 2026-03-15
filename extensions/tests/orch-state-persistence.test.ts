@@ -1041,6 +1041,194 @@ try {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// 1.4: Schema v1 → v2 Compatibility (loadBatchState regression tests)
+// ═══════════════════════════════════════════════════════════════════════
+
+console.log("\n── 1.4: Schema v1 → v2 compatibility (loadBatchState regression) ──");
+
+// Create a temp directory for v1 compat tests
+const v1CompatRoot = join(tmpdir(), `orch-v1compat-test-${Date.now()}`);
+mkdirSync(join(v1CompatRoot, ".pi"), { recursive: true });
+
+try {
+	{
+		console.log("  ▸ loadBatchState with v1 fixture upconverts to v2 in-memory");
+		const v1Json = loadFixture("batch-state-v1-valid.json");
+		saveBatchState(v1Json, v1CompatRoot);
+
+		const loaded = loadBatchState(v1CompatRoot);
+		assert(loaded !== null, "v1 state loaded successfully");
+		assertEqual(loaded!.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "v1 upconverted: schemaVersion is 2");
+		assertEqual(loaded!.mode, "repo", "v1 upconverted: mode defaults to 'repo'");
+		assertEqual(loaded!.baseBranch, "", "v1 upconverted: baseBranch defaults to ''");
+		// Verify records preserved
+		assertEqual(loaded!.tasks.length, 3, "v1 upconverted: 3 task records preserved");
+		assertEqual(loaded!.lanes.length, 2, "v1 upconverted: 2 lane records preserved");
+		assertEqual(loaded!.wavePlan.length, 2, "v1 upconverted: 2 waves preserved");
+		// Verify task details
+		assertEqual(loaded!.tasks[0].taskId, "TS-001", "v1 upconverted: task TS-001 preserved");
+		assertEqual(loaded!.tasks[0].status, "succeeded", "v1 upconverted: task status preserved");
+		assertEqual(loaded!.tasks[0].taskFolder, "/tmp/tasks/TS-001", "v1 upconverted: taskFolder preserved");
+		assertEqual(loaded!.tasks[0].doneFileFound, true, "v1 upconverted: doneFileFound preserved");
+		// Verify v2 optional repo fields absent
+		assertEqual(loaded!.tasks[0].repoId, undefined, "v1 upconverted: task repoId is undefined");
+		assertEqual(loaded!.tasks[0].resolvedRepoId, undefined, "v1 upconverted: task resolvedRepoId is undefined");
+		assertEqual(loaded!.lanes[0].repoId, undefined, "v1 upconverted: lane repoId is undefined");
+		// Verify lane details
+		assertEqual(loaded!.lanes[0].laneId, "lane-1", "v1 upconverted: lane-1 laneId preserved");
+		assertEqual(loaded!.lanes[0].tmuxSessionName, "orch-lane-1", "v1 upconverted: lane-1 sessionName preserved");
+		assertEqual(loaded!.lanes[0].taskIds.length, 1, "v1 upconverted: lane-1 taskIds preserved");
+		// Verify top-level fields
+		assertEqual(loaded!.phase, "executing", "v1 upconverted: phase preserved");
+		assertEqual(loaded!.batchId, "20260309T010000", "v1 upconverted: batchId preserved");
+		assertEqual(loaded!.totalTasks, 3, "v1 upconverted: totalTasks preserved");
+		assertEqual(loaded!.succeededTasks, 1, "v1 upconverted: succeededTasks preserved");
+	}
+
+	{
+		console.log("  ▸ loadBatchState with v1 fixture does NOT rewrite on-disk file");
+		// Save a fresh v1 fixture to disk
+		const v1Json = loadFixture("batch-state-v1-valid.json");
+		saveBatchState(v1Json, v1CompatRoot);
+
+		// Read on-disk content before load
+		const onDiskBefore = readFileSync(batchStatePath(v1CompatRoot), "utf-8");
+		const parsedBefore = JSON.parse(onDiskBefore);
+		assertEqual(parsedBefore.schemaVersion, 1, "on-disk before load: schemaVersion is 1");
+
+		// Load (which upconverts in-memory)
+		const loaded = loadBatchState(v1CompatRoot);
+		assertEqual(loaded!.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "in-memory: schemaVersion is 2");
+
+		// Read on-disk content after load — must remain v1
+		const onDiskAfter = readFileSync(batchStatePath(v1CompatRoot), "utf-8");
+		const parsedAfter = JSON.parse(onDiskAfter);
+		assertEqual(parsedAfter.schemaVersion, 1, "on-disk after load: schemaVersion is still 1 (no implicit rewrite)");
+		assertEqual(parsedAfter.mode, undefined, "on-disk after load: mode field absent (v1 had no mode)");
+
+		// Verify byte-level equality — file content unchanged
+		assertEqual(onDiskBefore, onDiskAfter, "on-disk file content unchanged after loadBatchState");
+	}
+
+	{
+		console.log("  ▸ loadBatchState with v2 repo-mode fixture preserves all fields");
+		const v2Json = loadFixture("batch-state-valid.json");
+		saveBatchState(v2Json, v1CompatRoot);
+
+		const loaded = loadBatchState(v1CompatRoot);
+		assert(loaded !== null, "v2 repo-mode state loaded successfully");
+		assertEqual(loaded!.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "v2: schemaVersion is 2");
+		assertEqual(loaded!.mode, "repo", "v2: mode is 'repo'");
+		assertEqual(loaded!.baseBranch, "main", "v2: baseBranch is 'main'");
+		assertEqual(loaded!.phase, "executing", "v2: phase preserved");
+		assertEqual(loaded!.batchId, "20260309T010000", "v2: batchId preserved");
+		assertEqual(loaded!.tasks.length, 3, "v2: 3 task records");
+		assertEqual(loaded!.lanes.length, 2, "v2: 2 lane records");
+		assertEqual(loaded!.wavePlan.length, 2, "v2: 2 waves");
+		// Confirm no repo fields on repo-mode fixture
+		assertEqual(loaded!.tasks[0].repoId, undefined, "v2 repo-mode: task has no repoId");
+		assertEqual(loaded!.lanes[0].repoId, undefined, "v2 repo-mode: lane has no repoId");
+	}
+
+	{
+		console.log("  ▸ loadBatchState with v2 workspace-mode fixture preserves repo-aware fields");
+		const wsJson = loadFixture("batch-state-v2-workspace.json");
+		saveBatchState(wsJson, v1CompatRoot);
+
+		const loaded = loadBatchState(v1CompatRoot);
+		assert(loaded !== null, "v2 workspace state loaded successfully");
+		assertEqual(loaded!.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "v2 workspace: schemaVersion is 2");
+		assertEqual(loaded!.mode, "workspace", "v2 workspace: mode is 'workspace'");
+		assertEqual(loaded!.baseBranch, "main", "v2 workspace: baseBranch preserved");
+		// Task repo-aware fields
+		assertEqual(loaded!.tasks.length, 2, "v2 workspace: 2 task records");
+		assertEqual(loaded!.tasks[0].taskId, "WS-001", "v2 workspace: task WS-001");
+		assertEqual(loaded!.tasks[0].repoId, "api", "v2 workspace: task[0].repoId is 'api'");
+		assertEqual(loaded!.tasks[0].resolvedRepoId, "api", "v2 workspace: task[0].resolvedRepoId is 'api'");
+		assertEqual(loaded!.tasks[1].repoId, undefined, "v2 workspace: task[1].repoId is undefined");
+		assertEqual(loaded!.tasks[1].resolvedRepoId, "frontend", "v2 workspace: task[1].resolvedRepoId is 'frontend'");
+		// Lane repo-aware fields
+		assertEqual(loaded!.lanes[0].repoId, "api", "v2 workspace: lane[0].repoId is 'api'");
+		assertEqual(loaded!.lanes[1].repoId, "frontend", "v2 workspace: lane[1].repoId is 'frontend'");
+	}
+
+	{
+		console.log("  ▸ loadBatchState rejects unsupported schema version (99)");
+		const wrongVersionJson = loadFixture("batch-state-wrong-version.json");
+		saveBatchState(wrongVersionJson, v1CompatRoot);
+
+		assertThrows(
+			() => loadBatchState(v1CompatRoot),
+			"STATE_SCHEMA_INVALID",
+			"unsupported schema version throws STATE_SCHEMA_INVALID via loadBatchState",
+		);
+	}
+
+	{
+		console.log("  ▸ loadBatchState rejects malformed JSON");
+		const malformedRoot = join(tmpdir(), `orch-v1compat-malformed-${Date.now()}`);
+		mkdirSync(join(malformedRoot, ".pi"), { recursive: true });
+		writeFileSync(batchStatePath(malformedRoot), "{ this is not valid json }", "utf-8");
+
+		assertThrows(
+			() => loadBatchState(malformedRoot),
+			"STATE_FILE_PARSE_ERROR",
+			"malformed JSON throws STATE_FILE_PARSE_ERROR via loadBatchState",
+		);
+		rmSync(malformedRoot, { recursive: true, force: true });
+	}
+
+	{
+		console.log("  ▸ loadBatchState rejects v2 state missing required mode field");
+		// Build a v2 state that has all fields except mode
+		const v2NoMode = JSON.parse(loadFixture("batch-state-valid.json"));
+		delete v2NoMode.mode; // Remove the mode field — v2 requires it
+		const v2NoModeRoot = join(tmpdir(), `orch-v1compat-nomode-${Date.now()}`);
+		mkdirSync(join(v2NoModeRoot, ".pi"), { recursive: true });
+		writeFileSync(batchStatePath(v2NoModeRoot), JSON.stringify(v2NoMode, null, 2), "utf-8");
+
+		assertThrows(
+			() => loadBatchState(v2NoModeRoot),
+			"STATE_SCHEMA_INVALID",
+			"v2 without mode throws STATE_SCHEMA_INVALID via loadBatchState",
+		);
+		rmSync(v2NoModeRoot, { recursive: true, force: true });
+	}
+
+	{
+		console.log("  ▸ v1 → save → load round-trip produces v2 on disk");
+		// Load a v1 file (in-memory upconvert to v2), then save (writes v2 to disk)
+		const v1Json = loadFixture("batch-state-v1-valid.json");
+		saveBatchState(v1Json, v1CompatRoot);
+		const loaded = loadBatchState(v1CompatRoot);
+		assert(loaded !== null, "v1 loaded for round-trip");
+
+		// Now save the in-memory v2 state back — this simulates what happens on
+		// resume: loadBatchState → modify → persistRuntimeState → saveBatchState
+		const v2Json = JSON.stringify(loaded, null, 2);
+		saveBatchState(v2Json, v1CompatRoot);
+
+		// Verify on-disk is now v2
+		const onDisk = readFileSync(batchStatePath(v1CompatRoot), "utf-8");
+		const parsed = JSON.parse(onDisk);
+		assertEqual(parsed.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "round-trip: on-disk schemaVersion is 2 after save");
+		assertEqual(parsed.mode, "repo", "round-trip: on-disk mode is 'repo' after save");
+		assertEqual(parsed.baseBranch, "", "round-trip: on-disk baseBranch is '' after save");
+
+		// Reload and verify
+		const reloaded = loadBatchState(v1CompatRoot);
+		assertEqual(reloaded!.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "round-trip: reloaded schemaVersion is 2");
+		assertEqual(reloaded!.mode, "repo", "round-trip: reloaded mode is 'repo'");
+		assertEqual(reloaded!.tasks.length, 3, "round-trip: reloaded task records preserved");
+	}
+
+} finally {
+	try {
+		rmSync(v1CompatRoot, { recursive: true, force: true });
+	} catch { /* best effort */ }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 // 2.1: persistRuntimeState — integration with state triggers
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -3480,6 +3668,396 @@ console.log("\n── 6.4: End-to-end simulated interruption scenario ──");
 
 	} finally {
 		try { rmSync(e2eRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Summary
+// ═══════════════════════════════════════════════════════════════════════
+// 7.1: Schema v1 Compatibility — Load Path Regression Tests (Step 2)
+// ═══════════════════════════════════════════════════════════════════════
+
+console.log("\n── 7.1: Schema v1 compatibility — load path regression tests ──");
+
+{
+	console.log("  ▸ loadBatchState with v1 fixture yields v2 in memory (full load path)");
+
+	// Write the v1 fixture to a temp root's .pi/batch-state.json, then load it
+	const v1LoadRoot = join(tmpdir(), `orch-v1-load-test-${Date.now()}`);
+	mkdirSync(join(v1LoadRoot, ".pi"), { recursive: true });
+
+	try {
+		const v1Json = loadFixture("batch-state-v1-valid.json");
+		writeFileSync(batchStatePath(v1LoadRoot), v1Json, "utf-8");
+
+		const loaded = loadBatchState(v1LoadRoot);
+		assert(loaded !== null, "v1 load path: returns non-null");
+		assertEqual(loaded!.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "v1 load path: schemaVersion upconverted to 2");
+		assertEqual(loaded!.mode, "repo", "v1 load path: mode defaults to 'repo'");
+		assertEqual(loaded!.baseBranch, "", "v1 load path: baseBranch defaults to ''");
+
+		// Verify core fields preserved through full load path
+		assertEqual(loaded!.phase, "executing", "v1 load path: phase preserved");
+		assertEqual(loaded!.batchId, "20260309T010000", "v1 load path: batchId preserved");
+		assertEqual(loaded!.totalTasks, 3, "v1 load path: totalTasks preserved");
+		assertEqual(loaded!.currentWaveIndex, 0, "v1 load path: currentWaveIndex preserved");
+		assertEqual(loaded!.totalWaves, 2, "v1 load path: totalWaves preserved");
+
+		// Verify task records survived upconversion
+		assertEqual(loaded!.tasks.length, 3, "v1 load path: 3 task records preserved");
+		assertEqual(loaded!.tasks[0].taskId, "TS-001", "v1 load path: task TS-001 preserved");
+		assertEqual(loaded!.tasks[0].status, "succeeded", "v1 load path: task status preserved");
+		assertEqual(loaded!.tasks[1].taskId, "TS-002", "v1 load path: task TS-002 preserved");
+		assertEqual(loaded!.tasks[1].status, "running", "v1 load path: task TS-002 status preserved");
+		assertEqual(loaded!.tasks[2].taskId, "TS-003", "v1 load path: task TS-003 preserved");
+		assertEqual(loaded!.tasks[2].status, "pending", "v1 load path: task TS-003 status preserved");
+
+		// Verify task repo fields are undefined (v1 has no repo fields)
+		assertEqual(loaded!.tasks[0].repoId, undefined, "v1 load path: task[0].repoId is undefined");
+		assertEqual(loaded!.tasks[0].resolvedRepoId, undefined, "v1 load path: task[0].resolvedRepoId is undefined");
+		assertEqual(loaded!.tasks[1].repoId, undefined, "v1 load path: task[1].repoId is undefined");
+		assertEqual(loaded!.tasks[2].repoId, undefined, "v1 load path: task[2].repoId is undefined");
+
+		// Verify lane records survived upconversion
+		assertEqual(loaded!.lanes.length, 2, "v1 load path: 2 lane records preserved");
+		assertEqual(loaded!.lanes[0].laneId, "lane-1", "v1 load path: lane-1 preserved");
+		assertEqual(loaded!.lanes[1].laneId, "lane-2", "v1 load path: lane-2 preserved");
+
+		// Verify lane repo fields are undefined (v1 has no lane repoId)
+		assertEqual(loaded!.lanes[0].repoId, undefined, "v1 load path: lane[0].repoId is undefined");
+		assertEqual(loaded!.lanes[1].repoId, undefined, "v1 load path: lane[1].repoId is undefined");
+
+		// Verify wavePlan preserved
+		assertEqual(loaded!.wavePlan.length, 2, "v1 load path: 2 waves preserved");
+		assertEqual(loaded!.wavePlan[0].length, 2, "v1 load path: wave 0 has 2 tasks");
+		assertEqual(loaded!.wavePlan[1].length, 1, "v1 load path: wave 1 has 1 task");
+
+	} finally {
+		try { rmSync(v1LoadRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+	}
+}
+
+{
+	console.log("  ▸ v1 file is NOT rewritten on load (on-disk schema remains 1)");
+
+	const v1NoRewriteRoot = join(tmpdir(), `orch-v1-norewrite-test-${Date.now()}`);
+	mkdirSync(join(v1NoRewriteRoot, ".pi"), { recursive: true });
+
+	try {
+		const v1Json = loadFixture("batch-state-v1-valid.json");
+		const statePath = batchStatePath(v1NoRewriteRoot);
+		writeFileSync(statePath, v1Json, "utf-8");
+
+		// Capture the on-disk content before load
+		const beforeLoad = readFileSync(statePath, "utf-8");
+		const beforeParsed = JSON.parse(beforeLoad);
+		assertEqual(beforeParsed.schemaVersion, 1, "on-disk: v1 schemaVersion before load");
+
+		// Load (triggers in-memory upconversion)
+		const loaded = loadBatchState(v1NoRewriteRoot);
+		assertEqual(loaded!.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "in-memory: upconverted to v2");
+
+		// Read file again — it must NOT have been rewritten
+		const afterLoad = readFileSync(statePath, "utf-8");
+		const afterParsed = JSON.parse(afterLoad);
+		assertEqual(afterParsed.schemaVersion, 1, "on-disk: v1 schemaVersion unchanged after load");
+		assertEqual(afterParsed.mode, undefined, "on-disk: mode still absent (v1 has no mode)");
+		assertEqual(afterParsed.baseBranch, undefined, "on-disk: baseBranch still absent (v1 has no baseBranch)");
+
+		// Verify byte-level content unchanged
+		assertEqual(afterLoad, beforeLoad, "on-disk: file content identical before and after load");
+
+	} finally {
+		try { rmSync(v1NoRewriteRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+	}
+}
+
+{
+	console.log("  ▸ v1 load followed by explicit save writes v2 to disk");
+
+	const v1SaveRoot = join(tmpdir(), `orch-v1-save-test-${Date.now()}`);
+	mkdirSync(join(v1SaveRoot, ".pi"), { recursive: true });
+
+	try {
+		const v1Json = loadFixture("batch-state-v1-valid.json");
+		const statePath = batchStatePath(v1SaveRoot);
+		writeFileSync(statePath, v1Json, "utf-8");
+
+		// Load v1 (in-memory upconversion)
+		const loaded = loadBatchState(v1SaveRoot);
+		assertEqual(loaded!.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "loaded as v2 in memory");
+
+		// Now save the upconverted state back (simulating what happens on next persist)
+		const reserializedJson = JSON.stringify(loaded, null, 2);
+		saveBatchState(reserializedJson, v1SaveRoot);
+
+		// Read and verify it's now v2 on disk
+		const afterSave = readFileSync(statePath, "utf-8");
+		const afterParsed = JSON.parse(afterSave);
+		assertEqual(afterParsed.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "on-disk: v2 after explicit save");
+		assertEqual(afterParsed.mode, "repo", "on-disk: mode persisted as 'repo'");
+		assertEqual(afterParsed.baseBranch, "", "on-disk: baseBranch persisted as ''");
+
+	} finally {
+		try { rmSync(v1SaveRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 7.2: Schema v2 Compatibility — Load Path Regression Tests (Step 2)
+// ═══════════════════════════════════════════════════════════════════════
+
+console.log("\n── 7.2: Schema v2 compatibility — load path regression tests ──");
+
+{
+	console.log("  ▸ loadBatchState with v2 repo-mode fixture (batch-state-valid.json)");
+
+	const v2RepoRoot = join(tmpdir(), `orch-v2-repo-load-test-${Date.now()}`);
+	mkdirSync(join(v2RepoRoot, ".pi"), { recursive: true });
+
+	try {
+		const v2Json = loadFixture("batch-state-valid.json");
+		writeFileSync(batchStatePath(v2RepoRoot), v2Json, "utf-8");
+
+		const loaded = loadBatchState(v2RepoRoot);
+		assert(loaded !== null, "v2 repo-mode load: returns non-null");
+		assertEqual(loaded!.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "v2 repo-mode load: schemaVersion is 2");
+		assertEqual(loaded!.mode, "repo", "v2 repo-mode load: mode is 'repo'");
+		assertEqual(loaded!.baseBranch, "main", "v2 repo-mode load: baseBranch is 'main'");
+		assertEqual(loaded!.phase, "executing", "v2 repo-mode load: phase preserved");
+		assertEqual(loaded!.batchId, "20260309T010000", "v2 repo-mode load: batchId preserved");
+		assertEqual(loaded!.tasks.length, 3, "v2 repo-mode load: 3 task records");
+		assertEqual(loaded!.lanes.length, 2, "v2 repo-mode load: 2 lane records");
+
+		// Verify no spurious repo fields in repo-mode fixture
+		assertEqual(loaded!.tasks[0].repoId, undefined, "v2 repo-mode load: task repoId is undefined");
+		assertEqual(loaded!.tasks[0].resolvedRepoId, undefined, "v2 repo-mode load: task resolvedRepoId is undefined");
+		assertEqual(loaded!.lanes[0].repoId, undefined, "v2 repo-mode load: lane repoId is undefined");
+
+	} finally {
+		try { rmSync(v2RepoRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+	}
+}
+
+{
+	console.log("  ▸ loadBatchState with v2 workspace-mode fixture (batch-state-v2-workspace.json)");
+
+	const v2WsRoot = join(tmpdir(), `orch-v2-ws-load-test-${Date.now()}`);
+	mkdirSync(join(v2WsRoot, ".pi"), { recursive: true });
+
+	try {
+		const v2WsJson = loadFixture("batch-state-v2-workspace.json");
+		writeFileSync(batchStatePath(v2WsRoot), v2WsJson, "utf-8");
+
+		const loaded = loadBatchState(v2WsRoot);
+		assert(loaded !== null, "v2 workspace-mode load: returns non-null");
+		assertEqual(loaded!.schemaVersion, BATCH_STATE_SCHEMA_VERSION, "v2 workspace-mode load: schemaVersion is 2");
+		assertEqual(loaded!.mode, "workspace", "v2 workspace-mode load: mode is 'workspace'");
+		assertEqual(loaded!.baseBranch, "main", "v2 workspace-mode load: baseBranch preserved");
+		assertEqual(loaded!.phase, "executing", "v2 workspace-mode load: phase preserved");
+		assertEqual(loaded!.batchId, "20260315T100000", "v2 workspace-mode load: batchId preserved");
+
+		// Verify task repo fields from workspace-mode fixture
+		assertEqual(loaded!.tasks.length, 2, "v2 workspace-mode load: 2 task records");
+		assertEqual(loaded!.tasks[0].taskId, "WS-001", "v2 workspace-mode load: task WS-001");
+		assertEqual(loaded!.tasks[0].repoId, "api", "v2 workspace-mode load: task[0].repoId is 'api'");
+		assertEqual(loaded!.tasks[0].resolvedRepoId, "api", "v2 workspace-mode load: task[0].resolvedRepoId is 'api'");
+		assertEqual(loaded!.tasks[1].taskId, "WS-002", "v2 workspace-mode load: task WS-002");
+		assertEqual(loaded!.tasks[1].repoId, undefined, "v2 workspace-mode load: task[1].repoId is undefined");
+		assertEqual(loaded!.tasks[1].resolvedRepoId, "frontend", "v2 workspace-mode load: task[1].resolvedRepoId is 'frontend'");
+
+		// Verify lane repo fields
+		assertEqual(loaded!.lanes.length, 2, "v2 workspace-mode load: 2 lane records");
+		assertEqual(loaded!.lanes[0].repoId, "api", "v2 workspace-mode load: lane[0].repoId is 'api'");
+		assertEqual(loaded!.lanes[1].repoId, "frontend", "v2 workspace-mode load: lane[1].repoId is 'frontend'");
+
+	} finally {
+		try { rmSync(v2WsRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 7.3: Schema Version Guardrails (Step 2)
+// ═══════════════════════════════════════════════════════════════════════
+
+console.log("\n── 7.3: Schema version guardrails ──");
+
+{
+	console.log("  ▸ loadBatchState rejects unsupported schema version (>2) with actionable message");
+
+	const futureVersionRoot = join(tmpdir(), `orch-future-version-test-${Date.now()}`);
+	mkdirSync(join(futureVersionRoot, ".pi"), { recursive: true });
+
+	try {
+		const futureVersionJson = loadFixture("batch-state-wrong-version.json");
+		writeFileSync(batchStatePath(futureVersionRoot), futureVersionJson, "utf-8");
+
+		assertThrows(
+			() => loadBatchState(futureVersionRoot),
+			"STATE_SCHEMA_INVALID",
+			"future version (99) through load path throws STATE_SCHEMA_INVALID",
+		);
+
+		// Also verify the error message is actionable
+		try {
+			loadBatchState(futureVersionRoot);
+		} catch (err: unknown) {
+			const e = err as { message?: string };
+			assert(
+				e.message !== undefined && e.message.includes("Delete .pi/batch-state.json"),
+				"error message includes actionable instruction to delete state file",
+			);
+			assert(
+				e.message !== undefined && e.message.includes("99"),
+				"error message includes the unsupported version number",
+			);
+		}
+
+	} finally {
+		try { rmSync(futureVersionRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+	}
+}
+
+{
+	console.log("  ▸ loadBatchState rejects schema version 0 (below supported range)");
+
+	const v0Root = join(tmpdir(), `orch-v0-test-${Date.now()}`);
+	mkdirSync(join(v0Root, ".pi"), { recursive: true });
+
+	try {
+		const v0State = JSON.parse(loadFixture("batch-state-valid.json"));
+		v0State.schemaVersion = 0;
+		writeFileSync(batchStatePath(v0Root), JSON.stringify(v0State, null, 2), "utf-8");
+
+		assertThrows(
+			() => loadBatchState(v0Root),
+			"STATE_SCHEMA_INVALID",
+			"version 0 through load path throws STATE_SCHEMA_INVALID",
+		);
+
+	} finally {
+		try { rmSync(v0Root, { recursive: true, force: true }); } catch { /* best effort */ }
+	}
+}
+
+{
+	console.log("  ▸ loadBatchState rejects schema version 3 (next unsupported)");
+
+	const v3Root = join(tmpdir(), `orch-v3-test-${Date.now()}`);
+	mkdirSync(join(v3Root, ".pi"), { recursive: true });
+
+	try {
+		const v3State = JSON.parse(loadFixture("batch-state-valid.json"));
+		v3State.schemaVersion = 3;
+		writeFileSync(batchStatePath(v3Root), JSON.stringify(v3State, null, 2), "utf-8");
+
+		assertThrows(
+			() => loadBatchState(v3Root),
+			"STATE_SCHEMA_INVALID",
+			"version 3 through load path throws STATE_SCHEMA_INVALID",
+		);
+
+	} finally {
+		try { rmSync(v3Root, { recursive: true, force: true }); } catch { /* best effort */ }
+	}
+}
+
+{
+	console.log("  ▸ loadBatchState rejects malformed JSON through full load path");
+
+	const malformedRoot = join(tmpdir(), `orch-malformed-load-test-${Date.now()}`);
+	mkdirSync(join(malformedRoot, ".pi"), { recursive: true });
+
+	try {
+		writeFileSync(batchStatePath(malformedRoot), "{ not valid json }", "utf-8");
+
+		assertThrows(
+			() => loadBatchState(malformedRoot),
+			"STATE_FILE_PARSE_ERROR",
+			"malformed JSON through load path throws STATE_FILE_PARSE_ERROR",
+		);
+
+	} finally {
+		try { rmSync(malformedRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+	}
+}
+
+{
+	console.log("  ▸ loadBatchState rejects v2 with missing required mode field");
+
+	const v2NoModeRoot = join(tmpdir(), `orch-v2-nomode-test-${Date.now()}`);
+	mkdirSync(join(v2NoModeRoot, ".pi"), { recursive: true });
+
+	try {
+		const v2State = JSON.parse(loadFixture("batch-state-valid.json"));
+		delete v2State.mode; // Remove required v2 field
+		writeFileSync(batchStatePath(v2NoModeRoot), JSON.stringify(v2State, null, 2), "utf-8");
+
+		assertThrows(
+			() => loadBatchState(v2NoModeRoot),
+			"STATE_SCHEMA_INVALID",
+			"v2 without mode through load path throws STATE_SCHEMA_INVALID",
+		);
+
+	} finally {
+		try { rmSync(v2NoModeRoot, { recursive: true, force: true }); } catch { /* best effort */ }
+	}
+}
+
+{
+	console.log("  ▸ v1 upconverted state is usable for resume flow (loadBatchState → reconcile → resume)");
+
+	// Integration test: v1 file loaded, upconverted, then used in resume decision pipeline
+	const v1ResumeRoot = join(tmpdir(), `orch-v1-resume-test-${Date.now()}`);
+	mkdirSync(join(v1ResumeRoot, ".pi"), { recursive: true });
+
+	try {
+		const v1Json = loadFixture("batch-state-v1-valid.json");
+		writeFileSync(batchStatePath(v1ResumeRoot), v1Json, "utf-8");
+
+		// Load through full path (v1 → v2 upconversion)
+		const loaded = loadBatchState(v1ResumeRoot);
+		assert(loaded !== null, "v1 resume flow: state loaded");
+
+		// Check resume eligibility (executing phase is eligible)
+		const eligibility = checkResumeEligibility(loaded!);
+		assertEqual(eligibility.eligible, true, "v1 resume flow: executing phase is resumable");
+
+		// Reconcile tasks (simulate: TS-001 done, TS-002 dead, TS-003 not started)
+		const reconciled = reconcileTaskStates(loaded!, new Set(), new Set(["TS-001"]));
+		assertEqual(reconciled.length, 3, "v1 resume flow: 3 tasks reconciled");
+
+		// TS-001: succeeded + .DONE → mark-complete
+		const ts001 = reconciled.find((r: any) => r.taskId === "TS-001");
+		assertEqual(ts001!.action, "mark-complete", "v1 resume: TS-001 mark-complete");
+
+		// TS-002: running + dead session + no .DONE → mark-failed
+		const ts002 = reconciled.find((r: any) => r.taskId === "TS-002");
+		assertEqual(ts002!.action, "mark-failed", "v1 resume: TS-002 mark-failed");
+
+		// TS-003: pending + dead session → mark-failed
+		const ts003 = reconciled.find((r: any) => r.taskId === "TS-003");
+		assertEqual(ts003!.action, "mark-failed", "v1 resume: TS-003 mark-failed");
+
+		// Compute resume point
+		const resumePoint = computeResumePoint(loaded!, reconciled);
+		assertEqual(resumePoint.resumeWaveIndex, 0, "v1 resume: wave 0 (TS-002 failed in wave 0)");
+		assertEqual(resumePoint.completedTaskIds.length, 1, "v1 resume: 1 completed (TS-001)");
+		assert(resumePoint.completedTaskIds.includes("TS-001"), "v1 resume: TS-001 completed");
+		assertEqual(resumePoint.failedTaskIds.length, 2, "v1 resume: 2 failed (TS-002, TS-003)");
+
+		// Verify orphan detection with upconverted state
+		const orphanResult = analyzeOrchestratorStartupState(
+			[], // No orphan sessions
+			"valid",
+			loaded!,
+			null,
+			new Set(["TS-001"]), // TS-001 has .DONE
+		);
+		assertEqual(orphanResult.recommendedAction, "resume", "v1 resume: orphan detection recommends resume");
+
+	} finally {
+		try { rmSync(v1ResumeRoot, { recursive: true, force: true }); } catch { /* best effort */ }
 	}
 }
 

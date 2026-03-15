@@ -1,11 +1,11 @@
 # TP-006: Persisted State Schema v2 with Repo-Aware Records — Status
 
-**Current Step:** Step 1: Implement serialization and validation
-**Status:** ✅ Complete
+**Current Step:** Step 2: Handle schema v1 compatibility
+**Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -130,10 +130,14 @@
 ---
 
 ### Step 2: Handle schema v1 compatibility
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Add v1->v2 up-conversion or explicit migration guardrails
-- [ ] Add regression tests covering v1 and v2 loading paths
+- [x] Confirm and lock compatibility policy (v1 in-memory upconvert, no implicit rewrite, v2 write-on-save, reject unsupported versions)
+- [x] Implement/verify migration path in `persistence.ts` (`validatePersistedState` + `loadBatchState`) with explicit guardrail errors
+- [x] Add `loadBatchState` regression tests for v1 fixture upconversion (assert schemaVersion=2, mode="repo", baseBranch="", records preserved)
+- [x] Add `loadBatchState` regression tests for v2 fixtures (batch-state-valid.json, batch-state-v2-workspace.json)
+- [x] Add regression test proving v1 file is not rewritten on load (on-disk content unchanged)
+- [x] Add/verify negative-path tests for unsupported version, malformed JSON, and v2 missing required mode
 
 ---
 
@@ -168,7 +172,34 @@
 | R003 | plan | Step 1 | APPROVE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 |---|------|------|---------|------|
+
+#### Step 2 Audit Notes
+
+**Compatibility policy (confirmed and locked):**
+- v1 state files are accepted by `validatePersistedState()` and upconverted to v2 in-memory via `upconvertV1toV2()`
+- On-disk v1 files are NOT rewritten during `loadBatchState()` — upconversion is purely in-memory
+- `saveBatchState()` always writes `schemaVersion: 2` (via `serializeBatchState()` using `BATCH_STATE_SCHEMA_VERSION`)
+- Schema versions other than 1 and 2 are rejected with `STATE_SCHEMA_INVALID`
+
+**Implementation already existed from Step 0:**
+- `upconvertV1toV2()` in `persistence.ts` — mutates in-place: bumps schemaVersion, defaults mode to "repo", baseBranch to ""
+- `validatePersistedState()` — accepts v1 (isV1 flag), validates v2-specific fields only on v2, calls upconvert at end
+- `loadBatchState()` — reads file, parses JSON, validates (with upconvert), returns in-memory v2 object; no write-back
+
+**Regression tests added (section 1.4 in test file):**
+1. `loadBatchState` with v1 fixture → verifies schemaVersion=2, mode="repo", baseBranch="", all records preserved
+2. v1 file NOT rewritten on load → byte-level comparison of on-disk content before/after `loadBatchState`
+3. `loadBatchState` with v2 repo-mode fixture → verifies all fields preserved, no repo fields in repo mode
+4. `loadBatchState` with v2 workspace-mode fixture → verifies repo-aware fields on tasks and lanes
+5. `loadBatchState` rejects unsupported schema version (batch-state-wrong-version.json) → STATE_SCHEMA_INVALID
+6. `loadBatchState` rejects malformed JSON → STATE_FILE_PARSE_ERROR
+7. `loadBatchState` rejects v2 state missing required mode field → STATE_SCHEMA_INVALID
+8. v1 → save → load round-trip: loads v1 (in-memory v2), saves back, verifies on-disk is v2, reloads and verifies
+
+**Test results: 207 tests passing (11 test files, 0 failures)**
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -210,6 +241,17 @@
 | 2026-03-15 18:27 | Review R004 | code Step 1: REVISE |
 | 2026-03-15 18:27 | Review R004 | code Step 1: REVISE |
 | 2026-03-15 18:31 | Step 1 R004 fix | Aligned test reimplementations with source: mode from state, resumable-phase logic, re-execute/worktree handling, pending-task categorization |
+| 2026-03-15 18:33 | Worker iter 2 | done in 350s, ctx: 26%, tools: 58 |
+| 2026-03-15 18:33 | Step 1 complete | Implement serialization and validation |
+| 2026-03-15 18:33 | Step 2 started | Handle schema v1 compatibility |
+| 2026-03-15 18:33 | Worker iter 2 | done in 379s, ctx: 48%, tools: 45 |
+| 2026-03-15 18:33 | Step 1 complete | Implement serialization and validation |
+| 2026-03-15 18:33 | Step 2 started | Handle schema v1 compatibility |
+| 2026-03-15 18:34 | Review R005 | plan Step 2: REVISE |
+| 2026-03-15 18:38 | Step 2 hydrated | R005 feedback: 6 granular checkboxes, compatibility policy explicit |
+| 2026-03-15 18:40 | Step 2 impl | 8 regression tests added in section 1.4, all 207 tests passing |
+| 2026-03-15 18:40 | Step 2 complete | Handle schema v1 compatibility |
+| 2026-03-15 18:35 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 
