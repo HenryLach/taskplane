@@ -569,6 +569,36 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 				`mergeResults[${i}].status is invalid: "${m.status}" (expected one of: ${[...VALID_PERSISTED_MERGE_STATUSES].join(", ")})`,
 			);
 		}
+		// v2 optional field: repoResults (array | undefined)
+		if (m.repoResults !== undefined) {
+			if (!Array.isArray(m.repoResults)) {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`mergeResults[${i}].repoResults is not an array (got ${typeof m.repoResults})`,
+				);
+			}
+			for (let j = 0; j < (m.repoResults as unknown[]).length; j++) {
+				const rr = (m.repoResults as unknown[])[j] as Record<string, unknown>;
+				if (!rr || typeof rr !== "object") {
+					throw new StateFileError(
+						"STATE_SCHEMA_INVALID",
+						`mergeResults[${i}].repoResults[${j}] is not an object`,
+					);
+				}
+				if (typeof rr.status !== "string" || !VALID_PERSISTED_MERGE_STATUSES.has(rr.status)) {
+					throw new StateFileError(
+						"STATE_SCHEMA_INVALID",
+						`mergeResults[${i}].repoResults[${j}].status is invalid: "${rr.status}"`,
+					);
+				}
+				if (!Array.isArray(rr.laneNumbers)) {
+					throw new StateFileError(
+						"STATE_SCHEMA_INVALID",
+						`mergeResults[${i}].repoResults[${j}].laneNumbers is not an array`,
+					);
+				}
+			}
+		}
 	}
 
 	// ── Validate lastError ───────────────────────────────────────
@@ -721,12 +751,25 @@ export function serializeBatchState(
 	// Clamp to 0 minimum: resume re-exec merges use sentinel waveIndex -1,
 	// which would produce -2 without clamping.
 	const mergeResults: PersistedMergeResult[] = (state.mergeResults || [])
-		.map((mr) => ({
-			waveIndex: Math.max(0, mr.waveIndex - 1),
-			status: mr.status,
-			failedLane: mr.failedLane,
-			failureReason: mr.failureReason,
-		}));
+		.map((mr) => {
+			const record: PersistedMergeResult = {
+				waveIndex: Math.max(0, mr.waveIndex - 1),
+				status: mr.status,
+				failedLane: mr.failedLane,
+				failureReason: mr.failureReason,
+			};
+			// v2 (TP-009): Serialize per-repo merge outcomes when available (workspace mode).
+			if (mr.repoResults && mr.repoResults.length > 0) {
+				record.repoResults = mr.repoResults.map((rr) => ({
+					repoId: rr.repoId,
+					status: rr.status,
+					laneNumbers: rr.laneResults.map((lr) => lr.laneNumber),
+					failedLane: rr.failedLane,
+					failureReason: rr.failureReason,
+				}));
+			}
+			return record;
+		});
 
 	const persisted: PersistedBatchState = {
 		schemaVersion: BATCH_STATE_SCHEMA_VERSION,

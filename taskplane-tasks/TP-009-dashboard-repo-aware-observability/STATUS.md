@@ -1,10 +1,10 @@
 # TP-009: Dashboard Repo-Aware Lanes, Tasks, and Merge Panels — Status
 
-**Current Step:** Step 0: Extend dashboard data model
+**Current Step:** Step 1: Implement repo-aware UI
 ​**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -41,7 +41,7 @@
 ---
 
 ### Step 1: Implement repo-aware UI
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add repo labels and filters in dashboard frontend
 - [ ] Group merge outcomes by repo for clear partial-result visibility
@@ -81,14 +81,15 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
 | Lane/task repo fields (repoId, resolvedRepoId) already pass through to dashboard via JSON spread — no server.cjs filtering needed | No action | persistence.ts, server.cjs |
-| PersistedMergeResult.repoResults and serialization were already implemented in TP-006 | No action | types.ts:1299, persistence.ts:762 |
-| Only missing dashboard payload field was top-level `mode` (repo/workspace) — added in server.cjs | Implemented | dashboard/server.cjs |
+| MergeWaveResult has repoResults at runtime (TP-006) but PersistedMergeResult did NOT serialize them — added PersistedRepoMergeOutcome type + serialization + validation | Implemented (iter 2) | types.ts, persistence.ts |
+| Top-level `mode` field was missing from dashboard payload — added in server.cjs (iter 1) | Implemented | dashboard/server.cjs |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -102,6 +103,11 @@
 | 2026-03-15 23:20 | Review R001 | plan Step 0: UNKNOWN |
 | 2026-03-15 23:25 | Step 0 impl | Added mode field to buildDashboardState; verified lane/task/merge repo fields already flow through |
 | 2026-03-15 23:25 | Step 0 complete | All checkboxes checked, 290/290 tests pass |
+| 2026-03-15 23:25 | Worker iter 1 | done in 291s, ctx: 45%, tools: 37 |
+| 2026-03-16 | Step 0 iter 2 | Added PersistedRepoMergeOutcome type, serialization in serializeBatchState, validation in validatePersistedState. 290/290 tests pass. |
+| 2026-03-15 23:26 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 23:26 | Step 0 complete | Extend dashboard data model |
+| 2026-03-15 23:26 | Step 1 started | Implement repo-aware UI |
 
 ## Blockers
 

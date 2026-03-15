@@ -1305,6 +1305,31 @@ export interface PersistedMergeResult {
 	failedLane: number | null;
 	/** Failure reason (null if all succeeded) */
 	failureReason: string | null;
+	/**
+	 * Per-repo merge outcomes (v2, TP-009).
+	 * Populated in workspace mode when MergeWaveResult.repoResults is available.
+	 * Undefined/absent in repo mode or for older state files. Dashboard treats
+	 * absence as single-repo merge.
+	 */
+	repoResults?: PersistedRepoMergeOutcome[];
+}
+
+/**
+ * Persisted per-repo merge outcome within a wave merge.
+ * Serializable subset of RepoMergeOutcome — excludes full MergeLaneResult
+ * objects (which contain detailed merge agent result JSON) to keep state file compact.
+ */
+export interface PersistedRepoMergeOutcome {
+	/** Repo ID. Undefined for the default group in repo mode. */
+	repoId: string | undefined;
+	/** Merge status for this repo. */
+	status: "succeeded" | "failed" | "partial";
+	/** Lane numbers involved in this repo's merge. */
+	laneNumbers: number[];
+	/** Failed lane number within this repo (null if all succeeded). */
+	failedLane: number | null;
+	/** Failure reason within this repo (null if all succeeded). */
+	failureReason: string | null;
 }
 
 /**
