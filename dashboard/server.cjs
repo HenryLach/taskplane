@@ -191,11 +191,16 @@ function buildDashboardState() {
       currentWaveIndex: state.currentWaveIndex || 0,
       totalWaves: state.totalWaves || (state.wavePlan ? state.wavePlan.length : 0),
       wavePlan: state.wavePlan || [],
+      // Lanes already include repoId (string|undefined) from PersistedLaneRecord (v2).
       lanes: state.lanes || [],
+      // Tasks already include repoId, resolvedRepoId (string|undefined) from PersistedTaskRecord (v2).
       tasks,
       mergeResults: state.mergeResults || [],
       errors: state.errors || [],
       lastError: state.lastError || null,
+      // Workspace mode: "repo" (default/v1) or "workspace" (v2 multi-repo).
+      // Additive field — absent in v1 state files, frontend must default to "repo".
+      mode: state.mode || "repo",
     },
     tmuxSessions,
     timestamp: Date.now(),

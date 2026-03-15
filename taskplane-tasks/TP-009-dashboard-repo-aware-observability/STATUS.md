@@ -1,11 +1,11 @@
 # TP-009: Dashboard Repo-Aware Lanes, Tasks, and Merge Panels — Status
 
-**Current Step:** Not Started
-​**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Extend dashboard data model
+​**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -15,10 +15,28 @@
 ---
 
 ### Step 0: Extend dashboard data model
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Include repo attribution in lane/task/merge payloads served by dashboard backend
-- [ ] Maintain backward compatibility for repo-mode payload consumers
+**Payload contract (additive-only — no field renames or removals):**
+
+| Object                 | New Field(s)                   | Type                         | Absent semantics            |
+|------------------------|-------------------------------|------------------------------|-----------------------------|
+| `batch`                | `mode`                        | `"repo"\|"workspace"`        | Treat as `"repo"`           |
+| `batch.lanes[]`        | `repoId`                      | `string\|undefined`          | Already persisted (TP-006)  |
+| `batch.tasks[]`        | `repoId`, `resolvedRepoId`    | `string\|undefined`          | Already persisted (TP-006)  |
+| `batch.mergeResults[]` | `repoResults`                 | `array\|undefined`           | Absent = single-repo merge  |
+
+**Backward compatibility:** Additive fields only. When repo fields are absent (repo mode, v1 state), they are simply omitted from JSON (undefined). No renames, no removals. Frontend consumers must tolerate missing fields.
+
+**Scope:** `dashboard/server.cjs` + `extensions/taskplane/persistence.ts` (enrich persisted merge results); `formatting.ts` TUI changes deferred to Step 1.
+
+**Merge attribution strategy:** `PersistedMergeResult` currently lacks repo data. We enrich it in `serializeBatchState()` by serializing `MergeWaveResult.repoResults` into a new `repoResults` field on the persisted record. This is additive — v1/v2 state files without this field remain valid.
+
+- [x] Add `mode` field to the `batch` object in `buildDashboardState()` (server.cjs)
+- [x] Enrich persisted merge results with `repoResults` from `MergeWaveResult` in `serializeBatchState()` (persistence.ts)
+- [x] Pass enriched merge results through to dashboard payload (server.cjs — already passes through)
+- [x] Verify lane/task repo fields already flow through (server.cjs spreads all persisted fields)
+- [x] Maintain backward compatibility — repo-mode payloads valid when repo fields undefined/absent
 
 ---
 
@@ -61,16 +79,29 @@
 
 ## Reviews
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Lane/task repo fields (repoId, resolvedRepoId) already pass through to dashboard via JSON spread — no server.cjs filtering needed | No action | persistence.ts, server.cjs |
+| PersistedMergeResult.repoResults and serialization were already implemented in TP-006 | No action | types.ts:1299, persistence.ts:762 |
+| Only missing dashboard payload field was top-level `mode` (repo/workspace) — added in server.cjs | Implemented | dashboard/server.cjs |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-15 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-15 23:17 | Task started | Extension-driven execution |
+| 2026-03-15 23:17 | Step 0 started | Extend dashboard data model |
+| 2026-03-15 23:17 | Task started | Extension-driven execution |
+| 2026-03-15 23:17 | Step 0 started | Extend dashboard data model |
+| 2026-03-15 23:20 | Review R001 | plan Step 0: REVISE |
+| 2026-03-15 23:20 | Review R001 | plan Step 0: UNKNOWN |
+| 2026-03-15 23:25 | Step 0 impl | Added mode field to buildDashboardState; verified lane/task/merge repo fields already flow through |
+| 2026-03-15 23:25 | Step 0 complete | All checkboxes checked, 290/290 tests pass |
 
 ## Blockers
 
