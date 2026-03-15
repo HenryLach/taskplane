@@ -56,13 +56,14 @@ Extend /orch-resume to reconstruct and continue polyrepo batches using repo-awar
 
 ## Steps
 
-> **Hydration:** STATUS.md checkboxes must match the granularity below.
-> See task-worker agent for full hydration rules.
+> **Hydration:** STATUS.md tracks outcomes, not individual code changes. Workers
+> expand steps when runtime discoveries warrant it. See task-worker agent for rules.
 
 ### Step 0: Implement repo-aware reconciliation
 
-- [ ] Match persisted tasks/lanes to live sessions using repo-aware identifiers
-- [ ] Resolve alive/dead/.DONE states correctly across repo-specific worktrees
+- [ ] Match persisted tasks/lanes to live sessions using repo-aware identifiers (with v1 fallback when repo fields are absent)
+- [ ] Resolve alive/dead/.DONE/worktree states correctly across repo-specific roots
+- [ ] Add tests for mixed-repo reconciliation scenarios
 
 ### Step 1: Compute repo-aware resume point
 

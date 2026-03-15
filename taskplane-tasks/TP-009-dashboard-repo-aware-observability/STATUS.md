@@ -8,8 +8,9 @@
 **Iteration:** 0
 **Size:** M
 
-> **Hydration:** Checkboxes below must be granular — one per unit of work.
-> Steps marked `⚠️ Hydrate` will be expanded by the worker.
+> **Hydration:** Checkboxes represent meaningful outcomes, not individual code
+> changes. Workers expand steps when runtime discoveries warrant it — aim for
+> 2-5 outcome-level items per step, not exhaustive implementation scripts.
 
 ---
 

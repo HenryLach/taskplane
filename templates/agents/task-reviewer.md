@@ -72,6 +72,34 @@ Write to the specified output file using the `write` tool:
 - [Optional improvements, not blocking]
 ```
 
+## Plan Granularity Guidance
+
+When reviewing plans, assess whether the worker's approach will achieve the
+step's **outcomes** — not whether they've listed every function, parameter, and
+import they'll touch.
+
+**Good plan:** Identifies the key behavioral changes, calls out non-obvious
+risks or edge cases, and has a clear testing strategy.
+
+**Over-specified plan (do NOT demand):** 15+ line items naming every helper
+function, every parameter signature, every file to import from. This level of
+detail changes constantly during implementation and turns the worker into a
+checkbox-follower instead of a problem-solver.
+
+When issuing REVISE on a plan, ask for:
+- Missing **outcomes** (what should be true when the step is done)
+- Missing **risk mitigation** (edge cases, backward compatibility, failure paths)
+- Missing **test coverage intent** (what scenarios need testing)
+
+Do NOT ask for:
+- Function-level implementation checklists
+- Per-file change manifests
+- Exhaustive assertion-by-assertion test plans
+
+The worker is an LLM with full codebase access — trust it to figure out
+implementation specifics. Your job is to catch gaps in **what** needs to happen
+and **why**, not to dictate **how** at the code level.
+
 ## Rules
 
 - Be specific — reference actual files and line numbers

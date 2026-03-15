@@ -59,47 +59,66 @@ orchestrator and you will be re-spawned to do it again.
 
 ## STATUS.md Hydration (MANDATORY)
 
-STATUS.md is your ONLY memory. Coarse checkboxes destroy progress — if you
-complete 5 of 8 sub-items inside one checkbox and your iteration ends, the next
-worker has no way to know where you left off.
+STATUS.md is your ONLY memory. It needs enough structure so progress survives
+iteration boundaries — but hydration is about **adaptability**, not about
+creating the most granular checklist possible.
+
+### Purpose
+
+You will discover things at runtime that weren't known when the task was created:
+actual function signatures, edge cases in source code, reviewer feedback that
+reshapes your approach. Hydration lets you capture these discoveries as
+checkboxes so a future worker can pick up where you left off.
+
+**Hydration is NOT:** rewriting the step as a 15-item implementation script that
+spells out every function, parameter, and import. That level of detail changes
+constantly during implementation and creates busywork maintaining a checklist
+instead of solving the problem.
 
 ### When Entering a Step
 
-Before implementing anything, check whether the step's checkboxes need expansion:
+Before implementing anything, assess whether the step needs expansion:
 
 1. **Read the PROMPT.md step details** for your assigned step
-2. **Compare granularity** — does STATUS.md have fewer/coarser items than PROMPT.md?
-3. **If yes, hydrate** — expand STATUS.md checkboxes to match PROMPT granularity
-4. **Look for `⚠️ Hydrate` markers** — these explicitly signal that a step needs
-   expansion based on what you've learned from prior steps or from reading source files
-5. **Commit the hydrated STATUS.md immediately** — this IS a checkpoint:
+2. **Look for `⚠️ Hydrate` markers** — these signal the task creator expected
+   you to expand based on runtime discoveries
+3. **If expansion is needed**, add checkboxes for **distinct outcomes** you've
+   identified — not for every individual code change. Think: "what are the 2-5
+   things that need to be true when this step is done?"
+4. **Commit the hydrated STATUS.md immediately** — this IS a checkpoint:
    ```bash
    git add -A && git commit -m "hydrate: expand Step N checkboxes"
    ```
-6. THEN start implementing from the first unchecked item
+5. THEN start implementing from the first unchecked item
+
+**Calibrating granularity:** A good checkbox represents a meaningful unit of
+progress that a future worker could verify and skip. Ask yourself: "if my
+iteration ends after this item, will the next worker clearly know it's done?"
+If yes, it's a good checkpoint. If the item is so small that it's inseparable
+from the next item, combine them.
 
 ### After a REVISE Review
 
 When a reviewer returns REVISE with specific feedback items:
 
 1. **Read the review file** in `.reviews/`
-2. **Add each revision item as a new checkbox** in the current step in STATUS.md
+2. **Add revision items as new checkboxes** in the current step — group related
+   fixes into single checkboxes rather than creating one per reviewer sentence
 3. **Commit the hydrated STATUS.md:**
    ```bash
    git add -A && git commit -m "hydrate: add R00N revision items to Step N"
    ```
 4. THEN implement the revisions, checking off each item as you go
 
-This ensures revision items have the same resumability as original work items.
-
 ### Rules
 
 - **Hydration is a checkpoint.** Always commit STATUS.md after hydrating, before
   implementing. If the iteration ends between hydration and implementation, the
   plan is preserved for the next worker.
-- **One checkbox per unit of work.** If a step says "implement 8 methods," each
-  method gets its own checkbox. If a step says "create tests for 5 scenarios,"
-  each scenario gets its own checkbox.
+- **One checkbox per meaningful outcome.** "Implement the CRUD methods" is one
+  checkbox if they're straightforward. "Implement create + implement delete" is
+  two checkboxes if they involve genuinely different logic. Use judgment — the
+  goal is resumability, not line-item tracking.
 - **It's fine to add checkboxes.** STATUS.md is a living document. The PROMPT
   defines goals; STATUS tracks reality. Add items you discover during execution.
 - **Don't re-hydrate completed steps.** Only hydrate the step you're entering.

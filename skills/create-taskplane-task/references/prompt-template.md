@@ -67,9 +67,8 @@ Copy this template when creating a new task. Replace all `[bracketed]` fields.
 
 ## Steps
 
-> **Hydration:** STATUS.md checkboxes must match the granularity below. Steps that
-> depend on runtime discoveries should be marked with `⚠️ Hydrate` in STATUS.md.
-> See task-worker agent for full hydration rules.
+> **Hydration:** STATUS.md tracks outcomes, not individual code changes. Workers
+> expand steps when runtime discoveries warrant it. See task-worker agent for rules.
 
 ### Step 0: Preflight
 
@@ -163,9 +162,9 @@ this from PROMPT.md.
 **Iteration:** 0
 **Size:** [S | M | L]
 
-> **Hydration:** Checkboxes below must be granular — one per unit of work.
-> Steps marked `⚠️ Hydrate` will be expanded by the worker when discoveries
-> from prior steps are available. See task-worker agent for rules.
+> **Hydration:** Checkboxes represent meaningful outcomes, not individual code
+> changes. Workers expand steps when runtime discoveries warrant it — aim for
+> 2-5 outcome-level items per step, not exhaustive implementation scripts.
 
 ---
 

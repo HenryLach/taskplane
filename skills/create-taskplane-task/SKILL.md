@@ -1,5 +1,6 @@
 ---
 name: create-taskplane-task
+version: 1.1.0
 description: Creates structured Taskplane task packets (PROMPT.md, STATUS.md) for autonomous agent execution via the task-runner and task-orchestrator extensions. Use when asked to "create a task", "create a taskplane task", "stage a task", "prepare a task for execution", "write a PROMPT.md", "set up work for the agent", "queue a task", or whenever the user wants to define work that will be executed autonomously by another agent instance.
 ---
 
@@ -172,45 +173,81 @@ Docs in `task-runner.yaml → never_load` must NOT appear in any task.
 
 ## STATUS.md Hydration
 
-STATUS.md is the worker's ONLY memory between iterations. Granularity directly
-determines how much progress survives when an iteration ends mid-step.
+STATUS.md is the worker's ONLY memory between iterations. It needs enough
+structure so progress survives when an iteration ends mid-step — but not so much
+structure that it becomes a rigid script the worker follows mechanically.
+
+### Philosophy: Adaptive Planning, Not Exhaustive Scripting
+
+Hydration exists because workers discover things at runtime they couldn't know
+upfront: the actual function signatures, the edge cases that emerge from reading
+source, the reviewer feedback that reshapes approach. The goal is **adaptability
+in the face of unknowns** — not granularity for its own sake.
+
+**The right level of detail depends on predictability:**
+
+| How predictable is the work? | Approach |
+|------------------------------|----------|
+| You know exactly what files/methods/tests are needed | List them as checkboxes |
+| You know the general shape but details depend on source code | Write intent-level checkboxes; trust the worker to figure out implementation specifics |
+| You genuinely don't know what's needed until a prior step runs | Use `⚠️ Hydrate` marker |
+
+**Anti-pattern to avoid:** Creating 15+ micro-checkboxes that spell out every
+function name, parameter, and assertion before the worker has even read the
+source code. This wastes task-creation time, produces items that frequently need
+revision anyway, and turns the worker into a checkbox-follower instead of a
+problem-solver.
 
 ### Task Creator Responsibilities
 
-**Pre-hydrate STATUS.md to match PROMPT.md granularity.** Since the skill creates
-both files at the same time, there is no reason for STATUS.md to be coarser than
-PROMPT.md.
+**Match STATUS.md to PROMPT.md granularity — no more, no less.** PROMPT.md steps
+should express *outcomes* the worker needs to achieve, not dictate *how* to
+achieve them.
+
+Good granularity examples:
 
 | PROMPT.md says | STATUS.md should have |
 |----------------|-----------------------|
-| "Implement Create, Update, Get, List, Publish, Clone" | One checkbox per method (6 checkboxes) |
-| "Test happy path, validation, auth, tenant isolation" | One checkbox per test category (4 checkboxes) |
-| "Create file X, file Y, file Z" | One checkbox per file (3 checkboxes) |
+| "Implement CRUD operations for Projects" | `- [ ] Implement Create, Read, Update, Delete for Projects` (one checkbox — the worker can figure out 4 methods) |
+| "Add repo-aware fields to persistence schema" | `- [ ] Add repo fields to schema and update serialization` |
+| "Test merge failure scenarios" | `- [ ] Add tests for merge failure paths` |
+| "Update merge flow to work per-repo" | `- [ ] Refactor merge to partition by repo` and `- [ ] Aggregate per-repo results` (two checkboxes — these are genuinely distinct outcomes) |
+
+Over-hydrated examples (avoid):
+
+| ❌ Too granular | ✅ Better |
+|----------------|-----------|
+| 10 checkboxes naming every function, parameter, and import to change | 2-3 checkboxes describing the behavioral changes |
+| Separate checkboxes for "create file", "add imports", "add function", "export function" | One checkbox: "Create helper module with X capability" |
+| One checkbox per test assertion | One checkbox per test scenario or category |
 
 **Use `⚠️ Hydrate` markers** for steps that genuinely depend on runtime
 discoveries — where the task creator cannot know the items upfront:
 
 ```markdown
-### Step 3: Create Task Files
+### Step 2: Handle migration
 **Status:** ⬜ Not Started
-> ⚠️ Hydrate: Expand with per-item checkboxes once Step 2 identifies the task list
+> ⚠️ Hydrate: Expand based on schema gaps identified in Step 1
 
-- [ ] Read create-taskplane-task skill and prompt template
-- [ ] Create task files (expand after Step 2)
+- [ ] Implement v1→v2 compatibility (details depend on Step 1 findings)
 ```
 
 **When to use markers vs. pre-hydration:**
 
 | Situation | Approach |
 |-----------|----------|
-| Items are known at creation time | Pre-hydrate (one checkbox per item) |
-| Items depend on analysis/discovery in a prior step | `⚠️ Hydrate` marker |
-| Items depend on what exists on disk (preflight) | `⚠️ Hydrate` marker |
-| Reviewer feedback adds new items | Worker hydrates (handled by worker agent) |
+| Outcomes are known at creation time | Pre-hydrate with outcome-level checkboxes |
+| Details depend on analysis/discovery in a prior step | `⚠️ Hydrate` marker |
+| Details depend on what exists on disk | `⚠️ Hydrate` marker |
+| Reviewer feedback adds new items | Worker adds items (handled by worker agent) |
 
-The worker agent has full hydration rules (commit-before-implement,
-REVISE-triggered hydration). Task creators just need to provide the right
-starting granularity.
+### Worker Hydration at Runtime
+
+Workers may expand checkboxes when entering a step — but should apply the same
+principle: **add checkboxes for distinct outcomes discovered during exploration,
+not for every individual code change.** The worker agent has hydration rules
+(commit-before-implement, REVISE-triggered expansion). The goal is a useful
+resumability checkpoint, not a line-by-line implementation journal.
 
 ### Constraint: No New Steps at Runtime
 

@@ -61,8 +61,8 @@ Build an integration-grade polyrepo fixture and automated regression suite that 
 
 ## Steps
 
-> **Hydration:** STATUS.md checkboxes must match the granularity below.
-> See task-worker agent for full hydration rules.
+> **Hydration:** STATUS.md tracks outcomes, not individual code changes. Workers
+> expand steps when runtime discoveries warrant it. See task-worker agent for rules.
 
 ### Step 0: Build polyrepo fixture workspace
 
