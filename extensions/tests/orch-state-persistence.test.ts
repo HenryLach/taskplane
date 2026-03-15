@@ -1050,8 +1050,11 @@ console.log("\n── 2.1: persistRuntimeState integration tests ──");
 interface MinimalBatchState {
 	phase: string;
 	batchId: string;
+	mode: string;
+	baseBranch: string;
 	pauseSignal: { paused: boolean };
 	waveResults: any[];
+	mergeResults: any[];
 	currentWaveIndex: number;
 	totalWaves: number;
 	blockedTaskIds: Set<string>;
@@ -1071,8 +1074,11 @@ function freshMinimalBatchState(): MinimalBatchState {
 	return {
 		phase: "idle",
 		batchId: "",
+		mode: "repo",
+		baseBranch: "",
 		pauseSignal: { paused: false },
 		waveResults: [],
+		mergeResults: [],
 		currentWaveIndex: -1,
 		totalWaves: 0,
 		blockedTaskIds: new Set(),
@@ -1226,20 +1232,23 @@ function serializeBatchState(
 		return record;
 	});
 
-	const mergeResults = state.waveResults
-		.filter((wr: any) => wr.waveIndex <= state.currentWaveIndex)
-		.map((wr: any) => ({
-			waveIndex: wr.waveIndex,
-			status: wr.overallStatus === "aborted" ? "failed" : wr.overallStatus,
-			failedLane: null,
-			failureReason: null,
+	// Build merge results from actual merge outcomes (accumulated on batchState).
+	// MergeWaveResult.waveIndex is 1-based (from merge module); normalize to
+	// 0-based for PersistedMergeResult (dashboard renders as "Wave N+1").
+	const mergeResults = (state.mergeResults || [])
+		.map((mr: any) => ({
+			waveIndex: mr.waveIndex - 1,
+			status: mr.status,
+			failedLane: mr.failedLane,
+			failureReason: mr.failureReason,
 		}));
 
 	const persisted = {
 		schemaVersion: BATCH_STATE_SCHEMA_VERSION,
 		phase: state.phase,
 		batchId: state.batchId,
-		mode: "repo",
+		baseBranch: state.baseBranch ?? "",
+		mode: state.mode ?? "repo",
 		startedAt: state.startedAt,
 		updatedAt: now,
 		endedAt: state.endedAt,
@@ -1890,16 +1899,39 @@ function analyzeOrchestratorStartupState(
 		}
 
 		const completedCount = allTaskIds.filter((id: string) => doneTaskIds.has(id)).length;
+
+		// Only phases that resumeOrchBatch can actually handle should get "resume".
+		// "failed" / "stopped" / "idle" / "planning" are non-resumable — if nothing
+		// ran yet (completedCount === 0) the state file is pure noise; auto-clean it
+		// so /orch can start fresh without forcing the user through /orch-abort first.
+		const resumablePhases = ["paused", "executing", "merging"];
+		const isResumable = resumablePhases.includes(loadedState.phase);
+
+		if (!isResumable && completedCount === 0) {
+			return {
+				orphanSessions: [],
+				stateStatus,
+				loadedState,
+				stateError,
+				recommendedAction: "cleanup-stale",
+				userMessage:
+					`🧹 Found non-resumable batch state (${loadedState.batchId}, phase=${loadedState.phase}, 0 tasks ran).\n` +
+					`   Cleaning up stale state file so a fresh batch can start.`,
+			};
+		}
+
 		return {
 			orphanSessions: [],
 			stateStatus,
 			loadedState,
 			stateError,
-			recommendedAction: "resume",
-			userMessage:
-				`🔄 Found interrupted batch ${loadedState.batchId} (${loadedState.phase}).\n` +
-				`   ${completedCount}/${allTaskIds.length} task(s) completed.\n` +
-				`   Use /orch-resume to continue, or /orch-abort to clean up.`,
+			recommendedAction: isResumable ? "resume" : "cleanup-stale",
+			userMessage: isResumable
+				? `🔄 Found interrupted batch ${loadedState.batchId} (${loadedState.phase}).\n` +
+				  `   ${completedCount}/${allTaskIds.length} task(s) completed.\n` +
+				  `   Use /orch-resume to continue, or /orch-abort to clean up.`
+				: `🧹 Found non-resumable batch state (${loadedState.batchId}, phase=${loadedState.phase}).\n` +
+				  `   ${completedCount}/${allTaskIds.length} task(s) completed. Cleaning up state file.`,
 		};
 	}
 
@@ -2192,10 +2224,12 @@ function reconcileTaskStates(
 	persistedState: any,
 	aliveSessions: ReadonlySet<string>,
 	doneTaskIds: ReadonlySet<string>,
+	existingWorktrees: ReadonlySet<string> = new Set(),
 ): any[] {
 	return persistedState.tasks.map((task: any) => {
 		const sessionAlive = aliveSessions.has(task.sessionName);
 		const doneFileFound = doneTaskIds.has(task.taskId);
+		const worktreeExists = existingWorktrees.has(task.taskId);
 
 		// Precedence 1: .DONE file found → task completed
 		if (doneFileFound) {
@@ -2205,6 +2239,7 @@ function reconcileTaskStates(
 				liveStatus: "succeeded",
 				sessionAlive,
 				doneFileFound: true,
+				worktreeExists,
 				action: "mark-complete",
 			};
 		}
@@ -2217,6 +2252,7 @@ function reconcileTaskStates(
 				liveStatus: "running",
 				sessionAlive: true,
 				doneFileFound: false,
+				worktreeExists,
 				action: "reconnect",
 			};
 		}
@@ -2230,17 +2266,32 @@ function reconcileTaskStates(
 				liveStatus: task.status,
 				sessionAlive: false,
 				doneFileFound: false,
+				worktreeExists,
 				action: "skip",
 			};
 		}
 
-		// Precedence 4: Dead session + not terminal + no .DONE → failed
+		// Precedence 4: Session dead + no .DONE + worktree exists → re-execute
+		if (worktreeExists) {
+			return {
+				taskId: task.taskId,
+				persistedStatus: task.status,
+				liveStatus: "pending",
+				sessionAlive: false,
+				doneFileFound: false,
+				worktreeExists: true,
+				action: "re-execute",
+			};
+		}
+
+		// Precedence 5: Dead session + not terminal + no .DONE + no worktree → failed
 		return {
 			taskId: task.taskId,
 			persistedStatus: task.status,
 			liveStatus: "failed",
 			sessionAlive: false,
 			doneFileFound: false,
+			worktreeExists: false,
 			action: "mark-failed",
 		};
 	});
@@ -2335,6 +2386,7 @@ function computeResumePoint(
 	const pendingTaskIds: string[] = [];
 	const failedTaskIds: string[] = [];
 	const reconnectTaskIds: string[] = [];
+	const reExecuteTaskIds: string[] = [];
 
 	for (const task of reconciledTasks) {
 		switch (task.action) {
@@ -2345,9 +2397,13 @@ function computeResumePoint(
 				} else if (task.liveStatus === "failed" || task.liveStatus === "stalled" || task.persistedStatus === "failed" || task.persistedStatus === "stalled") {
 					failedTaskIds.push(task.taskId);
 				}
+				// skipped tasks from original run don't count as completed or failed
 				break;
 			case "reconnect":
 				reconnectTaskIds.push(task.taskId);
+				break;
+			case "re-execute":
+				reExecuteTaskIds.push(task.taskId);
 				break;
 			case "mark-failed":
 				failedTaskIds.push(task.taskId);
@@ -2361,6 +2417,7 @@ function computeResumePoint(
 		const allDone = waveTasks.every((taskId: string) => {
 			const reconciled = reconciledMap.get(taskId);
 			if (!reconciled) return false;
+			// A task is "done" for wave-skip purposes if it completed or failed terminally
 			return (
 				reconciled.action === "mark-complete" ||
 				(reconciled.action === "skip" && (
@@ -2380,18 +2437,25 @@ function computeResumePoint(
 		}
 	}
 
+	// Determine pending tasks: tasks in resume wave and later that need execution
 	const actualPendingTaskIds: string[] = [];
 	for (let i = resumeWaveIndex; i < persistedState.wavePlan.length; i++) {
 		for (const taskId of persistedState.wavePlan[i]) {
 			const reconciled = reconciledMap.get(taskId);
 			if (!reconciled) {
-				actualPendingTaskIds.push(taskId);
+				actualPendingTaskIds.push(taskId); // Unknown task — treat as pending
 				continue;
 			}
-			if (reconciled.action === "reconnect" || reconciled.action === "mark-failed") {
+			if (reconciled.action === "reconnect") {
+				// Tasks with alive sessions need reconnection and remain pending.
+				actualPendingTaskIds.push(taskId);
+			}
+			if (reconciled.action === "re-execute") {
+				// Tasks with existing worktrees need re-execution and remain pending.
 				actualPendingTaskIds.push(taskId);
 			}
 			if (reconciled.action === "skip" && reconciled.persistedStatus === "pending") {
+				// Skipped tasks that were pending need execution
 				actualPendingTaskIds.push(taskId);
 			}
 		}
@@ -2403,6 +2467,7 @@ function computeResumePoint(
 		pendingTaskIds: actualPendingTaskIds,
 		failedTaskIds,
 		reconnectTaskIds,
+		reExecuteTaskIds,
 	};
 }
 
@@ -2421,7 +2486,9 @@ function computeResumePoint(
 	const point = computeResumePoint(state, reconciled);
 	assertEqual(point.resumeWaveIndex, 1, "resumes from wave 1");
 	assertEqual(point.completedTaskIds.length, 2, "2 tasks completed");
-	assert(point.pendingTaskIds.includes("T3"), "T3 is pending (mark-failed since dead+no DONE)");
+	// T3: pending status + dead session + no .DONE + no worktree → mark-failed → failedTaskIds
+	// (mark-failed tasks are NOT counted as pending in actualPendingTaskIds per source)
+	assert(point.failedTaskIds.includes("T3"), "T3 is failed (mark-failed: dead session + no DONE + no worktree)");
 }
 
 {
