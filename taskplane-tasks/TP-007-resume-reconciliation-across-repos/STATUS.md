@@ -1,6 +1,6 @@
 # TP-007: Resume Reconciliation and Continuation Across Repos — Status
 
-**Current Step:** Step 1: Compute repo-aware resume point
+**Current Step:** Step 2: Execute resumed waves safely
 ​**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
@@ -53,7 +53,7 @@
 ---
 
 ### Step 1: Compute repo-aware resume point
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 **Decision table — reconciled action → continuation outcome:**
 
@@ -141,6 +141,10 @@
 |-----------|-------------|----------|
 | resume.ts already had repo-aware patterns for all 4 critical areas (reconnect, re-execute, worktree reset, cleanup) from prior TP-005/TP-006 work | Verified + added test coverage | extensions/taskplane/resume.ts |
 | engine.ts inter-wave worktree reset and terminal cleanup use single repoRoot (same gap as pre-fix resume.ts) — needs separate fix | Tech debt logged | extensions/taskplane/engine.ts:474,669 |
+| `computeResumePoint` missing `"skipped"` in wave-skip terminal condition — pre-existing gap (waves with only skipped tasks would not be skipped over) | Fixed | extensions/taskplane/resume.ts:339 |
+| `computeResumePoint` missing `"pending"` reconciliation action for never-started tasks (pending + no session) — all such tasks were incorrectly mark-failed | Fixed + added action type | extensions/taskplane/resume.ts:241, types.ts:1438 |
+| Reconciled failures did not seed `blockedTaskIds` before wave loop (dependents of reconciled mark-failed tasks could execute under skip-dependents) | Fixed: added `computeTransitiveDependents` call in section 9b | extensions/taskplane/resume.ts:833 |
+| `mark-failed` treated as terminal for wave-skip (semantic change: waves with all-failed tasks now skipped, reducing no-op loop iterations) | Intentional change + updated 15+ test expectations | extensions/taskplane/resume.ts:341 |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -163,6 +167,8 @@
 | 2026-03-15 22:09 | Step 1 started | Compute repo-aware resume point |
 | 2026-03-15 22:12 | Review R003 | plan Step 1: UNKNOWN |
 | 2026-03-15 22:13 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 22:38 | Worker iter 2 | done in 1530s, ctx: 72%, tools: 191 |
+| 2026-03-15 22:40 | Step 1 completed | computeResumePoint: mark-failed terminal, pending action, blocked seeding, skipped semantics; 8 new tests; 290/290 passing |
 
 ## Blockers
 
