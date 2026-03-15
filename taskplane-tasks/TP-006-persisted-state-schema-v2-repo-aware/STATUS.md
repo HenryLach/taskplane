@@ -1,7 +1,7 @@
 # TP-006: Persisted State Schema v2 with Repo-Aware Records — Status
 
 **Current Step:** Step 2: Handle schema v1 compatibility
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 3
 **Review Counter:** 5
@@ -189,15 +189,18 @@
 - `validatePersistedState()` — accepts v1 (isV1 flag), validates v2-specific fields only on v2, calls upconvert at end
 - `loadBatchState()` — reads file, parses JSON, validates (with upconvert), returns in-memory v2 object; no write-back
 
-**Regression tests added (section 1.4 in test file):**
-1. `loadBatchState` with v1 fixture → verifies schemaVersion=2, mode="repo", baseBranch="", all records preserved
+**Regression tests added (sections 7.1–7.3 in test file):**
+1. `loadBatchState` with v1 fixture → verifies schemaVersion=2, mode="repo", baseBranch="", all 3 task/2 lane records preserved, repo fields undefined
 2. v1 file NOT rewritten on load → byte-level comparison of on-disk content before/after `loadBatchState`
-3. `loadBatchState` with v2 repo-mode fixture → verifies all fields preserved, no repo fields in repo mode
-4. `loadBatchState` with v2 workspace-mode fixture → verifies repo-aware fields on tasks and lanes
-5. `loadBatchState` rejects unsupported schema version (batch-state-wrong-version.json) → STATE_SCHEMA_INVALID
-6. `loadBatchState` rejects malformed JSON → STATE_FILE_PARSE_ERROR
-7. `loadBatchState` rejects v2 state missing required mode field → STATE_SCHEMA_INVALID
-8. v1 → save → load round-trip: loads v1 (in-memory v2), saves back, verifies on-disk is v2, reloads and verifies
+3. v1 load → explicit save writes v2 on disk (schemaVersion=2, mode="repo", baseBranch="")
+4. `loadBatchState` with v2 repo-mode fixture → verifies all fields preserved, no spurious repo fields in repo mode
+5. `loadBatchState` with v2 workspace-mode fixture → verifies repo-aware fields on tasks (repoId, resolvedRepoId) and lanes
+6. `loadBatchState` rejects unsupported schema version 99 (batch-state-wrong-version.json) → STATE_SCHEMA_INVALID with actionable message
+7. `loadBatchState` rejects schema version 0 → STATE_SCHEMA_INVALID
+8. `loadBatchState` rejects schema version 3 → STATE_SCHEMA_INVALID
+9. `loadBatchState` rejects malformed JSON → STATE_FILE_PARSE_ERROR
+10. `loadBatchState` rejects v2 state missing required mode field → STATE_SCHEMA_INVALID
+11. v1 upconverted state usable in full resume pipeline: loadBatchState → checkResumeEligibility → reconcileTaskStates → computeResumePoint → analyzeOrchestratorStartupState
 
 **Test results: 207 tests passing (11 test files, 0 failures)**
 
@@ -252,6 +255,8 @@
 | 2026-03-15 18:40 | Step 2 impl | 8 regression tests added in section 1.4, all 207 tests passing |
 | 2026-03-15 18:40 | Step 2 complete | Handle schema v1 compatibility |
 | 2026-03-15 18:35 | Review R005 | plan Step 2: REVISE |
+| 2026-03-15 18:39 | Worker iter 3 | done in 288s, ctx: 43%, tools: 29 |
+| 2026-03-15 18:41 | Step 2 impl (iter 3) | Added 11 regression tests in sections 7.1–7.3: v1 load path, no-rewrite, v2 repo/workspace load, version guardrails (v0/v3/v99), malformed JSON, v2 missing mode, v1 resume pipeline. 207 tests passing. |
 
 ## Blockers
 
