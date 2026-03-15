@@ -81,11 +81,30 @@ Typical worktree directory:
 - `subdirectory` mode: `.worktrees/<prefix>-<N>`
 - `sibling` mode: `../<prefix>-<N>`
 
+### Repo-scoped worktrees (workspace mode)
+
+When workspace mode is active, worktrees are created per repo group.
+Each repo group's lanes are provisioned against that repo's root directory
+with its resolved base branch. The base branch resolution follows a
+fallback chain: per-repo config override → detected repo HEAD → batch-level
+base branch.
+
+If worktree creation fails for any repo group, all previously-created
+worktrees across all repos are rolled back (atomic wave provisioning).
+
+Lane identifiers include the repo context:
+
+| Identifier | Repo mode | Workspace mode |
+|------------|-----------|----------------|
+| `laneId` | `lane-{N}` | `{repoId}/lane-{N}` |
+| `tmuxSessionName` | `{prefix}-lane-{N}` | `{prefix}-{repoId}-lane-{N}` |
+
 Why this matters:
 
 - no file write conflicts between parallel workers
 - independent git history per lane
 - safer recovery and post-failure inspection
+- each repo maintains its own worktree/branch lifecycle
 
 ---
 
