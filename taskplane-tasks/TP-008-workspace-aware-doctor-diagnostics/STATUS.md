@@ -1,11 +1,11 @@
 # TP-008: Workspace-Aware Doctor Diagnostics and Validation — Status
 
-**Current Step:** Step 1: Validate repo and routing topology
-**Status:** ✅ Complete
+**Current Step:** Step 3: Testing & Verification
+**Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 3
-**Iteration:** 2
+**Review Counter:** 4
+**Iteration:** 3
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -108,10 +108,33 @@ For area routing errors:
 ---
 
 ### Step 2: Improve operator guidance
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Emit actionable remediation hints for missing repos/mappings
-- [ ] Keep existing repo-mode doctor output unchanged
+#### Diagnostics → Hint coverage table
+All workspace-mode failures must include: (a) error code on the status line, (b) `→` remediation hint on the next line with specific file/key reference.
+
+| Diagnostic | Code | Remediation hint |
+|-----------|------|-------------------|
+| Workspace config invalid (all schema errors) | varies per error | `→ Fix .pi/taskplane-workspace.yaml or remove it to use repo mode` |
+| Repo path not found | `WORKSPACE_REPO_PATH_NOT_FOUND` | `→ Check repos.<id>.path in .pi/taskplane-workspace.yaml` |
+| Repo not a git repo | `WORKSPACE_REPO_NOT_GIT` | `→ Run: git init <path> or fix repos.<id>.path in .pi/taskplane-workspace.yaml` |
+| Area repo_id unknown | `AREA_REPO_ID_UNKNOWN` | `→ Available repos: <sorted list>. Fix repo_id in .pi/task-runner.yaml` |
+| Task area path missing | (no code — common check) | `→ Run: mkdir -p <path>` |
+| Config file missing (required) | (no code — common check) | `→ Run: taskplane init` |
+
+#### R004 false-positive fix (repo_id trim alignment)
+Align `discoverTaskAreaMetadata()` with orchestrator `config.ts:93` behavior: only store `repo_id` when the trimmed value is non-empty (truthy). This prevents whitespace-only `repo_id: " "` from producing a spurious `AREA_REPO_ID_UNKNOWN` failure.
+
+#### Repo-mode regression guard
+Repo mode output must remain unchanged. Verification: run `node bin/taskplane.mjs doctor` without `.pi/taskplane-workspace.yaml` and confirm common checks are byte-identical.
+
+#### Implementation checklist
+- [x] Fix `discoverTaskAreaMetadata()` to skip empty/whitespace-only `repo_id` values (R004)
+- [x] Sort `knownRepoIds` in area `repo_id` hint for deterministic output
+- [x] Add `→ Run: taskplane init` hint for missing required config files
+- [x] Standardize `WORKSPACE_REPO_NOT_GIT` hint to include both `git init` and config fix options
+- [x] Verify repo-mode output is unchanged (no visible changes when no workspace config exists)
+- [x] Verify all workspace-mode failure hints match coverage table
 
 ---
 
@@ -144,6 +167,9 @@ For area routing errors:
 | R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -176,6 +202,19 @@ For area routing errors:
 | 2026-03-15 | Step 1 verified | All 6 verification scenarios passed, repo mode baseline unchanged, all workspace/routing tests pass |
 | 2026-03-15 | Step 1 complete | Validate repo and routing topology |
 | 2026-03-15 08:29 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 08:33 | Worker iter 2 | done in 338s, ctx: 29%, tools: 47 |
+| 2026-03-15 08:34 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 08:34 | Step 1 complete | Validate repo and routing topology |
+| 2026-03-15 08:34 | Step 2 started | Improve operator guidance |
+| 2026-03-15 08:35 | Worker iter 2 | done in 371s, ctx: 26%, tools: 51 |
+| 2026-03-15 08:35 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 | Step 2 plan hydrated | Diagnostics coverage table, R004 fix scope, repo-mode regression guard, implementation checklist |
+| 2026-03-15 | Step 2 implemented | R004 false-positive fix, sorted knownRepoIds, config file missing hint, WORKSPACE_REPO_NOT_GIT improved hint |
+| 2026-03-15 | Step 2 verified | Repo-mode baseline confirmed (common checks unchanged when all pass), workspace-mode hints match coverage table, whitespace repo_id ignored |
+| 2026-03-15 | Step 2 complete | Improve operator guidance |
+| 2026-03-15 08:38 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 08:38 | Step 1 complete | Validate repo and routing topology |
+| 2026-03-15 08:38 | Step 2 started | Improve operator guidance |
 
 ## Blockers
 

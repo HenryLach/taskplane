@@ -337,9 +337,12 @@ function discoverTaskAreaMetadata(projectRoot) {
 		}
 
 		// Extract repo_id per area (workspace mode routing validation)
+		// Only store when trimmed value is non-empty — aligns with orchestrator
+		// config.ts behavior which ignores empty/whitespace repo_id values.
 		const repoIdMatch = line.match(/^\s{4}repo_id:\s*["']?([^"'\n#]+)["']?\s*(?:#.*)?$/);
-		if (repoIdMatch?.[1] && currentAreaName) {
-			areaRepoIds[currentAreaName] = repoIdMatch[1].trim();
+		const repoIdValue = repoIdMatch?.[1]?.trim();
+		if (repoIdValue && currentAreaName) {
+			areaRepoIds[currentAreaName] = repoIdValue;
 		}
 	}
 
@@ -1083,7 +1086,8 @@ function cmdDoctor() {
 				console.log(`  ${OK} repo: ${repoId} ${c.dim}(${resolvedPath})${c.reset}`);
 			} catch {
 				console.log(`  ${FAIL} repo: ${repoId} — not a git repository: ${resolvedPath} [WORKSPACE_REPO_NOT_GIT]`);
-				console.log(`     ${c.dim}→ Initialize git in the directory or fix repos.${repoId}.path${c.reset}`);
+				console.log(`     ${c.dim}→ Run: git init ${resolvedPath}${c.reset}`);
+				console.log(`     ${c.dim}  or fix repos.${repoId}.path in .pi/taskplane-workspace.yaml${c.reset}`);
 				issues++;
 			}
 		}
@@ -1105,16 +1109,21 @@ function cmdDoctor() {
 		configFiles.push({ path: ".pi/taskplane-workspace.yaml", required: true });
 	}
 
+	let missingRequiredConfigs = 0;
 	for (const { path: relPath, required } of configFiles) {
 		const exists = fs.existsSync(path.join(projectRoot, relPath));
 		if (exists) {
 			console.log(`  ${OK} ${relPath} exists`);
 		} else if (required) {
 			console.log(`  ${FAIL} ${relPath} missing`);
+			missingRequiredConfigs++;
 			issues++;
 		} else {
 			console.log(`  ${WARN} ${relPath} missing ${c.dim}(optional)${c.reset}`);
 		}
+	}
+	if (missingRequiredConfigs > 0) {
+		console.log(`     ${c.dim}→ Run: taskplane init${c.reset}`);
 	}
 
 	// Check task areas from config
@@ -1143,7 +1152,7 @@ function cmdDoctor() {
 
 	// Validate area repo_id routing targets (workspace mode + valid config only)
 	if (isWorkspaceMode && wsResult.config && Object.keys(areaRepoIds).length > 0) {
-		const knownRepoIds = Object.keys(wsResult.config.repos);
+		const knownRepoIds = Object.keys(wsResult.config.repos).sort();
 		const areaNames = Object.keys(areaRepoIds).sort();
 		for (const areaName of areaNames) {
 			const repoId = areaRepoIds[areaName];
