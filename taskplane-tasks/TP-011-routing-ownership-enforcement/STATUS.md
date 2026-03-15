@@ -68,7 +68,7 @@
 - [x] Add test 26.1 in `discovery-routing.test.ts`: repo-mode `runDiscovery` with strict-like task areas still skips routing
 - [x] Add tests 27.1–27.5 in `discovery-routing.test.ts`: governance scenarios (strict+unknown, permissive+default, mixed pipeline, strict blocks area fallback, permissive allows area fallback)
 - [x] Verify all existing governance tests pass (19.x–27.x, 1.15–1.20)
-- [x] Run full test suite: 99/99 discovery-routing, 46/46 workspace-config
+- [x] Run full test suite: 145/145 (discovery-routing + workspace-config); pre-existing failures only in unrelated modules
 
 ---
 
@@ -153,6 +153,7 @@
 | 2026-03-15 | Step 2 implemented | Added 5 governance tests (27.1–27.5): strict+unknown pipeline, permissive+default pipeline, strict mixed pipeline, strict blocks area fallback, permissive allows area fallback |
 | 2026-03-15 | Step 2 verified | 99/99 discovery-routing tests pass, 46/46 workspace-config tests pass |
 | 2026-03-15 | Step 2 complete | Cover governance scenarios (incremental coverage) |
+| 2026-03-15 15:58 | Worker iter 3 | done in 242s, ctx: 29%, tools: 38 |
 
 ## Blockers
 
