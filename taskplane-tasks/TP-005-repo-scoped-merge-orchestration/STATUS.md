@@ -30,6 +30,9 @@
 - [x] Add unit tests: mono-repo no-regression (single group, same behavior)
 - [x] Add unit tests: deterministic failure aggregation across repos
 - [x] Fix messages.ts misleading "into develop" text
+- [x] R002 fix: propagate `repoId` on `MergeLaneResult` in both success and error paths
+- [x] R002 fix: aggregate status uses lane-level evidence (not repo-level) to fix all-partial misclassification
+- [x] R002 fix: add status rollup edge case tests and repoId propagation tests (10 new assertions)
 
 ---
 
@@ -99,6 +102,9 @@
 | 2026-03-15 17:04 | Step 0 implemented | groupLanesByRepo + mergeWaveByRepo, engine/resume updated, tests pass (216/216) |
 | 2026-03-15 17:04 | Worker iter 1 | done in 672s, ctx: 46%, tools: 84 |
 | 2026-03-15 17:09 | Review R002 | code Step 0: REVISE |
+| 2026-03-15 17:12 | Worker iter 1 | done in 1233s, ctx: 72%, tools: 132 |
+| 2026-03-15 17:12 | R002 fixes committed | repoId propagation, status rollup, tests (d08694e) |
+| 2026-03-15 17:13 | Step 0 re-verified | All 207 tests pass (40 merge-repo-scoped assertions) |
 
 ## Blockers
 
