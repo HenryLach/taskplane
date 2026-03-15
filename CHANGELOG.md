@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- No unreleased changes yet.
+
+## [0.1.14] - 2026-03-15
+
 ### Fixed
 - `taskplane doctor` now parses task-area `context:` paths only from the `task_areas` block, preventing false-positive CONTEXT warnings from unrelated YAML sections.
 
@@ -56,7 +61,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.1.13...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.1.14...HEAD
+[0.1.14]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.14
 [0.1.13]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.13
 [0.1.12]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.12
 [0.1.11]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.11
