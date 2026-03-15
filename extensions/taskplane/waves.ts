@@ -6,8 +6,9 @@ import { join } from "path";
 
 import { parseDependencyReference } from "./discovery.ts";
 import { AllocationError, getTaskDurationMinutes } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, AllocateLanesResult, AllocationErrorCode, DependencyGraph, DiscoveryError, GraphValidationResult, LaneAssignment, OrchestratorConfig, ParsedTask, WaveAssignment, WaveComputationResult, WorktreeInfo } from "./types.ts";
-import { ensureLaneWorktrees, removeAllWorktrees } from "./worktree.ts";
+import type { AllocatedLane, AllocatedTask, AllocateLanesResult, AllocationErrorCode, DependencyGraph, DiscoveryError, GraphValidationResult, LaneAssignment, OrchestratorConfig, ParsedTask, WaveAssignment, WaveComputationResult, WorkspaceConfig, WorktreeInfo } from "./types.ts";
+import { getCurrentBranch } from "./git.ts";
+import { ensureLaneWorktrees, removeAllWorktrees, removeWorktree } from "./worktree.ts";
 
 // ── Dependency Graph Construction ────────────────────────────────────
 
@@ -507,6 +508,83 @@ export function generateTmuxSessionName(tmuxPrefix: string, laneLocalNumber: num
 }
 
 
+// ── Repo-Scoped Worktree Resolution ─────────────────────────────────
+
+/**
+ * Resolve the repo root path for a given repo group.
+ *
+ * - Repo mode (repoId undefined): returns the passed `defaultRepoRoot`.
+ * - Workspace mode (repoId set): looks up `workspaceConfig.repos.get(repoId).path`.
+ *   Falls back to `defaultRepoRoot` if repoId is not found in config (defensive).
+ *
+ * @param repoId          - Repo identifier (undefined in repo mode)
+ * @param defaultRepoRoot - Default repo root (the single repoRoot in repo mode)
+ * @param workspaceConfig - Workspace configuration (null in repo mode)
+ * @returns Absolute path to the repo root for this group
+ */
+export function resolveRepoRoot(
+	repoId: string | undefined,
+	defaultRepoRoot: string,
+	workspaceConfig?: WorkspaceConfig | null,
+): string {
+	if (!repoId || !workspaceConfig) {
+		return defaultRepoRoot;
+	}
+	const repoConfig = workspaceConfig.repos.get(repoId);
+	if (!repoConfig) {
+		// Defensive fallback — discovery/routing should have caught this
+		return defaultRepoRoot;
+	}
+	return repoConfig.path;
+}
+
+/**
+ * Resolve the base branch for worktree creation in a given repo.
+ *
+ * Fallback chain (first non-empty wins):
+ * 1. `WorkspaceRepoConfig.defaultBranch` — explicit per-repo override from workspace config
+ * 2. Detected current branch via `getCurrentBranch(repoRoot)` — runtime detection
+ * 3. `batchBaseBranch` — the branch captured at batch start (ultimate fallback)
+ *
+ * In repo mode (repoId undefined), step 1 is skipped and step 2 uses
+ * the same repo root as the batch, so the result is equivalent to
+ * `batchBaseBranch` (which was itself detected from that repo).
+ *
+ * @param repoId          - Repo identifier (undefined in repo mode)
+ * @param repoRoot        - Absolute path to this repo's root
+ * @param batchBaseBranch - The base branch captured at batch start
+ * @param workspaceConfig - Workspace configuration (null in repo mode)
+ * @returns Branch name to base worktrees on for this repo
+ */
+export function resolveBaseBranch(
+	repoId: string | undefined,
+	repoRoot: string,
+	batchBaseBranch: string,
+	workspaceConfig?: WorkspaceConfig | null,
+): string {
+	// Step 1: Per-repo default branch from workspace config
+	if (repoId && workspaceConfig) {
+		const repoConfig = workspaceConfig.repos.get(repoId);
+		if (repoConfig?.defaultBranch) {
+			return repoConfig.defaultBranch;
+		}
+	}
+
+	// Step 2: Detect current branch of this specific repo
+	// In repo mode this is the same repo as the batch, so it's equivalent to batchBaseBranch.
+	// In workspace mode this detects the actual HEAD of each repo independently.
+	if (repoId) {
+		const detected = getCurrentBranch(repoRoot);
+		if (detected) {
+			return detected;
+		}
+	}
+
+	// Step 3: Ultimate fallback — batch-level base branch
+	return batchBaseBranch;
+}
+
+
 // ── Lane Assignment ──────────────────────────────────────────────────
 
 /**
@@ -769,13 +847,14 @@ export function validateAllocationInputs(
  * Repo group order is sorted alphabetically by repoId. Lane assignment within
  * each group uses the configured strategy deterministically.
  *
- * @param waveTasks - Task IDs in this wave (from topological sort)
- * @param pending   - Full pending task map (from discovery)
- * @param config    - Orchestrator configuration
- * @param repoRoot  - Absolute path to the main repository root
- * @param batchId   - Batch ID for branch/session naming (e.g., "20260308T111750")
- * @param baseBranch - Branch to base worktrees on (captured at batch start)
- * @returns         - AllocateLanesResult with success flag and lane details
+ * @param waveTasks       - Task IDs in this wave (from topological sort)
+ * @param pending         - Full pending task map (from discovery)
+ * @param config          - Orchestrator configuration
+ * @param repoRoot        - Absolute path to the main/default repository root
+ * @param batchId         - Batch ID for branch/session naming (e.g., "20260308T111750")
+ * @param baseBranch      - Branch to base worktrees on (captured at batch start)
+ * @param workspaceConfig - Workspace configuration for repo routing (null/undefined = repo mode)
+ * @returns               - AllocateLanesResult with success flag and lane details
  */
 export function allocateLanes(
 	waveTasks: string[],
@@ -784,6 +863,7 @@ export function allocateLanes(
 	repoRoot: string,
 	batchId: string,
 	baseBranch: string,
+	workspaceConfig?: WorkspaceConfig | null,
 ): AllocateLanesResult {
 	// ── Stage 0: Input validation ────────────────────────────────
 	const validationError = validateAllocationInputs(waveTasks, pending, config);
@@ -876,33 +956,96 @@ export function allocateLanes(
 		};
 	}
 
-	// ── Stage 3: Ensure lane worktrees exist (reuse across waves + create missing) ─
-	const sortedGlobalLaneNumbers = globalLaneEntries.map((e) => e.globalLane);
-	const worktreeResult = ensureLaneWorktrees(sortedGlobalLaneNumbers, batchId, config, repoRoot, baseBranch);
+	// ── Stage 3: Ensure lane worktrees exist per repo group ──────
+	// In repo mode: all lanes use the single repoRoot/baseBranch (unchanged).
+	// In workspace mode: each repo group's lanes are created against that
+	// repo's root with its resolved base branch. Cross-repo rollback on
+	// partial failure ensures atomic wave provisioning.
+	//
+	// Group globalLaneEntries by repoId for per-repo worktree provisioning.
+	const repoLaneGroups = new Map<string, number[]>(); // key → global lane numbers
+	const repoIdForGroup = new Map<string, string | undefined>(); // key → repoId
+	for (const entry of globalLaneEntries) {
+		const key = entry.repoId ?? "";
+		const existing = repoLaneGroups.get(key) || [];
+		existing.push(entry.globalLane);
+		repoLaneGroups.set(key, existing);
+		repoIdForGroup.set(key, entry.repoId);
+	}
+	const sortedGroupKeys = [...repoLaneGroups.keys()].sort();
 
-	if (!worktreeResult.success) {
-		const failedLanes = worktreeResult.errors
-			.map((e) => `Lane ${e.laneNumber}: [${e.code}] ${e.message}`)
-			.join("\n");
-		const rollbackIssues = worktreeResult.rollbackErrors.length > 0
-			? "\nRollback issues:\n" +
-			  worktreeResult.rollbackErrors
-				.map((e) => `  Lane ${e.laneNumber}: [${e.code}] ${e.message}`)
-				.join("\n")
-			: "";
+	// Track all worktrees created across all repo groups for cross-repo rollback
+	const allWorktrees = new Map<number, WorktreeInfo>(); // global lane → worktree
+	const createdGroupKeys: string[] = []; // groups that succeeded (for rollback tracking)
 
-		return {
-			success: false,
-			lanes: [],
-			laneCount: 0,
-			error: {
-				code: "ALLOC_WORKTREE_FAILED",
-				message: `Failed to create worktrees for ${laneCount} lane(s)`,
-				details: failedLanes + rollbackIssues,
-			},
-			rolledBack: worktreeResult.rolledBack,
+	for (const groupKey of sortedGroupKeys) {
+		const groupLaneNumbers = repoLaneGroups.get(groupKey)!;
+		const groupRepoId = repoIdForGroup.get(groupKey);
+		const groupRepoRoot = resolveRepoRoot(groupRepoId, repoRoot, workspaceConfig);
+		const groupBaseBranch = resolveBaseBranch(groupRepoId, groupRepoRoot, baseBranch, workspaceConfig);
+
+		const worktreeResult = ensureLaneWorktrees(
+			groupLaneNumbers,
 			batchId,
-		};
+			config,
+			groupRepoRoot,
+			groupBaseBranch,
+		);
+
+		if (!worktreeResult.success) {
+			// ── Cross-repo rollback: remove worktrees from all previously-succeeded groups ─
+			const rollbackErrors: string[] = [];
+			for (const prevKey of createdGroupKeys) {
+				const prevRepoId = repoIdForGroup.get(prevKey);
+				const prevRepoRoot = resolveRepoRoot(prevRepoId, repoRoot, workspaceConfig);
+				const prevLanes = repoLaneGroups.get(prevKey)!;
+				for (const lane of prevLanes) {
+					const wt = allWorktrees.get(lane);
+					if (wt) {
+						try {
+							removeWorktree(wt, prevRepoRoot);
+						} catch (rbErr: unknown) {
+							rollbackErrors.push(
+								`Lane ${lane} (repo ${prevRepoId ?? "default"}): ${rbErr instanceof Error ? rbErr.message : String(rbErr)}`,
+							);
+						}
+					}
+				}
+			}
+
+			const failedLanes = worktreeResult.errors
+				.map((e) => `Lane ${e.laneNumber}: [${e.code}] ${e.message}`)
+				.join("\n");
+			const withinGroupRollbackIssues = worktreeResult.rollbackErrors.length > 0
+				? "\nWithin-group rollback issues:\n" +
+				  worktreeResult.rollbackErrors
+					.map((e) => `  Lane ${e.laneNumber}: [${e.code}] ${e.message}`)
+					.join("\n")
+				: "";
+			const crossRepoRollbackIssues = rollbackErrors.length > 0
+				? "\nCross-repo rollback issues:\n" +
+				  rollbackErrors.map((e) => `  ${e}`).join("\n")
+				: "";
+
+			return {
+				success: false,
+				lanes: [],
+				laneCount: 0,
+				error: {
+					code: "ALLOC_WORKTREE_FAILED",
+					message: `Failed to create worktrees for repo "${groupRepoId ?? "default"}" (${groupLaneNumbers.length} lane(s))`,
+					details: failedLanes + withinGroupRollbackIssues + crossRepoRollbackIssues,
+				},
+				rolledBack: true,
+				batchId,
+			};
+		}
+
+		// Record successful worktrees
+		for (const wt of worktreeResult.worktrees) {
+			allWorktrees.set(wt.laneNumber, wt);
+		}
+		createdGroupKeys.push(groupKey);
 	}
 
 	// ── Stage 4: Build AllocatedLane[] from assignments + worktrees ─
@@ -910,21 +1053,19 @@ export function allocateLanes(
 	const strategy = config.assignment.strategy as AllocatedLane["strategy"];
 	const sizeWeights = config.assignment.size_weights;
 
-	// Build a worktree lookup by global lane number
-	const worktreeByLane = new Map<number, WorktreeInfo>();
-	for (const wt of worktreeResult.worktrees) {
-		worktreeByLane.set(wt.laneNumber, wt);
-	}
-
 	const allocatedLanes: AllocatedLane[] = [];
 
 	for (const entry of globalLaneEntries) {
-		const wt = worktreeByLane.get(entry.globalLane);
+		const wt = allWorktrees.get(entry.globalLane);
 		if (!wt) {
 			// This should never happen if ensureLaneWorktrees and assignTasksToLanes
-			// agree on lane numbers, but handle defensively
-			// Roll back all worktrees on this unexpected failure
-			removeAllWorktrees(config.orchestrator.worktree_prefix, repoRoot);
+			// agree on lane numbers, but handle defensively.
+			// Roll back all worktrees across all repos on this unexpected failure.
+			for (const groupKey of createdGroupKeys) {
+				const groupRepoId = repoIdForGroup.get(groupKey);
+				const groupRepoRoot = resolveRepoRoot(groupRepoId, repoRoot, workspaceConfig);
+				removeAllWorktrees(config.orchestrator.worktree_prefix, groupRepoRoot);
+			}
 			return {
 				success: false,
 				lanes: [],
