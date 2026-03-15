@@ -1,0 +1,2 @@
+completed: 2026-03-15
+summary: Resume reconciliation and continuation across repos — repo-aware reconciliation, resume point computation, wave continuation with full repo attribution, metadata preservation, blocked counter stability, v1 backward compatibility

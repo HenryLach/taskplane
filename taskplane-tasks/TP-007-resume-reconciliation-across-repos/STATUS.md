@@ -1,10 +1,10 @@
 # TP-007: Resume Reconciliation and Continuation Across Repos — Status
 
-**Current Step:** Step 3: Testing & Verification
+**Current Step:** Step 4: Documentation & Delivery
 ​**Status:** ✅ Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 6
+**Review Counter:** 9
 **Iteration:** 4
 **Size:** L
 
@@ -167,13 +167,16 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] "Must Update" docs modified
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
-- [ ] `.DONE` created
-- [ ] Archive and push
+- [x] "Must Update" docs modified
+  - `.pi/local/docs/taskplane/polyrepo-support-spec.md`: Added Resume subsection under Section 9 with implementation status, reconciliation details, metadata preservation, counter stability, v1 backward compatibility, guarantees, and limitations. Updated Phase 2 milestone and spec version to v0.4.
+- [x] "Check If Affected" docs reviewed
+  - `docs/explanation/persistence-and-resume.md`: Updated resume algorithm to include `pending` action, blocked-task seeding, and terminal wave skipping. Added workspace mode (polyrepo) resume subsection. Updated state file description with repo fields (mode, repo ID, repo attribution, repo-grouped merge summaries).
+- [x] Discoveries logged
+  - 11 discoveries logged in STATUS.md (all from Steps 0-2)
+- [x] `.DONE` created
+- [x] Archive and push (orchestrated — .DONE only, no archive)
 
 ---
 
@@ -191,6 +194,11 @@
 | R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
 | R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | UNKNOWN | .reviews/R008-code-step3.md |
+| R008 | code | Step 3 | UNKNOWN | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | UNKNOWN | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | UNKNOWN | .reviews/R009-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -254,6 +262,18 @@
 | 2026-03-15 23:08 | Review R006 | code Step 2: UNKNOWN |
 | 2026-03-15 23:08 | Step 2 complete | Execute resumed waves safely |
 | 2026-03-15 23:08 | Step 3 started | Testing & Verification |
+| 2026-03-15 23:10 | Worker iter 4 | done in 156s, ctx: 10%, tools: 19 |
+| 2026-03-15 23:11 | Review R007 | plan Step 3: UNKNOWN |
+| 2026-03-15 23:12 | Review R008 | code Step 3: UNKNOWN |
+| 2026-03-15 23:12 | Step 3 complete | Testing & Verification |
+| 2026-03-15 23:12 | Step 4 started | Documentation & Delivery |
+| 2026-03-15 23:14 | Review R008 | code Step 3: UNKNOWN |
+| 2026-03-15 23:14 | Step 3 complete | Testing & Verification |
+| 2026-03-15 23:14 | Step 4 started | Documentation & Delivery |
+| 2026-03-15 23:14 | Review R009 | plan Step 4: UNKNOWN |
+| 2026-03-15 23:15 | Review R009 | plan Step 4: UNKNOWN |
+| 2026-03-15 23:16 | Step 4 docs | Updated polyrepo-support-spec.md (Resume subsection + Phase 2 milestone) and persistence-and-resume.md (workspace mode resume, repo fields, algorithm updates) |
+| 2026-03-15 23:16 | Step 4 complete | Documentation & Delivery — all docs updated, .DONE created |
 
 ## Blockers
 

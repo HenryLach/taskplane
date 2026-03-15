@@ -19,11 +19,11 @@ Canonical persisted orchestration state.
 Contains (high level):
 
 - schema version (`schemaVersion`)
-- batch metadata (`batchId`, phase, timestamps)
+- batch metadata (`batchId`, phase, timestamps, mode)
 - wave plan and current wave index
-- per-lane records (session/worktree/branch/task IDs)
-- per-task records (status, folder, session, timings, done marker)
-- merge summaries
+- per-lane records (session/worktree/branch/task IDs, repo ID)
+- per-task records (status, folder, session, timings, done marker, repo attribution)
+- merge summaries (grouped by repo in workspace mode)
 - aggregate counters and error history
 
 ### Lane sidecars (`.pi/lane-state-*.json`)
@@ -90,9 +90,26 @@ Non-resumable phases (for example `failed`, `stopped`, `completed`) require clea
    - re-execute
    - mark failed
    - skip terminal
-6. Compute first incomplete wave
-7. Reconstruct runtime counters/state
-8. Continue execution from resume wave
+   - pending (never started)
+6. Compute first incomplete wave (skipping waves where all tasks are terminal)
+7. Reconstruct runtime counters/state (including blocked-task accounting)
+8. Seed blocked task set from reconciled failures and their transitive dependents
+9. Continue execution from resume wave
+
+### Workspace mode (polyrepo)
+
+In workspace mode, resume reconciliation is repo-aware:
+
+- Each persisted lane and task record carries a `repoId` identifying its target repo
+- Repo roots are resolved at resume time from workspace config (not stored as absolute paths, keeping state portable)
+- Reconciliation actions (reconnect, re-execute, worktree reset, cleanup) use per-lane repo roots
+- Cross-repo dependency propagation: a failure in one repo correctly blocks dependents in another repo
+- Lane metadata and task repo attribution are preserved across resume checkpoints
+
+Backward compatibility:
+
+- State files from before workspace mode (schema v1, no repo fields) resume identically to existing behavior
+- Missing repo fields default to `undefined` and fall through to single-repo semantics
 
 ---
 
