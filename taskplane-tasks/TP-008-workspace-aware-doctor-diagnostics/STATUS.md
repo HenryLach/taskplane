@@ -110,6 +110,7 @@ In workspace mode, the workspace root (`cwd`) is intentionally non-git. The exis
 | 2026-03-15 | Step 0 plan hydrated | Addressed R001 findings: mode detection behavior, check matrix, non-git rule, verification plan |
 | 2026-03-15 | Step 0 implemented | loadWorkspaceConfigForDoctor + parseWorkspaceYaml added, cmdDoctor workspace branch, all 3 verification scenarios passed |
 | 2026-03-15 | Step 0 complete | All implementation and verification items checked off |
+| 2026-03-15 08:22 | Worker iter 1 | done in 749s, ctx: 40%, tools: 86 |
 
 ## Blockers
 
