@@ -202,6 +202,7 @@ Current protection baseline for `main`:
 - Conversation resolution required
 - Required approvals: `0` (solo-maintainer baseline; may increase as maintainership expands)
 
+Contributor note: maintainer-only operating policies (Dependabot merge cadence, release timing, emergency bypass rules) are documented in [docs/maintainers/repository-governance.md](docs/maintainers/repository-governance.md).
 ### Commit Message Convention
 
 ```

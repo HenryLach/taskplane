@@ -178,6 +178,40 @@ gh label create "status:ready" --color "0E8A16" --description "Ready for impleme
 
 ---
 
+## Solo-Maintainer Operating Policy (Current)
+
+This section captures practical defaults for a single primary maintainer.
+
+### Draft PR usage
+
+- Open a Draft PR early for larger changes to surface CI quickly.
+- Convert to "Ready for review" when scope is stable and docs/tests are updated.
+
+### Dependabot handling
+
+- Prioritize GitHub Actions and dev dependency bumps with green CI.
+- Merge patch/minor updates after CI passes and no suspicious changelog notes.
+- For major updates, keep as regular PRs and do a quick local smoke check before merge.
+- Rebase/update Dependabot branches if they become behind `main` before merging.
+
+### Release timing
+
+- Batch low-risk dependency/docs/chore changes together when possible.
+- Release from `main` after:
+  - CI is green
+  - changelog is updated for user-visible behavior changes
+  - quick install smoke check is successful
+
+### Emergency bypass rule
+
+- Admin bypass is allowed only for urgent production/security remediation.
+- After any bypassed merge, immediately open a follow-up issue documenting:
+  - what was bypassed
+  - why bypass was necessary
+  - what guardrail should prevent recurrence
+
+---
+
 ## Ongoing Maintainer Cadence (suggested)
 
 Weekly:
