@@ -1,10 +1,10 @@
 # TP-010: Team-Scale Session and Worktree Naming Hardening — Status
 
-**Current Step:** Step 1: Apply naming contract consistently
-​**Status:** ✅ Complete
+**Current Step:** Step 2: Validate collision resistance
+**Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 3
+**Review Counter:** 5
 **Iteration:** 3
 **Size:** M
 
@@ -54,10 +54,26 @@
 ---
 
 ### Step 2: Validate collision resistance
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Add tests/smoke scenarios for concurrent runs in shared environments
-- [ ] Confirm naming remains human-readable for debugging and lane-agent-style supervision views
+#### 2a — Collision test matrix (new test file: `naming-collision.test.ts`)
+- [x] Same operator + same tmux_prefix + different repos: TMUX sessions must differ (repo slug differentiates)
+- [x] Different operators + same repo + same prefix: TMUX sessions, worktree paths, branch names, merge sessions must differ
+- [x] Concurrent batches (same operator, different batchIds, overlapping lane numbers): branches and merge sidecars must differ
+- [x] Same operator + same repo + workspace mode: sessions include repoId, no cross-repo collision
+- [x] opId fallback ("op") combined with legacy worktree patterns: listWorktrees discovers both
+
+#### 2b — Ownership-safe consumer validation (extend `naming-collision.test.ts`)
+- [x] `parseOrchSessionNames()` with mixed-operator session list: prefix-only filtering returns ALL operators' sessions (expected behavior)
+- [x] `listOrchSessions()` prefix filtering: verify all sessions matching prefix returned regardless of opId (batch-state enrichment distinguishes ownership)
+- [x] Sidecar cleanup (`engine.ts` cleanup logic): verify prefix-based cleanup deletes all operators' sidecars (document as known cross-operator behavior in discoveries)
+- [x] `/orch-abort` session kill: verify prefix-based kill hits all sessions (document as intended team behavior)
+
+#### 2c — Human-readability validation (extend `naming-collision.test.ts`)
+- [x] TMUX session names ≤ 64 chars for worst-case component lengths
+- [x] Branch names ≤ 100 chars for worst-case
+- [x] Generated names contain all expected tokens in correct order (snapshot assertions)
+- [x] `/orch-sessions` display format: verify session names are parseable and supervision-friendly (token order: prefix → opId → [repoId] → lane-N)
 
 ---
 
@@ -90,11 +106,18 @@
 | R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Sidecar cleanup (engine.ts) and /orch-abort use prefix-only matching, affecting ALL operators' files/sessions. This is intended: state lock serializes access, abort is a hard-stop escape hatch. | Accepted (by design) | engine.ts:651-655, extension.ts:475 |
+| sanitizeNameComponent collapses dots/underscores to hyphens, so `john.doe` and `john-doe` resolve to same opId. Operators with names differing only in special chars may collide. | Accepted (document in config reference) | naming.ts:34 |
+| Truncation to 12 chars can cause opId collision for long names sharing a prefix (e.g. `ci-runner-team-alpha` vs `ci-runner-team-beta` both → `ci-runner-te`). | Accepted (recommend unique 12-char prefixes in CI) | naming.ts:73 |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -119,6 +142,16 @@
 | 2026-03-15 19:26 | Worker iter 2 | done in 1077s, ctx: 81%, tools: 122 |
 | 2026-03-15 19:27 | Worker iter 3 | done in 24s, ctx: 6%, tools: 4 |
 | 2026-03-15 19:31 | Step 1 iter 2 | Updated remaining test files (waves-repo-scoped, worktree-lifecycle) for opId. All 207+54+160 tests passing. |
+| 2026-03-15 19:28 | Worker iter 2 | done in 1073s, ctx: 81%, tools: 162 |
+| 2026-03-15 19:34 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 19:34 | Step 1 complete | Apply naming contract consistently |
+| 2026-03-15 19:34 | Step 2 started | Validate collision resistance |
+| 2026-03-15 19:35 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-15 19:35 | Step 1 complete | Apply naming contract consistently |
+| 2026-03-15 19:35 | Step 2 started | Validate collision resistance |
+| 2026-03-15 19:37 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 19:37 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-15 19:41 | Step 2 iter 4 | Hydrated Step 2 per R005 review. Created naming-collision.test.ts with 48 tests covering collision matrix (2a), ownership-safe consumers (2b), human-readability (2c), and sanitization edge cases (2d). All 255 tests passing. |
 
 ## Blockers
 
