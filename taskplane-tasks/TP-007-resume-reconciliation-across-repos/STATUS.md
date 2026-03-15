@@ -274,6 +274,7 @@
 | 2026-03-15 23:15 | Review R009 | plan Step 4: UNKNOWN |
 | 2026-03-15 23:16 | Step 4 docs | Updated polyrepo-support-spec.md (Resume subsection + Phase 2 milestone) and persistence-and-resume.md (workspace mode resume, repo fields, algorithm updates) |
 | 2026-03-15 23:16 | Step 4 complete | Documentation & Delivery — all docs updated, .DONE created |
+| 2026-03-15 23:17 | Worker iter 4 | error (code 3221225786) in 120s, ctx: 13%, tools: 20 |
 
 ## Blockers
 

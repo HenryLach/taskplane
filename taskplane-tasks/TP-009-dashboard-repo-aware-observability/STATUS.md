@@ -1,11 +1,11 @@
 # TP-009: Dashboard Repo-Aware Lanes, Tasks, and Merge Panels — Status
 
-**Current Step:** Step 1: Implement repo-aware UI
+**Current Step:** Step 2: Preserve existing UX guarantees
 ​**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -41,10 +41,41 @@
 ---
 
 ### Step 1: Implement repo-aware UI
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add repo labels and filters in dashboard frontend
-- [ ] Group merge outcomes by repo for clear partial-result visibility
+**Repo derivation rules:**
+- Lane label: `lane.repoId` (with fallback: omit label when undefined)
+- Task label: prefer `task.resolvedRepoId`, fallback to `task.repoId`, fallback to owning lane's `repoId`
+- Merge grouping: `mergeResult.repoResults[]` (array of `PersistedRepoMergeOutcome`)
+- Repo filter set: union of all known repoIds from lanes + tasks + merge repoResults; sorted lexicographically; include "All repos" default
+
+**Filter semantics:**
+- "All repos" is the default — shows everything (identical to current view)
+- Filter affects lanes/tasks/merge panels consistently
+- Summary bar and footer remain global (not filtered) — always show full batch progress
+- When selected repo disappears in next SSE payload, revert to "All repos"
+
+**Merge rendering contract:**
+- Per wave: show overall merge status (existing behavior)
+- If `repoResults` present and length >= 2: render repo-grouped sub-rows beneath the wave row
+- If `repoResults` absent or length < 2: retain existing single-row behavior
+
+**Mode gating:**
+- Repo filter UI only shown when `batch.mode === "workspace"` AND there are 2+ distinct repos
+- In repo mode (default/v1 state), no repo labels or filter clutter — existing rendering unchanged
+
+**Step 1 verification matrix:**
+- Workspace mode (>=2 repos): repo badges on lanes/tasks, filter dropdown, grouped merge outcomes
+- Repo mode / older state files: no extra repo clutter; existing rendering fully intact
+- Conversation/STATUS.md viewer still opens and updates normally (no changes to viewer)
+- `formatting.ts` (TUI) is explicitly out of scope for Step 1
+
+**Implementation outcomes:**
+- [x] Add repo filter controls to `index.html` and filter styles to `style.css`
+- [x] Implement repo-aware label rendering in `renderLanesTasks()` gated by mode/availability
+- [x] Implement merge panel per-repo grouping in `renderMergeAgents()` with backward-compatible fallback
+- [x] Implement repo filter logic: build repo set, filter lanes/tasks/merge, handle disappearing repos
+- [x] Gate all repo UI by mode + repo count so monorepo views remain unchanged
 
 ---
 
@@ -82,6 +113,9 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -108,6 +142,13 @@
 | 2026-03-15 23:26 | Review R002 | code Step 0: UNKNOWN |
 | 2026-03-15 23:26 | Step 0 complete | Extend dashboard data model |
 | 2026-03-15 23:26 | Step 1 started | Implement repo-aware UI |
+| 2026-03-15 23:27 | Worker iter 1 | done in 418s, ctx: 50%, tools: 55 |
+| 2026-03-15 23:28 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-16 | Step 1 impl | Hydrated plan per R003 review. Implemented repo filter (index.html, style.css), repo badges on lanes/tasks (app.js renderLanesTasks), per-repo merge sub-rows (app.js renderMergeAgents), filter logic with disappearing-repo handling. All gated by mode=workspace + 2+ repos. 290/290 tests pass. |
+| 2026-03-15 23:30 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 23:30 | Step 0 complete | Extend dashboard data model |
+| 2026-03-15 23:30 | Step 1 started | Implement repo-aware UI |
+| 2026-03-15 23:31 | Review R003 | plan Step 1: UNKNOWN |
 
 ## Blockers
 

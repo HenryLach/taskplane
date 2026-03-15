@@ -940,6 +940,69 @@ body {
   .progress-bar-bg { width: 160px; }
 }
 
+/* ─── Repo Filter & Badges ─────────────────────────────────────────────── */
+
+.repo-filter-select {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  padding: 3px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  max-width: 220px;
+}
+.repo-filter-select:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.repo-filter-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.repo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: rgba(188,140,255,0.12);
+  color: var(--magenta);
+  white-space: nowrap;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repo-badge-lane {
+  margin-left: 8px;
+}
+
+.repo-badge-task {
+  margin-left: 4px;
+}
+
+/* Merge repo sub-rows */
+.merge-repo-row td {
+  padding: 4px 12px 4px 28px !important;
+  font-size: 0.78rem !important;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.merge-repo-row td:first-child {
+  padding-left: 28px !important;
+}
+
+.merge-repo-row:last-child td {
+  border-bottom: none;
+}
+
 /* ─── Scrollbar ────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar { width: 6px; }

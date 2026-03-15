@@ -137,6 +137,13 @@ const $historySelect  = $("history-select");
 const $historyPanel   = $("history-panel");
 const $historyBody    = $("history-body");
 
+// ─── Repo Filter State ──────────────────────────────────────────────────────
+
+const $repoFilter = $("repo-filter");
+let selectedRepo = "";       // "" means "All repos"
+let knownRepos = [];         // sorted list of known repo IDs
+let repoFilterVisible = false;
+
 // ─── History State ──────────────────────────────────────────────────────────
 
 let historyList = [];  // compact batch summaries
@@ -146,6 +153,97 @@ let viewingHistoryId = null; // batchId if viewing history, null if live
 
 let viewerMode = null;   // "conversation" | "status-md" | null
 let viewerTarget = null; // session name (conversation) or taskId (status-md)
+
+// ─── Repo Helpers ───────────────────────────────────────────────────────────
+
+/**
+ * Build a sorted, deduplicated list of repo IDs from the batch payload.
+ * Returns empty array when mode !== "workspace" or when fewer than 2 repos.
+ */
+function buildRepoSet(batch) {
+  if (!batch || batch.mode !== "workspace") return [];
+
+  const repos = new Set();
+  for (const lane of (batch.lanes || [])) {
+    if (lane.repoId) repos.add(lane.repoId);
+  }
+  for (const task of (batch.tasks || [])) {
+    const rid = task.resolvedRepoId || task.repoId;
+    if (rid) repos.add(rid);
+  }
+  for (const mr of (batch.mergeResults || [])) {
+    for (const rr of (mr.repoResults || [])) {
+      if (rr.repoId) repos.add(rr.repoId);
+    }
+  }
+  const sorted = Array.from(repos).sort();
+  return sorted.length >= 2 ? sorted : [];
+}
+
+/**
+ * Update the repo filter dropdown options and visibility.
+ * Resets selection to "All repos" if the previously selected repo disappeared.
+ */
+function updateRepoFilter(repos) {
+  knownRepos = repos;
+  const shouldShow = repos.length >= 2;
+
+  if (shouldShow !== repoFilterVisible) {
+    $repoFilter.style.display = shouldShow ? "" : "none";
+    repoFilterVisible = shouldShow;
+  }
+
+  if (!shouldShow) {
+    selectedRepo = "";
+    return;
+  }
+
+  // If selected repo disappeared, reset to "All"
+  if (selectedRepo && !repos.includes(selectedRepo)) {
+    selectedRepo = "";
+  }
+
+  // Rebuild options only if repo set changed
+  const currentOpts = Array.from($repoFilter.options).slice(1).map(o => o.value);
+  const changed = currentOpts.length !== repos.length || currentOpts.some((v, i) => v !== repos[i]);
+  if (changed) {
+    // Preserve selection
+    const prev = selectedRepo;
+    $repoFilter.innerHTML = '<option value="">All repos</option>';
+    for (const r of repos) {
+      const opt = document.createElement("option");
+      opt.value = r;
+      opt.textContent = r;
+      $repoFilter.appendChild(opt);
+    }
+    $repoFilter.value = prev;
+  }
+}
+
+/** Get the effective repo ID for a task (prefer resolvedRepoId, fallback repoId). */
+function taskRepoId(task) {
+  return task.resolvedRepoId || task.repoId || undefined;
+}
+
+/** Render a repo badge span. Returns "" if repoId is falsy or repos not active. */
+function repoBadgeHtml(repoId, extraClass) {
+  if (!repoId || knownRepos.length < 2) return "";
+  return `<span class="repo-badge ${extraClass || ""}" title="Repo: ${escapeHtml(repoId)}">${escapeHtml(repoId)}</span>`;
+}
+
+// Repo filter change handler
+$repoFilter.addEventListener("change", (e) => {
+  selectedRepo = e.target.value;
+  // Re-render with current data
+  if (currentData) {
+    const batch = currentData.batch;
+    const tmux = currentData.tmuxSessions || [];
+    if (batch) {
+      renderLanesTasks(batch, tmux);
+      renderMergeAgents(batch, tmux);
+    }
+  }
+});
 
 // ─── Render: Header ─────────────────────────────────────────────────────────
 
@@ -288,9 +386,18 @@ function renderLanesTasks(batch, tmuxSessions) {
   const tasks = batch.tasks || [];
   const tmuxSet = new Set(tmuxSessions || []);
   const laneStates = currentData?.laneStates || {};
+  const showRepos = knownRepos.length >= 2;
   let html = "";
 
   for (const lane of batch.lanes) {
+    // Repo filtering: if a repo is selected, skip lanes that don't match
+    if (selectedRepo && showRepos) {
+      const laneTasks = (lane.taskIds || []).map(tid => tasks.find(t => t.taskId === tid)).filter(Boolean);
+      const laneMatchesRepo = (lane.repoId === selectedRepo) ||
+        laneTasks.some(t => (taskRepoId(t) || lane.repoId) === selectedRepo);
+      if (!laneMatchesRepo) continue;
+    }
+
     const alive = tmuxSet.has(lane.tmuxSessionName);
     const tmuxCmd = `tmux attach -t ${lane.tmuxSessionName}`;
 
@@ -301,6 +408,9 @@ function renderLanesTasks(batch, tmuxSessions) {
     html += `  <div class="lane-meta">`;
     html += `    <span class="lane-session">${escapeHtml(lane.tmuxSessionName || "—")}</span>`;
     html += `    <span class="lane-branch">${escapeHtml(lane.branch || "—")}</span>`;
+    if (showRepos && lane.repoId) {
+      html += `    ${repoBadgeHtml(lane.repoId, "repo-badge-lane")}`;
+    }
     html += `  </div>`;
     html += `  <div class="lane-right">`;
     html += `    <span class="tmux-dot ${alive ? "alive" : "dead"}" title="${alive ? "tmux alive" : "tmux dead"}"></span>`;
@@ -326,6 +436,10 @@ function renderLanesTasks(batch, tmuxSessions) {
     const ls = laneStates[lane.tmuxSessionName] || null;
 
     for (const task of laneTasks) {
+      // Repo filtering at task level
+      const tRepo = taskRepoId(task) || lane.repoId;
+      if (selectedRepo && showRepos && tRepo !== selectedRepo) continue;
+
       const sd = task.statusData;
       const dur = task.startedAt
         ? formatDuration((task.endedAt || Date.now()) - task.startedAt)
@@ -402,7 +516,7 @@ function renderLanesTasks(batch, tmuxSessions) {
         <div class="task-row">
           <span class="task-icon"><span class="status-dot ${task.status}"></span></span>
           <span class="task-actions">${eyeHtml}</span>
-          <span class="task-id status-${task.status}">${escapeHtml(task.taskId)}</span>
+          <span class="task-id status-${task.status}">${escapeHtml(task.taskId)}${showRepos ? repoBadgeHtml(tRepo, "repo-badge-task") : ""}</span>
           <span><span class="status-badge status-${task.status}"><span class="status-dot ${task.status}"></span> ${task.status}</span></span>
           <span class="task-duration">${dur}</span>
           <span>${progressHtml}</span>
@@ -421,6 +535,7 @@ function renderLanesTasks(batch, tmuxSessions) {
 function renderMergeAgents(batch, tmuxSessions) {
   const mergeResults = batch?.mergeResults || [];
   const tmuxSet = new Set(tmuxSessions || []);
+  const showRepos = knownRepos.length >= 2;
 
   // Check for active merge sessions (convention: orch-merge-*)
   const mergeSessions = (tmuxSessions || []).filter(s => s.startsWith("orch-merge"));
@@ -436,6 +551,14 @@ function renderMergeAgents(batch, tmuxSessions) {
 
   // Show merge results
   for (const mr of mergeResults) {
+    // Repo filtering: if a repo is selected and this merge has repoResults,
+    // check if the selected repo is among them
+    const repoResults = mr.repoResults || [];
+    if (selectedRepo && showRepos && repoResults.length >= 2) {
+      const hasSelectedRepo = repoResults.some(rr => rr.repoId === selectedRepo);
+      if (!hasSelectedRepo) continue;
+    }
+
     const statusCls = mr.status === "succeeded" ? "status-succeeded"
       : mr.status === "partial" ? "status-stalled"
       : "status-failed";
@@ -458,6 +581,29 @@ function renderMergeAgents(batch, tmuxSessions) {
     html += `</td>`;
     html += `<td style="font-size:0.8rem;color:var(--text-muted);">${mr.failureReason ? escapeHtml(mr.failureReason) : "—"}</td>`;
     html += `</tr>`;
+
+    // Per-repo sub-rows: only when repoResults has 2+ entries (workspace mode)
+    if (showRepos && repoResults.length >= 2) {
+      const displayRepos = selectedRepo
+        ? repoResults.filter(rr => rr.repoId === selectedRepo)
+        : repoResults;
+
+      for (const rr of displayRepos) {
+        const rrStatusCls = rr.status === "succeeded" ? "status-succeeded"
+          : rr.status === "partial" ? "status-stalled"
+          : "status-failed";
+        const rrLanes = (rr.laneNumbers || []).map(n => `L${n}`).join(", ") || "—";
+        const rrDetail = rr.failureReason ? escapeHtml(rr.failureReason) : "—";
+
+        html += `<tr class="merge-repo-row">`;
+        html += `<td>${repoBadgeHtml(rr.repoId)}</td>`;
+        html += `<td><span class="status-badge ${rrStatusCls}">${rr.status}</span></td>`;
+        html += `<td style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-faint);">${rrLanes}</td>`;
+        html += `<td></td>`;
+        html += `<td style="font-size:0.75rem;color:var(--text-faint);">${rrDetail}</td>`;
+        html += `</tr>`;
+      }
+    }
   }
 
   // Show active merge sessions not yet in results
@@ -503,6 +649,9 @@ let noBatchRendered = false;
 function renderNoBatch() {
   if (noBatchRendered) return;
   noBatchRendered = true;
+
+  // Hide repo filter when no batch
+  updateRepoFilter([]);
 
   // Hide live panels, show history panel
   const $lanesPanel = document.getElementById("lanes-tasks-panel");
@@ -570,6 +719,11 @@ function render(data) {
 
   renderHeader(batch);
   renderSummary(batch);
+
+  // Update repo filter based on current batch data
+  const repos = buildRepoSet(batch);
+  updateRepoFilter(repos);
+
   renderLanesTasks(batch, tmux);
   renderMergeAgents(batch, tmux);
   renderErrors(batch);
