@@ -198,7 +198,7 @@ Merge policy:
 Current protection baseline for `main`:
 
 - PR required before merge
-- CI required (`CI / ci`)
+- CI required (`ci`)
 - Conversation resolution required
 - Required approvals: `0` (solo-maintainer baseline; may increase as maintainership expands)
 
