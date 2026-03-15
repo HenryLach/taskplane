@@ -39,7 +39,7 @@
 ---
 
 ### Step 1: Update outcome modeling
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 **Contract:** Step 0 already added `repoId` on `MergeLaneResult`, `RepoMergeOutcome` type, and `repoResults` on `MergeWaveResult`. Step 1 adds explicit partial-success summary reporting when repos diverge in merge outcome.
 
@@ -97,6 +97,7 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | APPROVE | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -129,11 +130,18 @@
 | 2026-03-15 17:14 | Step 1 started | Update outcome modeling |
 | 2026-03-15 17:16 | Review R002 | code Step 0: REVISE |
 | 2026-03-15 17:16 | Review R003 | plan Step 1: REVISE |
+| 2026-03-15 17:20 | Step 1 hydrated | Plan expanded per R003 findings |
+| 2026-03-15 17:21 | Step 1 impl | formatRepoMergeSummary + orchMergePartialRepoSummary in messages.ts |
+| 2026-03-15 17:21 | Step 1 impl | Wired partial-summary emission in engine.ts + resume.ts (parity) |
+| 2026-03-15 17:21 | Step 1 tests | 8 new assertions for repo-divergence summaries |
+| 2026-03-15 17:21 | Step 1 verified | All 207 tests pass (11 files) |
+| 2026-03-15 17:21 | Step 1 committed | db6e5a1 |
 | 2026-03-15 17:19 | R002 iter2 fixes | anyRepoFailed flag + 4 setup-failure tests (f5ae458) |
 | 2026-03-15 17:19 | Step 0 re-verified | All 207 tests pass (44 merge-repo-scoped assertions) |
 | 2026-03-15 17:21 | Worker iter 1 | done in 277s, ctx: 24%, tools: 31 |
 | 2026-03-15 17:21 | Step 0 complete | Partition merge flow by repo |
 | 2026-03-15 17:21 | Step 1 started | Update outcome modeling |
+| 2026-03-15 17:22 | Review R003 | plan Step 1: APPROVE |
 
 ## Blockers
 
