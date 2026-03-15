@@ -124,13 +124,25 @@
 
 **Duplicated per-repo root collection:**
 - Replace inline loops at inter-wave reset and terminal cleanup with `collectRepoRoots()` helper.
+- Added `collectAllRepoRoots()` helper for merging repo roots from multiple sources (persisted + newly allocated lanes).
+- Added `encounteredRepoRoots` tracking set: seeded from persisted lanes via `collectRepoRoots()`, augmented in `onLanesAllocated` callback.
+- Inter-wave reset and terminal cleanup now use `encounteredRepoRoots` instead of only `persistedState.lanes`, covering repos introduced by resumed waves.
+
+**Repo-root coverage contract (deterministic precedence):**
+| Operation | Root source | Covers new repos? |
+|---|---|---|
+| Reconnect/re-execute | `resolveRepoRoot(laneRecord.repoId, ...)` | N/A (uses persisted lane) |
+| Wave allocation | `executeWave(..., workspaceConfig)` → allocateLanes | Yes (internal) |
+| Inter-wave reset | `encounteredRepoRoots` (persisted + wave-allocated) | ✅ Yes |
+| Terminal cleanup | `encounteredRepoRoots` (persisted + wave-allocated) | ✅ Yes |
 
 - [x] Reconstruct `AllocatedLane[]` from persisted lanes + discovery at resume init to preserve lane/task metadata across checkpoints
 - [x] Carry forward task repo attribution (`repoId`, `resolvedRepoId`, `taskFolder`) from persisted task records for non-pending tasks
 - [x] Fix blocked counter: count persisted-blocked-but-never-wave-entered tasks at resume init
 - [x] Fix re-exec merge indexing: use sentinel value and clamp persistence normalization
-- [x] Replace duplicated per-repo root loops with `collectRepoRoots()` helper
-- [x] Add tests: checkpoint round-trip, blocked counter pause/resume, re-exec merge persistence, metadata preservation
+- [x] Replace duplicated per-repo root loops with `encounteredRepoRoots` tracking set + `collectAllRepoRoots()` helper
+- [x] Augment `encounteredRepoRoots` in `onLanesAllocated` callback to cover repos from new waves
+- [x] Add tests: checkpoint round-trip, blocked counter pause/resume, re-exec merge persistence, metadata preservation, collectAllRepoRoots, reconstructAllocatedLanes (740 total assertions, 0 failures)
 
 ---
 
@@ -181,6 +193,7 @@
 | Resume checkpoints lost lane/task repo attribution when `latestAllocatedLanes` was empty | Fixed: `reconstructAllocatedLanes(lanes, tasks)` carries repo fields from persisted task records | extensions/taskplane/resume.ts:74,915 |
 | Blocked counter undercounted: persisted-blocked tasks in unvisited waves never counted | Fixed: count persisted-blocked IDs in waves >= resumeWaveIndex at resume init | extensions/taskplane/resume.ts:597 |
 | Resume inter-wave/cleanup loops duplicated `collectRepoRoots()` logic inline | Fixed: replaced with `collectRepoRoots()` helper call | extensions/taskplane/resume.ts:920 |
+| Inter-wave reset and terminal cleanup only used `persistedState.lanes` for repo root collection — repos introduced by resumed waves would be missed | Fixed: `encounteredRepoRoots` set seeded from persisted + augmented per wave | extensions/taskplane/resume.ts:1068,1281,1309 |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -216,6 +229,8 @@
 | 2026-03-15 22:51 | Review R005 | plan Step 2: UNKNOWN |
 | 2026-03-15 23:01 | Step 2 impl | Fixed 5 issues: re-exec merge indexing, blocked counter gap, repo attribution carry-forward, collectRepoRoots helper usage, reconstructAllocatedLanes with persistedTasks |
 | 2026-03-15 23:01 | Tests passing | 290/290 tests pass across 12 test files; 7 new Step 2 tests added |
+| 2026-03-15 23:02 | Worker iter 3 | done in 665s, ctx: 58%, tools: 75 |
+| 2026-03-15 23:05 | Step 2 impl (iter 3) | Fixed inter-wave/cleanup repo root gap with encounteredRepoRoots tracking; added collectAllRepoRoots helper; 10 new Step 2 tests; 740 total assertions; all 290 vitest tests pass |
 
 ## Blockers
 
