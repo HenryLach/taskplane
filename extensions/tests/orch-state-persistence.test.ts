@@ -2474,7 +2474,20 @@ function reconcileTaskStates(
 			};
 		}
 
-		// Precedence 5: Dead session + not terminal + no .DONE + no worktree → failed
+		// Precedence 5: Never-started task (pending + no session assigned) → remain pending
+		if (task.status === "pending" && !task.sessionName) {
+			return {
+				taskId: task.taskId,
+				persistedStatus: task.status,
+				liveStatus: "pending",
+				sessionAlive: false,
+				doneFileFound: false,
+				worktreeExists: false,
+				action: "pending",
+			};
+		}
+
+		// Precedence 6: Dead session + not terminal + no .DONE + no worktree → failed
 		return {
 			taskId: task.taskId,
 			persistedStatus: task.status,
@@ -2581,13 +2594,16 @@ function computeResumePoint(
 	for (const task of reconciledTasks) {
 		switch (task.action) {
 			case "mark-complete":
+				completedTaskIds.push(task.taskId);
+				break;
 			case "skip":
 				if (task.liveStatus === "succeeded" || task.persistedStatus === "succeeded") {
 					completedTaskIds.push(task.taskId);
 				} else if (task.liveStatus === "failed" || task.liveStatus === "stalled" || task.persistedStatus === "failed" || task.persistedStatus === "stalled") {
 					failedTaskIds.push(task.taskId);
 				}
-				// skipped tasks from original run don't count as completed or failed
+				// persistedStatus === "skipped" → terminal but neither completed nor failed.
+				// Not re-queued. Counted separately via batchState.skippedTasks (carried from persisted state).
 				break;
 			case "reconnect":
 				reconnectTaskIds.push(task.taskId);
@@ -2598,6 +2614,10 @@ function computeResumePoint(
 			case "mark-failed":
 				failedTaskIds.push(task.taskId);
 				break;
+			case "pending":
+				// Never-started tasks remain pending for execution — not failed.
+				pendingTaskIds.push(task.taskId);
+				break;
 		}
 	}
 
@@ -2607,16 +2627,19 @@ function computeResumePoint(
 		const allDone = waveTasks.every((taskId: string) => {
 			const reconciled = reconciledMap.get(taskId);
 			if (!reconciled) return false;
-			// A task is "done" for wave-skip purposes if it completed or failed terminally
+			// A task is "done" for wave-skip purposes if it completed or is otherwise terminal.
+			// mark-failed is intentionally NOT included here.
 			return (
 				reconciled.action === "mark-complete" ||
 				(reconciled.action === "skip" && (
 					reconciled.liveStatus === "succeeded" ||
 					reconciled.liveStatus === "failed" ||
 					reconciled.liveStatus === "stalled" ||
+					reconciled.liveStatus === "skipped" ||
 					reconciled.persistedStatus === "succeeded" ||
 					reconciled.persistedStatus === "failed" ||
-					reconciled.persistedStatus === "stalled"
+					reconciled.persistedStatus === "stalled" ||
+					reconciled.persistedStatus === "skipped"
 				))
 			);
 		});
@@ -2648,6 +2671,10 @@ function computeResumePoint(
 				// Skipped tasks that were pending need execution
 				actualPendingTaskIds.push(taskId);
 			}
+			if (reconciled.action === "pending") {
+				// Never-started tasks from future waves need execution
+				actualPendingTaskIds.push(taskId);
+			}
 		}
 	}
 
@@ -2662,13 +2689,14 @@ function computeResumePoint(
 }
 
 {
-	console.log("  ▸ all tasks in wave 0 done → resumeWaveIndex=1");
+	console.log("  ▸ all tasks in wave 0 done → resumeWaveIndex=1, future-wave pending task remains pending");
 	const state = minimalPersistedState({
 		wavePlan: [["T1", "T2"], ["T3"]],
 		tasks: [
 			makeTaskRecord({ taskId: "T1", status: "succeeded" }),
 			makeTaskRecord({ taskId: "T2", status: "succeeded" }),
-			makeTaskRecord({ taskId: "T3", status: "pending" }),
+			// T3 is a future-wave task that was never allocated (no session name)
+			makeTaskRecord({ taskId: "T3", status: "pending", sessionName: "" }),
 		],
 	});
 	// All in wave 0 are succeeded → skip action
@@ -2676,9 +2704,29 @@ function computeResumePoint(
 	const point = computeResumePoint(state, reconciled);
 	assertEqual(point.resumeWaveIndex, 1, "resumes from wave 1");
 	assertEqual(point.completedTaskIds.length, 2, "2 tasks completed");
-	// T3: pending status + dead session + no .DONE + no worktree → mark-failed → failedTaskIds
-	// (mark-failed tasks are NOT counted as pending in actualPendingTaskIds per source)
-	assert(point.failedTaskIds.includes("T3"), "T3 is failed (mark-failed: dead session + no DONE + no worktree)");
+	// T3: pending + no session → "pending" action → pendingTaskIds (not failed)
+	assert(point.pendingTaskIds.includes("T3"), "T3 is pending for execution (never-started future-wave task)");
+	assert(!point.failedTaskIds.includes("T3"), "T3 is NOT failed (it was never started)");
+}
+
+{
+	console.log("  ▸ all tasks in wave 0 done → mark-failed for allocated-but-crashed pending task");
+	const state = minimalPersistedState({
+		wavePlan: [["T1", "T2"], ["T3"]],
+		tasks: [
+			makeTaskRecord({ taskId: "T1", status: "succeeded" }),
+			makeTaskRecord({ taskId: "T2", status: "succeeded" }),
+			// T3 was allocated to a lane (has session name) but still pending — crashed before executing
+			makeTaskRecord({ taskId: "T3", status: "pending", sessionName: "orch-lane-2" }),
+		],
+	});
+	const reconciled = reconcileTaskStates(state, new Set(), new Set());
+	const point = computeResumePoint(state, reconciled);
+	// Wave 0: T1+T2 succeeded (skip→done). Wave 1: T3 mark-failed → NOT done for wave-skip.
+	assertEqual(point.resumeWaveIndex, 1, "resumes from wave 1 (mark-failed NOT done for wave-skip)");
+	// T3: pending status + has session + dead session + no .DONE + no worktree → mark-failed
+	assert(point.failedTaskIds.includes("T3"), "T3 is failed (allocated but crashed, no worktree)");
+	assert(!point.pendingTaskIds.includes("T3"), "T3 is NOT pending (it was allocated and crashed)");
 }
 
 {
@@ -2691,10 +2739,11 @@ function computeResumePoint(
 			makeTaskRecord({ taskId: "T3", status: "pending" }),
 		],
 	});
-	// T1 is succeeded→skip, T2 is running+dead→mark-failed, T3 is pending→mark-failed
+	// T1 is succeeded→skip (terminal), T2 is running+dead→mark-failed (terminal), T3 is pending+has session→mark-failed (terminal)
+	// T1 succeeded (skip→done), T2 running+dead→mark-failed (NOT done), T3 pending+session→mark-failed
 	const reconciled = reconcileTaskStates(state, new Set(), new Set());
 	const point = computeResumePoint(state, reconciled);
-	assertEqual(point.resumeWaveIndex, 0, "resumes from wave 0 (T2 not done)");
+	assertEqual(point.resumeWaveIndex, 0, "resumes from wave 0 (mark-failed NOT done for wave-skip)");
 	assert(point.completedTaskIds.includes("T1"), "T1 completed");
 	assert(point.failedTaskIds.includes("T2"), "T2 failed");
 }
@@ -4037,16 +4086,18 @@ console.log("\n── 7.3: Schema version guardrails ──");
 		const ts002 = reconciled.find((r: any) => r.taskId === "TS-002");
 		assertEqual(ts002!.action, "mark-failed", "v1 resume: TS-002 mark-failed");
 
-		// TS-003: pending + dead session → mark-failed
+		// TS-003: pending + no session → "pending" action (never-started, remains pending for execution)
 		const ts003 = reconciled.find((r: any) => r.taskId === "TS-003");
-		assertEqual(ts003!.action, "mark-failed", "v1 resume: TS-003 mark-failed");
+		assertEqual(ts003!.action, "pending", "v1 resume: TS-003 pending (never-started, no session)");
 
 		// Compute resume point
+		// Wave 0: TS-001 mark-complete (done) + TS-002 mark-failed (NOT done for wave-skip)
 		const resumePoint = computeResumePoint(loaded!, reconciled);
-		assertEqual(resumePoint.resumeWaveIndex, 0, "v1 resume: wave 0 (TS-002 failed in wave 0)");
+		assertEqual(resumePoint.resumeWaveIndex, 0, "v1 resume: wave 0 (TS-002 mark-failed NOT done for wave-skip)");
 		assertEqual(resumePoint.completedTaskIds.length, 1, "v1 resume: 1 completed (TS-001)");
 		assert(resumePoint.completedTaskIds.includes("TS-001"), "v1 resume: TS-001 completed");
-		assertEqual(resumePoint.failedTaskIds.length, 2, "v1 resume: 2 failed (TS-002, TS-003)");
+		assertEqual(resumePoint.failedTaskIds.length, 1, "v1 resume: 1 failed (TS-002 only)");
+		assert(resumePoint.pendingTaskIds.includes("TS-003"), "v1 resume: TS-003 pending for execution");
 
 		// Verify orphan detection with upconverted state
 		const orphanResult = analyzeOrchestratorStartupState(
@@ -4379,13 +4430,10 @@ function collectRepoRoots(
 	const reconciled = reconcileTaskStates(state, new Set(), new Set(["WS-001"]));
 	const point = computeResumePoint(state, reconciled);
 
-	// Wave 0: WS-001 complete, but WS-002 is mark-failed (not "mark-complete" or "skip").
-	// mark-failed tasks are NOT considered "done" for wave-skip purposes — the wave
-	// wasn't fully processed. So resumeWaveIndex stays at 0.
-	assertEqual(point.resumeWaveIndex, 0, "resumes from wave 0 (WS-002 mark-failed is not 'done' for wave skip)");
+	// Wave 0: WS-001 mark-complete (done) + WS-002 mark-failed (NOT done for wave-skip)
+	assertEqual(point.resumeWaveIndex, 0, "resumes from wave 0 (mark-failed NOT done for wave-skip)");
 	assert(point.completedTaskIds.includes("WS-001"), "WS-001 in completed");
 	assert(point.failedTaskIds.includes("WS-002"), "WS-002 in failed");
-	// WS-003 is in wave 1 (beyond resumeWaveIndex=0), not counted yet
 	assert(point.failedTaskIds.includes("WS-003"), "WS-003 in failed (mark-failed: dead session + no DONE + no worktree)");
 }
 
@@ -4539,7 +4587,8 @@ const testWorkspaceConfig = {
 	const point = computeResumePoint(state, reconciled);
 	assert(point.completedTaskIds.includes("WS-001"), "workspace: WS-001 in completed");
 	assert(point.failedTaskIds.includes("WS-002"), "workspace: WS-002 in failed");
-	assertEqual(point.resumeWaveIndex, 0, "workspace: resume from wave 0 (WS-002 failed)");
+	// Wave 0: WS-001 mark-complete (done) + WS-002 mark-failed (NOT done for wave-skip)
+	assertEqual(point.resumeWaveIndex, 0, "workspace: resume from wave 0 (mark-failed NOT done for wave-skip)");
 }
 
 {
@@ -4571,7 +4620,8 @@ const testWorkspaceConfig = {
 	assertEqual(t2!.action, "mark-failed", "v1: T2 mark-failed (dead session)");
 
 	const point = computeResumePoint(v1State, reconciled);
-	assertEqual(point.resumeWaveIndex, 0, "v1: resume from wave 0 (T2 not done)");
+	// Wave 0: T1 skip/succeeded (done) + T2 mark-failed (NOT done for wave-skip)
+	assertEqual(point.resumeWaveIndex, 0, "v1: resume from wave 0 (mark-failed NOT done for wave-skip)");
 	assert(point.completedTaskIds.includes("T1"), "v1: T1 completed");
 	assert(point.failedTaskIds.includes("T2"), "v1: T2 failed");
 
@@ -4767,6 +4817,365 @@ const testWorkspaceConfig = {
 
 	assertEqual(uniqueRoots.size, 1, "empty lanes fallback: 1 root");
 	assert(uniqueRoots.has(defaultRoot), "empty lanes fallback: default root used");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 4.7: Step 1 — Blocked propagation, skipped semantics, counter stability
+// ═══════════════════════════════════════════════════════════════════════
+
+console.log("\n── 4.7: Step 1 — blocked propagation & skipped semantics ──");
+
+// Helper: build a simple dependency graph for testing blocked propagation
+function buildTestDepGraph(
+	deps: Record<string, string[]>,
+): { dependencies: Map<string, string[]>; dependents: Map<string, string[]>; nodes: Set<string> } {
+	const dependencies = new Map<string, string[]>();
+	const dependents = new Map<string, string[]>();
+	const nodes = new Set<string>();
+
+	for (const [taskId, taskDeps] of Object.entries(deps)) {
+		nodes.add(taskId);
+		dependencies.set(taskId, taskDeps);
+		if (!dependents.has(taskId)) dependents.set(taskId, []);
+		for (const dep of taskDeps) {
+			nodes.add(dep);
+			if (!dependencies.has(dep)) dependencies.set(dep, []);
+			if (!dependents.has(dep)) dependents.set(dep, []);
+			dependents.get(dep)!.push(taskId);
+		}
+	}
+
+	return { dependencies, dependents, nodes };
+}
+
+// Reimplement computeTransitiveDependents (mirrors execution.ts exactly)
+function computeTransitiveDependents(
+	failedTaskIds: Set<string>,
+	dependencyGraph: { dependents: Map<string, string[]> },
+): Set<string> {
+	const blocked = new Set<string>();
+	const queue = [...failedTaskIds];
+
+	while (queue.length > 0) {
+		const current = queue.shift()!;
+		const deps = dependencyGraph.dependents.get(current) || [];
+		const sortedDeps = [...deps].sort();
+
+		for (const dep of sortedDeps) {
+			if (blocked.has(dep)) continue;
+			if (failedTaskIds.has(dep)) continue;
+			blocked.add(dep);
+			queue.push(dep);
+		}
+	}
+
+	return blocked;
+}
+
+{
+	console.log("  ▸ reconciled failure in repo A blocks dependent in repo B under skip-dependents");
+	// Scenario: workspace mode, 2 waves
+	// Wave 0: WS-001 (api) fails on reconciliation, WS-002 (frontend) succeeds
+	// Wave 1: WS-003 (api) depends on WS-001, WS-004 (frontend) depends on WS-002
+	// Under skip-dependents: WS-003 should be blocked, WS-004 should still execute
+
+	const depGraph = buildTestDepGraph({
+		"WS-001": [],
+		"WS-002": [],
+		"WS-003": ["WS-001"],  // WS-003 depends on WS-001
+		"WS-004": ["WS-002"],  // WS-004 depends on WS-002
+	});
+
+	const state = minimalPersistedState({
+		mode: "workspace",
+		wavePlan: [["WS-001", "WS-002"], ["WS-003", "WS-004"]],
+		blockedTaskIds: [],
+		lanes: [
+			{
+				laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+				worktreePath: "/tmp/wt-1", branch: "task/lane-1-batch",
+				taskIds: ["WS-001", "WS-003"], repoId: "api",
+			},
+			{
+				laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2",
+				worktreePath: "/tmp/wt-2", branch: "task/lane-2-batch",
+				taskIds: ["WS-002", "WS-004"], repoId: "frontend",
+			},
+		],
+		tasks: [
+			makeTaskRecord({ taskId: "WS-001", laneNumber: 1, sessionName: "orch-lane-1", status: "running", repoId: "api" }),
+			makeTaskRecord({ taskId: "WS-002", laneNumber: 2, sessionName: "orch-lane-2", status: "succeeded", resolvedRepoId: "frontend" }),
+			// Wave 2 tasks: never started (no session assigned) → action: "pending"
+			makeTaskRecord({ taskId: "WS-003", laneNumber: 0, sessionName: "", status: "pending", repoId: "api" }),
+			makeTaskRecord({ taskId: "WS-004", laneNumber: 0, sessionName: "", status: "pending", resolvedRepoId: "frontend" }),
+		],
+	});
+
+	// WS-001: dead session, no .DONE, no worktree → mark-failed
+	// WS-002: .DONE exists → mark-complete
+	// WS-003, WS-004: pending + no session → action: "pending"
+	const reconciled = reconcileTaskStates(state, new Set(), new Set(["WS-002"]));
+
+	const ws001 = reconciled.find((r: any) => r.taskId === "WS-001");
+	const ws002 = reconciled.find((r: any) => r.taskId === "WS-002");
+	const ws003 = reconciled.find((r: any) => r.taskId === "WS-003");
+	const ws004 = reconciled.find((r: any) => r.taskId === "WS-004");
+	assertEqual(ws001!.action, "mark-failed", "cross-repo blocked: WS-001 mark-failed");
+	assertEqual(ws002!.action, "mark-complete", "cross-repo blocked: WS-002 mark-complete");
+	assertEqual(ws003!.action, "pending", "cross-repo blocked: WS-003 pending (never started)");
+	assertEqual(ws004!.action, "pending", "cross-repo blocked: WS-004 pending (never started)");
+
+	const point = computeResumePoint(state, reconciled);
+	assertEqual(point.failedTaskIds.length, 1, "cross-repo blocked: 1 failed (WS-001)");
+	assert(point.failedTaskIds.includes("WS-001"), "cross-repo blocked: WS-001 in failed");
+
+	// Now simulate what resumeOrchBatch does: compute transitive dependents from failures
+	const failedSet = new Set(point.failedTaskIds);
+	const blocked = computeTransitiveDependents(failedSet, depGraph);
+
+	assertEqual(blocked.size, 1, "cross-repo blocked: 1 task blocked (WS-003)");
+	assert(blocked.has("WS-003"), "cross-repo blocked: WS-003 blocked (depends on failed WS-001)");
+	assert(!blocked.has("WS-004"), "cross-repo blocked: WS-004 NOT blocked (WS-002 succeeded)");
+
+	// Verify wave 1 execution filter: WS-003 blocked, WS-004 eligible
+	const blockedTaskIds = new Set<string>([...state.blockedTaskIds, ...blocked]);
+	const completedSet = new Set(point.completedTaskIds);
+	const wave1Tasks = state.wavePlan[1].filter(
+		(taskId: string) => !completedSet.has(taskId) && !failedSet.has(taskId) && !blockedTaskIds.has(taskId),
+	);
+	assertEqual(wave1Tasks.length, 1, "cross-repo blocked: 1 task eligible in wave 1");
+	assertEqual(wave1Tasks[0], "WS-004", "cross-repo blocked: WS-004 is the eligible task");
+}
+
+{
+	console.log("  ▸ persisted skipped tasks are not re-queued and wave is skipped over");
+	const state = minimalPersistedState({
+		wavePlan: [["T1", "T2"], ["T3"]],
+		skippedTasks: 1,
+		tasks: [
+			makeTaskRecord({ taskId: "T1", status: "succeeded" }),
+			makeTaskRecord({ taskId: "T2", status: "skipped" }),
+			// T3 is a future-wave task that was never allocated
+			makeTaskRecord({ taskId: "T3", status: "pending", sessionName: "" }),
+		],
+	});
+
+	const reconciled = reconcileTaskStates(state, new Set(), new Set());
+	// T1: succeeded → skip(succeeded)
+	// T2: skipped → skip(skipped)
+	// T3: pending + no session → action: "pending" (future-wave, not failed)
+
+	const t1 = reconciled.find((r: any) => r.taskId === "T1");
+	const t2 = reconciled.find((r: any) => r.taskId === "T2");
+	assertEqual(t1!.action, "skip", "skipped-wave: T1 skip (succeeded)");
+	assertEqual(t2!.action, "skip", "skipped-wave: T2 skip (skipped)");
+	assertEqual(t2!.persistedStatus, "skipped", "skipped-wave: T2 persisted status is skipped");
+
+	const point = computeResumePoint(state, reconciled);
+
+	// Wave 0 should be skipped: T1 is succeeded (terminal), T2 is skipped (terminal)
+	assertEqual(point.resumeWaveIndex, 1, "skipped-wave: wave 0 skipped (all terminal)");
+
+	// T2 should NOT be in completedTaskIds or failedTaskIds or pendingTaskIds
+	assert(!point.completedTaskIds.includes("T2"), "skipped-wave: T2 not in completed");
+	assert(!point.failedTaskIds.includes("T2"), "skipped-wave: T2 not in failed");
+	assert(!point.pendingTaskIds.includes("T2"), "skipped-wave: T2 not re-queued as pending");
+
+	// T1 should be in completed
+	assert(point.completedTaskIds.includes("T1"), "skipped-wave: T1 in completed");
+}
+
+{
+	console.log("  ▸ wave with only mark-failed tasks is skipped over");
+	const state = minimalPersistedState({
+		wavePlan: [["T1", "T2"], ["T3"]],
+		tasks: [
+			makeTaskRecord({ taskId: "T1", status: "running" }),
+			makeTaskRecord({ taskId: "T2", status: "running" }),
+			makeTaskRecord({ taskId: "T3", status: "pending" }),
+		],
+	});
+
+	// All dead, no .DONE, no worktrees → all mark-failed
+	const reconciled = reconcileTaskStates(state, new Set(), new Set());
+	assertEqual(reconciled[0].action, "mark-failed", "all-failed-wave: T1 mark-failed");
+	assertEqual(reconciled[1].action, "mark-failed", "all-failed-wave: T2 mark-failed");
+	assertEqual(reconciled[2].action, "mark-failed", "all-failed-wave: T3 mark-failed");
+
+	const point = computeResumePoint(state, reconciled);
+	// Wave 0: T1, T2 mark-failed → NOT done for wave-skip → resumeWaveIndex = 0
+	assertEqual(point.resumeWaveIndex, 0, "all-failed-wave: resumes from wave 0 (mark-failed is NOT done for wave-skip)");
+	assertEqual(point.failedTaskIds.length, 3, "all-failed-wave: 3 failed tasks");
+}
+
+{
+	console.log("  ▸ blocked/skipped counter stability across pause/resume cycle");
+	// Simulate: first run had 2 blocked tasks and 1 skipped task, persisted
+	// Resume should carry those counters and add new ones without double-counting
+
+	const state = minimalPersistedState({
+		wavePlan: [["T1", "T2"], ["T3", "T4", "T5"]],
+		blockedTasks: 2,
+		blockedTaskIds: ["T4", "T5"],  // blocked from prior run
+		skippedTasks: 1,
+		tasks: [
+			makeTaskRecord({ taskId: "T1", status: "succeeded" }),
+			makeTaskRecord({ taskId: "T2", status: "failed" }),
+			// Wave 2 tasks: never started (no session assigned)
+			makeTaskRecord({ taskId: "T3", status: "pending", sessionName: "" }),
+			makeTaskRecord({ taskId: "T4", status: "pending", sessionName: "" }),
+			makeTaskRecord({ taskId: "T5", status: "pending", sessionName: "" }),
+		],
+	});
+
+	const reconciled = reconcileTaskStates(state, new Set(), new Set());
+	const point = computeResumePoint(state, reconciled);
+
+	// Wave 0: T1 succeeded (skip, terminal), T2 failed (skip, terminal) → wave 0 skipped
+	// Wave 1: T3, T4, T5 are pending (no session → action: "pending", NOT terminal) → resume here
+	assertEqual(point.resumeWaveIndex, 1, "counter-stability: wave 0 skipped");
+	assertEqual(point.completedTaskIds.length, 1, "counter-stability: 1 completed (T1)");
+	assertEqual(point.failedTaskIds.length, 1, "counter-stability: 1 failed (T2)");
+
+	// Simulate runtime state reconstruction (mirrors resumeOrchBatch step 6)
+	const succeededTasks = point.completedTaskIds.length;  // 1
+	const failedTasks = point.failedTaskIds.length;         // 1
+	const skippedTasks = state.skippedTasks;                // 1 (carried)
+	const blockedTasks = state.blockedTasks;                // 2 (carried)
+	const blockedTaskIds = new Set<string>(state.blockedTaskIds);  // {T4, T5}
+
+	// T2 is failed (from persisted state). Compute new blocked dependents:
+	const depGraph = buildTestDepGraph({
+		"T1": [],
+		"T2": [],
+		"T3": ["T2"],
+		"T4": ["T1"],
+		"T5": ["T3"],
+	});
+
+	const failedSet = new Set(point.failedTaskIds);
+	// T2 failed → T3 depends on T2 → blocked. T5 depends on T3 → transitively blocked.
+	const newBlocked = computeTransitiveDependents(failedSet, depGraph);
+
+	for (const taskId of newBlocked) {
+		blockedTaskIds.add(taskId);
+	}
+
+	// T3 depends on T2 (failed) → T3 blocked
+	// T5 depends on T3 (now blocked) → T5 also blocked via transitive closure
+	// T4 depends on T1 (succeeded) → T4 NOT newly blocked
+	assert(blockedTaskIds.has("T3"), "counter-stability: T3 newly blocked (depends on failed T2)");
+	assert(blockedTaskIds.has("T5"), "counter-stability: T5 still blocked (transitive via T3)");
+	assert(blockedTaskIds.has("T4"), "counter-stability: T4 still blocked (carried from persisted)");
+
+	// In wave 1, count blocked tasks in that wave
+	const wave1BlockedCount = state.wavePlan[1].filter(
+		(taskId: string) => blockedTaskIds.has(taskId),
+	).length;
+	assertEqual(wave1BlockedCount, 3, "counter-stability: all 3 wave-1 tasks blocked");
+
+	// Final counters
+	assertEqual(succeededTasks, 1, "counter-stability: succeededTasks = 1");
+	assertEqual(failedTasks, 1, "counter-stability: failedTasks = 1");
+	assertEqual(skippedTasks, 1, "counter-stability: skippedTasks = 1 (carried)");
+	assertEqual(blockedTasks, 2, "counter-stability: blockedTasks starts at 2 (carried)");
+	// blockedTasks would be incremented per-wave in the loop (wave 1 adds 3 more, minus already-counted ones)
+}
+
+{
+	console.log("  ▸ v1 fallback: computeResumePoint works identically without repo fields");
+	// v1 state has no repoId, resolvedRepoId fields on tasks/lanes
+	const v1State = minimalPersistedState({
+		mode: "repo",
+		wavePlan: [["T1"], ["T2", "T3"]],
+		blockedTaskIds: [],
+		lanes: [
+			{
+				laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+				worktreePath: "/tmp/wt-1", branch: "task/lane-1-batch",
+				taskIds: ["T1", "T2"],
+				// No repoId — v1
+			},
+			{
+				laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2",
+				worktreePath: "/tmp/wt-2", branch: "task/lane-2-batch",
+				taskIds: ["T3"],
+				// No repoId — v1
+			},
+		],
+		tasks: [
+			makeTaskRecord({ taskId: "T1", laneNumber: 1, sessionName: "orch-lane-1", status: "succeeded" }),
+			makeTaskRecord({ taskId: "T2", laneNumber: 1, sessionName: "orch-lane-1", status: "running" }),
+			makeTaskRecord({ taskId: "T3", laneNumber: 2, sessionName: "orch-lane-2", status: "pending" }),
+		],
+	});
+
+	// T1 done, T2 dead session (had session), T3 dead session (had session)
+	const reconciled = reconcileTaskStates(v1State, new Set(), new Set());
+	const point = computeResumePoint(v1State, reconciled);
+
+	// T1: succeeded → skip(succeeded) → completed
+	assertEqual(point.completedTaskIds.length, 1, "v1 fallback: 1 completed (T1)");
+	assert(point.completedTaskIds.includes("T1"), "v1 fallback: T1 in completed");
+
+	// T2: running + dead + has session → mark-failed
+	// T3: pending + dead + has session → mark-failed
+	assertEqual(point.failedTaskIds.length, 2, "v1 fallback: 2 failed (T2, T3)");
+
+	// Wave 0: T1 succeeded (skip→done). Wave 1: T2, T3 mark-failed (NOT done for wave-skip).
+	assertEqual(point.resumeWaveIndex, 1, "v1 fallback: resumes from wave 1 (mark-failed NOT done for wave-skip)");
+
+	// Blocked propagation with v1 dep graph
+	const depGraph = buildTestDepGraph({
+		"T1": [],
+		"T2": ["T1"],
+		"T3": ["T2"],
+	});
+
+	const failedSet = new Set(point.failedTaskIds);
+	const blocked = computeTransitiveDependents(failedSet, depGraph);
+	// T2 failed, T3 failed (both already in failedTaskIds) → T3 depends on T2
+	// But T3 is already in failedSet, so no NEW blocked tasks
+	assertEqual(blocked.size, 0, "v1 fallback: no new blocked (T3 already failed directly)");
+}
+
+{
+	console.log("  ▸ transitive blocked propagation across repos: A→B→C chain");
+	// Scenario: A (api) fails → B (frontend, depends on A) blocked → C (api, depends on B) also blocked
+	const depGraph = buildTestDepGraph({
+		"A": [],
+		"B": ["A"],
+		"C": ["B"],
+	});
+
+	const failedSet = new Set(["A"]);
+	const blocked = computeTransitiveDependents(failedSet, depGraph);
+	assertEqual(blocked.size, 2, "transitive-chain: 2 tasks blocked");
+	assert(blocked.has("B"), "transitive-chain: B blocked (direct dep of A)");
+	assert(blocked.has("C"), "transitive-chain: C blocked (transitive via B)");
+	assert(!blocked.has("A"), "transitive-chain: A not in blocked set (it's in failedSet)");
+}
+
+{
+	console.log("  ▸ mark-complete action always categorizes as completed (not filtered by status)");
+	// Previously, mark-complete was grouped with skip and could miss tasks
+	// if the persistedStatus wasn't explicitly "succeeded"
+	const state = minimalPersistedState({
+		wavePlan: [["T1"]],
+		tasks: [
+			makeTaskRecord({ taskId: "T1", status: "running" }),
+		],
+	});
+
+	// T1 has .DONE → mark-complete regardless of persisted status
+	const reconciled = reconcileTaskStates(state, new Set(), new Set(["T1"]));
+	assertEqual(reconciled[0].action, "mark-complete", "mark-complete-always: action is mark-complete");
+	assertEqual(reconciled[0].persistedStatus, "running", "mark-complete-always: persisted was running");
+
+	const point = computeResumePoint(state, reconciled);
+	assertEqual(point.completedTaskIds.length, 1, "mark-complete-always: T1 in completed");
+	assert(point.completedTaskIds.includes("T1"), "mark-complete-always: T1 present");
+	assertEqual(point.failedTaskIds.length, 0, "mark-complete-always: no failures");
 }
 
 // ═══════════════════════════════════════════════════════════════════════

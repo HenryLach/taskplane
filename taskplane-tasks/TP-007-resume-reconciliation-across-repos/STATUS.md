@@ -1,11 +1,11 @@
 # TP-007: Resume Reconciliation and Continuation Across Repos — Status
 
-**Current Step:** Step 0: Implement repo-aware reconciliation
+**Current Step:** Step 1: Compute repo-aware resume point
 ​**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -53,10 +53,48 @@
 ---
 
 ### Step 1: Compute repo-aware resume point
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Update wave/task continuation logic for mixed repo outcomes
-- [ ] Ensure blocked/skipped semantics remain deterministic
+**Decision table — reconciled action → continuation outcome:**
+
+| Reconciled action | Persisted status | Continuation outcome | Counter effect |
+|-------------------|-----------------|---------------------|----------------|
+| mark-complete     | any             | `completedTaskIds` (succeeded) | `succeededTasks++` |
+| skip (succeeded)  | succeeded       | `completedTaskIds` (succeeded) | (already counted) |
+| skip (failed)     | failed/stalled  | `failedTaskIds` (terminal)     | (already counted) |
+| skip (skipped)    | skipped         | treated as terminal for wave-skip; not re-queued | (already counted) |
+| reconnect         | running/pending | wait for poll → succeeded or failed | `succeededTasks++` or `failedTasks++` |
+| re-execute        | running/pending | re-spawn → succeeded or failed | `succeededTasks++` or `failedTasks++` |
+| mark-failed       | running/pending | `failedTaskIds` (terminal) | `failedTasks++` |
+
+**Blocked propagation rules (skip-dependents policy):**
+- After reconciliation AND after reconnect/re-execute resolve, compute `computeTransitiveDependents(failedTaskSet, depGraph)`.
+- Merge result with persisted `blockedTaskIds` (union, not replace) so repeated resume can't lose prior blocked tasks.
+- Seed `batchState.blockedTaskIds` with the merged set BEFORE the wave loop begins.
+- Within wave loop: `executeWave()` produces new blocked IDs from NEW wave failures (same as engine.ts).
+
+**Counter invariants across resume boundaries:**
+- `succeededTasks`: initialized from `resumePoint.completedTaskIds.length`, incremented by reconnect/re-execute successes and wave successes.
+- `failedTasks`: initialized from `resumePoint.failedTaskIds.length`, incremented by reconnect/re-execute failures and wave failures.
+- `skippedTasks`: carried from `persistedState.skippedTasks`, incremented only by wave execution.
+- `blockedTasks`: carried from `persistedState.blockedTasks`, incremented per-wave for tasks in `blockedTaskIds` that appear in that wave (same as engine.ts).
+- `blockedTaskIds`: union of `persistedState.blockedTaskIds` + newly computed transitive dependents from all reconciled+reconnect+re-execute failures.
+
+**Skipped task semantics:**
+- `computeResumePoint` wave-skip: `persistedStatus === "skipped"` treated as terminal (wave is "done" for skip purposes).
+- `computeResumePoint` pending aggregation: skipped tasks with `persistedStatus === "skipped"` are NOT re-queued.
+- Wave execution filtering: already excluded by `failedTaskSet`/`completedTaskSet`/`blockedTaskIds` + discovery filter.
+
+- [x] Seed `blockedTaskIds` from reconciled failures before wave loop (import + call `computeTransitiveDependents` in `resumeOrchBatch` after reconciliation/reconnect/re-execute phases)
+  - Already present in source (section 9b). Verified and tested.
+- [x] Fix `computeResumePoint` to treat `persistedStatus === "skipped"` as terminal for wave-skip and NOT re-queue skipped tasks
+  - Added `"skipped"` to wave-skip condition in `computeResumePoint` (was missing — pre-existing gap)
+  - Added `"pending"` reconciliation action for never-started tasks (pending + no session) to prevent incorrect mark-failed
+  - Fixed blocked task counter double-counting with `persistedBlockedTaskIds` tracking
+  - Separated `mark-complete` from `skip` case in categorization switch for clarity
+- [x] Add tests: reconciled failure in repo A blocks dependent in repo B under `skip-dependents`; persisted skipped tasks not re-queued; blocked/skipped counter stability across pause/resume; v1 fallback parity
+  - 8 new test cases: pending-vs-failed distinction, skipped wave-skip, all-failed wave, counter stability, cross-repo blocked propagation, v1 fallback, workspace resume semantics
+  - All 290 tests passing across 12 test files
 
 ---
 
@@ -92,6 +130,10 @@
 ## Reviews
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | REVISED | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -111,6 +153,16 @@
 | 2026-03-15 22:03 | Step 0 impl | Code already repo-aware; added collectRepoRoots helper + 10 mixed-repo tests |
 | 2026-03-15 22:03 | Tests passing | 290/290 tests pass across 12 test files |
 | 2026-03-15 22:05 | Step 0 completed | Fixed 4 areas with per-repo resolveRepoRoot; 8 new mixed-repo reconciliation tests; all 290 tests pass |
+| 2026-03-15 22:04 | Worker iter 1 | done in 663s, ctx: 73%, tools: 71 |
+| 2026-03-15 22:05 | Worker iter 1 | done in 584s, ctx: 52%, tools: 73 |
+| 2026-03-15 22:09 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 22:09 | Step 0 complete | Implement repo-aware reconciliation |
+| 2026-03-15 22:09 | Step 1 started | Compute repo-aware resume point |
+| 2026-03-15 22:09 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 22:09 | Step 0 complete | Implement repo-aware reconciliation |
+| 2026-03-15 22:09 | Step 1 started | Compute repo-aware resume point |
+| 2026-03-15 22:12 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 22:13 | Review R003 | plan Step 1: UNKNOWN |
 
 ## Blockers
 

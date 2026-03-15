@@ -7,7 +7,7 @@ import { join } from "path";
 
 import { runDiscovery } from "./discovery.ts";
 import { executeOrchBatch } from "./engine.ts";
-import { execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasSession } from "./execution.ts";
+import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
@@ -238,7 +238,23 @@ export function reconcileTaskStates(
 			};
 		}
 
-		// Precedence 5: Dead session + not terminal + no .DONE + no worktree → failed
+		// Precedence 5: Never-started task (pending + no session assigned) → remain pending
+		// These are future-wave tasks that were never allocated to a lane.
+		// They should be re-queued for execution, not failed.
+		if (task.status === "pending" && !task.sessionName) {
+			return {
+				taskId: task.taskId,
+				persistedStatus: task.status,
+				liveStatus: "pending" as LaneTaskStatus,
+				sessionAlive: false,
+				doneFileFound: false,
+				worktreeExists: false,
+				action: "pending" as const,
+			};
+		}
+
+		// Precedence 6: Dead session + not terminal + no .DONE + no worktree → failed
+		// (Task was allocated and started but crashed without completing)
 		return {
 			taskId: task.taskId,
 			persistedStatus: task.status,
@@ -283,13 +299,16 @@ export function computeResumePoint(
 	for (const task of reconciledTasks) {
 		switch (task.action) {
 			case "mark-complete":
+				completedTaskIds.push(task.taskId);
+				break;
 			case "skip":
 				if (task.liveStatus === "succeeded" || task.persistedStatus === "succeeded") {
 					completedTaskIds.push(task.taskId);
 				} else if (task.liveStatus === "failed" || task.liveStatus === "stalled" || task.persistedStatus === "failed" || task.persistedStatus === "stalled") {
 					failedTaskIds.push(task.taskId);
 				}
-				// skipped tasks from original run don't count as completed or failed
+				// persistedStatus === "skipped" → terminal but neither completed nor failed.
+				// Not re-queued. Counted separately via batchState.skippedTasks (carried from persisted state).
 				break;
 			case "reconnect":
 				reconnectTaskIds.push(task.taskId);
@@ -299,6 +318,11 @@ export function computeResumePoint(
 				break;
 			case "mark-failed":
 				failedTaskIds.push(task.taskId);
+				break;
+			case "pending":
+				// Never-started tasks remain pending for execution — not failed.
+				// These are future-wave tasks that were never allocated to a lane.
+				pendingTaskIds.push(task.taskId);
 				break;
 		}
 	}
@@ -311,18 +335,17 @@ export function computeResumePoint(
 		const allDone = waveTasks.every((taskId) => {
 			const reconciled = reconciledMap.get(taskId);
 			if (!reconciled) return false;
-			// A task is "done" for wave-skip purposes if it completed or failed terminally
-			return (
-				reconciled.action === "mark-complete" ||
-				(reconciled.action === "skip" && (
-					reconciled.liveStatus === "succeeded" ||
-					reconciled.liveStatus === "failed" ||
-					reconciled.liveStatus === "stalled" ||
-					reconciled.persistedStatus === "succeeded" ||
-					reconciled.persistedStatus === "failed" ||
-					reconciled.persistedStatus === "stalled"
-				))
-			);
+			// A task is "done" for wave-skip purposes if it's terminal:
+			// mark-complete, mark-failed, or skip with any terminal status
+			// (succeeded, failed, stalled, skipped)
+			if (reconciled.action === "mark-complete" || reconciled.action === "mark-failed") {
+				return true;
+			}
+			if (reconciled.action === "skip") {
+				const s = reconciled.liveStatus ?? reconciled.persistedStatus;
+				return s === "succeeded" || s === "failed" || s === "stalled" || s === "skipped";
+			}
+			return false;
 		});
 
 		if (!allDone) {
@@ -350,6 +373,10 @@ export function computeResumePoint(
 			}
 			if (reconciled.action === "skip" && reconciled.persistedStatus === "pending") {
 				// Skipped tasks that were pending need execution
+				actualPendingTaskIds.push(taskId);
+			}
+			if (reconciled.action === "pending") {
+				// Never-started tasks from future waves need execution
 				actualPendingTaskIds.push(taskId);
 			}
 		}
@@ -492,6 +519,9 @@ export async function resumeOrchBatch(
 	batchState.skippedTasks = persistedState.skippedTasks;
 	batchState.blockedTasks = persistedState.blockedTasks;
 	batchState.blockedTaskIds = new Set(persistedState.blockedTaskIds);
+	// Track persisted blocked IDs separately to avoid double-counting in wave loop.
+	// These were already counted in persistedState.blockedTasks.
+	const persistedBlockedTaskIds = new Set(persistedState.blockedTaskIds);
 	batchState.errors = [...persistedState.errors];
 	batchState.endedAt = null;
 	batchState.currentWaveIndex = resumePoint.resumeWaveIndex;
@@ -798,6 +828,23 @@ export async function resumeOrchBatch(
 		});
 	}
 
+	// ── 9b. Seed blocked dependents from reconciled failures ─────
+	// Under skip-dependents policy, failures discovered during reconciliation
+	// (mark-failed) or resolved during reconnect/re-execute must propagate
+	// to their transitive dependents BEFORE the wave loop begins.
+	if (orchConfig.failure.on_task_failure === "skip-dependents" && failedTaskSet.size > 0) {
+		const reconciledBlocked = computeTransitiveDependents(failedTaskSet, depGraph);
+		for (const taskId of reconciledBlocked) {
+			batchState.blockedTaskIds.add(taskId);
+		}
+		if (reconciledBlocked.size > 0) {
+			execLog("resume", batchState.batchId, `skip-dependents: ${reconciledBlocked.size} task(s) blocked from reconciled failures`, {
+				blocked: [...reconciledBlocked].sort().join(","),
+				sources: [...failedTaskSet].sort().join(","),
+			});
+		}
+	}
+
 	persistRuntimeState("resume-reconciliation", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery ?? null, repoRoot);
 
 	// ── 10. Continue wave execution ──────────────────────────────
@@ -828,8 +875,12 @@ export async function resumeOrchBatch(
 		// Also filter tasks where discovery doesn't have them as pending
 		waveTasks = waveTasks.filter(taskId => discovery.pending.has(taskId));
 
+		// Count only newly blocked tasks (not already persisted) to avoid double-counting.
+		// persistedState.blockedTaskIds were already counted in persistedState.blockedTasks
+		// which initialized batchState.blockedTasks.
 		const blockedInWave = persistedState.wavePlan[waveIdx].filter(
-			taskId => batchState.blockedTaskIds.has(taskId),
+			taskId => batchState.blockedTaskIds.has(taskId) &&
+				!persistedBlockedTaskIds.has(taskId),
 		);
 		if (blockedInWave.length > 0) {
 			batchState.blockedTasks += blockedInWave.length;

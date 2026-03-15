@@ -1435,7 +1435,7 @@ export interface ReconciledTaskState {
 	/** Whether the lane worktree still exists on disk */
 	worktreeExists: boolean;
 	/** Action the resume engine should take */
-	action: "reconnect" | "mark-complete" | "mark-failed" | "re-execute" | "skip";
+	action: "reconnect" | "mark-complete" | "mark-failed" | "re-execute" | "skip" | "pending";
 }
 
 /**
