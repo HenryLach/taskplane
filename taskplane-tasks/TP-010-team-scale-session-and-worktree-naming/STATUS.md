@@ -1,7 +1,7 @@
 # TP-010: Team-Scale Session and Worktree Naming Hardening — Status
 
 **Current Step:** Step 2: Validate collision resistance
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 3
 **Review Counter:** 5
@@ -152,6 +152,8 @@
 | 2026-03-15 19:37 | Review R005 | plan Step 2: UNKNOWN |
 | 2026-03-15 19:37 | Review R005 | plan Step 2: UNKNOWN |
 | 2026-03-15 19:41 | Step 2 iter 4 | Hydrated Step 2 per R005 review. Created naming-collision.test.ts with 48 tests covering collision matrix (2a), ownership-safe consumers (2b), human-readability (2c), and sanitization edge cases (2d). All 255 tests passing. |
+| 2026-03-15 19:43 | Step 2 iter 5 | Rewrote naming-collision.test.ts with 83 comprehensive tests: collision matrix (2a: 20 tests), shared-env interference (2b: 28 tests), human-readability (2c: 23 tests), naming utilities (12 tests). All 290 tests passing (207 existing + 83 new). |
+| 2026-03-15 19:44 | Worker iter 4 | done in 450s, ctx: 26%, tools: 51 |
 
 ## Blockers
 
