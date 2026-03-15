@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 2,
+  "phase": "executing",
+  "batchId": "20260315T110000",
+  "baseBranch": "main",
+  "mode": "workspace",
+  "startedAt": 1741478400000,
+  "updatedAt": 1741478460000,
+  "endedAt": null,
+  "currentWaveIndex": 0,
+  "totalWaves": 1,
+  "wavePlan": [
+    ["BAD-001"]
+  ],
+  "lanes": [
+    {
+      "laneNumber": 1,
+      "laneId": "lane-1",
+      "tmuxSessionName": "orch-lane-1",
+      "worktreePath": "/tmp/taskplane-wt-1",
+      "branch": "task/lane-1-20260315T110000",
+      "taskIds": ["BAD-001"],
+      "repoId": 42
+    }
+  ],
+  "tasks": [
+    {
+      "taskId": "BAD-001",
+      "laneNumber": 1,
+      "sessionName": "orch-lane-1",
+      "status": "running",
+      "taskFolder": "/tmp/tasks/BAD-001",
+      "startedAt": 1741478400000,
+      "endedAt": null,
+      "doneFileFound": false,
+      "exitReason": "",
+      "repoId": {"nested": "object"},
+      "resolvedRepoId": null
+    }
+  ],
+  "mergeResults": [],
+  "totalTasks": 1,
+  "succeededTasks": 0,
+  "failedTasks": 0,
+  "skippedTasks": 0,
+  "blockedTasks": 0,
+  "blockedTaskIds": [],
+  "lastError": null,
+  "errors": []
+}
