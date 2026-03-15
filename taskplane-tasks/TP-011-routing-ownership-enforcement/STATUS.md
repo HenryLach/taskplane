@@ -22,6 +22,7 @@
 - [x] Update `resolveTaskRouting()` in `discovery.ts` to enforce strict mode: error when `promptRepoId` is absent
 - [x] Add remediation guidance in strict-mode error messages (actionable text pointing to `## Execution Target`)
 - [x] Thread `strict` flag from `WorkspaceConfig` through `DiscoveryOptions` into `resolveTaskRouting()`
+- [x] Add targeted unit tests in `discovery-routing.test.ts` for strict routing policy (19 tests: 19.x–24.x)
 
 ---
 
@@ -71,6 +72,8 @@
 ## Discoveries
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Pre-existing failures in orch-state-persistence.test.ts and task-runner-orchestration.test.ts (4 test files, 3 tests) | Noted — not caused by TP-011 changes | extensions/tests/ |
+| Step 0 schema/types/parsing were already implemented from prior iteration; only tests were missing | Completed — added 19 tests | extensions/tests/discovery-routing.test.ts |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -85,6 +88,8 @@
 | 2026-03-15 15:36 | Step 0 implemented | types.ts: WorkspaceRoutingConfig.strict, TASK_ROUTING_STRICT error code; workspace.ts: parse routing.strict from YAML; discovery.ts: strict mode enforcement in resolveTaskRouting() |
 | 2026-03-15 15:36 | Step 0 verified | All 68 routing tests pass, 40 workspace tests pass |
 | 2026-03-15 15:32 | Review R001 | plan Step 0: UNKNOWN |
+| 2026-03-15 15:37 | Worker iter 1 | done in 359s, ctx: 37%, tools: 37 |
+| 2026-03-15 | Step 0 tests added | 19 new tests (19.x–24.x) for strict routing in discovery-routing.test.ts — 87/87 pass |
 
 ## Blockers
 

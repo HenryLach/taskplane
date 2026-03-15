@@ -1820,3 +1820,518 @@ describe("17.x: Actionable routing error guidance", () => {
 		expect(output).toContain("[TASK_REPO_UNKNOWN]");
 	});
 });
+
+
+// ══════════════════════════════════════════════════════════════════════
+// Strict Routing Policy Tests (TP-011)
+// ══════════════════════════════════════════════════════════════════════
+
+// ── 19.x: Strict mode — rejects tasks without promptRepoId ──────────
+
+describe("19.x: Strict mode — rejects tasks without explicit execution target", () => {
+	it("19.1: task without promptRepoId produces TASK_ROUTING_STRICT error", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		// Enable strict mode
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "", repoId: "api" },
+		};
+		// Task has NO promptRepoId — would normally fall through to area repoId
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_ROUTING_STRICT");
+		expect(errors[0].taskId).toBe("TP-100");
+		expect(task.resolvedRepoId).toBeUndefined(); // NOT resolved via fallback
+	});
+
+	it("19.2: strict error message contains actionable guidance", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		const msg = errors[0].message;
+		// Must contain guidance on how to fix
+		expect(msg).toContain("Execution Target");
+		expect(msg).toContain("Repo:");
+		expect(msg).toContain("routing.strict");
+		// Must list available repos
+		expect(msg).toContain("api");
+		expect(msg).toContain("frontend");
+	});
+
+	it("19.3: strict mode rejects multiple tasks without promptRepoId", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" } },
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "", repoId: "api" },
+		};
+		const task1 = makeTask({ taskId: "TP-001", areaName: "default" });
+		const task2 = makeTask({ taskId: "TP-002", areaName: "default" });
+		const discovery = makeDiscoveryResult([task1, task2]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(2);
+		expect(errors.every((e) => e.code === "TASK_ROUTING_STRICT")).toBe(true);
+		const taskIds = errors.map((e) => e.taskId).sort();
+		expect(taskIds).toEqual(["TP-001", "TP-002"]);
+	});
+
+	it("19.4: strict mode still blocks even if area-level repoId is available", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" } },
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			"api-area": { path: "/workspace/api-tasks", prefix: "AP", context: "", repoId: "api" },
+		};
+		// Has area repoId but no promptRepoId — strict mode should block
+		const task = makeTask({ taskId: "AP-001", areaName: "api-area" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_ROUTING_STRICT");
+		expect(task.resolvedRepoId).toBeUndefined();
+	});
+
+	it("19.5: strict mode still blocks even if workspace default repo is set", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" } },
+			"api", // default repo set
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_ROUTING_STRICT");
+	});
+});
+
+// ── 20.x: Strict mode — accepts tasks with promptRepoId ─────────────
+
+describe("20.x: Strict mode — accepts tasks with explicit execution target", () => {
+	it("20.1: task with valid promptRepoId passes strict mode", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default", promptRepoId: "frontend" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("frontend");
+	});
+
+	it("20.2: strict mode still validates that promptRepoId is known", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" } },
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		// Has promptRepoId but it's not a known repo
+		const task = makeTask({ taskId: "TP-100", areaName: "default", promptRepoId: "ghost" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_REPO_UNKNOWN");
+		expect(errors[0].message).toContain("ghost");
+	});
+
+	it("20.3: mix of tasks — some with promptRepoId, some without — in strict mode", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task1 = makeTask({ taskId: "TP-001", areaName: "default", promptRepoId: "api" });
+		const task2 = makeTask({ taskId: "TP-002", areaName: "default" }); // no promptRepoId
+		const task3 = makeTask({ taskId: "TP-003", areaName: "default", promptRepoId: "frontend" });
+
+		const discovery = makeDiscoveryResult([task1, task2, task3]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		// Only task2 should fail
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_ROUTING_STRICT");
+		expect(errors[0].taskId).toBe("TP-002");
+		// task1 and task3 should be resolved
+		expect(task1.resolvedRepoId).toBe("api");
+		expect(task2.resolvedRepoId).toBeUndefined();
+		expect(task3.resolvedRepoId).toBe("frontend");
+	});
+});
+
+// ── 21.x: Permissive mode — unchanged behavior (non-regression) ─────
+
+describe("21.x: Permissive mode (strict=false) — existing behavior unchanged", () => {
+	it("21.1: strict=false still resolves via area fallback", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		// Explicitly permissive (default)
+		workspaceConfig.routing.strict = false;
+
+		const taskAreas: Record<string, TaskArea> = {
+			"ui-area": { path: "/workspace/ui-tasks", prefix: "UI", context: "", repoId: "frontend" },
+		};
+		const task = makeTask({ taskId: "UI-001", areaName: "ui-area" }); // no promptRepoId
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("frontend"); // area fallback works
+	});
+
+	it("21.2: strict=undefined (not set) behaves as permissive", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" } },
+			"api",
+		);
+		// strict field not set at all (undefined)
+		delete (workspaceConfig.routing as any).strict;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api"); // default fallback works
+	});
+
+	it("21.3: permissive mode still allows prompt repo to take precedence", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "", repoId: "api" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default", promptRepoId: "frontend" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("frontend"); // prompt wins
+	});
+});
+
+// ── 22.x: TASK_ROUTING_STRICT is fatal ───────────────────────────────
+
+describe("22.x: TASK_ROUTING_STRICT is classified as fatal", () => {
+	it("22.1: TASK_ROUTING_STRICT is in FATAL_DISCOVERY_CODES", () => {
+		const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+		expect(fatalCodes.has("TASK_ROUTING_STRICT")).toBe(true);
+	});
+
+	it("22.2: formatDiscoveryResults classifies TASK_ROUTING_STRICT as error not warning", () => {
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+		discovery.errors.push({
+			code: "TASK_ROUTING_STRICT",
+			message:
+				'Task TP-100 has no explicit execution target, but strict routing is enabled.',
+			taskId: "TP-100",
+			taskPath: "/workspace/tasks/TP-100/PROMPT.md",
+		});
+
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("❌ Errors:");
+		expect(output).toContain("[TASK_ROUTING_STRICT]");
+		// Should NOT be in warnings section
+		expect(output).not.toContain("⚠️  Warnings:");
+	});
+
+	it("22.3: strict error includes taskId and taskPath", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" } },
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-100",
+			areaName: "default",
+			promptPath: "/workspace/tasks/TP-100/PROMPT.md",
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].taskId).toBe("TP-100");
+		expect(errors[0].taskPath).toBe("/workspace/tasks/TP-100/PROMPT.md");
+	});
+});
+
+// ── 23.x: Repo mode — strict has no effect ──────────────────────────
+
+describe("23.x: Repo mode — strict routing has no effect", () => {
+	it("23.1: repo mode never calls resolveTaskRouting (no workspace config)", () => {
+		// In repo mode, runDiscovery skips routing entirely.
+		// resolveTaskRouting is only called when workspaceConfig.mode === "workspace"
+		// This test verifies repo mode tasks have no resolvedRepoId regardless
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		expect(task.resolvedRepoId).toBeUndefined();
+		// No routing errors possible in repo mode
+	});
+});
+
+// ── 24.x: End-to-end strict routing via runDiscovery ─────────────────
+
+describe("24.x: runDiscovery pipeline — strict routing end-to-end", () => {
+	it("24.1: strict workspace config produces TASK_ROUTING_STRICT via runDiscovery", () => {
+		const areaDir = makeTestDir("strict-e2e");
+		const taskDir = join(areaDir, "TP-400-strict-test");
+		mkdirSync(taskDir, { recursive: true });
+		writeFileSync(
+			join(taskDir, "PROMPT.md"),
+			`# Task: TP-400 - Strict Test
+
+**Size:** M
+
+## Dependencies
+
+**None**
+
+## Steps
+
+### Step 0: Implement
+
+- [ ] Do it
+
+---
+`,
+			"utf-8",
+		);
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: areaDir, prefix: "TP", context: "", repoId: "api" },
+		};
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" } },
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const result = runDiscovery("all", taskAreas, areaDir, {
+			workspaceConfig,
+		});
+
+		// Should have a fatal error because the task lacks Repo: in PROMPT.md
+		const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+		const fatalErrors = result.errors.filter((e) => fatalCodes.has(e.code));
+		expect(fatalErrors.length).toBeGreaterThan(0);
+		expect(fatalErrors[0].code).toBe("TASK_ROUTING_STRICT");
+		expect(fatalErrors[0].taskId).toBe("TP-400");
+	});
+
+	it("24.2: strict workspace config allows tasks with explicit Repo: in PROMPT.md", () => {
+		const areaDir = makeTestDir("strict-e2e-pass");
+		const taskDir = join(areaDir, "TP-401-strict-pass");
+		mkdirSync(taskDir, { recursive: true });
+		writeFileSync(
+			join(taskDir, "PROMPT.md"),
+			`# Task: TP-401 - Strict Pass
+
+**Size:** M
+
+## Dependencies
+
+**None**
+
+## Execution Target
+
+Repo: api
+
+## Steps
+
+### Step 0: Implement
+
+- [ ] Do it
+
+---
+`,
+			"utf-8",
+		);
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: areaDir, prefix: "TP", context: "" },
+		};
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" } },
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const result = runDiscovery("all", taskAreas, areaDir, {
+			workspaceConfig,
+		});
+
+		// No fatal errors — task has explicit Repo
+		const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+		const fatalErrors = result.errors.filter((e) => fatalCodes.has(e.code));
+		expect(fatalErrors).toHaveLength(0);
+
+		const task = result.pending.get("TP-401");
+		expect(task).toBeDefined();
+		expect(task!.promptRepoId).toBe("api");
+		expect(task!.resolvedRepoId).toBe("api");
+	});
+
+	it("24.3: permissive workspace config allows tasks without explicit Repo via area fallback", () => {
+		const areaDir = makeTestDir("permissive-e2e");
+		const taskDir = join(areaDir, "TP-402-permissive");
+		mkdirSync(taskDir, { recursive: true });
+		writeFileSync(
+			join(taskDir, "PROMPT.md"),
+			`# Task: TP-402 - Permissive Fallback
+
+**Size:** M
+
+## Dependencies
+
+**None**
+
+## Steps
+
+### Step 0: Implement
+
+- [ ] Do it
+
+---
+`,
+			"utf-8",
+		);
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: areaDir, prefix: "TP", context: "", repoId: "api" },
+		};
+		const workspaceConfig = makeWorkspaceConfig(
+			{ api: { path: "/repos/api" } },
+			"api",
+		);
+		// strict is NOT set (permissive default)
+
+		const result = runDiscovery("all", taskAreas, areaDir, {
+			workspaceConfig,
+		});
+
+		// No errors — area fallback works in permissive mode
+		const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+		const fatalErrors = result.errors.filter((e) => fatalCodes.has(e.code));
+		expect(fatalErrors).toHaveLength(0);
+
+		const task = result.pending.get("TP-402");
+		expect(task).toBeDefined();
+		expect(task!.resolvedRepoId).toBe("api"); // resolved via area
+	});
+
+	it("24.4: formatted output shows TASK_ROUTING_STRICT as fatal error with guidance", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const routingErrors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+		discovery.errors.push(...routingErrors);
+
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("❌ Errors:");
+		expect(output).toContain("TASK_ROUTING_STRICT");
+		expect(output).toContain("Execution Target");
+		expect(output).toContain("Repo:");
+	});
+});
