@@ -34,13 +34,13 @@
 - [x] Add `TASK_ROUTING_STRICT` to command-surface helper hints in `extension.ts` (`/orch-plan` fatal error block)
 - [x] Add `TASK_ROUTING_STRICT` to command-surface helper hints in `engine.ts` (`/orch` fatal error block)
 - [x] Validate `routing.strict` type in `workspace.ts` — reject non-boolean values with `WORKSPACE_SCHEMA_INVALID` (close fail-open gap)
-- [x] Verify targeted tests for Step 1 changes already exist and pass:
+- [x] Add targeted tests for Step 1 changes:
   - Strict config validation: workspace-config.test.ts 1.15–1.19 (5 tests: true/false/omitted/string/number)
-  - Strict routing fatal behavior: discovery-routing.test.ts 19.x–22.x (13 tests)
-  - End-to-end pipeline: discovery-routing.test.ts 24.x (4 tests)
+  - Command-surface hint verification: discovery-routing.test.ts 25.x (6 tests: source verification of extension.ts + engine.ts handling)
+  - Strict routing fatal behavior: discovery-routing.test.ts 19.x–22.x (13 tests from Step 0)
+  - End-to-end pipeline: discovery-routing.test.ts 24.x (4 tests from Step 0)
   - Remediation text visibility: 19.2, 22.2, 24.4 verify error body and formatted output
   - Repo-mode non-regression: 23.x (1 test) confirms strict has no effect in repo mode
-- [x] **Decision:** No additional command-surface hint needed beyond existing `/orch-plan` and `/orch` blocks — error body already contains full remediation text (Execution Target template + available repos)
 
 ---
 
@@ -114,8 +114,9 @@
 | 2026-03-15 15:44 | Step 1 started | Enforce policy during discovery |
 | 2026-03-15 15:46 | Review R003 | plan Step 1: UNKNOWN |
 | 2026-03-15 15:48 | Step 1 verified | All runtime behavior implemented in Step 0; hydrated Step 1 with verification matrix per R003 feedback |
-| 2026-03-15 15:48 | Step 1 tests | 87/87 discovery-routing tests pass, 45/45 workspace-config tests pass |
+| 2026-03-15 15:48 | Step 1 tests | 93/93 discovery-routing tests pass (87+6 new §25.x), 45/45 workspace-config tests pass (40+5 new §1.15–1.19) |
 | 2026-03-15 15:48 | Step 1 complete | Enforce policy during discovery (verification-only) |
+| 2026-03-15 15:49 | Worker iter 2 | done in 210s, ctx: 32%, tools: 35 |
 
 ## Blockers
 
