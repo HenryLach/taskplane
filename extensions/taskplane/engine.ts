@@ -13,8 +13,8 @@ import { mergeWave } from "./merge.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
 import { deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
-import { generateBatchId } from "./types.ts";
-import type { AllocatedLane, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, TokenCounts } from "./types.ts";
+import { FATAL_DISCOVERY_CODES, generateBatchId } from "./types.ts";
+import type { AllocatedLane, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, TokenCounts, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaves, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, formatPreflightResults, listWorktrees, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 
@@ -32,6 +32,7 @@ import { deleteBranchBestEffort, formatPreflightResults, listWorktrees, removeAl
  * @param batchState  - Mutable batch state (updated throughout execution)
  * @param onNotify    - Callback for user-facing messages
  * @param onMonitorUpdate - Optional callback for dashboard updates
+ * @param workspaceConfig - Workspace configuration for repo routing (null = repo mode)
  */
 export async function executeOrchBatch(
 	args: string,
@@ -41,6 +42,7 @@ export async function executeOrchBatch(
 	batchState: OrchBatchRuntimeState,
 	onNotify: (message: string, level: "info" | "warning" | "error") => void,
 	onMonitorUpdate?: MonitorUpdateCallback,
+	workspaceConfig?: WorkspaceConfig | null,
 ): Promise<void> {
 	const repoRoot = cwd;
 
@@ -95,18 +97,13 @@ export async function executeOrchBatch(
 		refreshDependencies: false,
 		dependencySource: orchConfig.dependencies.source,
 		useDependencyCache: orchConfig.dependencies.cache,
+		workspaceConfig: workspaceConfig ?? null,
 	});
 	onNotify(formatDiscoveryResults(discovery), discovery.errors.length > 0 ? "warning" : "info");
 
 	// Check for fatal errors
-	const fatalErrors = discovery.errors.filter(
-		(e) =>
-			e.code === "DUPLICATE_ID" ||
-			e.code === "DEP_UNRESOLVED" ||
-			e.code === "DEP_PENDING" ||
-			e.code === "DEP_AMBIGUOUS" ||
-			e.code === "PARSE_MISSING_ID",
-	);
+	const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+	const fatalErrors = discovery.errors.filter((e) => fatalCodes.has(e.code));
 	if (fatalErrors.length > 0) {
 		batchState.phase = "failed";
 		batchState.endedAt = Date.now();

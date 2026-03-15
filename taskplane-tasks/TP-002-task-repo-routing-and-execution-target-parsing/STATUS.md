@@ -1,11 +1,11 @@
 # TP-002: Task-to-Repo Routing and Execution Target Parsing — Status
 
-**Current Step:** Step 0: Parse execution target metadata
-​**Status:** ✅ Step 0 Complete
+**Current Step:** Step 2: Annotate discovery outputs
+​**Status:** ✅ Step 1 Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -47,10 +47,64 @@
 ---
 
 ### Step 1: Implement routing precedence chain
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Resolve repo using: prompt repo -> area map -> workspace default repo
-- [ ] Emit explicit errors for unresolved or unknown repo IDs (TASK_REPO_UNRESOLVED, TASK_REPO_UNKNOWN)
+**Routing contract:**
+- In **repo mode** (`workspaceConfig === null`): routing is a no-op. No `resolvedRepoId` is set. Single-repo semantics are preserved.
+- In **workspace mode**: apply 3-level precedence: prompt repo → area repo → workspace default repo.
+- If no source resolves a repo ID → `TASK_REPO_UNRESOLVED` (fatal).
+- If resolved ID is not a key in `workspaceConfig.repos` → `TASK_REPO_UNKNOWN` (fatal).
+
+**Area-to-repo mapping source:**
+- Add optional `repo_id?: string` field to `TaskArea` in `types.ts`.
+- Loaded from `task-runner.yaml` per-area config. Absent = undefined (fall through to default repo).
+- Validated at routing time: if present, must be a valid repo ID (lowercase alnum + hyphens).
+
+**Changes by file:**
+
+1. `types.ts`:
+   - Add `repoId?: string` to `TaskArea`
+   - Add `resolvedRepoId?: string` to `ParsedTask`
+   - Add `TASK_REPO_UNRESOLVED` and `TASK_REPO_UNKNOWN` to `DiscoveryError.code` union
+   - Export `FATAL_DISCOVERY_CODES` constant array for DRY fatal-error filtering
+
+2. `discovery.ts`:
+   - Add `resolveTaskRouting(discovery, taskAreas, workspaceConfig)` function
+   - Call it from `runDiscovery` when `workspaceConfig` is provided
+   - Thread `workspaceConfig` into `runDiscovery` via `DiscoveryOptions`
+
+3. `extension.ts` / `engine.ts` / `resume.ts`:
+   - Pass `workspaceConfig` through `DiscoveryOptions` at call sites
+   - Update fatal error filters to use `FATAL_DISCOVERY_CODES`
+
+4. Tests (`discovery-routing.test.ts`):
+   - Prompt repo wins over area/default
+   - Area repo fallback (prompt has no repo, area has repoId)
+   - Default repo fallback (prompt + area have no repo)
+   - Unknown repo ID → TASK_REPO_UNKNOWN error
+   - Unresolved routing (no sources) → TASK_REPO_UNRESOLVED error
+   - Repo mode (no workspace config) → no routing, no error
+   - Multiple tasks with different routing sources
+
+**Checklist:**
+- [x] Add `repoId?: string` to `TaskArea` in `types.ts`
+- [x] Add `resolvedRepoId?: string` to `ParsedTask` in `types.ts`
+- [x] Add `TASK_REPO_UNRESOLVED` and `TASK_REPO_UNKNOWN` to `DiscoveryError.code` union
+- [x] Export `FATAL_DISCOVERY_CODES` array for DRY fatal-error filtering
+- [x] Add `workspaceConfig` to `DiscoveryOptions` in `discovery.ts`
+- [x] Implement `resolveTaskRouting()` function in `discovery.ts`
+- [x] Call `resolveTaskRouting()` from `runDiscovery` pipeline
+- [x] Update `extension.ts` call sites to pass `workspaceConfig` and use `FATAL_DISCOVERY_CODES`
+- [x] Update `engine.ts` call sites to pass `workspaceConfig` and use `FATAL_DISCOVERY_CODES`
+- [x] Update `formatDiscoveryResults` to include new fatal codes
+- [x] Add test: repo mode (no workspace config) → no routing applied
+- [x] Add test: prompt repo wins over area and default
+- [x] Add test: area repo fallback when prompt has no repo
+- [x] Add test: default repo fallback when prompt + area have no repo
+- [x] Add test: TASK_REPO_UNKNOWN when resolved ID not in workspace repos
+- [x] Add test: TASK_REPO_UNRESOLVED when all sources are undefined
+- [x] Add test: multiple tasks with mixed routing sources
+- [x] All existing tests still pass (38 routing tests + 40 workspace tests = 78 pass)
 
 ---
 
@@ -87,6 +141,10 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -108,6 +166,23 @@
 | 2026-03-15 | Step 0 tests | Created discovery-prompt-parser.test.ts — 28/28 pass |
 | 2026-03-15 | Step 0 complete | All checklist items verified and checked off |
 | 2026-03-15 06:37 | Worker iter 1 | done in 359s, ctx: 35%, tools: 51 |
+| 2026-03-15 06:39 | Worker iter 1 | done in 458s, ctx: 35%, tools: 57 |
+| 2026-03-15 06:41 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 06:41 | Step 0 complete | Parse execution target metadata |
+| 2026-03-15 06:41 | Step 1 started | Implement routing precedence chain |
+| 2026-03-15 06:42 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-15 06:42 | Step 0 complete | Parse execution target metadata |
+| 2026-03-15 06:42 | Step 1 started | Implement routing precedence chain |
+| 2026-03-15 06:45 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 06:45 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-15 06:51 | Step 1 impl | types.ts changes already present from iter 1 (repoId, resolvedRepoId, error codes, FATAL_DISCOVERY_CODES) |
+| 2026-03-15 06:51 | Step 1 impl | discovery.ts: resolveTaskRouting() already implemented, integrated into runDiscovery pipeline |
+| 2026-03-15 06:52 | Step 1 impl | engine.ts: added workspaceConfig param, wired to runDiscovery, use FATAL_DISCOVERY_CODES |
+| 2026-03-15 06:52 | Step 1 impl | extension.ts: pass workspaceConfig to runDiscovery & executeOrchBatch & resumeOrchBatch |
+| 2026-03-15 06:52 | Step 1 impl | resume.ts: workspaceConfig param already wired from iter 1 |
+| 2026-03-15 06:53 | Step 1 tests | Removed duplicate helpers; 14 routing tests (8.x–14.x) already present — 38/38 pass |
+| 2026-03-15 06:54 | Step 1 tests | Full suite: 78 passing (38 routing + 40 workspace), 4 pre-existing failures in other suites |
+| 2026-03-15 06:55 | Step 1 complete | All checklist items verified and checked off |
 
 ## Blockers
 

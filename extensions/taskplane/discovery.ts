@@ -5,7 +5,8 @@
 import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "fs";
 import { join, dirname, basename, resolve } from "path";
 
-import type { DiscoveryError, DiscoveryResult, ParsedTask, TaskArea } from "./types.ts";
+import { FATAL_DISCOVERY_CODES } from "./types.ts";
+import type { DiscoveryError, DiscoveryResult, ParsedTask, TaskArea, WorkspaceConfig } from "./types.ts";
 
 // ── PROMPT.md Parsing ────────────────────────────────────────────────
 
@@ -489,6 +490,8 @@ export interface DiscoveryOptions {
 	refreshDependencies?: boolean;
 	dependencySource?: "prompt" | "agent";
 	useDependencyCache?: boolean;
+	/** Workspace config for repo routing (null/undefined = repo mode, no routing). */
+	workspaceConfig?: WorkspaceConfig | null;
 }
 
 export interface DependencyCacheFile {
@@ -856,6 +859,92 @@ export function resolveDependencies(
 }
 
 
+// ── Task-to-Repo Routing ─────────────────────────────────────────────
+
+/** Repo ID validation: lowercase alphanumeric + hyphens, starting with alnum */
+const ROUTING_REPO_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
+/**
+ * Resolve the target repo for each discovered task using the routing
+ * precedence chain:
+ *
+ *   1. `task.promptRepoId` — declared in PROMPT.md metadata
+ *   2. `taskArea.repoId` — area-level config from task-runner.yaml
+ *   3. `workspaceConfig.routing.defaultRepo` — workspace-level default
+ *
+ * Only applied in workspace mode (when `workspaceConfig` is provided).
+ * In repo mode this function is never called.
+ *
+ * Returns an array of DiscoveryError for routing failures:
+ *   - TASK_REPO_UNRESOLVED: no source provided a repo ID
+ *   - TASK_REPO_UNKNOWN: resolved repo ID is not in workspace repos map
+ */
+export function resolveTaskRouting(
+	discovery: DiscoveryResult,
+	taskAreas: Record<string, TaskArea>,
+	workspaceConfig: WorkspaceConfig,
+): DiscoveryError[] {
+	const errors: DiscoveryError[] = [];
+	const validRepoIds = workspaceConfig.repos;
+
+	for (const task of discovery.pending.values()) {
+		// Precedence 1: prompt-declared repo
+		let resolvedId = task.promptRepoId;
+		let source = "prompt";
+
+		// Precedence 2: area-level repo
+		if (!resolvedId) {
+			const area = taskAreas[task.areaName];
+			if (area?.repoId) {
+				const candidate = area.repoId.trim().toLowerCase();
+				if (ROUTING_REPO_ID_PATTERN.test(candidate)) {
+					resolvedId = candidate;
+					source = "area";
+				}
+			}
+		}
+
+		// Precedence 3: workspace default repo
+		if (!resolvedId) {
+			resolvedId = workspaceConfig.routing.defaultRepo;
+			source = "default";
+		}
+
+		// Validate resolution
+		if (!resolvedId) {
+			errors.push({
+				code: "TASK_REPO_UNRESOLVED",
+				message:
+					`Task ${task.taskId} has no resolved repo. ` +
+					`Add a Repo: field to the PROMPT, set repo_id on area "${task.areaName}", ` +
+					`or set routing.default_repo in the workspace config.`,
+				taskId: task.taskId,
+				taskPath: task.promptPath,
+			});
+			continue;
+		}
+
+		if (!validRepoIds.has(resolvedId)) {
+			errors.push({
+				code: "TASK_REPO_UNKNOWN",
+				message:
+					`Task ${task.taskId} resolved to repo "${resolvedId}" (via ${source}), ` +
+					`but no repo with that ID exists in the workspace config. ` +
+					`Known repos: ${[...validRepoIds.keys()].join(", ")}`,
+				taskId: task.taskId,
+				taskPath: task.promptPath,
+			});
+			continue;
+		}
+
+		// Attach resolved repo to the task
+		task.resolvedRepoId = resolvedId;
+	}
+
+	return errors;
+}
+
+
 // ── Discovery Pipeline (Public) ──────────────────────────────────────
 
 /**
@@ -950,6 +1039,13 @@ export function runDiscovery(
 		}
 	}
 
+	// Step 6: Task-to-repo routing (workspace mode only)
+	const workspaceConfig = options.workspaceConfig;
+	if (workspaceConfig && workspaceConfig.mode === "workspace") {
+		const routingErrors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+		discovery.errors.push(...routingErrors);
+	}
+
 	return discovery;
 }
 
@@ -998,22 +1094,9 @@ export function formatDiscoveryResults(result: DiscoveryResult): string {
 
 	// Show errors
 	if (result.errors.length > 0) {
-		const fatalErrors = result.errors.filter(
-			(e) =>
-				e.code === "DUPLICATE_ID" ||
-				e.code === "DEP_UNRESOLVED" ||
-				e.code === "DEP_PENDING" ||
-				e.code === "DEP_AMBIGUOUS" ||
-				e.code === "PARSE_MISSING_ID",
-		);
-		const warnings = result.errors.filter(
-			(e) =>
-				e.code !== "DUPLICATE_ID" &&
-				e.code !== "DEP_UNRESOLVED" &&
-				e.code !== "DEP_PENDING" &&
-				e.code !== "DEP_AMBIGUOUS" &&
-				e.code !== "PARSE_MISSING_ID",
-		);
+		const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+		const fatalErrors = result.errors.filter((e) => fatalCodes.has(e.code));
+		const warnings = result.errors.filter((e) => !fatalCodes.has(e.code));
 
 		if (fatalErrors.length > 0) {
 			lines.push("❌ Errors:");

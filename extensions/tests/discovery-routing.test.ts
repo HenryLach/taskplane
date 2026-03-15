@@ -1,7 +1,8 @@
 /**
- * Discovery Routing Tests — TP-002 Step 0
+ * Discovery Routing Tests — TP-002 Step 0 + Step 1
  *
- * Tests for execution target (repo ID) parsing from PROMPT.md metadata.
+ * Tests for execution target (repo ID) parsing from PROMPT.md metadata
+ * and routing precedence chain resolution.
  *
  * Test categories:
  *   1.x — Prompt with no execution target (backward compat)
@@ -11,6 +12,13 @@
  *   5.x — Both section + inline present (section wins)
  *   6.x — Invalid repo ID format (non-matching = undefined)
  *   7.x — Existing dependency/file-scope parsing unchanged
+ *   8.x — Routing precedence: repo mode (no routing)
+ *   9.x — Routing precedence: prompt repo wins
+ *  10.x — Routing precedence: area repo fallback
+ *  11.x — Routing precedence: default repo fallback
+ *  12.x — Routing errors: TASK_REPO_UNKNOWN
+ *  13.x — Routing errors: TASK_REPO_UNRESOLVED
+ *  14.x — Routing: multiple tasks with mixed sources
  *
  * Run: npx vitest run tests/discovery-routing.test.ts
  */
@@ -20,7 +28,8 @@ import { mkdirSync, writeFileSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
-import { parsePromptForOrchestrator } from "../taskplane/discovery.ts";
+import { parsePromptForOrchestrator, resolveTaskRouting } from "../taskplane/discovery.ts";
+import type { DiscoveryResult, ParsedTask, TaskArea, WorkspaceConfig, WorkspaceRepoConfig } from "../taskplane/types.ts";
 
 // ── Test Fixtures ────────────────────────────────────────────────────
 
@@ -603,5 +612,386 @@ Repo: api
 		expect(result.error).toBeNull();
 		expect(result.task!.dependencies).toContain("other-area/OA-001");
 		expect(result.task!.promptRepoId).toBe("api");
+	});
+});
+
+
+// ── Routing Precedence Tests (Step 1) ────────────────────────────────
+
+/**
+ * Helper to build a minimal WorkspaceConfig for routing tests.
+ */
+function makeWorkspaceConfig(
+	repos: Record<string, { path: string; defaultBranch?: string }>,
+	defaultRepo: string,
+): WorkspaceConfig {
+	const repoMap = new Map<string, WorkspaceRepoConfig>();
+	for (const [id, cfg] of Object.entries(repos)) {
+		repoMap.set(id, { id, path: cfg.path, defaultBranch: cfg.defaultBranch });
+	}
+	return {
+		mode: "workspace",
+		repos: repoMap,
+		routing: {
+			tasksRoot: "/workspace/tasks",
+			defaultRepo,
+		},
+		configPath: "/workspace/.pi/taskplane-workspace.yaml",
+	};
+}
+
+/**
+ * Helper to build a minimal DiscoveryResult with given tasks.
+ */
+function makeDiscoveryResult(tasks: ParsedTask[]): DiscoveryResult {
+	const pending = new Map<string, ParsedTask>();
+	for (const task of tasks) {
+		pending.set(task.taskId, task);
+	}
+	return {
+		pending,
+		completed: new Set<string>(),
+		errors: [],
+	};
+}
+
+/**
+ * Helper to build a minimal ParsedTask.
+ */
+function makeTask(overrides: Partial<ParsedTask> & { taskId: string; areaName: string }): ParsedTask {
+	return {
+		taskName: overrides.taskName ?? "Test Task",
+		reviewLevel: overrides.reviewLevel ?? 2,
+		size: overrides.size ?? "M",
+		dependencies: overrides.dependencies ?? [],
+		fileScope: overrides.fileScope ?? [],
+		taskFolder: overrides.taskFolder ?? `/workspace/tasks/${overrides.taskId}`,
+		promptPath: overrides.promptPath ?? `/workspace/tasks/${overrides.taskId}/PROMPT.md`,
+		status: overrides.status ?? "pending",
+		...overrides,
+	};
+}
+
+// ── 8.x: Repo mode (no routing) ─────────────────────────────────────
+
+describe("8.x: Repo mode — no routing applied", () => {
+	it("8.1: resolveTaskRouting is not called in repo mode (no workspace config)", () => {
+		// In repo mode, runDiscovery never calls resolveTaskRouting.
+		// This test verifies that tasks remain without resolvedRepoId
+		// when there's no workspace config.
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		expect(task.resolvedRepoId).toBeUndefined();
+		// No resolveTaskRouting call needed — repo mode skips routing
+	});
+});
+
+// ── 9.x: Prompt repo wins ───────────────────────────────────────────
+
+describe("9.x: Prompt repo wins over area and default", () => {
+	it("9.1: promptRepoId is used even when area and default are available", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+				shared: { path: "/repos/shared" },
+			},
+			"shared",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "", repoId: "frontend" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default", promptRepoId: "api" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api");
+	});
+
+	it("9.2: promptRepoId overrides area repoId", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			"ui-area": { path: "/workspace/ui-tasks", prefix: "UI", context: "", repoId: "frontend" },
+		};
+		const task = makeTask({ taskId: "UI-001", areaName: "ui-area", promptRepoId: "api" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api");
+	});
+});
+
+// ── 10.x: Area repo fallback ─────────────────────────────────────────
+
+describe("10.x: Area repo fallback when prompt has no repo", () => {
+	it("10.1: area repoId used when no promptRepoId", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			"ui-area": { path: "/workspace/ui-tasks", prefix: "UI", context: "", repoId: "frontend" },
+		};
+		const task = makeTask({ taskId: "UI-001", areaName: "ui-area" }); // no promptRepoId
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("frontend");
+	});
+
+	it("10.2: area repoId is case-normalized", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				frontend: { path: "/repos/frontend" },
+			},
+			"frontend",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			"ui-area": { path: "/workspace/ui-tasks", prefix: "UI", context: "", repoId: "Frontend" },
+		};
+		const task = makeTask({ taskId: "UI-001", areaName: "ui-area" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("frontend");
+	});
+
+	it("10.3: area with invalid repoId format falls through to default", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+			},
+			"api",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "", repoId: "INVALID_ID!" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api"); // falls through to default
+	});
+});
+
+// ── 11.x: Default repo fallback ──────────────────────────────────────
+
+describe("11.x: Default repo fallback when prompt + area have no repo", () => {
+	it("11.1: workspace default repo used when prompt and area are empty", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" }, // no repoId
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default" }); // no promptRepoId
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api");
+	});
+
+	it("11.2: area without repoId and no promptRepoId falls to default", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				backend: { path: "/repos/backend" },
+			},
+			"backend",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			services: { path: "/workspace/services-tasks", prefix: "SVC", context: "" },
+		};
+		const task = makeTask({ taskId: "SVC-001", areaName: "services" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("backend");
+	});
+});
+
+// ── 12.x: TASK_REPO_UNKNOWN ─────────────────────────────────────────
+
+describe("12.x: TASK_REPO_UNKNOWN when resolved ID not in workspace repos", () => {
+	it("12.1: prompt repo ID not in workspace repos", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+			},
+			"api",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default", promptRepoId: "nonexistent" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_REPO_UNKNOWN");
+		expect(errors[0].taskId).toBe("TP-100");
+		expect(errors[0].message).toContain("nonexistent");
+		expect(errors[0].message).toContain("api"); // lists known repos
+		expect(task.resolvedRepoId).toBeUndefined(); // not set on failure
+	});
+
+	it("12.2: area repo ID not in workspace repos", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+			},
+			"api",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "", repoId: "missing-repo" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_REPO_UNKNOWN");
+		expect(errors[0].taskId).toBe("TP-100");
+		expect(errors[0].message).toContain("missing-repo");
+	});
+
+	it("12.3: error message includes via source", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+			},
+			"api",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default", promptRepoId: "ghost" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].message).toContain("via prompt");
+	});
+});
+
+// ── 13.x: TASK_REPO_UNRESOLVED ──────────────────────────────────────
+
+describe("13.x: TASK_REPO_UNRESOLVED when all sources are undefined", () => {
+	it("13.1: no prompt repo, no area repo, no default repo → unresolved", () => {
+		// Create a workspace config with empty defaultRepo
+		const repoMap = new Map<string, WorkspaceRepoConfig>();
+		repoMap.set("api", { id: "api", path: "/repos/api" });
+		const workspaceConfig: WorkspaceConfig = {
+			mode: "workspace",
+			repos: repoMap,
+			routing: {
+				tasksRoot: "/workspace/tasks",
+				defaultRepo: "", // empty default
+			},
+			configPath: "/workspace/.pi/taskplane-workspace.yaml",
+		};
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({ taskId: "TP-100", areaName: "default" });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_REPO_UNRESOLVED");
+		expect(errors[0].taskId).toBe("TP-100");
+		expect(errors[0].message).toContain("no resolved repo");
+		expect(task.resolvedRepoId).toBeUndefined();
+	});
+});
+
+// ── 14.x: Multiple tasks with mixed routing sources ─────────────────
+
+describe("14.x: Multiple tasks with mixed routing sources", () => {
+	it("14.1: each task resolves independently via its own source", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+				shared: { path: "/repos/shared" },
+			},
+			"shared",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			"api-area": { path: "/workspace/api-tasks", prefix: "AP", context: "", repoId: "api" },
+			"ui-area": { path: "/workspace/ui-tasks", prefix: "UI", context: "" }, // no repoId
+		};
+
+		// Task 1: prompt repo
+		const task1 = makeTask({ taskId: "AP-001", areaName: "api-area", promptRepoId: "frontend" });
+		// Task 2: area repo (no prompt)
+		const task2 = makeTask({ taskId: "AP-002", areaName: "api-area" });
+		// Task 3: default repo (no prompt, no area)
+		const task3 = makeTask({ taskId: "UI-001", areaName: "ui-area" });
+
+		const discovery = makeDiscoveryResult([task1, task2, task3]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task1.resolvedRepoId).toBe("frontend"); // prompt wins over area
+		expect(task2.resolvedRepoId).toBe("api"); // area fallback
+		expect(task3.resolvedRepoId).toBe("shared"); // default fallback
+	});
+
+	it("14.2: mix of successful and failing routing", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+			},
+			"api",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+
+		// Task 1: valid prompt repo
+		const task1 = makeTask({ taskId: "TP-001", areaName: "default", promptRepoId: "api" });
+		// Task 2: unknown prompt repo
+		const task2 = makeTask({ taskId: "TP-002", areaName: "default", promptRepoId: "ghost" });
+
+		const discovery = makeDiscoveryResult([task1, task2]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_REPO_UNKNOWN");
+		expect(errors[0].taskId).toBe("TP-002");
+		expect(task1.resolvedRepoId).toBe("api"); // success
+		expect(task2.resolvedRepoId).toBeUndefined(); // failure
 	});
 });

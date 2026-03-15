@@ -61,6 +61,8 @@ export interface ParsedTask {
 	status: "pending" | "complete";
 	/** Repo ID declared in the PROMPT metadata (e.g., "api", "frontend"). Undefined if not declared. */
 	promptRepoId?: string;
+	/** Resolved repo ID after routing precedence (workspace mode only). Undefined in repo mode. */
+	resolvedRepoId?: string;
 }
 
 /** A wave: a group of tasks whose dependencies are all satisfied */
@@ -107,6 +109,8 @@ export interface TaskArea {
 	path: string;
 	prefix: string;
 	context: string;
+	/** Optional repo ID for routing tasks in this area (workspace mode only). */
+	repoId?: string;
 }
 
 /** Subset of task-runner.yaml that the orchestrator needs */
@@ -361,11 +365,30 @@ export interface DiscoveryError {
 		| "DEP_UNRESOLVED"
 		| "DEP_PENDING"
 		| "DEP_AMBIGUOUS"
-		| "DEP_SOURCE_FALLBACK";
+		| "DEP_SOURCE_FALLBACK"
+		| "TASK_REPO_UNRESOLVED"
+		| "TASK_REPO_UNKNOWN";
 	message: string;
 	taskPath?: string;
 	taskId?: string;
 }
+
+/**
+ * Discovery error codes that are fatal (block planning/execution).
+ *
+ * Used by formatDiscoveryResults, extension.ts, and engine.ts for
+ * consistent fatal-error classification. Keep in sync with the
+ * DiscoveryError.code union above.
+ */
+export const FATAL_DISCOVERY_CODES: ReadonlyArray<DiscoveryError["code"]> = [
+	"DUPLICATE_ID",
+	"DEP_UNRESOLVED",
+	"DEP_PENDING",
+	"DEP_AMBIGUOUS",
+	"PARSE_MISSING_ID",
+	"TASK_REPO_UNRESOLVED",
+	"TASK_REPO_UNKNOWN",
+] as const;
 
 /** Result of the full discovery pipeline */
 export interface DiscoveryResult {
