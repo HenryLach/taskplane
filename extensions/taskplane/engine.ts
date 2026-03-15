@@ -241,6 +241,7 @@ export async function executeOrchBatch(
 					persistRuntimeState("wave-lanes-allocated", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, repoRoot);
 				}
 			},
+			workspaceConfig,
 		);
 
 		batchState.waveResults.push(waveResult);

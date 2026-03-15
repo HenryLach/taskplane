@@ -7,7 +7,7 @@ import { spawnSync } from "child_process";
 import { join, dirname, resolve, relative, delimiter as pathDelimiter } from "path";
 
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { allocateLanes } from "./waves.ts";
 import { runGit } from "./git.ts";
 
@@ -1652,6 +1652,7 @@ export function ensureTaskFilesCommitted(
  * @param baseBranch        - Branch to base worktrees on (captured at batch start)
  * @param onMonitorUpdate   - Optional callback for dashboard updates during monitoring
  * @param onLanesAllocated  - Optional callback fired after lane allocation succeeds
+ * @param workspaceConfig   - Workspace configuration for repo routing (null/undefined = repo mode)
  * @returns WaveExecutionResult with outcomes and blocked task IDs
  */
 export async function executeWave(
@@ -1666,6 +1667,7 @@ export async function executeWave(
 	baseBranch: string,
 	onMonitorUpdate?: MonitorUpdateCallback,
 	onLanesAllocated?: (lanes: AllocatedLane[]) => void,
+	workspaceConfig?: WorkspaceConfig | null,
 ): Promise<WaveExecutionResult> {
 	const startedAt = Date.now();
 	const policy = config.failure.on_task_failure;
@@ -1705,7 +1707,7 @@ export async function executeWave(
 	}
 
 	// ── Stage 1: Allocate lanes ──────────────────────────────────
-	const allocResult = allocateLanes(waveTasks, pending, config, repoRoot, batchId, baseBranch);
+	const allocResult = allocateLanes(waveTasks, pending, config, repoRoot, batchId, baseBranch, workspaceConfig);
 
 	if (!allocResult.success) {
 		const errMsg = allocResult.error?.message || "Unknown allocation failure";
