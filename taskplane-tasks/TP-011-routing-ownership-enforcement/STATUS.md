@@ -4,8 +4,8 @@
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 7
-**Iteration:** 4
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** M
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -83,13 +83,28 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] "Must Update" docs modified
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
-- [ ] `.DONE` created
-- [ ] Archive and push
+**4.1 — Update `.pi/local/docs/taskplane/polyrepo-support-spec.md` (Must Update)**
+- [x] Add new section documenting `routing.strict` semantics (workspace-mode only, default `false`)
+- [x] Document strict enforcement behavior during discovery (`TASK_ROUTING_STRICT` error when prompt target missing)
+- [x] Document config validation guardrails (`routing.strict` must be boolean; `null` rejected as `WORKSPACE_SCHEMA_INVALID`)
+- [x] Document recommended team policy: require explicit `## Execution Target` in PROMPT.md for multi-team workspaces
+
+**4.2 — Review `docs/reference/configuration/task-orchestrator.yaml.md` (Check If Affected)**
+- [x] Record decision: **NOT updated** — `routing.strict` is a workspace config field (`WorkspaceRoutingConfig` in `types.ts`, parsed in `workspace.ts` from `.pi/taskplane-workspace.yaml`), not an orchestrator config field. `task-orchestrator.yaml.md` documents `.pi/task-orchestrator.yaml` schema only. No changes needed.
+
+**4.3 — Finalize STATUS.md**
+- [x] Discoveries table complete (all findings from Steps 0–4)
+- [ ] Execution log updated with Step 4 completion
+
+**4.4 — Pre-`.DONE` gate**
+- [x] Confirm all TP-011-related tests pass (targeted: 145/145 — 99 discovery-routing + 46 workspace-config)
+- [x] Confirm pre-existing failures are documented in Discoveries and not caused by TP-011 (3 pre-existing failures in unrelated modules)
+- [x] Confirm prompt completion criteria met: all steps complete, docs updated, tests passing
+
+**4.5 — Create `.DONE`**
+- [ ] `.DONE` created in task folder
 
 ---
 
@@ -109,6 +124,10 @@
 | R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | UNKNOWN | .reviews/R008-code-step3.md |
+| R008 | code | Step 3 | UNKNOWN | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | UNKNOWN | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | UNKNOWN | .reviews/R009-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -116,6 +135,9 @@
 |-----------|-------------|----------|
 | Pre-existing failures in orch-state-persistence.test.ts and task-runner-orchestration.test.ts (4 test files, 3 tests) | Noted — not caused by TP-011 changes | extensions/tests/ |
 | Step 0 schema/types/parsing were already implemented from prior iteration; only tests were missing | Completed — added 19 tests | extensions/tests/discovery-routing.test.ts |
+| `routing.strict: null` fail-open gap: bare YAML `strict:` or explicit `null` was treated as falsy (permissive), bypassing strict enforcement silently | Fixed in Step 2 — null now rejected with `WORKSPACE_SCHEMA_INVALID` | extensions/taskplane/workspace.ts |
+| `routing.strict` lives in workspace config (`.pi/taskplane-workspace.yaml`), not orchestrator config (`.pi/task-orchestrator.yaml`) | No changes to `task-orchestrator.yaml.md` needed | extensions/taskplane/types.ts, workspace.ts |
+| Step 1 was verification-only: all runtime enforcement was already implemented in Step 0 | Documented in Step 1 scope note; added 11 verification tests instead | extensions/tests/ |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -170,6 +192,15 @@
 | 2026-03-15 | Step 3 verified | Full test suite: 202/205 pass (3 pre-existing failures); targeted: 145/145 pass; CLI smoke: help + doctor pass |
 | 2026-03-15 | Step 3 complete | Testing & Verification |
 | 2026-03-15 16:06 | Worker iter 4 | done in 160s, ctx: 12%, tools: 18 |
+| 2026-03-15 16:06 | Worker iter 4 | done in 235s, ctx: 13%, tools: 26 |
+| 2026-03-15 16:08 | Review R008 | code Step 3: UNKNOWN |
+| 2026-03-15 16:08 | Step 3 complete | Testing & Verification |
+| 2026-03-15 16:08 | Step 4 started | Documentation & Delivery |
+| 2026-03-15 16:09 | Review R008 | code Step 3: UNKNOWN |
+| 2026-03-15 16:09 | Step 3 complete | Testing & Verification |
+| 2026-03-15 16:09 | Step 4 started | Documentation & Delivery |
+| 2026-03-15 16:10 | Review R009 | plan Step 4: UNKNOWN |
+| 2026-03-15 16:12 | Review R009 | plan Step 4: UNKNOWN |
 
 ## Blockers
 
