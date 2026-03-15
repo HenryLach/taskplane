@@ -10,7 +10,7 @@ import { execLog, executeWave, tmuxKillSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
-import { formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import { deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
 import { FATAL_DISCOVERY_CODES, generateBatchId } from "./types.ts";
@@ -445,58 +445,20 @@ export async function executeOrchBatch(
 		}
 
 		// ── Handle merge failure ─────────────────────────────────
-		// Apply config.failure.on_merge_failure policy
+		// Apply config.failure.on_merge_failure policy via shared helper
+		// for guaranteed parity with resume.ts (TP-005 Step 2).
 		if (mergeResult && (mergeResult.status === "failed" || mergeResult.status === "partial")) {
-			const mergeFailurePolicy = orchConfig.failure.on_merge_failure;
-			let failedLaneIds = mergeResult.laneResults
-				.filter(r => r.result?.status === "CONFLICT_UNRESOLVED" || r.result?.status === "BUILD_FAILURE" || r.error)
-				.map(r => `lane-${r.laneNumber}`)
-				.join(", ");
-			if (!failedLaneIds && mergeResult.failedLane !== null) {
-				failedLaneIds = `lane-${mergeResult.failedLane}`;
-			}
+			const policyResult = computeMergeFailurePolicy(mergeResult, waveIdx, orchConfig);
 
-			execLog("batch", batchState.batchId, `merge failure — applying ${mergeFailurePolicy} policy`, {
-				failedLane: mergeResult.failedLane ?? 0,
-				failedLaneIds,
-				reason: mergeResult.failureReason?.slice(0, 200) || "unknown",
-			});
+			execLog("batch", batchState.batchId, `merge failure — applying ${policyResult.policy} policy`, policyResult.logDetails);
 
-			if (mergeFailurePolicy === "pause") {
-				batchState.phase = "paused";
-				batchState.errors.push(
-					`Merge failed at wave ${waveIdx + 1}: ${mergeResult.failureReason || "unknown"}. ` +
-					`Batch paused. Resolve conflicts and use /orch-resume to continue.`,
-				);
-				// ── TS-009: Persist BEFORE cleanup decision (pause) ──
-				persistRuntimeState("merge-failure-pause", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, repoRoot);
-				onNotify(
-					`⏸️  Batch paused due to merge failure at wave ${waveIdx + 1} (${failedLaneIds}). ` +
-					`Reason: ${mergeResult.failureReason?.slice(0, 200) || "unknown"}. ` +
-					`Resolve conflicts and resume (TS-009).`,
-					"error",
-				);
-				// DO NOT cleanup/reset worktrees — preserve state for debugging/resume
-				preserveWorktreesForResume = true;
-				break;
-			} else {
-				// abort policy
-				batchState.phase = "stopped";
-				batchState.errors.push(
-					`Merge failed at wave ${waveIdx + 1}: ${mergeResult.failureReason || "unknown"}. ` +
-					`Batch aborted by on_merge_failure policy.`,
-				);
-				// ── TS-009: Persist BEFORE cleanup decision (abort) ──
-				persistRuntimeState("merge-failure-abort", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, repoRoot);
-				onNotify(
-					`⛔ Batch aborted due to merge failure at wave ${waveIdx + 1} (${failedLaneIds}). ` +
-					`Reason: ${mergeResult.failureReason?.slice(0, 200) || "unknown"}.`,
-					"error",
-				);
-				// DO NOT cleanup/reset worktrees — preserve state for debugging
-				preserveWorktreesForResume = true;
-				break;
-			}
+			batchState.phase = policyResult.targetPhase;
+			batchState.errors.push(policyResult.errorMessage);
+			persistRuntimeState(policyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, repoRoot);
+			onNotify(policyResult.notifyMessage, policyResult.notifyLevel);
+			// DO NOT cleanup/reset worktrees — preserve state for debugging/resume
+			preserveWorktreesForResume = true;
+			break;
 		}
 
 		// NOTE: Merged branch cleanup is deferred to Phase 3, AFTER worktree

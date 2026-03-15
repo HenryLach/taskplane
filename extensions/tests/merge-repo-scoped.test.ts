@@ -15,6 +15,7 @@ import {
 	groupLanesByRepo,
 	determineMergeOrder,
 	formatRepoMergeSummary,
+	computeMergeFailurePolicy,
 	ORCH_MESSAGES,
 } from "../task-orchestrator.ts";
 
@@ -23,6 +24,7 @@ import type {
 	AllocatedTask,
 	MergeLaneResult,
 	MergeWaveResult,
+	OrchestratorConfig,
 	ParsedTask,
 	RepoMergeOutcome,
 } from "../task-orchestrator.ts";
@@ -85,6 +87,31 @@ function makeLane(
 		estimatedLoad: taskIds.length * 2,
 		estimatedMinutes: taskIds.length * 60,
 		repoId: opts?.repoId,
+	};
+}
+
+function makeConfig(mergeFailurePolicy: "pause" | "abort" = "pause"): OrchestratorConfig {
+	return {
+		orchestrator: {
+			max_lanes: 4,
+			worktree_location: "sibling",
+			worktree_prefix: "orch",
+			batch_id_format: "timestamp",
+			spawn_mode: "tmux",
+			tmux_prefix: "orch",
+		},
+		dependencies: { source: "prompt", cache: true },
+		assignment: { strategy: "round-robin", size_weights: {} },
+		pre_warm: { auto_detect: false, commands: {}, always: [] },
+		merge: { model: "", tools: "", verify: [], order: "fewest-files-first" },
+		failure: {
+			on_task_failure: "skip-dependents",
+			on_merge_failure: mergeFailurePolicy,
+			stall_timeout: 30,
+			max_worker_minutes: 30,
+			abort_grace_period: 30,
+		},
+		monitoring: { poll_interval: 5 },
 	};
 }
 
@@ -650,6 +677,401 @@ function runAllTests(): void {
 
 		const summary = formatRepoMergeSummary(mergeResult);
 		assert(summary === null, "mixed-outcome-lanes: no repo summary when all repos partial (same status)");
+	}
+
+	// ─── 19. computeMergeFailurePolicy: pause policy ────────────────
+	console.log("\n── 19. computeMergeFailurePolicy: pause policy ──");
+	{
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 2,
+			status: "failed",
+			laneResults: [
+				{
+					laneNumber: 3, laneId: "api/lane-3", sourceBranch: "task/lane-3",
+					targetBranch: "main", result: {
+						status: "CONFLICT_UNRESOLVED", source_branch: "task/lane-3", target_branch: "main",
+						merge_commit: "", conflicts: [{ file: "index.ts", type: "content", resolved: false }],
+						verification: { ran: false, passed: false, output: "" },
+					},
+					error: null, durationMs: 5000, repoId: "api",
+				},
+			],
+			failedLane: 3,
+			failureReason: "Unresolved merge conflicts in lane 3: index.ts",
+			totalDurationMs: 5000,
+		};
+		const config = makeConfig("pause");
+		const result = computeMergeFailurePolicy(mergeResult, 1, config);
+
+		assert(result.policy === "pause", "pause-policy: policy is 'pause'");
+		assert(result.targetPhase === "paused", "pause-policy: targetPhase is 'paused'");
+		assert(result.persistTrigger === "merge-failure-pause", "pause-policy: persistTrigger is 'merge-failure-pause'");
+		assert(result.notifyLevel === "error", "pause-policy: notifyLevel is 'error'");
+		assert(result.failedLaneIds === "lane-3", "pause-policy: failedLaneIds is 'lane-3'");
+		assert(result.notifyMessage.includes("⏸️"), "pause-policy: notify has pause emoji");
+		assert(result.notifyMessage.includes("lane-3"), "pause-policy: notify includes lane ID");
+		assert(result.notifyMessage.includes("wave 2"), "pause-policy: notify includes wave number");
+		assert(result.notifyMessage.includes("Reason:"), "pause-policy: notify includes reason prefix");
+		assert(result.notifyMessage.includes("index.ts"), "pause-policy: notify includes failure detail");
+		assert(result.errorMessage.includes("wave 2"), "pause-policy: error includes wave number");
+		assert(result.errorMessage.includes("/orch-resume"), "pause-policy: error mentions /orch-resume");
+		assert(result.logDetails.failedLane === 3, "pause-policy: logDetails.failedLane is 3");
+		assert(result.logDetails.failedLaneIds === "lane-3", "pause-policy: logDetails.failedLaneIds");
+	}
+
+	// ─── 20. computeMergeFailurePolicy: abort policy ────────────────
+	console.log("\n── 20. computeMergeFailurePolicy: abort policy ──");
+	{
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 1,
+			status: "partial",
+			laneResults: [
+				{
+					laneNumber: 1, laneId: "lane-1", sourceBranch: "task/lane-1",
+					targetBranch: "main", result: {
+						status: "SUCCESS", source_branch: "task/lane-1", target_branch: "main",
+						merge_commit: "abc1234", conflicts: [],
+						verification: { ran: true, passed: true, output: "" },
+					},
+					error: null, durationMs: 5000,
+				},
+				{
+					laneNumber: 2, laneId: "lane-2", sourceBranch: "task/lane-2",
+					targetBranch: "main", result: {
+						status: "BUILD_FAILURE", source_branch: "task/lane-2", target_branch: "main",
+						merge_commit: "", conflicts: [],
+						verification: { ran: true, passed: false, output: "tests failed" },
+					},
+					error: null, durationMs: 3000,
+				},
+			],
+			failedLane: 2,
+			failureReason: "Post-merge verification failed in lane 2",
+			totalDurationMs: 8000,
+		};
+		const config = makeConfig("abort");
+		const result = computeMergeFailurePolicy(mergeResult, 0, config);
+
+		assert(result.policy === "abort", "abort-policy: policy is 'abort'");
+		assert(result.targetPhase === "stopped", "abort-policy: targetPhase is 'stopped'");
+		assert(result.persistTrigger === "merge-failure-abort", "abort-policy: persistTrigger is 'merge-failure-abort'");
+		assert(result.notifyMessage.includes("⛔"), "abort-policy: notify has stop emoji");
+		assert(result.notifyMessage.includes("lane-2"), "abort-policy: notify includes lane ID");
+		assert(result.notifyMessage.includes("wave 1"), "abort-policy: notify includes wave number");
+		assert(result.notifyMessage.includes("Reason:"), "abort-policy: notify includes reason prefix");
+		assert(result.failedLaneIds === "lane-2", "abort-policy: failedLaneIds is 'lane-2'");
+		assert(result.errorMessage.includes("on_merge_failure"), "abort-policy: error mentions policy name");
+	}
+
+	// ─── 21. computeMergeFailurePolicy: setup failure (failedLane=null) ──
+	console.log("\n── 21. computeMergeFailurePolicy: setup failure (no failedLane) ──");
+	{
+		// Repo setup failure: mergeWave() returns status="failed" with failedLane=null
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 1,
+			status: "failed",
+			laneResults: [],
+			failedLane: null,
+			failureReason: "Failed to create merge temp branch: branch exists",
+			totalDurationMs: 100,
+		};
+		const config = makeConfig("pause");
+		const result = computeMergeFailurePolicy(mergeResult, 0, config);
+
+		assert(result.failedLaneIds === "", "setup-failure: failedLaneIds is empty");
+		assert(result.logDetails.failedLane === 0, "setup-failure: logDetails.failedLane is 0 (null mapped to 0)");
+		assert(result.notifyMessage.includes("wave 1"), "setup-failure: notify includes wave number");
+		assert(!result.notifyMessage.includes("(lane-"), "setup-failure: notify does NOT include lane detail");
+		assert(result.notifyMessage.includes("Reason:"), "setup-failure: notify includes reason");
+		assert(result.notifyMessage.includes("temp branch"), "setup-failure: notify includes actual reason");
+	}
+
+	// ─── 22. computeMergeFailurePolicy: multi-lane failure attribution ──
+	console.log("\n── 22. computeMergeFailurePolicy: multi-lane failure ──");
+	{
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 3,
+			status: "failed",
+			laneResults: [
+				{
+					laneNumber: 1, laneId: "lane-1", sourceBranch: "b1", targetBranch: "main",
+					result: null, error: "spawn failed", durationMs: 100,
+				},
+				{
+					laneNumber: 4, laneId: "lane-4", sourceBranch: "b4", targetBranch: "main",
+					result: {
+						status: "BUILD_FAILURE", source_branch: "b4", target_branch: "main",
+						merge_commit: "", conflicts: [],
+						verification: { ran: true, passed: false, output: "err" },
+					},
+					error: null, durationMs: 200,
+				},
+			],
+			failedLane: 1,
+			failureReason: "Merge error in lane 1: spawn failed",
+			totalDurationMs: 300,
+		};
+		const config = makeConfig("abort");
+		const result = computeMergeFailurePolicy(mergeResult, 2, config);
+
+		assert(result.failedLaneIds === "lane-1, lane-4", "multi-lane: failedLaneIds lists both lanes");
+		assert(result.notifyMessage.includes("lane-1, lane-4"), "multi-lane: notify includes both lane IDs");
+	}
+
+	// ─── 23. computeMergeFailurePolicy: engine vs resume parity ──────
+	console.log("\n── 23. computeMergeFailurePolicy: parity guarantee ──");
+	{
+		// The same function is called by both engine.ts and resume.ts.
+		// Verify it produces identical output for the same inputs — this is
+		// the structural parity guarantee (both import computeMergeFailurePolicy).
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 2,
+			status: "partial",
+			laneResults: [
+				{
+					laneNumber: 5, laneId: "api/lane-5", sourceBranch: "task/lane-5",
+					targetBranch: "develop", result: {
+						status: "CONFLICT_UNRESOLVED", source_branch: "task/lane-5", target_branch: "develop",
+						merge_commit: "", conflicts: [{ file: "a.ts", type: "content", resolved: false }],
+						verification: { ran: false, passed: false, output: "" },
+					},
+					error: null, durationMs: 1000, repoId: "api",
+				},
+			],
+			failedLane: 5,
+			failureReason: "[repo:api] Unresolved merge conflicts in lane 5: a.ts",
+			totalDurationMs: 1000,
+			repoResults: [
+				{
+					repoId: "api", status: "failed",
+					laneResults: [], failedLane: 5, failureReason: "Unresolved merge conflicts",
+				},
+				{
+					repoId: "web", status: "succeeded",
+					laneResults: [], failedLane: null, failureReason: null,
+				},
+			],
+		};
+
+		const pauseConfig = makeConfig("pause");
+		const abortConfig = makeConfig("abort");
+
+		// Call twice — simulating engine.ts and resume.ts calling the same function
+		const engineResult = computeMergeFailurePolicy(mergeResult, 1, pauseConfig);
+		const resumeResult = computeMergeFailurePolicy(mergeResult, 1, pauseConfig);
+
+		assert(engineResult.policy === resumeResult.policy, "parity: same policy");
+		assert(engineResult.targetPhase === resumeResult.targetPhase, "parity: same targetPhase");
+		assert(engineResult.errorMessage === resumeResult.errorMessage, "parity: same errorMessage");
+		assert(engineResult.notifyMessage === resumeResult.notifyMessage, "parity: same notifyMessage");
+		assert(engineResult.persistTrigger === resumeResult.persistTrigger, "parity: same persistTrigger");
+		assert(engineResult.failedLaneIds === resumeResult.failedLaneIds, "parity: same failedLaneIds");
+		assert(JSON.stringify(engineResult.logDetails) === JSON.stringify(resumeResult.logDetails), "parity: same logDetails");
+
+		// Also check abort policy produces different result
+		const abortResult = computeMergeFailurePolicy(mergeResult, 1, abortConfig);
+		assert(abortResult.policy !== engineResult.policy, "parity: different config → different policy");
+		assert(abortResult.targetPhase !== engineResult.targetPhase, "parity: different config → different phase");
+	}
+
+	// ─── 24. computeMergeFailurePolicy: reason truncation ────────────
+	console.log("\n── 24. computeMergeFailurePolicy: reason truncation ──");
+	{
+		const longReason = "x".repeat(500);
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 1,
+			status: "failed",
+			laneResults: [],
+			failedLane: 1,
+			failureReason: longReason,
+			totalDurationMs: 100,
+		};
+		const config = makeConfig("pause");
+		const result = computeMergeFailurePolicy(mergeResult, 0, config);
+
+		// Notification should truncate to 200 chars
+		assert(result.notifyMessage.length < longReason.length + 200, "truncation: notify is shorter than full reason");
+		assert(result.logDetails.reason.length === 200, "truncation: logDetails.reason is 200 chars");
+		// Error message stores the full reason for batchState.errors
+		assert(result.errorMessage.includes(longReason), "truncation: errorMessage stores full reason");
+	}
+
+	// ─── 25. computeMergeFailurePolicy: deterministic first-failure across repos ──
+	console.log("\n── 25. computeMergeFailurePolicy: deterministic first-failure across repos ──");
+	{
+		// When mergeWaveByRepo processes repos in sorted order, the first failure
+		// is always from the alphabetically-first failing repo.
+		// This test validates the downstream policy application is also deterministic.
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 1,
+			status: "partial",
+			laneResults: [
+				{
+					laneNumber: 1, laneId: "api/lane-1", sourceBranch: "b1", targetBranch: "main",
+					result: { status: "SUCCESS", source_branch: "b1", target_branch: "main", merge_commit: "a", conflicts: [], verification: { ran: true, passed: true, output: "" } },
+					error: null, durationMs: 100, repoId: "api",
+				},
+				{
+					laneNumber: 2, laneId: "web/lane-2", sourceBranch: "b2", targetBranch: "main",
+					result: { status: "CONFLICT_UNRESOLVED", source_branch: "b2", target_branch: "main", merge_commit: "", conflicts: [{ file: "x.ts", type: "content", resolved: false }], verification: { ran: false, passed: false, output: "" } },
+					error: null, durationMs: 200, repoId: "web",
+				},
+			],
+			failedLane: 2,
+			failureReason: "[repo:web] Unresolved merge conflicts in lane 2: x.ts",
+			totalDurationMs: 300,
+		};
+
+		const config = makeConfig("pause");
+
+		// Call 3 times — all must produce identical output
+		const results = [
+			computeMergeFailurePolicy(mergeResult, 0, config),
+			computeMergeFailurePolicy(mergeResult, 0, config),
+			computeMergeFailurePolicy(mergeResult, 0, config),
+		];
+
+		assert(results[0].failedLaneIds === results[1].failedLaneIds && results[1].failedLaneIds === results[2].failedLaneIds,
+			"deterministic: failedLaneIds identical across 3 calls");
+		assert(results[0].notifyMessage === results[1].notifyMessage && results[1].notifyMessage === results[2].notifyMessage,
+			"deterministic: notifyMessage identical across 3 calls");
+		assert(results[0].errorMessage === results[1].errorMessage && results[1].errorMessage === results[2].errorMessage,
+			"deterministic: errorMessage identical across 3 calls");
+	}
+
+	// ─── 26. computeMergeFailurePolicy: repo-level fallback for setup failures ──
+	console.log("\n── 26. computeMergeFailurePolicy: repo-level fallback ──");
+	{
+		// Repo setup failure in workspace mode: failedLane=null, no lane results,
+		// but repoResults show which repos failed. The repo-level fallback should
+		// produce `repo:<repoId>` identifiers instead of empty string.
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 2,
+			status: "failed",
+			laneResults: [], // No lanes merged (setup failed)
+			failedLane: null,
+			failureReason: "[repo:backend] Merge failed (setup error)",
+			totalDurationMs: 50,
+			repoResults: [
+				{
+					repoId: "backend", status: "failed",
+					laneResults: [], failedLane: null, failureReason: "Merge failed (setup error)",
+				},
+				{
+					repoId: "frontend", status: "succeeded",
+					laneResults: [], failedLane: null, failureReason: null,
+				},
+			],
+		};
+		const config = makeConfig("pause");
+		const result = computeMergeFailurePolicy(mergeResult, 1, config);
+
+		assert(result.failedLaneIds === "repo:backend", "repo-fallback: failedLaneIds uses repo:backend");
+		assert(result.notifyMessage.includes("repo:backend"), "repo-fallback: notify includes repo:backend");
+		assert(result.notifyMessage.includes("wave 2"), "repo-fallback: notify includes wave number");
+		assert(result.logDetails.failedLaneIds === "repo:backend", "repo-fallback: logDetails uses repo:backend");
+	}
+
+	// ─── 27. computeMergeFailurePolicy: multi-repo setup failure fallback ──
+	console.log("\n── 27. computeMergeFailurePolicy: multi-repo setup failure ──");
+	{
+		// Both repos fail setup — repo-level fallback lists both, sorted
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 1,
+			status: "failed",
+			laneResults: [],
+			failedLane: null,
+			failureReason: "[repo:api] Merge failed (setup error)",
+			totalDurationMs: 50,
+			repoResults: [
+				{
+					repoId: "api", status: "failed",
+					laneResults: [], failedLane: null, failureReason: "setup error",
+				},
+				{
+					repoId: "web", status: "failed",
+					laneResults: [], failedLane: null, failureReason: "setup error",
+				},
+			],
+		};
+		const config = makeConfig("abort");
+		const result = computeMergeFailurePolicy(mergeResult, 0, config);
+
+		assert(result.failedLaneIds === "repo:api, repo:web", "multi-repo-setup: failedLaneIds lists both repos");
+		assert(result.notifyMessage.includes("repo:api, repo:web"), "multi-repo-setup: notify includes both repos");
+		assert(result.targetPhase === "stopped", "multi-repo-setup: abort → stopped");
+	}
+
+	// ─── 28. computeMergeFailurePolicy: lane-level takes priority over repo-level ──
+	console.log("\n── 28. computeMergeFailurePolicy: lane-level priority ──");
+	{
+		// When there are lane-level failures, repo-level fallback should NOT be used
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 1,
+			status: "partial",
+			laneResults: [
+				{
+					laneNumber: 3, laneId: "web/lane-3", sourceBranch: "b3", targetBranch: "main",
+					result: {
+						status: "CONFLICT_UNRESOLVED", source_branch: "b3", target_branch: "main",
+						merge_commit: "", conflicts: [{ file: "y.ts", type: "content", resolved: false }],
+						verification: { ran: false, passed: false, output: "" },
+					},
+					error: null, durationMs: 200, repoId: "web",
+				},
+			],
+			failedLane: 3,
+			failureReason: "[repo:web] Unresolved merge conflicts",
+			totalDurationMs: 200,
+			repoResults: [
+				{
+					repoId: "api", status: "succeeded",
+					laneResults: [], failedLane: null, failureReason: null,
+				},
+				{
+					repoId: "web", status: "failed",
+					laneResults: [], failedLane: 3, failureReason: "conflicts",
+				},
+			],
+		};
+		const config = makeConfig("pause");
+		const result = computeMergeFailurePolicy(mergeResult, 0, config);
+
+		// Lane-level attribution should be used, NOT repo-level
+		assert(result.failedLaneIds === "lane-3", "lane-priority: failedLaneIds is lane-3 (not repo:web)");
+		assert(!result.failedLaneIds.includes("repo:"), "lane-priority: no repo: prefix when lane-level exists");
+	}
+
+	// ─── 29. computeMergeFailurePolicy: preserveWorktrees contract ───
+	console.log("\n── 29. preserveWorktrees contract verification ──");
+	{
+		// Verify that the policy result structure enables correct artifact preservation.
+		// Both pause and abort produce a result that callers use to set preserveWorktreesForResume = true.
+		// This test validates the structural invariant, not the side effect itself.
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 1,
+			status: "failed",
+			laneResults: [],
+			failedLane: null,
+			failureReason: "some error",
+			totalDurationMs: 100,
+		};
+
+		const pauseResult = computeMergeFailurePolicy(mergeResult, 0, makeConfig("pause"));
+		const abortResult = computeMergeFailurePolicy(mergeResult, 0, makeConfig("abort"));
+
+		// Both policies produce a definite targetPhase that engine/resume use to trigger
+		// preserveWorktreesForResume = true and skip final cleanup.
+		assert(pauseResult.targetPhase === "paused", "preserve-contract: pause → paused (triggers worktree preservation)");
+		assert(abortResult.targetPhase === "stopped", "preserve-contract: abort → stopped (triggers worktree preservation)");
+
+		// Both persist triggers are recognized by persistRuntimeState()
+		assert(pauseResult.persistTrigger === "merge-failure-pause", "preserve-contract: pause persistTrigger");
+		assert(abortResult.persistTrigger === "merge-failure-abort", "preserve-contract: abort persistTrigger");
+
+		// Error messages are pushed to batchState.errors for state persistence
+		assert(pauseResult.errorMessage.length > 0, "preserve-contract: pause error non-empty");
+		assert(abortResult.errorMessage.length > 0, "preserve-contract: abort error non-empty");
 	}
 
 	// ── Summary ──────────────────────────────────────────────────────

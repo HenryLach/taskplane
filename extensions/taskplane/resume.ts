@@ -11,7 +11,7 @@ import { execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasS
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
-import { formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import { deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { StateFileError } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
@@ -1001,38 +1001,18 @@ export async function resumeOrchBatch(
 			onNotify(ORCH_MESSAGES.orchMergeSkipped(waveIdx + 1), "info");
 		}
 
-		// Handle merge failure
+		// Handle merge failure — shared helper guarantees parity with engine.ts (TP-005 Step 2)
 		if (mergeResult && (mergeResult.status === "failed" || mergeResult.status === "partial")) {
-			const mergeFailurePolicy = orchConfig.failure.on_merge_failure;
+			const policyResult = computeMergeFailurePolicy(mergeResult, waveIdx, orchConfig);
 
-			if (mergeFailurePolicy === "pause") {
-				batchState.phase = "paused";
-				batchState.errors.push(
-					`Merge failed at wave ${waveIdx + 1}: ${mergeResult.failureReason || "unknown"}. ` +
-					`Batch paused. Resolve conflicts and use /orch-resume to continue.`,
-				);
-				persistRuntimeState("merge-failure-pause", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
-				onNotify(
-					`⏸️  Batch paused due to merge failure at wave ${waveIdx + 1}. ` +
-					`Resolve conflicts and resume.`,
-					"error",
-				);
-				preserveWorktreesForResume = true;
-				break;
-			} else {
-				batchState.phase = "stopped";
-				batchState.errors.push(
-					`Merge failed at wave ${waveIdx + 1}: ${mergeResult.failureReason || "unknown"}. ` +
-					`Batch aborted by on_merge_failure policy.`,
-				);
-				persistRuntimeState("merge-failure-abort", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
-				onNotify(
-					`⛔ Batch aborted due to merge failure at wave ${waveIdx + 1}.`,
-					"error",
-				);
-				preserveWorktreesForResume = true;
-				break;
-			}
+			execLog("batch", batchState.batchId, `merge failure — applying ${policyResult.policy} policy`, policyResult.logDetails);
+
+			batchState.phase = policyResult.targetPhase;
+			batchState.errors.push(policyResult.errorMessage);
+			persistRuntimeState(policyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
+			onNotify(policyResult.notifyMessage, policyResult.notifyLevel);
+			preserveWorktreesForResume = true;
+			break;
 		}
 
 		// Post-merge: reset worktrees for next wave

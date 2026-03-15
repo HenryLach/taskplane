@@ -2,7 +2,7 @@
  * User-facing message templates (ORCH_MESSAGES)
  * @module orch/messages
  */
-import type { AbortMode, MergeWaveResult, RepoMergeOutcome } from "./types.ts";
+import type { AbortMode, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome } from "./types.ts";
 
 // ── Message Templates ────────────────────────────────────────────────
 
@@ -191,6 +191,136 @@ export function formatRepoMergeSummary(mergeResult: MergeWaveResult): string | n
 	});
 
 	return ORCH_MESSAGES.orchMergePartialRepoSummary(mergeResult.waveIndex, repoLines);
+}
+
+
+// ── Merge Failure Policy Application (TP-005 Step 2) ─────────────────
+
+/**
+ * Result of applying the merge failure policy.
+ *
+ * Pure function output — callers use this to perform state mutations
+ * and notifications consistently. Ensures engine.ts and resume.ts
+ * apply identical pause/abort transitions.
+ */
+export interface MergeFailurePolicyResult {
+	/** The applied policy: "pause" or "abort". */
+	policy: "pause" | "abort";
+	/** Target phase for batchState.phase. */
+	targetPhase: "paused" | "stopped";
+	/** Error message to push to batchState.errors. */
+	errorMessage: string;
+	/** Persistence trigger label. */
+	persistTrigger: "merge-failure-pause" | "merge-failure-abort";
+	/** User-facing notification message. */
+	notifyMessage: string;
+	/** Notification level for onNotify. */
+	notifyLevel: "error";
+	/** Comma-separated failed lane identifiers for logging. */
+	failedLaneIds: string;
+	/** Structured log details for execLog. */
+	logDetails: {
+		failedLane: number;
+		failedLaneIds: string;
+		reason: string;
+	};
+}
+
+/**
+ * Compute the merge failure policy application result.
+ *
+ * This is a **pure function** — it computes all outputs deterministically
+ * from the merge result and config, without performing any side effects.
+ *
+ * Both engine.ts and resume.ts MUST use this function to guarantee
+ * identical failure attribution, phase transitions, error messages,
+ * and notifications on repo-scoped merge failures.
+ *
+ * Failure attribution rules (priority chain):
+ * 1. Lane-level: lanes with CONFLICT_UNRESOLVED, BUILD_FAILURE, or error
+ *    → formatted as `lane-<N>` (comma-separated).
+ * 2. Fallback: if no lane-level failures but `mergeResult.failedLane`
+ *    is non-null, uses `lane-<N>` as the identifier.
+ * 3. Repo-level: if no lane-level failures and failedLane is null
+ *    (repo setup failure), uses `repo:<repoId>` from repoResults
+ *    entries with non-succeeded status. Sorted deterministically.
+ * - The failure reason is truncated to 200 chars for notifications and
+ *   logged in full in batchState.errors.
+ *
+ * @param mergeResult  - The merge wave result with status "failed" or "partial"
+ * @param waveIndex    - 0-based wave index (displayed as 1-indexed)
+ * @param config       - Orchestrator configuration (for on_merge_failure policy)
+ * @returns Policy result object for callers to apply
+ */
+export function computeMergeFailurePolicy(
+	mergeResult: MergeWaveResult,
+	waveIndex: number,
+	config: OrchestratorConfig,
+): MergeFailurePolicyResult {
+	const waveNum = waveIndex + 1;
+	const mergeFailurePolicy = config.failure.on_merge_failure;
+
+	// Build failed lane identifiers from lane results.
+	// Priority chain:
+	//   1. Lane-level: lanes with CONFLICT_UNRESOLVED, BUILD_FAILURE, or error
+	//   2. Fallback: failedLane from mergeResult (single lane ID)
+	//   3. Repo-level: repos with non-succeeded status from repoResults
+	//      (catches setup failures where failedLane=null and no lane results)
+	let failedLaneIds = mergeResult.laneResults
+		.filter(r => r.result?.status === "CONFLICT_UNRESOLVED" || r.result?.status === "BUILD_FAILURE" || r.error)
+		.map(r => `lane-${r.laneNumber}`)
+		.join(", ");
+	if (!failedLaneIds && mergeResult.failedLane !== null) {
+		failedLaneIds = `lane-${mergeResult.failedLane}`;
+	}
+	if (!failedLaneIds && mergeResult.repoResults && mergeResult.repoResults.length > 0) {
+		// Repo-level fallback for setup failures (no lane results, failedLane=null).
+		// Uses sorted repoResults order for determinism.
+		failedLaneIds = mergeResult.repoResults
+			.filter(r => r.status !== "succeeded")
+			.map(r => `repo:${r.repoId ?? "default"}`)
+			.join(", ");
+	}
+
+	const reason = mergeResult.failureReason || "unknown";
+	const reasonTruncated = reason.slice(0, 200);
+
+	const logDetails = {
+		failedLane: mergeResult.failedLane ?? 0,
+		failedLaneIds,
+		reason: reasonTruncated,
+	};
+
+	const errorMessage =
+		`Merge failed at wave ${waveNum}: ${reason}. ` +
+		(mergeFailurePolicy === "pause"
+			? `Batch paused. Resolve conflicts and use /orch-resume to continue.`
+			: `Batch aborted by on_merge_failure policy.`);
+
+	const laneDetail = failedLaneIds ? ` (${failedLaneIds})` : "";
+
+	let notifyMessage: string;
+	if (mergeFailurePolicy === "pause") {
+		notifyMessage =
+			`⏸️  Batch paused due to merge failure at wave ${waveNum}${laneDetail}. ` +
+			`Reason: ${reasonTruncated}. ` +
+			`Resolve conflicts and resume.`;
+	} else {
+		notifyMessage =
+			`⛔ Batch aborted due to merge failure at wave ${waveNum}${laneDetail}. ` +
+			`Reason: ${reasonTruncated}.`;
+	}
+
+	return {
+		policy: mergeFailurePolicy,
+		targetPhase: mergeFailurePolicy === "pause" ? "paused" : "stopped",
+		errorMessage,
+		persistTrigger: mergeFailurePolicy === "pause" ? "merge-failure-pause" : "merge-failure-abort",
+		notifyMessage,
+		notifyLevel: "error",
+		failedLaneIds,
+		logDetails,
+	};
 }
 
 

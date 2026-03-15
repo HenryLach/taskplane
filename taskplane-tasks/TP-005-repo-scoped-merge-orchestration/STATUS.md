@@ -1,11 +1,11 @@
 # TP-005: Repo-Scoped Merge Orchestration with Explicit Partial Outcomes — Status
 
-**Current Step:** Step 1: Update outcome modeling
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 3
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** L
 
 > **Hydration:** Checkboxes below must be granular — one per unit of work.
@@ -62,10 +62,40 @@
 ---
 
 ### Step 2: Harden failure behavior
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Ensure pause/abort policies remain deterministic with repo-scoped failures
-- [ ] Preserve debug artifacts needed for manual intervention
+**Contract:**
+
+**Deterministic failure attribution rules:**
+- `failedLaneIds` is built from `MergeWaveResult.laneResults` with `CONFLICT_UNRESOLVED`, `BUILD_FAILURE`, or `error` status. Lanes are listed in their merge result order (which is deterministic due to sorted repo groups from `mergeWaveByRepo`).
+- When no lane-level failures exist but `mergeResult.failedLane` is non-null, `failedLaneIds` falls back to `lane-<N>`.
+- For repo-level setup failures (`failedLane=null`, `status="failed"`, empty `laneResults`), `failedLaneIds` is empty string. The failure reason carries the setup error detail.
+- First-failure ordering is deterministic because `mergeWaveByRepo` processes repos in alphabetical order and `firstFailedLane`/`firstFailureReason` capture the first.
+
+**Policy transition rules:**
+- `on_merge_failure: "pause"` → `batchState.phase = "paused"`, persist with `"merge-failure-pause"` trigger, set `preserveWorktreesForResume = true`, break wave loop.
+- `on_merge_failure: "abort"` → `batchState.phase = "stopped"`, persist with `"merge-failure-abort"` trigger, set `preserveWorktreesForResume = true`, break wave loop.
+- Both engine.ts and resume.ts use the shared `computeMergeFailurePolicy()` helper in `messages.ts` to guarantee identical decisions and messages.
+
+**Artifact preservation rules:**
+- On pause/abort: lane worktrees are preserved (NOT cleaned up) for manual intervention.
+- `.pi/batch-state.json` is persisted BEFORE the cleanup-skip decision (captures phase, error, wave plan, lane records).
+- Merge result sidecar files (`.pi/merge-result-*.json`) are left in place by `mergeWave()` (never cleaned up on failure).
+- Merge request sidecar files are cleaned up per-lane after each merge attempt.
+- Lane state files (`.pi/lane-state-*.json`) and worker conversation files remain for debugging.
+- On success: all artifacts are cleaned up in Phase 3 (engine.ts) / step 11 (resume.ts).
+
+- [x] Extract shared `computeMergeFailurePolicy()` pure function in messages.ts
+- [x] Refactor engine.ts merge-failure handler to use `computeMergeFailurePolicy()`
+- [x] Refactor resume.ts merge-failure handler to use `computeMergeFailurePolicy()` (parity)
+- [x] Add tests: pause policy produces correct phase/trigger/message (test 19)
+- [x] Add tests: abort policy produces correct phase/trigger/message (test 20)
+- [x] Add tests: setup-failure attribution with failedLane=null (test 21)
+- [x] Add tests: multi-lane failure attribution (test 22)
+- [x] Add tests: engine vs resume parity — same function, same output (test 23)
+- [x] Add tests: reason truncation in notifications vs full in errors (test 24)
+- [x] Add tests: deterministic first-failure across repos (test 25)
+- [x] Verify all 207 tests pass
 
 ---
 
@@ -98,6 +128,10 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | APPROVE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -142,6 +176,20 @@
 | 2026-03-15 17:21 | Step 0 complete | Partition merge flow by repo |
 | 2026-03-15 17:21 | Step 1 started | Update outcome modeling |
 | 2026-03-15 17:22 | Review R003 | plan Step 1: APPROVE |
+| 2026-03-15 17:23 | Worker iter 2 | done in 376s, ctx: 41%, tools: 47 |
+| 2026-03-15 17:25 | Review R004 | code Step 1: APPROVE |
+| 2026-03-15 17:25 | Step 1 complete | Update outcome modeling |
+| 2026-03-15 17:25 | Step 2 started | Harden failure behavior |
+| 2026-03-15 17:27 | Review R004 | code Step 1: APPROVE |
+| 2026-03-15 17:27 | Step 1 complete | Update outcome modeling |
+| 2026-03-15 17:27 | Step 2 started | Harden failure behavior |
+| 2026-03-15 17:27 | Review R005 | plan Step 2: REVISE |
+| 2026-03-15 17:33 | Step 2 hydrated | Plan expanded per R005 findings |
+| 2026-03-15 17:33 | Step 2 impl | computeMergeFailurePolicy() shared helper in messages.ts |
+| 2026-03-15 17:33 | Step 2 impl | Refactored engine.ts + resume.ts to use shared helper (parity) |
+| 2026-03-15 17:33 | Step 2 tests | 7 new test sections (19-25) for failure policy determinism + parity |
+| 2026-03-15 17:33 | Step 2 verified | All 207 tests pass (11 files) |
+| 2026-03-15 17:29 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 
