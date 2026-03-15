@@ -118,7 +118,8 @@ export function buildLaneEnvVars(
 	if (promptNorm.startsWith(repoRootNorm + "/")) {
 		relativePath = promptNorm.slice(repoRootNorm.length + 1);
 	} else {
-		// Fallback: use the path as-is (shouldn't happen in normal use)
+		// External task folder (workspace mode): prompt path is outside repo root.
+		// Use the absolute path as-is — task-runner accepts absolute TASK_AUTOSTART paths.
 		relativePath = promptPath;
 	}
 
