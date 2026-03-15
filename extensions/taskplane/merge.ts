@@ -7,6 +7,7 @@ import { spawnSync } from "child_process";
 import { join } from "path";
 
 import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
+import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
@@ -494,6 +495,7 @@ export function mergeWave(
 ): MergeWaveResult {
 	const startTime = Date.now();
 	const tmuxPrefix = config.orchestrator.tmux_prefix;
+	const opId = resolveOperatorId(config);
 	const targetBranch = baseBranch;
 	const laneResults: MergeLaneResult[] = [];
 
@@ -544,8 +546,9 @@ export function mergeWave(
 	// ── Create isolated merge worktree ──────────────────────────────
 	// Merging in a dedicated worktree prevents dirty-worktree failures
 	// caused by user edits or orchestrator-generated files in the main repo.
-	const tempBranch = `_merge-temp-${batchId}`;
-	const mergeWorkDir = join(repoRoot, ".worktrees", "merge-workspace");
+	// Include opId to prevent collisions between concurrent operators.
+	const tempBranch = `_merge-temp-${opId}-${batchId}`;
+	const mergeWorkDir = join(repoRoot, ".worktrees", `merge-workspace-${opId}`);
 
 	// Clean up stale merge worktree/branch from prior failed attempt
 	try {
@@ -593,10 +596,10 @@ export function mergeWave(
 
 	for (const lane of orderedLanes) {
 		const laneStart = Date.now();
-		const sessionName = `${tmuxPrefix}-merge-${lane.laneNumber}`;
-		const resultFileName = `merge-result-w${waveIndex}-lane${lane.laneNumber}-${batchId}.json`;
+		const sessionName = `${tmuxPrefix}-${opId}-merge-${lane.laneNumber}`;
+		const resultFileName = `merge-result-w${waveIndex}-lane${lane.laneNumber}-${opId}-${batchId}.json`;
 		const resultFilePath = join(repoRoot, ".pi", resultFileName);
-		const requestFileName = `merge-request-w${waveIndex}-lane${lane.laneNumber}-${batchId}.txt`;
+		const requestFileName = `merge-request-w${waveIndex}-lane${lane.laneNumber}-${opId}-${batchId}.txt`;
 		const requestFilePath = join(repoRoot, ".pi", requestFileName);
 
 		execLog("merge", sessionName, `starting merge for lane ${lane.laneNumber}`, {

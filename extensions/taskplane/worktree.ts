@@ -8,20 +8,25 @@ import { join, basename, resolve } from "path";
 
 import { execLog } from "./execution.ts";
 import { runGit } from "./git.ts";
+import { resolveOperatorId } from "./naming.ts";
 import { DEFAULT_ORCHESTRATOR_CONFIG, WorktreeError } from "./types.ts";
 import type { BulkWorktreeError, CreateLaneWorktreesResult, CreateWorktreeOptions, OrchestratorConfig, PreflightCheck, PreflightResult, RemoveAllWorktreesResult, RemoveWorktreeOutcome, RemoveWorktreeResult, WorktreeInfo } from "./types.ts";
 
 // ── Worktree Helpers ─────────────────────────────────────────────────
 
 /**
- * Generate branch name per §4.4 naming convention.
- * Format: task/lane-{N}-{batchId}
+ * Generate branch name per naming convention.
+ * Format: task/{opId}-lane-{N}-{batchId}
+ *
+ * Includes the operator identifier for collision resistance across
+ * concurrent operators in the same repository.
  *
  * @param laneNumber - Lane number (1-indexed)
  * @param batchId    - Batch ID timestamp (e.g. "20260308T111750")
+ * @param opId       - Operator identifier (sanitized, e.g., "henrylach")
  */
-export function generateBranchName(laneNumber: number, batchId: string): string {
-	return `task/lane-${laneNumber}-${batchId}`;
+export function generateBranchName(laneNumber: number, batchId: string, opId: string): string {
+	return `task/${opId}-lane-${laneNumber}-${batchId}`;
 }
 
 /**
@@ -52,26 +57,28 @@ export function resolveWorktreeBasePath(
 /**
  * Generate worktree path based on config's worktree_location setting.
  *
- * Naming rule: basename = {prefix}-{N}
- *   Sibling mode:      ../{prefix}-{N}        (e.g. ../taskplane-wt-1)
- *   Subdirectory mode: .worktrees/{prefix}-{N} (e.g. .worktrees/taskplane-wt-1)
+ * Naming rule: basename = {prefix}-{opId}-{N}
+ *   Sibling mode:      ../{prefix}-{opId}-{N}        (e.g. ../taskplane-wt-henrylach-1)
+ *   Subdirectory mode: .worktrees/{prefix}-{opId}-{N} (e.g. .worktrees/taskplane-wt-henrylach-1)
  *
  * Uses path.resolve() for Windows path normalization (R002 requirement).
  *
  * @param prefix     - Directory prefix (e.g. "taskplane-wt")
  * @param laneNumber - Lane number (1-indexed)
  * @param repoRoot   - Absolute path to the main repository root
+ * @param opId       - Operator identifier (sanitized, e.g., "henrylach")
  * @param config     - Orchestrator config (optional; defaults to subdirectory mode)
  */
 export function generateWorktreePath(
 	prefix: string,
 	laneNumber: number,
 	repoRoot: string,
+	opId: string,
 	config?: OrchestratorConfig,
 ): string {
 	const effectiveConfig = config || DEFAULT_ORCHESTRATOR_CONFIG;
 	const basePath = resolveWorktreeBasePath(repoRoot, effectiveConfig);
-	return resolve(basePath, `${prefix}-${laneNumber}`);
+	return resolve(basePath, `${prefix}-${opId}-${laneNumber}`);
 }
 
 /**
@@ -195,10 +202,10 @@ export function isRegisteredWorktree(targetPath: string, cwd: string): boolean {
  * @throws         - WorktreeError with stable error code on failure
  */
 export function createWorktree(opts: CreateWorktreeOptions, repoRoot: string): WorktreeInfo {
-	const { laneNumber, batchId, baseBranch, prefix, config } = opts;
+	const { laneNumber, batchId, baseBranch, prefix, opId, config } = opts;
 
-	const branch = generateBranchName(laneNumber, batchId);
-	const worktreePath = generateWorktreePath(prefix, laneNumber, repoRoot, config);
+	const branch = generateBranchName(laneNumber, batchId, opId);
+	const worktreePath = generateWorktreePath(prefix, laneNumber, repoRoot, opId, config);
 
 	// ── Pre-check 1: Validate base branch exists ─────────────────
 	const baseBranchCheck = runGit(
@@ -1029,39 +1036,53 @@ export function preserveBranch(
 // ── Bulk Worktree Operations ─────────────────────────────────────────
 
 /**
- * List all orchestrator worktrees matching a prefix pattern.
+ * List all orchestrator worktrees matching a prefix and operator pattern.
  *
  * Parses `git worktree list --porcelain` via parseWorktreeList() and filters
- * entries whose path basename matches `{prefix}-{N}` (where N is a number).
+ * entries whose path basename matches `{prefix}-{opId}-{N}` (where N is a number).
  *
- * Naming invariant: basename = {prefix}-{N}. The prefix comes from config
- * (e.g. "taskplane-wt"), and the lane number is appended with a single
- * dash separator. No extra `-wt-` infix is added.
+ * Operator-scoped discovery: only returns worktrees belonging to the specified
+ * operator. This prevents one operator from accidentally reusing or removing
+ * another operator's active worktrees in concurrent team-scale scenarios.
+ *
+ * For backward compatibility, also matches the legacy pattern `{prefix}-{N}`
+ * (worktrees from prior batches without operator IDs), but only when `opId`
+ * is `"op"` (the default fallback), to avoid capturing other operators' resources.
  *
  * Lane number is extracted from the path basename pattern. Entries with
  * malformed/partial data (missing path, unparseable lane number) are
  * silently skipped — they are not orchestrator worktrees.
  *
  * @param prefix   - Worktree directory prefix (e.g. "taskplane-wt")
- *                   Full basename pattern: `{prefix}-{N}` (e.g. "taskplane-wt-1")
  * @param repoRoot - Absolute path to the main repository root
+ * @param opId     - Operator identifier for scoping (e.g., "henrylach")
  * @returns        - WorktreeInfo[] sorted by laneNumber (ascending)
  */
-export function listWorktrees(prefix: string, repoRoot: string): WorktreeInfo[] {
+export function listWorktrees(prefix: string, repoRoot: string, opId: string): WorktreeInfo[] {
 	const entries = parseWorktreeList(repoRoot);
 	const results: WorktreeInfo[] = [];
 
-	// Build regex pattern to match the worktree basename.
-	// Naming invariant: basename = {prefix}-{N} where N is one or more digits.
-	// Example: prefix "taskplane-wt" matches "taskplane-wt-1", "taskplane-wt-2", etc.
-	const pattern = new RegExp(`^${escapeRegex(prefix)}-(\\d+)$`);
+	// Primary pattern: {prefix}-{opId}-{N}
+	// Example: "taskplane-wt-henrylach-1"
+	const primaryPattern = new RegExp(`^${escapeRegex(prefix)}-${escapeRegex(opId)}-(\\d+)$`);
+
+	// Legacy pattern: {prefix}-{N} (only matched when opId is the default fallback)
+	// This allows cleanup of worktrees from prior batches without operator IDs.
+	const legacyPattern = opId === "op"
+		? new RegExp(`^${escapeRegex(prefix)}-(\\d+)$`)
+		: null;
 
 	for (const entry of entries) {
 		if (!entry.path) continue;
 
 		// Extract basename from the worktree path
 		const entryBasename = basename(resolve(entry.path));
-		const match = entryBasename.match(pattern);
+
+		// Try primary pattern first
+		let match = entryBasename.match(primaryPattern);
+		if (!match && legacyPattern) {
+			match = entryBasename.match(legacyPattern);
+		}
 		if (!match) continue;
 
 		const laneNumber = parseInt(match[1], 10);
@@ -1106,6 +1127,7 @@ export function escapeRegex(str: string): string {
  * @param config   - Orchestrator config (prefix extracted from it)
  * @param repoRoot - Absolute path to the main repository root
  * @param baseBranch - Branch to base worktrees on (captured at batch start)
+ * @param opId     - Operator identifier for collision-resistant naming
  * @returns        - CreateLaneWorktreesResult with success flag and details
  */
 export function createLaneWorktrees(
@@ -1116,13 +1138,14 @@ export function createLaneWorktrees(
 	baseBranch: string,
 ): CreateLaneWorktreesResult {
 	const prefix = config.orchestrator.worktree_prefix;
+	const opId = resolveOperatorId(config);
 	const created: WorktreeInfo[] = [];
 	const errors: BulkWorktreeError[] = [];
 
 	for (let lane = 1; lane <= count; lane++) {
 		try {
 			const wt = createWorktree(
-				{ laneNumber: lane, batchId, baseBranch, prefix, config },
+				{ laneNumber: lane, batchId, baseBranch, prefix, opId, config },
 				repoRoot,
 			);
 			created.push(wt);
@@ -1191,8 +1214,9 @@ export function ensureLaneWorktrees(
 	baseBranch: string,
 ): CreateLaneWorktreesResult {
 	const prefix = config.orchestrator.worktree_prefix;
+	const opId = resolveOperatorId(config);
 
-	const existing = listWorktrees(prefix, repoRoot);
+	const existing = listWorktrees(prefix, repoRoot, opId);
 	const existingByLane = new Map<number, WorktreeInfo>();
 	for (const wt of existing) {
 		existingByLane.set(wt.laneNumber, wt);
@@ -1224,7 +1248,7 @@ export function ensureLaneWorktrees(
 
 		try {
 			const wt = createWorktree(
-				{ laneNumber: lane, batchId, baseBranch, prefix, config },
+				{ laneNumber: lane, batchId, baseBranch, prefix, opId, config },
 				repoRoot,
 			);
 			createdNow.push(wt);
@@ -1272,26 +1296,28 @@ export function ensureLaneWorktrees(
 }
 
 /**
- * Remove all orchestrator worktrees matching a prefix.
+ * Remove all orchestrator worktrees matching a prefix and operator scope.
  *
- * Uses listWorktrees() to discover matching worktrees, then removes each
- * one via removeWorktree(). Best-effort: continues on per-worktree errors
- * (does not fail-fast).
+ * Uses listWorktrees() to discover matching worktrees (operator-scoped),
+ * then removes each one via removeWorktree(). Best-effort: continues on
+ * per-worktree errors (does not fail-fast).
  *
  * When `targetBranch` is provided, branches with unmerged commits are
  * preserved as `saved/<branch>` refs instead of being force-deleted.
  *
  * @param prefix       - Worktree directory prefix (e.g. "taskplane-wt")
  * @param repoRoot     - Absolute path to the main repository root
+ * @param opId         - Operator identifier for scoping (e.g., "henrylach")
  * @param targetBranch - Optional target branch for unmerged commit detection (e.g. "develop")
  * @returns            - RemoveAllWorktreesResult with per-worktree outcomes
  */
 export function removeAllWorktrees(
 	prefix: string,
 	repoRoot: string,
+	opId: string,
 	targetBranch?: string,
 ): RemoveAllWorktreesResult {
-	const worktrees = listWorktrees(prefix, repoRoot);
+	const worktrees = listWorktrees(prefix, repoRoot, opId);
 	const outcomes: RemoveWorktreeOutcome[] = [];
 	const removed: WorktreeInfo[] = [];
 	const failed: RemoveWorktreeOutcome[] = [];

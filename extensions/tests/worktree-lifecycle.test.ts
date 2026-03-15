@@ -225,29 +225,34 @@ function getCommitSha(repoDir: string, branch: string): string {
 // ══════════════════════════════════════════════════════════════════════
 
 describe("5.1 generateBranchName", () => {
-	test("format matches task/lane-{N}-{batchId}", () => {
-		const result = generateBranchName(1, "20260308T111750");
-		assertEqual(result, "task/lane-1-20260308T111750", "branch name");
+	test("format matches task/{opId}-lane-{N}-{batchId}", () => {
+		const result = generateBranchName(1, "20260308T111750", "henrylach");
+		assertEqual(result, "task/henrylach-lane-1-20260308T111750", "branch name");
 	});
 
-	test("handles multi-digit lane numbers", () => {
-		const result = generateBranchName(12, "batch42");
-		assertEqual(result, "task/lane-12-batch42", "branch name");
+	test("handles multi-digit lane numbers with opId", () => {
+		const result = generateBranchName(12, "batch42", "ci-runner");
+		assertEqual(result, "task/ci-runner-lane-12-batch42", "branch name");
+	});
+
+	test("uses default fallback opId", () => {
+		const result = generateBranchName(1, "20260308T111750", "op");
+		assertEqual(result, "task/op-lane-1-20260308T111750", "branch name");
 	});
 });
 
 describe("5.1 generateWorktreePath", () => {
-	test("defaults to subdirectory mode (.worktrees)", () => {
-		const result = generateWorktreePath("myprefix", 3, "/tmp/test-repo");
-		const expected = resolve("/tmp/test-repo", ".worktrees", "myprefix-3");
+	test("defaults to subdirectory mode (.worktrees) with opId", () => {
+		const result = generateWorktreePath("myprefix", 3, "/tmp/test-repo", "henrylach");
+		const expected = resolve("/tmp/test-repo", ".worktrees", "myprefix-henrylach-3");
 		assertEqual(result, expected, "worktree path");
 	});
 
-	test("sibling mode places worktree adjacent to repo root", () => {
+	test("sibling mode places worktree adjacent to repo root with opId", () => {
 		const siblingConfig = { orchestrator: { worktree_location: "sibling" as const } };
 		const repoRoot = "/some/path/repo";
-		const result = generateWorktreePath("pfx", 1, repoRoot, siblingConfig);
-		const expected = resolve(repoRoot, "..", "pfx-1");
+		const result = generateWorktreePath("pfx", 1, repoRoot, "op", siblingConfig);
+		const expected = resolve(repoRoot, "..", "pfx-op-1");
 		assertEqual(result, expected, "sibling worktree path");
 	});
 });
@@ -348,6 +353,7 @@ describe("5.2 createWorktree — happy path", () => {
 			laneNumber: 1,
 			batchId: "test001",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -361,14 +367,14 @@ describe("5.2 createWorktree — happy path", () => {
 		assert(stat.isFile(), ".git should be a file in a worktree, not a directory");
 
 		// Branch exists and matches
-		assertEqual(wt.branch, "task/lane-1-test001", "branch name");
+		assertEqual(wt.branch, "task/test-lane-1-test001", "branch name");
 		assertEqual(wt.laneNumber, 1, "lane number");
 
 		// Correct branch is checked out
 		const headBranch = execSync("git rev-parse --abbrev-ref HEAD", {
 			cwd: wt.path, encoding: "utf-8", stdio: "pipe",
 		}).trim();
-		assertEqual(headBranch, "task/lane-1-test001", "checked out branch");
+		assertEqual(headBranch, "task/test-lane-1-test001", "checked out branch");
 
 		// Branch points to develop HEAD
 		const wtHead = execSync("git rev-parse HEAD", { cwd: wt.path, encoding: "utf-8", stdio: "pipe" }).trim();
@@ -385,17 +391,18 @@ describe("5.2 createWorktree — happy path", () => {
 			laneNumber: 2,
 			batchId: "space001",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: `${basename(repoDir)} with space`,
 		}, repoDir);
 
 		assert(existsSync(wt.path), `worktree dir should exist: ${wt.path}`);
-		assert(wt.path.includes(" with space-2"), "worktree path should include spaced prefix");
+		assert(wt.path.includes(" with space-test-2"), "worktree path should include spaced prefix");
 
 		// Verify the worktree is fully functional with spaced paths
 		const headBranch = execSync("git rev-parse --abbrev-ref HEAD", {
 			cwd: wt.path, encoding: "utf-8", stdio: "pipe",
 		}).trim();
-		assertEqual(headBranch, "task/lane-2-space001", "checked out branch in spaced path worktree");
+		assertEqual(headBranch, "task/test-lane-2-space001", "checked out branch in spaced path worktree");
 
 		const removeResult = removeWorktree(wt, repoDir);
 		assertEqual(removeResult.removed, true, "spaced-path worktree should remove cleanly");
@@ -414,6 +421,7 @@ describe("5.2 createWorktree — error paths", () => {
 				laneNumber: 1,
 				batchId: "test002",
 				baseBranch: "nonexistent-branch",
+				opId: "test",
 				prefix: basename(repoDir),
 			}, repoDir);
 		}, "WORKTREE_INVALID_BASE");
@@ -428,6 +436,7 @@ describe("5.2 createWorktree — error paths", () => {
 			laneNumber: 1,
 			batchId: "test003",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -437,6 +446,7 @@ describe("5.2 createWorktree — error paths", () => {
 				laneNumber: 1,
 				batchId: "test004",
 				baseBranch: "develop",
+				opId: "test",
 				prefix: basename(repoDir),
 			}, repoDir);
 		}, "WORKTREE_PATH_IS_WORKTREE");
@@ -452,21 +462,23 @@ describe("5.2 createWorktree — error paths", () => {
 			laneNumber: 1,
 			batchId: "test005",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
 		// Try creating at different lane but same batchId (different path, same branch format)
 		// Actually we need same branch name. Create a branch manually that matches lane-2's pattern
-		execSync("git branch task/lane-2-test005", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		execSync("git branch task/test-lane-2-test005", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
 		const err = assertThrows(() => {
 			createWorktree({
 				laneNumber: 2,
 				batchId: "test005",
 				baseBranch: "develop",
+				opId: "test",
 				prefix: basename(repoDir),
 			}, repoDir);
 		}, "WORKTREE_BRANCH_EXISTS");
-		assert(err.message.includes("task/lane-2-test005"), "error should mention branch");
+		assert(err.message.includes("task/test-lane-2-test005"), "error should mention branch");
 
 		cleanupTestRepo(repoDir);
 	});
@@ -487,6 +499,7 @@ describe("5.3 resetWorktree — happy path", () => {
 			laneNumber: 1,
 			batchId: "reset001",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -502,7 +515,7 @@ describe("5.3 resetWorktree — happy path", () => {
 		const updated = resetWorktree(wt, "develop", repoDir);
 
 		// Branch name preserved
-		assertEqual(updated.branch, "task/lane-1-reset001", "branch should be preserved");
+		assertEqual(updated.branch, "task/test-lane-1-reset001", "branch should be preserved");
 		assertEqual(updated.laneNumber, 1, "lane number preserved");
 
 		// HEAD matches new develop
@@ -519,6 +532,7 @@ describe("5.3 resetWorktree — happy path", () => {
 			laneNumber: 1,
 			batchId: "reset002",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -544,6 +558,7 @@ describe("5.3 resetWorktree — error paths", () => {
 			laneNumber: 1,
 			batchId: "reset003",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -565,6 +580,7 @@ describe("5.3 resetWorktree — error paths", () => {
 			laneNumber: 1,
 			batchId: "reset004",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -580,7 +596,7 @@ describe("5.3 resetWorktree — error paths", () => {
 
 		const fakeWt: WorktreeInfo = {
 			path: resolve(repoDir, "..", "nonexistent-wt"),
-			branch: "task/lane-99-fake",
+			branch: "task/test-lane-99-fake",
 			laneNumber: 99,
 		};
 
@@ -606,6 +622,7 @@ describe("5.4 removeWorktree — happy path", () => {
 			laneNumber: 1,
 			batchId: "rem001",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -641,6 +658,7 @@ describe("5.4 removeWorktree — idempotent", () => {
 			laneNumber: 1,
 			batchId: "rem002",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -663,6 +681,7 @@ describe("5.4 removeWorktree — idempotent", () => {
 			laneNumber: 1,
 			batchId: "rem003",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -695,6 +714,7 @@ describe("5.4 removeWorktree — unmerged branch", () => {
 			laneNumber: 1,
 			batchId: "rem004",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -726,6 +746,7 @@ describe("5.4b removeWorktree — branch protection with targetBranch", () => {
 			laneNumber: 1,
 			batchId: "pres001",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -761,6 +782,7 @@ describe("5.4b removeWorktree — branch protection with targetBranch", () => {
 			laneNumber: 1,
 			batchId: "merge001",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -788,6 +810,7 @@ describe("5.4b removeWorktree — branch protection with targetBranch", () => {
 			laneNumber: 1,
 			batchId: "idem001",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -987,6 +1010,7 @@ describe("5.5 Full lifecycle: create → verify → remove → verify", () => {
 			laneNumber: 1,
 			batchId: "life001",
 			baseBranch: "develop",
+			opId: "test",
 			prefix: basename(repoDir),
 		}, repoDir);
 
@@ -1028,11 +1052,11 @@ describe("5.6 listWorktrees — prefix filtering", () => {
 		const prefix = basename(repoDir);
 
 		// Create 3 worktrees
-		const wt1 = createWorktree({ laneNumber: 1, batchId: "list001", baseBranch: "develop", prefix }, repoDir);
-		const wt2 = createWorktree({ laneNumber: 2, batchId: "list001", baseBranch: "develop", prefix }, repoDir);
-		const wt3 = createWorktree({ laneNumber: 3, batchId: "list001", baseBranch: "develop", prefix }, repoDir);
+		const wt1 = createWorktree({ laneNumber: 1, batchId: "list001", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		const wt2 = createWorktree({ laneNumber: 2, batchId: "list001", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		const wt3 = createWorktree({ laneNumber: 3, batchId: "list001", baseBranch: "develop", opId: "test", prefix }, repoDir);
 
-		const found = listWorktrees(prefix, repoDir);
+		const found = listWorktrees(prefix, repoDir, "test");
 
 		assertEqual(found.length, 3, "should find 3 worktrees");
 		assertEqual(found[0].laneNumber, 1, "first should be lane 1");
@@ -1047,7 +1071,7 @@ describe("5.6 listWorktrees — prefix filtering", () => {
 		const prefix = basename(repoDir);
 
 		// Create one orchestrator worktree
-		createWorktree({ laneNumber: 1, batchId: "list002", baseBranch: "develop", prefix }, repoDir);
+		createWorktree({ laneNumber: 1, batchId: "list002", baseBranch: "develop", opId: "test", prefix }, repoDir);
 
 		// Create a non-orchestrator worktree manually (different naming)
 		const otherPath = resolve(repoDir, "..", "random-worktree");
@@ -1055,7 +1079,7 @@ describe("5.6 listWorktrees — prefix filtering", () => {
 			cwd: repoDir, encoding: "utf-8", stdio: "pipe",
 		});
 
-		const found = listWorktrees(prefix, repoDir);
+		const found = listWorktrees(prefix, repoDir, "test");
 		assertEqual(found.length, 1, "should only find 1 orchestrator worktree");
 		assertEqual(found[0].laneNumber, 1, "should be lane 1");
 
@@ -1067,7 +1091,7 @@ describe("5.6 listWorktrees — prefix filtering", () => {
 	test("returns empty array when no worktrees match prefix", () => {
 		repoDir = initTestRepo("list-empty");
 
-		const found = listWorktrees("nonexistent-prefix", repoDir);
+		const found = listWorktrees("nonexistent-prefix", repoDir, "test");
 		assertEqual(found.length, 0, "should find 0 worktrees");
 
 		cleanupTestRepo(repoDir);
@@ -1090,6 +1114,7 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 				batch_id_format: "timestamp" as const,
 				spawn_mode: "tmux" as const,
 				tmux_prefix: "orch",
+				operator_id: "test",
 			},
 			dependencies: { source: "prompt" as const, cache: true },
 			assignment: { strategy: "affinity-first" as const, size_weights: { S: 1, M: 2, L: 4 } },
@@ -1108,7 +1133,7 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 		// Verify naming
 		for (let i = 0; i < 3; i++) {
 			assertEqual(result.worktrees[i].laneNumber, i + 1, `lane ${i + 1} number`);
-			assertEqual(result.worktrees[i].branch, `task/lane-${i + 1}-bulk001`, `lane ${i + 1} branch`);
+			assertEqual(result.worktrees[i].branch, `task/test-lane-${i + 1}-bulk001`, `lane ${i + 1} branch`);
 			assert(existsSync(result.worktrees[i].path), `lane ${i + 1} dir should exist`);
 		}
 
@@ -1120,7 +1145,7 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 		const prefix = basename(repoDir);
 
 		// Pre-create a branch that will conflict with lane 2
-		execSync("git branch task/lane-2-bulkfail", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		execSync("git branch task/test-lane-2-bulkfail", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
 
 		const config = {
 			orchestrator: {
@@ -1130,6 +1155,7 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 				batch_id_format: "timestamp" as const,
 				spawn_mode: "tmux" as const,
 				tmux_prefix: "orch",
+				operator_id: "test",
 			},
 			dependencies: { source: "prompt" as const, cache: true },
 			assignment: { strategy: "affinity-first" as const, size_weights: { S: 1, M: 2, L: 4 } },
@@ -1149,7 +1175,7 @@ describe("5.6 createLaneWorktrees — bulk creation", () => {
 		assertEqual(result.rolledBack, true, "should have rolled back");
 
 		// Verify lane 1 worktree was cleaned up
-		const lane1Path = generateWorktreePath(prefix, 1, repoDir);
+		const lane1Path = generateWorktreePath(prefix, 1, repoDir, "test");
 		assert(!existsSync(lane1Path), "lane 1 dir should be cleaned up after rollback");
 
 		cleanupTestRepo(repoDir);
@@ -1164,22 +1190,22 @@ describe("5.6 removeAllWorktrees — bulk removal", () => {
 		const prefix = basename(repoDir);
 
 		// Create 3 worktrees
-		createWorktree({ laneNumber: 1, batchId: "rmall001", baseBranch: "develop", prefix }, repoDir);
-		createWorktree({ laneNumber: 2, batchId: "rmall001", baseBranch: "develop", prefix }, repoDir);
-		createWorktree({ laneNumber: 3, batchId: "rmall001", baseBranch: "develop", prefix }, repoDir);
+		createWorktree({ laneNumber: 1, batchId: "rmall001", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree({ laneNumber: 2, batchId: "rmall001", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree({ laneNumber: 3, batchId: "rmall001", baseBranch: "develop", opId: "test", prefix }, repoDir);
 
 		// Verify they exist
-		assertEqual(listWorktrees(prefix, repoDir).length, 3, "should have 3 before removal");
+		assertEqual(listWorktrees(prefix, repoDir, "test").length, 3, "should have 3 before removal");
 
 		// Remove all
-		const result = removeAllWorktrees(prefix, repoDir);
+		const result = removeAllWorktrees(prefix, repoDir, "test");
 
 		assertEqual(result.totalAttempted, 3, "should attempt 3");
 		assertEqual(result.removed.length, 3, "should remove 3");
 		assertEqual(result.failed.length, 0, "should have no failures");
 
 		// Verify none left
-		assertEqual(listWorktrees(prefix, repoDir).length, 0, "should have 0 after removal");
+		assertEqual(listWorktrees(prefix, repoDir, "test").length, 0, "should have 0 after removal");
 
 		cleanupTestRepo(repoDir);
 	});
@@ -1187,7 +1213,7 @@ describe("5.6 removeAllWorktrees — bulk removal", () => {
 	test("handles empty prefix match gracefully", () => {
 		repoDir = initTestRepo("bulk-remove-empty");
 
-		const result = removeAllWorktrees("nonexistent-prefix-xyz", repoDir);
+		const result = removeAllWorktrees("nonexistent-prefix-xyz", repoDir, "test");
 
 		assertEqual(result.totalAttempted, 0, "should attempt 0");
 		assertEqual(result.removed.length, 0, "should remove 0");

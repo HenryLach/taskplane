@@ -214,17 +214,17 @@ describe("generateLaneId", () => {
 // ── 5. generateTmuxSessionName() ─────────────────────────────────────
 
 describe("generateTmuxSessionName", () => {
-	it("generates repo-mode format when repoId is undefined", () => {
-		expect(generateTmuxSessionName("orch", 1)).toBe("orch-lane-1");
-		expect(generateTmuxSessionName("orch", 3)).toBe("orch-lane-3");
+	it("generates repo-mode format with opId when repoId is undefined", () => {
+		expect(generateTmuxSessionName("orch", 1, "henrylach")).toBe("orch-henrylach-lane-1");
+		expect(generateTmuxSessionName("orch", 3, "op")).toBe("orch-op-lane-3");
 	});
 
-	it("generates workspace-mode format when repoId is set", () => {
-		expect(generateTmuxSessionName("orch", 1, "api")).toBe("orch-api-lane-1");
-		expect(generateTmuxSessionName("orch", 2, "frontend")).toBe("orch-frontend-lane-2");
+	it("generates workspace-mode format with opId when repoId is set", () => {
+		expect(generateTmuxSessionName("orch", 1, "henrylach", "api")).toBe("orch-henrylach-api-lane-1");
+		expect(generateTmuxSessionName("orch", 2, "ci-runner", "frontend")).toBe("orch-ci-runner-frontend-lane-2");
 	});
 
-	it("uses custom prefix", () => {
-		expect(generateTmuxSessionName("tp", 1, "api")).toBe("tp-api-lane-1");
+	it("uses custom prefix with opId", () => {
+		expect(generateTmuxSessionName("tp", 1, "op", "api")).toBe("tp-op-api-lane-1");
 	});
 });

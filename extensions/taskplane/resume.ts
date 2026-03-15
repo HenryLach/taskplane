@@ -12,6 +12,7 @@ import type { MonitorUpdateCallback } from "./execution.ts";
 import { runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
 import { computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { resolveOperatorId } from "./naming.ts";
 import { deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { StateFileError } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
@@ -1031,7 +1032,8 @@ export async function resumeOrchBatch(
 
 		if (waveIdx < persistedState.wavePlan.length - 1 && !batchState.pauseSignal.paused) {
 			const wtPrefix = orchConfig.orchestrator.worktree_prefix;
-			const existingWorktrees = listWorktrees(wtPrefix, repoRoot);
+			const resetOpId = resolveOperatorId(orchConfig);
+			const existingWorktrees = listWorktrees(wtPrefix, repoRoot, resetOpId);
 			if (existingWorktrees.length > 0) {
 				const targetBranch = batchState.baseBranch;
 				for (const wt of existingWorktrees) {
@@ -1051,8 +1053,9 @@ export async function resumeOrchBatch(
 	// ── 11. Cleanup and terminal state ───────────────────────────
 	if (!preserveWorktreesForResume) {
 		const wtPrefix = orchConfig.orchestrator.worktree_prefix;
+		const cleanupOpId = resolveOperatorId(orchConfig);
 		const targetBranch = batchState.baseBranch;
-		removeAllWorktrees(wtPrefix, repoRoot, targetBranch);
+		removeAllWorktrees(wtPrefix, repoRoot, cleanupOpId, targetBranch);
 	}
 
 	batchState.endedAt = Date.now();

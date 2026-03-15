@@ -19,8 +19,8 @@ orchestrator:
   max_lanes: 3
 
   # Where to create worktree directories.
-  # "sibling"       = ../{prefix}-{N}          (e.g. ../project-wt-1)
-  # "subdirectory"  = .worktrees/{prefix}-{N}  (e.g. .worktrees/project-wt-1)
+  # "sibling"       = ../{prefix}-{opId}-{N}          (e.g. ../project-wt-alice-1)
+  # "subdirectory"  = .worktrees/{prefix}-{opId}-{N}  (e.g. .worktrees/project-wt-alice-1)
   worktree_location: "subdirectory"
   worktree_prefix: "project-wt"
 
@@ -33,6 +33,11 @@ orchestrator:
 
   # Prefix for TMUX session names when tmux mode is enabled.
   tmux_prefix: "orch"
+
+  # Optional operator identifier for team-scale collision resistance.
+  # Auto-detected from OS username if empty. Set explicitly in CI or
+  # when multiple operators share the same machine.
+  # operator_id: ""
 
 # ── Dependency Analysis ───────────────────────────────────────────────
 

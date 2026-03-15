@@ -776,7 +776,7 @@ const generateWorktreePathFn = new Function(
 	`return (${stripTypeAnnotations(generateWorktreePathSource)
 		.replace(/^function generateWorktreePath/, "function")
 	})`,
-)(resolve, resolveWorktreeBasePathFn, { orchestrator: { worktree_location: defaultWorktreeLocation } }) as (prefix: string, laneNumber: number, repoRoot: string, config?: any) => string;
+)(resolve, resolveWorktreeBasePathFn, { orchestrator: { worktree_location: defaultWorktreeLocation } }) as (prefix: string, laneNumber: number, repoRoot: string, opId: string, config?: any) => string;
 
 console.log("\n7.7 — generateWorktreePath (table-driven, extracted from source)");
 
@@ -785,62 +785,68 @@ console.log("\n7.7 — generateWorktreePath (table-driven, extracted from source
 	// Verify the default config matches what we extracted
 	assertEqual(defaultWorktreeLocation, "subdirectory", "DEFAULT_ORCHESTRATOR_CONFIG uses subdirectory");
 
-	// Table-driven test cases: { worktree_location, repoRoot, prefix, lane, expectedPath }
-	// Naming rule: basename = {prefix}-{N} (no extra -wt- infix)
+	// Table-driven test cases: { worktree_location, repoRoot, prefix, lane, opId, expectedPath }
+	// Naming rule: basename = {prefix}-{opId}-{N}
 	const testCases = [
 		{
 			label: "subdirectory mode, lane 1",
 			config: { orchestrator: { worktree_location: "subdirectory" } },
 			repoRoot: "/home/user/project",
 			prefix: "proj-wt",
+			opId: "testop",
 			lane: 1,
-			expected: resolve("/home/user/project", ".worktrees", "proj-wt-1"),
+			expected: resolve("/home/user/project", ".worktrees", "proj-wt-testop-1"),
 		},
 		{
 			label: "subdirectory mode, lane 3",
 			config: { orchestrator: { worktree_location: "subdirectory" } },
 			repoRoot: "/home/user/project",
 			prefix: "proj-wt",
+			opId: "testop",
 			lane: 3,
-			expected: resolve("/home/user/project", ".worktrees", "proj-wt-3"),
+			expected: resolve("/home/user/project", ".worktrees", "proj-wt-testop-3"),
 		},
 		{
 			label: "sibling mode, lane 1",
 			config: { orchestrator: { worktree_location: "sibling" } },
 			repoRoot: "/home/user/project",
 			prefix: "proj-wt",
+			opId: "testop",
 			lane: 1,
-			expected: resolve("/home/user/project", "..", "proj-wt-1"),
+			expected: resolve("/home/user/project", "..", "proj-wt-testop-1"),
 		},
 		{
 			label: "sibling mode, lane 2",
 			config: { orchestrator: { worktree_location: "sibling" } },
 			repoRoot: "/home/user/project",
 			prefix: "proj-wt",
+			opId: "testop",
 			lane: 2,
-			expected: resolve("/home/user/project", "..", "proj-wt-2"),
+			expected: resolve("/home/user/project", "..", "proj-wt-testop-2"),
 		},
 		{
 			label: "default config (no config arg) → subdirectory",
 			config: undefined,
 			repoRoot: "/home/user/project",
 			prefix: "proj-wt",
+			opId: "testop",
 			lane: 1,
-			expected: resolve("/home/user/project", ".worktrees", "proj-wt-1"),
+			expected: resolve("/home/user/project", ".worktrees", "proj-wt-testop-1"),
 		},
 		{
 			label: "Windows-style repoRoot in subdirectory mode",
 			config: { orchestrator: { worktree_location: "subdirectory" } },
 			repoRoot: "C:\\dev\\taskplane",
 			prefix: "taskplane-wt",
+			opId: "testop",
 			lane: 2,
-			expected: resolve("C:\\dev\\taskplane", ".worktrees", "taskplane-wt-2"),
+			expected: resolve("C:\\dev\\taskplane", ".worktrees", "taskplane-wt-testop-2"),
 		},
 	];
 
 	for (const tc of testCases) {
 		console.log(`  ▸ ${tc.label}`);
-		const result = generateWorktreePathFn(tc.prefix, tc.lane, tc.repoRoot, tc.config);
+		const result = generateWorktreePathFn(tc.prefix, tc.lane, tc.repoRoot, tc.opId, tc.config);
 		assertEqual(result, tc.expected, tc.label);
 	}
 }
@@ -857,52 +863,59 @@ const escapeRegexFn = new Function(
 	`return (${stripTypeAnnotations(escapeRegexSource).replace(/^function escapeRegex/, "function")})`,
 )() as (str: string) => string;
 
-/** Build the listWorktrees regex for a given prefix (mirrors production code). */
-function buildListWorktreesPattern(prefix: string): RegExp {
+/** Build the listWorktrees primary regex for a given prefix and opId (mirrors production code). */
+function buildListWorktreesPrimaryPattern(prefix: string, opId: string): RegExp {
+	return new RegExp(`^${escapeRegexFn(prefix)}-${escapeRegexFn(opId)}-(\\d+)$`);
+}
+
+/** Build the legacy regex (opId="op" only) for backward compatibility. */
+function buildListWorktreesLegacyPattern(prefix: string): RegExp {
 	return new RegExp(`^${escapeRegexFn(prefix)}-(\\d+)$`);
 }
 
-console.log("\n7.8 — listWorktrees regex pattern (naming invariant: {prefix}-{N})");
+console.log("\n7.8 — listWorktrees regex pattern (naming invariant: {prefix}-{opId}-{N})");
 
 {
-	// Table-driven: [prefix, basename, shouldMatch, expectedLane]
+	// Table-driven: [prefix, opId, basename, shouldMatch, expectedLane]
 	const testCases: Array<{
 		label: string;
 		prefix: string;
+		opId: string;
 		basename: string;
 		shouldMatch: boolean;
 		expectedLane?: number;
+		patternType: "primary" | "legacy";
 	}> = [
-		// Standard prefix "taskplane-wt"
-		{ label: "taskplane-wt prefix, lane 1", prefix: "taskplane-wt", basename: "taskplane-wt-1", shouldMatch: true, expectedLane: 1 },
-		{ label: "taskplane-wt prefix, lane 10", prefix: "taskplane-wt", basename: "taskplane-wt-10", shouldMatch: true, expectedLane: 10 },
-		{ label: "taskplane-wt prefix, old double-wt name (no match)", prefix: "taskplane-wt", basename: "taskplane-wt-wt-1", shouldMatch: false },
-		{ label: "taskplane-wt prefix, no lane number", prefix: "taskplane-wt", basename: "taskplane-wt-", shouldMatch: false },
-		{ label: "taskplane-wt prefix, non-numeric lane", prefix: "taskplane-wt", basename: "taskplane-wt-abc", shouldMatch: false },
+		// Primary pattern: {prefix}-{opId}-{N}
+		{ label: "primary: taskplane-wt with op henrylach, lane 1", prefix: "taskplane-wt", opId: "henrylach", basename: "taskplane-wt-henrylach-1", shouldMatch: true, expectedLane: 1, patternType: "primary" },
+		{ label: "primary: taskplane-wt with op henrylach, lane 10", prefix: "taskplane-wt", opId: "henrylach", basename: "taskplane-wt-henrylach-10", shouldMatch: true, expectedLane: 10, patternType: "primary" },
+		{ label: "primary: different opId (no match)", prefix: "taskplane-wt", opId: "henrylach", basename: "taskplane-wt-alice-1", shouldMatch: false, patternType: "primary" },
+		{ label: "primary: legacy format (no opId, no match)", prefix: "taskplane-wt", opId: "henrylach", basename: "taskplane-wt-1", shouldMatch: false, patternType: "primary" },
+		{ label: "primary: no lane number", prefix: "taskplane-wt", opId: "henrylach", basename: "taskplane-wt-henrylach-", shouldMatch: false, patternType: "primary" },
+		{ label: "primary: non-numeric lane", prefix: "taskplane-wt", opId: "henrylach", basename: "taskplane-wt-henrylach-abc", shouldMatch: false, patternType: "primary" },
 
-		// Short prefix "wt"
-		{ label: "wt prefix, lane 1", prefix: "wt", basename: "wt-1", shouldMatch: true, expectedLane: 1 },
-		{ label: "wt prefix, lane 3", prefix: "wt", basename: "wt-3", shouldMatch: true, expectedLane: 3 },
-		{ label: "wt prefix, old double-wt name (no match)", prefix: "wt", basename: "wt-wt-1", shouldMatch: false },
-
-		// Custom prefix without -wt
-		{ label: "myproject prefix, lane 2", prefix: "myproject", basename: "myproject-2", shouldMatch: true, expectedLane: 2 },
-		{ label: "myproject prefix, wrong name", prefix: "myproject", basename: "myproject-wt-2", shouldMatch: false },
+		// Short prefix with opId
+		{ label: "primary: wt prefix with op, lane 1", prefix: "wt", opId: "ci-1", basename: "wt-ci-1-1", shouldMatch: true, expectedLane: 1, patternType: "primary" },
+		{ label: "primary: wt prefix with op, lane 3", prefix: "wt", opId: "ci-1", basename: "wt-ci-1-3", shouldMatch: true, expectedLane: 3, patternType: "primary" },
 
 		// Prefix with special regex chars (dots)
-		{ label: "prefix with dots, lane 1", prefix: "my.project", basename: "my.project-1", shouldMatch: true, expectedLane: 1 },
-		{ label: "prefix with dots, dot-as-wildcard rejected", prefix: "my.project", basename: "myXproject-1", shouldMatch: false },
+		{ label: "primary: prefix with dots, lane 1", prefix: "my.project", opId: "op", basename: "my.project-op-1", shouldMatch: true, expectedLane: 1, patternType: "primary" },
+		{ label: "primary: prefix with dots, dot-as-wildcard rejected", prefix: "my.project", opId: "op", basename: "myXproject-op-1", shouldMatch: false, patternType: "primary" },
 
 		// Different prefix should not match
-		{ label: "wrong prefix, no match", prefix: "taskplane-wt", basename: "other-wt-1", shouldMatch: false },
+		{ label: "primary: wrong prefix, no match", prefix: "taskplane-wt", opId: "op", basename: "other-wt-op-1", shouldMatch: false, patternType: "primary" },
 
-		// Lane 0 (technically matches regex but filtered by listWorktrees laneNumber < 1 check)
-		{ label: "lane 0 matches regex", prefix: "wt", basename: "wt-0", shouldMatch: true, expectedLane: 0 },
+		// Legacy pattern: {prefix}-{N} (only valid when opId="op")
+		{ label: "legacy: taskplane-wt, lane 1", prefix: "taskplane-wt", opId: "op", basename: "taskplane-wt-1", shouldMatch: true, expectedLane: 1, patternType: "legacy" },
+		{ label: "legacy: taskplane-wt, lane 10", prefix: "taskplane-wt", opId: "op", basename: "taskplane-wt-10", shouldMatch: true, expectedLane: 10, patternType: "legacy" },
+		{ label: "legacy: lane 0 matches regex", prefix: "wt", opId: "op", basename: "wt-0", shouldMatch: true, expectedLane: 0, patternType: "legacy" },
 	];
 
 	for (const tc of testCases) {
 		console.log(`  ▸ ${tc.label}`);
-		const pattern = buildListWorktreesPattern(tc.prefix);
+		const pattern = tc.patternType === "primary"
+			? buildListWorktreesPrimaryPattern(tc.prefix, tc.opId)
+			: buildListWorktreesLegacyPattern(tc.prefix);
 		const match = tc.basename.match(pattern);
 
 		if (tc.shouldMatch) {

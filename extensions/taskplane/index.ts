@@ -8,6 +8,7 @@
 export * from "./types.ts";
 export * from "./config.ts";
 export * from "./git.ts";
+export * from "./naming.ts";
 export * from "./worktree.ts";
 export * from "./discovery.ts";
 export * from "./waves.ts";

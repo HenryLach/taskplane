@@ -5,6 +5,7 @@
 import { join } from "path";
 
 import { parseDependencyReference } from "./discovery.ts";
+import { resolveOperatorId } from "./naming.ts";
 import { AllocationError, getTaskDurationMinutes } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, AllocateLanesResult, AllocationErrorCode, DependencyGraph, DiscoveryError, GraphValidationResult, LaneAssignment, OrchestratorConfig, ParsedTask, WaveAssignment, WaveComputationResult, WorkspaceConfig, WorktreeInfo } from "./types.ts";
 import { getCurrentBranch } from "./git.ts";
@@ -489,22 +490,26 @@ export function generateLaneId(laneLocalNumber: number, repoId?: string): string
 /**
  * Generate a TMUX session name for a lane.
  *
- * - Repo mode: `"{prefix}-lane-{N}"` — preserves legacy format
- * - Workspace mode: `"{prefix}-{repoId}-lane-{N}"` — collision-safe
+ * Includes the operator identifier (`opId`) for collision resistance
+ * across concurrent operators on the same machine.
  *
- * TMUX session names must not contain periods or colons. Repo IDs are
- * assumed to be valid identifiers (alphanumeric + hyphens) from the
- * workspace config validation pipeline.
+ * - Repo mode: `"{prefix}-{opId}-lane-{N}"` — operator-scoped
+ * - Workspace mode: `"{prefix}-{opId}-{repoId}-lane-{N}"` — operator + repo scoped
+ *
+ * TMUX session names must not contain periods or colons. Both `opId`
+ * and `repoId` are assumed to be sanitized identifiers (alphanumeric
+ * + hyphens only).
  *
  * @param tmuxPrefix      - TMUX prefix from config (e.g., "orch")
  * @param laneLocalNumber - Lane number within the repo group (1-indexed)
+ * @param opId            - Operator identifier (sanitized, e.g., "henrylach")
  * @param repoId          - Repo identifier (undefined in repo mode)
  */
-export function generateTmuxSessionName(tmuxPrefix: string, laneLocalNumber: number, repoId?: string): string {
+export function generateTmuxSessionName(tmuxPrefix: string, laneLocalNumber: number, opId: string, repoId?: string): string {
 	if (repoId) {
-		return `${tmuxPrefix}-${repoId}-lane-${laneLocalNumber}`;
+		return `${tmuxPrefix}-${opId}-${repoId}-lane-${laneLocalNumber}`;
 	}
-	return `${tmuxPrefix}-lane-${laneLocalNumber}`;
+	return `${tmuxPrefix}-${opId}-lane-${laneLocalNumber}`;
 }
 
 
@@ -1050,6 +1055,7 @@ export function allocateLanes(
 
 	// ── Stage 4: Build AllocatedLane[] from assignments + worktrees ─
 	const tmuxPrefix = config.orchestrator.tmux_prefix || "orch";
+	const opId = resolveOperatorId(config);
 	const strategy = config.assignment.strategy as AllocatedLane["strategy"];
 	const sizeWeights = config.assignment.size_weights;
 
@@ -1064,7 +1070,7 @@ export function allocateLanes(
 			for (const groupKey of createdGroupKeys) {
 				const groupRepoId = repoIdForGroup.get(groupKey);
 				const groupRepoRoot = resolveRepoRoot(groupRepoId, repoRoot, workspaceConfig);
-				removeAllWorktrees(config.orchestrator.worktree_prefix, groupRepoRoot);
+				removeAllWorktrees(config.orchestrator.worktree_prefix, groupRepoRoot, opId);
 			}
 			return {
 				success: false,
@@ -1099,7 +1105,7 @@ export function allocateLanes(
 		allocatedLanes.push({
 			laneNumber: entry.globalLane,
 			laneId: generateLaneId(entry.localLane, entry.repoId),
-			tmuxSessionName: generateTmuxSessionName(tmuxPrefix, entry.localLane, entry.repoId),
+			tmuxSessionName: generateTmuxSessionName(tmuxPrefix, entry.localLane, opId, entry.repoId),
 			worktreePath: wt.path,
 			branch: wt.branch,
 			tasks: allocatedTasks,

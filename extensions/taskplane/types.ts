@@ -15,6 +15,8 @@ export interface OrchestratorConfig {
 		batch_id_format: "timestamp" | "sequential";
 		spawn_mode: "tmux" | "subprocess";
 		tmux_prefix: string;
+		/** Optional operator identifier. Auto-detected from OS username if empty. */
+		operator_id: string;
 	};
 	dependencies: {
 		source: "prompt" | "agent";
@@ -146,6 +148,7 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 		batch_id_format: "timestamp",
 		spawn_mode: "subprocess",
 		tmux_prefix: "orch",
+		operator_id: "",
 	},
 	dependencies: {
 		source: "prompt",
@@ -224,6 +227,8 @@ export interface CreateWorktreeOptions {
 	baseBranch: string;
 	/** Worktree directory prefix (e.g. "taskplane-wt") */
 	prefix: string;
+	/** Operator identifier (sanitized, e.g., "henrylach") */
+	opId: string;
 	/** Full orchestrator config (optional; used for worktree_location) */
 	config?: OrchestratorConfig;
 }

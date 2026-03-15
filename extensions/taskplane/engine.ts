@@ -11,6 +11,7 @@ import type { MonitorUpdateCallback } from "./execution.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
 import { computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { resolveOperatorId } from "./naming.ts";
 import { deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
 import { FATAL_DISCOVERY_CODES, generateBatchId } from "./types.ts";
@@ -469,7 +470,8 @@ export async function executeOrchBatch(
 		// Only reset if merge succeeded AND there are more waves
 		if (waveIdx < rawWaves.length - 1 && !batchState.pauseSignal.paused) {
 			const prefix = orchConfig.orchestrator.worktree_prefix;
-			const existingWorktrees = listWorktrees(prefix, repoRoot);
+			const resetOpId = resolveOperatorId(orchConfig);
+			const existingWorktrees = listWorktrees(prefix, repoRoot, resetOpId);
 
 			if (existingWorktrees.length > 0) {
 				onNotify(
@@ -662,8 +664,9 @@ export async function executeOrchBatch(
 
 		// Clean up worktrees — pass base branch to protect unmerged work
 		const targetBranch = batchState.baseBranch;
+		const cleanupOpId = resolveOperatorId(orchConfig);
 		execLog("batch", batchState.batchId, "cleaning up worktrees");
-		const removeResult = removeAllWorktrees(prefix, repoRoot, targetBranch);
+		const removeResult = removeAllWorktrees(prefix, repoRoot, cleanupOpId, targetBranch);
 
 		// Log preserved branches
 		for (const p of removeResult.preserved) {
