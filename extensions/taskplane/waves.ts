@@ -567,21 +567,24 @@ export function resolveBaseBranch(
 	batchBaseBranch: string,
 	workspaceConfig?: WorkspaceConfig | null,
 ): string {
-	// Step 1: Per-repo default branch from workspace config
-	if (repoId && workspaceConfig) {
-		const repoConfig = workspaceConfig.repos.get(repoId);
-		if (repoConfig?.defaultBranch) {
-			return repoConfig.defaultBranch;
-		}
-	}
-
-	// Step 2: Detect current branch of this specific repo
-	// In repo mode this is the same repo as the batch, so it's equivalent to batchBaseBranch.
-	// In workspace mode this detects the actual HEAD of each repo independently.
+	// Step 1: Detect current branch of this specific repo.
+	// This is the branch the developer is working on — worktrees should
+	// branch from here so task files committed on this branch are visible.
+	// In repo mode this equals batchBaseBranch. In workspace mode this
+	// detects each repo's actual HEAD independently.
 	if (repoId) {
 		const detected = getCurrentBranch(repoRoot);
 		if (detected) {
 			return detected;
+		}
+	}
+
+	// Step 2: Per-repo default branch from workspace config.
+	// Used when repo HEAD is detached or undetectable.
+	if (repoId && workspaceConfig) {
+		const repoConfig = workspaceConfig.repos.get(repoId);
+		if (repoConfig?.defaultBranch) {
+			return repoConfig.defaultBranch;
 		}
 	}
 
