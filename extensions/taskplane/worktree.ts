@@ -1373,12 +1373,13 @@ export function removeAllWorktrees(
  * Execute a command synchronously and return { ok, stdout }.
  * Returns ok=false on any error (non-zero exit, command not found, etc.).
  */
-export function execCheck(command: string): { ok: boolean; stdout: string } {
+export function execCheck(command: string, cwd?: string): { ok: boolean; stdout: string } {
 	try {
 		const stdout = execSync(command, {
 			encoding: "utf-8",
 			timeout: 10_000,
 			stdio: ["pipe", "pipe", "pipe"],
+			...(cwd ? { cwd } : {}),
 		}).trim();
 		return { ok: true, stdout };
 	} catch {
@@ -1417,7 +1418,7 @@ export function meetsMinVersion(actual: [number, number], minimum: [number, numb
  *   - tmux version >= 2.6
  *   - tmux functional (can create/destroy sessions)
  */
-export function runPreflight(config: OrchestratorConfig): PreflightResult {
+export function runPreflight(config: OrchestratorConfig, repoRoot?: string): PreflightResult {
 	const checks: PreflightCheck[] = [];
 	const tmuxRequired = config.orchestrator.spawn_mode === "tmux";
 
@@ -1450,14 +1451,19 @@ export function runPreflight(config: OrchestratorConfig): PreflightResult {
 	}
 
 	// ── Git worktree support ─────────────────────────────────────
-	const worktreeResult = execCheck("git worktree list");
+	// In workspace mode, cwd may not be a git repo — run from a repo root
+	const worktreeResult = execCheck("git worktree list", repoRoot);
 	checks.push({
 		name: "git-worktree",
 		status: worktreeResult.ok ? "pass" : "fail",
 		message: worktreeResult.ok
 			? "Worktree support available"
 			: "Git worktree not available",
-		hint: worktreeResult.ok ? undefined : "Upgrade Git to 2.15+",
+		hint: worktreeResult.ok
+			? undefined
+			: repoRoot
+				? "Upgrade Git to 2.15+"
+				: "Workspace root is not a git repo. Check workspace config repo paths.",
 	});
 
 	// ── TMUX availability and version ────────────────────────────

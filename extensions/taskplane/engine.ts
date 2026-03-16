@@ -85,7 +85,7 @@ export async function executeOrchBatch(
 	execLog("batch", batchState.batchId, "starting batch planning");
 
 	// Preflight
-	const preflight = runPreflight(orchConfig);
+	const preflight = runPreflight(orchConfig, repoRoot);
 	onNotify(formatPreflightResults(preflight), preflight.passed ? "info" : "error");
 	if (!preflight.passed) {
 		batchState.phase = "failed";

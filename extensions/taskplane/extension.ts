@@ -252,7 +252,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// ── Section 1: Preflight ─────────────────────────────────
-			const preflight = runPreflight(orchConfig);
+			const preflight = runPreflight(orchConfig, execCtx!.repoRoot);
 			ctx.ui.notify(formatPreflightResults(preflight), preflight.passed ? "info" : "error");
 			if (!preflight.passed) return;
 
