@@ -1,11 +1,11 @@
 # TP-012: Polyrepo Integration Fixtures and Regression Test Suite — Status
 
-**Current Step:** Step 1: Add end-to-end polyrepo regression tests
+**Current Step:** Step 3: Testing & Verification
 ​**Status:** 🟨 In Progress
 **Last Updated:** 2026-03-16
 **Review Level:** 3
-**Review Counter:** 3
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -34,10 +34,12 @@
 ---
 
 ### Step 2: Protect monorepo compatibility
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Add/expand assertions ensuring existing monorepo behavior is unchanged
-- [ ] Document fixture usage and limitations for maintainers
+- [x] Create `monorepo-compat-regression.test.ts` with explicit monorepo-mode contract guards covering: v1→v2 persistence (no repo fields), repo-mode discovery (no routing), repo-mode naming (no repoId segments), repo-mode merge (no per-repo grouping), and repo-mode resume (mode-agnostic resume eligibility)
+- [x] Verify monorepo compat tests pass alongside polyrepo tests (full suite green)
+- [x] Update `docs/maintainers/testing.md` with polyrepo fixture usage, when to use polyrepo vs monorepo tests, and fixture limitations
+- [x] Targeted verification: `npx vitest run tests/monorepo-compat-regression.test.ts` and full suite
 
 ---
 
@@ -70,6 +72,10 @@
 | R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
+| R004 | code | Step 1 | UNKNOWN | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | UNKNOWN | .reviews/R005-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -99,6 +105,16 @@
 | 2026-03-16 00:21 | Review R003 | plan Step 1: UNKNOWN |
 | 2026-03-16 | Step 1 implemented | polyrepo-regression.test.ts — 47 tests, all 369 suite tests pass |
 | 2026-03-16 00:29 | Worker iter 2 | done in 467s, ctx: 57%, tools: 52 |
+| 2026-03-16 00:30 | Worker iter 2 | done in 543s, ctx: 62%, tools: 72 |
+| 2026-03-16 00:32 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-16 00:32 | Step 1 complete | Add end-to-end polyrepo regression tests |
+| 2026-03-16 00:32 | Step 2 started | Protect monorepo compatibility |
+| 2026-03-16 00:34 | Review R005 | plan Step 2: UNKNOWN |
+| 2026-03-16 | Step 2 implemented | monorepo-compat-regression.test.ts — 34 tests, docs/maintainers/testing.md updated, all 403 suite tests pass |
+| 2026-03-16 00:34 | Review R004 | code Step 1: UNKNOWN |
+| 2026-03-16 00:34 | Step 1 complete | Add end-to-end polyrepo regression tests |
+| 2026-03-16 00:34 | Step 2 started | Protect monorepo compatibility |
+| 2026-03-16 00:35 | Review R005 | plan Step 2: UNKNOWN |
 
 ## Blockers
 
