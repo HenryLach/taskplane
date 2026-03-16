@@ -158,7 +158,7 @@ pi --version
 node --version
 ```
 
-Taskplane requires Node 20+ and compatible pi runtime.
+Taskplane requires Node 22+ and compatible pi runtime.
 
 ---
 

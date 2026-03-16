@@ -19,13 +19,13 @@ Taskplane turns your coding project into an AI-managed task board. You define ta
 
 ## Install
 
-Taskplane is a [pi package](https://github.com/badlogic/pi-mono). You need [Node.js](https://nodejs.org/) ≥ 20 and [pi](https://github.com/badlogic/pi-mono) installed first.
+Taskplane is a [pi package](https://github.com/badlogic/pi-mono). You need [Node.js](https://nodejs.org/) ≥ 22 and [pi](https://github.com/badlogic/pi-mono) installed first.
 
 ### Prerequisites
 
 | Dependency | Required | Notes |
 |-----------|----------|-------|
-| [Node.js](https://nodejs.org/) ≥ 20 | Yes | Runtime |
+| [Node.js](https://nodejs.org/) ≥ 22 | Yes | Runtime |
 | [pi](https://github.com/badlogic/pi-mono) | Yes | Agent framework |
 | [Git](https://git-scm.com/) | Yes | Version control, worktrees |
 | **tmux** | **Strongly recommended** | Required for `/orch` parallel execution |

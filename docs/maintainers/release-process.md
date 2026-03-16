@@ -20,7 +20,7 @@ Best practice for Taskplane is to keep them aligned:
 
 - npm publish access for `taskplane`
 - clean git working tree
-- Node.js 20+
+- Node.js 22+
 
 ---
 
