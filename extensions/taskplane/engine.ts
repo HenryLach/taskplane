@@ -34,6 +34,7 @@ import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, l
  * @param onNotify    - Callback for user-facing messages
  * @param onMonitorUpdate - Optional callback for dashboard updates
  * @param workspaceConfig - Workspace configuration for repo routing (null = repo mode)
+ * @param workspaceRoot - Workspace root for resolving task area paths (defaults to cwd)
  */
 export async function executeOrchBatch(
 	args: string,
@@ -44,6 +45,7 @@ export async function executeOrchBatch(
 	onNotify: (message: string, level: "info" | "warning" | "error") => void,
 	onMonitorUpdate?: MonitorUpdateCallback,
 	workspaceConfig?: WorkspaceConfig | null,
+	workspaceRoot?: string,
 ): Promise<void> {
 	const repoRoot = cwd;
 
@@ -94,8 +96,10 @@ export async function executeOrchBatch(
 		return;
 	}
 
-	// Discovery
-	const discovery = runDiscovery(args, runnerConfig.task_areas, cwd, {
+	// Discovery — task area paths in task-runner.yaml are workspace-relative.
+	// In repo mode workspaceRoot === repoRoot, so this is always correct.
+	const discoveryRoot = workspaceRoot ?? cwd;
+	const discovery = runDiscovery(args, runnerConfig.task_areas, discoveryRoot, {
 		refreshDependencies: false,
 		dependencySource: orchConfig.dependencies.source,
 		useDependencyCache: orchConfig.dependencies.cache,

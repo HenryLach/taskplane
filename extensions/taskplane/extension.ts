@@ -207,6 +207,7 @@ export default function (pi: ExtensionAPI) {
 					if (changed) updateOrchWidget(); // Only refresh on actual state change
 				},
 				execCtx!.workspaceConfig,
+				execCtx!.workspaceRoot,
 			);
 
 			// Final widget update after batch completes
@@ -257,9 +258,9 @@ export default function (pi: ExtensionAPI) {
 			if (!preflight.passed) return;
 
 			// ── Section 2: Discovery ─────────────────────────────────
-			// Discovery uses repoRoot for consistency with engine.ts and resume.ts
-			// which both call runDiscovery with their cwd (= repoRoot).
-			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, execCtx!.repoRoot, {
+			// Discovery resolves task area paths relative to workspaceRoot (not repoRoot),
+			// because task_areas in task-runner.yaml are workspace-relative paths.
+			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, execCtx!.workspaceRoot, {
 				refreshDependencies: hasRefresh,
 				dependencySource: orchConfig.dependencies.source,
 				useDependencyCache: orchConfig.dependencies.cache,
@@ -608,8 +609,8 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Run discovery (no preflight needed for deps view).
-			// Uses repoRoot for consistency with engine.ts and resume.ts.
-			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, execCtx!.repoRoot, {
+			// Task area paths are workspace-relative, so use workspaceRoot.
+			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, execCtx!.workspaceRoot, {
 				refreshDependencies: hasRefresh,
 				dependencySource: orchConfig.dependencies.source,
 				useDependencyCache: orchConfig.dependencies.cache,
