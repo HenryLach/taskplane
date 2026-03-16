@@ -78,6 +78,9 @@ export function parseMergeResult(resultPath: string): MergeResult {
 				);
 			}
 
+			// Normalize status to uppercase (merge agents may write lowercase)
+			parsed.status = String(parsed.status).toUpperCase();
+
 			// Validate status value
 			if (!VALID_MERGE_STATUSES.has(parsed.status)) {
 				execLog("merge", "parse", `unknown merge status "${parsed.status}" — treating as BUILD_FAILURE`, {
