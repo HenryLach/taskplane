@@ -1,0 +1,161 @@
+{
+  "schemaVersion": 2,
+  "phase": "paused",
+  "batchId": "20260316T120000",
+  "baseBranch": "main",
+  "mode": "workspace",
+  "startedAt": 1741478400000,
+  "updatedAt": 1741478700000,
+  "endedAt": null,
+  "currentWaveIndex": 1,
+  "totalWaves": 3,
+  "wavePlan": [
+    ["SH-001", "AP-001", "UI-001"],
+    ["AP-002", "UI-002"],
+    ["SH-002"]
+  ],
+  "lanes": [
+    {
+      "laneNumber": 1,
+      "laneId": "docs/lane-1",
+      "tmuxSessionName": "orch-op-docs-lane-1",
+      "worktreePath": "/tmp/taskplane-wt-1",
+      "branch": "task/op-docs-lane-1-20260316T120000",
+      "taskIds": ["SH-001", "SH-002"],
+      "repoId": "docs"
+    },
+    {
+      "laneNumber": 2,
+      "laneId": "api/lane-2",
+      "tmuxSessionName": "orch-op-api-lane-2",
+      "worktreePath": "/tmp/taskplane-wt-2",
+      "branch": "task/op-api-lane-2-20260316T120000",
+      "taskIds": ["AP-001", "AP-002"],
+      "repoId": "api"
+    },
+    {
+      "laneNumber": 3,
+      "laneId": "frontend/lane-3",
+      "tmuxSessionName": "orch-op-frontend-lane-3",
+      "worktreePath": "/tmp/taskplane-wt-3",
+      "branch": "task/op-frontend-lane-3-20260316T120000",
+      "taskIds": ["UI-001", "UI-002"],
+      "repoId": "frontend"
+    }
+  ],
+  "tasks": [
+    {
+      "taskId": "SH-001",
+      "laneNumber": 1,
+      "sessionName": "orch-op-docs-lane-1",
+      "status": "succeeded",
+      "taskFolder": "/workspace/repos/docs/tasks/shared-tasks/SH-001-create-shared-types",
+      "startedAt": 1741478400000,
+      "endedAt": 1741478500000,
+      "doneFileFound": true,
+      "exitReason": "Task completed successfully",
+      "resolvedRepoId": "docs"
+    },
+    {
+      "taskId": "AP-001",
+      "laneNumber": 2,
+      "sessionName": "orch-op-api-lane-2",
+      "status": "succeeded",
+      "taskFolder": "/workspace/repos/docs/tasks/api-tasks/AP-001-set-up-api-scaffolding",
+      "startedAt": 1741478400000,
+      "endedAt": 1741478520000,
+      "doneFileFound": true,
+      "exitReason": "Task completed successfully",
+      "resolvedRepoId": "api"
+    },
+    {
+      "taskId": "UI-001",
+      "laneNumber": 3,
+      "sessionName": "orch-op-frontend-lane-3",
+      "status": "succeeded",
+      "taskFolder": "/workspace/repos/docs/tasks/ui-tasks/UI-001-initialize-frontend-project",
+      "startedAt": 1741478400000,
+      "endedAt": 1741478530000,
+      "doneFileFound": true,
+      "exitReason": "Task completed successfully",
+      "repoId": "frontend",
+      "resolvedRepoId": "frontend"
+    },
+    {
+      "taskId": "AP-002",
+      "laneNumber": 2,
+      "sessionName": "orch-op-api-lane-2",
+      "status": "running",
+      "taskFolder": "/workspace/repos/docs/tasks/api-tasks/AP-002-implement-auth-endpoints",
+      "startedAt": 1741478600000,
+      "endedAt": null,
+      "doneFileFound": false,
+      "exitReason": "",
+      "resolvedRepoId": "api"
+    },
+    {
+      "taskId": "UI-002",
+      "laneNumber": 3,
+      "sessionName": "orch-op-frontend-lane-3",
+      "status": "running",
+      "taskFolder": "/workspace/repos/docs/tasks/ui-tasks/UI-002-build-auth-ui",
+      "startedAt": 1741478600000,
+      "endedAt": null,
+      "doneFileFound": false,
+      "exitReason": "",
+      "repoId": "frontend",
+      "resolvedRepoId": "frontend"
+    },
+    {
+      "taskId": "SH-002",
+      "laneNumber": 1,
+      "sessionName": "orch-op-docs-lane-1",
+      "status": "pending",
+      "taskFolder": "/workspace/repos/docs/tasks/shared-tasks/SH-002-write-integration-guide",
+      "startedAt": null,
+      "endedAt": null,
+      "doneFileFound": false,
+      "exitReason": "",
+      "resolvedRepoId": "docs"
+    }
+  ],
+  "mergeResults": [
+    {
+      "waveIndex": 0,
+      "status": "succeeded",
+      "failedLane": null,
+      "failureReason": null,
+      "repoResults": [
+        {
+          "repoId": "api",
+          "status": "succeeded",
+          "laneNumbers": [2],
+          "failedLane": null,
+          "failureReason": null
+        },
+        {
+          "repoId": "docs",
+          "status": "succeeded",
+          "laneNumbers": [1],
+          "failedLane": null,
+          "failureReason": null
+        },
+        {
+          "repoId": "frontend",
+          "status": "succeeded",
+          "laneNumbers": [3],
+          "failedLane": null,
+          "failureReason": null
+        }
+      ]
+    }
+  ],
+  "totalTasks": 6,
+  "succeededTasks": 3,
+  "failedTasks": 0,
+  "skippedTasks": 0,
+  "blockedTasks": 0,
+  "blockedTaskIds": [],
+  "lastError": null,
+  "errors": []
+}
