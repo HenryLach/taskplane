@@ -10,48 +10,46 @@
 - `extensions/tests/polyrepo-fixture.test.ts`
 - `extensions/tests/polyrepo-regression.test.ts`
 - `extensions/tests/monorepo-compat-regression.test.ts`
+- `extensions/taskplane/waves.ts`
 
 ## Blocking findings
 
-### 1) Step 3 is not hydrated into an execution-ready verification plan
-`STATUS.md` still lists only generic prompt bullets for Step 3 (unit run, targeted run, fix failures, CLI smoke). For a Level 3 task, this is too coarse to execute/audit reliably.
+### 1) Step 3 is still too generic for a Level 3 verification gate
+`STATUS.md` lists prompt-level bullets only. For this task size/risk, Step 3 needs an execution-ready command plan with explicit pass criteria and evidence capture.
 
-### 2) No targeted test matrix tied to changed scope
-The plan does not specify which files/suites must run as “targeted tests for changed modules.”
+### 2) “Targeted tests” are not mapped to changed scope
+The plan does not define which suites constitute targeted verification for Steps 0–2 changes.
 
-Given Steps 0–2 added/changed polyrepo + compat coverage, Step 3 should explicitly include at least:
+Minimum targeted matrix should include:
 - `tests/polyrepo-fixture.test.ts`
 - `tests/polyrepo-regression.test.ts`
 - `tests/monorepo-compat-regression.test.ts`
-- plus impacted existing guards from prompt file scope:
+- plus impacted baseline guards from task file scope:
   - `tests/orch-state-persistence.test.ts`
   - `tests/orch-direct-implementation.test.ts`
   - `tests/task-runner-orchestration.test.ts`
   - `tests/orch-pure-functions.test.ts`
 
-Without this mapping, “targeted tests passed” is not verifiable.
+### 3) Step 3 does not include closure of outstanding review defects
+There is still an open code-quality issue from Step 2 (`buildDependencyGraph(pending)` used with missing `completed` arg in `monorepo-compat-regression.test.ts`, while signature is `(pending, completed)`).
 
-### 3) “Fix all failures” has no triage/closure criteria
-The plan has no rule for handling failures (test failure vs flaky infra vs fixture issue), no rerun policy, and no requirement to record fixes and rerun evidence in `STATUS.md`.
+Step 3 plan must explicitly require resolving open review findings before final verification runs, not only reacting to test failures.
 
-This conflicts with Step 3’s explicit requirement: **zero test failures allowed**.
+### 4) CLI smoke check is underspecified
+Prompt requires `node bin/taskplane.mjs help`, but the plan does not define execution context (repo root), acceptance signal (exit code 0 + help header), or logging format in `STATUS.md`.
 
-### 4) CLI smoke check is underspecified operationally
-Prompt requires `node bin/taskplane.mjs help`, but the plan does not define execution context (repo root), success criterion (exit code/output), or where to log evidence.
-
-### 5) Status traceability cleanup is not included in Step 3 verification
-`STATUS.md` still contains duplicated review/log rows and prior count inconsistencies. Step 3 is the validation gate; plan should include normalization so final delivery is auditable.
+### 5) Auditability controls are missing from the plan
+`STATUS.md` already shows duplicated review/log rows and prior count drift. Step 3 should include a normalization step so final verification is traceable and reproducible.
 
 ## Required updates before approval
-1. Hydrate Step 3 into concrete outcome-level checklist items (3–5 items) with explicit commands and expected pass criteria.
-2. Add a targeted-suite command matrix mapped to changed modules/files.
-3. Add failure triage + rerun policy (what gets fixed, what gets rerun, what is recorded).
-4. Specify CLI smoke command context and acceptance signal (exit code 0 + expected help output header).
-5. Add a Step 3 evidence logging format in `STATUS.md` (commands run, pass/fail counts, timestamp), including cleanup of duplicate rows.
+1. Hydrate Step 3 into 3–5 concrete outcomes with exact commands.
+2. Add targeted test matrix mapped to changed files/modules.
+3. Add explicit “close outstanding review findings” gate before final full-suite run.
+4. Define CLI smoke execution context + success criteria.
+5. Define evidence logging format in `STATUS.md` (timestamp, command, file/test counts, result) and clean duplicate rows.
 
-## Suggested command set (example)
+## Suggested command set
 - `cd extensions && npx vitest run tests/polyrepo-fixture.test.ts tests/polyrepo-regression.test.ts tests/monorepo-compat-regression.test.ts`
 - `cd extensions && npx vitest run tests/orch-state-persistence.test.ts tests/orch-direct-implementation.test.ts tests/task-runner-orchestration.test.ts tests/orch-pure-functions.test.ts`
 - `cd extensions && npx vitest run`
-- `node bin/taskplane.mjs help`
-
+- `cd . && node bin/taskplane.mjs help`

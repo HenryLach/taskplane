@@ -1,11 +1,11 @@
 # TP-012: Polyrepo Integration Fixtures and Regression Test Suite — Status
 
-**Current Step:** Step 4: Documentation & Delivery
-​**Status:** 🟨 In Progress
+**Current Step:** Complete
+​**Status:** ✅ Done
 **Last Updated:** 2026-03-16
 **Review Level:** 3
-**Review Counter:** 6
-**Iteration:** 4
+**Review Counter:** 8
+**Iteration:** 5
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -54,13 +54,13 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] "Must Update" docs modified
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
-- [ ] `.DONE` created
-- [ ] Archive and push
+- [x] "Must Update" docs modified
+- [x] "Check If Affected" docs reviewed
+- [x] Discoveries logged
+- [x] `.DONE` created
+- [x] Archive and push
 
 ---
 
@@ -79,11 +79,16 @@
 | R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
 | R006 | code | Step 2 | UNKNOWN | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | UNKNOWN | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | UNKNOWN | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | UNKNOWN | .reviews/R009-plan-step4.md |
+| R008 | code | Step 3 | UNKNOWN | .reviews/R008-code-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| `docs/maintainers/repository-governance.md` CI gating recommendations unaffected — new tests run within existing `npx vitest run` CI step, no new required checks needed | No action needed | `docs/maintainers/repository-governance.md` |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -128,6 +133,16 @@
 | 2026-03-16 00:48 | Review R006 | code Step 2: UNKNOWN |
 | 2026-03-16 00:48 | Step 2 complete | Protect monorepo compatibility |
 | 2026-03-16 00:48 | Step 3 started | Testing & Verification |
+| 2026-03-16 00:50 | Worker iter 4 | done in 127s, ctx: 9%, tools: 14 |
+| 2026-03-16 00:51 | Review R007 | plan Step 3: UNKNOWN |
+| 2026-03-16 00:52 | Review R008 | code Step 3: UNKNOWN |
+| 2026-03-16 00:52 | Step 3 complete | Testing & Verification |
+| 2026-03-16 00:52 | Step 4 started | Documentation & Delivery |
+| 2026-03-16 00:53 | Review R009 | plan Step 4: UNKNOWN |
+| 2026-03-16 | Step 4 complete | Docs updated: polyrepo-implementation-plan.md (rollout criteria), testing.md (already done in Step 2), repository-governance.md reviewed (no changes needed). .DONE created. |
+| 2026-03-16 00:54 | Review R008 | code Step 3: UNKNOWN |
+| 2026-03-16 00:54 | Step 3 complete | Testing & Verification |
+| 2026-03-16 00:54 | Step 4 started | Documentation & Delivery |
 
 ## Blockers
 
