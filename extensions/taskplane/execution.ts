@@ -106,6 +106,7 @@ export function buildLaneEnvVars(
 	lane: AllocatedLane,
 	promptPath: string,
 	repoRoot: string,
+	workspaceRoot?: string,
 ): Record<string, string> {
 	// TASK_AUTOSTART needs a path relative to the worktree root.
 	// The promptPath is absolute (from the main repo). We need the
@@ -129,7 +130,7 @@ export function buildLaneEnvVars(
 	}
 	const nodePath = [...new Set(nodePathEntries)].join(pathDelimiter);
 
-	return {
+	const vars: Record<string, string> = {
 		TASK_AUTOSTART: relativePath,
 		TASK_RUNNER_SPAWN_MODE: "subprocess",
 		TASK_RUNNER_TMUX_PREFIX: lane.tmuxSessionName,
@@ -139,6 +140,15 @@ export function buildLaneEnvVars(
 		// Force xterm-256color so pi can render and start execution.
 		TERM: "xterm-256color",
 	};
+
+	// In workspace mode, the worktree cwd is inside a repo — not the workspace root.
+	// The task-runner needs TASKPLANE_WORKSPACE_ROOT to find .pi/task-runner.yaml
+	// and resolve task area paths from the correct base directory.
+	if (workspaceRoot && workspaceRoot !== repoRoot) {
+		vars.TASKPLANE_WORKSPACE_ROOT = workspaceRoot;
+	}
+
+	return vars;
 }
 
 /**
@@ -438,6 +448,7 @@ export function spawnLaneSession(
 	task: AllocatedTask,
 	config: OrchestratorConfig,
 	repoRoot: string,
+	workspaceRoot?: string,
 ): void {
 	const sessionName = lane.tmuxSessionName;
 	const laneId = lane.laneId;
@@ -460,7 +471,7 @@ export function spawnLaneSession(
 	}
 
 	// Build env vars
-	const envVars = buildLaneEnvVars(lane, task.task.promptPath, repoRoot);
+	const envVars = buildLaneEnvVars(lane, task.task.promptPath, repoRoot, workspaceRoot);
 
 	// Prepare per-task lane log path for post-mortem diagnostics
 	const laneLogPath = resolveLaneLogPath(lane, task);
@@ -761,6 +772,7 @@ export async function executeLane(
 	config: OrchestratorConfig,
 	repoRoot: string,
 	pauseSignal: { paused: boolean },
+	workspaceRoot?: string,
 ): Promise<LaneExecutionResult> {
 	const laneId = lane.laneId;
 	const laneStartTime = Date.now();
@@ -797,7 +809,7 @@ export async function executeLane(
 
 		try {
 			// Spawn TMUX session
-			spawnLaneSession(lane, task, config, repoRoot);
+			spawnLaneSession(lane, task, config, repoRoot, workspaceRoot);
 
 			// Poll until completion
 			const pollResult = await pollUntilTaskComplete(
@@ -1745,8 +1757,11 @@ export async function executeWave(
 	const wavePauseSignal = pauseSignal;
 
 	// Start lane execution promises
+	// In workspace mode, pass the workspace root so lane sessions can find .pi/ config.
+	// configPath is .pi/taskplane-workspace.yaml → parent of parent is workspace root.
+	const wsRoot = workspaceConfig ? dirname(dirname(workspaceConfig.configPath)) : undefined;
 	const lanePromises = lanes.map(lane =>
-		executeLane(lane, config, repoRoot, wavePauseSignal),
+		executeLane(lane, config, repoRoot, wavePauseSignal, wsRoot),
 	);
 
 	// Start monitoring as a sibling async loop

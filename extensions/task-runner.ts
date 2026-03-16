@@ -138,7 +138,12 @@ const DEFAULT_CONFIG: TaskConfig = {
 };
 
 function loadConfig(cwd: string): TaskConfig {
-	const configPath = join(cwd, ".pi", "task-runner.yaml");
+	let configPath = join(cwd, ".pi", "task-runner.yaml");
+	// In workspace mode, the worker runs in a repo worktree — not the workspace root.
+	// TASKPLANE_WORKSPACE_ROOT tells us where .pi/task-runner.yaml actually lives.
+	if (!existsSync(configPath) && process.env.TASKPLANE_WORKSPACE_ROOT) {
+		configPath = join(process.env.TASKPLANE_WORKSPACE_ROOT, ".pi", "task-runner.yaml");
+	}
 	if (!existsSync(configPath)) return { ...DEFAULT_CONFIG };
 	try {
 		const raw = readFileSync(configPath, "utf-8");
