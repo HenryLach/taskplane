@@ -339,21 +339,141 @@ function clearConversationLog(prefix: string): void {
 
 // ── Agent Loader ─────────────────────────────────────────────────────
 
-function loadAgentDef(cwd: string, name: string): { systemPrompt: string; tools: string; model: string } | null {
-	const paths = [join(cwd, ".pi", "agents", `${name}.md`), join(cwd, "agents", `${name}.md`)];
-	for (const p of paths) {
-		if (!existsSync(p)) continue;
-		const raw = readFileSync(p, "utf-8").replace(/\r\n/g, "\n");
-		const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
-		if (!match) continue;
-		const fm: Record<string, string> = {};
-		for (const line of match[1].split("\n")) {
-			const idx = line.indexOf(":");
-			if (idx > 0) fm[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
-		}
-		return { systemPrompt: match[2].trim(), tools: fm.tools || "read,grep,find,ls", model: fm.model || "" };
+/**
+ * Parse a markdown agent file into frontmatter key-value pairs and body content.
+ * Returns null if the file doesn't exist or has no frontmatter block.
+ */
+function parseAgentFile(filePath: string): { fm: Record<string, string>; body: string } | null {
+	if (!existsSync(filePath)) return null;
+	const raw = readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
+	const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+	if (!match) return null;
+	const fm: Record<string, string> = {};
+	for (const line of match[1].split("\n")) {
+		const idx = line.indexOf(":");
+		if (idx > 0) fm[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
 	}
-	return null;
+	return { fm, body: match[2].trim() };
+}
+
+/** Cached package root — resolved once, reused for all agent file lookups. */
+let _packageRoot: string | null = null;
+
+/**
+ * Find the taskplane package root directory.
+ *
+ * Strategy: this file lives at <package-root>/extensions/task-runner.ts.
+ * When pi loads it via `-e`, it resolves the full path. We can find the
+ * package root by searching for package.json with name "taskplane"
+ * starting from known candidate locations.
+ */
+function findPackageRoot(): string {
+	if (_packageRoot !== null) return _packageRoot;
+
+	// Strategy 1: Walk up from this file's location via require.resolve or npm paths
+	const candidates: string[] = [];
+
+	// The extension is loaded by pi from the installed package location.
+	// Check well-known npm global paths.
+	const home = process.env.HOME || process.env.USERPROFILE || "";
+	if (home) {
+		candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", "taskplane"));
+		candidates.push(join(home, ".npm-global", "lib", "node_modules", "taskplane"));
+	}
+	candidates.push(join("/usr", "local", "lib", "node_modules", "taskplane"));
+
+	// Strategy 2: resolve from pi's node_modules peer
+	try {
+		const piPath = process.argv[1] || "";
+		const piPkgDir = resolve(piPath, "..", "..");
+		candidates.push(join(piPkgDir, "..", "taskplane"));
+	} catch { /* ignore */ }
+
+	// Strategy 3: Check TASKPLANE_WORKSPACE_ROOT project-local install
+	const wsRoot = process.env.TASKPLANE_WORKSPACE_ROOT;
+	if (wsRoot) {
+		candidates.push(join(wsRoot, ".pi", "npm", "node_modules", "taskplane"));
+		candidates.push(join(wsRoot, "node_modules", "taskplane"));
+	}
+
+	for (const dir of candidates) {
+		try {
+			const pkgPath = join(dir, "package.json");
+			if (existsSync(pkgPath)) {
+				const pkg = JSON.parse(readFileSync(pkgPath, "utf-8"));
+				if (pkg.name === "taskplane") {
+					_packageRoot = dir;
+					return dir;
+				}
+			}
+		} catch { /* ignore */ }
+	}
+
+	_packageRoot = "";
+	return "";
+}
+
+/**
+ * Resolve the package-shipped base agent file path.
+ * Base files live in the package's templates/agents/ directory.
+ */
+function resolveBaseAgentPath(name: string): string {
+	const root = findPackageRoot();
+	if (!root) return "";
+	return join(root, "templates", "agents", `${name}.md`);
+}
+
+/**
+ * Load an agent definition with prompt inheritance.
+ *
+ * Inheritance model (default: compose base + local):
+ * 1. Load base agent from the shipped package (templates/agents/{name}.md)
+ * 2. Load local agent from .pi/agents/{name}.md (if it exists)
+ * 3. If local file has `standalone: true` in frontmatter, use it as-is (no base)
+ * 4. Otherwise, compose: base prompt + separator + local content
+ * 5. Local frontmatter values (tools, model) override base values
+ *
+ * If no local file exists, the base file is used directly.
+ * If no base file exists (e.g., custom agent), local file is used as-is.
+ */
+function loadAgentDef(cwd: string, name: string): { systemPrompt: string; tools: string; model: string } | null {
+	const basePath = resolveBaseAgentPath(name);
+	const localPaths = [join(cwd, ".pi", "agents", `${name}.md`), join(cwd, "agents", `${name}.md`)];
+
+	// Load base from package
+	const baseDef = parseAgentFile(basePath);
+
+	// Load local override (first found wins)
+	let localDef: { fm: Record<string, string>; body: string } | null = null;
+	for (const p of localPaths) {
+		localDef = parseAgentFile(p);
+		if (localDef) break;
+	}
+
+	// No base and no local → null
+	if (!baseDef && !localDef) return null;
+
+	// Local with standalone: true → use local as-is, ignore base
+	if (localDef?.fm.standalone === "true") {
+		return {
+			systemPrompt: localDef.body,
+			tools: localDef.fm.tools || "read,grep,find,ls",
+			model: localDef.fm.model || "",
+		};
+	}
+
+	// Compose base + local
+	const basePrompt = baseDef?.body || "";
+	const localPrompt = localDef?.body || "";
+	const composedPrompt = localPrompt
+		? basePrompt + "\n\n---\n\n## Project-Specific Guidance\n\n" + localPrompt
+		: basePrompt;
+
+	// Local frontmatter overrides base (tools, model)
+	const tools = localDef?.fm.tools || baseDef?.fm.tools || "read,grep,find,ls";
+	const model = localDef?.fm.model || baseDef?.fm.model || "";
+
+	return { systemPrompt: composedPrompt.trim(), tools, model };
 }
 
 // ── PROMPT.md Parser ─────────────────────────────────────────────────

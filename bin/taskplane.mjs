@@ -645,10 +645,11 @@ async function cmdInit(args) {
 	console.log(`\n${c.bold}Creating files...${c.reset}\n`);
 	const skipIfExists = !force;
 
-	// Agent prompts
+	// Agent prompts — copy thin local files (base prompts ship in the package
+	// and are composed automatically by the task-runner at runtime)
 	for (const agent of ["task-worker.md", "task-reviewer.md", "task-merger.md"]) {
 		copyTemplate(
-			path.join(TEMPLATES_DIR, "agents", agent),
+			path.join(TEMPLATES_DIR, "agents", "local", agent),
 			path.join(projectRoot, ".pi", "agents", agent),
 			{ skipIfExists, label: `.pi/agents/${agent}` }
 		);
