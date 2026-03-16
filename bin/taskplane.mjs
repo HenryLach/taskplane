@@ -10,6 +10,18 @@
  * and auto-discovered by pi. This CLI is for everything else.
  */
 
+// ─── Node.js version gate (fail fast) ───────────────────────────────────────
+
+const MIN_NODE_MAJOR = 22;
+const nodeMajor = parseInt(process.versions.node.split(".")[0], 10);
+if (nodeMajor < MIN_NODE_MAJOR) {
+	console.error(
+		`\x1b[31m❌ Taskplane requires Node.js >= ${MIN_NODE_MAJOR}.0.0 (found ${process.versions.node}).\x1b[0m\n` +
+		`   Upgrade: https://nodejs.org/\n`
+	);
+	process.exit(1);
+}
+
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
