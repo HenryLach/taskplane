@@ -21,6 +21,23 @@ Taskplane turns your coding project into an AI-managed task board. You define ta
 
 Taskplane is a [pi package](https://github.com/badlogic/pi-mono). You need [Node.js](https://nodejs.org/) ≥ 20 and [pi](https://github.com/badlogic/pi-mono) installed first.
 
+### Prerequisites
+
+| Dependency | Required | Notes |
+|-----------|----------|-------|
+| [Node.js](https://nodejs.org/) ≥ 20 | Yes | Runtime |
+| [pi](https://github.com/badlogic/pi-mono) | Yes | Agent framework |
+| [Git](https://git-scm.com/) | Yes | Version control, worktrees |
+| **tmux** | **Strongly recommended** | Required for `/orch` parallel execution |
+
+**tmux** is needed for the orchestrator to spawn parallel worker sessions. Without it, `/orch` will not work. On Windows, Taskplane can install it for you:
+
+```bash
+taskplane install-tmux
+```
+
+On macOS: `brew install tmux` · On Linux: `sudo apt install tmux` (or your distro's package manager)
+
 ### Option A: Global Install (all projects)
 
 ```bash
@@ -138,6 +155,7 @@ Orchestrator lanes execute tasks through task-runner under the hood, so `/task` 
 |---------|-------------|
 | `taskplane init` | Scaffold project config (interactive or `--preset`) |
 | `taskplane doctor` | Validate installation and config |
+| `taskplane install-tmux` | Install or upgrade tmux for Git Bash (Windows) |
 | `taskplane version` | Show version info |
 | `taskplane dashboard` | Launch the web dashboard |
 | `taskplane uninstall` | Remove Taskplane project files and optionally uninstall package (`--package`) |
