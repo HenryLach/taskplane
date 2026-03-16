@@ -269,6 +269,7 @@ export function spawnMergeAgent(
 	mergeWorkDir: string,
 	mergeRequestPath: string,
 	config: OrchestratorConfig,
+	stateRoot?: string,
 ): void {
 	execLog("merge", sessionName, "preparing to spawn merge agent", {
 		mergeWorkDir,
@@ -303,7 +304,7 @@ export function spawnMergeAgent(
 		"pi --no-session",
 		modelArgs,
 		toolsArgs,
-		`--append-system-prompt ${shellQuote(join(repoRoot, ".pi", "agents", "task-merger.md"))}`,
+		`--append-system-prompt ${shellQuote(join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md"))}`,
 		`@${shellQuote(mergeRequestPath)}`,
 	].filter(Boolean).join(" ");
 
@@ -507,6 +508,7 @@ export function mergeWave(
 	repoRoot: string,
 	batchId: string,
 	baseBranch: string,
+	stateRoot?: string,
 ): MergeWaveResult {
 	const startTime = Date.now();
 	const tmuxPrefix = config.orchestrator.tmux_prefix;
@@ -613,9 +615,10 @@ export function mergeWave(
 		const laneStart = Date.now();
 		const sessionName = `${tmuxPrefix}-${opId}-merge-${lane.laneNumber}`;
 		const resultFileName = `merge-result-w${waveIndex}-lane${lane.laneNumber}-${opId}-${batchId}.json`;
-		const resultFilePath = join(repoRoot, ".pi", resultFileName);
+		const piDir = stateRoot ?? repoRoot;
+		const resultFilePath = join(piDir, ".pi", resultFileName);
 		const requestFileName = `merge-request-w${waveIndex}-lane${lane.laneNumber}-${opId}-${batchId}.txt`;
-		const requestFilePath = join(repoRoot, ".pi", requestFileName);
+		const requestFilePath = join(piDir, ".pi", requestFileName);
 
 		execLog("merge", sessionName, `starting merge for lane ${lane.laneNumber}`, {
 			sourceBranch: lane.branch,
@@ -645,7 +648,7 @@ export function mergeWave(
 			writeFileSync(requestFilePath, mergeRequestContent, "utf-8");
 
 			// Spawn merge agent in the isolated merge worktree
-			spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config);
+			spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot);
 
 			// Wait for result
 			const mergeResult = waitForMergeResult(resultFilePath, sessionName);
@@ -890,6 +893,7 @@ export function mergeWaveByRepo(
 	batchId: string,
 	baseBranch: string,
 	workspaceConfig?: WorkspaceConfig | null,
+	stateRoot?: string,
 ): MergeWaveResult {
 	const startTime = Date.now();
 
@@ -942,6 +946,7 @@ export function mergeWaveByRepo(
 			repoRoot,
 			batchId,
 			baseBranch,
+			stateRoot,
 		);
 		// Attach empty repoResults for consistent shape
 		return { ...result, repoResults: [] };
@@ -985,6 +990,7 @@ export function mergeWaveByRepo(
 			groupRepoRoot,
 			batchId,
 			groupBaseBranch,
+			stateRoot,
 		);
 
 		// Accumulate lane results

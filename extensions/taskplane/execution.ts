@@ -134,7 +134,7 @@ export function buildLaneEnvVars(
 		TASK_AUTOSTART: relativePath,
 		TASK_RUNNER_SPAWN_MODE: "subprocess",
 		TASK_RUNNER_TMUX_PREFIX: lane.tmuxSessionName,
-		ORCH_SIDECAR_DIR: join(repoRoot, ".pi"),
+		ORCH_SIDECAR_DIR: join(workspaceRoot || repoRoot, ".pi"),
 		NODE_PATH: nodePath,
 		// Pi's TUI (ink/react) hangs silently with TERM=tmux-256color (tmux default).
 		// Force xterm-256color so pi can render and start execution.
