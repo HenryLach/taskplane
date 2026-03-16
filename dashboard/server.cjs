@@ -76,11 +76,59 @@ function resolveTaskFolder(task, state) {
   const laneNum = task.laneNumber;
   const lane = (state?.lanes || []).find((l) => l.laneNumber === laneNum);
   if (!lane || !lane.worktreePath) return task.taskFolder;
+
+  // In workspace mode, the worktree is inside a specific repo, not the workspace root.
+  // The task folder path needs to be made relative to the repo root (parent of the worktree),
+  // not the workspace root. Detect this by finding the repo root from the worktree path.
   const taskFolderAbs = path.resolve(task.taskFolder);
+  const worktreeAbs = path.resolve(lane.worktreePath);
+
+  // Try to find the repo root: walk up from the worktree path looking for which
+  // ancestor is a prefix of the task folder. The worktree is at <repoRoot>/.worktrees/<name>
+  // or a sibling, so the repo root is typically 2 levels up from a subdirectory worktree.
+  // Heuristic: find the longest common ancestor between taskFolder and worktree's repo root.
   const repoRootAbs = path.resolve(REPO_ROOT);
-  const rel = path.relative(repoRootAbs, taskFolderAbs);
+
+  // First try: relative to workspace root (works in repo mode where workspace = repo)
+  let rel = path.relative(repoRootAbs, taskFolderAbs);
   if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return task.taskFolder;
-  return path.join(lane.worktreePath, rel);
+
+  // Check if joining with worktree produces a valid path
+  const candidate = path.join(worktreeAbs, rel);
+  try {
+    if (fs.existsSync(candidate)) return candidate;
+  } catch { /* fall through */ }
+
+  // Second try: the worktree is inside a repo subdirectory of the workspace root.
+  // Strip the repo prefix from the task folder path to get the repo-relative path.
+  // e.g., taskFolder = "workspace/platform-docs/task-mgmt/DOC-001/"
+  //        worktree  = "workspace/platform-docs/.worktrees/wt-1/"
+  //        repo-relative = "task-mgmt/DOC-001/"
+  // Find the repo by checking which workspace repo path is a prefix of the task folder.
+  const repoRoots = [];
+  try {
+    const stateMode = state.mode;
+    if (stateMode === "workspace" && state.repos) {
+      for (const r of state.repos) repoRoots.push(path.resolve(r.path));
+    }
+  } catch { /* no repo info in state */ }
+
+  // Also try inferring repo root from worktree path pattern:
+  // .worktrees/<name> → parent is repo root; sibling worktrees → shared parent
+  const worktreeParent = path.dirname(worktreeAbs);
+  const worktreeGrandparent = path.dirname(worktreeParent);
+  for (const possibleRepoRoot of [worktreeGrandparent, ...repoRoots]) {
+    const repoRel = path.relative(possibleRepoRoot, taskFolderAbs);
+    if (repoRel && !repoRel.startsWith("..") && !path.isAbsolute(repoRel)) {
+      const repoCandidate = path.join(worktreeAbs, repoRel);
+      try {
+        if (fs.existsSync(repoCandidate)) return repoCandidate;
+      } catch { continue; }
+    }
+  }
+
+  // Fallback: return original task folder (might work if not in worktree)
+  return task.taskFolder;
 }
 
 function parseStatusMd(taskFolder) {
