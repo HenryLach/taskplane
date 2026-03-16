@@ -120,6 +120,17 @@ This keeps tests deterministic and fast.
 
 ## Polyrepo fixture usage
 
+### Fixture files
+
+| Fixture | Mode | Purpose |
+|---------|------|---------|
+| `batch-state-valid.json` | repo | Standard monorepo batch state (no repo fields) |
+| `batch-state-v1-valid.json` | repo (v1) | Schema v1 for upconversion testing |
+| `batch-state-v2-workspace.json` | workspace | Minimal workspace-mode state (2 repos) |
+| `batch-state-v2-polyrepo.json` | workspace | Full polyrepo fixture: 6 tasks, 3 repos, 3 waves |
+| `batch-state-v2-bad-repo-fields.json` | workspace | Intentionally malformed repo fields for rejection tests |
+| `polyrepo-builder.ts` | workspace | Dynamic fixture builder for end-to-end polyrepo tests |
+
 ### When to use polyrepo tests
 
 Use the polyrepo fixture (`polyrepo-builder.ts`) when you need to test:
@@ -136,6 +147,18 @@ Use `monorepo-compat-regression.test.ts` or existing repo-mode test patterns whe
 - **Repo-mode (single-repo) behavior** — the default mode with no workspace config
 - **Backward compatibility** — ensuring workspace-mode additions don't break existing repo-mode contracts
 - **v1→v2 schema migration** — upconversion from legacy state files
+
+### Test file organization
+
+| Test file | Scope |
+|-----------|-------|
+| `polyrepo-fixture.test.ts` | Fixture builder self-tests (topology, routing, wave shape) |
+| `polyrepo-regression.test.ts` | End-to-end polyrepo regression: routing, waves, serialization, resume, merge, naming |
+| `monorepo-compat-regression.test.ts` | Monorepo non-regression guard: ensures repo-mode behavior is unchanged |
+| `discovery-routing.test.ts` | Discovery + routing unit tests (both modes) |
+| `orch-state-persistence.test.ts` | State persistence, schema validation, file I/O |
+| `naming-collision.test.ts` | Collision-safe naming for sessions, lanes, branches |
+| `merge-repo-scoped.test.ts` | Per-repo merge grouping and mergeWaveByRepo |
 
 ### How to use the polyrepo fixture
 
@@ -168,6 +191,7 @@ The fixture creates:
 3. **No real TMUX sessions** — the fixture only tests data-level contracts (discovery, waves, persistence, naming). Session creation and monitoring are not covered.
 4. **Fixed topology** — the fixture has a specific 3-repo, 6-task, 3-wave shape. If you need a different topology, build custom tasks via `buildFixtureParsedTasks()` helpers or create a new fixture.
 5. **Static batch-state fixture** — `batch-state-v2-polyrepo.json` is a hand-crafted state file for resume tests. If the schema changes, this fixture must be updated manually.
+6. **No network/remote repos** — all repos are local. Remote push/pull behavior is not covered.
 
 ---
 
