@@ -992,6 +992,251 @@ function parseWorkspaceYaml(raw) {
 	return result;
 }
 
+// ─── install-tmux ───────────────────────────────────────────────────────────
+
+/**
+ * Install or upgrade tmux for Git Bash on Windows.
+ *
+ * Downloads tmux and libevent packages from the official MSYS2 package
+ * repository, extracts the required binaries, and places them in ~/bin/.
+ *
+ * Requirements:
+ * - Windows with Git Bash (provides tar and msys-2.0.dll runtime)
+ * - Node.js >= 21.7 (native zstd decompression)
+ *
+ * The install target is ~/bin/ because:
+ * - It's user-writable (no admin rights needed)
+ * - Git Bash includes it in PATH by default
+ * - It doesn't conflict with Git's own /usr/bin/
+ */
+
+const TMUX_PACKAGES = [
+	{
+		name: "tmux",
+		url: "https://mirror.msys2.org/msys/x86_64/tmux-3.6.a-1-x86_64.pkg.tar.zst",
+		version: "3.6a",
+		files: ["usr/bin/tmux.exe"],
+	},
+	{
+		name: "libevent",
+		url: "https://mirror.msys2.org/msys/x86_64/libevent-2.1.12-4-x86_64.pkg.tar.zst",
+		version: "2.1.12",
+		files: ["usr/bin/msys-event-2-1-7.dll", "usr/bin/msys-event_core-2-1-7.dll"],
+	},
+];
+
+const TMUX_INSTALL_DIR_NAME = "bin";
+
+function getTmuxInstallDir() {
+	return path.join(process.env.HOME || process.env.USERPROFILE || "", TMUX_INSTALL_DIR_NAME);
+}
+
+function detectCurrentTmux() {
+	try {
+		const out = execSync("tmux -V", { encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"] }).trim();
+		const match = out.match(/tmux\s+([\d.]+\w*)/);
+		const version = match ? match[1] : "unknown";
+
+		// Find where tmux lives
+		let location = "";
+		try {
+			location = execSync("which tmux", { encoding: "utf-8", timeout: 5000, stdio: ["pipe", "pipe", "pipe"], shell: "C:/Program Files/Git/bin/bash.exe" }).trim();
+		} catch { /* ignore */ }
+
+		return { installed: true, version, location };
+	} catch {
+		return { installed: false, version: null, location: null };
+	}
+}
+
+async function httpFollowRedirects(url) {
+	const https = await import("node:https");
+	const http = await import("node:http");
+
+	return new Promise((resolve, reject) => {
+		const mod = url.startsWith("https") ? https.default : http.default;
+		mod.get(url, { headers: { "User-Agent": "taskplane" } }, (res) => {
+			if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+				return httpFollowRedirects(res.headers.location).then(resolve, reject);
+			}
+			if (res.statusCode !== 200) {
+				return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+			}
+			const chunks = [];
+			res.on("data", (chunk) => chunks.push(chunk));
+			res.on("end", () => resolve(Buffer.concat(chunks)));
+			res.on("error", reject);
+		}).on("error", reject);
+	});
+}
+
+function toPosixPath(p) {
+	return p.replace(/\\/g, "/").replace(/^([A-Z]):/i, (_m, d) => "/" + d.toLowerCase());
+}
+
+async function cmdInstallTmux(args) {
+	const checkOnly = args.includes("--check");
+	const force = args.includes("--force");
+
+	console.log(`\n${c.bold}Taskplane — tmux installer${c.reset}\n`);
+
+	// ── Platform check ───────────────────────────────────────────
+	if (process.platform !== "win32") {
+		console.log(`  ${INFO} This command is for Windows only.`);
+		console.log(`      On macOS: ${c.cyan}brew install tmux${c.reset}`);
+		console.log(`      On Linux: ${c.cyan}sudo apt install tmux${c.reset} (or your distro's package manager)\n`);
+		return;
+	}
+
+	// ── Node.js version check (need >= 21.7 for zstd) ───────────
+	const [nodeMajor, nodeMinor] = process.versions.node.split(".").map(Number);
+	if (nodeMajor < 21 || (nodeMajor === 21 && nodeMinor < 7)) {
+		die(`Node.js >= 21.7 required for zstd decompression (found ${process.versions.node}).\n      Upgrade Node.js: https://nodejs.org/`);
+	}
+
+	// ── Git Bash check ───────────────────────────────────────────
+	const gitBashBin = "C:/Program Files/Git/bin/bash.exe";
+	if (!fs.existsSync(gitBashBin)) {
+		die(`Git Bash not found at ${gitBashBin}.\n      Install Git for Windows: https://git-scm.com/downloads`);
+	}
+
+	// ── MSYS2 runtime check ──────────────────────────────────────
+	const msysDll = "C:/Program Files/Git/usr/bin/msys-2.0.dll";
+	if (!fs.existsSync(msysDll)) {
+		die(`MSYS2 runtime (msys-2.0.dll) not found.\n      This should ship with Git for Windows. Reinstall Git if missing.`);
+	}
+
+	// ── Current tmux status ──────────────────────────────────────
+	const current = detectCurrentTmux();
+	if (current.installed) {
+		console.log(`  ${OK} tmux ${c.bold}${current.version}${c.reset} found`);
+		if (current.location) {
+			console.log(`      Location: ${c.dim}${current.location}${c.reset}`);
+		}
+	} else {
+		console.log(`  ${FAIL} tmux not found`);
+	}
+
+	const targetVersion = TMUX_PACKAGES[0].version;
+	console.log(`  ${INFO} Available version: ${c.bold}${targetVersion}${c.reset} (MSYS2 package)\n`);
+
+	if (checkOnly) return;
+
+	// ── Skip if already up to date ───────────────────────────────
+	if (current.installed && current.version === targetVersion && !force) {
+		console.log(`  ${OK} Already up to date. Use ${c.cyan}--force${c.reset} to reinstall.\n`);
+		return;
+	}
+
+	// ── Download and extract ─────────────────────────────────────
+	const zlib = await import("node:zlib");
+	const os = await import("node:os");
+	const tmpDir = os.default.tmpdir();
+	const extractDir = path.join(tmpDir, "taskplane-tmux-install");
+
+	// Clean previous extract
+	fs.rmSync(extractDir, { recursive: true, force: true });
+	fs.mkdirSync(extractDir, { recursive: true });
+
+	for (const pkg of TMUX_PACKAGES) {
+		process.stdout.write(`  ⏳ Downloading ${pkg.name} (v${pkg.version})...`);
+		let buf;
+		try {
+			buf = await httpFollowRedirects(pkg.url);
+		} catch (err) {
+			console.log(` ${c.red}failed${c.reset}`);
+			die(`Download failed: ${err.message}\n      URL: ${pkg.url}`);
+		}
+		console.log(` ${c.green}${Math.round(buf.length / 1024)}KB${c.reset}`);
+
+		// Decompress zstd → tar
+		let tar;
+		try {
+			tar = zlib.default.zstdDecompressSync(buf);
+		} catch (err) {
+			die(`zstd decompression failed for ${pkg.name}: ${err.message}`);
+		}
+		const tarPath = path.join(tmpDir, `${pkg.name}.pkg.tar`);
+		fs.writeFileSync(tarPath, tar);
+
+		// Extract needed files
+		const posixTar = toPosixPath(tarPath);
+		const posixExtract = toPosixPath(extractDir);
+		for (const f of pkg.files) {
+			try {
+				execSync(`tar xf "${posixTar}" -C "${posixExtract}" ${f}`, {
+					shell: gitBashBin,
+					timeout: 10000,
+					stdio: ["pipe", "pipe", "pipe"],
+				});
+			} catch (err) {
+				die(`Failed to extract ${f} from ${pkg.name}: ${err.message}`);
+			}
+		}
+
+		// Clean up tar
+		try { fs.unlinkSync(tarPath); } catch { /* best effort */ }
+	}
+
+	// ── Install to ~/bin/ ────────────────────────────────────────
+	const installDir = getTmuxInstallDir();
+	fs.mkdirSync(installDir, { recursive: true });
+
+	const extractBinDir = path.join(extractDir, "usr", "bin");
+	const installedFiles = [];
+	const lockedFiles = [];
+	for (const f of fs.readdirSync(extractBinDir)) {
+		const src = path.join(extractBinDir, f);
+		const dest = path.join(installDir, f);
+		try {
+			fs.copyFileSync(src, dest);
+			installedFiles.push(f);
+		} catch (err) {
+			if (err.code === "EBUSY" || err.code === "EPERM") {
+				// File is locked (e.g., DLL in use by running tmux session).
+				// Try rename-then-copy: rename old file, copy new, delete old.
+				const backup = dest + ".old";
+				try {
+					if (fs.existsSync(backup)) fs.unlinkSync(backup);
+					fs.renameSync(dest, backup);
+					fs.copyFileSync(src, dest);
+					try { fs.unlinkSync(backup); } catch { /* clean up later */ }
+					installedFiles.push(f);
+				} catch {
+					lockedFiles.push(f);
+				}
+			} else {
+				throw err;
+			}
+		}
+	}
+
+	// Clean up extract dir
+	fs.rmSync(extractDir, { recursive: true, force: true });
+
+	// ── Verify ───────────────────────────────────────────────────
+	console.log("");
+	if (lockedFiles.length > 0) {
+		console.log(`  ${WARN} Some files are locked (tmux may be running): ${lockedFiles.join(", ")}`);
+		console.log(`      Close all tmux sessions and re-run ${c.cyan}taskplane install-tmux --force${c.reset}`);
+		if (installedFiles.length > 0) {
+			console.log(`      Updated: ${installedFiles.join(", ")}`);
+		}
+	} else {
+		const verify = detectCurrentTmux();
+		if (verify.installed) {
+			console.log(`  ${OK} tmux ${c.bold}${verify.version}${c.reset} installed successfully`);
+			console.log(`      Location: ${c.dim}${installDir}${c.reset}`);
+			console.log(`      Files: ${installedFiles.join(", ")}`);
+		} else {
+			console.log(`  ${WARN} Files installed to ${installDir} but tmux not found on PATH.`);
+			console.log(`      Ensure ${c.cyan}~/bin${c.reset} is in your PATH. In Git Bash, add to ~/.bashrc:`);
+			console.log(`      ${c.dim}export PATH="$HOME/bin:$PATH"${c.reset}`);
+		}
+	}
+	console.log("");
+}
+
 // ─── doctor ─────────────────────────────────────────────────────────────────
 
 function cmdDoctor() {
@@ -1026,6 +1271,9 @@ function cmdDoctor() {
 	console.log(
 		`  ${hasTmux ? OK : `${WARN}`} tmux installed${hasTmux ? ` ${c.dim}(${getVersion("tmux", "-V")})${c.reset}` : ` ${c.dim}(optional — needed for spawn_mode: tmux)${c.reset}`}`
 	);
+	if (!hasTmux && process.platform === "win32") {
+		console.log(`      ${c.dim}→ Run ${c.cyan}taskplane install-tmux${c.dim} to install${c.reset}`);
+	}
 
 	// Check package installation
 	const pkgJson = path.join(PACKAGE_ROOT, "package.json");
@@ -1272,12 +1520,13 @@ ${c.bold}Usage:${c.reset}
   taskplane <command> [options]
 
 ${c.bold}Commands:${c.reset}
-  ${c.cyan}init${c.reset}        Scaffold Taskplane config in the current project
-  ${c.cyan}doctor${c.reset}      Validate installation and project configuration
-  ${c.cyan}version${c.reset}     Show version information
-  ${c.cyan}dashboard${c.reset}   Launch the web-based orchestrator dashboard
-  ${c.cyan}uninstall${c.reset}   Remove Taskplane project files and/or package install
-  ${c.cyan}help${c.reset}        Show this help message
+  ${c.cyan}init${c.reset}           Scaffold Taskplane config in the current project
+  ${c.cyan}doctor${c.reset}         Validate installation and project configuration
+  ${c.cyan}install-tmux${c.reset}   Install or upgrade tmux for Git Bash (Windows)
+  ${c.cyan}version${c.reset}        Show version information
+  ${c.cyan}dashboard${c.reset}      Launch the web-based orchestrator dashboard
+  ${c.cyan}uninstall${c.reset}      Remove Taskplane project files and/or package install
+  ${c.cyan}help${c.reset}           Show this help message
 
 ${c.bold}Init options:${c.reset}
   --preset <name>       Use a preset: minimal, full, runner-only
@@ -1301,7 +1550,13 @@ ${c.bold}Uninstall options:${c.reset}
   --remove-tasks    Also remove task area directories from task-runner.yaml
   --all             Equivalent to --package + --remove-tasks
 
+${c.bold}Install-tmux options:${c.reset}
+  --check             Check tmux status without installing
+  --force             Reinstall even if tmux is already present
+
 ${c.bold}Examples:${c.reset}
+  taskplane install-tmux                # Install or upgrade tmux
+  taskplane install-tmux --check        # Check tmux status only
   taskplane init                        # Interactive project setup
   taskplane init --preset full          # Quick setup with defaults
   taskplane init --preset full --tasks-root docs/task-management
@@ -1332,6 +1587,9 @@ switch (command) {
 		break;
 	case "doctor":
 		cmdDoctor();
+		break;
+	case "install-tmux":
+		await cmdInstallTmux(args);
 		break;
 	case "version":
 	case "--version":
