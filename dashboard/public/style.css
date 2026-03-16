@@ -712,22 +712,26 @@ body {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 0.75rem;
-  padding: 2px;
+  font-size: 0.85rem;
+  padding: 3px 5px;
   border-radius: var(--radius-sm);
-  opacity: 0.6;
-  transition: opacity 0.2s, background 0.2s;
+  opacity: 1;
+  transition: opacity 0.2s, background 0.2s, color 0.2s, box-shadow 0.2s;
   line-height: 1;
+  color: var(--text-muted);
 }
 
 .viewer-eye-btn:hover {
   opacity: 1;
-  background: rgba(88,166,255,0.15);
+  background: rgba(88,166,255,0.18);
+  color: var(--accent);
 }
 
 .viewer-eye-btn.active {
   opacity: 1;
-  background: rgba(88,166,255,0.15);
+  background: rgba(88,166,255,0.25);
+  color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-dim);
 }
 
 .tmux-view-btn.active {
