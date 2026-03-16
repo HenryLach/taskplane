@@ -1,11 +1,11 @@
 # TP-012: Polyrepo Integration Fixtures and Regression Test Suite — Status
 
-**Current Step:** Step 0: Build polyrepo fixture workspace
-​**Status:** ✅ Complete
-**Last Updated:** 2026-03-15
+**Current Step:** Step 1: Add end-to-end polyrepo regression tests
+​**Status:** 🟨 In Progress
+**Last Updated:** 2026-03-16
 **Review Level:** 3
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -26,10 +26,10 @@
 ---
 
 ### Step 1: Add end-to-end polyrepo regression tests
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Cover /task routing, /orch-plan, /orch execution, per-repo merge outcomes, and resume
-- [ ] Assert collision-safe naming artifacts and repo-aware persisted state fields
+- [x] Cover /task routing, /orch-plan, /orch execution, per-repo merge outcomes, and resume
+- [x] Assert collision-safe naming artifacts and repo-aware persisted state fields
 
 ---
 
@@ -66,6 +66,10 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | UNKNOWN | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | UNKNOWN | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | UNKNOWN | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -83,6 +87,18 @@
 | 2026-03-16 00:03 | Review R001 | plan Step 0: UNKNOWN |
 | 2026-03-16 | Step 0 implemented | polyrepo-builder.ts, batch-state-v2-polyrepo.json, polyrepo-fixture.test.ts — 32/32 tests pass, all 322 suite tests pass |
 | 2026-03-16 00:04 | Review R001 | plan Step 0: UNKNOWN |
+| 2026-03-16 00:14 | Worker iter 1 | done in 644s, ctx: 64%, tools: 67 |
+| 2026-03-16 00:16 | Worker iter 1 | done in 697s, ctx: 74%, tools: 63 |
+| 2026-03-16 00:17 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-16 00:17 | Step 0 complete | Build polyrepo fixture workspace |
+| 2026-03-16 00:17 | Step 1 started | Add end-to-end polyrepo regression tests |
+| 2026-03-16 00:19 | Review R002 | code Step 0: UNKNOWN |
+| 2026-03-16 00:19 | Step 0 complete | Build polyrepo fixture workspace |
+| 2026-03-16 00:19 | Step 1 started | Add end-to-end polyrepo regression tests |
+| 2026-03-16 00:21 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-16 00:21 | Review R003 | plan Step 1: UNKNOWN |
+| 2026-03-16 | Step 1 implemented | polyrepo-regression.test.ts — 47 tests, all 369 suite tests pass |
+| 2026-03-16 00:29 | Worker iter 2 | done in 467s, ctx: 57%, tools: 52 |
 
 ## Blockers
 
