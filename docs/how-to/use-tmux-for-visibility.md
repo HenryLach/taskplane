@@ -80,7 +80,13 @@ For standalone `/task`, prefer default subprocess mode unless you specifically n
 
 ### `tmux: command not found`
 
-Install tmux and verify:
+Install tmux:
+
+- **Windows (Git Bash):** `taskplane install-tmux`
+- **macOS:** `brew install tmux`
+- **Linux:** `sudo apt install tmux`
+
+Verify:
 
 ```bash
 tmux -V

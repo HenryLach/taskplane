@@ -7,9 +7,37 @@ This tutorial gets Taskplane running in a project and verifies that `/task` and 
 - Node.js **20+**
 - [pi](https://github.com/badlogic/pi-mono)
 - Git
+- **tmux** (strongly recommended — required for `/orch` parallel execution)
 
-Optional (for tmux-based orchestration visibility):
-- tmux
+### Installing tmux
+
+tmux is needed for the orchestrator to spawn parallel worker sessions in isolated worktrees. Without it, `/orch` will not work.
+
+**Windows (Git Bash):**
+
+```bash
+taskplane install-tmux
+```
+
+This downloads tmux from the official [MSYS2](https://packages.msys2.org/packages/tmux) package repository and installs it into `~/bin/`. No admin rights or external tools needed. To upgrade later, run the same command with `--force`.
+
+**macOS:**
+
+```bash
+brew install tmux
+```
+
+**Linux (Debian/Ubuntu):**
+
+```bash
+sudo apt install tmux
+```
+
+Verify tmux is available:
+
+```bash
+tmux -V
+```
 
 ---
 
@@ -218,9 +246,13 @@ pi install npm:taskplane
 
 Run `taskplane init` from the project root.
 
-### tmux warning in doctor
+### tmux missing or not found
 
-tmux is optional unless you use `spawn_mode: tmux` in orchestrator config.
+tmux is required for `/orch` parallel execution. Install it:
+
+- **Windows:** `taskplane install-tmux`
+- **macOS:** `brew install tmux`
+- **Linux:** `sudo apt install tmux`
 
 ---
 

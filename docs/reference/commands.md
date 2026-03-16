@@ -346,6 +346,25 @@ Scaffold Taskplane project files (`.pi/`, agents, task templates).
 
 Validate installation and project configuration.
 
+On Windows, if tmux is not found, doctor suggests running `taskplane install-tmux`.
+
+### `taskplane install-tmux [options]`
+
+Install or upgrade tmux for Git Bash on Windows. Downloads tmux and libevent packages from the official MSYS2 package repository and places binaries in `~/bin/`.
+
+**Options**
+
+- `--check` — show current tmux status without installing
+- `--force` — reinstall even if already up to date
+
+**Notes**
+
+- Windows only. On macOS/Linux, prints a redirect to `brew install tmux` or `apt install tmux`.
+- Requires Node.js ≥ 21.7 (for native zstd decompression).
+- Requires Git Bash (provides `tar` and the MSYS2 runtime).
+- Installs to `~/bin/` which is on PATH in Git Bash by default. No admin rights needed.
+- Safe to re-run for upgrades.
+
 ### `taskplane version`
 
 Show package and environment version details.
