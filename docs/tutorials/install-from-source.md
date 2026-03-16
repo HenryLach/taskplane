@@ -4,7 +4,7 @@ Use this path when developing Taskplane itself or testing local changes before p
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - Git
 - pi
 

@@ -4,7 +4,7 @@ This guide is for contributors working on Taskplane itself.
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - Git
 - pi
 - Optional: `just` for convenience commands

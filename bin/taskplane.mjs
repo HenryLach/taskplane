@@ -1249,10 +1249,10 @@ function cmdDoctor() {
 	const checks = [
 		{ label: "pi installed", check: () => commandExists("pi"), detail: () => getVersion("pi") },
 		{
-			label: "Node.js >= 20.0.0",
+			label: "Node.js >= 22.0.0",
 			check: () => {
 				const v = process.versions.node;
-				return parseInt(v.split(".")[0]) >= 20;
+				return parseInt(v.split(".")[0]) >= 22;
 			},
 			detail: () => `v${process.versions.node}`,
 		},

@@ -4,7 +4,7 @@ This tutorial gets Taskplane running in a project and verifies that `/task` and 
 
 ## Prerequisites
 
-- Node.js **20+**
+- Node.js **22+**
 - [pi](https://github.com/badlogic/pi-mono)
 - Git
 - **tmux** (strongly recommended — required for `/orch` parallel execution)
