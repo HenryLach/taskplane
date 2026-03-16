@@ -71,11 +71,23 @@ export function parseMergeResult(resultPath: string): MergeResult {
 					`Merge result missing required field "source_branch": ${resultPath}`,
 				);
 			}
+			// Normalize verification: accept either a nested object or flat fields
 			if (!parsed.verification || typeof parsed.verification !== "object") {
-				throw new MergeError(
-					"MERGE_RESULT_MISSING_FIELDS",
-					`Merge result missing required field "verification": ${resultPath}`,
-				);
+				// Merge agents may write flat verification_passed/verification_commands fields
+				// instead of a nested verification object. Normalize to the expected shape.
+				if (typeof parsed.verification_passed === "boolean" || Array.isArray(parsed.verification_commands)) {
+					parsed.verification = {
+						commands_run: parsed.verification_commands || [],
+						all_passed: parsed.verification_passed !== false,
+						output: "",
+						notes: "",
+					};
+				} else {
+					throw new MergeError(
+						"MERGE_RESULT_MISSING_FIELDS",
+						`Merge result missing required field "verification": ${resultPath}`,
+					);
+				}
 			}
 
 			// Normalize status to uppercase (merge agents may write lowercase)
