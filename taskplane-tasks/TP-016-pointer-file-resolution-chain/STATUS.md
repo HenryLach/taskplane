@@ -18,7 +18,7 @@
 **Status:** 🟨 In Progress
 
 - [x] Inventory all config/agent/state resolution call sites (resolution map)
-- [ ] Document mode matrix: repo mode vs workspace mode (pointer present/missing/invalid)
+- [x] Document mode matrix: repo mode vs workspace mode (pointer present/missing/invalid)
 - [ ] Document env-var precedence interactions (TASKPLANE_WORKSPACE_ROOT, ORCH_SIDECAR_DIR, pointer)
 
 ---
@@ -134,3 +134,38 @@
 - **Merge agent** (#8): Uses `stateRoot` (wsRoot in workspace mode) to find `.pi/agents/task-merger.md`. Same gap as #2 — agents should come from config repo via pointer.
 - **Dashboard** (#12,13): Hardcoded to `REPO_ROOT/.pi/`. In workspace mode dashboard needs workspace root, not individual repo root.
 - **Pointer file schema**: `{ config_repo: string, config_path: string }` where config_repo is a repo name (not path) and config_path is relative within that repo (e.g., ".taskplane").
+
+### Mode Matrix: Pointer Resolution Behavior
+
+| Scenario | Pointer File | Config Source | Agent Source | State Source |
+|----------|-------------|---------------|--------------|--------------|
+| **Repo mode** (no workspace config) | Absent | `<cwd>/.pi/` (unchanged) | `<cwd>/.pi/agents/` (unchanged) | `<cwd>/.pi/` (unchanged) |
+| **Workspace + pointer valid** | `{ config_repo: "myrepo", config_path: ".taskplane" }` | `<configRepoPath>/.taskplane/` | `<configRepoPath>/.taskplane/agents/` | `<wsRoot>/.pi/` (unchanged — state stays at workspace root) |
+| **Workspace + pointer absent** | N/A | `<wsRoot>/.pi/` via `TASKPLANE_WORKSPACE_ROOT` (current fallback) | `<wsRoot>/.pi/agents/` (current fallback) | `<wsRoot>/.pi/` |
+| **Workspace + pointer malformed** | Invalid JSON | Log warning → fall back to `TASKPLANE_WORKSPACE_ROOT` | Same fallback | `<wsRoot>/.pi/` |
+| **Workspace + pointer references unknown repo** | `config_repo` not in workspace repos map | Log warning → fall back to `TASKPLANE_WORKSPACE_ROOT` | Same fallback | `<wsRoot>/.pi/` |
+
+**Design principle:** Pointer failure is non-fatal — always fall back to existing `TASKPLANE_WORKSPACE_ROOT` behavior. State files never follow the pointer (they are workspace-scoped runtime artifacts).
+
+### Env-Var Precedence (with pointer introduced)
+
+```
+Config resolution (new precedence):
+1. cwd has config files → use cwd (existing — repo mode or worktree with local config)
+2. Pointer file valid → resolve <configRepoPath>/<configPath>/ as configRoot (NEW)
+3. TASKPLANE_WORKSPACE_ROOT has config files → use it (existing fallback)
+4. Fall back to cwd, loaders return defaults (existing)
+
+Agent resolution (new precedence):
+1. <cwd>/.pi/agents/{name}.md or <cwd>/agents/{name}.md (existing local override)
+2. Pointer → <configRepoPath>/<configPath>/agents/{name}.md (NEW — workspace config repo)
+3. Package templates/agents/{name}.md (existing base agent)
+
+State/sidecar resolution (UNCHANGED by pointer):
+- ORCH_SIDECAR_DIR → walk up → create at cwd
+- Dashboard: --root flag or cwd → <root>/.pi/
+
+ORCH_SIDECAR_DIR (UNCHANGED by pointer):
+- Set to join(workspaceRoot || repoRoot, ".pi") by orchestrator
+- State lives at workspace root, not config repo
+```
