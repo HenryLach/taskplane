@@ -326,7 +326,13 @@ These are shell commands (not pi slash commands).
 
 ### `taskplane init [options]`
 
-Scaffold Taskplane project files (`.pi/`, agents, task templates).
+Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs the appropriate init flow.
+
+**Mode detection:**
+
+- **Repo mode** — current directory is a git repo with no git repo subdirectories. Scaffolds config in `.pi/`.
+- **Workspace mode** — current directory is not a git repo but contains git repo subdirectories. Scaffolds config in `<config-repo>/.taskplane/` and creates a pointer file.
+- **Ambiguous** — git repo with git repo subdirectories. Prompts interactively; defaults to repo mode in non-interactive modes (`--preset`, `--dry-run`).
 
 **Common options**
 
@@ -341,6 +347,9 @@ Scaffold Taskplane project files (`.pi/`, agents, task templates).
 
 - `--tasks-root` must be relative to project root.
 - When `--tasks-root` is passed, Taskplane skips sample tasks by default to avoid polluting an existing task area.
+- Init adds required `.gitignore` entries for runtime artifacts (batch state, orchestrator logs, worktrees, etc.) and offers to untrack any that are already committed.
+- tmux availability is detected at init time. When tmux is found, `spawn_mode` defaults to `"tmux"` in the orchestrator config; otherwise it defaults to `"subprocess"`.
+- Init generates `taskplane-config.json` (JSON) alongside YAML configs. JSON takes precedence when present; YAML is retained during the transition period.
 
 ### `taskplane doctor`
 
