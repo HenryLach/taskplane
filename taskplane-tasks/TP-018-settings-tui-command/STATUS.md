@@ -4,8 +4,8 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -63,8 +63,10 @@
 ### Step 3: Implement Write-Back
 **Status:** 🟨 In Progress
 
-- [ ] Layer 1 → project config, Layer 2 → user preferences
-- [ ] Confirmation prompt for project config changes
+- [ ] Implement write-back destination matrix: L1-only → project JSON, L2-only → prefs JSON, L1+L2 → user chooses destination via ctx.ui.select(); clear/unset semantics match Step 1 field contract (optional fields: delete key; string prefs: set "" to clear)
+- [ ] Layer 1 writes always target `<resolveConfigRoot(...)>/.pi/taskplane-config.json` (JSON-first); when source config is YAML-only, create new JSON file alongside YAML (YAML preserved, JSON takes precedence on next load); atomic tmp+rename write pattern
+- [ ] Layer 2 writes target `resolveUserPreferencesPath()` with mkdir -p; atomic tmp+rename; reuse existing loadUserPreferences auto-create pattern
+- [ ] Confirmation gate for project config writes (`ctx.ui.confirm`); no side effects on cancel; L2 writes need no confirmation; post-write notification with "restart session to apply"
 
 ---
 
@@ -100,6 +102,7 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -150,6 +153,7 @@
 | 2026-03-17 18:06 | Worker iter 3 | done in 292s, ctx: 26%, tools: 39 |
 | 2026-03-17 18:06 | Step 2 complete | Implement /settings Command |
 | 2026-03-17 18:06 | Step 3 started | Implement Write-Back |
+| 2026-03-17 18:09 | Review R007 | plan Step 3: REVISE |
 
 ## Blockers
 *None*
