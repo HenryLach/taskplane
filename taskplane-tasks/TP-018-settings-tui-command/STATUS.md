@@ -30,7 +30,7 @@
 ### Step 1: Design Settings Navigation
 **Status:** 🟨 In Progress
 
-- [ ] Final section taxonomy, ordering, and field-to-section assignment documented in STATUS.md
+- [x] Final section taxonomy, ordering, and field-to-section assignment documented in STATUS.md
 - [ ] Source-indicator behavior rules for project/user/default (including dual-layer L1+L2 fields) documented
 - [ ] Schema coverage validation: every scalar field in config-schema.ts is either in navigation map or explicitly excluded with rationale
 
@@ -259,6 +259,95 @@ operatorId, tmuxPrefix, spawnMode, workerModel, reviewerModel, mergeModel, dashb
 
 **CONTEXT.md Review (R002 item 2):**
 Reviewed `taskplane-tasks/CONTEXT.md` — confirms key file paths (extensions/taskplane/, .pi/ configs, tests), no additional constraints beyond what AGENTS.md and PROMPT.md specify. Task area is "General" (default). No special testing or config notes that affect /settings TUI design.
+
+### Step 1 Design Decisions
+
+#### Section Taxonomy and Menu Order
+
+The TUI top-level menu presents these sections in order. Each section maps to a config schema path and contains only scalar/enum/boolean fields suitable for TUI editing.
+
+| # | Menu Section | Config Path | Fields |
+|---|-------------|-------------|--------|
+| 1 | **Orchestrator** | `orchestrator.orchestrator` | maxLanes, worktreeLocation, worktreePrefix, batchIdFormat, spawnMode, tmuxPrefix, operatorId |
+| 2 | **Dependencies** | `orchestrator.dependencies` | source, cache |
+| 3 | **Assignment** | `orchestrator.assignment` | strategy |
+| 4 | **Pre-Warm** | `orchestrator.preWarm` | autoDetect |
+| 5 | **Merge** | `orchestrator.merge` | model, tools, order |
+| 6 | **Failure Policy** | `orchestrator.failure` | onTaskFailure, onMergeFailure, stallTimeout, maxWorkerMinutes, abortGracePeriod |
+| 7 | **Monitoring** | `orchestrator.monitoring` | pollInterval |
+| 8 | **Worker** | `taskRunner.worker` | model, tools, thinking, spawnMode |
+| 9 | **Reviewer** | `taskRunner.reviewer` | model, tools, thinking |
+| 10 | **Context Limits** | `taskRunner.context` | workerContextWindow, warnPercent, killPercent, maxWorkerIterations, maxReviewCycles, noProgressLimit, maxWorkerMinutes |
+| 11 | **User Preferences** | `(preferences only)` | dashboardPort |
+
+**Rationale for ordering:** Orchestrator settings first (most commonly tuned), then task-runner subsections, then user preferences at the end. This mirrors the config file structure and groups by concern.
+
+**Excluded from TUI navigation (intentionally — complex/collection types, edit JSON directly):**
+- `taskRunner.project` (name, description) — project identity
+- `taskRunner.paths` (tasks, architecture) — project structure
+- `taskRunner.testing.commands` — Record<string, string>
+- `taskRunner.standards` (docs, rules) — string arrays
+- `taskRunner.standardsOverrides` — Record<string, StandardsOverride>
+- `taskRunner.taskAreas` — Record<string, TaskAreaConfig>
+- `taskRunner.referenceDocs` — Record<string, string>
+- `taskRunner.neverLoad` — string[]
+- `taskRunner.selfDocTargets` — Record<string, string>
+- `taskRunner.protectedDocs` — string[]
+- `orchestrator.assignment.sizeWeights` — Record<string, number>
+- `orchestrator.preWarm.commands` — Record<string, string>
+- `orchestrator.preWarm.always` — string[]
+- `orchestrator.merge.verify` — string[]
+- `configVersion` — read-only, not user-editable
+
+#### Field-to-UI-Control Mapping
+
+| UI Control | Fields |
+|-----------|--------|
+| **SettingsList toggle** (cycle through values) | worktreeLocation, batchIdFormat, spawnMode (orch), source, cache, autoDetect, strategy, order, onTaskFailure, onMergeFailure, spawnMode (worker) |
+| **ctx.ui.input()** (free text/number) | maxLanes, worktreePrefix, tmuxPrefix, operatorId, model (merge/worker/reviewer), tools (merge/worker/reviewer), thinking (worker/reviewer), stallTimeout, maxWorkerMinutes (failure), abortGracePeriod, pollInterval, workerContextWindow, warnPercent, killPercent, maxWorkerIterations, maxReviewCycles, noProgressLimit, maxWorkerMinutes (context), dashboardPort |
+
+**Design decision:** Use a **two-level navigation** pattern:
+1. Top-level: SelectList of sections (11 items)
+2. Per-section: SettingsList showing all fields in that section, with enum fields as toggles and string/number fields using ctx.ui.input() for editing
+
+**Keybindings:**
+- ↑↓ navigate sections/fields
+- Enter: select section / enter edit mode for input fields
+- ←→ or Space: cycle toggle values (SettingsList built-in)
+- Esc: back to section list / exit settings
+- `/` or search: filter fields (SettingsList built-in search)
+
+#### Source-Indicator Behavior
+
+Each field displays a **source label** showing where its current value comes from:
+
+| Source Label | Meaning | Display |
+|-------------|---------|---------|
+| `(default)` | No override in any config file; using schema default | dim/muted text |
+| `(project)` | Value set in `.pi/taskplane-config.json` (or YAML fallback) | normal text |
+| `(user)` | Value set in `~/.pi/agent/taskplane/preferences.json` | accent text |
+
+**Rules for dual-layer (L1+L2) fields:**
+These fields can be set in either project config or user preferences. The effective value uses Layer 2 merge semantics from TP-017:
+
+1. If the user preference is set (non-undefined), show the **user preference value** with `(user)` label
+2. If user preference is undefined but project config has a value, show the **project config value** with `(project)` label
+3. If neither is set, show the **default value** with `(default)` label
+
+**Edit destination for L1+L2 fields:**
+When the user edits an L1+L2 field, the TUI offers a choice:
+- **"Save to user preferences"** — writes to `~/.pi/agent/taskplane/preferences.json` (affects only this user)
+- **"Save to project config"** — writes to `.pi/taskplane-config.json` (shared, requires confirmation)
+
+For **L1-only fields**, edits always go to project config (with confirmation).
+For **L2-only fields** (dashboardPort), edits always go to user preferences (no confirmation needed).
+
+**Source detection logic:**
+To determine source, the TUI reads both raw config files (before merge) and compares:
+1. Load raw project config JSON (or YAML) — fields present here are `(project)` sourced
+2. Load raw user preferences JSON — fields present here are `(user)` sourced
+3. Fields not in either file are `(default)` sourced
+4. For L1+L2 fields: if both project AND user have a value, the effective value is from user (L2 wins), but both sources exist — show `(user)` as the active source
 
 **Schema Coverage Checklist (R002 item 1):**
 All scalar/enum/boolean fields in config-schema.ts categorized:
