@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -31,9 +31,11 @@
 ### Step 1: Mode Auto-Detection
 **Status:** 🟨 In Progress
 
-- [ ] Detection logic implemented (git repo, subdirectory scan, mode)
-- [ ] Ambiguous case handled with prompt
-- [ ] "Already initialized" detection for Scenario B
+- [ ] Detection logic implemented (git repo check, subdirectory git repo scan, mode determination)
+- [ ] Error path: no git repo and no git repo subdirectories → clear error message and exit
+- [ ] Ambiguous case handled with prompt; preset/non-interactive mode defaults to repo mode (no prompt)
+- [ ] "Already initialized" detection for Scenario B (existing config check before topology detection)
+- [ ] Validate: repo mode, workspace mode, ambiguous prompt, no-repo error, preset bypass all covered
 
 ---
 
@@ -92,6 +94,8 @@
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -112,6 +116,11 @@
 | 2026-03-17 15:34 | Worker iter 1 | done in 75s, ctx: 9%, tools: 11 |
 | 2026-03-17 15:34 | Step 0 complete | Preflight |
 | 2026-03-17 15:34 | Step 1 started | Mode Auto-Detection |
+| 2026-03-17 15:35 | Worker iter 1 | done in 190s, ctx: 14%, tools: 31 |
+| 2026-03-17 15:35 | Step 0 complete | Preflight |
+| 2026-03-17 15:35 | Step 1 started | Mode Auto-Detection |
+| 2026-03-17 15:36 | Review R003 | plan Step 1: REVISE |
+| 2026-03-17 15:36 | Review R003 | plan Step 1: REVISE |
 
 ## Blockers
 *None*
