@@ -104,4 +104,33 @@
 *None*
 
 ## Notes
-*Reserved for execution notes*
+
+### Resolver Inventory (Step 0 Preflight)
+
+#### Artifact → Resolver → Current Root
+
+| # | Artifact | Resolver | File:Line | Current Root (Repo Mode) | Current Root (Workspace Mode) |
+|---|----------|----------|-----------|-------------------------|-------------------------------|
+| 1 | `taskplane-config.json` / YAML configs | `resolveConfigRoot()` → `loadProjectConfig()` | `config-loader.ts:557-564` | cwd | cwd → fallback `TASKPLANE_WORKSPACE_ROOT` |
+| 2 | Agent prompts (`task-worker.md`, `task-reviewer.md`) | `loadAgentDef()` | `task-runner.ts:408` | `cwd/.pi/agents/` or `cwd/agents/` | same (worktree cwd) — no workspace fallback |
+| 3 | Sidecar dir (lane state, conversation logs) | `getSidecarDir()` | `task-runner.ts:226-244` | Walk up to `.pi/` dir | `ORCH_SIDECAR_DIR` env (set by orchestrator) |
+| 4 | `ORCH_SIDECAR_DIR` (orchestrator → worker env) | `buildLaneEnvVars()` | `execution.ts:137` | `join(repoRoot, ".pi")` | `join(workspaceRoot, ".pi")` |
+| 5 | `TASKPLANE_WORKSPACE_ROOT` env propagation | `buildLaneEnvVars()` | `execution.ts:147-148` | not set | `workspaceRoot` (when != repoRoot) |
+| 6 | Orch-abort signal file | monitor loop | `execution.ts:578` | `join(repoRoot, ".pi", "orch-abort-signal")` | same (uses repoRoot) |
+| 7 | Orch lane log paths | `laneLogPath()` | `execution.ts:237,249` | `join(lane.worktreePath, ".pi", "orch-logs", ...)` | same |
+| 8 | Merge agent prompt | `launchTmuxMerge()` | `merge.ts:307` | `join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md")` | stateRoot = wsRoot |
+| 9 | Merge request/result files | `runMergeWave()` | `merge.ts:619,621` | `join(stateRoot ?? repoRoot, ".pi", ...)` | stateRoot = wsRoot |
+| 10 | Batch state (`batch-state.json`) | `batchStatePath()` | `types.ts:1168-1170` | `join(repoRoot, ".pi", BATCH_STATE_FILENAME)` | same (repoRoot from context) |
+| 11 | Batch history (`batch-history.json`) | `batchHistoryPath()` | `persistence.ts:1242` | `join(repoRoot, ".pi", ...)` | same |
+| 12 | Dashboard batch state | `loadLaneStates()`, startup | `dashboard/server.cjs:194,635-636` | `join(REPO_ROOT, ".pi", ...)` | same (REPO_ROOT from --root flag) |
+| 13 | Dashboard conversation logs | route handler | `dashboard/server.cjs:381` | `join(REPO_ROOT, ".pi", ...)` | same |
+| 14 | Workspace config | `loadWorkspaceConfig()` | `workspace.ts` via `workspaceConfigPath()` | N/A (absent = repo mode) | `join(workspaceRoot, ".pi", "taskplane-workspace.yaml")` |
+| 15 | Taskplane extension install path | `resolveTaskplanePackage()` | `task-runner.ts:362` | standard node resolution | also checks `TASKPLANE_WORKSPACE_ROOT/.pi/npm/node_modules/taskplane` |
+
+#### Key Observations
+- **Config loading** (#1): Already has `TASKPLANE_WORKSPACE_ROOT` fallback via `resolveConfigRoot()`. Pointer would replace/extend this.
+- **Agent loading** (#2): Does NOT have workspace fallback — only looks in worktree cwd. This is a gap for workspace mode (agents live in config repo).
+- **Sidecar/state files** (#3,4,6,10,11): Use `repoRoot/.pi/` or `workspaceRoot/.pi/`. These are runtime state, NOT config — likely should stay at workspace root, not follow pointer to config repo.
+- **Merge agent** (#8): Uses `stateRoot` (wsRoot in workspace mode) to find `.pi/agents/task-merger.md`. Same gap as #2 — agents should come from config repo via pointer.
+- **Dashboard** (#12,13): Hardcoded to `REPO_ROOT/.pi/`. In workspace mode dashboard needs workspace root, not individual repo root.
+- **Pointer file schema**: `{ config_repo: string, config_path: string }` where config_repo is a repo name (not path) and config_path is relative within that repo (e.g., ".taskplane").
