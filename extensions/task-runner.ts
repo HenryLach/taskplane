@@ -26,7 +26,7 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join, dirname, basename, resolve } from "path";
-import { parse as yamlParse } from "yaml";
+import { loadProjectConfig, toTaskConfig } from "./taskplane/config-loader.ts";
 
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -137,54 +137,21 @@ const DEFAULT_CONFIG: TaskConfig = {
 	},
 };
 
-function loadConfig(cwd: string): TaskConfig {
-	let configPath = join(cwd, ".pi", "task-runner.yaml");
-	// In workspace mode, the worker runs in a repo worktree — not the workspace root.
-	// TASKPLANE_WORKSPACE_ROOT tells us where .pi/task-runner.yaml actually lives.
-	if (!existsSync(configPath) && process.env.TASKPLANE_WORKSPACE_ROOT) {
-		configPath = join(process.env.TASKPLANE_WORKSPACE_ROOT, ".pi", "task-runner.yaml");
-	}
-	if (!existsSync(configPath)) return { ...DEFAULT_CONFIG };
+/**
+ * Load task-runner config via the unified config loader.
+ *
+ * Reads `.pi/taskplane-config.json` first; falls back to YAML files;
+ * then defaults. Returns the legacy snake_case TaskConfig shape so all
+ * downstream consumers remain unchanged.
+ *
+ * Path resolution honors TASKPLANE_WORKSPACE_ROOT for workspace mode.
+ */
+export function loadConfig(cwd: string): TaskConfig {
 	try {
-		const raw = readFileSync(configPath, "utf-8");
-		const loaded = yamlParse(raw) as any;
-		// Parse standards_overrides: Record<areaName, { docs?, rules? }>
-		const rawOverrides = loaded?.standards_overrides || {};
-		const parsedOverrides: Record<string, { docs?: string[]; rules?: string[] }> = {};
-		for (const [key, val] of Object.entries(rawOverrides)) {
-			if (val && typeof val === "object") {
-				const v = val as any;
-				parsedOverrides[key] = {
-					docs: Array.isArray(v.docs) ? v.docs : undefined,
-					rules: Array.isArray(v.rules) ? v.rules : undefined,
-				};
-			}
-		}
-
-		// Parse task_areas minimally (we only need path for standards resolution)
-		const rawAreas = loaded?.task_areas || {};
-		const parsedAreas: Record<string, { path: string }> = {};
-		for (const [key, val] of Object.entries(rawAreas)) {
-			if (val && typeof val === "object" && (val as any).path) {
-				parsedAreas[key] = { path: (val as any).path };
-			}
-		}
-
-		return {
-			project: { ...DEFAULT_CONFIG.project, ...loaded?.project },
-			paths: { ...DEFAULT_CONFIG.paths, ...loaded?.paths },
-			testing: { commands: { ...DEFAULT_CONFIG.testing.commands, ...loaded?.testing?.commands } },
-			standards: {
-				docs: loaded?.standards?.docs || DEFAULT_CONFIG.standards.docs,
-				rules: loaded?.standards?.rules || DEFAULT_CONFIG.standards.rules,
-			},
-			standards_overrides: parsedOverrides,
-			task_areas: parsedAreas,
-			worker: { ...DEFAULT_CONFIG.worker, ...loaded?.worker },
-			reviewer: { ...DEFAULT_CONFIG.reviewer, ...loaded?.reviewer },
-			context: { ...DEFAULT_CONFIG.context, ...loaded?.context },
-		};
+		const unified = loadProjectConfig(cwd);
+		return toTaskConfig(unified);
 	} catch {
+		// If config loading fails (e.g., malformed JSON), fall back to defaults
 		return { ...DEFAULT_CONFIG };
 	}
 }
