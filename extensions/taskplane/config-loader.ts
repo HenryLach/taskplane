@@ -384,6 +384,126 @@ function loadOrchestratorYaml(configRoot: string): OrchestratorSection {
 }
 
 
+// ── User Preferences (Layer 2) ───────────────────────────────────────
+
+/**
+ * Resolve the absolute path to the user preferences file.
+ *
+ * Resolution order:
+ *   1. `PI_CODING_AGENT_DIR` env → `<value>/taskplane/preferences.json`
+ *   2. `os.homedir()/.pi/agent/taskplane/preferences.json`
+ *
+ * Uses `os.homedir()` for cross-platform home resolution
+ * (USERPROFILE on Windows, HOME on Unix) and `path.join()` for separators.
+ */
+export function resolveUserPreferencesPath(): string {
+	const agentDir = process.env.PI_CODING_AGENT_DIR;
+	if (agentDir) {
+		return join(agentDir, USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+	}
+	return join(homedir(), ".pi", "agent", USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+}
+
+/**
+ * Load user preferences from `~/.pi/agent/taskplane/preferences.json`.
+ *
+ * Behavior:
+ * - If file doesn't exist: auto-create with empty defaults `{}`, return defaults
+ * - If file is malformed JSON: log warning, return defaults (non-destructive)
+ * - Unknown keys are silently ignored (only allowlisted fields extracted)
+ * - Returns a fresh UserPreferences object on each call
+ *
+ * @returns Parsed UserPreferences (only recognized fields)
+ */
+export function loadUserPreferences(): UserPreferences {
+	const prefsPath = resolveUserPreferencesPath();
+
+	if (!existsSync(prefsPath)) {
+		// Auto-create with empty defaults on first access
+		try {
+			const dir = join(prefsPath, "..");
+			mkdirSync(dir, { recursive: true });
+			writeFileSync(prefsPath, JSON.stringify(DEFAULT_USER_PREFERENCES, null, 2) + "\n", "utf-8");
+		} catch {
+			// Best-effort; if we can't create, just return defaults
+		}
+		return { ...DEFAULT_USER_PREFERENCES };
+	}
+
+	let raw: string;
+	try {
+		raw = readFileSync(prefsPath, "utf-8");
+	} catch {
+		return { ...DEFAULT_USER_PREFERENCES };
+	}
+
+	let parsed: any;
+	try {
+		parsed = JSON.parse(raw);
+	} catch {
+		// Malformed JSON — return defaults without overwriting (non-destructive)
+		return { ...DEFAULT_USER_PREFERENCES };
+	}
+
+	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+		return { ...DEFAULT_USER_PREFERENCES };
+	}
+
+	// Extract only allowlisted fields — unknown keys are ignored
+	return extractAllowlistedPreferences(parsed);
+}
+
+/**
+ * Extract only recognized/allowlisted fields from a raw parsed object.
+ * Unknown keys are silently dropped — this is the Layer 2 boundary guardrail.
+ */
+function extractAllowlistedPreferences(raw: Record<string, any>): UserPreferences {
+	const prefs: UserPreferences = {};
+
+	if (typeof raw.operatorId === "string") prefs.operatorId = raw.operatorId;
+	if (typeof raw.tmuxPrefix === "string") prefs.tmuxPrefix = raw.tmuxPrefix;
+	if (raw.spawnMode === "tmux" || raw.spawnMode === "subprocess") prefs.spawnMode = raw.spawnMode;
+	if (typeof raw.workerModel === "string") prefs.workerModel = raw.workerModel;
+	if (typeof raw.reviewerModel === "string") prefs.reviewerModel = raw.reviewerModel;
+
+	return prefs;
+}
+
+/**
+ * Apply user preferences (Layer 2) onto a project config (Layer 1).
+ *
+ * Only allowlisted fields are applied. User preferences win for Layer 2
+ * fields; all other config fields (Layer 1) are left untouched.
+ *
+ * Mutates `config` in place and returns it for chaining.
+ *
+ * Mapping table:
+ *   prefs.operatorId    → config.orchestrator.orchestrator.operatorId
+ *   prefs.tmuxPrefix    → config.orchestrator.orchestrator.tmuxPrefix
+ *   prefs.spawnMode     → config.orchestrator.orchestrator.spawnMode
+ *   prefs.workerModel   → config.taskRunner.worker.model
+ *   prefs.reviewerModel → config.taskRunner.reviewer.model
+ */
+export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPreferences): TaskplaneConfig {
+	if (prefs.operatorId !== undefined) {
+		config.orchestrator.orchestrator.operatorId = prefs.operatorId;
+	}
+	if (prefs.tmuxPrefix !== undefined) {
+		config.orchestrator.orchestrator.tmuxPrefix = prefs.tmuxPrefix;
+	}
+	if (prefs.spawnMode !== undefined) {
+		config.orchestrator.orchestrator.spawnMode = prefs.spawnMode;
+	}
+	if (prefs.workerModel !== undefined) {
+		config.taskRunner.worker.model = prefs.workerModel;
+	}
+	if (prefs.reviewerModel !== undefined) {
+		config.taskRunner.reviewer.model = prefs.reviewerModel;
+	}
+	return config;
+}
+
+
 // ── Unified Loader ───────────────────────────────────────────────────
 
 /**
