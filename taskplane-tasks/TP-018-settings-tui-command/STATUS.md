@@ -4,7 +4,7 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 9
+**Review Counter:** 10
 **Iteration:** 5
 **Size:** L
 
@@ -76,12 +76,14 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ✅ Complete
+**Status:** 🔄 In Progress
 
 - [x] R009: Add YAML-only and JSON+YAML source-badge tests (JSON-only, YAML-only, JSON+YAML precedence scenarios)
 - [x] R009: Add interaction-level tests for L1+L2 destination selection, project confirm decline, and cancel zero-mutation paths
 - [x] R009: Add discoverability regression test ensuring uncovered/new fields appear in Advanced section
 - [x] Full test suite passes: `cd extensions && npx vitest run` (682 tests, 21 files, all green)
+- [ ] R010 fix #1: Extract destination/confirmation decision logic into testable pure helper (resolveWriteAction), add tests exercising Cancel short-circuit and confirm-decline branches with real function calls
+- [ ] R010 fix #2: Update STATUS test count to match actual suite output
 
 ---
 
@@ -114,6 +116,8 @@
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -181,6 +185,10 @@
 | 2026-03-17 18:30 | Step 4 started | Testing & Verification |
 | 2026-03-17 18:32 | Review R009 | plan Step 4: REVISE |
 | 2026-03-17 18:32 | Review R009 | plan Step 4: REVISE |
+| 2026-03-17 18:41 | Worker iter 5 | done in 525s, ctx: 36%, tools: 47 |
+| 2026-03-17 18:41 | Worker iter 5 | done in 578s, ctx: 42%, tools: 60 |
+| 2026-03-17 18:44 | Review R010 | code Step 4: REVISE |
+| 2026-03-17 18:44 | Review R010 | code Step 4: REVISE |
 
 ## Blockers
 *None*
