@@ -499,6 +499,7 @@ export async function resumeOrchBatch(
 	onNotify: (message: string, level: "info" | "warning" | "error") => void,
 	onMonitorUpdate?: MonitorUpdateCallback,
 	workspaceConfig?: WorkspaceConfig | null,
+	agentRoot?: string,
 ): Promise<void> {
 	const repoRoot = cwd;
 	const prefix = orchConfig.orchestrator.tmux_prefix;
@@ -898,6 +899,8 @@ export async function resumeOrchBatch(
 				batchState.batchId,
 				batchState.baseBranch,
 				workspaceConfig,
+				undefined, // stateRoot — uses default (repoRoot)
+				agentRoot,
 			);
 
 			if (reExecMergeResult.status === "succeeded") {
@@ -1175,6 +1178,8 @@ export async function resumeOrchBatch(
 					batchState.batchId,
 					batchState.baseBranch,
 					workspaceConfig,
+					undefined, // stateRoot — uses default (repoRoot)
+					agentRoot,
 				);
 				batchState.mergeResults.push(mergeResult);
 

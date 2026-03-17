@@ -401,6 +401,7 @@ export default function (pi: ExtensionAPI) {
 					updateOrchWidget();
 				},
 				execCtx!.workspaceConfig,
+				execCtx!.pointer?.agentRoot,
 			);
 
 			// Final widget update
