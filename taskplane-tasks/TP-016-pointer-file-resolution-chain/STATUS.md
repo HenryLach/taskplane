@@ -1,10 +1,10 @@
 # TP-016: Pointer File Resolution Chain — Status
 
-**Current Step:** Step 4: Thread Through Dashboard
+**Current Step:** Step 6: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 9
+**Review Counter:** 10
 **Iteration:** 6
 **Size:** M
 
@@ -71,12 +71,12 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Close Step 3 open item: verify test 7.11 is behavioral (not source-text) and check off the Step 3 checkbox
 - [x] Verify pointer failure/parity matrix coverage: existing tests cover missing, malformed, unknown config_repo (warn+fallback), valid pointer, and repo-mode (pointer ignored) scenarios
 - [x] Verify integration split invariant: config/agent paths follow pointer while state paths (batch, sidecar, merge) stay at workspaceRoot/.pi
-- [ ] Run full test suite: `cd extensions && npx vitest run` — all tests passing
+- [x] Run full test suite: `cd extensions && npx vitest run` — 609 tests passing (20 test files)
 
 ---
 
@@ -109,6 +109,7 @@
 | R010 | code | Step 4 | APPROVE | .reviews/R010-code-step4.md |
 | R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 | R009 | plan | Step 4 | APPROVE | .reviews/R009-plan-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -177,6 +178,7 @@
 | 2026-03-17 18:50 | Step 3 complete | Thread Through Orchestrator |
 | 2026-03-17 18:50 | Step 4 started | Thread Through Dashboard |
 | 2026-03-17 18:51 | Review R009 | plan Step 4: APPROVE |
+| 2026-03-17 18:53 | Review R010 | code Step 4: REVISE |
 
 ## Blockers
 *None*
