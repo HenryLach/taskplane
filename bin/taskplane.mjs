@@ -2148,6 +2148,138 @@ function cmdDoctor() {
 		}
 	}
 
+	// ── Workspace pointer chain validation ──────────────────────────────
+	// Validates: pointer file → config repo → .taskplane/ directory → default branch
+	if (isWorkspaceMode && wsResult.config) {
+		console.log();
+		const pointerPath = path.join(projectRoot, ".pi", "taskplane-pointer.json");
+
+		// Check 1: Pointer file exists and is valid JSON with required fields
+		let pointer = null;
+		if (!fs.existsSync(pointerPath)) {
+			console.log(`  ${FAIL} .pi/taskplane-pointer.json missing [POINTER_MISSING]`);
+			console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to create the workspace pointer${c.reset}`);
+			issues++;
+		} else {
+			try {
+				pointer = JSON.parse(fs.readFileSync(pointerPath, "utf-8"));
+				if (!pointer.config_repo || !pointer.config_path) {
+					console.log(`  ${FAIL} .pi/taskplane-pointer.json missing required fields (config_repo, config_path) [POINTER_SCHEMA_INVALID]`);
+					console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to recreate the pointer${c.reset}`);
+					pointer = null;
+					issues++;
+				} else {
+					console.log(`  ${OK} .pi/taskplane-pointer.json ${c.dim}(→ ${pointer.config_repo}/${pointer.config_path})${c.reset}`);
+				}
+			} catch {
+				console.log(`  ${FAIL} .pi/taskplane-pointer.json is not valid JSON [POINTER_PARSE_ERROR]`);
+				console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to recreate the pointer${c.reset}`);
+				issues++;
+			}
+		}
+
+		// Check 2: Config repo path exists on disk
+		let configRepoRoot = null;
+		if (pointer) {
+			configRepoRoot = path.resolve(projectRoot, pointer.config_repo);
+			if (!fs.existsSync(configRepoRoot)) {
+				console.log(`  ${FAIL} config repo not found: ${pointer.config_repo} [CONFIG_REPO_NOT_FOUND]`);
+				console.log(`     ${c.dim}→ Clone ${pointer.config_repo} into ${projectRoot}${c.reset}`);
+				configRepoRoot = null;
+				issues++;
+			} else if (!isInsideGitRepo(configRepoRoot)) {
+				console.log(`  ${FAIL} config repo is not a git repository: ${pointer.config_repo} [CONFIG_REPO_NOT_GIT]`);
+				console.log(`     ${c.dim}→ Run: git init ${configRepoRoot}${c.reset}`);
+				configRepoRoot = null;
+				issues++;
+			} else {
+				console.log(`  ${OK} config repo: ${pointer.config_repo} ${c.dim}(${configRepoRoot})${c.reset}`);
+			}
+		}
+
+		// Check 3: .taskplane/ directory exists in config repo
+		let taskplaneDirExists = false;
+		if (configRepoRoot) {
+			const taskplaneDir = path.join(configRepoRoot, pointer.config_path);
+			if (!fs.existsSync(taskplaneDir)) {
+				console.log(`  ${FAIL} ${pointer.config_repo}/${pointer.config_path}/ not found [CONFIG_DIR_NOT_FOUND]`);
+				console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to create the config directory${c.reset}`);
+				issues++;
+			} else {
+				console.log(`  ${OK} ${pointer.config_repo}/${pointer.config_path}/ exists`);
+				taskplaneDirExists = true;
+			}
+		}
+
+		// Check 4: .taskplane/ exists on config repo's default branch (not just current branch)
+		if (configRepoRoot && taskplaneDirExists) {
+			try {
+				// Get current branch name
+				const currentBranch = execFileSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+					cwd: configRepoRoot,
+					stdio: ["pipe", "pipe", "pipe"],
+					timeout: 5000,
+				}).toString().trim();
+
+				// Detect default branch (try origin/HEAD, fall back to main/master heuristic)
+				let defaultBranch = null;
+				try {
+					const originHead = execFileSync("git", ["symbolic-ref", "refs/remotes/origin/HEAD"], {
+						cwd: configRepoRoot,
+						stdio: ["pipe", "pipe", "pipe"],
+						timeout: 5000,
+					}).toString().trim();
+					// refs/remotes/origin/main → main
+					defaultBranch = originHead.replace(/^refs\/remotes\/origin\//, "");
+				} catch {
+					// origin/HEAD not set — try common default branch names
+					for (const candidate of ["main", "master", "develop"]) {
+						try {
+							execFileSync("git", ["rev-parse", "--verify", `refs/heads/${candidate}`], {
+								cwd: configRepoRoot,
+								stdio: ["pipe", "pipe", "pipe"],
+								timeout: 5000,
+							});
+							defaultBranch = candidate;
+							break;
+						} catch {
+							// candidate doesn't exist, try next
+						}
+					}
+				}
+
+				if (defaultBranch && currentBranch !== defaultBranch) {
+					// Check if .taskplane/ exists on the default branch via git ls-tree
+					try {
+						const lsOutput = execFileSync("git", ["ls-tree", "--name-only", defaultBranch, pointer.config_path + "/"], {
+							cwd: configRepoRoot,
+							stdio: ["pipe", "pipe", "pipe"],
+							timeout: 5000,
+						}).toString().trim();
+
+						if (lsOutput) {
+							console.log(`  ${OK} ${pointer.config_path}/ exists on default branch (${defaultBranch})`);
+						} else {
+							console.log(`  ${WARN} ${pointer.config_path}/ exists on current branch (${currentBranch}) but not on default branch (${defaultBranch})`);
+							console.log(`     ${c.dim}→ Merge to ${defaultBranch} so teammates can onboard${c.reset}`);
+						}
+					} catch {
+						// ls-tree failed — directory doesn't exist on that branch
+						console.log(`  ${WARN} ${pointer.config_path}/ exists on current branch (${currentBranch}) but not on default branch (${defaultBranch})`);
+						console.log(`     ${c.dim}→ Merge to ${defaultBranch} so teammates can onboard${c.reset}`);
+					}
+				} else if (defaultBranch && currentBranch === defaultBranch) {
+					console.log(`  ${OK} ${pointer.config_path}/ on default branch (${defaultBranch})`);
+				} else {
+					// Could not determine default branch — skip this check silently
+					console.log(`  ${INFO} could not determine default branch for ${pointer.config_repo} — skipping branch check`);
+				}
+			} catch {
+				// git commands failed — skip branch check
+			}
+		}
+	}
+
 	// Step 1: Validate repo topology (workspace mode + valid config only)
 	if (isWorkspaceMode && wsResult.config) {
 		console.log();
