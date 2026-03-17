@@ -15,7 +15,7 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Inventory all config/agent/state resolution call sites (resolution map)
 - [x] Document mode matrix: repo mode vs workspace mode (pointer present/missing/invalid)
