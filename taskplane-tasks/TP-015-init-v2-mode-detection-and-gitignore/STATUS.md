@@ -72,7 +72,7 @@
 - [x] Scaffold `.taskplane/` in config repo (config JSON, workspace.json, agents, version tracker, CONTEXT.md, examples)
 - [x] Gitignore enforcement in config repo with `.taskplane/`-scoped prefix; tracked-artifact detection
 - [x] Pointer file creation (`taskplane-pointer.json`) in workspace root `.pi/`
-- [ ] Dry-run/preset/force/non-interactive compatibility for workspace mode
+- [x] Dry-run/preset/force/non-interactive compatibility for workspace mode
 - [ ] Post-init merge guidance and auto-commit in config repo
 
 ---
