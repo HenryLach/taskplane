@@ -1,11 +1,11 @@
 # TP-014: JSON Config Schema and Loader — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Define JSON Schema
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -23,11 +23,13 @@
 ---
 
 ### Step 1: Define JSON Schema
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] TypeScript interfaces for unified config schema defined
-- [ ] Schema merges task-runner + orchestrator settings
-- [ ] `configVersion` field included
+- [ ] TypeScript interfaces for unified `TaskplaneConfig` schema defined in `extensions/taskplane/config-schema.ts`
+- [ ] Schema covers all 13 task-runner sections + 7 orchestrator sections with JSON camelCase naming
+- [ ] `configVersion` field with v1 semantics (required, initial value 1, unknown future versions rejected)
+- [ ] Centralized defaults for the unified config (single source of truth)
+- [ ] Section mapping documented in STATUS.md Discoveries table
 
 ---
 
@@ -62,6 +64,10 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | APPROVE | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | APPROVE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | APPROVE | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -83,6 +89,16 @@
 | 2026-03-17 14:18 | Step 0 started | Preflight |
 | 2026-03-17 14:19 | Review R001 | plan Step 0: APPROVE |
 | 2026-03-17 14:19 | Review R001 | plan Step 0: APPROVE |
+| 2026-03-17 14:20 | Worker iter 1 | done in 86s, ctx: 19%, tools: 17 |
+| 2026-03-17 14:20 | Worker iter 1 | done in 82s, ctx: 29%, tools: 16 |
+| 2026-03-17 14:21 | Review R002 | code Step 0: APPROVE |
+| 2026-03-17 14:21 | Step 0 complete | Preflight |
+| 2026-03-17 14:21 | Step 1 started | Define JSON Schema |
+| 2026-03-17 14:22 | Review R002 | code Step 0: APPROVE |
+| 2026-03-17 14:22 | Step 0 complete | Preflight |
+| 2026-03-17 14:22 | Step 1 started | Define JSON Schema |
+| 2026-03-17 14:23 | Review R003 | plan Step 1: REVISE |
+| 2026-03-17 14:23 | Review R003 | plan Step 1: APPROVE |
 
 ## Blockers
 *None*
