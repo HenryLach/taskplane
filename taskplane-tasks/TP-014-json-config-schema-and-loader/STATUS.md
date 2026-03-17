@@ -64,7 +64,7 @@
 **Status:** 🟨 In Progress
 
 - [x] Update `docs/reference/configuration/task-runner.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
-- [ ] Update `docs/reference/configuration/task-orchestrator.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
+- [x] Update `docs/reference/configuration/task-orchestrator.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
 - [ ] Check `docs/tutorials/install.md` — update or explicitly no-op references to YAML scaffolding (lines mentioning `.pi/task-runner.yaml` / `.pi/task-orchestrator.yaml`)
 - [ ] `.DONE` created
 
