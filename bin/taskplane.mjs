@@ -1020,11 +1020,252 @@ async function cmdInit(args) {
 	}
 	console.log();
 
-	// Workspace mode: project init (Scenario C) is implemented in Step 4.
-	// For now, display guidance and exit.
+	// ── Workspace mode: Scenario C (first-time project init) ─────────────
 	if (resolvedMode === "workspace") {
-		console.log(`  ${WARN} Workspace mode init is not yet implemented.`);
-		console.log(`     For now, run ${c.cyan}taskplane init${c.reset} inside an individual repo.\n`);
+		// List discovered repos
+		console.log(`  Found ${detection.subRepos.length} git repositories:`);
+		console.log(`    ${detection.subRepos.join(", ")}\n`);
+
+		// ── Config repo selection ────────────────────────────────────
+		let configRepoName;
+		if (isPreset || dryRun) {
+			// Non-interactive: pick first repo alphabetically as default
+			configRepoName = detection.subRepos[0];
+			console.log(`  ${INFO} Using ${c.cyan}${configRepoName}${c.reset} as config repo (first alphabetically).\n`);
+		} else {
+			// Interactive: prompt user to choose config repo
+			console.log(`  Which repo should hold Taskplane config?`);
+			for (let i = 0; i < detection.subRepos.length; i++) {
+				console.log(`    ${c.dim}${i + 1}.${c.reset} ${detection.subRepos[i]}`);
+			}
+			console.log();
+			const configRepoAnswer = await ask(
+				"Config repo (name or number)",
+				detection.subRepos[0]
+			);
+			// Accept numeric index or repo name
+			const asNum = parseInt(configRepoAnswer, 10);
+			if (asNum >= 1 && asNum <= detection.subRepos.length) {
+				configRepoName = detection.subRepos[asNum - 1];
+			} else if (detection.subRepos.includes(configRepoAnswer)) {
+				configRepoName = configRepoAnswer;
+			} else {
+				die(`Unknown repo: ${configRepoAnswer}. Must be one of: ${detection.subRepos.join(", ")}`);
+			}
+			console.log(`  Using config repo: ${c.cyan}${configRepoName}${c.reset}\n`);
+		}
+
+		const configRepoRoot = path.join(projectRoot, configRepoName);
+		const taskplaneDir = path.join(configRepoRoot, ".taskplane");
+
+		// ── Existing config overwrite check for workspace reinit ─────
+		if (fs.existsSync(taskplaneDir) && !force) {
+			console.log(`${WARN} Taskplane config already exists in ${configRepoName}/.taskplane/.`);
+			const proceed = await confirm("  Overwrite existing files?", false);
+			if (!proceed) {
+				console.log("  Aborted.");
+				return;
+			}
+		}
+
+		// ── Gather config values (workspace mode) ───────────────────
+		let vars;
+		if (preset === "minimal" || preset === "full" || preset === "runner-only") {
+			vars = getPresetVars(preset, projectRoot, tasksRootOverride);
+			console.log(`  Using preset: ${c.cyan}${preset}${c.reset}`);
+			if (tasksRootOverride) {
+				console.log(`  Task directory: ${c.cyan}${tasksRootOverride}${c.reset}`);
+			}
+			console.log();
+		} else {
+			vars = await getInteractiveVars(projectRoot, tasksRootOverride);
+		}
+
+		// ── tmux / spawn mode detection ─────────────────────────────
+		const { spawnMode, hasTmux } = detectSpawnMode();
+		vars.spawn_mode = spawnMode;
+
+		if (preset !== "runner-only" && !hasTmux) {
+			console.log(`  ${WARN} tmux not found. Using subprocess mode.`);
+			console.log(`     Run ${c.cyan}taskplane install-tmux${c.reset} for full orchestrator support.\n`);
+		}
+
+		const exampleTemplateDirs = noExamples ? [] : listExampleTaskTemplates();
+
+		// ── Dry-run: show what would be created ─────────────────────
+		if (dryRun) {
+			console.log(`\n${c.bold}Dry run — files that would be created:${c.reset}\n`);
+			printWorkspaceFileList(vars, noExamples, preset, exampleTemplateDirs, configRepoName, configRepoRoot);
+			console.log(`  ${c.green}create${c.reset} .pi/taskplane-pointer.json`);
+			console.log();
+			return;
+		}
+
+		// ── Scaffold .taskplane/ in config repo ─────────────────────
+		console.log(`\n${c.bold}Creating files in ${configRepoName}/.taskplane/...${c.reset}\n`);
+		const skipIfExists = !force;
+
+		// Agent prompts
+		for (const agent of ["task-worker.md", "task-reviewer.md", "task-merger.md"]) {
+			copyTemplate(
+				path.join(TEMPLATES_DIR, "agents", "local", agent),
+				path.join(taskplaneDir, "agents", agent),
+				{ skipIfExists, label: `${configRepoName}/.taskplane/agents/${agent}` }
+			);
+		}
+
+		// Task runner config
+		writeFile(
+			path.join(taskplaneDir, "task-runner.yaml"),
+			generateTaskRunnerYaml(vars),
+			{ skipIfExists, label: `${configRepoName}/.taskplane/task-runner.yaml` }
+		);
+
+		// Orchestrator config (skip for runner-only preset)
+		if (preset !== "runner-only") {
+			writeFile(
+				path.join(taskplaneDir, "task-orchestrator.yaml"),
+				generateOrchestratorYaml(vars),
+				{ skipIfExists, label: `${configRepoName}/.taskplane/task-orchestrator.yaml` }
+			);
+		}
+
+		// Project config JSON (taskplane-config.json)
+		const projectConfig = {
+			configVersion: 1,
+			taskRunner: {},
+			orchestrator: {},
+		};
+		writeFile(
+			path.join(taskplaneDir, "taskplane-config.json"),
+			JSON.stringify(projectConfig, null, 2) + "\n",
+			{ skipIfExists, label: `${configRepoName}/.taskplane/taskplane-config.json` }
+		);
+
+		// Version tracker (always overwrite)
+		const versionInfo = {
+			version: getPackageVersion(),
+			installedAt: new Date().toISOString(),
+			lastUpgraded: new Date().toISOString(),
+			components: { agents: getPackageVersion(), config: getPackageVersion() },
+		};
+		writeFile(
+			path.join(taskplaneDir, "taskplane.json"),
+			JSON.stringify(versionInfo, null, 2) + "\n",
+			{ label: `${configRepoName}/.taskplane/taskplane.json` }
+		);
+
+		// Workspace definition (workspace.json)
+		const workspaceConfig = {
+			repos: detection.subRepos.map(name => ({
+				name,
+				path: `../${name}`,
+				default_branch: "main",
+			})),
+			routing: {
+				tasks_root: vars.tasks_root,
+				default_repo: configRepoName,
+				strict: false,
+			},
+		};
+		writeFile(
+			path.join(taskplaneDir, "workspace.json"),
+			JSON.stringify(workspaceConfig, null, 2) + "\n",
+			{ skipIfExists, label: `${configRepoName}/.taskplane/workspace.json` }
+		);
+
+		// CONTEXT.md — tasks area context
+		const tasksDir = path.join(configRepoRoot, vars.tasks_root);
+		const contextSrc = fs.readFileSync(path.join(TEMPLATES_DIR, "tasks", "CONTEXT.md"), "utf-8");
+		writeFile(
+			path.join(tasksDir, "CONTEXT.md"),
+			interpolate(contextSrc, vars),
+			{ skipIfExists, label: `${configRepoName}/${vars.tasks_root}/CONTEXT.md` }
+		);
+
+		// Example tasks
+		if (!noExamples) {
+			for (const exampleName of exampleTemplateDirs) {
+				const exampleDir = path.join(TEMPLATES_DIR, "tasks", exampleName);
+				const destDir = path.join(tasksDir, exampleName);
+				for (const file of ["PROMPT.md", "STATUS.md"]) {
+					const srcPath = path.join(exampleDir, file);
+					if (!fs.existsSync(srcPath)) continue;
+					const src = fs.readFileSync(srcPath, "utf-8");
+					writeFile(path.join(destDir, file), interpolate(src, vars), {
+						skipIfExists,
+						label: `${configRepoName}/${vars.tasks_root}/${exampleName}/${file}`,
+					});
+				}
+			}
+			if (exampleTemplateDirs.length === 0) {
+				console.log(`  ${WARN} No example task templates found under templates/tasks/EXAMPLE-*`);
+			}
+		}
+
+		// ── Gitignore enforcement in config repo ────────────────────
+		// Use .taskplane/ prefix so patterns apply within the config repo's
+		// .taskplane/ directory (e.g., ".taskplane/.pi/batch-state.json")
+		// Per spec: standard .pi/ patterns + .worktrees/ in config repo root
+		const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: false });
+
+		if (gitignoreResult.created) {
+			console.log(`  ${c.green}create${c.reset} ${configRepoName}/.gitignore`);
+		} else if (gitignoreResult.added.length > 0) {
+			console.log(`  ${c.green}update${c.reset} ${configRepoName}/.gitignore (${gitignoreResult.added.length} entries added)`);
+		} else {
+			console.log(`  ${c.dim}skip${c.reset}  ${configRepoName}/.gitignore (all entries already present)`);
+		}
+
+		// Check for tracked runtime artifacts in config repo
+		const wsIsInteractive = !isPreset && !dryRun;
+		await detectAndOfferUntrackArtifacts(configRepoRoot, { dryRun: false, interactive: wsIsInteractive });
+
+		// ── Pointer file in workspace root .pi/ ─────────────────────
+		const pointer = {
+			config_repo: configRepoName,
+			config_path: ".taskplane",
+		};
+		writeFile(
+			path.join(projectRoot, ".pi", "taskplane-pointer.json"),
+			JSON.stringify(pointer, null, 2) + "\n",
+			{ label: ".pi/taskplane-pointer.json" }
+		);
+
+		// ── Auto-commit config files in the config repo ─────────────
+		await autoCommitTaskFiles(configRepoRoot, vars.tasks_root);
+		// Also stage and commit .taskplane/ directory
+		try {
+			execSync('git add .taskplane/', { cwd: configRepoRoot, stdio: "pipe" });
+			const status = execSync("git diff --cached --name-only", { cwd: configRepoRoot, stdio: "pipe" })
+				.toString().trim();
+			if (status) {
+				execSync('git commit -m "chore: initialize taskplane workspace config"', {
+					cwd: configRepoRoot,
+					stdio: "pipe",
+				});
+				console.log(`\n  ${c.green}git${c.reset}    committed .taskplane/ to ${configRepoName}`);
+			}
+		} catch (err) {
+			console.log(`\n  ${WARN} Could not auto-commit .taskplane/ to ${configRepoName}.`);
+			console.log(`  ${c.dim}Run manually: cd ${configRepoName} && git add .taskplane/ && git commit -m "add taskplane config"${c.reset}`);
+		}
+
+		// ── Post-init guidance ──────────────────────────────────────
+		console.log(`\n${OK} ${c.bold}Taskplane initialized in workspace mode!${c.reset}\n`);
+		console.log(`  Config repo: ${c.cyan}${configRepoName}/.taskplane/${c.reset}`);
+		console.log(`  Pointer:     ${c.cyan}.pi/taskplane-pointer.json${c.reset}\n`);
+		console.log(`  ${WARN} ${c.bold}Important:${c.reset} merge these changes to your default branch (e.g., ${c.cyan}develop${c.reset})`);
+		console.log(`     before other team members run ${c.cyan}taskplane init${c.reset}.\n`);
+		console.log(`     cd ${configRepoName}`);
+		console.log(`     git push && ${c.dim}[create PR / merge to default branch]${c.reset}\n`);
+		console.log(`${c.bold}Quick start:${c.reset}`);
+		console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
+		if (preset !== "runner-only") {
+			console.log(`  ${c.cyan}/orch-plan all${c.reset}                                   # preview waves/lanes/dependencies`);
+			console.log(`  ${c.cyan}/orch all${c.reset}                                        # run via orchestrator`);
+		}
+		console.log();
 		return;
 	}
 
@@ -1262,6 +1503,41 @@ function printFileList(vars, noExamples, preset, exampleTemplateDirs = [], proje
 	}
 
 	console.log();
+}
+
+/**
+ * Print the list of files that would be created for workspace mode (dry-run).
+ * Similar to printFileList but paths are scoped to <configRepo>/.taskplane/.
+ */
+function printWorkspaceFileList(vars, noExamples, preset, exampleTemplateDirs, configRepoName, configRepoRoot) {
+	const prefix = `${configRepoName}/.taskplane`;
+	const files = [
+		`${prefix}/agents/task-worker.md`,
+		`${prefix}/agents/task-reviewer.md`,
+		`${prefix}/agents/task-merger.md`,
+		`${prefix}/task-runner.yaml`,
+	];
+	if (preset !== "runner-only") files.push(`${prefix}/task-orchestrator.yaml`);
+	files.push(`${prefix}/taskplane-config.json`);
+	files.push(`${prefix}/taskplane.json`);
+	files.push(`${prefix}/workspace.json`);
+	files.push(`${configRepoName}/${vars.tasks_root}/CONTEXT.md`);
+	if (!noExamples) {
+		for (const exampleName of exampleTemplateDirs) {
+			files.push(`${configRepoName}/${vars.tasks_root}/${exampleName}/PROMPT.md`);
+			files.push(`${configRepoName}/${vars.tasks_root}/${exampleName}/STATUS.md`);
+		}
+	}
+	for (const f of files) console.log(`  ${c.green}create${c.reset} ${f}`);
+
+	// Show gitignore entries that would be added to config repo
+	const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: true });
+	if (gitignoreResult.added.length > 0) {
+		const action = fs.existsSync(path.join(configRepoRoot, ".gitignore")) ? "update" : "create";
+		console.log(`  ${c.green}${action}${c.reset} ${configRepoName}/.gitignore (${gitignoreResult.added.length} entries)`);
+	} else {
+		console.log(`  ${c.dim}skip${c.reset}  ${configRepoName}/.gitignore (all entries already present)`);
+	}
 }
 
 // ─── Workspace Mode Detection (for doctor) ─────────────────────────────────

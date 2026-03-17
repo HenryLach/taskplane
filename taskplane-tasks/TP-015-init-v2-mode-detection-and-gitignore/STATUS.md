@@ -68,7 +68,7 @@
 ### Step 4: Workspace Mode Init (Scenario C)
 **Status:** 🟨 In Progress
 
-- [ ] Config repo selection prompt and workspace interactive/preset vars gathering
+- [x] Config repo selection prompt and workspace interactive/preset vars gathering
 - [ ] Scaffold `.taskplane/` in config repo (config JSON, workspace.json, agents, version tracker, CONTEXT.md, examples)
 - [ ] Gitignore enforcement in config repo with `.taskplane/`-scoped prefix; tracked-artifact detection
 - [ ] Pointer file creation (`taskplane-pointer.json`) in workspace root `.pi/`
