@@ -15,14 +15,14 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Read pi's `ctx.ui` API capabilities
 - [x] Read config schema from TP-014
 - [x] Review Layer 2 allowlist and preferences boundary (R001 item 2)
 - [x] Review config root/path semantics in workspace mode (R001 item)
 - [x] Review JSON-first + YAML fallback behavior for write-back alignment (R001 item)
-- [ ] Produce preflight findings: field/source inventory with UI control types + layer mapping (R001 item 3)
+- [x] Produce preflight findings: field/source inventory with UI control types + layer mapping (R001 item 3)
 
 ---
 
@@ -78,6 +78,8 @@
 ## Discoveries
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| `resolveConfigRoot` not exported from config-loader.ts | Export in Step 2/3 | config-loader.ts |
+| settings-and-onboarding-spec.md not found at expected path | Non-blocking, spec content derived from code | .pi/local/docs/ |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -94,4 +96,87 @@
 *None*
 
 ## Notes
-*Reserved for execution notes*
+
+### Preflight Findings (Step 0)
+
+**Source files:**
+- Config schema: `extensions/taskplane/config-schema.ts`
+- Config loader: `extensions/taskplane/config-loader.ts`
+- Extension entry: `extensions/taskplane/extension.ts`
+- Pi TUI docs: tui.md (SettingsList, SelectList, custom components)
+
+**ctx.ui capabilities relevant to /settings:**
+- `SettingsList` — cycling through predefined values (ideal for enums/booleans)
+- `SelectList` — selection from list (for section navigation)
+- `ctx.ui.custom()` — full TUI with keyboard input
+- `ctx.ui.input()` — free text input (for strings/numbers)
+- `ctx.ui.confirm()` — yes/no (for Layer 1 write confirmation)
+- `getSettingsListTheme()` — pre-built theme for SettingsList
+- `DynamicBorder` — border framing
+
+**Write-back targets:**
+- Layer 1 → `resolveConfigRoot(cwd)/.pi/taskplane-config.json` (always JSON, creates if absent)
+- Layer 2 → `resolveUserPreferencesPath()` (~/.pi/agent/taskplane/preferences.json)
+- `resolveConfigRoot` is not exported — must export or add helper for write-back
+
+**Config root in workspace mode:**
+- `resolveConfigRoot(cwd)` checks cwd for config files first, then TASKPLANE_WORKSPACE_ROOT
+- Write-back MUST use the same resolution to avoid writing to worktree instead of workspace root
+
+**Field Inventory — TUI-Editable Fields:**
+
+| Section | Field | Type | UI Control | Layer | Write Target |
+|---------|-------|------|------------|-------|-------------|
+| **Orchestrator** | maxLanes | number | input | L1 | project config |
+| | worktreeLocation | enum | settings-toggle | L1 | project config |
+| | worktreePrefix | string | input | L1 | project config |
+| | batchIdFormat | enum | settings-toggle | L1 | project config |
+| | spawnMode | enum | settings-toggle | L1+L2 | project or prefs |
+| | tmuxPrefix | string | input | L1+L2 | project or prefs |
+| | operatorId | string | input | L1+L2 | project or prefs |
+| **Dependencies** | source | enum | settings-toggle | L1 | project config |
+| | cache | boolean | settings-toggle | L1 | project config |
+| **Assignment** | strategy | enum | settings-toggle | L1 | project config |
+| **Merge** | model | string | input | L1+L2 | project or prefs |
+| | tools | string | input | L1 | project config |
+| | order | enum | settings-toggle | L1 | project config |
+| **Failure** | onTaskFailure | enum | settings-toggle | L1 | project config |
+| | onMergeFailure | enum | settings-toggle | L1 | project config |
+| | stallTimeout | number | input | L1 | project config |
+| | maxWorkerMinutes | number | input | L1 | project config |
+| | abortGracePeriod | number | input | L1 | project config |
+| **Monitoring** | pollInterval | number | input | L1 | project config |
+| **Task Runner: Worker** | model | string | input | L1+L2 | project or prefs |
+| | tools | string | input | L1 | project config |
+| | thinking | string | input | L1 | project config |
+| **Task Runner: Reviewer** | model | string | input | L1+L2 | project or prefs |
+| | tools | string | input | L1 | project config |
+| | thinking | string | input | L1 | project config |
+| **Task Runner: Context** | workerContextWindow | number | input | L1 | project config |
+| | warnPercent | number | input | L1 | project config |
+| | killPercent | number | input | L1 | project config |
+| | maxWorkerIterations | number | input | L1 | project config |
+| | maxReviewCycles | number | input | L1 | project config |
+| | noProgressLimit | number | input | L1 | project config |
+| **User Preferences** | dashboardPort | number | input | L2 | prefs only |
+
+**Layer 2 writable fields (allowlist):**
+operatorId, tmuxPrefix, spawnMode, workerModel, reviewerModel, mergeModel, dashboardPort
+
+**Fields NOT shown in TUI (complex/collection types — edit JSON directly):**
+- taskAreas (Record), referenceDocs (Record), neverLoad (array), selfDocTargets (Record)
+- protectedDocs (array), standards (docs/rules arrays), standardsOverrides (Record)
+- testing.commands (Record), preWarm.commands (Record), preWarm.always (array)
+- assignment.sizeWeights (Record), merge.verify (array)
+- project.name, project.description, paths.tasks, paths.architecture (simple but project-identity)
+
+**Enum value maps for settings-toggle fields:**
+- worktreeLocation: ["sibling", "subdirectory"]
+- batchIdFormat: ["timestamp", "sequential"]
+- spawnMode: ["tmux", "subprocess"]
+- dependencies.source: ["prompt", "agent"]
+- assignment.strategy: ["affinity-first", "round-robin", "load-balanced"]
+- merge.order: ["fewest-files-first", "sequential"]
+- onTaskFailure: ["skip-dependents", "stop-wave", "stop-all"]
+- onMergeFailure: ["pause", "abort"]
+- cache: ["true", "false"] (boolean as toggle)
