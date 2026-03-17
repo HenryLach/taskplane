@@ -1,7 +1,7 @@
 # TP-018: /settings TUI Command — Status
 
 **Current Step:** Step 5: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
 **Review Counter:** 11
@@ -88,7 +88,7 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Commands reference updated (`docs/reference/commands.md` — add `/settings` section)
 - [x] Check-if-affected: Update `README.md` command table with `/settings` row
