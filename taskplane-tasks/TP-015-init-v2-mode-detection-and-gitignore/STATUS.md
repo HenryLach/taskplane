@@ -29,7 +29,7 @@
 ---
 
 ### Step 1: Mode Auto-Detection
-**Status:** 🔄 In Progress
+**Status:** ✅ Complete
 
 - [x] Detection logic implemented (git repo check, subdirectory git repo scan, mode determination)
 - [x] Error path: no git repo and no git repo subdirectories → clear error message and exit
