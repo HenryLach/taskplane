@@ -1,7 +1,7 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
 **Current Step:** Step 1: Mode Auto-Detection
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
 **Review Counter:** 3
@@ -29,7 +29,7 @@
 ---
 
 ### Step 1: Mode Auto-Detection
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Detection logic implemented (git repo check, subdirectory git repo scan, mode determination)
 - [x] Error path: no git repo and no git repo subdirectories → clear error message and exit
