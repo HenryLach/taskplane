@@ -65,7 +65,7 @@
 
 - [x] Update `docs/reference/configuration/task-runner.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
 - [x] Update `docs/reference/configuration/task-orchestrator.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
-- [ ] Check `docs/tutorials/install.md` — update or explicitly no-op references to YAML scaffolding (lines mentioning `.pi/task-runner.yaml` / `.pi/task-orchestrator.yaml`)
+- [x] Check `docs/tutorials/install.md` — update or explicitly no-op references to YAML scaffolding (lines mentioning `.pi/task-runner.yaml` / `.pi/task-orchestrator.yaml`) — NO-OP: `taskplane init` still scaffolds YAML files, JSON config is an opt-in alternative, so YAML references in the install tutorial remain correct
 - [ ] `.DONE` created
 
 ---

@@ -114,6 +114,8 @@ This scaffolds:
 - `taskplane-tasks/EXAMPLE-001-hello-world/{PROMPT.md,STATUS.md}`
 - `taskplane-tasks/EXAMPLE-002-parallel-smoke/{PROMPT.md,STATUS.md}`
 
+> **Tip:** You can also use a single `.pi/taskplane-config.json` file instead of the two YAML files. When a JSON config is present it takes precedence and the YAML files are ignored. See the [task-runner config reference](../reference/configuration/task-runner.yaml.md#unified-json-config) and [orchestrator config reference](../reference/configuration/task-orchestrator.yaml.md#unified-json-config) for the JSON format.
+
 ---
 
 ## Validate the Installation
