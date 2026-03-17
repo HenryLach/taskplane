@@ -661,15 +661,22 @@ function ensureGitignoreEntries(projectRoot, { dryRun = false, prefix = "" } = {
  * @param {object} options
  * @param {boolean} options.dryRun - If true, report but don't modify index
  * @param {boolean} options.interactive - If false, skip prompt and don't untrack
+ * @param {string} options.prefix - Path prefix for workspace-scoped scanning (e.g., ".taskplane/")
  */
-async function detectAndOfferUntrackArtifacts(projectRoot, { dryRun = false, interactive = true } = {}) {
+async function detectAndOfferUntrackArtifacts(projectRoot, { dryRun = false, interactive = true, prefix = "" } = {}) {
 	// Only run in a git repo
 	if (!isInsideGitRepo(projectRoot)) return { found: [], untracked: false };
 
-	// Get list of tracked files under .pi/ and .worktrees/
+	// Get list of tracked files under the relevant directories
+	// For workspace mode (prefix=".taskplane/"), scan .taskplane/.pi/ and .taskplane/.worktrees/
+	// For repo mode (no prefix), scan .pi/ and .worktrees/
+	const scanDirs = prefix
+		? [`${prefix}.pi/`, `${prefix}.worktrees/`]
+		: [".pi/", ".worktrees/"];
+
 	let trackedFiles;
 	try {
-		const raw = execSync("git ls-files .pi/ .worktrees/", {
+		const raw = execSync(`git ls-files ${scanDirs.join(" ")}`, {
 			cwd: projectRoot,
 			stdio: ["pipe", "pipe", "pipe"],
 			timeout: 10000,
@@ -681,8 +688,11 @@ async function detectAndOfferUntrackArtifacts(projectRoot, { dryRun = false, int
 
 	if (trackedFiles.length === 0) return { found: [], untracked: false };
 
-	// Build regex patterns for matching
-	const patterns = ALL_GITIGNORE_PATTERNS.map(p => patternToRegex(p));
+	// Build regex patterns for matching (with prefix if workspace-scoped)
+	const prefixedPatterns = prefix
+		? ALL_GITIGNORE_PATTERNS.map(p => `${prefix}${p}`)
+		: ALL_GITIGNORE_PATTERNS;
+	const patterns = prefixedPatterns.map(p => patternToRegex(p));
 
 	// Find tracked files that match runtime artifact patterns
 	const matchedFiles = trackedFiles.filter(file => {
@@ -1207,7 +1217,7 @@ async function cmdInit(args) {
 		// Use .taskplane/ prefix so patterns apply within the config repo's
 		// .taskplane/ directory (e.g., ".taskplane/.pi/batch-state.json")
 		// Per spec: standard .pi/ patterns + .worktrees/ in config repo root
-		const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: false });
+		const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: false, prefix: ".taskplane/" });
 
 		if (gitignoreResult.created) {
 			console.log(`  ${c.green}create${c.reset} ${configRepoName}/.gitignore`);
@@ -1217,9 +1227,9 @@ async function cmdInit(args) {
 			console.log(`  ${c.dim}skip${c.reset}  ${configRepoName}/.gitignore (all entries already present)`);
 		}
 
-		// Check for tracked runtime artifacts in config repo
+		// Check for tracked runtime artifacts in config repo (workspace-scoped)
 		const wsIsInteractive = !isPreset && !dryRun;
-		await detectAndOfferUntrackArtifacts(configRepoRoot, { dryRun: false, interactive: wsIsInteractive });
+		await detectAndOfferUntrackArtifacts(configRepoRoot, { dryRun: false, interactive: wsIsInteractive, prefix: ".taskplane/" });
 
 		// ── Pointer file in workspace root .pi/ ─────────────────────
 		const pointer = {
@@ -1530,8 +1540,8 @@ function printWorkspaceFileList(vars, noExamples, preset, exampleTemplateDirs, c
 	}
 	for (const f of files) console.log(`  ${c.green}create${c.reset} ${f}`);
 
-	// Show gitignore entries that would be added to config repo
-	const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: true });
+	// Show gitignore entries that would be added to config repo (workspace-scoped)
+	const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: true, prefix: ".taskplane/" });
 	if (gitignoreResult.added.length > 0) {
 		const action = fs.existsSync(path.join(configRepoRoot, ".gitignore")) ? "update" : "create";
 		console.log(`  ${c.green}${action}${c.reset} ${configRepoName}/.gitignore (${gitignoreResult.added.length} entries)`);

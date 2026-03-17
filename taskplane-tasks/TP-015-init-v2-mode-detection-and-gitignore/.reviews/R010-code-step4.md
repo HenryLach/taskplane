@@ -3,20 +3,18 @@
 ### Verdict: REVISE
 
 ### Summary
-The workspace-mode scaffolding is largely in place (config-repo selection, `.taskplane/` generation, pointer creation, and guidance), but there are two correctness gaps around gitignore handling that can break the core runtime-artifact safety guarantees. I also found an overwrite-flow inconsistency where confirming overwrite does not actually overwrite existing files unless `--force` is used.
+Workspace-mode scaffolding is mostly in place (config repo selection, `.taskplane/` creation, pointer creation, and guidance), but the gitignore/artifact-cleanup behavior is not correctly scoped for workspace layout. As implemented, the code still targets root-level `.pi/` paths in the config repo, which conflicts with the new `.taskplane/` placement and leaves workspace runtime artifacts uncovered.
 
 ### Issues Found
-1. **[bin/taskplane.mjs:1206-1222, 1533-1537] [important]** — Workspace gitignore handling is not scoped to `.taskplane/` even though the code comment says it should be. `ensureGitignoreEntries(configRepoRoot, ...)` is called without `prefix: ".taskplane/"`, so entries written are `.pi/...` and `.worktrees/` at repo root, not `.taskplane/.pi/...` (per Scenario C spec). The tracked-artifact check also scans only root `.pi/`/`.worktrees/` paths, so it will miss `.taskplane/.pi/*` artifacts. **Fix:** pass `prefix: ".taskplane/"` in workspace init/dry-run and add a workspace-aware tracked-artifact detection path (or extend `detectAndOfferUntrackArtifacts` with prefix-aware scanning).
-2. **[bin/taskplane.mjs:1236-1243, 1261] [important]** — Required `.gitignore` changes in the config repo are not staged/committed by the workspace auto-commit flow. `autoCommitTaskFiles()` stages only the task directory, and the second commit stages only `.taskplane/`; `.gitignore` remains untracked (reproducible), but post-init instructions suggest a plain `git push`. This can ship workspace config without the required ignore rules. **Fix:** include `.gitignore` in staging/commit (or explicitly instruct user to `git add .gitignore` before push).
-3. **[bin/taskplane.mjs:1062-1068, 1106] [minor]** — The overwrite confirmation is misleading: after user confirms “Overwrite existing files?”, scaffolding still uses `const skipIfExists = !force`, so existing files are skipped unless `--force` is set. **Fix:** track confirmation result and set `skipIfExists` accordingly (or change prompt text to “continue without overwriting”).
+1. **[bin/taskplane.mjs:1206-1210, bin/taskplane.mjs:1533-1535] [important]** — Workspace gitignore enforcement does not apply the `.taskplane/` prefix despite comments stating that intent. `ensureGitignoreEntries()` is called without `prefix`, so generated entries are `.pi/...` and `.worktrees/` at repo root instead of workspace-scoped `.taskplane/.pi/...` where applicable. This mismatches the Scenario C spec requirement to scope entries for config-in-`.taskplane/` layouts. **Fix:** pass a workspace prefix in workspace mode and update `ensureGitignoreEntries()` to prefix only applicable patterns (e.g., `.pi/*`) while keeping non-prefixed entries (like `.worktrees/`) where required.
+2. **[bin/taskplane.mjs:665-690, bin/taskplane.mjs:1220-1222] [important]** — Tracked-artifact detection is still hardcoded to `git ls-files .pi/ .worktrees/` with unprefixed matching patterns. In workspace mode this misses tracked files under `.taskplane/.pi/*` (e.g., `.taskplane/.pi/batch-state.json`), so init does not offer cleanup for the files it is supposed to protect against. **Fix:** add workspace-aware scan roots/patterns (or a prefix option) to `detectAndOfferUntrackArtifacts()` and use it from the workspace branch.
 
 ### Pattern Violations
-- Comment/behavior mismatch in workspace gitignore block (`"Use .taskplane/ prefix"` comment, but no prefix is applied in code).
+- Inline comments and step status claim `.taskplane/`-scoped gitignore behavior, but runtime behavior currently writes/validates root-scoped `.pi/*` entries.
 
 ### Test Gaps
-- No automated coverage for workspace-mode gitignore prefixing (`.taskplane/.pi/*` vs `.pi/*`).
-- No test ensuring workspace init commits/stages `.gitignore` alongside generated config.
-- No test for overwrite-confirmation behavior in workspace mode (confirm yes should overwrite or messaging should reflect skip behavior).
+- No tests for workspace `init` gitignore output (dry-run and real run) asserting `.taskplane/`-scoped entries.
+- No tests for workspace tracked-artifact detection/untrack prompts against `.taskplane/.pi/*` files.
 
 ### Suggestions
-- Add a focused workspace-init test matrix for `--dry-run`, `--preset full`, and re-init flows (`existing .taskplane/`, with/without `--force`) validating file paths and git staging outcomes.
+- Consider including config-repo `.gitignore` in the workspace auto-commit flow so users do not end with partially committed init output.
