@@ -34,7 +34,7 @@
 - [x] Source-indicator behavior rules for project/user/default (including dual-layer L1+L2 fields) documented
 - [x] Schema coverage validation: every scalar field in config-schema.ts is either in navigation map or explicitly excluded with rationale
 - [x] R003 fix: worker.spawnMode corrected to L1-only, non-editable field surfacing defined, field contract table with source/clear semantics added
-- [ ] R004 fix: Consolidate canonical navigation map (12 sections including Advanced), fix all references to section count
+- [x] R004 fix: Consolidate canonical navigation map (12 sections including Advanced), fix all references to section count
 - [ ] R004 fix: Align source-badge rules with actual merge semantics — string prefs require non-empty, enum prefs require defined, add empty-string edge case examples
 
 ---
@@ -269,9 +269,9 @@ Reviewed `taskplane-tasks/CONTEXT.md` — confirms key file paths (extensions/ta
 
 ### Step 1 Design Decisions
 
-#### Section Taxonomy and Menu Order
+#### Canonical Navigation Map (single source of truth)
 
-The TUI top-level menu presents these sections in order. Each section maps to a config schema path and contains only scalar/enum/boolean fields suitable for TUI editing.
+The TUI top-level menu presents **12 sections** in this exact order. Sections 1–10 contain editable scalar/enum/boolean fields. Section 11 is user-preferences-only. Section 12 aggregates all non-editable collection/Record/array fields for discoverability.
 
 | # | Menu Section | Config Path | Fields |
 |---|-------------|-------------|--------|
@@ -320,8 +320,8 @@ Each entry shows its current value (summarized — e.g. "3 entries" for Records,
 | **ctx.ui.input()** (free text/number) | maxLanes, worktreePrefix, tmuxPrefix, operatorId, model (merge/worker/reviewer), tools (merge/worker/reviewer), thinking (worker/reviewer), stallTimeout, maxWorkerMinutes (failure), abortGracePeriod, pollInterval, workerContextWindow, warnPercent, killPercent, maxWorkerIterations, maxReviewCycles, noProgressLimit, maxWorkerMinutes (context), dashboardPort |
 
 **Design decision:** Use a **two-level navigation** pattern:
-1. Top-level: SelectList of sections (11 items)
-2. Per-section: SettingsList showing all fields in that section, with enum fields as toggles and string/number fields using ctx.ui.input() for editing
+1. Top-level: SelectList of **12 sections** (see Canonical Navigation Map above)
+2. Per-section: SettingsList showing all fields in that section, with enum fields as toggles and string/number fields using ctx.ui.input() for editing. Section 12 (Advanced) uses read-only display only.
 
 **Keybindings:**
 - ↑↓ navigate sections/fields
