@@ -1,11 +1,11 @@
 # TP-014: JSON Config Schema and Loader — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -15,9 +15,9 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Read current config loading paths
+- [x] Read current config loading paths
 - [ ] Read YAML config reference docs
 
 ---
@@ -60,6 +60,8 @@
 
 ## Reviews
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
+| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -70,6 +72,12 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-17 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-17 14:18 | Task started | Extension-driven execution |
+| 2026-03-17 14:18 | Step 0 started | Preflight |
+| 2026-03-17 14:18 | Task started | Extension-driven execution |
+| 2026-03-17 14:18 | Step 0 started | Preflight |
+| 2026-03-17 14:19 | Review R001 | plan Step 0: APPROVE |
+| 2026-03-17 14:19 | Review R001 | plan Step 0: APPROVE |
 
 ## Blockers
 *None*
