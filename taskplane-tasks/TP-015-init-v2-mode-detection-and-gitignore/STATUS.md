@@ -84,7 +84,7 @@
 **Status:** 🟨 In Progress
 
 - [x] Scenario D early-return branch: when existing `.taskplane/` is detected, skip Scenario C scaffolding/prompts/gitignore/auto-commit and create pointer only
-- [ ] Pointer idempotency: handle existing `.pi/taskplane-pointer.json` (overwrite prompt, --force semantics, dry-run output)
+- [x] Pointer idempotency: handle existing `.pi/taskplane-pointer.json` (overwrite prompt, --force semantics, dry-run output)
 - [ ] User confirmation messaging: show which config repo was found and what was created
 - [ ] Scenario C preservation: verify Scenario C flow is unbroken when no existing `.taskplane/` is found
 
