@@ -1,6 +1,6 @@
 # TP-014: JSON Config Schema and Loader — Status
 
-**Current Step:** Step 2: Implement Unified Config Loader
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
@@ -34,7 +34,7 @@
 ---
 
 ### Step 2: Implement Unified Config Loader
-**Status:** ✅ Complete
+**Status:** ✅ Complete (R006 revisions applied)
 
 - [x] `loadProjectConfig()` implemented: reads `.pi/taskplane-config.json` first, falls back to both YAML files, respects `TASKPLANE_WORKSPACE_ROOT`, validates `configVersion`, errors on malformed JSON/unsupported version
 - [x] YAML-to-camelCase mapping: snake_case keys from both YAML files mapped to unified `TaskplaneConfig` shape with deep merge + cloned defaults (non-mutating)
@@ -47,7 +47,7 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Tests for JSON, YAML fallback, defaults, and schema validation
 - [ ] Existing tests pass
@@ -125,6 +125,9 @@
 | 2026-03-17 14:46 | Worker iter 3 | done in 679s, ctx: 30%, tools: 47 |
 | 2026-03-17 14:53 | Review R006 | code Step 2: REVISE |
 | 2026-03-17 14:53 | Review R006 | code Step 2: REVISE |
+| 2026-03-17 14:58 | Worker iter 3 | done in 329s, ctx: 28%, tools: 38 |
+| 2026-03-17 14:58 | Step 2 complete | Implement Unified Config Loader |
+| 2026-03-17 14:58 | Step 3 started | Testing & Verification |
 
 ## Blockers
 *None*
