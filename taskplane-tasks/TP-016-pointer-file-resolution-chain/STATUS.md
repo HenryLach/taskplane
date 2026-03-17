@@ -51,8 +51,11 @@
 ### Step 3: Thread Through Orchestrator
 **Status:** 🟨 In Progress
 
-- [ ] `buildExecutionContext()` uses pointer
-- [ ] Sidecar and merge agent paths use pointer
+- [ ] `buildExecutionContext()` resolves pointer once and passes `pointer.configRoot` to config loaders. Repo mode (null pointer) unchanged.
+- [ ] `spawnMergeAgent()` uses pointer's `agentRoot` for merge agent prompt path (separate from `stateRoot` used for state files). Merge request/result files stay at `stateRoot/.pi/`.
+- [ ] Pointer warning logged once at orchestrator startup (non-fatal, warn+fallback).
+- [ ] State/sidecar paths invariant: `ORCH_SIDECAR_DIR`, abort signal, batch state, merge request/result files all remain at `<workspaceRoot>/.pi/` — never follow pointer.
+- [ ] Add orchestrator pointer tests: buildExecutionContext with pointer, merge agent path via pointer, state paths unchanged, repo-mode parity.
 
 ---
 
@@ -92,6 +95,7 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ## Discoveries
@@ -141,6 +145,10 @@
 | 2026-03-17 18:11 | Step 2 complete | Thread Through Task-Runner |
 | 2026-03-17 18:11 | Step 3 started | Thread Through Orchestrator |
 | 2026-03-17 18:13 | Review R007 | plan Step 3: REVISE |
+| 2026-03-17 18:15 | Worker iter 3 | done in 648s, ctx: 34%, tools: 84 |
+| 2026-03-17 18:15 | Step 2 complete | Thread Through Task-Runner |
+| 2026-03-17 18:15 | Step 3 started | Thread Through Orchestrator |
+| 2026-03-17 18:17 | Review R007 | plan Step 3: REVISE |
 
 ## Blockers
 *None*
