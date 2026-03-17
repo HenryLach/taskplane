@@ -866,75 +866,74 @@ function loadConfigState(configRoot: string): {
 }
 
 /**
- * Show the top-level section selector.
+ * Top-level section selector loop.
+ *
+ * Re-loads config state each iteration so write-backs are reflected
+ * immediately in the TUI.
  */
-async function showSectionSelector(
+async function showSectionSelectorLoop(
 	ctx: ExtensionContext,
-	mergedConfig: TaskplaneConfig,
-	prefs: UserPreferences,
-	rawProject: Record<string, any> | null,
-	rawPrefs: Record<string, any> | null,
 	configRoot: string,
 ): Promise<void> {
-	const sectionItems: SelectItem[] = SECTIONS.map((section, i) => ({
-		value: String(i),
-		label: section.name,
-		description: section.readOnly
-			? "Read-only collection/record fields"
-			: `${section.fields.length} setting${section.fields.length === 1 ? "" : "s"}`,
-	}));
+	while (true) {
+		const state = loadConfigState(configRoot);
 
-	const selectedSection = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-		const container = new Container();
+		const sectionItems: SelectItem[] = SECTIONS.map((section, i) => ({
+			value: String(i),
+			label: section.name,
+			description: section.readOnly
+				? "Read-only collection/record fields"
+				: `${section.fields.length} setting${section.fields.length === 1 ? "" : "s"}`,
+		}));
 
-		// Top border
-		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+		const selectedSection = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+			const container = new Container();
 
-		// Title
-		container.addChild(new Text(theme.fg("accent", theme.bold("⚙ Settings")), 1, 0));
-		container.addChild(new Text(theme.fg("dim", "Navigate sections to view and edit configuration"), 1, 0));
-		container.addChild(new Text("", 0, 0));
+			// Top border
+			container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
 
-		// SelectList
-		const selectList = new SelectList(sectionItems, Math.min(sectionItems.length, 14), {
-			selectedPrefix: (t) => theme.fg("accent", t),
-			selectedText: (t) => theme.fg("accent", t),
-			description: (t) => theme.fg("muted", t),
-			scrollInfo: (t) => theme.fg("dim", t),
-			noMatch: (t) => theme.fg("warning", t),
+			// Title
+			container.addChild(new Text(theme.fg("accent", theme.bold("⚙ Settings")), 1, 0));
+			container.addChild(new Text(theme.fg("dim", "Navigate sections to view and edit configuration"), 1, 0));
+			container.addChild(new Text("", 0, 0));
+
+			// SelectList
+			const selectList = new SelectList(sectionItems, Math.min(sectionItems.length, 14), {
+				selectedPrefix: (t) => theme.fg("accent", t),
+				selectedText: (t) => theme.fg("accent", t),
+				description: (t) => theme.fg("muted", t),
+				scrollInfo: (t) => theme.fg("dim", t),
+				noMatch: (t) => theme.fg("warning", t),
+			});
+			selectList.onSelect = (item) => done(item.value);
+			selectList.onCancel = () => done(null);
+			container.addChild(selectList);
+
+			// Help text
+			container.addChild(new Text("", 0, 0));
+			container.addChild(new Text(theme.fg("dim", "↑↓ navigate • enter select • esc close"), 1, 0));
+
+			// Bottom border
+			container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+
+			return {
+				render: (w: number) => container.render(w),
+				invalidate: () => container.invalidate(),
+				handleInput: (data: string) => { selectList.handleInput(data); tui.requestRender(); },
+			};
 		});
-		selectList.onSelect = (item) => done(item.value);
-		selectList.onCancel = () => done(null);
-		container.addChild(selectList);
 
-		// Help text
-		container.addChild(new Text("", 0, 0));
-		container.addChild(new Text(theme.fg("dim", "↑↓ navigate • enter select • esc close"), 1, 0));
+		if (selectedSection === null) return;  // User pressed Esc
 
-		// Bottom border
-		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+		const sectionIndex = parseInt(selectedSection, 10);
+		const section = SECTIONS[sectionIndex];
 
-		return {
-			render: (w: number) => container.render(w),
-			invalidate: () => container.invalidate(),
-			handleInput: (data: string) => { selectList.handleInput(data); tui.requestRender(); },
-		};
-	});
-
-	if (selectedSection === null) return;  // User pressed Esc
-
-	const sectionIndex = parseInt(selectedSection, 10);
-	const section = SECTIONS[sectionIndex];
-
-	if (section.readOnly) {
-		await showAdvancedSection(ctx, mergedConfig);
-	} else {
-		await showSectionSettings(ctx, section, mergedConfig, prefs, rawProject, rawPrefs, configRoot);
+		if (section.readOnly) {
+			await showAdvancedSection(ctx, state.mergedConfig);
+		} else {
+			await showSectionSettingsLoop(ctx, section, configRoot);
+		}
 	}
-
-	// After returning from a section, re-show the section selector
-	// (loop until user presses Esc at the top level)
-	await showSectionSelector(ctx, mergedConfig, prefs, rawProject, rawPrefs, configRoot);
 }
 
 /**
@@ -1000,18 +999,100 @@ function formatSourceBadge(source: FieldSource): string {
 	}
 }
 
+/** Represents a pending field change returned from the section TUI. */
+interface PendingChange {
+	fieldId: string;
+	rawValue: string;
+}
+
 /**
- * Show the settings list for a specific section.
+ * Section settings loop — shows the section, handles writes, and
+ * re-renders with fresh state after each successful write.
  */
-async function showSectionSettings(
+async function showSectionSettingsLoop(
+	ctx: ExtensionContext,
+	section: SectionDef,
+	configRoot: string,
+): Promise<void> {
+	while (true) {
+		const state = loadConfigState(configRoot);
+		const result = await showSectionSettingsOnce(ctx, section, state.mergedConfig, state.prefs, state.rawProject, state.rawPrefs);
+
+		if (result === null) return;  // User pressed Esc → back to sections
+
+		// Process the pending change
+		const field = section.fields.find((f) => f.configPath === result.fieldId);
+		if (!field) continue;  // Safety: field not found
+
+		const typedValue = coerceValueForWrite(field, result.rawValue);
+
+		// Determine write destination
+		const defaultDest = getDefaultWriteDestination(field);
+		let dest: WriteDestination | null = defaultDest;
+
+		// L1+L2 fields: ask user where to save
+		if (dest === null) {
+			const choice = await ctx.ui.select<"project" | "prefs" | "cancel">(
+				"Save this change to:",
+				[
+					{ value: "prefs", label: "User preferences", description: "Personal — affects only you" },
+					{ value: "project", label: "Project config", description: "Shared — affects all users of this project" },
+					{ value: "cancel", label: "Cancel", description: "Discard this change" },
+				],
+			);
+			if (!choice || choice === "cancel") continue;  // Cancelled → re-show section
+			dest = choice;
+		}
+
+		// Confirmation gate for project config writes
+		if (dest === "project") {
+			const confirmed = await ctx.ui.confirm(
+				"This changes shared project config (.pi/taskplane-config.json). Continue?",
+			);
+			if (!confirmed) continue;  // Declined → re-show section
+		}
+
+		// Perform the write
+		try {
+			if (dest === "project") {
+				writeProjectConfigField(configRoot, field.configPath, typedValue);
+			} else {
+				// L2 write — use prefsKey
+				if (field.prefsKey) {
+					writeUserPreference(field.prefsKey, typedValue);
+				}
+			}
+			ctx.ui.notify(
+				`✅ ${field.label} updated.\n` +
+				`ℹ Restart session to apply changes.`,
+				"info",
+			);
+		} catch (err: any) {
+			ctx.ui.notify(`❌ Failed to save: ${err.message}`, "error");
+		}
+
+		// Loop continues → re-show section with fresh state
+	}
+}
+
+/**
+ * Show the settings list for a section once.
+ *
+ * Returns a PendingChange when the user edits a field (toggle or input),
+ * or null when the user presses Esc to go back.
+ *
+ * Design: the TUI exits after any change so the caller can handle
+ * confirmation/destination choice with standard ctx.ui methods,
+ * then re-renders with fresh state.
+ */
+async function showSectionSettingsOnce(
 	ctx: ExtensionContext,
 	section: SectionDef,
 	mergedConfig: TaskplaneConfig,
 	prefs: UserPreferences,
 	rawProject: Record<string, any> | null,
 	rawPrefs: Record<string, any> | null,
-	_configRoot: string,
-): Promise<void> {
+): Promise<PendingChange | null> {
 	// Build SettingItem[] from section fields
 	const settingsItems: SettingItem[] = section.fields.map((field) => {
 		const displayValue = getFieldDisplayValue(field, mergedConfig, prefs);
@@ -1027,11 +1108,7 @@ async function showSectionSettings(
 
 		// Toggle fields get values array for cycling
 		if (field.control === "toggle" && field.values) {
-			item.values = field.values.map((v) => {
-				// Re-detect source when cycling: it will always be current layer.
-				// For now, append the same source badge since toggle changes aren't persisted yet (Step 3).
-				return `${v}  ${sourceBadge}`;
-			});
+			item.values = field.values.map((v) => `${v}  ${sourceBadge}`);
 		}
 
 		// Input fields get a submenu for inline editing
@@ -1047,7 +1124,7 @@ async function showSectionSettings(
 	// Find JSON-only fields for this section's config path (footer note)
 	const jsonOnlyNote = getJsonOnlyFooterForSection(section, mergedConfig);
 
-	await ctx.ui.custom((tui, theme, _kb, done) => {
+	return ctx.ui.custom<PendingChange | null>((tui, theme, _kb, done) => {
 		const container = new Container();
 
 		// Top border
@@ -1062,17 +1139,11 @@ async function showSectionSettings(
 			Math.min(settingsItems.length + 2, 20),
 			getSettingsListTheme(),
 			(id, newValue) => {
-				// onChange: handle toggle changes
-				// For now, just update the display. Write-back is Step 3.
-				// Note: "Restart session to apply" — edits are display-only until Step 3.
-				ctx.ui.notify(
-					`⚙ Setting changed: ${id}\n` +
-					`New value: ${newValue.replace(/\s+\(.*\)$/, "")}\n\n` +
-					`ℹ Write-back not yet implemented. Changes take effect on next session.`,
-					"info",
-				);
+				// onChange: a toggle was cycled or an input was submitted
+				// Exit TUI with the change so the caller can handle write-back
+				done({ fieldId: id, rawValue: newValue });
 			},
-			() => done(undefined),  // onCancel → back to section selector
+			() => done(null),  // onCancel → back to section selector
 			{ enableSearch: settingsItems.length > 5 },
 		);
 		container.addChild(settingsList);
