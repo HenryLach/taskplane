@@ -1,7 +1,7 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
 **Current Step:** Step 5: Workspace Join (Scenario D)
-**Status:** ✅ Step 4 Complete
+**Status:** ✅ Step 5 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
 **Review Counter:** 11
@@ -81,12 +81,12 @@
 ---
 
 ### Step 5: Workspace Join (Scenario D)
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Scenario D early-return branch: when existing `.taskplane/` is detected, skip Scenario C scaffolding/prompts/gitignore/auto-commit and create pointer only
 - [x] Pointer idempotency: handle existing `.pi/taskplane-pointer.json` (overwrite prompt, --force semantics, dry-run output)
 - [x] User confirmation messaging: show which config repo was found and what was created
-- [ ] Scenario C preservation: verify Scenario C flow is unbroken when no existing `.taskplane/` is found
+- [x] Scenario C preservation: verify Scenario C flow is unbroken when no existing `.taskplane/` is found
 
 ---
 
