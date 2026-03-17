@@ -1,12 +1,19 @@
 /**
- * Unified config loader for taskplane-config.json with YAML fallback.
+ * Unified config loader for taskplane-config.json with YAML fallback
+ * and user preferences (Layer 2) merge.
  *
- * Precedence matrix:
+ * Layer 1 — Project config precedence:
  *   1. `.pi/taskplane-config.json` exists and is valid → use it
  *   2. `.pi/taskplane-config.json` exists but malformed → throw with clear error
  *   3. `.pi/taskplane-config.json` exists but unsupported configVersion → throw
  *   4. JSON absent + one/both YAML files present → read YAML, map to unified shape
  *   5. None present → return cloned defaults
+ *
+ * Layer 2 — User preferences:
+ *   After loading Layer 1, reads `~/.pi/agent/taskplane/preferences.json`
+ *   (or `$PI_CODING_AGENT_DIR/taskplane/preferences.json`) and applies
+ *   allowlisted user-scoped fields on top. Unknown keys are ignored.
+ *   Malformed preferences fall back to defaults silently.
  *
  * Path resolution:
  *   Resolves config paths relative to `configRoot`. Callers should pass
@@ -465,6 +472,10 @@ function extractAllowlistedPreferences(raw: Record<string, any>): UserPreference
 	if (raw.spawnMode === "tmux" || raw.spawnMode === "subprocess") prefs.spawnMode = raw.spawnMode;
 	if (typeof raw.workerModel === "string") prefs.workerModel = raw.workerModel;
 	if (typeof raw.reviewerModel === "string") prefs.reviewerModel = raw.reviewerModel;
+	if (typeof raw.mergeModel === "string") prefs.mergeModel = raw.mergeModel;
+	if (typeof raw.dashboardPort === "number" && Number.isFinite(raw.dashboardPort)) {
+		prefs.dashboardPort = raw.dashboardPort;
+	}
 
 	return prefs;
 }
@@ -477,29 +488,39 @@ function extractAllowlistedPreferences(raw: Record<string, any>): UserPreference
  *
  * Mutates `config` in place and returns it for chaining.
  *
+ * Empty-string preference values are treated as "not set" and do NOT
+ * override the project config value. This lets users clear a preference
+ * by deleting the field or setting it to "".
+ *
  * Mapping table:
  *   prefs.operatorId    → config.orchestrator.orchestrator.operatorId
  *   prefs.tmuxPrefix    → config.orchestrator.orchestrator.tmuxPrefix
  *   prefs.spawnMode     → config.orchestrator.orchestrator.spawnMode
  *   prefs.workerModel   → config.taskRunner.worker.model
  *   prefs.reviewerModel → config.taskRunner.reviewer.model
+ *   prefs.mergeModel    → config.orchestrator.merge.model
+ *   prefs.dashboardPort → (no config target yet — stored only)
  */
 export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPreferences): TaskplaneConfig {
-	if (prefs.operatorId !== undefined) {
-		config.orchestrator.orchestrator.operatorId = prefs.operatorId;
-	}
-	if (prefs.tmuxPrefix !== undefined) {
-		config.orchestrator.orchestrator.tmuxPrefix = prefs.tmuxPrefix;
-	}
+	// Helper: only apply non-empty string values
+	const applyStr = (val: string | undefined, setter: (v: string) => void) => {
+		if (val !== undefined && val !== "") setter(val);
+	};
+
+	applyStr(prefs.operatorId, (v) => { config.orchestrator.orchestrator.operatorId = v; });
+	applyStr(prefs.tmuxPrefix, (v) => { config.orchestrator.orchestrator.tmuxPrefix = v; });
+	applyStr(prefs.workerModel, (v) => { config.taskRunner.worker.model = v; });
+	applyStr(prefs.reviewerModel, (v) => { config.taskRunner.reviewer.model = v; });
+	applyStr(prefs.mergeModel, (v) => { config.orchestrator.merge.model = v; });
+
+	// spawnMode: enum — apply if defined (not a string-empty check)
 	if (prefs.spawnMode !== undefined) {
 		config.orchestrator.orchestrator.spawnMode = prefs.spawnMode;
 	}
-	if (prefs.workerModel !== undefined) {
-		config.taskRunner.worker.model = prefs.workerModel;
-	}
-	if (prefs.reviewerModel !== undefined) {
-		config.taskRunner.reviewer.model = prefs.reviewerModel;
-	}
+
+	// dashboardPort: no config schema target yet — intentionally not applied
+	// It can be read directly from loadUserPreferences() by consumers that need it.
+
 	return config;
 }
 
@@ -548,10 +569,16 @@ function resolveConfigRoot(cwd: string): string {
 /**
  * Load the unified project configuration.
  *
- * Precedence:
- *   1. `.pi/taskplane-config.json` — JSON-first (new format)
- *   2. `.pi/task-runner.yaml` + `.pi/task-orchestrator.yaml` — YAML fallback
- *   3. Defaults — if no config files exist
+ * Precedence (layered):
+ *   Layer 1 — Project config:
+ *     1. `.pi/taskplane-config.json` — JSON-first (new format)
+ *     2. `.pi/task-runner.yaml` + `.pi/task-orchestrator.yaml` — YAML fallback
+ *     3. Defaults — if no config files exist
+ *
+ *   Layer 2 — User preferences (applied on top of Layer 1):
+ *     Reads `~/.pi/agent/taskplane/preferences.json` and overrides only
+ *     allowlisted user-scoped fields. See `applyUserPreferences()` for
+ *     the field mapping.
  *
  * Path resolution honors TASKPLANE_WORKSPACE_ROOT for workspace mode.
  *
@@ -562,19 +589,29 @@ function resolveConfigRoot(cwd: string): string {
 export function loadProjectConfig(cwd: string): TaskplaneConfig {
 	const configRoot = resolveConfigRoot(cwd);
 
+	// Layer 1: Project config
+	let config: TaskplaneConfig;
+
 	// Try JSON first
 	const jsonConfig = loadJsonConfig(configRoot);
-	if (jsonConfig !== null) return jsonConfig;
+	if (jsonConfig !== null) {
+		config = jsonConfig;
+	} else {
+		// Fall back to YAML
+		const taskRunner = loadTaskRunnerYaml(configRoot);
+		const orchestrator = loadOrchestratorYaml(configRoot);
+		config = {
+			configVersion: CONFIG_VERSION,
+			taskRunner,
+			orchestrator,
+		};
+	}
 
-	// Fall back to YAML
-	const taskRunner = loadTaskRunnerYaml(configRoot);
-	const orchestrator = loadOrchestratorYaml(configRoot);
+	// Layer 2: User preferences (allowlisted fields only)
+	const prefs = loadUserPreferences();
+	applyUserPreferences(config, prefs);
 
-	return {
-		configVersion: CONFIG_VERSION,
-		taskRunner,
-		orchestrator,
-	};
+	return config;
 }
 
 

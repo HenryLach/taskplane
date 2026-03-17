@@ -26,7 +26,7 @@
 
 - [x] Preferences schema + Layer 2 allowlist defined (interface, defaults, snake→camelCase mapping, explicit field allowlist for merge)
 - [x] `resolveUserPreferencesPath()` + `loadUserPreferences()` implemented (read/auto-create, malformed fallback, unknown keys ignored)
-- [ ] Merge function `applyUserPreferences()` integrates into `loadProjectConfig()` — only allowlisted fields override, Layer 1 untouched
+- [x] Merge function `applyUserPreferences()` integrates into `loadProjectConfig()` — only allowlisted fields override, Layer 1 untouched
 - [ ] Exports wired up and existing tests still pass
 
 ---

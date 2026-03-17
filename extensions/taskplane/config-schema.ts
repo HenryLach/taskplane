@@ -354,6 +354,8 @@ export interface TaskplaneConfig {
  * | spawnMode          | orchestrator.orchestrator.spawnMode  | string  |
  * | workerModel        | taskRunner.worker.model              | string  |
  * | reviewerModel      | taskRunner.reviewer.model            | string  |
+ * | mergeModel         | orchestrator.merge.model             | string  |
+ * | dashboardPort      | (preferences-only; not yet in schema)| number  |
  */
 export interface UserPreferences {
 	/** Operator identifier (overrides orchestrator.orchestrator.operatorId) */
@@ -366,6 +368,10 @@ export interface UserPreferences {
 	workerModel?: string;
 	/** Reviewer model override (overrides taskRunner.reviewer.model) */
 	reviewerModel?: string;
+	/** Merge model override (overrides orchestrator.merge.model) */
+	mergeModel?: string;
+	/** Dashboard port (preferences-only; not yet wired into config schema) */
+	dashboardPort?: number;
 }
 
 /** Default (empty) user preferences — all fields undefined means "no override". */
