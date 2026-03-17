@@ -76,14 +76,14 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🔄 In Progress
+**Status:** ✅ Complete
 
 - [x] R009: Add YAML-only and JSON+YAML source-badge tests (JSON-only, YAML-only, JSON+YAML precedence scenarios)
 - [x] R009: Add interaction-level tests for L1+L2 destination selection, project confirm decline, and cancel zero-mutation paths
 - [x] R009: Add discoverability regression test ensuring uncovered/new fields appear in Advanced section
-- [x] Full test suite passes: `cd extensions && npx vitest run` (682 tests, 21 files, all green)
+- [x] Full test suite passes: `cd extensions && npx vitest run` (669 tests, 21 files, all green)
 - [x] R010 fix #1: Extract destination/confirmation decision logic into testable pure helper (resolveWriteAction), add tests exercising Cancel short-circuit and confirm-decline branches with real function calls
-- [ ] R010 fix #2: Update STATUS test count to match actual suite output
+- [x] R010 fix #2: Update STATUS test count to match actual suite output
 
 ---
 
