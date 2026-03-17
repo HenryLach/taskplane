@@ -1,11 +1,11 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
-**Current Step:** Step 3: tmux and Environment Detection
+**Current Step:** Step 4: Workspace Mode Init (Scenario C)
 **Status:** ✅ Step 3 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 7
-**Iteration:** 4
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -66,11 +66,14 @@
 ---
 
 ### Step 4: Workspace Mode Init (Scenario C)
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Config repo selection and `.taskplane/` creation
-- [ ] Pointer file creation in workspace root
-- [ ] Post-init merge guidance displayed
+- [ ] Config repo selection prompt and workspace interactive/preset vars gathering
+- [ ] Scaffold `.taskplane/` in config repo (config JSON, workspace.json, agents, version tracker, CONTEXT.md, examples)
+- [ ] Gitignore enforcement in config repo with `.taskplane/`-scoped prefix; tracked-artifact detection
+- [ ] Pointer file creation (`taskplane-pointer.json`) in workspace root `.pi/`
+- [ ] Dry-run/preset/force/non-interactive compatibility for workspace mode
+- [ ] Post-init merge guidance and auto-commit in config repo
 
 ---
 
@@ -114,6 +117,10 @@
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
+| R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -164,6 +171,15 @@
 | 2026-03-17 16:12 | Step 3 started | tmux and Environment Detection |
 | 2026-03-17 16:13 | Review R007 | plan Step 3: APPROVE |
 | 2026-03-17 16:16 | Worker iter 4 | done in 189s, ctx: 23%, tools: 23 |
+| 2026-03-17 16:17 | Worker iter 4 | done in 333s, ctx: 21%, tools: 54 |
+| 2026-03-17 16:19 | Review R008 | code Step 3: APPROVE |
+| 2026-03-17 16:19 | Step 3 complete | tmux and Environment Detection |
+| 2026-03-17 16:19 | Step 4 started | Workspace Mode Init (Scenario C) |
+| 2026-03-17 16:19 | Review R008 | code Step 3: APPROVE |
+| 2026-03-17 16:19 | Step 3 complete | tmux and Environment Detection |
+| 2026-03-17 16:19 | Step 4 started | Workspace Mode Init (Scenario C) |
+| 2026-03-17 16:21 | Review R009 | plan Step 4: REVISE |
+| 2026-03-17 16:21 | Review R009 | plan Step 4: REVISE |
 
 ## Blockers
 *None*
