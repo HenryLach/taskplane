@@ -1,0 +1,101 @@
+# TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
+
+**Current Step:** Not Started
+**Status:** 🔵 Ready for Execution
+**Last Updated:** 2026-03-17
+**Review Level:** 2
+**Review Counter:** 0
+**Iteration:** 0
+**Size:** L
+
+> **Hydration:** Checkboxes represent meaningful outcomes, not individual code
+> changes. Workers expand steps when runtime discoveries warrant it — aim for
+> 2-5 outcome-level items per step, not exhaustive implementation scripts.
+
+---
+
+### Step 0: Preflight
+**Status:** ⬜ Not Started
+
+- [ ] Read current `cmdInit()` implementation
+- [ ] Read spec auto-detection and gitignore sections
+
+---
+
+### Step 1: Mode Auto-Detection
+**Status:** ⬜ Not Started
+
+- [ ] Detection logic implemented (git repo, subdirectory scan, mode)
+- [ ] Ambiguous case handled with prompt
+- [ ] "Already initialized" detection for Scenario B
+
+---
+
+### Step 2: Gitignore Enforcement
+**Status:** ⬜ Not Started
+
+- [ ] Selective gitignore entries added during init
+- [ ] Tracked artifact detection and `git rm --cached` offer
+
+---
+
+### Step 3: tmux and Environment Detection
+**Status:** ⬜ Not Started
+
+- [ ] tmux detection with spawn_mode defaulting
+- [ ] Guidance message when tmux not found
+
+---
+
+### Step 4: Workspace Mode Init (Scenario C)
+**Status:** ⬜ Not Started
+
+- [ ] Config repo selection and `.taskplane/` creation
+- [ ] Pointer file creation in workspace root
+- [ ] Post-init merge guidance displayed
+
+---
+
+### Step 5: Workspace Join (Scenario D)
+**Status:** ⬜ Not Started
+
+- [ ] Existing `.taskplane/` discovery
+- [ ] Pointer-only creation
+
+---
+
+### Step 6: Testing & Verification
+**Status:** ⬜ Not Started
+
+- [ ] All four scenarios verified with `--dry-run`
+- [ ] Mode detection edge cases tested
+
+---
+
+### Step 7: Documentation & Delivery
+**Status:** ⬜ Not Started
+
+- [ ] Install tutorial updated
+- [ ] `.DONE` created
+- [ ] Archive and push
+
+---
+
+## Reviews
+| # | Type | Step | Verdict | File |
+|---|------|------|---------|------|
+
+## Discoveries
+| Discovery | Disposition | Location |
+|-----------|-------------|----------|
+
+## Execution Log
+| Timestamp | Action | Outcome |
+|-----------|--------|---------|
+| 2026-03-17 | Task staged | PROMPT.md and STATUS.md created |
+
+## Blockers
+*None*
+
+## Notes
+*Reserved for execution notes*
