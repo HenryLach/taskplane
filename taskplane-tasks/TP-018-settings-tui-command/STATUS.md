@@ -95,7 +95,7 @@
 - [x] Check-if-affected: Review `docs/tutorials/install.md` — add `/settings` mention if appropriate
 - [x] Normalize STATUS.md top-level status field to match actual step state
 - [x] `.DONE` created in task folder
-- [ ] R012 fix #1: Fix /settings "Common responses" to match actual error paths (requireExecCtx + load failure)
+- [x] R012 fix #1: Fix /settings "Common responses" to match actual error paths (requireExecCtx + load failure)
 - [ ] R012 fix #2: Update commands.md intro to include /settings, move Configuration Commands above CLI Commands to group all slash commands
 - [ ] R012 fix #3: Add Example block to /settings section for consistency with other command entries
 
@@ -125,6 +125,7 @@
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 | R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 | R011 | plan | Step 5 | APPROVE | .reviews/R011-plan-step5.md |
+| R012 | code | Step 5 | REVISE | .reviews/R012-code-step5.md |
 | R012 | code | Step 5 | REVISE | .reviews/R012-code-step5.md |
 |---|------|------|---------|------|
 
@@ -207,6 +208,7 @@
 | 2026-03-17 18:53 | Review R011 | plan Step 5: APPROVE |
 | 2026-03-17 18:56 | Worker iter 6 | done in 186s, ctx: 15%, tools: 22 |
 | 2026-03-17 18:58 | Review R012 | code Step 5: REVISE |
+| 2026-03-17 18:59 | Review R012 | code Step 5: REVISE |
 
 ## Blockers
 *None*

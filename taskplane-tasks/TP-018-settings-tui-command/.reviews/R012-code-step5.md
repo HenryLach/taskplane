@@ -3,20 +3,17 @@
 ### Verdict: REVISE
 
 ### Summary
-The step correctly updates the primary documentation surfaces (`README.md`, `docs/reference/commands.md`, and `docs/tutorials/install.md`) and includes task closure artifacts. However, the new `/settings` command reference contains at least one behavior claim that does not match the actual runtime behavior, and the command-surface framing is now internally inconsistent. Since this step is documentation-focused, these accuracy issues should be corrected before approval.
+Step 5 covers the required documentation surfaces and task-closure artifacts (`README.md`, `docs/reference/commands.md`, `docs/tutorials/install.md`, `.DONE`, `STATUS.md`). However, the new `/settings` reference includes at least one behavior claim that does not match runtime behavior. Because this step is explicitly documentation-focused, these accuracy issues should be corrected before approval.
 
 ### Issues Found
-1. **[docs/reference/commands.md:450] [important]** — The documented common response says `/settings` shows an error when “config root cannot be resolved,” but `resolveConfigRoot()` in `extensions/taskplane/config-loader.ts` does not fail this way (it falls back to `cwd`), and `/settings` failures are surfaced as `❌ Failed to load settings: ...` from `extensions/taskplane/extension.ts:657` or the `requireExecCtx` startup error from `extension.ts:84-90`.  
-   **Fix:** Replace this bullet with actual user-visible error paths (startup context unavailable / load failure), or remove the “Common responses” line entirely if no stable message is intended.
-
-2. **[docs/reference/commands.md:5-6, 406] [minor]** — The page intro says slash commands are only ``/task`` and ``/orch*``, but this same page now documents `/settings` as a slash command under a separate “Configuration Commands” section placed after CLI commands. This creates structural inconsistency in the reference page.
-   **Fix:** Update the intro to include `/settings` in the slash-command surface and consider moving “Configuration Commands” above “CLI Commands” (or grouping all slash commands together).
+1. **[docs/reference/commands.md:450] [important]** — The `/settings` “Common responses” section claims an error when “config root cannot be resolved,” but `resolveConfigRoot()` falls back to `cwd` instead of throwing (`extensions/taskplane/config-loader.ts:557-569`). Actual user-visible failures are the exec-context guard (`extensions/taskplane/extension.ts:84-92`) or generic load/save failures (`extensions/taskplane/extension.ts:657-659`). **Fix:** Replace this line with real, stable user-facing error conditions/messages.
+2. **[docs/reference/commands.md:446] [minor]** — The Advanced section description says it lists only “collection/Record/array fields,” but implementation surfaces any uncovered leaf field, including primitives (`extensions/taskplane/settings-tui.ts:816`) and explicitly tests `configVersion` visibility (`extensions/tests/settings-tui.test.ts:1439`). **Fix:** Reword to “read-only listing of uncovered/non-editable fields” (or equivalent).
 
 ### Pattern Violations
-- Slash-command documentation is split around the CLI section (`/settings` is documented after CLI commands), which differs from the page’s own stated command-surface organization.
+- `docs/reference/commands.md:5` still frames slash commands as only ``/task`` and ``/orch*`` even though `/settings` is now documented; this creates an internal reference-page inconsistency.
 
 ### Test Gaps
-- No automated doc checks verify command reference statements against actual command error outputs (e.g., `/settings` common responses).
+- No doc-validation checks assert that command-reference “Common responses” match actual command output paths.
 
 ### Suggestions
-- In the `/settings` section, add one concrete “Example” block (even though syntax is no-arg) to match nearby command entries’ readability patterns.
+- Keep all pi slash commands grouped together in the reference structure (or explicitly explain why `/settings` is separated under “Configuration Commands”).
