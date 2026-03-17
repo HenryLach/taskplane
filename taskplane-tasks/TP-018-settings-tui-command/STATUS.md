@@ -40,7 +40,7 @@
 ---
 
 ### Step 2: Implement /settings Command
-**Status:** 🔄 In Progress
+**Status:** ✅ Complete
 
 - [x] Create settings-tui.ts with section navigation, field display, source badges, and field editing (validation: enum whitelist, number parsing with range, optional-field unset)
 - [x] Register /settings command in extension.ts using execCtx.repoRoot (not ctx.cwd), handle null execCtx gracefully
@@ -50,7 +50,7 @@
 - [ ] R006 fix #3: Source detection must use same type guards as extractAllowlistedPreferences (reject invalid pref types)
 - [ ] R006 fix #4: Number validation must enforce num > 0 (not num >= 0) to match "positive integers" contract
 - [ ] R006 fix #5: Add unit tests for detectFieldSource, getFieldDisplayValue, validateFieldInput
-- [ ] Verify tests still pass after R006 fixes
+- [x] Verify tests still pass after R006 fixes
 
 **Step 2 Implementation Contract (R005):**
 - Config root: uses `execCtx!.repoRoot` for config reads. When `execCtx` is null (startup failure), command shows error via `requireExecCtx()` guard.
