@@ -545,18 +545,27 @@ function hasConfigFiles(root: string): boolean {
  *
  * In workspace mode, workers run in repo worktrees — not the workspace root.
  * TASKPLANE_WORKSPACE_ROOT tells us where config files actually live.
+ * The pointer file (`taskplane-pointer.json`) can redirect config loading
+ * to a specific repo's config path.
  *
  * Resolution order:
- *   1. If `cwd` has actual config files → use cwd
- *   2. If TASKPLANE_WORKSPACE_ROOT is set and has config files → use it
- *   3. Fall back to cwd (loaders will return defaults)
+ *   1. If `cwd` has actual config files → use cwd (local override wins)
+ *   2. If `pointerConfigRoot` is set and has config files → use it (pointer redirect)
+ *   3. If TASKPLANE_WORKSPACE_ROOT is set and has config files → use it (legacy fallback)
+ *   4. Fall back to cwd (loaders will return defaults)
  *
  * We check for actual config files — not just the `.pi/` directory —
  * because worktrees may have a sidecar `.pi` without config files.
+ *
+ * @param cwd - Current working directory (project root or worktree)
+ * @param pointerConfigRoot - Resolved config root from pointer file (optional, workspace mode only)
  */
-function resolveConfigRoot(cwd: string): string {
-	// Prefer cwd if it has actual config files
+function resolveConfigRoot(cwd: string, pointerConfigRoot?: string): string {
+	// Prefer cwd if it has actual config files (local override always wins)
 	if (hasConfigFiles(cwd)) return cwd;
+
+	// Pointer-resolved config root — workspace mode with valid pointer
+	if (pointerConfigRoot && hasConfigFiles(pointerConfigRoot)) return pointerConfigRoot;
 
 	// Workspace mode fallback — check for actual config files at workspace root
 	const wsRoot = process.env.TASKPLANE_WORKSPACE_ROOT;
@@ -580,14 +589,21 @@ function resolveConfigRoot(cwd: string): string {
  *     allowlisted user-scoped fields. See `applyUserPreferences()` for
  *     the field mapping.
  *
- * Path resolution honors TASKPLANE_WORKSPACE_ROOT for workspace mode.
+ * Config root resolution order:
+ *   1. cwd has config files → use cwd (local override)
+ *   2. pointerConfigRoot has config files → use it (pointer redirect, workspace mode)
+ *   3. TASKPLANE_WORKSPACE_ROOT has config files → use it (legacy fallback)
+ *   4. Fall back to cwd (loaders will return defaults)
  *
  * @param cwd - Current working directory (project root or worktree)
+ * @param pointerConfigRoot - Resolved config root from pointer file (optional).
+ *   Callers in workspace mode should resolve the pointer via `resolvePointer()`
+ *   and pass `result.configRoot` here. In repo mode, omit or pass undefined.
  * @returns Unified TaskplaneConfig — always a fresh deep-cloned object
  * @throws ConfigLoadError if JSON exists but is malformed or has unsupported version
  */
-export function loadProjectConfig(cwd: string): TaskplaneConfig {
-	const configRoot = resolveConfigRoot(cwd);
+export function loadProjectConfig(cwd: string, pointerConfigRoot?: string): TaskplaneConfig {
+	const configRoot = resolveConfigRoot(cwd, pointerConfigRoot);
 
 	// Layer 1: Project config
 	let config: TaskplaneConfig;

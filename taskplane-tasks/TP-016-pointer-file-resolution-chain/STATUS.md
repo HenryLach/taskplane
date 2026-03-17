@@ -38,7 +38,7 @@
 ### Step 2: Thread Through Task-Runner
 **Status:** 🟨 In Progress
 
-- [ ] Thread pointer into `resolveConfigRoot()` in config-loader.ts: insert pointer configRoot between cwd-local and TASKPLANE_WORKSPACE_ROOT in precedence chain (cwd → pointer → wsRoot → defaults). Non-fatal: resolvePointer warn+fallback, never throws.
+- [x] Thread pointer into `resolveConfigRoot()` in config-loader.ts: insert pointer configRoot between cwd-local and TASKPLANE_WORKSPACE_ROOT in precedence chain (cwd → pointer → wsRoot → defaults). Non-fatal: resolvePointer warn+fallback, never throws.
 - [ ] Thread pointer into `loadAgentDef()` in task-runner.ts: insert pointer agentRoot between cwd-local paths and base package (cwd/.pi/agents → cwd/agents → pointer agentRoot → base package). Non-fatal: pointer fallback transparent.
 - [ ] Repo mode parity: verify no behavior change when workspaceConfig is null (pointer returns null, existing code paths unchanged)
 - [ ] Add Step 2 tests in workspace-config.test.ts: config resolution with valid pointer, missing/malformed pointer fallback, and repo-mode parity for both config and agent paths
@@ -86,6 +86,7 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -125,6 +126,7 @@
 | 2026-03-17 17:50 | Step 1 complete | Implement Pointer Resolution |
 | 2026-03-17 17:50 | Step 2 started | Thread Through Task-Runner |
 | 2026-03-17 17:50 | Review R005 | plan Step 2: REVISE |
+| 2026-03-17 17:52 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 *None*
