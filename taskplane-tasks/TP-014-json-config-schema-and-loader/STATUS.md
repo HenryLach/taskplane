@@ -23,7 +23,7 @@
 ---
 
 ### Step 1: Define JSON Schema
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] TypeScript interfaces for unified `TaskplaneConfig` schema defined in `extensions/taskplane/config-schema.ts`
 - [x] Schema covers all 13 task-runner sections + 7 orchestrator sections with JSON camelCase naming
