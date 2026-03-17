@@ -1015,10 +1015,66 @@ async function cmdInit(args) {
 		}
 		if (resolvedMode === "workspace" && effectiveConfigPath) {
 			// Scenario D: existing workspace config found in a subdirectory repo
+			// Create pointer only — skip all Scenario C scaffolding/prompts/gitignore/auto-commit
 			const configRepo = path.basename(path.dirname(effectiveConfigPath));
+			console.log(`  ${c.dim}Mode: workspace (${detection.subRepos.length} git repositories found)${c.reset}`);
 			console.log(`  ${INFO} Found existing Taskplane config in ${c.cyan}${configRepo}/.taskplane/${c.reset}`);
 			console.log(`     Using existing configuration.\n`);
-			// Scenario D continues to create pointer only — handled in Step 5
+
+			// ── Pointer idempotency ─────────────────────────────────
+			const pointerPath = path.join(projectRoot, ".pi", "taskplane-pointer.json");
+			const pointerExists = fs.existsSync(pointerPath);
+
+			if (dryRun) {
+				console.log(`${c.bold}Dry run — files that would be created:${c.reset}\n`);
+				if (pointerExists) {
+					console.log(`  ${c.yellow}overwrite${c.reset} .pi/taskplane-pointer.json`);
+				} else {
+					console.log(`  ${c.green}create${c.reset}    .pi/taskplane-pointer.json`);
+				}
+				console.log();
+				return;
+			}
+
+			if (pointerExists && !force) {
+				const existingPointer = JSON.parse(fs.readFileSync(pointerPath, "utf-8"));
+				if (existingPointer.config_repo === configRepo && existingPointer.config_path === ".taskplane") {
+					console.log(`  ${c.dim}skip${c.reset}  .pi/taskplane-pointer.json (already points to ${configRepo}/.taskplane/)`);
+					console.log(`\n${OK} ${c.bold}Workspace already configured.${c.reset}`);
+					console.log(`     Run ${c.cyan}taskplane doctor${c.reset} to verify.\n`);
+					return;
+				}
+				// Pointer exists but points elsewhere — prompt to overwrite
+				if (!isPreset) {
+					console.log(`  ${WARN} .pi/taskplane-pointer.json already exists (points to ${existingPointer.config_repo}/.taskplane/).`);
+					const proceed = await confirm("  Update pointer to point to " + configRepo + "/.taskplane/?", true);
+					if (!proceed) {
+						console.log("  Aborted.");
+						return;
+					}
+				}
+				// Preset/non-interactive: overwrite silently
+			}
+
+			// Create pointer file
+			const pointer = {
+				config_repo: configRepo,
+				config_path: ".taskplane",
+			};
+			writeFile(
+				pointerPath,
+				JSON.stringify(pointer, null, 2) + "\n",
+				{ label: ".pi/taskplane-pointer.json" }
+			);
+
+			console.log(`\n${OK} ${c.bold}Workspace pointer created.${c.reset}\n`);
+			console.log(`  Config:  ${c.cyan}${configRepo}/.taskplane/${c.reset}`);
+			console.log(`  Pointer: ${c.cyan}.pi/taskplane-pointer.json${c.reset}\n`);
+			console.log(`${c.bold}Quick start:${c.reset}`);
+			console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
+			console.log(`  ${c.cyan}taskplane doctor${c.reset}                                # verify setup`);
+			console.log();
+			return;
 		}
 	}
 

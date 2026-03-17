@@ -83,7 +83,7 @@
 ### Step 5: Workspace Join (Scenario D)
 **Status:** 🟨 In Progress
 
-- [ ] Scenario D early-return branch: when existing `.taskplane/` is detected, skip Scenario C scaffolding/prompts/gitignore/auto-commit and create pointer only
+- [x] Scenario D early-return branch: when existing `.taskplane/` is detected, skip Scenario C scaffolding/prompts/gitignore/auto-commit and create pointer only
 - [ ] Pointer idempotency: handle existing `.pi/taskplane-pointer.json` (overwrite prompt, --force semantics, dry-run output)
 - [ ] User confirmation messaging: show which config repo was found and what was created
 - [ ] Scenario C preservation: verify Scenario C flow is unbroken when no existing `.taskplane/` is found
@@ -129,6 +129,7 @@
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 | R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
+| R011 | plan | Step 5 | APPROVE | .reviews/R011-plan-step5.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -199,6 +200,7 @@
 | 2026-03-17 16:39 | Worker iter 5 | done in 432s, ctx: 23%, tools: 56 |
 | 2026-03-17 16:39 | Step 4 complete | Workspace Mode Init (Scenario C) |
 | 2026-03-17 16:39 | Step 5 started | Workspace Join (Scenario D) |
+| 2026-03-17 16:40 | Review R011 | plan Step 5: APPROVE |
 
 ## Blockers
 *None*
