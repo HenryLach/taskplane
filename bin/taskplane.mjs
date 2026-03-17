@@ -1244,9 +1244,9 @@ async function cmdInit(args) {
 
 		// ── Auto-commit config files in the config repo ─────────────
 		await autoCommitTaskFiles(configRepoRoot, vars.tasks_root);
-		// Also stage and commit .taskplane/ directory
+		// Also stage and commit .taskplane/ directory and .gitignore
 		try {
-			execSync('git add .taskplane/', { cwd: configRepoRoot, stdio: "pipe" });
+			execSync('git add .taskplane/ .gitignore', { cwd: configRepoRoot, stdio: "pipe" });
 			const status = execSync("git diff --cached --name-only", { cwd: configRepoRoot, stdio: "pipe" })
 				.toString().trim();
 			if (status) {
@@ -1254,11 +1254,11 @@ async function cmdInit(args) {
 					cwd: configRepoRoot,
 					stdio: "pipe",
 				});
-				console.log(`\n  ${c.green}git${c.reset}    committed .taskplane/ to ${configRepoName}`);
+				console.log(`\n  ${c.green}git${c.reset}    committed .taskplane/ and .gitignore to ${configRepoName}`);
 			}
 		} catch (err) {
 			console.log(`\n  ${WARN} Could not auto-commit .taskplane/ to ${configRepoName}.`);
-			console.log(`  ${c.dim}Run manually: cd ${configRepoName} && git add .taskplane/ && git commit -m "add taskplane config"${c.reset}`);
+			console.log(`  ${c.dim}Run manually: cd ${configRepoName} && git add .taskplane/ .gitignore && git commit -m "add taskplane config"${c.reset}`);
 		}
 
 		// ── Post-init guidance ──────────────────────────────────────

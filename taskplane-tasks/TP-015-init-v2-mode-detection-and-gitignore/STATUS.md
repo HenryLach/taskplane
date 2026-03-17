@@ -75,7 +75,7 @@
 - [x] Dry-run/preset/force/non-interactive compatibility for workspace mode
 - [x] Post-init merge guidance and auto-commit in config repo
 - [x] R010: Pass `prefix: ".taskplane/"` to `ensureGitignoreEntries()` and extend tracked-artifact detection with prefix-aware scanning
-- [ ] R010: Include `.gitignore` in workspace auto-commit staging alongside `.taskplane/`
+- [x] R010: Include `.gitignore` in workspace auto-commit staging alongside `.taskplane/`
 - [ ] R010: Fix overwrite confirmation — track user confirmation to set `skipIfExists` accordingly
 
 ---
