@@ -15,10 +15,10 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Read current config loading paths
-- [ ] Read YAML config reference docs
+- [x] Read YAML config reference docs
 
 ---
 
@@ -67,6 +67,11 @@
 ## Discoveries
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| task-runner.ts has its own `TaskConfig` interface + `loadConfig()` that reads `.pi/task-runner.yaml` with YAML parse + defaults merge. Separate from orchestrator's config.ts. | Step 1 input | `extensions/task-runner.ts:40-190` |
+| Orchestrator config.ts has `loadOrchestratorConfig()` and `loadTaskRunnerConfig()` — two separate loaders reading two YAML files | Step 1 input | `extensions/taskplane/config.ts` |
+| types.ts has `OrchestratorConfig`, `TaskRunnerConfig` interfaces + `DEFAULT_ORCHESTRATOR_CONFIG`, `DEFAULT_TASK_RUNNER_CONFIG` defaults | Step 1 input | `extensions/taskplane/types.ts` |
+| task-runner.ts supports `TASKPLANE_WORKSPACE_ROOT` env var fallback for config path resolution | Step 2 input | `extensions/task-runner.ts:146-149` |
+| task-runner.yaml has 13 top-level sections; task-orchestrator.yaml has 7 sections. Unified schema must merge all 20 sections. | Step 1 input | docs/reference/configuration/ |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
