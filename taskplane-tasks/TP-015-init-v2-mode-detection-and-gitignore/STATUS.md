@@ -1,6 +1,6 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Mode Auto-Detection
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
@@ -15,7 +15,7 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Read current `cmdInit()` implementation
 - [x] Read spec auto-detection and gitignore sections
@@ -29,7 +29,7 @@
 ---
 
 ### Step 1: Mode Auto-Detection
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Detection logic implemented (git repo, subdirectory scan, mode)
 - [ ] Ambiguous case handled with prompt
@@ -109,6 +109,9 @@
 | 2026-03-17 15:25 | Review R001 | plan Step 0: REVISE |
 | 2026-03-17 15:29 | Worker iter 1 | done in 242s, ctx: 31%, tools: 49 |
 | 2026-03-17 15:31 | Review R002 | code Step 0: REVISE |
+| 2026-03-17 15:34 | Worker iter 1 | done in 75s, ctx: 9%, tools: 11 |
+| 2026-03-17 15:34 | Step 0 complete | Preflight |
+| 2026-03-17 15:34 | Step 1 started | Mode Auto-Detection |
 
 ## Blockers
 *None*
