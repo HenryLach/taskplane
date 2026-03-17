@@ -19,7 +19,7 @@
 
 - [x] Inventory all config/agent/state resolution call sites (resolution map)
 - [x] Document mode matrix: repo mode vs workspace mode (pointer present/missing/invalid)
-- [ ] Document env-var precedence interactions (TASKPLANE_WORKSPACE_ROOT, ORCH_SIDECAR_DIR, pointer)
+- [x] Document env-var precedence interactions (TASKPLANE_WORKSPACE_ROOT, ORCH_SIDECAR_DIR, pointer)
 
 ---
 
@@ -134,6 +134,23 @@
 - **Merge agent** (#8): Uses `stateRoot` (wsRoot in workspace mode) to find `.pi/agents/task-merger.md`. Same gap as #2 — agents should come from config repo via pointer.
 - **Dashboard** (#12,13): Hardcoded to `REPO_ROOT/.pi/`. In workspace mode dashboard needs workspace root, not individual repo root.
 - **Pointer file schema**: `{ config_repo: string, config_path: string }` where config_repo is a repo name (not path) and config_path is relative within that repo (e.g., ".taskplane").
+
+### Mode Matrix (Step 0 Preflight)
+
+| Scenario | Workspace Config | Pointer File | Config Resolution | Agent Resolution | State/Sidecar Resolution |
+|----------|-----------------|--------------|-------------------|------------------|--------------------------|
+| **Repo mode** | Absent | N/A (ignored) | `cwd/.pi/` (config files) → defaults | `cwd/.pi/agents/` → base package | `cwd/.pi/` (walk-up) |
+| **Workspace, valid pointer** | Present | Valid JSON, valid `config_repo`+`config_path` | Resolve pointer → `<config_repo_path>/<config_path>/` for config | Resolve pointer → `<config_repo_path>/<config_path>/agents/` → base package | `workspaceRoot/.pi/` (state stays at workspace root) |
+| **Workspace, pointer missing** | Present | File absent at `workspaceRoot/.pi/taskplane-pointer.json` | Fallback to `TASKPLANE_WORKSPACE_ROOT/.pi/` (current behavior) | Fallback to current worktree cwd paths (current behavior) | `workspaceRoot/.pi/` (unchanged) |
+| **Workspace, pointer malformed** | Present | File exists but invalid JSON or missing fields | Warn + fallback same as "pointer missing" | Warn + fallback same as "pointer missing" | `workspaceRoot/.pi/` (unchanged) |
+| **Workspace, pointer invalid config_repo** | Present | Valid JSON but `config_repo` not in workspace repos map | Error — fail-fast (config_repo must match a known repo ID) | Error — same | `workspaceRoot/.pi/` (unchanged) |
+
+#### Design decisions:
+1. **Pointer is workspace-only**: In repo mode, no pointer file is read. Even if one exists, it's ignored. This guarantees zero repo-mode behavior change.
+2. **State/sidecar files never follow pointer**: Batch state, conversation logs, abort signals, lane logs — all stay at `workspaceRoot/.pi/`. Only config and agent artifacts follow the pointer to the config repo.
+3. **Missing pointer = graceful fallback**: Workspace mode without a pointer is a valid (if degraded) configuration. This supports incremental adoption and the case where init v2 hasn't been run yet.
+4. **Malformed pointer = warn + fallback**: Non-destructive. Log a warning but don't crash. User can fix or re-run init.
+5. **Invalid config_repo = fail-fast**: If the pointer references a repo not in the workspace config, that's a hard error — the config repo path can't be resolved.
 
 ### Mode Matrix: Pointer Resolution Behavior
 
