@@ -1,7 +1,7 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
 **Current Step:** Step 3: tmux and Environment Detection
-**Status:** ✅ Step 2 Complete
+**Status:** ✅ Step 3 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
 **Review Counter:** 7
@@ -56,12 +56,12 @@
 ---
 
 ### Step 3: tmux and Environment Detection
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Implement `detectSpawnMode()` reusable helper that returns `{ spawnMode, hasTmux }` — reusable for Step 4 workspace init
 - [x] Wire detected spawn_mode into `generateOrchestratorYaml()` via init vars (replace hardcoded `"subprocess"`)
 - [x] Show guidance message when tmux not found; silent when present. Skip message for runner-only preset (no orchestrator). Respect dry-run output.
-- [ ] Verify: preset/dry-run/runner-only compatibility; tmux-present and tmux-absent branches
+- [x] Verify: preset/dry-run/runner-only compatibility; tmux-present and tmux-absent branches
 
 ---
 
