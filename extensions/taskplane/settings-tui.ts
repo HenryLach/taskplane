@@ -10,8 +10,9 @@
  * determine whether each field value comes from project config, user
  * preferences, or schema defaults.
  *
- * Write-back is handled in Step 3 — this module focuses on display
- * and validation only. The onChange callback is the integration seam.
+ * Write-back targets the correct destination per field layer:
+ *   - L1-only → project JSON, L2-only → preferences JSON,
+ *   - L1+L2 → user chooses destination via ctx.ui.select()
  *
  * @module settings/tui
  */
@@ -19,7 +20,7 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder, getSettingsListTheme } from "@mariozechner/pi-coding-agent";
 import { Container, type SelectItem, SelectList, type SettingItem, SettingsList, Text } from "@mariozechner/pi-tui";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
 import { parse as yamlParse } from "yaml";
 
@@ -375,9 +376,15 @@ export function writeProjectConfigField(
 		try {
 			const raw = readFileSync(jsonPath, "utf-8");
 			configObj = JSON.parse(raw);
-		} catch {
-			// Malformed — bootstrap from full L1 config (YAML + defaults)
-			configObj = JSON.parse(JSON.stringify(loadLayer1Config(configRoot)));
+		} catch (e: any) {
+			// Malformed JSON — cannot safely bootstrap because loadLayer1Config
+			// would also fail on the same corrupt file. Surface the error so the
+			// user can fix/delete the malformed JSON file first.
+			throw new Error(
+				`Cannot write settings: ${jsonPath} contains malformed JSON. ` +
+				`Please fix or delete the file and try again. ` +
+				`(Parse error: ${e.message ?? "unknown"})`,
+			);
 		}
 	} else {
 		// No JSON exists (possibly YAML-only) — bootstrap from full L1 config.
@@ -396,7 +403,7 @@ export function writeProjectConfigField(
 	} catch {
 		// Windows fallback: direct write if rename fails
 		writeFileSync(jsonPath, json, "utf-8");
-		try { if (existsSync(tmpPath)) renameSync(tmpPath, tmpPath); } catch { /* cleanup best-effort */ }
+		try { if (existsSync(tmpPath)) unlinkSync(tmpPath); } catch { /* cleanup best-effort */ }
 	}
 }
 
@@ -452,7 +459,7 @@ export function writeUserPreference(
 	} catch {
 		// Windows fallback: direct write if rename fails
 		writeFileSync(prefsPath, json, "utf-8");
-		try { if (existsSync(tmpPath)) renameSync(tmpPath, tmpPath); } catch { /* cleanup best-effort */ }
+		try { if (existsSync(tmpPath)) unlinkSync(tmpPath); } catch { /* cleanup best-effort */ }
 	}
 }
 
