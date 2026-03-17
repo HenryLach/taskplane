@@ -141,6 +141,9 @@ const DEFAULT_CONFIG: TaskConfig = {
 
 // ── Pointer Resolution (Workspace Mode) ──────────────────────────────
 
+/** Track whether a pointer warning has been logged this session (log once). */
+let _pointerWarningLogged = false;
+
 /**
  * Resolve the workspace pointer for config and agent path redirection.
  *
@@ -150,7 +153,7 @@ const DEFAULT_CONFIG: TaskConfig = {
  *
  * All pointer failures are non-fatal: missing, malformed, or invalid
  * pointer files produce a warning and fall back to existing paths.
- * Callers should log `result.warning` if present but never throw.
+ * Warning is logged to stderr once per session for operator visibility.
  *
  * @returns PointerResolution with resolved paths, or null in repo mode
  */
@@ -160,11 +163,24 @@ function resolveTaskRunnerPointer(): PointerResolution | null {
 
 	try {
 		const wsConfig = loadWorkspaceConfig(wsRoot);
-		return resolvePointer(wsRoot, wsConfig);
+		const result = resolvePointer(wsRoot, wsConfig);
+
+		// Surface pointer warnings once per session for operator visibility
+		if (result?.warning && !_pointerWarningLogged) {
+			_pointerWarningLogged = true;
+			console.error(`[task-runner] pointer: ${result.warning}`);
+		}
+
+		return result;
 	} catch {
 		// Workspace config load failure — fall back gracefully
 		return null;
 	}
+}
+
+/** Reset pointer warning state (for testing only). */
+export function _resetPointerWarning(): void {
+	_pointerWarningLogged = false;
 }
 
 /**

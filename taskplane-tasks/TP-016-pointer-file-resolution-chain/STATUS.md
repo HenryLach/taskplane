@@ -43,7 +43,7 @@
 - [x] Repo mode parity: verify no behavior change when workspaceConfig is null (pointer returns null, existing code paths unchanged)
 - [x] Add Step 2 tests in project-config-loader.test.ts (5.x series): config resolution with valid pointer, pointer precedence over wsRoot, cwd override over pointer, fallback when pointer has no config, repo-mode parity, task-runner loadConfig integration, YAML pointer config
 - [x] R006: Fix pointer config root layout mismatch — config-loader looks for `<root>/.pi/*` but pointer roots use flat layout `<root>/*`. Add dual-layout support in `hasConfigFiles`, `loadJsonConfig`, `loadTaskRunnerYaml`, `loadOrchestratorYaml`.
-- [ ] R006: Surface pointer warnings — log `pointer.warning` via console in task-runner.ts config and agent call paths (once per session).
+- [x] R006: Surface pointer warnings — log `pointer.warning` via console.error in task-runner.ts `resolveTaskRunnerPointer()` (once per session via `_pointerWarningLogged` flag).
 - [ ] R006: Consolidate duplicate 5.x test suites and add tests for real `.taskplane` layout, agent resolution precedence with pointer, and warning surfacing.
 
 ---
