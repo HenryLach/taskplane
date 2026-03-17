@@ -86,7 +86,7 @@
 ### Step 6: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Architecture doc impact check: review `docs/explanation/architecture.md` and confirm no update needed (pointer is internal plumbing, doesn't change high-level architecture) or update if impacted
+- [x] Architecture doc impact check: review `docs/explanation/architecture.md` and confirm no update needed (pointer is internal plumbing, doesn't change high-level architecture) or update if impacted
 - [ ] Final acceptance reconciliation: verify all PROMPT.md completion criteria are met (all steps complete, pointer works end-to-end in workspace mode, repo-mode unchanged, all tests passing per Step 5 VERIFICATION.md)
 - [ ] `.DONE` created in task folder
 
