@@ -3,21 +3,21 @@
 ### Verdict: REVISE
 
 ### Summary
-The new Scenario D branch is a good direction: it now detects existing workspace config and creates a pointer with clear user messaging. However, there is a control-flow bug that makes `--force` bypass Scenario D entirely and run Scenario C scaffolding logic, which breaks the “pointer-only” requirement for joiners. There is also an unhandled JSON parse path that can crash `taskplane init` when an existing pointer file is malformed.
+Scenario D has the right high-level intent (existing workspace config detection + pointer-only flow), but two important control-flow/robustness issues remain. In the current implementation, `--force` bypasses Scenario D and falls through into full Scenario C scaffolding, and malformed existing pointer JSON can crash the command with an uncaught exception.
 
 ### Issues Found
-1. **[bin/taskplane.mjs:1009] [important]** — Scenario D is gated by `if (effectiveAlreadyInitialized && !force)`, so `--force` skips the pointer-only path and falls through into full workspace init (Scenario C prompts/scaffolding/auto-commit). This contradicts Step 5’s required behavior (“create pointer only” for existing workspace config) and also makes the inner `pointerExists && !force` logic effectively dead for force semantics.  
-   **Fix:** Handle `resolvedMode === "workspace" && effectiveConfigPath` as a dedicated early-return branch independent of the outer `!force` gate; apply `force` only to pointer overwrite behavior (skip confirmation), not to Scenario D detection.
+1. **[bin/taskplane.mjs:1009] [important]** — Scenario D is nested under `if (effectiveAlreadyInitialized && !force)`, so `taskplane init --force` skips the join flow entirely and executes Scenario C workspace scaffolding/prompts/auto-commit. That violates the Step 5 requirement that existing `.taskplane/` should use pointer-only behavior.  
+   **Fix:** Split handling so repo Scenario B remains `!force`-gated, but workspace Scenario D (`resolvedMode === "workspace" && effectiveConfigPath`) is an unconditional early-return branch. Apply `force` only to pointer overwrite confirmation behavior.
 
-2. **[bin/taskplane.mjs:1040] [important]** — `JSON.parse(fs.readFileSync(pointerPath, "utf-8"))` is unguarded. If `.pi/taskplane-pointer.json` is malformed, `taskplane init` throws and exits with a stack trace instead of a controlled CLI message.
-   **Fix:** Wrap pointer parse in `try/catch`; on parse failure, treat as invalid existing pointer and prompt to overwrite (or overwrite silently with `--force`/preset mode).
+2. **[bin/taskplane.mjs:1040] [important]** — `JSON.parse(fs.readFileSync(pointerPath, "utf-8"))` is unguarded. If `.pi/taskplane-pointer.json` is malformed, init crashes with a stack trace instead of controlled CLI behavior.  
+   **Fix:** Wrap parse in `try/catch` and treat invalid JSON as a non-matching pointer: warn and prompt to overwrite (or overwrite directly in non-interactive/`--force` mode).
 
 ### Pattern Violations
-- No major project-style violations found beyond missing defensive error handling on file parsing.
+- Defensive JSON parsing is inconsistent with existing file patterns (e.g., `cmdVersion` wraps JSON parsing in `try/catch` at `bin/taskplane.mjs:2268-2273`).
 
 ### Test Gaps
-- Missing coverage for Scenario D with existing config + `--force` (should remain pointer-only, no Scenario C prompts/scaffolding).
-- Missing coverage for malformed existing `.pi/taskplane-pointer.json` (should not crash; should recover via overwrite flow).
+- Missing coverage for Scenario D + `--force` when `.taskplane/` already exists (must remain pointer-only, no Scenario C scaffolding).
+- Missing coverage for malformed `.pi/taskplane-pointer.json` (must not crash).
 
 ### Suggestions
-- Consider extracting pointer read/validate logic into a small helper to keep Scenario D flow readable and to centralize parse/shape validation.
+- Consider a small helper for pointer read/validation to keep Scenario D logic linear and reduce repeated edge-case handling.

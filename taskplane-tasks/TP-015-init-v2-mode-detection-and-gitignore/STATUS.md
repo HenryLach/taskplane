@@ -87,7 +87,7 @@
 - [x] Pointer idempotency: handle existing `.pi/taskplane-pointer.json` (overwrite prompt, --force semantics, dry-run output)
 - [x] User confirmation messaging: show which config repo was found and what was created
 - [x] Scenario C preservation: verify Scenario C flow is unbroken when no existing `.taskplane/` is found
-- [ ] R012: Fix control-flow bug — `--force` must not bypass Scenario D; separate Scenario D detection from `!force` gate, apply `force` only to pointer overwrite
+- [x] R012: Fix control-flow bug — `--force` must not bypass Scenario D; separate Scenario D detection from `!force` gate, apply `force` only to pointer overwrite
 - [ ] R012: Wrap pointer JSON.parse in try/catch — malformed pointer should prompt overwrite, not crash
 
 ---
@@ -132,6 +132,7 @@
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 | R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 | R011 | plan | Step 5 | APPROVE | .reviews/R011-plan-step5.md |
+| R012 | code | Step 5 | REVISE | .reviews/R012-code-step5.md |
 | R012 | code | Step 5 | REVISE | .reviews/R012-code-step5.md |
 
 ## Discoveries
@@ -207,6 +208,7 @@
 | 2026-03-17 16:45 | Worker iter 6 | done in 314s, ctx: 18%, tools: 32 |
 | 2026-03-17 16:47 | Worker iter 6 | done in 525s, ctx: 23%, tools: 43 |
 | 2026-03-17 16:47 | Review R012 | code Step 5: REVISE |
+| 2026-03-17 16:49 | Review R012 | code Step 5: REVISE |
 
 ## Blockers
 *None*
