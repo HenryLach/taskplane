@@ -28,7 +28,7 @@
 **Status:** 🟨 In Progress
 
 - [x] `resolvePointer()` function in workspace.ts: reads pointer JSON, validates fields, resolves config_repo against WorkspaceConfig.repos, normalizes config_path (reject traversal), returns result with resolved absolute paths + used/fallback status + warning reason. Non-fatal: never throws on pointer failures, always returns fallback paths with warning.
-- [ ] Return contract separates config/agent roots (follow pointer) from state root (always workspace root `.pi/`). Repo mode returns null (pointer ignored entirely).
+- [x] Return contract separates config/agent roots (follow pointer) from state root (always workspace root `.pi/`). Repo mode returns null (pointer ignored entirely).
 - [ ] Types added for pointer result (PointerResolution) in types.ts
 
 ---
