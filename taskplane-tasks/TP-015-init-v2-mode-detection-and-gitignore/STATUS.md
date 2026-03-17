@@ -93,7 +93,7 @@
 ---
 
 ### Step 6: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Baseline validation gates pass (`cd extensions && npx vitest run`, `node bin/taskplane.mjs help`, `node bin/taskplane.mjs doctor`)
 - [x] Scenario A (repo mode, fresh init) dry-run works: `node bin/taskplane.mjs init --dry-run --force --preset full`
