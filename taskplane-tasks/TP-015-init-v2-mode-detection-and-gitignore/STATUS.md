@@ -81,14 +81,14 @@
 ---
 
 ### Step 5: Workspace Join (Scenario D)
-**Status:** 🔧 In Progress (R012 revisions)
+**Status:** ✅ Complete
 
 - [x] Scenario D early-return branch: when existing `.taskplane/` is detected, skip Scenario C scaffolding/prompts/gitignore/auto-commit and create pointer only
 - [x] Pointer idempotency: handle existing `.pi/taskplane-pointer.json` (overwrite prompt, --force semantics, dry-run output)
 - [x] User confirmation messaging: show which config repo was found and what was created
 - [x] Scenario C preservation: verify Scenario C flow is unbroken when no existing `.taskplane/` is found
 - [x] R012: Fix control-flow bug — `--force` must not bypass Scenario D; separate Scenario D detection from `!force` gate, apply `force` only to pointer overwrite
-- [ ] R012: Wrap pointer JSON.parse in try/catch — malformed pointer should prompt overwrite, not crash
+- [x] R012: Wrap pointer JSON.parse in try/catch — malformed pointer should prompt overwrite, not crash
 
 ---
 
