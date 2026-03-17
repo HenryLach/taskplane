@@ -101,7 +101,7 @@
 - [x] YAML output still generated alongside JSON (constraint from PROMPT)
 - [x] Mode detection edge cases and regression coverage: add init-focused automated test file covering mode detection, gitignore enforcement, and scenario branching
 - [x] R014: Fix mirrored `isGitRepoRoot()` in test to include `fs.realpathSync.native()` normalization matching production code, and add regression case for path-canonicalization mismatch
-- [ ] R014: Re-run vitest to confirm all tests pass after fix
+- [x] R014: Re-run vitest to confirm all tests pass after fix
 
 ---
 
