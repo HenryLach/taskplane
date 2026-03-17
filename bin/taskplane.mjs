@@ -783,6 +783,14 @@ async function cmdInit(args) {
 	}
 	console.log();
 
+	// Workspace mode: project init (Scenario C) is implemented in Step 4.
+	// For now, display guidance and exit.
+	if (resolvedMode === "workspace") {
+		console.log(`  ${WARN} Workspace mode init is not yet implemented.`);
+		console.log(`     For now, run ${c.cyan}taskplane init${c.reset} inside an individual repo.\n`);
+		return;
+	}
+
 	// ── Existing config overwrite check (for repo mode force reinit) ──
 	const hasConfig =
 		fs.existsSync(path.join(projectRoot, ".pi", "task-runner.yaml")) ||

@@ -35,7 +35,7 @@
 - [x] Error path: no git repo and no git repo subdirectories → clear error message and exit
 - [x] Ambiguous case handled with prompt; preset/non-interactive mode defaults to repo mode (no prompt)
 - [x] "Already initialized" detection for Scenario B (existing config check before topology detection)
-- [ ] Validate: repo mode, workspace mode, ambiguous prompt, no-repo error, preset bypass all covered
+- [x] Validate: repo mode, workspace mode, ambiguous prompt, no-repo error, preset bypass all covered
 
 ---
 
