@@ -1339,6 +1339,26 @@ async function cmdInit(args) {
 		}
 	}
 
+	// ── Gitignore enforcement ────────────────────────────────────────────
+	// Must run BEFORE autoCommitTaskFiles() so that:
+	// 1. .gitignore changes are committed alongside task files
+	// 2. git rm --cached removals don't get bundled into the task auto-commit
+	const isInteractive = !isPreset && !dryRun;
+	const gitignoreResult = ensureGitignoreEntries(projectRoot, { dryRun });
+
+	if (!dryRun) {
+		if (gitignoreResult.created) {
+			console.log(`  ${c.green}create${c.reset} .gitignore`);
+		} else if (gitignoreResult.added.length > 0) {
+			console.log(`  ${c.green}update${c.reset} .gitignore (${gitignoreResult.added.length} entries added)`);
+		} else {
+			console.log(`  ${c.dim}skip${c.reset}  .gitignore (all entries already present)`);
+		}
+	}
+
+	// Check for tracked runtime artifacts and offer to untrack
+	await detectAndOfferUntrackArtifacts(projectRoot, { dryRun, interactive: isInteractive });
+
 	// Auto-commit task files to git so they're available in worktrees
 	await autoCommitTaskFiles(projectRoot, vars.tasks_root);
 
