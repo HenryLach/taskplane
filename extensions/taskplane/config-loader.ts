@@ -109,26 +109,140 @@ function snakeToCamel(s: string): string {
 }
 
 /**
- * Recursively convert all keys in an object from snake_case to camelCase.
- * Record-type sections (task_areas, reference_docs, etc.) have their
- * user-defined keys preserved — only structural keys are converted.
+ * Convert structural keys from snake_case to camelCase, recursively.
+ * Used for sections where ALL keys are structural schema keys (no
+ * user-defined dictionary keys).
  */
-function convertKeysToCamel(obj: any): any {
+function convertStructuralKeys(obj: any): any {
 	if (obj === null || obj === undefined) return obj;
-	if (Array.isArray(obj)) return obj.map(convertKeysToCamel);
+	if (Array.isArray(obj)) return obj.map(convertStructuralKeys);
 	if (typeof obj !== "object") return obj;
 
 	const result: Record<string, any> = {};
 	for (const [key, val] of Object.entries(obj)) {
 		const camelKey = snakeToCamel(key);
 		if (val !== null && typeof val === "object" && !Array.isArray(val)) {
-			result[camelKey] = convertKeysToCamel(val);
+			result[camelKey] = convertStructuralKeys(val);
 		} else if (Array.isArray(val)) {
-			result[camelKey] = val.map(convertKeysToCamel);
+			result[camelKey] = val.map(convertStructuralKeys);
 		} else {
 			result[camelKey] = val;
 		}
 	}
+	return result;
+}
+
+/**
+ * Convert a record/dictionary section where outer keys are user-defined
+ * identifiers (preserve verbatim) but inner keys are structural (convert).
+ */
+function convertRecordSection(obj: any): any {
+	if (obj === null || obj === undefined) return obj;
+	if (typeof obj !== "object" || Array.isArray(obj)) return obj;
+
+	const result: Record<string, any> = {};
+	for (const [key, val] of Object.entries(obj)) {
+		// Preserve user-defined key verbatim, convert structural inner keys
+		if (val !== null && typeof val === "object" && !Array.isArray(val)) {
+			result[key] = convertStructuralKeys(val);
+		} else {
+			result[key] = val;
+		}
+	}
+	return result;
+}
+
+/**
+ * Convert a flat record/dictionary where both keys and values are
+ * user-defined (preserve everything verbatim). Used for sections like
+ * `reference_docs`, `self_doc_targets`, `testing.commands` where
+ * keys are identifiers and values are strings.
+ */
+function preserveRecord(obj: any): any {
+	if (obj === null || obj === undefined) return obj;
+	if (typeof obj !== "object" || Array.isArray(obj)) return obj;
+	return { ...obj };
+}
+
+// ── Section-aware YAML mapping ───────────────────────────────────────
+
+/**
+ * Map a raw task-runner YAML object to the camelCase TaskRunnerSection shape.
+ *
+ * Knows which sections contain user-defined record keys vs. structural keys:
+ * - Structural-only: project, paths, worker, reviewer, context, standards
+ * - Record with structural inner keys: task_areas, standards_overrides
+ * - Flat record (preserve all keys): testing.commands, reference_docs,
+ *   self_doc_targets
+ * - Array (preserve): never_load, protected_docs
+ */
+function mapTaskRunnerYaml(raw: any): Partial<TaskRunnerSection> {
+	const result: any = {};
+
+	// Structural sections — all keys are schema-defined
+	if (raw.project) result.project = convertStructuralKeys(raw.project);
+	if (raw.paths) result.paths = convertStructuralKeys(raw.paths);
+	if (raw.worker) result.worker = convertStructuralKeys(raw.worker);
+	if (raw.reviewer) result.reviewer = convertStructuralKeys(raw.reviewer);
+	if (raw.context) result.context = convertStructuralKeys(raw.context);
+	if (raw.standards) result.standards = convertStructuralKeys(raw.standards);
+
+	// Testing: commands is a flat user-defined record
+	if (raw.testing) {
+		result.testing = {};
+		if (raw.testing.commands) {
+			result.testing.commands = preserveRecord(raw.testing.commands);
+		}
+	}
+
+	// Record sections with structural inner keys
+	if (raw.task_areas) result.taskAreas = convertRecordSection(raw.task_areas);
+	if (raw.standards_overrides) result.standardsOverrides = convertRecordSection(raw.standards_overrides);
+
+	// Flat record sections (keys are identifiers, values are strings)
+	if (raw.reference_docs) result.referenceDocs = preserveRecord(raw.reference_docs);
+	if (raw.self_doc_targets) result.selfDocTargets = preserveRecord(raw.self_doc_targets);
+
+	// Array sections (preserve verbatim)
+	if (raw.never_load) result.neverLoad = [...raw.never_load];
+	if (raw.protected_docs) result.protectedDocs = [...raw.protected_docs];
+
+	return result;
+}
+
+/**
+ * Map a raw orchestrator YAML object to the camelCase OrchestratorSection shape.
+ *
+ * Knows which sections contain user-defined record keys:
+ * - Structural: orchestrator, dependencies, merge, failure, monitoring
+ * - Record with structural inner keys: (none)
+ * - Flat record (preserve keys): pre_warm.commands, assignment.size_weights
+ */
+function mapOrchestratorYaml(raw: any): Partial<OrchestratorSection> {
+	const result: any = {};
+
+	// Structural sections
+	if (raw.orchestrator) result.orchestrator = convertStructuralKeys(raw.orchestrator);
+	if (raw.dependencies) result.dependencies = convertStructuralKeys(raw.dependencies);
+	if (raw.merge) result.merge = convertStructuralKeys(raw.merge);
+	if (raw.failure) result.failure = convertStructuralKeys(raw.failure);
+	if (raw.monitoring) result.monitoring = convertStructuralKeys(raw.monitoring);
+
+	// assignment: strategy is structural, size_weights is a user-defined record
+	if (raw.assignment) {
+		result.assignment = {};
+		if (raw.assignment.strategy !== undefined) result.assignment.strategy = raw.assignment.strategy;
+		if (raw.assignment.size_weights) result.assignment.sizeWeights = preserveRecord(raw.assignment.size_weights);
+	}
+
+	// pre_warm: auto_detect is structural, commands is user-defined, always is array
+	if (raw.pre_warm) {
+		result.preWarm = {};
+		if (raw.pre_warm.auto_detect !== undefined) result.preWarm.autoDetect = raw.pre_warm.auto_detect;
+		if (raw.pre_warm.commands) result.preWarm.commands = preserveRecord(raw.pre_warm.commands);
+		if (raw.pre_warm.always) result.preWarm.always = [...raw.pre_warm.always];
+	}
+
 	return result;
 }
 
@@ -196,6 +310,7 @@ function loadJsonConfig(configRoot: string): TaskplaneConfig | null {
 /**
  * Load task-runner settings from `.pi/task-runner.yaml`.
  * Maps snake_case YAML keys to the camelCase TaskRunnerSection shape.
+ * Uses section-aware mapping that preserves user-defined record keys.
  * Returns cloned defaults if the file doesn't exist or is malformed.
  */
 function loadTaskRunnerYaml(configRoot: string): TaskRunnerSection {
@@ -207,12 +322,12 @@ function loadTaskRunnerYaml(configRoot: string): TaskRunnerSection {
 		const loaded = yamlParse(raw) as any;
 		if (!loaded || typeof loaded !== "object") return deepClone(DEFAULT_TASK_RUNNER_SECTION);
 
-		// Convert snake_case keys to camelCase
-		const camel = convertKeysToCamel(loaded);
+		// Section-aware mapping: structural keys → camelCase, record keys → preserved
+		const mapped = mapTaskRunnerYaml(loaded);
 
 		// Deep merge with cloned defaults
 		const section = deepClone(DEFAULT_TASK_RUNNER_SECTION);
-		deepMerge(section, camel);
+		deepMerge(section, mapped);
 
 		// Post-process taskAreas: trim repoId, drop whitespace-only values
 		// (matches legacy loadTaskRunnerConfig behavior from config.ts)
@@ -238,6 +353,7 @@ function loadTaskRunnerYaml(configRoot: string): TaskRunnerSection {
 /**
  * Load orchestrator settings from `.pi/task-orchestrator.yaml`.
  * Maps snake_case YAML keys to the camelCase OrchestratorSection shape.
+ * Uses section-aware mapping that preserves user-defined record keys.
  * Returns cloned defaults if the file doesn't exist or is malformed.
  */
 function loadOrchestratorYaml(configRoot: string): OrchestratorSection {
@@ -249,12 +365,12 @@ function loadOrchestratorYaml(configRoot: string): OrchestratorSection {
 		const loaded = yamlParse(raw) as any;
 		if (!loaded || typeof loaded !== "object") return deepClone(DEFAULT_ORCHESTRATOR_SECTION);
 
-		// Convert snake_case keys to camelCase
-		const camel = convertKeysToCamel(loaded);
+		// Section-aware mapping: structural keys → camelCase, record keys → preserved
+		const mapped = mapOrchestratorYaml(loaded);
 
 		// Deep merge with cloned defaults
 		const section = deepClone(DEFAULT_ORCHESTRATOR_SECTION);
-		deepMerge(section, camel);
+		deepMerge(section, mapped);
 
 		return section;
 	} catch {
@@ -266,21 +382,41 @@ function loadOrchestratorYaml(configRoot: string): OrchestratorSection {
 // ── Unified Loader ───────────────────────────────────────────────────
 
 /**
+ * Check whether any config files exist under `root/.pi/`.
+ * Returns true if taskplane-config.json, task-runner.yaml, or
+ * task-orchestrator.yaml is present.
+ */
+function hasConfigFiles(root: string): boolean {
+	return (
+		existsSync(join(root, ".pi", PROJECT_CONFIG_FILENAME)) ||
+		existsSync(join(root, ".pi", "task-runner.yaml")) ||
+		existsSync(join(root, ".pi", "task-orchestrator.yaml"))
+	);
+}
+
+/**
  * Resolve the config root directory.
  *
  * In workspace mode, workers run in repo worktrees — not the workspace root.
  * TASKPLANE_WORKSPACE_ROOT tells us where config files actually live.
- * Falls back to `cwd` if the env var is not set or the path doesn't have `.pi/`.
+ *
+ * Resolution order:
+ *   1. If `cwd` has actual config files → use cwd
+ *   2. If TASKPLANE_WORKSPACE_ROOT is set and has config files → use it
+ *   3. Fall back to cwd (loaders will return defaults)
+ *
+ * We check for actual config files — not just the `.pi/` directory —
+ * because worktrees may have a sidecar `.pi` without config files.
  */
 function resolveConfigRoot(cwd: string): string {
-	// First try cwd
-	if (existsSync(join(cwd, ".pi"))) return cwd;
+	// Prefer cwd if it has actual config files
+	if (hasConfigFiles(cwd)) return cwd;
 
-	// Workspace mode fallback
+	// Workspace mode fallback — check for actual config files at workspace root
 	const wsRoot = process.env.TASKPLANE_WORKSPACE_ROOT;
-	if (wsRoot && existsSync(join(wsRoot, ".pi"))) return wsRoot;
+	if (wsRoot && hasConfigFiles(wsRoot)) return wsRoot;
 
-	// Fall back to cwd even without .pi/ — loaders will return defaults
+	// Fall back to cwd even without config files — loaders will return defaults
 	return cwd;
 }
 
@@ -323,42 +459,56 @@ export function loadProjectConfig(cwd: string): TaskplaneConfig {
 // back to the snake_case shapes expected by existing consumers.
 
 /**
- * Convert a camelCase key to snake_case.
- */
-function camelToSnake(s: string): string {
-	return s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
-}
-
-/**
- * Recursively convert all keys in an object from camelCase to snake_case.
- */
-function convertKeysToSnake(obj: any): any {
-	if (obj === null || obj === undefined) return obj;
-	if (Array.isArray(obj)) return obj.map(convertKeysToSnake);
-	if (typeof obj !== "object") return obj;
-
-	const result: Record<string, any> = {};
-	for (const [key, val] of Object.entries(obj)) {
-		const snakeKey = camelToSnake(key);
-		if (val !== null && typeof val === "object" && !Array.isArray(val)) {
-			result[snakeKey] = convertKeysToSnake(val);
-		} else if (Array.isArray(val)) {
-			result[snakeKey] = val.map(convertKeysToSnake);
-		} else {
-			result[snakeKey] = val;
-		}
-	}
-	return result;
-}
-
-/**
  * Adapter: produce the legacy `OrchestratorConfig` (snake_case) from unified config.
  *
- * This allows `buildExecutionContext()` and all orchestrator consumers to
- * continue using `OrchestratorConfig` without changes during the transition.
+ * Uses explicit field mapping instead of generic recursive key conversion
+ * to preserve record/dictionary keys verbatim (e.g., sizeWeights S/M/L,
+ * preWarm.commands keys, etc.).
  */
 export function toOrchestratorConfig(config: TaskplaneConfig): import("./types.ts").OrchestratorConfig {
-	return convertKeysToSnake(config.orchestrator) as import("./types.ts").OrchestratorConfig;
+	const o = config.orchestrator;
+	return {
+		orchestrator: {
+			max_lanes: o.orchestrator.maxLanes,
+			worktree_location: o.orchestrator.worktreeLocation,
+			worktree_prefix: o.orchestrator.worktreePrefix,
+			batch_id_format: o.orchestrator.batchIdFormat,
+			spawn_mode: o.orchestrator.spawnMode,
+			tmux_prefix: o.orchestrator.tmuxPrefix,
+			operator_id: o.orchestrator.operatorId,
+		},
+		dependencies: {
+			source: o.dependencies.source,
+			cache: o.dependencies.cache,
+		},
+		assignment: {
+			strategy: o.assignment.strategy,
+			// Preserve dictionary keys verbatim (S, M, L, XL, etc.)
+			size_weights: { ...o.assignment.sizeWeights },
+		},
+		pre_warm: {
+			auto_detect: o.preWarm.autoDetect,
+			// Preserve user-defined command keys verbatim
+			commands: { ...o.preWarm.commands },
+			always: [...o.preWarm.always],
+		},
+		merge: {
+			model: o.merge.model,
+			tools: o.merge.tools,
+			verify: [...o.merge.verify],
+			order: o.merge.order,
+		},
+		failure: {
+			on_task_failure: o.failure.onTaskFailure,
+			on_merge_failure: o.failure.onMergeFailure,
+			stall_timeout: o.failure.stallTimeout,
+			max_worker_minutes: o.failure.maxWorkerMinutes,
+			abort_grace_period: o.failure.abortGracePeriod,
+		},
+		monitoring: {
+			poll_interval: o.monitoring.pollInterval,
+		},
+	};
 }
 
 /**
