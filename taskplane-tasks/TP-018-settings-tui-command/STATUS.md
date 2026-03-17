@@ -34,6 +34,8 @@
 - [x] Source-indicator behavior rules for project/user/default (including dual-layer L1+L2 fields) documented
 - [x] Schema coverage validation: every scalar field in config-schema.ts is either in navigation map or explicitly excluded with rationale
 - [x] R003 fix: worker.spawnMode corrected to L1-only, non-editable field surfacing defined, field contract table with source/clear semantics added
+- [ ] R004 fix: Consolidate canonical navigation map (12 sections including Advanced), fix all references to section count
+- [ ] R004 fix: Align source-badge rules with actual merge semantics — string prefs require non-empty, enum prefs require defined, add empty-string edge case examples
 
 ---
 
@@ -113,6 +115,7 @@
 | 2026-03-17 17:35 | Review R003 | plan Step 1: REVISE |
 | 2026-03-17 17:37 | Worker iter 2 | done in 151s, ctx: 18%, tools: 21 |
 | 2026-03-17 17:39 | Review R004 | code Step 1: REVISE |
+| 2026-03-17 17:40 | Worker iter 2 | done in 281s, ctx: 29%, tools: 40 |
 
 ## Blockers
 *None*
