@@ -1861,6 +1861,73 @@ export class WorkspaceConfigError extends Error {
 }
 
 
+// ── Pointer Resolution Types ─────────────────────────────────────────
+
+/**
+ * Canonical filename for the workspace pointer file.
+ * Located at `<workspace-root>/.pi/taskplane-pointer.json`.
+ *
+ * Created by `taskplane init` in workspace mode. Points to the config
+ * repo and config path within it. Not committed to git — each user
+ * creates it during onboarding.
+ */
+export const POINTER_FILENAME = "taskplane-pointer.json";
+
+/**
+ * Resolve the absolute path to the pointer file.
+ * @param workspaceRoot - Absolute path to the workspace root
+ */
+export function pointerFilePath(workspaceRoot: string): string {
+	return join(workspaceRoot, ".pi", POINTER_FILENAME);
+}
+
+/**
+ * Result of resolving the workspace pointer file.
+ *
+ * This is the primary contract for downstream consumers (task-runner,
+ * orchestrator, merge agent, dashboard). All pointer failures are
+ * non-fatal: when the pointer cannot be resolved, `used` is false and
+ * `configRoot`/`agentRoot` fall back to workspace-root paths.
+ *
+ * State/sidecar paths are NOT affected by the pointer — they always
+ * live at `<workspace-root>/.pi/` regardless of pointer resolution.
+ *
+ * In repo mode, `resolvePointer()` returns null (pointer is ignored
+ * entirely, even if a file happens to exist).
+ */
+export interface PointerResolution {
+	/**
+	 * Whether the pointer was successfully resolved.
+	 * - true: pointer file was found, parsed, and config_repo resolved
+	 *   to a known repo in WorkspaceConfig.repos.
+	 * - false: pointer was missing, malformed, or referenced an unknown
+	 *   repo. Fallback paths are used instead.
+	 */
+	used: boolean;
+
+	/**
+	 * Resolved config root directory.
+	 * - When used=true: `<config-repo-path>/<config_path>/`
+	 * - When used=false: `<workspace-root>/.pi/` (existing fallback)
+	 */
+	configRoot: string;
+
+	/**
+	 * Resolved agent overrides directory.
+	 * - When used=true: `<config-repo-path>/<config_path>/agents/`
+	 * - When used=false: `<workspace-root>/.pi/agents/` (existing fallback)
+	 */
+	agentRoot: string;
+
+	/**
+	 * Warning message when pointer resolution fell back.
+	 * - undefined when used=true (no warning)
+	 * - Human-readable reason string when used=false
+	 */
+	warning?: string;
+}
+
+
 // ── Workspace Defaults ───────────────────────────────────────────────
 
 /**
