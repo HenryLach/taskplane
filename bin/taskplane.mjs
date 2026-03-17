@@ -2346,6 +2346,45 @@ function cmdDoctor() {
 		console.log(`     ${c.dim}→ Run: taskplane init${c.reset}`);
 	}
 
+	// ── Legacy YAML config migration warning ────────────────────────────
+	// Detect YAML config files without a JSON equivalent (taskplane-config.json).
+	// In workspace mode, check inside the config repo's .taskplane/ directory.
+	// In repo mode, check the project root's .pi/ directory.
+	{
+		let configRoot = projectRoot;
+		let configPrefix = ".pi";
+		let locationLabel = "";
+
+		if (isWorkspaceMode && wsResult.config) {
+			// Workspace mode: resolve config repo path from pointer
+			const pointerPath = path.join(projectRoot, ".pi", "taskplane-pointer.json");
+			try {
+				const pointer = JSON.parse(fs.readFileSync(pointerPath, "utf-8"));
+				if (pointer.config_repo && pointer.config_path) {
+					configRoot = path.resolve(projectRoot, pointer.config_repo);
+					configPrefix = pointer.config_path;
+					locationLabel = `${pointer.config_repo}/${pointer.config_path}`;
+				}
+			} catch {
+				// Pointer missing/invalid — skip (pointer validation handles this)
+			}
+		}
+
+		const yamlRunnerPath = path.join(configRoot, configPrefix, "task-runner.yaml");
+		const yamlOrchestratorPath = path.join(configRoot, configPrefix, "task-orchestrator.yaml");
+		const jsonConfigPath = path.join(configRoot, configPrefix, "taskplane-config.json");
+
+		const hasYamlRunner = fs.existsSync(yamlRunnerPath);
+		const hasYamlOrchestrator = fs.existsSync(yamlOrchestratorPath);
+		const hasJsonConfig = fs.existsSync(jsonConfigPath);
+
+		if ((hasYamlRunner || hasYamlOrchestrator) && !hasJsonConfig) {
+			const loc = locationLabel ? `in ${locationLabel}` : "";
+			console.log(`  ${WARN} legacy YAML config detected${loc ? ` ${loc}` : ""}`);
+			console.log(`     ${c.dim}→ Run /settings to migrate to taskplane-config.json${c.reset}`);
+		}
+	}
+
 	// Check task areas from config
 	const { paths: taskAreaPaths, contexts: taskAreaContexts, areaRepoIds } = discoverTaskAreaMetadata(projectRoot);
 	if (taskAreaPaths.length > 0) {

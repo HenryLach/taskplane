@@ -1,11 +1,11 @@
 # TP-019: Doctor Enhancements: Gitignore, Artifact, and Workspace Validation — Status
 
-**Current Step:** Step 2: Workspace Pointer Chain Validation
+**Current Step:** Step 3: Legacy Config Migration Warning
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 1
-**Review Counter:** 3
-**Iteration:** 4
+**Review Counter:** 4
+**Iteration:** 5
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -39,9 +39,9 @@
 ---
 
 ### Step 3: Legacy Config Migration Warning
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] YAML-without-JSON detection and migration warning
+- [x] YAML-without-JSON detection and migration warning
 
 ---
 
@@ -73,6 +73,7 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | plan | Step 1 | APPROVE | .reviews/R002-plan-step1.md |
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
+| R004 | plan | Step 3 | APPROVE | .reviews/R004-plan-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -95,6 +96,10 @@
 | 2026-03-17 20:43 | Step 1 complete | Gitignore and Tracked Artifact Checks |
 | 2026-03-17 20:43 | Step 2 started | Workspace Pointer Chain Validation |
 | 2026-03-17 20:43 | Review R003 | plan Step 2: APPROVE |
+| 2026-03-17 20:46 | Worker iter 4 | done in 171s, ctx: 18%, tools: 31 |
+| 2026-03-17 20:46 | Step 2 complete | Workspace Pointer Chain Validation |
+| 2026-03-17 20:46 | Step 3 started | Legacy Config Migration Warning |
+| 2026-03-17 20:47 | Review R004 | plan Step 3: APPROVE |
 
 ## Blockers
 *None*
