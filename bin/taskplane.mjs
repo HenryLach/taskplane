@@ -562,6 +562,124 @@ async function cmdUninstall(args) {
 	}
 }
 
+// ─── Mode Auto-Detection ────────────────────────────────────────────────────
+
+/**
+ * Check if the given directory is the root of a git repository.
+ * Uses `git rev-parse --is-inside-work-tree` for reliability.
+ */
+function isGitRepo(dir) {
+	try {
+		execSync("git rev-parse --is-inside-work-tree", {
+			cwd: dir,
+			stdio: ["pipe", "pipe", "pipe"],
+			timeout: 5000,
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Scan immediate subdirectories of `dir` for git repositories.
+ * Returns an array of subdirectory names that are git repos.
+ * Only checks one level deep (direct children).
+ */
+function findSubdirectoryGitRepos(dir) {
+	const results = [];
+	try {
+		const entries = fs.readdirSync(dir, { withFileTypes: true });
+		for (const entry of entries) {
+			if (!entry.isDirectory()) continue;
+			// Skip hidden directories and common non-repo directories
+			if (entry.name.startsWith(".")) continue;
+			if (entry.name === "node_modules") continue;
+			const subdir = path.join(dir, entry.name);
+			if (isGitRepo(subdir)) {
+				results.push(entry.name);
+			}
+		}
+	} catch {
+		// If we can't read the directory, return empty
+	}
+	return results.sort();
+}
+
+/**
+ * Detect the init mode for the current directory.
+ *
+ * Detection precedence:
+ * 1. Check for existing config (Scenario B — "already initialized")
+ * 2. Check git repo topology to determine mode
+ *
+ * Returns: { mode, subRepos, alreadyInitialized, existingConfigPath }
+ * - mode: "repo" | "workspace" | "ambiguous" | "error"
+ * - subRepos: string[] — names of subdirectory git repos (for workspace/ambiguous)
+ * - alreadyInitialized: boolean — true if config already exists
+ * - existingConfigPath: string|null — path to existing config (for Scenario B/D messaging)
+ */
+function detectInitMode(dir) {
+	const currentIsGitRepo = isGitRepo(dir);
+	const subRepos = findSubdirectoryGitRepos(dir);
+	const hasSubRepos = subRepos.length > 0;
+
+	// Check for existing config in current dir (monorepo Scenario B)
+	const hasLocalConfig =
+		fs.existsSync(path.join(dir, ".pi", "task-runner.yaml")) ||
+		fs.existsSync(path.join(dir, ".pi", "task-orchestrator.yaml")) ||
+		fs.existsSync(path.join(dir, ".pi", "taskplane-config.json"));
+
+	if (currentIsGitRepo && !hasSubRepos) {
+		// Clear repo mode (Scenario A or B)
+		return {
+			mode: "repo",
+			subRepos: [],
+			alreadyInitialized: hasLocalConfig,
+			existingConfigPath: hasLocalConfig ? path.join(dir, ".pi") : null,
+		};
+	}
+
+	if (currentIsGitRepo && hasSubRepos) {
+		// Ambiguous — git repo that also contains git repo subdirectories
+		return {
+			mode: "ambiguous",
+			subRepos,
+			alreadyInitialized: hasLocalConfig,
+			existingConfigPath: hasLocalConfig ? path.join(dir, ".pi") : null,
+		};
+	}
+
+	if (!currentIsGitRepo && hasSubRepos) {
+		// Workspace mode (Scenario C or D)
+		// Check for existing .taskplane/ in any subdirectory repo (Scenario D)
+		let existingConfigRepo = null;
+		for (const repoName of subRepos) {
+			const taskplaneDir = path.join(dir, repoName, ".taskplane");
+			if (fs.existsSync(taskplaneDir)) {
+				existingConfigRepo = repoName;
+				break;
+			}
+		}
+		return {
+			mode: "workspace",
+			subRepos,
+			alreadyInitialized: existingConfigRepo !== null,
+			existingConfigPath: existingConfigRepo
+				? path.join(dir, existingConfigRepo, ".taskplane")
+				: null,
+		};
+	}
+
+	// Not a git repo and no git repos in subdirectories → error
+	return {
+		mode: "error",
+		subRepos: [],
+		alreadyInitialized: false,
+		existingConfigPath: null,
+	};
+}
+
 // ─── init ───────────────────────────────────────────────────────────────────
 
 async function cmdInit(args) {
@@ -606,12 +724,72 @@ async function cmdInit(args) {
 		console.log(`     Use --include-examples to scaffold examples into that directory.\n`);
 	}
 
-	// Check for existing config
+	// ── Mode auto-detection ──────────────────────────────────────
+	const detection = detectInitMode(projectRoot);
+	const isPreset = preset === "minimal" || preset === "full" || preset === "runner-only";
+
+	// Error path: not a git repo and no git repos found
+	if (detection.mode === "error") {
+		die(
+			"Not a git repo and no git repos found in subdirectories.\n" +
+			"  Run from inside a git repository, or from a workspace root\n" +
+			"  that contains git repositories as subdirectories."
+		);
+	}
+
+	// Resolve ambiguous mode (git repo + git repo subdirectories)
+	let resolvedMode = detection.mode;
+	if (detection.mode === "ambiguous") {
+		if (isPreset || dryRun) {
+			// Non-interactive: default to repo mode (safe default, no prompt)
+			resolvedMode = "repo";
+			console.log(`  ${INFO} Ambiguous layout detected (git repo with git repo subdirectories).`);
+			console.log(`     Defaulting to ${c.cyan}repo mode${c.reset} (use interactive mode for workspace).\n`);
+		} else {
+			// Interactive: prompt the user
+			console.log(`  ${WARN} This directory is a git repo AND contains git repos as subdirectories.`);
+			console.log(`     Subdirectory repos found: ${detection.subRepos.join(", ")}\n`);
+			const modeChoice = await ask(
+				"Mode: (r)epo — treat as single monorepo, or (w)orkspace — treat subdirs as independent repos",
+				"r"
+			);
+			resolvedMode = modeChoice.toLowerCase().startsWith("w") ? "workspace" : "repo";
+			console.log();
+		}
+	}
+
+	// "Already initialized" detection (Scenario B for repo, Scenario D for workspace)
+	if (detection.alreadyInitialized && !force) {
+		if (resolvedMode === "repo") {
+			// Scenario B: existing monorepo config
+			console.log(`  ${INFO} Project already initialized (config exists in .pi/).`);
+			console.log(`     Run ${c.cyan}taskplane doctor${c.reset} to verify, or use ${c.cyan}--force${c.reset} to reinitialize.\n`);
+			return;
+		}
+		if (resolvedMode === "workspace" && detection.existingConfigPath) {
+			// Scenario D: existing workspace config found in a subdirectory repo
+			const configRepo = path.basename(path.dirname(detection.existingConfigPath));
+			console.log(`  ${INFO} Found existing Taskplane config in ${c.cyan}${configRepo}/.taskplane/${c.reset}`);
+			console.log(`     Using existing configuration.\n`);
+			// Scenario D continues to create pointer only — handled in Step 5
+		}
+	}
+
+	// Show detected mode
+	if (resolvedMode === "repo") {
+		console.log(`  ${c.dim}Mode: repo (standard monorepo)${c.reset}`);
+	} else if (resolvedMode === "workspace") {
+		console.log(`  ${c.dim}Mode: workspace (${detection.subRepos.length} git repositories found)${c.reset}`);
+	}
+	console.log();
+
+	// ── Existing config overwrite check (for repo mode force reinit) ──
 	const hasConfig =
 		fs.existsSync(path.join(projectRoot, ".pi", "task-runner.yaml")) ||
-		fs.existsSync(path.join(projectRoot, ".pi", "task-orchestrator.yaml"));
+		fs.existsSync(path.join(projectRoot, ".pi", "task-orchestrator.yaml")) ||
+		fs.existsSync(path.join(projectRoot, ".pi", "taskplane-config.json"));
 
-	if (hasConfig && !force) {
+	if (hasConfig && !force && resolvedMode === "repo") {
 		console.log(`${WARN} Taskplane config already exists in this project.`);
 		const proceed = await confirm("  Overwrite existing files?", false);
 		if (!proceed) {
