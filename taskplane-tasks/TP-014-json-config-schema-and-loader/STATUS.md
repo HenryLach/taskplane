@@ -1,7 +1,7 @@
 # TP-014: JSON Config Schema and Loader — Status
 
 **Current Step:** Step 4: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
 **Review Counter:** 9
@@ -61,12 +61,12 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Update `docs/reference/configuration/task-runner.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
 - [x] Update `docs/reference/configuration/task-orchestrator.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
 - [x] Check `docs/tutorials/install.md` — update or explicitly no-op references to YAML scaffolding (lines mentioning `.pi/task-runner.yaml` / `.pi/task-orchestrator.yaml`) — NO-OP: `taskplane init` still scaffolds YAML files, JSON config is an opt-in alternative, so YAML references in the install tutorial remain correct
-- [ ] `.DONE` created
+- [x] `.DONE` created
 
 ---
 
