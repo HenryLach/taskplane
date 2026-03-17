@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 8
-**Iteration:** 4
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -63,9 +63,10 @@
 ### Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Config reference docs updated
+- [ ] Update `docs/reference/configuration/task-runner.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
+- [ ] Update `docs/reference/configuration/task-orchestrator.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
+- [ ] Check `docs/tutorials/install.md` — update or explicitly no-op references to YAML scaffolding (lines mentioning `.pi/task-runner.yaml` / `.pi/task-orchestrator.yaml`)
 - [ ] `.DONE` created
-- [ ] Archive and push
 
 ---
 
@@ -87,6 +88,8 @@
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -149,6 +152,11 @@
 | 2026-03-17 15:15 | Worker iter 4 | done in 313s, ctx: 17%, tools: 42 |
 | 2026-03-17 15:15 | Step 3 complete | Testing & Verification |
 | 2026-03-17 15:15 | Step 4 started | Documentation & Delivery |
+| 2026-03-17 15:16 | Worker iter 4 | done in 380s, ctx: 21%, tools: 40 |
+| 2026-03-17 15:16 | Step 3 complete | Testing & Verification |
+| 2026-03-17 15:16 | Step 4 started | Documentation & Delivery |
+| 2026-03-17 15:17 | Review R009 | plan Step 4: REVISE |
+| 2026-03-17 15:18 | Review R009 | plan Step 4: REVISE |
 
 ## Blockers
 *None*
