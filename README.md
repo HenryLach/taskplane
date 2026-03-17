@@ -6,16 +6,24 @@ Multi-agent AI orchestration for [pi](https://github.com/badlogic/pi-mono) — p
 
 ## What It Does
 
-Taskplane turns your coding project into an AI-managed task board. You define tasks as structured markdown files. Taskplane's agents execute them autonomously — one at a time with `/task`, or many in parallel with `/orch`.
+### STEP 1: Create the tasks
+Taskplane turns your coding project into an AI-managed task orchestration system. You simply ask your agent to create tasks using the built-in "create-taskplane-tasks" skill. This skill provides an opinionated task definition template designed to drive successful coding outcomes. Tasks define both the prompt.md and the status.md files that together act as the persistent memory store that allows AI coding agents to survive context resets and succeed with very long running tasks that would typically exhaust an agent's context window.
+
+### STEP 2: Run batches of tasks
+The system works out the dependancy map for the entire batch of tasks then orchestrates them in waves, with appropriate parallelization and serialization. 
+
+The taskplane dashboard runs on a local port on your system and gives you elegant visibility into everything that's going on (a stark improvement over TUI-based dashboards).
+
+<img src="docs/images/orchrun-wave2of4-2lanes-withstatus.png" alt="image of taskplane dashboard" width="50%">
 
 ### Key Features
 
-- **Task Runner** (`/task`) — Autonomous single-task execution. Workers run in fresh-context loops with STATUS.md as persistent memory. Every checkbox gets a git checkpoint. Cross-model reviewers catch what the worker missed.
-- **Task Orchestrator** (`/orch`) — Parallel multi-task execution using git worktrees for full filesystem isolation. Dependency-aware wave scheduling. Automated merges with conflict resolution.
+- **Task Orchestrator** — Parallel multi-task execution using git worktrees for full filesystem isolation. Dependency-aware wave scheduling. Automated merges with conflict resolution.
+- **Task Runner** — What the Orchestrator uses for autonomous single-task execution. Worker agents run in fresh-context loops with STATUS.md as persistent memory. Every checkbox gets a git checkpoint. Cross-model reviewer agents catch what the worker agents missed.
 - **Web Dashboard** — Live browser-based monitoring via `taskplane dashboard`. SSE streaming, lane/task progress, wave visualization, batch history.
 - **Structured Tasks** — PROMPT.md defines the mission, steps, and constraints. STATUS.md tracks progress. Agents follow the plan, not vibes.
 - **Checkpoint Discipline** — Every completed checkbox item triggers a git commit. Work is never lost, even if a worker crashes mid-task.
-- **Cross-Model Review** — Reviewer agent uses a different model than the worker. Independent quality gate before merge.
+- **Cross-Model Review** — Reviewer agent uses a different model than the worker agent (highly recommended, not enforced). Independent quality gate before merge.
 
 ## Install
 
