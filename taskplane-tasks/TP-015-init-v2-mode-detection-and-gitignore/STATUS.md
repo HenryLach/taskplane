@@ -1,11 +1,11 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
-**Current Step:** Step 5: Workspace Join (Scenario D)
+**Current Step:** Step 6: Testing & Verification
 **Status:** ✅ Step 5 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 12
-**Iteration:** 6
+**Review Counter:** 13
+**Iteration:** 7
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -93,10 +93,13 @@
 ---
 
 ### Step 6: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] All four scenarios verified with `--dry-run`
-- [ ] Mode detection edge cases tested
+- [ ] Baseline validation gates pass (`cd extensions && npx vitest run`, `node bin/taskplane.mjs help`, `node bin/taskplane.mjs doctor`)
+- [ ] Scenario A (repo mode, fresh init) dry-run works: `node bin/taskplane.mjs init --dry-run --force`
+- [ ] Preset compatibility verified: `--preset minimal`, `--preset full`, `--preset runner-only` all work with `--dry-run --force`
+- [ ] YAML output still generated alongside JSON (constraint from PROMPT)
+- [ ] Mode detection edge cases and regression coverage: add init-focused automated test file covering mode detection, gitignore enforcement, and scenario branching
 
 ---
 
@@ -134,6 +137,8 @@
 | R011 | plan | Step 5 | APPROVE | .reviews/R011-plan-step5.md |
 | R012 | code | Step 5 | REVISE | .reviews/R012-code-step5.md |
 | R012 | code | Step 5 | REVISE | .reviews/R012-code-step5.md |
+| R013 | plan | Step 6 | REVISE | .reviews/R013-plan-step6.md |
+| R013 | plan | Step 6 | REVISE | .reviews/R013-plan-step6.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -209,6 +214,14 @@
 | 2026-03-17 16:47 | Worker iter 6 | done in 525s, ctx: 23%, tools: 43 |
 | 2026-03-17 16:47 | Review R012 | code Step 5: REVISE |
 | 2026-03-17 16:49 | Review R012 | code Step 5: REVISE |
+| 2026-03-17 16:51 | Worker iter 6 | done in 248s, ctx: 14%, tools: 20 |
+| 2026-03-17 16:51 | Step 5 complete | Workspace Join (Scenario D) |
+| 2026-03-17 16:51 | Step 6 started | Testing & Verification |
+| 2026-03-17 16:51 | Worker iter 6 | done in 159s, ctx: 16%, tools: 23 |
+| 2026-03-17 16:51 | Step 5 complete | Workspace Join (Scenario D) |
+| 2026-03-17 16:51 | Step 6 started | Testing & Verification |
+| 2026-03-17 16:53 | Review R013 | plan Step 6: REVISE |
+| 2026-03-17 16:53 | Review R013 | plan Step 6: REVISE |
 
 ## Blockers
 *None*
