@@ -59,7 +59,7 @@
 **Status:** 🟨 In Progress
 
 - [x] Implement `detectSpawnMode()` reusable helper that returns `{ spawnMode, hasTmux }` — reusable for Step 4 workspace init
-- [ ] Wire detected spawn_mode into `generateOrchestratorYaml()` via init vars (replace hardcoded `"subprocess"`)
+- [x] Wire detected spawn_mode into `generateOrchestratorYaml()` via init vars (replace hardcoded `"subprocess"`)
 - [ ] Show guidance message when tmux not found; silent when present. Skip message for runner-only preset (no orchestrator). Respect dry-run output.
 - [ ] Verify: preset/dry-run/runner-only compatibility; tmux-present and tmux-absent branches
 
