@@ -22,12 +22,12 @@
 ---
 
 ### Step 1: Implement Preferences Loader
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Preferences schema + Layer 2 allowlist defined (interface, defaults, snake→camelCase mapping, explicit field allowlist for merge)
 - [x] `resolveUserPreferencesPath()` + `loadUserPreferences()` implemented (read/auto-create, malformed fallback, unknown keys ignored)
 - [x] Merge function `applyUserPreferences()` integrates into `loadProjectConfig()` — only allowlisted fields override, Layer 1 untouched
-- [ ] Exports wired up and existing tests still pass
+- [x] Exports wired up and existing tests still pass
 
 ---
 
@@ -61,6 +61,8 @@
 | **Preferences path resolution**: Base dir = `PI_CODING_AGENT_DIR` env (if set), else `os.homedir() + '.pi/agent'`. Preferences at `<base>/taskplane/preferences.json`. Use `os.homedir()` for cross-platform home resolution (USERPROFILE on Windows, HOME on Unix) + `path.join()` for separators. Implement as shared `resolveUserPreferencesPath()` helper in `config-loader.ts`. | Decided — implement in Step 1 | `extensions/taskplane/config-loader.ts` |
 | **No existing agent-dir helper in codebase**: Taskplane has no helper to resolve the pi agent directory. The new helper will be the first. If pi later exports one, we can switch. | Noted | N/A |
 | **Step 2 test plan**: Include test for `PI_CODING_AGENT_DIR` override behavior (mock env var, verify path changes). | Plan for Step 2 | `extensions/tests/` |
+| **Pre-existing preferences plumbing**: `config-schema.ts` and `config-loader.ts` already had UserPreferences interface, loadUserPreferences(), applyUserPreferences(), and integration in loadProjectConfig(). TP-017 added: `mergeModel` field, `dashboardPort` field, empty-string-means-not-set semantics in applyUserPreferences(). | Noted | `config-loader.ts`, `config-schema.ts` |
+| **dashboardPort not in config schema**: PROMPT requests dashboard_port in preferences but no config schema field exists. Stored in preferences for future TUI consumption; not merged into project config. | Tech debt | `config-schema.ts` |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
