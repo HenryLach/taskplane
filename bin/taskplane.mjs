@@ -2106,13 +2106,40 @@ function cmdDoctor() {
 		if (!ok) issues++;
 	}
 
-	// Check tmux (optional)
+	// Check tmux and spawn_mode compatibility
 	const hasTmux = commandExists("tmux");
 	console.log(
 		`  ${hasTmux ? OK : `${WARN}`} tmux installed${hasTmux ? ` ${c.dim}(${getVersion("tmux", "-V")})${c.reset}` : ` ${c.dim}(optional — needed for spawn_mode: tmux)${c.reset}`}`
 	);
 	if (!hasTmux && process.platform === "win32") {
 		console.log(`      ${c.dim}→ Run ${c.cyan}taskplane install-tmux${c.dim} to install${c.reset}`);
+	}
+
+	// Check if project config requires tmux but it's not installed
+	const orchConfigPath = path.join(projectRoot, ".pi", "task-orchestrator.yaml");
+	const orchJsonPath = path.join(projectRoot, ".pi", "taskplane-config.json");
+	let projectSpawnMode = null;
+	try {
+		if (fs.existsSync(orchJsonPath)) {
+			const json = JSON.parse(fs.readFileSync(orchJsonPath, "utf-8"));
+			projectSpawnMode = json?.orchestrator?.spawn_mode || json?.orchestrator?.spawnMode || null;
+		} else if (fs.existsSync(orchConfigPath)) {
+			const raw = fs.readFileSync(orchConfigPath, "utf-8");
+			const match = raw.match(/spawn_mode:\s*["']?(\w+)["']?/);
+			if (match) projectSpawnMode = match[1];
+		}
+	} catch { /* best effort */ }
+
+	if (projectSpawnMode === "tmux" && !hasTmux) {
+		issues++;
+		console.log(
+			`  ${FAIL} spawn_mode is ${c.bold}"tmux"${c.reset} but tmux is not installed`
+		);
+		if (process.platform === "win32") {
+			console.log(`      ${c.dim}→ Run ${c.cyan}taskplane install-tmux${c.dim} to install tmux${c.reset}`);
+		} else {
+			console.log(`      ${c.dim}→ Install tmux: ${c.cyan}brew install tmux${c.dim} (macOS) or ${c.cyan}sudo apt install tmux${c.dim} (Linux)${c.reset}`);
+		}
 	}
 
 	// Check package installation

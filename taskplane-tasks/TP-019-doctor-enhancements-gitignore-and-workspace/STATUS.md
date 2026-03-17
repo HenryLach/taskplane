@@ -1,11 +1,11 @@
 # TP-019: Doctor Enhancements: Gitignore, Artifact, and Workspace Validation — Status
 
-**Current Step:** Step 3: Legacy Config Migration Warning
-**Status:** 🟡 In Progress
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 1
-**Review Counter:** 4
-**Iteration:** 5
+**Review Counter:** 5
+**Iteration:** 8
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -39,31 +39,31 @@
 ---
 
 ### Step 3: Legacy Config Migration Warning
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] YAML-without-JSON detection and migration warning
 
 ---
 
 ### Step 4: tmux vs spawn_mode Check
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Mismatch detection with `install-tmux` suggestion
+- [x] Mismatch detection with `install-tmux` suggestion
 
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Doctor output verified for all new checks
+- [x] Doctor output verified for all new checks
 - [ ] `node bin/taskplane.mjs doctor`
 
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] `.DONE` created
+- [x] `.DONE` created
 - [ ] Archive and push
 
 ---
@@ -74,6 +74,7 @@
 | R002 | plan | Step 1 | APPROVE | .reviews/R002-plan-step1.md |
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
 | R004 | plan | Step 3 | APPROVE | .reviews/R004-plan-step3.md |
+| R005 | plan | Step 4 | APPROVE | .reviews/R005-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -100,6 +101,14 @@
 | 2026-03-17 20:46 | Step 2 complete | Workspace Pointer Chain Validation |
 | 2026-03-17 20:46 | Step 3 started | Legacy Config Migration Warning |
 | 2026-03-17 20:47 | Review R004 | plan Step 3: APPROVE |
+| 2026-03-17 20:50 | Worker iter 5 | done in 200s, ctx: 22%, tools: 22 |
+| 2026-03-17 20:50 | Step 3 complete | Legacy Config Migration Warning |
+| 2026-03-17 20:50 | Step 4 started | tmux Availability vs spawn_mode Check |
+| 2026-03-17 20:50 | Review R005 | plan Step 4: APPROVE |
+| 2026-03-17 20:53 | Worker iter 6 | done in 144s, ctx: 21%, tools: 15 |
+| 2026-03-17 20:54 | Worker iter 7 | done in 86s, ctx: 0%, tools: 0 |
+| 2026-03-17 20:55 | Worker iter 8 | done in 86s, ctx: 4%, tools: 2 |
+| 2026-03-17 20:55 | Step 4 blocked | No progress after 3 iterations |
 
 ## Blockers
 *None*
