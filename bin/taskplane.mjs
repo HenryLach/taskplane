@@ -233,7 +233,7 @@ orchestrator:
   worktree_location: "subdirectory"
   worktree_prefix: "${vars.worktree_prefix}"
   batch_id_format: "timestamp"
-  spawn_mode: "subprocess"
+  spawn_mode: "${vars.spawn_mode}"
   tmux_prefix: "${vars.tmux_prefix}"
 
 dependencies:
@@ -890,6 +890,23 @@ function detectInitMode(dir) {
 	};
 }
 
+// ─── tmux / spawn mode detection ────────────────────────────────────────────
+
+/**
+ * Detect whether tmux is available and determine the default spawn_mode.
+ *
+ * Reusable for both repo mode (Step 3) and workspace mode (Step 4) init.
+ *
+ * @returns {{ spawnMode: string, hasTmux: boolean }}
+ */
+function detectSpawnMode() {
+	const hasTmux = commandExists("tmux");
+	return {
+		spawnMode: hasTmux ? "tmux" : "subprocess",
+		hasTmux,
+	};
+}
+
 // ─── init ───────────────────────────────────────────────────────────────────
 
 async function cmdInit(args) {
@@ -1037,6 +1054,19 @@ async function cmdInit(args) {
 		console.log();
 	} else {
 		vars = await getInteractiveVars(projectRoot, tasksRootOverride);
+	}
+
+	// ── tmux / spawn mode detection ──────────────────────────────
+	// Detect tmux availability and set spawn_mode for orchestrator config.
+	// Runs for all init modes (repo and workspace) per spec.
+	// Silent when tmux is found; shows guidance when missing.
+	// Skipped for runner-only preset (no orchestrator config generated).
+	const { spawnMode, hasTmux } = detectSpawnMode();
+	vars.spawn_mode = spawnMode;
+
+	if (preset !== "runner-only" && !hasTmux) {
+		console.log(`  ${WARN} tmux not found. Using subprocess mode.`);
+		console.log(`     Run ${c.cyan}taskplane install-tmux${c.reset} for full orchestrator support.\n`);
 	}
 
 	const exampleTemplateDirs = noExamples ? [] : listExampleTaskTemplates();
