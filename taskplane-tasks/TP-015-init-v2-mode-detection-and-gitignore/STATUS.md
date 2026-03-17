@@ -24,7 +24,7 @@
 - [x] Record current `cmdInit()` behavior to preserve (--preset, YAML continuity, --tasks-root, --dry-run, --force, --no-examples)
 - [x] Identify downstream validation (existing tests, CLI checks for init regressions)
 - [x] R002: Revert TP-014 file changes from TP-015 commits (scope drift fix)
-- [ ] R002: Fix malformed STATUS.md tables (separator placement, deduplicate review rows and log entries)
+- [x] R002: Fix malformed STATUS.md tables (separator placement, deduplicate review rows and log entries)
 
 ---
 
@@ -89,18 +89,16 @@
 
 ## Reviews
 | # | Type | Step | Verdict | File |
-| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
-| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
-| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
-| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 |---|------|------|---------|------|
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
+|-----------|-------------|----------|
 | Spec not in worktree — `.pi/local/` is gitignored. Canonical source: `C:\dev\taskplane\.pi\local\docs\settings-and-onboarding-spec.md` (main repo). Read successfully from there. | Noted | Step 0 |
 | TP-014 contract verified: JSON filename=`taskplane-config.json`, configVersion=1, shape=`{configVersion,taskRunner,orchestrator}`. Loader: `loadProjectConfig()` in `config-loader.ts`. JSON-first, YAML fallback. spawnMode at `orchestrator.orchestrator.spawnMode`. PROMPT says keep YAML generation until JSON is validated. | Noted | Step 0 |
 | No existing init-specific tests. Downstream validation: `project-config-loader.test.ts` (39 tests), CLI smoke `node bin/taskplane.mjs help`, `taskplane init --dry-run --force`. Step 6 should add init-specific tests. | Noted | Step 0 |
-|-----------|-------------|----------|
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -108,14 +106,9 @@
 | 2026-03-17 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-03-17 15:23 | Task started | Extension-driven execution |
 | 2026-03-17 15:23 | Step 0 started | Preflight |
-| 2026-03-17 15:23 | Task started | Extension-driven execution |
-| 2026-03-17 15:23 | Step 0 started | Preflight |
 | 2026-03-17 15:25 | Review R001 | plan Step 0: REVISE |
-| 2026-03-17 15:26 | Review R001 | plan Step 0: REVISE |
 | 2026-03-17 15:29 | Worker iter 1 | done in 242s, ctx: 31%, tools: 49 |
-| 2026-03-17 15:30 | Worker iter 1 | done in 298s, ctx: 27%, tools: 42 |
 | 2026-03-17 15:31 | Review R002 | code Step 0: REVISE |
-| 2026-03-17 15:32 | Review R002 | code Step 0: REVISE |
 
 ## Blockers
 *None*
