@@ -1,11 +1,2 @@
-TP-015 complete.
-
-Init v2 implemented:
-- Mode auto-detection (repo, workspace, ambiguous, error)
-- Gitignore enforcement with tracked-artifact detection and cleanup
-- tmux detection with spawn_mode defaulting
-- Workspace mode init (Scenario C) with .taskplane/ scaffolding
-- Workspace join (Scenario D) with pointer-only creation
-- JSON config output (taskplane-config.json) alongside YAML transition
-- 513 tests passing, 34 init-specific tests added
-- Documentation updated: install.md, commands.md, README.md
+Completed: 2026-03-17T17:23:05.323Z
+Task: TP-015
