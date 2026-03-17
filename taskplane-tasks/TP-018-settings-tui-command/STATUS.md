@@ -4,7 +4,7 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 4
 **Size:** L
 
@@ -69,6 +69,9 @@
 - [x] Confirmation gate for project config writes (`ctx.ui.confirm`); no side effects on cancel; L2 writes need no confirmation; post-write notification with "restart session to apply"
 - [x] R007 fix: YAML-only bootstrap writes full L1 snapshot — export loadLayer1Config from config-loader.ts; writeProjectConfigField seeds JSON from full L1 config (YAML+defaults) before applying edit, not partial skeleton
 - [x] Verify write-back: run tests, confirm no regressions (598 tests)
+- [ ] R008 fix #1: Malformed JSON fallback in writeProjectConfigField — loadLayer1Config re-throws on same malformed JSON; replace with explicit error or bypass JSON and read YAML/defaults directly
+- [ ] R008 fix #2: Temp-file cleanup uses renameSync(tmpPath, tmpPath) (no-op) — replace with unlinkSync(tmpPath) in try/catch
+- [ ] R008 fix #3: Add unit tests for writeProjectConfigField, writeUserPreference, coerceValueForWrite, and cancel paths (zero mutation)
 
 ---
 
@@ -106,6 +109,7 @@
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -162,6 +166,8 @@
 | 2026-03-17 18:11 | Step 3 started | Implement Write-Back |
 | 2026-03-17 18:13 | Review R007 | plan Step 3: REVISE |
 | 2026-03-17 18:18 | Worker iter 4 | done in 288s, ctx: 27%, tools: 36 |
+| 2026-03-17 18:19 | Worker iter 4 | done in 631s, ctx: 43%, tools: 64 |
+| 2026-03-17 18:23 | Review R008 | code Step 3: REVISE |
 
 ## Blockers
 *None*
