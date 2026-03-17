@@ -17,7 +17,7 @@
 ### Step 0: Preflight
 **Status:** 🟨 In Progress
 
-- [ ] Confirm path convention: resolve `PI_CODING_AGENT_DIR` override, cross-platform home dir, and document decision in Discoveries
+- [x] Confirm path convention: resolve `PI_CODING_AGENT_DIR` override, cross-platform home dir, and document decision in Discoveries
 
 ---
 
@@ -55,6 +55,9 @@
 ## Discoveries
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| **Preferences path resolution**: Base dir = `PI_CODING_AGENT_DIR` env (if set), else `os.homedir() + '.pi/agent'`. Preferences at `<base>/taskplane/preferences.json`. Use `os.homedir()` for cross-platform home resolution (USERPROFILE on Windows, HOME on Unix) + `path.join()` for separators. Implement as shared `resolveUserPreferencesPath()` helper in `config-loader.ts`. | Decided — implement in Step 1 | `extensions/taskplane/config-loader.ts` |
+| **No existing agent-dir helper in codebase**: Taskplane has no helper to resolve the pi agent directory. The new helper will be the first. If pi later exports one, we can switch. | Noted | N/A |
+| **Step 2 test plan**: Include test for `PI_CODING_AGENT_DIR` override behavior (mock env var, verify path changes). | Plan for Step 2 | `extensions/tests/` |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
