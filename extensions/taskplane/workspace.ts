@@ -547,34 +547,47 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
  */
 export function buildExecutionContext(
 	cwd: string,
-	loadOrchConfig: (root: string) => import("./types.ts").OrchestratorConfig,
-	loadTaskConfig: (root: string) => import("./types.ts").TaskRunnerConfig,
+	loadOrchConfig: (root: string, pointerConfigRoot?: string) => import("./types.ts").OrchestratorConfig,
+	loadTaskConfig: (root: string, pointerConfigRoot?: string) => import("./types.ts").TaskRunnerConfig,
 ): import("./types.ts").ExecutionContext {
-	const orchestratorConfig = loadOrchConfig(cwd);
-	const taskRunnerConfig = loadTaskConfig(cwd);
-
 	const workspaceConfig = loadWorkspaceConfig(cwd);
 
 	if (workspaceConfig === null) {
-		// Repo mode: cwd is both workspace root and repo root
+		// Repo mode: pointer is ignored entirely. Config loads from cwd.
+		const orchestratorConfig = loadOrchConfig(cwd);
+		const taskRunnerConfig = loadTaskConfig(cwd);
+
 		return {
 			workspaceRoot: cwd,
 			repoRoot: cwd,
 			mode: "repo",
 			workspaceConfig: null,
-			taskRunnerConfig,
 			orchestratorConfig,
+			taskRunnerConfig,
+			pointer: null,
 		};
 	}
 
-	// Workspace mode: workspace root is cwd, repo root is the default repo
+	// Workspace mode: resolve pointer once, pass configRoot to config loaders.
+	const pointer = resolvePointer(cwd, workspaceConfig);
+
+	// Log pointer warning once at startup (non-fatal).
+	if (pointer && pointer.warning) {
+		console.error(`[taskplane] pointer warning: ${pointer.warning}`);
+	}
+
+	const pointerConfigRoot = pointer?.configRoot;
+	const orchestratorConfig = loadOrchConfig(cwd, pointerConfigRoot);
+	const taskRunnerConfig = loadTaskConfig(cwd, pointerConfigRoot);
+
 	const defaultRepo = workspaceConfig.repos.get(workspaceConfig.routing.defaultRepo)!;
 	return {
 		workspaceRoot: cwd,
 		repoRoot: defaultRepo.path,
 		mode: "workspace",
 		workspaceConfig,
-		taskRunnerConfig,
 		orchestratorConfig,
+		taskRunnerConfig,
+		pointer,
 	};
 }

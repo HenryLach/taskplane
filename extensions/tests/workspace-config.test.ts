@@ -117,8 +117,8 @@ const mockRunnerConfig = {
 	},
 };
 
-const mockLoadOrchConfig = (_root: string) => mockOrchConfig;
-const mockLoadRunnerConfig = (_root: string) => mockRunnerConfig;
+const mockLoadOrchConfig = (_root: string, _pointerConfigRoot?: string) => mockOrchConfig;
+const mockLoadRunnerConfig = (_root: string, _pointerConfigRoot?: string) => mockRunnerConfig;
 
 // ── Setup / Teardown ─────────────────────────────────────────────────
 
@@ -520,6 +520,7 @@ describe("buildExecutionContext", () => {
 		expect(ctx.workspaceConfig).toBeNull();
 		expect(ctx.orchestratorConfig).toEqual(mockOrchConfig);
 		expect(ctx.taskRunnerConfig).toEqual(mockRunnerConfig);
+		expect(ctx.pointer).toBeNull();
 	});
 
 	it("2.2: workspace mode — workspaceRoot !== repoRoot, repoRoot === default repo", () => {
@@ -542,6 +543,10 @@ describe("buildExecutionContext", () => {
 		expect(ctx.workspaceConfig).not.toBeNull();
 		expect(ctx.workspaceConfig!.mode).toBe("workspace");
 		expect(ctx.workspaceConfig!.repos.size).toBe(1);
+		// Pointer resolved but no pointer file — used=false with fallback
+		expect(ctx.pointer).not.toBeNull();
+		expect(ctx.pointer!.used).toBe(false);
+		expect(ctx.pointer!.warning).toBeDefined();
 	});
 
 	it("2.3: propagates WorkspaceConfigError from invalid config", () => {

@@ -22,10 +22,14 @@ import type { OrchestratorConfig, TaskRunnerConfig } from "./types.ts";
  * Reads `.pi/taskplane-config.json` first; falls back to
  * `.pi/task-orchestrator.yaml` + `.pi/task-runner.yaml`; then defaults.
  *
+ * In workspace mode, `pointerConfigRoot` (from the resolved pointer file)
+ * is inserted into the config resolution chain between cwd-local and
+ * TASKPLANE_WORKSPACE_ROOT. See `resolveConfigRoot()` in config-loader.ts.
+ *
  * Returns the legacy `OrchestratorConfig` (snake_case) shape.
  */
-export function loadOrchestratorConfig(cwd: string): OrchestratorConfig {
-	const unified = loadProjectConfig(cwd);
+export function loadOrchestratorConfig(cwd: string, pointerConfigRoot?: string): OrchestratorConfig {
+	const unified = loadProjectConfig(cwd, pointerConfigRoot);
 	return toOrchestratorConfig(unified);
 }
 
@@ -35,9 +39,13 @@ export function loadOrchestratorConfig(cwd: string): OrchestratorConfig {
  * Reads `.pi/taskplane-config.json` first; falls back to
  * `.pi/task-runner.yaml`; then defaults.
  *
+ * In workspace mode, `pointerConfigRoot` (from the resolved pointer file)
+ * is inserted into the config resolution chain between cwd-local and
+ * TASKPLANE_WORKSPACE_ROOT. See `resolveConfigRoot()` in config-loader.ts.
+ *
  * Returns the legacy `TaskRunnerConfig` (snake_case) shape.
  */
-export function loadTaskRunnerConfig(cwd: string): TaskRunnerConfig {
-	const unified = loadProjectConfig(cwd);
+export function loadTaskRunnerConfig(cwd: string, pointerConfigRoot?: string): TaskRunnerConfig {
+	const unified = loadProjectConfig(cwd, pointerConfigRoot);
 	return toTaskRunnerConfig(unified);
 }

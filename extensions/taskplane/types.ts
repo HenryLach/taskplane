@@ -1796,6 +1796,14 @@ export interface ExecutionContext {
 	taskRunnerConfig: TaskRunnerConfig;
 	/** Loaded orchestrator configuration */
 	orchestratorConfig: OrchestratorConfig;
+	/**
+	 * Resolved pointer for config/agent paths (null in repo mode).
+	 *
+	 * When present, `pointer.configRoot` and `pointer.agentRoot` point to
+	 * the config repo's config directory. State/sidecar paths are NOT
+	 * affected — they always live at `<workspaceRoot>/.pi/`.
+	 */
+	pointer: PointerResolution | null;
 }
 
 
@@ -1967,6 +1975,7 @@ export function createRepoModeContext(
 		workspaceConfig: null,
 		taskRunnerConfig,
 		orchestratorConfig,
+		pointer: null,
 	};
 }
 

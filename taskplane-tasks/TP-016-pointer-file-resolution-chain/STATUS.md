@@ -51,7 +51,7 @@
 ### Step 3: Thread Through Orchestrator
 **Status:** 🟨 In Progress
 
-- [ ] `buildExecutionContext()` resolves pointer once and passes `pointer.configRoot` to config loaders. Repo mode (null pointer) unchanged.
+- [x] `buildExecutionContext()` resolves pointer once and passes `pointer.configRoot` to config loaders. Repo mode (null pointer) unchanged.
 - [ ] `spawnMergeAgent()` uses pointer's `agentRoot` for merge agent prompt path (separate from `stateRoot` used for state files). Merge request/result files stay at `stateRoot/.pi/`.
 - [ ] Pointer warning logged once at orchestrator startup (non-fatal, warn+fallback).
 - [ ] State/sidecar paths invariant: `ORCH_SIDECAR_DIR`, abort signal, batch state, merge request/result files all remain at `<workspaceRoot>/.pi/` — never follow pointer.
