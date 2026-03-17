@@ -36,7 +36,7 @@
 ---
 
 ### Step 2: Thread Through Task-Runner
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Thread pointer into `resolveConfigRoot()` in config-loader.ts: insert pointer configRoot between cwd-local and TASKPLANE_WORKSPACE_ROOT in precedence chain (cwd → pointer → wsRoot → defaults). Non-fatal: resolvePointer warn+fallback, never throws.
 - [x] Thread pointer into `loadAgentDef()` in task-runner.ts: insert pointer agentRoot between cwd-local paths and base package (cwd/.pi/agents → cwd/agents → pointer agentRoot → base package). Non-fatal: pointer fallback transparent.
@@ -44,7 +44,7 @@
 - [x] Add Step 2 tests in project-config-loader.test.ts (5.x series): config resolution with valid pointer, pointer precedence over wsRoot, cwd override over pointer, fallback when pointer has no config, repo-mode parity, task-runner loadConfig integration, YAML pointer config
 - [x] R006: Fix pointer config root layout mismatch — config-loader looks for `<root>/.pi/*` but pointer roots use flat layout `<root>/*`. Add dual-layout support in `hasConfigFiles`, `loadJsonConfig`, `loadTaskRunnerYaml`, `loadOrchestratorYaml`.
 - [x] R006: Surface pointer warnings — log `pointer.warning` via console.error in task-runner.ts `resolveTaskRunnerPointer()` (once per session via `_pointerWarningLogged` flag).
-- [ ] R006: Consolidate duplicate 5.x test suites and add tests for real `.taskplane` layout, agent resolution precedence with pointer, and warning surfacing.
+- [x] R006: Consolidate duplicate 5.x test suites into single canonical suite. Add flat-layout tests (5.10–5.15) for real `.taskplane` pointer directory. All 591 tests passing.
 
 ---
 

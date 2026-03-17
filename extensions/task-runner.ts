@@ -183,6 +183,9 @@ export function _resetPointerWarning(): void {
 	_pointerWarningLogged = false;
 }
 
+/** Expose loadAgentDef for testing (not part of public API). */
+export const _loadAgentDef = (cwd: string, name: string) => loadAgentDef(cwd, name);
+
 /**
  * Load task-runner config via the unified config loader.
  *
