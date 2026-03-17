@@ -42,20 +42,16 @@
 ---
 
 ### Step 2: Gitignore Enforcement
-**Status:** 🔧 Revising (R006)
+**Status:** 🔧 In Progress (R006 revisions)
 
 - [x] Define required gitignore entries as a reusable constant (for Step 4 reuse)
 - [x] Implement `ensureGitignoreEntries()` helper — idempotent: creates file if needed, skips existing entries, respects dry-run
 - [x] Integrate gitignore enforcement into `cmdInit()` repo-mode flow (after scaffolding, before auto-commit)
 - [x] Implement tracked-artifact detection (`git ls-files`) and `git rm --cached` offer — isolated from auto-commit staging, respects dry-run and non-interactive modes
 - [x] Update `printFileList()` dry-run output to show gitignore entries that would be added
-- [ ] R006: Fix directory-pattern matching — trailing-slash patterns must be prefix matches (not exact), so tracked files under `.worktrees/`, `.pi/orch-logs/`, `.pi/npm/` are detected; switch untrack to `execFileSync` for shell-safety
-- [ ] R006: Remove dead `buildGitignoreBlock()` function or integrate it into `ensureGitignoreEntries()`
-- [ ] R006: Add test coverage for tracked-artifact matching (directory entries, wildcard patterns)
-- [ ] R006: Fix `patternToRegex()` — directory patterns (trailing `/`) must be prefix matches, not exact matches
-- [ ] R006: Remove unused `buildGitignoreBlock()` function or integrate it
-- [ ] R006: Switch `git rm --cached` to `execFileSync` for argument safety
-- [ ] R006: Add tests for tracked-artifact pattern matching (directories, wildcards)
+- [ ] R006: Fix `patternToRegex()` — directory patterns (trailing `/`) must be prefix matches; switch `git rm --cached` to `execFileSync` for shell-safety
+- [ ] R006: Remove unused `buildGitignoreBlock()` function
+- [ ] R006: Add test coverage for tracked-artifact pattern matching (directories, wildcards)
 
 ---
 

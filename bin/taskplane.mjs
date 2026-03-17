@@ -26,7 +26,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
-import { execSync, spawn } from "node:child_process";
+import { execSync, execFileSync, spawn } from "node:child_process";
 
 // ─── Paths ──────────────────────────────────────────────────────────────────
 
@@ -687,8 +687,16 @@ function ensureGitignoreEntries(projectRoot, { dryRun = false, prefix = "" } = {
 /**
  * Glob-like patterns from TASKPLANE_GITIGNORE_ENTRIES for `git ls-files` matching.
  * Converts wildcard patterns to regex patterns for checking tracked files.
+ * Trailing-slash directory patterns (e.g., `.pi/orch-logs/`) are treated as
+ * prefix matches so that files underneath are correctly detected.
  */
 function patternToRegex(pattern) {
+	// Directory patterns (trailing slash) → prefix match
+	if (pattern.endsWith("/")) {
+		const dirPath = pattern.slice(0, -1);
+		const escaped = dirPath.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+		return new RegExp("^" + escaped + "/.*");
+	}
 	// Escape regex special chars except *
 	const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
 	// Replace * with .*
@@ -765,10 +773,9 @@ async function detectAndOfferUntrackArtifacts(projectRoot, { dryRun = false, int
 		return { found: matchedFiles, untracked: false };
 	}
 
-	// Untrack: git rm --cached for each file
+	// Untrack: git rm --cached for each file (using execFileSync for shell-safety)
 	try {
-		const fileArgs = matchedFiles.map(f => `"${f}"`).join(" ");
-		execSync(`git rm --cached ${fileArgs}`, {
+		execFileSync("git", ["rm", "--cached", "--", ...matchedFiles], {
 			cwd: projectRoot,
 			stdio: ["pipe", "pipe", "pipe"],
 			timeout: 10000,
