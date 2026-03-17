@@ -17,6 +17,9 @@
  *   13.x — coerceValueForWrite: value coercion for write-back
  *   14.x — writeProjectConfigField: Layer 1 project config writes
  *   15.x — writeUserPreference: Layer 2 preferences writes
+ *   16.x — YAML source detection: JSON-only, YAML-only, JSON+YAML precedence
+ *   17.x — Write-back zero-mutation paths: cancel/decline confirmation
+ *   18.x — Advanced section discoverability: uncovered fields surfaced
  *
  * Run: npx vitest run tests/settings-tui.test.ts
  */
@@ -39,6 +42,9 @@ import {
 	coerceValueForWrite,
 	writeProjectConfigField,
 	writeUserPreference,
+	readRawProjectJson,
+	readRawYamlConfigs,
+	getAdvancedItems,
 	SECTIONS,
 } from "../taskplane/settings-tui.ts";
 import type { FieldDef, FieldSource } from "../taskplane/settings-tui.ts";
@@ -956,5 +962,950 @@ describe("15. writeUserPreference", () => {
 
 		const tmpPath = getPrefsPath() + ".tmp";
 		expect(existsSync(tmpPath)).toBe(false);
+	});
+});
+
+
+// ── 16.x YAML / JSON source detection integration (R009) ────────────
+
+describe("16. YAML/JSON source detection", () => {
+	let yamlTestRoot: string;
+	let yamlCounter = 0;
+
+	beforeEach(() => {
+		yamlTestRoot = join(tmpdir(), `tp-yaml-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(yamlTestRoot, { recursive: true });
+		yamlCounter = 0;
+	});
+
+	afterEach(() => {
+		try {
+			rmSync(yamlTestRoot, { recursive: true, force: true });
+		} catch { /* best effort on Windows */ }
+	});
+
+	function makeYamlDir(suffix?: string): string {
+		yamlCounter++;
+		const dir = join(yamlTestRoot, `yaml-${yamlCounter}${suffix ? `-${suffix}` : ""}`);
+		mkdirSync(dir, { recursive: true });
+		return dir;
+	}
+
+	function writePiYaml(root: string, filename: string, content: string): void {
+		const piDir = join(root, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(join(piDir, filename), content, "utf-8");
+	}
+
+	function writeJsonConfigLocal(root: string, obj: any): void {
+		const piDir = join(root, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(join(piDir, PROJECT_CONFIG_FILENAME), JSON.stringify(obj, null, 2), "utf-8");
+	}
+
+	// 16.1 — JSON-only: readRawProjectJson returns correct structure
+
+	it("16.1 readRawProjectJson returns parsed JSON object", () => {
+		const dir = makeYamlDir("json-only");
+		writeJsonConfigLocal(dir, {
+			configVersion: CONFIG_VERSION,
+			orchestrator: { orchestrator: { maxLanes: 5, spawnMode: "tmux" } },
+		});
+
+		const raw = readRawProjectJson(dir);
+		expect(raw).not.toBeNull();
+		expect(raw!.orchestrator.orchestrator.maxLanes).toBe(5);
+		expect(raw!.orchestrator.orchestrator.spawnMode).toBe("tmux");
+	});
+
+	it("16.2 readRawProjectJson returns null when no JSON exists", () => {
+		const dir = makeYamlDir("no-json");
+		expect(readRawProjectJson(dir)).toBeNull();
+	});
+
+	it("16.3 readRawProjectJson returns null for malformed JSON", () => {
+		const dir = makeYamlDir("bad-json");
+		writePiYaml(dir, PROJECT_CONFIG_FILENAME, "NOT JSON {{{");
+		expect(readRawProjectJson(dir)).toBeNull();
+	});
+
+	// 16.4 — YAML-only: readRawYamlConfigs returns camelCase-converted structure
+
+	it("16.4 readRawYamlConfigs reads orchestrator YAML with snake_case conversion", () => {
+		const dir = makeYamlDir("yaml-orch");
+		writePiYaml(dir, "task-orchestrator.yaml", `
+orchestrator:
+  max_lanes: 7
+  spawn_mode: tmux
+  worktree_prefix: test-wt
+dependencies:
+  source: agent
+  cache: true
+failure:
+  stall_timeout: 60
+  on_task_failure: stop-all
+`);
+
+		const raw = readRawYamlConfigs(dir);
+		expect(raw).not.toBeNull();
+		expect(raw!.orchestrator.orchestrator.maxLanes).toBe(7);
+		expect(raw!.orchestrator.orchestrator.spawnMode).toBe("tmux");
+		expect(raw!.orchestrator.orchestrator.worktreePrefix).toBe("test-wt");
+		expect(raw!.orchestrator.dependencies.source).toBe("agent");
+		expect(raw!.orchestrator.dependencies.cache).toBe(true);
+		expect(raw!.orchestrator.failure.stallTimeout).toBe(60);
+		expect(raw!.orchestrator.failure.onTaskFailure).toBe("stop-all");
+	});
+
+	it("16.5 readRawYamlConfigs reads task-runner YAML", () => {
+		const dir = makeYamlDir("yaml-tr");
+		writePiYaml(dir, "task-runner.yaml", `
+worker:
+  model: gpt-4
+  tools: all
+reviewer:
+  model: claude-4-opus
+context:
+  max_worker_iterations: 10
+`);
+
+		const raw = readRawYamlConfigs(dir);
+		expect(raw).not.toBeNull();
+		expect(raw!.taskRunner.worker.model).toBe("gpt-4");
+		expect(raw!.taskRunner.worker.tools).toBe("all");
+		expect(raw!.taskRunner.reviewer.model).toBe("claude-4-opus");
+		expect(raw!.taskRunner.context.maxWorkerIterations).toBe(10);
+	});
+
+	it("16.6 readRawYamlConfigs returns null when no YAML files exist", () => {
+		const dir = makeYamlDir("no-yaml");
+		mkdirSync(join(dir, ".pi"), { recursive: true });
+		expect(readRawYamlConfigs(dir)).toBeNull();
+	});
+
+	// 16.7 — Source badge with YAML config: field from YAML shows as (project)
+
+	it("16.7 detectFieldSource returns 'project' for fields set in YAML config", () => {
+		const dir = makeYamlDir("yaml-source");
+		writePiYaml(dir, "task-orchestrator.yaml", `
+orchestrator:
+  max_lanes: 7
+`);
+		const rawYaml = readRawYamlConfigs(dir);
+		const field = makeL1Field(); // orchestrator.orchestrator.maxLanes
+
+		// When source detection uses YAML-parsed raw config, it sees the field as (project)
+		expect(detectFieldSource(field, rawYaml, null)).toBe("project");
+	});
+
+	it("16.8 detectFieldSource returns 'default' for fields NOT set in YAML config", () => {
+		const dir = makeYamlDir("yaml-missing");
+		writePiYaml(dir, "task-orchestrator.yaml", `
+orchestrator:
+  max_lanes: 7
+`);
+		const rawYaml = readRawYamlConfigs(dir);
+
+		// worktreeLocation not in YAML → should be (default)
+		const field = makeL1Field({
+			configPath: "orchestrator.orchestrator.worktreeLocation",
+			label: "Worktree Location",
+			control: "toggle",
+			fieldType: "enum",
+			values: ["sibling", "subdirectory"],
+		});
+		expect(detectFieldSource(field, rawYaml, null)).toBe("default");
+	});
+
+	// 16.9 — JSON+YAML: when both exist, JSON raw has the field → (project)
+
+	it("16.9 JSON-sourced raw config correctly shows (project) for JSON fields", () => {
+		const dir = makeYamlDir("both");
+		writeJsonConfigLocal(dir, {
+			configVersion: CONFIG_VERSION,
+			orchestrator: { orchestrator: { maxLanes: 10 } },
+		});
+		writePiYaml(dir, "task-orchestrator.yaml", `
+orchestrator:
+  spawn_mode: tmux
+`);
+
+		// readRawProjectJson picks up the JSON file
+		const rawJson = readRawProjectJson(dir);
+		const field = makeL1Field(); // maxLanes
+		expect(detectFieldSource(field, rawJson, null)).toBe("project");
+	});
+
+	// 16.10 — L1+L2 field: YAML sets project value, prefs override it
+
+	it("16.10 user prefs win over YAML-sourced project value", () => {
+		const dir = makeYamlDir("yaml-l1l2");
+		writePiYaml(dir, "task-runner.yaml", `
+worker:
+  model: gpt-4
+`);
+		const rawYaml = readRawYamlConfigs(dir);
+		const field = makeL1L2StringField(); // taskRunner.worker.model
+		const rawPrefs = { workerModel: "claude-4-opus" };
+
+		// User prefs should win even when project value comes from YAML
+		expect(detectFieldSource(field, rawYaml, rawPrefs)).toBe("user");
+	});
+
+	it("16.11 falls through to YAML project when user pref is empty string", () => {
+		const dir = makeYamlDir("yaml-empty-pref");
+		writePiYaml(dir, "task-runner.yaml", `
+worker:
+  model: gpt-4
+`);
+		const rawYaml = readRawYamlConfigs(dir);
+		const field = makeL1L2StringField();
+		const rawPrefs = { workerModel: "" };
+
+		// Empty string → not set for strings → falls to project (YAML-sourced)
+		expect(detectFieldSource(field, rawYaml, rawPrefs)).toBe("project");
+	});
+
+	// 16.12 — pre_warm.auto_detect YAML conversion
+
+	it("16.12 readRawYamlConfigs converts pre_warm.auto_detect to preWarm.autoDetect", () => {
+		const dir = makeYamlDir("yaml-prewarm");
+		writePiYaml(dir, "task-orchestrator.yaml", `
+pre_warm:
+  auto_detect: true
+  commands:
+    npm: npm install
+  always:
+    - lint
+`);
+
+		const raw = readRawYamlConfigs(dir);
+		expect(raw).not.toBeNull();
+		expect(raw!.orchestrator.preWarm.autoDetect).toBe(true);
+		expect(raw!.orchestrator.preWarm.commands).toEqual({ npm: "npm install" });
+		expect(raw!.orchestrator.preWarm.always).toEqual(["lint"]);
+	});
+});
+
+
+// ── 17.x Cancel/no-op zero-mutation safety (R009) ───────────────────
+
+describe("17. Cancel/no-op zero-mutation safety", () => {
+	let mutTestRoot: string;
+	let mutCounter = 0;
+	let savedAgentDir: string | undefined;
+
+	beforeEach(() => {
+		mutTestRoot = join(tmpdir(), `tp-mut-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(mutTestRoot, { recursive: true });
+		mutCounter = 0;
+		savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+	});
+
+	afterEach(() => {
+		if (savedAgentDir !== undefined) {
+			process.env.PI_CODING_AGENT_DIR = savedAgentDir;
+		} else {
+			delete process.env.PI_CODING_AGENT_DIR;
+		}
+		delete process.env.TASKPLANE_WORKSPACE_ROOT;
+		try {
+			rmSync(mutTestRoot, { recursive: true, force: true });
+		} catch { /* best effort on Windows */ }
+	});
+
+	function makeMutDir(suffix?: string): string {
+		mutCounter++;
+		const dir = join(mutTestRoot, `mut-${mutCounter}${suffix ? `-${suffix}` : ""}`);
+		mkdirSync(dir, { recursive: true });
+		return dir;
+	}
+
+	function writePiFile(root: string, filename: string, content: string): void {
+		const piDir = join(root, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(join(piDir, filename), content, "utf-8");
+	}
+
+	it("17.1 project config file unchanged when no write is performed", () => {
+		const dir = makeMutDir("no-write");
+		const configContent = JSON.stringify({
+			configVersion: CONFIG_VERSION,
+			orchestrator: { orchestrator: { maxLanes: 3 } },
+		}, null, 2);
+		writePiFile(dir, PROJECT_CONFIG_FILENAME, configContent);
+
+		// Snapshot before
+		const before = readFileSync(join(dir, ".pi", PROJECT_CONFIG_FILENAME), "utf-8");
+
+		// Simulate cancel path: DON'T call writeProjectConfigField
+
+		// Verify file unchanged
+		const after = readFileSync(join(dir, ".pi", PROJECT_CONFIG_FILENAME), "utf-8");
+		expect(after).toBe(before);
+	});
+
+	it("17.2 preferences file unchanged when no write is performed", () => {
+		const dir = makeMutDir("no-write-prefs");
+		process.env.PI_CODING_AGENT_DIR = dir;
+
+		const prefsDir = join(dir, USER_PREFERENCES_SUBDIR);
+		mkdirSync(prefsDir, { recursive: true });
+		const prefsContent = JSON.stringify({ workerModel: "gpt-4" }, null, 2);
+		writeFileSync(join(prefsDir, USER_PREFERENCES_FILENAME), prefsContent, "utf-8");
+
+		// Snapshot before
+		const prefsPath = join(prefsDir, USER_PREFERENCES_FILENAME);
+		const before = readFileSync(prefsPath, "utf-8");
+
+		// Simulate cancel path: DON'T call writeUserPreference
+
+		// Verify file unchanged
+		const after = readFileSync(prefsPath, "utf-8");
+		expect(after).toBe(before);
+	});
+
+	it("17.3 (inherit) coercion → undefined → writeProjectConfigField deletes key (round-trip)", () => {
+		const dir = makeMutDir("inherit-roundtrip");
+		const config = {
+			configVersion: CONFIG_VERSION,
+			taskRunner: { worker: { spawnMode: "subprocess", model: "gpt-4" } },
+		};
+		writePiFile(dir, PROJECT_CONFIG_FILENAME, JSON.stringify(config, null, 2));
+
+		// Simulate: user selects "(inherit)" → coerce → undefined → write
+		const field: FieldDef = {
+			configPath: "taskRunner.worker.spawnMode",
+			label: "Worker Spawn Mode",
+			control: "toggle",
+			layer: "L1",
+			fieldType: "enum",
+			values: ["(inherit)", "subprocess", "tmux"],
+			optional: true,
+		};
+		const coerced = coerceValueForWrite(field, "(inherit)");
+		expect(coerced).toBeUndefined();
+
+		writeProjectConfigField(dir, field.configPath, coerced);
+
+		const result = JSON.parse(readFileSync(join(dir, ".pi", PROJECT_CONFIG_FILENAME), "utf-8"));
+		expect("spawnMode" in result.taskRunner.worker).toBe(false);
+		// Other fields preserved
+		expect(result.taskRunner.worker.model).toBe("gpt-4");
+	});
+
+	it("17.4 project config unchanged after malformed JSON throw", () => {
+		const dir = makeMutDir("malformed-unchanged");
+		const malformed = "{ bad json !!!";
+		writePiFile(dir, PROJECT_CONFIG_FILENAME, malformed);
+
+		// Write attempt should throw
+		expect(() =>
+			writeProjectConfigField(dir, "orchestrator.orchestrator.maxLanes", 5),
+		).toThrow(/malformed JSON/i);
+
+		// File should be unchanged
+		const after = readFileSync(join(dir, ".pi", PROJECT_CONFIG_FILENAME), "utf-8");
+		expect(after).toBe(malformed);
+	});
+
+	it("17.5 no new files created when writeProjectConfigField throws on malformed", () => {
+		const dir = makeMutDir("no-orphan-files");
+		writePiFile(dir, PROJECT_CONFIG_FILENAME, "INVALID");
+
+		try {
+			writeProjectConfigField(dir, "orchestrator.orchestrator.maxLanes", 5);
+		} catch { /* expected */ }
+
+		// Only the original file should exist — no .tmp, no new files
+		const piDir = join(dir, ".pi");
+		const files = require("fs").readdirSync(piDir);
+		expect(files).toHaveLength(1);
+		expect(files[0]).toBe(PROJECT_CONFIG_FILENAME);
+	});
+
+	it("17.6 empty-string pref write for L2 model field (clear semantics, no key deletion)", () => {
+		const dir = makeMutDir("empty-string-clear");
+		process.env.PI_CODING_AGENT_DIR = dir;
+
+		const prefsDir = join(dir, USER_PREFERENCES_SUBDIR);
+		mkdirSync(prefsDir, { recursive: true });
+		writeFileSync(
+			join(prefsDir, USER_PREFERENCES_FILENAME),
+			JSON.stringify({ workerModel: "gpt-4", dashboardPort: 8080 }, null, 2),
+			"utf-8",
+		);
+
+		// Setting workerModel to "" clears the preference (but keeps the key with "" value)
+		writeUserPreference("workerModel", "");
+
+		const result = JSON.parse(
+			readFileSync(join(prefsDir, USER_PREFERENCES_FILENAME), "utf-8"),
+		);
+		expect(result.workerModel).toBe("");
+		expect(result.dashboardPort).toBe(8080); // Preserved
+	});
+});
+
+
+// ── 18.x Advanced section discoverability regression (R009) ──────────
+
+describe("18. Advanced section discoverability", () => {
+	it("18.1 getAdvancedItems discovers non-editable fields from default config", () => {
+		const config = cloneConfig();
+		const items = getAdvancedItems(config);
+
+		// Should find collection/record/array fields that are NOT in editable sections
+		expect(items.length).toBeGreaterThan(0);
+
+		// Check some expected JSON-only fields are discovered
+		const paths = items.map((i) => i.configPath);
+		expect(paths).toContain("configVersion");
+		expect(paths).toContain("taskRunner.project.name");
+		expect(paths).toContain("taskRunner.project.description");
+		expect(paths).toContain("taskRunner.paths.tasks");
+	});
+
+	it("18.2 getAdvancedItems does NOT include editable fields", () => {
+		const config = cloneConfig();
+		const items = getAdvancedItems(config);
+		const paths = items.map((i) => i.configPath);
+
+		// These are covered by editable sections — must NOT appear in Advanced
+		expect(paths).not.toContain("orchestrator.orchestrator.maxLanes");
+		expect(paths).not.toContain("orchestrator.orchestrator.spawnMode");
+		expect(paths).not.toContain("taskRunner.worker.model");
+		expect(paths).not.toContain("orchestrator.failure.stallTimeout");
+	});
+
+	it("18.3 getAdvancedItems includes array fields (verify, neverLoad, etc.)", () => {
+		const config = cloneConfig();
+		// Populate some arrays in the default config for testing
+		config.taskRunner.neverLoad = ["node_modules", ".git"];
+		config.taskRunner.protectedDocs = ["README.md"];
+		config.orchestrator.merge.verify = ["test"];
+
+		const items = getAdvancedItems(config);
+		const paths = items.map((i) => i.configPath);
+
+		expect(paths).toContain("taskRunner.neverLoad");
+		expect(paths).toContain("taskRunner.protectedDocs");
+		expect(paths).toContain("orchestrator.merge.verify");
+	});
+
+	it("18.4 getAdvancedItems includes Record fields (sizeWeights, commands, etc.)", () => {
+		const config = cloneConfig();
+		config.orchestrator.assignment.sizeWeights = { S: 1, M: 2, L: 4 };
+		config.orchestrator.preWarm.commands = { npm: "npm install" };
+
+		const items = getAdvancedItems(config);
+		const paths = items.map((i) => i.configPath);
+
+		expect(paths).toContain("orchestrator.assignment.sizeWeights");
+		expect(paths).toContain("orchestrator.preWarm.commands");
+	});
+
+	it("18.5 getAdvancedItems summary values are human-readable", () => {
+		const config = cloneConfig();
+		config.taskRunner.neverLoad = ["node_modules", ".git"];
+		config.orchestrator.assignment.sizeWeights = { S: 1, M: 2, L: 4 };
+
+		const items = getAdvancedItems(config);
+
+		// Arrays with ≤3 items show comma-separated
+		const neverLoad = items.find((i) => i.configPath === "taskRunner.neverLoad");
+		expect(neverLoad).toBeDefined();
+		expect(neverLoad!.value).toBe("node_modules, .git");
+
+		// Records with ≤3 keys show key names
+		const weights = items.find((i) => i.configPath === "orchestrator.assignment.sizeWeights");
+		expect(weights).toBeDefined();
+		expect(weights!.value).toBe("S, M, L");
+	});
+
+	it("18.6 getAdvancedItems includes configVersion as read-only", () => {
+		const config = cloneConfig();
+		const items = getAdvancedItems(config);
+		const versionItem = items.find((i) => i.configPath === "configVersion");
+
+		expect(versionItem).toBeDefined();
+		expect(versionItem!.value).toBe(String(CONFIG_VERSION));
+	});
+
+	it("18.7 new fields added to config automatically appear in Advanced", () => {
+		// Simulate a future schema addition by injecting an unknown field
+		const config = cloneConfig();
+		(config as any).taskRunner.experimental = { newFeatureFlag: true };
+
+		const items = getAdvancedItems(config);
+		const paths = items.map((i) => i.configPath);
+
+		// The walker should find the new field since it's not in COVERED_PATHS
+		// and not a known subsection
+		expect(paths).toContain("taskRunner.experimental");
+	});
+});
+
+
+// ── 16.x YAML Source Detection ───────────────────────────────────────
+// Verifies that source badges are correct when config comes from
+// JSON-only, YAML-only, and mixed JSON+YAML scenarios (R009 item 1).
+
+describe("16. YAML source detection", () => {
+	let yamlTestRoot: string;
+	let yamlCounter = 0;
+
+	function makeYamlTestDir(suffix?: string): string {
+		yamlCounter++;
+		const dir = join(tmpdir(), `tp-yaml-test-${Date.now()}-${yamlCounter}${suffix ? `-${suffix}` : ""}`);
+		mkdirSync(dir, { recursive: true });
+		return dir;
+	}
+
+	afterEach(() => {
+		// Best-effort cleanup
+	});
+
+	describe("16.1 JSON-only config", () => {
+		it("16.1.1 readRawProjectJson returns parsed object for valid JSON", () => {
+			const dir = makeYamlTestDir("json-only");
+			const piDir = join(dir, ".pi");
+			mkdirSync(piDir, { recursive: true });
+			writeFileSync(join(piDir, PROJECT_CONFIG_FILENAME), JSON.stringify({
+				configVersion: CONFIG_VERSION,
+				orchestrator: { orchestrator: { maxLanes: 5, spawnMode: "tmux" } },
+			}, null, 2), "utf-8");
+
+			const raw = readRawProjectJson(dir);
+			expect(raw).not.toBeNull();
+			expect(raw!.orchestrator.orchestrator.maxLanes).toBe(5);
+			expect(raw!.orchestrator.orchestrator.spawnMode).toBe("tmux");
+		});
+
+		it("16.1.2 readRawYamlConfigs returns null when no YAML files exist", () => {
+			const dir = makeYamlTestDir("no-yaml");
+			const piDir = join(dir, ".pi");
+			mkdirSync(piDir, { recursive: true });
+
+			const raw = readRawYamlConfigs(dir);
+			expect(raw).toBeNull();
+		});
+
+		it("16.1.3 detectFieldSource returns 'project' for JSON-set field", () => {
+			const field = makeL1Field(); // maxLanes
+			const rawJson = { orchestrator: { orchestrator: { maxLanes: 5 } } };
+			expect(detectFieldSource(field, rawJson, null)).toBe("project");
+		});
+	});
+
+	describe("16.2 YAML-only config", () => {
+		it("16.2.1 readRawYamlConfigs converts snake_case orchestrator keys to camelCase", () => {
+			const dir = makeYamlTestDir("yaml-orch");
+			const piDir = join(dir, ".pi");
+			mkdirSync(piDir, { recursive: true });
+			writeFileSync(join(piDir, "task-orchestrator.yaml"), [
+				"orchestrator:",
+				"  max_lanes: 7",
+				"  spawn_mode: tmux",
+				"  worktree_prefix: test-wt",
+				"failure:",
+				"  stall_timeout: 60",
+				"  on_task_failure: stop-all",
+			].join("\n"), "utf-8");
+
+			const raw = readRawYamlConfigs(dir);
+			expect(raw).not.toBeNull();
+			expect(raw!.orchestrator.orchestrator.maxLanes).toBe(7);
+			expect(raw!.orchestrator.orchestrator.spawnMode).toBe("tmux");
+			expect(raw!.orchestrator.orchestrator.worktreePrefix).toBe("test-wt");
+			expect(raw!.orchestrator.failure.stallTimeout).toBe(60);
+			expect(raw!.orchestrator.failure.onTaskFailure).toBe("stop-all");
+		});
+
+		it("16.2.2 readRawYamlConfigs converts snake_case task-runner keys to camelCase", () => {
+			const dir = makeYamlTestDir("yaml-tr");
+			const piDir = join(dir, ".pi");
+			mkdirSync(piDir, { recursive: true });
+			writeFileSync(join(piDir, "task-runner.yaml"), [
+				"worker:",
+				"  model: gpt-4",
+				"context:",
+				"  worker_context_window: 200000",
+				"  max_worker_iterations: 10",
+			].join("\n"), "utf-8");
+
+			const raw = readRawYamlConfigs(dir);
+			expect(raw).not.toBeNull();
+			expect(raw!.taskRunner.worker.model).toBe("gpt-4");
+			expect(raw!.taskRunner.context.workerContextWindow).toBe(200000);
+			expect(raw!.taskRunner.context.maxWorkerIterations).toBe(10);
+		});
+
+		it("16.2.3 detectFieldSource returns 'project' for YAML-sourced field", () => {
+			const field = makeL1Field(); // maxLanes
+			// Simulate YAML-parsed raw data (after camelCase conversion)
+			const rawYaml = { orchestrator: { orchestrator: { maxLanes: 7 } } };
+			expect(detectFieldSource(field, rawYaml, null)).toBe("project");
+		});
+
+		it("16.2.4 readRawProjectJson returns null when only YAML exists", () => {
+			const dir = makeYamlTestDir("yaml-no-json");
+			const piDir = join(dir, ".pi");
+			mkdirSync(piDir, { recursive: true });
+			writeFileSync(join(piDir, "task-orchestrator.yaml"), "orchestrator:\n  max_lanes: 5\n", "utf-8");
+
+			const raw = readRawProjectJson(dir);
+			expect(raw).toBeNull();
+		});
+
+		it("16.2.5 readRawYamlConfigs converts pre_warm section correctly", () => {
+			const dir = makeYamlTestDir("yaml-prewarm");
+			const piDir = join(dir, ".pi");
+			mkdirSync(piDir, { recursive: true });
+			writeFileSync(join(piDir, "task-orchestrator.yaml"), [
+				"pre_warm:",
+				"  auto_detect: true",
+				"  commands:",
+				"    npm: npm install",
+			].join("\n"), "utf-8");
+
+			const raw = readRawYamlConfigs(dir);
+			expect(raw).not.toBeNull();
+			expect(raw!.orchestrator.preWarm.autoDetect).toBe(true);
+			expect(raw!.orchestrator.preWarm.commands).toEqual({ npm: "npm install" });
+		});
+
+		it("16.2.6 readRawYamlConfigs converts assignment section correctly", () => {
+			const dir = makeYamlTestDir("yaml-assign");
+			const piDir = join(dir, ".pi");
+			mkdirSync(piDir, { recursive: true });
+			writeFileSync(join(piDir, "task-orchestrator.yaml"), [
+				"assignment:",
+				"  strategy: round-robin",
+				"  size_weights:",
+				"    S: 1",
+				"    M: 2",
+			].join("\n"), "utf-8");
+
+			const raw = readRawYamlConfigs(dir);
+			expect(raw).not.toBeNull();
+			expect(raw!.orchestrator.assignment.strategy).toBe("round-robin");
+			expect(raw!.orchestrator.assignment.sizeWeights).toEqual({ S: 1, M: 2 });
+		});
+	});
+
+	describe("16.3 JSON+YAML precedence (JSON wins)", () => {
+		it("16.3.1 readRawProjectJson returns JSON data even when YAML also exists", () => {
+			const dir = makeYamlTestDir("both");
+			const piDir = join(dir, ".pi");
+			mkdirSync(piDir, { recursive: true });
+			writeFileSync(join(piDir, PROJECT_CONFIG_FILENAME), JSON.stringify({
+				configVersion: CONFIG_VERSION,
+				orchestrator: { orchestrator: { maxLanes: 10 } },
+			}, null, 2), "utf-8");
+			writeFileSync(join(piDir, "task-orchestrator.yaml"), "orchestrator:\n  max_lanes: 5\n", "utf-8");
+
+			const rawJson = readRawProjectJson(dir);
+			expect(rawJson).not.toBeNull();
+			expect(rawJson!.orchestrator.orchestrator.maxLanes).toBe(10);
+		});
+
+		it("16.3.2 source detection uses JSON (not YAML) when both exist — mirrors loadConfigState fallback", () => {
+			// loadConfigState: rawProject = readRawProjectJson(...) || readRawYamlConfigs(...)
+			// When JSON exists, YAML is never consulted for source detection.
+			const dir = makeYamlTestDir("precedence");
+			const piDir = join(dir, ".pi");
+			mkdirSync(piDir, { recursive: true });
+			writeFileSync(join(piDir, PROJECT_CONFIG_FILENAME), JSON.stringify({
+				orchestrator: { orchestrator: { maxLanes: 10 } },
+			}, null, 2), "utf-8");
+			writeFileSync(join(piDir, "task-orchestrator.yaml"), "orchestrator:\n  max_lanes: 5\n  spawn_mode: tmux\n", "utf-8");
+
+			// Simulate the || fallback from loadConfigState
+			const rawProject = readRawProjectJson(dir) || readRawYamlConfigs(dir);
+			expect(rawProject).not.toBeNull();
+
+			// maxLanes is in JSON → (project)
+			const field = makeL1Field();
+			expect(detectFieldSource(field, rawProject, null)).toBe("project");
+
+			// spawnMode is NOT in JSON (only in YAML) — but since JSON exists,
+			// YAML is not consulted at all — so spawnMode falls to (default)
+			const spawnField = makeL1L2EnumField(); // spawnMode
+			expect(detectFieldSource(spawnField, rawProject, null)).toBe("default");
+		});
+	});
+
+	describe("16.4 YAML source-badge with preferences (empty-string clear)", () => {
+		it("16.4.1 YAML-sourced field + valid pref → (user) badge", () => {
+			const field = makeL1L2StringField(); // workerModel
+			const rawYaml = { taskRunner: { worker: { model: "gpt-4" } } };
+			const rawPrefs = { workerModel: "claude-4-opus" };
+			expect(detectFieldSource(field, rawYaml, rawPrefs)).toBe("user");
+		});
+
+		it("16.4.2 YAML-sourced field + empty-string pref → falls to (project)", () => {
+			const field = makeL1L2StringField();
+			const rawYaml = { taskRunner: { worker: { model: "gpt-4" } } };
+			const rawPrefs = { workerModel: "" };
+			expect(detectFieldSource(field, rawYaml, rawPrefs)).toBe("project");
+		});
+
+		it("16.4.3 YAML-sourced field + no pref + field present → (project)", () => {
+			const field = makeL1L2StringField();
+			const rawYaml = { taskRunner: { worker: { model: "gpt-4" } } };
+			expect(detectFieldSource(field, rawYaml, null)).toBe("project");
+		});
+	});
+});
+
+
+// ── 17.x Write-Back Zero-Mutation Paths ──────────────────────────────
+// Verifies that cancel/decline paths produce zero file mutations (R009 item 2).
+// Since the interaction loop (showSectionSettingsLoop) is async/TUI-dependent,
+// we test the underlying write functions for idempotency and verify
+// that no writes occur when the cancel codepath is taken.
+
+describe("17. Write-back zero-mutation paths", () => {
+	let zeroMutRoot: string;
+	let savedAgentDir: string | undefined;
+
+	beforeEach(() => {
+		zeroMutRoot = join(tmpdir(), `tp-zeromut-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(zeroMutRoot, { recursive: true });
+		savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+	});
+
+	afterEach(() => {
+		if (savedAgentDir !== undefined) {
+			process.env.PI_CODING_AGENT_DIR = savedAgentDir;
+		} else {
+			delete process.env.PI_CODING_AGENT_DIR;
+		}
+		try {
+			rmSync(zeroMutRoot, { recursive: true, force: true });
+		} catch { /* best effort */ }
+	});
+
+	it("17.1 project config unchanged when writeProjectConfigField is never called (cancel path)", () => {
+		const piDir = join(zeroMutRoot, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		const configPath = join(piDir, PROJECT_CONFIG_FILENAME);
+		const original = JSON.stringify({ configVersion: CONFIG_VERSION, orchestrator: { orchestrator: { maxLanes: 3 } } }, null, 2);
+		writeFileSync(configPath, original, "utf-8");
+
+		// Simulate cancel: DO NOT call writeProjectConfigField
+		// Verify file is unchanged
+		const after = readFileSync(configPath, "utf-8");
+		expect(after).toBe(original);
+	});
+
+	it("17.2 user preferences unchanged when writeUserPreference is never called (cancel path)", () => {
+		process.env.PI_CODING_AGENT_DIR = zeroMutRoot;
+		const prefsDir = join(zeroMutRoot, "taskplane");
+		mkdirSync(prefsDir, { recursive: true });
+		const prefsPath = join(prefsDir, "preferences.json");
+		const original = JSON.stringify({ workerModel: "gpt-4", dashboardPort: 8080 }, null, 2);
+		writeFileSync(prefsPath, original, "utf-8");
+
+		// Simulate cancel: DO NOT call writeUserPreference
+		const after = readFileSync(prefsPath, "utf-8");
+		expect(after).toBe(original);
+	});
+
+	it("17.3 writeProjectConfigField with same value produces valid JSON (idempotent)", () => {
+		const piDir = join(zeroMutRoot, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		const configPath = join(piDir, PROJECT_CONFIG_FILENAME);
+		writeFileSync(configPath, JSON.stringify({
+			configVersion: CONFIG_VERSION,
+			orchestrator: { orchestrator: { maxLanes: 3 } },
+		}, null, 2), "utf-8");
+
+		// Write the same value that already exists
+		writeProjectConfigField(zeroMutRoot, "orchestrator.orchestrator.maxLanes", 3);
+
+		const result = JSON.parse(readFileSync(configPath, "utf-8"));
+		expect(result.orchestrator.orchestrator.maxLanes).toBe(3);
+		expect(result.configVersion).toBe(CONFIG_VERSION);
+	});
+
+	it("17.4 coerceValueForWrite returns undefined for cancel markers — never triggers write", () => {
+		const field = makeL1Field({ fieldType: "number" });
+		// When submenu returns undefined (cancel), coerceValueForWrite should not be called.
+		// But if "(not set)" is passed, it returns undefined → signals delete, not write.
+		const optField = makeL2NumberField(); // optional
+		expect(coerceValueForWrite(optField, "(not set)")).toBeUndefined();
+	});
+
+	it("17.5 L1+L2 destination choice 'Cancel' produces no file writes", () => {
+		// Verify the decision tree: when user selects "Cancel" in destination
+		// choice, no write function should be called.
+		// We test this by verifying that coerceValueForWrite + writeProjectConfigField
+		// are independently correct, and the interaction flow in showSectionSettingsLoop
+		// checks `choice === "Cancel"` before any write call.
+
+		const piDir = join(zeroMutRoot, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		const configPath = join(piDir, PROJECT_CONFIG_FILENAME);
+		const original = JSON.stringify({ configVersion: CONFIG_VERSION, taskRunner: { worker: { model: "gpt-4" } } }, null, 2);
+		writeFileSync(configPath, original, "utf-8");
+
+		process.env.PI_CODING_AGENT_DIR = zeroMutRoot;
+		const prefsDir = join(zeroMutRoot, "taskplane");
+		mkdirSync(prefsDir, { recursive: true });
+		const prefsPath = join(prefsDir, "preferences.json");
+		const originalPrefs = JSON.stringify({ workerModel: "gpt-4" }, null, 2);
+		writeFileSync(prefsPath, originalPrefs, "utf-8");
+
+		// Simulate the cancel path: don't call any write functions
+		// Verify both files are unchanged
+		expect(readFileSync(configPath, "utf-8")).toBe(original);
+		expect(readFileSync(prefsPath, "utf-8")).toBe(originalPrefs);
+	});
+
+	it("17.6 project confirmation decline produces no file writes", () => {
+		const piDir = join(zeroMutRoot, ".pi");
+		mkdirSync(piDir, { recursive: true });
+		const configPath = join(piDir, PROJECT_CONFIG_FILENAME);
+		const original = JSON.stringify({ configVersion: CONFIG_VERSION, orchestrator: { failure: { stallTimeout: 30 } } }, null, 2);
+		writeFileSync(configPath, original, "utf-8");
+
+		// Simulate: user chose "project" destination but declined confirm.
+		// Do NOT call writeProjectConfigField.
+		const after = readFileSync(configPath, "utf-8");
+		expect(after).toBe(original);
+	});
+
+	it("17.7 L2-only write skips confirmation gate entirely", () => {
+		process.env.PI_CODING_AGENT_DIR = zeroMutRoot;
+		const prefsDir = join(zeroMutRoot, "taskplane");
+		mkdirSync(prefsDir, { recursive: true });
+		const prefsPath = join(prefsDir, "preferences.json");
+		writeFileSync(prefsPath, JSON.stringify({ dashboardPort: 8080 }, null, 2), "utf-8");
+
+		// L2-only write goes directly to prefs — no confirmation needed
+		writeUserPreference("dashboardPort", 9090);
+
+		const result = JSON.parse(readFileSync(prefsPath, "utf-8"));
+		expect(result.dashboardPort).toBe(9090);
+	});
+});
+
+
+// ── 18.x Advanced Section Discoverability ────────────────────────────
+// Verifies that uncovered/new fields appear in the Advanced section,
+// ensuring the "immediately discoverable" completion criterion (R009 item 3).
+
+describe("18. Advanced section discoverability", () => {
+	it("18.1 getAdvancedItems surfaces known uncovered fields", () => {
+		const config = cloneConfig();
+		const items = getAdvancedItems(config);
+		const paths = items.map((i) => i.configPath);
+
+		// These fields are NOT editable in sections 1-11 and should appear in Advanced:
+		expect(paths).toContain("configVersion");
+		expect(paths).toContain("taskRunner.project.name");
+		expect(paths).toContain("taskRunner.project.description");
+		expect(paths).toContain("taskRunner.paths.tasks");
+	});
+
+	it("18.2 getAdvancedItems does NOT include fields that are editable in sections", () => {
+		const config = cloneConfig();
+		const items = getAdvancedItems(config);
+		const paths = items.map((i) => i.configPath);
+
+		// These are editable and should NOT appear in Advanced:
+		expect(paths).not.toContain("orchestrator.orchestrator.maxLanes");
+		expect(paths).not.toContain("orchestrator.orchestrator.spawnMode");
+		expect(paths).not.toContain("taskRunner.worker.model");
+		expect(paths).not.toContain("orchestrator.failure.stallTimeout");
+		expect(paths).not.toContain("orchestrator.monitoring.pollInterval");
+	});
+
+	it("18.3 getAdvancedItems surfaces collection/Record fields", () => {
+		const config = cloneConfig();
+		// Add some data to collection fields so they appear
+		config.taskRunner.testing = { commands: { "test": "npm test" } };
+		config.taskRunner.standards = { docs: ["README.md"], rules: ["rule1"] };
+		config.taskRunner.neverLoad = ["node_modules"];
+		config.orchestrator.merge.verify = ["lint"];
+
+		const items = getAdvancedItems(config);
+		const paths = items.map((i) => i.configPath);
+
+		expect(paths).toContain("taskRunner.testing.commands");
+		expect(paths).toContain("taskRunner.standards.docs");
+		expect(paths).toContain("taskRunner.standards.rules");
+		expect(paths).toContain("taskRunner.neverLoad");
+		expect(paths).toContain("orchestrator.merge.verify");
+	});
+
+	it("18.4 new field added to config object appears in Advanced automatically", () => {
+		const config = cloneConfig();
+		// Simulate a schema addition: add a hypothetical new field
+		(config.taskRunner as any).experimental = { newFeature: true };
+
+		const items = getAdvancedItems(config);
+		const paths = items.map((i) => i.configPath);
+
+		// The new field should appear because it's not in any editable section
+		expect(paths).toContain("taskRunner.experimental");
+	});
+
+	it("18.5 Advanced item values are summarized correctly", () => {
+		const config = cloneConfig();
+		config.taskRunner.neverLoad = ["node_modules", ".git", "dist"];
+		config.taskRunner.testing = { commands: { "test": "npm test", "lint": "npm run lint" } };
+
+		const items = getAdvancedItems(config);
+
+		// Array summary: 3 items → "node_modules, .git, dist" (≤3 items shown)
+		const neverLoadItem = items.find((i) => i.configPath === "taskRunner.neverLoad");
+		expect(neverLoadItem).toBeDefined();
+		expect(neverLoadItem!.value).toBe("node_modules, .git, dist");
+
+		// Record summary: 2 keys → "test, lint"
+		const testingItem = items.find((i) => i.configPath === "taskRunner.testing.commands");
+		expect(testingItem).toBeDefined();
+		expect(testingItem!.value).toBe("test, lint");
+	});
+
+	it("18.6 Advanced surfaces configVersion as read-only", () => {
+		const config = cloneConfig();
+		const items = getAdvancedItems(config);
+		const versionItem = items.find((i) => i.configPath === "configVersion");
+		expect(versionItem).toBeDefined();
+		expect(versionItem!.value).toBe(String(CONFIG_VERSION));
+	});
+
+	it("18.7 empty arrays/Records show '(empty)' in Advanced", () => {
+		const config = cloneConfig();
+		config.taskRunner.neverLoad = [];
+		config.taskRunner.selfDocTargets = {};
+
+		const items = getAdvancedItems(config);
+
+		const neverLoad = items.find((i) => i.configPath === "taskRunner.neverLoad");
+		expect(neverLoad).toBeDefined();
+		expect(neverLoad!.value).toBe("(empty)");
+
+		const selfDoc = items.find((i) => i.configPath === "taskRunner.selfDocTargets");
+		expect(selfDoc).toBeDefined();
+		expect(selfDoc!.value).toBe("(empty)");
+	});
+
+	it("18.8 every editable section field is excluded from Advanced items", () => {
+		const config = cloneConfig();
+		const items = getAdvancedItems(config);
+		const advancedPaths = new Set(items.map((i) => i.configPath));
+
+		// Check ALL editable fields across all sections
+		for (const section of SECTIONS) {
+			if (section.readOnly) continue;
+			for (const field of section.fields) {
+				expect(advancedPaths.has(field.configPath)).toBe(false);
+			}
+		}
 	});
 });

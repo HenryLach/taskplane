@@ -78,7 +78,7 @@
 ### Step 4: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] R009: Add YAML-only and JSON+YAML source-badge tests (JSON-only, YAML-only, JSON+YAML precedence scenarios)
+- [x] R009: Add YAML-only and JSON+YAML source-badge tests (JSON-only, YAML-only, JSON+YAML precedence scenarios)
 - [ ] R009: Add interaction-level tests for L1+L2 destination selection, project confirm decline, and cancel zero-mutation paths
 - [ ] R009: Add discoverability regression test ensuring uncovered/new fields appear in Advanced section
 - [ ] Full test suite passes: `cd extensions && npx vitest run`

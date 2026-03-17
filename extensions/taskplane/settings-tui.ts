@@ -195,7 +195,7 @@ export const SECTIONS: SectionDef[] = [
  * Read the raw project config JSON as a plain object (no defaults merge).
  * Returns null if no JSON config exists. Does not throw on parse errors.
  */
-function readRawProjectJson(configRoot: string): Record<string, any> | null {
+export function readRawProjectJson(configRoot: string): Record<string, any> | null {
 	const jsonPath = join(configRoot, ".pi", PROJECT_CONFIG_FILENAME);
 	if (!existsSync(jsonPath)) return null;
 	try {
@@ -212,7 +212,7 @@ function readRawProjectJson(configRoot: string): Record<string, any> | null {
  * using the same path structure as the JSON config.
  * Returns null if no YAML files exist.
  */
-function readRawYamlConfigs(configRoot: string): Record<string, any> | null {
+export function readRawYamlConfigs(configRoot: string): Record<string, any> | null {
 	const trPath = join(configRoot, ".pi", "task-runner.yaml");
 	const orchPath = join(configRoot, ".pi", "task-orchestrator.yaml");
 	const hasTr = existsSync(trPath);
@@ -667,7 +667,7 @@ export function validateFieldInput(field: FieldDef, input: string): ValidationRe
 
 // ── Advanced Section Items ───────────────────────────────────────────
 
-interface AdvancedItem {
+export interface AdvancedItem {
 	label: string;
 	value: string;
 	configPath: string;
@@ -727,7 +727,7 @@ function camelToTitle(str: string): string {
  * by recursively walking the merged config object. This ensures new fields
  * added to the schema are automatically surfaced for discoverability.
  */
-function getAdvancedItems(config: TaskplaneConfig): AdvancedItem[] {
+export function getAdvancedItems(config: TaskplaneConfig): AdvancedItem[] {
 	const items: AdvancedItem[] = [];
 
 	// Walk the config object and collect uncovered leaf paths
