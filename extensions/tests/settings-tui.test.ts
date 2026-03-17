@@ -1,34 +1,53 @@
 /**
- * Settings TUI Pure Function Tests — TP-018 Step 2
+ * Settings TUI Tests — TP-018 Steps 2 & 3
  *
  * Tests for the pure/testable functions exported from settings-tui.ts:
  *   - detectFieldSource: source badge precedence with type guards
  *   - getFieldDisplayValue: merged config → display string
  *   - validateFieldInput: input validation per field type
- *
- * These functions are the core logic of the /settings TUI — testing them
- * ensures source badges are accurate, values display correctly, and
- * validation matches the declared contract.
+ *   - coerceValueForWrite: raw TUI value → typed config value
+ *   - writeProjectConfigField: Layer 1 write-back (JSON-only, YAML bootstrap, malformed)
+ *   - writeUserPreference: Layer 2 write-back (prefs JSON)
  *
  * Test categories:
  *   9.x  — detectFieldSource: source badge precedence and type guards
  *   10.x — getFieldDisplayValue: value display formatting
  *   11.x — validateFieldInput: input validation per field type
+ *   12.x — SECTIONS schema coverage
+ *   13.x — coerceValueForWrite: value coercion for write-back
+ *   14.x — writeProjectConfigField: Layer 1 project config writes
+ *   15.x — writeUserPreference: Layer 2 preferences writes
  *
  * Run: npx vitest run tests/settings-tui.test.ts
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import {
+	mkdirSync,
+	writeFileSync,
+	readFileSync,
+	existsSync,
+	rmSync,
+} from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 
 import {
 	detectFieldSource,
 	getFieldDisplayValue,
 	validateFieldInput,
+	coerceValueForWrite,
+	writeProjectConfigField,
+	writeUserPreference,
 	SECTIONS,
 } from "../taskplane/settings-tui.ts";
 import type { FieldDef, FieldSource } from "../taskplane/settings-tui.ts";
 import {
 	DEFAULT_PROJECT_CONFIG,
+	CONFIG_VERSION,
+	PROJECT_CONFIG_FILENAME,
+	USER_PREFERENCES_FILENAME,
+	USER_PREFERENCES_SUBDIR,
 } from "../taskplane/config-schema.ts";
 import type {
 	TaskplaneConfig,
@@ -537,5 +556,405 @@ describe("12. SECTIONS schema coverage", () => {
 				paths.add(field.configPath);
 			}
 		}
+	});
+});
+
+
+// ── Write-Back Test Fixtures ─────────────────────────────────────────
+
+let writeTestRoot: string;
+let writeCounter = 0;
+let savedAgentDir: string | undefined;
+
+function makeWriteTestDir(suffix?: string): string {
+	writeCounter++;
+	const dir = join(writeTestRoot, `wb-${writeCounter}${suffix ? `-${suffix}` : ""}`);
+	mkdirSync(dir, { recursive: true });
+	return dir;
+}
+
+function writePiFile(root: string, filename: string, content: string): void {
+	const piDir = join(root, ".pi");
+	mkdirSync(piDir, { recursive: true });
+	writeFileSync(join(piDir, filename), content, "utf-8");
+}
+
+function writeJsonConfig(root: string, obj: any): void {
+	writePiFile(root, PROJECT_CONFIG_FILENAME, JSON.stringify(obj, null, 2));
+}
+
+function readJsonFile(path: string): any {
+	return JSON.parse(readFileSync(path, "utf-8"));
+}
+
+
+// ── 13.x coerceValueForWrite ─────────────────────────────────────────
+
+describe("13. coerceValueForWrite", () => {
+	it("13.1 coerces number string to number", () => {
+		const field = makeL1Field({ fieldType: "number" });
+		expect(coerceValueForWrite(field, "42")).toBe(42);
+	});
+
+	it("13.2 coerces boolean string 'true' to boolean true", () => {
+		const field: FieldDef = {
+			configPath: "orchestrator.dependencies.cache",
+			label: "Cache",
+			control: "toggle",
+			layer: "L1",
+			fieldType: "boolean",
+			values: ["true", "false"],
+		};
+		expect(coerceValueForWrite(field, "true")).toBe(true);
+	});
+
+	it("13.3 coerces boolean string 'false' to boolean false", () => {
+		const field: FieldDef = {
+			configPath: "orchestrator.dependencies.cache",
+			label: "Cache",
+			control: "toggle",
+			layer: "L1",
+			fieldType: "boolean",
+			values: ["true", "false"],
+		};
+		expect(coerceValueForWrite(field, "false")).toBe(false);
+	});
+
+	it("13.4 returns string as-is for string fields", () => {
+		const field = makeL1L2StringField();
+		expect(coerceValueForWrite(field, "claude-4-opus")).toBe("claude-4-opus");
+	});
+
+	it("13.5 returns string as-is for enum fields", () => {
+		const field = makeL1L2EnumField();
+		expect(coerceValueForWrite(field, "tmux")).toBe("tmux");
+	});
+
+	it("13.6 returns undefined for '(not set)' marker", () => {
+		const field = makeL2NumberField();
+		expect(coerceValueForWrite(field, "(not set)")).toBeUndefined();
+	});
+
+	it("13.7 returns undefined for '(inherit)' marker", () => {
+		const field: FieldDef = {
+			configPath: "taskRunner.worker.spawnMode",
+			label: "Worker Spawn Mode",
+			control: "toggle",
+			layer: "L1",
+			fieldType: "enum",
+			values: ["(inherit)", "subprocess", "tmux"],
+			optional: true,
+		};
+		expect(coerceValueForWrite(field, "(inherit)")).toBeUndefined();
+	});
+
+	it("13.8 strips source badge before coercion", () => {
+		const field = makeL1Field({ fieldType: "number" });
+		expect(coerceValueForWrite(field, "42  (project)")).toBe(42);
+	});
+
+	it("13.9 strips '(default)' source badge", () => {
+		const field = makeL1L2StringField();
+		expect(coerceValueForWrite(field, "gpt-4  (default)")).toBe("gpt-4");
+	});
+
+	it("13.10 strips '(user)' source badge", () => {
+		const field = makeL1L2EnumField();
+		expect(coerceValueForWrite(field, "tmux  (user)")).toBe("tmux");
+	});
+
+	it("13.11 returns undefined for non-parseable number", () => {
+		const field = makeL1Field({ fieldType: "number" });
+		expect(coerceValueForWrite(field, "abc")).toBeUndefined();
+	});
+
+	it("13.12 coerces '0' to number 0", () => {
+		const field = makeL1Field({ fieldType: "number" });
+		expect(coerceValueForWrite(field, "0")).toBe(0);
+	});
+});
+
+
+// ── 14.x writeProjectConfigField ─────────────────────────────────────
+
+describe("14. writeProjectConfigField", () => {
+	beforeEach(() => {
+		writeTestRoot = join(tmpdir(), `tp-wb-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(writeTestRoot, { recursive: true });
+		writeCounter = 0;
+		// Isolate env vars
+		savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+		delete process.env.TASKPLANE_WORKSPACE_ROOT;
+	});
+
+	afterEach(() => {
+		if (savedAgentDir !== undefined) {
+			process.env.PI_CODING_AGENT_DIR = savedAgentDir;
+		} else {
+			delete process.env.PI_CODING_AGENT_DIR;
+		}
+		delete process.env.TASKPLANE_WORKSPACE_ROOT;
+		try {
+			rmSync(writeTestRoot, { recursive: true, force: true });
+		} catch { /* best effort on Windows */ }
+	});
+
+	it("14.1 writes new value to existing JSON config", () => {
+		const dir = makeWriteTestDir("json-exist");
+		const config = {
+			configVersion: CONFIG_VERSION,
+			orchestrator: { orchestrator: { maxLanes: 3 } },
+		};
+		writeJsonConfig(dir, config);
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.maxLanes", 5);
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.orchestrator.orchestrator.maxLanes).toBe(5);
+		expect(result.configVersion).toBe(CONFIG_VERSION);
+	});
+
+	it("14.2 creates nested path that doesn't exist yet", () => {
+		const dir = makeWriteTestDir("nested-create");
+		const config = {
+			configVersion: CONFIG_VERSION,
+			orchestrator: {},
+		};
+		writeJsonConfig(dir, config);
+
+		writeProjectConfigField(dir, "orchestrator.failure.stallTimeout", 60);
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.orchestrator.failure.stallTimeout).toBe(60);
+	});
+
+	it("14.3 deletes key when value is undefined (optional field unset)", () => {
+		const dir = makeWriteTestDir("delete-key");
+		const config = {
+			configVersion: CONFIG_VERSION,
+			taskRunner: { worker: { spawnMode: "subprocess" } },
+		};
+		writeJsonConfig(dir, config);
+
+		writeProjectConfigField(dir, "taskRunner.worker.spawnMode", undefined);
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.taskRunner.worker.spawnMode).toBeUndefined();
+		expect("spawnMode" in result.taskRunner.worker).toBe(false);
+	});
+
+	it("14.4 throws on malformed JSON with descriptive error", () => {
+		const dir = makeWriteTestDir("malformed");
+		writePiFile(dir, PROJECT_CONFIG_FILENAME, "{ bad json !!!");
+
+		expect(() =>
+			writeProjectConfigField(dir, "orchestrator.orchestrator.maxLanes", 5),
+		).toThrow(/malformed JSON/i);
+	});
+
+	it("14.5 bootstraps JSON from YAML-only project (preserves YAML values)", () => {
+		const dir = makeWriteTestDir("yaml-only");
+		// Write a YAML config with a custom value
+		writePiFile(dir, "task-orchestrator.yaml", `
+orchestrator:
+  max_lanes: 7
+  spawn_mode: tmux
+`);
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", "test-wt");
+
+		const jsonPath = join(dir, ".pi", PROJECT_CONFIG_FILENAME);
+		expect(existsSync(jsonPath)).toBe(true);
+		const result = readJsonFile(jsonPath);
+		// The edited field
+		expect(result.orchestrator.orchestrator.worktreePrefix).toBe("test-wt");
+		// YAML-sourced values are preserved in the bootstrapped JSON
+		expect(result.orchestrator.orchestrator.maxLanes).toBe(7);
+		expect(result.orchestrator.orchestrator.spawnMode).toBe("tmux");
+		// YAML file is still there
+		expect(existsSync(join(dir, ".pi", "task-orchestrator.yaml"))).toBe(true);
+	});
+
+	it("14.6 creates .pi directory when it doesn't exist", () => {
+		const dir = makeWriteTestDir("no-pi-dir");
+		// No .pi dir at all — writeProjectConfigField should create it
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.maxLanes", 4);
+
+		const jsonPath = join(dir, ".pi", PROJECT_CONFIG_FILENAME);
+		expect(existsSync(jsonPath)).toBe(true);
+		const result = readJsonFile(jsonPath);
+		expect(result.orchestrator.orchestrator.maxLanes).toBe(4);
+	});
+
+	it("14.7 preserves existing fields when writing a new one", () => {
+		const dir = makeWriteTestDir("preserve");
+		const config = {
+			configVersion: CONFIG_VERSION,
+			orchestrator: {
+				orchestrator: { maxLanes: 3, spawnMode: "tmux" },
+				failure: { stallTimeout: 30 },
+			},
+		};
+		writeJsonConfig(dir, config);
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.maxLanes", 10);
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.orchestrator.orchestrator.maxLanes).toBe(10);
+		expect(result.orchestrator.orchestrator.spawnMode).toBe("tmux");
+		expect(result.orchestrator.failure.stallTimeout).toBe(30);
+	});
+
+	it("14.8 no .tmp file left after successful write", () => {
+		const dir = makeWriteTestDir("no-tmp");
+		const config = { configVersion: CONFIG_VERSION };
+		writeJsonConfig(dir, config);
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.maxLanes", 5);
+
+		const tmpPath = join(dir, ".pi", PROJECT_CONFIG_FILENAME + ".tmp");
+		expect(existsSync(tmpPath)).toBe(false);
+	});
+
+	it("14.9 writes string value correctly", () => {
+		const dir = makeWriteTestDir("string-val");
+		const config = {
+			configVersion: CONFIG_VERSION,
+			taskRunner: { worker: {} },
+		};
+		writeJsonConfig(dir, config);
+
+		writeProjectConfigField(dir, "taskRunner.worker.model", "claude-4-opus");
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.taskRunner.worker.model).toBe("claude-4-opus");
+	});
+
+	it("14.10 writes boolean value correctly", () => {
+		const dir = makeWriteTestDir("bool-val");
+		const config = {
+			configVersion: CONFIG_VERSION,
+			orchestrator: { dependencies: {} },
+		};
+		writeJsonConfig(dir, config);
+
+		writeProjectConfigField(dir, "orchestrator.dependencies.cache", false);
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.orchestrator.dependencies.cache).toBe(false);
+	});
+});
+
+
+// ── 15.x writeUserPreference ─────────────────────────────────────────
+
+describe("15. writeUserPreference", () => {
+	beforeEach(() => {
+		writeTestRoot = join(tmpdir(), `tp-prefs-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(writeTestRoot, { recursive: true });
+		writeCounter = 0;
+		savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+		// Point prefs at our temp dir
+		process.env.PI_CODING_AGENT_DIR = writeTestRoot;
+	});
+
+	afterEach(() => {
+		if (savedAgentDir !== undefined) {
+			process.env.PI_CODING_AGENT_DIR = savedAgentDir;
+		} else {
+			delete process.env.PI_CODING_AGENT_DIR;
+		}
+		try {
+			rmSync(writeTestRoot, { recursive: true, force: true });
+		} catch { /* best effort on Windows */ }
+	});
+
+	function getPrefsPath(): string {
+		return join(writeTestRoot, USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+	}
+
+	function writePrefs(obj: any): void {
+		const prefsDir = join(writeTestRoot, USER_PREFERENCES_SUBDIR);
+		mkdirSync(prefsDir, { recursive: true });
+		writeFileSync(getPrefsPath(), JSON.stringify(obj, null, 2), "utf-8");
+	}
+
+	it("15.1 writes a new preference value", () => {
+		writePrefs({});
+
+		writeUserPreference("dashboardPort", 9090);
+
+		const result = readJsonFile(getPrefsPath());
+		expect(result.dashboardPort).toBe(9090);
+	});
+
+	it("15.2 updates an existing preference value", () => {
+		writePrefs({ dashboardPort: 8080, workerModel: "gpt-4" });
+
+		writeUserPreference("dashboardPort", 9090);
+
+		const result = readJsonFile(getPrefsPath());
+		expect(result.dashboardPort).toBe(9090);
+		expect(result.workerModel).toBe("gpt-4"); // preserved
+	});
+
+	it("15.3 deletes preference when value is undefined", () => {
+		writePrefs({ dashboardPort: 8080, workerModel: "gpt-4" });
+
+		writeUserPreference("dashboardPort", undefined);
+
+		const result = readJsonFile(getPrefsPath());
+		expect("dashboardPort" in result).toBe(false);
+		expect(result.workerModel).toBe("gpt-4"); // preserved
+	});
+
+	it("15.4 creates prefs directory and file when they don't exist", () => {
+		const prefsPath = getPrefsPath();
+		expect(existsSync(prefsPath)).toBe(false);
+
+		writeUserPreference("workerModel", "claude-4-opus");
+
+		expect(existsSync(prefsPath)).toBe(true);
+		const result = readJsonFile(prefsPath);
+		expect(result.workerModel).toBe("claude-4-opus");
+	});
+
+	it("15.5 recovers from malformed prefs file (starts fresh)", () => {
+		const prefsDir = join(writeTestRoot, USER_PREFERENCES_SUBDIR);
+		mkdirSync(prefsDir, { recursive: true });
+		writeFileSync(getPrefsPath(), "NOT VALID JSON!!", "utf-8");
+
+		writeUserPreference("spawnMode", "tmux");
+
+		const result = readJsonFile(getPrefsPath());
+		expect(result.spawnMode).toBe("tmux");
+	});
+
+	it("15.6 writes string preference correctly", () => {
+		writePrefs({});
+
+		writeUserPreference("operatorId", "alice");
+
+		const result = readJsonFile(getPrefsPath());
+		expect(result.operatorId).toBe("alice");
+	});
+
+	it("15.7 sets string to empty (clear semantics)", () => {
+		writePrefs({ workerModel: "gpt-4" });
+
+		writeUserPreference("workerModel", "");
+
+		const result = readJsonFile(getPrefsPath());
+		expect(result.workerModel).toBe("");
+	});
+
+	it("15.8 no .tmp file left after successful write", () => {
+		writePrefs({});
+
+		writeUserPreference("dashboardPort", 3000);
+
+		const tmpPath = getPrefsPath() + ".tmp";
+		expect(existsSync(tmpPath)).toBe(false);
 	});
 });

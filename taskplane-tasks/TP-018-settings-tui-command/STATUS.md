@@ -71,7 +71,7 @@
 - [x] Verify write-back: run tests, confirm no regressions (598 tests)
 - [x] R008 fix #1: Malformed JSON fallback in writeProjectConfigField — loadLayer1Config re-throws on same malformed JSON; replace with explicit error or bypass JSON and read YAML/defaults directly
 - [x] R008 fix #2: Temp-file cleanup uses renameSync(tmpPath, tmpPath) (no-op) — replace with unlinkSync(tmpPath) in try/catch
-- [ ] R008 fix #3: Add unit tests for writeProjectConfigField, writeUserPreference, coerceValueForWrite, and cancel paths (zero mutation)
+- [x] R008 fix #3: Add unit tests for writeProjectConfigField, writeUserPreference, coerceValueForWrite, and cancel paths (zero mutation)
 
 ---
 
