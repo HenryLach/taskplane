@@ -1,6 +1,6 @@
 # TP-018: /settings TUI Command — Status
 
-**Current Step:** Step 2: Implement /settings Command
+**Current Step:** Step 3: Implement Write-Back
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
@@ -47,8 +47,8 @@
 - [x] Verify tests pass (existing workspace-config test 5.5 ctx.cwd constraint)
 - [x] R006 fix #1: Use execCtx.workspaceRoot (not repoRoot) for config reads — workspace mode reads config from workspace root
 - [x] R006 fix #2: Generate Advanced section items dynamically from schema/default config instead of hardcoded list
-- [ ] R006 fix #3: Source detection must use same type guards as extractAllowlistedPreferences (reject invalid pref types)
-- [ ] R006 fix #4: Number validation must enforce num > 0 (not num >= 0) to match "positive integers" contract
+- [x] R006 fix #3: Source detection must use same type guards as extractAllowlistedPreferences (reject invalid pref types)
+- [x] R006 fix #4: Number validation must enforce num > 0 (not num >= 0) to match "positive integers" contract
 - [ ] R006 fix #5: Add unit tests for detectFieldSource, getFieldDisplayValue, validateFieldInput
 - [x] Verify tests still pass after R006 fixes
 
@@ -61,7 +61,7 @@
 ---
 
 ### Step 3: Implement Write-Back
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Layer 1 → project config, Layer 2 → user preferences
 - [ ] Confirmation prompt for project config changes
@@ -147,6 +147,9 @@
 | 2026-03-17 17:58 | Worker iter 3 | done in 624s, ctx: 55%, tools: 81 |
 | 2026-03-17 18:01 | Review R006 | code Step 2: REVISE |
 | 2026-03-17 18:02 | Review R006 | code Step 2: REVISE |
+| 2026-03-17 18:06 | Worker iter 3 | done in 292s, ctx: 26%, tools: 39 |
+| 2026-03-17 18:06 | Step 2 complete | Implement /settings Command |
+| 2026-03-17 18:06 | Step 3 started | Implement Write-Back |
 
 ## Blockers
 *None*

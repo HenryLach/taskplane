@@ -338,18 +338,24 @@ export function detectFieldSource(
 	rawProjectConfig: Record<string, any> | null,
 	rawPrefs: Record<string, any> | null,
 ): FieldSource {
-	// L2 check for dual-layer and L2-only fields
+	// L2 check for dual-layer and L2-only fields.
+	// Type guards MUST match extractAllowlistedPreferences() in config-loader.ts
+	// to avoid showing "(user)" for values that the merge layer would reject.
 	if ((field.layer === "L1+L2" || field.layer === "L2") && field.prefsKey && rawPrefs) {
 		const prefVal = rawPrefs[field.prefsKey];
 		if (field.fieldType === "string") {
-			// String rule: non-undefined AND non-empty → (user)
-			if (prefVal !== undefined && prefVal !== "") return "user";
+			// String rule: must be typeof string, non-empty → (user)
+			// Matches: `typeof raw.X === "string"` AND applyUserPreferences `val !== "" `
+			if (typeof prefVal === "string" && prefVal !== "") return "user";
 		} else if (field.fieldType === "enum") {
-			// Enum rule: any defined value → (user)
-			if (prefVal !== undefined) return "user";
+			// Enum rule: must be a valid enum value from the field's values array.
+			// Matches extractAllowlistedPreferences which checks exact enum membership
+			// (e.g., raw.spawnMode === "tmux" || raw.spawnMode === "subprocess").
+			if (prefVal !== undefined && field.values && field.values.includes(String(prefVal))) return "user";
 		} else if (field.fieldType === "number") {
-			// Number rule: any defined value → (user)
-			if (prefVal !== undefined) return "user";
+			// Number rule: must be typeof number and finite → (user)
+			// Matches: `typeof raw.X === "number" && Number.isFinite(raw.X)`
+			if (typeof prefVal === "number" && Number.isFinite(prefVal)) return "user";
 		}
 	}
 
@@ -427,8 +433,8 @@ export function validateFieldInput(field: FieldDef, input: string): ValidationRe
 	switch (field.fieldType) {
 		case "number": {
 			const num = Number(input.trim());
-			if (!Number.isFinite(num) || num < 0) {
-				return { valid: false, error: "Must be a positive number" };
+			if (!Number.isFinite(num) || num <= 0) {
+				return { valid: false, error: "Must be a positive integer" };
 			}
 			// Integer check for most number fields
 			if (!Number.isInteger(num)) {
@@ -979,18 +985,45 @@ function truncateLine(text: string, width: number): string {
 // ── JSON-Only Footer ─────────────────────────────────────────────────
 
 /**
- * Generate a footer note about JSON-only fields related to a section.
+ * Map from section name to the config subsection prefixes it covers.
+ * Used to dynamically discover JSON-only sibling fields.
  */
-function getJsonOnlyFooterForSection(section: SectionDef, _config: TaskplaneConfig): string | null {
-	// Map sections to their JSON-only siblings
-	const sectionJsonOnly: Record<string, string[]> = {
-		"Assignment": ["sizeWeights"],
-		"Pre-Warm": ["commands", "always"],
-		"Merge": ["verify"],
-	};
+const SECTION_CONFIG_PREFIXES: Record<string, string[]> = {
+	"Orchestrator": ["orchestrator.orchestrator"],
+	"Dependencies": ["orchestrator.dependencies"],
+	"Assignment": ["orchestrator.assignment"],
+	"Pre-Warm": ["orchestrator.preWarm"],
+	"Merge": ["orchestrator.merge"],
+	"Failure Policy": ["orchestrator.failure"],
+	"Monitoring": ["orchestrator.monitoring"],
+	"Worker": ["taskRunner.worker"],
+	"Reviewer": ["taskRunner.reviewer"],
+	"Context Limits": ["taskRunner.context"],
+};
 
-	const jsonFields = sectionJsonOnly[section.name];
-	if (!jsonFields || jsonFields.length === 0) return null;
+/**
+ * Generate a footer note about JSON-only fields related to a section.
+ *
+ * Dynamically discovers uncovered fields under the same config subsection
+ * prefix, so new fields added to the schema auto-appear in footers.
+ */
+function getJsonOnlyFooterForSection(section: SectionDef, config: TaskplaneConfig): string | null {
+	const prefixes = SECTION_CONFIG_PREFIXES[section.name];
+	if (!prefixes) return null;
 
-	return `+ ${jsonFields.join(", ")} (edit JSON directly)`;
+	// Find all uncovered leaf fields under these prefixes
+	const uncoveredFields: string[] = [];
+	walkConfig(config, "", (path, _value) => {
+		if (COVERED_PATHS.has(path)) return; // Already editable
+		for (const prefix of prefixes) {
+			if (path.startsWith(prefix + ".")) {
+				// Extract the field name (last segment)
+				const fieldName = path.split(".").pop() || path;
+				uncoveredFields.push(fieldName);
+			}
+		}
+	});
+
+	if (uncoveredFields.length === 0) return null;
+	return `+ ${uncoveredFields.join(", ")} (edit JSON directly)`;
 }
