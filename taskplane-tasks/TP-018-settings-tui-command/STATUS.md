@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -30,8 +30,9 @@
 ### Step 1: Design Settings Navigation
 **Status:** 🟨 In Progress
 
-- [ ] Section groupings and field types defined
-- [ ] Layer 1 vs Layer 2 fields identified
+- [ ] Final section taxonomy, ordering, and field-to-section assignment documented in STATUS.md
+- [ ] Source-indicator behavior rules for project/user/default (including dual-layer L1+L2 fields) documented
+- [ ] Schema coverage validation: every scalar field in config-schema.ts is either in navigation map or explicitly excluded with rationale
 
 ---
 
@@ -76,6 +77,8 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -101,6 +104,11 @@
 | 2026-03-17 17:32 | Worker iter 1 | done in 128s, ctx: 13%, tools: 20 |
 | 2026-03-17 17:32 | Step 0 complete | Preflight |
 | 2026-03-17 17:32 | Step 1 started | Design Settings Navigation |
+| 2026-03-17 17:33 | Worker iter 1 | done in 171s, ctx: 15%, tools: 27 |
+| 2026-03-17 17:33 | Step 0 complete | Preflight |
+| 2026-03-17 17:33 | Step 1 started | Design Settings Navigation |
+| 2026-03-17 17:34 | Review R003 | plan Step 1: REVISE |
+| 2026-03-17 17:35 | Review R003 | plan Step 1: REVISE |
 
 ## Blockers
 *None*
