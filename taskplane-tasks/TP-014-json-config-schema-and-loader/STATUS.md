@@ -34,7 +34,7 @@
 ---
 
 ### Step 2: Implement Unified Config Loader
-**Status:** 🟡 In Progress (R006 revisions)
+**Status:** ✅ Complete
 
 - [x] `loadProjectConfig()` implemented: reads `.pi/taskplane-config.json` first, falls back to both YAML files, respects `TASKPLANE_WORKSPACE_ROOT`, validates `configVersion`, errors on malformed JSON/unsupported version
 - [x] YAML-to-camelCase mapping: snake_case keys from both YAML files mapped to unified `TaskplaneConfig` shape with deep merge + cloned defaults (non-mutating)
@@ -42,7 +42,7 @@
 - [x] All existing consumers unaffected: `buildExecutionContext()`, `extension.ts`, task-runner command handlers produce identical runtime behavior
 - [x] R006-fix: `resolveConfigRoot()` uses per-file precedence (check for actual config files, not just `.pi/` dir), prefer `TASKPLANE_WORKSPACE_ROOT` when target config files missing in cwd
 - [x] R006-fix: Replace generic recursive `convertKeysToSnake()` in `toOrchestratorConfig()` with explicit field mapping that preserves record/dictionary keys verbatim (sizeWeights S/M/L, preWarm.commands, etc.)
-- [ ] R006-fix: `convertKeysToCamel()` only converts structural keys; preserves user-defined keys in record-valued sections (taskAreas, standardsOverrides, referenceDocs, selfDocTargets, etc.)
+- [x] R006-fix: `convertKeysToCamel()` only converts structural keys; preserves user-defined keys in record-valued sections (taskAreas, standardsOverrides, referenceDocs, selfDocTargets, etc.)
 
 ---
 
