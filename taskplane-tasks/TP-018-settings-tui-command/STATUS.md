@@ -31,7 +31,7 @@
 **Status:** 🟨 In Progress
 
 - [x] Final section taxonomy, ordering, and field-to-section assignment documented in STATUS.md
-- [ ] Source-indicator behavior rules for project/user/default (including dual-layer L1+L2 fields) documented
+- [x] Source-indicator behavior rules for project/user/default (including dual-layer L1+L2 fields) documented
 - [ ] Schema coverage validation: every scalar field in config-schema.ts is either in navigation map or explicitly excluded with rationale
 
 ---
