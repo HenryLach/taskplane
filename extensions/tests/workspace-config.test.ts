@@ -12,6 +12,7 @@
  *   4.x — WorkspaceConfigError and createRepoModeContext contracts
  *   5.x — Root-consistency regression checks (source verification)
  *   6.x — resolvePointer() resolution chain (TP-016)
+ *   7.x — Orchestrator pointer threading (TP-016 Step 3)
  *
  * Run: npx vitest run tests/workspace-config.test.ts
  */
@@ -43,6 +44,7 @@ import {
 	canonicalizePath,
 	resolvePointer,
 } from "../taskplane/workspace.ts";
+import { buildLaneEnvVars } from "../taskplane/execution.ts";
 
 // ── Test Fixtures ────────────────────────────────────────────────────
 
@@ -1296,5 +1298,303 @@ describe("resolvePointer", () => {
 		const r4 = resolvePointer(dir, wsConfig)!;
 		expect(r4.configRoot).toBe(expectedConfigRoot);
 		expect(r4.agentRoot).toBe(expectedAgentRoot);
+	});
+});
+
+// ── 7.x: Orchestrator Pointer Threading (TP-016 Step 3) ─────────────
+
+describe("orchestrator pointer threading", () => {
+	// Helper: write a pointer file for the workspace
+	function writePointerFile(workspaceRoot: string, content: string): void {
+		const dir = join(workspaceRoot, ".pi");
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(pointerFilePath(workspaceRoot), content, "utf-8");
+	}
+
+	it("7.1: buildExecutionContext passes pointer.configRoot to config loaders in workspace mode", () => {
+		const dir = makeTestDir("orch-ptr-pass");
+		const repoDir = join(dir, "my-repo");
+		initGitRepo(repoDir);
+		const tasksDir = join(dir, "tasks");
+		mkdirSync(tasksDir, { recursive: true });
+		writeWorkspaceConfig(dir,
+			`repos:\n  myrepo:\n    path: ${repoDir}\n` +
+			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: myrepo\n`
+		);
+		// Write a valid pointer file — config_repo points to the same repo for simplicity
+		writePointerFile(dir, JSON.stringify({ config_repo: "myrepo", config_path: ".taskplane" }));
+
+		// Track what the config loaders receive
+		let orchPointerRoot: string | undefined;
+		let runnerPointerRoot: string | undefined;
+
+		const trackingOrchLoader = (_cwd: string, pointerConfigRoot?: string) => {
+			orchPointerRoot = pointerConfigRoot;
+			return mockOrchConfig;
+		};
+		const trackingRunnerLoader = (_cwd: string, pointerConfigRoot?: string) => {
+			runnerPointerRoot = pointerConfigRoot;
+			return mockRunnerConfig;
+		};
+
+		const ctx = buildExecutionContext(dir, trackingOrchLoader, trackingRunnerLoader);
+
+		// Config loaders should receive the pointer config root
+		// Use resolve() to match OS-specific path normalization (realpathSync may expand 8.3 names)
+		expect(ctx.pointer).not.toBeNull();
+		expect(ctx.pointer!.used).toBe(true);
+		expect(orchPointerRoot).toBe(ctx.pointer!.configRoot);
+		expect(runnerPointerRoot).toBe(ctx.pointer!.configRoot);
+		// configRoot should point inside the repo
+		expect(ctx.pointer!.configRoot).toContain(".taskplane");
+	});
+
+	it("7.2: buildExecutionContext passes undefined pointer to config loaders in repo mode", () => {
+		const dir = makeTestDir("orch-ptr-repo");
+
+		let orchPointerRoot: string | undefined = "sentinel";
+		let runnerPointerRoot: string | undefined = "sentinel";
+
+		const trackingOrchLoader = (_cwd: string, pointerConfigRoot?: string) => {
+			orchPointerRoot = pointerConfigRoot;
+			return mockOrchConfig;
+		};
+		const trackingRunnerLoader = (_cwd: string, pointerConfigRoot?: string) => {
+			runnerPointerRoot = pointerConfigRoot;
+			return mockRunnerConfig;
+		};
+
+		const ctx = buildExecutionContext(dir, trackingOrchLoader, trackingRunnerLoader);
+
+		// Repo mode: no pointer passed to loaders
+		expect(orchPointerRoot).toBeUndefined();
+		expect(runnerPointerRoot).toBeUndefined();
+		expect(ctx.pointer).toBeNull();
+		expect(ctx.mode).toBe("repo");
+	});
+
+	it("7.3: buildExecutionContext with missing pointer file → fallback configRoot passed to loaders", () => {
+		const dir = makeTestDir("orch-ptr-missing");
+		const repoDir = join(dir, "my-repo");
+		initGitRepo(repoDir);
+		const tasksDir = join(dir, "tasks");
+		mkdirSync(tasksDir, { recursive: true });
+		writeWorkspaceConfig(dir,
+			`repos:\n  myrepo:\n    path: ${repoDir}\n` +
+			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: myrepo\n`
+		);
+		// No pointer file written
+
+		let orchPointerRoot: string | undefined;
+		const trackingOrchLoader = (_cwd: string, pointerConfigRoot?: string) => {
+			orchPointerRoot = pointerConfigRoot;
+			return mockOrchConfig;
+		};
+
+		const ctx = buildExecutionContext(dir, trackingOrchLoader, mockLoadRunnerConfig);
+
+		// Fallback configRoot is <workspaceRoot>/.pi
+		expect(orchPointerRoot).toBe(resolve(dir, ".pi"));
+		expect(ctx.pointer).not.toBeNull();
+		expect(ctx.pointer!.used).toBe(false);
+		expect(ctx.pointer!.warning).toBeDefined();
+	});
+
+	it("7.4: ORCH_SIDECAR_DIR uses workspaceRoot, not pointer configRoot", () => {
+		// Verify buildLaneEnvVars sets ORCH_SIDECAR_DIR to workspaceRoot/.pi
+		const lane = {
+			laneNumber: 1,
+			laneId: "lane-1",
+			branch: "orch-lane-1",
+			tasks: [] as Array<{ task: { taskId: string; promptPath: string; size: string }; position: number }>,
+			tmuxSessionName: "orch-lane-1",
+			worktreePath: resolve("C:/fake/worktree"),
+		};
+
+		const repoRoot = resolve("C:/workspace/repos/api");
+		const workspaceRoot = resolve("C:/workspace");
+
+		const vars = buildLaneEnvVars(lane, resolve("C:/workspace/repos/api/tasks/T-001/PROMPT.md"), repoRoot, workspaceRoot);
+
+		// ORCH_SIDECAR_DIR should be workspaceRoot/.pi, NOT pointer config root
+		expect(vars.ORCH_SIDECAR_DIR).toBe(join(workspaceRoot, ".pi"));
+		// TASKPLANE_WORKSPACE_ROOT should be set in workspace mode
+		expect(vars.TASKPLANE_WORKSPACE_ROOT).toBe(workspaceRoot);
+	});
+
+	it("7.5: ORCH_SIDECAR_DIR uses repoRoot in repo mode (no workspaceRoot)", () => {
+		const lane = {
+			laneNumber: 1,
+			laneId: "lane-1",
+			branch: "orch-lane-1",
+			tasks: [] as Array<{ task: { taskId: string; promptPath: string; size: string }; position: number }>,
+			tmuxSessionName: "orch-lane-1",
+			worktreePath: resolve("C:/fake/worktree"),
+		};
+
+		const repoRoot = resolve("C:/my-project");
+
+		// Repo mode: no workspaceRoot
+		const vars = buildLaneEnvVars(lane, resolve("C:/my-project/tasks/T-001/PROMPT.md"), repoRoot);
+
+		expect(vars.ORCH_SIDECAR_DIR).toBe(join(repoRoot, ".pi"));
+		expect(vars.TASKPLANE_WORKSPACE_ROOT).toBeUndefined();
+	});
+
+	it("7.6: spawnMergeAgent signature accepts agentRoot, separate from stateRoot", () => {
+		// Verify the spawnMergeAgent function signature includes both agentRoot and stateRoot
+		const mergeSrc = readFileSync(
+			resolve(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+
+		// spawnMergeAgent should accept agentRoot parameter
+		const funcStart = mergeSrc.indexOf("function spawnMergeAgent");
+		expect(funcStart).toBeGreaterThan(-1);
+		// Find the closing paren of the parameter list
+		const funcParamEnd = mergeSrc.indexOf(")", funcStart);
+		const funcSignature = mergeSrc.substring(funcStart, funcParamEnd + 1);
+		expect(funcSignature).toContain("agentRoot");
+		expect(funcSignature).toContain("stateRoot");
+
+		// The pi command should use agentRoot for task-merger.md when available
+		const piCommandLines = mergeSrc
+			.split("\n")
+			.filter(l => l.includes("task-merger.md"));
+		expect(piCommandLines.length).toBeGreaterThan(0);
+		expect(piCommandLines[0]).toContain("agentRoot");
+	});
+
+	it("7.7: merge request/result files use stateRoot (piDir), not agentRoot", () => {
+		// Verify merge.ts uses piDir (= stateRoot ?? repoRoot) for merge result files,
+		// NOT agentRoot or configRoot from pointer
+		const mergeSrc = readFileSync(
+			resolve(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+
+		// The piDir variable should be set from stateRoot
+		const piDirLine = mergeSrc.split("\n").find(l => l.includes("const piDir") && l.includes("stateRoot"));
+		expect(piDirLine).toBeDefined();
+
+		// resultFilePath and requestFilePath should use piDir
+		const resultLines = mergeSrc.split("\n").filter(l =>
+			(l.includes("resultFilePath") || l.includes("requestFilePath")) && l.includes("piDir"),
+		);
+		expect(resultLines.length).toBeGreaterThan(0);
+	});
+
+	it("7.8: executeOrchBatch accepts and threads agentRoot to mergeWaveByRepo", () => {
+		const engineSrc = readFileSync(
+			resolve(__dirname, "..", "taskplane", "engine.ts"),
+			"utf-8",
+		);
+
+		// executeOrchBatch should accept agentRoot parameter
+		const funcStart = engineSrc.indexOf("function executeOrchBatch");
+		const funcParamsEnd = engineSrc.indexOf("{", funcStart);
+		const funcSignature = engineSrc.substring(funcStart, funcParamsEnd);
+		expect(funcSignature).toContain("agentRoot");
+
+		// agentRoot should be passed to mergeWaveByRepo
+		const mergeCallIdx = engineSrc.indexOf("mergeWaveByRepo(");
+		expect(mergeCallIdx).toBeGreaterThan(-1);
+		// Get the full call including closing paren
+		let depth = 0;
+		let endIdx = mergeCallIdx;
+		for (let i = mergeCallIdx; i < engineSrc.length; i++) {
+			if (engineSrc[i] === "(") depth++;
+			if (engineSrc[i] === ")") {
+				depth--;
+				if (depth === 0) { endIdx = i; break; }
+			}
+		}
+		const mergeCallBlock = engineSrc.substring(mergeCallIdx, endIdx + 1);
+		expect(mergeCallBlock).toContain("agentRoot");
+	});
+
+	it("7.9: extension.ts passes execCtx.pointer.agentRoot to executeOrchBatch", () => {
+		const extensionSrc = readFileSync(
+			resolve(__dirname, "..", "taskplane", "extension.ts"),
+			"utf-8",
+		);
+
+		// The executeOrchBatch call should pass pointer?.agentRoot
+		const orchBatchCallIdx = extensionSrc.indexOf("executeOrchBatch(");
+		expect(orchBatchCallIdx).toBeGreaterThan(-1);
+		let depth = 0;
+		let endIdx = orchBatchCallIdx;
+		for (let i = orchBatchCallIdx; i < extensionSrc.length; i++) {
+			if (extensionSrc[i] === "(") depth++;
+			if (extensionSrc[i] === ")") {
+				depth--;
+				if (depth === 0) { endIdx = i; break; }
+			}
+		}
+		const orchBatchCall = extensionSrc.substring(orchBatchCallIdx, endIdx + 1);
+		expect(orchBatchCall).toContain("pointer");
+		expect(orchBatchCall).toContain("agentRoot");
+	});
+
+	it("7.10: pointer warning is logged via console.error at startup", () => {
+		const dir = makeTestDir("orch-ptr-warn-log");
+		const repoDir = join(dir, "my-repo");
+		initGitRepo(repoDir);
+		const tasksDir = join(dir, "tasks");
+		mkdirSync(tasksDir, { recursive: true });
+		writeWorkspaceConfig(dir,
+			`repos:\n  myrepo:\n    path: ${repoDir}\n` +
+			`routing:\n  tasks_root: ${tasksDir}\n  default_repo: myrepo\n`
+		);
+		// No pointer file — should trigger warning
+
+		const consoleErrors: string[] = [];
+		const origError = console.error;
+		console.error = (...args: unknown[]) => {
+			consoleErrors.push(args.map(String).join(" "));
+		};
+
+		try {
+			buildExecutionContext(dir, mockLoadOrchConfig, mockLoadRunnerConfig);
+
+			// Should have logged exactly one pointer warning
+			const pointerWarnings = consoleErrors.filter(m => m.includes("[taskplane] pointer warning"));
+			expect(pointerWarnings.length).toBe(1);
+			expect(pointerWarnings[0]).toContain("Pointer file not found");
+		} finally {
+			console.error = origError;
+		}
+	});
+
+	it("7.11: abort signal and batch state paths never reference pointer", () => {
+		// Source-level check: execution.ts abort signal and types.ts batchStatePath
+		// should use repoRoot, never pointer/agentRoot/configRoot
+		const executionSrc = readFileSync(
+			resolve(__dirname, "..", "taskplane", "execution.ts"),
+			"utf-8",
+		);
+		const typesSrc = readFileSync(
+			resolve(__dirname, "..", "taskplane", "types.ts"),
+			"utf-8",
+		);
+
+		// Abort signal references should not use pointer
+		const abortLines = executionSrc
+			.split("\n")
+			.filter(l => l.includes("orch-abort-signal"));
+		expect(abortLines.length).toBeGreaterThan(0);
+		for (const line of abortLines) {
+			expect(line).not.toContain("pointer");
+			expect(line).not.toContain("agentRoot");
+			expect(line).not.toContain("configRoot");
+		}
+
+		// batchStatePath function should take repoRoot
+		const batchStateFunc = typesSrc
+			.split("\n")
+			.find(l => l.includes("function batchStatePath"));
+		expect(batchStateFunc).toBeDefined();
+		expect(batchStateFunc).toContain("repoRoot");
+		expect(batchStateFunc).not.toContain("pointer");
 	});
 });

@@ -55,7 +55,7 @@
 - [x] `spawnMergeAgent()` uses pointer's `agentRoot` for merge agent prompt path (separate from `stateRoot` used for state files). Merge request/result files stay at `stateRoot/.pi/`.
 - [x] Pointer warning logged once at orchestrator startup (non-fatal, warn+fallback).
 - [x] State/sidecar paths invariant: `ORCH_SIDECAR_DIR`, abort signal, batch state, merge request/result files all remain at `<workspaceRoot>/.pi/` — never follow pointer.
-- [ ] Add orchestrator pointer tests: buildExecutionContext with pointer, merge agent path via pointer, state paths unchanged, repo-mode parity.
+- [x] Add orchestrator pointer tests: buildExecutionContext with pointer, merge agent path via pointer, state paths unchanged, repo-mode parity.
 
 ---
 
