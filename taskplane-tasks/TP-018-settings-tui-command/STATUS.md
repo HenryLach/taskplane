@@ -97,7 +97,7 @@
 - [x] `.DONE` created in task folder
 - [x] R012 fix #1: Fix /settings "Common responses" to match actual error paths (requireExecCtx + load failure)
 - [x] R012 fix #2: Update commands.md intro to include /settings, move Configuration Commands above CLI Commands to group all slash commands
-- [ ] R012 fix #3: Add Example block to /settings section for consistency with other command entries
+- [x] R012 fix #3: Add Example block to /settings section for consistency with other command entries
 
 ---
 
