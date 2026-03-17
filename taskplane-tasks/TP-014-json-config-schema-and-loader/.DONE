@@ -1,0 +1,8 @@
+TP-014 complete. JSON config schema and loader implemented.
+
+- Unified `TaskplaneConfig` schema in `extensions/taskplane/config-schema.ts`
+- Config loader in `extensions/taskplane/config-loader.ts` with JSON-first precedence, YAML fallback, and defaults
+- Backward-compatible adapters preserve existing snake_case consumer contracts
+- 434 tests passing (16 test files)
+- Docs updated: task-runner.yaml.md and task-orchestrator.yaml.md both document JSON alternative
+- install.md checked: no changes needed (taskplane init still scaffolds YAML)
