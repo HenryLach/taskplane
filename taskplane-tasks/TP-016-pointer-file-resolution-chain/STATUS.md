@@ -1,11 +1,11 @@
 # TP-016: Pointer File Resolution Chain — Status
 
-**Current Step:** Step 3: Thread Through Orchestrator
+**Current Step:** Step 4: Thread Through Dashboard
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 7
-**Iteration:** 4
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -60,9 +60,11 @@
 ---
 
 ### Step 4: Thread Through Dashboard
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Dashboard follows pointer for state and STATUS.md
+- [ ] Verify and document that all dashboard `.pi/` paths (batch-state, lane-state, conversation logs, batch-history, fs.watch) use `REPO_ROOT` (= workspace root) and do NOT follow pointer. Add clarifying code comment at the REPO_ROOT initialization site.
+- [ ] Verify STATUS.md and task-folder resolution (`resolveTaskFolder`, `parseStatusMd`, `serveStatusMd`) works correctly in workspace mode — task folders live in repos/worktrees, not config repo, so no pointer needed.
+- [ ] Confirm repo-mode parity: dashboard behavior is completely unchanged when no workspace/pointer exists (REPO_ROOT = repo root, all paths at `<repoRoot>/.pi/`).
 
 ---
 
@@ -97,6 +99,8 @@
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -150,6 +154,11 @@
 | 2026-03-17 18:15 | Step 3 started | Thread Through Orchestrator |
 | 2026-03-17 18:17 | Review R007 | plan Step 3: REVISE |
 | 2026-03-17 18:31 | Worker iter 4 | done in 1067s, ctx: 55%, tools: 146 |
+| 2026-03-17 18:36 | Worker iter 4 | done in 1109s, ctx: 57%, tools: 110 |
+| 2026-03-17 18:37 | Review R008 | code Step 3: APPROVE |
+| 2026-03-17 18:37 | Step 3 complete | Thread Through Orchestrator |
+| 2026-03-17 18:37 | Step 4 started | Thread Through Dashboard |
+| 2026-03-17 18:39 | Review R009 | plan Step 4: REVISE |
 
 ## Blockers
 *None*
