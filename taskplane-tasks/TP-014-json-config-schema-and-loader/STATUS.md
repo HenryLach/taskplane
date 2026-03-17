@@ -47,7 +47,7 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Create `extensions/tests/project-config-loader.test.ts` with loader precedence/error matrix (valid JSON, malformed JSON, missing configVersion, unsupported configVersion, JSON+YAML present uses JSON, YAML-only fallback, neither present returns defaults)
 - [x] Workspace root resolution tests: cwd has `.pi` but no config → falls back to TASKPLANE_WORKSPACE_ROOT with config files
@@ -56,7 +56,7 @@
 - [x] Existing tests pass: `cd extensions && npx vitest run` (16 files, 434 tests, all green)
 - [x] R008-fix: Test 4.5 reworked to exercise actual `loadProjectConfig` throw on malformed JSON + verify `toTaskConfig` default shape (both halves of task-runner error-swallowing contract)
 - [x] R008-fix: Export task-runner's `loadConfig()` and add a real failure-path test with malformed JSON that verifies default fallback behavior
-- [ ] R008-fix: All tests still green after changes
+- [x] R008-fix: All tests still green after changes
 
 ---
 

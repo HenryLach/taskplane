@@ -40,6 +40,7 @@ import {
 	loadOrchestratorConfig,
 	loadTaskRunnerConfig,
 } from "../taskplane/config.ts";
+import { loadConfig as taskRunnerLoadConfig } from "../task-runner.ts";
 
 // ── Fixture Helpers ──────────────────────────────────────────────────
 
