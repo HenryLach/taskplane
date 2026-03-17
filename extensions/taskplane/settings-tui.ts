@@ -33,6 +33,7 @@ import {
 import {
 	loadUserPreferences,
 	loadProjectConfig,
+	loadLayer1Config,
 	resolveConfigRoot,
 	resolveUserPreferencesPath,
 } from "./config-loader.ts";
@@ -338,9 +339,15 @@ function setNestedValue(obj: Record<string, any>, path: string, value: any): voi
  * Write a value to the project config JSON (Layer 1).
  *
  * Always writes to `<configRoot>/.pi/taskplane-config.json`.
- * When no JSON config exists (YAML-only scenario), creates a new JSON
- * file with configVersion + the changed field. The YAML files are
- * preserved; JSON takes precedence on next load per loader semantics.
+ *
+ * When no JSON config exists (YAML-only scenario), bootstraps the new
+ * JSON file from the full current Layer 1 config (YAML values + defaults).
+ * This preserves ALL existing YAML-set values — because JSON takes
+ * precedence on next load, a partial skeleton would silently reset
+ * non-edited fields to defaults.
+ *
+ * YAML files are preserved alongside the new JSON; the loader's
+ * JSON-first precedence means the JSON file is authoritative going forward.
  *
  * Uses atomic tmp+rename write pattern to prevent partial writes.
  */
@@ -359,19 +366,23 @@ export function writeProjectConfigField(
 		mkdirSync(piDir, { recursive: true });
 	}
 
-	// Load existing JSON config or create minimal skeleton
+	// Load existing JSON config, or bootstrap from full L1 config.
+	// When YAML-only, we seed from loadLayer1Config to preserve all
+	// YAML-sourced values (since JSON takes precedence on next load
+	// and YAML values would otherwise be lost).
 	let configObj: Record<string, any>;
 	if (existsSync(jsonPath)) {
 		try {
 			const raw = readFileSync(jsonPath, "utf-8");
 			configObj = JSON.parse(raw);
 		} catch {
-			// Malformed — create fresh with version
-			configObj = { configVersion: CONFIG_VERSION };
+			// Malformed — bootstrap from full L1 config (YAML + defaults)
+			configObj = JSON.parse(JSON.stringify(loadLayer1Config(configRoot)));
 		}
 	} else {
-		// No JSON exists (possibly YAML-only) — create new JSON file
-		configObj = { configVersion: CONFIG_VERSION };
+		// No JSON exists (possibly YAML-only) — bootstrap from full L1 config.
+		// Deep-clone via JSON roundtrip since we mutate the object below.
+		configObj = JSON.parse(JSON.stringify(loadLayer1Config(configRoot)));
 	}
 
 	// Set the value at the config path
@@ -1032,22 +1043,23 @@ async function showSectionSettingsLoop(
 
 		// L1+L2 fields: ask user where to save
 		if (dest === null) {
-			const choice = await ctx.ui.select<"project" | "prefs" | "cancel">(
+			const choice = await ctx.ui.select(
 				"Save this change to:",
 				[
-					{ value: "prefs", label: "User preferences", description: "Personal — affects only you" },
-					{ value: "project", label: "Project config", description: "Shared — affects all users of this project" },
-					{ value: "cancel", label: "Cancel", description: "Discard this change" },
+					"User preferences (personal)",
+					"Project config (shared)",
+					"Cancel",
 				],
 			);
-			if (!choice || choice === "cancel") continue;  // Cancelled → re-show section
-			dest = choice;
+			if (!choice || choice === "Cancel") continue;  // Cancelled → re-show section
+			dest = choice.startsWith("User") ? "prefs" : "project";
 		}
 
 		// Confirmation gate for project config writes
 		if (dest === "project") {
 			const confirmed = await ctx.ui.confirm(
-				"This changes shared project config (.pi/taskplane-config.json). Continue?",
+				"Confirm project config change",
+				"This writes to .pi/taskplane-config.json (shared project config). Continue?",
 			);
 			if (!confirmed) continue;  // Declined → re-show section
 		}

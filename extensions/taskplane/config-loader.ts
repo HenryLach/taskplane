@@ -614,6 +614,37 @@ export function loadProjectConfig(cwd: string): TaskplaneConfig {
 	return config;
 }
 
+/**
+ * Load Layer 1 config only (project config without user preferences).
+ *
+ * Returns the project config merged with defaults, but WITHOUT applying
+ * Layer 2 user preferences. Used by the settings TUI write-back to
+ * bootstrap a JSON config file from YAML-only projects without
+ * accidentally embedding user preferences into the project config.
+ *
+ * @param cwd - Current working directory (project root or worktree)
+ * @returns Layer 1 TaskplaneConfig — always a fresh deep-cloned object
+ * @throws ConfigLoadError if JSON exists but is malformed or has unsupported version
+ */
+export function loadLayer1Config(cwd: string): TaskplaneConfig {
+	const configRoot = resolveConfigRoot(cwd);
+
+	// Try JSON first
+	const jsonConfig = loadJsonConfig(configRoot);
+	if (jsonConfig !== null) {
+		return jsonConfig;
+	}
+
+	// Fall back to YAML
+	const taskRunner = loadTaskRunnerYaml(configRoot);
+	const orchestrator = loadOrchestratorYaml(configRoot);
+	return {
+		configVersion: CONFIG_VERSION,
+		taskRunner,
+		orchestrator,
+	};
+}
+
 
 // ── Backward-Compatible Adapters ─────────────────────────────────────
 
