@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -27,8 +27,9 @@
 ### Step 1: Implement Pointer Resolution
 **Status:** 🟨 In Progress
 
-- [ ] `resolvePointer()` function created and validated
-- [ ] Returns resolved paths for config, agents, and state
+- [ ] `resolvePointer()` function in workspace.ts: reads pointer JSON, validates fields, resolves config_repo against WorkspaceConfig.repos, normalizes config_path (reject traversal), returns result with resolved absolute paths + used/fallback status + warning reason. Non-fatal: never throws on pointer failures, always returns fallback paths with warning.
+- [ ] Return contract separates config/agent roots (follow pointer) from state root (always workspace root `.pi/`). Repo mode returns null (pointer ignored entirely).
+- [ ] Types added for pointer result (PointerResolution) in types.ts
 
 ---
 
@@ -76,6 +77,8 @@
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -102,6 +105,11 @@
 | 2026-03-17 17:32 | Worker iter 1 | done in 128s, ctx: 12%, tools: 19 |
 | 2026-03-17 17:32 | Step 0 complete | Preflight |
 | 2026-03-17 17:32 | Step 1 started | Implement Pointer Resolution |
+| 2026-03-17 17:34 | Worker iter 1 | done in 170s, ctx: 16%, tools: 26 |
+| 2026-03-17 17:34 | Step 0 complete | Preflight |
+| 2026-03-17 17:34 | Step 1 started | Implement Pointer Resolution |
+| 2026-03-17 17:34 | Review R003 | plan Step 1: REVISE |
+| 2026-03-17 17:35 | Review R003 | plan Step 1: REVISE |
 
 ## Blockers
 *None*
