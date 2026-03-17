@@ -35,7 +35,7 @@
 **Status:** 🟨 In Progress
 
 - [x] Tests: path resolution (default + PI_CODING_AGENT_DIR override), auto-creation, malformed JSON fallback, unknown-key dropping, empty-string "not set" semantics
-- [ ] Tests: Layer 2 guardrails — non-allowlisted keys ignored, allowlisted fields applied; dashboardPort is preferences-only (not merged into config)
+- [x] Tests: Layer 2 guardrails — non-allowlisted keys ignored, allowlisted fields applied; dashboardPort is preferences-only (not merged into config)
 - [ ] Tests: applyUserPreferences merge integration on both JSON-backed and YAML-backed Layer 1 inputs; loadProjectConfig e2e with prefs
 - [ ] `cd extensions && npx vitest run` — full suite passes
 
