@@ -4,7 +4,7 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 2
 **Size:** L
 
@@ -29,13 +29,15 @@
 ---
 
 ### Step 1: Mode Auto-Detection
-**Status:** ✅ Complete
+**Status:** 🔄 In Progress
 
 - [x] Detection logic implemented (git repo check, subdirectory git repo scan, mode determination)
 - [x] Error path: no git repo and no git repo subdirectories → clear error message and exit
 - [x] Ambiguous case handled with prompt; preset/non-interactive mode defaults to repo mode (no prompt)
 - [x] "Already initialized" detection for Scenario B (existing config check before topology detection)
 - [x] Validate: repo mode, workspace mode, ambiguous prompt, no-repo error, preset bypass all covered
+- [ ] R004: Fix `findSubdirectoryGitRepos()` — must check for actual nested repo roots (`.git` entry + `git rev-parse --show-toplevel` matching child), not just "inside work tree"
+- [ ] R004: Fix `existingConfigPath` mismatch — when ambiguous mode resolves to workspace, recompute workspace-specific existing-config detection instead of reusing monorepo `.pi` path
 
 ---
 
@@ -96,6 +98,8 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -121,6 +125,10 @@
 | 2026-03-17 15:35 | Step 1 started | Mode Auto-Detection |
 | 2026-03-17 15:36 | Review R003 | plan Step 1: REVISE |
 | 2026-03-17 15:36 | Review R003 | plan Step 1: REVISE |
+| 2026-03-17 15:44 | Worker iter 2 | done in 461s, ctx: 26%, tools: 63 |
+| 2026-03-17 15:44 | Worker iter 2 | done in 450s, ctx: 28%, tools: 50 |
+| 2026-03-17 15:46 | Review R004 | code Step 1: REVISE |
+| 2026-03-17 15:47 | Review R004 | code Step 1: REVISE |
 
 ## Blockers
 *None*
