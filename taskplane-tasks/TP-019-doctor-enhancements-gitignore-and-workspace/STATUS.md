@@ -17,7 +17,7 @@
 ### Step 0: Preflight
 **Status:** 🟨 In Progress
 
-- [ ] Read current `cmdDoctor()`, spec doctor checks, and reusable helpers — capture baseline and patterns
+- [x] Read current `cmdDoctor()`, spec doctor checks, and reusable helpers — capture baseline and patterns
 - [ ] Document preflight findings in STATUS Notes (baseline output, helper inventory, spec acceptance criteria)
 
 ---
