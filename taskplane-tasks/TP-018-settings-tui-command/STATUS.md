@@ -4,7 +4,7 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 3
 **Size:** L
 
@@ -40,11 +40,14 @@
 ---
 
 ### Step 2: Implement /settings Command
-**Status:** ✅ Complete
+**Status:** 🔄 In Progress
 
 - [x] Create settings-tui.ts with section navigation, field display, source badges, and field editing (validation: enum whitelist, number parsing with range, optional-field unset)
 - [x] Register /settings command in extension.ts using execCtx.repoRoot (not ctx.cwd), handle null execCtx gracefully
 - [x] Verify tests pass (existing workspace-config test 5.5 ctx.cwd constraint)
+- [ ] R006 fix #1: Use execCtx.workspaceRoot (not repoRoot) for config reads — workspace mode reads config from workspace root
+- [ ] R006 fix #2: Generate Advanced section items dynamically from schema/default config instead of hardcoded list
+- [ ] Verify tests still pass after R006 fixes
 
 **Step 2 Implementation Contract (R005):**
 - Config root: uses `execCtx!.repoRoot` for config reads. When `execCtx` is null (startup failure), command shows error via `requireExecCtx()` guard.
@@ -92,6 +95,8 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -136,6 +141,9 @@
 | 2026-03-17 17:46 | Review R005 | plan Step 2: REVISE |
 | 2026-03-17 17:47 | Review R005 | plan Step 2: REVISE |
 | 2026-03-17 17:57 | Worker iter 3 | done in 698s, ctx: 53%, tools: 87 |
+| 2026-03-17 17:58 | Worker iter 3 | done in 624s, ctx: 55%, tools: 81 |
+| 2026-03-17 18:01 | Review R006 | code Step 2: REVISE |
+| 2026-03-17 18:02 | Review R006 | code Step 2: REVISE |
 
 ## Blockers
 *None*
