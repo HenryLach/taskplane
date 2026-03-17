@@ -49,7 +49,7 @@
 ---
 
 ### Step 3: Thread Through Orchestrator
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] `buildExecutionContext()` resolves pointer once and passes `pointer.configRoot` to config loaders. Repo mode (null pointer) unchanged.
 - [x] `spawnMergeAgent()` uses pointer's `agentRoot` for merge agent prompt path (separate from `stateRoot` used for state files). Merge request/result files stay at `stateRoot/.pi/`.
@@ -149,6 +149,7 @@
 | 2026-03-17 18:15 | Step 2 complete | Thread Through Task-Runner |
 | 2026-03-17 18:15 | Step 3 started | Thread Through Orchestrator |
 | 2026-03-17 18:17 | Review R007 | plan Step 3: REVISE |
+| 2026-03-17 18:31 | Worker iter 4 | done in 1067s, ctx: 55%, tools: 146 |
 
 ## Blockers
 *None*
