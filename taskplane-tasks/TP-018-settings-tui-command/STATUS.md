@@ -67,6 +67,8 @@
 - [x] Layer 1 writes always target `<resolveConfigRoot(...)>/.pi/taskplane-config.json` (JSON-first); when source config is YAML-only, create new JSON file alongside YAML (YAML preserved, JSON takes precedence on next load); atomic tmp+rename write pattern
 - [x] Layer 2 writes target `resolveUserPreferencesPath()` with mkdir -p; atomic tmp+rename; reuse existing loadUserPreferences auto-create pattern
 - [ ] Confirmation gate for project config writes (`ctx.ui.confirm`); no side effects on cancel; L2 writes need no confirmation; post-write notification with "restart session to apply"
+- [ ] R007 fix: YAML-only bootstrap writes full L1 snapshot — export loadLayer1Config from config-loader.ts; writeProjectConfigField seeds JSON from full L1 config (YAML+defaults) before applying edit, not partial skeleton
+- [ ] Verify write-back: run tests, confirm no regressions (598 tests)
 
 ---
 
