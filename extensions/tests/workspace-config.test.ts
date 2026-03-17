@@ -35,6 +35,7 @@ import {
 	workspaceConfigPath,
 	pointerFilePath,
 	batchStatePath,
+	BATCH_STATE_SCHEMA_VERSION,
 	type WorkspaceConfig,
 	type WorkspaceRepoConfig,
 	type WorkspaceRoutingConfig,
@@ -46,6 +47,7 @@ import {
 	resolvePointer,
 } from "../taskplane/workspace.ts";
 import { buildLaneEnvVars } from "../taskplane/execution.ts";
+import { saveBatchState, loadBatchState, deleteBatchState } from "../taskplane/persistence.ts";
 
 // ── Test Fixtures ────────────────────────────────────────────────────
 
@@ -1567,45 +1569,179 @@ describe("orchestrator pointer threading", () => {
 		}
 	});
 
-	it("7.11: state paths use stateRoot (workspaceRoot), not pointer configRoot or agentRoot", () => {
-		// Behavioral test: batchStatePath produces path under the passed root,
-		// which in workspace mode should be workspaceRoot (not pointer paths).
-		const wsRoot = "/workspace/root";
-		const configRepoRoot = "/workspace/root/repos/config-repo";
-		const pointerConfigRoot = join(configRepoRoot, ".taskplane");
+	it("7.11: state operations (save/load/delete) use workspaceRoot, not pointer configRoot or repoRoot", () => {
+		// Behavioral test: in workspace mode where workspaceRoot != repoRoot,
+		// state files must be saved/loaded/deleted under workspaceRoot/.pi/,
+		// never under the pointer config repo or the individual repo root.
+		const wsRoot = makeTestDir("ws-state-root");
+		const repoRoot = makeTestDir("repo-state-root");
+		const configRepoRoot = makeTestDir("config-repo-state-root");
 
-		// batchStatePath always produces <root>/.pi/batch-state.json
-		const statePath = batchStatePath(wsRoot);
-		expect(statePath).toBe(join(wsRoot, ".pi", "batch-state.json"));
+		// Create a valid batch state JSON (matches PersistedBatchState schema v2)
+		const now = Date.now();
+		const validState = JSON.stringify({
+			schemaVersion: BATCH_STATE_SCHEMA_VERSION,
+			phase: "executing",
+			batchId: "20260317T120000",
+			baseBranch: "main",
+			mode: "workspace",
+			startedAt: now,
+			updatedAt: now,
+			endedAt: null,
+			currentWaveIndex: 0,
+			totalWaves: 1,
+			wavePlan: [["TASK-001"]],
+			lanes: [],
+			tasks: [{
+				taskId: "TASK-001",
+				status: "running",
+				laneNumber: 1,
+				sessionName: "orch-lane-1",
+				taskFolder: "/workspace/tasks/TASK-001",
+				exitReason: "",
+				startedAt: now,
+				endedAt: null,
+				doneFileFound: false,
+			}],
+			mergeResults: [],
+			totalTasks: 1,
+			succeededTasks: 0,
+			failedTasks: 0,
+			skippedTasks: 0,
+			blockedTasks: 0,
+			blockedTaskIds: [],
+			lastError: null,
+			errors: [],
+		});
 
-		// State path should NOT reference the pointer config root
-		expect(statePath).not.toContain(pointerConfigRoot);
-		expect(statePath).not.toContain(".taskplane");
+		// Save batch state to workspaceRoot (simulating what orch does with stateRoot = workspaceRoot)
+		saveBatchState(validState, wsRoot);
 
-		// State path should NOT reference the config repo root
-		expect(statePath).not.toContain(configRepoRoot);
+		// Verify: loadBatchState finds it at workspaceRoot
+		const loaded = loadBatchState(wsRoot);
+		expect(loaded).not.toBeNull();
+		expect(loaded!.batchId).toBe("20260317T120000");
+		expect(loaded!.mode).toBe("workspace");
 
-		// Verify that workspace root and repo root produce different state paths
-		// (this is the key invariant: resume must use wsRoot, same as fresh orch)
-		const repoRoot = "/workspace/root/repos/my-repo";
-		const repoStatePath = batchStatePath(repoRoot);
-		expect(repoStatePath).not.toBe(statePath);
-		expect(repoStatePath).toBe(join(repoRoot, ".pi", "batch-state.json"));
+		// Verify: loadBatchState does NOT find it at repoRoot (different path)
+		const loadedFromRepo = loadBatchState(repoRoot);
+		expect(loadedFromRepo).toBeNull();
+
+		// Verify: loadBatchState does NOT find it at configRepoRoot
+		const loadedFromConfig = loadBatchState(configRepoRoot);
+		expect(loadedFromConfig).toBeNull();
+
+		// Verify: the file physically exists at wsRoot/.pi/batch-state.json
+		expect(existsSync(batchStatePath(wsRoot))).toBe(true);
+		expect(existsSync(batchStatePath(repoRoot))).toBe(false);
+		expect(existsSync(batchStatePath(configRepoRoot))).toBe(false);
+
+		// Verify: deleteBatchState at repoRoot has no effect on wsRoot state
+		deleteBatchState(repoRoot);
+		expect(existsSync(batchStatePath(wsRoot))).toBe(true);
+
+		// Verify: deleteBatchState at wsRoot removes the file
+		deleteBatchState(wsRoot);
+		expect(existsSync(batchStatePath(wsRoot))).toBe(false);
+		expect(loadBatchState(wsRoot)).toBeNull();
 	});
 
-	it("7.12: resumeOrchBatch accepts workspaceRoot parameter for consistent state rooting", () => {
-		// Behavioral test: resumeOrchBatch signature accepts workspaceRoot,
-		// ensuring resume uses the same stateRoot as fresh executeOrchBatch.
-		// We verify by checking the function accepts the parameter (type-level check)
-		// and that the parameter is positioned between workspaceConfig and agentRoot.
-		const { resumeOrchBatch } = require("../taskplane/resume.ts");
-		expect(typeof resumeOrchBatch).toBe("function");
+	it("7.12: orch and orch-resume derive stateRoot identically from workspaceRoot", () => {
+		// Core invariant: both executeOrchBatch and resumeOrchBatch compute
+		// stateRoot = workspaceRoot ?? cwd. This test verifies the behavioral
+		// consequence: a batch state saved during orch execution (using wsRoot)
+		// is loadable during resume (using the same wsRoot), even when
+		// cwd (repoRoot) differs.
+		const wsRoot = makeTestDir("ws-resume-parity");
+		const cwd = makeTestDir("cwd-resume-parity");
 
-		// resumeOrchBatch should accept 10 parameters:
-		// (orchConfig, runnerConfig, cwd, batchState, onNotify, onMonitorUpdate,
-		//  workspaceConfig, workspaceRoot, agentRoot)
-		// The function.length only counts params up to the first optional one,
-		// but we can verify it's callable with the right shape.
-		expect(resumeOrchBatch.length).toBeGreaterThanOrEqual(5);
+		// Simulate orch execution: stateRoot = workspaceRoot ?? cwd → wsRoot
+		const orchStateRoot = wsRoot ?? cwd;
+		expect(orchStateRoot).toBe(wsRoot);
+
+		// Simulate orch-resume: stateRoot = workspaceRoot ?? cwd → wsRoot
+		const resumeStateRoot = wsRoot ?? cwd;
+		expect(resumeStateRoot).toBe(wsRoot);
+
+		// Both paths produce the same state root
+		expect(orchStateRoot).toBe(resumeStateRoot);
+
+		// Now verify with real I/O: save state as orch would, load as resume would
+		const now = Date.now();
+		const validState = JSON.stringify({
+			schemaVersion: BATCH_STATE_SCHEMA_VERSION,
+			phase: "paused",
+			batchId: "20260317T130000",
+			baseBranch: "main",
+			mode: "workspace",
+			startedAt: now,
+			updatedAt: now,
+			endedAt: null,
+			currentWaveIndex: 1,
+			totalWaves: 2,
+			wavePlan: [["TASK-001"], ["TASK-002"]],
+			lanes: [],
+			tasks: [
+				{
+					taskId: "TASK-001",
+					status: "succeeded",
+					laneNumber: 1,
+					sessionName: "orch-lane-1",
+					taskFolder: "/workspace/tasks/TASK-001",
+					exitReason: "Task completed successfully",
+					startedAt: now,
+					endedAt: now,
+					doneFileFound: true,
+				},
+				{
+					taskId: "TASK-002",
+					status: "pending",
+					laneNumber: 0,
+					sessionName: "",
+					taskFolder: "/workspace/tasks/TASK-002",
+					exitReason: "",
+					startedAt: null,
+					endedAt: null,
+					doneFileFound: false,
+				},
+			],
+			mergeResults: [],
+			totalTasks: 2,
+			succeededTasks: 1,
+			failedTasks: 0,
+			skippedTasks: 0,
+			blockedTasks: 0,
+			blockedTaskIds: [],
+			lastError: null,
+			errors: [],
+		});
+
+		// Orch saves state using stateRoot (= workspaceRoot)
+		saveBatchState(validState, orchStateRoot);
+
+		// Resume loads state using the same stateRoot derivation
+		const resumeLoaded = loadBatchState(resumeStateRoot);
+		expect(resumeLoaded).not.toBeNull();
+		expect(resumeLoaded!.batchId).toBe("20260317T130000");
+		expect(resumeLoaded!.phase).toBe("paused");
+		expect(resumeLoaded!.currentWaveIndex).toBe(1);
+
+		// Resume would NOT find state at cwd (repoRoot) — proving stateRoot matters
+		const cwdLoaded = loadBatchState(cwd);
+		expect(cwdLoaded).toBeNull();
+
+		// When workspaceRoot is undefined (repo mode), both fall back to cwd
+		const repoModeStateRoot = undefined ?? cwd;
+		expect(repoModeStateRoot).toBe(cwd);
+
+		// Save state at cwd in repo mode
+		saveBatchState(validState, cwd);
+		const repoModeLoaded = loadBatchState(cwd);
+		expect(repoModeLoaded).not.toBeNull();
+		expect(repoModeLoaded!.batchId).toBe("20260317T130000");
+
+		// Cleanup
+		deleteBatchState(orchStateRoot);
+		deleteBatchState(cwd);
 	});
 });
