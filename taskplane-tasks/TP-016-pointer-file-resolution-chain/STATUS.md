@@ -1,10 +1,10 @@
 # TP-016: Pointer File Resolution Chain — Status
 
-**Current Step:** Step 6: Documentation & Delivery
+**Current Step:** Step 5: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 10
+**Review Counter:** 12
 **Iteration:** 6
 **Size:** M
 
@@ -71,12 +71,13 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] Close Step 3 open item: verify test 7.11 is behavioral (not source-text) and check off the Step 3 checkbox
 - [x] Verify pointer failure/parity matrix coverage: existing tests cover missing, malformed, unknown config_repo (warn+fallback), valid pointer, and repo-mode (pointer ignored) scenarios
 - [x] Verify integration split invariant: config/agent paths follow pointer while state paths (batch, sidecar, merge) stay at workspaceRoot/.pi
 - [x] Run full test suite: `cd extensions && npx vitest run` — 609 tests passing (20 test files)
+- [ ] R012: Add committed test artifact (test-results summary or verification log) so the review delta is non-empty and verifiable
 
 ---
 
@@ -110,6 +111,9 @@
 | R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 | R009 | plan | Step 4 | APPROVE | .reviews/R009-plan-step4.md |
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
+| R011 | plan | Step 5 | APPROVE | .reviews/R011-plan-step5.md |
+| R012 | code | Step 5 | REVISE | .reviews/R012-code-step5.md |
+| R012 | code | Step 5 | REVISE | .reviews/R012-code-step5.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -179,6 +183,13 @@
 | 2026-03-17 18:50 | Step 4 started | Thread Through Dashboard |
 | 2026-03-17 18:51 | Review R009 | plan Step 4: APPROVE |
 | 2026-03-17 18:53 | Review R010 | code Step 4: REVISE |
+| 2026-03-17 18:55 | Worker iter 6 | done in 390s, ctx: 25%, tools: 39 |
+| 2026-03-17 18:56 | Worker iter 4 | done in 150s, ctx: 12%, tools: 13 |
+| 2026-03-17 18:56 | Step 4 complete | Thread Through Dashboard |
+| 2026-03-17 18:56 | Step 5 started | Testing & Verification |
+| 2026-03-17 18:56 | Review R011 | plan Step 5: APPROVE |
+| 2026-03-17 18:57 | Review R012 | code Step 5: REVISE |
+| 2026-03-17 18:58 | Review R012 | code Step 5: REVISE |
 
 ## Blockers
 *None*
