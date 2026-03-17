@@ -1,7 +1,7 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
 **Current Step:** Step 2: Gitignore Enforcement
-**Status:** 🔄 In Progress (R006 revisions)
+**Status:** ✅ Step 2 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
 **Review Counter:** 6
@@ -42,7 +42,7 @@
 ---
 
 ### Step 2: Gitignore Enforcement
-**Status:** 🔧 In Progress (R006 revisions)
+**Status:** ✅ Complete
 
 - [x] Define required gitignore entries as a reusable constant (for Step 4 reuse)
 - [x] Implement `ensureGitignoreEntries()` helper — idempotent: creates file if needed, skips existing entries, respects dry-run
@@ -51,7 +51,7 @@
 - [x] Update `printFileList()` dry-run output to show gitignore entries that would be added
 - [x] R006: Fix `patternToRegex()` — directory patterns (trailing `/`) must be prefix matches; switch `git rm --cached` to `execFileSync` for shell-safety
 - [x] R006: Remove unused `buildGitignoreBlock()` function
-- [ ] R006: Add test coverage for tracked-artifact pattern matching (directories, wildcards)
+- [x] R006: Add test coverage for tracked-artifact pattern matching (directories, wildcards)
 
 ---
 

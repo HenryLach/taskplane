@@ -27,6 +27,14 @@ import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
 import { execSync, execFileSync, spawn } from "node:child_process";
+import {
+	TASKPLANE_GITIGNORE_HEADER,
+	TASKPLANE_GITIGNORE_NPM_HEADER,
+	TASKPLANE_GITIGNORE_ENTRIES,
+	TASKPLANE_GITIGNORE_NPM_ENTRIES,
+	ALL_GITIGNORE_PATTERNS,
+	patternToRegex,
+} from "./gitignore-patterns.mjs";
 
 // ─── Paths ──────────────────────────────────────────────────────────────────
 
@@ -564,36 +572,7 @@ async function cmdUninstall(args) {
 
 // ─── Gitignore Enforcement ──────────────────────────────────────────────────
 
-/**
- * Required gitignore entries for Taskplane projects.
- * These patterns cover runtime artifacts that are machine-specific and must
- * not be committed to git. Reused by both repo mode (Step 2) and workspace
- * mode (Step 4) init flows.
- */
-const TASKPLANE_GITIGNORE_HEADER = "# Taskplane runtime artifacts (machine-specific, do not commit)";
-const TASKPLANE_GITIGNORE_NPM_HEADER = "# Pi project-local packages (if using pi install -l)";
-
-const TASKPLANE_GITIGNORE_ENTRIES = [
-	".pi/batch-state.json",
-	".pi/batch-history.json",
-	".pi/lane-state-*",
-	".pi/merge-result-*",
-	".pi/merge-request-*",
-	".pi/worker-conversation-*",
-	".pi/orch-logs/",
-	".pi/orch-abort-signal",
-	".pi/settings.json",
-	".worktrees/",
-];
-
-const TASKPLANE_GITIGNORE_NPM_ENTRIES = [
-	".pi/npm/",
-];
-
-/**
- * All patterns that should be gitignored, used for tracked-artifact detection.
- */
-const ALL_GITIGNORE_PATTERNS = [...TASKPLANE_GITIGNORE_ENTRIES, ...TASKPLANE_GITIGNORE_NPM_ENTRIES];
+// Gitignore constants and patternToRegex imported from ./gitignore-patterns.mjs
 
 /**
  * Ensure required Taskplane gitignore entries exist in the project's .gitignore.
@@ -667,25 +646,7 @@ function ensureGitignoreEntries(projectRoot, { dryRun = false, prefix = "" } = {
 	return { created: !fileExists, added, skipped };
 }
 
-/**
- * Glob-like patterns from TASKPLANE_GITIGNORE_ENTRIES for `git ls-files` matching.
- * Converts wildcard patterns to regex patterns for checking tracked files.
- * Trailing-slash directory patterns (e.g., `.pi/orch-logs/`) are treated as
- * prefix matches so that files underneath are correctly detected.
- */
-function patternToRegex(pattern) {
-	// Directory patterns (trailing slash) → prefix match
-	if (pattern.endsWith("/")) {
-		const dirPath = pattern.slice(0, -1);
-		const escaped = dirPath.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
-		return new RegExp("^" + escaped + "/.*");
-	}
-	// Escape regex special chars except *
-	const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
-	// Replace * with .*
-	const regexStr = "^" + escaped.replace(/\*/g, ".*") + "$";
-	return new RegExp(regexStr);
-}
+// patternToRegex imported from ./gitignore-patterns.mjs
 
 /**
  * Check for tracked runtime artifacts and offer to untrack them.
