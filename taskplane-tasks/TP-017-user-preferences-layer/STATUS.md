@@ -34,7 +34,7 @@
 ### Step 2: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] Tests: path resolution (default + PI_CODING_AGENT_DIR override), auto-creation, malformed JSON fallback, unknown-key dropping, empty-string "not set" semantics
+- [x] Tests: path resolution (default + PI_CODING_AGENT_DIR override), auto-creation, malformed JSON fallback, unknown-key dropping, empty-string "not set" semantics
 - [ ] Tests: Layer 2 guardrails — non-allowlisted keys ignored, allowlisted fields applied; dashboardPort is preferences-only (not merged into config)
 - [ ] Tests: applyUserPreferences merge integration on both JSON-backed and YAML-backed Layer 1 inputs; loadProjectConfig e2e with prefs
 - [ ] `cd extensions && npx vitest run` — full suite passes
@@ -55,6 +55,7 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
@@ -92,6 +93,7 @@
 | 2026-03-17 15:37 | Step 1 complete | Implement Preferences Loader |
 | 2026-03-17 15:37 | Step 2 started | Testing & Verification |
 | 2026-03-17 15:37 | Review R003 | plan Step 2: REVISE |
+| 2026-03-17 15:38 | Review R003 | plan Step 2: REVISE |
 
 ## Blockers
 *None*
