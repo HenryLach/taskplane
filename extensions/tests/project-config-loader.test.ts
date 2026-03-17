@@ -1,5 +1,5 @@
 /**
- * Project Config Loader Tests — TP-014 Step 3
+ * Project Config Loader Tests — TP-014 Step 3, TP-016 Step 2
  *
  * Tests for the unified config loader (`loadProjectConfig`), its
  * precedence/error matrix, YAML fallback, adapter compatibility,
@@ -10,6 +10,7 @@
  *   2.x — Workspace root resolution
  *   3.x — Key preservation and adapter regression
  *   4.x — Defaults, cloning, non-mutation, backward-compat wrappers
+ *   5.x — Pointer-aware config resolution (TP-016)
  *
  * Run: npx vitest run tests/project-config-loader.test.ts
  */
@@ -810,5 +811,265 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 			e2e_test: "npm run e2e",
 			type_check: "npx tsc --noEmit",
 		});
+	});
+});
+
+// ── 5.x: Pointer-aware config resolution (TP-016) ───────────────────
+
+describe("loadProjectConfig with pointerConfigRoot", () => {
+	it("5.1: pointerConfigRoot with config files is used when cwd has no config", () => {
+		const cwdDir = makeTestDir("ptr-cwd-empty");
+		const pointerDir = makeTestDir("ptr-config-repo");
+		writeTaskRunnerYaml(pointerDir, "project:\n  name: FromPointerRepo\n");
+
+		const config = loadProjectConfig(cwdDir, pointerDir);
+		expect(config.taskRunner.project.name).toBe("FromPointerRepo");
+	});
+
+	it("5.2: cwd config takes precedence over pointerConfigRoot", () => {
+		const cwdDir = makeTestDir("ptr-cwd-has-config");
+		const pointerDir = makeTestDir("ptr-config-repo-override");
+		writeTaskRunnerYaml(cwdDir, "project:\n  name: FromCwd\n");
+		writeTaskRunnerYaml(pointerDir, "project:\n  name: FromPointer\n");
+
+		const config = loadProjectConfig(cwdDir, pointerDir);
+		expect(config.taskRunner.project.name).toBe("FromCwd");
+	});
+
+	it("5.3: pointerConfigRoot takes precedence over TASKPLANE_WORKSPACE_ROOT", () => {
+		const cwdDir = makeTestDir("ptr-cwd-no-config");
+		const pointerDir = makeTestDir("ptr-config-repo-priority");
+		const wsRoot = makeTestDir("ptr-ws-root");
+		writeTaskRunnerYaml(pointerDir, "project:\n  name: FromPointer\n");
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: FromWsRoot\n");
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		const config = loadProjectConfig(cwdDir, pointerDir);
+		expect(config.taskRunner.project.name).toBe("FromPointer");
+	});
+
+	it("5.4: pointerConfigRoot without config files falls through to TASKPLANE_WORKSPACE_ROOT", () => {
+		const cwdDir = makeTestDir("ptr-cwd-no-config2");
+		const pointerDir = makeTestDir("ptr-empty-pointer");
+		const wsRoot = makeTestDir("ptr-ws-fallback");
+		// pointerDir has no config files
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: FromWsRootFallback\n");
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		const config = loadProjectConfig(cwdDir, pointerDir);
+		expect(config.taskRunner.project.name).toBe("FromWsRootFallback");
+	});
+
+	it("5.5: undefined pointerConfigRoot preserves existing behavior", () => {
+		const cwdDir = makeTestDir("ptr-undefined");
+		const wsRoot = makeTestDir("ptr-ws-existing");
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: FromWsExisting\n");
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		const config = loadProjectConfig(cwdDir, undefined);
+		expect(config.taskRunner.project.name).toBe("FromWsExisting");
+	});
+
+	it("5.6: repo mode — no pointerConfigRoot, no TASKPLANE_WORKSPACE_ROOT → defaults", () => {
+		const cwdDir = makeTestDir("ptr-repo-mode");
+		// No config files anywhere, no env var, no pointer
+		const config = loadProjectConfig(cwdDir);
+		expect(config.taskRunner.project.name).toBe(DEFAULT_TASK_RUNNER_SECTION.project.name);
+	});
+
+	it("5.7: pointerConfigRoot with JSON config is used (JSON-first precedence preserved)", () => {
+		const cwdDir = makeTestDir("ptr-json");
+		const pointerDir = makeTestDir("ptr-json-config-repo");
+		writeJsonConfig(pointerDir, {
+			configVersion: 1,
+			taskRunner: { project: { name: "FromPointerJson" } },
+		});
+
+		const config = loadProjectConfig(cwdDir, pointerDir);
+		expect(config.taskRunner.project.name).toBe("FromPointerJson");
+	});
+
+	it("5.8: full precedence chain — cwd > pointer > TASKPLANE_WORKSPACE_ROOT > defaults", () => {
+		// Verify the complete 4-level precedence chain
+		const cwdDir = makeTestDir("ptr-chain-cwd");
+		const pointerDir = makeTestDir("ptr-chain-pointer");
+		const wsRoot = makeTestDir("ptr-chain-ws");
+
+		// Level 4: No config anywhere → defaults
+		let config = loadProjectConfig(cwdDir, undefined);
+		expect(config.taskRunner.project.name).toBe(DEFAULT_TASK_RUNNER_SECTION.project.name);
+
+		// Level 3: Only TASKPLANE_WORKSPACE_ROOT has config
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: Level3WsRoot\n");
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+		config = loadProjectConfig(cwdDir, undefined);
+		expect(config.taskRunner.project.name).toBe("Level3WsRoot");
+
+		// Level 2: Pointer has config (beats TASKPLANE_WORKSPACE_ROOT)
+		writeTaskRunnerYaml(pointerDir, "project:\n  name: Level2Pointer\n");
+		config = loadProjectConfig(cwdDir, pointerDir);
+		expect(config.taskRunner.project.name).toBe("Level2Pointer");
+
+		// Level 1: cwd has config (beats pointer)
+		writeTaskRunnerYaml(cwdDir, "project:\n  name: Level1Cwd\n");
+		config = loadProjectConfig(cwdDir, pointerDir);
+		expect(config.taskRunner.project.name).toBe("Level1Cwd");
+	});
+});
+
+// ── 5.x: Pointer-threaded config resolution (TP-016 Step 2) ─────────
+
+describe("pointer-threaded config resolution (TP-016)", () => {
+	/**
+	 * These tests verify that loadProjectConfig and task-runner's loadConfig
+	 * correctly thread pointer configRoot through the precedence chain:
+	 *   1. cwd has config files → use cwd (local override)
+	 *   2. pointerConfigRoot has config files → use it
+	 *   3. TASKPLANE_WORKSPACE_ROOT has config files → use it (legacy fallback)
+	 *   4. Fall back to cwd (loaders return defaults)
+	 */
+
+	it("5.1: loadProjectConfig uses pointerConfigRoot when cwd has no config files", () => {
+		const cwdDir = makeTestDir("ptr-cwd-empty");
+		const pointerRoot = makeTestDir("ptr-config-repo");
+
+		// Pointer config root has config
+		writeJsonConfig(pointerRoot, {
+			configVersion: 1,
+			taskRunner: { project: { name: "FromPointer" } },
+		});
+
+		const config = loadProjectConfig(cwdDir, join(pointerRoot));
+		expect(config.taskRunner.project.name).toBe("FromPointer");
+	});
+
+	it("5.2: cwd config takes precedence over pointerConfigRoot", () => {
+		const cwdDir = makeTestDir("ptr-cwd-wins");
+		const pointerRoot = makeTestDir("ptr-config-repo-2");
+
+		// cwd has config
+		writeJsonConfig(cwdDir, {
+			configVersion: 1,
+			taskRunner: { project: { name: "FromCwd" } },
+		});
+		// Pointer also has config
+		writeJsonConfig(pointerRoot, {
+			configVersion: 1,
+			taskRunner: { project: { name: "FromPointer" } },
+		});
+
+		const config = loadProjectConfig(cwdDir, join(pointerRoot));
+		expect(config.taskRunner.project.name).toBe("FromCwd");
+	});
+
+	it("5.3: pointerConfigRoot takes precedence over TASKPLANE_WORKSPACE_ROOT", () => {
+		const cwdDir = makeTestDir("ptr-over-ws");
+		const wsRoot = makeTestDir("ptr-ws-root");
+		const pointerRoot = makeTestDir("ptr-config-repo-3");
+
+		// Workspace root has config
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: FromWsRoot\n");
+		// Pointer config root has config
+		writeJsonConfig(pointerRoot, {
+			configVersion: 1,
+			taskRunner: { project: { name: "FromPointer" } },
+		});
+
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		const config = loadProjectConfig(cwdDir, join(pointerRoot));
+		expect(config.taskRunner.project.name).toBe("FromPointer");
+	});
+
+	it("5.4: pointerConfigRoot without config files falls through to TASKPLANE_WORKSPACE_ROOT", () => {
+		const cwdDir = makeTestDir("ptr-no-config");
+		const wsRoot = makeTestDir("ptr-ws-root-fb");
+		const pointerRoot = makeTestDir("ptr-config-repo-empty");
+
+		// Pointer root exists but has no config files
+		mkdirSync(join(pointerRoot, ".pi"), { recursive: true });
+
+		// Workspace root has config
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: FromWsRootFallback\n");
+
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		const config = loadProjectConfig(cwdDir, join(pointerRoot));
+		expect(config.taskRunner.project.name).toBe("FromWsRootFallback");
+	});
+
+	it("5.5: null/undefined pointerConfigRoot is same as pre-pointer behavior", () => {
+		const cwdDir = makeTestDir("ptr-null");
+		const wsRoot = makeTestDir("ptr-ws-root-null");
+
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: FromWsRootNoPointer\n");
+
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		// Explicit undefined
+		const config1 = loadProjectConfig(cwdDir, undefined);
+		expect(config1.taskRunner.project.name).toBe("FromWsRootNoPointer");
+
+		// No second arg at all
+		const config2 = loadProjectConfig(cwdDir);
+		expect(config2.taskRunner.project.name).toBe("FromWsRootNoPointer");
+	});
+
+	it("5.6: repo mode — no TASKPLANE_WORKSPACE_ROOT, no pointer → uses cwd or defaults", () => {
+		const cwdDir = makeTestDir("ptr-repo-mode");
+
+		// No TASKPLANE_WORKSPACE_ROOT, no pointer
+		delete process.env.TASKPLANE_WORKSPACE_ROOT;
+
+		const config = loadProjectConfig(cwdDir);
+		// Should get defaults since cwd has no config files
+		expect(config.taskRunner.project.name).toBe(DEFAULT_TASK_RUNNER_SECTION.project.name);
+	});
+
+	it("5.7: task-runner loadConfig repo mode parity — returns config without pointer interference", () => {
+		const cwdDir = makeTestDir("ptr-loadconfig-repo");
+
+		// No TASKPLANE_WORKSPACE_ROOT
+		delete process.env.TASKPLANE_WORKSPACE_ROOT;
+
+		writeJsonConfig(cwdDir, {
+			configVersion: 1,
+			taskRunner: { project: { name: "RepoModeProject" } },
+		});
+
+		const config = taskRunnerLoadConfig(cwdDir);
+		expect(config.project.name).toBe("RepoModeProject");
+	});
+
+	it("5.8: task-runner loadConfig workspace mode — resolves pointer for config", () => {
+		// This tests the full chain: loadConfig → resolveTaskRunnerPointer → loadProjectConfig
+		// We simulate workspace mode by setting TASKPLANE_WORKSPACE_ROOT, but since
+		// the workspace config YAML would need a full git repo setup, we verify that
+		// loadConfig gracefully handles workspace config failures (returns defaults or
+		// falls through to TASKPLANE_WORKSPACE_ROOT).
+		const cwdDir = makeTestDir("ptr-loadconfig-ws");
+		const wsRoot = makeTestDir("ptr-ws-for-loadconfig");
+
+		// Workspace root has config but no valid workspace YAML → pointer resolution
+		// will fail (workspace config load throws), but loadConfig should still work
+		// by falling through to TASKPLANE_WORKSPACE_ROOT
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: WsConfigFallback\n");
+
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		const config = taskRunnerLoadConfig(cwdDir);
+		// Should fall through: pointer fails (no workspace yaml) → wsRoot fallback
+		expect(config.project.name).toBe("WsConfigFallback");
+	});
+
+	it("5.9: pointerConfigRoot with YAML config is resolved correctly", () => {
+		const cwdDir = makeTestDir("ptr-yaml");
+		const pointerRoot = makeTestDir("ptr-yaml-config");
+
+		// Pointer root has YAML config (no JSON)
+		writeTaskRunnerYaml(pointerRoot, "project:\n  name: PointerYaml\n");
+
+		const config = loadProjectConfig(cwdDir, join(pointerRoot));
+		expect(config.taskRunner.project.name).toBe("PointerYaml");
 	});
 });

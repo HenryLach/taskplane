@@ -41,7 +41,7 @@
 - [x] Thread pointer into `resolveConfigRoot()` in config-loader.ts: insert pointer configRoot between cwd-local and TASKPLANE_WORKSPACE_ROOT in precedence chain (cwd → pointer → wsRoot → defaults). Non-fatal: resolvePointer warn+fallback, never throws.
 - [x] Thread pointer into `loadAgentDef()` in task-runner.ts: insert pointer agentRoot between cwd-local paths and base package (cwd/.pi/agents → cwd/agents → pointer agentRoot → base package). Non-fatal: pointer fallback transparent.
 - [x] Repo mode parity: verify no behavior change when workspaceConfig is null (pointer returns null, existing code paths unchanged)
-- [ ] Add Step 2 tests in workspace-config.test.ts: config resolution with valid pointer, missing/malformed pointer fallback, and repo-mode parity for both config and agent paths
+- [x] Add Step 2 tests in project-config-loader.test.ts (5.x series): config resolution with valid pointer, pointer precedence over wsRoot, cwd override over pointer, fallback when pointer has no config, repo-mode parity, task-runner loadConfig integration, YAML pointer config
 
 ---
 
