@@ -56,7 +56,7 @@
 - [x] Pointer warning logged once at orchestrator startup (non-fatal, warn+fallback).
 - [x] State/sidecar paths invariant: `ORCH_SIDECAR_DIR`, abort signal, batch state, merge request/result files all remain at `<workspaceRoot>/.pi/` — never follow pointer.
 - [x] Add orchestrator pointer tests: buildExecutionContext with pointer, merge agent path via pointer, state paths unchanged, repo-mode parity.
-- [ ] R008: Thread `workspaceRoot` into `resumeOrchBatch()` — add parameter, use as stateRoot for `loadBatchState`, `persistRuntimeState`, `mergeWaveByRepo`, `deleteBatchState`. Update extension.ts call site.
+- [x] R008: Thread `workspaceRoot` into `resumeOrchBatch()` — add parameter, use as stateRoot for `loadBatchState`, `persistRuntimeState`, `mergeWaveByRepo`, `deleteBatchState`. Update extension.ts call site.
 - [ ] R008: Replace source-text assertions in test 7.11 with behavioral test validating workspace-mode state root consistency between orch and orch-resume paths.
 
 ---
@@ -163,6 +163,7 @@
 | 2026-03-17 18:37 | Step 4 started | Thread Through Dashboard |
 | 2026-03-17 18:39 | Review R009 | plan Step 4: REVISE |
 | 2026-03-17 18:42 | Review R008 | code Step 3: REVISE |
+| 2026-03-17 18:44 | Worker iter 5 | done in 297s, ctx: 21%, tools: 33 |
 
 ## Blockers
 *None*

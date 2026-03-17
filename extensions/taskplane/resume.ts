@@ -499,15 +499,19 @@ export async function resumeOrchBatch(
 	onNotify: (message: string, level: "info" | "warning" | "error") => void,
 	onMonitorUpdate?: MonitorUpdateCallback,
 	workspaceConfig?: WorkspaceConfig | null,
+	workspaceRoot?: string,
 	agentRoot?: string,
 ): Promise<void> {
 	const repoRoot = cwd;
+	// State files (.pi/batch-state.json, lane-state, etc.) belong in the workspace root,
+	// which is where .pi/ config lives. In repo mode, stateRoot === repoRoot.
+	const stateRoot = workspaceRoot ?? cwd;
 	const prefix = orchConfig.orchestrator.tmux_prefix;
 
 	// ── 1. Load persisted state ──────────────────────────────────
 	let persistedState: PersistedBatchState | null;
 	try {
-		persistedState = loadBatchState(repoRoot);
+		persistedState = loadBatchState(stateRoot);
 	} catch (err: unknown) {
 		if (err instanceof StateFileError) {
 			onNotify(
@@ -899,7 +903,7 @@ export async function resumeOrchBatch(
 				batchState.batchId,
 				batchState.baseBranch,
 				workspaceConfig,
-				undefined, // stateRoot — uses default (repoRoot)
+				stateRoot,
 				agentRoot,
 			);
 
@@ -992,7 +996,7 @@ export async function resumeOrchBatch(
 		}
 	}
 
-	persistRuntimeState("resume-reconciliation", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery ?? null, repoRoot);
+	persistRuntimeState("resume-reconciliation", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery ?? null, stateRoot);
 
 	// ── 10. Continue wave execution ──────────────────────────────
 	// We need to execute remaining waves starting from resumeWaveIndex.
@@ -1004,13 +1008,13 @@ export async function resumeOrchBatch(
 		// Check pause signal
 		if (batchState.pauseSignal.paused) {
 			batchState.phase = "paused";
-			persistRuntimeState("pause-before-wave", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
+			persistRuntimeState("pause-before-wave", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 			onNotify(`⏸️  Batch paused before wave ${waveIdx + 1}.`, "warning");
 			break;
 		}
 
 		batchState.currentWaveIndex = waveIdx;
-		persistRuntimeState("wave-index-change", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
+		persistRuntimeState("wave-index-change", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 
 		// Get wave tasks, filtering out completed/failed/blocked ones.
 		let waveTasks = persistedState.wavePlan[waveIdx].filter(
@@ -1046,7 +1050,7 @@ export async function resumeOrchBatch(
 		const handleResumeMonitorUpdate: MonitorUpdateCallback = (monitorState) => {
 			const changed = syncTaskOutcomesFromMonitor(monitorState, allTaskOutcomes);
 			if (changed) {
-				persistRuntimeState("task-transition", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
+				persistRuntimeState("task-transition", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 			}
 			onMonitorUpdate?.(monitorState);
 		};
@@ -1071,7 +1075,7 @@ export async function resumeOrchBatch(
 					encounteredRepoRoots.add(resolveRepoRoot(lane.repoId, repoRoot, workspaceConfig));
 				}
 				if (seedPendingOutcomesForAllocatedLanes(lanes, allTaskOutcomes)) {
-					persistRuntimeState("wave-lanes-allocated", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
+					persistRuntimeState("wave-lanes-allocated", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 				}
 			},
 			workspaceConfig,
@@ -1108,7 +1112,7 @@ export async function resumeOrchBatch(
 			batchState.blockedTaskIds.add(blocked);
 		}
 
-		persistRuntimeState("wave-execution-complete", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
+		persistRuntimeState("wave-execution-complete", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 
 		const elapsedSec = Math.round((waveResult.endedAt - waveResult.startedAt) / 1000);
 		onNotify(
@@ -1126,13 +1130,13 @@ export async function resumeOrchBatch(
 		if (waveResult.stoppedEarly) {
 			if (waveResult.policyApplied === "stop-all") {
 				batchState.phase = "stopped";
-				persistRuntimeState("stop-all", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
+				persistRuntimeState("stop-all", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 				onNotify(ORCH_MESSAGES.orchBatchStopped(batchState.batchId, "stop-all"), "error");
 				break;
 			}
 			if (waveResult.policyApplied === "stop-wave") {
 				batchState.phase = "stopped";
-				persistRuntimeState("stop-wave", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
+				persistRuntimeState("stop-wave", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 				onNotify(ORCH_MESSAGES.orchBatchStopped(batchState.batchId, "stop-wave"), "error");
 				break;
 			}
@@ -1166,7 +1170,7 @@ export async function resumeOrchBatch(
 
 			if (mergeableLaneCount > 0) {
 				batchState.phase = "merging";
-				persistRuntimeState("merge-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
+				persistRuntimeState("merge-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 				onNotify(ORCH_MESSAGES.orchMergeStart(waveIdx + 1, mergeableLaneCount), "info");
 
 				mergeResult = mergeWaveByRepo(
@@ -1178,7 +1182,7 @@ export async function resumeOrchBatch(
 					batchState.batchId,
 					batchState.baseBranch,
 					workspaceConfig,
-					undefined, // stateRoot — uses default (repoRoot)
+					stateRoot,
 					agentRoot,
 				);
 				batchState.mergeResults.push(mergeResult);
@@ -1228,7 +1232,7 @@ export async function resumeOrchBatch(
 				}
 
 				batchState.phase = "executing";
-				persistRuntimeState("merge-complete", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
+				persistRuntimeState("merge-complete", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 			} else if (mixedOutcomeLanes.length > 0) {
 				const mixedIds = mixedOutcomeLanes.map(l => `lane-${l.laneNumber}`).join(", ");
 				mergeResult = {
@@ -1260,7 +1264,7 @@ export async function resumeOrchBatch(
 
 			batchState.phase = policyResult.targetPhase;
 			batchState.errors.push(policyResult.errorMessage);
-			persistRuntimeState(policyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
+			persistRuntimeState(policyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 			onNotify(policyResult.notifyMessage, policyResult.notifyLevel);
 			preserveWorktreesForResume = true;
 			break;
@@ -1330,7 +1334,7 @@ export async function resumeOrchBatch(
 		}
 	}
 
-	persistRuntimeState("batch-terminal", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, repoRoot);
+	persistRuntimeState("batch-terminal", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 
 	if (batchState.phase === "paused" || batchState.phase === "stopped") {
 		execLog("resume", batchState.batchId, "resumed batch ended in non-terminal state", { phase: batchState.phase });
@@ -1349,7 +1353,7 @@ export async function resumeOrchBatch(
 
 		if (batchState.phase === "completed") {
 			try {
-				deleteBatchState(repoRoot);
+				deleteBatchState(stateRoot);
 				execLog("state", batchState.batchId, "state file deleted on clean resume completion");
 			} catch {
 				// Best-effort
