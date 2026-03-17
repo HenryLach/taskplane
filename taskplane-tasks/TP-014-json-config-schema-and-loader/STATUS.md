@@ -28,7 +28,7 @@
 - [x] TypeScript interfaces for unified `TaskplaneConfig` schema defined in `extensions/taskplane/config-schema.ts`
 - [x] Schema covers all 13 task-runner sections + 7 orchestrator sections with JSON camelCase naming
 - [x] `configVersion` field with v1 semantics (required, initial value 1, unknown future versions rejected)
-- [ ] Centralized defaults for the unified config (single source of truth)
+- [x] Centralized defaults for the unified config (single source of truth)
 - [ ] Section mapping documented in STATUS.md Discoveries table
 
 ---
