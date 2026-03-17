@@ -1,11 +1,11 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -15,10 +15,14 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Read current `cmdInit()` implementation
 - [ ] Read spec auto-detection and gitignore sections
+- [ ] Verify spec reachability and record source path
+- [ ] Verify TP-014 config loader/schema contract (JSON output shape, YAML fallback expectations)
+- [ ] Record current `cmdInit()` behavior to preserve (--preset, YAML continuity, --tasks-root, --dry-run, --force, --no-examples)
+- [ ] Identify downstream validation (existing tests, CLI checks for init regressions)
 
 ---
 
@@ -83,6 +87,8 @@
 
 ## Reviews
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -93,6 +99,12 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-17 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-17 15:23 | Task started | Extension-driven execution |
+| 2026-03-17 15:23 | Step 0 started | Preflight |
+| 2026-03-17 15:23 | Task started | Extension-driven execution |
+| 2026-03-17 15:23 | Step 0 started | Preflight |
+| 2026-03-17 15:25 | Review R001 | plan Step 0: REVISE |
+| 2026-03-17 15:26 | Review R001 | plan Step 0: REVISE |
 
 ## Blockers
 *None*
