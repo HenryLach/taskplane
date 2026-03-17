@@ -654,8 +654,9 @@ export function mergeWave(
 			// Spawn merge agent in the isolated merge worktree
 			spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
 
-			// Wait for result
-			const mergeResult = waitForMergeResult(resultFilePath, sessionName);
+			// Wait for result — use configured timeout (default 10 min, was 5 min)
+			const timeoutMs = (config.merge.timeout_minutes ?? 10) * 60 * 1000;
+			const mergeResult = waitForMergeResult(resultFilePath, sessionName, timeoutMs);
 
 			// Clean up request file (leave result file for debugging)
 			try {

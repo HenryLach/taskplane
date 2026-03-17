@@ -746,6 +746,7 @@ export function toOrchestratorConfig(config: TaskplaneConfig): import("./types.t
 			tools: o.merge.tools,
 			verify: [...o.merge.verify],
 			order: o.merge.order,
+			timeout_minutes: o.merge.timeoutMinutes ?? 10,
 		},
 		failure: {
 			on_task_failure: o.failure.onTaskFailure,
