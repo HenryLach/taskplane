@@ -45,7 +45,7 @@
 **Status:** 🟨 In Progress
 
 - [x] Define required gitignore entries as a reusable constant (for Step 4 reuse)
-- [ ] Implement `ensureGitignoreEntries()` helper — idempotent: creates file if needed, skips existing entries, respects dry-run
+- [x] Implement `ensureGitignoreEntries()` helper — idempotent: creates file if needed, skips existing entries, respects dry-run
 - [ ] Integrate gitignore enforcement into `cmdInit()` repo-mode flow (after scaffolding, before auto-commit)
 - [ ] Implement tracked-artifact detection (`git ls-files`) and `git rm --cached` offer — isolated from auto-commit staging, respects dry-run and non-interactive modes
 - [ ] Update `printFileList()` dry-run output to show gitignore entries that would be added
