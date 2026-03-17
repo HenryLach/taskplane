@@ -49,8 +49,8 @@
 - [x] R006 fix #2: Generate Advanced section items dynamically from schema/default config instead of hardcoded list
 - [x] R006 fix #3: Source detection must use same type guards as extractAllowlistedPreferences (reject invalid pref types)
 - [x] R006 fix #4: Number validation must enforce num > 0 (not num >= 0) to match "positive integers" contract
-- [ ] R006 fix #5: Add unit tests for detectFieldSource, getFieldDisplayValue, validateFieldInput
-- [x] Verify tests still pass after R006 fixes
+- [x] R006 fix #5: Add unit tests for detectFieldSource, getFieldDisplayValue, validateFieldInput (58 tests in settings-tui.test.ts)
+- [x] Verify tests still pass after R006 fixes (598 total: 540 existing + 58 new)
 
 **Step 2 Implementation Contract (R005):**
 - Config root: uses `execCtx!.repoRoot` for config reads. When `execCtx` is null (startup failure), command shows error via `requireExecCtx()` guard.

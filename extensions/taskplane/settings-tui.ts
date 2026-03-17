@@ -19,8 +19,8 @@
 import type { ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder, getSettingsListTheme } from "@mariozechner/pi-coding-agent";
 import { Container, type SelectItem, SelectList, type SettingItem, SettingsList, Text } from "@mariozechner/pi-tui";
-import { readFileSync, existsSync } from "fs";
-import { join } from "path";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs";
+import { join, dirname } from "path";
 import { parse as yamlParse } from "yaml";
 
 import {
@@ -306,6 +306,191 @@ function readRawPreferences(): Record<string, any> | null {
 	} catch {
 		return null;
 	}
+}
+
+
+// ── Write-Back ───────────────────────────────────────────────────────
+
+/**
+ * Set a nested value in an object by dot-path, creating intermediate
+ * objects as needed. If `value` is undefined, deletes the leaf key
+ * (for clearing optional fields).
+ */
+function setNestedValue(obj: Record<string, any>, path: string, value: any): void {
+	const parts = path.split(".");
+	let current = obj;
+	for (let i = 0; i < parts.length - 1; i++) {
+		const part = parts[i];
+		if (current[part] === undefined || current[part] === null || typeof current[part] !== "object") {
+			current[part] = {};
+		}
+		current = current[part];
+	}
+	const leafKey = parts[parts.length - 1];
+	if (value === undefined) {
+		delete current[leafKey];
+	} else {
+		current[leafKey] = value;
+	}
+}
+
+/**
+ * Write a value to the project config JSON (Layer 1).
+ *
+ * Always writes to `<configRoot>/.pi/taskplane-config.json`.
+ * When no JSON config exists (YAML-only scenario), creates a new JSON
+ * file with configVersion + the changed field. The YAML files are
+ * preserved; JSON takes precedence on next load per loader semantics.
+ *
+ * Uses atomic tmp+rename write pattern to prevent partial writes.
+ */
+export function writeProjectConfigField(
+	configRoot: string,
+	configPath: string,
+	value: any,
+): void {
+	const resolvedRoot = resolveConfigRoot(configRoot);
+	const piDir = join(resolvedRoot, ".pi");
+	const jsonPath = join(piDir, PROJECT_CONFIG_FILENAME);
+	const tmpPath = jsonPath + ".tmp";
+
+	// Ensure .pi/ directory exists
+	if (!existsSync(piDir)) {
+		mkdirSync(piDir, { recursive: true });
+	}
+
+	// Load existing JSON config or create minimal skeleton
+	let configObj: Record<string, any>;
+	if (existsSync(jsonPath)) {
+		try {
+			const raw = readFileSync(jsonPath, "utf-8");
+			configObj = JSON.parse(raw);
+		} catch {
+			// Malformed — create fresh with version
+			configObj = { configVersion: CONFIG_VERSION };
+		}
+	} else {
+		// No JSON exists (possibly YAML-only) — create new JSON file
+		configObj = { configVersion: CONFIG_VERSION };
+	}
+
+	// Set the value at the config path
+	setNestedValue(configObj, configPath, value);
+
+	// Atomic write: tmp + rename
+	const json = JSON.stringify(configObj, null, 2) + "\n";
+	writeFileSync(tmpPath, json, "utf-8");
+	try {
+		renameSync(tmpPath, jsonPath);
+	} catch {
+		// Windows fallback: direct write if rename fails
+		writeFileSync(jsonPath, json, "utf-8");
+		try { if (existsSync(tmpPath)) renameSync(tmpPath, tmpPath); } catch { /* cleanup best-effort */ }
+	}
+}
+
+/**
+ * Write a value to the user preferences JSON (Layer 2).
+ *
+ * Writes to `resolveUserPreferencesPath()`.
+ * If `value` is undefined, deletes the key from the preferences file
+ * (for clearing preferences).
+ *
+ * Uses atomic tmp+rename write pattern to prevent partial writes.
+ */
+export function writeUserPreference(
+	prefsKey: keyof import("./config-schema.ts").UserPreferences,
+	value: any,
+): void {
+	const prefsPath = resolveUserPreferencesPath();
+	const tmpPath = prefsPath + ".tmp";
+
+	// Ensure directory exists
+	const prefsDir = dirname(prefsPath);
+	if (!existsSync(prefsDir)) {
+		mkdirSync(prefsDir, { recursive: true });
+	}
+
+	// Load existing prefs or create empty object
+	let prefsObj: Record<string, any> = {};
+	if (existsSync(prefsPath)) {
+		try {
+			const raw = readFileSync(prefsPath, "utf-8");
+			const parsed = JSON.parse(raw);
+			if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+				prefsObj = parsed;
+			}
+		} catch {
+			// Malformed — start fresh (preserve what we can't parse)
+			prefsObj = {};
+		}
+	}
+
+	// Set or delete the value
+	if (value === undefined) {
+		delete prefsObj[prefsKey];
+	} else {
+		prefsObj[prefsKey] = value;
+	}
+
+	// Atomic write: tmp + rename
+	const json = JSON.stringify(prefsObj, null, 2) + "\n";
+	writeFileSync(tmpPath, json, "utf-8");
+	try {
+		renameSync(tmpPath, prefsPath);
+	} catch {
+		// Windows fallback: direct write if rename fails
+		writeFileSync(prefsPath, json, "utf-8");
+		try { if (existsSync(tmpPath)) renameSync(tmpPath, tmpPath); } catch { /* cleanup best-effort */ }
+	}
+}
+
+/**
+ * Convert a raw string value from the TUI into the appropriate typed
+ * value for writing to config JSON.
+ *
+ * - Numbers: parse to number
+ * - Booleans: parse "true"/"false" to boolean
+ * - "(not set)" / "(inherit)": returns undefined (delete key)
+ * - Strings: return as-is
+ */
+export function coerceValueForWrite(field: FieldDef, rawValue: string): any {
+	// Strip source badge if present
+	const cleaned = rawValue.replace(/\s+\((?:default|project|user)\)$/, "").trim();
+
+	// Unset / inherit → undefined (delete key)
+	if (cleaned === "(not set)" || cleaned === "(inherit)") {
+		return undefined;
+	}
+
+	switch (field.fieldType) {
+		case "number": {
+			const num = Number(cleaned);
+			return Number.isFinite(num) ? num : undefined;
+		}
+		case "boolean":
+			return cleaned === "true";
+		case "enum":
+		case "string":
+		default:
+			return cleaned;
+	}
+}
+
+/**
+ * Determine the write destination for a field change.
+ *
+ * - L1-only → "project"
+ * - L2-only → "prefs"
+ * - L1+L2 → must be chosen by the user (returns null to signal "ask user")
+ */
+type WriteDestination = "project" | "prefs";
+
+function getDefaultWriteDestination(field: FieldDef): WriteDestination | null {
+	if (field.layer === "L1") return "project";
+	if (field.layer === "L2") return "prefs";
+	// L1+L2 → user must choose
+	return null;
 }
 
 
@@ -657,13 +842,27 @@ export async function openSettingsTui(
 	ctx: ExtensionContext,
 	configRoot: string,
 ): Promise<void> {
-	// Load current config state
-	const mergedConfig = loadProjectConfig(configRoot);
-	const prefs = loadUserPreferences();
-	const rawProject = readRawProjectJson(resolveConfigRoot(configRoot)) || readRawYamlConfigs(resolveConfigRoot(configRoot));
-	const rawPrefs = readRawPreferences();
+	// Load current config state — refreshed each time we return to the top level
+	await showSectionSelectorLoop(ctx, configRoot);
+}
 
-	await showSectionSelector(ctx, mergedConfig, prefs, rawProject, rawPrefs, configRoot);
+/**
+ * Reload all config state from disk. Called after write-back to
+ * refresh the TUI display.
+ */
+function loadConfigState(configRoot: string): {
+	mergedConfig: TaskplaneConfig;
+	prefs: UserPreferences;
+	rawProject: Record<string, any> | null;
+	rawPrefs: Record<string, any> | null;
+} {
+	const resolvedRoot = resolveConfigRoot(configRoot);
+	return {
+		mergedConfig: loadProjectConfig(configRoot),
+		prefs: loadUserPreferences(),
+		rawProject: readRawProjectJson(resolvedRoot) || readRawYamlConfigs(resolvedRoot),
+		rawPrefs: readRawPreferences(),
+	};
 }
 
 /**
