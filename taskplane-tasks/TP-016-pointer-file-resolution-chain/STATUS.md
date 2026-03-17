@@ -49,13 +49,15 @@
 ---
 
 ### Step 3: Thread Through Orchestrator
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] `buildExecutionContext()` resolves pointer once and passes `pointer.configRoot` to config loaders. Repo mode (null pointer) unchanged.
 - [x] `spawnMergeAgent()` uses pointer's `agentRoot` for merge agent prompt path (separate from `stateRoot` used for state files). Merge request/result files stay at `stateRoot/.pi/`.
 - [x] Pointer warning logged once at orchestrator startup (non-fatal, warn+fallback).
 - [x] State/sidecar paths invariant: `ORCH_SIDECAR_DIR`, abort signal, batch state, merge request/result files all remain at `<workspaceRoot>/.pi/` — never follow pointer.
 - [x] Add orchestrator pointer tests: buildExecutionContext with pointer, merge agent path via pointer, state paths unchanged, repo-mode parity.
+- [ ] R008: Thread `workspaceRoot` into `resumeOrchBatch()` — add parameter, use as stateRoot for `loadBatchState`, `persistRuntimeState`, `mergeWaveByRepo`, `deleteBatchState`. Update extension.ts call site.
+- [ ] R008: Replace source-text assertions in test 7.11 with behavioral test validating workspace-mode state root consistency between orch and orch-resume paths.
 
 ---
 
