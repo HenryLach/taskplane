@@ -1,6 +1,6 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
-**Current Step:** Step 2: Gitignore Enforcement
+**Current Step:** Step 3: tmux and Environment Detection
 **Status:** ✅ Step 2 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
@@ -56,7 +56,7 @@
 ---
 
 ### Step 3: tmux and Environment Detection
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] tmux detection with spawn_mode defaulting
 - [ ] Guidance message when tmux not found
@@ -151,6 +151,9 @@
 | 2026-03-17 16:02 | Worker iter 3 | done in 484s, ctx: 29%, tools: 55 |
 | 2026-03-17 16:04 | Review R006 | code Step 2: REVISE |
 | 2026-03-17 16:04 | Review R006 | code Step 2: REVISE |
+| 2026-03-17 16:10 | Worker iter 3 | done in 342s, ctx: 19%, tools: 48 |
+| 2026-03-17 16:10 | Step 2 complete | Gitignore Enforcement |
+| 2026-03-17 16:10 | Step 3 started | tmux and Environment Detection |
 
 ## Blockers
 *None*
