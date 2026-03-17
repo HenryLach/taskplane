@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -34,7 +34,7 @@
 ---
 
 ### Step 2: Implement Unified Config Loader
-**Status:** ✅ Complete (R006 revisions applied)
+**Status:** ✅ Complete
 
 - [x] `loadProjectConfig()` implemented: reads `.pi/taskplane-config.json` first, falls back to both YAML files, respects `TASKPLANE_WORKSPACE_ROOT`, validates `configVersion`, errors on malformed JSON/unsupported version
 - [x] YAML-to-camelCase mapping: snake_case keys from both YAML files mapped to unified `TaskplaneConfig` shape with deep merge + cloned defaults (non-mutating)
@@ -49,9 +49,11 @@
 ### Step 3: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] Tests for JSON, YAML fallback, defaults, and schema validation
-- [ ] Existing tests pass
-- [ ] `cd extensions && npx vitest run`
+- [ ] Create `extensions/tests/project-config-loader.test.ts` with loader precedence/error matrix (valid JSON, malformed JSON, missing configVersion, unsupported configVersion, JSON+YAML present uses JSON, YAML-only fallback, neither present returns defaults)
+- [ ] Workspace root resolution tests: cwd has `.pi` but no config → falls back to TASKPLANE_WORKSPACE_ROOT with config files
+- [ ] Key-preservation and adapter regression tests: record keys preserved (sizeWeights S/M/L, preWarm.commands, taskAreas IDs), snake_case adapters produce correct shapes, repoId trim/drop behavior
+- [ ] Defaults cloned/non-mutating across multiple calls + backward-compat wrappers (loadOrchestratorConfig, loadTaskRunnerConfig, task-runner loadConfig)
+- [ ] Existing tests pass: `cd extensions && npx vitest run`
 
 ---
 
@@ -78,6 +80,8 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -128,6 +132,11 @@
 | 2026-03-17 14:58 | Worker iter 3 | done in 329s, ctx: 28%, tools: 38 |
 | 2026-03-17 14:58 | Step 2 complete | Implement Unified Config Loader |
 | 2026-03-17 14:58 | Step 3 started | Testing & Verification |
+| 2026-03-17 14:59 | Worker iter 3 | done in 367s, ctx: 25%, tools: 38 |
+| 2026-03-17 14:59 | Step 2 complete | Implement Unified Config Loader |
+| 2026-03-17 14:59 | Step 3 started | Testing & Verification |
+| 2026-03-17 15:00 | Review R007 | plan Step 3: REVISE |
+| 2026-03-17 15:01 | Review R007 | plan Step 3: REVISE |
 
 ## Blockers
 *None*
