@@ -1,6 +1,6 @@
 # TP-016: Pointer File Resolution Chain — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Implement Pointer Resolution
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
@@ -25,7 +25,7 @@
 ---
 
 ### Step 1: Implement Pointer Resolution
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] `resolvePointer()` function created and validated
 - [ ] Returns resolved paths for config, agents, and state
@@ -87,7 +87,7 @@
 | Sidecar dir: `ORCH_SIDECAR_DIR = join(workspaceRoot \|\| repoRoot, ".pi")` | Step 3 input | `execution.ts:138` |
 | Dashboard state: `BATCH_STATE_PATH = <REPO_ROOT>/.pi/batch-state.json`, lane states from `<REPO_ROOT>/.pi/lane-state-*.json` | Step 4 input | `dashboard/server.cjs:634-636,194` |
 | Pointer file shape: `{ config_repo: "<repoId>", config_path: ".taskplane" }` at `<workspaceRoot>/.pi/taskplane-pointer.json` | Step 1 input | `bin/taskplane.mjs:1072-1075` |
-| `settings-and-onboarding-spec.md` does not exist in this worktree or main repo | Non-blocking | `.pi/local/docs/` |
+| `settings-and-onboarding-spec.md` exists at `C:/dev/taskplane/.pi/local/docs/settings-and-onboarding-spec.md` (main repo, not worktree) | Step 0 input | `.pi/local/docs/` |
 | Dashboard conversation files at `<REPO_ROOT>/.pi/worker-conversation-*.jsonl` | Step 4 input | `dashboard/server.cjs:381` |
 
 ## Execution Log
@@ -99,7 +99,9 @@
 | 2026-03-17 17:25 | Review R001 | plan Step 0: REVISE |
 | 2026-03-17 17:29 | Worker iter 1 | done in 234s, ctx: 40%, tools: 43 |
 | 2026-03-17 17:30 | Review R002 | code Step 0: REVISE |
-| 2026-03-17 17:31 | Review R002 | code Step 0: REVISE |
+| 2026-03-17 17:32 | Worker iter 1 | done in 128s, ctx: 12%, tools: 19 |
+| 2026-03-17 17:32 | Step 0 complete | Preflight |
+| 2026-03-17 17:32 | Step 1 started | Implement Pointer Resolution |
 
 ## Blockers
 *None*
@@ -119,14 +121,14 @@
 | 5 | `TASKPLANE_WORKSPACE_ROOT` env propagation | `buildLaneEnvVars()` | `execution.ts:147-148` | not set | `workspaceRoot` (when != repoRoot) |
 | 6 | Orch-abort signal file | monitor loop | `execution.ts:578` | `join(repoRoot, ".pi", "orch-abort-signal")` | same (uses repoRoot) |
 | 7 | Orch lane log paths | `laneLogPath()` | `execution.ts:237,249` | `join(lane.worktreePath, ".pi", "orch-logs", ...)` | same |
-| 8 | Merge agent prompt | `launchTmuxMerge()` | `merge.ts:307` | `join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md")` | stateRoot = wsRoot |
+| 8 | Merge agent prompt | `spawnMergeAgent()` | `merge.ts:307` | `join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md")` | stateRoot = wsRoot |
 | 9 | Merge request/result files | `runMergeWave()` | `merge.ts:619,621` | `join(stateRoot ?? repoRoot, ".pi", ...)` | stateRoot = wsRoot |
 | 10 | Batch state (`batch-state.json`) | `batchStatePath()` | `types.ts:1168-1170` | `join(repoRoot, ".pi", BATCH_STATE_FILENAME)` | same (repoRoot from context) |
 | 11 | Batch history (`batch-history.json`) | `batchHistoryPath()` | `persistence.ts:1242` | `join(repoRoot, ".pi", ...)` | same |
 | 12 | Dashboard batch state | `loadLaneStates()`, startup | `dashboard/server.cjs:194,635-636` | `join(REPO_ROOT, ".pi", ...)` | same (REPO_ROOT from --root flag) |
 | 13 | Dashboard conversation logs | route handler | `dashboard/server.cjs:381` | `join(REPO_ROOT, ".pi", ...)` | same |
 | 14 | Workspace config | `loadWorkspaceConfig()` | `workspace.ts` via `workspaceConfigPath()` | N/A (absent = repo mode) | `join(workspaceRoot, ".pi", "taskplane-workspace.yaml")` |
-| 15 | Taskplane extension install path | `resolveTaskplanePackage()` | `task-runner.ts:362` | standard node resolution | also checks `TASKPLANE_WORKSPACE_ROOT/.pi/npm/node_modules/taskplane` |
+| 15 | Taskplane extension install path | `findPackageRoot()` | `task-runner.ts:337` | standard node resolution | also checks `TASKPLANE_WORKSPACE_ROOT/.pi/npm/node_modules/taskplane` |
 
 #### Key Observations
 - **Config loading** (#1): Already has `TASKPLANE_WORKSPACE_ROOT` fallback via `resolveConfigRoot()`. Pointer would replace/extend this.
@@ -136,34 +138,23 @@
 - **Dashboard** (#12,13): Hardcoded to `REPO_ROOT/.pi/`. In workspace mode dashboard needs workspace root, not individual repo root.
 - **Pointer file schema**: `{ config_repo: string, config_path: string }` where config_repo is a repo name (not path) and config_path is relative within that repo (e.g., ".taskplane").
 
-### Mode Matrix (Step 0 Preflight)
+### Authoritative Mode Matrix
 
-| Scenario | Workspace Config | Pointer File | Config Resolution | Agent Resolution | State/Sidecar Resolution |
-|----------|-----------------|--------------|-------------------|------------------|--------------------------|
-| **Repo mode** | Absent | N/A (ignored) | `cwd/.pi/` (config files) → defaults | `cwd/.pi/agents/` → base package | `cwd/.pi/` (walk-up) |
-| **Workspace, valid pointer** | Present | Valid JSON, valid `config_repo`+`config_path` | Resolve pointer → `<config_repo_path>/<config_path>/` for config | Resolve pointer → `<config_repo_path>/<config_path>/agents/` → base package | `workspaceRoot/.pi/` (state stays at workspace root) |
-| **Workspace, pointer missing** | Present | File absent at `workspaceRoot/.pi/taskplane-pointer.json` | Fallback to `TASKPLANE_WORKSPACE_ROOT/.pi/` (current behavior) | Fallback to current worktree cwd paths (current behavior) | `workspaceRoot/.pi/` (unchanged) |
-| **Workspace, pointer malformed** | Present | File exists but invalid JSON or missing fields | Warn + fallback same as "pointer missing" | Warn + fallback same as "pointer missing" | `workspaceRoot/.pi/` (unchanged) |
-| **Workspace, pointer invalid config_repo** | Present | Valid JSON but `config_repo` not in workspace repos map | Log warning → fall back to `TASKPLANE_WORKSPACE_ROOT` | Same fallback | `workspaceRoot/.pi/` (unchanged) |
+> Spec source: `C:/dev/taskplane/.pi/local/docs/settings-and-onboarding-spec.md` — Resolved Decision #1 (pointer), #4 (dashboard), "What lives where" polyrepo diagram.
 
-#### Design decisions:
-1. **Pointer is workspace-only**: In repo mode, no pointer file is read. Even if one exists, it's ignored. This guarantees zero repo-mode behavior change.
+| Scenario | Workspace Config | Pointer File | Config Source | Agent Source | State/Sidecar Source |
+|----------|-----------------|--------------|---------------|--------------|----------------------|
+| **Repo mode** | Absent | N/A (ignored even if present) | `<cwd>/.pi/` → defaults | `<cwd>/.pi/agents/` → base package | `<cwd>/.pi/` (walk-up) |
+| **Workspace + pointer valid** | Present | Valid JSON, valid `config_repo`+`config_path` | `<configRepoPath>/<config_path>/` | `<configRepoPath>/<config_path>/agents/` → base package | `<wsRoot>/.pi/` (unchanged) |
+| **Workspace + pointer absent** | Present | File absent | Warn + fallback to `TASKPLANE_WORKSPACE_ROOT/.pi/` | Warn + fallback to worktree cwd paths | `<wsRoot>/.pi/` (unchanged) |
+| **Workspace + pointer malformed** | Present | Invalid JSON or missing fields | Warn + fallback to `TASKPLANE_WORKSPACE_ROOT/.pi/` | Warn + fallback to worktree cwd paths | `<wsRoot>/.pi/` (unchanged) |
+| **Workspace + unknown config_repo** | Present | `config_repo` not in workspace repos map | Warn + fallback to `TASKPLANE_WORKSPACE_ROOT/.pi/` | Warn + fallback to worktree cwd paths | `<wsRoot>/.pi/` (unchanged) |
+
+#### Design decisions (unified):
+1. **Pointer is workspace-only**: In repo mode, no pointer file is read. Even if one exists, it's ignored. Zero repo-mode behavior change.
 2. **State/sidecar files never follow pointer**: Batch state, conversation logs, abort signals, lane logs — all stay at `workspaceRoot/.pi/`. Only config and agent artifacts follow the pointer to the config repo.
-3. **Missing pointer = graceful fallback**: Workspace mode without a pointer is a valid (if degraded) configuration. This supports incremental adoption and the case where init v2 hasn't been run yet.
-4. **Malformed pointer = warn + fallback**: Non-destructive. Log a warning but don't crash. User can fix or re-run init.
-5. **Invalid config_repo = warn + fallback**: If the pointer references a repo not in the workspace config, log a warning and fall back to `TASKPLANE_WORKSPACE_ROOT` behavior. This keeps pointer failure consistently non-fatal across all failure modes.
-
-### Mode Matrix: Pointer Resolution Behavior
-
-| Scenario | Pointer File | Config Source | Agent Source | State Source |
-|----------|-------------|---------------|--------------|--------------|
-| **Repo mode** (no workspace config) | Absent | `<cwd>/.pi/` (unchanged) | `<cwd>/.pi/agents/` (unchanged) | `<cwd>/.pi/` (unchanged) |
-| **Workspace + pointer valid** | `{ config_repo: "myrepo", config_path: ".taskplane" }` | `<configRepoPath>/.taskplane/` | `<configRepoPath>/.taskplane/agents/` | `<wsRoot>/.pi/` (unchanged — state stays at workspace root) |
-| **Workspace + pointer absent** | N/A | `<wsRoot>/.pi/` via `TASKPLANE_WORKSPACE_ROOT` (current fallback) | `<wsRoot>/.pi/agents/` (current fallback) | `<wsRoot>/.pi/` |
-| **Workspace + pointer malformed** | Invalid JSON | Log warning → fall back to `TASKPLANE_WORKSPACE_ROOT` | Same fallback | `<wsRoot>/.pi/` |
-| **Workspace + pointer references unknown repo** | `config_repo` not in workspace repos map | Log warning → fall back to `TASKPLANE_WORKSPACE_ROOT` | Same fallback | `<wsRoot>/.pi/` |
-
-**Design principle:** Pointer failure is non-fatal — always fall back to existing `TASKPLANE_WORKSPACE_ROOT` behavior. State files never follow the pointer (they are workspace-scoped runtime artifacts).
+3. **All pointer failures are non-fatal (warn + fallback)**: Whether the pointer is missing, malformed, or references an unknown repo, the behavior is the same: log a warning and fall back to existing `TASKPLANE_WORKSPACE_ROOT` behavior. This supports incremental adoption and avoids crashing on fixable misconfigurations. Step 5 tests must validate all three failure modes produce warnings and fall back consistently.
+4. **Missing pointer is valid**: Workspace mode without a pointer is a valid (if degraded) configuration. This supports the case where init v2 hasn't been run yet.
 
 ### Env-Var Precedence (with pointer introduced)
 
