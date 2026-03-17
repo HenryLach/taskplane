@@ -21,7 +21,7 @@
 - [x] Read config schema from TP-014
 - [x] Review Layer 2 allowlist and preferences boundary (R001 item 2)
 - [x] Review config root/path semantics in workspace mode (R001 item)
-- [ ] Review JSON-first + YAML fallback behavior for write-back alignment (R001 item)
+- [x] Review JSON-first + YAML fallback behavior for write-back alignment (R001 item)
 - [ ] Produce preflight findings: field/source inventory with UI control types + layer mapping (R001 item 3)
 
 ---
