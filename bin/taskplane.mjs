@@ -777,9 +777,14 @@ function isGitRepoRoot(dir) {
 			stdio: ["pipe", "pipe", "pipe"],
 			timeout: 5000,
 		}).toString().trim();
-		// Normalize paths for comparison (handles Windows path separators)
+		// Normalize paths for comparison (handles Windows path separators
+		// and 8.3 short name mismatches on Windows)
 		const normalizedToplevel = path.resolve(toplevel);
-		const normalizedDir = path.resolve(dir);
+		let normalizedDir = path.resolve(dir);
+		// On Windows, fs.realpathSync.native resolves 8.3 short names to
+		// long names, matching what git returns. Without this, paths like
+		// C:\Users\HENRYL~1\... won't match C:\Users\HenryLach\...
+		try { normalizedDir = fs.realpathSync.native(normalizedDir); } catch {}
 		return normalizedToplevel === normalizedDir;
 	} catch {
 		return false;

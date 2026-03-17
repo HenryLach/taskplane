@@ -99,7 +99,7 @@
 - [x] Scenario A (repo mode, fresh init) dry-run works: `node bin/taskplane.mjs init --dry-run --force --preset full`
 - [x] Preset compatibility verified: `--preset minimal`, `--preset full`, `--preset runner-only` all work with `--dry-run --force`
 - [x] YAML output still generated alongside JSON (constraint from PROMPT)
-- [ ] Mode detection edge cases and regression coverage: add init-focused automated test file covering mode detection, gitignore enforcement, and scenario branching
+- [x] Mode detection edge cases and regression coverage: add init-focused automated test file covering mode detection, gitignore enforcement, and scenario branching
 
 ---
 
@@ -146,6 +146,7 @@
 | Spec not in worktree — `.pi/local/` is gitignored. Canonical source: `C:\dev\taskplane\.pi\local\docs\settings-and-onboarding-spec.md` (main repo). Read successfully from there. | Noted | Step 0 |
 | TP-014 contract verified: JSON filename=`taskplane-config.json`, configVersion=1, shape=`{configVersion,taskRunner,orchestrator}`. Loader: `loadProjectConfig()` in `config-loader.ts`. JSON-first, YAML fallback. spawnMode at `orchestrator.orchestrator.spawnMode`. PROMPT says keep YAML generation until JSON is validated. | Noted | Step 0 |
 | No existing init-specific tests. Downstream validation: `project-config-loader.test.ts` (39 tests), CLI smoke `node bin/taskplane.mjs help`, `taskplane init --dry-run --force`. Step 6 should add init-specific tests. | Noted | Step 0 |
+| Windows 8.3 short path bug in `isGitRepoRoot()`: `path.resolve(dir)` could return `HENRYL~1` while git returns `HenryLach`, causing path comparison to fail. Fixed with `fs.realpathSync.native()`. | Fixed | Step 6 |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
