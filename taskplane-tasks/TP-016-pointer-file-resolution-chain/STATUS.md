@@ -77,6 +77,8 @@
 - [x] Verify pointer failure/parity matrix coverage: existing tests cover missing, malformed, unknown config_repo (warn+fallback), valid pointer, and repo-mode (pointer ignored) scenarios
 - [x] Verify integration split invariant: config/agent paths follow pointer while state paths (batch, sidecar, merge) stay at workspaceRoot/.pi
 - [x] Run full test suite: `cd extensions && npx vitest run` — 609 tests passing (20 test files)
+- [ ] R012: Replace signature/shape tests 7.11 and 7.12 with behavioral tests that verify state operations use workspaceRoot in both orch and orch-resume paths (loadBatchState, persistRuntimeState, deleteBatchState all called with workspace-root-derived path when workspaceRoot differs from repoRoot)
+- [ ] R012: Run full test suite passing after revision
 - [ ] R012: Add committed test artifact (test-results summary or verification log) so the review delta is non-empty and verifiable
 
 ---
