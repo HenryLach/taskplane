@@ -1,6 +1,6 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
-**Current Step:** Step 6: Testing & Verification
+**Current Step:** Step 7: Documentation & Delivery
 **Status:** ✅ Step 5 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
@@ -93,7 +93,7 @@
 ---
 
 ### Step 6: Testing & Verification
-**Status:** 🔄 In Progress
+**Status:** ✅ Complete
 
 - [x] Baseline validation gates pass (`cd extensions && npx vitest run`, `node bin/taskplane.mjs help`, `node bin/taskplane.mjs doctor`)
 - [x] Scenario A (repo mode, fresh init) dry-run works: `node bin/taskplane.mjs init --dry-run --force --preset full`
@@ -106,7 +106,7 @@
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Install tutorial updated
 - [ ] `.DONE` created
@@ -231,6 +231,9 @@
 | 2026-03-17 17:06 | Worker iter 7 | done in 794s, ctx: 36%, tools: 55 |
 | 2026-03-17 17:09 | Review R014 | code Step 6: REVISE |
 | 2026-03-17 17:10 | Review R014 | code Step 6: REVISE |
+| 2026-03-17 17:13 | Worker iter 7 | done in 197s, ctx: 15%, tools: 16 |
+| 2026-03-17 17:13 | Step 6 complete | Testing & Verification |
+| 2026-03-17 17:13 | Step 7 started | Documentation & Delivery |
 
 ## Blockers
 *None*
