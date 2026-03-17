@@ -668,11 +668,24 @@ function detectInitMode(dir) {
 
 	if (currentIsGitRepo && hasSubRepos) {
 		// Ambiguous — git repo that also contains git repo subdirectories
+		// Check for workspace-style .taskplane/ in subrepos too (for Scenario D if user picks workspace)
+		let workspaceConfigRepo = null;
+		for (const repoName of subRepos) {
+			const taskplaneDir = path.join(dir, repoName, ".taskplane");
+			if (fs.existsSync(taskplaneDir)) {
+				workspaceConfigRepo = repoName;
+				break;
+			}
+		}
 		return {
 			mode: "ambiguous",
 			subRepos,
 			alreadyInitialized: hasLocalConfig,
 			existingConfigPath: hasLocalConfig ? path.join(dir, ".pi") : null,
+			workspaceConfigRepo,
+			workspaceConfigPath: workspaceConfigRepo
+				? path.join(dir, workspaceConfigRepo, ".taskplane")
+				: null,
 		};
 	}
 
@@ -784,17 +797,27 @@ async function cmdInit(args) {
 		}
 	}
 
-	// "Already initialized" detection (Scenario B for repo, Scenario D for workspace)
-	if (detection.alreadyInitialized && !force) {
+	// When ambiguous mode resolves to workspace, use workspace-specific config
+	// detection. The detection.existingConfigPath from ambiguous mode points to
+	// monorepo `.pi/` config, which is irrelevant for workspace Scenario D
+	// (which looks for `.taskplane/` in subrepos).
+	let effectiveAlreadyInitialized = detection.alreadyInitialized;
+	let effectiveConfigPath = detection.existingConfigPath;
+	if (detection.mode === "ambiguous" && resolvedMode === "workspace") {
+		effectiveAlreadyInitialized = detection.workspaceConfigRepo !== null;
+		effectiveConfigPath = detection.workspaceConfigPath || null;
+	}
+
+	if (effectiveAlreadyInitialized && !force) {
 		if (resolvedMode === "repo") {
 			// Scenario B: existing monorepo config
 			console.log(`  ${INFO} Project already initialized (config exists in .pi/).`);
 			console.log(`     Run ${c.cyan}taskplane doctor${c.reset} to verify, or use ${c.cyan}--force${c.reset} to reinitialize.\n`);
 			return;
 		}
-		if (resolvedMode === "workspace" && detection.existingConfigPath) {
+		if (resolvedMode === "workspace" && effectiveConfigPath) {
 			// Scenario D: existing workspace config found in a subdirectory repo
-			const configRepo = path.basename(path.dirname(detection.existingConfigPath));
+			const configRepo = path.basename(path.dirname(effectiveConfigPath));
 			console.log(`  ${INFO} Found existing Taskplane config in ${c.cyan}${configRepo}/.taskplane/${c.reset}`);
 			console.log(`     Using existing configuration.\n`);
 			// Scenario D continues to create pointer only — handled in Step 5
