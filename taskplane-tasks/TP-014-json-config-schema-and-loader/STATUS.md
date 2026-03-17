@@ -38,7 +38,7 @@
 
 - [x] `loadProjectConfig()` implemented: reads `.pi/taskplane-config.json` first, falls back to both YAML files, respects `TASKPLANE_WORKSPACE_ROOT`, validates `configVersion`, errors on malformed JSON/unsupported version
 - [x] YAML-to-camelCase mapping: snake_case keys from both YAML files mapped to unified `TaskplaneConfig` shape with deep merge + cloned defaults (non-mutating)
-- [ ] Backward-compatible adapter functions: `loadOrchestratorConfig()` and `loadTaskRunnerConfig()` in `config.ts` become thin wrappers over unified loader, returning existing snake_case shapes unchanged; task-runner's `loadConfig()` also wraps the unified loader
+- [x] Backward-compatible adapter functions: `loadOrchestratorConfig()` and `loadTaskRunnerConfig()` in `config.ts` become thin wrappers over unified loader, returning existing snake_case shapes unchanged; task-runner's `loadConfig()` also wraps the unified loader
 - [ ] All existing consumers unaffected: `buildExecutionContext()`, `extension.ts`, task-runner command handlers produce identical runtime behavior
 
 ---

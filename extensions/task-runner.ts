@@ -26,7 +26,6 @@ import {
 } from "fs";
 import { tmpdir } from "os";
 import { join, dirname, basename, resolve } from "path";
-import { parse as yamlParse } from "yaml";
 import { loadProjectConfig, toTaskConfig } from "./taskplane/config-loader.ts";
 
 
