@@ -554,7 +554,7 @@ function hasConfigFiles(root: string): boolean {
  * We check for actual config files — not just the `.pi/` directory —
  * because worktrees may have a sidecar `.pi` without config files.
  */
-function resolveConfigRoot(cwd: string): string {
+export function resolveConfigRoot(cwd: string): string {
 	// Prefer cwd if it has actual config files
 	if (hasConfigFiles(cwd)) return cwd;
 

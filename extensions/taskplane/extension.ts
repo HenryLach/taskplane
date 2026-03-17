@@ -1,4 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { DynamicBorder, getSettingsListTheme, getSelectListTheme } from "@mariozechner/pi-coding-agent";
+import { Container, Text, Spacer, type SelectItem, SelectList, type SettingItem, SettingsList } from "@mariozechner/pi-tui";
 
 import { execSync } from "child_process";
 import { writeFileSync, unlinkSync, mkdirSync } from "fs";
@@ -32,6 +34,17 @@ import {
 	runPreflight,
 } from "./index.ts";
 import { buildExecutionContext } from "./workspace.ts";
+import {
+	SECTIONS,
+	ADVANCED_ITEMS,
+	loadSettingsData,
+	detectFieldSource,
+	getFieldValue,
+	validateFieldInput,
+	type FieldDef,
+	type FieldSource,
+	type SettingsData,
+} from "./settings-tui.ts";
 import type {
 	AbortMode,
 	ExecutionContext,
@@ -643,6 +656,27 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// ── Settings TUI ─────────────────────────────────────────────────
+
+	pi.registerCommand("settings", {
+		description: "View and edit taskplane configuration",
+		handler: async (_args, ctx) => {
+			if (!requireExecCtx(ctx)) return;
+
+			const repoRoot = execCtx!.repoRoot;
+			let settingsData: SettingsData;
+			try {
+				settingsData = loadSettingsData(repoRoot);
+			} catch (err: any) {
+				ctx.ui.notify(`❌ Failed to load settings: ${err.message}`, "error");
+				return;
+			}
+
+			// Top-level: section selection
+			await showSectionSelector(ctx, settingsData);
+		},
+	});
+
 	// ── Session Lifecycle ────────────────────────────────────────────
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -707,6 +741,252 @@ export default function (pi: ExtensionAPI) {
 		// Check for taskplane updates (non-blocking)
 		checkForUpdate(ctx);
 	});
+}
+
+// ── Settings TUI Functions ────────────────────────────────────────────
+
+/**
+ * Format a source badge for display.
+ */
+function sourceBadge(source: FieldSource, theme: any): string {
+	switch (source) {
+		case "project": return theme.fg("text", "(project)");
+		case "user": return theme.fg("accent", "(user)");
+		case "default": return theme.fg("dim", "(default)");
+	}
+}
+
+/**
+ * Show the top-level section selector.
+ */
+async function showSectionSelector(
+	ctx: ExtensionContext,
+	settingsData: SettingsData,
+): Promise<void> {
+	// Build section items — all 12 sections including Advanced
+	const sectionItems: SelectItem[] = SECTIONS.map((section, i) => {
+		const fieldCount = section.fields.length;
+		const desc = section.name === "Advanced (JSON Only)"
+			? `${ADVANCED_ITEMS.length} read-only fields`
+			: `${fieldCount} setting${fieldCount !== 1 ? "s" : ""}`;
+		return {
+			value: String(i),
+			label: section.name,
+			description: desc,
+		};
+	});
+
+	const selectedIndex = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+		const container = new Container();
+
+		// Title
+		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+		container.addChild(new Text(
+			theme.fg("accent", theme.bold(" ⚙  Taskplane Settings")),
+			1, 0,
+		));
+		container.addChild(new Text(
+			theme.fg("dim", `  Config version: ${settingsData.config.configVersion}`),
+			1, 0,
+		));
+		container.addChild(new Spacer(1));
+
+		// SelectList
+		const selectList = new SelectList(
+			sectionItems,
+			Math.min(sectionItems.length + 1, 15),
+			getSelectListTheme(),
+		);
+		selectList.onSelect = (item) => done(item.value);
+		selectList.onCancel = () => done(null);
+		container.addChild(selectList);
+
+		// Help
+		container.addChild(new Spacer(1));
+		container.addChild(new Text(
+			theme.fg("dim", "  ↑↓ navigate • enter select • esc close"),
+			1, 0,
+		));
+		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+
+		return {
+			render: (w: number) => container.render(w),
+			invalidate: () => container.invalidate(),
+			handleInput: (data: string) => { selectList.handleInput(data); tui.requestRender(); },
+		};
+	});
+
+	if (selectedIndex === null) return;
+
+	const sectionIdx = parseInt(selectedIndex, 10);
+	const section = SECTIONS[sectionIdx];
+
+	if (section.name === "Advanced (JSON Only)") {
+		await showAdvancedSection(ctx, settingsData);
+	} else {
+		await showSectionFields(ctx, settingsData, section);
+	}
+
+	// After returning from a section, re-show section selector (loop)
+	await showSectionSelector(ctx, settingsData);
+}
+
+/**
+ * Show fields for a specific section using SettingsList.
+ */
+async function showSectionFields(
+	ctx: ExtensionContext,
+	settingsData: SettingsData,
+	section: { name: string; fields: FieldDef[] },
+): Promise<void> {
+	const { config, prefs, rawProjectJson } = settingsData;
+
+	// Build SettingItems
+	const items: SettingItem[] = section.fields.map((field) => {
+		const currentValue = getFieldValue(field, config, prefs);
+		const source = detectFieldSource(field, rawProjectJson, prefs);
+
+		// For toggle fields, provide values array for cycling
+		const values = field.control === "toggle" ? field.values : undefined;
+
+		return {
+			id: field.configPath,
+			label: field.label,
+			currentValue: `${currentValue}  ${sourceLabel(source)}`,
+			values: values?.map((v) => `${v}  ${sourceLabel(source)}`),
+			description: describeField(field, source),
+		};
+	});
+
+	await ctx.ui.custom((_tui, theme, _kb, done) => {
+		const container = new Container();
+
+		// Section header
+		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+		container.addChild(new Text(
+			theme.fg("accent", theme.bold(`  ${section.name}`)),
+			1, 0,
+		));
+		container.addChild(new Spacer(1));
+
+		const settingsList = new SettingsList(
+			items,
+			Math.min(items.length + 2, 18),
+			getSettingsListTheme(),
+			(id, _newValue) => {
+				// Find the field def
+				const field = section.fields.find((f) => f.configPath === id);
+				if (!field) return;
+
+				if (field.control === "toggle" && field.values) {
+					// Extract clean value (remove source badge)
+					const cleanValue = _newValue.replace(/\s+\([^)]+\)\s*$/, "");
+					// For toggle fields, the value has been cycled by SettingsList
+					// We just need to store it — write-back is Step 3
+					const source = detectFieldSource(field, rawProjectJson, prefs);
+					// Update the displayed item
+					settingsList.updateValue(id, `${cleanValue}  ${sourceLabel(source)}`);
+				}
+			},
+			() => done(undefined), // Close → back to section list
+			{ enableSearch: true },
+		);
+
+		container.addChild(settingsList);
+
+		// Help text
+		container.addChild(new Spacer(1));
+		container.addChild(new Text(
+			theme.fg("dim", "  ←→ toggle • / search • esc back"),
+			1, 0,
+		));
+		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+
+		return {
+			render: (w: number) => container.render(w),
+			invalidate: () => container.invalidate(),
+			handleInput: (data: string) => { settingsList.handleInput?.(data); _tui.requestRender(); },
+		};
+	});
+}
+
+/**
+ * Show the Advanced (JSON Only) section with read-only items.
+ */
+async function showAdvancedSection(
+	ctx: ExtensionContext,
+	settingsData: SettingsData,
+): Promise<void> {
+	const { config } = settingsData;
+
+	const items: SettingItem[] = ADVANCED_ITEMS.map((item) => ({
+		id: item.configPath,
+		label: item.label,
+		currentValue: item.summarize(config),
+		description: "Edit in .pi/taskplane-config.json",
+	}));
+
+	await ctx.ui.custom((_tui, theme, _kb, done) => {
+		const container = new Container();
+
+		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+		container.addChild(new Text(
+			theme.fg("accent", theme.bold("  Advanced (JSON Only)")),
+			1, 0,
+		));
+		container.addChild(new Text(
+			theme.fg("dim", "  These fields require direct JSON editing"),
+			1, 0,
+		));
+		container.addChild(new Spacer(1));
+
+		const settingsList = new SettingsList(
+			items,
+			Math.min(items.length + 2, 18),
+			getSettingsListTheme(),
+			() => {}, // No edits allowed
+			() => done(undefined),
+			{ enableSearch: true },
+		);
+
+		container.addChild(settingsList);
+
+		container.addChild(new Spacer(1));
+		container.addChild(new Text(
+			theme.fg("dim", "  / search • esc back"),
+			1, 0,
+		));
+		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+
+		return {
+			render: (w: number) => container.render(w),
+			invalidate: () => container.invalidate(),
+			handleInput: (data: string) => { settingsList.handleInput?.(data); _tui.requestRender(); },
+		};
+	});
+}
+
+/**
+ * Plain source label (no theme — used inside SettingItem values).
+ */
+function sourceLabel(source: FieldSource): string {
+	switch (source) {
+		case "project": return "(project)";
+		case "user": return "(user)";
+		case "default": return "(default)";
+	}
+}
+
+/**
+ * Generate a description line for a field.
+ */
+function describeField(field: FieldDef, source: FieldSource): string {
+	const parts: string[] = [];
+	if (field.layer === "L1+L2") parts.push("project + user");
+	else if (field.layer === "L2") parts.push("user only");
+	else parts.push("project only");
+	if (field.optional) parts.push("optional");
+	return parts.join(" · ");
 }
 
 // ── Update Check ─────────────────────────────────────────────────────
