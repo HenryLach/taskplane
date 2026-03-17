@@ -461,49 +461,163 @@ export function validateFieldInput(field: FieldDef, input: string): ValidationRe
 interface AdvancedItem {
 	label: string;
 	value: string;
+	configPath: string;
+}
+
+/**
+ * Build a Set of all config paths that are covered by editable sections.
+ * Used to detect "uncovered" paths for the Advanced section.
+ */
+function buildCoveredPaths(): Set<string> {
+	const covered = new Set<string>();
+	for (const section of SECTIONS) {
+		for (const field of section.fields) {
+			covered.add(field.configPath);
+		}
+	}
+	// Also mark the preferences-only path
+	covered.add("preferences.dashboardPort");
+	return covered;
+}
+
+/** Cached set of editable config paths */
+const COVERED_PATHS = buildCoveredPaths();
+
+/**
+ * Convert a dot-path to a human-readable label.
+ * e.g., "taskRunner.project.name" → "Project Name"
+ *       "orchestrator.preWarm.commands" → "Pre-Warm Commands"
+ */
+function pathToLabel(path: string): string {
+	const parts = path.split(".");
+	// Take the last 1-2 meaningful segments (skip top-level "taskRunner"/"orchestrator")
+	const meaningful = parts.slice(1); // Drop "taskRunner"/"orchestrator"/"configVersion"
+	if (meaningful.length === 0) {
+		// Top-level like "configVersion"
+		return camelToTitle(parts[parts.length - 1]);
+	}
+	// For nested paths like "project.name", use last 2 segments if parent is a grouping
+	if (meaningful.length >= 2) {
+		return `${camelToTitle(meaningful[meaningful.length - 2])} ${camelToTitle(meaningful[meaningful.length - 1])}`;
+	}
+	return camelToTitle(meaningful[0]);
+}
+
+/** Convert camelCase to Title Case (e.g., "maxLanes" → "Max Lanes") */
+function camelToTitle(str: string): string {
+	return str
+		.replace(/([A-Z])/g, " $1")
+		.replace(/^./, (s) => s.toUpperCase())
+		.trim();
 }
 
 /**
  * Get display items for the Advanced (JSON Only) section.
- * Shows collection/Record/array fields that aren't editable in the TUI.
+ *
+ * Dynamically discovers all config paths NOT covered by editable sections
+ * by recursively walking the merged config object. This ensures new fields
+ * added to the schema are automatically surfaced for discoverability.
  */
 function getAdvancedItems(config: TaskplaneConfig): AdvancedItem[] {
 	const items: AdvancedItem[] = [];
 
-	// Config version
-	items.push({ label: "Config Version", value: String(config.configVersion) });
+	// Walk the config object and collect uncovered leaf paths
+	walkConfig(config, "", (path, value) => {
+		if (COVERED_PATHS.has(path)) return; // Skip editable fields
 
-	// Project identity
-	items.push({ label: "Project Name", value: config.taskRunner.project.name || "(empty)" });
-	items.push({ label: "Project Description", value: config.taskRunner.project.description || "(empty)" });
-
-	// Paths
-	items.push({ label: "Tasks Path", value: config.taskRunner.paths.tasks });
-	if (config.taskRunner.paths.architecture) {
-		items.push({ label: "Architecture Path", value: config.taskRunner.paths.architecture });
-	}
-
-	// Collections — show counts
-	const testing = config.taskRunner.testing.commands;
-	items.push({ label: "Testing Commands", value: summarizeRecord(testing) });
-
-	items.push({ label: "Standards Docs", value: summarizeArray(config.taskRunner.standards.docs) });
-	items.push({ label: "Standards Rules", value: summarizeArray(config.taskRunner.standards.rules) });
-
-	items.push({ label: "Standards Overrides", value: summarizeRecord(config.taskRunner.standardsOverrides) });
-	items.push({ label: "Task Areas", value: summarizeRecord(config.taskRunner.taskAreas) });
-	items.push({ label: "Reference Docs", value: summarizeRecord(config.taskRunner.referenceDocs) });
-	items.push({ label: "Never Load", value: summarizeArray(config.taskRunner.neverLoad) });
-	items.push({ label: "Self Doc Targets", value: summarizeRecord(config.taskRunner.selfDocTargets) });
-	items.push({ label: "Protected Docs", value: summarizeArray(config.taskRunner.protectedDocs) });
-
-	// Orchestrator collections
-	items.push({ label: "Size Weights", value: summarizeRecord(config.orchestrator.assignment.sizeWeights) });
-	items.push({ label: "Pre-Warm Commands", value: summarizeRecord(config.orchestrator.preWarm.commands) });
-	items.push({ label: "Pre-Warm Always", value: summarizeArray(config.orchestrator.preWarm.always) });
-	items.push({ label: "Merge Verify", value: summarizeArray(config.orchestrator.merge.verify) });
+		const label = pathToLabel(path);
+		const display = summarizeValue(value);
+		items.push({ label, value: display, configPath: path });
+	});
 
 	return items;
+}
+
+/**
+ * Recursively walk a config object, calling the visitor for each "leaf" field.
+ *
+ * A "leaf" is either:
+ * - A primitive (string, number, boolean)
+ * - An array
+ * - A Record/object that is a "data container" (not a known config subsection)
+ *
+ * Known subsection objects (like `taskRunner.worker`, `orchestrator.merge`)
+ * are recursed into, not reported as leaves themselves.
+ */
+function walkConfig(
+	obj: any,
+	prefix: string,
+	visitor: (path: string, value: any) => void,
+): void {
+	if (obj === null || obj === undefined) return;
+
+	for (const [key, value] of Object.entries(obj)) {
+		const path = prefix ? `${prefix}.${key}` : key;
+
+		if (Array.isArray(value)) {
+			// Arrays are leaf items (e.g., verify, docs, rules, neverLoad)
+			visitor(path, value);
+		} else if (typeof value === "object" && value !== null) {
+			// Determine if this is a "config subsection" to recurse into,
+			// or a "data Record" to report as a leaf.
+			// Config subsections have known typed structure; data Records
+			// are user-defined key-value maps.
+			if (isConfigSubsection(path)) {
+				walkConfig(value, path, visitor);
+			} else {
+				// Data Record — report as leaf
+				visitor(path, value);
+			}
+		} else {
+			// Primitive — report as leaf
+			visitor(path, value);
+		}
+	}
+}
+
+/**
+ * Known config subsection paths that should be recursed into
+ * (not reported as Advanced items themselves).
+ *
+ * This list is derived from the TaskplaneConfig interface structure.
+ * When the schema adds a new top-level subsection, add it here to
+ * recurse properly. Unknown subsections default to being treated as
+ * data Records (shown in Advanced), which is the safe default for
+ * discoverability.
+ */
+const CONFIG_SUBSECTIONS = new Set([
+	"taskRunner",
+	"orchestrator",
+	"taskRunner.project",
+	"taskRunner.paths",
+	"taskRunner.testing",
+	"taskRunner.standards",
+	"taskRunner.worker",
+	"taskRunner.reviewer",
+	"taskRunner.context",
+	"orchestrator.orchestrator",
+	"orchestrator.dependencies",
+	"orchestrator.assignment",
+	"orchestrator.preWarm",
+	"orchestrator.merge",
+	"orchestrator.failure",
+	"orchestrator.monitoring",
+]);
+
+function isConfigSubsection(path: string): boolean {
+	return CONFIG_SUBSECTIONS.has(path);
+}
+
+/**
+ * Summarize a value for display in the Advanced section.
+ */
+function summarizeValue(value: any): string {
+	if (value === undefined || value === null) return "(not set)";
+	if (typeof value === "string") return value || "(empty)";
+	if (typeof value === "number" || typeof value === "boolean") return String(value);
+	if (Array.isArray(value)) return summarizeArray(value);
+	if (typeof value === "object") return summarizeRecord(value);
+	return String(value);
 }
 
 function summarizeRecord(obj: Record<string, any>): string {
@@ -627,11 +741,11 @@ async function showAdvancedSection(
 ): Promise<void> {
 	const advItems = getAdvancedItems(mergedConfig);
 
-	const settingsItems: SettingItem[] = advItems.map((item, i) => ({
-		id: `adv-${i}`,
+	const settingsItems: SettingItem[] = advItems.map((item) => ({
+		id: item.configPath,
 		label: item.label,
 		currentValue: item.value,
-		description: "Edit in .pi/taskplane-config.json",
+		description: `${item.configPath} — edit in .pi/taskplane-config.json`,
 		// No `values` array = no toggle cycling
 	}));
 
