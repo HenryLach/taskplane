@@ -1,10 +1,10 @@
 # TP-016: Pointer File Resolution Chain — Status
 
-**Current Step:** Step 5: Testing & Verification
+**Current Step:** Step 4: Thread Through Dashboard
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 11
+**Review Counter:** 9
 **Iteration:** 6
 **Size:** M
 
@@ -73,8 +73,10 @@
 ### Step 5: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] Pointer resolution tests (include unknown config_repo → warn + fallback scenario)
-- [ ] `cd extensions && npx vitest run`
+- [ ] Close Step 3 open item: verify test 7.11 is behavioral (not source-text) and check off the Step 3 checkbox
+- [ ] Verify pointer failure/parity matrix coverage: existing tests cover missing, malformed, unknown config_repo (warn+fallback), valid pointer, and repo-mode (pointer ignored) scenarios
+- [ ] Verify integration split invariant: config/agent paths follow pointer while state paths (batch, sidecar, merge) stay at workspaceRoot/.pi
+- [ ] Run full test suite: `cd extensions && npx vitest run` — all tests passing
 
 ---
 
@@ -106,6 +108,7 @@
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R010 | code | Step 4 | APPROVE | .reviews/R010-code-step4.md |
 | R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
+| R009 | plan | Step 4 | APPROVE | .reviews/R009-plan-step4.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -170,6 +173,10 @@
 | 2026-03-17 18:47 | Step 4 complete | Thread Through Dashboard |
 | 2026-03-17 18:47 | Step 5 started | Testing & Verification |
 | 2026-03-17 18:49 | Review R011 | plan Step 5: REVISE |
+| 2026-03-17 18:50 | Worker iter 4 | done in 502s, ctx: 22%, tools: 65 |
+| 2026-03-17 18:50 | Step 3 complete | Thread Through Orchestrator |
+| 2026-03-17 18:50 | Step 4 started | Thread Through Dashboard |
+| 2026-03-17 18:51 | Review R009 | plan Step 4: APPROVE |
 
 ## Blockers
 *None*
