@@ -15,10 +15,10 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Read current `cmdDoctor()`, spec doctor checks, and reusable helpers — capture baseline and patterns
-- [ ] Document preflight findings in STATUS Notes (baseline output, helper inventory, spec acceptance criteria)
+- [x] Document preflight findings in STATUS Notes (baseline output, helper inventory, spec acceptance criteria)
 
 ---
 
@@ -89,4 +89,33 @@
 *None*
 
 ## Notes
-*Reserved for execution notes*
+
+### Preflight Findings (Step 0)
+
+**Baseline doctor output (current check order):**
+1. Prerequisites: pi installed, Node.js >= 22, git installed
+2. tmux installed (optional, warns if missing)
+3. taskplane package installed (version, install type)
+4. Workspace mode detection + validation (if workspace)
+5. Repo topology validation (workspace only — path exists, is git repo)
+6. Config files existence (.pi/task-runner.yaml, .pi/task-orchestrator.yaml, agents/*.md, taskplane.json, workspace yaml)
+7. Task area paths + CONTEXT.md existence
+8. Area repo_id routing validation (workspace only)
+9. Summary (pass/fail count)
+
+**Reusable helpers for new checks:**
+- `TASKPLANE_GITIGNORE_ENTRIES`, `ALL_GITIGNORE_PATTERNS`, `patternToRegex()` — from `bin/gitignore-patterns.mjs` (already imported)
+- `ensureGitignoreEntries()` — init-only (writes), but logic shows pattern for reading gitignore
+- `detectAndOfferUntrackArtifacts()` — init-only (interactive), but `git ls-files` pattern is reusable
+- `isInsideGitRepo(dir)` — fast git check
+- `execFileSync("git", ...)` — already used in cmdDoctor for workspace repo checks
+- `OK`, `WARN`, `FAIL`, `INFO` symbols — consistent output formatting
+- `loadWorkspaceConfigForDoctor()` — already loads pointer + workspace config
+
+**Spec acceptance criteria mapped to steps:**
+- **Step 1 — Gitignore + tracked artifacts:** Spec "Doctor checks for git tracking" §1 (gitignore entries present → WARN) and §2 (tracked artifacts → FAIL with `git rm --cached` remediation)
+- **Step 2 — Workspace pointer chain:** Spec Resolved Decision #5 items 1-5 (pointer exists, config repo exists, .taskplane/ exists, default branch has .taskplane/, repos exist). Items 1, 2, 5 already implemented in current doctor. Items 3-4 are NEW.
+- **Step 3 — Legacy YAML migration:** Spec "Migration path" §3 (detect YAML without JSON, warn to use /settings)
+- **Step 4 — tmux vs spawn_mode:** Spec layer note + Decision #5 item 6 (spawn_mode: tmux but no tmux → error with install-tmux suggestion). Currently partially implemented (tmux check exists but doesn't read project config spawn_mode).
+
+**Key constraint:** Doctor is read-only diagnostics. Must NOT modify files.
