@@ -72,7 +72,7 @@ cd my-project
 taskplane init --preset full
 ```
 
-This creates config files in `.pi/`, agent prompts, and two example tasks.
+This creates config files in `.pi/`, agent prompts, two example tasks, and adds `.gitignore` entries for runtime artifacts. Init auto-detects whether you're in a single repo or a multi-repo workspace. See the [install tutorial](docs/tutorials/install.md) for workspace mode and other scenarios.
 
 Already have a task folder (for example `docs/task-management`)? Use:
 

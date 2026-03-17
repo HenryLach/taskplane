@@ -110,7 +110,7 @@
 
 - [x] Update `docs/tutorials/install.md` — document init-v2 flow: mode auto-detection (repo vs workspace), gitignore enforcement + tracked artifact cleanup, tmux-based spawn_mode defaulting, JSON config output with YAML transition note
 - [x] Check/update `docs/reference/commands.md` — verify `taskplane init` section reflects new behavior
-- [ ] Check/update `README.md` — verify install/quickstart section is consistent with new init flow
+- [x] Check/update `README.md` — verify install/quickstart section is consistent with new init flow
 - [ ] Final verification: commits use TP-015 prefix, all tests pass
 - [ ] `.DONE` created in task folder
 

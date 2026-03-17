@@ -70,23 +70,6 @@ This writes package config to `.pi/settings.json` in the project.
 
 ## Initialize the Project
 
-`taskplane init` auto-detects your project layout and runs the appropriate init flow.
-
-### How mode detection works
-
-When you run `taskplane init`, Taskplane examines the current directory:
-
-| Layout | Detected mode | Behavior |
-|--------|---------------|----------|
-| Inside a git repo, no git repo subdirectories | **Repo mode** | Scaffolds config in `.pi/` (Scenario A) |
-| Not a git repo, has git repo subdirectories | **Workspace mode** | Scaffolds config in `<config-repo>/.taskplane/` (Scenario C/D) |
-| Inside a git repo **and** has git repo subdirectories | **Ambiguous** | Prompts you to choose repo or workspace mode |
-| Not a git repo, no git repo subdirectories | **Error** | Exits with a message to run from a git repo or workspace |
-
-> **Preset/dry-run note:** In non-interactive modes (`--preset`, `--dry-run`), ambiguous layouts default to repo mode without prompting.
-
-### Scenario A — Standard repo init (most common)
-
 From the project root:
 
 ```bash
@@ -105,11 +88,37 @@ Or:
 .pi/npm/node_modules/.bin/taskplane init
 ```
 
-For a non-interactive default setup:
+### Mode Auto-Detection
+
+`taskplane init` automatically detects your project layout:
+
+| Layout | Mode | What happens |
+|--------|------|-------------|
+| Single git repo (or monorepo) | **Repo mode** | Config scaffolded into `.pi/` in the current directory |
+| Directory with git repo subdirectories | **Workspace mode** | Config scaffolded into `.taskplane/` inside a chosen config repo; pointer file created in workspace root |
+| Git repo **and** git repo subdirectories | **Ambiguous** | Interactive prompt asks you to choose repo or workspace mode (defaults to repo with `--preset`) |
+| No git repo found | **Error** | Init exits with a message asking you to run from a git repo |
+
+In ambiguous cases, preset/dry-run/non-interactive modes default to repo mode without prompting.
+
+### Repo Mode (Standard)
+
+For a single repo or monorepo:
 
 ```bash
 taskplane init --preset full
 ```
+
+This scaffolds:
+
+- `.pi/task-runner.yaml` — task runner config
+- `.pi/task-orchestrator.yaml` — orchestrator config
+- `.pi/taskplane-config.json` — unified JSON config (takes precedence when present)
+- `.pi/taskplane.json` — version tracker
+- `.pi/agents/task-worker.md`, `task-reviewer.md`, `task-merger.md` — agent prompts
+- `taskplane-tasks/CONTEXT.md` — task area context
+- `taskplane-tasks/EXAMPLE-001-hello-world/{PROMPT.md,STATUS.md}` — example tasks
+- `taskplane-tasks/EXAMPLE-002-parallel-smoke/{PROMPT.md,STATUS.md}` — example tasks
 
 If your project already has a task folder, point init at it:
 
@@ -119,97 +128,73 @@ taskplane init --preset full --tasks-root docs/task-management
 
 When `--tasks-root` is provided, Taskplane skips sample task packets by default to avoid polluting an existing task area. Add `--include-examples` if you explicitly want them.
 
-This scaffolds:
+### Workspace Mode
 
-- `.pi/task-runner.yaml`
-- `.pi/task-orchestrator.yaml`
-- `.pi/taskplane-config.json`
-- `.pi/agents/task-worker.md`
-- `.pi/agents/task-reviewer.md`
-- `.pi/agents/task-merger.md`
-- `.pi/taskplane.json`
-- `taskplane-tasks/CONTEXT.md`
-- `taskplane-tasks/EXAMPLE-001-hello-world/{PROMPT.md,STATUS.md}`
-- `taskplane-tasks/EXAMPLE-002-parallel-smoke/{PROMPT.md,STATUS.md}`
-
-> **JSON + YAML:** Init now generates a `taskplane-config.json` file alongside the YAML configs. When a JSON config is present it takes precedence and the YAML files are ignored. YAML generation is retained during the transition period. See the [task-runner config reference](../reference/configuration/task-runner.yaml.md#unified-json-config) and [orchestrator config reference](../reference/configuration/task-orchestrator.yaml.md#unified-json-config) for the JSON format.
-
-### Scenario B — Already initialized
-
-If Taskplane detects an existing config (`.pi/task-runner.yaml`, `.pi/task-orchestrator.yaml`, or `.pi/taskplane-config.json`), it shows:
-
-```
-Project already initialized (config exists in .pi/).
-Run `taskplane doctor` to verify, or use --force to reinitialize.
-```
-
-Use `--force` to overwrite existing files.
-
-### Scenario C — Workspace init (multi-repo)
-
-When you run `taskplane init` from a directory that contains multiple git repos as subdirectories (and is not itself a git repo), Taskplane enters workspace mode:
-
-1. Lists discovered git repos
-2. Prompts you to choose which repo holds Taskplane config
-3. Scaffolds `.taskplane/` in the chosen config repo (config, agents, workspace definition)
-4. Creates `.pi/taskplane-pointer.json` in the workspace root pointing to the config repo
-5. Adds gitignore entries to the config repo's `.gitignore`
-6. Auto-commits the config to the config repo
+For multi-repo workspaces (e.g., a parent directory containing several independent git repos):
 
 ```bash
-cd my-workspace    # contains repo-a/, repo-b/, repo-c/
+cd my-workspace    # contains repo-a/, repo-b/, repo-c/ as git repos
 taskplane init
 ```
 
-After workspace init, merge the config repo changes to your default branch so other team members can join.
+Init detects the subdirectory repos and prompts you to choose which one holds the shared Taskplane config. The selected repo gets a `.taskplane/` directory with all config, and the workspace root gets a pointer file (`.pi/taskplane-pointer.json`) that tells Taskplane where to find it.
 
-### Scenario D — Workspace join
+Files created in the config repo (e.g., `repo-a`):
 
-When workspace mode detects an existing `.taskplane/` directory in one of the subdirectory repos (i.e., another team member already ran Scenario C and merged), it skips scaffolding and only creates the pointer file:
+- `repo-a/.taskplane/task-runner.yaml`
+- `repo-a/.taskplane/task-orchestrator.yaml`
+- `repo-a/.taskplane/taskplane-config.json`
+- `repo-a/.taskplane/taskplane.json`
+- `repo-a/.taskplane/workspace.json` — lists all discovered repos
+- `repo-a/.taskplane/agents/task-worker.md`, `task-reviewer.md`, `task-merger.md`
+- `repo-a/taskplane-tasks/CONTEXT.md`
 
-```
-Found existing Taskplane config in repo-a/.taskplane/
-Using existing configuration.
-```
+Files created in the workspace root:
 
-This is the expected flow for the second (and subsequent) developer on a team.
+- `.pi/taskplane-pointer.json` — points to the config repo
 
----
+> **Important:** After workspace init, merge the `.taskplane/` directory in the config repo to its default branch before other team members run `taskplane init`. Team members joining later will see the existing config and get Scenario D (pointer-only) instead of a full re-init.
 
-## Gitignore Enforcement
+### Joining an Existing Workspace (Scenario D)
 
-During init, Taskplane automatically adds entries to `.gitignore` for runtime artifacts that should never be committed:
+If you run `taskplane init` in a workspace where `.taskplane/` already exists in one of the subdirectory repos, Taskplane detects this and creates only the pointer file — no config prompts, no scaffolding. This is the intended flow for team members joining an already-initialized workspace.
 
-- `.pi/batch-state.json` — orchestrator state
-- `.pi/batch-history.json` — batch history
-- `.pi/lane-state-*` — lane execution state
-- `.pi/merge-result-*`, `.pi/merge-request-*` — merge artifacts
-- `.pi/worker-conversation-*` — worker conversations
-- `.pi/orch-logs/` — orchestrator logs
-- `.pi/orch-abort-signal` — abort signal file
-- `.pi/settings.json` — pi settings (machine-specific)
-- `.worktrees/` — git worktree scratch area
-- `.pi/npm/` — project-local pi packages
+### Presets
 
-If any of these artifacts are already tracked by git, Taskplane detects them and offers to untrack them (`git rm --cached`). Files remain on disk but are removed from git tracking.
+All presets work in both repo and workspace modes:
 
-In workspace mode, these entries are prefixed with `.taskplane/` in the config repo's `.gitignore`.
+| Preset | What it includes |
+|--------|------------------|
+| `--preset full` | Task runner + orchestrator + examples |
+| `--preset minimal` | Task runner + orchestrator, no examples |
+| `--preset runner-only` | Task runner only (no orchestrator config) |
 
----
+### Gitignore Enforcement
 
-## tmux Detection
+During init, Taskplane automatically adds entries to `.gitignore` for runtime artifacts that should not be committed:
 
-During init, Taskplane checks whether tmux is available:
+- `.pi/batch-state.json`, `.pi/batch-history.json` — orchestrator state
+- `.pi/lane-state-*`, `.pi/merge-result-*`, `.pi/merge-request-*` — lane/merge artifacts
+- `.pi/worker-conversation-*` — worker conversation logs
+- `.pi/orch-logs/`, `.pi/orch-abort-signal` — orchestrator logs/signals
+- `.pi/settings.json` — machine-local pi settings
+- `.worktrees/` — git worktree directories
+- `.pi/npm/` — project-local npm packages
 
-- **tmux found:** `spawn_mode` defaults to `"tmux"` in the orchestrator config. No message shown.
-- **tmux not found:** `spawn_mode` defaults to `"subprocess"` and a guidance message is shown:
+If any of these files are already tracked in git, init detects them and offers to untrack them with `git rm --cached` (interactive mode only).
 
-  ```
-  ⚠ tmux not found. Using subprocess mode.
-    Run `taskplane install-tmux` for full orchestrator support.
-  ```
+In workspace mode, these entries are prefixed with `.taskplane/` and added to the config repo's `.gitignore`.
 
-  The `runner-only` preset suppresses this message since it does not generate orchestrator config.
+### tmux Detection
+
+Init checks for tmux availability and sets the orchestrator's `spawn_mode` accordingly:
+
+- **tmux found** → `spawn_mode: "tmux"` (parallel execution via tmux sessions)
+- **tmux not found** → `spawn_mode: "subprocess"` with a guidance message suggesting `taskplane install-tmux`
+
+This is silent when tmux is present. The `runner-only` preset skips this check since no orchestrator config is generated.
+
+> **Tip:** You can also use a single `.pi/taskplane-config.json` file instead of the two YAML files. When a JSON config is present it takes precedence and the YAML files are ignored. See the [task-runner config reference](../reference/configuration/task-runner.yaml.md#unified-json-config) and [orchestrator config reference](../reference/configuration/task-orchestrator.yaml.md#unified-json-config) for the JSON format.
 
 ---
 
