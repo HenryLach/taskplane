@@ -1,11 +1,11 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
-**Current Step:** Step 1: Mode Auto-Detection
+**Current Step:** Step 2: Gitignore Enforcement
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -42,10 +42,13 @@
 ---
 
 ### Step 2: Gitignore Enforcement
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Selective gitignore entries added during init
-- [ ] Tracked artifact detection and `git rm --cached` offer
+- [ ] Define required gitignore entries as a reusable constant (for Step 4 reuse)
+- [ ] Implement `ensureGitignoreEntries()` helper — idempotent: creates file if needed, skips existing entries, respects dry-run
+- [ ] Integrate gitignore enforcement into `cmdInit()` repo-mode flow (after scaffolding, before auto-commit)
+- [ ] Implement tracked-artifact detection (`git ls-files`) and `git rm --cached` offer — isolated from auto-commit staging, respects dry-run and non-interactive modes
+- [ ] Update `printFileList()` dry-run output to show gitignore entries that would be added
 
 ---
 
@@ -100,6 +103,8 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -129,6 +134,14 @@
 | 2026-03-17 15:44 | Worker iter 2 | done in 450s, ctx: 28%, tools: 50 |
 | 2026-03-17 15:46 | Review R004 | code Step 1: REVISE |
 | 2026-03-17 15:47 | Review R004 | code Step 1: REVISE |
+| 2026-03-17 15:51 | Worker iter 2 | done in 296s, ctx: 16%, tools: 37 |
+| 2026-03-17 15:51 | Step 1 complete | Mode Auto-Detection |
+| 2026-03-17 15:51 | Step 2 started | Gitignore Enforcement |
+| 2026-03-17 15:52 | Worker iter 2 | done in 345s, ctx: 16%, tools: 39 |
+| 2026-03-17 15:52 | Step 1 complete | Mode Auto-Detection |
+| 2026-03-17 15:52 | Step 2 started | Gitignore Enforcement |
+| 2026-03-17 15:53 | Review R005 | plan Step 2: REVISE |
+| 2026-03-17 15:54 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 *None*
