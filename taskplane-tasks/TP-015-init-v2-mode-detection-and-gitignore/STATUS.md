@@ -4,7 +4,7 @@
 **Status:** ✅ Step 5 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 13
+**Review Counter:** 14
 **Iteration:** 7
 **Size:** L
 
@@ -93,13 +93,15 @@
 ---
 
 ### Step 6: Testing & Verification
-**Status:** ✅ Complete
+**Status:** 🔄 In Progress
 
 - [x] Baseline validation gates pass (`cd extensions && npx vitest run`, `node bin/taskplane.mjs help`, `node bin/taskplane.mjs doctor`)
 - [x] Scenario A (repo mode, fresh init) dry-run works: `node bin/taskplane.mjs init --dry-run --force --preset full`
 - [x] Preset compatibility verified: `--preset minimal`, `--preset full`, `--preset runner-only` all work with `--dry-run --force`
 - [x] YAML output still generated alongside JSON (constraint from PROMPT)
 - [x] Mode detection edge cases and regression coverage: add init-focused automated test file covering mode detection, gitignore enforcement, and scenario branching
+- [ ] R014: Fix mirrored `isGitRepoRoot()` in test to include `fs.realpathSync.native()` normalization matching production code, and add regression case for path-canonicalization mismatch
+- [ ] R014: Re-run vitest to confirm all tests pass after fix
 
 ---
 
@@ -139,6 +141,8 @@
 | R012 | code | Step 5 | REVISE | .reviews/R012-code-step5.md |
 | R013 | plan | Step 6 | REVISE | .reviews/R013-plan-step6.md |
 | R013 | plan | Step 6 | REVISE | .reviews/R013-plan-step6.md |
+| R014 | code | Step 6 | REVISE | .reviews/R014-code-step6.md |
+| R014 | code | Step 6 | REVISE | .reviews/R014-code-step6.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -223,6 +227,10 @@
 | 2026-03-17 16:51 | Step 6 started | Testing & Verification |
 | 2026-03-17 16:53 | Review R013 | plan Step 6: REVISE |
 | 2026-03-17 16:53 | Review R013 | plan Step 6: REVISE |
+| 2026-03-17 17:06 | Worker iter 7 | done in 763s, ctx: 44%, tools: 73 |
+| 2026-03-17 17:06 | Worker iter 7 | done in 794s, ctx: 36%, tools: 55 |
+| 2026-03-17 17:09 | Review R014 | code Step 6: REVISE |
+| 2026-03-17 17:10 | Review R014 | code Step 6: REVISE |
 
 ## Blockers
 *None*
