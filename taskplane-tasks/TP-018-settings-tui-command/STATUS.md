@@ -17,7 +17,7 @@
 ### Step 0: Preflight
 **Status:** 🟨 In Progress
 
-- [ ] Read pi's `ctx.ui` API capabilities
+- [x] Read pi's `ctx.ui` API capabilities
 - [ ] Read config schema from TP-014
 - [ ] Review Layer 2 allowlist and preferences boundary (R001 item 2)
 - [ ] Review config root/path semantics in workspace mode (R001 item)
