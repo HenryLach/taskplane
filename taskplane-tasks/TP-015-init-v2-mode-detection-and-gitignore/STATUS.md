@@ -4,7 +4,7 @@
 **Status:** ✅ Step 4 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 9
+**Review Counter:** 10
 **Iteration:** 5
 **Size:** L
 
@@ -66,7 +66,7 @@
 ---
 
 ### Step 4: Workspace Mode Init (Scenario C)
-**Status:** ✅ Complete
+**Status:** 🔧 In Progress (R010 revisions)
 
 - [x] Config repo selection prompt and workspace interactive/preset vars gathering
 - [x] Scaffold `.taskplane/` in config repo (config JSON, workspace.json, agents, version tracker, CONTEXT.md, examples)
@@ -74,6 +74,9 @@
 - [x] Pointer file creation (`taskplane-pointer.json`) in workspace root `.pi/`
 - [x] Dry-run/preset/force/non-interactive compatibility for workspace mode
 - [x] Post-init merge guidance and auto-commit in config repo
+- [ ] R010: Pass `prefix: ".taskplane/"` to `ensureGitignoreEntries()` and extend tracked-artifact detection with prefix-aware scanning
+- [ ] R010: Include `.gitignore` in workspace auto-commit staging alongside `.taskplane/`
+- [ ] R010: Fix overwrite confirmation — track user confirmation to set `skipIfExists` accordingly
 
 ---
 
@@ -121,6 +124,7 @@
 | R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -180,6 +184,9 @@
 | 2026-03-17 16:19 | Step 4 started | Workspace Mode Init (Scenario C) |
 | 2026-03-17 16:21 | Review R009 | plan Step 4: REVISE |
 | 2026-03-17 16:21 | Review R009 | plan Step 4: REVISE |
+| 2026-03-17 16:28 | Worker iter 5 | done in 411s, ctx: 30%, tools: 70 |
+| 2026-03-17 16:30 | Worker iter 5 | done in 592s, ctx: 33%, tools: 71 |
+| 2026-03-17 16:32 | Review R010 | code Step 4: REVISE |
 
 ## Blockers
 *None*
