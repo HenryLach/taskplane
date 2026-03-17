@@ -17,7 +17,7 @@
 ### Step 0: Preflight
 **Status:** 🟨 In Progress
 
-- [ ] Inventory all config/agent/state resolution call sites (resolution map)
+- [x] Inventory all config/agent/state resolution call sites (resolution map)
 - [ ] Document mode matrix: repo mode vs workspace mode (pointer present/missing/invalid)
 - [ ] Document env-var precedence interactions (TASKPLANE_WORKSPACE_ROOT, ORCH_SIDECAR_DIR, pointer)
 
@@ -79,6 +79,15 @@
 ## Discoveries
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Config resolution: `resolveConfigRoot()` checks cwd for config files, then `TASKPLANE_WORKSPACE_ROOT`, falls back to cwd | Step 1-2 input | `config-loader.ts:546-567` |
+| Config loading: `loadProjectConfig()` reads `<configRoot>/.pi/taskplane-config.json` first, then YAML fallback | Step 1-2 input | `config-loader.ts:569-603` |
+| Agent loading: `loadAgentDef()` looks at `<cwd>/.pi/agents/{name}.md` and `<cwd>/agents/{name}.md` | Step 2 input | `task-runner.ts:408` |
+| Merge agent prompt: hard-coded `join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md")` | Step 3 input | `merge.ts:307` |
+| Sidecar dir: `ORCH_SIDECAR_DIR = join(workspaceRoot \|\| repoRoot, ".pi")` | Step 3 input | `execution.ts:138` |
+| Dashboard state: `BATCH_STATE_PATH = <REPO_ROOT>/.pi/batch-state.json`, lane states from `<REPO_ROOT>/.pi/lane-state-*.json` | Step 4 input | `dashboard/server.cjs:634-636,194` |
+| Pointer file shape: `{ config_repo: "<repoId>", config_path: ".taskplane" }` at `<workspaceRoot>/.pi/taskplane-pointer.json` | Step 1 input | `bin/taskplane.mjs:1072-1075` |
+| `settings-and-onboarding-spec.md` does not exist in this worktree or main repo | Non-blocking | `.pi/local/docs/` |
+| Dashboard conversation files at `<REPO_ROOT>/.pi/worker-conversation-*.jsonl` | Step 4 input | `dashboard/server.cjs:381` |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
