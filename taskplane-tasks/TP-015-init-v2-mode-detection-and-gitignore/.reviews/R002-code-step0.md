@@ -3,19 +3,18 @@
 ### Verdict: REVISE
 
 ### Summary
-Step 0 preflight coverage is materially improved and now captures the key dependency/spec checks requested by R001. However, the checkpoint also includes unrelated edits to TP-014 artifacts, and the TP-015 status tables are malformed/duplicated in ways that reduce traceability and can break tooling that consumes these files.
+The preflight notes in `STATUS.md` now cover the key outcomes requested in R001 (spec reachability, TP-014 contract check, preserved `cmdInit()` behaviors, and validation intent). However, the commit range for this step also includes unrelated edits to TP-014 task artifacts, which breaks step scoping and makes review history harder to trust. There are also duplicated review/log rows in TP-015 status metadata that should be cleaned up for traceability.
 
 ### Issues Found
-1. **[taskplane-tasks/TP-014-json-config-schema-and-loader/STATUS.md:1] [important]** — TP-015 Step 0 commits modify TP-014 task artifacts (`STATUS.md` and `.DONE`). This violates task scoping and makes this step harder to audit/revert safely. **Fix:** revert TP-014 file changes from this step (or move them to a separate TP-014 housekeeping commit/PR).
-2. **[taskplane-tasks/TP-015-init-v2-mode-detection-and-gitignore/STATUS.md:88] [important]** — Markdown tables in `Reviews` and `Discoveries` are structurally invalid (separator row is at the bottom) and include duplicated review rows. **Fix:** keep standard table shape (`header` then `|---|...|` then rows) and de-duplicate R001 entries.
-3. **[taskplane-tasks/TP-015-init-v2-mode-detection-and-gitignore/STATUS.md:105] [minor]** — Execution log contains duplicated start entries for the same timestamp/action. **Fix:** collapse duplicate log lines to preserve a single canonical timeline.
+1. **[taskplane-tasks/TP-014-json-config-schema-and-loader/.DONE:1] [important]** — Step 0 for TP-015 includes modifications to TP-014 completion artifacts (`.DONE` and `STATUS.md`), which are unrelated to this task step. Revert TP-014 file edits from this step (or move them to a separate housekeeping commit) so TP-015 Step 0 is self-contained.
+2. **[taskplane-tasks/TP-015-init-v2-mode-detection-and-gitignore/STATUS.md:90-93] [minor]** — Reviews table has duplicate `R001` entries and an inverted table structure (`|---|...|` appears after data rows). Deduplicate entries and keep a standard header-separator-first markdown table layout.
+3. **[taskplane-tasks/TP-015-init-v2-mode-detection-and-gitignore/STATUS.md:106-113] [minor]** — Execution log contains duplicate "Task started" / "Step 0 started" rows. Remove duplicates to keep the audit trail clear.
 
 ### Pattern Violations
-- Commit scope drift: TP-015 checkpoint includes TP-014 file updates (contrary to “keep commits scoped and reviewable” guidance in `AGENTS.md`).
-- Status bookkeeping quality: duplicated rows/log entries reduce operator clarity.
+- Step scope includes unrelated task-folder changes (`TP-014` touched during `TP-015` Step 0), contrary to the project guidance to keep changes scoped and reviewable.
 
 ### Test Gaps
-- No runtime code changed in this step, so behavior tests are not required; however, there is no validation pass for status-file formatting/consistency.
+- No runtime code changed in this step, so no additional tests are required yet.
 
 ### Suggestions
-- Add a lightweight status-file sanity check in the worker flow (e.g., no duplicate review IDs per step, valid markdown table delimiter placement).
+- After cleaning scope/metadata, keep the strong preflight notes section as-is; it provides good guardrails for Step 1 implementation.

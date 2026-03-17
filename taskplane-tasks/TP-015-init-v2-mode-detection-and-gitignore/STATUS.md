@@ -23,7 +23,7 @@
 - [x] Verify TP-014 config loader/schema contract (JSON output shape, YAML fallback expectations)
 - [x] Record current `cmdInit()` behavior to preserve (--preset, YAML continuity, --tasks-root, --dry-run, --force, --no-examples)
 - [x] Identify downstream validation (existing tests, CLI checks for init regressions)
-- [ ] R002: Revert TP-014 file changes from TP-015 commits (scope drift fix)
+- [x] R002: Revert TP-014 file changes from TP-015 commits (scope drift fix)
 - [ ] R002: Fix malformed STATUS.md tables (separator placement, deduplicate review rows and log entries)
 
 ---
@@ -92,6 +92,7 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -114,6 +115,7 @@
 | 2026-03-17 15:29 | Worker iter 1 | done in 242s, ctx: 31%, tools: 49 |
 | 2026-03-17 15:30 | Worker iter 1 | done in 298s, ctx: 27%, tools: 42 |
 | 2026-03-17 15:31 | Review R002 | code Step 0: REVISE |
+| 2026-03-17 15:32 | Review R002 | code Step 0: REVISE |
 
 ## Blockers
 *None*
