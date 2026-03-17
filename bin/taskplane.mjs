@@ -2254,6 +2254,145 @@ function cmdDoctor() {
 		}
 	}
 
+	// ── Gitignore and tracked artifact checks ───────────────────────────
+	// In workspace mode, check the config repo's .gitignore (with .taskplane/ prefix).
+	// In repo mode, check the project root's .gitignore directly.
+	// Workspace root is NOT a git repo, so gitignore checks don't apply there.
+
+	if (isWorkspaceMode && wsResult.config) {
+		// Workspace mode: find config repo from pointer file
+		const pointerPath = path.join(projectRoot, ".pi", "taskplane-pointer.json");
+		let configRepoRoot = null;
+		let configRepoName = null;
+		try {
+			const pointer = JSON.parse(fs.readFileSync(pointerPath, "utf-8"));
+			if (pointer.config_repo) {
+				configRepoName = pointer.config_repo;
+				configRepoRoot = path.resolve(projectRoot, pointer.config_repo);
+			}
+		} catch {
+			// Pointer missing or invalid — skip gitignore checks (pointer validation is Step 2)
+		}
+
+		if (configRepoRoot && isInsideGitRepo(configRepoRoot)) {
+			const prefix = ".taskplane/";
+			console.log();
+
+			// Check 1: Gitignore entries present in config repo
+			const gitignorePath = path.join(configRepoRoot, ".gitignore");
+			const gitignoreExists = fs.existsSync(gitignorePath);
+			if (!gitignoreExists) {
+				console.log(`  ${WARN} ${configRepoName}/.gitignore missing — Taskplane runtime entries not protected`);
+				console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to add them, or add manually${c.reset}`);
+				// WARN doesn't increment issues (it's advisory, not a failure)
+			} else {
+				const content = fs.readFileSync(gitignorePath, "utf-8");
+				const existingLines = new Set(content.split(/\r?\n/).map(l => l.trim()));
+				const allEntries = [...TASKPLANE_GITIGNORE_ENTRIES, ...TASKPLANE_GITIGNORE_NPM_ENTRIES];
+				const missing = allEntries
+					.map(entry => `${prefix}${entry}`)
+					.filter(prefixed => !existingLines.has(prefixed));
+
+				if (missing.length === 0) {
+					console.log(`  ${OK} ${configRepoName}/.gitignore has all Taskplane runtime entries`);
+				} else {
+					console.log(`  ${WARN} ${configRepoName}/.gitignore missing ${missing.length} Taskplane runtime entr${missing.length === 1 ? "y" : "ies"}`);
+					console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to add them, or add manually${c.reset}`);
+				}
+			}
+
+			// Check 2: Tracked artifact detection in config repo
+			const scanDirs = [`${prefix}.pi/`, `${prefix}.worktrees/`];
+			try {
+				const raw = execFileSync("git", ["ls-files", "--", ...scanDirs], {
+					cwd: configRepoRoot,
+					stdio: ["pipe", "pipe", "pipe"],
+					timeout: 10000,
+				}).toString().trim();
+				const trackedFiles = raw ? raw.split(/\r?\n/) : [];
+
+				if (trackedFiles.length > 0) {
+					const prefixedPatterns = ALL_GITIGNORE_PATTERNS.map(p => `${prefix}${p}`);
+					const patterns = prefixedPatterns.map(p => patternToRegex(p));
+					const matchedFiles = trackedFiles.filter(file =>
+						patterns.some(regex => regex.test(file))
+					);
+
+					if (matchedFiles.length > 0) {
+						console.log(`  ${FAIL} ${matchedFiles.length} runtime artifact${matchedFiles.length === 1 ? "" : "s"} tracked by git in ${configRepoName}`);
+						for (const file of matchedFiles) {
+							console.log(`     ${c.dim}${file}${c.reset}`);
+						}
+						console.log(`     ${c.dim}→ Run: cd ${configRepoName} && git rm --cached ${matchedFiles.join(" ")}${c.reset}`);
+						issues++;
+					} else {
+						console.log(`  ${OK} no runtime artifacts tracked by git in ${configRepoName}`);
+					}
+				} else {
+					console.log(`  ${OK} no runtime artifacts tracked by git in ${configRepoName}`);
+				}
+			} catch {
+				// git ls-files failed — skip silently (repo validation already covers git issues)
+			}
+		}
+	} else if (!isWorkspaceMode && isInsideGitRepo(projectRoot)) {
+		// Repo mode: check project root .gitignore and tracked artifacts
+		console.log();
+
+		// Check 1: Gitignore entries present
+		const gitignorePath = path.join(projectRoot, ".gitignore");
+		const gitignoreExists = fs.existsSync(gitignorePath);
+		if (!gitignoreExists) {
+			console.log(`  ${WARN} .gitignore missing — Taskplane runtime entries not protected`);
+			console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to add them, or add manually${c.reset}`);
+		} else {
+			const content = fs.readFileSync(gitignorePath, "utf-8");
+			const existingLines = new Set(content.split(/\r?\n/).map(l => l.trim()));
+			const allEntries = [...TASKPLANE_GITIGNORE_ENTRIES, ...TASKPLANE_GITIGNORE_NPM_ENTRIES];
+			const missing = allEntries.filter(entry => !existingLines.has(entry));
+
+			if (missing.length === 0) {
+				console.log(`  ${OK} .gitignore has all Taskplane runtime entries`);
+			} else {
+				console.log(`  ${WARN} .gitignore missing ${missing.length} Taskplane runtime entr${missing.length === 1 ? "y" : "ies"}`);
+				console.log(`     ${c.dim}→ Run ${c.cyan}taskplane init${c.dim} to add them, or add manually${c.reset}`);
+			}
+		}
+
+		// Check 2: Tracked artifact detection
+		const scanDirs = [".pi/", ".worktrees/"];
+		try {
+			const raw = execFileSync("git", ["ls-files", "--", ...scanDirs], {
+				cwd: projectRoot,
+				stdio: ["pipe", "pipe", "pipe"],
+				timeout: 10000,
+			}).toString().trim();
+			const trackedFiles = raw ? raw.split(/\r?\n/) : [];
+
+			if (trackedFiles.length > 0) {
+				const patterns = ALL_GITIGNORE_PATTERNS.map(p => patternToRegex(p));
+				const matchedFiles = trackedFiles.filter(file =>
+					patterns.some(regex => regex.test(file))
+				);
+
+				if (matchedFiles.length > 0) {
+					console.log(`  ${FAIL} ${matchedFiles.length} runtime artifact${matchedFiles.length === 1 ? "" : "s"} tracked by git`);
+					for (const file of matchedFiles) {
+						console.log(`     ${c.dim}${file}${c.reset}`);
+					}
+					console.log(`     ${c.dim}→ Run: git rm --cached ${matchedFiles.join(" ")}${c.reset}`);
+					issues++;
+				} else {
+					console.log(`  ${OK} no runtime artifacts tracked by git`);
+				}
+			} else {
+				console.log(`  ${OK} no runtime artifacts tracked by git`);
+			}
+		} catch {
+			// git ls-files failed — skip silently
+		}
+	}
+
 	console.log();
 	if (issues === 0) {
 		console.log(`${OK} ${c.green}All checks passed!${c.reset}\n`);

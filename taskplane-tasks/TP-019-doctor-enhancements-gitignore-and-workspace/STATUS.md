@@ -1,11 +1,11 @@
 # TP-019: Doctor Enhancements: Gitignore, Artifact, and Workspace Validation — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Gitignore and Tracked Artifact Checks
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 1
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 2
+**Iteration:** 2
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -23,9 +23,9 @@
 ---
 
 ### Step 1: Gitignore and Tracked Artifact Checks
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Gitignore entry validation implemented
+- [x] Gitignore entry validation implemented
 - [ ] Tracked artifact detection with remediation
 
 ---
@@ -71,6 +71,7 @@
 ## Reviews
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | plan | Step 1 | APPROVE | .reviews/R002-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -84,6 +85,10 @@
 | 2026-03-17 20:33 | Task started | Extension-driven execution |
 | 2026-03-17 20:33 | Step 0 started | Preflight |
 | 2026-03-17 20:33 | Review R001 | plan Step 0: REVISE |
+| 2026-03-17 20:35 | Worker iter 1 | done in 139s, ctx: 15%, tools: 25 |
+| 2026-03-17 20:35 | Step 0 complete | Preflight |
+| 2026-03-17 20:35 | Step 1 started | Gitignore and Tracked Artifact Checks |
+| 2026-03-17 20:36 | Review R002 | plan Step 1: APPROVE |
 
 ## Blockers
 *None*
