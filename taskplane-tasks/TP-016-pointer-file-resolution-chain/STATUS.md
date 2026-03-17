@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -20,6 +20,7 @@
 - [x] Inventory all config/agent/state resolution call sites (resolution map)
 - [x] Document mode matrix: repo mode vs workspace mode (pointer present/missing/invalid)
 - [x] Document env-var precedence interactions (TASKPLANE_WORKSPACE_ROOT, ORCH_SIDECAR_DIR, pointer)
+- [x] R002 revision: Unify pointer failure semantics (warn+fallback for all failure modes) and fix STATUS.md table/log formatting
 
 ---
 
@@ -57,7 +58,7 @@
 ### Step 5: Testing & Verification
 **Status:** ⬜ Not Started
 
-- [ ] Pointer resolution tests
+- [ ] Pointer resolution tests (include unknown config_repo → warn + fallback scenario)
 - [ ] `cd extensions && npx vitest run`
 
 ---
@@ -72,9 +73,9 @@
 
 ## Reviews
 | # | Type | Step | Verdict | File |
-| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
-| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -95,10 +96,10 @@
 | 2026-03-17 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-03-17 17:23 | Task started | Extension-driven execution |
 | 2026-03-17 17:23 | Step 0 started | Preflight |
-| 2026-03-17 17:23 | Task started | Extension-driven execution |
-| 2026-03-17 17:23 | Step 0 started | Preflight |
 | 2026-03-17 17:25 | Review R001 | plan Step 0: REVISE |
-| 2026-03-17 17:25 | Review R001 | plan Step 0: REVISE |
+| 2026-03-17 17:29 | Worker iter 1 | done in 234s, ctx: 40%, tools: 43 |
+| 2026-03-17 17:30 | Review R002 | code Step 0: REVISE |
+| 2026-03-17 17:31 | Review R002 | code Step 0: REVISE |
 
 ## Blockers
 *None*
@@ -143,14 +144,14 @@
 | **Workspace, valid pointer** | Present | Valid JSON, valid `config_repo`+`config_path` | Resolve pointer → `<config_repo_path>/<config_path>/` for config | Resolve pointer → `<config_repo_path>/<config_path>/agents/` → base package | `workspaceRoot/.pi/` (state stays at workspace root) |
 | **Workspace, pointer missing** | Present | File absent at `workspaceRoot/.pi/taskplane-pointer.json` | Fallback to `TASKPLANE_WORKSPACE_ROOT/.pi/` (current behavior) | Fallback to current worktree cwd paths (current behavior) | `workspaceRoot/.pi/` (unchanged) |
 | **Workspace, pointer malformed** | Present | File exists but invalid JSON or missing fields | Warn + fallback same as "pointer missing" | Warn + fallback same as "pointer missing" | `workspaceRoot/.pi/` (unchanged) |
-| **Workspace, pointer invalid config_repo** | Present | Valid JSON but `config_repo` not in workspace repos map | Error — fail-fast (config_repo must match a known repo ID) | Error — same | `workspaceRoot/.pi/` (unchanged) |
+| **Workspace, pointer invalid config_repo** | Present | Valid JSON but `config_repo` not in workspace repos map | Log warning → fall back to `TASKPLANE_WORKSPACE_ROOT` | Same fallback | `workspaceRoot/.pi/` (unchanged) |
 
 #### Design decisions:
 1. **Pointer is workspace-only**: In repo mode, no pointer file is read. Even if one exists, it's ignored. This guarantees zero repo-mode behavior change.
 2. **State/sidecar files never follow pointer**: Batch state, conversation logs, abort signals, lane logs — all stay at `workspaceRoot/.pi/`. Only config and agent artifacts follow the pointer to the config repo.
 3. **Missing pointer = graceful fallback**: Workspace mode without a pointer is a valid (if degraded) configuration. This supports incremental adoption and the case where init v2 hasn't been run yet.
 4. **Malformed pointer = warn + fallback**: Non-destructive. Log a warning but don't crash. User can fix or re-run init.
-5. **Invalid config_repo = fail-fast**: If the pointer references a repo not in the workspace config, that's a hard error — the config repo path can't be resolved.
+5. **Invalid config_repo = warn + fallback**: If the pointer references a repo not in the workspace config, log a warning and fall back to `TASKPLANE_WORKSPACE_ROOT` behavior. This keeps pointer failure consistently non-fatal across all failure modes.
 
 ### Mode Matrix: Pointer Resolution Behavior
 
