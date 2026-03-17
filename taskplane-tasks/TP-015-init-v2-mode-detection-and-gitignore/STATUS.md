@@ -21,7 +21,7 @@
 - [x] Read spec auto-detection and gitignore sections
 - [x] Verify spec reachability and record source path
 - [x] Verify TP-014 config loader/schema contract (JSON output shape, YAML fallback expectations)
-- [ ] Record current `cmdInit()` behavior to preserve (--preset, YAML continuity, --tasks-root, --dry-run, --force, --no-examples)
+- [x] Record current `cmdInit()` behavior to preserve (--preset, YAML continuity, --tasks-root, --dry-run, --force, --no-examples)
 - [ ] Identify downstream validation (existing tests, CLI checks for init regressions)
 
 ---
@@ -112,4 +112,23 @@
 *None*
 
 ## Notes
-*Reserved for execution notes*
+
+### Current `cmdInit()` behavior to preserve (Step 0 preflight)
+
+1. **Flags**: `--force`, `--dry-run`, `--no-examples`, `--include-examples`, `--preset <name>`, `--tasks-root <path>`
+2. **Presets**: `minimal`, `full`, `runner-only` — call `getPresetVars()`, skip interactive prompts
+3. **Interactive mode**: prompts for project name, max lanes, tasks directory, area name, prefix, test/build commands
+4. **Config check**: detects existing `.pi/task-runner.yaml` or `.pi/task-orchestrator.yaml`; prompts to overwrite if `--force` not set
+5. **Files created**: agent prompts (3), task-runner.yaml, task-orchestrator.yaml (unless runner-only), taskplane.json, CONTEXT.md, example tasks
+6. **Auto-commit**: `autoCommitTaskFiles()` commits tasks dir to git after scaffolding
+7. **Stack detection**: `detectStack()` checks package.json/go.mod/Cargo.toml etc. for test/build commands
+8. **YAML generation**: `generateTaskRunnerYaml()` and `generateOrchestratorYaml()` — currently YAML-only output, no JSON output yet
+9. **Template interpolation**: `{{variables}}` in CONTEXT.md and example tasks
+10. **`--tasks-root`**: validates relative, non-empty, no `..`; disables examples unless `--include-examples`
+
+### Key constraints for v2
+
+- PROMPT: "Do NOT break existing `--preset` flags"
+- PROMPT: "Do NOT remove YAML config generation until JSON is fully validated"
+- Spec: init should output `taskplane-config.json` (JSON) — but YAML must remain as fallback during transition
+- Spec: `spawnMode` is a project setting, defaulted based on tmux detection
