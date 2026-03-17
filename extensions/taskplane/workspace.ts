@@ -37,7 +37,7 @@
  * @module orch/workspace
  */
 import { readFileSync, existsSync, realpathSync } from "fs";
-import { resolve } from "path";
+import { resolve, relative, isAbsolute } from "path";
 import { parse as yamlParse } from "yaml";
 
 import { runGit } from "./git.ts";
@@ -213,8 +213,19 @@ export function resolvePointer(
 
 	// ── 5. Guard path traversal ──────────────────────────────────
 	const normalizedConfigPath = configPath.trim().replace(/\\/g, "/");
+
+	// Reject absolute paths (POSIX `/...` and Windows `C:/...`, `\\...`)
+	if (isAbsolute(normalizedConfigPath) || isAbsolute(configPath.trim())) {
+		return {
+			used: false,
+			configRoot: fallbackConfigRoot,
+			agentRoot: fallbackAgentRoot,
+			warning: `Pointer file ${filePath} has invalid config_path '${configPath}' (absolute paths not allowed).`,
+		};
+	}
+
+	// Reject traversal sequences
 	if (
-		normalizedConfigPath.startsWith("/") ||
 		normalizedConfigPath.startsWith("..") ||
 		normalizedConfigPath.includes("/../") ||
 		normalizedConfigPath.endsWith("/..")
@@ -240,8 +251,20 @@ export function resolvePointer(
 		};
 	}
 
-	// ── 7. Build resolved paths ──────────────────────────────────
+	// ── 7. Build resolved paths + containment check ──────────────
 	const resolvedConfigRoot = resolve(repoConfig.path, normalizedConfigPath);
+
+	// Verify the resolved path is within the repo root (defense-in-depth)
+	const rel = relative(repoConfig.path, resolvedConfigRoot);
+	if (rel.startsWith("..") || isAbsolute(rel)) {
+		return {
+			used: false,
+			configRoot: fallbackConfigRoot,
+			agentRoot: fallbackAgentRoot,
+			warning: `Pointer file ${filePath} has invalid config_path '${configPath}' (resolved path escapes config repo root).`,
+		};
+	}
+
 	const resolvedAgentRoot = resolve(resolvedConfigRoot, "agents");
 
 	return {
