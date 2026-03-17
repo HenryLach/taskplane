@@ -1,11 +1,11 @@
 # TP-016: Pointer File Resolution Chain — Status
 
-**Current Step:** Step 1: Implement Pointer Resolution
+**Current Step:** Step 2: Thread Through Task-Runner
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -36,10 +36,12 @@
 ---
 
 ### Step 2: Thread Through Task-Runner
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Agent and config loading uses pointer in workspace mode
-- [ ] Repo mode unchanged
+- [ ] Thread pointer into `resolveConfigRoot()` in config-loader.ts: insert pointer configRoot between cwd-local and TASKPLANE_WORKSPACE_ROOT in precedence chain (cwd → pointer → wsRoot → defaults). Non-fatal: resolvePointer warn+fallback, never throws.
+- [ ] Thread pointer into `loadAgentDef()` in task-runner.ts: insert pointer agentRoot between cwd-local paths and base package (cwd/.pi/agents → cwd/agents → pointer agentRoot → base package). Non-fatal: pointer fallback transparent.
+- [ ] Repo mode parity: verify no behavior change when workspaceConfig is null (pointer returns null, existing code paths unchanged)
+- [ ] Add Step 2 tests in workspace-config.test.ts: config resolution with valid pointer, missing/malformed pointer fallback, and repo-mode parity for both config and agent paths
 
 ---
 
@@ -83,6 +85,7 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -118,6 +121,10 @@
 | 2026-03-17 17:39 | Worker iter 2 | done in 297s, ctx: 20%, tools: 35 |
 | 2026-03-17 17:42 | Review R004 | code Step 1: REVISE |
 | 2026-03-17 17:42 | Review R004 | code Step 1: REVISE |
+| 2026-03-17 17:50 | Worker iter 2 | done in 431s, ctx: 25%, tools: 41 |
+| 2026-03-17 17:50 | Step 1 complete | Implement Pointer Resolution |
+| 2026-03-17 17:50 | Step 2 started | Thread Through Task-Runner |
+| 2026-03-17 17:50 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 *None*
