@@ -1,7 +1,7 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
 **Current Step:** Step 4: Workspace Mode Init (Scenario C)
-**Status:** ✅ Step 3 Complete
+**Status:** ✅ Step 4 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
 **Review Counter:** 9
@@ -66,14 +66,14 @@
 ---
 
 ### Step 4: Workspace Mode Init (Scenario C)
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Config repo selection prompt and workspace interactive/preset vars gathering
 - [x] Scaffold `.taskplane/` in config repo (config JSON, workspace.json, agents, version tracker, CONTEXT.md, examples)
 - [x] Gitignore enforcement in config repo with `.taskplane/`-scoped prefix; tracked-artifact detection
 - [x] Pointer file creation (`taskplane-pointer.json`) in workspace root `.pi/`
 - [x] Dry-run/preset/force/non-interactive compatibility for workspace mode
-- [ ] Post-init merge guidance and auto-commit in config repo
+- [x] Post-init merge guidance and auto-commit in config repo
 
 ---
 
