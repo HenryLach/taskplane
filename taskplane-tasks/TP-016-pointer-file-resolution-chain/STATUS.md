@@ -1,11 +1,11 @@
 # TP-016: Pointer File Resolution Chain — Status
 
-**Current Step:** Step 2: Thread Through Task-Runner
+**Current Step:** Step 3: Thread Through Orchestrator
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -49,7 +49,7 @@
 ---
 
 ### Step 3: Thread Through Orchestrator
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] `buildExecutionContext()` uses pointer
 - [ ] Sidecar and merge agent paths use pointer
@@ -92,6 +92,7 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -136,6 +137,10 @@
 | 2026-03-17 18:01 | Worker iter 3 | done in 670s, ctx: 39%, tools: 77 |
 | 2026-03-17 18:02 | Review R006 | code Step 2: REVISE |
 | 2026-03-17 18:04 | Review R006 | code Step 2: REVISE |
+| 2026-03-17 18:11 | Worker iter 3 | done in 510s, ctx: 37%, tools: 57 |
+| 2026-03-17 18:11 | Step 2 complete | Thread Through Task-Runner |
+| 2026-03-17 18:11 | Step 3 started | Thread Through Orchestrator |
+| 2026-03-17 18:13 | Review R007 | plan Step 3: REVISE |
 
 ## Blockers
 *None*

@@ -1153,44 +1153,69 @@ describe("pointer warning surfacing (TP-016)", () => {
 		_resetPointerWarning();
 	});
 
-	it("6.4: pointer warning is logged to console.error when pointer file is missing", () => {
+	it("6.4: no pointer warning when workspace config fails to load (catch returns null)", () => {
 		const cwdDir = makeTestDir("warn-missing");
 		const wsRoot = makeTestDir("warn-ws-root");
 
-		// Set up workspace mode without a pointer file or workspace YAML
+		// Set up workspace mode without a workspace YAML
+		// resolveTaskRunnerPointer catches loadWorkspaceConfig errors → returns null
+		// No pointer warning is emitted (the catch path doesn't produce one)
 		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
 
-		// loadConfig triggers resolveTaskRunnerPointer → warning
 		taskRunnerLoadConfig(cwdDir);
 
-		// Warning is logged because workspace config load fails (no YAML)
-		// and resolveTaskRunnerPointer catches the error — so no pointer
-		// warning is logged (the catch returns null, not a PointerResolution with warning)
-		// This is correct behavior: workspace config load failure is a separate path
+		const pointerWarnings = consoleErrorSpy.mock.calls.filter(
+			(args) => typeof args[0] === "string" && args[0].includes("[task-runner] pointer:"),
+		);
+		expect(pointerWarnings.length).toBe(0);
 	});
 
-	it("6.5: pointer warning is logged exactly once per session (dedup)", () => {
+	it("6.5: pointer warning is logged when workspace config exists but pointer is missing", () => {
 		const cwdDir = makeTestDir("warn-dedup");
 		const wsRoot = makeTestDir("warn-ws-dedup");
 
-		// Create a valid workspace YAML so resolvePointer actually runs
-		// but no pointer file → triggers the "pointer not found" warning
+		// Create a real git repo for the workspace YAML to reference
+		const gitRepoPath = join(testRoot, "warn-fake-repo");
+		mkdirSync(gitRepoPath, { recursive: true });
+		const { execSync } = require("child_process");
+		try {
+			execSync("git init", { cwd: gitRepoPath, stdio: "pipe" });
+		} catch {
+			// Skip test if git init fails (CI environment without git)
+			return;
+		}
+
+		// Create tasks_root directory (routing validation requires it to exist)
+		const tasksRoot = join(wsRoot, "taskplane-tasks");
+		mkdirSync(tasksRoot, { recursive: true });
+
 		mkdirSync(join(wsRoot, ".pi"), { recursive: true });
 		writeFileSync(
 			join(wsRoot, ".pi", "taskplane-workspace.yaml"),
-			"name: test-workspace\nrepos:\n  main:\n    path: /tmp/main\n    default_branch: main\n",
+			[
+				"repos:",
+				"  main:",
+				`    path: ${gitRepoPath.replace(/\\/g, "/")}`,
+				"    default_branch: main",
+				"routing:",
+				"  tasks_root: taskplane-tasks",
+				"  default_repo: main",
+			].join("\n"),
 			"utf-8",
 		);
+
+		// No pointer file at wsRoot/.pi/taskplane-pointer.json
+		// → resolvePointer returns { used: false, warning: "Pointer file not found..." }
 
 		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
 		_resetPointerWarning();
 
-		// Call loadConfig multiple times
+		// Call loadConfig multiple times — warning should appear once
 		taskRunnerLoadConfig(cwdDir);
 		taskRunnerLoadConfig(cwdDir);
 		taskRunnerLoadConfig(cwdDir);
 
-		// Warning should be logged exactly once
+		// Warning should be logged exactly once (dedup via _pointerWarningLogged)
 		const pointerWarnings = consoleErrorSpy.mock.calls.filter(
 			(args) => typeof args[0] === "string" && args[0].includes("[task-runner] pointer:"),
 		);
