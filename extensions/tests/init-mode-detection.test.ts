@@ -21,6 +21,7 @@ import {
 	mkdirSync,
 	writeFileSync,
 	readFileSync,
+	readdirSync,
 	rmSync,
 	existsSync,
 	appendFileSync,
@@ -67,7 +68,15 @@ function isGitRepoRoot(dir: string): boolean {
 			stdio: ["pipe", "pipe", "pipe"],
 			timeout: 5000,
 		}).toString().trim();
-		return resolve(toplevel) === resolve(dir);
+		// Normalize paths for comparison (handles Windows path separators
+		// and 8.3 short name mismatches on Windows)
+		const normalizedToplevel = resolve(toplevel);
+		let normalizedDir = resolve(dir);
+		// On Windows, fs.realpathSync.native resolves 8.3 short names to
+		// long names, matching what git returns. Without this, paths like
+		// C:\Users\HENRYL~1\... won't match C:\Users\HenryLach\...
+		try { normalizedDir = realpathSync.native(normalizedDir); } catch {}
+		return normalizedToplevel === normalizedDir;
 	} catch {
 		return false;
 	}
@@ -76,7 +85,6 @@ function isGitRepoRoot(dir: string): boolean {
 function findSubdirectoryGitRepos(dir: string): string[] {
 	const results: string[] = [];
 	try {
-		const { readdirSync } = require("fs");
 		const entries = readdirSync(dir, { withFileTypes: true });
 		for (const entry of entries) {
 			if (!entry.isDirectory()) continue;
@@ -374,7 +382,35 @@ describe("isGitRepoRoot and findSubdirectoryGitRepos", () => {
 		expect(found).toEqual(["alpha", "middle", "zebra"]);
 	});
 
-	it("1.8 — findSubdirectoryGitRepos does not detect subdirs of a parent repo as repo roots", () => {
+	it("1.8 — isGitRepoRoot uses realpathSync.native for path canonicalization (Windows 8.3 regression)", () => {
+		// Regression: on Windows, temp dirs may use 8.3 short names (e.g., HENRYL~1)
+		// while `git rev-parse --show-toplevel` returns the long name (HenryLach).
+		// The fix uses fs.realpathSync.native() to canonicalize the dir path before
+		// comparison. This test verifies that the helper's path normalization matches
+		// production behavior by comparing realpathSync.native output to resolve output.
+		const repo = makeTestDir("realpath-regression");
+		initGitRepo(repo);
+
+		// Verify the function works with the real path
+		expect(isGitRepoRoot(repo)).toBe(true);
+
+		// Verify that realpathSync.native resolves to the same or longer form
+		const resolved = resolve(repo);
+		const realpathed = realpathSync.native(resolved);
+		// On Windows, realpathed may differ from resolved (8.3 → long name).
+		// On Linux/macOS they should be identical. Either way, isGitRepoRoot must work.
+		expect(isGitRepoRoot(realpathed)).toBe(true);
+
+		// If the paths differ (Windows 8.3 scenario), confirm that the function
+		// handles both forms correctly by using the native-resolved path
+		if (resolved !== realpathed) {
+			// Both the short and long forms should resolve to the same repo root
+			expect(isGitRepoRoot(resolved)).toBe(true);
+			expect(isGitRepoRoot(realpathed)).toBe(true);
+		}
+	});
+
+	it("1.9 — findSubdirectoryGitRepos does not detect subdirs of a parent repo as repo roots", () => {
 		const parentRepo = makeTestDir("parent-with-subdirs");
 		initGitRepo(parentRepo);
 		mkdirSync(join(parentRepo, "packages", "pkg-a"), { recursive: true });

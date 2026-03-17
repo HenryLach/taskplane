@@ -100,7 +100,7 @@
 - [x] Preset compatibility verified: `--preset minimal`, `--preset full`, `--preset runner-only` all work with `--dry-run --force`
 - [x] YAML output still generated alongside JSON (constraint from PROMPT)
 - [x] Mode detection edge cases and regression coverage: add init-focused automated test file covering mode detection, gitignore enforcement, and scenario branching
-- [ ] R014: Fix mirrored `isGitRepoRoot()` in test to include `fs.realpathSync.native()` normalization matching production code, and add regression case for path-canonicalization mismatch
+- [x] R014: Fix mirrored `isGitRepoRoot()` in test to include `fs.realpathSync.native()` normalization matching production code, and add regression case for path-canonicalization mismatch
 - [ ] R014: Re-run vitest to confirm all tests pass after fix
 
 ---
