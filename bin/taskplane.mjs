@@ -562,6 +562,226 @@ async function cmdUninstall(args) {
 	}
 }
 
+// ─── Gitignore Enforcement ──────────────────────────────────────────────────
+
+/**
+ * Required gitignore entries for Taskplane projects.
+ * These patterns cover runtime artifacts that are machine-specific and must
+ * not be committed to git. Reused by both repo mode (Step 2) and workspace
+ * mode (Step 4) init flows.
+ */
+const TASKPLANE_GITIGNORE_HEADER = "# Taskplane runtime artifacts (machine-specific, do not commit)";
+const TASKPLANE_GITIGNORE_NPM_HEADER = "# Pi project-local packages (if using pi install -l)";
+
+const TASKPLANE_GITIGNORE_ENTRIES = [
+	".pi/batch-state.json",
+	".pi/batch-history.json",
+	".pi/lane-state-*",
+	".pi/merge-result-*",
+	".pi/merge-request-*",
+	".pi/worker-conversation-*",
+	".pi/orch-logs/",
+	".pi/orch-abort-signal",
+	".pi/settings.json",
+	".worktrees/",
+];
+
+const TASKPLANE_GITIGNORE_NPM_ENTRIES = [
+	".pi/npm/",
+];
+
+/**
+ * All patterns that should be gitignored, used for tracked-artifact detection.
+ */
+const ALL_GITIGNORE_PATTERNS = [...TASKPLANE_GITIGNORE_ENTRIES, ...TASKPLANE_GITIGNORE_NPM_ENTRIES];
+
+/**
+ * Build the full gitignore block text (with headers and entries).
+ */
+function buildGitignoreBlock() {
+	const lines = [];
+	lines.push(TASKPLANE_GITIGNORE_HEADER);
+	for (const entry of TASKPLANE_GITIGNORE_ENTRIES) {
+		lines.push(entry);
+	}
+	lines.push("");
+	lines.push(TASKPLANE_GITIGNORE_NPM_HEADER);
+	for (const entry of TASKPLANE_GITIGNORE_NPM_ENTRIES) {
+		lines.push(entry);
+	}
+	return lines.join("\n");
+}
+
+/**
+ * Ensure required Taskplane gitignore entries exist in the project's .gitignore.
+ * Creates the file if it doesn't exist. Skips entries that already exist.
+ * Returns { created: boolean, added: string[], skipped: string[] }.
+ *
+ * @param {string} projectRoot - Root directory containing (or to contain) .gitignore
+ * @param {object} options
+ * @param {boolean} options.dryRun - If true, don't modify files
+ * @param {string} [options.prefix] - Optional prefix for entries (e.g., ".taskplane/" for workspace mode)
+ */
+function ensureGitignoreEntries(projectRoot, { dryRun = false, prefix = "" } = {}) {
+	const gitignorePath = path.join(projectRoot, ".gitignore");
+	const fileExists = fs.existsSync(gitignorePath);
+	const existingContent = fileExists ? fs.readFileSync(gitignorePath, "utf-8") : "";
+	const existingLines = new Set(existingContent.split(/\r?\n/).map(l => l.trim()));
+
+	const allEntries = [...TASKPLANE_GITIGNORE_ENTRIES, ...TASKPLANE_GITIGNORE_NPM_ENTRIES];
+	const added = [];
+	const skipped = [];
+
+	for (const entry of allEntries) {
+		const prefixedEntry = prefix ? `${prefix}${entry}` : entry;
+		if (existingLines.has(prefixedEntry)) {
+			skipped.push(prefixedEntry);
+		} else {
+			added.push(prefixedEntry);
+		}
+	}
+
+	if (added.length === 0) {
+		return { created: false, added: [], skipped };
+	}
+
+	if (!dryRun) {
+		// Build the block of new entries with headers
+		const runtimeAdded = added.filter(e => !e.endsWith("npm/"));
+		const npmAdded = added.filter(e => e.endsWith("npm/"));
+		const newLines = [];
+
+		if (runtimeAdded.length > 0) {
+			// Only add header if it's not already present
+			const headerToCheck = prefix
+				? TASKPLANE_GITIGNORE_HEADER
+				: TASKPLANE_GITIGNORE_HEADER;
+			if (!existingLines.has(headerToCheck)) {
+				newLines.push(TASKPLANE_GITIGNORE_HEADER);
+			}
+			newLines.push(...runtimeAdded);
+		}
+
+		if (npmAdded.length > 0) {
+			if (!existingLines.has(TASKPLANE_GITIGNORE_NPM_HEADER)) {
+				if (newLines.length > 0) newLines.push("");
+				newLines.push(TASKPLANE_GITIGNORE_NPM_HEADER);
+			}
+			newLines.push(...npmAdded);
+		}
+
+		const blockText = newLines.join("\n") + "\n";
+
+		if (fileExists) {
+			// Append to existing file with a blank line separator
+			const separator = existingContent.endsWith("\n") ? "\n" : "\n\n";
+			fs.appendFileSync(gitignorePath, separator + blockText, "utf-8");
+		} else {
+			fs.writeFileSync(gitignorePath, blockText, "utf-8");
+		}
+	}
+
+	return { created: !fileExists, added, skipped };
+}
+
+/**
+ * Glob-like patterns from TASKPLANE_GITIGNORE_ENTRIES for `git ls-files` matching.
+ * Converts wildcard patterns to regex patterns for checking tracked files.
+ */
+function patternToRegex(pattern) {
+	// Escape regex special chars except *
+	const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&");
+	// Replace * with .*
+	const regexStr = "^" + escaped.replace(/\*/g, ".*") + "$";
+	return new RegExp(regexStr);
+}
+
+/**
+ * Check for tracked runtime artifacts and offer to untrack them.
+ * Uses `git ls-files` to find tracked files that match gitignore patterns.
+ * Runs `git rm --cached` to untrack (files remain on disk).
+ *
+ * Isolation: This function commits or stashes nothing. It only removes files
+ * from the index. The caller is responsible for ensuring this runs BEFORE
+ * autoCommitTaskFiles() so the removals don't get bundled into unrelated commits.
+ *
+ * @param {string} projectRoot - Git repo root
+ * @param {object} options
+ * @param {boolean} options.dryRun - If true, report but don't modify index
+ * @param {boolean} options.interactive - If false, skip prompt and don't untrack
+ */
+async function detectAndOfferUntrackArtifacts(projectRoot, { dryRun = false, interactive = true } = {}) {
+	// Only run in a git repo
+	if (!isInsideGitRepo(projectRoot)) return { found: [], untracked: false };
+
+	// Get list of tracked files under .pi/ and .worktrees/
+	let trackedFiles;
+	try {
+		const raw = execSync("git ls-files .pi/ .worktrees/", {
+			cwd: projectRoot,
+			stdio: ["pipe", "pipe", "pipe"],
+			timeout: 10000,
+		}).toString().trim();
+		trackedFiles = raw ? raw.split(/\r?\n/) : [];
+	} catch {
+		return { found: [], untracked: false };
+	}
+
+	if (trackedFiles.length === 0) return { found: [], untracked: false };
+
+	// Build regex patterns for matching
+	const patterns = ALL_GITIGNORE_PATTERNS.map(p => patternToRegex(p));
+
+	// Find tracked files that match runtime artifact patterns
+	const matchedFiles = trackedFiles.filter(file => {
+		return patterns.some(regex => regex.test(file));
+	});
+
+	if (matchedFiles.length === 0) return { found: [], untracked: false };
+
+	// Report findings
+	console.log(`\n  ${WARN} Found runtime artifacts tracked by git:`);
+	for (const file of matchedFiles) {
+		console.log(`     ${file}`);
+	}
+	console.log();
+	console.log(`  These files contain machine-specific state that will cause problems`);
+	console.log(`  for other team members.`);
+
+	if (dryRun) {
+		console.log(`  ${c.dim}(dry run — would offer to untrack these files)${c.reset}`);
+		return { found: matchedFiles, untracked: false };
+	}
+
+	if (!interactive) {
+		console.log(`  ${c.dim}Run: git rm --cached ${matchedFiles.join(" ")}${c.reset}`);
+		return { found: matchedFiles, untracked: false };
+	}
+
+	const doUntrack = await confirm("  Untrack them? (files stay on disk, become gitignored)", true);
+	if (!doUntrack) {
+		console.log(`  ${c.dim}Skipped. You can untrack later with:${c.reset}`);
+		console.log(`  ${c.dim}git rm --cached ${matchedFiles.join(" ")}${c.reset}`);
+		return { found: matchedFiles, untracked: false };
+	}
+
+	// Untrack: git rm --cached for each file
+	try {
+		const fileArgs = matchedFiles.map(f => `"${f}"`).join(" ");
+		execSync(`git rm --cached ${fileArgs}`, {
+			cwd: projectRoot,
+			stdio: ["pipe", "pipe", "pipe"],
+			timeout: 10000,
+		});
+		console.log(`  ${OK} Files untracked (still on disk, now gitignored)`);
+		return { found: matchedFiles, untracked: true };
+	} catch (err) {
+		console.log(`  ${WARN} Failed to untrack files: ${err.message}`);
+		console.log(`  ${c.dim}Run manually: git rm --cached ${matchedFiles.join(" ")}${c.reset}`);
+		return { found: matchedFiles, untracked: false };
+	}
+}
+
 // ─── Mode Auto-Detection ────────────────────────────────────────────────────
 
 /**
@@ -717,6 +937,178 @@ function detectInitMode(dir) {
 		alreadyInitialized: false,
 		existingConfigPath: null,
 	};
+}
+
+// ─── Gitignore Enforcement ──────────────────────────────────────────────────
+
+/**
+ * Required gitignore entries for Taskplane runtime artifacts.
+ * These are machine-specific files that must NOT be committed to git.
+ * Reused by repo-mode init (Step 2) and workspace-mode init (Step 4).
+ */
+const REQUIRED_GITIGNORE_ENTRIES = [
+	{ comment: "# Taskplane runtime artifacts (machine-specific, do not commit)", entries: [
+		".pi/batch-state.json",
+		".pi/batch-history.json",
+		".pi/lane-state-*",
+		".pi/merge-result-*",
+		".pi/merge-request-*",
+		".pi/worker-conversation-*",
+		".pi/orch-logs/",
+		".pi/orch-abort-signal",
+		".pi/settings.json",
+		".worktrees/",
+	]},
+	{ comment: "# Pi project-local packages (if using pi install -l)", entries: [
+		".pi/npm/",
+	]},
+];
+
+/**
+ * Ensure required gitignore entries exist in the target .gitignore file.
+ * Creates the file if it doesn't exist. Skips entries already present.
+ * Returns { added: string[], alreadyPresent: string[], created: boolean }.
+ *
+ * @param {string} gitignorePath - Absolute path to the .gitignore file
+ * @param {object} options
+ * @param {boolean} options.dryRun - If true, don't write to disk
+ */
+function ensureGitignoreEntries(gitignorePath, { dryRun = false } = {}) {
+	const created = !fs.existsSync(gitignorePath);
+	const existingContent = created ? "" : fs.readFileSync(gitignorePath, "utf-8");
+	const existingLines = new Set(
+		existingContent.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith("#"))
+	);
+
+	const added = [];
+	const alreadyPresent = [];
+	const linesToAppend = [];
+
+	for (const group of REQUIRED_GITIGNORE_ENTRIES) {
+		const groupAdded = [];
+		for (const entry of group.entries) {
+			if (existingLines.has(entry)) {
+				alreadyPresent.push(entry);
+			} else {
+				groupAdded.push(entry);
+				added.push(entry);
+			}
+		}
+		if (groupAdded.length > 0) {
+			// Add a blank line separator before each group comment (if not at start)
+			if (linesToAppend.length > 0 || (existingContent.trim().length > 0)) {
+				linesToAppend.push("");
+			}
+			linesToAppend.push(group.comment);
+			for (const entry of groupAdded) {
+				linesToAppend.push(entry);
+			}
+		}
+	}
+
+	if (added.length > 0 && !dryRun) {
+		// Ensure existing content ends with newline before appending
+		let content = existingContent;
+		if (content.length > 0 && !content.endsWith("\n")) {
+			content += "\n";
+		}
+		content += linesToAppend.join("\n") + "\n";
+		fs.mkdirSync(path.dirname(gitignorePath), { recursive: true });
+		fs.writeFileSync(gitignorePath, content, "utf-8");
+	}
+
+	return { added, alreadyPresent, created };
+}
+
+/**
+ * Detect tracked runtime artifacts that should be gitignored.
+ * Uses `git ls-files` to check if any required gitignore patterns match tracked files.
+ * Returns an array of tracked file paths that should be untracked.
+ *
+ * @param {string} repoRoot - Absolute path to the git repo root
+ */
+function detectTrackedArtifacts(repoRoot) {
+	// Collect all entry patterns (flat list)
+	const patterns = REQUIRED_GITIGNORE_ENTRIES.flatMap(g => g.entries);
+	const trackedFiles = [];
+
+	for (const pattern of patterns) {
+		try {
+			const output = execSync(`git ls-files "${pattern}"`, {
+				cwd: repoRoot,
+				stdio: ["pipe", "pipe", "pipe"],
+				timeout: 10000,
+			}).toString().trim();
+			if (output) {
+				for (const file of output.split(/\r?\n/)) {
+					if (file.trim()) trackedFiles.push(file.trim());
+				}
+			}
+		} catch {
+			// Pattern didn't match or git error — skip
+		}
+	}
+
+	return [...new Set(trackedFiles)]; // deduplicate
+}
+
+/**
+ * Offer to untrack runtime artifacts that are currently tracked by git.
+ * In non-interactive mode (preset / dry-run), reports but does not prompt.
+ * Dry-run: reports what would be untracked but does not modify git index.
+ * Non-interactive (preset): auto-accepts untrack (safe — git rm --cached
+ * only removes from index, files remain on disk).
+ *
+ * @param {string} repoRoot - Absolute path to the git repo root
+ * @param {object} options
+ * @param {boolean} options.dryRun - If true, don't execute git rm --cached
+ * @param {boolean} options.nonInteractive - If true, auto-accept untrack (no prompt)
+ */
+async function offerUntrackArtifacts(repoRoot, { dryRun = false, nonInteractive = false } = {}) {
+	const trackedFiles = detectTrackedArtifacts(repoRoot);
+	if (trackedFiles.length === 0) return { untracked: [], skipped: false };
+
+	console.log(`\n  ${WARN} Found runtime artifacts tracked by git:`);
+	for (const file of trackedFiles) {
+		console.log(`      ${file}`);
+	}
+	console.log();
+	console.log(`  These files contain machine-specific state that will cause problems`);
+	console.log(`  for other team members.`);
+
+	if (dryRun) {
+		console.log(`\n  ${c.dim}(dry-run) Would offer to untrack ${trackedFiles.length} file(s) via git rm --cached${c.reset}`);
+		return { untracked: [], skipped: true };
+	}
+
+	let shouldUntrack = false;
+	if (nonInteractive) {
+		// Auto-accept: git rm --cached is safe (files remain on disk, now gitignored)
+		shouldUntrack = true;
+		console.log(`  Auto-untracking (non-interactive mode)...`);
+	} else {
+		shouldUntrack = await confirm("  Untrack them? (git rm --cached — files stay on disk)", true);
+	}
+
+	if (shouldUntrack) {
+		try {
+			const fileArgs = trackedFiles.map(f => `"${f}"`).join(" ");
+			execSync(`git rm --cached ${fileArgs}`, {
+				cwd: repoRoot,
+				stdio: ["pipe", "pipe", "pipe"],
+				timeout: 15000,
+			});
+			console.log(`  ${OK} Files untracked (still on disk, now gitignored)`);
+			return { untracked: trackedFiles, skipped: false };
+		} catch (err) {
+			console.log(`  ${WARN} Failed to untrack files: ${err.message}`);
+			console.log(`     Run manually: git rm --cached ${trackedFiles.join(" ")}`);
+			return { untracked: [], skipped: true };
+		}
+	} else {
+		console.log(`  Skipped. To untrack later: git rm --cached ${trackedFiles.join(" ")}`);
+		return { untracked: [], skipped: true };
+	}
 }
 
 // ─── init ───────────────────────────────────────────────────────────────────
