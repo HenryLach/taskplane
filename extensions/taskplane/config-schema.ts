@@ -335,7 +335,7 @@ export interface TaskplaneConfig {
 /** Default task runner section values */
 export const DEFAULT_TASK_RUNNER_SECTION: TaskRunnerSection = {
 	project: { name: "Project", description: "" },
-	paths: { tasks: "tasks" },
+	paths: { tasks: "docs/task-management" },
 	testing: { commands: {} },
 	standards: { docs: [], rules: [] },
 	standardsOverrides: {},

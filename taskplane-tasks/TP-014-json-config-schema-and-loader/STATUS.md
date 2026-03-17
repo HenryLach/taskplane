@@ -29,7 +29,7 @@
 - [x] Schema covers all 13 task-runner sections + 7 orchestrator sections with JSON camelCase naming
 - [x] `configVersion` field with v1 semantics (required, initial value 1, unknown future versions rejected)
 - [x] Centralized defaults for the unified config (single source of truth)
-- [ ] Section mapping documented in STATUS.md Discoveries table
+- [x] Section mapping documented in STATUS.md Discoveries table
 
 ---
 
@@ -78,6 +78,8 @@
 | types.ts has `OrchestratorConfig`, `TaskRunnerConfig` interfaces + `DEFAULT_ORCHESTRATOR_CONFIG`, `DEFAULT_TASK_RUNNER_CONFIG` defaults | Step 1 input | `extensions/taskplane/types.ts` |
 | task-runner.ts supports `TASKPLANE_WORKSPACE_ROOT` env var fallback for config path resolution | Step 2 input | `extensions/task-runner.ts:146-149` |
 | task-runner.yaml has 13 top-level sections; task-orchestrator.yaml has 7 sections. Unified schema must merge all 20 sections. | Step 1 input | docs/reference/configuration/ |
+| Section mapping (YAML→JSON): task-runner: project→taskRunner.project, paths→taskRunner.paths, testing→taskRunner.testing, standards→taskRunner.standards, standards_overrides→taskRunner.standardsOverrides, worker→taskRunner.worker, reviewer→taskRunner.reviewer, context→taskRunner.context, task_areas→taskRunner.taskAreas, reference_docs→taskRunner.referenceDocs, never_load→taskRunner.neverLoad, self_doc_targets→taskRunner.selfDocTargets, protected_docs→taskRunner.protectedDocs. Orchestrator: orchestrator→orchestrator.orchestrator, dependencies→orchestrator.dependencies, assignment→orchestrator.assignment, pre_warm→orchestrator.preWarm, merge→orchestrator.merge, failure→orchestrator.failure, monitoring→orchestrator.monitoring | Step 2 input | `extensions/taskplane/config-schema.ts` |
+| Key naming policy: JSON uses camelCase (maxLanes, workerContextWindow, etc). YAML snake_case keys (max_lanes, worker_context_window) mapped in loader. Inner keys also camelCase: onTaskFailure (was on_task_failure), sizeWeights (was size_weights), etc. | Step 2 input | `extensions/taskplane/config-schema.ts` |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
