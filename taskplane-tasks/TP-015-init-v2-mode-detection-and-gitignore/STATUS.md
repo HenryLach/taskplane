@@ -1,10 +1,10 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
 **Current Step:** Step 2: Gitignore Enforcement
-**Status:** ✅ Step 2 Complete
+**Status:** 🔄 In Progress (R006 revisions)
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 3
 **Size:** L
 
@@ -42,13 +42,20 @@
 ---
 
 ### Step 2: Gitignore Enforcement
-**Status:** ✅ Complete
+**Status:** 🔧 Revising (R006)
 
 - [x] Define required gitignore entries as a reusable constant (for Step 4 reuse)
 - [x] Implement `ensureGitignoreEntries()` helper — idempotent: creates file if needed, skips existing entries, respects dry-run
 - [x] Integrate gitignore enforcement into `cmdInit()` repo-mode flow (after scaffolding, before auto-commit)
 - [x] Implement tracked-artifact detection (`git ls-files`) and `git rm --cached` offer — isolated from auto-commit staging, respects dry-run and non-interactive modes
 - [x] Update `printFileList()` dry-run output to show gitignore entries that would be added
+- [ ] R006: Fix directory-pattern matching — trailing-slash patterns must be prefix matches (not exact), so tracked files under `.worktrees/`, `.pi/orch-logs/`, `.pi/npm/` are detected; switch untrack to `execFileSync` for shell-safety
+- [ ] R006: Remove dead `buildGitignoreBlock()` function or integrate it into `ensureGitignoreEntries()`
+- [ ] R006: Add test coverage for tracked-artifact matching (directory entries, wildcard patterns)
+- [ ] R006: Fix `patternToRegex()` — directory patterns (trailing `/`) must be prefix matches, not exact matches
+- [ ] R006: Remove unused `buildGitignoreBlock()` function or integrate it
+- [ ] R006: Switch `git rm --cached` to `execFileSync` for argument safety
+- [ ] R006: Add tests for tracked-artifact pattern matching (directories, wildcards)
 
 ---
 
@@ -105,6 +112,8 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -143,6 +152,9 @@
 | 2026-03-17 15:53 | Review R005 | plan Step 2: REVISE |
 | 2026-03-17 15:54 | Review R005 | plan Step 2: REVISE |
 | 2026-03-17 16:01 | Worker iter 3 | done in 454s, ctx: 23%, tools: 60 |
+| 2026-03-17 16:02 | Worker iter 3 | done in 484s, ctx: 29%, tools: 55 |
+| 2026-03-17 16:04 | Review R006 | code Step 2: REVISE |
+| 2026-03-17 16:04 | Review R006 | code Step 2: REVISE |
 
 ## Blockers
 *None*
