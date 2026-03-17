@@ -1,11 +1,11 @@
 # TP-014: JSON Config Schema and Loader — Status
 
-**Current Step:** Step 1: Define JSON Schema
+**Current Step:** Step 2: Implement Unified Config Loader
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 3
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -34,11 +34,12 @@
 ---
 
 ### Step 2: Implement Unified Config Loader
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] `loadProjectConfig()` reads JSON first, falls back to YAML
-- [ ] YAML fallback produces identical config shape
-- [ ] task-runner and orchestrator both use unified loader
+- [ ] `loadProjectConfig()` implemented: reads `.pi/taskplane-config.json` first, falls back to both YAML files, respects `TASKPLANE_WORKSPACE_ROOT`, validates `configVersion`, errors on malformed JSON/unsupported version
+- [ ] YAML-to-camelCase mapping: snake_case keys from both YAML files mapped to unified `TaskplaneConfig` shape with deep merge + cloned defaults (non-mutating)
+- [ ] Backward-compatible adapter functions: `loadOrchestratorConfig()` and `loadTaskRunnerConfig()` in `config.ts` become thin wrappers over unified loader, returning existing snake_case shapes unchanged; task-runner's `loadConfig()` also wraps the unified loader
+- [ ] All existing consumers unaffected: `buildExecutionContext()`, `extension.ts`, task-runner command handlers produce identical runtime behavior
 
 ---
 
@@ -68,6 +69,10 @@
 | R002 | code | Step 0 | APPROVE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | APPROVE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -102,6 +107,15 @@
 | 2026-03-17 14:23 | Review R003 | plan Step 1: REVISE |
 | 2026-03-17 14:23 | Review R003 | plan Step 1: APPROVE |
 | 2026-03-17 14:29 | Worker iter 2 | done in 377s, ctx: 30%, tools: 57 |
+| 2026-03-17 14:30 | Worker iter 2 | done in 414s, ctx: 29%, tools: 51 |
+| 2026-03-17 14:33 | Review R004 | code Step 1: APPROVE |
+| 2026-03-17 14:33 | Step 1 complete | Define JSON Schema |
+| 2026-03-17 14:33 | Step 2 started | Implement Unified Config Loader |
+| 2026-03-17 14:33 | Review R004 | code Step 1: APPROVE |
+| 2026-03-17 14:33 | Step 1 complete | Define JSON Schema |
+| 2026-03-17 14:33 | Step 2 started | Implement Unified Config Loader |
+| 2026-03-17 14:35 | Review R005 | plan Step 2: REVISE |
+| 2026-03-17 14:36 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 *None*
