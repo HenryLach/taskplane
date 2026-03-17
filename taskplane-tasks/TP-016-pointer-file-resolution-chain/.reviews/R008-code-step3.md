@@ -1,18 +1,20 @@
 ## Code Review: Step 3: Thread Through Orchestrator
 
-### Verdict: APPROVE
+### Verdict: REVISE
 
 ### Summary
-The Step 3 changes correctly thread pointer resolution through orchestrator startup and merge-agent prompt loading without breaking repo-mode behavior. `buildExecutionContext()` now resolves pointer once and passes `pointer.configRoot` into both config loaders, and merge execution cleanly separates agent prompt root (`agentRoot`) from state file root (`stateRoot`). Test coverage was expanded in both config-loader and workspace suites, and the full extension test suite passes.
+Pointer threading is mostly in place for startup config loading and merge-agent prompt resolution, and the new tests cover much of that path. However, resume-mode merge/state rooting is still inconsistent with workspace-mode execution rooting, so Step 3’s state-path invariants are not reliably maintained across `/orch` vs `/orch-resume`. This can split runtime artifacts between different `.pi` roots.
 
 ### Issues Found
-1. **[N/A]** [minor] — No blocking issues found in this diff range.
+1. **[extensions/taskplane/resume.ts:510,893-904,1172-1183] [important]** — `resumeOrchBatch()` still roots resume state at `repoRoot` (`loadBatchState(repoRoot)`), and both resume merge calls explicitly pass `undefined` for `stateRoot`, forcing `mergeWaveByRepo()`/`mergeWave()` to write merge request/result artifacts under `<repoRoot>/.pi`. In contrast, fresh `/orch` execution uses `workspaceRoot` as `stateRoot` (`extensions/taskplane/engine.ts:54`, call site `extensions/taskplane/extension.ts:209-211`). This creates inconsistent state locations between initial run and resume in workspace mode. **Fix:** thread an explicit `stateRoot` (workspace root in workspace mode) into `resumeOrchBatch()` from `extension.ts`, and use it consistently for `loadBatchState`, `persistRuntimeState`, `mergeWaveByRepo`, and terminal `deleteBatchState`.
+2. **[extensions/tests/workspace-config.test.ts:1592-1598] [important]** — Test 7.11 hard-codes `batchStatePath(repoRoot)` as the expected invariant, which bakes in the same inconsistent rooting instead of validating workspace-mode state-root behavior end-to-end. **Fix:** replace this source-level assertion with a behavior test that exercises workspace-mode `/orch` + `/orch-resume` state file continuity under `<workspaceRoot>/.pi`.
 
 ### Pattern Violations
-- None observed.
+- Several new checks in 7.x are source-text assertions (`readFileSync(...).includes(...)`) rather than behavioral assertions, which are brittle to harmless refactors and can miss runtime rooting regressions.
 
 ### Test Gaps
-- No blocking gaps for Step 3 scope. Existing/new tests cover pointer config threading, repo-mode parity, warning surfacing, and merge-agent path threading.
+- No runtime test verifies that resume reads/writes the same state root used by initial workspace-mode execution.
+- No merge test covers resume path with pointer + workspace mode to ensure merge request/result files stay in the intended state root while prompt path follows `agentRoot`.
 
 ### Suggestions
-- Consider adding a dedicated resume-path regression test that asserts merge request/result sidecar location and agent prompt location together during `/orch-resume`, to lock parity expectations explicitly.
+- Add a shared helper for orchestrator state root resolution (repo vs workspace) and use it in both engine and resume paths to avoid drift.

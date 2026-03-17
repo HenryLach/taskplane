@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 9
+**Review Counter:** 8
 **Iteration:** 5
 **Size:** M
 
@@ -60,11 +60,11 @@
 ---
 
 ### Step 4: Thread Through Dashboard
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Verify and document that all dashboard `.pi/` paths (batch-state, lane-state, conversation logs, batch-history, fs.watch) use `REPO_ROOT` (= workspace root) and do NOT follow pointer. Add clarifying code comment at the REPO_ROOT initialization site.
 - [x] Verify STATUS.md and task-folder resolution (`resolveTaskFolder`, `parseStatusMd`, `serveStatusMd`) works correctly in workspace mode — task folders live in repos/worktrees, not config repo, so no pointer needed.
-- [ ] Confirm repo-mode parity: dashboard behavior is completely unchanged when no workspace/pointer exists (REPO_ROOT = repo root, all paths at `<repoRoot>/.pi/`).
+- [x] Confirm repo-mode parity: dashboard behavior is completely unchanged when no workspace/pointer exists (REPO_ROOT = repo root, all paths at `<repoRoot>/.pi/`). All 608 tests passing.
 
 ---
 
@@ -101,6 +101,7 @@
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -159,6 +160,7 @@
 | 2026-03-17 18:37 | Step 3 complete | Thread Through Orchestrator |
 | 2026-03-17 18:37 | Step 4 started | Thread Through Dashboard |
 | 2026-03-17 18:39 | Review R009 | plan Step 4: REVISE |
+| 2026-03-17 18:42 | Review R008 | code Step 3: REVISE |
 
 ## Blockers
 *None*
