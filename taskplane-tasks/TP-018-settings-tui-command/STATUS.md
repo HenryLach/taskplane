@@ -35,7 +35,7 @@
 - [x] Schema coverage validation: every scalar field in config-schema.ts is either in navigation map or explicitly excluded with rationale
 - [x] R003 fix: worker.spawnMode corrected to L1-only, non-editable field surfacing defined, field contract table with source/clear semantics added
 - [x] R004 fix: Consolidate canonical navigation map (12 sections including Advanced), fix all references to section count
-- [ ] R004 fix: Align source-badge rules with actual merge semantics — string prefs require non-empty, enum prefs require defined, add empty-string edge case examples
+- [x] R004 fix: Align source-badge rules with actual merge semantics — string prefs require non-empty, enum prefs require defined, add empty-string edge case examples
 
 ---
 
@@ -83,6 +83,7 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -116,6 +117,7 @@
 | 2026-03-17 17:37 | Worker iter 2 | done in 151s, ctx: 18%, tools: 21 |
 | 2026-03-17 17:39 | Review R004 | code Step 1: REVISE |
 | 2026-03-17 17:40 | Worker iter 2 | done in 281s, ctx: 29%, tools: 40 |
+| 2026-03-17 17:41 | Review R004 | code Step 1: REVISE |
 
 ## Blockers
 *None*
@@ -340,12 +342,25 @@ Each field displays a **source label** showing where its current value comes fro
 | `(project)` | Value set in `.pi/taskplane-config.json` (or YAML fallback) | normal text |
 | `(user)` | Value set in `~/.pi/agent/taskplane/preferences.json` | accent text |
 
-**Rules for dual-layer (L1+L2) fields:**
-These fields can be set in either project config or user preferences. The effective value uses Layer 2 merge semantics from TP-017:
+**Rules for dual-layer (L1+L2) fields — type-specific (aligned with `applyUserPreferences` in config-loader.ts):**
 
-1. If the user preference is set (non-undefined), show the **user preference value** with `(user)` label
-2. If user preference is undefined but project config has a value, show the **project config value** with `(project)` label
-3. If neither is set, show the **default value** with `(default)` label
+The merge semantics differ by type. The TUI source badge MUST match these rules exactly:
+
+1. **String L2 fields** (operatorId, tmuxPrefix, workerModel, reviewerModel, mergeModel):
+   - Pref value is **non-undefined AND non-empty-string** → `(user)` label, show pref value
+   - Pref value is `undefined` or `""` → L2 is NOT active; fall through to project/default
+   - Project config has the field → `(project)` label, show project value
+   - Neither → `(default)` label, show schema default
+   - **Key insight:** Setting a string pref to `""` is equivalent to clearing it — the source reverts to `(project)` or `(default)`.
+
+2. **Enum L2 fields** (spawnMode):
+   - Pref value is **not undefined** (any valid enum value, including any string) → `(user)` label
+   - Pref value is `undefined` → fall through to project/default
+   - **Key insight:** Unlike strings, there's no "empty" concept for enums. To clear, delete the key entirely.
+
+3. **Number L2 fields** (dashboardPort — L2-only, not merged into project config):
+   - Pref value is **not undefined** → `(user)` label
+   - Pref value is `undefined` → `(default)` label (no project layer for L2-only fields)
 
 **Edit destination for L1+L2 fields:**
 When the user edits an L1+L2 field, the TUI offers a choice:
@@ -358,9 +373,45 @@ For **L2-only fields** (dashboardPort), edits always go to user preferences (no 
 **Source detection logic:**
 To determine source, the TUI reads both raw config files (before merge) and compares:
 1. Load raw project config JSON (or YAML) — fields present here are `(project)` sourced
-2. Load raw user preferences JSON — fields present here are `(user)` sourced
+2. Load raw user preferences JSON — L2 fields use type-specific "is set" rules above
 3. Fields not in either file are `(default)` sourced
-4. For L1+L2 fields: if both project AND user have a value, the effective value is from user (L2 wins), but both sources exist — show `(user)` as the active source
+4. For L1+L2 fields: L2 "is set" check happens first (type-specific); if L2 is set, show `(user)`. Otherwise fall through to project/default.
+
+**Source-badge examples (including empty-string edge case):**
+
+```
+Example 1: String pref is non-empty → (user)
+  prefs.workerModel = "claude-4-opus"
+  project config worker.model = "claude-3.5-sonnet"
+  → Display: Worker Model       claude-4-opus       (user)
+
+Example 2: String pref is "" (cleared) → reverts to (project)
+  prefs.workerModel = ""
+  project config worker.model = "claude-3.5-sonnet"
+  → Display: Worker Model       claude-3.5-sonnet   (project)
+  Rationale: "" is treated as "not set" per applyUserPreferences
+
+Example 3: String pref is "" and no project value → (default)
+  prefs.workerModel = ""
+  project config has no worker.model key
+  → Display: Worker Model       (empty)             (default)
+  Rationale: "" clears pref, no project override, schema default applies
+
+Example 4: Enum pref is defined → (user)
+  prefs.spawnMode = "tmux"
+  project config spawnMode = "subprocess"
+  → Display: Spawn Mode         tmux                (user)
+
+Example 5: No pref, project has value → (project)
+  prefs.spawnMode = undefined
+  project config spawnMode = "subprocess"
+  → Display: Spawn Mode         subprocess          (project)
+
+Example 6: Neither set → (default)
+  prefs.stallTimeout = (not an L2 field)
+  project config has no stallTimeout key
+  → Display: Stall Timeout      30                  (default)
+```
 
 **Schema Coverage Checklist (R002 item 1) — REVISED per R003:**
 
@@ -427,14 +478,14 @@ Complete per-field specification for Step 2 implementation:
 | `orchestrator.orchestrator.worktreeLocation` | Worktree Location | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset, always has value |
 | `orchestrator.orchestrator.worktreePrefix` | Worktree Prefix | input (string) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset, always has value |
 | `orchestrator.orchestrator.batchIdFormat` | Batch ID Format | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset, always has value |
-| `orchestrator.orchestrator.spawnMode` | Spawn Mode | toggle | L1+L2 | project or prefs | prefs.spawnMode set? → (user), raw JSON present? → (project), else (default) | Prefs: delete key to clear. Project: always has default |
-| `orchestrator.orchestrator.tmuxPrefix` | Tmux Prefix | input (string) | L1+L2 | project or prefs | prefs.tmuxPrefix non-empty? → (user), raw JSON present? → (project), else (default) | Prefs: set "" to clear. Project: always has default |
-| `orchestrator.orchestrator.operatorId` | Operator ID | input (string) | L1+L2 | project or prefs | prefs.operatorId non-empty? → (user), raw JSON present? → (project), else (default) | Prefs: set "" to clear (auto-detect). Project: "" = auto-detect |
+| `orchestrator.orchestrator.spawnMode` | Spawn Mode | toggle | L1+L2 | project or prefs | prefs.spawnMode !== undefined → (user), raw JSON present? → (project), else (default). **Enum rule: any defined value counts.** | Prefs: delete key to clear. Project: always has default |
+| `orchestrator.orchestrator.tmuxPrefix` | Tmux Prefix | input (string) | L1+L2 | project or prefs | prefs.tmuxPrefix !== undefined && !== "" → (user), raw JSON present? → (project), else (default). **String rule: "" = not set.** | Prefs: set "" to clear (reverts to project/default). Project: always has default |
+| `orchestrator.orchestrator.operatorId` | Operator ID | input (string) | L1+L2 | project or prefs | prefs.operatorId !== undefined && !== "" → (user), raw JSON present? → (project), else (default). **String rule: "" = not set.** | Prefs: set "" to clear (reverts to project/default, auto-detect). Project: "" = auto-detect |
 | `orchestrator.dependencies.source` | Dep Source | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `orchestrator.dependencies.cache` | Dep Cache | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `orchestrator.assignment.strategy` | Strategy | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `orchestrator.preWarm.autoDetect` | Auto-Detect | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
-| `orchestrator.merge.model` | Merge Model | input (string) | L1+L2 | project or prefs | prefs.mergeModel non-empty? → (user), raw JSON present? → (project), else (default) | Prefs: set "" to clear. "" = inherit session model |
+| `orchestrator.merge.model` | Merge Model | input (string) | L1+L2 | project or prefs | prefs.mergeModel !== undefined && !== "" → (user), raw JSON present? → (project), else (default). **String rule: "" = not set.** | Prefs: set "" to clear (reverts to project/default). "" = inherit session model |
 | `orchestrator.merge.tools` | Merge Tools | input (string) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `orchestrator.merge.order` | Merge Order | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `orchestrator.failure.onTaskFailure` | On Task Failure | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
@@ -443,11 +494,11 @@ Complete per-field specification for Step 2 implementation:
 | `orchestrator.failure.maxWorkerMinutes` | Max Worker Min | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `orchestrator.failure.abortGracePeriod` | Abort Grace (sec) | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `orchestrator.monitoring.pollInterval` | Poll Interval (sec) | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
-| `taskRunner.worker.model` | Worker Model | input (string) | L1+L2 | project or prefs | prefs.workerModel non-empty? → (user), raw JSON present? → (project), else (default) | Prefs: set "" to clear. "" = inherit session model |
+| `taskRunner.worker.model` | Worker Model | input (string) | L1+L2 | project or prefs | prefs.workerModel !== undefined && !== "" → (user), raw JSON present? → (project), else (default). **String rule: "" = not set.** | Prefs: set "" to clear (reverts to project/default). "" = inherit session model |
 | `taskRunner.worker.tools` | Worker Tools | input (string) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `taskRunner.worker.thinking` | Worker Thinking | input (string) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `taskRunner.worker.spawnMode` | Worker Spawn Mode | toggle | L1 | project | raw JSON present? → (project), else (default=unset, inherits orch) | **Optional field:** unset means inherit from orchestrator.spawnMode. Toggle values: ["(inherit)", "subprocess", "tmux"]. Selecting "(inherit)" deletes the key from JSON. |
-| `taskRunner.reviewer.model` | Reviewer Model | input (string) | L1+L2 | project or prefs | prefs.reviewerModel non-empty? → (user), raw JSON present? → (project), else (default) | Prefs: set "" to clear. "" = inherit session model |
+| `taskRunner.reviewer.model` | Reviewer Model | input (string) | L1+L2 | project or prefs | prefs.reviewerModel !== undefined && !== "" → (user), raw JSON present? → (project), else (default). **String rule: "" = not set.** | Prefs: set "" to clear (reverts to project/default). "" = inherit session model |
 | `taskRunner.reviewer.tools` | Reviewer Tools | input (string) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `taskRunner.reviewer.thinking` | Reviewer Thinking | input (string) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `taskRunner.context.workerContextWindow` | Context Window | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
@@ -457,7 +508,7 @@ Complete per-field specification for Step 2 implementation:
 | `taskRunner.context.maxReviewCycles` | Max Review Cycles | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `taskRunner.context.noProgressLimit` | No Progress Limit | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
 | `taskRunner.context.maxWorkerMinutes` | Max Worker Min (ctx) | input (number) | L1 | project | raw JSON present? → (project), else (default) | **Optional field:** unset means no per-worker time cap. Input accepts empty string to delete key. |
-| `(preferences only) dashboardPort` | Dashboard Port | input (number) | L2 | prefs only | prefs.dashboardPort set? → (user), else (default=unset) | Delete key to unset |
+| `(preferences only) dashboardPort` | Dashboard Port | input (number) | L2 | prefs only | prefs.dashboardPort !== undefined → (user), else (default). **Number rule: any defined value counts (L2-only, no project layer).** | Delete key to unset |
 
 **Source badge examples (R003 suggestion):**
 1. **Project-set:** `Max Lanes          5              (project)` — value 5 found in `.pi/taskplane-config.json`
