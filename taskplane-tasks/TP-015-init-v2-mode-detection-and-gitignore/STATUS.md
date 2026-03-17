@@ -18,7 +18,7 @@
 **Status:** 🟨 In Progress
 
 - [x] Read current `cmdInit()` implementation
-- [ ] Read spec auto-detection and gitignore sections
+- [x] Read spec auto-detection and gitignore sections
 - [ ] Verify spec reachability and record source path
 - [ ] Verify TP-014 config loader/schema contract (JSON output shape, YAML fallback expectations)
 - [ ] Record current `cmdInit()` behavior to preserve (--preset, YAML continuity, --tasks-root, --dry-run, --force, --no-examples)
