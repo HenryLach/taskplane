@@ -15,7 +15,7 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Read pi's `ctx.ui` API capabilities
 - [x] Read config schema from TP-014
@@ -23,7 +23,7 @@
 - [x] Review config root/path semantics in workspace mode (R001 item)
 - [x] Review JSON-first + YAML fallback behavior for write-back alignment (R001 item)
 - [x] Produce preflight findings: field/source inventory with UI control types + layer mapping (R001 item 3)
-- [ ] R002: Record CONTEXT.md review in preflight and add missing fields (worker.spawnMode, context.maxWorkerMinutes, preWarm.autoDetect) to inventory with explicit categorizations
+- [x] R002: Record CONTEXT.md review in preflight and add missing fields (worker.spawnMode, context.maxWorkerMinutes, preWarm.autoDetect) to inventory with explicit categorizations
 
 ---
 
@@ -144,6 +144,7 @@
 | **Dependencies** | source | enum | settings-toggle | L1 | project config |
 | | cache | boolean | settings-toggle | L1 | project config |
 | **Assignment** | strategy | enum | settings-toggle | L1 | project config |
+| **Pre-Warm** | autoDetect | boolean | settings-toggle | L1 | project config |
 | **Merge** | model | string | input | L1+L2 | project or prefs |
 | | tools | string | input | L1 | project config |
 | | order | enum | settings-toggle | L1 | project config |
@@ -156,6 +157,7 @@
 | **Task Runner: Worker** | model | string | input | L1+L2 | project or prefs |
 | | tools | string | input | L1 | project config |
 | | thinking | string | input | L1 | project config |
+| | spawnMode | enum (optional) | settings-toggle | L1+L2 | project or prefs |
 | **Task Runner: Reviewer** | model | string | input | L1+L2 | project or prefs |
 | | tools | string | input | L1 | project config |
 | | thinking | string | input | L1 | project config |
@@ -165,25 +167,119 @@
 | | maxWorkerIterations | number | input | L1 | project config |
 | | maxReviewCycles | number | input | L1 | project config |
 | | noProgressLimit | number | input | L1 | project config |
+| | maxWorkerMinutes | number (optional) | input | L1 | project config |
 | **User Preferences** | dashboardPort | number | input | L2 | prefs only |
 
 **Layer 2 writable fields (allowlist):**
 operatorId, tmuxPrefix, spawnMode, workerModel, reviewerModel, mergeModel, dashboardPort
 
-**Fields NOT shown in TUI (complex/collection types — edit JSON directly):**
-- taskAreas (Record), referenceDocs (Record), neverLoad (array), selfDocTargets (Record)
-- protectedDocs (array), standards (docs/rules arrays), standardsOverrides (Record)
-- testing.commands (Record), preWarm.commands (Record), preWarm.always (array)
-- assignment.sizeWeights (Record), merge.verify (array)
-- project.name, project.description, paths.tasks, paths.architecture (simple but project-identity)
+**CONTEXT.md Review (R002 item 2):**
+- Reviewed `taskplane-tasks/CONTEXT.md` — confirms key files map, no additional constraints beyond what AGENTS.md provides. No impact on /settings design beyond confirming config paths (`.pi/task-runner.yaml`, `.pi/task-orchestrator.yaml`) and extension location (`extensions/taskplane/`).
+
+**Missing Fields Added (R002 item 1):**
+
+| Section | Field | Type | UI Control | Layer | Write Target | Status |
+|---------|-------|------|------------|-------|-------------|--------|
+| **Task Runner: Worker** | spawnMode | enum (optional) | settings-toggle | L1+L2 | project or prefs | NEW — maps to same L2 allowlist as orchestrator.spawnMode |
+| **Task Runner: Context** | maxWorkerMinutes | number (optional) | input | L1 | project config | NEW — was missing |
+| **Pre-Warm** | autoDetect | boolean | settings-toggle | L1 | project config | NEW — was missing |
+
+**Schema Coverage Checklist — All Scalar/Enum/Boolean Fields:**
+
+✅ = editable in TUI, 🏠 = prefs-only (L2), 🚫 = intentionally hidden
+
+*Orchestrator Core:*
+- ✅ maxLanes, worktreeLocation, worktreePrefix, batchIdFormat, spawnMode, tmuxPrefix, operatorId
+
+*Dependencies:*
+- ✅ source, cache
+
+*Assignment:*
+- ✅ strategy
+- 🚫 sizeWeights (Record — edit JSON directly)
+
+*Pre-Warm:*
+- ✅ autoDetect
+- 🚫 commands (Record), always (array) — edit JSON directly
+
+*Merge:*
+- ✅ model, tools, order
+- 🚫 verify (array) — edit JSON directly
+
+*Failure:*
+- ✅ onTaskFailure, onMergeFailure, stallTimeout, maxWorkerMinutes, abortGracePeriod
+
+*Monitoring:*
+- ✅ pollInterval
+
+*Task Runner Worker:*
+- ✅ model, tools, thinking, spawnMode
+
+*Task Runner Reviewer:*
+- ✅ model, tools, thinking
+
+*Task Runner Context:*
+- ✅ workerContextWindow, warnPercent, killPercent, maxWorkerIterations, maxReviewCycles, noProgressLimit, maxWorkerMinutes
+
+*Task Runner Project:*
+- 🚫 name, description — project identity fields, edit JSON directly
+
+*Task Runner Paths:*
+- 🚫 tasks, architecture — project structure, edit JSON directly
+
+*Task Runner Collections (all 🚫 — edit JSON directly):*
+- testing.commands, standards.docs, standards.rules, standardsOverrides, taskAreas, referenceDocs, neverLoad, selfDocTargets, protectedDocs
+
+*User Preferences (🏠):*
+- 🏠 dashboardPort
 
 **Enum value maps for settings-toggle fields:**
 - worktreeLocation: ["sibling", "subdirectory"]
 - batchIdFormat: ["timestamp", "sequential"]
-- spawnMode: ["tmux", "subprocess"]
+- spawnMode: ["tmux", "subprocess"] (both orchestrator.orchestrator.spawnMode AND worker.spawnMode)
 - dependencies.source: ["prompt", "agent"]
 - assignment.strategy: ["affinity-first", "round-robin", "load-balanced"]
 - merge.order: ["fewest-files-first", "sequential"]
 - onTaskFailure: ["skip-dependents", "stop-wave", "stop-all"]
 - onMergeFailure: ["pause", "abort"]
 - cache: ["true", "false"] (boolean as toggle)
+- worker.spawnMode: ["subprocess", "tmux"] (optional — when unset, inherits orchestrator.spawnMode)
+- preWarm.autoDetect: ["true", "false"] (boolean as toggle)
+
+**CONTEXT.md Review (R002 item 2):**
+Reviewed `taskplane-tasks/CONTEXT.md` — confirms key file paths (extensions/taskplane/, .pi/ configs, tests), no additional constraints beyond what AGENTS.md and PROMPT.md specify. Task area is "General" (default). No special testing or config notes that affect /settings TUI design.
+
+**Schema Coverage Checklist (R002 item 1):**
+All scalar/enum/boolean fields in config-schema.ts categorized:
+
+✅ **Editable in TUI** (36 fields):
+- orchestrator.orchestrator: maxLanes, worktreeLocation, worktreePrefix, batchIdFormat, spawnMode, tmuxPrefix, operatorId (7)
+- orchestrator.dependencies: source, cache (2)
+- orchestrator.assignment: strategy (1)
+- orchestrator.preWarm: autoDetect (1)
+- orchestrator.merge: model, tools, order (3)
+- orchestrator.failure: onTaskFailure, onMergeFailure, stallTimeout, maxWorkerMinutes, abortGracePeriod (5)
+- orchestrator.monitoring: pollInterval (1)
+- taskRunner.worker: model, tools, thinking, spawnMode (4)
+- taskRunner.reviewer: model, tools, thinking (3)
+- taskRunner.context: workerContextWindow, warnPercent, killPercent, maxWorkerIterations, maxReviewCycles, noProgressLimit, maxWorkerMinutes (7)
+- User preferences-only: dashboardPort (1)
+- configVersion: (read-only display, not editable) (1 — excluded from editable count)
+
+🚫 **Intentionally excluded** (complex/collection types — edit JSON directly):
+- taskRunner.project: name, description (project identity — dangerous to change casually)
+- taskRunner.paths: tasks, architecture (project identity)
+- taskRunner.testing.commands (Record<string, string>)
+- taskRunner.standards: docs, rules (arrays)
+- taskRunner.standardsOverrides (Record<string, StandardsOverride>)
+- taskRunner.taskAreas (Record<string, TaskAreaConfig>)
+- taskRunner.referenceDocs (Record<string, string>)
+- taskRunner.neverLoad (string[])
+- taskRunner.selfDocTargets (Record<string, string>)
+- taskRunner.protectedDocs (string[])
+- orchestrator.assignment.sizeWeights (Record<string, number>)
+- orchestrator.preWarm.commands (Record<string, string>)
+- orchestrator.preWarm.always (string[])
+- orchestrator.merge.verify (string[])
+
+Rationale for exclusions: Collection/Record types don't map cleanly to single-value TUI controls. Project identity fields (name, description, paths) are rarely changed and risky to edit casually. All excluded fields can be edited directly in taskplane-config.json.
