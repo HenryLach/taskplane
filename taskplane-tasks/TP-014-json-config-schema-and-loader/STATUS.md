@@ -49,7 +49,7 @@
 ### Step 3: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] Create `extensions/tests/project-config-loader.test.ts` with loader precedence/error matrix (valid JSON, malformed JSON, missing configVersion, unsupported configVersion, JSON+YAML present uses JSON, YAML-only fallback, neither present returns defaults)
+- [x] Create `extensions/tests/project-config-loader.test.ts` with loader precedence/error matrix (valid JSON, malformed JSON, missing configVersion, unsupported configVersion, JSON+YAML present uses JSON, YAML-only fallback, neither present returns defaults)
 - [ ] Workspace root resolution tests: cwd has `.pi` but no config → falls back to TASKPLANE_WORKSPACE_ROOT with config files
 - [ ] Key-preservation and adapter regression tests: record keys preserved (sizeWeights S/M/L, preWarm.commands, taskAreas IDs), snake_case adapters produce correct shapes, repoId trim/drop behavior
 - [ ] Defaults cloned/non-mutating across multiple calls + backward-compat wrappers (loadOrchestratorConfig, loadTaskRunnerConfig, task-runner loadConfig)
