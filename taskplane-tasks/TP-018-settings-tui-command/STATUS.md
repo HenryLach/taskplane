@@ -94,7 +94,7 @@
 - [x] Check-if-affected: Update `README.md` command table with `/settings` row
 - [x] Check-if-affected: Review `docs/tutorials/install.md` — add `/settings` mention if appropriate
 - [x] Normalize STATUS.md top-level status field to match actual step state
-- [ ] `.DONE` created in task folder
+- [x] `.DONE` created in task folder
 
 ---
 
