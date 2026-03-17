@@ -66,7 +66,7 @@
 ---
 
 ### Step 4: Workspace Mode Init (Scenario C)
-**Status:** 🔧 In Progress (R010 revisions)
+**Status:** ✅ Complete
 
 - [x] Config repo selection prompt and workspace interactive/preset vars gathering
 - [x] Scaffold `.taskplane/` in config repo (config JSON, workspace.json, agents, version tracker, CONTEXT.md, examples)
@@ -76,7 +76,7 @@
 - [x] Post-init merge guidance and auto-commit in config repo
 - [x] R010: Pass `prefix: ".taskplane/"` to `ensureGitignoreEntries()` and extend tracked-artifact detection with prefix-aware scanning
 - [x] R010: Include `.gitignore` in workspace auto-commit staging alongside `.taskplane/`
-- [ ] R010: Fix overwrite confirmation — track user confirmation to set `skipIfExists` accordingly
+- [x] R010: Fix overwrite confirmation — track user confirmation to set `skipIfExists` accordingly
 
 ---
 

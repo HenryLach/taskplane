@@ -676,7 +676,7 @@ async function detectAndOfferUntrackArtifacts(projectRoot, { dryRun = false, int
 
 	let trackedFiles;
 	try {
-		const raw = execSync(`git ls-files ${scanDirs.join(" ")}`, {
+		const raw = execFileSync("git", ["ls-files", "--", ...scanDirs], {
 			cwd: projectRoot,
 			stdio: ["pipe", "pipe", "pipe"],
 			timeout: 10000,
@@ -1069,6 +1069,7 @@ async function cmdInit(args) {
 		const taskplaneDir = path.join(configRepoRoot, ".taskplane");
 
 		// ── Existing config overwrite check for workspace reinit ─────
+		let userConfirmedOverwrite = false;
 		if (fs.existsSync(taskplaneDir) && !force) {
 			console.log(`${WARN} Taskplane config already exists in ${configRepoName}/.taskplane/.`);
 			const proceed = await confirm("  Overwrite existing files?", false);
@@ -1076,6 +1077,7 @@ async function cmdInit(args) {
 				console.log("  Aborted.");
 				return;
 			}
+			userConfirmedOverwrite = true;
 		}
 
 		// ── Gather config values (workspace mode) ───────────────────
@@ -1113,7 +1115,8 @@ async function cmdInit(args) {
 
 		// ── Scaffold .taskplane/ in config repo ─────────────────────
 		console.log(`\n${c.bold}Creating files in ${configRepoName}/.taskplane/...${c.reset}\n`);
-		const skipIfExists = !force;
+		// Skip existing files only when --force was NOT used AND the user did NOT confirm overwrite
+		const skipIfExists = !force && !userConfirmedOverwrite;
 
 		// Agent prompts
 		for (const agent of ["task-worker.md", "task-reviewer.md", "task-merger.md"]) {
@@ -1280,6 +1283,7 @@ async function cmdInit(args) {
 	}
 
 	// ── Existing config overwrite check (for repo mode force reinit) ──
+	let repoUserConfirmedOverwrite = false;
 	const hasConfig =
 		fs.existsSync(path.join(projectRoot, ".pi", "task-runner.yaml")) ||
 		fs.existsSync(path.join(projectRoot, ".pi", "task-orchestrator.yaml")) ||
@@ -1292,6 +1296,7 @@ async function cmdInit(args) {
 			console.log("  Aborted.");
 			return;
 		}
+		repoUserConfirmedOverwrite = true;
 	}
 
 	// Gather config values
@@ -1330,7 +1335,8 @@ async function cmdInit(args) {
 
 	// Scaffold files
 	console.log(`\n${c.bold}Creating files...${c.reset}\n`);
-	const skipIfExists = !force;
+	// Skip existing files only when --force was NOT used AND the user did NOT confirm overwrite
+	const skipIfExists = !force && !repoUserConfirmedOverwrite;
 
 	// Agent prompts — copy thin local files (base prompts ship in the package
 	// and are composed automatically by the task-runner at runtime)
