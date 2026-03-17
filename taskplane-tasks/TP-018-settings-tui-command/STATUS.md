@@ -91,7 +91,7 @@
 **Status:** 🟨 In Progress
 
 - [x] Commands reference updated (`docs/reference/commands.md` — add `/settings` section)
-- [ ] Check-if-affected: Update `README.md` command table with `/settings` row
+- [x] Check-if-affected: Update `README.md` command table with `/settings` row
 - [ ] Check-if-affected: Review `docs/tutorials/install.md` — add `/settings` mention if appropriate
 - [ ] Normalize STATUS.md top-level status field to match actual step state
 - [ ] `.DONE` created in task folder
