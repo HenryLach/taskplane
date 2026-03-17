@@ -1,7 +1,7 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
 **Current Step:** Step 2: Gitignore Enforcement
-**Status:** ✅ Complete
+**Status:** ✅ Step 2 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
 **Review Counter:** 5
@@ -42,13 +42,13 @@
 ---
 
 ### Step 2: Gitignore Enforcement
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Define required gitignore entries as a reusable constant (for Step 4 reuse)
 - [x] Implement `ensureGitignoreEntries()` helper — idempotent: creates file if needed, skips existing entries, respects dry-run
 - [x] Integrate gitignore enforcement into `cmdInit()` repo-mode flow (after scaffolding, before auto-commit)
 - [x] Implement tracked-artifact detection (`git ls-files`) and `git rm --cached` offer — isolated from auto-commit staging, respects dry-run and non-interactive modes
-- [ ] Update `printFileList()` dry-run output to show gitignore entries that would be added
+- [x] Update `printFileList()` dry-run output to show gitignore entries that would be added
 
 ---
 

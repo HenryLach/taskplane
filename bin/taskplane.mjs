@@ -1092,7 +1092,7 @@ async function cmdInit(args) {
 
 	if (dryRun) {
 		console.log(`\n${c.bold}Dry run — files that would be created:${c.reset}\n`);
-		printFileList(vars, noExamples, preset, exampleTemplateDirs);
+		printFileList(vars, noExamples, preset, exampleTemplateDirs, projectRoot);
 		return;
 	}
 
@@ -1251,7 +1251,7 @@ async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 	};
 }
 
-function printFileList(vars, noExamples, preset, exampleTemplateDirs = []) {
+function printFileList(vars, noExamples, preset, exampleTemplateDirs = [], projectRoot = null) {
 	const files = [
 		".pi/agents/task-worker.md",
 		".pi/agents/task-reviewer.md",
@@ -1268,6 +1268,18 @@ function printFileList(vars, noExamples, preset, exampleTemplateDirs = []) {
 		}
 	}
 	for (const f of files) console.log(`  ${c.green}create${c.reset} ${f}`);
+
+	// Show gitignore entries that would be added
+	if (projectRoot) {
+		const gitignoreResult = ensureGitignoreEntries(projectRoot, { dryRun: true });
+		if (gitignoreResult.added.length > 0) {
+			const action = fs.existsSync(path.join(projectRoot, ".gitignore")) ? "update" : "create";
+			console.log(`  ${c.green}${action}${c.reset} .gitignore (${gitignoreResult.added.length} entries)`);
+		} else {
+			console.log(`  ${c.dim}skip${c.reset}  .gitignore (all entries already present)`);
+		}
+	}
+
 	console.log();
 }
 
