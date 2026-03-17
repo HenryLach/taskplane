@@ -531,7 +531,7 @@ function summarizeArray(arr: any[]): string {
  *   2. SettingsList for per-section field display and editing
  *
  * @param ctx - Extension context for UI access
- * @param configRoot - Resolved config root path (from execCtx.repoRoot)
+ * @param configRoot - Resolved config root path (from execCtx.workspaceRoot)
  */
 export async function openSettingsTui(
 	ctx: ExtensionContext,

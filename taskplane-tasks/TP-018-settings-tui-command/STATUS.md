@@ -45,7 +45,7 @@
 - [x] Create settings-tui.ts with section navigation, field display, source badges, and field editing (validation: enum whitelist, number parsing with range, optional-field unset)
 - [x] Register /settings command in extension.ts using execCtx.repoRoot (not ctx.cwd), handle null execCtx gracefully
 - [x] Verify tests pass (existing workspace-config test 5.5 ctx.cwd constraint)
-- [ ] R006 fix #1: Use execCtx.workspaceRoot (not repoRoot) for config reads — workspace mode reads config from workspace root
+- [x] R006 fix #1: Use execCtx.workspaceRoot (not repoRoot) for config reads — workspace mode reads config from workspace root
 - [ ] R006 fix #2: Generate Advanced section items dynamically from schema/default config instead of hardcoded list
 - [ ] Verify tests still pass after R006 fixes
 
