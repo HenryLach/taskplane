@@ -95,7 +95,7 @@
 ### Step 6: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] Baseline validation gates pass (`cd extensions && npx vitest run`, `node bin/taskplane.mjs help`, `node bin/taskplane.mjs doctor`)
+- [x] Baseline validation gates pass (`cd extensions && npx vitest run`, `node bin/taskplane.mjs help`, `node bin/taskplane.mjs doctor`)
 - [ ] Scenario A (repo mode, fresh init) dry-run works: `node bin/taskplane.mjs init --dry-run --force`
 - [ ] Preset compatibility verified: `--preset minimal`, `--preset full`, `--preset runner-only` all work with `--dry-run --force`
 - [ ] YAML output still generated alongside JSON (constraint from PROMPT)
