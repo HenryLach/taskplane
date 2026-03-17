@@ -1,6 +1,6 @@
 # TP-018: /settings TUI Command — Status
 
-**Current Step:** Step 1: Design Settings Navigation
+**Current Step:** Step 2: Implement /settings Command
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
@@ -40,7 +40,7 @@
 ---
 
 ### Step 2: Implement /settings Command
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Command registered, section navigation working
 - [ ] Field editing with validation
@@ -91,6 +91,7 @@
 |-----------|-------------|----------|
 | `resolveConfigRoot` not exported from config-loader.ts | Export in Step 2/3 | config-loader.ts |
 | settings-and-onboarding-spec.md not found at expected path | Non-blocking, spec content derived from code | .pi/local/docs/ |
+| R004 test gaps: empty-string prefs, (inherit) write-back, section render count | Add tests in Step 4 | extensions/tests/ |
 
 ## Execution Log
 | Timestamp | Action | Outcome |
@@ -118,6 +119,9 @@
 | 2026-03-17 17:39 | Review R004 | code Step 1: REVISE |
 | 2026-03-17 17:40 | Worker iter 2 | done in 281s, ctx: 29%, tools: 40 |
 | 2026-03-17 17:41 | Review R004 | code Step 1: REVISE |
+| 2026-03-17 17:43 | Worker iter 2 | done in 204s, ctx: 19%, tools: 25 |
+| 2026-03-17 17:43 | Step 1 complete | Design Settings Navigation |
+| 2026-03-17 17:43 | Step 2 started | Implement /settings Command |
 
 ## Blockers
 *None*
@@ -256,7 +260,7 @@ operatorId, tmuxPrefix, spawnMode, workerModel, reviewerModel, mergeModel, dashb
 **Enum value maps for settings-toggle fields:**
 - worktreeLocation: ["sibling", "subdirectory"]
 - batchIdFormat: ["timestamp", "sequential"]
-- spawnMode: ["tmux", "subprocess"] (both orchestrator.orchestrator.spawnMode AND worker.spawnMode)
+- orchestrator.spawnMode: ["tmux", "subprocess"] (L1+L2 — orchestrator-level only)
 - dependencies.source: ["prompt", "agent"]
 - assignment.strategy: ["affinity-first", "round-robin", "load-balanced"]
 - merge.order: ["fewest-files-first", "sequential"]
@@ -270,6 +274,24 @@ operatorId, tmuxPrefix, spawnMode, workerModel, reviewerModel, mergeModel, dashb
 Reviewed `taskplane-tasks/CONTEXT.md` — confirms key file paths (extensions/taskplane/, .pi/ configs, tests), no additional constraints beyond what AGENTS.md and PROMPT.md specify. Task area is "General" (default). No special testing or config notes that affect /settings TUI design.
 
 ### Step 1 Design Decisions
+
+#### Canonical Source Rule Matrix (single source of truth)
+
+Source badge detection for L1+L2 fields depends on the preference value type.
+These rules mirror `applyUserPreferences()` in `config-loader.ts` exactly:
+
+| Pref Type | "Is set" test (L2 active?) | Examples of "not set" | Clear action |
+|-----------|---------------------------|----------------------|--------------|
+| **String** (operatorId, tmuxPrefix, workerModel, reviewerModel, mergeModel) | `val !== undefined && val !== ""` | `undefined`, `""` | Set to `""` or delete key |
+| **Enum** (spawnMode) | `val !== undefined` | `undefined` | Delete key |
+| **Number** (dashboardPort — L2-only) | `val !== undefined` | `undefined` | Delete key |
+
+Cascade: L2 "is set"? → `(user)`. Else raw project JSON has field? → `(project)`. Else → `(default)`.
+
+**Empty-string edge cases:**
+- `prefs.workerModel = ""` → L2 NOT active → falls through to project/default (string rule)
+- `prefs.spawnMode = "tmux"` → L2 active → `(user)` (enum rule: any defined value)
+- `prefs.spawnMode = undefined` → L2 NOT active → falls through (enum rule)
 
 #### Canonical Navigation Map (single source of truth)
 
