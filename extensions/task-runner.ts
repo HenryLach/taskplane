@@ -146,7 +146,7 @@ const DEFAULT_CONFIG: TaskConfig = {
  *
  * Path resolution honors TASKPLANE_WORKSPACE_ROOT for workspace mode.
  */
-function loadConfig(cwd: string): TaskConfig {
+export function loadConfig(cwd: string): TaskConfig {
 	try {
 		const unified = loadProjectConfig(cwd);
 		return toTaskConfig(unified);

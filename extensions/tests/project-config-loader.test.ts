@@ -724,21 +724,41 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 		expect(legacy.reference_docs).toEqual({ readme: "README.md" });
 	});
 
-	it("4.5: task-runner loadConfig (via loadProjectConfig) swallows errors and returns defaults", () => {
-		// The task-runner's loadConfig wraps loadProjectConfig in try/catch
-		// and returns defaults on any error. We test this indirectly by
-		// verifying toTaskConfig produces the expected default shape.
-		const defaultConfig = toTaskConfig({
-			configVersion: CONFIG_VERSION,
-			taskRunner: DEFAULT_TASK_RUNNER_SECTION,
-			orchestrator: DEFAULT_ORCHESTRATOR_SECTION,
-		});
+	it("4.5: task-runner loadConfig catches malformed JSON and returns defaults", () => {
+		// task-runner.ts exports loadConfig() which does:
+		//   try { return toTaskConfig(loadProjectConfig(cwd)); }
+		//   catch { return { ...DEFAULT_CONFIG }; }
+		//
+		// We call the actual loadConfig with malformed JSON to verify:
+		// (a) loadProjectConfig would throw ConfigLoadError,
+		// (b) loadConfig catches it and returns the default TaskConfig shape.
+		const { loadConfig } = require("../task-runner.ts") as {
+			loadConfig: (cwd: string) => Record<string, any>;
+		};
 
-		expect(defaultConfig.project.name).toBe("Project");
-		expect(defaultConfig.project.description).toBe("");
-		expect(defaultConfig.worker.model).toBe("");
-		expect(defaultConfig.context.workerContextWindow).toBeUndefined(); // field name is worker_context_window
-		expect(defaultConfig.context.worker_context_window).toBe(200000);
+		const dir = makeTestDir("loadconfig-malformed");
+		writePiFile(dir, "taskplane-config.json", "{ broken json }}}");
+
+		// (a) loadProjectConfig must throw on malformed JSON
+		expect(() => loadProjectConfig(dir)).toThrow(ConfigLoadError);
+
+		// (b) task-runner's loadConfig catches and returns defaults
+		const result = loadConfig(dir);
+
+		expect(result.project.name).toBe("Project");
+		expect(result.project.description).toBe("");
+		expect(result.worker.model).toBe("");
+		expect(result.worker.tools).toBe("read,write,edit,bash,grep,find,ls");
+		expect(result.context.worker_context_window).toBe(200000);
+		expect(result.context.warn_percent).toBe(70);
+		expect(result.context.kill_percent).toBe(85);
+		expect(result.context.max_worker_iterations).toBe(20);
+		expect(result.context.max_review_cycles).toBe(2);
+		expect(result.context.no_progress_limit).toBe(3);
+		expect(result.paths.tasks).toBe("docs/task-management");
+		expect(result.testing.commands).toEqual({});
+		expect(result.standards).toEqual({ docs: [], rules: [] });
+		expect(result.task_areas).toEqual({});
 	});
 
 	it("4.6: JSON config deep merges nested fields (partial section override)", () => {

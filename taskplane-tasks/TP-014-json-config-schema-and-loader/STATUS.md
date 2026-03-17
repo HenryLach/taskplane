@@ -54,6 +54,7 @@
 - [x] Key-preservation and adapter regression tests: record keys preserved (sizeWeights S/M/L, preWarm.commands, taskAreas IDs), snake_case adapters produce correct shapes, repoId trim/drop behavior
 - [x] Defaults cloned/non-mutating across multiple calls + backward-compat wrappers (loadOrchestratorConfig, loadTaskRunnerConfig, task-runner loadConfig)
 - [x] Existing tests pass: `cd extensions && npx vitest run` (16 files, 434 tests, all green)
+- [x] R008-fix: Test 4.5 reworked to exercise actual `loadProjectConfig` throw on malformed JSON + verify `toTaskConfig` default shape (both halves of task-runner error-swallowing contract)
 - [ ] R008-fix: Export task-runner's `loadConfig()` and add a real failure-path test with malformed JSON that verifies default fallback behavior
 - [ ] R008-fix: All tests still green after changes
 
