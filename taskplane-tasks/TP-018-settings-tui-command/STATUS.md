@@ -1,11 +1,11 @@
 # TP-018: /settings TUI Command — Status
 
-**Current Step:** Step 3: Implement Write-Back
+**Current Step:** Step 4: Testing & Verification
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 8
-**Iteration:** 4
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -76,11 +76,12 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Settings load/display tested
-- [ ] Write-back tested
-- [ ] `cd extensions && npx vitest run`
+- [ ] R009: Add YAML-only and JSON+YAML source-badge tests (JSON-only, YAML-only, JSON+YAML precedence scenarios)
+- [ ] R009: Add interaction-level tests for L1+L2 destination selection, project confirm decline, and cancel zero-mutation paths
+- [ ] R009: Add discoverability regression test ensuring uncovered/new fields appear in Advanced section
+- [ ] Full test suite passes: `cd extensions && npx vitest run`
 
 ---
 
@@ -111,6 +112,8 @@
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -170,6 +173,14 @@
 | 2026-03-17 18:19 | Worker iter 4 | done in 631s, ctx: 43%, tools: 64 |
 | 2026-03-17 18:23 | Review R008 | code Step 3: REVISE |
 | 2026-03-17 18:24 | Review R008 | code Step 3: REVISE |
+| 2026-03-17 18:30 | Worker iter 4 | done in 435s, ctx: 39%, tools: 57 |
+| 2026-03-17 18:30 | Step 3 complete | Implement Write-Back |
+| 2026-03-17 18:30 | Step 4 started | Testing & Verification |
+| 2026-03-17 18:30 | Worker iter 4 | done in 378s, ctx: 34%, tools: 46 |
+| 2026-03-17 18:30 | Step 3 complete | Implement Write-Back |
+| 2026-03-17 18:30 | Step 4 started | Testing & Verification |
+| 2026-03-17 18:32 | Review R009 | plan Step 4: REVISE |
+| 2026-03-17 18:32 | Review R009 | plan Step 4: REVISE |
 
 ## Blockers
 *None*
