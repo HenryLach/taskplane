@@ -1,7 +1,7 @@
 # TP-018: /settings TUI Command — Status
 
 **Current Step:** Step 1: Design Settings Navigation
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
 **Review Counter:** 3
@@ -28,11 +28,11 @@
 ---
 
 ### Step 1: Design Settings Navigation
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Final section taxonomy, ordering, and field-to-section assignment documented in STATUS.md
 - [x] Source-indicator behavior rules for project/user/default (including dual-layer L1+L2 fields) documented
-- [ ] Schema coverage validation: every scalar field in config-schema.ts is either in navigation map or explicitly excluded with rationale
+- [x] Schema coverage validation: every scalar field in config-schema.ts is either in navigation map or explicitly excluded with rationale
 
 ---
 
