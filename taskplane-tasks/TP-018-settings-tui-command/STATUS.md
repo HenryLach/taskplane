@@ -4,8 +4,8 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -42,9 +42,15 @@
 ### Step 2: Implement /settings Command
 **Status:** 🟨 In Progress
 
-- [ ] Command registered, section navigation working
-- [ ] Field editing with validation
-- [ ] Source indicators (project/user/default) displayed
+- [ ] Create settings-tui.ts with section navigation, field display, source badges, and field editing (validation: enum whitelist, number parsing with range, optional-field unset)
+- [ ] Register /settings command in extension.ts using execCtx.repoRoot (not ctx.cwd), handle null execCtx gracefully
+- [ ] Verify tests pass (existing workspace-config test 5.5 ctx.cwd constraint)
+
+**Step 2 Implementation Contract (R005):**
+- Config root: uses `execCtx!.repoRoot` for config reads. When `execCtx` is null (startup failure), command shows error via `requireExecCtx()` guard.
+- In-memory config is NOT refreshed after edits — changes take effect on next session (simpler, safer). TUI shows a note "Restart session to apply."
+- Validation rules: enum fields validate against known values array; number fields must parse as finite positive integers (or match field-specific ranges); optional fields accept empty to unset.
+- User-facing error: invalid input shows inline message, does not close TUI.
 
 ---
 
@@ -84,6 +90,8 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -122,6 +130,11 @@
 | 2026-03-17 17:43 | Worker iter 2 | done in 204s, ctx: 19%, tools: 25 |
 | 2026-03-17 17:43 | Step 1 complete | Design Settings Navigation |
 | 2026-03-17 17:43 | Step 2 started | Implement /settings Command |
+| 2026-03-17 17:45 | Worker iter 2 | done in 257s, ctx: 22%, tools: 41 |
+| 2026-03-17 17:45 | Step 1 complete | Design Settings Navigation |
+| 2026-03-17 17:45 | Step 2 started | Implement /settings Command |
+| 2026-03-17 17:46 | Review R005 | plan Step 2: REVISE |
+| 2026-03-17 17:47 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 *None*
