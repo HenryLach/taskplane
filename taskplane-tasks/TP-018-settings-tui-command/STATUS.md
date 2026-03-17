@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** L
 
@@ -15,7 +15,7 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] Read pi's `ctx.ui` API capabilities
 - [x] Read config schema from TP-014
@@ -23,6 +23,7 @@
 - [x] Review config root/path semantics in workspace mode (R001 item)
 - [x] Review JSON-first + YAML fallback behavior for write-back alignment (R001 item)
 - [x] Produce preflight findings: field/source inventory with UI control types + layer mapping (R001 item 3)
+- [ ] R002: Record CONTEXT.md review in preflight and add missing fields (worker.spawnMode, context.maxWorkerMinutes, preWarm.autoDetect) to inventory with explicit categorizations
 
 ---
 
@@ -73,6 +74,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -92,6 +95,9 @@
 | 2026-03-17 17:24 | Review R001 | plan Step 0: REVISE |
 | 2026-03-17 17:24 | Review R001 | plan Step 0: REVISE |
 | 2026-03-17 17:28 | Worker iter 1 | done in 235s, ctx: 31%, tools: 42 |
+| 2026-03-17 17:29 | Worker iter 1 | done in 254s, ctx: 33%, tools: 42 |
+| 2026-03-17 17:30 | Review R002 | code Step 0: REVISE |
+| 2026-03-17 17:30 | Review R002 | code Step 0: REVISE |
 
 ## Blockers
 *None*
