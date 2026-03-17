@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 2
 **Size:** M
 
@@ -25,11 +25,13 @@
 ---
 
 ### Step 1: Implement Pointer Resolution
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] `resolvePointer()` function in workspace.ts: reads pointer JSON, validates fields, resolves config_repo against WorkspaceConfig.repos, normalizes config_path (reject traversal), returns result with resolved absolute paths + used/fallback status + warning reason. Non-fatal: never throws on pointer failures, always returns fallback paths with warning.
 - [x] Return contract separates config/agent roots (follow pointer) from state root (always workspace root `.pi/`). Repo mode returns null (pointer ignored entirely).
 - [x] Types added for pointer result (PointerResolution) in types.ts
+- [ ] R004: Fix config_path containment — reject absolute paths (Windows drive letters, `path.isAbsolute()`), then verify resolved path is within repo root using `relative()` check
+- [ ] R004: Add `resolvePointer()` test suite in workspace-config.test.ts covering: repo mode null, missing pointer, malformed JSON, missing fields, unknown config_repo, traversal rejection, Windows absolute path rejection
 
 ---
 
@@ -79,6 +81,8 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -111,6 +115,9 @@
 | 2026-03-17 17:34 | Review R003 | plan Step 1: REVISE |
 | 2026-03-17 17:35 | Review R003 | plan Step 1: REVISE |
 | 2026-03-17 17:38 | Worker iter 2 | done in 161s, ctx: 32%, tools: 31 |
+| 2026-03-17 17:39 | Worker iter 2 | done in 297s, ctx: 20%, tools: 35 |
+| 2026-03-17 17:42 | Review R004 | code Step 1: REVISE |
+| 2026-03-17 17:42 | Review R004 | code Step 1: REVISE |
 
 ## Blockers
 *None*
