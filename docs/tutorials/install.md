@@ -240,6 +240,12 @@ Optional single-task check:
 /task
 ```
 
+To review or customize your configuration interactively:
+
+```
+/settings
+```
+
 ---
 
 ## Quick Smoke Test (Orchestrator-First)

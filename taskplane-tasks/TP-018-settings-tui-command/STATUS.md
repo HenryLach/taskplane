@@ -92,7 +92,7 @@
 
 - [x] Commands reference updated (`docs/reference/commands.md` — add `/settings` section)
 - [x] Check-if-affected: Update `README.md` command table with `/settings` row
-- [ ] Check-if-affected: Review `docs/tutorials/install.md` — add `/settings` mention if appropriate
+- [x] Check-if-affected: Review `docs/tutorials/install.md` — add `/settings` mention if appropriate
 - [ ] Normalize STATUS.md top-level status field to match actual step state
 - [ ] `.DONE` created in task folder
 
@@ -121,6 +121,7 @@
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 | R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
+| R011 | plan | Step 5 | APPROVE | .reviews/R011-plan-step5.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -199,6 +200,7 @@
 | 2026-03-17 18:51 | Step 4 complete | Testing & Verification |
 | 2026-03-17 18:51 | Step 5 started | Documentation & Delivery |
 | 2026-03-17 18:51 | Review R011 | plan Step 5: REVISE |
+| 2026-03-17 18:53 | Review R011 | plan Step 5: APPROVE |
 
 ## Blockers
 *None*
