@@ -73,7 +73,7 @@
 ### Step 5: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] Close Step 3 open item: verify test 7.11 is behavioral (not source-text) and check off the Step 3 checkbox
+- [x] Close Step 3 open item: verify test 7.11 is behavioral (not source-text) and check off the Step 3 checkbox
 - [ ] Verify pointer failure/parity matrix coverage: existing tests cover missing, malformed, unknown config_repo (warn+fallback), valid pointer, and repo-mode (pointer ignored) scenarios
 - [ ] Verify integration split invariant: config/agent paths follow pointer while state paths (batch, sidecar, merge) stay at workspaceRoot/.pi
 - [ ] Run full test suite: `cd extensions && npx vitest run` — all tests passing
