@@ -330,6 +330,65 @@ export interface TaskplaneConfig {
 }
 
 
+// ── User Preferences (Layer 2) ───────────────────────────────────────
+
+/**
+ * User preferences — personal settings stored per-user.
+ *
+ * File: `~/.pi/agent/taskplane/preferences.json`
+ * (or `$PI_CODING_AGENT_DIR/taskplane/preferences.json` if set)
+ *
+ * These are "Layer 2" fields — they override project config (Layer 1)
+ * for user-scoped settings only. The merge is allowlist-based: only
+ * the fields defined here can be overridden by user preferences.
+ * Unknown keys in the preferences file are silently ignored.
+ *
+ * Preferences JSON uses camelCase keys matching the runtime config shape.
+ *
+ * Layer 2 allowlist — preference field → config path:
+ *
+ * | Preference field   | Config path                          | Type    |
+ * |--------------------|--------------------------------------|---------|
+ * | operatorId         | orchestrator.orchestrator.operatorId | string  |
+ * | tmuxPrefix         | orchestrator.orchestrator.tmuxPrefix | string  |
+ * | spawnMode          | orchestrator.orchestrator.spawnMode  | string  |
+ * | workerModel        | taskRunner.worker.model              | string  |
+ * | reviewerModel      | taskRunner.reviewer.model            | string  |
+ * | mergeModel         | orchestrator.merge.model             | string  |
+ * | dashboardPort      | (preferences-only; not yet in schema)| number  |
+ */
+export interface UserPreferences {
+	/** Operator identifier (overrides orchestrator.orchestrator.operatorId) */
+	operatorId?: string;
+	/** TMUX session prefix (overrides orchestrator.orchestrator.tmuxPrefix) */
+	tmuxPrefix?: string;
+	/** Spawn mode override (overrides orchestrator.orchestrator.spawnMode) */
+	spawnMode?: "tmux" | "subprocess";
+	/** Worker model override (overrides taskRunner.worker.model) */
+	workerModel?: string;
+	/** Reviewer model override (overrides taskRunner.reviewer.model) */
+	reviewerModel?: string;
+	/** Merge model override (overrides orchestrator.merge.model) */
+	mergeModel?: string;
+	/** Dashboard port (preferences-only; not yet wired into config schema) */
+	dashboardPort?: number;
+}
+
+/** Default (empty) user preferences — all fields undefined means "no override". */
+export const DEFAULT_USER_PREFERENCES: UserPreferences = {};
+
+/**
+ * Canonical filename for user preferences.
+ * Resolved relative to agent directory: `<agentDir>/taskplane/preferences.json`
+ */
+export const USER_PREFERENCES_FILENAME = "preferences.json";
+
+/**
+ * Subdirectory under the agent dir for taskplane preferences.
+ */
+export const USER_PREFERENCES_SUBDIR = "taskplane";
+
+
 // ── Defaults ─────────────────────────────────────────────────────────
 
 /** Default task runner section values */
