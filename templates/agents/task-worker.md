@@ -18,44 +18,58 @@ ONLY memory.
 
 ## Checkpoint Discipline (CRITICAL)
 
-After completing EACH checkbox item, you MUST:
+There are two distinct actions: **checking off items** and **git commits**.
+They happen at different cadences.
 
-1. **Edit STATUS.md** to check off the item. Use the `edit` tool:
-   - oldText: `- [ ] The item text`
-   - newText: `- [x] The item text`
+### Checking off items (after EACH checkbox)
 
-2. **Git commit** the checkpoint:
-   ```bash
-   git add -A && git commit -m "checkpoint: <what you did>"
-   ```
-
-3. **Check for wrap-up signal:**
-   ```bash
-   if test -f "<TASK_FOLDER>/.task-wrap-up" || test -f "<TASK_FOLDER>/.wiggum-wrap-up"; then
-     echo "WRAP_UP_SIGNAL"
-   fi
-   ```
-   Primary signal file is `.task-wrap-up`; `.wiggum-wrap-up` is legacy and still supported.
-   If either signal exists, STOP immediately after this checkpoint.
-
-### Example checkpoint sequence:
-
-After verifying that source files exist, immediately do:
+After completing each checkbox item, **immediately update STATUS.md**:
 
 ```
 edit STATUS.md
-  oldText: "- [ ] Verify all source files exist"
-  newText: "- [x] Verify all source files exist"
+  oldText: "- [ ] The item text"
+  newText: "- [x] The item text"
 ```
 
-Then:
+Then **check for wrap-up signal:**
 ```bash
-git add -A && git commit -m "checkpoint: verified source files exist"
+if test -f "<TASK_FOLDER>/.task-wrap-up" || test -f "<TASK_FOLDER>/.wiggum-wrap-up"; then
+  echo "WRAP_UP_SIGNAL"
+fi
 ```
+Primary signal file is `.task-wrap-up`; `.wiggum-wrap-up` is legacy and still supported.
+If either signal exists, STOP immediately after this checkpoint.
 
-**NEVER batch updates.** Check off ONE item, commit, then do the next.
 If you do work but don't edit STATUS.md, that work is INVISIBLE to the
 orchestrator and you will be re-spawned to do it again.
+
+### Git commits (after completing a STEP)
+
+Git commits happen at **step boundaries**, not after every checkbox. When all
+checkboxes in a step are checked off:
+
+```bash
+git add -A && git commit -m "feat(TASK-ID): complete Step N — description"
+```
+
+This keeps the git history meaningful — one coherent commit per step instead of
+dozens of micro-commits that nobody reads.
+
+**Exceptions** — commit immediately (before step completion) in these cases:
+- **Hydration:** After expanding STATUS.md with new checkboxes, commit before
+  implementing: `git add -A && git commit -m "hydrate: expand Step N checkboxes"`
+- **REVISE response:** After adding reviewer revision items to STATUS.md:
+  `git add -A && git commit -m "hydrate: add R00N revision items to Step N"`
+- **Wrap-up signal:** If stopping mid-step due to a wrap-up signal, commit
+  whatever is done so far.
+
+### Why this approach
+
+STATUS.md is the worker's memory, not git. Checking off items in STATUS.md
+ensures the next worker iteration knows where to resume. Git commits preserve
+file changes at meaningful milestones. Per-checkbox commits waste tool calls
+on git housekeeping without adding recovery value — the files are already on
+disk in the worktree.
 
 ## STATUS.md Hydration (MANDATORY)
 
@@ -85,7 +99,7 @@ Before implementing anything, assess whether the step needs expansion:
 3. **If expansion is needed**, add checkboxes for **distinct outcomes** you've
    identified — not for every individual code change. Think: "what are the 2-5
    things that need to be true when this step is done?"
-4. **Commit the hydrated STATUS.md immediately** — this IS a checkpoint:
+4. **Commit the hydrated STATUS.md immediately** (see Checkpoint Discipline exceptions):
    ```bash
    git add -A && git commit -m "hydrate: expand Step N checkboxes"
    ```
@@ -104,7 +118,7 @@ When a reviewer returns REVISE with specific feedback items:
 1. **Read the review file** in `.reviews/`
 2. **Add revision items as new checkboxes** in the current step — group related
    fixes into single checkboxes rather than creating one per reviewer sentence
-3. **Commit the hydrated STATUS.md:**
+3. **Commit the hydrated STATUS.md** (see Checkpoint Discipline exceptions):
    ```bash
    git add -A && git commit -m "hydrate: add R00N revision items to Step N"
    ```
@@ -112,9 +126,9 @@ When a reviewer returns REVISE with specific feedback items:
 
 ### Rules
 
-- **Hydration is a checkpoint.** Always commit STATUS.md after hydrating, before
-  implementing. If the iteration ends between hydration and implementation, the
-  plan is preserved for the next worker.
+- **Hydration gets an immediate commit.** Always commit STATUS.md after hydrating,
+  before implementing. If the iteration ends between hydration and implementation,
+  the plan is preserved for the next worker.
 - **One checkbox per meaningful outcome.** "Implement the CRUD methods" is one
   checkbox if they're straightforward. "Implement create + implement delete" is
   two checkboxes if they involve genuinely different logic. Use judgment — the

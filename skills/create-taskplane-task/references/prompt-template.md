@@ -118,12 +118,13 @@ Copy this template when creating a new task. Replace all `[bracketed]` fields.
 
 ## Git Commit Convention
 
-All commits for this task MUST include the task ID for traceability:
+Commits happen at **step boundaries** (not after every checkbox). All commits
+for this task MUST include the task ID for traceability:
 
-- **Implementation:** `feat([PREFIX-###]): description`
+- **Step completion:** `feat([PREFIX-###]): complete Step N — description`
 - **Bug fixes:** `fix([PREFIX-###]): description`
 - **Tests:** `test([PREFIX-###]): description`
-- **Checkpoints:** `checkpoint: [PREFIX-###] description`
+- **Hydration:** `hydrate: [PREFIX-###] expand Step N checkboxes`
 
 ## Do NOT
 

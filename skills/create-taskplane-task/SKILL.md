@@ -326,11 +326,13 @@ Verify every task against this before reporting the launch command:
 
 ## Git Commit Convention
 
-The prompt template includes a `## Git Commit Convention` section with the full
-format table (`feat(TASK-ID):`, `fix(TASK-ID):`, `checkpoint: TASK-ID`, etc.).
-Always include it — without task ID prefixes, there's no way to trace commits
-back to the task that produced them (`git log --grep="PM-004"` only works if
-the prefix is there).
+The prompt template includes a `## Git Commit Convention` section. Workers
+commit at **step boundaries** (not after every checkbox) to keep git history
+meaningful. Hydration commits are the exception — STATUS.md expansions are
+committed immediately to preserve the plan for crash recovery. Always include
+the task ID prefix — without it, there's no way to trace commits back to the
+task that produced them (`git log --grep="PM-004"` only works if the prefix
+is there).
 
 ---
 
