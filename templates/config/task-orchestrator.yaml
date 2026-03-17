@@ -76,6 +76,9 @@ merge:
 
   order: "fewest-files-first"
 
+  # Merge agent timeout in minutes. Increase for large batches with many files.
+  timeout_minutes: 10
+
 # ── Failure Handling ──────────────────────────────────────────────────
 
 failure:

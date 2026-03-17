@@ -36,6 +36,8 @@ export interface OrchestratorConfig {
 		tools: string;
 		verify: string[];
 		order: "fewest-files-first" | "sequential";
+		/** Merge agent timeout in minutes. Default: 10. Increase for large batches. */
+		timeout_minutes: number;
 	};
 	failure: {
 		on_task_failure: "skip-dependents" | "stop-wave" | "stop-all";
@@ -168,6 +170,7 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 		tools: "read,write,edit,bash,grep,find,ls",
 		verify: [],
 		order: "fewest-files-first",
+		timeout_minutes: 10,
 	},
 	failure: {
 		on_task_failure: "skip-dependents",
@@ -1049,7 +1052,8 @@ export class MergeError extends Error {
  * Merge agents typically complete in 10-60 seconds. A 5-minute timeout
  * is generous and covers verification (go build) on large codebases.
  */
-export const MERGE_TIMEOUT_MS = 5 * 60 * 1000;
+/** Default merge agent timeout. Use config.merge.timeout_minutes to override. */
+export const MERGE_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
  * Polling interval for merge result file (ms).
