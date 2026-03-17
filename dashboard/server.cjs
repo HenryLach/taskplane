@@ -23,6 +23,12 @@ const MAX_PORT_ATTEMPTS = 20;
 const POLL_INTERVAL = 2000; // ms between state checks
 
 // REPO_ROOT is resolved after parseArgs() — see initialization below.
+// In workspace mode, REPO_ROOT is the workspace root (passed via --root).
+// All dashboard state paths (batch-state, lane-state, conversation logs,
+// batch-history) live at <REPO_ROOT>/.pi/ — this is runtime/sidecar state
+// which does NOT follow the taskplane-pointer.json resolution chain.
+// The pointer directs config/agent lookups to a config repo, but the
+// dashboard only reads state files, so no pointer resolution is needed here.
 let REPO_ROOT;
 let BATCH_STATE_PATH;
 let BATCH_HISTORY_PATH;
@@ -630,7 +636,13 @@ async function findPort(server, start, explicit) {
 async function main() {
   const opts = parseArgs();
 
-  // Resolve project root: --root flag > cwd
+  // Resolve project root: --root flag > cwd.
+  // In workspace mode this is the workspace root. All state/sidecar files
+  // (batch-state, lane-state, conversation logs, batch-history) live at
+  // <REPO_ROOT>/.pi/ and are NOT affected by taskplane-pointer.json.
+  // The pointer only redirects config/agent resolution in task-runner and
+  // orchestrator — the dashboard reads only runtime state, so no pointer
+  // resolution is performed here.
   REPO_ROOT = path.resolve(opts.root || process.cwd());
   BATCH_STATE_PATH = path.join(REPO_ROOT, ".pi", "batch-state.json");
   BATCH_HISTORY_PATH = path.join(REPO_ROOT, ".pi", "batch-history.json");

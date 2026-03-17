@@ -62,7 +62,7 @@
 ### Step 4: Thread Through Dashboard
 **Status:** 🟨 In Progress
 
-- [ ] Verify and document that all dashboard `.pi/` paths (batch-state, lane-state, conversation logs, batch-history, fs.watch) use `REPO_ROOT` (= workspace root) and do NOT follow pointer. Add clarifying code comment at the REPO_ROOT initialization site.
+- [x] Verify and document that all dashboard `.pi/` paths (batch-state, lane-state, conversation logs, batch-history, fs.watch) use `REPO_ROOT` (= workspace root) and do NOT follow pointer. Add clarifying code comment at the REPO_ROOT initialization site.
 - [ ] Verify STATUS.md and task-folder resolution (`resolveTaskFolder`, `parseStatusMd`, `serveStatusMd`) works correctly in workspace mode — task folders live in repos/worktrees, not config repo, so no pointer needed.
 - [ ] Confirm repo-mode parity: dashboard behavior is completely unchanged when no workspace/pointer exists (REPO_ROOT = repo root, all paths at `<repoRoot>/.pi/`).
 
