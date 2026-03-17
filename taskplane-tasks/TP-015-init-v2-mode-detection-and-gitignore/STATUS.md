@@ -4,8 +4,8 @@
 **Status:** ✅ Step 5 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 14
-**Iteration:** 7
+**Review Counter:** 15
+**Iteration:** 8
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -108,9 +108,11 @@
 ### Step 7: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Install tutorial updated
-- [ ] `.DONE` created
-- [ ] Archive and push
+- [ ] Update `docs/tutorials/install.md` — document init-v2 flow: mode auto-detection (repo vs workspace), gitignore enforcement + tracked artifact cleanup, tmux-based spawn_mode defaulting, JSON config output with YAML transition note
+- [ ] Check/update `docs/reference/commands.md` — verify `taskplane init` section reflects new behavior
+- [ ] Check/update `README.md` — verify install/quickstart section is consistent with new init flow
+- [ ] Final verification: commits use TP-015 prefix, all tests pass
+- [ ] `.DONE` created in task folder
 
 ---
 
@@ -143,6 +145,8 @@
 | R013 | plan | Step 6 | REVISE | .reviews/R013-plan-step6.md |
 | R014 | code | Step 6 | REVISE | .reviews/R014-code-step6.md |
 | R014 | code | Step 6 | REVISE | .reviews/R014-code-step6.md |
+| R015 | plan | Step 7 | REVISE | .reviews/R015-plan-step7.md |
+| R015 | plan | Step 7 | REVISE | .reviews/R015-plan-step7.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -234,6 +238,11 @@
 | 2026-03-17 17:13 | Worker iter 7 | done in 197s, ctx: 15%, tools: 16 |
 | 2026-03-17 17:13 | Step 6 complete | Testing & Verification |
 | 2026-03-17 17:13 | Step 7 started | Documentation & Delivery |
+| 2026-03-17 17:14 | Worker iter 7 | done in 268s, ctx: 19%, tools: 30 |
+| 2026-03-17 17:14 | Step 6 complete | Testing & Verification |
+| 2026-03-17 17:14 | Step 7 started | Documentation & Delivery |
+| 2026-03-17 17:15 | Review R015 | plan Step 7: REVISE |
+| 2026-03-17 17:15 | Review R015 | plan Step 7: REVISE |
 
 ## Blockers
 *None*
