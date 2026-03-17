@@ -1,11 +1,11 @@
 # TP-017: User Preferences Layer — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 1
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** S
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -15,9 +15,9 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Confirm path convention
+- [ ] Confirm path convention: resolve `PI_CODING_AGENT_DIR` override, cross-platform home dir, and document decision in Discoveries
 
 ---
 
@@ -48,6 +48,8 @@
 
 ## Reviews
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -58,6 +60,12 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-17 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-17 15:23 | Task started | Extension-driven execution |
+| 2026-03-17 15:23 | Step 0 started | Preflight |
+| 2026-03-17 15:23 | Task started | Extension-driven execution |
+| 2026-03-17 15:23 | Step 0 started | Preflight |
+| 2026-03-17 15:25 | Review R001 | plan Step 0: REVISE |
+| 2026-03-17 15:25 | Review R001 | plan Step 0: REVISE |
 
 ## Blockers
 *None*
