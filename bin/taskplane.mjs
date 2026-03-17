@@ -565,10 +565,10 @@ async function cmdUninstall(args) {
 // ─── Mode Auto-Detection ────────────────────────────────────────────────────
 
 /**
- * Check if the given directory is the root of a git repository.
+ * Check if the given directory is inside a git work tree.
  * Uses `git rev-parse --is-inside-work-tree` for reliability.
  */
-function isGitRepo(dir) {
+function isInsideGitRepo(dir) {
 	try {
 		execSync("git rev-parse --is-inside-work-tree", {
 			cwd: dir,
@@ -582,9 +582,35 @@ function isGitRepo(dir) {
 }
 
 /**
+ * Check if the given directory is the root of its own git repository.
+ * A directory is a git repo root if it has a `.git` entry (file or directory)
+ * AND `git rev-parse --show-toplevel` resolves to that directory.
+ * This distinguishes true nested repos from subdirectories of a parent repo.
+ */
+function isGitRepoRoot(dir) {
+	const gitEntry = path.join(dir, ".git");
+	if (!fs.existsSync(gitEntry)) return false;
+	try {
+		const toplevel = execSync("git rev-parse --show-toplevel", {
+			cwd: dir,
+			stdio: ["pipe", "pipe", "pipe"],
+			timeout: 5000,
+		}).toString().trim();
+		// Normalize paths for comparison (handles Windows path separators)
+		const normalizedToplevel = path.resolve(toplevel);
+		const normalizedDir = path.resolve(dir);
+		return normalizedToplevel === normalizedDir;
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Scan immediate subdirectories of `dir` for git repositories.
- * Returns an array of subdirectory names that are git repos.
+ * Returns an array of subdirectory names that are git repo roots.
  * Only checks one level deep (direct children).
+ * Uses `isGitRepoRoot()` to ensure we find actual nested repos,
+ * not just subdirectories of the parent repo.
  */
 function findSubdirectoryGitRepos(dir) {
 	const results = [];
@@ -596,7 +622,7 @@ function findSubdirectoryGitRepos(dir) {
 			if (entry.name.startsWith(".")) continue;
 			if (entry.name === "node_modules") continue;
 			const subdir = path.join(dir, entry.name);
-			if (isGitRepo(subdir)) {
+			if (isGitRepoRoot(subdir)) {
 				results.push(entry.name);
 			}
 		}
@@ -620,7 +646,7 @@ function findSubdirectoryGitRepos(dir) {
  * - existingConfigPath: string|null — path to existing config (for Scenario B/D messaging)
  */
 function detectInitMode(dir) {
-	const currentIsGitRepo = isGitRepo(dir);
+	const currentIsGitRepo = isInsideGitRepo(dir);
 	const subRepos = findSubdirectoryGitRepos(dir);
 	const hasSubRepos = subRepos.length > 0;
 

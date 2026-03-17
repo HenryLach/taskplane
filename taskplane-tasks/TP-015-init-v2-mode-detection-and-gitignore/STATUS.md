@@ -36,7 +36,7 @@
 - [x] Ambiguous case handled with prompt; preset/non-interactive mode defaults to repo mode (no prompt)
 - [x] "Already initialized" detection for Scenario B (existing config check before topology detection)
 - [x] Validate: repo mode, workspace mode, ambiguous prompt, no-repo error, preset bypass all covered
-- [ ] R004: Fix `findSubdirectoryGitRepos()` — must check for actual nested repo roots (`.git` entry + `git rev-parse --show-toplevel` matching child), not just "inside work tree"
+- [x] R004: Fix `findSubdirectoryGitRepos()` — must check for actual nested repo roots (`.git` entry + `git rev-parse --show-toplevel` matching child), not just "inside work tree"
 - [ ] R004: Fix `existingConfigPath` mismatch — when ambiguous mode resolves to workspace, recompute workspace-specific existing-config detection instead of reusing monorepo `.pi` path
 
 ---
