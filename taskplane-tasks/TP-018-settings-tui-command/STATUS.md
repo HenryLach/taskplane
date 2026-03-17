@@ -43,7 +43,7 @@
 **Status:** 🟨 In Progress
 
 - [x] Create settings-tui.ts with section navigation, field display, source badges, and field editing (validation: enum whitelist, number parsing with range, optional-field unset)
-- [ ] Register /settings command in extension.ts using execCtx.repoRoot (not ctx.cwd), handle null execCtx gracefully
+- [x] Register /settings command in extension.ts using execCtx.repoRoot (not ctx.cwd), handle null execCtx gracefully
 - [ ] Verify tests pass (existing workspace-config test 5.5 ctx.cwd constraint)
 
 **Step 2 Implementation Contract (R005):**
