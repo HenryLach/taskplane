@@ -19,7 +19,7 @@
 
 - [x] Read current `cmdInit()` implementation
 - [x] Read spec auto-detection and gitignore sections
-- [ ] Verify spec reachability and record source path
+- [x] Verify spec reachability and record source path
 - [ ] Verify TP-014 config loader/schema contract (JSON output shape, YAML fallback expectations)
 - [ ] Record current `cmdInit()` behavior to preserve (--preset, YAML continuity, --tasks-root, --dry-run, --force, --no-examples)
 - [ ] Identify downstream validation (existing tests, CLI checks for init regressions)
@@ -93,6 +93,7 @@
 
 ## Discoveries
 | Discovery | Disposition | Location |
+| Spec not in worktree — `.pi/local/` is gitignored. Canonical source: `C:\dev\taskplane\.pi\local\docs\settings-and-onboarding-spec.md` (main repo). Read successfully from there. | Noted | Step 0 |
 |-----------|-------------|----------|
 
 ## Execution Log
