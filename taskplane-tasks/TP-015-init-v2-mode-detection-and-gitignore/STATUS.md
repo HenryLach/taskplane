@@ -98,7 +98,7 @@
 - [x] Baseline validation gates pass (`cd extensions && npx vitest run`, `node bin/taskplane.mjs help`, `node bin/taskplane.mjs doctor`)
 - [x] Scenario A (repo mode, fresh init) dry-run works: `node bin/taskplane.mjs init --dry-run --force --preset full`
 - [x] Preset compatibility verified: `--preset minimal`, `--preset full`, `--preset runner-only` all work with `--dry-run --force`
-- [ ] YAML output still generated alongside JSON (constraint from PROMPT)
+- [x] YAML output still generated alongside JSON (constraint from PROMPT)
 - [ ] Mode detection edge cases and regression coverage: add init-focused automated test file covering mode detection, gitignore enforcement, and scenario branching
 
 ---
