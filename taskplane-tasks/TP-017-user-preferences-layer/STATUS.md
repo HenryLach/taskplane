@@ -1,11 +1,11 @@
 # TP-017: User Preferences Layer — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Implement Preferences Loader
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 1
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 2
+**Iteration:** 2
 **Size:** S
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -15,18 +15,19 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Confirm path convention: resolve `PI_CODING_AGENT_DIR` override, cross-platform home dir, and document decision in Discoveries
 
 ---
 
 ### Step 1: Implement Preferences Loader
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Preferences schema defined
-- [ ] `loadUserPreferences()` implemented with auto-creation
-- [ ] Merge logic with project config correct
+- [ ] Preferences schema + Layer 2 allowlist defined (interface, defaults, snake→camelCase mapping, explicit field allowlist for merge)
+- [ ] `resolveUserPreferencesPath()` + `loadUserPreferences()` implemented (read/auto-create, malformed fallback, unknown keys ignored)
+- [ ] Merge function `applyUserPreferences()` integrates into `loadProjectConfig()` — only allowlisted fields override, Layer 1 untouched
+- [ ] Exports wired up and existing tests still pass
 
 ---
 
@@ -50,6 +51,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
+| R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -69,6 +72,14 @@
 | 2026-03-17 15:23 | Step 0 started | Preflight |
 | 2026-03-17 15:25 | Review R001 | plan Step 0: REVISE |
 | 2026-03-17 15:25 | Review R001 | plan Step 0: REVISE |
+| 2026-03-17 15:27 | Worker iter 1 | done in 132s, ctx: 23%, tools: 20 |
+| 2026-03-17 15:27 | Step 0 complete | Preflight |
+| 2026-03-17 15:27 | Step 1 started | Implement Preferences Loader |
+| 2026-03-17 15:27 | Worker iter 1 | done in 98s, ctx: 15%, tools: 25 |
+| 2026-03-17 15:27 | Step 0 complete | Preflight |
+| 2026-03-17 15:27 | Step 1 started | Implement Preferences Loader |
+| 2026-03-17 15:29 | Review R002 | plan Step 1: REVISE |
+| 2026-03-17 15:30 | Review R002 | plan Step 1: REVISE |
 
 ## Blockers
 *None*
