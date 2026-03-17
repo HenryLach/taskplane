@@ -733,9 +733,6 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 		// We call the actual loadConfig with malformed JSON to verify:
 		// (a) loadProjectConfig would throw ConfigLoadError,
 		// (b) loadConfig catches it and returns the default TaskConfig shape.
-		const { loadConfig } = require("../task-runner.ts") as {
-			loadConfig: (cwd: string) => Record<string, any>;
-		};
 
 		const dir = makeTestDir("loadconfig-malformed");
 		writePiFile(dir, "taskplane-config.json", "{ broken json }}}");
@@ -744,7 +741,7 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 		expect(() => loadProjectConfig(dir)).toThrow(ConfigLoadError);
 
 		// (b) task-runner's loadConfig catches and returns defaults
-		const result = loadConfig(dir);
+		const result = taskRunnerLoadConfig(dir);
 
 		expect(result.project.name).toBe("Project");
 		expect(result.project.description).toBe("");
