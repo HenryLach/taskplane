@@ -45,6 +45,8 @@ import {
 	readRawProjectJson,
 	readRawYamlConfigs,
 	getAdvancedItems,
+	getDefaultWriteDestination,
+	resolveWriteAction,
 	SECTIONS,
 } from "../taskplane/settings-tui.ts";
 import type { FieldDef, FieldSource } from "../taskplane/settings-tui.ts";
@@ -1178,135 +1180,180 @@ describe("16. YAML source detection", () => {
 });
 
 
-// ── 17.x Write-Back Zero-Mutation Paths ──────────────────────────────
-// Verifies that cancel/decline paths produce zero file mutations (R009 item 2).
-// Since the interaction loop (showSectionSettingsLoop) is async/TUI-dependent,
-// we test the underlying write functions for idempotency and verify
-// that no writes occur when the cancel codepath is taken.
+// ── 17.x Write-Decision Logic ────────────────────────────────────────
+// Tests the extracted resolveWriteAction + getDefaultWriteDestination
+// functions that encapsulate the destination/confirmation decision tree
+// from showSectionSettingsLoop. These exercise real function calls — not
+// tautological "file unchanged when we didn't write" assertions (R010 fix).
 
-describe("17. Write-back zero-mutation paths", () => {
-	let zeroMutRoot: string;
-	let savedAgentDir: string | undefined;
+describe("17. Write-decision logic (resolveWriteAction)", () => {
 
-	beforeEach(() => {
-		zeroMutRoot = join(tmpdir(), `tp-zeromut-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-		mkdirSync(zeroMutRoot, { recursive: true });
-		savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+	// 17.1 — getDefaultWriteDestination routing
+
+	describe("17.1 getDefaultWriteDestination", () => {
+		it("17.1.1 L1-only field → 'project'", () => {
+			const field = makeL1Field();
+			expect(getDefaultWriteDestination(field)).toBe("project");
+		});
+
+		it("17.1.2 L2-only field → 'prefs'", () => {
+			const field = makeL2NumberField();
+			expect(getDefaultWriteDestination(field)).toBe("prefs");
+		});
+
+		it("17.1.3 L1+L2 string field → null (user must choose)", () => {
+			const field = makeL1L2StringField();
+			expect(getDefaultWriteDestination(field)).toBeNull();
+		});
+
+		it("17.1.4 L1+L2 enum field → null (user must choose)", () => {
+			const field = makeL1L2EnumField();
+			expect(getDefaultWriteDestination(field)).toBeNull();
+		});
 	});
 
-	afterEach(() => {
-		if (savedAgentDir !== undefined) {
-			process.env.PI_CODING_AGENT_DIR = savedAgentDir;
-		} else {
-			delete process.env.PI_CODING_AGENT_DIR;
-		}
-		try {
-			rmSync(zeroMutRoot, { recursive: true, force: true });
-		} catch { /* best effort */ }
+	// 17.2 — L1-only resolveWriteAction
+
+	describe("17.2 L1-only fields", () => {
+		it("17.2.1 L1 field + project confirmed → 'project'", () => {
+			const field = makeL1Field();
+			expect(resolveWriteAction(field, null, true)).toBe("project");
+		});
+
+		it("17.2.2 L1 field + project confirmation declined → 'skip'", () => {
+			const field = makeL1Field();
+			expect(resolveWriteAction(field, null, false)).toBe("skip");
+		});
 	});
 
-	it("17.1 project config unchanged when writeProjectConfigField is never called (cancel path)", () => {
-		const piDir = join(zeroMutRoot, ".pi");
-		mkdirSync(piDir, { recursive: true });
-		const configPath = join(piDir, PROJECT_CONFIG_FILENAME);
-		const original = JSON.stringify({ configVersion: CONFIG_VERSION, orchestrator: { orchestrator: { maxLanes: 3 } } }, null, 2);
-		writeFileSync(configPath, original, "utf-8");
+	// 17.3 — L2-only resolveWriteAction
 
-		// Simulate cancel: DO NOT call writeProjectConfigField
-		// Verify file is unchanged
-		const after = readFileSync(configPath, "utf-8");
-		expect(after).toBe(original);
+	describe("17.3 L2-only fields", () => {
+		it("17.3.1 L2 field → 'prefs' regardless of confirmation flag", () => {
+			const field = makeL2NumberField();
+			expect(resolveWriteAction(field, null, false)).toBe("prefs");
+		});
+
+		it("17.3.2 L2 field → 'prefs' (confirmation not consulted)", () => {
+			const field = makeL2NumberField();
+			expect(resolveWriteAction(field, null, true)).toBe("prefs");
+		});
 	});
 
-	it("17.2 user preferences unchanged when writeUserPreference is never called (cancel path)", () => {
-		process.env.PI_CODING_AGENT_DIR = zeroMutRoot;
-		const prefsDir = join(zeroMutRoot, "taskplane");
-		mkdirSync(prefsDir, { recursive: true });
-		const prefsPath = join(prefsDir, "preferences.json");
-		const original = JSON.stringify({ workerModel: "gpt-4", dashboardPort: 8080 }, null, 2);
-		writeFileSync(prefsPath, original, "utf-8");
+	// 17.4 — L1+L2 Cancel path
 
-		// Simulate cancel: DO NOT call writeUserPreference
-		const after = readFileSync(prefsPath, "utf-8");
-		expect(after).toBe(original);
+	describe("17.4 L1+L2 destination Cancel", () => {
+		it("17.4.1 L1+L2 field + Cancel choice → 'skip'", () => {
+			const field = makeL1L2StringField();
+			expect(resolveWriteAction(field, "Cancel", true)).toBe("skip");
+		});
+
+		it("17.4.2 L1+L2 field + null choice (escaped) → 'skip'", () => {
+			const field = makeL1L2StringField();
+			expect(resolveWriteAction(field, null, true)).toBe("skip");
+		});
+
+		it("17.4.3 L1+L2 enum field + Cancel choice → 'skip'", () => {
+			const field = makeL1L2EnumField();
+			expect(resolveWriteAction(field, "Cancel", false)).toBe("skip");
+		});
 	});
 
-	it("17.3 writeProjectConfigField with same value produces valid JSON (idempotent)", () => {
-		const piDir = join(zeroMutRoot, ".pi");
-		mkdirSync(piDir, { recursive: true });
-		const configPath = join(piDir, PROJECT_CONFIG_FILENAME);
-		writeFileSync(configPath, JSON.stringify({
-			configVersion: CONFIG_VERSION,
-			orchestrator: { orchestrator: { maxLanes: 3 } },
-		}, null, 2), "utf-8");
+	// 17.5 — L1+L2 user prefs destination
 
-		// Write the same value that already exists
-		writeProjectConfigField(zeroMutRoot, "orchestrator.orchestrator.maxLanes", 3);
+	describe("17.5 L1+L2 user preferences destination", () => {
+		it("17.5.1 L1+L2 + 'User preferences (personal)' → 'prefs'", () => {
+			const field = makeL1L2StringField();
+			expect(resolveWriteAction(field, "User preferences (personal)", false)).toBe("prefs");
+		});
 
-		const result = JSON.parse(readFileSync(configPath, "utf-8"));
-		expect(result.orchestrator.orchestrator.maxLanes).toBe(3);
-		expect(result.configVersion).toBe(CONFIG_VERSION);
+		it("17.5.2 L1+L2 + user prefs choice — confirmation flag irrelevant", () => {
+			const field = makeL1L2StringField();
+			expect(resolveWriteAction(field, "User preferences (personal)", true)).toBe("prefs");
+		});
 	});
 
-	it("17.4 coerceValueForWrite returns undefined for cancel markers — never triggers write", () => {
-		const field = makeL1Field({ fieldType: "number" });
-		// When submenu returns undefined (cancel), coerceValueForWrite should not be called.
-		// But if "(not set)" is passed, it returns undefined → signals delete, not write.
-		const optField = makeL2NumberField(); // optional
-		expect(coerceValueForWrite(optField, "(not set)")).toBeUndefined();
+	// 17.6 — L1+L2 project destination with confirmation gate
+
+	describe("17.6 L1+L2 project destination + confirmation", () => {
+		it("17.6.1 L1+L2 + 'Project config (shared)' + confirmed → 'project'", () => {
+			const field = makeL1L2StringField();
+			expect(resolveWriteAction(field, "Project config (shared)", true)).toBe("project");
+		});
+
+		it("17.6.2 L1+L2 + 'Project config (shared)' + declined → 'skip'", () => {
+			const field = makeL1L2StringField();
+			expect(resolveWriteAction(field, "Project config (shared)", false)).toBe("skip");
+		});
+
+		it("17.6.3 L1+L2 enum + 'Project config (shared)' + declined → 'skip'", () => {
+			const field = makeL1L2EnumField();
+			expect(resolveWriteAction(field, "Project config (shared)", false)).toBe("skip");
+		});
 	});
 
-	it("17.5 L1+L2 destination choice 'Cancel' produces no file writes", () => {
-		// Verify the decision tree: when user selects "Cancel" in destination
-		// choice, no write function should be called.
-		// We test this by verifying that coerceValueForWrite + writeProjectConfigField
-		// are independently correct, and the interaction flow in showSectionSettingsLoop
-		// checks `choice === "Cancel"` before any write call.
+	// 17.7 — Idempotent write and coerce markers (kept from original suite)
 
-		const piDir = join(zeroMutRoot, ".pi");
-		mkdirSync(piDir, { recursive: true });
-		const configPath = join(piDir, PROJECT_CONFIG_FILENAME);
-		const original = JSON.stringify({ configVersion: CONFIG_VERSION, taskRunner: { worker: { model: "gpt-4" } } }, null, 2);
-		writeFileSync(configPath, original, "utf-8");
+	describe("17.7 Idempotent write and coerce edge cases", () => {
+		let zeroMutRoot: string;
+		let savedAgentDir: string | undefined;
 
-		process.env.PI_CODING_AGENT_DIR = zeroMutRoot;
-		const prefsDir = join(zeroMutRoot, "taskplane");
-		mkdirSync(prefsDir, { recursive: true });
-		const prefsPath = join(prefsDir, "preferences.json");
-		const originalPrefs = JSON.stringify({ workerModel: "gpt-4" }, null, 2);
-		writeFileSync(prefsPath, originalPrefs, "utf-8");
+		beforeEach(() => {
+			zeroMutRoot = join(tmpdir(), `tp-zeromut-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+			mkdirSync(zeroMutRoot, { recursive: true });
+			savedAgentDir = process.env.PI_CODING_AGENT_DIR;
+		});
 
-		// Simulate the cancel path: don't call any write functions
-		// Verify both files are unchanged
-		expect(readFileSync(configPath, "utf-8")).toBe(original);
-		expect(readFileSync(prefsPath, "utf-8")).toBe(originalPrefs);
-	});
+		afterEach(() => {
+			if (savedAgentDir !== undefined) {
+				process.env.PI_CODING_AGENT_DIR = savedAgentDir;
+			} else {
+				delete process.env.PI_CODING_AGENT_DIR;
+			}
+			try {
+				rmSync(zeroMutRoot, { recursive: true, force: true });
+			} catch { /* best effort */ }
+		});
 
-	it("17.6 project confirmation decline produces no file writes", () => {
-		const piDir = join(zeroMutRoot, ".pi");
-		mkdirSync(piDir, { recursive: true });
-		const configPath = join(piDir, PROJECT_CONFIG_FILENAME);
-		const original = JSON.stringify({ configVersion: CONFIG_VERSION, orchestrator: { failure: { stallTimeout: 30 } } }, null, 2);
-		writeFileSync(configPath, original, "utf-8");
+		it("17.7.1 writeProjectConfigField with same value produces valid JSON (idempotent)", () => {
+			const piDir = join(zeroMutRoot, ".pi");
+			mkdirSync(piDir, { recursive: true });
+			const configPath = join(piDir, PROJECT_CONFIG_FILENAME);
+			writeFileSync(configPath, JSON.stringify({
+				configVersion: CONFIG_VERSION,
+				orchestrator: { orchestrator: { maxLanes: 3 } },
+			}, null, 2), "utf-8");
 
-		// Simulate: user chose "project" destination but declined confirm.
-		// Do NOT call writeProjectConfigField.
-		const after = readFileSync(configPath, "utf-8");
-		expect(after).toBe(original);
-	});
+			writeProjectConfigField(zeroMutRoot, "orchestrator.orchestrator.maxLanes", 3);
 
-	it("17.7 L2-only write skips confirmation gate entirely", () => {
-		process.env.PI_CODING_AGENT_DIR = zeroMutRoot;
-		const prefsDir = join(zeroMutRoot, "taskplane");
-		mkdirSync(prefsDir, { recursive: true });
-		const prefsPath = join(prefsDir, "preferences.json");
-		writeFileSync(prefsPath, JSON.stringify({ dashboardPort: 8080 }, null, 2), "utf-8");
+			const result = JSON.parse(readFileSync(configPath, "utf-8"));
+			expect(result.orchestrator.orchestrator.maxLanes).toBe(3);
+			expect(result.configVersion).toBe(CONFIG_VERSION);
+		});
 
-		// L2-only write goes directly to prefs — no confirmation needed
-		writeUserPreference("dashboardPort", 9090);
+		it("17.7.2 coerceValueForWrite returns undefined for '(not set)' marker", () => {
+			const optField = makeL2NumberField();
+			expect(coerceValueForWrite(optField, "(not set)")).toBeUndefined();
+		});
 
-		const result = JSON.parse(readFileSync(prefsPath, "utf-8"));
-		expect(result.dashboardPort).toBe(9090);
+		it("17.7.3 L2-only write skips confirmation gate (resolveWriteAction proves this)", () => {
+			// resolveWriteAction returns "prefs" even when projectConfirmed is false —
+			// proving the confirmation gate is never consulted for L2-only fields.
+			const field = makeL2NumberField();
+			expect(resolveWriteAction(field, null, false)).toBe("prefs");
+
+			// And verify actual write works
+			process.env.PI_CODING_AGENT_DIR = zeroMutRoot;
+			const prefsDir = join(zeroMutRoot, "taskplane");
+			mkdirSync(prefsDir, { recursive: true });
+			const prefsPath = join(prefsDir, "preferences.json");
+			writeFileSync(prefsPath, JSON.stringify({ dashboardPort: 8080 }, null, 2), "utf-8");
+
+			writeUserPreference("dashboardPort", 9090);
+
+			const result = JSON.parse(readFileSync(prefsPath, "utf-8"));
+			expect(result.dashboardPort).toBe(9090);
+		});
 	});
 });
 

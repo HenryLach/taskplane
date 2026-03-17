@@ -82,7 +82,7 @@
 - [x] R009: Add interaction-level tests for L1+L2 destination selection, project confirm decline, and cancel zero-mutation paths
 - [x] R009: Add discoverability regression test ensuring uncovered/new fields appear in Advanced section
 - [x] Full test suite passes: `cd extensions && npx vitest run` (682 tests, 21 files, all green)
-- [ ] R010 fix #1: Extract destination/confirmation decision logic into testable pure helper (resolveWriteAction), add tests exercising Cancel short-circuit and confirm-decline branches with real function calls
+- [x] R010 fix #1: Extract destination/confirmation decision logic into testable pure helper (resolveWriteAction), add tests exercising Cancel short-circuit and confirm-decline branches with real function calls
 - [ ] R010 fix #2: Update STATUS test count to match actual suite output
 
 ---

@@ -502,13 +502,48 @@ export function coerceValueForWrite(field: FieldDef, rawValue: string): any {
  * - L2-only → "prefs"
  * - L1+L2 → must be chosen by the user (returns null to signal "ask user")
  */
-type WriteDestination = "project" | "prefs";
+export type WriteDestination = "project" | "prefs";
 
-function getDefaultWriteDestination(field: FieldDef): WriteDestination | null {
+export function getDefaultWriteDestination(field: FieldDef): WriteDestination | null {
 	if (field.layer === "L1") return "project";
 	if (field.layer === "L2") return "prefs";
 	// L1+L2 → user must choose
 	return null;
+}
+
+/**
+ * Resolve the write action for a field change.
+ *
+ * Encapsulates the destination + confirmation decision tree from
+ * showSectionSettingsLoop as a pure function for testability.
+ *
+ * @param field - The field being edited
+ * @param destinationChoice - For L1+L2 fields: the user's choice from the
+ *   destination select ("User preferences (personal)", "Project config (shared)",
+ *   "Cancel", or null). Ignored for L1-only and L2-only fields.
+ * @param projectConfirmed - For project-destination writes: whether the user
+ *   confirmed the project config change. Ignored for prefs-destination writes.
+ * @returns The resolved destination ("project" | "prefs") or "skip" if the
+ *   user cancelled or declined confirmation.
+ */
+export function resolveWriteAction(
+	field: FieldDef,
+	destinationChoice: string | null,
+	projectConfirmed: boolean,
+): WriteDestination | "skip" {
+	const defaultDest = getDefaultWriteDestination(field);
+	let dest: WriteDestination | null = defaultDest;
+
+	// L1+L2 fields: resolve from user's destination choice
+	if (dest === null) {
+		if (!destinationChoice || destinationChoice === "Cancel") return "skip";
+		dest = destinationChoice.startsWith("User") ? "prefs" : "project";
+	}
+
+	// Confirmation gate for project config writes
+	if (dest === "project" && !projectConfirmed) return "skip";
+
+	return dest;
 }
 
 
@@ -1044,13 +1079,11 @@ async function showSectionSettingsLoop(
 
 		const typedValue = coerceValueForWrite(field, result.rawValue);
 
-		// Determine write destination
-		const defaultDest = getDefaultWriteDestination(field);
-		let dest: WriteDestination | null = defaultDest;
-
-		// L1+L2 fields: ask user where to save
-		if (dest === null) {
-			const choice = await ctx.ui.select(
+		// Collect UI answers for the write-decision contract
+		let destinationChoice: string | null = null;
+		if (getDefaultWriteDestination(field) === null) {
+			// L1+L2 fields: ask user where to save
+			destinationChoice = await ctx.ui.select(
 				"Save this change to:",
 				[
 					"User preferences (personal)",
@@ -1058,18 +1091,22 @@ async function showSectionSettingsLoop(
 					"Cancel",
 				],
 			);
-			if (!choice || choice === "Cancel") continue;  // Cancelled → re-show section
-			dest = choice.startsWith("User") ? "prefs" : "project";
 		}
 
-		// Confirmation gate for project config writes
-		if (dest === "project") {
-			const confirmed = await ctx.ui.confirm(
+		let projectConfirmed = true;
+		// Only ask for confirmation if the resolved dest will be "project"
+		const needsProjectConfirm =
+			(field.layer === "L1") ||
+			(field.layer === "L1+L2" && destinationChoice?.startsWith("Project"));
+		if (needsProjectConfirm) {
+			projectConfirmed = await ctx.ui.confirm(
 				"Confirm project config change",
 				"This writes to .pi/taskplane-config.json (shared project config). Continue?",
 			);
-			if (!confirmed) continue;  // Declined → re-show section
 		}
+
+		const dest = resolveWriteAction(field, destinationChoice, projectConfirmed);
+		if (dest === "skip") continue;
 
 		// Perform the write
 		try {
