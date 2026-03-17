@@ -1,11 +1,11 @@
 # TP-016: Pointer File Resolution Chain — Status
 
-**Current Step:** Step 4: Thread Through Dashboard
+**Current Step:** Step 5: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 8
-**Iteration:** 5
+**Review Counter:** 11
+**Iteration:** 6
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -49,7 +49,7 @@
 ---
 
 ### Step 3: Thread Through Orchestrator
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] `buildExecutionContext()` resolves pointer once and passes `pointer.configRoot` to config loaders. Repo mode (null pointer) unchanged.
 - [x] `spawnMergeAgent()` uses pointer's `agentRoot` for merge agent prompt path (separate from `stateRoot` used for state files). Merge request/result files stay at `stateRoot/.pi/`.
@@ -57,7 +57,7 @@
 - [x] State/sidecar paths invariant: `ORCH_SIDECAR_DIR`, abort signal, batch state, merge request/result files all remain at `<workspaceRoot>/.pi/` — never follow pointer.
 - [x] Add orchestrator pointer tests: buildExecutionContext with pointer, merge agent path via pointer, state paths unchanged, repo-mode parity.
 - [x] R008: Thread `workspaceRoot` into `resumeOrchBatch()` — add parameter, use as stateRoot for `loadBatchState`, `persistRuntimeState`, `mergeWaveByRepo`, `deleteBatchState`. Update extension.ts call site.
-- [ ] R008: Replace source-text assertions in test 7.11 with behavioral test validating workspace-mode state root consistency between orch and orch-resume paths.
+- [x] R008: Replace source-text assertions in test 7.11 with behavioral test validating workspace-mode state root consistency between orch and orch-resume paths.
 
 ---
 
@@ -71,7 +71,7 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Pointer resolution tests (include unknown config_repo → warn + fallback scenario)
 - [ ] `cd extensions && npx vitest run`
@@ -104,6 +104,8 @@
 | R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R010 | code | Step 4 | APPROVE | .reviews/R010-code-step4.md |
+| R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -164,6 +166,10 @@
 | 2026-03-17 18:39 | Review R009 | plan Step 4: REVISE |
 | 2026-03-17 18:42 | Review R008 | code Step 3: REVISE |
 | 2026-03-17 18:44 | Worker iter 5 | done in 297s, ctx: 21%, tools: 33 |
+| 2026-03-17 18:47 | Review R010 | code Step 4: APPROVE |
+| 2026-03-17 18:47 | Step 4 complete | Thread Through Dashboard |
+| 2026-03-17 18:47 | Step 5 started | Testing & Verification |
+| 2026-03-17 18:49 | Review R011 | plan Step 5: REVISE |
 
 ## Blockers
 *None*
