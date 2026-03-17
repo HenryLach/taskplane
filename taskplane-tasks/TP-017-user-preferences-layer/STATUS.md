@@ -1,6 +1,6 @@
 # TP-017: User Preferences Layer — Status
 
-**Current Step:** Step 1: Implement Preferences Loader
+**Current Step:** Step 2: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 1
@@ -32,7 +32,7 @@
 ---
 
 ### Step 2: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Tests for loading, auto-creation, and merge
 - [ ] `cd extensions && npx vitest run`
@@ -82,6 +82,9 @@
 | 2026-03-17 15:27 | Step 1 started | Implement Preferences Loader |
 | 2026-03-17 15:29 | Review R002 | plan Step 1: REVISE |
 | 2026-03-17 15:30 | Review R002 | plan Step 1: REVISE |
+| 2026-03-17 15:35 | Worker iter 2 | done in 362s, ctx: 23%, tools: 51 |
+| 2026-03-17 15:35 | Step 1 complete | Implement Preferences Loader |
+| 2026-03-17 15:35 | Step 2 started | Testing & Verification |
 
 ## Blockers
 *None*
