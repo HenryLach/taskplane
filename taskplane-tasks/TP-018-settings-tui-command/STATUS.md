@@ -28,11 +28,12 @@
 ---
 
 ### Step 1: Design Settings Navigation
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 
 - [x] Final section taxonomy, ordering, and field-to-section assignment documented in STATUS.md
 - [x] Source-indicator behavior rules for project/user/default (including dual-layer L1+L2 fields) documented
 - [x] Schema coverage validation: every scalar field in config-schema.ts is either in navigation map or explicitly excluded with rationale
+- [ ] R003 fix: worker.spawnMode corrected to L1-only, non-editable field surfacing defined, field contract table with source/clear semantics added
 
 ---
 
@@ -109,6 +110,7 @@
 | 2026-03-17 17:33 | Step 1 started | Design Settings Navigation |
 | 2026-03-17 17:34 | Review R003 | plan Step 1: REVISE |
 | 2026-03-17 17:35 | Review R003 | plan Step 1: REVISE |
+| 2026-03-17 17:37 | Worker iter 2 | done in 151s, ctx: 18%, tools: 21 |
 
 ## Blockers
 *None*
@@ -168,7 +170,7 @@
 | **Task Runner: Worker** | model | string | input | L1+L2 | project or prefs |
 | | tools | string | input | L1 | project config |
 | | thinking | string | input | L1 | project config |
-| | spawnMode | enum (optional) | settings-toggle | L1+L2 | project or prefs |
+| | spawnMode | enum (optional) | settings-toggle | L1 | project config (R003 fix: not in L2 allowlist) |
 | **Task Runner: Reviewer** | model | string | input | L1+L2 | project or prefs |
 | | tools | string | input | L1 | project config |
 | | thinking | string | input | L1 | project config |
@@ -191,7 +193,7 @@ operatorId, tmuxPrefix, spawnMode, workerModel, reviewerModel, mergeModel, dashb
 
 | Section | Field | Type | UI Control | Layer | Write Target | Status |
 |---------|-------|------|------------|-------|-------------|--------|
-| **Task Runner: Worker** | spawnMode | enum (optional) | settings-toggle | L1+L2 | project or prefs | NEW — maps to same L2 allowlist as orchestrator.spawnMode |
+| **Task Runner: Worker** | spawnMode | enum (optional) | settings-toggle | L1 | project config | NEW — R003 corrected: NOT in L2 allowlist (L2 spawnMode only maps to orchestrator.orchestrator.spawnMode) |
 | **Task Runner: Context** | maxWorkerMinutes | number (optional) | input | L1 | project config | NEW — was missing |
 | **Pre-Warm** | autoDetect | boolean | settings-toggle | L1 | project config | NEW — was missing |
 
@@ -254,7 +256,7 @@ operatorId, tmuxPrefix, spawnMode, workerModel, reviewerModel, mergeModel, dashb
 - onTaskFailure: ["skip-dependents", "stop-wave", "stop-all"]
 - onMergeFailure: ["pause", "abort"]
 - cache: ["true", "false"] (boolean as toggle)
-- worker.spawnMode: ["subprocess", "tmux"] (optional — when unset, inherits orchestrator.spawnMode)
+- worker.spawnMode: ["(inherit)", "subprocess", "tmux"] (optional L1-only — when unset/"(inherit)", inherits orchestrator.spawnMode)
 - preWarm.autoDetect: ["true", "false"] (boolean as toggle)
 
 **CONTEXT.md Review (R002 item 2):**
@@ -279,14 +281,19 @@ The TUI top-level menu presents these sections in order. Each section maps to a 
 | 9 | **Reviewer** | `taskRunner.reviewer` | model, tools, thinking |
 | 10 | **Context Limits** | `taskRunner.context` | workerContextWindow, warnPercent, killPercent, maxWorkerIterations, maxReviewCycles, noProgressLimit, maxWorkerMinutes |
 | 11 | **User Preferences** | `(preferences only)` | dashboardPort |
+| 12 | **Advanced (JSON Only)** | `(aggregated)` | Read-only listing of all collection/Record/array fields |
 
-**Rationale for ordering:** Orchestrator settings first (most commonly tuned), then task-runner subsections, then user preferences at the end. This mirrors the config file structure and groups by concern.
+**Rationale for ordering:** Orchestrator settings first (most commonly tuned), then task-runner subsections, then user preferences, then Advanced at the end for discoverability. This mirrors the config file structure and groups by concern.
 
-**Excluded from TUI navigation (intentionally — complex/collection types, edit JSON directly):**
-- `taskRunner.project` (name, description) — project identity
-- `taskRunner.paths` (tasks, architecture) — project structure
+**Fields shown in Advanced (JSON Only) section — visible, not editable (R003 item 3):**
+- `configVersion` — read-only informational
+- `taskRunner.project.name` — project identity
+- `taskRunner.project.description` — project identity
+- `taskRunner.paths.tasks` — project structure path
+- `taskRunner.paths.architecture` — project structure path (optional)
 - `taskRunner.testing.commands` — Record<string, string>
-- `taskRunner.standards` (docs, rules) — string arrays
+- `taskRunner.standards.docs` — string[]
+- `taskRunner.standards.rules` — string[]
 - `taskRunner.standardsOverrides` — Record<string, StandardsOverride>
 - `taskRunner.taskAreas` — Record<string, TaskAreaConfig>
 - `taskRunner.referenceDocs` — Record<string, string>
@@ -297,7 +304,8 @@ The TUI top-level menu presents these sections in order. Each section maps to a 
 - `orchestrator.preWarm.commands` — Record<string, string>
 - `orchestrator.preWarm.always` — string[]
 - `orchestrator.merge.verify` — string[]
-- `configVersion` — read-only, not user-editable
+
+Each entry shows its current value (summarized — e.g. "3 entries" for Records, first items for arrays) and instructs "Edit in .pi/taskplane-config.json".
 
 #### Field-to-UI-Control Mapping
 
@@ -349,37 +357,110 @@ To determine source, the TUI reads both raw config files (before merge) and comp
 3. Fields not in either file are `(default)` sourced
 4. For L1+L2 fields: if both project AND user have a value, the effective value is from user (L2 wins), but both sources exist — show `(user)` as the active source
 
-**Schema Coverage Checklist (R002 item 1):**
-All scalar/enum/boolean fields in config-schema.ts categorized:
+**Schema Coverage Checklist (R002 item 1) — REVISED per R003:**
+
+All scalar/enum/boolean fields in config-schema.ts categorized. **R003 fix:** `taskRunner.worker.spawnMode` corrected to L1 only (not in L2 allowlist).
 
 ✅ **Editable in TUI** (36 fields):
-- orchestrator.orchestrator: maxLanes, worktreeLocation, worktreePrefix, batchIdFormat, spawnMode, tmuxPrefix, operatorId (7)
-- orchestrator.dependencies: source, cache (2)
-- orchestrator.assignment: strategy (1)
-- orchestrator.preWarm: autoDetect (1)
-- orchestrator.merge: model, tools, order (3)
-- orchestrator.failure: onTaskFailure, onMergeFailure, stallTimeout, maxWorkerMinutes, abortGracePeriod (5)
-- orchestrator.monitoring: pollInterval (1)
-- taskRunner.worker: model, tools, thinking, spawnMode (4)
-- taskRunner.reviewer: model, tools, thinking (3)
-- taskRunner.context: workerContextWindow, warnPercent, killPercent, maxWorkerIterations, maxReviewCycles, noProgressLimit, maxWorkerMinutes (7)
-- User preferences-only: dashboardPort (1)
-- configVersion: (read-only display, not editable) (1 — excluded from editable count)
+- orchestrator.orchestrator: maxLanes, worktreeLocation, worktreePrefix, batchIdFormat, spawnMode (L1+L2), tmuxPrefix (L1+L2), operatorId (L1+L2) — 7 fields
+- orchestrator.dependencies: source, cache — 2 fields (L1 only)
+- orchestrator.assignment: strategy — 1 field (L1 only)
+- orchestrator.preWarm: autoDetect — 1 field (L1 only)
+- orchestrator.merge: model (L1+L2), tools, order — 3 fields
+- orchestrator.failure: onTaskFailure, onMergeFailure, stallTimeout, maxWorkerMinutes, abortGracePeriod — 5 fields (L1 only)
+- orchestrator.monitoring: pollInterval — 1 field (L1 only)
+- taskRunner.worker: model (L1+L2), tools, thinking, spawnMode — 4 fields (**spawnMode is L1 only — corrected from L1+L2**)
+- taskRunner.reviewer: model (L1+L2), tools, thinking — 3 fields
+- taskRunner.context: workerContextWindow, warnPercent, killPercent, maxWorkerIterations, maxReviewCycles, noProgressLimit, maxWorkerMinutes — 7 fields (L1 only)
+- User preferences-only: dashboardPort — 1 field (L2 only)
 
-🚫 **Intentionally excluded** (complex/collection types — edit JSON directly):
-- taskRunner.project: name, description (project identity — dangerous to change casually)
-- taskRunner.paths: tasks, architecture (project identity)
-- taskRunner.testing.commands (Record<string, string>)
-- taskRunner.standards: docs, rules (arrays)
-- taskRunner.standardsOverrides (Record<string, StandardsOverride>)
-- taskRunner.taskAreas (Record<string, TaskAreaConfig>)
-- taskRunner.referenceDocs (Record<string, string>)
-- taskRunner.neverLoad (string[])
-- taskRunner.selfDocTargets (Record<string, string>)
-- taskRunner.protectedDocs (string[])
-- orchestrator.assignment.sizeWeights (Record<string, number>)
-- orchestrator.preWarm.commands (Record<string, string>)
-- orchestrator.preWarm.always (string[])
-- orchestrator.merge.verify (string[])
+📖 **Read-only / informational** (visible but not editable):
+- configVersion — displayed at top of settings view as "Config Version: 1"
+
+🔧 **JSON-only fields** (visible in section footer, not editable — R003 item 3):
+Each section that has excluded fields shows a footer note: "N additional fields (edit JSON directly): field1, field2..."
+- taskRunner.project: name, description — shown in a "Project" read-only section header
+- taskRunner.paths: tasks, architecture — shown in "Project" read-only section
+- taskRunner.testing.commands — footer in hypothetical "Testing" section (or standalone note)
+- taskRunner.standards: docs, rules — string arrays
+- taskRunner.standardsOverrides — Record<string, StandardsOverride>
+- taskRunner.taskAreas — Record<string, TaskAreaConfig>
+- taskRunner.referenceDocs — Record<string, string>
+- taskRunner.neverLoad — string[]
+- taskRunner.selfDocTargets — Record<string, string>
+- taskRunner.protectedDocs — string[]
+- orchestrator.assignment.sizeWeights — Record<string, number>
+- orchestrator.preWarm.commands — Record<string, string>
+- orchestrator.preWarm.always — string[]
+- orchestrator.merge.verify — string[]
 
 Rationale for exclusions: Collection/Record types don't map cleanly to single-value TUI controls. Project identity fields (name, description, paths) are rarely changed and risky to edit casually. All excluded fields can be edited directly in taskplane-config.json.
+
+### Non-Editable Field Surfacing (R003 item 3)
+
+The TUI shows ALL config fields for discoverability per PROMPT.md requirement. Non-editable fields are surfaced as follows:
+
+1. **Read-only header in each section:** Sections with JSON-only fields show a dimmed footer row listing them. Example:
+   ```
+   ── Assignment ──────────────────────
+     strategy          affinity-first    (project)
+     ┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄
+     + sizeWeights (edit JSON directly)
+   ```
+
+2. **Dedicated "Advanced (JSON Only)" section** at the bottom of the section list (section #12) that aggregates all JSON-only fields grouped by subsection. This section uses SettingsList with all items set to read-only display (no `values` array = no toggle). Selecting an item shows its current value and the instruction "Edit in .pi/taskplane-config.json".
+
+3. **Project identity fields** (name, description, paths) are shown as a read-only banner at the top of the settings view — always visible, not editable.
+
+### Field Contract Table (R003 suggestion)
+
+Complete per-field specification for Step 2 implementation:
+
+| Config Path | Display Label | Control | Layer | Write Target | Source Badge Rule | Clear/Unset |
+|------------|--------------|---------|-------|-------------|-------------------|-------------|
+| `orchestrator.orchestrator.maxLanes` | Max Lanes | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset, always has value |
+| `orchestrator.orchestrator.worktreeLocation` | Worktree Location | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset, always has value |
+| `orchestrator.orchestrator.worktreePrefix` | Worktree Prefix | input (string) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset, always has value |
+| `orchestrator.orchestrator.batchIdFormat` | Batch ID Format | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset, always has value |
+| `orchestrator.orchestrator.spawnMode` | Spawn Mode | toggle | L1+L2 | project or prefs | prefs.spawnMode set? → (user), raw JSON present? → (project), else (default) | Prefs: delete key to clear. Project: always has default |
+| `orchestrator.orchestrator.tmuxPrefix` | Tmux Prefix | input (string) | L1+L2 | project or prefs | prefs.tmuxPrefix non-empty? → (user), raw JSON present? → (project), else (default) | Prefs: set "" to clear. Project: always has default |
+| `orchestrator.orchestrator.operatorId` | Operator ID | input (string) | L1+L2 | project or prefs | prefs.operatorId non-empty? → (user), raw JSON present? → (project), else (default) | Prefs: set "" to clear (auto-detect). Project: "" = auto-detect |
+| `orchestrator.dependencies.source` | Dep Source | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `orchestrator.dependencies.cache` | Dep Cache | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `orchestrator.assignment.strategy` | Strategy | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `orchestrator.preWarm.autoDetect` | Auto-Detect | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `orchestrator.merge.model` | Merge Model | input (string) | L1+L2 | project or prefs | prefs.mergeModel non-empty? → (user), raw JSON present? → (project), else (default) | Prefs: set "" to clear. "" = inherit session model |
+| `orchestrator.merge.tools` | Merge Tools | input (string) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `orchestrator.merge.order` | Merge Order | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `orchestrator.failure.onTaskFailure` | On Task Failure | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `orchestrator.failure.onMergeFailure` | On Merge Failure | toggle | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `orchestrator.failure.stallTimeout` | Stall Timeout (min) | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `orchestrator.failure.maxWorkerMinutes` | Max Worker Min | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `orchestrator.failure.abortGracePeriod` | Abort Grace (sec) | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `orchestrator.monitoring.pollInterval` | Poll Interval (sec) | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `taskRunner.worker.model` | Worker Model | input (string) | L1+L2 | project or prefs | prefs.workerModel non-empty? → (user), raw JSON present? → (project), else (default) | Prefs: set "" to clear. "" = inherit session model |
+| `taskRunner.worker.tools` | Worker Tools | input (string) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `taskRunner.worker.thinking` | Worker Thinking | input (string) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `taskRunner.worker.spawnMode` | Worker Spawn Mode | toggle | L1 | project | raw JSON present? → (project), else (default=unset, inherits orch) | **Optional field:** unset means inherit from orchestrator.spawnMode. Toggle values: ["(inherit)", "subprocess", "tmux"]. Selecting "(inherit)" deletes the key from JSON. |
+| `taskRunner.reviewer.model` | Reviewer Model | input (string) | L1+L2 | project or prefs | prefs.reviewerModel non-empty? → (user), raw JSON present? → (project), else (default) | Prefs: set "" to clear. "" = inherit session model |
+| `taskRunner.reviewer.tools` | Reviewer Tools | input (string) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `taskRunner.reviewer.thinking` | Reviewer Thinking | input (string) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `taskRunner.context.workerContextWindow` | Context Window | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `taskRunner.context.warnPercent` | Warn % | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `taskRunner.context.killPercent` | Kill % | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `taskRunner.context.maxWorkerIterations` | Max Iterations | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `taskRunner.context.maxReviewCycles` | Max Review Cycles | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `taskRunner.context.noProgressLimit` | No Progress Limit | input (number) | L1 | project | raw JSON present? → (project), else (default) | Cannot unset |
+| `taskRunner.context.maxWorkerMinutes` | Max Worker Min (ctx) | input (number) | L1 | project | raw JSON present? → (project), else (default) | **Optional field:** unset means no per-worker time cap. Input accepts empty string to delete key. |
+| `(preferences only) dashboardPort` | Dashboard Port | input (number) | L2 | prefs only | prefs.dashboardPort set? → (user), else (default=unset) | Delete key to unset |
+
+**Source badge examples (R003 suggestion):**
+1. **Project-set:** `Max Lanes          5              (project)` — value 5 found in `.pi/taskplane-config.json`
+2. **User-override:** `Worker Model       claude-4-opus  (user)` — prefs.workerModel="claude-4-opus" overrides project value
+3. **Default-only:** `Stall Timeout      30             (default)` — no override in either file, using schema default
+
+**Disambiguation for duplicate labels (R003 missing item):**
+- `spawnMode` appears in both Orchestrator and Worker sections. In Orchestrator, it's labeled "Spawn Mode"; in Worker, it's labeled "Worker Spawn Mode". The section heading provides additional context.
+- `maxWorkerMinutes` appears in Failure and Context sections. Failure version is labeled "Max Worker Min"; Context version is labeled "Max Worker Min (ctx)".
+- `model` appears in Merge, Worker, and Reviewer sections. Each is in its own section, providing unambiguous context.
+- `tools` appears in Merge, Worker, and Reviewer. Same: section context disambiguates.
