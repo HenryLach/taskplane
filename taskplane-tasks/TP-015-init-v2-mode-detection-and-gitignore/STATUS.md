@@ -50,7 +50,7 @@
 - [x] Implement tracked-artifact detection (`git ls-files`) and `git rm --cached` offer — isolated from auto-commit staging, respects dry-run and non-interactive modes
 - [x] Update `printFileList()` dry-run output to show gitignore entries that would be added
 - [x] R006: Fix `patternToRegex()` — directory patterns (trailing `/`) must be prefix matches; switch `git rm --cached` to `execFileSync` for shell-safety
-- [ ] R006: Remove unused `buildGitignoreBlock()` function
+- [x] R006: Remove unused `buildGitignoreBlock()` function
 - [ ] R006: Add test coverage for tracked-artifact pattern matching (directories, wildcards)
 
 ---

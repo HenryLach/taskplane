@@ -596,23 +596,6 @@ const TASKPLANE_GITIGNORE_NPM_ENTRIES = [
 const ALL_GITIGNORE_PATTERNS = [...TASKPLANE_GITIGNORE_ENTRIES, ...TASKPLANE_GITIGNORE_NPM_ENTRIES];
 
 /**
- * Build the full gitignore block text (with headers and entries).
- */
-function buildGitignoreBlock() {
-	const lines = [];
-	lines.push(TASKPLANE_GITIGNORE_HEADER);
-	for (const entry of TASKPLANE_GITIGNORE_ENTRIES) {
-		lines.push(entry);
-	}
-	lines.push("");
-	lines.push(TASKPLANE_GITIGNORE_NPM_HEADER);
-	for (const entry of TASKPLANE_GITIGNORE_NPM_ENTRIES) {
-		lines.push(entry);
-	}
-	return lines.join("\n");
-}
-
-/**
  * Ensure required Taskplane gitignore entries exist in the project's .gitignore.
  * Creates the file if it doesn't exist. Skips entries that already exist.
  * Returns { created: boolean, added: string[], skipped: string[] }.
