@@ -46,7 +46,7 @@
 - [x] Register /settings command in extension.ts using execCtx.repoRoot (not ctx.cwd), handle null execCtx gracefully
 - [x] Verify tests pass (existing workspace-config test 5.5 ctx.cwd constraint)
 - [x] R006 fix #1: Use execCtx.workspaceRoot (not repoRoot) for config reads — workspace mode reads config from workspace root
-- [ ] R006 fix #2: Generate Advanced section items dynamically from schema/default config instead of hardcoded list
+- [x] R006 fix #2: Generate Advanced section items dynamically from schema/default config instead of hardcoded list
 - [ ] R006 fix #3: Source detection must use same type guards as extractAllowlistedPreferences (reject invalid pref types)
 - [ ] R006 fix #4: Number validation must enforce num > 0 (not num >= 0) to match "positive integers" contract
 - [ ] R006 fix #5: Add unit tests for detectFieldSource, getFieldDisplayValue, validateFieldInput
