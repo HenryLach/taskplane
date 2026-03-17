@@ -42,7 +42,7 @@
 - [x] Thread pointer into `loadAgentDef()` in task-runner.ts: insert pointer agentRoot between cwd-local paths and base package (cwd/.pi/agents → cwd/agents → pointer agentRoot → base package). Non-fatal: pointer fallback transparent.
 - [x] Repo mode parity: verify no behavior change when workspaceConfig is null (pointer returns null, existing code paths unchanged)
 - [x] Add Step 2 tests in project-config-loader.test.ts (5.x series): config resolution with valid pointer, pointer precedence over wsRoot, cwd override over pointer, fallback when pointer has no config, repo-mode parity, task-runner loadConfig integration, YAML pointer config
-- [ ] R006: Fix pointer config root layout mismatch — config-loader looks for `<root>/.pi/*` but pointer roots use flat layout `<root>/*`. Add dual-layout support in `hasConfigFiles`, `loadJsonConfig`, `loadTaskRunnerYaml`, `loadOrchestratorYaml`.
+- [x] R006: Fix pointer config root layout mismatch — config-loader looks for `<root>/.pi/*` but pointer roots use flat layout `<root>/*`. Add dual-layout support in `hasConfigFiles`, `loadJsonConfig`, `loadTaskRunnerYaml`, `loadOrchestratorYaml`.
 - [ ] R006: Surface pointer warnings — log `pointer.warning` via console in task-runner.ts config and agent call paths (once per session).
 - [ ] R006: Consolidate duplicate 5.x test suites and add tests for real `.taskplane` layout, agent resolution precedence with pointer, and warning surfacing.
 
@@ -91,6 +91,7 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -134,6 +135,7 @@
 | 2026-03-17 17:59 | Worker iter 3 | done in 407s, ctx: 40%, tools: 58 |
 | 2026-03-17 18:01 | Worker iter 3 | done in 670s, ctx: 39%, tools: 77 |
 | 2026-03-17 18:02 | Review R006 | code Step 2: REVISE |
+| 2026-03-17 18:04 | Review R006 | code Step 2: REVISE |
 
 ## Blockers
 *None*
