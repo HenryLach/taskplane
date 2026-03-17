@@ -15,7 +15,7 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Read current `cmdInit()` implementation
 - [x] Read spec auto-detection and gitignore sections
