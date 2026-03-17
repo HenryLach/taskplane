@@ -17,8 +17,9 @@
  * @module config/loader
  */
 
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
+import { homedir } from "os";
 import { parse as yamlParse } from "yaml";
 
 import {
@@ -27,11 +28,15 @@ import {
 	DEFAULT_PROJECT_CONFIG,
 	DEFAULT_TASK_RUNNER_SECTION,
 	DEFAULT_ORCHESTRATOR_SECTION,
+	DEFAULT_USER_PREFERENCES,
+	USER_PREFERENCES_FILENAME,
+	USER_PREFERENCES_SUBDIR,
 } from "./config-schema.ts";
 import type {
 	TaskplaneConfig,
 	TaskRunnerSection,
 	OrchestratorSection,
+	UserPreferences,
 } from "./config-schema.ts";
 
 
