@@ -360,7 +360,7 @@ Open the interactive settings TUI for viewing and editing taskplane configuratio
 | Reviewer | Reviewer model, tools, thinking |
 | Context Limits | Context window, iteration limits, progress limits |
 | User Preferences | Dashboard port and other per-user settings |
-| Advanced (JSON Only) | Read-only listing of collection/Record/array fields |
+| Advanced (JSON Only) | Read-only listing of uncovered/non-editable fields (collections, records, arrays, and other fields not directly editable in the TUI) |
 
 **Example**
 
@@ -372,8 +372,8 @@ Opens the settings TUI in the current pi session. No arguments needed.
 
 **Common responses**
 
-- `❌ Orchestrator not initialized. Workspace configuration failed at startup.` — startup context is unavailable; fix workspace config and restart
-- `❌ Failed to load settings: ...` — config files could not be read or parsed
+- `❌ Orchestrator not initialized. Workspace configuration failed at startup.` — the execution context (`execCtx`) was not set during session startup; typically caused by a missing or invalid workspace/repo configuration. Fix the config and restart the pi session.
+- `❌ Failed to load settings: <message>` — an error occurred while loading or parsing config files (e.g., malformed JSON/YAML, filesystem permission issue). The error message provides specifics.
 
 ---
 
