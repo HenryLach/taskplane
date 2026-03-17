@@ -27,6 +27,8 @@ import {
 import { tmpdir } from "os";
 import { join, dirname, basename, resolve } from "path";
 import { loadProjectConfig, toTaskConfig } from "./taskplane/config-loader.ts";
+import { loadWorkspaceConfig, resolvePointer } from "./taskplane/workspace.ts";
+import type { PointerResolution } from "./taskplane/types.ts";
 
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -137,6 +139,53 @@ const DEFAULT_CONFIG: TaskConfig = {
 	},
 };
 
+// ── Pointer Resolution (Workspace Mode) ──────────────────────────────
+
+/** Track whether a pointer warning has been logged this session (log once). */
+let _pointerWarningLogged = false;
+
+/**
+ * Resolve the workspace pointer for config and agent path redirection.
+ *
+ * In workspace mode (TASKPLANE_WORKSPACE_ROOT set), reads the pointer
+ * file and resolves config/agent roots to the config repo. In repo mode,
+ * returns null (no pointer resolution needed).
+ *
+ * All pointer failures are non-fatal: missing, malformed, or invalid
+ * pointer files produce a warning and fall back to existing paths.
+ * Warning is logged to stderr once per session for operator visibility.
+ *
+ * @returns PointerResolution with resolved paths, or null in repo mode
+ */
+function resolveTaskRunnerPointer(): PointerResolution | null {
+	const wsRoot = process.env.TASKPLANE_WORKSPACE_ROOT;
+	if (!wsRoot) return null; // repo mode — no pointer needed
+
+	try {
+		const wsConfig = loadWorkspaceConfig(wsRoot);
+		const result = resolvePointer(wsRoot, wsConfig);
+
+		// Surface pointer warnings once per session for operator visibility
+		if (result?.warning && !_pointerWarningLogged) {
+			_pointerWarningLogged = true;
+			console.error(`[task-runner] pointer: ${result.warning}`);
+		}
+
+		return result;
+	} catch {
+		// Workspace config load failure — fall back gracefully
+		return null;
+	}
+}
+
+/** Reset pointer warning state (for testing only). */
+export function _resetPointerWarning(): void {
+	_pointerWarningLogged = false;
+}
+
+/** Expose loadAgentDef for testing (not part of public API). */
+export const _loadAgentDef = (cwd: string, name: string) => loadAgentDef(cwd, name);
+
 /**
  * Load task-runner config via the unified config loader.
  *
@@ -144,11 +193,18 @@ const DEFAULT_CONFIG: TaskConfig = {
  * then defaults. Returns the legacy snake_case TaskConfig shape so all
  * downstream consumers remain unchanged.
  *
- * Path resolution honors TASKPLANE_WORKSPACE_ROOT for workspace mode.
+ * Config root resolution order (workspace mode with pointer):
+ *   1. cwd has config files → use cwd (local override)
+ *   2. Pointer-resolved config root has config files → use it
+ *   3. TASKPLANE_WORKSPACE_ROOT has config files → use it (legacy fallback)
+ *   4. Fall back to cwd (loaders will return defaults)
+ *
+ * Repo mode: pointer is ignored, existing behavior unchanged.
  */
 export function loadConfig(cwd: string): TaskConfig {
 	try {
-		const unified = loadProjectConfig(cwd);
+		const pointer = resolveTaskRunnerPointer();
+		const unified = loadProjectConfig(cwd, pointer?.configRoot);
 		return toTaskConfig(unified);
 	} catch {
 		// If config loading fails (e.g., malformed JSON), fall back to defaults
@@ -395,17 +451,29 @@ function resolveBaseAgentPath(name: string): string {
  *
  * Inheritance model (default: compose base + local):
  * 1. Load base agent from the shipped package (templates/agents/{name}.md)
- * 2. Load local agent from .pi/agents/{name}.md (if it exists)
+ * 2. Load local agent from .pi/agents/{name}.md (if it exists) — or from
+ *    the pointer-resolved agent root in workspace mode
  * 3. If local file has `standalone: true` in frontmatter, use it as-is (no base)
  * 4. Otherwise, compose: base prompt + separator + local content
  * 5. Local frontmatter values (tools, model) override base values
  *
- * If no local file exists, the base file is used directly.
+ * Local override resolution order:
+ *   1. `<cwd>/.pi/agents/{name}.md` — worktree/repo local override (always first)
+ *   2. `<cwd>/agents/{name}.md` — worktree/repo local override (legacy location)
+ *   3. `<pointerAgentRoot>/{name}.md` — pointer-resolved config repo agents (workspace mode)
+ *   First found wins. If none found, base file is used directly.
+ *
  * If no base file exists (e.g., custom agent), local file is used as-is.
  */
 function loadAgentDef(cwd: string, name: string): { systemPrompt: string; tools: string; model: string } | null {
 	const basePath = resolveBaseAgentPath(name);
 	const localPaths = [join(cwd, ".pi", "agents", `${name}.md`), join(cwd, "agents", `${name}.md`)];
+
+	// In workspace mode, add pointer-resolved agent root as fallback
+	const pointer = resolveTaskRunnerPointer();
+	if (pointer?.agentRoot) {
+		localPaths.push(join(pointer.agentRoot, `${name}.md`));
+	}
 
 	// Load base from package
 	const baseDef = parseAgentFile(basePath);

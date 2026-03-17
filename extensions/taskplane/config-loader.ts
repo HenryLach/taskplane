@@ -259,15 +259,45 @@ function mapOrchestratorYaml(raw: any): Partial<OrchestratorSection> {
 }
 
 
+// ── Config File Path Resolution ──────────────────────────────────────
+
+/**
+ * Resolve the path to a config file under the given root.
+ *
+ * Supports two directory layouts:
+ *   1. Standard layout: `<root>/.pi/<filename>` — used by repo mode and
+ *      workspace root, where config files live under the `.pi/` subdirectory.
+ *   2. Flat layout: `<root>/<filename>` — used by pointer-resolved config
+ *      roots (e.g., `<configRepo>/.taskplane/task-runner.yaml`), where
+ *      `taskplane init` scaffolds files directly in the config path.
+ *
+ * Standard layout is checked first for backward compatibility. If neither
+ * exists, returns the standard-layout path (callers check existence).
+ */
+function resolveConfigFilePath(configRoot: string, filename: string): string {
+	const standardPath = join(configRoot, ".pi", filename);
+	if (existsSync(standardPath)) return standardPath;
+
+	const flatPath = join(configRoot, filename);
+	if (existsSync(flatPath)) return flatPath;
+
+	// Default to standard path — callers handle non-existence
+	return standardPath;
+}
+
 // ── JSON Loading ─────────────────────────────────────────────────────
 
 /**
- * Attempt to load and validate `.pi/taskplane-config.json`.
+ * Attempt to load and validate `taskplane-config.json`.
+ *
+ * Checks both standard layout (`<root>/.pi/taskplane-config.json`) and
+ * flat layout (`<root>/taskplane-config.json`) — see `resolveConfigFilePath`.
+ *
  * Returns the parsed config or null if the file doesn't exist.
  * Throws ConfigLoadError for malformed JSON or unsupported versions.
  */
 function loadJsonConfig(configRoot: string): TaskplaneConfig | null {
-	const jsonPath = join(configRoot, ".pi", PROJECT_CONFIG_FILENAME);
+	const jsonPath = resolveConfigFilePath(configRoot, PROJECT_CONFIG_FILENAME);
 	if (!existsSync(jsonPath)) return null;
 
 	let raw: string;
@@ -320,13 +350,16 @@ function loadJsonConfig(configRoot: string): TaskplaneConfig | null {
 // ── YAML Loading ─────────────────────────────────────────────────────
 
 /**
- * Load task-runner settings from `.pi/task-runner.yaml`.
+ * Load task-runner settings from `task-runner.yaml`.
+ *
+ * Checks both standard layout (`<root>/.pi/task-runner.yaml`) and
+ * flat layout (`<root>/task-runner.yaml`) — see `resolveConfigFilePath`.
  * Maps snake_case YAML keys to the camelCase TaskRunnerSection shape.
  * Uses section-aware mapping that preserves user-defined record keys.
  * Returns cloned defaults if the file doesn't exist or is malformed.
  */
 function loadTaskRunnerYaml(configRoot: string): TaskRunnerSection {
-	const yamlPath = join(configRoot, ".pi", "task-runner.yaml");
+	const yamlPath = resolveConfigFilePath(configRoot, "task-runner.yaml");
 	if (!existsSync(yamlPath)) return deepClone(DEFAULT_TASK_RUNNER_SECTION);
 
 	try {
@@ -363,13 +396,16 @@ function loadTaskRunnerYaml(configRoot: string): TaskRunnerSection {
 }
 
 /**
- * Load orchestrator settings from `.pi/task-orchestrator.yaml`.
+ * Load orchestrator settings from `task-orchestrator.yaml`.
+ *
+ * Checks both standard layout (`<root>/.pi/task-orchestrator.yaml`) and
+ * flat layout (`<root>/task-orchestrator.yaml`) — see `resolveConfigFilePath`.
  * Maps snake_case YAML keys to the camelCase OrchestratorSection shape.
  * Uses section-aware mapping that preserves user-defined record keys.
  * Returns cloned defaults if the file doesn't exist or is malformed.
  */
 function loadOrchestratorYaml(configRoot: string): OrchestratorSection {
-	const yamlPath = join(configRoot, ".pi", "task-orchestrator.yaml");
+	const yamlPath = resolveConfigFilePath(configRoot, "task-orchestrator.yaml");
 	if (!existsSync(yamlPath)) return deepClone(DEFAULT_ORCHESTRATOR_SECTION);
 
 	try {
@@ -528,16 +564,20 @@ export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPrefere
 // ── Unified Loader ───────────────────────────────────────────────────
 
 /**
- * Check whether any config files exist under `root/.pi/`.
- * Returns true if taskplane-config.json, task-runner.yaml, or
- * task-orchestrator.yaml is present.
+ * Check whether any config files exist under the given root.
+ *
+ * Supports both standard layout (`<root>/.pi/<file>`) and flat layout
+ * (`<root>/<file>`). Returns true if any recognized config file is found
+ * in either location. This allows pointer-resolved roots (e.g.,
+ * `<configRepo>/.taskplane/`) where files are scaffolded directly
+ * without a `.pi/` subdirectory.
  */
 function hasConfigFiles(root: string): boolean {
-	return (
-		existsSync(join(root, ".pi", PROJECT_CONFIG_FILENAME)) ||
-		existsSync(join(root, ".pi", "task-runner.yaml")) ||
-		existsSync(join(root, ".pi", "task-orchestrator.yaml"))
-	);
+	const files = [PROJECT_CONFIG_FILENAME, "task-runner.yaml", "task-orchestrator.yaml"];
+	for (const f of files) {
+		if (existsSync(join(root, ".pi", f)) || existsSync(join(root, f))) return true;
+	}
+	return false;
 }
 
 /**
@@ -545,18 +585,27 @@ function hasConfigFiles(root: string): boolean {
  *
  * In workspace mode, workers run in repo worktrees — not the workspace root.
  * TASKPLANE_WORKSPACE_ROOT tells us where config files actually live.
+ * The pointer file (`taskplane-pointer.json`) can redirect config loading
+ * to a specific repo's config path.
  *
  * Resolution order:
- *   1. If `cwd` has actual config files → use cwd
- *   2. If TASKPLANE_WORKSPACE_ROOT is set and has config files → use it
- *   3. Fall back to cwd (loaders will return defaults)
+ *   1. If `cwd` has actual config files → use cwd (local override wins)
+ *   2. If `pointerConfigRoot` is set and has config files → use it (pointer redirect)
+ *   3. If TASKPLANE_WORKSPACE_ROOT is set and has config files → use it (legacy fallback)
+ *   4. Fall back to cwd (loaders will return defaults)
  *
  * We check for actual config files — not just the `.pi/` directory —
  * because worktrees may have a sidecar `.pi` without config files.
+ *
+ * @param cwd - Current working directory (project root or worktree)
+ * @param pointerConfigRoot - Resolved config root from pointer file (optional, workspace mode only)
  */
-export function resolveConfigRoot(cwd: string): string {
-	// Prefer cwd if it has actual config files
+export function resolveConfigRoot(cwd: string, pointerConfigRoot?: string): string {
+	// Prefer cwd if it has actual config files (local override always wins)
 	if (hasConfigFiles(cwd)) return cwd;
+
+	// Pointer-resolved config root — workspace mode with valid pointer
+	if (pointerConfigRoot && hasConfigFiles(pointerConfigRoot)) return pointerConfigRoot;
 
 	// Workspace mode fallback — check for actual config files at workspace root
 	const wsRoot = process.env.TASKPLANE_WORKSPACE_ROOT;
@@ -580,14 +629,21 @@ export function resolveConfigRoot(cwd: string): string {
  *     allowlisted user-scoped fields. See `applyUserPreferences()` for
  *     the field mapping.
  *
- * Path resolution honors TASKPLANE_WORKSPACE_ROOT for workspace mode.
+ * Config root resolution order:
+ *   1. cwd has config files → use cwd (local override)
+ *   2. pointerConfigRoot has config files → use it (pointer redirect, workspace mode)
+ *   3. TASKPLANE_WORKSPACE_ROOT has config files → use it (legacy fallback)
+ *   4. Fall back to cwd (loaders will return defaults)
  *
  * @param cwd - Current working directory (project root or worktree)
+ * @param pointerConfigRoot - Resolved config root from pointer file (optional).
+ *   Callers in workspace mode should resolve the pointer via `resolvePointer()`
+ *   and pass `result.configRoot` here. In repo mode, omit or pass undefined.
  * @returns Unified TaskplaneConfig — always a fresh deep-cloned object
  * @throws ConfigLoadError if JSON exists but is malformed or has unsupported version
  */
-export function loadProjectConfig(cwd: string): TaskplaneConfig {
-	const configRoot = resolveConfigRoot(cwd);
+export function loadProjectConfig(cwd: string, pointerConfigRoot?: string): TaskplaneConfig {
+	const configRoot = resolveConfigRoot(cwd, pointerConfigRoot);
 
 	// Layer 1: Project config
 	let config: TaskplaneConfig;

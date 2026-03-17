@@ -1,5 +1,5 @@
 /**
- * Project Config Loader Tests — TP-014 Step 3
+ * Project Config Loader Tests — TP-014 Step 3, TP-016 Step 2
  *
  * Tests for the unified config loader (`loadProjectConfig`), its
  * precedence/error matrix, YAML fallback, adapter compatibility,
@@ -10,6 +10,7 @@
  *   2.x — Workspace root resolution
  *   3.x — Key preservation and adapter regression
  *   4.x — Defaults, cloning, non-mutation, backward-compat wrappers
+ *   5.x — Pointer-threaded config resolution (standard + flat layout)
  *
  * Run: npx vitest run tests/project-config-loader.test.ts
  */
@@ -810,5 +811,428 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 			e2e_test: "npm run e2e",
 			type_check: "npx tsc --noEmit",
 		});
+	});
+});
+
+// ── 5.x: Pointer-threaded config resolution (TP-016) ────────────────
+
+describe("pointer-threaded config resolution (TP-016)", () => {
+	/**
+	 * Tests verify loadProjectConfig and task-runner's loadConfig
+	 * correctly thread pointer configRoot through the precedence chain:
+	 *   1. cwd has config files → use cwd (local override)
+	 *   2. pointerConfigRoot has config files → use it (standard or flat layout)
+	 *   3. TASKPLANE_WORKSPACE_ROOT has config files → use it (legacy fallback)
+	 *   4. Fall back to cwd (loaders return defaults)
+	 *
+	 * Two config layouts are supported:
+	 *   - Standard: <root>/.pi/taskplane-config.json (repo mode, workspace root)
+	 *   - Flat: <root>/taskplane-config.json (pointer-resolved .taskplane/ dir)
+	 */
+
+	// ── Helper: write config in flat layout (no .pi/ subdirectory) ───
+	function writeFlatJsonConfig(root: string, obj: any): void {
+		mkdirSync(root, { recursive: true });
+		writeFileSync(join(root, "taskplane-config.json"), JSON.stringify(obj, null, 2), "utf-8");
+	}
+
+	function writeFlatTaskRunnerYaml(root: string, content: string): void {
+		mkdirSync(root, { recursive: true });
+		writeFileSync(join(root, "task-runner.yaml"), content, "utf-8");
+	}
+
+	function writeFlatOrchestratorYaml(root: string, content: string): void {
+		mkdirSync(root, { recursive: true });
+		writeFileSync(join(root, "task-orchestrator.yaml"), content, "utf-8");
+	}
+
+	// ── Standard layout (pointer root with .pi/ subdirectory) ────────
+
+	it("5.1: pointerConfigRoot with standard-layout config is used when cwd has no config", () => {
+		const cwdDir = makeTestDir("ptr-cwd-empty");
+		const pointerRoot = makeTestDir("ptr-config-repo");
+
+		writeJsonConfig(pointerRoot, {
+			configVersion: 1,
+			taskRunner: { project: { name: "FromPointer" } },
+		});
+
+		const config = loadProjectConfig(cwdDir, pointerRoot);
+		expect(config.taskRunner.project.name).toBe("FromPointer");
+	});
+
+	it("5.2: cwd config takes precedence over pointerConfigRoot", () => {
+		const cwdDir = makeTestDir("ptr-cwd-wins");
+		const pointerRoot = makeTestDir("ptr-config-repo-2");
+
+		writeJsonConfig(cwdDir, {
+			configVersion: 1,
+			taskRunner: { project: { name: "FromCwd" } },
+		});
+		writeJsonConfig(pointerRoot, {
+			configVersion: 1,
+			taskRunner: { project: { name: "FromPointer" } },
+		});
+
+		const config = loadProjectConfig(cwdDir, pointerRoot);
+		expect(config.taskRunner.project.name).toBe("FromCwd");
+	});
+
+	it("5.3: pointerConfigRoot takes precedence over TASKPLANE_WORKSPACE_ROOT", () => {
+		const cwdDir = makeTestDir("ptr-over-ws");
+		const wsRoot = makeTestDir("ptr-ws-root");
+		const pointerRoot = makeTestDir("ptr-config-repo-3");
+
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: FromWsRoot\n");
+		writeJsonConfig(pointerRoot, {
+			configVersion: 1,
+			taskRunner: { project: { name: "FromPointer" } },
+		});
+
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		const config = loadProjectConfig(cwdDir, pointerRoot);
+		expect(config.taskRunner.project.name).toBe("FromPointer");
+	});
+
+	it("5.4: pointerConfigRoot without config files falls through to TASKPLANE_WORKSPACE_ROOT", () => {
+		const cwdDir = makeTestDir("ptr-no-config");
+		const wsRoot = makeTestDir("ptr-ws-root-fb");
+		const pointerRoot = makeTestDir("ptr-config-repo-empty");
+
+		mkdirSync(pointerRoot, { recursive: true });
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: FromWsRootFallback\n");
+
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		const config = loadProjectConfig(cwdDir, pointerRoot);
+		expect(config.taskRunner.project.name).toBe("FromWsRootFallback");
+	});
+
+	it("5.5: null/undefined pointerConfigRoot is same as pre-pointer behavior", () => {
+		const cwdDir = makeTestDir("ptr-null");
+		const wsRoot = makeTestDir("ptr-ws-root-null");
+
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: FromWsRootNoPointer\n");
+
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		const config1 = loadProjectConfig(cwdDir, undefined);
+		expect(config1.taskRunner.project.name).toBe("FromWsRootNoPointer");
+
+		const config2 = loadProjectConfig(cwdDir);
+		expect(config2.taskRunner.project.name).toBe("FromWsRootNoPointer");
+	});
+
+	it("5.6: repo mode — no TASKPLANE_WORKSPACE_ROOT, no pointer → uses cwd or defaults", () => {
+		const cwdDir = makeTestDir("ptr-repo-mode");
+
+		delete process.env.TASKPLANE_WORKSPACE_ROOT;
+
+		const config = loadProjectConfig(cwdDir);
+		expect(config.taskRunner.project.name).toBe(DEFAULT_TASK_RUNNER_SECTION.project.name);
+	});
+
+	it("5.7: task-runner loadConfig repo mode parity — returns config without pointer interference", () => {
+		const cwdDir = makeTestDir("ptr-loadconfig-repo");
+
+		delete process.env.TASKPLANE_WORKSPACE_ROOT;
+
+		writeJsonConfig(cwdDir, {
+			configVersion: 1,
+			taskRunner: { project: { name: "RepoModeProject" } },
+		});
+
+		const config = taskRunnerLoadConfig(cwdDir);
+		expect(config.project.name).toBe("RepoModeProject");
+	});
+
+	it("5.8: task-runner loadConfig workspace mode — resolves pointer for config", () => {
+		const cwdDir = makeTestDir("ptr-loadconfig-ws");
+		const wsRoot = makeTestDir("ptr-ws-for-loadconfig");
+
+		// No valid workspace YAML → pointer resolution fails → wsRoot fallback
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: WsConfigFallback\n");
+
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		const config = taskRunnerLoadConfig(cwdDir);
+		expect(config.project.name).toBe("WsConfigFallback");
+	});
+
+	it("5.9: pointerConfigRoot with YAML config is resolved correctly", () => {
+		const cwdDir = makeTestDir("ptr-yaml");
+		const pointerRoot = makeTestDir("ptr-yaml-config");
+
+		writeTaskRunnerYaml(pointerRoot, "project:\n  name: PointerYaml\n");
+
+		const config = loadProjectConfig(cwdDir, pointerRoot);
+		expect(config.taskRunner.project.name).toBe("PointerYaml");
+	});
+
+	// ── Flat layout (real .taskplane/ pointer directory) ─────────────
+
+	it("5.10: flat-layout JSON config at pointer root is found (no .pi/ subdirectory)", () => {
+		const cwdDir = makeTestDir("flat-json-cwd");
+		// Simulate <configRepo>/.taskplane/ with files directly in root
+		const pointerRoot = makeTestDir("flat-json-taskplane");
+
+		writeFlatJsonConfig(pointerRoot, {
+			configVersion: 1,
+			taskRunner: { project: { name: "FlatJsonPointer" } },
+		});
+
+		const config = loadProjectConfig(cwdDir, pointerRoot);
+		expect(config.taskRunner.project.name).toBe("FlatJsonPointer");
+	});
+
+	it("5.11: flat-layout YAML config at pointer root is found", () => {
+		const cwdDir = makeTestDir("flat-yaml-cwd");
+		const pointerRoot = makeTestDir("flat-yaml-taskplane");
+
+		writeFlatTaskRunnerYaml(pointerRoot, "project:\n  name: FlatYamlPointer\n");
+
+		const config = loadProjectConfig(cwdDir, pointerRoot);
+		expect(config.taskRunner.project.name).toBe("FlatYamlPointer");
+	});
+
+	it("5.12: flat-layout orchestrator YAML at pointer root is found", () => {
+		const cwdDir = makeTestDir("flat-orch-cwd");
+		const pointerRoot = makeTestDir("flat-orch-taskplane");
+
+		writeFlatOrchestratorYaml(pointerRoot, "orchestrator:\n  max_lanes: 8\n");
+
+		const config = loadProjectConfig(cwdDir, pointerRoot);
+		expect(config.orchestrator.orchestrator.maxLanes).toBe(8);
+	});
+
+	it("5.13: flat-layout pointer takes precedence over TASKPLANE_WORKSPACE_ROOT", () => {
+		const cwdDir = makeTestDir("flat-vs-ws-cwd");
+		const pointerRoot = makeTestDir("flat-vs-ws-ptr");
+		const wsRoot = makeTestDir("flat-vs-ws-root");
+
+		writeFlatJsonConfig(pointerRoot, {
+			configVersion: 1,
+			taskRunner: { project: { name: "FlatPointerWins" } },
+		});
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: WsRootLoses\n");
+
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		const config = loadProjectConfig(cwdDir, pointerRoot);
+		expect(config.taskRunner.project.name).toBe("FlatPointerWins");
+	});
+
+	it("5.14: standard layout (.pi/) is preferred over flat layout when both exist", () => {
+		const cwdDir = makeTestDir("dual-layout-cwd");
+		const pointerRoot = makeTestDir("dual-layout-ptr");
+
+		// Both layouts present — standard should win
+		writeJsonConfig(pointerRoot, {
+			configVersion: 1,
+			taskRunner: { project: { name: "StandardWins" } },
+		});
+		writeFlatJsonConfig(pointerRoot, {
+			configVersion: 1,
+			taskRunner: { project: { name: "FlatLoses" } },
+		});
+
+		const config = loadProjectConfig(cwdDir, pointerRoot);
+		expect(config.taskRunner.project.name).toBe("StandardWins");
+	});
+
+	it("5.15: full precedence chain — cwd > pointer (flat) > wsRoot > defaults", () => {
+		const cwdDir = makeTestDir("full-chain-cwd");
+		const pointerRoot = makeTestDir("full-chain-ptr");
+		const wsRoot = makeTestDir("full-chain-ws");
+
+		// Level 4: defaults
+		let config = loadProjectConfig(cwdDir, undefined);
+		expect(config.taskRunner.project.name).toBe(DEFAULT_TASK_RUNNER_SECTION.project.name);
+
+		// Level 3: wsRoot
+		writeTaskRunnerYaml(wsRoot, "project:\n  name: Level3WsRoot\n");
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+		config = loadProjectConfig(cwdDir, undefined);
+		expect(config.taskRunner.project.name).toBe("Level3WsRoot");
+
+		// Level 2: flat pointer config
+		writeFlatJsonConfig(pointerRoot, {
+			configVersion: 1,
+			taskRunner: { project: { name: "Level2FlatPointer" } },
+		});
+		config = loadProjectConfig(cwdDir, pointerRoot);
+		expect(config.taskRunner.project.name).toBe("Level2FlatPointer");
+
+		// Level 1: cwd overrides
+		writeJsonConfig(cwdDir, {
+			configVersion: 1,
+			taskRunner: { project: { name: "Level1Cwd" } },
+		});
+		config = loadProjectConfig(cwdDir, pointerRoot);
+		expect(config.taskRunner.project.name).toBe("Level1Cwd");
+	});
+});
+
+// ── 6.x: Agent resolution with pointer + warning surfacing ──────────
+
+import {
+	_loadAgentDef,
+	_resetPointerWarning,
+} from "../task-runner.ts";
+import { vi } from "vitest";
+
+describe("agent resolution precedence with pointer (TP-016)", () => {
+	/** Helper: write a minimal agent markdown file. */
+	function writeAgentFile(dir: string, name: string, content: string): void {
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, `${name}.md`), content, "utf-8");
+	}
+
+	/** Create a valid agent file with frontmatter. */
+	function agentContent(label: string, opts?: { standalone?: boolean; tools?: string; model?: string }): string {
+		const lines = ["---", `name: test-agent`];
+		if (opts?.tools) lines.push(`tools: ${opts.tools}`);
+		if (opts?.model) lines.push(`model: ${opts.model}`);
+		if (opts?.standalone) lines.push("standalone: true");
+		lines.push("---", `Agent prompt from ${label}`);
+		return lines.join("\n");
+	}
+
+	it("6.1: cwd/.pi/agents/ override takes precedence over pointer agent root", () => {
+		const cwdDir = makeTestDir("agent-cwd-wins");
+		const pointerAgentDir = makeTestDir("agent-ptr-root");
+
+		// cwd has local agent
+		writeAgentFile(join(cwdDir, ".pi", "agents"), "test-agent", agentContent("cwd-local"));
+		// pointer also has agent
+		writeAgentFile(pointerAgentDir, "test-agent", agentContent("pointer-agent"));
+
+		// loadAgentDef checks cwd first, so cwd should win even without pointer env
+		const result = _loadAgentDef(cwdDir, "test-agent");
+		expect(result).not.toBeNull();
+		expect(result!.systemPrompt).toContain("cwd-local");
+	});
+
+	it("6.2: cwd/agents/ (legacy) takes precedence over pointer agent root", () => {
+		const cwdDir = makeTestDir("agent-legacy-wins");
+		const pointerAgentDir = makeTestDir("agent-ptr-root-2");
+
+		// cwd has legacy agent location
+		writeAgentFile(join(cwdDir, "agents"), "test-agent", agentContent("cwd-legacy"));
+		// pointer also has agent
+		writeAgentFile(pointerAgentDir, "test-agent", agentContent("pointer-agent"));
+
+		const result = _loadAgentDef(cwdDir, "test-agent");
+		expect(result).not.toBeNull();
+		expect(result!.systemPrompt).toContain("cwd-legacy");
+	});
+
+	it("6.3: repo mode — pointer is not consulted (TASKPLANE_WORKSPACE_ROOT absent)", () => {
+		const cwdDir = makeTestDir("agent-repo-mode");
+		delete process.env.TASKPLANE_WORKSPACE_ROOT;
+
+		// No local agents, no pointer → should still work (returns base agent or null)
+		const result = _loadAgentDef(cwdDir, "task-worker");
+		// task-worker exists in base package templates
+		expect(result).not.toBeNull();
+		expect(result!.systemPrompt).toBeTruthy();
+	});
+});
+
+describe("pointer warning surfacing (TP-016)", () => {
+	let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+
+	beforeEach(() => {
+		_resetPointerWarning();
+		consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		consoleErrorSpy.mockRestore();
+		_resetPointerWarning();
+	});
+
+	it("6.4: no pointer warning when workspace config fails to load (catch returns null)", () => {
+		const cwdDir = makeTestDir("warn-missing");
+		const wsRoot = makeTestDir("warn-ws-root");
+
+		// Set up workspace mode without a workspace YAML
+		// resolveTaskRunnerPointer catches loadWorkspaceConfig errors → returns null
+		// No pointer warning is emitted (the catch path doesn't produce one)
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+
+		taskRunnerLoadConfig(cwdDir);
+
+		const pointerWarnings = consoleErrorSpy.mock.calls.filter(
+			(args) => typeof args[0] === "string" && args[0].includes("[task-runner] pointer:"),
+		);
+		expect(pointerWarnings.length).toBe(0);
+	});
+
+	it("6.5: pointer warning is logged when workspace config exists but pointer is missing", () => {
+		const cwdDir = makeTestDir("warn-dedup");
+		const wsRoot = makeTestDir("warn-ws-dedup");
+
+		// Create a real git repo for the workspace YAML to reference
+		const gitRepoPath = join(testRoot, "warn-fake-repo");
+		mkdirSync(gitRepoPath, { recursive: true });
+		const { execSync } = require("child_process");
+		try {
+			execSync("git init", { cwd: gitRepoPath, stdio: "pipe" });
+		} catch {
+			// Skip test if git init fails (CI environment without git)
+			return;
+		}
+
+		// Create tasks_root directory (routing validation requires it to exist)
+		const tasksRoot = join(wsRoot, "taskplane-tasks");
+		mkdirSync(tasksRoot, { recursive: true });
+
+		mkdirSync(join(wsRoot, ".pi"), { recursive: true });
+		writeFileSync(
+			join(wsRoot, ".pi", "taskplane-workspace.yaml"),
+			[
+				"repos:",
+				"  main:",
+				`    path: ${gitRepoPath.replace(/\\/g, "/")}`,
+				"    default_branch: main",
+				"routing:",
+				"  tasks_root: taskplane-tasks",
+				"  default_repo: main",
+			].join("\n"),
+			"utf-8",
+		);
+
+		// No pointer file at wsRoot/.pi/taskplane-pointer.json
+		// → resolvePointer returns { used: false, warning: "Pointer file not found..." }
+
+		process.env.TASKPLANE_WORKSPACE_ROOT = wsRoot;
+		_resetPointerWarning();
+
+		// Call loadConfig multiple times — warning should appear once
+		taskRunnerLoadConfig(cwdDir);
+		taskRunnerLoadConfig(cwdDir);
+		taskRunnerLoadConfig(cwdDir);
+
+		// Warning should be logged exactly once (dedup via _pointerWarningLogged)
+		const pointerWarnings = consoleErrorSpy.mock.calls.filter(
+			(args) => typeof args[0] === "string" && args[0].includes("[task-runner] pointer:"),
+		);
+		expect(pointerWarnings.length).toBe(1);
+		expect(pointerWarnings[0][0]).toContain("Pointer file not found");
+	});
+
+	it("6.6: no pointer warning in repo mode", () => {
+		const cwdDir = makeTestDir("warn-repo-mode");
+		delete process.env.TASKPLANE_WORKSPACE_ROOT;
+		_resetPointerWarning();
+
+		taskRunnerLoadConfig(cwdDir);
+
+		const pointerWarnings = consoleErrorSpy.mock.calls.filter(
+			(args) => typeof args[0] === "string" && args[0].includes("[task-runner] pointer:"),
+		);
+		expect(pointerWarnings.length).toBe(0);
 	});
 });

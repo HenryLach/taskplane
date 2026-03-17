@@ -209,6 +209,7 @@ export default function (pi: ExtensionAPI) {
 				},
 				execCtx!.workspaceConfig,
 				execCtx!.workspaceRoot,
+				execCtx!.pointer?.agentRoot,
 			);
 
 			// Final widget update after batch completes
@@ -401,6 +402,8 @@ export default function (pi: ExtensionAPI) {
 					updateOrchWidget();
 				},
 				execCtx!.workspaceConfig,
+				execCtx!.workspaceRoot,
+				execCtx!.pointer?.agentRoot,
 			);
 
 			// Final widget update

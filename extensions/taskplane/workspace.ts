@@ -37,16 +37,18 @@
  * @module orch/workspace
  */
 import { readFileSync, existsSync, realpathSync } from "fs";
-import { resolve } from "path";
+import { resolve, relative, isAbsolute } from "path";
 import { parse as yamlParse } from "yaml";
 
 import { runGit } from "./git.ts";
 import {
 	WorkspaceConfigError,
 	workspaceConfigPath,
+	pointerFilePath,
 	type WorkspaceConfig,
 	type WorkspaceRepoConfig,
 	type WorkspaceRoutingConfig,
+	type PointerResolution,
 } from "./types.ts";
 
 
@@ -91,6 +93,185 @@ function resolveAbsolutePath(p: string, base: string): string {
 	} catch {
 		return resolved;
 	}
+}
+
+
+// ── Pointer Resolution ───────────────────────────────────────────────
+
+/**
+ * Resolve the workspace pointer file to find config and agent roots.
+ *
+ * The pointer file (`<workspace-root>/.pi/taskplane-pointer.json`) tells
+ * Taskplane where to find project config and agent overrides in workspace
+ * (polyrepo) mode. It's created by `taskplane init` and is local-only
+ * (not committed to git).
+ *
+ * **Repo mode:** Returns null. The pointer is workspace-only — in repo
+ * mode it is never read, even if a file happens to exist on disk.
+ *
+ * **Workspace mode:** Reads and validates the pointer, then resolves
+ * config and agent roots. All failures are non-fatal:
+ * - Missing pointer file → warn + fallback
+ * - Malformed JSON → warn + fallback
+ * - Missing required fields → warn + fallback
+ * - Unknown config_repo (not in WorkspaceConfig.repos) → warn + fallback
+ * - Path traversal in config_path → warn + fallback
+ *
+ * Fallback paths: `<workspace-root>/.pi/` for config,
+ * `<workspace-root>/.pi/agents/` for agents.
+ *
+ * State/sidecar paths are NOT affected by the pointer and are not
+ * included in the return value — they always live at
+ * `<workspace-root>/.pi/` regardless.
+ *
+ * @param workspaceRoot - Absolute path to the workspace root directory
+ * @param workspaceConfig - Loaded workspace config (null = repo mode → returns null)
+ * @returns PointerResolution with resolved paths, or null in repo mode
+ */
+export function resolvePointer(
+	workspaceRoot: string,
+	workspaceConfig: WorkspaceConfig | null,
+): PointerResolution | null {
+	// ── Repo mode: pointer is ignored entirely ───────────────────
+	if (workspaceConfig === null) {
+		return null;
+	}
+
+	const fallbackConfigRoot = resolve(workspaceRoot, ".pi");
+	const fallbackAgentRoot = resolve(workspaceRoot, ".pi", "agents");
+
+	const filePath = pointerFilePath(workspaceRoot);
+
+	// ── 1. File existence ────────────────────────────────────────
+	if (!existsSync(filePath)) {
+		return {
+			used: false,
+			configRoot: fallbackConfigRoot,
+			agentRoot: fallbackAgentRoot,
+			warning: `Pointer file not found: ${filePath}. Run 'taskplane init' to create it.`,
+		};
+	}
+
+	// ── 2. Read file ─────────────────────────────────────────────
+	let rawContent: string;
+	try {
+		rawContent = readFileSync(filePath, "utf-8");
+	} catch (err: unknown) {
+		const msg = err instanceof Error ? err.message : String(err);
+		return {
+			used: false,
+			configRoot: fallbackConfigRoot,
+			agentRoot: fallbackAgentRoot,
+			warning: `Cannot read pointer file ${filePath}: ${msg}`,
+		};
+	}
+
+	// ── 3. Parse JSON ────────────────────────────────────────────
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(rawContent);
+	} catch {
+		return {
+			used: false,
+			configRoot: fallbackConfigRoot,
+			agentRoot: fallbackAgentRoot,
+			warning: `Pointer file ${filePath} contains invalid JSON.`,
+		};
+	}
+
+	// ── 4. Validate shape ────────────────────────────────────────
+	if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
+		return {
+			used: false,
+			configRoot: fallbackConfigRoot,
+			agentRoot: fallbackAgentRoot,
+			warning: `Pointer file ${filePath} must be a JSON object.`,
+		};
+	}
+
+	const doc = parsed as Record<string, unknown>;
+	const configRepo = doc.config_repo;
+	const configPath = doc.config_path;
+
+	if (!configRepo || typeof configRepo !== "string" || configRepo.trim() === "") {
+		return {
+			used: false,
+			configRoot: fallbackConfigRoot,
+			agentRoot: fallbackAgentRoot,
+			warning: `Pointer file ${filePath} is missing required field 'config_repo'.`,
+		};
+	}
+
+	if (!configPath || typeof configPath !== "string" || configPath.trim() === "") {
+		return {
+			used: false,
+			configRoot: fallbackConfigRoot,
+			agentRoot: fallbackAgentRoot,
+			warning: `Pointer file ${filePath} is missing required field 'config_path'.`,
+		};
+	}
+
+	// ── 5. Guard path traversal ──────────────────────────────────
+	const normalizedConfigPath = configPath.trim().replace(/\\/g, "/");
+
+	// Reject absolute paths (POSIX `/...` and Windows `C:/...`, `\\...`)
+	if (isAbsolute(normalizedConfigPath) || isAbsolute(configPath.trim())) {
+		return {
+			used: false,
+			configRoot: fallbackConfigRoot,
+			agentRoot: fallbackAgentRoot,
+			warning: `Pointer file ${filePath} has invalid config_path '${configPath}' (absolute paths not allowed).`,
+		};
+	}
+
+	// Reject traversal sequences
+	if (
+		normalizedConfigPath.startsWith("..") ||
+		normalizedConfigPath.includes("/../") ||
+		normalizedConfigPath.endsWith("/..")
+	) {
+		return {
+			used: false,
+			configRoot: fallbackConfigRoot,
+			agentRoot: fallbackAgentRoot,
+			warning: `Pointer file ${filePath} has invalid config_path '${configPath}' (path traversal not allowed).`,
+		};
+	}
+
+	// ── 6. Resolve config_repo against workspace repos map ──────
+	const repoId = configRepo.trim();
+	const repoConfig = workspaceConfig.repos.get(repoId);
+	if (!repoConfig) {
+		const available = Array.from(workspaceConfig.repos.keys()).join(", ");
+		return {
+			used: false,
+			configRoot: fallbackConfigRoot,
+			agentRoot: fallbackAgentRoot,
+			warning: `Pointer file ${filePath}: config_repo '${repoId}' not found in workspace repos. Available repos: ${available}`,
+		};
+	}
+
+	// ── 7. Build resolved paths + containment check ──────────────
+	const resolvedConfigRoot = resolve(repoConfig.path, normalizedConfigPath);
+
+	// Verify the resolved path is within the repo root (defense-in-depth)
+	const rel = relative(repoConfig.path, resolvedConfigRoot);
+	if (rel.startsWith("..") || isAbsolute(rel)) {
+		return {
+			used: false,
+			configRoot: fallbackConfigRoot,
+			agentRoot: fallbackAgentRoot,
+			warning: `Pointer file ${filePath} has invalid config_path '${configPath}' (resolved path escapes config repo root).`,
+		};
+	}
+
+	const resolvedAgentRoot = resolve(resolvedConfigRoot, "agents");
+
+	return {
+		used: true,
+		configRoot: resolvedConfigRoot,
+		agentRoot: resolvedAgentRoot,
+	};
 }
 
 
@@ -366,34 +547,47 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
  */
 export function buildExecutionContext(
 	cwd: string,
-	loadOrchConfig: (root: string) => import("./types.ts").OrchestratorConfig,
-	loadTaskConfig: (root: string) => import("./types.ts").TaskRunnerConfig,
+	loadOrchConfig: (root: string, pointerConfigRoot?: string) => import("./types.ts").OrchestratorConfig,
+	loadTaskConfig: (root: string, pointerConfigRoot?: string) => import("./types.ts").TaskRunnerConfig,
 ): import("./types.ts").ExecutionContext {
-	const orchestratorConfig = loadOrchConfig(cwd);
-	const taskRunnerConfig = loadTaskConfig(cwd);
-
 	const workspaceConfig = loadWorkspaceConfig(cwd);
 
 	if (workspaceConfig === null) {
-		// Repo mode: cwd is both workspace root and repo root
+		// Repo mode: pointer is ignored entirely. Config loads from cwd.
+		const orchestratorConfig = loadOrchConfig(cwd);
+		const taskRunnerConfig = loadTaskConfig(cwd);
+
 		return {
 			workspaceRoot: cwd,
 			repoRoot: cwd,
 			mode: "repo",
 			workspaceConfig: null,
-			taskRunnerConfig,
 			orchestratorConfig,
+			taskRunnerConfig,
+			pointer: null,
 		};
 	}
 
-	// Workspace mode: workspace root is cwd, repo root is the default repo
+	// Workspace mode: resolve pointer once, pass configRoot to config loaders.
+	const pointer = resolvePointer(cwd, workspaceConfig);
+
+	// Log pointer warning once at startup (non-fatal).
+	if (pointer && pointer.warning) {
+		console.error(`[taskplane] pointer warning: ${pointer.warning}`);
+	}
+
+	const pointerConfigRoot = pointer?.configRoot;
+	const orchestratorConfig = loadOrchConfig(cwd, pointerConfigRoot);
+	const taskRunnerConfig = loadTaskConfig(cwd, pointerConfigRoot);
+
 	const defaultRepo = workspaceConfig.repos.get(workspaceConfig.routing.defaultRepo)!;
 	return {
 		workspaceRoot: cwd,
 		repoRoot: defaultRepo.path,
 		mode: "workspace",
 		workspaceConfig,
-		taskRunnerConfig,
 		orchestratorConfig,
+		taskRunnerConfig,
+		pointer,
 	};
 }
