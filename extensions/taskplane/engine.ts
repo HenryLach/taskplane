@@ -46,6 +46,7 @@ export async function executeOrchBatch(
 	onMonitorUpdate?: MonitorUpdateCallback,
 	workspaceConfig?: WorkspaceConfig | null,
 	workspaceRoot?: string,
+	agentRoot?: string,
 ): Promise<void> {
 	const repoRoot = cwd;
 	// State files (.pi/batch-state.json, lane-state, etc.) belong in the workspace root,
@@ -363,6 +364,7 @@ export async function executeOrchBatch(
 					batchState.baseBranch,
 					workspaceConfig,
 					stateRoot,
+					agentRoot,
 				);
 				allMergeResults.push(mergeResult);
 				batchState.mergeResults.push(mergeResult);

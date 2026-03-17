@@ -26,7 +26,15 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { fileURLToPath } from "node:url";
-import { execSync, spawn } from "node:child_process";
+import { execSync, execFileSync, spawn } from "node:child_process";
+import {
+	TASKPLANE_GITIGNORE_HEADER,
+	TASKPLANE_GITIGNORE_NPM_HEADER,
+	TASKPLANE_GITIGNORE_ENTRIES,
+	TASKPLANE_GITIGNORE_NPM_ENTRIES,
+	ALL_GITIGNORE_PATTERNS,
+	patternToRegex,
+} from "./gitignore-patterns.mjs";
 
 // ─── Paths ──────────────────────────────────────────────────────────────────
 
@@ -225,7 +233,7 @@ orchestrator:
   worktree_location: "subdirectory"
   worktree_prefix: "${vars.worktree_prefix}"
   batch_id_format: "timestamp"
-  spawn_mode: "subprocess"
+  spawn_mode: "${vars.spawn_mode}"
   tmux_prefix: "${vars.tmux_prefix}"
 
 dependencies:
@@ -562,6 +570,358 @@ async function cmdUninstall(args) {
 	}
 }
 
+// ─── Gitignore Enforcement ──────────────────────────────────────────────────
+
+// Gitignore constants and patternToRegex imported from ./gitignore-patterns.mjs
+
+/**
+ * Ensure required Taskplane gitignore entries exist in the project's .gitignore.
+ * Creates the file if it doesn't exist. Skips entries that already exist.
+ * Returns { created: boolean, added: string[], skipped: string[] }.
+ *
+ * @param {string} projectRoot - Root directory containing (or to contain) .gitignore
+ * @param {object} options
+ * @param {boolean} options.dryRun - If true, don't modify files
+ * @param {string} [options.prefix] - Optional prefix for entries (e.g., ".taskplane/" for workspace mode)
+ */
+function ensureGitignoreEntries(projectRoot, { dryRun = false, prefix = "" } = {}) {
+	const gitignorePath = path.join(projectRoot, ".gitignore");
+	const fileExists = fs.existsSync(gitignorePath);
+	const existingContent = fileExists ? fs.readFileSync(gitignorePath, "utf-8") : "";
+	const existingLines = new Set(existingContent.split(/\r?\n/).map(l => l.trim()));
+
+	const allEntries = [...TASKPLANE_GITIGNORE_ENTRIES, ...TASKPLANE_GITIGNORE_NPM_ENTRIES];
+	const added = [];
+	const skipped = [];
+
+	for (const entry of allEntries) {
+		const prefixedEntry = prefix ? `${prefix}${entry}` : entry;
+		if (existingLines.has(prefixedEntry)) {
+			skipped.push(prefixedEntry);
+		} else {
+			added.push(prefixedEntry);
+		}
+	}
+
+	if (added.length === 0) {
+		return { created: false, added: [], skipped };
+	}
+
+	if (!dryRun) {
+		// Build the block of new entries with headers
+		const runtimeAdded = added.filter(e => !e.endsWith("npm/"));
+		const npmAdded = added.filter(e => e.endsWith("npm/"));
+		const newLines = [];
+
+		if (runtimeAdded.length > 0) {
+			// Only add header if it's not already present
+			const headerToCheck = prefix
+				? TASKPLANE_GITIGNORE_HEADER
+				: TASKPLANE_GITIGNORE_HEADER;
+			if (!existingLines.has(headerToCheck)) {
+				newLines.push(TASKPLANE_GITIGNORE_HEADER);
+			}
+			newLines.push(...runtimeAdded);
+		}
+
+		if (npmAdded.length > 0) {
+			if (!existingLines.has(TASKPLANE_GITIGNORE_NPM_HEADER)) {
+				if (newLines.length > 0) newLines.push("");
+				newLines.push(TASKPLANE_GITIGNORE_NPM_HEADER);
+			}
+			newLines.push(...npmAdded);
+		}
+
+		const blockText = newLines.join("\n") + "\n";
+
+		if (fileExists) {
+			// Append to existing file with a blank line separator
+			const separator = existingContent.endsWith("\n") ? "\n" : "\n\n";
+			fs.appendFileSync(gitignorePath, separator + blockText, "utf-8");
+		} else {
+			fs.writeFileSync(gitignorePath, blockText, "utf-8");
+		}
+	}
+
+	return { created: !fileExists, added, skipped };
+}
+
+// patternToRegex imported from ./gitignore-patterns.mjs
+
+/**
+ * Check for tracked runtime artifacts and offer to untrack them.
+ * Uses `git ls-files` to find tracked files that match gitignore patterns.
+ * Runs `git rm --cached` to untrack (files remain on disk).
+ *
+ * Isolation: This function commits or stashes nothing. It only removes files
+ * from the index. The caller is responsible for ensuring this runs BEFORE
+ * autoCommitTaskFiles() so the removals don't get bundled into unrelated commits.
+ *
+ * @param {string} projectRoot - Git repo root
+ * @param {object} options
+ * @param {boolean} options.dryRun - If true, report but don't modify index
+ * @param {boolean} options.interactive - If false, skip prompt and don't untrack
+ * @param {string} options.prefix - Path prefix for workspace-scoped scanning (e.g., ".taskplane/")
+ */
+async function detectAndOfferUntrackArtifacts(projectRoot, { dryRun = false, interactive = true, prefix = "" } = {}) {
+	// Only run in a git repo
+	if (!isInsideGitRepo(projectRoot)) return { found: [], untracked: false };
+
+	// Get list of tracked files under the relevant directories
+	// For workspace mode (prefix=".taskplane/"), scan .taskplane/.pi/ and .taskplane/.worktrees/
+	// For repo mode (no prefix), scan .pi/ and .worktrees/
+	const scanDirs = prefix
+		? [`${prefix}.pi/`, `${prefix}.worktrees/`]
+		: [".pi/", ".worktrees/"];
+
+	let trackedFiles;
+	try {
+		const raw = execFileSync("git", ["ls-files", "--", ...scanDirs], {
+			cwd: projectRoot,
+			stdio: ["pipe", "pipe", "pipe"],
+			timeout: 10000,
+		}).toString().trim();
+		trackedFiles = raw ? raw.split(/\r?\n/) : [];
+	} catch {
+		return { found: [], untracked: false };
+	}
+
+	if (trackedFiles.length === 0) return { found: [], untracked: false };
+
+	// Build regex patterns for matching (with prefix if workspace-scoped)
+	const prefixedPatterns = prefix
+		? ALL_GITIGNORE_PATTERNS.map(p => `${prefix}${p}`)
+		: ALL_GITIGNORE_PATTERNS;
+	const patterns = prefixedPatterns.map(p => patternToRegex(p));
+
+	// Find tracked files that match runtime artifact patterns
+	const matchedFiles = trackedFiles.filter(file => {
+		return patterns.some(regex => regex.test(file));
+	});
+
+	if (matchedFiles.length === 0) return { found: [], untracked: false };
+
+	// Report findings
+	console.log(`\n  ${WARN} Found runtime artifacts tracked by git:`);
+	for (const file of matchedFiles) {
+		console.log(`     ${file}`);
+	}
+	console.log();
+	console.log(`  These files contain machine-specific state that will cause problems`);
+	console.log(`  for other team members.`);
+
+	if (dryRun) {
+		console.log(`  ${c.dim}(dry run — would offer to untrack these files)${c.reset}`);
+		return { found: matchedFiles, untracked: false };
+	}
+
+	if (!interactive) {
+		console.log(`  ${c.dim}Run: git rm --cached ${matchedFiles.join(" ")}${c.reset}`);
+		return { found: matchedFiles, untracked: false };
+	}
+
+	const doUntrack = await confirm("  Untrack them? (files stay on disk, become gitignored)", true);
+	if (!doUntrack) {
+		console.log(`  ${c.dim}Skipped. You can untrack later with:${c.reset}`);
+		console.log(`  ${c.dim}git rm --cached ${matchedFiles.join(" ")}${c.reset}`);
+		return { found: matchedFiles, untracked: false };
+	}
+
+	// Untrack: git rm --cached for each file (using execFileSync for shell-safety)
+	try {
+		execFileSync("git", ["rm", "--cached", "--", ...matchedFiles], {
+			cwd: projectRoot,
+			stdio: ["pipe", "pipe", "pipe"],
+			timeout: 10000,
+		});
+		console.log(`  ${OK} Files untracked (still on disk, now gitignored)`);
+		return { found: matchedFiles, untracked: true };
+	} catch (err) {
+		console.log(`  ${WARN} Failed to untrack files: ${err.message}`);
+		console.log(`  ${c.dim}Run manually: git rm --cached ${matchedFiles.join(" ")}${c.reset}`);
+		return { found: matchedFiles, untracked: false };
+	}
+}
+
+// ─── Mode Auto-Detection ────────────────────────────────────────────────────
+
+/**
+ * Check if the given directory is inside a git work tree.
+ * Uses `git rev-parse --is-inside-work-tree` for reliability.
+ */
+function isInsideGitRepo(dir) {
+	try {
+		execSync("git rev-parse --is-inside-work-tree", {
+			cwd: dir,
+			stdio: ["pipe", "pipe", "pipe"],
+			timeout: 5000,
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Check if the given directory is the root of its own git repository.
+ * A directory is a git repo root if it has a `.git` entry (file or directory)
+ * AND `git rev-parse --show-toplevel` resolves to that directory.
+ * This distinguishes true nested repos from subdirectories of a parent repo.
+ */
+function isGitRepoRoot(dir) {
+	const gitEntry = path.join(dir, ".git");
+	if (!fs.existsSync(gitEntry)) return false;
+	try {
+		const toplevel = execSync("git rev-parse --show-toplevel", {
+			cwd: dir,
+			stdio: ["pipe", "pipe", "pipe"],
+			timeout: 5000,
+		}).toString().trim();
+		// Normalize paths for comparison (handles Windows path separators
+		// and 8.3 short name mismatches on Windows)
+		const normalizedToplevel = path.resolve(toplevel);
+		let normalizedDir = path.resolve(dir);
+		// On Windows, fs.realpathSync.native resolves 8.3 short names to
+		// long names, matching what git returns. Without this, paths like
+		// C:\Users\HENRYL~1\... won't match C:\Users\HenryLach\...
+		try { normalizedDir = fs.realpathSync.native(normalizedDir); } catch {}
+		return normalizedToplevel === normalizedDir;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Scan immediate subdirectories of `dir` for git repositories.
+ * Returns an array of subdirectory names that are git repo roots.
+ * Only checks one level deep (direct children).
+ * Uses `isGitRepoRoot()` to ensure we find actual nested repos,
+ * not just subdirectories of the parent repo.
+ */
+function findSubdirectoryGitRepos(dir) {
+	const results = [];
+	try {
+		const entries = fs.readdirSync(dir, { withFileTypes: true });
+		for (const entry of entries) {
+			if (!entry.isDirectory()) continue;
+			// Skip hidden directories and common non-repo directories
+			if (entry.name.startsWith(".")) continue;
+			if (entry.name === "node_modules") continue;
+			const subdir = path.join(dir, entry.name);
+			if (isGitRepoRoot(subdir)) {
+				results.push(entry.name);
+			}
+		}
+	} catch {
+		// If we can't read the directory, return empty
+	}
+	return results.sort();
+}
+
+/**
+ * Detect the init mode for the current directory.
+ *
+ * Detection precedence:
+ * 1. Check for existing config (Scenario B — "already initialized")
+ * 2. Check git repo topology to determine mode
+ *
+ * Returns: { mode, subRepos, alreadyInitialized, existingConfigPath }
+ * - mode: "repo" | "workspace" | "ambiguous" | "error"
+ * - subRepos: string[] — names of subdirectory git repos (for workspace/ambiguous)
+ * - alreadyInitialized: boolean — true if config already exists
+ * - existingConfigPath: string|null — path to existing config (for Scenario B/D messaging)
+ */
+function detectInitMode(dir) {
+	const currentIsGitRepo = isInsideGitRepo(dir);
+	const subRepos = findSubdirectoryGitRepos(dir);
+	const hasSubRepos = subRepos.length > 0;
+
+	// Check for existing config in current dir (monorepo Scenario B)
+	const hasLocalConfig =
+		fs.existsSync(path.join(dir, ".pi", "task-runner.yaml")) ||
+		fs.existsSync(path.join(dir, ".pi", "task-orchestrator.yaml")) ||
+		fs.existsSync(path.join(dir, ".pi", "taskplane-config.json"));
+
+	if (currentIsGitRepo && !hasSubRepos) {
+		// Clear repo mode (Scenario A or B)
+		return {
+			mode: "repo",
+			subRepos: [],
+			alreadyInitialized: hasLocalConfig,
+			existingConfigPath: hasLocalConfig ? path.join(dir, ".pi") : null,
+		};
+	}
+
+	if (currentIsGitRepo && hasSubRepos) {
+		// Ambiguous — git repo that also contains git repo subdirectories
+		// Check for workspace-style .taskplane/ in subrepos too (for Scenario D if user picks workspace)
+		let workspaceConfigRepo = null;
+		for (const repoName of subRepos) {
+			const taskplaneDir = path.join(dir, repoName, ".taskplane");
+			if (fs.existsSync(taskplaneDir)) {
+				workspaceConfigRepo = repoName;
+				break;
+			}
+		}
+		return {
+			mode: "ambiguous",
+			subRepos,
+			alreadyInitialized: hasLocalConfig,
+			existingConfigPath: hasLocalConfig ? path.join(dir, ".pi") : null,
+			workspaceConfigRepo,
+			workspaceConfigPath: workspaceConfigRepo
+				? path.join(dir, workspaceConfigRepo, ".taskplane")
+				: null,
+		};
+	}
+
+	if (!currentIsGitRepo && hasSubRepos) {
+		// Workspace mode (Scenario C or D)
+		// Check for existing .taskplane/ in any subdirectory repo (Scenario D)
+		let existingConfigRepo = null;
+		for (const repoName of subRepos) {
+			const taskplaneDir = path.join(dir, repoName, ".taskplane");
+			if (fs.existsSync(taskplaneDir)) {
+				existingConfigRepo = repoName;
+				break;
+			}
+		}
+		return {
+			mode: "workspace",
+			subRepos,
+			alreadyInitialized: existingConfigRepo !== null,
+			existingConfigPath: existingConfigRepo
+				? path.join(dir, existingConfigRepo, ".taskplane")
+				: null,
+		};
+	}
+
+	// Not a git repo and no git repos in subdirectories → error
+	return {
+		mode: "error",
+		subRepos: [],
+		alreadyInitialized: false,
+		existingConfigPath: null,
+	};
+}
+
+// ─── tmux / spawn mode detection ────────────────────────────────────────────
+
+/**
+ * Detect whether tmux is available and determine the default spawn_mode.
+ *
+ * Reusable for both repo mode (Step 3) and workspace mode (Step 4) init.
+ *
+ * @returns {{ spawnMode: string, hasTmux: boolean }}
+ */
+function detectSpawnMode() {
+	const hasTmux = commandExists("tmux");
+	return {
+		spawnMode: hasTmux ? "tmux" : "subprocess",
+		hasTmux,
+	};
+}
+
 // ─── init ───────────────────────────────────────────────────────────────────
 
 async function cmdInit(args) {
@@ -606,18 +966,404 @@ async function cmdInit(args) {
 		console.log(`     Use --include-examples to scaffold examples into that directory.\n`);
 	}
 
-	// Check for existing config
+	// ── Mode auto-detection ──────────────────────────────────────
+	const detection = detectInitMode(projectRoot);
+	const isPreset = preset === "minimal" || preset === "full" || preset === "runner-only";
+
+	// Error path: not a git repo and no git repos found
+	if (detection.mode === "error") {
+		die(
+			"Not a git repo and no git repos found in subdirectories.\n" +
+			"  Run from inside a git repository, or from a workspace root\n" +
+			"  that contains git repositories as subdirectories."
+		);
+	}
+
+	// Resolve ambiguous mode (git repo + git repo subdirectories)
+	let resolvedMode = detection.mode;
+	if (detection.mode === "ambiguous") {
+		if (isPreset || dryRun) {
+			// Non-interactive: default to repo mode (safe default, no prompt)
+			resolvedMode = "repo";
+			console.log(`  ${INFO} Ambiguous layout detected (git repo with git repo subdirectories).`);
+			console.log(`     Defaulting to ${c.cyan}repo mode${c.reset} (use interactive mode for workspace).\n`);
+		} else {
+			// Interactive: prompt the user
+			console.log(`  ${WARN} This directory is a git repo AND contains git repos as subdirectories.`);
+			console.log(`     Subdirectory repos found: ${detection.subRepos.join(", ")}\n`);
+			const modeChoice = await ask(
+				"Mode: (r)epo — treat as single monorepo, or (w)orkspace — treat subdirs as independent repos",
+				"r"
+			);
+			resolvedMode = modeChoice.toLowerCase().startsWith("w") ? "workspace" : "repo";
+			console.log();
+		}
+	}
+
+	// When ambiguous mode resolves to workspace, use workspace-specific config
+	// detection. The detection.existingConfigPath from ambiguous mode points to
+	// monorepo `.pi/` config, which is irrelevant for workspace Scenario D
+	// (which looks for `.taskplane/` in subrepos).
+	let effectiveAlreadyInitialized = detection.alreadyInitialized;
+	let effectiveConfigPath = detection.existingConfigPath;
+	if (detection.mode === "ambiguous" && resolvedMode === "workspace") {
+		effectiveAlreadyInitialized = detection.workspaceConfigRepo !== null;
+		effectiveConfigPath = detection.workspaceConfigPath || null;
+	}
+
+	// Scenario B: existing monorepo config — block reinit unless --force
+	if (effectiveAlreadyInitialized && !force && resolvedMode === "repo") {
+		console.log(`  ${INFO} Project already initialized (config exists in .pi/).`);
+		console.log(`     Run ${c.cyan}taskplane doctor${c.reset} to verify, or use ${c.cyan}--force${c.reset} to reinitialize.\n`);
+		return;
+	}
+
+	// Scenario D: existing workspace config found in a subdirectory repo
+	// Create pointer only — skip all Scenario C scaffolding/prompts/gitignore/auto-commit
+	// This is independent of --force: --force only controls pointer overwrite, not Scenario D detection
+	if (effectiveAlreadyInitialized && resolvedMode === "workspace" && effectiveConfigPath) {
+		const configRepo = path.basename(path.dirname(effectiveConfigPath));
+		console.log(`  ${c.dim}Mode: workspace (${detection.subRepos.length} git repositories found)${c.reset}`);
+		console.log(`  ${INFO} Found existing Taskplane config in ${c.cyan}${configRepo}/.taskplane/${c.reset}`);
+		console.log(`     Using existing configuration.\n`);
+
+		// ── Pointer idempotency ─────────────────────────────────
+		const pointerPath = path.join(projectRoot, ".pi", "taskplane-pointer.json");
+		const pointerExists = fs.existsSync(pointerPath);
+
+		if (dryRun) {
+			console.log(`${c.bold}Dry run — files that would be created:${c.reset}\n`);
+			if (pointerExists) {
+				console.log(`  ${c.yellow}overwrite${c.reset} .pi/taskplane-pointer.json`);
+			} else {
+				console.log(`  ${c.green}create${c.reset}    .pi/taskplane-pointer.json`);
+			}
+			console.log();
+			return;
+		}
+
+		if (pointerExists && !force) {
+			let existingPointer = null;
+			try {
+				existingPointer = JSON.parse(fs.readFileSync(pointerPath, "utf-8"));
+			} catch {
+				// Malformed pointer file — treat as invalid, will be overwritten
+				console.log(`  ${WARN} .pi/taskplane-pointer.json exists but is malformed — will overwrite.`);
+			}
+			if (existingPointer && existingPointer.config_repo === configRepo && existingPointer.config_path === ".taskplane") {
+				console.log(`  ${c.dim}skip${c.reset}  .pi/taskplane-pointer.json (already points to ${configRepo}/.taskplane/)`);
+				console.log(`\n${OK} ${c.bold}Workspace already configured.${c.reset}`);
+				console.log(`     Run ${c.cyan}taskplane doctor${c.reset} to verify.\n`);
+				return;
+			}
+			// Pointer exists but points elsewhere (or was malformed) — prompt to overwrite
+			if (existingPointer && !isPreset) {
+				console.log(`  ${WARN} .pi/taskplane-pointer.json already exists (points to ${existingPointer.config_repo}/.taskplane/).`);
+				const proceed = await confirm("  Update pointer to point to " + configRepo + "/.taskplane/?", true);
+				if (!proceed) {
+					console.log("  Aborted.");
+					return;
+				}
+			}
+			// Preset/non-interactive or malformed: overwrite silently
+		}
+
+		// Create pointer file
+		const pointer = {
+			config_repo: configRepo,
+			config_path: ".taskplane",
+		};
+		writeFile(
+			pointerPath,
+			JSON.stringify(pointer, null, 2) + "\n",
+			{ label: ".pi/taskplane-pointer.json" }
+		);
+
+		console.log(`\n${OK} ${c.bold}Workspace pointer created.${c.reset}\n`);
+		console.log(`  Config:  ${c.cyan}${configRepo}/.taskplane/${c.reset}`);
+		console.log(`  Pointer: ${c.cyan}.pi/taskplane-pointer.json${c.reset}\n`);
+		console.log(`${c.bold}Quick start:${c.reset}`);
+		console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
+		console.log(`  ${c.cyan}taskplane doctor${c.reset}                                # verify setup`);
+		console.log();
+		return;
+	}
+
+	// Show detected mode
+	if (resolvedMode === "repo") {
+		console.log(`  ${c.dim}Mode: repo (standard monorepo)${c.reset}`);
+	} else if (resolvedMode === "workspace") {
+		console.log(`  ${c.dim}Mode: workspace (${detection.subRepos.length} git repositories found)${c.reset}`);
+	}
+	console.log();
+
+	// ── Workspace mode: Scenario C (first-time project init) ─────────────
+	if (resolvedMode === "workspace") {
+		// List discovered repos
+		console.log(`  Found ${detection.subRepos.length} git repositories:`);
+		console.log(`    ${detection.subRepos.join(", ")}\n`);
+
+		// ── Config repo selection ────────────────────────────────────
+		let configRepoName;
+		if (isPreset || dryRun) {
+			// Non-interactive: pick first repo alphabetically as default
+			configRepoName = detection.subRepos[0];
+			console.log(`  ${INFO} Using ${c.cyan}${configRepoName}${c.reset} as config repo (first alphabetically).\n`);
+		} else {
+			// Interactive: prompt user to choose config repo
+			console.log(`  Which repo should hold Taskplane config?`);
+			for (let i = 0; i < detection.subRepos.length; i++) {
+				console.log(`    ${c.dim}${i + 1}.${c.reset} ${detection.subRepos[i]}`);
+			}
+			console.log();
+			const configRepoAnswer = await ask(
+				"Config repo (name or number)",
+				detection.subRepos[0]
+			);
+			// Accept numeric index or repo name
+			const asNum = parseInt(configRepoAnswer, 10);
+			if (asNum >= 1 && asNum <= detection.subRepos.length) {
+				configRepoName = detection.subRepos[asNum - 1];
+			} else if (detection.subRepos.includes(configRepoAnswer)) {
+				configRepoName = configRepoAnswer;
+			} else {
+				die(`Unknown repo: ${configRepoAnswer}. Must be one of: ${detection.subRepos.join(", ")}`);
+			}
+			console.log(`  Using config repo: ${c.cyan}${configRepoName}${c.reset}\n`);
+		}
+
+		const configRepoRoot = path.join(projectRoot, configRepoName);
+		const taskplaneDir = path.join(configRepoRoot, ".taskplane");
+
+		// ── Existing config overwrite check for workspace reinit ─────
+		let userConfirmedOverwrite = false;
+		if (fs.existsSync(taskplaneDir) && !force) {
+			console.log(`${WARN} Taskplane config already exists in ${configRepoName}/.taskplane/.`);
+			const proceed = await confirm("  Overwrite existing files?", false);
+			if (!proceed) {
+				console.log("  Aborted.");
+				return;
+			}
+			userConfirmedOverwrite = true;
+		}
+
+		// ── Gather config values (workspace mode) ───────────────────
+		let vars;
+		if (preset === "minimal" || preset === "full" || preset === "runner-only") {
+			vars = getPresetVars(preset, projectRoot, tasksRootOverride);
+			console.log(`  Using preset: ${c.cyan}${preset}${c.reset}`);
+			if (tasksRootOverride) {
+				console.log(`  Task directory: ${c.cyan}${tasksRootOverride}${c.reset}`);
+			}
+			console.log();
+		} else {
+			vars = await getInteractiveVars(projectRoot, tasksRootOverride);
+		}
+
+		// ── tmux / spawn mode detection ─────────────────────────────
+		const { spawnMode, hasTmux } = detectSpawnMode();
+		vars.spawn_mode = spawnMode;
+
+		if (preset !== "runner-only" && !hasTmux) {
+			console.log(`  ${WARN} tmux not found. Using subprocess mode.`);
+			console.log(`     Run ${c.cyan}taskplane install-tmux${c.reset} for full orchestrator support.\n`);
+		}
+
+		const exampleTemplateDirs = noExamples ? [] : listExampleTaskTemplates();
+
+		// ── Dry-run: show what would be created ─────────────────────
+		if (dryRun) {
+			console.log(`\n${c.bold}Dry run — files that would be created:${c.reset}\n`);
+			printWorkspaceFileList(vars, noExamples, preset, exampleTemplateDirs, configRepoName, configRepoRoot);
+			console.log(`  ${c.green}create${c.reset} .pi/taskplane-pointer.json`);
+			console.log();
+			return;
+		}
+
+		// ── Scaffold .taskplane/ in config repo ─────────────────────
+		console.log(`\n${c.bold}Creating files in ${configRepoName}/.taskplane/...${c.reset}\n`);
+		// Skip existing files only when --force was NOT used AND the user did NOT confirm overwrite
+		const skipIfExists = !force && !userConfirmedOverwrite;
+
+		// Agent prompts
+		for (const agent of ["task-worker.md", "task-reviewer.md", "task-merger.md"]) {
+			copyTemplate(
+				path.join(TEMPLATES_DIR, "agents", "local", agent),
+				path.join(taskplaneDir, "agents", agent),
+				{ skipIfExists, label: `${configRepoName}/.taskplane/agents/${agent}` }
+			);
+		}
+
+		// Task runner config
+		writeFile(
+			path.join(taskplaneDir, "task-runner.yaml"),
+			generateTaskRunnerYaml(vars),
+			{ skipIfExists, label: `${configRepoName}/.taskplane/task-runner.yaml` }
+		);
+
+		// Orchestrator config (skip for runner-only preset)
+		if (preset !== "runner-only") {
+			writeFile(
+				path.join(taskplaneDir, "task-orchestrator.yaml"),
+				generateOrchestratorYaml(vars),
+				{ skipIfExists, label: `${configRepoName}/.taskplane/task-orchestrator.yaml` }
+			);
+		}
+
+		// Project config JSON (taskplane-config.json)
+		const projectConfig = {
+			configVersion: 1,
+			taskRunner: {},
+			orchestrator: {},
+		};
+		writeFile(
+			path.join(taskplaneDir, "taskplane-config.json"),
+			JSON.stringify(projectConfig, null, 2) + "\n",
+			{ skipIfExists, label: `${configRepoName}/.taskplane/taskplane-config.json` }
+		);
+
+		// Version tracker (always overwrite)
+		const versionInfo = {
+			version: getPackageVersion(),
+			installedAt: new Date().toISOString(),
+			lastUpgraded: new Date().toISOString(),
+			components: { agents: getPackageVersion(), config: getPackageVersion() },
+		};
+		writeFile(
+			path.join(taskplaneDir, "taskplane.json"),
+			JSON.stringify(versionInfo, null, 2) + "\n",
+			{ label: `${configRepoName}/.taskplane/taskplane.json` }
+		);
+
+		// Workspace definition (workspace.json)
+		const workspaceConfig = {
+			repos: detection.subRepos.map(name => ({
+				name,
+				path: `../${name}`,
+				default_branch: "main",
+			})),
+			routing: {
+				tasks_root: vars.tasks_root,
+				default_repo: configRepoName,
+				strict: false,
+			},
+		};
+		writeFile(
+			path.join(taskplaneDir, "workspace.json"),
+			JSON.stringify(workspaceConfig, null, 2) + "\n",
+			{ skipIfExists, label: `${configRepoName}/.taskplane/workspace.json` }
+		);
+
+		// CONTEXT.md — tasks area context
+		const tasksDir = path.join(configRepoRoot, vars.tasks_root);
+		const contextSrc = fs.readFileSync(path.join(TEMPLATES_DIR, "tasks", "CONTEXT.md"), "utf-8");
+		writeFile(
+			path.join(tasksDir, "CONTEXT.md"),
+			interpolate(contextSrc, vars),
+			{ skipIfExists, label: `${configRepoName}/${vars.tasks_root}/CONTEXT.md` }
+		);
+
+		// Example tasks
+		if (!noExamples) {
+			for (const exampleName of exampleTemplateDirs) {
+				const exampleDir = path.join(TEMPLATES_DIR, "tasks", exampleName);
+				const destDir = path.join(tasksDir, exampleName);
+				for (const file of ["PROMPT.md", "STATUS.md"]) {
+					const srcPath = path.join(exampleDir, file);
+					if (!fs.existsSync(srcPath)) continue;
+					const src = fs.readFileSync(srcPath, "utf-8");
+					writeFile(path.join(destDir, file), interpolate(src, vars), {
+						skipIfExists,
+						label: `${configRepoName}/${vars.tasks_root}/${exampleName}/${file}`,
+					});
+				}
+			}
+			if (exampleTemplateDirs.length === 0) {
+				console.log(`  ${WARN} No example task templates found under templates/tasks/EXAMPLE-*`);
+			}
+		}
+
+		// ── Gitignore enforcement in config repo ────────────────────
+		// Use .taskplane/ prefix so patterns apply within the config repo's
+		// .taskplane/ directory (e.g., ".taskplane/.pi/batch-state.json")
+		// Per spec: standard .pi/ patterns + .worktrees/ in config repo root
+		const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: false, prefix: ".taskplane/" });
+
+		if (gitignoreResult.created) {
+			console.log(`  ${c.green}create${c.reset} ${configRepoName}/.gitignore`);
+		} else if (gitignoreResult.added.length > 0) {
+			console.log(`  ${c.green}update${c.reset} ${configRepoName}/.gitignore (${gitignoreResult.added.length} entries added)`);
+		} else {
+			console.log(`  ${c.dim}skip${c.reset}  ${configRepoName}/.gitignore (all entries already present)`);
+		}
+
+		// Check for tracked runtime artifacts in config repo (workspace-scoped)
+		const wsIsInteractive = !isPreset && !dryRun;
+		await detectAndOfferUntrackArtifacts(configRepoRoot, { dryRun: false, interactive: wsIsInteractive, prefix: ".taskplane/" });
+
+		// ── Pointer file in workspace root .pi/ ─────────────────────
+		const pointer = {
+			config_repo: configRepoName,
+			config_path: ".taskplane",
+		};
+		writeFile(
+			path.join(projectRoot, ".pi", "taskplane-pointer.json"),
+			JSON.stringify(pointer, null, 2) + "\n",
+			{ label: ".pi/taskplane-pointer.json" }
+		);
+
+		// ── Auto-commit config files in the config repo ─────────────
+		await autoCommitTaskFiles(configRepoRoot, vars.tasks_root);
+		// Also stage and commit .taskplane/ directory and .gitignore
+		try {
+			execSync('git add .taskplane/ .gitignore', { cwd: configRepoRoot, stdio: "pipe" });
+			const status = execSync("git diff --cached --name-only", { cwd: configRepoRoot, stdio: "pipe" })
+				.toString().trim();
+			if (status) {
+				execSync('git commit -m "chore: initialize taskplane workspace config"', {
+					cwd: configRepoRoot,
+					stdio: "pipe",
+				});
+				console.log(`\n  ${c.green}git${c.reset}    committed .taskplane/ and .gitignore to ${configRepoName}`);
+			}
+		} catch (err) {
+			console.log(`\n  ${WARN} Could not auto-commit .taskplane/ to ${configRepoName}.`);
+			console.log(`  ${c.dim}Run manually: cd ${configRepoName} && git add .taskplane/ .gitignore && git commit -m "add taskplane config"${c.reset}`);
+		}
+
+		// ── Post-init guidance ──────────────────────────────────────
+		console.log(`\n${OK} ${c.bold}Taskplane initialized in workspace mode!${c.reset}\n`);
+		console.log(`  Config repo: ${c.cyan}${configRepoName}/.taskplane/${c.reset}`);
+		console.log(`  Pointer:     ${c.cyan}.pi/taskplane-pointer.json${c.reset}\n`);
+		console.log(`  ${WARN} ${c.bold}Important:${c.reset} merge these changes to your default branch (e.g., ${c.cyan}develop${c.reset})`);
+		console.log(`     before other team members run ${c.cyan}taskplane init${c.reset}.\n`);
+		console.log(`     cd ${configRepoName}`);
+		console.log(`     git push && ${c.dim}[create PR / merge to default branch]${c.reset}\n`);
+		console.log(`${c.bold}Quick start:${c.reset}`);
+		console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
+		if (preset !== "runner-only") {
+			console.log(`  ${c.cyan}/orch-plan all${c.reset}                                   # preview waves/lanes/dependencies`);
+			console.log(`  ${c.cyan}/orch all${c.reset}                                        # run via orchestrator`);
+		}
+		console.log();
+		return;
+	}
+
+	// ── Existing config overwrite check (for repo mode force reinit) ──
+	let repoUserConfirmedOverwrite = false;
 	const hasConfig =
 		fs.existsSync(path.join(projectRoot, ".pi", "task-runner.yaml")) ||
-		fs.existsSync(path.join(projectRoot, ".pi", "task-orchestrator.yaml"));
+		fs.existsSync(path.join(projectRoot, ".pi", "task-orchestrator.yaml")) ||
+		fs.existsSync(path.join(projectRoot, ".pi", "taskplane-config.json"));
 
-	if (hasConfig && !force) {
+	if (hasConfig && !force && resolvedMode === "repo") {
 		console.log(`${WARN} Taskplane config already exists in this project.`);
 		const proceed = await confirm("  Overwrite existing files?", false);
 		if (!proceed) {
 			console.log("  Aborted.");
 			return;
 		}
+		repoUserConfirmedOverwrite = true;
 	}
 
 	// Gather config values
@@ -633,17 +1379,31 @@ async function cmdInit(args) {
 		vars = await getInteractiveVars(projectRoot, tasksRootOverride);
 	}
 
+	// ── tmux / spawn mode detection ──────────────────────────────
+	// Detect tmux availability and set spawn_mode for orchestrator config.
+	// Runs for all init modes (repo and workspace) per spec.
+	// Silent when tmux is found; shows guidance when missing.
+	// Skipped for runner-only preset (no orchestrator config generated).
+	const { spawnMode, hasTmux } = detectSpawnMode();
+	vars.spawn_mode = spawnMode;
+
+	if (preset !== "runner-only" && !hasTmux) {
+		console.log(`  ${WARN} tmux not found. Using subprocess mode.`);
+		console.log(`     Run ${c.cyan}taskplane install-tmux${c.reset} for full orchestrator support.\n`);
+	}
+
 	const exampleTemplateDirs = noExamples ? [] : listExampleTaskTemplates();
 
 	if (dryRun) {
 		console.log(`\n${c.bold}Dry run — files that would be created:${c.reset}\n`);
-		printFileList(vars, noExamples, preset, exampleTemplateDirs);
+		printFileList(vars, noExamples, preset, exampleTemplateDirs, projectRoot);
 		return;
 	}
 
 	// Scaffold files
 	console.log(`\n${c.bold}Creating files...${c.reset}\n`);
-	const skipIfExists = !force;
+	// Skip existing files only when --force was NOT used AND the user did NOT confirm overwrite
+	const skipIfExists = !force && !repoUserConfirmedOverwrite;
 
 	// Agent prompts — copy thin local files (base prompts ship in the package
 	// and are composed automatically by the task-runner at runtime)
@@ -712,6 +1472,26 @@ async function cmdInit(args) {
 		}
 	}
 
+	// ── Gitignore enforcement ────────────────────────────────────────────
+	// Must run BEFORE autoCommitTaskFiles() so that:
+	// 1. .gitignore changes are committed alongside task files
+	// 2. git rm --cached removals don't get bundled into the task auto-commit
+	const isInteractive = !isPreset && !dryRun;
+	const gitignoreResult = ensureGitignoreEntries(projectRoot, { dryRun });
+
+	if (!dryRun) {
+		if (gitignoreResult.created) {
+			console.log(`  ${c.green}create${c.reset} .gitignore`);
+		} else if (gitignoreResult.added.length > 0) {
+			console.log(`  ${c.green}update${c.reset} .gitignore (${gitignoreResult.added.length} entries added)`);
+		} else {
+			console.log(`  ${c.dim}skip${c.reset}  .gitignore (all entries already present)`);
+		}
+	}
+
+	// Check for tracked runtime artifacts and offer to untrack
+	await detectAndOfferUntrackArtifacts(projectRoot, { dryRun, interactive: isInteractive });
+
 	// Auto-commit task files to git so they're available in worktrees
 	await autoCommitTaskFiles(projectRoot, vars.tasks_root);
 
@@ -776,7 +1556,7 @@ async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 	};
 }
 
-function printFileList(vars, noExamples, preset, exampleTemplateDirs = []) {
+function printFileList(vars, noExamples, preset, exampleTemplateDirs = [], projectRoot = null) {
 	const files = [
 		".pi/agents/task-worker.md",
 		".pi/agents/task-reviewer.md",
@@ -793,7 +1573,54 @@ function printFileList(vars, noExamples, preset, exampleTemplateDirs = []) {
 		}
 	}
 	for (const f of files) console.log(`  ${c.green}create${c.reset} ${f}`);
+
+	// Show gitignore entries that would be added
+	if (projectRoot) {
+		const gitignoreResult = ensureGitignoreEntries(projectRoot, { dryRun: true });
+		if (gitignoreResult.added.length > 0) {
+			const action = fs.existsSync(path.join(projectRoot, ".gitignore")) ? "update" : "create";
+			console.log(`  ${c.green}${action}${c.reset} .gitignore (${gitignoreResult.added.length} entries)`);
+		} else {
+			console.log(`  ${c.dim}skip${c.reset}  .gitignore (all entries already present)`);
+		}
+	}
+
 	console.log();
+}
+
+/**
+ * Print the list of files that would be created for workspace mode (dry-run).
+ * Similar to printFileList but paths are scoped to <configRepo>/.taskplane/.
+ */
+function printWorkspaceFileList(vars, noExamples, preset, exampleTemplateDirs, configRepoName, configRepoRoot) {
+	const prefix = `${configRepoName}/.taskplane`;
+	const files = [
+		`${prefix}/agents/task-worker.md`,
+		`${prefix}/agents/task-reviewer.md`,
+		`${prefix}/agents/task-merger.md`,
+		`${prefix}/task-runner.yaml`,
+	];
+	if (preset !== "runner-only") files.push(`${prefix}/task-orchestrator.yaml`);
+	files.push(`${prefix}/taskplane-config.json`);
+	files.push(`${prefix}/taskplane.json`);
+	files.push(`${prefix}/workspace.json`);
+	files.push(`${configRepoName}/${vars.tasks_root}/CONTEXT.md`);
+	if (!noExamples) {
+		for (const exampleName of exampleTemplateDirs) {
+			files.push(`${configRepoName}/${vars.tasks_root}/${exampleName}/PROMPT.md`);
+			files.push(`${configRepoName}/${vars.tasks_root}/${exampleName}/STATUS.md`);
+		}
+	}
+	for (const f of files) console.log(`  ${c.green}create${c.reset} ${f}`);
+
+	// Show gitignore entries that would be added to config repo (workspace-scoped)
+	const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: true, prefix: ".taskplane/" });
+	if (gitignoreResult.added.length > 0) {
+		const action = fs.existsSync(path.join(configRepoRoot, ".gitignore")) ? "update" : "create";
+		console.log(`  ${c.green}${action}${c.reset} ${configRepoName}/.gitignore (${gitignoreResult.added.length} entries)`);
+	} else {
+		console.log(`  ${c.dim}skip${c.reset}  ${configRepoName}/.gitignore (all entries already present)`);
+	}
 }
 
 // ─── Workspace Mode Detection (for doctor) ─────────────────────────────────

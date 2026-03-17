@@ -261,6 +261,8 @@ export function buildMergeRequest(
  * @param repoRoot        - Main repository root (merge happens here)
  * @param mergeRequestPath - Path to the merge request temp file
  * @param config          - Orchestrator config (for model, tools)
+ * @param stateRoot       - Root for state files (batch state, merge results). Stays at workspace root.
+ * @param agentRoot       - Root for agent prompts. When pointer is resolved, this is the config repo's agent dir. Falls back to `<stateRoot>/.pi/agents/` or `<repoRoot>/.pi/agents/`.
  * @throws MergeError if spawn fails after retries
  */
 export function spawnMergeAgent(
@@ -270,6 +272,7 @@ export function spawnMergeAgent(
 	mergeRequestPath: string,
 	config: OrchestratorConfig,
 	stateRoot?: string,
+	agentRoot?: string,
 ): void {
 	execLog("merge", sessionName, "preparing to spawn merge agent", {
 		mergeWorkDir,
@@ -304,7 +307,7 @@ export function spawnMergeAgent(
 		"pi --no-session",
 		modelArgs,
 		toolsArgs,
-		`--append-system-prompt ${shellQuote(join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md"))}`,
+		`--append-system-prompt ${shellQuote(agentRoot ? join(agentRoot, "task-merger.md") : join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md"))}`,
 		`@${shellQuote(mergeRequestPath)}`,
 	].filter(Boolean).join(" ");
 
@@ -509,6 +512,7 @@ export function mergeWave(
 	batchId: string,
 	baseBranch: string,
 	stateRoot?: string,
+	agentRoot?: string,
 ): MergeWaveResult {
 	const startTime = Date.now();
 	const tmuxPrefix = config.orchestrator.tmux_prefix;
@@ -648,10 +652,11 @@ export function mergeWave(
 			writeFileSync(requestFilePath, mergeRequestContent, "utf-8");
 
 			// Spawn merge agent in the isolated merge worktree
-			spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot);
+			spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
 
-			// Wait for result
-			const mergeResult = waitForMergeResult(resultFilePath, sessionName);
+			// Wait for result — use configured timeout (default 10 min, was 5 min)
+			const timeoutMs = (config.merge.timeout_minutes ?? 10) * 60 * 1000;
+			const mergeResult = waitForMergeResult(resultFilePath, sessionName, timeoutMs);
 
 			// Clean up request file (leave result file for debugging)
 			try {
@@ -894,6 +899,7 @@ export function mergeWaveByRepo(
 	baseBranch: string,
 	workspaceConfig?: WorkspaceConfig | null,
 	stateRoot?: string,
+	agentRoot?: string,
 ): MergeWaveResult {
 	const startTime = Date.now();
 
@@ -947,6 +953,7 @@ export function mergeWaveByRepo(
 			batchId,
 			baseBranch,
 			stateRoot,
+			agentRoot,
 		);
 		// Attach empty repoResults for consistent shape
 		return { ...result, repoResults: [] };
@@ -991,6 +998,7 @@ export function mergeWaveByRepo(
 			batchId,
 			groupBaseBranch,
 			stateRoot,
+			agentRoot,
 		);
 
 		// Accumulate lane results

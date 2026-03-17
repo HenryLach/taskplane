@@ -32,6 +32,7 @@ import {
 	runPreflight,
 } from "./index.ts";
 import { buildExecutionContext } from "./workspace.ts";
+import { openSettingsTui } from "./settings-tui.ts";
 import type {
 	AbortMode,
 	ExecutionContext,
@@ -208,6 +209,7 @@ export default function (pi: ExtensionAPI) {
 				},
 				execCtx!.workspaceConfig,
 				execCtx!.workspaceRoot,
+				execCtx!.pointer?.agentRoot,
 			);
 
 			// Final widget update after batch completes
@@ -400,6 +402,8 @@ export default function (pi: ExtensionAPI) {
 					updateOrchWidget();
 				},
 				execCtx!.workspaceConfig,
+				execCtx!.workspaceRoot,
+				execCtx!.pointer?.agentRoot,
 			);
 
 			// Final widget update
@@ -640,6 +644,21 @@ export default function (pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			const sessions = listOrchSessions(orchConfig.orchestrator.tmux_prefix, orchBatchState);
 			ctx.ui.notify(formatOrchSessions(sessions), "info");
+		},
+	});
+
+	// ── Settings TUI ─────────────────────────────────────────────────
+
+	pi.registerCommand("settings", {
+		description: "View and edit taskplane configuration",
+		handler: async (_args, ctx) => {
+			if (!requireExecCtx(ctx)) return;
+
+			try {
+				await openSettingsTui(ctx, execCtx!.workspaceRoot);
+			} catch (err: any) {
+				ctx.ui.notify(`❌ Failed to load settings: ${err.message}`, "error");
+			}
 		},
 	});
 

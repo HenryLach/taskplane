@@ -2,7 +2,7 @@
 
 This page documents Taskplane command surfaces:
 
-1. pi session slash commands (`/task`, `/orch*`)
+1. pi session slash commands (`/task`, `/orch*`, `/settings`)
 2. CLI shell commands (`taskplane ...`)
 
 > Slash commands are registered by Taskplane extensions when loaded in pi.
@@ -320,13 +320,76 @@ List active orchestrator tmux sessions.
 
 ---
 
+## Configuration Commands
+
+### `/settings`
+
+Open the interactive settings TUI for viewing and editing taskplane configuration.
+
+**Syntax**
+
+```text
+/settings
+```
+
+**Behavior**
+
+- Shows a two-level navigation: section selector → field list
+- Displays 12 sections covering orchestrator, task-runner, user preferences, and advanced (JSON-only) fields
+- Each field shows its current value and source indicator: `(project)`, `(user)`, or `(default)`
+- Enum and boolean fields use toggleable controls; strings and numbers use text input
+- Layer 1 (project) changes write to `.pi/taskplane-config.json`
+- Layer 2 (user preference) changes write to `~/.pi/agent/taskplane/preferences.json`
+- Dual-layer (L1+L2) fields prompt for save destination
+- Project config changes require confirmation before writing
+- New config parameters added in future schema updates appear automatically
+- Changes take effect on next session restart
+
+**Sections**
+
+| Section | Description |
+|---------|-------------|
+| Orchestrator | Lanes, worktree layout, spawn mode, operator ID |
+| Dependencies | Dependency source and caching |
+| Assignment | Task assignment strategy |
+| Pre-Warm | Auto-detection settings |
+| Merge | Merge model, tools, and ordering |
+| Failure Policy | Task/merge failure handling, timeouts |
+| Monitoring | Poll interval |
+| Worker | Worker model, tools, thinking, spawn mode |
+| Reviewer | Reviewer model, tools, thinking |
+| Context Limits | Context window, iteration limits, progress limits |
+| User Preferences | Dashboard port and other per-user settings |
+| Advanced (JSON Only) | Read-only listing of uncovered/non-editable fields (collections, records, arrays, and other fields not directly editable in the TUI) |
+
+**Example**
+
+```text
+/settings
+```
+
+Opens the settings TUI in the current pi session. No arguments needed.
+
+**Common responses**
+
+- `❌ Orchestrator not initialized. Workspace configuration failed at startup.` — the execution context (`execCtx`) was not set during session startup; typically caused by a missing or invalid workspace/repo configuration. Fix the config and restart the pi session.
+- `❌ Failed to load settings: <message>` — an error occurred while loading or parsing config files (e.g., malformed JSON/YAML, filesystem permission issue). The error message provides specifics.
+
+---
+
 ## CLI Commands
 
 These are shell commands (not pi slash commands).
 
 ### `taskplane init [options]`
 
-Scaffold Taskplane project files (`.pi/`, agents, task templates).
+Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs the appropriate init flow.
+
+**Mode detection:**
+
+- **Repo mode** — current directory is a git repo with no git repo subdirectories. Scaffolds config in `.pi/`.
+- **Workspace mode** — current directory is not a git repo but contains git repo subdirectories. Scaffolds config in `<config-repo>/.taskplane/` and creates a pointer file.
+- **Ambiguous** — git repo with git repo subdirectories. Prompts interactively; defaults to repo mode in non-interactive modes (`--preset`, `--dry-run`).
 
 **Common options**
 
@@ -341,6 +404,9 @@ Scaffold Taskplane project files (`.pi/`, agents, task templates).
 
 - `--tasks-root` must be relative to project root.
 - When `--tasks-root` is passed, Taskplane skips sample tasks by default to avoid polluting an existing task area.
+- Init adds required `.gitignore` entries for runtime artifacts (batch state, orchestrator logs, worktrees, etc.) and offers to untrack any that are already committed.
+- tmux availability is detected at init time. When tmux is found, `spawn_mode` defaults to `"tmux"` in the orchestrator config; otherwise it defaults to `"subprocess"`.
+- Init generates `taskplane-config.json` (JSON) alongside YAML configs. JSON takes precedence when present; YAML is retained during the transition period.
 
 ### `taskplane doctor`
 

@@ -6,6 +6,8 @@ This file configures parallel orchestration behavior for `/orch*` commands.
 
 > Template source: `templates/config/task-orchestrator.yaml`
 
+> **JSON alternative:** These settings can also be configured via `.pi/taskplane-config.json`, which merges task-runner and orchestrator settings into a single file. See [Unified JSON Config](#unified-json-config) below for details and precedence rules.
+
 ---
 
 ## Schema overview
@@ -130,6 +132,127 @@ The resolved value is sanitized (lowercase, alphanumeric + hyphens only) and tru
 - **CI environments:** Set `TASKPLANE_OPERATOR_ID` explicitly (e.g., `ci-runner-1`) to avoid OS username variability.
 - **Team usage:** Ensure operator identifiers are unique within the first 12 characters after sanitization. Names like `ci-runner-team-alpha` and `ci-runner-team-beta` both truncate to `ci-runner-te` — use shorter, distinct prefixes instead.
 - **Sanitization note:** Dots and underscores are collapsed to hyphens, so `john.doe` and `john-doe` resolve to the same `opId`.
+
+---
+
+## Unified JSON Config
+
+Orchestrator settings can be provided via the unified `.pi/taskplane-config.json` file instead of (or alongside) the YAML file. The JSON format merges settings from both `task-orchestrator.yaml` and `task-runner.yaml` into one file.
+
+### Precedence
+
+The config loader uses the following precedence:
+
+1. **`.pi/taskplane-config.json` exists and is valid** → use it (YAML files are ignored)
+2. **`.pi/taskplane-config.json` exists but is malformed** → error (hard failure, not a silent fallback)
+3. **`.pi/taskplane-config.json` absent** → fall back to `.pi/task-orchestrator.yaml` + `.pi/task-runner.yaml`
+4. **No config files present** → internal defaults
+
+> **Important:** When `taskplane-config.json` is present, YAML files are completely ignored — they are not merged together. This is an either/or precedence, not a layered merge.
+
+### Path resolution
+
+Config files are resolved relative to the project root. In workspace/worktree mode, if the current working directory has no config files, the loader checks `TASKPLANE_WORKSPACE_ROOT` for config files before falling back to defaults.
+
+### Error behavior
+
+| Condition | Behavior |
+|---|---|
+| Valid JSON with `configVersion: 1` | Config loaded, missing fields filled from defaults |
+| Valid JSON without `configVersion` | **Error:** `CONFIG_VERSION_MISSING` — loader throws |
+| Malformed JSON (syntax error) | **Error:** `CONFIG_JSON_MALFORMED` — loader throws |
+| JSON with unsupported `configVersion` | **Error:** `CONFIG_VERSION_UNSUPPORTED` — "please upgrade Taskplane" |
+| YAML present, no JSON | YAML loaded and mapped to unified config shape |
+| Malformed YAML | Silent fallback to internal defaults (legacy behavior preserved) |
+
+### Key naming: YAML snake_case → JSON camelCase
+
+The JSON format uses **camelCase** keys. YAML snake_case keys are mapped automatically by the loader.
+
+| YAML key | JSON key |
+|---|---|
+| `max_lanes` | `maxLanes` |
+| `worktree_location` | `worktreeLocation` |
+| `worktree_prefix` | `worktreePrefix` |
+| `batch_id_format` | `batchIdFormat` |
+| `spawn_mode` | `spawnMode` |
+| `tmux_prefix` | `tmuxPrefix` |
+| `operator_id` | `operatorId` |
+| `size_weights` | `sizeWeights` |
+| `auto_detect` | `autoDetect` |
+| `pre_warm` | `preWarm` |
+| `on_task_failure` | `onTaskFailure` |
+| `on_merge_failure` | `onMergeFailure` |
+| `stall_timeout` | `stallTimeout` |
+| `max_worker_minutes` | `maxWorkerMinutes` |
+| `abort_grace_period` | `abortGracePeriod` |
+| `poll_interval` | `pollInterval` |
+
+> **Note:** User-defined dictionary keys (size weight labels like `S`/`M`/`L`, pre-warm command names, etc.) are preserved verbatim in both formats.
+
+### Section mapping
+
+In the JSON file, orchestrator settings live under the `orchestrator` key:
+
+| YAML section | JSON path |
+|---|---|
+| `orchestrator` | `orchestrator.orchestrator` |
+| `dependencies` | `orchestrator.dependencies` |
+| `assignment` | `orchestrator.assignment` |
+| `pre_warm` | `orchestrator.preWarm` |
+| `merge` | `orchestrator.merge` |
+| `failure` | `orchestrator.failure` |
+| `monitoring` | `orchestrator.monitoring` |
+
+### Example JSON
+
+```json
+{
+  "configVersion": 1,
+  "orchestrator": {
+    "orchestrator": {
+      "maxLanes": 3,
+      "worktreeLocation": "subdirectory",
+      "worktreePrefix": "taskplane-wt",
+      "batchIdFormat": "timestamp",
+      "spawnMode": "subprocess",
+      "tmuxPrefix": "orch",
+      "operatorId": ""
+    },
+    "dependencies": {
+      "source": "prompt",
+      "cache": true
+    },
+    "assignment": {
+      "strategy": "affinity-first",
+      "sizeWeights": { "S": 1, "M": 2, "L": 4 }
+    },
+    "preWarm": {
+      "autoDetect": false,
+      "commands": {},
+      "always": []
+    },
+    "merge": {
+      "model": "",
+      "tools": "read,write,edit,bash,grep,find,ls",
+      "verify": [],
+      "order": "fewest-files-first"
+    },
+    "failure": {
+      "onTaskFailure": "skip-dependents",
+      "onMergeFailure": "pause",
+      "stallTimeout": 30,
+      "maxWorkerMinutes": 30,
+      "abortGracePeriod": 60
+    },
+    "monitoring": {
+      "pollInterval": 5
+    }
+  }
+}
+```
+
+> The `taskRunner` key is also available at the top level for task-runner settings — see [Task Runner Config Reference](task-runner.yaml.md#unified-json-config).
 
 ---
 
