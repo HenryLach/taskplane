@@ -4,8 +4,8 @@
 **Status:** ✅ Step 2 Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -58,8 +58,10 @@
 ### Step 3: tmux and Environment Detection
 **Status:** 🟨 In Progress
 
-- [ ] tmux detection with spawn_mode defaulting
-- [ ] Guidance message when tmux not found
+- [ ] Implement `detectSpawnMode()` reusable helper that returns `{ spawnMode, hasTmux }` — reusable for Step 4 workspace init
+- [ ] Wire detected spawn_mode into `generateOrchestratorYaml()` via init vars (replace hardcoded `"subprocess"`)
+- [ ] Show guidance message when tmux not found; silent when present. Skip message for runner-only preset (no orchestrator). Respect dry-run output.
+- [ ] Verify: preset/dry-run/runner-only compatibility; tmux-present and tmux-absent branches
 
 ---
 
@@ -110,6 +112,7 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ## Discoveries
 | Discovery | Disposition | Location |
@@ -154,6 +157,10 @@
 | 2026-03-17 16:10 | Worker iter 3 | done in 342s, ctx: 19%, tools: 48 |
 | 2026-03-17 16:10 | Step 2 complete | Gitignore Enforcement |
 | 2026-03-17 16:10 | Step 3 started | tmux and Environment Detection |
+| 2026-03-17 16:12 | Review R007 | plan Step 3: REVISE |
+| 2026-03-17 16:12 | Worker iter 3 | done in 501s, ctx: 23%, tools: 68 |
+| 2026-03-17 16:12 | Step 2 complete | Gitignore Enforcement |
+| 2026-03-17 16:12 | Step 3 started | tmux and Environment Detection |
 
 ## Blockers
 *None*
