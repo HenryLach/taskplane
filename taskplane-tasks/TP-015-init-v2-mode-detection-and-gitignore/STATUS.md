@@ -1,7 +1,7 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
 **Current Step:** Step 7: Documentation & Delivery
-**Status:** ✅ Step 5 Complete
+**Status:** ✅ All Steps Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
 **Review Counter:** 15
@@ -106,13 +106,13 @@
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Update `docs/tutorials/install.md` — document init-v2 flow: mode auto-detection (repo vs workspace), gitignore enforcement + tracked artifact cleanup, tmux-based spawn_mode defaulting, JSON config output with YAML transition note
 - [x] Check/update `docs/reference/commands.md` — verify `taskplane init` section reflects new behavior
 - [x] Check/update `README.md` — verify install/quickstart section is consistent with new init flow
 - [x] Final verification: commits use TP-015 prefix, all tests pass
-- [ ] `.DONE` created in task folder
+- [x] `.DONE` created in task folder
 
 ---
 
