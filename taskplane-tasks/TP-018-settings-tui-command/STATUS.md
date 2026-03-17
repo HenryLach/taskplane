@@ -1,6 +1,6 @@
 # TP-018: /settings TUI Command — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Design Settings Navigation
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-17
 **Review Level:** 2
@@ -28,7 +28,7 @@
 ---
 
 ### Step 1: Design Settings Navigation
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Section groupings and field types defined
 - [ ] Layer 1 vs Layer 2 fields identified
@@ -98,6 +98,9 @@
 | 2026-03-17 17:29 | Worker iter 1 | done in 254s, ctx: 33%, tools: 42 |
 | 2026-03-17 17:30 | Review R002 | code Step 0: REVISE |
 | 2026-03-17 17:30 | Review R002 | code Step 0: REVISE |
+| 2026-03-17 17:32 | Worker iter 1 | done in 128s, ctx: 13%, tools: 20 |
+| 2026-03-17 17:32 | Step 0 complete | Preflight |
+| 2026-03-17 17:32 | Step 1 started | Design Settings Navigation |
 
 ## Blockers
 *None*
