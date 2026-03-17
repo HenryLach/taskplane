@@ -90,7 +90,7 @@
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Commands reference updated (`docs/reference/commands.md` — add `/settings` section)
+- [x] Commands reference updated (`docs/reference/commands.md` — add `/settings` section)
 - [ ] Check-if-affected: Update `README.md` command table with `/settings` row
 - [ ] Check-if-affected: Review `docs/tutorials/install.md` — add `/settings` mention if appropriate
 - [ ] Normalize STATUS.md top-level status field to match actual step state

@@ -403,6 +403,54 @@ Notes:
 
 ---
 
+## Configuration Commands
+
+### `/settings`
+
+Open the interactive settings TUI for viewing and editing taskplane configuration.
+
+**Syntax**
+
+```text
+/settings
+```
+
+**Behavior**
+
+- Shows a two-level navigation: section selector → field list
+- Displays 12 sections covering orchestrator, task-runner, user preferences, and advanced (JSON-only) fields
+- Each field shows its current value and source indicator: `(project)`, `(user)`, or `(default)`
+- Enum and boolean fields use toggleable controls; strings and numbers use text input
+- Layer 1 (project) changes write to `.pi/taskplane-config.json`
+- Layer 2 (user preference) changes write to `~/.pi/agent/taskplane/preferences.json`
+- Dual-layer (L1+L2) fields prompt for save destination
+- Project config changes require confirmation before writing
+- New config parameters added in future schema updates appear automatically
+- Changes take effect on next session restart
+
+**Sections**
+
+| Section | Description |
+|---------|-------------|
+| Orchestrator | Lanes, worktree layout, spawn mode, operator ID |
+| Dependencies | Dependency source and caching |
+| Assignment | Task assignment strategy |
+| Pre-Warm | Auto-detection settings |
+| Merge | Merge model, tools, and ordering |
+| Failure Policy | Task/merge failure handling, timeouts |
+| Monitoring | Poll interval |
+| Worker | Worker model, tools, thinking, spawn mode |
+| Reviewer | Reviewer model, tools, thinking |
+| Context Limits | Context window, iteration limits, progress limits |
+| User Preferences | Dashboard port and other per-user settings |
+| Advanced (JSON Only) | Read-only listing of collection/Record/array fields |
+
+**Common responses**
+
+- Error notification if config root cannot be resolved (e.g. no project context)
+
+---
+
 ## Related
 
 - [Task Runner Config Reference](configuration/task-runner.yaml.md)
