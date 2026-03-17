@@ -45,7 +45,7 @@
 **Status:** 🟨 In Progress
 
 - [x] Verify completion criteria: all prior steps complete, preferences auto-created on first load, user values override project defaults for Layer 2 fields, tests pass
-- [ ] Documentation impact check: confirm no docs need updating (internal plumbing per PROMPT)
+- [x] Documentation impact check: confirm no docs need updating (internal plumbing per PROMPT)
 - [ ] Create `.DONE` in task folder
 - [ ] Final commit with `feat(TP-017): ...` prefix and push
 
