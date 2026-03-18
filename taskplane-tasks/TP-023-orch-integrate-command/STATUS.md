@@ -1,11 +1,11 @@
 # TP-023: `/orch-integrate` Command — Status
 
-**Current Step:** Step 1: Register `/orch-integrate` Command
+**Current Step:** Step 2: Implement Integration Logic
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -38,11 +38,11 @@
 ---
 
 ### Step 2: Implement Integration Logic
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Load and validate batch state
-- [ ] Branch safety check (current vs baseBranch)
-- [ ] Pre-integration summary
+- [ ] Resolve orch branch + baseBranch: (1) try loadBatchState → use orchBranch/baseBranch from state, (2) if null use positional `<orch-branch>` arg, (3) if neither list candidate `orch/*` branches and guide user. Handle StateFileError exceptions (IO/parse/schema) with user-facing messages.
+- [ ] Branch safety check: getCurrentBranch(repoRoot) with detached HEAD null-check, compare to baseBranch (or infer baseBranch from current branch when state unavailable), --force bypass. All git/state reads use execCtx!.repoRoot.
+- [ ] Pre-integration summary: show orch branch name, baseBranch, commits ahead, files changed via git rev-list/diff --stat
 
 ---
 
@@ -84,6 +84,8 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ---
 
@@ -123,6 +125,11 @@
 | 2026-03-18 16:50 | Worker iter 2 | done in 376s, ctx: 23%, tools: 52 |
 | 2026-03-18 16:53 | Review R004 | code Step 1: REVISE |
 | 2026-03-18 iter2 | R004 revisions | Added 24 unit tests for parseIntegrateArgs() in orch-integrate.test.ts, fixed duplicate rows in reviews/exec tables. 777/777 tests pass |
+| 2026-03-18 16:59 | Worker iter 2 | done in 358s, ctx: 18%, tools: 41 |
+| 2026-03-18 16:59 | Step 1 complete | Register `/orch-integrate` Command |
+| 2026-03-18 16:59 | Step 2 started | Implement Integration Logic |
+| 2026-03-18 17:00 | Review R005 | plan Step 2: REVISE |
+| 2026-03-18 iter3 | R005 hydration | Expanded Step 2: state→arg→branch-scan fallback, StateFileError handling, detached HEAD, repoRoot invariant |
 
 ---
 
