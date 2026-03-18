@@ -111,7 +111,7 @@
 - [x] Resolve R012 debt: add detached-HEAD test for orch branch creation + deduplicate STATUS.md review/log rows
 - [x] Reconcile STATUS.md audit consistency (single canonical review timeline, no duplicate rows)
 - [x] Verify discoveries are logged
-- [ ] Create `.DONE` file
+- [x] Create `.DONE` file
 
 ---
 
