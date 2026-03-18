@@ -22,7 +22,7 @@ import { resolve, basename } from "path";
 // Direct imports from production modules
 import { sanitizeNameComponent, resolveOperatorId, resolveRepoSlug } from "../taskplane/naming.ts";
 import { generateTmuxSessionName, generateLaneId } from "../taskplane/waves.ts";
-import { generateBranchName, generateWorktreePath } from "../taskplane/worktree.ts";
+import { generateBranchName, generateWorktreePath, generateMergeWorktreePath, generateBatchContainerPath } from "../taskplane/worktree.ts";
 import { parseOrchSessionNames } from "../taskplane/persistence.ts";
 import type { OrchestratorConfig } from "../taskplane/types.ts";
 import { DEFAULT_ORCHESTRATOR_CONFIG } from "../taskplane/types.ts";

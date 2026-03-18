@@ -1,11 +1,11 @@
 # TP-021: Batch-Scoped Worktree Containers — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 8
-**Iteration:** 5
+**Review Counter:** 10
+**Iteration:** 6
 **Size:** M
 
 ---
@@ -74,9 +74,11 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
+- [ ] Check docs impact: assess `docs/reference/configuration/taskplane-settings.md` for stale worktree naming references; log disposition (updated or deferred to TP-024) in Discoveries
 - [ ] Discoveries logged
+- [ ] Verify all PROMPT.md completion criteria are satisfied (batch-scoped paths, merge in container, no collisions, all callers updated, all tests passing)
 - [ ] `.DONE` created
 
 ---
@@ -99,6 +101,8 @@
 | R007 | code | Step 3 | APPROVE | .reviews/R007-code-step3.md |
 | R008 | plan | Step 4 | REVISE | .reviews/R008-plan-step4.md |
 | R008 | plan | Step 4 | REVISE | .reviews/R008-plan-step4.md |
+| R009 | code | Step 4 | APPROVE | .reviews/R009-code-step4.md |
+| R010 | plan | Step 5 | REVISE | .reviews/R010-plan-step5.md |
 |---|------|------|---------|------|
 
 ---
@@ -171,6 +175,11 @@
 | 2026-03-18 14:05 | Step 4 started | Testing & Verification |
 | 2026-03-18 14:08 | Review R008 | plan Step 4: REVISE |
 | 2026-03-18 14:11 | Review R008 | plan Step 4: REVISE |
+| 2026-03-18 14:21 | Worker iter 5 | done in 818s, ctx: 46%, tools: 68 |
+| 2026-03-18 14:25 | Review R009 | code Step 4: APPROVE |
+| 2026-03-18 14:25 | Step 4 complete | Testing & Verification |
+| 2026-03-18 14:25 | Step 5 started | Documentation & Delivery |
+| 2026-03-18 14:26 | Review R010 | plan Step 5: REVISE |
 
 ---
 
