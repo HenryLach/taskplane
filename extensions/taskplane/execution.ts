@@ -189,9 +189,11 @@ export function buildLaneEnvVars(
 	};
 
 	// In workspace mode, the worktree cwd is inside a repo — not the workspace root.
-	// The task-runner needs TASKPLANE_WORKSPACE_ROOT to find .pi/task-runner.yaml
+	// The task-runner needs TASKPLANE_WORKSPACE_ROOT to find .pi/ config
 	// and resolve task area paths from the correct base directory.
-	if (workspaceRoot && workspaceRoot !== repoRoot) {
+	// Always set when workspaceRoot is provided (workspace mode), regardless of
+	// whether it equals repoRoot (it often does — cwd is the workspace root).
+	if (workspaceRoot) {
 		vars.TASKPLANE_WORKSPACE_ROOT = workspaceRoot;
 	}
 
