@@ -71,6 +71,34 @@ export function generateBatchContainerName(opId: string, batchId: string): strin
 }
 
 /**
+ * Generate the absolute path to the batch container directory.
+ *
+ * All worktrees for a single batch (lanes + merge) live inside this container.
+ * Format: `{basePath}/{opId}-{batchId}`
+ *
+ * Uses `resolveWorktreeBasePath()` to respect `worktree_location` config
+ * (sibling vs subdirectory mode). Both `generateWorktreePath()` and
+ * `generateMergeWorktreePath()` delegate to this function, ensuring
+ * consistent base-path resolution.
+ *
+ * @param opId     - Operator identifier (sanitized, e.g., "henrylach")
+ * @param batchId  - Batch ID timestamp (e.g. "20260308T111750")
+ * @param repoRoot - Absolute path to the main repository root
+ * @param config   - Orchestrator config (optional; defaults to subdirectory mode)
+ * @returns        - Absolute path to the batch container directory
+ */
+export function generateBatchContainerPath(
+	opId: string,
+	batchId: string,
+	repoRoot: string,
+	config?: OrchestratorConfig,
+): string {
+	const effectiveConfig = config || DEFAULT_ORCHESTRATOR_CONFIG;
+	const basePath = resolveWorktreeBasePath(repoRoot, effectiveConfig);
+	return resolve(basePath, generateBatchContainerName(opId, batchId));
+}
+
+/**
  * Generate worktree path based on config's worktree_location setting.
  *
  * Naming rule: `{basePath}/{opId}-{batchId}/lane-{N}`
@@ -79,6 +107,9 @@ export function generateBatchContainerName(opId: string, batchId: string): strin
  *
  * Each batch gets its own container directory, preventing collisions
  * between concurrent batches by the same operator.
+ *
+ * Uses `generateBatchContainerPath()` for the container directory,
+ * preserving `worktree_location` semantics (sibling vs subdirectory).
  *
  * Uses path.resolve() for Windows path normalization (R002 requirement).
  *
@@ -97,16 +128,15 @@ export function generateWorktreePath(
 	config?: OrchestratorConfig,
 	batchId?: string,
 ): string {
-	const effectiveConfig = config || DEFAULT_ORCHESTRATOR_CONFIG;
-	const basePath = resolveWorktreeBasePath(repoRoot, effectiveConfig);
-
 	if (batchId) {
 		// New batch-scoped container layout
-		const container = generateBatchContainerName(opId, batchId);
-		return resolve(basePath, container, `lane-${laneNumber}`);
+		const containerPath = generateBatchContainerPath(opId, batchId, repoRoot, config);
+		return resolve(containerPath, `lane-${laneNumber}`);
 	}
 
 	// Legacy fallback (no batchId) — flat layout for backward compatibility
+	const effectiveConfig = config || DEFAULT_ORCHESTRATOR_CONFIG;
+	const basePath = resolveWorktreeBasePath(repoRoot, effectiveConfig);
 	return resolve(basePath, `${prefix}-${opId}-${laneNumber}`);
 }
 
@@ -115,7 +145,8 @@ export function generateWorktreePath(
  *
  * Format: `{basePath}/{opId}-{batchId}/merge`
  *
- * Used by merge.ts instead of the ad-hoc merge worktree path, ensuring
+ * Uses `generateBatchContainerPath()` for config-aware, base-path-consistent
+ * path resolution (respects `worktree_location` setting). This ensures
  * the merge worktree is co-located with lane worktrees in the same
  * batch container for unified cleanup.
  *
@@ -130,10 +161,8 @@ export function generateMergeWorktreePath(
 	batchId: string,
 	config?: OrchestratorConfig,
 ): string {
-	const effectiveConfig = config || DEFAULT_ORCHESTRATOR_CONFIG;
-	const basePath = resolveWorktreeBasePath(repoRoot, effectiveConfig);
-	const container = generateBatchContainerName(opId, batchId);
-	return resolve(basePath, container, "merge");
+	const containerPath = generateBatchContainerPath(opId, batchId, repoRoot, config);
+	return resolve(containerPath, "merge");
 }
 
 /**

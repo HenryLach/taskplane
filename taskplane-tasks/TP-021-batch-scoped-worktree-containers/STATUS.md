@@ -25,13 +25,13 @@
 ---
 
 ### Step 1: Refactor Worktree Path Generation
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add `generateBatchContainerPath()` shared helper: `{basePath}/{opId}-{batchId}` using `resolveWorktreeBasePath()` (preserves sibling/subdirectory mode)
-- [ ] Update `generateWorktreePath()` signature to include `batchId`, output `{basePath}/{opId}-{batchId}/lane-{N}` via the shared helper
-- [ ] Add `generateMergeWorktreePath()` using the same shared helper: `{basePath}/{opId}-{batchId}/merge` (config-aware, base-path-consistent)
-- [ ] Verify `CreateWorktreeOptions` already has `batchId` (no schema change needed — R003 item)
-- [ ] Update `createWorktree()` to pass `batchId` to `generateWorktreePath()` and ensure container dir is auto-created (`mkdirSync recursive`)
+- [x] Add `generateBatchContainerPath()` shared helper: `{basePath}/{opId}-{batchId}` using `resolveWorktreeBasePath()` (preserves sibling/subdirectory mode)
+- [x] Update `generateWorktreePath()` signature to include `batchId`, output `{basePath}/{opId}-{batchId}/lane-{N}` via the shared helper
+- [x] Add `generateMergeWorktreePath()` using the same shared helper: `{basePath}/{opId}-{batchId}/merge` (config-aware, base-path-consistent)
+- [x] Verify `CreateWorktreeOptions` already has `batchId` (no schema change needed — R003 item)
+- [x] Update `createWorktree()` to pass `batchId` to `generateWorktreePath()` and ensure container dir is auto-created (`mkdirSync recursive`)
 
 ---
 
