@@ -133,7 +133,9 @@
 | 2026-03-18 14:32 | Task started | Extension-driven execution |
 | 2026-03-18 14:32 | Step 0 started | Preflight |
 | 2026-03-18 14:34 | Review R001 | plan Step 0: REVISE |
+| 2026-03-18 | Step 0 complete | All preflight items checked, baseBranch call sites mapped, test files identified |
 | 2026-03-18 14:34 | Review R001 | plan Step 0: REVISE |
+| 2026-03-18 14:37 | Worker iter 1 | done in 215s, ctx: 49%, tools: 40 |
 
 ---
 
@@ -145,4 +147,17 @@
 
 ## Notes
 
-*Reserved for execution notes*
+### Impacted Test Files (Step 5 reference)
+-  — baseBranch/orchBranch serialization, v1→v2 upconvert, round-trip tests
+-  — resolveBaseBranch() tests (likely no changes needed)
+-  — resolveBaseBranch, state serialization with baseBranch
+-  — baseBranch in createWorktree calls (no change: worktree code is unchanged)
+-  — orchBranch field in state fixtures
+-  — merge flow tests (may need update for update-ref vs ff-only)
+
+### baseBranch → orchBranch Migration Summary
+- **engine.ts**: 3 sites migrate to orchBranch (executeWave, mergeWaveByRepo, post-merge reset). Phase 3 cleanup keeps baseBranch.
+- **merge.ts**: ff-only replaced with update-ref, stash/pop removed. targetBranch parameter receives orchBranch from caller.
+- **resume.ts**: 4 sites migrate to orchBranch (mirrors engine.ts). Cleanup keeps baseBranch.
+- **waves.ts**: No changes needed. resolveBaseBranch() receives orchBranch in repo mode.
+- **persistence.ts**: orchBranch serialization already present from TP-020.
