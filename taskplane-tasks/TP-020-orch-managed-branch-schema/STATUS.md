@@ -1,22 +1,25 @@
 # TP-020: Orch-Managed Branch Schema & Config — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 1
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Read `types.ts` — locate runtime state, persisted state, config interfaces, defaults
 - [ ] Read `config-schema.ts` — understand config field definitions
-- [ ] Read `config-loader.ts` — understand camelCase↔snake_case mappings
+- [ ] Read `config-loader.ts` — understand camelCase↔snake_case mappings and legacy snake_case adapter
 - [ ] Read `settings-tui.ts` — understand TUI field declarations
+- [ ] Read `persistence.ts` — locate backward-compat defaults for new persisted fields, serialization/deserialization paths
+- [ ] Read `settings-tui.test.ts` — scan test coverage for section schema constraints, Advanced discoverability
+- [ ] Record preflight discoveries (file+line anchors) in STATUS.md Notes
 
 ---
 
@@ -66,6 +69,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ---
@@ -82,6 +86,11 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-18 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-18 03:23 | Task started | Extension-driven execution |
+| 2026-03-18 03:23 | Step 0 started | Preflight |
+| 2026-03-18 03:23 | Task started | Extension-driven execution |
+| 2026-03-18 03:23 | Step 0 started | Preflight |
+| 2026-03-18 03:24 | Review R001 | plan Step 0: REVISE |
 
 ---
 
