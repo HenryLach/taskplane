@@ -1,11 +1,11 @@
 # TP-022: Orch Branch Lifecycle & Merge Redirect — Status
 
-**Current Step:** Step 2: Route Worktrees and Merge to Orch Branch
+**Current Step:** Step 3: Replace Fast-Forward with update-ref in Merge
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** L
 
 ---
@@ -58,11 +58,12 @@
 ---
 
 ### Step 3: Replace Fast-Forward with update-ref in Merge
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Replace `git merge --ff-only` with `git update-ref`
-- [ ] Remove stash/pop logic
-- [ ] Verify merge worktree still works against orch branch
+- [ ] Replace ff-only+stash/pop block with rev-parse+update-ref: get temp branch HEAD via `git rev-parse`, update target branch ref via `git update-ref`, with proper error handling (failedLane/failureReason set on failure, exec logging for success and failure)
+- [ ] Add non-regression verification: no `git merge --ff-only` or `git stash` calls remain in merge flow
+- [ ] Add Step 3 tests to orch-direct-implementation.test.ts: success path (update-ref called, no ff-only/stash), failure path (update-ref error → failedLane/failureReason set, status partial/failed)
+- [ ] Clean up duplicate R006 review row in STATUS.md
 
 ---
 
@@ -106,6 +107,7 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ---
 
@@ -178,6 +180,13 @@
 | 2026-03-18 15:12 | Review R006 | code Step 2: REVISE |
 | 2026-03-18 | R006 revisions | Fixed orchBranch guard ordering in resume.ts, added orch branch fallback guard in resolveBaseBranch(), added tests 9-10, 753 tests pass |
 | 2026-03-18 15:13 | Review R006 | code Step 2: REVISE |
+| 2026-03-18 15:19 | Worker iter 3 | done in 434s, ctx: 20%, tools: 39 |
+| 2026-03-18 15:19 | Step 2 complete | Route Worktrees and Merge to Orch Branch |
+| 2026-03-18 15:19 | Step 3 started | Replace Fast-Forward with update-ref in Merge |
+| 2026-03-18 15:21 | Review R007 | plan Step 3: REVISE |
+| 2026-03-18 15:22 | Worker iter 3 | done in 495s, ctx: 25%, tools: 57 |
+| 2026-03-18 15:22 | Step 2 complete | Route Worktrees and Merge to Orch Branch |
+| 2026-03-18 15:22 | Step 3 started | Replace Fast-Forward with update-ref in Merge |
 
 ---
 
