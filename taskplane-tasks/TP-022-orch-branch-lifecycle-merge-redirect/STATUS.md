@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 2
 **Size:** L
 
@@ -28,12 +28,14 @@
 ---
 
 ### Step 1: Create Orch Branch at Batch Start
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] Generate orch branch name `orch/{opId}-{batchId}` using `resolveOperatorId(orchConfig)` and create via `runGit(["branch", orchBranch, baseBranch], repoRoot)`; store in `batchState.orchBranch`
 - [x] Handle creation failure: set phase="failed", endedAt, push error, notify, return (matching existing early-exit pattern in engine.ts)
 - [x] Log branch creation via `execLog("batch", batchId, "created orch branch", { orchBranch, baseBranch })`
 - [x] R003: Clean duplicate Execution Log rows in STATUS.md
+- [ ] R004: Move orch branch creation after preflight+discovery, or add best-effort cleanup on all planning-phase early exits that occur after branch creation
+- [ ] R004: Add tests for orch branch creation (success path, failure path, cleanup on early exit)
 
 ---
 
@@ -91,6 +93,7 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 
 ---
 
@@ -144,6 +147,8 @@
 | 2026-03-18 14:43 | Review R003 | plan Step 1: REVISE — hydrate naming/failure/test items |
 | 2026-03-18 | Step 1 impl | Orch branch creation added to engine.ts, all 753 tests pass |
 | 2026-03-18 14:47 | Worker iter 2 | done in 228s, ctx: 22%, tools: 31 |
+| 2026-03-18 14:48 | Worker iter 2 | done in 253s, ctx: 20%, tools: 32 |
+| 2026-03-18 14:50 | Review R004 | code Step 1: REVISE |
 
 ---
 
