@@ -243,7 +243,7 @@ Optional single-task check:
 To review or customize your configuration interactively:
 
 ```
-/settings
+/taskplane-settings
 ```
 
 ---
