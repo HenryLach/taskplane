@@ -155,20 +155,30 @@ export function buildLaneEnvVars(
 	repoRoot: string,
 	workspaceRoot?: string,
 ): Record<string, string> {
-	// TASK_AUTOSTART needs a path relative to the worktree root.
-	// The promptPath is absolute (from the main repo). We need the
-	// relative portion from the repo root, which will be the same
-	// relative path in the worktree since worktrees mirror the repo structure.
+	// TASK_AUTOSTART: resolve the prompt path for the lane session.
+	//
+	// In workspace mode, tasks may live in a different repo than the lane's
+	// worktree (e.g., task PROMPT.md in shared-libs, worker runs in api-service).
+	// Always use the absolute path — task-runner's resolve(cwd, autoPath) handles
+	// absolute paths correctly, and this avoids broken relative paths when the
+	// task folder is outside the lane's repo.
+	//
+	// In repo mode (no workspace), we still use relative paths from repoRoot
+	// because the worktree mirrors the repo structure and the task folder is
+	// inside the repo.
 	const repoRootNorm = resolve(repoRoot).replace(/\\/g, "/");
 	const promptNorm = resolve(promptPath).replace(/\\/g, "/");
 
 	let relativePath: string;
-	if (promptNorm.startsWith(repoRootNorm + "/")) {
+	if (workspaceRoot) {
+		// Workspace mode: always use absolute path for cross-repo safety
+		relativePath = resolve(promptPath);
+	} else if (promptNorm.startsWith(repoRootNorm + "/")) {
+		// Repo mode: relative path from repo root (mirrors into worktree)
 		relativePath = promptNorm.slice(repoRootNorm.length + 1);
 	} else {
-		// External task folder (workspace mode): prompt path is outside repo root.
-		// Use the absolute path as-is — task-runner accepts absolute TASK_AUTOSTART paths.
-		relativePath = promptPath;
+		// Fallback: absolute path
+		relativePath = resolve(promptPath);
 	}
 
 	const nodePathEntries: string[] = [join(repoRoot, "node_modules")];
