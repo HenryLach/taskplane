@@ -42,6 +42,67 @@ import type {
 	TaskRunnerConfig,
 } from "./index.ts";
 
+// ── Integrate Args Parsing ────────────────────────────────────────────
+
+export type IntegrateMode = "ff" | "merge" | "pr";
+
+export interface IntegrateArgs {
+	mode: IntegrateMode;
+	force: boolean;
+	orchBranchArg?: string;
+}
+
+/**
+ * Parse `/orch-integrate` command arguments.
+ *
+ * Supported flags: --merge, --pr, --force
+ * Optional positional: orch branch name (e.g., orch/op-batchid)
+ *
+ * Returns parsed args or an error string if arguments are invalid.
+ */
+export function parseIntegrateArgs(raw: string | undefined): IntegrateArgs | { error: string } {
+	const input = raw?.trim() ?? "";
+	const tokens = input.split(/\s+/).filter(Boolean);
+
+	let mode: IntegrateMode = "ff";
+	let force = false;
+	const positionals: string[] = [];
+	let hasMerge = false;
+	let hasPr = false;
+
+	for (const token of tokens) {
+		if (token === "--merge") {
+			hasMerge = true;
+		} else if (token === "--pr") {
+			hasPr = true;
+		} else if (token === "--force") {
+			force = true;
+		} else if (token.startsWith("--")) {
+			return { error: `Unknown flag: ${token}` };
+		} else {
+			positionals.push(token);
+		}
+	}
+
+	// Mutual exclusion: --merge and --pr cannot be used together
+	if (hasMerge && hasPr) {
+		return { error: "Cannot use --merge and --pr together. Choose one integration mode." };
+	}
+
+	if (hasMerge) mode = "merge";
+	if (hasPr) mode = "pr";
+
+	if (positionals.length > 1) {
+		return { error: `Expected at most one branch argument, got ${positionals.length}: ${positionals.join(", ")}` };
+	}
+
+	return {
+		mode,
+		force,
+		orchBranchArg: positionals[0],
+	};
+}
+
 // ── Extension ────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
@@ -647,6 +708,53 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	pi.registerCommand("orch-integrate", {
+		description: "Integrate completed orch batch into your working branch",
+		handler: async (args, ctx) => {
+			// Show usage if no args and no active batch state to infer from
+			if (args?.trim() === "--help" || args?.trim() === "-h") {
+				ctx.ui.notify(
+					"Usage: /orch-integrate [<orch-branch>] [--merge] [--pr] [--force]\n\n" +
+					"Integrate a completed orch batch into your working branch.\n\n" +
+					"Modes:\n" +
+					"  (default)   Fast-forward merge (cleanest history)\n" +
+					"  --merge     Create a real merge commit\n" +
+					"  --pr        Push orch branch and create a pull request\n\n" +
+					"Options:\n" +
+					"  --force     Skip branch safety check\n" +
+					"  <branch>    Orch branch name (auto-detected from batch state if omitted)\n\n" +
+					"Examples:\n" +
+					"  /orch-integrate                          Auto-detect and fast-forward\n" +
+					"  /orch-integrate --merge                  Auto-detect with merge commit\n" +
+					"  /orch-integrate orch/op-abc123 --pr      Specific branch, create PR\n" +
+					"  /orch-integrate --force                  Skip branch safety check",
+					"info",
+				);
+				return;
+			}
+
+			if (!requireExecCtx(ctx)) return;
+
+			// Parse arguments
+			const parsed = parseIntegrateArgs(args);
+			if ("error" in parsed) {
+				ctx.ui.notify(`❌ ${parsed.error}\n\nRun /orch-integrate --help for usage.`, "error");
+				return;
+			}
+
+			// TODO(Step 2): Load batch state, validate, branch safety check
+			// TODO(Step 3): Execute integration mode (ff/merge/pr)
+			ctx.ui.notify(
+				`🔀 /orch-integrate — parsed args:\n` +
+				`   Mode: ${parsed.mode}\n` +
+				`   Force: ${parsed.force}\n` +
+				`   Branch arg: ${parsed.orchBranchArg ?? "(auto-detect)"}` +
+				`\n\n⚠️ Integration logic not yet implemented (Step 2/3).`,
+				"info",
+			);
+		},
+	});
+
 	// ── Settings TUI ─────────────────────────────────────────────────
 
 	pi.registerCommand("taskplane-settings", {
@@ -719,7 +827,8 @@ export default function (pi: ExtensionAPI) {
 			"/orch <areas|all>        Start batch execution\n" +
 			"/orch-plan <areas|all>   Preview execution plan\n" +
 			"/orch-deps <areas|all>   Show dependency graph\n" +
-			"/orch-sessions           List TMUX sessions",
+			"/orch-sessions           List TMUX sessions\n" +
+			"/orch-integrate          Integrate orch branch into working branch",
 			"info",
 		);
 

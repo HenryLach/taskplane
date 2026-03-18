@@ -26,12 +26,12 @@
 ---
 
 ### Step 1: Register `/orch-integrate` Command
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Extract `parseIntegrateArgs()` pure helper returning `{ mode: "ff"|"merge"|"pr", force: boolean, orchBranchArg?: string }` with mutual-exclusion validation
-- [ ] Register `/orch-integrate` command with description, usage text (incl. optional branch arg), and handler calling parseIntegrateArgs
-- [ ] Update session-start command list to include `/orch-integrate`
-- [ ] Verify parsing: default mode, force flag, conflict rejection, optional branch arg capture
+- [x] Extract `parseIntegrateArgs()` pure helper returning `{ mode: "ff"|"merge"|"pr", force: boolean, orchBranchArg?: string }` with mutual-exclusion validation
+- [x] Register `/orch-integrate` command with description, usage text (incl. optional branch arg), and handler calling parseIntegrateArgs
+- [x] Update session-start command list to include `/orch-integrate`
+- [x] Verify parsing: default mode, force flag, conflict rejection, optional branch arg capture
 
 ---
 
@@ -117,6 +117,7 @@
 | 2026-03-18 16:41 | Step 1 started | Register `/orch-integrate` Command |
 | 2026-03-18 16:43 | Review R003 | plan Step 1: REVISE |
 | 2026-03-18 iter2 | R003 hydration | Expanded Step 1: parse contract, mutual exclusion, session-start list, verify |
+| 2026-03-18 iter2 | Step 1 complete | Cleaned up duplicate code from iter 1, consolidated parseIntegrateArgs + command registration, 753/753 tests pass |
 
 ---
 
