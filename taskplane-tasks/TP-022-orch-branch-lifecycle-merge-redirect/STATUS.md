@@ -1,6 +1,6 @@
 # TP-022: Orch Branch Lifecycle & Merge Redirect — Status
 
-**Current Step:** Step 1: Create Orch Branch at Batch Start
+**Current Step:** Step 1: Create Orch Branch at Batch Start (complete)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
@@ -28,7 +28,7 @@
 ---
 
 ### Step 1: Create Orch Branch at Batch Start
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Generate orch branch name `orch/{opId}-{batchId}` using `resolveOperatorId(orchConfig)` and create via `runGit(["branch", orchBranch, baseBranch], repoRoot)`; store in `batchState.orchBranch`
 - [x] Handle creation failure: set phase="failed", endedAt, push error, notify, return (matching existing early-exit pattern in engine.ts)
@@ -143,6 +143,7 @@
 | 2026-03-18 14:40 | Step 1 started | Create Orch Branch at Batch Start |
 | 2026-03-18 14:43 | Review R003 | plan Step 1: REVISE — hydrate naming/failure/test items |
 | 2026-03-18 | Step 1 impl | Orch branch creation added to engine.ts, all 753 tests pass |
+| 2026-03-18 14:47 | Worker iter 2 | done in 228s, ctx: 22%, tools: 31 |
 
 ---
 
