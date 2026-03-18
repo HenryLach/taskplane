@@ -430,6 +430,90 @@ function runAllTests(): void {
 			"workspace mode with non-orch fallback returns batchBaseBranch as before");
 	}
 
+	// ── TP-022 Step 3: update-ref replaces ff-only in merge.ts ───────
+
+	// 11) merge.ts uses rev-parse + update-ref (not ff-only or stash)
+	{
+		console.log("\n  11) merge.ts uses update-ref (no ff-only/stash)");
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
+
+		// Positive: rev-parse and update-ref are present in the ref advancement block
+		assert(mergeSource.includes('["rev-parse", tempBranch]'),
+			"merge.ts calls rev-parse on temp branch to get merged HEAD");
+		assert(mergeSource.includes('"update-ref"'),
+			"merge.ts calls update-ref to advance target branch");
+		assert(mergeSource.includes('`refs/heads/${targetBranch}`'),
+			"merge.ts update-ref targets refs/heads/<targetBranch>");
+
+		// Negative: ff-only and stash are gone from the merge flow
+		assert(!mergeSource.includes("--ff-only"),
+			"merge.ts does NOT contain --ff-only (removed in Step 3)");
+		assert(!mergeSource.includes("git stash") && !mergeSource.includes('"stash"'),
+			"merge.ts does NOT contain stash calls (removed in Step 3)");
+		assert(!mergeSource.includes("autostash"),
+			"merge.ts does NOT contain autostash references (removed in Step 3)");
+	}
+
+	// 12) merge.ts update-ref failure path sets failedLane/failureReason correctly
+	{
+		console.log("  12) merge.ts update-ref failure path sets proper error state");
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
+
+		// Find the update-ref failure block
+		const updateRefBlock = mergeSource.match(
+			/if \(updateRefResult\.status !== 0\)[\s\S]*?failureReason\s*=\s*`[^`]+`/
+		)?.[0] ?? "";
+		assert(updateRefBlock.length > 0,
+			"update-ref failure block exists in merge.ts");
+		assert(updateRefBlock.includes("failedLane"),
+			"update-ref failure sets failedLane");
+		assert(updateRefBlock.includes("failureReason"),
+			"update-ref failure sets failureReason");
+
+		// Find the rev-parse failure block
+		const revParseBlock = mergeSource.match(
+			/if \(revParseResult\.status !== 0\)[\s\S]*?failureReason\s*=\s*`[^`]+`/
+		)?.[0] ?? "";
+		assert(revParseBlock.length > 0,
+			"rev-parse failure block exists in merge.ts");
+		assert(revParseBlock.includes("failedLane"),
+			"rev-parse failure sets failedLane");
+		assert(revParseBlock.includes("failureReason"),
+			"rev-parse failure sets failureReason");
+
+		// Both failures use failedLane ?? -1 (doesn't overwrite a lane-level failure)
+		assert(updateRefBlock.includes("failedLane ?? -1"),
+			"update-ref failure uses failedLane ?? -1 (preserves prior lane failure)");
+		assert(revParseBlock.includes("failedLane ?? -1"),
+			"rev-parse failure uses failedLane ?? -1 (preserves prior lane failure)");
+	}
+
+	// 13) merge.ts update-ref success path logs correctly
+	{
+		console.log("  13) merge.ts update-ref success path logs ref update");
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
+
+		// Success path logs with exec logging
+		const successLog = mergeSource.match(
+			/`updated \$\{targetBranch\} ref to merge result`/
+		)?.[0] ?? "";
+		assert(successLog.length > 0,
+			"update-ref success logs 'updated <targetBranch> ref to merge result'");
+
+		// Failure path logs with exec logging
+		const failureLog = mergeSource.match(
+			/`update-ref failed for \$\{targetBranch\}/
+		)?.[0] ?? "";
+		assert(failureLog.length > 0,
+			"update-ref failure logs 'update-ref failed for <targetBranch>'");
+
+		const revParseFailLog = mergeSource.match(
+			/`failed to resolve temp branch HEAD/
+		)?.[0] ?? "";
+		assert(revParseFailLog.length > 0,
+			"rev-parse failure logs 'failed to resolve temp branch HEAD'");
+	}
+
 	console.log(`\nResults: ${passed} passed, ${failed} failed`);
 	if (failed > 0) throw new Error(`${failed} test(s) failed`);
 } // end runAllTests

@@ -1,7 +1,7 @@
 # TP-022: Orch Branch Lifecycle & Merge Redirect — Status
 
 **Current Step:** Step 3: Replace Fast-Forward with update-ref in Merge
-**Status:** ✅ Complete
+**Status:** ✅ Step 3 Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
 **Review Counter:** 7
@@ -58,12 +58,12 @@
 ---
 
 ### Step 3: Replace Fast-Forward with update-ref in Merge
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Replace ff-only+stash/pop block with rev-parse+update-ref: get temp branch HEAD via `git rev-parse`, update target branch ref via `git update-ref`, with proper error handling (failedLane/failureReason set on failure, exec logging for success and failure)
-- [ ] Add non-regression verification: no `git merge --ff-only` or `git stash` calls remain in merge flow
-- [ ] Add Step 3 tests to orch-direct-implementation.test.ts: success path (update-ref called, no ff-only/stash), failure path (update-ref error → failedLane/failureReason set, status partial/failed)
-- [ ] Clean up duplicate R006 review row in STATUS.md
+- [x] Replace ff-only+stash/pop block with rev-parse+update-ref: get temp branch HEAD via `git rev-parse`, update target branch ref via `git update-ref`, with proper error handling (failedLane/failureReason set on failure, exec logging for success and failure)
+- [x] Add non-regression verification: no `git merge --ff-only` or `git stash` calls remain in merge flow
+- [x] Add Step 3 tests to orch-direct-implementation.test.ts: success path (update-ref called, no ff-only/stash), failure path (update-ref error → failedLane/failureReason set, status partial/failed)
+- [x] Clean up duplicate R006 review row in STATUS.md
 
 ---
 
@@ -106,8 +106,8 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
-| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
 
 ---
 
@@ -187,6 +187,9 @@
 | 2026-03-18 15:22 | Worker iter 3 | done in 495s, ctx: 25%, tools: 57 |
 | 2026-03-18 15:22 | Step 2 complete | Route Worktrees and Merge to Orch Branch |
 | 2026-03-18 15:22 | Step 3 started | Replace Fast-Forward with update-ref in Merge |
+| 2026-03-18 15:23 | Review R007 | plan Step 3: APPROVE |
+| 2026-03-18 | Step 3 impl | ff-only+stash replaced with update-ref, tests 11-13 verified, 753 tests pass |
+| 2026-03-18 | Step 3 complete | Replace Fast-Forward with update-ref in Merge |
 
 ---
 
