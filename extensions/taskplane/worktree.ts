@@ -2,7 +2,7 @@
  * Worktree CRUD, bulk ops, branch protection, preflight
  * @module orch/worktree
  */
-import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmdirSync, rmSync } from "fs";
 import { execSync } from "child_process";
 import { join, basename, resolve } from "path";
 
@@ -202,7 +202,7 @@ export function removeBatchContainerIfEmpty(containerPath: string): boolean {
 		if (entries.length > 0) {
 			return false; // Non-empty — do not remove (partial failure safety)
 		}
-		rmSync(containerPath, { recursive: false });
+		rmdirSync(containerPath);
 		return true;
 	} catch {
 		// If we can't read or remove — leave it alone (safe default)
@@ -1390,7 +1390,7 @@ export function ensureLaneWorktrees(
 	const prefix = config.orchestrator.worktree_prefix;
 	const opId = resolveOperatorId(config);
 
-	const existing = listWorktrees(prefix, repoRoot, opId);
+	const existing = listWorktrees(prefix, repoRoot, opId, batchId);
 	const existingByLane = new Map<number, WorktreeInfo>();
 	for (const wt of existing) {
 		existingByLane.set(wt.laneNumber, wt);

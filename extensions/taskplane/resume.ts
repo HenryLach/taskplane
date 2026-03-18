@@ -9,14 +9,14 @@ import { runDiscovery } from "./discovery.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
-import { runGit } from "./git.ts";
-import { mergeWaveByRepo } from "./merge.ts";
+import { getCurrentBranch, runGit } from "./git.ts";
+import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
 import { computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { StateFileError } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, PersistedLaneRecord, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
-import { buildDependencyGraph, resolveRepoRoot } from "./waves.ts";
+import { buildDependencyGraph, resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, removeAllWorktrees, removeWorktree, safeResetWorktree } from "./worktree.ts";
 
 // ── Resume Repo Helpers ──────────────────────────────────────────────
@@ -54,6 +54,37 @@ export function collectRepoRoots(
 	roots.add(defaultRepoRoot);
 
 	return [...roots];
+}
+
+/**
+ * Resolve a repoId from a resolved repo root path.
+ *
+ * In workspace mode, workspace config maps repoId → path. This performs
+ * the reverse lookup: given a resolved absolute path, find the repoId.
+ * Returns `undefined` if no workspace config or no matching repo is found
+ * (which is correct for repo mode or the primary/default repo).
+ *
+ * Used during cleanup to call `resolveBaseBranch()` per-repo with the
+ * correct repoId, ensuring unmerged-branch protection checks against
+ * the right target branch in workspace mode.
+ *
+ * @param repoRoot        - Resolved absolute path of the repo
+ * @param workspaceConfig - Workspace configuration (null in repo mode)
+ * @returns The repoId or undefined if not found / not in workspace mode
+ */
+export function resolveRepoIdFromRoot(
+	repoRoot: string,
+	workspaceConfig?: WorkspaceConfig | null,
+): string | undefined {
+	if (!workspaceConfig) return undefined;
+
+	for (const [repoId, repoConfig] of workspaceConfig.repos) {
+		if (repoConfig.path === repoRoot) {
+			return repoId;
+		}
+	}
+
+	return undefined;
 }
 
 /**
@@ -609,10 +640,26 @@ export async function resumeOrchBatch(
 	}
 
 	// ── 6. Reconstruct runtime state ─────────────────────────────
+
+	// Guard: orchBranch must be present for routing. Persisted states from
+	// pre-TP-022 runs may have orchBranch="" (TP-020 defaults).
+	// Check BEFORE mutating batchState so phase/batchId remain idle on rejection,
+	// allowing future /orch-resume or /orch-abort to proceed.
+	if (!persistedState.orchBranch) {
+		onNotify(
+			`❌ Cannot resume batch ${persistedState.batchId}: persisted state has no orch branch. ` +
+			`This batch was created before orch-branch routing was implemented. ` +
+			`Use /orch-abort to clean up, then start a new batch.`,
+			"error",
+		);
+		return;
+	}
+
 	batchState.phase = "executing";
 	batchState.batchId = persistedState.batchId;
 	batchState.baseBranch = persistedState.baseBranch || "";
-	batchState.orchBranch = persistedState.orchBranch || "";
+	batchState.orchBranch = persistedState.orchBranch;
+
 	batchState.mode = persistedState.mode;
 	batchState.startedAt = persistedState.startedAt;
 	batchState.pauseSignal = { paused: false };
@@ -902,7 +949,7 @@ export async function resumeOrchBatch(
 				orchConfig,
 				repoRoot,
 				batchState.batchId,
-				batchState.baseBranch,
+				batchState.orchBranch,
 				workspaceConfig,
 				stateRoot,
 				agentRoot,
@@ -1066,7 +1113,7 @@ export async function resumeOrchBatch(
 			batchState.batchId,
 			batchState.pauseSignal,
 			depGraph,
-			batchState.baseBranch,
+			batchState.orchBranch,
 			handleResumeMonitorUpdate,
 			(lanes) => {
 				latestAllocatedLanes = lanes;
@@ -1181,7 +1228,7 @@ export async function resumeOrchBatch(
 					orchConfig,
 					repoRoot,
 					batchState.batchId,
-					batchState.baseBranch,
+					batchState.orchBranch,
 					workspaceConfig,
 					stateRoot,
 					agentRoot,
@@ -1291,10 +1338,24 @@ export async function resumeOrchBatch(
 			// Use encounteredRepoRoots which includes both persisted lanes
 			// AND newly allocated lanes from resumed waves, ensuring repos
 			// introduced after resume starts are covered.
+			// Per-repo target branch: primary repo uses orchBranch, secondary
+			// repos resolve their own branch (same as cleanup — see section 11).
 			for (const perRepoRoot of encounteredRepoRoots) {
-				const existingWorktrees = listWorktrees(wtPrefix, perRepoRoot, resetOpId);
+				const existingWorktrees = listWorktrees(wtPrefix, perRepoRoot, resetOpId, batchState.batchId);
 				if (existingWorktrees.length > 0) {
-					const targetBranch = batchState.baseBranch;
+					let targetBranch: string;
+					if (perRepoRoot === repoRoot) {
+						targetBranch = batchState.orchBranch;
+					} else {
+						const repoId = resolveRepoIdFromRoot(perRepoRoot, workspaceConfig);
+						try {
+							targetBranch = resolveBaseBranch(repoId, perRepoRoot, batchState.orchBranch, workspaceConfig);
+						} catch {
+							// If resolution fails, fall back to orchBranch (reset will
+							// fail gracefully and trigger worktree removal)
+							targetBranch = batchState.orchBranch;
+						}
+					}
 					for (const wt of existingWorktrees) {
 						const resetResult = safeResetWorktree(wt, targetBranch, perRepoRoot);
 						if (!resetResult.success) {
@@ -1314,13 +1375,39 @@ export async function resumeOrchBatch(
 	if (!preserveWorktreesForResume) {
 		const wtPrefix = orchConfig.orchestrator.worktree_prefix;
 		const cleanupOpId = resolveOperatorId(orchConfig);
-		const targetBranch = batchState.baseBranch;
 
 		// Use encounteredRepoRoots which includes both persisted lanes
 		// AND newly allocated lanes from resumed waves, ensuring repos
 		// introduced after resume starts are cleaned up.
+		//
+		// Per-repo target branch resolution (workspace-mode correctness):
+		// In repo mode, orchBranch is the correct target for all worktrees.
+		// In workspace mode, the orchBranch only exists in the primary repo.
+		// Secondary repos were merged against their own resolved base branch
+		// (via resolveBaseBranch in mergeWaveByRepo), so unmerged-branch
+		// protection must compare against that same per-repo branch.
 		for (const perRepoRoot of encounteredRepoRoots) {
-			removeAllWorktrees(wtPrefix, perRepoRoot, cleanupOpId, targetBranch);
+			let targetBranch: string | undefined;
+			if (perRepoRoot === repoRoot) {
+				// Primary repo: lane branches were merged into orchBranch
+				targetBranch = batchState.orchBranch;
+			} else {
+				// Secondary repo (workspace mode): resolve the repo's own branch
+				// using the same logic as mergeWaveByRepo. Find repoId by matching
+				// the resolved path back to workspace config.
+				const repoId = resolveRepoIdFromRoot(perRepoRoot, workspaceConfig);
+				try {
+					targetBranch = resolveBaseBranch(repoId, perRepoRoot, batchState.orchBranch, workspaceConfig);
+				} catch {
+					// resolveBaseBranch may throw if HEAD is detached and no
+					// defaultBranch is configured. Fall back to undefined which
+					// skips branch protection (branches are deleted without
+					// merge-status check — safe because successfully merged
+					// branches were already cleaned up in post-merge steps).
+					targetBranch = undefined;
+				}
+			}
+			removeAllWorktrees(wtPrefix, perRepoRoot, cleanupOpId, targetBranch, batchState.batchId, orchConfig);
 		}
 	}
 
@@ -1332,6 +1419,32 @@ export async function resumeOrchBatch(
 			batchState.phase = "failed";
 		} else {
 			batchState.phase = "completed";
+		}
+	}
+
+	// ── Auto-Integration & Orch Branch Preservation (TP-022 Step 4) ──
+	// Parity with engine.ts: auto-integrate if configured, else show manual guidance.
+	// Gate: only run for terminal phases (completed/failed). Paused/stopped batches
+	// are not yet done — integration would mutate refs prematurely.
+	let autoIntegrated = false;
+	const mergedTaskCount = batchState.succeededTasks;
+	const isTerminalPhase = batchState.phase === "completed" || batchState.phase === "failed";
+	if (isTerminalPhase && !preserveWorktreesForResume && batchState.orchBranch && mergedTaskCount > 0) {
+		if (orchConfig.orchestrator.integration === "auto") {
+			autoIntegrated = attemptAutoIntegration(
+				batchState.orchBranch,
+				batchState.baseBranch,
+				repoRoot,
+				batchState.batchId,
+				"resume",
+				onNotify,
+			);
+		}
+		if (!autoIntegrated) {
+			onNotify(
+				ORCH_MESSAGES.orchIntegrationManual(batchState.orchBranch, batchState.baseBranch, mergedTaskCount),
+				"info",
+			);
 		}
 	}
 
@@ -1362,4 +1475,8 @@ export async function resumeOrchBatch(
 		}
 	}
 }
+
+
+// attemptAutoIntegration is now a shared helper in merge.ts (TP-022 Step 4).
+// Both engine.ts and resume.ts import it from there to eliminate parity drift.
 

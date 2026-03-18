@@ -1,11 +1,11 @@
 # TP-021: Batch-Scoped Worktree Containers — Status
 
-**Current Step:** Step 2: Update Worktree Listing and Cleanup
-**Status:** 🟡 In Progress
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 5
-**Iteration:** 3
+**Review Counter:** 10
+**Iteration:** 6
 **Size:** M
 
 ---
@@ -49,32 +49,37 @@
 ---
 
 ### Step 3: Update All Callers
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Update `allocateLanes()` in `waves.ts`
-- [ ] Update `engine.ts` worktree reset and cleanup
-- [ ] Update `merge.ts` to use `generateMergeWorktreePath()`
-- [ ] Update `execution.ts` if needed
-- [ ] Update `resume.ts` callers of `listWorktrees()` and `removeAllWorktrees()` to pass `batchId` for batch-scoped operations (R005 dependency)
+- [x] Update `ensureLaneWorktrees()` in `worktree.ts` — pass `batchId` to `listWorktrees()` for batch-scoped lane reuse (R006 critical: prevents cross-batch collision in concurrent same-operator batches)
+- [x] Update `waves.ts` — pass `batchId` and `config` to rollback `removeAllWorktrees()` call in `allocateLanes()` for batch-scoped cleanup (R006: rollback must not delete other batches)
+- [x] Update `engine.ts` Phase 2 — pass `batchId` to `listWorktrees()` in worktree reset loop for batch-scoped discovery
+- [x] Update `engine.ts` Phase 3 — pass `batchId` and `config` to `removeAllWorktrees()` in final cleanup for batch-scoped removal
+- [x] Update `merge.ts` — use `generateMergeWorktreePath()` instead of ad-hoc path construction; pass `batchId` and `config` for config-aware container resolution
+- [x] Update `resume.ts` — pass `batchId` to `listWorktrees()` and `removeAllWorktrees()` for batch-scoped operations (R005 dependency)
+- [x] Verify: no opId-only list/remove calls remain in active batch flows (done criteria per R006)
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Unit tests passing
-- [ ] Path generation verified
-- [ ] Subdirectory and sibling modes verified
-- [ ] Listing and cleanup verified
-- [ ] All failures fixed
+- [x] Run existing test suite — confirm no regressions from Steps 1-3 (worktree-lifecycle, naming-collision, orch-pure-functions, full vitest)
+- [x] Add batch-scoped isolation test: same opId, two different batchIds — `listWorktrees(batchId=A)` returns only A's lanes, `removeAllWorktrees(batchId=A)` does not touch B's lanes
+- [x] Add transition compatibility test: legacy flat worktrees + new nested worktrees coexist; `listWorktrees()` without batchId finds both; `listWorktrees(batchId=X)` excludes legacy
+- [x] Add merge path and cleanup edge-case tests: `generateMergeWorktreePath()` produces correct `{basePath}/{opId}-{batchId}/merge`; empty-container cleanup after worktree removal; no empty container left after pre-check failure
+- [x] Verify subdirectory vs sibling mode still works with new batch-scoped naming (path assertions in both modes)
+- [x] Fix all test failures — ZERO failures allowed in our changed test files (fixed `removeBatchContainerIfEmpty` to use `rmdirSync` instead of `rmSync({recursive:false})` for empty-dir removal on Windows)
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Discoveries logged
-- [ ] `.DONE` created
+- [x] Check docs impact: assess `docs/reference/configuration/taskplane-settings.md` for stale worktree naming references; log disposition (updated or deferred to TP-024) in Discoveries
+- [x] Discoveries logged
+- [x] Verify all PROMPT.md completion criteria are satisfied (batch-scoped paths, merge in container, no collisions, all callers updated, all tests passing — 753/753 tests pass)
+- [x] `.DONE` created
 
 ---
 
@@ -90,6 +95,14 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R006 | plan | Step 3 | REVISE | .reviews/R006-plan-step3.md |
+| R006 | plan | Step 3 | REVISE | .reviews/R006-plan-step3.md |
+| R007 | code | Step 3 | APPROVE | .reviews/R007-code-step3.md |
+| R007 | code | Step 3 | APPROVE | .reviews/R007-code-step3.md |
+| R008 | plan | Step 4 | REVISE | .reviews/R008-plan-step4.md |
+| R008 | plan | Step 4 | REVISE | .reviews/R008-plan-step4.md |
+| R009 | code | Step 4 | APPROVE | .reviews/R009-code-step4.md |
+| R010 | plan | Step 5 | REVISE | .reviews/R010-plan-step5.md |
 |---|------|------|---------|------|
 
 ---
@@ -114,6 +127,7 @@
 | `resume.ts` calls `listWorktrees()` at line 1295 and `removeAllWorktrees()` at line 1323 — confirmed as runtime-critical callers | Must update in Step 3 (R001 item) | resume.ts |
 | `listWorktrees()` currently matches `{prefix}-{opId}-{N}` basename pattern. New pattern must match `lane-{N}` inside `{opId}-{batchId}/` containers. Transition: must support both old flat pattern AND new nested pattern. | Step 2 implementation concern | worktree.ts |
 | Tests in `naming-collision.test.ts` assert `basename == "taskplane-wt-alice-1"` etc. These will break with new naming. Tests in `worktree-lifecycle.test.ts` assert `generateWorktreePath` output format. Both need migration in Step 4. | Test migration needed | tests |
+| `docs/reference/configuration/taskplane-settings.md` has stale worktree naming references: "Worktree Location" describes `{prefix}-{N}` and "Worktree Prefix" describes `{prefix}-{opId}-{N}`. New scheme is `{opId}-{batchId}/lane-{N}`. **Deferred to TP-024** (user-facing docs task) per PROMPT.md "Must Update: None (docs task TP-024 handles user-facing docs)". | Deferred to TP-024 | docs/reference/configuration/taskplane-settings.md |
 
 ---
 
@@ -146,6 +160,27 @@
 | 2026-03-18 12:01 | Step 1 complete | Refactor Worktree Path Generation |
 | 2026-03-18 12:01 | Step 2 started | Update Worktree Listing and Cleanup |
 | 2026-03-18 12:03 | Review R005 | plan Step 2: REVISE |
+| 2026-03-18 13:51 | Task started | Extension-driven execution |
+| 2026-03-18 13:51 | Step 3 started | Update All Callers |
+| 2026-03-18 13:51 | Task started | Extension-driven execution |
+| 2026-03-18 13:51 | Step 3 started | Update All Callers |
+| 2026-03-18 13:54 | Review R006 | plan Step 3: REVISE |
+| 2026-03-18 13:55 | Review R006 | plan Step 3: REVISE |
+| 2026-03-18 13:59 | Worker iter 4 | done in 265s, ctx: 27%, tools: 60 |
+| 2026-03-18 14:00 | Worker iter 4 | done in 350s, ctx: 50%, tools: 67 |
+| 2026-03-18 14:03 | Review R007 | code Step 3: APPROVE |
+| 2026-03-18 14:03 | Step 3 complete | Update All Callers |
+| 2026-03-18 14:03 | Step 4 started | Testing & Verification |
+| 2026-03-18 14:05 | Review R007 | code Step 3: APPROVE |
+| 2026-03-18 14:05 | Step 3 complete | Update All Callers |
+| 2026-03-18 14:05 | Step 4 started | Testing & Verification |
+| 2026-03-18 14:08 | Review R008 | plan Step 4: REVISE |
+| 2026-03-18 14:11 | Review R008 | plan Step 4: REVISE |
+| 2026-03-18 14:21 | Worker iter 5 | done in 818s, ctx: 46%, tools: 68 |
+| 2026-03-18 14:25 | Review R009 | code Step 4: APPROVE |
+| 2026-03-18 14:25 | Step 4 complete | Testing & Verification |
+| 2026-03-18 14:25 | Step 5 started | Documentation & Delivery |
+| 2026-03-18 14:26 | Review R010 | plan Step 5: REVISE |
 
 ---
 

@@ -9,7 +9,7 @@ import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { execLog, executeWave, tmuxKillSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
-import { mergeWaveByRepo } from "./merge.ts";
+import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
 import { computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
@@ -182,6 +182,26 @@ export async function executeOrchBatch(
 	wavePlan = rawWaves;
 	discoveryRef = discovery;
 
+	// ── Create orchestrator-managed branch ───────────────────────
+	// Created after all planning validations pass (preflight, discovery,
+	// graph validation, wave computation) to avoid orphan branches on
+	// planning-phase early exits.
+	// The orch branch isolates all batch work from the user's current branch.
+	// Worktrees branch from it; merges target it via update-ref.
+	const opId = resolveOperatorId(orchConfig);
+	const orchBranch = `orch/${opId}-${batchState.batchId}`;
+	const branchResult = runGit(["branch", orchBranch, batchState.baseBranch], repoRoot);
+	if (!branchResult.ok) {
+		batchState.phase = "failed";
+		batchState.endedAt = Date.now();
+		const errDetail = branchResult.stderr || branchResult.stdout || "unknown error";
+		batchState.errors.push(`Failed to create orch branch '${orchBranch}': ${errDetail}`);
+		onNotify(`❌ Failed to create orch branch '${orchBranch}': ${errDetail}`, "error");
+		return;
+	}
+	batchState.orchBranch = orchBranch;
+	execLog("batch", batchState.batchId, "created orch branch", { orchBranch, baseBranch: batchState.baseBranch });
+
 	onNotify(
 		ORCH_MESSAGES.orchStarting(batchState.batchId, rawWaves.length, batchState.totalTasks),
 		"info",
@@ -253,7 +273,7 @@ export async function executeOrchBatch(
 			batchState.batchId,
 			batchState.pauseSignal,
 			depGraph,
-			batchState.baseBranch,
+			batchState.orchBranch,
 			handleWaveMonitorUpdate,
 			(lanes) => {
 				latestAllocatedLanes = lanes;
@@ -361,7 +381,7 @@ export async function executeOrchBatch(
 					orchConfig,
 					repoRoot,
 					batchState.batchId,
-					batchState.baseBranch,
+					batchState.orchBranch,
 					workspaceConfig,
 					stateRoot,
 					agentRoot,
@@ -481,7 +501,7 @@ export async function executeOrchBatch(
 		if (waveIdx < rawWaves.length - 1 && !batchState.pauseSignal.paused) {
 			const prefix = orchConfig.orchestrator.worktree_prefix;
 			const resetOpId = resolveOperatorId(orchConfig);
-			const existingWorktrees = listWorktrees(prefix, repoRoot, resetOpId);
+			const existingWorktrees = listWorktrees(prefix, repoRoot, resetOpId, batchState.batchId);
 
 			if (existingWorktrees.length > 0) {
 				onNotify(
@@ -489,7 +509,7 @@ export async function executeOrchBatch(
 					"info",
 				);
 
-				const targetBranch = batchState.baseBranch;
+				const targetBranch = batchState.orchBranch;
 				for (const wt of existingWorktrees) {
 					const resetResult = safeResetWorktree(wt, targetBranch, repoRoot);
 					if (!resetResult.success) {
@@ -672,11 +692,13 @@ export async function executeOrchBatch(
 			}
 		} catch { /* .pi dir may not exist */ }
 
-		// Clean up worktrees — pass base branch to protect unmerged work
-		const targetBranch = batchState.baseBranch;
+		// Clean up worktrees — use orchBranch to protect unmerged work.
+		// Lane branches were merged into orchBranch (not baseBranch), so
+		// unmerged-branch detection must compare against orchBranch.
+		const targetBranch = batchState.orchBranch;
 		const cleanupOpId = resolveOperatorId(orchConfig);
 		execLog("batch", batchState.batchId, "cleaning up worktrees");
-		const removeResult = removeAllWorktrees(prefix, repoRoot, cleanupOpId, targetBranch);
+		const removeResult = removeAllWorktrees(prefix, repoRoot, cleanupOpId, targetBranch, batchState.batchId, orchConfig);
 
 		// Log preserved branches
 		for (const p of removeResult.preserved) {
@@ -750,6 +772,35 @@ export async function executeOrchBatch(
 		}
 	}
 
+	// ── Auto-Integration & Orch Branch Preservation (TP-022 Step 4) ──
+	// After all waves are done, optionally fast-forward baseBranch to orchBranch.
+	// Auto-integration never converts a successful batch into "failed" — failures
+	// are warnings that preserve the orch branch for manual integration.
+	// Gate: only run for terminal phases (completed/failed). Paused/stopped batches
+	// are not yet done — integration would mutate refs prematurely.
+	let autoIntegrated = false;
+	const mergedTaskCount = batchState.succeededTasks;
+	const isTerminalPhase = batchState.phase === "completed" || batchState.phase === "failed";
+	if (isTerminalPhase && !preserveWorktreesForResume && batchState.orchBranch && mergedTaskCount > 0) {
+		if (orchConfig.orchestrator.integration === "auto") {
+			autoIntegrated = attemptAutoIntegration(
+				batchState.orchBranch,
+				batchState.baseBranch,
+				repoRoot,
+				batchState.batchId,
+				"batch",
+				onNotify,
+			);
+		}
+		// Manual mode (default) or auto-integration skipped: show integration guidance
+		if (!autoIntegrated) {
+			onNotify(
+				ORCH_MESSAGES.orchIntegrationManual(batchState.orchBranch, batchState.baseBranch, mergedTaskCount),
+				"info",
+			);
+		}
+	}
+
 	// ── TS-009: Persist terminal state ──
 	persistRuntimeState("batch-terminal", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 
@@ -782,6 +833,7 @@ export async function executeOrchBatch(
 		}
 	}
 }
+
 
 // ── Dashboard Widget (Step 6) ────────────────────────────────────────
 

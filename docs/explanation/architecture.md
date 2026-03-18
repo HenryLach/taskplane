@@ -62,7 +62,7 @@ Owns parallel batch execution:
 
 - `/orch`, `/orch-plan`, `/orch-status`
 - `/orch-pause`, `/orch-resume`, `/orch-abort`
-- `/orch-deps`, `/orch-sessions`
+- `/orch-deps`, `/orch-sessions`, `/orch-integrate`
 
 Responsibilities:
 
@@ -70,7 +70,8 @@ Responsibilities:
 - parse dependencies and build DAG
 - compute waves and lane assignments
 - allocate lane worktrees/branches
-- supervise execution + merges
+- supervise execution + merge lanes into a dedicated orch branch
+- provide integration path back to working branch (`/orch-integrate`)
 - persist/reconcile state for resume
 
 ### 3) CLI (`bin/taskplane.mjs`)
@@ -128,6 +129,8 @@ Customized per repository.
 3. Runner/orchestrator performs execution
 4. Progress is persisted to files (`STATUS.md`, `.DONE`, `.pi/batch-state.json`, lane sidecars)
 5. Dashboard reads persisted/sidecar state for live visualization
+
+**Orch branch model:** `/orch` creates a dedicated orch branch (e.g. `orch/op-<id>`) and merges completed lane work there — the user's working branch is never modified during execution. When the batch completes, the user integrates results via `/orch-integrate` (merge, fast-forward, or PR) or configures auto-integration.
 
 File-based state is intentional: recoverability and inspectability are first-class.
 

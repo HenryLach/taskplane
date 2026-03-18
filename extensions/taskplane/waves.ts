@@ -588,7 +588,20 @@ export function resolveBaseBranch(
 		}
 	}
 
-	// Step 3: Ultimate fallback — batch-level base branch
+	// Step 3: Ultimate fallback — batch-level base branch.
+	// In workspace mode the batch base branch is the orch branch (e.g.
+	// "orch/op-batch123"), which only exists in the primary repo. Using it
+	// for a secondary repo would cause worktree creation failure because the
+	// ref doesn't exist there. Fail fast with an actionable message instead.
+	if (repoId && batchBaseBranch.startsWith("orch/")) {
+		throw new Error(
+			`Cannot resolve base branch for repo "${repoId}" at ${repoRoot}: ` +
+			`HEAD is detached and no defaultBranch is configured. ` +
+			`The batch base branch "${batchBaseBranch}" is an orch branch that does not exist in this repo. ` +
+			`Configure a defaultBranch for this repo in task-orchestrator.yaml workspace settings.`,
+		);
+	}
+
 	return batchBaseBranch;
 }
 
@@ -1070,10 +1083,11 @@ export function allocateLanes(
 			// This should never happen if ensureLaneWorktrees and assignTasksToLanes
 			// agree on lane numbers, but handle defensively.
 			// Roll back all worktrees across all repos on this unexpected failure.
+			// Pass batchId + config for batch-scoped cleanup (only remove this batch's worktrees).
 			for (const groupKey of createdGroupKeys) {
 				const groupRepoId = repoIdForGroup.get(groupKey);
 				const groupRepoRoot = resolveRepoRoot(groupRepoId, repoRoot, workspaceConfig);
-				removeAllWorktrees(config.orchestrator.worktree_prefix, groupRepoRoot, opId);
+				removeAllWorktrees(config.orchestrator.worktree_prefix, groupRepoRoot, opId, undefined, batchId, config);
 			}
 			return {
 				success: false,

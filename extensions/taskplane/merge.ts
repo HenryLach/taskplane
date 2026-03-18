@@ -11,7 +11,9 @@ import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
-import { sleepSync } from "./worktree.ts";
+import { generateMergeWorktreePath, sleepSync } from "./worktree.ts";
+import { getCurrentBranch, runGit } from "./git.ts";
+import { ORCH_MESSAGES } from "./messages.ts";
 
 // ── Merge Implementation ─────────────────────────────────────────────
 
@@ -567,9 +569,10 @@ export function mergeWave(
 	// ── Create isolated merge worktree ──────────────────────────────
 	// Merging in a dedicated worktree prevents dirty-worktree failures
 	// caused by user edits or orchestrator-generated files in the main repo.
-	// Include opId to prevent collisions between concurrent operators.
+	// The merge worktree lives inside the batch container alongside lane worktrees:
+	// {basePath}/{opId}-{batchId}/merge
 	const tempBranch = `_merge-temp-${opId}-${batchId}`;
-	const mergeWorkDir = join(repoRoot, ".worktrees", `merge-workspace-${opId}`);
+	const mergeWorkDir = generateMergeWorktreePath(repoRoot, opId, batchId, config);
 
 	// Clean up stale merge worktree/branch from prior failed attempt
 	try {
@@ -752,37 +755,87 @@ export function mergeWave(
 		}
 	}
 
-	// ── Fast-forward develop and clean up merge worktree ────────────
+	// ── Update target branch ref and clean up merge worktree ────────
 	const anySuccess = laneResults.some(
 		r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED",
 	);
 
 	if (anySuccess) {
-		// Fast-forward the real target branch to the temp merge branch.
-		// The main repo may have dirty files (user edits) — stash if needed.
-		const ffResult = spawnSync("git", ["merge", "--ff-only", tempBranch], { cwd: repoRoot });
+		// Get the temp branch HEAD commit — this is the merged result.
+		const revParseResult = spawnSync("git", ["rev-parse", tempBranch], { cwd: repoRoot });
 
-		if (ffResult.status !== 0) {
-			// Dirty working tree may block ff — try stash + ff + pop
-			execLog("merge", `W${waveIndex}`, "fast-forward blocked — stashing user changes");
-			const stashMsg = `merge-agent-autostash-w${waveIndex}-${batchId}`;
-			spawnSync("git", ["stash", "push", "--include-untracked", "-m", stashMsg], { cwd: repoRoot });
-
-			const ffRetry = spawnSync("git", ["merge", "--ff-only", tempBranch], { cwd: repoRoot });
-
-			// Always pop stash, regardless of ff result
-			spawnSync("git", ["stash", "pop"], { cwd: repoRoot });
-
-			if (ffRetry.status !== 0) {
-				const err = ffRetry.stderr?.toString().trim() || "unknown error";
-				execLog("merge", `W${waveIndex}`, `fast-forward failed even after stash: ${err}`);
-				failedLane = failedLane ?? -1;
-				failureReason = `Fast-forward of ${targetBranch} failed: ${err}`;
-			} else {
-				execLog("merge", `W${waveIndex}`, "fast-forward succeeded after stash/pop");
-			}
+		if (revParseResult.status !== 0) {
+			const err = revParseResult.stderr?.toString().trim() || "unknown error";
+			execLog("merge", `W${waveIndex}`, `failed to resolve temp branch HEAD: ${err}`, { tempBranch });
+			failedLane = failedLane ?? -1;
+			failureReason = `Failed to resolve merge temp branch HEAD (${tempBranch}): ${err}`;
 		} else {
-			execLog("merge", `W${waveIndex}`, `fast-forwarded ${targetBranch} to merge result`);
+			const tempBranchHead = revParseResult.stdout.toString().trim();
+
+			// Gate advancement strategy:
+			// - If targetBranch is NOT checked out in repoRoot, use update-ref
+			//   (safe, does not touch the working tree). This is the common case
+			//   for the orch branch in repo mode.
+			// - If targetBranch IS checked out in repoRoot (workspace mode, where
+			//   resolveBaseBranch returns the repo's current branch), use
+			//   git merge --ff-only to advance HEAD+index+worktree together.
+			const checkedOutBranch = getCurrentBranch(repoRoot);
+			const targetIsCheckedOut = checkedOutBranch === targetBranch;
+
+			if (targetIsCheckedOut) {
+				// Checked-out branch — must use ff-only to keep HEAD/index/worktree in sync.
+				// Dirty working tree may block ff — stash if needed.
+				const ffResult = spawnSync("git", ["merge", "--ff-only", tempBranch], { cwd: repoRoot });
+
+				if (ffResult.status !== 0) {
+					// Dirty working tree may block ff — try stash + ff + pop
+					execLog("merge", `W${waveIndex}`, "fast-forward blocked — stashing user changes");
+					const stashMsg = `merge-agent-autostash-w${waveIndex}-${batchId}`;
+					spawnSync("git", ["stash", "push", "--include-untracked", "-m", stashMsg], { cwd: repoRoot });
+
+					const ffRetry = spawnSync("git", ["merge", "--ff-only", tempBranch], { cwd: repoRoot });
+
+					// Always pop stash, regardless of ff result
+					spawnSync("git", ["stash", "pop"], { cwd: repoRoot });
+
+					if (ffRetry.status !== 0) {
+						const err = ffRetry.stderr?.toString().trim() || "unknown error";
+						execLog("merge", `W${waveIndex}`, `fast-forward failed even after stash: ${err}`);
+						failedLane = failedLane ?? -1;
+						failureReason = `Fast-forward of ${targetBranch} failed: ${err}`;
+					} else {
+						execLog("merge", `W${waveIndex}`, "fast-forward succeeded after stash/pop");
+					}
+				} else {
+					execLog("merge", `W${waveIndex}`, `fast-forwarded ${targetBranch} to merge result`);
+				}
+			} else {
+				// Not checked out — safe to use update-ref without touching the worktree.
+				// Use compare-and-swap (3-arg form) to guard against concurrent branch movement.
+				const oldRefResult = spawnSync("git", ["rev-parse", `refs/heads/${targetBranch}`], { cwd: repoRoot });
+				const oldRef = oldRefResult.status === 0 ? oldRefResult.stdout.toString().trim() : "";
+
+				const updateRefArgs = oldRef
+					? ["update-ref", `refs/heads/${targetBranch}`, tempBranchHead, oldRef]
+					: ["update-ref", `refs/heads/${targetBranch}`, tempBranchHead];
+
+				const updateRefResult = spawnSync("git", updateRefArgs, { cwd: repoRoot });
+
+				if (updateRefResult.status !== 0) {
+					const err = updateRefResult.stderr?.toString().trim() || "unknown error";
+					execLog("merge", `W${waveIndex}`, `update-ref failed for ${targetBranch}: ${err}`, {
+						targetBranch,
+						tempBranchHead: tempBranchHead.slice(0, 8),
+					});
+					failedLane = failedLane ?? -1;
+					failureReason = `update-ref of ${targetBranch} to ${tempBranchHead.slice(0, 8)} failed: ${err}`;
+				} else {
+					execLog("merge", `W${waveIndex}`, `updated ${targetBranch} ref to merge result`, {
+						targetBranch,
+						commit: tempBranchHead.slice(0, 8),
+					});
+				}
+			}
 		}
 	}
 
@@ -1066,5 +1119,107 @@ export function mergeWaveByRepo(
 		totalDurationMs,
 		repoResults: repoOutcomes,
 	};
+}
+
+// ── Auto-Integration ─────────────────────────────────────────────────
+
+/**
+ * Attempt to fast-forward baseBranch to orchBranch in the main repo.
+ *
+ * Shared by engine.ts (fresh batch) and resume.ts (resumed batch).
+ * The `logCategory` parameter distinguishes the calling context in execLog.
+ *
+ * Failure matrix — all failures are warnings, never batch-fatal:
+ * - **Diverged**: baseBranch has commits not in orchBranch (not fast-forwardable)
+ * - **Detached HEAD / missing base**: baseBranch not resolvable
+ * - **Dirty worktree**: baseBranch is checked out with uncommitted changes
+ * - **Branch not checked out**: baseBranch is not the current branch;
+ *   use update-ref (no worktree impact) with compare-and-swap
+ *
+ * @param orchBranch  - The orch branch to integrate from
+ * @param baseBranch  - The user's branch to advance
+ * @param repoRoot    - Absolute path to the primary repo root
+ * @param batchId     - Batch identifier for logging
+ * @param logCategory - execLog category ("batch" for engine, "resume" for resume)
+ * @param onNotify    - Notification callback
+ * @returns true if integration succeeded, false otherwise
+ */
+export function attemptAutoIntegration(
+	orchBranch: string,
+	baseBranch: string,
+	repoRoot: string,
+	batchId: string,
+	logCategory: string,
+	onNotify: (message: string, level: "info" | "warning" | "error") => void,
+): boolean {
+	// 1. Verify orchBranch exists
+	const orchExists = runGit(["rev-parse", "--verify", `refs/heads/${orchBranch}`], repoRoot);
+	if (!orchExists.ok) {
+		const reason = `orch branch '${orchBranch}' not found`;
+		execLog(logCategory, batchId, `auto-integration skipped: ${reason}`);
+		onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+		return false;
+	}
+
+	// 2. Verify baseBranch exists
+	const baseExists = runGit(["rev-parse", "--verify", `refs/heads/${baseBranch}`], repoRoot);
+	if (!baseExists.ok) {
+		const reason = `base branch '${baseBranch}' not found`;
+		execLog(logCategory, batchId, `auto-integration skipped: ${reason}`);
+		onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+		return false;
+	}
+
+	// 3. Check fast-forwardability: baseBranch must be an ancestor of orchBranch
+	const isAncestor = runGit(["merge-base", "--is-ancestor", baseBranch, orchBranch], repoRoot);
+	if (!isAncestor.ok) {
+		const reason = `branches have diverged (${baseBranch} is not an ancestor of ${orchBranch})`;
+		execLog(logCategory, batchId, `auto-integration skipped: ${reason}`);
+		onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+		return false;
+	}
+
+	// 4. Gate on whether baseBranch is checked out (same pattern as merge advancement)
+	const checkedOutBranch = getCurrentBranch(repoRoot);
+	const baseIsCheckedOut = checkedOutBranch === baseBranch;
+
+	const orchHead = runGit(["rev-parse", orchBranch], repoRoot).stdout.trim();
+
+	if (baseIsCheckedOut) {
+		// baseBranch is checked out — use merge --ff-only (updates worktree)
+		// Check for dirty worktree first
+		const statusCheck = runGit(["status", "--porcelain"], repoRoot);
+		if (statusCheck.ok && statusCheck.stdout.trim()) {
+			const reason = `working tree is dirty (${baseBranch} is checked out with uncommitted changes)`;
+			execLog(logCategory, batchId, `auto-integration skipped: ${reason}`);
+			onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+			return false;
+		}
+
+		const ffResult = runGit(["merge", "--ff-only", orchBranch], repoRoot);
+		if (!ffResult.ok) {
+			const reason = `fast-forward failed: ${ffResult.stderr || ffResult.stdout || "unknown"}`;
+			execLog(logCategory, batchId, `auto-integration failed: ${reason}`);
+			onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+			return false;
+		}
+	} else {
+		// baseBranch is NOT checked out — use update-ref with compare-and-swap
+		const baseOldRef = runGit(["rev-parse", baseBranch], repoRoot).stdout.trim();
+		const updateResult = runGit(
+			["update-ref", `refs/heads/${baseBranch}`, orchHead, baseOldRef],
+			repoRoot,
+		);
+		if (!updateResult.ok) {
+			const reason = `update-ref failed: ${updateResult.stderr || updateResult.stdout || "unknown"}`;
+			execLog(logCategory, batchId, `auto-integration failed: ${reason}`);
+			onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+			return false;
+		}
+	}
+
+	execLog(logCategory, batchId, `auto-integrated: ${baseBranch} advanced to ${orchBranch}`, { orchHead });
+	onNotify(ORCH_MESSAGES.orchIntegrationAutoSuccess(orchBranch, baseBranch), "info");
+	return true;
 }
 
