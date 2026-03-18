@@ -18,7 +18,7 @@ The taskplane dashboard runs on a local port on your system and gives you elegan
 
 ### Key Features
 
-- **Task Orchestrator** — Parallel multi-task execution using git worktrees for full filesystem isolation. Dependency-aware wave scheduling. Automated merges with conflict resolution.
+- **Task Orchestrator** — Parallel multi-task execution using git worktrees for full filesystem isolation. Dependency-aware wave scheduling. Automated merges into a dedicated orch branch — your working branch stays stable until you choose to integrate.
 - **Task Runner** — What the Orchestrator uses for autonomous single-task execution. Worker agents run in fresh-context loops with STATUS.md as persistent memory. Every checkbox gets a git checkpoint. Cross-model reviewer agents catch what the worker agents missed.
 - **Web Dashboard** — Live browser-based monitoring via `taskplane dashboard`. SSE streaming, lane/task progress, wave visualization, batch history.
 - **Structured Tasks** — PROMPT.md defines the mission, steps, and constraints. STATUS.md tracks progress. Agents follow the plan, not vibes.
@@ -128,7 +128,7 @@ The default scaffold includes two independent example tasks, so `/orch all` give
 Important distinction:
 
 - `/task` runs in your **current branch/worktree**.
-- `/orch` runs tasks in **isolated worktrees** and merges back.
+- `/orch` runs tasks in **isolated worktrees** on a dedicated orch branch — your working branch is never touched until you integrate.
 
 Because workers checkpoint with git commits, `/task` can capture unrelated local edits if you're changing files in parallel. For safer isolation (even with one task), prefer:
 
@@ -156,6 +156,7 @@ Orchestrator lanes execute tasks through task-runner under the hood, so `/task` 
 | `/orch-abort [--hard]` | Abort batch (graceful or immediate) |
 | `/orch-deps <areas\|paths\|all>` | Show dependency graph |
 | `/orch-sessions` | List active worker sessions |
+| `/orch-integrate` | Integrate completed orch batch into your working branch |
 | `/taskplane-settings` | View and edit taskplane configuration interactively |
 
 ### CLI Commands
@@ -189,14 +190,18 @@ Orchestrator lanes execute tasks through task-runner under the hood, so `/task` 
                  │
           ┌──────▼──────┐
           │ Merge Agent │    ← Conflict resolution
-          │ Integration │      & verification
-          │   Branch    │
+          │ Orch Branch │      & verification
+          └──────┬──────┘
+                 │
+          ┌──────▼──────┐
+          │ /orch-      │    ← User integrates into
+          │  integrate  │      working branch
           └─────────────┘
 ```
 
 **Single task** (`/task`): Worker iterates in fresh-context loops. STATUS.md is persistent memory. Each checkbox → git checkpoint. Reviewer validates on completion.
 
-**Parallel batch** (`/orch`): Tasks are sorted into dependency waves. Each wave runs in parallel across lanes (git worktrees). Completed lanes merge into the integration branch before the next wave starts.
+**Parallel batch** (`/orch`): Tasks are sorted into dependency waves. Each wave runs in parallel across lanes (git worktrees). Completed lanes merge into a dedicated orch branch. When the batch completes, use `/orch-integrate` to bring the results into your working branch (or configure auto-integration).
 
 ## Documentation
 
