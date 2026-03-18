@@ -30,10 +30,10 @@
 ### Step 1: Create Orch Branch at Batch Start
 **Status:** 🟨 In Progress
 
-- [ ] Generate orch branch name `orch/{opId}-{batchId}` using `resolveOperatorId(orchConfig)` and create via `runGit(["branch", orchBranch, baseBranch], repoRoot)`; store in `batchState.orchBranch`
-- [ ] Handle creation failure: set phase="failed", endedAt, push error, notify, return (matching existing early-exit pattern in engine.ts)
-- [ ] Log branch creation via `execLog("batch", batchId, "created orch branch", { orchBranch, baseBranch })`
-- [ ] R003: Clean duplicate Execution Log rows in STATUS.md
+- [x] Generate orch branch name `orch/{opId}-{batchId}` using `resolveOperatorId(orchConfig)` and create via `runGit(["branch", orchBranch, baseBranch], repoRoot)`; store in `batchState.orchBranch`
+- [x] Handle creation failure: set phase="failed", endedAt, push error, notify, return (matching existing early-exit pattern in engine.ts)
+- [x] Log branch creation via `execLog("batch", batchId, "created orch branch", { orchBranch, baseBranch })`
+- [x] R003: Clean duplicate Execution Log rows in STATUS.md
 
 ---
 
@@ -91,7 +91,6 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
-| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ---
 
@@ -143,7 +142,7 @@
 | 2026-03-18 14:40 | Step 0 complete | Preflight |
 | 2026-03-18 14:40 | Step 1 started | Create Orch Branch at Batch Start |
 | 2026-03-18 14:43 | Review R003 | plan Step 1: REVISE — hydrate naming/failure/test items |
-| 2026-03-18 14:44 | Review R003 | plan Step 1: REVISE |
+| 2026-03-18 | Step 1 impl | Orch branch creation added to engine.ts, all 753 tests pass |
 
 ---
 
