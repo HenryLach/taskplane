@@ -817,18 +817,30 @@ export async function executeOrchBatch(
 				batchState.skippedTasks,
 				batchState.blockedTasks,
 				totalElapsedSec,
+				batchState.orchBranch,
+				batchState.baseBranch,
 			),
 			batchState.failedTasks > 0 ? "warning" : "info",
 		);
 
-		// ── TS-009: Delete state file on clean completion (no failures) ──
+		// ── Preserve state for /orch-integrate when orch branch exists ──
+		// If integration is "manual" and we have an orch branch, keep the
+		// state file so /orch-integrate can find orchBranch and baseBranch.
+		// Only delete state if there's no orch branch to integrate.
 		if (batchState.phase === "completed") {
-			try {
-				deleteBatchState(stateRoot);
-				execLog("state", batchState.batchId, "state file deleted on clean completion");
-			} catch (err: unknown) {
-				const msg = err instanceof Error ? err.message : String(err);
-				execLog("state", batchState.batchId, `failed to delete state file: ${msg}`);
+			if (batchState.orchBranch) {
+				execLog("state", batchState.batchId, "state file preserved for /orch-integrate", {
+					orchBranch: batchState.orchBranch,
+				});
+			} else {
+				// Legacy mode (no orch branch) — clean up state
+				try {
+					deleteBatchState(stateRoot);
+					execLog("state", batchState.batchId, "state file deleted on clean completion");
+				} catch (err: unknown) {
+					const msg = err instanceof Error ? err.message : String(err);
+					execLog("state", batchState.batchId, `failed to delete state file: ${msg}`);
+				}
 			}
 		}
 	}

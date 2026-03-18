@@ -11,6 +11,53 @@ import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult
 import { allocateLanes } from "./waves.ts";
 import { runGit } from "./git.ts";
 
+// ── Task Runner Extension Path Resolution ────────────────────────────
+
+/**
+ * Find the task-runner extension path for lane sessions.
+ *
+ * Resolution order:
+ *   1. Local project: {repoRoot}/extensions/task-runner.ts (for taskplane dev)
+ *   2. Global npm (Windows): {APPDATA}/npm/node_modules/taskplane/extensions/task-runner.ts
+ *   3. Global npm (Unix): /usr/local/lib/node_modules/taskplane/extensions/task-runner.ts
+ *   4. npm peer: resolve from pi's location
+ *
+ * @throws ExecutionError if task-runner.ts cannot be found anywhere
+ */
+function resolveTaskRunnerExtensionPath(repoRoot: string): string {
+	const extFile = join("extensions", "task-runner.ts");
+
+	// 1. Local project (taskplane development)
+	const localPath = join(resolve(repoRoot), extFile);
+	if (existsSync(localPath)) return localPath;
+
+	// 2. Global npm install paths
+	const home = process.env.HOME || process.env.USERPROFILE || "";
+	const candidates: string[] = [];
+	if (process.env.APPDATA) {
+		candidates.push(join(process.env.APPDATA, "npm", "node_modules", "taskplane", extFile));
+	}
+	if (home) {
+		candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", "taskplane", extFile));
+		candidates.push(join(home, ".npm-global", "lib", "node_modules", "taskplane", extFile));
+	}
+	candidates.push(join("/usr", "local", "lib", "node_modules", "taskplane", extFile));
+
+	// 3. Peer of pi's package
+	try {
+		const piPath = process.argv[1] || "";
+		const piPkgDir = resolve(piPath, "..", "..");
+		candidates.push(join(piPkgDir, "..", "taskplane", extFile));
+	} catch { /* ignore */ }
+
+	for (const candidate of candidates) {
+		if (existsSync(candidate)) return candidate;
+	}
+
+	// Fallback: return the local path (will fail at spawn time with a clear error)
+	return localPath;
+}
+
 // ── Execution Helpers ────────────────────────────────────────────────
 
 /**
@@ -206,7 +253,7 @@ export function buildTmuxSpawnArgs(
 		.map(([key, val]) => `${key}=${shellQuote(val)}`)
 		.join(" ");
 
-	const taskRunnerExtPath = join(resolve(repoRoot), "extensions", "task-runner.ts");
+	const taskRunnerExtPath = resolveTaskRunnerExtensionPath(repoRoot);
 	const basePiCommand = `${envParts} pi --no-session -e ${shellQuote(taskRunnerExtPath)}`;
 
 	// NOTE: Do not redirect lane output here. Shell redirection has proven

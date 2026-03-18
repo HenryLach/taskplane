@@ -36,7 +36,7 @@ export const ORCH_MESSAGES = {
 		`🔀 [Wave ${waveNum}] Merge: placeholder — Step 3 (TS-008) will replace with mergeWave()`,
 	orchWorktreeReset: (waveNum: number, lanes: number) =>
 		`🔄 Resetting ${lanes} worktree(s) to target branch HEAD after wave ${waveNum}`,
-	orchBatchComplete: (batchId: string, succeeded: number, failed: number, skipped: number, blocked: number, elapsedSec: number) => {
+	orchBatchComplete: (batchId: string, succeeded: number, failed: number, skipped: number, blocked: number, elapsedSec: number, orchBranch?: string, baseBranch?: string) => {
 		const lines = [`\n🏁 Batch ${batchId} complete: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped, ${blocked} blocked (${elapsedSec}s)`];
 		if (failed > 0 || blocked > 0) {
 			lines.push("");
@@ -47,6 +47,17 @@ export const ORCH_MESSAGES = {
 			lines.push("   • /orch-status     — review what failed and why");
 			lines.push("   • /orch-resume     — retry from the failed wave");
 			lines.push("   • /orch-abort      — clean up and start fresh");
+		}
+		if (orchBranch && succeeded > 0) {
+			lines.push("");
+			lines.push(`   ℹ Orch branch: ${orchBranch}`);
+			if (baseBranch) {
+				lines.push(`   Review changes: git log ${baseBranch}..${orchBranch}`);
+			}
+			lines.push("   Next steps:");
+			lines.push("   • /orch-integrate          — fast-forward into your branch");
+			lines.push("   • /orch-integrate --merge   — merge (if branches diverged)");
+			lines.push("   • /orch-integrate --pr      — push and open a PR");
 		}
 		return lines.join("\n");
 	},
