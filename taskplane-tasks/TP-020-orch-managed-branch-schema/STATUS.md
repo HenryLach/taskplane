@@ -55,14 +55,14 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Run `cd extensions && npx vitest run` — all tests must pass (zero failures)
-- [ ] Verify `freshOrchBatchState()` returns `orchBranch: ""` (inspect types.ts)
-- [ ] Verify `DEFAULT_ORCHESTRATOR_CONFIG.orchestrator.integration === "manual"` (inspect types.ts)
-- [ ] Verify backward-compat: `validatePersistedState()` defaults missing `orchBranch` to `""` for older v2 state files (inspect persistence.ts)
-- [ ] Verify Settings TUI: `integration` field is editable L1 toggle in Orchestrator section and does NOT appear in Advanced section (confirm via settings-tui.test.ts coverage at tests 18.2, 18.8)
-- [ ] Fix all failures if any, re-run tests until green
+- [x] Run `cd extensions && npx vitest run` — all tests must pass (zero failures) ✅ 21 files, 742 tests passed
+- [x] Verify `freshOrchBatchState()` returns `orchBranch: ""` (inspect types.ts) ✅ line 916
+- [x] Verify `DEFAULT_ORCHESTRATOR_CONFIG.orchestrator.integration === "manual"` (inspect types.ts) ✅ line 156
+- [x] Verify backward-compat: `validatePersistedState()` defaults missing `orchBranch` to `""` for older v2 state files (inspect persistence.ts) ✅ lines 369-379 (validation + default) and line 791 (serialization)
+- [x] Verify Settings TUI: `integration` field is editable L1 toggle in Orchestrator section and does NOT appear in Advanced section (confirm via settings-tui.test.ts coverage at tests 18.2, 18.8) ✅ settings-tui.ts line 105, tests 18.2+18.8 pass
+- [x] Fix all failures if any, re-run tests until green ✅ No failures — 21 files, 742 tests all green
 
 ---
 
@@ -85,6 +85,7 @@
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
 | R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
 | R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
+| R005 | plan | Step 4 | REVISE | .reviews/R005-plan-step4.md |
 | R005 | plan | Step 4 | REVISE | .reviews/R005-plan-step4.md |
 |---|------|------|---------|------|
 
@@ -136,6 +137,7 @@
 | 2026-03-18 03:46 | Step 3 complete | Add Integration Toggle to Settings TUI |
 | 2026-03-18 03:46 | Step 4 started | Testing & Verification |
 | 2026-03-18 03:47 | Review R005 | plan Step 4: REVISE |
+| 2026-03-18 03:49 | Review R005 | plan Step 4: REVISE |
 
 ---
 

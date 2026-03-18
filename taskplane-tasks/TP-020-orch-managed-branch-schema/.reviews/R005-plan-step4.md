@@ -3,17 +3,18 @@
 ### Verdict: REVISE
 
 ### Summary
-The Step 4 plan is currently too generic to guarantee the required verification outcomes. `STATUS.md` captures high-level goals, but it drops several explicit checks required by `PROMPT.md`, which makes the test step non-deterministic and easier to mark complete without proving key contracts. Tightening the checklist to concrete verification targets will make this step reliably reviewable.
+The Step 4 plan is directionally correct, but it is too high-level to be deterministic for a verification step. In `STATUS.md`, the checklist currently uses broad items (`taskplane-tasks/TP-020-orch-managed-branch-schema/STATUS.md:60-63`) and does not yet encode all required verification outcomes from `PROMPT.md` (`taskplane-tasks/TP-020-orch-managed-branch-schema/PROMPT.md:109-113`, `130-134`). Tighten the plan to explicitly cover the compatibility and contract checks this task introduced.
 
 ### Issues Found
-1. **[Severity: important]** — The Step 4 checklist in `STATUS.md` is underspecified compared with the prompt contract. It only lists broad items (`Unit tests passing`, `Schema defaults verified`, etc.) at `taskplane-tasks/TP-020-orch-managed-branch-schema/STATUS.md:60-63`, but the prompt requires explicit checks for: running `cd extensions && npx vitest run`, verifying `freshOrchBatchState().orchBranch === ""`, verifying `DEFAULT_ORCHESTRATOR_CONFIG.orchestrator.integration === "manual"`, and verifying Settings Advanced discoverability behavior (`PROMPT.md:109-113`). Add these exact outcomes back into Step 4 acceptance criteria.
-2. **[Severity: important]** — The plan does not explicitly include backward-compat verification for persisted state files missing `orchBranch`, even though that is a completion criterion (`PROMPT.md:133`). This is a risk area because compatibility is implemented via load-time normalization (`extensions/taskplane/persistence.ts:369-379`) and resume rehydration (`extensions/taskplane/resume.ts:615`). Add a concrete test intent/checklist item to validate that older state payloads load with `orchBranch: ""` and resume state keeps a defined value.
+1. **[Severity: important]** The plan does not explicitly include the required full-suite command from the prompt (`cd extensions && npx vitest run`) and only states a generic outcome (`Unit tests passing`) in `STATUS.md:60`. For Step 4, the execution command should be explicit so review can confirm the “ZERO test failures” requirement in `PROMPT.md:107-110` was actually exercised.
+2. **[Severity: important]** “Schema defaults verified” (`STATUS.md:61`) is underspecified relative to prompt-required checks (`PROMPT.md:110-112`). The plan should name the exact outcomes to validate: `freshOrchBatchState().orchBranch === ""` (`extensions/taskplane/types.ts:911-917`) and `DEFAULT_ORCHESTRATOR_CONFIG.orchestrator.integration === "manual"` (`extensions/taskplane/types.ts:147-157`).
+3. **[Severity: important]** The plan misses explicit backward-compat verification intent for persisted-state loading with missing `orchBranch`, even though this is a completion criterion (`PROMPT.md:133`) and a key risk area touched in code (`extensions/taskplane/persistence.ts:369-379`).
 
 ### Missing Items
-- Explicit Step 4 pass/fail criteria mirroring `PROMPT.md:109-113`.
-- A named compatibility verification for missing `orchBranch` in persisted v2 data (not just generic “schema defaults verified”).
-- A targeted mention that Advanced-section exclusion for editable fields is verified via existing Settings TUI coverage (`extensions/tests/settings-tui.test.ts:1423-1435`, `1509-1519`).
+- Explicit Step 4 check for backward-compatible load behavior: persisted v2 state without `orchBranch` is normalized to `""`.
+- Explicit reference to the existing integration default/mapping test path (`extensions/tests/project-config-loader.test.ts:658-671`) as part of verification intent.
+- Explicit Advanced discoverability validation anchor (`extensions/tests/settings-tui.test.ts:1509-1519`) for ensuring editable fields (including integration) are excluded from Advanced.
 
 ### Suggestions
-- Keep `npx vitest run` as the gate, but include a short triage note for failures pointing first to changed-surface suites (config loader, persistence/resume, settings-tui) to speed iteration.
-- When Step 4 is done, record the exact command run and key assertion outcomes in `STATUS.md` for auditability.
+- Use a two-stage test flow: run targeted files first (persistence/config/settings), then run full `npx vitest run` before marking Step 4 complete.
+- Log which assertions/files were used for each Step 4 checkbox in `STATUS.md` so completion is auditable.
