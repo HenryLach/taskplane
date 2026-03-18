@@ -89,10 +89,10 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Full test suite passes: `cd extensions && npx vitest run` — 21 files, 753 tests passed
-- [x] Orch branch creation edge cases verified: success path (test 5), branch-already-exists failure (test 6), lifecycle ordering after all planning exits (test 7) — all pass
+- [x] Orch branch creation edge cases verified: success path (test 5), branch-already-exists failure (test 6), lifecycle ordering after all planning exits (test 7), detached-HEAD rejection before creation (test 7b) — all pass
 - [x] Merge advancement: non-checked-out path uses update-ref with CAS (tests 11-13, 15-16); checked-out fallback uses ff-only+stash (test 14, 17) — both paths verified in merge.ts:775-835
 - [x] Worktrees based on orchBranch: engine.ts passes batchState.orchBranch to executeWave (L275) and mergeWaveByRepo (L384); tests 5-8 verify
 - [x] Post-merge worktree reset targets orchBranch: engine.ts L512, cleanup L698 both use batchState.orchBranch; tests 5-8 verify
@@ -100,8 +100,8 @@
 - [x] Auto-integration verified: ff success (test 18), divergence fallback (test 19), update-ref non-checked-out (test 23), shared attemptAutoIntegration function gates both paths (test 22)
 - [x] Resume parity: terminal-phase gating (test 24), orchBranch guard consistency (tests 7, 9), resolveBaseBranch fallback (test 10), workspace-mode cleanup (test 25), inter-wave reset (test 26) — all pass
 - [x] All failures fixed — no failures found (753/753 tests pass, 21/21 test files pass)
-- [ ] R012: Add detached-HEAD test for orch branch creation edge case — verify engine.ts fails fast before branch creation when on detached HEAD
-- [ ] R012: Deduplicate review/log rows in STATUS.md
+- [x] R012: Add detached-HEAD test for orch branch creation edge case — verify engine.ts fails fast before branch creation when on detached HEAD (test 7b added, 753/753 pass)
+- [x] R012: Deduplicate review/log rows in STATUS.md
 
 ---
 
@@ -125,17 +125,11 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
-| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
-| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
-| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | APPROVE | .reviews/R009-plan-step4.md |
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
-| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 | R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
-| R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
-| R012 | code | Step 5 | APPROVE | .reviews/R012-code-step5.md |
 | R012 | code | Step 5 | REVISE | .reviews/R012-code-step5.md |
 | R013 | plan | Step 6 | REVISE | .reviews/R013-plan-step6.md |
 
@@ -190,72 +184,32 @@
 | 2026-03-18 14:40 | Step 1 started | Create Orch Branch at Batch Start |
 | 2026-03-18 14:43 | Review R003 | plan Step 1: REVISE — hydrate naming/failure/test items |
 | 2026-03-18 | Step 1 impl | Orch branch creation added to engine.ts, all 753 tests pass |
-| 2026-03-18 14:47 | Worker iter 2 | done in 228s, ctx: 22%, tools: 31 |
-| 2026-03-18 14:48 | Worker iter 2 | done in 253s, ctx: 20%, tools: 32 |
 | 2026-03-18 14:50 | Review R004 | code Step 1: REVISE |
 | 2026-03-18 | R004 revisions | Moved orch branch creation after all planning validations; added tests for success/failure/lifecycle; 754 tests pass |
-| 2026-03-18 14:51 | Review R004 | code Step 1: REVISE |
-| 2026-03-18 14:58 | Worker iter 2 | done in 465s, ctx: 28%, tools: 58 |
 | 2026-03-18 14:58 | Step 1 complete | Create Orch Branch at Batch Start |
 | 2026-03-18 14:58 | Step 2 started | Route Worktrees and Merge to Orch Branch |
 | 2026-03-18 15:00 | Review R005 | plan Step 2: REVISE |
 | 2026-03-18 | Step 2 impl | orchBranch routing in engine.ts (3 sites) + resume.ts (4 sites + empty guard), tests added, 753 tests pass |
-| 2026-03-18 | Step 2 complete | Route Worktrees and Merge to Orch Branch |
-| 2026-03-18 15:01 | Worker iter 2 | done in 567s, ctx: 24%, tools: 41 |
-| 2026-03-18 15:01 | Step 1 complete | Create Orch Branch at Batch Start |
-| 2026-03-18 15:01 | Step 2 started | Route Worktrees and Merge to Orch Branch |
-| 2026-03-18 15:05 | Review R005 | plan Step 2: REVISE |
-| 2026-03-18 15:08 | Worker iter 3 | done in 508s, ctx: 37%, tools: 63 |
-| 2026-03-18 15:08 | Worker iter 3 | done in 172s, ctx: 19%, tools: 17 |
 | 2026-03-18 15:12 | Review R006 | code Step 2: REVISE |
 | 2026-03-18 | R006 revisions | Fixed orchBranch guard ordering in resume.ts, added orch branch fallback guard in resolveBaseBranch(), added tests 9-10, 753 tests pass |
-| 2026-03-18 15:13 | Review R006 | code Step 2: REVISE |
-| 2026-03-18 15:19 | Worker iter 3 | done in 434s, ctx: 20%, tools: 39 |
 | 2026-03-18 15:19 | Step 2 complete | Route Worktrees and Merge to Orch Branch |
 | 2026-03-18 15:19 | Step 3 started | Replace Fast-Forward with update-ref in Merge |
-| 2026-03-18 15:21 | Review R007 | plan Step 3: REVISE |
-| 2026-03-18 15:22 | Worker iter 3 | done in 495s, ctx: 25%, tools: 57 |
-| 2026-03-18 15:22 | Step 2 complete | Route Worktrees and Merge to Orch Branch |
-| 2026-03-18 15:22 | Step 3 started | Replace Fast-Forward with update-ref in Merge |
 | 2026-03-18 15:23 | Review R007 | plan Step 3: APPROVE |
 | 2026-03-18 | Step 3 impl | ff-only+stash replaced with update-ref, tests 11-13 verified, 753 tests pass |
-| 2026-03-18 | Step 3 complete | Replace Fast-Forward with update-ref in Merge |
-| 2026-03-18 15:28 | Worker iter 4 | done in 299s, ctx: 27%, tools: 42 |
-| 2026-03-18 15:28 | Worker iter 4 | done in 398s, ctx: 26%, tools: 38 |
 | 2026-03-18 15:32 | Review R008 | code Step 3: REVISE |
 | 2026-03-18 | R008 revisions | Gated advancement: update-ref for non-checked-out (with CAS), ff-only+stash for checked-out; test 14 added; 753 tests pass |
-| 2026-03-18 | Step 3 complete | Replace Fast-Forward with update-ref in Merge (R008 addressed) |
-| 2026-03-18 15:39 | Worker iter 4 | done in 443s, ctx: 23%, tools: 39 |
 | 2026-03-18 15:39 | Step 3 complete | Replace Fast-Forward with update-ref in Merge |
 | 2026-03-18 15:39 | Step 4 started | Auto-Integration and Cleanup |
-| 2026-03-18 15:43 | Review R009 | plan Step 4: REVISE |
-| 2026-03-18 15:44 | Worker iter 4 | done in 683s, ctx: 39%, tools: 53 |
-| 2026-03-18 15:44 | Step 3 complete | Replace Fast-Forward with update-ref in Merge |
-| 2026-03-18 15:44 | Step 4 started | Auto-Integration and Cleanup |
 | 2026-03-18 15:46 | Review R009 | plan Step 4: APPROVE |
 | 2026-03-18 | Step 4 impl | Resume parity verified (already implemented); added tests 18-23; 753 tests pass |
-| 2026-03-18 | Step 4 complete | Auto-Integration and Cleanup |
-| 2026-03-18 15:52 | Worker iter 5 | done in 408s, ctx: 45%, tools: 44 |
-| 2026-03-18 15:53 | Worker iter 5 | done in 630s, ctx: 44%, tools: 67 |
 | 2026-03-18 15:56 | Review R010 | code Step 4: REVISE |
-| 2026-03-18 15:58 | Review R010 | code Step 4: REVISE |
 | 2026-03-18 | R010 revisions | Fixed workspace-mode cleanup (per-repo target branch), extracted shared attemptAutoIntegration to merge.ts, added tests 24-26, 753 tests pass |
-| 2026-03-18 | Step 4 complete | Auto-Integration and Cleanup (R010 addressed) |
-| 2026-03-18 16:12 | Worker iter 5 | done in 945s, ctx: 45%, tools: 108 |
-| 2026-03-18 16:12 | Step 4 complete | Auto-Integration and Cleanup |
-| 2026-03-18 16:12 | Step 5 started | Testing & Verification |
-| 2026-03-18 16:12 | Worker iter 5 | done in 877s, ctx: 40%, tools: 114 |
-| 2026-03-18 16:12 | Step 4 complete | Auto-Integration and Cleanup |
+| 2026-03-18 16:12 | Step 4 complete | Auto-Integration and Cleanup (R010 addressed) |
 | 2026-03-18 16:12 | Step 5 started | Testing & Verification |
 | 2026-03-18 16:14 | Review R011 | plan Step 5: REVISE |
-| 2026-03-18 16:14 | Review R011 | plan Step 5: REVISE |
-| 2026-03-18 16:19 | Worker iter 6 | done in 297s, ctx: 24%, tools: 41 |
-| 2026-03-18 16:19 | Worker iter 6 | done in 253s, ctx: 23%, tools: 23 |
-| 2026-03-18 16:21 | Review R012 | code Step 5: APPROVE |
-| 2026-03-18 16:21 | Step 5 complete | Testing & Verification |
-| 2026-03-18 16:21 | Step 6 started | Documentation & Delivery |
 | 2026-03-18 16:21 | Review R012 | code Step 5: REVISE |
 | 2026-03-18 16:23 | Review R013 | plan Step 6: REVISE |
+| 2026-03-18 | R012 revisions | Added detached-HEAD test (7b), deduplicated reviews/log tables, 753 tests pass |
 
 ---
 
