@@ -284,12 +284,17 @@ function runAllTests(): void {
 		assert(reExecMergeRegex.test(resumeSource),
 			"resume.ts re-exec mergeWaveByRepo() receives batchState.orchBranch");
 
-		// Post-merge worktree reset uses orchBranch
-		const resumeResetBlocks = resumeSource.match(/const targetBranch = batchState\.\w+/g) || [];
-		// Should have at least one orchBranch reset (inter-wave) and one baseBranch (terminal cleanup)
-		const orchBranchResets = resumeResetBlocks.filter(b => b.includes("orchBranch"));
-		assert(orchBranchResets.length >= 2,
-			"resume.ts uses orchBranch for both inter-wave reset and terminal cleanup (TP-022 Step 4)");
+		// Post-merge worktree reset and terminal cleanup use per-repo target branch resolution:
+		// Primary repo uses batchState.orchBranch, secondary repos resolve via resolveBaseBranch.
+		// Both the inter-wave reset and terminal cleanup should have this per-repo pattern.
+		assert(resumeSource.includes("resolveRepoIdFromRoot"),
+			"resume.ts uses resolveRepoIdFromRoot for per-repo target branch in workspace mode");
+		assert(resumeSource.includes("resolveBaseBranch(repoId, perRepoRoot"),
+			"resume.ts calls resolveBaseBranch per-repo for secondary repos");
+		// Primary repo path still uses orchBranch in both locations
+		const orchBranchAssignments = resumeSource.match(/targetBranch = batchState\.orchBranch/g) || [];
+		assert(orchBranchAssignments.length >= 2,
+			"resume.ts uses orchBranch for primary repo in both inter-wave reset and terminal cleanup (TP-022 Step 4)");
 	}
 
 	// 7) resume.ts has orchBranch empty-guard for pre-TP-022 persisted states
@@ -939,41 +944,44 @@ function runAllTests(): void {
 		assert(resumeSource.includes('orchestrator.integration === "auto"'),
 			"resume.ts gates auto-integration by config.orchestrator.integration");
 
-		// b) resume.ts calls attemptAutoIntegrationResume
-		assert(resumeSource.includes("attemptAutoIntegrationResume"),
-			"resume.ts has attemptAutoIntegrationResume helper");
+		// b) resume.ts imports shared attemptAutoIntegration from merge.ts (no local duplicate)
+		assert(resumeSource.includes("attemptAutoIntegration, mergeWaveByRepo"),
+			"resume.ts imports attemptAutoIntegration from merge.ts");
+		assert(!resumeSource.includes("function attemptAutoIntegrationResume"),
+			"resume.ts does NOT have a local duplicate — uses shared helper from merge.ts");
 
 		// c) resume.ts shows manual integration guidance on non-auto path
 		assert(resumeSource.includes("orchIntegrationManual"),
 			"resume.ts calls orchIntegrationManual for manual mode guidance");
 
-		// d) resume.ts cleanup uses orchBranch (not baseBranch) for unmerged detection
+		// d) resume.ts cleanup uses orchBranch (not baseBranch) for primary repo unmerged detection
 		const resumeCleanupSection = resumeSource.match(
 			/11\. Cleanup and terminal state[\s\S]*?batchState\.endedAt = Date\.now/
 		)?.[0] ?? "";
 		assert(resumeCleanupSection.includes("batchState.orchBranch"),
 			"resume.ts cleanup references batchState.orchBranch for unmerged-branch detection");
 
-		// e) resume.ts attemptAutoIntegrationResume has same gate structure as engine.ts
-		const resumeAutoFn = resumeSource.match(
-			/function attemptAutoIntegrationResume[\s\S]*?return true;\s*\}/
+		// e) Shared attemptAutoIntegration in merge.ts has the required gate structure
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
+		const sharedAutoFn = mergeSource.match(
+			/export function attemptAutoIntegration[\s\S]*?return true;\s*\}/
 		)?.[0] ?? "";
-		assert(resumeAutoFn.includes("merge-base", ),
-			"resume auto-integration checks merge-base ancestry");
-		assert(resumeAutoFn.includes("getCurrentBranch"),
-			"resume auto-integration gates on checked-out branch");
-		assert(resumeAutoFn.includes("update-ref"),
-			"resume auto-integration uses update-ref for non-checked-out path");
-		assert(resumeAutoFn.includes("--ff-only"),
-			"resume auto-integration uses --ff-only for checked-out path");
-		assert(resumeAutoFn.includes("status", "--porcelain"),
-			"resume auto-integration checks dirty worktree before ff-only");
+		assert(sharedAutoFn.includes("merge-base"),
+			"shared auto-integration checks merge-base ancestry");
+		assert(sharedAutoFn.includes("getCurrentBranch"),
+			"shared auto-integration gates on checked-out branch");
+		assert(sharedAutoFn.includes("update-ref"),
+			"shared auto-integration uses update-ref for non-checked-out path");
+		assert(sharedAutoFn.includes("--ff-only"),
+			"shared auto-integration uses --ff-only for checked-out path");
+		assert(sharedAutoFn.includes("--porcelain"),
+			"shared auto-integration checks dirty worktree before ff-only");
+		assert(sharedAutoFn.includes("logCategory"),
+			"shared auto-integration accepts logCategory parameter for engine/resume disambiguation");
 
-		// f) Both engine and resume call the same ORCH_MESSAGES templates
-		assert(engineSource.includes("orchIntegrationAutoSuccess") && resumeSource.includes("orchIntegrationAutoSuccess"),
-			"both engine.ts and resume.ts use orchIntegrationAutoSuccess message");
-		assert(engineSource.includes("orchIntegrationAutoFailed") && resumeSource.includes("orchIntegrationAutoFailed"),
-			"both engine.ts and resume.ts use orchIntegrationAutoFailed message");
+		// f) Both engine and resume import the same shared function
+		assert(engineSource.includes("attemptAutoIntegration, mergeWaveByRepo"),
+			"engine.ts imports attemptAutoIntegration from merge.ts");
 		assert(engineSource.includes("orchIntegrationManual") && resumeSource.includes("orchIntegrationManual"),
 			"both engine.ts and resume.ts use orchIntegrationManual message");
 	}
@@ -1035,6 +1043,100 @@ function runAllTests(): void {
 		} finally {
 			rmSync(tempBase, { recursive: true, force: true });
 		}
+	}
+
+	// 24) Structural: auto-integration is gated to terminal phases only (no integration on paused/stopped)
+	{
+		console.log("  24) Structural: auto-integration gated to terminal phases (completed/failed) only");
+		const engineSource = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
+		const resumeSource = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
+
+		// engine.ts: isTerminalPhase gate before auto-integration
+		const engineAutoBlock = engineSource.match(
+			/Auto-Integration[\s\S]*?orchIntegrationManual/
+		)?.[0] ?? "";
+		assert(engineAutoBlock.includes('batchState.phase === "completed"'),
+			"engine.ts auto-integration checks for completed phase");
+		assert(engineAutoBlock.includes('batchState.phase === "failed"'),
+			"engine.ts auto-integration checks for failed phase");
+		assert(engineAutoBlock.includes("isTerminalPhase"),
+			"engine.ts auto-integration uses isTerminalPhase gate");
+
+		// resume.ts: same isTerminalPhase gate
+		const resumeAutoBlock = resumeSource.match(
+			/Auto-Integration[\s\S]*?orchIntegrationManual/
+		)?.[0] ?? "";
+		assert(resumeAutoBlock.includes('batchState.phase === "completed"'),
+			"resume.ts auto-integration checks for completed phase");
+		assert(resumeAutoBlock.includes('batchState.phase === "failed"'),
+			"resume.ts auto-integration checks for failed phase");
+		assert(resumeAutoBlock.includes("isTerminalPhase"),
+			"resume.ts auto-integration uses isTerminalPhase gate");
+
+		// Neither file should run auto-integration when phase is paused or stopped
+		// Verify the gate is used in the if condition (not just defined)
+		const engineGateIf = engineSource.match(/if \(isTerminalPhase && !preserveWorktreesForResume/);
+		assert(engineGateIf !== null,
+			"engine.ts gates auto-integration with isTerminalPhase in if condition");
+		const resumeGateIf = resumeSource.match(/if \(isTerminalPhase && !preserveWorktreesForResume/);
+		assert(resumeGateIf !== null,
+			"resume.ts gates auto-integration with isTerminalPhase in if condition");
+	}
+
+	// 25) Structural: resume.ts workspace-mode cleanup resolves per-repo target branch
+	{
+		console.log("  25) Structural: resume.ts resolves per-repo target branch for workspace-mode cleanup");
+		const resumeSource = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
+
+		// Section 11 cleanup should resolve per-repo target branches
+		const cleanupSection = resumeSource.match(
+			/11\. Cleanup and terminal state[\s\S]*?batchState\.endedAt = Date\.now/
+		)?.[0] ?? "";
+
+		// Primary repo uses orchBranch
+		assert(cleanupSection.includes("perRepoRoot === repoRoot"),
+			"resume.ts cleanup distinguishes primary repo from secondary repos");
+		assert(cleanupSection.includes("batchState.orchBranch"),
+			"resume.ts cleanup uses orchBranch for primary repo");
+
+		// Secondary repos resolve via resolveBaseBranch
+		assert(cleanupSection.includes("resolveRepoIdFromRoot"),
+			"resume.ts cleanup resolves repoId for secondary repos");
+		assert(cleanupSection.includes("resolveBaseBranch(repoId, perRepoRoot"),
+			"resume.ts cleanup calls resolveBaseBranch per secondary repo");
+
+		// Graceful fallback when resolveBaseBranch throws
+		assert(cleanupSection.includes("targetBranch = undefined"),
+			"resume.ts cleanup falls back to undefined targetBranch when resolveBaseBranch throws");
+
+		// resolveRepoIdFromRoot helper exists and works correctly
+		assert(resumeSource.includes("export function resolveRepoIdFromRoot"),
+			"resolveRepoIdFromRoot helper is exported from resume.ts");
+		const helperFn = resumeSource.match(
+			/function resolveRepoIdFromRoot[\s\S]*?return undefined;\s*\}/
+		)?.[0] ?? "";
+		assert(helperFn.includes("workspaceConfig"),
+			"resolveRepoIdFromRoot uses workspaceConfig for reverse lookup");
+		assert(helperFn.includes("repoConfig.path === repoRoot"),
+			"resolveRepoIdFromRoot matches by repo path");
+	}
+
+	// 26) Structural: resume.ts inter-wave reset also uses per-repo target branch
+	{
+		console.log("  26) Structural: resume.ts inter-wave reset uses per-repo target branch");
+		const resumeSource = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
+
+		// Inter-wave reset section (between wave executions) should resolve per-repo
+		const resetSection = resumeSource.match(
+			/waveIdx < persistedState\.wavePlan\.length - 1[\s\S]*?forceCleanupWorktree/
+		)?.[0] ?? "";
+
+		assert(resetSection.includes("perRepoRoot === repoRoot"),
+			"inter-wave reset distinguishes primary repo from secondary repos");
+		assert(resetSection.includes("resolveRepoIdFromRoot"),
+			"inter-wave reset resolves repoId for secondary repos");
+		assert(resetSection.includes("resolveBaseBranch"),
+			"inter-wave reset calls resolveBaseBranch for secondary repos");
 	}
 
 	console.log(`\nResults: ${passed} passed, ${failed} failed`);
