@@ -1,7 +1,7 @@
 # TP-022: Orch Branch Lifecycle & Merge Redirect — Status
 
 **Current Step:** Step 2: Route Worktrees and Merge to Orch Branch
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
 **Review Counter:** 5
@@ -40,16 +40,16 @@
 ---
 
 ### Step 2: Route Worktrees and Merge to Orch Branch
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] In engine.ts: pass `orchBranch` (not `baseBranch`) to `executeWave()` and `mergeWaveByRepo()` calls
-- [ ] In engine.ts: post-merge worktree reset targets `orchBranch` (not `baseBranch`)
-- [ ] In resume.ts: add orchBranch empty-guard — fail fast with clear message if `batchState.orchBranch` is empty/missing on resume
-- [ ] In resume.ts: pass `orchBranch` to `executeWave()` and `mergeWaveByRepo()` calls (4 call sites: re-exec merge, wave executeWave, wave mergeWaveByRepo, and re-exec merge target)
-- [ ] In resume.ts: post-merge worktree reset targets `orchBranch` (not `baseBranch`)
-- [ ] Verify `resolveBaseBranch()` compatibility — in workspace mode it detects per-repo branch; in repo mode it returns passed-in value (now orchBranch)
-- [ ] Add tests for orchBranch routing: engine execute/merge/reset, resume parity, resolveBaseBranch repo vs workspace mode
-- [ ] Remove duplicate R004 review row in STATUS.md
+- [x] In engine.ts: pass `orchBranch` (not `baseBranch`) to `executeWave()` and `mergeWaveByRepo()` calls
+- [x] In engine.ts: post-merge worktree reset targets `orchBranch` (not `baseBranch`)
+- [x] In resume.ts: add orchBranch empty-guard — fail fast with clear message if `batchState.orchBranch` is empty/missing on resume
+- [x] In resume.ts: pass `orchBranch` to `executeWave()` and `mergeWaveByRepo()` calls (4 call sites: re-exec merge, wave executeWave, wave mergeWaveByRepo, and re-exec merge target)
+- [x] In resume.ts: post-merge worktree reset targets `orchBranch` (not `baseBranch`)
+- [x] Verify `resolveBaseBranch()` compatibility — in workspace mode it detects per-repo branch; in repo mode it returns passed-in value (now orchBranch). No changes needed.
+- [x] Add tests for orchBranch routing: engine execute/merge/reset, resume parity, resolveBaseBranch repo vs workspace mode (added to orch-direct-implementation.test.ts, tests 5-8)
+- [x] Remove duplicate R004 review row in STATUS.md
 
 ---
 
@@ -99,7 +99,7 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
-| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ---
@@ -162,9 +162,12 @@
 | 2026-03-18 14:58 | Step 1 complete | Create Orch Branch at Batch Start |
 | 2026-03-18 14:58 | Step 2 started | Route Worktrees and Merge to Orch Branch |
 | 2026-03-18 15:00 | Review R005 | plan Step 2: REVISE |
+| 2026-03-18 | Step 2 impl | orchBranch routing in engine.ts (3 sites) + resume.ts (4 sites + empty guard), tests added, 753 tests pass |
+| 2026-03-18 | Step 2 complete | Route Worktrees and Merge to Orch Branch |
 | 2026-03-18 15:01 | Worker iter 2 | done in 567s, ctx: 24%, tools: 41 |
 | 2026-03-18 15:01 | Step 1 complete | Create Orch Branch at Batch Start |
 | 2026-03-18 15:01 | Step 2 started | Route Worktrees and Merge to Orch Branch |
+| 2026-03-18 15:05 | Review R005 | plan Step 2: REVISE |
 
 ---
 

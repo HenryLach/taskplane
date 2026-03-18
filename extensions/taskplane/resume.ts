@@ -613,6 +613,19 @@ export async function resumeOrchBatch(
 	batchState.batchId = persistedState.batchId;
 	batchState.baseBranch = persistedState.baseBranch || "";
 	batchState.orchBranch = persistedState.orchBranch || "";
+
+	// Guard: orchBranch must be present for routing. Persisted states from
+	// pre-TP-022 runs may have orchBranch="" (TP-020 defaults).
+	if (!batchState.orchBranch) {
+		onNotify(
+			`❌ Cannot resume batch ${persistedState.batchId}: persisted state has no orch branch. ` +
+			`This batch was created before orch-branch routing was implemented. ` +
+			`Use /orch-abort to clean up, then start a new batch.`,
+			"error",
+		);
+		return;
+	}
+
 	batchState.mode = persistedState.mode;
 	batchState.startedAt = persistedState.startedAt;
 	batchState.pauseSignal = { paused: false };
@@ -902,7 +915,7 @@ export async function resumeOrchBatch(
 				orchConfig,
 				repoRoot,
 				batchState.batchId,
-				batchState.baseBranch,
+				batchState.orchBranch,
 				workspaceConfig,
 				stateRoot,
 				agentRoot,
@@ -1066,7 +1079,7 @@ export async function resumeOrchBatch(
 			batchState.batchId,
 			batchState.pauseSignal,
 			depGraph,
-			batchState.baseBranch,
+			batchState.orchBranch,
 			handleResumeMonitorUpdate,
 			(lanes) => {
 				latestAllocatedLanes = lanes;
@@ -1181,7 +1194,7 @@ export async function resumeOrchBatch(
 					orchConfig,
 					repoRoot,
 					batchState.batchId,
-					batchState.baseBranch,
+					batchState.orchBranch,
 					workspaceConfig,
 					stateRoot,
 					agentRoot,
@@ -1294,7 +1307,7 @@ export async function resumeOrchBatch(
 			for (const perRepoRoot of encounteredRepoRoots) {
 				const existingWorktrees = listWorktrees(wtPrefix, perRepoRoot, resetOpId, batchState.batchId);
 				if (existingWorktrees.length > 0) {
-					const targetBranch = batchState.baseBranch;
+					const targetBranch = batchState.orchBranch;
 					for (const wt of existingWorktrees) {
 						const resetResult = safeResetWorktree(wt, targetBranch, perRepoRoot);
 						if (!resetResult.success) {

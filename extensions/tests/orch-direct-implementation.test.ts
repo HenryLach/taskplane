@@ -221,6 +221,111 @@ function runAllTests(): void {
 			"orch branch creation occurs after wave computation early return");
 	}
 
+	// ── TP-022 Step 2: orchBranch routing verification ───────────────
+
+	// 5) engine.ts passes orchBranch (not baseBranch) to executeWave and mergeWaveByRepo
+	{
+		console.log("\n  5) engine.ts routes orchBranch to executeWave/mergeWaveByRepo/worktree reset");
+		const engineSource = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
+
+		// executeWave call should pass orchBranch
+		const executeWaveCallRegex = /executeWave\(\s*waveTasks[\s\S]*?batchState\.orchBranch/;
+		assert(executeWaveCallRegex.test(engineSource),
+			"executeWave() receives batchState.orchBranch (not baseBranch)");
+
+		// Verify baseBranch is NOT passed to executeWave
+		// Find the executeWave call block and check it doesn't use baseBranch
+		const executeWaveBlock = engineSource.match(/const waveResult = await executeWave\([\s\S]*?\);/)?.[0] ?? "";
+		assert(!executeWaveBlock.includes("batchState.baseBranch"),
+			"executeWave() call block does not reference batchState.baseBranch");
+
+		// mergeWaveByRepo should pass orchBranch
+		const mergeCallRegex = /mergeWaveByRepo\(\s*waveResult\.allocatedLanes[\s\S]*?batchState\.orchBranch/;
+		assert(mergeCallRegex.test(engineSource),
+			"mergeWaveByRepo() receives batchState.orchBranch (not baseBranch)");
+
+		// Post-merge worktree reset uses orchBranch
+		const resetBlock = engineSource.match(/Post-merge: Reset worktrees[\s\S]*?const targetBranch = batchState\.\w+/)?.[0] ?? "";
+		assert(resetBlock.includes("batchState.orchBranch"),
+			"post-merge worktree reset uses batchState.orchBranch");
+		assert(!resetBlock.includes("batchState.baseBranch"),
+			"post-merge worktree reset does NOT use batchState.baseBranch");
+
+		// Phase 3 cleanup still uses baseBranch (Step 4 territory — unmerged-branch check)
+		const cleanupBlock = engineSource.match(/Phase 3: Cleanup[\s\S]*?const targetBranch = batchState\.\w+/)?.[0] ?? "";
+		assert(cleanupBlock.includes("batchState.baseBranch"),
+			"Phase 3 cleanup still uses batchState.baseBranch for unmerged-branch check");
+	}
+
+	// 6) resume.ts mirrors engine.ts orchBranch routing
+	{
+		console.log("  6) resume.ts routes orchBranch to executeWave/mergeWaveByRepo/worktree reset");
+		const resumeSource = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
+
+		// executeWave in resume should use orchBranch
+		const resumeExecBlock = resumeSource.match(/const waveResult = await executeWave\([\s\S]*?\);/)?.[0] ?? "";
+		assert(resumeExecBlock.includes("batchState.orchBranch"),
+			"resume.ts executeWave() receives batchState.orchBranch");
+		assert(!resumeExecBlock.includes("batchState.baseBranch"),
+			"resume.ts executeWave() does NOT reference batchState.baseBranch");
+
+		// Wave mergeWaveByRepo in resume should use orchBranch
+		// There are multiple mergeWaveByRepo calls — find the one in the wave loop (not re-exec)
+		const waveMergeRegex = /mergeWaveByRepo\(\s*waveResult\.allocatedLanes[\s\S]*?batchState\.orchBranch/;
+		assert(waveMergeRegex.test(resumeSource),
+			"resume.ts wave mergeWaveByRepo() receives batchState.orchBranch");
+
+		// Re-exec merge also uses orchBranch
+		const reExecMergeRegex = /reExecAllocatedLanes[\s\S]*?mergeWaveByRepo\([\s\S]*?batchState\.orchBranch/;
+		assert(reExecMergeRegex.test(resumeSource),
+			"resume.ts re-exec mergeWaveByRepo() receives batchState.orchBranch");
+
+		// Post-merge worktree reset uses orchBranch
+		const resumeResetBlocks = resumeSource.match(/const targetBranch = batchState\.\w+/g) || [];
+		// Should have at least one orchBranch reset (inter-wave) and one baseBranch (terminal cleanup)
+		const orchBranchResets = resumeResetBlocks.filter(b => b.includes("orchBranch"));
+		const baseBranchResets = resumeResetBlocks.filter(b => b.includes("baseBranch"));
+		assert(orchBranchResets.length >= 1,
+			"resume.ts has at least 1 inter-wave reset using orchBranch");
+		assert(baseBranchResets.length >= 1,
+			"resume.ts retains at least 1 terminal cleanup using baseBranch");
+	}
+
+	// 7) resume.ts has orchBranch empty-guard for pre-TP-022 persisted states
+	{
+		console.log("  7) resume.ts guards against empty orchBranch");
+		const resumeSource = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
+
+		assert(resumeSource.includes("!batchState.orchBranch"),
+			"resume.ts checks for empty orchBranch");
+		assert(resumeSource.includes("has no orch branch"),
+			"resume.ts has clear error message for missing orchBranch");
+
+		// The guard should appear BEFORE any orchBranch routing usage
+		const guardPos = resumeSource.indexOf("!batchState.orchBranch");
+		const firstRoutingUse = resumeSource.indexOf("batchState.orchBranch,");
+		assert(guardPos > 0 && firstRoutingUse > 0 && guardPos < firstRoutingUse,
+			"orchBranch guard appears before first orchBranch routing usage");
+	}
+
+	// 8) resolveBaseBranch in waves.ts: repo mode returns passed-in branch, workspace mode detects per-repo
+	{
+		console.log("  8) resolveBaseBranch compatibility (no changes needed)");
+		const wavesSource = readFileSync(join(__dirname, "..", "taskplane", "waves.ts"), "utf-8");
+
+		// resolveBaseBranch exists
+		assert(wavesSource.includes("export function resolveBaseBranch"),
+			"resolveBaseBranch() exists in waves.ts");
+
+		// In repo mode (no repoId), it falls through to return batchBaseBranch
+		assert(wavesSource.includes("return batchBaseBranch"),
+			"resolveBaseBranch falls back to batchBaseBranch (which is now orchBranch)");
+
+		// In workspace mode (repoId present), it detects per-repo branch
+		assert(wavesSource.includes("getCurrentBranch(repoRoot)"),
+			"resolveBaseBranch detects per-repo branch in workspace mode");
+	}
+
 	console.log(`\nResults: ${passed} passed, ${failed} failed`);
 	if (failed > 0) throw new Error(`${failed} test(s) failed`);
 } // end runAllTests

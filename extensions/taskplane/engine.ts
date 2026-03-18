@@ -273,7 +273,7 @@ export async function executeOrchBatch(
 			batchState.batchId,
 			batchState.pauseSignal,
 			depGraph,
-			batchState.baseBranch,
+			batchState.orchBranch,
 			handleWaveMonitorUpdate,
 			(lanes) => {
 				latestAllocatedLanes = lanes;
@@ -381,7 +381,7 @@ export async function executeOrchBatch(
 					orchConfig,
 					repoRoot,
 					batchState.batchId,
-					batchState.baseBranch,
+					batchState.orchBranch,
 					workspaceConfig,
 					stateRoot,
 					agentRoot,
@@ -509,7 +509,7 @@ export async function executeOrchBatch(
 					"info",
 				);
 
-				const targetBranch = batchState.baseBranch;
+				const targetBranch = batchState.orchBranch;
 				for (const wt of existingWorktrees) {
 					const resetResult = safeResetWorktree(wt, targetBranch, repoRoot);
 					if (!resetResult.success) {

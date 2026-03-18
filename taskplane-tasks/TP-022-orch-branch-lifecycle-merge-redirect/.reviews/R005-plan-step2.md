@@ -3,17 +3,16 @@
 ### Verdict: REVISE
 
 ### Summary
-The plan captures the core engine-side routing outcomes for Step 2, but it is incomplete for resumability and compatibility. Right now it scopes changes to `engine.ts`/`waves.ts` only, while the same base-branch routing still exists in resume execution paths. Before implementation, expand the plan to include resume parity and explicit test intent so this change does not regress recoverability.
+The revised plan is much stronger: it now includes engine + resume parity and explicitly calls out an `orchBranch` guard on resume. However, one workspace-mode branch-resolution edge case is still underspecified, and the test intent does not yet cover the new legacy-state compatibility boundary introduced by the guard. Tightening those two outcomes will make Step 2 safer and more deterministic.
 
 ### Issues Found
-1. **[Severity: critical]** — `taskplane-tasks/TP-022-orch-branch-lifecycle-merge-redirect/STATUS.md:45-47` omits `resume.ts` updates, even though Step 2 routing points are duplicated there (`STATUS.md:110-127`) and currently still pass/reset against `baseBranch` (`extensions/taskplane/resume.ts:898-905`, `1060-1069`, `1177-1184`, `1297-1299`). This risks split behavior between fresh and resumed batches, violating the task constraint to not break resume flow (`PROMPT.md:176`). **Fix:** add explicit Step 2 outcomes for resume parity (re-exec merge, wave execute/merge, inter-wave reset use `orchBranch`; keep cleanup targeting `baseBranch` for Step 4).
-2. **[Severity: important]** — The plan does not define how to handle persisted states where `orchBranch` is empty/missing (`extensions/taskplane/persistence.ts:369-378`; runtime assignment currently allows empty string at `extensions/taskplane/resume.ts:615`). If Step 2 blindly routes to `orchBranch`, resume can pass an invalid branch name into worktree/merge flows. **Fix:** add a guard outcome (e.g., fail fast with clear message, or explicit compatibility fallback) before using `batchState.orchBranch` in resume/execution routing.
-3. **[Severity: important]** — Step 2 has no concrete test coverage intent beyond generic Step 5 bullets (`STATUS.md:70-77`), despite multiple call-site migrations and repo/workspace mode branch-resolution behavior. **Fix:** add explicit Step 2 test intent for (a) engine execute/merge/reset routing to orch branch, (b) resume parity for the same routing points, and (c) `resolveBaseBranch()` behavior in repo vs workspace mode.
+1. **[Severity: important]** — `taskplane-tasks/TP-022-orch-branch-lifecycle-merge-redirect/STATUS.md:50` marks `resolveBaseBranch()` as “No changes needed,” but `extensions/taskplane/waves.ts:564-596` falls back to `batchBaseBranch` when repo branch detection/default-branch lookup fails, and that value is consumed in worktree provisioning (`extensions/taskplane/waves.ts:993`). After Step 2, `batchBaseBranch` passed into this path becomes `orchBranch`, which may not exist in non-primary workspace repos. **Suggested fix:** add an explicit outcome for this failure path (e.g., ensure orch branch existence per repo before use, or define/document an intentional non-orch fallback for workspace mode when detection fails).
+2. **[Severity: important]** — The plan adds a resume fail-fast on empty `orchBranch` (`STATUS.md:47`), but Step 2 test intent (`STATUS.md:51`) does not explicitly cover that compatibility boundary. Persisted state loading currently defaults missing `orchBranch` to `""` (`extensions/taskplane/persistence.ts:369-378`), so this is a real edge path. **Suggested fix:** add one explicit test scenario for resume with empty/missing `orchBranch`, validating the expected behavior and user-facing message.
+3. **[Severity: minor]** — Discovery notes still say empty `orchBranch` is “already handled by persistence validation” (`STATUS.md:135`), which conflicts with the Step 2 fail-fast outcome (`STATUS.md:47`). **Suggested fix:** reconcile notes so there is one clear compatibility strategy.
 
 ### Missing Items
-- Resume-path routing parity checklist for `resume.ts` call sites discovered in Step 0.
-- Explicit compatibility decision for empty `orchBranch` in loaded persisted state.
-- Step-specific test scenarios tied to the migrated routing call sites.
+- Explicit risk-mitigation outcome for workspace-mode branch-resolution fallback when repo branch detection fails.
+- Explicit Step 2 test intent for the empty/missing `orchBranch` resume path.
 
 ### Suggestions
-- Minor housekeeping: remove duplicate review row `R004` in `STATUS.md:96-97` to keep review history unambiguous.
+- Clean up the duplicate `R004` review row in `STATUS.md` once Step 2 edits are finalized to keep review history unambiguous.
