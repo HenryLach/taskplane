@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 ---
@@ -28,8 +28,10 @@
 ### Step 1: Register `/orch-integrate` Command
 **Status:** 🟨 In Progress
 
-- [ ] Register command with args parsing (--merge, --pr, --force)
-- [ ] Set command description
+- [ ] Extract `parseIntegrateArgs()` pure helper returning `{ mode: "ff"|"merge"|"pr", force: boolean, orchBranchArg?: string }` with mutual-exclusion validation
+- [ ] Register `/orch-integrate` command with description, usage text (incl. optional branch arg), and handler calling parseIntegrateArgs
+- [ ] Update session-start command list to include `/orch-integrate`
+- [ ] Verify parsing: default mode, force flag, conflict rejection, optional branch arg capture
 
 ---
 
@@ -78,6 +80,8 @@
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ---
 
@@ -111,6 +115,8 @@
 | 2026-03-18 16:41 | Worker iter 1 | done in 158s, ctx: 18%, tools: 27 |
 | 2026-03-18 16:41 | Step 0 complete | Preflight |
 | 2026-03-18 16:41 | Step 1 started | Register `/orch-integrate` Command |
+| 2026-03-18 16:43 | Review R003 | plan Step 1: REVISE |
+| 2026-03-18 iter2 | R003 hydration | Expanded Step 1: parse contract, mutual exclusion, session-start list, verify |
 
 ---
 
