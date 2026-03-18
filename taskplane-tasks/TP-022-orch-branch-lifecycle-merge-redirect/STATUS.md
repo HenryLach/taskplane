@@ -1,6 +1,6 @@
 # TP-022: Orch Branch Lifecycle & Merge Redirect — Status
 
-**Current Step:** Step 4: Auto-Integration and Cleanup
+**Current Step:** Step 5: Testing & Verification
 **Status:** ✅ Step 4 Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
@@ -71,7 +71,7 @@
 ---
 
 ### Step 4: Auto-Integration and Cleanup
-**Status:** ✅ Complete (R010 revisions addressed)
+**Status:** ✅ Complete
 
 - [x] Add ORCH_MESSAGES helper for post-batch integration guidance (shared by engine.ts + resume.ts)
 - [x] Implement auto-integration in engine.ts Phase 3: gated ff of baseBranch to orchBranch (success → log+notify, diverged/detached/dirty/missing → warn+preserve orchBranch, never fail the batch)
@@ -89,7 +89,7 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Unit tests passing
 - [ ] Orch branch creation edge cases verified
@@ -228,6 +228,9 @@
 | 2026-03-18 15:58 | Review R010 | code Step 4: REVISE |
 | 2026-03-18 | R010 revisions | Fixed workspace-mode cleanup (per-repo target branch), extracted shared attemptAutoIntegration to merge.ts, added tests 24-26, 753 tests pass |
 | 2026-03-18 | Step 4 complete | Auto-Integration and Cleanup (R010 addressed) |
+| 2026-03-18 16:12 | Worker iter 5 | done in 945s, ctx: 45%, tools: 108 |
+| 2026-03-18 16:12 | Step 4 complete | Auto-Integration and Cleanup |
+| 2026-03-18 16:12 | Step 5 started | Testing & Verification |
 
 ---
 
