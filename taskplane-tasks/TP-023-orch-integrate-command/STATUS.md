@@ -38,11 +38,11 @@
 ---
 
 ### Step 2: Implement Integration Logic
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Resolve orch branch + baseBranch: (1) try loadBatchState → use orchBranch/baseBranch from state, (2) if null use positional `<orch-branch>` arg, (3) if neither list candidate `orch/*` branches and guide user. Handle StateFileError exceptions (IO/parse/schema) with user-facing messages.
-- [ ] Branch safety check: getCurrentBranch(repoRoot) with detached HEAD null-check, compare to baseBranch (or infer baseBranch from current branch when state unavailable), --force bypass. All git/state reads use execCtx!.repoRoot.
-- [ ] Pre-integration summary: show orch branch name, baseBranch, commits ahead, files changed via git rev-list/diff --stat
+- [x] Resolve orch branch + baseBranch: (1) try loadBatchState → use orchBranch/baseBranch from state, (2) if null use positional `<orch-branch>` arg, (3) if neither list candidate `orch/*` branches and guide user. Handle StateFileError exceptions (IO/parse/schema) with user-facing messages.
+- [x] Branch safety check: getCurrentBranch(repoRoot) with detached HEAD null-check, compare to baseBranch (or infer baseBranch from current branch when state unavailable), --force bypass. All git/state reads use execCtx!.repoRoot.
+- [x] Pre-integration summary: show orch branch name, baseBranch, commits ahead, files changed via git rev-list/diff --stat
 
 ---
 
@@ -130,6 +130,7 @@
 | 2026-03-18 16:59 | Step 2 started | Implement Integration Logic |
 | 2026-03-18 17:00 | Review R005 | plan Step 2: REVISE |
 | 2026-03-18 iter3 | R005 hydration | Expanded Step 2: state→arg→branch-scan fallback, StateFileError handling, detached HEAD, repoRoot invariant |
+| 2026-03-18 iter3 | Step 2 complete | Implemented: 3-tier branch resolution (state→arg→scan), StateFileError handling (IO/parse/schema), legacy merge mode detection, detached HEAD check, branch safety with --force bypass, pre-integration summary with commits/diff. 777/777 tests pass. |
 
 ---
 
