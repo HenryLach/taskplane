@@ -4,7 +4,7 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 3
 **Size:** L
 
@@ -40,7 +40,7 @@
 ---
 
 ### Step 2: Route Worktrees and Merge to Orch Branch
-**Status:** ✅ Complete
+**Status:** 🔧 In Progress
 
 - [x] In engine.ts: pass `orchBranch` (not `baseBranch`) to `executeWave()` and `mergeWaveByRepo()` calls
 - [x] In engine.ts: post-merge worktree reset targets `orchBranch` (not `baseBranch`)
@@ -50,6 +50,10 @@
 - [x] Verify `resolveBaseBranch()` compatibility — in workspace mode it detects per-repo branch; in repo mode it returns passed-in value (now orchBranch). No changes needed.
 - [x] Add tests for orchBranch routing: engine execute/merge/reset, resume parity, resolveBaseBranch repo vs workspace mode (added to orch-direct-implementation.test.ts, tests 5-8)
 - [x] Remove duplicate R004 review row in STATUS.md
+- [ ] R006: Fix orchBranch guard in resume.ts — move guard before runtime state mutation (phase/batchId), or set terminal phase + endedAt + error before returning, so state remains consistent and future /orch-resume is not blocked
+- [ ] R006: Add workspace-mode fallback handling in resolveBaseBranch() — fail fast with targeted message when fallback would be an orch branch in a non-primary repo (detached HEAD + no defaultBranch)
+- [ ] R006: Add test for legacy-state guard path verifying runtime state is resumable/consistent after rejection
+- [ ] R006: Add workspace-mode test for resolveBaseBranch() fallback with detached HEAD when batchBaseBranch is an orch branch
 
 ---
 
@@ -101,6 +105,7 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 
 ---
 
@@ -168,6 +173,9 @@
 | 2026-03-18 15:01 | Step 1 complete | Create Orch Branch at Batch Start |
 | 2026-03-18 15:01 | Step 2 started | Route Worktrees and Merge to Orch Branch |
 | 2026-03-18 15:05 | Review R005 | plan Step 2: REVISE |
+| 2026-03-18 15:08 | Worker iter 3 | done in 508s, ctx: 37%, tools: 63 |
+| 2026-03-18 15:08 | Worker iter 3 | done in 172s, ctx: 19%, tools: 17 |
+| 2026-03-18 15:12 | Review R006 | code Step 2: REVISE |
 
 ---
 
