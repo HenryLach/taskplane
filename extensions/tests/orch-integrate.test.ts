@@ -4,13 +4,22 @@
  * Tests for:
  * - parseIntegrateArgs() — pure argument parser
  * - resolveIntegrationContext() — pure context resolution with dependency injection
+ * - executeIntegration() — mode execution with DI for git/gh ops
  *
  * Run: npx vitest run extensions/tests/orch-integrate.test.ts
  */
 
 import { describe, it, expect } from "vitest";
-import { parseIntegrateArgs, resolveIntegrationContext } from "../taskplane/extension.ts";
-import type { IntegrateArgs, IntegrationDeps, IntegrationContext, IntegrationContextError } from "../taskplane/extension.ts";
+import { parseIntegrateArgs, resolveIntegrationContext, executeIntegration } from "../taskplane/extension.ts";
+import type {
+	IntegrateArgs,
+	IntegrateMode,
+	IntegrationDeps,
+	IntegrationContext,
+	IntegrationContextError,
+	IntegrationResult,
+	IntegrationExecDeps,
+} from "../taskplane/extension.ts";
 import { StateFileError } from "../taskplane/types.ts";
 import type { PersistedBatchState, OrchBatchPhase } from "../taskplane/types.ts";
 
@@ -616,5 +625,727 @@ describe("resolveIntegrationContext — happy path", () => {
 		expect(ctx.orchBranch).toBe("orch/override");
 		// baseBranch still comes from state
 		expect(ctx.baseBranch).toBe("main");
+	});
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// executeIntegration — mode execution tests
+// ═══════════════════════════════════════════════════════════════════════
+
+/** Create a default IntegrationContext for executeIntegration tests */
+function makeContext(overrides: Partial<IntegrationContext> = {}): IntegrationContext {
+	return {
+		orchBranch: "orch/test-batch123",
+		baseBranch: "main",
+		batchId: "20260318T150000",
+		currentBranch: "main",
+		notices: [],
+		...overrides,
+	};
+}
+
+/** Git result helper */
+function gitOk(stdout = ""): { ok: boolean; stdout: string; stderr: string } {
+	return { ok: true, stdout, stderr: "" };
+}
+function gitFail(stderr = "error"): { ok: boolean; stdout: string; stderr: string } {
+	return { ok: false, stdout: "", stderr };
+}
+
+/** Create default IntegrationExecDeps where everything succeeds */
+function makeExecDeps(overrides: Partial<IntegrationExecDeps> = {}): IntegrationExecDeps {
+	return {
+		runGit: () => gitOk(),
+		runCommand: () => gitOk(),
+		deleteBatchState: () => {},
+		...overrides,
+	};
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 1. Fast-forward mode
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("executeIntegration — fast-forward mode", () => {
+	it("succeeds on clean fast-forward", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge" && args[1] === "--ff-only") return gitOk();
+				if (args[0] === "rev-list") return gitOk("3");
+				if (args[0] === "branch" && args[1] === "-D") return gitOk();
+				return gitOk();
+			},
+		});
+		const result = executeIntegration("ff", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(result.integratedLocally).toBe(true);
+		expect(result.message).toContain("Fast-forwarded");
+		expect(result.message).toContain("orch/test-batch123");
+	});
+
+	it("returns error with suggestions when ff diverges", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge" && args[1] === "--ff-only") {
+					return gitFail("fatal: Not possible to fast-forward, aborting.");
+				}
+				return gitOk();
+			},
+		});
+		const result = executeIntegration("ff", makeContext(), deps);
+		expect(result.success).toBe(false);
+		expect(result.integratedLocally).toBe(false);
+		expect(result.error).toContain("Fast-forward failed");
+		expect(result.error).toContain("--merge");
+		expect(result.error).toContain("--pr");
+	});
+
+	it("does not call cleanup on ff failure", () => {
+		let branchDeleteCalled = false;
+		let stateDeleteCalled = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") return gitFail("diverged");
+				if (args[0] === "branch" && args[1] === "-D") { branchDeleteCalled = true; return gitOk(); }
+				return gitOk();
+			},
+			deleteBatchState: () => { stateDeleteCalled = true; },
+		});
+		executeIntegration("ff", makeContext(), deps);
+		expect(branchDeleteCalled).toBe(false);
+		expect(stateDeleteCalled).toBe(false);
+	});
+
+	it("performs cleanup (branch + state deletion) on ff success", () => {
+		let deletedBranch = "";
+		let stateDeleted = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") return gitOk();
+				if (args[0] === "branch" && args[1] === "-D") {
+					deletedBranch = args[2];
+					return gitOk();
+				}
+				return gitOk();
+			},
+			deleteBatchState: () => { stateDeleted = true; },
+		});
+		const result = executeIntegration("ff", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(deletedBranch).toBe("orch/test-batch123");
+		expect(stateDeleted).toBe(true);
+	});
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 2. Merge mode
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("executeIntegration — merge mode", () => {
+	it("succeeds on clean merge", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") return gitOk();
+				if (args[0] === "branch" && args[1] === "-D") return gitOk();
+				return gitOk();
+			},
+		});
+		const result = executeIntegration("merge", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(result.integratedLocally).toBe(true);
+		expect(result.message).toContain("Merged");
+		expect(result.message).toContain("merge commit");
+		expect(result.message).toContain("orch/test-batch123");
+	});
+
+	it("passes correct args to git merge", () => {
+		let mergeArgs: string[] = [];
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") { mergeArgs = args; return gitOk(); }
+				return gitOk();
+			},
+		});
+		executeIntegration("merge", makeContext(), deps);
+		expect(mergeArgs).toEqual(["merge", "orch/test-batch123", "--no-edit"]);
+	});
+
+	it("returns error with stderr on merge conflict", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") {
+					return gitFail("CONFLICT (content): Merge conflict in file.ts\nAutomatic merge failed");
+				}
+				return gitOk();
+			},
+		});
+		const result = executeIntegration("merge", makeContext(), deps);
+		expect(result.success).toBe(false);
+		expect(result.integratedLocally).toBe(false);
+		expect(result.error).toContain("Merge failed");
+		expect(result.error).toContain("CONFLICT");
+		expect(result.error).toContain("--pr");
+	});
+
+	it("does not call cleanup on merge failure", () => {
+		let branchDeleteCalled = false;
+		let stateDeleteCalled = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") return gitFail("conflict");
+				if (args[0] === "branch" && args[1] === "-D") { branchDeleteCalled = true; return gitOk(); }
+				return gitOk();
+			},
+			deleteBatchState: () => { stateDeleteCalled = true; },
+		});
+		executeIntegration("merge", makeContext(), deps);
+		expect(branchDeleteCalled).toBe(false);
+		expect(stateDeleteCalled).toBe(false);
+	});
+
+	it("performs cleanup on merge success", () => {
+		let deletedBranch = "";
+		let stateDeleted = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") return gitOk();
+				if (args[0] === "branch" && args[1] === "-D") { deletedBranch = args[2]; return gitOk(); }
+				return gitOk();
+			},
+			deleteBatchState: () => { stateDeleted = true; },
+		});
+		const result = executeIntegration("merge", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(deletedBranch).toBe("orch/test-batch123");
+		expect(stateDeleted).toBe(true);
+	});
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 3. PR mode
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("executeIntegration — PR mode", () => {
+	it("succeeds: pushes branch then creates PR", () => {
+		let pushArgs: string[] = [];
+		let ghArgs: string[] = [];
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "push") { pushArgs = args; return gitOk(); }
+				return gitOk();
+			},
+			runCommand: (cmd, args) => {
+				if (cmd === "gh") { ghArgs = args; return gitOk("https://github.com/owner/repo/pull/42"); }
+				return gitOk();
+			},
+		});
+		const result = executeIntegration("pr", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(result.integratedLocally).toBe(false);
+		expect(result.message).toContain("Pull request created");
+		expect(result.message).toContain("https://github.com/owner/repo/pull/42");
+		expect(result.message).toContain("orch branch has been kept");
+		// Verify push args
+		expect(pushArgs).toEqual(["push", "origin", "orch/test-batch123"]);
+		// Verify gh args
+		expect(ghArgs).toContain("pr");
+		expect(ghArgs).toContain("create");
+		expect(ghArgs).toContain("--base");
+		expect(ghArgs).toContain("main");
+		expect(ghArgs).toContain("--head");
+		expect(ghArgs).toContain("orch/test-batch123");
+	});
+
+	it("returns error when push fails", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "push") return gitFail("remote: Permission denied");
+				return gitOk();
+			},
+		});
+		const result = executeIntegration("pr", makeContext(), deps);
+		expect(result.success).toBe(false);
+		expect(result.integratedLocally).toBe(false);
+		expect(result.error).toContain("Failed to push");
+		expect(result.error).toContain("Permission denied");
+	});
+
+	it("does not call gh when push fails", () => {
+		let ghCalled = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "push") return gitFail("push failed");
+				return gitOk();
+			},
+			runCommand: () => { ghCalled = true; return gitOk(); },
+		});
+		executeIntegration("pr", makeContext(), deps);
+		expect(ghCalled).toBe(false);
+	});
+
+	it("returns error when gh pr create fails (but push succeeded)", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "push") return gitOk();
+				return gitOk();
+			},
+			runCommand: () => gitFail("gh: not logged in"),
+		});
+		const result = executeIntegration("pr", makeContext(), deps);
+		expect(result.success).toBe(false);
+		expect(result.integratedLocally).toBe(false);
+		expect(result.error).toContain("PR creation failed");
+		expect(result.error).toContain("not logged in");
+		expect(result.error).toContain("create the PR manually");
+	});
+
+	it("never calls cleanup (branch delete / state delete) on PR success", () => {
+		let branchDeleteCalled = false;
+		let stateDeleteCalled = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "push") return gitOk();
+				if (args[0] === "branch" && args[1] === "-D") { branchDeleteCalled = true; return gitOk(); }
+				return gitOk();
+			},
+			runCommand: () => gitOk("https://example.com/pr/1"),
+			deleteBatchState: () => { stateDeleteCalled = true; },
+		});
+		const result = executeIntegration("pr", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(branchDeleteCalled).toBe(false);
+		expect(stateDeleteCalled).toBe(false);
+	});
+
+	it("never calls cleanup on PR push failure", () => {
+		let branchDeleteCalled = false;
+		let stateDeleteCalled = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "push") return gitFail("push error");
+				if (args[0] === "branch" && args[1] === "-D") { branchDeleteCalled = true; return gitOk(); }
+				return gitOk();
+			},
+			deleteBatchState: () => { stateDeleteCalled = true; },
+		});
+		executeIntegration("pr", makeContext(), deps);
+		expect(branchDeleteCalled).toBe(false);
+		expect(stateDeleteCalled).toBe(false);
+	});
+
+	it("uses batchId in PR title when available", () => {
+		let prTitle = "";
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "push") return gitOk();
+				return gitOk();
+			},
+			runCommand: (_cmd, args) => {
+				const titleIdx = args.indexOf("--title");
+				if (titleIdx >= 0) prTitle = args[titleIdx + 1];
+				return gitOk("https://example.com/pr/1");
+			},
+		});
+		executeIntegration("pr", makeContext({ batchId: "20260318T150000" }), deps);
+		expect(prTitle).toContain("Integrate orch batch 20260318T150000");
+	});
+
+	it("falls back to branch name in PR title when batchId is empty", () => {
+		let prTitle = "";
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "push") return gitOk();
+				return gitOk();
+			},
+			runCommand: (_cmd, args) => {
+				const titleIdx = args.indexOf("--title");
+				if (titleIdx >= 0) prTitle = args[titleIdx + 1];
+				return gitOk("https://example.com/pr/1");
+			},
+		});
+		executeIntegration("pr", makeContext({ batchId: "", orchBranch: "orch/my-feature" }), deps);
+		expect(prTitle).toContain("Integrate orch/my-feature");
+		expect(prTitle).not.toContain("batch");
+	});
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 4. Cleanup behavior (cross-mode)
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("executeIntegration — cleanup behavior", () => {
+	it("includes warning when branch deletion fails (non-fatal)", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") return gitOk();
+				if (args[0] === "branch" && args[1] === "-D") return gitFail("branch not found");
+				return gitOk();
+			},
+		});
+		const result = executeIntegration("ff", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(result.message).toContain("⚠️");
+		expect(result.message).toContain("Could not delete local branch");
+	});
+
+	it("includes warning when state deletion fails (non-fatal)", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") return gitOk();
+				if (args[0] === "branch" && args[1] === "-D") return gitOk();
+				return gitOk();
+			},
+			deleteBatchState: () => { throw new Error("ENOENT: no such file"); },
+		});
+		const result = executeIntegration("ff", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(result.message).toContain("⚠️");
+		expect(result.message).toContain("Could not clean up batch state");
+	});
+
+	it("both cleanup failures are non-fatal and included as warnings", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") return gitOk();
+				if (args[0] === "branch" && args[1] === "-D") return gitFail("error deleting");
+				return gitOk();
+			},
+			deleteBatchState: () => { throw new Error("EACCES"); },
+		});
+		const result = executeIntegration("merge", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(result.message).toContain("Could not delete local branch");
+		expect(result.message).toContain("Could not clean up batch state");
+	});
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// executeIntegration — mode execution tests
+// ═══════════════════════════════════════════════════════════════════════
+
+/** Create a default IntegrationContext for executeIntegration tests */
+function makeContext(overrides: Partial<IntegrationContext> = {}): IntegrationContext {
+	return {
+		orchBranch: "orch/henry-20260318T140000",
+		baseBranch: "main",
+		batchId: "20260318T140000",
+		currentBranch: "main",
+		notices: [],
+		...overrides,
+	};
+}
+
+/** Create default exec deps where everything succeeds */
+function makeExecDeps(overrides: Partial<IntegrationExecDeps> = {}): IntegrationExecDeps {
+	return {
+		runGit: () => ({ ok: true, stdout: "", stderr: "" }),
+		runCommand: () => ({ ok: true, stdout: "https://github.com/org/repo/pull/42", stderr: "" }),
+		deleteBatchState: () => {},
+		...overrides,
+	};
+}
+
+// ── Fast-forward mode ─────────────────────────────────────────────────
+
+describe("executeIntegration — fast-forward mode", () => {
+	it("succeeds with ff merge and sets integratedLocally=true", () => {
+		const result = executeIntegration("ff", makeContext(), makeExecDeps());
+		expect(result.success).toBe(true);
+		expect(result.integratedLocally).toBe(true);
+		expect(result.message).toContain("Fast-forwarded");
+		expect(result.message).toContain("main");
+		expect(result.message).toContain("orch/henry-20260318T140000");
+	});
+
+	it("calls git merge --ff-only with the orch branch", () => {
+		const gitCalls: string[][] = [];
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				gitCalls.push(args);
+				return { ok: true, stdout: "", stderr: "" };
+			},
+		});
+		executeIntegration("ff", makeContext(), deps);
+		expect(gitCalls[0]).toEqual(["merge", "--ff-only", "orch/henry-20260318T140000"]);
+	});
+
+	it("returns error when ff fails (diverged branches)", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") {
+					return { ok: false, stdout: "", stderr: "fatal: Not possible to fast-forward" };
+				}
+				return { ok: true, stdout: "", stderr: "" };
+			},
+		});
+		const result = executeIntegration("ff", makeContext(), deps);
+		expect(result.success).toBe(false);
+		expect(result.integratedLocally).toBe(false);
+		expect(result.error).toContain("Fast-forward failed");
+		expect(result.error).toContain("diverged");
+		expect(result.error).toContain("--merge");
+		expect(result.error).toContain("--pr");
+	});
+
+	it("does NOT perform cleanup on ff failure", () => {
+		let cleanupCalled = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") {
+					return { ok: false, stdout: "", stderr: "fail" };
+				}
+				// branch -D should not be called
+				if (args[0] === "branch" && args[1] === "-D") {
+					cleanupCalled = true;
+				}
+				return { ok: true, stdout: "", stderr: "" };
+			},
+			deleteBatchState: () => { cleanupCalled = true; },
+		});
+		executeIntegration("ff", makeContext(), deps);
+		expect(cleanupCalled).toBe(false);
+	});
+});
+
+// ── Merge mode ─────────────────────────────────────────────────────────
+
+describe("executeIntegration — merge mode", () => {
+	it("succeeds with merge commit and sets integratedLocally=true", () => {
+		const result = executeIntegration("merge", makeContext(), makeExecDeps());
+		expect(result.success).toBe(true);
+		expect(result.integratedLocally).toBe(true);
+		expect(result.message).toContain("Merged");
+		expect(result.message).toContain("merge commit");
+	});
+
+	it("calls git merge with --no-edit", () => {
+		const gitCalls: string[][] = [];
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				gitCalls.push(args);
+				return { ok: true, stdout: "", stderr: "" };
+			},
+		});
+		executeIntegration("merge", makeContext(), deps);
+		expect(gitCalls[0]).toEqual(["merge", "orch/henry-20260318T140000", "--no-edit"]);
+	});
+
+	it("returns error when merge fails (conflict)", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") {
+					return { ok: false, stdout: "", stderr: "CONFLICT (content): Merge conflict in file.txt" };
+				}
+				return { ok: true, stdout: "", stderr: "" };
+			},
+		});
+		const result = executeIntegration("merge", makeContext(), deps);
+		expect(result.success).toBe(false);
+		expect(result.integratedLocally).toBe(false);
+		expect(result.error).toContain("Merge failed");
+		expect(result.error).toContain("conflicts");
+		expect(result.error).toContain("--pr");
+	});
+
+	it("does NOT perform cleanup on merge failure", () => {
+		let cleanupCalled = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge") {
+					return { ok: false, stdout: "", stderr: "fail" };
+				}
+				if (args[0] === "branch" && args[1] === "-D") {
+					cleanupCalled = true;
+				}
+				return { ok: true, stdout: "", stderr: "" };
+			},
+			deleteBatchState: () => { cleanupCalled = true; },
+		});
+		executeIntegration("merge", makeContext(), deps);
+		expect(cleanupCalled).toBe(false);
+	});
+});
+
+// ── PR mode ────────────────────────────────────────────────────────────
+
+describe("executeIntegration — PR mode", () => {
+	it("succeeds and sets integratedLocally=false", () => {
+		const result = executeIntegration("pr", makeContext(), makeExecDeps());
+		expect(result.success).toBe(true);
+		expect(result.integratedLocally).toBe(false);
+		expect(result.message).toContain("Pull request created");
+		expect(result.message).toContain("orch branch has been kept");
+	});
+
+	it("includes PR URL in success message", () => {
+		const deps = makeExecDeps({
+			runCommand: () => ({ ok: true, stdout: "https://github.com/org/repo/pull/42", stderr: "" }),
+		});
+		const result = executeIntegration("pr", makeContext(), deps);
+		expect(result.message).toContain("https://github.com/org/repo/pull/42");
+	});
+
+	it("pushes orch branch before creating PR", () => {
+		const calls: Array<{ type: string; args: string[] }> = [];
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				calls.push({ type: "git", args });
+				return { ok: true, stdout: "", stderr: "" };
+			},
+			runCommand: (cmd, args) => {
+				calls.push({ type: cmd, args });
+				return { ok: true, stdout: "https://github.com/org/repo/pull/1", stderr: "" };
+			},
+		});
+		executeIntegration("pr", makeContext(), deps);
+		// First call should be git push
+		expect(calls[0].type).toBe("git");
+		expect(calls[0].args).toEqual(["push", "origin", "orch/henry-20260318T140000"]);
+		// Second call should be gh pr create
+		expect(calls[1].type).toBe("gh");
+		expect(calls[1].args).toContain("pr");
+		expect(calls[1].args).toContain("create");
+	});
+
+	it("returns error when push fails", () => {
+		const deps = makeExecDeps({
+			runGit: () => ({ ok: false, stdout: "", stderr: "fatal: remote rejected" }),
+		});
+		const result = executeIntegration("pr", makeContext(), deps);
+		expect(result.success).toBe(false);
+		expect(result.error).toContain("Failed to push");
+		expect(result.error).toContain("remote rejected");
+	});
+
+	it("returns error when gh pr create fails (after successful push)", () => {
+		const deps = makeExecDeps({
+			runGit: () => ({ ok: true, stdout: "", stderr: "" }),
+			runCommand: () => ({ ok: false, stdout: "", stderr: "gh: Not logged in" }),
+		});
+		const result = executeIntegration("pr", makeContext(), deps);
+		expect(result.success).toBe(false);
+		expect(result.error).toContain("PR creation failed");
+		expect(result.error).toContain("create the PR manually");
+	});
+
+	it("does NOT delete local branch or state on PR success", () => {
+		let branchDeleted = false;
+		let stateDeleted = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "branch" && args[1] === "-D") branchDeleted = true;
+				return { ok: true, stdout: "", stderr: "" };
+			},
+			runCommand: () => ({ ok: true, stdout: "https://example.com/pr/1", stderr: "" }),
+			deleteBatchState: () => { stateDeleted = true; },
+		});
+		executeIntegration("pr", makeContext(), deps);
+		expect(branchDeleted).toBe(false);
+		expect(stateDeleted).toBe(false);
+	});
+
+	it("uses orch branch name in PR title when batchId is empty", () => {
+		let prArgs: string[] = [];
+		const deps = makeExecDeps({
+			runCommand: (_cmd, args) => {
+				prArgs = args;
+				return { ok: true, stdout: "https://example.com/pr/1", stderr: "" };
+			},
+		});
+		executeIntegration("pr", makeContext({ batchId: "" }), deps);
+		const titleIdx = prArgs.indexOf("--title");
+		expect(titleIdx).toBeGreaterThan(-1);
+		expect(prArgs[titleIdx + 1]).toContain("orch/henry-20260318T140000");
+		expect(prArgs[titleIdx + 1]).not.toContain("batch");
+	});
+
+	it("uses batchId in PR title when available", () => {
+		let prArgs: string[] = [];
+		const deps = makeExecDeps({
+			runCommand: (_cmd, args) => {
+				prArgs = args;
+				return { ok: true, stdout: "https://example.com/pr/1", stderr: "" };
+			},
+		});
+		executeIntegration("pr", makeContext({ batchId: "20260318T140000" }), deps);
+		const titleIdx = prArgs.indexOf("--title");
+		expect(titleIdx).toBeGreaterThan(-1);
+		expect(prArgs[titleIdx + 1]).toContain("20260318T140000");
+	});
+});
+
+// ── Cleanup behavior ──────────────────────────────────────────────────
+
+describe("executeIntegration — cleanup", () => {
+	it("deletes orch branch and batch state on ff success", () => {
+		let branchDeleted = false;
+		let stateDeleted = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "branch" && args[1] === "-D") {
+					branchDeleted = true;
+					expect(args[2]).toBe("orch/henry-20260318T140000");
+				}
+				return { ok: true, stdout: "", stderr: "" };
+			},
+			deleteBatchState: () => { stateDeleted = true; },
+		});
+		executeIntegration("ff", makeContext(), deps);
+		expect(branchDeleted).toBe(true);
+		expect(stateDeleted).toBe(true);
+	});
+
+	it("deletes orch branch and batch state on merge success", () => {
+		let branchDeleted = false;
+		let stateDeleted = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "branch" && args[1] === "-D") branchDeleted = true;
+				return { ok: true, stdout: "", stderr: "" };
+			},
+			deleteBatchState: () => { stateDeleted = true; },
+		});
+		executeIntegration("merge", makeContext(), deps);
+		expect(branchDeleted).toBe(true);
+		expect(stateDeleted).toBe(true);
+	});
+
+	it("warns but still succeeds if branch deletion fails", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "branch" && args[1] === "-D") {
+					return { ok: false, stdout: "", stderr: "error: branch not found" };
+				}
+				return { ok: true, stdout: "", stderr: "" };
+			},
+		});
+		const result = executeIntegration("ff", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(result.message).toContain("Could not delete local branch");
+	});
+
+	it("warns but still succeeds if state deletion throws", () => {
+		const deps = makeExecDeps({
+			deleteBatchState: () => { throw new Error("permission denied"); },
+		});
+		const result = executeIntegration("ff", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(result.message).toContain("Could not clean up batch state");
+	});
+
+	it("warns for both branch and state cleanup failures without failing", () => {
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "branch" && args[1] === "-D") {
+					return { ok: false, stdout: "", stderr: "branch error" };
+				}
+				return { ok: true, stdout: "", stderr: "" };
+			},
+			deleteBatchState: () => { throw new Error("state error"); },
+		});
+		const result = executeIntegration("ff", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(result.message).toContain("Could not delete local branch");
+		expect(result.message).toContain("Could not clean up batch state");
 	});
 });

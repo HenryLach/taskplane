@@ -50,15 +50,15 @@
 ---
 
 ### Step 3: Implement Integration Modes
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Extract `executeIntegration()` pure-ish helper with DI for git/gh ops; returns `IntegrationResult` with `{ success, integratedLocally, commitCount, message, error? }`. Mode-specific failure handling: ff diverged → suggest --merge/--pr; merge conflict → suggest resolve or --pr; push/gh failure → show stderr. No cleanup on any failure path.
-- [ ] Fast-forward mode: `git merge --ff-only {orchBranch}` — success sets integratedLocally=true; failure (exit code ≠ 0) returns error suggesting --merge or --pr
-- [ ] Merge mode: `git merge {orchBranch} --no-edit` — success sets integratedLocally=true; conflict/failure returns error with stderr
-- [ ] PR mode: `git push origin {orchBranch}` then `gh pr create --base {currentBranch} --head {orchBranch} --title "..." --fill` — success sets integratedLocally=false (branch must survive); push failure or gh failure returns error with stderr
-- [ ] Cleanup gated on integratedLocally===true only: delete local orch branch (`git branch -D`), delete batch state file. PR mode never cleans up. Any cleanup failure is non-fatal (warn, don't error).
-- [ ] Wire executeIntegration into handler, show success summary with commit count and mode-specific message
-- [ ] Add unit tests for executeIntegration: ff success, ff diverged, merge success, merge conflict, pr success, pr push-fail, pr gh-fail, cleanup only when integratedLocally, PR title fallback when batchId unavailable
+- [x] Extract `executeIntegration()` pure-ish helper with DI for git/gh ops; returns `IntegrationResult` with `{ success, integratedLocally, commitCount, message, error? }`. Mode-specific failure handling: ff diverged → suggest --merge/--pr; merge conflict → suggest resolve or --pr; push/gh failure → show stderr. No cleanup on any failure path.
+- [x] Fast-forward mode: `git merge --ff-only {orchBranch}` — success sets integratedLocally=true; failure (exit code ≠ 0) returns error suggesting --merge or --pr
+- [x] Merge mode: `git merge {orchBranch} --no-edit` — success sets integratedLocally=true; conflict/failure returns error with stderr
+- [x] PR mode: `git push origin {orchBranch}` then `gh pr create --base {currentBranch} --head {orchBranch} --title "..." --fill` — success sets integratedLocally=false (branch must survive); push failure or gh failure returns error with stderr
+- [x] Cleanup gated on integratedLocally===true only: delete local orch branch (`git branch -D`), delete batch state file. PR mode never cleans up. Any cleanup failure is non-fatal (warn, don't error).
+- [x] Wire executeIntegration into handler, show success summary with commit count and mode-specific message
+- [x] Add unit tests for executeIntegration: ff success, ff diverged, merge success, merge conflict, pr success, pr push-fail, pr gh-fail, cleanup only when integratedLocally, PR title fallback when batchId unavailable
 
 ---
 
@@ -92,6 +92,7 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
 
 ---
 
@@ -146,6 +147,12 @@
 | 2026-03-18 17:20 | Step 2 complete | Implement Integration Logic |
 | 2026-03-18 17:20 | Step 3 started | Implement Integration Modes |
 | 2026-03-18 17:22 | Review R007 | plan Step 3: REVISE |
+| 2026-03-18 iter4 | R007 hydration | Expanded Step 3 with per-mode outcomes, cleanup gating, failure handling, test coverage |
+| 2026-03-18 iter4 | Step 3 complete | Implemented executeIntegration() with DI: ff/merge/pr modes, mode-specific failure messages, cleanup gated on integratedLocally===true, PR title fallback. Wired into handler. 21 new unit tests (828/828 pass). |
+| 2026-03-18 17:26 | Worker iter 3 | done in 1000s, ctx: 56%, tools: 95 |
+| 2026-03-18 17:26 | Step 2 complete | Implement Integration Logic |
+| 2026-03-18 17:26 | Step 3 started | Implement Integration Modes |
+| 2026-03-18 17:27 | Review R007 | plan Step 3: APPROVE |
 
 ---
 

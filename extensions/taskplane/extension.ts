@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
-import { execSync } from "child_process";
+import { execSync, execFileSync } from "child_process";
 import { writeFileSync, unlinkSync, mkdirSync } from "fs";
 import { join } from "path";
 
@@ -279,6 +279,189 @@ export function resolveIntegrationContext(
 		currentBranch,
 		notices,
 	};
+}
+
+// ── Integration Execution ─────────────────────────────────────────────
+
+/**
+ * Result of an integration attempt.
+ */
+export interface IntegrationResult {
+	/** Whether the integration succeeded overall */
+	success: boolean;
+	/** True if work was integrated locally (ff/merge) — controls cleanup eligibility */
+	integratedLocally: boolean;
+	/** Number of commits applied (informational) */
+	commitCount: string;
+	/** User-facing success message */
+	message: string;
+	/** User-facing error message (only when success=false) */
+	error?: string;
+}
+
+/**
+ * Dependencies injected into executeIntegration for testability.
+ */
+export interface IntegrationExecDeps {
+	runGit: (args: string[]) => { ok: boolean; stdout: string; stderr: string };
+	runCommand: (cmd: string, args: string[]) => { ok: boolean; stdout: string; stderr: string };
+	deleteBatchState: () => void;
+}
+
+/**
+ * Execute the integration operation for the resolved context.
+ *
+ * Mode-specific behavior:
+ * - ff: `git merge --ff-only {orchBranch}`. On failure → suggest --merge/--pr.
+ * - merge: `git merge {orchBranch} --no-edit`. On failure → show stderr.
+ * - pr: `git push origin {orchBranch}` then `gh pr create`. Never cleans up locally.
+ *
+ * Cleanup (local branch deletion + state file removal) is gated on integratedLocally === true.
+ * Cleanup failures are non-fatal (included as warnings in the message).
+ */
+export function executeIntegration(
+	mode: IntegrateMode,
+	context: IntegrationContext,
+	deps: IntegrationExecDeps,
+): IntegrationResult {
+	const { orchBranch, currentBranch, batchId } = context;
+
+	if (mode === "ff") {
+		// Fast-forward merge
+		const result = deps.runGit(["merge", "--ff-only", orchBranch]);
+		if (!result.ok) {
+			return {
+				success: false,
+				integratedLocally: false,
+				commitCount: "0",
+				message: "",
+				error:
+					`❌ Fast-forward failed — branches have diverged.\n` +
+					`${result.stderr}\n\n` +
+					`Try:\n` +
+					`  /orch-integrate --merge    Create a merge commit\n` +
+					`  /orch-integrate --pr       Create a pull request instead`,
+			};
+		}
+		// Count commits that were applied
+		const countResult = deps.runGit(["rev-list", "--count", `${orchBranch}..HEAD`]);
+		// After ff, HEAD === orchBranch tip so we use a different measurement
+		// The rev-list before the merge was computed in the handler; pass commitCount through context
+		// Actually, for ff: commits applied = what was ahead before merge.
+		// After ff merge HEAD moved forward, so we measure from the merge-base.
+		// Simplest: use "merge was successful" and the pre-computed count from the handler.
+		return performCleanup(deps, orchBranch, {
+			success: true,
+			integratedLocally: true,
+			commitCount: "?", // Overridden by caller with pre-computed count
+			message: `✅ Fast-forwarded ${currentBranch} to ${orchBranch}.`,
+		});
+	}
+
+	if (mode === "merge") {
+		const result = deps.runGit(["merge", orchBranch, "--no-edit"]);
+		if (!result.ok) {
+			return {
+				success: false,
+				integratedLocally: false,
+				commitCount: "0",
+				message: "",
+				error:
+					`❌ Merge failed — there may be conflicts.\n` +
+					`${result.stderr}\n\n` +
+					`Resolve conflicts manually, or try:\n` +
+					`  /orch-integrate --pr       Create a pull request instead`,
+			};
+		}
+		return performCleanup(deps, orchBranch, {
+			success: true,
+			integratedLocally: true,
+			commitCount: "?",
+			message: `✅ Merged ${orchBranch} into ${currentBranch} (merge commit created).`,
+		});
+	}
+
+	// PR mode
+	// Step 1: Push the orch branch to origin
+	const pushResult = deps.runGit(["push", "origin", orchBranch]);
+	if (!pushResult.ok) {
+		return {
+			success: false,
+			integratedLocally: false,
+			commitCount: "0",
+			message: "",
+			error:
+				`❌ Failed to push ${orchBranch} to origin.\n` +
+				`${pushResult.stderr}\n\n` +
+				`Check your remote configuration and try again.`,
+		};
+	}
+
+	// Step 2: Create pull request via gh CLI
+	const prTitle = batchId
+		? `Integrate orch batch ${batchId}`
+		: `Integrate ${orchBranch}`;
+	const ghResult = deps.runCommand("gh", [
+		"pr", "create",
+		"--base", currentBranch,
+		"--head", orchBranch,
+		"--title", prTitle,
+		"--fill",
+	]);
+	if (!ghResult.ok) {
+		return {
+			success: false,
+			integratedLocally: false,
+			commitCount: "0",
+			message: "",
+			error:
+				`❌ Branch pushed but PR creation failed.\n` +
+				`${ghResult.stderr}\n\n` +
+				`The branch ${orchBranch} is on origin — create the PR manually.`,
+		};
+	}
+
+	const prUrl = ghResult.stdout.trim();
+	return {
+		success: true,
+		integratedLocally: false, // PR mode: branch must survive
+		commitCount: "0",
+		message:
+			`✅ Pull request created for ${orchBranch} → ${currentBranch}.\n` +
+			(prUrl ? `   ${prUrl}\n` : "") +
+			`\nThe orch branch has been kept (needed for the PR).`,
+	};
+}
+
+/**
+ * Perform post-integration cleanup: delete local orch branch and batch state.
+ * Cleanup failures are non-fatal — warnings are appended to the result message.
+ */
+function performCleanup(
+	deps: IntegrationExecDeps,
+	orchBranch: string,
+	result: IntegrationResult,
+): IntegrationResult {
+	const warnings: string[] = [];
+
+	// Delete local orch branch
+	const branchDelete = deps.runGit(["branch", "-D", orchBranch]);
+	if (!branchDelete.ok) {
+		warnings.push(`⚠️ Could not delete local branch ${orchBranch}: ${branchDelete.stderr}`);
+	}
+
+	// Delete batch state file
+	try {
+		deps.deleteBatchState();
+	} catch (err: unknown) {
+		warnings.push(`⚠️ Could not clean up batch state: ${(err as Error).message}`);
+	}
+
+	if (warnings.length > 0) {
+		result.message += "\n" + warnings.join("\n");
+	}
+
+	return result;
 }
 
 // ── Extension ────────────────────────────────────────────────────────
@@ -979,7 +1162,47 @@ export default function (pi: ExtensionAPI) {
 				"info",
 			);
 
-			// TODO(Step 3): Execute integration mode (ff/merge/pr)
+			// ── Step 3: Execute integration mode ─────────────────
+			const integrationResult = executeIntegration(parsed.mode, resolution as IntegrationContext, {
+				runGit: (gitArgs: string[]) => runGit(gitArgs, repoRoot),
+				runCommand: (cmd: string, cmdArgs: string[]) => {
+					try {
+						const stdout = execFileSync(cmd, cmdArgs, {
+							encoding: "utf-8",
+							timeout: 60_000,
+							cwd: repoRoot,
+							stdio: ["pipe", "pipe", "pipe"],
+						}).trim();
+						return { ok: true, stdout, stderr: "" };
+					} catch (err: unknown) {
+						const e = err as { stdout?: string; stderr?: string; message?: string };
+						return {
+							ok: false,
+							stdout: (e.stdout ?? "").toString().trim(),
+							stderr: (e.stderr ?? e.message ?? "unknown error").toString().trim(),
+						};
+					}
+				},
+				deleteBatchState: () => deleteBatchState(repoRoot),
+			});
+
+			if (!integrationResult.success) {
+				ctx.ui.notify(integrationResult.error!, "error");
+				return;
+			}
+
+			// Override commit count with pre-computed value for local integrations
+			if (integrationResult.integratedLocally) {
+				integrationResult.commitCount = commitsAhead;
+			}
+
+			ctx.ui.notify(
+				integrationResult.message +
+				(integrationResult.integratedLocally
+					? `\n${integrationResult.commitCount} commit(s) applied.`
+					: ""),
+				"info",
+			);
 		},
 	});
 
