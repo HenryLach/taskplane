@@ -1,11 +1,11 @@
 # TP-021: Batch-Scoped Worktree Containers — Status
 
-**Current Step:** Step 2: Update Worktree Listing and Cleanup
+**Current Step:** Step 3: Update All Callers
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 5
-**Iteration:** 3
+**Review Counter:** 6
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -49,13 +49,15 @@
 ---
 
 ### Step 3: Update All Callers
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Update `allocateLanes()` in `waves.ts`
-- [ ] Update `engine.ts` worktree reset and cleanup
-- [ ] Update `merge.ts` to use `generateMergeWorktreePath()`
-- [ ] Update `execution.ts` if needed
-- [ ] Update `resume.ts` callers of `listWorktrees()` and `removeAllWorktrees()` to pass `batchId` for batch-scoped operations (R005 dependency)
+- [ ] Update `ensureLaneWorktrees()` in `worktree.ts` — pass `batchId` to `listWorktrees()` for batch-scoped lane reuse (R006 critical: prevents cross-batch collision in concurrent same-operator batches)
+- [ ] Update `waves.ts` — pass `batchId` and `config` to rollback `removeAllWorktrees()` call in `allocateLanes()` for batch-scoped cleanup (R006: rollback must not delete other batches)
+- [ ] Update `engine.ts` Phase 2 — pass `batchId` to `listWorktrees()` in worktree reset loop for batch-scoped discovery
+- [ ] Update `engine.ts` Phase 3 — pass `batchId` and `config` to `removeAllWorktrees()` in final cleanup for batch-scoped removal
+- [ ] Update `merge.ts` — use `generateMergeWorktreePath()` instead of ad-hoc path construction; pass `batchId` and `config` for config-aware container resolution
+- [ ] Update `resume.ts` — pass `batchId` to `listWorktrees()` and `removeAllWorktrees()` for batch-scoped operations (R005 dependency)
+- [ ] Verify: no opId-only list/remove calls remain in active batch flows (done criteria per R006)
 
 ---
 
@@ -90,6 +92,8 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R006 | plan | Step 3 | REVISE | .reviews/R006-plan-step3.md |
+| R006 | plan | Step 3 | REVISE | .reviews/R006-plan-step3.md |
 |---|------|------|---------|------|
 
 ---
@@ -146,6 +150,12 @@
 | 2026-03-18 12:01 | Step 1 complete | Refactor Worktree Path Generation |
 | 2026-03-18 12:01 | Step 2 started | Update Worktree Listing and Cleanup |
 | 2026-03-18 12:03 | Review R005 | plan Step 2: REVISE |
+| 2026-03-18 13:51 | Task started | Extension-driven execution |
+| 2026-03-18 13:51 | Step 3 started | Update All Callers |
+| 2026-03-18 13:51 | Task started | Extension-driven execution |
+| 2026-03-18 13:51 | Step 3 started | Update All Callers |
+| 2026-03-18 13:54 | Review R006 | plan Step 3: REVISE |
+| 2026-03-18 13:55 | Review R006 | plan Step 3: REVISE |
 
 ---
 
