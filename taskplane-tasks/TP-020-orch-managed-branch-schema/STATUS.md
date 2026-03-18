@@ -24,14 +24,14 @@
 ---
 
 ### Step 1: Add `orchBranch` to Runtime + Persisted State
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add `orchBranch: string` to `OrchBatchRuntimeState` and `PersistedBatchState` with JSDoc
-- [ ] Initialize to `""` in `freshOrchBatchState()`
-- [ ] Serialize `orchBranch` in `serializeBatchState()` (persistence.ts)
-- [ ] Default `orchBranch` to `""` in `validatePersistedState()` for backward compat (v2 files missing field)
-- [ ] Carry `orchBranch` from persisted state during resume reconstruction in `resume.ts`
-- [ ] Fix any PersistedBatchState object literal compile errors in tests
+- [x] Add `orchBranch: string` to `OrchBatchRuntimeState` and `PersistedBatchState` with JSDoc
+- [x] Initialize to `""` in `freshOrchBatchState()`
+- [x] Serialize `orchBranch` in `serializeBatchState()` (persistence.ts)
+- [x] Default `orchBranch` to `""` in `validatePersistedState()` for backward compat (v2 files missing field)
+- [x] Carry `orchBranch` from persisted state during resume reconstruction in `resume.ts`
+- [x] Fix any PersistedBatchState object literal compile errors in tests
 
 ---
 

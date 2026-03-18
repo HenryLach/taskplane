@@ -829,6 +829,8 @@ export interface OrchBatchRuntimeState {
 	batchId: string;
 	/** Branch that was active when /orch started — used as base for worktrees and merge target */
 	baseBranch: string;
+	/** Orchestrator-managed branch name (e.g., 'orch/henry-20260318T140000'). Empty = legacy mode (merge into baseBranch directly). */
+	orchBranch: string;
 	/** Workspace execution mode (v2). Defaults to "repo" for backward compatibility. */
 	mode: WorkspaceMode;
 	/** Shared pause signal — set by /orch-pause, read by executeLane/executeWave */
@@ -908,6 +910,7 @@ export function freshOrchBatchState(): OrchBatchRuntimeState {
 		phase: "idle",
 		batchId: "",
 		baseBranch: "",
+		orchBranch: "",
 		mode: "repo",
 		pauseSignal: { paused: false },
 		waveResults: [],
@@ -1367,6 +1370,8 @@ export interface PersistedBatchState {
 	batchId: string;
 	/** Branch that was active when /orch started — used as base for worktrees and merge target */
 	baseBranch: string;
+	/** Orchestrator-managed branch name (e.g., 'orch/henry-20260318T140000'). Empty = legacy mode (merge into baseBranch directly). */
+	orchBranch: string;
 	/**
 	 * Workspace execution mode at batch start (v2).
 	 * - "repo": Single-repo mode (default, backward-compatible).

@@ -366,6 +366,18 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		);
 	}
 
+	// ── Optional string fields: orchBranch ───────────────────────
+	// orchBranch was added after schema v2 shipped; default to "" if missing.
+	if (obj.orchBranch !== undefined && typeof obj.orchBranch !== "string") {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`Invalid "orchBranch" field (expected string, got ${typeof obj.orchBranch})`,
+		);
+	}
+	if (obj.orchBranch === undefined) {
+		obj.orchBranch = "";
+	}
+
 	// ── v2: mode field ───────────────────────────────────────────
 	// mode is required in v2, absent in v1 (defaults to "repo" via upconvert).
 	if (!isV1 && obj.mode === undefined) {
@@ -776,6 +788,7 @@ export function serializeBatchState(
 		phase: state.phase,
 		batchId: state.batchId,
 		baseBranch: state.baseBranch,
+		orchBranch: state.orchBranch ?? "",
 		mode: state.mode ?? "repo",
 		startedAt: state.startedAt,
 		updatedAt: now,
