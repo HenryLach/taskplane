@@ -1,5 +1,5 @@
-import { execSync } from "child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "fs";
+import { execSync, spawnSync } from "child_process";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, existsSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { tmpdir } from "os";
@@ -566,6 +566,202 @@ function runAllTests(): void {
 		// Workspace mode comment explains the rationale
 		assert(advancementBlock.includes("workspace mode"),
 			"advancement block documents workspace mode behavior");
+	}
+
+	// ── TP-022 Step 3 — Behavioral tests: real git repo ref advancement ──
+
+	// 15) Behavioral: update-ref advances non-checked-out branch (orch branch path)
+	{
+		console.log("\n  15) Behavioral: update-ref advances non-checked-out branch");
+		const tempBase = mkdtempSync(join(tmpdir(), "orch-updateref-"));
+		const repoDir = join(tempBase, "repo");
+		try {
+			// Set up repo with initial commit on main
+			execSync(`git init "${repoDir}"`, { encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.email test@test.com", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.name Test", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(repoDir, "README.md"), "# Test\n");
+			execSync("git add -A", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "initial"', { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			try { execSync("git branch -M main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }); } catch { /* already main */ }
+
+			// Create orch branch (simulating engine.ts batch start)
+			const orchBranch = "orch/testop-batch1";
+			execSync(`git branch ${orchBranch} main`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			const orchOldSha = execSync(`git rev-parse ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+
+			// Create temp merge branch from orch branch and add a commit
+			const tempBranch = "_merge-temp-testop-batch1";
+			execSync(`git branch ${tempBranch} ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			// Use a worktree to add a commit on temp branch (can't checkout in main working tree)
+			const wtDir = join(tempBase, "merge-wt");
+			execSync(`git worktree add "${wtDir}" ${tempBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(wtDir, "merged.txt"), "merged content\n");
+			execSync("git add -A", { cwd: wtDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "merge: wave 1 lane 1"', { cwd: wtDir, encoding: "utf-8", stdio: "pipe" });
+			const tempBranchHead = execSync(`git rev-parse ${tempBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			// Clean up worktree
+			execSync(`git worktree remove "${wtDir}" --force`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			// Verify orch branch hasn't moved yet
+			assert(orchOldSha !== tempBranchHead,
+				"temp branch HEAD differs from orch branch (commit was added)");
+			const orchPreUpdateSha = execSync(`git rev-parse ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			assert(orchPreUpdateSha === orchOldSha,
+				"orch branch is still at original commit before update-ref");
+
+			// Execute update-ref with compare-and-swap (mirrors merge.ts logic)
+			const updateResult = spawnSync("git",
+				["update-ref", `refs/heads/${orchBranch}`, tempBranchHead, orchOldSha],
+				{ cwd: repoDir }
+			);
+			assert(updateResult.status === 0,
+				"update-ref succeeds with correct old OID");
+
+			// Verify orch branch now points to the merged commit
+			const orchNewSha = execSync(`git rev-parse ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			assert(orchNewSha === tempBranchHead,
+				"orch branch now points to temp branch HEAD after update-ref");
+
+			// Verify main (user's branch) was NOT touched
+			const mainSha = execSync("git rev-parse main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			assert(mainSha === orchOldSha,
+				"main branch is still at original commit (user's branch untouched)");
+
+			// Verify working tree is clean (update-ref doesn't touch it)
+			const statusOutput = execSync("git status --porcelain", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			assert(statusOutput === "",
+				"working tree is clean after update-ref (no dirty files)");
+
+			// Clean up temp branch
+			execSync(`git branch -D ${tempBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		} finally {
+			rmSync(tempBase, { recursive: true, force: true });
+		}
+	}
+
+	// 16) Behavioral: update-ref compare-and-swap rejects stale old OID
+	{
+		console.log("  16) Behavioral: update-ref compare-and-swap rejects stale OID");
+		const tempBase = mkdtempSync(join(tmpdir(), "orch-cas-fail-"));
+		const repoDir = join(tempBase, "repo");
+		try {
+			// Set up repo with initial commit
+			execSync(`git init "${repoDir}"`, { encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.email test@test.com", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.name Test", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(repoDir, "README.md"), "# Test\n");
+			execSync("git add -A", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "initial"', { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			try { execSync("git branch -M main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }); } catch { /* already main */ }
+
+			// Create orch branch
+			const orchBranch = "orch/testop-cas";
+			execSync(`git branch ${orchBranch} main`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			const orchOriginalSha = execSync(`git rev-parse ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+
+			// Simulate concurrent movement: advance orch branch independently
+			const wtDir = join(tempBase, "concurrent-wt");
+			execSync(`git worktree add "${wtDir}" ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(wtDir, "concurrent.txt"), "concurrent change\n");
+			execSync("git add -A", { cwd: wtDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "concurrent commit"', { cwd: wtDir, encoding: "utf-8", stdio: "pipe" });
+			const concurrentSha = execSync(`git rev-parse ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			execSync(`git worktree remove "${wtDir}" --force`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			assert(concurrentSha !== orchOriginalSha,
+				"orch branch moved due to concurrent commit");
+
+			// Create a temp merge branch with a different commit
+			const tempBranch = "_merge-temp-testop-cas";
+			execSync(`git branch ${tempBranch} main`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			const wtDir2 = join(tempBase, "merge-wt2");
+			execSync(`git worktree add "${wtDir2}" ${tempBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(wtDir2, "merged.txt"), "merge content\n");
+			execSync("git add -A", { cwd: wtDir2, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "merge commit"', { cwd: wtDir2, encoding: "utf-8", stdio: "pipe" });
+			const mergeHead = execSync(`git rev-parse ${tempBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			execSync(`git worktree remove "${wtDir2}" --force`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			// Attempt update-ref with stale old OID (orchOriginalSha, but branch moved to concurrentSha)
+			const updateResult = spawnSync("git",
+				["update-ref", `refs/heads/${orchBranch}`, mergeHead, orchOriginalSha],
+				{ cwd: repoDir }
+			);
+
+			assert(updateResult.status !== 0,
+				"update-ref REJECTS stale old OID (compare-and-swap failure)");
+
+			// Verify orch branch was NOT clobbered — still at concurrent commit
+			const orchAfterSha = execSync(`git rev-parse ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			assert(orchAfterSha === concurrentSha,
+				"orch branch preserved at concurrent commit (not clobbered)");
+
+			// Verify the error message contains relevant info
+			const errMsg = updateResult.stderr?.toString() || "";
+			assert(errMsg.length > 0,
+				"update-ref failure produces stderr error message");
+
+			// Clean up
+			execSync(`git branch -D ${tempBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		} finally {
+			rmSync(tempBase, { recursive: true, force: true });
+		}
+	}
+
+	// 17) Behavioral: ff-only advances checked-out branch + working tree (workspace mode path)
+	{
+		console.log("  17) Behavioral: ff-only advances checked-out branch + working tree");
+		const tempBase = mkdtempSync(join(tmpdir(), "orch-ff-workspace-"));
+		const repoDir = join(tempBase, "repo");
+		try {
+			// Set up repo with initial commit on main
+			execSync(`git init "${repoDir}"`, { encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.email test@test.com", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.name Test", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(repoDir, "README.md"), "# Test\n");
+			execSync("git add -A", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "initial"', { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			try { execSync("git branch -M main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }); } catch { /* already main */ }
+
+			const mainOldSha = execSync("git rev-parse main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+
+			// Create temp branch from main with an additional commit
+			const tempBranch = "_merge-temp-workspace";
+			execSync(`git branch ${tempBranch} main`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			const wtDir = join(tempBase, "merge-wt");
+			execSync(`git worktree add "${wtDir}" ${tempBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(wtDir, "new-file.txt"), "workspace merge\n");
+			execSync("git add -A", { cwd: wtDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "workspace merge commit"', { cwd: wtDir, encoding: "utf-8", stdio: "pipe" });
+			const tempHead = execSync(`git rev-parse ${tempBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			execSync(`git worktree remove "${wtDir}" --force`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			assert(tempHead !== mainOldSha,
+				"temp branch advanced beyond main");
+
+			// We're on main (checked out). Simulate the workspace ff-only path.
+			const ffResult = execSync(`git merge --ff-only ${tempBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			// Verify main advanced
+			const mainNewSha = execSync("git rev-parse main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			assert(mainNewSha === tempHead,
+				"main branch advanced to temp branch HEAD via ff-only");
+
+			// Verify working tree has the new file (ff-only updates worktree)
+			assert(existsSync(join(repoDir, "new-file.txt")),
+				"new-file.txt exists in working tree after ff-only (worktree updated)");
+
+			// Verify working tree is clean
+			const statusOutput = execSync("git status --porcelain", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			assert(statusOutput === "",
+				"working tree is clean after ff-only merge");
+
+			// Clean up temp branch
+			execSync(`git branch -D ${tempBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		} finally {
+			rmSync(tempBase, { recursive: true, force: true });
+		}
 	}
 
 	console.log(`\nResults: ${passed} passed, ${failed} failed`);

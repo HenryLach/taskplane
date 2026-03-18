@@ -1,11 +1,11 @@
 # TP-022: Orch Branch Lifecycle & Merge Redirect — Status
 
-**Current Step:** Step 3: Replace Fast-Forward with update-ref in Merge
+**Current Step:** Step 4: Auto-Integration and Cleanup
 **Status:** ✅ Step 3 Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 8
-**Iteration:** 4
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** L
 
 ---
@@ -71,7 +71,7 @@
 ---
 
 ### Step 4: Auto-Integration and Cleanup
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Implement auto-integration (config-driven ff)
 - [ ] Preserve orch branch for manual integration
@@ -113,6 +113,7 @@
 | R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 
 ---
 
@@ -200,6 +201,10 @@
 | 2026-03-18 15:32 | Review R008 | code Step 3: REVISE |
 | 2026-03-18 | R008 revisions | Gated advancement: update-ref for non-checked-out (with CAS), ff-only+stash for checked-out; test 14 added; 753 tests pass |
 | 2026-03-18 | Step 3 complete | Replace Fast-Forward with update-ref in Merge (R008 addressed) |
+| 2026-03-18 15:39 | Worker iter 4 | done in 443s, ctx: 23%, tools: 39 |
+| 2026-03-18 15:39 | Step 3 complete | Replace Fast-Forward with update-ref in Merge |
+| 2026-03-18 15:39 | Step 4 started | Auto-Integration and Cleanup |
+| 2026-03-18 15:43 | Review R009 | plan Step 4: REVISE |
 
 ---
 
