@@ -692,8 +692,10 @@ export async function executeOrchBatch(
 			}
 		} catch { /* .pi dir may not exist */ }
 
-		// Clean up worktrees — pass base branch to protect unmerged work
-		const targetBranch = batchState.baseBranch;
+		// Clean up worktrees — use orchBranch to protect unmerged work.
+		// Lane branches were merged into orchBranch (not baseBranch), so
+		// unmerged-branch detection must compare against orchBranch.
+		const targetBranch = batchState.orchBranch;
 		const cleanupOpId = resolveOperatorId(orchConfig);
 		execLog("batch", batchState.batchId, "cleaning up worktrees");
 		const removeResult = removeAllWorktrees(prefix, repoRoot, cleanupOpId, targetBranch, batchState.batchId, orchConfig);
@@ -770,6 +772,31 @@ export async function executeOrchBatch(
 		}
 	}
 
+	// ── Auto-Integration & Orch Branch Preservation (TP-022 Step 4) ──
+	// After all waves are done, optionally fast-forward baseBranch to orchBranch.
+	// Auto-integration never converts a successful batch into "failed" — failures
+	// are warnings that preserve the orch branch for manual integration.
+	let autoIntegrated = false;
+	const mergedTaskCount = batchState.succeededTasks;
+	if (!preserveWorktreesForResume && batchState.orchBranch && mergedTaskCount > 0) {
+		if (orchConfig.orchestrator.integration === "auto") {
+			autoIntegrated = attemptAutoIntegration(
+				batchState.orchBranch,
+				batchState.baseBranch,
+				repoRoot,
+				batchState.batchId,
+				onNotify,
+			);
+		}
+		// Manual mode (default) or auto-integration skipped: show integration guidance
+		if (!autoIntegrated) {
+			onNotify(
+				ORCH_MESSAGES.orchIntegrationManual(batchState.orchBranch, batchState.baseBranch, mergedTaskCount),
+				"info",
+			);
+		}
+	}
+
 	// ── TS-009: Persist terminal state ──
 	persistRuntimeState("batch-terminal", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 
@@ -801,6 +828,99 @@ export async function executeOrchBatch(
 			}
 		}
 	}
+}
+
+
+// ── Auto-Integration Helper (TP-022 Step 4) ─────────────────────────
+
+/**
+ * Attempt to fast-forward baseBranch to orchBranch in the main repo.
+ *
+ * Failure matrix — all failures are warnings, never batch-fatal:
+ * - **Diverged**: baseBranch has commits not in orchBranch (not fast-forwardable)
+ * - **Detached HEAD / missing base**: baseBranch not resolvable
+ * - **Dirty worktree**: baseBranch is checked out with uncommitted changes
+ * - **Branch not checked out**: baseBranch is not the current branch;
+ *   use update-ref (no worktree impact)
+ *
+ * @returns true if integration succeeded, false otherwise
+ */
+function attemptAutoIntegration(
+	orchBranch: string,
+	baseBranch: string,
+	repoRoot: string,
+	batchId: string,
+	onNotify: (message: string, level: "info" | "warning" | "error") => void,
+): boolean {
+	// 1. Verify orchBranch exists
+	const orchExists = runGit(["rev-parse", "--verify", `refs/heads/${orchBranch}`], repoRoot);
+	if (!orchExists.ok) {
+		const reason = `orch branch '${orchBranch}' not found`;
+		execLog("batch", batchId, `auto-integration skipped: ${reason}`);
+		onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+		return false;
+	}
+
+	// 2. Verify baseBranch exists
+	const baseExists = runGit(["rev-parse", "--verify", `refs/heads/${baseBranch}`], repoRoot);
+	if (!baseExists.ok) {
+		const reason = `base branch '${baseBranch}' not found`;
+		execLog("batch", batchId, `auto-integration skipped: ${reason}`);
+		onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+		return false;
+	}
+
+	// 3. Check fast-forwardability: baseBranch must be an ancestor of orchBranch
+	const isAncestor = runGit(["merge-base", "--is-ancestor", baseBranch, orchBranch], repoRoot);
+	if (!isAncestor.ok) {
+		const reason = `branches have diverged (${baseBranch} is not an ancestor of ${orchBranch})`;
+		execLog("batch", batchId, `auto-integration skipped: ${reason}`);
+		onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+		return false;
+	}
+
+	// 4. Gate on whether baseBranch is checked out (same pattern as merge.ts)
+	const checkedOutBranch = getCurrentBranch(repoRoot);
+	const baseIsCheckedOut = checkedOutBranch === baseBranch;
+
+	const orchHead = runGit(["rev-parse", orchBranch], repoRoot).stdout.trim();
+
+	if (baseIsCheckedOut) {
+		// baseBranch is checked out — use merge --ff-only (updates worktree)
+		// Check for dirty worktree first
+		const statusCheck = runGit(["status", "--porcelain"], repoRoot);
+		if (statusCheck.ok && statusCheck.stdout.trim()) {
+			const reason = `working tree is dirty (${baseBranch} is checked out with uncommitted changes)`;
+			execLog("batch", batchId, `auto-integration skipped: ${reason}`);
+			onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+			return false;
+		}
+
+		const ffResult = runGit(["merge", "--ff-only", orchBranch], repoRoot);
+		if (!ffResult.ok) {
+			const reason = `fast-forward failed: ${ffResult.stderr || ffResult.stdout || "unknown"}`;
+			execLog("batch", batchId, `auto-integration failed: ${reason}`);
+			onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+			return false;
+		}
+	} else {
+		// baseBranch is NOT checked out — use update-ref (no worktree impact)
+		const baseOldRef = runGit(["rev-parse", baseBranch], repoRoot).stdout.trim();
+		const updateResult = runGit(
+			["update-ref", `refs/heads/${baseBranch}`, orchHead, baseOldRef],
+			repoRoot,
+		);
+		if (!updateResult.ok) {
+			const reason = `update-ref failed: ${updateResult.stderr || updateResult.stdout || "unknown"}`;
+			execLog("batch", batchId, `auto-integration failed: ${reason}`);
+			onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+			return false;
+		}
+	}
+
+	execLog("batch", batchId, `auto-integrated: ${baseBranch} advanced to ${orchBranch}`, { orchHead });
+	onNotify(ORCH_MESSAGES.orchIntegrationAutoSuccess(orchBranch, baseBranch), "info");
+	return true;
 }
 
 // ── Dashboard Widget (Step 6) ────────────────────────────────────────

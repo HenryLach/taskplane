@@ -9,7 +9,7 @@ import { runDiscovery } from "./discovery.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
-import { runGit } from "./git.ts";
+import { getCurrentBranch, runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
 import { computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
@@ -1330,7 +1330,9 @@ export async function resumeOrchBatch(
 	if (!preserveWorktreesForResume) {
 		const wtPrefix = orchConfig.orchestrator.worktree_prefix;
 		const cleanupOpId = resolveOperatorId(orchConfig);
-		const targetBranch = batchState.baseBranch;
+		// Use orchBranch for unmerged-branch protection: lane branches were
+		// merged into orchBranch (not baseBranch). Parity with engine.ts Phase 3.
+		const targetBranch = batchState.orchBranch;
 
 		// Use encounteredRepoRoots which includes both persisted lanes
 		// AND newly allocated lanes from resumed waves, ensuring repos
@@ -1348,6 +1350,28 @@ export async function resumeOrchBatch(
 			batchState.phase = "failed";
 		} else {
 			batchState.phase = "completed";
+		}
+	}
+
+	// ── Auto-Integration & Orch Branch Preservation (TP-022 Step 4) ──
+	// Parity with engine.ts: auto-integrate if configured, else show manual guidance.
+	let autoIntegrated = false;
+	const mergedTaskCount = batchState.succeededTasks;
+	if (!preserveWorktreesForResume && batchState.orchBranch && mergedTaskCount > 0) {
+		if (orchConfig.orchestrator.integration === "auto") {
+			autoIntegrated = attemptAutoIntegrationResume(
+				batchState.orchBranch,
+				batchState.baseBranch,
+				repoRoot,
+				batchState.batchId,
+				onNotify,
+			);
+		}
+		if (!autoIntegrated) {
+			onNotify(
+				ORCH_MESSAGES.orchIntegrationManual(batchState.orchBranch, batchState.baseBranch, mergedTaskCount),
+				"info",
+			);
 		}
 	}
 
@@ -1377,5 +1401,91 @@ export async function resumeOrchBatch(
 			}
 		}
 	}
+}
+
+
+// ── Auto-Integration Helper for Resume (TP-022 Step 4) ──────────────
+
+/**
+ * Attempt to fast-forward baseBranch to orchBranch in the main repo.
+ * Identical logic to engine.ts attemptAutoIntegration — extracted as
+ * a local helper for resume parity.
+ *
+ * @returns true if integration succeeded, false otherwise
+ */
+function attemptAutoIntegrationResume(
+	orchBranch: string,
+	baseBranch: string,
+	repoRoot: string,
+	batchId: string,
+	onNotify: (message: string, level: "info" | "warning" | "error") => void,
+): boolean {
+	// 1. Verify orchBranch exists
+	const orchExists = runGit(["rev-parse", "--verify", `refs/heads/${orchBranch}`], repoRoot);
+	if (!orchExists.ok) {
+		const reason = `orch branch '${orchBranch}' not found`;
+		execLog("resume", batchId, `auto-integration skipped: ${reason}`);
+		onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+		return false;
+	}
+
+	// 2. Verify baseBranch exists
+	const baseExists = runGit(["rev-parse", "--verify", `refs/heads/${baseBranch}`], repoRoot);
+	if (!baseExists.ok) {
+		const reason = `base branch '${baseBranch}' not found`;
+		execLog("resume", batchId, `auto-integration skipped: ${reason}`);
+		onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+		return false;
+	}
+
+	// 3. Check fast-forwardability: baseBranch must be an ancestor of orchBranch
+	const isAncestor = runGit(["merge-base", "--is-ancestor", baseBranch, orchBranch], repoRoot);
+	if (!isAncestor.ok) {
+		const reason = `branches have diverged (${baseBranch} is not an ancestor of ${orchBranch})`;
+		execLog("resume", batchId, `auto-integration skipped: ${reason}`);
+		onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+		return false;
+	}
+
+	// 4. Gate on whether baseBranch is checked out
+	const checkedOutBranch = getCurrentBranch(repoRoot);
+	const baseIsCheckedOut = checkedOutBranch === baseBranch;
+
+	const orchHead = runGit(["rev-parse", orchBranch], repoRoot).stdout.trim();
+
+	if (baseIsCheckedOut) {
+		// Check for dirty worktree
+		const statusCheck = runGit(["status", "--porcelain"], repoRoot);
+		if (statusCheck.ok && statusCheck.stdout.trim()) {
+			const reason = `working tree is dirty (${baseBranch} is checked out with uncommitted changes)`;
+			execLog("resume", batchId, `auto-integration skipped: ${reason}`);
+			onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+			return false;
+		}
+
+		const ffResult = runGit(["merge", "--ff-only", orchBranch], repoRoot);
+		if (!ffResult.ok) {
+			const reason = `fast-forward failed: ${ffResult.stderr || ffResult.stdout || "unknown"}`;
+			execLog("resume", batchId, `auto-integration failed: ${reason}`);
+			onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+			return false;
+		}
+	} else {
+		const baseOldRef = runGit(["rev-parse", baseBranch], repoRoot).stdout.trim();
+		const updateResult = runGit(
+			["update-ref", `refs/heads/${baseBranch}`, orchHead, baseOldRef],
+			repoRoot,
+		);
+		if (!updateResult.ok) {
+			const reason = `update-ref failed: ${updateResult.stderr || updateResult.stdout || "unknown"}`;
+			execLog("resume", batchId, `auto-integration failed: ${reason}`);
+			onNotify(ORCH_MESSAGES.orchIntegrationAutoFailed(orchBranch, baseBranch, reason), "warning");
+			return false;
+		}
+	}
+
+	execLog("resume", batchId, `auto-integrated: ${baseBranch} advanced to ${orchBranch}`, { orchHead });
+	onNotify(ORCH_MESSAGES.orchIntegrationAutoSuccess(orchBranch, baseBranch), "info");
+	return true;
 }
 

@@ -16,6 +16,8 @@ import {
 	resolveOperatorId,
 	generateBatchId,
 	resolveBaseBranch,
+	getCurrentBranch,
+	ORCH_MESSAGES,
 } from "../task-orchestrator.ts";
 
 // Detect vitest: if present, wrap everything in a describe/it block
@@ -252,10 +254,11 @@ function runAllTests(): void {
 		assert(!resetBlock.includes("batchState.baseBranch"),
 			"post-merge worktree reset does NOT use batchState.baseBranch");
 
-		// Phase 3 cleanup still uses baseBranch (Step 4 territory — unmerged-branch check)
+		// Phase 3 cleanup uses orchBranch for unmerged-branch protection
+		// (lane branches were merged into orchBranch, not baseBranch — TP-022 Step 4)
 		const cleanupBlock = engineSource.match(/Phase 3: Cleanup[\s\S]*?const targetBranch = batchState\.\w+/)?.[0] ?? "";
-		assert(cleanupBlock.includes("batchState.baseBranch"),
-			"Phase 3 cleanup still uses batchState.baseBranch for unmerged-branch check");
+		assert(cleanupBlock.includes("batchState.orchBranch"),
+			"Phase 3 cleanup uses batchState.orchBranch for unmerged-branch check");
 	}
 
 	// 6) resume.ts mirrors engine.ts orchBranch routing
@@ -285,11 +288,8 @@ function runAllTests(): void {
 		const resumeResetBlocks = resumeSource.match(/const targetBranch = batchState\.\w+/g) || [];
 		// Should have at least one orchBranch reset (inter-wave) and one baseBranch (terminal cleanup)
 		const orchBranchResets = resumeResetBlocks.filter(b => b.includes("orchBranch"));
-		const baseBranchResets = resumeResetBlocks.filter(b => b.includes("baseBranch"));
-		assert(orchBranchResets.length >= 1,
-			"resume.ts has at least 1 inter-wave reset using orchBranch");
-		assert(baseBranchResets.length >= 1,
-			"resume.ts retains at least 1 terminal cleanup using baseBranch");
+		assert(orchBranchResets.length >= 2,
+			"resume.ts uses orchBranch for both inter-wave reset and terminal cleanup (TP-022 Step 4)");
 	}
 
 	// 7) resume.ts has orchBranch empty-guard for pre-TP-022 persisted states
@@ -759,6 +759,279 @@ function runAllTests(): void {
 
 			// Clean up temp branch
 			execSync(`git branch -D ${tempBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		} finally {
+			rmSync(tempBase, { recursive: true, force: true });
+		}
+	}
+
+	// ── TP-022 Step 4: Auto-Integration & Cleanup ───────────────────────
+
+	// 18) Behavioral: auto-integration fast-forwards baseBranch to orchBranch (update-ref path)
+	{
+		console.log("\n── TP-022 Step 4: Auto-Integration & Cleanup ──");
+		console.log("  18) Behavioral: auto-integration ff advances baseBranch to orchBranch");
+		const tempBase = mkdtempSync(join(tmpdir(), "orch-autointegrate-"));
+		const repoDir = join(tempBase, "repo");
+		try {
+			// Set up repo with initial commit on main
+			execSync(`git init "${repoDir}"`, { encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.email test@test.com", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.name Test", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(repoDir, "README.md"), "# Test\n");
+			execSync("git add -A", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "initial"', { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			try { execSync("git branch -M main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }); } catch { /* already main */ }
+
+			const mainOriginalSha = execSync("git rev-parse main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+
+			// Create orch branch and advance it (simulating merged wave work)
+			const orchBranch = "orch/testop-autointegrate";
+			execSync(`git branch ${orchBranch} main`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			// Add a commit to orch branch via worktree
+			const wtDir = join(tempBase, "orch-wt");
+			execSync(`git worktree add "${wtDir}" ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(wtDir, "task-work.txt"), "task work\n");
+			execSync("git add -A", { cwd: wtDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "task: completed work"', { cwd: wtDir, encoding: "utf-8", stdio: "pipe" });
+			const orchHead = execSync(`git rev-parse ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			execSync(`git worktree remove "${wtDir}" --force`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			assert(orchHead !== mainOriginalSha, "orch branch has advanced beyond main");
+
+			// baseBranch (main) is checked out → auto-integration uses ff-only
+			const currentBranch = getCurrentBranch(repoDir);
+			assert(currentBranch === "main", "main is checked out (ff-only path)");
+
+			// Verify fast-forwardability: main must be ancestor of orchBranch
+			const isAncestor = runGit(["merge-base", "--is-ancestor", "main", orchBranch], repoDir);
+			assert(isAncestor.ok, "main is ancestor of orch branch (fast-forwardable)");
+
+			// Execute ff-only (mirrors attemptAutoIntegration's checked-out path)
+			const ffResult = runGit(["merge", "--ff-only", orchBranch], repoDir);
+			assert(ffResult.ok, "ff-only auto-integration succeeds");
+
+			// Verify main advanced to orchBranch HEAD
+			const mainNewSha = execSync("git rev-parse main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			assert(mainNewSha === orchHead, "main advanced to orch branch HEAD after auto-integration");
+
+			// Verify working tree has the new file
+			assert(existsSync(join(repoDir, "task-work.txt")),
+				"task-work.txt present in working tree after auto-integration");
+
+			// Orch branch still exists (never deleted)
+			const orchExists = runGit(["rev-parse", "--verify", `refs/heads/${orchBranch}`], repoDir);
+			assert(orchExists.ok, "orch branch still exists after auto-integration (preserved)");
+		} finally {
+			rmSync(tempBase, { recursive: true, force: true });
+		}
+	}
+
+	// 19) Behavioral: auto-integration skips when branches have diverged
+	{
+		console.log("  19) Behavioral: auto-integration skips when branches diverged");
+		const tempBase = mkdtempSync(join(tmpdir(), "orch-diverged-"));
+		const repoDir = join(tempBase, "repo");
+		try {
+			// Set up repo with initial commit
+			execSync(`git init "${repoDir}"`, { encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.email test@test.com", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.name Test", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(repoDir, "README.md"), "# Test\n");
+			execSync("git add -A", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "initial"', { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			try { execSync("git branch -M main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }); } catch { /* already main */ }
+
+			// Create orch branch from main
+			const orchBranch = "orch/testop-diverged";
+			execSync(`git branch ${orchBranch} main`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			// Advance orch branch
+			const wtDir = join(tempBase, "orch-wt");
+			execSync(`git worktree add "${wtDir}" ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(wtDir, "orch-work.txt"), "orch work\n");
+			execSync("git add -A", { cwd: wtDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "orch: task work"', { cwd: wtDir, encoding: "utf-8", stdio: "pipe" });
+			execSync(`git worktree remove "${wtDir}" --force`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			// Also advance main (user commits during batch) → divergence
+			writeFileSync(join(repoDir, "user-change.txt"), "user work\n");
+			execSync("git add -A", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "user: concurrent work"', { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			const mainSha = execSync("git rev-parse main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			const orchSha = execSync(`git rev-parse ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			assert(mainSha !== orchSha, "branches have diverged");
+
+			// Check fast-forwardability fails (main is NOT ancestor of orchBranch)
+			const isAncestor = runGit(["merge-base", "--is-ancestor", "main", orchBranch], repoDir);
+			assert(!isAncestor.ok, "main is NOT ancestor of orch branch (diverged — ff not possible)");
+
+			// Orch branch is preserved for manual integration
+			const orchExists = runGit(["rev-parse", "--verify", `refs/heads/${orchBranch}`], repoDir);
+			assert(orchExists.ok, "orch branch preserved when integration fails (divergence fallback)");
+
+			// Main was not touched
+			const mainAfter = execSync("git rev-parse main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			assert(mainAfter === mainSha, "main branch unchanged after failed auto-integration");
+		} finally {
+			rmSync(tempBase, { recursive: true, force: true });
+		}
+	}
+
+	// 20) ORCH_MESSAGES integration templates produce correct content
+	{
+		console.log("  20) ORCH_MESSAGES integration templates produce correct content");
+
+		// Manual integration message
+		const manualMsg = ORCH_MESSAGES.orchIntegrationManual("orch/op-batch1", "main", 5);
+		assert(manualMsg.includes("orch/op-batch1"), "manual message includes orch branch");
+		assert(manualMsg.includes("main"), "manual message includes base branch");
+		assert(manualMsg.includes("5 merged task"), "manual message includes task count");
+		assert(manualMsg.includes("git log"), "manual message includes git log command");
+		assert(manualMsg.includes("git merge"), "manual message includes git merge command");
+
+		// Auto-integration success message
+		const autoSuccessMsg = ORCH_MESSAGES.orchIntegrationAutoSuccess("orch/op-batch1", "main");
+		assert(autoSuccessMsg.includes("Auto-integrated"), "auto-success message indicates auto-integration");
+		assert(autoSuccessMsg.includes("fast-forwarded"), "auto-success message mentions fast-forward");
+
+		// Auto-integration failure message
+		const autoFailedMsg = ORCH_MESSAGES.orchIntegrationAutoFailed("orch/op-batch1", "main", "branches diverged");
+		assert(autoFailedMsg.includes("skipped"), "auto-failed message says skipped");
+		assert(autoFailedMsg.includes("branches diverged"), "auto-failed message includes reason");
+		assert(autoFailedMsg.includes("preserved"), "auto-failed message says branch preserved");
+		assert(autoFailedMsg.includes("git merge"), "auto-failed message includes manual merge command");
+	}
+
+	// 21) Structural: engine.ts cleanup preserves orchBranch (no deletion) and uses orchBranch for unmerged detection
+	{
+		console.log("  21) Structural: engine.ts cleanup uses orchBranch and never deletes it");
+		const engineSource = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
+
+		// Cleanup section uses orchBranch for targetBranch
+		const cleanupSection = engineSource.match(/Phase 3: Cleanup[\s\S]*?Post-worktree-removal/)?.[0] ?? "";
+		assert(cleanupSection.includes("batchState.orchBranch"),
+			"Phase 3 cleanup references batchState.orchBranch for unmerged-branch detection");
+
+		// No deletion of orchBranch anywhere in engine.ts
+		assert(!engineSource.includes('deleteBranchBestEffort(batchState.orchBranch'),
+			"engine.ts never calls deleteBranchBestEffort on orchBranch");
+		assert(!engineSource.includes('deleteBranchBestEffort(orchBranch'),
+			"engine.ts never calls deleteBranchBestEffort on orchBranch variable");
+
+		// Auto-integration block exists and is gated by integration config
+		assert(engineSource.includes('orchestrator.integration === "auto"'),
+			"auto-integration is gated by config.orchestrator.integration");
+
+		// Manual mode preserves orchBranch with guidance message
+		assert(engineSource.includes("orchIntegrationManual"),
+			"engine.ts calls orchIntegrationManual for manual mode guidance");
+	}
+
+	// 22) Structural: resume.ts section 11 mirrors engine.ts Phase 3 (auto-integration + cleanup + messaging)
+	{
+		console.log("  22) Structural: resume.ts mirrors engine.ts auto-integration + cleanup + messaging");
+		const resumeSource = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
+		const engineSource = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
+
+		// a) resume.ts has auto-integration block
+		assert(resumeSource.includes('orchestrator.integration === "auto"'),
+			"resume.ts gates auto-integration by config.orchestrator.integration");
+
+		// b) resume.ts calls attemptAutoIntegrationResume
+		assert(resumeSource.includes("attemptAutoIntegrationResume"),
+			"resume.ts has attemptAutoIntegrationResume helper");
+
+		// c) resume.ts shows manual integration guidance on non-auto path
+		assert(resumeSource.includes("orchIntegrationManual"),
+			"resume.ts calls orchIntegrationManual for manual mode guidance");
+
+		// d) resume.ts cleanup uses orchBranch (not baseBranch) for unmerged detection
+		const resumeCleanupSection = resumeSource.match(
+			/11\. Cleanup and terminal state[\s\S]*?batchState\.endedAt = Date\.now/
+		)?.[0] ?? "";
+		assert(resumeCleanupSection.includes("batchState.orchBranch"),
+			"resume.ts cleanup references batchState.orchBranch for unmerged-branch detection");
+
+		// e) resume.ts attemptAutoIntegrationResume has same gate structure as engine.ts
+		const resumeAutoFn = resumeSource.match(
+			/function attemptAutoIntegrationResume[\s\S]*?return true;\s*\}/
+		)?.[0] ?? "";
+		assert(resumeAutoFn.includes("merge-base", ),
+			"resume auto-integration checks merge-base ancestry");
+		assert(resumeAutoFn.includes("getCurrentBranch"),
+			"resume auto-integration gates on checked-out branch");
+		assert(resumeAutoFn.includes("update-ref"),
+			"resume auto-integration uses update-ref for non-checked-out path");
+		assert(resumeAutoFn.includes("--ff-only"),
+			"resume auto-integration uses --ff-only for checked-out path");
+		assert(resumeAutoFn.includes("status", "--porcelain"),
+			"resume auto-integration checks dirty worktree before ff-only");
+
+		// f) Both engine and resume call the same ORCH_MESSAGES templates
+		assert(engineSource.includes("orchIntegrationAutoSuccess") && resumeSource.includes("orchIntegrationAutoSuccess"),
+			"both engine.ts and resume.ts use orchIntegrationAutoSuccess message");
+		assert(engineSource.includes("orchIntegrationAutoFailed") && resumeSource.includes("orchIntegrationAutoFailed"),
+			"both engine.ts and resume.ts use orchIntegrationAutoFailed message");
+		assert(engineSource.includes("orchIntegrationManual") && resumeSource.includes("orchIntegrationManual"),
+			"both engine.ts and resume.ts use orchIntegrationManual message");
+	}
+
+	// 23) Behavioral: auto-integration via update-ref when baseBranch is NOT checked out
+	{
+		console.log("  23) Behavioral: auto-integration uses update-ref when baseBranch not checked out");
+		const tempBase = mkdtempSync(join(tmpdir(), "orch-autointegrate-ref-"));
+		const repoDir = join(tempBase, "repo");
+		try {
+			// Set up repo with initial commit on main
+			execSync(`git init "${repoDir}"`, { encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.email test@test.com", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.name Test", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(repoDir, "README.md"), "# Test\n");
+			execSync("git add -A", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "initial"', { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			try { execSync("git branch -M main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }); } catch { /* already main */ }
+
+			// Create a feature branch and check it out (so main is NOT checked out)
+			execSync("git checkout -b feature", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			const mainOriginalSha = execSync("git rev-parse main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+
+			// Create orch branch from main and advance it
+			const orchBranch = "orch/testop-refintegrate";
+			execSync(`git branch ${orchBranch} main`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			const wtDir = join(tempBase, "orch-wt");
+			execSync(`git worktree add "${wtDir}" ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(wtDir, "task-work.txt"), "task work\n");
+			execSync("git add -A", { cwd: wtDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "task: completed work"', { cwd: wtDir, encoding: "utf-8", stdio: "pipe" });
+			const orchHead = execSync(`git rev-parse ${orchBranch}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			execSync(`git worktree remove "${wtDir}" --force`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			// Verify main is NOT checked out
+			const currentBranch = getCurrentBranch(repoDir);
+			assert(currentBranch === "feature", "feature is checked out, not main");
+
+			// Execute update-ref (mirrors attemptAutoIntegration's non-checked-out path)
+			const baseOldRef = execSync("git rev-parse main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			const updateResult = runGit(
+				["update-ref", "refs/heads/main", orchHead, baseOldRef],
+				repoDir,
+			);
+			assert(updateResult.ok, "update-ref succeeds for auto-integration");
+
+			// Verify main advanced
+			const mainNewSha = execSync("git rev-parse main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }).trim();
+			assert(mainNewSha === orchHead, "main advanced to orchBranch HEAD via update-ref");
+
+			// Verify working tree was NOT affected (we're on feature branch)
+			assert(!existsSync(join(repoDir, "task-work.txt")),
+				"task-work.txt NOT in working tree (update-ref doesn't touch it)");
+
+			// Verify we're still on feature branch
+			assert(getCurrentBranch(repoDir) === "feature",
+				"still on feature branch after update-ref (checkout untouched)");
 		} finally {
 			rmSync(tempBase, { recursive: true, force: true });
 		}
