@@ -7,19 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- No unreleased changes yet.
+
+## [0.4.0] - 2026-03-17
+
 ### Added
+- **`/settings` TUI command** — interactive config editor with section navigation, source indicators (project/user/default), type-specific controls, and validation. Primary config interface — users rarely need to edit files directly.
+- **JSON config schema** — unified `taskplane-config.json` replaces both YAML files. Unified loader with YAML fallback for backward compatibility.
+- **`taskplane init` v2** — auto-detects repo vs workspace mode (no `--workspace` flag needed). Enforces selective gitignore entries. Detects and offers to untrack accidentally committed runtime artifacts. Defaults `spawn_mode` to `"tmux"` when available.
+- **Pointer file resolution** — workspace mode uses `taskplane-pointer.json` to locate config, agents, and state in the designated config repo. All subsystems (task-runner, orchestrator, dashboard, merge agent) follow the pointer.
+- **User preferences** — `~/.pi/agent/taskplane/preferences.json` for personal settings (operator ID, models, tmux prefix, dashboard port). Merged with project config at load time.
+- **Doctor enhancements** — gitignore validation, tracked artifact detection, workspace pointer chain validation, config repo default branch check, legacy YAML migration warning, tmux vs `spawn_mode` mismatch detection.
 - Configurable merge agent timeout (`merge.timeout_minutes`, default: 10 min, was hardcoded 5 min). Exposed in `/settings` TUI.
-- Per-step git commits replace per-checkbox commits — reduces git overhead by ~70-80% without losing recovery capability.
-- `taskplane doctor` checks tmux availability vs project `spawn_mode` config and warns on mismatch.
-- JSON config schema and unified loader (`taskplane-config.json` replaces both YAML files, with YAML fallback).
-- `taskplane init` mode auto-detection (repo vs workspace, no `--workspace` flag needed).
-- `taskplane init` gitignore enforcement — adds selective entries for runtime artifacts.
-- `taskplane init` detects and offers to untrack accidentally committed runtime artifacts.
-- `taskplane init` defaults `spawn_mode` to `"tmux"` when tmux is available.
-- Pointer file resolution chain for workspace mode (`taskplane-pointer.json`).
-- User preferences layer (`~/.pi/agent/taskplane/preferences.json`).
-- `/settings` TUI command — interactive config editor with section navigation, source indicators, and validation.
-- Doctor enhancements: gitignore validation, tracked artifact detection, workspace pointer chain validation, legacy YAML migration warning.
+
+### Changed
+- **Per-step git commits** replace per-checkbox commits — reduces git overhead by ~70-80% without losing recovery capability. STATUS.md is still updated after each checkbox.
+- CHANGELOG.md mandatory in release process (AGENTS.md pre-release checklist added).
 
 ## [0.3.1] - 2026-03-16
 
