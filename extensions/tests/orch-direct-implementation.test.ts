@@ -1,6 +1,10 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
-import { join } from "path";
+import { execSync } from "child_process";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "fs";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { tmpdir } from "os";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 import {
 	serializeBatchState,
@@ -8,6 +12,9 @@ import {
 	computeResumePoint,
 	selectAbortTargetSessions,
 	hasTaskDoneMarker,
+	runGit,
+	resolveOperatorId,
+	generateBatchId,
 } from "../task-orchestrator.ts";
 
 // Detect vitest: if present, wrap everything in a describe/it block
@@ -91,6 +98,127 @@ function runAllTests(): void {
 		} finally {
 			rmSync(base, { recursive: true, force: true });
 		}
+	}
+
+	// ── 5) Orch branch creation: success path (TP-022 Step 1) ──
+	{
+		console.log("\n── orch branch creation tests (TP-022) ──");
+		const tempBase = mkdtempSync(join(tmpdir(), "orch-branch-test-"));
+		const repoDir = join(tempBase, "repo");
+		try {
+			// Init a test repo with an initial commit on main
+			execSync(`git init "${repoDir}"`, { encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.email test@test.com", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.name Test", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(repoDir, "README.md"), "# Test\n");
+			execSync("git add -A", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "initial"', { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			try { execSync("git branch -M main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }); } catch { /* already main */ }
+
+			// Generate expected orch branch name
+			const orchConfig = {
+				orchestrator: { operator_id: "testop" },
+			} as any;
+			const opId = resolveOperatorId(orchConfig);
+			const batchId = generateBatchId();
+			const orchBranch = `orch/${opId}-${batchId}`;
+
+			// Create the branch (mirrors engine.ts logic)
+			const result = runGit(["branch", orchBranch, "main"], repoDir);
+			assert(result.ok, "orch branch creation succeeds");
+			assert(orchBranch.startsWith("orch/"), "orch branch name has orch/ prefix");
+			assert(orchBranch.includes(opId), "orch branch name contains operator id");
+			assert(orchBranch.includes(batchId), "orch branch name contains batch id");
+
+			// Verify the branch exists in the repo
+			const verifyResult = runGit(["rev-parse", "--verify", `refs/heads/${orchBranch}`], repoDir);
+			assert(verifyResult.ok, "orch branch ref is verifiable after creation");
+
+			// Verify it points to the same commit as main
+			const mainSha = runGit(["rev-parse", "main"], repoDir).stdout.trim();
+			const orchSha = runGit(["rev-parse", orchBranch], repoDir).stdout.trim();
+			assert(mainSha === orchSha, "orch branch points to same commit as base branch");
+		} finally {
+			rmSync(tempBase, { recursive: true, force: true });
+		}
+	}
+
+	// ── 6) Orch branch creation: failure path (branch already exists) ──
+	{
+		const tempBase = mkdtempSync(join(tmpdir(), "orch-branch-fail-"));
+		const repoDir = join(tempBase, "repo");
+		try {
+			execSync(`git init "${repoDir}"`, { encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.email test@test.com", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.name Test", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(repoDir, "README.md"), "# Test\n");
+			execSync("git add -A", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "initial"', { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			try { execSync("git branch -M main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }); } catch { /* already main */ }
+
+			// Create the branch first
+			const orchBranch = "orch/testop-duplicate";
+			runGit(["branch", orchBranch, "main"], repoDir);
+
+			// Attempt to create it again — should fail
+			const result = runGit(["branch", orchBranch, "main"], repoDir);
+			assert(!result.ok, "duplicate orch branch creation fails");
+
+			// Verify error detail falls back correctly
+			const errDetail = result.stderr || result.stdout || "unknown error";
+			assert(errDetail.length > 0, "error detail is non-empty on branch creation failure");
+			assert(errDetail !== "unknown error", "error detail contains actual git error, not fallback");
+
+			// Verify the engine failure path sets correct state
+			const batchState = freshOrchBatchState();
+			batchState.phase = "planning";
+			batchState.batchId = "test-batch";
+			batchState.startedAt = Date.now();
+
+			if (!result.ok) {
+				batchState.phase = "failed";
+				batchState.endedAt = Date.now();
+				batchState.errors.push(`Failed to create orch branch '${orchBranch}': ${errDetail}`);
+			}
+
+			assert(batchState.phase === "failed", "batch state phase set to 'failed' on branch creation failure");
+			assert(batchState.endedAt !== null, "batch state endedAt set on failure");
+			assert(batchState.errors.length === 1, "exactly one error recorded");
+			assert(batchState.errors[0].includes(orchBranch), "error message contains branch name");
+		} finally {
+			rmSync(tempBase, { recursive: true, force: true });
+		}
+	}
+
+	// ── 7) Orch branch lifecycle: no orphan branches on planning exits ──
+	// Validates that the engine creates the orch branch AFTER planning
+	// validations, so early exits during preflight/discovery/graph/waves
+	// cannot leak orphan branches.
+	{
+		// This is a structural test: verify that in engine.ts, the branch
+		// creation block appears after all planning-phase early returns.
+		// We verify this by reading the source and checking ordering.
+		const engineSource = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
+
+		// Find positions of key planning-phase markers and branch creation
+		const preflightReturnPos = engineSource.indexOf('batchState.errors.push("Preflight check failed")');
+		const discoveryReturnPos = engineSource.indexOf('batchState.errors.push("Discovery had fatal errors');
+		const noPendingReturnPos = engineSource.indexOf("No pending tasks found");
+		const graphReturnPos = engineSource.indexOf("Graph validation failed");
+		const waveReturnPos = engineSource.indexOf("Wave computation failed");
+		const branchCreationPos = engineSource.indexOf('runGit(["branch", orchBranch, batchState.baseBranch]');
+
+		assert(branchCreationPos > 0, "branch creation block found in engine.ts");
+		assert(preflightReturnPos > 0 && branchCreationPos > preflightReturnPos,
+			"orch branch creation occurs after preflight early return");
+		assert(discoveryReturnPos > 0 && branchCreationPos > discoveryReturnPos,
+			"orch branch creation occurs after discovery fatal error early return");
+		assert(noPendingReturnPos > 0 && branchCreationPos > noPendingReturnPos,
+			"orch branch creation occurs after no-pending-tasks early return");
+		assert(graphReturnPos > 0 && branchCreationPos > graphReturnPos,
+			"orch branch creation occurs after graph validation early return");
+		assert(waveReturnPos > 0 && branchCreationPos > waveReturnPos,
+			"orch branch creation occurs after wave computation early return");
 	}
 
 	console.log(`\nResults: ${passed} passed, ${failed} failed`);

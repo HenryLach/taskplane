@@ -72,22 +72,6 @@ export async function executeOrchBatch(
 	}
 	batchState.baseBranch = detectedBranch;
 
-	// ── Create orchestrator-managed branch ───────────────────────
-	// The orch branch isolates all batch work from the user's current branch.
-	// Worktrees branch from it; merges target it via update-ref.
-	const opId = resolveOperatorId(orchConfig);
-	const orchBranch = `orch/${opId}-${batchState.batchId}`;
-	const branchResult = runGit(["branch", orchBranch, batchState.baseBranch], repoRoot);
-	if (!branchResult.ok) {
-		batchState.phase = "failed";
-		batchState.endedAt = Date.now();
-		batchState.errors.push(`Failed to create orch branch '${orchBranch}': ${branchResult.stderr}`);
-		onNotify(`❌ Failed to create orch branch '${orchBranch}': ${branchResult.stderr}`, "error");
-		return;
-	}
-	batchState.orchBranch = orchBranch;
-	execLog("batch", batchState.batchId, "created orch branch", { orchBranch, baseBranch: batchState.baseBranch });
-
 	// When true, final cleanup is skipped so failed merge state is preserved
 	// for manual intervention and TS-009 resume flow.
 	let preserveWorktreesForResume = false;
@@ -197,6 +181,26 @@ export async function executeOrchBatch(
 	// Store wave plan and discovery for state persistence
 	wavePlan = rawWaves;
 	discoveryRef = discovery;
+
+	// ── Create orchestrator-managed branch ───────────────────────
+	// Created after all planning validations pass (preflight, discovery,
+	// graph validation, wave computation) to avoid orphan branches on
+	// planning-phase early exits.
+	// The orch branch isolates all batch work from the user's current branch.
+	// Worktrees branch from it; merges target it via update-ref.
+	const opId = resolveOperatorId(orchConfig);
+	const orchBranch = `orch/${opId}-${batchState.batchId}`;
+	const branchResult = runGit(["branch", orchBranch, batchState.baseBranch], repoRoot);
+	if (!branchResult.ok) {
+		batchState.phase = "failed";
+		batchState.endedAt = Date.now();
+		const errDetail = branchResult.stderr || branchResult.stdout || "unknown error";
+		batchState.errors.push(`Failed to create orch branch '${orchBranch}': ${errDetail}`);
+		onNotify(`❌ Failed to create orch branch '${orchBranch}': ${errDetail}`, "error");
+		return;
+	}
+	batchState.orchBranch = orchBranch;
+	execLog("batch", batchState.batchId, "created orch branch", { orchBranch, baseBranch: batchState.baseBranch });
 
 	onNotify(
 		ORCH_MESSAGES.orchStarting(batchState.batchId, rawWaves.length, batchState.totalTasks),

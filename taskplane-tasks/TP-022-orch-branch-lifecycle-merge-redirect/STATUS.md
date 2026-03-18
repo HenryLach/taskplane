@@ -1,6 +1,6 @@
 # TP-022: Orch Branch Lifecycle & Merge Redirect — Status
 
-**Current Step:** Step 1: Create Orch Branch at Batch Start (complete)
+**Current Step:** Step 1: Create Orch Branch at Batch Start (R004 revisions complete)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
@@ -34,8 +34,8 @@
 - [x] Handle creation failure: set phase="failed", endedAt, push error, notify, return (matching existing early-exit pattern in engine.ts)
 - [x] Log branch creation via `execLog("batch", batchId, "created orch branch", { orchBranch, baseBranch })`
 - [x] R003: Clean duplicate Execution Log rows in STATUS.md
-- [ ] R004: Move orch branch creation after preflight+discovery, or add best-effort cleanup on all planning-phase early exits that occur after branch creation
-- [ ] R004: Add tests for orch branch creation (success path, failure path, cleanup on early exit)
+- [x] R004: Move orch branch creation after preflight+discovery, or add best-effort cleanup on all planning-phase early exits that occur after branch creation
+- [x] R004: Add tests for orch branch creation (success path, failure path, cleanup on early exit)
 
 ---
 
@@ -94,6 +94,7 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 
 ---
 
@@ -149,6 +150,8 @@
 | 2026-03-18 14:47 | Worker iter 2 | done in 228s, ctx: 22%, tools: 31 |
 | 2026-03-18 14:48 | Worker iter 2 | done in 253s, ctx: 20%, tools: 32 |
 | 2026-03-18 14:50 | Review R004 | code Step 1: REVISE |
+| 2026-03-18 | R004 revisions | Moved orch branch creation after all planning validations; added tests for success/failure/lifecycle; 754 tests pass |
+| 2026-03-18 14:51 | Review R004 | code Step 1: REVISE |
 
 ---
 
