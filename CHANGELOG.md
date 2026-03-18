@@ -8,7 +8,115 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- No unreleased changes yet.
+- Configurable merge agent timeout (`merge.timeout_minutes`, default: 10 min, was hardcoded 5 min). Exposed in `/settings` TUI.
+- Per-step git commits replace per-checkbox commits — reduces git overhead by ~70-80% without losing recovery capability.
+- `taskplane doctor` checks tmux availability vs project `spawn_mode` config and warns on mismatch.
+- JSON config schema and unified loader (`taskplane-config.json` replaces both YAML files, with YAML fallback).
+- `taskplane init` mode auto-detection (repo vs workspace, no `--workspace` flag needed).
+- `taskplane init` gitignore enforcement — adds selective entries for runtime artifacts.
+- `taskplane init` detects and offers to untrack accidentally committed runtime artifacts.
+- `taskplane init` defaults `spawn_mode` to `"tmux"` when tmux is available.
+- Pointer file resolution chain for workspace mode (`taskplane-pointer.json`).
+- User preferences layer (`~/.pi/agent/taskplane/preferences.json`).
+- `/settings` TUI command — interactive config editor with section navigation, source indicators, and validation.
+- Doctor enhancements: gitignore validation, tracked artifact detection, workspace pointer chain validation, legacy YAML migration warning.
+
+## [0.3.1] - 2026-03-16
+
+### Added
+- Agent prompt inheritance — base prompts ship in package and auto-update on `pi update`. Local `.pi/agents/*.md` files are thin project-specific overrides composed at runtime. `standalone: true` opts out.
+- `taskplane init` now scaffolds thin local agent files instead of full copies.
+
+## [0.3.0] - 2026-03-16
+
+### Breaking
+- **Node.js minimum raised to 22** (was 20). All CLI commands fail fast with a clear error on older versions. CI updated to Node 22.
+
+### Added
+- `taskplane install-tmux` — automated tmux installation for Git Bash on Windows. Downloads from MSYS2 mirrors, no admin rights needed. `--check` for status, `--force` to reinstall/upgrade.
+- tmux documented as strongly recommended prerequisite across all public-facing docs.
+- `taskplane doctor` suggests `install-tmux` when tmux is missing on Windows.
+
+## [0.2.9] - 2026-03-16
+
+### Added
+- `taskplane install-tmux` command (same as v0.3.0 — released before the Node.js bump).
+
+## [0.2.8] - 2026-03-16
+
+### Fixed
+- Dashboard STATUS.md eye icon resolves paths correctly in workspace mode (was double-pathing repo prefix).
+
+## [0.2.7] - 2026-03-16
+
+### Fixed
+- State/sidecar files (batch-state.json, lane-state, merge results) now write to workspace root's `.pi/` instead of repo root's `.pi/` in workspace mode. Fixes dashboard not showing batch progress.
+
+## [0.2.6] - 2026-03-16
+
+### Fixed
+- Tolerate flat `verification_passed`/`verification_commands` fields in merge result JSON (merge agents may write flat fields instead of nested `verification` object).
+
+## [0.2.5] - 2026-03-16
+
+### Fixed
+- Normalize merge result `status` field to uppercase before validation. Merge agents may write lowercase (`"success"` vs `"SUCCESS"`).
+
+## [0.2.4] - 2026-03-16
+
+### Fixed
+- Worktree base branch resolved from current HEAD instead of `default_branch` in workspace config. Was causing worktrees to branch from `develop` instead of the user's feature branch.
+
+## [0.2.3] - 2026-03-16
+
+### Fixed
+- Thread `TASKPLANE_WORKSPACE_ROOT` env var to lane sessions so task-runner can find `.pi/task-runner.yaml` in workspace mode.
+
+## [0.2.2] - 2026-03-16
+
+### Fixed
+- Discovery resolves task area paths from workspace root (not repo root) in workspace mode.
+
+## [0.2.1] - 2026-03-16
+
+### Fixed
+- Preflight `git worktree list` check runs from repo root in workspace mode (workspace root is not a git repo).
+
+## [0.2.0] - 2026-03-15
+
+### Added
+- **Polyrepo workspace mode** — multi-repository orchestration with per-repo lanes, merges, and resume.
+- Workspace config (`.pi/taskplane-workspace.yaml`) with repo definitions, routing, and strict mode.
+- Task repo routing via `## Execution Target` in PROMPT.md.
+- Repo-scoped lane allocation with global lane numbering.
+- Repo-scoped merge sequencing with partial-success reporting.
+- Operator-scoped naming for sessions, worktrees, branches, and merge artifacts (collision resistance).
+- Schema v2 persistence with repo-aware task/lane records and v1→v2 auto-upconversion.
+- Resume reconciliation across repos.
+- Dashboard repo filter, badges, and per-repo merge sub-rows.
+- Strict routing enforcement (`routing.strict: true`).
+- 398 tests across 15 test files.
+
+## [0.1.18] - 2026-03-15
+
+### Changed
+- Rebalanced hydration philosophy — outcome-level checkboxes (2-5 per step) replace exhaustive implementation scripts (15+ micro-checkboxes).
+- Updated task-worker and task-reviewer agent prompts with "Adaptive Planning, Not Exhaustive Scripting" guidance.
+
+## [0.1.17] - 2026-03-15
+
+### Fixed
+- Dashboard eye icon contrast improved — higher opacity, accent color on hover/active states, box-shadow ring for on/off distinction.
+
+## [0.1.16] - 2026-03-15
+
+### Fixed
+- Minor bug fixes and stability improvements.
+
+## [0.1.15] - 2026-03-15
+
+### Fixed
+- Minor bug fixes and stability improvements.
 
 ## [0.1.14] - 2026-03-15
 

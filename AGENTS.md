@@ -196,7 +196,13 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
 ### Default release sequence (only when explicitly requested)
 
 1. Ensure `main` is clean and synced; tests/smokes pass.
-2. Update `CHANGELOG.md`.
+2. **Update `CHANGELOG.md` (MANDATORY — do NOT skip).**
+   - Add a section for the new version with date.
+   - List all user-facing changes since the last changelog entry.
+   - Group by: Breaking, New, Fixed, Docs, Internal.
+   - Read `git log` since the last release tag to find all changes.
+   - This is the permanent record of what shipped. GitHub release notes
+     are derived from this, not the other way around.
 3. Validate package contents:
    - `npm pack --dry-run`
 4. Bump version and create tag:
@@ -206,9 +212,16 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
 6. Push commit + tags:
    - `git push && git push --tags`
 7. Create GitHub release for the same version tag.
+   - Release notes should match or summarize `CHANGELOG.md`.
 8. Verify:
    - `npm view taskplane version`
    - `gh release view v<version>`
+
+**Pre-release checklist (verify before step 3):**
+- [ ] `CHANGELOG.md` updated with all changes since last release
+- [ ] Tests pass: `cd extensions && npx vitest run`
+- [ ] CLI smoke: `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor`
+- [ ] No uncommitted changes on the release branch
 
 - Never perform publish/release actions unless the user explicitly asks.
 
