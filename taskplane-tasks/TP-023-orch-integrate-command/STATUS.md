@@ -26,14 +26,14 @@
 ---
 
 ### Step 1: Register `/orch-integrate` Command
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Extract `parseIntegrateArgs()` pure helper returning `{ mode: "ff"|"merge"|"pr", force: boolean, orchBranchArg?: string }` with mutual-exclusion validation
 - [x] Register `/orch-integrate` command with description, usage text (incl. optional branch arg), and handler calling parseIntegrateArgs
 - [x] Update session-start command list to include `/orch-integrate`
 - [x] Verify parsing: default mode, force flag, conflict rejection, optional branch arg capture
-- [ ] R004: Add unit tests for `parseIntegrateArgs()` covering: default mode, --merge, --pr, --force, mutual exclusion conflict, unknown flags, single optional branch arg, >1 positional rejection
-- [ ] R004: Fix duplicate R003 row in reviews table
+- [x] R004: Add unit tests for `parseIntegrateArgs()` covering: default mode, --merge, --pr, --force, mutual exclusion conflict, unknown flags, single optional branch arg, >1 positional rejection
+- [x] R004: Fix duplicate R003 row in reviews table
 
 ---
 
@@ -83,8 +83,6 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
-| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
-| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 
 ---
@@ -122,10 +120,9 @@
 | 2026-03-18 16:43 | Review R003 | plan Step 1: REVISE |
 | 2026-03-18 iter2 | R003 hydration | Expanded Step 1: parse contract, mutual exclusion, session-start list, verify |
 | 2026-03-18 iter2 | Step 1 complete | Cleaned up duplicate code from iter 1, consolidated parseIntegrateArgs + command registration, 753/753 tests pass |
-| 2026-03-18 16:50 | Worker iter 2 | done in 427s, ctx: 24%, tools: 51 |
 | 2026-03-18 16:50 | Worker iter 2 | done in 376s, ctx: 23%, tools: 52 |
 | 2026-03-18 16:53 | Review R004 | code Step 1: REVISE |
-| 2026-03-18 16:53 | Review R004 | code Step 1: REVISE |
+| 2026-03-18 iter2 | R004 revisions | Added 24 unit tests for parseIntegrateArgs() in orch-integrate.test.ts, fixed duplicate rows in reviews/exec tables. 777/777 tests pass |
 
 ---
 
