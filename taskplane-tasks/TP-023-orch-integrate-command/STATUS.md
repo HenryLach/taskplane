@@ -1,11 +1,11 @@
 # TP-023: `/orch-integrate` Command — Status
 
-**Current Step:** Step 3: Implement Integration Modes
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 7
-**Iteration:** 4
+**Review Counter:** 8
+**Iteration:** 5
 **Size:** M
 
 ---
@@ -63,13 +63,13 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Unit tests passing
-- [ ] Command parsing verified
-- [ ] Branch safety verified
-- [ ] Error messages verified
-- [ ] All failures fixed
+- [ ] Run full vitest suite (`cd extensions && npx vitest run`) — record pass count, fix any failures
+- [ ] Verify orch-integrate.test.ts coverage: parseIntegrateArgs (defaults, modes, force, mutual exclusion, unknown flags, branch args, multi-positional), resolveIntegrationContext (phase gating, legacy, fallback, StateFileError, branch existence, detached HEAD, branch safety, force bypass), executeIntegration (ff success/fail, merge success/fail, pr success/push-fail/gh-fail, cleanup gating per mode)
+- [ ] Verify command registration + session-start list includes /orch-integrate in extension.ts
+- [ ] Verify error messages for: missing state, wrong phase, legacy orchBranch, detached HEAD, branch mismatch, ff diverged, merge conflict, push fail, gh fail
+- [ ] Fix all test failures if any
 
 ---
 
@@ -93,6 +93,9 @@
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
 
 ---
 
@@ -154,6 +157,14 @@
 | 2026-03-18 17:26 | Step 3 started | Implement Integration Modes |
 | 2026-03-18 17:27 | Review R007 | plan Step 3: APPROVE |
 | 2026-03-18 17:30 | Worker iter 4 | done in 442s, ctx: 25%, tools: 50 |
+| 2026-03-18 17:32 | Worker iter 4 | done in 292s, ctx: 25%, tools: 27 |
+| 2026-03-18 17:34 | Review R008 | code Step 3: APPROVE |
+| 2026-03-18 17:34 | Step 3 complete | Implement Integration Modes |
+| 2026-03-18 17:34 | Step 4 started | Testing & Verification |
+| 2026-03-18 17:35 | Review R009 | plan Step 4: REVISE |
+| 2026-03-18 17:35 | Review R008 | code Step 3: APPROVE |
+| 2026-03-18 17:35 | Step 3 complete | Implement Integration Modes |
+| 2026-03-18 17:35 | Step 4 started | Testing & Verification |
 
 ---
 
