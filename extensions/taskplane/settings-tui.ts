@@ -102,6 +102,7 @@ export const SECTIONS: SectionDef[] = [
 			// The user-facing spawn mode setting is under Worker (controls /task behavior).
 			{ configPath: "orchestrator.orchestrator.tmuxPrefix", label: "Tmux Prefix", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "tmuxPrefix", description: "Prefix for orchestrator tmux sessions" },
 			{ configPath: "orchestrator.orchestrator.operatorId", label: "Operator ID", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "operatorId", description: "Operator identifier (empty = auto-detect)" },
+			{ configPath: "orchestrator.orchestrator.integration", label: "Integration", control: "toggle", layer: "L1", fieldType: "enum", values: ["manual", "auto"], description: "How completed batches are integrated. manual = user runs /orch-integrate. auto = fast-forward on completion." },
 		],
 	},
 	{
