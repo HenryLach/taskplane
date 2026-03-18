@@ -17,6 +17,8 @@ export interface OrchestratorConfig {
 		tmux_prefix: string;
 		/** Optional operator identifier. Auto-detected from OS username if empty. */
 		operator_id: string;
+		/** How completed batches are integrated. manual = user runs /orch-integrate. auto = fast-forward on completion. */
+		integration: "manual" | "auto";
 	};
 	dependencies: {
 		source: "prompt" | "agent";
@@ -151,6 +153,7 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 		spawn_mode: "subprocess",
 		tmux_prefix: "orch",
 		operator_id: "",
+		integration: "manual",
 	},
 	dependencies: {
 		source: "prompt",
@@ -829,6 +832,8 @@ export interface OrchBatchRuntimeState {
 	batchId: string;
 	/** Branch that was active when /orch started — used as base for worktrees and merge target */
 	baseBranch: string;
+	/** Orchestrator-managed branch name (e.g., 'orch/henry-20260318T140000'). Empty = legacy mode (merge into baseBranch directly). */
+	orchBranch: string;
 	/** Workspace execution mode (v2). Defaults to "repo" for backward compatibility. */
 	mode: WorkspaceMode;
 	/** Shared pause signal — set by /orch-pause, read by executeLane/executeWave */
@@ -908,6 +913,7 @@ export function freshOrchBatchState(): OrchBatchRuntimeState {
 		phase: "idle",
 		batchId: "",
 		baseBranch: "",
+		orchBranch: "",
 		mode: "repo",
 		pauseSignal: { paused: false },
 		waveResults: [],
@@ -1367,6 +1373,8 @@ export interface PersistedBatchState {
 	batchId: string;
 	/** Branch that was active when /orch started — used as base for worktrees and merge target */
 	baseBranch: string;
+	/** Orchestrator-managed branch name (e.g., 'orch/henry-20260318T140000'). Empty = legacy mode (merge into baseBranch directly). */
+	orchBranch: string;
 	/**
 	 * Workspace execution mode at batch start (v2).
 	 * - "repo": Single-repo mode (default, backward-compatible).
