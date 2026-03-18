@@ -156,7 +156,7 @@ Orchestrator lanes execute tasks through task-runner under the hood, so `/task` 
 | `/orch-abort [--hard]` | Abort batch (graceful or immediate) |
 | `/orch-deps <areas\|paths\|all>` | Show dependency graph |
 | `/orch-sessions` | List active worker sessions |
-| `/settings` | View and edit taskplane configuration interactively |
+| `/taskplane-settings` | View and edit taskplane configuration interactively |
 
 ### CLI Commands
 

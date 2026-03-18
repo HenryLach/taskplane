@@ -649,7 +649,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Settings TUI ─────────────────────────────────────────────────
 
-	pi.registerCommand("settings", {
+	pi.registerCommand("taskplane-settings", {
 		description: "View and edit taskplane configuration",
 		handler: async (_args, ctx) => {
 			if (!requireExecCtx(ctx)) return;

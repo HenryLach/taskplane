@@ -1,7 +1,7 @@
 /**
  * Settings TUI — interactive configuration viewer and editor.
  *
- * Provides a `/settings` command that renders a two-level navigation:
+ * Provides a `/taskplane-settings` command that renders a two-level navigation:
  *   1. Section selector (12 sections)
  *   2. Per-section SettingsList with field display, source badges,
  *      and inline editing for enum/boolean/string/number fields
@@ -911,7 +911,7 @@ function summarizeArray(arr: any[]): string {
 /**
  * Open the settings TUI.
  *
- * This is the main entry point called from the /settings command handler.
+ * This is the main entry point called from the /taskplane-settings command handler.
  * Uses a two-level navigation:
  *   1. SelectList for section navigation
  *   2. SettingsList for per-section field display and editing

@@ -2,7 +2,7 @@
 
 This page documents Taskplane command surfaces:
 
-1. pi session slash commands (`/task`, `/orch*`, `/settings`)
+1. pi session slash commands (`/task`, `/orch*`, `/taskplane-settings`)
 2. CLI shell commands (`taskplane ...`)
 
 > Slash commands are registered by Taskplane extensions when loaded in pi.
@@ -322,14 +322,14 @@ List active orchestrator tmux sessions.
 
 ## Configuration Commands
 
-### `/settings`
+### `/taskplane-settings`
 
 Open the interactive settings TUI for viewing and editing taskplane configuration.
 
 **Syntax**
 
 ```text
-/settings
+/taskplane-settings
 ```
 
 **Behavior**
@@ -365,7 +365,7 @@ Open the interactive settings TUI for viewing and editing taskplane configuratio
 **Example**
 
 ```text
-/settings
+/taskplane-settings
 ```
 
 Opens the settings TUI in the current pi session. No arguments needed.

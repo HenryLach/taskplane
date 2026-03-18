@@ -2565,7 +2565,7 @@ function cmdDoctor() {
 
 		if ((hasYamlRunner || hasYamlOrchestrator) && !hasJsonConfig) {
 			console.log(`  ${WARN} legacy YAML config detected in ${configLocation.label}`);
-			console.log(`     ${c.dim}→ Run /settings to migrate to taskplane-config.json${c.reset}`);
+			console.log(`     ${c.dim}→ Run /taskplane-settings to migrate to taskplane-config.json${c.reset}`);
 		}
 	}
 
