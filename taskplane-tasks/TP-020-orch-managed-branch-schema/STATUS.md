@@ -1,11 +1,11 @@
 # TP-020: Orch-Managed Branch Schema & Config — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Add `orchBranch` to Runtime + Persisted State
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 1
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 2
+**Iteration:** 2
 **Size:** M
 
 ---
@@ -24,11 +24,14 @@
 ---
 
 ### Step 1: Add `orchBranch` to Runtime + Persisted State
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Add `orchBranch` to `OrchBatchRuntimeState` and `PersistedBatchState`
+- [ ] Add `orchBranch: string` to `OrchBatchRuntimeState` and `PersistedBatchState` with JSDoc
 - [ ] Initialize to `""` in `freshOrchBatchState()`
-- [ ] Update `persistence.ts` serialization/deserialization with backward compat
+- [ ] Serialize `orchBranch` in `serializeBatchState()` (persistence.ts)
+- [ ] Default `orchBranch` to `""` in `validatePersistedState()` for backward compat (v2 files missing field)
+- [ ] Carry `orchBranch` from persisted state during resume reconstruction in `resume.ts`
+- [ ] Fix any PersistedBatchState object literal compile errors in tests
 
 ---
 
@@ -71,6 +74,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
+| R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
+| R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -93,6 +98,14 @@
 | 2026-03-18 03:23 | Step 0 started | Preflight |
 | 2026-03-18 03:24 | Review R001 | plan Step 0: REVISE |
 | 2026-03-18 03:26 | Review R001 | plan Step 0: APPROVE |
+| 2026-03-18 03:28 | Worker iter 1 | done in 228s, ctx: 40%, tools: 32 |
+| 2026-03-18 03:28 | Step 0 complete | Preflight |
+| 2026-03-18 03:28 | Step 1 started | Add `orchBranch` to Runtime + Persisted State |
+| 2026-03-18 03:28 | Worker iter 1 | done in 160s, ctx: 44%, tools: 26 |
+| 2026-03-18 03:28 | Step 0 complete | Preflight |
+| 2026-03-18 03:28 | Step 1 started | Add `orchBranch` to Runtime + Persisted State |
+| 2026-03-18 03:31 | Review R002 | plan Step 1: REVISE |
+| 2026-03-18 03:31 | Review R002 | plan Step 1: REVISE |
 
 ---
 
