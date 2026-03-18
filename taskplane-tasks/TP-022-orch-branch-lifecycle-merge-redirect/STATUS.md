@@ -4,8 +4,8 @@
 **Status:** ✅ Step 5 Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 12
-**Iteration:** 6
+**Review Counter:** 13
+**Iteration:** 7
 **Size:** L
 
 ---
@@ -108,8 +108,10 @@
 ### Step 6: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Discoveries logged
-- [ ] `.DONE` created
+- [ ] Resolve R012 debt: add detached-HEAD test for orch branch creation + deduplicate STATUS.md review/log rows
+- [ ] Reconcile STATUS.md audit consistency (single canonical review timeline, no duplicate rows)
+- [ ] Verify discoveries are logged
+- [ ] Create `.DONE` file
 
 ---
 
@@ -135,6 +137,7 @@
 | R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 | R012 | code | Step 5 | APPROVE | .reviews/R012-code-step5.md |
 | R012 | code | Step 5 | REVISE | .reviews/R012-code-step5.md |
+| R013 | plan | Step 6 | REVISE | .reviews/R013-plan-step6.md |
 
 ---
 
@@ -252,6 +255,7 @@
 | 2026-03-18 16:21 | Step 5 complete | Testing & Verification |
 | 2026-03-18 16:21 | Step 6 started | Documentation & Delivery |
 | 2026-03-18 16:21 | Review R012 | code Step 5: REVISE |
+| 2026-03-18 16:23 | Review R013 | plan Step 6: REVISE |
 
 ---
 

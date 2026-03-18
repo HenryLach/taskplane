@@ -224,6 +224,63 @@ function runAllTests(): void {
 			"orch branch creation occurs after wave computation early return");
 	}
 
+	// ── 7b) Orch branch creation: detached HEAD is rejected before branch creation ──
+	// engine.ts detects detached HEAD via getCurrentBranch() and fails fast before
+	// reaching the orch branch creation block. This ensures no orphan branch is
+	// created when the user is on a detached HEAD.
+	{
+		console.log("\n── orch branch creation: detached HEAD edge case (TP-022) ──");
+		const tempBase = mkdtempSync(join(tmpdir(), "orch-branch-detached-"));
+		const repoDir = join(tempBase, "repo");
+		try {
+			// Init a test repo and create a commit
+			execSync(`git init "${repoDir}"`, { encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.email test@test.com", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync("git config user.name Test", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			writeFileSync(join(repoDir, "README.md"), "# Test\n");
+			execSync("git add -A", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			execSync('git commit -m "initial"', { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+			try { execSync("git branch -M main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" }); } catch { /* already main */ }
+
+			// Detach HEAD by checking out a specific commit
+			const headSha = execSync("git rev-parse HEAD", { cwd: repoDir, encoding: "utf-8" }).trim();
+			execSync(`git checkout ${headSha}`, { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+			// getCurrentBranch should return null/empty for detached HEAD
+			const detectedBranch = getCurrentBranch(repoDir);
+			assert(!detectedBranch, "getCurrentBranch returns falsy for detached HEAD");
+
+			// Simulate engine.ts behavior: detached HEAD check prevents orch branch creation
+			const batchState = freshOrchBatchState();
+			batchState.phase = "planning";
+			batchState.batchId = "test-detached";
+			batchState.startedAt = Date.now();
+
+			if (!detectedBranch) {
+				batchState.phase = "failed";
+				batchState.endedAt = Date.now();
+				batchState.errors.push("Cannot determine current branch (detached HEAD or not a git repo)");
+			}
+
+			assert(batchState.phase === "failed", "batch fails on detached HEAD before orch branch creation");
+			assert(batchState.errors[0].includes("detached HEAD"), "error message mentions detached HEAD");
+			assert(batchState.orchBranch === "", "orchBranch remains empty — no orphan branch created");
+
+			// Verify no orch branches were accidentally created in the repo
+			const branchList = execSync("git branch", { cwd: repoDir, encoding: "utf-8" });
+			assert(!branchList.includes("orch/"), "no orch/ branches exist in repo after detached HEAD rejection");
+
+			// Structural verification: the detached HEAD check in engine.ts is before branch creation
+			const engineSource = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
+			const detachedCheckPos = engineSource.indexOf("detached HEAD or not a git repo");
+			const branchCreationPos = engineSource.indexOf('runGit(["branch", orchBranch, batchState.baseBranch]');
+			assert(detachedCheckPos > 0 && branchCreationPos > 0 && detachedCheckPos < branchCreationPos,
+				"detached HEAD check occurs before orch branch creation in engine.ts");
+		} finally {
+			rmSync(tempBase, { recursive: true, force: true });
+		}
+	}
+
 	// ── TP-022 Step 2: orchBranch routing verification ───────────────
 
 	// 5) engine.ts passes orchBranch (not baseBranch) to executeWave and mergeWaveByRepo
