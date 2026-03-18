@@ -3,20 +3,20 @@
 ### Verdict: REVISE
 
 ### Summary
-The core routing substitutions in `engine.ts` and `resume.ts` are in place, and the new guard in resume correctly detects legacy persisted states with missing `orchBranch`. However, one new early-return path leaves in-memory runtime state inconsistent, and workspace-mode branch fallback is now riskier because `orchBranch` is passed through as the batch fallback branch. These need to be addressed before this step is safe to ship.
+The Step 2 routing substitutions are mostly correct: `engine.ts` and `resume.ts` now pass `orchBranch` into wave execution/merge paths, and the inter-wave reset target was updated as intended. Tests are green (`cd extensions && npx vitest run` → 753 passed), but two behavioral issues remain: one leaves resume state inconsistent on a new guard return path, and one workspace fallback path can now resolve to a non-existent orch branch.
 
 ### Issues Found
-1. **[extensions/taskplane/resume.ts:612-627] [critical]** — The new `orchBranch` guard returns after setting `batchState.phase = "executing"` and `batchState.batchId`, but without restoring/terminalizing state. This leaves the orchestrator thinking a batch is active even though resume aborted; `/orch-resume` then blocks future attempts due to the phase gate in `extensions/taskplane/extension.ts:378-384`. **Fix:** move the missing-`orchBranch` guard before mutating runtime state, or explicitly set a terminal/idle phase + endedAt/error before returning.
+1. **[extensions/taskplane/resume.ts:612-627] [critical]** — The new missing-`orchBranch` guard returns after setting `batchState.phase = "executing"` and `batchState.batchId`. That leaves in-memory runtime state appearing active even though resume aborted. This conflicts with the `/orch-resume` phase gate in `extensions/taskplane/extension.ts:378-384`, which can block follow-up resume attempts as if a batch were still running. **Fix:** run the guard before mutating runtime state, or set a safe terminal/idle phase (`failed` or `idle`), set `endedAt`, and record an error before returning.
 
-2. **[extensions/taskplane/engine.ts:267-276, extensions/taskplane/resume.ts:1073-1083, extensions/taskplane/waves.ts:564-593, extensions/taskplane/worktree.ts:339-349] [important]** — After this step, `executeWave(..., batchState.orchBranch, ...)` feeds `orchBranch` into `resolveBaseBranch()` fallback (`return batchBaseBranch`). In workspace mode, if `getCurrentBranch(repoRoot)` fails (detached HEAD) and no `defaultBranch` is configured, fallback now becomes `orch/<op>-<batch>` which does not exist in non-primary repos, causing worktree creation failure (`WORKTREE_INVALID_BASE`). This was called out as a Step 2 risk but remains unmitigated. **Fix:** define explicit fallback behavior for workspace repos (e.g., require per-repo `defaultBranch`, fail fast with targeted message, or ensure orch branch exists per repo before use).
+2. **[extensions/taskplane/engine.ts:267-276, extensions/taskplane/resume.ts:1073-1083, extensions/taskplane/waves.ts:564-593, extensions/taskplane/worktree.ts:339-349] [important]** — `executeWave(..., batchState.orchBranch, ...)` now feeds `orchBranch` into `resolveBaseBranch(..., batchBaseBranch, ...)`. In workspace mode, if per-repo branch detection fails (detached HEAD) and no `defaultBranch` exists, fallback returns `batchBaseBranch` (now `orch/...`). That branch is only created in the primary repo, so worktree creation in another repo can fail with `WORKTREE_INVALID_BASE`. **Fix:** define explicit workspace fallback behavior for this case (e.g., require per-repo `defaultBranch`, fail fast with targeted guidance, or ensure orch branch exists per repo before using it as fallback).
 
 ### Pattern Violations
-- None blocking.
+- None blocking beyond the two behavioral issues above.
 
 ### Test Gaps
-- No behavioral test covers the new legacy-state guard path where `persistedState.orchBranch` is empty and verifies runtime state remains resumable/consistent after the rejection.
-- No workspace-mode test covers detached/missing-branch detection fallback when `batchBaseBranch` is now an orch branch.
+- No behavioral test exercises resume with missing/empty `orchBranch` and asserts resulting `batchState.phase` is not left as `executing`.
+- No workspace-mode test covers `resolveBaseBranch()` fallback when `repoId` is set and branch detection/default-branch resolution both fail after routing to orch branch.
 
 ### Suggestions
-- Add a small unit/integration test around `resumeOrchBatch()` with a mocked persisted state missing `orchBranch` to lock in expected phase/error behavior.
-- Add a workspace-mode allocation test that exercises `resolveBaseBranch()` fallback with `repoId` + detached HEAD to prevent regressions in branch routing semantics.
+- Add one focused test for the missing-`orchBranch` resume guard that validates both user notification and runtime state mutation.
+- Add one workspace lane-allocation test to lock in intended fallback behavior when a repo is detached or has no resolvable branch.

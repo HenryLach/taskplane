@@ -609,14 +609,12 @@ export async function resumeOrchBatch(
 	}
 
 	// ── 6. Reconstruct runtime state ─────────────────────────────
-	batchState.phase = "executing";
-	batchState.batchId = persistedState.batchId;
-	batchState.baseBranch = persistedState.baseBranch || "";
-	batchState.orchBranch = persistedState.orchBranch || "";
 
 	// Guard: orchBranch must be present for routing. Persisted states from
 	// pre-TP-022 runs may have orchBranch="" (TP-020 defaults).
-	if (!batchState.orchBranch) {
+	// Check BEFORE mutating batchState so phase/batchId remain idle on rejection,
+	// allowing future /orch-resume or /orch-abort to proceed.
+	if (!persistedState.orchBranch) {
 		onNotify(
 			`❌ Cannot resume batch ${persistedState.batchId}: persisted state has no orch branch. ` +
 			`This batch was created before orch-branch routing was implemented. ` +
@@ -625,6 +623,11 @@ export async function resumeOrchBatch(
 		);
 		return;
 	}
+
+	batchState.phase = "executing";
+	batchState.batchId = persistedState.batchId;
+	batchState.baseBranch = persistedState.baseBranch || "";
+	batchState.orchBranch = persistedState.orchBranch;
 
 	batchState.mode = persistedState.mode;
 	batchState.startedAt = persistedState.startedAt;
