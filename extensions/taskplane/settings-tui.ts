@@ -1109,6 +1109,30 @@ async function showSectionSettingsLoop(
 		const field = section.fields.find((f) => f.configPath === result.fieldId);
 		if (!field) continue;  // Safety: field not found
 
+		// Input fields: the submenu returned a sentinel — use ctx.ui.input() for actual editing
+		if (result.rawValue === "__EDIT_REQUESTED__" && field.control === "input") {
+			const state = loadConfigState(configRoot, pointerConfigRoot);
+			const currentDisplay = getFieldDisplayValue(field, state.mergedConfig, state.prefs);
+			const currentClean = String(currentDisplay).replace(/\s+\((?:default|project|user)\)$/, "");
+			const placeholder = currentClean === "(not set)" || currentClean === "(inherit)" ? "" : currentClean;
+
+			const newValue = await ctx.ui.input(
+				`${field.label}${field.description ? ` — ${field.description}` : ""}`,
+				placeholder,
+			);
+
+			if (newValue === null || newValue === undefined) continue;  // Cancelled
+
+			// Validate
+			const validation = validateFieldInput(field, newValue);
+			if (!validation.valid) {
+				ctx.ui.notify(`❌ Invalid value: ${validation.error}`, "error");
+				continue;
+			}
+
+			result.rawValue = newValue;
+		}
+
 		const typedValue = coerceValueForWrite(field, result.rawValue);
 
 		// Collect UI answers for the write-decision contract
@@ -1199,11 +1223,12 @@ async function showSectionSettingsOnce(
 			item.values = field.values.map((v) => `${v}  ${sourceBadge}`);
 		}
 
-		// Input fields get a submenu for inline editing
+		// Input fields: use a single-value cycling pattern instead of a submenu.
+		// The inline submenu approach freezes on Windows/tmux (issue #57).
+		// We set a single sentinel value so pressing Enter/Space triggers onChange,
+		// which exits the TUI. The caller then uses ctx.ui.input() for actual editing.
 		if (field.control === "input") {
-			item.submenu = (currentValue: string, submenuDone: (selectedValue?: string) => void) => {
-				return createInputSubmenu(field, currentValue, submenuDone);
-			};
+			item.values = [`__EDIT_REQUESTED__`];
 		}
 
 		return item;
