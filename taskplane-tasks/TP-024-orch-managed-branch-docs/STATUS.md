@@ -1,6 +1,6 @@
 # TP-024: Orch-Managed Branch Documentation — Status
 
-**Current Step:** Step 1: Add `/orch-integrate` to Commands Reference
+**Current Step:** Step 2: Update Settings Reference
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 0
@@ -30,7 +30,7 @@
 ---
 
 ### Step 2: Update Settings Reference
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add Integration setting to Orchestrator section
 
@@ -88,6 +88,9 @@
 | 2026-03-18 17:47 | Worker iter 2 | done in 114s, ctx: 20%, tools: 27 |
 | 2026-03-18 17:47 | Step 0 complete | Preflight |
 | 2026-03-18 17:47 | Step 1 started | Add `/orch-integrate` to Commands Reference |
+| 2026-03-18 17:49 | Worker iter 2 | done in 169s, ctx: 17%, tools: 30 |
+| 2026-03-18 17:49 | Step 1 complete | Add `/orch-integrate` to Commands Reference |
+| 2026-03-18 17:49 | Step 2 started | Update Settings Reference |
 
 ---
 
