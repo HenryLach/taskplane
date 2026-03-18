@@ -1,7 +1,7 @@
 # TP-021: Batch-Scoped Worktree Containers — Status
 
 **Current Step:** Step 5: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
 **Review Counter:** 10
@@ -74,12 +74,12 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Check docs impact: assess `docs/reference/configuration/taskplane-settings.md` for stale worktree naming references; log disposition (updated or deferred to TP-024) in Discoveries
 - [x] Discoveries logged
 - [x] Verify all PROMPT.md completion criteria are satisfied (batch-scoped paths, merge in container, no collisions, all callers updated, all tests passing — 753/753 tests pass)
-- [ ] `.DONE` created
+- [x] `.DONE` created
 
 ---
 
