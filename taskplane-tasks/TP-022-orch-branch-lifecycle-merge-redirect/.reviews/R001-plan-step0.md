@@ -3,17 +3,17 @@
 ### Verdict: REVISE
 
 ### Summary
-The preflight checklist covers the primary fresh-run files (`engine.ts`, `merge.ts`, `waves.ts`, `persistence.ts`) and dependency verification, which is a solid start. However, it misses resume-path parity analysis, which is critical for this task’s core invariant (“never touches the user’s current branch”). Without adding that to preflight, later steps are likely to update only the non-resume path.
+The Step 0 checklist covers core fresh-run files and dependency checks, so the baseline direction is good. However, it does not include a resume-path audit, which is a high-risk gap for this task because the main behavioral change is branch-target routing. Add resume parity and test-surface mapping to preflight before implementation proceeds.
 
 ### Issues Found
-1. **[Severity: important]** — `STATUS.md:16-20` scopes preflight to four files and omits `resume.ts`, but resume currently routes merge/reset/cleanup through `baseBranch` at `extensions/taskplane/resume.ts:905`, `:1069`, `:1184`, `:1297`, and `:1317`. Add a preflight item to audit resume branch routing and define which call sites must switch to `orchBranch`.
-2. **[Severity: minor]** — Preflight has no explicit test-surface mapping, so implementation may miss coverage for resumed-batch behavior. Add a preflight item to identify impacted tests (at minimum merge + persistence + resume regression suites) before coding.
+1. **[Severity: important]** — `taskplane-tasks/TP-022-orch-branch-lifecycle-merge-redirect/STATUS.md:16-20` omits `extensions/taskplane/resume.ts` from preflight scope. Resume currently routes key operations via `baseBranch` (`extensions/taskplane/resume.ts:905`, `1069`, `1184`, `1297`, `1317`), so updating only `engine.ts`/`merge.ts` risks violating the “user branch never touched” objective on resumed batches. **Fix:** add explicit preflight audit of resume call sites and intended `orchBranch` routing.
+2. **[Severity: important]** — Preflight lacks explicit test-impact inventory for branch-routing behavior changes. Existing tests currently encode today’s `resolveBaseBranch` assumptions (e.g., `extensions/tests/waves-repo-scoped.test.ts:9,112-127`, `extensions/tests/polyrepo-regression.test.ts:322-327`) and may require coordinated updates. **Fix:** add a Step 0 item to map impacted suites (fresh run + resume + merge + persistence).
 
 ### Missing Items
-- Resume-path parity check (`resume.ts`) for worktree base branch, merge target, reset target, and cleanup target.
-- Preflight compatibility note for persisted states where `orchBranch` can be empty (`persistence.ts` defaulting/upconvert path).
-- Explicit preflight test intent for resumed batches (not just fresh `/orch` execution).
+- Resume-path parity check (`resume.ts`) for execute, merge, post-merge reset, and cleanup branch targets.
+- Preflight note on backward compatibility when persisted state has empty `orchBranch` (defaulted in `extensions/taskplane/persistence.ts:369-378`).
+- Explicit resumed-batch test intent, not just fresh `/orch` execution.
 
 ### Suggestions
-- Record a Step 0 discovery table entry listing all `baseBranch` call sites and the intended `orchBranch` migration decision.
-- Include `messages.ts` in preflight reads since Step 4 requires completion-message changes.
+- Add a Step 0 discovery entry listing all current `baseBranch` branch-target call sites and the migration decision per site.
+- Include `extensions/taskplane/messages.ts` in preflight reading since Step 4 plans completion-message changes.
