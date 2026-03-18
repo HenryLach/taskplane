@@ -1,11 +1,11 @@
 # TP-021: Batch-Scoped Worktree Containers — Status
 
-**Current Step:** Step 3: Update All Callers
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 4
+**Review Counter:** 8
+**Iteration:** 5
 **Size:** M
 
 ---
@@ -62,13 +62,14 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Unit tests passing
-- [ ] Path generation verified
-- [ ] Subdirectory and sibling modes verified
-- [ ] Listing and cleanup verified
-- [ ] All failures fixed
+- [ ] Run existing test suite — confirm no regressions from Steps 1-3 (worktree-lifecycle, naming-collision, orch-pure-functions, full vitest)
+- [ ] Add batch-scoped isolation test: same opId, two different batchIds — `listWorktrees(batchId=A)` returns only A's lanes, `removeAllWorktrees(batchId=A)` does not touch B's lanes
+- [ ] Add transition compatibility test: legacy flat worktrees + new nested worktrees coexist; `listWorktrees()` without batchId finds both; `listWorktrees(batchId=X)` excludes legacy
+- [ ] Add merge path and cleanup edge-case tests: `generateMergeWorktreePath()` produces correct `{basePath}/{opId}-{batchId}/merge`; empty-container cleanup after worktree removal; no empty container left after pre-check failure
+- [ ] Verify subdirectory vs sibling mode still works with new batch-scoped naming (path assertions in both modes)
+- [ ] Fix all test failures — ZERO failures allowed in our changed test files
 
 ---
 
@@ -94,6 +95,10 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | plan | Step 3 | REVISE | .reviews/R006-plan-step3.md |
 | R006 | plan | Step 3 | REVISE | .reviews/R006-plan-step3.md |
+| R007 | code | Step 3 | APPROVE | .reviews/R007-code-step3.md |
+| R007 | code | Step 3 | APPROVE | .reviews/R007-code-step3.md |
+| R008 | plan | Step 4 | REVISE | .reviews/R008-plan-step4.md |
+| R008 | plan | Step 4 | REVISE | .reviews/R008-plan-step4.md |
 |---|------|------|---------|------|
 
 ---
@@ -157,6 +162,15 @@
 | 2026-03-18 13:54 | Review R006 | plan Step 3: REVISE |
 | 2026-03-18 13:55 | Review R006 | plan Step 3: REVISE |
 | 2026-03-18 13:59 | Worker iter 4 | done in 265s, ctx: 27%, tools: 60 |
+| 2026-03-18 14:00 | Worker iter 4 | done in 350s, ctx: 50%, tools: 67 |
+| 2026-03-18 14:03 | Review R007 | code Step 3: APPROVE |
+| 2026-03-18 14:03 | Step 3 complete | Update All Callers |
+| 2026-03-18 14:03 | Step 4 started | Testing & Verification |
+| 2026-03-18 14:05 | Review R007 | code Step 3: APPROVE |
+| 2026-03-18 14:05 | Step 3 complete | Update All Callers |
+| 2026-03-18 14:05 | Step 4 started | Testing & Verification |
+| 2026-03-18 14:08 | Review R008 | plan Step 4: REVISE |
+| 2026-03-18 14:11 | Review R008 | plan Step 4: REVISE |
 
 ---
 
