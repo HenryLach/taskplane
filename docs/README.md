@@ -49,8 +49,9 @@ Use these when you need complete command or file semantics.
 - [Glossary](reference/glossary.md)
 
 Configuration reference:
-- [task-runner.yaml](reference/configuration/task-runner.yaml.md)
-- [task-orchestrator.yaml](reference/configuration/task-orchestrator.yaml.md)
+- [Settings Reference (`/taskplane-settings`)](reference/configuration/taskplane-settings.md)
+- [task-runner.yaml](reference/configuration/task-runner.yaml.md) *(legacy, still supported)*
+- [task-orchestrator.yaml](reference/configuration/task-orchestrator.yaml.md) *(legacy, still supported)*
 
 ---
 
