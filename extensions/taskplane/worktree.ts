@@ -177,6 +177,40 @@ export function ensureBatchContainerDir(containerPath: string): void {
 }
 
 /**
+ * Remove a batch container directory if it exists and is empty.
+ *
+ * Safety rules:
+ * - Only removes the directory if it exists
+ * - Only removes the directory if it is empty (no files or subdirectories)
+ * - Never force-removes a non-empty container (partial failure safety)
+ * - Returns whether the container was removed
+ *
+ * Used after per-worktree removals in `removeAllWorktrees()` and
+ * `forceCleanupWorktree()` to clean up the container directory when
+ * all worktrees inside it have been removed.
+ *
+ * @param containerPath - Absolute path to the batch container directory
+ * @returns true if the container was removed, false otherwise
+ */
+export function removeBatchContainerIfEmpty(containerPath: string): boolean {
+	if (!existsSync(containerPath)) {
+		return false; // Already gone — no-op
+	}
+
+	try {
+		const entries = readdirSync(containerPath);
+		if (entries.length > 0) {
+			return false; // Non-empty — do not remove (partial failure safety)
+		}
+		rmSync(containerPath, { recursive: false });
+		return true;
+	} catch {
+		// If we can't read or remove — leave it alone (safe default)
+		return false;
+	}
+}
+
+/**
  * Parse `git worktree list --porcelain` output into structured entries.
  *
  * Porcelain output format (one block per worktree, separated by blank lines):
@@ -1142,13 +1176,16 @@ export function preserveBranch(
  * Parses `git worktree list --porcelain` via parseWorktreeList() and filters
  * entries whose path basename matches `{prefix}-{opId}-{N}` (where N is a number).
  *
- * Operator-scoped discovery: only returns worktrees belonging to the specified
- * operator. This prevents one operator from accidentally reusing or removing
- * another operator's active worktrees in concurrent team-scale scenarios.
+ * **Batch-scoped discovery:** When `batchId` is provided, only returns worktrees
+ * inside the specific batch container `{opId}-{batchId}/lane-{N}`. This prevents
+ * cross-batch interference when the same operator runs concurrent batches.
  *
- * For backward compatibility, also matches the legacy pattern `{prefix}-{N}`
- * (worktrees from prior batches without operator IDs), but only when `opId`
- * is `"op"` (the default fallback), to avoid capturing other operators' resources.
+ * **Operator-scoped discovery:** When `batchId` is omitted, returns ALL worktrees
+ * belonging to the operator (across all batches). This supports cleanup scenarios
+ * that need to discover all operator worktrees regardless of batch.
+ *
+ * For backward compatibility, also matches the legacy flat pattern `{prefix}-{opId}-{N}`
+ * and (when opId is "op") `{prefix}-{N}`. This supports transition from old naming.
  *
  * Lane number is extracted from the path basename pattern. Entries with
  * malformed/partial data (missing path, unparseable lane number) are
@@ -1157,9 +1194,11 @@ export function preserveBranch(
  * @param prefix   - Worktree directory prefix (e.g. "taskplane-wt")
  * @param repoRoot - Absolute path to the main repository root
  * @param opId     - Operator identifier for scoping (e.g., "henrylach")
+ * @param batchId  - Optional batch ID for batch-scoped filtering; when provided,
+ *                   only returns worktrees inside the `{opId}-{batchId}/` container
  * @returns        - WorktreeInfo[] sorted by laneNumber (ascending)
  */
-export function listWorktrees(prefix: string, repoRoot: string, opId: string): WorktreeInfo[] {
+export function listWorktrees(prefix: string, repoRoot: string, opId: string, batchId?: string): WorktreeInfo[] {
 	const entries = parseWorktreeList(repoRoot);
 	const results: WorktreeInfo[] = [];
 
@@ -1179,7 +1218,11 @@ export function listWorktrees(prefix: string, repoRoot: string, opId: string): W
 	// Parent directory: {opId}-{batchId} (e.g., "henrylach-20260308T111750")
 	// Full: {basePath}/{opId}-{batchId}/lane-{N}
 	const nestedLanePattern = /^lane-(\d+)$/;
-	const containerPattern = new RegExp(`^${escapeRegex(opId)}-\\S+$`);
+	// When batchId is provided, match only the exact container for batch isolation.
+	// When omitted, match any container belonging to this operator (all batches).
+	const containerPattern = batchId
+		? new RegExp(`^${escapeRegex(generateBatchContainerName(opId, batchId))}$`)
+		: new RegExp(`^${escapeRegex(opId)}-\\S+$`);
 
 	for (const entry of entries) {
 		if (!entry.path) continue;
@@ -1190,7 +1233,7 @@ export function listWorktrees(prefix: string, repoRoot: string, opId: string): W
 		// ── Try new nested pattern first ─────────────────────────
 		const nestedMatch = entryBasename.match(nestedLanePattern);
 		if (nestedMatch) {
-			// Verify the parent directory matches the operator's container pattern
+			// Verify the parent directory matches the container pattern
 			const parentDir = basename(resolve(resolvedPath, ".."));
 			if (containerPattern.test(parentDir)) {
 				const laneNumber = parseInt(nestedMatch[1], 10);
@@ -1205,21 +1248,25 @@ export function listWorktrees(prefix: string, repoRoot: string, opId: string): W
 			}
 		}
 
-		// ── Try legacy flat patterns ─────────────────────────────
-		let match = entryBasename.match(primaryPattern);
-		if (!match && legacyPattern) {
-			match = entryBasename.match(legacyPattern);
+		// ── Try legacy flat patterns (only when not batch-scoped) ─
+		// When batchId is provided, skip legacy matching — the caller
+		// explicitly wants only this batch's worktrees.
+		if (!batchId) {
+			let match = entryBasename.match(primaryPattern);
+			if (!match && legacyPattern) {
+				match = entryBasename.match(legacyPattern);
+			}
+			if (match) {
+				const laneNumber = parseInt(match[1], 10);
+				if (!isNaN(laneNumber) && laneNumber >= 1) {
+					results.push({
+						path: resolvedPath,
+						branch: entry.branch || "",
+						laneNumber,
+					});
+				}
+			}
 		}
-		if (!match) continue;
-
-		const laneNumber = parseInt(match[1], 10);
-		if (isNaN(laneNumber) || laneNumber < 1) continue;
-
-		results.push({
-			path: resolvedPath,
-			branch: entry.branch || "",
-			laneNumber,
-		});
 	}
 
 	// Sort by laneNumber ascending (deterministic output)
@@ -1432,10 +1479,22 @@ export function ensureLaneWorktrees(
  * When `targetBranch` is provided, branches with unmerged commits are
  * preserved as `saved/<branch>` refs instead of being force-deleted.
  *
+ * **Batch-scoped cleanup:** When `batchId` is provided, only removes
+ * worktrees inside the specific batch container `{opId}-{batchId}/`.
+ * After removing all worktrees, attempts to remove the empty container
+ * directory. When `batchId` is omitted, removes all operator worktrees
+ * (all batches, including legacy flat-layout).
+ *
+ * **Container cleanup:** After per-worktree removals, each touched batch
+ * container directory is checked and removed if empty. Non-empty containers
+ * (from partial failures or active worktrees) are left intact.
+ *
  * @param prefix       - Worktree directory prefix (e.g. "taskplane-wt")
  * @param repoRoot     - Absolute path to the main repository root
  * @param opId         - Operator identifier for scoping (e.g., "henrylach")
  * @param targetBranch - Optional target branch for unmerged commit detection (e.g. "develop")
+ * @param batchId      - Optional batch ID for batch-scoped cleanup
+ * @param config       - Optional orchestrator config (needed for container path resolution when batchId is provided)
  * @returns            - RemoveAllWorktreesResult with per-worktree outcomes
  */
 export function removeAllWorktrees(
@@ -1443,8 +1502,10 @@ export function removeAllWorktrees(
 	repoRoot: string,
 	opId: string,
 	targetBranch?: string,
+	batchId?: string,
+	config?: OrchestratorConfig,
 ): RemoveAllWorktreesResult {
-	const worktrees = listWorktrees(prefix, repoRoot, opId);
+	const worktrees = listWorktrees(prefix, repoRoot, opId, batchId);
 	const outcomes: RemoveWorktreeOutcome[] = [];
 	const removed: WorktreeInfo[] = [];
 	const failed: RemoveWorktreeOutcome[] = [];
@@ -1485,6 +1546,30 @@ export function removeAllWorktrees(
 			outcomes.push(outcome);
 			failed.push(outcome);
 		}
+	}
+
+	// ── Container cleanup ────────────────────────────────────────
+	// After removing worktrees, attempt to remove empty batch container
+	// directories. Collect unique container paths from removed worktrees,
+	// then remove each one only if empty (partial failure safety).
+	const containerPaths = new Set<string>();
+	for (const wt of removed) {
+		const parentDir = resolve(wt.path, "..");
+		// Only consider directories that look like batch containers
+		// (i.e., parent is not the base worktree path itself)
+		const parentName = basename(parentDir);
+		if (parentName.startsWith(`${opId}-`)) {
+			containerPaths.add(parentDir);
+		}
+	}
+	// When batchId is explicitly provided, also add the expected container path
+	// even if no worktrees were found (cleanup of empty containers from prior runs)
+	if (batchId && config) {
+		const expectedContainer = generateBatchContainerPath(opId, batchId, repoRoot, config);
+		containerPaths.add(expectedContainer);
+	}
+	for (const containerPath of containerPaths) {
+		removeBatchContainerIfEmpty(containerPath);
 	}
 
 	return {
@@ -1879,6 +1964,20 @@ export function forceCleanupWorktree(
 				branch,
 				error: deleteResult.stderr,
 			});
+		}
+	}
+
+	// Step 4: Attempt to remove the batch container directory if empty
+	// The worktree path is {basePath}/{opId}-{batchId}/lane-{N}, so the
+	// container is the parent directory.
+	const containerDir = resolve(worktreePath, "..");
+	const containerName = basename(containerDir);
+	// Only attempt container cleanup if the parent looks like a batch container
+	// (contains a hyphen, indicating {opId}-{batchId} naming)
+	if (containerName.includes("-")) {
+		const containerRemoved = removeBatchContainerIfEmpty(containerDir);
+		if (containerRemoved) {
+			execLog("cleanup", `lane-${laneNumber}`, `removed empty batch container`, { path: containerDir });
 		}
 	}
 }

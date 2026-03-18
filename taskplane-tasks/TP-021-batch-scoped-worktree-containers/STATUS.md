@@ -38,13 +38,13 @@
 ---
 
 ### Step 2: Update Worktree Listing and Cleanup
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add optional `batchId` parameter to `listWorktrees()` — when provided, scope discovery to only `{opId}-{batchId}/lane-{N}` entries (batch isolation); when omitted, retain current all-operator behavior (backward compat). Preserve legacy flat-path matching for transition support.
-- [ ] Add optional `batchId` parameter to `removeAllWorktrees()` — pass through to `listWorktrees()` for batch-scoped cleanup. After removing worktrees, attempt to remove the empty batch container directory (only if it exists and is empty; never force-remove non-empty containers).
-- [ ] Add `removeBatchContainerIfEmpty()` helper — safely removes `{basePath}/{opId}-{batchId}/` only when empty. Used by `removeAllWorktrees()` after per-worktree removals. No-op on partial failure (non-empty dir).
-- [ ] Update `forceCleanupWorktree()` to also attempt container cleanup after force-removing a worktree (per-container, empty-only check)
-- [ ] Add Step 3 dependency note: `resume.ts` must be updated when list/remove signatures change (R005 item)
+- [x] Add optional `batchId` parameter to `listWorktrees()` — when provided, scope discovery to only `{opId}-{batchId}/lane-{N}` entries (batch isolation); when omitted, retain current all-operator behavior (backward compat). Preserve legacy flat-path matching for transition support.
+- [x] Add optional `batchId` parameter to `removeAllWorktrees()` — pass through to `listWorktrees()` for batch-scoped cleanup. After removing worktrees, attempt to remove the empty batch container directory (only if it exists and is empty; never force-remove non-empty containers).
+- [x] Add `removeBatchContainerIfEmpty()` helper — safely removes `{basePath}/{opId}-{batchId}/` only when empty. Used by `removeAllWorktrees()` after per-worktree removals. No-op on partial failure (non-empty dir).
+- [x] Update `forceCleanupWorktree()` to also attempt container cleanup after force-removing a worktree (per-container, empty-only check)
+- [x] Add Step 3 dependency note: `resume.ts` must be updated when list/remove signatures change (R005 item)
 
 ---
 
@@ -55,6 +55,7 @@
 - [ ] Update `engine.ts` worktree reset and cleanup
 - [ ] Update `merge.ts` to use `generateMergeWorktreePath()`
 - [ ] Update `execution.ts` if needed
+- [ ] Update `resume.ts` callers of `listWorktrees()` and `removeAllWorktrees()` to pass `batchId` for batch-scoped operations (R005 dependency)
 
 ---
 
