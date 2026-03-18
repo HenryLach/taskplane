@@ -1427,7 +1427,8 @@ describe("18. Advanced section discoverability", () => {
 
 		// These are editable and should NOT appear in Advanced:
 		expect(paths).not.toContain("orchestrator.orchestrator.maxLanes");
-		expect(paths).not.toContain("orchestrator.orchestrator.spawnMode");
+		// orchestrator.orchestrator.spawnMode is intentionally NOT editable —
+		// /orch always requires tmux. It appears in Advanced as read-only.
 		expect(paths).not.toContain("taskRunner.worker.model");
 		expect(paths).not.toContain("orchestrator.failure.stallTimeout");
 		expect(paths).not.toContain("orchestrator.monitoring.pollInterval");
