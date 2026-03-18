@@ -38,14 +38,14 @@
 ---
 
 ### Step 2: Implement Integration Logic
-**Status:** 🟡 In Progress (R006 revisions)
+**Status:** ✅ Complete
 
 - [x] Resolve orch branch + baseBranch: (1) try loadBatchState → use orchBranch/baseBranch from state, (2) if null use positional `<orch-branch>` arg, (3) if neither list candidate `orch/*` branches and guide user. Handle StateFileError exceptions (IO/parse/schema) with user-facing messages.
 - [x] Branch safety check: getCurrentBranch(repoRoot) with detached HEAD null-check, compare to baseBranch (or infer baseBranch from current branch when state unavailable), --force bypass. All git/state reads use execCtx!.repoRoot.
 - [x] Pre-integration summary: show orch branch name, baseBranch, commits ahead, files changed via git rev-list/diff --stat
-- [ ] R006: Add `phase === "completed"` validation gate after loading batch state — if phase is not completed, show batchId + current phase and suggest waiting or running /orch-status, then return
-- [ ] R006: Fix duplicate R005 row in reviews table
-- [ ] R006: Add unit tests for handler-level logic — extract `resolveIntegrationContext()` pure helper and test: phase gating (completed vs executing/paused/failed), state fallback branches (no state + 0/1/many orch branches, StateFileError paths), detached HEAD, --force branch-safety bypass
+- [x] R006: Add `phase === "completed"` validation gate after loading batch state — if phase is not completed, show batchId + current phase and suggest waiting or running /orch-status, then return
+- [x] R006: Fix duplicate R005 row in reviews table
+- [x] R006: Add unit tests for handler-level logic — extract `resolveIntegrationContext()` pure helper and test: phase gating (completed vs executing/paused/failed), state fallback branches (no state + 0/1/many orch branches, StateFileError paths), detached HEAD, --force branch-safety bypass
 
 ---
 
@@ -88,8 +88,6 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
-| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
-| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 
 ---
@@ -140,6 +138,7 @@
 | 2026-03-18 17:06 | Worker iter 3 | done in 311s, ctx: 24%, tools: 49 |
 | 2026-03-18 17:09 | Review R006 | code Step 2: REVISE |
 | 2026-03-18 17:10 | Review R006 | code Step 2: REVISE |
+| 2026-03-18 iter3 | R006 revisions | Added phase gate (already present), fixed dup R005/R006 rows, extracted resolveIntegrationContext() pure helper with DI, refactored handler to use it, added 30 unit tests. 807/807 tests pass. |
 
 ---
 

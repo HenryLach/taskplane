@@ -106,6 +106,181 @@ export function parseIntegrateArgs(raw: string | undefined): IntegrateArgs | { e
 	};
 }
 
+// ── Integration Context Resolution ────────────────────────────────────
+
+/**
+ * Successful result from resolveIntegrationContext.
+ */
+export interface IntegrationContext {
+	orchBranch: string;
+	baseBranch: string;
+	batchId: string;
+	currentBranch: string;
+	/** Informational messages generated during resolution (e.g., auto-detect notices) */
+	notices: string[];
+}
+
+/**
+ * Error result from resolveIntegrationContext.
+ */
+export interface IntegrationContextError {
+	error: string;
+	/** "info" for non-error states (legacy mode), "error" for real failures */
+	severity: "info" | "error";
+}
+
+/**
+ * Dependencies injected into resolveIntegrationContext for testability.
+ */
+export interface IntegrationDeps {
+	loadBatchState: () => PersistedBatchState | null;
+	getCurrentBranch: () => string | null;
+	listOrchBranches: () => string[];
+	orchBranchExists: (branch: string) => boolean;
+}
+
+/**
+ * Pure function to resolve all context needed for /orch-integrate.
+ *
+ * Resolution order:
+ * 1. Try loading persisted batch state → extract orchBranch/baseBranch
+ * 2. If state unavailable, use positional CLI arg
+ * 3. If neither, scan for orch/* branches
+ *
+ * Also performs: phase gating, legacy mode detection, branch existence check,
+ * detached HEAD check, and branch safety validation.
+ *
+ * Returns either a fully-resolved IntegrationContext or an IntegrationContextError.
+ */
+export function resolveIntegrationContext(
+	parsed: IntegrateArgs,
+	deps: IntegrationDeps,
+): IntegrationContext | IntegrationContextError {
+	let orchBranch = "";
+	let baseBranch = "";
+	let batchId = "";
+	const notices: string[] = [];
+
+	// Source 1: Try loading batch state
+	try {
+		const state = deps.loadBatchState();
+		if (state) {
+			orchBranch = state.orchBranch ?? "";
+			baseBranch = state.baseBranch ?? "";
+			batchId = state.batchId;
+
+			// Phase gate: batch must be completed before integration
+			if (state.phase !== "completed") {
+				return {
+					error:
+						`⏳ Batch ${batchId} is currently in "${state.phase}" phase.\n` +
+						`Integration requires a completed batch.\n` +
+						`Run /orch-status to check progress, or wait for the batch to finish.`,
+					severity: "info",
+				};
+			}
+
+			// Legacy merge mode check
+			if (!orchBranch) {
+				return {
+					error:
+						`ℹ️ Batch ${batchId} used legacy merge mode — work was already merged directly into ${baseBranch || "the base branch"}.\n` +
+						`There is no separate orch branch to integrate.`,
+					severity: "info",
+				};
+			}
+		}
+	} catch (err: unknown) {
+		// Capture the error but don't return yet — user may have provided a branch arg
+		const msg = err instanceof StateFileError
+			? (err.code === "STATE_FILE_IO_ERROR"
+				? `Could not read batch state file: ${err.message}`
+				: err.code === "STATE_FILE_PARSE_ERROR"
+					? `Batch state file contains invalid JSON: ${err.message}`
+					: `Batch state file has invalid schema: ${err.message}`)
+			: `Unexpected error loading batch state: ${(err as Error).message}`;
+		if (!parsed.orchBranchArg) {
+			return {
+				error: `⚠️ ${msg}\nYou can specify the orch branch directly: /orch-integrate <orch-branch>`,
+				severity: "error",
+			};
+		}
+		notices.push(`⚠️ ${msg} — using provided branch arg instead.`);
+	}
+
+	// Source 2: CLI positional branch arg overrides or fills in
+	if (parsed.orchBranchArg) {
+		orchBranch = parsed.orchBranchArg;
+	}
+
+	// Source 3: Neither state nor arg — scan for orch/* branches
+	if (!orchBranch) {
+		const candidates = deps.listOrchBranches();
+		if (candidates.length === 0) {
+			return {
+				error:
+					"❌ No completed batch found and no orch branches exist.\n" +
+					"Run /orch first to create a batch, or specify a branch: /orch-integrate <orch-branch>",
+				severity: "error",
+			};
+		}
+		if (candidates.length === 1) {
+			orchBranch = candidates[0];
+			notices.push(`ℹ️ No batch state found. Auto-detected orch branch: ${orchBranch}`);
+		} else {
+			return {
+				error:
+					`❌ No batch state found and multiple orch branches exist:\n` +
+					candidates.map(b => `  • ${b}`).join("\n") +
+					`\n\nSpecify which branch to integrate: /orch-integrate <orch-branch>`,
+				severity: "error",
+			};
+		}
+	}
+
+	// Verify orch branch exists
+	if (!deps.orchBranchExists(orchBranch)) {
+		return {
+			error: `❌ Branch "${orchBranch}" does not exist locally.\nCheck the branch name and try again.`,
+			severity: "error",
+		};
+	}
+
+	// Detached HEAD check
+	const currentBranch = deps.getCurrentBranch();
+	if (currentBranch === null) {
+		return {
+			error:
+				"❌ HEAD is detached — cannot integrate.\n" +
+				"Check out a branch first (e.g., `git checkout main`), then retry.",
+			severity: "error",
+		};
+	}
+
+	// Infer baseBranch from current branch when state is unavailable
+	if (!baseBranch) {
+		baseBranch = currentBranch;
+	}
+
+	// Branch safety: current branch must match baseBranch (unless --force)
+	if (currentBranch !== baseBranch && !parsed.force) {
+		return {
+			error:
+				`⚠️ Batch was started from ${baseBranch}, but you're on ${currentBranch}.\n` +
+				`Switch to ${baseBranch} first, or use /orch-integrate --force to skip this check.`,
+			severity: "error",
+		};
+	}
+
+	return {
+		orchBranch,
+		baseBranch,
+		batchId,
+		currentBranch,
+		notices,
+	};
+}
+
 // ── Extension ────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
@@ -745,143 +920,33 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// ── Step 2: Resolve orch branch + baseBranch ─────────────
+			// ── Step 2: Resolve integration context ──────────────────
 			const { repoRoot } = execCtx!;
-			let orchBranch: string = "";
-			let baseBranch: string = "";
-			let batchId: string = "";
-			let stateAvailable = false;
+			const resolution = resolveIntegrationContext(parsed, {
+				loadBatchState: () => loadBatchState(repoRoot),
+				getCurrentBranch: () => getCurrentBranch(repoRoot),
+				listOrchBranches: () => {
+					const result = runGit(["branch", "--list", "orch/*"], repoRoot);
+					return result.ok
+						? result.stdout.split("\n").map(b => b.replace(/^\*?\s+/, "").trim()).filter(Boolean)
+						: [];
+				},
+				orchBranchExists: (branch: string) => {
+					return runGit(["rev-parse", "--verify", `refs/heads/${branch}`], repoRoot).ok;
+				},
+			});
 
-			// Source 1: Try loading batch state
-			try {
-				const state = loadBatchState(repoRoot);
-				if (state) {
-					stateAvailable = true;
-					orchBranch = state.orchBranch ?? "";
-					baseBranch = state.baseBranch ?? "";
-					batchId = state.batchId;
-
-					// Validate: orchBranch must be non-empty (legacy merge mode check)
-					if (!orchBranch) {
-						ctx.ui.notify(
-							`ℹ️ Batch ${batchId} used legacy merge mode — work was already merged directly into ${baseBranch || "the base branch"}.\n` +
-							`There is no separate orch branch to integrate.`,
-							"info",
-						);
-						return;
-					}
-				}
-			} catch (err: unknown) {
-				if (err instanceof StateFileError) {
-					switch (err.code) {
-						case "STATE_FILE_IO_ERROR":
-							ctx.ui.notify(
-								`⚠️ Could not read batch state file: ${err.message}\n` +
-								`You can specify the orch branch directly: /orch-integrate <orch-branch>`,
-								"error",
-							);
-							if (!parsed.orchBranchArg) return;
-							break;
-						case "STATE_FILE_PARSE_ERROR":
-							ctx.ui.notify(
-								`⚠️ Batch state file contains invalid JSON: ${err.message}\n` +
-								`You can specify the orch branch directly: /orch-integrate <orch-branch>`,
-								"error",
-							);
-							if (!parsed.orchBranchArg) return;
-							break;
-						case "STATE_SCHEMA_INVALID":
-							ctx.ui.notify(
-								`⚠️ Batch state file has invalid schema: ${err.message}\n` +
-								`You can specify the orch branch directly: /orch-integrate <orch-branch>`,
-								"error",
-							);
-							if (!parsed.orchBranchArg) return;
-							break;
-					}
-				} else {
-					ctx.ui.notify(
-						`⚠️ Unexpected error loading batch state: ${(err as Error).message}\n` +
-						`You can specify the orch branch directly: /orch-integrate <orch-branch>`,
-						"error",
-					);
-					if (!parsed.orchBranchArg) return;
-				}
-			}
-
-			// Source 2: CLI positional branch arg overrides or fills in
-			if (parsed.orchBranchArg) {
-				orchBranch = parsed.orchBranchArg;
-				// When using branch arg without state, baseBranch is unknown —
-				// we'll infer it from the current branch
-			}
-
-			// Source 3: Neither state nor arg — scan for orch/* branches
-			if (!orchBranch) {
-				const branchResult = runGit(["branch", "--list", "orch/*"], repoRoot);
-				const candidates = branchResult.ok
-					? branchResult.stdout.split("\n").map(b => b.replace(/^\*?\s+/, "").trim()).filter(Boolean)
-					: [];
-				if (candidates.length === 0) {
-					ctx.ui.notify(
-						"❌ No completed batch found and no orch branches exist.\n" +
-						"Run /orch first to create a batch, or specify a branch: /orch-integrate <orch-branch>",
-						"error",
-					);
-					return;
-				}
-				if (candidates.length === 1) {
-					orchBranch = candidates[0];
-					ctx.ui.notify(
-						`ℹ️ No batch state found. Auto-detected orch branch: ${orchBranch}`,
-						"info",
-					);
-				} else {
-					ctx.ui.notify(
-						`❌ No batch state found and multiple orch branches exist:\n` +
-						candidates.map(b => `  • ${b}`).join("\n") +
-						`\n\nSpecify which branch to integrate: /orch-integrate <orch-branch>`,
-						"error",
-					);
-					return;
-				}
-			}
-
-			// Verify orch branch actually exists as a local branch
-			const orchBranchCheck = runGit(["rev-parse", "--verify", `refs/heads/${orchBranch}`], repoRoot);
-			if (!orchBranchCheck.ok) {
-				ctx.ui.notify(
-					`❌ Branch "${orchBranch}" does not exist locally.\n` +
-					`Check the branch name and try again.`,
-					"error",
-				);
+			if ("error" in resolution) {
+				const severity = (resolution as IntegrationContextError).severity;
+				ctx.ui.notify(resolution.error, severity === "info" ? "info" : "error");
 				return;
 			}
 
-			// ── Step 2: Branch safety check ──────────────────────────
-			const currentBranch = getCurrentBranch(repoRoot);
-			if (currentBranch === null) {
-				ctx.ui.notify(
-					"❌ HEAD is detached — cannot integrate.\n" +
-					"Check out a branch first (e.g., `git checkout main`), then retry.",
-					"error",
-				);
-				return;
-			}
+			const { orchBranch, baseBranch, batchId, currentBranch, notices } = resolution as IntegrationContext;
 
-			// Infer baseBranch from current branch when state is unavailable
-			if (!baseBranch) {
-				baseBranch = currentBranch;
-			}
-
-			// Branch safety: current branch must match baseBranch (unless --force)
-			if (currentBranch !== baseBranch && !parsed.force) {
-				ctx.ui.notify(
-					`⚠️ Batch was started from ${baseBranch}, but you're on ${currentBranch}.\n` +
-					`Switch to ${baseBranch} first, or use /orch-integrate --force to skip this check.`,
-					"error",
-				);
-				return;
+			// Show any notices from resolution (auto-detection messages, warnings)
+			for (const notice of notices) {
+				ctx.ui.notify(notice, "info");
 			}
 
 			// ── Step 2: Pre-integration summary ──────────────────────
