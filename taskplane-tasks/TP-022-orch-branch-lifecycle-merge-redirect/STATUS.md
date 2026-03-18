@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** L
 
@@ -22,6 +22,8 @@
 - [x] Verify TP-020 and TP-021 artifacts present
 - [x] Map baseBranch call sites → orchBranch migration decisions (log in Discoveries)
 - [x] Identify impacted test files for resumed-batch and merge coverage (orch-state-persistence, merge-repo-scoped, monorepo-compat-regression, worktree-lifecycle, orch-pure-functions)
+- [x] R002: Fill in explicit test file paths in Notes "Impacted Test Files" section
+- [x] R002: Deduplicate Reviews table and Execution Log rows
 
 ---
 
@@ -85,9 +87,10 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
-| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
-| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 
 ---
 
@@ -130,12 +133,12 @@
 | 2026-03-18 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-03-18 14:32 | Task started | Extension-driven execution |
 | 2026-03-18 14:32 | Step 0 started | Preflight |
-| 2026-03-18 14:32 | Task started | Extension-driven execution |
-| 2026-03-18 14:32 | Step 0 started | Preflight |
 | 2026-03-18 14:34 | Review R001 | plan Step 0: REVISE |
 | 2026-03-18 | Step 0 complete | All preflight items checked, baseBranch call sites mapped, test files identified |
-| 2026-03-18 14:34 | Review R001 | plan Step 0: REVISE |
 | 2026-03-18 14:37 | Worker iter 1 | done in 215s, ctx: 49%, tools: 40 |
+| 2026-03-18 14:39 | Review R002 | code Step 0: REVISE |
+| 2026-03-18 | R002 revisions | Fixed test file names in Notes, deduplicated Reviews/Execution Log tables |
+| 2026-03-18 14:40 | Review R002 | code Step 0: REVISE |
 
 ---
 
@@ -148,12 +151,12 @@
 ## Notes
 
 ### Impacted Test Files (Step 5 reference)
--  — baseBranch/orchBranch serialization, v1→v2 upconvert, round-trip tests
--  — resolveBaseBranch() tests (likely no changes needed)
--  — resolveBaseBranch, state serialization with baseBranch
--  — baseBranch in createWorktree calls (no change: worktree code is unchanged)
--  — orchBranch field in state fixtures
--  — merge flow tests (may need update for update-ref vs ff-only)
+- `extensions/tests/orch-state-persistence.test.ts` — baseBranch/orchBranch serialization, v1→v2 upconvert, round-trip tests
+- `extensions/tests/waves-repo-scoped.test.ts` — resolveBaseBranch() tests (likely no changes needed)
+- `extensions/tests/orch-pure-functions.test.ts` — resolveBaseBranch, state serialization with baseBranch
+- `extensions/tests/worktree-lifecycle.test.ts` — baseBranch in createWorktree calls (no change: worktree code is unchanged)
+- `extensions/tests/monorepo-compat-regression.test.ts` — orchBranch field in state fixtures
+- `extensions/tests/merge-repo-scoped.test.ts` — merge flow tests (may need update for update-ref vs ff-only)
 
 ### baseBranch → orchBranch Migration Summary
 - **engine.ts**: 3 sites migrate to orchBranch (executeWave, mergeWaveByRepo, post-merge reset). Phase 3 cleanup keeps baseBranch.
