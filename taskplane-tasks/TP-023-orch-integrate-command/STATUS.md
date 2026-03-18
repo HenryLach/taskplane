@@ -1,11 +1,11 @@
 # TP-023: `/orch-integrate` Command — Status
 
-**Current Step:** Step 2: Implement Integration Logic
+**Current Step:** Step 3: Implement Integration Modes
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -50,13 +50,15 @@
 ---
 
 ### Step 3: Implement Integration Modes
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Fast-forward (default)
-- [ ] Real merge (--merge)
-- [ ] PR mode (--pr)
-- [ ] Cleanup on success (delete orch branch, clean state)
-- [ ] Success summary
+- [ ] Extract `executeIntegration()` pure-ish helper with DI for git/gh ops; returns `IntegrationResult` with `{ success, integratedLocally, commitCount, message, error? }`. Mode-specific failure handling: ff diverged → suggest --merge/--pr; merge conflict → suggest resolve or --pr; push/gh failure → show stderr. No cleanup on any failure path.
+- [ ] Fast-forward mode: `git merge --ff-only {orchBranch}` — success sets integratedLocally=true; failure (exit code ≠ 0) returns error suggesting --merge or --pr
+- [ ] Merge mode: `git merge {orchBranch} --no-edit` — success sets integratedLocally=true; conflict/failure returns error with stderr
+- [ ] PR mode: `git push origin {orchBranch}` then `gh pr create --base {currentBranch} --head {orchBranch} --title "..." --fill` — success sets integratedLocally=false (branch must survive); push failure or gh failure returns error with stderr
+- [ ] Cleanup gated on integratedLocally===true only: delete local orch branch (`git branch -D`), delete batch state file. PR mode never cleans up. Any cleanup failure is non-fatal (warn, don't error).
+- [ ] Wire executeIntegration into handler, show success summary with commit count and mode-specific message
+- [ ] Add unit tests for executeIntegration: ff success, ff diverged, merge success, merge conflict, pr success, pr push-fail, pr gh-fail, cleanup only when integratedLocally, PR title fallback when batchId unavailable
 
 ---
 
@@ -89,6 +91,7 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ---
 
@@ -139,6 +142,10 @@
 | 2026-03-18 17:09 | Review R006 | code Step 2: REVISE |
 | 2026-03-18 17:10 | Review R006 | code Step 2: REVISE |
 | 2026-03-18 iter3 | R006 revisions | Added phase gate (already present), fixed dup R005/R006 rows, extracted resolveIntegrationContext() pure helper with DI, refactored handler to use it, added 30 unit tests. 807/807 tests pass. |
+| 2026-03-18 17:20 | Worker iter 3 | done in 628s, ctx: 32%, tools: 73 |
+| 2026-03-18 17:20 | Step 2 complete | Implement Integration Logic |
+| 2026-03-18 17:20 | Step 3 started | Implement Integration Modes |
+| 2026-03-18 17:22 | Review R007 | plan Step 3: REVISE |
 
 ---
 
