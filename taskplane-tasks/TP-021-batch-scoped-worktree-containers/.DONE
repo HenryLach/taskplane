@@ -1,0 +1,11 @@
+TP-021 complete.
+
+Batch-scoped worktree containers implemented:
+- generateBatchContainerPath() shared helper: {basePath}/{opId}-{batchId}/
+- generateWorktreePath() updated: {basePath}/{opId}-{batchId}/lane-{N}
+- generateMergeWorktreePath() added: {basePath}/{opId}-{batchId}/merge
+- listWorktrees() supports batch-scoped discovery (new nested + legacy flat patterns)
+- removeAllWorktrees() supports batch-scoped cleanup with container removal
+- All callers updated: engine.ts, waves.ts, merge.ts, resume.ts
+- 753/753 tests pass (21 test files)
+- Docs impact deferred to TP-024 (logged in CONTEXT.md tech debt)

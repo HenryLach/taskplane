@@ -76,9 +76,9 @@
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Check docs impact: assess `docs/reference/configuration/taskplane-settings.md` for stale worktree naming references; log disposition (updated or deferred to TP-024) in Discoveries
-- [ ] Discoveries logged
-- [ ] Verify all PROMPT.md completion criteria are satisfied (batch-scoped paths, merge in container, no collisions, all callers updated, all tests passing)
+- [x] Check docs impact: assess `docs/reference/configuration/taskplane-settings.md` for stale worktree naming references; log disposition (updated or deferred to TP-024) in Discoveries
+- [x] Discoveries logged
+- [x] Verify all PROMPT.md completion criteria are satisfied (batch-scoped paths, merge in container, no collisions, all callers updated, all tests passing — 753/753 tests pass)
 - [ ] `.DONE` created
 
 ---
@@ -127,6 +127,7 @@
 | `resume.ts` calls `listWorktrees()` at line 1295 and `removeAllWorktrees()` at line 1323 — confirmed as runtime-critical callers | Must update in Step 3 (R001 item) | resume.ts |
 | `listWorktrees()` currently matches `{prefix}-{opId}-{N}` basename pattern. New pattern must match `lane-{N}` inside `{opId}-{batchId}/` containers. Transition: must support both old flat pattern AND new nested pattern. | Step 2 implementation concern | worktree.ts |
 | Tests in `naming-collision.test.ts` assert `basename == "taskplane-wt-alice-1"` etc. These will break with new naming. Tests in `worktree-lifecycle.test.ts` assert `generateWorktreePath` output format. Both need migration in Step 4. | Test migration needed | tests |
+| `docs/reference/configuration/taskplane-settings.md` has stale worktree naming references: "Worktree Location" describes `{prefix}-{N}` and "Worktree Prefix" describes `{prefix}-{opId}-{N}`. New scheme is `{opId}-{batchId}/lane-{N}`. **Deferred to TP-024** (user-facing docs task) per PROMPT.md "Must Update: None (docs task TP-024 handles user-facing docs)". | Deferred to TP-024 | docs/reference/configuration/taskplane-settings.md |
 
 ---
 
