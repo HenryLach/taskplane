@@ -38,3 +38,5 @@ Taskplane is an AI agent orchestration system built as a pi package. It provides
 ## Technical Debt / Future Work
 
 _Items discovered during task execution are logged here by agents._
+
+- [ ] **Update worktree naming in taskplane-settings.md** — `docs/reference/configuration/taskplane-settings.md` still describes old `{prefix}-{opId}-{N}` naming. TP-021 changed to batch-scoped `{opId}-{batchId}/lane-{N}`. Deferred to TP-024. (discovered during TP-021)

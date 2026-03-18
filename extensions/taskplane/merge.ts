@@ -11,7 +11,7 @@ import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
-import { sleepSync } from "./worktree.ts";
+import { generateMergeWorktreePath, sleepSync } from "./worktree.ts";
 
 // ── Merge Implementation ─────────────────────────────────────────────
 
@@ -567,9 +567,10 @@ export function mergeWave(
 	// ── Create isolated merge worktree ──────────────────────────────
 	// Merging in a dedicated worktree prevents dirty-worktree failures
 	// caused by user edits or orchestrator-generated files in the main repo.
-	// Include opId to prevent collisions between concurrent operators.
+	// The merge worktree lives inside the batch container alongside lane worktrees:
+	// {basePath}/{opId}-{batchId}/merge
 	const tempBranch = `_merge-temp-${opId}-${batchId}`;
-	const mergeWorkDir = join(repoRoot, ".worktrees", `merge-workspace-${opId}`);
+	const mergeWorkDir = generateMergeWorktreePath(repoRoot, opId, batchId, config);
 
 	// Clean up stale merge worktree/branch from prior failed attempt
 	try {

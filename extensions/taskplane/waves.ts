@@ -1070,10 +1070,11 @@ export function allocateLanes(
 			// This should never happen if ensureLaneWorktrees and assignTasksToLanes
 			// agree on lane numbers, but handle defensively.
 			// Roll back all worktrees across all repos on this unexpected failure.
+			// Pass batchId + config for batch-scoped cleanup (only remove this batch's worktrees).
 			for (const groupKey of createdGroupKeys) {
 				const groupRepoId = repoIdForGroup.get(groupKey);
 				const groupRepoRoot = resolveRepoRoot(groupRepoId, repoRoot, workspaceConfig);
-				removeAllWorktrees(config.orchestrator.worktree_prefix, groupRepoRoot, opId);
+				removeAllWorktrees(config.orchestrator.worktree_prefix, groupRepoRoot, opId, undefined, batchId, config);
 			}
 			return {
 				success: false,

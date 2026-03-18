@@ -22,7 +22,7 @@ import { resolve, basename } from "path";
 // Direct imports from production modules
 import { sanitizeNameComponent, resolveOperatorId, resolveRepoSlug } from "../taskplane/naming.ts";
 import { generateTmuxSessionName, generateLaneId } from "../taskplane/waves.ts";
-import { generateBranchName, generateWorktreePath } from "../taskplane/worktree.ts";
+import { generateBranchName, generateWorktreePath, generateMergeWorktreePath, generateBatchContainerPath } from "../taskplane/worktree.ts";
 import { parseOrchSessionNames } from "../taskplane/persistence.ts";
 import type { OrchestratorConfig } from "../taskplane/types.ts";
 import { DEFAULT_ORCHESTRATOR_CONFIG } from "../taskplane/types.ts";
@@ -120,6 +120,64 @@ describe("2a — Collision Matrix", () => {
 			const path1 = generateWorktreePath(wtPrefix, 1, repoRoot, "alice");
 			const path2 = generateWorktreePath(wtPrefix, 2, repoRoot, "alice");
 			expect(path1).not.toBe(path2);
+		});
+	});
+
+	describe("Batch-scoped worktree paths are unique across operators and batches (TP-021)", () => {
+		it("different opId produces different batch-scoped worktree paths", () => {
+			const repoRoot = "/home/user/project";
+			const pathA = generateWorktreePath(wtPrefix, lane, repoRoot, "alice", undefined, batchId);
+			const pathB = generateWorktreePath(wtPrefix, lane, repoRoot, "bob", undefined, batchId);
+			expect(pathA).not.toBe(pathB);
+			expect(basename(resolve(pathA))).toBe("lane-1");
+			expect(basename(resolve(pathB))).toBe("lane-1");
+			// Container dirs differ
+			expect(basename(resolve(pathA, ".."))).toBe(`alice-${batchId}`);
+			expect(basename(resolve(pathB, ".."))).toBe(`bob-${batchId}`);
+		});
+
+		it("same operator, different batchIds produce different container paths", () => {
+			const repoRoot = "/home/user/project";
+			const pathA = generateWorktreePath(wtPrefix, lane, repoRoot, "alice", undefined, "20260315T120000");
+			const pathB = generateWorktreePath(wtPrefix, lane, repoRoot, "alice", undefined, "20260315T120001");
+			expect(pathA).not.toBe(pathB);
+			expect(basename(resolve(pathA, ".."))).toBe("alice-20260315T120000");
+			expect(basename(resolve(pathB, ".."))).toBe("alice-20260315T120001");
+		});
+
+		it("same operator, same batch, different lanes produce unique paths", () => {
+			const repoRoot = "/home/user/project";
+			const path1 = generateWorktreePath(wtPrefix, 1, repoRoot, "alice", undefined, batchId);
+			const path2 = generateWorktreePath(wtPrefix, 2, repoRoot, "alice", undefined, batchId);
+			expect(path1).not.toBe(path2);
+			expect(basename(resolve(path1))).toBe("lane-1");
+			expect(basename(resolve(path2))).toBe("lane-2");
+			// Same container
+			expect(basename(resolve(path1, ".."))).toBe(basename(resolve(path2, "..")));
+		});
+
+		it("merge worktree path is unique from lane paths in same batch", () => {
+			const repoRoot = "/home/user/project";
+			const lanePath = generateWorktreePath(wtPrefix, lane, repoRoot, "alice", undefined, batchId);
+			const mergePath = generateMergeWorktreePath(repoRoot, "alice", batchId);
+			expect(lanePath).not.toBe(mergePath);
+			expect(basename(resolve(mergePath))).toBe("merge");
+			// Same container
+			expect(basename(resolve(lanePath, ".."))).toBe(basename(resolve(mergePath, "..")));
+		});
+
+		it("merge worktree paths differ across operators", () => {
+			const repoRoot = "/home/user/project";
+			const mergeA = generateMergeWorktreePath(repoRoot, "alice", batchId);
+			const mergeB = generateMergeWorktreePath(repoRoot, "bob", batchId);
+			expect(mergeA).not.toBe(mergeB);
+		});
+
+		it("merge worktree paths differ across batches", () => {
+			const repoRoot = "/home/user/project";
+			const merge1 = generateMergeWorktreePath(repoRoot, "alice", "20260315T120000");
+			const merge2 = generateMergeWorktreePath(repoRoot, "alice", "20260315T120001");
+			expect(merge1).not.toBe(merge2);
 		});
 	});
 
@@ -286,6 +344,49 @@ describe("2a — Collision Matrix", () => {
 
 			// Merge workspace dirs: unique per operator
 			expect(mergeWorkDirs.size).toBe(operators.length);
+		});
+
+		it("batch-scoped worktree paths are unique across op × batch × lane (TP-021)", () => {
+			const operators = ["alice", "bob"];
+			const batches = ["20260315T120000", "20260315T120001"];
+			const lanes = [1, 2];
+			const repoRoot = "/home/user/project";
+
+			const batchWorktrees = new Set<string>();
+			const batchMergePaths = new Set<string>();
+			const batchContainers = new Set<string>();
+
+			for (const op of operators) {
+				for (const batch of batches) {
+					// Container path (per: op × batch)
+					const container = generateBatchContainerPath(op, batch, repoRoot);
+					batchContainers.add(container);
+
+					// Merge worktree (per: op × batch)
+					const mergePath = generateMergeWorktreePath(repoRoot, op, batch);
+					batchMergePaths.add(mergePath);
+
+					for (const lane of lanes) {
+						// Batch-scoped lane worktree (per: op × batch × lane)
+						const wtPath = generateWorktreePath(wtPrefix, lane, repoRoot, op, undefined, batch);
+						batchWorktrees.add(wtPath);
+					}
+				}
+			}
+
+			// Batch-scoped worktrees: op(2) × batch(2) × lane(2) = 8
+			expect(batchWorktrees.size).toBe(operators.length * batches.length * lanes.length);
+
+			// Batch containers: op(2) × batch(2) = 4
+			expect(batchContainers.size).toBe(operators.length * batches.length);
+
+			// Merge worktree paths: op(2) × batch(2) = 4
+			expect(batchMergePaths.size).toBe(operators.length * batches.length);
+
+			// Merge paths should not collide with any lane paths
+			for (const mp of batchMergePaths) {
+				expect(batchWorktrees.has(mp)).toBe(false);
+			}
 		});
 	});
 
@@ -605,7 +706,7 @@ describe("2c — Human-Readability Acceptance", () => {
 			expect(tokens[3]).toBe("1");
 		});
 
-		it("Worktree paths: prefix → opId → N", () => {
+		it("Worktree paths (legacy): prefix → opId → N", () => {
 			const wtPath = generateWorktreePath(wtPrefix, 1, "/home/user/project", opId);
 			const wtBasename = basename(resolve(wtPath));
 			expect(wtBasename).toBe("taskplane-wt-henrylach-1");
@@ -614,6 +715,24 @@ describe("2c — Human-Readability Acceptance", () => {
 			expect(tokens.slice(0, 2).join("-")).toBe("taskplane-wt"); // prefix
 			expect(tokens[2]).toBe("henrylach");                       // opId
 			expect(tokens[3]).toBe("1");                               // lane number
+		});
+
+		it("Worktree paths (batch-scoped): container = opId-batchId, basename = lane-N", () => {
+			const batchIdVal = "20260315T120000";
+			const wtPath = generateWorktreePath(wtPrefix, 1, "/home/user/project", opId, undefined, batchIdVal);
+			const wtBasename = basename(resolve(wtPath));
+			expect(wtBasename).toBe("lane-1");
+			const containerName = basename(resolve(wtPath, ".."));
+			expect(containerName).toBe(`${opId}-${batchIdVal}`);
+		});
+
+		it("Merge worktree paths: container = opId-batchId, basename = merge", () => {
+			const batchIdVal = "20260315T120000";
+			const mergePath = generateMergeWorktreePath("/home/user/project", opId, batchIdVal);
+			const mergeBasename = basename(resolve(mergePath));
+			expect(mergeBasename).toBe("merge");
+			const containerName = basename(resolve(mergePath, ".."));
+			expect(containerName).toBe(`${opId}-${batchIdVal}`);
 		});
 
 		it("Branch names: task/ → opId → lane → N → batchId", () => {
@@ -734,9 +853,21 @@ describe("2c — Human-Readability Acceptance", () => {
 				.toBe("_merge-temp-henrylach-20260308T214300");
 		});
 
-		it("Worktree path basename example", () => {
+		it("Worktree path basename example (legacy)", () => {
 			const wtPath = generateWorktreePath("taskplane-wt", 1, "/home/user/project", "henrylach");
 			expect(basename(resolve(wtPath))).toBe("taskplane-wt-henrylach-1");
+		});
+
+		it("Worktree path example (batch-scoped, TP-021)", () => {
+			const wtPath = generateWorktreePath("taskplane-wt", 1, "/home/user/project", "henrylach", undefined, "20260308T214300");
+			expect(basename(resolve(wtPath))).toBe("lane-1");
+			expect(basename(resolve(wtPath, ".."))).toBe("henrylach-20260308T214300");
+		});
+
+		it("Merge worktree path example (TP-021)", () => {
+			const mergePath = generateMergeWorktreePath("/home/user/project", "henrylach", "20260308T214300");
+			expect(basename(resolve(mergePath))).toBe("merge");
+			expect(basename(resolve(mergePath, ".."))).toBe("henrylach-20260308T214300");
 		});
 
 		it("Lane ID — repo mode unchanged", () => {
