@@ -11,17 +11,17 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Read `extension.ts` — command registration patterns
 - [x] Read `persistence.ts` — batch state loading
 - [x] Read `git.ts` — git helpers
 - [x] Verify TP-022 artifacts present
 - [x] R001: Document TP-022 invariants, failure modes, and test intent in Discoveries
-- [ ] R002: Document state-lifetime contract (state deleted after clean completion) and design decision for /orch-integrate
-- [ ] R002: Map concrete test files for command registration/parsing and branch-safety
-- [ ] R002: Fix malformed review table and deduplicate execution log entries
-- [ ] R002: Document --merge + --pr conflict handling decision
+- [x] R002: Document state-lifetime contract (state deleted after clean completion) and design decision for /orch-integrate
+- [x] R002: Map concrete test files for command registration/parsing and branch-safety
+- [x] R002: Fix malformed review table and deduplicate execution log entries
+- [x] R002: Document --merge + --pr conflict handling decision
 
 ---
 
