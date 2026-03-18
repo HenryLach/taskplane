@@ -1,11 +1,11 @@
 # TP-020: Orch-Managed Branch Schema & Config — Status
 
-**Current Step:** Step 1: Add `orchBranch` to Runtime + Persisted State
+**Current Step:** Step 2: Add `integration` to Orchestrator Config
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 1
-**Review Counter:** 2
-**Iteration:** 2
+**Review Counter:** 3
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -36,11 +36,12 @@
 ---
 
 ### Step 2: Add `integration` to Orchestrator Config
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Add `integration` to config interface and defaults in `types.ts`
-- [ ] Add to `config-schema.ts` validation
-- [ ] Add camelCase↔snake_case mapping in `config-loader.ts`
+- [ ] Add `integration: "manual" | "auto"` to legacy `OrchestratorConfig.orchestrator` in `types.ts` + default `"manual"` in `DEFAULT_ORCHESTRATOR_CONFIG`
+- [ ] Add `integration: "manual" | "auto"` to unified `OrchestratorCoreConfig` in `config-schema.ts` + default `"manual"` in `DEFAULT_ORCHESTRATOR_SECTION`
+- [ ] Add `integration` mapping in `toOrchestratorConfig()` in `config-loader.ts`
+- [ ] Add test coverage: extend adapter assertions in `project-config-loader.test.ts` for `integration` (default, override, YAML mapping)
 
 ---
 
@@ -76,6 +77,7 @@
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
 ---
@@ -106,6 +108,10 @@
 | 2026-03-18 03:28 | Step 1 started | Add `orchBranch` to Runtime + Persisted State |
 | 2026-03-18 03:31 | Review R002 | plan Step 1: REVISE |
 | 2026-03-18 03:31 | Review R002 | plan Step 1: REVISE |
+| 2026-03-18 03:37 | Worker iter 2 | done in 367s, ctx: 21%, tools: 65 |
+| 2026-03-18 03:37 | Step 1 complete | Add `orchBranch` to Runtime + Persisted State |
+| 2026-03-18 03:37 | Step 2 started | Add `integration` to Orchestrator Config |
+| 2026-03-18 03:39 | Review R003 | plan Step 2: REVISE |
 
 ---
 
