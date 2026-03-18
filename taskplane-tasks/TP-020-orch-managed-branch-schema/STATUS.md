@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 1
-**Review Counter:** 3
-**Iteration:** 3
+**Review Counter:** 4
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -48,7 +48,9 @@
 ### Step 3: Add Integration Toggle to Settings TUI
 **Status:** 🟨 In Progress
 
-- [ ] Add Integration toggle to Orchestrator section in `settings-tui.ts`
+- [ ] Add Integration field to Orchestrator section in `settings-tui.ts` with exact contract: configPath `orchestrator.orchestrator.integration`, label `Integration`, control `toggle`, layer `L1`, fieldType `enum`, values `["manual", "auto"]`, description per PROMPT.md
+- [ ] Verify field is editable L1 toggle and COVERED_PATHS auto-includes it (no manual edits needed)
+- [ ] Verify `integration` does NOT appear in Advanced section (covered by SECTIONS → COVERED_PATHS rebuild)
 
 ---
 
@@ -79,6 +81,7 @@
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
+| R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
 |---|------|------|---------|------|
 
 ---
@@ -117,6 +120,10 @@
 | 2026-03-18 03:43 | Worker iter 3 | done in 141s, ctx: 26%, tools: 28 |
 | 2026-03-18 03:43 | Step 2 complete | Add `integration` to Orchestrator Config |
 | 2026-03-18 03:43 | Step 3 started | Add Integration Toggle to Settings TUI |
+| 2026-03-18 03:43 | Worker iter 3 | done in 269s, ctx: 18%, tools: 43 |
+| 2026-03-18 03:43 | Step 2 complete | Add `integration` to Orchestrator Config |
+| 2026-03-18 03:43 | Step 3 started | Add Integration Toggle to Settings TUI |
+| 2026-03-18 03:44 | Review R004 | plan Step 3: REVISE |
 
 ---
 
