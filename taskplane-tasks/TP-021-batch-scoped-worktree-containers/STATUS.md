@@ -25,15 +25,15 @@
 ---
 
 ### Step 1: Refactor Worktree Path Generation
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Add `generateBatchContainerPath()` shared helper: `{basePath}/{opId}-{batchId}` using `resolveWorktreeBasePath()` (preserves sibling/subdirectory mode)
 - [x] Update `generateWorktreePath()` signature to include `batchId`, output `{basePath}/{opId}-{batchId}/lane-{N}` via the shared helper
 - [x] Add `generateMergeWorktreePath()` using the same shared helper: `{basePath}/{opId}-{batchId}/merge` (config-aware, base-path-consistent)
 - [x] Verify `CreateWorktreeOptions` already has `batchId` (no schema change needed — R003 item)
 - [x] Update `createWorktree()` to pass `batchId` to `generateWorktreePath()` and ensure container dir is auto-created (`mkdirSync recursive`)
-- [ ] R004-1: Add transitional matching in `listWorktrees()` for new nested `lane-{N}` pattern inside `{opId}-{batchId}/` containers (while retaining legacy flat pattern matching)
-- [ ] R004-2: Move `ensureBatchContainerDir()` call in `createWorktree()` to after pre-checks (before `git worktree add`), preventing empty container dirs on validation failure
+- [x] R004-1: Add transitional matching in `listWorktrees()` for new nested `lane-{N}` pattern inside `{opId}-{batchId}/` containers (while retaining legacy flat pattern matching)
+- [x] R004-2: Move `ensureBatchContainerDir()` call in `createWorktree()` to after pre-checks (before `git worktree add`), preventing empty container dirs on validation failure
 
 ---
 

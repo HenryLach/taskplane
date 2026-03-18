@@ -302,11 +302,6 @@ export function createWorktree(opts: CreateWorktreeOptions, repoRoot: string): W
 	const branch = generateBranchName(laneNumber, batchId, opId);
 	const worktreePath = generateWorktreePath(prefix, laneNumber, repoRoot, opId, config, batchId);
 
-	// ── Ensure batch container directory exists ──────────────────
-	// The container is the parent of the lane directory (e.g., {basePath}/{opId}-{batchId}/)
-	const containerDir = resolve(worktreePath, "..");
-	ensureBatchContainerDir(containerDir);
-
 	// ── Pre-check 1: Validate base branch exists ─────────────────
 	const baseBranchCheck = runGit(
 		["rev-parse", "--verify", `refs/heads/${baseBranch}`],
@@ -364,6 +359,12 @@ export function createWorktree(opts: CreateWorktreeOptions, repoRoot: string): W
 			`Delete it: git branch -D ${branch}`,
 		);
 	}
+
+	// ── Ensure batch container directory exists ──────────────────
+	// Placed after pre-checks so no empty container is left behind on
+	// validation failure (R004 review feedback).
+	const containerDir = resolve(worktreePath, "..");
+	ensureBatchContainerDir(containerDir);
 
 	// ── Create worktree ──────────────────────────────────────────
 	const createResult = runGit(
@@ -1162,6 +1163,7 @@ export function listWorktrees(prefix: string, repoRoot: string, opId: string): W
 	const entries = parseWorktreeList(repoRoot);
 	const results: WorktreeInfo[] = [];
 
+	// ── Legacy flat patterns ─────────────────────────────────────
 	// Primary pattern: {prefix}-{opId}-{N}
 	// Example: "taskplane-wt-henrylach-1"
 	const primaryPattern = new RegExp(`^${escapeRegex(prefix)}-${escapeRegex(opId)}-(\\d+)$`);
@@ -1172,13 +1174,38 @@ export function listWorktrees(prefix: string, repoRoot: string, opId: string): W
 		? new RegExp(`^${escapeRegex(prefix)}-(\\d+)$`)
 		: null;
 
+	// ── New batch-scoped nested pattern ──────────────────────────
+	// Basename: lane-{N}
+	// Parent directory: {opId}-{batchId} (e.g., "henrylach-20260308T111750")
+	// Full: {basePath}/{opId}-{batchId}/lane-{N}
+	const nestedLanePattern = /^lane-(\d+)$/;
+	const containerPattern = new RegExp(`^${escapeRegex(opId)}-\\S+$`);
+
 	for (const entry of entries) {
 		if (!entry.path) continue;
 
-		// Extract basename from the worktree path
-		const entryBasename = basename(resolve(entry.path));
+		const resolvedPath = resolve(entry.path);
+		const entryBasename = basename(resolvedPath);
 
-		// Try primary pattern first
+		// ── Try new nested pattern first ─────────────────────────
+		const nestedMatch = entryBasename.match(nestedLanePattern);
+		if (nestedMatch) {
+			// Verify the parent directory matches the operator's container pattern
+			const parentDir = basename(resolve(resolvedPath, ".."));
+			if (containerPattern.test(parentDir)) {
+				const laneNumber = parseInt(nestedMatch[1], 10);
+				if (!isNaN(laneNumber) && laneNumber >= 1) {
+					results.push({
+						path: resolvedPath,
+						branch: entry.branch || "",
+						laneNumber,
+					});
+					continue;
+				}
+			}
+		}
+
+		// ── Try legacy flat patterns ─────────────────────────────
 		let match = entryBasename.match(primaryPattern);
 		if (!match && legacyPattern) {
 			match = entryBasename.match(legacyPattern);
@@ -1189,7 +1216,7 @@ export function listWorktrees(prefix: string, repoRoot: string, opId: string): W
 		if (isNaN(laneNumber) || laneNumber < 1) continue;
 
 		results.push({
-			path: resolve(entry.path),
+			path: resolvedPath,
 			branch: entry.branch || "",
 			laneNumber,
 		});
