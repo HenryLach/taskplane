@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 2
 **Size:** M
 
@@ -25,13 +25,15 @@
 ---
 
 ### Step 1: Refactor Worktree Path Generation
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] Add `generateBatchContainerPath()` shared helper: `{basePath}/{opId}-{batchId}` using `resolveWorktreeBasePath()` (preserves sibling/subdirectory mode)
 - [x] Update `generateWorktreePath()` signature to include `batchId`, output `{basePath}/{opId}-{batchId}/lane-{N}` via the shared helper
 - [x] Add `generateMergeWorktreePath()` using the same shared helper: `{basePath}/{opId}-{batchId}/merge` (config-aware, base-path-consistent)
 - [x] Verify `CreateWorktreeOptions` already has `batchId` (no schema change needed — R003 item)
 - [x] Update `createWorktree()` to pass `batchId` to `generateWorktreePath()` and ensure container dir is auto-created (`mkdirSync recursive`)
+- [ ] R004-1: Add transitional matching in `listWorktrees()` for new nested `lane-{N}` pattern inside `{opId}-{batchId}/` containers (while retaining legacy flat pattern matching)
+- [ ] R004-2: Move `ensureBatchContainerDir()` call in `createWorktree()` to after pre-checks (before `git worktree add`), preventing empty container dirs on validation failure
 
 ---
 
@@ -82,6 +84,8 @@
 | R002 | code | Step 0 | APPROVE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | APPROVE | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -130,6 +134,10 @@
 | 2026-03-18 11:47 | Step 1 started | Refactor Worktree Path Generation |
 | 2026-03-18 11:49 | Review R003 | plan Step 1: APPROVE |
 | 2026-03-18 11:50 | Review R003 | plan Step 1: REVISE |
+| 2026-03-18 11:54 | Worker iter 2 | done in 230s, ctx: 26%, tools: 33 |
+| 2026-03-18 11:55 | Worker iter 2 | done in 327s, ctx: 32%, tools: 40 |
+| 2026-03-18 11:57 | Review R004 | code Step 1: REVISE |
+| 2026-03-18 11:58 | Review R004 | code Step 1: REVISE |
 
 ---
 
