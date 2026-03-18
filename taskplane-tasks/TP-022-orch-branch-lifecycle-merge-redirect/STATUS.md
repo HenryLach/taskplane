@@ -4,7 +4,7 @@
 **Status:** ✅ Step 4 Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 9
+**Review Counter:** 10
 **Iteration:** 5
 **Size:** L
 
@@ -71,7 +71,7 @@
 ---
 
 ### Step 4: Auto-Integration and Cleanup
-**Status:** ✅ Complete
+**Status:** 🔄 In Progress (R010 revisions)
 
 - [x] Add ORCH_MESSAGES helper for post-batch integration guidance (shared by engine.ts + resume.ts)
 - [x] Implement auto-integration in engine.ts Phase 3: gated ff of baseBranch to orchBranch (success → log+notify, diverged/detached/dirty/missing → warn+preserve orchBranch, never fail the batch)
@@ -79,6 +79,9 @@
 - [x] Update engine.ts completion notification to include orchBranch integration info
 - [x] Resume parity: mirror auto-integration + cleanup + completion messaging in resume.ts section 11
 - [x] Add Step 4 tests: auto-integration success, auto-integration divergence fallback, manual mode preserves orchBranch, completion message content, resume parity structural checks (tests 18-23 in orch-direct-implementation.test.ts, 753 tests pass)
+- [ ] R010: Fix resume.ts cleanup to resolve per-repo target branch in workspace mode instead of using global orchBranch — use repo-scoped resolution (same pattern as mergeWaveByRepo) so lane branches in secondary repos are correctly cleaned up
+- [ ] R010: Add test for resumed workspace-mode cleanup across multiple repos verifying lane branches are deleted against correct per-repo target branch
+- [ ] R010: Consider extracting shared auto-integration logic into helper to avoid engine.ts/resume.ts parity drift
 
 ---
 
@@ -117,6 +120,7 @@
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | APPROVE | .reviews/R009-plan-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 
 ---
 
@@ -215,6 +219,8 @@
 | 2026-03-18 | Step 4 impl | Resume parity verified (already implemented); added tests 18-23; 753 tests pass |
 | 2026-03-18 | Step 4 complete | Auto-Integration and Cleanup |
 | 2026-03-18 15:52 | Worker iter 5 | done in 408s, ctx: 45%, tools: 44 |
+| 2026-03-18 15:53 | Worker iter 5 | done in 630s, ctx: 44%, tools: 67 |
+| 2026-03-18 15:56 | Review R010 | code Step 4: REVISE |
 
 ---
 
