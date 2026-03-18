@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 8
+**Review Counter:** 9
 **Iteration:** 5
 **Size:** M
 
@@ -63,13 +63,13 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Run full vitest suite (`cd extensions && npx vitest run`) — record pass count, fix any failures
-- [ ] Verify orch-integrate.test.ts coverage: parseIntegrateArgs (defaults, modes, force, mutual exclusion, unknown flags, branch args, multi-positional), resolveIntegrationContext (phase gating, legacy, fallback, StateFileError, branch existence, detached HEAD, branch safety, force bypass), executeIntegration (ff success/fail, merge success/fail, pr success/push-fail/gh-fail, cleanup gating per mode)
-- [ ] Verify command registration + session-start list includes /orch-integrate in extension.ts
-- [ ] Verify error messages for: missing state, wrong phase, legacy orchBranch, detached HEAD, branch mismatch, ff diverged, merge conflict, push fail, gh fail
-- [ ] Fix all test failures if any
+- [x] Run full vitest suite (`cd extensions && npx vitest run`) — 828/828 tests pass, 22 test files
+- [x] Verify orch-integrate.test.ts coverage: 75/75 tests pass. parseIntegrateArgs (24 tests: defaults, modes, force, mutual exclusion, unknown flags, branch args, multi-positional, combined), resolveIntegrationContext (30 tests: phase gating incl. 7 non-completed phases, legacy merge mode, state→arg→scan fallback, StateFileError IO/parse/schema with+without arg fallback, branch existence, detached HEAD, branch safety same/different/force/inferred, happy path e2e), executeIntegration (21 tests: ff success/diverged/no-cleanup, merge success/conflict/no-cleanup, pr success/URL/push-order/push-fail/gh-fail/no-cleanup/title-fallback/title-batchId, cleanup ff+merge/branch-warn/state-warn/both-warn)
+- [x] Verify command registration + session-start list includes /orch-integrate in extension.ts — registered at line 1072, session-start at line 1282
+- [x] Verify error messages for: missing state ("No completed batch found"), wrong phase ("Integration requires a completed batch" for all 7 non-completed phases), legacy orchBranch ("legacy merge mode"), detached HEAD ("HEAD is detached"), branch mismatch ("Batch was started from"), ff diverged ("Fast-forward failed"+"diverged"+"--merge"+"--pr"), merge conflict ("Merge failed"+"conflicts"+"--pr"), push fail ("Failed to push"), gh fail ("PR creation failed"+"create the PR manually")
+- [x] Fix all test failures if any — no failures found, all 828/828 tests pass including 75 orch-integrate tests
 
 ---
 
@@ -96,6 +96,7 @@
 | R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | APPROVE | .reviews/R009-plan-step4.md |
 
 ---
 
@@ -162,9 +163,12 @@
 | 2026-03-18 17:34 | Step 3 complete | Implement Integration Modes |
 | 2026-03-18 17:34 | Step 4 started | Testing & Verification |
 | 2026-03-18 17:35 | Review R009 | plan Step 4: REVISE |
+| 2026-03-18 iter5 | R009 hydration | Expanded Step 4 with mode verification matrix, cleanup gating, command registration checks |
+| 2026-03-18 iter5 | Step 4 complete | Full vitest: 828/828 pass. orch-integrate.test.ts: 75/75 pass (24 parseIntegrateArgs + 30 resolveIntegrationContext + 21 executeIntegration). All error messages verified. Command registration at ext:1072, session-start at ext:1282. |
 | 2026-03-18 17:35 | Review R008 | code Step 3: APPROVE |
 | 2026-03-18 17:35 | Step 3 complete | Implement Integration Modes |
 | 2026-03-18 17:35 | Step 4 started | Testing & Verification |
+| 2026-03-18 17:38 | Review R009 | plan Step 4: APPROVE |
 
 ---
 
