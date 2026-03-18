@@ -73,10 +73,12 @@
 ### Step 4: Auto-Integration and Cleanup
 **Status:** 🟨 In Progress
 
-- [ ] Implement auto-integration (config-driven ff)
-- [ ] Preserve orch branch for manual integration
-- [ ] Update completion notification with integration instructions
-- [ ] Update cleanup to not delete orch branch
+- [ ] Add ORCH_MESSAGES helper for post-batch integration guidance (shared by engine.ts + resume.ts)
+- [ ] Implement auto-integration in engine.ts Phase 3: gated ff of baseBranch to orchBranch (success → log+notify, diverged/detached/dirty/missing → warn+preserve orchBranch, never fail the batch)
+- [ ] Update engine.ts cleanup: do NOT delete orchBranch; lane branches deleted as before; unmerged-branch protection uses orchBranch (lanes merged into orchBranch, not baseBranch)
+- [ ] Update engine.ts completion notification to include orchBranch integration info
+- [ ] Resume parity: mirror auto-integration + cleanup + completion messaging in resume.ts section 11
+- [ ] Add Step 4 tests: auto-integration success, auto-integration divergence fallback, manual mode preserves orchBranch, completion message content, resume parity structural checks
 
 ---
 
@@ -205,6 +207,9 @@
 | 2026-03-18 15:39 | Step 3 complete | Replace Fast-Forward with update-ref in Merge |
 | 2026-03-18 15:39 | Step 4 started | Auto-Integration and Cleanup |
 | 2026-03-18 15:43 | Review R009 | plan Step 4: REVISE |
+| 2026-03-18 15:44 | Worker iter 4 | done in 683s, ctx: 39%, tools: 53 |
+| 2026-03-18 15:44 | Step 3 complete | Replace Fast-Forward with update-ref in Merge |
+| 2026-03-18 15:44 | Step 4 started | Auto-Integration and Cleanup |
 
 ---
 
