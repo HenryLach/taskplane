@@ -62,14 +62,14 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Run existing test suite — confirm no regressions from Steps 1-3 (worktree-lifecycle, naming-collision, orch-pure-functions, full vitest)
-- [ ] Add batch-scoped isolation test: same opId, two different batchIds — `listWorktrees(batchId=A)` returns only A's lanes, `removeAllWorktrees(batchId=A)` does not touch B's lanes
-- [ ] Add transition compatibility test: legacy flat worktrees + new nested worktrees coexist; `listWorktrees()` without batchId finds both; `listWorktrees(batchId=X)` excludes legacy
-- [ ] Add merge path and cleanup edge-case tests: `generateMergeWorktreePath()` produces correct `{basePath}/{opId}-{batchId}/merge`; empty-container cleanup after worktree removal; no empty container left after pre-check failure
-- [ ] Verify subdirectory vs sibling mode still works with new batch-scoped naming (path assertions in both modes)
-- [ ] Fix all test failures — ZERO failures allowed in our changed test files
+- [x] Run existing test suite — confirm no regressions from Steps 1-3 (worktree-lifecycle, naming-collision, orch-pure-functions, full vitest)
+- [x] Add batch-scoped isolation test: same opId, two different batchIds — `listWorktrees(batchId=A)` returns only A's lanes, `removeAllWorktrees(batchId=A)` does not touch B's lanes
+- [x] Add transition compatibility test: legacy flat worktrees + new nested worktrees coexist; `listWorktrees()` without batchId finds both; `listWorktrees(batchId=X)` excludes legacy
+- [x] Add merge path and cleanup edge-case tests: `generateMergeWorktreePath()` produces correct `{basePath}/{opId}-{batchId}/merge`; empty-container cleanup after worktree removal; no empty container left after pre-check failure
+- [x] Verify subdirectory vs sibling mode still works with new batch-scoped naming (path assertions in both modes)
+- [x] Fix all test failures — ZERO failures allowed in our changed test files (fixed `removeBatchContainerIfEmpty` to use `rmdirSync` instead of `rmSync({recursive:false})` for empty-dir removal on Windows)
 
 ---
 

@@ -16,10 +16,13 @@
  *   5.4d — Integration tests for hasUnmergedCommits
  *   5.5 — Integration tests for create + remove lifecycle
  *   5.6 — Integration tests for bulk operations
+ *   5.7 — Batch-scoped isolation tests (TP-021)
+ *   5.8 — Transition compatibility tests (legacy flat + new nested)
+ *   5.9 — Merge path and cleanup edge cases (TP-021)
  */
 
 import { execSync } from "child_process";
-import { existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync, statSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync, readdirSync, statSync } from "fs";
 import { join, resolve, basename } from "path";
 import { tmpdir } from "os";
 
@@ -56,6 +59,12 @@ import {
 	// Branch protection
 	hasUnmergedCommits,
 	preserveBranch,
+
+	// Batch container helpers (TP-021)
+	generateMergeWorktreePath,
+	generateBatchContainerPath,
+	removeBatchContainerIfEmpty,
+	ensureBatchContainerDir,
 } from "../task-orchestrator.ts";
 
 const isVitest = typeof globalThis.vi !== "undefined" || !!process.env.VITEST;
@@ -1226,6 +1235,267 @@ describe("5.6 removeAllWorktrees — bulk removal", () => {
 		assertEqual(result.failed.length, 0, "should have no failures");
 
 		cleanupTestRepo(repoDir);
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 5.7 — Batch-Scoped Isolation Tests (TP-021)
+// ══════════════════════════════════════════════════════════════════════
+
+describe("5.7 Batch-scoped isolation — same opId, different batchIds", () => {
+	let repoDir: string;
+
+	test("listWorktrees(batchId=A) returns only batch A's lanes", () => {
+		repoDir = initTestRepo("batch-isolation-list");
+		const prefix = basename(repoDir);
+
+		// Create worktrees in batch A
+		createWorktree({ laneNumber: 1, batchId: "batchA", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree({ laneNumber: 2, batchId: "batchA", baseBranch: "develop", opId: "test", prefix }, repoDir);
+
+		// Create worktrees in batch B (same opId, different batchId)
+		createWorktree({ laneNumber: 1, batchId: "batchB", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree({ laneNumber: 3, batchId: "batchB", baseBranch: "develop", opId: "test", prefix }, repoDir);
+
+		// List only batch A — should get exactly 2
+		const batchAWts = listWorktrees(prefix, repoDir, "test", "batchA");
+		assertEqual(batchAWts.length, 2, "batchA should have 2 worktrees");
+		assertEqual(batchAWts[0].laneNumber, 1, "batchA lane 1");
+		assertEqual(batchAWts[1].laneNumber, 2, "batchA lane 2");
+
+		// List only batch B — should get exactly 2
+		const batchBWts = listWorktrees(prefix, repoDir, "test", "batchB");
+		assertEqual(batchBWts.length, 2, "batchB should have 2 worktrees");
+		assertEqual(batchBWts[0].laneNumber, 1, "batchB lane 1");
+		assertEqual(batchBWts[1].laneNumber, 3, "batchB lane 3");
+
+		// List without batchId — should get all 4
+		const allWts = listWorktrees(prefix, repoDir, "test");
+		assertEqual(allWts.length, 4, "all batches should have 4 worktrees total");
+
+		cleanupTestRepo(repoDir);
+	});
+
+	test("removeAllWorktrees(batchId=A) does not touch batch B's lanes", () => {
+		repoDir = initTestRepo("batch-isolation-remove");
+		const prefix = basename(repoDir);
+
+		// Create worktrees in batch A
+		createWorktree({ laneNumber: 1, batchId: "batchA", baseBranch: "develop", opId: "test", prefix }, repoDir);
+		createWorktree({ laneNumber: 2, batchId: "batchA", baseBranch: "develop", opId: "test", prefix }, repoDir);
+
+		// Create worktrees in batch B
+		createWorktree({ laneNumber: 1, batchId: "batchB", baseBranch: "develop", opId: "test", prefix }, repoDir);
+
+		// Remove only batch A
+		const result = removeAllWorktrees(prefix, repoDir, "test", undefined, "batchA");
+		assertEqual(result.totalAttempted, 2, "should attempt 2 (batch A only)");
+		assertEqual(result.removed.length, 2, "should remove 2");
+
+		// Batch B should be untouched
+		const batchBWts = listWorktrees(prefix, repoDir, "test", "batchB");
+		assertEqual(batchBWts.length, 1, "batchB should still have 1 worktree");
+		assertEqual(batchBWts[0].laneNumber, 1, "batchB lane 1 untouched");
+
+		// Batch A should be empty
+		const batchAWts = listWorktrees(prefix, repoDir, "test", "batchA");
+		assertEqual(batchAWts.length, 0, "batchA should have 0 worktrees after removal");
+
+		cleanupTestRepo(repoDir);
+	});
+
+	test("batch container is removed when all lanes in it are removed", () => {
+		repoDir = initTestRepo("batch-container-cleanup");
+		const prefix = basename(repoDir);
+
+		// Create worktrees in batch A
+		const wt1 = createWorktree({ laneNumber: 1, batchId: "batchClean", baseBranch: "develop", opId: "test", prefix }, repoDir);
+
+		// The container dir should exist
+		const containerPath = resolve(wt1.path, "..");
+		assert(existsSync(containerPath), "batch container should exist before cleanup");
+
+		// Remove all worktrees in this batch
+		removeAllWorktrees(prefix, repoDir, "test", undefined, "batchClean");
+
+		// The container directory should be removed (empty after worktree removal)
+		assert(!existsSync(containerPath), "batch container should be removed after all worktrees cleaned up");
+
+		cleanupTestRepo(repoDir);
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 5.8 — Transition Compatibility Tests (legacy flat + new nested)
+// ══════════════════════════════════════════════════════════════════════
+
+describe("5.8 Transition compatibility — legacy flat and new nested coexistence", () => {
+	let repoDir: string;
+
+	test("listWorktrees() without batchId finds both legacy flat and new nested worktrees", () => {
+		repoDir = initTestRepo("compat-mixed");
+		const prefix = basename(repoDir);
+
+		// Create a new nested worktree (batch-scoped)
+		createWorktree({ laneNumber: 1, batchId: "new001", baseBranch: "develop", opId: "test", prefix }, repoDir);
+
+		// Manually create a legacy flat worktree: {basePath}/{prefix}-{opId}-{N}
+		const legacyPath = resolve(repoDir, ".worktrees", `${prefix}-test-5`);
+		execSync(`git worktree add -b task/test-lane-5-legacybatch "${legacyPath}" develop`, {
+			cwd: repoDir, encoding: "utf-8", stdio: "pipe",
+		});
+
+		// List without batchId — should find both
+		const allWts = listWorktrees(prefix, repoDir, "test");
+		assertEqual(allWts.length, 2, "should find both legacy and new worktrees");
+
+		// The new one has laneNumber 1, the legacy one has laneNumber 5
+		const lanes = allWts.map(w => w.laneNumber).sort((a, b) => a - b);
+		assertEqual(lanes[0], 1, "new nested worktree lane 1");
+		assertEqual(lanes[1], 5, "legacy flat worktree lane 5");
+
+		cleanupTestRepo(repoDir);
+	});
+
+	test("listWorktrees(batchId=X) does NOT pick up legacy flat worktrees", () => {
+		repoDir = initTestRepo("compat-no-legacy");
+		const prefix = basename(repoDir);
+
+		// Create a new nested worktree (batch-scoped)
+		createWorktree({ laneNumber: 1, batchId: "new002", baseBranch: "develop", opId: "test", prefix }, repoDir);
+
+		// Manually create a legacy flat worktree
+		const legacyPath = resolve(repoDir, ".worktrees", `${prefix}-test-7`);
+		execSync(`git worktree add -b task/test-lane-7-legacybatch2 "${legacyPath}" develop`, {
+			cwd: repoDir, encoding: "utf-8", stdio: "pipe",
+		});
+
+		// List with specific batchId — should only find the new one
+		const batchWts = listWorktrees(prefix, repoDir, "test", "new002");
+		assertEqual(batchWts.length, 1, "batch-scoped list should find only new worktrees");
+		assertEqual(batchWts[0].laneNumber, 1, "only the new nested worktree");
+
+		cleanupTestRepo(repoDir);
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 5.9 — Merge Path and Cleanup Edge Cases (TP-021)
+// ══════════════════════════════════════════════════════════════════════
+
+describe("5.9 generateMergeWorktreePath — correctness", () => {
+	test("produces {basePath}/{opId}-{batchId}/merge in subdirectory mode", () => {
+		const result = generateMergeWorktreePath("/tmp/repo", "henrylach", "20260308T111750");
+		const expected = resolve("/tmp/repo", ".worktrees", "henrylach-20260308T111750", "merge");
+		assertEqual(result, expected, "merge worktree path (subdirectory mode)");
+	});
+
+	test("produces {basePath}/{opId}-{batchId}/merge in sibling mode", () => {
+		const siblingConfig = { orchestrator: { worktree_location: "sibling" as const } } as any;
+		const result = generateMergeWorktreePath("/some/path/repo", "alice", "batch42", siblingConfig);
+		const expected = resolve("/some/path/repo", "..", "alice-batch42", "merge");
+		assertEqual(result, expected, "merge worktree path (sibling mode)");
+	});
+
+	test("merge path is co-located with lane paths in the same container", () => {
+		const repoRoot = "/tmp/test-repo";
+		const opId = "test";
+		const batchId = "20260318T100000";
+
+		const lanePath = generateWorktreePath("unused-prefix", 1, repoRoot, opId, undefined, batchId);
+		const mergePath = generateMergeWorktreePath(repoRoot, opId, batchId);
+
+		// Both should share the same parent (batch container)
+		const laneParent = resolve(lanePath, "..");
+		const mergeParent = resolve(mergePath, "..");
+		assertEqual(laneParent, mergeParent, "lane and merge worktrees share the same batch container");
+	});
+});
+
+describe("5.9 removeBatchContainerIfEmpty — edge cases", () => {
+	test("removes empty container directory", () => {
+		const tempDir = mkdtempSync(join(tmpdir(), "container-test-"));
+		const containerPath = join(tempDir, "test-batch-container");
+		mkdirSync(containerPath, { recursive: true });
+
+		assert(existsSync(containerPath), "container should exist before removal");
+		const removed = removeBatchContainerIfEmpty(containerPath);
+		assertEqual(removed, true, "should report container was removed");
+		assert(!existsSync(containerPath), "container should not exist after removal");
+
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	test("does NOT remove non-empty container", () => {
+		const tempDir = mkdtempSync(join(tmpdir(), "container-test-ne-"));
+		const containerPath = join(tempDir, "test-batch-container");
+		mkdirSync(containerPath, { recursive: true });
+		writeFileSync(join(containerPath, "leftover.txt"), "content");
+
+		const removed = removeBatchContainerIfEmpty(containerPath);
+		assertEqual(removed, false, "should NOT remove non-empty container");
+		assert(existsSync(containerPath), "container should still exist");
+
+		rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	test("returns false for non-existent path", () => {
+		const removed = removeBatchContainerIfEmpty("/tmp/nonexistent-container-path-12345");
+		assertEqual(removed, false, "should return false for nonexistent path");
+	});
+});
+
+describe("5.9 createWorktree — no empty container on pre-check failure", () => {
+	let repoDir: string;
+
+	test("pre-check failure (bad base branch) does NOT create empty container dir", () => {
+		repoDir = initTestRepo("no-empty-container");
+		const prefix = basename(repoDir);
+
+		// The container path that would be created
+		const containerPath = generateBatchContainerPath("test", "failbatch", repoDir);
+
+		// Attempt to create worktree with nonexistent base branch — should fail at pre-check 1
+		try {
+			createWorktree({
+				laneNumber: 1,
+				batchId: "failbatch",
+				baseBranch: "nonexistent-branch",
+				opId: "test",
+				prefix,
+			}, repoDir);
+			assert(false, "should have thrown");
+		} catch (err) {
+			assert(err instanceof WorktreeError, "should throw WorktreeError");
+			assertEqual((err as WorktreeError).code, "WORKTREE_INVALID_BASE", "error code");
+		}
+
+		// Container directory should NOT exist (it's created after pre-checks)
+		assert(!existsSync(containerPath), "container dir should NOT exist after pre-check failure");
+
+		cleanupTestRepo(repoDir);
+	});
+});
+
+describe("5.9 generateWorktreePath — subdirectory vs sibling with batch-scoped naming", () => {
+	test("subdirectory mode: {repoRoot}/.worktrees/{opId}-{batchId}/lane-{N}", () => {
+		const subdirConfig = { orchestrator: { worktree_location: "subdirectory" as const } } as any;
+		const result = generateWorktreePath("unused", 3, "/tmp/repo", "alice", subdirConfig, "batch99");
+		const expected = resolve("/tmp/repo", ".worktrees", "alice-batch99", "lane-3");
+		assertEqual(result, expected, "subdirectory batch-scoped path");
+	});
+
+	test("sibling mode: {repoRoot}/../{opId}-{batchId}/lane-{N}", () => {
+		const siblingConfig = { orchestrator: { worktree_location: "sibling" as const } } as any;
+		const result = generateWorktreePath("unused", 2, "/some/path/repo", "bob", siblingConfig, "batch42");
+		const expected = resolve("/some/path/repo", "..", "bob-batch42", "lane-2");
+		assertEqual(result, expected, "sibling batch-scoped path");
+	});
+
+	test("legacy fallback (no batchId) still uses old flat layout", () => {
+		const result = generateWorktreePath("taskplane-wt", 1, "/tmp/repo", "alice");
+		const expected = resolve("/tmp/repo", ".worktrees", "taskplane-wt-alice-1");
+		assertEqual(result, expected, "legacy flat layout when batchId omitted");
 	});
 });
 
