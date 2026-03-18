@@ -1,11 +1,11 @@
 # TP-023: `/orch-integrate` Command — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 9
-**Iteration:** 5
+**Review Counter:** 11
+**Iteration:** 6
 **Size:** M
 
 ---
@@ -74,9 +74,9 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Discoveries logged
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
@@ -97,6 +97,10 @@
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | APPROVE | .reviews/R009-plan-step4.md |
+| R010 | code | Step 4 | APPROVE | .reviews/R010-code-step4.md |
+| R011 | plan | Step 5 | APPROVE | .reviews/R011-plan-step5.md |
+| R010 | code | Step 4 | APPROVE | .reviews/R010-code-step4.md |
+| R011 | plan | Step 5 | APPROVE | .reviews/R011-plan-step5.md |
 
 ---
 
@@ -169,6 +173,16 @@
 | 2026-03-18 17:35 | Step 3 complete | Implement Integration Modes |
 | 2026-03-18 17:35 | Step 4 started | Testing & Verification |
 | 2026-03-18 17:38 | Review R009 | plan Step 4: APPROVE |
+| 2026-03-18 17:39 | Worker iter 5 | done in 232s, ctx: 22%, tools: 27 |
+| 2026-03-18 17:39 | Worker iter 5 | done in 76s, ctx: 18%, tools: 14 |
+| 2026-03-18 17:41 | Review R010 | code Step 4: APPROVE |
+| 2026-03-18 17:41 | Step 4 complete | Testing & Verification |
+| 2026-03-18 17:41 | Step 5 started | Documentation & Delivery |
+| 2026-03-18 17:42 | Review R011 | plan Step 5: APPROVE |
+| 2026-03-18 17:42 | Review R010 | code Step 4: APPROVE |
+| 2026-03-18 17:42 | Step 4 complete | Testing & Verification |
+| 2026-03-18 17:42 | Step 5 started | Documentation & Delivery |
+| 2026-03-18 17:43 | Review R011 | plan Step 5: APPROVE |
 
 ---
 
