@@ -1,11 +1,11 @@
 # TP-024: Orch-Managed Branch Documentation — Status
 
-**Current Step:** Step 2: Update Settings Reference
+**Current Step:** Step 3: Update README and Architecture
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 0
 **Review Counter:** 0
-**Iteration:** 3
+**Iteration:** 4
 **Size:** S
 
 ---
@@ -30,14 +30,14 @@
 ---
 
 ### Step 2: Update Settings Reference
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add Integration setting to Orchestrator section
+- [x] Add Integration setting to Orchestrator section
 
 ---
 
 ### Step 3: Update README and Architecture
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add `/orch-integrate` to README command table
 - [ ] Update orchestrator workflow description
@@ -91,6 +91,11 @@
 | 2026-03-18 17:49 | Worker iter 2 | done in 169s, ctx: 17%, tools: 30 |
 | 2026-03-18 17:49 | Step 1 complete | Add `/orch-integrate` to Commands Reference |
 | 2026-03-18 17:49 | Step 2 started | Update Settings Reference |
+| 2026-03-18 17:50 | Worker iter 3 | done in 194s, ctx: 18%, tools: 34 |
+| 2026-03-18 17:50 | Step 1 complete | Add `/orch-integrate` to Commands Reference |
+| 2026-03-18 17:50 | Step 2 started | Update Settings Reference |
+| 2026-03-18 17:50 | Step 2 complete | Update Settings Reference |
+| 2026-03-18 17:50 | Step 3 started | Update README and Architecture |
 
 ---
 
