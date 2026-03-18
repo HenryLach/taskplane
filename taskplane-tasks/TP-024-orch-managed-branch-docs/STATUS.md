@@ -1,6 +1,6 @@
 # TP-024: Orch-Managed Branch Documentation — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Add `/orch-integrate` to Commands Reference
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 0
@@ -21,7 +21,7 @@
 ---
 
 ### Step 1: Add `/orch-integrate` to Commands Reference
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add `/orch-integrate` entry with modes, safety check, examples
 - [ ] Update `/orch` entry for managed branch behavior
@@ -82,6 +82,9 @@
 | 2026-03-18 17:45 | Step 0 started | Preflight |
 | 2026-03-18 17:45 | Task started | Extension-driven execution |
 | 2026-03-18 17:45 | Step 0 started | Preflight |
+| 2026-03-18 17:47 | Worker iter 1 | done in 99s, ctx: 23%, tools: 26 |
+| 2026-03-18 17:47 | Step 0 complete | Preflight |
+| 2026-03-18 17:47 | Step 1 started | Add `/orch-integrate` to Commands Reference |
 
 ---
 
