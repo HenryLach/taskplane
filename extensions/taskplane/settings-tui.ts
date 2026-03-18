@@ -98,7 +98,8 @@ export const SECTIONS: SectionDef[] = [
 			{ configPath: "orchestrator.orchestrator.worktreeLocation", label: "Worktree Location", control: "toggle", layer: "L1", fieldType: "enum", values: ["sibling", "subdirectory"], description: "Where lane worktree directories are created" },
 			{ configPath: "orchestrator.orchestrator.worktreePrefix", label: "Worktree Prefix", control: "input", layer: "L1", fieldType: "string", description: "Prefix for worktree directory names" },
 			{ configPath: "orchestrator.orchestrator.batchIdFormat", label: "Batch ID Format", control: "toggle", layer: "L1", fieldType: "enum", values: ["timestamp", "sequential"], description: "Batch ID format for logs/branch naming" },
-			{ configPath: "orchestrator.orchestrator.spawnMode", label: "Spawn Mode", control: "toggle", layer: "L1+L2", fieldType: "enum", values: ["tmux", "subprocess"], prefsKey: "spawnMode", description: "How lane sessions are spawned" },
+			// spawn_mode removed from Orchestrator section — /orch always requires tmux.
+			// The user-facing spawn mode setting is under Worker (controls /task behavior).
 			{ configPath: "orchestrator.orchestrator.tmuxPrefix", label: "Tmux Prefix", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "tmuxPrefix", description: "Prefix for orchestrator tmux sessions" },
 			{ configPath: "orchestrator.orchestrator.operatorId", label: "Operator ID", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "operatorId", description: "Operator identifier (empty = auto-detect)" },
 		],
@@ -153,7 +154,7 @@ export const SECTIONS: SectionDef[] = [
 			{ configPath: "taskRunner.worker.model", label: "Worker Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "workerModel", description: "Worker model (empty = inherit session)" },
 			{ configPath: "taskRunner.worker.tools", label: "Worker Tools", control: "input", layer: "L1", fieldType: "string", description: "Worker tool allowlist" },
 			{ configPath: "taskRunner.worker.thinking", label: "Worker Thinking", control: "input", layer: "L1", fieldType: "string", description: "Worker thinking mode" },
-			{ configPath: "taskRunner.worker.spawnMode", label: "Worker Spawn Mode", control: "toggle", layer: "L1", fieldType: "enum", values: ["(inherit)", "subprocess", "tmux"], optional: true, description: "Worker spawn mode override (inherit = use orchestrator)" },
+			{ configPath: "taskRunner.worker.spawnMode", label: "Spawn Mode", control: "toggle", layer: "L1", fieldType: "enum", values: ["subprocess", "tmux"], description: "How /task spawns workers and reviewers. subprocess = child process (simpler), tmux = named sessions (attachable for debugging)" },
 		],
 	},
 	{
