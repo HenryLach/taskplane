@@ -79,7 +79,10 @@
 - [x] Update engine.ts completion notification to include orchBranch integration info
 - [x] Resume parity: mirror auto-integration + cleanup + completion messaging in resume.ts section 11
 - [x] Add Step 4 tests: auto-integration success, auto-integration divergence fallback, manual mode preserves orchBranch, completion message content, resume parity structural checks (tests 18-23 in orch-direct-implementation.test.ts, 753 tests pass)
-- [ ] R010: Fix resume.ts cleanup to resolve per-repo target branch in workspace mode instead of using global orchBranch — use repo-scoped resolution (same pattern as mergeWaveByRepo) so lane branches in secondary repos are correctly cleaned up
+- [ ] R010: Verify resume.ts cleanup already resolves per-repo target branch in workspace mode (check if already implemented)
+- [ ] R010: Gate auto-integration and manual guidance in engine.ts to terminal phases only (exclude paused/stopped)
+- [ ] R010: Gate auto-integration and manual guidance in resume.ts to terminal phases only (parity)
+- [ ] R010: Add regression tests — no auto-integration/guidance when phase is paused/stopped (engine + resume)
 - [ ] R010: Add test for resumed workspace-mode cleanup across multiple repos verifying lane branches are deleted against correct per-repo target branch
 - [ ] R010: Consider extracting shared auto-integration logic into helper to avoid engine.ts/resume.ts parity drift
 
@@ -120,6 +123,7 @@
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | APPROVE | .reviews/R009-plan-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 
 ---
@@ -221,6 +225,7 @@
 | 2026-03-18 15:52 | Worker iter 5 | done in 408s, ctx: 45%, tools: 44 |
 | 2026-03-18 15:53 | Worker iter 5 | done in 630s, ctx: 44%, tools: 67 |
 | 2026-03-18 15:56 | Review R010 | code Step 4: REVISE |
+| 2026-03-18 15:58 | Review R010 | code Step 4: REVISE |
 
 ---
 

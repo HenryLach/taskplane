@@ -3,18 +3,20 @@
 ### Verdict: REVISE
 
 ### Summary
-Step 4 implementation adds the intended integration messaging and auto-integration flow in both `engine.ts` and `resume.ts`, and test coverage was expanded for the new message helpers and integration paths. However, there is a workspace-mode cleanup regression in `resume.ts` that can leave lane branches undeleted in non-primary repos. This needs to be fixed before approval because it violates the “lane branches deleted as before” outcome.
+The Step 4 implementation is close: auto-integration logic is wired in both `engine.ts` and `resume.ts`, orch branch preservation messaging is added, and targeted tests pass (`npx vitest run tests/orch-direct-implementation.test.ts`). However, there is an important control-flow gap: integration/messaging can still run when a batch ends in non-terminal execution states (`paused`/`stopped`). That can mutate refs and emit “Batch complete” guidance when completion is explicitly suppressed.
 
 ### Issues Found
-1. **[resume.ts:1333-1342] [important]** — `resume.ts` now passes a single `targetBranch = batchState.orchBranch` to `removeAllWorktrees()` for **every** repo in `encounteredRepoRoots`. In workspace mode, per-repo merges are still performed against repo-resolved base branches (`merge.ts:1027-1051`, `waves.ts:575-588`), so secondary repos often do not have the orch branch. When that happens, branch preservation/deletion checks degrade to `TARGET_BRANCH_MISSING` and deletion is skipped (`worktree.ts:1102-1113`, `worktree.ts:838-844`), leaving stale lane branches.  
-   **Fix:** In resume cleanup, resolve the per-repo target branch (same rule used during allocate/merge), or delete by `lr.targetBranch` from persisted merge results per lane/repo instead of applying a single global target branch.
+1. **[extensions/taskplane/engine.ts:781-798, 803-807] [important]** — Auto-integration and manual integration guidance run without checking terminal phase. If a batch is `paused`/`stopped` with prior successful waves, this block can still advance `baseBranch` (auto mode) or emit `orchIntegrationManual` (“Batch complete...”) even though the code immediately treats the batch as non-terminal and suppresses completion messaging.  
+   **Fix:** Gate the Step 4 integration block to terminal outcomes only (e.g., `batchState.phase === "completed" || batchState.phase === "failed"`), or at minimum explicitly exclude `paused`/`stopped` before attempting integration and before emitting manual guidance.
+
+2. **[extensions/taskplane/resume.ts:1360-1376, 1380-1382] [important]** — Same phase-gating issue exists in resume parity path. A resumed batch ending in `paused`/`stopped` can still run auto-integration/manual guidance before non-terminal suppression.  
+   **Fix:** Apply the same terminal-phase gate in `resume.ts` for parity with `engine.ts`.
 
 ### Pattern Violations
-- Cleanup target selection in `resume.ts` is no longer consistent with the existing repo-scoped branch resolution pattern used by `mergeWaveByRepo()`.
+- Non-terminal state handling is inconsistent: completion messaging is correctly suppressed for `paused`/`stopped`, but integration side-effects/messages are not.
 
 ### Test Gaps
-- No test currently exercises resumed **workspace-mode** cleanup across multiple repos to verify lane branches are deleted/preserved against the correct per-repo target branch.
-- No regression test verifies behavior when a cleanup target branch is missing in a secondary repo after resume.
+- Missing regression tests asserting **no** auto-integration and **no** manual completion guidance when final phase is `paused` or `stopped` (for both engine and resume flows).
 
 ### Suggestions
-- Consider extracting shared auto-integration logic from `engine.ts`/`resume.ts` into a single helper to avoid future parity drift.
+- Optional maintainability improvement: deduplicate `attemptAutoIntegration` / `attemptAutoIntegrationResume` into a shared helper to reduce drift risk.
