@@ -2,7 +2,7 @@
  * Worktree CRUD, bulk ops, branch protection, preflight
  * @module orch/worktree
  */
-import { existsSync, readdirSync, realpathSync, rmSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, realpathSync, rmSync } from "fs";
 import { execSync } from "child_process";
 import { join, basename, resolve } from "path";
 
@@ -55,19 +55,39 @@ export function resolveWorktreeBasePath(
 }
 
 /**
+ * Generate the batch container directory name.
+ *
+ * Format: `{opId}-{batchId}`
+ * Example: `henrylach-20260308T111750`
+ *
+ * This is the directory that holds all lane worktrees and the merge
+ * worktree for a single batch.
+ *
+ * @param opId    - Operator identifier (sanitized, e.g., "henrylach")
+ * @param batchId - Batch ID timestamp (e.g. "20260308T111750")
+ */
+export function generateBatchContainerName(opId: string, batchId: string): string {
+	return `${opId}-${batchId}`;
+}
+
+/**
  * Generate worktree path based on config's worktree_location setting.
  *
- * Naming rule: basename = {prefix}-{opId}-{N}
- *   Sibling mode:      ../{prefix}-{opId}-{N}        (e.g. ../taskplane-wt-henrylach-1)
- *   Subdirectory mode: .worktrees/{prefix}-{opId}-{N} (e.g. .worktrees/taskplane-wt-henrylach-1)
+ * Naming rule: `{basePath}/{opId}-{batchId}/lane-{N}`
+ *   Sibling mode:      ../{opId}-{batchId}/lane-{N}
+ *   Subdirectory mode: .worktrees/{opId}-{batchId}/lane-{N}
+ *
+ * Each batch gets its own container directory, preventing collisions
+ * between concurrent batches by the same operator.
  *
  * Uses path.resolve() for Windows path normalization (R002 requirement).
  *
- * @param prefix     - Directory prefix (e.g. "taskplane-wt")
+ * @param prefix     - Directory prefix (unused in new scheme, kept for API compat)
  * @param laneNumber - Lane number (1-indexed)
  * @param repoRoot   - Absolute path to the main repository root
  * @param opId       - Operator identifier (sanitized, e.g., "henrylach")
  * @param config     - Orchestrator config (optional; defaults to subdirectory mode)
+ * @param batchId    - Batch ID timestamp (e.g. "20260308T111750")
  */
 export function generateWorktreePath(
 	prefix: string,
@@ -75,10 +95,56 @@ export function generateWorktreePath(
 	repoRoot: string,
 	opId: string,
 	config?: OrchestratorConfig,
+	batchId?: string,
 ): string {
 	const effectiveConfig = config || DEFAULT_ORCHESTRATOR_CONFIG;
 	const basePath = resolveWorktreeBasePath(repoRoot, effectiveConfig);
+
+	if (batchId) {
+		// New batch-scoped container layout
+		const container = generateBatchContainerName(opId, batchId);
+		return resolve(basePath, container, `lane-${laneNumber}`);
+	}
+
+	// Legacy fallback (no batchId) — flat layout for backward compatibility
 	return resolve(basePath, `${prefix}-${opId}-${laneNumber}`);
+}
+
+/**
+ * Generate the merge worktree path inside a batch container.
+ *
+ * Format: `{basePath}/{opId}-{batchId}/merge`
+ *
+ * Used by merge.ts instead of the ad-hoc merge worktree path, ensuring
+ * the merge worktree is co-located with lane worktrees in the same
+ * batch container for unified cleanup.
+ *
+ * @param repoRoot - Absolute path to the main repository root
+ * @param opId     - Operator identifier (sanitized, e.g., "henrylach")
+ * @param batchId  - Batch ID timestamp (e.g. "20260308T111750")
+ * @param config   - Orchestrator config (optional; defaults to subdirectory mode)
+ */
+export function generateMergeWorktreePath(
+	repoRoot: string,
+	opId: string,
+	batchId: string,
+	config?: OrchestratorConfig,
+): string {
+	const effectiveConfig = config || DEFAULT_ORCHESTRATOR_CONFIG;
+	const basePath = resolveWorktreeBasePath(repoRoot, effectiveConfig);
+	const container = generateBatchContainerName(opId, batchId);
+	return resolve(basePath, container, "merge");
+}
+
+/**
+ * Ensure the batch container directory exists, creating it if necessary.
+ *
+ * @param containerPath - Absolute path to the container directory
+ */
+export function ensureBatchContainerDir(containerPath: string): void {
+	if (!existsSync(containerPath)) {
+		mkdirSync(containerPath, { recursive: true });
+	}
 }
 
 /**
@@ -205,7 +271,12 @@ export function createWorktree(opts: CreateWorktreeOptions, repoRoot: string): W
 	const { laneNumber, batchId, baseBranch, prefix, opId, config } = opts;
 
 	const branch = generateBranchName(laneNumber, batchId, opId);
-	const worktreePath = generateWorktreePath(prefix, laneNumber, repoRoot, opId, config);
+	const worktreePath = generateWorktreePath(prefix, laneNumber, repoRoot, opId, config, batchId);
+
+	// ── Ensure batch container directory exists ──────────────────
+	// The container is the parent of the lane directory (e.g., {basePath}/{opId}-{batchId}/)
+	const containerDir = resolve(worktreePath, "..");
+	ensureBatchContainerDir(containerDir);
 
 	// ── Pre-check 1: Validate base branch exists ─────────────────
 	const baseBranchCheck = runGit(

@@ -1,11 +1,11 @@
 # TP-021: Batch-Scoped Worktree Containers — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Refactor Worktree Path Generation
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 ---
@@ -25,12 +25,13 @@
 ---
 
 ### Step 1: Refactor Worktree Path Generation
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Update `generateWorktreePath()` to `{basePath}/{opId}-{batchId}/lane-{N}`
-- [ ] Add `generateMergeWorktreePath()` → `{basePath}/{opId}-{batchId}/merge`
-- [ ] Update `CreateWorktreeOptions` and `createWorktree()` for new paths
-- [ ] Ensure container directory creation
+- [ ] Add `generateBatchContainerPath()` shared helper: `{basePath}/{opId}-{batchId}` using `resolveWorktreeBasePath()` (preserves sibling/subdirectory mode)
+- [ ] Update `generateWorktreePath()` signature to include `batchId`, output `{basePath}/{opId}-{batchId}/lane-{N}` via the shared helper
+- [ ] Add `generateMergeWorktreePath()` using the same shared helper: `{basePath}/{opId}-{batchId}/merge` (config-aware, base-path-consistent)
+- [ ] Verify `CreateWorktreeOptions` already has `batchId` (no schema change needed — R003 item)
+- [ ] Update `createWorktree()` to pass `batchId` to `generateWorktreePath()` and ensure container dir is auto-created (`mkdirSync recursive`)
 
 ---
 
@@ -77,6 +78,10 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | APPROVE | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | APPROVE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | APPROVE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -116,6 +121,15 @@
 | 2026-03-18 11:42 | Review R001 | plan Step 0: REVISE |
 | 2026-03-18 11:42 | Review R001 | plan Step 0: REVISE |
 | 2026-03-18 11:45 | Worker iter 1 | done in 188s, ctx: 40%, tools: 37 |
+| 2026-03-18 11:46 | Worker iter 1 | done in 225s, ctx: 55%, tools: 46 |
+| 2026-03-18 11:47 | Review R002 | code Step 0: APPROVE |
+| 2026-03-18 11:47 | Step 0 complete | Preflight |
+| 2026-03-18 11:47 | Step 1 started | Refactor Worktree Path Generation |
+| 2026-03-18 11:47 | Review R002 | code Step 0: APPROVE |
+| 2026-03-18 11:47 | Step 0 complete | Preflight |
+| 2026-03-18 11:47 | Step 1 started | Refactor Worktree Path Generation |
+| 2026-03-18 11:49 | Review R003 | plan Step 1: APPROVE |
+| 2026-03-18 11:50 | Review R003 | plan Step 1: REVISE |
 
 ---
 
