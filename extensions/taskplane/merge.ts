@@ -12,6 +12,7 @@ import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIE
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { generateMergeWorktreePath, sleepSync } from "./worktree.ts";
+import { getCurrentBranch } from "./git.ts";
 
 // ── Merge Implementation ─────────────────────────────────────────────
 
@@ -770,28 +771,69 @@ export function mergeWave(
 		} else {
 			const tempBranchHead = revParseResult.stdout.toString().trim();
 
-			// Update the target branch ref directly — no checkout required.
-			// The target branch (orch branch) is never checked out in the main repo,
-			// so update-ref is safe and does not touch the working tree.
-			const updateRefResult = spawnSync(
-				"git",
-				["update-ref", `refs/heads/${targetBranch}`, tempBranchHead],
-				{ cwd: repoRoot },
-			);
+			// Gate advancement strategy:
+			// - If targetBranch is NOT checked out in repoRoot, use update-ref
+			//   (safe, does not touch the working tree). This is the common case
+			//   for the orch branch in repo mode.
+			// - If targetBranch IS checked out in repoRoot (workspace mode, where
+			//   resolveBaseBranch returns the repo's current branch), use
+			//   git merge --ff-only to advance HEAD+index+worktree together.
+			const checkedOutBranch = getCurrentBranch(repoRoot);
+			const targetIsCheckedOut = checkedOutBranch === targetBranch;
 
-			if (updateRefResult.status !== 0) {
-				const err = updateRefResult.stderr?.toString().trim() || "unknown error";
-				execLog("merge", `W${waveIndex}`, `update-ref failed for ${targetBranch}: ${err}`, {
-					targetBranch,
-					tempBranchHead: tempBranchHead.slice(0, 8),
-				});
-				failedLane = failedLane ?? -1;
-				failureReason = `update-ref of ${targetBranch} to ${tempBranchHead.slice(0, 8)} failed: ${err}`;
+			if (targetIsCheckedOut) {
+				// Checked-out branch — must use ff-only to keep HEAD/index/worktree in sync.
+				// Dirty working tree may block ff — stash if needed.
+				const ffResult = spawnSync("git", ["merge", "--ff-only", tempBranch], { cwd: repoRoot });
+
+				if (ffResult.status !== 0) {
+					// Dirty working tree may block ff — try stash + ff + pop
+					execLog("merge", `W${waveIndex}`, "fast-forward blocked — stashing user changes");
+					const stashMsg = `merge-agent-autostash-w${waveIndex}-${batchId}`;
+					spawnSync("git", ["stash", "push", "--include-untracked", "-m", stashMsg], { cwd: repoRoot });
+
+					const ffRetry = spawnSync("git", ["merge", "--ff-only", tempBranch], { cwd: repoRoot });
+
+					// Always pop stash, regardless of ff result
+					spawnSync("git", ["stash", "pop"], { cwd: repoRoot });
+
+					if (ffRetry.status !== 0) {
+						const err = ffRetry.stderr?.toString().trim() || "unknown error";
+						execLog("merge", `W${waveIndex}`, `fast-forward failed even after stash: ${err}`);
+						failedLane = failedLane ?? -1;
+						failureReason = `Fast-forward of ${targetBranch} failed: ${err}`;
+					} else {
+						execLog("merge", `W${waveIndex}`, "fast-forward succeeded after stash/pop");
+					}
+				} else {
+					execLog("merge", `W${waveIndex}`, `fast-forwarded ${targetBranch} to merge result`);
+				}
 			} else {
-				execLog("merge", `W${waveIndex}`, `updated ${targetBranch} ref to merge result`, {
-					targetBranch,
-					commit: tempBranchHead.slice(0, 8),
-				});
+				// Not checked out — safe to use update-ref without touching the worktree.
+				// Use compare-and-swap (3-arg form) to guard against concurrent branch movement.
+				const oldRefResult = spawnSync("git", ["rev-parse", `refs/heads/${targetBranch}`], { cwd: repoRoot });
+				const oldRef = oldRefResult.status === 0 ? oldRefResult.stdout.toString().trim() : "";
+
+				const updateRefArgs = oldRef
+					? ["update-ref", `refs/heads/${targetBranch}`, tempBranchHead, oldRef]
+					: ["update-ref", `refs/heads/${targetBranch}`, tempBranchHead];
+
+				const updateRefResult = spawnSync("git", updateRefArgs, { cwd: repoRoot });
+
+				if (updateRefResult.status !== 0) {
+					const err = updateRefResult.stderr?.toString().trim() || "unknown error";
+					execLog("merge", `W${waveIndex}`, `update-ref failed for ${targetBranch}: ${err}`, {
+						targetBranch,
+						tempBranchHead: tempBranchHead.slice(0, 8),
+					});
+					failedLane = failedLane ?? -1;
+					failureReason = `update-ref of ${targetBranch} to ${tempBranchHead.slice(0, 8)} failed: ${err}`;
+				} else {
+					execLog("merge", `W${waveIndex}`, `updated ${targetBranch} ref to merge result`, {
+						targetBranch,
+						commit: tempBranchHead.slice(0, 8),
+					});
+				}
 			}
 		}
 	}

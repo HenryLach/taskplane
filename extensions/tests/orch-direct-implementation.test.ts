@@ -432,26 +432,34 @@ function runAllTests(): void {
 
 	// ── TP-022 Step 3: update-ref replaces ff-only in merge.ts ───────
 
-	// 11) merge.ts uses rev-parse + update-ref (not ff-only or stash)
+	// 11) merge.ts uses gated advancement: update-ref for non-checked-out, ff-only for checked-out
 	{
-		console.log("\n  11) merge.ts uses update-ref (no ff-only/stash)");
+		console.log("\n  11) merge.ts uses gated branch advancement (update-ref / ff-only)");
 		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 
 		// Positive: rev-parse and update-ref are present in the ref advancement block
 		assert(mergeSource.includes('["rev-parse", tempBranch]'),
 			"merge.ts calls rev-parse on temp branch to get merged HEAD");
 		assert(mergeSource.includes('"update-ref"'),
-			"merge.ts calls update-ref to advance target branch");
+			"merge.ts calls update-ref to advance non-checked-out target branch");
 		assert(mergeSource.includes('`refs/heads/${targetBranch}`'),
 			"merge.ts update-ref targets refs/heads/<targetBranch>");
 
-		// Negative: ff-only and stash are gone from the merge flow
-		assert(!mergeSource.includes("--ff-only"),
-			"merge.ts does NOT contain --ff-only (removed in Step 3)");
-		assert(!mergeSource.includes("git stash") && !mergeSource.includes('"stash"'),
-			"merge.ts does NOT contain stash calls (removed in Step 3)");
-		assert(!mergeSource.includes("autostash"),
-			"merge.ts does NOT contain autostash references (removed in Step 3)");
+		// Gate detection: getCurrentBranch is used to determine checked-out state
+		assert(mergeSource.includes("getCurrentBranch(repoRoot)"),
+			"merge.ts detects checked-out branch via getCurrentBranch(repoRoot)");
+		assert(mergeSource.includes("targetIsCheckedOut"),
+			"merge.ts gates on targetIsCheckedOut flag");
+
+		// Checked-out path: ff-only with stash fallback (workspace mode safety)
+		assert(mergeSource.includes("--ff-only"),
+			"merge.ts uses --ff-only for checked-out target branch (workspace mode)");
+		assert(mergeSource.includes('"stash"'),
+			"merge.ts uses stash fallback for dirty worktree in checked-out path");
+
+		// Compare-and-swap: update-ref uses old-ref guard for non-checked-out path
+		assert(mergeSource.includes('`refs/heads/${targetBranch}`, tempBranchHead, oldRef'),
+			"merge.ts uses compare-and-swap update-ref (3-arg form with old ref)");
 	}
 
 	// 12) merge.ts update-ref failure path sets failedLane/failureReason correctly
@@ -512,6 +520,52 @@ function runAllTests(): void {
 		)?.[0] ?? "";
 		assert(revParseFailLog.length > 0,
 			"rev-parse failure logs 'failed to resolve temp branch HEAD'");
+	}
+
+	// 14) merge.ts workspace-mode safety: checked-out branch uses ff-only, not update-ref
+	{
+		console.log("  14) merge.ts workspace-mode safety: gated branch advancement");
+		const mergeSource = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
+
+		// The advancement block must have both paths gated by targetIsCheckedOut.
+		// Extract the block between "Gate advancement strategy" and "Clean up merge worktree"
+		const advancementBlock = mergeSource.match(
+			/Gate advancement strategy[\s\S]*?Clean up merge worktree/
+		)?.[0] ?? "";
+		assert(advancementBlock.length > 0,
+			"advancement block with gate comment exists");
+
+		// The gate uses getCurrentBranch to detect checked-out state
+		assert(advancementBlock.includes("getCurrentBranch(repoRoot)"),
+			"gate calls getCurrentBranch(repoRoot) to detect checked-out branch");
+		assert(advancementBlock.includes("checkedOutBranch === targetBranch"),
+			"gate compares checkedOutBranch to targetBranch");
+
+		// Checked-out path comes first (if targetIsCheckedOut)
+		const checkedOutIdx = advancementBlock.indexOf("if (targetIsCheckedOut)");
+		const elseIdx = advancementBlock.indexOf("} else {", checkedOutIdx);
+		assert(checkedOutIdx > 0 && elseIdx > checkedOutIdx,
+			"gate has if (targetIsCheckedOut) ... else ... structure");
+
+		// Checked-out path uses ff-only (between if and else)
+		const checkedOutPath = advancementBlock.slice(checkedOutIdx, elseIdx);
+		assert(checkedOutPath.includes("--ff-only"),
+			"checked-out path uses --ff-only merge");
+		assert(checkedOutPath.includes("stash"),
+			"checked-out path has stash fallback for dirty worktree");
+		assert(!checkedOutPath.includes("update-ref"),
+			"checked-out path does NOT use update-ref (would desync worktree)");
+
+		// Non-checked-out path uses update-ref (after else)
+		const nonCheckedOutPath = advancementBlock.slice(elseIdx);
+		assert(nonCheckedOutPath.includes("update-ref"),
+			"non-checked-out path uses update-ref");
+		assert(!nonCheckedOutPath.includes("--ff-only"),
+			"non-checked-out path does NOT use --ff-only");
+
+		// Workspace mode comment explains the rationale
+		assert(advancementBlock.includes("workspace mode"),
+			"advancement block documents workspace mode behavior");
 	}
 
 	console.log(`\nResults: ${passed} passed, ${failed} failed`);
