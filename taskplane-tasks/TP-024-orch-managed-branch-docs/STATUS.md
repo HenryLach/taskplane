@@ -5,7 +5,7 @@
 **Last Updated:** 2026-03-18
 **Review Level:** 0
 **Review Counter:** 0
-**Iteration:** 2
+**Iteration:** 3
 **Size:** S
 
 ---
@@ -21,11 +21,11 @@
 ---
 
 ### Step 1: Add `/orch-integrate` to Commands Reference
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add `/orch-integrate` entry with modes, safety check, examples
-- [ ] Update `/orch` entry for managed branch behavior
-- [ ] Update batch completion flow
+- [x] Add `/orch-integrate` entry with modes, safety check, examples
+- [x] Update `/orch` entry for managed branch behavior
+- [x] Update batch completion flow
 
 ---
 
@@ -83,6 +83,9 @@
 | 2026-03-18 17:45 | Task started | Extension-driven execution |
 | 2026-03-18 17:45 | Step 0 started | Preflight |
 | 2026-03-18 17:47 | Worker iter 1 | done in 99s, ctx: 23%, tools: 26 |
+| 2026-03-18 17:47 | Step 0 complete | Preflight |
+| 2026-03-18 17:47 | Step 1 started | Add `/orch-integrate` to Commands Reference |
+| 2026-03-18 17:47 | Worker iter 2 | done in 114s, ctx: 20%, tools: 27 |
 | 2026-03-18 17:47 | Step 0 complete | Preflight |
 | 2026-03-18 17:47 | Step 1 started | Add `/orch-integrate` to Commands Reference |
 

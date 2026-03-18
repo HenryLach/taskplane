@@ -140,9 +140,17 @@ Start parallel batch execution.
 - Runs orphan-session/state detection before starting
 - Discovers tasks and dependencies
 - Computes waves and lane assignments
+- Creates an **orch branch** (`orch/<operator>-<batchId>`) from the current branch — all batch work lands here, not on your working branch
 - Executes tasks in isolated worktrees
-- Merges successful lane branches
+- Merges successful lane branches into the orch branch
+- On completion, shows integration guidance (or auto-integrates if `integration` is set to `auto`)
 - Can be used with a single task path when you want `/task` semantics with worktree isolation
+
+**Orch branch model**
+
+`/orch` never modifies your working branch directly. Instead, it creates a dedicated orch branch where all task work is merged. When the batch completes, you integrate the results using `/orch-integrate` (or let auto-integration handle it). This keeps your working branch stable while tasks execute.
+
+See also: [`/orch-integrate`](#orch-integrate-orch-branch---merge---pr---force)
 
 **Examples**
 
@@ -317,6 +325,72 @@ List active orchestrator tmux sessions.
 
 - Lists sessions matching configured orchestrator tmux prefix
 - Useful for debugging/resume/cleanup in tmux mode
+
+---
+
+### `/orch-integrate [<orch-branch>] [--merge] [--pr] [--force]`
+
+Integrate a completed orch batch into your working branch.
+
+After `/orch` finishes, all task work lives on an orch branch (`orch/<operator>-<batchId>`). This command brings that work into your working branch using one of three modes.
+
+**Syntax**
+
+```text
+/orch-integrate [<orch-branch>] [--merge] [--pr] [--force]
+```
+
+**Arguments**
+
+- `<orch-branch>` — (optional) name of the orch branch to integrate. Auto-detected from batch state if omitted. Required when batch state is unavailable or multiple orch branches exist.
+
+**Modes**
+
+| Flag | Mode | Description |
+|------|------|-------------|
+| *(default)* | Fast-forward | `git merge --ff-only` — cleanest history, fails if branches have diverged |
+| `--merge` | Merge commit | `git merge --no-edit` — creates a merge commit, works when branches have diverged |
+| `--pr` | Pull request | Pushes orch branch to origin and creates a PR via `gh pr create` |
+
+**Options**
+
+- `--force` — skip the branch safety check (normally the command verifies you're on the same branch the batch was started from)
+
+**Branch safety check**
+
+By default, `/orch-integrate` verifies that your current branch matches the base branch recorded when the batch started. This prevents accidentally integrating into the wrong branch. Use `--force` to skip this check.
+
+**Resolution order**
+
+The command determines which orch branch to integrate using this priority:
+
+1. **Persisted batch state** (`.pi/batch-state.json`) — preferred source, provides orch branch, base branch, and batch ID
+2. **Positional argument** — overrides or supplements batch state
+3. **Branch scan** — if neither state nor argument is available, scans for `orch/*` branches. Works automatically when exactly one exists; prompts for selection when multiple are found.
+
+**Cleanup**
+
+- In **fast-forward** and **merge** modes: on success, the local orch branch is deleted and batch state is cleaned up. Cleanup failures are non-fatal (shown as warnings).
+- In **PR mode**: the orch branch is preserved (needed for the pull request). Batch state is not cleaned up.
+
+**Examples**
+
+```text
+/orch-integrate                          # Auto-detect branch, fast-forward
+/orch-integrate --merge                  # Auto-detect branch, merge commit
+/orch-integrate --pr                     # Auto-detect branch, create PR
+/orch-integrate orch/op-abc123           # Specific branch, fast-forward
+/orch-integrate orch/op-abc123 --pr      # Specific branch, create PR
+/orch-integrate --force                  # Skip branch safety check
+```
+
+**Common responses**
+
+- `⏳ Batch ... is currently in "running" phase.` — batch must complete before integration
+- `❌ Fast-forward failed — branches have diverged.` — use `--merge` or `--pr` instead
+- `⚠️ Batch was started from main, but you're on develop.` — switch branches or use `--force`
+- `ℹ️ Batch ... used legacy merge mode` — older batch that was already merged directly (no orch branch to integrate)
+- `❌ No completed batch found and no orch branches exist.` — run `/orch` first
 
 ---
 
