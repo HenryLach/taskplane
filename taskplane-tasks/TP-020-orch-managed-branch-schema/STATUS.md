@@ -1,6 +1,6 @@
 # TP-020: Orch-Managed Branch Schema & Config — Status
 
-**Current Step:** Step 2: Add `integration` to Orchestrator Config
+**Current Step:** Step 3: Add Integration Toggle to Settings TUI
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 1
@@ -46,7 +46,7 @@
 ---
 
 ### Step 3: Add Integration Toggle to Settings TUI
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add Integration toggle to Orchestrator section in `settings-tui.ts`
 
@@ -114,6 +114,9 @@
 | 2026-03-18 03:37 | Step 2 started | Add `integration` to Orchestrator Config |
 | 2026-03-18 03:39 | Review R003 | plan Step 2: REVISE |
 | 2026-03-18 03:40 | Review R003 | plan Step 2: APPROVE |
+| 2026-03-18 03:43 | Worker iter 3 | done in 141s, ctx: 26%, tools: 28 |
+| 2026-03-18 03:43 | Step 2 complete | Add `integration` to Orchestrator Config |
+| 2026-03-18 03:43 | Step 3 started | Add Integration Toggle to Settings TUI |
 
 ---
 
