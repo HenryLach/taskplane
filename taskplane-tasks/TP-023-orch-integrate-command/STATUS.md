@@ -1,6 +1,6 @@
 # TP-023: `/orch-integrate` Command — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Register `/orch-integrate` Command
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
@@ -26,7 +26,7 @@
 ---
 
 ### Step 1: Register `/orch-integrate` Command
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Register command with args parsing (--merge, --pr, --force)
 - [ ] Set command description
@@ -108,6 +108,9 @@
 | 2026-03-18 16:35 | Worker iter 1 | done in 116s |
 | 2026-03-18 16:38 | Review R002 | code Step 0: REVISE |
 | 2026-03-18 16:40 | R002 revisions | Adding state-lifetime, test mapping, table fixes |
+| 2026-03-18 16:41 | Worker iter 1 | done in 158s, ctx: 18%, tools: 27 |
+| 2026-03-18 16:41 | Step 0 complete | Preflight |
+| 2026-03-18 16:41 | Step 1 started | Register `/orch-integrate` Command |
 
 ---
 
