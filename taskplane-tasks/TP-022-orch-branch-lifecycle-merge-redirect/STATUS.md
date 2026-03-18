@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** L
 
 ---
@@ -30,10 +30,10 @@
 ### Step 1: Create Orch Branch at Batch Start
 **Status:** 🟨 In Progress
 
-- [ ] Generate orch branch name and create via `git branch`
-- [ ] Store in `batchState.orchBranch`
-- [ ] Handle creation failure
-- [ ] Log branch creation
+- [ ] Generate orch branch name `orch/{opId}-{batchId}` using `resolveOperatorId(orchConfig)` and create via `runGit(["branch", orchBranch, baseBranch], repoRoot)`; store in `batchState.orchBranch`
+- [ ] Handle creation failure: set phase="failed", endedAt, push error, notify, return (matching existing early-exit pattern in engine.ts)
+- [ ] Log branch creation via `execLog("batch", batchId, "created orch branch", { orchBranch, baseBranch })`
+- [ ] R003: Clean duplicate Execution Log rows in STATUS.md
 
 ---
 
@@ -90,6 +90,8 @@
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ---
 
@@ -137,10 +139,11 @@
 | 2026-03-18 14:37 | Worker iter 1 | done in 215s, ctx: 49%, tools: 40 |
 | 2026-03-18 14:39 | Review R002 | code Step 0: REVISE |
 | 2026-03-18 | R002 revisions | Fixed test file names in Notes, deduplicated Reviews/Execution Log tables |
-| 2026-03-18 14:40 | Review R002 | code Step 0: REVISE |
-| 2026-03-18 14:40 | Worker iter 1 | done in 78s, ctx: 10%, tools: 14 |
+| 2026-03-18 14:40 | Worker iter 2 | done in 78s, ctx: 10%, tools: 14 |
 | 2026-03-18 14:40 | Step 0 complete | Preflight |
 | 2026-03-18 14:40 | Step 1 started | Create Orch Branch at Batch Start |
+| 2026-03-18 14:43 | Review R003 | plan Step 1: REVISE — hydrate naming/failure/test items |
+| 2026-03-18 14:44 | Review R003 | plan Step 1: REVISE |
 
 ---
 
