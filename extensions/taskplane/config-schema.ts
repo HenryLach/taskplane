@@ -254,6 +254,8 @@ export interface MergeConfig {
 	verify: string[];
 	/** Lane merge ordering policy */
 	order: "fewest-files-first" | "sequential";
+	/** Merge-agent timeout in minutes */
+	timeoutMinutes?: number;
 }
 
 /** Failure policy settings */
@@ -444,6 +446,7 @@ export const DEFAULT_ORCHESTRATOR_SECTION: OrchestratorSection = {
 		tools: "read,write,edit,bash,grep,find,ls",
 		verify: [],
 		order: "fewest-files-first",
+		timeoutMinutes: 10,
 	},
 	failure: {
 		onTaskFailure: "skip-dependents",

@@ -852,6 +852,27 @@ orchestrator:
 		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
 		expect(result.orchestrator.dependencies.cache).toBe(false);
 	});
+
+	it("14.11 writes to pointer-resolved flat layout (no .pi subdir)", () => {
+		const workspaceRoot = makeWriteTestDir("pointer-flat-workspace");
+		const pointerRoot = join(workspaceRoot, "config-repo", ".taskplane");
+		mkdirSync(pointerRoot, { recursive: true });
+		writeFileSync(join(pointerRoot, "task-orchestrator.yaml"), "orchestrator:\n  max_lanes: 6\n", "utf-8");
+
+		writeProjectConfigField(
+			workspaceRoot,
+			"orchestrator.orchestrator.worktreePrefix",
+			"tp-wt",
+			pointerRoot,
+		);
+
+		expect(existsSync(join(pointerRoot, PROJECT_CONFIG_FILENAME))).toBe(true);
+		expect(existsSync(join(workspaceRoot, ".pi", PROJECT_CONFIG_FILENAME))).toBe(false);
+
+		const result = readJsonFile(join(pointerRoot, PROJECT_CONFIG_FILENAME));
+		expect(result.orchestrator.orchestrator.maxLanes).toBe(6);
+		expect(result.orchestrator.orchestrator.worktreePrefix).toBe("tp-wt");
+	});
 });
 
 
@@ -1016,6 +1037,18 @@ describe("16. YAML source detection", () => {
 			const rawJson = { orchestrator: { orchestrator: { maxLanes: 5 } } };
 			expect(detectFieldSource(field, rawJson, null)).toBe("project");
 		});
+
+		it("16.1.4 readRawProjectJson supports flat pointer layout", () => {
+			const dir = makeYamlTestDir("json-flat");
+			writeFileSync(join(dir, PROJECT_CONFIG_FILENAME), JSON.stringify({
+				configVersion: CONFIG_VERSION,
+				orchestrator: { orchestrator: { maxLanes: 9 } },
+			}, null, 2), "utf-8");
+
+			const raw = readRawProjectJson(dir);
+			expect(raw).not.toBeNull();
+			expect(raw!.orchestrator.orchestrator.maxLanes).toBe(9);
+		});
 	});
 
 	describe("16.2 YAML-only config", () => {
@@ -1111,6 +1144,18 @@ describe("16. YAML source detection", () => {
 			expect(raw).not.toBeNull();
 			expect(raw!.orchestrator.assignment.strategy).toBe("round-robin");
 			expect(raw!.orchestrator.assignment.sizeWeights).toEqual({ S: 1, M: 2 });
+		});
+
+		it("16.2.7 readRawYamlConfigs supports flat pointer layout", () => {
+			const dir = makeYamlTestDir("yaml-flat");
+			writeFileSync(join(dir, "task-orchestrator.yaml"), [
+				"orchestrator:",
+				"  max_lanes: 11",
+			].join("\n"), "utf-8");
+
+			const raw = readRawYamlConfigs(dir);
+			expect(raw).not.toBeNull();
+			expect(raw!.orchestrator.orchestrator.maxLanes).toBe(11);
 		});
 	});
 

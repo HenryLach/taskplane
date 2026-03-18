@@ -679,11 +679,12 @@ export function loadProjectConfig(cwd: string, pointerConfigRoot?: string): Task
  * accidentally embedding user preferences into the project config.
  *
  * @param cwd - Current working directory (project root or worktree)
+ * @param pointerConfigRoot - Optional pointer-resolved config root (workspace mode)
  * @returns Layer 1 TaskplaneConfig — always a fresh deep-cloned object
  * @throws ConfigLoadError if JSON exists but is malformed or has unsupported version
  */
-export function loadLayer1Config(cwd: string): TaskplaneConfig {
-	const configRoot = resolveConfigRoot(cwd);
+export function loadLayer1Config(cwd: string, pointerConfigRoot?: string): TaskplaneConfig {
+	const configRoot = resolveConfigRoot(cwd, pointerConfigRoot);
 
 	// Try JSON first
 	const jsonConfig = loadJsonConfig(configRoot);

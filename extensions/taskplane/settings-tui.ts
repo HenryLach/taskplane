@@ -128,7 +128,7 @@ export const SECTIONS: SectionDef[] = [
 			{ configPath: "orchestrator.merge.model", label: "Merge Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "mergeModel", description: "Merge-agent model (empty = inherit session)" },
 			{ configPath: "orchestrator.merge.tools", label: "Merge Tools", control: "input", layer: "L1", fieldType: "string", description: "Merge-agent tool allowlist" },
 			{ configPath: "orchestrator.merge.order", label: "Merge Order", control: "toggle", layer: "L1", fieldType: "enum", values: ["fewest-files-first", "sequential"], description: "Lane merge ordering policy" },
-			{ configPath: "orchestrator.merge.timeout_minutes", label: "Merge Timeout (minutes)", control: "input", layer: "L1", fieldType: "number", description: "Max time for merge agent to complete. Increase for large batches (default: 10)" },
+			{ configPath: "orchestrator.merge.timeoutMinutes", label: "Merge Timeout (minutes)", control: "input", layer: "L1", fieldType: "number", description: "Max time for merge agent to complete. Increase for large batches (default: 10)" },
 		],
 	},
 	{
@@ -193,11 +193,25 @@ export const SECTIONS: SectionDef[] = [
 // ── Raw Config Readers (Source Detection) ────────────────────────────
 
 /**
+ * Resolve the path to a config file under the given root.
+ *
+ * Supports both standard layout (`<root>/.pi/<file>`) and flat layout
+ * (`<root>/<file>`) used by pointer-resolved `.taskplane/` config roots.
+ */
+function resolveConfigFilePath(configRoot: string, filename: string): string {
+	const standardPath = join(configRoot, ".pi", filename);
+	if (existsSync(standardPath)) return standardPath;
+	const flatPath = join(configRoot, filename);
+	if (existsSync(flatPath)) return flatPath;
+	return standardPath;
+}
+
+/**
  * Read the raw project config JSON as a plain object (no defaults merge).
  * Returns null if no JSON config exists. Does not throw on parse errors.
  */
 export function readRawProjectJson(configRoot: string): Record<string, any> | null {
-	const jsonPath = join(configRoot, ".pi", PROJECT_CONFIG_FILENAME);
+	const jsonPath = resolveConfigFilePath(configRoot, PROJECT_CONFIG_FILENAME);
 	if (!existsSync(jsonPath)) return null;
 	try {
 		const raw = readFileSync(jsonPath, "utf-8");
@@ -214,8 +228,8 @@ export function readRawProjectJson(configRoot: string): Record<string, any> | nu
  * Returns null if no YAML files exist.
  */
 export function readRawYamlConfigs(configRoot: string): Record<string, any> | null {
-	const trPath = join(configRoot, ".pi", "task-runner.yaml");
-	const orchPath = join(configRoot, ".pi", "task-orchestrator.yaml");
+	const trPath = resolveConfigFilePath(configRoot, "task-runner.yaml");
+	const orchPath = resolveConfigFilePath(configRoot, "task-orchestrator.yaml");
 	const hasTr = existsSync(trPath);
 	const hasOrch = existsSync(orchPath);
 	if (!hasTr && !hasOrch) return null;
@@ -340,7 +354,9 @@ function setNestedValue(obj: Record<string, any>, path: string, value: any): voi
 /**
  * Write a value to the project config JSON (Layer 1).
  *
- * Always writes to `<configRoot>/.pi/taskplane-config.json`.
+ * Writes to the resolved config root using the active layout:
+ * - standard: `<configRoot>/.pi/taskplane-config.json`
+ * - flat: `<configRoot>/taskplane-config.json` (pointer `.taskplane/` roots)
  *
  * When no JSON config exists (YAML-only scenario), bootstraps the new
  * JSON file from the full current Layer 1 config (YAML values + defaults).
@@ -357,16 +373,27 @@ export function writeProjectConfigField(
 	configRoot: string,
 	configPath: string,
 	value: any,
+	pointerConfigRoot?: string,
 ): void {
-	const resolvedRoot = resolveConfigRoot(configRoot);
-	const piDir = join(resolvedRoot, ".pi");
-	const jsonPath = join(piDir, PROJECT_CONFIG_FILENAME);
+	const resolvedRoot = resolveConfigRoot(configRoot, pointerConfigRoot);
+
+	const hasStandardLayout =
+		existsSync(join(resolvedRoot, ".pi", PROJECT_CONFIG_FILENAME)) ||
+		existsSync(join(resolvedRoot, ".pi", "task-runner.yaml")) ||
+		existsSync(join(resolvedRoot, ".pi", "task-orchestrator.yaml"));
+	const hasFlatLayout =
+		existsSync(join(resolvedRoot, PROJECT_CONFIG_FILENAME)) ||
+		existsSync(join(resolvedRoot, "task-runner.yaml")) ||
+		existsSync(join(resolvedRoot, "task-orchestrator.yaml"));
+	const useFlatLayout = !hasStandardLayout && hasFlatLayout;
+
+	const jsonPath = useFlatLayout
+		? join(resolvedRoot, PROJECT_CONFIG_FILENAME)
+		: join(resolvedRoot, ".pi", PROJECT_CONFIG_FILENAME);
 	const tmpPath = jsonPath + ".tmp";
 
-	// Ensure .pi/ directory exists
-	if (!existsSync(piDir)) {
-		mkdirSync(piDir, { recursive: true });
-	}
+	// Ensure parent directory exists
+	mkdirSync(dirname(jsonPath), { recursive: true });
 
 	// Load existing JSON config, or bootstrap from full L1 config.
 	// When YAML-only, we seed from loadLayer1Config to preserve all
@@ -390,7 +417,7 @@ export function writeProjectConfigField(
 	} else {
 		// No JSON exists (possibly YAML-only) — bootstrap from full L1 config.
 		// Deep-clone via JSON roundtrip since we mutate the object below.
-		configObj = JSON.parse(JSON.stringify(loadLayer1Config(configRoot)));
+		configObj = JSON.parse(JSON.stringify(loadLayer1Config(configRoot, pointerConfigRoot)));
 	}
 
 	// Set the value at the config path
@@ -890,29 +917,31 @@ function summarizeArray(arr: any[]): string {
  *   2. SettingsList for per-section field display and editing
  *
  * @param ctx - Extension context for UI access
- * @param configRoot - Resolved config root path (from execCtx.workspaceRoot)
+ * @param configRoot - Workspace/repo root (from execCtx.workspaceRoot)
+ * @param pointerConfigRoot - Optional pointer-resolved config root (workspace mode)
  */
 export async function openSettingsTui(
 	ctx: ExtensionContext,
 	configRoot: string,
+	pointerConfigRoot?: string,
 ): Promise<void> {
 	// Load current config state — refreshed each time we return to the top level
-	await showSectionSelectorLoop(ctx, configRoot);
+	await showSectionSelectorLoop(ctx, configRoot, pointerConfigRoot);
 }
 
 /**
  * Reload all config state from disk. Called after write-back to
  * refresh the TUI display.
  */
-function loadConfigState(configRoot: string): {
+function loadConfigState(configRoot: string, pointerConfigRoot?: string): {
 	mergedConfig: TaskplaneConfig;
 	prefs: UserPreferences;
 	rawProject: Record<string, any> | null;
 	rawPrefs: Record<string, any> | null;
 } {
-	const resolvedRoot = resolveConfigRoot(configRoot);
+	const resolvedRoot = resolveConfigRoot(configRoot, pointerConfigRoot);
 	return {
-		mergedConfig: loadProjectConfig(configRoot),
+		mergedConfig: loadProjectConfig(configRoot, pointerConfigRoot),
 		prefs: loadUserPreferences(),
 		rawProject: readRawProjectJson(resolvedRoot) || readRawYamlConfigs(resolvedRoot),
 		rawPrefs: readRawPreferences(),
@@ -928,9 +957,10 @@ function loadConfigState(configRoot: string): {
 async function showSectionSelectorLoop(
 	ctx: ExtensionContext,
 	configRoot: string,
+	pointerConfigRoot?: string,
 ): Promise<void> {
 	while (true) {
-		const state = loadConfigState(configRoot);
+		const state = loadConfigState(configRoot, pointerConfigRoot);
 
 		const sectionItems: SelectItem[] = SECTIONS.map((section, i) => ({
 			value: String(i),
@@ -985,7 +1015,7 @@ async function showSectionSelectorLoop(
 		if (section.readOnly) {
 			await showAdvancedSection(ctx, state.mergedConfig);
 		} else {
-			await showSectionSettingsLoop(ctx, section, configRoot);
+			await showSectionSettingsLoop(ctx, section, configRoot, pointerConfigRoot);
 		}
 	}
 }
@@ -1067,9 +1097,10 @@ async function showSectionSettingsLoop(
 	ctx: ExtensionContext,
 	section: SectionDef,
 	configRoot: string,
+	pointerConfigRoot?: string,
 ): Promise<void> {
 	while (true) {
-		const state = loadConfigState(configRoot);
+		const state = loadConfigState(configRoot, pointerConfigRoot);
 		const result = await showSectionSettingsOnce(ctx, section, state.mergedConfig, state.prefs, state.rawProject, state.rawPrefs);
 
 		if (result === null) return;  // User pressed Esc → back to sections
@@ -1112,7 +1143,7 @@ async function showSectionSettingsLoop(
 		// Perform the write
 		try {
 			if (dest === "project") {
-				writeProjectConfigField(configRoot, field.configPath, typedValue);
+				writeProjectConfigField(configRoot, field.configPath, typedValue, pointerConfigRoot);
 			} else {
 				// L2 write — use prefsKey
 				if (field.prefsKey) {

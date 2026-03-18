@@ -270,6 +270,93 @@ monitoring:
 `;
 }
 
+function buildTestingCommands(vars) {
+	const commands = {};
+	if (vars.test_cmd) commands.unit = vars.test_cmd;
+	if (vars.build_cmd) commands.build = vars.build_cmd;
+	return commands;
+}
+
+function generateProjectConfig(vars) {
+	return {
+		configVersion: 1,
+		taskRunner: {
+			project: { name: vars.project_name, description: "" },
+			paths: { tasks: vars.tasks_root },
+			testing: { commands: buildTestingCommands(vars) },
+			standards: { docs: [], rules: [] },
+			standardsOverrides: {},
+			worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "off" },
+			reviewer: { model: "openai/gpt-5.3-codex", tools: "read,bash,grep,find,ls", thinking: "on" },
+			context: {
+				workerContextWindow: 200000,
+				warnPercent: 70,
+				killPercent: 85,
+				maxWorkerIterations: 20,
+				maxReviewCycles: 2,
+				noProgressLimit: 3,
+			},
+			taskAreas: {
+				[vars.default_area]: {
+					path: vars.tasks_root,
+					prefix: vars.default_prefix,
+					context: `${vars.tasks_root}/CONTEXT.md`,
+				},
+			},
+			referenceDocs: {},
+			neverLoad: [],
+			selfDocTargets: {},
+			protectedDocs: [],
+		},
+		orchestrator: {
+			orchestrator: {
+				maxLanes: vars.max_lanes,
+				worktreeLocation: "subdirectory",
+				worktreePrefix: vars.worktree_prefix,
+				batchIdFormat: "timestamp",
+				spawnMode: vars.spawn_mode,
+				tmuxPrefix: vars.tmux_prefix,
+				operatorId: "",
+			},
+			dependencies: { source: "prompt", cache: true },
+			assignment: { strategy: "affinity-first", sizeWeights: { S: 1, M: 2, L: 4 } },
+			preWarm: { autoDetect: false, commands: {}, always: [] },
+			merge: {
+				model: "",
+				tools: "read,write,edit,bash,grep,find,ls",
+				verify: [],
+				order: "fewest-files-first",
+				timeoutMinutes: 10,
+			},
+			failure: {
+				onTaskFailure: "skip-dependents",
+				onMergeFailure: "pause",
+				stallTimeout: 30,
+				maxWorkerMinutes: 30,
+				abortGracePeriod: 60,
+			},
+			monitoring: { pollInterval: 5 },
+		},
+	};
+}
+
+function generateWorkspaceYaml(repoNames, defaultRepo, tasksRoot) {
+	const reposBlock = repoNames
+		.map((name) => `  ${name}:\n    path: "${name}"`)
+		.join("\n");
+	return `repos:\n${reposBlock}\nrouting:\n  tasks_root: "${tasksRoot}"\n  default_repo: "${defaultRepo}"\n`;
+}
+
+function readWorkspaceJson(configRepoRoot) {
+	const workspaceJsonPath = path.join(configRepoRoot, ".taskplane", "workspace.json");
+	if (!fs.existsSync(workspaceJsonPath)) return null;
+	try {
+		return JSON.parse(fs.readFileSync(workspaceJsonPath, "utf-8"));
+	} catch {
+		return null;
+	}
+}
+
 // ═════════════════════════════════════════════════════════════════════════════
 // COMMANDS
 // ═════════════════════════════════════════════════════════════════════════════
@@ -310,8 +397,8 @@ async function autoCommitTaskFiles(projectRoot, tasksRoot) {
 	}
 }
 
-function discoverTaskAreaMetadata(projectRoot) {
-	const runnerPath = path.join(projectRoot, ".pi", "task-runner.yaml");
+function discoverTaskAreaMetadata(projectRoot, configRoot = projectRoot, configPrefix = ".pi") {
+	const runnerPath = path.join(configRoot, configPrefix, "task-runner.yaml");
 	if (!fs.existsSync(runnerPath)) return { paths: [], contexts: [], areaRepoIds: {} };
 
 	const raw = readYaml(runnerPath);
@@ -1023,13 +1110,28 @@ async function cmdInit(args) {
 	// This is independent of --force: --force only controls pointer overwrite, not Scenario D detection
 	if (effectiveAlreadyInitialized && resolvedMode === "workspace" && effectiveConfigPath) {
 		const configRepo = path.basename(path.dirname(effectiveConfigPath));
+		const configRepoRoot = path.join(projectRoot, configRepo);
+		const existingWorkspaceJson = readWorkspaceJson(configRepoRoot);
+		const workspaceTasksRoot = existingWorkspaceJson?.routing?.tasks_root || "taskplane-tasks";
+		const workspaceDefaultRepo = existingWorkspaceJson?.routing?.default_repo || configRepo;
+		const workspaceRepoNames = Array.from(
+			new Set([
+				...detection.subRepos,
+				...((Array.isArray(existingWorkspaceJson?.repos) ? existingWorkspaceJson.repos : [])
+					.map((repo) => repo?.name)
+					.filter(Boolean)),
+			]),
+		).sort();
+
 		console.log(`  ${c.dim}Mode: workspace (${detection.subRepos.length} git repositories found)${c.reset}`);
 		console.log(`  ${INFO} Found existing Taskplane config in ${c.cyan}${configRepo}/.taskplane/${c.reset}`);
 		console.log(`     Using existing configuration.\n`);
 
 		// ── Pointer idempotency ─────────────────────────────────
 		const pointerPath = path.join(projectRoot, ".pi", "taskplane-pointer.json");
+		const workspaceYamlPath = path.join(projectRoot, ".pi", "taskplane-workspace.yaml");
 		const pointerExists = fs.existsSync(pointerPath);
+		const workspaceYamlExists = fs.existsSync(workspaceYamlPath);
 
 		if (dryRun) {
 			console.log(`${c.bold}Dry run — files that would be created:${c.reset}\n`);
@@ -1037,6 +1139,11 @@ async function cmdInit(args) {
 				console.log(`  ${c.yellow}overwrite${c.reset} .pi/taskplane-pointer.json`);
 			} else {
 				console.log(`  ${c.green}create${c.reset}    .pi/taskplane-pointer.json`);
+			}
+			if (workspaceYamlExists) {
+				console.log(`  ${c.dim}skip${c.reset}  .pi/taskplane-workspace.yaml (already exists)`);
+			} else {
+				console.log(`  ${c.green}create${c.reset} .pi/taskplane-workspace.yaml`);
 			}
 			console.log();
 			return;
@@ -1079,9 +1186,16 @@ async function cmdInit(args) {
 			{ label: ".pi/taskplane-pointer.json" }
 		);
 
+		writeFile(
+			workspaceYamlPath,
+			generateWorkspaceYaml(workspaceRepoNames, workspaceDefaultRepo, workspaceTasksRoot),
+			{ skipIfExists: !force, label: ".pi/taskplane-workspace.yaml" },
+		);
+
 		console.log(`\n${OK} ${c.bold}Workspace pointer created.${c.reset}\n`);
 		console.log(`  Config:  ${c.cyan}${configRepo}/.taskplane/${c.reset}`);
-		console.log(`  Pointer: ${c.cyan}.pi/taskplane-pointer.json${c.reset}\n`);
+		console.log(`  Pointer: ${c.cyan}.pi/taskplane-pointer.json${c.reset}`);
+		console.log(`  Workspace config: ${c.cyan}.pi/taskplane-workspace.yaml${c.reset}\n`);
 		console.log(`${c.bold}Quick start:${c.reset}`);
 		console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
 		console.log(`  ${c.cyan}taskplane doctor${c.reset}                                # verify setup`);
@@ -1176,6 +1290,7 @@ async function cmdInit(args) {
 			console.log(`\n${c.bold}Dry run — files that would be created:${c.reset}\n`);
 			printWorkspaceFileList(vars, noExamples, preset, exampleTemplateDirs, configRepoName, configRepoRoot);
 			console.log(`  ${c.green}create${c.reset} .pi/taskplane-pointer.json`);
+			console.log(`  ${c.green}create${c.reset} .pi/taskplane-workspace.yaml`);
 			console.log();
 			return;
 		}
@@ -1211,11 +1326,7 @@ async function cmdInit(args) {
 		}
 
 		// Project config JSON (taskplane-config.json)
-		const projectConfig = {
-			configVersion: 1,
-			taskRunner: {},
-			orchestrator: {},
-		};
+		const projectConfig = generateProjectConfig(vars);
 		writeFile(
 			path.join(taskplaneDir, "taskplane-config.json"),
 			JSON.stringify(projectConfig, null, 2) + "\n",
@@ -1311,6 +1422,11 @@ async function cmdInit(args) {
 			JSON.stringify(pointer, null, 2) + "\n",
 			{ label: ".pi/taskplane-pointer.json" }
 		);
+		writeFile(
+			path.join(projectRoot, ".pi", "taskplane-workspace.yaml"),
+			generateWorkspaceYaml(detection.subRepos, configRepoName, vars.tasks_root),
+			{ label: ".pi/taskplane-workspace.yaml" },
+		);
 
 		// ── Auto-commit config files in the config repo ─────────────
 		await autoCommitTaskFiles(configRepoRoot, vars.tasks_root);
@@ -1334,7 +1450,8 @@ async function cmdInit(args) {
 		// ── Post-init guidance ──────────────────────────────────────
 		console.log(`\n${OK} ${c.bold}Taskplane initialized in workspace mode!${c.reset}\n`);
 		console.log(`  Config repo: ${c.cyan}${configRepoName}/.taskplane/${c.reset}`);
-		console.log(`  Pointer:     ${c.cyan}.pi/taskplane-pointer.json${c.reset}\n`);
+		console.log(`  Pointer:     ${c.cyan}.pi/taskplane-pointer.json${c.reset}`);
+		console.log(`  Workspace:   ${c.cyan}.pi/taskplane-workspace.yaml${c.reset}\n`);
 		console.log(`  ${WARN} ${c.bold}Important:${c.reset} merge these changes to your default branch (e.g., ${c.cyan}develop${c.reset})`);
 		console.log(`     before other team members run ${c.cyan}taskplane init${c.reset}.\n`);
 		console.log(`     cd ${configRepoName}`);
@@ -1430,6 +1547,13 @@ async function cmdInit(args) {
 			{ skipIfExists, label: ".pi/task-orchestrator.yaml" }
 		);
 	}
+
+	// Unified project config JSON
+	writeFile(
+		path.join(projectRoot, ".pi", "taskplane-config.json"),
+		JSON.stringify(generateProjectConfig(vars), null, 2) + "\n",
+		{ skipIfExists, label: ".pi/taskplane-config.json" },
+	);
 
 	// Version tracker (always overwrite)
 	const versionInfo = {
@@ -1564,6 +1688,7 @@ function printFileList(vars, noExamples, preset, exampleTemplateDirs = [], proje
 		".pi/task-runner.yaml",
 	];
 	if (preset !== "runner-only") files.push(".pi/task-orchestrator.yaml");
+	files.push(".pi/taskplane-config.json");
 	files.push(".pi/taskplane.json");
 	files.push(`${vars.tasks_root}/CONTEXT.md`);
 	if (!noExamples) {
@@ -2079,6 +2204,44 @@ async function cmdInstallTmux(args) {
 
 // ─── doctor ─────────────────────────────────────────────────────────────────
 
+function resolveDoctorConfigLocation(projectRoot, isWorkspaceMode) {
+	if (!isWorkspaceMode) {
+		return {
+			root: projectRoot,
+			prefix: ".pi",
+			label: ".pi",
+		};
+	}
+
+	const pointerPath = path.join(projectRoot, ".pi", "taskplane-pointer.json");
+	if (!fs.existsSync(pointerPath)) {
+		return {
+			root: projectRoot,
+			prefix: ".pi",
+			label: ".pi",
+		};
+	}
+
+	try {
+		const pointer = JSON.parse(fs.readFileSync(pointerPath, "utf-8"));
+		if (pointer.config_repo && pointer.config_path) {
+			return {
+				root: path.resolve(projectRoot, pointer.config_repo),
+				prefix: pointer.config_path,
+				label: `${pointer.config_repo}/${pointer.config_path}`,
+			};
+		}
+	} catch {
+		// fall through to workspace-root .pi fallback
+	}
+
+	return {
+		root: projectRoot,
+		prefix: ".pi",
+		label: ".pi",
+	};
+}
+
 function cmdDoctor() {
 	const projectRoot = process.cwd();
 	let issues = 0;
@@ -2106,6 +2269,11 @@ function cmdDoctor() {
 		if (!ok) issues++;
 	}
 
+	// Detect workspace mode early so config-path checks can resolve via pointer
+	const wsResult = loadWorkspaceConfigForDoctor(projectRoot);
+	const isWorkspaceMode = wsResult.mode === "workspace";
+	const configLocation = resolveDoctorConfigLocation(projectRoot, isWorkspaceMode);
+
 	// Check tmux and spawn_mode compatibility
 	const hasTmux = commandExists("tmux");
 	console.log(
@@ -2116,13 +2284,17 @@ function cmdDoctor() {
 	}
 
 	// Check if project config requires tmux but it's not installed
-	const orchConfigPath = path.join(projectRoot, ".pi", "task-orchestrator.yaml");
-	const orchJsonPath = path.join(projectRoot, ".pi", "taskplane-config.json");
+	const orchConfigPath = path.join(configLocation.root, configLocation.prefix, "task-orchestrator.yaml");
+	const orchJsonPath = path.join(configLocation.root, configLocation.prefix, "taskplane-config.json");
 	let projectSpawnMode = null;
 	try {
 		if (fs.existsSync(orchJsonPath)) {
 			const json = JSON.parse(fs.readFileSync(orchJsonPath, "utf-8"));
-			projectSpawnMode = json?.orchestrator?.spawn_mode || json?.orchestrator?.spawnMode || null;
+			projectSpawnMode =
+				json?.orchestrator?.orchestrator?.spawnMode ||
+				json?.orchestrator?.spawnMode ||
+				json?.orchestrator?.spawn_mode ||
+				null;
 		} else if (fs.existsSync(orchConfigPath)) {
 			const raw = fs.readFileSync(orchConfigPath, "utf-8");
 			const match = raw.match(/spawn_mode:\s*["']?(\w+)["']?/);
@@ -2148,10 +2320,6 @@ function cmdDoctor() {
 	const isProjectLocal = PACKAGE_ROOT.includes(".pi");
 	const installType = isProjectLocal ? "project-local" : "global";
 	console.log(`  ${OK} taskplane package installed ${c.dim}(v${pkgVersion}, ${installType})${c.reset}`);
-
-	// Detect workspace mode
-	const wsResult = loadWorkspaceConfigForDoctor(projectRoot);
-	const isWorkspaceMode = wsResult.mode === "workspace";
 
 	if (isWorkspaceMode) {
 		console.log();
@@ -2342,78 +2510,67 @@ function cmdDoctor() {
 
 	// Check project config (common — both modes)
 	console.log();
+	const hasUnifiedJson = fs.existsSync(path.join(configLocation.root, configLocation.prefix, "taskplane-config.json"));
 	const configFiles = [
-		{ path: ".pi/task-runner.yaml", required: true },
-		{ path: ".pi/task-orchestrator.yaml", required: true },
-		{ path: ".pi/agents/task-worker.md", required: true },
-		{ path: ".pi/agents/task-reviewer.md", required: true },
-		{ path: ".pi/agents/task-merger.md", required: true },
-		{ path: ".pi/taskplane.json", required: false },
+		{ path: "taskplane-config.json", required: false },
+		{ path: "task-runner.yaml", required: !hasUnifiedJson },
+		{ path: "task-orchestrator.yaml", required: !hasUnifiedJson },
+		{ path: "agents/task-worker.md", required: true },
+		{ path: "agents/task-reviewer.md", required: true },
+		{ path: "agents/task-merger.md", required: true },
+		{ path: "taskplane.json", required: false },
 	];
-
-	// In workspace mode, include workspace config in the config files check
-	if (isWorkspaceMode && !wsResult.error) {
-		configFiles.push({ path: ".pi/taskplane-workspace.yaml", required: true });
-	}
 
 	let missingRequiredConfigs = 0;
 	for (const { path: relPath, required } of configFiles) {
-		const exists = fs.existsSync(path.join(projectRoot, relPath));
+		const fullPath = path.join(configLocation.root, configLocation.prefix, relPath);
+		const displayPath = `${configLocation.label}/${relPath}`;
+		const exists = fs.existsSync(fullPath);
 		if (exists) {
-			console.log(`  ${OK} ${relPath} exists`);
+			console.log(`  ${OK} ${displayPath} exists`);
 		} else if (required) {
-			console.log(`  ${FAIL} ${relPath} missing`);
+			console.log(`  ${FAIL} ${displayPath} missing`);
 			missingRequiredConfigs++;
 			issues++;
 		} else {
-			console.log(`  ${WARN} ${relPath} missing ${c.dim}(optional)${c.reset}`);
+			console.log(`  ${WARN} ${displayPath} missing ${c.dim}(optional)${c.reset}`);
 		}
 	}
+
+	if (isWorkspaceMode && !wsResult.error) {
+		const wsConfigPath = path.join(projectRoot, ".pi", "taskplane-workspace.yaml");
+		if (fs.existsSync(wsConfigPath)) {
+			console.log(`  ${OK} .pi/taskplane-workspace.yaml exists`);
+		} else {
+			console.log(`  ${FAIL} .pi/taskplane-workspace.yaml missing`);
+			missingRequiredConfigs++;
+			issues++;
+		}
+	}
+
 	if (missingRequiredConfigs > 0) {
 		console.log(`     ${c.dim}→ Run: taskplane init${c.reset}`);
 	}
 
 	// ── Legacy YAML config migration warning ────────────────────────────
 	// Detect YAML config files without a JSON equivalent (taskplane-config.json).
-	// In workspace mode, check inside the config repo's .taskplane/ directory.
-	// In repo mode, check the project root's .pi/ directory.
 	{
-		let configRoot = projectRoot;
-		let configPrefix = ".pi";
-		let locationLabel = "";
-
-		if (isWorkspaceMode && wsResult.config) {
-			// Workspace mode: resolve config repo path from pointer
-			const pointerPath = path.join(projectRoot, ".pi", "taskplane-pointer.json");
-			try {
-				const pointer = JSON.parse(fs.readFileSync(pointerPath, "utf-8"));
-				if (pointer.config_repo && pointer.config_path) {
-					configRoot = path.resolve(projectRoot, pointer.config_repo);
-					configPrefix = pointer.config_path;
-					locationLabel = `${pointer.config_repo}/${pointer.config_path}`;
-				}
-			} catch {
-				// Pointer missing/invalid — skip (pointer validation handles this)
-			}
-		}
-
-		const yamlRunnerPath = path.join(configRoot, configPrefix, "task-runner.yaml");
-		const yamlOrchestratorPath = path.join(configRoot, configPrefix, "task-orchestrator.yaml");
-		const jsonConfigPath = path.join(configRoot, configPrefix, "taskplane-config.json");
+		const yamlRunnerPath = path.join(configLocation.root, configLocation.prefix, "task-runner.yaml");
+		const yamlOrchestratorPath = path.join(configLocation.root, configLocation.prefix, "task-orchestrator.yaml");
+		const jsonConfigPath = path.join(configLocation.root, configLocation.prefix, "taskplane-config.json");
 
 		const hasYamlRunner = fs.existsSync(yamlRunnerPath);
 		const hasYamlOrchestrator = fs.existsSync(yamlOrchestratorPath);
 		const hasJsonConfig = fs.existsSync(jsonConfigPath);
 
 		if ((hasYamlRunner || hasYamlOrchestrator) && !hasJsonConfig) {
-			const loc = locationLabel ? `in ${locationLabel}` : "";
-			console.log(`  ${WARN} legacy YAML config detected${loc ? ` ${loc}` : ""}`);
+			console.log(`  ${WARN} legacy YAML config detected in ${configLocation.label}`);
 			console.log(`     ${c.dim}→ Run /settings to migrate to taskplane-config.json${c.reset}`);
 		}
 	}
 
 	// Check task areas from config
-	const { paths: taskAreaPaths, contexts: taskAreaContexts, areaRepoIds } = discoverTaskAreaMetadata(projectRoot);
+	const { paths: taskAreaPaths, contexts: taskAreaContexts, areaRepoIds } = discoverTaskAreaMetadata(projectRoot, configLocation.root, configLocation.prefix);
 	if (taskAreaPaths.length > 0) {
 		console.log();
 		for (const areaPath of taskAreaPaths) {
@@ -2446,7 +2603,7 @@ function cmdDoctor() {
 				console.log(`  ${OK} area '${areaName}' repo_id: ${repoId}`);
 			} else {
 				console.log(`  ${FAIL} area '${areaName}' repo_id '${repoId}' does not match any workspace repo [AREA_REPO_ID_UNKNOWN]`);
-				console.log(`     ${c.dim}→ Available repos: ${knownRepoIds.join(", ")}. Fix repo_id in .pi/task-runner.yaml${c.reset}`);
+				console.log(`     ${c.dim}→ Available repos: ${knownRepoIds.join(", ")}. Fix repo_id in ${configLocation.label}/task-runner.yaml${c.reset}`);
 				issues++;
 			}
 		}

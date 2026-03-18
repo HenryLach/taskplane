@@ -655,7 +655,7 @@ export default function (pi: ExtensionAPI) {
 			if (!requireExecCtx(ctx)) return;
 
 			try {
-				await openSettingsTui(ctx, execCtx!.workspaceRoot);
+				await openSettingsTui(ctx, execCtx!.workspaceRoot, execCtx!.pointer?.configRoot);
 			} catch (err: any) {
 				ctx.ui.notify(`❌ Failed to load settings: ${err.message}`, "error");
 			}
