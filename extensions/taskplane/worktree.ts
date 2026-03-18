@@ -1390,7 +1390,7 @@ export function ensureLaneWorktrees(
 	const prefix = config.orchestrator.worktree_prefix;
 	const opId = resolveOperatorId(config);
 
-	const existing = listWorktrees(prefix, repoRoot, opId);
+	const existing = listWorktrees(prefix, repoRoot, opId, batchId);
 	const existingByLane = new Map<number, WorktreeInfo>();
 	for (const wt of existing) {
 		existingByLane.set(wt.laneNumber, wt);

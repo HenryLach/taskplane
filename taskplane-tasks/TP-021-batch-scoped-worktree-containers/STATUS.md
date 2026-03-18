@@ -49,15 +49,15 @@
 ---
 
 ### Step 3: Update All Callers
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Update `ensureLaneWorktrees()` in `worktree.ts` — pass `batchId` to `listWorktrees()` for batch-scoped lane reuse (R006 critical: prevents cross-batch collision in concurrent same-operator batches)
-- [ ] Update `waves.ts` — pass `batchId` and `config` to rollback `removeAllWorktrees()` call in `allocateLanes()` for batch-scoped cleanup (R006: rollback must not delete other batches)
-- [ ] Update `engine.ts` Phase 2 — pass `batchId` to `listWorktrees()` in worktree reset loop for batch-scoped discovery
-- [ ] Update `engine.ts` Phase 3 — pass `batchId` and `config` to `removeAllWorktrees()` in final cleanup for batch-scoped removal
-- [ ] Update `merge.ts` — use `generateMergeWorktreePath()` instead of ad-hoc path construction; pass `batchId` and `config` for config-aware container resolution
-- [ ] Update `resume.ts` — pass `batchId` to `listWorktrees()` and `removeAllWorktrees()` for batch-scoped operations (R005 dependency)
-- [ ] Verify: no opId-only list/remove calls remain in active batch flows (done criteria per R006)
+- [x] Update `ensureLaneWorktrees()` in `worktree.ts` — pass `batchId` to `listWorktrees()` for batch-scoped lane reuse (R006 critical: prevents cross-batch collision in concurrent same-operator batches)
+- [x] Update `waves.ts` — pass `batchId` and `config` to rollback `removeAllWorktrees()` call in `allocateLanes()` for batch-scoped cleanup (R006: rollback must not delete other batches)
+- [x] Update `engine.ts` Phase 2 — pass `batchId` to `listWorktrees()` in worktree reset loop for batch-scoped discovery
+- [x] Update `engine.ts` Phase 3 — pass `batchId` and `config` to `removeAllWorktrees()` in final cleanup for batch-scoped removal
+- [x] Update `merge.ts` — use `generateMergeWorktreePath()` instead of ad-hoc path construction; pass `batchId` and `config` for config-aware container resolution
+- [x] Update `resume.ts` — pass `batchId` to `listWorktrees()` and `removeAllWorktrees()` for batch-scoped operations (R005 dependency)
+- [x] Verify: no opId-only list/remove calls remain in active batch flows (done criteria per R006)
 
 ---
 
@@ -156,6 +156,7 @@
 | 2026-03-18 13:51 | Step 3 started | Update All Callers |
 | 2026-03-18 13:54 | Review R006 | plan Step 3: REVISE |
 | 2026-03-18 13:55 | Review R006 | plan Step 3: REVISE |
+| 2026-03-18 13:59 | Worker iter 4 | done in 265s, ctx: 27%, tools: 60 |
 
 ---
 

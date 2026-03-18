@@ -1292,7 +1292,7 @@ export async function resumeOrchBatch(
 			// AND newly allocated lanes from resumed waves, ensuring repos
 			// introduced after resume starts are covered.
 			for (const perRepoRoot of encounteredRepoRoots) {
-				const existingWorktrees = listWorktrees(wtPrefix, perRepoRoot, resetOpId);
+				const existingWorktrees = listWorktrees(wtPrefix, perRepoRoot, resetOpId, batchState.batchId);
 				if (existingWorktrees.length > 0) {
 					const targetBranch = batchState.baseBranch;
 					for (const wt of existingWorktrees) {
@@ -1320,7 +1320,7 @@ export async function resumeOrchBatch(
 		// AND newly allocated lanes from resumed waves, ensuring repos
 		// introduced after resume starts are cleaned up.
 		for (const perRepoRoot of encounteredRepoRoots) {
-			removeAllWorktrees(wtPrefix, perRepoRoot, cleanupOpId, targetBranch);
+			removeAllWorktrees(wtPrefix, perRepoRoot, cleanupOpId, targetBranch, batchState.batchId, orchConfig);
 		}
 	}
 

@@ -481,7 +481,7 @@ export async function executeOrchBatch(
 		if (waveIdx < rawWaves.length - 1 && !batchState.pauseSignal.paused) {
 			const prefix = orchConfig.orchestrator.worktree_prefix;
 			const resetOpId = resolveOperatorId(orchConfig);
-			const existingWorktrees = listWorktrees(prefix, repoRoot, resetOpId);
+			const existingWorktrees = listWorktrees(prefix, repoRoot, resetOpId, batchState.batchId);
 
 			if (existingWorktrees.length > 0) {
 				onNotify(
@@ -676,7 +676,7 @@ export async function executeOrchBatch(
 		const targetBranch = batchState.baseBranch;
 		const cleanupOpId = resolveOperatorId(orchConfig);
 		execLog("batch", batchState.batchId, "cleaning up worktrees");
-		const removeResult = removeAllWorktrees(prefix, repoRoot, cleanupOpId, targetBranch);
+		const removeResult = removeAllWorktrees(prefix, repoRoot, cleanupOpId, targetBranch, batchState.batchId, orchConfig);
 
 		// Log preserved branches
 		for (const p of removeResult.preserved) {
