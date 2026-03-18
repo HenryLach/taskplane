@@ -6,8 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
-n### Fixed
+
+## [0.4.3] - 2026-03-18
+
+### Added
+- **Settings reference doc** — `docs/reference/configuration/taskplane-settings.md` documents every setting with types, defaults, options, and descriptions.
+- **Orchestrator-managed branch schema** (TP-020) — `orchBranch` field in runtime and persisted batch state, `integration` config (`"manual"` | `"auto"`, default `"manual"`), Integration toggle in `/taskplane-settings` TUI. Foundation for issue #24.
+- **Batch-scoped worktree containers** (TP-021, partial) — `generateWorktreePath()` refactored to `{basePath}/{opId}-{batchId}/lane-{N}`, new `generateMergeWorktreePath()`, updated listing and cleanup for nested structure. Prevents directory collisions between concurrent batches.
+
+### Fixed
+- **Settings TUI input fields freeze terminal** (issue #57) — replaced inline submenu with single-value cycling pattern that exits TUI, then prompts via `ctx.ui.input()`. Works on all platforms.
 - Renamed `/settings` to `/taskplane-settings` to avoid collision with pi's built-in `/settings` command.
+
+### Removed
+- Orchestrator `spawn_mode` setting removed from `/taskplane-settings` TUI — `/orch` always requires tmux, making the setting misleading. The worker-level Spawn Mode (controls `/task` behavior) remains.
+
 
 
 
