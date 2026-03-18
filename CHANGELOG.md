@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-03-18
+
+### Fixed
+- **TASKPLANE_WORKSPACE_ROOT not set for lane sessions** — env var condition was always false in workspace mode. Lane sessions couldn't find config, showing "0 areas".
+
 ## [0.5.1] - 2026-03-18
 
 ### Fixed
