@@ -120,6 +120,24 @@ export const ORCH_MESSAGES = {
 	// /orch merge — repo-scoped partial summary (TP-005 Step 1)
 	orchMergePartialRepoSummary: (waveNum: number, repoLines: string[]) =>
 		`⚠️ [Wave ${waveNum}] Merge partially succeeded — repo outcomes diverged:\n${repoLines.join("\n")}`,
+
+	// /orch integration — post-batch integration guidance (TP-022 Step 4)
+	orchIntegrationAutoSuccess: (orchBranch: string, baseBranch: string) =>
+		`✅ Auto-integrated: ${baseBranch} fast-forwarded to ${orchBranch}.`,
+	orchIntegrationAutoFailed: (orchBranch: string, baseBranch: string, reason: string) =>
+		`⚠️ Auto-integration skipped: ${reason}\n` +
+		`   Orch branch ${orchBranch} preserved. Integrate manually:\n` +
+		`   git log ${baseBranch}..${orchBranch}\n` +
+		`   git merge ${orchBranch}`,
+	orchIntegrationManual: (orchBranch: string, baseBranch: string, mergedTaskCount: number) => {
+		const lines = [
+			`ℹ️ Batch complete. Orch branch ${orchBranch} has ${mergedTaskCount} merged task(s).`,
+			`   Review and integrate:`,
+			`   git log ${baseBranch}..${orchBranch}`,
+			`   git merge ${orchBranch}`,
+		];
+		return lines.join("\n");
+	},
 } as const;
 
 

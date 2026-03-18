@@ -43,6 +43,7 @@ Settings that control how `/orch` runs parallel task batches.
 | **Batch ID Format** | enum | `timestamp` | `timestamp`, `sequential` | Format for batch identifiers used in branch names and logs. `timestamp` = `20260317T140000`. `sequential` = incrementing number. |
 | **Tmux Prefix** | string | `orch` | Any string | Prefix for orchestrator tmux session names. Sessions are named `{prefix}-{opId}-lane-{N}`. Change if you run multiple taskplane instances and need distinct session names. *(L1+L2)* |
 | **Operator ID** | string | *(auto-detect)* | Any string | Identifier for this operator. Auto-detected from OS username if empty. Used in session names, worktree paths, and branch names for collision resistance when multiple people run batches on the same repo. *(L1+L2)* |
+| **Integration** | enum | `manual` | `manual`, `auto` | How completed batches are integrated into your working branch. `manual` = you run `/orch-integrate` after the batch completes (gives you full control over timing and integration mode). `auto` = the orchestrator attempts a fast-forward of your base branch when the batch completes (falls back to manual guidance if fast-forward isn't possible). See [`/orch-integrate`](../commands.md) for details on the manual integration flow. |
 
 ---
 
