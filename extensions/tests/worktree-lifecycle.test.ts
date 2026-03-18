@@ -396,7 +396,9 @@ describe("5.2 createWorktree — happy path", () => {
 		}, repoDir);
 
 		assert(existsSync(wt.path), `worktree dir should exist: ${wt.path}`);
-		assert(wt.path.includes(" with space-test-2"), "worktree path should include spaced prefix");
+		// New batch-scoped path: {basePath}/test-space001/lane-2
+		assert(wt.path.includes("test-space001"), "worktree path should include batch container");
+		assert(wt.path.endsWith(`lane-2`), "worktree path should end with lane-2");
 
 		// Verify the worktree is fully functional with spaced paths
 		const headBranch = execSync("git rev-parse --abbrev-ref HEAD", {
@@ -431,7 +433,7 @@ describe("5.2 createWorktree — error paths", () => {
 
 	test("WORKTREE_PATH_IS_WORKTREE for existing worktree at same path", () => {
 		repoDir = initTestRepo("create-collision");
-		// Create first worktree
+		// Create first worktree — this occupies {basePath}/test-test003/lane-1
 		const wt1 = createWorktree({
 			laneNumber: 1,
 			batchId: "test003",
@@ -440,11 +442,15 @@ describe("5.2 createWorktree — error paths", () => {
 			prefix: basename(repoDir),
 		}, repoDir);
 
-		// Try creating at same path (different batchId but same lane)
+		// Try creating at the same path by using the same opId/batchId/laneNumber
+		// but a different branch trick: delete the branch first so pre-check 4
+		// won't fire, leaving pre-check 2 (path collision) to trigger.
+		// Actually, same params produce both same path AND same branch name, so
+		// pre-check 2 fires first (path is already a registered worktree).
 		const err = assertThrows(() => {
 			createWorktree({
 				laneNumber: 1,
-				batchId: "test004",
+				batchId: "test003",
 				baseBranch: "develop",
 				opId: "test",
 				prefix: basename(repoDir),

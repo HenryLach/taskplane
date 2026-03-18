@@ -1,11 +1,11 @@
 # TP-021: Batch-Scoped Worktree Containers — Status
 
-**Current Step:** Step 1: Refactor Worktree Path Generation
+**Current Step:** Step 2: Update Worktree Listing and Cleanup
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -38,11 +38,13 @@
 ---
 
 ### Step 2: Update Worktree Listing and Cleanup
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Update `listWorktrees()` for new nested structure
-- [ ] Update `removeAllWorktrees()` to remove batch container
-- [ ] Update `removeWorktree()` and `forceCleanupWorktree()` if needed
+- [ ] Add optional `batchId` parameter to `listWorktrees()` — when provided, scope discovery to only `{opId}-{batchId}/lane-{N}` entries (batch isolation); when omitted, retain current all-operator behavior (backward compat). Preserve legacy flat-path matching for transition support.
+- [ ] Add optional `batchId` parameter to `removeAllWorktrees()` — pass through to `listWorktrees()` for batch-scoped cleanup. After removing worktrees, attempt to remove the empty batch container directory (only if it exists and is empty; never force-remove non-empty containers).
+- [ ] Add `removeBatchContainerIfEmpty()` helper — safely removes `{basePath}/{opId}-{batchId}/` only when empty. Used by `removeAllWorktrees()` after per-worktree removals. No-op on partial failure (non-empty dir).
+- [ ] Update `forceCleanupWorktree()` to also attempt container cleanup after force-removing a worktree (per-container, empty-only check)
+- [ ] Add Step 3 dependency note: `resume.ts` must be updated when list/remove signatures change (R005 item)
 
 ---
 
@@ -86,6 +88,7 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 |---|------|------|---------|------|
 
 ---
@@ -138,6 +141,10 @@
 | 2026-03-18 11:55 | Worker iter 2 | done in 327s, ctx: 32%, tools: 40 |
 | 2026-03-18 11:57 | Review R004 | code Step 1: REVISE |
 | 2026-03-18 11:58 | Review R004 | code Step 1: REVISE |
+| 2026-03-18 12:01 | Worker iter 2 | done in 174s, ctx: 16%, tools: 29 |
+| 2026-03-18 12:01 | Step 1 complete | Refactor Worktree Path Generation |
+| 2026-03-18 12:01 | Step 2 started | Update Worktree Listing and Cleanup |
+| 2026-03-18 12:03 | Review R005 | plan Step 2: REVISE |
 
 ---
 
