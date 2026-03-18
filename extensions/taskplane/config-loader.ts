@@ -726,6 +726,7 @@ export function toOrchestratorConfig(config: TaskplaneConfig): import("./types.t
 			spawn_mode: o.orchestrator.spawnMode,
 			tmux_prefix: o.orchestrator.tmuxPrefix,
 			operator_id: o.orchestrator.operatorId,
+			integration: o.orchestrator.integration,
 		},
 		dependencies: {
 			source: o.dependencies.source,

@@ -216,6 +216,8 @@ export interface OrchestratorCoreConfig {
 	tmuxPrefix: string;
 	/** Operator identifier. Auto-detected from OS username if empty */
 	operatorId: string;
+	/** How completed batches are integrated. manual = user runs /orch-integrate. auto = fast-forward on completion. */
+	integration: "manual" | "auto";
 }
 
 /** Dependency resolution settings */
@@ -427,6 +429,7 @@ export const DEFAULT_ORCHESTRATOR_SECTION: OrchestratorSection = {
 		spawnMode: "subprocess",
 		tmuxPrefix: "orch",
 		operatorId: "",
+		integration: "manual",
 	},
 	dependencies: {
 		source: "prompt",

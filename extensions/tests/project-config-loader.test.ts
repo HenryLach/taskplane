@@ -602,6 +602,7 @@ describe("key preservation and adapter regression", () => {
 			"  spawn_mode: tmux",
 			"  tmux_prefix: myorch",
 			"  operator_id: testuser",
+			"  integration: auto",
 			"dependencies:",
 			"  source: agent",
 			"  cache: false",
@@ -637,6 +638,7 @@ describe("key preservation and adapter regression", () => {
 		expect(legacy.orchestrator.spawn_mode).toBe("tmux");
 		expect(legacy.orchestrator.tmux_prefix).toBe("myorch");
 		expect(legacy.orchestrator.operator_id).toBe("testuser");
+		expect(legacy.orchestrator.integration).toBe("auto");
 		expect(legacy.dependencies.source).toBe("agent");
 		expect(legacy.dependencies.cache).toBe(false);
 		expect(legacy.assignment.strategy).toBe("round-robin");
@@ -651,6 +653,21 @@ describe("key preservation and adapter regression", () => {
 		expect(legacy.failure.max_worker_minutes).toBe(45);
 		expect(legacy.failure.abort_grace_period).toBe(120);
 		expect(legacy.monitoring.poll_interval).toBe(10);
+	});
+
+	it("3.13: integration defaults to 'manual' when omitted from YAML", () => {
+		const dir = makeTestDir("integration-default");
+		writeOrchestratorYaml(dir, [
+			"orchestrator:",
+			"  max_lanes: 2",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		// Unified config should have the default
+		expect(config.orchestrator.orchestrator.integration).toBe("manual");
+		// Adapter should carry it through
+		const legacy = toOrchestratorConfig(config);
+		expect(legacy.orchestrator.integration).toBe("manual");
 	});
 });
 

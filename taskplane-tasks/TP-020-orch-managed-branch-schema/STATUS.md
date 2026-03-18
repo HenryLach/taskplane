@@ -36,12 +36,12 @@
 ---
 
 ### Step 2: Add `integration` to Orchestrator Config
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add `integration: "manual" | "auto"` to legacy `OrchestratorConfig.orchestrator` in `types.ts` + default `"manual"` in `DEFAULT_ORCHESTRATOR_CONFIG`
-- [ ] Add `integration: "manual" | "auto"` to unified `OrchestratorCoreConfig` in `config-schema.ts` + default `"manual"` in `DEFAULT_ORCHESTRATOR_SECTION`
-- [ ] Add `integration` mapping in `toOrchestratorConfig()` in `config-loader.ts`
-- [ ] Add test coverage: extend adapter assertions in `project-config-loader.test.ts` for `integration` (default, override, YAML mapping)
+- [x] Add `integration: "manual" | "auto"` to legacy `OrchestratorConfig.orchestrator` in `types.ts` + default `"manual"` in `DEFAULT_ORCHESTRATOR_CONFIG`
+- [x] Add `integration: "manual" | "auto"` to unified `OrchestratorCoreConfig` in `config-schema.ts` + default `"manual"` in `DEFAULT_ORCHESTRATOR_SECTION`
+- [x] Add `integration` mapping in `toOrchestratorConfig()` in `config-loader.ts`
+- [x] Add test coverage: extend adapter assertions in `project-config-loader.test.ts` for `integration` (default, override, YAML mapping)
 
 ---
 
@@ -78,6 +78,7 @@
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
 ---
@@ -112,6 +113,7 @@
 | 2026-03-18 03:37 | Step 1 complete | Add `orchBranch` to Runtime + Persisted State |
 | 2026-03-18 03:37 | Step 2 started | Add `integration` to Orchestrator Config |
 | 2026-03-18 03:39 | Review R003 | plan Step 2: REVISE |
+| 2026-03-18 03:40 | Review R003 | plan Step 2: APPROVE |
 
 ---
 
