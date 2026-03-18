@@ -1,10 +1,10 @@
 # TP-022: Orch Branch Lifecycle & Merge Redirect — Status
 
-**Current Step:** Step 5: Testing & Verification
+**Current Step:** Step 6: Documentation & Delivery
 **Status:** ✅ Step 5 Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 11
+**Review Counter:** 12
 **Iteration:** 6
 **Size:** L
 
@@ -89,7 +89,7 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 
 - [x] Full test suite passes: `cd extensions && npx vitest run` — 21 files, 753 tests passed
 - [x] Orch branch creation edge cases verified: success path (test 5), branch-already-exists failure (test 6), lifecycle ordering after all planning exits (test 7) — all pass
@@ -100,11 +100,13 @@
 - [x] Auto-integration verified: ff success (test 18), divergence fallback (test 19), update-ref non-checked-out (test 23), shared attemptAutoIntegration function gates both paths (test 22)
 - [x] Resume parity: terminal-phase gating (test 24), orchBranch guard consistency (tests 7, 9), resolveBaseBranch fallback (test 10), workspace-mode cleanup (test 25), inter-wave reset (test 26) — all pass
 - [x] All failures fixed — no failures found (753/753 tests pass, 21/21 test files pass)
+- [ ] R012: Add detached-HEAD test for orch branch creation edge case — verify engine.ts fails fast before branch creation when on detached HEAD
+- [ ] R012: Deduplicate review/log rows in STATUS.md
 
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Discoveries logged
 - [ ] `.DONE` created
@@ -131,6 +133,8 @@
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 | R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 | R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
+| R012 | code | Step 5 | APPROVE | .reviews/R012-code-step5.md |
+| R012 | code | Step 5 | REVISE | .reviews/R012-code-step5.md |
 
 ---
 
@@ -242,6 +246,12 @@
 | 2026-03-18 16:12 | Step 5 started | Testing & Verification |
 | 2026-03-18 16:14 | Review R011 | plan Step 5: REVISE |
 | 2026-03-18 16:14 | Review R011 | plan Step 5: REVISE |
+| 2026-03-18 16:19 | Worker iter 6 | done in 297s, ctx: 24%, tools: 41 |
+| 2026-03-18 16:19 | Worker iter 6 | done in 253s, ctx: 23%, tools: 23 |
+| 2026-03-18 16:21 | Review R012 | code Step 5: APPROVE |
+| 2026-03-18 16:21 | Step 5 complete | Testing & Verification |
+| 2026-03-18 16:21 | Step 6 started | Documentation & Delivery |
+| 2026-03-18 16:21 | Review R012 | code Step 5: REVISE |
 
 ---
 
