@@ -1,11 +1,11 @@
 # TP-020: Orch-Managed Branch Schema & Config — Status
 
-**Current Step:** Step 3: Add Integration Toggle to Settings TUI
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 1
-**Review Counter:** 4
-**Iteration:** 4
+**Review Counter:** 5
+**Iteration:** 5
 **Size:** M
 
 ---
@@ -55,12 +55,14 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Unit tests passing
-- [ ] Schema defaults verified
-- [ ] Settings TUI tests passing
-- [ ] All failures fixed
+- [ ] Run `cd extensions && npx vitest run` — all tests must pass (zero failures)
+- [ ] Verify `freshOrchBatchState()` returns `orchBranch: ""` (inspect types.ts)
+- [ ] Verify `DEFAULT_ORCHESTRATOR_CONFIG.orchestrator.integration === "manual"` (inspect types.ts)
+- [ ] Verify backward-compat: `validatePersistedState()` defaults missing `orchBranch` to `""` for older v2 state files (inspect persistence.ts)
+- [ ] Verify Settings TUI: `integration` field is editable L1 toggle in Orchestrator section and does NOT appear in Advanced section (confirm via settings-tui.test.ts coverage at tests 18.2, 18.8)
+- [ ] Fix all failures if any, re-run tests until green
 
 ---
 
@@ -83,6 +85,7 @@
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
 | R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
 | R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
+| R005 | plan | Step 4 | REVISE | .reviews/R005-plan-step4.md |
 |---|------|------|---------|------|
 
 ---
@@ -126,6 +129,13 @@
 | 2026-03-18 03:43 | Step 3 started | Add Integration Toggle to Settings TUI |
 | 2026-03-18 03:44 | Review R004 | plan Step 3: REVISE |
 | 2026-03-18 03:45 | Review R004 | plan Step 3: REVISE |
+| 2026-03-18 03:46 | Worker iter 4 | done in 92s, ctx: 20%, tools: 17 |
+| 2026-03-18 03:46 | Step 3 complete | Add Integration Toggle to Settings TUI |
+| 2026-03-18 03:46 | Step 4 started | Testing & Verification |
+| 2026-03-18 03:46 | Worker iter 4 | done in 66s, ctx: 12%, tools: 15 |
+| 2026-03-18 03:46 | Step 3 complete | Add Integration Toggle to Settings TUI |
+| 2026-03-18 03:46 | Step 4 started | Testing & Verification |
+| 2026-03-18 03:47 | Review R005 | plan Step 4: REVISE |
 
 ---
 
