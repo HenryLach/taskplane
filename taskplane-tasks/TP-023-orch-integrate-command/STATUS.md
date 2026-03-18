@@ -131,6 +131,7 @@
 | 2026-03-18 17:00 | Review R005 | plan Step 2: REVISE |
 | 2026-03-18 iter3 | R005 hydration | Expanded Step 2: state→arg→branch-scan fallback, StateFileError handling, detached HEAD, repoRoot invariant |
 | 2026-03-18 iter3 | Step 2 complete | Implemented: 3-tier branch resolution (state→arg→scan), StateFileError handling (IO/parse/schema), legacy merge mode detection, detached HEAD check, branch safety with --force bypass, pre-integration summary with commits/diff. 777/777 tests pass. |
+| 2026-03-18 17:06 | Worker iter 3 | done in 318s, ctx: 24%, tools: 39 |
 
 ---
 
