@@ -4,8 +4,8 @@
 **Status:** ✅ Step 4 Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 10
-**Iteration:** 5
+**Review Counter:** 11
+**Iteration:** 6
 **Size:** L
 
 ---
@@ -91,10 +91,14 @@
 ### Step 5: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] Unit tests passing
-- [ ] Orch branch creation edge cases verified
-- [ ] Merge no longer touches user's branch
-- [ ] Auto-integration verified
+- [ ] Full test suite passes: `cd extensions && npx vitest run` — record pass count
+- [ ] Orch branch creation edge cases verified: detached HEAD, branch-already-exists handled in tests (Step 1 tests 1-4)
+- [ ] Merge advancement: non-checked-out path uses update-ref (no ff-only on user branch); checked-out fallback uses ff-only+stash (Step 3 tests 11-14)
+- [ ] Worktrees based on orchBranch: engine.ts and resume.ts pass orchBranch to executeWave (Step 2 tests 5-8)
+- [ ] Post-merge worktree reset targets orchBranch (Step 2 tests 5-8)
+- [ ] Cleanup preserves orchBranch in manual-integration mode (Step 4 tests 18-23)
+- [ ] Auto-integration verified: success path and divergence fallback (Step 4 tests 18-23)
+- [ ] Resume parity: terminal-phase gating for auto-integration, orchBranch guard on legacy state (Step 4 tests 24-26, Step 2 tests 9-10)
 - [ ] All failures fixed
 
 ---
@@ -125,6 +129,7 @@
 | R009 | plan | Step 4 | APPROVE | .reviews/R009-plan-step4.md |
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
+| R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 
 ---
 
@@ -231,6 +236,10 @@
 | 2026-03-18 16:12 | Worker iter 5 | done in 945s, ctx: 45%, tools: 108 |
 | 2026-03-18 16:12 | Step 4 complete | Auto-Integration and Cleanup |
 | 2026-03-18 16:12 | Step 5 started | Testing & Verification |
+| 2026-03-18 16:12 | Worker iter 5 | done in 877s, ctx: 40%, tools: 114 |
+| 2026-03-18 16:12 | Step 4 complete | Auto-Integration and Cleanup |
+| 2026-03-18 16:12 | Step 5 started | Testing & Verification |
+| 2026-03-18 16:14 | Review R011 | plan Step 5: REVISE |
 
 ---
 
