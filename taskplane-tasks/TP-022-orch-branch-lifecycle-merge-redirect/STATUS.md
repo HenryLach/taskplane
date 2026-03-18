@@ -1,11 +1,11 @@
 # TP-022: Orch Branch Lifecycle & Merge Redirect — Status
 
-**Current Step:** Step 1: Create Orch Branch at Batch Start (R004 revisions complete)
+**Current Step:** Step 2: Route Worktrees and Merge to Orch Branch
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** L
 
 ---
@@ -28,7 +28,7 @@
 ---
 
 ### Step 1: Create Orch Branch at Batch Start
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Generate orch branch name `orch/{opId}-{batchId}` using `resolveOperatorId(orchConfig)` and create via `runGit(["branch", orchBranch, baseBranch], repoRoot)`; store in `batchState.orchBranch`
 - [x] Handle creation failure: set phase="failed", endedAt, push error, notify, return (matching existing early-exit pattern in engine.ts)
@@ -40,11 +40,16 @@
 ---
 
 ### Step 2: Route Worktrees and Merge to Orch Branch
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Pass `orchBranch` to `executeWave()` and `mergeWaveByRepo()`
-- [ ] Post-merge worktree reset targets `orchBranch`
-- [ ] Verify `resolveBaseBranch()` compatibility
+- [ ] In engine.ts: pass `orchBranch` (not `baseBranch`) to `executeWave()` and `mergeWaveByRepo()` calls
+- [ ] In engine.ts: post-merge worktree reset targets `orchBranch` (not `baseBranch`)
+- [ ] In resume.ts: add orchBranch empty-guard — fail fast with clear message if `batchState.orchBranch` is empty/missing on resume
+- [ ] In resume.ts: pass `orchBranch` to `executeWave()` and `mergeWaveByRepo()` calls (4 call sites: re-exec merge, wave executeWave, wave mergeWaveByRepo, and re-exec merge target)
+- [ ] In resume.ts: post-merge worktree reset targets `orchBranch` (not `baseBranch`)
+- [ ] Verify `resolveBaseBranch()` compatibility — in workspace mode it detects per-repo branch; in repo mode it returns passed-in value (now orchBranch)
+- [ ] Add tests for orchBranch routing: engine execute/merge/reset, resume parity, resolveBaseBranch repo vs workspace mode
+- [ ] Remove duplicate R004 review row in STATUS.md
 
 ---
 
@@ -95,6 +100,7 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ---
 
@@ -152,6 +158,13 @@
 | 2026-03-18 14:50 | Review R004 | code Step 1: REVISE |
 | 2026-03-18 | R004 revisions | Moved orch branch creation after all planning validations; added tests for success/failure/lifecycle; 754 tests pass |
 | 2026-03-18 14:51 | Review R004 | code Step 1: REVISE |
+| 2026-03-18 14:58 | Worker iter 2 | done in 465s, ctx: 28%, tools: 58 |
+| 2026-03-18 14:58 | Step 1 complete | Create Orch Branch at Batch Start |
+| 2026-03-18 14:58 | Step 2 started | Route Worktrees and Merge to Orch Branch |
+| 2026-03-18 15:00 | Review R005 | plan Step 2: REVISE |
+| 2026-03-18 15:01 | Worker iter 2 | done in 567s, ctx: 24%, tools: 41 |
+| 2026-03-18 15:01 | Step 1 complete | Create Orch Branch at Batch Start |
+| 2026-03-18 15:01 | Step 2 started | Route Worktrees and Merge to Orch Branch |
 
 ---
 
