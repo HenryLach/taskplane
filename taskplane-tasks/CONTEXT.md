@@ -40,3 +40,4 @@ Taskplane is an AI agent orchestration system built as a pi package. It provides
 _Items discovered during task execution are logged here by agents._
 
 - [ ] **Update worktree naming in taskplane-settings.md** — `docs/reference/configuration/taskplane-settings.md` still describes old `{prefix}-{opId}-{N}` naming. TP-021 changed to batch-scoped `{opId}-{batchId}/lane-{N}`. Deferred to TP-024. (discovered during TP-021)
+- [ ] **Intermittent orch-state-persistence test failure** — `orch-state-persistence.test.ts` occasionally fails when run in full suite (WS-010 task record not found) but passes in isolation. Likely temp directory collision between parallel tests. (discovered during TP-022)

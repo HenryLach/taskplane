@@ -1,17 +1,15 @@
 ## Plan Review: Step 6: Documentation & Delivery
 
-### Verdict: REVISE
+### Verdict: APPROVE
 
 ### Summary
-The Step 6 checklist is currently too narrow for safe delivery. While it matches the two prompt bullets (`PROMPT.md:141-142`), it does not account for unresolved review debt from Step 5 that is still marked `REVISE` and would make `.DONE` premature. The plan should explicitly include closing those open issues and reconciling STATUS audit inconsistencies before finalizing.
+The Step 6 plan is sufficient to close the task: it includes the prompt-required outcomes (discoveries recorded and `.DONE` creation) and adds useful audit-hygiene checks before final delivery. Given Step 5 evidence is already present, this plan should safely complete the task without additional implementation risk. Overall, this is a proportionate finalization plan.
 
 ### Issues Found
-1. **[Severity: important]** — The Step 6 plan in `taskplane-tasks/TP-022-orch-branch-lifecycle-merge-redirect/STATUS.md:106-110` does not include resolving the outstanding Step 5 `REVISE` findings in `.reviews/R012-code-step5.md:3-10`, especially the missing detached-HEAD edge-case verification required by `PROMPT.md:131`. **Suggested fix:** add a pre-delivery checklist item to resolve/verify R012 items (or reopen Step 5), then update Step 5 evidence accordingly before creating `.DONE`.
-2. **[Severity: important]** — Delivery-status records are inconsistent: `STATUS.md:134-135` lists both `R012 APPROVE` and `R012 REVISE`, and `STATUS.md:249-252` similarly records conflicting review outcomes. This undermines operator visibility for final handoff. **Suggested fix:** add explicit Step 6 hygiene work to reconcile/deduplicate Reviews + Execution Log entries and record the canonical final verdict trail.
+1. **[Severity: minor]** — `STATUS.md:111` says “Resolve R012 debt,” but those items are already marked completed in Step 5 (`STATUS.md:103-104`). Suggested fix: reword this as a verification/audit pass (e.g., “Confirm R012 closure is reflected consistently”) to avoid ambiguity.
 
 ### Missing Items
-- A "review debt closure" outcome (all blocking review items resolved and reflected in STATUS) before `.DONE` creation.
-- An explicit STATUS audit cleanup outcome to ensure a single, consistent review timeline at delivery.
+- None blocking.
 
 ### Suggestions
-- Keep the existing Step 6 bullets, but gate `.DONE` on: (1) R012 closure, (2) STATUS audit consistency, and (3) adding the final Step 6 completion log/review row.
+- Before creating `.DONE`, add a brief final reconciliation note confirming prompt completion criteria are satisfied end-to-end (for operator clarity during handoff).
