@@ -590,6 +590,10 @@ export async function executeOrchBatch(
 			const resetPrefix = orchConfig.orchestrator.worktree_prefix;
 			const resetOpId = resolveOperatorId(orchConfig);
 			let totalResetWorktrees = 0;
+			// TP-029 R006: Track worktrees that failed reset AND removal
+			// so the cleanup gate only fires on true stale state, not
+			// successfully-reset reusable worktrees.
+			const failedRemovalWorktrees = new Map<string, { repoId: string | undefined; paths: string[] }>();
 
 			for (const [perRepoRoot, perRepoId] of encounteredRepoRoots) {
 				const existingWorktrees = listWorktrees(resetPrefix, perRepoRoot, resetOpId, batchState.batchId);
@@ -639,6 +643,11 @@ export async function executeOrchBatch(
 							});
 							// Last resort: force-remove the directory and prune git worktree state.
 							forceCleanupWorktree(wt, perRepoRoot, batchState.batchId);
+							// Track this worktree for the cleanup gate — it may still be registered
+							if (!failedRemovalWorktrees.has(perRepoRoot)) {
+								failedRemovalWorktrees.set(perRepoRoot, { repoId: perRepoId, paths: [] });
+							}
+							failedRemovalWorktrees.get(perRepoRoot)!.paths.push(wt.path);
 						}
 					} else {
 						execLog("batch", batchState.batchId, `worktree reset OK for lane ${wt.laneNumber}`);
@@ -654,21 +663,25 @@ export async function executeOrchBatch(
 			}
 
 			// ── TP-029: Post-merge cleanup gate ──────────────────────
-			// Verify no stale worktrees remain after inter-wave reset.
-			// If any repo still has registered worktrees, pause the batch
-			// to prevent the next wave from executing with dirty state.
-			// Follows the same pure-function policy pattern as merge failure.
+			// Only gate on worktrees that the reset loop tried and failed
+			// to remove. Successfully-reset reusable worktrees are expected
+			// to remain registered — they will be reused in the next wave.
+			// For each failed-removal worktree, verify it is still registered
+			// before classifying it as truly stale.
 			const cleanupGateFailures: CleanupGateRepoFailure[] = [];
-			for (const [perRepoRoot, perRepoId] of encounteredRepoRoots) {
-				const remaining = listWorktrees(resetPrefix, perRepoRoot, resetOpId, batchState.batchId);
-				// Filter out worktrees that were deliberately preserved (unsaved partial progress)
-				const stale = remaining.filter(wt => !ppUnsafeBranches.has(wt.branch));
-				if (stale.length > 0) {
-					cleanupGateFailures.push({
-						repoRoot: perRepoRoot,
-						repoId: perRepoId,
-						staleWorktrees: stale.map(wt => wt.path),
-					});
+			if (failedRemovalWorktrees.size > 0) {
+				for (const [perRepoRoot, { repoId: perRepoId, paths: failedPaths }] of failedRemovalWorktrees) {
+					const remaining = listWorktrees(resetPrefix, perRepoRoot, resetOpId, batchState.batchId);
+					const remainingPaths = new Set(remaining.map(wt => wt.path));
+					// Only report worktrees that were targeted for removal but are still registered
+					const stale = failedPaths.filter(p => remainingPaths.has(p));
+					if (stale.length > 0) {
+						cleanupGateFailures.push({
+							repoRoot: perRepoRoot,
+							repoId: perRepoId,
+							staleWorktrees: stale,
+						});
+					}
 				}
 			}
 

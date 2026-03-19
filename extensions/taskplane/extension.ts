@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 
 import { execSync, execFileSync } from "child_process";
-import { writeFileSync, unlinkSync, mkdirSync } from "fs";
-import { join } from "path";
+import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync } from "fs";
+import { join, resolve } from "path";
 
 import {
 	DEFAULT_ORCHESTRATOR_CONFIG,
@@ -11,6 +11,7 @@ import {
 	ORCH_MESSAGES,
 	StateFileError,
 	WorkspaceConfigError,
+	computeIntegrateCleanupResult,
 	computeWaveAssignments,
 	createOrchWidget,
 	deleteBatchState,
@@ -25,10 +26,13 @@ import {
 	freshOrchBatchState,
 	getCurrentBranch,
 	listOrchSessions,
+	listWorktrees,
 	loadBatchState,
 	loadOrchestratorConfig,
 	loadTaskRunnerConfig,
 	parseOrchSessionNames,
+	resolveOperatorId,
+	resolveWorktreeBasePath,
 	resumeOrchBatch,
 	runDiscovery,
 	runGit,
@@ -39,6 +43,7 @@ import { openSettingsTui } from "./settings-tui.ts";
 import type {
 	AbortMode,
 	ExecutionContext,
+	IntegrateCleanupRepoFindings,
 	MonitorState,
 	OrchestratorConfig,
 	PersistedBatchState,
@@ -491,6 +496,151 @@ function performCleanup(
 	}
 
 	return result;
+}
+
+// ── Post-Integration Cleanup Helpers (TP-029 Step 3) ─────────────────
+
+/**
+ * Drop batch-scoped autostash entries from a repo.
+ *
+ * Targets two stash message patterns created during orchestration:
+ * - "orch-integrate-autostash-{batchId}" (from /orch-integrate ff/merge modes)
+ * - "merge-agent-autostash-w{N}-{batchId}" (from merge.ts wave ff)
+ *
+ * Git stash subjects include a branch prefix ("On <branch>: <message>"), so
+ * we match with `String.includes()` or a regex test against the full subject.
+ *
+ * Scans the stash list bottom-to-top so that dropping entries doesn't
+ * invalidate remaining indices. Non-matching stashes are never touched.
+ */
+export function dropBatchAutostash(repoRoot: string, batchId: string): void {
+	if (!batchId) return;
+
+	const stashList = runGit(["stash", "list", "--format=%gd %s"], repoRoot);
+	if (!stashList.ok || !stashList.stdout.trim()) return;
+
+	// Collect indices to drop (bottom-up order — highest index first)
+	const lines = stashList.stdout.trim().split("\n");
+	const indicesToDrop: number[] = [];
+
+	// Match patterns within the full stash subject (includes "On <branch>: " prefix)
+	const integrateSubstring = `orch-integrate-autostash-${batchId}`;
+	const mergePattern = new RegExp(`merge-agent-autostash-w\\d+-${escapeRegexStr(batchId)}`);
+
+	for (const line of lines) {
+		// Format: "stash@{N} <subject>"
+		const match = line.match(/^stash@\{(\d+)\}\s+(.*)$/);
+		if (!match) continue;
+		const idx = parseInt(match[1], 10);
+		const subject = match[2];
+		if (subject.includes(integrateSubstring) || mergePattern.test(subject)) {
+			indicesToDrop.push(idx);
+		}
+	}
+
+	// Sort descending so we drop from bottom up
+	indicesToDrop.sort((a, b) => b - a);
+	for (const idx of indicesToDrop) {
+		runGit(["stash", "drop", `stash@{${idx}}`], repoRoot);
+	}
+}
+
+/**
+ * Escape a string for use in a RegExp.
+ */
+function escapeRegexStr(s: string): string {
+	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Collect cleanup acceptance findings for a single repo.
+ *
+ * Checks the five acceptance criteria from roadmap 2d:
+ * 1. No registered lane worktrees (via listWorktrees)
+ * 2. No lane branches (task/{opId}-lane-*)
+ * 3. No orch branches (the specific orch branch for this batch)
+ * 4. No batch-scoped autostash entries
+ * 5. No non-empty .worktrees/ containers
+ */
+export function collectRepoCleanupFindings(
+	repoRoot: string,
+	repoId: string | undefined,
+	opId: string,
+	batchId: string,
+	worktreePrefix: string,
+	orchBranch: string,
+	orchConfig: OrchestratorConfig,
+): IntegrateCleanupRepoFindings {
+	const findings: IntegrateCleanupRepoFindings = {
+		repoRoot,
+		repoId,
+		staleWorktrees: [],
+		staleLaneBranches: [],
+		staleOrchBranches: [],
+		staleAutostashEntries: [],
+		nonEmptyWorktreeContainers: [],
+	};
+
+	// 1. Stale lane worktrees — check for any worktrees belonging to this operator+batch
+	try {
+		const wts = listWorktrees(worktreePrefix, repoRoot, opId, batchId);
+		findings.staleWorktrees = wts.map(wt => wt.path);
+	} catch { /* best effort — git worktree list may fail in unusual states */ }
+
+	// 2. Lane branches — task/{opId}-lane-*
+	try {
+		const branchResult = runGit(["branch", "--list", `task/${opId}-lane-*`], repoRoot);
+		if (branchResult.ok && branchResult.stdout.trim()) {
+			findings.staleLaneBranches = branchResult.stdout
+				.split("\n")
+				.map(b => b.replace(/^\*?\s+/, "").trim())
+				.filter(Boolean);
+		}
+	} catch { /* best effort */ }
+
+	// 3. Orch branch — check if the specific orch branch still exists
+	try {
+		const orchCheck = runGit(["rev-parse", "--verify", `refs/heads/${orchBranch}`], repoRoot);
+		if (orchCheck.ok) {
+			findings.staleOrchBranches = [orchBranch];
+		}
+	} catch { /* best effort */ }
+
+	// 4. Autostash entries — same patterns as dropBatchAutostash
+	// Git stash subjects include branch prefix ("On <branch>: <message>"),
+	// so we use substring/regex matching against the full subject.
+	if (batchId) {
+		try {
+			const stashList = runGit(["stash", "list", "--format=%gd %s"], repoRoot);
+			if (stashList.ok && stashList.stdout.trim()) {
+				const integrateSubstring = `orch-integrate-autostash-${batchId}`;
+				const mergePattern = new RegExp(`merge-agent-autostash-w\\d+-${escapeRegexStr(batchId)}`);
+				for (const line of stashList.stdout.trim().split("\n")) {
+					const match = line.match(/^stash@\{(\d+)\}\s+(.*)$/);
+					if (!match) continue;
+					const subject = match[2];
+					if (subject.includes(integrateSubstring) || mergePattern.test(subject)) {
+						findings.staleAutostashEntries.push(match[1]); // stash index
+					}
+				}
+			}
+		} catch { /* best effort */ }
+	}
+
+	// 5. Non-empty .worktrees/ containers (subdirectory mode only)
+	if (orchConfig.orchestrator.worktree_location !== "sibling") {
+		try {
+			const basePath = resolveWorktreeBasePath(repoRoot, orchConfig);
+			if (existsSync(basePath)) {
+				const entries = readdirSync(basePath);
+				if (entries.length > 0) {
+					findings.nonEmptyWorktreeContainers = [basePath];
+				}
+			}
+		} catch { /* best effort */ }
+	}
+
+	return findings;
 }
 
 // ── Extension ────────────────────────────────────────────────────────
@@ -1253,12 +1403,51 @@ export default function (pi: ExtensionAPI) {
 
 			if (!allSucceeded) return;
 
-			// Clean up batch state after all repos integrated
+			// ── Step 4: Post-integration cleanup & acceptance ────────
+			// Run acceptance checks BEFORE deleting batch state so recovery
+			// context is still available if something goes wrong.
+
+			// Resolve all repos to verify (all workspace repos, not just those
+			// that had the orch branch — roadmap 2d requires "any workspace repo").
+			const allRepos: { id: string; root: string }[] = [];
+			if (wsConfig) {
+				for (const [repoId, repoConf] of wsConfig.repos) {
+					allRepos.push({ id: repoId, root: repoConf.path });
+				}
+			} else {
+				allRepos.push({ id: "(default)", root: repoRoot });
+			}
+
+			const opId = resolveOperatorId(orchConfig);
+			const orchPrefix = orchConfig.orchestrator.worktree_prefix;
+
+			// Drop batch-scoped autostash entries from all repos.
+			// Patterns: "orch-integrate-autostash-{batchId}" (from extension.ts)
+			//           "merge-agent-autostash-w*-{batchId}" (from merge.ts)
+			for (const repo of allRepos) {
+				dropBatchAutostash(repo.root, batchId);
+			}
+
+			// Run acceptance checks across all workspace repos.
+			const repoFindings: IntegrateCleanupRepoFindings[] = [];
+			for (const repo of allRepos) {
+				const findings = collectRepoCleanupFindings(
+					repo.root, repo.id === "(default)" ? undefined : repo.id,
+					opId, batchId, orchPrefix, resolvedOrchBranch, orchConfig,
+				);
+				repoFindings.push(findings);
+			}
+
+			const cleanupResult = computeIntegrateCleanupResult(repoFindings);
+
+			// NOW delete batch state (acceptance checks are done)
 			try { deleteBatchState(repoRoot); } catch { /* best effort */ }
 
-			const summary = wsConfig
+			const integrationSummary = wsConfig
 				? `✅ Integrated ${resolvedOrchBranch} across ${reposToIntegrate.length} repo(s).\n${repoMessages.join("\n")}\n${totalCommits} total commit(s) applied.`
 				: `${repoMessages[0] || "✅ Integrated."}\n${commitsAhead} commit(s) applied.`;
+
+			const summary = integrationSummary + "\n" + cleanupResult.report;
 
 			ctx.ui.notify(summary, "info");
 		},

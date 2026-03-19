@@ -10,7 +10,8 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { parseIntegrateArgs, resolveIntegrationContext, executeIntegration } from "../taskplane/extension.ts";
+import { parseIntegrateArgs, resolveIntegrationContext, executeIntegration, dropBatchAutostash, collectRepoCleanupFindings } from "../taskplane/extension.ts";
+import { computeIntegrateCleanupResult } from "../taskplane/messages.ts";
 import type {
 	IntegrateArgs,
 	IntegrateMode,
@@ -20,8 +21,13 @@ import type {
 	IntegrationResult,
 	IntegrationExecDeps,
 } from "../taskplane/extension.ts";
-import { StateFileError } from "../taskplane/types.ts";
-import type { PersistedBatchState, OrchBatchPhase } from "../taskplane/types.ts";
+import type { IntegrateCleanupRepoFindings } from "../taskplane/messages.ts";
+import { StateFileError, DEFAULT_ORCHESTRATOR_CONFIG } from "../taskplane/types.ts";
+import type { PersistedBatchState, OrchBatchPhase, OrchestratorConfig } from "../taskplane/types.ts";
+import { execSync } from "child_process";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -962,5 +968,305 @@ describe("executeIntegration — cleanup", () => {
 		expect(result.success).toBe(true);
 		expect(result.message).toContain("Could not delete local branch");
 		expect(result.message).toContain("Could not clean up batch state");
+	});
+});
+
+// ── TP-029 Step 3: computeIntegrateCleanupResult ─────────────────────
+
+describe("computeIntegrateCleanupResult — pure function", () => {
+	it("returns clean=true when all repos have no findings", () => {
+		const findings: IntegrateCleanupRepoFindings[] = [
+			{
+				repoRoot: "/repo-a",
+				repoId: "repo-a",
+				staleWorktrees: [],
+				staleLaneBranches: [],
+				staleOrchBranches: [],
+				staleAutostashEntries: [],
+				nonEmptyWorktreeContainers: [],
+			},
+			{
+				repoRoot: "/repo-b",
+				repoId: "repo-b",
+				staleWorktrees: [],
+				staleLaneBranches: [],
+				staleOrchBranches: [],
+				staleAutostashEntries: [],
+				nonEmptyWorktreeContainers: [],
+			},
+		];
+		const result = computeIntegrateCleanupResult(findings);
+		expect(result.clean).toBe(true);
+		expect(result.dirtyRepos).toHaveLength(0);
+		expect(result.report).toContain("🧹");
+		expect(result.report).toContain("no stale");
+	});
+
+	it("returns clean=false and reports stale worktrees", () => {
+		const findings: IntegrateCleanupRepoFindings[] = [
+			{
+				repoRoot: "/repo-a",
+				repoId: "repo-a",
+				staleWorktrees: ["/worktrees/lane-1"],
+				staleLaneBranches: [],
+				staleOrchBranches: [],
+				staleAutostashEntries: [],
+				nonEmptyWorktreeContainers: [],
+			},
+		];
+		const result = computeIntegrateCleanupResult(findings);
+		expect(result.clean).toBe(false);
+		expect(result.dirtyRepos).toHaveLength(1);
+		expect(result.report).toContain("⚠️");
+		expect(result.report).toContain("stale worktree");
+		expect(result.report).toContain("git worktree remove");
+	});
+
+	it("reports multiple issue types across multiple repos", () => {
+		const findings: IntegrateCleanupRepoFindings[] = [
+			{
+				repoRoot: "/repo-a",
+				repoId: "repo-a",
+				staleWorktrees: [],
+				staleLaneBranches: ["task/op-lane-1-abc"],
+				staleOrchBranches: ["orch/op-abc"],
+				staleAutostashEntries: [],
+				nonEmptyWorktreeContainers: [],
+			},
+			{
+				repoRoot: "/repo-b",
+				repoId: "repo-b",
+				staleWorktrees: [],
+				staleLaneBranches: [],
+				staleOrchBranches: [],
+				staleAutostashEntries: ["0"],
+				nonEmptyWorktreeContainers: ["/repo-b/.worktrees"],
+			},
+		];
+		const result = computeIntegrateCleanupResult(findings);
+		expect(result.clean).toBe(false);
+		expect(result.dirtyRepos).toHaveLength(2);
+		expect(result.report).toContain("repo-a");
+		expect(result.report).toContain("lane branch");
+		expect(result.report).toContain("orch branch");
+		expect(result.report).toContain("repo-b");
+		expect(result.report).toContain("autostash");
+		expect(result.report).toContain("container");
+	});
+
+	it("uses (default) label for repo-mode (repoId undefined)", () => {
+		const findings: IntegrateCleanupRepoFindings[] = [
+			{
+				repoRoot: "/repo",
+				repoId: undefined,
+				staleWorktrees: ["/wt"],
+				staleLaneBranches: [],
+				staleOrchBranches: [],
+				staleAutostashEntries: [],
+				nonEmptyWorktreeContainers: [],
+			},
+		];
+		const result = computeIntegrateCleanupResult(findings);
+		expect(result.report).toContain("(default)");
+	});
+
+	it("includes recovery commands for all artifact types", () => {
+		const findings: IntegrateCleanupRepoFindings[] = [
+			{
+				repoRoot: "/repo",
+				repoId: "myrepo",
+				staleWorktrees: ["/wt/lane-1"],
+				staleLaneBranches: ["task/op-lane-1-batch"],
+				staleOrchBranches: ["orch/op-batch"],
+				staleAutostashEntries: ["2"],
+				nonEmptyWorktreeContainers: [],
+			},
+		];
+		const result = computeIntegrateCleanupResult(findings);
+		expect(result.report).toContain('git worktree remove --force');
+		expect(result.report).toContain('git branch -D');
+		expect(result.report).toContain('git stash drop');
+	});
+});
+
+// ── TP-029 Step 3: dropBatchAutostash ────────────────────────────────
+
+describe("dropBatchAutostash — real git repo", () => {
+	let tmpDir: string;
+	const batchId = "20260319T120000";
+
+	function initRepo(): string {
+		const dir = mkdtempSync(join(tmpdir(), "tp029-stash-"));
+		execSync("git init", { cwd: dir, stdio: "pipe" });
+		execSync("git config user.email test@test.com", { cwd: dir, stdio: "pipe" });
+		execSync("git config user.name Test", { cwd: dir, stdio: "pipe" });
+		writeFileSync(join(dir, "file.txt"), "initial");
+		execSync("git add -A && git commit -m init", { cwd: dir, stdio: "pipe" });
+		return dir;
+	}
+
+	function createStash(dir: string, msg: string): void {
+		writeFileSync(join(dir, "dirty.txt"), `dirty-${Date.now()}-${Math.random()}`);
+		execSync(`git stash push --include-untracked -m "${msg}"`, { cwd: dir, stdio: "pipe" });
+	}
+
+	function stashMessages(dir: string): string[] {
+		const out = execSync("git stash list --format=%s", { cwd: dir, encoding: "utf-8" }).trim();
+		return out ? out.split("\n") : [];
+	}
+
+	it("drops orch-integrate-autostash entries for matching batchId", () => {
+		tmpDir = initRepo();
+		createStash(tmpDir, `orch-integrate-autostash-${batchId}`);
+		createStash(tmpDir, "unrelated-stash");
+		expect(stashMessages(tmpDir)).toHaveLength(2);
+
+		dropBatchAutostash(tmpDir, batchId);
+
+		const remaining = stashMessages(tmpDir);
+		expect(remaining).toHaveLength(1);
+		expect(remaining[0]).toContain("unrelated-stash");
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("drops merge-agent-autostash entries for matching batchId", () => {
+		tmpDir = initRepo();
+		createStash(tmpDir, `merge-agent-autostash-w0-${batchId}`);
+		createStash(tmpDir, `merge-agent-autostash-w1-${batchId}`);
+		createStash(tmpDir, "user-stash");
+		expect(stashMessages(tmpDir)).toHaveLength(3);
+
+		dropBatchAutostash(tmpDir, batchId);
+
+		const remaining = stashMessages(tmpDir);
+		expect(remaining).toHaveLength(1);
+		expect(remaining[0]).toContain("user-stash");
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("preserves stashes from different batchId", () => {
+		tmpDir = initRepo();
+		const otherBatch = "20260318T100000";
+		createStash(tmpDir, `orch-integrate-autostash-${otherBatch}`);
+		createStash(tmpDir, `merge-agent-autostash-w0-${otherBatch}`);
+		expect(stashMessages(tmpDir)).toHaveLength(2);
+
+		dropBatchAutostash(tmpDir, batchId);
+
+		const remaining = stashMessages(tmpDir);
+		expect(remaining).toHaveLength(2);
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("handles empty stash list gracefully", () => {
+		tmpDir = initRepo();
+		// No stashes created — should not throw
+		dropBatchAutostash(tmpDir, batchId);
+		expect(stashMessages(tmpDir)).toHaveLength(0);
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("handles empty batchId gracefully (no-op)", () => {
+		tmpDir = initRepo();
+		createStash(tmpDir, "some-stash");
+		dropBatchAutostash(tmpDir, "");
+		expect(stashMessages(tmpDir)).toHaveLength(1);
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+});
+
+// ── TP-029 Step 3: collectRepoCleanupFindings ────────────────────────
+
+describe("collectRepoCleanupFindings — real git repo", () => {
+	const batchId = "20260319T120000";
+	const opId = "testop";
+	const orchBranch = `orch/${opId}-${batchId}`;
+	const prefix = "taskplane-wt";
+
+	function initRepo(): string {
+		const dir = mkdtempSync(join(tmpdir(), "tp029-findings-"));
+		execSync("git init", { cwd: dir, stdio: "pipe" });
+		execSync("git config user.email test@test.com", { cwd: dir, stdio: "pipe" });
+		execSync("git config user.name Test", { cwd: dir, stdio: "pipe" });
+		writeFileSync(join(dir, "file.txt"), "initial");
+		execSync("git add -A && git commit -m init", { cwd: dir, stdio: "pipe" });
+		return dir;
+	}
+
+	function makeConfig(overrides: Partial<OrchestratorConfig["orchestrator"]> = {}): OrchestratorConfig {
+		return {
+			...DEFAULT_ORCHESTRATOR_CONFIG,
+			orchestrator: {
+				...DEFAULT_ORCHESTRATOR_CONFIG.orchestrator,
+				worktree_prefix: prefix,
+				...overrides,
+			},
+		};
+	}
+
+	it("returns empty findings for a clean repo", () => {
+		const dir = initRepo();
+		const config = makeConfig();
+		const findings = collectRepoCleanupFindings(dir, "myrepo", opId, batchId, prefix, orchBranch, config);
+		expect(findings.staleWorktrees).toHaveLength(0);
+		expect(findings.staleLaneBranches).toHaveLength(0);
+		expect(findings.staleOrchBranches).toHaveLength(0);
+		expect(findings.staleAutostashEntries).toHaveLength(0);
+		expect(findings.nonEmptyWorktreeContainers).toHaveLength(0);
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("detects stale lane branches", () => {
+		const dir = initRepo();
+		execSync(`git branch "task/${opId}-lane-1-${batchId}"`, { cwd: dir, stdio: "pipe" });
+		execSync(`git branch "task/${opId}-lane-2-${batchId}"`, { cwd: dir, stdio: "pipe" });
+		const config = makeConfig();
+		const findings = collectRepoCleanupFindings(dir, "myrepo", opId, batchId, prefix, orchBranch, config);
+		expect(findings.staleLaneBranches).toHaveLength(2);
+		expect(findings.staleLaneBranches).toContain(`task/${opId}-lane-1-${batchId}`);
+		expect(findings.staleLaneBranches).toContain(`task/${opId}-lane-2-${batchId}`);
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("detects stale orch branch", () => {
+		const dir = initRepo();
+		execSync(`git branch "${orchBranch}"`, { cwd: dir, stdio: "pipe" });
+		const config = makeConfig();
+		const findings = collectRepoCleanupFindings(dir, "myrepo", opId, batchId, prefix, orchBranch, config);
+		expect(findings.staleOrchBranches).toHaveLength(1);
+		expect(findings.staleOrchBranches[0]).toBe(orchBranch);
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("detects stale autostash entries", () => {
+		const dir = initRepo();
+		writeFileSync(join(dir, "dirty.txt"), "dirty");
+		execSync(`git stash push --include-untracked -m "orch-integrate-autostash-${batchId}"`, { cwd: dir, stdio: "pipe" });
+		const config = makeConfig();
+		const findings = collectRepoCleanupFindings(dir, "myrepo", opId, batchId, prefix, orchBranch, config);
+		expect(findings.staleAutostashEntries).toHaveLength(1);
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("detects non-empty .worktrees containers in subdirectory mode", () => {
+		const dir = initRepo();
+		const worktreesDir = join(dir, ".worktrees");
+		mkdirSync(worktreesDir, { recursive: true });
+		writeFileSync(join(worktreesDir, "stale-file"), "leftover");
+		const config = makeConfig({ worktree_location: "subdirectory" });
+		const findings = collectRepoCleanupFindings(dir, "myrepo", opId, batchId, prefix, orchBranch, config);
+		expect(findings.nonEmptyWorktreeContainers).toHaveLength(1);
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("does NOT check .worktrees containers in sibling mode", () => {
+		const dir = initRepo();
+		const worktreesDir = join(dir, ".worktrees");
+		mkdirSync(worktreesDir, { recursive: true });
+		writeFileSync(join(worktreesDir, "stale-file"), "leftover");
+		const config = makeConfig({ worktree_location: "sibling" });
+		const findings = collectRepoCleanupFindings(dir, "myrepo", opId, batchId, prefix, orchBranch, config);
+		expect(findings.nonEmptyWorktreeContainers).toHaveLength(0);
+		rmSync(dir, { recursive: true, force: true });
 	});
 });

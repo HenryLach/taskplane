@@ -383,8 +383,8 @@ export interface CleanupGatePolicyResult {
 	targetPhase: "paused";
 	/** Error message to push to batchState.errors */
 	errorMessage: string;
-	/** Persistence trigger label */
-	persistTrigger: "cleanup-post-merge-failed";
+	/** Persistence trigger label — matches spec classification naming */
+	persistTrigger: "cleanup_post_merge_failed";
 	/** User-facing notification message */
 	notifyMessage: string;
 	/** Notification level for onNotify */
@@ -457,7 +457,7 @@ export function computeCleanupGatePolicy(
 		policy: "pause",
 		targetPhase: "paused",
 		errorMessage,
-		persistTrigger: "cleanup-post-merge-failed",
+		persistTrigger: "cleanup_post_merge_failed",
 		notifyMessage,
 		notifyLevel: "error",
 		logDetails: {
@@ -466,6 +466,131 @@ export function computeCleanupGatePolicy(
 			totalStaleWorktrees,
 			repos,
 		},
+	};
+}
+
+// ── Integrate Cleanup Acceptance (TP-029 Step 3) ─────────────────────
+
+/**
+ * Per-repo acceptance check findings after /orch-integrate.
+ * Collected by scanning all workspace repos (not just repos that had the orch branch).
+ */
+export interface IntegrateCleanupRepoFindings {
+	/** Repo root path */
+	repoRoot: string;
+	/** Repo ID (undefined for repo-mode / primary) */
+	repoId: string | undefined;
+	/** Stale lane worktrees still registered (git worktree list matches) */
+	staleWorktrees: string[];
+	/** Stale lane branches (task/{opId}-lane-*) */
+	staleLaneBranches: string[];
+	/** Stale orch branches (orch/{opId}-{batchId}) */
+	staleOrchBranches: string[];
+	/** Batch-scoped autostash entries still present */
+	staleAutostashEntries: string[];
+	/** Non-empty .worktrees/ containers */
+	nonEmptyWorktreeContainers: string[];
+}
+
+/**
+ * Result of the /orch-integrate cleanup acceptance check.
+ * Pure function output — callers use this to format the summary notification.
+ */
+export interface IntegrateCleanupResult {
+	/** True if all repos pass all acceptance criteria */
+	clean: boolean;
+	/** Per-repo findings (only repos with at least one finding) */
+	dirtyRepos: IntegrateCleanupRepoFindings[];
+	/** User-facing cleanup report (appended to integrate summary) */
+	report: string;
+}
+
+/**
+ * Compute the integrate cleanup result from per-repo acceptance findings.
+ *
+ * This is a **pure function** — computes all outputs deterministically
+ * from the per-repo findings without side effects.
+ *
+ * The acceptance criteria (roadmap 2d) are:
+ * 1. No registered lane worktrees remain in any workspace repo
+ * 2. No lane branches remain (task/{opId}-lane-*)
+ * 3. No orch branches remain (orch/{opId}-{batchId})
+ * 4. No stale autostash from current batch remains
+ * 5. No non-empty .worktrees/ containers remain
+ *
+ * @param repoFindings  - Per-repo findings from scanning all workspace repos
+ * @returns Cleanup result with pass/fail verdict and human-readable report
+ */
+export function computeIntegrateCleanupResult(
+	repoFindings: IntegrateCleanupRepoFindings[],
+): IntegrateCleanupResult {
+	// Filter to repos that have at least one issue
+	const dirtyRepos = repoFindings.filter(r =>
+		r.staleWorktrees.length > 0 ||
+		r.staleLaneBranches.length > 0 ||
+		r.staleOrchBranches.length > 0 ||
+		r.staleAutostashEntries.length > 0 ||
+		r.nonEmptyWorktreeContainers.length > 0,
+	);
+
+	if (dirtyRepos.length === 0) {
+		return {
+			clean: true,
+			dirtyRepos: [],
+			report: "🧹 Cleanup verified: no stale worktrees, branches, or autostash entries remain.",
+		};
+	}
+
+	// Build per-repo detail lines
+	const details: string[] = [];
+	for (const repo of dirtyRepos) {
+		const label = repo.repoId ?? "(default)";
+		const issues: string[] = [];
+		if (repo.staleWorktrees.length > 0) {
+			issues.push(`${repo.staleWorktrees.length} stale worktree(s)`);
+		}
+		if (repo.staleLaneBranches.length > 0) {
+			issues.push(`${repo.staleLaneBranches.length} lane branch(es)`);
+		}
+		if (repo.staleOrchBranches.length > 0) {
+			issues.push(`${repo.staleOrchBranches.length} orch branch(es)`);
+		}
+		if (repo.staleAutostashEntries.length > 0) {
+			issues.push(`${repo.staleAutostashEntries.length} autostash entr(ies)`);
+		}
+		if (repo.nonEmptyWorktreeContainers.length > 0) {
+			issues.push(`${repo.nonEmptyWorktreeContainers.length} non-empty .worktrees/ container(s)`);
+		}
+		details.push(`  ${label}: ${issues.join(", ")}`);
+	}
+
+	// Build recovery commands
+	const recovery: string[] = [];
+	for (const repo of dirtyRepos) {
+		const label = repo.repoId ?? "default";
+		for (const wt of repo.staleWorktrees) {
+			recovery.push(`  git worktree remove --force "${wt}"  # repo: ${label}`);
+		}
+		for (const br of repo.staleLaneBranches) {
+			recovery.push(`  git branch -D "${br}"  # repo: ${label}`);
+		}
+		for (const br of repo.staleOrchBranches) {
+			recovery.push(`  git branch -D "${br}"  # repo: ${label}`);
+		}
+		for (const entry of repo.staleAutostashEntries) {
+			recovery.push(`  git stash drop "${entry}"  # repo: ${label}`);
+		}
+	}
+
+	const report =
+		`⚠️ Cleanup incomplete — residual artifacts found:\n` +
+		details.join("\n") +
+		(recovery.length > 0 ? `\n  Manual cleanup:\n${recovery.join("\n")}` : "");
+
+	return {
+		clean: false,
+		dirtyRepos,
+		report,
 	};
 }
 

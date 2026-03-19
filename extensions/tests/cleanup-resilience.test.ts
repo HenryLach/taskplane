@@ -10,6 +10,7 @@
  *   CR.3 — .worktrees base-dir cleanup safety (subdirectory vs sibling mode)
  *   CR.4 — Merge worktree force cleanup fallback (forceRemoveMergeWorktree pattern)
  *   CR.5 — Engine-level multi-repo terminal cleanup (behavioral verification)
+ *   CR.7 — R006 regression: cleanup gate fires only on true stale state, not reusable worktrees
  *
  * Run: npx vitest run extensions/tests/cleanup-resilience.test.ts
  */
@@ -31,6 +32,7 @@ import {
 	removeAllWorktrees,
 	listWorktrees,
 	forceCleanupWorktree,
+	safeResetWorktree,
 	resolveWorktreeBasePath,
 	generateMergeWorktreePath,
 	computeCleanupGatePolicy,
@@ -740,7 +742,7 @@ describe("CR.6 Cleanup gate policy — computeCleanupGatePolicy", () => {
 		// Policy always pauses (never aborts) — merged commits must be preserved
 		assertEqual(result.policy, "pause", "policy should be pause");
 		assertEqual(result.targetPhase, "paused", "targetPhase should be paused");
-		assertEqual(result.persistTrigger, "cleanup-post-merge-failed", "persistTrigger");
+		assertEqual(result.persistTrigger, "cleanup_post_merge_failed", "persistTrigger");
 		assertEqual(result.notifyLevel, "error", "notifyLevel should be error");
 
 		// Error message includes wave number, stale count, and repo detail
@@ -882,6 +884,173 @@ describe("CR.6 Cleanup gate — behavioral: stale worktrees block wave advance",
 		assertEqual(cleanupGateFailures.length, 0, "no cleanup gate failures when all clean");
 
 		cleanupTestRepo(repo);
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// CR.7 — Cleanup Gate R006 Regression: Gate fires only on true stale state
+// ══════════════════════════════════════════════════════════════════════
+
+describe("CR.7 Cleanup gate regression — successful reset does NOT trigger gate", () => {
+	test("successfully-reset worktrees remain registered but do NOT trigger cleanup gate", () => {
+		// This is the critical regression the R006 review identified:
+		// After inter-wave reset, safeResetWorktree() resets worktrees in-place
+		// without removing them. These successfully-reset worktrees are reusable
+		// and should NOT be treated as stale by the cleanup gate.
+		//
+		// The fixed cleanup gate tracks only worktrees that FAILED reset AND
+		// removal, then verifies those specific worktrees are still registered.
+		const repoDir = initTestRepo("gate-reset-ok");
+		const prefix = basename(repoDir);
+		const batchId = "gater001";
+
+		// Create worktrees (simulating wave 1 allocation)
+		const wt1 = createWorktree({
+			laneNumber: 1, batchId, baseBranch: "develop", opId: "test", prefix,
+		}, repoDir);
+		const wt2 = createWorktree({
+			laneNumber: 2, batchId, baseBranch: "develop", opId: "test", prefix,
+		}, repoDir);
+
+		// Successfully reset both worktrees (simulating inter-wave reset)
+		const reset1 = safeResetWorktree(wt1, "develop", repoDir);
+		const reset2 = safeResetWorktree(wt2, "develop", repoDir);
+		assert(reset1.success, "worktree 1 reset should succeed");
+		assert(reset2.success, "worktree 2 reset should succeed");
+
+		// Worktrees are STILL registered (they were reset, not removed)
+		const remaining = listWorktrees(prefix, repoDir, "test", batchId);
+		assertEqual(remaining.length, 2, "both worktrees should still be registered after reset");
+
+		// Simulate the R006-fixed cleanup gate logic:
+		// failedRemovalWorktrees is empty because both resets succeeded
+		const failedRemovalWorktrees = new Map<string, { repoId: string | undefined; paths: string[] }>();
+
+		// Gate check: only fires if failedRemovalWorktrees has entries
+		const cleanupGateFailures: CleanupGateRepoFailure[] = [];
+		if (failedRemovalWorktrees.size > 0) {
+			// This block is never entered — all resets succeeded
+			for (const [perRepoRoot, { repoId, paths: failedPaths }] of failedRemovalWorktrees) {
+				const rem = listWorktrees(prefix, perRepoRoot, "test", batchId);
+				const remPaths = new Set(rem.map(wt => wt.path));
+				const stale = failedPaths.filter(p => remPaths.has(p));
+				if (stale.length > 0) {
+					cleanupGateFailures.push({ repoRoot: perRepoRoot, repoId, staleWorktrees: stale });
+				}
+			}
+		}
+
+		// Gate should NOT fire — no failures to report
+		assertEqual(cleanupGateFailures.length, 0,
+			"cleanup gate should NOT fire after successful resets (worktrees are reusable)");
+
+		cleanupTestRepo(repoDir);
+	});
+
+	test("cleanup gate fires ONLY for worktrees that failed both reset and removal", () => {
+		// Create two worktrees: one resets successfully, one fails reset AND removal.
+		// The gate should only report the failed one, not the successfully-reset one.
+		//
+		// In production, failedRemovalWorktrees tracks wt.path values from
+		// listWorktrees() (which returns resolve()-normalized paths). The gate
+		// then re-lists and compares. We simulate this by getting the tracked
+		// path from listWorktrees() rather than from createWorktree(), to
+		// match the production code pattern where wt.path comes from the same
+		// listWorktrees() function used in the reset loop.
+		const repoDir = initTestRepo("gate-mixed");
+		const prefix = basename(repoDir);
+		const batchId = "gater002";
+
+		createWorktree({
+			laneNumber: 1, batchId, baseBranch: "develop", opId: "test", prefix,
+		}, repoDir);
+		createWorktree({
+			laneNumber: 2, batchId, baseBranch: "develop", opId: "test", prefix,
+		}, repoDir);
+
+		// Get the listed worktree info (production code uses this, not createWorktree return)
+		const listed = listWorktrees(prefix, repoDir, "test", batchId);
+		assertEqual(listed.length, 2, "should have 2 worktrees initially");
+		const wt1Listed = listed.find(w => w.laneNumber === 1)!;
+		const wt2Listed = listed.find(w => w.laneNumber === 2)!;
+
+		// Reset wt1 successfully (simulating normal inter-wave behavior)
+		const reset1 = safeResetWorktree(wt1Listed, "develop", repoDir);
+		assert(reset1.success, "worktree 1 reset should succeed");
+
+		// Simulate: wt2's reset failed, then remove failed, then forceCleanup
+		// was attempted. Track it using the path from listWorktrees (matching
+		// the production pattern in engine.ts).
+		const failedRemovalWorktrees = new Map<string, { repoId: string | undefined; paths: string[] }>();
+		failedRemovalWorktrees.set(repoDir, { repoId: undefined, paths: [wt2Listed.path] });
+
+		// Gate verification: check only the tracked failure paths
+		const cleanupGateFailures: CleanupGateRepoFailure[] = [];
+		for (const [perRepoRoot, { repoId, paths: failedPaths }] of failedRemovalWorktrees) {
+			const remaining = listWorktrees(prefix, perRepoRoot, "test", batchId);
+			const remainingPaths = new Set(remaining.map(wt => wt.path));
+			const stale = failedPaths.filter(p => remainingPaths.has(p));
+			if (stale.length > 0) {
+				cleanupGateFailures.push({ repoRoot: perRepoRoot, repoId, staleWorktrees: stale });
+			}
+		}
+
+		// Gate should fire, but only for wt2
+		assertEqual(cleanupGateFailures.length, 1, "should detect 1 repo with stale worktrees");
+		assertEqual(cleanupGateFailures[0].staleWorktrees.length, 1, "only 1 stale worktree");
+		assertEqual(cleanupGateFailures[0].staleWorktrees[0], wt2Listed.path,
+			"stale worktree should be wt2 (the one that failed removal)");
+
+		cleanupTestRepo(repoDir);
+	});
+
+	test("cleanup gate does NOT fire when forceCleanup actually succeeds", () => {
+		// Even when a worktree fails normal removal but forceCleanup succeeds,
+		// the gate should verify the worktree is no longer registered.
+		const repoDir = initTestRepo("gate-force-ok");
+		const prefix = basename(repoDir);
+		const batchId = "gater003";
+
+		const wt = createWorktree({
+			laneNumber: 1, batchId, baseBranch: "develop", opId: "test", prefix,
+		}, repoDir);
+
+		// Force-cleanup the worktree (simulating reset fail → remove fail → force cleanup)
+		forceCleanupWorktree(wt, repoDir, batchId);
+
+		// Even though this was tracked as a failed removal, forceCleanup succeeded.
+		// Gate verification should find it's no longer registered.
+		const failedRemovalWorktrees = new Map<string, { repoId: string | undefined; paths: string[] }>();
+		failedRemovalWorktrees.set(repoDir, { repoId: undefined, paths: [wt.path] });
+
+		const cleanupGateFailures: CleanupGateRepoFailure[] = [];
+		for (const [perRepoRoot, { repoId, paths: failedPaths }] of failedRemovalWorktrees) {
+			const remaining = listWorktrees(prefix, perRepoRoot, "test", batchId);
+			const remainingPaths = new Set(remaining.map(wt => wt.path));
+			const stale = failedPaths.filter(p => remainingPaths.has(p));
+			if (stale.length > 0) {
+				cleanupGateFailures.push({ repoRoot: perRepoRoot, repoId, staleWorktrees: stale });
+			}
+		}
+
+		// Gate should NOT fire — forceCleanup successfully removed the worktree
+		assertEqual(cleanupGateFailures.length, 0,
+			"cleanup gate should not fire when forceCleanup actually succeeded");
+
+		cleanupTestRepo(repoDir);
+	});
+
+	test("persistTrigger uses underscore format (cleanup_post_merge_failed)", () => {
+		// Verify the canonical classification token uses underscore per spec
+		const failures: CleanupGateRepoFailure[] = [{
+			repoRoot: "/repos/main",
+			repoId: undefined,
+			staleWorktrees: ["/repos/main/.worktrees/lane-1"],
+		}];
+
+		const result = computeCleanupGatePolicy(0, failures);
+		assertEqual(result.persistTrigger, "cleanup_post_merge_failed",
+			"persistTrigger should use underscore format matching spec classification");
 	});
 });
 
