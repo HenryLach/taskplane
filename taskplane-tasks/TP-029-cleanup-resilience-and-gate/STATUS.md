@@ -65,9 +65,10 @@
 ### Step 3: Integrate Cleanup into /orch-integrate
 **Status:** 🟨 In Progress
 
-- [ ] Clean autostash entries after integrate
-- [ ] Verify polyrepo acceptance criteria
-- [ ] Report cleanup status
+- [ ] Add `computeIntegrateCleanupResult()` pure function to messages.ts — takes per-repo findings (stale worktrees, lane branches, orch branches, autostash entries, .worktrees containers) and produces cleanup report + overall pass/fail + recovery commands. Covers ALL workspace repos (not just reposToIntegrate).
+- [ ] In extension.ts, after all repos integrated + batch state deleted: (a) drop batch-scoped autostash entries (`orch-integrate-autostash-{batchId}` and `merge-agent-autostash-w*-{batchId}`) per repo, (b) run acceptance checks across all workspace repos (or repoRoot in repo mode), (c) call the pure function, (d) append cleanup status to summary notification. Acceptance runs BEFORE final state cleanup.
+- [ ] Add tests: (a) autostash entries for current batch are dropped, non-batch stashes preserved; (b) acceptance check detects stale lane branches/worktrees and reports them; (c) clean pass produces green summary with no warnings
+- [ ] Run full test suite and confirm green
 
 ---
 
