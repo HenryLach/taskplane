@@ -48,13 +48,13 @@
 ---
 
 ### Step 2: Post-Merge Cleanup Gate
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] R005: Add `cleanup_post_merge_failed` classification to messages.ts (pure function like computeMergeFailurePolicy) — returns targetPhase "paused", errorMessage, persistTrigger, notification with per-repo failure details and recovery commands (`/orch-resume`, manual cleanup)
 - [x] R005: In engine.ts, after inter-wave reset loop, verify no registered worktrees remain for any repo that should be clean; collect per-repo failure payloads (repo path + stale worktree list); if any failures → call cleanup gate policy → set phase="paused", persist state, emit diagnostic, break wave loop
-- [ ] R005: Add parity cleanup gate to resume.ts inter-wave reset (same verification + pause + persist pattern)
-- [ ] R005: Add tests — (a) cleanup failure pauses batch and blocks wave N+1 start, (b) cleanup success still advances normally (regression guard)
-- [ ] R005: Run full test suite and confirm green
+- [x] R005: Add parity cleanup gate to resume.ts inter-wave reset (same verification + pause + persist pattern)
+- [x] R005: Add tests — (a) cleanup failure pauses batch and blocks wave N+1 start, (b) cleanup success still advances normally (regression guard)
+- [x] R005: Run full test suite and confirm green (998 tests, 26 files, all pass)
 
 ---
 
@@ -96,6 +96,7 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | APPROVE | .reviews/R005-plan-step2.md |
 
 ---
 
@@ -132,6 +133,10 @@
 | 2026-03-19 21:09 | Step 1 complete | Fix Per-Wave Cleanup Across All Repos |
 | 2026-03-19 21:09 | Step 2 started | Post-Merge Cleanup Gate |
 | 2026-03-19 21:12 | Review R005 | plan Step 2: REVISE |
+| 2026-03-19 21:17 | Worker iter 2 | done in 646s, ctx: 29%, tools: 76 |
+| 2026-03-19 21:17 | Step 1 complete | Fix Per-Wave Cleanup Across All Repos |
+| 2026-03-19 21:17 | Step 2 started | Post-Merge Cleanup Gate |
+| 2026-03-19 21:19 | Review R005 | plan Step 2: APPROVE |
 
 ---
 

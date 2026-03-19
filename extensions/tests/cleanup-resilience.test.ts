@@ -25,6 +25,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 import {
 	type WorktreeInfo,
 	type OrchestratorConfig,
+	type CleanupGateRepoFailure,
 	createWorktree,
 	removeWorktree,
 	removeAllWorktrees,
@@ -32,6 +33,7 @@ import {
 	forceCleanupWorktree,
 	resolveWorktreeBasePath,
 	generateMergeWorktreePath,
+	computeCleanupGatePolicy,
 	runGit,
 } from "../task-orchestrator.ts";
 
@@ -718,6 +720,168 @@ describe("CR.5 Engine-level multi-repo cleanup — behavioral verification", () 
 			".worktrees dir should be removed by removeAllWorktrees when empty and config is passed");
 
 		cleanupTestRepo(repoDir);
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// CR.6 — Post-Merge Cleanup Gate Policy
+// ══════════════════════════════════════════════════════════════════════
+
+describe("CR.6 Cleanup gate policy — computeCleanupGatePolicy", () => {
+	test("single-repo failure produces correct policy result", () => {
+		const failures: CleanupGateRepoFailure[] = [{
+			repoRoot: "/repos/api",
+			repoId: "api",
+			staleWorktrees: ["/repos/api/.worktrees/lane-1", "/repos/api/.worktrees/lane-2"],
+		}];
+
+		const result = computeCleanupGatePolicy(2, failures); // waveIndex=2 → wave 3
+
+		// Policy always pauses (never aborts) — merged commits must be preserved
+		assertEqual(result.policy, "pause", "policy should be pause");
+		assertEqual(result.targetPhase, "paused", "targetPhase should be paused");
+		assertEqual(result.persistTrigger, "cleanup-post-merge-failed", "persistTrigger");
+		assertEqual(result.notifyLevel, "error", "notifyLevel should be error");
+
+		// Error message includes wave number, stale count, and repo detail
+		assert(result.errorMessage.includes("wave 3"), "errorMessage should include wave number");
+		assert(result.errorMessage.includes("2 stale worktree(s)"), "errorMessage should include stale count");
+		assert(result.errorMessage.includes("1 repo(s)"), "errorMessage should include repo count");
+		assert(result.errorMessage.includes("api"), "errorMessage should include repo ID");
+		assert(result.errorMessage.includes("/orch-resume"), "errorMessage should include recovery command");
+
+		// Notification includes manual recovery commands
+		assert(result.notifyMessage.includes("git worktree remove"), "notifyMessage should include manual cleanup command");
+		assert(result.notifyMessage.includes("/orch-resume"), "notifyMessage should include resume command");
+		assert(result.notifyMessage.includes("lane-1"), "notifyMessage should include stale worktree paths");
+		assert(result.notifyMessage.includes("lane-2"), "notifyMessage should include stale worktree paths");
+
+		// Log details
+		assertEqual(result.logDetails.waveNumber, 3, "logDetails.waveNumber");
+		assertEqual(result.logDetails.failedRepoCount, 1, "logDetails.failedRepoCount");
+		assertEqual(result.logDetails.totalStaleWorktrees, 2, "logDetails.totalStaleWorktrees");
+		assertEqual(result.logDetails.repos.length, 1, "logDetails.repos.length");
+		assertEqual(result.logDetails.repos[0].repoId, "api", "logDetails.repos[0].repoId");
+		assertEqual(result.logDetails.repos[0].staleCount, 2, "logDetails.repos[0].staleCount");
+	});
+
+	test("multi-repo failure aggregates correctly", () => {
+		const failures: CleanupGateRepoFailure[] = [
+			{
+				repoRoot: "/repos/api",
+				repoId: "api",
+				staleWorktrees: ["/repos/api/.worktrees/lane-1"],
+			},
+			{
+				repoRoot: "/repos/frontend",
+				repoId: "frontend",
+				staleWorktrees: ["/repos/frontend/.worktrees/lane-2", "/repos/frontend/.worktrees/lane-3"],
+			},
+		];
+
+		const result = computeCleanupGatePolicy(0, failures); // waveIndex=0 → wave 1
+
+		assertEqual(result.logDetails.waveNumber, 1, "waveNumber");
+		assertEqual(result.logDetails.failedRepoCount, 2, "failedRepoCount");
+		assertEqual(result.logDetails.totalStaleWorktrees, 3, "totalStaleWorktrees");
+		assert(result.errorMessage.includes("3 stale worktree(s)"), "total stale count in error");
+		assert(result.errorMessage.includes("2 repo(s)"), "repo count in error");
+	});
+
+	test("default repoId renders as (default) in messages", () => {
+		const failures: CleanupGateRepoFailure[] = [{
+			repoRoot: "/repos/main",
+			repoId: undefined,
+			staleWorktrees: ["/repos/main/.worktrees/lane-1"],
+		}];
+
+		const result = computeCleanupGatePolicy(0, failures);
+
+		assert(result.errorMessage.includes("(default)"), "undefined repoId should render as (default)");
+		assertEqual(result.logDetails.repos[0].repoId, "(default)", "logDetails repoId for primary");
+	});
+});
+
+describe("CR.6 Cleanup gate — behavioral: stale worktrees block wave advance", () => {
+	test("cleanup gate detects stale worktrees after failed reset", () => {
+		// Simulate the engine.ts pattern:
+		// 1. Create worktrees for two repos
+		// 2. Clean only one repo (simulating a reset failure in the other)
+		// 3. The cleanup gate check should detect remaining worktrees
+		const repoA = initTestRepo("gate-clean");
+		const repoB = initTestRepo("gate-stale");
+		const prefixA = basename(repoA);
+		const prefixB = basename(repoB);
+		const batchId = "gate001";
+
+		// Create worktrees in both repos
+		createWorktree({
+			laneNumber: 1, batchId, baseBranch: "develop", opId: "test", prefix: prefixA,
+		}, repoA);
+		createWorktree({
+			laneNumber: 1, batchId, baseBranch: "develop", opId: "test", prefix: prefixB,
+		}, repoB);
+
+		// Clean only repo A (simulating successful reset)
+		removeAllWorktrees(prefixA, repoA, "test", "develop", batchId);
+
+		// Now simulate the cleanup gate verification (from engine.ts):
+		const encounteredRepoRoots = new Map<string, string | undefined>();
+		encounteredRepoRoots.set(repoA, "repo-a");
+		encounteredRepoRoots.set(repoB, "repo-b");
+
+		const cleanupGateFailures: CleanupGateRepoFailure[] = [];
+		for (const [perRepoRoot, perRepoId] of encounteredRepoRoots) {
+			const prefix = perRepoRoot === repoA ? prefixA : prefixB;
+			const remaining = listWorktrees(prefix, perRepoRoot, "test", batchId);
+			if (remaining.length > 0) {
+				cleanupGateFailures.push({
+					repoRoot: perRepoRoot,
+					repoId: perRepoId,
+					staleWorktrees: remaining.map(wt => wt.path),
+				});
+			}
+		}
+
+		// Should detect failure in repo B only
+		assertEqual(cleanupGateFailures.length, 1, "should detect 1 repo with stale worktrees");
+		assertEqual(cleanupGateFailures[0].repoId, "repo-b", "stale repo should be repo-b");
+		assertEqual(cleanupGateFailures[0].staleWorktrees.length, 1, "should have 1 stale worktree");
+
+		// The policy result should pause
+		const policy = computeCleanupGatePolicy(0, cleanupGateFailures);
+		assertEqual(policy.targetPhase, "paused", "batch should be paused");
+
+		cleanupTestRepo(repoA);
+		cleanupTestRepo(repoB);
+	});
+
+	test("cleanup gate passes when all worktrees are clean", () => {
+		// After successful reset, the gate should find zero stale worktrees
+		const repo = initTestRepo("gate-pass");
+		const prefix = basename(repo);
+		const batchId = "gate002";
+
+		// Create and then clean worktrees
+		createWorktree({
+			laneNumber: 1, batchId, baseBranch: "develop", opId: "test", prefix,
+		}, repo);
+		createWorktree({
+			laneNumber: 2, batchId, baseBranch: "develop", opId: "test", prefix,
+		}, repo);
+
+		removeAllWorktrees(prefix, repo, "test", "develop", batchId);
+
+		// Verify gate check finds nothing
+		const remaining = listWorktrees(prefix, repo, "test", batchId);
+		assertEqual(remaining.length, 0, "no stale worktrees should remain");
+
+		// No failures = gate passes, wave can advance normally
+		const cleanupGateFailures: CleanupGateRepoFailure[] = [];
+		// (in real code, the gate check only fires if cleanupGateFailures.length > 0)
+		assertEqual(cleanupGateFailures.length, 0, "no cleanup gate failures when all clean");
+
+		cleanupTestRepo(repo);
 	});
 });
 

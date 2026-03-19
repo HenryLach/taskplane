@@ -1455,7 +1455,7 @@ export async function resumeOrchBatch(
 
 				batchState.phase = gatePolicyResult.targetPhase;
 				batchState.errors.push(gatePolicyResult.errorMessage);
-				persistRuntimeState(gatePolicyResult.persistTrigger, batchState, persistedState.wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+				persistRuntimeState(gatePolicyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 				onNotify(gatePolicyResult.notifyMessage, gatePolicyResult.notifyLevel);
 				preserveWorktreesForResume = true;
 				break;
