@@ -119,7 +119,7 @@ The resolved value is sanitized (lowercase, alphanumeric + hyphens only) and tru
 
 | Artifact | Pattern | Example |
 |---|---|---|
-| TMUX session (repo mode) | `{tmux_prefix}-{opId}-lane-{N}` | `orch-alice-lane-1` |
+| TMUX session (single-repo mode) | `{tmux_prefix}-{opId}-lane-{N}` | `orch-alice-lane-1` |
 | TMUX session (workspace) | `{tmux_prefix}-{opId}-{repoId}-lane-{N}` | `orch-alice-api-lane-1` |
 | Merge session | `{tmux_prefix}-{opId}-merge-{N}` | `orch-alice-merge-1` |
 | Worktree directory | `{worktree_prefix}-{opId}-{N}` | `taskplane-wt-alice-1` |

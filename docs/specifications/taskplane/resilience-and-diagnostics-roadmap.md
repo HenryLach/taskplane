@@ -32,7 +32,7 @@ These gaps compound in polyrepo workspaces where failures can occur across
 multiple repos, branches, and worktrees simultaneously.
 
 **Goal:** Make the system self-diagnosing, self-recovering for known failures,
-and quality-verified — in both repo mode and workspace mode.
+and quality-verified — in both single-repo mode and workspace mode.
 
 ---
 
@@ -190,7 +190,7 @@ must be scoped using the existing naming contract from `naming.ts`:
 
 - Operator-scoped: `{opId}` in all artifact paths
 - Batch-scoped: `{batchId}` prevents cross-batch collision
-- Repo-scoped: `{repoId}` for workspace mode (defaults to `"default"` in repo mode)
+- Repo-scoped: `{repoId}` for workspace mode (defaults to `"default"` in single-repo mode)
 - Lane-scoped: `lane-{N}` where applicable
 
 Pattern: `.pi/{artifactType}-{opId}-{batchId}-{repoId}[-lane-{N}].{ext}`
@@ -295,7 +295,7 @@ interface TaskExitDiagnostic {
   durationSec: number;
   lastKnownStep: number | null;
   lastKnownCheckbox: string | null;
-  repoId: string;           // "default" in repo mode, repo key in workspace mode
+  repoId: string;           // "default" in single-repo mode, repo key in workspace mode
 }
 ```
 
@@ -400,7 +400,7 @@ When a task fails without `.DONE` but has commits on its lane branch:
 - In workspace mode, the task's `resolvedRepoId` determines which repo to check
 - The save operation must use the correct repo root, not workspace root
 - Saved branch naming includes `{repoId}` in workspace mode:
-  `saved/{opId}-{taskId}-{batchId}` in repo mode,
+  `saved/{opId}-{taskId}-{batchId}` in single-repo mode,
   `saved/{opId}-{repoId}-{taskId}-{batchId}` in workspace mode
 
 #### 2b. Stale Worktree Cleanup Fallback
@@ -802,7 +802,7 @@ in guarded mode.
 Every phase in this roadmap must work correctly in workspace mode. Key
 invariants:
 
-| Concern | Repo Mode | Workspace Mode |
+| Concern | Single-Repo Mode | Workspace Mode |
 |---------|-----------|----------------|
 | Telemetry sidecar path | `.pi/telemetry/{opId}-...` | `{workspaceRoot}/.pi/telemetry/{opId}-...` |
 | Diagnostic path | `.pi/diagnostics/{opId}-...` | `{workspaceRoot}/.pi/diagnostics/{opId}-...` |
@@ -880,7 +880,7 @@ resilience:
 9. Execution commands fail fast with actionable tmux prerequisite guidance when
    tmux is missing
 10. Operator time lost per incident drops from ~25 min average to < 5 min
-11. All of the above work identically in repo mode and workspace mode
+11. All of the above work identically in single-repo mode and workspace mode
 
 ---
 

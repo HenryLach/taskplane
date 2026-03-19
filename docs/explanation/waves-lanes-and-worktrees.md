@@ -9,6 +9,28 @@ Parallel orchestration (`/orch`) is built on three concepts:
 Together with the **orch-managed branch model**, these concepts enable safe
 parallel task execution without touching the user's working branch.
 
+### Single-repo mode vs workspace mode
+
+Taskplane operates in one of two modes depending on your project structure:
+
+**Single-repo mode** is the default. Your project lives in one git repository
+and all tasks, configuration, and code share that single repo. This is the
+common setup for most projects — think of a typical monorepo or standalone
+application. Taskplane creates worktrees, branches, and merges entirely within
+that one repository.
+
+**Workspace mode** is for polyrepo projects — multiple independent git
+repositories that are developed together (e.g., a frontend app, a backend API,
+and a shared library in separate repos). In workspace mode, a lightweight
+pointer file (`taskplane-pointer.json`) in the workspace root tells Taskplane
+where to find the configuration repo, and a workspace config maps repo IDs to
+directory paths. Tasks can target specific repos via `## Execution Target` in
+their PROMPT.md, and the orchestrator creates worktrees, branches, and merges
+independently in each repo.
+
+Everything in this document applies to both modes. Sections that describe
+workspace-specific behavior are called out explicitly.
+
 ---
 
 ## 1) Dependency graph
