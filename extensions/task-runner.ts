@@ -447,6 +447,34 @@ function resolveBaseAgentPath(name: string): string {
 }
 
 /**
+ * Resolve the path to rpc-wrapper.mjs from the installed taskplane package.
+ * Uses the same findPackageRoot() strategy as resolveBaseAgentPath().
+ *
+ * Falls back to a cwd-relative path for development (when running from
+ * the taskplane repo directly).
+ *
+ * @returns Absolute path to rpc-wrapper.mjs
+ * @throws Error if rpc-wrapper.mjs cannot be found
+ */
+function resolveRpcWrapperPath(): string {
+	// 1. Package root (installed npm package)
+	const root = findPackageRoot();
+	if (root) {
+		const wrapperPath = join(root, "bin", "rpc-wrapper.mjs");
+		if (existsSync(wrapperPath)) return wrapperPath;
+	}
+
+	// 2. Development fallback: relative to cwd (running from taskplane repo)
+	const cwdPath = join(process.cwd(), "bin", "rpc-wrapper.mjs");
+	if (existsSync(cwdPath)) return cwdPath;
+
+	throw new Error(
+		"Cannot find rpc-wrapper.mjs. Ensure taskplane is installed correctly. " +
+		`Searched: ${root ? join(root, "bin", "rpc-wrapper.mjs") : "(no package root)"}, ${cwdPath}`
+	);
+}
+
+/**
  * Load an agent definition with prompt inheritance.
  *
  * Inheritance model (default: compose base + local):
@@ -1019,6 +1047,15 @@ function spawnAgent(opts: {
  *   - output:         always "" (no JSON stream in TMUX mode)
  *   - exitCode:       0 on normal completion, 1 on poll error (TMUX doesn't forward exit codes)
  *
+ * RPC Wrapper Integration (TP-026):
+ * Instead of spawning `pi -p` directly, this function now spawns `rpc-wrapper.mjs`
+ * which runs pi in RPC mode and produces:
+ *   - Sidecar JSONL file with real-time telemetry (tokens, cost, tool calls, retries)
+ *   - Exit summary JSON with structured exit data for classification
+ *
+ * The telemetry file paths are returned alongside the promise/kill handles so that
+ * Steps 2 (sidecar tailing) and 3 (exit diagnostic) can read them.
+ *
  * @param opts.sessionName  — TMUX session name (e.g., "orch-lane-1-worker")
  * @param opts.cwd          — Working directory for the TMUX session
  * @param opts.systemPrompt — System prompt content (written to temp file)
@@ -1035,7 +1072,12 @@ function spawnAgentTmux(opts: {
 	model: string;
 	tools: string;
 	thinking: string;
-}): { promise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>; kill: () => void } {
+}): {
+	promise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>;
+	kill: () => void;
+	sidecarPath: string;
+	exitSummaryPath: string;
+} {
 
 	// ── Preflight: verify tmux is available ──────────────────────────
 	const tmuxCheck = spawnSync("tmux", ["-V"], { shell: true });
@@ -1047,10 +1089,21 @@ function spawnAgentTmux(opts: {
 		);
 	}
 
+	// ── Generate telemetry file paths ───────────────────────────────
+	// Naming contract: {sidecarDir}/telemetry/{sessionName}-{timestamp}.{ext}
+	// - sessionName already includes lane/role scope (e.g., "orch-lane-1-worker")
+	// - timestamp provides uniqueness across iterations
+	// - getSidecarDir() respects ORCH_SIDECAR_DIR for workspace mode
+	const telemetryTs = Date.now();
+	const telemetryDir = join(getSidecarDir(), "telemetry");
+	if (!existsSync(telemetryDir)) mkdirSync(telemetryDir, { recursive: true });
+	const sidecarPath = join(telemetryDir, `${opts.sessionName}-${telemetryTs}.jsonl`);
+	const exitSummaryPath = join(telemetryDir, `${opts.sessionName}-${telemetryTs}-exit.json`);
+
 	// ── Write prompts to temp files ─────────────────────────────────
 	// Same pattern as spawnAgent() — avoids shell escaping issues with
 	// backticks, quotes, and special characters in markdown content.
-	const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+	const id = `${telemetryTs}-${Math.random().toString(36).slice(2, 8)}`;
 	const sysTmpFile = join(tmpdir(), `pi-task-sys-${id}.txt`);
 	const promptTmpFile = join(tmpdir(), `pi-task-prompt-${id}.txt`);
 	writeFileSync(sysTmpFile, opts.systemPrompt);
@@ -1061,10 +1114,14 @@ function spawnAgentTmux(opts: {
 		try { unlinkSync(promptTmpFile); } catch {}
 	};
 
-	// ── Build Pi command ─────────────────────────────────────────────
-	// Use an array of arguments and quote each one individually to handle
-	// paths with spaces (Windows paths, temp dir, etc.). The command is
-	// passed as a single string to tmux new-session, so we shell-quote it.
+	// ── Build RPC Wrapper command ────────────────────────────────────
+	// Spawns `node rpc-wrapper.mjs` instead of `pi -p`. The wrapper runs
+	// pi in RPC mode, captures telemetry to the sidecar JSONL, and writes
+	// a structured exit summary JSON on process exit.
+	//
+	// Shell quoting: use quoteArg() for all path arguments — same quoting
+	// guarantees as the previous `pi -p` command since both execute as a
+	// single shell string via tmux new-session.
 	const quoteArg = (s: string): string => {
 		// If the arg contains spaces, quotes, or shell metacharacters, wrap in single quotes.
 		// Inside single quotes, escape existing single quotes as '\'' (end quote, escaped quote, restart quote).
@@ -1074,17 +1131,24 @@ function spawnAgentTmux(opts: {
 		return s;
 	};
 
-	const piArgs = [
-		"pi",
-		"-p",  // Non-interactive: process prompt and exit (without this, pi waits for more input)
-		"--no-session", "--no-extensions", "--no-skills",
+	// Resolve rpc-wrapper.mjs path from the installed package
+	const rpcWrapperPath = resolveRpcWrapperPath();
+
+	const wrapperArgs = [
+		"node", quoteArg(rpcWrapperPath),
+		"--sidecar-path", quoteArg(sidecarPath),
+		"--exit-summary-path", quoteArg(exitSummaryPath),
 		"--model", quoteArg(opts.model),
+		"--system-prompt-file", quoteArg(sysTmpFile),
+		"--prompt-file", quoteArg(promptTmpFile),
 		"--tools", quoteArg(opts.tools),
+		// Passthrough pi args: flags that were previously passed to `pi -p` directly.
+		// The wrapper forwards these to the underlying pi --mode rpc process.
+		"--",
 		"--thinking", quoteArg(opts.thinking),
-		"--append-system-prompt", quoteArg(sysTmpFile),
-		`@${quoteArg(promptTmpFile)}`,
+		"--no-session", "--no-extensions", "--no-skills",
 	];
-	const piCommand = piArgs.join(" ");
+	const wrapperCommand = wrapperArgs.join(" ");
 
 	// ── Handle stale session ─────────────────────────────────────────
 	// Session names are fixed per role (e.g., "orch-lane-1-worker").
@@ -1101,7 +1165,7 @@ function spawnAgentTmux(opts: {
 	// Pi's ink/react TUI hangs with TERM=tmux-256color (tmux default), so we
 	// force xterm-256color.
 	const tmuxCwd = opts.cwd.replace(/^([A-Za-z]):\\/, (_, d: string) => `/${d.toLowerCase()}/`).replace(/\\/g, "/");
-	const wrappedCommand = `cd ${quoteArg(tmuxCwd)} && TERM=xterm-256color ${piCommand}`;
+	const wrappedCommand = `cd ${quoteArg(tmuxCwd)} && TERM=xterm-256color ${wrapperCommand}`;
 	const createResult = spawnSync("tmux", [
 		"new-session", "-d",
 		"-s", opts.sessionName,
@@ -1174,7 +1238,7 @@ function spawnAgentTmux(opts: {
 		console.error(`[task-runner] tmux: cleanup done for '${opts.sessionName}' (killed)`);
 	};
 
-	return { promise, kill };
+	return { promise, kill, sidecarPath, exitSummaryPath };
 }
 
 // ── Display Helpers ──────────────────────────────────────────────────

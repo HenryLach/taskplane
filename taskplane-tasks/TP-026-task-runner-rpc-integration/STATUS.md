@@ -24,13 +24,13 @@
 ---
 
 ### Step 1: Update spawnAgentTmux to Use RPC Wrapper
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add resolveRpcWrapperPath() using findPackageRoot() pattern
-- [ ] Generate telemetry file paths with naming contract (sessionName + timestamp, using getSidecarDir() for workspace-awareness)
-- [ ] Build rpc-wrapper.mjs command with correct args and passthrough of existing pi flags (--thinking, --no-session, --no-extensions, --no-skills)
-- [ ] Replace pi -p command in tmux new-session with node rpc-wrapper.mjs command (preserve quoteArg shell-quoting for Windows/MSYS paths)
-- [ ] R003: Deduplicate execution log entries and add Step 1 design notes subsection
+- [x] Add resolveRpcWrapperPath() using findPackageRoot() pattern
+- [x] Generate telemetry file paths with naming contract (sessionName + timestamp, using getSidecarDir() for workspace-awareness)
+- [x] Build rpc-wrapper.mjs command with correct args and passthrough of existing pi flags (--thinking, --no-session, --no-extensions, --no-skills)
+- [x] Replace pi -p command in tmux new-session with node rpc-wrapper.mjs command (preserve quoteArg shell-quoting for Windows/MSYS paths)
+- [x] R003: Deduplicate execution log entries and add Step 1 design notes subsection
 
 ---
 
@@ -83,7 +83,6 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
-| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ---
 
@@ -119,11 +118,12 @@
 | 2026-03-19 22:18 | Worker iter 1 | done in 63s, ctx: 15%, tools: 14 |
 | 2026-03-19 22:19 | Worker iter 2 | done in 75s, ctx: 17%, tools: 19 |
 | 2026-03-19 22:19 | Review R002 | code Step 0: REVISE |
-| 2026-03-19 22:22 | Worker iter 1 | done in 138s, ctx: 13%, tools: 25 |
+| 2026-03-19 22:22 | Worker iter 3 | done in 138s, ctx: 13%, tools: 25 |
 | 2026-03-19 22:22 | Step 0 complete | Preflight |
 | 2026-03-19 22:22 | Step 1 started | Update spawnAgentTmux to Use RPC Wrapper |
 | 2026-03-19 22:24 | Review R003 | plan Step 1: REVISE |
-| 2026-03-19 22:26 | Review R003 | plan Step 1: REVISE |
+| 2026-03-19 22:26 | Step 1 iter 1 | Hydrated checkboxes, added resolveRpcWrapperPath(), started command rewrite |
+| 2026-03-19 | Step 1 iter 2 | Completed spawn rewrite: telemetry paths, rpc-wrapper command, return type |
 
 ---
 
