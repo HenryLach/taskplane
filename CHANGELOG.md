@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Cross-repo TASK_AUTOSTART path resolution** — workspace mode now uses absolute paths for task PROMPT.md so workers in api-service/web-client worktrees can find tasks that live in shared-libs.
 
+## [0.5.12] - 2026-03-19
+
+### Fixed
+- **`.DONE` files missing after `/orch-integrate`** — artifact staging was deleting `.DONE` files from the working tree after copying to the merge worktree. After ff integration, they weren't restored. Now `.DONE` files are preserved in the working tree (the stash in `/orch-integrate` handles them).
+- **`.worktrees/` directory excluded from artifact staging** — prevents worktree internals from being committed to the orch branch.
+- **Test isolation** — config loader tests no longer break when user preferences override reviewer model.
+
 ## [0.5.11] - 2026-03-19
 
 ### Fixed
