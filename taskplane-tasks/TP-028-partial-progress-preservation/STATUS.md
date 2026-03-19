@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 3 (R004 revisions)
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -43,9 +43,12 @@
 ### Step 2: Record Partial Progress in Task Outcome
 **Status:** 🟨 In Progress
 
-- [ ] Add fields to task outcome type
-- [ ] Populate fields during progress save
-- [ ] Persist to batch-state.json
+- [ ] Add optional `partialProgressCommits` (number) and `partialProgressBranch` (string|null) to `LaneTaskOutcome` and `PersistedTaskRecord` in types.ts, with backward-compat defaults (0 / undefined)
+- [ ] Update `upsertTaskOutcome()` change detection in persistence.ts to include the new fields
+- [ ] Update all outcome construction sites (seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, resume.ts reconstitution) to carry/default the new fields
+- [ ] Update `serializeBatchState()` in persistence.ts to map the new fields from `LaneTaskOutcome` → `PersistedTaskRecord`
+- [ ] Add validation for the new optional fields in the state-file validation block in persistence.ts (backward-compatible: allow undefined)
+- [ ] Populate fields at all 4 `preserveFailedLaneProgress()` call sites: engine.ts inter-wave, engine.ts terminal, resume.ts inter-wave, resume.ts terminal — update task outcomes with ppResult data after preservation
 
 ---
 
@@ -80,6 +83,8 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ---
 
@@ -127,6 +132,11 @@
 | 2026-03-19 19:37 | Worker iter 3 | done in 414s, ctx: 23%, tools: 46 |
 | 2026-03-19 19:37 | Step 1 complete | Detect and Save Partial Progress |
 | 2026-03-19 19:37 | Step 2 started | Record Partial Progress in Task Outcome |
+| 2026-03-19 19:38 | Worker iter 2 | done in 320s, ctx: 24%, tools: 52 |
+| 2026-03-19 19:38 | Step 1 complete | Detect and Save Partial Progress |
+| 2026-03-19 19:38 | Step 2 started | Record Partial Progress in Task Outcome |
+| 2026-03-19 19:41 | Review R005 | plan Step 2: REVISE |
+| 2026-03-19 19:41 | Review R005 | plan Step 2: REVISE |
 
 ---
 
