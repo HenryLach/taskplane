@@ -4,8 +4,8 @@
 **Status:** ✅ Step 3 Complete (R008 revisions applied)
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 8
-**Iteration:** 4
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** M
 
 ---
@@ -52,7 +52,7 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ✅ Complete (R008 revisions applied)
+**Status:** ✅ Complete
 - [x] Create `extensions/tests/state-migration.test.ts` with migration happy-path tests (v1→v3, v2→v3, v3 clean read) including defaults verification for resilience/diagnostics
 - [x] Add strict v3 validation rejection tests (missing resilience/diagnostics, bad retryCountByScope values, bad repairHistory entries, bad diagnostics.taskExits entries, malformed exitDiagnostic on tasks)
 - [x] Add unknown-field roundtrip preservation test (top-level only) and exitDiagnostic survives serialize roundtrip test
@@ -67,8 +67,10 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] JSDoc for v3 schema
+**Status:** 🟨 In Progress
+- [ ] JSDoc for v3 schema interfaces and version constant in types.ts
+- [ ] Review `docs/reference/configuration/task-orchestrator.yaml.md` for schema-version references; update or record no-change rationale
+- [ ] Final test-gate validation: run full suite and record pass/fail disposition
 - [ ] `.DONE` created
 
 ---
@@ -85,6 +87,8 @@
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 
 ## Discoveries
 
@@ -144,6 +148,14 @@
 | 2026-03-19 23:39 | Worker iter 4 | done in 590s, ctx: 46%, tools: 47 |
 | 2026-03-19 23:45 | Review R008 | code Step 3: REVISE |
 | 2026-03-19 23:45 | Review R008 | code Step 3: REVISE |
+| 2026-03-19 23:53 | Worker iter 4 | done in 487s, ctx: 32%, tools: 48 |
+| 2026-03-19 23:53 | Step 3 complete | Testing & Verification |
+| 2026-03-19 23:53 | Step 4 started | Documentation & Delivery |
+| 2026-03-19 23:53 | Worker iter 4 | done in 466s, ctx: 27%, tools: 36 |
+| 2026-03-19 23:53 | Step 3 complete | Testing & Verification |
+| 2026-03-19 23:53 | Step 4 started | Documentation & Delivery |
+| 2026-03-19 23:54 | Review R009 | plan Step 4: REVISE |
+| 2026-03-19 23:54 | Review R009 | plan Step 4: REVISE |
 
 ## Blockers
 
