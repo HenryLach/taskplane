@@ -1269,4 +1269,42 @@ describe("collectRepoCleanupFindings — real git repo", () => {
 		expect(findings.nonEmptyWorktreeContainers).toHaveLength(0);
 		rmSync(dir, { recursive: true, force: true });
 	});
+
+	it("skips orch branch detection when skipOrchBranch option is set (PR mode)", () => {
+		const dir = initRepo();
+		// Create the orch branch — this is intentionally preserved in PR mode
+		execSync(`git branch "${orchBranch}"`, { cwd: dir, stdio: "pipe" });
+		const config = makeConfig();
+
+		// Without skipOrchBranch → orch branch is flagged as stale
+		const findingsDefault = collectRepoCleanupFindings(dir, "myrepo", opId, batchId, prefix, orchBranch, config);
+		expect(findingsDefault.staleOrchBranches).toHaveLength(1);
+		expect(findingsDefault.staleOrchBranches[0]).toBe(orchBranch);
+
+		// With skipOrchBranch → orch branch is NOT flagged (PR mode contract)
+		const findingsPr = collectRepoCleanupFindings(dir, "myrepo", opId, batchId, prefix, orchBranch, config, { skipOrchBranch: true });
+		expect(findingsPr.staleOrchBranches).toHaveLength(0);
+
+		// Other findings still work normally with skipOrchBranch
+		execSync(`git branch "task/${opId}-lane-1-${batchId}"`, { cwd: dir, stdio: "pipe" });
+		const findingsWithLane = collectRepoCleanupFindings(dir, "myrepo", opId, batchId, prefix, orchBranch, config, { skipOrchBranch: true });
+		expect(findingsWithLane.staleLaneBranches).toHaveLength(1);
+		expect(findingsWithLane.staleOrchBranches).toHaveLength(0);
+
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("PR mode: clean result when only orch branch remains (everything else clean)", () => {
+		const dir = initRepo();
+		execSync(`git branch "${orchBranch}"`, { cwd: dir, stdio: "pipe" });
+		const config = makeConfig();
+
+		// With skipOrchBranch, the repo should be considered clean
+		const findings = collectRepoCleanupFindings(dir, "myrepo", opId, batchId, prefix, orchBranch, config, { skipOrchBranch: true });
+		const result = computeIntegrateCleanupResult([findings]);
+		expect(result.clean).toBe(true);
+		expect(result.dirtyRepos).toHaveLength(0);
+
+		rmSync(dir, { recursive: true, force: true });
+	});
 });

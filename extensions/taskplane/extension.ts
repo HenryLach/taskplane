@@ -570,6 +570,7 @@ export function collectRepoCleanupFindings(
 	worktreePrefix: string,
 	orchBranch: string,
 	orchConfig: OrchestratorConfig,
+	options?: { skipOrchBranch?: boolean },
 ): IntegrateCleanupRepoFindings {
 	const findings: IntegrateCleanupRepoFindings = {
 		repoRoot,
@@ -599,12 +600,15 @@ export function collectRepoCleanupFindings(
 	} catch { /* best effort */ }
 
 	// 3. Orch branch — check if the specific orch branch still exists
-	try {
-		const orchCheck = runGit(["rev-parse", "--verify", `refs/heads/${orchBranch}`], repoRoot);
-		if (orchCheck.ok) {
-			findings.staleOrchBranches = [orchBranch];
-		}
-	} catch { /* best effort */ }
+	// Skip in PR mode where the orch branch is intentionally preserved for the PR.
+	if (!options?.skipOrchBranch) {
+		try {
+			const orchCheck = runGit(["rev-parse", "--verify", `refs/heads/${orchBranch}`], repoRoot);
+			if (orchCheck.ok) {
+				findings.staleOrchBranches = [orchBranch];
+			}
+		} catch { /* best effort */ }
+	}
 
 	// 4. Autostash entries — same patterns as dropBatchAutostash
 	// Git stash subjects include branch prefix ("On <branch>: <message>"),
@@ -1429,11 +1433,15 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Run acceptance checks across all workspace repos.
+			// In PR mode, the orch branch is intentionally preserved for the PR,
+			// so we skip orch branch detection to avoid contradictory output.
+			const skipOrchBranch = parsed.mode === "pr";
 			const repoFindings: IntegrateCleanupRepoFindings[] = [];
 			for (const repo of allRepos) {
 				const findings = collectRepoCleanupFindings(
 					repo.root, repo.id === "(default)" ? undefined : repo.id,
 					opId, batchId, orchPrefix, resolvedOrchBranch, orchConfig,
+					{ skipOrchBranch },
 				);
 				repoFindings.push(findings);
 			}
@@ -1449,7 +1457,7 @@ export default function (pi: ExtensionAPI) {
 
 			const summary = integrationSummary + "\n" + cleanupResult.report;
 
-			ctx.ui.notify(summary, "info");
+			ctx.ui.notify(summary, cleanupResult.clean ? "info" : "warning");
 		},
 	});
 

@@ -1,10 +1,10 @@
 # TP-029: Cleanup Resilience & Post-Merge Gate — Status
 
-**Current Step:** Step 3: Integrate Cleanup into /orch-integrate
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 8
+**Review Counter:** 9
 **Iteration:** 4
 **Size:** M
 
@@ -69,21 +69,22 @@
 - [x] In extension.ts, after all repos integrated + batch state deleted: (a) drop batch-scoped autostash entries (`orch-integrate-autostash-{batchId}` and `merge-agent-autostash-w*-{batchId}`) per repo, (b) run acceptance checks across all workspace repos (or repoRoot in repo mode), (c) call the pure function, (d) append cleanup status to summary notification. Acceptance runs BEFORE final state cleanup.
 - [x] Add tests: (a) autostash entries for current batch are dropped, non-batch stashes preserved; (b) acceptance check detects stale lane branches/worktrees and reports them; (c) clean pass produces green summary with no warnings
 - [x] Run full test suite and confirm green (1014 tests, 26 files, all pass)
-- [ ] R008: Fix PR-mode regression — skip orch branch from cleanup findings when mode is "pr" (integratedLocally=false), so preserved orch branch is not flagged as stale
-- [ ] R008: Use "warning" notification level when cleanupResult.clean === false (instead of always "info")
-- [ ] R008: Add test — /orch-integrate --pr does not report orch branch as stale (mode-specific cleanup semantics)
+- [x] R008: Fix PR-mode regression — skip orch branch from cleanup findings when mode is "pr" (integratedLocally=false), so preserved orch branch is not flagged as stale
+- [x] R008: Use "warning" notification level when cleanupResult.clean === false (instead of always "info")
+- [x] R008: Add test — /orch-integrate --pr does not report orch branch as stale (mode-specific cleanup semantics)
 - [ ] R008: Run full test suite and confirm green
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Multi-repo cleanup tests
-- [ ] Force cleanup fallback tests
-- [ ] Cleanup gate tests
-- [ ] Autostash cleanup tests
-- [ ] Full test suite passes
+- [ ] R008 residual: Run full test suite to confirm Step 3 R008 changes are green
+- [ ] Verify PR-mode semantics: `/orch-integrate --pr` does NOT flag preserved orch branch as stale
+- [ ] Verify notification severity: warning level when cleanup findings are present, info when clean
+- [ ] Verify polyrepo acceptance criteria: cross-repo assertion of all 5 dimensions (worktrees, lane branches, orch branches, autostash, .worktrees containers) after /orch-integrate
+- [ ] Run full test suite (`cd extensions && npx vitest run`) — ZERO failures
+- [ ] Fix any failures found
 
 ---
 
@@ -112,6 +113,7 @@
 | R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 
 ---
 
@@ -166,6 +168,10 @@
 | 2026-03-19 21:45 | Review R007 | plan Step 3: APPROVE |
 | 2026-03-19 21:46 | Review R008 | code Step 3: REVISE |
 | 2026-03-19 21:47 | Review R008 | code Step 3: REVISE |
+| 2026-03-19 21:49 | Worker iter 3 | done in 134s, ctx: 10%, tools: 9 |
+| 2026-03-19 21:49 | Step 3 complete | Integrate Cleanup into /orch-integrate |
+| 2026-03-19 21:49 | Step 4 started | Testing & Verification |
+| 2026-03-19 21:50 | Review R009 | plan Step 4: REVISE |
 
 ---
 
