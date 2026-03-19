@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -22,6 +22,9 @@
 - [x] Read resume.ts per-repo cleanup pattern for parity (R001 issue 3)
 - [x] Inventory existing test surface for cleanup/worktree/integrate paths
 - [x] Record preflight findings: insertion points, expected failure-path behavior
+- [x] R002: Fix Reviews table separator row placement (moved after header)
+- [x] R002: Remove duplicate R002 row from Reviews table
+- [x] R002: Verify no out-of-scope TP-028 edits in checkpoint
 
 ---
 
@@ -75,8 +78,9 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
-| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 
 ---
 
@@ -96,6 +100,10 @@
 | 2026-03-19 20:27 | Step 0 started | Preflight |
 | 2026-03-19 20:29 | Review R001 | plan Step 0: REVISE |
 | 2026-03-19 20:32 | Worker iter 1 | done in 197s, ctx: 46%, tools: 35 |
+| 2026-03-19 20:33 | Worker iter 1 | done in 266s, ctx: 53%, tools: 48 |
+| 2026-03-19 20:34 | Review R002 | code Step 0: REVISE |
+| 2026-03-19 20:35 | R002 revisions | Fixed reviews table, removed duplicate row, verified no TP-028 edits |
+| 2026-03-19 20:35 | Review R002 | code Step 0: REVISE |
 
 ---
 
