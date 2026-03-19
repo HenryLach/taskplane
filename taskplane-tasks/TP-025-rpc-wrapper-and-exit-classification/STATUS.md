@@ -25,14 +25,14 @@
 ---
 
 ### Step 1: Define TaskExitDiagnostic Type & Classification Logic
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] ExitClassification string-literal union (9 values) and TokenCounts interface
-- [ ] ExitClassificationInput structured input type with all runtime signals (exit summary, .DONE, timeout/stall/user-kill flags, context %)
-- [ ] TaskExitDiagnostic interface with all fields, using ExitClassification return type
-- [ ] classifyExit(input: ExitClassificationInput) with roadmap precedence: .DONE → api_error → context_overflow → wall_clock_timeout → process_crash → session_vanished → stall_timeout → user_killed → unknown
-- [ ] JSDoc precedence table on classifyExit and types
-- [ ] Re-export from extensions/taskplane/index.ts barrel
+- [x] ExitClassification string-literal union (9 values) and TokenCounts interface
+- [x] ExitClassificationInput structured input type with all runtime signals (exit summary, .DONE, timeout/stall/user-kill flags, context %)
+- [x] TaskExitDiagnostic interface with all fields, using ExitClassification return type
+- [x] classifyExit(input: ExitClassificationInput) with roadmap precedence: .DONE → api_error → context_overflow → wall_clock_timeout → process_crash → session_vanished → stall_timeout → user_killed → unknown
+- [x] JSDoc precedence table on classifyExit and types
+- [x] Re-export from extensions/taskplane/index.ts barrel
 
 ---
 
@@ -79,6 +79,7 @@
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | APPROVE | .reviews/R003-plan-step1.md |
 
 ---
 
@@ -104,6 +105,7 @@
 | 2026-03-19 18:07 | Worker iter 1 | done in 157s, ctx: 28%, tools: 27 |
 | 2026-03-19 18:07 | Step 0 complete | Preflight |
 | 2026-03-19 18:07 | Step 1 started | Define TaskExitDiagnostic Type & Classification Logic |
+| 2026-03-19 18:09 | Review R003 | plan Step 1: APPROVE |
 
 ---
 
