@@ -16,7 +16,7 @@ import { deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHisto
 import { listOrchSessions } from "./sessions.ts";
 import { FATAL_DISCOVERY_CODES, generateBatchId } from "./types.ts";
 import type { AllocatedLane, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, TokenCounts, WorkspaceConfig } from "./types.ts";
-import { buildDependencyGraph, computeWaves, resolveRepoRoot, validateGraph } from "./waves.ts";
+import { buildDependencyGraph, computeWaves, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 
 // ── /orch Execution Engine ───────────────────────────────────────────
@@ -532,9 +532,16 @@ export async function executeOrchBatch(
 				allTaskOutcomes,
 				ppOpId,
 				batchState.batchId,
-				repoRoot,
-				batchState.orchBranch,
-				workspaceConfig,
+				(repoId) => {
+					const perRepoRoot = resolveRepoRoot(repoId, repoRoot, workspaceConfig);
+					let targetBranch = batchState.orchBranch;
+					if (repoId && perRepoRoot !== repoRoot) {
+						try {
+							targetBranch = resolveBaseBranch(repoId, perRepoRoot, batchState.orchBranch, workspaceConfig);
+						} catch { /* fall back to orchBranch */ }
+					}
+					return { repoRoot: perRepoRoot, targetBranch };
+				},
 			);
 			if (ppResult.results.some(r => r.saved)) {
 				execLog("batch", batchState.batchId,
@@ -749,9 +756,16 @@ export async function executeOrchBatch(
 				allTaskOutcomes,
 				ppOpId,
 				batchState.batchId,
-				repoRoot,
-				batchState.orchBranch,
-				workspaceConfig,
+				(repoId) => {
+					const perRepoRoot = resolveRepoRoot(repoId, repoRoot, workspaceConfig);
+					let targetBranch = batchState.orchBranch;
+					if (repoId && perRepoRoot !== repoRoot) {
+						try {
+							targetBranch = resolveBaseBranch(repoId, perRepoRoot, batchState.orchBranch, workspaceConfig);
+						} catch { /* fall back to orchBranch */ }
+					}
+					return { repoRoot: perRepoRoot, targetBranch };
+				},
 			);
 			if (ppResult.results.some(r => r.saved)) {
 				execLog("batch", batchState.batchId,

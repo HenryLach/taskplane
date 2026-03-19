@@ -2147,6 +2147,20 @@ export interface PreserveFailedLaneProgressResult {
 }
 
 /**
+ * Callback for resolving repo root and target branch for a given repoId.
+ *
+ * Allows callers (engine.ts, resume.ts) to pass workspace-aware resolution
+ * logic without creating a circular dependency (worktree.ts → waves.ts → worktree.ts).
+ *
+ * @param repoId - Repo identifier (undefined in repo mode)
+ * @returns { repoRoot, targetBranch } for the given repo
+ */
+export type ResolveRepoContext = (repoId: string | undefined) => {
+	repoRoot: string;
+	targetBranch: string;
+};
+
+/**
  * Preserve partial progress for all failed tasks before cleanup/reset.
  *
  * Iterates task outcomes to find failed/stalled tasks, maps each to its
@@ -2155,16 +2169,15 @@ export interface PreserveFailedLaneProgressResult {
  * that were preserved, so the caller can skip their deletion during
  * cleanup.
  *
- * Workspace-aware: resolves per-repo target branches and repo roots
- * for correct commit counting in workspace mode.
+ * Workspace-aware: uses the provided `resolveRepo` callback to resolve
+ * per-repo target branches and repo roots for correct commit counting
+ * in workspace mode.
  *
- * @param allocatedLanes  - Lanes from the current/last wave (maps tasks to branches)
- * @param taskOutcomes    - All task outcomes accumulated so far
- * @param opId            - Operator identifier
- * @param batchId         - Batch ID
- * @param repoRoot        - Primary repository root
- * @param orchBranch      - Orchestrator branch (target for commit counting in primary repo)
- * @param workspaceConfig - Workspace configuration (null in repo mode)
+ * @param allocatedLanes - Lanes from the current/last wave (maps tasks to branches)
+ * @param taskOutcomes   - All task outcomes accumulated so far
+ * @param opId           - Operator identifier
+ * @param batchId        - Batch ID
+ * @param resolveRepo    - Callback to resolve repo root and target branch per repoId
  * @returns PreserveFailedLaneProgressResult with per-task results and preserved branch set
  */
 export function preserveFailedLaneProgress(
@@ -2172,9 +2185,7 @@ export function preserveFailedLaneProgress(
 	taskOutcomes: LaneTaskOutcome[],
 	opId: string,
 	batchId: string,
-	repoRoot: string,
-	orchBranch: string,
-	workspaceConfig?: WorkspaceConfig | null,
+	resolveRepo: ResolveRepoContext,
 ): PreserveFailedLaneProgressResult {
 	const results: SavePartialProgressResult[] = [];
 	const preservedBranches = new Set<string>();
@@ -2218,21 +2229,8 @@ export function preserveFailedLaneProgress(
 		}
 		processedBranches.add(laneInfo.branch);
 
-		// Resolve repo-specific target branch and repo root for workspace mode
-		const perRepoRoot = resolveRepoRoot(laneInfo.repoId, repoRoot, workspaceConfig);
-		let targetBranch: string;
-		if (perRepoRoot === repoRoot || !laneInfo.repoId) {
-			// Primary repo or repo mode: use orchBranch
-			targetBranch = orchBranch;
-		} else {
-			// Secondary repo in workspace mode: resolve repo's own base branch
-			try {
-				targetBranch = resolveBaseBranch(laneInfo.repoId, perRepoRoot, orchBranch, workspaceConfig);
-			} catch {
-				// Fall back to orchBranch if resolution fails
-				targetBranch = orchBranch;
-			}
-		}
+		// Resolve repo-specific target branch and repo root
+		const { repoRoot: perRepoRoot, targetBranch } = resolveRepo(laneInfo.repoId);
 
 		const result = savePartialProgress(
 			laneInfo.branch,

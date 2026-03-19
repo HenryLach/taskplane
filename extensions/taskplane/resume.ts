@@ -1339,9 +1339,16 @@ export async function resumeOrchBatch(
 				allTaskOutcomes,
 				ppOpId,
 				batchState.batchId,
-				repoRoot,
-				batchState.orchBranch,
-				workspaceConfig,
+				(repoId) => {
+					const perRepoRoot = resolveRepoRoot(repoId, repoRoot, workspaceConfig);
+					let targetBranch = batchState.orchBranch;
+					if (repoId && perRepoRoot !== repoRoot) {
+						try {
+							targetBranch = resolveBaseBranch(repoId, perRepoRoot, batchState.orchBranch, workspaceConfig);
+						} catch { /* fall back to orchBranch */ }
+					}
+					return { repoRoot: perRepoRoot, targetBranch };
+				},
 			);
 			if (ppResult.results.some(r => r.saved)) {
 				execLog("batch", batchState.batchId,
@@ -1399,9 +1406,16 @@ export async function resumeOrchBatch(
 			allTaskOutcomes,
 			ppOpId,
 			batchState.batchId,
-			repoRoot,
-			batchState.orchBranch,
-			workspaceConfig,
+			(repoId) => {
+				const perRepoRoot = resolveRepoRoot(repoId, repoRoot, workspaceConfig);
+				let targetBranch = batchState.orchBranch;
+				if (repoId && perRepoRoot !== repoRoot) {
+					try {
+						targetBranch = resolveBaseBranch(repoId, perRepoRoot, batchState.orchBranch, workspaceConfig);
+					} catch { /* fall back to orchBranch */ }
+				}
+				return { repoRoot: perRepoRoot, targetBranch };
+			},
 		);
 		if (ppResult.results.some(r => r.saved)) {
 			execLog("batch", batchState.batchId,
