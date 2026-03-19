@@ -3,34 +3,25 @@
 ### Verdict: REVISE
 
 ### Summary
-The type-level v3 additions in `extensions/taskplane/types.ts` are directionally correct (new resilience/diagnostics sections and `exitDiagnostic` promotion), but this step introduces runtime compatibility regressions by bumping the schema constant without corresponding validator/serializer updates. In its current state, existing v2 persisted files are rejected and emitted v3 state can be structurally incomplete versus the declared v3 contract. This must be corrected before proceeding.
+The step successfully introduces the core v3 type surface in `extensions/taskplane/types.ts` (resilience, diagnostics, schema bump, and `exitDiagnostic` on both runtime and persisted task records). However, there are still contract inconsistencies in the inline schema documentation that conflict with the new required-v3 shape and current runtime behavior. Tightening those now will prevent Step 2 migration/validation drift.
 
 ### Issues Found
-1. **[extensions/taskplane/persistence.ts:381-382] [critical]** — v2 state files are now rejected.
-   - `validatePersistedState()` currently accepts only schema `1` and `BATCH_STATE_SCHEMA_VERSION`; after the bump to `3`, schema `2` files fail with `Unsupported schema version 2`.
-   - This breaks the stated compatibility contract and resumability for existing users.
-   - **Fix:** Accept `2` during transition and implement chained migration (`v1 -> v2 -> v3`) before enforcing stricter validation.
+1. **[extensions/taskplane/types.ts:1310-1315] [important]** — v3 JSDoc says `resilience`/`diagnostics` are optional, but the actual v3 contract in `PersistedBatchState` marks both as required (`extensions/taskplane/types.ts:1606-1615`).
+   - **Fix:** Update the `BATCH_STATE_SCHEMA_VERSION` version-history text to say canonical v3 requires both sections, and v1/v2 migration fills defaults.
 
-2. **[extensions/taskplane/persistence.ts:847-873, extensions/taskplane/types.ts:1610-1615] [important]** — Serializer writes `schemaVersion: 3` but does not emit required v3 sections.
-   - `PersistedBatchState` now requires `resilience` and `diagnostics`, but `serializeBatchState()` omits both.
-   - That creates on-disk data claiming v3 while missing declared required fields.
-   - **Fix:** Include `resilience: defaultResilienceState()` and `diagnostics: defaultBatchDiagnostics()` in serialization immediately (or keep fields optional until migration/serialization is updated in the same step).
+2. **[extensions/taskplane/types.ts:1317-1322] [important]** — Compatibility policy JSDoc claims current load/save behavior (`loadBatchState() accepts v1/v2/v3`, `saveBatchState() writes v3`) that is not true yet in runtime code (`extensions/taskplane/persistence.ts:380-386` still rejects v2 once schema constant is 3).
+   - **Fix:** Either (a) mark this as pending Step 2 behavior in comments, or (b) align persistence behavior in the same change. As written, docs and behavior diverge.
 
-3. **[extensions/taskplane/persistence.ts:340-343] [important]** — `upconvertV1toV2()` no longer matches its contract.
-   - It now sets `schemaVersion` to `BATCH_STATE_SCHEMA_VERSION` (3), despite function name/docs/tests indicating v1→v2 behavior.
-   - This creates semantic drift and confuses migration ownership.
-   - **Fix:** Keep `upconvertV1toV2()` targeting literal `2`, then add a separate `upconvertV2toV3()` and chain explicitly.
+3. **[extensions/taskplane/types.ts:1249-1250] [minor]** — `retries` is optional in `PersistedTaskExitSummary`, but comment says “0 if never retried,” which implies required numeric normalization.
+   - **Fix:** Make `retries` required with default `0`, or update comment to explicitly allow `undefined` when not recorded.
 
 ### Pattern Violations
-- **Contract/code drift:** `types.ts` documents v3 load compatibility and required v3 sections, but current `persistence.ts` behavior still reflects v2 assumptions.
+- Inline schema docs currently drift from actual runtime behavior, which violates the project guidance to keep behavior/docs aligned.
 
 ### Test Gaps
-- Regression suites currently failing due schema/version behavior mismatch:
-  - `extensions/tests/polyrepo-regression.test.ts`
-  - `extensions/tests/monorepo-compat-regression.test.ts`
-- Repro command used:
-  - `cd extensions && npx vitest run tests/polyrepo-regression.test.ts tests/monorepo-compat-regression.test.ts` (15 failing tests)
+- No tests were added for new v3 type-contract defaults (`defaultResilienceState()`, `defaultBatchDiagnostics()`).
+- Current suite is red after this step (`cd extensions && npx vitest run`): 15 failures (mostly v2 schema compatibility expectations), indicating migration/validation follow-through is still pending.
 
 ### Suggestions
-- Land schema version bump and persistence migration logic atomically (same checkpoint) to avoid transient breakage of recoverability semantics.
-- After Step 2 migration updates, add explicit assertions that v2 fixtures load and round-trip into canonical v3 with defaulted `resilience`/`diagnostics`.
+- In Step 2, add targeted migration tests that assert canonical v3 shape always contains required `resilience` and `diagnostics` after load/upconvert.
+- Add a tiny unit assertion for default factory functions to lock expected conservative defaults.

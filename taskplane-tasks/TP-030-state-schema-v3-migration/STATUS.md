@@ -1,11 +1,11 @@
 # TP-030: State Schema v3 & Migration — Status
 
-**Current Step:** Step 1: Define v3 Schema
+**Current Step:** Step 2: Implement Migration
 **Status:** ✅ Step 1 Complete
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -23,7 +23,7 @@
 ---
 
 ### Step 1: Define v3 Schema
-**Status:** 🔧 Revising (R004)
+**Status:** ✅ Complete
 - [x] Add `ResilienceState` interface and `PersistedRepairRecord` interface with all fields from roadmap 3a
 - [x] Add `BatchDiagnostics` and `PersistedTaskExitSummary` interfaces for diagnostics section
 - [x] Add **required** `resilience: ResilienceState` and `diagnostics: BatchDiagnostics` to `PersistedBatchState` (required in v3; migration fills defaults for v1/v2)
@@ -31,15 +31,15 @@
 - [x] Bump `BATCH_STATE_SCHEMA_VERSION` to 3 and update version-history JSDoc
 - [x] Add v3 type contract table to STATUS.md Notes
 - [x] Verify types compile cleanly (no TS errors)
-- [ ] R004-1: Fix `upconvertV1toV2()` to set literal `2` instead of `BATCH_STATE_SCHEMA_VERSION` (3)
-- [ ] R004-2: Fix `validatePersistedState()` to accept v2 alongside v1 and v3 (accept 1, 2, and 3)
-- [ ] R004-3: Fix `serializeBatchState()` to emit `resilience` and `diagnostics` with defaults
-- [ ] R004-4: Verify 16 previously-failing regression tests now pass
+- [x] R004-1: Fix `upconvertV1toV2()` to set literal `2` instead of `BATCH_STATE_SCHEMA_VERSION` (3)
+- [x] R004-2: Fix `validatePersistedState()` to accept v2 alongside v1 and v3 (accept 1, 2, and 3)
+- [x] R004-3: Fix `serializeBatchState()` to emit `resilience` and `diagnostics` with defaults
+- [x] R004-4: Verify 16 previously-failing regression tests now pass
 
 ---
 
 ### Step 2: Implement Migration
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Auto-detect schema version on read
 - [ ] v1/v2 → v3 migration with conservative defaults
 - [ ] Corrupt state handling (paused + diagnostic)
@@ -75,6 +75,8 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ## Discoveries
 
@@ -109,6 +111,11 @@
 | 2026-03-19 22:34 | Worker iter 2 | done in 622s, ctx: 26%, tools: 78 |
 | 2026-03-19 22:35 | Worker iter 2 | done in 620s, ctx: 35%, tools: 56 |
 | 2026-03-19 22:37 | Review R004 | code Step 1: REVISE |
+| 2026-03-19 22:39 | Review R004 | code Step 1: REVISE |
+| 2026-03-19 22:41 | Worker iter 2 | done in 218s, ctx: 16%, tools: 36 |
+| 2026-03-19 22:41 | Step 1 complete | Define v3 Schema |
+| 2026-03-19 22:41 | Step 2 started | Implement Migration |
+| 2026-03-19 22:45 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 

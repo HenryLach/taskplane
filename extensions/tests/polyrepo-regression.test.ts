@@ -355,7 +355,7 @@ describe("3.x: Serialization — repo-aware persisted state", () => {
 		const json = serializeBatchState(batchState, wavePlan, lanes, []);
 		const parsed = JSON.parse(json) as PersistedBatchState;
 
-		expect(parsed.schemaVersion).toBe(2);
+		expect(parsed.schemaVersion).toBe(BATCH_STATE_SCHEMA_VERSION);
 		expect(parsed.mode).toBe("workspace");
 		expect(parsed.wavePlan).toEqual(wavePlan);
 		expect(parsed.tasks).toHaveLength(6);
@@ -401,7 +401,7 @@ describe("3.x: Serialization — repo-aware persisted state", () => {
 
 		// Validate doesn't throw
 		const validated = validatePersistedState(parsed);
-		expect(validated.schemaVersion).toBe(2);
+		expect(validated.schemaVersion).toBe(BATCH_STATE_SCHEMA_VERSION);
 		expect(validated.mode).toBe("workspace");
 		expect(validated.tasks).toHaveLength(6);
 		expect(validated.lanes).toHaveLength(3);
@@ -940,7 +940,7 @@ describe("7.x: Repo-aware persisted state — validation and upconversion", () =
 		);
 		const validated = validatePersistedState(data);
 
-		expect(validated.schemaVersion).toBe(2);
+		expect(validated.schemaVersion).toBe(BATCH_STATE_SCHEMA_VERSION);
 		expect(validated.mode).toBe("workspace");
 		expect(validated.tasks.every(t => t.resolvedRepoId !== undefined)).toBe(true);
 		expect(validated.lanes.every(l => l.repoId !== undefined)).toBe(true);
@@ -994,8 +994,8 @@ describe("7.x: Repo-aware persisted state — validation and upconversion", () =
 
 		const validated = validatePersistedState(v1State);
 
-		// After upconversion:
-		expect(validated.schemaVersion).toBe(2);
+		// After upconversion (v1→v2→v3):
+		expect(validated.schemaVersion).toBe(BATCH_STATE_SCHEMA_VERSION);
 		expect(validated.mode).toBe("repo");
 		// Task/lane repo fields should be undefined (v1 = repo mode)
 		expect(validated.tasks[0].repoId).toBeUndefined();

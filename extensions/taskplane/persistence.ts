@@ -7,7 +7,7 @@ import { execSync } from "child_process";
 import { join, dirname, basename } from "path";
 
 import { execLog } from "./execution.ts";
-import { BATCH_STATE_SCHEMA_VERSION, StateFileError, batchStatePath, BATCH_HISTORY_MAX_ENTRIES } from "./types.ts";
+import { BATCH_STATE_SCHEMA_VERSION, StateFileError, batchStatePath, BATCH_HISTORY_MAX_ENTRIES, defaultResilienceState, defaultBatchDiagnostics } from "./types.ts";
 import type { BatchHistorySummary } from "./types.ts";
 import type { AllocatedLane, DiscoveryResult, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedTaskRecord, TaskMonitorSnapshot, WorkspaceMode } from "./types.ts";
 import { sleepSync } from "./worktree.ts";
@@ -338,8 +338,8 @@ export const VALID_PERSISTED_MERGE_STATUSES: ReadonlySet<string> = new Set([
  * @param obj - Parsed state object (mutated in-place)
  */
 export function upconvertV1toV2(obj: Record<string, unknown>): void {
-	if ((obj.schemaVersion as number) >= BATCH_STATE_SCHEMA_VERSION) return;
-	obj.schemaVersion = BATCH_STATE_SCHEMA_VERSION;
+	if ((obj.schemaVersion as number) >= 2) return;
+	obj.schemaVersion = 2;
 	if (!obj.baseBranch) obj.baseBranch = "";
 	if (!obj.mode) obj.mode = "repo";
 	// Task and lane records: v2 optional fields default to undefined (omitted)
@@ -347,17 +347,36 @@ export function upconvertV1toV2(obj: Record<string, unknown>): void {
 }
 
 /**
+ * Upconvert a v2 state object to v3 by adding resilience and diagnostics
+ * sections with conservative defaults.
+ *
+ * Added fields:
+ * - `resilience`: default empty resilience state (no retries, no repairs)
+ * - `diagnostics`: default empty diagnostics (no task exits, zero batch cost)
+ *
+ * This function is idempotent: calling it on an already-v3 object is a no-op.
+ *
+ * @param obj - Parsed state object (mutated in-place)
+ */
+export function upconvertV2toV3(obj: Record<string, unknown>): void {
+	if ((obj.schemaVersion as number) >= 3) return;
+	obj.schemaVersion = 3;
+	if (!obj.resilience) obj.resilience = defaultResilienceState();
+	if (!obj.diagnostics) obj.diagnostics = defaultBatchDiagnostics();
+}
+
+/**
  * Validate a parsed JSON object as a PersistedBatchState.
  *
  * Checks:
- * 1. Schema version is 1 (auto-upconverted to v2) or 2 (current)
+ * 1. Schema version is 1 (auto-upconverted to v2→v3), 2 (upconverted to v3), or 3 (current)
  * 2. All required fields are present with correct types
  * 3. Enum fields contain valid values (phase, task statuses, merge statuses)
  * 4. Arrays contain valid sub-records
  * 5. v2 optional fields (repoId, resolvedRepoId, mode) are valid when present
  *
  * @param data - Parsed JSON (unknown type)
- * @returns Validated PersistedBatchState (always v2, even if input was v1)
+ * @returns Validated PersistedBatchState (always v3, even if input was v1/v2)
  * @throws StateFileError with STATE_SCHEMA_INVALID on any validation failure
  */
 export function validatePersistedState(data: unknown): PersistedBatchState {
@@ -377,12 +396,15 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 			`Missing or invalid "schemaVersion" field (expected number, got ${typeof obj.schemaVersion})`,
 		);
 	}
-	// Accept v1 (auto-upconvert) and v2 (current). Reject anything else.
-	if (obj.schemaVersion !== 1 && obj.schemaVersion !== BATCH_STATE_SCHEMA_VERSION) {
+	// Accept v1 (auto-upconvert to v2→v3), v2 (upconvert to v3), and v3 (current).
+	// Reject anything else — including future versions from newer runtimes.
+	const ACCEPTED_VERSIONS = [1, 2, BATCH_STATE_SCHEMA_VERSION];
+	if (!ACCEPTED_VERSIONS.includes(obj.schemaVersion as number)) {
 		throw new StateFileError(
 			"STATE_SCHEMA_INVALID",
 			`Unsupported schema version ${obj.schemaVersion} (expected ${BATCH_STATE_SCHEMA_VERSION}). ` +
-			`Delete .pi/batch-state.json and re-run the batch.`,
+			`Upgrade taskplane to a version that supports schema v${obj.schemaVersion}, ` +
+			`or delete .pi/batch-state.json and re-run the batch.`,
 		);
 	}
 	const isV1 = obj.schemaVersion === 1;
@@ -703,10 +725,12 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		}
 	}
 
-	// ── v1→v2 upconversion ───────────────────────────────────────
-	// Apply defaults for fields that may be absent in v1 state files.
+	// ── v1→v2→v3 upconversion ────────────────────────────────────
+	// Apply defaults for fields that may be absent in older state files.
 	// The on-disk file is NOT rewritten; upconversion is in-memory only.
+	// Chain: v1→v2 then v2→v3 (each is idempotent / no-op if already at target).
 	upconvertV1toV2(obj);
+	upconvertV2toV3(obj);
 
 	return obj as unknown as PersistedBatchState;
 }
@@ -870,6 +894,8 @@ export function serializeBatchState(
 			? { code: "BATCH_ERROR", message: state.errors[state.errors.length - 1] }
 			: null,
 		errors: [...state.errors],
+		resilience: defaultResilienceState(),
+		diagnostics: defaultBatchDiagnostics(),
 	};
 
 	return JSON.stringify(persisted, null, 2);
