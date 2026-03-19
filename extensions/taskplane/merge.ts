@@ -787,12 +787,10 @@ export function mergeWave(
 					spawnSync("git", ["commit", "-m", `checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md)`], { cwd: mergeWorkDir });
 					execLog("merge", `W${waveIndex}`, `committed ${staged} task artifact(s) to merge worktree`);
 
-					// Restore the repo's working tree — remove the artifacts from develop's working tree
-					// so they don't cause conflicts on /orch-integrate
-					for (const file of artifactFiles) {
-						spawnSync("git", ["checkout", "--", file], { cwd: repoRoot });
-					}
-					// Also remove any untracked .DONE files
+					// Restore .DONE files only — these are untracked and would cause
+					// "dirty working tree" issues on /orch-integrate.
+					// Keep STATUS.md modifications in develop's working tree so the
+					// dashboard can read current progress from the canonical path.
 					for (const file of artifactFiles) {
 						if (file.endsWith(".DONE")) {
 							const srcPath = join(repoRoot, file);
