@@ -13,7 +13,7 @@ import { getCurrentBranch, runGit } from "./git.ts";
 import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
 import { computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
+import { applyPartialProgressToOutcomes, deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { StateFileError } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, PersistedLaneRecord, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
@@ -1024,6 +1024,9 @@ export async function resumeOrchBatch(
 				: persistedTask?.exitReason ?? "",
 			sessionName: persistedTask?.sessionName ?? "",
 			doneFileFound: status === "succeeded" ? true : task.doneFileFound,
+			// Carry forward partial progress from persisted state (TP-028)
+			partialProgressCommits: persistedTask?.partialProgressCommits,
+			partialProgressBranch: persistedTask?.partialProgressBranch,
 		});
 	}
 
@@ -1372,6 +1375,8 @@ export async function resumeOrchBatch(
 					`WARNING: ${ppUnsafeBranches.size} lane branch(es) could not be preserved — skipping reset for those lanes to prevent commit loss`,
 					{ unsafeBranches: [...ppUnsafeBranches] });
 			}
+			// TP-028: Stamp task outcomes with partial progress data for persistence
+			applyPartialProgressToOutcomes(ppResult, allTaskOutcomes);
 		}
 
 		if (waveIdx < persistedState.wavePlan.length - 1 && !batchState.pauseSignal.paused) {
@@ -1459,6 +1464,8 @@ export async function resumeOrchBatch(
 					{ taskId: r.taskId, commitCount: r.commitCount, error: r.error ?? "unknown" });
 			}
 		}
+		// TP-028: Stamp task outcomes with partial progress data for persistence
+		applyPartialProgressToOutcomes(ppResult, allTaskOutcomes);
 	}
 
 	if (!preserveWorktreesForResume) {

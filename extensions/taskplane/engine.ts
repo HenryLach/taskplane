@@ -12,7 +12,7 @@ import { getCurrentBranch, runGit } from "./git.ts";
 import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
 import { computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
+import { applyPartialProgressToOutcomes, deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
 import { FATAL_DISCOVERY_CODES, generateBatchId } from "./types.ts";
 import type { AllocatedLane, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, TokenCounts, WorkspaceConfig } from "./types.ts";
@@ -565,6 +565,8 @@ export async function executeOrchBatch(
 					`WARNING: ${ppUnsafeBranches.size} lane branch(es) could not be preserved — skipping reset for those lanes to prevent commit loss`,
 					{ unsafeBranches: [...ppUnsafeBranches] });
 			}
+			// TP-028: Stamp task outcomes with partial progress data for persistence
+			applyPartialProgressToOutcomes(ppResult, allTaskOutcomes);
 		}
 
 		// ── Post-merge: Reset worktrees for next wave ────────────
@@ -809,6 +811,8 @@ export async function executeOrchBatch(
 						{ taskId: r.taskId, commitCount: r.commitCount, error: r.error ?? "unknown" });
 				}
 			}
+			// TP-028: Stamp task outcomes with partial progress data for persistence
+			applyPartialProgressToOutcomes(ppResult, allTaskOutcomes);
 		}
 
 		// Clean up worktrees — use orchBranch to protect unmerged work.

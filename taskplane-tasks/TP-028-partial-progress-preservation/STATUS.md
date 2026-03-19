@@ -43,12 +43,12 @@
 ### Step 2: Record Partial Progress in Task Outcome
 **Status:** 🟨 In Progress
 
-- [ ] Add optional `partialProgressCommits` (number) and `partialProgressBranch` (string|null) to `LaneTaskOutcome` and `PersistedTaskRecord` in types.ts, with backward-compat defaults (0 / undefined)
-- [ ] Update `upsertTaskOutcome()` change detection in persistence.ts to include the new fields
-- [ ] Update all outcome construction sites (seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, resume.ts reconstitution) to carry/default the new fields
-- [ ] Update `serializeBatchState()` in persistence.ts to map the new fields from `LaneTaskOutcome` → `PersistedTaskRecord`
-- [ ] Add validation for the new optional fields in the state-file validation block in persistence.ts (backward-compatible: allow undefined)
-- [ ] Populate fields at all 4 `preserveFailedLaneProgress()` call sites: engine.ts inter-wave, engine.ts terminal, resume.ts inter-wave, resume.ts terminal — update task outcomes with ppResult data after preservation
+- [x] Add optional `partialProgressCommits` (number) and `partialProgressBranch` (string|null) to `LaneTaskOutcome` and `PersistedTaskRecord` in types.ts, with backward-compat defaults (0 / undefined)
+- [x] Update `upsertTaskOutcome()` change detection in persistence.ts to include the new fields
+- [x] Update all outcome construction sites (seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, resume.ts reconstitution) to carry/default the new fields
+- [x] Update `serializeBatchState()` in persistence.ts to map the new fields from `LaneTaskOutcome` → `PersistedTaskRecord`
+- [x] Add validation for the new optional fields in the state-file validation block in persistence.ts (backward-compatible: allow undefined)
+- [x] Populate fields at all 4 `preserveFailedLaneProgress()` call sites: engine.ts inter-wave, engine.ts terminal, resume.ts inter-wave, resume.ts terminal — update task outcomes with ppResult data after preservation
 
 ---
 

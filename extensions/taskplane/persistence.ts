@@ -11,6 +11,7 @@ import { BATCH_STATE_SCHEMA_VERSION, StateFileError, batchStatePath, BATCH_HISTO
 import type { BatchHistorySummary } from "./types.ts";
 import type { AllocatedLane, DiscoveryResult, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedTaskRecord, TaskMonitorSnapshot, WorkspaceMode } from "./types.ts";
 import { sleepSync } from "./worktree.ts";
+import type { PreserveFailedLaneProgressResult } from "./worktree.ts";
 
 // ── State Persistence Helper (TS-009 Step 2) ────────────────────────
 
@@ -66,12 +67,43 @@ export function upsertTaskOutcome(outcomes: LaneTaskOutcome[], next: LaneTaskOut
 		prev.endTime !== next.endTime ||
 		prev.exitReason !== next.exitReason ||
 		prev.sessionName !== next.sessionName ||
-		prev.doneFileFound !== next.doneFileFound;
+		prev.doneFileFound !== next.doneFileFound ||
+		prev.partialProgressCommits !== next.partialProgressCommits ||
+		prev.partialProgressBranch !== next.partialProgressBranch;
 
 	if (changed) {
 		outcomes[idx] = next;
 	}
 	return changed;
+}
+
+/**
+ * Apply partial progress preservation results to task outcomes (TP-028).
+ *
+ * After `preserveFailedLaneProgress()` runs, call this to stamp each
+ * successfully-preserved task outcome with the saved branch name and
+ * commit count. This ensures the data flows into persistence and
+ * diagnostics via the normal outcome → serialization path.
+ *
+ * @param ppResult  - Result from `preserveFailedLaneProgress()`
+ * @param outcomes  - Mutable array of task outcomes to update in-place
+ * @returns Number of outcomes that were updated
+ */
+export function applyPartialProgressToOutcomes(
+	ppResult: PreserveFailedLaneProgressResult,
+	outcomes: LaneTaskOutcome[],
+): number {
+	let updated = 0;
+	for (const r of ppResult.results) {
+		if (!r.saved || !r.savedBranch) continue;
+		const outcome = outcomes.find(o => o.taskId === r.taskId);
+		if (outcome) {
+			outcome.partialProgressCommits = r.commitCount;
+			outcome.partialProgressBranch = r.savedBranch;
+			updated++;
+		}
+	}
+	return updated;
 }
 
 /**
@@ -130,6 +162,8 @@ export function syncTaskOutcomesFromMonitor(
 				exitReason: existing?.exitReason || "Pending execution",
 				sessionName: existing?.sessionName || lane.sessionName,
 				doneFileFound: false,
+				partialProgressCommits: existing?.partialProgressCommits,
+				partialProgressBranch: existing?.partialProgressBranch,
 			}) || changed;
 		}
 
@@ -144,6 +178,8 @@ export function syncTaskOutcomesFromMonitor(
 				exitReason: existing?.exitReason || ".DONE file created by task-runner",
 				sessionName: existing?.sessionName || lane.sessionName,
 				doneFileFound: true,
+				partialProgressCommits: existing?.partialProgressCommits,
+				partialProgressBranch: existing?.partialProgressBranch,
 			}) || changed;
 		}
 
@@ -158,6 +194,8 @@ export function syncTaskOutcomesFromMonitor(
 				exitReason: existing?.exitReason || "Task failed or stalled",
 				sessionName: existing?.sessionName || lane.sessionName,
 				doneFileFound: false,
+				partialProgressCommits: existing?.partialProgressCommits,
+				partialProgressBranch: existing?.partialProgressBranch,
 			}) || changed;
 		}
 
@@ -185,6 +223,8 @@ export function syncTaskOutcomesFromMonitor(
 				exitReason: existing?.exitReason || (mappedStatus === "running" ? "Task in progress" : (snap.stallReason || "Task reached terminal state")),
 				sessionName: existing?.sessionName || lane.sessionName,
 				doneFileFound: snap.doneFileFound,
+				partialProgressCommits: existing?.partialProgressCommits,
+				partialProgressBranch: existing?.partialProgressBranch,
 			}) || changed;
 		}
 	}
@@ -518,6 +558,19 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 				`tasks[${i}].resolvedRepoId is not a string (got ${typeof t.resolvedRepoId})`,
 			);
 		}
+		// TP-028 optional fields: partialProgressCommits (number | undefined), partialProgressBranch (string | undefined)
+		if (t.partialProgressCommits !== undefined && typeof t.partialProgressCommits !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`tasks[${i}].partialProgressCommits is not a number (got ${typeof t.partialProgressCommits})`,
+			);
+		}
+		if (t.partialProgressBranch !== undefined && typeof t.partialProgressBranch !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`tasks[${i}].partialProgressBranch is not a string (got ${typeof t.partialProgressBranch})`,
+			);
+		}
 	}
 
 	// ── Validate lane records ────────────────────────────────────
@@ -736,6 +789,14 @@ export function serializeBatchState(
 			}
 			if (allocated?.allocatedTask.task?.resolvedRepoId !== undefined) {
 				record.resolvedRepoId = allocated.allocatedTask.task.resolvedRepoId;
+			}
+
+			// TP-028: Serialize partial progress fields from task outcome
+			if (outcome?.partialProgressCommits !== undefined) {
+				record.partialProgressCommits = outcome.partialProgressCommits;
+			}
+			if (outcome?.partialProgressBranch !== undefined) {
+				record.partialProgressBranch = outcome.partialProgressBranch;
 			}
 
 			return record;

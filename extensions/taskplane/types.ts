@@ -549,6 +549,18 @@ export interface LaneTaskOutcome {
 	sessionName: string;
 	/** Whether .DONE file was found */
 	doneFileFound: boolean;
+	/**
+	 * Number of commits preserved as partial progress for a failed task.
+	 * 0 when no partial progress was saved (succeeded tasks, no commits, etc.).
+	 * Optional for backward compatibility — defaults to 0 when absent.
+	 */
+	partialProgressCommits?: number;
+	/**
+	 * Saved branch name holding partial progress for a failed task.
+	 * Undefined/null when no partial progress was saved.
+	 * Optional for backward compatibility.
+	 */
+	partialProgressBranch?: string | null;
 }
 
 /**
@@ -1258,6 +1270,18 @@ export interface PersistedTaskRecord {
 	 * repo target after prompt → area → workspace-default fallback.
 	 */
 	resolvedRepoId?: string;
+	/**
+	 * Number of commits preserved as partial progress for a failed task (TP-028).
+	 * Undefined when no partial progress was saved (succeeded tasks, no commits, etc.).
+	 * Optional for backward compatibility with pre-TP-028 state files.
+	 */
+	partialProgressCommits?: number;
+	/**
+	 * Saved branch name holding partial progress for a failed task (TP-028).
+	 * Undefined when no partial progress was saved.
+	 * Optional for backward compatibility with pre-TP-028 state files.
+	 */
+	partialProgressBranch?: string;
 }
 
 /**
