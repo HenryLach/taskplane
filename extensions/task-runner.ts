@@ -1287,9 +1287,9 @@ function readExitSummary(exitSummaryPath: string): ExitSummary | null {
 		const raw = readFileSync(exitSummaryPath, "utf-8").trim();
 		if (!raw) return null;
 		const parsed = JSON.parse(raw);
-		// Minimal shape validation: must be an object with expected fields
-		if (typeof parsed !== "object" || parsed === null) {
-			console.error(`[task-runner] exit summary is not an object: ${exitSummaryPath}`);
+		// Minimal shape validation: must be a plain object (not array, not null)
+		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+			console.error(`[task-runner] exit summary is not a plain object: ${exitSummaryPath}`);
 			return null;
 		}
 		return parsed as ExitSummary;
@@ -1342,16 +1342,17 @@ interface BuildExitDiagnosticInput {
  * - `stallDetected` in ExitClassificationInput ← not directly available in
  *   task-runner's tmux mode (stall detection is orchestrator-level), so
  *   always false here. Stall classification may still occur via orchestrator.
- * - `contextKilled` ← when the task-runner kills the session due to
- *   context limit, the context_overflow classification is triggered via
- *   the exit summary's compactions + contextPct path. If no exit summary
- *   is available (crash), context kills appear as session_vanished.
+ * - `contextKilled` ← when the task-runner explicitly kills the session
+ *   due to context limit. Passed to classifyExit() so it can produce
+ *   `context_overflow` even when exit summary is missing or lacks
+ *   compaction events (e.g., wrapper crashed before writing summary).
  */
 function buildExitDiagnostic(input: BuildExitDiagnosticInput): TaskExitDiagnostic {
 	const classification = classifyExit({
 		exitSummary: input.exitSummary,
 		doneFileFound: input.doneFileFound,
 		timerKilled: input.timerKilled,
+		contextKilled: input.contextKilled,
 		stallDetected: false, // Stall detection is orchestrator-level, not available in /task mode
 		userKilled: input.userKilled,
 		contextPct: input.contextPct,

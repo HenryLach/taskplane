@@ -152,6 +152,7 @@ export interface ExitSummary {
  * - `exitSummary`: from rpc-wrapper.mjs exit summary JSON (null if file missing)
  * - `doneFileFound`: from .DONE file presence check (task-runner)
  * - `timerKilled`: true if task-runner's max_worker_minutes timer killed the session
+ * - `contextKilled`: true if the task-runner explicitly killed the session due to context limit
  * - `stallDetected`: true if monitoring detected no STATUS.md progress
  * - `userKilled`: true if user manually killed the session (e.g., /orch-abort, tmux kill)
  * - `contextPct`: estimated context utilization % (0-100), null if unknown
@@ -166,6 +167,8 @@ export interface ExitClassificationInput {
 	doneFileFound: boolean;
 	/** Whether the task-runner's wall-clock timer killed the session */
 	timerKilled: boolean;
+	/** Whether the task-runner explicitly killed the session due to context limit (TP-026) */
+	contextKilled?: boolean;
 	/** Whether monitoring detected a stall (no STATUS.md progress) */
 	stallDetected: boolean;
 	/** Whether the user manually killed the session */
@@ -234,6 +237,7 @@ export const CONTEXT_OVERFLOW_THRESHOLD_PCT = 90;
  * | 1        | `.DONE` file found                                   | `completed`         |
  * | 2        | Retries present with final retry failed               | `api_error`         |
  * | 3        | Compactions > 0 AND contextPct ≥ 90%                  | `context_overflow`  |
+ * | 3b       | Task-runner explicitly context-killed                  | `context_overflow`  |
  * | 4        | Timer killed the session                              | `wall_clock_timeout`|
  * | 5        | Non-zero exit code, no API error                      | `process_crash`     |
  * | 6        | No exit summary file (session vanished)               | `session_vanished`  |
@@ -258,6 +262,7 @@ export const CONTEXT_OVERFLOW_THRESHOLD_PCT = 90;
  */
 export function classifyExit(input: ExitClassificationInput): ExitClassification {
 	const { exitSummary, doneFileFound, timerKilled, stallDetected, userKilled, contextPct } = input;
+	const contextKilled = input.contextKilled ?? false;
 
 	// 1. .DONE file found → completed (task succeeded, regardless of session state)
 	if (doneFileFound) {
@@ -278,6 +283,13 @@ export function classifyExit(input: ExitClassificationInput): ExitClassification
 		if (effectivePct >= CONTEXT_OVERFLOW_THRESHOLD_PCT) {
 			return "context_overflow";
 		}
+	}
+
+	// 3b. Task-runner explicitly killed session due to context limit → context_overflow
+	// Catches cases where exit summary is missing (wrapper crashed) or compactions=0
+	// but the task-runner's own context guard triggered the kill.
+	if (contextKilled) {
+		return "context_overflow";
 	}
 
 	// 4. Task-runner's wall-clock timer killed the session → wall_clock_timeout

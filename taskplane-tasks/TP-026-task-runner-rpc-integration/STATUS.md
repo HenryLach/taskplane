@@ -1,6 +1,6 @@
 # TP-026: Task-Runner RPC Wrapper Integration — Status
 
-**Current Step:** Step 3: Produce Structured Exit Diagnostic (R008 revisions)
+**Current Step:** Step 3: Produce Structured Exit Diagnostic (complete)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
@@ -51,16 +51,16 @@
 ---
 
 ### Step 3: Produce Structured Exit Diagnostic
-**Status:** 🟡 In Progress (R008 revisions)
+**Status:** ✅ Complete
 
 - [x] Read exit summary JSON after tmux session exit (non-fatal parse with deterministic fallback for missing/malformed files)
 - [x] Build ExitClassificationInput with all signals: exitSummary, doneFileFound, timerKilled (wall-clock timeout flag), stallDetected (stall timer), userKilled (manual kill), contextPct (from sidecar tail state)
 - [x] Call classifyExit() and build full TaskExitDiagnostic (with progress metadata: partialProgressCommits, lastKnownStep, repoId, durationSec)
 - [x] Add exitDiagnostic as optional field to PersistedTaskRecord and LaneTaskOutcome (additive, preserve legacy exitReason, update serialization + validation)
 - [x] Preserve telemetry files by default (no cleanup — dashboard may read them; add log of paths for operator visibility)
-- [ ] R008: Wire contextKilled into classifyExit — add contextKilled field to ExitClassificationInput, handle in classifyExit() before process_crash, update buildExitDiagnostic to pass it, update existing classification tests
-- [ ] R008: Tighten exitDiagnostic validation — reject arrays (Array.isArray), add minimal shape check (classification is string)
-- [ ] R008: Add Step 3 helper tests — _readExitSummary (missing, malformed, valid), _buildExitDiagnostic (timer/context/user kill mapping, missing summary), persistence round-trip (exitDiagnostic present/absent/invalid shapes)
+- [x] R008: Wire contextKilled into classifyExit — add contextKilled field to ExitClassificationInput, handle in classifyExit() before process_crash, update buildExitDiagnostic to pass it, update existing classification tests
+- [x] R008: Tighten exitDiagnostic validation — reject arrays (Array.isArray), add minimal shape check (classification is string)
+- [x] R008: Add Step 3 helper tests — _readExitSummary (missing, malformed, valid), _buildExitDiagnostic (timer/context/user kill mapping, missing summary), persistence round-trip (exitDiagnostic present/absent/invalid shapes)
 
 ---
 
@@ -99,6 +99,7 @@
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 
 ---
@@ -175,6 +176,9 @@
 | 2026-03-19 23:36 | Worker iter 4 | done in 753s, ctx: 36%, tools: 98 |
 | 2026-03-19 23:37 | Worker iter 4 | done in 354s, ctx: 22%, tools: 47 |
 | 2026-03-19 23:40 | Review R008 | code Step 3: REVISE |
+| 2026-03-19 23:45 | Review R008 | code Step 3: REVISE |
+| 2026-03-19 | Step 3 R008 iter 2 | Fixed exitDiagnostic carry-forward in upsertTaskOutcome + syncTaskOutcomesFromMonitor, added 16 tests (upsert/sync/round-trip). All 71 TP-026 tests pass, 1095 total pass. |
+| 2026-03-19 | Step 3 complete | Produce Structured Exit Diagnostic (including R008 revisions) |
 
 ---
 

@@ -3,22 +3,21 @@
 ### Verdict: REVISE
 
 ### Summary
-The Step 3 implementation is close: exit-summary ingestion is non-fatal, diagnostics are surfaced in task-runner state, and persistence/resume schemas were extended additively. However, there is a classification gap where explicit context-limit kills can be mislabeled as `unknown`, which undermines deterministic diagnostics. There is also a schema-validation looseness for `exitDiagnostic` shape.
+The step adds the core tmux-side diagnostic plumbing (`readExitSummary`, `buildExitDiagnostic`, kill-reason tracking, and lane-state emission) and extends persisted schemas additively with `exitDiagnostic`. However, the new `exitDiagnostic` field is not preserved through the existing outcome upsert/sync pipeline, so diagnostics can be dropped before persistence updates. That breaks the intended resumable-state contract for this new field.
 
 ### Issues Found
-1. **[extensions/task-runner.ts:1316, 1351-1358, 2278-2280] [important]** — `contextKilled` is collected and passed into `buildExitDiagnostic()`, but it is never used when determining classification. In practice, a session killed by the task-runner context guard can end up classified as `unknown` (e.g., no compaction event or context below the 90% classifier threshold) even though the kill reason is explicitly known.  
-   **Fix:** incorporate `contextKilled` into classification logic (either as an override/fallback in `buildExitDiagnostic()` or by extending `ExitClassificationInput`/`classifyExit()` to include `contextKilled` with documented precedence and tests).
-
-2. **[extensions/taskplane/persistence.ts:575] [minor]** — `exitDiagnostic` validation only checks `typeof === "object"`, so arrays are accepted even though this field is intended to be a structured diagnostic object.  
-   **Fix:** reject arrays (`Array.isArray(...)`) and, ideally, add a minimal shape check (e.g., `classification` is a string) to prevent malformed state from silently passing validation.
+1. **[extensions/taskplane/persistence.ts:64-72,157-167,173-183,189-199,218-228] [important]** — `exitDiagnostic` is not included in outcome change detection or monitor-sync carry-forward. `upsertTaskOutcome()` ignores `prev.exitDiagnostic !== next.exitDiagnostic`, and `syncTaskOutcomesFromMonitor()` rebuilds outcomes without `exitDiagnostic`. When a task status transitions (e.g., running → succeeded/failed), the replacement record drops the diagnostic, so `serializeBatchState()` cannot persist it.  
+   **Fix:**
+   - Include `exitDiagnostic` in `upsertTaskOutcome()` comparison.
+   - Preserve `existing?.exitDiagnostic` in all `syncTaskOutcomesFromMonitor()` upsert payloads (same pattern as partial-progress fields).
+   - Add a regression test proving `exitDiagnostic` survives sync/upsert transitions.
 
 ### Pattern Violations
-- None blocking, but the project’s deterministic-diagnostics goal is weakened by having an explicit runtime signal (`contextKilled`) that is currently ignored.
+- None blocking, but this change currently diverges from the established optional-field propagation pattern used for `partialProgressCommits` / `partialProgressBranch`.
 
 ### Test Gaps
-- No tests were added for `_readExitSummary` / `_buildExitDiagnostic` behavior in task-runner (missing summary, malformed JSON, timer/context/user kill signal mapping).
-- No persistence tests cover the new `exitDiagnostic` field for both compatibility modes: absent (`undefined`) and present (valid object), plus invalid shapes.
+- Missing unit tests for `upsertTaskOutcome()` and `syncTaskOutcomesFromMonitor()` with `exitDiagnostic` present.
+- Missing persistence round-trip test (runtime outcome with `exitDiagnostic` → `serializeBatchState()` → `validatePersistedState()` / resume path).
 
 ### Suggestions
-- Add a focused `extensions/tests/task-runner-rpc.test.ts` suite for Step 3 helpers and kill-reason classification mapping.
-- Add persistence round-trip tests that verify `exitReason` remains intact while `exitDiagnostic` is serialized/deserialized additively.
+- In `extensions/task-runner.ts`, either remove `contextKilled` from `BuildExitDiagnosticInput` or extend `ExitClassificationInput`/`classifyExit()` to consume it; right now it is collected but unused in classification.

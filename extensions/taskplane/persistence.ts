@@ -69,7 +69,8 @@ export function upsertTaskOutcome(outcomes: LaneTaskOutcome[], next: LaneTaskOut
 		prev.sessionName !== next.sessionName ||
 		prev.doneFileFound !== next.doneFileFound ||
 		prev.partialProgressCommits !== next.partialProgressCommits ||
-		prev.partialProgressBranch !== next.partialProgressBranch;
+		prev.partialProgressBranch !== next.partialProgressBranch ||
+		prev.exitDiagnostic !== next.exitDiagnostic;
 
 	if (changed) {
 		outcomes[idx] = next;
@@ -164,6 +165,7 @@ export function syncTaskOutcomesFromMonitor(
 				doneFileFound: false,
 				partialProgressCommits: existing?.partialProgressCommits,
 				partialProgressBranch: existing?.partialProgressBranch,
+				exitDiagnostic: existing?.exitDiagnostic,
 			}) || changed;
 		}
 
@@ -180,6 +182,7 @@ export function syncTaskOutcomesFromMonitor(
 				doneFileFound: true,
 				partialProgressCommits: existing?.partialProgressCommits,
 				partialProgressBranch: existing?.partialProgressBranch,
+				exitDiagnostic: existing?.exitDiagnostic,
 			}) || changed;
 		}
 
@@ -196,6 +199,7 @@ export function syncTaskOutcomesFromMonitor(
 				doneFileFound: false,
 				partialProgressCommits: existing?.partialProgressCommits,
 				partialProgressBranch: existing?.partialProgressBranch,
+				exitDiagnostic: existing?.exitDiagnostic,
 			}) || changed;
 		}
 
@@ -225,6 +229,7 @@ export function syncTaskOutcomesFromMonitor(
 				doneFileFound: snap.doneFileFound,
 				partialProgressCommits: existing?.partialProgressCommits,
 				partialProgressBranch: existing?.partialProgressBranch,
+				exitDiagnostic: existing?.exitDiagnostic,
 			}) || changed;
 		}
 	}
@@ -571,12 +576,20 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 				`tasks[${i}].partialProgressBranch is not a string (got ${typeof t.partialProgressBranch})`,
 			);
 		}
-		// TP-026 optional field: exitDiagnostic (object | undefined)
-		if (t.exitDiagnostic !== undefined && (typeof t.exitDiagnostic !== "object" || t.exitDiagnostic === null)) {
-			throw new StateFileError(
-				"STATE_SCHEMA_INVALID",
-				`tasks[${i}].exitDiagnostic is not an object (got ${typeof t.exitDiagnostic})`,
-			);
+		// TP-026 optional field: exitDiagnostic (object with classification string | undefined)
+		if (t.exitDiagnostic !== undefined) {
+			if (typeof t.exitDiagnostic !== "object" || t.exitDiagnostic === null || Array.isArray(t.exitDiagnostic)) {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`tasks[${i}].exitDiagnostic is not a plain object (got ${Array.isArray(t.exitDiagnostic) ? "array" : typeof t.exitDiagnostic})`,
+				);
+			}
+			if (typeof (t.exitDiagnostic as any).classification !== "string") {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`tasks[${i}].exitDiagnostic.classification is not a string (got ${typeof (t.exitDiagnostic as any).classification})`,
+				);
+			}
 		}
 	}
 
