@@ -1,7 +1,7 @@
 # TP-029: Cleanup Resilience & Post-Merge Gate — Status
 
 **Current Step:** Step 5: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-19
 **Review Level:** 2
 **Review Counter:** 11
@@ -91,13 +91,13 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] R011: Complete residual R010 items from Step 4 — replace tautological notification-severity tests with direct `result.notifyLevel` assertions; run full test suite
 - [x] R011: Docs-impact check — review `/orch-integrate` message changes from Step 3 and decide if `docs/reference/commands.md` needs updating (decision: no update needed — existing docs already say "Cleanup failures are non-fatal (shown as warnings)"; our changes make cleanup more thorough but don't change the command interface, flags, or modes)
 - [x] R011: Close issue #93 with commit/PR reference (closed via gh issue close 93 with comment referencing TP-029 branch)
 - [x] R011: Verify all completion criteria from PROMPT.md are satisfied (all steps complete, all tests passing, cleanup works across all repos, cleanup gate blocks on failure)
-- [ ] `.DONE` created
+- [x] `.DONE` created
 
 ---
 
