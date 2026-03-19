@@ -327,8 +327,24 @@ export function executeIntegration(
 	const { orchBranch, currentBranch, batchId } = context;
 
 	if (mode === "ff") {
-		// Fast-forward merge
+		// Fast-forward merge.
+		// Stash any dirty working tree files first — workspace mode leaves
+		// STATUS.md modifications in the working tree for dashboard visibility.
+		// These would block ff if the orch branch has different versions.
+		let stashed = false;
+		const statusCheck = deps.runGit(["status", "--porcelain"]);
+		if (statusCheck.ok && statusCheck.stdout.trim()) {
+			deps.runGit(["stash", "push", "--include-untracked", "-m", `orch-integrate-autostash-${batchId}`]);
+			stashed = true;
+		}
+
 		const result = deps.runGit(["merge", "--ff-only", orchBranch]);
+
+		// Always pop stash if we stashed, regardless of ff result
+		if (stashed) {
+			deps.runGit(["stash", "pop"]);
+		}
+
 		if (!result.ok) {
 			return {
 				success: false,
@@ -359,7 +375,20 @@ export function executeIntegration(
 	}
 
 	if (mode === "merge") {
+		// Stash dirty working tree (same as ff mode — workspace STATUS.md artifacts)
+		let mergeStashed = false;
+		const mergeStatusCheck = deps.runGit(["status", "--porcelain"]);
+		if (mergeStatusCheck.ok && mergeStatusCheck.stdout.trim()) {
+			deps.runGit(["stash", "push", "--include-untracked", "-m", `orch-integrate-autostash-${batchId}`]);
+			mergeStashed = true;
+		}
+
 		const result = deps.runGit(["merge", orchBranch, "--no-edit"]);
+		// Pop stash regardless of merge result
+		if (mergeStashed) {
+			deps.runGit(["stash", "pop"]);
+		}
+
 		if (!result.ok) {
 			return {
 				success: false,
