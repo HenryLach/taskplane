@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 8
-**Iteration:** 4
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** M
 
 ---
@@ -67,12 +67,11 @@
 ### Step 4: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] Test rpc-wrapper command generation
-- [ ] Test sidecar tailing and accumulation
-- [ ] Test exit summary reading and classification
-- [ ] Test crash scenario (missing summary)
-- [ ] Test workspace mode paths
-- [ ] Full test suite passes
+- [ ] Verify existing TP-026 test coverage (rpc-wrapper.test.ts, sidecar-tailing.test.ts, task-runner-exit-diagnostic.test.ts) — all pass, covers command gen, sidecar tailing, exit classification, crash scenarios, persistence round-trip
+- [ ] Add workspace mode sidecar path test — verify getSidecarDir() with ORCH_SIDECAR_DIR env gives correct telemetry path
+- [ ] Add /orch subprocess path non-regression test — verify spawnAgent() is unchanged (diff guard or assertion) and pollUntilTaskComplete in execution.ts is unmodified
+- [ ] Add exitDiagnostic persistence/resume propagation test — verify exitDiagnostic survives upsert → syncFromMonitor → validate round-trip
+- [ ] Run full test suite — all pass (pre-existing failures in cleanup-resilience, worktree-lifecycle, orch-direct-implementation are TP-029, not TP-026)
 
 ---
 
@@ -101,6 +100,8 @@
 | R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 
 ---
 
@@ -183,6 +184,11 @@
 | 2026-03-19 23:52 | Step 3 complete | Produce Structured Exit Diagnostic |
 | 2026-03-19 23:52 | Step 4 started | Testing & Verification |
 | 2026-03-19 | Step 3 R008 iter 4 | Re-applied R008 revisions: contextKilled wired into classifyExit (3b priority), readExitSummary rejects arrays, exitDiagnostic validation tightened (Array.isArray + classification string check), added 30 task-runner-exit-diagnostic tests + 8 contextKilled classification tests. All 1097 tests pass. |
+| 2026-03-19 23:53 | Worker iter 4 | done in 813s, ctx: 44%, tools: 84 |
+| 2026-03-19 23:53 | Step 3 complete | Produce Structured Exit Diagnostic |
+| 2026-03-19 23:53 | Step 4 started | Testing & Verification |
+| 2026-03-19 23:55 | Review R009 | plan Step 4: REVISE |
+| 2026-03-19 23:55 | Review R009 | plan Step 4: REVISE |
 
 ---
 
