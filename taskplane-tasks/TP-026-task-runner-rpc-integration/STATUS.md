@@ -1,6 +1,6 @@
 # TP-026: Task-Runner RPC Wrapper Integration — Status
 
-**Current Step:** Step 3: Produce Structured Exit Diagnostic (complete)
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
@@ -65,7 +65,7 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Test rpc-wrapper command generation
 - [ ] Test sidecar tailing and accumulation
@@ -179,6 +179,10 @@
 | 2026-03-19 23:45 | Review R008 | code Step 3: REVISE |
 | 2026-03-19 | Step 3 R008 iter 2 | Fixed exitDiagnostic carry-forward in upsertTaskOutcome + syncTaskOutcomesFromMonitor, added 16 tests (upsert/sync/round-trip). All 71 TP-026 tests pass, 1095 total pass. |
 | 2026-03-19 | Step 3 complete | Produce Structured Exit Diagnostic (including R008 revisions) |
+| 2026-03-19 23:52 | Worker iter 4 | done in 389s, ctx: 41%, tools: 43 |
+| 2026-03-19 23:52 | Step 3 complete | Produce Structured Exit Diagnostic |
+| 2026-03-19 23:52 | Step 4 started | Testing & Verification |
+| 2026-03-19 | Step 3 R008 iter 4 | Re-applied R008 revisions: contextKilled wired into classifyExit (3b priority), readExitSummary rejects arrays, exitDiagnostic validation tightened (Array.isArray + classification string check), added 30 task-runner-exit-diagnostic tests + 8 contextKilled classification tests. All 1097 tests pass. |
 
 ---
 
