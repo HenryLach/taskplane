@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Cross-repo TASK_AUTOSTART path resolution** — workspace mode now uses absolute paths for task PROMPT.md so workers in api-service/web-client worktrees can find tasks that live in shared-libs.
 
+## [0.5.11] - 2026-03-19
+
+### Fixed
+- **`/orch-integrate` blocked by dirty STATUS.md files** — workspace mode preserves STATUS.md in the working tree for dashboard visibility, but these dirty files blocked `git merge --ff-only`. Now auto-stashes before integration and pops after.
+- **Batch completion message unclear** — simplified to two options: "Apply now (recommended)" and "Push & open PR for review". Removed `--merge` from default display (shown in ff error fallback). Added "Your branch was not modified" reassurance.
+
 ## [0.5.10] - 2026-03-19
 
 ### Fixed
