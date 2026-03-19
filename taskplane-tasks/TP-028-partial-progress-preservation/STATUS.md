@@ -72,7 +72,7 @@
 - [x] Inline comments updated in worktree.ts, engine.ts, resume.ts, types.ts, persistence.ts for partial progress preservation
 - [x] Docs-impact decision: `/orch-status` output is summary-only (counts, phase, wave, elapsed) — does NOT expose saved branch names or per-task partial progress data. No docs/reference/commands.md update needed.
 - [x] Closeout evidence note recorded in Execution Log
-- [ ] `.DONE` created
+- [x] `.DONE` created
 
 ---
 

@@ -1,22 +1,26 @@
 # TP-029: Cleanup Resilience & Post-Merge Gate — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Read worktree cleanup flow
-- [ ] Read merge worktree lifecycle
-- [ ] Understand issue #93 root cause
-- [ ] Read roadmap Phase 2 sections
+- [ ] Read CONTEXT.md (Tier 2 context)
+- [ ] Read worktree cleanup flow (engine → worktree.ts)
+- [ ] Read merge worktree lifecycle (merge.ts)
+- [ ] Understand issue #93 root cause: why only last-wave repos get cleanup
+- [ ] Read roadmap Phase 2 sections 2b, 2c, 2d
+- [ ] Read /orch-integrate flow in extension.ts (autostash, cleanup touchpoints)
+- [ ] Inventory existing test surface for cleanup/worktree/integrate paths
+- [ ] Record preflight findings: insertion points, expected failure-path behavior
 
 ---
 
@@ -70,6 +74,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ---
@@ -86,6 +92,12 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-19 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-19 20:27 | Task started | Extension-driven execution |
+| 2026-03-19 20:27 | Step 0 started | Preflight |
+| 2026-03-19 20:27 | Task started | Extension-driven execution |
+| 2026-03-19 20:27 | Step 0 started | Preflight |
+| 2026-03-19 20:29 | Review R001 | plan Step 0: REVISE |
+| 2026-03-19 20:29 | Review R001 | plan Step 0: REVISE |
 
 ---
 
