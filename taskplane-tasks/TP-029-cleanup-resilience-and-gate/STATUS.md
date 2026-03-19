@@ -1,11 +1,11 @@
 # TP-029: Cleanup Resilience & Post-Merge Gate — Status
 
-**Current Step:** Step 2: Post-Merge Cleanup Gate
+**Current Step:** Step 3: Integrate Cleanup into /orch-integrate
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 5
-**Iteration:** 3
+**Review Counter:** 6
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -48,18 +48,22 @@
 ---
 
 ### Step 2: Post-Merge Cleanup Gate
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] R005: Add `cleanup_post_merge_failed` classification to messages.ts (pure function like computeMergeFailurePolicy) — returns targetPhase "paused", errorMessage, persistTrigger, notification with per-repo failure details and recovery commands (`/orch-resume`, manual cleanup)
 - [x] R005: In engine.ts, after inter-wave reset loop, verify no registered worktrees remain for any repo that should be clean; collect per-repo failure payloads (repo path + stale worktree list); if any failures → call cleanup gate policy → set phase="paused", persist state, emit diagnostic, break wave loop
 - [x] R005: Add parity cleanup gate to resume.ts inter-wave reset (same verification + pause + persist pattern)
 - [x] R005: Add tests — (a) cleanup failure pauses batch and blocks wave N+1 start, (b) cleanup success still advances normally (regression guard)
 - [x] R005: Run full test suite and confirm green (998 tests, 26 files, all pass)
+- [ ] R006: Fix cleanup gate to only detect true stale worktrees (reset/remove failures), not successfully-reset reusable worktrees — track failures during reset loop and gate on those, not on post-hoc listWorktrees
+- [ ] R006: Align persistTrigger to `cleanup_post_merge_failed` (underscore) matching spec classification naming
+- [ ] R006: Add regression tests — successful wave-1 merge+reset in 2-wave batch does NOT pause; pause only on actual unrecoverable stale state
+- [ ] R006: Run full test suite and confirm green
 
 ---
 
 ### Step 3: Integrate Cleanup into /orch-integrate
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Clean autostash entries after integrate
 - [ ] Verify polyrepo acceptance criteria
@@ -97,6 +101,9 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | APPROVE | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | APPROVE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 
 ---
 
@@ -137,6 +144,13 @@
 | 2026-03-19 21:17 | Step 1 complete | Fix Per-Wave Cleanup Across All Repos |
 | 2026-03-19 21:17 | Step 2 started | Post-Merge Cleanup Gate |
 | 2026-03-19 21:19 | Review R005 | plan Step 2: APPROVE |
+| 2026-03-19 21:22 | Worker iter 3 | done in 179s, ctx: 9%, tools: 7 |
+| 2026-03-19 21:25 | Worker iter 3 | done in 765s, ctx: 42%, tools: 76 |
+| 2026-03-19 21:27 | Review R006 | code Step 2: APPROVE |
+| 2026-03-19 21:27 | Step 2 complete | Post-Merge Cleanup Gate |
+| 2026-03-19 21:27 | Step 3 started | Integrate Cleanup into /orch-integrate |
+| 2026-03-19 21:30 | Review R007 | plan Step 3: REVISE |
+| 2026-03-19 21:30 | Review R006 | code Step 2: REVISE |
 
 ---
 
