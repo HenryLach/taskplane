@@ -314,6 +314,171 @@ function attachJsonlReader(stream, onLine) {
 	});
 }
 
+// ── Session Accumulator (testable) ───────────────────────────────────
+
+/**
+ * Create a fresh session state object for accumulating RPC events.
+ * Extracted from _main() for testability.
+ */
+function createSessionState() {
+	return {
+		tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		cost: 0,
+		toolCalls: 0,
+		compactions: 0,
+		retries: [],
+		lastToolCall: null,
+		currentTool: null,
+		error: null,
+		agentEnded: false,
+	};
+}
+
+/**
+ * Apply an RPC event to session state, mutating state in place.
+ * Extracted from _main() handleEvent for testability.
+ *
+ * Returns the mutated state (same reference).
+ */
+function applyEvent(state, event) {
+	if (!event || !event.type) return state;
+
+	switch (event.type) {
+		case "message_end": {
+			const usage = event.message?.usage;
+			if (usage) {
+				state.tokens.input += usage.input || 0;
+				state.tokens.output += usage.output || 0;
+				state.tokens.cacheRead += usage.cacheRead || 0;
+				state.tokens.cacheWrite += usage.cacheWrite || 0;
+				if (usage.cost) {
+					state.cost += typeof usage.cost === "object" ? (usage.cost.total || 0) : (typeof usage.cost === "number" ? usage.cost : 0);
+				}
+			}
+			break;
+		}
+
+		case "tool_execution_start": {
+			state.toolCalls++;
+			const toolDesc = event.toolName || "unknown";
+			let argPreview = "";
+			if (event.args) {
+				if (typeof event.args === "string") {
+					argPreview = event.args.slice(0, 80);
+				} else if (typeof event.args === "object") {
+					const firstVal = Object.values(event.args)[0];
+					if (typeof firstVal === "string") {
+						argPreview = firstVal.slice(0, 80);
+					}
+				}
+			}
+			state.currentTool = argPreview ? `${toolDesc}: ${argPreview}` : toolDesc;
+			state.lastToolCall = state.currentTool;
+			break;
+		}
+
+		case "tool_execution_end": {
+			state.currentTool = null;
+			break;
+		}
+
+		case "auto_retry_start": {
+			state.retries.push({
+				attempt: event.attempt || state.retries.length + 1,
+				error: event.errorMessage || event.error || "unknown",
+				delayMs: event.delayMs || 0,
+				succeeded: false,
+			});
+			break;
+		}
+
+		case "auto_retry_end": {
+			if (state.retries.length > 0) {
+				const last = state.retries[state.retries.length - 1];
+				last.succeeded = event.success === true;
+			}
+			break;
+		}
+
+		case "auto_compaction_start": {
+			state.compactions++;
+			break;
+		}
+
+		case "agent_end": {
+			state.agentEnded = true;
+			break;
+		}
+
+		case "response": {
+			if (event.success === false && event.error) {
+				state.error = event.error;
+			}
+			break;
+		}
+
+		default:
+			break;
+	}
+
+	return state;
+}
+
+/**
+ * Build an exit summary object from session state.
+ * Applies redaction. Does NOT write to disk — caller handles persistence.
+ *
+ * @param {object} state - Session state from createSessionState + applyEvent calls
+ * @param {number|null} exitCode - Process exit code
+ * @param {string|null} exitSignal - Process exit signal
+ * @param {string|null} errorOverride - Override error message (e.g., spawn error)
+ * @param {number} startTime - Session start timestamp (Date.now())
+ * @returns {object} Redacted exit summary ready for serialization
+ */
+function buildExitSummary(state, exitCode, exitSignal, errorOverride, startTime) {
+	const durationSec = Math.round((Date.now() - startTime) / 1000);
+	const finalError = errorOverride || state.error || null;
+	const normalizedExitCode = (typeof exitCode === "number" && Number.isFinite(exitCode) && exitCode >= 0)
+		? exitCode
+		: (exitCode === null || exitCode === undefined ? null : 1);
+
+	const rawSummary = {
+		exitCode: normalizedExitCode,
+		exitSignal: exitSignal || null,
+		tokens: (state.tokens.input + state.tokens.output + state.tokens.cacheRead + state.tokens.cacheWrite) > 0
+			? { ...state.tokens }
+			: null,
+		cost: state.cost > 0 ? state.cost : null,
+		toolCalls: state.toolCalls,
+		retries: state.retries,
+		compactions: state.compactions,
+		durationSec,
+		lastToolCall: state.lastToolCall,
+		error: finalError,
+	};
+
+	return redactSummary(rawSummary);
+}
+
+/**
+ * Create a single-write guard for exit summary persistence.
+ * Returns a function that writes the summary at most once;
+ * subsequent calls are no-ops.
+ *
+ * @param {function} writer - Function that receives (summary) and persists it
+ * @returns {function} Guarded writer: (state, exitCode, exitSignal, errorOverride, startTime) => boolean
+ */
+function createSingleWriteGuard(writer) {
+	let written = false;
+	return function guardedWrite(state, exitCode, exitSignal, errorOverride, startTime) {
+		if (written) return false;
+		written = true;
+		const summary = buildExitSummary(state, exitCode, exitSignal, errorOverride, startTime);
+		writer(summary);
+		return true;
+	};
+}
+
 // ── Exports for Testing ──────────────────────────────────────────────
 
 // Export pure functions so tests can import them without triggering side effects.
@@ -326,6 +491,10 @@ export {
 	attachJsonlReader,
 	SECRET_ENV_PATTERN,
 	MAX_TOOL_ARG_LENGTH,
+	createSessionState,
+	applyEvent,
+	buildExitSummary,
+	createSingleWriteGuard,
 };
 
 // ── Main ─────────────────────────────────────────────────────────────
@@ -392,18 +561,7 @@ mkdirSync(dirname(resolve(args.exitSummaryPath)), { recursive: true });
 // ── Session State ────────────────────────────────────────────────────
 
 const startTime = Date.now();
-
-const state = {
-	tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	cost: 0,
-	toolCalls: 0,
-	compactions: 0,
-	retries: [],
-	lastToolCall: null,
-	currentTool: null,
-	error: null,
-	agentEnded: false,
-};
+const state = createSessionState();
 
 // ── Build pi spawn args ──────────────────────────────────────────────
 
@@ -464,93 +622,31 @@ function handleEvent(event) {
 	// Write ALL events to sidecar (redacted)
 	writeSidecarEvent(args.sidecarPath, event);
 
+	// Delegate state mutation to the extracted (testable) accumulator
+	applyEvent(state, event);
+
+	// Side effects that depend on the event type (IO, stdin lifecycle, display)
 	switch (event.type) {
-		case "message_end": {
-			const usage = event.message?.usage;
-			if (usage) {
-				state.tokens.input += usage.input || 0;
-				state.tokens.output += usage.output || 0;
-				state.tokens.cacheRead += usage.cacheRead || 0;
-				state.tokens.cacheWrite += usage.cacheWrite || 0;
-				if (usage.cost) {
-					state.cost += typeof usage.cost === "object" ? (usage.cost.total || 0) : (typeof usage.cost === "number" ? usage.cost : 0);
-				}
-			}
+		case "message_end":
+		case "tool_execution_start":
 			displayProgress(state);
 			break;
-		}
 
-		case "tool_execution_start": {
-			state.toolCalls++;
-			const toolDesc = event.toolName || "unknown";
-			// Build a brief description: "toolName: first arg preview"
-			let argPreview = "";
-			if (event.args) {
-				if (typeof event.args === "string") {
-					argPreview = event.args.slice(0, 80);
-				} else if (typeof event.args === "object") {
-					const firstVal = Object.values(event.args)[0];
-					if (typeof firstVal === "string") {
-						argPreview = firstVal.slice(0, 80);
-					}
-				}
-			}
-			state.currentTool = argPreview ? `${toolDesc}: ${argPreview}` : toolDesc;
-			state.lastToolCall = state.currentTool;
-			displayProgress(state);
-			break;
-		}
-
-		case "tool_execution_end": {
-			state.currentTool = null;
-			break;
-		}
-
-		case "auto_retry_start": {
-			state.retries.push({
-				attempt: event.attempt || state.retries.length + 1,
-				error: event.errorMessage || event.error || "unknown",
-				delayMs: event.delayMs || 0,
-				succeeded: false, // updated on auto_retry_end
-			});
-			break;
-		}
-
-		case "auto_retry_end": {
-			// Update the last retry record with success status
-			if (state.retries.length > 0) {
-				const last = state.retries[state.retries.length - 1];
-				last.succeeded = event.success === true;
-			}
-			break;
-		}
-
-		case "auto_compaction_start": {
-			state.compactions++;
-			break;
-		}
-
-		case "agent_end": {
-			state.agentEnded = true;
+		case "agent_end":
 			// Close stdin so pi process can exit cleanly.
 			// RPC mode waits for more commands while stdin is open;
 			// without this, the process can hang indefinitely.
 			closeStdin();
 			break;
-		}
 
-		case "response": {
-			// Check for command errors
+		case "response":
+			// Terminal error response — close stdin to let pi exit
 			if (event.success === false && event.error) {
-				state.error = event.error;
-				// Terminal error response — close stdin to let pi exit
 				closeStdin();
 			}
 			break;
-		}
 
 		default:
-			// Other events are still written to sidecar above
 			break;
 	}
 }
@@ -578,55 +674,17 @@ proc.stderr?.on("data", (chunk) => {
  * Single-write guard: ensures exit summary is written exactly once
  * across all termination paths (close, error, signal handlers).
  *
- * Precedence for exitCode/exitSignal/error when multiple handlers fire:
- * 1. `close` event provides exitCode and exitSignal (most authoritative)
- * 2. `error` event provides spawn/pipe errors (fallback if close doesn't fire)
- * 3. Signal handlers set exitSignal to the forwarded signal name
- *
+ * Uses the extracted createSingleWriteGuard + buildExitSummary for testability.
  * The first handler to call writeExitSummary() wins; subsequent calls are no-ops.
  */
-let summaryWritten = false;
-
-function writeExitSummary(exitCode, exitSignal, errorOverride) {
-	if (summaryWritten) return;
-	summaryWritten = true;
-
-	const durationSec = Math.round((Date.now() - startTime) / 1000);
-
-	// Determine final error: explicit override > accumulated state error > null
-	const finalError = errorOverride || state.error || null;
-
-	// Normalize exit code: null/undefined/NaN/negative → 1 for summary consumers
-	const normalizedExitCode = (typeof exitCode === "number" && Number.isFinite(exitCode) && exitCode >= 0)
-		? exitCode
-		: (exitCode === null || exitCode === undefined ? null : 1);
-
-	const rawSummary = {
-		exitCode: normalizedExitCode,
-		exitSignal: exitSignal || null,
-		tokens: (state.tokens.input + state.tokens.output + state.tokens.cacheRead + state.tokens.cacheWrite) > 0
-			? { ...state.tokens }
-			: null,
-		cost: state.cost > 0 ? state.cost : null,
-		toolCalls: state.toolCalls,
-		retries: state.retries,
-		compactions: state.compactions,
-		durationSec,
-		lastToolCall: state.lastToolCall,
-		error: finalError,
-	};
-
-	// Apply redaction pipeline to summary fields (error, lastToolCall, retries)
-	// before persisting — same policy as sidecar events.
-	const summary = redactSummary(rawSummary);
-
+const writeExitSummary = createSingleWriteGuard((summary) => {
 	try {
 		writeFileSync(resolve(args.exitSummaryPath), JSON.stringify(summary, null, 2) + "\n", "utf-8");
 		process.stderr.write(`\n[rpc-wrapper] exit summary written to ${args.exitSummaryPath}\n`);
 	} catch (err) {
 		process.stderr.write(`\n[rpc-wrapper] FATAL: failed to write exit summary: ${err.message}\n`);
 	}
-}
+});
 
 // ── Process Lifecycle Handlers ───────────────────────────────────────
 
