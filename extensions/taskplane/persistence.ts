@@ -359,8 +359,12 @@ export function upconvertV1toV2(obj: Record<string, unknown>): void {
  * @param obj - Parsed state object (mutated in-place)
  */
 export function upconvertV2toV3(obj: Record<string, unknown>): void {
-	if ((obj.schemaVersion as number) >= 3) return;
-	obj.schemaVersion = 3;
+	if ((obj.schemaVersion as number) < 3) {
+		obj.schemaVersion = 3;
+	}
+	// Ensure v3 sections exist with defaults — both for genuine v2→v3
+	// upconversion and defensively for v3 states that are somehow incomplete
+	// (e.g., test fixtures that don't specify every field).
 	if (!obj.resilience) obj.resilience = defaultResilienceState();
 	if (!obj.diagnostics) obj.diagnostics = defaultBatchDiagnostics();
 }
@@ -732,6 +736,105 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 	upconvertV1toV2(obj);
 	upconvertV2toV3(obj);
 
+	// ── Validate v3 resilience section ───────────────────────────
+	// After upconversion, resilience must be a valid object with correct types.
+	if (!obj.resilience || typeof obj.resilience !== "object") {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`Missing or invalid "resilience" section (expected object, got ${typeof obj.resilience})`,
+		);
+	}
+	const res = obj.resilience as Record<string, unknown>;
+	if (typeof res.resumeForced !== "boolean") {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`resilience.resumeForced must be a boolean (got ${typeof res.resumeForced})`,
+		);
+	}
+	if (!res.retryCountByScope || typeof res.retryCountByScope !== "object" || Array.isArray(res.retryCountByScope)) {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`resilience.retryCountByScope must be an object (got ${typeof res.retryCountByScope})`,
+		);
+	}
+	if (res.lastFailureClass !== null && typeof res.lastFailureClass !== "string") {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`resilience.lastFailureClass must be a string or null (got ${typeof res.lastFailureClass})`,
+		);
+	}
+	if (!Array.isArray(res.repairHistory)) {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`resilience.repairHistory must be an array (got ${typeof res.repairHistory})`,
+		);
+	}
+
+	// ── Validate v3 diagnostics section ──────────────────────────
+	// After upconversion, diagnostics must be a valid object with correct types.
+	if (!obj.diagnostics || typeof obj.diagnostics !== "object") {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`Missing or invalid "diagnostics" section (expected object, got ${typeof obj.diagnostics})`,
+		);
+	}
+	const diag = obj.diagnostics as Record<string, unknown>;
+	if (!diag.taskExits || typeof diag.taskExits !== "object" || Array.isArray(diag.taskExits)) {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`diagnostics.taskExits must be an object (got ${typeof diag.taskExits})`,
+		);
+	}
+	if (typeof diag.batchCost !== "number") {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`diagnostics.batchCost must be a number (got ${typeof diag.batchCost})`,
+		);
+	}
+
+	// ── Validate exitDiagnostic on task records (optional) ───────
+	for (let i = 0; i < tasks.length; i++) {
+		const t = tasks[i] as Record<string, unknown>;
+		if (t.exitDiagnostic !== undefined) {
+			if (!t.exitDiagnostic || typeof t.exitDiagnostic !== "object") {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`tasks[${i}].exitDiagnostic must be an object when present (got ${typeof t.exitDiagnostic})`,
+				);
+			}
+			const ed = t.exitDiagnostic as Record<string, unknown>;
+			if (typeof ed.classification !== "string") {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`tasks[${i}].exitDiagnostic.classification must be a string (got ${typeof ed.classification})`,
+				);
+			}
+		}
+	}
+
+	// ── Capture unknown top-level fields for roundtrip preservation ──
+	// Any fields not in the known schema are preserved so they survive
+	// serialization. This protects against data loss from future schema
+	// extensions or external tools writing additional fields.
+	const KNOWN_TOP_LEVEL_FIELDS = new Set([
+		"schemaVersion", "phase", "batchId", "baseBranch", "orchBranch", "mode",
+		"startedAt", "updatedAt", "endedAt", "currentWaveIndex", "totalWaves",
+		"wavePlan", "lanes", "tasks", "mergeResults",
+		"totalTasks", "succeededTasks", "failedTasks", "skippedTasks", "blockedTasks",
+		"blockedTaskIds", "lastError", "errors",
+		"resilience", "diagnostics",
+		"_extraFields",
+	]);
+	const extraFields: Record<string, unknown> = {};
+	for (const key of Object.keys(obj)) {
+		if (!KNOWN_TOP_LEVEL_FIELDS.has(key)) {
+			extraFields[key] = obj[key];
+		}
+	}
+	if (Object.keys(extraFields).length > 0) {
+		obj._extraFields = extraFields;
+	}
+
 	return obj as unknown as PersistedBatchState;
 }
 
@@ -823,6 +926,11 @@ export function serializeBatchState(
 				record.partialProgressBranch = outcome.partialProgressBranch;
 			}
 
+			// TP-030 v3: Serialize exit diagnostic from task outcome
+			if (outcome?.exitDiagnostic !== undefined) {
+				record.exitDiagnostic = outcome.exitDiagnostic;
+			}
+
 			return record;
 		});
 
@@ -894,9 +1002,21 @@ export function serializeBatchState(
 			? { code: "BATCH_ERROR", message: state.errors[state.errors.length - 1] }
 			: null,
 		errors: [...state.errors],
-		resilience: defaultResilienceState(),
-		diagnostics: defaultBatchDiagnostics(),
+		resilience: state.resilience ?? defaultResilienceState(),
+		diagnostics: state.diagnostics ?? defaultBatchDiagnostics(),
 	};
+
+	// Merge unknown fields from loaded state to preserve roundtrip fidelity.
+	// Extra fields are placed at the end of the object (after known schema fields)
+	// and will not overwrite any known field.
+	if (state._extraFields) {
+		const output = persisted as Record<string, unknown>;
+		for (const [key, value] of Object.entries(state._extraFields)) {
+			if (!(key in output)) {
+				output[key] = value;
+			}
+		}
+	}
 
 	return JSON.stringify(persisted, null, 2);
 }
@@ -1056,10 +1176,11 @@ export type OrphanStateStatus = "valid" | "missing" | "invalid" | "io-error";
  *
  * - "resume"         — Orphan sessions + valid state, or no orphans + valid state with incomplete tasks: suggest /orch-resume
  * - "abort-orphans"  — Orphan sessions without usable state: suggest /orch-abort
- * - "cleanup-stale"  — No orphans + stale/invalid state file: auto-delete and start fresh
+ * - "cleanup-stale"  — No orphans + stale/valid/completed state: auto-delete and start fresh
+ * - "paused-corrupt" — No orphans + corrupt/unreadable state file: do NOT auto-delete; notify user to inspect or manually remove
  * - "start-fresh"    — No orphans, no state file: proceed normally
  */
-export type OrphanRecommendedAction = "resume" | "abort-orphans" | "cleanup-stale" | "start-fresh";
+export type OrphanRecommendedAction = "resume" | "abort-orphans" | "cleanup-stale" | "paused-corrupt" | "start-fresh";
 
 /**
  * Result of orphan detection analysis.
@@ -1123,8 +1244,8 @@ export function parseOrchSessionNames(stdout: string, prefix: string): string[] 
  * | No       | valid       | all   | cleanup-stale   |
  * | No       | valid       | !all  | resume          |
  * | No       | missing     | —     | start-fresh     |
- * | No       | invalid     | —     | cleanup-stale   |
- * | No       | io-error    | —     | cleanup-stale   |
+ * | No       | invalid     | —     | paused-corrupt  |
+ * | No       | io-error    | —     | paused-corrupt  |
  *
  * Pure function — no process or filesystem access.
  *
@@ -1245,17 +1366,20 @@ export function analyzeOrchestratorStartupState(
 		};
 	}
 
-	// Invalid or io-error state with no orphans — safe to clean up
+	// Invalid or io-error state with no orphans — corrupt state.
+	// Never auto-delete: enter paused-corrupt so the user can inspect the file
+	// and decide whether to manually recover or remove it.
 	return {
 		orphanSessions: [],
 		stateStatus,
 		loadedState: null,
 		stateError,
-		recommendedAction: "cleanup-stale",
+		recommendedAction: "paused-corrupt",
 		userMessage:
-			`🧹 Found unusable batch state file (${stateStatus}).\n` +
+			`⚠️ Batch state file is corrupt or unreadable (${stateStatus}).\n` +
 			(stateError ? `   Error: ${stateError}\n` : "") +
-			`   Cleaning up state file before starting fresh.`,
+			`   The file has NOT been deleted. Inspect .pi/batch-state.json manually,\n` +
+			`   then either fix it or delete it and run /orch again.`,
 	};
 }
 

@@ -894,6 +894,21 @@ export interface OrchBatchRuntimeState {
 	dependencyGraph: DependencyGraph | null;
 	/** Accumulated merge results across all waves */
 	mergeResults: MergeWaveResult[];
+	/**
+	 * v3 resilience state carried forward across resume cycles.
+	 * Populated from persisted state on resume; defaults used for new batches.
+	 */
+	resilience?: ResilienceState;
+	/**
+	 * v3 diagnostics state carried forward across resume cycles.
+	 * Populated from persisted state on resume; defaults used for new batches.
+	 */
+	diagnostics?: BatchDiagnostics;
+	/**
+	 * Unknown top-level fields from loaded persisted state.
+	 * Carried forward so they survive serialization roundtrips.
+	 */
+	_extraFields?: Record<string, unknown>;
 }
 
 /**
@@ -1613,6 +1628,13 @@ export interface PersistedBatchState {
 	 * Required in v3. Migration from v1/v2 fills conservative defaults.
 	 */
 	diagnostics: BatchDiagnostics;
+	/**
+	 * Unknown top-level fields captured during deserialization.
+	 * Preserved on roundtrip to avoid data loss from future schema extensions
+	 * or external tools writing additional fields.
+	 * Not serialized directly — merged back by `serializeBatchState()`.
+	 */
+	_extraFields?: Record<string, unknown>;
 }
 
 

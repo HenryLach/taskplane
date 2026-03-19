@@ -703,6 +703,14 @@ export async function resumeOrchBatch(
 	batchState.currentWaveIndex = resumePoint.resumeWaveIndex;
 	batchState.waveResults = [];
 
+	// v3: Carry forward resilience and diagnostics from persisted state
+	batchState.resilience = persistedState.resilience;
+	batchState.diagnostics = persistedState.diagnostics;
+	// Carry forward unknown fields for roundtrip preservation
+	if (persistedState._extraFields) {
+		batchState._extraFields = persistedState._extraFields;
+	}
+
 	// ── 7. Re-run discovery for ParsedTask metadata ──────────────
 	// We need fresh ParsedTask data (taskFolder, promptPath) for execution.
 	// Use "all" to discover all areas.
@@ -1028,6 +1036,8 @@ export async function resumeOrchBatch(
 			// Carry forward partial progress from persisted state (TP-028)
 			partialProgressCommits: persistedTask?.partialProgressCommits,
 			partialProgressBranch: persistedTask?.partialProgressBranch,
+			// v3: Carry forward exit diagnostic from persisted state (TP-030)
+			exitDiagnostic: persistedTask?.exitDiagnostic,
 		});
 	}
 

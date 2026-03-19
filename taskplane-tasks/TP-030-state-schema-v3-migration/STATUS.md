@@ -1,7 +1,7 @@
 # TP-030: State Schema v3 & Migration — Status
 
-**Current Step:** Step 2: Implement Migration
-**Status:** ✅ Step 1 Complete
+**Current Step:** Step 3: Testing & Verification
+**Status:** ✅ Step 2 Complete
 **Last Updated:** 2026-03-19
 **Review Level:** 2
 **Review Counter:** 5
@@ -39,12 +39,12 @@
 ---
 
 ### Step 2: Implement Migration
-**Status:** 🟨 In Progress
-- [ ] Auto-detect & upconvert: `validatePersistedState` already chains v1→v2→v3; verify roundtrip defaults are correct for loaded v1/v2 states
-- [ ] Corrupt state → paused (not auto-delete): Change `analyzeOrchestratorStartupState` for invalid/io-error with no orphans to recommend "paused" instead of "cleanup-stale"; update extension.ts handler to enter paused phase with diagnostic
-- [ ] v3 non-default fields survive serialization: Update `serializeBatchState` to carry forward loaded resilience/diagnostics/exitDiagnostic values from runtime state instead of always emitting defaults
-- [ ] Unknown-field preservation on read/write roundtrip: Store extra top-level keys from loaded JSON, merge them back in `serializeBatchState`
-- [ ] Version mismatch error text includes upgrade guidance (already done in validatePersistedState — verify wording)
+**Status:** ✅ Complete
+- [x] Auto-detect & upconvert: `validatePersistedState` already chains v1→v2→v3; verify roundtrip defaults are correct for loaded v1/v2 states
+- [x] Corrupt state → paused (not auto-delete): Change `analyzeOrchestratorStartupState` for invalid/io-error with no orphans to recommend "paused-corrupt" instead of "cleanup-stale"; update extension.ts handler to enter paused phase with diagnostic
+- [x] v3 non-default fields survive serialization: Update `serializeBatchState` to carry forward loaded resilience/diagnostics/exitDiagnostic values from runtime state instead of always emitting defaults
+- [x] Unknown-field preservation on read/write roundtrip: Store extra top-level keys from loaded JSON, merge them back in `serializeBatchState`
+- [x] Version mismatch error text includes upgrade guidance (already done in validatePersistedState — verified)
 
 ---
 
@@ -76,6 +76,7 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ## Discoveries
@@ -116,6 +117,10 @@
 | 2026-03-19 22:41 | Step 1 complete | Define v3 Schema |
 | 2026-03-19 22:41 | Step 2 started | Implement Migration |
 | 2026-03-19 22:45 | Review R005 | plan Step 2: REVISE |
+| 2026-03-19 22:50 | Worker iter 2 | done in 620s, ctx: 21%, tools: 52 |
+| 2026-03-19 22:50 | Step 1 complete | Define v3 Schema |
+| 2026-03-19 22:50 | Step 2 started | Implement Migration |
+| 2026-03-19 22:52 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 

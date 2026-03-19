@@ -769,7 +769,7 @@ export default function (pi: ExtensionAPI) {
 					return;
 
 				case "cleanup-stale":
-					// No orphans + stale/invalid state file — auto-delete and continue
+					// No orphans + stale/completed state file — auto-delete and continue
 					try {
 						deleteBatchState(repoRoot);
 					} catch {
@@ -779,6 +779,12 @@ export default function (pi: ExtensionAPI) {
 						ctx.ui.notify(orphanResult.userMessage, "info");
 					}
 					break;
+
+				case "paused-corrupt":
+					// Corrupt/unreadable state file — do NOT auto-delete.
+					// Notify user and stop; they must inspect or manually remove the file.
+					ctx.ui.notify(orphanResult.userMessage, "warning");
+					return;
 
 				case "start-fresh":
 					// No orphans, no state file — proceed normally
