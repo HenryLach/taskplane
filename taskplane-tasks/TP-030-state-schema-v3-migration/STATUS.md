@@ -1,21 +1,24 @@
 # TP-030: State Schema v3 & Migration — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read current v2 schema
+**Status:** 🟨 In Progress
+- [ ] Read CONTEXT.md (Tier 2 context)
+- [ ] Read current v2 schema in types.ts
 - [ ] Read persistence read/write flow
 - [ ] Read resume validation
 - [ ] Read roadmap Phase 3 section 3a
+- [ ] Verify TP-025 dependency: confirm TaskExitDiagnostic exists in diagnostics.ts
+- [ ] Record key migration constraints in Discoveries/Notes
 
 ---
 
@@ -58,6 +61,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -70,6 +75,10 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-19 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-19 22:16 | Task started | Extension-driven execution |
+| 2026-03-19 22:16 | Step 0 started | Preflight |
+| 2026-03-19 22:17 | Review R001 | plan Step 0: REVISE |
+| 2026-03-19 22:17 | Review R001 | plan Step 0: REVISE |
 
 ## Blockers
 
