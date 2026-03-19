@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Cross-repo TASK_AUTOSTART path resolution** — workspace mode now uses absolute paths for task PROMPT.md so workers in api-service/web-client worktrees can find tasks that live in shared-libs.
 
+## [0.5.6] - 2026-03-18
+
+### Fixed
+- **Dashboard missing merge sub-rows for single-repo waves** — Wave 3 merge showed "succeeded" but no lane details when only one repo was involved. Threshold changed from 2+ to 1+ repo results.
+
 ## [0.5.5] - 2026-03-18
 
 ### Fixed
