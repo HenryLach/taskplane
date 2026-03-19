@@ -767,7 +767,10 @@ export function mergeWave(
 			const lines = statusResult.stdout.split("\n").filter((l: string) => l.trim());
 			const artifactFiles = lines
 				.map((l: string) => l.slice(3).trim())
-				.filter((f: string) => f.endsWith(".DONE") || f.endsWith("STATUS.md"));
+				.filter((f: string) =>
+					(f.endsWith(".DONE") || f.endsWith("STATUS.md")) &&
+					!f.includes(".worktrees/"),  // Never stage worktree internals
+				);
 
 			if (artifactFiles.length > 0) {
 				let staged = 0;
@@ -787,16 +790,11 @@ export function mergeWave(
 					spawnSync("git", ["commit", "-m", `checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md)`], { cwd: mergeWorkDir });
 					execLog("merge", `W${waveIndex}`, `committed ${staged} task artifact(s) to merge worktree`);
 
-					// Restore .DONE files only — these are untracked and would cause
-					// "dirty working tree" issues on /orch-integrate.
-					// Keep STATUS.md modifications in develop's working tree so the
-					// dashboard can read current progress from the canonical path.
-					for (const file of artifactFiles) {
-						if (file.endsWith(".DONE")) {
-							const srcPath = join(repoRoot, file);
-							try { if (existsSync(srcPath)) unlinkSync(srcPath); } catch { /* best effort */ }
-						}
-					}
+					// Keep both .DONE and STATUS.md in develop's working tree:
+					// - STATUS.md: dashboard reads current progress from canonical path
+					// - .DONE: harmless untracked files, cleaned up by /orch-integrate stash
+					// Previous approach of deleting .DONE caused them to be missing
+					// after ff integration (git couldn't reliably restore them).
 				}
 			}
 		}
