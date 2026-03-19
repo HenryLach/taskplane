@@ -2,7 +2,7 @@
  * Main batch execution engine
  * @module orch/engine
  */
-import { readFileSync, readdirSync, unlinkSync } from "fs";
+import { existsSync, readdirSync, readFileSync, rmdirSync, unlinkSync } from "fs";
 import { join, resolve } from "path";
 
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
@@ -16,8 +16,9 @@ import { applyPartialProgressToOutcomes, deleteBatchState, loadBatchHistory, per
 import { listOrchSessions } from "./sessions.ts";
 import { FATAL_DISCOVERY_CODES, generateBatchId } from "./types.ts";
 import type { AllocatedLane, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, TokenCounts, WorkspaceConfig } from "./types.ts";
+import { resolveRepoIdFromRoot } from "./resume.ts";
 import { buildDependencyGraph, computeWaves, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
-import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
+import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, resolveWorktreeBasePath, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 
 // ── /orch Execution Engine ───────────────────────────────────────────
 
@@ -87,6 +88,12 @@ export async function executeOrchBatch(
 	let wavePlan: string[][] = [];
 	// Reference to discovery result for enriching taskFolder paths.
 	let discoveryRef: DiscoveryResult | null = null;
+	// TP-029: Track all repo roots encountered during execution.
+	// Maps repoRoot → repoId (undefined for primary/repo-mode).
+	// Used by inter-wave reset and terminal cleanup to iterate ALL repos
+	// that had lanes, not just the primary repoRoot. Parity with resume.ts.
+	const encounteredRepoRoots = new Map<string, string | undefined>();
+	encounteredRepoRoots.set(repoRoot, undefined); // always include primary
 
 	execLog("batch", batchState.batchId, "starting batch planning");
 
@@ -303,6 +310,11 @@ export async function executeOrchBatch(
 			(lanes) => {
 				latestAllocatedLanes = lanes;
 				batchState.currentLanes = lanes;
+				// TP-029: Track repos from newly allocated lanes for cleanup coverage
+				for (const lane of lanes) {
+					const laneRepoRoot = resolveRepoRoot(lane.repoId, repoRoot, workspaceConfig);
+					encounteredRepoRoots.set(laneRepoRoot, lane.repoId);
+				}
 				if (seedPendingOutcomesForAllocatedLanes(lanes, allTaskOutcomes)) {
 					persistRuntimeState("wave-lanes-allocated", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				}
@@ -570,19 +582,35 @@ export async function executeOrchBatch(
 		}
 
 		// ── Post-merge: Reset worktrees for next wave ────────────
-		// Only reset if merge succeeded AND there are more waves
+		// Only reset if merge succeeded AND there are more waves.
+		// TP-029: Iterate ALL encountered repo roots (not just primary repoRoot)
+		// so that repos active in wave N but not in the final wave still get reset.
+		// Follows the resume.ts encounteredRepoRoots pattern for parity.
 		if (waveIdx < rawWaves.length - 1 && !batchState.pauseSignal.paused) {
-			const prefix = orchConfig.orchestrator.worktree_prefix;
+			const resetPrefix = orchConfig.orchestrator.worktree_prefix;
 			const resetOpId = resolveOperatorId(orchConfig);
-			const existingWorktrees = listWorktrees(prefix, repoRoot, resetOpId, batchState.batchId);
+			let totalResetWorktrees = 0;
 
-			if (existingWorktrees.length > 0) {
-				onNotify(
-					ORCH_MESSAGES.orchWorktreeReset(waveIdx + 1, existingWorktrees.length),
-					"info",
-				);
+			for (const [perRepoRoot, perRepoId] of encounteredRepoRoots) {
+				const existingWorktrees = listWorktrees(resetPrefix, perRepoRoot, resetOpId, batchState.batchId);
+				if (existingWorktrees.length === 0) continue;
+				totalResetWorktrees += existingWorktrees.length;
 
-				const targetBranch = batchState.orchBranch;
+				// Per-repo target branch: primary repo uses orchBranch,
+				// secondary repos resolve their own branch (parity with resume.ts).
+				let targetBranch: string;
+				if (perRepoRoot === repoRoot) {
+					targetBranch = batchState.orchBranch;
+				} else {
+					try {
+						targetBranch = resolveBaseBranch(perRepoId, perRepoRoot, batchState.orchBranch, workspaceConfig);
+					} catch {
+						// If resolution fails, fall back to orchBranch (reset will
+						// fail gracefully and trigger worktree removal)
+						targetBranch = batchState.orchBranch;
+					}
+				}
+
 				for (const wt of existingWorktrees) {
 					// TP-028: Skip reset for worktrees whose lane branch has
 					// unsaved partial progress (preservation failed with commits)
@@ -593,15 +621,16 @@ export async function executeOrchBatch(
 						continue;
 					}
 
-					const resetResult = safeResetWorktree(wt, targetBranch, repoRoot);
+					const resetResult = safeResetWorktree(wt, targetBranch, perRepoRoot);
 					if (!resetResult.success) {
 						execLog("batch", batchState.batchId, `worktree reset failed for lane ${wt.laneNumber}`, {
 							error: resetResult.error || "unknown",
 							path: wt.path,
+							repoId: perRepoId ?? "(default)",
 						});
 						// If reset fails, remove this worktree so the next wave can recreate it cleanly.
 						try {
-							removeWorktree(wt, repoRoot);
+							removeWorktree(wt, perRepoRoot);
 							execLog("batch", batchState.batchId, `removed unrecoverable worktree for lane ${wt.laneNumber}`);
 						} catch (removeErr: unknown) {
 							execLog("batch", batchState.batchId, `removeWorktree failed for lane ${wt.laneNumber}, attempting force cleanup`, {
@@ -609,14 +638,19 @@ export async function executeOrchBatch(
 								path: wt.path,
 							});
 							// Last resort: force-remove the directory and prune git worktree state.
-							// This handles cases where git has partially deregistered the worktree
-							// or undeletable files (e.g., Windows reserved names like "nul") block removal.
-							forceCleanupWorktree(wt, repoRoot, batchState.batchId);
+							forceCleanupWorktree(wt, perRepoRoot, batchState.batchId);
 						}
 					} else {
 						execLog("batch", batchState.batchId, `worktree reset OK for lane ${wt.laneNumber}`);
 					}
 				}
+			}
+
+			if (totalResetWorktrees > 0) {
+				onNotify(
+					ORCH_MESSAGES.orchWorktreeReset(waveIdx + 1, totalResetWorktrees),
+					"info",
+				);
 			}
 		}
 	}
@@ -815,32 +849,76 @@ export async function executeOrchBatch(
 			applyPartialProgressToOutcomes(ppResult, allTaskOutcomes);
 		}
 
-		// Clean up worktrees — use orchBranch to protect unmerged work.
-		// Lane branches were merged into orchBranch (not baseBranch), so
-		// unmerged-branch detection must compare against orchBranch.
-		const targetBranch = batchState.orchBranch;
+		// TP-029: Clean up worktrees across ALL encountered repos (not just primary).
+		// Per-repo target branch resolution: primary repo uses orchBranch,
+		// secondary repos resolve their own branch via resolveBaseBranch.
+		// Parity with resume.ts:1475-1507.
 		const cleanupOpId = resolveOperatorId(orchConfig);
 		execLog("batch", batchState.batchId, "cleaning up worktrees");
-		const removeResult = removeAllWorktrees(prefix, repoRoot, cleanupOpId, targetBranch, batchState.batchId, orchConfig);
 
-		// Log preserved branches
-		for (const p of removeResult.preserved) {
-			execLog("batch", batchState.batchId, `preserving unmerged branch as saved ref`, {
-				branch: p.branch,
-				savedBranch: p.savedBranch,
-				lane: p.laneNumber,
-				target: targetBranch,
-				commitCount: p.unmergedCount ?? 0,
-			});
+		for (const [perRepoRoot, perRepoId] of encounteredRepoRoots) {
+			let targetBranch: string | undefined;
+			if (perRepoRoot === repoRoot) {
+				// Primary repo: lane branches were merged into orchBranch
+				targetBranch = batchState.orchBranch;
+			} else {
+				// Secondary repo (workspace mode): resolve the repo's own branch
+				try {
+					targetBranch = resolveBaseBranch(perRepoId, perRepoRoot, batchState.orchBranch, workspaceConfig);
+				} catch {
+					// Fall back to undefined — skips branch protection
+					// (safe because successfully merged branches were already cleaned)
+					targetBranch = undefined;
+				}
+			}
+			const removeResult = removeAllWorktrees(prefix, perRepoRoot, cleanupOpId, targetBranch, batchState.batchId, orchConfig);
+
+			// Log preserved branches
+			for (const p of removeResult.preserved) {
+				execLog("batch", batchState.batchId, `preserving unmerged branch as saved ref`, {
+					branch: p.branch,
+					savedBranch: p.savedBranch,
+					lane: p.laneNumber,
+					target: targetBranch,
+					commitCount: p.unmergedCount ?? 0,
+					repoId: perRepoId ?? "(default)",
+				});
+			}
+
+			if (removeResult.failed.length > 0) {
+				const failedPaths = removeResult.failed.map(f => f.worktree.path).join(", ");
+				execLog("batch", batchState.batchId, `worktree cleanup: ${removeResult.removed.length} removed, ${removeResult.failed.length} failed, ${removeResult.preserved.length} preserved`, {
+					failedPaths,
+					repoId: perRepoId ?? "(default)",
+				});
+			} else if (removeResult.totalAttempted > 0) {
+				execLog("batch", batchState.batchId, `worktree cleanup: ${removeResult.removed.length} removed, ${removeResult.preserved.length} preserved`, {
+					repoId: perRepoId ?? "(default)",
+				});
+			}
 		}
 
-		if (removeResult.failed.length > 0) {
-			const failedPaths = removeResult.failed.map(f => f.worktree.path).join(", ");
-			execLog("batch", batchState.batchId, `worktree cleanup: ${removeResult.removed.length} removed, ${removeResult.failed.length} failed, ${removeResult.preserved.length} preserved`, {
-				failedPaths,
-			});
-		} else if (removeResult.totalAttempted > 0) {
-			execLog("batch", batchState.batchId, `worktree cleanup: ${removeResult.removed.length} removed, ${removeResult.preserved.length} preserved`);
+		// TP-029: Clean up empty .worktrees base directories in subdirectory mode.
+		// Only targets subdirectory-mode repos where the base path is
+		// {repoRoot}/.worktrees. Never force-removes non-empty parents
+		// (partial failure safety — R003 requirement).
+		if (orchConfig.orchestrator.worktree_location !== "sibling") {
+			for (const [perRepoRoot, perRepoId] of encounteredRepoRoots) {
+				const worktreeBase = resolveWorktreeBasePath(perRepoRoot, orchConfig);
+				// Safety: only clean dirs that end with .worktrees (subdirectory mode)
+				if (worktreeBase.endsWith(".worktrees") && existsSync(worktreeBase)) {
+					try {
+						const entries = readdirSync(worktreeBase);
+						if (entries.length === 0) {
+							rmdirSync(worktreeBase);
+							execLog("batch", batchState.batchId, `removed empty .worktrees directory`, {
+								path: worktreeBase,
+								repoId: perRepoId ?? "(default)",
+							});
+						}
+					} catch { /* best effort — leave non-empty dirs intact */ }
+				}
+			}
 		}
 
 		// ── Post-worktree-removal: Clean up merged branches ──────

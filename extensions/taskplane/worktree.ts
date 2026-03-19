@@ -1572,6 +1572,21 @@ export function removeAllWorktrees(
 		removeBatchContainerIfEmpty(containerPath);
 	}
 
+	// TP-029: Remove empty .worktrees/ base directory in subdirectory mode.
+	// In sibling mode the base dir is the repo's parent (e.g., "..") — never remove that.
+	// Only attempt removal when empty (same safety as container cleanup).
+	if (config && config.orchestrator.worktree_location !== "sibling") {
+		const basePath = resolveWorktreeBasePath(repoRoot, config);
+		try {
+			if (existsSync(basePath)) {
+				const entries = readdirSync(basePath);
+				if (entries.length === 0) {
+					rmdirSync(basePath);
+				}
+			}
+		} catch { /* safe default — leave it alone */ }
+	}
+
 	return {
 		totalAttempted: worktrees.length,
 		removed,

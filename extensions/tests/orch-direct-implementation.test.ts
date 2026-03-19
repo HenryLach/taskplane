@@ -304,8 +304,11 @@ function runAllTests(): void {
 		assert(mergeCallRegex.test(engineSource),
 			"mergeWaveByRepo() receives batchState.orchBranch (not baseBranch)");
 
-		// Post-merge worktree reset uses orchBranch
-		const resetBlock = engineSource.match(/Post-merge: Reset worktrees[\s\S]*?const targetBranch = batchState\.\w+/)?.[0] ?? "";
+		// Post-merge worktree reset uses orchBranch for primary repo.
+		// TP-029: Now iterates encounteredRepoRoots with per-repo target branch
+		// resolution. Primary repo uses batchState.orchBranch; secondary repos
+		// use resolveBaseBranch. Verify orchBranch is used and baseBranch is not.
+		const resetBlock = engineSource.match(/Post-merge: Reset worktrees[\s\S]*?targetBranch = batchState\.\w+/)?.[0] ?? "";
 		assert(resetBlock.includes("batchState.orchBranch"),
 			"post-merge worktree reset uses batchState.orchBranch");
 		assert(!resetBlock.includes("batchState.baseBranch"),
@@ -313,7 +316,8 @@ function runAllTests(): void {
 
 		// Phase 3 cleanup uses orchBranch for unmerged-branch protection
 		// (lane branches were merged into orchBranch, not baseBranch — TP-022 Step 4)
-		const cleanupBlock = engineSource.match(/Phase 3: Cleanup[\s\S]*?const targetBranch = batchState\.\w+/)?.[0] ?? "";
+		// TP-029: Now iterates encounteredRepoRoots with per-repo target branch.
+		const cleanupBlock = engineSource.match(/Phase 3: Cleanup[\s\S]*?targetBranch = batchState\.\w+/)?.[0] ?? "";
 		assert(cleanupBlock.includes("batchState.orchBranch"),
 			"Phase 3 cleanup uses batchState.orchBranch for unmerged-branch check");
 	}

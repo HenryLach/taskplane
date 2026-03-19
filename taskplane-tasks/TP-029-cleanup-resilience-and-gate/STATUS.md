@@ -29,13 +29,13 @@
 ---
 
 ### Step 1: Fix Per-Wave Cleanup Across All Repos
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Inter-wave reset: collect all repo roots from allocated lanes and iterate per-repo (following resume.ts encounteredRepoRoots pattern); per-repo target branch resolution (primary=orchBranch, secondary=resolveBaseBranch)
-- [ ] Terminal cleanup: iterate all encountered repo roots for removeAllWorktrees (not just primary repoRoot); follow same pattern as resume.ts:1475-1507
-- [ ] Force cleanup fallback: apply forceCleanupWorktree to both merge.ts stale-prep cleanup (~577) and end-of-wave merge worktree cleanup (~887)
-- [ ] .worktrees parent cleanup: only remove empty .worktrees base dirs in subdirectory mode; never force-remove non-empty parents (R003 safety rule)
-- [ ] Remove duplicate execution-log rows at STATUS.md:110-113 (R003 housekeeping)
+- [x] Inter-wave reset: collect all repo roots from allocated lanes and iterate per-repo (following resume.ts encounteredRepoRoots pattern); per-repo target branch resolution (primary=orchBranch, secondary=resolveBaseBranch)
+- [x] Terminal cleanup: iterate all encountered repo roots for removeAllWorktrees (not just primary repoRoot); follow same pattern as resume.ts:1475-1507
+- [x] Force cleanup fallback: apply forceCleanupWorktree to both merge.ts stale-prep cleanup (~577) and end-of-wave merge worktree cleanup (~887)
+- [x] .worktrees parent cleanup: only remove empty .worktrees base dirs in subdirectory mode; never force-remove non-empty parents (R003 safety rule)
+- [x] Remove duplicate execution-log rows at STATUS.md:110-113 (R003 housekeeping)
 
 ---
 
@@ -83,7 +83,6 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
-| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ---
 
@@ -111,10 +110,7 @@
 | 2026-03-19 20:36 | Step 0 complete | Preflight |
 | 2026-03-19 20:36 | Step 1 started | Fix Per-Wave Cleanup Across All Repos |
 | 2026-03-19 20:36 | Worker iter 1 | done in 74s, ctx: 10%, tools: 15 |
-| 2026-03-19 20:36 | Step 0 complete | Preflight |
-| 2026-03-19 20:36 | Step 1 started | Fix Per-Wave Cleanup Across All Repos |
 | 2026-03-19 20:38 | Review R003 | plan Step 1: REVISE |
-| 2026-03-19 20:39 | Review R003 | plan Step 1: REVISE |
 
 ---
 

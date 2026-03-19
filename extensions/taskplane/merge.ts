@@ -2,8 +2,8 @@
  * Merge orchestration, merge agents, merge worktree
  * @module orch/merge
  */
-import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdirSync } from "fs";
-import { spawnSync } from "child_process";
+import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdirSync, rmSync } from "fs";
+import { execSync, spawnSync } from "child_process";
 import { join, dirname } from "path";
 
 import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
@@ -474,6 +474,67 @@ export function waitForMergeResult(
 }
 
 /**
+ * Force-remove a merge worktree directory and prune stale git references.
+ *
+ * TP-029: Applies the same forceCleanupWorktree pattern used for lane
+ * worktrees. Tries `git worktree remove --force` first, then falls back
+ * to `rm -rf` + `git worktree prune` if the initial removal fails.
+ *
+ * Used in both stale-prep cleanup (before creating a fresh merge worktree)
+ * and end-of-wave cleanup (after merge completes).
+ *
+ * @param mergeWorkDir - Absolute path to the merge worktree directory
+ * @param repoRoot     - Main repository root for git operations
+ * @param context      - Logging context (e.g., "W1" for wave 1)
+ */
+function forceRemoveMergeWorktree(
+	mergeWorkDir: string,
+	repoRoot: string,
+	context: string,
+): void {
+	if (!existsSync(mergeWorkDir)) return;
+
+	// Try git worktree remove --force first
+	const removeResult = spawnSync("git", ["worktree", "remove", mergeWorkDir, "--force"], { cwd: repoRoot });
+	if (removeResult.status === 0) {
+		return;
+	}
+
+	// Fallback: force-remove the directory and prune git worktree state
+	const stderr = removeResult.stderr?.toString().trim() || "";
+	execLog("merge", context, `git worktree remove failed for merge worktree, applying force cleanup`, {
+		error: stderr.slice(0, 200),
+		path: mergeWorkDir,
+	});
+
+	try {
+		rmSync(mergeWorkDir, { recursive: true, force: true });
+		execLog("merge", context, `force-removed merge worktree directory`, { path: mergeWorkDir });
+	} catch (rmErr: unknown) {
+		// Node's rmSync may fail on Windows reserved-name files — try OS-level removal
+		const rmMsg = rmErr instanceof Error ? rmErr.message : String(rmErr);
+		execLog("merge", context, `rmSync failed for merge worktree, trying OS-level removal`, { error: rmMsg });
+		try {
+			if (process.platform === "win32") {
+				execSync(`rd /s /q "${mergeWorkDir}"`, { stdio: "pipe", timeout: 30_000 });
+			} else {
+				execSync(`rm -rf "${mergeWorkDir}"`, { stdio: "pipe", timeout: 30_000 });
+			}
+			execLog("merge", context, `OS-level removal of merge worktree succeeded`, { path: mergeWorkDir });
+		} catch (osErr: unknown) {
+			const osMsg = osErr instanceof Error ? osErr.message : String(osErr);
+			execLog("merge", context, `OS-level removal also failed — manual cleanup needed`, {
+				path: mergeWorkDir,
+				error: osMsg,
+			});
+		}
+	}
+
+	// Prune stale worktree references
+	runGit(["worktree", "prune"], repoRoot);
+}
+
+/**
  * Merge a completed wave's lane branches into the base branch.
  *
  * Orchestration flow:
@@ -574,13 +635,15 @@ export function mergeWave(
 	const tempBranch = `_merge-temp-${opId}-${batchId}`;
 	const mergeWorkDir = generateMergeWorktreePath(repoRoot, opId, batchId, config);
 
-	// Clean up stale merge worktree/branch from prior failed attempt
-	try {
-		if (existsSync(mergeWorkDir)) {
-			spawnSync("git", ["worktree", "remove", mergeWorkDir, "--force"], { cwd: repoRoot });
-			sleepSync(500);
-		}
-	} catch { /* best effort */ }
+	// Clean up stale merge worktree/branch from prior failed attempt.
+	// TP-029: Apply forceRemoveMergeWorktree fallback so stale merge worktrees
+	// from prior failed attempts don't block new merge creation.
+	forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
+	if (existsSync(mergeWorkDir)) {
+		// Force cleanup didn't fully remove — wait and retry once
+		sleepSync(500);
+		forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
+	}
 	try {
 		spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot });
 	} catch { /* branch may not exist */ }
@@ -884,10 +947,10 @@ export function mergeWave(
 		}
 	}
 
-	// Clean up merge worktree and temp branch (always, regardless of outcome)
-	try {
-		spawnSync("git", ["worktree", "remove", mergeWorkDir, "--force"], { cwd: repoRoot });
-	} catch { /* best effort */ }
+	// Clean up merge worktree and temp branch (always, regardless of outcome).
+	// TP-029: Apply forceRemoveMergeWorktree fallback so locked/corrupted
+	// merge worktrees don't persist between attempts.
+	forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
 	try {
 		// Small delay to ensure worktree lock is released
 		sleepSync(500);
