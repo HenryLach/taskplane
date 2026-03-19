@@ -24,7 +24,7 @@ import { spawn, spawnSync } from "child_process";
 import {
 	readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, unlinkSync,
 } from "fs";
-import { tmpdir } from "os";
+import { tmpdir, userInfo } from "os";
 import { join, dirname, basename, resolve } from "path";
 import { loadProjectConfig, toTaskConfig } from "./taskplane/config-loader.ts";
 import { loadWorkspaceConfig, resolvePointer } from "./taskplane/workspace.ts";
@@ -448,29 +448,83 @@ function resolveBaseAgentPath(name: string): string {
 
 /**
  * Resolve the path to rpc-wrapper.mjs from the installed taskplane package.
- * Uses the same findPackageRoot() strategy as resolveBaseAgentPath().
  *
- * Falls back to a cwd-relative path for development (when running from
- * the taskplane repo directly).
+ * Resolution strategy (first match wins):
+ *   1. Package root via findPackageRoot() (covers global npm, workspace, pi peer)
+ *   2. Project-local node_modules/taskplane (for non-workspace local installs)
+ *   3. Global npm paths (explicit fallback for layouts findPackageRoot may miss)
+ *   4. Extension-file-relative: derive package root from the `-e` arg that loaded
+ *      this extension (handles dev scenarios where cwd differs from checkout)
+ *   5. Development fallback: cwd/bin/rpc-wrapper.mjs (running from taskplane repo)
  *
  * @returns Absolute path to rpc-wrapper.mjs
  * @throws Error if rpc-wrapper.mjs cannot be found
  */
 function resolveRpcWrapperPath(): string {
-	// 1. Package root (installed npm package)
+	const wrapperRelPath = join("bin", "rpc-wrapper.mjs");
+	const searched: string[] = [];
+
+	const tryPath = (dir: string): string | null => {
+		const p = join(dir, wrapperRelPath);
+		searched.push(p);
+		return existsSync(p) ? p : null;
+	};
+
+	// 1. Package root (installed npm package — covers global, workspace, peer)
 	const root = findPackageRoot();
 	if (root) {
-		const wrapperPath = join(root, "bin", "rpc-wrapper.mjs");
-		if (existsSync(wrapperPath)) return wrapperPath;
+		const found = tryPath(root);
+		if (found) return found;
 	}
 
-	// 2. Development fallback: relative to cwd (running from taskplane repo)
-	const cwdPath = join(process.cwd(), "bin", "rpc-wrapper.mjs");
-	if (existsSync(cwdPath)) return cwdPath;
+	// 2. Project-local node_modules (non-workspace local installs)
+	const cwdLocal = join(process.cwd(), "node_modules", "taskplane");
+	if (existsSync(cwdLocal)) {
+		const found = tryPath(cwdLocal);
+		if (found) return found;
+	}
+
+	// 3. Global npm paths (explicit check for layouts findPackageRoot may miss)
+	const home = process.env.HOME || process.env.USERPROFILE || "";
+	const globalCandidates: string[] = [];
+	if (process.env.APPDATA) {
+		globalCandidates.push(join(process.env.APPDATA, "npm", "node_modules", "taskplane"));
+	}
+	if (home) {
+		globalCandidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", "taskplane"));
+		globalCandidates.push(join(home, ".npm-global", "lib", "node_modules", "taskplane"));
+	}
+	globalCandidates.push(join("/usr", "local", "lib", "node_modules", "taskplane"));
+	for (const dir of globalCandidates) {
+		const found = tryPath(dir);
+		if (found) return found;
+	}
+
+	// 4. Extension-file-relative: derive package root from the -e argument
+	//    that loaded this file. This covers dev scenarios where the extension
+	//    is loaded from a local checkout but cwd is a different directory
+	//    (e.g., a worktree or integration test working directory).
+	//    This file lives at <package-root>/extensions/task-runner.ts, so walk up two levels.
+	try {
+		const args = process.argv;
+		for (let i = 0; i < args.length - 1; i++) {
+			if (args[i] === "-e" && args[i + 1]?.includes("task-runner")) {
+				const extPath = resolve(args[i + 1]);
+				const derivedRoot = resolve(extPath, "..", "..");
+				const found = tryPath(derivedRoot);
+				if (found) return found;
+			}
+		}
+	} catch { /* ignore argv parsing errors */ }
+
+	// 5. Development fallback: running from the taskplane repo directly
+	const cwdDev = process.cwd();
+	const devFound = tryPath(cwdDev);
+	if (devFound) return devFound;
 
 	throw new Error(
 		"Cannot find rpc-wrapper.mjs. Ensure taskplane is installed correctly. " +
-		`Searched: ${root ? join(root, "bin", "rpc-wrapper.mjs") : "(no package root)"}, ${cwdPath}`
+		`Searched: ${searched.join(", ")}`
 	);
 }
 
@@ -1039,7 +1093,9 @@ function spawnAgent(opts: {
  *   - Session creation failure (throws after cleanup)
  *
  * Parity with spawnAgent():
- *   - Return shape:   identical — { promise, kill }
+ *   - Return shape:   extended — { promise, kill, sidecarPath, exitSummaryPath }
+ *     (promise and kill are drop-in compatible; sidecarPath and exitSummaryPath
+ *     are additions for RPC telemetry consumption in Steps 2/3)
  *   - Promise result: identical fields — { output, exitCode, elapsed, killed }
  *   - Kill semantics: sets killed=true, terminates session, cleans temp files
  *   - Elapsed calc:   Date.now() - startTime (same pattern)
@@ -1063,6 +1119,7 @@ function spawnAgent(opts: {
  * @param opts.model        — Model identifier (e.g., "anthropic/claude-sonnet-4-20250514")
  * @param opts.tools        — Comma-separated tool list
  * @param opts.thinking     — Thinking mode ("off", "on", etc.)
+ * @param opts.taskId       — Optional task ID for telemetry filename enrichment (e.g., "TP-026")
  */
 function spawnAgentTmux(opts: {
 	sessionName: string;
@@ -1072,6 +1129,7 @@ function spawnAgentTmux(opts: {
 	model: string;
 	tools: string;
 	thinking: string;
+	taskId?: string;
 }): {
 	promise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>;
 	kill: () => void;
@@ -1090,15 +1148,53 @@ function spawnAgentTmux(opts: {
 	}
 
 	// ── Generate telemetry file paths ───────────────────────────────
-	// Naming contract: {sidecarDir}/telemetry/{sessionName}-{timestamp}.{ext}
-	// - sessionName already includes lane/role scope (e.g., "orch-lane-1-worker")
-	// - timestamp provides uniqueness across iterations
-	// - getSidecarDir() respects ORCH_SIDECAR_DIR for workspace mode
+	// Naming contract from resilience roadmap:
+	//   .pi/telemetry/{opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.{ext}
+	//
+	// In standalone /task mode (no orchestrator):
+	//   opId    → TASKPLANE_OPERATOR_ID env, or OS username, or "op"
+	//   batchId → timestamp (no batch concept in standalone mode)
+	//   repoId  → "default" (single-repo mode)
+	//   taskId  → from opts.taskId when provided (e.g., "tp-026"), omitted if absent
+	//   lane    → omitted (no lanes)
+	//   role    → derived from sessionName suffix (worker/reviewer)
+	//
+	// getSidecarDir() respects ORCH_SIDECAR_DIR for workspace mode.
 	const telemetryTs = Date.now();
+
+	// Resolve opId: same priority chain as naming.ts resolveOperatorId()
+	let opId = "op";
+	const envOpId = process.env.TASKPLANE_OPERATOR_ID;
+	if (envOpId?.trim()) {
+		opId = envOpId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+	} else {
+		try {
+			const username = userInfo().username;
+			if (username?.trim()) {
+				opId = username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+			}
+		} catch { /* userInfo() can throw on some platforms */ }
+	}
+
+	const batchId = String(telemetryTs);
+	const repoId = "default";
+
+	// Extract role (worker/reviewer) from sessionName, and optional lane component
+	// sessionName patterns: "task-worker", "task-reviewer", "orch-lane-1-worker"
+	const role = opts.sessionName.endsWith("-reviewer") ? "reviewer" : "worker";
+	const laneMatch = opts.sessionName.match(/lane-(\d+)/);
+	const laneSuffix = laneMatch ? `-lane-${laneMatch[1]}` : "";
+
+	// Include taskId when available — sanitize to filesystem-safe characters.
+	// Pattern: {opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}
+	const taskIdSegment = opts.taskId
+		? `-${opts.taskId.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30)}`
+		: "";
+	const telemetryBasename = `${opId}-${batchId}-${repoId}${taskIdSegment}${laneSuffix}-${role}`;
 	const telemetryDir = join(getSidecarDir(), "telemetry");
 	if (!existsSync(telemetryDir)) mkdirSync(telemetryDir, { recursive: true });
-	const sidecarPath = join(telemetryDir, `${opts.sessionName}-${telemetryTs}.jsonl`);
-	const exitSummaryPath = join(telemetryDir, `${opts.sessionName}-${telemetryTs}-exit.json`);
+	const sidecarPath = join(telemetryDir, `${telemetryBasename}.jsonl`);
+	const exitSummaryPath = join(telemetryDir, `${telemetryBasename}-exit.json`);
 
 	// ── Write prompts to temp files ─────────────────────────────────
 	// Same pattern as spawnAgent() — avoids shell escaping issues with
@@ -1142,11 +1238,11 @@ function spawnAgentTmux(opts: {
 		"--system-prompt-file", quoteArg(sysTmpFile),
 		"--prompt-file", quoteArg(promptTmpFile),
 		"--tools", quoteArg(opts.tools),
-		// Passthrough pi args: flags that were previously passed to `pi -p` directly.
-		// The wrapper forwards these to the underlying pi --mode rpc process.
+		// Passthrough pi args: flags forwarded to the underlying pi --mode rpc process.
+		// Note: --no-session is NOT passed here — rpc-wrapper.mjs already injects it.
 		"--",
 		"--thinking", quoteArg(opts.thinking),
-		"--no-session", "--no-extensions", "--no-skills",
+		"--no-extensions", "--no-skills",
 	];
 	const wrapperCommand = wrapperArgs.join(" ");
 
@@ -1682,6 +1778,7 @@ export default function (pi: ExtensionAPI) {
 				model,
 				tools: config.worker.tools || workerDef?.tools || "read,write,edit,bash,grep,find,ls",
 				thinking: config.worker.thinking || "off",
+				taskId: task.taskId,
 			});
 			promise = spawned.promise;
 			kill = spawned.kill;
@@ -1847,6 +1944,7 @@ export default function (pi: ExtensionAPI) {
 				model: reviewerModel,
 				tools: config.reviewer.tools || reviewerDef?.tools || "read,write,bash,grep,find,ls",
 				thinking: config.reviewer.thinking || "on",
+				taskId: state.task?.taskId,
 			});
 			reviewPromise = spawned.promise;
 			state.reviewerProc = { kill: spawned.kill };

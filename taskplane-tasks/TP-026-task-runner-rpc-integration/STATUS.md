@@ -24,16 +24,16 @@
 ---
 
 ### Step 1: Update spawnAgentTmux to Use RPC Wrapper
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Add resolveRpcWrapperPath() using findPackageRoot() pattern
 - [x] Generate telemetry file paths with naming contract (sessionName + timestamp, using getSidecarDir() for workspace-awareness)
 - [x] Build rpc-wrapper.mjs command with correct args and passthrough of existing pi flags (--thinking, --no-session, --no-extensions, --no-skills)
 - [x] Replace pi -p command in tmux new-session with node rpc-wrapper.mjs command (preserve quoteArg shell-quoting for Windows/MSYS paths)
 - [x] R003: Deduplicate execution log entries and add Step 1 design notes subsection
-- [ ] R004: Add extension-file-relative fallback to resolveRpcWrapperPath() (use findPackageRoot result dirname or walk up from extension file path)
-- [ ] R004: Fix return-shape comment — document that function now returns { promise, kill, sidecarPath, exitSummaryPath }
-- [ ] R004: Enrich telemetry filenames with available contract identifiers (tmuxPrefix, taskId from TASK_AUTOSTART) where present
+- [x] R004: Add extension-file-relative fallback to resolveRpcWrapperPath() (use findPackageRoot result dirname or walk up from extension file path)
+- [x] R004: Fix return-shape comment — document that function now returns { promise, kill, sidecarPath, exitSummaryPath }
+- [x] R004: Enrich telemetry filenames with available contract identifiers (tmuxPrefix, taskId from TASK_AUTOSTART) where present
 
 ---
 
@@ -133,6 +133,7 @@
 | 2026-03-19 22:35 | Worker iter 2 | done in 562s, ctx: 33%, tools: 63 |
 | 2026-03-19 22:38 | Review R004 | code Step 1: REVISE |
 | 2026-03-19 22:39 | Review R004 | code Step 1: REVISE |
+| 2026-03-19 | Step 1 R004 revisions | Fixed resolveRpcWrapperPath (5-strategy resolution), telemetry naming contract (opId/batchId/repoId), doc block return shape, removed duplicate --no-session |
 
 ---
 
