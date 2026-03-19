@@ -4,23 +4,23 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress (R002 REVISE)
+**Status:** ✅ Complete
 
 - [x] Read pi RPC docs to understand protocol
 - [x] Read current task outcome types
 - [x] Read naming contract
 - [x] Read roadmap Phase 1 sections
-- [ ] R002 fix: Normalize top-level state metadata to be consistent with step states
-- [ ] R002 fix: Deduplicate and fix Reviews table markdown formatting
-- [ ] R002 fix: Deduplicate Execution Log rows and add Step 0 complete event
-- [ ] R002 fix: Add preflight findings to Discoveries/Notes for downstream traceability
+- [x] R002 fix: Normalize top-level state metadata to be consistent with step states
+- [x] R002 fix: Deduplicate and fix Reviews table markdown formatting
+- [x] R002 fix: Deduplicate Execution Log rows and add Step 0 complete event
+- [x] R002 fix: Add preflight findings to Discoveries/Notes for downstream traceability
 
 ---
 
@@ -73,11 +73,10 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
-| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
-| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
-| R002 | code | Step 0 | APPROVE | .reviews/R002-code-step0.md |
-| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 |---|------|------|---------|------|
+| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ---
 
@@ -95,16 +94,11 @@
 | 2026-03-19 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-03-19 18:01 | Task started | Extension-driven execution |
 | 2026-03-19 18:01 | Step 0 started | Preflight |
-| 2026-03-19 18:01 | Task started | Extension-driven execution |
-| 2026-03-19 18:01 | Step 0 started | Preflight |
 | 2026-03-19 18:01 | Review R001 | plan Step 0: APPROVE |
-| 2026-03-19 18:02 | Review R001 | plan Step 0: APPROVE |
 | 2026-03-19 18:03 | Worker iter 1 | done in 83s, ctx: 28%, tools: 17 |
-| 2026-03-19 18:03 | Worker iter 1 | done in 47s, ctx: 14%, tools: 8 |
-| 2026-03-19 18:04 | Review R002 | code Step 0: APPROVE |
-| 2026-03-19 18:04 | Step 0 complete | Preflight |
-| 2026-03-19 18:04 | Step 1 started | Define TaskExitDiagnostic Type & Classification Logic |
 | 2026-03-19 18:05 | Review R002 | code Step 0: REVISE |
+| 2026-03-19 18:05 | Step 0 reopened | R002 REVISE — fixing STATUS.md inconsistencies |
+| 2026-03-19 18:07 | Review R003 | plan Step 1: REVISE |
 
 ---
 
@@ -116,4 +110,28 @@
 
 ## Notes
 
-*Reserved for execution notes*
+### Preflight Findings
+
+**RPC Protocol (rpc.md):**
+- JSONL framing: split on `\n` only, accept optional `\r\n` by stripping trailing `\r`. Do NOT use Node `readline` (splits on U+2028/U+2029).
+- Commands: `prompt` (send message), `abort` (interrupt). Both return `{"type":"response"}`.
+- Key events: `agent_start`, `agent_end`, `message_end` (has `usage` with token counts), `tool_execution_start/end`, `auto_retry_start/end`, `auto_compaction_start/end`.
+- `message_end.message` contains `AssistantMessage` with `usage: {input, output, cacheRead, cacheWrite, cost}`.
+- `get_session_stats` command returns aggregate tokens + cost if needed.
+- Signal forwarding: send `{"type":"abort"}` via stdin for graceful shutdown.
+
+**Current Types (types.ts):**
+- `LaneTaskOutcome` has `exitReason: string` (free-text) — `TaskExitDiagnostic` will sit alongside this.
+- `LaneTaskStatus`: `"pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped"`.
+- No token/cost types exist yet — `TokenCounts` interface is new.
+
+**Naming Contract (naming.ts):**
+- `sanitizeNameComponent()` for safe FS/git/tmux names.
+- `resolveOperatorId()` chain: env → config → OS username → "op".
+- Telemetry paths follow: `.pi/telemetry/{opId}-{batchId}-{repoId}-lane-{N}.{ext}`.
+
+**Roadmap Phase 1:**
+- 9 exit classifications: completed, api_error, context_overflow, wall_clock_timeout, process_crash, session_vanished, stall_timeout, user_killed, unknown.
+- Classification precedence: .DONE → retries w/final failure → compactions+high ctx% → timer kill → non-zero exit → no summary → no progress → unknown.
+- Redaction: strip `*_KEY`, `*_TOKEN`, `*_SECRET` env vars; truncate large tool args to 500 chars.
+- Sidecar JSONL + exit summary JSON are the two output artifacts per session.
