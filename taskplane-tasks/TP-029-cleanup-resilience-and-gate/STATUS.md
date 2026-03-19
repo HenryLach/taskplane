@@ -72,7 +72,7 @@
 - [x] R008: Fix PR-mode regression — skip orch branch from cleanup findings when mode is "pr" (integratedLocally=false), so preserved orch branch is not flagged as stale
 - [x] R008: Use "warning" notification level when cleanupResult.clean === false (instead of always "info")
 - [x] R008: Add test — /orch-integrate --pr does not report orch branch as stale (mode-specific cleanup semantics)
-- [ ] R008: Run full test suite and confirm green
+- [x] R008: Run full test suite and confirm green (1016 tests, 26 files, all pass)
 
 ---
 
