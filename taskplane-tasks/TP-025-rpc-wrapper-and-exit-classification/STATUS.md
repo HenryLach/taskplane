@@ -1,7 +1,7 @@
 # TP-025: RPC Wrapper Script & Exit Classification Types — Status
 
 **Current Step:** Step 4: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-19
 **Review Level:** 2
 **Review Counter:** 9
@@ -78,14 +78,14 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] JSDoc on exported types and functions in diagnostics.ts
-- [ ] Usage comment at top of rpc-wrapper.mjs
-- [ ] package.json files array — verify bin/rpc-wrapper.mjs is covered (bin/ glob or explicit entry) via npm pack --dry-run
-- [ ] R009: Evaluate docs/explanation/architecture.md and README.md for impact; record decision
-- [ ] R009: Completion gate — verify all prior step checkboxes are checked, run tests, confirm evidence
-- [ ] `.DONE` created
+- [x] JSDoc on exported types and functions in diagnostics.ts
+- [x] Usage comment at top of rpc-wrapper.mjs
+- [x] package.json files array — verified: bin/ glob already covers bin/rpc-wrapper.mjs (24.9kB in npm pack --dry-run)
+- [x] R009: Evaluate docs/explanation/architecture.md and README.md for impact — NOT AFFECTED: rpc-wrapper is internal infra not yet integrated (TP-026); README covers user-facing features only
+- [x] R009: Completion gate — all 47 prior checkboxes checked, 955/955 tests pass, rpc-wrapper.mjs --help OK, npm pack --dry-run confirms packaging
+- [x] `.DONE` created
 
 ---
 
@@ -110,6 +110,7 @@
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | APPROVE | .reviews/R009-plan-step4.md |
 
 ---
 
@@ -178,6 +179,10 @@
 | 2026-03-19 18:56 | Step 3 complete | Testing & Verification |
 | 2026-03-19 18:56 | Step 4 started | Documentation & Delivery |
 | 2026-03-19 18:58 | Review R009 | plan Step 4: REVISE |
+| 2026-03-19 18:59 | Worker iter 4 | done in 698s, ctx: 45%, tools: 48 |
+| 2026-03-19 18:59 | Step 3 complete | Testing & Verification |
+| 2026-03-19 18:59 | Step 4 started | Documentation & Delivery |
+| 2026-03-19 18:59 | Review R009 | plan Step 4: APPROVE |
 
 ---
 
