@@ -1185,6 +1185,10 @@ export default function (pi: ExtensionAPI) {
 			const repoMessages: string[] = [];
 
 			for (const repo of reposToIntegrate) {
+				// Count commits BEFORE integration (after ff, HEAD === orch tip so count would be 0)
+				const preCountResult = runGit(["rev-list", "--count", `HEAD..${resolvedOrchBranch}`], repo.root);
+				const repoCommitsBefore = preCountResult.ok ? parseInt(preCountResult.stdout) || 0 : 0;
+
 				const integrationResult = executeIntegration(parsed.mode, resolution as IntegrationContext, {
 					runGit: (gitArgs: string[]) => runGit(gitArgs, repo.root),
 					runCommand: (cmd: string, cmdArgs: string[]) => {
@@ -1214,10 +1218,7 @@ export default function (pi: ExtensionAPI) {
 					break;
 				}
 
-				// Count commits for this repo
-				const countResult = runGit(["rev-list", "--count", `HEAD...${resolvedOrchBranch}`], repo.root);
-				const repoCommits = countResult.ok ? parseInt(countResult.stdout) || 0 : 0;
-				totalCommits += repoCommits;
+				totalCommits += repoCommitsBefore;
 				repoMessages.push(`  ${repo.id}: ${integrationResult.message}`);
 			}
 
