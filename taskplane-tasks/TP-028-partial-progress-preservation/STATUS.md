@@ -1,11 +1,11 @@
 # TP-028: Partial Progress Preservation — Status
 
-**Current Step:** Step 2: Record Partial Progress in Task Outcome
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -55,14 +55,11 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Test saved branch for failed task with commits
-- [ ] Test no saved branch for failed task without commits
-- [ ] Test workspace mode naming
-- [ ] Test repo mode naming
-- [ ] Test outcome includes partial progress fields
-- [ ] Full test suite passes
+- [ ] Branch preservation behavior tests: savePartialProgress (repo/workspace naming, no-commits skip, collision idempotency same-SHA, collision different-SHA suffixed), preserveFailedLaneProgress (happy path, unsafeBranches for failed preservation with commits, error handling for missing branches)
+- [ ] State contract tests: persistence round-trip with partialProgress fields present/absent, validation accepts/rejects correct types, serialization skips undefined fields
+- [ ] Full test suite passes (`cd extensions && npx vitest run`)
 
 ---
 
@@ -89,6 +86,8 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ---
 
@@ -145,6 +144,14 @@
 | 2026-03-19 19:49 | Worker iter 4 | done in 517s, ctx: 31%, tools: 86 |
 | 2026-03-19 19:53 | Review R006 | code Step 2: REVISE |
 | 2026-03-19 19:53 | Review R006 | code Step 2: REVISE |
+| 2026-03-19 19:57 | Worker iter 3 | done in 221s, ctx: 13%, tools: 28 |
+| 2026-03-19 19:57 | Step 2 complete | Record Partial Progress in Task Outcome |
+| 2026-03-19 19:57 | Step 3 started | Testing & Verification |
+| 2026-03-19 19:57 | Worker iter 4 | done in 240s, ctx: 15%, tools: 34 |
+| 2026-03-19 19:57 | Step 2 complete | Record Partial Progress in Task Outcome |
+| 2026-03-19 19:57 | Step 3 started | Testing & Verification |
+| 2026-03-19 20:00 | Review R007 | plan Step 3: REVISE |
+| 2026-03-19 20:00 | Review R007 | plan Step 3: REVISE |
 
 ---
 
