@@ -1,22 +1,22 @@
 # TP-026: Task-Runner RPC Wrapper Integration — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read spawnAgentTmux() in task-runner.ts
-- [ ] Read poll loop implementation
-- [ ] Read TP-025 artifacts
-- [ ] Verify RPC wrapper runs
+- [x] Read spawnAgentTmux() in task-runner.ts
+- [x] Read poll loop implementation
+- [x] Read TP-025 artifacts
+- [x] Verify RPC wrapper runs
 
 ---
 
@@ -76,6 +76,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ---
@@ -92,6 +94,12 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-19 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-19 22:16 | Task started | Extension-driven execution |
+| 2026-03-19 22:16 | Step 0 started | Preflight |
+| 2026-03-19 22:16 | Task started | Extension-driven execution |
+| 2026-03-19 22:16 | Step 0 started | Preflight |
+| 2026-03-19 22:17 | Review R001 | plan Step 0: APPROVE |
+| 2026-03-19 22:17 | Review R001 | plan Step 0: REVISE |
 
 ---
 
