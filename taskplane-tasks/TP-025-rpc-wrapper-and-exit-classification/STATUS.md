@@ -1,11 +1,11 @@
 # TP-025: RPC Wrapper Script & Exit Classification Types — Status
 
-**Current Step:** Step 1: Define TaskExitDiagnostic Type & Classification Logic
+**Current Step:** Step 2: Build RPC Wrapper Script
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -39,16 +39,16 @@
 ---
 
 ### Step 2: Build RPC Wrapper Script
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] CLI arg parsing
-- [ ] Spawn pi --mode rpc --no-session
-- [ ] Send prompt via JSONL framing
-- [ ] Route and capture RPC events to sidecar JSONL
-- [ ] Redaction policy applied
-- [ ] Live progress display on stderr
-- [ ] Exit summary JSON on process exit
-- [ ] Signal forwarding and crash handling
+- [ ] R005: Align exit-summary schema — `ExitSummary` is wrapper output (no classification field); classification deferred to `classifyExit()` consumer
+- [ ] R005: Single-write finalization — guard ensures exit summary written exactly once across close/error/signal handlers; deterministic precedence for exitCode/exitSignal/error
+- [ ] CLI arg parsing (--sidecar-path, --exit-summary-path, --model, --system-prompt-file, --prompt-file, --tools, --extensions, plus passthrough)
+- [ ] Spawn pi --mode rpc --no-session and send prompt via JSONL framing (split on \n only, NOT readline)
+- [ ] Route and capture RPC events to sidecar JSONL with redaction (strip *_KEY/*_TOKEN/*_SECRET env vars, truncate large tool args to 500 chars)
+- [ ] Live progress display on stderr (current tool, cumulative tokens, cost)
+- [ ] Exit summary JSON on process exit with single-write guard
+- [ ] Signal forwarding (SIGTERM/SIGINT → abort RPC command) and crash handling (non-zero exit, no agent_end)
 
 ---
 
@@ -84,6 +84,8 @@
 | R003 | plan | Step 1 | APPROVE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ---
 
@@ -114,6 +116,14 @@
 | 2026-03-19 18:15 | Worker iter 2 | done in 358s, ctx: 32%, tools: 29 |
 | 2026-03-19 18:16 | Review R004 | code Step 1: REVISE |
 | 2026-03-19 18:18 | Review R004 | code Step 1: REVISE |
+| 2026-03-19 18:20 | Worker iter 2 | done in 225s, ctx: 15%, tools: 22 |
+| 2026-03-19 18:20 | Step 1 complete | Define TaskExitDiagnostic Type & Classification Logic |
+| 2026-03-19 18:20 | Step 2 started | Build RPC Wrapper Script |
+| 2026-03-19 18:22 | Worker iter 2 | done in 207s, ctx: 15%, tools: 22 |
+| 2026-03-19 18:22 | Step 1 complete | Define TaskExitDiagnostic Type & Classification Logic |
+| 2026-03-19 18:22 | Step 2 started | Build RPC Wrapper Script |
+| 2026-03-19 18:22 | Review R005 | plan Step 2: REVISE |
+| 2026-03-19 18:23 | Review R005 | plan Step 2: REVISE |
 
 ---
 
