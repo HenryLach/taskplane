@@ -2,7 +2,7 @@
  * Main batch execution engine
  * @module orch/engine
  */
-import { existsSync, readdirSync, readFileSync, rmdirSync, unlinkSync } from "fs";
+import { existsSync, readdirSync, readFileSync, unlinkSync } from "fs";
 import { join, resolve } from "path";
 
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
@@ -17,7 +17,7 @@ import { listOrchSessions } from "./sessions.ts";
 import { FATAL_DISCOVERY_CODES, generateBatchId } from "./types.ts";
 import type { AllocatedLane, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, TokenCounts, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaves, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
-import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, resolveWorktreeBasePath, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
+import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 
 // ── /orch Execution Engine ───────────────────────────────────────────
 
@@ -897,28 +897,8 @@ export async function executeOrchBatch(
 			}
 		}
 
-		// TP-029: Clean up empty .worktrees base directories in subdirectory mode.
-		// Only targets subdirectory-mode repos where the base path is
-		// {repoRoot}/.worktrees. Never force-removes non-empty parents
-		// (partial failure safety — R003 requirement).
-		if (orchConfig.orchestrator.worktree_location !== "sibling") {
-			for (const [perRepoRoot, perRepoId] of encounteredRepoRoots) {
-				const worktreeBase = resolveWorktreeBasePath(perRepoRoot, orchConfig);
-				// Safety: only clean dirs that end with .worktrees (subdirectory mode)
-				if (worktreeBase.endsWith(".worktrees") && existsSync(worktreeBase)) {
-					try {
-						const entries = readdirSync(worktreeBase);
-						if (entries.length === 0) {
-							rmdirSync(worktreeBase);
-							execLog("batch", batchState.batchId, `removed empty .worktrees directory`, {
-								path: worktreeBase,
-								repoId: perRepoId ?? "(default)",
-							});
-						}
-					} catch { /* best effort — leave non-empty dirs intact */ }
-				}
-			}
-		}
+		// NOTE: Empty .worktrees base-dir cleanup (subdirectory mode) is handled
+		// inside removeAllWorktrees() when config is passed — no duplicate pass needed here.
 
 		// ── Post-worktree-removal: Clean up merged branches ──────
 		// This MUST run after worktree removal because git branch -D
