@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 2
 **Size:** M
 
@@ -24,13 +24,16 @@
 ---
 
 ### Step 1: Update spawnAgentTmux to Use RPC Wrapper
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] Add resolveRpcWrapperPath() using findPackageRoot() pattern
 - [x] Generate telemetry file paths with naming contract (sessionName + timestamp, using getSidecarDir() for workspace-awareness)
 - [x] Build rpc-wrapper.mjs command with correct args and passthrough of existing pi flags (--thinking, --no-session, --no-extensions, --no-skills)
 - [x] Replace pi -p command in tmux new-session with node rpc-wrapper.mjs command (preserve quoteArg shell-quoting for Windows/MSYS paths)
 - [x] R003: Deduplicate execution log entries and add Step 1 design notes subsection
+- [ ] R004: Add extension-file-relative fallback to resolveRpcWrapperPath() (use findPackageRoot result dirname or walk up from extension file path)
+- [ ] R004: Fix return-shape comment — document that function now returns { promise, kill, sidecarPath, exitSummaryPath }
+- [ ] R004: Enrich telemetry filenames with available contract identifiers (tmuxPrefix, taskId from TASK_AUTOSTART) where present
 
 ---
 
@@ -83,6 +86,8 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 
 ---
 
@@ -125,6 +130,9 @@
 | 2026-03-19 22:26 | Step 1 iter 1 | Hydrated checkboxes, added resolveRpcWrapperPath(), started command rewrite |
 | 2026-03-19 | Step 1 iter 2 | Completed spawn rewrite: telemetry paths, rpc-wrapper command, return type |
 | 2026-03-19 22:34 | Worker iter 2 | done in 587s, ctx: 31%, tools: 52 |
+| 2026-03-19 22:35 | Worker iter 2 | done in 562s, ctx: 33%, tools: 63 |
+| 2026-03-19 22:38 | Review R004 | code Step 1: REVISE |
+| 2026-03-19 22:39 | Review R004 | code Step 1: REVISE |
 
 ---
 
