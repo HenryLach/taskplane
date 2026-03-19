@@ -69,9 +69,9 @@
 ### Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Inline comments updated in worktree.ts, engine.ts, resume.ts, types.ts, persistence.ts for partial progress preservation
-- [ ] Docs-impact decision: review `/orch-status` output (extension.ts) vs docs/reference/commands.md and record whether update is needed
-- [ ] Closeout evidence note recorded in Execution Log
+- [x] Inline comments updated in worktree.ts, engine.ts, resume.ts, types.ts, persistence.ts for partial progress preservation
+- [x] Docs-impact decision: `/orch-status` output is summary-only (counts, phase, wave, elapsed) — does NOT expose saved branch names or per-task partial progress data. No docs/reference/commands.md update needed.
+- [x] Closeout evidence note recorded in Execution Log
 - [ ] `.DONE` created
 
 ---
@@ -172,6 +172,7 @@
 | 2026-03-19 20:23 | Step 3 complete | Testing & Verification |
 | 2026-03-19 20:23 | Step 4 started | Documentation & Delivery |
 | 2026-03-19 20:24 | Review R009 | plan Step 4: REVISE |
+| 2026-03-19 | Step 4 closeout | Inline comments verified across worktree.ts (savePartialProgress, preserveFailedLaneProgress, computePartialProgressBranchName, resolveSavedBranchCollision, interfaces), engine.ts (inter-wave + terminal preservation blocks with TP-028 markers), resume.ts (matching preservation blocks + carry-forward), types.ts (LaneTaskOutcome + PersistedTaskRecord field docs), persistence.ts (applyPartialProgressToOutcomes, serialization, validation). /orch-status docs unchanged — output is summary-only, no saved branch exposure. |
 | 2026-03-19 20:25 | Review R009 | plan Step 4: REVISE |
 
 ---
