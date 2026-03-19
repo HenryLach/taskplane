@@ -2,9 +2,9 @@
  * Merge orchestration, merge agents, merge worktree
  * @module orch/merge
  */
-import { readFileSync, writeFileSync, existsSync, unlinkSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdirSync } from "fs";
 import { spawnSync } from "child_process";
-import { join } from "path";
+import { join, dirname } from "path";
 
 import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
@@ -752,6 +752,55 @@ export function mergeWave(
 			failedLane = lane.laneNumber;
 			failureReason = `Merge error in lane ${lane.laneNumber}: ${errMsg}`;
 			break;
+		}
+	}
+
+	// ── Stage workspace task artifacts into merge worktree ──────────
+	// In workspace mode, workers write .DONE and STATUS.md to the canonical
+	// task folder (e.g., shared-libs/task-management/...) which is the repo's
+	// checked-out working tree (develop). These files need to be on the orch
+	// branch, not develop. Copy them into the merge worktree (which is on the
+	// orch branch's temp) and commit, so they're included in the update-ref.
+	if (mergeWorkDir) {
+		const statusResult = spawnSync("git", ["status", "--porcelain"], { cwd: repoRoot, encoding: "utf-8" });
+		if (statusResult.status === 0 && statusResult.stdout) {
+			const lines = statusResult.stdout.split("\n").filter((l: string) => l.trim());
+			const artifactFiles = lines
+				.map((l: string) => l.slice(3).trim())
+				.filter((f: string) => f.endsWith(".DONE") || f.endsWith("STATUS.md"));
+
+			if (artifactFiles.length > 0) {
+				let staged = 0;
+				for (const file of artifactFiles) {
+					const srcPath = join(repoRoot, file);
+					const destPath = join(mergeWorkDir, file);
+					try {
+						if (existsSync(srcPath)) {
+							mkdirSync(dirname(destPath), { recursive: true });
+							copyFileSync(srcPath, destPath);
+							spawnSync("git", ["add", file], { cwd: mergeWorkDir });
+							staged++;
+						}
+					} catch { /* best effort */ }
+				}
+				if (staged > 0) {
+					spawnSync("git", ["commit", "-m", `checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md)`], { cwd: mergeWorkDir });
+					execLog("merge", `W${waveIndex}`, `committed ${staged} task artifact(s) to merge worktree`);
+
+					// Restore the repo's working tree — remove the artifacts from develop's working tree
+					// so they don't cause conflicts on /orch-integrate
+					for (const file of artifactFiles) {
+						spawnSync("git", ["checkout", "--", file], { cwd: repoRoot });
+					}
+					// Also remove any untracked .DONE files
+					for (const file of artifactFiles) {
+						if (file.endsWith(".DONE")) {
+							const srcPath = join(repoRoot, file);
+							try { if (existsSync(srcPath)) unlinkSync(srcPath); } catch { /* best effort */ }
+						}
+					}
+				}
+			}
 		}
 	}
 
