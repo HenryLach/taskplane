@@ -4,19 +4,22 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] Read spawnAgentTmux() in task-runner.ts
 - [x] Read poll loop implementation
 - [x] Read TP-025 artifacts
 - [x] Verify RPC wrapper runs
+- [ ] R002: Fix Reviews table markdown formatting (separator row placement, deduplicate entries)
+- [ ] R002: Deduplicate Execution Log entries
+- [ ] R002: Add preflight findings to Discoveries/Notes (edit targets, no-change guardrails, wrapper help outcome)
 
 ---
 
@@ -78,6 +81,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 |---|------|------|---------|------|
 
 ---
@@ -101,6 +106,9 @@
 | 2026-03-19 22:17 | Review R001 | plan Step 0: APPROVE |
 | 2026-03-19 22:17 | Review R001 | plan Step 0: REVISE |
 | 2026-03-19 22:18 | Worker iter 1 | done in 63s, ctx: 15%, tools: 14 |
+| 2026-03-19 22:19 | Worker iter 1 | done in 75s, ctx: 17%, tools: 19 |
+| 2026-03-19 22:19 | Review R002 | code Step 0: REVISE |
+| 2026-03-19 22:20 | Review R002 | code Step 0: REVISE |
 
 ---
 
