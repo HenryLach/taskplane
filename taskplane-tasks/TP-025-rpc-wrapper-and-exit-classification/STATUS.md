@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 4
 **Size:** M
 
@@ -67,6 +67,9 @@
 - [x] Integration test: mock pi process (scripted fixture stdout), verify sidecar + summary artifacts
 - [x] Full test suite passes: `cd extensions && npx vitest run`
 - [x] rpc-wrapper.mjs runs: `node bin/rpc-wrapper.mjs --help`
+- [ ] R008 fix: Replace no-op integration test with real subprocess integration (spawn mock-pi fixture, verify sidecar JSONL + exit summary JSON contents)
+- [ ] R008 fix: Add lifecycle finalization tests — multi-message_end token accumulation, retry/compaction aggregation, single-write guard across close/error/signal, spawn-error summary persistence
+- [ ] R008 fix: Full test suite passes after additions
 
 ---
 
@@ -98,6 +101,8 @@
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 
 ---
 
@@ -158,6 +163,10 @@
 | 2026-03-19 18:37 | Step 2 complete | Build RPC Wrapper Script |
 | 2026-03-19 18:37 | Step 3 started | Testing & Verification |
 | 2026-03-19 18:38 | Review R007 | plan Step 3: REVISE |
+| 2026-03-19 18:44 | Worker iter 4 | done in 380s, ctx: 28%, tools: 36 |
+| 2026-03-19 18:44 | Worker iter 4 | done in 476s, ctx: 27%, tools: 48 |
+| 2026-03-19 18:47 | Review R008 | code Step 3: REVISE |
+| 2026-03-19 18:47 | Review R008 | code Step 3: REVISE |
 
 ---
 
