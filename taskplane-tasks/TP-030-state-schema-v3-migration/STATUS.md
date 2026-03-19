@@ -1,7 +1,7 @@
 # TP-030: State Schema v3 & Migration — Status
 
 **Current Step:** Step 1: Define v3 Schema
-**Status:** 🟡 In Progress
+**Status:** ✅ Step 1 Complete
 **Last Updated:** 2026-03-19
 **Review Level:** 2
 **Review Counter:** 3
@@ -101,15 +101,17 @@
 | 2026-03-19 22:23 | Step 1 started | Define v3 Schema |
 | 2026-03-19 22:24 | Review R003 | plan Step 1: REVISE |
 | 2026-03-19 22:25 | Review R003 | plan Step 1: REVISE |
+| 2026-03-19 22:34 | Worker iter 2 | done in 622s, ctx: 26%, tools: 78 |
 
 ## Blockers
 
 *None*
 
 ### Step 1/Step 2 Ownership Split (per R003 review)
-- **Step 1 owns:** Type/schema contracts in `types.ts` only. All new v3 sections are optional on `PersistedBatchState` so v1/v2 states remain assignable. Reuses `TaskExitDiagnostic` from `diagnostics.ts`.
-- **Step 2 owns:** Persistence/resume migration logic + unknown-field roundtrip preservation in `persistence.ts`.
+- **Step 1 owns:** Type/schema contracts in `types.ts` only. v3 sections (`resilience`, `diagnostics`) are **required** on `PersistedBatchState`. Default factory functions (`defaultResilienceState()`, `defaultBatchDiagnostics()`) provided. Reuses `TaskExitDiagnostic` from `diagnostics.ts`. `exitDiagnostic` added to both `LaneTaskOutcome` (runtime) and `PersistedTaskRecord` (persisted).
+- **Step 2 owns:** Persistence/resume migration logic. Must update `serializeBatchState()` to emit `resilience` and `diagnostics` using defaults. Must update `validatePersistedState()` to accept v1/v2/v3 and auto-upconvert. Must update test fixtures to v3 or add migration coverage. Unknown-field roundtrip preservation in `persistence.ts`.
 - `exitReason` stays as legacy string. `exitDiagnostic` becomes preferred canonical data. Consumers should prefer `exitDiagnostic` when present.
+- **Known test failures from Step 1:** 16 tests fail due to schema version mismatch (v2 fixtures vs v3 expected). All are in `polyrepo-regression.test.ts` and `monorepo-compat-regression.test.ts`. Step 2 will fix these when updating validation/migration logic.
 
 ## Notes
 
