@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -51,12 +51,13 @@
 ---
 
 ### Step 3: Produce Structured Exit Diagnostic
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Read exit summary JSON after session exit
-- [ ] Call classifyExit() and populate TaskExitDiagnostic
-- [ ] Add exitDiagnostic additively to batch state task record
-- [ ] Clean up or preserve telemetry files
+- [ ] Read exit summary JSON after tmux session exit (non-fatal parse with deterministic fallback for missing/malformed files)
+- [ ] Build ExitClassificationInput with all signals: exitSummary, doneFileFound, timerKilled (wall-clock timeout flag), stallDetected (stall timer), userKilled (manual kill), contextPct (from sidecar tail state)
+- [ ] Call classifyExit() and build full TaskExitDiagnostic (with progress metadata: partialProgressCommits, lastKnownStep, repoId, durationSec)
+- [ ] Add exitDiagnostic as optional field to PersistedTaskRecord and LaneTaskOutcome (additive, preserve legacy exitReason, update serialization + validation)
+- [ ] Preserve telemetry files by default (no cleanup — dashboard may read them; add log of paths for operator visibility)
 
 ---
 
@@ -93,6 +94,7 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ---
 
@@ -155,6 +157,10 @@
 | 2026-03-19 23:05 | Review R006 | code Step 2: REVISE |
 | 2026-03-19 | Step 2 R006 revisions | Fixed retry state persistence (retryActive in SidecarTailState), added hadEvents gating, created sidecar-tailing.test.ts (27 tests). All 1044+ tests pass. |
 | 2026-03-19 | Step 2 complete | Read Sidecar Telemetry During Polling (including R006 revisions) |
+| 2026-03-19 23:20 | Worker iter 3 | done in 872s, ctx: 36%, tools: 53 |
+| 2026-03-19 23:20 | Step 2 complete | Read Sidecar Telemetry During Polling |
+| 2026-03-19 23:20 | Step 3 started | Produce Structured Exit Diagnostic |
+| 2026-03-19 23:23 | Review R007 | plan Step 3: REVISE |
 
 ---
 
