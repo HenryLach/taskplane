@@ -203,6 +203,45 @@ function redactString(str) {
 	return str;
 }
 
+/**
+ * Redact sensitive data from an exit summary before writing to disk.
+ *
+ * Applies the same redaction pipeline used for sidecar events to all
+ * string fields in the summary — particularly `error` and `lastToolCall`
+ * which may carry secrets or token-like strings.
+ *
+ * Returns a new object (does not mutate input).
+ */
+function redactSummary(summary) {
+	if (!summary || typeof summary !== "object") return summary;
+
+	const redacted = { ...summary };
+
+	// Redact error field
+	if (typeof redacted.error === "string") {
+		redacted.error = redactString(redacted.error);
+	}
+
+	// Redact lastToolCall field (built from raw tool args)
+	if (typeof redacted.lastToolCall === "string") {
+		redacted.lastToolCall = redactString(
+			redacted.lastToolCall.length > MAX_TOOL_ARG_LENGTH
+				? redacted.lastToolCall.slice(0, MAX_TOOL_ARG_LENGTH) + "…[truncated]"
+				: redacted.lastToolCall
+		);
+	}
+
+	// Redact retry error messages
+	if (Array.isArray(redacted.retries)) {
+		redacted.retries = redacted.retries.map((r) => ({
+			...r,
+			error: typeof r.error === "string" ? redactString(r.error) : r.error,
+		}));
+	}
+
+	return redacted;
+}
+
 // ── Sidecar Event Writing ────────────────────────────────────────────
 
 /**
@@ -360,12 +399,33 @@ piArgs.push(...args.passthrough);
 const proc = spawn("pi", piArgs, {
 	stdio: ["pipe", "pipe", "pipe"],
 	env: { ...process.env },
+	shell: true, // Required for Windows: resolves pi.cmd shim. Matches task-runner.ts pattern.
 });
 
 // ── Send prompt via JSONL stdin ──────────────────────────────────────
 
 const promptCmd = { type: "prompt", message: promptContent };
 proc.stdin.write(JSON.stringify(promptCmd) + "\n");
+
+// ── Stdin Lifecycle ──────────────────────────────────────────────────
+
+/**
+ * Close the child process stdin at a deterministic terminal point.
+ * RPC mode waits for more commands while stdin is open — without closing it,
+ * the pi process can hang indefinitely after `agent_end` or a terminal error.
+ *
+ * Called from: agent_end handler, terminal response error handler.
+ * Safe to call multiple times (checks destroyed flag).
+ */
+function closeStdin() {
+	try {
+		if (proc.stdin && !proc.stdin.destroyed) {
+			proc.stdin.end();
+		}
+	} catch {
+		// stdin may already be closed — ignore
+	}
+}
 
 // ── Route RPC events ─────────────────────────────────────────────────
 
@@ -443,6 +503,10 @@ function handleEvent(event) {
 
 		case "agent_end": {
 			state.agentEnded = true;
+			// Close stdin so pi process can exit cleanly.
+			// RPC mode waits for more commands while stdin is open;
+			// without this, the process can hang indefinitely.
+			closeStdin();
 			break;
 		}
 
@@ -450,6 +514,8 @@ function handleEvent(event) {
 			// Check for command errors
 			if (event.success === false && event.error) {
 				state.error = event.error;
+				// Terminal error response — close stdin to let pi exit
+				closeStdin();
 			}
 			break;
 		}
@@ -501,7 +567,7 @@ function writeExitSummary(exitCode, exitSignal, errorOverride) {
 	// Determine final error: explicit override > accumulated state error > null
 	const finalError = errorOverride || state.error || null;
 
-	const summary = {
+	const rawSummary = {
 		exitCode: typeof exitCode === "number" ? exitCode : null,
 		exitSignal: exitSignal || null,
 		tokens: (state.tokens.input + state.tokens.output + state.tokens.cacheRead + state.tokens.cacheWrite) > 0
@@ -515,6 +581,10 @@ function writeExitSummary(exitCode, exitSignal, errorOverride) {
 		lastToolCall: state.lastToolCall,
 		error: finalError,
 	};
+
+	// Apply redaction pipeline to summary fields (error, lastToolCall, retries)
+	// before persisting — same policy as sidecar events.
+	const summary = redactSummary(rawSummary);
 
 	try {
 		writeFileSync(resolve(args.exitSummaryPath), JSON.stringify(summary, null, 2) + "\n", "utf-8");

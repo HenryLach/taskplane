@@ -3,22 +3,22 @@
 ### Verdict: REVISE
 
 ### Summary
-The wrapper covers most of the Step 2 surface (arg parsing, JSONL buffering, sidecar writing, and single-write summary guards), but there are two blocking runtime issues and one security gap. In its current form, the child process lifecycle is not deterministic (can hang after `agent_end`), and process spawning is not cross-platform-safe in this repo’s Windows environment. Summary redaction is also incomplete, which violates the task’s “no unredacted secrets in sidecar or summary” requirement.
+The wrapper covers most Step 2 outcomes (JSONL framing, sidecar capture, single-write summary, signal forwarding), but there are a few integration bugs that will break or weaken real runs. The most significant are incorrect Pi CLI argument mapping for tools and Windows/subprocess spawn behavior. There is also a telemetry hygiene gap where summary fields can still persist unredacted sensitive data.
 
 ### Issues Found
-1. **[bin/rpc-wrapper.mjs:368,444-447,530-541] [critical]** — The wrapper never closes `proc.stdin` after sending the prompt, so `pi --mode rpc` can remain alive indefinitely after `agent_end` (RPC mode waits for more commands while stdin stays open). This can prevent `close` from firing, so exit summaries and downstream classification may never complete. **Fix:** close stdin at a deterministic terminal point (e.g., on `agent_end` / terminal `response` error) while still keeping abort behavior during active runs.
-2. **[bin/rpc-wrapper.mjs:360-363] [critical]** — `spawn("pi", ...)` is used without `shell: true` (or explicit platform handling). In this Windows worktree, that resolves to `spawn pi ENOENT` from Node even though `pi` works in shell sessions (`pi.cmd`/shim resolution difference). This makes the wrapper unusable in the current target environment. **Fix:** follow the existing project spawn pattern (see `extensions/task-runner.ts:900-905`, `shell: true`) or resolve an explicit executable path (`pi.cmd` on win32).
-3. **[bin/rpc-wrapper.mjs:502-517,394-411] [important]** — Exit summary fields are written without redaction (`error`, `lastToolCall`). `lastToolCall` is built from raw tool args, and `error` can carry token-like strings; both are persisted directly. This violates the redaction requirement for both sidecar and summary artifacts. **Fix:** apply the same redaction pipeline to summary fields before serialization (at minimum `error` and `lastToolCall`; ideally full summary object).
+1. **[bin/rpc-wrapper.mjs:350-352] [important]** — Tools are forwarded as repeated `--tool` flags, but Taskplane/Pi CLI patterns use `--tools <comma-list>`. This means configured tool restrictions are not applied correctly (and can be ignored/misparsed). **Fix:** pass one `--tools` argument (e.g., `piArgs.push("--tools", args.tools.join(","))`) to match existing usage in `extensions/task-runner.ts`.
+2. **[bin/rpc-wrapper.mjs:360-363] [important]** — `spawn("pi", ...)` without shell/Windows handling fails with `ENOENT` in this environment (wrapper immediately writes spawn-error summary). Existing Taskplane spawn paths use `shell: true` for portability. **Fix:** align spawn strategy with existing patterns (at minimum platform-aware executable resolution for Windows, or `shell: true` with safe argument handling).
+3. **[bin/rpc-wrapper.mjs:134-160, 409-410, 515-516] [important]** — Redaction is only applied to selected sidecar event fields and not to summary strings. `lastToolCall` and `error` are written unredacted, so secrets can still be persisted in exit summary (violates telemetry hygiene requirement for sidecar/summary artifacts). **Fix:** apply the same redaction helpers to summary fields before write, and redact event payloads more comprehensively (not just `args/result/error*`).
+4. **[bin/rpc-wrapper.mjs:608-612] [minor]** — Wrapper exit code is set directly from child `close` code, which can be negative on spawn errors (observed as large unsigned process exit values). **Fix:** normalize non-finite/negative/null child codes to `1`.
 
 ### Pattern Violations
-- Diverges from established subprocess spawning pattern in `extensions/task-runner.ts` (`shell: true`), causing platform inconsistency.
-- Redaction policy is applied to sidecar events but not consistently to all persisted telemetry artifacts (summary file).
+- Wrapper diverges from established Taskplane Pi spawn conventions in `extensions/task-runner.ts` (`--tools` usage and Windows-safe subprocess invocation).
 
 ### Test Gaps
-- No test proving the wrapper exits after `agent_end` (and writes summary) when RPC stdin would otherwise remain open.
-- No test for Windows spawn behavior (`pi` shim / `pi.cmd` resolution).
-- No test asserting summary redaction for `error` and `lastToolCall` fields.
+- No validation yet for `--tools` forwarding contract to Pi.
+- No regression test for spawn-error path on Windows/ENOENT.
+- No test asserting redaction of exit-summary fields (`error`, `lastToolCall`) in addition to sidecar entries.
 
 ### Suggestions
-- Add a focused integration test with a mock RPC child that emits `agent_end` and then waits for EOF; assert wrapper closes stdin and exits.
-- Add a helper `redactSummary(summary)` and unit-test it alongside `redactEvent()`.
+- Add a small black-box test with a mock Pi binary to assert exact spawned argv and summary shape.
+- Reuse one redaction pipeline for both sidecar entries and final summary to avoid drift.
