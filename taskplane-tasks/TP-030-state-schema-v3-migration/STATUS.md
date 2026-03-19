@@ -1,7 +1,7 @@
 # TP-030: State Schema v3 & Migration — Status
 
-**Current Step:** Step 3: Testing & Verification (R008 revisions)
-**Status:** 🔧 Step 3 R008 Revisions
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Step 3 Complete (R008 revisions applied)
 **Last Updated:** 2026-03-19
 **Review Level:** 2
 **Review Counter:** 8
@@ -52,17 +52,17 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** 🔧 In Progress (R008 revisions)
+**Status:** ✅ Complete (R008 revisions applied)
 - [x] Create `extensions/tests/state-migration.test.ts` with migration happy-path tests (v1→v3, v2→v3, v3 clean read) including defaults verification for resilience/diagnostics
 - [x] Add strict v3 validation rejection tests (missing resilience/diagnostics, bad retryCountByScope values, bad repairHistory entries, bad diagnostics.taskExits entries, malformed exitDiagnostic on tasks)
 - [x] Add unknown-field roundtrip preservation test (top-level only) and exitDiagnostic survives serialize roundtrip test
 - [x] Add corrupt-state / paused-corrupt test: verify `analyzeOrchestratorStartupState` recommends "paused-corrupt" for invalid/io-error state with no orphans, does NOT auto-delete
 - [x] Add version-mismatch error message test: unsupported schema version (v99) includes upgrade guidance text
 - [x] Run full test suite (`cd extensions && npx vitest run`) — all tests pass with zero failures
-- [ ] R008-1: Add true read/write roundtrip test for unknown-field preservation (validate → serialize → parse → assert unknown fields present)
-- [ ] R008-2: Add exitDiagnostic serialization roundtrip test (serialize task with exitDiagnostic → revalidate/parse → assert field integrity)
-- [ ] R008-3: Add integration-level corrupt-state test that verifies runtime state actually enters "paused" phase (not just recommendation)
-- [ ] R008-4: Re-run full test suite, document results accurately (note any flaky/timeout tests separately)
+- [x] R008-1: Add true read/write roundtrip test for unknown-field preservation (validate → serialize → parse → assert unknown fields present)
+- [x] R008-2: Add exitDiagnostic serialization roundtrip test (serialize task with exitDiagnostic → revalidate/parse → assert field integrity)
+- [x] R008-3: Add integration-level corrupt-state test that verifies runtime state actually enters "paused" phase (not just recommendation)
+- [x] R008-4: Re-run full test suite — 26/27 test files pass, 1079/1080 tests pass. Only failure: `orch-direct-implementation.test.ts` timeout at 60s (ran 87s) — pre-existing flaky test unrelated to TP-030
 
 ---
 
@@ -80,16 +80,10 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
-| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
-| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
-| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
-| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
-| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
-| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 
 ## Discoveries

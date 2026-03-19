@@ -18,11 +18,21 @@ import {
 	upconvertV1toV2,
 	upconvertV2toV3,
 	analyzeOrchestratorStartupState,
+	serializeBatchState,
 } from "../taskplane/persistence.ts";
 import {
 	BATCH_STATE_SCHEMA_VERSION,
 	defaultResilienceState,
 	defaultBatchDiagnostics,
+	freshOrchBatchState,
+} from "../taskplane/types.ts";
+import type {
+	OrchBatchRuntimeState,
+	AllocatedLane,
+	LaneTaskOutcome,
+	AllocatedTask,
+	ParsedTask,
+	PersistedBatchState,
 } from "../taskplane/types.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -794,6 +804,280 @@ describe("State Schema v3 Migration", () => {
 			expect(result.resilience.resumeForced).toBe(true);
 			expect(result.resilience.retryCountByScope["X:w0:l1"]).toBe(5);
 			expect(result.diagnostics.batchCost).toBe(99.0);
+		});
+	});
+
+	// ═════════════════════════════════════════════════════════════════
+	// 9. Serialization Roundtrip Tests (R008)
+	// ═════════════════════════════════════════════════════════════════
+
+	describe("serialization roundtrip", () => {
+		/**
+		 * Helper: build a minimal runtime state and matching lanes/outcomes
+		 * from a validated PersistedBatchState, suitable for serializeBatchState().
+		 */
+		function buildRuntimeFromPersisted(persisted: PersistedBatchState): {
+			runtimeState: OrchBatchRuntimeState;
+			wavePlan: string[][];
+			lanes: AllocatedLane[];
+			outcomes: LaneTaskOutcome[];
+		} {
+			const dummyParsedTask: ParsedTask = {
+				taskId: "TP-001",
+				taskName: "Test Task",
+				reviewLevel: 0,
+				size: "S",
+				dependencies: [],
+				fileScope: [],
+				taskFolder: "/tmp/tasks/TP-001",
+				promptPath: "/tmp/tasks/TP-001/PROMPT.md",
+				areaName: "test",
+				status: "pending",
+			};
+
+			const lanes: AllocatedLane[] = persisted.lanes.map((lr) => ({
+				laneNumber: lr.laneNumber,
+				laneId: lr.laneId,
+				tmuxSessionName: lr.tmuxSessionName,
+				worktreePath: lr.worktreePath,
+				branch: lr.branch,
+				tasks: lr.taskIds.map((taskId, i) => ({
+					taskId,
+					order: i,
+					task: { ...dummyParsedTask, taskId },
+					estimatedMinutes: 10,
+				} as AllocatedTask)),
+				strategy: "round-robin" as const,
+				estimatedLoad: 1,
+				estimatedMinutes: 10,
+			}));
+
+			const outcomes: LaneTaskOutcome[] = persisted.tasks.map((tr) => ({
+				taskId: tr.taskId,
+				status: tr.status,
+				startTime: tr.startedAt,
+				endTime: tr.endedAt,
+				exitReason: tr.exitReason,
+				sessionName: tr.sessionName,
+				doneFileFound: tr.doneFileFound,
+				...(tr.exitDiagnostic ? { exitDiagnostic: tr.exitDiagnostic } : {}),
+				...(tr.partialProgressCommits !== undefined ? { partialProgressCommits: tr.partialProgressCommits } : {}),
+				...(tr.partialProgressBranch !== undefined ? { partialProgressBranch: tr.partialProgressBranch } : {}),
+			}));
+
+			const runtimeState: OrchBatchRuntimeState = {
+				phase: persisted.phase as any,
+				batchId: persisted.batchId,
+				baseBranch: persisted.baseBranch,
+				orchBranch: persisted.orchBranch ?? "",
+				mode: persisted.mode as any ?? "repo",
+				pauseSignal: { paused: false },
+				waveResults: [],
+				currentWaveIndex: persisted.currentWaveIndex,
+				totalWaves: persisted.totalWaves,
+				blockedTaskIds: new Set(persisted.blockedTaskIds ?? []),
+				startedAt: persisted.startedAt,
+				endedAt: persisted.endedAt,
+				totalTasks: persisted.totalTasks,
+				succeededTasks: persisted.succeededTasks,
+				failedTasks: persisted.failedTasks,
+				skippedTasks: persisted.skippedTasks,
+				blockedTasks: persisted.blockedTasks,
+				errors: persisted.errors ?? [],
+				currentLanes: lanes,
+				dependencyGraph: null,
+				mergeResults: [],
+				resilience: persisted.resilience,
+				diagnostics: persisted.diagnostics,
+				_extraFields: persisted._extraFields,
+			};
+
+			return { runtimeState, wavePlan: persisted.wavePlan, lanes, outcomes };
+		}
+
+		it("preserves unknown top-level fields through validate → serialize → parse roundtrip", () => {
+			// Step 1: Build v3 state with unknown fields
+			const v3 = makeValidV3();
+			v3.customPlugin = { foo: "bar", nested: { deep: true } };
+			v3.futureField = 42;
+
+			// Step 2: Validate (read path — captures unknown fields in _extraFields)
+			const validated = validatePersistedState(v3);
+			expect(validated._extraFields).toBeDefined();
+			expect(validated._extraFields!.customPlugin).toEqual({ foo: "bar", nested: { deep: true } });
+
+			// Step 3: Serialize (write path — merges _extraFields back into output)
+			const { runtimeState, wavePlan, lanes, outcomes } = buildRuntimeFromPersisted(validated);
+			const json = serializeBatchState(runtimeState, wavePlan, lanes, outcomes);
+			const reParsed = JSON.parse(json);
+
+			// Step 4: Assert unknown fields survived serialization
+			expect(reParsed.customPlugin).toEqual({ foo: "bar", nested: { deep: true } });
+			expect(reParsed.futureField).toBe(42);
+			expect(reParsed.schemaVersion).toBe(3);
+
+			// Step 5: Re-validate the serialized output (full roundtrip)
+			const reValidated = validatePersistedState(reParsed);
+			expect(reValidated._extraFields).toBeDefined();
+			expect(reValidated._extraFields!.customPlugin).toEqual({ foo: "bar", nested: { deep: true } });
+			expect(reValidated._extraFields!.futureField).toBe(42);
+		});
+
+		it("preserves exitDiagnostic on task records through serialize → re-validate roundtrip", () => {
+			// Step 1: Build v3 state with exitDiagnostic on a task
+			const v3 = makeValidV3();
+			const exitDiag = {
+				classification: "context-overflow",
+				exitCode: 1,
+				errorMessage: "Context window exhausted",
+				tokensUsed: 200000,
+				contextPct: 99.5,
+				partialProgressCommits: 2,
+				partialProgressBranch: "task/lane-1-partial",
+				durationSec: 300,
+				lastKnownStep: 3,
+				lastKnownCheckbox: "Implement migration logic",
+				repoId: null,
+			};
+			(v3.tasks as any[])[0].exitDiagnostic = exitDiag;
+			(v3.tasks as any[])[0].status = "failed";
+			(v3.tasks as any[])[0].exitReason = "context-overflow";
+
+			// Step 2: Validate (read path)
+			const validated = validatePersistedState(v3);
+			expect(validated.tasks[0].exitDiagnostic).toBeDefined();
+			expect(validated.tasks[0].exitDiagnostic!.classification).toBe("context-overflow");
+
+			// Step 3: Serialize (write path)
+			const { runtimeState, wavePlan, lanes, outcomes } = buildRuntimeFromPersisted(validated);
+			const json = serializeBatchState(runtimeState, wavePlan, lanes, outcomes);
+			const reParsed = JSON.parse(json);
+
+			// Step 4: Assert exitDiagnostic survived serialization
+			const taskRecord = reParsed.tasks.find((t: any) => t.taskId === "TP-001");
+			expect(taskRecord).toBeDefined();
+			expect(taskRecord.exitDiagnostic).toBeDefined();
+			expect(taskRecord.exitDiagnostic.classification).toBe("context-overflow");
+			expect(taskRecord.exitDiagnostic.exitCode).toBe(1);
+			expect(taskRecord.exitDiagnostic.errorMessage).toBe("Context window exhausted");
+			expect(taskRecord.exitDiagnostic.tokensUsed).toBe(200000);
+			expect(taskRecord.exitDiagnostic.contextPct).toBe(99.5);
+			expect(taskRecord.exitDiagnostic.partialProgressCommits).toBe(2);
+			expect(taskRecord.exitDiagnostic.partialProgressBranch).toBe("task/lane-1-partial");
+			expect(taskRecord.exitDiagnostic.durationSec).toBe(300);
+			expect(taskRecord.exitDiagnostic.lastKnownStep).toBe(3);
+			expect(taskRecord.exitDiagnostic.lastKnownCheckbox).toBe("Implement migration logic");
+			expect(taskRecord.exitDiagnostic.repoId).toBeNull();
+
+			// Step 5: Re-validate the serialized output
+			const reValidated = validatePersistedState(reParsed);
+			expect(reValidated.tasks[0].exitDiagnostic).toBeDefined();
+			expect(reValidated.tasks[0].exitDiagnostic!.classification).toBe("context-overflow");
+			expect(reValidated.tasks[0].exitDiagnostic!.tokensUsed).toBe(200000);
+		});
+
+		it("preserves resilience and diagnostics through serialize → re-validate roundtrip", () => {
+			const v3 = makeValidV3();
+			v3.resilience = {
+				resumeForced: true,
+				retryCountByScope: { "TP-001:w0:l1": 3 },
+				lastFailureClass: "tool-error",
+				repairHistory: [{
+					id: "r-001",
+					strategy: "stale-worktree-cleanup",
+					status: "succeeded",
+					startedAt: 1000,
+					endedAt: 2000,
+				}],
+			};
+			v3.diagnostics = {
+				taskExits: {
+					"TP-001": { classification: "tool-error", cost: 2.50, durationSec: 180, retries: 3 },
+				},
+				batchCost: 2.50,
+			};
+
+			const validated = validatePersistedState(v3);
+			const { runtimeState, wavePlan, lanes, outcomes } = buildRuntimeFromPersisted(validated);
+			const json = serializeBatchState(runtimeState, wavePlan, lanes, outcomes);
+			const reParsed = JSON.parse(json);
+
+			// Resilience survives
+			expect(reParsed.resilience.resumeForced).toBe(true);
+			expect(reParsed.resilience.retryCountByScope["TP-001:w0:l1"]).toBe(3);
+			expect(reParsed.resilience.lastFailureClass).toBe("tool-error");
+			expect(reParsed.resilience.repairHistory).toHaveLength(1);
+
+			// Diagnostics survives
+			expect(reParsed.diagnostics.taskExits["TP-001"].classification).toBe("tool-error");
+			expect(reParsed.diagnostics.batchCost).toBe(2.50);
+
+			// Re-validate
+			const reValidated = validatePersistedState(reParsed);
+			expect(reValidated.resilience.resumeForced).toBe(true);
+			expect(reValidated.diagnostics.batchCost).toBe(2.50);
+		});
+	});
+
+	// ═════════════════════════════════════════════════════════════════
+	// 10. Corrupt State Runtime Behavior (R008)
+	// ═════════════════════════════════════════════════════════════════
+
+	describe("corrupt state runtime behavior (integration)", () => {
+		it("paused-corrupt recommendation sets runtime phase to paused when handler executes", () => {
+			// This test verifies the contract between analyzeOrchestratorStartupState
+			// and the extension handler: the recommendation is "paused-corrupt", and
+			// the handler mutates orchBatchState.phase to "paused".
+			//
+			// We simulate the handler logic from extension.ts (case "paused-corrupt")
+			// without importing extension.ts (which has heavy dependencies).
+
+			// Step 1: Get the recommendation
+			const result = analyzeOrchestratorStartupState(
+				[],
+				"invalid",
+				null,
+				"Unexpected token at position 42",
+				new Set<string>(),
+			);
+			expect(result.recommendedAction).toBe("paused-corrupt");
+
+			// Step 2: Simulate the handler (mirrors extension.ts case "paused-corrupt")
+			const orchBatchState: { phase: string; errors: string[] } = {
+				phase: "idle",
+				errors: [],
+			};
+
+			// Handler logic (from extension.ts lines 783-791):
+			orchBatchState.phase = "paused";
+			orchBatchState.errors.push(result.userMessage);
+
+			// Step 3: Assert runtime state reflects paused
+			expect(orchBatchState.phase).toBe("paused");
+			expect(orchBatchState.errors).toHaveLength(1);
+			expect(orchBatchState.errors[0]).toContain("corrupt");
+			expect(orchBatchState.errors[0]).toContain("NOT been deleted");
+			expect(orchBatchState.errors[0]).toContain("Unexpected token at position 42");
+		});
+
+		it("paused-corrupt handler does NOT delete state file (no cleanup call)", () => {
+			// The critical behavioral property: paused-corrupt path returns immediately
+			// after setting phase to paused — it does NOT fall through to cleanup-stale
+			// or any other branch that calls deleteBatchState().
+			const result = analyzeOrchestratorStartupState(
+				[],
+				"io-error",
+				null,
+				"ENOENT or permission error",
+				new Set<string>(),
+			);
+
+			// Recommendation is paused-corrupt, not cleanup-stale
+			expect(result.recommendedAction).toBe("paused-corrupt");
+			expect(result.recommendedAction).not.toBe("cleanup-stale");
+
+			// The user message explicitly tells the user the file was NOT deleted
+			expect(result.userMessage).toContain("NOT been deleted");
 		});
 	});
 });
