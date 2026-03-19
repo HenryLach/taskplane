@@ -55,11 +55,11 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Branch preservation behavior tests: savePartialProgress (repo/workspace naming, no-commits skip, collision idempotency same-SHA, collision different-SHA suffixed), preserveFailedLaneProgress (happy path, unsafeBranches for failed preservation with commits, error handling for missing branches)
-- [ ] State contract tests: persistence round-trip with partialProgress fields present/absent, validation accepts/rejects correct types, serialization skips undefined fields
-- [ ] Full test suite passes (`cd extensions && npx vitest run`)
+- [x] Branch preservation behavior tests: savePartialProgress (repo/workspace naming, no-commits skip, collision idempotency same-SHA, collision different-SHA suffixed), preserveFailedLaneProgress (happy path, unsafeBranches for failed preservation with commits, error handling for missing branches)
+- [x] State contract tests: persistence round-trip with partialProgress fields present/absent, validation accepts/rejects correct types, serialization skips undefined fields
+- [x] Full test suite passes (`cd extensions && npx vitest run`) — 990/990 tests, 25/25 files
 
 ---
 
