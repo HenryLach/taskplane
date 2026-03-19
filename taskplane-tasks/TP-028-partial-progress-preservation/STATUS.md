@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 3
 **Size:** M
 
@@ -49,6 +49,8 @@
 - [x] Update `serializeBatchState()` in persistence.ts to map the new fields from `LaneTaskOutcome` → `PersistedTaskRecord`
 - [x] Add validation for the new optional fields in the state-file validation block in persistence.ts (backward-compatible: allow undefined)
 - [x] Populate fields at all 4 `preserveFailedLaneProgress()` call sites: engine.ts inter-wave, engine.ts terminal, resume.ts inter-wave, resume.ts terminal — update task outcomes with ppResult data after preservation
+- [ ] R006: Fix nullability contract mismatch — normalize `partialProgressBranch` to `string | undefined` across LaneTaskOutcome, PersistedTaskRecord, serialization, and validation (currently typed as `string | null` in LaneTaskOutcome but validation rejects null)
+- [ ] R006: Ensure serialization skips writing `partialProgressBranch` when undefined, and validate round-trip correctness at all boundaries
 
 ---
 
@@ -85,6 +87,8 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 
 ---
 
@@ -138,6 +142,9 @@
 | 2026-03-19 19:41 | Review R005 | plan Step 2: REVISE |
 | 2026-03-19 19:41 | Review R005 | plan Step 2: REVISE |
 | 2026-03-19 19:49 | Worker iter 3 | done in 439s, ctx: 30%, tools: 76 |
+| 2026-03-19 19:49 | Worker iter 4 | done in 517s, ctx: 31%, tools: 86 |
+| 2026-03-19 19:53 | Review R006 | code Step 2: REVISE |
+| 2026-03-19 19:53 | Review R006 | code Step 2: REVISE |
 
 ---
 
