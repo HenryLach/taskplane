@@ -1028,6 +1028,8 @@ export async function resumeOrchBatch(
 			// Carry forward partial progress from persisted state (TP-028)
 			partialProgressCommits: persistedTask?.partialProgressCommits,
 			partialProgressBranch: persistedTask?.partialProgressBranch,
+			// Carry forward exit diagnostic from persisted state (TP-026)
+			exitDiagnostic: persistedTask?.exitDiagnostic,
 		});
 	}
 

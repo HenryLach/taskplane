@@ -571,6 +571,13 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 				`tasks[${i}].partialProgressBranch is not a string (got ${typeof t.partialProgressBranch})`,
 			);
 		}
+		// TP-026 optional field: exitDiagnostic (object | undefined)
+		if (t.exitDiagnostic !== undefined && (typeof t.exitDiagnostic !== "object" || t.exitDiagnostic === null)) {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`tasks[${i}].exitDiagnostic is not an object (got ${typeof t.exitDiagnostic})`,
+			);
+		}
 	}
 
 	// ── Validate lane records ────────────────────────────────────
@@ -797,6 +804,11 @@ export function serializeBatchState(
 			}
 			if (outcome?.partialProgressBranch !== undefined) {
 				record.partialProgressBranch = outcome.partialProgressBranch;
+			}
+
+			// TP-026: Serialize structured exit diagnostic (additive, preserves exitReason)
+			if (outcome?.exitDiagnostic !== undefined) {
+				record.exitDiagnostic = outcome.exitDiagnostic;
 			}
 
 			return record;

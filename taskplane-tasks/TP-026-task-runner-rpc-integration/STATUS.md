@@ -1,6 +1,6 @@
 # TP-026: Task-Runner RPC Wrapper Integration — Status
 
-**Current Step:** Step 3: Produce Structured Exit Diagnostic
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
@@ -51,13 +51,13 @@
 ---
 
 ### Step 3: Produce Structured Exit Diagnostic
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Read exit summary JSON after tmux session exit (non-fatal parse with deterministic fallback for missing/malformed files)
-- [ ] Build ExitClassificationInput with all signals: exitSummary, doneFileFound, timerKilled (wall-clock timeout flag), stallDetected (stall timer), userKilled (manual kill), contextPct (from sidecar tail state)
-- [ ] Call classifyExit() and build full TaskExitDiagnostic (with progress metadata: partialProgressCommits, lastKnownStep, repoId, durationSec)
-- [ ] Add exitDiagnostic as optional field to PersistedTaskRecord and LaneTaskOutcome (additive, preserve legacy exitReason, update serialization + validation)
-- [ ] Preserve telemetry files by default (no cleanup — dashboard may read them; add log of paths for operator visibility)
+- [x] Read exit summary JSON after tmux session exit (non-fatal parse with deterministic fallback for missing/malformed files)
+- [x] Build ExitClassificationInput with all signals: exitSummary, doneFileFound, timerKilled (wall-clock timeout flag), stallDetected (stall timer), userKilled (manual kill), contextPct (from sidecar tail state)
+- [x] Call classifyExit() and build full TaskExitDiagnostic (with progress metadata: partialProgressCommits, lastKnownStep, repoId, durationSec)
+- [x] Add exitDiagnostic as optional field to PersistedTaskRecord and LaneTaskOutcome (additive, preserve legacy exitReason, update serialization + validation)
+- [x] Preserve telemetry files by default (no cleanup — dashboard may read them; add log of paths for operator visibility)
 
 ---
 
@@ -95,6 +95,7 @@
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
 
 ---
 
@@ -161,6 +162,12 @@
 | 2026-03-19 23:20 | Step 2 complete | Read Sidecar Telemetry During Polling |
 | 2026-03-19 23:20 | Step 3 started | Produce Structured Exit Diagnostic |
 | 2026-03-19 23:23 | Review R007 | plan Step 3: REVISE |
+| 2026-03-19 | Step 3 iter 1 | Implemented exit summary reader (readExitSummary), buildExitDiagnostic helper, kill-reason tracking (timer/context/user), exitDiagnostic additive field on LaneTaskOutcome + PersistedTaskRecord + persistence validation + resume carry-forward. All 1047 tests pass. |
+| 2026-03-19 | Step 3 complete | Produce Structured Exit Diagnostic |
+| 2026-03-19 23:28 | Worker iter 3 | done in 1356s, ctx: 33%, tools: 61 |
+| 2026-03-19 23:28 | Step 2 complete | Read Sidecar Telemetry During Polling |
+| 2026-03-19 23:28 | Step 3 started | Produce Structured Exit Diagnostic |
+| 2026-03-19 23:31 | Review R007 | plan Step 3: APPROVE |
 
 ---
 
@@ -192,6 +199,43 @@ The current `pi -p` command passes `--no-session`, `--no-extensions`, `--no-skil
 
 **Shell quoting:**
 Reuse the existing `quoteArg()` function for all path arguments. The `node` command replaces `pi` — same shell-quoting rules apply since both are executed via tmux `new-session` as a shell string.
+
+### Step 3 Design Notes
+
+**TaskExitDiagnostic field → source mapping:**
+| Field | Source |
+|-------|--------|
+| classification | `classifyExit()` with all signals |
+| exitCode | `exitSummary.exitCode` (null if no summary) |
+| errorMessage | `exitSummary.error` (null if no summary) |
+| tokensUsed | `exitSummary.tokens` (null if no summary) |
+| contextPct | `state.workerContextPct` from sidecar tailing |
+| partialProgressCommits | Set to 0 at task-runner level; orchestrator enriches post-commit |
+| partialProgressBranch | Set to null at task-runner level; orchestrator enriches |
+| durationSec | `Math.round(state.workerElapsed / 1000)` |
+| lastKnownStep | `state.currentStep` |
+| lastKnownCheckbox | null (would require STATUS.md parsing) |
+| repoId | `TASKPLANE_REPO_ID` env or "default" |
+
+**Kill reason tracking:**
+- `killReason` variable tracks "timer" | "context" | "user" | null
+- Timer kill: set in wallClockKillTimer setTimeout
+- Context kill: set in onTelemetry when pct >= killPct
+- User kill: inferred when result.killed but killReason is null
+- stallDetected: always false in /task mode (stall monitoring is an /orch concern)
+
+**Additive persistence:**
+- `exitDiagnostic?: TaskExitDiagnostic` added to both `LaneTaskOutcome` and `PersistedTaskRecord`
+- Legacy `exitReason: string` preserved as-is on both types
+- Validation in `loadState()` accepts optional object field
+- Resume path carries forward exitDiagnostic from persisted state
+- No breaking changes to schema — pre-TP-026 state files load cleanly (field absent = undefined)
+
+**Telemetry file retention:**
+- Sidecar JSONL and exit summary JSON are NOT cleaned up after reading
+- Paths logged to stderr for operator visibility
+- Dashboard can read them independently
+- `cleanupTmp()` only removes prompt/system-prompt temp files
 
 ### Preflight Findings (Step 0)
 

@@ -3,6 +3,7 @@
  * @module orch/types
  */
 import { join } from "path";
+import type { TaskExitDiagnostic } from "./diagnostics.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -561,6 +562,13 @@ export interface LaneTaskOutcome {
 	 * Optional for backward compatibility.
 	 */
 	partialProgressBranch?: string;
+	/**
+	 * Structured exit diagnostic from the task session (TP-026).
+	 * Additive alongside legacy `exitReason` for transition compatibility.
+	 * Undefined when not available (subprocess mode, pre-TP-026 sessions).
+	 * Optional for backward compatibility.
+	 */
+	exitDiagnostic?: TaskExitDiagnostic;
 }
 
 /**
@@ -1282,6 +1290,13 @@ export interface PersistedTaskRecord {
 	 * Optional for backward compatibility with pre-TP-028 state files.
 	 */
 	partialProgressBranch?: string;
+	/**
+	 * Structured exit diagnostic from the task session (TP-026).
+	 * Additive alongside legacy `exitReason` for transition compatibility.
+	 * Undefined when not available (pre-TP-026 state files, subprocess mode).
+	 * Optional for backward compatibility.
+	 */
+	exitDiagnostic?: TaskExitDiagnostic;
 }
 
 /**

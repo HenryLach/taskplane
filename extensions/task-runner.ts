@@ -30,6 +30,8 @@ import { join, dirname, basename, resolve } from "path";
 import { loadProjectConfig, toTaskConfig } from "./taskplane/config-loader.ts";
 import { loadWorkspaceConfig, resolvePointer } from "./taskplane/workspace.ts";
 import type { PointerResolution } from "./taskplane/types.ts";
+import { classifyExit } from "./taskplane/diagnostics.ts";
+import type { TaskExitDiagnostic, ExitSummary } from "./taskplane/diagnostics.ts";
 
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -102,6 +104,8 @@ interface TaskState {
 	workerRetryActive: boolean;
 	workerRetryCount: number;
 	workerLastRetryError: string;
+	/** Structured exit diagnostic from the most recent tmux worker iteration (null in subprocess mode or before first completion). */
+	workerExitDiagnostic: TaskExitDiagnostic | null;
 	reviewerStatus: "idle" | "running" | "done" | "error";
 	reviewerType: string;
 	reviewerElapsed: number;
@@ -121,6 +125,7 @@ function freshState(): TaskState {
 		workerInputTokens: 0, workerOutputTokens: 0, workerCacheReadTokens: 0, workerCacheWriteTokens: 0, workerCostUsd: 0,
 		workerProc: null, workerTimer: null,
 		workerRetryActive: false, workerRetryCount: 0, workerLastRetryError: "",
+		workerExitDiagnostic: null,
 		reviewerStatus: "idle", reviewerType: "", reviewerElapsed: 0,
 		reviewerLastTool: "", reviewerProc: null, reviewerTimer: null,
 		reviewCounter: 0, totalIterations: 0, stepStatuses: new Map(),
@@ -334,6 +339,7 @@ function writeLaneState(state: TaskState): void {
 			workerRetryActive: state.workerRetryActive,
 			workerRetryCount: state.workerRetryCount,
 			workerLastRetryError: state.workerLastRetryError,
+			workerExitDiagnostic: state.workerExitDiagnostic || undefined,
 			reviewerStatus: state.reviewerStatus || "idle",
 			timestamp: Date.now(),
 		};
@@ -1264,6 +1270,113 @@ export const _tailSidecarJsonl = tailSidecarJsonl;
 export const _createSidecarTailState = createSidecarTailState;
 export type { SidecarTailState, SidecarTelemetryDelta };
 
+// ── Exit Summary & Diagnostic ────────────────────────────────────────
+
+/**
+ * Read the exit summary JSON file written by rpc-wrapper.mjs.
+ *
+ * Returns null if the file is missing (session vanished) or malformed
+ * (wrapper crashed mid-write). Logs a warning on parse failure but
+ * never throws — the caller should treat null as "session_vanished".
+ */
+function readExitSummary(exitSummaryPath: string): ExitSummary | null {
+	try {
+		if (!existsSync(exitSummaryPath)) {
+			return null;
+		}
+		const raw = readFileSync(exitSummaryPath, "utf-8").trim();
+		if (!raw) return null;
+		const parsed = JSON.parse(raw);
+		// Minimal shape validation: must be an object with expected fields
+		if (typeof parsed !== "object" || parsed === null) {
+			console.error(`[task-runner] exit summary is not an object: ${exitSummaryPath}`);
+			return null;
+		}
+		return parsed as ExitSummary;
+	} catch (err: any) {
+		console.error(`[task-runner] failed to read exit summary: ${err.message}`);
+		return null;
+	}
+}
+
+/**
+ * Input parameters for `buildExitDiagnostic()`.
+ *
+ * Bridges the task-runner's runtime state into `classifyExit()` input
+ * and populates the full `TaskExitDiagnostic` with progress metadata.
+ */
+interface BuildExitDiagnosticInput {
+	/** Exit summary from rpc-wrapper.mjs (null if file missing) */
+	exitSummary: ExitSummary | null;
+	/** Whether .DONE file was found */
+	doneFileFound: boolean;
+	/** Whether the wall-clock timer killed the session */
+	timerKilled: boolean;
+	/** Whether the context-limit kill was triggered */
+	contextKilled: boolean;
+	/** Whether the user manually killed the session */
+	userKilled: boolean;
+	/** Estimated context utilization % from sidecar tailing (0-100) */
+	contextPct: number;
+	/** Wall-clock duration in seconds */
+	durationSec: number;
+	/** Repo identifier ("default" in repo mode, repo key in workspace mode) */
+	repoId: string;
+	/** Last known step number from STATUS.md (null if not parsed) */
+	lastKnownStep: number | null;
+	/** Last known checkbox text from STATUS.md (null if not parsed) */
+	lastKnownCheckbox: string | null;
+	/** Number of commits representing partial progress (0 if none) */
+	partialProgressCommits: number;
+	/** Branch name holding partial progress (null if no branch) */
+	partialProgressBranch: string | null;
+}
+
+/**
+ * Build a structured `TaskExitDiagnostic` from task-runner runtime state.
+ *
+ * Calls `classifyExit()` with the appropriate signal mapping, then
+ * enriches the result with progress metadata (commits, step, repo).
+ *
+ * Signal mapping:
+ * - `stallDetected` in ExitClassificationInput ← not directly available in
+ *   task-runner's tmux mode (stall detection is orchestrator-level), so
+ *   always false here. Stall classification may still occur via orchestrator.
+ * - `contextKilled` ← when the task-runner kills the session due to
+ *   context limit, the context_overflow classification is triggered via
+ *   the exit summary's compactions + contextPct path. If no exit summary
+ *   is available (crash), context kills appear as session_vanished.
+ */
+function buildExitDiagnostic(input: BuildExitDiagnosticInput): TaskExitDiagnostic {
+	const classification = classifyExit({
+		exitSummary: input.exitSummary,
+		doneFileFound: input.doneFileFound,
+		timerKilled: input.timerKilled,
+		stallDetected: false, // Stall detection is orchestrator-level, not available in /task mode
+		userKilled: input.userKilled,
+		contextPct: input.contextPct,
+	});
+
+	return {
+		classification,
+		exitCode: input.exitSummary?.exitCode ?? null,
+		errorMessage: input.exitSummary?.error ?? null,
+		tokensUsed: input.exitSummary?.tokens ?? null,
+		contextPct: input.contextPct,
+		partialProgressCommits: input.partialProgressCommits,
+		partialProgressBranch: input.partialProgressBranch,
+		durationSec: input.durationSec,
+		lastKnownStep: input.lastKnownStep,
+		lastKnownCheckbox: input.lastKnownCheckbox,
+		repoId: input.repoId,
+	};
+}
+
+/** Expose exit summary/diagnostic helpers for testing. */
+export const _readExitSummary = readExitSummary;
+export const _buildExitDiagnostic = buildExitDiagnostic;
+export type { BuildExitDiagnosticInput };
+
 // ── TMUX Agent Spawner ───────────────────────────────────────────────
 
 /**
@@ -1980,6 +2093,11 @@ export default function (pi: ExtensionAPI) {
 		let kill: () => void;
 		let wallClockWarnTimer: ReturnType<typeof setTimeout> | null = null;
 		let wallClockKillTimer: ReturnType<typeof setTimeout> | null = null;
+		// Track why the session was killed for exit classification.
+		// "timer" = wall-clock timeout, "context" = context % limit, "user" = manual kill.
+		let killReason: "timer" | "context" | "user" | null = null;
+		// Exit summary path — set only in tmux mode (rpc-wrapper produces this file).
+		let exitSummaryPath: string | null = null;
 
 		if (spawnMode === "tmux") {
 			// ── TMUX mode ────────────────────────────────────────
@@ -2031,6 +2149,7 @@ export default function (pi: ExtensionAPI) {
 						}
 						if (pct >= killPct && state.workerStatus === "running") {
 							console.error(`[task-runner] tmux worker: context limit (${Math.round(pct)}%) — killing session '${sessionName}'`);
+							killReason = "context";
 							spawned.kill();
 						}
 					}
@@ -2040,6 +2159,7 @@ export default function (pi: ExtensionAPI) {
 			});
 			promise = spawned.promise;
 			kill = spawned.kill;
+			exitSummaryPath = spawned.exitSummaryPath;
 
 			// Wall-clock timeout: write wrap-up file at 80% of limit,
 			// hard kill at 100%. Context-% based wrap-up/kill is also active
@@ -2063,6 +2183,7 @@ export default function (pi: ExtensionAPI) {
 			wallClockKillTimer = setTimeout(() => {
 				if (state.workerStatus === "running" && state.totalIterations === iterationMarker) {
 					console.error(`[task-runner] tmux worker: wall-clock timeout (${maxMinutes}min) — killing session '${sessionName}'`);
+					killReason = "timer";
 					kill();
 				}
 			}, killMs);
@@ -2138,10 +2259,52 @@ export default function (pi: ExtensionAPI) {
 
 		clearWrapUpSignals();
 
+		// ── Exit Diagnostic (tmux mode only) ─────────────────────
+		// Read the exit summary JSON written by rpc-wrapper.mjs, classify
+		// the exit, and build a structured diagnostic for persistence.
+		// Subprocess mode doesn't produce exit summaries (it uses JSON
+		// event stream directly), so this path is tmux-only.
+		if (spawnMode === "tmux" && exitSummaryPath) {
+			const exitSummary = readExitSummary(exitSummaryPath);
+			const donePath = join(task.taskFolder, ".DONE");
+			const doneFileFound = existsSync(donePath);
+
+			// Determine userKilled: killed is true but not by timer or context
+			const userKilled = result.killed && killReason === null;
+
+			const diagnostic = buildExitDiagnostic({
+				exitSummary,
+				doneFileFound,
+				timerKilled: killReason === "timer",
+				contextKilled: killReason === "context",
+				userKilled,
+				contextPct: state.workerContextPct,
+				durationSec: Math.round(state.workerElapsed / 1000),
+				repoId: process.env.TASKPLANE_REPO_ID || "default",
+				lastKnownStep: state.currentStep || null,
+				lastKnownCheckbox: null, // Not parsed in task-runner; available via STATUS.md
+				partialProgressCommits: 0, // Computed by orchestrator after commit
+				partialProgressBranch: null,
+			});
+
+			// Store diagnostic on state for lane-state sidecar and logging
+			state.workerExitDiagnostic = diagnostic;
+
+			console.error(`[task-runner] exit diagnostic: ${diagnostic.classification}` +
+				(diagnostic.exitCode !== null ? ` (exit ${diagnostic.exitCode})` : "") +
+				(exitSummary ? `` : " (no exit summary)"));
+
+			// Log telemetry file paths for operator visibility (files preserved for dashboard)
+			const sidecarPath = exitSummaryPath.replace(/-exit\.json$/, ".jsonl");
+			console.error(`[task-runner] telemetry files preserved:` +
+				`\n  sidecar: ${sidecarPath}` +
+				`\n  exit summary: ${exitSummaryPath}`);
+		}
+
 		// Log with telemetry detail — both subprocess and TMUX now have context%
 		const killedMsg = result.killed
 			? (spawnMode === "tmux"
-				? `killed (${state.workerContextPct >= config.context.kill_percent ? "context limit" : "wall-clock timeout"})`
+				? `killed (${killReason === "context" ? "context limit" : killReason === "timer" ? "wall-clock timeout" : "user"})`
 				: "killed (context limit)")
 			: "";
 		const statusMsg = killedMsg || (result.exitCode === 0 ? "done" : `error (code ${result.exitCode})`);
