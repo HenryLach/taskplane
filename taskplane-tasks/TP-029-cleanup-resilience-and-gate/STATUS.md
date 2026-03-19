@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 6
+**Review Counter:** 8
 **Iteration:** 4
 **Size:** M
 
@@ -48,7 +48,7 @@
 ---
 
 ### Step 2: Post-Merge Cleanup Gate
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] R005: Add `cleanup_post_merge_failed` classification to messages.ts (pure function like computeMergeFailurePolicy) — returns targetPhase "paused", errorMessage, persistTrigger, notification with per-repo failure details and recovery commands (`/orch-resume`, manual cleanup)
 - [x] R005: In engine.ts, after inter-wave reset loop, verify no registered worktrees remain for any repo that should be clean; collect per-repo failure payloads (repo path + stale worktree list); if any failures → call cleanup gate policy → set phase="paused", persist state, emit diagnostic, break wave loop
@@ -69,6 +69,10 @@
 - [x] In extension.ts, after all repos integrated + batch state deleted: (a) drop batch-scoped autostash entries (`orch-integrate-autostash-{batchId}` and `merge-agent-autostash-w*-{batchId}`) per repo, (b) run acceptance checks across all workspace repos (or repoRoot in repo mode), (c) call the pure function, (d) append cleanup status to summary notification. Acceptance runs BEFORE final state cleanup.
 - [x] Add tests: (a) autostash entries for current batch are dropped, non-batch stashes preserved; (b) acceptance check detects stale lane branches/worktrees and reports them; (c) clean pass produces green summary with no warnings
 - [x] Run full test suite and confirm green (1014 tests, 26 files, all pass)
+- [ ] R008: Fix PR-mode regression — skip orch branch from cleanup findings when mode is "pr" (integratedLocally=false), so preserved orch branch is not flagged as stale
+- [ ] R008: Use "warning" notification level when cleanupResult.clean === false (instead of always "info")
+- [ ] R008: Add test — /orch-integrate --pr does not report orch branch as stale (mode-specific cleanup semantics)
+- [ ] R008: Run full test suite and confirm green
 
 ---
 
@@ -105,6 +109,9 @@
 | R006 | code | Step 2 | APPROVE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | APPROVE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 
 ---
 
@@ -153,6 +160,12 @@
 | 2026-03-19 21:30 | Review R007 | plan Step 3: REVISE |
 | 2026-03-19 21:30 | Review R006 | code Step 2: REVISE |
 | 2026-03-19 21:43 | Worker iter 4 | done in 792s, ctx: 36%, tools: 86 |
+| 2026-03-19 21:44 | Worker iter 3 | done in 811s, ctx: 35%, tools: 66 |
+| 2026-03-19 21:44 | Step 2 complete | Post-Merge Cleanup Gate |
+| 2026-03-19 21:44 | Step 3 started | Integrate Cleanup into /orch-integrate |
+| 2026-03-19 21:45 | Review R007 | plan Step 3: APPROVE |
+| 2026-03-19 21:46 | Review R008 | code Step 3: REVISE |
+| 2026-03-19 21:47 | Review R008 | code Step 3: REVISE |
 
 ---
 
