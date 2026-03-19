@@ -5,21 +5,21 @@
 **Last Updated:** 2026-03-19
 **Review Level:** 2
 **Review Counter:** 1
-**Iteration:** 1
+**Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Read worktree cleanup logic
 - [x] Read task outcome recording
 - [x] Read roadmap Phase 2 section 2a
 - [x] Understand existing saved-branch logic
 - [x] R001: Read CONTEXT.md (Tier 2) and persistence.ts serialization contract
-- [ ] R001: Read naming.ts and diagnostics.ts partialProgress fields for naming alignment
-- [ ] R001: Identify all cleanup call sites and document insertion points for Steps 1-2
+- [x] R001: Read naming.ts and diagnostics.ts partialProgress fields for naming alignment
+- [x] R001: Identify all cleanup call sites and document insertion points for Steps 1-2
 
 ---
 
@@ -95,6 +95,7 @@
 | 2026-03-19 19:05 | Review R001 | plan Step 0: APPROVE |
 | 2026-03-19 | Step 0 complete | Preflight: read worktree.ts cleanup, execution.ts outcome recording, roadmap Phase 2 sec 2a, saved-branch logic |
 | 2026-03-19 19:05 | Review R001 | plan Step 0: REVISE |
+| 2026-03-19 19:08 | Worker iter 1 | done in 163s, ctx: 36%, tools: 33 |
 
 ---
 
@@ -106,4 +107,27 @@
 
 ## Notes
 
-*Reserved for execution notes*
+### Preflight Findings (Step 0)
+
+**Cleanup call sites (Step 1 insertion points):**
+1. `engine.ts:726` — `removeAllWorktrees()` in post-batch cleanup (end-of-batch). Uses `orchBranch` as targetBranch. This is the PRIMARY insertion point — partial progress save should happen BEFORE this cleanup.
+2. `resume.ts:1410` — `removeAllWorktrees()` in resume terminal cleanup (section 11). Per-repo with per-repo targetBranch. Same pattern — save before cleanup.
+3. `engine.ts:557` — `forceCleanupWorktree()` in inter-wave worktree reset failure path. This is for BETWEEN waves, not end-of-batch — partial progress save not needed here (task will be retried).
+4. `resume.ts:1365` — `forceCleanupWorktree()` in resume pre-execution reset. Same as #3 — between-wave, not relevant.
+
+**Key insight:** Partial progress preservation should happen BEFORE `removeAllWorktrees()` calls at batch end (sites #1 and #2), not during. We need to iterate over failed task outcomes, check each lane branch for commits ahead of base, and create saved branches BEFORE cleanup deletes them.
+
+**Existing branch preservation compatibility:**
+- `removeAllWorktrees()` already calls `removeWorktree()` → `ensureBranchDeleted()` → `preserveBranch()` which preserves branches with unmerged commits vs `targetBranch` as `saved/{originalBranch}`.
+- TP-028 adds a DIFFERENT preservation: saving branches for FAILED tasks specifically, with task-ID-based naming (`saved/{opId}-{taskId}-{batchId}`).
+- These are complementary, not conflicting. The existing merge-aware preservation handles success-path branch safety; TP-028 handles failure-path progress recovery.
+
+**Naming alignment:**
+- `diagnostics.ts` already has `partialProgressCommits: number` and `partialProgressBranch: string | null` in `TaskExitDiagnostic`.
+- New fields on `LaneTaskOutcome` and `PersistedTaskRecord` should use the same names.
+- Saved branch naming: `saved/{opId}-{taskId}-{batchId}` (repo mode) or `saved/{opId}-{repoId}-{taskId}-{batchId}` (workspace mode) per roadmap spec.
+
+**Serialization path (Step 2):**
+- `persistence.ts:serializeBatchState()` maps `LaneTaskOutcome` → `PersistedTaskRecord`.
+- Add `partialProgressCommits` and `partialProgressBranch` to both types.
+- The mapping in `serializeBatchState()` at line ~721 already handles optional fields pattern (see `repoId`, `resolvedRepoId`).
