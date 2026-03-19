@@ -9,11 +9,29 @@
  * @see docs/specifications/taskplane/resilience-and-diagnostics-roadmap.md §1b
  */
 
-import type { TokenCounts } from "./types.ts";
+// ── Token Counts (Diagnostics) ───────────────────────────────────────
 
-// Re-export TokenCounts so downstream consumers importing from diagnostics
-// still get the type without a separate import from types.ts.
-export type { TokenCounts } from "./types.ts";
+/**
+ * Token usage breakdown for a single session.
+ *
+ * Matches the RPC exit-summary `tokens` shape: four count fields only.
+ * Cost is tracked separately as a top-level field on `ExitSummary` and
+ * `TaskExitDiagnostic`, not embedded in the token counts.
+ *
+ * This is distinct from `TokenCounts` in `types.ts` (which bundles
+ * `costUsd` for batch-history aggregation). Downstream consumers that
+ * need to convert can merge `{ ...sessionTokens, costUsd: cost }`.
+ */
+export interface SessionTokenCounts {
+	/** Input tokens consumed */
+	input: number;
+	/** Output tokens generated */
+	output: number;
+	/** Tokens served from cache (read) */
+	cacheRead: number;
+	/** Tokens written to cache */
+	cacheWrite: number;
+}
 
 // ── Exit Classification ──────────────────────────────────────────────
 
@@ -88,29 +106,39 @@ export interface RetryRecord {
  * everything the wrapper observed during the session. The task-runner
  * reads this to build `TaskExitDiagnostic`.
  *
- * All fields are nullable/optional to handle partial writes when
- * the process crashes before accumulating complete data.
+ * **Field optionality rationale:**
+ * The wrapper initializes counters (toolCalls, compactions, durationSec,
+ * retries) at startup, so they are always present even on crash — these
+ * are required. Fields that depend on RPC event accumulation (tokens,
+ * cost, lastToolCall, error) are nullable — they may be absent if the
+ * process crashes before capturing any events. `exitCode` and
+ * `exitSignal` are optional (`?`) because the wrapper may crash before
+ * the Node exit handler fires, producing a partial JSON artifact that
+ * `JSON.parse()` succeeds on but lacks these fields.
+ *
+ * Consumers MUST use `typeof` guards on optional/nullable fields before
+ * branching (e.g., `typeof exitCode === "number"` rather than `!== null`).
  */
 export interface ExitSummary {
-	/** Process exit code (null if killed by signal) */
-	exitCode: number | null;
-	/** Signal that killed the process (e.g., "SIGTERM"), null if clean exit */
-	exitSignal: string | null;
-	/** Accumulated token counts across all turns */
-	tokens: TokenCounts | null;
-	/** Total cost in USD */
+	/** Process exit code. Optional — may be absent if wrapper crashes before exit handler fires. Null if killed by signal. */
+	exitCode?: number | null;
+	/** Signal that killed the process (e.g., "SIGTERM"). Optional — may be absent on crash. Null if clean exit. */
+	exitSignal?: string | null;
+	/** Accumulated token counts across all turns (null if no message_end events received) */
+	tokens: SessionTokenCounts | null;
+	/** Total cost in USD (null if no cost data received) */
 	cost: number | null;
-	/** Total tool calls made */
+	/** Total tool calls made (initialized to 0 at startup) */
 	toolCalls: number;
-	/** API retry events observed */
+	/** API retry events observed (initialized to [] at startup) */
 	retries: RetryRecord[];
-	/** Number of context compactions observed */
+	/** Number of context compactions observed (initialized to 0 at startup) */
 	compactions: number;
-	/** Wall-clock duration of the session in seconds */
+	/** Wall-clock duration of the session in seconds (always written, even on crash) */
 	durationSec: number;
-	/** Last tool call description (e.g., "bash: npx vitest run") */
+	/** Last tool call description (e.g., "bash: npx vitest run"), null if no tools were called */
 	lastToolCall: string | null;
-	/** Error message if the session ended with an error */
+	/** Error message if the session ended with an error, null on clean exit */
 	error: string | null;
 }
 
@@ -166,7 +194,7 @@ export interface TaskExitDiagnostic {
 	/** Human-readable error message (null if clean exit) */
 	errorMessage: string | null;
 	/** Token usage breakdown (null if no summary available) */
-	tokensUsed: TokenCounts | null;
+	tokensUsed: SessionTokenCounts | null;
 	/** Estimated context utilization percentage (0-100, null if unknown) */
 	contextPct: number | null;
 	/** Number of commits on the task branch (partial progress indicator) */
@@ -258,7 +286,8 @@ export function classifyExit(input: ExitClassificationInput): ExitClassification
 	}
 
 	// 5. Non-zero exit code, no API error indicators → process_crash
-	if (exitSummary && exitSummary.exitCode !== null && exitSummary.exitCode !== 0) {
+	// Guard with typeof to handle partial summaries where exitCode may be undefined
+	if (exitSummary && typeof exitSummary.exitCode === "number" && exitSummary.exitCode !== 0) {
 		return "process_crash";
 	}
 

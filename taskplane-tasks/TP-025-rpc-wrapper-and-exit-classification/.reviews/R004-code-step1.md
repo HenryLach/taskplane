@@ -3,18 +3,20 @@
 ### Verdict: REVISE
 
 ### Summary
-The new diagnostics module is a strong start: it introduces the requested exit classification union, structured `TaskExitDiagnostic`, and explicit precedence in `classifyExit()`. However, the current barrel export wiring introduces a conflicting `TokenCounts` public symbol that can break downstream imports from `extensions/taskplane/index.ts`. Please resolve the exported type collision before proceeding.
+The new `extensions/taskplane/diagnostics.ts` module is a solid foundation: it introduces the required exit-classification union, structured input contract, deterministic precedence, and barrel export wiring. However, there are two contract-level issues that will cause integration drift in Step 2/3 if left as-is: token shape mismatch against the RPC summary spec, and partial-summary handling that can misclassify exits as crashes. These should be fixed before building the wrapper/parser on top.
 
 ### Issues Found
-1. **[extensions/taskplane/index.ts:8-25, extensions/taskplane/diagnostics.ts:66-75, extensions/taskplane/types.ts:1643-1649] [important]** — `TokenCounts` is now exported from both `types.ts` and `diagnostics.ts` via `export *` in the barrel. These two `TokenCounts` shapes are different (`types.ts` includes `costUsd`; `diagnostics.ts` does not), creating an ambiguous/conflicting re-export and a brittle public API. Fix by making one canonical type name (or aliasing one explicitly), then ensure `index.ts` exports an unambiguous symbol set.
-2. **[extensions/taskplane/diagnostics.ts:104-127] [minor]** — `ExitSummary` JSDoc says fields are “nullable/optional,” but several fields are required and non-nullable in the type (`toolCalls`, `retries`, `compactions`, `durationSec`). Either adjust the wording or make the type optional where partial-write tolerance is required.
+1. **[extensions/taskplane/diagnostics.ts:12,100,169 + extensions/taskplane/types.ts:1643] [important]** — `diagnostics.ts` reuses `TokenCounts` from `types.ts`, but that interface requires `costUsd`. The TP-025 exit-summary contract defines `tokens` as `{input, output, cacheRead, cacheWrite}` and keeps `cost` as a separate top-level field. This currently makes `ExitSummary.tokens`/`TaskExitDiagnostic.tokensUsed` structurally inconsistent with the RPC summary artifact and duplicates cost semantics. **Fix:** define a diagnostics-specific token shape matching the RPC contract (or make shared `TokenCounts` compatible, e.g. optional `costUsd`) and keep `cost` separate.
+2. **[extensions/taskplane/diagnostics.ts:91-93,94-115,260-263] [important]** — Comments state exit-summary fields may be partial/optional, but the interface marks most fields as required, and `classifyExit()` treats any non-null/non-zero `exitCode` as crash. With unvalidated JSON, `exitCode: undefined` satisfies `!== null && !== 0`, causing false `process_crash`. **Fix:** align type and logic for partial artifacts (`?`/`| undefined` where intended) and guard crash classification with a numeric check (e.g., `typeof exitSummary.exitCode === "number" && exitSummary.exitCode !== 0`).
 
 ### Pattern Violations
-- Public barrel export (`index.ts`) currently violates a stable-contract expectation by introducing conflicting type names from multiple modules.
+- None major; module/barrel structure and JSDoc style are consistent with existing `extensions/taskplane/*` patterns.
 
 ### Test Gaps
-- No tests were added yet for `classifyExit()` precedence and all 9 classifications. Step 3 is planned for this, but this step still leaves classification behavior unverified.
+- No unit tests yet for `classifyExit()` precedence collisions (e.g., `userKilled + non-zero exit`, `timerKilled + non-zero exit`).
+- No test for partial/malformed-but-parseable summary objects (missing `exitCode`, missing `retries`, etc.).
+- No test locking expected token-shape contract for `ExitSummary.tokens`.
 
 ### Suggestions
-- Add an explicit precedence-collision test set in Step 3 (e.g., `.DONE + failed retry`, `timerKilled + non-zero exit`, `userKilled + non-zero exit`) so ordering stays intentional.
-- Consider exporting `EXIT_CLASSIFICATIONS` as the single runtime validation source used by parser/normalizer code in later steps.
+- Add `EXIT_CLASSIFICATIONS` coverage test to ensure values stay aligned with the union over time.
+- Keep `classifyExit()` input-based (current design is good) and document how `userKilled` is expected to be set when summary is missing.
