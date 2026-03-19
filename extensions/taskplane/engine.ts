@@ -2,8 +2,8 @@
  * Main batch execution engine
  * @module orch/engine
  */
-import { readFileSync, readdirSync, unlinkSync } from "fs";
-import { join } from "path";
+import { existsSync, readFileSync, readdirSync, unlinkSync } from "fs";
+import { dirname, join, resolve } from "path";
 
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { execLog, executeWave, tmuxKillSession } from "./execution.ts";
@@ -337,6 +337,16 @@ export async function executeOrchBatch(
 				onNotify(ORCH_MESSAGES.orchBatchStopped(batchState.batchId, "stop-wave"), "error");
 				break;
 			}
+		}
+
+		// ── Workspace mode: commit task artifacts to task-area repos ─
+		// In workspace mode, workers write .DONE and STATUS.md to the
+		// canonical task folder (e.g., shared-libs/task-management/...) via
+		// absolute paths, not to the lane worktree. These changes land as
+		// uncommitted modifications in the task-area repo's working tree.
+		// Commit them before the merge step so they appear in the orch branch.
+		if (workspaceConfig && waveResult.succeededTaskIds.length > 0) {
+			commitWorkspaceTaskArtifacts(discoveryRef, workspaceRoot ?? repoRoot, waveIdx + 1, batchState.batchId);
 		}
 
 		// ── Wave Merge ───────────────────────────────────────────
@@ -846,6 +856,79 @@ export async function executeOrchBatch(
 	}
 }
 
+
+// ── Workspace Task Artifact Commit ───────────────────────────────────
+
+/**
+ * In workspace mode, commit task artifacts (.DONE, STATUS.md) that workers
+ * wrote to the canonical task folder in the task-area repo.
+ *
+ * Workers write to absolute paths (e.g., shared-libs/task-management/.../TP-002/.DONE)
+ * which land as uncommitted changes in the task-area repo's working tree.
+ * This function finds all task-area repos with dirty task files and commits them
+ * so they appear in the lane branches and merge correctly.
+ *
+ * Best-effort: failures are logged but don't block the batch.
+ */
+function commitWorkspaceTaskArtifacts(
+	discovery: DiscoveryResult | null,
+	workspaceRoot: string,
+	waveIndex: number,
+	batchId: string,
+): void {
+	if (!discovery) return;
+
+	// Collect unique repo roots that contain task folders
+	const repoRootsWithTasks = new Set<string>();
+	for (const [, task] of discovery.pending) {
+		const taskFolder = resolve(task.taskFolder);
+		// Walk up to find the git repo root for this task folder
+		const gitResult = runGit(["rev-parse", "--show-toplevel"], dirname(taskFolder));
+		if (gitResult.ok) {
+			repoRootsWithTasks.add(gitResult.stdout.trim().replace(/\\/g, "/"));
+		}
+	}
+
+	for (const taskRepoRoot of repoRootsWithTasks) {
+		// Check for uncommitted changes
+		const statusResult = runGit(["status", "--porcelain", "--", "task-management/"], taskRepoRoot);
+		if (!statusResult.ok) {
+			// Try without path filter (task area might have different name)
+			const statusAll = runGit(["status", "--porcelain"], taskRepoRoot);
+			if (!statusAll.ok || !statusAll.stdout.trim()) continue;
+		}
+		if (statusResult.ok && !statusResult.stdout.trim()) continue;
+
+		// Stage task artifacts (only .DONE and STATUS.md files)
+		const lines = (statusResult.stdout || "").split("\n").filter(l => l.trim());
+		let hasTaskArtifacts = false;
+		for (const line of lines) {
+			const file = line.slice(3).trim();
+			if (file.endsWith(".DONE") || file.endsWith("STATUS.md")) {
+				const addResult = runGit(["add", file], taskRepoRoot);
+				if (addResult.ok) hasTaskArtifacts = true;
+			}
+		}
+
+		if (!hasTaskArtifacts) continue;
+
+		// Commit
+		const commitResult = runGit(
+			["commit", "-m", `checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md)`],
+			taskRepoRoot,
+		);
+		if (commitResult.ok) {
+			execLog("batch", batchId, `committed workspace task artifacts`, {
+				repoRoot: taskRepoRoot,
+				wave: waveIndex,
+			});
+		} else if (!commitResult.stderr.includes("nothing to commit")) {
+			execLog("batch", batchId, `workspace task artifact commit failed (non-fatal): ${commitResult.stderr.slice(0, 200)}`, {
+				repoRoot: taskRepoRoot,
+			});
+		}
+	}
+}
 
 // ── Dashboard Widget (Step 6) ────────────────────────────────────────
 
