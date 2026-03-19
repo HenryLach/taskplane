@@ -1,10 +1,10 @@
 # TP-030: State Schema v3 & Migration — Status
 
-**Current Step:** Step 3: Testing & Verification
-**Status:** ✅ Step 2 Complete
+**Current Step:** Step 2: Implement Migration (R006 revisions)
+**Status:** 🔄 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 3
 **Size:** M
 
@@ -39,12 +39,15 @@
 ---
 
 ### Step 2: Implement Migration
-**Status:** ✅ Complete
+**Status:** 🔄 In Progress (R006 revisions)
 - [x] Auto-detect & upconvert: `validatePersistedState` already chains v1→v2→v3; verify roundtrip defaults are correct for loaded v1/v2 states
 - [x] Corrupt state → paused (not auto-delete): Change `analyzeOrchestratorStartupState` for invalid/io-error with no orphans to recommend "paused-corrupt" instead of "cleanup-stale"; update extension.ts handler to enter paused phase with diagnostic
 - [x] v3 non-default fields survive serialization: Update `serializeBatchState` to carry forward loaded resilience/diagnostics/exitDiagnostic values from runtime state instead of always emitting defaults
 - [x] Unknown-field preservation on read/write roundtrip: Store extra top-level keys from loaded JSON, merge them back in `serializeBatchState`
 - [x] Version mismatch error text includes upgrade guidance (already done in validatePersistedState — verified)
+- [ ] R006-1: Only backfill resilience/diagnostics during true migration (schemaVersion < 3); for schemaVersion === 3, reject missing sections via validation
+- [ ] R006-2: Deep-validate v3 nested structures (retryCountByScope values, repairHistory record shapes, taskExits entry shapes)
+- [ ] R006-3: Corrupt-state handler in extension.ts sets orchBatchState.phase to "paused" and refreshes widget before returning
 
 ---
 
@@ -78,6 +81,7 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 
 ## Discoveries
 
@@ -122,6 +126,8 @@
 | 2026-03-19 22:50 | Step 2 started | Implement Migration |
 | 2026-03-19 22:52 | Review R005 | plan Step 2: REVISE |
 | 2026-03-19 23:05 | Worker iter 3 | done in 730s, ctx: 29%, tools: 68 |
+| 2026-03-19 23:06 | Worker iter 3 | done in 1285s, ctx: 43%, tools: 116 |
+| 2026-03-19 23:12 | Review R006 | code Step 2: REVISE |
 
 ## Blockers
 
