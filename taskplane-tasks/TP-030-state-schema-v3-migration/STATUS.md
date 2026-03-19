@@ -1,7 +1,7 @@
 # TP-030: State Schema v3 & Migration — Status
 
-**Current Step:** Step 3: Testing & Verification
-**Status:** ✅ Step 2 Complete
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Step 3 Complete
 **Last Updated:** 2026-03-19
 **Review Level:** 2
 **Review Counter:** 7
@@ -52,13 +52,13 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] Create `extensions/tests/state-migration.test.ts` with migration happy-path tests (v1→v3, v2→v3, v3 clean read) including defaults verification for resilience/diagnostics
-- [ ] Add strict v3 validation rejection tests (missing resilience/diagnostics, bad retryCountByScope values, bad repairHistory entries, bad diagnostics.taskExits entries, malformed exitDiagnostic on tasks)
-- [ ] Add unknown-field roundtrip preservation test (top-level only) and exitDiagnostic survives serialize roundtrip test
-- [ ] Add corrupt-state / paused-corrupt test: verify `analyzeOrchestratorStartupState` recommends "paused-corrupt" for invalid/io-error state with no orphans, does NOT auto-delete
-- [ ] Add version-mismatch error message test: unsupported schema version (v99) includes upgrade guidance text
-- [ ] Run full test suite (`cd extensions && npx vitest run`) — all tests pass with zero failures
+**Status:** ✅ Complete
+- [x] Create `extensions/tests/state-migration.test.ts` with migration happy-path tests (v1→v3, v2→v3, v3 clean read) including defaults verification for resilience/diagnostics
+- [x] Add strict v3 validation rejection tests (missing resilience/diagnostics, bad retryCountByScope values, bad repairHistory entries, bad diagnostics.taskExits entries, malformed exitDiagnostic on tasks)
+- [x] Add unknown-field roundtrip preservation test (top-level only) and exitDiagnostic survives serialize roundtrip test
+- [x] Add corrupt-state / paused-corrupt test: verify `analyzeOrchestratorStartupState` recommends "paused-corrupt" for invalid/io-error state with no orphans, does NOT auto-delete
+- [x] Add version-mismatch error message test: unsupported schema version (v99) includes upgrade guidance text
+- [x] Run full test suite (`cd extensions && npx vitest run`) — all tests pass with zero failures
 
 ---
 
