@@ -1,6 +1,6 @@
 # TP-028: Partial Progress Preservation — Status
 
-**Current Step:** Step 1: Detect and Save Partial Progress
+**Current Step:** Step 2: Record Partial Progress in Task Outcome
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
@@ -41,7 +41,7 @@
 ---
 
 ### Step 2: Record Partial Progress in Task Outcome
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add fields to task outcome type
 - [ ] Populate fields during progress save
@@ -124,6 +124,9 @@
 | 2026-03-19 19:26 | Worker iter 2 | done in 638s, ctx: 45%, tools: 77 |
 | 2026-03-19 19:30 | Review R004 | code Step 1: REVISE |
 | 2026-03-19 19:33 | Review R004 | code Step 1: REVISE |
+| 2026-03-19 19:37 | Worker iter 3 | done in 414s, ctx: 23%, tools: 46 |
+| 2026-03-19 19:37 | Step 1 complete | Detect and Save Partial Progress |
+| 2026-03-19 19:37 | Step 2 started | Record Partial Progress in Task Outcome |
 
 ---
 
