@@ -359,12 +359,11 @@ export function upconvertV1toV2(obj: Record<string, unknown>): void {
  * @param obj - Parsed state object (mutated in-place)
  */
 export function upconvertV2toV3(obj: Record<string, unknown>): void {
-	if ((obj.schemaVersion as number) < 3) {
-		obj.schemaVersion = 3;
-	}
-	// Ensure v3 sections exist with defaults — both for genuine v2→v3
-	// upconversion and defensively for v3 states that are somehow incomplete
-	// (e.g., test fixtures that don't specify every field).
+	if ((obj.schemaVersion as number) >= 3) return;
+	obj.schemaVersion = 3;
+	// Backfill v3 sections with conservative defaults only during genuine
+	// v1/v2→v3 migration. A native v3 file missing these sections is
+	// malformed and must be rejected by validation — not silently patched.
 	if (!obj.resilience) obj.resilience = defaultResilienceState();
 	if (!obj.diagnostics) obj.diagnostics = defaultBatchDiagnostics();
 }
@@ -757,6 +756,15 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 			`resilience.retryCountByScope must be an object (got ${typeof res.retryCountByScope})`,
 		);
 	}
+	// Deep-validate retryCountByScope: all values must be numbers
+	for (const [scope, count] of Object.entries(res.retryCountByScope as Record<string, unknown>)) {
+		if (typeof count !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.retryCountByScope["${scope}"] must be a number (got ${typeof count})`,
+			);
+		}
+	}
 	if (res.lastFailureClass !== null && typeof res.lastFailureClass !== "string") {
 		throw new StateFileError(
 			"STATE_SCHEMA_INVALID",
@@ -768,6 +776,55 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 			"STATE_SCHEMA_INVALID",
 			`resilience.repairHistory must be an array (got ${typeof res.repairHistory})`,
 		);
+	}
+	// Deep-validate repairHistory entries
+	for (let i = 0; i < (res.repairHistory as unknown[]).length; i++) {
+		const rec = (res.repairHistory as unknown[])[i];
+		if (!rec || typeof rec !== "object") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}] must be an object (got ${typeof rec})`,
+			);
+		}
+		const r = rec as Record<string, unknown>;
+		if (typeof r.id !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}].id must be a string (got ${typeof r.id})`,
+			);
+		}
+		if (typeof r.strategy !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}].strategy must be a string (got ${typeof r.strategy})`,
+			);
+		}
+		const VALID_REPAIR_STATUSES = new Set(["succeeded", "failed", "skipped"]);
+		if (typeof r.status !== "string" || !VALID_REPAIR_STATUSES.has(r.status)) {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}].status must be "succeeded"|"failed"|"skipped" (got ${JSON.stringify(r.status)})`,
+			);
+		}
+		if (typeof r.startedAt !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}].startedAt must be a number (got ${typeof r.startedAt})`,
+			);
+		}
+		if (typeof r.endedAt !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}].endedAt must be a number (got ${typeof r.endedAt})`,
+			);
+		}
+		// repoId is optional — validate type only if present
+		if (r.repoId !== undefined && typeof r.repoId !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}].repoId must be a string when present (got ${typeof r.repoId})`,
+			);
+		}
 	}
 
 	// ── Validate v3 diagnostics section ──────────────────────────
@@ -784,6 +841,41 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 			"STATE_SCHEMA_INVALID",
 			`diagnostics.taskExits must be an object (got ${typeof diag.taskExits})`,
 		);
+	}
+	// Deep-validate taskExits entries
+	for (const [taskId, entry] of Object.entries(diag.taskExits as Record<string, unknown>)) {
+		if (!entry || typeof entry !== "object") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`diagnostics.taskExits["${taskId}"] must be an object (got ${typeof entry})`,
+			);
+		}
+		const te = entry as Record<string, unknown>;
+		if (typeof te.classification !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`diagnostics.taskExits["${taskId}"].classification must be a string (got ${typeof te.classification})`,
+			);
+		}
+		if (typeof te.cost !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`diagnostics.taskExits["${taskId}"].cost must be a number (got ${typeof te.cost})`,
+			);
+		}
+		if (typeof te.durationSec !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`diagnostics.taskExits["${taskId}"].durationSec must be a number (got ${typeof te.durationSec})`,
+			);
+		}
+		// retries is optional — validate type only if present
+		if (te.retries !== undefined && typeof te.retries !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`diagnostics.taskExits["${taskId}"].retries must be a number when present (got ${typeof te.retries})`,
+			);
+		}
 	}
 	if (typeof diag.batchCost !== "number") {
 		throw new StateFileError(

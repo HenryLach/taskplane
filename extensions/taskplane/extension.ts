@@ -782,7 +782,11 @@ export default function (pi: ExtensionAPI) {
 
 				case "paused-corrupt":
 					// Corrupt/unreadable state file — do NOT auto-delete.
-					// Notify user and stop; they must inspect or manually remove the file.
+					// Enter paused phase so operator-visible state reflects the issue,
+					// notify user, refresh widget, then stop.
+					orchBatchState.phase = "paused";
+					orchBatchState.errors.push(orphanResult.userMessage);
+					updateOrchWidget();
 					ctx.ui.notify(orphanResult.userMessage, "warning");
 					return;
 
