@@ -1,0 +1,12 @@
+{
+  "exitCode": null,
+  "exitSignal": null,
+  "tokens": null,
+  "cost": null,
+  "toolCalls": 0,
+  "retries": [],
+  "compactions": 0,
+  "durationSec": 0,
+  "lastToolCall": null,
+  "error": "spawn error: spawn pi ENOENT"
+}

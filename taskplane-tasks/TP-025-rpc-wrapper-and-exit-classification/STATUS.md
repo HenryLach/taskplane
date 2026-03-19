@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 5
-**Iteration:** 3
+**Review Counter:** 6
+**Iteration:** 6
 **Size:** M
 
 ---
@@ -39,7 +39,7 @@
 ---
 
 ### Step 2: Build RPC Wrapper Script
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] R005: Align exit-summary schema — `ExitSummary` is wrapper output (no classification field); classification deferred to `classifyExit()` consumer
 - [x] R005: Single-write finalization — guard ensures exit summary written exactly once across close/error/signal handlers; deterministic precedence for exitCode/exitSignal/error
@@ -49,11 +49,14 @@
 - [x] Live progress display on stderr (current tool, cumulative tokens, cost)
 - [x] Exit summary JSON on process exit with single-write guard
 - [x] Signal forwarding (SIGTERM/SIGINT → abort RPC command) and crash handling (non-zero exit, no agent_end)
+- [ ] R006 fix: Close stdin after agent_end/terminal response to prevent pi from hanging indefinitely
+- [ ] R006 fix: Use shell:true in spawn() to match task-runner.ts pattern and ensure Windows compatibility (pi.cmd shim)
+- [ ] R006 fix: Apply redaction to exit summary fields (error, lastToolCall) before writing — add redactSummary helper
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Unit tests for classifyExit()
 - [ ] Unit tests for redaction logic
@@ -86,6 +89,9 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R006 | plan | Step 3 | UNAVAILABLE | .reviews/R006-plan-step3.md |
+| R006 | plan | Step 3 | REVISE | .reviews/R006-plan-step3.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 
 ---
 
@@ -124,6 +130,19 @@
 | 2026-03-19 18:22 | Step 2 started | Build RPC Wrapper Script |
 | 2026-03-19 18:22 | Review R005 | plan Step 2: REVISE |
 | 2026-03-19 18:23 | Review R005 | plan Step 2: REVISE |
+| 2026-03-19 18:28 | Worker iter 3 | done in 282s, ctx: 30%, tools: 42 |
+| 2026-03-19 18:28 | Task started | Extension-driven execution |
+| 2026-03-19 18:28 | Step 3 started | Testing & Verification |
+| 2026-03-19 18:30 | Task started | Extension-driven execution |
+| 2026-03-19 18:30 | Step 3 started | Testing & Verification |
+| 2026-03-19 18:30 | Reviewer R006 | plan review — reviewer did not produce output |
+| 2026-03-19 18:30 | Review R006 | plan Step 3: UNAVAILABLE |
+| 2026-03-19 18:31 | Review R006 | plan Step 3: REVISE |
+| 2026-03-19 18:31 | Worker iter 4 | error (code 3221225794) in 0s, ctx: 0%, tools: 0 |
+| 2026-03-19 18:31 | Worker iter 5 | error (code 3221225794) in 0s, ctx: 0%, tools: 0 |
+| 2026-03-19 18:31 | Worker iter 6 | error (code 3221225794) in 0s, ctx: 0%, tools: 0 |
+| 2026-03-19 18:31 | Step 3 blocked | No progress after 3 iterations |
+| 2026-03-19 18:33 | Review R006 | code Step 2: REVISE |
 
 ---
 

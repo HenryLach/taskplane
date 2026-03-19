@@ -1,0 +1,18 @@
+#!/usr/bin/env python3
+import sys, json, os
+# record args
+with open(os.environ['MOCK_ARGS_FILE'],'w') as f:
+    json.dump(sys.argv[1:], f)
+# read one command
+line=sys.stdin.readline()
+if line:
+    try:
+        cmd=json.loads(line)
+    except Exception:
+        cmd={}
+    # respond success
+    print(json.dumps({'type':'response','command':'prompt','success':True}), flush=True)
+    # emit tool start
+    print(json.dumps({'type':'tool_execution_start','toolName':'bash','args':{'command':'echo hi','OPENAI_API_KEY':'secret'}}), flush=True)
+    print(json.dumps({'type':'message_end','message':{'usage':{'input':1,'output':2,'cacheRead':3,'cacheWrite':4,'cost':{'total':0.1}}}}), flush=True)
+    print(json.dumps({'type':'agent_end'}), flush=True)
