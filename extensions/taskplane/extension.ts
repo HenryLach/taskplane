@@ -1457,7 +1457,7 @@ export default function (pi: ExtensionAPI) {
 
 			const summary = integrationSummary + "\n" + cleanupResult.report;
 
-			ctx.ui.notify(summary, cleanupResult.clean ? "info" : "warning");
+			ctx.ui.notify(summary, cleanupResult.notifyLevel);
 		},
 	});
 

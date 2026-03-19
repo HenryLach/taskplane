@@ -1092,7 +1092,7 @@ describe("computeIntegrateCleanupResult — pure function", () => {
 // ── TP-029 Step 4: Notification severity policy ──────────────────────
 
 describe("computeIntegrateCleanupResult — notification severity policy", () => {
-	it("clean=true drives info-level notification", () => {
+	it("clean result returns notifyLevel='info' (used by ctx.ui.notify in extension.ts)", () => {
 		const findings: IntegrateCleanupRepoFindings[] = [
 			{
 				repoRoot: "/repo",
@@ -1106,12 +1106,12 @@ describe("computeIntegrateCleanupResult — notification severity policy", () =>
 		];
 		const result = computeIntegrateCleanupResult(findings);
 		expect(result.clean).toBe(true);
-		// In extension.ts: ctx.ui.notify(summary, cleanupResult.clean ? "info" : "warning")
-		const notifyLevel = result.clean ? "info" : "warning";
-		expect(notifyLevel).toBe("info");
+		// notifyLevel is computed by the production function and consumed directly
+		// by extension.ts: ctx.ui.notify(summary, cleanupResult.notifyLevel)
+		expect(result.notifyLevel).toBe("info");
 	});
 
-	it("clean=false drives warning-level notification", () => {
+	it("dirty result returns notifyLevel='warning' (used by ctx.ui.notify in extension.ts)", () => {
 		const findings: IntegrateCleanupRepoFindings[] = [
 			{
 				repoRoot: "/repo",
@@ -1125,8 +1125,8 @@ describe("computeIntegrateCleanupResult — notification severity policy", () =>
 		];
 		const result = computeIntegrateCleanupResult(findings);
 		expect(result.clean).toBe(false);
-		const notifyLevel = result.clean ? "info" : "warning";
-		expect(notifyLevel).toBe("warning");
+		// notifyLevel is computed by the production function — no ternary duplication
+		expect(result.notifyLevel).toBe("warning");
 	});
 });
 
@@ -1235,9 +1235,8 @@ describe("computeIntegrateCleanupResult — all 5 acceptance dimensions across r
 		expect(result.dirtyRepos).toHaveLength(0);
 		expect(result.report).toContain("🧹");
 		expect(result.report).toContain("no stale");
-		// Verify info-level notification
-		const notifyLevel = result.clean ? "info" : "warning";
-		expect(notifyLevel).toBe("info");
+		// Verify info-level notification via production notifyLevel field
+		expect(result.notifyLevel).toBe("info");
 	});
 });
 

@@ -1,10 +1,10 @@
 # TP-029: Cleanup Resilience & Post-Merge Gate — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 10
+**Review Counter:** 11
 **Iteration:** 5
 **Size:** M
 
@@ -91,9 +91,12 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Close issue #93
+- [ ] R011: Complete residual R010 items from Step 4 — replace tautological notification-severity tests with direct `result.notifyLevel` assertions; run full test suite
+- [ ] R011: Docs-impact check — review `/orch-integrate` message changes from Step 3 and decide if `docs/reference/commands.md` needs updating (record decision)
+- [ ] R011: Close issue #93 with commit/PR reference
+- [ ] R011: Verify all completion criteria from PROMPT.md are satisfied (all steps complete, all tests passing, cleanup works across all repos, cleanup gate blocks on failure)
 - [ ] `.DONE` created
 
 ---
@@ -118,6 +121,8 @@
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | APPROVE | .reviews/R009-plan-step4.md |
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
+| R010 | code | Step 4 | APPROVE | .reviews/R010-code-step4.md |
+| R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 
 ---
 
@@ -183,6 +188,10 @@
 | 2026-03-19 21:58 | Worker iter 5 | done in 237s, ctx: 24%, tools: 26 |
 | 2026-03-19 21:59 | Worker iter 4 | done in 497s, ctx: 32%, tools: 41 |
 | 2026-03-19 22:02 | Review R010 | code Step 4: REVISE |
+| 2026-03-19 22:03 | Review R010 | code Step 4: APPROVE |
+| 2026-03-19 22:03 | Step 4 complete | Testing & Verification |
+| 2026-03-19 22:03 | Step 5 started | Documentation & Delivery |
+| 2026-03-19 22:04 | Review R011 | plan Step 5: REVISE |
 
 ---
 

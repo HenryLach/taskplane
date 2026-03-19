@@ -499,6 +499,8 @@ export interface IntegrateCleanupRepoFindings {
 export interface IntegrateCleanupResult {
 	/** True if all repos pass all acceptance criteria */
 	clean: boolean;
+	/** Notification severity level: "info" when clean, "warning" when dirty */
+	notifyLevel: "info" | "warning";
 	/** Per-repo findings (only repos with at least one finding) */
 	dirtyRepos: IntegrateCleanupRepoFindings[];
 	/** User-facing cleanup report (appended to integrate summary) */
@@ -536,6 +538,7 @@ export function computeIntegrateCleanupResult(
 	if (dirtyRepos.length === 0) {
 		return {
 			clean: true,
+			notifyLevel: "info",
 			dirtyRepos: [],
 			report: "🧹 Cleanup verified: no stale worktrees, branches, or autostash entries remain.",
 		};
@@ -589,6 +592,7 @@ export function computeIntegrateCleanupResult(
 
 	return {
 		clean: false,
+		notifyLevel: "warning",
 		dirtyRepos,
 		report,
 	};
