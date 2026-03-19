@@ -60,12 +60,13 @@
 ### Step 3: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] Unit tests for classifyExit()
-- [ ] Unit tests for redaction logic
-- [ ] Unit tests for exit summary accumulation
-- [ ] Integration test with mock RPC process
-- [ ] Full test suite passes
-- [ ] rpc-wrapper.mjs runs
+- [ ] Unit tests for classifyExit() — all 9 classifications + precedence collisions (table-driven)
+- [ ] Unit tests for redaction logic — sidecar events AND exit summary, including *_KEY/*_TOKEN/*_SECRET + truncation
+- [ ] Unit tests for exit summary accumulation (token totals, retry aggregation, single-write guard)
+- [ ] Unit tests for JSONL framing (split on \n, optional \r, trailing partial buffer)
+- [ ] Integration test: mock pi process (scripted fixture stdout), verify sidecar + summary artifacts
+- [ ] Full test suite passes: `cd extensions && npx vitest run`
+- [ ] rpc-wrapper.mjs runs: `node bin/rpc-wrapper.mjs --help`
 
 ---
 
@@ -152,6 +153,9 @@
 | 2026-03-19 18:35 | Step 2 complete | Build RPC Wrapper Script |
 | 2026-03-19 18:35 | Step 3 started | Testing & Verification |
 | 2026-03-19 18:36 | Review R007 | plan Step 3: REVISE |
+| 2026-03-19 18:37 | Worker iter 3 | done in 149s, ctx: 18%, tools: 24 |
+| 2026-03-19 18:37 | Step 2 complete | Build RPC Wrapper Script |
+| 2026-03-19 18:37 | Step 3 started | Testing & Verification |
 
 ---
 
