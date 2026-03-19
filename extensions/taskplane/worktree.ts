@@ -10,7 +10,7 @@ import { execLog } from "./execution.ts";
 import { runGit } from "./git.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { DEFAULT_ORCHESTRATOR_CONFIG, WorktreeError } from "./types.ts";
-import type { BulkWorktreeError, CreateLaneWorktreesResult, CreateWorktreeOptions, OrchestratorConfig, PreflightCheck, PreflightResult, RemoveAllWorktreesResult, RemoveWorktreeOutcome, RemoveWorktreeResult, WorktreeInfo } from "./types.ts";
+import type { AllocatedLane, BulkWorktreeError, CreateLaneWorktreesResult, CreateWorktreeOptions, LaneTaskOutcome, OrchestratorConfig, PreflightCheck, PreflightResult, RemoveAllWorktreesResult, RemoveWorktreeOutcome, RemoveWorktreeResult, WorktreeInfo } from "./types.ts";
 
 // ── Worktree Helpers ─────────────────────────────────────────────────
 
@@ -1980,5 +1980,288 @@ export function forceCleanupWorktree(
 			execLog("cleanup", `lane-${laneNumber}`, `removed empty batch container`, { path: containerDir });
 		}
 	}
+}
+
+
+// ── Partial Progress Preservation ────────────────────────────────────
+
+/**
+ * Result of saving partial progress for a single failed task.
+ */
+export interface SavePartialProgressResult {
+	/** Whether partial progress was saved (branch created or already existed) */
+	saved: boolean;
+	/** The saved branch name, if saved */
+	savedBranch?: string;
+	/** Number of commits ahead of the target branch */
+	commitCount: number;
+	/** Task ID this progress belongs to */
+	taskId: string;
+	/** Error message if save failed */
+	error?: string;
+}
+
+/**
+ * Compute the saved branch name for partial progress from a failed task.
+ *
+ * Naming convention per roadmap Phase 2 section 2a:
+ *   - Repo mode:      `saved/{opId}-{taskId}-{batchId}`
+ *   - Workspace mode:  `saved/{opId}-{repoId}-{taskId}-{batchId}`
+ *
+ * Pure function — no side effects.
+ *
+ * @param opId    - Operator identifier (sanitized)
+ * @param taskId  - Task identifier (e.g., "TP-028")
+ * @param batchId - Batch ID timestamp (e.g., "20260308T111750")
+ * @param repoId  - Repo identifier (workspace mode only; omit for repo mode)
+ * @returns Saved branch name
+ */
+export function computePartialProgressBranchName(
+	opId: string,
+	taskId: string,
+	batchId: string,
+	repoId?: string,
+): string {
+	if (repoId) {
+		return `saved/${opId}-${repoId}-${taskId}-${batchId}`;
+	}
+	return `saved/${opId}-${taskId}-${batchId}`;
+}
+
+/**
+ * Save partial progress from a failed task's lane branch.
+ *
+ * Checks if the lane branch has commits ahead of the target branch,
+ * and if so, creates a saved branch preserving those commits.
+ *
+ * Uses `resolveSavedBranchCollision()` for idempotent collision handling:
+ * - Same SHA → no-op (keep existing)
+ * - Different SHA → create with timestamp suffix
+ *
+ * @param laneBranch   - The lane branch that may have partial commits
+ * @param targetBranch - The base/target branch to compare against
+ * @param opId         - Operator identifier
+ * @param taskId       - Task identifier
+ * @param batchId      - Batch ID
+ * @param repoRoot     - Repository root for git operations
+ * @param repoId       - Repo identifier (workspace mode only)
+ * @returns SavePartialProgressResult describing what was done
+ */
+export function savePartialProgress(
+	laneBranch: string,
+	targetBranch: string,
+	opId: string,
+	taskId: string,
+	batchId: string,
+	repoRoot: string,
+	repoId?: string,
+): SavePartialProgressResult {
+	// Check if lane branch exists
+	const branchCheck = runGit(
+		["rev-parse", "--verify", `refs/heads/${laneBranch}`],
+		repoRoot,
+	);
+	if (!branchCheck.ok) {
+		return { saved: false, commitCount: 0, taskId, error: `Lane branch "${laneBranch}" not found` };
+	}
+	const branchSHA = branchCheck.stdout.trim();
+
+	// Count commits ahead of target branch
+	const unmergedResult = hasUnmergedCommits(laneBranch, targetBranch, repoRoot);
+	if (!unmergedResult.ok) {
+		return {
+			saved: false,
+			commitCount: 0,
+			taskId,
+			error: `Failed to count commits: ${unmergedResult.error}`,
+		};
+	}
+
+	if (unmergedResult.count === 0) {
+		// No partial progress — lane branch has no new commits
+		return { saved: false, commitCount: 0, taskId };
+	}
+
+	// Compute saved branch name using task-ID naming convention
+	const savedName = computePartialProgressBranchName(opId, taskId, batchId, repoId);
+
+	// Check for collision (idempotent re-runs, retries)
+	const existingCheck = runGit(
+		["rev-parse", "--verify", `refs/heads/${savedName}`],
+		repoRoot,
+	);
+	const existingSHA = existingCheck.ok ? existingCheck.stdout.trim() : "";
+
+	const resolution = resolveSavedBranchCollision(savedName, existingSHA, branchSHA);
+
+	switch (resolution.action) {
+		case "keep-existing":
+			// Already preserved at the same SHA — idempotent success
+			return {
+				saved: true,
+				savedBranch: resolution.savedName,
+				commitCount: unmergedResult.count,
+				taskId,
+			};
+
+		case "create":
+		case "create-suffixed": {
+			const createResult = runGit(
+				["branch", resolution.savedName, branchSHA],
+				repoRoot,
+			);
+			if (!createResult.ok) {
+				return {
+					saved: false,
+					commitCount: unmergedResult.count,
+					taskId,
+					error: `Failed to create saved branch "${resolution.savedName}": ${createResult.stderr}`,
+				};
+			}
+			return {
+				saved: true,
+				savedBranch: resolution.savedName,
+				commitCount: unmergedResult.count,
+				taskId,
+			};
+		}
+
+		default:
+			return {
+				saved: false,
+				commitCount: unmergedResult.count,
+				taskId,
+				error: `Unknown collision resolution action`,
+			};
+	}
+}
+
+/**
+ * Result of preserving partial progress across all failed tasks.
+ */
+export interface PreserveFailedLaneProgressResult {
+	/** Per-task results for each failed task that was checked */
+	results: SavePartialProgressResult[];
+	/** Set of lane branch names that were preserved (should NOT be deleted during cleanup) */
+	preservedBranches: Set<string>;
+}
+
+/**
+ * Preserve partial progress for all failed tasks before cleanup/reset.
+ *
+ * Iterates task outcomes to find failed/stalled tasks, maps each to its
+ * lane branch via the allocated lanes, and saves any partial commits as
+ * task-ID-named saved branches. Returns the set of lane branch names
+ * that were preserved, so the caller can skip their deletion during
+ * cleanup.
+ *
+ * Workspace-aware: resolves per-repo target branches and repo roots
+ * for correct commit counting in workspace mode.
+ *
+ * @param allocatedLanes  - Lanes from the current/last wave (maps tasks to branches)
+ * @param taskOutcomes    - All task outcomes accumulated so far
+ * @param opId            - Operator identifier
+ * @param batchId         - Batch ID
+ * @param repoRoot        - Primary repository root
+ * @param orchBranch      - Orchestrator branch (target for commit counting in primary repo)
+ * @param workspaceConfig - Workspace configuration (null in repo mode)
+ * @returns PreserveFailedLaneProgressResult with per-task results and preserved branch set
+ */
+export function preserveFailedLaneProgress(
+	allocatedLanes: AllocatedLane[],
+	taskOutcomes: LaneTaskOutcome[],
+	opId: string,
+	batchId: string,
+	repoRoot: string,
+	orchBranch: string,
+	workspaceConfig?: WorkspaceConfig | null,
+): PreserveFailedLaneProgressResult {
+	const results: SavePartialProgressResult[] = [];
+	const preservedBranches = new Set<string>();
+
+	// Build a map: taskId → { laneBranch, repoId } from allocated lanes
+	const taskToLane = new Map<string, { branch: string; repoId?: string }>();
+	for (const lane of allocatedLanes) {
+		for (const allocatedTask of lane.tasks) {
+			taskToLane.set(allocatedTask.taskId, {
+				branch: lane.branch,
+				repoId: lane.repoId,
+			});
+		}
+	}
+
+	// Find failed/stalled tasks
+	const failedTasks = taskOutcomes.filter(
+		(to) => to.status === "failed" || to.status === "stalled",
+	);
+
+	// Track which lane branches we've already processed (a lane may have
+	// multiple tasks; only save once per branch since all commits are shared)
+	const processedBranches = new Set<string>();
+
+	for (const failedTask of failedTasks) {
+		const laneInfo = taskToLane.get(failedTask.taskId);
+		if (!laneInfo) {
+			// Task not found in allocated lanes — skip (shouldn't happen)
+			results.push({
+				saved: false,
+				commitCount: 0,
+				taskId: failedTask.taskId,
+				error: "Task not found in allocated lanes",
+			});
+			continue;
+		}
+
+		// Skip if we've already processed this branch (multiple failed tasks on same lane)
+		if (processedBranches.has(laneInfo.branch)) {
+			continue;
+		}
+		processedBranches.add(laneInfo.branch);
+
+		// Resolve repo-specific target branch and repo root for workspace mode
+		const perRepoRoot = resolveRepoRoot(laneInfo.repoId, repoRoot, workspaceConfig);
+		let targetBranch: string;
+		if (perRepoRoot === repoRoot || !laneInfo.repoId) {
+			// Primary repo or repo mode: use orchBranch
+			targetBranch = orchBranch;
+		} else {
+			// Secondary repo in workspace mode: resolve repo's own base branch
+			try {
+				targetBranch = resolveBaseBranch(laneInfo.repoId, perRepoRoot, orchBranch, workspaceConfig);
+			} catch {
+				// Fall back to orchBranch if resolution fails
+				targetBranch = orchBranch;
+			}
+		}
+
+		const result = savePartialProgress(
+			laneInfo.branch,
+			targetBranch,
+			opId,
+			failedTask.taskId,
+			batchId,
+			perRepoRoot,
+			laneInfo.repoId,
+		);
+
+		results.push(result);
+
+		if (result.saved) {
+			// Track the lane branch as preserved so cleanup doesn't delete it
+			preservedBranches.add(laneInfo.branch);
+
+			execLog("partial-progress", failedTask.taskId,
+				`Task ${failedTask.taskId} failed but has ${result.commitCount} commit(s) of partial progress on branch ${result.savedBranch}`,
+				{
+					laneBranch: laneInfo.branch,
+					savedBranch: result.savedBranch,
+					commitCount: result.commitCount,
+					repoId: laneInfo.repoId ?? "(default)",
+				},
+			);
+		}
+	}
+
+	return { results, preservedBranches };
 }
 

@@ -17,7 +17,7 @@ import { deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeStat
 import { StateFileError } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, PersistedLaneRecord, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
-import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, removeAllWorktrees, removeWorktree, safeResetWorktree } from "./worktree.ts";
+import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, safeResetWorktree } from "./worktree.ts";
 
 // ── Resume Repo Helpers ──────────────────────────────────────────────
 
@@ -1331,6 +1331,24 @@ export async function resumeOrchBatch(
 			}
 		}
 
+		// ── TP-028: Preserve partial progress before inter-wave reset ──
+		if (waveIdx < persistedState.wavePlan.length - 1 && !batchState.pauseSignal.paused) {
+			const ppOpId = resolveOperatorId(orchConfig);
+			const ppResult = preserveFailedLaneProgress(
+				latestAllocatedLanes,
+				allTaskOutcomes,
+				ppOpId,
+				batchState.batchId,
+				repoRoot,
+				batchState.orchBranch,
+				workspaceConfig,
+			);
+			if (ppResult.results.some(r => r.saved)) {
+				execLog("batch", batchState.batchId,
+					`preserved partial progress for ${ppResult.results.filter(r => r.saved).length} failed task(s) before inter-wave reset`);
+			}
+		}
+
 		if (waveIdx < persistedState.wavePlan.length - 1 && !batchState.pauseSignal.paused) {
 			const wtPrefix = orchConfig.orchestrator.worktree_prefix;
 			const resetOpId = resolveOperatorId(orchConfig);
@@ -1372,6 +1390,25 @@ export async function resumeOrchBatch(
 	}
 
 	// ── 11. Cleanup and terminal state ───────────────────────────
+
+	// ── TP-028: Preserve partial progress before terminal cleanup ──
+	if (!preserveWorktreesForResume) {
+		const ppOpId = resolveOperatorId(orchConfig);
+		const ppResult = preserveFailedLaneProgress(
+			latestAllocatedLanes,
+			allTaskOutcomes,
+			ppOpId,
+			batchState.batchId,
+			repoRoot,
+			batchState.orchBranch,
+			workspaceConfig,
+		);
+		if (ppResult.results.some(r => r.saved)) {
+			execLog("batch", batchState.batchId,
+				`preserved partial progress for ${ppResult.results.filter(r => r.saved).length} failed task(s) before terminal cleanup`);
+		}
+	}
+
 	if (!preserveWorktreesForResume) {
 		const wtPrefix = orchConfig.orchestrator.worktree_prefix;
 		const cleanupOpId = resolveOperatorId(orchConfig);

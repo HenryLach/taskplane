@@ -26,14 +26,14 @@
 ---
 
 ### Step 1: Detect and Save Partial Progress
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Implement `savePartialProgress()` helper in worktree.ts: counts commits on lane branch vs target, creates saved branch with task-ID naming, handles collisions via resolveSavedBranchCollision, returns partial progress info
-- [ ] Add `preserveFailedLaneProgress()` orchestration function in worktree.ts: iterates task outcomes, finds failed tasks with lane branches, calls savePartialProgress for each, returns set of preserved branch names
-- [ ] Insert preservation call before inter-wave reset in engine.ts (R003 critical: prevents commit loss during between-wave resets)
-- [ ] Insert preservation call before terminal cleanup in engine.ts removeAllWorktrees
-- [ ] Insert preservation call before terminal cleanup in resume.ts removeAllWorktrees
-- [ ] Pass preserved branch names to cleanup so ensureBranchDeleted skips them (R003: exemption mechanism)
+- [x] Implement `savePartialProgress()` helper in worktree.ts: counts commits on lane branch vs target, creates saved branch with task-ID naming, handles collisions via resolveSavedBranchCollision, returns partial progress info
+- [x] Add `preserveFailedLaneProgress()` orchestration function in worktree.ts: iterates task outcomes, finds failed tasks with lane branches, calls savePartialProgress for each, returns set of preserved branch names
+- [x] Insert preservation call before inter-wave reset in engine.ts (R003 critical: prevents commit loss during between-wave resets)
+- [x] Insert preservation call before terminal cleanup in engine.ts removeAllWorktrees
+- [x] Insert preservation call before terminal cleanup in resume.ts removeAllWorktrees
+- [x] Pass preserved branch names to cleanup so ensureBranchDeleted skips them (R003: exemption mechanism) — Design decision: NOT NEEDED. savePartialProgress() creates a separate saved branch (saved/{opId}-{taskId}-{batchId}) at the lane branch SHA BEFORE cleanup. The lane branch can be safely deleted during cleanup since the saved branch preserves the commits independently. Existing ensureBranchDeleted may also create saved/task/... which is redundant but harmless.
 
 ---
 

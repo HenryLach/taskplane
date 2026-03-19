@@ -17,7 +17,7 @@ import { listOrchSessions } from "./sessions.ts";
 import { FATAL_DISCOVERY_CODES, generateBatchId } from "./types.ts";
 import type { AllocatedLane, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, TokenCounts, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaves, resolveRepoRoot, validateGraph } from "./waves.ts";
-import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
+import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 
 // ── /orch Execution Engine ───────────────────────────────────────────
 
@@ -521,6 +521,27 @@ export async function executeOrchBatch(
 		// NOTE: Merged branch cleanup is deferred to Phase 3, AFTER worktree
 		// removal. git branch -D fails if a worktree has the branch checked out.
 
+		// ── TP-028: Preserve partial progress before inter-wave reset ──
+		// Failed tasks may have commits on their lane branch that would be lost
+		// when the worktree is reset for the next wave. Save these as named
+		// branches before any branch-destructive reset/removal occurs.
+		if (waveIdx < rawWaves.length - 1 && !batchState.pauseSignal.paused) {
+			const ppOpId = resolveOperatorId(orchConfig);
+			const ppResult = preserveFailedLaneProgress(
+				latestAllocatedLanes,
+				allTaskOutcomes,
+				ppOpId,
+				batchState.batchId,
+				repoRoot,
+				batchState.orchBranch,
+				workspaceConfig,
+			);
+			if (ppResult.results.some(r => r.saved)) {
+				execLog("batch", batchState.batchId,
+					`preserved partial progress for ${ppResult.results.filter(r => r.saved).length} failed task(s) before inter-wave reset`);
+			}
+		}
+
 		// ── Post-merge: Reset worktrees for next wave ────────────
 		// Only reset if merge succeeded AND there are more waves
 		if (waveIdx < rawWaves.length - 1 && !batchState.pauseSignal.paused) {
@@ -716,6 +737,27 @@ export async function executeOrchBatch(
 				execLog("batch", batchState.batchId, `cleaned up ${sidecarFiles.length} sidecar file(s)`);
 			}
 		} catch { /* .pi dir may not exist */ }
+
+		// ── TP-028: Preserve partial progress before terminal cleanup ──
+		// Save failed task commits as named branches before worktree removal
+		// destroys the lane branches. Uses the last wave's allocated lanes
+		// to map failed tasks to their lane branches.
+		{
+			const ppOpId = resolveOperatorId(orchConfig);
+			const ppResult = preserveFailedLaneProgress(
+				latestAllocatedLanes,
+				allTaskOutcomes,
+				ppOpId,
+				batchState.batchId,
+				repoRoot,
+				batchState.orchBranch,
+				workspaceConfig,
+			);
+			if (ppResult.results.some(r => r.saved)) {
+				execLog("batch", batchState.batchId,
+					`preserved partial progress for ${ppResult.results.filter(r => r.saved).length} failed task(s) before terminal cleanup`);
+			}
+		}
 
 		// Clean up worktrees — use orchBranch to protect unmerged work.
 		// Lane branches were merged into orchBranch (not baseBranch), so
