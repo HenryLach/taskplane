@@ -58,15 +58,15 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Unit tests for classifyExit() — all 9 classifications + precedence collisions (table-driven)
-- [ ] Unit tests for redaction logic — sidecar events AND exit summary, including *_KEY/*_TOKEN/*_SECRET + truncation
-- [ ] Unit tests for exit summary accumulation (token totals, retry aggregation, single-write guard)
-- [ ] Unit tests for JSONL framing (split on \n, optional \r, trailing partial buffer)
-- [ ] Integration test: mock pi process (scripted fixture stdout), verify sidecar + summary artifacts
-- [ ] Full test suite passes: `cd extensions && npx vitest run`
-- [ ] rpc-wrapper.mjs runs: `node bin/rpc-wrapper.mjs --help`
+- [x] Unit tests for classifyExit() — all 9 classifications + precedence collisions (table-driven)
+- [x] Unit tests for redaction logic — sidecar events AND exit summary, including *_KEY/*_TOKEN/*_SECRET + truncation
+- [x] Unit tests for exit summary accumulation (token totals, retry aggregation, single-write guard)
+- [x] Unit tests for JSONL framing (split on \n, optional \r, trailing partial buffer)
+- [x] Integration test: mock pi process (scripted fixture stdout), verify sidecar + summary artifacts
+- [x] Full test suite passes: `cd extensions && npx vitest run`
+- [x] rpc-wrapper.mjs runs: `node bin/rpc-wrapper.mjs --help`
 
 ---
 
@@ -96,6 +96,7 @@
 | R006 | plan | Step 3 | REVISE | .reviews/R006-plan-step3.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ---
@@ -156,6 +157,7 @@
 | 2026-03-19 18:37 | Worker iter 3 | done in 149s, ctx: 18%, tools: 24 |
 | 2026-03-19 18:37 | Step 2 complete | Build RPC Wrapper Script |
 | 2026-03-19 18:37 | Step 3 started | Testing & Verification |
+| 2026-03-19 18:38 | Review R007 | plan Step 3: REVISE |
 
 ---
 

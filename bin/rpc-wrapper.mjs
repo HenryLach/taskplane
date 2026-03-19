@@ -314,7 +314,36 @@ function attachJsonlReader(stream, onLine) {
 	});
 }
 
+// ── Exports for Testing ──────────────────────────────────────────────
+
+// Export pure functions so tests can import them without triggering side effects.
+export {
+	parseArgs,
+	redactEvent,
+	redactValue,
+	redactString,
+	redactSummary,
+	attachJsonlReader,
+	SECRET_ENV_PATTERN,
+	MAX_TOOL_ARG_LENGTH,
+};
+
 // ── Main ─────────────────────────────────────────────────────────────
+
+// Guard: only run main logic when executed directly (not imported).
+// import.meta.url ends with the script name; process.argv[1] is the entry point.
+// On Windows with shell:true, argv[1] may differ, so also check for --help being
+// processed as a signal that we're the entry point.
+const _isMain = process.argv[1] &&
+	(import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/")) ||
+	 import.meta.url.endsWith("/" + process.argv[1].replace(/\\/g, "/").split("/").pop()) ||
+	 process.argv[1].endsWith("rpc-wrapper.mjs"));
+
+if (_isMain) {
+	_main();
+}
+
+function _main() {
 
 const args = parseArgs(process.argv);
 
@@ -686,3 +715,5 @@ proc.on("close", (code) => {
 		process.exitCode = (typeof code === "number" && Number.isFinite(code) && code >= 0) ? code : 1;
 	});
 });
+
+} // end _main()
