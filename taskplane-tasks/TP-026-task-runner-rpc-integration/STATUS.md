@@ -1,6 +1,6 @@
 # TP-026: Task-Runner RPC Wrapper Integration — Status
 
-**Current Step:** Step 2: Read Sidecar Telemetry During Polling (R006 revisions)
+**Current Step:** Step 3: Produce Structured Exit Diagnostic
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
@@ -38,15 +38,15 @@
 ---
 
 ### Step 2: Read Sidecar Telemetry During Polling
-**Status:** 🟡 In Progress (R006 revisions)
+**Status:** ✅ Complete
 
 - [x] Implement sidecar JSONL tailing helper (incremental byte-offset reads, partial-line handling, malformed-line resilience)
 - [x] Integrate tailing into tmux poll loop: on each 2s tick, read new sidecar lines and update state (tokens, cost, context%, tool calls, retries)
 - [x] Derive workerContextPct from message_end usage.totalTokens against config.context.worker_context_window (parity with subprocess mode)
 - [x] Expose retry telemetry: add retry tracking fields to TaskState and lane-state payload so dashboard can consume them
 - [x] Handle missing/empty sidecar gracefully (file not yet created, empty reads, partial trailing lines)
-- [ ] R006: Fix retry-active state persistence across ticks — move retryActive into SidecarTailState, update on auto_retry_start/end events, dispatch telemetry on any parsed event (not just truthy numeric fields)
-- [ ] R006: Add tests for tailSidecarJsonl + poll integration (retry lifecycle across ticks, partial-line buffering, missing-file, final-tail-on-session-end)
+- [x] R006: Fix retry-active state persistence across ticks — move retryActive into SidecarTailState, update on auto_retry_start/end events, dispatch telemetry on any parsed event (not just truthy numeric fields)
+- [x] R006: Add tests for tailSidecarJsonl + poll integration (retry lifecycle across ticks, partial-line buffering, missing-file, final-tail-on-session-end)
 
 ---
 
@@ -153,6 +153,8 @@
 | 2026-03-19 23:01 | Worker iter 3 | done in 503s, ctx: 31%, tools: 51 |
 | 2026-03-19 23:05 | Review R006 | code Step 2: REVISE |
 | 2026-03-19 23:05 | Review R006 | code Step 2: REVISE |
+| 2026-03-19 | Step 2 R006 revisions | Fixed retry state persistence (retryActive in SidecarTailState), added hadEvents gating, created sidecar-tailing.test.ts (27 tests). All 1044+ tests pass. |
+| 2026-03-19 | Step 2 complete | Read Sidecar Telemetry During Polling (including R006 revisions) |
 
 ---
 

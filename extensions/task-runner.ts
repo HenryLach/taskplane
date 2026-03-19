@@ -1092,10 +1092,12 @@ interface SidecarTailState {
 	offset: number;
 	/** Partial trailing line from the last read (incomplete JSONL line) */
 	partial: string;
+	/** Whether a retry is currently active (persisted across ticks) */
+	retryActive: boolean;
 }
 
 function createSidecarTailState(): SidecarTailState {
-	return { offset: 0, partial: "" };
+	return { offset: 0, partial: "", retryActive: false };
 }
 
 /**
@@ -1116,12 +1118,14 @@ interface SidecarTelemetryDelta {
 	toolCalls: number;
 	/** Last tool description from tool_execution_start */
 	lastTool: string;
-	/** Whether a retry is currently active (auto_retry_start without matching end) */
+	/** Whether a retry is currently active (persisted across ticks via SidecarTailState) */
 	retryActive: boolean;
 	/** Total retries started in this tick */
 	retriesStarted: number;
 	/** Error message from the most recent auto_retry_start */
 	lastRetryError: string;
+	/** Whether any sidecar events were parsed in this tick (used for callback gating) */
+	hadEvents: boolean;
 }
 
 /**
@@ -1139,7 +1143,8 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 	const delta: SidecarTelemetryDelta = {
 		inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
 		cost: 0, latestTotalTokens: 0, toolCalls: 0, lastTool: "",
-		retryActive: false, retriesStarted: 0, lastRetryError: "",
+		retryActive: tailState.retryActive, retriesStarted: 0, lastRetryError: "",
+		hadEvents: false,
 	};
 
 	// Gracefully handle missing file (wrapper hasn't written yet)
@@ -1178,9 +1183,6 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 	// Last element is either "" (if chunk ended with \n) or a partial line
 	tailState.partial = lines.pop() || "";
 
-	// Track retry state within this tick for the retryActive flag
-	let retryActiveInTick = false;
-
 	for (const line of lines) {
 		const trimmed = line.trim();
 		if (!trimmed) continue;
@@ -1194,6 +1196,8 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 		}
 
 		if (!event || !event.type) continue;
+
+		delta.hadEvents = true;
 
 		switch (event.type) {
 			case "message_end": {
@@ -1239,20 +1243,26 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 			case "auto_retry_start": {
 				delta.retriesStarted++;
 				delta.lastRetryError = event.errorMessage || event.error || "unknown";
-				retryActiveInTick = true;
+				tailState.retryActive = true;
 				break;
 			}
 
 			case "auto_retry_end": {
-				retryActiveInTick = false;
+				tailState.retryActive = false;
 				break;
 			}
 		}
 	}
 
-	delta.retryActive = retryActiveInTick;
+	// Reflect persisted retry state into the delta for the caller
+	delta.retryActive = tailState.retryActive;
 	return delta;
 }
+
+/** Expose sidecar tailing internals for testing (not part of public API). */
+export const _tailSidecarJsonl = tailSidecarJsonl;
+export const _createSidecarTailState = createSidecarTailState;
+export type { SidecarTailState, SidecarTelemetryDelta };
 
 // ── TMUX Agent Spawner ───────────────────────────────────────────────
 
@@ -1479,10 +1489,8 @@ function spawnAgentTmux(opts: {
 				// Tail sidecar JSONL for telemetry updates on each tick
 				if (opts.onTelemetry) {
 					const delta = tailSidecarJsonl(sidecarPath, tailState);
-					// Only call back if there's meaningful new data
-					if (delta.inputTokens || delta.outputTokens || delta.cost ||
-						delta.toolCalls || delta.retriesStarted || delta.retryActive ||
-						delta.latestTotalTokens) {
+					// Call back whenever events were parsed (including retry state transitions)
+					if (delta.hadEvents) {
 						opts.onTelemetry(delta);
 					}
 				}
@@ -1493,9 +1501,7 @@ function spawnAgentTmux(opts: {
 					// Final tail to catch any events written since last tick
 					if (opts.onTelemetry) {
 						const finalDelta = tailSidecarJsonl(sidecarPath, tailState);
-						if (finalDelta.inputTokens || finalDelta.outputTokens || finalDelta.cost ||
-							finalDelta.toolCalls || finalDelta.retriesStarted ||
-							finalDelta.latestTotalTokens) {
+						if (finalDelta.hadEvents) {
 							opts.onTelemetry(finalDelta);
 						}
 					}
