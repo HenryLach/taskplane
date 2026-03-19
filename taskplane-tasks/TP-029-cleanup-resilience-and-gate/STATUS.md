@@ -11,7 +11,7 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Read CONTEXT.md (Tier 2 context)
 - [x] Read worktree cleanup flow (engine → worktree.ts)
@@ -95,6 +95,7 @@
 | 2026-03-19 20:27 | Task started | Extension-driven execution |
 | 2026-03-19 20:27 | Step 0 started | Preflight |
 | 2026-03-19 20:29 | Review R001 | plan Step 0: REVISE |
+| 2026-03-19 20:32 | Worker iter 1 | done in 197s, ctx: 46%, tools: 35 |
 
 ---
 
