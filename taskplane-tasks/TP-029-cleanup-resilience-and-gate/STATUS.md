@@ -85,18 +85,18 @@
 - [x] Verify polyrepo acceptance criteria: cross-repo assertion of all 5 dimensions (worktrees, lane branches, orch branches, autostash, .worktrees containers) after /orch-integrate
 - [x] Run full test suite (`cd extensions && npx vitest run`) — ZERO failures (1020 tests, 26 files, all pass)
 - [x] Fix any failures found (none — all 1020 tests passed)
-- [ ] R010: Replace tautological notification-severity assertions with tests that verify actual `ctx.ui.notify` severity argument from production code path (dirty→"warning", clean→"info")
-- [ ] R010: Run full test suite and confirm green
+- [x] R010: Replace tautological notification-severity assertions with tests that verify actual `ctx.ui.notify` severity argument from production code path (dirty→"warning", clean→"info")
+- [x] R010: Run full test suite and confirm green
 
 ---
 
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] R011: Complete residual R010 items from Step 4 — replace tautological notification-severity tests with direct `result.notifyLevel` assertions; run full test suite
-- [ ] R011: Docs-impact check — review `/orch-integrate` message changes from Step 3 and decide if `docs/reference/commands.md` needs updating (record decision)
-- [ ] R011: Close issue #93 with commit/PR reference
-- [ ] R011: Verify all completion criteria from PROMPT.md are satisfied (all steps complete, all tests passing, cleanup works across all repos, cleanup gate blocks on failure)
+- [x] R011: Complete residual R010 items from Step 4 — replace tautological notification-severity tests with direct `result.notifyLevel` assertions; run full test suite
+- [x] R011: Docs-impact check — review `/orch-integrate` message changes from Step 3 and decide if `docs/reference/commands.md` needs updating (decision: no update needed — existing docs already say "Cleanup failures are non-fatal (shown as warnings)"; our changes make cleanup more thorough but don't change the command interface, flags, or modes)
+- [x] R011: Close issue #93 with commit/PR reference (closed via gh issue close 93 with comment referencing TP-029 branch)
+- [x] R011: Verify all completion criteria from PROMPT.md are satisfied (all steps complete, all tests passing, cleanup works across all repos, cleanup gate blocks on failure)
 - [ ] `.DONE` created
 
 ---
