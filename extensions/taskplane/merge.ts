@@ -1025,7 +1025,11 @@ export function mergeWaveByRepo(
 
 	for (const group of repoGroups) {
 		const groupRepoRoot = resolveRepoRoot(group.repoId, repoRoot, workspaceConfig);
-		const groupBaseBranch = resolveBaseBranch(group.repoId, groupRepoRoot, baseBranch, workspaceConfig);
+		// In workspace mode with orch branch, always merge into the orch branch
+		// (passed as baseBranch from engine.ts). Do NOT use resolveBaseBranch()
+		// which returns the repo's current branch (e.g., develop), bypassing
+		// the orch branch model entirely.
+		const groupBaseBranch = baseBranch;
 
 		execLog("merge", `W${waveIndex}`, `merging repo group: ${group.repoId ?? "(default)"}`, {
 			repoRoot: groupRepoRoot,

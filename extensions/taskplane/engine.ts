@@ -190,17 +190,42 @@ export async function executeOrchBatch(
 	// Worktrees branch from it; merges target it via update-ref.
 	const opId = resolveOperatorId(orchConfig);
 	const orchBranch = `orch/${opId}-${batchState.batchId}`;
-	const branchResult = runGit(["branch", orchBranch, batchState.baseBranch], repoRoot);
-	if (!branchResult.ok) {
-		batchState.phase = "failed";
-		batchState.endedAt = Date.now();
-		const errDetail = branchResult.stderr || branchResult.stdout || "unknown error";
-		batchState.errors.push(`Failed to create orch branch '${orchBranch}': ${errDetail}`);
-		onNotify(`❌ Failed to create orch branch '${orchBranch}': ${errDetail}`, "error");
-		return;
+
+	// In workspace mode, create the orch branch in every repo that might
+	// have tasks. In repo mode, create it only in the single repo.
+	if (workspaceConfig) {
+		let orchBranchFailed = false;
+		for (const [repoId, repoConf] of workspaceConfig.repos) {
+			const rRoot = repoConf.path;
+			const repoBranch = getCurrentBranch(rRoot) || "HEAD";
+			const result = runGit(["branch", orchBranch, repoBranch], rRoot);
+			if (result.ok) {
+				execLog("batch", batchState.batchId, `created orch branch in ${repoId}`, { orchBranch, base: repoBranch });
+			} else {
+				const errDetail = result.stderr || result.stdout || "unknown error";
+				execLog("batch", batchState.batchId, `failed to create orch branch in ${repoId}: ${errDetail}`);
+				batchState.phase = "failed";
+				batchState.endedAt = Date.now();
+				batchState.errors.push(`Failed to create orch branch '${orchBranch}' in ${repoId}: ${errDetail}`);
+				onNotify(`❌ Failed to create orch branch '${orchBranch}' in ${repoId}: ${errDetail}`, "error");
+				orchBranchFailed = true;
+				break;
+			}
+		}
+		if (orchBranchFailed) return;
+	} else {
+		const branchResult = runGit(["branch", orchBranch, batchState.baseBranch], repoRoot);
+		if (!branchResult.ok) {
+			batchState.phase = "failed";
+			batchState.endedAt = Date.now();
+			const errDetail = branchResult.stderr || branchResult.stdout || "unknown error";
+			batchState.errors.push(`Failed to create orch branch '${orchBranch}': ${errDetail}`);
+			onNotify(`❌ Failed to create orch branch '${orchBranch}': ${errDetail}`, "error");
+			return;
+		}
+		execLog("batch", batchState.batchId, "created orch branch", { orchBranch, baseBranch: batchState.baseBranch });
 	}
 	batchState.orchBranch = orchBranch;
-	execLog("batch", batchState.batchId, "created orch branch", { orchBranch, baseBranch: batchState.baseBranch });
 
 	onNotify(
 		ORCH_MESSAGES.orchStarting(batchState.batchId, rawWaves.length, batchState.totalTasks),
