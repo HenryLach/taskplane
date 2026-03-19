@@ -1,6 +1,6 @@
 # TP-030: State Schema v3 & Migration — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Define v3 Schema
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
@@ -23,7 +23,7 @@
 ---
 
 ### Step 1: Define v3 Schema
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Add resilience section
 - [ ] Add diagnostics section
 - [ ] Promote exitDiagnostic alongside legacy exitReason
@@ -64,7 +64,6 @@
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
-| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 
 ## Discoveries
 
@@ -88,7 +87,9 @@
 | 2026-03-19 22:17 | Review R001 | plan Step 0: REVISE |
 | 2026-03-19 22:20 | Worker iter 1 | done in 198s, ctx: 47%, tools: 37 |
 | 2026-03-19 22:21 | Review R002 | code Step 0: REVISE |
-| 2026-03-19 22:22 | Review R002 | code Step 0: REVISE |
+| 2026-03-19 22:22 | Worker iter 1 | done in 43s, ctx: 9%, tools: 8 |
+| 2026-03-19 22:22 | Step 0 complete | Preflight |
+| 2026-03-19 22:22 | Step 1 started | Define v3 Schema |
 
 ## Blockers
 
