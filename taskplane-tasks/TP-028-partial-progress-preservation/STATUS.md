@@ -17,7 +17,7 @@
 - [x] Read task outcome recording
 - [x] Read roadmap Phase 2 section 2a
 - [x] Understand existing saved-branch logic
-- [ ] R001: Read CONTEXT.md (Tier 2) and persistence.ts serialization contract
+- [x] R001: Read CONTEXT.md (Tier 2) and persistence.ts serialization contract
 - [ ] R001: Read naming.ts and diagnostics.ts partialProgress fields for naming alignment
 - [ ] R001: Identify all cleanup call sites and document insertion points for Steps 1-2
 
