@@ -4,8 +4,8 @@
 **Status:** ✅ Step 2 Complete
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -53,12 +53,12 @@
 
 ### Step 3: Testing & Verification
 **Status:** 🟨 In Progress
-- [ ] v1 → v3 migration test
-- [ ] v2 → v3 migration test
-- [ ] v3 clean read test
-- [ ] Unknown field preservation test
-- [ ] Corrupt state test
-- [ ] Full test suite passes
+- [ ] Create `extensions/tests/state-migration.test.ts` with migration happy-path tests (v1→v3, v2→v3, v3 clean read) including defaults verification for resilience/diagnostics
+- [ ] Add strict v3 validation rejection tests (missing resilience/diagnostics, bad retryCountByScope values, bad repairHistory entries, bad diagnostics.taskExits entries, malformed exitDiagnostic on tasks)
+- [ ] Add unknown-field roundtrip preservation test (top-level only) and exitDiagnostic survives serialize roundtrip test
+- [ ] Add corrupt-state / paused-corrupt test: verify `analyzeOrchestratorStartupState` recommends "paused-corrupt" for invalid/io-error state with no orphans, does NOT auto-delete
+- [ ] Add version-mismatch error message test: unsupported schema version (v99) includes upgrade guidance text
+- [ ] Run full test suite (`cd extensions && npx vitest run`) — all tests pass with zero failures
 
 ---
 
@@ -83,6 +83,8 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ## Discoveries
 
@@ -133,6 +135,11 @@
 | 2026-03-19 23:26 | Worker iter 3 | done in 878s, ctx: 21%, tools: 52 |
 | 2026-03-19 23:26 | Step 2 complete | Implement Migration |
 | 2026-03-19 23:26 | Step 3 started | Testing & Verification |
+| 2026-03-19 23:28 | Worker iter 3 | done in 807s, ctx: 32%, tools: 46 |
+| 2026-03-19 23:28 | Step 2 complete | Implement Migration |
+| 2026-03-19 23:28 | Step 3 started | Testing & Verification |
+| 2026-03-19 23:29 | Review R007 | plan Step 3: REVISE |
+| 2026-03-19 23:30 | Review R007 | plan Step 3: REVISE |
 
 ## Blockers
 
