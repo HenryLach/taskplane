@@ -11,15 +11,15 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Read spawnAgentTmux() in task-runner.ts
 - [x] Read poll loop implementation
 - [x] Read TP-025 artifacts
 - [x] Verify RPC wrapper runs
-- [ ] R002: Fix Reviews table markdown formatting (separator row placement, deduplicate entries)
-- [ ] R002: Deduplicate Execution Log entries
-- [ ] R002: Add preflight findings to Discoveries/Notes (edit targets, no-change guardrails, wrapper help outcome)
+- [x] R002: Fix Reviews table markdown formatting (separator row placement, deduplicate entries)
+- [x] R002: Deduplicate Execution Log entries
+- [x] R002: Add preflight findings to Discoveries/Notes (edit targets, no-change guardrails, wrapper help outcome)
 
 ---
 
@@ -79,11 +79,9 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
-| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
+|---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
-| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
-|---|------|------|---------|------|
 
 ---
 
@@ -91,6 +89,20 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Edit target: `spawnAgentTmux()` at task-runner.ts:1030 — builds pi command & polls tmux session | Step 1-3 edit target | extensions/task-runner.ts |
+| Edit target: tmux poll loop at task-runner.ts:1130 (while/has-session loop) — add sidecar tailing here | Step 2 edit target | extensions/task-runner.ts |
+| Read-only: `pollUntilTaskComplete()` at execution.ts:616 — /orch subprocess path, DO NOT MODIFY | No-change guardrail | extensions/taskplane/execution.ts |
+| Read-only: `spawnAgent()` subprocess function — /orch path, DO NOT MODIFY | No-change guardrail | extensions/task-runner.ts |
+| `resolveTaskRunnerExtensionPath()` pattern at execution.ts:27 — use same pattern for rpc-wrapper.mjs path resolution | Reuse pattern in Step 1 | extensions/taskplane/execution.ts |
+| `rpc-wrapper.mjs` verified: `node bin/rpc-wrapper.mjs --help` exits 0, shows required args (--sidecar-path, --exit-summary-path, --prompt-file) and optional args (--model, --system-prompt-file, --tools, --extensions) | Preflight verified | bin/rpc-wrapper.mjs |
+| `classifyExit()` and all diagnostic types exist in diagnostics.ts (TP-025 complete) | Available for Step 3 | extensions/taskplane/diagnostics.ts |
+| Caller sites: spawnAgentTmux called at task-runner.ts:1613 (worker) and :1778 (reviewer) | Step 1 scope | extensions/task-runner.ts |
+| `spawnAgentTmux()` is the sole edit target for spawn changes (line 1030, task-runner.ts). Its poll loop (lines 1130–1160) is where sidecar tailing will go. | Step 1–2 edit target | `extensions/task-runner.ts:1030` |
+| `pollUntilTaskComplete` in `extensions/taskplane/execution.ts:616` is the **orchestrator** poll loop — NOT in scope. Must not be modified. | No-change guardrail | `extensions/taskplane/execution.ts:616` |
+| `spawnAgent()` subprocess path is separate and must not change per PROMPT. | No-change guardrail | `extensions/task-runner.ts` |
+| `resolveTaskRunnerExtensionPath()` in `execution.ts:27` shows pattern for resolving npm package paths — reuse for `rpc-wrapper.mjs`. | Pattern reference | `extensions/taskplane/execution.ts:27` |
+| `node bin/rpc-wrapper.mjs --help` runs successfully. Args: `--sidecar-path`, `--exit-summary-path`, `--prompt-file` (required); `--model`, `--system-prompt-file`, `--tools`, `--extensions` (optional). | Verified | `bin/rpc-wrapper.mjs` |
+| `classifyExit()` and `TaskExitDiagnostic` types exist in `extensions/taskplane/diagnostics.ts` (from TP-025). | Ready to use | `extensions/taskplane/diagnostics.ts` |
 
 ---
 
@@ -101,14 +113,10 @@
 | 2026-03-19 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-03-19 22:16 | Task started | Extension-driven execution |
 | 2026-03-19 22:16 | Step 0 started | Preflight |
-| 2026-03-19 22:16 | Task started | Extension-driven execution |
-| 2026-03-19 22:16 | Step 0 started | Preflight |
-| 2026-03-19 22:17 | Review R001 | plan Step 0: APPROVE |
 | 2026-03-19 22:17 | Review R001 | plan Step 0: REVISE |
 | 2026-03-19 22:18 | Worker iter 1 | done in 63s, ctx: 15%, tools: 14 |
-| 2026-03-19 22:19 | Worker iter 1 | done in 75s, ctx: 17%, tools: 19 |
+| 2026-03-19 22:19 | Worker iter 2 | done in 75s, ctx: 17%, tools: 19 |
 | 2026-03-19 22:19 | Review R002 | code Step 0: REVISE |
-| 2026-03-19 22:20 | Review R002 | code Step 0: REVISE |
 
 ---
 
@@ -120,4 +128,19 @@
 
 ## Notes
 
-*Reserved for execution notes*
+### Preflight Findings (Step 0)
+
+**Edit targets (in scope):**
+- `extensions/task-runner.ts` — `spawnAgentTmux()` at line 1030: modify spawn command to use `rpc-wrapper.mjs` instead of `pi -p`. Add sidecar tailing to the poll loop (lines 1130–1160). Add exit summary reading after session ends.
+- `extensions/taskplane/diagnostics.ts` — May need minor additions for integration (types already exist from TP-025).
+- `extensions/tests/task-runner-rpc.test.ts` — New test file for RPC integration tests.
+
+**No-change guardrails:**
+- `extensions/taskplane/execution.ts` — Contains `pollUntilTaskComplete()` (orchestrator path) and `spawnLaneSession()`. These are `/orch` paths and must NOT be modified.
+- `extensions/task-runner.ts` — `spawnAgent()` (subprocess mode) must remain unchanged.
+
+**Wrapper verification:**
+- `node bin/rpc-wrapper.mjs --help` succeeded. Required args: `--sidecar-path`, `--exit-summary-path`, `--prompt-file`. Optional: `--model`, `--system-prompt-file`, `--tools`, `--extensions`.
+
+**Path resolution pattern:**
+- `resolveTaskRunnerExtensionPath()` in `execution.ts:27` resolves paths relative to the installed npm package using `import.meta.url`. Reuse this pattern for `rpc-wrapper.mjs`.
