@@ -1,6 +1,6 @@
 # TP-025: RPC Wrapper Script & Exit Classification Types — Status
 
-**Current Step:** Step 2: Build RPC Wrapper Script
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
@@ -39,16 +39,16 @@
 ---
 
 ### Step 2: Build RPC Wrapper Script
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] R005: Align exit-summary schema — `ExitSummary` is wrapper output (no classification field); classification deferred to `classifyExit()` consumer
-- [ ] R005: Single-write finalization — guard ensures exit summary written exactly once across close/error/signal handlers; deterministic precedence for exitCode/exitSignal/error
-- [ ] CLI arg parsing (--sidecar-path, --exit-summary-path, --model, --system-prompt-file, --prompt-file, --tools, --extensions, plus passthrough)
-- [ ] Spawn pi --mode rpc --no-session and send prompt via JSONL framing (split on \n only, NOT readline)
-- [ ] Route and capture RPC events to sidecar JSONL with redaction (strip *_KEY/*_TOKEN/*_SECRET env vars, truncate large tool args to 500 chars)
-- [ ] Live progress display on stderr (current tool, cumulative tokens, cost)
-- [ ] Exit summary JSON on process exit with single-write guard
-- [ ] Signal forwarding (SIGTERM/SIGINT → abort RPC command) and crash handling (non-zero exit, no agent_end)
+- [x] R005: Align exit-summary schema — `ExitSummary` is wrapper output (no classification field); classification deferred to `classifyExit()` consumer
+- [x] R005: Single-write finalization — guard ensures exit summary written exactly once across close/error/signal handlers; deterministic precedence for exitCode/exitSignal/error
+- [x] CLI arg parsing (--sidecar-path, --exit-summary-path, --model, --system-prompt-file, --prompt-file, --tools, --extensions, plus passthrough)
+- [x] Spawn pi --mode rpc --no-session and send prompt via JSONL framing (split on \n only, NOT readline)
+- [x] Route and capture RPC events to sidecar JSONL with redaction (strip *_KEY/*_TOKEN/*_SECRET env vars, truncate large tool args to 500 chars)
+- [x] Live progress display on stderr (current tool, cumulative tokens, cost)
+- [x] Exit summary JSON on process exit with single-write guard
+- [x] Signal forwarding (SIGTERM/SIGINT → abort RPC command) and crash handling (non-zero exit, no agent_end)
 
 ---
 
