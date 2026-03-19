@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 2
 **Size:** M
 
@@ -25,7 +25,7 @@
 ---
 
 ### Step 1: Define TaskExitDiagnostic Type & Classification Logic
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] ExitClassification string-literal union (9 values) and TokenCounts interface
 - [x] ExitClassificationInput structured input type with all runtime signals (exit summary, .DONE, timeout/stall/user-kill flags, context %)
@@ -33,6 +33,8 @@
 - [x] classifyExit(input: ExitClassificationInput) with roadmap precedence: .DONE → api_error → context_overflow → wall_clock_timeout → process_crash → session_vanished → stall_timeout → user_killed → unknown
 - [x] JSDoc precedence table on classifyExit and types
 - [x] Re-export from extensions/taskplane/index.ts barrel
+- [ ] R004 fix: Remove TokenCounts re-export from diagnostics.ts to avoid duplicate export via barrel index.ts
+- [ ] R004 fix: Correct ExitSummary JSDoc — mark required non-nullable fields accurately or make them optional for crash tolerance
 
 ---
 
@@ -80,6 +82,7 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | APPROVE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 
 ---
 
@@ -107,6 +110,8 @@
 | 2026-03-19 18:07 | Step 1 started | Define TaskExitDiagnostic Type & Classification Logic |
 | 2026-03-19 18:09 | Review R003 | plan Step 1: APPROVE |
 | 2026-03-19 18:12 | Worker iter 2 | done in 309s, ctx: 22%, tools: 34 |
+| 2026-03-19 18:15 | Worker iter 2 | done in 358s, ctx: 32%, tools: 29 |
+| 2026-03-19 18:16 | Review R004 | code Step 1: REVISE |
 
 ---
 
