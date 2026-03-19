@@ -696,15 +696,15 @@ proc.on("close", (code, signal) => {
 	if (!state.agentEnded && code !== 0) {
 		// Process crashed without agent_end — capture what we have
 		const crashError = state.error || `pi process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}`;
-		writeExitSummary(code, signal, crashError);
+		writeExitSummary(state, code, signal, crashError, startTime);
 	} else {
-		writeExitSummary(code, signal, null);
+		writeExitSummary(state, code, signal, null, startTime);
 	}
 });
 
 // Fallback handler: spawn error (e.g., pi binary not found)
 proc.on("error", (err) => {
-	writeExitSummary(null, null, `spawn error: ${err.message}`);
+	writeExitSummary(state, null, null, `spawn error: ${err.message}`, startTime);
 });
 
 // ── Signal Forwarding ────────────────────────────────────────────────
@@ -753,14 +753,14 @@ process.on("SIGINT", () => forwardSignal("SIGINT"));
 
 process.on("uncaughtException", (err) => {
 	process.stderr.write(`\n[rpc-wrapper] uncaught exception: ${err.message}\n`);
-	writeExitSummary(null, null, `wrapper uncaught exception: ${err.message}`);
+	writeExitSummary(state, null, null, `wrapper uncaught exception: ${err.message}`, startTime);
 	process.exit(1);
 });
 
 process.on("unhandledRejection", (reason) => {
 	const msg = reason instanceof Error ? reason.message : String(reason);
 	process.stderr.write(`\n[rpc-wrapper] unhandled rejection: ${msg}\n`);
-	writeExitSummary(null, null, `wrapper unhandled rejection: ${msg}`);
+	writeExitSummary(state, null, null, `wrapper unhandled rejection: ${msg}`, startTime);
 	process.exit(1);
 });
 

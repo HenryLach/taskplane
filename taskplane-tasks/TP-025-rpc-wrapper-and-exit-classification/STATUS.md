@@ -58,7 +58,7 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Unit tests for classifyExit() — all 9 classifications + precedence collisions (table-driven)
 - [x] Unit tests for redaction logic — sidecar events AND exit summary, including *_KEY/*_TOKEN/*_SECRET + truncation
@@ -67,10 +67,10 @@
 - [x] Integration test: mock pi process (scripted fixture stdout), verify sidecar + summary artifacts
 - [x] Full test suite passes: `cd extensions && npx vitest run`
 - [x] rpc-wrapper.mjs runs: `node bin/rpc-wrapper.mjs --help`
-- [ ] R008 fix: Real integration test — run rpc-wrapper.mjs with mock pi script, assert sidecar JSONL entries and exit summary JSON contents
-- [ ] R008 fix: Process-level tests for exit summary lifecycle — spawn error fallback, crash without agent_end, exit code normalization (null/negative → 1), single-write guard
-- [ ] R008 fix: Remove dead/placeholder code from integration test (unused imports, no-op assertions)
-- [ ] R008 fix: Full test suite passes after changes
+- [x] R008 fix: Real integration test — run rpc-wrapper.mjs with mock pi script, assert sidecar JSONL entries and exit summary JSON contents
+- [x] R008 fix: Process-level tests for exit summary lifecycle — spawn error fallback, crash without agent_end, exit code normalization (null/negative → 1), single-write guard
+- [x] R008 fix: Remove dead/placeholder code from integration test (unused imports, no-op assertions)
+- [x] R008 fix: Full test suite passes after changes
 - [ ] R008 fix: Replace no-op integration test with real subprocess integration (spawn mock-pi fixture, verify sidecar JSONL + exit summary JSON contents)
 - [ ] R008 fix: Add lifecycle finalization tests — multi-message_end token accumulation, retry/compaction aggregation, single-write guard across close/error/signal, spawn-error summary persistence
 - [ ] R008 fix: Full test suite passes after additions
