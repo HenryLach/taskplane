@@ -4,7 +4,7 @@
 **Status:** ✅ Step 1 Complete
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 2
 **Size:** M
 
@@ -23,7 +23,7 @@
 ---
 
 ### Step 1: Define v3 Schema
-**Status:** ✅ Complete
+**Status:** 🔧 Revising (R004)
 - [x] Add `ResilienceState` interface and `PersistedRepairRecord` interface with all fields from roadmap 3a
 - [x] Add `BatchDiagnostics` and `PersistedTaskExitSummary` interfaces for diagnostics section
 - [x] Add **required** `resilience: ResilienceState` and `diagnostics: BatchDiagnostics` to `PersistedBatchState` (required in v3; migration fills defaults for v1/v2)
@@ -31,6 +31,10 @@
 - [x] Bump `BATCH_STATE_SCHEMA_VERSION` to 3 and update version-history JSDoc
 - [x] Add v3 type contract table to STATUS.md Notes
 - [x] Verify types compile cleanly (no TS errors)
+- [ ] R004-1: Fix `upconvertV1toV2()` to set literal `2` instead of `BATCH_STATE_SCHEMA_VERSION` (3)
+- [ ] R004-2: Fix `validatePersistedState()` to accept v2 alongside v1 and v3 (accept 1, 2, and 3)
+- [ ] R004-3: Fix `serializeBatchState()` to emit `resilience` and `diagnostics` with defaults
+- [ ] R004-4: Verify 16 previously-failing regression tests now pass
 
 ---
 
@@ -70,6 +74,7 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 
 ## Discoveries
 
@@ -102,6 +107,8 @@
 | 2026-03-19 22:24 | Review R003 | plan Step 1: REVISE |
 | 2026-03-19 22:25 | Review R003 | plan Step 1: REVISE |
 | 2026-03-19 22:34 | Worker iter 2 | done in 622s, ctx: 26%, tools: 78 |
+| 2026-03-19 22:35 | Worker iter 2 | done in 620s, ctx: 35%, tools: 56 |
+| 2026-03-19 22:37 | Review R004 | code Step 1: REVISE |
 
 ## Blockers
 
