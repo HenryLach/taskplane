@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Cross-repo TASK_AUTOSTART path resolution** — workspace mode now uses absolute paths for task PROMPT.md so workers in api-service/web-client worktrees can find tasks that live in shared-libs.
 
+## [0.5.8] - 2026-03-18
+
+### Fixed
+- **Task artifacts committed to develop instead of orch branch** — `.DONE` and `STATUS.md` files are now staged into the merge worktree (on the orch branch) instead of committed directly to develop. This prevents branch divergence that blocked `/orch-integrate` fast-forward.
+
 ## [0.5.7] - 2026-03-18
 
 ### Fixed
