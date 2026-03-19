@@ -1,11 +1,11 @@
 # TP-029: Cleanup Resilience & Post-Merge Gate — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Fix Per-Wave Cleanup Across All Repos
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 ---
@@ -29,12 +29,13 @@
 ---
 
 ### Step 1: Fix Per-Wave Cleanup Across All Repos
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Iterate ALL repos per wave for cleanup
-- [ ] Apply force cleanup fallback pattern
-- [ ] Extend to merge worktrees
-- [ ] Remove empty .worktrees/ dirs
+- [ ] Inter-wave reset: collect all repo roots from allocated lanes and iterate per-repo (following resume.ts encounteredRepoRoots pattern); per-repo target branch resolution (primary=orchBranch, secondary=resolveBaseBranch)
+- [ ] Terminal cleanup: iterate all encountered repo roots for removeAllWorktrees (not just primary repoRoot); follow same pattern as resume.ts:1475-1507
+- [ ] Force cleanup fallback: apply forceCleanupWorktree to both merge.ts stale-prep cleanup (~577) and end-of-wave merge worktree cleanup (~887)
+- [ ] .worktrees parent cleanup: only remove empty .worktrees base dirs in subdirectory mode; never force-remove non-empty parents (R003 safety rule)
+- [ ] Remove duplicate execution-log rows at STATUS.md:110-113 (R003 housekeeping)
 
 ---
 
@@ -81,6 +82,8 @@
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ---
 
@@ -104,6 +107,14 @@
 | 2026-03-19 20:34 | Review R002 | code Step 0: REVISE |
 | 2026-03-19 20:35 | R002 revisions | Fixed reviews table, removed duplicate row, verified no TP-028 edits |
 | 2026-03-19 20:35 | Review R002 | code Step 0: REVISE |
+| 2026-03-19 20:36 | Worker iter 1 | done in 84s, ctx: 10%, tools: 14 |
+| 2026-03-19 20:36 | Step 0 complete | Preflight |
+| 2026-03-19 20:36 | Step 1 started | Fix Per-Wave Cleanup Across All Repos |
+| 2026-03-19 20:36 | Worker iter 1 | done in 74s, ctx: 10%, tools: 15 |
+| 2026-03-19 20:36 | Step 0 complete | Preflight |
+| 2026-03-19 20:36 | Step 1 started | Fix Per-Wave Cleanup Across All Repos |
+| 2026-03-19 20:38 | Review R003 | plan Step 1: REVISE |
+| 2026-03-19 20:39 | Review R003 | plan Step 1: REVISE |
 
 ---
 
@@ -131,6 +142,14 @@
 **Parity constraints with resume.ts:**
 - `resume.ts:1475-1507` uses `encounteredRepoRoots` set to collect ALL repo roots from persisted + newly allocated lanes. Engine.ts needs the same approach.
 - Per-repo target branch resolution differs: primary repo uses orchBranch, secondary repos resolve via `resolveBaseBranch()`.
+
+**Step 1 done when:**
+1. Inter-wave reset iterates ALL repos that had lanes in the batch, not just primary repoRoot
+2. Terminal cleanup iterates ALL encountered repo roots (parity with resume.ts)
+3. Merge worktree cleanup (both stale-prep and end-of-wave in merge.ts) applies forceCleanupWorktree fallback
+4. Empty .worktrees base dirs (subdirectory mode only) are cleaned after batch container removal
+5. Non-empty parents are never force-removed (partial failure safety)
+6. Repo active in wave N but not in final wave still gets cleaned up
 
 **Cleanup gate failure classification:**
 - New `cleanup_post_merge_failed` classification will be surfaced via `batchState.errors` and exec log.
