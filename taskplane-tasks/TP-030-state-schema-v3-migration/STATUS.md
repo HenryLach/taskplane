@@ -25,10 +25,11 @@
 ### Step 1: Define v3 Schema
 **Status:** 🟨 In Progress
 - [ ] Add `ResilienceState` interface and `PersistedRepairRecord` interface with all fields from roadmap 3a
-- [ ] Add `BatchDiagnostics` and `TaskExitSummary` interfaces for diagnostics section
-- [ ] Add optional `resilience` and `diagnostics` fields to `PersistedBatchState` (optional for v1/v2 compat)
-- [ ] Add optional `exitDiagnostic?: TaskExitDiagnostic` to `PersistedTaskRecord` alongside legacy `exitReason`
+- [ ] Add `BatchDiagnostics` and `PersistedTaskExitSummary` interfaces for diagnostics section
+- [ ] Add **required** `resilience: ResilienceState` and `diagnostics: BatchDiagnostics` to `PersistedBatchState` (required in v3; migration fills defaults for v1/v2)
+- [ ] Add optional `exitDiagnostic?: TaskExitDiagnostic` to both `LaneTaskOutcome` (runtime) and `PersistedTaskRecord` (persisted) alongside legacy `exitReason`
 - [ ] Bump `BATCH_STATE_SCHEMA_VERSION` to 3 and update version-history JSDoc
+- [ ] Add v3 type contract table to STATUS.md Notes
 - [ ] Verify types compile cleanly (no TS errors)
 
 ---

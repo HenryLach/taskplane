@@ -3,6 +3,7 @@
  * @module orch/types
  */
 import { join } from "path";
+import type { ExitClassification, TaskExitDiagnostic } from "./diagnostics.js";
 
 // ── Types ────────────────────────────────────────────────────────────
 
