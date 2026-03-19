@@ -27,10 +27,12 @@
 ### Step 1: Define TaskExitDiagnostic Type & Classification Logic
 **Status:** 🟨 In Progress
 
-- [ ] TaskExitDiagnostic interface with all fields
-- [ ] classifyExit() function with all 9 classification paths
-- [ ] TokenCounts interface
-- [ ] Types exported for downstream use
+- [ ] ExitClassification string-literal union (9 values) and TokenCounts interface
+- [ ] ExitClassificationInput structured input type with all runtime signals (exit summary, .DONE, timeout/stall/user-kill flags, context %)
+- [ ] TaskExitDiagnostic interface with all fields, using ExitClassification return type
+- [ ] classifyExit(input: ExitClassificationInput) with roadmap precedence: .DONE → api_error → context_overflow → wall_clock_timeout → process_crash → session_vanished → stall_timeout → user_killed → unknown
+- [ ] JSDoc precedence table on classifyExit and types
+- [ ] Re-export from extensions/taskplane/index.ts barrel
 
 ---
 
@@ -99,6 +101,9 @@
 | 2026-03-19 18:05 | Review R002 | code Step 0: REVISE |
 | 2026-03-19 18:05 | Step 0 reopened | R002 REVISE — fixing STATUS.md inconsistencies |
 | 2026-03-19 18:07 | Review R003 | plan Step 1: REVISE |
+| 2026-03-19 18:07 | Worker iter 1 | done in 157s, ctx: 28%, tools: 27 |
+| 2026-03-19 18:07 | Step 0 complete | Preflight |
+| 2026-03-19 18:07 | Step 1 started | Define TaskExitDiagnostic Type & Classification Logic |
 
 ---
 
