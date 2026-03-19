@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Cross-repo TASK_AUTOSTART path resolution** — workspace mode now uses absolute paths for task PROMPT.md so workers in api-service/web-client worktrees can find tasks that live in shared-libs.
 
+## [0.5.5] - 2026-03-18
+
+### Fixed
+- **Workspace task artifacts not committed before merge** — workers wrote `.DONE` and `STATUS.md` to the canonical task folder (shared-libs) via absolute paths, leaving them as uncommitted working tree changes. New `commitWorkspaceTaskArtifacts()` runs after each wave before the merge step, committing task artifacts to the task-area repo so they appear in the orch branch and don't block `/orch-integrate`.
+
 ## [0.5.4] - 2026-03-18
 
 ### Fixed
