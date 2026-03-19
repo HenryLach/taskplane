@@ -5,7 +5,7 @@
 >
 > **Created:** 2026-03-15  
 > **Last Updated:** 2026-03-15  
-> **Related:** [lane-agent-design.md](lane-agent-design.md), [architecture](../../../../docs/explanation/architecture.md)
+> **Related:** [lane-agent-design.md](lane-agent-design.md), [architecture](../../explanation/architecture.md)
 
 ---
 

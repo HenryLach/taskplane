@@ -2,7 +2,7 @@
 
 > **Status:** Draft — Pending Review  
 > **Created:** 2026-03-08  
-> **Related:** [task-runner extension](../../extensions/task-runner.ts), [task-runner.yaml](../../.pi/task-runner.yaml), [EXECUTION-STRATEGY.md](../task-management/EXECUTION-STRATEGY.md)
+> **Related:** [task-runner extension](../../../extensions/task-runner.ts), task-runner.yaml (`.pi/task-runner.yaml`)
 
 ---
 
