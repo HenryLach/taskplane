@@ -2142,8 +2142,19 @@ export function savePartialProgress(
 export interface PreserveFailedLaneProgressResult {
 	/** Per-task results for each failed task that was checked */
 	results: SavePartialProgressResult[];
-	/** Set of lane branch names that were preserved (should NOT be deleted during cleanup) */
+	/**
+	 * Set of saved branch names that were created (e.g., `saved/{opId}-{taskId}-{batchId}`).
+	 * These branches independently preserve the commits — lane branches can still be
+	 * safely deleted during cleanup since the saved refs retain reachability.
+	 */
 	preservedBranches: Set<string>;
+	/**
+	 * Set of lane branch names where preservation FAILED but commits existed.
+	 * These branches are unsafe to reset/delete — doing so would lose commits
+	 * that were not successfully saved to a separate branch. Callers should skip
+	 * worktree reset and branch deletion for these branches to prevent data loss.
+	 */
+	unsafeBranches: Set<string>;
 }
 
 /**
@@ -2165,9 +2176,13 @@ export type ResolveRepoContext = (repoId: string | undefined) => {
  *
  * Iterates task outcomes to find failed/stalled tasks, maps each to its
  * lane branch via the allocated lanes, and saves any partial commits as
- * task-ID-named saved branches. Returns the set of lane branch names
- * that were preserved, so the caller can skip their deletion during
- * cleanup.
+ * task-ID-named saved branches.
+ *
+ * Returns two branch sets:
+ * - `preservedBranches`: saved branch names that were successfully created
+ *   (lane branches can be safely deleted since these refs retain commits)
+ * - `unsafeBranches`: lane branch names where preservation FAILED but commits
+ *   existed (callers must NOT reset/delete these to prevent data loss)
  *
  * Workspace-aware: uses the provided `resolveRepo` callback to resolve
  * per-repo target branches and repo roots for correct commit counting
@@ -2189,6 +2204,7 @@ export function preserveFailedLaneProgress(
 ): PreserveFailedLaneProgressResult {
 	const results: SavePartialProgressResult[] = [];
 	const preservedBranches = new Set<string>();
+	const unsafeBranches = new Set<string>();
 
 	// Build a map: taskId → { laneBranch, repoId } from allocated lanes
 	const taskToLane = new Map<string, { branch: string; repoId?: string }>();
@@ -2245,8 +2261,8 @@ export function preserveFailedLaneProgress(
 		results.push(result);
 
 		if (result.saved) {
-			// Track the lane branch as preserved so cleanup doesn't delete it
-			preservedBranches.add(laneInfo.branch);
+			// Track the saved branch name for caller visibility
+			preservedBranches.add(result.savedBranch!);
 
 			execLog("partial-progress", failedTask.taskId,
 				`Task ${failedTask.taskId} failed but has ${result.commitCount} commit(s) of partial progress on branch ${result.savedBranch}`,
@@ -2257,9 +2273,25 @@ export function preserveFailedLaneProgress(
 					repoId: laneInfo.repoId ?? "(default)",
 				},
 			);
+		} else if (result.commitCount > 0 || result.error) {
+			// Preservation FAILED but commits may exist on the lane branch.
+			// Mark this branch as unsafe to reset/delete — doing so would
+			// irreversibly lose the partial work.
+			unsafeBranches.add(laneInfo.branch);
+
+			execLog("partial-progress", failedTask.taskId,
+				`WARNING: Failed to preserve partial progress for task ${failedTask.taskId} ` +
+				`(${result.commitCount} commit(s) at risk on branch "${laneInfo.branch}")`,
+				{
+					laneBranch: laneInfo.branch,
+					commitCount: result.commitCount,
+					error: result.error ?? "unknown",
+					repoId: laneInfo.repoId ?? "(default)",
+				},
+			);
 		}
 	}
 
-	return { results, preservedBranches };
+	return { results, preservedBranches, unsafeBranches };
 }
 

@@ -525,6 +525,9 @@ export async function executeOrchBatch(
 		// Failed tasks may have commits on their lane branch that would be lost
 		// when the worktree is reset for the next wave. Save these as named
 		// branches before any branch-destructive reset/removal occurs.
+		// Hoisted outside the if-block so unsafeBranches is accessible to the
+		// reset loop below — both blocks share the same guard condition.
+		let ppUnsafeBranches = new Set<string>();
 		if (waveIdx < rawWaves.length - 1 && !batchState.pauseSignal.paused) {
 			const ppOpId = resolveOperatorId(orchConfig);
 			const ppResult = preserveFailedLaneProgress(
@@ -543,9 +546,24 @@ export async function executeOrchBatch(
 					return { repoRoot: perRepoRoot, targetBranch };
 				},
 			);
+			ppUnsafeBranches = ppResult.unsafeBranches;
 			if (ppResult.results.some(r => r.saved)) {
 				execLog("batch", batchState.batchId,
 					`preserved partial progress for ${ppResult.results.filter(r => r.saved).length} failed task(s) before inter-wave reset`);
+			}
+			// Log per-task warnings for failed preservation attempts
+			for (const r of ppResult.results) {
+				if (!r.saved && (r.commitCount > 0 || r.error)) {
+					execLog("batch", batchState.batchId,
+						`WARNING: Failed to preserve partial progress for task ${r.taskId} ` +
+						`(${r.commitCount} commit(s) at risk on lane branch)`,
+						{ taskId: r.taskId, commitCount: r.commitCount, error: r.error ?? "unknown" });
+				}
+			}
+			if (ppUnsafeBranches.size > 0) {
+				execLog("batch", batchState.batchId,
+					`WARNING: ${ppUnsafeBranches.size} lane branch(es) could not be preserved — skipping reset for those lanes to prevent commit loss`,
+					{ unsafeBranches: [...ppUnsafeBranches] });
 			}
 		}
 
@@ -564,6 +582,15 @@ export async function executeOrchBatch(
 
 				const targetBranch = batchState.orchBranch;
 				for (const wt of existingWorktrees) {
+					// TP-028: Skip reset for worktrees whose lane branch has
+					// unsaved partial progress (preservation failed with commits)
+					if (ppUnsafeBranches.has(wt.branch)) {
+						execLog("batch", batchState.batchId,
+							`skipping worktree reset for lane ${wt.laneNumber} — branch "${wt.branch}" has unsaved partial progress`,
+							{ path: wt.path, branch: wt.branch });
+						continue;
+					}
+
 					const resetResult = safeResetWorktree(wt, targetBranch, repoRoot);
 					if (!resetResult.success) {
 						execLog("batch", batchState.batchId, `worktree reset failed for lane ${wt.laneNumber}`, {
@@ -770,6 +797,17 @@ export async function executeOrchBatch(
 			if (ppResult.results.some(r => r.saved)) {
 				execLog("batch", batchState.batchId,
 					`preserved partial progress for ${ppResult.results.filter(r => r.saved).length} failed task(s) before terminal cleanup`);
+			}
+			// Log warnings for failed preservation attempts — at terminal cleanup
+			// we cannot skip deletion (batch is ending), but operators need to know
+			// that commits may become unreachable via reflog only.
+			for (const r of ppResult.results) {
+				if (!r.saved && (r.commitCount > 0 || r.error)) {
+					execLog("batch", batchState.batchId,
+						`WARNING: Failed to preserve partial progress for task ${r.taskId} ` +
+						`(${r.commitCount} commit(s) may become unreachable after cleanup)`,
+						{ taskId: r.taskId, commitCount: r.commitCount, error: r.error ?? "unknown" });
+				}
 			}
 		}
 
