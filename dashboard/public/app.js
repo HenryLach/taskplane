@@ -554,7 +554,7 @@ function renderMergeAgents(batch, tmuxSessions) {
     // Repo filtering: if a repo is selected and this merge has repoResults,
     // check if the selected repo is among them
     const repoResults = mr.repoResults || [];
-    if (selectedRepo && showRepos && repoResults.length >= 2) {
+    if (selectedRepo && showRepos && repoResults.length >= 1) {
       const hasSelectedRepo = repoResults.some(rr => rr.repoId === selectedRepo);
       if (!hasSelectedRepo) continue;
     }
@@ -582,8 +582,8 @@ function renderMergeAgents(batch, tmuxSessions) {
     html += `<td style="font-size:0.8rem;color:var(--text-muted);">${mr.failureReason ? escapeHtml(mr.failureReason) : "—"}</td>`;
     html += `</tr>`;
 
-    // Per-repo sub-rows: only when repoResults has 2+ entries (workspace mode)
-    if (showRepos && repoResults.length >= 2) {
+    // Per-repo sub-rows: show when workspace mode has repo results
+    if (showRepos && repoResults.length >= 1) {
       const displayRepos = selectedRepo
         ? repoResults.filter(rr => rr.repoId === selectedRepo)
         : repoResults;
