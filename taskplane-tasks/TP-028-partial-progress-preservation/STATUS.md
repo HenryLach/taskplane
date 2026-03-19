@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 4
 **Size:** M
 
@@ -55,11 +55,14 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] Branch preservation behavior tests: savePartialProgress (repo/workspace naming, no-commits skip, collision idempotency same-SHA, collision different-SHA suffixed), preserveFailedLaneProgress (happy path, unsafeBranches for failed preservation with commits, error handling for missing branches)
 - [x] State contract tests: persistence round-trip with partialProgress fields present/absent, validation accepts/rejects correct types, serialization skips undefined fields
 - [x] Full test suite passes (`cd extensions && npx vitest run`) — 990/990 tests, 25/25 files
+- [ ] R008: Fix flaky "no change when fields are identical" test — use fixed timestamps instead of Date.now()
+- [ ] R008: Add integration tests with disposable git repos for savePartialProgress and preserveFailedLaneProgress (lane with commits → saved branch, no commits → skip, collision handling, unsafeBranches population)
+- [ ] R008: Update STATUS.md test count evidence to match actual output
 
 ---
 
@@ -88,6 +91,7 @@
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 
 ---
 
@@ -152,6 +156,9 @@
 | 2026-03-19 19:57 | Step 3 started | Testing & Verification |
 | 2026-03-19 20:00 | Review R007 | plan Step 3: REVISE |
 | 2026-03-19 20:00 | Review R007 | plan Step 3: REVISE |
+| 2026-03-19 20:07 | Worker iter 4 | done in 428s, ctx: 27%, tools: 57 |
+| 2026-03-19 20:09 | Worker iter 5 | done in 568s, ctx: 30%, tools: 59 |
+| 2026-03-19 20:13 | Review R008 | code Step 3: REVISE |
 
 ---
 
