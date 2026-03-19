@@ -40,11 +40,11 @@
 
 ### Step 2: Implement Migration
 **Status:** 🟨 In Progress
-- [ ] Auto-detect schema version on read
-- [ ] v1/v2 → v3 migration with conservative defaults
-- [ ] Corrupt state handling (paused + diagnostic)
-- [ ] Version mismatch error for old runtimes
-- [ ] Unknown-field preservation on read/write roundtrip (ownership moved from Step 1 per R003)
+- [ ] Auto-detect & upconvert: `validatePersistedState` already chains v1→v2→v3; verify roundtrip defaults are correct for loaded v1/v2 states
+- [ ] Corrupt state → paused (not auto-delete): Change `analyzeOrchestratorStartupState` for invalid/io-error with no orphans to recommend "paused" instead of "cleanup-stale"; update extension.ts handler to enter paused phase with diagnostic
+- [ ] v3 non-default fields survive serialization: Update `serializeBatchState` to carry forward loaded resilience/diagnostics/exitDiagnostic values from runtime state instead of always emitting defaults
+- [ ] Unknown-field preservation on read/write roundtrip: Store extra top-level keys from loaded JSON, merge them back in `serializeBatchState`
+- [ ] Version mismatch error text includes upgrade guidance (already done in validatePersistedState — verify wording)
 
 ---
 
