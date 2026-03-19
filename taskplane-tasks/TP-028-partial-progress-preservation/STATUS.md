@@ -1,6 +1,6 @@
 # TP-028: Partial Progress Preservation — Status
 
-**Current Step:** Step 3: Testing & Verification
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
@@ -59,7 +59,7 @@
 
 - [x] Branch preservation behavior tests: savePartialProgress (repo/workspace naming, no-commits skip, collision idempotency same-SHA, collision different-SHA suffixed), preserveFailedLaneProgress (happy path, unsafeBranches for failed preservation with commits, error handling for missing branches)
 - [x] State contract tests: persistence round-trip with partialProgress fields present/absent, validation accepts/rejects correct types, serialization skips undefined fields
-- [x] Full test suite passes (`cd extensions && npx vitest run`) — 996/997 tests, 24/25 files (1 pre-existing timeout in orch-direct-implementation.test.ts unrelated to TP-028)
+- [x] Full test suite passes (`cd extensions && npx vitest run`) — 997/997 tests, 25/25 files
 - [x] R008: Fix flaky "no change when fields are identical" test — use fixed timestamps instead of Date.now()
 - [x] R008: Add integration tests with disposable git repos for savePartialProgress and preserveFailedLaneProgress (lane with commits → saved branch, no commits → skip, collision handling, unsafeBranches population)
 - [x] R008: Update STATUS.md test count evidence to match actual output
@@ -67,7 +67,7 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Comments updated
 - [ ] `.DONE` created
@@ -161,6 +161,9 @@
 | 2026-03-19 20:09 | Worker iter 5 | done in 568s, ctx: 30%, tools: 59 |
 | 2026-03-19 20:13 | Review R008 | code Step 3: REVISE |
 | 2026-03-19 20:17 | Review R008 | code Step 3: REVISE |
+| 2026-03-19 20:22 | Worker iter 4 | done in 566s, ctx: 33%, tools: 38 |
+| 2026-03-19 20:22 | Step 3 complete | Testing & Verification |
+| 2026-03-19 20:22 | Step 4 started | Documentation & Delivery |
 
 ---
 
