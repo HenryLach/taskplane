@@ -1,11 +1,11 @@
 # TP-026: Task-Runner RPC Wrapper Integration — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Update spawnAgentTmux to Use RPC Wrapper
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 ---
@@ -24,13 +24,13 @@
 ---
 
 ### Step 1: Update spawnAgentTmux to Use RPC Wrapper
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Generate sidecar and exit summary file paths
-- [ ] Build rpc-wrapper.mjs command line
-- [ ] Resolve rpc-wrapper.mjs path from npm package
-- [ ] Replace pi -p with rpc-wrapper in tmux send-keys
-- [ ] Workspace-aware paths for telemetry files
+- [ ] Add resolveRpcWrapperPath() using findPackageRoot() pattern
+- [ ] Generate telemetry file paths with naming contract (sessionName + timestamp, using getSidecarDir() for workspace-awareness)
+- [ ] Build rpc-wrapper.mjs command with correct args and passthrough of existing pi flags (--thinking, --no-session, --no-extensions, --no-skills)
+- [ ] Replace pi -p command in tmux new-session with node rpc-wrapper.mjs command (preserve quoteArg shell-quoting for Windows/MSYS paths)
+- [ ] R003: Deduplicate execution log entries and add Step 1 design notes subsection
 
 ---
 
@@ -82,6 +82,8 @@
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ---
 
@@ -117,6 +119,11 @@
 | 2026-03-19 22:18 | Worker iter 1 | done in 63s, ctx: 15%, tools: 14 |
 | 2026-03-19 22:19 | Worker iter 2 | done in 75s, ctx: 17%, tools: 19 |
 | 2026-03-19 22:19 | Review R002 | code Step 0: REVISE |
+| 2026-03-19 22:22 | Worker iter 1 | done in 138s, ctx: 13%, tools: 25 |
+| 2026-03-19 22:22 | Step 0 complete | Preflight |
+| 2026-03-19 22:22 | Step 1 started | Update spawnAgentTmux to Use RPC Wrapper |
+| 2026-03-19 22:24 | Review R003 | plan Step 1: REVISE |
+| 2026-03-19 22:26 | Review R003 | plan Step 1: REVISE |
 
 ---
 
@@ -127,6 +134,27 @@
 ---
 
 ## Notes
+
+### Step 1 Design Notes
+
+**Telemetry filename pattern:**
+`{sidecarDir}/telemetry/{sessionName}-{timestamp}.jsonl` (sidecar)
+`{sidecarDir}/telemetry/{sessionName}-{timestamp}-exit.json` (exit summary)
+
+Where:
+- `sidecarDir` = `getSidecarDir()` (respects `ORCH_SIDECAR_DIR` for workspace mode, falls back to `.pi/`)
+- `sessionName` = tmux session name (e.g., `task-worker`, `orch-lane-1-worker`) — already scoped by lane/role
+- `timestamp` = `Date.now()` for uniqueness across iterations
+
+**Identifier sources:**
+- `sessionName` incorporates the tmux prefix (set from `TASK_RUNNER_TMUX_PREFIX` by orchestrator), which already includes lane identity
+- In workspace mode, `getSidecarDir()` returns the shared `.pi/` under `ORCH_SIDECAR_DIR`, so all lanes write to the same telemetry directory — sessionName provides collision avoidance
+
+**Preserved passthrough flags:**
+The current `pi -p` command passes `--no-session`, `--no-extensions`, `--no-skills`, `--model`, `--tools`, `--thinking`, `--append-system-prompt`, and the prompt file via `@file`. The rpc-wrapper handles `--model`, `--tools`, `--system-prompt-file`, `--prompt-file` natively. Remaining flags (`--thinking`, `--no-session`, `--no-extensions`, `--no-skills`) are passed via `-- ...passthrough`.
+
+**Shell quoting:**
+Reuse the existing `quoteArg()` function for all path arguments. The `node` command replaces `pi` — same shell-quoting rules apply since both are executed via tmux `new-session` as a shell string.
 
 ### Preflight Findings (Step 0)
 
