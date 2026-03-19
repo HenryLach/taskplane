@@ -1,22 +1,22 @@
 # TP-025: RPC Wrapper Script & Exit Classification Types — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read pi RPC docs to understand protocol
-- [ ] Read current task outcome types
-- [ ] Read naming contract
-- [ ] Read roadmap Phase 1 sections
+- [x] Read pi RPC docs to understand protocol
+- [x] Read current task outcome types
+- [x] Read naming contract
+- [x] Read roadmap Phase 1 sections
 
 ---
 
@@ -69,6 +69,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
+| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ---
@@ -85,6 +87,12 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-19 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-19 18:01 | Task started | Extension-driven execution |
+| 2026-03-19 18:01 | Step 0 started | Preflight |
+| 2026-03-19 18:01 | Task started | Extension-driven execution |
+| 2026-03-19 18:01 | Step 0 started | Preflight |
+| 2026-03-19 18:01 | Review R001 | plan Step 0: APPROVE |
+| 2026-03-19 18:02 | Review R001 | plan Step 0: APPROVE |
 
 ---
 
