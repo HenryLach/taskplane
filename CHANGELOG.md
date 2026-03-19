@@ -12,6 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Cross-repo TASK_AUTOSTART path resolution** — workspace mode now uses absolute paths for task PROMPT.md so workers in api-service/web-client worktrees can find tasks that live in shared-libs.
 
+## [0.5.10] - 2026-03-19
+
+### Fixed
+- **Dashboard wave progress bar stale** — STATUS.md was reverted in develop's working tree after artifact staging, causing the dashboard to show partial checkbox counts for completed waves. Now only .DONE files are removed; STATUS.md modifications are preserved for dashboard visibility.
+- **`/orch-integrate` commit count always 0** — count was measured after fast-forward when HEAD already equals orch tip. Now measured before.
+
 ## [0.5.9] - 2026-03-18
 
 ### Fixed
