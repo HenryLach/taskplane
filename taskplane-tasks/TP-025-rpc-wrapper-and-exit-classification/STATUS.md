@@ -1,6 +1,6 @@
 # TP-025: RPC Wrapper Script & Exit Classification Types — Status
 
-**Current Step:** Step 3: Testing & Verification
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
@@ -71,14 +71,14 @@
 - [x] R008 fix: Process-level tests for exit summary lifecycle — spawn error fallback, crash without agent_end, exit code normalization (null/negative → 1), single-write guard
 - [x] R008 fix: Remove dead/placeholder code from integration test (unused imports, no-op assertions)
 - [x] R008 fix: Full test suite passes after changes
-- [ ] R008 fix: Replace no-op integration test with real subprocess integration (spawn mock-pi fixture, verify sidecar JSONL + exit summary JSON contents)
-- [ ] R008 fix: Add lifecycle finalization tests — multi-message_end token accumulation, retry/compaction aggregation, single-write guard across close/error/signal, spawn-error summary persistence
-- [ ] R008 fix: Full test suite passes after additions
+- [x] R008 fix: Replace no-op integration test with real subprocess integration (spawn mock-pi fixture, verify sidecar JSONL + exit summary JSON contents)
+- [x] R008 fix: Add lifecycle finalization tests — multi-message_end token accumulation, retry/compaction aggregation, single-write guard across close/error/signal, spawn-error summary persistence
+- [x] R008 fix: Full test suite passes after additions
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] JSDoc on exported types and functions
 - [ ] Usage comment in rpc-wrapper.mjs
@@ -171,6 +171,9 @@
 | 2026-03-19 18:44 | Worker iter 4 | done in 476s, ctx: 27%, tools: 48 |
 | 2026-03-19 18:47 | Review R008 | code Step 3: REVISE |
 | 2026-03-19 18:47 | Review R008 | code Step 3: REVISE |
+| 2026-03-19 18:56 | Worker iter 4 | done in 546s, ctx: 36%, tools: 34 |
+| 2026-03-19 18:56 | Step 3 complete | Testing & Verification |
+| 2026-03-19 18:56 | Step 4 started | Documentation & Delivery |
 
 ---
 
