@@ -1163,46 +1163,74 @@ export default function (pi: ExtensionAPI) {
 			);
 
 			// ── Step 3: Execute integration mode ─────────────────
-			const integrationResult = executeIntegration(parsed.mode, resolution as IntegrationContext, {
-				runGit: (gitArgs: string[]) => runGit(gitArgs, repoRoot),
-				runCommand: (cmd: string, cmdArgs: string[]) => {
-					try {
-						const stdout = execFileSync(cmd, cmdArgs, {
-							encoding: "utf-8",
-							timeout: 60_000,
-							cwd: repoRoot,
-							stdio: ["pipe", "pipe", "pipe"],
-						}).trim();
-						return { ok: true, stdout, stderr: "" };
-					} catch (err: unknown) {
-						const e = err as { stdout?: string; stderr?: string; message?: string };
-						return {
-							ok: false,
-							stdout: (e.stdout ?? "").toString().trim(),
-							stderr: (e.stderr ?? e.message ?? "unknown error").toString().trim(),
-						};
+			// In workspace mode, integrate in every repo that has the orch branch.
+			const resolvedOrchBranch = (resolution as IntegrationContext).orchBranch;
+			const wsConfig = execCtx!.workspaceConfig;
+			const reposToIntegrate: { id: string; root: string }[] = [];
+
+			if (wsConfig) {
+				for (const [repoId, repoConf] of wsConfig.repos) {
+					// Check if orch branch exists in this repo
+					const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${resolvedOrchBranch}`], repoConf.path);
+					if (branchCheck.ok) {
+						reposToIntegrate.push({ id: repoId, root: repoConf.path });
 					}
-				},
-				deleteBatchState: () => deleteBatchState(repoRoot),
-			});
-
-			if (!integrationResult.success) {
-				ctx.ui.notify(integrationResult.error!, "error");
-				return;
+				}
+			} else {
+				reposToIntegrate.push({ id: "(default)", root: repoRoot });
 			}
 
-			// Override commit count with pre-computed value for local integrations
-			if (integrationResult.integratedLocally) {
-				integrationResult.commitCount = commitsAhead;
+			let totalCommits = 0;
+			let allSucceeded = true;
+			const repoMessages: string[] = [];
+
+			for (const repo of reposToIntegrate) {
+				const integrationResult = executeIntegration(parsed.mode, resolution as IntegrationContext, {
+					runGit: (gitArgs: string[]) => runGit(gitArgs, repo.root),
+					runCommand: (cmd: string, cmdArgs: string[]) => {
+						try {
+							const stdout = execFileSync(cmd, cmdArgs, {
+								encoding: "utf-8",
+								timeout: 60_000,
+								cwd: repo.root,
+								stdio: ["pipe", "pipe", "pipe"],
+							}).trim();
+							return { ok: true, stdout, stderr: "" };
+						} catch (err: unknown) {
+							const e = err as { stdout?: string; stderr?: string; message?: string };
+							return {
+								ok: false,
+								stdout: (e.stdout ?? "").toString().trim(),
+								stderr: (e.stderr ?? e.message ?? "unknown error").toString().trim(),
+							};
+						}
+					},
+					deleteBatchState: () => { /* handled once after all repos */ },
+				});
+
+				if (!integrationResult.success) {
+					ctx.ui.notify(`❌ Integration failed in ${repo.id}:\n${integrationResult.error}`, "error");
+					allSucceeded = false;
+					break;
+				}
+
+				// Count commits for this repo
+				const countResult = runGit(["rev-list", "--count", `HEAD...${resolvedOrchBranch}`], repo.root);
+				const repoCommits = countResult.ok ? parseInt(countResult.stdout) || 0 : 0;
+				totalCommits += repoCommits;
+				repoMessages.push(`  ${repo.id}: ${integrationResult.message}`);
 			}
 
-			ctx.ui.notify(
-				integrationResult.message +
-				(integrationResult.integratedLocally
-					? `\n${integrationResult.commitCount} commit(s) applied.`
-					: ""),
-				"info",
-			);
+			if (!allSucceeded) return;
+
+			// Clean up batch state after all repos integrated
+			try { deleteBatchState(repoRoot); } catch { /* best effort */ }
+
+			const summary = wsConfig
+				? `✅ Integrated ${resolvedOrchBranch} across ${reposToIntegrate.length} repo(s).\n${repoMessages.join("\n")}\n${totalCommits} total commit(s) applied.`
+				: `${repoMessages[0] || "✅ Integrated."}\n${commitsAhead} commit(s) applied.`;
+
+			ctx.ui.notify(summary, "info");
 		},
 	});
 
