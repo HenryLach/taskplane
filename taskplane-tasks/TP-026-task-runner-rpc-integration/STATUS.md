@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -40,12 +40,11 @@
 ### Step 2: Read Sidecar Telemetry During Polling
 **Status:** 🟨 In Progress
 
-- [ ] Tail new sidecar JSONL lines on each poll tick
-- [ ] Track file read offset for incremental reads
-- [ ] Accumulate token counts and cost from message_end events
-- [ ] Detect active retries from auto_retry events
-- [ ] Make telemetry available for dashboard
-- [ ] Handle missing/empty sidecar gracefully
+- [ ] Implement sidecar JSONL tailing helper (incremental byte-offset reads, partial-line handling, malformed-line resilience)
+- [ ] Integrate tailing into tmux poll loop: on each 2s tick, read new sidecar lines and update state (tokens, cost, context%, tool calls, retries)
+- [ ] Derive workerContextPct from message_end usage.totalTokens against config.context.worker_context_window (parity with subprocess mode)
+- [ ] Expose retry telemetry: add retry tracking fields to TaskState and lane-state payload so dashboard can consume them
+- [ ] Handle missing/empty sidecar gracefully (file not yet created, empty reads, partial trailing lines)
 
 ---
 
@@ -88,6 +87,8 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ---
 
@@ -138,6 +139,11 @@
 | 2026-03-19 22:48 | Step 1 complete | Update spawnAgentTmux to Use RPC Wrapper |
 | 2026-03-19 | Step 1 R004 iter 2 | Added extension-file-relative fallback (#4) to resolveRpcWrapperPath(), enriched telemetry basenames with taskId segment, passed taskId from callers. All 1020 tests pass. |
 | 2026-03-19 22:48 | Step 2 started | Read Sidecar Telemetry During Polling |
+| 2026-03-19 22:50 | Worker iter 2 | done in 735s, ctx: 34%, tools: 74 |
+| 2026-03-19 22:50 | Step 1 complete | Update spawnAgentTmux to Use RPC Wrapper |
+| 2026-03-19 22:50 | Step 2 started | Read Sidecar Telemetry During Polling |
+| 2026-03-19 22:51 | Review R005 | plan Step 2: REVISE |
+| 2026-03-19 22:52 | Review R005 | plan Step 2: REVISE |
 
 ---
 
