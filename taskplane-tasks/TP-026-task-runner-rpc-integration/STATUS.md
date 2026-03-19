@@ -1,6 +1,6 @@
 # TP-026: Task-Runner RPC Wrapper Integration — Status
 
-**Current Step:** Step 1: Update spawnAgentTmux to Use RPC Wrapper
+**Current Step:** Step 2: Read Sidecar Telemetry During Polling
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
@@ -38,7 +38,7 @@
 ---
 
 ### Step 2: Read Sidecar Telemetry During Polling
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Tail new sidecar JSONL lines on each poll tick
 - [ ] Track file read offset for incremental reads
@@ -134,6 +134,10 @@
 | 2026-03-19 22:38 | Review R004 | code Step 1: REVISE |
 | 2026-03-19 22:39 | Review R004 | code Step 1: REVISE |
 | 2026-03-19 | Step 1 R004 revisions | Fixed resolveRpcWrapperPath (5-strategy resolution), telemetry naming contract (opId/batchId/repoId), doc block return shape, removed duplicate --no-session |
+| 2026-03-19 22:48 | Worker iter 2 | done in 535s, ctx: 32%, tools: 67 |
+| 2026-03-19 22:48 | Step 1 complete | Update spawnAgentTmux to Use RPC Wrapper |
+| 2026-03-19 | Step 1 R004 iter 2 | Added extension-file-relative fallback (#4) to resolveRpcWrapperPath(), enriched telemetry basenames with taskId segment, passed taskId from callers. All 1020 tests pass. |
+| 2026-03-19 22:48 | Step 2 started | Read Sidecar Telemetry During Polling |
 
 ---
 
@@ -148,8 +152,8 @@
 ### Step 1 Design Notes
 
 **Telemetry filename pattern:**
-`{sidecarDir}/telemetry/{sessionName}-{timestamp}.jsonl` (sidecar)
-`{sidecarDir}/telemetry/{sessionName}-{timestamp}-exit.json` (exit summary)
+`{sidecarDir}/telemetry/{opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.jsonl` (sidecar)
+`{sidecarDir}/telemetry/{opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}-exit.json` (exit summary)
 
 Where:
 - `sidecarDir` = `getSidecarDir()` (respects `ORCH_SIDECAR_DIR` for workspace mode, falls back to `.pi/`)
