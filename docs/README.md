@@ -68,6 +68,15 @@ Use these to understand the design and tradeoffs.
 
 ---
 
+## Specifications (Design Docs)
+
+Internal design documents, architecture decisions, and implementation specs.
+These are the source of truth for how features were designed and why.
+
+- [Specifications Index](specifications/README.md)
+
+---
+
 ## Contributors and Maintainers
 
 - [Development Setup](maintainers/development-setup.md)
