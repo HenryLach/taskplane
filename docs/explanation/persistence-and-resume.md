@@ -68,13 +68,16 @@ This keeps recovery point close to live execution.
 
 ## Resume eligibility
 
-`/orch-resume` only resumes batches in resumable phases:
+`/orch-resume` resumes batches based on their phase:
 
-- `paused`
-- `executing`
-- `merging`
-
-Non-resumable phases (for example `failed`, `stopped`, `completed`) require cleanup/new batch.
+| Phase | Resumable | Notes |
+|-------|-----------|-------|
+| `paused` | ✅ | Standard resume |
+| `executing` | ✅ | Crash recovery — reconciles in-flight tasks |
+| `merging` | ✅ | Interrupted merge recovery |
+| `stopped` | ⚠️ | Requires `--force` (planned) |
+| `failed` | ⚠️ | Requires `--force` (planned) |
+| `completed` | ❌ | Terminal — start a new batch |
 
 ---
 
