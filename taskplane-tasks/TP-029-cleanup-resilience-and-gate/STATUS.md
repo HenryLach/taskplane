@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 9
+**Review Counter:** 10
 **Iteration:** 5
 **Size:** M
 
@@ -85,6 +85,8 @@
 - [x] Verify polyrepo acceptance criteria: cross-repo assertion of all 5 dimensions (worktrees, lane branches, orch branches, autostash, .worktrees containers) after /orch-integrate
 - [x] Run full test suite (`cd extensions && npx vitest run`) — ZERO failures (1020 tests, 26 files, all pass)
 - [x] Fix any failures found (none — all 1020 tests passed)
+- [ ] R010: Replace tautological notification-severity assertions with tests that verify actual `ctx.ui.notify` severity argument from production code path (dirty→"warning", clean→"info")
+- [ ] R010: Run full test suite and confirm green
 
 ---
 
@@ -115,6 +117,7 @@
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | APPROVE | .reviews/R009-plan-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 
 ---
 
@@ -177,6 +180,9 @@
 | 2026-03-19 21:53 | Step 3 complete | Integrate Cleanup into /orch-integrate |
 | 2026-03-19 21:53 | Step 4 started | Testing & Verification |
 | 2026-03-19 21:54 | Review R009 | plan Step 4: APPROVE |
+| 2026-03-19 21:58 | Worker iter 5 | done in 237s, ctx: 24%, tools: 26 |
+| 2026-03-19 21:59 | Worker iter 4 | done in 497s, ctx: 32%, tools: 41 |
+| 2026-03-19 22:02 | Review R010 | code Step 4: REVISE |
 
 ---
 
