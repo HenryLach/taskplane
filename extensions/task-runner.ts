@@ -23,6 +23,7 @@ import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "child_process";
 import {
 	readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, unlinkSync,
+	statSync, openSync, readSync, closeSync,
 } from "fs";
 import { tmpdir, userInfo } from "os";
 import { join, dirname, basename, resolve } from "path";
@@ -98,6 +99,9 @@ interface TaskState {
 	workerCostUsd: number;
 	workerProc: any;
 	workerTimer: any;
+	workerRetryActive: boolean;
+	workerRetryCount: number;
+	workerLastRetryError: string;
 	reviewerStatus: "idle" | "running" | "done" | "error";
 	reviewerType: string;
 	reviewerElapsed: number;
@@ -116,6 +120,7 @@ function freshState(): TaskState {
 		workerContextPct: 0, workerLastTool: "", workerToolCount: 0,
 		workerInputTokens: 0, workerOutputTokens: 0, workerCacheReadTokens: 0, workerCacheWriteTokens: 0, workerCostUsd: 0,
 		workerProc: null, workerTimer: null,
+		workerRetryActive: false, workerRetryCount: 0, workerLastRetryError: "",
 		reviewerStatus: "idle", reviewerType: "", reviewerElapsed: 0,
 		reviewerLastTool: "", reviewerProc: null, reviewerTimer: null,
 		reviewCounter: 0, totalIterations: 0, stepStatuses: new Map(),
@@ -326,6 +331,9 @@ function writeLaneState(state: TaskState): void {
 			workerCacheReadTokens: state.workerCacheReadTokens,
 			workerCacheWriteTokens: state.workerCacheWriteTokens,
 			workerCostUsd: state.workerCostUsd,
+			workerRetryActive: state.workerRetryActive,
+			workerRetryCount: state.workerRetryCount,
+			workerLastRetryError: state.workerLastRetryError,
 			reviewerStatus: state.reviewerStatus || "idle",
 			timestamp: Date.now(),
 		};
@@ -1073,6 +1081,179 @@ function spawnAgent(opts: {
 	return { promise, kill: () => killFn() };
 }
 
+// ── Sidecar JSONL Tailing ────────────────────────────────────────────
+
+/**
+ * Mutable state for incremental byte-offset sidecar JSONL reading.
+ * One instance per sidecar file, persists across poll ticks within a session.
+ */
+interface SidecarTailState {
+	/** Byte offset of the next unread position in the sidecar file */
+	offset: number;
+	/** Partial trailing line from the last read (incomplete JSONL line) */
+	partial: string;
+}
+
+function createSidecarTailState(): SidecarTailState {
+	return { offset: 0, partial: "" };
+}
+
+/**
+ * Parsed telemetry accumulated from sidecar JSONL events.
+ * Returned by tailSidecarJsonl() on each tick.
+ */
+interface SidecarTelemetryDelta {
+	/** Per-turn input tokens (sum of new message_end events in this tick) */
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+	/** Incremental cost from new message_end events */
+	cost: number;
+	/** Most recent totalTokens from message_end usage (cumulative, for context %) */
+	latestTotalTokens: number;
+	/** Tool calls observed in this tick */
+	toolCalls: number;
+	/** Last tool description from tool_execution_start */
+	lastTool: string;
+	/** Whether a retry is currently active (auto_retry_start without matching end) */
+	retryActive: boolean;
+	/** Total retries started in this tick */
+	retriesStarted: number;
+	/** Error message from the most recent auto_retry_start */
+	lastRetryError: string;
+}
+
+/**
+ * Incrementally read new lines from a sidecar JSONL file and parse telemetry events.
+ *
+ * O(new) per call — only reads bytes after the previous offset. Handles:
+ * - File not yet created (returns zero delta)
+ * - Empty reads (no new data since last tick)
+ * - Partial trailing lines (buffered for next call)
+ * - Malformed JSON lines (skipped with stderr warning, does not break iteration)
+ *
+ * The caller (poll loop) accumulates the returned deltas into TaskState.
+ */
+function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): SidecarTelemetryDelta {
+	const delta: SidecarTelemetryDelta = {
+		inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
+		cost: 0, latestTotalTokens: 0, toolCalls: 0, lastTool: "",
+		retryActive: false, retriesStarted: 0, lastRetryError: "",
+	};
+
+	// Gracefully handle missing file (wrapper hasn't written yet)
+	let fileSize: number;
+	try {
+		fileSize = statSync(filePath).size;
+	} catch {
+		return delta; // File doesn't exist yet — no-op
+	}
+
+	if (fileSize <= tailState.offset) {
+		return delta; // No new data
+	}
+
+	// Read new bytes from offset to end of file
+	const bytesToRead = fileSize - tailState.offset;
+	const buf = Buffer.alloc(bytesToRead);
+	let fd: number;
+	try {
+		fd = openSync(filePath, "r");
+	} catch {
+		return delta; // File became inaccessible between stat and open
+	}
+	try {
+		readSync(fd, buf, 0, bytesToRead, tailState.offset);
+	} catch {
+		closeSync(fd);
+		return delta; // Read error — try again next tick
+	}
+	closeSync(fd);
+	tailState.offset = fileSize;
+
+	// Split into lines, preserving any partial trailing line
+	const chunk = tailState.partial + buf.toString("utf-8");
+	const lines = chunk.split("\n");
+	// Last element is either "" (if chunk ended with \n) or a partial line
+	tailState.partial = lines.pop() || "";
+
+	// Track retry state within this tick for the retryActive flag
+	let retryActiveInTick = false;
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+
+		let event: any;
+		try {
+			event = JSON.parse(trimmed);
+		} catch {
+			// Malformed JSON — skip silently (concurrent write race, truncated line)
+			continue;
+		}
+
+		if (!event || !event.type) continue;
+
+		switch (event.type) {
+			case "message_end": {
+				const usage = event.message?.usage;
+				if (usage) {
+					delta.inputTokens += usage.input || 0;
+					delta.outputTokens += usage.output || 0;
+					delta.cacheReadTokens += usage.cacheRead || 0;
+					delta.cacheWriteTokens += usage.cacheWrite || 0;
+					if (usage.cost) {
+						delta.cost += typeof usage.cost === "object"
+							? (usage.cost.total || 0)
+							: (typeof usage.cost === "number" ? usage.cost : 0);
+					}
+					// totalTokens is cumulative (grows each turn) — use latest value
+					const totalTokens = usage.totalTokens
+						|| ((usage.input || 0) + (usage.output || 0));
+					if (totalTokens > delta.latestTotalTokens) {
+						delta.latestTotalTokens = totalTokens;
+					}
+				}
+				break;
+			}
+
+			case "tool_execution_start": {
+				delta.toolCalls++;
+				const toolDesc = event.toolName || "unknown";
+				let argPreview = "";
+				if (event.args) {
+					if (typeof event.args === "string") {
+						argPreview = event.args.slice(0, 80);
+					} else if (typeof event.args === "object") {
+						const firstVal = Object.values(event.args)[0];
+						if (typeof firstVal === "string") {
+							argPreview = (firstVal as string).slice(0, 80);
+						}
+					}
+				}
+				delta.lastTool = argPreview ? `${toolDesc} ${argPreview}` : toolDesc;
+				break;
+			}
+
+			case "auto_retry_start": {
+				delta.retriesStarted++;
+				delta.lastRetryError = event.errorMessage || event.error || "unknown";
+				retryActiveInTick = true;
+				break;
+			}
+
+			case "auto_retry_end": {
+				retryActiveInTick = false;
+				break;
+			}
+		}
+	}
+
+	delta.retryActive = retryActiveInTick;
+	return delta;
+}
+
 // ── TMUX Agent Spawner ───────────────────────────────────────────────
 
 /**
@@ -1130,6 +1311,10 @@ function spawnAgentTmux(opts: {
 	tools: string;
 	thinking: string;
 	taskId?: string;
+	/** Called on each poll tick with accumulated telemetry from the sidecar JSONL.
+	 *  Enables the tmux poll loop to update TaskState (tokens, cost, context%, tools, retries)
+	 *  with the same signals that subprocess mode gets from onTokenUpdate/onContextPct/onToolCall. */
+	onTelemetry?: (delta: SidecarTelemetryDelta) => void;
 }): {
 	promise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>;
 	kill: () => void;
@@ -1284,14 +1469,36 @@ function spawnAgentTmux(opts: {
 	// ── Poll until session ends ─────────────────────────────────────
 	let killed = false;
 	const startTime = Date.now();
+	const tailState = createSidecarTailState();
 
 	const promise = (async (): Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }> => {
 		try {
 			while (true) {
 				await new Promise(r => setTimeout(r, 2000));
+
+				// Tail sidecar JSONL for telemetry updates on each tick
+				if (opts.onTelemetry) {
+					const delta = tailSidecarJsonl(sidecarPath, tailState);
+					// Only call back if there's meaningful new data
+					if (delta.inputTokens || delta.outputTokens || delta.cost ||
+						delta.toolCalls || delta.retriesStarted || delta.retryActive ||
+						delta.latestTotalTokens) {
+						opts.onTelemetry(delta);
+					}
+				}
+
 				const result = spawnSync("tmux", ["has-session", "-t", opts.sessionName]);
 				if (result.status !== 0) {
 					// Session no longer exists — Pi exited, TMUX closed
+					// Final tail to catch any events written since last tick
+					if (opts.onTelemetry) {
+						const finalDelta = tailSidecarJsonl(sidecarPath, tailState);
+						if (finalDelta.inputTokens || finalDelta.outputTokens || finalDelta.cost ||
+							finalDelta.toolCalls || finalDelta.retriesStarted ||
+							finalDelta.latestTotalTokens) {
+							opts.onTelemetry(finalDelta);
+						}
+					}
 					break;
 				}
 			}
@@ -1751,6 +1958,9 @@ export default function (pi: ExtensionAPI) {
 		state.workerContextPct = 0;
 		state.workerLastTool = "";
 		state.workerToolCount = 0;
+		state.workerRetryActive = false;
+		state.workerRetryCount = 0;
+		state.workerLastRetryError = "";
 		updateWidgets();
 
 		const startTime = Date.now();
@@ -1767,9 +1977,14 @@ export default function (pi: ExtensionAPI) {
 
 		if (spawnMode === "tmux") {
 			// ── TMUX mode ────────────────────────────────────────
-			// No JSON stream → no onToolCall/onContextPct callbacks.
-			// Kill via wall-clock timeout instead of context-%.
+			// Sidecar JSONL provides telemetry parity: tokens, cost, context%,
+			// tool calls, and retry events — same signals as subprocess mode.
+			// Kill via wall-clock timeout (context-% wrap-up also available via sidecar).
 			const sessionName = `${getTmuxPrefix()}-worker`;
+			const contextWindow = config.context.worker_context_window;
+			const warnPct = config.context.warn_percent;
+			const killPct = config.context.kill_percent;
+
 			const spawned = spawnAgentTmux({
 				sessionName,
 				cwd: ctx.cwd,
@@ -1779,12 +1994,50 @@ export default function (pi: ExtensionAPI) {
 				tools: config.worker.tools || workerDef?.tools || "read,write,edit,bash,grep,find,ls",
 				thinking: config.worker.thinking || "off",
 				taskId: task.taskId,
+				onTelemetry: (delta) => {
+					// Accumulate tokens and cost (same as subprocess onTokenUpdate)
+					state.workerInputTokens += delta.inputTokens;
+					state.workerOutputTokens += delta.outputTokens;
+					state.workerCacheReadTokens += delta.cacheReadTokens;
+					state.workerCacheWriteTokens += delta.cacheWriteTokens;
+					state.workerCostUsd += delta.cost;
+
+					// Tool tracking (same as subprocess onToolCall)
+					state.workerToolCount += delta.toolCalls;
+					if (delta.lastTool) {
+						state.workerLastTool = delta.lastTool;
+					}
+
+					// Retry tracking
+					state.workerRetryCount += delta.retriesStarted;
+					state.workerRetryActive = delta.retryActive;
+					if (delta.lastRetryError) {
+						state.workerLastRetryError = delta.lastRetryError;
+					}
+
+					// Context % (same as subprocess onContextPct)
+					// totalTokens is cumulative from the most recent message_end
+					if (delta.latestTotalTokens > 0 && contextWindow > 0) {
+						const pct = (delta.latestTotalTokens / contextWindow) * 100;
+						state.workerContextPct = pct;
+						if (pct >= warnPct) {
+							writeWrapUpSignal(`Wrap up (context ${Math.round(pct)}%)`);
+						}
+						if (pct >= killPct && state.workerStatus === "running") {
+							console.error(`[task-runner] tmux worker: context limit (${Math.round(pct)}%) — killing session '${sessionName}'`);
+							spawned.kill();
+						}
+					}
+
+					updateWidgets();
+				},
 			});
 			promise = spawned.promise;
 			kill = spawned.kill;
 
 			// Wall-clock timeout: write wrap-up file at 80% of limit,
-			// hard kill at 100%. No context telemetry in TMUX mode.
+			// hard kill at 100%. Context-% based wrap-up/kill is also active
+			// via sidecar telemetry (above), providing dual safety nets.
 			const maxMinutes = getMaxWorkerMinutes(config);
 			const warnMs = Math.round(maxMinutes * 0.8 * 60_000);
 			const killMs = maxMinutes * 60_000;
@@ -1879,12 +2132,15 @@ export default function (pi: ExtensionAPI) {
 
 		clearWrapUpSignals();
 
-		// Log with mode-appropriate detail: subprocess has context%, TMUX does not
-		const killedMsg = spawnMode === "tmux" ? "killed (wall-clock timeout)" : "killed (context limit)";
-		const statusMsg = result.killed ? killedMsg : (result.exitCode === 0 ? "done" : `error (code ${result.exitCode})`);
-		const ctxDetail = spawnMode === "tmux" ? "" : `, ctx: ${Math.round(state.workerContextPct)}%`;
+		// Log with telemetry detail — both subprocess and TMUX now have context%
+		const killedMsg = result.killed
+			? (spawnMode === "tmux"
+				? `killed (${state.workerContextPct >= config.context.kill_percent ? "context limit" : "wall-clock timeout"})`
+				: "killed (context limit)")
+			: "";
+		const statusMsg = killedMsg || (result.exitCode === 0 ? "done" : `error (code ${result.exitCode})`);
 		logExecution(statusPath, `Worker iter ${state.totalIterations}`,
-			`${statusMsg} in ${Math.round(state.workerElapsed / 1000)}s${ctxDetail}, tools: ${state.workerToolCount}`);
+			`${statusMsg} in ${Math.round(state.workerElapsed / 1000)}s, ctx: ${Math.round(state.workerContextPct)}%, tools: ${state.workerToolCount}`);
 
 		updateWidgets();
 	}

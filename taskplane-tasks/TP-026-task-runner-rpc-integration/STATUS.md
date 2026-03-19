@@ -1,6 +1,6 @@
 # TP-026: Task-Runner RPC Wrapper Integration — Status
 
-**Current Step:** Step 2: Read Sidecar Telemetry During Polling
+**Current Step:** Step 3: Produce Structured Exit Diagnostic
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
@@ -38,13 +38,13 @@
 ---
 
 ### Step 2: Read Sidecar Telemetry During Polling
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Implement sidecar JSONL tailing helper (incremental byte-offset reads, partial-line handling, malformed-line resilience)
-- [ ] Integrate tailing into tmux poll loop: on each 2s tick, read new sidecar lines and update state (tokens, cost, context%, tool calls, retries)
-- [ ] Derive workerContextPct from message_end usage.totalTokens against config.context.worker_context_window (parity with subprocess mode)
-- [ ] Expose retry telemetry: add retry tracking fields to TaskState and lane-state payload so dashboard can consume them
-- [ ] Handle missing/empty sidecar gracefully (file not yet created, empty reads, partial trailing lines)
+- [x] Implement sidecar JSONL tailing helper (incremental byte-offset reads, partial-line handling, malformed-line resilience)
+- [x] Integrate tailing into tmux poll loop: on each 2s tick, read new sidecar lines and update state (tokens, cost, context%, tool calls, retries)
+- [x] Derive workerContextPct from message_end usage.totalTokens against config.context.worker_context_window (parity with subprocess mode)
+- [x] Expose retry telemetry: add retry tracking fields to TaskState and lane-state payload so dashboard can consume them
+- [x] Handle missing/empty sidecar gracefully (file not yet created, empty reads, partial trailing lines)
 
 ---
 
@@ -143,6 +143,7 @@
 | 2026-03-19 22:50 | Step 1 complete | Update spawnAgentTmux to Use RPC Wrapper |
 | 2026-03-19 22:50 | Step 2 started | Read Sidecar Telemetry During Polling |
 | 2026-03-19 22:51 | Review R005 | plan Step 2: REVISE |
+| 2026-03-19 | Step 2 iter 1 | Implemented sidecar JSONL tailing (tailSidecarJsonl + SidecarTailState), integrated into poll loop with onTelemetry callback, added context% parity, retry tracking fields (TaskState + lane-state), partial-line resilience. 1018 tests pass. |
 | 2026-03-19 22:52 | Review R005 | plan Step 2: REVISE |
 
 ---
