@@ -1,10 +1,10 @@
 # TP-028: Partial Progress Preservation — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Detect and Save Partial Progress
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 3
 **Size:** M
 
@@ -26,13 +26,14 @@
 ---
 
 ### Step 1: Detect and Save Partial Progress
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Check lane branch commit count before cleanup
-- [ ] Create saved branch with naming contract
-- [ ] Skip lane branch deletion when saved
-- [ ] Log partial progress info
-- [ ] Workspace-aware repo root for branch ops
+- [ ] Implement `savePartialProgress()` helper in worktree.ts: counts commits on lane branch vs target, creates saved branch with task-ID naming, handles collisions via resolveSavedBranchCollision, returns partial progress info
+- [ ] Add `preserveFailedLaneProgress()` orchestration function in worktree.ts: iterates task outcomes, finds failed tasks with lane branches, calls savePartialProgress for each, returns set of preserved branch names
+- [ ] Insert preservation call before inter-wave reset in engine.ts (R003 critical: prevents commit loss during between-wave resets)
+- [ ] Insert preservation call before terminal cleanup in engine.ts removeAllWorktrees
+- [ ] Insert preservation call before terminal cleanup in resume.ts removeAllWorktrees
+- [ ] Pass preserved branch names to cleanup so ensureBranchDeleted skips them (R003: exemption mechanism)
 
 ---
 
@@ -71,6 +72,9 @@
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ---
 
@@ -102,6 +106,15 @@
 | 2026-03-19 19:10 | Worker iter 2 | done in 149s, ctx: 19%, tools: 30 |
 | 2026-03-19 19:11 | Review R002 | code Step 0: REVISE |
 | 2026-03-19 | R002 revisions | Fixed Reviews table format, removed duplicate R001 entry, updated metadata |
+| 2026-03-19 19:12 | Worker iter 1 | done in 78s, ctx: 10%, tools: 15 |
+| 2026-03-19 19:12 | Step 0 complete | Preflight |
+| 2026-03-19 19:12 | Step 1 started | Detect and Save Partial Progress |
+| 2026-03-19 19:12 | Review R002 | code Step 0: REVISE |
+| 2026-03-19 19:13 | Worker iter 2 | done in 18s, ctx: 7%, tools: 3 |
+| 2026-03-19 19:13 | Step 0 complete | Preflight |
+| 2026-03-19 19:13 | Step 1 started | Detect and Save Partial Progress |
+| 2026-03-19 19:16 | Review R003 | plan Step 1: REVISE |
+| 2026-03-19 19:16 | Review R003 | plan Step 1: REVISE |
 
 ---
 

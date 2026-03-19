@@ -3,20 +3,20 @@
 ### Verdict: REVISE
 
 ### Summary
-Step 0 preflight content is substantive and the new findings in `STATUS.md` are useful for Steps 1–2. However, the status artifact has consistency problems that should be corrected before proceeding, including malformed review-table structure and contradictory review history. There are also unrelated task-file edits in this step range that should be scoped out.
+The preflight findings captured in `TP-028` are useful and aligned with the task intent, especially around cleanup insertion points and serialization impact. However, the step range includes unrelated changes under `TP-025`, and the review ledger for `TP-028` is internally inconsistent. Those should be corrected before proceeding so task history remains deterministic and auditable.
 
 ### Issues Found
-1. **[taskplane-tasks/TP-028-partial-progress-preservation/STATUS.md:68-71] [important]** — The Reviews table is malformed: the separator row (`|---|...|`) appears after data rows instead of directly below the header. This deviates from the project STATUS template and can break simple table parsing. **Fix:** move the separator to line 69 (immediately after the header), then list review rows below it.
-2. **[taskplane-tasks/TP-028-partial-progress-preservation/STATUS.md:69-70, taskplane-tasks/TP-028-partial-progress-preservation/.reviews/R001-plan-step0.md:3] [important]** — Review history is internally inconsistent: `STATUS.md` records both `APPROVE` and `REVISE` for the same review ID/file (`R001`), but the referenced review file’s verdict is `REVISE`. **Fix:** keep only verifiable review entries, or add a new follow-up review artifact (new review ID/file) if the step was later approved.
-3. **[taskplane-tasks/TP-028-partial-progress-preservation/STATUS.md:3-4,13-27] [minor]** — Top-level metadata says current step is `Step 0: Preflight` and overall status is `In Progress`, while Step 0 is marked `✅ Complete` and Step 1 remains `Not Started`. **Fix:** normalize header metadata to the actual next actionable state for operator clarity.
-4. **[taskplane-tasks/TP-025-rpc-wrapper-and-exit-classification/.reviews/request-R010.md:1, taskplane-tasks/TP-025-rpc-wrapper-and-exit-classification/STATUS.md:186] [minor]** — The step diff includes unrelated TP-025 updates. **Fix:** keep TP-028 step commits/revisions scoped to TP-028 files unless cross-task edits are intentional and documented.
+1. **[taskplane-tasks/TP-025-rpc-wrapper-and-exit-classification/.reviews/request-R010.md:1] [important]** — This Step 0 change set for `TP-028` includes a new review-request artifact for a different task (`TP-025`). Remove unrelated task artifacts from this step (or isolate them into a separate commit) to keep scope/review history clean.
+2. **[taskplane-tasks/TP-025-rpc-wrapper-and-exit-classification/STATUS.md:186] [important]** — `TP-025` execution log was modified in the same range as `TP-028` Step 0. This cross-task mutation violates scoped-change expectations; revert it from this task branch/range.
+3. **[taskplane-tasks/TP-028-partial-progress-preservation/STATUS.md:69-70] [important]** — The Reviews table records both `APPROVE` and `REVISE` for the same review ID/file (`R001`, `.reviews/R001-plan-step0.md`), while the review document itself is `REVISE` (`.reviews/R001-plan-step0.md:3`). Normalize to a single truthful entry per review artifact, or issue a new review ID for any superseding verdict.
 
 ### Pattern Violations
-- `STATUS.md` Reviews table ordering does not follow established template structure used across task status files.
-- Step changes are not cleanly scoped to the task under execution (cross-task artifact touches).
+- `AGENTS.md` requires scoped, reviewable changes; this step range includes files outside `taskplane-tasks/TP-028-partial-progress-preservation/`.
+- Operator-visibility/audit trail is weakened by contradictory review metadata in `STATUS.md`.
 
 ### Test Gaps
-- No runtime code was changed in this step, so there are no behavioral tests to evaluate yet.
+- No runtime code changed in this step, so no additional automated tests are required for Step 0 itself.
 
 ### Suggestions
-- After correcting the STATUS inconsistencies, add a single authoritative review entry for Step 0 (or new review ID) before starting Step 1 implementation.
+- Clean up commit history (or stage content) so Step 0 contains only TP-028 artifacts.
+- After normalizing the Reviews table, add a short log note indicating which verdict is superseded to preserve chronology without ambiguity.
