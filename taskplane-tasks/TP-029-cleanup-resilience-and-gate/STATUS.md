@@ -29,7 +29,7 @@
 ---
 
 ### Step 1: Fix Per-Wave Cleanup Across All Repos
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Inter-wave reset: collect all repo roots from allocated lanes and iterate per-repo (following resume.ts encounteredRepoRoots pattern); per-repo target branch resolution (primary=orchBranch, secondary=resolveBaseBranch)
 - [x] Terminal cleanup: iterate all encountered repo roots for removeAllWorktrees (not just primary repoRoot); follow same pattern as resume.ts:1475-1507
@@ -38,20 +38,20 @@
 - [x] Remove duplicate execution-log rows at STATUS.md:110-113 (R003 housekeeping)
 - [x] R004: Remove unused `resolveRepoIdFromRoot` import from engine.ts (fixes circular dep engine→resume→engine)
 - [x] R004-v2: Remove duplicate .worktrees base-dir cleanup from engine.ts (keep single owner in removeAllWorktrees)
-- [ ] R004-v2: Add behavioral test for merge worktree force cleanup fallback (forceRemoveMergeWorktree)
-- [ ] R004-v2: Add engine-level behavioral test for multi-repo terminal cleanup (not just structural assertions)
+- [x] R004-v2: Add behavioral test for merge worktree force cleanup fallback (forceRemoveMergeWorktree)
+- [x] R004-v2: Add engine-level behavioral test for multi-repo terminal cleanup (not just structural assertions)
 - [x] R004: Add behavioral tests for multi-repo terminal cleanup (repos active in earlier waves but not final wave)
 - [x] R004: Add behavioral test for merge worktree force cleanup fallback path
 - [x] R004: Add behavioral test for .worktrees base-dir cleanup safety split by mode (subdirectory vs sibling)
-- [ ] R004-v2: Run full test suite and confirm green
+- [x] R004-v2: Run full test suite and confirm green (998 tests, 26 files, all pass)
 
 ---
 
 ### Step 2: Post-Merge Cleanup Gate
 **Status:** 🟨 In Progress
 
-- [ ] R005: Add `cleanup_post_merge_failed` classification to messages.ts (pure function like computeMergeFailurePolicy) — returns targetPhase "paused", errorMessage, persistTrigger, notification with per-repo failure details and recovery commands (`/orch-resume`, manual cleanup)
-- [ ] R005: In engine.ts, after inter-wave reset loop, verify no registered worktrees remain for any repo that should be clean; collect per-repo failure payloads (repo path + stale worktree list); if any failures → call cleanup gate policy → set phase="paused", persist state, emit diagnostic, break wave loop
+- [x] R005: Add `cleanup_post_merge_failed` classification to messages.ts (pure function like computeMergeFailurePolicy) — returns targetPhase "paused", errorMessage, persistTrigger, notification with per-repo failure details and recovery commands (`/orch-resume`, manual cleanup)
+- [x] R005: In engine.ts, after inter-wave reset loop, verify no registered worktrees remain for any repo that should be clean; collect per-repo failure payloads (repo path + stale worktree list); if any failures → call cleanup gate policy → set phase="paused", persist state, emit diagnostic, break wave loop
 - [ ] R005: Add parity cleanup gate to resume.ts inter-wave reset (same verification + pause + persist pattern)
 - [ ] R005: Add tests — (a) cleanup failure pauses batch and blocks wave N+1 start, (b) cleanup success still advances normally (regression guard)
 - [ ] R005: Run full test suite and confirm green

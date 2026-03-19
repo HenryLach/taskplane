@@ -354,6 +354,121 @@ export function computeMergeFailurePolicy(
 }
 
 
+// ── Cleanup Gate Policy (TP-029 Step 2) ──────────────────────────────
+
+/**
+ * Per-repo cleanup failure detail.
+ * Collected during post-merge inter-wave verification.
+ */
+export interface CleanupGateRepoFailure {
+	/** Repo root path that has stale worktrees */
+	repoRoot: string;
+	/** Repo ID (undefined for primary/repo-mode) */
+	repoId: string | undefined;
+	/** Paths of stale worktrees still registered after cleanup */
+	staleWorktrees: string[];
+}
+
+/**
+ * Result of applying the cleanup gate policy.
+ *
+ * Pure function output — callers use this to perform state mutations
+ * and notifications consistently. Ensures engine.ts and resume.ts
+ * apply identical pause transitions on cleanup failure.
+ */
+export interface CleanupGatePolicyResult {
+	/** Always "pause" — cleanup failures block next wave but preserve merged work */
+	policy: "pause";
+	/** Target phase for batchState.phase */
+	targetPhase: "paused";
+	/** Error message to push to batchState.errors */
+	errorMessage: string;
+	/** Persistence trigger label */
+	persistTrigger: "cleanup-post-merge-failed";
+	/** User-facing notification message */
+	notifyMessage: string;
+	/** Notification level for onNotify */
+	notifyLevel: "error";
+	/** Structured log details for execLog */
+	logDetails: {
+		waveNumber: number;
+		failedRepoCount: number;
+		totalStaleWorktrees: number;
+		repos: Array<{ repoId: string; staleCount: number }>;
+	};
+}
+
+/**
+ * Compute the cleanup gate policy result for post-merge verification failure.
+ *
+ * This is a **pure function** — it computes all outputs deterministically
+ * from the wave index and per-repo failure details, without performing any
+ * side effects.
+ *
+ * Both engine.ts and resume.ts MUST use this function to guarantee
+ * identical failure attribution, phase transitions, error messages,
+ * and notifications when post-merge cleanup leaves stale worktrees.
+ *
+ * The cleanup gate always pauses (never aborts) because:
+ * - Merged commits are already on the orch branch and must not be lost
+ * - The operator can manually remove stale worktrees and `/orch-resume`
+ *
+ * @param waveIndex  - 0-based wave index (displayed as 1-indexed)
+ * @param failures   - Per-repo cleanup failure details
+ * @returns Policy result object for callers to apply
+ */
+export function computeCleanupGatePolicy(
+	waveIndex: number,
+	failures: CleanupGateRepoFailure[],
+): CleanupGatePolicyResult {
+	const waveNum = waveIndex + 1;
+	const failedRepoCount = failures.length;
+	const totalStaleWorktrees = failures.reduce((sum, f) => sum + f.staleWorktrees.length, 0);
+
+	const repos = failures.map(f => ({
+		repoId: f.repoId ?? "(default)",
+		staleCount: f.staleWorktrees.length,
+	}));
+
+	const repoDetail = repos.map(r => `${r.repoId} (${r.staleCount} stale)`).join(", ");
+
+	const errorMessage =
+		`Post-merge cleanup failed at wave ${waveNum}: ${totalStaleWorktrees} stale worktree(s) ` +
+		`in ${failedRepoCount} repo(s) [${repoDetail}]. ` +
+		`Batch paused. Remove stale worktrees manually and use /orch-resume to continue.`;
+
+	// Build recovery commands for each failed repo
+	const recoveryLines: string[] = [];
+	for (const f of failures) {
+		const label = f.repoId ?? "default";
+		for (const wt of f.staleWorktrees) {
+			recoveryLines.push(`     git worktree remove --force "${wt}"  # repo: ${label}`);
+		}
+	}
+
+	const notifyMessage =
+		`⏸️  Batch paused: post-merge cleanup failed at wave ${waveNum}.\n` +
+		`   ${totalStaleWorktrees} stale worktree(s) in ${failedRepoCount} repo(s): ${repoDetail}\n` +
+		`   Manual recovery:\n` +
+		recoveryLines.join("\n") + "\n" +
+		`   Then: /orch-resume`;
+
+	return {
+		policy: "pause",
+		targetPhase: "paused",
+		errorMessage,
+		persistTrigger: "cleanup-post-merge-failed",
+		notifyMessage,
+		notifyLevel: "error",
+		logDetails: {
+			waveNumber: waveNum,
+			failedRepoCount,
+			totalStaleWorktrees,
+			repos,
+		},
+	};
+}
+
 // ── Resume ORCH_MESSAGES ─────────────────────────────────────────────
 
 // Note: These are added via extension to the ORCH_MESSAGES object below.

@@ -10,7 +10,8 @@ import { execLog, executeWave, tmuxKillSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
-import { computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import type { CleanupGateRepoFailure } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
@@ -650,6 +651,39 @@ export async function executeOrchBatch(
 					ORCH_MESSAGES.orchWorktreeReset(waveIdx + 1, totalResetWorktrees),
 					"info",
 				);
+			}
+
+			// ── TP-029: Post-merge cleanup gate ──────────────────────
+			// Verify no stale worktrees remain after inter-wave reset.
+			// If any repo still has registered worktrees, pause the batch
+			// to prevent the next wave from executing with dirty state.
+			// Follows the same pure-function policy pattern as merge failure.
+			const cleanupGateFailures: CleanupGateRepoFailure[] = [];
+			for (const [perRepoRoot, perRepoId] of encounteredRepoRoots) {
+				const remaining = listWorktrees(resetPrefix, perRepoRoot, resetOpId, batchState.batchId);
+				// Filter out worktrees that were deliberately preserved (unsaved partial progress)
+				const stale = remaining.filter(wt => !ppUnsafeBranches.has(wt.branch));
+				if (stale.length > 0) {
+					cleanupGateFailures.push({
+						repoRoot: perRepoRoot,
+						repoId: perRepoId,
+						staleWorktrees: stale.map(wt => wt.path),
+					});
+				}
+			}
+
+			if (cleanupGateFailures.length > 0) {
+				const gatePolicyResult = computeCleanupGatePolicy(waveIdx, cleanupGateFailures);
+
+				execLog("batch", batchState.batchId, `cleanup gate failed — pausing batch`, gatePolicyResult.logDetails);
+
+				batchState.phase = gatePolicyResult.targetPhase;
+				batchState.errors.push(gatePolicyResult.errorMessage);
+				persistRuntimeState(gatePolicyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+				onNotify(gatePolicyResult.notifyMessage, gatePolicyResult.notifyLevel);
+				// Preserve remaining worktrees for manual cleanup — do NOT remove them
+				preserveWorktreesForResume = true;
+				break;
 			}
 		}
 	}

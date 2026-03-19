@@ -11,7 +11,8 @@ import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplet
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
-import { computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import type { CleanupGateRepoFailure } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { StateFileError } from "./types.ts";
@@ -1424,6 +1425,40 @@ export async function resumeOrchBatch(
 						}
 					}
 				}
+			}
+
+			// ── TP-029: Post-merge cleanup gate (parity with engine.ts) ──
+			// Verify no stale worktrees remain after inter-wave reset.
+			// If any repo still has registered worktrees, pause the batch
+			// to prevent the next wave from executing with dirty state.
+			const cleanupGateFailures: CleanupGateRepoFailure[] = [];
+			for (const perRepoRoot of encounteredRepoRoots) {
+				const remaining = listWorktrees(wtPrefix, perRepoRoot, resetOpId, batchState.batchId);
+				// Filter out worktrees deliberately preserved (unsaved partial progress)
+				const stale = remaining.filter(wt => !ppUnsafeBranches.has(wt.branch));
+				if (stale.length > 0) {
+					const repoId = perRepoRoot === repoRoot
+						? undefined
+						: resolveRepoIdFromRoot(perRepoRoot, workspaceConfig);
+					cleanupGateFailures.push({
+						repoRoot: perRepoRoot,
+						repoId,
+						staleWorktrees: stale.map(wt => wt.path),
+					});
+				}
+			}
+
+			if (cleanupGateFailures.length > 0) {
+				const gatePolicyResult = computeCleanupGatePolicy(waveIdx, cleanupGateFailures);
+
+				execLog("batch", batchState.batchId, `cleanup gate failed — pausing batch`, gatePolicyResult.logDetails);
+
+				batchState.phase = gatePolicyResult.targetPhase;
+				batchState.errors.push(gatePolicyResult.errorMessage);
+				persistRuntimeState(gatePolicyResult.persistTrigger, batchState, persistedState.wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+				onNotify(gatePolicyResult.notifyMessage, gatePolicyResult.notifyLevel);
+				preserveWorktreesForResume = true;
+				break;
 			}
 		}
 	}
