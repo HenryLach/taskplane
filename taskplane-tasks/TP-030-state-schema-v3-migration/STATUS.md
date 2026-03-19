@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 ---
@@ -24,10 +24,12 @@
 
 ### Step 1: Define v3 Schema
 **Status:** 🟨 In Progress
-- [ ] Add resilience section
-- [ ] Add diagnostics section
-- [ ] Promote exitDiagnostic alongside legacy exitReason
-- [ ] Preserve v2 fields, preserve unknown fields
+- [ ] Add `ResilienceState` interface and `PersistedRepairRecord` interface with all fields from roadmap 3a
+- [ ] Add `BatchDiagnostics` and `TaskExitSummary` interfaces for diagnostics section
+- [ ] Add optional `resilience` and `diagnostics` fields to `PersistedBatchState` (optional for v1/v2 compat)
+- [ ] Add optional `exitDiagnostic?: TaskExitDiagnostic` to `PersistedTaskRecord` alongside legacy `exitReason`
+- [ ] Bump `BATCH_STATE_SCHEMA_VERSION` to 3 and update version-history JSDoc
+- [ ] Verify types compile cleanly (no TS errors)
 
 ---
 
@@ -37,6 +39,7 @@
 - [ ] v1/v2 → v3 migration with conservative defaults
 - [ ] Corrupt state handling (paused + diagnostic)
 - [ ] Version mismatch error for old runtimes
+- [ ] Unknown-field preservation on read/write roundtrip (ownership moved from Step 1 per R003)
 
 ---
 
@@ -64,6 +67,8 @@
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ## Discoveries
 
@@ -90,10 +95,20 @@
 | 2026-03-19 22:22 | Worker iter 1 | done in 43s, ctx: 9%, tools: 8 |
 | 2026-03-19 22:22 | Step 0 complete | Preflight |
 | 2026-03-19 22:22 | Step 1 started | Define v3 Schema |
+| 2026-03-19 22:23 | Worker iter 1 | done in 52s, ctx: 9%, tools: 10 |
+| 2026-03-19 22:23 | Step 0 complete | Preflight |
+| 2026-03-19 22:23 | Step 1 started | Define v3 Schema |
+| 2026-03-19 22:24 | Review R003 | plan Step 1: REVISE |
+| 2026-03-19 22:25 | Review R003 | plan Step 1: REVISE |
 
 ## Blockers
 
 *None*
+
+### Step 1/Step 2 Ownership Split (per R003 review)
+- **Step 1 owns:** Type/schema contracts in `types.ts` only. All new v3 sections are optional on `PersistedBatchState` so v1/v2 states remain assignable. Reuses `TaskExitDiagnostic` from `diagnostics.ts`.
+- **Step 2 owns:** Persistence/resume migration logic + unknown-field roundtrip preservation in `persistence.ts`.
+- `exitReason` stays as legacy string. `exitDiagnostic` becomes preferred canonical data. Consumers should prefer `exitDiagnostic` when present.
 
 ## Notes
 
