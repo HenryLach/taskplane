@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 2
 **Size:** M
 
@@ -29,13 +29,17 @@
 ---
 
 ### Step 1: Fix Per-Wave Cleanup Across All Repos
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] Inter-wave reset: collect all repo roots from allocated lanes and iterate per-repo (following resume.ts encounteredRepoRoots pattern); per-repo target branch resolution (primary=orchBranch, secondary=resolveBaseBranch)
 - [x] Terminal cleanup: iterate all encountered repo roots for removeAllWorktrees (not just primary repoRoot); follow same pattern as resume.ts:1475-1507
 - [x] Force cleanup fallback: apply forceCleanupWorktree to both merge.ts stale-prep cleanup (~577) and end-of-wave merge worktree cleanup (~887)
 - [x] .worktrees parent cleanup: only remove empty .worktrees base dirs in subdirectory mode; never force-remove non-empty parents (R003 safety rule)
 - [x] Remove duplicate execution-log rows at STATUS.md:110-113 (R003 housekeeping)
+- [ ] R004: Remove unused `resolveRepoIdFromRoot` import from engine.ts (fixes circular dep engine→resume→engine)
+- [ ] R004: Add behavioral tests for multi-repo terminal cleanup (repos active in earlier waves but not final wave)
+- [ ] R004: Add behavioral test for merge worktree force cleanup fallback path
+- [ ] R004: Add behavioral test for .worktrees base-dir cleanup safety split by mode (subdirectory vs sibling)
 
 ---
 
@@ -83,6 +87,7 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 
 ---
 
@@ -112,6 +117,8 @@
 | 2026-03-19 20:36 | Worker iter 1 | done in 74s, ctx: 10%, tools: 15 |
 | 2026-03-19 20:38 | Review R003 | plan Step 1: REVISE |
 | 2026-03-19 20:50 | Worker iter 2 | done in 688s, ctx: 55%, tools: 74 |
+| 2026-03-19 20:55 | Worker iter 2 | done in 1015s, ctx: 40%, tools: 116 |
+| 2026-03-19 21:00 | Review R004 | code Step 1: REVISE |
 
 ---
 
