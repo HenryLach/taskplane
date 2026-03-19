@@ -94,12 +94,12 @@ Or:
 
 | Layout | Mode | What happens |
 |--------|------|-------------|
-| Single git repo (or monorepo) | **Repo mode** | Config scaffolded into `.pi/` in the current directory |
+| Single git repo (or monorepo) | **Single-repo mode** | Config scaffolded into `.pi/` in the current directory |
 | Directory with git repo subdirectories | **Workspace mode** | Config scaffolded into `.taskplane/` inside a chosen config repo; pointer file created in workspace root |
 | Git repo **and** git repo subdirectories | **Ambiguous** | Interactive prompt asks you to choose repo or workspace mode (defaults to repo with `--preset`) |
 | No git repo found | **Error** | Init exits with a message asking you to run from a git repo |
 
-In ambiguous cases, preset/dry-run/non-interactive modes default to repo mode without prompting.
+In ambiguous cases, preset/dry-run/non-interactive modes default to single-repo mode without prompting.
 
 ### Repo Mode (Standard)
 
