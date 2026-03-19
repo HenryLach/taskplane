@@ -101,7 +101,8 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
 
 ## Never do
 
-1. **Never hardcode machine/user-specific paths or private environment assumptions.**
+1. **Never `git reset --hard` when you have uncommitted or staged changes.** Use `git stash` first, or commit to a branch. Hard reset silently destroys work that must then be re-applied from scratch.
+2. **Never hardcode machine/user-specific paths or private environment assumptions.**
 2. **Never leak internal/planning artifacts into public docs/templates.**
 3. **Never make template content project- or language-specific.**
 4. **Never silently change command names/flags or config schema fields.**
