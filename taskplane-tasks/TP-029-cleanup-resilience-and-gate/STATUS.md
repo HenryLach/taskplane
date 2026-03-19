@@ -1,6 +1,6 @@
 # TP-029: Cleanup Resilience & Post-Merge Gate — Status
 
-**Current Step:** Step 1: Fix Per-Wave Cleanup Across All Repos
+**Current Step:** Step 2: Post-Merge Cleanup Gate
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
@@ -29,7 +29,7 @@
 ---
 
 ### Step 1: Fix Per-Wave Cleanup Across All Repos
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] Inter-wave reset: collect all repo roots from allocated lanes and iterate per-repo (following resume.ts encounteredRepoRoots pattern); per-repo target branch resolution (primary=orchBranch, secondary=resolveBaseBranch)
 - [x] Terminal cleanup: iterate all encountered repo roots for removeAllWorktrees (not just primary repoRoot); follow same pattern as resume.ts:1475-1507
@@ -37,14 +37,18 @@
 - [x] .worktrees parent cleanup: only remove empty .worktrees base dirs in subdirectory mode; never force-remove non-empty parents (R003 safety rule)
 - [x] Remove duplicate execution-log rows at STATUS.md:110-113 (R003 housekeeping)
 - [x] R004: Remove unused `resolveRepoIdFromRoot` import from engine.ts (fixes circular dep engine→resume→engine)
+- [ ] R004-v2: Remove duplicate .worktrees base-dir cleanup from engine.ts (keep single owner in removeAllWorktrees)
+- [ ] R004-v2: Add behavioral test for merge worktree force cleanup fallback (forceRemoveMergeWorktree)
+- [ ] R004-v2: Add engine-level behavioral test for multi-repo terminal cleanup (not just structural assertions)
 - [x] R004: Add behavioral tests for multi-repo terminal cleanup (repos active in earlier waves but not final wave)
 - [x] R004: Add behavioral test for merge worktree force cleanup fallback path
 - [x] R004: Add behavioral test for .worktrees base-dir cleanup safety split by mode (subdirectory vs sibling)
+- [ ] R004-v2: Run full test suite and confirm green
 
 ---
 
 ### Step 2: Post-Merge Cleanup Gate
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Verify cleanup success before advancing wave
 - [ ] Pause batch on cleanup failure
@@ -121,6 +125,9 @@
 | 2026-03-19 20:55 | Worker iter 2 | done in 1015s, ctx: 40%, tools: 116 |
 | 2026-03-19 21:00 | Review R004 | code Step 1: REVISE |
 | 2026-03-19 21:06 | Review R004 | code Step 1: REVISE |
+| 2026-03-19 21:09 | Worker iter 2 | done in 538s, ctx: 30%, tools: 46 |
+| 2026-03-19 21:09 | Step 1 complete | Fix Per-Wave Cleanup Across All Repos |
+| 2026-03-19 21:09 | Step 2 started | Post-Merge Cleanup Gate |
 
 ---
 
