@@ -71,6 +71,14 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
    - Only files in `package.json#files` ship.
    - Changes to package layout or manifest impact install/runtime behavior.
 
+6. **Configuration lives in `taskplane-config.json`, not YAML**
+   - The canonical project config file is `.pi/taskplane-config.json` (JSON, camelCase keys).
+   - Legacy `.pi/task-runner.yaml` and `.pi/task-orchestrator.yaml` files may still exist but are **fallback only** — the JSON config takes precedence when present.
+   - When reading or modifying configuration, always check for `taskplane-config.json` first.
+   - When documenting config changes, reference the JSON format and keys (e.g., `taskRunner.reviewer.thinking`, not `reviewer:\n  thinking:`).
+   - User preferences live in `~/.pi/agent/taskplane/preferences.json` and override project config.
+   - See `extensions/taskplane/config-loader.ts` and `extensions/taskplane/config-schema.ts` for the loading chain and defaults.
+
 ---
 
 ## Always do
