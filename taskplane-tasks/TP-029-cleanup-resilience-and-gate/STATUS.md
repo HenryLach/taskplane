@@ -58,7 +58,7 @@
 - [x] R006: Fix cleanup gate to only detect true stale worktrees (reset/remove failures), not successfully-reset reusable worktrees — track failures during reset loop and gate on those, not on post-hoc listWorktrees
 - [x] R006: Align persistTrigger to `cleanup_post_merge_failed` (underscore) matching spec classification naming
 - [x] R006: Add regression tests — successful wave-1 merge+reset in 2-wave batch does NOT pause; pause only on actual unrecoverable stale state
-- [ ] R006: Run full test suite and confirm green
+- [x] R006: Run full test suite and confirm green (1014 tests, 26 files, all pass)
 
 ---
 
@@ -152,6 +152,7 @@
 | 2026-03-19 21:27 | Step 3 started | Integrate Cleanup into /orch-integrate |
 | 2026-03-19 21:30 | Review R007 | plan Step 3: REVISE |
 | 2026-03-19 21:30 | Review R006 | code Step 2: REVISE |
+| 2026-03-19 21:43 | Worker iter 4 | done in 792s, ctx: 36%, tools: 86 |
 
 ---
 
