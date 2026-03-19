@@ -675,7 +675,10 @@ describe("executeIntegration — fast-forward mode", () => {
 			},
 		});
 		executeIntegration("ff", makeContext(), deps);
-		expect(gitCalls[0]).toEqual(["merge", "--ff-only", "orch/henry-20260318T140000"]);
+		// First call is status --porcelain (stash check), then merge
+		expect(gitCalls[0]).toEqual(["status", "--porcelain"]);
+		const mergeCall = gitCalls.find(c => c[0] === "merge");
+		expect(mergeCall).toEqual(["merge", "--ff-only", "orch/henry-20260318T140000"]);
 	});
 
 	it("returns error when ff fails (diverged branches)", () => {
@@ -736,7 +739,10 @@ describe("executeIntegration — merge mode", () => {
 			},
 		});
 		executeIntegration("merge", makeContext(), deps);
-		expect(gitCalls[0]).toEqual(["merge", "orch/henry-20260318T140000", "--no-edit"]);
+		// First call is status --porcelain (stash check), then merge
+		expect(gitCalls[0]).toEqual(["status", "--porcelain"]);
+		const mergeCall = gitCalls.find(c => c[0] === "merge");
+		expect(mergeCall).toEqual(["merge", "orch/henry-20260318T140000", "--no-edit"]);
 	});
 
 	it("returns error when merge fails (conflict)", () => {
