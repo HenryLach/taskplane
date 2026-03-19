@@ -557,10 +557,10 @@ export interface LaneTaskOutcome {
 	partialProgressCommits?: number;
 	/**
 	 * Saved branch name holding partial progress for a failed task.
-	 * Undefined/null when no partial progress was saved.
+	 * Undefined when no partial progress was saved.
 	 * Optional for backward compatibility.
 	 */
-	partialProgressBranch?: string | null;
+	partialProgressBranch?: string;
 }
 
 /**

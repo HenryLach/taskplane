@@ -49,8 +49,8 @@
 - [x] Update `serializeBatchState()` in persistence.ts to map the new fields from `LaneTaskOutcome` → `PersistedTaskRecord`
 - [x] Add validation for the new optional fields in the state-file validation block in persistence.ts (backward-compatible: allow undefined)
 - [x] Populate fields at all 4 `preserveFailedLaneProgress()` call sites: engine.ts inter-wave, engine.ts terminal, resume.ts inter-wave, resume.ts terminal — update task outcomes with ppResult data after preservation
-- [ ] R006: Fix nullability contract mismatch — normalize `partialProgressBranch` to `string | undefined` across LaneTaskOutcome, PersistedTaskRecord, serialization, and validation (currently typed as `string | null` in LaneTaskOutcome but validation rejects null)
-- [ ] R006: Ensure serialization skips writing `partialProgressBranch` when undefined, and validate round-trip correctness at all boundaries
+- [x] R006: Fix nullability contract mismatch — normalize `partialProgressBranch` to `string | undefined` across LaneTaskOutcome, PersistedTaskRecord, serialization, and validation (currently typed as `string | null` in LaneTaskOutcome but validation rejects null)
+- [x] R006: Ensure serialization skips writing `partialProgressBranch` when undefined, and validate round-trip correctness at all boundaries
 
 ---
 
