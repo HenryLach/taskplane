@@ -12,6 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Cross-repo TASK_AUTOSTART path resolution** — workspace mode now uses absolute paths for task PROMPT.md so workers in api-service/web-client worktrees can find tasks that live in shared-libs.
 
+## [0.5.9] - 2026-03-18
+
+### Fixed
+- **`/orch-integrate` only integrated default repo** — in workspace mode, now loops over all repos that have the orch branch and integrates each one.
+
 ## [0.5.8] - 2026-03-18
 
 ### Fixed
