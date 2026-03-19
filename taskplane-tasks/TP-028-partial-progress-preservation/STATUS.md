@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 8
-**Iteration:** 4
+**Review Counter:** 9
+**Iteration:** 6
 **Size:** M
 
 ---
@@ -69,7 +69,9 @@
 ### Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Comments updated
+- [ ] Inline comments updated in worktree.ts, engine.ts, resume.ts, types.ts, persistence.ts for partial progress preservation
+- [ ] Docs-impact decision: review `/orch-status` output (extension.ts) vs docs/reference/commands.md and record whether update is needed
+- [ ] Closeout evidence note recorded in Execution Log
 - [ ] `.DONE` created
 
 ---
@@ -93,6 +95,8 @@
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 
 ---
 
@@ -164,6 +168,11 @@
 | 2026-03-19 20:22 | Worker iter 4 | done in 566s, ctx: 33%, tools: 38 |
 | 2026-03-19 20:22 | Step 3 complete | Testing & Verification |
 | 2026-03-19 20:22 | Step 4 started | Documentation & Delivery |
+| 2026-03-19 20:23 | Worker iter 5 | done in 334s, ctx: 11%, tools: 14 |
+| 2026-03-19 20:23 | Step 3 complete | Testing & Verification |
+| 2026-03-19 20:23 | Step 4 started | Documentation & Delivery |
+| 2026-03-19 20:24 | Review R009 | plan Step 4: REVISE |
+| 2026-03-19 20:25 | Review R009 | plan Step 4: REVISE |
 
 ---
 
