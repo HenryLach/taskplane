@@ -41,7 +41,7 @@
 ---
 
 ### Step 2: Record Partial Progress in Task Outcome
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Add optional `partialProgressCommits` (number) and `partialProgressBranch` (string|null) to `LaneTaskOutcome` and `PersistedTaskRecord` in types.ts, with backward-compat defaults (0 / undefined)
 - [x] Update `upsertTaskOutcome()` change detection in persistence.ts to include the new fields
@@ -137,6 +137,7 @@
 | 2026-03-19 19:38 | Step 2 started | Record Partial Progress in Task Outcome |
 | 2026-03-19 19:41 | Review R005 | plan Step 2: REVISE |
 | 2026-03-19 19:41 | Review R005 | plan Step 2: REVISE |
+| 2026-03-19 19:49 | Worker iter 3 | done in 439s, ctx: 30%, tools: 76 |
 
 ---
 
