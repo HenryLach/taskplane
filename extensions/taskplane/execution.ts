@@ -413,21 +413,26 @@ export function resolveCanonicalTaskPaths(
 	taskFolder: string,
 	worktreePath: string,
 	repoRoot: string,
+	isWorkspaceMode?: boolean,
 ): ResolvedTaskPaths {
 	const repoRootNorm = resolve(repoRoot).replace(/\\/g, "/");
 	const folderNorm = resolve(taskFolder).replace(/\\/g, "/");
 
 	let resolvedFolder: string;
 
-	if (folderNorm.startsWith(repoRootNorm + "/")) {
-		// Case 1: Task folder is inside the repo root.
+	if (isWorkspaceMode) {
+		// Workspace mode: task folder may live in a different repo than
+		// the lane's worktree. Always use the absolute canonical path —
+		// .DONE and STATUS.md are written by workers to the original
+		// task folder (via absolute TASK_AUTOSTART path), not to the worktree.
+		resolvedFolder = resolve(taskFolder);
+	} else if (folderNorm.startsWith(repoRootNorm + "/")) {
+		// Repo mode: task folder is inside the repo root.
 		// Translate to equivalent path in the worktree.
 		const relativePath = folderNorm.slice(repoRootNorm.length + 1);
 		resolvedFolder = join(worktreePath, relativePath);
 	} else {
-		// Case 2: Task folder is outside the repo root (workspace mode).
-		// Use the absolute path directly — task state lives in the
-		// canonical task folder, not mirrored in any worktree.
+		// Fallback: use absolute path directly.
 		resolvedFolder = resolve(taskFolder);
 	}
 
@@ -484,8 +489,9 @@ export function resolveTaskDonePath(
 	taskFolder: string,
 	worktreePath: string,
 	repoRoot: string,
+	isWorkspaceMode?: boolean,
 ): string {
-	return resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot).donePath;
+	return resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot, isWorkspaceMode).donePath;
 }
 
 /**
@@ -613,10 +619,11 @@ export async function pollUntilTaskComplete(
 	config: OrchestratorConfig,
 	repoRoot: string,
 	pauseSignal: { paused: boolean },
+	isWorkspaceMode?: boolean,
 ): Promise<{ status: LaneTaskStatus; exitReason: string; doneFileFound: boolean }> {
 	const sessionName = lane.tmuxSessionName;
 	const laneId = lane.laneId;
-	const resolved = resolveCanonicalTaskPaths(task.task.taskFolder, lane.worktreePath, repoRoot);
+	const resolved = resolveCanonicalTaskPaths(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
 	const donePath = resolved.donePath;
 	const statusPath = resolved.statusPath;
 	const laneLogPath = resolveLaneLogPath(lane, task);
@@ -832,6 +839,7 @@ export async function executeLane(
 	repoRoot: string,
 	pauseSignal: { paused: boolean },
 	workspaceRoot?: string,
+	isWorkspaceMode?: boolean,
 ): Promise<LaneExecutionResult> {
 	const laneId = lane.laneId;
 	const laneStartTime = Date.now();
@@ -877,6 +885,7 @@ export async function executeLane(
 				config,
 				repoRoot,
 				pauseSignal,
+				isWorkspaceMode,
 			);
 
 			taskOutcome = {
@@ -1003,9 +1012,10 @@ export function parseWorktreeStatusMd(
 	taskFolder: string,
 	worktreePath: string,
 	repoRoot: string,
+	isWorkspaceMode?: boolean,
 ): { parsed: ParsedWorktreeStatus | null; error: string | null } {
 	// Use canonical resolver for consistent path translation
-	const resolved = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot);
+	const resolved = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot, isWorkspaceMode);
 	const statusPath = resolved.statusPath;
 
 	if (!existsSync(statusPath)) {
@@ -1323,6 +1333,7 @@ export async function monitorLanes(
 	pauseSignal: { paused: boolean },
 	waveNumber: number = 1,
 	onUpdate?: MonitorUpdateCallback,
+	isWorkspaceMode?: boolean,
 ): Promise<MonitorState> {
 	const pollIntervalMs = (config.monitoring.poll_interval || 5) * 1000;
 	const stallTimeoutMs = (config.failure.stall_timeout || 30) * 60_000;
@@ -1412,8 +1423,8 @@ export async function monitorLanes(
 					currentTaskId = task.taskId;
 
 					const tracker = getOrCreateTracker(task.taskId, now);
-					const donePath = resolveTaskDonePath(task.task.taskFolder, lane.worktreePath, repoRoot);
-					const statusResult = parseWorktreeStatusMd(task.task.taskFolder, lane.worktreePath, repoRoot);
+					const donePath = resolveTaskDonePath(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
+					const statusResult = parseWorktreeStatusMd(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
 
 					const snapshot = resolveTaskMonitorState(
 						task.taskId,
@@ -1819,8 +1830,9 @@ export async function executeWave(
 	// In workspace mode, pass the workspace root so lane sessions can find .pi/ config.
 	// configPath is .pi/taskplane-workspace.yaml → parent of parent is workspace root.
 	const wsRoot = workspaceConfig ? dirname(dirname(workspaceConfig.configPath)) : undefined;
+	const isWsMode = !!workspaceConfig;
 	const lanePromises = lanes.map(lane =>
-		executeLane(lane, config, repoRoot, wavePauseSignal, wsRoot),
+		executeLane(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode),
 	);
 
 	// Start monitoring as a sibling async loop
@@ -1832,6 +1844,7 @@ export async function executeWave(
 		wavePauseSignal,
 		waveIndex,
 		onMonitorUpdate,
+		isWsMode,
 	);
 
 	// ── Stage 4: Wait for all lanes + apply policy ───────────────
