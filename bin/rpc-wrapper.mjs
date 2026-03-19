@@ -386,8 +386,8 @@ if (args.model) {
 if (systemPromptContent) {
 	piArgs.push("--system-prompt", systemPromptContent);
 }
-for (const tool of args.tools) {
-	piArgs.push("--tool", tool);
+if (args.tools.length > 0) {
+	piArgs.push("--tools", args.tools.join(","));
 }
 for (const ext of args.extensions) {
 	piArgs.push("-e", ext);
@@ -567,8 +567,13 @@ function writeExitSummary(exitCode, exitSignal, errorOverride) {
 	// Determine final error: explicit override > accumulated state error > null
 	const finalError = errorOverride || state.error || null;
 
+	// Normalize exit code: null/undefined/NaN/negative → 1 for summary consumers
+	const normalizedExitCode = (typeof exitCode === "number" && Number.isFinite(exitCode) && exitCode >= 0)
+		? exitCode
+		: (exitCode === null || exitCode === undefined ? null : 1);
+
 	const rawSummary = {
-		exitCode: typeof exitCode === "number" ? exitCode : null,
+		exitCode: normalizedExitCode,
 		exitSignal: exitSignal || null,
 		tokens: (state.tokens.input + state.tokens.output + state.tokens.cacheRead + state.tokens.cacheWrite) > 0
 			? { ...state.tokens }
@@ -674,10 +679,10 @@ process.on("unhandledRejection", (reason) => {
 
 // ── Exit Code Forwarding ─────────────────────────────────────────────
 
-// Forward the pi process exit code as our own
+// Forward the pi process exit code as our own (normalized: null/negative/non-finite → 1)
 proc.on("close", (code) => {
 	// Use setImmediate to let other close handlers run first
 	setImmediate(() => {
-		process.exitCode = code ?? 1;
+		process.exitCode = (typeof code === "number" && Number.isFinite(code) && code >= 0) ? code : 1;
 	});
 });

@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 6
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -52,6 +52,8 @@
 - [x] R006 fix: Close stdin after agent_end/terminal response to prevent pi from hanging indefinitely
 - [x] R006 fix: Use shell:true in spawn() to match task-runner.ts pattern and ensure Windows compatibility (pi.cmd shim)
 - [x] R006 fix: Apply redaction to exit summary fields (error, lastToolCall) before writing — add redactSummary helper
+- [x] R006 fix: Use --tools (comma-list) instead of repeated --tool flags to match task-runner.ts pattern
+- [x] R006 fix: Normalize exit codes (negative/NaN/non-finite → 1) in both exit summary and process.exitCode
 
 ---
 
@@ -93,6 +95,7 @@
 | R006 | plan | Step 3 | REVISE | .reviews/R006-plan-step3.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ---
 
@@ -145,6 +148,10 @@
 | 2026-03-19 18:31 | Step 3 blocked | No progress after 3 iterations |
 | 2026-03-19 18:33 | Review R006 | code Step 2: REVISE |
 | 2026-03-19 18:34 | Review R006 | code Step 2: REVISE |
+| 2026-03-19 18:35 | Worker iter 3 | done in 154s, ctx: 19%, tools: 24 |
+| 2026-03-19 18:35 | Step 2 complete | Build RPC Wrapper Script |
+| 2026-03-19 18:35 | Step 3 started | Testing & Verification |
+| 2026-03-19 18:36 | Review R007 | plan Step 3: REVISE |
 
 ---
 
