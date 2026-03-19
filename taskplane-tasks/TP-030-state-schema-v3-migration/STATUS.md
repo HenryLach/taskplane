@@ -23,14 +23,14 @@
 ---
 
 ### Step 1: Define v3 Schema
-**Status:** 🟨 In Progress
-- [ ] Add `ResilienceState` interface and `PersistedRepairRecord` interface with all fields from roadmap 3a
-- [ ] Add `BatchDiagnostics` and `PersistedTaskExitSummary` interfaces for diagnostics section
-- [ ] Add **required** `resilience: ResilienceState` and `diagnostics: BatchDiagnostics` to `PersistedBatchState` (required in v3; migration fills defaults for v1/v2)
-- [ ] Add optional `exitDiagnostic?: TaskExitDiagnostic` to both `LaneTaskOutcome` (runtime) and `PersistedTaskRecord` (persisted) alongside legacy `exitReason`
-- [ ] Bump `BATCH_STATE_SCHEMA_VERSION` to 3 and update version-history JSDoc
-- [ ] Add v3 type contract table to STATUS.md Notes
-- [ ] Verify types compile cleanly (no TS errors)
+**Status:** ✅ Complete
+- [x] Add `ResilienceState` interface and `PersistedRepairRecord` interface with all fields from roadmap 3a
+- [x] Add `BatchDiagnostics` and `PersistedTaskExitSummary` interfaces for diagnostics section
+- [x] Add **required** `resilience: ResilienceState` and `diagnostics: BatchDiagnostics` to `PersistedBatchState` (required in v3; migration fills defaults for v1/v2)
+- [x] Add optional `exitDiagnostic?: TaskExitDiagnostic` to both `LaneTaskOutcome` (runtime) and `PersistedTaskRecord` (persisted) alongside legacy `exitReason`
+- [x] Bump `BATCH_STATE_SCHEMA_VERSION` to 3 and update version-history JSDoc
+- [x] Add v3 type contract table to STATUS.md Notes
+- [x] Verify types compile cleanly (no TS errors)
 
 ---
 
@@ -126,3 +126,18 @@
 | Old runtime on v3 state | Throws `STATE_SCHEMA_INVALID` with "Delete .pi/batch-state.json" | Change error message to include upgrade guidance | `persistence.ts` |
 | v1→v3 migration | v1→v2 via `upconvertV1toV2()` | Chain: v1→v2→v3, with v3 defaults (empty resilience/diagnostics) | `persistence.ts` |
 | v2→v3 migration | N/A | Default missing resilience/diagnostics fields conservatively | `persistence.ts` |
+
+### v3 Type Contract (per R003 review)
+
+| Field | Parent | Required? | Default (migration) | Type |
+|-------|--------|-----------|---------------------|------|
+| `resilience` | `PersistedBatchState` | **Required** | `defaultResilienceState()` | `ResilienceState` |
+| `resilience.resumeForced` | `ResilienceState` | Required | `false` | `boolean` |
+| `resilience.retryCountByScope` | `ResilienceState` | Required | `{}` | `Record<string, number>` |
+| `resilience.lastFailureClass` | `ResilienceState` | Required | `null` | `ExitClassification \| null` |
+| `resilience.repairHistory` | `ResilienceState` | Required | `[]` | `PersistedRepairRecord[]` |
+| `diagnostics` | `PersistedBatchState` | **Required** | `defaultBatchDiagnostics()` | `BatchDiagnostics` |
+| `diagnostics.taskExits` | `BatchDiagnostics` | Required | `{}` | `Record<string, PersistedTaskExitSummary>` |
+| `diagnostics.batchCost` | `BatchDiagnostics` | Required | `0` | `number` |
+| `exitDiagnostic` | `PersistedTaskRecord` | Optional | `undefined` | `TaskExitDiagnostic \| undefined` |
+| `exitDiagnostic` | `LaneTaskOutcome` | Optional | `undefined` | `TaskExitDiagnostic \| undefined` |
