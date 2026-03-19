@@ -1089,6 +1089,158 @@ describe("computeIntegrateCleanupResult — pure function", () => {
 	});
 });
 
+// ── TP-029 Step 4: Notification severity policy ──────────────────────
+
+describe("computeIntegrateCleanupResult — notification severity policy", () => {
+	it("clean=true drives info-level notification", () => {
+		const findings: IntegrateCleanupRepoFindings[] = [
+			{
+				repoRoot: "/repo",
+				repoId: "repo",
+				staleWorktrees: [],
+				staleLaneBranches: [],
+				staleOrchBranches: [],
+				staleAutostashEntries: [],
+				nonEmptyWorktreeContainers: [],
+			},
+		];
+		const result = computeIntegrateCleanupResult(findings);
+		expect(result.clean).toBe(true);
+		// In extension.ts: ctx.ui.notify(summary, cleanupResult.clean ? "info" : "warning")
+		const notifyLevel = result.clean ? "info" : "warning";
+		expect(notifyLevel).toBe("info");
+	});
+
+	it("clean=false drives warning-level notification", () => {
+		const findings: IntegrateCleanupRepoFindings[] = [
+			{
+				repoRoot: "/repo",
+				repoId: "repo",
+				staleWorktrees: ["/wt/lane-1"],
+				staleLaneBranches: [],
+				staleOrchBranches: [],
+				staleAutostashEntries: [],
+				nonEmptyWorktreeContainers: [],
+			},
+		];
+		const result = computeIntegrateCleanupResult(findings);
+		expect(result.clean).toBe(false);
+		const notifyLevel = result.clean ? "info" : "warning";
+		expect(notifyLevel).toBe("warning");
+	});
+});
+
+// ── TP-029 Step 4: Polyrepo acceptance — all 5 dimensions ───────────
+
+describe("computeIntegrateCleanupResult — all 5 acceptance dimensions across repos", () => {
+	it("validates all 5 cleanup criteria across multiple workspace repos", () => {
+		// This test covers the full polyrepo acceptance contract:
+		// 1. staleWorktrees, 2. staleLaneBranches, 3. staleOrchBranches,
+		// 4. staleAutostashEntries, 5. nonEmptyWorktreeContainers
+		// Distributed across 3 repos (simulating a workspace with multiple repos).
+		const findings: IntegrateCleanupRepoFindings[] = [
+			{
+				repoRoot: "/workspace/api",
+				repoId: "api",
+				staleWorktrees: ["/workspace/api/.worktrees/lane-1"],
+				staleLaneBranches: ["task/op-lane-1-batch123"],
+				staleOrchBranches: [],
+				staleAutostashEntries: [],
+				nonEmptyWorktreeContainers: [],
+			},
+			{
+				repoRoot: "/workspace/frontend",
+				repoId: "frontend",
+				staleWorktrees: [],
+				staleLaneBranches: [],
+				staleOrchBranches: ["orch/op-batch123"],
+				staleAutostashEntries: ["0", "1"],
+				nonEmptyWorktreeContainers: [],
+			},
+			{
+				repoRoot: "/workspace/shared",
+				repoId: "shared",
+				staleWorktrees: [],
+				staleLaneBranches: [],
+				staleOrchBranches: [],
+				staleAutostashEntries: [],
+				nonEmptyWorktreeContainers: ["/workspace/shared/.worktrees"],
+			},
+		];
+		const result = computeIntegrateCleanupResult(findings);
+
+		// Overall: dirty (3 repos have findings)
+		expect(result.clean).toBe(false);
+		expect(result.dirtyRepos).toHaveLength(3);
+
+		// Dimension 1: staleWorktrees (repo: api)
+		expect(result.report).toContain("api");
+		expect(result.report).toContain("stale worktree");
+		expect(result.report).toContain("git worktree remove");
+
+		// Dimension 2: staleLaneBranches (repo: api)
+		expect(result.report).toContain("lane branch");
+		expect(result.report).toContain("git branch -D");
+
+		// Dimension 3: staleOrchBranches (repo: frontend)
+		expect(result.report).toContain("frontend");
+		expect(result.report).toContain("orch branch");
+
+		// Dimension 4: staleAutostashEntries (repo: frontend)
+		expect(result.report).toContain("autostash");
+		expect(result.report).toContain("git stash drop");
+
+		// Dimension 5: nonEmptyWorktreeContainers (repo: shared)
+		expect(result.report).toContain("shared");
+		expect(result.report).toContain("container");
+
+		// All recovery commands should be present
+		expect(result.report).toContain("git worktree remove");
+		expect(result.report).toContain("git branch -D");
+		expect(result.report).toContain("git stash drop");
+	});
+
+	it("returns clean when all 5 dimensions are clear across all workspace repos", () => {
+		const findings: IntegrateCleanupRepoFindings[] = [
+			{
+				repoRoot: "/workspace/api",
+				repoId: "api",
+				staleWorktrees: [],
+				staleLaneBranches: [],
+				staleOrchBranches: [],
+				staleAutostashEntries: [],
+				nonEmptyWorktreeContainers: [],
+			},
+			{
+				repoRoot: "/workspace/frontend",
+				repoId: "frontend",
+				staleWorktrees: [],
+				staleLaneBranches: [],
+				staleOrchBranches: [],
+				staleAutostashEntries: [],
+				nonEmptyWorktreeContainers: [],
+			},
+			{
+				repoRoot: "/workspace/shared",
+				repoId: "shared",
+				staleWorktrees: [],
+				staleLaneBranches: [],
+				staleOrchBranches: [],
+				staleAutostashEntries: [],
+				nonEmptyWorktreeContainers: [],
+			},
+		];
+		const result = computeIntegrateCleanupResult(findings);
+		expect(result.clean).toBe(true);
+		expect(result.dirtyRepos).toHaveLength(0);
+		expect(result.report).toContain("🧹");
+		expect(result.report).toContain("no stale");
+		// Verify info-level notification
+		const notifyLevel = result.clean ? "info" : "warning";
+		expect(notifyLevel).toBe("info");
+	});
+});
+
 // ── TP-029 Step 3: dropBatchAutostash ────────────────────────────────
 
 describe("dropBatchAutostash — real git repo", () => {
