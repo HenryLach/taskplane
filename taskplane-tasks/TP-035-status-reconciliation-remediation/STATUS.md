@@ -1,6 +1,6 @@
 # TP-035: STATUS.md Reconciliation & Artifact Staging Scope — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: STATUS.md Reconciliation
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
@@ -20,7 +20,7 @@
 ---
 
 ### Step 1: STATUS.md Reconciliation
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Apply reconciliation findings to STATUS.md
 - [ ] Uncheck/check mismatched boxes
 - [ ] Record reconciliation in diagnostics
@@ -80,6 +80,9 @@
 | 2026-03-20 05:43 | Step 0 started | Preflight |
 | 2026-03-20 05:44 | Review R001 | plan Step 0: APPROVE |
 | 2026-03-20 05:45 | Review R001 | plan Step 0: APPROVE |
+| 2026-03-20 05:46 | Worker iter 1 | done in 111s, ctx: 32%, tools: 29 |
+| 2026-03-20 05:46 | Step 0 complete | Preflight |
+| 2026-03-20 05:46 | Step 1 started | STATUS.md Reconciliation |
 
 ## Blockers
 
