@@ -1,7 +1,7 @@
 # TP-027: Dashboard Real-Time Telemetry — Status
 
 **Current Step:** Step 4: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 1
 **Review Counter:** 5
@@ -55,11 +55,11 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Review docs/reference/commands.md dashboard section and record decision (update or no-change rationale)
-- [ ] Finalize STATUS.md: mark Step 4 complete, update top-level status, add execution-log entry
-- [ ] Confirm .DONE file exists as final action (reconcile with STATUS.md completion)
+- [x] Review docs/reference/commands.md dashboard section and record decision (update or no-change rationale)
+- [x] Finalize STATUS.md: mark Step 4 complete, update top-level status, add execution-log entry
+- [x] Confirm .DONE file exists as final action (reconcile with STATUS.md completion)
 
 ---
 
@@ -135,6 +135,8 @@
 | 2026-03-20 03:08 | Step 3 complete | Testing & Verification |
 | 2026-03-20 03:08 | Step 4 started | Documentation & Delivery |
 | 2026-03-20 03:09 | Review R005 | plan Step 4: REVISE |
+| 2026-03-20 | Step 4 complete | Documentation reviewed (no change needed), STATUS.md finalized, .DONE confirmed |
+| 2026-03-20 | Task complete | All 5 steps done — dashboard telemetry feature delivered |
 
 ---
 
@@ -193,6 +195,10 @@
 - Compact chip style: small font, muted colors, icon prefix (🔄 retry, 🗜 compaction)
 - Retry active state: yellow pulsing badge to indicate in-progress retry
 - Batch cost in summary bar: use `batchTotalCost` from API response
+
+### Step 4 Documentation Decision
+
+Reviewed `docs/reference/commands.md` dashboard section (line 512-514). The section documents the `taskplane dashboard [--port <n>] [--no-open]` command with description "Launch the web dashboard server." This task adds real-time telemetry display (retry badges, compaction badges, batch total cost) as a **UI enhancement only** — no new CLI commands, no new flags, no new config keys. The dashboard is self-documenting via its UI. **No doc edit needed.**
 
 ### Step 1 Design Decisions
 
