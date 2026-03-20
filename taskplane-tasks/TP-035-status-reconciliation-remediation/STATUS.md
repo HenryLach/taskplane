@@ -1,11 +1,11 @@
 # TP-035: STATUS.md Reconciliation & Artifact Staging Scope — Status
 
-**Current Step:** Step 2: Tighten Artifact Staging Scope
+**Current Step:** Step 3: Clean Up System-Owned Template Items
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
-**Review Counter:** 3
-**Iteration:** 3
+**Review Counter:** 4
+**Iteration:** 4
 **Size:** S
 
 ---
@@ -36,9 +36,10 @@
 ---
 
 ### Step 3: Clean Up System-Owned Template Items
-**Status:** ⬜ Not Started
-- [ ] Audit templates for system-owned checkboxes
-- [ ] Remove or reword non-worker-actionable items
+**Status:** 🟨 In Progress
+- [ ] Audit all template surfaces for system-owned checkboxes: `templates/tasks/EXAMPLE-*/`, `templates/agents/`, and `skills/create-taskplane-task/references/prompt-template.md`
+- [ ] Remove or reword non-worker-actionable items (e.g., "Archive and push", "Task archived (auto — handled by task-runner extension)")
+- [ ] Verify: grep templates for banned phrases ("Archive and push", "Task archived") confirms zero matches after cleanup
 
 ---
 
@@ -65,6 +66,7 @@
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
+| R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -99,6 +101,13 @@
 | 2026-03-20 05:57 | Step 1 complete | STATUS.md Reconciliation |
 | 2026-03-20 05:57 | Step 2 started | Tighten Artifact Staging Scope |
 | 2026-03-20 05:59 | Review R003 | plan Step 2: APPROVE |
+| 2026-03-20 06:01 | Worker iter 3 | done in 295s, ctx: 23%, tools: 31 |
+| 2026-03-20 06:01 | Step 2 complete | Tighten Artifact Staging Scope |
+| 2026-03-20 06:01 | Step 3 started | Clean Up System-Owned Template Items |
+| 2026-03-20 06:02 | Worker iter 3 | done in 195s, ctx: 21%, tools: 16 |
+| 2026-03-20 06:02 | Step 2 complete | Tighten Artifact Staging Scope |
+| 2026-03-20 06:02 | Step 3 started | Clean Up System-Owned Template Items |
+| 2026-03-20 06:03 | Review R004 | plan Step 3: REVISE |
 
 ## Blockers
 
