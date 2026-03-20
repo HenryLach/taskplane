@@ -5,7 +5,7 @@
 **Last Updated:** 2026-03-20
 **Review Level:** 2
 **Review Counter:** 9
-**Iteration:** 5
+**Iteration:** 4
 **Size:** L
 
 ---
@@ -58,14 +58,14 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] R009-1: Parser edge cases — suite-level vitest failures (no assertionResults), non-zero exit with empty parsed output → command_error fallback
-- [ ] R009-2: Rollback/advancement safety — (a) successful rollback on verification_new_failure, (b) rollback failure / no preLaneHead blocks ALL advancement, (c) engine.ts + resume.ts counting + cleanup parity (exclude lr.error lanes)
-- [ ] R009-3: Workspace mode artifact naming — per-repo repoId suffix prevents filename collisions
-- [ ] Diff algorithm + pre-existing vs new failure tests (including deduplication, fixed detection)
-- [ ] Flaky handling tests (flakyReruns=0 immediate block, cleared re-run → flaky_suspected)
-- [ ] Mode behavior tests (strict/permissive on missing baseline and no-commands)
-- [ ] Full test suite passes (`cd extensions && npx vitest run`)
+**Status:** ✅ Complete
+- [x] R009-1: Parser edge cases — suite-level vitest failures (no assertionResults), non-zero exit with empty parsed output → command_error fallback
+- [x] R009-2: Rollback/advancement safety — (a) successful rollback on verification_new_failure, (b) rollback failure / no preLaneHead blocks ALL advancement, (c) engine.ts + resume.ts counting + cleanup parity (exclude lr.error lanes)
+- [x] R009-3: Workspace mode artifact naming — per-repo repoId suffix prevents filename collisions
+- [x] Diff algorithm + pre-existing vs new failure tests (including deduplication, fixed detection)
+- [x] Flaky handling tests (flakyReruns=0 immediate block, cleared re-run → flaky_suspected)
+- [x] Mode behavior tests (strict/permissive on missing baseline and no-commands)
+- [x] Full test suite passes (`cd extensions && npx vitest run`)
 
 ---
 
@@ -93,6 +93,7 @@
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 
 ## Discoveries
@@ -173,6 +174,8 @@
 | 2026-03-20 05:25 | Step 3 complete | Configuration & Modes |
 | 2026-03-20 05:25 | Step 4 started | Testing & Verification |
 | 2026-03-20 05:25 | Review R009 | plan Step 4: REVISE |
+| 2026-03-20 05:32 | Step 4 implemented | R009 revisions + full test suite 1534/1534 pass |
+| 2026-03-20 05:27 | Review R009 | plan Step 4: REVISE |
 
 ## Blockers
 
