@@ -1406,6 +1406,20 @@ export const _readExitSummary = readExitSummary;
 export const _buildExitDiagnostic = buildExitDiagnostic;
 export type { BuildExitDiagnosticInput };
 
+/**
+ * Determine whether a step is "low-risk" and should skip reviews.
+ * Low-risk steps: Step 0 (Preflight) and the final step (Delivery/Docs).
+ *
+ * @param stepNumber  The 0-based step number being evaluated
+ * @param totalSteps  Total number of steps in the task
+ * @returns true if the step should skip plan and code reviews
+ */
+export function isLowRiskStep(stepNumber: number, totalSteps: number): boolean {
+	if (totalSteps <= 0) return false;
+	const lastStepIndex = totalSteps - 1;
+	return stepNumber === 0 || stepNumber === lastStepIndex;
+}
+
 // ── TMUX Agent Spawner ───────────────────────────────────────────────
 
 /**
@@ -2082,12 +2096,11 @@ export default function (pi: ExtensionAPI) {
 		updateWidgets();
 
 		// Skip reviews for low-risk steps (Step 0 / Preflight and final step / Delivery)
-		const lastStepNumber = task.steps[task.steps.length - 1].number;
-		const isLowRiskStep = step.number === 0 || step.number === lastStepNumber;
+		const _isLowRiskStep = isLowRiskStep(step.number, task.steps.length);
 
 		// Plan review (level ≥ 1)
 		if (task.reviewLevel >= 1) {
-			if (isLowRiskStep) {
+			if (_isLowRiskStep) {
 				const label = step.number === 0 ? "Preflight" : "final step";
 				logExecution(statusPath, `Skip plan review`, `Step ${step.number} (${label}) — low-risk`);
 				ctx.ui.notify(`⏭️ Skipping plan review for Step ${step.number} (${label})`, "info");
@@ -2145,7 +2158,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Code review (level ≥ 2)
 		if (task.reviewLevel >= 2 && state.phase === "running") {
-			if (isLowRiskStep) {
+			if (_isLowRiskStep) {
 				const label = step.number === 0 ? "Preflight" : "final step";
 				logExecution(statusPath, `Skip code review`, `Step ${step.number} (${label}) — low-risk`);
 				ctx.ui.notify(`⏭️ Skipping code review for Step ${step.number} (${label})`, "info");
