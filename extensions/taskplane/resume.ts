@@ -12,14 +12,14 @@ import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplet
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
-import { computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
-import { StateFileError } from "./types.ts";
+import { defaultResilienceState, StateFileError } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, PersistedLaneRecord, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
-import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, safeResetWorktree } from "./worktree.ts";
+import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, safeResetWorktree, sleepSync } from "./worktree.ts";
 
 // ── Resume Repo Helpers ──────────────────────────────────────────────
 
@@ -1497,18 +1497,132 @@ export async function resumeOrchBatch(
 			onNotify(ORCH_MESSAGES.orchMergeSkipped(waveIdx + 1), "info");
 		}
 
-		// Handle merge failure — shared helper guarantees parity with engine.ts (TP-005 Step 2)
-		if (mergeResult && (mergeResult.status === "failed" || mergeResult.status === "partial")) {
-			const policyResult = computeMergeFailurePolicy(mergeResult, waveIdx, orchConfig);
+		// ── TP-033: Safe-stop on rollback failure ─────────────────
+		// When a verification rollback failed, force paused regardless of
+		// on_merge_failure policy. The merge worktree and temp branch are
+		// preserved for manual recovery using commands in the transaction record.
+		if (mergeResult?.rollbackFailed) {
+			// TP-033 R004-2: Include persistence error warning when transaction
+			// record files may be missing, so operator knows to inspect manually
+			const hasPersistErrors = mergeResult.persistenceErrors && mergeResult.persistenceErrors.length > 0;
+			const persistWarning = hasPersistErrors
+				? ` WARNING: ${mergeResult.persistenceErrors!.length} transaction record(s) failed to persist — recovery file(s) may be missing.`
+				: "";
 
-			execLog("batch", batchState.batchId, `merge failure — applying ${policyResult.policy} policy`, policyResult.logDetails);
+			execLog("batch", batchState.batchId, "SAFE-STOP: verification rollback failed — forcing paused regardless of policy", {
+				waveIndex: waveIdx,
+				configPolicy: orchConfig.failure.on_merge_failure,
+				...(hasPersistErrors ? { persistenceErrors: mergeResult.persistenceErrors } : {}),
+			});
 
-			batchState.phase = policyResult.targetPhase;
-			batchState.errors.push(policyResult.errorMessage);
-			persistRuntimeState(policyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
-			onNotify(policyResult.notifyMessage, policyResult.notifyLevel);
+			batchState.phase = "paused";
+			batchState.errors.push(
+				`Safe-stop at wave ${waveIdx + 1}: verification rollback failed. ` +
+				`Merge worktree and temp branch preserved for recovery. ` +
+				`Check transaction records in .pi/verification/ for recovery commands.` +
+				persistWarning
+			);
+			persistRuntimeState("merge-rollback-safe-stop", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+			onNotify(
+				`🛑 Safe-stop: verification rollback failed at wave ${waveIdx + 1}. ` +
+				`Batch force-paused. Merge worktree preserved for manual recovery. ` +
+				`See .pi/verification/ transaction records for recovery commands.` +
+				persistWarning,
+				"error",
+			);
 			preserveWorktreesForResume = true;
 			break;
+		}
+
+		// Handle merge failure — TP-033 Step 2 (R006): Retry policy matrix via shared applyMergeRetryLoop.
+		// Uses the same centralized loop as engine.ts for guaranteed parity.
+		if (mergeResult && (mergeResult.status === "failed" || mergeResult.status === "partial")) {
+			// Initialize resilience state if not yet present
+			if (!batchState.resilience) {
+				batchState.resilience = defaultResilienceState();
+			}
+
+			const retryOutcome = applyMergeRetryLoop(
+				mergeResult,
+				waveIdx,
+				batchState.resilience.retryCountByScope,
+				{
+					performMerge: () => {
+						batchState.phase = "merging";
+						return mergeWaveByRepo(
+							waveResult.allocatedLanes,
+							waveResult,
+							waveIdx + 1,
+							orchConfig,
+							repoRoot,
+							batchState.batchId,
+							batchState.orchBranch,
+							workspaceConfig,
+							stateRoot,
+							agentRoot,
+							runnerConfig.testing_commands,
+						);
+					},
+					persist: (trigger) => persistRuntimeState(trigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot),
+					log: (message, details) => execLog("batch", batchState.batchId, message, details),
+					notify: (message, level) => onNotify(message, level),
+					updateMergeResult: (result) => {
+						mergeResult = result;
+						batchState.mergeResults[batchState.mergeResults.length - 1] = result;
+					},
+					sleep: sleepSync,
+				},
+			);
+
+			if (retryOutcome.kind === "retry_succeeded") {
+				mergeResult = retryOutcome.mergeResult;
+				batchState.phase = "executing";
+				persistRuntimeState("merge-retry-succeeded", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+				// Fall through to normal post-merge flow
+			} else if (retryOutcome.kind === "safe_stop") {
+				mergeResult = retryOutcome.mergeResult;
+				batchState.phase = "paused";
+				batchState.errors.push(retryOutcome.errorMessage);
+				persistRuntimeState("merge-rollback-safe-stop", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+				onNotify(retryOutcome.notifyMessage, "error");
+				preserveWorktreesForResume = true;
+				break;
+			} else if (retryOutcome.kind === "exhausted") {
+				// TP-033 R006-2: Force paused regardless of on_merge_failure config.
+				mergeResult = retryOutcome.mergeResult;
+				const exhaustionMsg = retryOutcome.errorMessage +
+					` [${retryOutcome.classification ?? "unknown"} ${retryOutcome.lastDecision.currentAttempt}/${retryOutcome.lastDecision.maxAttempts}, scope=${retryOutcome.scopeKey}]`;
+
+				execLog("batch", batchState.batchId, `merge retry exhausted — forcing paused`, {
+					classification: retryOutcome.classification,
+					scopeKey: retryOutcome.scopeKey,
+					attempts: retryOutcome.lastDecision.currentAttempt,
+					maxAttempts: retryOutcome.lastDecision.maxAttempts,
+				});
+
+				batchState.phase = "paused";
+				batchState.errors.push(exhaustionMsg);
+				persistRuntimeState("merge-retry-exhausted", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+				onNotify(retryOutcome.notifyMessage, "error");
+				preserveWorktreesForResume = true;
+				break;
+			} else {
+				// kind === "no_retry": fall through to standard on_merge_failure policy
+				mergeResult = retryOutcome.mergeResult;
+				const policyResult = computeMergeFailurePolicy(mergeResult, waveIdx, orchConfig);
+				const classNote = retryOutcome.classification
+					? ` [not retriable: ${retryOutcome.classification}, scope=${retryOutcome.scopeKey}]`
+					: "";
+
+				execLog("batch", batchState.batchId, `merge failure — applying ${policyResult.policy} policy${classNote}`, policyResult.logDetails);
+
+				batchState.phase = policyResult.targetPhase;
+				batchState.errors.push(policyResult.errorMessage + classNote);
+				persistRuntimeState(policyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+				onNotify(policyResult.notifyMessage + classNote, policyResult.notifyLevel);
+				preserveWorktreesForResume = true;
+				break;
+			}
 		}
 
 		// Post-merge: reset worktrees for next wave

@@ -2,7 +2,8 @@
  * User-facing message templates (ORCH_MESSAGES)
  * @module orch/messages
  */
-import type { AbortMode, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome } from "./types.ts";
+import type { AbortMode, MergeFailureClassification, MergeRetryCallbacks, MergeRetryDecision, MergeRetryLoopOutcome, MergeRetryPolicy, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome } from "./types.ts";
+import { MERGE_RETRY_POLICY_MATRIX } from "./types.ts";
 
 // ── Message Templates ────────────────────────────────────────────────
 
@@ -474,6 +475,345 @@ export function computeCleanupGatePolicy(
 			totalStaleWorktrees,
 			repos,
 		},
+	};
+}
+
+// ── Merge Retry Policy (TP-033 Step 2) ───────────────────────────────
+
+/**
+ * Classify a merge failure into a MergeFailureClassification.
+ *
+ * Inspects the MergeWaveResult — lane errors, failure reasons, and merge
+ * result statuses — to determine which retry policy class applies.
+ *
+ * Classification priority (first match wins):
+ * 1. `verification_new_failure` — any lane error starts with "verification_new_failure"
+ * 2. `merge_conflict_unresolved` — any lane result has CONFLICT_UNRESOLVED status
+ * 3. `cleanup_post_merge_failed` — failure reason contains "cleanup" or "stale worktree"
+ * 4. `git_lock_file` — failure reason contains "lock" or ".lock"
+ * 5. `git_worktree_dirty` — failure reason contains "dirty" or "worktree"
+ * 6. `null` — unclassifiable (treated as non-retriable by callers)
+ *
+ * This is a **pure function** — no side effects.
+ *
+ * @param mergeResult - The failed MergeWaveResult to classify
+ * @returns Classification or null if no merge-retry class matches
+ * @since TP-033
+ */
+export function classifyMergeFailure(mergeResult: MergeWaveResult): MergeFailureClassification | null {
+	// Check lane-level errors first (most specific)
+	for (const lr of mergeResult.laneResults) {
+		if (lr.error && lr.error.startsWith("verification_new_failure")) {
+			return "verification_new_failure";
+		}
+	}
+
+	// Check lane result statuses
+	for (const lr of mergeResult.laneResults) {
+		if (lr.result?.status === "CONFLICT_UNRESOLVED") {
+			return "merge_conflict_unresolved";
+		}
+	}
+
+	// Check failure reason string patterns
+	const reason = (mergeResult.failureReason || "").toLowerCase();
+
+	// Lock file detection: git operations fail with "Unable to create '.../.git/index.lock': File exists"
+	if (reason.includes("lock") || reason.includes(".lock")) {
+		return "git_lock_file";
+	}
+
+	// Cleanup failures: stale worktrees or cleanup errors
+	if (reason.includes("cleanup") || reason.includes("stale worktree")) {
+		return "cleanup_post_merge_failed";
+	}
+
+	// Dirty worktree: git operations fail due to uncommitted changes
+	if (reason.includes("dirty") || reason.includes("worktree")) {
+		return "git_worktree_dirty";
+	}
+
+	return null;
+}
+
+/**
+ * Compute the retry decision for a merge failure.
+ *
+ * Given the failure classification and the current retry count for the
+ * relevant scope, returns a decision indicating whether to retry, the
+ * cooldown to wait, or the exhaustion action to take.
+ *
+ * This is a **pure function** — both engine.ts and resume.ts MUST use
+ * this function to guarantee identical retry behavior.
+ *
+ * @param classification - The classified merge failure (null = unclassifiable)
+ * @param currentRetryCount - Current retry attempts for this scope (0 = first failure)
+ * @returns Retry decision with all fields populated
+ * @since TP-033
+ */
+export function computeMergeRetryDecision(
+	classification: MergeFailureClassification | null,
+	currentRetryCount: number,
+): MergeRetryDecision {
+	// Unclassifiable failures are never retried
+	if (classification === null) {
+		return {
+			shouldRetry: false,
+			cooldownMs: 0,
+			reason: "Unclassifiable merge failure — no retry policy available",
+			currentAttempt: currentRetryCount,
+			maxAttempts: 0,
+			classification: "merge_conflict_unresolved", // placeholder for type safety
+			exhaustionAction: "pause",
+		};
+	}
+
+	const policy: MergeRetryPolicy = MERGE_RETRY_POLICY_MATRIX[classification];
+
+	if (!policy.retriable) {
+		return {
+			shouldRetry: false,
+			cooldownMs: 0,
+			reason: `${classification} is not retriable — immediate ${policy.exhaustionAction}`,
+			currentAttempt: currentRetryCount,
+			maxAttempts: 0,
+			classification,
+			exhaustionAction: policy.exhaustionAction,
+		};
+	}
+
+	if (currentRetryCount >= policy.maxAttempts) {
+		return {
+			shouldRetry: false,
+			cooldownMs: 0,
+			reason: `${classification} retry exhausted (${currentRetryCount}/${policy.maxAttempts}) — ${policy.exhaustionAction}`,
+			currentAttempt: currentRetryCount,
+			maxAttempts: policy.maxAttempts,
+			classification,
+			exhaustionAction: policy.exhaustionAction,
+		};
+	}
+
+	return {
+		shouldRetry: true,
+		cooldownMs: policy.cooldownMs,
+		reason: `${classification} retry ${currentRetryCount + 1}/${policy.maxAttempts}` +
+			(policy.cooldownMs > 0 ? ` (cooldown: ${policy.cooldownMs}ms)` : ""),
+		currentAttempt: currentRetryCount + 1,
+		maxAttempts: policy.maxAttempts,
+		classification,
+		exhaustionAction: policy.exhaustionAction,
+	};
+}
+
+/**
+ * Build the merge retry scope key for persisted retry counters.
+ *
+ * Format: `{repoId}:w{waveIndex}:l{laneNumber}`
+ * - In workspace mode: uses the repo ID (e.g., "api:w0:l1")
+ * - In repo mode (repoId undefined/null): uses "default" (e.g., "default:w0:l1")
+ *
+ * NOTE: This is a different key format from the task-scoped format in v3 types
+ * (`{taskId}:w{waveIndex}:l{laneNumber}`). The merge retry scope is intentionally
+ * repo-scoped because merge failures are per-repo, not per-task. Both formats
+ * coexist in `resilience.retryCountByScope` — the prefix disambiguates them.
+ *
+ * @param repoId - Repo ID (undefined/null in repo mode)
+ * @param waveIndex - 0-based wave index
+ * @param laneNumber - Lane number
+ * @returns Scope key string
+ * @since TP-033
+ */
+export function buildMergeRetryScopeKey(
+	repoId: string | undefined | null,
+	waveIndex: number,
+	laneNumber: number,
+): string {
+	const repo = repoId ?? "default";
+	return `${repo}:w${waveIndex}:l${laneNumber}`;
+}
+
+/**
+ * Extract the repo ID for a failed merge from the MergeWaveResult.
+ *
+ * Priority:
+ * 1. Lane-level: find the failed lane result and use its repoId
+ * 2. Repo-level: when failedLane is null (setup failure), check repoResults
+ *    for the first failed repo group
+ * 3. Fallback: undefined (will become "default" in scope key)
+ *
+ * This ensures workspace-mode setup failures (e.g., worktree dirty before
+ * any lane starts) still get repo-scoped counters rather than all collapsing
+ * into "default:w{N}:l0".
+ *
+ * @param mergeResult - The failed MergeWaveResult
+ * @returns Repo ID or undefined if not determinable
+ * @since TP-033 R006
+ */
+export function extractFailedRepoId(mergeResult: MergeWaveResult): string | undefined {
+	const failedLaneNum = mergeResult.failedLane;
+
+	// 1. Try lane-level extraction
+	if (failedLaneNum !== null && failedLaneNum !== undefined) {
+		const failedLaneResult = mergeResult.laneResults.find(
+			lr => lr.laneNumber === failedLaneNum &&
+				(lr.error || lr.result?.status === "CONFLICT_UNRESOLVED" || lr.result?.status === "BUILD_FAILURE"),
+		);
+		if (failedLaneResult?.repoId) return failedLaneResult.repoId;
+	}
+
+	// 2. Repo-level fallback for setup failures (failedLane === null)
+	if (mergeResult.repoResults && mergeResult.repoResults.length > 0) {
+		const failedRepo = mergeResult.repoResults.find(
+			rr => rr.status === "failed" || rr.status === "partial",
+		);
+		if (failedRepo?.repoId) return failedRepo.repoId;
+	}
+
+	// 3. If failureReason mentions a specific repo path, we could parse it,
+	//    but that's fragile. Return undefined → "default" in scope key.
+	return undefined;
+}
+
+/**
+ * Shared merge retry loop used by both engine.ts and resume.ts.
+ *
+ * Wraps the retry cycle in a loop: after each failed retry, re-classifies
+ * the latest mergeResult, recomputes the retry decision using the persisted
+ * counter, and continues until success, safe-stop, or exhaustion/non-retriable.
+ *
+ * This is the **single implementation** of retry loop semantics.
+ * Engine.ts and resume.ts provide callbacks for their specific side effects
+ * (persistence, merge invocation, notification) to guarantee parity.
+ *
+ * **Important:** On retry exhaustion, this returns `kind: "exhausted"` which
+ * the caller MUST handle by forcing `paused` phase regardless of
+ * `on_merge_failure` config. The exhaustion action from the matrix takes
+ * precedence over config policy.
+ *
+ * @param mergeResult - The initial failed merge result
+ * @param waveIdx - 0-based wave index (for logging)
+ * @param retryCountByScope - Mutable reference to persisted retry counters
+ * @param callbacks - Side-effect callbacks for persistence/merge/logging
+ * @returns Outcome describing what happened during the retry cycle
+ * @since TP-033 R006
+ */
+export function applyMergeRetryLoop(
+	mergeResult: MergeWaveResult,
+	waveIdx: number,
+	retryCountByScope: Record<string, number>,
+	callbacks: MergeRetryCallbacks,
+): MergeRetryLoopOutcome {
+	let currentResult = mergeResult;
+
+	// Classify the initial failure
+	let classification = classifyMergeFailure(currentResult);
+	const failedRepoId = extractFailedRepoId(currentResult);
+	const failedLaneNum = currentResult.failedLane ?? 0;
+	const scopeKey = buildMergeRetryScopeKey(failedRepoId, waveIdx, failedLaneNum);
+	const currentRetryCount = retryCountByScope[scopeKey] ?? 0;
+
+	// Check if any retry is possible at all
+	const initialDecision = computeMergeRetryDecision(classification, currentRetryCount);
+
+	if (!initialDecision.shouldRetry) {
+		// Non-retriable or already exhausted before we start
+		if (classification !== null && initialDecision.currentAttempt > 0) {
+			// Previously had retries — this is exhaustion
+			return {
+				kind: "exhausted",
+				mergeResult: currentResult,
+				classification,
+				scopeKey,
+				lastDecision: initialDecision,
+				errorMessage: `Merge retry exhausted at wave ${waveIdx + 1}: ${initialDecision.reason}`,
+				notifyMessage: `⏸️ Merge retry exhausted at wave ${waveIdx + 1}. ${initialDecision.reason}`,
+			};
+		}
+		// No retry was ever possible
+		return {
+			kind: "no_retry",
+			mergeResult: currentResult,
+			classification,
+			scopeKey,
+		};
+	}
+
+	// Enter retry loop
+	let lastDecision = initialDecision;
+
+	while (lastDecision.shouldRetry) {
+		// Increment counter in persisted state
+		retryCountByScope[scopeKey] = lastDecision.currentAttempt;
+
+		callbacks.log(`merge retry: ${lastDecision.reason}`, {
+			classification,
+			scopeKey,
+			attempt: lastDecision.currentAttempt,
+			maxAttempts: lastDecision.maxAttempts,
+			cooldownMs: lastDecision.cooldownMs,
+		});
+
+		callbacks.persist("merge-retry-increment");
+		callbacks.notify(
+			`🔄 Merge retry (${lastDecision.reason}) at wave ${waveIdx + 1}. ` +
+			(lastDecision.cooldownMs > 0 ? `Waiting ${lastDecision.cooldownMs}ms before retry...` : "Retrying immediately..."),
+			"warning",
+		);
+
+		if (lastDecision.cooldownMs > 0) {
+			callbacks.sleep(lastDecision.cooldownMs);
+		}
+
+		// Re-invoke merge
+		callbacks.persist("merge-retry-start");
+		currentResult = callbacks.performMerge();
+		callbacks.updateMergeResult(currentResult);
+		callbacks.persist("merge-retry-complete");
+
+		// Check outcome
+		if (currentResult.status === "succeeded") {
+			callbacks.notify(`✅ Merge retry succeeded at wave ${waveIdx + 1}.`, "info");
+			return {
+				kind: "retry_succeeded",
+				mergeResult: currentResult,
+			};
+		}
+
+		if (currentResult.rollbackFailed) {
+			// Safe-stop takes priority
+			const hasPersistErrors = currentResult.persistenceErrors && currentResult.persistenceErrors.length > 0;
+			const persistWarning = hasPersistErrors
+				? ` WARNING: ${currentResult.persistenceErrors!.length} transaction record(s) failed to persist.`
+				: "";
+
+			return {
+				kind: "safe_stop",
+				mergeResult: currentResult,
+				errorMessage:
+					`Safe-stop at wave ${waveIdx + 1}: verification rollback failed after retry. ` +
+					`Merge worktree and temp branch preserved for recovery.` + persistWarning,
+				notifyMessage:
+					`🛑 Safe-stop: verification rollback failed at wave ${waveIdx + 1} after retry. ` +
+					`Batch force-paused.` + persistWarning,
+			};
+		}
+
+		// Retry failed — re-classify and check if we can retry again
+		classification = classifyMergeFailure(currentResult);
+		const updatedCount = retryCountByScope[scopeKey] ?? 0;
+		lastDecision = computeMergeRetryDecision(classification, updatedCount);
+	}
+
+	// Loop ended: exhaustion
+	return {
+		kind: "exhausted",
+		mergeResult: currentResult,
+		classification,
+		scopeKey,
+		lastDecision,
+		errorMessage: `Merge retry exhausted at wave ${waveIdx + 1}: ${lastDecision.reason}`,
+		notifyMessage: `⏸️ Merge retry exhausted at wave ${waveIdx + 1}. ${lastDecision.reason}`,
 	};
 }
 

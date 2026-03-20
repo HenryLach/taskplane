@@ -1083,6 +1083,24 @@ export interface MergeWaveResult {
 	totalDurationMs: number;
 	/** Per-repo merge outcomes (populated in workspace mode; empty in repo mode). */
 	repoResults?: RepoMergeOutcome[];
+	/**
+	 * TP-033: True when a verification rollback failed and safe-stop was triggered.
+	 * Engine MUST force `paused` phase regardless of `on_merge_failure` config,
+	 * and preserve all merge worktrees/branches for manual recovery.
+	 */
+	rollbackFailed?: boolean;
+	/**
+	 * TP-033: Transaction records for each lane merge attempt in this wave.
+	 * Populated when transactional envelope is active.
+	 */
+	transactionRecords?: TransactionRecord[];
+	/**
+	 * TP-033 R004-2: Errors encountered while persisting transaction records.
+	 * When non-empty, recovery commands in transaction records may reference
+	 * files that don't exist on disk. Operator should check `.pi/verification/`
+	 * manually.
+	 */
+	persistenceErrors?: string[];
 }
 
 /** Per-repo merge outcome within a wave merge. */
@@ -1097,6 +1115,62 @@ export interface RepoMergeOutcome {
 	failedLane: number | null;
 	/** Failure reason within this repo (null if all succeeded). */
 	failureReason: string | null;
+}
+
+// ── Merge Transaction Types (TP-033) ─────────────────────────────────
+
+/**
+ * Status of a transactional merge attempt for a single lane.
+ *
+ * - `committed`: Merge succeeded, verification passed, refs advanced.
+ * - `rolled_back`: Verification failed, merge commit rolled back to baseHEAD.
+ * - `rollback_failed`: Rollback attempted but failed — safe-stop triggered.
+ * - `merge_failed`: Merge itself failed (conflict, crash, etc.) before verification.
+ *
+ * @since TP-033
+ */
+export type TransactionStatus = "committed" | "rolled_back" | "rollback_failed" | "merge_failed";
+
+/**
+ * Transactional record for a single lane merge attempt.
+ *
+ * Persisted as JSON at:
+ * `.pi/verification/{opId}/txn-b{batchId}-repo-{repoId}-wave-{n}-lane-{k}.json`
+ *
+ * Captures the complete ref state before and after merge, rollback outcome,
+ * and recovery commands for safe-stop scenarios.
+ *
+ * @since TP-033
+ */
+export interface TransactionRecord {
+	/** Operator ID for this batch run */
+	opId: string;
+	/** Batch identifier */
+	batchId: string;
+	/** Wave index (0-based) */
+	waveIndex: number;
+	/** Lane number within the wave */
+	laneNumber: number;
+	/** Repo ID (undefined/null in repo mode, string in workspace mode) */
+	repoId: string | null;
+	/** HEAD of temp branch before this lane's merge commit (rollback target) */
+	baseHEAD: string;
+	/** HEAD of the lane's source branch (commit being merged in) */
+	laneHEAD: string;
+	/** HEAD of temp branch after merge commit (null if merge failed before commit) */
+	mergedHEAD: string | null;
+	/** Transaction outcome */
+	status: TransactionStatus;
+	/** Whether a rollback was attempted */
+	rollbackAttempted: boolean;
+	/** Rollback outcome detail (null if rollback not attempted) */
+	rollbackResult: string | null;
+	/** Recovery commands emitted on rollback failure (empty array otherwise) */
+	recoveryCommands: string[];
+	/** ISO timestamp when transaction started */
+	startedAt: string;
+	/** ISO timestamp when transaction completed */
+	completedAt: string;
 }
 
 // ── Merge Error Types ────────────────────────────────────────────────
@@ -1170,6 +1244,197 @@ export const MERGE_RESULT_READ_RETRY_DELAY_MS = 1_000;
  */
 export const MERGE_SPAWN_RETRY_MAX = 2;
 
+
+// ── Merge Retry Policy Matrix (TP-033 Step 2) ───────────────────────
+
+/**
+ * Merge-related failure classifications for the retry policy matrix.
+ *
+ * These are the merge-phase failure classes from the resilience roadmap §4c.
+ * Task-execution classes (api_error, context_overflow, etc.) are out of scope
+ * for TP-033 and handled separately in Phase 1/3.
+ *
+ * @since TP-033
+ */
+export type MergeFailureClassification =
+	| "verification_new_failure"
+	| "merge_conflict_unresolved"
+	| "cleanup_post_merge_failed"
+	| "git_worktree_dirty"
+	| "git_lock_file";
+
+/**
+ * Retry policy for a single merge failure classification.
+ *
+ * Defines whether a failure class is retriable, the maximum retry attempts,
+ * cooldown between retries (in milliseconds), and what happens on exhaustion.
+ *
+ * @since TP-033
+ */
+export interface MergeRetryPolicy {
+	/** Whether this failure class can be retried automatically */
+	retriable: boolean;
+	/** Maximum number of retry attempts (0 for non-retriable) */
+	maxAttempts: number;
+	/** Cooldown delay between retries in milliseconds (0 for immediate) */
+	cooldownMs: number;
+	/** Action when retries are exhausted or class is non-retriable */
+	exhaustionAction: "pause" | "pause_wave_gate" | "pause_escalation";
+}
+
+/**
+ * Centralized retry policy matrix for merge-related failure classes.
+ *
+ * This is the **single source of truth** for retry behavior. Both engine.ts
+ * and resume.ts consume this table through `computeMergeRetryDecision()` to
+ * guarantee parity.
+ *
+ * Values from resilience roadmap §4c:
+ *
+ * | Classification              | Retry? | Max | Cooldown | Exhaustion          |
+ * |-----------------------------|--------|-----|----------|---------------------|
+ * | verification_new_failure    | ✅     | 1   | 0ms      | pause + diagnostic  |
+ * | merge_conflict_unresolved   | ❌     | 0   | —        | pause + escalation  |
+ * | cleanup_post_merge_failed   | ✅     | 1   | 2000ms   | pause (wave gate)   |
+ * | git_worktree_dirty          | ✅     | 1   | 2000ms   | pause               |
+ * | git_lock_file               | ✅     | 2   | 3000ms   | pause               |
+ *
+ * @since TP-033
+ */
+export const MERGE_RETRY_POLICY_MATRIX: Readonly<Record<MergeFailureClassification, MergeRetryPolicy>> = {
+	verification_new_failure: {
+		retriable: true,
+		maxAttempts: 1,
+		cooldownMs: 0,
+		exhaustionAction: "pause",
+	},
+	merge_conflict_unresolved: {
+		retriable: false,
+		maxAttempts: 0,
+		cooldownMs: 0,
+		exhaustionAction: "pause_escalation",
+	},
+	cleanup_post_merge_failed: {
+		retriable: true,
+		maxAttempts: 1,
+		cooldownMs: 2_000,
+		exhaustionAction: "pause_wave_gate",
+	},
+	git_worktree_dirty: {
+		retriable: true,
+		maxAttempts: 1,
+		cooldownMs: 2_000,
+		exhaustionAction: "pause",
+	},
+	git_lock_file: {
+		retriable: true,
+		maxAttempts: 2,
+		cooldownMs: 3_000,
+		exhaustionAction: "pause",
+	},
+};
+
+/**
+ * All merge failure classifications as a readonly array, for iteration/validation.
+ * @since TP-033
+ */
+export const MERGE_FAILURE_CLASSIFICATIONS: readonly MergeFailureClassification[] = [
+	"verification_new_failure",
+	"merge_conflict_unresolved",
+	"cleanup_post_merge_failed",
+	"git_worktree_dirty",
+	"git_lock_file",
+] as const;
+
+/**
+ * Decision output from the merge retry policy evaluator.
+ *
+ * Pure data structure — callers use this to decide whether to retry,
+ * wait, or escalate to paused.
+ *
+ * @since TP-033
+ */
+export interface MergeRetryDecision {
+	/** Whether the merge should be retried */
+	shouldRetry: boolean;
+	/** Cooldown to wait before retry (0 if no retry or immediate) */
+	cooldownMs: number;
+	/** Human-readable reason for the decision */
+	reason: string;
+	/** Current retry count for this scope (after increment if retrying) */
+	currentAttempt: number;
+	/** Maximum attempts allowed for this classification */
+	maxAttempts: number;
+	/** Classification that was evaluated */
+	classification: MergeFailureClassification;
+	/** Exhaustion action if not retrying */
+	exhaustionAction: MergeRetryPolicy["exhaustionAction"];
+}
+
+/**
+ * Outcome of the merge retry loop.
+ *
+ * Returned by `applyMergeRetryLoop()` to tell the caller what happened
+ * during the retry cycle so it can take the appropriate action (continue,
+ * break, force-pause, etc.).
+ *
+ * @since TP-033 R006
+ */
+export type MergeRetryLoopOutcome =
+	| {
+		/** Retry succeeded — caller should continue normal post-merge flow */
+		kind: "retry_succeeded";
+		mergeResult: MergeWaveResult;
+	}
+	| {
+		/** Safe-stop triggered during retry — caller should break the wave loop */
+		kind: "safe_stop";
+		mergeResult: MergeWaveResult;
+		errorMessage: string;
+		notifyMessage: string;
+	}
+	| {
+		/**
+		 * Retry exhausted or failure is non-retriable — caller should
+		 * force `paused` regardless of on_merge_failure config.
+		 */
+		kind: "exhausted";
+		mergeResult: MergeWaveResult;
+		classification: MergeFailureClassification | null;
+		scopeKey: string;
+		lastDecision: MergeRetryDecision;
+		errorMessage: string;
+		notifyMessage: string;
+	}
+	| {
+		/** No retry attempted (unclassifiable or non-retriable with 0 attempts).
+		 *  Caller should fall through to standard on_merge_failure policy. */
+		kind: "no_retry";
+		mergeResult: MergeWaveResult;
+		classification: MergeFailureClassification | null;
+		scopeKey: string;
+	};
+
+/**
+ * Callbacks provided to `applyMergeRetryLoop()` for side effects
+ * that differ between engine.ts and resume.ts.
+ *
+ * @since TP-033 R006
+ */
+export interface MergeRetryCallbacks {
+	/** Re-invoke mergeWaveByRepo and return the new result */
+	performMerge: () => MergeWaveResult;
+	/** Persist batch state with a trigger label */
+	persist: (trigger: string) => void;
+	/** Log a message */
+	log: (message: string, details?: Record<string, unknown>) => void;
+	/** Emit a notification */
+	notify: (message: string, level: "info" | "warning" | "error") => void;
+	/** Update the merge result in tracking arrays */
+	updateMergeResult: (result: MergeWaveResult) => void;
+	/** Sleep for cooldown (allows test injection) */
+	sleep: (ms: number) => void;
+}
 
 // ── View-Model Types ─────────────────────────────────────────────────
 
