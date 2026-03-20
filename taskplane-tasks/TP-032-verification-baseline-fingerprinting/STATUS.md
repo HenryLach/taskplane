@@ -1,11 +1,11 @@
 # TP-032: Verification Baseline & Fingerprinting — Status
 
-**Current Step:** Step 1: Verification Command Runner & Fingerprint Parser
+**Current Step:** Step 2: Baseline Capture & Comparison in Merge Flow
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** L
 
 ---
@@ -35,12 +35,11 @@
 ---
 
 ### Step 2: Baseline Capture & Comparison in Merge Flow
-**Status:** ⬜ Not Started
-- [ ] Capture baseline pre-merge per repo
-- [ ] Capture post-merge fingerprints
-- [ ] Compute new failures diff
-- [ ] Block on new failures, pass on pre-existing only
-- [ ] Flaky handling: re-run once
+**Status:** 🟨 In Progress
+- [ ] R005-1: Decouple orchestrator-side baseline verification from merge-agent verification (merge-agent verify remains for agent-side revert logic; orchestrator-side baseline diff gates merge advancement separately)
+- [ ] R005-2: Implement orchestrator-side baseline capture/post-merge/diff in mergeWave() with persistence to `.pi/verification/{opId}/` and per-repo naming
+- [ ] R005-3: Implement flaky re-run (failed commands only, once) with classification: verification_new_failure blocks lane, flaky_suspected is warning-only
+- [ ] R005-4: Add decision note in STATUS.md documenting verification command source and integration architecture
 
 ---
 
@@ -80,6 +79,8 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ## Discoveries
 
@@ -128,6 +129,14 @@
 | 2026-03-20 04:25 | Worker iter 1 | done in 318s, ctx: 23%, tools: 42 |
 | 2026-03-20 04:28 | Review R004 | code Step 1: REVISE |
 | 2026-03-20 04:29 | Review R004 | code Step 1: REVISE |
+| 2026-03-20 04:30 | Worker iter 2 | done in 133s, ctx: 15%, tools: 19 |
+| 2026-03-20 04:30 | Step 1 complete | Verification Command Runner & Fingerprint Parser |
+| 2026-03-20 04:30 | Step 2 started | Baseline Capture & Comparison in Merge Flow |
+| 2026-03-20 04:30 | Worker iter 1 | done in 55s, ctx: 12%, tools: 8 |
+| 2026-03-20 04:30 | Step 1 complete | Verification Command Runner & Fingerprint Parser |
+| 2026-03-20 04:30 | Step 2 started | Baseline Capture & Comparison in Merge Flow |
+| 2026-03-20 04:33 | Review R005 | plan Step 2: REVISE |
+| 2026-03-20 04:33 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 
