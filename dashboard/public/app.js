@@ -73,6 +73,26 @@ function tokenSummaryFromLaneState(ls) {
   return s;
 }
 
+/** Build compact telemetry badge HTML for retry/compaction indicators.
+ *  Only shows badges when telemetry data has meaningful values.
+ *  @param {object|null} tel - Telemetry data for a lane (from currentData.telemetry[prefix])
+ *  @returns {string} HTML string with badges, or "" if nothing to show
+ */
+function telemetryBadgesHtml(tel) {
+  if (!tel) return "";
+  let badges = "";
+  if (tel.retryActive) {
+    const err = tel.lastRetryError ? ` — ${tel.lastRetryError}` : "";
+    badges += `<span class="telem-badge telem-retry-active" title="Retry in progress${escapeHtml(err)}">🔄 retrying</span>`;
+  } else if (tel.retries > 0) {
+    badges += `<span class="telem-badge telem-retry" title="${tel.retries} auto-retry event(s)">🔄 ${tel.retries}</span>`;
+  }
+  if (tel.compactions > 0) {
+    badges += `<span class="telem-badge telem-compaction" title="${tel.compactions} context compaction(s)">🗜 ${tel.compactions}</span>`;
+  }
+  return badges;
+}
+
 // ─── Copy to Clipboard ──────────────────────────────────────────────────────
 
 let toastEl = null;
@@ -342,14 +362,19 @@ function renderSummary(batch) {
 
   // Aggregate tokens across all active lane states
   const laneStates = currentData?.laneStates || {};
-  let batchInput = 0, batchOutput = 0, batchCacheRead = 0, batchCacheWrite = 0, batchCost = 0;
+  let batchInput = 0, batchOutput = 0, batchCacheRead = 0, batchCacheWrite = 0, batchCostFromLanes = 0;
   for (const ls of Object.values(laneStates)) {
     batchInput += ls.workerInputTokens || 0;
     batchOutput += ls.workerOutputTokens || 0;
     batchCacheRead += ls.workerCacheReadTokens || 0;
     batchCacheWrite += ls.workerCacheWriteTokens || 0;
-    batchCost += ls.workerCostUsd || 0;
+    batchCostFromLanes += ls.workerCostUsd || 0;
   }
+  // Use server-computed batchTotalCost (includes telemetry for uncovered lanes);
+  // fallback to lane-state-only sum for backward compatibility (pre-telemetry server)
+  const batchCost = (currentData?.batchTotalCost != null && currentData.batchTotalCost > 0)
+    ? currentData.batchTotalCost
+    : batchCostFromLanes;
   const batchTotalIn = batchInput + batchCacheRead;
   if (batchTotalIn > 0 || batchOutput > 0) {
     let tokenStr = `  ·  tokens: ↑${formatTokens(batchTotalIn)} ↓${formatTokens(batchOutput)}`;
@@ -386,6 +411,7 @@ function renderLanesTasks(batch, tmuxSessions) {
   const tasks = batch.tasks || [];
   const tmuxSet = new Set(tmuxSessions || []);
   const laneStates = currentData?.laneStates || {};
+  const telemetry = currentData?.telemetry || {};
   const showRepos = knownRepos.length >= 2;
   let html = "";
 
@@ -432,8 +458,9 @@ function renderLanesTasks(batch, tmuxSessions) {
       html += `<div class="task-row"><span class="task-icon"></span><span style="color:var(--text-faint);grid-column:2/-1;">No tasks assigned</span></div>`;
     }
 
-    // Get lane state for worker stats
+    // Get lane state and telemetry for worker stats
     const ls = laneStates[lane.tmuxSessionName] || null;
+    const tel = telemetry[lane.tmuxSessionName] || null;
 
     for (const task of laneTasks) {
       // Repo filtering at task level
@@ -486,8 +513,9 @@ function renderLanesTasks(batch, tmuxSessions) {
         stepHtml = `<span style="color:var(--text-faint)">${escapeHtml(task.exitReason || "—")}</span>`;
       }
 
-      // Worker stats from lane state sidecar — only show for the active (running) task
+      // Worker stats from lane state sidecar + telemetry badges
       let workerHtml = "";
+      const telemBadges = task.status !== "pending" ? telemetryBadgesHtml(tel) : "";
       if (ls && ls.workerStatus === "running" && task.status === "running") {
         const elapsed = ls.workerElapsed ? `${Math.round(ls.workerElapsed / 1000)}s` : "";
         const tools = ls.workerToolCount || 0;
@@ -500,11 +528,22 @@ function renderLanesTasks(batch, tmuxSessions) {
         if (ctx) workerHtml += `<span class="worker-stat" title="Context window used">📊 ${ctx}</span>`;
         if (tokenStr) workerHtml += `<span class="worker-stat" title="Tokens: input↑ output↓ cacheRead(R) cacheWrite(W)">🪙 ${tokenStr}</span>`;
         if (lastTool) workerHtml += `<span class="worker-stat worker-last-tool" title="Last tool call">${escapeHtml(lastTool)}</span>`;
+        workerHtml += telemBadges;
+        workerHtml += `</div>`;
+      } else if (!ls && tel && task.status === "running") {
+        // Running task with telemetry but no lane-state yet (early startup)
+        const lastTool = tel.lastTool || "";
+        workerHtml = `<div class="worker-stats">`;
+        if (lastTool) workerHtml += `<span class="worker-stat worker-last-tool" title="Last tool call">${escapeHtml(lastTool)}</span>`;
+        workerHtml += telemBadges;
         workerHtml += `</div>`;
       } else if (ls && ls.workerStatus === "done" && task.status !== "pending") {
-        workerHtml = `<div class="worker-stats"><span class="worker-stat" style="color:var(--green)">✓ Worker done</span></div>`;
+        workerHtml = `<div class="worker-stats"><span class="worker-stat" style="color:var(--green)">✓ Worker done</span>${telemBadges}</div>`;
       } else if (ls && ls.workerStatus === "error" && task.status !== "pending") {
-        workerHtml = `<div class="worker-stats"><span class="worker-stat" style="color:var(--red)">✗ Worker error</span></div>`;
+        workerHtml = `<div class="worker-stats"><span class="worker-stat" style="color:var(--red)">✗ Worker error</span>${telemBadges}</div>`;
+      } else if (telemBadges && task.status !== "pending") {
+        // No lane-state but telemetry exists (done/error lane without sidecar)
+        workerHtml = `<div class="worker-stats">${telemBadges}</div>`;
       }
 
       const isViewingStatus = viewerMode === 'status-md' && viewerTarget === task.taskId;

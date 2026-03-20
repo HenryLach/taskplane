@@ -34,12 +34,12 @@
 ---
 
 ### Step 2: Dashboard Frontend — Display Telemetry
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Consume `currentData.telemetry[tmuxPrefix]` in renderLanesTasks() — show retry badge (active/count), compaction badge, and telemetry-sourced lastTool for all task states (running, done, error), not just running
-- [ ] Use `currentData.batchTotalCost` in renderSummary() with backward-compatible fallback to lane-state aggregation when batchTotalCost is absent
-- [ ] Add CSS for telemetry badges (.telem-badge, .telem-retry-active, .telem-compaction) as compact chips in .worker-stats — secondary to existing lane-state display
-- [ ] Graceful "—" fallback: lanes/tasks without telemetry show no telemetry badges (no empty containers, no layout shift)
+- [x] Consume `currentData.telemetry[tmuxPrefix]` in renderLanesTasks() — show retry badge (active/count), compaction badge, and telemetry-sourced lastTool for all task states (running, done, error), not just running
+- [x] Use `currentData.batchTotalCost` in renderSummary() with backward-compatible fallback to lane-state aggregation when batchTotalCost is absent
+- [x] Add CSS for telemetry badges (.telem-badge, .telem-retry-active, .telem-compaction) as compact chips in .worker-stats — secondary to existing lane-state display
+- [x] Graceful "—" fallback: lanes/tasks without telemetry show no telemetry badges (no empty containers, no layout shift)
 
 ---
 
