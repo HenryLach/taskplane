@@ -1,11 +1,11 @@
 # TP-036: Skip Reviews for Low-Risk Steps — Status
 
-**Current Step:** Step 2: Testing & Verification
+**Current Step:** Step 3: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
-**Review Counter:** 3
-**Iteration:** 3
+**Review Counter:** 4
+**Iteration:** 4
 **Size:** S
 
 ---
@@ -41,8 +41,9 @@
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
+- [ ] Review and update docs/explanation/execution-model.md and docs/explanation/review-loop.md for low-risk step skip behavior
 - [ ] `.DONE` created
 
 ---
@@ -56,6 +57,7 @@
 | R002 | plan | Step 1 | APPROVE | .reviews/R002-plan-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
+| R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
 |---|------|------|---------|------|
 
 ---
@@ -98,6 +100,10 @@
 | 2026-03-20 15:19 | Step 2 started | Testing & Verification |
 | 2026-03-20 15:21 | Review R003 | plan Step 2: REVISE |
 | 2026-03-20 15:21 | Review R003 | plan Step 2: APPROVE |
+| 2026-03-20 15:30 | Worker iter 3 | done in 569s, ctx: 22%, tools: 31 |
+| 2026-03-20 15:30 | Step 2 complete | Testing & Verification |
+| 2026-03-20 15:30 | Step 3 started | Documentation & Delivery |
+| 2026-03-20 15:32 | Review R004 | plan Step 3: REVISE |
 
 ---
 
