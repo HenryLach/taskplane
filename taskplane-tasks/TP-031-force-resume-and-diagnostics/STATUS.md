@@ -1,11 +1,11 @@
 # TP-031: Force-Resume Policy & Diagnostic Reports — Status
 
-**Current Step:** Step 1: Implement Force-Resume Policy
+**Current Step:** Step 2: Default Merge Failure to Paused
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 3
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -36,10 +36,12 @@
 ---
 
 ### Step 2: Default Merge Failure to Paused
-**Status:** ⬜ Not Started
-- [ ] Change merge failure to paused
-- [ ] Reserve failed for unrecoverable states
-- [ ] Verify existing resume handles paused from merge
+**Status:** 🟨 In Progress
+- [ ] Change engine.ts end-of-batch finalization: `failedTasks > 0` → `"paused"` (not `"failed"`) when phase is `"executing"`/`"merging"`, add `preserveWorktreesForResume = true` so worktrees survive for resume
+- [ ] Change resume.ts end-of-batch finalization (parity): same `failedTasks > 0` → `"paused"` transition with worktree preservation
+- [ ] Reserve `"failed"` for future unrecoverable invariant violations — add code comments documenting this intent at both sites
+- [ ] Verify downstream: `isTerminalPhase` checks, completion banners, state cleanup, auto-integration gates all handle new `"paused"` outcome correctly (no functional change needed if they already handle paused)
+- [ ] Add expected final-phase matrix to STATUS.md Notes section
 
 ---
 
@@ -77,6 +79,8 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | UNAVAILABLE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ## Discoveries
 
@@ -103,6 +107,13 @@
 | 2026-03-20 02:46 | Review R003 | plan Step 1: REVISE |
 | 2026-03-20 | Step 1 complete | Force-resume policy: parseResumeArgs, eligibility matrix, pre-resume diagnostics, force wiring |
 | 2026-03-20 02:47 | Review R003 | plan Step 1: REVISE |
+| 2026-03-20 02:54 | Worker iter 2 | done in 492s, ctx: 30%, tools: 58 |
+| 2026-03-20 02:55 | Reviewer R004 | code review — reviewer did not produce output |
+| 2026-03-20 02:55 | Review R004 | code Step 1: UNAVAILABLE |
+| 2026-03-20 02:55 | Step 1 complete | Implement Force-Resume Policy |
+| 2026-03-20 02:55 | Step 2 started | Default Merge Failure to Paused |
+| 2026-03-20 02:55 | Worker iter 2 | done in 521s, ctx: 48%, tools: 48 |
+| 2026-03-20 02:57 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 
