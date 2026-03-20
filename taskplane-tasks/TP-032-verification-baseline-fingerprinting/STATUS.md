@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** L
 
@@ -24,10 +24,11 @@
 
 ### Step 1: Verification Command Runner & Fingerprint Parser
 **Status:** 🟨 In Progress
-- [ ] Create verification.ts module
-- [ ] Implement runVerificationCommands()
-- [ ] Implement parseTestOutput() with vitest adapter
-- [ ] Implement diffFingerprints()
+- [ ] Create verification.ts with typed interfaces: TestFingerprint, CommandResult, VerificationBaseline, FingerprintDiff
+- [ ] Implement runVerificationCommands() with per-command result shape (commandId, exitCode, stdout, stderr, error classification)
+- [ ] Implement parseTestOutput() with vitest JSON adapter, messageNorm normalization (ANSI strip, whitespace collapse, path sep normalize), and fallback to command_error kind for non-JSON/malformed output
+- [ ] Implement diffFingerprints(baseline, postMerge) with set-based equality on composite key (commandId+file+case+kind+messageNorm), dedup before subtraction
+- [ ] R003: Add design notes to STATUS.md documenting runner result schema and fingerprint equality key
 
 ---
 
@@ -74,6 +75,7 @@
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ## Discoveries
 
@@ -113,6 +115,10 @@
 | 2026-03-20 04:17 | Worker iter 0 | done in 210s, ctx: 23%, tools: 41 |
 | 2026-03-20 04:17 | Step 0 complete | Preflight |
 | 2026-03-20 04:17 | Step 1 started | Verification Command Runner & Fingerprint Parser |
+| 2026-03-20 04:18 | Worker iter 1 | done in 261s, ctx: 28%, tools: 47 |
+| 2026-03-20 04:18 | Step 0 complete | Preflight |
+| 2026-03-20 04:18 | Step 1 started | Verification Command Runner & Fingerprint Parser |
+| 2026-03-20 04:20 | Review R003 | plan Step 1: REVISE |
 
 ## Blockers
 
