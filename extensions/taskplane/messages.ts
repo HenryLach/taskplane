@@ -2,7 +2,8 @@
  * User-facing message templates (ORCH_MESSAGES)
  * @module orch/messages
  */
-import type { AbortMode, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome } from "./types.ts";
+import type { AbortMode, MergeFailureClassification, MergeRetryDecision, MergeRetryPolicy, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome } from "./types.ts";
+import { MERGE_RETRY_POLICY_MATRIX } from "./types.ts";
 
 // ── Message Templates ────────────────────────────────────────────────
 
@@ -475,6 +476,161 @@ export function computeCleanupGatePolicy(
 			repos,
 		},
 	};
+}
+
+// ── Merge Retry Policy (TP-033 Step 2) ───────────────────────────────
+
+/**
+ * Classify a merge failure into a MergeFailureClassification.
+ *
+ * Inspects the MergeWaveResult — lane errors, failure reasons, and merge
+ * result statuses — to determine which retry policy class applies.
+ *
+ * Classification priority (first match wins):
+ * 1. `verification_new_failure` — any lane error starts with "verification_new_failure"
+ * 2. `merge_conflict_unresolved` — any lane result has CONFLICT_UNRESOLVED status
+ * 3. `cleanup_post_merge_failed` — failure reason contains "cleanup" or "stale worktree"
+ * 4. `git_lock_file` — failure reason contains "lock" or ".lock"
+ * 5. `git_worktree_dirty` — failure reason contains "dirty" or "worktree"
+ * 6. `null` — unclassifiable (treated as non-retriable by callers)
+ *
+ * This is a **pure function** — no side effects.
+ *
+ * @param mergeResult - The failed MergeWaveResult to classify
+ * @returns Classification or null if no merge-retry class matches
+ * @since TP-033
+ */
+export function classifyMergeFailure(mergeResult: MergeWaveResult): MergeFailureClassification | null {
+	// Check lane-level errors first (most specific)
+	for (const lr of mergeResult.laneResults) {
+		if (lr.error && lr.error.startsWith("verification_new_failure")) {
+			return "verification_new_failure";
+		}
+	}
+
+	// Check lane result statuses
+	for (const lr of mergeResult.laneResults) {
+		if (lr.result?.status === "CONFLICT_UNRESOLVED") {
+			return "merge_conflict_unresolved";
+		}
+	}
+
+	// Check failure reason string patterns
+	const reason = (mergeResult.failureReason || "").toLowerCase();
+
+	// Lock file detection: git operations fail with "Unable to create '.../.git/index.lock': File exists"
+	if (reason.includes("lock") || reason.includes(".lock")) {
+		return "git_lock_file";
+	}
+
+	// Cleanup failures: stale worktrees or cleanup errors
+	if (reason.includes("cleanup") || reason.includes("stale worktree")) {
+		return "cleanup_post_merge_failed";
+	}
+
+	// Dirty worktree: git operations fail due to uncommitted changes
+	if (reason.includes("dirty") || reason.includes("worktree")) {
+		return "git_worktree_dirty";
+	}
+
+	return null;
+}
+
+/**
+ * Compute the retry decision for a merge failure.
+ *
+ * Given the failure classification and the current retry count for the
+ * relevant scope, returns a decision indicating whether to retry, the
+ * cooldown to wait, or the exhaustion action to take.
+ *
+ * This is a **pure function** — both engine.ts and resume.ts MUST use
+ * this function to guarantee identical retry behavior.
+ *
+ * @param classification - The classified merge failure (null = unclassifiable)
+ * @param currentRetryCount - Current retry attempts for this scope (0 = first failure)
+ * @returns Retry decision with all fields populated
+ * @since TP-033
+ */
+export function computeMergeRetryDecision(
+	classification: MergeFailureClassification | null,
+	currentRetryCount: number,
+): MergeRetryDecision {
+	// Unclassifiable failures are never retried
+	if (classification === null) {
+		return {
+			shouldRetry: false,
+			cooldownMs: 0,
+			reason: "Unclassifiable merge failure — no retry policy available",
+			currentAttempt: currentRetryCount,
+			maxAttempts: 0,
+			classification: "merge_conflict_unresolved", // placeholder for type safety
+			exhaustionAction: "pause",
+		};
+	}
+
+	const policy: MergeRetryPolicy = MERGE_RETRY_POLICY_MATRIX[classification];
+
+	if (!policy.retriable) {
+		return {
+			shouldRetry: false,
+			cooldownMs: 0,
+			reason: `${classification} is not retriable — immediate ${policy.exhaustionAction}`,
+			currentAttempt: currentRetryCount,
+			maxAttempts: 0,
+			classification,
+			exhaustionAction: policy.exhaustionAction,
+		};
+	}
+
+	if (currentRetryCount >= policy.maxAttempts) {
+		return {
+			shouldRetry: false,
+			cooldownMs: 0,
+			reason: `${classification} retry exhausted (${currentRetryCount}/${policy.maxAttempts}) — ${policy.exhaustionAction}`,
+			currentAttempt: currentRetryCount,
+			maxAttempts: policy.maxAttempts,
+			classification,
+			exhaustionAction: policy.exhaustionAction,
+		};
+	}
+
+	return {
+		shouldRetry: true,
+		cooldownMs: policy.cooldownMs,
+		reason: `${classification} retry ${currentRetryCount + 1}/${policy.maxAttempts}` +
+			(policy.cooldownMs > 0 ? ` (cooldown: ${policy.cooldownMs}ms)` : ""),
+		currentAttempt: currentRetryCount + 1,
+		maxAttempts: policy.maxAttempts,
+		classification,
+		exhaustionAction: policy.exhaustionAction,
+	};
+}
+
+/**
+ * Build the merge retry scope key for persisted retry counters.
+ *
+ * Format: `{repoId}:w{waveIndex}:l{laneNumber}`
+ * - In workspace mode: uses the repo ID (e.g., "api:w0:l1")
+ * - In repo mode (repoId undefined/null): uses "default" (e.g., "default:w0:l1")
+ *
+ * NOTE: This is a different key format from the task-scoped format in v3 types
+ * (`{taskId}:w{waveIndex}:l{laneNumber}`). The merge retry scope is intentionally
+ * repo-scoped because merge failures are per-repo, not per-task. Both formats
+ * coexist in `resilience.retryCountByScope` — the prefix disambiguates them.
+ *
+ * @param repoId - Repo ID (undefined/null in repo mode)
+ * @param waveIndex - 0-based wave index
+ * @param laneNumber - Lane number
+ * @returns Scope key string
+ * @since TP-033
+ */
+export function buildMergeRetryScopeKey(
+	repoId: string | undefined | null,
+	waveIndex: number,
+	laneNumber: number,
+): string {
+	const repo = repoId ?? "default";
+	return `${repo}:w${waveIndex}:l${laneNumber}`;
 }
 
 // ── Integrate Cleanup Acceptance (TP-029 Step 3) ─────────────────────

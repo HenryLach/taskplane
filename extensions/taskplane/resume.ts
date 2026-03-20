@@ -12,14 +12,14 @@ import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplet
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
-import { computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { buildMergeRetryScopeKey, classifyMergeFailure, computeCleanupGatePolicy, computeMergeFailurePolicy, computeMergeRetryDecision, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
-import { StateFileError } from "./types.ts";
+import { defaultResilienceState, StateFileError } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, PersistedLaneRecord, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
-import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, safeResetWorktree } from "./worktree.ts";
+import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, safeResetWorktree, sleepSync } from "./worktree.ts";
 
 // ── Resume Repo Helpers ──────────────────────────────────────────────
 
@@ -1534,18 +1534,122 @@ export async function resumeOrchBatch(
 			break;
 		}
 
-		// Handle merge failure — shared helper guarantees parity with engine.ts (TP-005 Step 2)
+		// Handle merge failure — TP-033 Step 2: Check retry policy matrix before applying pause/abort.
+		// Mirrors engine.ts retry logic for guaranteed parity.
 		if (mergeResult && (mergeResult.status === "failed" || mergeResult.status === "partial")) {
-			const policyResult = computeMergeFailurePolicy(mergeResult, waveIdx, orchConfig);
+			const mergeClassification = classifyMergeFailure(mergeResult);
 
-			execLog("batch", batchState.batchId, `merge failure — applying ${policyResult.policy} policy`, policyResult.logDetails);
+			// Initialize resilience state if not yet present
+			if (!batchState.resilience) {
+				batchState.resilience = defaultResilienceState();
+			}
 
-			batchState.phase = policyResult.targetPhase;
-			batchState.errors.push(policyResult.errorMessage);
-			persistRuntimeState(policyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
-			onNotify(policyResult.notifyMessage, policyResult.notifyLevel);
-			preserveWorktreesForResume = true;
-			break;
+			// Build scope key from the first failed lane
+			const failedLaneNum = mergeResult.failedLane ?? 0;
+			const failedLaneResult = mergeResult.laneResults.find(
+				lr => lr.laneNumber === failedLaneNum && (lr.error || lr.result?.status === "CONFLICT_UNRESOLVED" || lr.result?.status === "BUILD_FAILURE"),
+			);
+			const failedRepoId = failedLaneResult?.repoId ?? undefined;
+			const scopeKey = buildMergeRetryScopeKey(failedRepoId, waveIdx, failedLaneNum);
+			const currentRetryCount = batchState.resilience.retryCountByScope[scopeKey] ?? 0;
+
+			const retryDecision = computeMergeRetryDecision(mergeClassification, currentRetryCount);
+
+			if (retryDecision.shouldRetry) {
+				// TP-033: Retry — increment counter, persist, cooldown, re-merge
+				batchState.resilience.retryCountByScope[scopeKey] = retryDecision.currentAttempt;
+
+				execLog("batch", batchState.batchId, `merge retry: ${retryDecision.reason}`, {
+					classification: mergeClassification,
+					scopeKey,
+					attempt: retryDecision.currentAttempt,
+					maxAttempts: retryDecision.maxAttempts,
+					cooldownMs: retryDecision.cooldownMs,
+				});
+
+				persistRuntimeState("merge-retry-increment", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+				onNotify(
+					`🔄 Merge retry (${retryDecision.reason}) at wave ${waveIdx + 1}. ` +
+					(retryDecision.cooldownMs > 0 ? `Waiting ${retryDecision.cooldownMs}ms before retry...` : "Retrying immediately..."),
+					"warning",
+				);
+
+				if (retryDecision.cooldownMs > 0) {
+					sleepSync(retryDecision.cooldownMs);
+				}
+
+				// Re-invoke merge
+				batchState.phase = "merging";
+				persistRuntimeState("merge-retry-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+
+				mergeResult = mergeWaveByRepo(
+					waveResult.allocatedLanes,
+					waveResult,
+					waveIdx + 1,
+					orchConfig,
+					repoRoot,
+					batchState.batchId,
+					batchState.orchBranch,
+					workspaceConfig,
+					stateRoot,
+					agentRoot,
+					runnerConfig.testing_commands,
+				);
+
+				// Replace last merge result
+				batchState.mergeResults[batchState.mergeResults.length - 1] = mergeResult;
+				persistRuntimeState("merge-retry-complete", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+
+				// Re-check: if retry succeeded, restore to executing and continue
+				if (mergeResult.status === "succeeded") {
+					batchState.phase = "executing";
+					persistRuntimeState("merge-retry-succeeded", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+					onNotify(`✅ Merge retry succeeded at wave ${waveIdx + 1}.`, "info");
+				} else if (mergeResult.rollbackFailed) {
+					const hasPersistErrors = mergeResult.persistenceErrors && mergeResult.persistenceErrors.length > 0;
+					const persistWarning = hasPersistErrors
+						? ` WARNING: ${mergeResult.persistenceErrors!.length} transaction record(s) failed to persist.`
+						: "";
+
+					batchState.phase = "paused";
+					batchState.errors.push(
+						`Safe-stop at wave ${waveIdx + 1}: verification rollback failed after retry. ` +
+						`Merge worktree and temp branch preserved for recovery.` + persistWarning,
+					);
+					persistRuntimeState("merge-rollback-safe-stop", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+					onNotify(
+						`🛑 Safe-stop: verification rollback failed at wave ${waveIdx + 1} after retry. ` +
+						`Batch force-paused.` + persistWarning,
+						"error",
+					);
+					preserveWorktreesForResume = true;
+					break;
+				}
+			}
+
+			// If retry succeeded, skip the pause/abort policy
+			if (mergeResult.status === "succeeded") {
+				// Continue to post-merge flow
+			} else {
+				// Apply config.failure.on_merge_failure policy via shared helper
+				const policyResult = computeMergeFailurePolicy(mergeResult, waveIdx, orchConfig);
+
+				// TP-033: Add retry exhaustion context to error message
+				const exhaustionSuffix = mergeClassification && !retryDecision.shouldRetry && retryDecision.currentAttempt > 0
+					? ` [retry exhausted: ${mergeClassification} ${retryDecision.currentAttempt}/${retryDecision.maxAttempts}, scope=${scopeKey}]`
+					: mergeClassification && !retryDecision.shouldRetry
+						? ` [not retriable: ${mergeClassification}, scope=${scopeKey}]`
+						: "";
+
+				execLog("batch", batchState.batchId, `merge failure — applying ${policyResult.policy} policy${exhaustionSuffix}`, policyResult.logDetails);
+
+				batchState.phase = policyResult.targetPhase;
+				batchState.errors.push(policyResult.errorMessage + exhaustionSuffix);
+				persistRuntimeState(policyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+				onNotify(policyResult.notifyMessage + exhaustionSuffix, policyResult.notifyLevel);
+				preserveWorktreesForResume = true;
+				break;
+			}
 		}
 
 		// Post-merge: reset worktrees for next wave

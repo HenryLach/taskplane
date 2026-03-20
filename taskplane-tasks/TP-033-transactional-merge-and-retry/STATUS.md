@@ -1,7 +1,7 @@
 # TP-033: Transactional Merge Envelope & Retry Matrix — Status
 
 **Current Step:** Step 2: Retry Policy Matrix
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 2
 **Review Counter:** 5
@@ -35,15 +35,15 @@
 ---
 
 ### Step 2: Retry Policy Matrix
-**Status:** 🟨 In Progress
-- [ ] Define MergeFailureClassification type and per-class retry policy matrix (verification_new_failure: max 1/0s, merge_conflict_unresolved: no retry, cleanup_post_merge_failed: max 1/2s + wave gate, git_worktree_dirty: max 1/2s, git_lock_file: max 2/3s) as a centralized pure lookup in types.ts
-- [ ] Implement classifyMergeFailure helper to map MergeWaveResult + lane errors to MergeFailureClassification
-- [ ] Update retryCountByScope key format to `{repoId}:w{N}:l{K}` with "default" fallback for repo mode; add migration/compat note in JSDoc
-- [ ] Implement computeMergeRetryDecision pure helper in messages.ts: given classification + current retry count + policy matrix → returns retry-allowed, cooldown, or exhaustion-pause action
-- [ ] Integrate retry decision into engine.ts merge failure handling: before applying pause/abort policy, check retry matrix; if retriable and under max, sleep cooldown then re-invoke mergeWaveByRepo; persist incremented retry counter to batch state
-- [ ] Mirror retry integration in resume.ts for execution/resume parity
-- [ ] Ensure cleanup_post_merge_failed remains a hard wave gate (no advancement to next wave) — existing computeCleanupGatePolicy already handles this; verify no bypass
-- [ ] On retry exhaustion: enter paused with diagnostic message including classification, attempt count, and scope key
+**Status:** ✅ Complete
+- [x] Define MergeFailureClassification type and per-class retry policy matrix (verification_new_failure: max 1/0s, merge_conflict_unresolved: no retry, cleanup_post_merge_failed: max 1/2s + wave gate, git_worktree_dirty: max 1/2s, git_lock_file: max 2/3s) as a centralized pure lookup in types.ts
+- [x] Implement classifyMergeFailure helper to map MergeWaveResult + lane errors to MergeFailureClassification
+- [x] Update retryCountByScope key format to `{repoId}:w{N}:l{K}` with "default" fallback for repo mode; add migration/compat note in JSDoc
+- [x] Implement computeMergeRetryDecision pure helper in messages.ts: given classification + current retry count + policy matrix → returns retry-allowed, cooldown, or exhaustion-pause action
+- [x] Integrate retry decision into engine.ts merge failure handling: before applying pause/abort policy, check retry matrix; if retriable and under max, sleep cooldown then re-invoke mergeWaveByRepo; persist incremented retry counter to batch state
+- [x] Mirror retry integration in resume.ts for execution/resume parity
+- [x] Ensure cleanup_post_merge_failed remains a hard wave gate (no advancement to next wave) — existing computeCleanupGatePolicy already handles this; verify no bypass
+- [x] On retry exhaustion: enter paused with diagnostic message including classification, attempt count, and scope key
 
 ---
 
@@ -107,6 +107,7 @@
 | 2026-03-20 12:46 | Step 1 complete | Transaction Envelope |
 | 2026-03-20 12:46 | Step 2 started | Retry Policy Matrix |
 | 2026-03-20 12:48 | Review R005 | plan Step 2: REVISE |
+| 2026-03-20 09:05 | Step 2 complete | Retry policy matrix: MergeFailureClassification type + MERGE_RETRY_POLICY_MATRIX (5 classes) + classifyMergeFailure + computeMergeRetryDecision + buildMergeRetryScopeKey. Engine/resume parity: both check retry before pause/abort. Scope key format {repoId}:w{N}:l{K} with "default" fallback. cleanup_post_merge_failed wave gate verified. All 1564 tests pass. |
 
 ## Blockers
 
