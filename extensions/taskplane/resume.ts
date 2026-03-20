@@ -5,6 +5,7 @@
 import { existsSync } from "fs";
 import { join } from "path";
 
+import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { runDiscovery } from "./discovery.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasSession } from "./execution.ts";
@@ -1792,6 +1793,10 @@ export async function resumeOrchBatch(
 	}
 
 	persistRuntimeState("batch-terminal", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+
+	// ── TP-031: Emit diagnostic reports (JSONL + markdown) ──
+	// Non-fatal: errors are logged but never crash batch finalization.
+	emitDiagnosticReports(assembleDiagnosticInput(orchConfig, batchState, allTaskOutcomes, stateRoot));
 
 	if (batchState.phase === "paused" || batchState.phase === "stopped") {
 		execLog("resume", batchState.batchId, "resumed batch ended in non-terminal state", { phase: batchState.phase });

@@ -12,6 +12,7 @@ import { getCurrentBranch, runGit } from "./git.ts";
 import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
 import { computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
+import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
@@ -1046,6 +1047,10 @@ export async function executeOrchBatch(
 
 	// ── TS-009: Persist terminal state ──
 	persistRuntimeState("batch-terminal", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+
+	// ── TP-031: Emit diagnostic reports (JSONL + markdown) ──
+	// Non-fatal: errors are logged but never crash batch finalization.
+	emitDiagnosticReports(assembleDiagnosticInput(orchConfig, batchState, allTaskOutcomes, stateRoot));
 
 	if (batchState.phase === "paused" || batchState.phase === "stopped") {
 		execLog("batch", batchState.batchId, "batch ended in non-terminal execution state; completion banner suppressed", {

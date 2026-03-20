@@ -48,11 +48,11 @@
 ---
 
 ### Step 3: Diagnostic Reports
-**Status:** 🟨 In Progress
-- [ ] Create `extensions/taskplane/diagnostic-reports.ts` with JSONL event log generator and human-readable markdown summary generator; resolve opId via `resolveOperatorId(orchConfig)`; create `.pi/diagnostics/` dir; write failures are non-fatal (log + don't crash)
-- [ ] JSONL events: one JSON line per task from `state.tasks[]` enriched with `state.diagnostics.taskExits{}`; fallback to task record fields when taskExits entry missing; deterministic sort by taskId; fields: batchId, taskId, phase, mode, status, classification, cost, durationSec, retries, repoId, exitReason
-- [ ] Human-readable summary: markdown with batch overview (batchId, phase, duration, total cost), per-task table, per-repo breakdown when `mode === "workspace"`; graceful fallback when diagnostic data is sparse/empty
-- [ ] Wire emission into engine.ts and resume.ts after `persistRuntimeState("batch-terminal", ...)` — call report generator with orchConfig, batchState, allTaskOutcomes, stateRoot; engine/resume parity
+**Status:** ✅ Complete
+- [x] Create `extensions/taskplane/diagnostic-reports.ts` with JSONL event log generator and human-readable markdown summary generator; resolve opId via `resolveOperatorId(orchConfig)`; create `.pi/diagnostics/` dir; write failures are non-fatal (log + don't crash)
+- [x] JSONL events: one JSON line per task from `state.tasks[]` enriched with `state.diagnostics.taskExits{}`; fallback to task record fields when taskExits entry missing; deterministic sort by taskId; fields: batchId, taskId, phase, mode, status, classification, cost, durationSec, retries, repoId, exitReason
+- [x] Human-readable summary: markdown with batch overview (batchId, phase, duration, total cost), per-task table, per-repo breakdown when `mode === "workspace"`; graceful fallback when diagnostic data is sparse/empty
+- [x] Wire emission into engine.ts and resume.ts after `persistRuntimeState("batch-terminal", ...)` — call report generator with orchConfig, batchState, allTaskOutcomes, stateRoot; engine/resume parity
 
 ---
 
@@ -138,6 +138,7 @@
 | 2026-03-20 03:15 | Reviewer R007 | plan review — reviewer did not produce output |
 | 2026-03-20 03:15 | Review R007 | plan Step 3: UNAVAILABLE |
 | 2026-03-20 03:15 | Review R007 | plan Step 3: REVISE |
+| 2026-03-20 03:26 | Worker iter 4 | done in 679s, ctx: 49%, tools: 65 |
 
 ## Blockers
 
