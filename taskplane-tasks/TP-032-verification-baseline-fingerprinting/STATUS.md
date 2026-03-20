@@ -1,6 +1,6 @@
 # TP-032: Verification Baseline & Fingerprinting — Status
 
-**Current Step:** Step 2: Baseline Capture & Comparison in Merge Flow
+**Current Step:** Step 3: Configuration & Modes
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 2
@@ -47,7 +47,7 @@
 ---
 
 ### Step 3: Configuration & Modes
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Add verification config section
 - [ ] Strict/permissive mode behavior
 - [ ] Feature flag (disabled by default)
@@ -146,6 +146,9 @@
 | 2026-03-20 04:45 | Worker iter 3 | done in 702s, ctx: 55%, tools: 90 |
 | 2026-03-20 04:50 | Review R006 | code Step 2: REVISE |
 | 2026-03-20 04:51 | Review R006 | code Step 2: REVISE |
+| 2026-03-20 04:58 | Worker iter 2 | done in 516s, ctx: 28%, tools: 63 |
+| 2026-03-20 04:58 | Step 2 complete | Baseline Capture & Comparison in Merge Flow |
+| 2026-03-20 04:58 | Step 3 started | Configuration & Modes |
 
 ## Blockers
 
