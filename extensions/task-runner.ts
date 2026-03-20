@@ -2081,11 +2081,21 @@ export default function (pi: ExtensionAPI) {
 		logExecution(statusPath, `Step ${step.number} started`, step.name);
 		updateWidgets();
 
+		// Skip reviews for low-risk steps (Step 0 / Preflight and final step / Delivery)
+		const lastStepNumber = task.steps[task.steps.length - 1].number;
+		const isLowRiskStep = step.number === 0 || step.number === lastStepNumber;
+
 		// Plan review (level ≥ 1)
 		if (task.reviewLevel >= 1) {
-			const verdict = await doReview("plan", step, ctx, stepBaselineCommit);
-			if (verdict === "RETHINK") {
-				ctx.ui.notify(`Reviewer: RETHINK on Step ${step.number} plan. Proceeding with caution.`, "warning");
+			if (isLowRiskStep) {
+				const label = step.number === 0 ? "Preflight" : "final step";
+				logExecution(statusPath, `Skip plan review`, `Step ${step.number} (${label}) — low-risk`);
+				ctx.ui.notify(`⏭️ Skipping plan review for Step ${step.number} (${label})`, "info");
+			} else {
+				const verdict = await doReview("plan", step, ctx, stepBaselineCommit);
+				if (verdict === "RETHINK") {
+					ctx.ui.notify(`Reviewer: RETHINK on Step ${step.number} plan. Proceeding with caution.`, "warning");
+				}
 			}
 		}
 
@@ -2135,10 +2145,16 @@ export default function (pi: ExtensionAPI) {
 
 		// Code review (level ≥ 2)
 		if (task.reviewLevel >= 2 && state.phase === "running") {
-			const verdict = await doReview("code", step, ctx, stepBaselineCommit);
-			if (verdict === "REVISE") {
-				ctx.ui.notify(`Reviewer: REVISE on Step ${step.number}. Running worker to fix...`, "warning");
-				await runWorker(step, ctx); // One more pass to address issues
+			if (isLowRiskStep) {
+				const label = step.number === 0 ? "Preflight" : "final step";
+				logExecution(statusPath, `Skip code review`, `Step ${step.number} (${label}) — low-risk`);
+				ctx.ui.notify(`⏭️ Skipping code review for Step ${step.number} (${label})`, "info");
+			} else {
+				const verdict = await doReview("code", step, ctx, stepBaselineCommit);
+				if (verdict === "REVISE") {
+					ctx.ui.notify(`Reviewer: REVISE on Step ${step.number}. Running worker to fix...`, "warning");
+					await runWorker(step, ctx); // One more pass to address issues
+				}
 			}
 		}
 

@@ -1,11 +1,11 @@
 # TP-036: Skip Reviews for Low-Risk Steps — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Implement Review Skip Logic
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 2
+**Iteration:** 2
 **Size:** S
 
 ---
@@ -19,12 +19,12 @@
 ---
 
 ### Step 1: Implement Review Skip Logic
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Add skip condition for Step 0 and final step
-- [ ] Detect final step by comparing index to total parsed steps
-- [ ] Log when reviews are skipped
-- [ ] Preserve existing behavior for middle steps
+- [x] Add skip condition for Step 0 and final step
+- [x] Detect final step by comparing index to total parsed steps
+- [x] Log when reviews are skipped
+- [x] Preserve existing behavior for middle steps
 
 ---
 
@@ -52,6 +52,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
+| R002 | plan | Step 1 | APPROVE | .reviews/R002-plan-step1.md |
+| R002 | plan | Step 1 | APPROVE | .reviews/R002-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -78,6 +80,14 @@
 | 2026-03-20 15:14 | Step 0 started | Preflight |
 | 2026-03-20 15:15 | Review R001 | plan Step 0: APPROVE |
 | 2026-03-20 15:15 | Review R001 | plan Step 0: APPROVE |
+| 2026-03-20 15:16 | Worker iter 1 | done in 84s, ctx: 12%, tools: 15 |
+| 2026-03-20 15:16 | Step 0 complete | Preflight |
+| 2026-03-20 15:16 | Step 1 started | Implement Review Skip Logic |
+| 2026-03-20 15:16 | Worker iter 1 | done in 66s, ctx: 12%, tools: 13 |
+| 2026-03-20 15:16 | Step 0 complete | Preflight |
+| 2026-03-20 15:16 | Step 1 started | Implement Review Skip Logic |
+| 2026-03-20 15:17 | Review R002 | plan Step 1: APPROVE |
+| 2026-03-20 15:18 | Review R002 | plan Step 1: APPROVE |
 
 ---
 
