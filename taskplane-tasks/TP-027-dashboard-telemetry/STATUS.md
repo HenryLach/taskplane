@@ -22,14 +22,14 @@
 ---
 
 ### Step 1: Dashboard Server — Serve Telemetry Data
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Implement loadTelemetryData() — read .pi/telemetry/*.jsonl with incremental byte-offset tailing, partial-line buffering, malformed-line skipping, and file-disappearance cleanup
-- [ ] Map telemetry files to lanes — parse filename pattern {opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.jsonl to extract lane number; merge worker+reviewer files per lane; key by lane tmux prefix using batch-state lane records
-- [ ] Parse JSONL events for metrics not in lane-state: compaction count (auto_compaction_start), and provide fallback tokens/cost/retry data for lanes where lane-state is absent
-- [ ] Compute batch total cost from lane-state (primary) + telemetry JSONL (supplementary); avoid double-counting
-- [ ] Include telemetry in buildDashboardState() response as additive field alongside existing laneStates; degrade gracefully when .pi/telemetry/ is missing (pre-RPC sessions)
-- [ ] Verify server.cjs loads cleanly: node --check dashboard/server.cjs
+- [x] Implement loadTelemetryData() — read .pi/telemetry/*.jsonl with incremental byte-offset tailing, partial-line buffering, malformed-line skipping, and file-disappearance cleanup
+- [x] Map telemetry files to lanes — parse filename pattern {opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.jsonl to extract lane number; merge worker+reviewer files per lane; key by lane tmux prefix using batch-state lane records
+- [x] Parse JSONL events for metrics not in lane-state: compaction count (auto_compaction_start), and provide fallback tokens/cost/retry data for lanes where lane-state is absent
+- [x] Compute batch total cost from lane-state (primary) + telemetry JSONL (supplementary); avoid double-counting
+- [x] Include telemetry in buildDashboardState() response as additive field alongside existing laneStates; degrade gracefully when .pi/telemetry/ is missing (pre-RPC sessions)
+- [x] Verify server.cjs loads cleanly: node --check dashboard/server.cjs
 
 ---
 
@@ -68,6 +68,7 @@
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
+| R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -104,6 +105,7 @@
 | 2026-03-20 02:41 | Step 0 complete | Preflight |
 | 2026-03-20 02:41 | Step 1 started | Dashboard Server — Serve Telemetry Data |
 | 2026-03-20 02:41 | Review R002 | plan Step 1: REVISE |
+| 2026-03-20 02:44 | Review R002 | plan Step 1: REVISE |
 
 ---
 

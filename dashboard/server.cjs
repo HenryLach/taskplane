@@ -213,14 +213,287 @@ function loadLaneStates() {
   return states;
 }
 
+// ─── Telemetry JSONL Tailing ────────────────────────────────────────────────
+
+/**
+ * Module-level tail state for incremental JSONL reading.
+ * Persists across poll ticks within this server process.
+ * Key: absolute file path → { offset, partial }
+ */
+const telemetryTailStates = new Map();
+
+/**
+ * Parse a telemetry JSONL filename to extract lane number and role.
+ * Pattern: {opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.jsonl
+ * Returns { laneNumber: number|null, role: string } or null if unparseable.
+ */
+function parseTelemetryFilename(filename) {
+  // Remove .jsonl extension
+  const base = filename.replace(/\.jsonl$/, "");
+  // Role is always the last segment
+  const lastDash = base.lastIndexOf("-");
+  if (lastDash < 0) return null;
+  const role = base.slice(lastDash + 1);
+  if (role !== "worker" && role !== "reviewer") return null;
+
+  // Extract lane number from -lane-{N}- pattern
+  const laneMatch = base.match(/-lane-(\d+)-/);
+  const laneNumber = laneMatch ? parseInt(laneMatch[1], 10) : null;
+
+  return { laneNumber, role };
+}
+
+/**
+ * Incrementally read new bytes from a JSONL file, parse events, and return them.
+ * Handles: file not yet created, empty reads, partial trailing lines, malformed JSON.
+ * @param {string} filePath - Absolute path to the JSONL file
+ * @returns {object[]} Array of parsed event objects from new data
+ */
+function tailJsonlFile(filePath) {
+  // Get or create tail state for this file
+  let tailState = telemetryTailStates.get(filePath);
+  if (!tailState) {
+    tailState = { offset: 0, partial: "" };
+    telemetryTailStates.set(filePath, tailState);
+  }
+
+  // Check file size
+  let fileSize;
+  try {
+    fileSize = fs.statSync(filePath).size;
+  } catch {
+    return []; // File doesn't exist yet
+  }
+
+  // Handle file truncation/recreation (offset beyond current size)
+  if (fileSize < tailState.offset) {
+    tailState.offset = 0;
+    tailState.partial = "";
+  }
+
+  if (fileSize <= tailState.offset) {
+    return []; // No new data
+  }
+
+  // Read new bytes from offset to end of file
+  const bytesToRead = fileSize - tailState.offset;
+  const buf = Buffer.alloc(bytesToRead);
+  let fd;
+  try {
+    fd = fs.openSync(filePath, "r");
+  } catch {
+    return []; // File became inaccessible
+  }
+  try {
+    fs.readSync(fd, buf, 0, bytesToRead, tailState.offset);
+  } catch {
+    fs.closeSync(fd);
+    return []; // Read error — try again next tick
+  }
+  fs.closeSync(fd);
+  tailState.offset = fileSize;
+
+  // Split into lines, preserving partial trailing line
+  const chunk = tailState.partial + buf.toString("utf-8");
+  const lines = chunk.split("\n");
+  tailState.partial = lines.pop() || "";
+
+  const events = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const event = JSON.parse(trimmed);
+      if (event && event.type) events.push(event);
+    } catch {
+      // Malformed JSON — skip (concurrent write race, truncated line)
+    }
+  }
+  return events;
+}
+
+/**
+ * Load and accumulate telemetry from .pi/telemetry/*.jsonl files.
+ * Returns telemetry keyed by tmux session prefix (e.g., "orch-lane-1").
+ *
+ * Uses batch-state lanes to map lane numbers → tmux prefixes.
+ * For standalone /task mode (no lane number in filename), data is keyed as "standalone".
+ *
+ * @param {object|null} batchState - The batch state from batch-state.json
+ * @returns {object} Map of tmuxPrefix → accumulated telemetry
+ */
+function loadTelemetryData(batchState) {
+  const telemetryDir = path.join(REPO_ROOT, ".pi", "telemetry");
+  const result = {};
+
+  // Build lane number → tmux prefix mapping from batch state
+  const laneToPrefix = {};
+  if (batchState && batchState.lanes) {
+    for (const lane of batchState.lanes) {
+      if (lane.laneNumber != null && lane.tmuxSessionName) {
+        laneToPrefix[lane.laneNumber] = lane.tmuxSessionName;
+      }
+    }
+  }
+
+  // Scan telemetry directory for JSONL files
+  let files;
+  try {
+    files = fs.readdirSync(telemetryDir).filter(f => f.endsWith(".jsonl"));
+  } catch {
+    // .pi/telemetry/ may not exist (pre-RPC sessions) — degrade gracefully
+    return result;
+  }
+
+  // Track which files still exist for tail-state cleanup
+  const currentFiles = new Set();
+
+  for (const file of files) {
+    const filePath = path.join(telemetryDir, file);
+    currentFiles.add(filePath);
+
+    // Parse filename to get lane number and role
+    const parsed = parseTelemetryFilename(file);
+    if (!parsed) continue;
+
+    // Determine the key (tmux prefix)
+    let prefix;
+    if (parsed.laneNumber != null && laneToPrefix[parsed.laneNumber]) {
+      prefix = laneToPrefix[parsed.laneNumber];
+    } else if (parsed.laneNumber != null) {
+      // Lane number found but no batch-state mapping — use heuristic
+      prefix = `orch-lane-${parsed.laneNumber}`;
+    } else {
+      // Standalone /task mode
+      prefix = "standalone";
+    }
+
+    // Initialize accumulator for this prefix if needed
+    if (!result[prefix]) {
+      result[prefix] = {
+        inputTokens: 0,
+        outputTokens: 0,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cost: 0,
+        toolCalls: 0,
+        lastTool: "",
+        retries: 0,
+        retryActive: false,
+        lastRetryError: "",
+        compactions: 0,
+        latestTotalTokens: 0,
+      };
+    }
+
+    const acc = result[prefix];
+
+    // Tail the file for new events
+    const events = tailJsonlFile(filePath);
+    for (const event of events) {
+      switch (event.type) {
+        case "message_end": {
+          const usage = event.message?.usage;
+          if (usage) {
+            acc.inputTokens += usage.input || 0;
+            acc.outputTokens += usage.output || 0;
+            acc.cacheReadTokens += usage.cacheRead || 0;
+            acc.cacheWriteTokens += usage.cacheWrite || 0;
+            if (usage.cost) {
+              acc.cost += typeof usage.cost === "object"
+                ? (usage.cost.total || 0)
+                : (typeof usage.cost === "number" ? usage.cost : 0);
+            }
+            const totalTokens = usage.totalTokens
+              || ((usage.input || 0) + (usage.output || 0));
+            if (totalTokens > acc.latestTotalTokens) {
+              acc.latestTotalTokens = totalTokens;
+            }
+          }
+          break;
+        }
+        case "tool_execution_start": {
+          acc.toolCalls++;
+          const toolDesc = event.toolName || "unknown";
+          let argPreview = "";
+          if (event.args) {
+            if (typeof event.args === "string") {
+              argPreview = event.args.slice(0, 80);
+            } else if (typeof event.args === "object") {
+              const firstVal = Object.values(event.args)[0];
+              if (typeof firstVal === "string") {
+                argPreview = firstVal.slice(0, 80);
+              }
+            }
+          }
+          acc.lastTool = argPreview ? `${toolDesc} ${argPreview}` : toolDesc;
+          break;
+        }
+        case "auto_retry_start": {
+          acc.retries++;
+          acc.retryActive = true;
+          acc.lastRetryError = event.errorMessage || event.error || "unknown";
+          break;
+        }
+        case "auto_retry_end": {
+          acc.retryActive = false;
+          break;
+        }
+        case "auto_compaction_start": {
+          acc.compactions++;
+          break;
+        }
+      }
+    }
+  }
+
+  // Clean up tail states for files that no longer exist
+  for (const [filePath] of telemetryTailStates) {
+    if (filePath.startsWith(telemetryDir) && !currentFiles.has(filePath)) {
+      telemetryTailStates.delete(filePath);
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Compute batch total cost from lane states (primary) and telemetry (supplementary).
+ * Lane states are authoritative — telemetry provides additional data only for lanes
+ * that have no lane-state entry (e.g., very early in session startup).
+ */
+function computeBatchTotalCost(laneStates, telemetry) {
+  let totalCost = 0;
+  const coveredPrefixes = new Set();
+
+  // Primary: sum cost from lane states
+  for (const [prefix, ls] of Object.entries(laneStates)) {
+    if (ls.workerCostUsd) {
+      totalCost += ls.workerCostUsd;
+      coveredPrefixes.add(prefix);
+    }
+  }
+
+  // Supplementary: add cost from telemetry for uncovered lanes only
+  for (const [prefix, tel] of Object.entries(telemetry)) {
+    if (!coveredPrefixes.has(prefix) && tel.cost > 0) {
+      totalCost += tel.cost;
+    }
+  }
+
+  return totalCost;
+}
+
 /** Build full dashboard state object for the frontend. */
 function buildDashboardState() {
   const state = loadBatchState();
   const tmuxSessions = getTmuxSessions();
   const laneStates = loadLaneStates();
+  const telemetry = loadTelemetryData(state);
+  const batchTotalCost = computeBatchTotalCost(laneStates, telemetry);
 
   if (!state) {
-    return { batch: null, tmuxSessions, laneStates: {}, timestamp: Date.now() };
+    return { batch: null, tmuxSessions, laneStates: {}, telemetry: {}, batchTotalCost: 0, timestamp: Date.now() };
   }
 
   const tasks = (state.tasks || []).map((task) => {
@@ -237,6 +510,8 @@ function buildDashboardState() {
 
   return {
     laneStates,
+    telemetry,
+    batchTotalCost,
     batch: {
       batchId: state.batchId,
       phase: state.phase,
