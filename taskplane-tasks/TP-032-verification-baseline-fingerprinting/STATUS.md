@@ -1,6 +1,6 @@
 # TP-032: Verification Baseline & Fingerprinting — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Verification Command Runner & Fingerprint Parser
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
@@ -23,7 +23,7 @@
 ---
 
 ### Step 1: Verification Command Runner & Fingerprint Parser
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Create verification.ts module
 - [ ] Implement runVerificationCommands()
 - [ ] Implement parseTestOutput() with vitest adapter
@@ -110,6 +110,9 @@
 | 2026-03-20 04:12 | Review R001 | plan Step 0: REVISE |
 | 2026-03-20 04:12 | Worker iter 1 | done in 113s, ctx: 33%, tools: 21 |
 | 2026-03-20 04:14 | Review R002 | code Step 0: REVISE |
+| 2026-03-20 04:17 | Worker iter 0 | done in 210s, ctx: 23%, tools: 41 |
+| 2026-03-20 04:17 | Step 0 complete | Preflight |
+| 2026-03-20 04:17 | Step 1 started | Verification Command Runner & Fingerprint Parser |
 
 ## Blockers
 
