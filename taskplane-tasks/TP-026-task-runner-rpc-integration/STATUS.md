@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 9
-**Iteration:** 6
+**Review Counter:** 11
+**Iteration:** 7
 **Size:** M
 
 ---
@@ -74,10 +74,13 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Inline comments updated
-- [ ] `.DONE` created
+- [ ] R011: Check `docs/explanation/architecture.md` for affected descriptions — confirm no change needed or update
+- [ ] R011: Run full test suite as closure gate — confirm all TP-026 tests pass and document pre-existing failures
+- [ ] R011: Verify completion criteria — /orch subprocess path unchanged, exitDiagnostic in task outcomes, sidecar/exit summary produced in tmux mode
+- [ ] Inline comments updated in spawnAgentTmux explaining RPC wrapper flow
+- [ ] `.DONE` created and STATUS.md marked complete
 
 ---
 
@@ -100,6 +103,9 @@
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R010 | code | Step 4 | APPROVE | .reviews/R010-code-step4.md |
+| R010 | code | Step 4 | APPROVE | .reviews/R010-code-step4.md |
+| R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 
 ---
 
@@ -188,6 +194,15 @@
 | 2026-03-19 23:55 | Review R009 | plan Step 4: REVISE |
 | 2026-03-19 23:55 | Review R009 | plan Step 4: REVISE |
 | 2026-03-20 00:04 | Worker iter 5 | done in 532s, ctx: 29%, tools: 37 |
+| 2026-03-20 00:09 | Worker iter 5 | done in 808s, ctx: 48%, tools: 61 |
+| 2026-03-20 00:09 | Worker iter 6 | done in 338s, ctx: 35%, tools: 37 |
+| 2026-03-20 00:14 | Review R010 | code Step 4: APPROVE |
+| 2026-03-20 00:14 | Step 4 complete | Testing & Verification |
+| 2026-03-20 00:14 | Step 5 started | Documentation & Delivery |
+| 2026-03-20 00:14 | Review R010 | code Step 4: APPROVE |
+| 2026-03-20 00:14 | Step 4 complete | Testing & Verification |
+| 2026-03-20 00:14 | Step 5 started | Documentation & Delivery |
+| 2026-03-20 00:15 | Review R011 | plan Step 5: REVISE |
 
 ---
 
