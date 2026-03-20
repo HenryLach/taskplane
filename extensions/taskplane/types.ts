@@ -1371,6 +1371,71 @@ export interface MergeRetryDecision {
 	exhaustionAction: MergeRetryPolicy["exhaustionAction"];
 }
 
+/**
+ * Outcome of the merge retry loop.
+ *
+ * Returned by `applyMergeRetryLoop()` to tell the caller what happened
+ * during the retry cycle so it can take the appropriate action (continue,
+ * break, force-pause, etc.).
+ *
+ * @since TP-033 R006
+ */
+export type MergeRetryLoopOutcome =
+	| {
+		/** Retry succeeded — caller should continue normal post-merge flow */
+		kind: "retry_succeeded";
+		mergeResult: MergeWaveResult;
+	}
+	| {
+		/** Safe-stop triggered during retry — caller should break the wave loop */
+		kind: "safe_stop";
+		mergeResult: MergeWaveResult;
+		errorMessage: string;
+		notifyMessage: string;
+	}
+	| {
+		/**
+		 * Retry exhausted or failure is non-retriable — caller should
+		 * force `paused` regardless of on_merge_failure config.
+		 */
+		kind: "exhausted";
+		mergeResult: MergeWaveResult;
+		classification: MergeFailureClassification | null;
+		scopeKey: string;
+		lastDecision: MergeRetryDecision;
+		errorMessage: string;
+		notifyMessage: string;
+	}
+	| {
+		/** No retry attempted (unclassifiable or non-retriable with 0 attempts).
+		 *  Caller should fall through to standard on_merge_failure policy. */
+		kind: "no_retry";
+		mergeResult: MergeWaveResult;
+		classification: MergeFailureClassification | null;
+		scopeKey: string;
+	};
+
+/**
+ * Callbacks provided to `applyMergeRetryLoop()` for side effects
+ * that differ between engine.ts and resume.ts.
+ *
+ * @since TP-033 R006
+ */
+export interface MergeRetryCallbacks {
+	/** Re-invoke mergeWaveByRepo and return the new result */
+	performMerge: () => MergeWaveResult;
+	/** Persist batch state with a trigger label */
+	persist: (trigger: string) => void;
+	/** Log a message */
+	log: (message: string, details?: Record<string, unknown>) => void;
+	/** Emit a notification */
+	notify: (message: string, level: "info" | "warning" | "error") => void;
+	/** Update the merge result in tracking arrays */
+	updateMergeResult: (result: MergeWaveResult) => void;
+	/** Sleep for cooldown (allows test injection) */
+	sleep: (ms: number) => void;
+}
+
 // ── View-Model Types ─────────────────────────────────────────────────
 
 /**

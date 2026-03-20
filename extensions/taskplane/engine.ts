@@ -10,7 +10,7 @@ import { execLog, executeWave, tmuxKillSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
-import { buildMergeRetryScopeKey, classifyMergeFailure, computeCleanupGatePolicy, computeMergeFailurePolicy, computeMergeRetryDecision, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { resolveOperatorId } from "./naming.ts";
@@ -556,130 +556,95 @@ export async function executeOrchBatch(
 		}
 
 		// ── Handle merge failure ─────────────────────────────────
-		// TP-033 Step 2: Check retry policy matrix before applying pause/abort.
-		// Classify the failure, check retry counter, and retry if allowed.
+		// TP-033 Step 2 (R006): Retry policy matrix via shared applyMergeRetryLoop.
+		// Classifies the failure, loops retries per the matrix (supports maxAttempts>1),
+		// and on exhaustion forces paused regardless of on_merge_failure config.
 		if (mergeResult && (mergeResult.status === "failed" || mergeResult.status === "partial")) {
-			const mergeClassification = classifyMergeFailure(mergeResult);
-
 			// Initialize resilience state if not yet present (fresh batch)
 			if (!batchState.resilience) {
 				batchState.resilience = defaultResilienceState();
 			}
 
-			// Build scope key from the first failed lane (or wave-level if no lane)
-			const failedLaneNum = mergeResult.failedLane ?? 0;
-			// Determine repoId from failed lane result if available
-			const failedLaneResult = mergeResult.laneResults.find(
-				lr => lr.laneNumber === failedLaneNum && (lr.error || lr.result?.status === "CONFLICT_UNRESOLVED" || lr.result?.status === "BUILD_FAILURE"),
+			const retryOutcome = applyMergeRetryLoop(
+				mergeResult,
+				waveIdx,
+				batchState.resilience.retryCountByScope,
+				{
+					performMerge: () => {
+						batchState.phase = "merging";
+						return mergeWaveByRepo(
+							waveResult.allocatedLanes,
+							waveResult,
+							waveIdx + 1,
+							orchConfig,
+							repoRoot,
+							batchState.batchId,
+							batchState.orchBranch,
+							workspaceConfig,
+							stateRoot,
+							agentRoot,
+							runnerConfig.testing_commands,
+						);
+					},
+					persist: (trigger) => persistRuntimeState(trigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot),
+					log: (message, details) => execLog("batch", batchState.batchId, message, details),
+					notify: (message, level) => onNotify(message, level),
+					updateMergeResult: (result) => {
+						mergeResult = result;
+						allMergeResults[allMergeResults.length - 1] = result;
+						batchState.mergeResults[batchState.mergeResults.length - 1] = result;
+					},
+					sleep: sleepSync,
+				},
 			);
-			const failedRepoId = failedLaneResult?.repoId ?? undefined;
-			const scopeKey = buildMergeRetryScopeKey(failedRepoId, waveIdx, failedLaneNum);
-			const currentRetryCount = batchState.resilience.retryCountByScope[scopeKey] ?? 0;
 
-			const retryDecision = computeMergeRetryDecision(mergeClassification, currentRetryCount);
+			if (retryOutcome.kind === "retry_succeeded") {
+				mergeResult = retryOutcome.mergeResult;
+				batchState.phase = "executing";
+				persistRuntimeState("merge-retry-succeeded", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+				// Fall through to normal post-merge flow (worktree cleanup, etc.)
+			} else if (retryOutcome.kind === "safe_stop") {
+				mergeResult = retryOutcome.mergeResult;
+				batchState.phase = "paused";
+				batchState.errors.push(retryOutcome.errorMessage);
+				persistRuntimeState("merge-rollback-safe-stop", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+				onNotify(retryOutcome.notifyMessage, "error");
+				preserveWorktreesForResume = true;
+				break;
+			} else if (retryOutcome.kind === "exhausted") {
+				// TP-033 R006-2: Force paused regardless of on_merge_failure config.
+				// Retry exhaustion takes precedence over config policy.
+				mergeResult = retryOutcome.mergeResult;
+				const exhaustionMsg = retryOutcome.errorMessage +
+					` [${retryOutcome.classification ?? "unknown"} ${retryOutcome.lastDecision.currentAttempt}/${retryOutcome.lastDecision.maxAttempts}, scope=${retryOutcome.scopeKey}]`;
 
-			if (retryDecision.shouldRetry) {
-				// TP-033: Retry — increment counter, persist, cooldown, re-merge
-				batchState.resilience.retryCountByScope[scopeKey] = retryDecision.currentAttempt;
-
-				execLog("batch", batchState.batchId, `merge retry: ${retryDecision.reason}`, {
-					classification: mergeClassification,
-					scopeKey,
-					attempt: retryDecision.currentAttempt,
-					maxAttempts: retryDecision.maxAttempts,
-					cooldownMs: retryDecision.cooldownMs,
+				execLog("batch", batchState.batchId, `merge retry exhausted — forcing paused`, {
+					classification: retryOutcome.classification,
+					scopeKey: retryOutcome.scopeKey,
+					attempts: retryOutcome.lastDecision.currentAttempt,
+					maxAttempts: retryOutcome.lastDecision.maxAttempts,
 				});
 
-				persistRuntimeState("merge-retry-increment", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
-				onNotify(
-					`🔄 Merge retry (${retryDecision.reason}) at wave ${waveIdx + 1}. ` +
-					(retryDecision.cooldownMs > 0 ? `Waiting ${retryDecision.cooldownMs}ms before retry...` : "Retrying immediately..."),
-					"warning",
-				);
-
-				if (retryDecision.cooldownMs > 0) {
-					sleepSync(retryDecision.cooldownMs);
-				}
-
-				// Re-invoke merge
-				batchState.phase = "merging";
-				persistRuntimeState("merge-retry-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
-
-				mergeResult = mergeWaveByRepo(
-					waveResult.allocatedLanes,
-					waveResult,
-					waveIdx + 1,
-					orchConfig,
-					repoRoot,
-					batchState.batchId,
-					batchState.orchBranch,
-					workspaceConfig,
-					stateRoot,
-					agentRoot,
-					runnerConfig.testing_commands,
-				);
-
-				// Replace last merge result in tracking arrays
-				allMergeResults[allMergeResults.length - 1] = mergeResult;
-				batchState.mergeResults[batchState.mergeResults.length - 1] = mergeResult;
-				persistRuntimeState("merge-retry-complete", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
-
-				// Re-check: if retry succeeded, restore to executing and continue
-				if (mergeResult.status === "succeeded") {
-					batchState.phase = "executing";
-					persistRuntimeState("merge-retry-succeeded", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
-					onNotify(`✅ Merge retry succeeded at wave ${waveIdx + 1}.`, "info");
-					// Fall through to normal post-merge flow (worktree cleanup, etc.)
-				} else if (mergeResult.rollbackFailed) {
-					// Safe-stop takes priority — handled by the rollbackFailed check above
-					// Re-enter the safe-stop path on next iteration... but we're past that check.
-					// Handle inline:
-					const hasPersistErrors = mergeResult.persistenceErrors && mergeResult.persistenceErrors.length > 0;
-					const persistWarning = hasPersistErrors
-						? ` WARNING: ${mergeResult.persistenceErrors!.length} transaction record(s) failed to persist.`
-						: "";
-
-					batchState.phase = "paused";
-					batchState.errors.push(
-						`Safe-stop at wave ${waveIdx + 1}: verification rollback failed after retry. ` +
-						`Merge worktree and temp branch preserved for recovery.` + persistWarning,
-					);
-					persistRuntimeState("merge-rollback-safe-stop", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
-					onNotify(
-						`🛑 Safe-stop: verification rollback failed at wave ${waveIdx + 1} after retry. ` +
-						`Batch force-paused.` + persistWarning,
-						"error",
-					);
-					preserveWorktreesForResume = true;
-					break;
-				} else {
-					// Retry also failed — fall through to standard policy below
-					// (retryDecision will return shouldRetry=false on next classification check
-					// because counter is now incremented)
-				}
-			}
-
-			// If retry succeeded, skip the pause/abort policy
-			if (mergeResult.status === "succeeded") {
-				// Continue to post-merge flow (worktree cleanup, etc.)
+				batchState.phase = "paused";
+				batchState.errors.push(exhaustionMsg);
+				persistRuntimeState("merge-retry-exhausted", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+				onNotify(retryOutcome.notifyMessage, "error");
+				preserveWorktreesForResume = true;
+				break;
 			} else {
-				// Apply config.failure.on_merge_failure policy via shared helper
-				// for guaranteed parity with resume.ts (TP-005 Step 2).
+				// kind === "no_retry": fall through to standard on_merge_failure policy
+				mergeResult = retryOutcome.mergeResult;
 				const policyResult = computeMergeFailurePolicy(mergeResult, waveIdx, orchConfig);
+				const classNote = retryOutcome.classification
+					? ` [not retriable: ${retryOutcome.classification}, scope=${retryOutcome.scopeKey}]`
+					: "";
 
-				// TP-033: Add retry exhaustion context to error message
-				const exhaustionSuffix = mergeClassification && !retryDecision.shouldRetry && retryDecision.currentAttempt > 0
-					? ` [retry exhausted: ${mergeClassification} ${retryDecision.currentAttempt}/${retryDecision.maxAttempts}, scope=${scopeKey}]`
-					: mergeClassification && !retryDecision.shouldRetry
-						? ` [not retriable: ${mergeClassification}, scope=${scopeKey}]`
-						: "";
-
-				execLog("batch", batchState.batchId, `merge failure — applying ${policyResult.policy} policy${exhaustionSuffix}`, policyResult.logDetails);
+				execLog("batch", batchState.batchId, `merge failure — applying ${policyResult.policy} policy${classNote}`, policyResult.logDetails);
 
 				batchState.phase = policyResult.targetPhase;
-				batchState.errors.push(policyResult.errorMessage + exhaustionSuffix);
+				batchState.errors.push(policyResult.errorMessage + classNote);
 				persistRuntimeState(policyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
-				onNotify(policyResult.notifyMessage + exhaustionSuffix, policyResult.notifyLevel);
+				onNotify(policyResult.notifyMessage + classNote, policyResult.notifyLevel);
 				// DO NOT cleanup/reset worktrees — preserve state for debugging/resume
 				preserveWorktreesForResume = true;
 				break;
