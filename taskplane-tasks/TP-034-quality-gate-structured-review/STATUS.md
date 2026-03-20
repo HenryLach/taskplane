@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 3
 **Size:** M
 
@@ -35,11 +35,13 @@
 ---
 
 ### Step 2: Implement Structured Review
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Add `runQualityGate()` function in quality-gate.ts: generates review prompt with evidence (PROMPT.md, STATUS.md, git diff, file list), instructs agent to write `REVIEW_VERDICT.json` to task folder
 - [x] Add `doQualityGateReview()` in task-runner.ts: spawns review agent (using quality_gate.review_model with fallback chain), reads/parses REVIEW_VERDICT.json, applies verdict rules with configured pass_threshold
 - [x] Integrate quality gate into executeTask(): after all steps complete, if quality_gate.enabled, call quality gate before .DONE; if disabled, keep existing .DONE path unchanged
 - [x] Handle all fail-open paths: missing verdict file, agent crash/non-zero exit, malformed JSON → synthetic PASS so task is never blocked by gate bugs
+- [ ] (R006) Fix prompt verdict rules to be threshold-aware: generate rules from passThreshold instead of hardcoded "3+ important => NEEDS_FIXES" that conflicts with `no_critical` threshold runtime logic
+- [ ] (R006) Fix buildGitDiff() to compute robust diff range (merge-base with main or bounded fallback) instead of hardcoded HEAD~20
 
 ---
 
@@ -85,6 +87,7 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | APPROVE | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 
 ## Discoveries
 
@@ -126,6 +129,8 @@
 | 2026-03-20 00:45 | Review R005 | plan Step 2: APPROVE |
 | 2026-03-20 | Step 2 complete | doQualityGateReview(), executeTask() integration, fail-open paths all verified |
 | 2026-03-20 00:48 | Worker iter 3 | done in 191s, ctx: 20%, tools: 35 |
+| 2026-03-20 00:51 | Worker iter 3 | done in 561s, ctx: 28%, tools: 49 |
+| 2026-03-20 00:51 | Review R006 | code Step 2: REVISE |
 
 ## Blockers
 
