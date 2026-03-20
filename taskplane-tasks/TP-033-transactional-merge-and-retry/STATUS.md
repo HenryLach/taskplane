@@ -20,7 +20,7 @@
 ---
 
 ### Step 1: Transaction Envelope
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 - [x] Define TransactionRecord interface in types.ts with required fields: opId, batchId, waveIndex, laneNumber, repoId, baseHEAD, laneHEAD, mergedHEAD, status, rollbackAttempted, rollbackResult, recoveryCommands, timestamps
 - [x] Capture baseHEAD (temp branch HEAD before lane merge) and laneHEAD (source branch tip) at merge start; capture mergedHEAD after successful merge commit
 - [x] On verification_new_failure: rollback to baseHEAD (existing TP-032 logic); record rollback result in transaction record
@@ -28,9 +28,9 @@
 - [x] Engine integration: detect rollbackFailed flag in MergeWaveResult and force paused phase + preserveWorktreesForResume regardless of config policy
 - [x] Persist transaction record JSON to `.pi/verification/{opId}/txn-b{batchId}-repo-{repoId}-wave-{n}-lane-{k}.json` after each lane merge completes (success, failure, or safe-stop)
 - [x] Handle repo-mode (repoId undefined): sanitize filename to use "default" when repoId is absent
-- [ ] R004-1: Short-circuit mergeWaveByRepo repo-group loop on rollbackFailed — stop processing subsequent repo groups when anyRollbackFailed becomes true; leave unprocessed repo groups untouched
-- [ ] R004-2: Surface transaction record persistence failure in merge outcome — add persistenceErrors to MergeWaveResult and include warning when txn write fails so recovery guidance remains actionable
-- [ ] R004-3: All tests pass after R004 revisions
+- [x] R004-1: Short-circuit mergeWaveByRepo repo-group loop on rollbackFailed — stop processing subsequent repo groups when anyRollbackFailed becomes true; leave unprocessed repo groups untouched
+- [x] R004-2: Surface transaction record persistence failure in merge outcome — add persistenceErrors to MergeWaveResult and include warning when txn write fails so recovery guidance remains actionable
+- [x] R004-3: All tests pass after R004 revisions
 
 ---
 

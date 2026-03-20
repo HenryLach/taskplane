@@ -1502,22 +1502,32 @@ export async function resumeOrchBatch(
 		// on_merge_failure policy. The merge worktree and temp branch are
 		// preserved for manual recovery using commands in the transaction record.
 		if (mergeResult?.rollbackFailed) {
+			// TP-033 R004-2: Include persistence error warning when transaction
+			// record files may be missing, so operator knows to inspect manually
+			const hasPersistErrors = mergeResult.persistenceErrors && mergeResult.persistenceErrors.length > 0;
+			const persistWarning = hasPersistErrors
+				? ` WARNING: ${mergeResult.persistenceErrors!.length} transaction record(s) failed to persist — recovery file(s) may be missing.`
+				: "";
+
 			execLog("batch", batchState.batchId, "SAFE-STOP: verification rollback failed — forcing paused regardless of policy", {
 				waveIndex: waveIdx,
 				configPolicy: orchConfig.failure.on_merge_failure,
+				...(hasPersistErrors ? { persistenceErrors: mergeResult.persistenceErrors } : {}),
 			});
 
 			batchState.phase = "paused";
 			batchState.errors.push(
 				`Safe-stop at wave ${waveIdx + 1}: verification rollback failed. ` +
 				`Merge worktree and temp branch preserved for recovery. ` +
-				`Check transaction records in .pi/verification/ for recovery commands.`
+				`Check transaction records in .pi/verification/ for recovery commands.` +
+				persistWarning
 			);
 			persistRuntimeState("merge-rollback-safe-stop", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 			onNotify(
 				`🛑 Safe-stop: verification rollback failed at wave ${waveIdx + 1}. ` +
 				`Batch force-paused. Merge worktree preserved for manual recovery. ` +
-				`See .pi/verification/ transaction records for recovery commands.`,
+				`See .pi/verification/ transaction records for recovery commands.` +
+				persistWarning,
 				"error",
 			);
 			preserveWorktreesForResume = true;

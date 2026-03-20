@@ -549,7 +549,13 @@ function forceRemoveMergeWorktree(
  * @param record - The transaction record to persist
  * @param stateRoot - Root directory for .pi state files
  */
-function persistTransactionRecord(record: TransactionRecord, stateRoot: string): void {
+/**
+ * Persist a transaction record to disk. Returns null on success, or an error
+ * message string on failure. Persistence is best-effort — callers should
+ * accumulate errors and surface them in MergeWaveResult.persistenceErrors
+ * so operators know recovery guidance may reference missing files.
+ */
+function persistTransactionRecord(record: TransactionRecord, stateRoot: string): string | null {
 	try {
 		const repoSlug = record.repoId
 			? record.repoId.replace(/[^a-zA-Z0-9_-]/g, "_")
@@ -566,10 +572,12 @@ function persistTransactionRecord(record: TransactionRecord, stateRoot: string):
 			file: fileName,
 			status: record.status,
 		});
+		return null;
 	} catch (err: unknown) {
 		// Transaction record persistence is best-effort — don't fail the merge
 		const errMsg = err instanceof Error ? err.message : String(err);
 		execLog("merge", `W${record.waveIndex}`, `failed to persist transaction record: ${errMsg}`);
+		return `lane ${record.laneNumber} (repo: ${record.repoId ?? "default"}): ${errMsg}`;
 	}
 }
 
@@ -997,6 +1005,8 @@ export function mergeWave(
 
 	// TP-033: Collect transaction records for all lane merges in this wave
 	const transactionRecords: TransactionRecord[] = [];
+	// TP-033 R004-2: Track persistence errors for operator visibility
+	const persistenceErrors: string[] = [];
 	// TP-033: Track whether any rollback failure triggered safe-stop
 	let rollbackFailed = false;
 
@@ -1290,7 +1300,8 @@ export function mergeWave(
 				completedAt: new Date().toISOString(),
 			};
 			transactionRecords.push(txnRecord);
-			persistTransactionRecord(txnRecord, stateRoot ?? repoRoot);
+			const txnPersistError = persistTransactionRecord(txnRecord, stateRoot ?? repoRoot);
+			if (txnPersistError) persistenceErrors.push(txnPersistError);
 
 			// Stop merging if this lane failed
 			if (failedLane !== null) break;
@@ -1342,7 +1353,8 @@ export function mergeWave(
 				completedAt: new Date().toISOString(),
 			};
 			transactionRecords.push(errorTxnRecord);
-			persistTransactionRecord(errorTxnRecord, stateRoot ?? repoRoot);
+			const errorTxnPersistError = persistTransactionRecord(errorTxnRecord, stateRoot ?? repoRoot);
+			if (errorTxnPersistError) persistenceErrors.push(errorTxnPersistError);
 
 			failedLane = lane.laneNumber;
 			failureReason = `Merge error in lane ${lane.laneNumber}: ${errMsg}`;
@@ -1571,6 +1583,11 @@ export function mergeWave(
 	if (rollbackFailed) {
 		result.rollbackFailed = true;
 	}
+	// TP-033 R004-2: Surface persistence failures so operator knows
+	// recovery guidance may reference missing transaction record files
+	if (persistenceErrors.length > 0) {
+		result.persistenceErrors = persistenceErrors;
+	}
 
 	return result;
 }
@@ -1716,6 +1733,8 @@ export function mergeWaveByRepo(
 	const allLaneResults: MergeLaneResult[] = [];
 	const repoOutcomes: RepoMergeOutcome[] = [];
 	const allTransactionRecords: TransactionRecord[] = [];
+	// TP-033 R004-2: Accumulate persistence errors across all repo groups
+	const allPersistenceErrors: string[] = [];
 	let firstFailedLane: number | null = null;
 	let firstFailureReason: string | null = null;
 	// Track repo-level failures independently of lane-level failures.
@@ -1770,6 +1789,10 @@ export function mergeWaveByRepo(
 		if (groupResult.transactionRecords) {
 			allTransactionRecords.push(...groupResult.transactionRecords);
 		}
+		// TP-033 R004-2: Accumulate persistence errors
+		if (groupResult.persistenceErrors) {
+			allPersistenceErrors.push(...groupResult.persistenceErrors);
+		}
 		if (groupResult.rollbackFailed) {
 			anyRollbackFailed = true;
 		}
@@ -1797,6 +1820,20 @@ export function mergeWaveByRepo(
 					? `[repo:${group.repoId ?? "default"}] ${groupResult.failureReason}`
 					: `[repo:${group.repoId ?? "default"}] Merge failed (setup error)`;
 			}
+		}
+
+		// TP-033 R004-1: Safe-stop — halt all remaining repo merges immediately
+		// when a rollback failure is detected. Continuing would advance refs in
+		// other repos, making manual recovery harder.
+		if (anyRollbackFailed) {
+			const processedIndex = repoGroups.indexOf(group);
+			const remainingGroups = repoGroups.slice(processedIndex + 1);
+			if (remainingGroups.length > 0) {
+				execLog("merge", `W${waveIndex}`, `safe-stop: skipping ${remainingGroups.length} remaining repo group(s) after rollback failure`, {
+					skippedRepos: remainingGroups.map(g => g.repoId ?? "(default)").join(", "),
+				});
+			}
+			break;
 		}
 	}
 
@@ -1844,6 +1881,10 @@ export function mergeWaveByRepo(
 	}
 	if (anyRollbackFailed) {
 		aggregateResult.rollbackFailed = true;
+	}
+	// TP-033 R004-2: Surface persistence errors from all repo groups
+	if (allPersistenceErrors.length > 0) {
+		aggregateResult.persistenceErrors = allPersistenceErrors;
 	}
 
 	return aggregateResult;

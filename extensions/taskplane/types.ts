@@ -1094,6 +1094,13 @@ export interface MergeWaveResult {
 	 * Populated when transactional envelope is active.
 	 */
 	transactionRecords?: TransactionRecord[];
+	/**
+	 * TP-033 R004-2: Errors encountered while persisting transaction records.
+	 * When non-empty, recovery commands in transaction records may reference
+	 * files that don't exist on disk. Operator should check `.pi/verification/`
+	 * manually.
+	 */
+	persistenceErrors?: string[];
 }
 
 /** Per-repo merge outcome within a wave merge. */
