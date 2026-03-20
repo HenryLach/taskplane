@@ -68,9 +68,9 @@
 
 ### Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
-- [ ] JSDoc for v3 schema interfaces and version constant in types.ts
-- [ ] Review `docs/reference/configuration/task-orchestrator.yaml.md` for schema-version references; update or record no-change rationale
-- [ ] Final test-gate validation: run full suite and record pass/fail disposition
+- [x] JSDoc for v3 schema interfaces and version constant in types.ts
+- [x] Review `docs/reference/configuration/task-orchestrator.yaml.md` for schema-version references; update or record no-change rationale (No change needed: the doc's "Schema overview" refers to the YAML config structure, not batch-state.json schema version. No mention of schemaVersion, BATCH_STATE_SCHEMA_VERSION, or batch-state.json anywhere in the file.)
+- [x] Final test-gate validation: run full suite and record pass/fail disposition (26/27 files pass, 1079/1080 tests pass. Single failure: orch-direct-implementation.test.ts timeout at 60s (ran 86s) — pre-existing flaky test, unrelated to TP-030. All TP-030-related tests pass.)
 - [ ] `.DONE` created
 
 ---

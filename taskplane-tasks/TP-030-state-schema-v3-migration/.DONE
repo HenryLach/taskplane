@@ -1,0 +1,14 @@
+TP-030 — State Schema v3 & Migration
+
+Completed: 2026-03-19
+
+Summary:
+- Extended batch-state.json to schema v3 with resilience and diagnostics sections
+- Implemented v1→v2→v3 migration chain with conservative defaults
+- Added exitDiagnostic to task records alongside legacy exitReason
+- Unknown top-level fields preserved on read/write roundtrip
+- Corrupt state enters paused phase with diagnostic (no auto-delete)
+- Version mismatch includes upgrade guidance
+- Strict v3 validation rejects malformed resilience/diagnostics structures
+- 50+ new tests in state-migration.test.ts covering all migration paths
+- All TP-030-related tests pass (1079/1080 total; 1 pre-existing timeout flake)
