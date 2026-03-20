@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 10
-**Iteration:** 5
+**Review Counter:** 11
+**Iteration:** 6
 **Size:** M
 
 ---
@@ -78,7 +78,10 @@
 
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
-- [ ] Config docs updated
+- [ ] Add `quality_gate` / `qualityGate` section to `docs/reference/configuration/task-runner.yaml.md`: field table with defaults, YAML→JSON key mappings, section mapping, and example JSON snippet
+- [ ] Update `docs/explanation/execution-model.md` to describe opt-in quality gate between step completion and .DONE creation
+- [ ] Assess `docs/reference/status-format.md` — record rationale if no changes needed (REVIEW_VERDICT.json is a task-folder artifact, not a STATUS.md field)
+- [ ] Final doc/code consistency check: defaults, threshold semantics, fail-open match implementation
 - [ ] `.DONE` created
 
 ---
@@ -106,6 +109,8 @@
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 | R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
+| R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
+| R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 
 ## Discoveries
 
@@ -181,6 +186,11 @@
 | 2026-03-20 01:39 | Worker iter 5 | done in 597s, ctx: 37%, tools: 58 |
 | 2026-03-20 01:39 | Step 4 complete | Testing & Verification |
 | 2026-03-20 01:39 | Step 5 started | Documentation & Delivery |
+| 2026-03-20 01:40 | Worker iter 5 | done in 598s, ctx: 31%, tools: 67 |
+| 2026-03-20 01:40 | Step 4 complete | Testing & Verification |
+| 2026-03-20 01:40 | Step 5 started | Documentation & Delivery |
+| 2026-03-20 01:42 | Review R011 | plan Step 5: REVISE |
+| 2026-03-20 01:42 | Review R011 | plan Step 5: REVISE |
 
 ## Blockers
 
