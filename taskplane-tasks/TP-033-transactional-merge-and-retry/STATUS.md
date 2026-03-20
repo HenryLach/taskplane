@@ -11,11 +11,11 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 - [x] Read merge flow end-to-end
 - [x] Read v3 state retry fields
 - [x] Read roadmap Phase 4 sections
-- [ ] R002: Fix Reviews table structure (separator after header) and normalize Execution Log timestamps
+- [x] R002: Fix Reviews table structure (separator after header) and normalize Execution Log timestamps
 
 ---
 
@@ -59,9 +59,9 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+|---|------|------|---------|------|
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
-|---|------|------|---------|------|
 
 ## Discoveries
 
@@ -75,13 +75,14 @@
 
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
-| 2026-03-19 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-19 00:00 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-03-20 12:13 | Task started | Extension-driven execution |
 | 2026-03-20 12:13 | Step 0 started | Preflight |
 | 2026-03-20 12:14 | Review R001 | plan Step 0: APPROVE |
-| 2026-03-20 | Step 0 complete | Read merge.ts (1770 lines), engine.ts (580 lines), types.ts (2257 lines), roadmap Phase 4 §4b/§4c. Identified TP-032 overlap, scope key format alignment needed, merge-related retry classes scoped. |
+| 2026-03-20 12:16 | Step 0 complete | Read merge.ts (1770 lines), engine.ts (580 lines), types.ts (2257 lines), roadmap Phase 4 §4b/§4c. Identified TP-032 overlap, scope key format alignment needed, merge-related retry classes scoped. |
 | 2026-03-20 12:16 | Worker iter 1 | done in 107s, ctx: 45%, tools: 19 |
 | 2026-03-20 12:18 | Review R002 | code Step 0: REVISE |
+| 2026-03-20 12:20 | R002 fixes applied | Fixed Reviews table separator order, normalized Execution Log timestamps to date+time |
 
 ## Blockers
 
