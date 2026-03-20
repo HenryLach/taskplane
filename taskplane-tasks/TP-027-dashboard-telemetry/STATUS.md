@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
-**Review Counter:** 3
-**Iteration:** 3
+**Review Counter:** 4
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -46,10 +46,11 @@
 ### Step 3: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] Manual dashboard test with mock data
-- [ ] No JS errors in console
-- [ ] Full test suite passes
-- [ ] Dashboard loads cleanly
+- [ ] Syntax check: `node --check dashboard/server.cjs` and `node --check dashboard/public/app.js` pass
+- [ ] API contract: Create mock telemetry JSONL + batch-state, verify buildDashboardState() returns `telemetry` and `batchTotalCost` fields with correct values (retry lifecycle, compaction count, cost dedup)
+- [ ] Fallback/edge cases: Verify graceful behavior with missing .pi/telemetry/, malformed JSONL lines, file deletion mid-read, and pre-RPC sessions (no telemetry files)
+- [ ] Full test suite: `cd extensions && npx vitest run` passes with zero failures
+- [ ] Fix any issues discovered during verification
 
 ---
 
@@ -70,6 +71,8 @@
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
+| R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
 |---|------|------|---------|------|
 
 ---
@@ -118,6 +121,11 @@
 | 2026-03-20 02:51 | Worker iter 3 | done in 220s, ctx: 29%, tools: 32 |
 | 2026-03-20 02:51 | Step 2 complete | Dashboard Frontend — Display Telemetry |
 | 2026-03-20 02:51 | Step 3 started | Testing & Verification |
+| 2026-03-20 02:53 | Worker iter 3 | done in 263s, ctx: 30%, tools: 39 |
+| 2026-03-20 02:53 | Step 2 complete | Dashboard Frontend — Display Telemetry |
+| 2026-03-20 02:53 | Step 3 started | Testing & Verification |
+| 2026-03-20 02:53 | Review R004 | plan Step 3: REVISE |
+| 2026-03-20 02:54 | Review R004 | plan Step 3: REVISE |
 
 ---
 
