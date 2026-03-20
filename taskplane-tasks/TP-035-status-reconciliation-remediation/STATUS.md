@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
-**Review Counter:** 1
-**Iteration:** 1
+**Review Counter:** 2
+**Iteration:** 2
 **Size:** S
 
 ---
@@ -21,10 +21,10 @@
 
 ### Step 1: STATUS.md Reconciliation
 **Status:** 🟨 In Progress
-- [ ] Apply reconciliation findings to STATUS.md
-- [ ] Uncheck/check mismatched boxes
-- [ ] Record reconciliation in diagnostics
-- [ ] Only when quality gate enabled
+- [ ] Implement `applyStatusReconciliation()` in quality-gate.ts: reads STATUS.md, matches reconciliation entries to checkboxes by normalized text, toggles checked/unchecked, handles partial→unchecked+note, handles duplicates/unmatched deterministically, returns change count
+- [ ] Integrate reconciliation call in task-runner.ts after `readAndEvaluateVerdict()` — only when quality gate enabled and verdict has reconciliation entries with a real delta (idempotent across cycles)
+- [ ] Log reconciliation actions to Execution Log via `logExecution()` with payload: changed count, skipped/unmatched count
+- [ ] Acceptance: given a verdict with reconciliation entries, STATUS checkbox states are corrected deterministically and reconciliation actions are auditable in logs
 
 ---
 
@@ -62,6 +62,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
+| R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
+| R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -83,6 +85,11 @@
 | 2026-03-20 05:46 | Worker iter 1 | done in 111s, ctx: 32%, tools: 29 |
 | 2026-03-20 05:46 | Step 0 complete | Preflight |
 | 2026-03-20 05:46 | Step 1 started | STATUS.md Reconciliation |
+| 2026-03-20 05:46 | Worker iter 1 | done in 75s, ctx: 28%, tools: 17 |
+| 2026-03-20 05:46 | Step 0 complete | Preflight |
+| 2026-03-20 05:46 | Step 1 started | STATUS.md Reconciliation |
+| 2026-03-20 05:49 | Review R002 | plan Step 1: REVISE |
+| 2026-03-20 05:50 | Review R002 | plan Step 1: REVISE |
 
 ## Blockers
 
