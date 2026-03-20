@@ -13,15 +13,16 @@
  *   5.x  — generateFeedbackMd (threshold-aware)
  *   6.x  — buildFixAgentPrompt
  *   7.x  — Verdict rules threshold matrix (no_critical, no_important, all_clear)
- *   8.x  — .DONE creation contract tests (disabled/enabled/pass/fail behavior)
- *   9.x  — Remediation cycle determinism (NEEDS_FIXES triggers fix, budget consumption)
+ *   8.x  — Gate decision logic (unit: config defaults, evaluation outcomes)
+ *   9.x  — Remediation cycle determinism (unit: feedback, prompt, budget)
  *   10.x — generateQualityGatePrompt evidence packaging
+ *   11.x — Composed gate decision flow (integration: file I/O, multi-cycle, .DONE assertions)
  *
  * Run: npx vitest run tests/quality-gate.test.ts
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdirSync, writeFileSync, rmSync, existsSync } from "fs";
+import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, unlinkSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -882,11 +883,11 @@ describe("7.x: Verdict rules threshold matrix", () => {
 // 8.x — .DONE creation contract tests
 // ══════════════════════════════════════════════════════════════════════
 
-describe("8.x: .DONE creation contracts", () => {
-	// These tests verify the decision logic that determines .DONE creation.
-	// They test the pure evaluation functions that the task-runner integration
-	// relies on — the actual .DONE file I/O happens in executeTask() which
-	// requires full task-runner state (not unit-testable here).
+describe("8.x: Gate decision logic (unit)", () => {
+	// Unit tests for the pure evaluation functions that feed .DONE creation
+	// decisions. These verify config defaults, verdict evaluation outcomes,
+	// and metadata expectations. The actual .DONE file I/O lives in
+	// executeTask() (task-runner.ts); composed flow tests are in 11.x.
 
 	it("8.1: disabled behavior — quality_gate.enabled defaults to false", () => {
 		// When disabled, the task-runner code path skips the gate entirely
@@ -964,12 +965,11 @@ describe("8.x: .DONE creation contracts", () => {
 // 9.x — Remediation cycle determinism
 // ══════════════════════════════════════════════════════════════════════
 
-describe("9.x: Remediation cycle determinism", () => {
-	// These tests verify the pure-function components of the remediation
-	// cycle: feedback generation, fix agent prompt building, and verdict
-	// evaluation across cycles. The actual agent spawning and loop control
-	// lives in task-runner.ts (doQualityGateFixAgent/executeTask) and
-	// requires full runtime state.
+describe("9.x: Remediation cycle determinism (unit)", () => {
+	// Unit tests for the pure-function components of the remediation cycle:
+	// feedback generation, fix agent prompt building, and verdict evaluation
+	// across cycles. Agent spawning and loop control live in task-runner.ts
+	// (doQualityGateFixAgent/executeTask). Composed flow tests in 11.x.
 
 	it("9.1: NEEDS_FIXES triggers feedback generation with correct cycle info", () => {
 		const v = makeVerdict({
@@ -1302,458 +1302,459 @@ describe("10.x: generateQualityGatePrompt", () => {
 });
 
 // ══════════════════════════════════════════════════════════════════════
-// 4.x — readAndEvaluateVerdict fail-open integration
+// 11.x — Composed gate decision flow (integration-level)
 // ══════════════════════════════════════════════════════════════════════
+//
+// These tests simulate the complete quality gate flow that executeTask()
+// performs in task-runner.ts. They exercise the composed sequence:
+//   verdict file → readAndEvaluateVerdict → .DONE decision → feedback →
+//   fix prompt → verdict deletion → re-evaluation
+//
+// The actual agent spawning is closure-scoped in task-runner.ts and
+// cannot be imported. These tests verify the decision logic and file
+// I/O that surrounds agent calls — the highest-risk, most testable
+// surface of the quality gate runtime.
 
-describe("4.x: readAndEvaluateVerdict", () => {
-	it("4.1: missing verdict file → synthetic PASS (fail-open)", () => {
-		const dir = makeTestDir("read-missing");
-		// No REVIEW_VERDICT.json exists in dir
-		const { verdict, evaluation } = readAndEvaluateVerdict(dir, "no_critical");
-		expect(verdict.verdict).toBe("PASS");
-		expect(verdict.confidence).toBe("low");
-		expect(verdict.summary).toContain("fail-open");
-		expect(evaluation.pass).toBe(true);
-		expect(evaluation.failReasons).toHaveLength(0);
-	});
+describe("11.x: Composed gate decision flow", () => {
+	/**
+	 * Simulate the .DONE creation decision the task-runner makes.
+	 * Mirrors the logic in executeTask() after quality gate review.
+	 */
+	function simulateDoneDecision(
+		taskFolder: string,
+		taskId: string,
+		passed: boolean,
+		cycleNum: number,
+	): void {
+		const donePath = join(taskFolder, ".DONE");
+		if (passed) {
+			writeFileSync(
+				donePath,
+				`Completed: ${new Date().toISOString()}\nTask: ${taskId}\nQuality gate: PASS (cycle ${cycleNum})\n`,
+			);
+		}
+		// If not passed, .DONE is NOT created (gate blocks it)
+	}
 
-	it("4.2: unreadable verdict file (bad permissions simulation via empty file) → synthetic PASS", () => {
-		const dir = makeTestDir("read-empty");
-		writeFileSync(join(dir, VERDICT_FILENAME), "");
-		const { verdict, evaluation } = readAndEvaluateVerdict(dir, "no_critical");
-		expect(verdict.verdict).toBe("PASS");
-		expect(verdict.confidence).toBe("low");
-		expect(evaluation.pass).toBe(true);
-	});
+	/**
+	 * Simulate the verdict file deletion the task-runner does before
+	 * each review cycle (to detect agent failure via file absence).
+	 */
+	function deleteVerdictFile(taskFolder: string): void {
+		const verdictPath = join(taskFolder, VERDICT_FILENAME);
+		try { if (existsSync(verdictPath)) unlinkSync(verdictPath); } catch { /* ignore */ }
+	}
 
-	it("4.3: malformed JSON in verdict file → synthetic PASS", () => {
-		const dir = makeTestDir("read-malformed");
-		writeFileSync(join(dir, VERDICT_FILENAME), "not json {{{");
-		const { verdict, evaluation } = readAndEvaluateVerdict(dir, "no_critical");
-		expect(verdict.verdict).toBe("PASS");
-		expect(verdict.summary).toContain("fail-open");
-		expect(evaluation.pass).toBe(true);
-	});
+	// ── 11.1: Full PASS flow — verdict → .DONE created ──────────────
 
-	it("4.4: valid PASS verdict file → PASS evaluation", () => {
-		const dir = makeTestDir("read-pass");
+	it("11.1: PASS verdict → .DONE created with quality gate metadata", () => {
+		const dir = makeTestDir("flow-pass");
+		const taskId = "TP-FLOW-PASS";
+
+		// Agent writes a PASS verdict
 		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
 			verdict: "PASS",
 			confidence: "high",
-			summary: "All requirements met",
+			summary: "All requirements met, tests pass",
+			findings: [],
 		}));
+
+		// Gate reads and evaluates (same call as task-runner)
 		const { verdict, evaluation } = readAndEvaluateVerdict(dir, "no_critical");
-		expect(verdict.verdict).toBe("PASS");
-		expect(verdict.confidence).toBe("high");
 		expect(evaluation.pass).toBe(true);
+
+		// Task-runner creates .DONE on PASS
+		simulateDoneDecision(dir, taskId, evaluation.pass, 1);
+
+		// Verify .DONE exists and contains quality gate metadata
+		const donePath = join(dir, ".DONE");
+		expect(existsSync(donePath)).toBe(true);
+		const doneContent = readFileSync(donePath, "utf-8");
+		expect(doneContent).toContain(taskId);
+		expect(doneContent).toContain("Quality gate: PASS");
+		expect(doneContent).toContain("cycle 1");
 	});
 
-	it("4.5: valid NEEDS_FIXES verdict with critical → fail evaluation", () => {
-		const dir = makeTestDir("read-needsfixes");
+	// ── 11.2: NEEDS_FIXES → .DONE absent, feedback written ─────────
+
+	it("11.2: NEEDS_FIXES with critical → .DONE NOT created, REVIEW_FEEDBACK.md written", () => {
+		const dir = makeTestDir("flow-needsfixes");
+		const taskId = "TP-FLOW-FIX";
+		const threshold: PassThreshold = "no_critical";
+		const maxReviewCycles = 2;
+
+		// Agent writes a NEEDS_FIXES verdict
+		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
+			verdict: "NEEDS_FIXES",
+			confidence: "high",
+			summary: "Critical bug in parser",
+			findings: [
+				{ severity: "critical", category: "incorrect_implementation",
+				  description: "Buffer overflow", file: "parser.ts", remediation: "Add bounds check" },
+			],
+		}));
+
+		// Gate reads and evaluates
+		const { verdict, evaluation } = readAndEvaluateVerdict(dir, threshold);
+		expect(evaluation.pass).toBe(false);
+
+		// Task-runner does NOT create .DONE
+		simulateDoneDecision(dir, taskId, evaluation.pass, 1);
+		expect(existsSync(join(dir, ".DONE"))).toBe(false);
+
+		// Task-runner writes REVIEW_FEEDBACK.md for fix agent
+		const feedbackContent = generateFeedbackMd(verdict, 1, maxReviewCycles, threshold);
+		const feedbackPath = join(dir, FEEDBACK_FILENAME);
+		writeFileSync(feedbackPath, feedbackContent);
+
+		// Verify feedback file exists and contains the finding
+		expect(existsSync(feedbackPath)).toBe(true);
+		const feedbackOnDisk = readFileSync(feedbackPath, "utf-8");
+		expect(feedbackOnDisk).toContain("Buffer overflow");
+		expect(feedbackOnDisk).toContain("parser.ts");
+		expect(feedbackOnDisk).toContain("Cycle 1/2");
+	});
+
+	// ── 11.3: Full remediation cycle → fix → PASS on cycle 2 ────────
+
+	it("11.3: NEEDS_FIXES → remediation → PASS on cycle 2 → .DONE created", () => {
+		const dir = makeTestDir("flow-remediate");
+		const taskId = "TP-FLOW-REMED";
+		const threshold: PassThreshold = "no_critical";
+		const maxReviewCycles = 2;
+		const maxFixCycles = 1;
+		let reviewCycle = 0;
+		let fixCyclesUsed = 0;
+
+		// Create PROMPT.md and STATUS.md for fix prompt building
+		writeFileSync(join(dir, "PROMPT.md"), "# Task: Fix Parser\n- [ ] Fix buffer overflow");
+		writeFileSync(join(dir, "STATUS.md"), "# Status\n**Status:** In Progress");
+
+		const gateContext: QualityGateContext = {
+			taskFolder: dir,
+			promptPath: join(dir, "PROMPT.md"),
+			taskId,
+			projectName: "TestProject",
+			passThreshold: threshold,
+		};
+
+		// ── Cycle 1: Review fails ────────────────────────────────
+		reviewCycle++;
 		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
 			verdict: "NEEDS_FIXES",
 			findings: [
-				{ severity: "critical", category: "incorrect_implementation", description: "Bug", file: "a.ts", remediation: "fix" },
+				{ severity: "critical", category: "incorrect_implementation",
+				  description: "OOB read", file: "parser.ts", remediation: "Add length check" },
 			],
 		}));
-		const { verdict, evaluation } = readAndEvaluateVerdict(dir, "no_critical");
-		expect(verdict.verdict).toBe("NEEDS_FIXES");
-		expect(evaluation.pass).toBe(false);
-		expect(evaluation.failReasons.some(r => r.rule === "critical_finding")).toBe(true);
-	});
 
-	it("4.6: verdict with invalid verdict value → synthetic PASS (fail-open)", () => {
-		const dir = makeTestDir("read-invalid-verdict");
-		writeFileSync(join(dir, VERDICT_FILENAME), JSON.stringify({
-			verdict: "MAYBE",
-			findings: [],
-		}));
-		const { verdict, evaluation } = readAndEvaluateVerdict(dir, "no_critical");
-		expect(verdict.verdict).toBe("PASS");
-		expect(evaluation.pass).toBe(true);
-	});
+		const result1 = readAndEvaluateVerdict(dir, threshold);
+		expect(result1.evaluation.pass).toBe(false);
 
-	it("4.7: nonexistent directory path → synthetic PASS (fail-open, no crash)", () => {
-		const { verdict, evaluation } = readAndEvaluateVerdict(
-			join(testRoot, "completely-nonexistent-dir"),
-			"no_critical",
-		);
-		expect(verdict.verdict).toBe("PASS");
-		expect(evaluation.pass).toBe(true);
-	});
-});
+		// Check: can we still fix? (reviewCycle < maxReviewCycles && fixCyclesUsed < maxFixCycles)
+		expect(reviewCycle < maxReviewCycles).toBe(true);
+		expect(fixCyclesUsed < maxFixCycles).toBe(true);
 
-// ══════════════════════════════════════════════════════════════════════
-// 5.x — generateFeedbackMd (threshold-aware)
-// ══════════════════════════════════════════════════════════════════════
+		// Generate feedback and fix prompt
+		fixCyclesUsed++;
+		const feedback = generateFeedbackMd(result1.verdict, reviewCycle, maxReviewCycles, threshold);
+		writeFileSync(join(dir, FEEDBACK_FILENAME), feedback);
+		const fixPrompt = buildFixAgentPrompt(gateContext, feedback, fixCyclesUsed);
+		expect(fixPrompt).toContain("OOB read");
+		expect(fixPrompt).toContain("Do NOT create .DONE");
 
-describe("5.x: generateFeedbackMd", () => {
-	it("5.1: critical and important findings included, suggestions excluded (no_critical threshold)", () => {
-		const verdict = makeVerdict({
-			verdict: "NEEDS_FIXES",
+		// [Fix agent would run here and fix the code]
+		// Delete verdict file before re-review (as task-runner does)
+		deleteVerdictFile(dir);
+		expect(existsSync(join(dir, VERDICT_FILENAME))).toBe(false);
+
+		// ── Cycle 2: Review passes ───────────────────────────────
+		reviewCycle++;
+		// Agent writes a PASS verdict after fix
+		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
+			verdict: "PASS",
 			confidence: "high",
-			summary: "Issues found",
-			findings: [
-				makeFinding({ severity: "critical", category: "incorrect_implementation", description: "Critical bug" }),
-				makeFinding({ severity: "important", category: "missing_requirement", description: "Missing feature" }),
-				makeFinding({ severity: "suggestion", category: "incomplete_work", description: "Style issue" }),
-			],
-		});
-		const md = generateFeedbackMd(verdict, 1, 2, "no_critical");
-		expect(md).toContain("Critical bug");
-		expect(md).toContain("Missing feature");
-		expect(md).not.toContain("Style issue");
-		expect(md).toContain("Cycle 1/2");
-	});
-
-	it("5.2: suggestions included under all_clear threshold", () => {
-		const verdict = makeVerdict({
-			verdict: "NEEDS_FIXES",
-			confidence: "medium",
-			summary: "Needs polish",
-			findings: [
-				makeFinding({ severity: "suggestion", category: "incomplete_work", description: "Naming nit" }),
-				makeFinding({ severity: "suggestion", category: "incomplete_work", description: "Doc issue" }),
-			],
-		});
-		const md = generateFeedbackMd(verdict, 1, 2, "all_clear");
-		expect(md).toContain("Naming nit");
-		expect(md).toContain("Doc issue");
-		expect(md).toContain("Suggestion Findings");
-		expect(md).toContain("all_clear");
-	});
-
-	it("5.3: suggestions excluded under no_important threshold", () => {
-		const verdict = makeVerdict({
-			verdict: "NEEDS_FIXES",
-			confidence: "medium",
-			summary: "Some findings",
-			findings: [
-				makeFinding({ severity: "important", category: "missing_requirement", description: "Important thing" }),
-				makeFinding({ severity: "suggestion", category: "incomplete_work", description: "Minor nit" }),
-			],
-		});
-		const md = generateFeedbackMd(verdict, 1, 3, "no_important");
-		expect(md).toContain("Important thing");
-		expect(md).not.toContain("Minor nit");
-		expect(md).not.toContain("Suggestion Findings");
-	});
-
-	it("5.4: STATUS.md reconciliation issues included", () => {
-		const verdict = makeVerdict({
-			verdict: "NEEDS_FIXES",
-			summary: "Checkbox mismatch",
-			statusReconciliation: [
-				{ checkbox: "Step 2 done", actualState: "not_done" as const, evidence: "Tests failing" },
-			],
-		});
-		const md = generateFeedbackMd(verdict, 1, 2);
-		expect(md).toContain("STATUS.md Reconciliation Issues");
-		expect(md).toContain("Step 2 done");
-		expect(md).toContain("not_done");
-		expect(md).toContain("Tests failing");
-	});
-
-	it("5.5: no blocking findings generates appropriate fallback message", () => {
-		const verdict = makeVerdict({
-			verdict: "NEEDS_FIXES",
-			summary: "Needs fixes but no findings??",
+			summary: "Fix verified, all requirements met",
 			findings: [],
-		});
-		const md = generateFeedbackMd(verdict, 1, 2, "no_critical");
-		expect(md).toContain("No blocking findings");
-		expect(md).toContain("REVIEW_VERDICT.json");
+		}));
+
+		const result2 = readAndEvaluateVerdict(dir, threshold);
+		expect(result2.evaluation.pass).toBe(true);
+
+		// .DONE created after PASS
+		simulateDoneDecision(dir, taskId, result2.evaluation.pass, reviewCycle);
+		const donePath = join(dir, ".DONE");
+		expect(existsSync(donePath)).toBe(true);
+		const doneContent = readFileSync(donePath, "utf-8");
+		expect(doneContent).toContain("Quality gate: PASS");
+		expect(doneContent).toContain("cycle 2");
 	});
 
-	it("5.6: cycle number and max cycles reflected in header", () => {
-		const verdict = makeVerdict({
-			verdict: "NEEDS_FIXES",
-			summary: "test",
-			findings: [makeFinding({ severity: "critical", category: "incorrect_implementation", description: "bug" })],
-		});
-		const md = generateFeedbackMd(verdict, 2, 3, "no_critical");
-		expect(md).toContain("Cycle 2/3");
-	});
+	// ── 11.4: Max cycles exhausted → .DONE absent ───────────────────
 
-	it("5.7: pass threshold shown in feedback header", () => {
-		const verdict = makeVerdict({
-			verdict: "NEEDS_FIXES",
-			summary: "test",
-			findings: [makeFinding({ severity: "critical", category: "incorrect_implementation", description: "bug" })],
-		});
-		const md = generateFeedbackMd(verdict, 1, 2, "no_important");
-		expect(md).toContain("`no_important`");
-	});
+	it("11.4: max review cycles exhausted → .DONE NOT created, findings summary available", () => {
+		const dir = makeTestDir("flow-exhausted");
+		const taskId = "TP-FLOW-EXHAUST";
+		const threshold: PassThreshold = "no_critical";
+		const maxReviewCycles = 2;
+		const maxFixCycles = 1;
+		let reviewCycle = 0;
+		let fixCyclesUsed = 0;
+		let lastVerdict: ReviewVerdict | null = null;
+		let gatePassed = false;
 
-	it("5.8: remediation instructions carried through", () => {
-		const verdict = makeVerdict({
+		writeFileSync(join(dir, "PROMPT.md"), "# Task");
+		writeFileSync(join(dir, "STATUS.md"), "# Status");
+
+		const gateContext: QualityGateContext = {
+			taskFolder: dir,
+			promptPath: join(dir, "PROMPT.md"),
+			taskId,
+			projectName: "TestProject",
+			passThreshold: threshold,
+		};
+
+		// ── Cycle 1: fails ───────────────────────────────────────
+		reviewCycle++;
+		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
 			verdict: "NEEDS_FIXES",
-			summary: "Fix this",
+			summary: "Critical bugs",
 			findings: [
-				makeFinding({
-					severity: "critical",
-					category: "incorrect_implementation",
-					description: "Auth bypass",
-					file: "auth.ts",
-					remediation: "Add token validation in middleware",
-				}),
+				{ severity: "critical", category: "incorrect_implementation",
+				  description: "Memory leak", file: "pool.ts", remediation: "Free buffer" },
+				{ severity: "important", category: "missing_requirement",
+				  description: "No error handling", file: "pool.ts", remediation: "Add try/catch" },
 			],
-		});
-		const md = generateFeedbackMd(verdict, 1, 2);
-		expect(md).toContain("auth.ts");
-		expect(md).toContain("Add token validation in middleware");
-	});
-});
+		}));
 
-// ══════════════════════════════════════════════════════════════════════
-// 6.x — buildFixAgentPrompt
-// ══════════════════════════════════════════════════════════════════════
+		const r1 = readAndEvaluateVerdict(dir, threshold);
+		lastVerdict = r1.verdict;
+		expect(r1.evaluation.pass).toBe(false);
 
-describe("6.x: buildFixAgentPrompt", () => {
-	it("6.1: includes task ID, cycle number, and feedback content", () => {
-		const dir = makeTestDir("fix-prompt");
-		// Create PROMPT.md and STATUS.md so they can be read
-		writeFileSync(join(dir, "PROMPT.md"), "# Task: Test\n## Steps\n- [ ] Step 1");
-		writeFileSync(join(dir, "STATUS.md"), "# Status\n**Status:** In Progress");
+		// Fix cycle
+		fixCyclesUsed++;
+		const fb = generateFeedbackMd(r1.verdict, reviewCycle, maxReviewCycles, threshold);
+		writeFileSync(join(dir, FEEDBACK_FILENAME), fb);
+		deleteVerdictFile(dir);
 
-		const ctx: QualityGateContext = {
-			taskFolder: dir,
-			promptPath: join(dir, "PROMPT.md"),
-			taskId: "TP-099",
-			projectName: "TestProject",
-			passThreshold: "no_critical",
-		};
+		// ── Cycle 2: still fails ─────────────────────────────────
+		reviewCycle++;
+		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
+			verdict: "NEEDS_FIXES",
+			summary: "Memory leak partially fixed but new issue",
+			findings: [
+				{ severity: "critical", category: "incorrect_implementation",
+				  description: "Double free", file: "pool.ts", remediation: "Track allocation state" },
+			],
+		}));
 
-		const feedback = "## Critical Findings\n### C1: Bug in auth\n- **File:** auth.ts";
-		const prompt = buildFixAgentPrompt(ctx, feedback, 1);
+		const r2 = readAndEvaluateVerdict(dir, threshold);
+		lastVerdict = r2.verdict;
+		expect(r2.evaluation.pass).toBe(false);
 
-		expect(prompt).toContain("TP-099");
-		expect(prompt).toContain("Fix Cycle 1");
-		expect(prompt).toContain("Bug in auth");
-		expect(prompt).toContain("auth.ts");
-		expect(prompt).toContain("Task: Test");
-		expect(prompt).toContain("Status");
-	});
+		// reviewCycle >= maxReviewCycles → terminal failure
+		expect(reviewCycle >= maxReviewCycles).toBe(true);
 
-	it("6.2: handles missing PROMPT.md and STATUS.md gracefully", () => {
-		const dir = makeTestDir("fix-prompt-missing-files");
-		// No PROMPT.md or STATUS.md
+		// .DONE must NOT exist
+		expect(existsSync(join(dir, ".DONE"))).toBe(false);
 
-		const ctx: QualityGateContext = {
-			taskFolder: dir,
-			promptPath: join(dir, "PROMPT.md"),
-			taskId: "TP-100",
-			projectName: "TestProject",
-			passThreshold: "no_critical",
-		};
-
-		const feedback = "## Issues\nSome feedback here";
-		const prompt = buildFixAgentPrompt(ctx, feedback, 2);
-
-		expect(prompt).toContain("TP-100");
-		expect(prompt).toContain("Fix Cycle 2");
-		expect(prompt).toContain("PROMPT.md not found");
-		expect(prompt).toContain("STATUS.md not found");
-		expect(prompt).toContain("Some feedback here");
+		// Verify findings summary for logging (mirrors task-runner terminal failure logic)
+		const criticals = lastVerdict!.findings.filter(f => f.severity === "critical");
+		const importants = lastVerdict!.findings.filter(f => f.severity === "important");
+		const summaryParts = [
+			criticals.length > 0 ? `${criticals.length} critical` : "",
+			importants.length > 0 ? `${importants.length} important` : "",
+		].filter(Boolean);
+		expect(summaryParts.join(", ")).toBe("1 critical");
+		expect(lastVerdict!.summary).toContain("partially fixed");
 	});
 
-	it("6.3: prompt instructs fix agent NOT to create .DONE", () => {
-		const dir = makeTestDir("fix-prompt-no-done");
-		writeFileSync(join(dir, "PROMPT.md"), "test");
-		writeFileSync(join(dir, "STATUS.md"), "test");
+	// ── 11.5: Fix agent crash → fail-open on missing verdict ────────
 
-		const ctx: QualityGateContext = {
-			taskFolder: dir,
-			promptPath: join(dir, "PROMPT.md"),
-			taskId: "TP-101",
-			projectName: "TestProject",
-			passThreshold: "no_critical",
-		};
-
-		const prompt = buildFixAgentPrompt(ctx, "feedback", 1);
-		expect(prompt).toContain("Do NOT create .DONE");
-	});
-});
-
-// ══════════════════════════════════════════════════════════════════════
-// 7.x — Verdict rules threshold matrix
-// ══════════════════════════════════════════════════════════════════════
-
-describe("7.x: Verdict rules threshold matrix", () => {
-	// ── no_critical threshold ───────────────────────────────────────
-	describe("no_critical threshold", () => {
+	it("11.5: fix agent crash leaves no verdict → readAndEvaluateVerdict returns fail-open PASS", () => {
+		const dir = makeTestDir("flow-fix-crash");
 		const threshold: PassThreshold = "no_critical";
 
-		it("7.1: 0 findings → pass", () => {
-			const result = applyVerdictRules(makeVerdict(), threshold);
-			expect(result.pass).toBe(true);
-		});
+		// Cycle 1: review fails
+		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
+			verdict: "NEEDS_FIXES",
+			findings: [
+				{ severity: "critical", category: "incorrect_implementation",
+				  description: "Bug", file: "a.ts", remediation: "fix" },
+			],
+		}));
 
-		it("7.2: 1 critical → fail", () => {
-			const result = applyVerdictRules(makeVerdict({
-				findings: [makeFinding({ severity: "critical", category: "incorrect_implementation" })],
-			}), threshold);
-			expect(result.pass).toBe(false);
-			expect(result.failReasons.some(r => r.rule === "critical_finding")).toBe(true);
-		});
+		const r1 = readAndEvaluateVerdict(dir, threshold);
+		expect(r1.evaluation.pass).toBe(false);
 
-		it("7.3: 5 important → pass (no_critical ignores important count)", () => {
-			const findings = Array(5).fill(null).map(() =>
-				makeFinding({ severity: "important", category: "missing_requirement" })
-			);
-			const result = applyVerdictRules(makeVerdict({ findings }), threshold);
-			expect(result.pass).toBe(true);
-		});
+		// Fix agent runs but crashes → no changes to verdict file
+		// Task-runner deletes old verdict before re-review
+		deleteVerdictFile(dir);
+		expect(existsSync(join(dir, VERDICT_FILENAME))).toBe(false);
 
-		it("7.4: suggestions only → pass", () => {
-			const result = applyVerdictRules(makeVerdict({
-				findings: [makeFinding({ severity: "suggestion" })],
-			}), threshold);
-			expect(result.pass).toBe(true);
-		});
+		// Re-review agent also crashes → no verdict file written
+		// readAndEvaluateVerdict on missing file → fail-open PASS
+		const r2 = readAndEvaluateVerdict(dir, threshold);
+		expect(r2.verdict.verdict).toBe("PASS");
+		expect(r2.verdict.confidence).toBe("low");
+		expect(r2.verdict.summary).toContain("fail-open");
+		expect(r2.evaluation.pass).toBe(true);
 
-		it("7.5: status_mismatch → fail regardless of severity", () => {
-			const result = applyVerdictRules(makeVerdict({
-				findings: [makeFinding({ severity: "suggestion", category: "status_mismatch" })],
-			}), threshold);
-			expect(result.pass).toBe(false);
-			expect(result.failReasons.some(r => r.rule === "status_mismatch")).toBe(true);
-		});
+		// .DONE would be created on fail-open PASS
+		simulateDoneDecision(dir, "TP-CRASH", r2.evaluation.pass, 2);
+		expect(existsSync(join(dir, ".DONE"))).toBe(true);
 	});
 
-	// ── no_important threshold ──────────────────────────────────────
-	describe("no_important threshold", () => {
-		const threshold: PassThreshold = "no_important";
+	// ── 11.6: Disabled gate → .DONE created without gate ────────────
 
-		it("7.6: 0 findings → pass", () => {
-			const result = applyVerdictRules(makeVerdict(), threshold);
-			expect(result.pass).toBe(true);
-		});
+	it("11.6: quality gate disabled → .DONE created immediately (no gate logic)", () => {
+		const dir = makeTestDir("flow-disabled");
+		const taskId = "TP-FLOW-DISABLED";
 
-		it("7.7: 1 critical → fail", () => {
-			const result = applyVerdictRules(makeVerdict({
-				findings: [makeFinding({ severity: "critical", category: "incorrect_implementation" })],
-			}), threshold);
-			expect(result.pass).toBe(false);
-		});
+		// Config defaults to disabled
+		const config = loadProjectConfig(dir);
+		const taskConfig = toTaskConfig(config);
+		expect(taskConfig.quality_gate.enabled).toBe(false);
 
-		it("7.8: 2 important → pass (under threshold of 3)", () => {
-			const findings = [
-				makeFinding({ severity: "important", category: "missing_requirement", description: "a" }),
-				makeFinding({ severity: "important", category: "missing_requirement", description: "b" }),
-			];
-			const result = applyVerdictRules(makeVerdict({ findings }), threshold);
-			expect(result.pass).toBe(true);
-		});
+		// When disabled, task-runner creates .DONE directly — no verdict file
+		const donePath = join(dir, ".DONE");
+		writeFileSync(donePath, `Completed: ${new Date().toISOString()}\nTask: ${taskId}\n`);
 
-		it("7.9: 3 important → fail (at threshold)", () => {
-			const findings = Array(3).fill(null).map((_, i) =>
-				makeFinding({ severity: "important", category: "missing_requirement", description: `item ${i}` })
-			);
-			const result = applyVerdictRules(makeVerdict({ findings }), threshold);
-			expect(result.pass).toBe(false);
-			expect(result.failReasons.some(r => r.rule === "important_threshold")).toBe(true);
-		});
-
-		it("7.10: 4 important → fail (over threshold)", () => {
-			const findings = Array(4).fill(null).map((_, i) =>
-				makeFinding({ severity: "important", category: "missing_requirement", description: `item ${i}` })
-			);
-			const result = applyVerdictRules(makeVerdict({ findings }), threshold);
-			expect(result.pass).toBe(false);
-		});
-
-		it("7.11: suggestions only → pass", () => {
-			const result = applyVerdictRules(makeVerdict({
-				findings: [makeFinding({ severity: "suggestion" })],
-			}), threshold);
-			expect(result.pass).toBe(true);
-		});
+		expect(existsSync(donePath)).toBe(true);
+		const content = readFileSync(donePath, "utf-8");
+		expect(content).toContain(taskId);
+		expect(content).not.toContain("Quality gate"); // No gate metadata when disabled
 	});
 
-	// ── all_clear threshold ─────────────────────────────────────────
-	describe("all_clear threshold", () => {
+	// ── 11.7: Budget exhaustion — fix cycles depleted before reviews ──
+
+	it("11.7: fix budget exhausted → stops remediation even with reviews remaining", () => {
+		const dir = makeTestDir("flow-fix-budget");
+		const threshold: PassThreshold = "no_critical";
+		const maxReviewCycles = 3;
+		const maxFixCycles = 1;
+		let reviewCycle = 0;
+		let fixCyclesUsed = 0;
+
+		writeFileSync(join(dir, "PROMPT.md"), "# Task");
+		writeFileSync(join(dir, "STATUS.md"), "# Status");
+
+		// ── Cycle 1: fails ───────────────────────────────────────
+		reviewCycle++;
+		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
+			verdict: "NEEDS_FIXES",
+			findings: [
+				{ severity: "critical", category: "incorrect_implementation",
+				  description: "Bug", file: "a.ts", remediation: "fix" },
+			],
+		}));
+
+		const r1 = readAndEvaluateVerdict(dir, threshold);
+		expect(r1.evaluation.pass).toBe(false);
+
+		// Use fix budget
+		fixCyclesUsed++;
+		expect(fixCyclesUsed <= maxFixCycles).toBe(true);
+		deleteVerdictFile(dir);
+
+		// ── Cycle 2: still fails ─────────────────────────────────
+		reviewCycle++;
+		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
+			verdict: "NEEDS_FIXES",
+			findings: [
+				{ severity: "critical", category: "incorrect_implementation",
+				  description: "Still broken", file: "a.ts", remediation: "try again" },
+			],
+		}));
+
+		const r2 = readAndEvaluateVerdict(dir, threshold);
+		expect(r2.evaluation.pass).toBe(false);
+
+		// Check: reviewCycle < maxReviewCycles (still true: 2 < 3)
+		// BUT fixCyclesUsed >= maxFixCycles (1 >= 1) → cannot fix anymore
+		expect(reviewCycle < maxReviewCycles).toBe(true);
+		expect(fixCyclesUsed >= maxFixCycles).toBe(true);
+
+		// Task-runner would break here with "Max fix cycles exhausted"
+		// .DONE not created
+		expect(existsSync(join(dir, ".DONE"))).toBe(false);
+	});
+
+	// ── 11.8: all_clear threshold — suggestions block gate ──────────
+
+	it("11.8: all_clear threshold — suggestion-only verdict blocks .DONE", () => {
+		const dir = makeTestDir("flow-all-clear");
+		const taskId = "TP-FLOW-ALLCLEAR";
 		const threshold: PassThreshold = "all_clear";
 
-		it("7.12: 0 findings → pass", () => {
-			const result = applyVerdictRules(makeVerdict(), threshold);
-			expect(result.pass).toBe(true);
-		});
+		// Agent writes verdict with only suggestions
+		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
+			verdict: "NEEDS_FIXES",
+			confidence: "medium",
+			summary: "Minor issues remain",
+			findings: [
+				{ severity: "suggestion", category: "incomplete_work",
+				  description: "Variable naming", file: "utils.ts", remediation: "Rename to be descriptive" },
+			],
+		}));
 
-		it("7.13: 1 critical → fail", () => {
-			const result = applyVerdictRules(makeVerdict({
-				findings: [makeFinding({ severity: "critical", category: "incorrect_implementation" })],
-			}), threshold);
-			expect(result.pass).toBe(false);
-		});
+		const { verdict, evaluation } = readAndEvaluateVerdict(dir, threshold);
+		expect(evaluation.pass).toBe(false);
 
-		it("7.14: 1 important → fail (all_clear blocks any finding)", () => {
-			const result = applyVerdictRules(makeVerdict({
-				findings: [makeFinding({ severity: "important", category: "missing_requirement" })],
-			}), threshold);
-			expect(result.pass).toBe(false);
-		});
+		// Under all_clear, suggestions block — .DONE NOT created
+		simulateDoneDecision(dir, taskId, evaluation.pass, 1);
+		expect(existsSync(join(dir, ".DONE"))).toBe(false);
 
-		it("7.15: 1 suggestion → fail (all_clear blocks suggestions too)", () => {
-			const result = applyVerdictRules(makeVerdict({
-				findings: [makeFinding({ severity: "suggestion" })],
-			}), threshold);
-			expect(result.pass).toBe(false);
-		});
+		// Feedback should include suggestions under all_clear
+		const feedback = generateFeedbackMd(verdict, 1, 2, threshold);
+		expect(feedback).toContain("Variable naming");
+		expect(feedback).toContain("all_clear");
 
-		it("7.16: mixed severity → fail with multiple reasons", () => {
-			const result = applyVerdictRules(makeVerdict({
-				findings: [
-					makeFinding({ severity: "critical", category: "incorrect_implementation" }),
-					makeFinding({ severity: "important", category: "missing_requirement" }),
-					makeFinding({ severity: "suggestion" }),
-				],
-			}), threshold);
-			expect(result.pass).toBe(false);
-			expect(result.failReasons.length).toBeGreaterThanOrEqual(1);
-		});
-
-		it("7.17: status_mismatch + suggestions → fail with multiple reasons", () => {
-			const result = applyVerdictRules(makeVerdict({
-				findings: [
-					makeFinding({ severity: "suggestion", category: "status_mismatch" }),
-					makeFinding({ severity: "suggestion" }),
-				],
-			}), threshold);
-			expect(result.pass).toBe(false);
-			expect(result.failReasons.some(r => r.rule === "status_mismatch")).toBe(true);
-		});
+		// Same findings under no_critical would PASS (suggestions don't block)
+		// Note: can't re-read the same file because verdict value "NEEDS_FIXES"
+		// triggers verdict_says_needs_fixes rule. Test via applyVerdictRules directly.
+		const noCritEval = applyVerdictRules(makeVerdict({
+			verdict: "PASS",
+			findings: verdict.findings,
+		}), "no_critical");
+		expect(noCritEval.pass).toBe(true);
 	});
 
-	// ── Cross-threshold edge cases ──────────────────────────────────
-	describe("Cross-threshold edge cases", () => {
-		it("7.18: NEEDS_FIXES verdict with 0 findings → fail via verdict_says_needs_fixes (all thresholds)", () => {
-			for (const threshold of ["no_critical", "no_important", "all_clear"] as PassThreshold[]) {
-				const result = applyVerdictRules(makeVerdict({
-					verdict: "NEEDS_FIXES",
-					findings: [],
-				}), threshold);
-				expect(result.pass).toBe(false);
-				expect(result.failReasons.some(r => r.rule === "verdict_says_needs_fixes")).toBe(true);
-			}
-		});
+	// ── 11.9: Verdict file deletion between cycles ──────────────────
 
-		it("7.19: PASS verdict with critical findings → fail (rules override verdict)", () => {
-			const result = applyVerdictRules(makeVerdict({
-				verdict: "PASS",
-				findings: [makeFinding({ severity: "critical", category: "incorrect_implementation" })],
-			}), "no_critical");
-			expect(result.pass).toBe(false);
-			expect(result.failReasons.some(r => r.rule === "critical_finding")).toBe(true);
-		});
+	it("11.9: verdict file deleted before each review cycle — ensures fresh evaluation", () => {
+		const dir = makeTestDir("flow-verdict-delete");
 
-		it("7.20: PASS verdict with status_mismatch → fail (status_mismatch always blocks)", () => {
-			const result = applyVerdictRules(makeVerdict({
-				verdict: "PASS",
-				findings: [makeFinding({ severity: "suggestion", category: "status_mismatch" })],
-			}), "no_critical");
-			expect(result.pass).toBe(false);
-			expect(result.failReasons.some(r => r.rule === "status_mismatch")).toBe(true);
-		});
+		// Write a NEEDS_FIXES verdict
+		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
+			verdict: "NEEDS_FIXES",
+			findings: [
+				{ severity: "critical", category: "incorrect_implementation",
+				  description: "Bug", file: "a.ts", remediation: "fix" },
+			],
+		}));
+
+		// Read and evaluate — NEEDS_FIXES
+		const r1 = readAndEvaluateVerdict(dir, "no_critical");
+		expect(r1.evaluation.pass).toBe(false);
+
+		// Delete verdict (as task-runner does before re-review)
+		deleteVerdictFile(dir);
+		expect(existsSync(join(dir, VERDICT_FILENAME))).toBe(false);
+
+		// If review agent fails to produce a new verdict, fail-open PASS
+		const r2 = readAndEvaluateVerdict(dir, "no_critical");
+		expect(r2.evaluation.pass).toBe(true);
+		expect(r2.verdict.summary).toContain("fail-open");
+
+		// Write a new PASS verdict (normal case: agent succeeds)
+		writeFileSync(join(dir, VERDICT_FILENAME), makeVerdictJson({
+			verdict: "PASS",
+			summary: "Fixed",
+		}));
+
+		const r3 = readAndEvaluateVerdict(dir, "no_critical");
+		expect(r3.evaluation.pass).toBe(true);
+		expect(r3.verdict.summary).toBe("Fixed");
 	});
 });

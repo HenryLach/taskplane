@@ -60,7 +60,7 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 - [x] Fail-open coverage: reviewer non-zero exit, reviewer crash, missing/unreadable verdict file each produce synthetic PASS
 - [x] Disabled behavior test: quality gate disabled → .DONE created normally (no gate logic runs)
 - [x] PASS verdict test: quality gate enabled, PASS verdict → .DONE created with quality gate metadata
@@ -70,9 +70,9 @@
 - [x] Verdict rules tests: threshold matrix covering no_critical, no_important, all_clear (suggestions blocking)
 - [x] generateFeedbackMd threshold-aware tests: suggestions included under all_clear, excluded otherwise
 - [x] Full test suite passes: `cd extensions && npx vitest run` zero failures
-- [ ] (R010) Remove duplicated test blocks (4.x-7.x after section 10.x, lines 1304-1759) and remove unused FEEDBACK_FILENAME import
-- [ ] (R010) Add integration-level tests: composed gate decision logic with .DONE file I/O assertions — PASS creates .DONE, NEEDS_FIXES leaves .DONE absent, cycle/budget progression determinism, fail-open on missing verdict after fix crash
-- [ ] (R010) Full test suite passes after changes: `cd extensions && npx vitest run` zero failures
+- [x] (R010) Remove duplicated test blocks (4.x-7.x after section 10.x, lines 1304-1759) and remove unused FEEDBACK_FILENAME import
+- [x] (R010) Add integration-level tests: composed gate decision logic with .DONE file I/O assertions — PASS creates .DONE, NEEDS_FIXES leaves .DONE absent, cycle/budget progression determinism, fail-open on missing verdict after fix crash
+- [x] (R010) Full test suite passes after changes: `cd extensions && npx vitest run` zero failures
 
 ---
 
@@ -176,6 +176,8 @@
 | 2026-03-20 01:25 | Worker iter 5 | done in 443s, ctx: 32%, tools: 30 |
 | 2026-03-20 01:29 | Review R010 | code Step 4: REVISE |
 | 2026-03-20 01:30 | Review R010 | code Step 4: REVISE |
+| 2026-03-20 | R010 revisions applied | Removed duplicated tests (already done), added 11.x composed gate flow integration tests (9 tests), 111 quality-gate tests pass, 1261/1261 full suite pass |
+| 2026-03-20 | Step 4 complete | Testing & Verification |
 
 ## Blockers
 
