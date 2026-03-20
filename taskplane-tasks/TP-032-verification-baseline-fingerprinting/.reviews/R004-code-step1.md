@@ -3,23 +3,20 @@
 ### Verdict: REVISE
 
 ### Summary
-The new `verification.ts` module is a strong start: command execution, normalization helpers, and set-based diffing are all present and readable. However, there is a blocking correctness gap in the vitest parser path that can silently treat real verification failures as passes. This needs to be fixed before Step 2 wiring, or merge-gate decisions can be wrong.
+The new `verification.ts` module establishes a solid foundation (typed command results, normalization helpers, adapter-style parsing, and set-based diffing). However, there is a correctness bug in failure parsing that can drop real command failures and let them appear as “no failures,” which is unsafe for merge-gate decisions. This needs to be fixed before Step 1 can be considered complete.
 
 ### Issues Found
-1. **[extensions/taskplane/verification.ts:399] [critical]** — Non-zero vitest runs can return zero fingerprints and be treated as "no failures".
+1. **[extensions/taskplane/verification.ts:397-401] [critical]** — Non-zero command exits can incorrectly produce zero fingerprints.
    - `parseTestOutput()` returns `vitestFingerprints` whenever parsing succeeds, even if that array is empty.
-   - `parseVitestOutput()` only fingerprints failed assertions (`assertion.status === "failed"`) and ignores suite-level failures (`testResults[].status === "failed"` with empty `assertionResults`, message in `testResults[].message`).
-   - Result: commands that fail due setup/import/runtime-at-file-load errors can produce `[]`, causing false "pass" behavior in baseline/post-merge diffing.
-   - **Fix:** when `exitCode !== 0` and parsed vitest fingerprints are empty, emit a fallback `command_error` (or suite-level runtime fingerprint) using `testResults[].message`/stderr/stdout.
+   - This happens for valid vitest JSON where `success=false` but `testResults` has no failed assertions (e.g., no tests found, coverage/config/runtime-level failure represented outside assertion failures). In that case, a failed verification command becomes indistinguishable from success in fingerprint diffing.
+   - **Fix:** For `exitCode !== 0`, treat `parseVitestOutput(...)` results as authoritative only when at least one fingerprint is produced. If parsing returns `null` **or an empty array**, emit fallback `command_error` fingerprint from `stderr || stdout || "Command failed with no output"`.
 
 ### Pattern Violations
-- `taskplane-tasks/TP-032-verification-baseline-fingerprinting/STATUS.md:78-79` contains duplicate `R003` review rows. Minor bookkeeping issue; not blocking runtime behavior.
+- `taskplane-tasks/TP-032-verification-baseline-fingerprinting/STATUS.md:80-81` duplicates the same review row (`R003`) twice; status ledger should stay deduplicated for operator clarity.
 
 ### Test Gaps
-- No tests were added for the new parser/diff module yet.
-- Missing coverage for the critical edge case above: vitest JSON with `success:false`, `testResults[].status:"failed"`, and empty `assertionResults`.
-- Missing fallback normalization tests (malformed JSON, empty output, timeout/spawn-error fingerprints).
+- Missing unit test for `parseTestOutput()` where `exitCode !== 0` and vitest JSON parses successfully but has no failed assertions (`testResults: []` / `success:false`) — should yield a `command_error` fingerprint.
+- Missing test for malformed/non-JSON fallback path asserting fingerprint is non-empty and normalized.
 
 ### Suggestions
-- Add `extensions/tests/verification-baseline.test.ts` now for parser+diff pure functions (fast unit tests), even if merge-flow integration tests land in Step 2.
-- Consider parsing suite-level vitest `message` into `runtime_error` fingerprints for better diagnostics than generic `command_error`.
+- Add a small table-driven test suite for `parseTestOutput` covering: success(0), failed+vitest failures, failed+parseable empty vitest result, failed+malformed JSON, and spawn/timeout error.

@@ -259,6 +259,8 @@ export function runVerificationCommands(
 interface VitestJsonResult {
 	testResults?: Array<{
 		name?: string;
+		status?: string;
+		message?: string;
 		assertionResults?: Array<{
 			fullName?: string;
 			status?: string;
@@ -338,24 +340,44 @@ export function parseVitestOutput(commandId: string, stdout: string): TestFinger
 
 	for (const testFile of json.testResults) {
 		const file = normalizeFilePath(testFile.name || "unknown");
+		const assertions = testFile.assertionResults;
+		const hasAssertions = Array.isArray(assertions) && assertions.length > 0;
 
-		if (!Array.isArray(testFile.assertionResults)) continue;
+		if (hasAssertions) {
+			for (const assertion of assertions!) {
+				// Only fingerprint failures
+				if (assertion.status !== "failed") continue;
 
-		for (const assertion of testFile.assertionResults) {
-			// Only fingerprint failures
-			if (assertion.status !== "failed") continue;
+				const caseName = assertion.fullName || "unknown";
+				const messages = assertion.failureMessages || [];
+				const rawMessage = messages.join("\n") || "no failure message";
 
-			const caseName = assertion.fullName || "unknown";
-			const messages = assertion.failureMessages || [];
-			const rawMessage = messages.join("\n") || "no failure message";
+				fingerprints.push({
+					commandId,
+					file,
+					case: caseName,
+					kind: classifyFailureKind(rawMessage),
+					messageNorm: normalizeMessage(rawMessage),
+				});
+			}
+		}
 
-			fingerprints.push({
-				commandId,
-				file,
-				case: caseName,
-				kind: classifyFailureKind(rawMessage),
-				messageNorm: normalizeMessage(rawMessage),
-			});
+		// Suite-level failures: testResults[].status === "failed" with no assertion-level details.
+		// This covers setup/import/runtime-at-file-load errors where vitest marks the file as
+		// failed but produces no assertionResults (or only non-failed ones).
+		if (testFile.status === "failed") {
+			const hasFailedAssertions = hasAssertions && assertions!.some(a => a.status === "failed");
+			if (!hasFailedAssertions) {
+				// No assertion-level failures captured — emit suite-level runtime_error fingerprint
+				const suiteMessage = testFile.message || "Suite failed with no message";
+				fingerprints.push({
+					commandId,
+					file,
+					case: "<suite>",
+					kind: "runtime_error",
+					messageNorm: normalizeMessage(suiteMessage),
+				});
+			}
 		}
 	}
 
@@ -396,9 +418,13 @@ export function parseTestOutput(commandResult: CommandResult): TestFingerprint[]
 
 	// Try vitest JSON adapter
 	const vitestFingerprints = parseVitestOutput(commandId, stdout);
-	if (vitestFingerprints !== null) {
+	if (vitestFingerprints !== null && vitestFingerprints.length > 0) {
 		return vitestFingerprints;
 	}
+
+	// Vitest JSON parsed successfully but produced zero fingerprints with non-zero exit.
+	// This can happen if the JSON structure is valid but contains no failure details
+	// we could extract. Fall through to the generic fallback below.
 
 	// Fallback: command_error fingerprint with stderr (or stdout if stderr is empty)
 	const fallbackMessage = stderr.trim() || stdout.trim() || "Command failed with no output";
