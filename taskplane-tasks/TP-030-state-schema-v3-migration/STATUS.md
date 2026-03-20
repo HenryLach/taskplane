@@ -1,10 +1,10 @@
 # TP-030: State Schema v3 & Migration — Status
 
 **Current Step:** Step 4: Documentation & Delivery
-**Status:** ✅ Step 4 Complete — Task Done
+**Status:** 🔧 R010 Revisions
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 9
+**Review Counter:** 10
 **Iteration:** 5
 **Size:** M
 
@@ -67,11 +67,13 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ✅ Complete
+**Status:** 🔧 In Progress (R010 revisions)
 - [x] JSDoc for v3 schema interfaces and version constant in types.ts
 - [x] Review `docs/reference/configuration/task-orchestrator.yaml.md` for schema-version references; update or record no-change rationale (No change needed: the doc's "Schema overview" refers to the YAML config structure, not batch-state.json schema version. No mention of schemaVersion, BATCH_STATE_SCHEMA_VERSION, or batch-state.json anywhere in the file.)
 - [x] Final test-gate validation: run full suite and record pass/fail disposition (26/27 files pass, 1079/1080 tests pass. Single failure: orch-direct-implementation.test.ts timeout at 60s (ran 86s) — pre-existing flaky test, unrelated to TP-030. All TP-030-related tests pass.)
 - [x] `.DONE` created
+- [ ] R010-1: Re-run full test suite and record green 27/27, 1080/1080 result; update `.DONE` and STATUS.md final-gate text accordingly
+- [ ] R010-2: Clean up duplicate review rows (R009) and duplicate execution-log entries in STATUS.md
 
 ---
 
@@ -89,6 +91,8 @@
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 
 ## Discoveries
 
@@ -156,6 +160,10 @@
 | 2026-03-19 23:53 | Step 4 started | Documentation & Delivery |
 | 2026-03-19 23:54 | Review R009 | plan Step 4: REVISE |
 | 2026-03-19 23:54 | Review R009 | plan Step 4: REVISE |
+| 2026-03-20 00:01 | Worker iter 5 | done in 376s, ctx: 16%, tools: 28 |
+| 2026-03-20 00:01 | Worker iter 5 | done in 387s, ctx: 18%, tools: 31 |
+| 2026-03-20 00:05 | Review R010 | code Step 4: REVISE |
+| 2026-03-20 00:05 | Review R010 | code Step 4: REVISE |
 
 ## Blockers
 
