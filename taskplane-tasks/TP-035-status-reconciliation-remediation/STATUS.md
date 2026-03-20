@@ -56,8 +56,8 @@
 
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
-- [ ] Doc-impact verification: review `docs/reference/task-format.md` and `docs/reference/status-format.md` for needed updates; record decision
-- [ ] Completion-criteria verification: confirm all PROMPT.md criteria met (or record justified exceptions)
+- [x] Doc-impact verification: review `docs/reference/task-format.md` and `docs/reference/status-format.md` for needed updates; record decision
+- [x] Completion-criteria verification: confirm all PROMPT.md criteria met (or record justified exceptions)
 - [ ] `.DONE` created
 
 ---
@@ -76,12 +76,15 @@
 | R005 | plan | Step 4 | REVISE | .reviews/R005-plan-step4.md |
 | R005 | plan | Step 4 | REVISE | .reviews/R005-plan-step4.md |
 | R006 | plan | Step 5 | REVISE | .reviews/R006-plan-step5.md |
+| R006 | plan | Step 5 | REVISE | .reviews/R006-plan-step5.md |
 |---|------|------|---------|------|
 
 ## Discoveries
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Pre-existing worktree-lifecycle.test.ts failure on Windows (git init temp dir issue) | Not TP-035 related; environmental/pre-existing | extensions/tests/worktree-lifecycle.test.ts |
+| `docs/reference/task-format.md` and `docs/reference/status-format.md` reviewed for TP-035 impact | No update needed — changes are internal runtime behavior, not format changes | docs/reference/ |
 
 ## Execution Log
 
@@ -133,6 +136,7 @@
 | 2026-03-20 06:16 | Step 4 complete | Testing & Verification |
 | 2026-03-20 06:16 | Step 5 started | Documentation & Delivery |
 | 2026-03-20 06:17 | Review R006 | plan Step 5: REVISE |
+| 2026-03-20 06:19 | Review R006 | plan Step 5: REVISE |
 
 ## Blockers
 
