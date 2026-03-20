@@ -1660,8 +1660,6 @@ export async function resumeOrchBatch(
 		}
 	}
 
-	// ── 11. Cleanup and terminal state ───────────────────────────
-
 	// ── Pre-cleanup: Determine if worktrees should be preserved ──
 	// TP-031 (R006): Parity with engine.ts — this check MUST run before cleanup
 	// so that worktrees survive when failedTasks > 0. Without this, cleanup
@@ -1672,6 +1670,8 @@ export async function resumeOrchBatch(
 		preserveWorktreesForResume = true;
 		execLog("resume", batchState.batchId, "pre-cleanup: failedTasks > 0 detected, preserving worktrees for resume");
 	}
+
+	// ── 11. Cleanup and terminal state ───────────────────────────
 
 	// ── TP-028: Preserve partial progress before terminal cleanup ──
 	if (!preserveWorktreesForResume) {

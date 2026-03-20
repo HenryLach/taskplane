@@ -434,21 +434,37 @@ describe("buildMarkdownReport", () => {
 	});
 });
 
-// ── 4. emitDiagnosticReports — Non-Fatal Write Failures ──────────────
+// ── 4. emitDiagnosticReports — Robustness & Emission ─────────────────
+
+// Use vi.mock for deterministic interception of ESM-style named fs imports
+vi.mock("fs", async (importOriginal) => {
+	const original = await importOriginal<typeof import("fs")>();
+	return {
+		...original,
+		// By default, pass through to originals.
+		// Individual tests override via vi.mocked().
+		existsSync: vi.fn(original.existsSync),
+		mkdirSync: vi.fn(original.mkdirSync),
+		writeFileSync: vi.fn(original.writeFileSync),
+		readFileSync: original.readFileSync,
+	};
+});
+
+import { existsSync as mockExistsSync, mkdirSync as mockMkdirSync, writeFileSync as mockWriteFileSync } from "fs";
 
 describe("emitDiagnosticReports — robustness", () => {
 	afterEach(() => {
-		vi.restoreAllMocks();
+		vi.mocked(mockExistsSync).mockReset();
+		vi.mocked(mockMkdirSync).mockReset();
+		vi.mocked(mockWriteFileSync).mockReset();
 	});
 
-	it("does not throw when writeFileSync fails", () => {
-		// Mock fs to make writes fail
-		const fs = require("fs");
-		vi.spyOn(fs, "writeFileSync").mockImplementation(() => {
+	it("does not throw when writeFileSync fails, and writeFileSync was actually called", () => {
+		vi.mocked(mockExistsSync).mockReturnValue(true);
+		vi.mocked(mockMkdirSync).mockImplementation(() => undefined as any);
+		vi.mocked(mockWriteFileSync).mockImplementation(() => {
 			throw new Error("disk full");
 		});
-		vi.spyOn(fs, "existsSync").mockReturnValue(true);
-		vi.spyOn(fs, "mkdirSync").mockImplementation(() => undefined);
 
 		const input = makeInput({
 			tasks: [makeTask("TP-001")],
@@ -458,12 +474,14 @@ describe("emitDiagnosticReports — robustness", () => {
 
 		// Should NOT throw
 		expect(() => emitDiagnosticReports(input)).not.toThrow();
+
+		// Verify the write-failure path was actually exercised (R010 fix)
+		expect(vi.mocked(mockWriteFileSync)).toHaveBeenCalled();
 	});
 
-	it("does not throw when mkdirSync fails", () => {
-		const fs = require("fs");
-		vi.spyOn(fs, "existsSync").mockReturnValue(false);
-		vi.spyOn(fs, "mkdirSync").mockImplementation(() => {
+	it("does not throw when mkdirSync fails, and mkdirSync was actually called", () => {
+		vi.mocked(mockExistsSync).mockReturnValue(false);
+		vi.mocked(mockMkdirSync).mockImplementation(() => {
 			throw new Error("permission denied");
 		});
 
@@ -472,5 +490,74 @@ describe("emitDiagnosticReports — robustness", () => {
 		});
 
 		expect(() => emitDiagnosticReports(input)).not.toThrow();
+
+		// Verify the mkdir-failure path was actually exercised (R010 fix)
+		expect(vi.mocked(mockMkdirSync)).toHaveBeenCalled();
+	});
+
+	it("success path writes both JSONL and markdown files with expected filenames", () => {
+		vi.mocked(mockExistsSync).mockReturnValue(true);
+		vi.mocked(mockMkdirSync).mockImplementation(() => undefined as any);
+		vi.mocked(mockWriteFileSync).mockImplementation(() => {}); // no-op (success)
+
+		const input = makeInput({
+			batchId: "test-batch-001",
+			tasks: [
+				makeTask("TP-001", { status: "succeeded" }),
+				makeTask("TP-002", { status: "failed", exitReason: "crash" }),
+			],
+			totalTasks: 2,
+			succeededTasks: 1,
+			failedTasks: 1,
+			diagnostics: {
+				taskExits: {
+					"TP-001": { classification: "completed", cost: 0.10, durationSec: 60, retries: 0 },
+					"TP-002": { classification: "crash", cost: 0.05, durationSec: 30, retries: 1 },
+				},
+				batchCost: 0.15,
+			},
+		});
+
+		emitDiagnosticReports(input);
+
+		// Verify both files were written (R010 fix)
+		expect(vi.mocked(mockWriteFileSync)).toHaveBeenCalledTimes(2);
+
+		// Check JSONL file
+		const jsonlCall = vi.mocked(mockWriteFileSync).mock.calls.find(
+			(call) => String(call[0]).endsWith("-events.jsonl"),
+		);
+		expect(jsonlCall).toBeDefined();
+		const jsonlPath = String(jsonlCall![0]);
+		expect(jsonlPath).toContain("test-batch-001");
+		expect(jsonlPath).toContain("-events.jsonl");
+
+		// Verify JSONL content has valid schema
+		const jsonlContent = String(jsonlCall![1]);
+		const jsonlLines = jsonlContent.trim().split("\n");
+		expect(jsonlLines.length).toBe(2); // 2 tasks
+		for (const line of jsonlLines) {
+			const parsed = JSON.parse(line);
+			expect(parsed).toHaveProperty("batchId");
+			expect(parsed).toHaveProperty("taskId");
+			expect(parsed).toHaveProperty("classification");
+			expect(parsed).toHaveProperty("cost");
+			expect(parsed).toHaveProperty("durationSec");
+			expect(parsed).toHaveProperty("status");
+		}
+
+		// Check markdown file
+		const mdCall = vi.mocked(mockWriteFileSync).mock.calls.find(
+			(call) => String(call[0]).endsWith("-report.md"),
+		);
+		expect(mdCall).toBeDefined();
+		const mdPath = String(mdCall![0]);
+		expect(mdPath).toContain("test-batch-001");
+		expect(mdPath).toContain("-report.md");
+
+		// Verify markdown content has expected sections
+		const mdContent = String(mdCall![1]);
+		expect(mdContent).toContain("# Batch Diagnostic Report");
+		expect(mdContent).toContain("## Per-Task Results");
 	});
 });

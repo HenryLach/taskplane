@@ -124,7 +124,55 @@ describe("merge failure → paused: source verification", () => {
 		// Must appear before the cleanup section
 		const cleanupIdx = resumeSource.indexOf("11. Cleanup and terminal state");
 		expect(cleanupIdx).toBeGreaterThan(-1);
-		// The preservation determination should be right after the cleanup header, before actual cleanup
+
+		// The preservation determination MUST come before cleanup (R010 fix)
+		expect(preCleanupIdx).toBeLessThan(cleanupIdx);
+	});
+
+	it("engine.ts transitions to 'completed' when failedTasks === 0 (success path)", () => {
+		const engineSource = readFileSync(
+			join(__dirname, "..", "taskplane", "engine.ts"),
+			"utf-8",
+		);
+
+		// Use "Normal completion" as the unique anchor for the finalization block
+		const anchorMarker = "Normal completion (not stopped, paused, or aborted)";
+		const anchorIdx = engineSource.indexOf(anchorMarker);
+		expect(anchorIdx).toBeGreaterThan(-1);
+
+		// Extract a generous window around the finalization block
+		const finalizationBlock = engineSource.substring(anchorIdx, anchorIdx + 1000);
+		expect(finalizationBlock).toContain("batchState.failedTasks > 0");
+		expect(finalizationBlock).toContain('batchState.phase = "paused"');
+		expect(finalizationBlock).toContain('batchState.phase = "completed"');
+
+		// Verify structure: paused is in the if-branch, completed is in the else-branch
+		const pausedIdx = finalizationBlock.indexOf('batchState.phase = "paused"');
+		const completedIdx = finalizationBlock.indexOf('batchState.phase = "completed"');
+		expect(completedIdx).toBeGreaterThan(pausedIdx);
+	});
+
+	it("resume.ts transitions to 'completed' when failedTasks === 0 (success path parity)", () => {
+		const resumeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "resume.ts"),
+			"utf-8",
+		);
+
+		// Use the TP-031 parity comment as unique anchor for the finalization block
+		const anchorMarker = "TP-031: Parity with engine.ts";
+		const anchorIdx = resumeSource.indexOf(anchorMarker);
+		expect(anchorIdx).toBeGreaterThan(-1);
+
+		// Extract a generous window around the finalization block
+		const finalizationBlock = resumeSource.substring(anchorIdx - 50, anchorIdx + 500);
+		expect(finalizationBlock).toContain("batchState.failedTasks > 0");
+		expect(finalizationBlock).toContain('batchState.phase = "paused"');
+		expect(finalizationBlock).toContain('batchState.phase = "completed"');
+
+		// Verify structure: paused is in the if-branch, completed is in the else-branch
+		const pausedIdx = finalizationBlock.indexOf('batchState.phase = "paused"');
+		const completedIdx = finalizationBlock.indexOf('batchState.phase = "completed"');
+		expect(completedIdx).toBeGreaterThan(pausedIdx);
 	});
 });
 
