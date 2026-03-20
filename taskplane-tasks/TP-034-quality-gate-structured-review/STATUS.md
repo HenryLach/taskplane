@@ -1,11 +1,11 @@
 # TP-034: Quality Gate Structured Review — Status
 
-**Current Step:** Step 3: Remediation Cycle
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 8
-**Iteration:** 4
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** M
 
 ---
@@ -60,14 +60,16 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] Disabled behavior test
-- [ ] PASS verdict test
-- [ ] NEEDS_FIXES remediation test
-- [ ] Max cycles exhaustion test
-- [ ] Malformed verdict fail-open test
-- [ ] Verdict rules tests
-- [ ] Full test suite passes
+**Status:** 🟨 In Progress
+- [ ] Fail-open coverage: reviewer non-zero exit, reviewer crash, missing/unreadable verdict file each produce synthetic PASS
+- [ ] Disabled behavior test: quality gate disabled → .DONE created normally (no gate logic runs)
+- [ ] PASS verdict test: quality gate enabled, PASS verdict → .DONE created with quality gate metadata
+- [ ] NEEDS_FIXES remediation test: NEEDS_FIXES triggers feedback generation and fix cycle
+- [ ] Max cycles exhaustion test: cycles exhausted → task error state, .DONE NOT created, findings summary in log
+- [ ] Fix-agent timeout/crash/non-zero tests: each consumes fix budget deterministically
+- [ ] Verdict rules tests: threshold matrix covering no_critical, no_important, all_clear (suggestions blocking)
+- [ ] generateFeedbackMd threshold-aware tests: suggestions included under all_clear, excluded otherwise
+- [ ] Full test suite passes: `cd extensions && npx vitest run` zero failures
 
 ---
 
@@ -97,6 +99,7 @@
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 
 ## Discoveries
 
@@ -154,6 +157,13 @@
 | 2026-03-20 01:04 | Worker iter 4 | done in 292s, ctx: 26%, tools: 40 |
 | 2026-03-20 01:07 | Review R008 | code Step 3: REVISE |
 | 2026-03-20 01:09 | Review R008 | code Step 3: REVISE |
+| 2026-03-20 01:14 | Worker iter 4 | done in 395s, ctx: 28%, tools: 39 |
+| 2026-03-20 01:14 | Step 3 complete | Remediation Cycle |
+| 2026-03-20 01:14 | Step 4 started | Testing & Verification |
+| 2026-03-20 01:15 | Worker iter 4 | done in 389s, ctx: 33%, tools: 46 |
+| 2026-03-20 01:15 | Step 3 complete | Remediation Cycle |
+| 2026-03-20 01:15 | Step 4 started | Testing & Verification |
+| 2026-03-20 01:16 | Review R009 | plan Step 4: REVISE |
 
 ## Blockers
 
