@@ -1,11 +1,11 @@
 # TP-033: Transactional Merge Envelope & Retry Matrix — Status
 
-**Current Step:** Step 2: Retry Policy Matrix
+**Current Step:** Step 3: Testing & Verification
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** L
 
 ---
@@ -52,14 +52,19 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] Transaction record tests
-- [ ] Rollback tests
-- [ ] Safe-stop tests
-- [ ] Retry counter persistence tests
-- [ ] Exhaustion tests
-- [ ] Workspace-scoped counter tests
-- [ ] Full test suite passes
+**Status:** 🟨 In Progress
+- [ ] Transaction record tests: successful merge captures pre/post refs (baseHEAD, laneHEAD, mergedHEAD) in record
+- [ ] Rollback tests: verification failure triggers rollback to baseHEAD
+- [ ] Safe-stop tests: rollback failure enters safe-stop with preserved state, recovery commands emitted, engine/resume force paused
+- [ ] Non-retriable class test: merge_conflict_unresolved immediately enters paused with no retry
+- [ ] Multi-attempt retry test: git_lock_file retries up to maxAttempts=2, then exhaustion-pauses
+- [ ] Cooldown delay test: retry enforces cooldown delay (non-zero) between attempts
+- [ ] Retry counter persistence tests: counters persist and increment in batch state scoped by repoId:w{N}:l{K}
+- [ ] Exhaustion tests: max attempts exhaustion forces paused regardless of on_merge_failure config
+- [ ] Engine/resume parity test: same failure classification leads to same phase transition and counter updates in both engine.ts and resume.ts code paths
+- [ ] Transaction persistence warning test: persistence failure surfaces in merge outcome with recovery guidance
+- [ ] Workspace-scoped counter tests: retry counters scoped by repoId in workspace mode
+- [ ] Full test suite passes (all existing + new tests)
 
 ---
 
@@ -80,6 +85,7 @@
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ## Discoveries
 
@@ -116,6 +122,10 @@
 | 2026-03-20 13:06 | Worker iter 3 | done in 1062s, ctx: 47%, tools: 106 |
 | 2026-03-20 13:11 | Review R006 | code Step 2: REVISE |
 | 2026-03-20 09:18 | R006 fixes applied | Extracted shared applyMergeRetryLoop helper (messages.ts), added MergeRetryLoopOutcome/MergeRetryCallbacks types, extractFailedRepoId with repoResults fallback. Engine+resume now use shared loop: supports maxAttempts>1, forces paused on exhaustion regardless of on_merge_failure, proper repo scoping for setup failures. All 1564 tests pass. |
+| 2026-03-20 13:18 | Worker iter 3 | done in 429s, ctx: 28%, tools: 45 |
+| 2026-03-20 13:18 | Step 2 complete | Retry Policy Matrix |
+| 2026-03-20 13:18 | Step 3 started | Testing & Verification |
+| 2026-03-20 13:20 | Review R007 | plan Step 3: REVISE |
 
 ## Blockers
 
