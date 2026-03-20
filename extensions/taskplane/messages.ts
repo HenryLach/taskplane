@@ -110,6 +110,13 @@ export const ORCH_MESSAGES = {
 	resumeComplete: (batchId: string, succeeded: number, failed: number, skipped: number, blocked: number, elapsedSec: number) =>
 		`\n🏁 Resumed batch ${batchId} complete: ${succeeded} succeeded, ${failed} failed, ${skipped} skipped, ${blocked} blocked (${elapsedSec}s total)`,
 
+	// /orch-resume --force
+	forceResumeStarting: (batchId: string, phase: string) =>
+		`⚠️ Force-resuming batch ${batchId} from ${phase} state. Running pre-resume diagnostics...`,
+	forceResumeDiagnosticsFailed: (batchId: string) =>
+		`❌ Cannot force-resume batch ${batchId}: pre-resume diagnostics failed.\n` +
+		`   Fix the issues above, then retry /orch-resume --force.`,
+
 	// /orch-abort
 	abortGracefulStarting: (batchId: string, sessionCount: number) =>
 		`⏳ Graceful abort of batch ${batchId}: signaling ${sessionCount} session(s) to checkpoint and exit...`,

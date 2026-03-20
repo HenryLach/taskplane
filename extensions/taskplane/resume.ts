@@ -192,20 +192,23 @@ export function collectAllRepoRoots(
  * Check whether a persisted batch state is eligible for resume.
  *
  * Resume eligibility matrix:
- * | Phase     | Eligible? | Reason                                    |
- * |-----------|-----------|-------------------------------------------|
- * | paused    | ✅        | Batch was paused (user/merge-failure)      |
- * | executing | ✅        | Batch was executing when orchestrator died |
- * | merging   | ✅        | Batch was merging when orchestrator died   |
- * | stopped   | ❌        | Batch was stopped by policy                |
- * | failed    | ❌        | Batch has terminal failure                 |
- * | completed | ❌        | Batch already completed                   |
- * | idle      | ❌        | Batch never started execution              |
- * | planning  | ❌        | Batch was still planning                   |
+ * | Phase     | Normal    | --force   | Reason                                    |
+ * |-----------|-----------|-----------|-------------------------------------------|
+ * | paused    | ✅        | ✅        | Batch was paused (user/merge-failure)      |
+ * | executing | ✅        | ✅        | Batch was executing when orchestrator died |
+ * | merging   | ✅        | ✅        | Batch was merging when orchestrator died   |
+ * | stopped   | ❌        | ✅        | Batch was stopped by policy                |
+ * | failed    | ❌        | ✅        | Batch has terminal failure                 |
+ * | completed | ❌        | ❌        | Batch already completed                   |
+ * | idle      | ❌        | ❌        | Batch never started execution              |
+ * | planning  | ❌        | ❌        | Batch was still planning                   |
  *
  * Pure function — no process or filesystem access.
+ *
+ * @param state - Persisted batch state to check
+ * @param force - When true, `stopped` and `failed` phases become eligible
  */
-export function checkResumeEligibility(state: PersistedBatchState): ResumeEligibility {
+export function checkResumeEligibility(state: PersistedBatchState, force: boolean = false): ResumeEligibility {
 	const { phase, batchId } = state;
 
 	switch (phase) {
@@ -234,17 +237,33 @@ export function checkResumeEligibility(state: PersistedBatchState): ResumeEligib
 			};
 
 		case "stopped":
+			if (force) {
+				return {
+					eligible: true,
+					reason: `Batch ${batchId} was stopped by failure policy. Force-resuming (--force).`,
+					phase,
+					batchId,
+				};
+			}
 			return {
 				eligible: false,
-				reason: `Batch ${batchId} was stopped by failure policy. Use /orch-abort to clean up, then start a new batch.`,
+				reason: `Batch ${batchId} was stopped by failure policy. Use --force to resume, or /orch-abort to clean up.`,
 				phase,
 				batchId,
 			};
 
 		case "failed":
+			if (force) {
+				return {
+					eligible: true,
+					reason: `Batch ${batchId} has a terminal failure. Force-resuming (--force).`,
+					phase,
+					batchId,
+				};
+			}
 			return {
 				eligible: false,
-				reason: `Batch ${batchId} has a terminal failure. Use /orch-abort to clean up, then start a new batch.`,
+				reason: `Batch ${batchId} has a terminal failure. Use --force to resume, or /orch-abort to clean up.`,
 				phase,
 				batchId,
 			};
@@ -252,7 +271,7 @@ export function checkResumeEligibility(state: PersistedBatchState): ResumeEligib
 		case "completed":
 			return {
 				eligible: false,
-				reason: `Batch ${batchId} already completed. Delete the state file or start a new batch.`,
+				reason: `Batch ${batchId} already completed. ${force ? "--force cannot resume a completed batch. " : ""}Delete the state file or start a new batch.`,
 				phase,
 				batchId,
 			};
@@ -523,6 +542,127 @@ export function computeResumePoint(
 }
 
 
+// ── Pre-Resume Diagnostics ───────────────────────────────────────────
+
+/**
+ * Result of a single diagnostic check.
+ */
+export interface DiagnosticCheckResult {
+	/** Short label for the check */
+	check: string;
+	/** Whether the check passed */
+	passed: boolean;
+	/** Human-readable detail (reason for failure or confirmation) */
+	detail: string;
+}
+
+/**
+ * Aggregate result of pre-resume diagnostics.
+ */
+export interface PreResumeDiagnosticsResult {
+	/** Whether all checks passed and resume can proceed */
+	passed: boolean;
+	/** Individual check results */
+	checks: DiagnosticCheckResult[];
+	/** Summary message for operator display */
+	summary: string;
+}
+
+/**
+ * Run pre-resume diagnostics before allowing a force-resume.
+ *
+ * Checks performed (per repo in workspace mode):
+ * 1. **State coherence:** batch-state.json exists and is loadable
+ * 2. **Branch consistency:** orch branch exists in each repo
+ * 3. **Worktree health:** persisted lane worktrees are accessible or cleanly absent
+ *
+ * Pure-ish function — reads filesystem/git state but does not mutate anything.
+ *
+ * @param persistedState   - Loaded batch state
+ * @param repoRoot         - Default repo root (cwd)
+ * @param stateRoot        - Root for state files (.pi/)
+ * @param workspaceConfig  - Workspace configuration (null in repo mode)
+ * @returns Diagnostics result with pass/fail and per-check details
+ */
+export function runPreResumeDiagnostics(
+	persistedState: PersistedBatchState,
+	repoRoot: string,
+	stateRoot: string,
+	workspaceConfig?: WorkspaceConfig | null,
+): PreResumeDiagnosticsResult {
+	const checks: DiagnosticCheckResult[] = [];
+
+	// 1. State coherence — verify batch-state.json is well-formed
+	// (Already loaded by caller, so if we get here the state is valid.)
+	checks.push({
+		check: "state-coherence",
+		passed: true,
+		detail: `Batch state loaded successfully (batchId: ${persistedState.batchId}, phase: ${persistedState.phase})`,
+	});
+
+	// 2. Branch consistency — verify orch branch exists in each repo
+	const repoRoots = collectRepoRoots(persistedState, repoRoot, workspaceConfig);
+	for (const root of repoRoots) {
+		const repoId = resolveRepoIdFromRoot(root, workspaceConfig);
+		const label = repoId ? `repo:${repoId}` : "default-repo";
+
+		if (persistedState.orchBranch) {
+			const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${persistedState.orchBranch}`], root);
+			if (branchCheck.ok) {
+				checks.push({
+					check: `branch-consistency:${label}`,
+					passed: true,
+					detail: `Orch branch "${persistedState.orchBranch}" exists in ${label}`,
+				});
+			} else {
+				checks.push({
+					check: `branch-consistency:${label}`,
+					passed: false,
+					detail: `Orch branch "${persistedState.orchBranch}" not found in ${label}. ` +
+						`The branch may have been deleted or the repo is in an inconsistent state.`,
+				});
+			}
+		}
+	}
+
+	// 3. Worktree health — check each persisted lane worktree
+	for (const lane of persistedState.lanes) {
+		if (!lane.worktreePath) continue;
+
+		const wtExists = existsSync(lane.worktreePath);
+		if (wtExists) {
+			// Verify it's a valid git worktree (has .git file/directory)
+			const gitMarker = join(lane.worktreePath, ".git");
+			const isValidWt = existsSync(gitMarker);
+			checks.push({
+				check: `worktree-health:lane-${lane.laneNumber}`,
+				passed: isValidWt,
+				detail: isValidWt
+					? `Lane ${lane.laneNumber} worktree exists and has valid .git marker`
+					: `Lane ${lane.laneNumber} worktree exists at ${lane.worktreePath} but lacks .git marker (corrupted)`,
+			});
+		} else {
+			// Absent worktree is OK — resume will re-create or skip
+			checks.push({
+				check: `worktree-health:lane-${lane.laneNumber}`,
+				passed: true,
+				detail: `Lane ${lane.laneNumber} worktree absent (will be re-created on resume)`,
+			});
+		}
+	}
+
+	const failed = checks.filter(c => !c.passed);
+	const passed = failed.length === 0;
+
+	const summary = passed
+		? `✅ Pre-resume diagnostics passed (${checks.length} checks)`
+		: `❌ Pre-resume diagnostics failed (${failed.length}/${checks.length} checks failed):\n` +
+		  failed.map(c => `   • ${c.check}: ${c.detail}`).join("\n");
+
+	return { passed, checks, summary };
+}
+
+
 export async function resumeOrchBatch(
 	orchConfig: OrchestratorConfig,
 	runnerConfig: TaskRunnerConfig,
@@ -533,6 +673,7 @@ export async function resumeOrchBatch(
 	workspaceConfig?: WorkspaceConfig | null,
 	workspaceRoot?: string,
 	agentRoot?: string,
+	force: boolean = false,
 ): Promise<void> {
 	const repoRoot = cwd;
 	// State files (.pi/batch-state.json, lane-state, etc.) belong in the workspace root,
@@ -564,13 +705,44 @@ export async function resumeOrchBatch(
 	}
 
 	// ── 2. Check eligibility ─────────────────────────────────────
-	const eligibility = checkResumeEligibility(persistedState);
+	const eligibility = checkResumeEligibility(persistedState, force);
 	if (!eligibility.eligible) {
 		onNotify(
 			ORCH_MESSAGES.resumePhaseNotResumable(persistedState.batchId, persistedState.phase, eligibility.reason),
 			"error",
 		);
 		return;
+	}
+
+	// ── 2b. Force-resume: pre-resume diagnostics & state mutation ──
+	const isForceResume = force && (persistedState.phase === "stopped" || persistedState.phase === "failed");
+	if (isForceResume) {
+		onNotify(
+			ORCH_MESSAGES.forceResumeStarting(persistedState.batchId, persistedState.phase),
+			"warning",
+		);
+
+		// Run pre-resume diagnostics before allowing force-resume
+		const diagnostics = runPreResumeDiagnostics(persistedState, repoRoot, stateRoot, workspaceConfig);
+		onNotify(diagnostics.summary, diagnostics.passed ? "info" : "error");
+
+		if (!diagnostics.passed) {
+			onNotify(
+				ORCH_MESSAGES.forceResumeDiagnosticsFailed(persistedState.batchId),
+				"error",
+			);
+			return;
+		}
+
+		// Record force intent in resilience state
+		persistedState.resilience.resumeForced = true;
+
+		// Reset phase to paused so normal resume flow can proceed
+		execLog("resume", persistedState.batchId, `force-resume: phase ${persistedState.phase} → paused`, {
+			diagnosticChecks: diagnostics.checks.length,
+			diagnosticsPassed: diagnostics.passed,
+		});
+		persistedState.phase = "paused";
 	}
 
 	onNotify(

@@ -111,6 +111,42 @@ export function parseIntegrateArgs(raw: string | undefined): IntegrateArgs | { e
 	};
 }
 
+// ── Resume Args Parsing ───────────────────────────────────────────────
+
+export interface ResumeArgs {
+	force: boolean;
+}
+
+/**
+ * Parse `/orch-resume` command arguments.
+ *
+ * Supported flags: --force
+ * No positional arguments accepted.
+ *
+ * Returns parsed args or an error string if arguments are invalid.
+ */
+export function parseResumeArgs(raw: string | undefined): ResumeArgs | { error: string } {
+	const input = raw?.trim() ?? "";
+	if (!input) return { force: false };
+
+	const tokens = input.split(/\s+/).filter(Boolean);
+	let force = false;
+
+	for (const token of tokens) {
+		if (token === "--force") {
+			force = true;
+		} else if (token === "--help") {
+			return { error: "Usage: /orch-resume [--force]\n\n  --force   Resume from stopped or failed state (runs pre-resume diagnostics first)" };
+		} else if (token.startsWith("--")) {
+			return { error: `Unknown flag: ${token}\n\nUsage: /orch-resume [--force]` };
+		} else {
+			return { error: `Unexpected argument: ${token}\n\nUsage: /orch-resume [--force]` };
+		}
+	}
+
+	return { force };
+}
+
 // ── Integration Context Resolution ────────────────────────────────────
 
 /**
@@ -985,9 +1021,16 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("orch-resume", {
-		description: "Resume a paused or interrupted batch",
-		handler: async (_args, ctx) => {
+		description: "Resume a paused or interrupted batch: /orch-resume [--force]",
+		handler: async (args, ctx) => {
 			if (!requireExecCtx(ctx)) return;
+
+			// Parse arguments
+			const parsed = parseResumeArgs(args);
+			if ("error" in parsed) {
+				ctx.ui.notify(`❌ ${parsed.error}`, "error");
+				return;
+			}
 
 			// Prevent resume if a batch is actively running
 			if (orchBatchState.phase === "executing" || orchBatchState.phase === "merging" || orchBatchState.phase === "planning") {
@@ -1019,6 +1062,7 @@ export default function (pi: ExtensionAPI) {
 				execCtx!.workspaceConfig,
 				execCtx!.workspaceRoot,
 				execCtx!.pointer?.agentRoot,
+				parsed.force,
 			);
 
 			// Final widget update

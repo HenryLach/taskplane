@@ -26,12 +26,12 @@
 ---
 
 ### Step 1: Implement Force-Resume Policy
-**Status:** 🟨 In Progress
-- [ ] Add `parseResumeArgs()` in extension.ts with --force flag parsing, unknown-flag rejection, and usage guidance
-- [ ] Update `checkResumeEligibility()` in resume.ts to accept `force: boolean` — stopped/failed become eligible with force, completed always rejected
-- [ ] Add pre-resume diagnostics function in resume.ts: worktree health, branch consistency, state coherence (repo-aware for workspace mode); block resume if diagnostics fail with operator-facing reason
-- [ ] Wire up: extension.ts handler calls parseResumeArgs → passes force to resumeOrchBatch → checkResumeEligibility(state, force) → run diagnostics → set resilience.resumeForced → reset phase to paused → continue
-- [ ] Update ORCH_MESSAGES for force-resume notifications (force started, diagnostics failed, etc.)
+**Status:** ✅ Complete
+- [x] Add `parseResumeArgs()` in extension.ts with --force flag parsing, unknown-flag rejection, and usage guidance
+- [x] Update `checkResumeEligibility()` in resume.ts to accept `force: boolean` — stopped/failed become eligible with force, completed always rejected
+- [x] Add pre-resume diagnostics function in resume.ts: worktree health, branch consistency, state coherence (repo-aware for workspace mode); block resume if diagnostics fail with operator-facing reason
+- [x] Wire up: extension.ts handler calls parseResumeArgs → passes force to resumeOrchBatch → checkResumeEligibility(state, force) → run diagnostics → set resilience.resumeForced → reset phase to paused → continue
+- [x] Update ORCH_MESSAGES for force-resume notifications (force started, diagnostics failed, etc.)
 
 ---
 
@@ -101,6 +101,7 @@
 | 2026-03-20 02:44 | Step 0 complete | Preflight |
 | 2026-03-20 02:44 | Step 1 started | Implement Force-Resume Policy |
 | 2026-03-20 02:46 | Review R003 | plan Step 1: REVISE |
+| 2026-03-20 | Step 1 complete | Force-resume policy: parseResumeArgs, eligibility matrix, pre-resume diagnostics, force wiring |
 | 2026-03-20 02:47 | Review R003 | plan Step 1: REVISE |
 
 ## Blockers
