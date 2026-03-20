@@ -1,10 +1,10 @@
 # TP-031: Force-Resume Policy & Diagnostic Reports — Status
 
-**Current Step:** Step 2: Default Merge Failure to Paused
+**Current Step:** Step 3: Diagnostic Reports
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 6
+**Review Counter:** 7
 **Iteration:** 3
 **Size:** M
 
@@ -48,11 +48,10 @@
 ---
 
 ### Step 3: Diagnostic Reports
-**Status:** ⬜ Not Started
-- [ ] JSONL event log generation
-- [ ] Human-readable summary generation
-- [ ] Per-task diagnostics, costs, timing
-- [ ] Per-repo breakdown in workspace mode
+**Status:** 🟨 In Progress
+- [ ] Create `extensions/taskplane/diagnostic-reports.ts` with JSONL event log generator and human-readable summary generator
+- [ ] Wire diagnostic report generation into engine.ts and resume.ts after `persistRuntimeState("batch-terminal", ...)` calls
+- [ ] Ensure `.pi/diagnostics/` directory is created; include per-task exit diagnostics, costs, timing, retry history, and per-repo breakdown in workspace mode
 
 ---
 
@@ -87,6 +86,8 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | UNAVAILABLE | .reviews/R007-plan-step3.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ## Discoveries
 
@@ -127,6 +128,15 @@
 | 2026-03-20 03:04 | Worker iter 3 | done in 377s, ctx: 18%, tools: 44 |
 | 2026-03-20 03:06 | Review R006 | code Step 2: REVISE |
 | 2026-03-20 03:07 | Review R006 | code Step 2: REVISE |
+| 2026-03-20 03:11 | Worker iter 2 | done in 287s, ctx: 17%, tools: 28 |
+| 2026-03-20 03:11 | Step 2 complete | Default Merge Failure to Paused |
+| 2026-03-20 03:11 | Step 3 started | Diagnostic Reports |
+| 2026-03-20 03:11 | Worker iter 3 | done in 262s, ctx: 16%, tools: 27 |
+| 2026-03-20 03:11 | Step 2 complete | Default Merge Failure to Paused |
+| 2026-03-20 03:11 | Step 3 started | Diagnostic Reports |
+| 2026-03-20 03:15 | Reviewer R007 | plan review — reviewer did not produce output |
+| 2026-03-20 03:15 | Review R007 | plan Step 3: UNAVAILABLE |
+| 2026-03-20 03:15 | Review R007 | plan Step 3: REVISE |
 
 ## Blockers
 
