@@ -11,14 +11,14 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 - [x] Read merge flow and verification execution
 - [x] Read roadmap Phase 4 section 4a
 - [x] Understand vitest output format
-- [ ] R002-1: Read CONTEXT.md and verify TP-030 dependency; add insertion-point findings
-- [ ] R002-2: Fix reviews table (header/separator order, deduplicate R001, remove contradictory verdicts)
-- [ ] R002-3: Deduplicate execution log entries
-- [ ] R002-4: Revert unrelated TP-031 STATUS.md edits
+- [x] R002-1: Read CONTEXT.md and verify TP-030 dependency; add insertion-point findings
+- [x] R002-2: Fix reviews table (header/separator order, deduplicate R001, remove contradictory verdicts)
+- [x] R002-3: Deduplicate execution log entries
+- [x] R002-4: Revert unrelated TP-031 STATUS.md edits
 
 ---
 
@@ -71,11 +71,9 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
-| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
+|---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
-| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
-|---|------|------|---------|------|
 
 ## Discoveries
 
@@ -85,6 +83,22 @@
 | config-schema.ts has TestingConfig.commands and MergeConfig.verify but no verification section | In scope (Step 3) | extensions/taskplane/config-schema.ts |
 | Vitest JSON reporter outputs testResults[].assertionResults[] with fullName/status/failureMessages | In scope (Step 1) | vitest docs |
 | mergeWave() already creates isolated merge worktree - baseline capture hooks in before/after merge | In scope (Step 2) | extensions/taskplane/merge.ts |
+| CONTEXT.md reviewed: default task area, key files mapped. No blockers for TP-032. | Preflight complete | taskplane-tasks/CONTEXT.md |
+| TP-030 dependency satisfied: v3 schema complete with resilience/diagnostics sections, .DONE exists | Preflight complete | taskplane-tasks/TP-030-state-schema-v3-migration/ |
+| Roadmap 4a defines fingerprint shape: {commandId, file, case, kind, messageNorm} | In scope (Step 1) | docs/specifications/taskplane/resilience-and-diagnostics-roadmap.md L559-592 |
+| Roadmap 4a config: verification.enabled (default false), mode (strict/permissive), flaky_reruns (1) | In scope (Step 3) | docs/specifications/taskplane/resilience-and-diagnostics-roadmap.md L841-844 |
+
+## Insertion Points
+
+| Target | File | Line/Location | Notes |
+|--------|------|---------------|-------|
+| Baseline capture (pre-merge) | merge.ts | Before `for (const lane of orderedLanes)` loop (~L683) | Run verification commands on merge worktree pre-merge state |
+| Post-merge fingerprint capture | merge.ts | After merge result SUCCESS/CONFLICT_RESOLVED (~L762) | Capture fingerprints, diff against baseline |
+| New failure blocking | merge.ts | Between result recording and `break` on failure (~L779) | Block merge if newFailures > 0, classify as verification_new_failure |
+| Config: verification section | config-schema.ts | New `VerificationConfig` interface + add to `OrchestratorSection` | enabled, mode, flakyReruns fields |
+| Config defaults | config-schema.ts | `DEFAULT_ORCHESTRATOR_SECTION` (~L470+) | verification: { enabled: false, mode: "strict", flakyReruns: 1 } |
+| buildMergeRequest verify cmds | merge.ts | `buildMergeRequest()` (~L197) | Currently uses config.merge.verify — baseline system uses testing.commands instead |
+| mergeWaveByRepo per-repo baseline | merge.ts | `mergeWaveByRepo()` (~L1053) | Per-repo baseline capture/comparison for workspace mode |
 
 ## Execution Log
 
@@ -93,12 +107,8 @@
 | 2026-03-19 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-03-20 04:08 | Task started | Extension-driven execution |
 | 2026-03-20 04:08 | Step 0 started | Preflight |
-| 2026-03-20 04:08 | Task started | Extension-driven execution |
-| 2026-03-20 04:08 | Step 0 started | Preflight |
-| 2026-03-20 04:10 | Review R001 | plan Step 0: APPROVE |
 | 2026-03-20 04:12 | Review R001 | plan Step 0: REVISE |
 | 2026-03-20 04:12 | Worker iter 1 | done in 113s, ctx: 33%, tools: 21 |
-| 2026-03-20 04:14 | Review R002 | code Step 0: REVISE |
 | 2026-03-20 04:14 | Review R002 | code Step 0: REVISE |
 
 ## Blockers
@@ -107,4 +117,22 @@
 
 ## Notes
 
-*Reserved for execution notes*
+### Preflight Findings (Step 0)
+
+**TP-030 dependency:** Satisfied. `.DONE` exists in `taskplane-tasks/TP-030-state-schema-v3-migration/`. v3 state schema includes `PersistedMergeResult` (types.ts:1506) with `mergeResults` array in `BatchStateV3` (types.ts:1608) — verification data can be stored alongside merge results.
+
+**Current verification flow:**
+- `merge.ts:buildMergeRequest()` (L197-232) passes `config.merge.verify` commands to the merge agent template
+- Merge agent runs commands in the merge worktree and writes result as `verification: { ran, passed, output }` (types.ts:1014-1020)
+- `merge.ts:parseMergeResult()` (L34-117) normalizes flat/nested verification fields
+- `BUILD_FAILURE` status (merge.ts:774-779) blocks merge when verification fails — but has no baseline comparison
+
+**Key insertion points:**
+1. **Baseline capture:** Before lane merge loop in `mergeWave()` (~L683) — run verification commands on pre-merge state in the merge worktree
+2. **Post-merge comparison:** After `SUCCESS`/`CONFLICT_RESOLVED` result (~L762) — capture post-merge fingerprints, diff against baseline
+3. **Workspace per-repo:** `mergeWaveByRepo()` (~L1053) iterates repo groups; baseline capture per group via `resolveRepoRoot()`
+4. **Config plumbing:** `config-schema.ts` needs `VerificationConfig` interface; `config-loader.ts` needs loading/defaults; `types.ts` needs no changes (reuses existing MergeVerification shape)
+
+**Vitest JSON output shape:** `testResults[].assertionResults[]` with fields: `fullName`, `status` ("passed"/"failed"), `failureMessages[]`. Maps to fingerprint shape `{commandId, file, case, kind, messageNorm}`.
+
+**Merge agent template:** `templates/agents/task-merger.md` (L71-88) contains verification step instructions. Baseline fingerprinting runs orchestrator-side (in merge.ts), NOT in the merge agent — this is a separate layer.
