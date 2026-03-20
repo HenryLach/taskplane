@@ -698,3 +698,525 @@ monitoring sessions.
 
 7. **Dashboard integration:** Should the dashboard show supervisor status and
    conversation history? Or is the terminal sufficient?
+
+---
+
+## 14. Supervisor-Led Onboarding
+
+### 14.1 Vision
+
+The supervisor is not just a batch monitor — it's the persistent intelligent
+interface for all of Taskplane. The user's first interaction with Taskplane
+should be a conversation, not a CLI wizard. Instead of `taskplane init`
+generating config files with wrong defaults that the user must manually fix,
+the supervisor discovers the project, asks questions, and proposes a setup
+that actually fits.
+
+**Entry point:** The user types `/orch` with no arguments. If no config exists,
+the supervisor detects this as a first-run scenario and initiates onboarding.
+
+```
+User: /orch
+Supervisor: "Welcome to Taskplane! I don't see a configuration for this
+            project yet. Let me help you get set up. Give me a moment to
+            look around your project..."
+
+[Supervisor reads repo structure, package.json, git branches, existing docs]
+
+Supervisor: "This looks like a Node.js monorepo with src/api/, src/web/,
+            and libs/shared/. You're on the 'develop' branch with 'main'
+            as protected. I have a few questions to get your task areas
+            configured correctly..."
+```
+
+### 14.2 Onboarding Scripts
+
+These are **conversational guides** for the supervisor agent — not deterministic
+code. They tell the supervisor what to explore, what questions to ask, what
+decisions need to be made, and what artifacts to create. The supervisor adapts
+the conversation based on what it discovers.
+
+---
+
+#### Script 1: First Time Ever Using Taskplane
+
+**Trigger:** No `.pi/` directory exists. No `taskplane-config.json`. User may
+not know what Taskplane does.
+
+**Goals:**
+- Explain what Taskplane does (in one paragraph, not a manual)
+- Assess the project and propose a setup
+- Create all required config and scaffolding
+- Get the user to a running first task within the conversation
+
+**Exploration phase:**
+```
+1. Read the repo structure (top-level dirs, key files)
+2. Identify project type:
+   - package.json → Node.js/TypeScript
+   - pyproject.toml / setup.py → Python
+   - go.mod → Go
+   - Cargo.toml → Rust
+   - pom.xml / build.gradle → Java
+   - Multiple languages → polyglot
+3. Check for existing docs (README, CONTRIBUTING, architecture docs)
+4. Check git state:
+   - Current branch name
+   - Remote branches (main, develop, master, etc.)
+   - Branch protection (gh api if available)
+   - Recent commit activity
+5. Check for existing task/issue tracking:
+   - GitHub Issues (gh issue list)
+   - TODO/FIXME comments in code
+   - Existing task folders or ticket references
+6. Check for test infrastructure:
+   - Test commands in package.json scripts
+   - Test directories (test/, tests/, __tests__/, spec/)
+   - CI config (.github/workflows/, .gitlab-ci.yml)
+```
+
+**Conversation script:**
+```
+Introduction:
+  "Welcome to Taskplane! I'm your project supervisor. I'll help you set up
+  task orchestration for this project. Taskplane lets AI agents work on
+  coding tasks autonomously — I plan the work, manage parallel execution,
+  handle merges, and keep you informed."
+
+Project assessment:
+  "Let me take a look at your project..."
+  [Run exploration]
+  "Here's what I found: [summary]. A few questions:"
+
+Task area discussion (delegate to Script 4: Task Area Design):
+  "Where should we organize tasks for this project?"
+
+Git branching discussion (delegate to Script 5: Git Branching):
+  "Let's make sure Taskplane works well with your git workflow."
+
+Config generation:
+  "Based on our conversation, here's what I'll set up:
+   - Config: .pi/taskplane-config.json
+   - Task area: [path] with prefix [PREFIX]
+   - CONTEXT.md describing [project summary]
+   - Agent prompts: .pi/agents/ (thin overrides, base prompts maintained by Taskplane)
+   - .gitignore entries for Taskplane working files"
+  [Generate files]
+
+First task:
+  "You're all set! Want me to create a task to work on? I can:
+   - Pull from GitHub Issues if you have any labeled 'ready'
+   - Help you describe something you want built
+   - Create a small smoke test task to verify everything works"
+
+Handoff:
+  "To run your first batch: /orch all
+   To see the plan first: /orch-plan all
+   I'll be here monitoring and ready to help."
+```
+
+---
+
+#### Script 2: First Use in a New/Empty Project
+
+**Trigger:** Config doesn't exist. Repo has minimal content — maybe a README,
+some spec docs, an empty src/ directory, but little to no code.
+
+**Goals:**
+- Understand what the user is building (from docs/specs if available)
+- Set up task areas that match the planned architecture (not current file structure)
+- Help decompose the initial build into tasks
+- Possibly create the first batch of tasks from spec docs
+
+**Exploration phase:**
+```
+1. Read any existing docs (README, specs, design docs, PRDs)
+2. Check if there's a project plan or architecture doc
+3. Look for technology choices (framework configs, dependency files)
+4. Assess how much structure exists vs how much needs to be created
+```
+
+**Conversation script:**
+```
+Assessment:
+  "This looks like a new project — I see [what exists]. Let me read
+  through your docs to understand what you're building..."
+  [Read available docs]
+  "Based on [doc], it looks like you're building [summary]."
+
+Architecture-first task areas:
+  "Since the codebase is just getting started, let's organize tasks
+  around your planned architecture rather than the current file structure.
+  From your [spec/README], it looks like the main components are:
+   - [component A]
+   - [component B]
+   - [component C]
+  Should we create a task area per component? Or would you prefer to
+  start with a single area and split later as the codebase grows?"
+
+Initial task decomposition:
+  "Want me to break down your [spec/plan] into executable tasks? I can
+  create a batch that builds out the initial scaffolding — project
+  structure, core interfaces, basic tests — and you can review the
+  task definitions before we run them."
+
+  [If user agrees, use create-taskplane-task skill to generate tasks
+   from the spec, with proper dependencies]
+
+Guidance for greenfield:
+  "A few recommendations for a new project:
+   - Start with small tasks (S/M) to build confidence in the workflow
+   - The first batch should establish patterns the later tasks can follow
+   - I'd suggest review level 2 (plan + code review) for foundational work
+   - Once patterns are established, you can drop to level 1 for speed"
+```
+
+---
+
+#### Script 3: First Use in an Established Project
+
+**Trigger:** Config doesn't exist. Repo has substantial code, docs, tests,
+and history. May have an existing task management system.
+
+**Goals:**
+- Understand the project's domain, architecture, and conventions
+- Discover existing task/issue tracking and offer to integrate
+- Set up task areas that reflect the actual project structure
+- Respect existing conventions (commit formats, branch naming, test commands)
+
+**Exploration phase:**
+```
+1. Full project structure scan (deep, not just top-level)
+2. Read key docs: README, CONTRIBUTING, architecture docs
+3. Detect conventions:
+   - Commit message format (conventional commits? ticket refs?)
+   - Branch naming patterns (feature/, fix/, etc.)
+   - PR templates (.github/PULL_REQUEST_TEMPLATE.md)
+   - Code review requirements
+4. Detect existing task tracking:
+   - GitHub Issues (count, labels, milestones)
+   - Jira references in commits
+   - Linear/Asana/Notion links in docs
+   - TODO comments in code
+5. Analyze code structure:
+   - Service boundaries (microservices, monorepo packages)
+   - Shared libraries
+   - Test coverage patterns
+   - Build/deploy configuration
+6. Check team indicators:
+   - CODEOWNERS file
+   - Multiple contributors in git log
+   - Branch protection rules
+```
+
+**Conversation script:**
+```
+Assessment:
+  "This is an established project — I can see [X commits], [N
+  contributors], and a [framework] codebase organized as [structure].
+  Let me dig deeper..."
+  [Run full exploration]
+
+Existing workflow integration:
+  "I found [GitHub Issues / Jira refs / etc.]. Taskplane can work
+  alongside your existing tracking — I create tasks from issues and
+  report results back. Want me to show you how that works?"
+
+  [If GitHub Issues: mention load-gh-issues skill if available]
+
+Task area design (delegate to Script 4):
+  "Your code is organized as [description]. Let me propose task areas
+  that match..."
+
+Convention detection:
+  "I noticed you use [conventional commits / ticket refs / etc.] in your
+  commit messages. I'll configure Taskplane to follow the same pattern.
+  Your test command looks like [detected command] — I'll use that for
+  verification."
+
+Existing standards:
+  "I found [CONTRIBUTING.md / coding standards / etc.]. I'll include
+  these as reference docs so task workers follow your project's rules."
+
+Migration path (if existing task system found):
+  "You have [N open issues / tasks in Jira / etc.]. Want me to:
+   - Import some as Taskplane tasks for autonomous execution?
+   - Keep them in [existing system] and just link?
+   - Show you how the two systems work together?"
+```
+
+---
+
+#### Script 4: Task Area Design
+
+**Trigger:** Delegated from Scripts 1-3 during onboarding, or invoked when
+the user wants to reorganize task areas.
+
+**Goals:**
+- Propose task area structure that matches the project
+- Explain what task areas are and why structure matters
+- Create CONTEXT.md files that accurately describe each area's scope
+- Set appropriate prefixes to avoid ID collisions
+
+**Conversation script:**
+```
+Explain (brief, only if first time):
+  "Task areas are how Taskplane organizes work. Each area has its own
+  folder, ID prefix, and context doc. When you create a task, it goes
+  into the area that owns that part of the codebase. The orchestrator
+  uses areas to find tasks and manage dependencies."
+
+Propose structure based on project analysis:
+  [For a monorepo with clear domains:]
+  "Based on your project structure, I'd suggest:
+   - 'api' area (prefix: API) for backend service work → tasks/api/
+   - 'web' area (prefix: WEB) for frontend work → tasks/web/
+   - 'platform' area (prefix: PLT) for shared libs/infra → tasks/platform/
+  Each gets a CONTEXT.md describing what it owns."
+
+  [For a single-service project:]
+  "Your project is a single [type]. I'd suggest starting with one area:
+   - 'general' area (prefix: T) → taskplane-tasks/
+  You can split into multiple areas later if the project grows."
+
+  [For a polyrepo workspace:]
+  "This is a multi-repo workspace. I'd suggest:
+   - One task area per repo, or per domain that spans repos
+   - Tasks declare which repo they target via Execution Target
+   - The shared config repo holds all task areas"
+
+CONTEXT.md generation:
+  "I'll create a CONTEXT.md for each area with:
+   - What this area owns (based on the code I found)
+   - Key files and directories
+   - Technical debt / known issues (if I found any)
+   - Next Task ID counter
+  Want to review these before I write them?"
+
+Path discussion:
+  "Where should the task folders live?
+   - Inside the project: tasks/ or taskplane-tasks/ (common for monorepos)
+   - Alongside docs: docs/task-management/ (keeps tasks near specs)
+   - Custom path: whatever makes sense for your team"
+```
+
+---
+
+#### Script 5: Git Branching & Protection
+
+**Trigger:** Delegated from Scripts 1-3, or invoked when the supervisor
+detects potential git workflow issues.
+
+**Goals:**
+- Understand the project's branching strategy
+- Ensure Taskplane's orch branch model works with it
+- Guide the user toward protective guardrails
+- Configure default branch and integration mode
+
+**Exploration phase:**
+```
+1. List remote branches: git branch -r
+2. Detect primary branches: main, master, develop, etc.
+3. Check branch protection: gh api repos/{owner}/{repo}/branches/{branch}/protection
+4. Check PR requirements: required reviews, CI checks, etc.
+5. Look for branching convention in CONTRIBUTING.md or PR templates
+```
+
+**Conversation script:**
+```
+Assessment:
+  "Let me check your git setup..."
+  [Run exploration]
+
+Branch strategy discussion:
+  [If simple (just main):]
+  "You're working directly on 'main'. Taskplane will create an orch
+  branch for batch work and integrate back when done. Since 'main'
+  isn't protected, /orch-integrate can fast-forward directly."
+
+  [If main + develop:]
+  "You have a 'main' and 'develop' branch. Which do you normally work
+  from? Taskplane should branch from your working branch — probably
+  'develop' if that's where feature work goes."
+
+  [If protected main:]
+  "Your 'main' branch has protection rules (requires PR with [N] reviews).
+  Perfect — Taskplane will use --pr mode for integration, which creates
+  a PR from the orch branch to 'main' for your normal review process."
+
+  [If no protection:]
+  "I notice 'main' doesn't have branch protection. I'd recommend adding
+  it — at minimum, require a PR so you can review Taskplane's work
+  before it lands. Want me to walk you through setting that up?"
+
+Protection recommendations:
+  "For the best experience with Taskplane, I'd recommend:
+   - Protect your primary branch (main/develop) — require PRs
+   - Enable required CI checks so Taskplane's /orch-integrate --pr
+     goes through your normal quality gates
+   - Taskplane never pushes directly — it always goes through
+     /orch-integrate, which respects your branch protection
+  This way, you review a clean PR with all the batch's work before
+  it merges."
+
+Configure defaults:
+  "I'll set your default branch to '[branch]' and integration mode to
+  '[auto/manual/pr]'. You can change this anytime in taskplane-config.json
+  or via /taskplane-settings."
+```
+
+---
+
+#### Script 6: Returning User — Batch Planning
+
+**Trigger:** Config exists, user types `/orch` with no arguments, no pending
+tasks or user wants guidance.
+
+**Goals:**
+- Help the user decide what to work on
+- Surface open issues, tech debt, or pending tasks
+- Guide task creation if needed
+- Start a batch when ready
+
+**Conversation script:**
+```
+Status check:
+  "Welcome back! Let me check what's available..."
+  [Scan task areas for pending tasks]
+  [Check GitHub Issues if gh CLI available]
+  [Read CONTEXT.md tech debt sections]
+
+  [If pending tasks exist:]
+  "You have [N] pending tasks:
+   - [list with sizes and dependencies]
+  Want me to plan a batch? /orch-plan all will show you the wave breakdown."
+
+  [If no pending tasks:]
+  "No pending tasks right now. Here's what I found that could become tasks:
+   - [N] GitHub Issues labeled 'ready' / 'good first issue'
+   - [M] tech debt items in CONTEXT.md
+   - [K] TODO comments in the codebase
+  Want me to turn some of these into tasks?"
+
+  [If issues exist:]
+  "I can pull in GitHub Issues and create task packets for them.
+  Which ones should we tackle? Or I can suggest a batch based on
+  priority and dependencies."
+```
+
+---
+
+#### Script 7: Project Health Check
+
+**Trigger:** User asks "how's the project doing?" or supervisor detects
+potential issues during routine operation.
+
+**Goals:**
+- Assess overall project health from Taskplane's perspective
+- Surface issues that might affect batch execution
+- Recommend maintenance actions
+
+**Conversation script:**
+```
+Health assessment:
+  [Check config validity]
+  [Check git state — clean working tree, correct branch]
+  [Check for stale worktrees or branches from prior batches]
+  [Check for orphaned batch state]
+  [Run taskplane doctor checks]
+  [Check disk space for worktrees]
+  [Check tmux availability]
+
+Report:
+  "Project health check:
+   ✅ Config valid (3 task areas, 4 lanes configured)
+   ✅ Git clean, on 'develop'
+   ⚠️ Found 2 stale worktree dirs from a previous batch — want me to clean them?
+   ✅ tmux available
+   ✅ No orphaned batch state
+
+  Task inventory:
+   - 3 pending tasks (TP-042, TP-043, TP-044)
+   - 41 completed tasks
+   - 5 tech debt items logged
+   - 12 open GitHub Issues (4 labeled 'status:ready-to-task')
+
+  Recommendations:
+   - Clean the stale worktrees (takes 2 seconds)
+   - Consider creating tasks from the 4 ready GitHub Issues
+   - TP-042 has been pending for 5 days — still relevant?"
+```
+
+---
+
+#### Script 8: Post-Batch Retrospective
+
+**Trigger:** After `/orch-integrate` completes, or operator asks "how did
+that batch go?"
+
+**Goals:**
+- Summarize batch outcomes
+- Highlight issues and learnings
+- Recommend config adjustments
+- Suggest next steps
+
+**Conversation script:**
+```
+Summary:
+  [Read batch diagnostic report]
+  [Read audit trail]
+
+  "Batch complete! Here's the summary:
+
+  📊 Results: 11/11 tasks succeeded
+  ⏱  Duration: 10h 33m
+  💰 Cost: $127.43
+
+  Highlights:
+  - Wave 2 merge timed out — recovered automatically (Tier 0 retry)
+  - TP-032 took 8 iterations on Step 2 (others averaged 3-4)
+  - Reviewer approved on first pass for 6/11 tasks (up from 0/11 last batch!)
+
+  Recommendations:
+  - Increase merge timeout to 20 min (verification tests take 90s)
+  - TP-032 scope may have been too large — consider splitting similar tasks
+  - The reviewer prompt changes reduced review overhead by ~30%
+
+  Ready to plan the next batch? I see 3 new tasks staged."
+```
+
+---
+
+### 14.3 Script Maintenance
+
+Scripts ship as part of the supervisor primer (`extensions/taskplane/supervisor-primer.md`)
+and update via `pi update`. As we learn from real user interactions:
+
+- New scripts are added for scenarios we didn't anticipate
+- Existing scripts are refined based on where users get confused
+- Project type detection heuristics improve (new languages, frameworks)
+- Convention detection gets smarter (more commit formats, branch patterns)
+
+Scripts are conversational guides, not rigid flows. The supervisor adapts based
+on what the user says and what it discovers. If the user says "just give me the
+defaults and let me tweak later," the supervisor respects that and skips the
+detailed discussions.
+
+### 14.4 Replacing `taskplane init`
+
+Once supervisor-led onboarding is stable, `taskplane init` becomes a thin
+fallback for non-interactive scenarios (CI, scripting, headless setup). The
+interactive path becomes:
+
+```
+Current:  npm install taskplane → taskplane init → manually fix config → create tasks → /orch
+Proposed: npm install taskplane → pi → /orch → supervisor guides everything
+```
+
+The CLI `taskplane init` command would remain for:
+- CI/CD pipelines that need non-interactive setup
+- `--preset` mode for known project types
+- Users who prefer CLI over conversation
+
+But the recommended path for new users would be: "Install Taskplane, open pi,
+type `/orch`, and let the supervisor guide you."
