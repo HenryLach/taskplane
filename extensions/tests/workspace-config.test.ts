@@ -1612,6 +1612,16 @@ describe("orchestrator pointer threading", () => {
 			blockedTaskIds: [],
 			lastError: null,
 			errors: [],
+			resilience: {
+				resumeForced: false,
+				retryCountByScope: {},
+				lastFailureClass: null,
+				repairHistory: [],
+			},
+			diagnostics: {
+				taskExits: {},
+				batchCost: 0,
+			},
 		});
 
 		// Save batch state to workspaceRoot (simulating what orch does with stateRoot = workspaceRoot)
@@ -1714,6 +1724,16 @@ describe("orchestrator pointer threading", () => {
 			blockedTaskIds: [],
 			lastError: null,
 			errors: [],
+			resilience: {
+				resumeForced: false,
+				retryCountByScope: {},
+				lastFailureClass: null,
+				repairHistory: [],
+			},
+			diagnostics: {
+				taskExits: {},
+				batchCost: 0,
+			},
 		});
 
 		// Orch saves state using stateRoot (= workspaceRoot)

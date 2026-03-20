@@ -7,7 +7,7 @@ import { execSync } from "child_process";
 import { join, dirname, basename } from "path";
 
 import { execLog } from "./execution.ts";
-import { BATCH_STATE_SCHEMA_VERSION, StateFileError, batchStatePath, BATCH_HISTORY_MAX_ENTRIES } from "./types.ts";
+import { BATCH_STATE_SCHEMA_VERSION, StateFileError, batchStatePath, BATCH_HISTORY_MAX_ENTRIES, defaultResilienceState, defaultBatchDiagnostics } from "./types.ts";
 import type { BatchHistorySummary } from "./types.ts";
 import type { AllocatedLane, DiscoveryResult, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedTaskRecord, TaskMonitorSnapshot, WorkspaceMode } from "./types.ts";
 import { sleepSync } from "./worktree.ts";
@@ -338,8 +338,8 @@ export const VALID_PERSISTED_MERGE_STATUSES: ReadonlySet<string> = new Set([
  * @param obj - Parsed state object (mutated in-place)
  */
 export function upconvertV1toV2(obj: Record<string, unknown>): void {
-	if ((obj.schemaVersion as number) >= BATCH_STATE_SCHEMA_VERSION) return;
-	obj.schemaVersion = BATCH_STATE_SCHEMA_VERSION;
+	if ((obj.schemaVersion as number) >= 2) return;
+	obj.schemaVersion = 2;
 	if (!obj.baseBranch) obj.baseBranch = "";
 	if (!obj.mode) obj.mode = "repo";
 	// Task and lane records: v2 optional fields default to undefined (omitted)
@@ -347,17 +347,39 @@ export function upconvertV1toV2(obj: Record<string, unknown>): void {
 }
 
 /**
+ * Upconvert a v2 state object to v3 by adding resilience and diagnostics
+ * sections with conservative defaults.
+ *
+ * Added fields:
+ * - `resilience`: default empty resilience state (no retries, no repairs)
+ * - `diagnostics`: default empty diagnostics (no task exits, zero batch cost)
+ *
+ * This function is idempotent: calling it on an already-v3 object is a no-op.
+ *
+ * @param obj - Parsed state object (mutated in-place)
+ */
+export function upconvertV2toV3(obj: Record<string, unknown>): void {
+	if ((obj.schemaVersion as number) >= 3) return;
+	obj.schemaVersion = 3;
+	// Backfill v3 sections with conservative defaults only during genuine
+	// v1/v2→v3 migration. A native v3 file missing these sections is
+	// malformed and must be rejected by validation — not silently patched.
+	if (!obj.resilience) obj.resilience = defaultResilienceState();
+	if (!obj.diagnostics) obj.diagnostics = defaultBatchDiagnostics();
+}
+
+/**
  * Validate a parsed JSON object as a PersistedBatchState.
  *
  * Checks:
- * 1. Schema version is 1 (auto-upconverted to v2) or 2 (current)
+ * 1. Schema version is 1 (auto-upconverted to v2→v3), 2 (upconverted to v3), or 3 (current)
  * 2. All required fields are present with correct types
  * 3. Enum fields contain valid values (phase, task statuses, merge statuses)
  * 4. Arrays contain valid sub-records
  * 5. v2 optional fields (repoId, resolvedRepoId, mode) are valid when present
  *
  * @param data - Parsed JSON (unknown type)
- * @returns Validated PersistedBatchState (always v2, even if input was v1)
+ * @returns Validated PersistedBatchState (always v3, even if input was v1/v2)
  * @throws StateFileError with STATE_SCHEMA_INVALID on any validation failure
  */
 export function validatePersistedState(data: unknown): PersistedBatchState {
@@ -377,12 +399,15 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 			`Missing or invalid "schemaVersion" field (expected number, got ${typeof obj.schemaVersion})`,
 		);
 	}
-	// Accept v1 (auto-upconvert) and v2 (current). Reject anything else.
-	if (obj.schemaVersion !== 1 && obj.schemaVersion !== BATCH_STATE_SCHEMA_VERSION) {
+	// Accept v1 (auto-upconvert to v2→v3), v2 (upconvert to v3), and v3 (current).
+	// Reject anything else — including future versions from newer runtimes.
+	const ACCEPTED_VERSIONS = [1, 2, BATCH_STATE_SCHEMA_VERSION];
+	if (!ACCEPTED_VERSIONS.includes(obj.schemaVersion as number)) {
 		throw new StateFileError(
 			"STATE_SCHEMA_INVALID",
 			`Unsupported schema version ${obj.schemaVersion} (expected ${BATCH_STATE_SCHEMA_VERSION}). ` +
-			`Delete .pi/batch-state.json and re-run the batch.`,
+			`Upgrade taskplane to a version that supports schema v${obj.schemaVersion}, ` +
+			`or delete .pi/batch-state.json and re-run the batch.`,
 		);
 	}
 	const isV1 = obj.schemaVersion === 1;
@@ -703,10 +728,204 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		}
 	}
 
-	// ── v1→v2 upconversion ───────────────────────────────────────
-	// Apply defaults for fields that may be absent in v1 state files.
+	// ── v1→v2→v3 upconversion ────────────────────────────────────
+	// Apply defaults for fields that may be absent in older state files.
 	// The on-disk file is NOT rewritten; upconversion is in-memory only.
+	// Chain: v1→v2 then v2→v3 (each is idempotent / no-op if already at target).
 	upconvertV1toV2(obj);
+	upconvertV2toV3(obj);
+
+	// ── Validate v3 resilience section ───────────────────────────
+	// After upconversion, resilience must be a valid object with correct types.
+	if (!obj.resilience || typeof obj.resilience !== "object") {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`Missing or invalid "resilience" section (expected object, got ${typeof obj.resilience})`,
+		);
+	}
+	const res = obj.resilience as Record<string, unknown>;
+	if (typeof res.resumeForced !== "boolean") {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`resilience.resumeForced must be a boolean (got ${typeof res.resumeForced})`,
+		);
+	}
+	if (!res.retryCountByScope || typeof res.retryCountByScope !== "object" || Array.isArray(res.retryCountByScope)) {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`resilience.retryCountByScope must be an object (got ${typeof res.retryCountByScope})`,
+		);
+	}
+	// Deep-validate retryCountByScope: all values must be numbers
+	for (const [scope, count] of Object.entries(res.retryCountByScope as Record<string, unknown>)) {
+		if (typeof count !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.retryCountByScope["${scope}"] must be a number (got ${typeof count})`,
+			);
+		}
+	}
+	if (res.lastFailureClass !== null && typeof res.lastFailureClass !== "string") {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`resilience.lastFailureClass must be a string or null (got ${typeof res.lastFailureClass})`,
+		);
+	}
+	if (!Array.isArray(res.repairHistory)) {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`resilience.repairHistory must be an array (got ${typeof res.repairHistory})`,
+		);
+	}
+	// Deep-validate repairHistory entries
+	for (let i = 0; i < (res.repairHistory as unknown[]).length; i++) {
+		const rec = (res.repairHistory as unknown[])[i];
+		if (!rec || typeof rec !== "object") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}] must be an object (got ${typeof rec})`,
+			);
+		}
+		const r = rec as Record<string, unknown>;
+		if (typeof r.id !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}].id must be a string (got ${typeof r.id})`,
+			);
+		}
+		if (typeof r.strategy !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}].strategy must be a string (got ${typeof r.strategy})`,
+			);
+		}
+		const VALID_REPAIR_STATUSES = new Set(["succeeded", "failed", "skipped"]);
+		if (typeof r.status !== "string" || !VALID_REPAIR_STATUSES.has(r.status)) {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}].status must be "succeeded"|"failed"|"skipped" (got ${JSON.stringify(r.status)})`,
+			);
+		}
+		if (typeof r.startedAt !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}].startedAt must be a number (got ${typeof r.startedAt})`,
+			);
+		}
+		if (typeof r.endedAt !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}].endedAt must be a number (got ${typeof r.endedAt})`,
+			);
+		}
+		// repoId is optional — validate type only if present
+		if (r.repoId !== undefined && typeof r.repoId !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`resilience.repairHistory[${i}].repoId must be a string when present (got ${typeof r.repoId})`,
+			);
+		}
+	}
+
+	// ── Validate v3 diagnostics section ──────────────────────────
+	// After upconversion, diagnostics must be a valid object with correct types.
+	if (!obj.diagnostics || typeof obj.diagnostics !== "object") {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`Missing or invalid "diagnostics" section (expected object, got ${typeof obj.diagnostics})`,
+		);
+	}
+	const diag = obj.diagnostics as Record<string, unknown>;
+	if (!diag.taskExits || typeof diag.taskExits !== "object" || Array.isArray(diag.taskExits)) {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`diagnostics.taskExits must be an object (got ${typeof diag.taskExits})`,
+		);
+	}
+	// Deep-validate taskExits entries
+	for (const [taskId, entry] of Object.entries(diag.taskExits as Record<string, unknown>)) {
+		if (!entry || typeof entry !== "object") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`diagnostics.taskExits["${taskId}"] must be an object (got ${typeof entry})`,
+			);
+		}
+		const te = entry as Record<string, unknown>;
+		if (typeof te.classification !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`diagnostics.taskExits["${taskId}"].classification must be a string (got ${typeof te.classification})`,
+			);
+		}
+		if (typeof te.cost !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`diagnostics.taskExits["${taskId}"].cost must be a number (got ${typeof te.cost})`,
+			);
+		}
+		if (typeof te.durationSec !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`diagnostics.taskExits["${taskId}"].durationSec must be a number (got ${typeof te.durationSec})`,
+			);
+		}
+		// retries is optional — validate type only if present
+		if (te.retries !== undefined && typeof te.retries !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`diagnostics.taskExits["${taskId}"].retries must be a number when present (got ${typeof te.retries})`,
+			);
+		}
+	}
+	if (typeof diag.batchCost !== "number") {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`diagnostics.batchCost must be a number (got ${typeof diag.batchCost})`,
+		);
+	}
+
+	// ── Validate exitDiagnostic on task records (optional) ───────
+	for (let i = 0; i < tasks.length; i++) {
+		const t = tasks[i] as Record<string, unknown>;
+		if (t.exitDiagnostic !== undefined) {
+			if (!t.exitDiagnostic || typeof t.exitDiagnostic !== "object") {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`tasks[${i}].exitDiagnostic must be an object when present (got ${typeof t.exitDiagnostic})`,
+				);
+			}
+			const ed = t.exitDiagnostic as Record<string, unknown>;
+			if (typeof ed.classification !== "string") {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`tasks[${i}].exitDiagnostic.classification must be a string (got ${typeof ed.classification})`,
+				);
+			}
+		}
+	}
+
+	// ── Capture unknown top-level fields for roundtrip preservation ──
+	// Any fields not in the known schema are preserved so they survive
+	// serialization. This protects against data loss from future schema
+	// extensions or external tools writing additional fields.
+	const KNOWN_TOP_LEVEL_FIELDS = new Set([
+		"schemaVersion", "phase", "batchId", "baseBranch", "orchBranch", "mode",
+		"startedAt", "updatedAt", "endedAt", "currentWaveIndex", "totalWaves",
+		"wavePlan", "lanes", "tasks", "mergeResults",
+		"totalTasks", "succeededTasks", "failedTasks", "skippedTasks", "blockedTasks",
+		"blockedTaskIds", "lastError", "errors",
+		"resilience", "diagnostics",
+		"_extraFields",
+	]);
+	const extraFields: Record<string, unknown> = {};
+	for (const key of Object.keys(obj)) {
+		if (!KNOWN_TOP_LEVEL_FIELDS.has(key)) {
+			extraFields[key] = obj[key];
+		}
+	}
+	if (Object.keys(extraFields).length > 0) {
+		obj._extraFields = extraFields;
+	}
 
 	return obj as unknown as PersistedBatchState;
 }
@@ -799,6 +1018,11 @@ export function serializeBatchState(
 				record.partialProgressBranch = outcome.partialProgressBranch;
 			}
 
+			// TP-030 v3: Serialize exit diagnostic from task outcome
+			if (outcome?.exitDiagnostic !== undefined) {
+				record.exitDiagnostic = outcome.exitDiagnostic;
+			}
+
 			return record;
 		});
 
@@ -870,7 +1094,21 @@ export function serializeBatchState(
 			? { code: "BATCH_ERROR", message: state.errors[state.errors.length - 1] }
 			: null,
 		errors: [...state.errors],
+		resilience: state.resilience ?? defaultResilienceState(),
+		diagnostics: state.diagnostics ?? defaultBatchDiagnostics(),
 	};
+
+	// Merge unknown fields from loaded state to preserve roundtrip fidelity.
+	// Extra fields are placed at the end of the object (after known schema fields)
+	// and will not overwrite any known field.
+	if (state._extraFields) {
+		const output = persisted as Record<string, unknown>;
+		for (const [key, value] of Object.entries(state._extraFields)) {
+			if (!(key in output)) {
+				output[key] = value;
+			}
+		}
+	}
 
 	return JSON.stringify(persisted, null, 2);
 }
@@ -1030,10 +1268,11 @@ export type OrphanStateStatus = "valid" | "missing" | "invalid" | "io-error";
  *
  * - "resume"         — Orphan sessions + valid state, or no orphans + valid state with incomplete tasks: suggest /orch-resume
  * - "abort-orphans"  — Orphan sessions without usable state: suggest /orch-abort
- * - "cleanup-stale"  — No orphans + stale/invalid state file: auto-delete and start fresh
+ * - "cleanup-stale"  — No orphans + stale/valid/completed state: auto-delete and start fresh
+ * - "paused-corrupt" — No orphans + corrupt/unreadable state file: do NOT auto-delete; notify user to inspect or manually remove
  * - "start-fresh"    — No orphans, no state file: proceed normally
  */
-export type OrphanRecommendedAction = "resume" | "abort-orphans" | "cleanup-stale" | "start-fresh";
+export type OrphanRecommendedAction = "resume" | "abort-orphans" | "cleanup-stale" | "paused-corrupt" | "start-fresh";
 
 /**
  * Result of orphan detection analysis.
@@ -1097,8 +1336,8 @@ export function parseOrchSessionNames(stdout: string, prefix: string): string[] 
  * | No       | valid       | all   | cleanup-stale   |
  * | No       | valid       | !all  | resume          |
  * | No       | missing     | —     | start-fresh     |
- * | No       | invalid     | —     | cleanup-stale   |
- * | No       | io-error    | —     | cleanup-stale   |
+ * | No       | invalid     | —     | paused-corrupt  |
+ * | No       | io-error    | —     | paused-corrupt  |
  *
  * Pure function — no process or filesystem access.
  *
@@ -1219,17 +1458,20 @@ export function analyzeOrchestratorStartupState(
 		};
 	}
 
-	// Invalid or io-error state with no orphans — safe to clean up
+	// Invalid or io-error state with no orphans — corrupt state.
+	// Never auto-delete: enter paused-corrupt so the user can inspect the file
+	// and decide whether to manually recover or remove it.
 	return {
 		orphanSessions: [],
 		stateStatus,
 		loadedState: null,
 		stateError,
-		recommendedAction: "cleanup-stale",
+		recommendedAction: "paused-corrupt",
 		userMessage:
-			`🧹 Found unusable batch state file (${stateStatus}).\n` +
+			`⚠️ Batch state file is corrupt or unreadable (${stateStatus}).\n` +
 			(stateError ? `   Error: ${stateError}\n` : "") +
-			`   Cleaning up state file before starting fresh.`,
+			`   The file has NOT been deleted. Inspect .pi/batch-state.json manually,\n` +
+			`   then either fix it or delete it and run /orch again.`,
 	};
 }
 

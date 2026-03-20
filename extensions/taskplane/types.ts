@@ -3,6 +3,7 @@
  * @module orch/types
  */
 import { join } from "path";
+import type { ExitClassification, TaskExitDiagnostic } from "./diagnostics.js";
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -561,6 +562,19 @@ export interface LaneTaskOutcome {
 	 * Optional for backward compatibility.
 	 */
 	partialProgressBranch?: string;
+	/**
+	 * Structured exit diagnostic for this task (v3, TP-030).
+	 *
+	 * Canonical structured exit data — preferred over the legacy `exitReason`
+	 * string when present. Produced by `classifyExit()` after session ends,
+	 * then enriched with progress/context metadata.
+	 *
+	 * Optional: absent for tasks that haven't exited yet, and for
+	 * backward compatibility with pre-v3 code paths.
+	 * Consumers should check `exitDiagnostic` first, falling back to
+	 * `exitReason` for display.
+	 */
+	exitDiagnostic?: TaskExitDiagnostic;
 }
 
 /**
@@ -880,6 +894,21 @@ export interface OrchBatchRuntimeState {
 	dependencyGraph: DependencyGraph | null;
 	/** Accumulated merge results across all waves */
 	mergeResults: MergeWaveResult[];
+	/**
+	 * v3 resilience state carried forward across resume cycles.
+	 * Populated from persisted state on resume; defaults used for new batches.
+	 */
+	resilience?: ResilienceState;
+	/**
+	 * v3 diagnostics state carried forward across resume cycles.
+	 * Populated from persisted state on resume; defaults used for new batches.
+	 */
+	diagnostics?: BatchDiagnostics;
+	/**
+	 * Unknown top-level fields from loaded persisted state.
+	 * Carried forward so they survive serialization roundtrips.
+	 */
+	_extraFields?: Record<string, unknown>;
 }
 
 /**
@@ -1158,6 +1187,131 @@ export interface OrchDashboardViewModel {
 
 // ── State Persistence Types (TS-009) ─────────────────────────────────
 
+// ── v3 Resilience & Diagnostics Sections (TP-030) ────────────────────
+
+/**
+ * Record of a single automated repair action taken by the orchestrator.
+ *
+ * Repair actions are deterministic strategies applied when known failure
+ * classes are detected (e.g., stale worktree cleanup, lock file removal).
+ * Each entry is immutable once written — history is append-only.
+ *
+ * @since v3 (TP-030)
+ */
+export interface PersistedRepairRecord {
+	/** Unique repair ID (e.g., "r-20260319-001") */
+	id: string;
+	/** Strategy name that was applied (e.g., "stale-worktree-cleanup", "lock-file-removal") */
+	strategy: string;
+	/** Outcome of the repair */
+	status: "succeeded" | "failed" | "skipped";
+	/** Repo ID targeted by the repair (undefined in repo mode) */
+	repoId?: string;
+	/** Epoch ms when the repair started */
+	startedAt: number;
+	/** Epoch ms when the repair ended */
+	endedAt: number;
+}
+
+/**
+ * Resilience state section for batch-state.json.
+ *
+ * Tracks retry/repair metadata so the orchestrator can make informed
+ * decisions about retries, force-resume, and failure escalation.
+ *
+ * All fields are required in a canonical v3 state. Migration from v1/v2
+ * fills conservative defaults (no retries, no repairs, no forced resume).
+ *
+ * @since v3 (TP-030)
+ */
+export interface ResilienceState {
+	/** Whether the last resume was a --force resume */
+	resumeForced: boolean;
+	/**
+	 * Retry counts keyed by scope string.
+	 * Scope format: `{taskId}:w{waveIndex}:l{laneNumber}` (e.g., "TP-001:w0:l1").
+	 * Value is the number of retries attempted for that scope.
+	 */
+	retryCountByScope: Record<string, number>;
+	/**
+	 * Exit classification of the most recent failure (null if no failures).
+	 * Uses the same `ExitClassification` union from diagnostics.ts.
+	 */
+	lastFailureClass: ExitClassification | null;
+	/** Chronological history of automated repair actions. Append-only. */
+	repairHistory: PersistedRepairRecord[];
+}
+
+/**
+ * Persisted summary of a single task's exit diagnostic.
+ *
+ * This is a compact representation stored in `diagnostics.taskExits`.
+ * For the full diagnostic (tokens, progress, etc.), see the
+ * `exitDiagnostic` field on `PersistedTaskRecord`.
+ *
+ * Uses `ExitClassification` from diagnostics.ts as the canonical
+ * classification type — no duplication.
+ *
+ * @since v3 (TP-030)
+ */
+export interface PersistedTaskExitSummary {
+	/** Deterministic exit classification */
+	classification: ExitClassification;
+	/** Estimated cost in USD for this task's execution */
+	cost: number;
+	/** Wall-clock duration of the task in seconds */
+	durationSec: number;
+	/** Number of retry attempts (0 if never retried) */
+	retries?: number;
+}
+
+/**
+ * Batch-level diagnostics section for batch-state.json.
+ *
+ * Aggregates per-task exit summaries and batch-wide cost for
+ * dashboard display and post-mortem analysis.
+ *
+ * All fields are required in a canonical v3 state. Migration from v1/v2
+ * fills conservative defaults (empty taskExits, zero batchCost).
+ *
+ * @since v3 (TP-030)
+ */
+export interface BatchDiagnostics {
+	/**
+	 * Per-task exit summaries keyed by task ID.
+	 * Populated as tasks complete during execution.
+	 */
+	taskExits: Record<string, PersistedTaskExitSummary>;
+	/** Accumulated batch cost in USD across all tasks */
+	batchCost: number;
+}
+
+/**
+ * Create a default ResilienceState with conservative initial values.
+ * Used when migrating v1/v2 states to v3, and for new batch creation.
+ */
+export function defaultResilienceState(): ResilienceState {
+	return {
+		resumeForced: false,
+		retryCountByScope: {},
+		lastFailureClass: null,
+		repairHistory: [],
+	};
+}
+
+/**
+ * Create a default BatchDiagnostics with empty/zero initial values.
+ * Used when migrating v1/v2 states to v3, and for new batch creation.
+ */
+export function defaultBatchDiagnostics(): BatchDiagnostics {
+	return {
+		taskExits: {},
+		batchCost: 0,
+	};
+}
+
+// ── Schema Version & Constants ───────────────────────────────────────
+
 /**
  * Current schema version for batch-state.json.
  * Increment when the persisted schema changes in incompatible ways.
@@ -1168,14 +1322,21 @@ export interface OrchDashboardViewModel {
  *   v2 — Repo-aware records (TP-006). Adds `repoId` and `resolvedRepoId`
  *         to task records. Formalizes `repoId` on lane records. Adds
  *         `mode` field to top-level state.
+ *   v3 — Resilience & diagnostics (TP-030). Adds optional `resilience`
+ *         section (retry counters, force-resume, failure classification,
+ *         repair history) and optional `diagnostics` section (per-task
+ *         exit summaries, batch cost). Task records gain optional
+ *         `exitDiagnostic` alongside legacy `exitReason`.
+ *         Both new sections are optional for v1/v2 migration paths.
  *
  * Compatibility policy:
- *   - loadBatchState() accepts v1 files and auto-upconverts to v2 in memory
- *     (via upconvertV1toV2()). The on-disk file is NOT rewritten.
- *   - saveBatchState() always writes v2.
- *   - Schema versions > 2 are rejected with STATE_SCHEMA_INVALID.
+ *   - loadBatchState() accepts v1, v2, and v3 files. v1 and v2 are
+ *     auto-upconverted to v3 in memory (chained: v1→v2→v3).
+ *     The on-disk file is NOT rewritten during load.
+ *   - saveBatchState() always writes v3.
+ *   - Schema versions > 3 are rejected with STATE_SCHEMA_INVALID.
  */
-export const BATCH_STATE_SCHEMA_VERSION = 2;
+export const BATCH_STATE_SCHEMA_VERSION = 3;
 
 /**
  * Canonical file path for persisted batch state.
@@ -1282,6 +1443,18 @@ export interface PersistedTaskRecord {
 	 * Optional for backward compatibility with pre-TP-028 state files.
 	 */
 	partialProgressBranch?: string;
+	/**
+	 * Structured exit diagnostic for this task (v3, TP-030).
+	 *
+	 * Canonical structured exit data — preferred over the legacy `exitReason`
+	 * string when present. Contains deterministic classification, cost, timing,
+	 * and progress metadata.
+	 *
+	 * Optional for backward compatibility with v1/v2 state files and tasks
+	 * that haven't exited yet. Consumers should check `exitDiagnostic` first,
+	 * falling back to `exitReason` for display.
+	 */
+	exitDiagnostic?: TaskExitDiagnostic;
 }
 
 /**
@@ -1387,9 +1560,18 @@ export interface PersistedRepoMergeOutcome {
  * - Lane records formalize `repoId` contract per mode
  * - v1 files are auto-upconverted: `mode` defaults to "repo", task/lane
  *   `repoId` fields default to `undefined` (omitted from JSON)
+ *
+ * v3 additions (TP-030):
+ * - `resilience` section (required): retry counters, force-resume intent,
+ *   failure classification, and repair history for automated recovery.
+ * - `diagnostics` section (required): per-task exit summaries and batch cost.
+ * - Task records gain optional `exitDiagnostic` (canonical structured exit
+ *   data alongside legacy `exitReason` string).
+ * - Both sections are required in v3. Migration from v1/v2 fills
+ *   conservative defaults (see `defaultResilienceState()` / `defaultBatchDiagnostics()`).
  */
 export interface PersistedBatchState {
-	/** Schema version — must equal BATCH_STATE_SCHEMA_VERSION (currently 2) */
+	/** Schema version — must equal BATCH_STATE_SCHEMA_VERSION (currently 3) */
 	schemaVersion: number;
 	/** Current batch execution phase */
 	phase: OrchBatchPhase;
@@ -1436,6 +1618,23 @@ export interface PersistedBatchState {
 	lastError: { code: string; message: string } | null;
 	/** Accumulated error messages */
 	errors: string[];
+	/**
+	 * Resilience state for retry/recovery tracking (v3, TP-030).
+	 * Required in v3. Migration from v1/v2 fills conservative defaults.
+	 */
+	resilience: ResilienceState;
+	/**
+	 * Batch-level diagnostics for cost tracking and exit summaries (v3, TP-030).
+	 * Required in v3. Migration from v1/v2 fills conservative defaults.
+	 */
+	diagnostics: BatchDiagnostics;
+	/**
+	 * Unknown top-level fields captured during deserialization.
+	 * Preserved on roundtrip to avoid data loss from future schema extensions
+	 * or external tools writing additional fields.
+	 * Not serialized directly — merged back by `serializeBatchState()`.
+	 */
+	_extraFields?: Record<string, unknown>;
 }
 
 

@@ -1988,7 +1988,7 @@ console.log("\n── 3.2: analyzeOrchestratorStartupState ──");
 
 // Reimplementation of type aliases and function (matches source)
 type OrphanStateStatus = "valid" | "missing" | "invalid" | "io-error";
-type OrphanRecommendedAction = "resume" | "abort-orphans" | "cleanup-stale" | "start-fresh";
+type OrphanRecommendedAction = "resume" | "abort-orphans" | "cleanup-stale" | "paused-corrupt" | "start-fresh";
 
 interface OrphanDetectionResult {
 	orphanSessions: string[];
@@ -2127,16 +2127,19 @@ function analyzeOrchestratorStartupState(
 		};
 	}
 
+	// Invalid or io-error state with no orphans — corrupt state.
+	// Never auto-delete: enter paused-corrupt so the user can inspect the file.
 	return {
 		orphanSessions: [],
 		stateStatus,
 		loadedState: null,
 		stateError,
-		recommendedAction: "cleanup-stale",
+		recommendedAction: "paused-corrupt",
 		userMessage:
-			`🧹 Found unusable batch state file (${stateStatus}).\n` +
+			`⚠️ Batch state file is corrupt or unreadable (${stateStatus}).\n` +
 			(stateError ? `   Error: ${stateError}\n` : "") +
-			`   Cleaning up state file before starting fresh.`,
+			`   The file has NOT been deleted. Inspect .pi/batch-state.json manually,\n` +
+			`   then either fix it or delete it and run /orch again.`,
 	};
 }
 
@@ -2280,7 +2283,7 @@ function minimalPersistedState(overrides?: Partial<PersistedBatchStateForTest>):
 }
 
 {
-	console.log("  ▸ no orphans + invalid state → recommend 'cleanup-stale'");
+	console.log("  ▸ no orphans + invalid state → recommend 'paused-corrupt' (never auto-delete)");
 	const result = analyzeOrchestratorStartupState(
 		[],
 		"invalid",
@@ -2288,13 +2291,14 @@ function minimalPersistedState(overrides?: Partial<PersistedBatchStateForTest>):
 		"[STATE_SCHEMA_INVALID] Unsupported schema version 99",
 		new Set(),
 	);
-	assertEqual(result.recommendedAction, "cleanup-stale", "recommend cleanup for invalid state");
-	assert(result.userMessage.includes("unusable"), "message mentions unusable");
+	assertEqual(result.recommendedAction, "paused-corrupt", "recommend paused-corrupt for invalid state");
+	assert(result.userMessage.includes("corrupt"), "message mentions corrupt");
+	assert(result.userMessage.includes("NOT been deleted"), "message says file was NOT deleted");
 	assert(result.userMessage.includes("schema version"), "error context in message");
 }
 
 {
-	console.log("  ▸ no orphans + io-error state → recommend 'cleanup-stale'");
+	console.log("  ▸ no orphans + io-error state → recommend 'paused-corrupt' (never auto-delete)");
 	const result = analyzeOrchestratorStartupState(
 		[],
 		"io-error",
@@ -2302,8 +2306,9 @@ function minimalPersistedState(overrides?: Partial<PersistedBatchStateForTest>):
 		"[STATE_FILE_IO_ERROR] EACCES: permission denied",
 		new Set(),
 	);
-	assertEqual(result.recommendedAction, "cleanup-stale", "recommend cleanup for io-error");
-	assert(result.userMessage.includes("unusable"), "message mentions unusable");
+	assertEqual(result.recommendedAction, "paused-corrupt", "recommend paused-corrupt for io-error");
+	assert(result.userMessage.includes("corrupt"), "message mentions corrupt");
+	assert(result.userMessage.includes("NOT been deleted"), "message says file was NOT deleted");
 }
 
 {
