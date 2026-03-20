@@ -13,29 +13,34 @@ new features.
   Read First" sections. Workers should read the specific sections cited, not
   entire documents.
 - **After implementation:** Update the spec if behavior diverged from the
-  original design, or mark sections as superseded.
+  original design, and move it to `taskplane/implemented/`.
 
 ## Document index
 
-### Active
+### Active (to be implemented)
 
 | Document | Description |
 |----------|-------------|
-| [taskplane/resilience-and-diagnostics-roadmap.md](taskplane/resilience-and-diagnostics-roadmap.md) | Consolidated roadmap for diagnostics, recovery, verification, and quality gates (Phases 1-6) |
-| [taskplane/watchdog-and-recovery-tiers.md](taskplane/watchdog-and-recovery-tiers.md) | Tiered watchdog design: Tier 0 (deterministic recovery), Tier 1 (bounded LLM triage), Tier 2 (fleet patrol agent) |
-| [taskplane/polyrepo-workspace-implementation.md](taskplane/polyrepo-workspace-implementation.md) | Polyrepo workspace architecture, bug history, smoke test checklist |
+| [taskplane/watchdog-and-recovery-tiers.md](taskplane/watchdog-and-recovery-tiers.md) | Supervisor agent, Tier 0 watchdog, interactive onboarding, recovery playbook |
+| [taskplane/evaluation-system.md](taskplane/evaluation-system.md) | Cross-task validation and integrated system testing |
 | [orch-managed-branch-spec.md](orch-managed-branch-spec.md) | Design for `orch/{opId}-{batchId}` branch model and `/orch-integrate` |
 | [settings-and-onboarding-spec.md](settings-and-onboarding-spec.md) | JSON config, pointer resolution, `/taskplane-settings` TUI, `init` v2 |
 
-### Superseded (historical reference)
+### Implemented
 
-| Document | Superseded By |
-|----------|--------------|
-| [taskplane/resilience-architecture.md](taskplane/resilience-architecture.md) | [resilience-and-diagnostics-roadmap.md](taskplane/resilience-and-diagnostics-roadmap.md) |
-| [taskplane/lane-agent-design.md](taskplane/lane-agent-design.md) | [resilience-and-diagnostics-roadmap.md](taskplane/resilience-and-diagnostics-roadmap.md) (Phase 5) |
-| [taskplane/tmux-telemetry-gap.md](taskplane/tmux-telemetry-gap.md) | [resilience-and-diagnostics-roadmap.md](taskplane/resilience-and-diagnostics-roadmap.md) (Phase 1) |
-| [taskplane/polyrepo-support-spec.md](taskplane/polyrepo-support-spec.md) | [polyrepo-workspace-implementation.md](taskplane/polyrepo-workspace-implementation.md) |
-| [taskplane/polyrepo-implementation-plan.md](taskplane/polyrepo-implementation-plan.md) | [polyrepo-workspace-implementation.md](taskplane/polyrepo-workspace-implementation.md) |
+Specs that have been fully or substantially implemented. Moved to
+`taskplane/implemented/` for reference.
+
+| Document | Shipped In | Description |
+|----------|-----------|-------------|
+| [taskplane/implemented/resilience-and-diagnostics-roadmap.md](taskplane/implemented/resilience-and-diagnostics-roadmap.md) | v0.6.0 | Diagnostics, recovery, verification, quality gates (Phases 1-5) |
+| [taskplane/implemented/polyrepo-workspace-implementation.md](taskplane/implemented/polyrepo-workspace-implementation.md) | v0.2.0–v0.5.x | Polyrepo workspace architecture, bug history, smoke test |
+| [taskplane/implemented/polyrepo-support-spec.md](taskplane/implemented/polyrepo-support-spec.md) | v0.2.0 | Original polyrepo design |
+| [taskplane/implemented/polyrepo-implementation-plan.md](taskplane/implemented/polyrepo-implementation-plan.md) | v0.2.0 | Polyrepo implementation plan |
+| [taskplane/implemented/polyrepo-execution-backlog.md](taskplane/implemented/polyrepo-execution-backlog.md) | v0.2.0–v0.5.x | Polyrepo feature backlog (completed) |
+| [taskplane/implemented/resilience-architecture.md](taskplane/implemented/resilience-architecture.md) | v0.6.0 | Original resilience spec (superseded by roadmap) |
+| [taskplane/implemented/lane-agent-design.md](taskplane/implemented/lane-agent-design.md) | v0.6.0 | Lane agent design (quality gate portion shipped as Phase 5) |
+| [taskplane/implemented/tmux-telemetry-gap.md](taskplane/implemented/tmux-telemetry-gap.md) | v0.6.0 | TMUX telemetry analysis (RPC wrapper shipped as Phase 1) |
 
 ### Other
 
@@ -46,5 +51,3 @@ new features.
 | [cli/NPM-PUBLISHING.md](cli/NPM-PUBLISHING.md) | npm publish workflow |
 | [framework/33-parallel-task-orchestrator.md](framework/33-parallel-task-orchestrator.md) | Original orchestrator design (early framework era) |
 | [open-source-documentation-plan.md](open-source-documentation-plan.md) | Documentation structure plan |
-| [taskplane/evaluation-system.md](taskplane/evaluation-system.md) | Task evaluation and scoring design |
-| [taskplane/polyrepo-execution-backlog.md](taskplane/polyrepo-execution-backlog.md) | Polyrepo feature backlog |
