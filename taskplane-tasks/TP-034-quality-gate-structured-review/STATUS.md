@@ -1,11 +1,11 @@
 # TP-034: Quality Gate Structured Review — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Define Quality Gate Configuration & Verdict Schema
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 ---
@@ -24,10 +24,13 @@
 ---
 
 ### Step 1: Define Configuration & Verdict Schema
-**Status:** ⬜ Not Started
-- [ ] Quality gate config section
-- [ ] ReviewVerdict and ReviewFinding interfaces
-- [ ] quality-gate.ts module created
+**Status:** 🟨 In Progress
+- [ ] Add QualityGateConfig interface to config-schema.ts and wire into TaskRunnerSection with defaults (enabled: false, reviewModel: "", maxReviewCycles: 2, maxFixCycles: 1, passThreshold: "no_critical")
+- [ ] Add quality_gate mapping to toTaskConfig() adapter in config-loader.ts and TaskConfig interface in task-runner.ts
+- [ ] Create quality-gate.ts with ReviewVerdict, ReviewFinding, StatusReconciliation interfaces and PassThreshold type
+- [ ] Add verdict evaluation logic: applyVerdictRules() implementing critical/important/status_mismatch rules
+- [ ] Add parseVerdict() with fail-open behavior for malformed/missing JSON
+- [ ] Add config-loader test coverage for quality gate defaults and adapter mapping
 
 ---
 
@@ -77,6 +80,8 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ## Discoveries
 
@@ -97,6 +102,14 @@
 | 2026-03-20 | R002 revisions applied | Reverted TP-026 scope leak, added Tier-2 context evidence |
 | 2026-03-20 | Step 0 complete | Preflight done, ready for Step 1 |
 | 2026-03-20 00:27 | Review R002 | code Step 0: REVISE |
+| 2026-03-20 00:28 | Worker iter 1 | done in 123s, ctx: 11%, tools: 25 |
+| 2026-03-20 00:28 | Step 0 complete | Preflight |
+| 2026-03-20 00:28 | Step 1 started | Define Quality Gate Configuration & Verdict Schema |
+| 2026-03-20 00:29 | Worker iter 1 | done in 133s, ctx: 12%, tools: 26 |
+| 2026-03-20 00:29 | Step 0 complete | Preflight |
+| 2026-03-20 00:29 | Step 1 started | Define Quality Gate Configuration & Verdict Schema |
+| 2026-03-20 00:30 | Review R003 | plan Step 1: REVISE |
+| 2026-03-20 00:30 | Review R003 | plan Step 1: REVISE |
 
 ## Blockers
 
