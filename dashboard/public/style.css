@@ -662,36 +662,6 @@ body {
   color: var(--magenta);
 }
 
-/* ─── Telemetry Badges (retry/compaction chips) ────────────────────────── */
-
-.telem-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  font-weight: 500;
-  padding: 1px 7px;
-  border-radius: 8px;
-  white-space: nowrap;
-}
-
-.telem-retry {
-  background: rgba(210,153,34,0.12);
-  color: var(--yellow);
-}
-
-.telem-retry-active {
-  background: rgba(210,153,34,0.2);
-  color: var(--yellow);
-  animation: pulse 2s infinite;
-}
-
-.telem-compaction {
-  background: rgba(188,140,255,0.12);
-  color: var(--magenta);
-}
-
 /* ─── Conversation Viewer ──────────────────────────────────────────────── */
 
 .conv-stream {
