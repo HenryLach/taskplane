@@ -1,11 +1,11 @@
 # TP-034: Quality Gate Structured Review — Status
 
-**Current Step:** Step 1: Define Quality Gate Configuration & Verdict Schema
+**Current Step:** Step 2: Implement Structured Review
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 3
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -35,12 +35,11 @@
 ---
 
 ### Step 2: Implement Structured Review
-**Status:** ⬜ Not Started
-- [ ] Spawn review agent after steps complete, before .DONE
-- [ ] Build review evidence package
-- [ ] Parse verdict JSON
-- [ ] Apply verdict rules
-- [ ] PASS → .DONE, NEEDS_FIXES → remediation
+**Status:** 🟨 In Progress
+- [ ] Add `runQualityGate()` function in quality-gate.ts: generates review prompt with evidence (PROMPT.md, STATUS.md, git diff, file list), instructs agent to write `REVIEW_VERDICT.json` to task folder
+- [ ] Add `doQualityGateReview()` in task-runner.ts: spawns review agent (using quality_gate.review_model with fallback chain), reads/parses REVIEW_VERDICT.json, applies verdict rules with configured pass_threshold
+- [ ] Integrate quality gate into executeTask(): after all steps complete, if quality_gate.enabled, call quality gate before .DONE; if disabled, keep existing .DONE path unchanged
+- [ ] Handle all fail-open paths: missing verdict file, agent crash/non-zero exit, malformed JSON → synthetic PASS so task is never blocked by gate bugs
 
 ---
 
@@ -82,6 +81,8 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ## Discoveries
 
@@ -112,6 +113,11 @@
 | 2026-03-20 00:30 | Review R003 | plan Step 1: REVISE |
 | 2026-03-20 | Step 1 complete | Config schema, adapter, quality-gate.ts, verdict logic, tests all done |
 | 2026-03-20 00:37 | Worker iter 2 | done in 410s, ctx: 23%, tools: 53 |
+| 2026-03-20 00:39 | Worker iter 2 | done in 558s, ctx: 37%, tools: 57 |
+| 2026-03-20 00:40 | Review R004 | code Step 1: APPROVE |
+| 2026-03-20 00:40 | Step 1 complete | Define Quality Gate Configuration & Verdict Schema |
+| 2026-03-20 00:40 | Step 2 started | Implement Structured Review |
+| 2026-03-20 00:42 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 
