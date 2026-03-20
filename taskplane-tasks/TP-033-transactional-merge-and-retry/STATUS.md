@@ -4,7 +4,7 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 3
 **Size:** L
 
@@ -35,7 +35,7 @@
 ---
 
 ### Step 2: Retry Policy Matrix
-**Status:** ✅ Complete
+**Status:** 🔄 In Progress
 - [x] Define MergeFailureClassification type and per-class retry policy matrix (verification_new_failure: max 1/0s, merge_conflict_unresolved: no retry, cleanup_post_merge_failed: max 1/2s + wave gate, git_worktree_dirty: max 1/2s, git_lock_file: max 2/3s) as a centralized pure lookup in types.ts
 - [x] Implement classifyMergeFailure helper to map MergeWaveResult + lane errors to MergeFailureClassification
 - [x] Update retryCountByScope key format to `{repoId}:w{N}:l{K}` with "default" fallback for repo mode; add migration/compat note in JSDoc
@@ -44,6 +44,10 @@
 - [x] Mirror retry integration in resume.ts for execution/resume parity
 - [x] Ensure cleanup_post_merge_failed remains a hard wave gate (no advancement to next wave) — existing computeCleanupGatePolicy already handles this; verify no bypass
 - [x] On retry exhaustion: enter paused with diagnostic message including classification, attempt count, and scope key
+- [ ] R006-1: Extract shared `applyMergeRetryLoop` helper used by both engine.ts and resume.ts; wrap retry in a loop that re-classifies after each failed attempt, supports maxAttempts>1 (e.g. git_lock_file), and returns structured outcome
+- [ ] R006-2: On retry exhaustion, force `paused` phase regardless of `on_merge_failure` config (do not route through computeMergeFailurePolicy); emit matrix-specific diagnostics
+- [ ] R006-3: Improve repo-scoped key extraction for setup failures (failedLane===null) by falling back to repoResults metadata
+- [ ] R006-4: All tests pass after R006 revisions
 
 ---
 
@@ -75,6 +79,7 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 
 ## Discoveries
 
@@ -108,6 +113,8 @@
 | 2026-03-20 12:46 | Step 2 started | Retry Policy Matrix |
 | 2026-03-20 12:48 | Review R005 | plan Step 2: REVISE |
 | 2026-03-20 09:05 | Step 2 complete | Retry policy matrix: MergeFailureClassification type + MERGE_RETRY_POLICY_MATRIX (5 classes) + classifyMergeFailure + computeMergeRetryDecision + buildMergeRetryScopeKey. Engine/resume parity: both check retry before pause/abort. Scope key format {repoId}:w{N}:l{K} with "default" fallback. cleanup_post_merge_failed wave gate verified. All 1564 tests pass. |
+| 2026-03-20 13:06 | Worker iter 3 | done in 1062s, ctx: 47%, tools: 106 |
+| 2026-03-20 13:11 | Review R006 | code Step 2: REVISE |
 
 ## Blockers
 
