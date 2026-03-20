@@ -1,11 +1,11 @@
 # TP-033: Transactional Merge Envelope & Retry Matrix — Status
 
-**Current Step:** Step 1: Transaction Envelope
+**Current Step:** Step 2: Retry Policy Matrix
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 2
+**Review Counter:** 5
+**Iteration:** 3
 **Size:** L
 
 ---
@@ -35,11 +35,15 @@
 ---
 
 ### Step 2: Retry Policy Matrix
-**Status:** ⬜ Not Started
-- [ ] Implement retry by failure classification
-- [ ] Persist retry counters scoped by repo/wave/lane
-- [ ] Enforce max attempts and cooldown
-- [ ] Exhaustion enters paused
+**Status:** 🟨 In Progress
+- [ ] Define MergeFailureClassification type and per-class retry policy matrix (verification_new_failure: max 1/0s, merge_conflict_unresolved: no retry, cleanup_post_merge_failed: max 1/2s + wave gate, git_worktree_dirty: max 1/2s, git_lock_file: max 2/3s) as a centralized pure lookup in types.ts
+- [ ] Implement classifyMergeFailure helper to map MergeWaveResult + lane errors to MergeFailureClassification
+- [ ] Update retryCountByScope key format to `{repoId}:w{N}:l{K}` with "default" fallback for repo mode; add migration/compat note in JSDoc
+- [ ] Implement computeMergeRetryDecision pure helper in messages.ts: given classification + current retry count + policy matrix → returns retry-allowed, cooldown, or exhaustion-pause action
+- [ ] Integrate retry decision into engine.ts merge failure handling: before applying pause/abort policy, check retry matrix; if retriable and under max, sleep cooldown then re-invoke mergeWaveByRepo; persist incremented retry counter to batch state
+- [ ] Mirror retry integration in resume.ts for execution/resume parity
+- [ ] Ensure cleanup_post_merge_failed remains a hard wave gate (no advancement to next wave) — existing computeCleanupGatePolicy already handles this; verify no bypass
+- [ ] On retry exhaustion: enter paused with diagnostic message including classification, attempt count, and scope key
 
 ---
 
@@ -70,6 +74,7 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ## Discoveries
 
@@ -98,6 +103,10 @@
 | 2026-03-20 08:35 | Step 1 complete | TransactionRecord interface + baseHEAD/laneHEAD/mergedHEAD capture + rollback tracking + safe-stop with worktree preservation + engine/resume force-paused on rollbackFailed + persistTransactionRecord to .pi/verification/ + mergeWaveByRepo propagation. All 1564 tests pass. |
 | 2026-03-20 12:35 | Worker iter 2 | done in 828s, ctx: 35%, tools: 77 |
 | 2026-03-20 12:39 | Review R004 | code Step 1: REVISE |
+| 2026-03-20 12:46 | Worker iter 2 | done in 374s, ctx: 21%, tools: 46 |
+| 2026-03-20 12:46 | Step 1 complete | Transaction Envelope |
+| 2026-03-20 12:46 | Step 2 started | Retry Policy Matrix |
+| 2026-03-20 12:48 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 
