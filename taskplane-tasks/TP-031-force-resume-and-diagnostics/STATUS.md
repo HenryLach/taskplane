@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** M
 
 ---
@@ -27,10 +27,11 @@
 
 ### Step 1: Implement Force-Resume Policy
 **Status:** 🟨 In Progress
-- [ ] Add --force flag parsing
-- [ ] Pre-resume diagnostics
-- [ ] Record force intent in state
-- [ ] Resume eligibility matrix
+- [ ] Add `parseResumeArgs()` in extension.ts with --force flag parsing, unknown-flag rejection, and usage guidance
+- [ ] Update `checkResumeEligibility()` in resume.ts to accept `force: boolean` — stopped/failed become eligible with force, completed always rejected
+- [ ] Add pre-resume diagnostics function in resume.ts: worktree health, branch consistency, state coherence (repo-aware for workspace mode); block resume if diagnostics fail with operator-facing reason
+- [ ] Wire up: extension.ts handler calls parseResumeArgs → passes force to resumeOrchBatch → checkResumeEligibility(state, force) → run diagnostics → set resilience.resumeForced → reset phase to paused → continue
+- [ ] Update ORCH_MESSAGES for force-resume notifications (force started, diagnostics failed, etc.)
 
 ---
 
@@ -74,6 +75,8 @@
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ## Discoveries
 
@@ -94,6 +97,11 @@
 | 2026-03-20 02:44 | Worker iter 1 | done in 85s, ctx: 11%, tools: 15 |
 | 2026-03-20 02:44 | Step 0 complete | Preflight |
 | 2026-03-20 02:44 | Step 1 started | Implement Force-Resume Policy |
+| 2026-03-20 02:44 | Worker iter 1 | done in 81s, ctx: 11%, tools: 16 |
+| 2026-03-20 02:44 | Step 0 complete | Preflight |
+| 2026-03-20 02:44 | Step 1 started | Implement Force-Resume Policy |
+| 2026-03-20 02:46 | Review R003 | plan Step 1: REVISE |
+| 2026-03-20 02:47 | Review R003 | plan Step 1: REVISE |
 
 ## Blockers
 
