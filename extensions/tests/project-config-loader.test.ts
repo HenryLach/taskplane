@@ -943,6 +943,159 @@ describe("quality gate config defaults and adapter mapping (TP-034)", () => {
 	});
 });
 
+// ── 4.14x: Verification config defaults and adapter mapping (TP-032) ─
+
+describe("verification config defaults and adapter mapping (TP-032)", () => {
+	it("4.14: verification defaults are correct when not specified in config", () => {
+		const dir = makeTestDir("verify-defaults");
+		writeOrchestratorYaml(dir, [
+			"orchestrator:",
+			"  max_lanes: 2",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.verification).toEqual({
+			enabled: false,
+			mode: "permissive",
+			flakyReruns: 1,
+		});
+	});
+
+	it("4.15: verification config from YAML (snake_case) maps to camelCase", () => {
+		const dir = makeTestDir("verify-yaml");
+		writeOrchestratorYaml(dir, [
+			"orchestrator:",
+			"  max_lanes: 2",
+			"verification:",
+			"  enabled: true",
+			"  mode: strict",
+			"  flaky_reruns: 3",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.verification).toEqual({
+			enabled: true,
+			mode: "strict",
+			flakyReruns: 3,
+		});
+	});
+
+	it("4.16: verification config from JSON (camelCase) loads correctly", () => {
+		const dir = makeTestDir("verify-json");
+		writeJsonConfig(dir, {
+			configVersion: CONFIG_VERSION,
+			orchestrator: {
+				verification: {
+					enabled: true,
+					mode: "strict",
+					flakyReruns: 0,
+				},
+			},
+		});
+
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.verification).toEqual({
+			enabled: true,
+			mode: "strict",
+			flakyReruns: 0,
+		});
+	});
+
+	it("4.17: toOrchestratorConfig adapter maps verification to snake_case", () => {
+		const dir = makeTestDir("verify-adapter");
+		writeJsonConfig(dir, {
+			configVersion: CONFIG_VERSION,
+			orchestrator: {
+				verification: {
+					enabled: true,
+					mode: "strict",
+					flakyReruns: 2,
+				},
+			},
+		});
+
+		const config = loadProjectConfig(dir);
+		const legacy = toOrchestratorConfig(config);
+
+		expect(legacy.verification).toEqual({
+			enabled: true,
+			mode: "strict",
+			flaky_reruns: 2,
+		});
+	});
+
+	it("4.18: verification defaults propagate through toOrchestratorConfig when not configured", () => {
+		const dir = makeTestDir("verify-defaults-adapter");
+		writeOrchestratorYaml(dir, [
+			"orchestrator:",
+			"  max_lanes: 2",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		const legacy = toOrchestratorConfig(config);
+
+		expect(legacy.verification).toEqual({
+			enabled: false,
+			mode: "permissive",
+			flaky_reruns: 1,
+		});
+	});
+
+	it("4.19: partial verification YAML config merges with defaults", () => {
+		const dir = makeTestDir("verify-partial");
+		writeOrchestratorYaml(dir, [
+			"verification:",
+			"  enabled: true",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		// enabled is overridden, mode and flakyReruns should come from defaults
+		expect(config.orchestrator.verification.enabled).toBe(true);
+		expect(config.orchestrator.verification.mode).toBe("permissive");
+		expect(config.orchestrator.verification.flakyReruns).toBe(1);
+	});
+
+	it("4.20: verification flaky_reruns=0 round-trips through YAML→adapter", () => {
+		const dir = makeTestDir("verify-zero-reruns");
+		writeOrchestratorYaml(dir, [
+			"verification:",
+			"  enabled: true",
+			"  flaky_reruns: 0",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.verification.flakyReruns).toBe(0);
+
+		const legacy = toOrchestratorConfig(config);
+		expect(legacy.verification.flaky_reruns).toBe(0);
+	});
+
+	it("4.21: existing 3.12 full adapter test includes verification", () => {
+		// Verify that the full adapter test (3.12) would include verification
+		// if present — this test explicitly checks that verification fields
+		// appear alongside other orchestrator adapter output
+		const dir = makeTestDir("verify-full-adapter");
+		writeOrchestratorYaml(dir, [
+			"orchestrator:",
+			"  max_lanes: 5",
+			"verification:",
+			"  enabled: true",
+			"  mode: strict",
+			"  flaky_reruns: 2",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		const legacy = toOrchestratorConfig(config);
+
+		// Core orchestrator fields
+		expect(legacy.orchestrator.max_lanes).toBe(5);
+		// Verification fields
+		expect(legacy.verification.enabled).toBe(true);
+		expect(legacy.verification.mode).toBe("strict");
+		expect(legacy.verification.flaky_reruns).toBe(2);
+	});
+});
+
 // ── 5.x: Pointer-threaded config resolution (TP-016) ────────────────
 
 describe("pointer-threaded config resolution (TP-016)", () => {
@@ -1363,5 +1516,141 @@ describe("pointer warning surfacing (TP-016)", () => {
 			(args) => typeof args[0] === "string" && args[0].includes("[task-runner] pointer:"),
 		);
 		expect(pointerWarnings.length).toBe(0);
+	});
+});
+
+// ── 7.x: Verification config defaults, mapping, and adapter (TP-032) ─
+
+describe("verification config defaults, mapping, and adapter (TP-032)", () => {
+	it("7.1: verification defaults are correct when not specified in config", () => {
+		const dir = makeTestDir("verify-defaults");
+		writeOrchestratorYaml(dir, [
+			"orchestrator:",
+			"  max_lanes: 2",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.verification).toEqual({
+			enabled: false,
+			mode: "permissive",
+			flakyReruns: 1,
+		});
+	});
+
+	it("7.2: verification YAML snake_case maps to camelCase in unified config", () => {
+		const dir = makeTestDir("verify-yaml-map");
+		writeOrchestratorYaml(dir, [
+			"orchestrator:",
+			"  max_lanes: 2",
+			"verification:",
+			"  enabled: true",
+			"  mode: strict",
+			"  flaky_reruns: 3",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.verification.enabled).toBe(true);
+		expect(config.orchestrator.verification.mode).toBe("strict");
+		expect(config.orchestrator.verification.flakyReruns).toBe(3);
+	});
+
+	it("7.3: verification JSON camelCase is loaded directly", () => {
+		const dir = makeTestDir("verify-json");
+		writeJsonConfig(dir, {
+			configVersion: CONFIG_VERSION,
+			orchestrator: {
+				verification: {
+					enabled: true,
+					mode: "strict",
+					flakyReruns: 0,
+				},
+			},
+		});
+
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.verification.enabled).toBe(true);
+		expect(config.orchestrator.verification.mode).toBe("strict");
+		expect(config.orchestrator.verification.flakyReruns).toBe(0);
+	});
+
+	it("7.4: toOrchestratorConfig round-trips verification to snake_case", () => {
+		const dir = makeTestDir("verify-adapter");
+		writeOrchestratorYaml(dir, [
+			"verification:",
+			"  enabled: true",
+			"  mode: strict",
+			"  flaky_reruns: 2",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		const legacy = toOrchestratorConfig(config);
+
+		expect(legacy.verification).toEqual({
+			enabled: true,
+			mode: "strict",
+			flaky_reruns: 2,
+		});
+	});
+
+	it("7.5: toOrchestratorConfig defaults produce correct snake_case verification", () => {
+		const dir = makeTestDir("verify-adapter-defaults");
+		// No verification section at all
+		writeOrchestratorYaml(dir, [
+			"orchestrator:",
+			"  max_lanes: 2",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		const legacy = toOrchestratorConfig(config);
+
+		expect(legacy.verification).toEqual({
+			enabled: false,
+			mode: "permissive",
+			flaky_reruns: 1,
+		});
+	});
+
+	it("7.6: partial verification YAML merges with defaults", () => {
+		const dir = makeTestDir("verify-partial");
+		writeOrchestratorYaml(dir, [
+			"verification:",
+			"  enabled: true",
+			// mode and flaky_reruns omitted — should use defaults
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.verification.enabled).toBe(true);
+		expect(config.orchestrator.verification.mode).toBe("permissive"); // default
+		expect(config.orchestrator.verification.flakyReruns).toBe(1);     // default
+	});
+
+	it("7.7: flakyReruns: 0 disables flaky re-runs and round-trips correctly", () => {
+		const dir = makeTestDir("verify-no-reruns");
+		writeOrchestratorYaml(dir, [
+			"verification:",
+			"  enabled: true",
+			"  flaky_reruns: 0",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.verification.flakyReruns).toBe(0);
+
+		const legacy = toOrchestratorConfig(config);
+		expect(legacy.verification.flaky_reruns).toBe(0);
+	});
+
+	it("7.8: loadOrchestratorConfig wrapper includes verification defaults", () => {
+		const dir = makeTestDir("verify-orch-wrapper");
+		writeOrchestratorYaml(dir, [
+			"orchestrator:",
+			"  max_lanes: 3",
+		].join("\n"));
+
+		const legacy = loadOrchestratorConfig(dir);
+		expect(legacy.verification).toEqual({
+			enabled: false,
+			mode: "permissive",
+			flaky_reruns: 1,
+		});
 	});
 });

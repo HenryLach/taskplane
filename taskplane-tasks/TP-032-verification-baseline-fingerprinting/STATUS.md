@@ -47,13 +47,13 @@
 ---
 
 ### Step 3: Configuration & Modes
-**Status:** 🔧 In Progress
+**Status:** ✅ Complete
 - [x] R007-1: Add VerificationConfig interface to config-schema.ts, defaults in DEFAULT_ORCHESTRATOR_SECTION, YAML→unified mapping in config-loader.ts (mapOrchestratorYaml), legacy adapter in toOrchestratorConfig, and legacy type in types.ts OrchestratorConfig
 - [x] R007-2: Wire verification.enabled as explicit feature flag — gating in merge.ts/engine.ts/resume.ts so that testing_commands presence alone does not enable fingerprinting; only `enabled: true` triggers it. Wire flakyReruns (including 0 = no reruns) through runPostMergeVerification
 - [x] R007-3: Implement strict/permissive mode behavior for baseline unavailable — strict: set failedLane + error (merge failure policy applies), permissive: log warning, continue without baseline. Precedence: verification.mode gates baseline-unavailable handling; failure.on_merge_failure gates how the resulting merge failure is handled (pause vs abort)
 - [x] R007-4: Add Step 3 decision note documenting precedence between verification.mode and failure.on_merge_failure, and behavior when enabled but commands empty
-- [ ] R008-1: Add config-loader regression tests for verification section — defaults, YAML→camelCase mapping, toOrchestratorConfig() snake_case round-trip in project-config-loader.test.ts
-- [ ] R008-2: Add merge-flow tests for verification mode behavior — (a) enabled+strict+no commands → merge failure, (b) enabled+permissive+no commands → continues, (c) enabled=false → no baseline capture, (d) flakyReruns=0 → no rerun attempt
+- [x] R008-1: Add config-loader regression tests for verification section — defaults, YAML→camelCase mapping, toOrchestratorConfig() snake_case round-trip in project-config-loader.test.ts
+- [x] R008-2: Add merge-flow tests for verification mode behavior — (a) enabled+strict+no commands → merge failure, (b) enabled+permissive+no commands → continues, (c) enabled=false → no baseline capture, (d) flakyReruns=0 → no rerun attempt
 
 ---
 

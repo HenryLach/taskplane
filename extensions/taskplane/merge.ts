@@ -547,9 +547,11 @@ function forceRemoveMergeWorktree(
  * - "verification_new_failure": genuinely new failures detected
  * - "flaky_suspected": new failures disappeared on re-run (warning only)
  *
- * Flaky handling: when new failures are detected, only the commands that
- * produced new failures are re-run once. If the failures disappear on
- * re-run, the result is reclassified as "flaky_suspected".
+ * Flaky handling: when new failures are detected and flakyReruns > 0,
+ * only the commands that produced new failures are re-run up to
+ * flakyReruns times. If the failures disappear on any re-run attempt,
+ * the result is reclassified as "flaky_suspected". When flakyReruns is
+ * 0, no re-runs are attempted and new failures immediately block.
  *
  * @param testingCommands - Named verification commands (from testing.commands config)
  * @param mergeWorkDir    - Merge worktree path (post-merge state)
