@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -19,6 +19,9 @@
 - [x] Read CONTEXT.md and verify TP-030 dependency contracts (resilience/diagnostics types, persistence serialization)
 - [x] Read messages.ts computeMergeFailurePolicy and identify merge failure phase transition insertion points
 - [x] Record preflight findings: insertion points, force-resume contract, and resume eligibility matrix in Notes
+- [ ] R002 fix: Deduplicate Reviews table — keep one canonical row per review ID with correct verdict
+- [ ] R002 fix: Deduplicate Execution Log — single chronological sequence, no duplicate events
+- [ ] R002 fix: Make status header consistent with step completion state
 
 ---
 
@@ -70,6 +73,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -89,6 +94,9 @@
 | 2026-03-20 02:38 | Review R001 | plan Step 0: APPROVE |
 | 2026-03-20 02:38 | Review R001 | plan Step 0: REVISE |
 | 2026-03-20 02:41 | Worker iter 1 | done in 157s, ctx: 48%, tools: 28 |
+| 2026-03-20 02:41 | Worker iter 1 | done in 159s, ctx: 47%, tools: 29 |
+| 2026-03-20 02:42 | Review R002 | code Step 0: REVISE |
+| 2026-03-20 02:43 | Review R002 | code Step 0: REVISE |
 
 ## Blockers
 
