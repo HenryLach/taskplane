@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-03-20
+
+### New
+- **Skip reviews for low-risk steps (TP-036)** — Step 0 (Preflight) and the final step (Documentation & Delivery) now skip plan and code reviews regardless of review level. Saves ~4 review agent invocations per task (~25-30% faster for M-sized tasks). Middle implementation steps are unaffected.
+
+### Docs
+- Supervisor-led onboarding scripts added to watchdog spec — 8 conversational scripts for project setup, task area design, git branching, batch planning, health checks, and post-batch retrospectives.
+
 ## [0.6.0] - 2026-03-20
 
 ### New
