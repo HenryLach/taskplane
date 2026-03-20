@@ -4,17 +4,21 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** L
 
 ---
 
 ### Step 0: Preflight
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Read merge flow and verification execution
 - [x] Read roadmap Phase 4 section 4a
 - [x] Understand vitest output format
+- [ ] R002-1: Read CONTEXT.md and verify TP-030 dependency; add insertion-point findings
+- [ ] R002-2: Fix reviews table (header/separator order, deduplicate R001, remove contradictory verdicts)
+- [ ] R002-3: Deduplicate execution log entries
+- [ ] R002-4: Revert unrelated TP-031 STATUS.md edits
 
 ---
 
@@ -69,6 +73,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -91,6 +97,9 @@
 | 2026-03-20 04:08 | Step 0 started | Preflight |
 | 2026-03-20 04:10 | Review R001 | plan Step 0: APPROVE |
 | 2026-03-20 04:12 | Review R001 | plan Step 0: REVISE |
+| 2026-03-20 04:12 | Worker iter 1 | done in 113s, ctx: 33%, tools: 21 |
+| 2026-03-20 04:14 | Review R002 | code Step 0: REVISE |
+| 2026-03-20 04:14 | Review R002 | code Step 0: REVISE |
 
 ## Blockers
 
