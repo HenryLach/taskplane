@@ -423,6 +423,7 @@ export async function executeOrchBatch(
 					workspaceConfig,
 					stateRoot,
 					agentRoot,
+					runnerConfig.testing_commands,
 				);
 				allMergeResults.push(mergeResult);
 				batchState.mergeResults.push(mergeResult);

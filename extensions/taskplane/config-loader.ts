@@ -791,9 +791,15 @@ export function toTaskRunnerConfig(config: TaskplaneConfig): import("./types.ts"
 		taskAreas[name] = ta;
 	}
 
+	// Include testing_commands for baseline fingerprinting (TP-032).
+	// Only set the field when there are actual commands configured.
+	const testingCommands = config.taskRunner.testing?.commands;
+	const hasTestingCommands = testingCommands && Object.keys(testingCommands).length > 0;
+
 	return {
 		task_areas: taskAreas,
 		reference_docs: { ...config.taskRunner.referenceDocs },
+		...(hasTestingCommands ? { testing_commands: { ...testingCommands } } : {}),
 	};
 }
 

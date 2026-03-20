@@ -1135,6 +1135,7 @@ export async function resumeOrchBatch(
 				workspaceConfig,
 				stateRoot,
 				agentRoot,
+				runnerConfig.testing_commands,
 			);
 
 			if (reExecMergeResult.status === "succeeded") {
@@ -1419,6 +1420,7 @@ export async function resumeOrchBatch(
 					workspaceConfig,
 					stateRoot,
 					agentRoot,
+					runnerConfig.testing_commands,
 				);
 				batchState.mergeResults.push(mergeResult);
 

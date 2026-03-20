@@ -1,7 +1,7 @@
 # TP-032: Verification Baseline & Fingerprinting — Status
 
 **Current Step:** Step 2: Baseline Capture & Comparison in Merge Flow
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 2
 **Review Counter:** 5
@@ -35,11 +35,11 @@
 ---
 
 ### Step 2: Baseline Capture & Comparison in Merge Flow
-**Status:** 🟨 In Progress
-- [ ] R005-1: Decouple orchestrator-side baseline verification from merge-agent verification (merge-agent verify remains for agent-side revert logic; orchestrator-side baseline diff gates merge advancement separately)
-- [ ] R005-2: Implement orchestrator-side baseline capture/post-merge/diff in mergeWave() with persistence to `.pi/verification/{opId}/` and per-repo naming
-- [ ] R005-3: Implement flaky re-run (failed commands only, once) with classification: verification_new_failure blocks lane, flaky_suspected is warning-only
-- [ ] R005-4: Add decision note in STATUS.md documenting verification command source and integration architecture
+**Status:** ✅ Complete
+- [x] R005-1: Decouple orchestrator-side baseline verification from merge-agent verification (merge-agent verify remains for agent-side revert logic; orchestrator-side baseline diff gates merge advancement separately)
+- [x] R005-2: Implement orchestrator-side baseline capture/post-merge/diff in mergeWave() with persistence to `.pi/verification/{opId}/` and per-repo naming
+- [x] R005-3: Implement flaky re-run (failed commands only, once) with classification: verification_new_failure blocks lane, flaky_suspected is warning-only
+- [x] R005-4: Add decision note in STATUS.md documenting verification command source and integration architecture
 
 ---
 
@@ -205,3 +205,16 @@ interface CommandResult {
 - Empty output: Fallback parser emits fingerprint with empty `messageNorm`.
 
 **Exported Types from `verification.ts`:** `VerificationCommand`, `CommandResult`, `TestFingerprint`, `VerificationBaseline`, `FingerprintDiff`, `runVerificationCommands()`, `parseTestOutput()`, `diffFingerprints()`.
+
+### Step 2 Decision Notes (R005 response)
+
+**Verification Command Source:**
+The orchestrator-side baseline system uses `testing.commands` (`Record<string, string>` — named keys like `{ test: "npx vitest run" }`) from the task runner config section. This is distinct from `merge.verify` (a `string[]` passed to the merge agent). The merge agent's own verification (via `merge.verify`) continues independently — it handles agent-side revert-on-failure logic. The orchestrator-side baseline comparison is a separate layer that gates merge advancement.
+
+**Integration Architecture:**
+1. **Two-layer verification**: Merge-agent runs `merge.verify` commands and may revert on failure (existing behavior, untouched). Orchestrator captures baseline/post-merge fingerprints using `testing.commands` and gates advancement based on diff results.
+2. **Timing**: Baseline is captured once per `mergeWave()` call on the merge worktree before any lane merges. Post-merge capture happens after each successful lane merge (SUCCESS/CONFLICT_RESOLVED). If the merge agent already failed the lane (BUILD_FAILURE/CONFLICT_UNRESOLVED), orchestrator-side verification is skipped for that lane.
+3. **Commands source threading**: `testing.commands` is passed as an optional `Record<string, string>` parameter to `mergeWave()` / `mergeWaveByRepo()`. When empty or undefined, baseline fingerprinting is skipped entirely (opt-in, matches the disabled-by-default requirement). The engine.ts caller sources this from the config.
+4. **Flaky re-run**: When new failures are detected, only the failed commands (not all commands) are re-run once. If the failure disappears on re-run, the lane is classified as `flaky_suspected` (warning-only, does not block). If the failure persists, the lane is classified as `verification_new_failure` (blocks merge advancement).
+5. **Persistence**: Baseline/post-merge artifacts are written to `.pi/verification/{opId}/baseline-b{batchId}-w{waveIndex}.json` and `.pi/verification/{opId}/post-b{batchId}-w{waveIndex}-lane{laneNumber}.json`. In workspace mode, repoId is appended: `baseline-b{batchId}-w{waveIndex}-{repoId}.json`.
+6. **Failure propagation**: `verification_new_failure` sets `failedLane` and `failureReason` in the merge loop, same as BUILD_FAILURE. The lane result's `verificationBaseline` field carries the detailed diff. Downstream failure policy (engine.ts `computeMergeFailurePolicy`) handles it identically to any other merge failure.
