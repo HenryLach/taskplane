@@ -26,7 +26,7 @@
 ---
 
 ### Step 1: Implement Force-Resume Policy
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Add --force flag parsing
 - [ ] Pre-resume diagnostics
 - [ ] Record force intent in state
@@ -91,6 +91,9 @@
 | 2026-03-20 02:41 | Worker iter 1 | done in 159s, ctx: 47%, tools: 29 |
 | 2026-03-20 02:43 | Review R002 | code Step 0: REVISE |
 | 2026-03-20 | Step 0 cleanup | R002 revisions — STATUS.md bookkeeping fixed |
+| 2026-03-20 02:44 | Worker iter 1 | done in 85s, ctx: 11%, tools: 15 |
+| 2026-03-20 02:44 | Step 0 complete | Preflight |
+| 2026-03-20 02:44 | Step 1 started | Implement Force-Resume Policy |
 
 ## Blockers
 
