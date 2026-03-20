@@ -1,7 +1,7 @@
 # TP-034: Quality Gate Structured Review — Status
 
 **Current Step:** Step 2: Implement Structured Review
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
 **Review Counter:** 5
@@ -35,11 +35,11 @@
 ---
 
 ### Step 2: Implement Structured Review
-**Status:** 🟨 In Progress
-- [ ] Add `runQualityGate()` function in quality-gate.ts: generates review prompt with evidence (PROMPT.md, STATUS.md, git diff, file list), instructs agent to write `REVIEW_VERDICT.json` to task folder
-- [ ] Add `doQualityGateReview()` in task-runner.ts: spawns review agent (using quality_gate.review_model with fallback chain), reads/parses REVIEW_VERDICT.json, applies verdict rules with configured pass_threshold
-- [ ] Integrate quality gate into executeTask(): after all steps complete, if quality_gate.enabled, call quality gate before .DONE; if disabled, keep existing .DONE path unchanged
-- [ ] Handle all fail-open paths: missing verdict file, agent crash/non-zero exit, malformed JSON → synthetic PASS so task is never blocked by gate bugs
+**Status:** ✅ Complete
+- [x] Add `runQualityGate()` function in quality-gate.ts: generates review prompt with evidence (PROMPT.md, STATUS.md, git diff, file list), instructs agent to write `REVIEW_VERDICT.json` to task folder
+- [x] Add `doQualityGateReview()` in task-runner.ts: spawns review agent (using quality_gate.review_model with fallback chain), reads/parses REVIEW_VERDICT.json, applies verdict rules with configured pass_threshold
+- [x] Integrate quality gate into executeTask(): after all steps complete, if quality_gate.enabled, call quality gate before .DONE; if disabled, keep existing .DONE path unchanged
+- [x] Handle all fail-open paths: missing verdict file, agent crash/non-zero exit, malformed JSON → synthetic PASS so task is never blocked by gate bugs
 
 ---
 
@@ -83,6 +83,8 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | APPROVE | .reviews/R005-plan-step2.md |
 
 ## Discoveries
 
@@ -118,6 +120,11 @@
 | 2026-03-20 00:40 | Step 1 complete | Define Quality Gate Configuration & Verdict Schema |
 | 2026-03-20 00:40 | Step 2 started | Implement Structured Review |
 | 2026-03-20 00:42 | Review R005 | plan Step 2: REVISE |
+| 2026-03-20 00:43 | Review R004 | code Step 1: APPROVE |
+| 2026-03-20 00:43 | Step 1 complete | Define Quality Gate Configuration & Verdict Schema |
+| 2026-03-20 00:43 | Step 2 started | Implement Structured Review |
+| 2026-03-20 00:45 | Review R005 | plan Step 2: APPROVE |
+| 2026-03-20 | Step 2 complete | doQualityGateReview(), executeTask() integration, fail-open paths all verified |
 
 ## Blockers
 

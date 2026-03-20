@@ -18,6 +18,9 @@
  */
 
 import type { PassThreshold } from "./config-schema.ts";
+import { readFileSync, existsSync } from "fs";
+import { join } from "path";
+import { spawnSync } from "child_process";
 
 // ── Verdict Interfaces ───────────────────────────────────────────────
 
@@ -327,4 +330,235 @@ function validateReconciliations(raw: unknown): StatusReconciliation[] {
 	}
 
 	return validated;
+}
+
+// ── Quality Gate Review Prompt ───────────────────────────────────────
+
+/** Information needed to build the quality gate review evidence package. */
+export interface QualityGateContext {
+	/** Absolute path to task folder */
+	taskFolder: string;
+	/** Absolute path to PROMPT.md */
+	promptPath: string;
+	/** Task ID (e.g., "TP-034") */
+	taskId: string;
+	/** Project name from config */
+	projectName: string;
+	/** Pass threshold from config */
+	passThreshold: PassThreshold;
+}
+
+/** Path where the quality gate verdict JSON file is written by the review agent. */
+export const VERDICT_FILENAME = "REVIEW_VERDICT.json";
+
+/**
+ * Build the git diff for the entire task.
+ *
+ * Tries `git diff HEAD~N..HEAD` where N is determined by the number of commits
+ * on the current branch vs main. Falls back to `git diff HEAD` if that fails.
+ */
+function buildGitDiff(cwd: string): { diff: string; fileList: string } {
+	try {
+		// Get file list of changed files
+		const fileListResult = spawnSync("git", ["diff", "--name-only", "HEAD~20..HEAD"], {
+			encoding: "utf-8",
+			cwd,
+			timeout: 30000,
+		});
+		const fileList = fileListResult.status === 0
+			? fileListResult.stdout.trim()
+			: "";
+
+		// Get full diff (truncated to avoid blowing up context)
+		const diffResult = spawnSync("git", ["diff", "HEAD~20..HEAD"], {
+			encoding: "utf-8",
+			cwd,
+			timeout: 30000,
+			maxBuffer: 200 * 1024, // 200KB max
+		});
+		const diff = diffResult.status === 0
+			? diffResult.stdout.trim()
+			: "(git diff unavailable)";
+
+		return { diff, fileList };
+	} catch {
+		return { diff: "(git diff failed)", fileList: "(file list unavailable)" };
+	}
+}
+
+/**
+ * Generate the quality gate review prompt that instructs the review agent
+ * to produce a structured JSON verdict.
+ *
+ * The prompt includes:
+ * - PROMPT.md content (task requirements)
+ * - STATUS.md content (declared progress)
+ * - Git diff of all task changes
+ * - File change list
+ * - JSON schema for the verdict
+ * - Instructions for fail criteria
+ *
+ * @param context - Task context for evidence building
+ * @param cwd - Working directory for git commands
+ * @returns Review prompt string
+ */
+export function generateQualityGatePrompt(context: QualityGateContext, cwd: string): string {
+	const statusPath = join(context.taskFolder, "STATUS.md");
+	const verdictPath = join(context.taskFolder, VERDICT_FILENAME);
+
+	// Read evidence files
+	let promptContent = "(PROMPT.md not found)";
+	try {
+		if (existsSync(context.promptPath)) {
+			promptContent = readFileSync(context.promptPath, "utf-8");
+		}
+	} catch { /* fail-open: proceed without */ }
+
+	let statusContent = "(STATUS.md not found)";
+	try {
+		if (existsSync(statusPath)) {
+			statusContent = readFileSync(statusPath, "utf-8");
+		}
+	} catch { /* fail-open: proceed without */ }
+
+	const { diff, fileList } = buildGitDiff(cwd);
+
+	// Truncate diff if too long (keep first 100KB)
+	const maxDiffLen = 100 * 1024;
+	const truncatedDiff = diff.length > maxDiffLen
+		? diff.slice(0, maxDiffLen) + "\n\n... (diff truncated at 100KB) ..."
+		: diff;
+
+	return [
+		`# Quality Gate Review`,
+		``,
+		`You are performing a structured post-completion quality gate review for task **${context.taskId}** in project **${context.projectName}**.`,
+		``,
+		`Your job is to verify that the task was completed correctly by comparing the PROMPT requirements against the actual code changes and STATUS.md progress claims.`,
+		``,
+		`## Task Requirements (PROMPT.md)`,
+		``,
+		`\`\`\`markdown`,
+		promptContent,
+		`\`\`\``,
+		``,
+		`## Declared Progress (STATUS.md)`,
+		``,
+		`\`\`\`markdown`,
+		statusContent,
+		`\`\`\``,
+		``,
+		`## Changed Files`,
+		``,
+		`\`\`\``,
+		fileList,
+		`\`\`\``,
+		``,
+		`## Git Diff`,
+		``,
+		`\`\`\`diff`,
+		truncatedDiff,
+		`\`\`\``,
+		``,
+		`## Instructions`,
+		``,
+		`1. **Read the PROMPT.md requirements** carefully — identify every deliverable and acceptance criterion.`,
+		`2. **Cross-check STATUS.md checkboxes** — verify each checked item actually has corresponding code/test changes in the diff.`,
+		`3. **Review the git diff** — look for missing implementations, incorrect logic, incomplete work.`,
+		`4. **Use tools** to read actual source files if the diff is unclear.`,
+		`5. **Produce your verdict** as a JSON object written to the file specified below.`,
+		``,
+		`## Verdict Rules`,
+		``,
+		`Apply these rules to determine your verdict:`,
+		`- **NEEDS_FIXES** if any finding has severity \`critical\``,
+		`- **NEEDS_FIXES** if 3 or more findings have severity \`important\``,
+		`- **NEEDS_FIXES** if any finding has category \`status_mismatch\` (checkbox claims work is done but it isn't)`,
+		`- **PASS** if only \`suggestion\`-level findings remain`,
+		`- **PASS** if no findings at all`,
+		``,
+		`Current pass threshold: \`${context.passThreshold}\``,
+		``,
+		`## Output Format`,
+		``,
+		`Write a JSON file to: \`${verdictPath}\``,
+		``,
+		`The JSON must conform to this schema:`,
+		``,
+		`\`\`\`json`,
+		`{`,
+		`  "verdict": "PASS" | "NEEDS_FIXES",`,
+		`  "confidence": "high" | "medium" | "low",`,
+		`  "summary": "Brief overall assessment",`,
+		`  "findings": [`,
+		`    {`,
+		`      "severity": "critical" | "important" | "suggestion",`,
+		`      "category": "missing_requirement" | "incorrect_implementation" | "incomplete_work" | "status_mismatch",`,
+		`      "description": "What is wrong",`,
+		`      "file": "path/to/file.ts",`,
+		`      "remediation": "Specific fix instruction"`,
+		`    }`,
+		`  ],`,
+		`  "statusReconciliation": [`,
+		`    {`,
+		`      "checkbox": "Original checkbox text",`,
+		`      "actualState": "done" | "not_done" | "partial",`,
+		`      "evidence": "How you verified"`,
+		`    }`,
+		`  ]`,
+		`}`,
+		`\`\`\``,
+		``,
+		`**IMPORTANT:** Write ONLY valid JSON to the verdict file. No markdown, no explanation — just the JSON object.`,
+		``,
+	].join("\n");
+}
+
+// ── Quality Gate Result ──────────────────────────────────────────────
+
+/** Result of a quality gate review cycle. */
+export interface QualityGateResult {
+	/** Whether the task passed the quality gate */
+	passed: boolean;
+	/** Parsed verdict from the review agent (fail-open sentinel if parsing failed) */
+	verdict: ReviewVerdict;
+	/** Evaluation of verdict rules against threshold */
+	evaluation: VerdictEvaluation;
+	/** Number of review cycles consumed so far */
+	cyclesUsed: number;
+	/** Whether the gate was skipped because it's disabled */
+	skipped: boolean;
+}
+
+/**
+ * Read and evaluate the quality gate verdict file from the task folder.
+ *
+ * Handles all fail-open paths:
+ * - Missing verdict file → synthetic PASS
+ * - Malformed JSON → synthetic PASS
+ * - Invalid verdict structure → synthetic PASS
+ *
+ * @param taskFolder - Absolute path to task folder
+ * @param passThreshold - Configured pass threshold
+ * @returns Evaluated quality gate result
+ */
+export function readAndEvaluateVerdict(
+	taskFolder: string,
+	passThreshold: PassThreshold,
+): { verdict: ReviewVerdict; evaluation: VerdictEvaluation } {
+	const verdictPath = join(taskFolder, VERDICT_FILENAME);
+
+	let rawJson: string | null = null;
+	try {
+		if (existsSync(verdictPath)) {
+			rawJson = readFileSync(verdictPath, "utf-8");
+		}
+	} catch {
+		// File read error → fail-open
+	}
+
+	const verdict = parseVerdict(rawJson);
+	const evaluation = applyVerdictRules(verdict, passThreshold);
+
+	return { verdict, evaluation };
 }

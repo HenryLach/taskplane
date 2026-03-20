@@ -32,6 +32,15 @@ import { loadWorkspaceConfig, resolvePointer } from "./taskplane/workspace.ts";
 import type { PointerResolution } from "./taskplane/types.ts";
 import { classifyExit } from "./taskplane/diagnostics.ts";
 import type { TaskExitDiagnostic, ExitSummary } from "./taskplane/diagnostics.ts";
+import {
+	generateQualityGatePrompt,
+	readAndEvaluateVerdict,
+	VERDICT_FILENAME,
+	type QualityGateContext,
+	type QualityGateResult,
+	type ReviewVerdict,
+	type VerdictEvaluation,
+} from "./taskplane/quality-gate.ts";
 
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -1905,11 +1914,70 @@ export default function (pi: ExtensionAPI) {
 			if (state.phase === "error" || state.phase === "paused") return;
 		}
 
-		// All done
-		const donePath = join(task.taskFolder, ".DONE");
-		writeFileSync(donePath, `Completed: ${new Date().toISOString()}\nTask: ${task.taskId}\n`);
-		updateStatusField(statusPath, "Status", "✅ Complete");
-		logExecution(statusPath, "Task complete", ".DONE created");
+		// All steps done — run quality gate if enabled, then create .DONE
+		if (config.quality_gate.enabled) {
+			// ── Quality Gate Enabled ─────────────────────────────────
+			// Run structured review cycles. .DONE only created after PASS.
+			const maxReviewCycles = config.quality_gate.max_review_cycles;
+			const maxFixCycles = config.quality_gate.max_fix_cycles;
+			let reviewCycle = 0;
+			let gatePassed = false;
+
+			logExecution(statusPath, "Quality gate", `Enabled (threshold: ${config.quality_gate.pass_threshold}, max reviews: ${maxReviewCycles}, max fixes: ${maxFixCycles})`);
+
+			while (reviewCycle < maxReviewCycles) {
+				reviewCycle++;
+				const result = await doQualityGateReview(ctx, reviewCycle);
+
+				if (result.passed) {
+					gatePassed = true;
+					break;
+				}
+
+				// NEEDS_FIXES — check if we can still do a fix cycle
+				if (reviewCycle >= maxReviewCycles) {
+					// No more review cycles — fail
+					break;
+				}
+
+				const fixCyclesUsed = reviewCycle - 1; // first review doesn't consume a fix cycle
+				if (fixCyclesUsed >= maxFixCycles) {
+					// No more fix cycles allowed
+					logExecution(statusPath, "Quality gate", `Max fix cycles (${maxFixCycles}) exhausted`);
+					break;
+				}
+
+				// Remediation will be implemented in Step 3 — for now,
+				// mark that we need fixes and break to fail the gate.
+				// Step 3 will add: write REVIEW_FEEDBACK.md, spawn fix agent,
+				// then loop back to re-review.
+				logExecution(statusPath, "Quality gate", `NEEDS_FIXES — remediation pending (Step 3)`);
+				break;
+			}
+
+			if (gatePassed) {
+				// PASS → create .DONE
+				const donePath = join(task.taskFolder, ".DONE");
+				writeFileSync(donePath, `Completed: ${new Date().toISOString()}\nTask: ${task.taskId}\nQuality gate: PASS (cycle ${reviewCycle})\n`);
+				updateStatusField(statusPath, "Status", "✅ Complete");
+				logExecution(statusPath, "Task complete", `.DONE created (quality gate PASS, cycle ${reviewCycle})`);
+			} else {
+				// Gate failed — do NOT create .DONE
+				state.phase = "error";
+				updateStatusField(statusPath, "Status", "❌ Quality gate failed");
+				logExecution(statusPath, "Quality gate failed", `Task did not pass after ${reviewCycle} review cycle(s)`);
+				ctx.ui.notify(`❌ Quality gate failed after ${reviewCycle} review cycle(s). .DONE not created.`, "error");
+				updateWidgets();
+				return;
+			}
+		} else {
+			// ── Quality Gate Disabled (default) ──────────────────────
+			// Unchanged behavior — create .DONE immediately.
+			const donePath = join(task.taskFolder, ".DONE");
+			writeFileSync(donePath, `Completed: ${new Date().toISOString()}\nTask: ${task.taskId}\n`);
+			updateStatusField(statusPath, "Status", "✅ Complete");
+			logExecution(statusPath, "Task complete", ".DONE created");
+		}
 
 		// Auto-archive: move task folder to tasks/archive/.
 		// In orchestrated runs, do NOT archive here — the orchestrator polls
@@ -2434,6 +2502,178 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify(`Review R${num} (${type} Step ${step.number}): ${verdict}`, verdict === "APPROVE" ? "success" : "warning");
 
 		return verdict;
+	}
+
+	// ── Quality Gate ─────────────────────────────────────────────────
+
+	/**
+	 * Run a single quality gate review cycle.
+	 *
+	 * Spawns a review agent with a structured prompt that includes task evidence
+	 * (PROMPT.md, STATUS.md, git diff, file list). The agent writes a JSON verdict
+	 * to REVIEW_VERDICT.json in the task folder. This function reads/parses that
+	 * file and applies verdict rules.
+	 *
+	 * Fail-open on all error paths:
+	 * - Agent crash / non-zero exit → synthetic PASS
+	 * - Missing verdict file → synthetic PASS
+	 * - Malformed JSON → synthetic PASS
+	 *
+	 * @param ctx - Extension context
+	 * @param cycleNum - Current review cycle number (1-based)
+	 * @returns Quality gate result with pass/fail, verdict, and evaluation
+	 */
+	async function doQualityGateReview(ctx: ExtensionContext, cycleNum: number): Promise<QualityGateResult> {
+		if (!state.task || !state.config) {
+			return {
+				passed: true, skipped: true, cyclesUsed: cycleNum,
+				verdict: { verdict: "PASS", confidence: "low", summary: "No task/config — skipped", findings: [], statusReconciliation: [] },
+				evaluation: { pass: true, failReasons: [] },
+			};
+		}
+
+		const task = state.task;
+		const config = state.config;
+		const statusPath = join(task.taskFolder, "STATUS.md");
+
+		// Delete any previous verdict file so we can detect agent failure
+		const verdictPath = join(task.taskFolder, VERDICT_FILENAME);
+		try { if (existsSync(verdictPath)) unlinkSync(verdictPath); } catch { /* ignore */ }
+
+		// Build the quality gate context and prompt
+		const gateContext: QualityGateContext = {
+			taskFolder: task.taskFolder,
+			promptPath: task.promptPath,
+			taskId: task.taskId,
+			projectName: config.project.name,
+			passThreshold: config.quality_gate.pass_threshold,
+		};
+
+		const prompt = generateQualityGatePrompt(gateContext, ctx.cwd);
+
+		// Determine review model with fallback chain:
+		// quality_gate.review_model → reviewer.model → agent def → default
+		const reviewerDef = loadAgentDef(ctx.cwd, "task-reviewer");
+		const reviewModel = config.quality_gate.review_model
+			|| config.reviewer.model
+			|| reviewerDef?.model
+			|| "openai/gpt-5.3-codex";
+
+		const reviewerPrompt = reviewerDef?.systemPrompt
+			|| "You are a quality gate reviewer. Read the review request and write your JSON verdict to the specified file.";
+		const systemPrompt = reviewerPrompt + "\n\n" + buildProjectContext(config, task.taskFolder);
+
+		// Update UI state
+		state.reviewerStatus = "running";
+		state.reviewerType = `quality-gate cycle ${cycleNum}`;
+		state.reviewerElapsed = 0;
+		state.reviewerLastTool = "";
+		updateWidgets();
+
+		const startTime = Date.now();
+		state.reviewerTimer = setInterval(() => {
+			state.reviewerElapsed = Date.now() - startTime;
+			updateWidgets();
+		}, 1000);
+
+		logExecution(statusPath, `Quality gate`, `Starting review cycle ${cycleNum}`);
+
+		const spawnMode = getSpawnMode(config);
+		let reviewPromise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>;
+
+		try {
+			if (spawnMode === "tmux") {
+				const sessionName = `${getTmuxPrefix()}-qg-reviewer`;
+				const spawned = spawnAgentTmux({
+					sessionName,
+					cwd: ctx.cwd,
+					systemPrompt,
+					prompt,
+					model: reviewModel,
+					tools: config.reviewer.tools || reviewerDef?.tools || "read,write,bash,grep,find,ls",
+					thinking: config.reviewer.thinking || "on",
+					taskId: task.taskId,
+				});
+				reviewPromise = spawned.promise;
+				state.reviewerProc = { kill: spawned.kill };
+			} else {
+				const spawned = spawnAgent({
+					model: reviewModel,
+					tools: config.reviewer.tools || reviewerDef?.tools || "read,write,bash,grep,find,ls",
+					thinking: config.reviewer.thinking || "on",
+					systemPrompt,
+					prompt,
+					onToolCall: (toolName, args) => {
+						const path = args?.path || args?.command || "";
+						const shortPath = typeof path === "string" && path.length > 40
+							? "..." + path.slice(-37) : path;
+						state.reviewerLastTool = `${toolName} ${shortPath}`.trim();
+						updateWidgets();
+					},
+				});
+				reviewPromise = spawned.promise;
+				state.reviewerProc = { kill: spawned.kill };
+			}
+
+			const result = await reviewPromise;
+
+			clearInterval(state.reviewerTimer);
+			state.reviewerElapsed = Date.now() - startTime;
+			state.reviewerStatus = result.exitCode === 0 ? "done" : "error";
+			state.reviewerProc = null;
+			updateWidgets();
+
+			// If agent exited non-zero, fail-open
+			if (result.exitCode !== 0) {
+				logExecution(statusPath, `Quality gate`, `Review agent exited with code ${result.exitCode} — fail-open → PASS`);
+				ctx.ui.notify(`Quality gate: review agent error (exit ${result.exitCode}) — fail-open PASS`, "warning");
+				return {
+					passed: true, skipped: false, cyclesUsed: cycleNum,
+					verdict: { verdict: "PASS", confidence: "low", summary: `Review agent exited with code ${result.exitCode} — fail-open`, findings: [], statusReconciliation: [] },
+					evaluation: { pass: true, failReasons: [] },
+				};
+			}
+		} catch (err: any) {
+			// Agent crash — fail-open
+			clearInterval(state.reviewerTimer);
+			state.reviewerStatus = "error";
+			state.reviewerProc = null;
+			updateWidgets();
+
+			logExecution(statusPath, `Quality gate`, `Review agent crashed: ${err?.message || err} — fail-open → PASS`);
+			ctx.ui.notify(`Quality gate: review agent crashed — fail-open PASS`, "warning");
+			return {
+				passed: true, skipped: false, cyclesUsed: cycleNum,
+				verdict: { verdict: "PASS", confidence: "low", summary: `Review agent crashed — fail-open`, findings: [], statusReconciliation: [] },
+				evaluation: { pass: true, failReasons: [] },
+			};
+		}
+
+		// Read and evaluate the verdict file
+		const { verdict, evaluation } = readAndEvaluateVerdict(
+			task.taskFolder,
+			config.quality_gate.pass_threshold,
+		);
+
+		const passed = evaluation.pass;
+		const verdictLabel = passed ? "PASS" : "NEEDS_FIXES";
+		const findingsSummary = verdict.findings.length > 0
+			? ` (${verdict.findings.length} findings: ${verdict.findings.filter(f => f.severity === "critical").length}C/${verdict.findings.filter(f => f.severity === "important").length}I/${verdict.findings.filter(f => f.severity === "suggestion").length}S)`
+			: "";
+
+		logExecution(statusPath, `Quality gate`, `Cycle ${cycleNum}: ${verdictLabel}${findingsSummary}`);
+		ctx.ui.notify(
+			`Quality gate cycle ${cycleNum}: ${verdictLabel}${findingsSummary}`,
+			passed ? "success" : "warning",
+		);
+
+		return {
+			passed,
+			skipped: false,
+			cyclesUsed: cycleNum,
+			verdict,
+			evaluation,
+		};
 	}
 
 	// ── Commands ─────────────────────────────────────────────────────

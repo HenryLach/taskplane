@@ -3,18 +3,18 @@
 ### Verdict: APPROVE
 
 ### Summary
-Step 1 is implemented cleanly and aligns with the task outcomes: quality-gate config is added end-to-end (schema/defaults → loader mapping → task-runner adapter), and a dedicated `quality-gate.ts` module introduces structured verdict types plus parsing/evaluation helpers. The new tests cover defaults, YAML/JSON mapping, fail-open parsing, and core verdict-rule behavior. I ran the targeted suite (`tests/quality-gate.test.ts` and `tests/project-config-loader.test.ts`), and both pass.
+The Step 1 implementation cleanly introduces the quality gate configuration contract, verdict schema types, and parsing/evaluation helpers without regressing existing behavior. The new `qualityGate` defaults are wired end-to-end through schema defaults, YAML/JSON loading, adapter mapping, and task-runner `TaskConfig` shape. Test coverage for both config propagation and verdict logic is strong, and the full extension test suite passes.
 
 ### Issues Found
-1. **[extensions/taskplane/quality-gate.ts:217,224,228,236] [minor]** — Fail-open returns use shallow spreads of `FAIL_OPEN_VERDICT`, so `findings`/`statusReconciliation` arrays are shared references. If a caller mutates a fail-open result, it can leak state across subsequent parses. **Fix:** return fresh arrays on each fail-open path (e.g., helper `makeFailOpenVerdict(summary)` that constructs new arrays).
+1. **[N/A] [minor]** No blocking issues found in this step.
 
 ### Pattern Violations
-- None blocking.
+- None identified.
 
 ### Test Gaps
-- Add a regression test that mutates a fail-open parse result, then calls `parseVerdict()` again and asserts arrays are still empty/fresh.
-- Add a config-loader test for invalid `pass_threshold` input behavior (explicit fallback or explicit acceptance), so runtime behavior is documented by test.
+- No critical gaps for Step 1 scope.
 
 ### Suggestions
-- `extensions/taskplane/config-schema.ts` header mapping comment could be updated to include `quality_gate → taskRunner.qualityGate` for completeness.
-- `extensions/tests/quality-gate.test.ts:25` imports `VerdictEvaluation` but does not use it; optional cleanup.
+- Optionally add a small test asserting `all_clear` fails on `important` findings (currently `suggestion` and `critical` paths are covered indirectly).
+- In a follow-up cleanup, update the top-of-file mapping comment in `extensions/taskplane/config-schema.ts` to include `quality_gate → taskRunner.qualityGate` for documentation completeness.
+
