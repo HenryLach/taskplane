@@ -4,7 +4,7 @@
  */
 import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdirSync, rmSync } from "fs";
 import { execSync, spawnSync } from "child_process";
-import { join, dirname } from "path";
+import { join, dirname, resolve, relative } from "path";
 
 import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
@@ -1208,47 +1208,75 @@ export function mergeWave(
 	}
 
 	// ── Stage workspace task artifacts into merge worktree ──────────
-	// In workspace mode, workers write .DONE and STATUS.md to the canonical
-	// task folder (e.g., shared-libs/task-management/...) which is the repo's
-	// checked-out working tree (develop). These files need to be on the orch
-	// branch, not develop. Copy them into the merge worktree (which is on the
-	// orch branch's temp) and commit, so they're included in the update-ref.
+	// TP-035: Tightened artifact staging — only allowlisted task-owned files
+	// are staged. The allowlist is derived per-task-folder from completed lanes:
+	// exactly `.DONE`, `STATUS.md`, and `REVIEW_VERDICT.json` (when present).
+	// Files outside known task folders, worktree internals, and repo-escape
+	// paths are rejected. Uses resolve+relative path containment consistent
+	// with ensureTaskFilesCommitted() in execution.ts.
 	if (mergeWorkDir) {
-		const statusResult = spawnSync("git", ["status", "--porcelain"], { cwd: repoRoot, encoding: "utf-8" });
-		if (statusResult.status === 0 && statusResult.stdout) {
-			const lines = statusResult.stdout.split("\n").filter((l: string) => l.trim());
-			const artifactFiles = lines
-				.map((l: string) => l.slice(3).trim())
-				.filter((f: string) =>
-					(f.endsWith(".DONE") || f.endsWith("STATUS.md")) &&
-					!f.includes(".worktrees/"),  // Never stage worktree internals
-				);
+		// Build the set of allowed artifact paths (repo-root-relative) from
+		// the completed lanes' task folders.
+		const ALLOWED_ARTIFACT_NAMES = [".DONE", "STATUS.md", "REVIEW_VERDICT.json"];
+		const resolvedRepoRoot = resolve(repoRoot);
+		const allowedRelPaths = new Set<string>();
 
-			if (artifactFiles.length > 0) {
-				let staged = 0;
-				for (const file of artifactFiles) {
-					const srcPath = join(repoRoot, file);
-					const destPath = join(mergeWorkDir, file);
-					try {
-						if (existsSync(srcPath)) {
-							mkdirSync(dirname(destPath), { recursive: true });
-							copyFileSync(srcPath, destPath);
-							spawnSync("git", ["add", file], { cwd: mergeWorkDir });
-							staged++;
-						}
-					} catch { /* best effort */ }
+		for (const lane of orderedLanes) {
+			for (const allocTask of lane.tasks) {
+				const absFolder = resolve(allocTask.task.taskFolder);
+				const relFolder = relative(resolvedRepoRoot, absFolder).replace(/\\/g, "/");
+
+				// Reject paths that escape the repo root
+				if (relFolder.startsWith("..") || relFolder.startsWith("/")) {
+					execLog("merge", `W${waveIndex}`, `skipping task folder outside repo root`, {
+						taskId: allocTask.taskId,
+						folder: relFolder,
+					});
+					continue;
 				}
-				if (staged > 0) {
-					spawnSync("git", ["commit", "-m", `checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md)`], { cwd: mergeWorkDir });
-					execLog("merge", `W${waveIndex}`, `committed ${staged} task artifact(s) to merge worktree`);
 
-					// Keep both .DONE and STATUS.md in develop's working tree:
-					// - STATUS.md: dashboard reads current progress from canonical path
-					// - .DONE: harmless untracked files, cleaned up by /orch-integrate stash
-					// Previous approach of deleting .DONE caused them to be missing
-					// after ff integration (git couldn't reliably restore them).
+				for (const name of ALLOWED_ARTIFACT_NAMES) {
+					allowedRelPaths.add(`${relFolder}/${name}`);
 				}
 			}
+		}
+
+		if (allowedRelPaths.size > 0) {
+			let staged = 0;
+			let skipped = 0;
+
+			for (const relPath of allowedRelPaths) {
+				const srcPath = join(repoRoot, relPath);
+				if (!existsSync(srcPath)) continue; // File not present (e.g., no REVIEW_VERDICT.json) — skip silently
+
+				const destPath = join(mergeWorkDir, relPath);
+				try {
+					mkdirSync(dirname(destPath), { recursive: true });
+					copyFileSync(srcPath, destPath);
+					// Use pathspec-safe staging with -- separator
+					spawnSync("git", ["add", "--", relPath], { cwd: mergeWorkDir });
+					staged++;
+				} catch {
+					skipped++;
+					execLog("merge", `W${waveIndex}`, `failed to stage artifact`, { path: relPath });
+				}
+			}
+
+			if (staged > 0) {
+				spawnSync("git", ["commit", "-m", `checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md, REVIEW_VERDICT.json)`], { cwd: mergeWorkDir });
+				execLog("merge", `W${waveIndex}`, `committed ${staged} task artifact(s) to merge worktree`, {
+					skipped,
+					allowedCandidates: allowedRelPaths.size,
+				});
+			} else {
+				execLog("merge", `W${waveIndex}`, `no task artifacts to stage (0 of ${allowedRelPaths.size} candidates present/changed)`);
+			}
+
+			// Keep both .DONE and STATUS.md in develop's working tree:
+			// - STATUS.md: dashboard reads current progress from canonical path
+			// - .DONE: harmless untracked files, cleaned up by /orch-integrate stash
+			// Previous approach of deleting .DONE caused them to be missing
+			// after ff integration (git couldn't reliably restore them).
 		}
 	}
 

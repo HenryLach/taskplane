@@ -29,9 +29,9 @@
 ---
 
 ### Step 2: Tighten Artifact Staging Scope
-**Status:** 🟨 In Progress
-- [ ] Refactor artifact staging in merge.ts to use per-task-folder allowlist (`.DONE`, `STATUS.md`, `REVIEW_VERDICT.json`) with resolve+relative path containment (reject `..` escapes), operator logging for skipped candidates, and no-op when no allowlisted artifacts changed
-- [ ] Add REVIEW_VERDICT.json to the known artifact filenames alongside .DONE and STATUS.md (stage only when present)
+**Status:** ✅ Complete
+- [x] Refactor artifact staging in merge.ts to use per-task-folder allowlist (`.DONE`, `STATUS.md`, `REVIEW_VERDICT.json`) with resolve+relative path containment (reject `..` escapes), operator logging for skipped candidates, and no-op when no allowlisted artifacts changed
+- [x] Add REVIEW_VERDICT.json to the known artifact filenames alongside .DONE and STATUS.md (stage only when present)
 
 ---
 
@@ -64,6 +64,7 @@
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -94,6 +95,10 @@
 | 2026-03-20 05:53 | Step 1 complete | STATUS.md Reconciliation |
 | 2026-03-20 05:53 | Step 2 started | Tighten Artifact Staging Scope |
 | 2026-03-20 05:56 | Review R003 | plan Step 2: REVISE |
+| 2026-03-20 05:57 | Worker iter 2 | done in 449s, ctx: 28%, tools: 60 |
+| 2026-03-20 05:57 | Step 1 complete | STATUS.md Reconciliation |
+| 2026-03-20 05:57 | Step 2 started | Tighten Artifact Staging Scope |
+| 2026-03-20 05:59 | Review R003 | plan Step 2: APPROVE |
 
 ## Blockers
 
