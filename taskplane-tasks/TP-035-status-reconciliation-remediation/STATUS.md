@@ -1,11 +1,11 @@
 # TP-035: STATUS.md Reconciliation & Artifact Staging Scope — Status
 
-**Current Step:** Step 1: STATUS.md Reconciliation
+**Current Step:** Step 2: Tighten Artifact Staging Scope
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
-**Review Counter:** 2
-**Iteration:** 2
+**Review Counter:** 3
+**Iteration:** 3
 **Size:** S
 
 ---
@@ -29,10 +29,9 @@
 ---
 
 ### Step 2: Tighten Artifact Staging Scope
-**Status:** ⬜ Not Started
-- [ ] Allowlist task-owned files only
-- [ ] Reject non-task files
-- [ ] Extend .worktrees/ exclusion to general policy
+**Status:** 🟨 In Progress
+- [ ] Refactor artifact staging in merge.ts to use per-task-folder allowlist (`.DONE`, `STATUS.md`, `REVIEW_VERDICT.json`) with resolve+relative path containment (reject `..` escapes), operator logging for skipped candidates, and no-op when no allowlisted artifacts changed
+- [ ] Add REVIEW_VERDICT.json to the known artifact filenames alongside .DONE and STATUS.md (stage only when present)
 
 ---
 
@@ -64,6 +63,7 @@
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -90,6 +90,10 @@
 | 2026-03-20 05:46 | Step 1 started | STATUS.md Reconciliation |
 | 2026-03-20 05:49 | Review R002 | plan Step 1: REVISE |
 | 2026-03-20 05:50 | Review R002 | plan Step 1: REVISE |
+| 2026-03-20 05:53 | Worker iter 2 | done in 277s, ctx: 22%, tools: 35 |
+| 2026-03-20 05:53 | Step 1 complete | STATUS.md Reconciliation |
+| 2026-03-20 05:53 | Step 2 started | Tighten Artifact Staging Scope |
+| 2026-03-20 05:56 | Review R003 | plan Step 2: REVISE |
 
 ## Blockers
 
