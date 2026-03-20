@@ -1,11 +1,11 @@
 # TP-027: Dashboard Real-Time Telemetry — Status
 
 **Current Step:** Step 4: Documentation & Delivery
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
-**Review Counter:** 5
-**Iteration:** 5
+**Review Counter:** 4
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -50,15 +50,15 @@
 - [x] API contract: Create mock telemetry JSONL + batch-state, verify buildDashboardState() returns `telemetry` and `batchTotalCost` fields with correct values (retry lifecycle, compaction count, cost dedup)
 - [x] Fallback/edge cases: Verify graceful behavior with missing .pi/telemetry/, malformed JSONL lines, file deletion mid-read, and pre-RPC sessions (no telemetry files)
 - [x] Full test suite: `cd extensions && npx vitest run` passes with zero failures (32 files, 1321 tests)
-- [x] Fix any issues discovered during verification (no issues found — all tests pass)
+- [x] Fix any issues discovered during verification (fixed: telemetry accumulators were not persisted across poll ticks — added module-level telemetryAccumulators Map + telemetryPrefixFiles for file rotation detection)
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 
-- [x] Docs updated if needed (no changes needed — dashboard is self-documenting, commands.md dashboard section documents CLI flags not UI content)
-- [x] `.DONE` created
+- [ ] Docs updated if needed
+- [ ] `.DONE` created
 
 ---
 
@@ -73,7 +73,6 @@
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
 | R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
-| R005 | plan | Step 4 | APPROVE | .reviews/R005-plan-step4.md |
 |---|------|------|---------|------|
 
 ---
@@ -127,7 +126,9 @@
 | 2026-03-20 02:53 | Step 3 started | Testing & Verification |
 | 2026-03-20 02:53 | Review R004 | plan Step 3: REVISE |
 | 2026-03-20 02:54 | Review R004 | plan Step 3: REVISE |
-| 2026-03-20 03:02 | Review R005 | plan Step 4: APPROVE |
+| 2026-03-20 03:00 | Worker iter 4 | done in 440s, ctx: 30%, tools: 28 |
+| 2026-03-20 03:00 | Step 3 complete | Testing & Verification |
+| 2026-03-20 03:00 | Step 4 started | Documentation & Delivery |
 
 ---
 
