@@ -1,20 +1,20 @@
 # TP-033: Transactional Merge Envelope & Retry Matrix — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-19
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** L
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read merge flow end-to-end
-- [ ] Read v3 state retry fields
-- [ ] Read roadmap Phase 4 sections
+**Status:** ✅ Complete
+- [x] Read merge flow end-to-end
+- [x] Read v3 state retry fields
+- [x] Read roadmap Phase 4 sections
 
 ---
 
@@ -58,18 +58,26 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| TP-032 already captures `preLaneHead` and rolls back on `verification_new_failure` with `blockAdvancement` flag. TP-033 must formalize this into a transaction record with `laneHEAD` and `mergedHEAD`, add safe-stop semantics (force `paused` + preserve all state + emit recovery commands), and persist the transaction record JSON. | Inform Step 1 design | `extensions/taskplane/merge.ts:420-480` |
+| `ResilienceState.retryCountByScope` already exists in v3 types, keyed by `{taskId}:w{waveIndex}:l{laneNumber}`. PROMPT specifies `{repoId}:w{N}:l{K}` scoping. Must align scope key format with the roadmap's `(repoId, wave, lane)` tuple. | Inform Step 2 design | `extensions/taskplane/types.ts` |
+| Retry policy matrix from roadmap §4c defines 15 failure classes. Only merge-related classes are in scope for TP-033: `verification_new_failure`, `merge_conflict_unresolved`, `cleanup_post_merge_failed`, `git_worktree_dirty`, `git_lock_file`. Task-level classes (api_error, context_overflow, etc.) are Phase 1/3 concerns. | Scope clarification | Roadmap §4c |
 
 ## Execution Log
 
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-19 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-20 12:13 | Task started | Extension-driven execution |
+| 2026-03-20 12:13 | Step 0 started | Preflight |
+| 2026-03-20 12:14 | Review R001 | plan Step 0: APPROVE |
+| 2026-03-20 | Step 0 complete | Read merge.ts (1770 lines), engine.ts (580 lines), types.ts (2257 lines), roadmap Phase 4 §4b/§4c. Identified TP-032 overlap, scope key format alignment needed, merge-related retry classes scoped. |
 
 ## Blockers
 
