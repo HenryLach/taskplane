@@ -22,6 +22,7 @@ new features.
 | Document | Description |
 |----------|-------------|
 | [taskplane/resilience-and-diagnostics-roadmap.md](taskplane/resilience-and-diagnostics-roadmap.md) | Consolidated roadmap for diagnostics, recovery, verification, and quality gates (Phases 1-6) |
+| [taskplane/watchdog-and-recovery-tiers.md](taskplane/watchdog-and-recovery-tiers.md) | Tiered watchdog design: Tier 0 (deterministic recovery), Tier 1 (bounded LLM triage), Tier 2 (fleet patrol agent) |
 | [taskplane/polyrepo-workspace-implementation.md](taskplane/polyrepo-workspace-implementation.md) | Polyrepo workspace architecture, bug history, smoke test checklist |
 | [orch-managed-branch-spec.md](orch-managed-branch-spec.md) | Design for `orch/{opId}-{batchId}` branch model and `/orch-integrate` |
 | [settings-and-onboarding-spec.md](settings-and-onboarding-spec.md) | JSON config, pointer resolution, `/taskplane-settings` TUI, `init` v2 |

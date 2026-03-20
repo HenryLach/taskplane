@@ -15,8 +15,8 @@ This design keeps shipped code upgradeable while keeping project behavior custom
                          User Project
 ┌─────────────────────────────────────────────────────────────────┐
 │                                                                 │
-│  .pi/task-runner.yaml      .pi/task-orchestrator.yaml          │
-│  .pi/agents/*.md           task folders (PROMPT.md/STATUS.md)  │
+│  .pi/taskplane-config.json    .pi/agents/*.md                  │
+│  task folders (PROMPT.md / STATUS.md / .DONE)                  │
 │                                                                 │
 │         ┌───────────────────────┐                               │
 │         │      pi session       │                               │
@@ -27,7 +27,10 @@ This design keeps shipped code upgradeable while keeping project behavior custom
 │                     │                                           │
 │                     │ spawns workers/reviewers/mergers          │
 │                     ▼                                           │
-│              git worktrees + lane sessions                      │
+│       orch branch (orch/{opId}-{batchId})                      │
+│       ├── lane worktrees + tmux sessions                       │
+│       ├── merge worktrees (per wave)                           │
+│       └── /orch-integrate → user's working branch              │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 
@@ -113,10 +116,14 @@ Upgraded by `pi update`.
 
 Created by `taskplane init`:
 
-- `.pi/task-runner.yaml`
-- `.pi/task-orchestrator.yaml`
-- `.pi/agents/*.md`
+- `.pi/taskplane-config.json` — unified project configuration (JSON, camelCase keys)
+- `.pi/agents/*.md` — agent system prompts
 - task directories (`PROMPT.md`, `STATUS.md`, area `CONTEXT.md`)
+
+Legacy `.pi/task-runner.yaml` and `.pi/task-orchestrator.yaml` are still supported
+as fallback but `taskplane-config.json` takes precedence when present.
+
+User preferences in `~/.pi/agent/taskplane/preferences.json` override project config.
 
 Customized per repository.
 
@@ -125,7 +132,7 @@ Customized per repository.
 ## Data and control flow
 
 1. User invokes command in pi (`/task` or `/orch*`)
-2. Extension loads config from `.pi/*.yaml`
+2. Extension loads config from `.pi/taskplane-config.json` (or YAML fallback)
 3. Runner/orchestrator performs execution
 4. Progress is persisted to files (`STATUS.md`, `.DONE`, `.pi/batch-state.json`, lane sidecars)
 5. Dashboard reads persisted/sidecar state for live visualization

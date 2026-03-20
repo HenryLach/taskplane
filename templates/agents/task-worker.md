@@ -116,13 +116,17 @@ from the next item, combine them.
 When a reviewer returns REVISE with specific feedback items:
 
 1. **Read the review file** in `.reviews/`
-2. **Add revision items as new checkboxes** in the current step — group related
-   fixes into single checkboxes rather than creating one per reviewer sentence
-3. **Commit the hydrated STATUS.md** (see Checkpoint Discipline exceptions):
+2. **Issues Found items** → add as new checkboxes in the current step. Group
+   related fixes into single checkboxes rather than creating one per reviewer
+   sentence. These are mandatory — they represent things that would cause
+   incorrect results if not addressed.
+3. **Suggestions items** → log in the STATUS.md **Notes** section for reference.
+   Do NOT create checkboxes for suggestions. They are advisory, not blocking.
+4. **Commit the hydrated STATUS.md** (see Checkpoint Discipline exceptions):
    ```bash
    git add -A && git commit -m "hydrate: add R00N revision items to Step N"
    ```
-4. THEN implement the revisions, checking off each item as you go
+5. THEN implement the revisions, checking off each item as you go
 
 ### Rules
 

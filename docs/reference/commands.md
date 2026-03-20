@@ -496,9 +496,9 @@ Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs
 
 **Mode detection:**
 
-- **Repo mode** — current directory is a git repo with no git repo subdirectories. Scaffolds config in `.pi/`.
+- **Single-repo mode** — current directory is a git repo with no git repo subdirectories. Scaffolds config in `.pi/`.
 - **Workspace mode** — current directory is not a git repo but contains git repo subdirectories. Scaffolds config in `<config-repo>/.taskplane/` and creates a pointer file.
-- **Ambiguous** — git repo with git repo subdirectories. Prompts interactively; defaults to repo mode in non-interactive modes (`--preset`, `--dry-run`).
+- **Ambiguous** — git repo with git repo subdirectories. Prompts interactively; defaults to single-repo mode in non-interactive modes (`--preset`, `--dry-run`).
 
 **Common options**
 
