@@ -1268,6 +1268,7 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 /** Expose sidecar tailing internals for testing (not part of public API). */
 export const _tailSidecarJsonl = tailSidecarJsonl;
 export const _createSidecarTailState = createSidecarTailState;
+export const _getSidecarDir = getSidecarDir;
 export type { SidecarTailState, SidecarTelemetryDelta };
 
 // ── Exit Summary & Diagnostic ────────────────────────────────────────

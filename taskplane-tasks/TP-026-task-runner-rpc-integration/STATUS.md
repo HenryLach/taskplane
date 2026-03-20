@@ -67,11 +67,9 @@
 ### Step 4: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] Verify existing TP-026 test coverage (rpc-wrapper.test.ts, sidecar-tailing.test.ts, task-runner-exit-diagnostic.test.ts) — all pass, covers command gen, sidecar tailing, exit classification, crash scenarios, persistence round-trip
-- [ ] Add workspace mode sidecar path test — verify getSidecarDir() with ORCH_SIDECAR_DIR env gives correct telemetry path
-- [ ] Add /orch subprocess path non-regression test — verify spawnAgent() is unchanged (diff guard or assertion) and pollUntilTaskComplete in execution.ts is unmodified
-- [ ] Add exitDiagnostic persistence/resume propagation test — verify exitDiagnostic survives upsert → syncFromMonitor → validate round-trip
-- [ ] Run full test suite — all pass (pre-existing failures in cleanup-resilience, worktree-lifecycle, orch-direct-implementation are TP-029, not TP-026)
+- [x] Verify existing TP-026 test coverage (rpc-wrapper.test.ts, sidecar-tailing.test.ts, task-runner-exit-diagnostic.test.ts) — all pass, covers command gen, sidecar tailing, exit classification, crash scenarios, persistence round-trip
+- [ ] Create task-runner-rpc.test.ts: (1) command-generation tests using source extraction — validate rpc-wrapper command structure with all args, deterministic pattern assertions for timestamp/random suffixes; (2) workspace telemetry path test — verify ORCH_SIDECAR_DIR env produces correct telemetry dir; (3) /orch subprocess no-regression — source-extract spawnAgent() and assert it uses `pi -p --mode json` not rpc-wrapper
+- [ ] Run full vitest suite — zero failures across all 28+ test files
 
 ---
 
