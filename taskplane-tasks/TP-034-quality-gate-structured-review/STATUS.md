@@ -78,10 +78,10 @@
 
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
-- [ ] Add `quality_gate` / `qualityGate` section to `docs/reference/configuration/task-runner.yaml.md`: field table with defaults, YAML→JSON key mappings, section mapping, and example JSON snippet
-- [ ] Update `docs/explanation/execution-model.md` to describe opt-in quality gate between step completion and .DONE creation
-- [ ] Assess `docs/reference/status-format.md` — record rationale if no changes needed (REVIEW_VERDICT.json is a task-folder artifact, not a STATUS.md field)
-- [ ] Final doc/code consistency check: defaults, threshold semantics, fail-open match implementation
+- [x] Add `quality_gate` / `qualityGate` section to `docs/reference/configuration/task-runner.yaml.md`: field table with defaults, YAML→JSON key mappings, section mapping, and example JSON snippet
+- [x] Update `docs/explanation/execution-model.md` to describe opt-in quality gate between step completion and .DONE creation
+- [x] Assess `docs/reference/status-format.md` — no changes needed: REVIEW_VERDICT.json and REVIEW_FEEDBACK.md are task-folder artifacts (like .DONE), not STATUS.md fields; quality gate logs to existing execution log table, adds no new STATUS.md sections or header fields
+- [x] Final doc/code consistency check: defaults, threshold semantics, fail-open match implementation (fixed no_important doc to say "fewer than 3 important" matching code; added status_mismatch note)
 - [ ] `.DONE` created
 
 ---
