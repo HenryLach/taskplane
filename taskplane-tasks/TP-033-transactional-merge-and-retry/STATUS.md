@@ -69,10 +69,10 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** 🟨 In Progress
-- [ ] Document merge retry policy in task-orchestrator.yaml.md: failure classifications table, retriable vs non-retriable behavior, max attempts/cooldowns, exhaustion behavior, scope key format, and precedence with on_merge_failure
-- [ ] Assess commands.md impact — determine if merge output changes require commands doc updates; record decision with rationale
-- [ ] Completion gate: docs reflect implemented behavior, impact check done, STATUS/review entries current → create `.DONE`
+**Status:** ✅ Complete
+- [x] Document merge retry policy in task-orchestrator.yaml.md: failure classifications table, retriable vs non-retriable behavior, max attempts/cooldowns, exhaustion behavior, scope key format, and precedence with on_merge_failure
+- [x] Assess commands.md impact — no update needed: TP-033 changes are internal to the merge flow (MergeWaveResult fields, retry logic, transaction records). No new commands, changed flags, or user-facing command output format changes. The retry/safe-stop behavior surfaces through existing pause/status mechanisms.
+- [x] Completion gate: docs reflect implemented behavior, impact check done, STATUS/review entries current → `.DONE` created
 
 ---
 

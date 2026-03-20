@@ -85,6 +85,40 @@ verification:
 | `failure.max_worker_minutes` | number | `30` | Max worker runtime budget per task in orchestrated mode. |
 | `failure.abort_grace_period` | number | `60` | Graceful abort wait time (seconds) before forced termination. |
 
+#### Merge retry policy matrix
+
+When a merge fails, the orchestrator classifies the failure and consults a built-in retry policy matrix before applying the `on_merge_failure` policy. Retriable failures are automatically retried up to the class-specific limit; non-retriable failures immediately trigger pause or abort per policy.
+
+| Classification | Retriable | Max attempts | Cooldown | Exhaustion action |
+|---|---|---|---|---|
+| `verification_new_failure` | ✅ | 1 | 0 ms | `pause` — diagnostic emitted |
+| `merge_conflict_unresolved` | ❌ | 0 | — | `pause` — operator escalation |
+| `cleanup_post_merge_failed` | ✅ | 1 | 2 000 ms | `pause` + wave gate (blocks next wave) |
+| `git_worktree_dirty` | ✅ | 1 | 2 000 ms | `pause` |
+| `git_lock_file` | ✅ | 2 | 3 000 ms | `pause` |
+
+**Classification descriptions:**
+
+- **`verification_new_failure`** — Post-merge verification detected genuinely new test failures (not present in the pre-merge baseline). The merge commit is rolled back to `baseHEAD` and one retry is allowed immediately.
+- **`merge_conflict_unresolved`** — Git merge produced conflicts that the merge agent could not resolve. Not retriable — requires operator intervention.
+- **`cleanup_post_merge_failed`** — Post-merge cleanup operations (worktree removal, branch deletion) failed. Retriable, but acts as a **wave gate**: the next wave cannot start until the issue is resolved.
+- **`git_worktree_dirty`** — The merge worktree had unexpected uncommitted changes. Retriable after a 2-second cooldown.
+- **`git_lock_file`** — A Git lock file (`.git/index.lock` or similar) blocked the operation. Retriable up to 2 times with 3-second cooldowns, as lock files are often transient.
+
+**Retry behavior:**
+
+1. On merge failure, the orchestrator classifies the error and looks up the policy matrix.
+2. If the class is retriable and the retry count (persisted in batch state) is below `maxAttempts`, the orchestrator waits for the cooldown period and re-invokes the merge.
+3. Retry counters are scoped by `{repoId}:w{N}:l{K}` (e.g., `api:w0:l1`). In single-repo mode, `repoId` defaults to `"default"`. Counters persist in `.pi/batch-state.json` under `resilience.retryCountByScope` and survive `/orch-resume`.
+4. On retry exhaustion (all attempts consumed), the orchestrator **forces `paused` phase** regardless of the `on_merge_failure` setting. This ensures operators always have a chance to inspect the failure — even when `on_merge_failure` is set to `"abort"`.
+5. Non-retriable classes (`merge_conflict_unresolved`) skip directly to step 4.
+
+> **Note:** The retry matrix is not configurable. The values above are built-in defaults derived from the resilience roadmap. Future releases may expose per-class overrides.
+
+**Transaction records:**
+
+Each lane merge attempt (success, failure, or rollback) produces a transaction record persisted at `.pi/verification/{opId}/txn-b{batchId}-repo-{repoId}-wave-{n}-lane-{k}.json`. These records capture `baseHEAD`, `laneHEAD`, `mergedHEAD`, rollback outcome, and recovery commands. If a rollback itself fails (safe-stop), the record includes exact `git` commands for manual recovery, and the merge worktree and temp branch are preserved.
+
 ### `monitoring`
 
 | Field | Type | Template default | Description |
