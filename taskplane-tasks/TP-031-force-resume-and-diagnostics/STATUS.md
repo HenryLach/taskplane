@@ -1,21 +1,24 @@
 # TP-031: Force-Resume Policy & Diagnostic Reports — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-19
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read resume eligibility logic
-- [ ] Read /orch-resume command handler
-- [ ] Read phase transition logic
-- [ ] Read roadmap Phase 3 sections
+**Status:** 🟨 In Progress
+- [x] Read resume eligibility logic
+- [x] Read /orch-resume command handler
+- [x] Read phase transition logic
+- [x] Read roadmap Phase 3 sections
+- [ ] Read CONTEXT.md and verify TP-030 dependency contracts (resilience/diagnostics types, persistence serialization)
+- [ ] Read messages.ts computeMergeFailurePolicy and identify merge failure phase transition insertion points
+- [ ] Record preflight findings: insertion points, force-resume contract, and resume eligibility matrix in Notes
 
 ---
 
@@ -65,6 +68,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
+| R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -77,6 +82,12 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-19 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-20 02:36 | Task started | Extension-driven execution |
+| 2026-03-20 02:36 | Step 0 started | Preflight |
+| 2026-03-20 02:36 | Task started | Extension-driven execution |
+| 2026-03-20 02:36 | Step 0 started | Preflight |
+| 2026-03-20 02:38 | Review R001 | plan Step 0: APPROVE |
+| 2026-03-20 02:38 | Review R001 | plan Step 0: REVISE |
 
 ## Blockers
 
