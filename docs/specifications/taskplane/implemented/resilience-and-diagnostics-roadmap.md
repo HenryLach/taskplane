@@ -3,7 +3,7 @@
 > **Status:** Consolidated spec — ready for task creation  
 > **Created:** 2026-03-19  
 > **Supersedes:** `resilience-architecture.md`, `lane-agent-design.md`, `tmux-telemetry-gap.md`  
-> **Related:** [polyrepo-workspace-implementation.md](polyrepo-workspace-implementation.md), [architecture](../../explanation/architecture.md)
+> **Related:** [polyrepo-workspace-implementation.md](polyrepo-workspace-implementation.md), [architecture](../../../explanation/architecture.md)
 
 ---
 

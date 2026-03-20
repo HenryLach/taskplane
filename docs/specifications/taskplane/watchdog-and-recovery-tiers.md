@@ -3,7 +3,7 @@
 > **Status:** Draft v2  
 > **Created:** 2026-03-20  
 > **Last Updated:** 2026-03-20  
-> **Related:** [resilience-and-diagnostics-roadmap.md](resilience-and-diagnostics-roadmap.md), [polyrepo-workspace-implementation.md](polyrepo-workspace-implementation.md)  
+> **Related:** [resilience-and-diagnostics-roadmap.md](implemented/resilience-and-diagnostics-roadmap.md), [polyrepo-workspace-implementation.md](implemented/polyrepo-workspace-implementation.md)  
 > **Inspired by:** [Overstory](https://github.com/jayminwest/overstory) tiered watchdog model, [Gastown](https://github.com/steveyegge/gastown) coordinator pattern
 
 ---

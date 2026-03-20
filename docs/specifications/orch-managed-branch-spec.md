@@ -3,7 +3,7 @@
 > **Status:** Ready for implementation  
 > **Created:** 2026-03-18  
 > **GitHub Issue:** #24  
-> **Related:** [resilience-architecture.md](taskplane/resilience-architecture.md), [architecture](../../docs/explanation/architecture.md)
+> **Related:** [resilience-architecture.md](taskplane/implemented/resilience-architecture.md), [architecture](../../docs/explanation/architecture.md)
 
 ---
 
