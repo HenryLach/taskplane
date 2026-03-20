@@ -4,7 +4,7 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 4
 **Size:** L
 
@@ -47,11 +47,13 @@
 ---
 
 ### Step 3: Configuration & Modes
-**Status:** ✅ Complete
+**Status:** 🔧 In Progress
 - [x] R007-1: Add VerificationConfig interface to config-schema.ts, defaults in DEFAULT_ORCHESTRATOR_SECTION, YAML→unified mapping in config-loader.ts (mapOrchestratorYaml), legacy adapter in toOrchestratorConfig, and legacy type in types.ts OrchestratorConfig
 - [x] R007-2: Wire verification.enabled as explicit feature flag — gating in merge.ts/engine.ts/resume.ts so that testing_commands presence alone does not enable fingerprinting; only `enabled: true` triggers it. Wire flakyReruns (including 0 = no reruns) through runPostMergeVerification
 - [x] R007-3: Implement strict/permissive mode behavior for baseline unavailable — strict: set failedLane + error (merge failure policy applies), permissive: log warning, continue without baseline. Precedence: verification.mode gates baseline-unavailable handling; failure.on_merge_failure gates how the resulting merge failure is handled (pause vs abort)
 - [x] R007-4: Add Step 3 decision note documenting precedence between verification.mode and failure.on_merge_failure, and behavior when enabled but commands empty
+- [ ] R008-1: Add config-loader regression tests for verification section — defaults, YAML→camelCase mapping, toOrchestratorConfig() snake_case round-trip in project-config-loader.test.ts
+- [ ] R008-2: Add merge-flow tests for verification mode behavior — (a) enabled+strict+no commands → merge failure, (b) enabled+permissive+no commands → continues, (c) enabled=false → no baseline capture, (d) flakyReruns=0 → no rerun attempt
 
 ---
 
@@ -89,6 +91,8 @@
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 
 ## Discoveries
 
@@ -158,6 +162,9 @@
 | 2026-03-20 05:02 | Review R007 | plan Step 3: REVISE |
 | 2026-03-20 05:03 | Review R007 | plan Step 3: REVISE |
 | 2026-03-20 05:11 | Worker iter 3 | done in 560s, ctx: 35%, tools: 66 |
+| 2026-03-20 05:11 | Worker iter 4 | done in 539s, ctx: 38%, tools: 67 |
+| 2026-03-20 05:15 | Review R008 | code Step 3: REVISE |
+| 2026-03-20 05:16 | Review R008 | code Step 3: REVISE |
 
 ## Blockers
 
