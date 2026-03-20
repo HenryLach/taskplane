@@ -5,7 +5,7 @@
 **Last Updated:** 2026-03-20
 **Review Level:** 2
 **Review Counter:** 3
-**Iteration:** 1
+**Iteration:** 2
 **Size:** L
 
 ---
@@ -24,11 +24,11 @@
 
 ### Step 1: Verification Command Runner & Fingerprint Parser
 **Status:** 🟨 In Progress
-- [ ] Create verification.ts with typed interfaces: TestFingerprint, CommandResult, VerificationBaseline, FingerprintDiff
-- [ ] Implement runVerificationCommands() with per-command result shape (commandId, exitCode, stdout, stderr, error classification)
-- [ ] Implement parseTestOutput() with vitest JSON adapter, messageNorm normalization (ANSI strip, whitespace collapse, path sep normalize), and fallback to command_error kind for non-JSON/malformed output
-- [ ] Implement diffFingerprints(baseline, postMerge) with set-based equality on composite key (commandId+file+case+kind+messageNorm), dedup before subtraction
-- [ ] R003: Add design notes to STATUS.md documenting runner result schema and fingerprint equality key
+- [ ] Create verification.ts with typed interfaces and exports: VerificationCommand, CommandResult, TestFingerprint, VerificationBaseline, FingerprintDiff
+- [ ] Implement runVerificationCommands(): execute commands with repo-scoped cwd, stable commandId from config key, capture exitCode/stdout/stderr, error classification (spawn_error, timeout, nonzero_exit)
+- [ ] Implement parseTestOutput(): vitest JSON adapter extracting file/case/kind/messageNorm; fallback parser for non-JSON/malformed/non-test commands emitting command_error fingerprints; normalization: ANSI strip, whitespace collapse, path separator normalize, duration/timestamp removal
+- [ ] Implement diffFingerprints(baseline, postMerge): set-based equality on composite key (commandId+file+case+kind+messageNorm), dedup before subtraction, return new failures only
+- [ ] R003: Design notes added documenting runner contract, fingerprint equality key, and error-path behaviors
 
 ---
 
@@ -76,6 +76,7 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ## Discoveries
 
@@ -119,6 +120,7 @@
 | 2026-03-20 04:18 | Step 0 complete | Preflight |
 | 2026-03-20 04:18 | Step 1 started | Verification Command Runner & Fingerprint Parser |
 | 2026-03-20 04:20 | Review R003 | plan Step 1: REVISE |
+| 2026-03-20 04:21 | Review R003 | plan Step 1: REVISE |
 
 ## Blockers
 
@@ -145,3 +147,45 @@
 **Vitest JSON output shape:** `testResults[].assertionResults[]` with fields: `fullName`, `status` ("passed"/"failed"), `failureMessages[]`. Maps to fingerprint shape `{commandId, file, case, kind, messageNorm}`.
 
 **Merge agent template:** `templates/agents/task-merger.md` (L71-88) contains verification step instructions. Baseline fingerprinting runs orchestrator-side (in merge.ts), NOT in the merge agent — this is a separate layer.
+
+### Step 1 Design Notes (R003 response)
+
+**Runner Result Schema (`CommandResult`):**
+```ts
+interface CommandResult {
+  commandId: string;    // Stable key from config (e.g., "test", "build") — matches testing.commands key
+  command: string;      // Raw command string
+  cwd: string;          // Repo-scoped working directory (merge worktree root or repo subdir)
+  exitCode: number;     // Process exit code (-1 for spawn failure)
+  stdout: string;       // Captured stdout
+  stderr: string;       // Captured stderr
+  durationMs: number;   // Execution time
+  error?: string;       // Error classification: "spawn_error" | "timeout" | "nonzero_exit"
+}
+```
+- `commandId` is deterministic — derived from the config key in `testing.commands` (e.g., `{ test: "npx vitest run" }` → commandId = `"test"`).
+- Same `commandId` is used for baseline and post-merge runs, ensuring diff alignment.
+- `cwd` is the merge worktree path (for single-repo) or `join(mergeWorktree, repoSubdir)` for workspace repos.
+
+**Fingerprint Composite Key:**
+`(commandId, file, case, kind, messageNorm)` — all five fields must match for two fingerprints to be considered equal.
+
+**Normalization Rules (`messageNorm`):**
+1. Strip ANSI escape sequences (`/\x1B\[[0-9;]*[a-zA-Z]/g`)
+2. Normalize path separators (`\\` → `/`)
+3. Collapse whitespace (runs of spaces/tabs → single space, trim)
+4. Remove duration strings (e.g., `(42ms)`, `(1.2s)`)
+5. Remove timestamps (ISO-8601 patterns)
+6. Lowercase for comparison stability
+
+**Parser Adapters:**
+- **vitest JSON adapter:** Parses `testResults[].assertionResults[]`. Maps `status==="failed"` entries to fingerprints with `kind="assertion_error"`, `file` from `testFilePath`, `case` from `fullName`, `messageNorm` from first `failureMessages[]` entry after normalization.
+- **Fallback parser:** For non-JSON output, malformed JSON, empty output, or non-test commands. Emits a single fingerprint: `{ commandId, file: "<command>", case: "<exit>", kind: "command_error", messageNorm: <normalized stderr or stdout> }`.
+
+**Error-Path Behaviors:**
+- Spawn failure (command not found): `CommandResult.error = "spawn_error"`, `exitCode = -1`. Fallback parser emits `command_error` fingerprint.
+- Timeout: `CommandResult.error = "timeout"`, process killed. Fallback parser emits fingerprint.
+- Malformed JSON: vitest adapter falls through to fallback parser.
+- Empty output: Fallback parser emits fingerprint with empty `messageNorm`.
+
+**Exported Types from `verification.ts`:** `VerificationCommand`, `CommandResult`, `TestFingerprint`, `VerificationBaseline`, `FingerprintDiff`, `runVerificationCommands()`, `parseTestOutput()`, `diffFingerprints()`.

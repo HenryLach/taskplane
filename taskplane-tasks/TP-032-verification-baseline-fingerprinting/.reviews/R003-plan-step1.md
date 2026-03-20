@@ -3,29 +3,27 @@
 ### Verdict: REVISE
 
 ### Summary
-The Step 1 plan captures the right high-level outcomes, but it is still too thin for a merge-gate feature where false positives/false negatives directly affect lane advancement. The current checklist in `STATUS.md` lists function names only (`STATUS.md:27-30`) and does not yet define key behavioral contracts needed for deterministic baseline diffing in Step 2. Tightening those contracts now will reduce rework and flaky merge decisions.
+The Step 1 checklist captures the high-level objective, but it is still too underspecified for a merge-gate feature that depends on deterministic fingerprinting. Key contracts around command source/cwd, non-vitest command handling, and normalization stability are missing from the plan. Tightening those outcomes now will reduce false positives and integration churn in Step 2.
 
 ### Issues Found
-1. **[Severity: important]** — Runner output contract is not defined beyond “execute configured commands.”  
-   `STATUS.md:28` + `PROMPT.md:64` do not specify what `runVerificationCommands()` returns per command (exit code, stdout/stderr capture, timeout/error classification, command ordering). Step 2 flaky reruns and merge blocking depend on this (`PROMPT.md:80`).  
-   **Suggested fix:** Add explicit Step 1 outcome for a typed per-command result shape (including `commandId`, exit status, output/error fields, and deterministic iteration order from `testing.commands`).
+1. **[Severity: important]** — The plan does not define the command-runner contract needed for per-repo baselines and flaky re-runs.
+   - Evidence: Step 1 only lists generic implementation bullets (`taskplane-tasks/TP-032-verification-baseline-fingerprinting/STATUS.md:27-30`), while requirements require running configured `testing.commands` per repo (`docs/specifications/taskplane/resilience-and-diagnostics-roadmap.md:563,589-592`).
+   - Also, current merge flow still feeds `config.merge.verify` into merge requests (`extensions/taskplane/merge.ts:709-714`), and STATUS already notes this mismatch (`taskplane-tasks/TP-032-verification-baseline-fingerprinting/STATUS.md:100`).
+   - Suggested fix: Add an explicit Step 1 outcome for `runVerificationCommands()` input/output contract (stable `commandId`, repo-scoped cwd, exit status + captured output) so Step 2 can reliably baseline/diff and rerun failed commands.
 
-2. **[Severity: important]** — `messageNorm` normalization rules are unspecified, risking unstable fingerprints across runs.  
-   `STATUS.md:29-30` and `PROMPT.md:66-67` require normalized fingerprints, but the plan does not define normalization behavior (ANSI stripping, whitespace collapsing, path separator normalization, volatile token handling). Without this, pre-existing failures may be misclassified as new failures.
-   **Suggested fix:** Add concrete normalization rules and a “stable key” definition used by `diffFingerprints()`.
+2. **[Severity: important]** — Parser scope is too narrow for the stated baseline strategy.
+   - Evidence: Step 1 calls out a vitest adapter (`STATUS.md:29`), but baseline strategy applies to all verification commands, not just test frameworks (`docs/specifications/taskplane/resilience-architecture.md:220-228`).
+   - Suggested fix: Include a fallback parser outcome now (for non-JSON/non-test command failures) that still emits normalized fingerprints, with adapter hooks for vitest/jest/pytest expansion.
 
-3. **[Severity: important]** — No fallback behavior is planned for non-JSON or partially malformed test output.  
-   The plan mentions vitest JSON adapter (`STATUS.md:29`) but does not cover command failures where JSON is missing/truncated. In those paths, baseline/post-merge comparison still needs a deterministic fingerprint to avoid silent pass-through.
-   **Suggested fix:** Define parser fallback classification (e.g., `kind: "command_error"`) with bounded raw message extraction when structured parsing fails.
-
-4. **[Severity: minor]** — Diff semantics are underspecified (set-vs-multiset, dedup strategy).  
-   `STATUS.md:30` says “new failures only” but does not define equality/dedup rules for repeated assertion messages in a single run.
-   **Suggested fix:** Specify equality key fields and whether duplicates are collapsed before subtraction.
+3. **[Severity: minor]** — Normalization and diff determinism rules are not defined.
+   - Evidence: Step 1 requires `messageNorm` fingerprints (`PROMPT.md:66`) but does not state how volatile output (paths, line numbers, durations, ANSI noise) will be normalized before `post - baseline` comparison.
+   - Suggested fix: Add explicit normalization outcomes (stable ordering + dedupe key + volatility stripping) and corresponding test intent.
 
 ### Missing Items
-- Step 1 test coverage intent for runner failure paths (non-zero exit, timeout, malformed JSON, empty command map, duplicate fingerprints).
-- Explicit API boundaries for `verification.ts` exports that Step 2 will consume (types/interfaces, not just function names).
+- Explicit failure-path behavior for command execution/parsing errors (spawn failure, malformed JSON, empty output).
+- Explicit Step 1 test intent for parser fallback and normalization stability (not only happy-path vitest parsing).
+- Explicit statement that command IDs are deterministic and consistent between baseline and post-merge runs.
 
 ### Suggestions
-- Add a short “Step 1 Design Notes” subsection in `STATUS.md` with the runner result schema and fingerprint equality key before implementation.
-- Clean up duplicated execution-log rows (`STATUS.md:116-119`) to keep review/audit history unambiguous.
+- Add a short “Step 1 deliverables” note in `STATUS.md` describing exported types from `verification.ts` so Step 2 integration points are clear.
+- Include one small fixture-driven example in planning notes (vitest JSON + raw command failure) to lock parser expectations before coding.
