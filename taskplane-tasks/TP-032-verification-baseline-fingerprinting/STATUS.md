@@ -4,8 +4,8 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 3
+**Review Counter:** 7
+**Iteration:** 4
 **Size:** L
 
 ---
@@ -48,9 +48,10 @@
 
 ### Step 3: Configuration & Modes
 **Status:** 🟨 In Progress
-- [ ] Add verification config section
-- [ ] Strict/permissive mode behavior
-- [ ] Feature flag (disabled by default)
+- [ ] R007-1: Add VerificationConfig interface to config-schema.ts, defaults in DEFAULT_ORCHESTRATOR_SECTION, YAML→unified mapping in config-loader.ts (mapOrchestratorYaml), legacy adapter in toOrchestratorConfig, and legacy type in types.ts OrchestratorConfig
+- [ ] R007-2: Wire verification.enabled as explicit feature flag — gating in merge.ts/engine.ts/resume.ts so that testing_commands presence alone does not enable fingerprinting; only `enabled: true` triggers it. Wire flakyReruns (including 0 = no reruns) through runPostMergeVerification
+- [ ] R007-3: Implement strict/permissive mode behavior for baseline unavailable — strict: set failedLane + error (merge failure policy applies), permissive: log warning, continue without baseline. Precedence: verification.mode gates baseline-unavailable handling; failure.on_merge_failure gates how the resulting merge failure is handled (pause vs abort)
+- [ ] R007-4: Add Step 3 decision note documenting precedence between verification.mode and failure.on_merge_failure, and behavior when enabled but commands empty
 
 ---
 
@@ -86,6 +87,8 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ## Discoveries
 
@@ -149,6 +152,11 @@
 | 2026-03-20 04:58 | Worker iter 2 | done in 516s, ctx: 28%, tools: 63 |
 | 2026-03-20 04:58 | Step 2 complete | Baseline Capture & Comparison in Merge Flow |
 | 2026-03-20 04:58 | Step 3 started | Configuration & Modes |
+| 2026-03-20 04:59 | Worker iter 3 | done in 511s, ctx: 35%, tools: 76 |
+| 2026-03-20 04:59 | Step 2 complete | Baseline Capture & Comparison in Merge Flow |
+| 2026-03-20 04:59 | Step 3 started | Configuration & Modes |
+| 2026-03-20 05:02 | Review R007 | plan Step 3: REVISE |
+| 2026-03-20 05:03 | Review R007 | plan Step 3: REVISE |
 
 ## Blockers
 
