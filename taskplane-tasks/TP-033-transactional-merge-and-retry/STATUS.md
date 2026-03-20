@@ -69,12 +69,12 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** 🔄 In Progress
+**Status:** ✅ Complete
 - [x] Document merge retry policy in task-orchestrator.yaml.md: failure classifications table, retriable vs non-retriable behavior, max attempts/cooldowns, exhaustion behavior, scope key format, and precedence with on_merge_failure
 - [x] Assess commands.md impact — no update needed: TP-033 changes are internal to the merge flow (MergeWaveResult fields, retry logic, transaction records). No new commands, changed flags, or user-facing command output format changes. The retry/safe-stop behavior surfaces through existing pause/status mechanisms.
 - [x] Completion gate: docs reflect implemented behavior, impact check done, STATUS/review entries current → `.DONE` created
-- [ ] R010-1: Fix non-retriable failure behavior description — non-retriable classes fall through to standard `on_merge_failure` policy (pause or abort), NOT forced pause. Update "Retry behavior" step 5 and `merge_conflict_unresolved` exhaustion action column. Add explicit note: forced pause overrides config only on retry exhaustion and rollback safe-stop.
-- [ ] R010-2: Remove stale `.DONE` and re-create after fixes verified
+- [x] R010-1: Fix non-retriable failure behavior description — non-retriable classes fall through to standard `on_merge_failure` policy (pause or abort), NOT forced pause. Update "Retry behavior" step 5 and `merge_conflict_unresolved` exhaustion action column. Add explicit note: forced pause overrides config only on retry exhaustion and rollback safe-stop.
+- [x] R010-2: Remove stale `.DONE` and re-create after fixes verified
 
 ---
 
@@ -139,6 +139,7 @@
 | 2026-03-20 13:41 | Review R009 | plan Step 4: REVISE |
 | 2026-03-20 13:46 | Worker iter 5 | done in 333s, ctx: 20%, tools: 27 |
 | 2026-03-20 13:48 | Review R010 | code Step 4: REVISE |
+| 2026-03-20 09:58 | R010 fixes applied | Fixed non-retriable failure docs: merge_conflict_unresolved uses on_merge_failure policy (not forced pause). Added forced-pause-vs-policy note. Removed/re-created .DONE. All 1661 tests pass. |
 
 ## Blockers
 

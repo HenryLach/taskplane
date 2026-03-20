@@ -1,15 +1,1 @@
 TP-033: Transactional Merge Envelope & Retry Matrix — Complete
-
-Completed: 2026-03-20
-
-Summary:
-- Transaction envelope wraps each lane merge with baseHEAD/laneHEAD/mergedHEAD capture
-- Rollback on verification failure; safe-stop with recovery commands on rollback failure
-- Engine/resume force paused on rollbackFailed regardless of on_merge_failure config
-- Transaction records persisted to .pi/verification/{opId}/txn-*.json
-- Retry policy matrix: 5 merge failure classifications with per-class retry limits and cooldowns
-- Retry counters scoped by {repoId}:w{N}:l{K}, persisted in batch state
-- Exhaustion forces paused regardless of on_merge_failure setting
-- Shared applyMergeRetryLoop helper ensures engine/resume parity
-- Documentation updated in task-orchestrator.yaml.md
-- All 1661 tests passing

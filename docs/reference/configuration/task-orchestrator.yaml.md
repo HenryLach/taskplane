@@ -92,7 +92,7 @@ When a merge fails, the orchestrator classifies the failure and consults a built
 | Classification | Retriable | Max attempts | Cooldown | Exhaustion action |
 |---|---|---|---|---|
 | `verification_new_failure` | ✅ | 1 | 0 ms | `pause` — diagnostic emitted |
-| `merge_conflict_unresolved` | ❌ | 0 | — | `pause` — operator escalation |
+| `merge_conflict_unresolved` | ❌ | 0 | — | `on_merge_failure` policy — operator escalation |
 | `cleanup_post_merge_failed` | ✅ | 1 | 2 000 ms | `pause` + wave gate (blocks next wave) |
 | `git_worktree_dirty` | ✅ | 1 | 2 000 ms | `pause` |
 | `git_lock_file` | ✅ | 2 | 3 000 ms | `pause` |
@@ -110,8 +110,10 @@ When a merge fails, the orchestrator classifies the failure and consults a built
 1. On merge failure, the orchestrator classifies the error and looks up the policy matrix.
 2. If the class is retriable and the retry count (persisted in batch state) is below `maxAttempts`, the orchestrator waits for the cooldown period and re-invokes the merge.
 3. Retry counters are scoped by `{repoId}:w{N}:l{K}` (e.g., `api:w0:l1`). In single-repo mode, `repoId` defaults to `"default"`. Counters persist in `.pi/batch-state.json` under `resilience.retryCountByScope` and survive `/orch-resume`.
-4. On retry exhaustion (all attempts consumed), the orchestrator **forces `paused` phase** regardless of the `on_merge_failure` setting. This ensures operators always have a chance to inspect the failure — even when `on_merge_failure` is set to `"abort"`.
-5. Non-retriable classes (`merge_conflict_unresolved`) skip directly to step 4.
+4. On retry exhaustion (all attempts consumed for a retriable class), the orchestrator **forces `paused` phase** regardless of the `on_merge_failure` setting. This ensures operators always have a chance to inspect the failure — even when `on_merge_failure` is set to `"abort"`.
+5. Non-retriable classes (`merge_conflict_unresolved`) skip retries entirely and apply the `on_merge_failure` policy immediately (`pause` or `abort` per configuration).
+
+> **Forced pause vs. policy:** Forced pause (overriding `on_merge_failure`) applies **only** in two situations: (1) retry exhaustion for a retriable class, and (2) rollback safe-stop (when a rollback itself fails). Initial non-retriable failures always respect the configured `on_merge_failure` policy.
 
 > **Note:** The retry matrix is not configurable. The values above are built-in defaults derived from the resilience roadmap. Future releases may expose per-class overrides.
 
