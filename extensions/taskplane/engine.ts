@@ -518,6 +518,33 @@ export async function executeOrchBatch(
 			onNotify(ORCH_MESSAGES.orchMergeSkipped(waveIdx + 1), "info");
 		}
 
+		// ── TP-033: Safe-stop on rollback failure ─────────────────
+		// When a verification rollback failed, force paused regardless of
+		// on_merge_failure policy. The merge worktree and temp branch are
+		// preserved for manual recovery using commands in the transaction record.
+		if (mergeResult?.rollbackFailed) {
+			execLog("batch", batchState.batchId, "SAFE-STOP: verification rollback failed — forcing paused regardless of policy", {
+				waveIndex: waveIdx,
+				configPolicy: orchConfig.failure.on_merge_failure,
+			});
+
+			batchState.phase = "paused";
+			batchState.errors.push(
+				`Safe-stop at wave ${waveIdx + 1}: verification rollback failed. ` +
+				`Merge worktree and temp branch preserved for recovery. ` +
+				`Check transaction records in .pi/verification/ for recovery commands.`
+			);
+			persistRuntimeState("merge-rollback-safe-stop", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+			onNotify(
+				`🛑 Safe-stop: verification rollback failed at wave ${waveIdx + 1}. ` +
+				`Batch force-paused. Merge worktree preserved for manual recovery. ` +
+				`See .pi/verification/ transaction records for recovery commands.`,
+				"error",
+			);
+			preserveWorktreesForResume = true;
+			break;
+		}
+
 		// ── Handle merge failure ─────────────────────────────────
 		// Apply config.failure.on_merge_failure policy via shared helper
 		// for guaranteed parity with resume.ts (TP-005 Step 2).

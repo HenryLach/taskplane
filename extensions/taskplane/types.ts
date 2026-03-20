@@ -1083,6 +1083,17 @@ export interface MergeWaveResult {
 	totalDurationMs: number;
 	/** Per-repo merge outcomes (populated in workspace mode; empty in repo mode). */
 	repoResults?: RepoMergeOutcome[];
+	/**
+	 * TP-033: True when a verification rollback failed and safe-stop was triggered.
+	 * Engine MUST force `paused` phase regardless of `on_merge_failure` config,
+	 * and preserve all merge worktrees/branches for manual recovery.
+	 */
+	rollbackFailed?: boolean;
+	/**
+	 * TP-033: Transaction records for each lane merge attempt in this wave.
+	 * Populated when transactional envelope is active.
+	 */
+	transactionRecords?: TransactionRecord[];
 }
 
 /** Per-repo merge outcome within a wave merge. */
@@ -1097,6 +1108,62 @@ export interface RepoMergeOutcome {
 	failedLane: number | null;
 	/** Failure reason within this repo (null if all succeeded). */
 	failureReason: string | null;
+}
+
+// ── Merge Transaction Types (TP-033) ─────────────────────────────────
+
+/**
+ * Status of a transactional merge attempt for a single lane.
+ *
+ * - `committed`: Merge succeeded, verification passed, refs advanced.
+ * - `rolled_back`: Verification failed, merge commit rolled back to baseHEAD.
+ * - `rollback_failed`: Rollback attempted but failed — safe-stop triggered.
+ * - `merge_failed`: Merge itself failed (conflict, crash, etc.) before verification.
+ *
+ * @since TP-033
+ */
+export type TransactionStatus = "committed" | "rolled_back" | "rollback_failed" | "merge_failed";
+
+/**
+ * Transactional record for a single lane merge attempt.
+ *
+ * Persisted as JSON at:
+ * `.pi/verification/{opId}/txn-b{batchId}-repo-{repoId}-wave-{n}-lane-{k}.json`
+ *
+ * Captures the complete ref state before and after merge, rollback outcome,
+ * and recovery commands for safe-stop scenarios.
+ *
+ * @since TP-033
+ */
+export interface TransactionRecord {
+	/** Operator ID for this batch run */
+	opId: string;
+	/** Batch identifier */
+	batchId: string;
+	/** Wave index (0-based) */
+	waveIndex: number;
+	/** Lane number within the wave */
+	laneNumber: number;
+	/** Repo ID (undefined/null in repo mode, string in workspace mode) */
+	repoId: string | null;
+	/** HEAD of temp branch before this lane's merge commit (rollback target) */
+	baseHEAD: string;
+	/** HEAD of the lane's source branch (commit being merged in) */
+	laneHEAD: string;
+	/** HEAD of temp branch after merge commit (null if merge failed before commit) */
+	mergedHEAD: string | null;
+	/** Transaction outcome */
+	status: TransactionStatus;
+	/** Whether a rollback was attempted */
+	rollbackAttempted: boolean;
+	/** Rollback outcome detail (null if rollback not attempted) */
+	rollbackResult: string | null;
+	/** Recovery commands emitted on rollback failure (empty array otherwise) */
+	recoveryCommands: string[];
+	/** ISO timestamp when transaction started */
+	startedAt: string;
+	/** ISO timestamp when transaction completed */
+	completedAt: string;
 }
 
 // ── Merge Error Types ────────────────────────────────────────────────

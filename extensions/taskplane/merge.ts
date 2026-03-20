@@ -9,7 +9,7 @@ import { join, dirname, resolve, relative } from "path";
 import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
-import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
+import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { generateMergeWorktreePath, sleepSync } from "./worktree.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
@@ -536,6 +536,43 @@ function forceRemoveMergeWorktree(
 	runGit(["worktree", "prune"], repoRoot);
 }
 
+// ── Transaction Record Persistence (TP-033) ─────────────────────────
+
+/**
+ * Persist a transaction record to disk as JSON.
+ *
+ * Written to: `.pi/verification/{opId}/txn-b{batchId}-repo-{repoId}-wave-{n}-lane-{k}.json`
+ *
+ * When repoId is null/undefined (repo mode), uses "default" as the repo slug.
+ * Non-alphanumeric characters in repoId are sanitized to underscores.
+ *
+ * @param record - The transaction record to persist
+ * @param stateRoot - Root directory for .pi state files
+ */
+function persistTransactionRecord(record: TransactionRecord, stateRoot: string): void {
+	try {
+		const repoSlug = record.repoId
+			? record.repoId.replace(/[^a-zA-Z0-9_-]/g, "_")
+			: "default";
+		const verifyDir = join(stateRoot, ".pi", "verification", record.opId);
+		mkdirSync(verifyDir, { recursive: true });
+		const fileName = `txn-b${record.batchId}-repo-${repoSlug}-wave-${record.waveIndex}-lane-${record.laneNumber}.json`;
+		writeFileSync(
+			join(verifyDir, fileName),
+			JSON.stringify(record, null, 2),
+			"utf-8",
+		);
+		execLog("merge", `W${record.waveIndex}`, `transaction record persisted`, {
+			file: fileName,
+			status: record.status,
+		});
+	} catch (err: unknown) {
+		// Transaction record persistence is best-effort — don't fail the merge
+		const errMsg = err instanceof Error ? err.message : String(err);
+		execLog("merge", `W${record.waveIndex}`, `failed to persist transaction record: ${errMsg}`);
+	}
+}
+
 // ── Orchestrator-Side Verification (TP-032) ──────────────────────────
 
 /**
@@ -958,8 +995,14 @@ export function mergeWave(
 	// includes the unverified commit and any prior successful merges built on top of it.
 	let blockAdvancement = false;
 
+	// TP-033: Collect transaction records for all lane merges in this wave
+	const transactionRecords: TransactionRecord[] = [];
+	// TP-033: Track whether any rollback failure triggered safe-stop
+	let rollbackFailed = false;
+
 	for (const lane of orderedLanes) {
 		const laneStart = Date.now();
+		const txnStartedAt = new Date().toISOString();
 		const sessionName = `${tmuxPrefix}-${opId}-merge-${lane.laneNumber}`;
 		const resultFileName = `merge-result-w${waveIndex}-lane${lane.laneNumber}-${opId}-${batchId}.json`;
 		const piDir = stateRoot ?? repoRoot;
@@ -967,20 +1010,34 @@ export function mergeWave(
 		const requestFileName = `merge-request-w${waveIndex}-lane${lane.laneNumber}-${opId}-${batchId}.txt`;
 		const requestFilePath = join(piDir, ".pi", requestFileName);
 
-		// ── TP-032: Capture pre-lane HEAD for rollback on verification failure ──
-		// If baseline is available and post-merge verification detects new failures,
-		// we reset the temp branch to this commit to undo the lane's merge commit.
-		let preLaneHead = "";
-		if (baseline) {
+		// ── TP-033: Capture baseHEAD (temp branch HEAD before lane merge) ──
+		// Always captured for transaction record — not conditional on baseline.
+		// This is the rollback target if verification detects new failures.
+		let baseHEAD = "";
+		{
 			const headResult = spawnSync("git", ["rev-parse", "HEAD"], { cwd: mergeWorkDir, encoding: "utf-8" });
 			if (headResult.status === 0) {
-				preLaneHead = headResult.stdout.trim();
+				baseHEAD = headResult.stdout.trim();
 			}
 		}
+
+		// ── TP-033: Capture laneHEAD (source branch tip being merged in) ──
+		let laneHEAD = "";
+		{
+			const laneRef = spawnSync("git", ["rev-parse", lane.branch], { cwd: repoRoot, encoding: "utf-8" });
+			if (laneRef.status === 0) {
+				laneHEAD = laneRef.stdout.trim();
+			}
+		}
+
+		// TP-032 compat: preLaneHead is baseHEAD (renamed for clarity in txn model)
+		const preLaneHead = baseHEAD;
 
 		execLog("merge", sessionName, `starting merge for lane ${lane.laneNumber}`, {
 			sourceBranch: lane.branch,
 			targetBranch,
+			baseHEAD: baseHEAD.slice(0, 8),
+			laneHEAD: laneHEAD.slice(0, 8),
 		});
 
 		try {
@@ -1080,6 +1137,21 @@ export function mergeWave(
 					break;
 			}
 
+			// ── TP-033: Capture mergedHEAD after successful merge commit ──
+			let mergedHEAD: string | null = null;
+			if (mergeResult.status === "SUCCESS" || mergeResult.status === "CONFLICT_RESOLVED") {
+				const postMergeRef = spawnSync("git", ["rev-parse", "HEAD"], { cwd: mergeWorkDir, encoding: "utf-8" });
+				if (postMergeRef.status === 0) {
+					mergedHEAD = postMergeRef.stdout.trim();
+				}
+			}
+
+			// ── TP-033: Initialize transaction record for this lane ──
+			let txnStatus: TransactionStatus = failedLane !== null ? "merge_failed" : "committed";
+			let txnRollbackAttempted = false;
+			let txnRollbackResult: string | null = null;
+			let txnRecoveryCommands: string[] = [];
+
 			// ── Orchestrator-side post-merge verification (TP-032) ──────
 			// After a successful merge (SUCCESS/CONFLICT_RESOLVED), capture
 			// post-merge fingerprints and diff against baseline. New failures
@@ -1123,12 +1195,15 @@ export function mergeWave(
 					laneResult.error = `verification_new_failure: ${verificationResult.newFailureCount} new failure(s)`;
 
 					if (preLaneHead) {
+						txnRollbackAttempted = true;
 						execLog("merge", sessionName, "rolling back temp branch to pre-lane HEAD", {
 							preLaneHead: preLaneHead.slice(0, 8),
 						});
 						const resetResult = spawnSync("git", ["reset", "--hard", preLaneHead], { cwd: mergeWorkDir });
 						if (resetResult.status === 0) {
 							execLog("merge", sessionName, "temp branch rolled back successfully");
+							txnStatus = "rolled_back";
+							txnRollbackResult = "success";
 						} else {
 							// TP-032 R006-2: Rollback failure is merge-fatal for this wave.
 							// The temp branch still contains the failing merge commit — target
@@ -1138,8 +1213,21 @@ export function mergeWave(
 							laneResult.error = `verification_new_failure: rollback reset failed (${resetErr}) — ` +
 								`temp branch may contain failing merge commit, advancement blocked`;
 							blockAdvancement = true;
-							execLog("merge", sessionName, `CRITICAL: rollback reset failed: ${resetErr} — ALL branch advancement blocked`, {
+							txnStatus = "rollback_failed";
+							txnRollbackResult = `reset failed: ${resetErr}`;
+
+							// ── TP-033: Safe-stop — emit recovery commands ──
+							txnRecoveryCommands = [
+								`# Recovery: manually reset merge worktree to pre-lane HEAD`,
+								`cd "${mergeWorkDir}"`,
+								`git reset --hard ${preLaneHead}`,
+								`# Then re-run merge or resume orchestration`,
+							];
+							rollbackFailed = true;
+
+							execLog("merge", sessionName, `CRITICAL: rollback reset failed: ${resetErr} — safe-stop triggered`, {
 								preLaneHead: preLaneHead.slice(0, 8),
+								recoveryCommands: txnRecoveryCommands,
 							});
 						}
 					} else {
@@ -1148,7 +1236,22 @@ export function mergeWave(
 						laneResult.error = `verification_new_failure: no pre-lane HEAD available for rollback — ` +
 							`advancement blocked`;
 						blockAdvancement = true;
-						execLog("merge", sessionName, "CRITICAL: no pre-lane HEAD — cannot roll back, ALL branch advancement blocked");
+						txnStatus = "rollback_failed";
+						txnRollbackAttempted = false;
+						txnRollbackResult = "no baseHEAD captured — rollback impossible";
+
+						// ── TP-033: Safe-stop — emit recovery commands ──
+						txnRecoveryCommands = [
+							`# Recovery: no baseHEAD was captured for rollback`,
+							`# Inspect merge worktree state manually:`,
+							`cd "${mergeWorkDir}"`,
+							`git log --oneline -5`,
+							`# Determine the correct pre-merge commit and reset:`,
+							`# git reset --hard <correct-commit>`,
+						];
+						rollbackFailed = true;
+
+						execLog("merge", sessionName, "CRITICAL: no baseHEAD — cannot roll back, safe-stop triggered");
 					}
 
 					failedLane = lane.laneNumber;
@@ -1168,6 +1271,26 @@ export function mergeWave(
 					});
 				}
 			}
+
+			// ── TP-033: Persist transaction record for this lane ──
+			const txnRecord: TransactionRecord = {
+				opId,
+				batchId,
+				waveIndex,
+				laneNumber: lane.laneNumber,
+				repoId: repoId ?? null,
+				baseHEAD,
+				laneHEAD,
+				mergedHEAD,
+				status: txnStatus,
+				rollbackAttempted: txnRollbackAttempted,
+				rollbackResult: txnRollbackResult,
+				recoveryCommands: txnRecoveryCommands,
+				startedAt: txnStartedAt,
+				completedAt: new Date().toISOString(),
+			};
+			transactionRecords.push(txnRecord);
+			persistTransactionRecord(txnRecord, stateRoot ?? repoRoot);
 
 			// Stop merging if this lane failed
 			if (failedLane !== null) break;
@@ -1200,6 +1323,26 @@ export function mergeWave(
 				durationMs: Date.now() - laneStart,
 				repoId: lane.repoId,
 			});
+
+			// ── TP-033: Transaction record for merge error ──
+			const errorTxnRecord: TransactionRecord = {
+				opId,
+				batchId,
+				waveIndex,
+				laneNumber: lane.laneNumber,
+				repoId: repoId ?? null,
+				baseHEAD,
+				laneHEAD,
+				mergedHEAD: null,
+				status: "merge_failed",
+				rollbackAttempted: false,
+				rollbackResult: null,
+				recoveryCommands: [],
+				startedAt: txnStartedAt,
+				completedAt: new Date().toISOString(),
+			};
+			transactionRecords.push(errorTxnRecord);
+			persistTransactionRecord(errorTxnRecord, stateRoot ?? repoRoot);
 
 			failedLane = lane.laneNumber;
 			failureReason = `Merge error in lane ${lane.laneNumber}: ${errMsg}`;
@@ -1374,15 +1517,25 @@ export function mergeWave(
 		}
 	}
 
-	// Clean up merge worktree and temp branch (always, regardless of outcome).
-	// TP-029: Apply forceRemoveMergeWorktree fallback so locked/corrupted
-	// merge worktrees don't persist between attempts.
-	forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
-	try {
-		// Small delay to ensure worktree lock is released
-		sleepSync(500);
-		spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot });
-	} catch { /* best effort */ }
+	// Clean up merge worktree and temp branch.
+	// TP-033: When rollback failed (safe-stop), preserve merge worktree and temp
+	// branch for manual recovery. The operator can use the recovery commands in
+	// the transaction record to restore consistency.
+	if (rollbackFailed) {
+		execLog("merge", `W${waveIndex}`, "SAFE-STOP: preserving merge worktree and temp branch for recovery", {
+			mergeWorkDir,
+			tempBranch,
+		});
+	} else {
+		// TP-029: Apply forceRemoveMergeWorktree fallback so locked/corrupted
+		// merge worktrees don't persist between attempts.
+		forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
+		try {
+			// Small delay to ensure worktree lock is released
+			sleepSync(500);
+			spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot });
+		} catch { /* best effort */ }
+	}
 
 	// Determine overall status
 	let status: MergeWaveResult["status"];
@@ -1402,7 +1555,7 @@ export function mergeWave(
 		duration: `${Math.round(totalDurationMs / 1000)}s`,
 	});
 
-	return {
+	const result: MergeWaveResult = {
 		waveIndex,
 		status,
 		laneResults,
@@ -1410,6 +1563,16 @@ export function mergeWave(
 		failureReason,
 		totalDurationMs,
 	};
+
+	// TP-033: Attach transaction metadata
+	if (transactionRecords.length > 0) {
+		result.transactionRecords = transactionRecords;
+	}
+	if (rollbackFailed) {
+		result.rollbackFailed = true;
+	}
+
+	return result;
 }
 
 
@@ -1552,6 +1715,7 @@ export function mergeWaveByRepo(
 	// ── Workspace mode: per-repo merge loops ─────────────────────
 	const allLaneResults: MergeLaneResult[] = [];
 	const repoOutcomes: RepoMergeOutcome[] = [];
+	const allTransactionRecords: TransactionRecord[] = [];
 	let firstFailedLane: number | null = null;
 	let firstFailureReason: string | null = null;
 	// Track repo-level failures independently of lane-level failures.
@@ -1559,6 +1723,8 @@ export function mergeWaveByRepo(
 	// pre-lane setup errors (temp branch creation, worktree creation).
 	// We must detect these to avoid misclassifying the aggregate as "succeeded".
 	let anyRepoFailed = false;
+	// TP-033: Track rollback failures across all repo groups
+	let anyRollbackFailed = false;
 
 	for (const group of repoGroups) {
 		const groupRepoRoot = resolveRepoRoot(group.repoId, repoRoot, workspaceConfig);
@@ -1599,6 +1765,14 @@ export function mergeWaveByRepo(
 
 		// Accumulate lane results
 		allLaneResults.push(...groupResult.laneResults);
+
+		// TP-033: Accumulate transaction records and rollback status
+		if (groupResult.transactionRecords) {
+			allTransactionRecords.push(...groupResult.transactionRecords);
+		}
+		if (groupResult.rollbackFailed) {
+			anyRollbackFailed = true;
+		}
 
 		// Build per-repo outcome
 		const repoOutcome: RepoMergeOutcome = {
@@ -1654,7 +1828,7 @@ export function mergeWaveByRepo(
 		duration: `${Math.round(totalDurationMs / 1000)}s`,
 	});
 
-	return {
+	const aggregateResult: MergeWaveResult = {
 		waveIndex,
 		status,
 		laneResults: allLaneResults,
@@ -1663,6 +1837,16 @@ export function mergeWaveByRepo(
 		totalDurationMs,
 		repoResults: repoOutcomes,
 	};
+
+	// TP-033: Attach transaction metadata from all repo groups
+	if (allTransactionRecords.length > 0) {
+		aggregateResult.transactionRecords = allTransactionRecords;
+	}
+	if (anyRollbackFailed) {
+		aggregateResult.rollbackFailed = true;
+	}
+
+	return aggregateResult;
 }
 
 // ── Auto-Integration ─────────────────────────────────────────────────

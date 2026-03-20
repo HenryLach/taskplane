@@ -298,11 +298,12 @@ describe("R009-2: Rollback/advancement safety — merge.ts (source verification)
 		expect(mergeSource).toContain("resetResult.status === 0");
 	});
 
-	it("2.2: preLaneHead is captured before each lane merge (only when baseline exists)", () => {
-		// preLaneHead capture must be gated on baseline availability
-		expect(mergeSource).toContain("if (baseline)");
+	it("2.2: baseHEAD is always captured before each lane merge (TP-033 transactional envelope)", () => {
+		// TP-033: baseHEAD (formerly preLaneHead) is always captured unconditionally
+		// for the transaction record — not gated on baseline availability.
 		expect(mergeSource).toContain('["rev-parse", "HEAD"]');
-		expect(mergeSource).toContain("preLaneHead = headResult.stdout.trim()");
+		// preLaneHead is derived from baseHEAD for backward compatibility
+		expect(mergeSource).toContain("const preLaneHead = baseHEAD");
 	});
 
 	it("2.3: rollback failure sets blockAdvancement = true", () => {

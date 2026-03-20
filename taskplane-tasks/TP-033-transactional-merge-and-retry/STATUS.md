@@ -20,14 +20,14 @@
 ---
 
 ### Step 1: Transaction Envelope
-**Status:** 🟨 In Progress
-- [ ] Define TransactionRecord interface in types.ts with required fields: opId, batchId, waveIndex, laneNumber, repoId, baseHEAD, laneHEAD, mergedHEAD, status, rollbackAttempted, rollbackResult, recoveryCommands, timestamps
-- [ ] Capture baseHEAD (temp branch HEAD before lane merge) and laneHEAD (source branch tip) at merge start; capture mergedHEAD after successful merge commit
-- [ ] On verification_new_failure: rollback to baseHEAD (existing TP-032 logic); record rollback result in transaction record
-- [ ] On rollback failure: implement safe-stop — set MergeWaveResult flag `rollbackFailed`, emit recovery commands in transaction record, signal engine to force `paused` regardless of on_merge_failure policy, preserve merge worktree and temp branch (skip cleanup)
-- [ ] Engine integration: detect rollbackFailed flag in MergeWaveResult and force paused phase + preserveWorktreesForResume regardless of config policy
-- [ ] Persist transaction record JSON to `.pi/verification/{opId}/txn-b{batchId}-repo-{repoId}-wave-{n}-lane-{k}.json` after each lane merge completes (success, failure, or safe-stop)
-- [ ] Handle repo-mode (repoId undefined): sanitize filename to use "default" when repoId is absent
+**Status:** ✅ Complete
+- [x] Define TransactionRecord interface in types.ts with required fields: opId, batchId, waveIndex, laneNumber, repoId, baseHEAD, laneHEAD, mergedHEAD, status, rollbackAttempted, rollbackResult, recoveryCommands, timestamps
+- [x] Capture baseHEAD (temp branch HEAD before lane merge) and laneHEAD (source branch tip) at merge start; capture mergedHEAD after successful merge commit
+- [x] On verification_new_failure: rollback to baseHEAD (existing TP-032 logic); record rollback result in transaction record
+- [x] On rollback failure: implement safe-stop — set MergeWaveResult flag `rollbackFailed`, emit recovery commands in transaction record, signal engine to force `paused` regardless of on_merge_failure policy, preserve merge worktree and temp branch (skip cleanup)
+- [x] Engine integration: detect rollbackFailed flag in MergeWaveResult and force paused phase + preserveWorktreesForResume regardless of config policy
+- [x] Persist transaction record JSON to `.pi/verification/{opId}/txn-b{batchId}-repo-{repoId}-wave-{n}-lane-{k}.json` after each lane merge completes (success, failure, or safe-stop)
+- [x] Handle repo-mode (repoId undefined): sanitize filename to use "default" when repoId is absent
 
 ---
 
@@ -91,6 +91,7 @@
 | 2026-03-20 12:19 | Step 0 complete | Preflight |
 | 2026-03-20 12:19 | Step 1 started | Transaction Envelope |
 | 2026-03-20 12:21 | Review R003 | plan Step 1: REVISE |
+| 2026-03-20 08:35 | Step 1 complete | TransactionRecord interface + baseHEAD/laneHEAD/mergedHEAD capture + rollback tracking + safe-stop with worktree preservation + engine/resume force-paused on rollbackFailed + persistTransactionRecord to .pi/verification/ + mergeWaveByRepo propagation. All 1564 tests pass. |
 
 ## Blockers
 
