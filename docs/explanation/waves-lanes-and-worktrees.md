@@ -338,4 +338,4 @@ Compared to running many agents in one working directory:
 - [Execution Model](execution-model.md)
 - [Persistence and Resume](persistence-and-resume.md)
 - [Commands Reference](../reference/commands.md) — `/orch`, `/orch-integrate` details
-- [Resilience & Diagnostics Roadmap](../specifications/taskplane/resilience-and-diagnostics-roadmap.md) — planned improvements
+- [Resilience & Diagnostics Roadmap](../specifications/taskplane/implemented/resilience-and-diagnostics-roadmap.md) — planned improvements
