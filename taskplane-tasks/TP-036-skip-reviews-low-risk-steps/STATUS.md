@@ -1,20 +1,20 @@
 # TP-036: Skip Reviews for Low-Risk Steps — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read review gating logic in task-runner.ts
-- [ ] Identify step index and total steps availability at review decision points
+- [x] Read review gating logic in task-runner.ts
+- [x] Identify step index and total steps availability at review decision points
 
 ---
 
@@ -50,6 +50,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
+| R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 |---|------|------|---------|------|
 
 ---
@@ -58,6 +60,10 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Plan review gated at L2084: `if (task.reviewLevel >= 1)` | Step 1 input | task-runner.ts:2084-2090 |
+| Code review gated at L2136: `if (task.reviewLevel >= 2 && state.phase === "running")` | Step 1 input | task-runner.ts:2136-2143 |
+| `step.number` (0-based) and `task.steps.length` available inside `executeStep` | Step 1 input | task-runner.ts:2068-2072 |
+| Last step number: `task.steps[task.steps.length - 1].number` | Step 1 input | task-runner.ts:2071 |
 
 ---
 
@@ -66,6 +72,12 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-20 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-20 15:14 | Task started | Extension-driven execution |
+| 2026-03-20 15:14 | Step 0 started | Preflight |
+| 2026-03-20 15:14 | Task started | Extension-driven execution |
+| 2026-03-20 15:14 | Step 0 started | Preflight |
+| 2026-03-20 15:15 | Review R001 | plan Step 0: APPROVE |
+| 2026-03-20 15:15 | Review R001 | plan Step 0: APPROVE |
 
 ---
 
