@@ -59,6 +59,12 @@ For each step:
 - `1`: plan review before implementation
 - `2+`: plan review + code review
 
+**Low-risk step exception:** Step 0 (Preflight) and the final step
+(Documentation & Delivery) always skip both plan and code reviews, regardless
+of the configured review level. These steps perform file reading and `.DONE`
+creation respectively — cross-model review adds overhead without catching
+meaningful issues. Middle steps are unaffected by this exception.
+
 ---
 
 ## Worker iteration loop
