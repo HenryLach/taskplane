@@ -1796,7 +1796,7 @@ export async function resumeOrchBatch(
 
 	// ── TP-031: Emit diagnostic reports (JSONL + markdown) ──
 	// Non-fatal: errors are logged but never crash batch finalization.
-	emitDiagnosticReports(assembleDiagnosticInput(orchConfig, batchState, allTaskOutcomes, stateRoot));
+	emitDiagnosticReports(assembleDiagnosticInput(orchConfig, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, stateRoot));
 
 	if (batchState.phase === "paused" || batchState.phase === "stopped") {
 		execLog("resume", batchState.batchId, "resumed batch ended in non-terminal state", { phase: batchState.phase });

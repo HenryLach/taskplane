@@ -15,7 +15,7 @@ import { join } from "path";
 
 import { execLog } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
-import type { LaneTaskOutcome, OrchBatchRuntimeState, OrchestratorConfig, PersistedTaskRecord, BatchDiagnostics, PersistedTaskExitSummary } from "./types.ts";
+import type { AllocatedLane, LaneTaskOutcome, OrchBatchRuntimeState, OrchestratorConfig, PersistedTaskRecord, BatchDiagnostics, PersistedTaskExitSummary } from "./types.ts";
 import { defaultBatchDiagnostics } from "./types.ts";
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -315,9 +315,9 @@ export function buildMarkdownReport(input: DiagnosticReportInput, events: Diagno
  * the `persistRuntimeState("batch-terminal", ...)` call in both engine.ts
  * and resume.ts.
  *
- * **Non-fatal:** All errors during report generation or writing are caught,
- * logged via `execLog()`, and appended to `batchState.errors`. They never
- * propagate to the caller or crash the batch finalization flow.
+ * **Non-fatal:** All errors during report generation or writing are caught
+ * and logged via `execLog()`. They never propagate to the caller or crash
+ * the batch finalization flow.
  *
  * @param input - Diagnostic report input assembled from runtime state
  */
@@ -354,38 +354,95 @@ export function emitDiagnosticReports(input: DiagnosticReportInput): void {
  * Assemble diagnostic report input from batch runtime state.
  *
  * Convenience helper for engine.ts and resume.ts to call at the
- * batch-terminal checkpoint. Builds task records from LaneTaskOutcome[]
- * (the primary runtime source at batch-terminal) and enriches them
- * with discovery data when available.
+ * batch-terminal checkpoint. Builds the full task registry from the
+ * wave plan + allocated lanes + task outcomes — matching the canonical
+ * model used by `serializeBatchState()`. This ensures diagnostics cover
+ * all tasks (including pending/blocked tasks that were never allocated)
+ * and preserve repo attribution fields for workspace per-repo breakdown.
  *
  * @param orchConfig - Orchestrator configuration
  * @param batchState - Current runtime batch state (at batch-terminal)
+ * @param wavePlan - Wave plan (array of waves, each an array of taskIds)
+ * @param lanes - Allocated lanes with task/repo metadata
  * @param allTaskOutcomes - All task outcomes accumulated during execution
  * @param stateRoot - State root path where `.pi/` lives
  */
 export function assembleDiagnosticInput(
 	orchConfig: OrchestratorConfig,
 	batchState: OrchBatchRuntimeState,
+	wavePlan: string[][],
+	lanes: AllocatedLane[],
 	allTaskOutcomes: LaneTaskOutcome[],
 	stateRoot: string,
 ): DiagnosticReportInput {
-	// Build minimal task records from outcomes (sorted by taskId for determinism)
-	const tasks: PersistedTaskRecord[] = [...allTaskOutcomes]
-		.sort((a, b) => a.taskId.localeCompare(b.taskId))
-		.map((outcome): PersistedTaskRecord => ({
-			taskId: outcome.taskId,
-			laneNumber: 0,
-			sessionName: outcome.sessionName ?? "",
-			status: outcome.status,
-			taskFolder: "",
-			startedAt: outcome.startTime ?? null,
-			endedAt: outcome.endTime ?? null,
-			doneFileFound: outcome.doneFileFound ?? false,
-			exitReason: outcome.exitReason ?? "",
-			exitDiagnostic: outcome.exitDiagnostic,
-			partialProgressCommits: outcome.partialProgressCommits,
-			partialProgressBranch: outcome.partialProgressBranch,
-		}));
+	// Build lookup maps for fast per-task enrichment (mirrors serializeBatchState logic).
+	const laneByTaskId = new Map<string, AllocatedLane>();
+	const allocatedTaskByTaskId = new Map<string, { allocatedTask: import("./types.ts").AllocatedTask; lane: AllocatedLane }>();
+	for (const lane of lanes) {
+		for (const allocTask of lane.tasks) {
+			laneByTaskId.set(allocTask.taskId, lane);
+			allocatedTaskByTaskId.set(allocTask.taskId, { allocatedTask: allocTask, lane });
+		}
+	}
+
+	// Latest outcome wins (allTaskOutcomes is append/replace ordered by time).
+	const outcomeByTaskId = new Map<string, LaneTaskOutcome>();
+	for (const outcome of allTaskOutcomes) {
+		outcomeByTaskId.set(outcome.taskId, outcome);
+	}
+
+	// Build full task ID set from wave plan + outcomes (covers pending/blocked tasks).
+	const taskIdSet = new Set<string>();
+	for (const wave of wavePlan) {
+		for (const taskId of wave) taskIdSet.add(taskId);
+	}
+	for (const outcome of allTaskOutcomes) {
+		taskIdSet.add(outcome.taskId);
+	}
+
+	// Build task records sorted by taskId for deterministic output.
+	const tasks: PersistedTaskRecord[] = [...taskIdSet]
+		.sort()
+		.map((taskId): PersistedTaskRecord => {
+			const lane = laneByTaskId.get(taskId);
+			const outcome = outcomeByTaskId.get(taskId);
+			const allocated = allocatedTaskByTaskId.get(taskId);
+
+			const record: PersistedTaskRecord = {
+				taskId,
+				laneNumber: lane?.laneNumber ?? 0,
+				sessionName: outcome?.sessionName || lane?.tmuxSessionName || "",
+				status: outcome?.status ?? "pending",
+				taskFolder: "",
+				startedAt: outcome?.startTime ?? null,
+				endedAt: outcome?.endTime ?? null,
+				doneFileFound: outcome?.doneFileFound ?? false,
+				exitReason: outcome?.exitReason ?? "",
+			};
+
+			// Repo attribution from allocated task metadata (workspace mode).
+			if (allocated?.allocatedTask.task?.promptRepoId !== undefined) {
+				record.repoId = allocated.allocatedTask.task.promptRepoId;
+			}
+			if (allocated?.allocatedTask.task?.resolvedRepoId !== undefined) {
+				record.resolvedRepoId = allocated.allocatedTask.task.resolvedRepoId;
+			}
+
+			// Partial progress fields from outcome.
+			if (outcome?.partialProgressCommits !== undefined) {
+				record.partialProgressCommits = outcome.partialProgressCommits;
+			}
+			if (outcome?.partialProgressBranch !== undefined) {
+				record.partialProgressBranch = outcome.partialProgressBranch;
+			}
+
+			// v3: Exit diagnostic from outcome.
+			if (outcome?.exitDiagnostic !== undefined) {
+				record.exitDiagnostic = outcome.exitDiagnostic;
+			}
+
+			return record;
+		});
 
 	return {
 		orchConfig,
