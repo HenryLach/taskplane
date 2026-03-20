@@ -11,7 +11,7 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Read task completion flow
 - [x] Read review agent spawn pattern
 - [x] Read roadmap Phase 5 sections
@@ -87,6 +87,7 @@
 | 2026-03-20 00:20 | Task started | Extension-driven execution |
 | 2026-03-20 00:20 | Step 0 started | Preflight |
 | 2026-03-20 00:21 | Review R001 | plan Step 0: REVISE |
+| 2026-03-20 00:24 | Worker iter 1 | done in 174s, ctx: 18%, tools: 31 |
 
 ## Blockers
 
