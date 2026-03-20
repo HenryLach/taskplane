@@ -1,16 +1,18 @@
 ## Plan Review: Step 4: Documentation & Delivery
 
-### Verdict: APPROVE
+### Verdict: REVISE
 
 ### Summary
-The Step 4 plan is appropriately scoped for this task’s closeout requirements. It aligns with the prompt’s documentation guidance (no mandatory docs changes, only a conditional check of the dashboard command docs) and includes the required completion marker creation (`.DONE`). Given Steps 1–3 are already completed with verification, this is a sufficient delivery plan.
+The closeout scope is mostly correct (conditional docs check + completion marker), but the current plan is missing a critical state-integrity safeguard. `STATUS.md` still marks Step 4 in progress while `.DONE` already exists, which conflicts with Taskplane’s completion semantics and can mislead operators/automation. The plan should explicitly reconcile this and define the documentation decision trail.
 
 ### Issues Found
-1. **[Severity: minor]** — The plan could more explicitly record the documentation-impact decision path (update vs. no-change rationale). Add a short STATUS note when Step 4 is executed (e.g., "`docs/reference/commands.md` reviewed; no command-surface changes, so no doc edit needed") to make closeout auditable. (`STATUS.md:60-61`, `PROMPT.md:101-110`, `docs/reference/commands.md:512-514`)
+1. **[Severity: important]** — Completion-state inconsistency is not addressed: `STATUS.md` shows Step 4 incomplete (`STATUS.md:3-4`, `STATUS.md:57-61`), but `.DONE` is already present (`taskplane-tasks/TP-027-dashboard-telemetry/.DONE`). The plan must include an explicit sequencing rule: finalize docs decision + status updates first, then create/confirm `.DONE` as the last step (or document why it already exists and reconcile status immediately).
+2. **[Severity: minor]** — “Docs updated if needed” is under-specified as an outcome. Add a concrete decision record in `STATUS.md` indicating whether `docs/reference/commands.md` changed and why (or why not), so Step 4 completion is auditable.
 
 ### Missing Items
-- None blocking.
+- Explicit finalization checklist item to align task metadata: Step 4 checkbox completion, top-level status flip to complete, and execution-log entry documenting closeout.
+- Explicit reconciliation of `.DONE` lifecycle with the status file to preserve authoritative completion semantics.
 
 ### Suggestions
-- Before creating `.DONE`, update Step 4 checkboxes and add an execution-log entry so task closure is traceable.
-- If `docs/reference/commands.md` is unchanged, explicitly state that decision in `STATUS.md` instead of leaving it implicit.
+- If no docs change is required, add a one-line note such as: “Reviewed `docs/reference/commands.md` dashboard command section; no command-surface change, no doc edit needed.”
+- Keep `.DONE` creation/confirmation as the final documented action to avoid premature task closure signals.
