@@ -44,13 +44,13 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Syntax check: `node --check dashboard/server.cjs` and `node --check dashboard/public/app.js` pass
-- [ ] API contract: Create mock telemetry JSONL + batch-state, verify buildDashboardState() returns `telemetry` and `batchTotalCost` fields with correct values (retry lifecycle, compaction count, cost dedup)
-- [ ] Fallback/edge cases: Verify graceful behavior with missing .pi/telemetry/, malformed JSONL lines, file deletion mid-read, and pre-RPC sessions (no telemetry files)
-- [ ] Full test suite: `cd extensions && npx vitest run` passes with zero failures
-- [ ] Fix any issues discovered during verification
+- [x] Syntax check: `node --check dashboard/server.cjs` and `node --check dashboard/public/app.js` pass
+- [x] API contract: Create mock telemetry JSONL + batch-state, verify buildDashboardState() returns `telemetry` and `batchTotalCost` fields with correct values (retry lifecycle, compaction count, cost dedup)
+- [x] Fallback/edge cases: Verify graceful behavior with missing .pi/telemetry/, malformed JSONL lines, file deletion mid-read, and pre-RPC sessions (no telemetry files)
+- [x] Full test suite: `cd extensions && npx vitest run` passes with zero failures (32 files, 1321 tests)
+- [x] Fix any issues discovered during verification (no issues found — all tests pass)
 
 ---
 

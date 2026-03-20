@@ -223,6 +223,20 @@ function loadLaneStates() {
 const telemetryTailStates = new Map();
 
 /**
+ * Module-level accumulated telemetry per tmux prefix.
+ * Persists across poll ticks so incremental tail reads accumulate correctly.
+ * Key: tmux prefix → { inputTokens, outputTokens, ... }
+ */
+const telemetryAccumulators = new Map();
+
+/**
+ * Tracks which files are currently contributing to each prefix.
+ * Key: tmux prefix → Set of absolute file paths
+ * Used to detect file rotation: when files change, accumulator is reset.
+ */
+const telemetryPrefixFiles = new Map();
+
+/**
  * Parse a telemetry JSONL filename to extract lane number and role.
  * Pattern: {opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.jsonl
  * Returns { laneNumber: number|null, role: string } or null if unparseable.
@@ -269,6 +283,7 @@ function tailJsonlFile(filePath) {
   if (fileSize < tailState.offset) {
     tailState.offset = 0;
     tailState.partial = "";
+    tailState.wasReset = true; // Signal to caller that accumulator should be reset
   }
 
   if (fileSize <= tailState.offset) {
@@ -347,6 +362,8 @@ function loadTelemetryData(batchState) {
 
   // Track which files still exist for tail-state cleanup
   const currentFiles = new Set();
+  // Track current file→prefix mapping to detect file rotation
+  const currentPrefixFiles = new Map(); // prefix → Set<filePath>
 
   for (const file of files) {
     const filePath = path.join(telemetryDir, file);
@@ -368,28 +385,47 @@ function loadTelemetryData(batchState) {
       prefix = "standalone";
     }
 
-    // Initialize accumulator for this prefix if needed
-    if (!result[prefix]) {
-      result[prefix] = {
-        inputTokens: 0,
-        outputTokens: 0,
-        cacheReadTokens: 0,
-        cacheWriteTokens: 0,
-        cost: 0,
-        toolCalls: 0,
-        lastTool: "",
-        retries: 0,
-        retryActive: false,
-        lastRetryError: "",
-        compactions: 0,
-        latestTotalTokens: 0,
+    // Track file→prefix mapping
+    if (!currentPrefixFiles.has(prefix)) currentPrefixFiles.set(prefix, new Set());
+    currentPrefixFiles.get(prefix).add(filePath);
+
+    // Check if file set for this prefix has changed (file rotation)
+    const prevFiles = telemetryPrefixFiles.get(prefix);
+    const isNewFile = !prevFiles || !prevFiles.has(filePath);
+
+    // Initialize persistent accumulator for this prefix if needed,
+    // or reset if files changed (new file appeared for same prefix)
+    if (!telemetryAccumulators.has(prefix) || (isNewFile && !telemetryTailStates.has(filePath))) {
+      const fresh = {
+        inputTokens: 0, outputTokens: 0, cacheReadTokens: 0,
+        cacheWriteTokens: 0, cost: 0, toolCalls: 0,
+        lastTool: "", retries: 0, retryActive: false,
+        lastRetryError: "", compactions: 0, latestTotalTokens: 0,
       };
+      telemetryAccumulators.set(prefix, fresh);
+      // Also reset tail states for ALL files of this prefix to re-read from beginning
+      if (prevFiles) {
+        for (const pf of prevFiles) {
+          telemetryTailStates.delete(pf);
+        }
+      }
     }
 
-    const acc = result[prefix];
+    const acc = telemetryAccumulators.get(prefix);
+    result[prefix] = acc; // expose the persistent accumulator in the result
 
     // Tail the file for new events
     const events = tailJsonlFile(filePath);
+
+    // Check if file was truncated — reset accumulator
+    const ts = telemetryTailStates.get(filePath);
+    if (ts && ts.wasReset) {
+      acc.inputTokens = 0; acc.outputTokens = 0; acc.cacheReadTokens = 0;
+      acc.cacheWriteTokens = 0; acc.cost = 0; acc.toolCalls = 0;
+      acc.lastTool = ""; acc.retries = 0; acc.retryActive = false;
+      acc.lastRetryError = ""; acc.compactions = 0; acc.latestTotalTokens = 0;
+      ts.wasReset = false;
+    }
     for (const event of events) {
       switch (event.type) {
         case "message_end": {
@@ -452,6 +488,20 @@ function loadTelemetryData(batchState) {
     if (filePath.startsWith(telemetryDir) && !currentFiles.has(filePath)) {
       telemetryTailStates.delete(filePath);
     }
+  }
+
+  // Update prefix→files tracking for next call
+  // Clean up accumulators and tracking for prefixes that have no remaining files
+  const activePrefixes = new Set(Object.keys(result));
+  for (const [prefix] of telemetryAccumulators) {
+    if (!activePrefixes.has(prefix)) {
+      telemetryAccumulators.delete(prefix);
+      telemetryPrefixFiles.delete(prefix);
+    }
+  }
+  // Store current file mappings for next call's rotation detection
+  for (const [prefix, fileSet] of currentPrefixFiles) {
+    telemetryPrefixFiles.set(prefix, fileSet);
   }
 
   return result;
