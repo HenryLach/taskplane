@@ -47,12 +47,12 @@
 
 ### Step 3: Remediation Cycle
 **Status:** 🟨 In Progress
-- [ ] Add `generateFeedbackMd()` to quality-gate.ts: deterministic template with cycle number, blocking findings (critical+important only), concrete remediation actions; file is intentionally staged (aligns with 5e artifact scope)
-- [ ] Add `buildFixAgentPrompt()` to quality-gate.ts: generates prompt instructing fix agent to address REVIEW_FEEDBACK.md findings in same worktree
-- [ ] Implement remediation loop in task-runner.ts: write REVIEW_FEEDBACK.md, spawn fix agent (reusing worker spawn pattern), re-run doQualityGateReview after fix completes; replace the current Step 3 placeholder break
-- [ ] Handle fix-agent abnormal exits deterministically: crash/non-zero/timeout consumes fix budget, logs reason, proceeds to next review cycle (or fails if budget exhausted); no ambiguous looping
-- [ ] On max cycles exhaustion: persist blocking findings summary (critical+important items + cycle count) into STATUS.md execution log and set error state
-- [ ] Log per-cycle remediation outcomes in STATUS.md execution log for operator visibility (fix attempt, review rerun result, terminal reason)
+- [x] Add `generateFeedbackMd()` to quality-gate.ts: deterministic template with cycle number, blocking findings (critical+important only), concrete remediation actions; file is intentionally staged (aligns with 5e artifact scope)
+- [x] Add `buildFixAgentPrompt()` to quality-gate.ts: generates prompt instructing fix agent to address REVIEW_FEEDBACK.md findings in same worktree
+- [x] Implement remediation loop in task-runner.ts: write REVIEW_FEEDBACK.md, spawn fix agent (reusing worker spawn pattern), re-run doQualityGateReview after fix completes; replace the current Step 3 placeholder break
+- [x] Handle fix-agent abnormal exits deterministically: crash/non-zero/timeout consumes fix budget, logs reason, proceeds to next review cycle (or fails if budget exhausted); no ambiguous looping
+- [x] On max cycles exhaustion: persist blocking findings summary (critical+important items + cycle count) into STATUS.md execution log and set error state
+- [x] Log per-cycle remediation outcomes in STATUS.md execution log for operator visibility (fix attempt, review rerun result, terminal reason)
 
 ---
 
@@ -90,6 +90,7 @@
 | R005 | plan | Step 2 | APPROVE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 
 ## Discoveries
@@ -142,6 +143,8 @@
 | 2026-03-20 00:58 | Worker iter 3 | done in 369s, ctx: 22%, tools: 40 |
 | 2026-03-20 00:58 | Step 2 complete | Implement Structured Review |
 | 2026-03-20 00:58 | Step 3 started | Remediation Cycle |
+| 2026-03-20 | Step 3 complete | Remediation cycle: generateFeedbackMd, buildFixAgentPrompt, doQualityGateFixAgent, full loop with deterministic failure handling |
+| 2026-03-20 00:59 | Review R007 | plan Step 3: REVISE |
 
 ## Blockers
 

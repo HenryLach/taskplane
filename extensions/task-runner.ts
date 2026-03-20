@@ -34,8 +34,11 @@ import { classifyExit } from "./taskplane/diagnostics.ts";
 import type { TaskExitDiagnostic, ExitSummary } from "./taskplane/diagnostics.ts";
 import {
 	generateQualityGatePrompt,
+	generateFeedbackMd,
+	buildFixAgentPrompt,
 	readAndEvaluateVerdict,
 	VERDICT_FILENAME,
+	FEEDBACK_FILENAME,
 	type QualityGateContext,
 	type QualityGateResult,
 	type ReviewVerdict,
@@ -1917,17 +1920,29 @@ export default function (pi: ExtensionAPI) {
 		// All steps done — run quality gate if enabled, then create .DONE
 		if (config.quality_gate.enabled) {
 			// ── Quality Gate Enabled ─────────────────────────────────
-			// Run structured review cycles. .DONE only created after PASS.
+			// Run structured review cycles with remediation. .DONE only
+			// created after PASS verdict — never delete/recreate.
 			const maxReviewCycles = config.quality_gate.max_review_cycles;
 			const maxFixCycles = config.quality_gate.max_fix_cycles;
 			let reviewCycle = 0;
+			let fixCyclesUsed = 0;
 			let gatePassed = false;
+			let lastVerdict: ReviewVerdict | null = null;
+
+			const gateContext: QualityGateContext = {
+				taskFolder: task.taskFolder,
+				promptPath: task.promptPath,
+				taskId: task.taskId,
+				projectName: config.project.name,
+				passThreshold: config.quality_gate.pass_threshold,
+			};
 
 			logExecution(statusPath, "Quality gate", `Enabled (threshold: ${config.quality_gate.pass_threshold}, max reviews: ${maxReviewCycles}, max fixes: ${maxFixCycles})`);
 
 			while (reviewCycle < maxReviewCycles) {
 				reviewCycle++;
 				const result = await doQualityGateReview(ctx, reviewCycle);
+				lastVerdict = result.verdict;
 
 				if (result.passed) {
 					gatePassed = true;
@@ -1936,23 +1951,45 @@ export default function (pi: ExtensionAPI) {
 
 				// NEEDS_FIXES — check if we can still do a fix cycle
 				if (reviewCycle >= maxReviewCycles) {
-					// No more review cycles — fail
+					// No more review cycles left — terminal failure
+					logExecution(statusPath, "Quality gate", `Max review cycles (${maxReviewCycles}) exhausted — no more reviews allowed`);
 					break;
 				}
 
-				const fixCyclesUsed = reviewCycle - 1; // first review doesn't consume a fix cycle
 				if (fixCyclesUsed >= maxFixCycles) {
 					// No more fix cycles allowed
-					logExecution(statusPath, "Quality gate", `Max fix cycles (${maxFixCycles}) exhausted`);
+					logExecution(statusPath, "Quality gate", `Max fix cycles (${maxFixCycles}) exhausted — cannot remediate`);
 					break;
 				}
 
-				// Remediation will be implemented in Step 3 — for now,
-				// mark that we need fixes and break to fail the gate.
-				// Step 3 will add: write REVIEW_FEEDBACK.md, spawn fix agent,
-				// then loop back to re-review.
-				logExecution(statusPath, "Quality gate", `NEEDS_FIXES — remediation pending (Step 3)`);
-				break;
+				// ── Remediation: write feedback, spawn fix agent ─────
+				fixCyclesUsed++;
+
+				// Write REVIEW_FEEDBACK.md with blocking findings
+				const feedbackContent = generateFeedbackMd(result.verdict, reviewCycle, maxReviewCycles);
+				const feedbackPath = join(task.taskFolder, FEEDBACK_FILENAME);
+				try {
+					writeFileSync(feedbackPath, feedbackContent);
+					logExecution(statusPath, "Quality gate", `Wrote ${FEEDBACK_FILENAME} (fix cycle ${fixCyclesUsed}/${maxFixCycles})`);
+				} catch (err: any) {
+					logExecution(statusPath, "Quality gate", `Failed to write ${FEEDBACK_FILENAME}: ${err?.message} — skipping remediation`);
+					break;
+				}
+
+				// Build fix agent prompt
+				const fixPrompt = buildFixAgentPrompt(gateContext, feedbackContent, fixCyclesUsed);
+
+				// Spawn fix agent (reuses worker spawn pattern)
+				const fixResult = await doQualityGateFixAgent(ctx, fixPrompt, fixCyclesUsed);
+
+				if (fixResult.exitCode !== 0) {
+					// Fix agent abnormal exit — consumes fix budget, log and continue to re-review
+					logExecution(statusPath, "Quality gate", `Fix agent exited with code ${fixResult.exitCode} (cycle ${fixCyclesUsed}) — budget consumed, proceeding to re-review`);
+				} else {
+					logExecution(statusPath, "Quality gate", `Fix agent completed (cycle ${fixCyclesUsed}, ${Math.round(fixResult.elapsed / 1000)}s) — proceeding to re-review`);
+				}
+
+				// Loop back to the top for re-review
 			}
 
 			if (gatePassed) {
@@ -1963,10 +2000,25 @@ export default function (pi: ExtensionAPI) {
 				logExecution(statusPath, "Task complete", `.DONE created (quality gate PASS, cycle ${reviewCycle})`);
 			} else {
 				// Gate failed — do NOT create .DONE
+				// Persist blocking findings summary for operator visibility
+				if (lastVerdict) {
+					const criticals = lastVerdict.findings.filter(f => f.severity === "critical");
+					const importants = lastVerdict.findings.filter(f => f.severity === "important");
+					const findingsSummary = [
+						criticals.length > 0 ? `${criticals.length} critical` : "",
+						importants.length > 0 ? `${importants.length} important` : "",
+					].filter(Boolean).join(", ");
+					logExecution(statusPath, "Quality gate failed",
+						`${reviewCycle} review cycle(s), ${fixCyclesUsed} fix cycle(s). ` +
+						`Blocking findings: ${findingsSummary || "none extracted"}. ` +
+						`Summary: ${lastVerdict.summary}`);
+				} else {
+					logExecution(statusPath, "Quality gate failed", `Task did not pass after ${reviewCycle} review cycle(s)`);
+				}
+
 				state.phase = "error";
 				updateStatusField(statusPath, "Status", "❌ Quality gate failed");
-				logExecution(statusPath, "Quality gate failed", `Task did not pass after ${reviewCycle} review cycle(s)`);
-				ctx.ui.notify(`❌ Quality gate failed after ${reviewCycle} review cycle(s). .DONE not created.`, "error");
+				ctx.ui.notify(`❌ Quality gate failed after ${reviewCycle} review cycle(s), ${fixCyclesUsed} fix cycle(s). .DONE not created.`, "error");
 				updateWidgets();
 				return;
 			}
@@ -2674,6 +2726,125 @@ export default function (pi: ExtensionAPI) {
 			verdict,
 			evaluation,
 		};
+	}
+
+	// ── Quality Gate Fix Agent ───────────────────────────────────────
+
+	/**
+	 * Spawn a fix agent to address quality gate findings.
+	 *
+	 * Reuses the worker spawn pattern (subprocess or tmux). The fix agent
+	 * receives REVIEW_FEEDBACK.md content and makes targeted code fixes.
+	 *
+	 * Handles abnormal exits deterministically:
+	 * - Agent crash → returns non-zero exit code (caller consumes fix budget)
+	 * - Agent timeout → returns non-zero (caller consumes fix budget)
+	 * - Agent exits normally but makes no changes → still returns 0 (re-review will catch)
+	 *
+	 * @param ctx - Extension context
+	 * @param fixPrompt - Prompt for the fix agent (includes REVIEW_FEEDBACK.md)
+	 * @param fixCycleNum - Current fix cycle number (1-based)
+	 * @returns Exit code and elapsed time
+	 */
+	async function doQualityGateFixAgent(
+		ctx: ExtensionContext,
+		fixPrompt: string,
+		fixCycleNum: number,
+	): Promise<{ exitCode: number; elapsed: number }> {
+		if (!state.task || !state.config) {
+			return { exitCode: 1, elapsed: 0 };
+		}
+
+		const task = state.task;
+		const config = state.config;
+		const statusPath = join(task.taskFolder, "STATUS.md");
+
+		// Use worker model and tools for fix agent (it needs to edit code)
+		const workerDef = loadAgentDef(ctx.cwd, "task-worker");
+		const fixModel = config.worker.model
+			|| workerDef?.model
+			|| "anthropic/claude-sonnet-4-20250514";
+
+		const basePrompt = workerDef?.systemPrompt
+			|| "You are a fix agent addressing quality gate findings. Read the feedback and make targeted code fixes.";
+		const systemPrompt = basePrompt + "\n\n" + buildProjectContext(config, task.taskFolder);
+
+		// Update UI state
+		state.workerStatus = "running";
+		state.workerElapsed = 0;
+		state.workerContextPct = 0;
+		state.workerLastTool = "";
+		state.workerToolCount = 0;
+		state.workerRetryActive = false;
+		state.workerRetryCount = 0;
+		state.workerLastRetryError = "";
+		updateWidgets();
+
+		const startTime = Date.now();
+		state.workerTimer = setInterval(() => {
+			state.workerElapsed = Date.now() - startTime;
+			updateWidgets();
+		}, 1000);
+
+		logExecution(statusPath, "Quality gate", `Starting fix agent (cycle ${fixCycleNum})`);
+
+		const spawnMode = getSpawnMode(config);
+		let fixPromise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>;
+
+		try {
+			if (spawnMode === "tmux") {
+				const sessionName = `${getTmuxPrefix()}-qg-fix`;
+				const spawned = spawnAgentTmux({
+					sessionName,
+					cwd: ctx.cwd,
+					systemPrompt,
+					prompt: fixPrompt,
+					model: fixModel,
+					tools: config.worker.tools || workerDef?.tools || "read,write,edit,bash,grep,find,ls",
+					thinking: config.worker.thinking || "off",
+					taskId: task.taskId,
+				});
+				fixPromise = spawned.promise;
+				state.workerProc = { kill: spawned.kill };
+			} else {
+				const spawned = spawnAgent({
+					model: fixModel,
+					tools: config.worker.tools || workerDef?.tools || "read,write,edit,bash,grep,find,ls",
+					thinking: config.worker.thinking || "off",
+					systemPrompt,
+					prompt: fixPrompt,
+					onToolCall: (toolName, args) => {
+						state.workerToolCount++;
+						const path = args?.path || args?.command || "";
+						const shortPath = typeof path === "string" && path.length > 80
+							? "..." + path.slice(-77) : path;
+						state.workerLastTool = `${toolName} ${shortPath}`.trim();
+						updateWidgets();
+					},
+				});
+				fixPromise = spawned.promise;
+				state.workerProc = { kill: spawned.kill };
+			}
+
+			const result = await fixPromise;
+
+			clearInterval(state.workerTimer);
+			state.workerElapsed = Date.now() - startTime;
+			state.workerStatus = result.exitCode === 0 ? "done" : "error";
+			state.workerProc = null;
+			updateWidgets();
+
+			return { exitCode: result.exitCode, elapsed: Date.now() - startTime };
+		} catch (err: any) {
+			// Fix agent crashed — return non-zero to consume fix budget
+			clearInterval(state.workerTimer);
+			state.workerStatus = "error";
+			state.workerProc = null;
+			updateWidgets();
+
+			logExecution(statusPath, "Quality gate", `Fix agent crashed: ${err?.message || err} — fix cycle ${fixCycleNum} consumed`);
+			return { exitCode: 1, elapsed: Date.now() - startTime };
+		}
 	}
 
 	// ── Commands ─────────────────────────────────────────────────────
