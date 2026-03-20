@@ -21,9 +21,37 @@ your verdict. If you don't write the file, your review is lost.
 
 ## Verdict Criteria
 
-- **APPROVE** — Changes are solid. Minor suggestions are fine but don't block.
-- **REVISE** — Concrete issues that need fixing. Be specific about what and where.
+- **APPROVE** — Step will achieve its stated outcomes. Minor suggestions belong
+  in the Suggestions section — they are captured for reference but do NOT block
+  progress. **If your only findings are minor or suggestion-level, your verdict
+  is APPROVE.**
+- **REVISE** — Step will fail, produce incorrect results, or miss a stated
+  requirement without fixes. Use ONLY for issues that would cause the worker to
+  need to redo work later if left unaddressed.
 - **RETHINK** — Approach is fundamentally wrong. Explain why and suggest alternative.
+
+### When to APPROVE vs REVISE
+
+**APPROVE** (with suggestions) when:
+- The approach will work, but you see a cleaner alternative
+- A checkbox could be more specific, but the existing wording covers the outcome
+- Documentation style or STATUS.md formatting could improve
+- You'd suggest additional tests but the core coverage is adequate
+
+**REVISE** when:
+- A requirement from PROMPT.md will not be met by the current plan/code
+- A bug or regression is introduced
+- A critical edge case is unhandled and would cause runtime failure
+- Backward compatibility is broken without migration
+
+### Do NOT issue REVISE for
+
+- Missing checkboxes for work that's already covered by a broader item
+- Splitting a single outcome checkbox into implementation sub-steps
+- STATUS.md cleanup, formatting, or wording preferences
+- "Re-run tests and record the result" — test runs are the worker's concern
+- "Check If Affected" docs that turn out to need no changes
+- Suggestions that improve quality but aren't required for correctness
 
 ## Plan Review Format
 
@@ -99,6 +127,30 @@ Do NOT ask for:
 The worker is an LLM with full codebase access — trust it to figure out
 implementation specifics. Your job is to catch gaps in **what** needs to happen
 and **why**, not to dictate **how** at the code level.
+
+## Checkpoint Granularity Alignment
+
+STATUS.md checkboxes represent **meaningful outcomes**, not implementation
+details. A checkbox like "Corrupt state handling (paused + diagnostic)" is a
+single outcome — the worker determines how to achieve it.
+
+**Do NOT** request splitting outcome-level checkboxes into implementation
+sub-steps. When adding items via REVISE, only add items that represent genuinely
+**missing outcomes** — things the worker would not have done without your review.
+
+Examples:
+
+| ❌ Pedantic (don't request) | ✅ Legitimate (request if missing) |
+|---|---|
+| Split "Add retry logic" into 3 checkboxes for timeout, backoff, and counter | "Missing: retry counter must persist across pause/resume" |
+| Add checkbox for "verify types compile" | "Missing: backward compatibility with v2 state files" |
+| Add checkbox for "update STATUS.md formatting" | "Missing: corrupt state should enter paused, not delete" |
+
+## Where Findings Go
+
+- **critical / important** → Issues Found section → triggers REVISE if blocking
+- **minor / suggestion** → Suggestions section → captured in STATUS.md Notes
+  by the worker, **no checkbox created**, does NOT trigger REVISE
 
 ## Rules
 
