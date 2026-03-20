@@ -52,19 +52,19 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] Transaction record tests: successful merge captures pre/post refs (baseHEAD, laneHEAD, mergedHEAD) in record
-- [ ] Rollback tests: verification failure triggers rollback to baseHEAD
-- [ ] Safe-stop tests: rollback failure enters safe-stop with preserved state, recovery commands emitted, engine/resume force paused
-- [ ] Non-retriable class test: merge_conflict_unresolved immediately enters paused with no retry
-- [ ] Multi-attempt retry test: git_lock_file retries up to maxAttempts=2, then exhaustion-pauses
-- [ ] Cooldown delay test: retry enforces cooldown delay (non-zero) between attempts
-- [ ] Retry counter persistence tests: counters persist and increment in batch state scoped by repoId:w{N}:l{K}
-- [ ] Exhaustion tests: max attempts exhaustion forces paused regardless of on_merge_failure config
-- [ ] Engine/resume parity test: same failure classification leads to same phase transition and counter updates in both engine.ts and resume.ts code paths
-- [ ] Transaction persistence warning test: persistence failure surfaces in merge outcome with recovery guidance
-- [ ] Workspace-scoped counter tests: retry counters scoped by repoId in workspace mode
-- [ ] Full test suite passes (all existing + new tests)
+**Status:** ✅ Complete
+- [x] Transaction record tests: successful merge captures pre/post refs (baseHEAD, laneHEAD, mergedHEAD) in record
+- [x] Rollback tests: verification failure triggers rollback to baseHEAD
+- [x] Safe-stop tests: rollback failure enters safe-stop with preserved state, recovery commands emitted, engine/resume force paused
+- [x] Non-retriable class test: merge_conflict_unresolved immediately enters paused with no retry
+- [x] Multi-attempt retry test: git_lock_file retries up to maxAttempts=2, then exhaustion-pauses
+- [x] Cooldown delay test: retry enforces cooldown delay (non-zero) between attempts
+- [x] Retry counter persistence tests: counters persist and increment in batch state scoped by repoId:w{N}:l{K}
+- [x] Exhaustion tests: max attempts exhaustion forces paused regardless of on_merge_failure config
+- [x] Engine/resume parity test: same failure classification leads to same phase transition and counter updates in both engine.ts and resume.ts code paths
+- [x] Transaction persistence warning test: persistence failure surfaces in merge outcome with recovery guidance
+- [x] Workspace-scoped counter tests: retry counters scoped by repoId in workspace mode
+- [x] Full test suite passes (all existing + new tests)
 
 ---
 
