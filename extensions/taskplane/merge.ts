@@ -560,6 +560,7 @@ function forceRemoveMergeWorktree(
  * @param opId            - Operator ID (for persistence naming)
  * @param sessionName     - Session name for structured logging
  * @param stateRoot       - State root for persistence (workspace root or repo root)
+ * @param repoId          - Repository ID for workspace-mode artifact naming (optional)
  * @returns VerificationBaselineResult with classification and details
  */
 function runPostMergeVerification(
@@ -572,6 +573,7 @@ function runPostMergeVerification(
 	opId: string,
 	sessionName: string,
 	stateRoot: string,
+	repoId?: string,
 ): VerificationBaselineResult {
 	execLog("merge", sessionName, "capturing post-merge verification fingerprints");
 
@@ -582,7 +584,10 @@ function runPostMergeVerification(
 	try {
 		const verifyDir = join(stateRoot, ".pi", "verification", opId);
 		mkdirSync(verifyDir, { recursive: true });
-		const postFileName = `post-b${batchId}-w${waveIndex}-lane${laneNumber}.json`;
+		// TP-032 R006-1: Include repoId in filename to prevent overwrites
+		// when mergeWaveByRepo() calls mergeWave() once per repo group.
+		const repoSuffix = repoId ? `-repo-${repoId.replace(/[^a-zA-Z0-9_-]/g, "_")}` : "";
+		const postFileName = `post-b${batchId}-w${waveIndex}${repoSuffix}-lane${laneNumber}.json`;
 		writeFileSync(
 			join(verifyDir, postFileName),
 			JSON.stringify(postMerge, null, 2),
@@ -721,6 +726,7 @@ export function mergeWave(
 	stateRoot?: string,
 	agentRoot?: string,
 	testingCommands?: Record<string, string>,
+	repoId?: string,
 ): MergeWaveResult {
 	const startTime = Date.now();
 	const tmuxPrefix = config.orchestrator.tmux_prefix;
@@ -843,7 +849,10 @@ export function mergeWave(
 			const piDir = stateRoot ?? repoRoot;
 			const verifyDir = join(piDir, ".pi", "verification", opId);
 			mkdirSync(verifyDir, { recursive: true });
-			const baselineFileName = `baseline-b${batchId}-w${waveIndex}.json`;
+			// TP-032 R006-1: Include repoId in filename to prevent overwrites
+			// when mergeWaveByRepo() calls mergeWave() once per repo group.
+			const repoSuffix = repoId ? `-repo-${repoId.replace(/[^a-zA-Z0-9_-]/g, "_")}` : "";
+			const baselineFileName = `baseline-b${batchId}-w${waveIndex}${repoSuffix}.json`;
 			writeFileSync(
 				join(verifyDir, baselineFileName),
 				JSON.stringify(baseline, null, 2),
@@ -870,6 +879,11 @@ export function mergeWave(
 	// Sequential merge loop
 	let failedLane: number | null = null;
 	let failureReason: string | null = null;
+	// TP-032 R006-2: When verification rollback fails, the temp branch still contains
+	// the bad merge commit. Branch advancement MUST be blocked entirely — not just for
+	// the verification-blocked lane, but for all lanes, because the temp branch HEAD
+	// includes the unverified commit and any prior successful merges built on top of it.
+	let blockAdvancement = false;
 
 	for (const lane of orderedLanes) {
 		const laneStart = Date.now();
@@ -907,17 +921,16 @@ export function mergeWave(
 			}
 
 			// Build merge request content
-			// TP-032: When baseline fingerprinting is active (testing.commands configured
-			// and baseline captured), pass empty verify commands to the merge agent.
-			// The orchestrator handles all verification via baseline comparison, so the
-			// merge agent should not independently fail on pre-existing test failures.
-			// This prevents BUILD_FAILURE before the orchestrator can classify failures.
-			const agentVerifyCommands = baseline ? [] : config.merge.verify;
+			// TP-032 R006-3: Preserve merge.verify commands independently of baseline
+			// fingerprinting. The orchestrator-side baseline comparison (testing.commands)
+			// is additive — it does NOT replace the merge agent's own verification
+			// (merge.verify). Agents may run build checks or other non-fingerprintable
+			// commands via merge.verify that must not be silently suppressed.
 			const mergeRequestContent = buildMergeRequest(
 				lane,
 				targetBranch,
 				waveIndex,
-				agentVerifyCommands,
+				config.merge.verify,
 				resultFilePath,
 			);
 
@@ -1014,6 +1027,7 @@ export function mergeWave(
 					opId,
 					sessionName,
 					stateRoot ?? repoRoot,
+					repoId,
 				);
 
 				// Attach verification result to the lane result
@@ -1029,6 +1043,10 @@ export function mergeWave(
 					// ── TP-032: Rollback merge commit on verification_new_failure ──
 					// Reset the temp branch to pre-lane HEAD so the failed lane's
 					// merge commit doesn't get included in branch advancement.
+					// TP-032 R006-2: Mark lane as errored so it's excluded from success
+					// counters and branch advancement (R006-3).
+					laneResult.error = `verification_new_failure: ${verificationResult.newFailureCount} new failure(s)`;
+
 					if (preLaneHead) {
 						execLog("merge", sessionName, "rolling back temp branch to pre-lane HEAD", {
 							preLaneHead: preLaneHead.slice(0, 8),
@@ -1037,9 +1055,25 @@ export function mergeWave(
 						if (resetResult.status === 0) {
 							execLog("merge", sessionName, "temp branch rolled back successfully");
 						} else {
+							// TP-032 R006-2: Rollback failure is merge-fatal for this wave.
+							// The temp branch still contains the failing merge commit — target
+							// ref advancement MUST NOT proceed for ANY lane, because the temp
+							// branch HEAD includes the unverified commit.
 							const resetErr = resetResult.stderr?.toString().trim() || "unknown error";
-							execLog("merge", sessionName, `rollback reset failed: ${resetErr}`);
+							laneResult.error = `verification_new_failure: rollback reset failed (${resetErr}) — ` +
+								`temp branch may contain failing merge commit, advancement blocked`;
+							blockAdvancement = true;
+							execLog("merge", sessionName, `CRITICAL: rollback reset failed: ${resetErr} — ALL branch advancement blocked`, {
+								preLaneHead: preLaneHead.slice(0, 8),
+							});
 						}
+					} else {
+						// TP-032 R006-2: No pre-lane HEAD captured — cannot roll back.
+						// Block advancement since the bad commit cannot be removed.
+						laneResult.error = `verification_new_failure: no pre-lane HEAD available for rollback — ` +
+							`advancement blocked`;
+						blockAdvancement = true;
+						execLog("merge", sessionName, "CRITICAL: no pre-lane HEAD — cannot roll back, ALL branch advancement blocked");
 					}
 
 					failedLane = lane.laneNumber;
@@ -1144,9 +1178,19 @@ export function mergeWave(
 	}
 
 	// ── Update target branch ref and clean up merge worktree ────────
-	const anySuccess = laneResults.some(
-		r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED",
+	// TP-032 R006-2: blockAdvancement overrides all success determination.
+	// When verification rollback fails, the temp branch contains a bad merge commit
+	// that would be included in branch advancement — so we block entirely.
+	// Also exclude verification_new_failure lanes (with successful rollback) from
+	// success accounting: they have laneResult.error set, so !r.error filters them.
+	const anySuccess = !blockAdvancement && laneResults.some(
+		r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
 	);
+
+	if (blockAdvancement) {
+		execLog("merge", `W${waveIndex}`, "branch advancement BLOCKED due to verification rollback failure — " +
+			"temp branch may contain unverified merge commit");
+	}
 
 	if (anySuccess) {
 		// Get the temp branch HEAD commit — this is the merged result.
@@ -1250,7 +1294,7 @@ export function mergeWave(
 	const totalDurationMs = Date.now() - startTime;
 
 	execLog("merge", `W${waveIndex}`, `wave merge complete: ${status}`, {
-		mergedLanes: laneResults.filter(r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED").length,
+		mergedLanes: laneResults.filter(r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")).length,
 		failedLane: failedLane ?? 0,
 		duration: `${Math.round(totalDurationMs / 1000)}s`,
 	});
@@ -1447,6 +1491,7 @@ export function mergeWaveByRepo(
 			stateRoot,
 			agentRoot,
 			testingCommands,
+			group.repoId,
 		);
 
 		// Accumulate lane results
@@ -1483,8 +1528,9 @@ export function mergeWaveByRepo(
 	// - anyLaneSucceeded: at least one lane merged successfully across all repos
 	// - anyRepoFailed: at least one repo had a non-succeeded status (includes
 	//   both lane-level failures AND repo setup failures with failedLane=null)
+	// TP-032 R006-3: Exclude verification_new_failure lanes from success determination
 	const anyLaneSucceeded = allLaneResults.some(
-		r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED",
+		r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
 	);
 
 	let status: MergeWaveResult["status"];
@@ -1501,7 +1547,7 @@ export function mergeWaveByRepo(
 	execLog("merge", `W${waveIndex}`, `repo-scoped wave merge complete: ${status}`, {
 		repoCount: repoOutcomes.length,
 		repoStatuses: repoOutcomes.map(r => `${r.repoId ?? "default"}:${r.status}`).join(", "),
-		mergedLanes: allLaneResults.filter(r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED").length,
+		mergedLanes: allLaneResults.filter(r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")).length,
 		duration: `${Math.round(totalDurationMs / 1000)}s`,
 	});
 

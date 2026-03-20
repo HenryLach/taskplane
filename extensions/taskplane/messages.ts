@@ -216,8 +216,9 @@ export function formatRepoMergeSummary(mergeResult: MergeWaveResult): string | n
 	const repoLines = repoResults.map(r => {
 		const repoLabel = r.repoId ?? "(default)";
 		const icon = repoStatusIcon(r.status);
+		// TP-032 R006-3: Exclude verification_new_failure lanes from success count
 		const mergedCount = r.laneResults.filter(
-			lr => lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED",
+			lr => !lr.error && (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED"),
 		).length;
 		const totalCount = r.laneResults.length;
 		let detail = `${mergedCount}/${totalCount} lane(s) merged`;

@@ -1145,8 +1145,9 @@ export async function resumeOrchBatch(
 				);
 
 				// Clean up merged branches (resolve per-lane repo root for workspace mode)
+				// TP-032 R006-3: Exclude verification_new_failure lanes from branch cleanup
 				for (const lr of reExecMergeResult.laneResults) {
-					if (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED") {
+					if (!lr.error && (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED")) {
 						const laneRepoRoot = resolveRepoRoot(lr.repoId, repoRoot, workspaceConfig);
 						deleteBranchBestEffort(lr.sourceBranch, laneRepoRoot);
 					}
@@ -1427,14 +1428,16 @@ export async function resumeOrchBatch(
 				// Emit per-lane merge notifications
 				for (const lr of mergeResult.laneResults) {
 					const durationSec = Math.round(lr.durationMs / 1000);
-					if (lr.result?.status === "SUCCESS") {
+					// TP-032 R006-3: Check lr.error first — verification_new_failure lanes
+					// have error set even though lr.result.status may be SUCCESS/CONFLICT_RESOLVED.
+					if (lr.error) {
+						onNotify(ORCH_MESSAGES.orchMergeLaneFailed(lr.laneNumber, lr.error), "error");
+					} else if (lr.result?.status === "SUCCESS") {
 						onNotify(ORCH_MESSAGES.orchMergeLaneSuccess(lr.laneNumber, lr.result.merge_commit, durationSec), "info");
 					} else if (lr.result?.status === "CONFLICT_RESOLVED") {
 						onNotify(ORCH_MESSAGES.orchMergeLaneConflictResolved(lr.laneNumber, lr.result.conflicts.length, durationSec), "info");
 					} else if (lr.result?.status === "CONFLICT_UNRESOLVED" || lr.result?.status === "BUILD_FAILURE") {
-						onNotify(ORCH_MESSAGES.orchMergeLaneFailed(lr.laneNumber, lr.error || lr.result.status), "error");
-					} else if (lr.error) {
-						onNotify(ORCH_MESSAGES.orchMergeLaneFailed(lr.laneNumber, lr.error), "error");
+						onNotify(ORCH_MESSAGES.orchMergeLaneFailed(lr.laneNumber, lr.result.status), "error");
 					}
 				}
 
@@ -1446,8 +1449,9 @@ export async function resumeOrchBatch(
 					mergeResult = { ...mergeResult, status: "partial", failedLane: mixedOutcomeLanes[0].laneNumber, failureReason };
 				}
 
+				// TP-032 R006-3: Exclude verification_new_failure lanes from success count
 				const mergedCount = mergeResult.laneResults.filter(
-					r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED",
+					r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
 				).length;
 				const mergeTotalSec = Math.round(mergeResult.totalDurationMs / 1000);
 
@@ -1508,9 +1512,10 @@ export async function resumeOrchBatch(
 		}
 
 		// Post-merge: reset worktrees for next wave
+		// TP-032 R006-3: Exclude verification_new_failure lanes from branch cleanup
 		if (mergeResult && mergeResult.status === "succeeded") {
 			for (const lr of mergeResult.laneResults) {
-				if (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED") {
+				if (!lr.error && (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED")) {
 					const laneRepoRoot = resolveRepoRoot(lr.repoId, repoRoot, workspaceConfig);
 					const ancestorCheck = runGit(["merge-base", "--is-ancestor", lr.sourceBranch, lr.targetBranch], laneRepoRoot);
 					if (ancestorCheck.ok) {

@@ -434,14 +434,16 @@ export async function executeOrchBatch(
 				// Emit per-lane merge notifications
 				for (const lr of mergeResult.laneResults) {
 					const durationSec = Math.round(lr.durationMs / 1000);
-					if (lr.result?.status === "SUCCESS") {
+					// TP-032 R006-3: Check lr.error first — verification_new_failure lanes
+					// have error set even though lr.result.status may be SUCCESS/CONFLICT_RESOLVED.
+					if (lr.error) {
+						onNotify(ORCH_MESSAGES.orchMergeLaneFailed(lr.laneNumber, lr.error), "error");
+					} else if (lr.result?.status === "SUCCESS") {
 						onNotify(ORCH_MESSAGES.orchMergeLaneSuccess(lr.laneNumber, lr.result.merge_commit, durationSec), "info");
 					} else if (lr.result?.status === "CONFLICT_RESOLVED") {
 						onNotify(ORCH_MESSAGES.orchMergeLaneConflictResolved(lr.laneNumber, lr.result.conflicts.length, durationSec), "info");
 					} else if (lr.result?.status === "CONFLICT_UNRESOLVED" || lr.result?.status === "BUILD_FAILURE") {
-						onNotify(ORCH_MESSAGES.orchMergeLaneFailed(lr.laneNumber, lr.error || lr.result.status), "error");
-					} else if (lr.error) {
-						onNotify(ORCH_MESSAGES.orchMergeLaneFailed(lr.laneNumber, lr.error), "error");
+						onNotify(ORCH_MESSAGES.orchMergeLaneFailed(lr.laneNumber, lr.result.status), "error");
 					}
 				}
 
@@ -464,8 +466,9 @@ export async function executeOrchBatch(
 				}
 
 				// Emit overall merge result notification
+				// TP-032 R006-3: Exclude verification_new_failure lanes from success count
 				const mergedCount = mergeResult.laneResults.filter(
-					r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED",
+					r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
 				).length;
 				const mergeTotalSec = Math.round(mergeResult.totalDurationMs / 1000);
 
@@ -968,7 +971,9 @@ export async function executeOrchBatch(
 		for (const mergeResult of allMergeResults) {
 			if (mergeResult.status === "succeeded" || mergeResult.status === "partial") {
 				for (const lr of mergeResult.laneResults) {
-					if (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED") {
+					// TP-032 R006-3: Exclude verification_new_failure lanes from branch cleanup
+					// (their merge commits were rolled back, so the branch is NOT merged)
+					if (!lr.error && (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED")) {
 						const laneRepoRoot = resolveRepoRoot(lr.repoId, repoRoot, workspaceConfig);
 						const ancestorCheck = runGit(
 							["merge-base", "--is-ancestor", lr.sourceBranch, lr.targetBranch],

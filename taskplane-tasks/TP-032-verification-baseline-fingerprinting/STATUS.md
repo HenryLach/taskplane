@@ -35,14 +35,14 @@
 ---
 
 ### Step 2: Baseline Capture & Comparison in Merge Flow
-**Status:** 🔄 In Progress
+**Status:** ✅ Complete
 - [x] R005-1: Decouple orchestrator-side baseline verification from merge-agent verification (merge-agent verify remains for agent-side revert logic; orchestrator-side baseline diff gates merge advancement separately)
 - [x] R005-2: Implement orchestrator-side baseline capture/post-merge/diff in mergeWave() with persistence to `.pi/verification/{opId}/` and per-repo naming
 - [x] R005-3: Implement flaky re-run (failed commands only, once) with classification: verification_new_failure blocks lane, flaky_suspected is warning-only
 - [x] R005-4: Add decision note in STATUS.md documenting verification command source and integration architecture
-- [ ] R006-1: Fix baseline artifact naming to include repo attribution in workspace mode (include repoId in filename to prevent overwrites when mergeWave() called per repo group)
-- [ ] R006-2: Fix rollback failure on verification_new_failure — treat reset failure as merge-fatal (set laneResult.error, gate target-branch advancement on successful rollback)
-- [ ] R006-3: Mark verification_new_failure lanes as failed in laneResult (set laneResult.error, exclude from success counters in anySuccess/mergedCount/branch-cleanup paths in engine.ts and resume.ts)
+- [x] R006-1: Fix baseline artifact naming to include repo attribution in workspace mode (include repoId in filename to prevent overwrites when mergeWave() called per repo group)
+- [x] R006-2: Fix rollback failure on verification_new_failure — treat reset failure as merge-fatal (set laneResult.error, gate target-branch advancement on successful rollback)
+- [x] R006-3: Mark verification_new_failure lanes as failed in laneResult (set laneResult.error, exclude from success counters in anySuccess/mergedCount/branch-cleanup paths in engine.ts and resume.ts)
 
 ---
 
