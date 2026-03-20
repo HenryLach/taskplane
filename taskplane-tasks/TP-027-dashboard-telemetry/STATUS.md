@@ -1,11 +1,11 @@
 # TP-027: Dashboard Real-Time Telemetry — Status
 
-**Current Step:** Step 1: Dashboard Server — Serve Telemetry Data
+**Current Step:** Step 2: Dashboard Frontend — Display Telemetry
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
-**Review Counter:** 2
-**Iteration:** 2
+**Review Counter:** 3
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -34,13 +34,12 @@
 ---
 
 ### Step 2: Dashboard Frontend — Display Telemetry
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Add telemetry display to lane view
-- [ ] Add batch cost total to summary
-- [ ] Retry and compaction indicators
-- [ ] Style as secondary/compact
-- [ ] Graceful degradation for pre-RPC lanes
+- [ ] Consume `currentData.telemetry[tmuxPrefix]` in renderLanesTasks() — show retry badge (active/count), compaction badge, and telemetry-sourced lastTool for all task states (running, done, error), not just running
+- [ ] Use `currentData.batchTotalCost` in renderSummary() with backward-compatible fallback to lane-state aggregation when batchTotalCost is absent
+- [ ] Add CSS for telemetry badges (.telem-badge, .telem-retry-active, .telem-compaction) as compact chips in .worker-stats — secondary to existing lane-state display
+- [ ] Graceful "—" fallback: lanes/tasks without telemetry show no telemetry badges (no empty containers, no layout shift)
 
 ---
 
@@ -69,6 +68,8 @@
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
 ---
@@ -106,6 +107,14 @@
 | 2026-03-20 02:41 | Step 1 started | Dashboard Server — Serve Telemetry Data |
 | 2026-03-20 02:41 | Review R002 | plan Step 1: REVISE |
 | 2026-03-20 02:44 | Review R002 | plan Step 1: REVISE |
+| 2026-03-20 02:46 | Worker iter 2 | done in 290s, ctx: 28%, tools: 46 |
+| 2026-03-20 02:46 | Step 1 complete | Dashboard Server — Serve Telemetry Data |
+| 2026-03-20 02:46 | Step 2 started | Dashboard Frontend — Display Telemetry |
+| 2026-03-20 02:47 | Worker iter 2 | done in 158s, ctx: 21%, tools: 29 |
+| 2026-03-20 02:47 | Step 1 complete | Dashboard Server — Serve Telemetry Data |
+| 2026-03-20 02:47 | Step 2 started | Dashboard Frontend — Display Telemetry |
+| 2026-03-20 02:47 | Review R003 | plan Step 2: REVISE |
+| 2026-03-20 02:48 | Review R003 | plan Step 2: REVISE |
 
 ---
 
@@ -138,6 +147,32 @@
 4. Handle missing .pi/telemetry/ directory gracefully — pre-RPC sessions won't have it
 5. Incremental file reading: track byte offset per JSONL file to avoid re-parsing on each poll
 6. Keep dashboard zero-dependency — no new npm packages
+
+### Step 2 Design Decisions
+
+**Field-level precedence (per metric):**
+- **Tokens (↑↓):** lane-state primary; telemetry ignored when lane-state present (avoid double-count)
+- **Cost (per-lane):** lane-state primary; telemetry only for lanes missing lane-state
+- **Cost (batch total):** `currentData.batchTotalCost` from server (already deduped); fallback: sum from lane-states
+- **Context %:** lane-state only (telemetry JSONL doesn't track context window %)
+- **Last tool:** lane-state primary when running; telemetry supplementary for done/error lanes
+- **Elapsed/tools:** lane-state only
+- **Retries:** telemetry only (new metric — not in lane-state)
+- **Compactions:** telemetry only (new metric — not in lane-state)
+
+**Render matrix — when to show telemetry badges:**
+- **Running task + lane-state present:** Show existing worker-stats from lane-state PLUS telemetry retry/compaction badges
+- **Running task + telemetry only:** Show telemetry lastTool, retry badge, compaction badge (no lane-state tokens/elapsed)
+- **Done/error task + telemetry present:** Show telemetry retry count + compaction count badges (compact summary)
+- **Done/error task + no telemetry:** Show existing "✓ Worker done" / "✗ Worker error" — no telemetry badges
+- **Pending task:** No worker stats, no telemetry badges
+- **No telemetry + no lane-state:** No worker stats shown — graceful "—"
+
+**UI placement:**
+- Telemetry badges appended inside `.worker-stats` div after existing stats
+- Compact chip style: small font, muted colors, icon prefix (🔄 retry, 🗜 compaction)
+- Retry active state: yellow pulsing badge to indicate in-progress retry
+- Batch cost in summary bar: use `batchTotalCost` from API response
 
 ### Step 1 Design Decisions
 
