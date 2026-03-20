@@ -11,15 +11,15 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 - [x] Read task completion flow
 - [x] Read review agent spawn pattern
 - [x] Read roadmap Phase 5 sections
 - [x] (R001) Record preflight findings with file/line anchors in Notes section
 - [x] (R001) Record risk/compatibility notes from roadmap Phase 5 in Notes section
 - [x] (R001) Clean up duplicate execution log rows
-- [ ] (R002) Revert TP-026 STATUS.md changes from this branch scope
-- [ ] (R002) Add Tier-2 context read evidence (CONTEXT.md takeaways) to Notes
+- [x] (R002) Revert TP-026 STATUS.md changes from this branch scope
+- [x] (R002) Add Tier-2 context read evidence (CONTEXT.md takeaways) to Notes
 
 ---
 
@@ -94,6 +94,8 @@
 | 2026-03-20 00:24 | Worker iter 1 | done in 174s, ctx: 18%, tools: 31 |
 | 2026-03-20 00:25 | Worker iter 1 | done in 205s, ctx: 21%, tools: 41 |
 | 2026-03-20 00:26 | Review R002 | code Step 0: REVISE |
+| 2026-03-20 | R002 revisions applied | Reverted TP-026 scope leak, added Tier-2 context evidence |
+| 2026-03-20 | Step 0 complete | Preflight done, ready for Step 1 |
 | 2026-03-20 00:27 | Review R002 | code Step 0: REVISE |
 
 ## Blockers
@@ -119,6 +121,13 @@
 **7. Remediation budget:** Max 2 review cycles (initial + after fix). No infinite loops. Config fields: `max_review_cycles: 2`, `max_fix_cycles: 1`.
 
 **8. Artifact staging scope (5e):** REVIEW_VERDICT.json should be staged in post-task commits when quality gate is enabled.
+
+### Tier-2 Context Read (taskplane-tasks/CONTEXT.md)
+
+- **Config files:** `.pi/task-runner.yaml` and `.pi/task-orchestrator.yaml` are the config paths listed in CONTEXT.md. Quality gate config additions must align with the `config-schema.ts` → `config-loader.ts` → `TaskConfig` adapter chain (as detailed in Preflight Finding #3 above).
+- **Extensions live in `extensions/taskplane/`:** New `quality-gate.ts` module belongs here, consistent with existing module layout (discovery.ts, waves.ts, execution.ts, etc.).
+- **Tests live in `extensions/tests/`:** New `quality-gate.test.ts` follows the established pattern.
+- **Tech debt items:** Two existing items noted (worktree naming docs, intermittent test failure). Neither affects this task, but the intermittent test failure should be watched when running full suite in Step 4.
 
 ### Risk / Compatibility Notes (from Roadmap Phase 5)
 
