@@ -36,14 +36,14 @@
 ---
 
 ### Step 2: Default Merge Failure to Paused
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 - [x] Change engine.ts end-of-batch finalization: `failedTasks > 0` → `"paused"` (not `"failed"`) when phase is `"executing"`/`"merging"`, add `preserveWorktreesForResume = true` so worktrees survive for resume
 - [x] Change resume.ts end-of-batch finalization (parity): same `failedTasks > 0` → `"paused"` transition with worktree preservation
 - [x] Reserve `"failed"` for future unrecoverable invariant violations — add code comments documenting this intent at both sites
 - [x] Verify downstream: `isTerminalPhase` checks, completion banners, state cleanup, auto-integration gates all handle new `"paused"` outcome correctly (no functional change needed if they already handle paused)
 - [x] Add expected final-phase matrix to STATUS.md Notes section
-- [ ] R006 fix: Move `failedTasks > 0 → paused` + `preserveWorktreesForResume = true` determination BEFORE cleanup in engine.ts so worktrees are preserved when tasks fail
-- [ ] R006 fix: Same ordering fix in resume.ts — compute preservation intent before section 11 cleanup
+- [x] R006 fix: Move `failedTasks > 0 → paused` + `preserveWorktreesForResume = true` determination BEFORE cleanup in engine.ts so worktrees are preserved when tasks fail
+- [x] R006 fix: Same ordering fix in resume.ts — compute preservation intent before section 11 cleanup
 
 ---
 
@@ -86,6 +86,7 @@
 | R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
+| R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 
 ## Discoveries
 
@@ -125,6 +126,7 @@
 | 2026-03-20 03:03 | Review R005 | plan Step 2: REVISE |
 | 2026-03-20 03:04 | Worker iter 3 | done in 377s, ctx: 18%, tools: 44 |
 | 2026-03-20 03:06 | Review R006 | code Step 2: REVISE |
+| 2026-03-20 03:07 | Review R006 | code Step 2: REVISE |
 
 ## Blockers
 

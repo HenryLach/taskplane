@@ -3,27 +3,31 @@
 ### Verdict: REVISE
 
 ### Summary
-The phase transition change to `paused` is applied consistently in both `engine.ts` and `resume.ts`, and the intent to reserve `failed` for unrecoverable invariants is clearly documented. However, the new `preserveWorktreesForResume = true` assignment is made after terminal cleanup has already run, so in key failure paths the worktrees are still deleted before the batch is marked `paused`. That ordering breaks the stated resumability/preservation intent and needs to be fixed before approval.
+The phase transition edits in `engine.ts` and `resume.ts` move `failedTasks > 0` to `paused`, but the worktree-preservation intent is not actually enforced because cleanup already runs before that phase decision. This creates a mismatch between state (`paused`/resumable) and artifacts on disk (worktrees already cleaned), and can leave operators without a clear final message for this new paused path. The changes need a small control-flow adjustment in both files before this is safe.
 
 ### Issues Found
-1. **[extensions/taskplane/engine.ts:824-1001] [important]** — `preserveWorktreesForResume` is set too late to affect cleanup.
-   - Cleanup is gated at `engine.ts:824` (`if (preserveWorktreesForResume) ... else cleanup`) but the new assignment for failed-task finalization happens later at `engine.ts:995-1001`.
-   - In paths where `failedTasks > 0` and no earlier merge/cleanup-gate pause occurred, cleanup already removed worktrees/branches before phase becomes `paused`.
-   - **Fix:** determine resumable final state (or a `shouldPreserveForResume` flag) before Phase 3 cleanup, and use that precomputed value to gate cleanup.
+1. **[extensions/taskplane/engine.ts:824, 995-1000] [important]** — `preserveWorktreesForResume` is set too late to affect cleanup.
+   - Cleanup is gated at line 824, but `preserveWorktreesForResume = true` for `failedTasks > 0` is only set at lines 995-1000.
+   - Result: worktrees/sidecars are already removed before the batch is marked `paused`.
+   - **Fix:** compute the final resumable outcome (or a `shouldPreserveForResume` flag) before entering Phase 3 cleanup, then use that flag to gate cleanup.
 
-2. **[extensions/taskplane/resume.ts:1665-1750] [important]** — Same ordering bug in resume parity path.
-   - Resume cleanup runs under `if (!preserveWorktreesForResume)` at `resume.ts:1665-1739`, but the new `failedTasks > 0 => paused` and `preserveWorktreesForResume = true` is only applied at `resume.ts:1744-1750`.
-   - This causes resumed batches to delete worktrees before marking the state as resumable.
-   - **Fix:** mirror the engine fix: compute preservation intent before section 11 cleanup and keep engine/resume ordering identical.
+2. **[extensions/taskplane/resume.ts:1665, 1702, 1745-1750] [important]** — Same ordering bug in resume flow (engine/resume parity regression).
+   - Resume cleanup runs under `!preserveWorktreesForResume` at lines 1665/1702, but the new pause-preserve assignment is only at 1745-1750.
+   - Result: resumed batches can also end as `paused` after cleanup already removed resumable artifacts.
+   - **Fix:** mirror the engine fix: decide/derive preservation before section 11 cleanup and keep both paths structurally identical.
+
+3. **[extensions/taskplane/engine.ts:1036-1055, extensions/taskplane/resume.ts:1784-1797] [minor]** — New `failedTasks > 0 => paused` path has no explicit operator-facing final notification.
+   - `paused/stopped` paths suppress completion banners, and this new paused outcome does not emit a dedicated pause reason.
+   - **Fix:** emit an explicit pause summary (`why paused`, `what to do next`) when this finalization branch is taken.
 
 ### Pattern Violations
-- Behavior change affecting resume recoverability was made without preserving pre-cleanup decision ordering (engine/resume lifecycle parity expectation is broken at cleanup timing).
+- Engine/resume parity intent is documented in comments, but current control-flow ordering diverges from the intended preservation semantics in both files.
 
 ### Test Gaps
-- Missing regression test for the `failedTasks > 0` terminal path where no prior `preserveWorktreesForResume` flag is set (e.g., all tasks fail, merge skipped): should end `paused` **and** skip cleanup.
-- Missing parity test that asserts the same preservation behavior in `resumeOrchBatch()`.
-- No test asserting `on_merge_failure: abort` remains `stopped` with existing cleanup behavior unchanged.
+- Missing regression tests for cleanup ordering:
+  - when final phase becomes `paused` due `failedTasks > 0`, worktrees must be preserved (not cleaned)
+  - same assertion for `resumeOrchBatch()` finalization path
+- Missing assertion for operator message on this new paused-finalization branch.
 
 ### Suggestions
-- Add a small shared helper (or mirrored pre-cleanup block) that computes `finalPhaseIntent` + `preserveWorktreesIntent` before cleanup to prevent future drift.
-- Keep comments aligned with behavior by explicitly documenting that preservation decisions are made pre-cleanup.
+- Add one shared helper for “final outcome decision” (phase + preserve flag) to avoid future engine/resume drift.

@@ -1661,6 +1661,17 @@ export async function resumeOrchBatch(
 
 	// ── 11. Cleanup and terminal state ───────────────────────────
 
+	// ── Pre-cleanup: Determine if worktrees should be preserved ──
+	// TP-031 (R006): Parity with engine.ts — this check MUST run before cleanup
+	// so that worktrees survive when failedTasks > 0. Without this, cleanup
+	// deletes worktrees before the batch is marked "paused", breaking resumability.
+	if (!preserveWorktreesForResume &&
+		((batchState.phase as OrchBatchPhase) === "executing" || (batchState.phase as OrchBatchPhase) === "merging") &&
+		batchState.failedTasks > 0) {
+		preserveWorktreesForResume = true;
+		execLog("resume", batchState.batchId, "pre-cleanup: failedTasks > 0 detected, preserving worktrees for resume");
+	}
+
 	// ── TP-028: Preserve partial progress before terminal cleanup ──
 	if (!preserveWorktreesForResume) {
 		const ppOpId = resolveOperatorId(orchConfig);
@@ -1746,8 +1757,9 @@ export async function resumeOrchBatch(
 			// TP-031: Parity with engine.ts — default to "paused" so the batch is
 			// resumable without --force. "failed" is reserved for unrecoverable
 			// invariant violations after retry exhaustion.
+			// NOTE: preserveWorktreesForResume was already set pre-cleanup to ensure
+			// worktrees survive; this just sets the phase for state persistence.
 			batchState.phase = "paused";
-			preserveWorktreesForResume = true;
 		} else {
 			batchState.phase = "completed";
 		}

@@ -818,6 +818,17 @@ export async function executeOrchBatch(
 		execLog("batch", batchState.batchId, `failed to save batch history: ${err}`);
 	}
 
+	// ── Pre-cleanup: Determine if worktrees should be preserved ──
+	// TP-031 (R006): This check MUST run before cleanup so that worktrees
+	// survive when failedTasks > 0. Without this, cleanup deletes worktrees
+	// before the batch is marked "paused", breaking resumability.
+	if (!preserveWorktreesForResume &&
+		((batchState.phase as OrchBatchPhase) === "executing" || (batchState.phase as OrchBatchPhase) === "merging") &&
+		batchState.failedTasks > 0) {
+		preserveWorktreesForResume = true;
+		execLog("batch", batchState.batchId, "pre-cleanup: failedTasks > 0 detected, preserving worktrees for resume");
+	}
+
 	// ── Phase 3: Cleanup ─────────────────────────────────────────
 	const prefix = orchConfig.orchestrator.worktree_prefix;
 
@@ -996,8 +1007,9 @@ export async function executeOrchBatch(
 			// TP-031: Default to "paused" so the batch is resumable without --force.
 			// "failed" is reserved for unrecoverable invariant violations after retry
 			// exhaustion (not yet implemented — will be added when retry logic lands).
+			// NOTE: preserveWorktreesForResume was already set pre-cleanup to ensure
+			// worktrees survive; this just sets the phase for state persistence.
 			batchState.phase = "paused";
-			preserveWorktreesForResume = true;
 		} else {
 			batchState.phase = "completed";
 		}
