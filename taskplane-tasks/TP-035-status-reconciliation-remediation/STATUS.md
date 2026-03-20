@@ -36,10 +36,10 @@
 ---
 
 ### Step 3: Clean Up System-Owned Template Items
-**Status:** 🟨 In Progress
-- [ ] Audit all template surfaces for system-owned checkboxes: `templates/tasks/EXAMPLE-*/`, `templates/agents/`, and `skills/create-taskplane-task/references/prompt-template.md`
-- [ ] Remove or reword non-worker-actionable items (e.g., "Archive and push", "Task archived (auto — handled by task-runner extension)")
-- [ ] Verify: grep templates for banned phrases ("Archive and push", "Task archived") confirms zero matches after cleanup
+**Status:** ✅ Complete
+- [x] Audit all template surfaces for system-owned checkboxes: `templates/tasks/EXAMPLE-*/`, `templates/agents/`, and `skills/create-taskplane-task/references/prompt-template.md`
+- [x] Remove or reword non-worker-actionable items (e.g., "Archive and push", "Task archived (auto — handled by task-runner extension)")
+- [x] Verify: grep templates for banned phrases ("Archive and push", "Task archived") confirms zero matches after cleanup
 
 ---
 
@@ -66,6 +66,7 @@
 | R002 | plan | Step 1 | REVISE | .reviews/R002-plan-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
+| R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
 | R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
 |---|------|------|---------|------|
 
@@ -108,6 +109,7 @@
 | 2026-03-20 06:02 | Step 2 complete | Tighten Artifact Staging Scope |
 | 2026-03-20 06:02 | Step 3 started | Clean Up System-Owned Template Items |
 | 2026-03-20 06:03 | Review R004 | plan Step 3: REVISE |
+| 2026-03-20 06:04 | Review R004 | plan Step 3: REVISE |
 
 ## Blockers
 

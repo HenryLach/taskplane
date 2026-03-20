@@ -99,7 +99,6 @@ Copy this template when creating a new task. Replace all `[bracketed]` fields.
 - [ ] "Check If Affected" docs reviewed
 - [ ] Discoveries logged in STATUS.md
 - [ ] `.DONE` created in this folder
-- [ ] Task archived (auto — handled by task-runner extension)
 
 ## Documentation Requirements
 
@@ -208,7 +207,6 @@ this from PROMPT.md.
 - [ ] "Check If Affected" docs reviewed
 - [ ] Discoveries logged
 - [ ] `.DONE` created
-- [ ] Archive and push
 
 ---
 
