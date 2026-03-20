@@ -52,6 +52,12 @@ export interface OrchestratorConfig {
 	monitoring: {
 		poll_interval: number;
 	};
+	/** Verification baseline fingerprinting settings (TP-032). */
+	verification: {
+		enabled: boolean;
+		mode: "strict" | "permissive";
+		flaky_reruns: number;
+	};
 }
 
 /** A parsed task from PROMPT.md, enriched for orchestrator use */
@@ -126,6 +132,8 @@ export interface TaskArea {
 export interface TaskRunnerConfig {
 	task_areas: Record<string, TaskArea>;
 	reference_docs: Record<string, string>;
+	/** Named testing/verification commands (e.g., { test: "npx vitest run" }). Used for baseline fingerprinting (TP-032). */
+	testing_commands?: Record<string, string>;
 }
 
 /** Result of a preflight check */
@@ -185,6 +193,11 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 	},
 	monitoring: {
 		poll_interval: 5,
+	},
+	verification: {
+		enabled: false,
+		mode: "permissive",
+		flaky_reruns: 1,
 	},
 };
 
@@ -1020,6 +1033,27 @@ export interface MergeResult {
 	verification: MergeVerification;
 }
 
+/**
+ * Orchestrator-side verification baseline comparison result for a single lane.
+ * Populated when verification baseline fingerprinting is enabled (testing.commands configured).
+ */
+export interface VerificationBaselineResult {
+	/** Whether baseline comparison was performed */
+	performed: boolean;
+	/** Number of new failures (not in baseline) */
+	newFailureCount: number;
+	/** Number of pre-existing failures (also in baseline) */
+	preExistingCount: number;
+	/** Number of failures that disappeared (fixed by the merge) */
+	fixedCount: number;
+	/** Classification: "pass" (no new failures), "verification_new_failure", "flaky_suspected" */
+	classification: "pass" | "verification_new_failure" | "flaky_suspected";
+	/** Human-readable summary of new failures (truncated) */
+	newFailureSummary: string;
+	/** Whether a flaky re-run was performed */
+	flakyRerunPerformed: boolean;
+}
+
 /** Per-lane merge outcome, enriched by the orchestrator. */
 export interface MergeLaneResult {
 	laneNumber: number;
@@ -1031,6 +1065,12 @@ export interface MergeLaneResult {
 	durationMs: number;
 	/** Repo ID this lane targeted (workspace mode only). Undefined in repo mode. */
 	repoId?: string;
+	/**
+	 * Orchestrator-side verification baseline result (TP-032).
+	 * Populated when baseline fingerprinting is enabled and a successful merge occurred.
+	 * Undefined when fingerprinting is not enabled or merge failed before verification.
+	 */
+	verificationBaseline?: VerificationBaselineResult;
 }
 
 /** Overall wave merge outcome. */

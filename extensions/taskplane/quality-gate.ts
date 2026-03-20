@@ -18,7 +18,7 @@
  */
 
 import type { PassThreshold } from "./config-schema.ts";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import { spawnSync } from "child_process";
 
@@ -634,6 +634,201 @@ export function readAndEvaluateVerdict(
 	const evaluation = applyVerdictRules(verdict, passThreshold);
 
 	return { verdict, evaluation };
+}
+
+// ── STATUS.md Reconciliation ─────────────────────────────────────────
+
+/** Result of applying status reconciliation to STATUS.md. */
+export interface ReconciliationResult {
+	/** Number of checkboxes whose state was changed */
+	changed: number;
+	/** Number of reconciliation entries that matched but required no change */
+	alreadyCorrect: number;
+	/** Number of reconciliation entries that could not be matched to a checkbox */
+	unmatched: number;
+	/** Details of each action taken */
+	actions: ReconciliationAction[];
+}
+
+/** A single reconciliation action applied (or skipped). */
+export interface ReconciliationAction {
+	/** The checkbox text from the reconciliation entry */
+	checkbox: string;
+	/** What happened */
+	outcome: "checked" | "unchecked" | "no_change" | "unmatched";
+	/** Human-readable reason */
+	reason: string;
+}
+
+/**
+ * Normalize checkbox text for fuzzy matching.
+ *
+ * Strips markdown formatting, collapses whitespace, lowercases, and removes
+ * leading punctuation/bullets. This allows reconciliation entries (which come
+ * from the review agent's paraphrasing) to match STATUS.md checkboxes that
+ * may differ in whitespace, casing, or minor formatting.
+ */
+function normalizeCheckboxText(text: string): string {
+	return text
+		.replace(/\*\*|__|``|`/g, "")       // strip bold/code formatting
+		.replace(/\s+/g, " ")                // collapse whitespace
+		.replace(/^\s*[-*•]\s*/, "")          // strip leading bullets
+		.trim()
+		.toLowerCase();
+}
+
+/**
+ * Apply statusReconciliation entries to STATUS.md checkboxes.
+ *
+ * For each reconciliation entry:
+ * - `done` → ensure checkbox is checked (`[x]`)
+ * - `not_done` → ensure checkbox is unchecked (`[ ]`)
+ * - `partial` → ensure checkbox is unchecked (`[ ]`) with "(partial)" annotation
+ *
+ * Matching strategy: normalize both the reconciliation `checkbox` text and the
+ * STATUS.md checkbox text, then match by substring containment (reconciliation
+ * text contained in STATUS line or vice versa). First match wins — duplicates
+ * are logged as "unmatched" after the first match is consumed.
+ *
+ * Idempotency: if a checkbox already has the correct state, no change is made.
+ * If no net changes occur, STATUS.md is not rewritten.
+ *
+ * @param statusPath - Absolute path to STATUS.md
+ * @param reconciliations - Array of reconciliation entries from the verdict
+ * @returns Summary of changes applied
+ */
+export function applyStatusReconciliation(
+	statusPath: string,
+	reconciliations: StatusReconciliation[],
+): ReconciliationResult {
+	const result: ReconciliationResult = {
+		changed: 0,
+		alreadyCorrect: 0,
+		unmatched: 0,
+		actions: [],
+	};
+
+	if (!reconciliations || reconciliations.length === 0) {
+		return result;
+	}
+
+	let content: string;
+	try {
+		if (!existsSync(statusPath)) {
+			// No STATUS.md — mark all as unmatched
+			for (const r of reconciliations) {
+				result.unmatched++;
+				result.actions.push({ checkbox: r.checkbox, outcome: "unmatched", reason: "STATUS.md not found" });
+			}
+			return result;
+		}
+		content = readFileSync(statusPath, "utf-8");
+	} catch {
+		for (const r of reconciliations) {
+			result.unmatched++;
+			result.actions.push({ checkbox: r.checkbox, outcome: "unmatched", reason: "STATUS.md unreadable" });
+		}
+		return result;
+	}
+
+	// Parse lines, identify checkbox lines with their indices
+	const lines = content.split("\n");
+	const checkboxRegex = /^(\s*-\s*\[)([ xX])(\]\s*)(.*)/;
+
+	// Track which line indices have been consumed by a reconciliation match
+	const consumed = new Set<number>();
+
+	for (const recon of reconciliations) {
+		const normalizedRecon = normalizeCheckboxText(recon.checkbox);
+		if (!normalizedRecon) {
+			result.unmatched++;
+			result.actions.push({ checkbox: recon.checkbox, outcome: "unmatched", reason: "Empty checkbox text after normalization" });
+			continue;
+		}
+
+		// Find the best matching checkbox line (first unconsumed match)
+		let matchedIdx = -1;
+		for (let i = 0; i < lines.length; i++) {
+			if (consumed.has(i)) continue;
+			const cbMatch = lines[i].match(checkboxRegex);
+			if (!cbMatch) continue;
+
+			const lineText = normalizeCheckboxText(cbMatch[4]);
+			// Match if either contains the other (handles paraphrasing)
+			if (lineText === normalizedRecon || lineText.includes(normalizedRecon) || normalizedRecon.includes(lineText)) {
+				matchedIdx = i;
+				break;
+			}
+		}
+
+		if (matchedIdx === -1) {
+			result.unmatched++;
+			result.actions.push({ checkbox: recon.checkbox, outcome: "unmatched", reason: "No matching checkbox found in STATUS.md" });
+			continue;
+		}
+
+		consumed.add(matchedIdx);
+		const cbMatch = lines[matchedIdx].match(checkboxRegex)!;
+		const currentlyChecked = cbMatch[2].toLowerCase() === "x";
+		const currentText = cbMatch[4];
+
+		// Determine desired state
+		const shouldBeChecked = recon.actualState === "done";
+		// partial → uncheck (conservative: don't claim done)
+
+		if (shouldBeChecked && currentlyChecked) {
+			// Already correct
+			result.alreadyCorrect++;
+			result.actions.push({ checkbox: recon.checkbox, outcome: "no_change", reason: "Already checked (done)" });
+		} else if (!shouldBeChecked && !currentlyChecked) {
+			// Already correct (unchecked for not_done or partial)
+			// But if partial, might need annotation
+			if (recon.actualState === "partial" && !currentText.includes("(partial)")) {
+				// Add partial annotation
+				lines[matchedIdx] = `${cbMatch[1]} ${cbMatch[3]}${currentText} (partial)`;
+				result.changed++;
+				result.actions.push({ checkbox: recon.checkbox, outcome: "unchecked", reason: "Added (partial) annotation" });
+			} else {
+				result.alreadyCorrect++;
+				result.actions.push({ checkbox: recon.checkbox, outcome: "no_change", reason: `Already unchecked (${recon.actualState})` });
+			}
+		} else if (shouldBeChecked && !currentlyChecked) {
+			// Need to check
+			lines[matchedIdx] = `${cbMatch[1]}x${cbMatch[3]}${currentText}`;
+			result.changed++;
+			result.actions.push({ checkbox: recon.checkbox, outcome: "checked", reason: "Work done but box was unchecked" });
+		} else {
+			// currentlyChecked but should not be (not_done or partial)
+			const annotation = recon.actualState === "partial" ? " (partial)" : "";
+			const cleanText = currentText.replace(/\s*\(partial\)\s*$/, "");
+			lines[matchedIdx] = `${cbMatch[1]} ${cbMatch[3]}${cleanText}${annotation}`;
+			result.changed++;
+			const outcomeReason = recon.actualState === "partial"
+				? "Unchecked — work partially done"
+				: "Unchecked — work not done";
+			result.actions.push({ checkbox: recon.checkbox, outcome: "unchecked", reason: outcomeReason });
+		}
+	}
+
+	// Only rewrite if there were actual changes
+	if (result.changed > 0) {
+		try {
+			writeFileSync(statusPath, lines.join("\n"), "utf-8");
+		} catch {
+			// Write failed — downgrade changes to unmatched for accuracy
+			// (the in-memory result says "changed" but file wasn't updated)
+			for (const action of result.actions) {
+				if (action.outcome === "checked" || action.outcome === "unchecked") {
+					action.outcome = "unmatched";
+					action.reason += " (write failed)";
+					result.changed--;
+					result.unmatched++;
+				}
+			}
+		}
+	}
+
+	return result;
 }
 
 // ── Remediation: Feedback & Fix Agent Prompt ─────────────────────────

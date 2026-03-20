@@ -4,16 +4,18 @@
  */
 import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdirSync, rmSync } from "fs";
 import { execSync, spawnSync } from "child_process";
-import { join, dirname } from "path";
+import { join, dirname, resolve, relative } from "path";
 
 import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
-import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
+import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { generateMergeWorktreePath, sleepSync } from "./worktree.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
+import { captureBaseline, diffFingerprints, runVerificationCommands, parseTestOutput, deduplicateFingerprints } from "./verification.ts";
+import type { VerificationBaseline, FingerprintDiff, TestFingerprint } from "./verification.ts";
 
 // ── Merge Implementation ─────────────────────────────────────────────
 
@@ -534,6 +536,190 @@ function forceRemoveMergeWorktree(
 	runGit(["worktree", "prune"], repoRoot);
 }
 
+// ── Orchestrator-Side Verification (TP-032) ──────────────────────────
+
+/**
+ * Run post-merge verification and compare against baseline.
+ *
+ * Captures fingerprints from the merge worktree after a successful merge,
+ * diffs against the pre-merge baseline, and classifies the result:
+ * - "pass": no new failures (only pre-existing or fixed)
+ * - "verification_new_failure": genuinely new failures detected
+ * - "flaky_suspected": new failures disappeared on re-run (warning only)
+ *
+ * Flaky handling: when new failures are detected and flakyReruns > 0,
+ * only the commands that produced new failures are re-run up to
+ * flakyReruns times. If the failures disappear on any re-run attempt,
+ * the result is reclassified as "flaky_suspected". When flakyReruns is
+ * 0, no re-runs are attempted and new failures immediately block.
+ *
+ * @param testingCommands - Named verification commands (from testing.commands config)
+ * @param mergeWorkDir    - Merge worktree path (post-merge state)
+ * @param baseline        - Pre-merge baseline to compare against
+ * @param laneNumber      - Lane number (for logging/persistence)
+ * @param waveIndex       - Wave index (for persistence naming)
+ * @param batchId         - Batch ID (for persistence naming)
+ * @param opId            - Operator ID (for persistence naming)
+ * @param sessionName     - Session name for structured logging
+ * @param stateRoot       - State root for persistence (workspace root or repo root)
+ * @param repoId          - Repository ID for workspace-mode artifact naming (optional)
+ * @param flakyReruns     - Number of flaky re-runs (0 = disabled, default 1)
+ * @returns VerificationBaselineResult with classification and details
+ */
+function runPostMergeVerification(
+	testingCommands: Record<string, string>,
+	mergeWorkDir: string,
+	baseline: VerificationBaseline,
+	laneNumber: number,
+	waveIndex: number,
+	batchId: string,
+	opId: string,
+	sessionName: string,
+	stateRoot: string,
+	repoId?: string,
+	flakyReruns: number = 1,
+): VerificationBaselineResult {
+	execLog("merge", sessionName, "capturing post-merge verification fingerprints");
+
+	// Capture post-merge fingerprints
+	const postMerge = captureBaseline(testingCommands, mergeWorkDir);
+
+	// Persist post-merge snapshot for debugging
+	try {
+		const verifyDir = join(stateRoot, ".pi", "verification", opId);
+		mkdirSync(verifyDir, { recursive: true });
+		// TP-032 R006-1: Include repoId in filename to prevent overwrites
+		// when mergeWaveByRepo() calls mergeWave() once per repo group.
+		const repoSuffix = repoId ? `-repo-${repoId.replace(/[^a-zA-Z0-9_-]/g, "_")}` : "";
+		const postFileName = `post-b${batchId}-w${waveIndex}${repoSuffix}-lane${laneNumber}.json`;
+		writeFileSync(
+			join(verifyDir, postFileName),
+			JSON.stringify(postMerge, null, 2),
+			"utf-8",
+		);
+	} catch {
+		// Best effort — persistence failure doesn't block verification
+	}
+
+	// Diff fingerprints
+	const diff = diffFingerprints(baseline.fingerprints, postMerge.fingerprints);
+
+	execLog("merge", sessionName, "verification diff computed", {
+		newFailures: diff.newFailures.length,
+		preExisting: diff.preExisting.length,
+		fixed: diff.fixed.length,
+	});
+
+	// No new failures — pass
+	if (diff.newFailures.length === 0) {
+		return {
+			performed: true,
+			newFailureCount: 0,
+			preExistingCount: diff.preExisting.length,
+			fixedCount: diff.fixed.length,
+			classification: "pass",
+			newFailureSummary: "",
+			flakyRerunPerformed: false,
+		};
+	}
+
+	// ── Flaky re-run: re-run only the commands that produced new failures ──
+	// Only when flakyReruns > 0 (0 = disabled — any new failure immediately blocks)
+	if (flakyReruns > 0) {
+		// Identify which commandIds produced new failures
+		const failedCommandIds = new Set(diff.newFailures.map(fp => fp.commandId));
+		const rerunCommands: Record<string, string> = {};
+		for (const cmdId of failedCommandIds) {
+			if (testingCommands[cmdId]) {
+				rerunCommands[cmdId] = testingCommands[cmdId];
+			}
+		}
+
+		// Re-run up to flakyReruns times; break early if failures clear
+		let clearedOnRerun = false;
+		for (let attempt = 0; attempt < flakyReruns; attempt++) {
+			execLog("merge", sessionName, `new failures detected — running flaky re-run ${attempt + 1}/${flakyReruns}`, {
+				failedCommands: [...failedCommandIds].join(", "),
+				rerunCount: Object.keys(rerunCommands).length,
+			});
+
+			const rerunResults = runVerificationCommands(rerunCommands, mergeWorkDir);
+
+			// Parse re-run fingerprints
+			const rerunFingerprints: TestFingerprint[] = [];
+			for (const result of rerunResults) {
+				const fps = parseTestOutput(result);
+				rerunFingerprints.push(...fps);
+			}
+			const dedupedRerun = deduplicateFingerprints(rerunFingerprints);
+
+			// Re-diff: compare baseline against re-run results for the failed commands only
+			// Filter baseline fingerprints to only the commands we re-ran
+			const baselineForRerun = baseline.fingerprints.filter(fp => failedCommandIds.has(fp.commandId));
+			const rerunDiff = diffFingerprints(baselineForRerun, dedupedRerun);
+
+			if (rerunDiff.newFailures.length === 0) {
+				// Failures disappeared on re-run — flaky suspected
+				execLog("merge", sessionName, `flaky re-run ${attempt + 1} cleared all new failures — classifying as flaky_suspected`);
+				clearedOnRerun = true;
+				break;
+			}
+
+			// If this is the last attempt and failures persist, return failure
+			if (attempt === flakyReruns - 1) {
+				const summary = rerunDiff.newFailures
+					.slice(0, 5)
+					.map(fp => `${fp.commandId}:${fp.file}:${fp.case} (${fp.kind})`)
+					.join("; ");
+				const truncated = rerunDiff.newFailures.length > 5
+					? ` ... and ${rerunDiff.newFailures.length - 5} more`
+					: "";
+
+				return {
+					performed: true,
+					newFailureCount: rerunDiff.newFailures.length,
+					preExistingCount: diff.preExisting.length,
+					fixedCount: diff.fixed.length,
+					classification: "verification_new_failure",
+					newFailureSummary: summary + truncated,
+					flakyRerunPerformed: true,
+				};
+			}
+		}
+
+		if (clearedOnRerun) {
+			return {
+				performed: true,
+				newFailureCount: 0,
+				preExistingCount: diff.preExisting.length,
+				fixedCount: diff.fixed.length,
+				classification: "flaky_suspected",
+				newFailureSummary: `Flaky: ${diff.newFailures.length} failure(s) disappeared on re-run`,
+				flakyRerunPerformed: true,
+			};
+		}
+	}
+
+	// flakyReruns === 0 or fallthrough: new failures block immediately
+	const summary = diff.newFailures
+		.slice(0, 5)
+		.map(fp => `${fp.commandId}:${fp.file}:${fp.case} (${fp.kind})`)
+		.join("; ");
+	const truncated = diff.newFailures.length > 5
+		? ` ... and ${diff.newFailures.length - 5} more`
+		: "";
+
+	return {
+		performed: true,
+		newFailureCount: diff.newFailures.length,
+		preExistingCount: diff.preExisting.length,
+		fixedCount: diff.fixed.length,
+		classification: "verification_new_failure",
+		newFailureSummary: summary + truncated,
+		flakyRerunPerformed: flakyReruns > 0,
+	};
+}
+
 /**
  * Merge a completed wave's lane branches into the base branch.
  *
@@ -576,6 +762,8 @@ export function mergeWave(
 	baseBranch: string,
 	stateRoot?: string,
 	agentRoot?: string,
+	testingCommands?: Record<string, string>,
+	repoId?: string,
 ): MergeWaveResult {
 	const startTime = Date.now();
 	const tmuxPrefix = config.orchestrator.tmux_prefix;
@@ -677,9 +865,98 @@ export function mergeWave(
 		tempBranch,
 	});
 
+	// ── Orchestrator-side baseline capture (TP-032) ────────────────
+	// Capture verification fingerprints on the pre-merge state of the merge
+	// worktree. This baseline is compared against post-merge fingerprints
+	// for each lane to detect genuinely new failures vs pre-existing ones.
+	// Only runs when verification.enabled === true AND testing.commands present.
+	let baseline: VerificationBaseline | null = null;
+	const hasTestingCommands = testingCommands && Object.keys(testingCommands).length > 0;
+	const verificationEnabled = config.verification.enabled;
+	const verificationMode = config.verification.mode;
+	const flakyReruns = config.verification.flaky_reruns;
+
+	if (verificationEnabled && !hasTestingCommands) {
+		// Verification is enabled but no testing commands configured — treat as
+		// baseline-unavailable. Strict/permissive handling below.
+		if (verificationMode === "strict") {
+			execLog("merge", `W${waveIndex}`, "verification enabled but no testing commands configured — strict mode: failing merge");
+			// Clean up worktree and temp branch before returning failure
+			forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
+			try { spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot }); } catch { /* best effort */ }
+			return {
+				waveIndex, status: "failed", laneResults: [],
+				failedLane: null,
+				failureReason: "Verification enabled (strict mode) but no testing commands configured in taskRunner.testing.commands",
+				totalDurationMs: Date.now() - startTime,
+			};
+		} else {
+			execLog("merge", `W${waveIndex}`, "verification enabled but no testing commands configured — permissive mode: continuing without verification");
+		}
+	}
+
+	if (verificationEnabled && hasTestingCommands) {
+		execLog("merge", `W${waveIndex}`, "capturing verification baseline on pre-merge state", {
+			commandCount: Object.keys(testingCommands).length,
+			commands: Object.keys(testingCommands).join(", "),
+		});
+
+		try {
+			baseline = captureBaseline(testingCommands, mergeWorkDir);
+
+			// Persist baseline for debugging/auditability
+			const piDir = stateRoot ?? repoRoot;
+			const verifyDir = join(piDir, ".pi", "verification", opId);
+			mkdirSync(verifyDir, { recursive: true });
+			// TP-032 R006-1: Include repoId in filename to prevent overwrites
+			// when mergeWaveByRepo() calls mergeWave() once per repo group.
+			const repoSuffix = repoId ? `-repo-${repoId.replace(/[^a-zA-Z0-9_-]/g, "_")}` : "";
+			const baselineFileName = `baseline-b${batchId}-w${waveIndex}${repoSuffix}.json`;
+			writeFileSync(
+				join(verifyDir, baselineFileName),
+				JSON.stringify(baseline, null, 2),
+				"utf-8",
+			);
+
+			execLog("merge", `W${waveIndex}`, "verification baseline captured", {
+				fingerprints: baseline.fingerprints.length,
+				preExistingFailures: baseline.fingerprints.length,
+				storedAt: join(verifyDir, baselineFileName),
+			});
+		} catch (err: unknown) {
+			const errMsg = err instanceof Error ? err.message : String(err);
+			if (verificationMode === "strict") {
+				execLog("merge", `W${waveIndex}`, `baseline capture failed — strict mode: failing merge`, {
+					error: errMsg,
+				});
+				// Clean up worktree and temp branch before returning failure
+				forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
+				try { spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot }); } catch { /* best effort */ }
+				return {
+					waveIndex, status: "failed", laneResults: [],
+					failedLane: null,
+					failureReason: `Verification baseline capture failed (strict mode): ${errMsg}`,
+					totalDurationMs: Date.now() - startTime,
+				};
+			}
+			execLog("merge", `W${waveIndex}`, `baseline capture failed — permissive mode: continuing without baseline verification`, {
+				error: errMsg,
+			});
+			// Permissive: baseline capture failure is non-fatal — merge proceeds without
+			// orchestrator-side verification. Merge-agent verification (merge.verify)
+			// still applies independently.
+			baseline = null;
+		}
+	}
+
 	// Sequential merge loop
 	let failedLane: number | null = null;
 	let failureReason: string | null = null;
+	// TP-032 R006-2: When verification rollback fails, the temp branch still contains
+	// the bad merge commit. Branch advancement MUST be blocked entirely — not just for
+	// the verification-blocked lane, but for all lanes, because the temp branch HEAD
+	// includes the unverified commit and any prior successful merges built on top of it.
+	let blockAdvancement = false;
 
 	for (const lane of orderedLanes) {
 		const laneStart = Date.now();
@@ -689,6 +966,17 @@ export function mergeWave(
 		const resultFilePath = join(piDir, ".pi", resultFileName);
 		const requestFileName = `merge-request-w${waveIndex}-lane${lane.laneNumber}-${opId}-${batchId}.txt`;
 		const requestFilePath = join(piDir, ".pi", requestFileName);
+
+		// ── TP-032: Capture pre-lane HEAD for rollback on verification failure ──
+		// If baseline is available and post-merge verification detects new failures,
+		// we reset the temp branch to this commit to undo the lane's merge commit.
+		let preLaneHead = "";
+		if (baseline) {
+			const headResult = spawnSync("git", ["rev-parse", "HEAD"], { cwd: mergeWorkDir, encoding: "utf-8" });
+			if (headResult.status === 0) {
+				preLaneHead = headResult.stdout.trim();
+			}
+		}
 
 		execLog("merge", sessionName, `starting merge for lane ${lane.laneNumber}`, {
 			sourceBranch: lane.branch,
@@ -706,6 +994,11 @@ export function mergeWave(
 			}
 
 			// Build merge request content
+			// TP-032 R006-3: Preserve merge.verify commands independently of baseline
+			// fingerprinting. The orchestrator-side baseline comparison (testing.commands)
+			// is additive — it does NOT replace the merge agent's own verification
+			// (merge.verify). Agents may run build checks or other non-fingerprintable
+			// commands via merge.verify that must not be silently suppressed.
 			const mergeRequestContent = buildMergeRequest(
 				lane,
 				targetBranch,
@@ -731,8 +1024,8 @@ export function mergeWave(
 				// Best effort
 			}
 
-			// Record lane result
-			laneResults.push({
+			// Record lane result (verificationBaseline populated below if applicable)
+			const laneResult: MergeLaneResult = {
 				laneNumber: lane.laneNumber,
 				laneId: lane.laneId,
 				sourceBranch: lane.branch,
@@ -741,7 +1034,8 @@ export function mergeWave(
 				error: null,
 				durationMs: Date.now() - laneStart,
 				repoId: lane.repoId,
-			});
+			};
+			laneResults.push(laneResult);
 
 			// Handle merge outcome
 			switch (mergeResult.status) {
@@ -771,13 +1065,108 @@ export function mergeWave(
 					break;
 
 				case "BUILD_FAILURE":
+					// TP-032: When baseline is active, BUILD_FAILURE from the merge agent
+					// should not normally occur (we suppress verify commands). But if it does
+					// (e.g., agent detected build failure independently), log and proceed as
+					// a regular failure — the orchestrator-side verification below will not
+					// run because the agent already reverted the merge commit.
 					execLog("merge", sessionName, "merge failed — verification failed", {
 						output: mergeResult.verification.output.slice(0, 200),
+						baselineActive: !!baseline,
 					});
 					failedLane = lane.laneNumber;
 					failureReason = `Post-merge verification failed in lane ${lane.laneNumber}: ` +
 						mergeResult.verification.output.slice(0, 500);
 					break;
+			}
+
+			// ── Orchestrator-side post-merge verification (TP-032) ──────
+			// After a successful merge (SUCCESS/CONFLICT_RESOLVED), capture
+			// post-merge fingerprints and diff against baseline. New failures
+			// that weren't in the baseline block merge advancement.
+			if (
+				baseline !== null &&
+				hasTestingCommands &&
+				verificationEnabled &&
+				failedLane === null &&
+				(mergeResult.status === "SUCCESS" || mergeResult.status === "CONFLICT_RESOLVED")
+			) {
+				const verificationResult = runPostMergeVerification(
+					testingCommands!,
+					mergeWorkDir,
+					baseline,
+					lane.laneNumber,
+					waveIndex,
+					batchId,
+					opId,
+					sessionName,
+					stateRoot ?? repoRoot,
+					repoId,
+					flakyReruns,
+				);
+
+				// Attach verification result to the lane result
+				laneResult.verificationBaseline = verificationResult;
+
+				if (verificationResult.classification === "verification_new_failure") {
+					execLog("merge", sessionName, "orchestrator-side verification detected new failures", {
+						newFailures: verificationResult.newFailureCount,
+						preExisting: verificationResult.preExistingCount,
+						summary: verificationResult.newFailureSummary.slice(0, 200),
+					});
+
+					// ── TP-032: Rollback merge commit on verification_new_failure ──
+					// Reset the temp branch to pre-lane HEAD so the failed lane's
+					// merge commit doesn't get included in branch advancement.
+					// TP-032 R006-2: Mark lane as errored so it's excluded from success
+					// counters and branch advancement (R006-3).
+					laneResult.error = `verification_new_failure: ${verificationResult.newFailureCount} new failure(s)`;
+
+					if (preLaneHead) {
+						execLog("merge", sessionName, "rolling back temp branch to pre-lane HEAD", {
+							preLaneHead: preLaneHead.slice(0, 8),
+						});
+						const resetResult = spawnSync("git", ["reset", "--hard", preLaneHead], { cwd: mergeWorkDir });
+						if (resetResult.status === 0) {
+							execLog("merge", sessionName, "temp branch rolled back successfully");
+						} else {
+							// TP-032 R006-2: Rollback failure is merge-fatal for this wave.
+							// The temp branch still contains the failing merge commit — target
+							// ref advancement MUST NOT proceed for ANY lane, because the temp
+							// branch HEAD includes the unverified commit.
+							const resetErr = resetResult.stderr?.toString().trim() || "unknown error";
+							laneResult.error = `verification_new_failure: rollback reset failed (${resetErr}) — ` +
+								`temp branch may contain failing merge commit, advancement blocked`;
+							blockAdvancement = true;
+							execLog("merge", sessionName, `CRITICAL: rollback reset failed: ${resetErr} — ALL branch advancement blocked`, {
+								preLaneHead: preLaneHead.slice(0, 8),
+							});
+						}
+					} else {
+						// TP-032 R006-2: No pre-lane HEAD captured — cannot roll back.
+						// Block advancement since the bad commit cannot be removed.
+						laneResult.error = `verification_new_failure: no pre-lane HEAD available for rollback — ` +
+							`advancement blocked`;
+						blockAdvancement = true;
+						execLog("merge", sessionName, "CRITICAL: no pre-lane HEAD — cannot roll back, ALL branch advancement blocked");
+					}
+
+					failedLane = lane.laneNumber;
+					failureReason = `Verification baseline comparison detected ${verificationResult.newFailureCount} new failure(s) ` +
+						`in lane ${lane.laneNumber} (${verificationResult.preExistingCount} pre-existing). ` +
+						verificationResult.newFailureSummary.slice(0, 300);
+				} else if (verificationResult.classification === "flaky_suspected") {
+					execLog("merge", sessionName, "flaky test suspected — failures disappeared on re-run (warning only)", {
+						newFailures: verificationResult.newFailureCount,
+						flakyRerun: true,
+					});
+					// Warning only — does not block merge advancement
+				} else {
+					execLog("merge", sessionName, "orchestrator-side verification passed", {
+						preExisting: verificationResult.preExistingCount,
+						fixed: verificationResult.fixedCount,
+					});
+				}
 			}
 
 			// Stop merging if this lane failed
@@ -819,54 +1208,92 @@ export function mergeWave(
 	}
 
 	// ── Stage workspace task artifacts into merge worktree ──────────
-	// In workspace mode, workers write .DONE and STATUS.md to the canonical
-	// task folder (e.g., shared-libs/task-management/...) which is the repo's
-	// checked-out working tree (develop). These files need to be on the orch
-	// branch, not develop. Copy them into the merge worktree (which is on the
-	// orch branch's temp) and commit, so they're included in the update-ref.
+	// TP-035: Tightened artifact staging — only allowlisted task-owned files
+	// are staged. The allowlist is derived per-task-folder from completed lanes:
+	// exactly `.DONE`, `STATUS.md`, and `REVIEW_VERDICT.json` (when present).
+	// Files outside known task folders, worktree internals, and repo-escape
+	// paths are rejected. Uses resolve+relative path containment consistent
+	// with ensureTaskFilesCommitted() in execution.ts.
 	if (mergeWorkDir) {
-		const statusResult = spawnSync("git", ["status", "--porcelain"], { cwd: repoRoot, encoding: "utf-8" });
-		if (statusResult.status === 0 && statusResult.stdout) {
-			const lines = statusResult.stdout.split("\n").filter((l: string) => l.trim());
-			const artifactFiles = lines
-				.map((l: string) => l.slice(3).trim())
-				.filter((f: string) =>
-					(f.endsWith(".DONE") || f.endsWith("STATUS.md")) &&
-					!f.includes(".worktrees/"),  // Never stage worktree internals
-				);
+		// Build the set of allowed artifact paths (repo-root-relative) from
+		// the completed lanes' task folders.
+		const ALLOWED_ARTIFACT_NAMES = [".DONE", "STATUS.md", "REVIEW_VERDICT.json"];
+		const resolvedRepoRoot = resolve(repoRoot);
+		const allowedRelPaths = new Set<string>();
 
-			if (artifactFiles.length > 0) {
-				let staged = 0;
-				for (const file of artifactFiles) {
-					const srcPath = join(repoRoot, file);
-					const destPath = join(mergeWorkDir, file);
-					try {
-						if (existsSync(srcPath)) {
-							mkdirSync(dirname(destPath), { recursive: true });
-							copyFileSync(srcPath, destPath);
-							spawnSync("git", ["add", file], { cwd: mergeWorkDir });
-							staged++;
-						}
-					} catch { /* best effort */ }
+		for (const lane of orderedLanes) {
+			for (const allocTask of lane.tasks) {
+				const absFolder = resolve(allocTask.task.taskFolder);
+				const relFolder = relative(resolvedRepoRoot, absFolder).replace(/\\/g, "/");
+
+				// Reject paths that escape the repo root
+				if (relFolder.startsWith("..") || relFolder.startsWith("/")) {
+					execLog("merge", `W${waveIndex}`, `skipping task folder outside repo root`, {
+						taskId: allocTask.taskId,
+						folder: relFolder,
+					});
+					continue;
 				}
-				if (staged > 0) {
-					spawnSync("git", ["commit", "-m", `checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md)`], { cwd: mergeWorkDir });
-					execLog("merge", `W${waveIndex}`, `committed ${staged} task artifact(s) to merge worktree`);
 
-					// Keep both .DONE and STATUS.md in develop's working tree:
-					// - STATUS.md: dashboard reads current progress from canonical path
-					// - .DONE: harmless untracked files, cleaned up by /orch-integrate stash
-					// Previous approach of deleting .DONE caused them to be missing
-					// after ff integration (git couldn't reliably restore them).
+				for (const name of ALLOWED_ARTIFACT_NAMES) {
+					allowedRelPaths.add(`${relFolder}/${name}`);
 				}
 			}
+		}
+
+		if (allowedRelPaths.size > 0) {
+			let staged = 0;
+			let skipped = 0;
+
+			for (const relPath of allowedRelPaths) {
+				const srcPath = join(repoRoot, relPath);
+				if (!existsSync(srcPath)) continue; // File not present (e.g., no REVIEW_VERDICT.json) — skip silently
+
+				const destPath = join(mergeWorkDir, relPath);
+				try {
+					mkdirSync(dirname(destPath), { recursive: true });
+					copyFileSync(srcPath, destPath);
+					// Use pathspec-safe staging with -- separator
+					spawnSync("git", ["add", "--", relPath], { cwd: mergeWorkDir });
+					staged++;
+				} catch {
+					skipped++;
+					execLog("merge", `W${waveIndex}`, `failed to stage artifact`, { path: relPath });
+				}
+			}
+
+			if (staged > 0) {
+				spawnSync("git", ["commit", "-m", `checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md, REVIEW_VERDICT.json)`], { cwd: mergeWorkDir });
+				execLog("merge", `W${waveIndex}`, `committed ${staged} task artifact(s) to merge worktree`, {
+					skipped,
+					allowedCandidates: allowedRelPaths.size,
+				});
+			} else {
+				execLog("merge", `W${waveIndex}`, `no task artifacts to stage (0 of ${allowedRelPaths.size} candidates present/changed)`);
+			}
+
+			// Keep both .DONE and STATUS.md in develop's working tree:
+			// - STATUS.md: dashboard reads current progress from canonical path
+			// - .DONE: harmless untracked files, cleaned up by /orch-integrate stash
+			// Previous approach of deleting .DONE caused them to be missing
+			// after ff integration (git couldn't reliably restore them).
 		}
 	}
 
 	// ── Update target branch ref and clean up merge worktree ────────
-	const anySuccess = laneResults.some(
-		r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED",
+	// TP-032 R006-2: blockAdvancement overrides all success determination.
+	// When verification rollback fails, the temp branch contains a bad merge commit
+	// that would be included in branch advancement — so we block entirely.
+	// Also exclude verification_new_failure lanes (with successful rollback) from
+	// success accounting: they have laneResult.error set, so !r.error filters them.
+	const anySuccess = !blockAdvancement && laneResults.some(
+		r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
 	);
+
+	if (blockAdvancement) {
+		execLog("merge", `W${waveIndex}`, "branch advancement BLOCKED due to verification rollback failure — " +
+			"temp branch may contain unverified merge commit");
+	}
 
 	if (anySuccess) {
 		// Get the temp branch HEAD commit — this is the merged result.
@@ -970,7 +1397,7 @@ export function mergeWave(
 	const totalDurationMs = Date.now() - startTime;
 
 	execLog("merge", `W${waveIndex}`, `wave merge complete: ${status}`, {
-		mergedLanes: laneResults.filter(r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED").length,
+		mergedLanes: laneResults.filter(r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")).length,
 		failedLane: failedLane ?? 0,
 		duration: `${Math.round(totalDurationMs / 1000)}s`,
 	});
@@ -1061,6 +1488,7 @@ export function mergeWaveByRepo(
 	workspaceConfig?: WorkspaceConfig | null,
 	stateRoot?: string,
 	agentRoot?: string,
+	testingCommands?: Record<string, string>,
 ): MergeWaveResult {
 	const startTime = Date.now();
 
@@ -1115,6 +1543,7 @@ export function mergeWaveByRepo(
 			baseBranch,
 			stateRoot,
 			agentRoot,
+			testingCommands,
 		);
 		// Attach empty repoResults for consistent shape
 		return { ...result, repoResults: [] };
@@ -1164,6 +1593,8 @@ export function mergeWaveByRepo(
 			groupBaseBranch,
 			stateRoot,
 			agentRoot,
+			testingCommands,
+			group.repoId,
 		);
 
 		// Accumulate lane results
@@ -1200,8 +1631,9 @@ export function mergeWaveByRepo(
 	// - anyLaneSucceeded: at least one lane merged successfully across all repos
 	// - anyRepoFailed: at least one repo had a non-succeeded status (includes
 	//   both lane-level failures AND repo setup failures with failedLane=null)
+	// TP-032 R006-3: Exclude verification_new_failure lanes from success determination
 	const anyLaneSucceeded = allLaneResults.some(
-		r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED",
+		r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
 	);
 
 	let status: MergeWaveResult["status"];
@@ -1218,7 +1650,7 @@ export function mergeWaveByRepo(
 	execLog("merge", `W${waveIndex}`, `repo-scoped wave merge complete: ${status}`, {
 		repoCount: repoOutcomes.length,
 		repoStatuses: repoOutcomes.map(r => `${r.repoId ?? "default"}:${r.status}`).join(", "),
-		mergedLanes: allLaneResults.filter(r => r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED").length,
+		mergedLanes: allLaneResults.filter(r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED")).length,
 		duration: `${Math.round(totalDurationMs / 1000)}s`,
 	});
 

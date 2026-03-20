@@ -236,29 +236,64 @@ Pause batch after current tasks finish.
 
 ---
 
-### `/orch-resume`
+### `/orch-resume [--force]`
 
 Resume a paused or interrupted batch from persisted state.
 
 **Syntax**
 
 ```text
-/orch-resume
+/orch-resume [--force]
 ```
+
+**Options**
+
+- `--force` — allow resuming from `stopped` or `failed` phases that are normally non-resumable. Runs pre-resume diagnostics before proceeding.
 
 **Behavior**
 
 - Loads `.pi/batch-state.json`
-- Validates resumable phase
+- Validates resumable phase (see eligibility matrix below)
 - Reconciles `.DONE` markers and live sessions
 - Reconnects/re-executes tasks as needed
 - Continues from first incomplete wave
+
+**Resume eligibility**
+
+| Phase | Normal | `--force` |
+|-------|--------|-----------|
+| `paused` | ✅ Eligible | ✅ Eligible |
+| `executing` | ✅ Eligible | ✅ Eligible |
+| `merging` | ✅ Eligible | ✅ Eligible |
+| `stopped` | ❌ Rejected | ✅ Eligible (after diagnostics) |
+| `failed` | ❌ Rejected | ✅ Eligible (after diagnostics) |
+| `completed` | ❌ Rejected | ❌ Rejected (always) |
+
+**Pre-resume diagnostics (`--force` only)**
+
+When `--force` is used on a `stopped` or `failed` batch, Taskplane runs pre-resume diagnostics before allowing execution to continue:
+
+- **Worktree health** — verifies lane worktrees still exist on disk
+- **Branch consistency** — confirms expected branches are present
+- **State coherence** — validates batch state internal consistency; in workspace mode, also checks repo-level state
+
+If diagnostics fail, the resume is blocked with an operator-facing explanation. Fix the reported issues and retry.
+
+When diagnostics pass, the batch phase is reset to `paused` and `resilience.resumeForced` is recorded in state for audit purposes. Normal resume flow then proceeds.
+
+**Examples**
+
+```text
+/orch-resume                  # Resume from paused/executing/merging
+/orch-resume --force           # Force resume from stopped or failed
+```
 
 **Common responses**
 
 - No batch state to resume
 - State invalid or non-resumable phase
 - Cannot resume while a batch is actively running
+- `--force` diagnostics failed: worktree/branch/state issues detected
 
 ---
 

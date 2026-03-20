@@ -258,6 +258,9 @@ function mapOrchestratorYaml(raw: any): Partial<OrchestratorSection> {
 		if (raw.pre_warm.always) result.preWarm.always = [...raw.pre_warm.always];
 	}
 
+	// verification: all keys are structural (TP-032)
+	if (raw.verification) result.verification = convertStructuralKeys(raw.verification);
+
 	return result;
 }
 
@@ -763,6 +766,11 @@ export function toOrchestratorConfig(config: TaskplaneConfig): import("./types.t
 		monitoring: {
 			poll_interval: o.monitoring.pollInterval,
 		},
+		verification: {
+			enabled: o.verification.enabled,
+			mode: o.verification.mode,
+			flaky_reruns: o.verification.flakyReruns,
+		},
 	};
 }
 
@@ -791,9 +799,15 @@ export function toTaskRunnerConfig(config: TaskplaneConfig): import("./types.ts"
 		taskAreas[name] = ta;
 	}
 
+	// Include testing_commands for baseline fingerprinting (TP-032).
+	// Only set the field when there are actual commands configured.
+	const testingCommands = config.taskRunner.testing?.commands;
+	const hasTestingCommands = testingCommands && Object.keys(testingCommands).length > 0;
+
 	return {
 		task_areas: taskAreas,
 		reference_docs: { ...config.taskRunner.referenceDocs },
+		...(hasTestingCommands ? { testing_commands: { ...testingCommands } } : {}),
 	};
 }
 

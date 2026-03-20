@@ -152,7 +152,7 @@ Orchestrator lanes execute tasks through task-runner under the hood, so `/task` 
 | `/orch-plan <areas\|paths\|all>` | Preview execution plan without running |
 | `/orch-status` | Show batch progress |
 | `/orch-pause` | Pause batch after current tasks finish |
-| `/orch-resume` | Resume a paused batch |
+| `/orch-resume [--force]` | Resume a paused batch (or force-resume from stopped/failed) |
 | `/orch-abort [--hard]` | Abort batch (graceful or immediate) |
 | `/orch-deps <areas\|paths\|all>` | Show dependency graph |
 | `/orch-sessions` | List active worker sessions |
