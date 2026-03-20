@@ -11,14 +11,14 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Read resume eligibility logic
 - [x] Read /orch-resume command handler
 - [x] Read phase transition logic
 - [x] Read roadmap Phase 3 sections
-- [ ] Read CONTEXT.md and verify TP-030 dependency contracts (resilience/diagnostics types, persistence serialization)
-- [ ] Read messages.ts computeMergeFailurePolicy and identify merge failure phase transition insertion points
-- [ ] Record preflight findings: insertion points, force-resume contract, and resume eligibility matrix in Notes
+- [x] Read CONTEXT.md and verify TP-030 dependency contracts (resilience/diagnostics types, persistence serialization)
+- [x] Read messages.ts computeMergeFailurePolicy and identify merge failure phase transition insertion points
+- [x] Record preflight findings: insertion points, force-resume contract, and resume eligibility matrix in Notes
 
 ---
 
@@ -95,4 +95,29 @@
 
 ## Notes
 
-*Reserved for execution notes*
+### Preflight Findings (Step 0)
+
+**Insertion Points:**
+
+1. **Force-resume gating:** `/orch-resume` handler in `extension.ts` (line ~549). Currently passes no `force` flag. Add `--force` parsing and pass boolean into `resumeOrchBatch()`.
+2. **Resume eligibility override:** `checkResumeEligibility()` in `resume.ts` (line ~119). Add `force: boolean` parameter. When force=true, `stopped` and `failed` phases become eligible.
+3. **Force intent recording:** In `resumeOrchBatch()` after eligibility check passes, set `batchState.resilience.resumeForced = true` before persisting.
+4. **Diagnostic report emission:** In `engine.ts` at batch terminal (line ~993-1033) and in `resume.ts` at terminal (same pattern). After `persistRuntimeState("batch-terminal", ...)`, call new diagnostic report generator.
+5. **Merge failure phase transition:** `computeMergeFailurePolicy()` in `messages.ts` already returns `targetPhase: "paused"` for `on_merge_failure: "pause"` (the default). The batch-end logic in `engine.ts` (line 993-999) sets `phase = "failed"` when `failedTasks > 0` — this is where merge-caused failures lead to terminal `failed` state.
+
+**Resume Eligibility Matrix (Current vs Required):**
+
+| Phase | Current | TP-031 Required |
+|---|---|---|
+| `paused` | ✅ eligible | ✅ eligible (normal) |
+| `executing` | ✅ eligible | ✅ eligible (normal) |
+| `merging` | ✅ eligible | ✅ eligible (normal) |
+| `stopped` | ❌ rejected | ⚠️ `--force` only |
+| `failed` | ❌ rejected | ⚠️ `--force` only |
+| `completed` | ❌ rejected | ❌ rejected (always) |
+| `idle` | ❌ rejected | ❌ rejected |
+| `planning` | ❌ rejected | ❌ rejected |
+
+**Force-resume contract:** `/orch-resume --force` → parse flag in extension.ts → pass `force: boolean` to `resumeOrchBatch()` → `checkResumeEligibility(state, force)` → if force && (stopped|failed), return eligible → run pre-resume diagnostics → set `resilience.resumeForced = true` → reset phase to `paused` → continue normal resume flow.
+
+**TP-030 Dependency Status:** Verified. `ResilienceState` type exists with `resumeForced: boolean`. `BatchDiagnostics` type exists with `taskExits` and `batchCost`. `serializeBatchState()` serializes both with defaults. State validation in `loadBatchState()` validates v3 schema.
