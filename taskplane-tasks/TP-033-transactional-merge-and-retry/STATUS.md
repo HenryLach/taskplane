@@ -1,11 +1,11 @@
 # TP-033: Transactional Merge Envelope & Retry Matrix — Status
 
-**Current Step:** Step 3: Testing & Verification
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 7
-**Iteration:** 4
+**Review Counter:** 9
+**Iteration:** 5
 **Size:** L
 
 ---
@@ -69,9 +69,10 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Config reference docs updated
-- [ ] `.DONE` created
+**Status:** 🟨 In Progress
+- [ ] Document merge retry policy in task-orchestrator.yaml.md: failure classifications table, retriable vs non-retriable behavior, max attempts/cooldowns, exhaustion behavior, scope key format, and precedence with on_merge_failure
+- [ ] Assess commands.md impact — determine if merge output changes require commands doc updates; record decision with rationale
+- [ ] Completion gate: docs reflect implemented behavior, impact check done, STATUS/review entries current → create `.DONE`
 
 ---
 
@@ -86,6 +87,8 @@
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | APPROVE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 
 ## Discoveries
 
@@ -126,6 +129,11 @@
 | 2026-03-20 13:18 | Step 2 complete | Retry Policy Matrix |
 | 2026-03-20 13:18 | Step 3 started | Testing & Verification |
 | 2026-03-20 13:20 | Review R007 | plan Step 3: REVISE |
+| 2026-03-20 13:33 | Worker iter 4 | done in 727s, ctx: 44%, tools: 75 |
+| 2026-03-20 13:38 | Review R008 | code Step 3: APPROVE |
+| 2026-03-20 13:38 | Step 3 complete | Testing & Verification |
+| 2026-03-20 13:38 | Step 4 started | Documentation & Delivery |
+| 2026-03-20 13:41 | Review R009 | plan Step 4: REVISE |
 
 ## Blockers
 
