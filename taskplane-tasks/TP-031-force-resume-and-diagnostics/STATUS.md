@@ -75,8 +75,8 @@
 
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
-- [ ] Update `docs/reference/commands.md` — `/orch-resume [--force]` syntax, force-only phases, normal phases, completed rejection, example invocations
-- [ ] Evaluate README.md command table — update `/orch-resume` row if needed or record why no change necessary
+- [x] Update `docs/reference/commands.md` — `/orch-resume [--force]` syntax, force-only phases, normal phases, completed rejection, example invocations
+- [x] Evaluate README.md command table — updated `/orch-resume` row to show `[--force]` flag and expanded description
 - [ ] Final delivery: create `.DONE`, mark step complete in STATUS.md, log completion
 
 ---
@@ -132,6 +132,9 @@
 | 2026-03-20 04:05 | Step 4 complete | Testing & Verification |
 | 2026-03-20 04:05 | Step 5 started | Documentation & Delivery |
 | 2026-03-20 04:07 | Review R011 | plan Step 5: REVISE |
+| 2026-03-20 04:08 | Worker iter 5 | done in 748s, ctx: 37%, tools: 71 |
+| 2026-03-20 04:08 | Step 4 complete | Testing & Verification |
+| 2026-03-20 04:08 | Step 5 started | Documentation & Delivery |
 
 ## Blockers
 
