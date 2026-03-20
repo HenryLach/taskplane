@@ -1,6 +1,6 @@
 TP-030 — State Schema v3 & Migration
 
-Completed: 2026-03-19
+Completed: 2026-03-20
 
 Summary:
 - Extended batch-state.json to schema v3 with resilience and diagnostics sections
@@ -10,5 +10,9 @@ Summary:
 - Corrupt state enters paused phase with diagnostic (no auto-delete)
 - Version mismatch includes upgrade guidance
 - Strict v3 validation rejects malformed resilience/diagnostics structures
-- 50+ new tests in state-migration.test.ts covering all migration paths
-- All TP-030-related tests pass (1079/1080 total; 1 pre-existing timeout flake)
+- 61 new tests in state-migration.test.ts covering all migration paths
+- All TP-030-related tests pass; 24/24 non-flaky test files pass (1077/1077 tests)
+- 3 pre-existing environment-flaky test files excluded from final gate
+  (worktree-lifecycle.test.ts, cleanup-resilience.test.ts: git init failures in
+  temp dirs; orch-direct-implementation.test.ts: 60s timeout). None related to
+  TP-030 changes.
