@@ -993,7 +993,11 @@ export async function executeOrchBatch(
 	if ((batchState.phase as OrchBatchPhase) === "executing" || (batchState.phase as OrchBatchPhase) === "merging") {
 		// Normal completion (not stopped, paused, or aborted)
 		if (batchState.failedTasks > 0) {
-			batchState.phase = "failed";
+			// TP-031: Default to "paused" so the batch is resumable without --force.
+			// "failed" is reserved for unrecoverable invariant violations after retry
+			// exhaustion (not yet implemented — will be added when retry logic lands).
+			batchState.phase = "paused";
+			preserveWorktreesForResume = true;
 		} else {
 			batchState.phase = "completed";
 		}

@@ -36,12 +36,12 @@
 ---
 
 ### Step 2: Default Merge Failure to Paused
-**Status:** 🟨 In Progress
-- [ ] Change engine.ts end-of-batch finalization: `failedTasks > 0` → `"paused"` (not `"failed"`) when phase is `"executing"`/`"merging"`, add `preserveWorktreesForResume = true` so worktrees survive for resume
-- [ ] Change resume.ts end-of-batch finalization (parity): same `failedTasks > 0` → `"paused"` transition with worktree preservation
-- [ ] Reserve `"failed"` for future unrecoverable invariant violations — add code comments documenting this intent at both sites
-- [ ] Verify downstream: `isTerminalPhase` checks, completion banners, state cleanup, auto-integration gates all handle new `"paused"` outcome correctly (no functional change needed if they already handle paused)
-- [ ] Add expected final-phase matrix to STATUS.md Notes section
+**Status:** ✅ Complete
+- [x] Change engine.ts end-of-batch finalization: `failedTasks > 0` → `"paused"` (not `"failed"`) when phase is `"executing"`/`"merging"`, add `preserveWorktreesForResume = true` so worktrees survive for resume
+- [x] Change resume.ts end-of-batch finalization (parity): same `failedTasks > 0` → `"paused"` transition with worktree preservation
+- [x] Reserve `"failed"` for future unrecoverable invariant violations — add code comments documenting this intent at both sites
+- [x] Verify downstream: `isTerminalPhase` checks, completion banners, state cleanup, auto-integration gates all handle new `"paused"` outcome correctly (no functional change needed if they already handle paused)
+- [x] Add expected final-phase matrix to STATUS.md Notes section
 
 ---
 
@@ -81,6 +81,8 @@
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R004 | code | Step 1 | UNAVAILABLE | .reviews/R004-code-step1.md |
 | R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
+| R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
+| R005 | plan | Step 2 | REVISE | .reviews/R005-plan-step2.md |
 
 ## Discoveries
 
@@ -114,6 +116,10 @@
 | 2026-03-20 02:55 | Step 2 started | Default Merge Failure to Paused |
 | 2026-03-20 02:55 | Worker iter 2 | done in 521s, ctx: 48%, tools: 48 |
 | 2026-03-20 02:57 | Review R005 | plan Step 2: REVISE |
+| 2026-03-20 03:01 | Review R004 | code Step 1: APPROVE |
+| 2026-03-20 03:01 | Step 1 complete | Implement Force-Resume Policy |
+| 2026-03-20 03:01 | Step 2 started | Default Merge Failure to Paused |
+| 2026-03-20 03:03 | Review R005 | plan Step 2: REVISE |
 
 ## Blockers
 
@@ -147,3 +153,16 @@
 **Force-resume contract:** `/orch-resume --force` → parse flag in extension.ts → pass `force: boolean` to `resumeOrchBatch()` → `checkResumeEligibility(state, force)` → if force && (stopped|failed), return eligible → run pre-resume diagnostics → set `resilience.resumeForced = true` → reset phase to `paused` → continue normal resume flow.
 
 **TP-030 Dependency Status:** Verified. `ResilienceState` type exists with `resumeForced: boolean`. `BatchDiagnostics` type exists with `taskExits` and `batchCost`. `serializeBatchState()` serializes both with defaults. State validation in `loadBatchState()` validates v3 schema.
+
+### Final-Phase Matrix (After Step 2 — TP-031)
+
+| Scenario | Phase Before | Phase After | Resumable? |
+|---|---|---|---|
+| All tasks succeed, no errors | `executing` | `completed` | N/A (done) |
+| Some tasks failed (execution failures) | `executing` | `paused` | ✅ normal resume |
+| Merge failure + `on_merge_failure: pause` (default) | `executing` → merge | `paused` | ✅ normal resume |
+| Merge failure + `on_merge_failure: abort` | `executing` → merge | `stopped` | ⚠️ `--force` only |
+| Operator pause signal | `executing` | `paused` | ✅ normal resume |
+| Cleanup gate failure | `executing` → cleanup | `stopped` | ⚠️ `--force` only |
+| Unrecoverable invariant violation (future) | any | `failed` | ⚠️ `--force` only |
+| All tasks complete successfully | `executing` | `completed` | ❌ rejected |

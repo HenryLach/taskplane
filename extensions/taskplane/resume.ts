@@ -1743,7 +1743,11 @@ export async function resumeOrchBatch(
 
 	if ((batchState.phase as OrchBatchPhase) === "executing" || (batchState.phase as OrchBatchPhase) === "merging") {
 		if (batchState.failedTasks > 0) {
-			batchState.phase = "failed";
+			// TP-031: Parity with engine.ts — default to "paused" so the batch is
+			// resumable without --force. "failed" is reserved for unrecoverable
+			// invariant violations after retry exhaustion.
+			batchState.phase = "paused";
+			preserveWorktreesForResume = true;
 		} else {
 			batchState.phase = "completed";
 		}
