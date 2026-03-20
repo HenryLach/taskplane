@@ -280,6 +280,44 @@ describe("classifyExit — precedence collisions", () => {
 			rationale: "Context overflow is the root cause; timeout may be secondary",
 		},
 		{
+			name: "contextKilled beats session_vanished (no summary)",
+			input: makeInput({
+				exitSummary: null,
+				contextKilled: true,
+			}),
+			expected: "context_overflow",
+			rationale: "Explicit context kill is authoritative even when summary is missing",
+		},
+		{
+			name: "contextKilled beats wall_clock_timeout",
+			input: makeInput({
+				contextKilled: true,
+				timerKilled: true,
+			}),
+			expected: "context_overflow",
+			rationale: "Context kill (3b) has higher precedence than timer (4)",
+		},
+		{
+			name: ".DONE beats contextKilled",
+			input: makeInput({
+				doneFileFound: true,
+				contextKilled: true,
+			}),
+			expected: "completed",
+			rationale: ".DONE always wins (priority 1)",
+		},
+		{
+			name: "api_error beats contextKilled",
+			input: makeInput({
+				exitSummary: makeSummary({
+					retries: [{ attempt: 1, error: "auth", delayMs: 0, succeeded: false }],
+				}),
+				contextKilled: true,
+			}),
+			expected: "api_error",
+			rationale: "API error (priority 2) beats context kill (priority 3b)",
+		},
+		{
 			name: "wall_clock_timeout beats process_crash (non-zero exit)",
 			input: makeInput({
 				exitSummary: makeSummary({ exitCode: 137 }),
@@ -368,6 +406,48 @@ describe("classifyExit — edge cases", () => {
 		}));
 		// 89 < 90 threshold → not context_overflow, exitCode=0 → not crash → unknown
 		expect(result).toBe("unknown");
+	});
+
+	it("contextKilled → context_overflow (even without compactions or summary)", () => {
+		// Task-runner explicitly killed the session due to context limit,
+		// but wrapper crashed before writing exit summary
+		const result = classifyExit(makeInput({
+			exitSummary: null,
+			contextKilled: true,
+		}));
+		// contextKilled (3b) beats session_vanished (6)
+		expect(result).toBe("context_overflow");
+	});
+
+	it("contextKilled → context_overflow (summary exists but compactions=0)", () => {
+		// Wrapper didn't record compactions but task-runner detected context limit
+		const result = classifyExit(makeInput({
+			exitSummary: makeSummary({ compactions: 0, exitCode: 0 }),
+			contextKilled: true,
+			contextPct: 50,
+		}));
+		expect(result).toBe("context_overflow");
+	});
+
+	it("contextKilled=false (default) → no change to existing behavior", () => {
+		const result = classifyExit(makeInput({
+			exitSummary: makeSummary({ exitCode: 0 }),
+		}));
+		// contextKilled defaults to false via ?? in classifyExit
+		expect(result).toBe("unknown");
+	});
+
+	it("contextKilled undefined → treated as false (backward compatible)", () => {
+		const input: ExitClassificationInput = {
+			exitSummary: makeSummary({ exitCode: 0 }),
+			doneFileFound: false,
+			timerKilled: false,
+			stallDetected: false,
+			userKilled: false,
+			contextPct: null,
+			// contextKilled intentionally not set
+		};
+		expect(classifyExit(input)).toBe("unknown");
 	});
 });
 

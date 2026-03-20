@@ -23,12 +23,27 @@ import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "child_process";
 import {
 	readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, unlinkSync,
+	statSync, openSync, readSync, closeSync,
 } from "fs";
-import { tmpdir } from "os";
+import { tmpdir, userInfo } from "os";
 import { join, dirname, basename, resolve } from "path";
 import { loadProjectConfig, toTaskConfig } from "./taskplane/config-loader.ts";
 import { loadWorkspaceConfig, resolvePointer } from "./taskplane/workspace.ts";
 import type { PointerResolution } from "./taskplane/types.ts";
+import { classifyExit } from "./taskplane/diagnostics.ts";
+import type { TaskExitDiagnostic, ExitSummary } from "./taskplane/diagnostics.ts";
+import {
+	generateQualityGatePrompt,
+	generateFeedbackMd,
+	buildFixAgentPrompt,
+	readAndEvaluateVerdict,
+	VERDICT_FILENAME,
+	FEEDBACK_FILENAME,
+	type QualityGateContext,
+	type QualityGateResult,
+	type ReviewVerdict,
+	type VerdictEvaluation,
+} from "./taskplane/quality-gate.ts";
 
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -55,6 +70,13 @@ interface TaskConfig {
 		max_review_cycles: number;
 		no_progress_limit: number;
 		max_worker_minutes?: number;
+	};
+	quality_gate: {
+		enabled: boolean;
+		review_model: string;
+		max_review_cycles: number;
+		max_fix_cycles: number;
+		pass_threshold: "no_critical" | "no_important" | "all_clear";
 	};
 }
 
@@ -98,6 +120,11 @@ interface TaskState {
 	workerCostUsd: number;
 	workerProc: any;
 	workerTimer: any;
+	workerRetryActive: boolean;
+	workerRetryCount: number;
+	workerLastRetryError: string;
+	/** Structured exit diagnostic from the most recent tmux worker iteration (null in subprocess mode or before first completion). */
+	workerExitDiagnostic: TaskExitDiagnostic | null;
 	reviewerStatus: "idle" | "running" | "done" | "error";
 	reviewerType: string;
 	reviewerElapsed: number;
@@ -116,6 +143,8 @@ function freshState(): TaskState {
 		workerContextPct: 0, workerLastTool: "", workerToolCount: 0,
 		workerInputTokens: 0, workerOutputTokens: 0, workerCacheReadTokens: 0, workerCacheWriteTokens: 0, workerCostUsd: 0,
 		workerProc: null, workerTimer: null,
+		workerRetryActive: false, workerRetryCount: 0, workerLastRetryError: "",
+		workerExitDiagnostic: null,
 		reviewerStatus: "idle", reviewerType: "", reviewerElapsed: 0,
 		reviewerLastTool: "", reviewerProc: null, reviewerTimer: null,
 		reviewCounter: 0, totalIterations: 0, stepStatuses: new Map(),
@@ -136,6 +165,13 @@ const DEFAULT_CONFIG: TaskConfig = {
 	context: {
 		worker_context_window: 200000, warn_percent: 70, kill_percent: 85,
 		max_worker_iterations: 20, max_review_cycles: 2, no_progress_limit: 3,
+	},
+	quality_gate: {
+		enabled: false,
+		review_model: "",
+		max_review_cycles: 2,
+		max_fix_cycles: 1,
+		pass_threshold: "no_critical",
 	},
 };
 
@@ -326,6 +362,10 @@ function writeLaneState(state: TaskState): void {
 			workerCacheReadTokens: state.workerCacheReadTokens,
 			workerCacheWriteTokens: state.workerCacheWriteTokens,
 			workerCostUsd: state.workerCostUsd,
+			workerRetryActive: state.workerRetryActive,
+			workerRetryCount: state.workerRetryCount,
+			workerLastRetryError: state.workerLastRetryError,
+			workerExitDiagnostic: state.workerExitDiagnostic || undefined,
 			reviewerStatus: state.reviewerStatus || "idle",
 			timestamp: Date.now(),
 		};
@@ -444,6 +484,88 @@ function resolveBaseAgentPath(name: string): string {
 	const root = findPackageRoot();
 	if (!root) return "";
 	return join(root, "templates", "agents", `${name}.md`);
+}
+
+/**
+ * Resolve the path to rpc-wrapper.mjs from the installed taskplane package.
+ *
+ * Resolution strategy (first match wins):
+ *   1. Package root via findPackageRoot() (covers global npm, workspace, pi peer)
+ *   2. Project-local node_modules/taskplane (for non-workspace local installs)
+ *   3. Global npm paths (explicit fallback for layouts findPackageRoot may miss)
+ *   4. Extension-file-relative: derive package root from the `-e` arg that loaded
+ *      this extension (handles dev scenarios where cwd differs from checkout)
+ *   5. Development fallback: cwd/bin/rpc-wrapper.mjs (running from taskplane repo)
+ *
+ * @returns Absolute path to rpc-wrapper.mjs
+ * @throws Error if rpc-wrapper.mjs cannot be found
+ */
+function resolveRpcWrapperPath(): string {
+	const wrapperRelPath = join("bin", "rpc-wrapper.mjs");
+	const searched: string[] = [];
+
+	const tryPath = (dir: string): string | null => {
+		const p = join(dir, wrapperRelPath);
+		searched.push(p);
+		return existsSync(p) ? p : null;
+	};
+
+	// 1. Package root (installed npm package — covers global, workspace, peer)
+	const root = findPackageRoot();
+	if (root) {
+		const found = tryPath(root);
+		if (found) return found;
+	}
+
+	// 2. Project-local node_modules (non-workspace local installs)
+	const cwdLocal = join(process.cwd(), "node_modules", "taskplane");
+	if (existsSync(cwdLocal)) {
+		const found = tryPath(cwdLocal);
+		if (found) return found;
+	}
+
+	// 3. Global npm paths (explicit check for layouts findPackageRoot may miss)
+	const home = process.env.HOME || process.env.USERPROFILE || "";
+	const globalCandidates: string[] = [];
+	if (process.env.APPDATA) {
+		globalCandidates.push(join(process.env.APPDATA, "npm", "node_modules", "taskplane"));
+	}
+	if (home) {
+		globalCandidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", "taskplane"));
+		globalCandidates.push(join(home, ".npm-global", "lib", "node_modules", "taskplane"));
+	}
+	globalCandidates.push(join("/usr", "local", "lib", "node_modules", "taskplane"));
+	for (const dir of globalCandidates) {
+		const found = tryPath(dir);
+		if (found) return found;
+	}
+
+	// 4. Extension-file-relative: derive package root from the -e argument
+	//    that loaded this file. This covers dev scenarios where the extension
+	//    is loaded from a local checkout but cwd is a different directory
+	//    (e.g., a worktree or integration test working directory).
+	//    This file lives at <package-root>/extensions/task-runner.ts, so walk up two levels.
+	try {
+		const args = process.argv;
+		for (let i = 0; i < args.length - 1; i++) {
+			if (args[i] === "-e" && args[i + 1]?.includes("task-runner")) {
+				const extPath = resolve(args[i + 1]);
+				const derivedRoot = resolve(extPath, "..", "..");
+				const found = tryPath(derivedRoot);
+				if (found) return found;
+			}
+		}
+	} catch { /* ignore argv parsing errors */ }
+
+	// 5. Development fallback: running from the taskplane repo directly
+	const cwdDev = process.cwd();
+	const devFound = tryPath(cwdDev);
+	if (devFound) return devFound;
+
+	throw new Error(
+		"Cannot find rpc-wrapper.mjs. Ensure taskplane is installed correctly. " +
+		`Searched: ${searched.join(", ")}`
+	);
 }
 
 /**
@@ -991,6 +1113,298 @@ function spawnAgent(opts: {
 	return { promise, kill: () => killFn() };
 }
 
+// ── Sidecar JSONL Tailing ────────────────────────────────────────────
+
+/**
+ * Mutable state for incremental byte-offset sidecar JSONL reading.
+ * One instance per sidecar file, persists across poll ticks within a session.
+ */
+interface SidecarTailState {
+	/** Byte offset of the next unread position in the sidecar file */
+	offset: number;
+	/** Partial trailing line from the last read (incomplete JSONL line) */
+	partial: string;
+	/** Whether a retry is currently active (persisted across ticks) */
+	retryActive: boolean;
+}
+
+function createSidecarTailState(): SidecarTailState {
+	return { offset: 0, partial: "", retryActive: false };
+}
+
+/**
+ * Parsed telemetry accumulated from sidecar JSONL events.
+ * Returned by tailSidecarJsonl() on each tick.
+ */
+interface SidecarTelemetryDelta {
+	/** Per-turn input tokens (sum of new message_end events in this tick) */
+	inputTokens: number;
+	outputTokens: number;
+	cacheReadTokens: number;
+	cacheWriteTokens: number;
+	/** Incremental cost from new message_end events */
+	cost: number;
+	/** Most recent totalTokens from message_end usage (cumulative, for context %) */
+	latestTotalTokens: number;
+	/** Tool calls observed in this tick */
+	toolCalls: number;
+	/** Last tool description from tool_execution_start */
+	lastTool: string;
+	/** Whether a retry is currently active (persisted across ticks via SidecarTailState) */
+	retryActive: boolean;
+	/** Total retries started in this tick */
+	retriesStarted: number;
+	/** Error message from the most recent auto_retry_start */
+	lastRetryError: string;
+	/** Whether any sidecar events were parsed in this tick (used for callback gating) */
+	hadEvents: boolean;
+}
+
+/**
+ * Incrementally read new lines from a sidecar JSONL file and parse telemetry events.
+ *
+ * O(new) per call — only reads bytes after the previous offset. Handles:
+ * - File not yet created (returns zero delta)
+ * - Empty reads (no new data since last tick)
+ * - Partial trailing lines (buffered for next call)
+ * - Malformed JSON lines (skipped with stderr warning, does not break iteration)
+ *
+ * The caller (poll loop) accumulates the returned deltas into TaskState.
+ */
+function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): SidecarTelemetryDelta {
+	const delta: SidecarTelemetryDelta = {
+		inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
+		cost: 0, latestTotalTokens: 0, toolCalls: 0, lastTool: "",
+		retryActive: tailState.retryActive, retriesStarted: 0, lastRetryError: "",
+		hadEvents: false,
+	};
+
+	// Gracefully handle missing file (wrapper hasn't written yet)
+	let fileSize: number;
+	try {
+		fileSize = statSync(filePath).size;
+	} catch {
+		return delta; // File doesn't exist yet — no-op
+	}
+
+	if (fileSize <= tailState.offset) {
+		return delta; // No new data
+	}
+
+	// Read new bytes from offset to end of file
+	const bytesToRead = fileSize - tailState.offset;
+	const buf = Buffer.alloc(bytesToRead);
+	let fd: number;
+	try {
+		fd = openSync(filePath, "r");
+	} catch {
+		return delta; // File became inaccessible between stat and open
+	}
+	try {
+		readSync(fd, buf, 0, bytesToRead, tailState.offset);
+	} catch {
+		closeSync(fd);
+		return delta; // Read error — try again next tick
+	}
+	closeSync(fd);
+	tailState.offset = fileSize;
+
+	// Split into lines, preserving any partial trailing line
+	const chunk = tailState.partial + buf.toString("utf-8");
+	const lines = chunk.split("\n");
+	// Last element is either "" (if chunk ended with \n) or a partial line
+	tailState.partial = lines.pop() || "";
+
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+
+		let event: any;
+		try {
+			event = JSON.parse(trimmed);
+		} catch {
+			// Malformed JSON — skip silently (concurrent write race, truncated line)
+			continue;
+		}
+
+		if (!event || !event.type) continue;
+
+		delta.hadEvents = true;
+
+		switch (event.type) {
+			case "message_end": {
+				const usage = event.message?.usage;
+				if (usage) {
+					delta.inputTokens += usage.input || 0;
+					delta.outputTokens += usage.output || 0;
+					delta.cacheReadTokens += usage.cacheRead || 0;
+					delta.cacheWriteTokens += usage.cacheWrite || 0;
+					if (usage.cost) {
+						delta.cost += typeof usage.cost === "object"
+							? (usage.cost.total || 0)
+							: (typeof usage.cost === "number" ? usage.cost : 0);
+					}
+					// totalTokens is cumulative (grows each turn) — use latest value
+					const totalTokens = usage.totalTokens
+						|| ((usage.input || 0) + (usage.output || 0));
+					if (totalTokens > delta.latestTotalTokens) {
+						delta.latestTotalTokens = totalTokens;
+					}
+				}
+				break;
+			}
+
+			case "tool_execution_start": {
+				delta.toolCalls++;
+				const toolDesc = event.toolName || "unknown";
+				let argPreview = "";
+				if (event.args) {
+					if (typeof event.args === "string") {
+						argPreview = event.args.slice(0, 80);
+					} else if (typeof event.args === "object") {
+						const firstVal = Object.values(event.args)[0];
+						if (typeof firstVal === "string") {
+							argPreview = (firstVal as string).slice(0, 80);
+						}
+					}
+				}
+				delta.lastTool = argPreview ? `${toolDesc} ${argPreview}` : toolDesc;
+				break;
+			}
+
+			case "auto_retry_start": {
+				delta.retriesStarted++;
+				delta.lastRetryError = event.errorMessage || event.error || "unknown";
+				tailState.retryActive = true;
+				break;
+			}
+
+			case "auto_retry_end": {
+				tailState.retryActive = false;
+				break;
+			}
+		}
+	}
+
+	// Reflect persisted retry state into the delta for the caller
+	delta.retryActive = tailState.retryActive;
+	return delta;
+}
+
+/** Expose sidecar tailing internals for testing (not part of public API). */
+export const _tailSidecarJsonl = tailSidecarJsonl;
+export const _createSidecarTailState = createSidecarTailState;
+export const _getSidecarDir = getSidecarDir;
+export type { SidecarTailState, SidecarTelemetryDelta };
+
+// ── Exit Summary & Diagnostic ────────────────────────────────────────
+
+/**
+ * Read the exit summary JSON file written by rpc-wrapper.mjs.
+ *
+ * Returns null if the file is missing (session vanished) or malformed
+ * (wrapper crashed mid-write). Logs a warning on parse failure but
+ * never throws — the caller should treat null as "session_vanished".
+ */
+function readExitSummary(exitSummaryPath: string): ExitSummary | null {
+	try {
+		if (!existsSync(exitSummaryPath)) {
+			return null;
+		}
+		const raw = readFileSync(exitSummaryPath, "utf-8").trim();
+		if (!raw) return null;
+		const parsed = JSON.parse(raw);
+		// Minimal shape validation: must be a plain object (not array, not null)
+		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+			console.error(`[task-runner] exit summary is not a plain object: ${exitSummaryPath}`);
+			return null;
+		}
+		return parsed as ExitSummary;
+	} catch (err: any) {
+		console.error(`[task-runner] failed to read exit summary: ${err.message}`);
+		return null;
+	}
+}
+
+/**
+ * Input parameters for `buildExitDiagnostic()`.
+ *
+ * Bridges the task-runner's runtime state into `classifyExit()` input
+ * and populates the full `TaskExitDiagnostic` with progress metadata.
+ */
+interface BuildExitDiagnosticInput {
+	/** Exit summary from rpc-wrapper.mjs (null if file missing) */
+	exitSummary: ExitSummary | null;
+	/** Whether .DONE file was found */
+	doneFileFound: boolean;
+	/** Whether the wall-clock timer killed the session */
+	timerKilled: boolean;
+	/** Whether the context-limit kill was triggered */
+	contextKilled: boolean;
+	/** Whether the user manually killed the session */
+	userKilled: boolean;
+	/** Estimated context utilization % from sidecar tailing (0-100) */
+	contextPct: number;
+	/** Wall-clock duration in seconds */
+	durationSec: number;
+	/** Repo identifier ("default" in repo mode, repo key in workspace mode) */
+	repoId: string;
+	/** Last known step number from STATUS.md (null if not parsed) */
+	lastKnownStep: number | null;
+	/** Last known checkbox text from STATUS.md (null if not parsed) */
+	lastKnownCheckbox: string | null;
+	/** Number of commits representing partial progress (0 if none) */
+	partialProgressCommits: number;
+	/** Branch name holding partial progress (null if no branch) */
+	partialProgressBranch: string | null;
+}
+
+/**
+ * Build a structured `TaskExitDiagnostic` from task-runner runtime state.
+ *
+ * Calls `classifyExit()` with the appropriate signal mapping, then
+ * enriches the result with progress metadata (commits, step, repo).
+ *
+ * Signal mapping:
+ * - `stallDetected` in ExitClassificationInput ← not directly available in
+ *   task-runner's tmux mode (stall detection is orchestrator-level), so
+ *   always false here. Stall classification may still occur via orchestrator.
+ * - `contextKilled` ← when the task-runner explicitly kills the session
+ *   due to context limit. Passed to classifyExit() so it can produce
+ *   `context_overflow` even when exit summary is missing or lacks
+ *   compaction events (e.g., wrapper crashed before writing summary).
+ */
+function buildExitDiagnostic(input: BuildExitDiagnosticInput): TaskExitDiagnostic {
+	const classification = classifyExit({
+		exitSummary: input.exitSummary,
+		doneFileFound: input.doneFileFound,
+		timerKilled: input.timerKilled,
+		contextKilled: input.contextKilled,
+		stallDetected: false, // Stall detection is orchestrator-level, not available in /task mode
+		userKilled: input.userKilled,
+		contextPct: input.contextPct,
+	});
+
+	return {
+		classification,
+		exitCode: input.exitSummary?.exitCode ?? null,
+		errorMessage: input.exitSummary?.error ?? null,
+		tokensUsed: input.exitSummary?.tokens ?? null,
+		contextPct: input.contextPct,
+		partialProgressCommits: input.partialProgressCommits,
+		partialProgressBranch: input.partialProgressBranch,
+		durationSec: input.durationSec,
+		lastKnownStep: input.lastKnownStep,
+		lastKnownCheckbox: input.lastKnownCheckbox,
+		repoId: input.repoId,
+	};
+}
+
+/** Expose exit summary/diagnostic helpers for testing. */
+export const _readExitSummary = readExitSummary;
+export const _buildExitDiagnostic = buildExitDiagnostic;
+export type { BuildExitDiagnosticInput };
+
 // ── TMUX Agent Spawner ───────────────────────────────────────────────
 
 /**
@@ -1011,13 +1425,24 @@ function spawnAgent(opts: {
  *   - Session creation failure (throws after cleanup)
  *
  * Parity with spawnAgent():
- *   - Return shape:   identical — { promise, kill }
+ *   - Return shape:   extended — { promise, kill, sidecarPath, exitSummaryPath }
+ *     (promise and kill are drop-in compatible; sidecarPath and exitSummaryPath
+ *     are additions for RPC telemetry consumption in Steps 2/3)
  *   - Promise result: identical fields — { output, exitCode, elapsed, killed }
  *   - Kill semantics: sets killed=true, terminates session, cleans temp files
  *   - Elapsed calc:   Date.now() - startTime (same pattern)
  *   - Cleanup:        synchronous on all paths (more deterministic than spawnAgent's 1s setTimeout)
  *   - output:         always "" (no JSON stream in TMUX mode)
  *   - exitCode:       0 on normal completion, 1 on poll error (TMUX doesn't forward exit codes)
+ *
+ * RPC Wrapper Integration (TP-026):
+ * Instead of spawning `pi -p` directly, this function now spawns `rpc-wrapper.mjs`
+ * which runs pi in RPC mode and produces:
+ *   - Sidecar JSONL file with real-time telemetry (tokens, cost, tool calls, retries)
+ *   - Exit summary JSON with structured exit data for classification
+ *
+ * The telemetry file paths are returned alongside the promise/kill handles so that
+ * Steps 2 (sidecar tailing) and 3 (exit diagnostic) can read them.
  *
  * @param opts.sessionName  — TMUX session name (e.g., "orch-lane-1-worker")
  * @param opts.cwd          — Working directory for the TMUX session
@@ -1026,6 +1451,7 @@ function spawnAgent(opts: {
  * @param opts.model        — Model identifier (e.g., "anthropic/claude-sonnet-4-20250514")
  * @param opts.tools        — Comma-separated tool list
  * @param opts.thinking     — Thinking mode ("off", "on", etc.)
+ * @param opts.taskId       — Optional task ID for telemetry filename enrichment (e.g., "TP-026")
  */
 function spawnAgentTmux(opts: {
 	sessionName: string;
@@ -1035,7 +1461,17 @@ function spawnAgentTmux(opts: {
 	model: string;
 	tools: string;
 	thinking: string;
-}): { promise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>; kill: () => void } {
+	taskId?: string;
+	/** Called on each poll tick with accumulated telemetry from the sidecar JSONL.
+	 *  Enables the tmux poll loop to update TaskState (tokens, cost, context%, tools, retries)
+	 *  with the same signals that subprocess mode gets from onTokenUpdate/onContextPct/onToolCall. */
+	onTelemetry?: (delta: SidecarTelemetryDelta) => void;
+}): {
+	promise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>;
+	kill: () => void;
+	sidecarPath: string;
+	exitSummaryPath: string;
+} {
 
 	// ── Preflight: verify tmux is available ──────────────────────────
 	const tmuxCheck = spawnSync("tmux", ["-V"], { shell: true });
@@ -1047,10 +1483,59 @@ function spawnAgentTmux(opts: {
 		);
 	}
 
+	// ── Generate telemetry file paths ───────────────────────────────
+	// Naming contract from resilience roadmap:
+	//   .pi/telemetry/{opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.{ext}
+	//
+	// In standalone /task mode (no orchestrator):
+	//   opId    → TASKPLANE_OPERATOR_ID env, or OS username, or "op"
+	//   batchId → timestamp (no batch concept in standalone mode)
+	//   repoId  → "default" (single-repo mode)
+	//   taskId  → from opts.taskId when provided (e.g., "tp-026"), omitted if absent
+	//   lane    → omitted (no lanes)
+	//   role    → derived from sessionName suffix (worker/reviewer)
+	//
+	// getSidecarDir() respects ORCH_SIDECAR_DIR for workspace mode.
+	const telemetryTs = Date.now();
+
+	// Resolve opId: same priority chain as naming.ts resolveOperatorId()
+	let opId = "op";
+	const envOpId = process.env.TASKPLANE_OPERATOR_ID;
+	if (envOpId?.trim()) {
+		opId = envOpId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+	} else {
+		try {
+			const username = userInfo().username;
+			if (username?.trim()) {
+				opId = username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+			}
+		} catch { /* userInfo() can throw on some platforms */ }
+	}
+
+	const batchId = String(telemetryTs);
+	const repoId = "default";
+
+	// Extract role (worker/reviewer) from sessionName, and optional lane component
+	// sessionName patterns: "task-worker", "task-reviewer", "orch-lane-1-worker"
+	const role = opts.sessionName.endsWith("-reviewer") ? "reviewer" : "worker";
+	const laneMatch = opts.sessionName.match(/lane-(\d+)/);
+	const laneSuffix = laneMatch ? `-lane-${laneMatch[1]}` : "";
+
+	// Include taskId when available — sanitize to filesystem-safe characters.
+	// Pattern: {opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}
+	const taskIdSegment = opts.taskId
+		? `-${opts.taskId.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30)}`
+		: "";
+	const telemetryBasename = `${opId}-${batchId}-${repoId}${taskIdSegment}${laneSuffix}-${role}`;
+	const telemetryDir = join(getSidecarDir(), "telemetry");
+	if (!existsSync(telemetryDir)) mkdirSync(telemetryDir, { recursive: true });
+	const sidecarPath = join(telemetryDir, `${telemetryBasename}.jsonl`);
+	const exitSummaryPath = join(telemetryDir, `${telemetryBasename}-exit.json`);
+
 	// ── Write prompts to temp files ─────────────────────────────────
 	// Same pattern as spawnAgent() — avoids shell escaping issues with
 	// backticks, quotes, and special characters in markdown content.
-	const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+	const id = `${telemetryTs}-${Math.random().toString(36).slice(2, 8)}`;
 	const sysTmpFile = join(tmpdir(), `pi-task-sys-${id}.txt`);
 	const promptTmpFile = join(tmpdir(), `pi-task-prompt-${id}.txt`);
 	writeFileSync(sysTmpFile, opts.systemPrompt);
@@ -1061,10 +1546,14 @@ function spawnAgentTmux(opts: {
 		try { unlinkSync(promptTmpFile); } catch {}
 	};
 
-	// ── Build Pi command ─────────────────────────────────────────────
-	// Use an array of arguments and quote each one individually to handle
-	// paths with spaces (Windows paths, temp dir, etc.). The command is
-	// passed as a single string to tmux new-session, so we shell-quote it.
+	// ── Build RPC Wrapper command ────────────────────────────────────
+	// Spawns `node rpc-wrapper.mjs` instead of `pi -p`. The wrapper runs
+	// pi in RPC mode, captures telemetry to the sidecar JSONL, and writes
+	// a structured exit summary JSON on process exit.
+	//
+	// Shell quoting: use quoteArg() for all path arguments — same quoting
+	// guarantees as the previous `pi -p` command since both execute as a
+	// single shell string via tmux new-session.
 	const quoteArg = (s: string): string => {
 		// If the arg contains spaces, quotes, or shell metacharacters, wrap in single quotes.
 		// Inside single quotes, escape existing single quotes as '\'' (end quote, escaped quote, restart quote).
@@ -1074,17 +1563,24 @@ function spawnAgentTmux(opts: {
 		return s;
 	};
 
-	const piArgs = [
-		"pi",
-		"-p",  // Non-interactive: process prompt and exit (without this, pi waits for more input)
-		"--no-session", "--no-extensions", "--no-skills",
+	// Resolve rpc-wrapper.mjs path from the installed package
+	const rpcWrapperPath = resolveRpcWrapperPath();
+
+	const wrapperArgs = [
+		"node", quoteArg(rpcWrapperPath),
+		"--sidecar-path", quoteArg(sidecarPath),
+		"--exit-summary-path", quoteArg(exitSummaryPath),
 		"--model", quoteArg(opts.model),
+		"--system-prompt-file", quoteArg(sysTmpFile),
+		"--prompt-file", quoteArg(promptTmpFile),
 		"--tools", quoteArg(opts.tools),
+		// Passthrough pi args: flags forwarded to the underlying pi --mode rpc process.
+		// Note: --no-session is NOT passed here — rpc-wrapper.mjs already injects it.
+		"--",
 		"--thinking", quoteArg(opts.thinking),
-		"--append-system-prompt", quoteArg(sysTmpFile),
-		`@${quoteArg(promptTmpFile)}`,
+		"--no-extensions", "--no-skills",
 	];
-	const piCommand = piArgs.join(" ");
+	const wrapperCommand = wrapperArgs.join(" ");
 
 	// ── Handle stale session ─────────────────────────────────────────
 	// Session names are fixed per role (e.g., "orch-lane-1-worker").
@@ -1101,7 +1597,7 @@ function spawnAgentTmux(opts: {
 	// Pi's ink/react TUI hangs with TERM=tmux-256color (tmux default), so we
 	// force xterm-256color.
 	const tmuxCwd = opts.cwd.replace(/^([A-Za-z]):\\/, (_, d: string) => `/${d.toLowerCase()}/`).replace(/\\/g, "/");
-	const wrappedCommand = `cd ${quoteArg(tmuxCwd)} && TERM=xterm-256color ${piCommand}`;
+	const wrappedCommand = `cd ${quoteArg(tmuxCwd)} && TERM=xterm-256color ${wrapperCommand}`;
 	const createResult = spawnSync("tmux", [
 		"new-session", "-d",
 		"-s", opts.sessionName,
@@ -1124,14 +1620,32 @@ function spawnAgentTmux(opts: {
 	// ── Poll until session ends ─────────────────────────────────────
 	let killed = false;
 	const startTime = Date.now();
+	const tailState = createSidecarTailState();
 
 	const promise = (async (): Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }> => {
 		try {
 			while (true) {
 				await new Promise(r => setTimeout(r, 2000));
+
+				// Tail sidecar JSONL for telemetry updates on each tick
+				if (opts.onTelemetry) {
+					const delta = tailSidecarJsonl(sidecarPath, tailState);
+					// Call back whenever events were parsed (including retry state transitions)
+					if (delta.hadEvents) {
+						opts.onTelemetry(delta);
+					}
+				}
+
 				const result = spawnSync("tmux", ["has-session", "-t", opts.sessionName]);
 				if (result.status !== 0) {
 					// Session no longer exists — Pi exited, TMUX closed
+					// Final tail to catch any events written since last tick
+					if (opts.onTelemetry) {
+						const finalDelta = tailSidecarJsonl(sidecarPath, tailState);
+						if (finalDelta.hadEvents) {
+							opts.onTelemetry(finalDelta);
+						}
+					}
 					break;
 				}
 			}
@@ -1174,7 +1688,7 @@ function spawnAgentTmux(opts: {
 		console.error(`[task-runner] tmux: cleanup done for '${opts.sessionName}' (killed)`);
 	};
 
-	return { promise, kill };
+	return { promise, kill, sidecarPath, exitSummaryPath };
 }
 
 // ── Display Helpers ──────────────────────────────────────────────────
@@ -1403,11 +1917,127 @@ export default function (pi: ExtensionAPI) {
 			if (state.phase === "error" || state.phase === "paused") return;
 		}
 
-		// All done
-		const donePath = join(task.taskFolder, ".DONE");
-		writeFileSync(donePath, `Completed: ${new Date().toISOString()}\nTask: ${task.taskId}\n`);
-		updateStatusField(statusPath, "Status", "✅ Complete");
-		logExecution(statusPath, "Task complete", ".DONE created");
+		// All steps done — run quality gate if enabled, then create .DONE
+		if (config.quality_gate.enabled) {
+			// ── Quality Gate Enabled ─────────────────────────────────
+			// Run structured review cycles with remediation. .DONE only
+			// created after PASS verdict — never delete/recreate.
+			const maxReviewCycles = config.quality_gate.max_review_cycles;
+			const maxFixCycles = config.quality_gate.max_fix_cycles;
+			let reviewCycle = 0;
+			let fixCyclesUsed = 0;
+			let gatePassed = false;
+			let lastVerdict: ReviewVerdict | null = null;
+
+			const gateContext: QualityGateContext = {
+				taskFolder: task.taskFolder,
+				promptPath: task.promptPath,
+				taskId: task.taskId,
+				projectName: config.project.name,
+				passThreshold: config.quality_gate.pass_threshold,
+			};
+
+			logExecution(statusPath, "Quality gate", `Enabled (threshold: ${config.quality_gate.pass_threshold}, max reviews: ${maxReviewCycles}, max fixes: ${maxFixCycles})`);
+
+			while (reviewCycle < maxReviewCycles) {
+				reviewCycle++;
+				const result = await doQualityGateReview(ctx, reviewCycle);
+				lastVerdict = result.verdict;
+
+				if (result.passed) {
+					gatePassed = true;
+					break;
+				}
+
+				// NEEDS_FIXES — check if we can still do a fix cycle
+				if (reviewCycle >= maxReviewCycles) {
+					// No more review cycles left — terminal failure
+					logExecution(statusPath, "Quality gate", `Max review cycles (${maxReviewCycles}) exhausted — no more reviews allowed`);
+					break;
+				}
+
+				if (fixCyclesUsed >= maxFixCycles) {
+					// No more fix cycles allowed
+					logExecution(statusPath, "Quality gate", `Max fix cycles (${maxFixCycles}) exhausted — cannot remediate`);
+					break;
+				}
+
+				// ── Remediation: write feedback, spawn fix agent ─────
+				fixCyclesUsed++;
+
+				// Write REVIEW_FEEDBACK.md with blocking findings
+				const feedbackContent = generateFeedbackMd(result.verdict, reviewCycle, maxReviewCycles, config.quality_gate.pass_threshold);
+				const feedbackPath = join(task.taskFolder, FEEDBACK_FILENAME);
+				try {
+					writeFileSync(feedbackPath, feedbackContent);
+					logExecution(statusPath, "Quality gate", `Wrote ${FEEDBACK_FILENAME} (fix cycle ${fixCyclesUsed}/${maxFixCycles})`);
+				} catch (err: any) {
+					logExecution(statusPath, "Quality gate", `Failed to write ${FEEDBACK_FILENAME}: ${err?.message} — skipping remediation`);
+					break;
+				}
+
+				// Build fix agent prompt
+				const fixPrompt = buildFixAgentPrompt(gateContext, feedbackContent, fixCyclesUsed);
+
+				// Spawn fix agent (reuses worker spawn pattern)
+				const fixResult = await doQualityGateFixAgent(ctx, fixPrompt, fixCyclesUsed);
+
+				if (fixResult.timedOut) {
+					// Fix agent hit wall-clock timeout — budget consumed deterministically
+					logExecution(statusPath, "Quality gate", `Fix agent timed out (cycle ${fixCyclesUsed}, ${Math.round(fixResult.elapsed / 1000)}s) — budget consumed, proceeding to re-review`);
+				} else if (fixResult.exitCode !== 0) {
+					// Fix agent abnormal exit — consumes fix budget, log and continue to re-review
+					logExecution(statusPath, "Quality gate", `Fix agent exited with code ${fixResult.exitCode} (cycle ${fixCyclesUsed}) — budget consumed, proceeding to re-review`);
+				} else {
+					logExecution(statusPath, "Quality gate", `Fix agent completed (cycle ${fixCyclesUsed}, ${Math.round(fixResult.elapsed / 1000)}s) — proceeding to re-review`);
+				}
+
+				// Loop back to the top for re-review
+			}
+
+			if (gatePassed) {
+				// PASS → create .DONE
+				const donePath = join(task.taskFolder, ".DONE");
+				writeFileSync(donePath, `Completed: ${new Date().toISOString()}\nTask: ${task.taskId}\nQuality gate: PASS (cycle ${reviewCycle})\n`);
+				updateStatusField(statusPath, "Status", "✅ Complete");
+				logExecution(statusPath, "Task complete", `.DONE created (quality gate PASS, cycle ${reviewCycle})`);
+			} else {
+				// Gate failed — do NOT create .DONE
+				// Persist blocking findings summary for operator visibility
+				if (lastVerdict) {
+					const criticals = lastVerdict.findings.filter(f => f.severity === "critical");
+					const importants = lastVerdict.findings.filter(f => f.severity === "important");
+					const suggestions = lastVerdict.findings.filter(f => f.severity === "suggestion");
+					const summaryParts = [
+						criticals.length > 0 ? `${criticals.length} critical` : "",
+						importants.length > 0 ? `${importants.length} important` : "",
+						// Include suggestion counts when they are blocking (all_clear threshold)
+						(config.quality_gate.pass_threshold === "all_clear" && suggestions.length > 0)
+							? `${suggestions.length} suggestion` : "",
+					].filter(Boolean);
+					const findingsSummary = summaryParts.join(", ");
+					logExecution(statusPath, "Quality gate failed",
+						`${reviewCycle} review cycle(s), ${fixCyclesUsed} fix cycle(s). ` +
+						`Blocking findings: ${findingsSummary || "none extracted"}. ` +
+						`Summary: ${lastVerdict.summary}`);
+				} else {
+					logExecution(statusPath, "Quality gate failed", `Task did not pass after ${reviewCycle} review cycle(s)`);
+				}
+
+				state.phase = "error";
+				updateStatusField(statusPath, "Status", "❌ Quality gate failed");
+				ctx.ui.notify(`❌ Quality gate failed after ${reviewCycle} review cycle(s), ${fixCyclesUsed} fix cycle(s). .DONE not created.`, "error");
+				updateWidgets();
+				return;
+			}
+		} else {
+			// ── Quality Gate Disabled (default) ──────────────────────
+			// Unchanged behavior — create .DONE immediately.
+			const donePath = join(task.taskFolder, ".DONE");
+			writeFileSync(donePath, `Completed: ${new Date().toISOString()}\nTask: ${task.taskId}\n`);
+			updateStatusField(statusPath, "Status", "✅ Complete");
+			logExecution(statusPath, "Task complete", ".DONE created");
+		}
 
 		// Auto-archive: move task folder to tasks/archive/.
 		// In orchestrated runs, do NOT archive here — the orchestrator polls
@@ -1591,6 +2221,9 @@ export default function (pi: ExtensionAPI) {
 		state.workerContextPct = 0;
 		state.workerLastTool = "";
 		state.workerToolCount = 0;
+		state.workerRetryActive = false;
+		state.workerRetryCount = 0;
+		state.workerLastRetryError = "";
 		updateWidgets();
 
 		const startTime = Date.now();
@@ -1604,12 +2237,22 @@ export default function (pi: ExtensionAPI) {
 		let kill: () => void;
 		let wallClockWarnTimer: ReturnType<typeof setTimeout> | null = null;
 		let wallClockKillTimer: ReturnType<typeof setTimeout> | null = null;
+		// Track why the session was killed for exit classification.
+		// "timer" = wall-clock timeout, "context" = context % limit, "user" = manual kill.
+		let killReason: "timer" | "context" | "user" | null = null;
+		// Exit summary path — set only in tmux mode (rpc-wrapper produces this file).
+		let exitSummaryPath: string | null = null;
 
 		if (spawnMode === "tmux") {
 			// ── TMUX mode ────────────────────────────────────────
-			// No JSON stream → no onToolCall/onContextPct callbacks.
-			// Kill via wall-clock timeout instead of context-%.
+			// Sidecar JSONL provides telemetry parity: tokens, cost, context%,
+			// tool calls, and retry events — same signals as subprocess mode.
+			// Kill via wall-clock timeout (context-% wrap-up also available via sidecar).
 			const sessionName = `${getTmuxPrefix()}-worker`;
+			const contextWindow = config.context.worker_context_window;
+			const warnPct = config.context.warn_percent;
+			const killPct = config.context.kill_percent;
+
 			const spawned = spawnAgentTmux({
 				sessionName,
 				cwd: ctx.cwd,
@@ -1618,12 +2261,53 @@ export default function (pi: ExtensionAPI) {
 				model,
 				tools: config.worker.tools || workerDef?.tools || "read,write,edit,bash,grep,find,ls",
 				thinking: config.worker.thinking || "off",
+				taskId: task.taskId,
+				onTelemetry: (delta) => {
+					// Accumulate tokens and cost (same as subprocess onTokenUpdate)
+					state.workerInputTokens += delta.inputTokens;
+					state.workerOutputTokens += delta.outputTokens;
+					state.workerCacheReadTokens += delta.cacheReadTokens;
+					state.workerCacheWriteTokens += delta.cacheWriteTokens;
+					state.workerCostUsd += delta.cost;
+
+					// Tool tracking (same as subprocess onToolCall)
+					state.workerToolCount += delta.toolCalls;
+					if (delta.lastTool) {
+						state.workerLastTool = delta.lastTool;
+					}
+
+					// Retry tracking
+					state.workerRetryCount += delta.retriesStarted;
+					state.workerRetryActive = delta.retryActive;
+					if (delta.lastRetryError) {
+						state.workerLastRetryError = delta.lastRetryError;
+					}
+
+					// Context % (same as subprocess onContextPct)
+					// totalTokens is cumulative from the most recent message_end
+					if (delta.latestTotalTokens > 0 && contextWindow > 0) {
+						const pct = (delta.latestTotalTokens / contextWindow) * 100;
+						state.workerContextPct = pct;
+						if (pct >= warnPct) {
+							writeWrapUpSignal(`Wrap up (context ${Math.round(pct)}%)`);
+						}
+						if (pct >= killPct && state.workerStatus === "running") {
+							console.error(`[task-runner] tmux worker: context limit (${Math.round(pct)}%) — killing session '${sessionName}'`);
+							killReason = "context";
+							spawned.kill();
+						}
+					}
+
+					updateWidgets();
+				},
 			});
 			promise = spawned.promise;
 			kill = spawned.kill;
+			exitSummaryPath = spawned.exitSummaryPath;
 
 			// Wall-clock timeout: write wrap-up file at 80% of limit,
-			// hard kill at 100%. No context telemetry in TMUX mode.
+			// hard kill at 100%. Context-% based wrap-up/kill is also active
+			// via sidecar telemetry (above), providing dual safety nets.
 			const maxMinutes = getMaxWorkerMinutes(config);
 			const warnMs = Math.round(maxMinutes * 0.8 * 60_000);
 			const killMs = maxMinutes * 60_000;
@@ -1643,6 +2327,7 @@ export default function (pi: ExtensionAPI) {
 			wallClockKillTimer = setTimeout(() => {
 				if (state.workerStatus === "running" && state.totalIterations === iterationMarker) {
 					console.error(`[task-runner] tmux worker: wall-clock timeout (${maxMinutes}min) — killing session '${sessionName}'`);
+					killReason = "timer";
 					kill();
 				}
 			}, killMs);
@@ -1718,12 +2403,57 @@ export default function (pi: ExtensionAPI) {
 
 		clearWrapUpSignals();
 
-		// Log with mode-appropriate detail: subprocess has context%, TMUX does not
-		const killedMsg = spawnMode === "tmux" ? "killed (wall-clock timeout)" : "killed (context limit)";
-		const statusMsg = result.killed ? killedMsg : (result.exitCode === 0 ? "done" : `error (code ${result.exitCode})`);
-		const ctxDetail = spawnMode === "tmux" ? "" : `, ctx: ${Math.round(state.workerContextPct)}%`;
+		// ── Exit Diagnostic (tmux mode only) ─────────────────────
+		// Read the exit summary JSON written by rpc-wrapper.mjs, classify
+		// the exit, and build a structured diagnostic for persistence.
+		// Subprocess mode doesn't produce exit summaries (it uses JSON
+		// event stream directly), so this path is tmux-only.
+		if (spawnMode === "tmux" && exitSummaryPath) {
+			const exitSummary = readExitSummary(exitSummaryPath);
+			const donePath = join(task.taskFolder, ".DONE");
+			const doneFileFound = existsSync(donePath);
+
+			// Determine userKilled: killed is true but not by timer or context
+			const userKilled = result.killed && killReason === null;
+
+			const diagnostic = buildExitDiagnostic({
+				exitSummary,
+				doneFileFound,
+				timerKilled: killReason === "timer",
+				contextKilled: killReason === "context",
+				userKilled,
+				contextPct: state.workerContextPct,
+				durationSec: Math.round(state.workerElapsed / 1000),
+				repoId: process.env.TASKPLANE_REPO_ID || "default",
+				lastKnownStep: state.currentStep || null,
+				lastKnownCheckbox: null, // Not parsed in task-runner; available via STATUS.md
+				partialProgressCommits: 0, // Computed by orchestrator after commit
+				partialProgressBranch: null,
+			});
+
+			// Store diagnostic on state for lane-state sidecar and logging
+			state.workerExitDiagnostic = diagnostic;
+
+			console.error(`[task-runner] exit diagnostic: ${diagnostic.classification}` +
+				(diagnostic.exitCode !== null ? ` (exit ${diagnostic.exitCode})` : "") +
+				(exitSummary ? `` : " (no exit summary)"));
+
+			// Log telemetry file paths for operator visibility (files preserved for dashboard)
+			const sidecarPath = exitSummaryPath.replace(/-exit\.json$/, ".jsonl");
+			console.error(`[task-runner] telemetry files preserved:` +
+				`\n  sidecar: ${sidecarPath}` +
+				`\n  exit summary: ${exitSummaryPath}`);
+		}
+
+		// Log with telemetry detail — both subprocess and TMUX now have context%
+		const killedMsg = result.killed
+			? (spawnMode === "tmux"
+				? `killed (${killReason === "context" ? "context limit" : killReason === "timer" ? "wall-clock timeout" : "user"})`
+				: "killed (context limit)")
+			: "";
+		const statusMsg = killedMsg || (result.exitCode === 0 ? "done" : `error (code ${result.exitCode})`);
 		logExecution(statusPath, `Worker iter ${state.totalIterations}`,
-			`${statusMsg} in ${Math.round(state.workerElapsed / 1000)}s${ctxDetail}, tools: ${state.workerToolCount}`);
+			`${statusMsg} in ${Math.round(state.workerElapsed / 1000)}s, ctx: ${Math.round(state.workerContextPct)}%, tools: ${state.workerToolCount}`);
 
 		updateWidgets();
 	}
@@ -1783,6 +2513,7 @@ export default function (pi: ExtensionAPI) {
 				model: reviewerModel,
 				tools: config.reviewer.tools || reviewerDef?.tools || "read,write,bash,grep,find,ls",
 				thinking: config.reviewer.thinking || "on",
+				taskId: state.task?.taskId,
 			});
 			reviewPromise = spawned.promise;
 			state.reviewerProc = { kill: spawned.kill };
@@ -1831,6 +2562,346 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify(`Review R${num} (${type} Step ${step.number}): ${verdict}`, verdict === "APPROVE" ? "success" : "warning");
 
 		return verdict;
+	}
+
+	// ── Quality Gate ─────────────────────────────────────────────────
+
+	/**
+	 * Run a single quality gate review cycle.
+	 *
+	 * Spawns a review agent with a structured prompt that includes task evidence
+	 * (PROMPT.md, STATUS.md, git diff, file list). The agent writes a JSON verdict
+	 * to REVIEW_VERDICT.json in the task folder. This function reads/parses that
+	 * file and applies verdict rules.
+	 *
+	 * Fail-open on all error paths:
+	 * - Agent crash / non-zero exit → synthetic PASS
+	 * - Missing verdict file → synthetic PASS
+	 * - Malformed JSON → synthetic PASS
+	 *
+	 * @param ctx - Extension context
+	 * @param cycleNum - Current review cycle number (1-based)
+	 * @returns Quality gate result with pass/fail, verdict, and evaluation
+	 */
+	async function doQualityGateReview(ctx: ExtensionContext, cycleNum: number): Promise<QualityGateResult> {
+		if (!state.task || !state.config) {
+			return {
+				passed: true, skipped: true, cyclesUsed: cycleNum,
+				verdict: { verdict: "PASS", confidence: "low", summary: "No task/config — skipped", findings: [], statusReconciliation: [] },
+				evaluation: { pass: true, failReasons: [] },
+			};
+		}
+
+		const task = state.task;
+		const config = state.config;
+		const statusPath = join(task.taskFolder, "STATUS.md");
+
+		// Delete any previous verdict file so we can detect agent failure
+		const verdictPath = join(task.taskFolder, VERDICT_FILENAME);
+		try { if (existsSync(verdictPath)) unlinkSync(verdictPath); } catch { /* ignore */ }
+
+		// Build the quality gate context and prompt
+		const gateContext: QualityGateContext = {
+			taskFolder: task.taskFolder,
+			promptPath: task.promptPath,
+			taskId: task.taskId,
+			projectName: config.project.name,
+			passThreshold: config.quality_gate.pass_threshold,
+		};
+
+		const prompt = generateQualityGatePrompt(gateContext, ctx.cwd);
+
+		// Determine review model with fallback chain:
+		// quality_gate.review_model → reviewer.model → agent def → default
+		const reviewerDef = loadAgentDef(ctx.cwd, "task-reviewer");
+		const reviewModel = config.quality_gate.review_model
+			|| config.reviewer.model
+			|| reviewerDef?.model
+			|| "openai/gpt-5.3-codex";
+
+		const reviewerPrompt = reviewerDef?.systemPrompt
+			|| "You are a quality gate reviewer. Read the review request and write your JSON verdict to the specified file.";
+		const systemPrompt = reviewerPrompt + "\n\n" + buildProjectContext(config, task.taskFolder);
+
+		// Update UI state
+		state.reviewerStatus = "running";
+		state.reviewerType = `quality-gate cycle ${cycleNum}`;
+		state.reviewerElapsed = 0;
+		state.reviewerLastTool = "";
+		updateWidgets();
+
+		const startTime = Date.now();
+		state.reviewerTimer = setInterval(() => {
+			state.reviewerElapsed = Date.now() - startTime;
+			updateWidgets();
+		}, 1000);
+
+		logExecution(statusPath, `Quality gate`, `Starting review cycle ${cycleNum}`);
+
+		const spawnMode = getSpawnMode(config);
+		let reviewPromise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>;
+
+		try {
+			if (spawnMode === "tmux") {
+				const sessionName = `${getTmuxPrefix()}-qg-reviewer`;
+				const spawned = spawnAgentTmux({
+					sessionName,
+					cwd: ctx.cwd,
+					systemPrompt,
+					prompt,
+					model: reviewModel,
+					tools: config.reviewer.tools || reviewerDef?.tools || "read,write,bash,grep,find,ls",
+					thinking: config.reviewer.thinking || "on",
+					taskId: task.taskId,
+				});
+				reviewPromise = spawned.promise;
+				state.reviewerProc = { kill: spawned.kill };
+			} else {
+				const spawned = spawnAgent({
+					model: reviewModel,
+					tools: config.reviewer.tools || reviewerDef?.tools || "read,write,bash,grep,find,ls",
+					thinking: config.reviewer.thinking || "on",
+					systemPrompt,
+					prompt,
+					onToolCall: (toolName, args) => {
+						const path = args?.path || args?.command || "";
+						const shortPath = typeof path === "string" && path.length > 40
+							? "..." + path.slice(-37) : path;
+						state.reviewerLastTool = `${toolName} ${shortPath}`.trim();
+						updateWidgets();
+					},
+				});
+				reviewPromise = spawned.promise;
+				state.reviewerProc = { kill: spawned.kill };
+			}
+
+			const result = await reviewPromise;
+
+			clearInterval(state.reviewerTimer);
+			state.reviewerElapsed = Date.now() - startTime;
+			state.reviewerStatus = result.exitCode === 0 ? "done" : "error";
+			state.reviewerProc = null;
+			updateWidgets();
+
+			// If agent exited non-zero, fail-open
+			if (result.exitCode !== 0) {
+				logExecution(statusPath, `Quality gate`, `Review agent exited with code ${result.exitCode} — fail-open → PASS`);
+				ctx.ui.notify(`Quality gate: review agent error (exit ${result.exitCode}) — fail-open PASS`, "warning");
+				return {
+					passed: true, skipped: false, cyclesUsed: cycleNum,
+					verdict: { verdict: "PASS", confidence: "low", summary: `Review agent exited with code ${result.exitCode} — fail-open`, findings: [], statusReconciliation: [] },
+					evaluation: { pass: true, failReasons: [] },
+				};
+			}
+		} catch (err: any) {
+			// Agent crash — fail-open
+			clearInterval(state.reviewerTimer);
+			state.reviewerStatus = "error";
+			state.reviewerProc = null;
+			updateWidgets();
+
+			logExecution(statusPath, `Quality gate`, `Review agent crashed: ${err?.message || err} — fail-open → PASS`);
+			ctx.ui.notify(`Quality gate: review agent crashed — fail-open PASS`, "warning");
+			return {
+				passed: true, skipped: false, cyclesUsed: cycleNum,
+				verdict: { verdict: "PASS", confidence: "low", summary: `Review agent crashed — fail-open`, findings: [], statusReconciliation: [] },
+				evaluation: { pass: true, failReasons: [] },
+			};
+		}
+
+		// Read and evaluate the verdict file
+		const { verdict, evaluation } = readAndEvaluateVerdict(
+			task.taskFolder,
+			config.quality_gate.pass_threshold,
+		);
+
+		const passed = evaluation.pass;
+		const verdictLabel = passed ? "PASS" : "NEEDS_FIXES";
+		const findingsSummary = verdict.findings.length > 0
+			? ` (${verdict.findings.length} findings: ${verdict.findings.filter(f => f.severity === "critical").length}C/${verdict.findings.filter(f => f.severity === "important").length}I/${verdict.findings.filter(f => f.severity === "suggestion").length}S)`
+			: "";
+
+		logExecution(statusPath, `Quality gate`, `Cycle ${cycleNum}: ${verdictLabel}${findingsSummary}`);
+		ctx.ui.notify(
+			`Quality gate cycle ${cycleNum}: ${verdictLabel}${findingsSummary}`,
+			passed ? "success" : "warning",
+		);
+
+		return {
+			passed,
+			skipped: false,
+			cyclesUsed: cycleNum,
+			verdict,
+			evaluation,
+		};
+	}
+
+	// ── Quality Gate Fix Agent ───────────────────────────────────────
+
+	/** Default wall-clock timeout for fix agents (15 minutes). */
+	const FIX_AGENT_TIMEOUT_MS = 15 * 60 * 1000;
+
+	/**
+	 * Spawn a fix agent to address quality gate findings.
+	 *
+	 * Reuses the worker spawn pattern (subprocess or tmux). The fix agent
+	 * receives REVIEW_FEEDBACK.md content and makes targeted code fixes.
+	 *
+	 * Handles abnormal exits deterministically:
+	 * - Agent crash → returns non-zero exit code (caller consumes fix budget)
+	 * - Agent timeout → kills agent, returns non-zero (caller consumes fix budget)
+	 * - Agent exits normally but makes no changes → still returns 0 (re-review will catch)
+	 *
+	 * Wall-clock timeout: 15 minutes (or getMaxWorkerMinutes if configured).
+	 * This prevents a hung fix agent from stalling the task permanently.
+	 *
+	 * @param ctx - Extension context
+	 * @param fixPrompt - Prompt for the fix agent (includes REVIEW_FEEDBACK.md)
+	 * @param fixCycleNum - Current fix cycle number (1-based)
+	 * @returns Exit code, elapsed time, and whether timeout was hit
+	 */
+	async function doQualityGateFixAgent(
+		ctx: ExtensionContext,
+		fixPrompt: string,
+		fixCycleNum: number,
+	): Promise<{ exitCode: number; elapsed: number; timedOut: boolean }> {
+		if (!state.task || !state.config) {
+			return { exitCode: 1, elapsed: 0, timedOut: false };
+		}
+
+		const task = state.task;
+		const config = state.config;
+		const statusPath = join(task.taskFolder, "STATUS.md");
+
+		// Use worker model and tools for fix agent (it needs to edit code)
+		const workerDef = loadAgentDef(ctx.cwd, "task-worker");
+		const fixModel = config.worker.model
+			|| workerDef?.model
+			|| "anthropic/claude-sonnet-4-20250514";
+
+		const basePrompt = workerDef?.systemPrompt
+			|| "You are a fix agent addressing quality gate findings. Read the feedback and make targeted code fixes.";
+		const systemPrompt = basePrompt + "\n\n" + buildProjectContext(config, task.taskFolder);
+
+		// Wall-clock timeout: use half of worker limit (fix agents should be quick),
+		// with a floor of 15 minutes.
+		const workerMinutes = getMaxWorkerMinutes(config);
+		const timeoutMs = Math.max(FIX_AGENT_TIMEOUT_MS, Math.floor(workerMinutes / 2) * 60 * 1000);
+
+		// Update UI state
+		state.workerStatus = "running";
+		state.workerElapsed = 0;
+		state.workerContextPct = 0;
+		state.workerLastTool = "";
+		state.workerToolCount = 0;
+		state.workerRetryActive = false;
+		state.workerRetryCount = 0;
+		state.workerLastRetryError = "";
+		updateWidgets();
+
+		const startTime = Date.now();
+		state.workerTimer = setInterval(() => {
+			state.workerElapsed = Date.now() - startTime;
+			updateWidgets();
+		}, 1000);
+
+		logExecution(statusPath, "Quality gate", `Starting fix agent (cycle ${fixCycleNum}, timeout: ${Math.round(timeoutMs / 60000)}min)`);
+
+		const spawnMode = getSpawnMode(config);
+		let fixPromise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>;
+		let killFn: (() => void) | null = null;
+		let tmuxExitSummaryPath: string | null = null;
+
+		try {
+			if (spawnMode === "tmux") {
+				const sessionName = `${getTmuxPrefix()}-qg-fix`;
+				const spawned = spawnAgentTmux({
+					sessionName,
+					cwd: ctx.cwd,
+					systemPrompt,
+					prompt: fixPrompt,
+					model: fixModel,
+					tools: config.worker.tools || workerDef?.tools || "read,write,edit,bash,grep,find,ls",
+					thinking: config.worker.thinking || "off",
+					taskId: task.taskId,
+				});
+				fixPromise = spawned.promise;
+				killFn = spawned.kill;
+				tmuxExitSummaryPath = spawned.exitSummaryPath;
+				state.workerProc = { kill: spawned.kill };
+			} else {
+				const spawned = spawnAgent({
+					model: fixModel,
+					tools: config.worker.tools || workerDef?.tools || "read,write,edit,bash,grep,find,ls",
+					thinking: config.worker.thinking || "off",
+					systemPrompt,
+					prompt: fixPrompt,
+					onToolCall: (toolName, args) => {
+						state.workerToolCount++;
+						const path = args?.path || args?.command || "";
+						const shortPath = typeof path === "string" && path.length > 80
+							? "..." + path.slice(-77) : path;
+						state.workerLastTool = `${toolName} ${shortPath}`.trim();
+						updateWidgets();
+					},
+				});
+				fixPromise = spawned.promise;
+				killFn = spawned.kill;
+				state.workerProc = { kill: spawned.kill };
+			}
+
+			// Race the agent against a wall-clock timeout
+			let timedOut = false;
+			const timeoutPromise = new Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>((resolve) => {
+				const timer = setTimeout(() => {
+					timedOut = true;
+					logExecution(statusPath, "Quality gate", `Fix agent wall-clock timeout (${Math.round(timeoutMs / 60000)}min) — killing agent`);
+					if (killFn) killFn();
+					// Resolve after a brief delay to allow kill to take effect
+					setTimeout(() => {
+						resolve({ output: "timeout", exitCode: 1, elapsed: Date.now() - startTime, killed: true });
+					}, 5000);
+				}, timeoutMs);
+				// Clean up timer if agent finishes first
+				fixPromise.then(() => clearTimeout(timer)).catch(() => clearTimeout(timer));
+			});
+
+			const result = await Promise.race([fixPromise, timeoutPromise]);
+
+			// ── TMUX exit classification ─────────────────────────
+			// spawnAgentTmux always reports exitCode: 0 on session end.
+			// Read the exit summary written by rpc-wrapper to get the
+			// real Pi process exit code (same pattern as worker flow).
+			let effectiveExitCode = result.exitCode;
+			if (spawnMode === "tmux" && tmuxExitSummaryPath && !timedOut) {
+				const exitSummary = readExitSummary(tmuxExitSummaryPath);
+				if (exitSummary && typeof exitSummary.exitCode === "number") {
+					effectiveExitCode = exitSummary.exitCode;
+					if (effectiveExitCode !== 0) {
+						console.error(`[task-runner] qg-fix: tmux exit summary reports exit code ${effectiveExitCode}`);
+					}
+				}
+				// If no exit summary exists, keep the tmux-reported code (0).
+				// This is fail-open: missing exit summary ≠ crash.
+			}
+
+			clearInterval(state.workerTimer);
+			state.workerElapsed = Date.now() - startTime;
+			state.workerStatus = (effectiveExitCode === 0 && !timedOut) ? "done" : "error";
+			state.workerProc = null;
+			updateWidgets();
+
+			return { exitCode: timedOut ? 1 : effectiveExitCode, elapsed: Date.now() - startTime, timedOut };
+		} catch (err: any) {
+			// Fix agent crashed — return non-zero to consume fix budget
+			clearInterval(state.workerTimer);
+			state.workerStatus = "error";
+			state.workerProc = null;
+			updateWidgets();
+
+			logExecution(statusPath, "Quality gate", `Fix agent crashed: ${err?.message || err} — fix cycle ${fixCycleNum} consumed`);
+			return { exitCode: 1, elapsed: Date.now() - startTime, timedOut: false };
+		}
 	}
 
 	// ── Commands ─────────────────────────────────────────────────────

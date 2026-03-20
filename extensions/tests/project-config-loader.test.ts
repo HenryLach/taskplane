@@ -834,6 +834,115 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 	});
 });
 
+// ── 4.9x: Quality gate config defaults and adapter mapping (TP-034) ─
+
+describe("quality gate config defaults and adapter mapping (TP-034)", () => {
+	it("4.9: quality gate defaults are correct when not specified in config", () => {
+		const dir = makeTestDir("qg-defaults");
+		writeTaskRunnerYaml(dir, [
+			"project:",
+			"  name: QGTest",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		expect(config.taskRunner.qualityGate).toEqual({
+			enabled: false,
+			reviewModel: "",
+			maxReviewCycles: 2,
+			maxFixCycles: 1,
+			passThreshold: "no_critical",
+		});
+	});
+
+	it("4.10: quality gate config from YAML maps correctly to TaskConfig snake_case", () => {
+		const dir = makeTestDir("qg-yaml-adapter");
+		writeTaskRunnerYaml(dir, [
+			"project:",
+			"  name: QGYaml",
+			"quality_gate:",
+			"  enabled: true",
+			"  review_model: openai/gpt-5",
+			"  max_review_cycles: 3",
+			"  max_fix_cycles: 2",
+			"  pass_threshold: no_important",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		const taskConfig = toTaskConfig(config);
+
+		expect(taskConfig.quality_gate).toEqual({
+			enabled: true,
+			review_model: "openai/gpt-5",
+			max_review_cycles: 3,
+			max_fix_cycles: 2,
+			pass_threshold: "no_important",
+		});
+	});
+
+	it("4.11: quality gate config from JSON maps correctly to TaskConfig snake_case", () => {
+		const dir = makeTestDir("qg-json-adapter");
+		writeJsonConfig(dir, {
+			configVersion: CONFIG_VERSION,
+			taskRunner: {
+				qualityGate: {
+					enabled: true,
+					reviewModel: "anthropic/claude-4",
+					maxReviewCycles: 1,
+					maxFixCycles: 0,
+					passThreshold: "all_clear",
+				},
+			},
+		});
+
+		const config = loadProjectConfig(dir);
+		const taskConfig = toTaskConfig(config);
+
+		expect(taskConfig.quality_gate).toEqual({
+			enabled: true,
+			review_model: "anthropic/claude-4",
+			max_review_cycles: 1,
+			max_fix_cycles: 0,
+			pass_threshold: "all_clear",
+		});
+	});
+
+	it("4.12: quality gate defaults propagate through toTaskConfig when not configured", () => {
+		const dir = makeTestDir("qg-defaults-adapter");
+		writeTaskRunnerYaml(dir, [
+			"project:",
+			"  name: DefaultQG",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		const taskConfig = toTaskConfig(config);
+
+		expect(taskConfig.quality_gate).toEqual({
+			enabled: false,
+			review_model: "",
+			max_review_cycles: 2,
+			max_fix_cycles: 1,
+			pass_threshold: "no_critical",
+		});
+	});
+
+	it("4.13: task-runner loadConfig includes quality_gate defaults", () => {
+		const dir = makeTestDir("qg-task-runner-defaults");
+		writeTaskRunnerYaml(dir, [
+			"project:",
+			"  name: TaskRunnerQG",
+		].join("\n"));
+
+		const result = taskRunnerLoadConfig(dir);
+		expect(result.quality_gate).toEqual({
+			enabled: false,
+			review_model: "",
+			max_review_cycles: 2,
+			max_fix_cycles: 1,
+			pass_threshold: "no_critical",
+		});
+	});
+});
+
 // ── 5.x: Pointer-threaded config resolution (TP-016) ────────────────
 
 describe("pointer-threaded config resolution (TP-016)", () => {

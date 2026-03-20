@@ -159,6 +159,29 @@ export interface SelfDocTarget {
 	[key: string]: string;
 }
 
+/**
+ * Severity threshold for quality gate pass decisions.
+ *
+ * - `no_critical`: PASS if no critical findings (important/suggestion allowed)
+ * - `no_important`: PASS if no critical and fewer than 3 important findings
+ * - `all_clear`: PASS only if zero findings of any severity
+ */
+export type PassThreshold = "no_critical" | "no_important" | "all_clear";
+
+/** Quality gate configuration — opt-in post-completion review */
+export interface QualityGateConfig {
+	/** Enable quality gate review before .DONE creation (default: false) */
+	enabled: boolean;
+	/** Model used for quality gate review agent (empty = inherit session model) */
+	reviewModel: string;
+	/** Max total review cycles before marking task failed (default: 2) */
+	maxReviewCycles: number;
+	/** Max fix agent cycles per quality gate run (default: 1) */
+	maxFixCycles: number;
+	/** Severity threshold for PASS decision (default: "no_critical") */
+	passThreshold: PassThreshold;
+}
+
 
 // ── Task Runner Combined Section ─────────────────────────────────────
 
@@ -195,6 +218,8 @@ export interface TaskRunnerSection {
 	selfDocTargets: Record<string, string>;
 	/** Paths requiring explicit user approval before modification */
 	protectedDocs: string[];
+	/** Quality gate configuration — opt-in post-completion review */
+	qualityGate: QualityGateConfig;
 }
 
 
@@ -417,6 +442,13 @@ export const DEFAULT_TASK_RUNNER_SECTION: TaskRunnerSection = {
 	neverLoad: [],
 	selfDocTargets: {},
 	protectedDocs: [],
+	qualityGate: {
+		enabled: false,
+		reviewModel: "",
+		maxReviewCycles: 2,
+		maxFixCycles: 1,
+		passThreshold: "no_critical",
+	},
 };
 
 /** Default orchestrator section values */

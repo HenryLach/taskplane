@@ -20,6 +20,7 @@ Core idea:
       (optional) plan review
       worker iteration loop
       (optional) code review + revise pass
+  → (optional) quality gate review
   → create .DONE
   → complete
 ```
@@ -122,6 +123,19 @@ On pi session restart, previously loaded task is restored as paused (if availabl
 A task is complete when runner finishes all steps and writes:
 
 - `<task-folder>/.DONE`
+
+### Quality gate (opt-in)
+
+When the `quality_gate` config is enabled, a structured review runs after all steps complete but **before** `.DONE` creation. A cross-model review agent evaluates the task output and produces a JSON verdict (`PASS` or `NEEDS_FIXES`) with severity-classified findings.
+
+- **PASS:** `.DONE` is created normally.
+- **NEEDS_FIXES:** A remediation cycle begins — a fix agent addresses blocking findings, then the review reruns. This repeats up to the configured cycle limits (`max_review_cycles`, `max_fix_cycles`).
+- **Cycles exhausted:** If the maximum cycles are reached without a PASS, the task enters error state. `.DONE` is **not** created.
+- **Fail-open:** If the review agent crashes, times out, or produces malformed/missing output, the verdict defaults to PASS so infrastructure failures never block task completion.
+
+When disabled (default), `.DONE` is created immediately after all steps complete — no behavioral change.
+
+See [task-runner.yaml Reference](../reference/configuration/task-runner.yaml.md#quality_gate) for configuration details.
 
 In non-orchestrated mode, task folder may be archived after completion.
 In orchestrated mode, runner avoids archive moves and lets orchestrator handle post-merge lifecycle.

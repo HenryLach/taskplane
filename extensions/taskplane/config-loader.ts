@@ -219,6 +219,9 @@ function mapTaskRunnerYaml(raw: any): Partial<TaskRunnerSection> {
 	if (raw.never_load) result.neverLoad = [...raw.never_load];
 	if (raw.protected_docs) result.protectedDocs = [...raw.protected_docs];
 
+	// Quality gate (structural — all keys are schema-defined)
+	if (raw.quality_gate) result.qualityGate = convertStructuralKeys(raw.quality_gate);
+
 	return result;
 }
 
@@ -818,6 +821,13 @@ export function toTaskConfig(config: TaskplaneConfig): {
 		no_progress_limit: number;
 		max_worker_minutes?: number;
 	};
+	quality_gate: {
+		enabled: boolean;
+		review_model: string;
+		max_review_cycles: number;
+		max_fix_cycles: number;
+		pass_threshold: "no_critical" | "no_important" | "all_clear";
+	};
 } {
 	const tr = config.taskRunner;
 
@@ -856,6 +866,13 @@ export function toTaskConfig(config: TaskplaneConfig): {
 			max_review_cycles: tr.context.maxReviewCycles,
 			no_progress_limit: tr.context.noProgressLimit,
 			max_worker_minutes: tr.context.maxWorkerMinutes,
+		},
+		quality_gate: {
+			enabled: tr.qualityGate.enabled,
+			review_model: tr.qualityGate.reviewModel,
+			max_review_cycles: tr.qualityGate.maxReviewCycles,
+			max_fix_cycles: tr.qualityGate.maxFixCycles,
+			pass_threshold: tr.qualityGate.passThreshold,
 		},
 	};
 }

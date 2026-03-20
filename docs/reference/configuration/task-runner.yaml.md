@@ -21,6 +21,7 @@ standards_overrides:
 worker:
 reviewer:
 context:
+quality_gate:
 task_areas:
 reference_docs:
 never_load:
@@ -110,6 +111,43 @@ Notes:
 | `context.no_progress_limit` | number | `3` | Max no-progress iterations before marking failure. |
 | `context.max_worker_minutes` | number | commented (`30`) | Optional per-worker wall-clock cap (used in tmux/orchestrated flows). |
 
+### `quality_gate`
+
+Opt-in post-completion quality gate. When enabled, a structured review runs after all steps complete but **before `.DONE` creation**. The review agent produces a JSON verdict (`PASS` or `NEEDS_FIXES`) with severity-classified findings. `.DONE` is only created after a `PASS` verdict.
+
+When disabled (default), `.DONE` is created immediately after all steps complete — no behavioral change from the baseline task-runner.
+
+| Field | Type | Template default | Description |
+|---|---|---|---|
+| `quality_gate.enabled` | boolean | `false` | Enable quality gate review before `.DONE` creation. |
+| `quality_gate.review_model` | string | `""` | Model used for the quality gate review agent. Empty string = inherit from active pi session model. |
+| `quality_gate.max_review_cycles` | number | `2` | Maximum total review cycles (initial + after fix) before marking the task failed. |
+| `quality_gate.max_fix_cycles` | number | `1` | Maximum fix-agent cycles per quality gate run. |
+| `quality_gate.pass_threshold` | `"no_critical"` \| `"no_important"` \| `"all_clear"` | `"no_critical"` | Severity threshold for a PASS decision. |
+
+**Pass threshold behavior:**
+
+| Threshold | PASS when |
+|---|---|
+| `no_critical` | No critical findings (important and suggestion findings allowed) |
+| `no_important` | No critical findings and fewer than 3 important findings (suggestions allowed) |
+| `all_clear` | Zero findings of any severity |
+
+> **Note:** At all threshold levels, any finding with `status_mismatch` category triggers `NEEDS_FIXES` regardless of severity.
+
+**Fail-open behavior:** If the review agent crashes, times out, or produces malformed/missing JSON, the verdict is treated as `PASS` so the quality gate never blocks task completion due to infrastructure failures.
+
+Example:
+
+```yaml
+quality_gate:
+  enabled: true
+  review_model: "claude-sonnet-4-20250514"
+  max_review_cycles: 2
+  max_fix_cycles: 1
+  pass_threshold: "no_critical"
+```
+
 ### `task_areas`
 
 | Field | Type | Template default | Description |
@@ -158,7 +196,7 @@ task_areas:
 ## Runtime behavior notes
 
 - If `.pi/task-runner.yaml` is missing or malformed, task-runner falls back to internal defaults.
-- Task-runner directly consumes the core execution sections (`project`, `paths`, `testing`, `standards`, `standards_overrides`, `task_areas`, `worker`, `reviewer`, `context`).
+- Task-runner directly consumes the core execution sections (`project`, `paths`, `testing`, `standards`, `standards_overrides`, `task_areas`, `worker`, `reviewer`, `context`, `quality_gate`).
 - Additional sections (`reference_docs`, `never_load`, `self_doc_targets`, `protected_docs`) are primarily used by Taskplane skill/workflow conventions and broader ecosystem tooling.
 
 ---
@@ -207,6 +245,11 @@ The JSON format uses **camelCase** keys. YAML snake_case keys are mapped automat
 | `max_review_cycles` | `maxReviewCycles` |
 | `max_worker_minutes` | `maxWorkerMinutes` |
 | `spawn_mode` | `spawnMode` |
+| `quality_gate` | `qualityGate` |
+| `quality_gate.review_model` | `qualityGate.reviewModel` |
+| `quality_gate.max_review_cycles` | `qualityGate.maxReviewCycles` |
+| `quality_gate.max_fix_cycles` | `qualityGate.maxFixCycles` |
+| `quality_gate.pass_threshold` | `qualityGate.passThreshold` |
 | `standards_overrides` | `standardsOverrides` |
 | `task_areas` | `taskAreas` |
 | `reference_docs` | `referenceDocs` |
@@ -230,6 +273,7 @@ In the JSON file, task-runner settings live under the `taskRunner` key:
 | `worker` | `taskRunner.worker` |
 | `reviewer` | `taskRunner.reviewer` |
 | `context` | `taskRunner.context` |
+| `quality_gate` | `taskRunner.qualityGate` |
 | `task_areas` | `taskRunner.taskAreas` |
 | `reference_docs` | `taskRunner.referenceDocs` |
 | `never_load` | `taskRunner.neverLoad` |
@@ -279,12 +323,26 @@ In the JSON file, task-runner settings live under the `taskRunner` key:
       "maxReviewCycles": 2,
       "noProgressLimit": 3
     },
+    "qualityGate": {
+      "enabled": false,
+      "reviewModel": "",
+      "maxReviewCycles": 2,
+      "maxFixCycles": 1,
+      "passThreshold": "no_critical"
+    },
     "taskAreas": {
       "core": {
         "path": "taskplane-tasks",
         "prefix": "CORE",
         "context": "taskplane-tasks/CONTEXT.md"
       }
+    },
+    "qualityGate": {
+      "enabled": false,
+      "reviewModel": "",
+      "maxReviewCycles": 2,
+      "maxFixCycles": 1,
+      "passThreshold": "no_critical"
     },
     "referenceDocs": {},
     "neverLoad": [],
