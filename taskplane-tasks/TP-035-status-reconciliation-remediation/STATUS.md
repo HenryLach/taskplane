@@ -1,6 +1,6 @@
 # TP-035: STATUS.md Reconciliation & Artifact Staging Scope — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
@@ -44,13 +44,13 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] Reconciliation happy-path tests: check→uncheck, uncheck→check, partial→uncheck+annotation, already-correct idempotent (in `tests/status-reconciliation.test.ts`)
-- [ ] Reconciliation edge-case tests: duplicate-match consumption (first match wins), unmatched entries when no checkbox matches, empty/null input, missing STATUS.md, partial annotation on already-unchecked item
-- [ ] Reconciliation guard tests: reconciliation only runs when quality gate enabled and verdict has entries (verify integration point in task-runner.ts)
-- [ ] Artifact staging positive tests: accepts .DONE, STATUS.md, REVIEW_VERDICT.json within task folder
-- [ ] Artifact staging negative tests: rejects paths outside task folder (repo-escape `..`), no-op commit when no allowlisted files changed
-- [ ] Full test suite passes: `cd extensions && npx vitest run` with zero failures
+**Status:** ✅ Complete
+- [x] Reconciliation happy-path tests: check→uncheck, uncheck→check, partial→uncheck+annotation, already-correct idempotent (in `tests/status-reconciliation.test.ts`)
+- [x] Reconciliation edge-case tests: duplicate-match consumption (first match wins), unmatched entries when no checkbox matches, empty/null input, missing STATUS.md, partial annotation on already-unchecked item
+- [x] Reconciliation guard tests: reconciliation only runs when quality gate enabled and verdict has entries (verify integration point in task-runner.ts)
+- [x] Artifact staging positive tests: accepts .DONE, STATUS.md, REVIEW_VERDICT.json within task folder
+- [x] Artifact staging negative tests: rejects paths outside task folder (repo-escape `..`), no-op commit when no allowlisted files changed
+- [x] Full test suite passes: `cd extensions && npx vitest run` with zero failures (38/39 files pass; 1 pre-existing worktree-lifecycle.test.ts failure due to Windows temp dir `git init` issue — not TP-035-related)
 
 ---
 
