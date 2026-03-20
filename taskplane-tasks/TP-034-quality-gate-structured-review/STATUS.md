@@ -1,6 +1,6 @@
 # TP-034: Quality Gate Structured Review — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
@@ -60,16 +60,16 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] Fail-open coverage: reviewer non-zero exit, reviewer crash, missing/unreadable verdict file each produce synthetic PASS
-- [ ] Disabled behavior test: quality gate disabled → .DONE created normally (no gate logic runs)
-- [ ] PASS verdict test: quality gate enabled, PASS verdict → .DONE created with quality gate metadata
-- [ ] NEEDS_FIXES remediation test: NEEDS_FIXES triggers feedback generation and fix cycle
-- [ ] Max cycles exhaustion test: cycles exhausted → task error state, .DONE NOT created, findings summary in log
-- [ ] Fix-agent timeout/crash/non-zero tests: each consumes fix budget deterministically
-- [ ] Verdict rules tests: threshold matrix covering no_critical, no_important, all_clear (suggestions blocking)
-- [ ] generateFeedbackMd threshold-aware tests: suggestions included under all_clear, excluded otherwise
-- [ ] Full test suite passes: `cd extensions && npx vitest run` zero failures
+**Status:** ✅ Complete
+- [x] Fail-open coverage: reviewer non-zero exit, reviewer crash, missing/unreadable verdict file each produce synthetic PASS
+- [x] Disabled behavior test: quality gate disabled → .DONE created normally (no gate logic runs)
+- [x] PASS verdict test: quality gate enabled, PASS verdict → .DONE created with quality gate metadata
+- [x] NEEDS_FIXES remediation test: NEEDS_FIXES triggers feedback generation and fix cycle
+- [x] Max cycles exhaustion test: cycles exhausted → task error state, .DONE NOT created, findings summary in log
+- [x] Fix-agent timeout/crash/non-zero tests: each consumes fix budget deterministically
+- [x] Verdict rules tests: threshold matrix covering no_critical, no_important, all_clear (suggestions blocking)
+- [x] generateFeedbackMd threshold-aware tests: suggestions included under all_clear, excluded otherwise
+- [x] Full test suite passes: `cd extensions && npx vitest run` zero failures
 
 ---
 
@@ -99,6 +99,7 @@
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 
 ## Discoveries
@@ -164,6 +165,9 @@
 | 2026-03-20 01:15 | Step 3 complete | Remediation Cycle |
 | 2026-03-20 01:15 | Step 4 started | Testing & Verification |
 | 2026-03-20 01:16 | Review R009 | plan Step 4: REVISE |
+| 2026-03-20 | Step 4 complete | 69 quality-gate tests (4.x fail-open, 5.x feedbackMd, 6.x fixPrompt, 7.x threshold matrix), 1229/1229 full suite pass |
+| 2026-03-20 01:17 | Review R009 | plan Step 4: REVISE |
+| 2026-03-20 01:24 | Worker iter 5 | done in 442s, ctx: 28%, tools: 41 |
 
 ## Blockers
 
