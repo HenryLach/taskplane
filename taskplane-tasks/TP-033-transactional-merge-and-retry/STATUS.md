@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 2
 **Size:** L
 
@@ -20,7 +20,7 @@
 ---
 
 ### Step 1: Transaction Envelope
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Define TransactionRecord interface in types.ts with required fields: opId, batchId, waveIndex, laneNumber, repoId, baseHEAD, laneHEAD, mergedHEAD, status, rollbackAttempted, rollbackResult, recoveryCommands, timestamps
 - [x] Capture baseHEAD (temp branch HEAD before lane merge) and laneHEAD (source branch tip) at merge start; capture mergedHEAD after successful merge commit
 - [x] On verification_new_failure: rollback to baseHEAD (existing TP-032 logic); record rollback result in transaction record
@@ -28,6 +28,9 @@
 - [x] Engine integration: detect rollbackFailed flag in MergeWaveResult and force paused phase + preserveWorktreesForResume regardless of config policy
 - [x] Persist transaction record JSON to `.pi/verification/{opId}/txn-b{batchId}-repo-{repoId}-wave-{n}-lane-{k}.json` after each lane merge completes (success, failure, or safe-stop)
 - [x] Handle repo-mode (repoId undefined): sanitize filename to use "default" when repoId is absent
+- [ ] R004-1: Short-circuit mergeWaveByRepo repo-group loop on rollbackFailed — stop processing subsequent repo groups when anyRollbackFailed becomes true; leave unprocessed repo groups untouched
+- [ ] R004-2: Surface transaction record persistence failure in merge outcome — add persistenceErrors to MergeWaveResult and include warning when txn write fails so recovery guidance remains actionable
+- [ ] R004-3: All tests pass after R004 revisions
 
 ---
 
@@ -66,6 +69,7 @@
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 
 ## Discoveries
 
@@ -92,6 +96,8 @@
 | 2026-03-20 12:19 | Step 1 started | Transaction Envelope |
 | 2026-03-20 12:21 | Review R003 | plan Step 1: REVISE |
 | 2026-03-20 08:35 | Step 1 complete | TransactionRecord interface + baseHEAD/laneHEAD/mergedHEAD capture + rollback tracking + safe-stop with worktree preservation + engine/resume force-paused on rollbackFailed + persistTransactionRecord to .pi/verification/ + mergeWaveByRepo propagation. All 1564 tests pass. |
+| 2026-03-20 12:35 | Worker iter 2 | done in 828s, ctx: 35%, tools: 77 |
+| 2026-03-20 12:39 | Review R004 | code Step 1: REVISE |
 
 ## Blockers
 
