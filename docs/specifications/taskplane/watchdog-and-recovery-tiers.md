@@ -1,6 +1,6 @@
 # Watchdog, Supervisor & Recovery Architecture
 
-> **Status:** Draft v2  
+> **Status:** Draft v3  
 > **Created:** 2026-03-20  
 > **Last Updated:** 2026-03-20  
 > **Related:** [resilience-and-diagnostics-roadmap.md](implemented/resilience-and-diagnostics-roadmap.md), [polyrepo-workspace-implementation.md](implemented/polyrepo-workspace-implementation.md)  
@@ -699,6 +699,23 @@ monitoring sessions.
 7. **Dashboard integration:** Should the dashboard show supervisor status and
    conversation history? Or is the terminal sufficient?
 
+8. **Supervisor and `/task` mode:** Should the supervisor also activate for
+   single-task `/task` execution? Currently `/task` is a simpler flow, but
+   it still benefits from crash recovery and progress monitoring. The
+   supervisor could offer a lighter-touch mode for single tasks.
+
+9. **Multi-project operation:** An operator may have Taskplane set up in
+   multiple projects. Should the supervisor maintain awareness across
+   projects (e.g., "your other project's batch finished 2 hours ago"),
+   or is each pi session fully independent?
+
+10. **Supervisor handoff on session restart:** If the operator closes their
+    terminal and reopens pi later, the supervisor needs to reconstruct its
+    context from the audit trail and batch state. How smooth is this
+    re-hydration? The primer + audit files should make it work, but it
+    needs explicit design for the "I'm back, what happened while I was
+    gone?" scenario.
+
 ---
 
 ## 14. Supervisor-Led Onboarding
@@ -1184,6 +1201,113 @@ Summary:
 
   Ready to plan the next batch? I see 3 new tasks staged."
 ```
+
+---
+
+#### Script 9: Supervisor-Managed Integration
+
+**Trigger:** Batch completes (all waves merged to orch branch). Supervisor
+takes over the integration flow instead of waiting for the operator to
+manually type `/orch-integrate`.
+
+**Goals:**
+- Complete the full batch lifecycle without operator intervention
+- Respect branch protection and project git workflow
+- Handle conflicts, PR creation, review, and merge
+- Report final outcome
+
+**Configuration (set during onboarding Script 5, or later via settings):**
+
+```yaml
+integration:
+  mode: "supervised"   # manual | supervised | auto
+```
+
+| Mode | Behavior |
+|------|----------|
+| `manual` | Current behavior — supervisor tells operator to run `/orch-integrate`. Operator does it themselves. |
+| `supervised` | Supervisor proposes integration strategy, explains what it will do, and asks for confirmation before executing. |
+| `auto` | Supervisor executes integration without asking. Pauses only if it hits something it can't resolve (complex conflicts, failed CI). |
+
+**Conversation script (supervised mode):**
+```
+Supervisor: "🏁 Batch complete! All 11 tasks succeeded. Here's my
+            integration plan:
+
+            Your branch: main (protected — requires PR)
+            Orch branch: orch/henrylach-20260320T111421
+            Strategy: Create PR → wait for CI → squash merge
+
+            I'll:
+            1. Sync the orch branch with main (in case main advanced)
+            2. Push the orch branch to origin
+            3. Create a PR targeting main
+            4. Wait for CI to pass
+            5. Merge the PR (squash)
+            6. Clean up the orch branch
+
+            Ready to proceed?"
+
+Operator: "Go for it"
+
+Supervisor: "Syncing orch branch with main..."
+            "PR #115 created. CI running..."
+            "CI passed. Merging..."
+            "✅ Integrated! 42 commits squashed into main. Orch branch
+            cleaned up. Here's the batch summary: [...]"
+```
+
+**Conversation script (auto mode):**
+```
+Supervisor: "🏁 Batch complete! Integrating automatically...
+            Syncing orch branch → PR #115 created → CI passing →
+            Merged to main. ✅
+
+            Batch summary: 11/11 tasks, $127.43, 10h 33m.
+            2 incidents recovered automatically."
+```
+
+**Conflict handling during integration:**
+```
+[Supervisor syncs orch branch, discovers conflicts with main]
+
+Supervisor: "The orch branch has conflicts with main — someone pushed
+            changes to main while the batch was running. Let me analyze...
+
+            Conflicts in 2 files:
+            - extensions/taskplane/types.ts (comment differences — trivial)
+            - README.md (both sides added a section — needs decision)
+
+            I can resolve types.ts automatically (keep orch version).
+            For README.md, should I:
+            1. Keep both additions (merge both sections)
+            2. Keep the orch branch version
+            3. Show you the diff and let you decide?"
+```
+
+**PR review (when supervisor has autonomy):**
+
+In auto mode, the supervisor can also review the PR diff before merging — a
+final sanity check that the batch's combined output makes sense:
+
+```
+Supervisor: "PR #115 ready. Quick review of the combined diff:
+            - 30,681 additions across 298 files
+            - 24 new test files (1661 tests, all passing)
+            - 11 new modules: diagnostics, quality-gate, verification...
+            - No changes to protected docs
+            Looks clean. Merging."
+```
+
+**Edge cases:**
+- **CI fails on PR:** Supervisor reports the failure, attempts diagnosis
+  (read CI logs), suggests fixes or asks operator
+- **PR has merge conflicts after CI:** Re-sync and retry
+- **Branch protection requires specific reviewers:** Supervisor can't approve
+  its own PR. Reports this and asks operator to approve, or tags the required
+  reviewers
+- **Operator changes mind:** "Actually, don't merge yet — I want to review
+  first." Supervisor acknowledges and leaves the PR open.
 
 ---
 
