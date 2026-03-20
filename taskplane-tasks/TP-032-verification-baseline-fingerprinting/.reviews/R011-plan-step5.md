@@ -3,21 +3,20 @@
 ### Verdict: REVISE
 
 ### Summary
-The Step 5 plan is directionally correct but too minimal to reliably close TP-032 documentation work. In `STATUS.md`, the plan only states “Config reference docs updated” and “.DONE created,” which does not cover the explicit “check if affected” requirement for command docs or the multiple config-doc surfaces that now need synchronization. Tightening the plan outcomes will reduce the chance of shipping partial or inconsistent docs after a substantial behavior change.
+The Step 5 plan is directionally correct but too thin to guarantee the docs will fully match the TP-032 behavior now implemented. Right now it can be marked complete after a minimal edit while still leaving key config surface areas undocumented or inconsistent. Add a few explicit documentation outcomes and one required impact check to make this step reliably complete.
 
 ### Issues Found
-1. **[Severity: important]** — The plan omits the required “check if affected” pass for command documentation.
-   - Evidence: `taskplane-tasks/TP-032-verification-baseline-fingerprinting/PROMPT.md:121-123` requires checking `docs/reference/commands.md` if verification affects merge output, but Step 5 in `taskplane-tasks/TP-032-verification-baseline-fingerprinting/STATUS.md:72-75` has no such outcome.
-   - Suggested fix: Add an explicit Step 5 outcome to review `docs/reference/commands.md` and either update it or record “no change required” with rationale.
+1. **[Severity: important]** — The plan is under-specified for the actual documentation delta and can miss required sections.
+   - Evidence: Step 5 in `taskplane-tasks/TP-032-verification-baseline-fingerprinting/STATUS.md:72-75` only says “Config reference docs updated,” while the target doc currently has no `verification` section in schema overview (`docs/reference/configuration/task-orchestrator.yaml.md:15-23`) or field reference tables (`docs/reference/configuration/task-orchestrator.yaml.md:68-92`).
+   - Suggested fix: Expand Step 5 outcomes to explicitly cover: (a) schema overview includes `verification`, (b) field reference documents `enabled`, `mode`, `flaky_reruns` with defaults/semantics, and (c) clarification that this is orchestrator-side baseline fingerprinting distinct from `merge.verify`.
 
-2. **[Severity: important]** — “Config reference docs updated” is too coarse for the actual verification surface area and can pass with incomplete docs.
-   - Evidence: the orchestrator config doc currently has no verification section in schema overview or field tables (`docs/reference/configuration/task-orchestrator.yaml.md:15-23`, `:68-92`), no key mapping for `flaky_reruns` (`:168-190`), no section mapping entry for `verification` (`:193-206`), and no `verification` object in the JSON example (`:209-253`).
-   - Suggested fix: Expand the Step 5 plan with explicit documentation outcomes covering those sections and the semantics introduced in code (`extensions/taskplane/config-schema.ts:309-355`), including enabled default, strict/permissive behavior, and flaky reruns.
+2. **[Severity: important]** — The plan omits the required “check-if-affected” commands doc review.
+   - Evidence: PROMPT requires checking `docs/reference/commands.md` if merge output is affected (`PROMPT.md:121-123`), but Step 5 checklist has no corresponding item (`STATUS.md:72-75`).
+   - Suggested fix: Add an explicit Step 5 checklist item to review `docs/reference/commands.md` and either update it or record “no change required” with rationale.
 
 ### Missing Items
-- Explicit documentation of the distinction between orchestrator baseline verification and merge-agent verification (`taskRunner.testing.commands` vs `merge.verify`) to prevent operator misconfiguration.
-- A concrete “documentation validation” check (e.g., quick consistency pass across schema overview, field table, key mapping, section mapping, and JSON example) before marking Step 5 done.
+- A docs consistency pass against source-of-truth defaults and keys in code (e.g., `mode: "permissive"`, `flakyReruns: 1` in `extensions/taskplane/config-schema.ts:547-551`, legacy YAML key `flaky_reruns` in `extensions/taskplane/types.ts:197-200`).
+- Unified JSON mapping updates in the same doc (`task-orchestrator.yaml.md`) so YAML and JSON references stay aligned (key naming table + section mapping + example JSON).
 
 ### Suggestions
-- When Step 5 lands, include a short STATUS note summarizing what was updated in docs and whether `commands.md` changed.
-- After docs are finalized, create `.DONE` only once the above checks are captured to keep delivery criteria auditable.
+- When marking Step 5 complete, add one short STATUS note listing exactly which doc sections were updated and whether `docs/reference/commands.md` required changes.

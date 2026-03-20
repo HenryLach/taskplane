@@ -5,7 +5,7 @@
 **Last Updated:** 2026-03-20
 **Review Level:** 2
 **Review Counter:** 11
-**Iteration:** 6
+**Iteration:** 5
 **Size:** L
 
 ---
@@ -71,8 +71,8 @@
 
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
-- [ ] Update task-orchestrator.yaml.md: add `verification` section to schema overview, field table, key mapping table, section mapping table, and JSON example
-- [ ] Check commands.md for merge output changes — update or record "no change needed" with rationale
+- [x] Update task-orchestrator.yaml.md: add `verification` section to schema overview, field table, key mapping table, section mapping table, and JSON example
+- [x] Check commands.md for merge output changes — no change needed: verification baseline fingerprinting is internal to the merge flow, gated by config; no command syntax, arguments, or documented output format changes
 - [ ] `.DONE` created
 
 ---
@@ -98,6 +98,7 @@
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R010 | code | Step 4 | APPROVE | .reviews/R010-code-step4.md |
 | R010 | code | Step 4 | APPROVE | .reviews/R010-code-step4.md |
+| R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 | R011 | plan | Step 5 | REVISE | .reviews/R011-plan-step5.md |
 
 ## Discoveries
@@ -189,6 +190,7 @@
 | 2026-03-20 05:40 | Step 4 complete | Testing & Verification |
 | 2026-03-20 05:40 | Step 5 started | Documentation & Delivery |
 | 2026-03-20 05:41 | Review R011 | plan Step 5: REVISE |
+| 2026-03-20 05:42 | Review R011 | plan Step 5: REVISE |
 
 ## Blockers
 

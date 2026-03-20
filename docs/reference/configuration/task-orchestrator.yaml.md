@@ -20,6 +20,7 @@ pre_warm:
 merge:
 failure:
 monitoring:
+verification:
 ```
 
 ---
@@ -89,6 +90,36 @@ monitoring:
 | Field | Type | Template default | Description |
 |---|---|---|---|
 | `monitoring.poll_interval` | number | `5` | Poll interval (seconds) for lane/task monitoring loop. |
+
+### `verification`
+
+| Field | Type | Template default | Description |
+|---|---|---|---|
+| `verification.enabled` | boolean | `false` | Enable verification baseline fingerprinting. When false, no baseline capture or comparison occurs regardless of testing commands. |
+| `verification.mode` | `"strict"` \| `"permissive"` | `"permissive"` | Behavior when baseline is unavailable (capture failure or no commands configured). |
+| `verification.flaky_reruns` | number | `1` | Number of re-runs for failed commands when new failures are detected. Set to `0` to disable flaky detection. |
+
+`verification.mode` values:
+
+- `strict`: Baseline unavailable (capture failure or no `taskRunner.testing.commands` configured) triggers a merge failure. The `failure.on_merge_failure` policy then determines whether the batch pauses or aborts.
+- `permissive`: Baseline unavailable logs a warning and continues without orchestrator-side verification. Merge-agent verification (`merge.verify`) still applies independently.
+
+**How it works:**
+
+Verification baseline fingerprinting runs orchestrator-side (in the merge flow), separate from merge-agent verification (`merge.verify`). When enabled:
+
+1. **Baseline capture:** Before merging lanes, test commands from `taskRunner.testing.commands` are run on the pre-merge state to capture a baseline of existing failures.
+2. **Post-merge capture:** After each successful lane merge, the same commands run again to capture post-merge state.
+3. **Diff:** Only genuinely *new* failures (present post-merge but absent from the baseline) block the merge. Pre-existing failures pass through.
+4. **Flaky handling:** When new failures are detected, only the failed commands are re-run up to `flaky_reruns` times. If failures clear on re-run, the lane is classified as `flaky_suspected` (warning only, does not block). If failures persist, the lane is blocked as `verification_new_failure`.
+
+**Requirements:**
+
+- `verification.enabled` must be `true` (feature flag, opt-in)
+- `taskRunner.testing.commands` must have at least one command configured (these are the commands that get fingerprinted)
+- Both conditions must be met for baseline capture to occur
+
+> **Note:** `merge.verify` (agent-side verification) and `verification` (orchestrator-side baseline fingerprinting) are independent features. `merge.verify` commands are run by the merge agent and trigger agent-side revert logic. `verification` commands are run by the orchestrator and gate merge advancement based on fingerprint comparison. You can use either, both, or neither.
 
 ---
 
@@ -187,6 +218,7 @@ The JSON format uses **camelCase** keys. YAML snake_case keys are mapped automat
 | `max_worker_minutes` | `maxWorkerMinutes` |
 | `abort_grace_period` | `abortGracePeriod` |
 | `poll_interval` | `pollInterval` |
+| `flaky_reruns` | `flakyReruns` |
 
 > **Note:** User-defined dictionary keys (size weight labels like `S`/`M`/`L`, pre-warm command names, etc.) are preserved verbatim in both formats.
 
@@ -203,6 +235,7 @@ In the JSON file, orchestrator settings live under the `orchestrator` key:
 | `merge` | `orchestrator.merge` |
 | `failure` | `orchestrator.failure` |
 | `monitoring` | `orchestrator.monitoring` |
+| `verification` | `orchestrator.verification` |
 
 ### Example JSON
 
@@ -247,6 +280,11 @@ In the JSON file, orchestrator settings live under the `orchestrator` key:
     },
     "monitoring": {
       "pollInterval": 5
+    },
+    "verification": {
+      "enabled": false,
+      "mode": "permissive",
+      "flakyReruns": 1
     }
   }
 }
