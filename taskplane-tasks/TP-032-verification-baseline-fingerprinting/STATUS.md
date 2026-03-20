@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 2
 **Size:** L
 
@@ -23,12 +23,14 @@
 ---
 
 ### Step 1: Verification Command Runner & Fingerprint Parser
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Create verification.ts with typed interfaces and exports: VerificationCommand, CommandResult, TestFingerprint, VerificationBaseline, FingerprintDiff
 - [x] Implement runVerificationCommands(): execute commands with repo-scoped cwd, stable commandId from config key, capture exitCode/stdout/stderr, error classification (spawn_error, timeout, nonzero_exit)
 - [x] Implement parseTestOutput(): vitest JSON adapter extracting file/case/kind/messageNorm; fallback parser for non-JSON/malformed/non-test commands emitting command_error fingerprints; normalization: ANSI strip, whitespace collapse, path separator normalize, duration/timestamp removal
 - [x] Implement diffFingerprints(baseline, postMerge): set-based equality on composite key (commandId+file+case+kind+messageNorm), dedup before subtraction, return new failures only
 - [x] R003: Design notes added documenting runner contract, fingerprint equality key, and error-path behaviors
+- [ ] R004-1: Fix parseVitestOutput to handle suite-level failures (testResults[].status==="failed" with empty assertionResults) — emit runtime_error fingerprints from testResults[].message; ensure parseTestOutput falls back to command_error when exitCode!==0 and vitest returns empty fingerprints
+- [ ] R004-2: Fix duplicate R003 review row in STATUS.md
 
 ---
 
@@ -77,6 +79,7 @@
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 | R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
+| R004 | code | Step 1 | REVISE | .reviews/R004-code-step1.md |
 
 ## Discoveries
 
@@ -122,6 +125,8 @@
 | 2026-03-20 04:20 | Review R003 | plan Step 1: REVISE |
 | 2026-03-20 04:21 | Review R003 | plan Step 1: REVISE |
 | 2026-03-20 04:24 | Worker iter 2 | done in 193s, ctx: 20%, tools: 29 |
+| 2026-03-20 04:25 | Worker iter 1 | done in 318s, ctx: 23%, tools: 42 |
+| 2026-03-20 04:28 | Review R004 | code Step 1: REVISE |
 
 ## Blockers
 
