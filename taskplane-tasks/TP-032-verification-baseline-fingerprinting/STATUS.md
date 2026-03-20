@@ -23,12 +23,12 @@
 ---
 
 ### Step 1: Verification Command Runner & Fingerprint Parser
-**Status:** 🟨 In Progress
-- [ ] Create verification.ts with typed interfaces and exports: VerificationCommand, CommandResult, TestFingerprint, VerificationBaseline, FingerprintDiff
-- [ ] Implement runVerificationCommands(): execute commands with repo-scoped cwd, stable commandId from config key, capture exitCode/stdout/stderr, error classification (spawn_error, timeout, nonzero_exit)
-- [ ] Implement parseTestOutput(): vitest JSON adapter extracting file/case/kind/messageNorm; fallback parser for non-JSON/malformed/non-test commands emitting command_error fingerprints; normalization: ANSI strip, whitespace collapse, path separator normalize, duration/timestamp removal
-- [ ] Implement diffFingerprints(baseline, postMerge): set-based equality on composite key (commandId+file+case+kind+messageNorm), dedup before subtraction, return new failures only
-- [ ] R003: Design notes added documenting runner contract, fingerprint equality key, and error-path behaviors
+**Status:** ✅ Complete
+- [x] Create verification.ts with typed interfaces and exports: VerificationCommand, CommandResult, TestFingerprint, VerificationBaseline, FingerprintDiff
+- [x] Implement runVerificationCommands(): execute commands with repo-scoped cwd, stable commandId from config key, capture exitCode/stdout/stderr, error classification (spawn_error, timeout, nonzero_exit)
+- [x] Implement parseTestOutput(): vitest JSON adapter extracting file/case/kind/messageNorm; fallback parser for non-JSON/malformed/non-test commands emitting command_error fingerprints; normalization: ANSI strip, whitespace collapse, path separator normalize, duration/timestamp removal
+- [x] Implement diffFingerprints(baseline, postMerge): set-based equality on composite key (commandId+file+case+kind+messageNorm), dedup before subtraction, return new failures only
+- [x] R003: Design notes added documenting runner contract, fingerprint equality key, and error-path behaviors
 
 ---
 

@@ -21,8 +21,10 @@
  * **messageNorm normalization rules:**
  *   1. Strip ANSI escape sequences
  *   2. Normalize path separators (backslash → forward slash)
- *   3. Collapse whitespace (runs of space/tab/newline → single space, then trim)
- *   4. Truncate to 512 chars (bound fingerprint size)
+ *   3. Remove duration strings (e.g., "(42ms)", "(1.2s)")
+ *   4. Remove ISO-8601 timestamps
+ *   5. Collapse whitespace (runs of space/tab/newline → single space, then trim)
+ *   6. Truncate to 512 chars (bound fingerprint size)
  *
  * **Fallback for non-JSON output:**
  *   If vitest JSON parsing fails (truncated, missing, non-JSON), produce a
@@ -34,6 +36,16 @@
 import { spawnSync } from "child_process";
 
 // ── Types ────────────────────────────────────────────────────────────
+
+/**
+ * A configured verification command from testing.commands config.
+ */
+export interface VerificationCommand {
+	/** Stable key from config (e.g., "test", "build") — used as commandId */
+	id: string;
+	/** Shell command string to execute */
+	command: string;
+}
 
 /**
  * Result of running a single verification command.
@@ -104,13 +116,21 @@ const MESSAGE_NORM_MAX_LENGTH = 512;
 // eslint-disable-next-line no-control-regex
 const ANSI_REGEX = /[\u001b\u009b]\[[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><~]/g;
 
+/** Match duration strings like (42ms), (1.2s), (3m 12s), 42 ms, 1200ms */
+const DURATION_REGEX = /\(?\d+(?:\.\d+)?\s*(?:ms|s|m)\s*(?:\d+(?:\.\d+)?\s*(?:ms|s))?\)?/g;
+
+/** Match ISO-8601 timestamps like 2026-03-20T12:34:56.789Z */
+const TIMESTAMP_REGEX = /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g;
+
 /**
  * Normalize a failure message for stable fingerprinting.
  *
  * 1. Strip ANSI escape sequences
  * 2. Normalize path separators (\ → /)
- * 3. Collapse whitespace
- * 4. Truncate to MESSAGE_NORM_MAX_LENGTH
+ * 3. Remove duration strings (e.g., "(42ms)", "(1.2s)")
+ * 4. Remove ISO-8601 timestamps
+ * 5. Collapse whitespace
+ * 6. Truncate to MESSAGE_NORM_MAX_LENGTH
  */
 export function normalizeMessage(raw: string): string {
 	let msg = raw;
@@ -118,9 +138,13 @@ export function normalizeMessage(raw: string): string {
 	msg = msg.replace(ANSI_REGEX, "");
 	// 2. Normalize path separators
 	msg = msg.replace(/\\/g, "/");
-	// 3. Collapse whitespace
+	// 3. Remove duration strings
+	msg = msg.replace(DURATION_REGEX, "");
+	// 4. Remove ISO-8601 timestamps
+	msg = msg.replace(TIMESTAMP_REGEX, "");
+	// 5. Collapse whitespace
 	msg = msg.replace(/\s+/g, " ").trim();
-	// 4. Truncate
+	// 6. Truncate
 	if (msg.length > MESSAGE_NORM_MAX_LENGTH) {
 		msg = msg.slice(0, MESSAGE_NORM_MAX_LENGTH);
 	}
