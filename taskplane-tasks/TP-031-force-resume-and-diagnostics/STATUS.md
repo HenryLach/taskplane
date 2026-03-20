@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 3
 **Size:** M
 
@@ -48,11 +48,13 @@
 ---
 
 ### Step 3: Diagnostic Reports
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Create `extensions/taskplane/diagnostic-reports.ts` with JSONL event log generator and human-readable markdown summary generator; resolve opId via `resolveOperatorId(orchConfig)`; create `.pi/diagnostics/` dir; write failures are non-fatal (log + don't crash)
 - [x] JSONL events: one JSON line per task from `state.tasks[]` enriched with `state.diagnostics.taskExits{}`; fallback to task record fields when taskExits entry missing; deterministic sort by taskId; fields: batchId, taskId, phase, mode, status, classification, cost, durationSec, retries, repoId, exitReason
 - [x] Human-readable summary: markdown with batch overview (batchId, phase, duration, total cost), per-task table, per-repo breakdown when `mode === "workspace"`; graceful fallback when diagnostic data is sparse/empty
 - [x] Wire emission into engine.ts and resume.ts after `persistRuntimeState("batch-terminal", ...)` — call report generator with orchConfig, batchState, allTaskOutcomes, stateRoot; engine/resume parity
+- [ ] R008 fix: Refactor `assembleDiagnosticInput()` to build tasks from `wavePlan` + `lanes` + `allTaskOutcomes` (like `serializeBatchState`), including pending/blocked tasks and repo attribution fields (`repoId`, `resolvedRepoId`); update both engine.ts and resume.ts call sites to pass `wavePlan` and `lanes`
+- [ ] R008 fix: Fix `emitDiagnosticReports` docstring — remove incorrect reference to `batchState.errors` (function has no access to batchState)
 
 ---
 
@@ -89,6 +91,8 @@
 | R006 | code | Step 2 | REVISE | .reviews/R006-code-step2.md |
 | R007 | plan | Step 3 | UNAVAILABLE | .reviews/R007-plan-step3.md |
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 
 ## Discoveries
 
@@ -139,6 +143,9 @@
 | 2026-03-20 03:15 | Review R007 | plan Step 3: UNAVAILABLE |
 | 2026-03-20 03:15 | Review R007 | plan Step 3: REVISE |
 | 2026-03-20 03:26 | Worker iter 4 | done in 679s, ctx: 49%, tools: 65 |
+| 2026-03-20 03:27 | Worker iter 3 | done in 703s, ctx: 40%, tools: 82 |
+| 2026-03-20 03:31 | Review R008 | code Step 3: REVISE |
+| 2026-03-20 03:32 | Review R008 | code Step 3: REVISE |
 
 ## Blockers
 
