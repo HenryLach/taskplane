@@ -4,20 +4,22 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Read task completion flow
 - [x] Read review agent spawn pattern
 - [x] Read roadmap Phase 5 sections
 - [x] (R001) Record preflight findings with file/line anchors in Notes section
 - [x] (R001) Record risk/compatibility notes from roadmap Phase 5 in Notes section
 - [x] (R001) Clean up duplicate execution log rows
+- [ ] (R002) Revert TP-026 STATUS.md changes from this branch scope
+- [ ] (R002) Add Tier-2 context read evidence (CONTEXT.md takeaways) to Notes
 
 ---
 
@@ -73,6 +75,8 @@
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | REVISE | .reviews/R001-plan-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
 
 ## Discoveries
 
@@ -88,6 +92,9 @@
 | 2026-03-20 00:20 | Step 0 started | Preflight |
 | 2026-03-20 00:21 | Review R001 | plan Step 0: REVISE |
 | 2026-03-20 00:24 | Worker iter 1 | done in 174s, ctx: 18%, tools: 31 |
+| 2026-03-20 00:25 | Worker iter 1 | done in 205s, ctx: 21%, tools: 41 |
+| 2026-03-20 00:26 | Review R002 | code Step 0: REVISE |
+| 2026-03-20 00:27 | Review R002 | code Step 0: REVISE |
 
 ## Blockers
 
