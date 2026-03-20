@@ -1,11 +1,11 @@
 # TP-031: Force-Resume Policy & Diagnostic Reports — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
 **Review Counter:** 9
-**Iteration:** 5
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -59,12 +59,12 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] Force-resume eligibility tests: phase×force matrix (paused/executing/merging normal, stopped/failed with --force, completed always rejected, idle/planning rejected), parseResumeArgs (empty, --force, --help, unknown flag, positional arg)
-- [ ] Merge failure phase tests: failedTasks>0 yields "paused" not "failed"; completed when 0 failures; engine/resume parity on this behavior
-- [ ] Diagnostic report tests: buildDiagnosticEvents deterministic ordering, taskExits fallback precedence, workspace per-repo breakdown, sparse/empty data graceful fallback, eventsToJsonl correct format, buildMarkdownReport covers batch overview + per-task table + workspace repo sections + empty events
-- [ ] Diagnostic emission robustness: emitDiagnosticReports non-fatal on write failure (mock writeFileSync throw)
-- [ ] Full test suite passes (`cd extensions && npx vitest run`)
+**Status:** ✅ Complete
+- [x] Force-resume eligibility tests: phase×force matrix (paused/executing/merging normal, stopped/failed with --force, completed always rejected, idle/planning rejected), parseResumeArgs (empty, --force, --help, unknown flag, positional arg)
+- [x] Merge failure phase tests: failedTasks>0 yields "paused" not "failed"; completed when 0 failures; engine/resume parity on this behavior
+- [x] Diagnostic report tests: buildDiagnosticEvents deterministic ordering, taskExits fallback precedence, workspace per-repo breakdown, sparse/empty data graceful fallback, eventsToJsonl correct format, buildMarkdownReport covers batch overview + per-task table + workspace repo sections + empty events
+- [x] Diagnostic emission robustness: emitDiagnosticReports non-fatal on write failure (mock writeFileSync throw)
+- [x] Full test suite passes (`cd extensions && npx vitest run`) — 33/35 suites pass, 2 pre-existing failures (cleanup-resilience, worktree-lifecycle) are Windows `git init` temp dir issues unrelated to TP-031; all 59 TP-031 tests pass
 
 ---
 
@@ -93,6 +93,7 @@
 | R007 | plan | Step 3 | REVISE | .reviews/R007-plan-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
+| R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 
 ## Discoveries
@@ -154,6 +155,7 @@
 | 2026-03-20 03:42 | Worker iter 3 | done in 602s, ctx: 23%, tools: 39 |
 | 2026-03-20 03:42 | Step 3 complete | Diagnostic Reports |
 | 2026-03-20 03:42 | Step 4 started | Testing & Verification |
+| 2026-03-20 03:44 | Review R009 | plan Step 4: REVISE |
 
 ## Blockers
 

@@ -3,27 +3,31 @@
 ### Verdict: REVISE
 
 ### Summary
-The current Step 4 plan is too high-level to reliably validate the TP-031 behavior changes. It names broad test buckets, but it does not spell out the specific risk paths introduced in Steps 1–3 (force diagnostics gating, paused-on-failure cleanup timing, and diagnostic report fallback/non-fatal semantics). Tightening the plan with explicit outcome-focused scenarios will reduce regression risk and make verification auditable.
+The Step 4 plan is still too coarse to verify TP-031 safely. It lists broad buckets, but it does not preserve the concrete outcome matrix required by the prompt or the regression-prone contracts introduced in Steps 1–3. Tightening the plan around explicit behavior/risk scenarios is needed before implementation.
 
 ### Issues Found
-1. **[Severity: important]** — Force-resume coverage is underspecified for the new eligibility + diagnostics contract.
-   - Evidence: Step 4 currently lists only broad buckets (`STATUS.md:63-66`), while the implemented behavior has distinct branches for phase matrix + force + diagnostics gating (`extensions/taskplane/resume.ts:212-303`, `extensions/taskplane/resume.ts:719-739`).
-   - Suggested fix: add explicit scenarios for `failed/stopped` with and without `--force`, `completed` rejection even with `--force`, and a diagnostics-fail path (e.g., missing orch branch or corrupted worktree) that blocks force-resume.
+1. **[Severity: important]** — The plan dropped required scenario-level outcomes into generic buckets, which makes acceptance ambiguous.
+   - Evidence: `STATUS.md:63-67` only says “Force resume tests / Resume rejection tests / Merge failure phase tests / Diagnostic report tests,” while the task requires explicit cases in `PROMPT.md:99-106` (failed-with-force success, failed-without-force rejection, paused/executing/merging normal resume, completed rejection, JSONL schema, markdown content).
+   - Suggested fix: expand Step 4 into a clear scenario matrix aligned to `PROMPT.md:99-106` so each acceptance outcome is testable and auditable.
 
-2. **[Severity: important]** — Plan does not explicitly cover the Step 2 regression-prone timing/parity behavior.
-   - Evidence: recent logic depends on pre-cleanup preservation before final phase assignment in both engine and resume (`extensions/taskplane/engine.ts:822-831`, `extensions/taskplane/engine.ts:1005-1014`, `extensions/taskplane/resume.ts:1665-1674`, `extensions/taskplane/resume.ts:1756-1764`).
-   - Suggested fix: include concrete verification that `failedTasks > 0` yields `paused` **and** preserves worktrees in both engine and resume paths, while `on_merge_failure: abort` still ends in `stopped`.
+2. **[Severity: important]** — No explicit test intent for force-resume diagnostics gating and force-intent recording.
+   - Evidence: force resume now depends on diagnostics pass/fail and only then sets `resumeForced` (`resume.ts:727-739`), with completed always rejected even with force (`resume.ts:275`).
+   - Suggested fix: include explicit scenarios for diagnostics-fail blocking, diagnostics-pass success, and persistence assertion for `resilience.resumeForced=true` only on successful forced resume.
 
-3. **[Severity: important]** — Diagnostic report tests are missing key contract cases (fallback + workspace grouping + non-fatal write failures).
-   - Evidence: implementation has explicit fallback precedence and workspace grouping (`extensions/taskplane/diagnostic-reports.ts:117-150`, `extensions/taskplane/diagnostic-reports.ts:257-299`) and guarantees non-fatal emission failures (`extensions/taskplane/diagnostic-reports.ts:324-350`), but Step 4 only says “Diagnostic report tests” (`STATUS.md:66`).
-   - Suggested fix: add explicit test intent for sparse `taskExits` fallback behavior, workspace per-repo breakdown correctness, deterministic event ordering, and write-failure non-crash behavior.
+3. **[Severity: important]** — Merge-failure/resumability parity checks are missing for both engine and resume finalization paths.
+   - Evidence: resumability depends on pre-cleanup preservation and phase assignment in both paths (`engine.ts:824-830`, `engine.ts:1007-1013`, `resume.ts:1667-1673`, `resume.ts:1757-1763`).
+   - Suggested fix: add tests that verify failed-task end state is `paused` (not `failed`) and that worktrees are preserved for resume in both engine and resume paths; also keep `on_merge_failure: abort` behavior covered.
+
+4. **[Severity: important]** — Diagnostic-report test coverage intent is missing key robustness contracts.
+   - Evidence: implementation includes fallback/ordering/workspace/non-fatal semantics (`diagnostic-reports.ts:119`, `diagnostic-reports.ts:122`, `diagnostic-reports.ts:258`, `diagnostic-reports.ts:271`, `diagnostic-reports.ts:346`) plus inclusion of pending/blocked tasks via wave/outcome synthesis (`diagnostic-reports.ts:395-405`, `diagnostic-reports.ts:415`).
+   - Suggested fix: explicitly plan tests for sparse `taskExits` fallback, deterministic ordering, workspace repo grouping, pending/blocked inclusion, and write-failure non-crash behavior.
 
 ### Missing Items
-- Explicit scenario matrix tied to TP-031 acceptance outcomes (phase × force × diagnostics result).
-- Engine/resume parity checks for paused-on-failure behavior and resumability preservation.
-- Diagnostic emission robustness checks (fallback data, workspace repo attribution, non-fatal I/O failure).
-- A clear test execution plan (targeted new tests first, then full `cd extensions && npx vitest run`).
+- Explicit acceptance mapping from Step 4 plan to `PROMPT.md:99-106`.
+- Force-resume diagnostics fail/pass path coverage and `resumeForced` persistence assertion.
+- Engine/resume parity verification for paused-on-failure + worktree preservation.
+- Diagnostic robustness coverage (fallbacks, deterministic sort, workspace grouping, non-fatal write failure).
 
 ### Suggestions
-- Record intended test locations up front (e.g., new focused files for force-resume and diagnostic reports plus any updates to existing persistence tests) to keep scope reviewable.
-- Prefer deterministic assertions (sorted task IDs / stable markdown sections) to avoid flaky test outcomes.
+- Call out intended test files up front (new focused tests + any updates to existing orchestrator regression suites) to keep scope reviewable.
+- Keep deterministic assertions (sorted events/sections) to minimize flaky CI behavior.
