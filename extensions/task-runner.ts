@@ -39,6 +39,7 @@ import {
 	readAndEvaluateVerdict,
 	VERDICT_FILENAME,
 	FEEDBACK_FILENAME,
+	applyStatusReconciliation,
 	type QualityGateContext,
 	type QualityGateResult,
 	type ReviewVerdict,
@@ -2714,6 +2715,15 @@ export default function (pi: ExtensionAPI) {
 			task.taskFolder,
 			config.quality_gate.pass_threshold,
 		);
+
+		// Apply STATUS.md reconciliation if verdict has entries
+		if (verdict.statusReconciliation.length > 0) {
+			const reconResult = applyStatusReconciliation(statusPath, verdict.statusReconciliation);
+			if (reconResult.changed > 0 || reconResult.unmatched > 0) {
+				logExecution(statusPath, `Reconciliation`,
+					`${reconResult.changed} changed, ${reconResult.alreadyCorrect} already correct, ${reconResult.unmatched} unmatched`);
+			}
+		}
 
 		const passed = evaluation.pass;
 		const verdictLabel = passed ? "PASS" : "NEEDS_FIXES";

@@ -20,11 +20,11 @@
 ---
 
 ### Step 1: STATUS.md Reconciliation
-**Status:** 🟨 In Progress
-- [ ] Implement `applyStatusReconciliation()` in quality-gate.ts: reads STATUS.md, matches reconciliation entries to checkboxes by normalized text, toggles checked/unchecked, handles partial→unchecked+note, handles duplicates/unmatched deterministically, returns change count
-- [ ] Integrate reconciliation call in task-runner.ts after `readAndEvaluateVerdict()` — only when quality gate enabled and verdict has reconciliation entries with a real delta (idempotent across cycles)
-- [ ] Log reconciliation actions to Execution Log via `logExecution()` with payload: changed count, skipped/unmatched count
-- [ ] Acceptance: given a verdict with reconciliation entries, STATUS checkbox states are corrected deterministically and reconciliation actions are auditable in logs
+**Status:** ✅ Complete
+- [x] Implement `applyStatusReconciliation()` in quality-gate.ts: reads STATUS.md, matches reconciliation entries to checkboxes by normalized text, toggles checked/unchecked, handles partial→unchecked+note, handles duplicates/unmatched deterministically, returns change count
+- [x] Integrate reconciliation call in task-runner.ts after `readAndEvaluateVerdict()` — only when quality gate enabled and verdict has reconciliation entries with a real delta (idempotent across cycles)
+- [x] Log reconciliation actions to Execution Log via `logExecution()` with payload: changed count, skipped/unmatched count
+- [x] Acceptance: given a verdict with reconciliation entries, STATUS checkbox states are corrected deterministically and reconciliation actions are auditable in logs
 
 ---
 
