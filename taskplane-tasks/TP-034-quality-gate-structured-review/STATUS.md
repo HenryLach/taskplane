@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 9
+**Review Counter:** 10
 **Iteration:** 5
 **Size:** M
 
@@ -60,7 +60,7 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Fail-open coverage: reviewer non-zero exit, reviewer crash, missing/unreadable verdict file each produce synthetic PASS
 - [x] Disabled behavior test: quality gate disabled → .DONE created normally (no gate logic runs)
 - [x] PASS verdict test: quality gate enabled, PASS verdict → .DONE created with quality gate metadata
@@ -70,6 +70,9 @@
 - [x] Verdict rules tests: threshold matrix covering no_critical, no_important, all_clear (suggestions blocking)
 - [x] generateFeedbackMd threshold-aware tests: suggestions included under all_clear, excluded otherwise
 - [x] Full test suite passes: `cd extensions && npx vitest run` zero failures
+- [ ] (R010) Remove duplicated test blocks (4.x-7.x after section 10.x, lines 1304-1759) and remove unused FEEDBACK_FILENAME import
+- [ ] (R010) Add integration-level tests: composed gate decision logic with .DONE file I/O assertions — PASS creates .DONE, NEEDS_FIXES leaves .DONE absent, cycle/budget progression determinism, fail-open on missing verdict after fix crash
+- [ ] (R010) Full test suite passes after changes: `cd extensions && npx vitest run` zero failures
 
 ---
 
@@ -101,6 +104,8 @@
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 
 ## Discoveries
 
@@ -168,6 +173,9 @@
 | 2026-03-20 | Step 4 complete | 69 quality-gate tests (4.x fail-open, 5.x feedbackMd, 6.x fixPrompt, 7.x threshold matrix), 1229/1229 full suite pass |
 | 2026-03-20 01:17 | Review R009 | plan Step 4: REVISE |
 | 2026-03-20 01:24 | Worker iter 5 | done in 442s, ctx: 28%, tools: 41 |
+| 2026-03-20 01:25 | Worker iter 5 | done in 443s, ctx: 32%, tools: 30 |
+| 2026-03-20 01:29 | Review R010 | code Step 4: REVISE |
+| 2026-03-20 01:30 | Review R010 | code Step 4: REVISE |
 
 ## Blockers
 
