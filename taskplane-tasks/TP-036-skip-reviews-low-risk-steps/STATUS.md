@@ -1,6 +1,6 @@
 # TP-036: Skip Reviews for Low-Risk Steps — Status
 
-**Current Step:** Step 1: Implement Review Skip Logic
+**Current Step:** Step 2: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
@@ -29,7 +29,7 @@
 ---
 
 ### Step 2: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Test: Step 0 reviews skipped at level 2
 - [ ] Test: final step reviews skipped at level 2
@@ -88,6 +88,9 @@
 | 2026-03-20 15:16 | Step 1 started | Implement Review Skip Logic |
 | 2026-03-20 15:17 | Review R002 | plan Step 1: APPROVE |
 | 2026-03-20 15:18 | Review R002 | plan Step 1: APPROVE |
+| 2026-03-20 15:19 | Worker iter 2 | done in 85s, ctx: 11%, tools: 17 |
+| 2026-03-20 15:19 | Step 1 complete | Implement Review Skip Logic |
+| 2026-03-20 15:19 | Step 2 started | Testing & Verification |
 
 ---
 
