@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 9
+**Review Counter:** 10
 **Iteration:** 4
 **Size:** M
 
@@ -59,12 +59,17 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Force-resume eligibility tests: phase×force matrix (paused/executing/merging normal, stopped/failed with --force, completed always rejected, idle/planning rejected), parseResumeArgs (empty, --force, --help, unknown flag, positional arg)
 - [x] Merge failure phase tests: failedTasks>0 yields "paused" not "failed"; completed when 0 failures; engine/resume parity on this behavior
 - [x] Diagnostic report tests: buildDiagnosticEvents deterministic ordering, taskExits fallback precedence, workspace per-repo breakdown, sparse/empty data graceful fallback, eventsToJsonl correct format, buildMarkdownReport covers batch overview + per-task table + workspace repo sections + empty events
 - [x] Diagnostic emission robustness: emitDiagnosticReports non-fatal on write failure (mock writeFileSync throw)
 - [x] Full test suite passes (`cd extensions && npx vitest run`) — 33/35 suites pass, 2 pre-existing failures (cleanup-resilience, worktree-lifecycle) are Windows `git init` temp dir issues unrelated to TP-031; all 59 TP-031 tests pass
+- [ ] R010 fix: Add `expect(preCleanupIdx).toBeLessThan(cleanupIdx)` ordering assertion in resume.ts parity test
+- [ ] R010 fix: Add force-resume runtime path tests — diagnostics failure blocks resume, diagnostics success allows forced resume, `resilience.resumeForced` persisted only on success
+- [ ] R010 fix: Improve emission robustness tests — assert spy call counts for write-failure paths, add success-path emission test verifying both files written with expected filenames
+- [ ] R010 fix: Deduplicate STATUS.md review rows and execution log entries
+- [ ] Full test suite green after R010 fixes
 
 ---
 
@@ -95,6 +100,8 @@
 | R008 | code | Step 3 | REVISE | .reviews/R008-code-step3.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
 | R009 | plan | Step 4 | REVISE | .reviews/R009-plan-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
+| R010 | code | Step 4 | REVISE | .reviews/R010-code-step4.md |
 
 ## Discoveries
 
@@ -156,6 +163,10 @@
 | 2026-03-20 03:42 | Step 3 complete | Diagnostic Reports |
 | 2026-03-20 03:42 | Step 4 started | Testing & Verification |
 | 2026-03-20 03:44 | Review R009 | plan Step 4: REVISE |
+| 2026-03-20 03:50 | Worker iter 5 | done in 518s, ctx: 32%, tools: 56 |
+| 2026-03-20 03:51 | Worker iter 4 | done in 391s, ctx: 30%, tools: 31 |
+| 2026-03-20 03:56 | Review R010 | code Step 4: REVISE |
+| 2026-03-20 03:56 | Review R010 | code Step 4: REVISE |
 
 ## Blockers
 
