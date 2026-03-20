@@ -1,11 +1,11 @@
 # TP-033: Transactional Merge Envelope & Retry Matrix — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Transaction Envelope
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 1
+**Review Counter:** 3
+**Iteration:** 2
 **Size:** L
 
 ---
@@ -20,11 +20,14 @@
 ---
 
 ### Step 1: Transaction Envelope
-**Status:** ⬜ Not Started
-- [ ] Capture pre/post merge refs
-- [ ] Rollback on verification failure
-- [ ] Safe-stop on rollback failure
-- [ ] Persist transaction record
+**Status:** 🟨 In Progress
+- [ ] Define TransactionRecord interface in types.ts with required fields: opId, batchId, waveIndex, laneNumber, repoId, baseHEAD, laneHEAD, mergedHEAD, status, rollbackAttempted, rollbackResult, recoveryCommands, timestamps
+- [ ] Capture baseHEAD (temp branch HEAD before lane merge) and laneHEAD (source branch tip) at merge start; capture mergedHEAD after successful merge commit
+- [ ] On verification_new_failure: rollback to baseHEAD (existing TP-032 logic); record rollback result in transaction record
+- [ ] On rollback failure: implement safe-stop — set MergeWaveResult flag `rollbackFailed`, emit recovery commands in transaction record, signal engine to force `paused` regardless of on_merge_failure policy, preserve merge worktree and temp branch (skip cleanup)
+- [ ] Engine integration: detect rollbackFailed flag in MergeWaveResult and force paused phase + preserveWorktreesForResume regardless of config policy
+- [ ] Persist transaction record JSON to `.pi/verification/{opId}/txn-b{batchId}-repo-{repoId}-wave-{n}-lane-{k}.json` after each lane merge completes (success, failure, or safe-stop)
+- [ ] Handle repo-mode (repoId undefined): sanitize filename to use "default" when repoId is absent
 
 ---
 
@@ -62,6 +65,7 @@
 |---|------|------|---------|------|
 | R001 | plan | Step 0 | APPROVE | .reviews/R001-plan-step0.md |
 | R002 | code | Step 0 | REVISE | .reviews/R002-code-step0.md |
+| R003 | plan | Step 1 | REVISE | .reviews/R003-plan-step1.md |
 
 ## Discoveries
 
@@ -83,6 +87,10 @@
 | 2026-03-20 12:16 | Worker iter 1 | done in 107s, ctx: 45%, tools: 19 |
 | 2026-03-20 12:18 | Review R002 | code Step 0: REVISE |
 | 2026-03-20 12:20 | R002 fixes applied | Fixed Reviews table separator order, normalized Execution Log timestamps to date+time |
+| 2026-03-20 12:19 | Worker iter 1 | done in 73s, ctx: 10%, tools: 15 |
+| 2026-03-20 12:19 | Step 0 complete | Preflight |
+| 2026-03-20 12:19 | Step 1 started | Transaction Envelope |
+| 2026-03-20 12:21 | Review R003 | plan Step 1: REVISE |
 
 ## Blockers
 
