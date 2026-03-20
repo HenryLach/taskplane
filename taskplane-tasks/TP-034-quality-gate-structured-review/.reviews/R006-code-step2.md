@@ -3,19 +3,18 @@
 ### Verdict: REVISE
 
 ### Summary
-The step adds the core quality-gate plumbing in the right places (`executeTask()` gating and `doQualityGateReview()` orchestration), and the fail-open handling for reviewer crashes/non-zero exits is thoughtfully implemented. However, there are two important correctness issues in the review-evidence and verdict-rule alignment that can cause false failures or low-fidelity reviews. These should be fixed before approving this step.
+The structured review path is wired into `executeTask()` correctly, and the fail-open behavior for agent failure/malformed verdicts is implemented in the right place. However, two implementation choices in `quality-gate.ts` materially weaken correctness: the reviewer prompt’s verdict rules are hard-coded and can conflict with configured `pass_threshold`, and the git diff evidence range is not actually task-scoped. These can cause false NEEDS_FIXES outcomes or noisy/unreliable evidence during gate evaluation.
 
 ### Issues Found
-1. **[extensions/taskplane/quality-gate.ts:473-480] [important]** — Prompt verdict rules are hardcoded and do not match the configured threshold semantics. The prompt always says “3+ important => NEEDS_FIXES”, but runtime `applyVerdictRules()` only enforces that for `no_important` (not `no_critical`). With current logic, a reviewer following the prompt can emit `NEEDS_FIXES`, and `applyVerdictRules()` will fail via `verdict_says_needs_fixes`, effectively overriding `no_critical` behavior. **Fix:** generate threshold-specific prompt rules from `passThreshold` (or instruct reviewer to report findings only and let runtime threshold logic determine pass/fail).
-
-2. **[extensions/taskplane/quality-gate.ts:360-385] [important]** — `buildGitDiff()` uses a fixed `HEAD~20..HEAD` range and does not implement the documented fallback behavior. In repositories with fewer than 20 commits (or shallow history), this returns unavailable/empty evidence; in long-lived branches it may include unrelated history. **Fix:** compute a robust baseline (e.g., merge-base with main/default branch or bounded commit count), then fall back to a valid smaller range when needed.
+1. **[extensions/taskplane/quality-gate.ts:473-480] [important]** — The prompt always instructs reviewers to fail on `3+ important` findings, regardless of configured `passThreshold`. With `pass_threshold: no_critical`, this conflicts with runtime policy and can still force failure via `verdict_says_needs_fixes` in `applyVerdictRules()`. **Fix:** generate threshold-specific verdict instructions (or explicitly instruct reviewer to align `verdict` with `Current pass threshold`) so reviewer output and evaluator policy are consistent.
+2. **[extensions/taskplane/quality-gate.ts:357-381] [important]** — `buildGitDiff()` uses a fixed `HEAD~20..HEAD` range and does not implement the documented fallback. This can include unrelated upstream commits (noise) or fail in shallow/short histories, producing poor evidence (`"(git diff unavailable)"`). **Fix:** compute a task-appropriate base commit (e.g., merge-base with `main`/`origin/main` or persisted task baseline), then diff `base..HEAD`; implement real fallback chain for both file list and diff.
 
 ### Pattern Violations
-- `buildGitDiff()` comment promises fallback logic that the implementation does not perform (comment/behavior mismatch).
+- `buildGitDiff()` docstring promises behavior (“N determined by branch vs main”, fallback to `git diff HEAD`) that is not implemented.
 
 ### Test Gaps
-- No tests cover `generateQualityGatePrompt()` evidence range behavior (short history, fallback paths, file list correctness).
-- No tests verify threshold-specific prompt consistency vs `applyVerdictRules()` behavior.
+- No tests for prompt generation honoring different `passThreshold` values.
+- No tests for diff-base selection/fallback behavior in `buildGitDiff()` (short history, missing main ref, fallback success).
 
 ### Suggestions
-- Add focused unit tests for `readAndEvaluateVerdict()` missing-file and malformed-file cases (to lock in fail-open behavior beyond `parseVerdict`).
+- Add a small unit test around `readAndEvaluateVerdict()` for missing verdict file fail-open to lock in Step 2 behavior.

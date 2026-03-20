@@ -352,15 +352,57 @@ export interface QualityGateContext {
 export const VERDICT_FILENAME = "REVIEW_VERDICT.json";
 
 /**
+ * Compute a robust diff range for the task's git changes.
+ *
+ * Strategy (in order):
+ * 1. `git merge-base HEAD main` — ideal for topic branches
+ * 2. `git merge-base HEAD origin/main` — fallback for detached/worktree checkouts
+ * 3. `HEAD~N` where N = min(commit count, 50) — bounded fallback for repos
+ *    without a main branch or with shallow history
+ * 4. Empty string (signals diff unavailable)
+ */
+function computeDiffBase(cwd: string): string {
+	const opts = { encoding: "utf-8" as const, cwd, timeout: 15000 };
+
+	// Try merge-base with local main
+	for (const ref of ["main", "origin/main", "master", "origin/master"]) {
+		const result = spawnSync("git", ["merge-base", "HEAD", ref], opts);
+		if (result.status === 0 && result.stdout.trim()) {
+			return result.stdout.trim();
+		}
+	}
+
+	// Fallback: count commits and use HEAD~N (bounded)
+	const countResult = spawnSync("git", ["rev-list", "--count", "HEAD"], opts);
+	if (countResult.status === 0) {
+		const count = parseInt(countResult.stdout.trim(), 10);
+		if (count > 1) {
+			const n = Math.min(count - 1, 50);
+			return `HEAD~${n}`;
+		}
+	}
+
+	return "";
+}
+
+/**
  * Build the git diff for the entire task.
  *
- * Tries `git diff HEAD~N..HEAD` where N is determined by the number of commits
- * on the current branch vs main. Falls back to `git diff HEAD` if that fails.
+ * Uses `computeDiffBase()` to find a robust baseline, then runs `git diff`
+ * between that base and HEAD. Falls back gracefully when git is unavailable
+ * or the repository has insufficient history.
  */
 function buildGitDiff(cwd: string): { diff: string; fileList: string } {
 	try {
+		const base = computeDiffBase(cwd);
+		if (!base) {
+			return { diff: "(git diff unavailable — could not determine base)", fileList: "(file list unavailable)" };
+		}
+
+		const range = `${base}..HEAD`;
+
 		// Get file list of changed files
-		const fileListResult = spawnSync("git", ["diff", "--name-only", "HEAD~20..HEAD"], {
+		const fileListResult = spawnSync("git", ["diff", "--name-only", range], {
 			encoding: "utf-8",
 			cwd,
 			timeout: 30000,
@@ -370,7 +412,7 @@ function buildGitDiff(cwd: string): { diff: string; fileList: string } {
 			: "";
 
 		// Get full diff (truncated to avoid blowing up context)
-		const diffResult = spawnSync("git", ["diff", "HEAD~20..HEAD"], {
+		const diffResult = spawnSync("git", ["diff", range], {
 			encoding: "utf-8",
 			cwd,
 			timeout: 30000,
@@ -402,6 +444,40 @@ function buildGitDiff(cwd: string): { diff: string; fileList: string } {
  * @param cwd - Working directory for git commands
  * @returns Review prompt string
  */
+/**
+ * Build threshold-specific verdict rule lines for the review prompt.
+ *
+ * This ensures the reviewer's instructions match the runtime behavior of
+ * `applyVerdictRules()` — preventing false failures caused by the reviewer
+ * emitting NEEDS_FIXES for findings that the runtime threshold would ignore.
+ */
+function buildThresholdRules(threshold: PassThreshold): string[] {
+	const rules: string[] = [];
+
+	// Common rules — always apply
+	rules.push(`- **NEEDS_FIXES** if any finding has category \`status_mismatch\` (checkbox claims work is done but it isn't)`);
+	rules.push(`- **NEEDS_FIXES** if any finding has severity \`critical\``);
+
+	// Threshold-specific rules
+	switch (threshold) {
+		case "no_critical":
+			rules.push(`- **PASS** even if there are \`important\` or \`suggestion\` findings (threshold: \`no_critical\`)`);
+			break;
+		case "no_important":
+			rules.push(`- **NEEDS_FIXES** if 3 or more findings have severity \`important\``);
+			rules.push(`- **PASS** if only \`suggestion\`-level findings remain`);
+			break;
+		case "all_clear":
+			rules.push(`- **NEEDS_FIXES** if ANY findings exist (including \`suggestion\`-level)`);
+			break;
+	}
+
+	rules.push(`- **PASS** if no findings at all`);
+	rules.push(``);
+
+	return rules;
+}
+
 export function generateQualityGatePrompt(context: QualityGateContext, cwd: string): string {
 	const statusPath = join(context.taskFolder, "STATUS.md");
 	const verdictPath = join(context.taskFolder, VERDICT_FILENAME);
@@ -470,14 +546,11 @@ export function generateQualityGatePrompt(context: QualityGateContext, cwd: stri
 		``,
 		`## Verdict Rules`,
 		``,
-		`Apply these rules to determine your verdict:`,
-		`- **NEEDS_FIXES** if any finding has severity \`critical\``,
-		`- **NEEDS_FIXES** if 3 or more findings have severity \`important\``,
-		`- **NEEDS_FIXES** if any finding has category \`status_mismatch\` (checkbox claims work is done but it isn't)`,
-		`- **PASS** if only \`suggestion\`-level findings remain`,
-		`- **PASS** if no findings at all`,
+		`Report ALL findings you discover with accurate severities. The runtime will`,
+		`apply the configured pass threshold (\`${context.passThreshold}\`) to decide pass/fail.`,
 		``,
-		`Current pass threshold: \`${context.passThreshold}\``,
+		`Use these rules to determine your verdict:`,
+		...buildThresholdRules(context.passThreshold),
 		``,
 		`## Output Format`,
 		``,
