@@ -52,6 +52,12 @@ export interface OrchestratorConfig {
 	monitoring: {
 		poll_interval: number;
 	};
+	/** Verification baseline fingerprinting settings (TP-032). */
+	verification: {
+		enabled: boolean;
+		mode: "strict" | "permissive";
+		flaky_reruns: number;
+	};
 }
 
 /** A parsed task from PROMPT.md, enriched for orchestrator use */
@@ -187,6 +193,11 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 	},
 	monitoring: {
 		poll_interval: 5,
+	},
+	verification: {
+		enabled: false,
+		mode: "permissive",
+		flaky_reruns: 1,
 	},
 };
 

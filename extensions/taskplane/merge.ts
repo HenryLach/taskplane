@@ -561,6 +561,7 @@ function forceRemoveMergeWorktree(
  * @param sessionName     - Session name for structured logging
  * @param stateRoot       - State root for persistence (workspace root or repo root)
  * @param repoId          - Repository ID for workspace-mode artifact naming (optional)
+ * @param flakyReruns     - Number of flaky re-runs (0 = disabled, default 1)
  * @returns VerificationBaselineResult with classification and details
  */
 function runPostMergeVerification(
@@ -574,6 +575,7 @@ function runPostMergeVerification(
 	sessionName: string,
 	stateRoot: string,
 	repoId?: string,
+	flakyReruns: number = 1,
 ): VerificationBaselineResult {
 	execLog("merge", sessionName, "capturing post-merge verification fingerprints");
 
@@ -620,66 +622,99 @@ function runPostMergeVerification(
 	}
 
 	// ── Flaky re-run: re-run only the commands that produced new failures ──
-	// Identify which commandIds produced new failures
-	const failedCommandIds = new Set(diff.newFailures.map(fp => fp.commandId));
-	const rerunCommands: Record<string, string> = {};
-	for (const cmdId of failedCommandIds) {
-		if (testingCommands[cmdId]) {
-			rerunCommands[cmdId] = testingCommands[cmdId];
+	// Only when flakyReruns > 0 (0 = disabled — any new failure immediately blocks)
+	if (flakyReruns > 0) {
+		// Identify which commandIds produced new failures
+		const failedCommandIds = new Set(diff.newFailures.map(fp => fp.commandId));
+		const rerunCommands: Record<string, string> = {};
+		for (const cmdId of failedCommandIds) {
+			if (testingCommands[cmdId]) {
+				rerunCommands[cmdId] = testingCommands[cmdId];
+			}
+		}
+
+		// Re-run up to flakyReruns times; break early if failures clear
+		let clearedOnRerun = false;
+		for (let attempt = 0; attempt < flakyReruns; attempt++) {
+			execLog("merge", sessionName, `new failures detected — running flaky re-run ${attempt + 1}/${flakyReruns}`, {
+				failedCommands: [...failedCommandIds].join(", "),
+				rerunCount: Object.keys(rerunCommands).length,
+			});
+
+			const rerunResults = runVerificationCommands(rerunCommands, mergeWorkDir);
+
+			// Parse re-run fingerprints
+			const rerunFingerprints: TestFingerprint[] = [];
+			for (const result of rerunResults) {
+				const fps = parseTestOutput(result);
+				rerunFingerprints.push(...fps);
+			}
+			const dedupedRerun = deduplicateFingerprints(rerunFingerprints);
+
+			// Re-diff: compare baseline against re-run results for the failed commands only
+			// Filter baseline fingerprints to only the commands we re-ran
+			const baselineForRerun = baseline.fingerprints.filter(fp => failedCommandIds.has(fp.commandId));
+			const rerunDiff = diffFingerprints(baselineForRerun, dedupedRerun);
+
+			if (rerunDiff.newFailures.length === 0) {
+				// Failures disappeared on re-run — flaky suspected
+				execLog("merge", sessionName, `flaky re-run ${attempt + 1} cleared all new failures — classifying as flaky_suspected`);
+				clearedOnRerun = true;
+				break;
+			}
+
+			// If this is the last attempt and failures persist, return failure
+			if (attempt === flakyReruns - 1) {
+				const summary = rerunDiff.newFailures
+					.slice(0, 5)
+					.map(fp => `${fp.commandId}:${fp.file}:${fp.case} (${fp.kind})`)
+					.join("; ");
+				const truncated = rerunDiff.newFailures.length > 5
+					? ` ... and ${rerunDiff.newFailures.length - 5} more`
+					: "";
+
+				return {
+					performed: true,
+					newFailureCount: rerunDiff.newFailures.length,
+					preExistingCount: diff.preExisting.length,
+					fixedCount: diff.fixed.length,
+					classification: "verification_new_failure",
+					newFailureSummary: summary + truncated,
+					flakyRerunPerformed: true,
+				};
+			}
+		}
+
+		if (clearedOnRerun) {
+			return {
+				performed: true,
+				newFailureCount: 0,
+				preExistingCount: diff.preExisting.length,
+				fixedCount: diff.fixed.length,
+				classification: "flaky_suspected",
+				newFailureSummary: `Flaky: ${diff.newFailures.length} failure(s) disappeared on re-run`,
+				flakyRerunPerformed: true,
+			};
 		}
 	}
 
-	execLog("merge", sessionName, "new failures detected — running flaky re-run", {
-		failedCommands: [...failedCommandIds].join(", "),
-		rerunCount: Object.keys(rerunCommands).length,
-	});
-
-	const rerunResults = runVerificationCommands(rerunCommands, mergeWorkDir);
-
-	// Parse re-run fingerprints
-	const rerunFingerprints: TestFingerprint[] = [];
-	for (const result of rerunResults) {
-		const fps = parseTestOutput(result);
-		rerunFingerprints.push(...fps);
-	}
-	const dedupedRerun = deduplicateFingerprints(rerunFingerprints);
-
-	// Re-diff: compare baseline against re-run results for the failed commands only
-	// Filter baseline fingerprints to only the commands we re-ran
-	const baselineForRerun = baseline.fingerprints.filter(fp => failedCommandIds.has(fp.commandId));
-	const rerunDiff = diffFingerprints(baselineForRerun, dedupedRerun);
-
-	if (rerunDiff.newFailures.length === 0) {
-		// Failures disappeared on re-run — flaky suspected
-		execLog("merge", sessionName, "flaky re-run cleared all new failures — classifying as flaky_suspected");
-		return {
-			performed: true,
-			newFailureCount: 0,
-			preExistingCount: diff.preExisting.length,
-			fixedCount: diff.fixed.length,
-			classification: "flaky_suspected",
-			newFailureSummary: `Flaky: ${diff.newFailures.length} failure(s) disappeared on re-run`,
-			flakyRerunPerformed: true,
-		};
-	}
-
-	// New failures persist after re-run — genuine new failures
-	const summary = rerunDiff.newFailures
+	// flakyReruns === 0 or fallthrough: new failures block immediately
+	const summary = diff.newFailures
 		.slice(0, 5)
 		.map(fp => `${fp.commandId}:${fp.file}:${fp.case} (${fp.kind})`)
 		.join("; ");
-	const truncated = rerunDiff.newFailures.length > 5
-		? ` ... and ${rerunDiff.newFailures.length - 5} more`
+	const truncated = diff.newFailures.length > 5
+		? ` ... and ${diff.newFailures.length - 5} more`
 		: "";
 
 	return {
 		performed: true,
-		newFailureCount: rerunDiff.newFailures.length,
+		newFailureCount: diff.newFailures.length,
 		preExistingCount: diff.preExisting.length,
 		fixedCount: diff.fixed.length,
 		classification: "verification_new_failure",
 		newFailureSummary: summary + truncated,
-		flakyRerunPerformed: true,
+		flakyRerunPerformed: flakyReruns > 0,
 	};
 }
 
@@ -832,11 +867,33 @@ export function mergeWave(
 	// Capture verification fingerprints on the pre-merge state of the merge
 	// worktree. This baseline is compared against post-merge fingerprints
 	// for each lane to detect genuinely new failures vs pre-existing ones.
-	// Only runs when testing.commands are configured (opt-in).
+	// Only runs when verification.enabled === true AND testing.commands present.
 	let baseline: VerificationBaseline | null = null;
 	const hasTestingCommands = testingCommands && Object.keys(testingCommands).length > 0;
+	const verificationEnabled = config.verification.enabled;
+	const verificationMode = config.verification.mode;
+	const flakyReruns = config.verification.flaky_reruns;
 
-	if (hasTestingCommands) {
+	if (verificationEnabled && !hasTestingCommands) {
+		// Verification is enabled but no testing commands configured — treat as
+		// baseline-unavailable. Strict/permissive handling below.
+		if (verificationMode === "strict") {
+			execLog("merge", `W${waveIndex}`, "verification enabled but no testing commands configured — strict mode: failing merge");
+			// Clean up worktree and temp branch before returning failure
+			forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
+			try { spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot }); } catch { /* best effort */ }
+			return {
+				waveIndex, status: "failed", laneResults: [],
+				failedLane: null,
+				failureReason: "Verification enabled (strict mode) but no testing commands configured in taskRunner.testing.commands",
+				totalDurationMs: Date.now() - startTime,
+			};
+		} else {
+			execLog("merge", `W${waveIndex}`, "verification enabled but no testing commands configured — permissive mode: continuing without verification");
+		}
+	}
+
+	if (verificationEnabled && hasTestingCommands) {
 		execLog("merge", `W${waveIndex}`, "capturing verification baseline on pre-merge state", {
 			commandCount: Object.keys(testingCommands).length,
 			commands: Object.keys(testingCommands).join(", "),
@@ -866,10 +923,24 @@ export function mergeWave(
 			});
 		} catch (err: unknown) {
 			const errMsg = err instanceof Error ? err.message : String(err);
-			execLog("merge", `W${waveIndex}`, `baseline capture failed — continuing without baseline verification`, {
+			if (verificationMode === "strict") {
+				execLog("merge", `W${waveIndex}`, `baseline capture failed — strict mode: failing merge`, {
+					error: errMsg,
+				});
+				// Clean up worktree and temp branch before returning failure
+				forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
+				try { spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot }); } catch { /* best effort */ }
+				return {
+					waveIndex, status: "failed", laneResults: [],
+					failedLane: null,
+					failureReason: `Verification baseline capture failed (strict mode): ${errMsg}`,
+					totalDurationMs: Date.now() - startTime,
+				};
+			}
+			execLog("merge", `W${waveIndex}`, `baseline capture failed — permissive mode: continuing without baseline verification`, {
 				error: errMsg,
 			});
-			// Baseline capture failure is non-fatal — merge proceeds without
+			// Permissive: baseline capture failure is non-fatal — merge proceeds without
 			// orchestrator-side verification. Merge-agent verification (merge.verify)
 			// still applies independently.
 			baseline = null;
@@ -1014,6 +1085,7 @@ export function mergeWave(
 			if (
 				baseline !== null &&
 				hasTestingCommands &&
+				verificationEnabled &&
 				failedLane === null &&
 				(mergeResult.status === "SUCCESS" || mergeResult.status === "CONFLICT_RESOLVED")
 			) {
@@ -1028,6 +1100,7 @@ export function mergeWave(
 					sessionName,
 					stateRoot ?? repoRoot,
 					repoId,
+					flakyReruns,
 				);
 
 				// Attach verification result to the lane result

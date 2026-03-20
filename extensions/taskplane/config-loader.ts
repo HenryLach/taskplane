@@ -258,6 +258,9 @@ function mapOrchestratorYaml(raw: any): Partial<OrchestratorSection> {
 		if (raw.pre_warm.always) result.preWarm.always = [...raw.pre_warm.always];
 	}
 
+	// verification: all keys are structural (TP-032)
+	if (raw.verification) result.verification = convertStructuralKeys(raw.verification);
+
 	return result;
 }
 
@@ -762,6 +765,11 @@ export function toOrchestratorConfig(config: TaskplaneConfig): import("./types.t
 		},
 		monitoring: {
 			poll_interval: o.monitoring.pollInterval,
+		},
+		verification: {
+			enabled: o.verification.enabled,
+			mode: o.verification.mode,
+			flaky_reruns: o.verification.flakyReruns,
 		},
 	};
 }

@@ -1,6 +1,6 @@
 # TP-032: Verification Baseline & Fingerprinting — Status
 
-**Current Step:** Step 3: Configuration & Modes
+**Current Step:** Step 4: Testing & Verification
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 2
@@ -47,11 +47,11 @@
 ---
 
 ### Step 3: Configuration & Modes
-**Status:** 🟨 In Progress
-- [ ] R007-1: Add VerificationConfig interface to config-schema.ts, defaults in DEFAULT_ORCHESTRATOR_SECTION, YAML→unified mapping in config-loader.ts (mapOrchestratorYaml), legacy adapter in toOrchestratorConfig, and legacy type in types.ts OrchestratorConfig
-- [ ] R007-2: Wire verification.enabled as explicit feature flag — gating in merge.ts/engine.ts/resume.ts so that testing_commands presence alone does not enable fingerprinting; only `enabled: true` triggers it. Wire flakyReruns (including 0 = no reruns) through runPostMergeVerification
-- [ ] R007-3: Implement strict/permissive mode behavior for baseline unavailable — strict: set failedLane + error (merge failure policy applies), permissive: log warning, continue without baseline. Precedence: verification.mode gates baseline-unavailable handling; failure.on_merge_failure gates how the resulting merge failure is handled (pause vs abort)
-- [ ] R007-4: Add Step 3 decision note documenting precedence between verification.mode and failure.on_merge_failure, and behavior when enabled but commands empty
+**Status:** ✅ Complete
+- [x] R007-1: Add VerificationConfig interface to config-schema.ts, defaults in DEFAULT_ORCHESTRATOR_SECTION, YAML→unified mapping in config-loader.ts (mapOrchestratorYaml), legacy adapter in toOrchestratorConfig, and legacy type in types.ts OrchestratorConfig
+- [x] R007-2: Wire verification.enabled as explicit feature flag — gating in merge.ts/engine.ts/resume.ts so that testing_commands presence alone does not enable fingerprinting; only `enabled: true` triggers it. Wire flakyReruns (including 0 = no reruns) through runPostMergeVerification
+- [x] R007-3: Implement strict/permissive mode behavior for baseline unavailable — strict: set failedLane + error (merge failure policy applies), permissive: log warning, continue without baseline. Precedence: verification.mode gates baseline-unavailable handling; failure.on_merge_failure gates how the resulting merge failure is handled (pause vs abort)
+- [x] R007-4: Add Step 3 decision note documenting precedence between verification.mode and failure.on_merge_failure, and behavior when enabled but commands empty
 
 ---
 
@@ -238,3 +238,32 @@ The orchestrator-side baseline system uses `testing.commands` (`Record<string, s
 4. **Flaky re-run**: When new failures are detected, only the failed commands (not all commands) are re-run once. If the failure disappears on re-run, the lane is classified as `flaky_suspected` (warning-only, does not block). If the failure persists, the lane is classified as `verification_new_failure` (blocks merge advancement).
 5. **Persistence**: Baseline/post-merge artifacts are written to `.pi/verification/{opId}/baseline-b{batchId}-w{waveIndex}.json` and `.pi/verification/{opId}/post-b{batchId}-w{waveIndex}-lane{laneNumber}.json`. In workspace mode, repoId is appended: `baseline-b{batchId}-w{waveIndex}-{repoId}.json`.
 6. **Failure propagation**: `verification_new_failure` sets `failedLane` and `failureReason` in the merge loop, same as BUILD_FAILURE. The lane result's `verificationBaseline` field carries the detailed diff. Downstream failure policy (engine.ts `computeMergeFailurePolicy`) handles it identically to any other merge failure.
+
+### Step 3 Decision Notes (R007 response)
+
+**Config Precedence & Feature Flag:**
+Verification baseline fingerprinting runs **only** when BOTH conditions are met:
+1. `orchestrator.verification.enabled === true` (feature flag, default: false)
+2. `taskRunner.testing.commands` has at least one command configured
+
+If `enabled` is false, no baseline capture or comparison occurs regardless of commands being configured. This is the explicit opt-in gate.
+
+**Strict vs Permissive Mode (`verification.mode`):**
+Controls behavior when baseline is **unavailable** (capture failure or missing commands):
+- **strict**: Baseline-unavailable triggers an immediate merge failure (`MergeWaveResult.status = "failed"` with diagnostic `failureReason`). The downstream `failure.onMergeFailure` policy then determines whether the batch pauses or aborts — strict mode does NOT bypass that policy.
+- **permissive** (default): Baseline-unavailable logs a warning and continues without orchestrator-side verification. Merge-agent verification (`merge.verify`) still applies independently.
+
+Two specific scenarios handled:
+1. **Enabled but no commands**: strict → immediate merge failure; permissive → warning, skip verification
+2. **Baseline capture throws**: strict → immediate merge failure; permissive → warning, set baseline=null, continue
+
+**Flaky Re-runs (`verification.flakyReruns`):**
+- `flakyReruns: 0` → disabled. Any new failure immediately blocks (no re-run).
+- `flakyReruns: 1` (default) → re-run failed commands once. If failures clear → `flaky_suspected` (warning). If persist → `verification_new_failure` (blocks).
+- `flakyReruns: N > 1` → up to N re-runs; break early if failures clear on any attempt.
+
+**YAML ↔ JSON Key Mapping:**
+- YAML: `verification.flaky_reruns` (snake_case)
+- JSON: `orchestrator.verification.flakyReruns` (camelCase)
+- Legacy adapter: `config.verification.flaky_reruns` (snake_case in OrchestratorConfig type)
+- `convertStructuralKeys()` handles YAML→unified mapping automatically.
