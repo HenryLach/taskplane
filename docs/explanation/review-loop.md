@@ -50,6 +50,10 @@ Task `Review Level` controls review rigor:
 
 Current runner behavior applies plan review at `>=1` and code review at `>=2`.
 
+**Exception:** Step 0 (Preflight) and the final step (Documentation & Delivery)
+always skip both plan and code reviews, regardless of review level. These
+low-risk steps don't benefit from cross-model review.
+
 ---
 
 ## Loop mechanics in task-runner
