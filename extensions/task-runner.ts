@@ -1966,7 +1966,7 @@ export default function (pi: ExtensionAPI) {
 				fixCyclesUsed++;
 
 				// Write REVIEW_FEEDBACK.md with blocking findings
-				const feedbackContent = generateFeedbackMd(result.verdict, reviewCycle, maxReviewCycles);
+				const feedbackContent = generateFeedbackMd(result.verdict, reviewCycle, maxReviewCycles, config.quality_gate.pass_threshold);
 				const feedbackPath = join(task.taskFolder, FEEDBACK_FILENAME);
 				try {
 					writeFileSync(feedbackPath, feedbackContent);
@@ -1982,7 +1982,10 @@ export default function (pi: ExtensionAPI) {
 				// Spawn fix agent (reuses worker spawn pattern)
 				const fixResult = await doQualityGateFixAgent(ctx, fixPrompt, fixCyclesUsed);
 
-				if (fixResult.exitCode !== 0) {
+				if (fixResult.timedOut) {
+					// Fix agent hit wall-clock timeout — budget consumed deterministically
+					logExecution(statusPath, "Quality gate", `Fix agent timed out (cycle ${fixCyclesUsed}, ${Math.round(fixResult.elapsed / 1000)}s) — budget consumed, proceeding to re-review`);
+				} else if (fixResult.exitCode !== 0) {
 					// Fix agent abnormal exit — consumes fix budget, log and continue to re-review
 					logExecution(statusPath, "Quality gate", `Fix agent exited with code ${fixResult.exitCode} (cycle ${fixCyclesUsed}) — budget consumed, proceeding to re-review`);
 				} else {
@@ -2004,10 +2007,15 @@ export default function (pi: ExtensionAPI) {
 				if (lastVerdict) {
 					const criticals = lastVerdict.findings.filter(f => f.severity === "critical");
 					const importants = lastVerdict.findings.filter(f => f.severity === "important");
-					const findingsSummary = [
+					const suggestions = lastVerdict.findings.filter(f => f.severity === "suggestion");
+					const summaryParts = [
 						criticals.length > 0 ? `${criticals.length} critical` : "",
 						importants.length > 0 ? `${importants.length} important` : "",
-					].filter(Boolean).join(", ");
+						// Include suggestion counts when they are blocking (all_clear threshold)
+						(config.quality_gate.pass_threshold === "all_clear" && suggestions.length > 0)
+							? `${suggestions.length} suggestion` : "",
+					].filter(Boolean);
+					const findingsSummary = summaryParts.join(", ");
 					logExecution(statusPath, "Quality gate failed",
 						`${reviewCycle} review cycle(s), ${fixCyclesUsed} fix cycle(s). ` +
 						`Blocking findings: ${findingsSummary || "none extracted"}. ` +
@@ -2730,6 +2738,9 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Quality Gate Fix Agent ───────────────────────────────────────
 
+	/** Default wall-clock timeout for fix agents (15 minutes). */
+	const FIX_AGENT_TIMEOUT_MS = 15 * 60 * 1000;
+
 	/**
 	 * Spawn a fix agent to address quality gate findings.
 	 *
@@ -2738,21 +2749,24 @@ export default function (pi: ExtensionAPI) {
 	 *
 	 * Handles abnormal exits deterministically:
 	 * - Agent crash → returns non-zero exit code (caller consumes fix budget)
-	 * - Agent timeout → returns non-zero (caller consumes fix budget)
+	 * - Agent timeout → kills agent, returns non-zero (caller consumes fix budget)
 	 * - Agent exits normally but makes no changes → still returns 0 (re-review will catch)
+	 *
+	 * Wall-clock timeout: 15 minutes (or getMaxWorkerMinutes if configured).
+	 * This prevents a hung fix agent from stalling the task permanently.
 	 *
 	 * @param ctx - Extension context
 	 * @param fixPrompt - Prompt for the fix agent (includes REVIEW_FEEDBACK.md)
 	 * @param fixCycleNum - Current fix cycle number (1-based)
-	 * @returns Exit code and elapsed time
+	 * @returns Exit code, elapsed time, and whether timeout was hit
 	 */
 	async function doQualityGateFixAgent(
 		ctx: ExtensionContext,
 		fixPrompt: string,
 		fixCycleNum: number,
-	): Promise<{ exitCode: number; elapsed: number }> {
+	): Promise<{ exitCode: number; elapsed: number; timedOut: boolean }> {
 		if (!state.task || !state.config) {
-			return { exitCode: 1, elapsed: 0 };
+			return { exitCode: 1, elapsed: 0, timedOut: false };
 		}
 
 		const task = state.task;
@@ -2768,6 +2782,11 @@ export default function (pi: ExtensionAPI) {
 		const basePrompt = workerDef?.systemPrompt
 			|| "You are a fix agent addressing quality gate findings. Read the feedback and make targeted code fixes.";
 		const systemPrompt = basePrompt + "\n\n" + buildProjectContext(config, task.taskFolder);
+
+		// Wall-clock timeout: use half of worker limit (fix agents should be quick),
+		// with a floor of 15 minutes.
+		const workerMinutes = getMaxWorkerMinutes(config);
+		const timeoutMs = Math.max(FIX_AGENT_TIMEOUT_MS, Math.floor(workerMinutes / 2) * 60 * 1000);
 
 		// Update UI state
 		state.workerStatus = "running";
@@ -2786,10 +2805,12 @@ export default function (pi: ExtensionAPI) {
 			updateWidgets();
 		}, 1000);
 
-		logExecution(statusPath, "Quality gate", `Starting fix agent (cycle ${fixCycleNum})`);
+		logExecution(statusPath, "Quality gate", `Starting fix agent (cycle ${fixCycleNum}, timeout: ${Math.round(timeoutMs / 60000)}min)`);
 
 		const spawnMode = getSpawnMode(config);
 		let fixPromise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>;
+		let killFn: (() => void) | null = null;
+		let tmuxExitSummaryPath: string | null = null;
 
 		try {
 			if (spawnMode === "tmux") {
@@ -2805,6 +2826,8 @@ export default function (pi: ExtensionAPI) {
 					taskId: task.taskId,
 				});
 				fixPromise = spawned.promise;
+				killFn = spawned.kill;
+				tmuxExitSummaryPath = spawned.exitSummaryPath;
 				state.workerProc = { kill: spawned.kill };
 			} else {
 				const spawned = spawnAgent({
@@ -2823,18 +2846,52 @@ export default function (pi: ExtensionAPI) {
 					},
 				});
 				fixPromise = spawned.promise;
+				killFn = spawned.kill;
 				state.workerProc = { kill: spawned.kill };
 			}
 
-			const result = await fixPromise;
+			// Race the agent against a wall-clock timeout
+			let timedOut = false;
+			const timeoutPromise = new Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>((resolve) => {
+				const timer = setTimeout(() => {
+					timedOut = true;
+					logExecution(statusPath, "Quality gate", `Fix agent wall-clock timeout (${Math.round(timeoutMs / 60000)}min) — killing agent`);
+					if (killFn) killFn();
+					// Resolve after a brief delay to allow kill to take effect
+					setTimeout(() => {
+						resolve({ output: "timeout", exitCode: 1, elapsed: Date.now() - startTime, killed: true });
+					}, 5000);
+				}, timeoutMs);
+				// Clean up timer if agent finishes first
+				fixPromise.then(() => clearTimeout(timer)).catch(() => clearTimeout(timer));
+			});
+
+			const result = await Promise.race([fixPromise, timeoutPromise]);
+
+			// ── TMUX exit classification ─────────────────────────
+			// spawnAgentTmux always reports exitCode: 0 on session end.
+			// Read the exit summary written by rpc-wrapper to get the
+			// real Pi process exit code (same pattern as worker flow).
+			let effectiveExitCode = result.exitCode;
+			if (spawnMode === "tmux" && tmuxExitSummaryPath && !timedOut) {
+				const exitSummary = readExitSummary(tmuxExitSummaryPath);
+				if (exitSummary && typeof exitSummary.exitCode === "number") {
+					effectiveExitCode = exitSummary.exitCode;
+					if (effectiveExitCode !== 0) {
+						console.error(`[task-runner] qg-fix: tmux exit summary reports exit code ${effectiveExitCode}`);
+					}
+				}
+				// If no exit summary exists, keep the tmux-reported code (0).
+				// This is fail-open: missing exit summary ≠ crash.
+			}
 
 			clearInterval(state.workerTimer);
 			state.workerElapsed = Date.now() - startTime;
-			state.workerStatus = result.exitCode === 0 ? "done" : "error";
+			state.workerStatus = (effectiveExitCode === 0 && !timedOut) ? "done" : "error";
 			state.workerProc = null;
 			updateWidgets();
 
-			return { exitCode: result.exitCode, elapsed: Date.now() - startTime };
+			return { exitCode: timedOut ? 1 : effectiveExitCode, elapsed: Date.now() - startTime, timedOut };
 		} catch (err: any) {
 			// Fix agent crashed — return non-zero to consume fix budget
 			clearInterval(state.workerTimer);
@@ -2843,7 +2900,7 @@ export default function (pi: ExtensionAPI) {
 			updateWidgets();
 
 			logExecution(statusPath, "Quality gate", `Fix agent crashed: ${err?.message || err} — fix cycle ${fixCycleNum} consumed`);
-			return { exitCode: 1, elapsed: Date.now() - startTime };
+			return { exitCode: 1, elapsed: Date.now() - startTime, timedOut: false };
 		}
 	}
 

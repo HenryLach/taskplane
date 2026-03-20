@@ -3,20 +3,20 @@
 ### Verdict: REVISE
 
 ### Summary
-The remediation loop is mostly in place (feedback file, fix-agent spawn, re-review loop, and terminal gate failure behavior), and the implementation is close to the intended Step 3 outcome. However, there are two important correctness gaps: blocking findings are not fully surfaced for the `all_clear` threshold, and fix-agent timeout behavior is documented but not actually enforced. These can cause non-remediable failures or indefinite hangs.
+The remediation loop is largely in place (feedback generation, fix-agent invocation, and re-review), and the core `.DONE` gating behavior remains correct. However, two reliability gaps remain in fix-agent execution semantics, especially in TMUX mode. These gaps break the stated deterministic handling for timeout/crash paths and can misreport failed fix attempts as successful.
 
 ### Issues Found
-1. **[extensions/taskplane/quality-gate.ts:647-666] [important]** — `generateFeedbackMd()` only includes `critical` and `important` findings, but under `pass_threshold = "all_clear"`, `suggestion` findings are also gate-blocking (`extensions/tests/quality-gate.test.ts:272-276`). This can produce `NEEDS_FIXES` cycles with no actionable blocking items in `REVIEW_FEEDBACK.md`. **Fix:** make feedback generation threshold-aware (or evaluation-aware) and include suggestion findings when they are blocking (at least for `all_clear`).
-2. **[extensions/task-runner.ts:2739-2742, 2783-2837] [important]** — The fix-agent function claims deterministic handling for timeout paths, but no timeout kill logic exists in `doQualityGateFixAgent()` (it awaits agent completion indefinitely). A hung fix agent can stall the task permanently. **Fix:** add explicit wall-clock timeout handling (subprocess + tmux), kill the agent on timeout, and return non-zero so fix budget is consumed deterministically.
+1. **[extensions/task-runner.ts:2741, 2791-2824] [important]** — Timeout handling is documented but not implemented for the fix agent. `doQualityGateFixAgent()` claims timeout paths are handled, but unlike `doWorkIteration()` it sets no wall-clock timers and passes no context/wrap-up kill controls to `spawnAgent()`, so a hung fix run can block indefinitely. **Fix:** add explicit timeout enforcement (warn + hard kill) for both subprocess and TMUX fix runs, and return non-zero when timeout kills the agent.
+2. **[extensions/task-runner.ts:2795-2834, 1436, 1671-1673] [important]** — TMUX fix-agent abnormal exits are not reliably detected. In TMUX mode, `spawnAgentTmux()` reports `exitCode: 0` on normal session end regardless of underlying Pi process exit, but `doQualityGateFixAgent()` uses that exit code to classify success/failure. This can log crashed/non-zero runs as “completed”. **Fix:** consume `exitSummaryPath` (as done in worker flow) or propagate wrapper exit code from `spawnAgentTmux()` so TMUX fix cycles can be classified deterministically.
 
 ### Pattern Violations
-- Comment/behavior mismatch: timeout handling is documented in the fix-agent contract but not implemented (`extensions/task-runner.ts:2739-2742`).
+- `doQualityGateFixAgent()` comments promise deterministic timeout/crash handling, but implementation currently lacks timeout enforcement and TMUX exit classification parity with the worker path.
 
 ### Test Gaps
-- No tests were added for remediation-specific behavior:
-  - `all_clear` + suggestion-only blocking findings should produce actionable `REVIEW_FEEDBACK.md` content.
-  - Fix-agent timeout/crash/non-zero paths should consume fix budget and continue/fail deterministically.
-  - End-to-end review→fix→re-review budget exhaustion ordering (`max_review_cycles` vs `max_fix_cycles`).
+- No tests covering fix-agent timeout behavior.
+- No TMUX-path test validating that fix-agent crashes/non-zero exits are logged and treated as failed fix attempts.
+- No regression test for remediation-loop behavior when fix agent hangs or exits abnormally before producing changes.
 
 ### Suggestions
-- Include suggestion counts in terminal failure summaries when threshold is `all_clear` so operator logs reflect actual blocking criteria.
+- Reuse the existing worker timeout/kill scaffolding in `doQualityGateFixAgent()` to keep behavior consistent.
+- Add a small helper to normalize subprocess/TMUX result classification into a single `FixAgentOutcome` type to avoid drift.
