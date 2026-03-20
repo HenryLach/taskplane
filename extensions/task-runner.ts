@@ -59,6 +59,13 @@ interface TaskConfig {
 		no_progress_limit: number;
 		max_worker_minutes?: number;
 	};
+	quality_gate: {
+		enabled: boolean;
+		review_model: string;
+		max_review_cycles: number;
+		max_fix_cycles: number;
+		pass_threshold: "no_critical" | "no_important" | "all_clear";
+	};
 }
 
 interface StepInfo {
@@ -146,6 +153,13 @@ const DEFAULT_CONFIG: TaskConfig = {
 	context: {
 		worker_context_window: 200000, warn_percent: 70, kill_percent: 85,
 		max_worker_iterations: 20, max_review_cycles: 2, no_progress_limit: 3,
+	},
+	quality_gate: {
+		enabled: false,
+		review_model: "",
+		max_review_cycles: 2,
+		max_fix_cycles: 1,
+		pass_threshold: "no_critical",
 	},
 };
 

@@ -1,7 +1,7 @@
 # TP-034: Quality Gate Structured Review — Status
 
 **Current Step:** Step 1: Define Quality Gate Configuration & Verdict Schema
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 2
 **Review Counter:** 3
@@ -24,13 +24,13 @@
 ---
 
 ### Step 1: Define Configuration & Verdict Schema
-**Status:** 🟨 In Progress
-- [ ] Add QualityGateConfig interface to config-schema.ts and wire into TaskRunnerSection with defaults (enabled: false, reviewModel: "", maxReviewCycles: 2, maxFixCycles: 1, passThreshold: "no_critical")
-- [ ] Add quality_gate mapping to toTaskConfig() adapter in config-loader.ts and TaskConfig interface in task-runner.ts
-- [ ] Create quality-gate.ts with ReviewVerdict, ReviewFinding, StatusReconciliation interfaces and PassThreshold type
-- [ ] Add verdict evaluation logic: applyVerdictRules() implementing critical/important/status_mismatch rules
-- [ ] Add parseVerdict() with fail-open behavior for malformed/missing JSON
-- [ ] Add config-loader test coverage for quality gate defaults and adapter mapping
+**Status:** ✅ Complete
+- [x] Add QualityGateConfig interface to config-schema.ts and wire into TaskRunnerSection with defaults (enabled: false, reviewModel: "", maxReviewCycles: 2, maxFixCycles: 1, passThreshold: "no_critical")
+- [x] Add quality_gate mapping to toTaskConfig() adapter in config-loader.ts and TaskConfig interface in task-runner.ts
+- [x] Create quality-gate.ts with ReviewVerdict, ReviewFinding, StatusReconciliation interfaces and PassThreshold type
+- [x] Add verdict evaluation logic: applyVerdictRules() implementing critical/important/status_mismatch rules
+- [x] Add parseVerdict() with fail-open behavior for malformed/missing JSON
+- [x] Add config-loader test coverage for quality gate defaults and adapter mapping
 
 ---
 
@@ -110,6 +110,7 @@
 | 2026-03-20 00:29 | Step 1 started | Define Quality Gate Configuration & Verdict Schema |
 | 2026-03-20 00:30 | Review R003 | plan Step 1: REVISE |
 | 2026-03-20 00:30 | Review R003 | plan Step 1: REVISE |
+| 2026-03-20 | Step 1 complete | Config schema, adapter, quality-gate.ts, verdict logic, tests all done |
 
 ## Blockers
 
