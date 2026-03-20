@@ -1,11 +1,11 @@
 # TP-035: STATUS.md Reconciliation & Artifact Staging Scope — Status
 
-**Current Step:** Step 3: Clean Up System-Owned Template Items
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 1
-**Review Counter:** 4
-**Iteration:** 4
+**Review Counter:** 5
+**Iteration:** 5
 **Size:** S
 
 ---
@@ -44,10 +44,13 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] Reconciliation tests
-- [ ] Staging scope tests
-- [ ] Full test suite passes
+**Status:** 🟨 In Progress
+- [ ] Reconciliation happy-path tests: check→uncheck, uncheck→check, partial→uncheck+annotation, already-correct idempotent (in `tests/status-reconciliation.test.ts`)
+- [ ] Reconciliation edge-case tests: duplicate-match consumption (first match wins), unmatched entries when no checkbox matches, empty/null input, missing STATUS.md, partial annotation on already-unchecked item
+- [ ] Reconciliation guard tests: reconciliation only runs when quality gate enabled and verdict has entries (verify integration point in task-runner.ts)
+- [ ] Artifact staging positive tests: accepts .DONE, STATUS.md, REVIEW_VERDICT.json within task folder
+- [ ] Artifact staging negative tests: rejects paths outside task folder (repo-escape `..`), no-op commit when no allowlisted files changed
+- [ ] Full test suite passes: `cd extensions && npx vitest run` with zero failures
 
 ---
 
@@ -68,6 +71,8 @@
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
 | R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
 | R004 | plan | Step 3 | REVISE | .reviews/R004-plan-step3.md |
+| R005 | plan | Step 4 | REVISE | .reviews/R005-plan-step4.md |
+| R005 | plan | Step 4 | REVISE | .reviews/R005-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -110,6 +115,14 @@
 | 2026-03-20 06:02 | Step 3 started | Clean Up System-Owned Template Items |
 | 2026-03-20 06:03 | Review R004 | plan Step 3: REVISE |
 | 2026-03-20 06:04 | Review R004 | plan Step 3: REVISE |
+| 2026-03-20 06:06 | Worker iter 4 | done in 133s, ctx: 16%, tools: 37 |
+| 2026-03-20 06:06 | Step 3 complete | Clean Up System-Owned Template Items |
+| 2026-03-20 06:06 | Step 4 started | Testing & Verification |
+| 2026-03-20 06:07 | Worker iter 4 | done in 123s, ctx: 12%, tools: 29 |
+| 2026-03-20 06:07 | Step 3 complete | Clean Up System-Owned Template Items |
+| 2026-03-20 06:07 | Step 4 started | Testing & Verification |
+| 2026-03-20 06:08 | Review R005 | plan Step 4: REVISE |
+| 2026-03-20 06:09 | Review R005 | plan Step 4: REVISE |
 
 ## Blockers
 
