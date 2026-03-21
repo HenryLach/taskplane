@@ -718,35 +718,229 @@ monitoring sessions.
 
 ---
 
-## 14. Supervisor-Led Onboarding
+## 14. `/orch` as the Universal Entry Point
 
 ### 14.1 Vision
 
-The supervisor is not just a batch monitor — it's the persistent intelligent
-interface for all of Taskplane. The user's first interaction with Taskplane
-should be a conversation, not a CLI wizard. Instead of `taskplane init`
-generating config files with wrong defaults that the user must manually fix,
-the supervisor discovers the project, asks questions, and proposes a setup
-that actually fits.
+`/orch` is the only command the user needs to know. It invokes the supervisor,
+which then guides the user through whatever comes next — onboarding, spec
+writing, task creation, batch execution, recovery, integration, and evaluation.
+The other `/orch-*` subcommands remain as shortcuts for operators who know
+what they want, but the primary path is always a conversation.
 
-**Entry point:** The user types `/orch` with no arguments. If no config exists,
-the supervisor detects this as a first-run scenario and initiates onboarding.
+The supervisor manages the complete **spec-driven development lifecycle:**
 
 ```
+┌─────────────────────────────────────────────────────────────────┐
+│                  Spec-Driven Development Cycle                   │
+│                                                                  │
+│  /orch                                                           │
+│    ↓                                                             │
+│  "What would you like to do today?"                              │
+│    ↓                                                             │
+│  ┌──────┐   ┌───────┐   ┌──────┐   ┌─────────┐   ┌──────────┐  │
+│  │ Spec │ → │ Tasks │ → │ Plan │ → │ Execute │ → │ Integrate│  │
+│  │      │   │       │   │ (DAG)│   │ (waves) │   │ (PR/merge│  │
+│  └──────┘   └───────┘   └──────┘   └─────────┘   └──────────┘  │
+│       ↑                                               ↓          │
+│       │          ┌──────────┐                         │          │
+│       └──────────│ Evaluate │←────────────────────────┘          │
+│                  │ (retro)  │                                    │
+│                  └──────────┘                                    │
+│                                                                  │
+│  The supervisor manages every stage, adapting to where the       │
+│  operator is in the cycle and what the project needs next.       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Entry point:** The user types `/orch` with no arguments. The supervisor
+assesses the project state and offers the most relevant next action:
+
+```
+[First time — no config]
 User: /orch
 Supervisor: "Welcome to Taskplane! I don't see a configuration for this
-            project yet. Let me help you get set up. Give me a moment to
-            look around your project..."
+            project yet. Let me help you get set up..."
 
-[Supervisor reads repo structure, package.json, git branches, existing docs]
+[Established project — pending tasks exist]
+User: /orch
+Supervisor: "Welcome back! You have 5 pending tasks ready to run:
+            - TP-037 (M), TP-038 (S), TP-039 (L) — no dependencies
+            - TP-040 (M) depends on TP-037
+            - TP-041 (S) depends on TP-039
+            That's 3 waves, 2 lanes. Estimated ~4 hours.
+            Want me to start the batch, or review the plan first?"
 
-Supervisor: "This looks like a Node.js monorepo with src/api/, src/web/,
-            and libs/shared/. You're on the 'develop' branch with 'main'
-            as protected. I have a few questions to get your task areas
-            configured correctly..."
+[Established project — no pending tasks]
+User: /orch
+Supervisor: "No pending tasks right now. Here's what I can help with:
+            • Create tasks from a spec or design doc
+            • Pull in GitHub Issues (4 labeled 'ready')
+            • Write a new spec for something you want to build
+            • Run a project health check
+            What interests you?"
+
+[Batch in progress]
+User: /orch
+Supervisor: "Batch 20260320T140046 is running. Wave 2 of 4, 6/11 tasks
+            done. TP-032 is on Step 3 (72%). Cost so far: $68.
+            Anything specific you want to know?"
+
+[Batch completed, not yet integrated]
+User: /orch
+Supervisor: "Your last batch completed — 11/11 tasks succeeded. The orch
+            branch is ready to integrate. Want me to create a PR to main?"
 ```
 
-### 14.2 Onboarding Scripts
+### 14.2 The Spec-Driven Development Workflow
+
+The supervisor guides the operator through a complete development cycle,
+starting from an idea and ending with shipped, evaluated code. Each stage
+is a conversation, not a command.
+
+#### Stage 1: Spec
+
+The operator describes what they want to build. The supervisor helps refine it
+into a structured specification.
+
+```
+Operator: "I want to add a supervisor agent to the orchestrator"
+Supervisor: "Big feature! Let me ask a few questions to scope it:
+            - Should it run in the same pi session or separately?
+            - What authority should it have over recovery?
+            - Should it handle onboarding too, or just batch monitoring?
+            Let me read your existing docs to see if there's prior work..."
+            
+[Supervisor reads project docs, finds watchdog spec]
+
+Supervisor: "Found your watchdog-and-recovery-tiers.md spec. It already
+            covers a lot of this. Want me to:
+            1. Create tasks directly from this spec?
+            2. Revise the spec first based on our discussion?
+            3. Start fresh with a new spec?"
+```
+
+The supervisor can help write specs from scratch, refine existing specs, or
+work from any document format — PRDs, GitHub Issues, Slack threads pasted in,
+even verbal descriptions.
+
+#### Stage 2: Tasks
+
+The supervisor decomposes the spec into executable Taskplane tasks with proper
+dependencies, sizing, and review levels.
+
+```
+Supervisor: "I've broken the watchdog spec into 8 tasks:
+
+            Phase 1 (Tier 0 + engine):
+              TP-037: Merge timeout retry with backoff (M)
+              TP-038: Stale session cleanup on resume (S)
+              TP-039: Non-blocking engine refactor (L)
+
+            Phase 2 (Supervisor):
+              TP-040: Supervisor system prompt + primer (M) → needs TP-039
+              TP-041: Interactive session integration (M) → needs TP-039
+              TP-042: Recovery action execution (M) → needs TP-040
+
+            Phase 3 (Integration):
+              TP-043: Auto-integration flow (M) → needs TP-042
+              TP-044: Post-batch retrospective (S) → needs TP-042
+
+            4 waves, estimated ~12 hours. Want me to create these tasks,
+            or adjust anything first?"
+
+Operator: "TP-039 seems too big. Can you split it?"
+Supervisor: "Sure. I'll split the non-blocking engine into:
+            TP-039a: Event emission infrastructure (M)
+            TP-039b: Command handler refactor (M) → needs TP-039a
+            That brings it to 9 tasks, 5 waves."
+```
+
+#### Stage 3: Plan
+
+The supervisor shows the execution plan (DAG, waves, lanes) and lets the
+operator adjust before committing.
+
+```
+Supervisor: "Here's the execution plan:
+
+            Wave 1: TP-037, TP-038, TP-039a (3 parallel, ~1h)
+            Wave 2: TP-039b (1 task, ~1h, needs 039a)
+            Wave 3: TP-040, TP-041 (2 parallel, ~2h)
+            Wave 4: TP-042 (1 task, ~1h)
+            Wave 5: TP-043, TP-044 (2 parallel, ~1.5h)
+
+            Estimated total: 6.5 hours, ~$85
+            Max lanes: 3 (wave 1)
+
+            Ready to start? Or want to adjust anything?"
+
+Operator: "Start it. I'll check back in a few hours."
+Supervisor: "Batch started. I'll handle any issues that come up and
+            send you a summary when it's done. Have a good afternoon."
+```
+
+#### Stage 4: Execute
+
+The supervisor monitors the batch, handles failures (Tier 0 + its own
+reasoning), and keeps the operator informed. See Sections 4-6 for details.
+
+#### Stage 5: Integrate
+
+The supervisor manages integration based on the configured mode. See Script 9
+for details. The full flow from batch completion to merged PR happens without
+the operator needing to run any commands.
+
+#### Stage 6: Evaluate
+
+After integration, the supervisor runs a retrospective (Script 8) and feeds
+learnings back into the next cycle:
+
+```
+Supervisor: "Batch shipped! Retrospective:
+
+            📊 9/9 tasks succeeded | ⏱ 7h 12m | 💰 $92
+            
+            What went well:
+            - Reviewer approved 7/9 tasks on first pass (prompt changes working)
+            - Zero merge conflicts (good file scope definitions)
+            - Tier 0 handled one merge timeout automatically
+            
+            What could improve:
+            - TP-039b took 4 iterations on Step 2 — prompt was ambiguous
+            - Test suite now takes 95s (up from 85s) — approaching merge timeout
+            
+            Recommendations for next cycle:
+            - Increase merge timeout to 25 min
+            - Split test suite into fast/slow if it grows more
+            - TP-039b's prompt should be more specific about the callback pattern
+            
+            Ready to start the next cycle? I see the evaluation-system spec
+            hasn't been tackled yet."
+```
+
+### 14.3 Relationship to Existing Commands
+
+`/orch` with no arguments is the conversational entry point. The existing
+subcommands remain as **shortcuts** for operators who know exactly what they
+want:
+
+| Command | Still works? | When to use |
+|---------|-------------|-------------|
+| `/orch` | ✅ Primary entry point | Always — supervisor guides you |
+| `/orch all` | ✅ Shortcut | Skip the conversation, just run everything |
+| `/orch <area>` | ✅ Shortcut | Run tasks in a specific area |
+| `/orch-plan all` | ✅ Shortcut | Just show the plan, don't start |
+| `/orch-status` | ✅ Shortcut | Quick status check without conversation |
+| `/orch-pause` | ✅ Shortcut | Emergency pause |
+| `/orch-resume` | ✅ Shortcut | Quick resume without conversation |
+| `/orch-integrate` | ✅ Shortcut | Manual integration |
+
+The supervisor understands all of these too. If the operator says "just run
+everything" in conversation, the supervisor does the same thing as `/orch all`.
+The subcommands are for operators who prefer typing commands over conversation.
+
+### 14.4 Onboarding & Workflow Scripts
 
 These are **conversational guides** for the supervisor agent — not deterministic
 code. They tell the supervisor what to explore, what questions to ask, what
@@ -1311,7 +1505,7 @@ Supervisor: "PR #115 ready. Quick review of the combined diff:
 
 ---
 
-### 14.3 Script Maintenance
+### 14.5 Script Maintenance
 
 Scripts ship as part of the supervisor primer (`extensions/taskplane/supervisor-primer.md`)
 and update via `pi update`. As we learn from real user interactions:
@@ -1326,7 +1520,7 @@ on what the user says and what it discovers. If the user says "just give me the
 defaults and let me tweak later," the supervisor respects that and skips the
 detailed discussions.
 
-### 14.4 Replacing `taskplane init`
+### 14.6 Replacing `taskplane init`
 
 Once supervisor-led onboarding is stable, `taskplane init` becomes a thin
 fallback for non-interactive scenarios (CI, scripting, headless setup). The
