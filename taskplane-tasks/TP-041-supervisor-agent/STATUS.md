@@ -4,8 +4,8 @@
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 3
+**Review Counter:** 5
+**Iteration:** 5
 **Size:** L
 
 ---
@@ -48,9 +48,10 @@
 
 ### Step 3: Engine Event Consumption + Notifications
 **Status:** 🟨 In Progress
-- [ ] Tail events JSONL
-- [ ] Proactive notifications for significant events
-- [ ] Notification frequency adapts to autonomy level
+- [ ] Implement event tailer with batch-scoped cursor (R005-1: tracks lastProcessedOffset, filters to active batchId, skips stale/foreign events)
+- [ ] Tie event tailer lifecycle to supervisor activation/deactivation/yield with idempotent start/stop (R005-2: single tailer, no duplicates across /orch, /orch-resume, takeover, /orch-takeover paths)
+- [ ] Implement proactive notification formatting for significant events (wave_start, merge_success, merge_failed, tier0_escalation, batch_complete, batch_paused) with coalesced task_complete digests
+- [ ] Adapt notification frequency and verbosity by autonomy level (interactive=more, autonomous=less)
 
 ---
 
@@ -93,6 +94,7 @@
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
+| R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -144,6 +146,10 @@
 | 2026-03-22 21:47 | Worker iter 4 | done in 115s, ctx: 19%, tools: 22 |
 | 2026-03-22 21:47 | Step 2 complete | Lockfile + Session Takeover |
 | 2026-03-22 21:47 | Step 3 started | Engine Event Consumption + Notifications |
+| 2026-03-22 21:49 | Worker iter 3 | done in 440s, ctx: 25%, tools: 50 |
+| 2026-03-22 21:49 | Step 2 complete | Lockfile + Session Takeover |
+| 2026-03-22 21:49 | Step 3 started | Engine Event Consumption + Notifications |
+| 2026-03-22 21:50 | Review R005 | plan Step 3: REVISE |
 
 ## Blockers
 
