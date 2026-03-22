@@ -1,21 +1,21 @@
 # TP-037: Resume Bug Fixes & State Coherence — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-21
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-03-22
 **Review Level:** 1
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read reconcileTaskStates() logic
-- [ ] Read computeResumePoint() logic
-- [ ] Read engine wave advancement
-- [ ] Identify code paths for both bugs
+**Status:** 🟨 In Progress
+- [x] Read reconcileTaskStates() logic
+- [x] Read computeResumePoint() logic
+- [x] Read engine wave advancement
+- [x] Identify code paths for both bugs
 
 ---
 
@@ -64,6 +64,12 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-21 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-22 04:23 | Task started | Extension-driven execution |
+| 2026-03-22 04:23 | Step 0 started | Preflight |
+| 2026-03-22 04:23 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 04:23 | Task started | Extension-driven execution |
+| 2026-03-22 04:23 | Step 0 started | Preflight |
+| 2026-03-22 04:23 | Skip plan review | Step 0 (Preflight) — low-risk |
 
 ## Blockers
 
