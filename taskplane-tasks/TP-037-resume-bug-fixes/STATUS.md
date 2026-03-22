@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** S
 
@@ -21,9 +21,10 @@
 
 ### Step 1: Fix Resume Merge Skip (Bug #102)
 **Status:** 🟨 In Progress
-- [ ] Verify mergeResults before skipping completed wave
-- [ ] Flag wave for merge retry when merge missing/failed
-- [ ] Add state coherence validation
+- [ ] Add `mergeRetryWaveIndexes` field to `ResumePoint` type in types.ts
+- [ ] Update `computeResumePoint()` to check per-wave merge status before skipping; build `mergeRetryWaveIndexes` array and add helper `getMergeStatusForWave()`
+- [ ] Update `resumeOrchBatch()` wave loop to detect merge-retry waves and run merge-only (no task execution)
+- [ ] Verify tests pass with `npx vitest run`
 
 ---
 
@@ -52,6 +53,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -73,6 +76,11 @@
 | 2026-03-22 04:24 | Worker iter 2 | done in 80s, ctx: 30%, tools: 16 |
 | 2026-03-22 04:24 | Step 0 complete | Preflight |
 | 2026-03-22 04:24 | Step 1 started | Fix Resume Merge Skip (Bug #102) |
+| 2026-03-22 04:24 | Worker iter 1 | done in 92s, ctx: 30%, tools: 19 |
+| 2026-03-22 04:24 | Step 0 complete | Preflight |
+| 2026-03-22 04:24 | Step 1 started | Fix Resume Merge Skip (Bug #102) |
+| 2026-03-22 04:27 | Review R001 | plan Step 1: REVISE |
+| 2026-03-22 04:27 | Review R001 | plan Step 1: REVISE |
 
 ## Blockers
 
