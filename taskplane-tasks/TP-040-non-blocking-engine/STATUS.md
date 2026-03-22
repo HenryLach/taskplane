@@ -4,7 +4,7 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 4
 **Size:** L
 
@@ -44,12 +44,14 @@
 ---
 
 ### Step 3: Preserve Existing Behavior
-**Status:** ✅ Complete
+**Status:** 🔄 In Progress
 - [x] R005-1: Fix pre-launch race window — set orchBatchState.phase to "launching" synchronously before setTimeout detach so /orch-status, /orch-pause, /orch-abort recognize the batch immediately
 - [x] R005-2: Make /orch-status fall back to disk-persisted batch-state.json when in-memory state is idle (covers fresh-session queries and post-crash recovery)
 - [x] Verify /orch all still works end-to-end (handler returns immediately, engine runs in background)
 - [x] Verify /orch-pause, /orch-resume, /orch-abort work with launching phase
 - [x] Existing tests pass
+- [ ] R006-1: Fix /orch-status disk fallback to resolve state root from workspaceRoot first, matching engine/resume persistence paths
+- [ ] R006-2: Verify all existing tests still pass after fix
 
 ---
 
@@ -83,6 +85,8 @@
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
+| R006 | code | Step 3 | REVISE | .reviews/R006-code-step3.md |
+| R006 | code | Step 3 | REVISE | .reviews/R006-code-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -139,6 +143,10 @@
 | 2026-03-22 19:59 | Step 3 started | Preserve Existing Behavior |
 | 2026-03-22 20:01 | Review R005 | plan Step 3: REVISE |
 | 2026-03-22 20:05 | Step 3 impl | R005-1 verified (already done), R005-2 /orch-status disk fallback added, all 1815 tests pass |
+| 2026-03-22 20:05 | Worker iter 4 | done in 254s, ctx: 24%, tools: 32 |
+| 2026-03-22 20:07 | Worker iter 5 | done in 489s, ctx: 27%, tools: 79 |
+| 2026-03-22 20:10 | Review R006 | code Step 3: REVISE |
+| 2026-03-22 20:11 | Review R006 | code Step 3: REVISE |
 
 ## Blockers
 

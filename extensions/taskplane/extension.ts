@@ -1053,7 +1053,7 @@ export default function (pi: ExtensionAPI) {
 			// restarted while a batch was running in tmux lanes) and
 			// post-crash recovery where in-memory state was lost.
 			if (orchBatchState.phase === "idle") {
-				const stateRoot = execCtx?.repoRoot ?? ctx.cwd;
+				const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
 				let diskState: PersistedBatchState | null = null;
 				try {
 					diskState = loadBatchState(stateRoot);
