@@ -4,7 +4,7 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** L
 
@@ -21,10 +21,11 @@
 
 ### Step 1: Supervisor System Prompt + Activation
 **Status:** 🟨 In Progress
-- [ ] Create supervisor.ts module
-- [ ] Design system prompt with identity, context, capabilities
-- [ ] Inject prompt after engine starts
-- [ ] Model inheritance + config override
+- [ ] Create supervisor.ts with system prompt builder and activation function
+- [ ] Add `before_agent_start` handler for persistent system prompt injection (guarded: only while batch is active)
+- [ ] Inject activation message via `sendMessage()` after `startBatchAsync()` in /orch handler
+- [ ] Add supervisor.model to config schema + user preferences + config loader
+- [ ] Export supervisor module from index.ts
 
 ---
 
@@ -77,6 +78,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -103,6 +106,12 @@
 | 2026-03-22 20:45 | Skip code review | Step 0 (Preflight) — low-risk |
 | 2026-03-22 20:45 | Step 0 complete | Preflight |
 | 2026-03-22 20:45 | Step 1 started | Supervisor System Prompt + Activation |
+| 2026-03-22 20:46 | Worker iter 1 | done in 123s, ctx: 35%, tools: 23 |
+| 2026-03-22 20:46 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 20:46 | Step 0 complete | Preflight |
+| 2026-03-22 20:46 | Step 1 started | Supervisor System Prompt + Activation |
+| 2026-03-22 20:48 | Review R001 | plan Step 1: REVISE |
+| 2026-03-22 20:48 | Review R001 | plan Step 1: APPROVE |
 
 ## Blockers
 
