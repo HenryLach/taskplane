@@ -124,6 +124,29 @@ Settings for the orchestrator's monitoring loop.
 
 ---
 
+## Supervisor
+
+Settings for the supervisor agent that monitors batches and handles failures.
+
+The supervisor activates automatically when `/orch` starts a batch. It shares the operator's pi session, monitoring engine events and providing proactive status updates.
+
+| Setting | Type | Default | Options | Description |
+|---------|------|---------|---------|-------------|
+| **Supervisor Model** | string | *(inherit)* | Any model ID | Model for the supervisor agent. Empty = inherits the active session's model. Set explicitly if you want a different model for supervision (e.g., a model with stronger reasoning for failure recovery). *(L1+L2)* |
+| **Autonomy Level** | enum | `supervised` | `interactive`, `supervised`, `autonomous` | Controls how much the supervisor does automatically vs. asking the operator. `interactive` = ask before any recovery action. `supervised` = known recovery patterns auto, novel recovery asks. `autonomous` = handle everything, pause only when stuck. |
+
+### Autonomy level details
+
+| Classification | Interactive | Supervised | Autonomous |
+|----------------|-------------|------------|------------|
+| **Diagnostic** (reading state, running tests) | ✅ Auto | ✅ Auto | ✅ Auto |
+| **Tier 0 Known** (session restart, worktree cleanup, merge retry) | ❓ Ask | ✅ Auto | ✅ Auto |
+| **Destructive** (state edits, git operations, session kills) | ❓ Ask | ❓ Ask | ✅ Auto |
+
+In all modes, the supervisor logs every recovery action to `.pi/supervisor/actions.jsonl` for audit trail purposes.
+
+---
+
 ## Worker
 
 Settings that control how `/task` spawns and manages worker agents.

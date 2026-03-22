@@ -1,11 +1,11 @@
 # TP-041: Supervisor Agent — Status
 
-**Current Step:** Step 5: Testing & Verification
+**Current Step:** Step 6: Documentation & Delivery
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 9
-**Iteration:** 6
+**Review Counter:** 10
+**Iteration:** 8
 **Size:** L
 
 ---
@@ -67,7 +67,7 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 - [x] Prompt injection test
 - [x] Lockfile tests
 - [x] Heartbeat test
@@ -75,13 +75,16 @@
 - [x] Event notification tests
 - [x] Audit trail test
 - [x] Full test suite passes
+- [ ] R010-1: Replace test 3.9 source-string assertion with behavioral heartbeat test (vi.useFakeTimers + advanceTimersByTime + assert lockfile heartbeat changes)
+- [ ] R010-2: Fix require("fs") pattern violation in test (line ~154)
+- [ ] R010-3: Full test suite still passes after changes
 
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Commands reference updated
-- [ ] Primer updated if needed
+**Status:** 🟨 In Progress
+- [x] Commands reference updated
+- [x] Primer updated if needed
 - [ ] `.DONE` created
 
 ---
@@ -108,6 +111,8 @@
 | R008 | code | Step 4 | APPROVE | .reviews/R008-code-step4.md |
 | R009 | plan | Step 5 | APPROVE | .reviews/R009-plan-step5.md |
 | R009 | plan | Step 5 | APPROVE | .reviews/R009-plan-step5.md |
+| R010 | code | Step 5 | APPROVE | .reviews/R010-code-step5.md |
+| R010 | code | Step 5 | REVISE | .reviews/R010-code-step5.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -187,6 +192,12 @@
 | 2026-03-22 22:19 | Review R009 | plan Step 5: APPROVE |
 | 2026-03-22 22:20 | Review R009 | plan Step 5: APPROVE |
 | 2026-03-22 22:27 | Worker iter 6 | done in 442s, ctx: 35%, tools: 42 |
+| 2026-03-22 22:27 | Worker iter 7 | done in 485s, ctx: 36%, tools: 37 |
+| 2026-03-22 22:31 | Review R010 | code Step 5: APPROVE |
+| 2026-03-22 22:31 | Step 5 complete | Testing & Verification |
+| 2026-03-22 22:31 | Step 6 started | Documentation & Delivery |
+| 2026-03-22 22:31 | Skip plan review | Step 6 (final step) — low-risk |
+| 2026-03-22 22:33 | Review R010 | code Step 5: REVISE |
 
 ## Blockers
 

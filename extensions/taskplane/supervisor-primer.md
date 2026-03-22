@@ -171,6 +171,31 @@ The JSON config takes precedence over YAML when both exist.
 **Workspace config:** `.pi/taskplane-workspace.yaml` in config repo  
 **Config:** `.pi/taskplane-config.json` in config repo
 
+### Supervisor Session Files
+
+**Lockfile:** `.pi/supervisor/lock.json`
+
+Enforces one-supervisor-per-project. Contains pid, sessionId, batchId,
+startedAt, and heartbeat (updated every 30 seconds). When you activate,
+a lockfile is written. When you deactivate (batch completes, fails, is
+stopped, or aborted), it's removed.
+
+If the lockfile's heartbeat is stale (>90 seconds) or its PID is dead,
+another session can take over. Live locks require force takeover via
+`/orch-takeover`, which overwrites the lockfile — your heartbeat timer
+detects the sessionId mismatch and yields gracefully.
+
+**Events:** `.pi/supervisor/events.jsonl`
+
+Engine lifecycle events (wave_start, task_complete, merge_success, etc.)
+are written here as JSONL. You tail this file for proactive monitoring.
+
+**Audit trail:** `.pi/supervisor/actions.jsonl`
+
+Every recovery action you take is logged here as JSONL. Destructive actions
+must be logged *before* execution (with result="pending"), then again after
+(with actual result). This file is read during takeover rehydration.
+
 ---
 
 ## 5. Wave Lifecycle (What Happens When)

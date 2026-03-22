@@ -8,12 +8,12 @@ You have full tool access — use `read` to examine files and `bash` to run comm
 - **Task PROMPT:** C:\dev\taskplane\.worktrees\henrylach-20260322T002306\lane-1\taskplane-tasks\TP-041-supervisor-agent\PROMPT.md
 - **Task STATUS:** C:\dev\taskplane\.worktrees\henrylach-20260322T002306\lane-1\taskplane-tasks\TP-041-supervisor-agent\STATUS.md
 - **Step reviewed:** Step 5: Testing & Verification
-- **Step baseline commit:** f6af4fa
+- **Step baseline commit:** d1abc56
 
 ## Instructions
 
-1. Run `git diff f6af4fa..HEAD --name-only` to see files changed in this step
-   Then `git diff f6af4fa..HEAD` for the full diff
+1. Run `git diff d1abc56..HEAD --name-only` to see files changed in this step
+   Then `git diff d1abc56..HEAD` for the full diff
    **Important:** The worker commits code via checkpoints, so plain `git diff` may show nothing.
    Always use the baseline commit range above to see all step changes.
 2. Read changed files in full for context
