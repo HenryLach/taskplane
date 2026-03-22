@@ -1,6 +1,6 @@
 # TP-041: Supervisor Agent — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Supervisor System Prompt + Activation
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-22
 **Review Level:** 2
@@ -20,7 +20,7 @@
 ---
 
 ### Step 1: Supervisor System Prompt + Activation
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Create supervisor.ts module
 - [ ] Design system prompt with identity, context, capabilities
 - [ ] Inject prompt after engine starts
@@ -99,6 +99,10 @@
 | 2026-03-22 20:44 | Step 0 started | Preflight |
 | 2026-03-22 20:44 | Skip plan review | Step 0 (Preflight) — low-risk |
 | 2026-03-22 | Step 0 complete | Read primer, extension.ts, spec sections 4.2-4.5/6.1-6.4, pi sendMessage API |
+| 2026-03-22 20:45 | Worker iter 2 | done in 111s, ctx: 32%, tools: 20 |
+| 2026-03-22 20:45 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 20:45 | Step 0 complete | Preflight |
+| 2026-03-22 20:45 | Step 1 started | Supervisor System Prompt + Activation |
 
 ## Blockers
 
@@ -106,4 +110,11 @@
 
 ## Notes
 
-*Reserved for execution notes*
+### Preflight Key Findings
+- **Supervisor activation**: After `startBatchAsync()` in `/orch` handler, inject supervisor prompt via `pi.sendMessage()` with `triggerTurn: true` to activate the supervisor conversation
+- **System prompt persistence**: Use `pi.on("before_agent_start")` to inject/augment system prompt on every turn, so the supervisor identity persists across the conversation
+- **Event consumption**: Supervisor reads `.pi/supervisor/events.jsonl` (engine writes events there). Use `pi.sendMessage()` with `triggerTurn: true` to inject event notifications that trigger supervisor response
+- **Autonomy config**: Add `supervisor.autonomy` to types.ts — `"interactive" | "supervised" | "autonomous"`
+- **Lockfile path**: `.pi/supervisor/lock.json` with pid, sessionId, batchId, heartbeat fields
+- **Audit trail**: `.pi/supervisor/actions.jsonl` — structured JSONL with timestamp, action, context, result
+- **Non-blocking engine**: Already implemented in TP-040 via `startBatchAsync()`. The `/orch` command handler returns immediately.
