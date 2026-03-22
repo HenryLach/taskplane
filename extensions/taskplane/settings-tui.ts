@@ -2,7 +2,7 @@
  * Settings TUI — interactive configuration viewer and editor.
  *
  * Provides a `/taskplane-settings` command that renders a two-level navigation:
- *   1. Section selector (12 sections)
+ *   1. Section selector (13 sections)
  *   2. Per-section SettingsList with field display, source badges,
  *      and inline editing for enum/boolean/string/number fields
  *
@@ -87,7 +87,7 @@ export interface SectionDef {
 // ── Section & Field Definitions ──────────────────────────────────────
 
 /**
- * Canonical navigation map — 12 sections.
+ * Canonical navigation map — 13 sections.
  * Order matches the Step 1 design in STATUS.md.
  */
 export const SECTIONS: SectionDef[] = [

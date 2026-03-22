@@ -716,6 +716,7 @@ export function startBatchAsync(
 	batchState: import("./types.ts").OrchBatchRuntimeState,
 	ctx: ExtensionContext,
 	updateWidget: () => void,
+	onTerminal?: () => void,
 ): void {
 	// Detach engine start to the next tick so the command handler returns
 	// immediately. Without this, the synchronous planning/discovery phase
@@ -725,6 +726,8 @@ export function startBatchAsync(
 			.then(() => {
 				// Engine completed normally — final widget update
 				updateWidget();
+				// TP-041 R002-3: Deactivate supervisor on all terminal paths
+				onTerminal?.();
 			})
 			.catch((err: unknown) => {
 				// Unhandled engine rejection — surface to operator and update state
@@ -740,6 +743,8 @@ export function startBatchAsync(
 					"error",
 				);
 				updateWidget();
+				// TP-041 R002-3: Deactivate supervisor on all terminal paths
+				onTerminal?.();
 			});
 	}, 0);
 }
@@ -950,13 +955,19 @@ export default function (pi: ExtensionAPI) {
 				orchBatchState,
 				ctx,
 				updateOrchWidget,
+				// TP-041: Deactivate supervisor on all terminal paths
+				// (completed, failed, stopped, crashed). Idempotent — safe
+				// to call even if supervisor was never activated.
+				() => { deactivateSupervisor(pi, supervisorState); },
 			);
 
 			// ── TP-041: Activate supervisor agent ────────────────────
 			// After the engine is launched (non-blocking), activate the
-			// supervisor in this pi session. The supervisor's system prompt
-			// is injected on every turn via before_agent_start while active.
-			// supervisorConfig is loaded at session_start from unified config.
+			// supervisor in this pi session. The system prompt is rebuilt
+			// dynamically on each LLM turn from the live batchState ref,
+			// ensuring batch metadata (batchId, wave/task counts) is always
+			// current even though the engine populates it asynchronously.
+			// Model override is resolved inside activateSupervisor via ctx.
 			activateSupervisor(
 				pi,
 				supervisorState,
@@ -964,6 +975,7 @@ export default function (pi: ExtensionAPI) {
 				orchConfig,
 				supervisorConfig,
 				repoRoot,
+				ctx,
 			);
 		},
 	});
@@ -1210,6 +1222,8 @@ export default function (pi: ExtensionAPI) {
 				orchBatchState,
 				ctx,
 				updateOrchWidget,
+				// TP-041: Deactivate supervisor on all terminal paths
+				() => { deactivateSupervisor(pi, supervisorState); },
 			);
 
 			// ── TP-041: Activate supervisor agent on resume ──────────
@@ -1221,6 +1235,7 @@ export default function (pi: ExtensionAPI) {
 				orchConfig,
 				supervisorConfig,
 				execCtx!.repoRoot,
+				ctx,
 			);
 		},
 	});
@@ -1338,7 +1353,7 @@ export default function (pi: ExtensionAPI) {
 
 				// ── Step 6: Clean up batch state ────────────────────────
 				// TP-041: Deactivate supervisor on abort
-				deactivateSupervisor(supervisorState);
+				deactivateSupervisor(pi, supervisorState);
 
 				try {
 					orchBatchState.phase = "stopped";

@@ -20,16 +20,16 @@
 ---
 
 ### Step 1: Supervisor System Prompt + Activation
-**Status:** 🔄 In Progress (R002 revisions)
+**Status:** ✅ Complete
 - [x] Create supervisor.ts with system prompt builder and activation function
 - [x] Add `before_agent_start` handler for persistent system prompt injection (guarded: only while batch is active)
 - [x] Inject activation message via `sendMessage()` after `startBatchAsync()` in /orch handler
 - [x] Add supervisor.model to config schema + user preferences + config loader
 - [x] Export supervisor module from index.ts
-- [ ] R002-1: Fix activation timing — defer activateSupervisor until batch metadata is initialized (batchId, tasks, waves populated)
-- [ ] R002-2: Apply supervisor.model at runtime — use pi.setModel() on activation when configured, restore on deactivation
-- [ ] R002-3: Add deactivation on all terminal paths (completed, failed, stopped) — not just abort
-- [ ] R002-4: Fix settings-tui.ts "12 sections" comment → "13 sections"
+- [x] R002-1: Fix activation timing — defer activateSupervisor until batch metadata is initialized (batchId, tasks, waves populated)
+- [x] R002-2: Apply supervisor.model at runtime — use pi.setModel() on activation when configured, restore on deactivation
+- [x] R002-3: Add deactivation on all terminal paths (completed, failed, stopped) — not just abort
+- [x] R002-4: Fix settings-tui.ts "12 sections" comment → "13 sections"
 
 ---
 

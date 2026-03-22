@@ -19,7 +19,8 @@
 
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { Model, Api } from "@mariozechner/pi-ai";
 import type { OrchBatchRuntimeState, OrchestratorConfig } from "./types.ts";
 
 // ── Supervisor Config Types ──────────────────────────────────────────
@@ -61,7 +62,7 @@ export const DEFAULT_SUPERVISOR_CONFIG: SupervisorConfig = {
  * Path to the supervisor primer markdown file, resolved relative to this
  * module's directory (extensions/taskplane/).
  */
-function resolvePriverPath(): string {
+function resolvePrimerPath(): string {
 	try {
 		const thisDir = dirname(fileURLToPath(import.meta.url));
 		return join(thisDir, "supervisor-primer.md");
@@ -81,7 +82,11 @@ function resolvePriverPath(): string {
  * 4. **Standing orders**: Monitor events, handle failures, keep operator informed
  * 5. **Primer reference**: Read supervisor-primer.md for detailed operational knowledge
  *
- * @param batchState - Current batch runtime state
+ * The prompt is rebuilt on every LLM turn from the live batchState reference,
+ * ensuring it always reflects the latest batch metadata (including batchId,
+ * wave counts, and task counts that are populated asynchronously by the engine).
+ *
+ * @param batchState - Current batch runtime state (live reference)
  * @param config - Orchestrator configuration
  * @param supervisorConfig - Supervisor-specific configuration
  * @param stateRoot - Root path for .pi/ state directory
@@ -95,7 +100,7 @@ export function buildSupervisorSystemPrompt(
 	supervisorConfig: SupervisorConfig,
 	stateRoot: string,
 ): string {
-	const primerPath = resolvePriverPath();
+	const primerPath = resolvePrimerPath();
 	const batchStatePath = join(stateRoot, ".pi", "batch-state.json");
 	const eventsPath = join(stateRoot, ".pi", "supervisor", "events.jsonl");
 	const autonomyLabel = supervisorConfig.autonomy;
@@ -118,7 +123,7 @@ at any time. You are a senior engineer on call for this batch.
 
 ## Current Batch Context
 
-- **Batch ID:** ${batchState.batchId}
+- **Batch ID:** ${batchState.batchId || "(initializing — read batch state file)"}
 - **Phase:** ${batchState.phase}
 - **Base branch:** ${batchState.baseBranch}
 - **Orch branch:** ${batchState.orchBranch || "(legacy mode)"}
@@ -210,17 +215,33 @@ Now that you've activated:
  * preventing duplicate activations and enabling guard logic for
  * the before_agent_start hook.
  *
+ * The prompt is rebuilt dynamically each turn from the live batchState
+ * reference, ensuring it always has current metadata (batchId, wave/task
+ * counts are populated asynchronously by the engine after planning).
+ *
  * @since TP-041
  */
 export interface SupervisorState {
 	/** Whether the supervisor is currently active */
 	active: boolean;
-	/** Batch ID the supervisor is monitoring (empty if inactive) */
+	/** Batch ID the supervisor is monitoring (empty if inactive or pre-planning) */
 	batchId: string;
-	/** The system prompt being injected */
-	systemPrompt: string;
 	/** Supervisor configuration */
 	config: SupervisorConfig;
+
+	// ── Live references for dynamic prompt rebuild ──────────────────
+	/** Live reference to the batch state (for dynamic prompt rebuild) */
+	batchStateRef: OrchBatchRuntimeState | null;
+	/** Orchestrator config reference (for dynamic prompt rebuild) */
+	orchConfigRef: OrchestratorConfig | null;
+	/** State root path (for dynamic prompt rebuild) */
+	stateRoot: string;
+
+	// ── Model override tracking ────────────────────────────────────
+	/** Model that was active before supervisor activation (for restoration) */
+	previousModel: Model<Api> | null;
+	/** Whether we switched models on activation (determines if we restore) */
+	didSwitchModel: boolean;
 }
 
 /**
@@ -230,9 +251,41 @@ export function freshSupervisorState(): SupervisorState {
 	return {
 		active: false,
 		batchId: "",
-		systemPrompt: "",
 		config: { ...DEFAULT_SUPERVISOR_CONFIG },
+		batchStateRef: null,
+		orchConfigRef: null,
+		stateRoot: "",
+		previousModel: null,
+		didSwitchModel: false,
 	};
+}
+
+/**
+ * Resolve a model string (e.g., "anthropic/claude-sonnet-4" or "claude-sonnet-4")
+ * to a Model object from the model registry.
+ *
+ * Format: "provider/modelId" or just "modelId" (searches all providers).
+ *
+ * @returns The resolved Model, or undefined if not found
+ * @since TP-041
+ */
+function resolveModelFromString(
+	modelStr: string,
+	ctx: ExtensionContext,
+): Model<Api> | undefined {
+	if (!modelStr) return undefined;
+
+	// Try "provider/id" format first
+	const slashIdx = modelStr.indexOf("/");
+	if (slashIdx > 0) {
+		const provider = modelStr.substring(0, slashIdx);
+		const id = modelStr.substring(slashIdx + 1);
+		return ctx.modelRegistry.find(provider, id);
+	}
+
+	// No provider prefix — search all models for matching id
+	const allModels = ctx.modelRegistry.getAll();
+	return allModels.find((m) => m.id === modelStr);
 }
 
 /**
@@ -240,48 +293,66 @@ export function freshSupervisorState(): SupervisorState {
  *
  * This is called after `startBatchAsync()` in the `/orch` command handler.
  * It:
- * 1. Builds the supervisor system prompt with batch context
- * 2. Stores the prompt in supervisor state (for before_agent_start injection)
+ * 1. Stores live references to batchState/config for dynamic prompt rebuild
+ * 2. Optionally switches model via pi.setModel() if supervisor.model is configured
  * 3. Sends an activation message via pi.sendMessage() with triggerTurn=true
  *    to kick off the supervisor's first turn
  *
- * The supervisor model can be configured via `supervisor.model` in settings.
- * If empty, the session's current model is used (inheritance).
+ * The system prompt is NOT cached at activation time — it is rebuilt dynamically
+ * on every LLM turn by the before_agent_start hook. This ensures the prompt
+ * always has current batch metadata, even though batchId/wave/task counts are
+ * populated asynchronously by the engine after planning.
  *
  * @param pi - The ExtensionAPI instance
  * @param state - Mutable supervisor state to populate
- * @param batchState - Current batch runtime state
+ * @param batchState - Current batch runtime state (live reference)
  * @param orchConfig - Orchestrator configuration
  * @param supervisorConfig - Supervisor-specific configuration
  * @param stateRoot - Root path for .pi/ state directory
+ * @param ctx - Extension context (for model resolution)
  *
  * @since TP-041
  */
-export function activateSupervisor(
+export async function activateSupervisor(
 	pi: ExtensionAPI,
 	state: SupervisorState,
 	batchState: OrchBatchRuntimeState,
 	orchConfig: OrchestratorConfig,
 	supervisorConfig: SupervisorConfig,
 	stateRoot: string,
-): void {
-	// Build the system prompt
-	const systemPrompt = buildSupervisorSystemPrompt(
-		batchState,
-		orchConfig,
-		supervisorConfig,
-		stateRoot,
-	);
-
-	// Update supervisor state
+	ctx: ExtensionContext,
+): Promise<void> {
+	// Store live references for dynamic prompt rebuild
 	state.active = true;
-	state.batchId = batchState.batchId;
-	state.systemPrompt = systemPrompt;
+	state.batchId = batchState.batchId; // May be empty pre-planning — that's OK
 	state.config = { ...supervisorConfig };
+	state.batchStateRef = batchState;
+	state.orchConfigRef = orchConfig;
+	state.stateRoot = stateRoot;
+
+	// ── Model override ───────────────────────────────────────────────
+	// If supervisor.model is configured, switch to it. Store the previous
+	// model for restoration on deactivation.
+	state.previousModel = ctx.model ?? null;
+	state.didSwitchModel = false;
+
+	if (supervisorConfig.model) {
+		const targetModel = resolveModelFromString(supervisorConfig.model, ctx);
+		if (targetModel) {
+			const success = await pi.setModel(targetModel);
+			if (success) {
+				state.didSwitchModel = true;
+			}
+			// If setModel fails (no API key), fall through to session model
+		}
+		// If model not found in registry, fall through to session model (inheritance)
+	}
 
 	// Send activation message to trigger the supervisor's first turn.
-	// The content tells the LLM what just happened; the system prompt
-	// (injected via before_agent_start) provides the full identity/context.
+	// The content is generic — specific counts may not be available yet
+	// since the engine sets batchId/totalWaves/totalTasks asynchronously.
+	// The supervisor's first action (per standing orders) is to read the
+	// batch state file for full metadata.
 	pi.sendMessage(
 		{
 			customType: "supervisor-activation",
@@ -289,13 +360,12 @@ export function activateSupervisor(
 				{
 					type: "text",
 					text:
-						`🔀 **Batch ${batchState.batchId} started.** ` +
-						`${batchState.totalTasks} tasks across ${batchState.totalWaves} waves. ` +
+						`🔀 **Batch started.** ` +
 						`Supervisor activated (autonomy: ${supervisorConfig.autonomy}).\n\n` +
 						`Read your operational primer and batch state, then report initial status to the operator.`,
 				},
 			],
-			display: "Supervisor activated for batch " + batchState.batchId,
+			display: "Supervisor activated" + (batchState.batchId ? ` for batch ${batchState.batchId}` : ""),
 		},
 		{ triggerTurn: true, deliverAs: "nextTurn" },
 	);
@@ -304,24 +374,49 @@ export function activateSupervisor(
 /**
  * Deactivate the supervisor agent.
  *
- * Called when a batch completes, fails terminally, or is aborted.
+ * Called when a batch completes, fails terminally, is stopped, or is aborted.
  * Clears the supervisor state so the before_agent_start hook stops
- * injecting the supervisor system prompt.
+ * injecting the supervisor system prompt. Restores the previous model
+ * if one was switched on activation.
+ *
+ * Safe to call multiple times (idempotent) — subsequent calls are no-ops.
+ *
+ * @param pi - The ExtensionAPI instance (for model restoration)
+ * @param state - Supervisor state to clear
  *
  * @since TP-041
  */
-export function deactivateSupervisor(state: SupervisorState): void {
+export async function deactivateSupervisor(
+	pi: ExtensionAPI,
+	state: SupervisorState,
+): Promise<void> {
+	if (!state.active) return; // Already inactive — idempotent guard
+
+	// Restore previous model if we switched on activation
+	if (state.didSwitchModel && state.previousModel) {
+		try {
+			await pi.setModel(state.previousModel);
+		} catch {
+			// Non-fatal — model may no longer be available
+		}
+	}
+
 	state.active = false;
 	state.batchId = "";
-	state.systemPrompt = "";
+	state.batchStateRef = null;
+	state.orchConfigRef = null;
+	state.stateRoot = "";
+	state.previousModel = null;
+	state.didSwitchModel = false;
 }
 
 /**
  * Register the before_agent_start hook for persistent system prompt injection.
  *
  * While the supervisor is active, every LLM turn gets the supervisor system
- * prompt injected. This ensures the supervisor identity persists across the
- * entire conversation — even after context compaction or session navigation.
+ * prompt injected. The prompt is rebuilt dynamically from the live batchState
+ * reference, ensuring it always reflects the latest batch metadata (batchId,
+ * wave/task counts populated asynchronously by the engine after planning).
  *
  * When the supervisor is inactive (no batch running), this hook is a no-op
  * and the original system prompt is used unmodified.
@@ -336,15 +431,22 @@ export function registerSupervisorPromptHook(
 	state: SupervisorState,
 ): void {
 	pi.on("before_agent_start", (_event) => {
-		if (!state.active) {
+		if (!state.active || !state.batchStateRef || !state.orchConfigRef) {
 			return undefined; // No-op: don't modify system prompt
 		}
 
-		// Return the supervisor system prompt to replace/augment the default.
-		// Per the pi API, returning { systemPrompt } replaces the system prompt
-		// for this turn. If multiple extensions return this, they are chained.
+		// Rebuild prompt dynamically from live batchState reference.
+		// This ensures the prompt always has current metadata, even though
+		// batchId/totalWaves/totalTasks are populated asynchronously.
+		const systemPrompt = buildSupervisorSystemPrompt(
+			state.batchStateRef,
+			state.orchConfigRef,
+			state.config,
+			state.stateRoot,
+		);
+
 		return {
-			systemPrompt: state.systemPrompt,
+			systemPrompt,
 		};
 	});
 }
