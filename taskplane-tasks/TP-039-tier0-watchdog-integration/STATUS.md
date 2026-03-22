@@ -1,10 +1,10 @@
 # TP-039: Tier 0 Watchdog Engine Integration — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 6
 **Size:** M
 
@@ -57,7 +57,7 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Auto-retry test: worker crash with retryable classification triggers retry via attemptWorkerCrashRetry
 - [x] Exhaustion-pauses test: retry exhaustion pauses batch AND emits both tier0_recovery_exhausted and tier0_escalation with populated EscalationContext (pattern, attempts, maxAttempts, lastError, affectedTasks, suggestion)
 - [x] Per-pattern exhaustion coverage: table-driven test covering worker_crash, stale_worktree, merge_timeout, cleanup_gate exhaustion event emission with correct payloads
@@ -66,11 +66,13 @@
 - [x] Event logging test: events written to .pi/supervisor/events.jsonl with correct schema (timestamp, batchId, waveIndex, laneNumber, repoId, attempt/maxAttempts fields)
 - [x] Happy path unaffected test: no failures → no events logged, no retries, supervisor events file absent
 - [x] Full test suite passes
+- [ ] R008-1: Add behavior-level merge timeout retry test — simulate first MERGE_TIMEOUT → retry success via applyMergeRetryLoop, assert no pause on first timeout and retry_succeeded outcome
+- [ ] R008-2: Full test suite passes after R008 revisions
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] `.DONE` created
 
 ---
@@ -92,6 +94,8 @@
 | R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
 | R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
 | R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
+| R008 | code | Step 4 | REVISE | .reviews/R008-code-step4.md |
+| R008 | code | Step 4 | APPROVE | .reviews/R008-code-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -155,6 +159,12 @@
 | 2026-03-22 19:05 | Review R007 | plan Step 4: REVISE |
 | 2026-03-22 19:05 | Review R007 | plan Step 4: REVISE |
 | 2026-03-22 19:12 | Worker iter 5 | done in 464s, ctx: 41%, tools: 53 |
+| 2026-03-22 19:13 | Worker iter 6 | done in 452s, ctx: 32%, tools: 45 |
+| 2026-03-22 19:16 | Review R008 | code Step 4: REVISE |
+| 2026-03-22 19:17 | Review R008 | code Step 4: APPROVE |
+| 2026-03-22 19:17 | Step 4 complete | Testing & Verification |
+| 2026-03-22 19:17 | Step 5 started | Documentation & Delivery |
+| 2026-03-22 19:17 | Skip plan review | Step 5 (final step) — low-risk |
 
 ## Blockers
 
