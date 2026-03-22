@@ -1244,6 +1244,19 @@ export const MERGE_RESULT_READ_RETRY_DELAY_MS = 1_000;
  */
 export const MERGE_SPAWN_RETRY_MAX = 2;
 
+/**
+ * Maximum retries for merge agent timeout (TP-038).
+ *
+ * When a merge agent times out, the orchestrator retries with 2× the
+ * previous timeout. This allows recovery from transient slowness without
+ * operator intervention.
+ *
+ * Retry 0: original timeout (e.g., 10 min)
+ * Retry 1: 2× original (e.g., 20 min)
+ * Retry 2: 4× original (e.g., 40 min)
+ */
+export const MERGE_TIMEOUT_MAX_RETRIES = 2;
+
 
 // ── Merge Retry Policy Matrix (TP-033 Step 2) ───────────────────────
 
