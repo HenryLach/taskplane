@@ -34,13 +34,13 @@
 ---
 
 ### Step 2: Tier 0 Event Logging
-**Status:** 🟨 In Progress
-- [ ] Define Tier0Event type and `emitTier0Event()` utility in persistence.ts — write to `stateRoot/.pi/supervisor/events.jsonl` with best-effort semantics (mkdir + append, failures logged but don't crash batch)
-- [ ] Instrument worker crash retry (attemptWorkerCrashRetry) with tier0_recovery_attempt / tier0_recovery_success / tier0_recovery_exhausted events
-- [ ] Instrument stale worktree recovery (attemptStaleWorktreeRecovery) with tier0_recovery_attempt / tier0_recovery_success / tier0_recovery_exhausted events
-- [ ] Instrument cleanup gate retry (inline in engine wave loop) with tier0_recovery_attempt / tier0_recovery_success / tier0_recovery_exhausted events
-- [ ] Instrument merge retry loop (applyMergeRetryLoop integration point in engine.ts) with tier0 events — emit attempt/success/exhausted at the engine caller site
-- [ ] Include full context in each event: timestamp, batchId, waveIndex, laneNumber, pattern, attempt, classification/error, and escalation-ready fields in exhausted events
+**Status:** ✅ Complete
+- [x] Define Tier0Event type and `emitTier0Event()` utility in persistence.ts — write to `stateRoot/.pi/supervisor/events.jsonl` with best-effort semantics (mkdir + append, failures logged but don't crash batch)
+- [x] Instrument worker crash retry (attemptWorkerCrashRetry) with tier0_recovery_attempt / tier0_recovery_success / tier0_recovery_exhausted events
+- [x] Instrument stale worktree recovery (attemptStaleWorktreeRecovery) with tier0_recovery_attempt / tier0_recovery_success / tier0_recovery_exhausted events
+- [x] Instrument cleanup gate retry (inline in engine wave loop) with tier0_recovery_attempt / tier0_recovery_success / tier0_recovery_exhausted events
+- [x] Instrument merge retry loop (applyMergeRetryLoop integration point in engine.ts) with tier0 events — emit attempt/success/exhausted at the engine caller site
+- [x] Include full context in each event: timestamp, batchId, waveIndex, laneNumber, pattern, attempt, classification/error, and escalation-ready fields in exhausted events
 
 ---
 

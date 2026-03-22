@@ -2,14 +2,14 @@
  * State persistence, serialization, orphan detection
  * @module orch/persistence
  */
-import { readFileSync, writeFileSync, existsSync, unlinkSync, renameSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, unlinkSync, renameSync, mkdirSync, appendFileSync } from "fs";
 import { execSync } from "child_process";
 import { join, dirname, basename } from "path";
 
 import { execLog } from "./execution.ts";
 import { BATCH_STATE_SCHEMA_VERSION, StateFileError, batchStatePath, BATCH_HISTORY_MAX_ENTRIES, defaultResilienceState, defaultBatchDiagnostics } from "./types.ts";
 import type { BatchHistorySummary } from "./types.ts";
-import type { AllocatedLane, DiscoveryResult, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedTaskRecord, TaskMonitorSnapshot, WorkspaceMode } from "./types.ts";
+import type { AllocatedLane, DiscoveryResult, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedTaskRecord, TaskMonitorSnapshot, Tier0RecoveryPattern, WorkspaceMode } from "./types.ts";
 import { sleepSync } from "./worktree.ts";
 import type { PreserveFailedLaneProgressResult } from "./worktree.ts";
 
@@ -1617,6 +1617,94 @@ export function saveBatchHistory(repoRoot: string, summary: BatchHistorySummary)
 		execLog("batch", "history", `saved batch summary (${history.length} entries)`);
 	} catch (err) {
 		execLog("batch", "history", `failed to save batch history: ${err}`);
+	}
+}
+
+
+// ── Tier 0 Supervisor Event Logging (TP-039 Step 2) ─────────────────
+
+/**
+ * Event types emitted by Tier 0 recovery actions.
+ *
+ * - `tier0_recovery_attempt` — A recovery action is being tried
+ * - `tier0_recovery_success` — Recovery succeeded
+ * - `tier0_recovery_exhausted` — Retry budget exhausted, escalation needed
+ *
+ * @since TP-039
+ */
+export type Tier0EventType =
+	| "tier0_recovery_attempt"
+	| "tier0_recovery_success"
+	| "tier0_recovery_exhausted";
+
+/**
+ * Structured event written to `.pi/supervisor/events.jsonl`.
+ *
+ * Each event contains enough context for the supervisor agent (Tier 1)
+ * to understand what happened and decide next actions.
+ *
+ * @since TP-039
+ */
+export interface Tier0Event {
+	/** ISO 8601 timestamp */
+	timestamp: string;
+	/** Event type */
+	type: Tier0EventType;
+	/** Batch identifier */
+	batchId: string;
+	/** Wave index (0-based) */
+	waveIndex: number;
+	/** Recovery pattern being applied */
+	pattern: Tier0RecoveryPattern | "merge_timeout";
+	/** Current attempt number (1-based) */
+	attempt: number;
+	/** Maximum attempts allowed */
+	maxAttempts: number;
+	/** Affected task ID (for task-scoped patterns like worker_crash) */
+	taskId?: string;
+	/** Lane number (for lane-scoped patterns) */
+	laneNumber?: number;
+	/** Exit classification or error type */
+	classification?: string;
+	/** Error message (for exhausted events) */
+	error?: string;
+	/** Resolution description (for success events) */
+	resolution?: string;
+	/** Scope key used for retry counter tracking */
+	scopeKey?: string;
+	/** Affected task IDs (for escalation context in exhausted events) */
+	affectedTaskIds?: string[];
+	/** Suggested remediation (for exhausted events) */
+	suggestion?: string;
+}
+
+/**
+ * Emit a Tier 0 event to `.pi/supervisor/events.jsonl`.
+ *
+ * Best-effort: creates the directory if needed, appends the event as a
+ * single JSONL line. Failures are logged but never crash the batch.
+ *
+ * @param stateRoot - Root directory for state files (workspace root or repo root)
+ * @param event     - The event to emit
+ *
+ * @since TP-039
+ */
+export function emitTier0Event(stateRoot: string, event: Tier0Event): void {
+	try {
+		const supervisorDir = join(stateRoot, ".pi", "supervisor");
+		if (!existsSync(supervisorDir)) {
+			mkdirSync(supervisorDir, { recursive: true });
+		}
+		const eventsPath = join(supervisorDir, "events.jsonl");
+		const line = JSON.stringify(event) + "\n";
+		appendFileSync(eventsPath, line);
+	} catch (err: unknown) {
+		// Best-effort: log but don't crash the batch
+		const msg = err instanceof Error ? err.message : String(err);
+		execLog("batch", event.batchId, `tier0 event write failed: ${msg}`, {
+			eventType: event.type,
+			pattern: event.pattern,
+		});
 	}
 }
 

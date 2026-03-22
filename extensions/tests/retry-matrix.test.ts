@@ -612,7 +612,9 @@ describe("7.x — Exhaustion forces paused", () => {
 		const exhaustedIdx = engineSource.indexOf('retryOutcome.kind === "exhausted"');
 		expect(exhaustedIdx).toBeGreaterThan(-1);
 
-		const afterExhausted = engineSource.substring(exhaustedIdx, exhaustedIdx + 1200);
+		// TP-039: Window increased from 1200 to 2400 to accommodate Tier 0 event
+		// emission block inserted before phase assignment in the exhausted branch.
+		const afterExhausted = engineSource.substring(exhaustedIdx, exhaustedIdx + 2400);
 		expect(afterExhausted).toContain('batchState.phase = "paused"');
 		expect(afterExhausted).toContain("merge-retry-exhausted");
 		expect(afterExhausted).toContain("preserveWorktreesForResume = true");
