@@ -1664,18 +1664,49 @@ export interface Tier0Event {
 	taskId?: string;
 	/** Lane number (for lane-scoped patterns) */
 	laneNumber?: number;
+	/** Repo ID (for workspace-mode attribution; null/undefined for repo-mode) */
+	repoId?: string | null;
 	/** Exit classification or error type */
 	classification?: string;
 	/** Error message (for exhausted events) */
 	error?: string;
 	/** Resolution description (for success events) */
 	resolution?: string;
+	/** Cooldown/timeout in milliseconds before retry (for attempt events) */
+	cooldownMs?: number;
 	/** Scope key used for retry counter tracking */
 	scopeKey?: string;
 	/** Affected task IDs (for escalation context in exhausted events) */
 	affectedTaskIds?: string[];
 	/** Suggested remediation (for exhausted events) */
 	suggestion?: string;
+}
+
+/**
+ * Build the required base fields for a Tier 0 event.
+ *
+ * Ensures consistent field population across all emit sites so
+ * supervisor consumers get a deterministic event shape.
+ *
+ * @since TP-039 R004
+ */
+export function buildTier0EventBase(
+	type: Tier0EventType,
+	batchId: string,
+	waveIndex: number,
+	pattern: Tier0RecoveryPattern | "merge_timeout",
+	attempt: number,
+	maxAttempts: number,
+): Pick<Tier0Event, "timestamp" | "type" | "batchId" | "waveIndex" | "pattern" | "attempt" | "maxAttempts"> {
+	return {
+		timestamp: new Date().toISOString(),
+		type,
+		batchId,
+		waveIndex,
+		pattern,
+		attempt,
+		maxAttempts,
+	};
 }
 
 /**

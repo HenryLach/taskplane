@@ -1510,11 +1510,23 @@ export type MergeRetryLoopOutcome =
 		/** Retry succeeded — caller should continue normal post-merge flow */
 		kind: "retry_succeeded";
 		mergeResult: MergeWaveResult;
+		/** Classification of the failure that was retried */
+		classification: MergeFailureClassification | null;
+		/** Scope key used for retry counter tracking */
+		scopeKey: string;
+		/** Last retry decision (carries attempt/maxAttempts for event emission) */
+		lastDecision: MergeRetryDecision;
 	}
 	| {
 		/** Safe-stop triggered during retry — caller should break the wave loop */
 		kind: "safe_stop";
 		mergeResult: MergeWaveResult;
+		/** Classification of the failure that was retried */
+		classification: MergeFailureClassification | null;
+		/** Scope key used for retry counter tracking */
+		scopeKey: string;
+		/** Last retry decision (carries attempt/maxAttempts for event emission) */
+		lastDecision: MergeRetryDecision;
 		errorMessage: string;
 		notifyMessage: string;
 	}
@@ -1559,6 +1571,13 @@ export interface MergeRetryCallbacks {
 	updateMergeResult: (result: MergeWaveResult) => void;
 	/** Sleep for cooldown (allows test injection) */
 	sleep: (ms: number) => void;
+	/**
+	 * Optional callback fired when a retry attempt is about to be executed.
+	 * Provides the retry decision with classification, attempt count, and cooldown
+	 * so callers can emit structured Tier 0 events at the right time.
+	 * @since TP-039 R004
+	 */
+	onRetryAttempt?: (decision: MergeRetryDecision) => void;
 }
 
 // ── View-Model Types ─────────────────────────────────────────────────

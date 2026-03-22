@@ -12,11 +12,11 @@ import type { MonitorUpdateCallback } from "./execution.ts";
 // from the diagnostic-reports pipeline (populated by assembleDiagnosticInput).
 import { getCurrentBranch, runGit } from "./git.ts";
 import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
-import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { applyPartialProgressToOutcomes, deleteBatchState, emitTier0Event, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
+import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitTier0Event, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
 import { defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
@@ -107,15 +107,10 @@ async function attemptWorkerCrashRetry(
 			);
 			// Emit exhausted event
 			emitTier0Event(stateRoot, {
-				timestamp: new Date().toISOString(),
-				type: "tier0_recovery_exhausted",
-				batchId: batchState.batchId,
-				waveIndex: waveIdx,
-				pattern: "worker_crash",
-				attempt: currentCount,
-				maxAttempts: budget.maxRetries,
+				...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "worker_crash", currentCount, budget.maxRetries),
 				taskId,
 				laneNumber: lane.laneNumber,
+				repoId: lane.repoId ?? null,
 				classification,
 				error: `Retry budget exhausted for task ${taskId} (${classification})`,
 				scopeKey,
@@ -140,16 +135,12 @@ async function attemptWorkerCrashRetry(
 
 		// Emit attempt event
 		emitTier0Event(stateRoot, {
-			timestamp: new Date().toISOString(),
-			type: "tier0_recovery_attempt",
-			batchId: batchState.batchId,
-			waveIndex: waveIdx,
-			pattern: "worker_crash",
-			attempt: currentCount + 1,
-			maxAttempts: budget.maxRetries,
+			...buildTier0EventBase("tier0_recovery_attempt", batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries),
 			taskId,
 			laneNumber: lane.laneNumber,
+			repoId: lane.repoId ?? null,
 			classification,
+			cooldownMs: budget.cooldownMs,
 			scopeKey,
 		});
 
@@ -219,15 +210,10 @@ async function attemptWorkerCrashRetry(
 
 				// Emit success event
 				emitTier0Event(stateRoot, {
-					timestamp: new Date().toISOString(),
-					type: "tier0_recovery_success",
-					batchId: batchState.batchId,
-					waveIndex: waveIdx,
-					pattern: "worker_crash",
-					attempt: currentCount + 1,
-					maxAttempts: budget.maxRetries,
+					...buildTier0EventBase("tier0_recovery_success", batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries),
 					taskId,
 					laneNumber: lane.laneNumber,
+					repoId: lane.repoId ?? null,
 					classification,
 					resolution: `Task ${taskId} succeeded on retry attempt ${currentCount + 1}`,
 					scopeKey,
@@ -244,15 +230,10 @@ async function attemptWorkerCrashRetry(
 
 				// Emit exhausted event (retry failed and budget now consumed)
 				emitTier0Event(stateRoot, {
-					timestamp: new Date().toISOString(),
-					type: "tier0_recovery_exhausted",
-					batchId: batchState.batchId,
-					waveIndex: waveIdx,
-					pattern: "worker_crash",
-					attempt: currentCount + 1,
-					maxAttempts: budget.maxRetries,
+					...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries),
 					taskId,
 					laneNumber: lane.laneNumber,
+					repoId: lane.repoId ?? null,
 					classification,
 					error: retryOutcome?.exitReason ?? `Task ${taskId} retry failed again`,
 					scopeKey,
@@ -270,15 +251,10 @@ async function attemptWorkerCrashRetry(
 
 			// Emit exhausted event for exception during retry
 			emitTier0Event(stateRoot, {
-				timestamp: new Date().toISOString(),
-				type: "tier0_recovery_exhausted",
-				batchId: batchState.batchId,
-				waveIndex: waveIdx,
-				pattern: "worker_crash",
-				attempt: currentCount + 1,
-				maxAttempts: budget.maxRetries,
+				...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries),
 				taskId,
 				laneNumber: lane.laneNumber,
+				repoId: lane.repoId ?? null,
 				classification,
 				error: errMsg,
 				scopeKey,
@@ -345,13 +321,8 @@ async function attemptStaleWorktreeRecovery(
 			{ scopeKey },
 		);
 		emitTier0Event(stateRoot, {
-			timestamp: new Date().toISOString(),
-			type: "tier0_recovery_exhausted",
-			batchId: batchState.batchId,
-			waveIndex: waveIdx,
-			pattern: "stale_worktree",
-			attempt: currentCount,
-			maxAttempts: budget.maxRetries,
+			...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "stale_worktree", currentCount, budget.maxRetries),
+			repoId: null, // wave-scoped
 			error: waveResult.allocationError.message,
 			scopeKey,
 			affectedTaskIds: waveTasks,
@@ -369,14 +340,10 @@ async function attemptStaleWorktreeRecovery(
 
 	// Emit attempt event
 	emitTier0Event(stateRoot, {
-		timestamp: new Date().toISOString(),
-		type: "tier0_recovery_attempt",
-		batchId: batchState.batchId,
-		waveIndex: waveIdx,
-		pattern: "stale_worktree",
-		attempt: currentCount + 1,
-		maxAttempts: budget.maxRetries,
+		...buildTier0EventBase("tier0_recovery_attempt", batchState.batchId, waveIdx, "stale_worktree", currentCount + 1, budget.maxRetries),
+		repoId: null, // wave-scoped: allocation failure may span multiple repos
 		classification: waveResult.allocationError.code,
+		cooldownMs: budget.cooldownMs,
 		scopeKey,
 	});
 
@@ -767,25 +734,15 @@ export async function executeOrchBatch(
 				const staleCount = batchState.resilience?.retryCountByScope[staleScopeKey] ?? 1;
 				if (staleRecovered) {
 					emitTier0Event(stateRoot, {
-						timestamp: new Date().toISOString(),
-						type: "tier0_recovery_success",
-						batchId: batchState.batchId,
-						waveIndex: waveIdx,
-						pattern: "stale_worktree",
-						attempt: staleCount,
-						maxAttempts: TIER0_RETRY_BUDGETS.stale_worktree.maxRetries,
+						...buildTier0EventBase("tier0_recovery_success", batchState.batchId, waveIdx, "stale_worktree", staleCount, TIER0_RETRY_BUDGETS.stale_worktree.maxRetries),
+						repoId: null, // wave-scoped
 						resolution: `Stale worktree cleanup succeeded — wave ${waveIdx + 1} re-executed successfully`,
 						scopeKey: staleScopeKey,
 					});
 				} else {
 					emitTier0Event(stateRoot, {
-						timestamp: new Date().toISOString(),
-						type: "tier0_recovery_exhausted",
-						batchId: batchState.batchId,
-						waveIndex: waveIdx,
-						pattern: "stale_worktree",
-						attempt: staleCount,
-						maxAttempts: TIER0_RETRY_BUDGETS.stale_worktree.maxRetries,
+						...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "stale_worktree", staleCount, TIER0_RETRY_BUDGETS.stale_worktree.maxRetries),
+						repoId: null, // wave-scoped
 						error: retryResult.allocationError?.message ?? "Allocation failed again after cleanup",
 						scopeKey: staleScopeKey,
 						affectedTaskIds: waveTasks,
@@ -1095,17 +1052,9 @@ export async function executeOrchBatch(
 				batchState.resilience = defaultResilienceState();
 			}
 
-			// Emit merge retry attempt event before entering retry loop
-			emitTier0Event(stateRoot, {
-				timestamp: new Date().toISOString(),
-				type: "tier0_recovery_attempt",
-				batchId: batchState.batchId,
-				waveIndex: waveIdx,
-				pattern: "merge_timeout",
-				attempt: 1,
-				maxAttempts: 2, // Default merge retry budget from matrix
-				classification: mergeResult.status,
-			});
+			// Extract repoId and lane for event attribution before entering retry loop
+			const mergeRepoId = extractFailedRepoId(mergeResult) ?? null;
+			const mergeFailedLane = mergeResult.failedLane ?? undefined;
 
 			const retryOutcome = applyMergeRetryLoop(
 				mergeResult,
@@ -1137,6 +1086,17 @@ export async function executeOrchBatch(
 						batchState.mergeResults[batchState.mergeResults.length - 1] = result;
 					},
 					sleep: sleepSync,
+					// TP-039 R004: Emit attempt event only when retry is actually scheduled,
+					// with accurate classification/attempt data from the retry decision.
+					onRetryAttempt: (decision) => {
+						emitTier0Event(stateRoot, {
+							...buildTier0EventBase("tier0_recovery_attempt", batchState.batchId, waveIdx, "merge_timeout", decision.currentAttempt, decision.maxAttempts),
+							laneNumber: mergeFailedLane,
+							repoId: mergeRepoId,
+							classification: decision.classification,
+							cooldownMs: decision.cooldownMs,
+						});
+					},
 				},
 			);
 
@@ -1147,13 +1107,9 @@ export async function executeOrchBatch(
 
 				// Emit merge retry success event
 				emitTier0Event(stateRoot, {
-					timestamp: new Date().toISOString(),
-					type: "tier0_recovery_success",
-					batchId: batchState.batchId,
-					waveIndex: waveIdx,
-					pattern: "merge_timeout",
-					attempt: retryOutcome.lastDecision?.currentAttempt ?? 1,
-					maxAttempts: retryOutcome.lastDecision?.maxAttempts ?? 1,
+					...buildTier0EventBase("tier0_recovery_success", batchState.batchId, waveIdx, "merge_timeout", retryOutcome.lastDecision.currentAttempt, retryOutcome.lastDecision.maxAttempts),
+					laneNumber: mergeFailedLane,
+					repoId: mergeRepoId,
 					classification: retryOutcome.classification ?? undefined,
 					resolution: `Merge retry succeeded at wave ${waveIdx + 1}`,
 					scopeKey: retryOutcome.scopeKey,
@@ -1169,13 +1125,9 @@ export async function executeOrchBatch(
 
 				// Emit merge safe-stop event (treated as exhausted — no further automatic recovery possible)
 				emitTier0Event(stateRoot, {
-					timestamp: new Date().toISOString(),
-					type: "tier0_recovery_exhausted",
-					batchId: batchState.batchId,
-					waveIndex: waveIdx,
-					pattern: "merge_timeout",
-					attempt: retryOutcome.lastDecision?.currentAttempt ?? 1,
-					maxAttempts: retryOutcome.lastDecision?.maxAttempts ?? 1,
+					...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "merge_timeout", retryOutcome.lastDecision.currentAttempt, retryOutcome.lastDecision.maxAttempts),
+					laneNumber: mergeFailedLane,
+					repoId: mergeRepoId,
 					classification: retryOutcome.classification ?? undefined,
 					error: retryOutcome.errorMessage,
 					scopeKey: retryOutcome.scopeKey,
@@ -1200,13 +1152,9 @@ export async function executeOrchBatch(
 
 				// Emit merge retry exhausted event
 				emitTier0Event(stateRoot, {
-					timestamp: new Date().toISOString(),
-					type: "tier0_recovery_exhausted",
-					batchId: batchState.batchId,
-					waveIndex: waveIdx,
-					pattern: "merge_timeout",
-					attempt: retryOutcome.lastDecision.currentAttempt,
-					maxAttempts: retryOutcome.lastDecision.maxAttempts,
+					...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "merge_timeout", retryOutcome.lastDecision.currentAttempt, retryOutcome.lastDecision.maxAttempts),
+					laneNumber: mergeFailedLane,
+					repoId: mergeRepoId,
 					classification: retryOutcome.classification ?? undefined,
 					error: exhaustionMsg,
 					scopeKey: retryOutcome.scopeKey,
@@ -1419,14 +1367,10 @@ export async function executeOrchBatch(
 					// Emit attempt event
 					const staleWorktreeCount = cleanupGateFailures.reduce((n, f) => n + f.staleWorktrees.length, 0);
 					emitTier0Event(stateRoot, {
-						timestamp: new Date().toISOString(),
-						type: "tier0_recovery_attempt",
-						batchId: batchState.batchId,
-						waveIndex: waveIdx,
-						pattern: "cleanup_gate",
-						attempt: cleanupRetryCount + 1,
-						maxAttempts: cleanupBudget.maxRetries,
+						...buildTier0EventBase("tier0_recovery_attempt", batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount + 1, cleanupBudget.maxRetries),
+						repoId: null, // wave-scoped: cleanup gate spans all repos
 						classification: `stale_worktrees:${staleWorktreeCount}`,
+						cooldownMs: cleanupBudget.cooldownMs,
 						scopeKey: cleanupScopeKey,
 					});
 
@@ -1473,13 +1417,8 @@ export async function executeOrchBatch(
 
 						// Emit success event
 						emitTier0Event(stateRoot, {
-							timestamp: new Date().toISOString(),
-							type: "tier0_recovery_success",
-							batchId: batchState.batchId,
-							waveIndex: waveIdx,
-							pattern: "cleanup_gate",
-							attempt: cleanupRetryCount + 1,
-							maxAttempts: cleanupBudget.maxRetries,
+							...buildTier0EventBase("tier0_recovery_success", batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount + 1, cleanupBudget.maxRetries),
+							repoId: null, // wave-scoped
 							resolution: `Cleanup gate retry succeeded — all stale worktrees removed at wave ${waveIdx + 1}`,
 							scopeKey: cleanupScopeKey,
 						});
@@ -1498,13 +1437,8 @@ export async function executeOrchBatch(
 						const stillStaleCount = retriedGateFailures.reduce((n, f) => n + f.staleWorktrees.length, 0);
 						// Emit exhausted event (retry attempted but failed)
 						emitTier0Event(stateRoot, {
-							timestamp: new Date().toISOString(),
-							type: "tier0_recovery_exhausted",
-							batchId: batchState.batchId,
-							waveIndex: waveIdx,
-							pattern: "cleanup_gate",
-							attempt: cleanupRetryCount + 1,
-							maxAttempts: cleanupBudget.maxRetries,
+							...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount + 1, cleanupBudget.maxRetries),
+							repoId: null, // wave-scoped
 							error: `Cleanup gate retry failed — ${stillStaleCount} stale worktree(s) remain`,
 							scopeKey: cleanupScopeKey,
 							affectedTaskIds: retriedGateFailures.flatMap(f => f.staleWorktrees),
@@ -1526,13 +1460,8 @@ export async function executeOrchBatch(
 
 					// Emit exhausted event (budget already consumed from prior waves)
 					emitTier0Event(stateRoot, {
-						timestamp: new Date().toISOString(),
-						type: "tier0_recovery_exhausted",
-						batchId: batchState.batchId,
-						waveIndex: waveIdx,
-						pattern: "cleanup_gate",
-						attempt: cleanupRetryCount,
-						maxAttempts: cleanupBudget.maxRetries,
+						...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount, cleanupBudget.maxRetries),
+						repoId: null, // wave-scoped
 						error: `Cleanup gate retry budget exhausted (${cleanupRetryCount}/${cleanupBudget.maxRetries})`,
 						scopeKey: cleanupScopeKey,
 						affectedTaskIds: cleanupGateFailures.flatMap(f => f.staleWorktrees),
