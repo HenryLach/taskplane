@@ -14,6 +14,7 @@ import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { generateMergeWorktreePath, sleepSync } from "./worktree.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
+import { loadOrchestratorConfig } from "./config.ts";
 import { captureBaseline, diffFingerprints, runVerificationCommands, parseTestOutput, deduplicateFingerprints } from "./verification.ts";
 import type { VerificationBaseline, FingerprintDiff, TestFingerprint } from "./verification.ts";
 
@@ -352,13 +353,43 @@ export function spawnMergeAgent(
 }
 
 /**
+ * Re-read merge timeout from config on disk.
+ *
+ * TP-038: Allows the operator to increase `merge.timeoutMinutes` without
+ * restarting the pi session. Called before each retry attempt so the
+ * retry loop picks up any config changes made while the batch was running.
+ *
+ * @param configRoot - The directory containing `.pi/taskplane-config.json`
+ * @param pointerConfigRoot - Optional pointer config root (workspace mode)
+ * @returns Fresh timeout in milliseconds
+ */
+export function reloadMergeTimeoutMs(configRoot: string, pointerConfigRoot?: string): number {
+	try {
+		const freshConfig = loadOrchestratorConfig(configRoot, pointerConfigRoot);
+		const minutes = freshConfig.merge.timeout_minutes ?? 10;
+		return minutes * 60 * 1000;
+	} catch (err: unknown) {
+		// Config re-read is best-effort — fall back to default on failure
+		const errMsg = err instanceof Error ? err.message : String(err);
+		execLog("merge", "config-reload", `failed to re-read merge timeout from config: ${errMsg} — using default`);
+		return MERGE_TIMEOUT_MS;
+	}
+}
+
+/** Merge result statuses that indicate the merge agent completed successfully. */
+const SUCCESSFUL_MERGE_STATUSES = new Set<string>(["SUCCESS", "CONFLICT_RESOLVED"]);
+
+/**
  * Wait for merge agent to produce a result file.
  *
  * Polling loop with timeout and session liveness detection:
  * 1. Check if result file exists → parse and return
  * 2. Check if TMUX session is still alive
  * 3. If session died without result → grace period → check again → fail
- * 4. If timeout exceeded → kill session → fail
+ * 4. If timeout exceeded → check result before killing:
+ *    a. If result exists with SUCCESS/CONFLICT_RESOLVED: accept it
+ *       (merge agent slow but succeeded)
+ *    b. If result missing or non-success: kill session → fail
  *
  * @param resultPath   - Path to the expected result JSON file
  * @param sessionName  - TMUX session name for liveness checking
@@ -384,20 +415,40 @@ export function waitForMergeResult(
 
 		// Check timeout
 		if (elapsed >= timeoutMs) {
+			// TP-038: Check result file BEFORE killing the session.
+			// The merge may have actually succeeded — the verification tests
+			// just pushed past the timeout. Accept successful results without killing.
+			if (existsSync(resultPath)) {
+				try {
+					const lateResult = parseMergeResult(resultPath);
+					if (SUCCESSFUL_MERGE_STATUSES.has(lateResult.status)) {
+						execLog("merge", sessionName, "merge agent slow but succeeded — accepting result at timeout", {
+							status: lateResult.status,
+							elapsed,
+							timeoutMs,
+						});
+						// Clean up session (agent may still be running post-write)
+						if (tmuxHasSession(sessionName)) {
+							tmuxKillSession(sessionName);
+						}
+						return lateResult;
+					}
+					// Non-success result at timeout — fall through to kill
+					execLog("merge", sessionName, "merge result exists at timeout but non-success — killing session", {
+						status: lateResult.status,
+						elapsed,
+						timeoutMs,
+					});
+				} catch {
+					// Result file unreadable — fall through to kill
+				}
+			}
+
 			execLog("merge", sessionName, "merge timeout — killing session", {
 				elapsed,
 				timeoutMs,
 			});
 			tmuxKillSession(sessionName);
-
-			// One final check for result file (agent may have written it just before timeout)
-			if (existsSync(resultPath)) {
-				try {
-					return parseMergeResult(resultPath);
-				} catch {
-					// Fall through to timeout error
-				}
-			}
 
 			throw new MergeError(
 				"MERGE_TIMEOUT",

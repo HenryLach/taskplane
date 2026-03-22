@@ -1,10 +1,10 @@
 # TP-038: Merge Timeout Resilience — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Check Result Before Kill + Config Reload
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** S
 
@@ -19,10 +19,10 @@
 ---
 
 ### Step 1: Check Result Before Kill + Config Reload
-**Status:** ⬜ Not Started
-- [ ] Check merge result file before killing agent
-- [ ] Accept successful result even after timeout
-- [ ] Re-read config on retry
+**Status:** ✅ Complete
+- [x] Check merge result file before killing agent
+- [x] Accept successful result even after timeout
+- [x] Re-read config on retry
 
 ---
 
@@ -53,6 +53,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -71,6 +73,14 @@
 | 2026-03-22 04:23 | Task started | Extension-driven execution |
 | 2026-03-22 04:23 | Step 0 started | Preflight |
 | 2026-03-22 04:23 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 04:24 | Worker iter 1 | done in 84s, ctx: 23%, tools: 15 |
+| 2026-03-22 04:24 | Step 0 complete | Preflight |
+| 2026-03-22 04:24 | Step 1 started | Check Result Before Kill + Config Reload |
+| 2026-03-22 04:24 | Worker iter 2 | done in 87s, ctx: 22%, tools: 18 |
+| 2026-03-22 04:24 | Step 0 complete | Preflight |
+| 2026-03-22 04:24 | Step 1 started | Check Result Before Kill + Config Reload |
+| 2026-03-22 04:26 | Review R001 | plan Step 1: APPROVE |
+| 2026-03-22 04:26 | Review R001 | plan Step 1: APPROVE |
 
 ## Blockers
 
