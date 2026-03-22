@@ -20,11 +20,11 @@
 ---
 
 ### Step 1: Fix Resume Merge Skip (Bug #102)
-**Status:** 🟨 In Progress
-- [ ] Add `mergeRetryWaveIndexes` field to `ResumePoint` type in types.ts
-- [ ] Update `computeResumePoint()` to check per-wave merge status before skipping; build `mergeRetryWaveIndexes` array and add helper `getMergeStatusForWave()`
-- [ ] Update `resumeOrchBatch()` wave loop to detect merge-retry waves and run merge-only (no task execution)
-- [ ] Verify tests pass with `npx vitest run`
+**Status:** ✅ Complete
+- [x] Add `mergeRetryWaveIndexes` field to `ResumePoint` type in types.ts
+- [x] Update `computeResumePoint()` to check per-wave merge status before skipping; build `mergeRetryWaveIndexes` array and add helper `getMergeStatusForWave()`
+- [x] Update `resumeOrchBatch()` wave loop to detect merge-retry waves and run merge-only (no task execution)
+- [x] Verify tests pass with `npx vitest run`
 
 ---
 

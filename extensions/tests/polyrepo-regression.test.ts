@@ -818,8 +818,10 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 		const sh002 = reconciled.find(t => t.taskId === "SH-002")!;
 		expect(sh002.action).toBe("mark-failed");
 
-		// All waves are terminal (mark-complete or mark-failed) → past end
-		expect(resumePoint.resumeWaveIndex).toBe(3);
+		// TP-037: Wave 1 has succeeded task (AP-002) but no merge result → flagged for merge retry
+		// resumeWaveIndex = 1 (first wave needing merge retry)
+		expect(resumePoint.resumeWaveIndex).toBe(1);
+		expect(resumePoint.mergeRetryWaveIndexes).toEqual([1]);
 		expect(resumePoint.completedTaskIds.sort()).toEqual(["AP-001", "AP-002", "SH-001", "UI-001"]);
 		expect(resumePoint.failedTaskIds).toContain("UI-002");
 		expect(resumePoint.failedTaskIds).toContain("SH-002");
