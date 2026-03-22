@@ -37,10 +37,15 @@ import {
 
 import type {
 	EscalationContext,
+	MergeRetryCallbacks,
+	MergeRetryDecision,
+	MergeWaveResult,
 	Tier0RecoveryPattern,
 	Tier0EscalationPattern,
 	Tier0RetryBudget,
 } from "../taskplane/types.ts";
+
+import { applyMergeRetryLoop } from "../taskplane/messages.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -212,6 +217,198 @@ describe("2.x — Retry exhaustion pauses batch with escalation event", () => {
 		);
 		const mergeEscalation = mergeSection.match(/emitTier0Escalation.*merge_timeout/g);
 		expect(mergeEscalation).not.toBeNull();
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 2.7+ — Merge timeout retry behavior (R008-1: behavior-level test)
+// ══════════════════════════════════════════════════════════════════════
+
+describe("2.7+ — Merge timeout triggers automatic retry (not immediate pause)", () => {
+	/**
+	 * Builds a minimal failed MergeWaveResult with a git_lock_file
+	 * failure reason, which classifies as retriable with maxAttempts=2.
+	 */
+	function buildFailedMergeResult(waveIndex: number, failureReason: string): MergeWaveResult {
+		return {
+			waveIndex,
+			status: "failed",
+			laneResults: [
+				{
+					laneNumber: 1,
+					laneId: "lane-1",
+					sourceBranch: "task/TP-TEST",
+					targetBranch: "main",
+					result: null,
+					error: null,
+					durationMs: 1000,
+				},
+			],
+			failedLane: 1,
+			failureReason,
+			totalDurationMs: 1500,
+		};
+	}
+
+	function buildSucceededMergeResult(waveIndex: number): MergeWaveResult {
+		return {
+			waveIndex,
+			status: "succeeded",
+			laneResults: [
+				{
+					laneNumber: 1,
+					laneId: "lane-1",
+					sourceBranch: "task/TP-TEST",
+					targetBranch: "main",
+					result: { status: "MERGED", resolvedWith: null, error: null },
+					error: null,
+					durationMs: 800,
+				},
+			],
+			failedLane: null,
+			failureReason: null,
+			totalDurationMs: 900,
+		};
+	}
+
+	it("2.7: first merge failure with retriable classification retries instead of immediately pausing", () => {
+		// git_lock_file is retriable with maxAttempts=2
+		const failedResult = buildFailedMergeResult(0, "Unable to create lock file");
+		const succeededResult = buildSucceededMergeResult(0);
+		const retryCountByScope: Record<string, number> = {};
+		const logs: string[] = [];
+		let mergeCallCount = 0;
+		let retryAttemptFired = false;
+
+		const callbacks: MergeRetryCallbacks = {
+			performMerge: () => {
+				mergeCallCount++;
+				// Second merge attempt succeeds
+				return succeededResult;
+			},
+			persist: () => {},
+			log: (msg) => logs.push(msg),
+			notify: () => {},
+			updateMergeResult: () => {},
+			sleep: () => {},
+			onRetryAttempt: (decision) => {
+				retryAttemptFired = true;
+				expect(decision.shouldRetry).toBe(true);
+				expect(decision.classification).toBe("git_lock_file");
+			},
+		};
+
+		const outcome = applyMergeRetryLoop(failedResult, 0, retryCountByScope, callbacks);
+
+		// Should retry and succeed — NOT pause
+		expect(outcome.kind).toBe("retry_succeeded");
+		expect(mergeCallCount).toBe(1); // performMerge called once for retry
+		expect(retryAttemptFired).toBe(true);
+		// Retry counter should have been incremented
+		const scopeKeys = Object.keys(retryCountByScope);
+		expect(scopeKeys.length).toBeGreaterThan(0);
+		expect(retryCountByScope[scopeKeys[0]]).toBe(1);
+	});
+
+	it("2.8: merge retry success returns the successful MergeWaveResult", () => {
+		const failedResult = buildFailedMergeResult(0, "Unable to create lock file");
+		const succeededResult = buildSucceededMergeResult(0);
+
+		const outcome = applyMergeRetryLoop(failedResult, 0, {}, {
+			performMerge: () => succeededResult,
+			persist: () => {},
+			log: () => {},
+			notify: () => {},
+			updateMergeResult: () => {},
+			sleep: () => {},
+		});
+
+		expect(outcome.kind).toBe("retry_succeeded");
+		if (outcome.kind === "retry_succeeded") {
+			expect(outcome.mergeResult.status).toBe("succeeded");
+			expect(outcome.classification).toBe("git_lock_file");
+		}
+	});
+
+	it("2.9: merge retry exhaustion returns 'exhausted' (not immediate no_retry)", () => {
+		// git_lock_file: maxAttempts=2. Pre-set counter to 2 so budget is exhausted.
+		const failedResult = buildFailedMergeResult(0, "Unable to create lock file");
+		const retryCountByScope: Record<string, number> = {};
+
+		// First call — will succeed on retry, consuming attempt 1
+		const firstOutcome = applyMergeRetryLoop(
+			failedResult, 0, retryCountByScope,
+			{
+				performMerge: () => buildFailedMergeResult(0, "Unable to create lock file"),
+				persist: () => {},
+				log: () => {},
+				notify: () => {},
+				updateMergeResult: () => {},
+				sleep: () => {},
+			},
+		);
+
+		// After first attempt fails again and second attempt also fails,
+		// the loop should exhaust both attempts
+		expect(firstOutcome.kind).toBe("exhausted");
+		if (firstOutcome.kind === "exhausted") {
+			expect(firstOutcome.classification).toBe("git_lock_file");
+		}
+	});
+
+	it("2.10: non-retriable merge failure returns no_retry (not retried)", () => {
+		// merge_conflict_unresolved is non-retriable
+		const failedResult: MergeWaveResult = {
+			waveIndex: 0,
+			status: "failed",
+			laneResults: [
+				{
+					laneNumber: 1,
+					laneId: "lane-1",
+					sourceBranch: "task/TP-TEST",
+					targetBranch: "main",
+					result: { status: "CONFLICT_UNRESOLVED", resolvedWith: null, error: "conflict" },
+					error: null,
+					durationMs: 500,
+				},
+			],
+			failedLane: 1,
+			failureReason: "Merge conflict",
+			totalDurationMs: 600,
+		};
+
+		let performMergeCalled = false;
+		const outcome = applyMergeRetryLoop(failedResult, 0, {}, {
+			performMerge: () => { performMergeCalled = true; return failedResult; },
+			persist: () => {},
+			log: () => {},
+			notify: () => {},
+			updateMergeResult: () => {},
+			sleep: () => {},
+		});
+
+		expect(outcome.kind).toBe("no_retry");
+		expect(performMergeCalled).toBe(false); // No retry attempt made
+		expect(outcome.classification).toBe("merge_conflict_unresolved");
+	});
+
+	it("2.11: engine wires merge retry via applyMergeRetryLoop with Tier 0 event callbacks", () => {
+		// Structural verification that the engine uses applyMergeRetryLoop
+		// with the onRetryAttempt callback for Tier 0 event emission
+		const engineSource = readSource("engine.ts");
+		const mergeSection = engineSource.substring(
+			engineSource.indexOf("applyMergeRetryLoop("),
+			engineSource.indexOf("applyMergeRetryLoop(") + 2000,
+		);
+		// The engine passes onRetryAttempt callback
+		expect(mergeSection).toContain("onRetryAttempt:");
+		// On retry_succeeded, engine continues (no pause)
+		expect(mergeSection).toContain('"retry_succeeded"');
+		// On exhausted, engine pauses
+		const exhaustedSection = engineSource.substring(
+			engineSource.indexOf('"exhausted"', engineSource.indexOf("applyMergeRetryLoop")),
+		);
+		expect(exhaustedSection).toContain('batchState.phase = "paused"');
 	});
 });
 
