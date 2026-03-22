@@ -1,6 +1,6 @@
 # TP-037: Resume Bug Fixes & State Coherence — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Fix Resume Merge Skip (Bug #102)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 1
@@ -11,7 +11,7 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Read reconcileTaskStates() logic
 - [x] Read computeResumePoint() logic
 - [x] Read engine wave advancement
@@ -20,7 +20,7 @@
 ---
 
 ### Step 1: Fix Resume Merge Skip (Bug #102)
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Verify mergeResults before skipping completed wave
 - [ ] Flag wave for merge retry when merge missing/failed
 - [ ] Add state coherence validation
@@ -70,6 +70,9 @@
 | 2026-03-22 04:23 | Task started | Extension-driven execution |
 | 2026-03-22 04:23 | Step 0 started | Preflight |
 | 2026-03-22 04:23 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 04:24 | Worker iter 2 | done in 80s, ctx: 30%, tools: 16 |
+| 2026-03-22 04:24 | Step 0 complete | Preflight |
+| 2026-03-22 04:24 | Step 1 started | Fix Resume Merge Skip (Bug #102) |
 
 ## Blockers
 
@@ -77,4 +80,12 @@
 
 ## Notes
 
-*Reserved for execution notes*
+### Bug #102 (Resume Merge Skip)
+- `computeResumePoint()` (resume.ts ~L315-350): wave-skip logic checks if all tasks are terminal (mark-complete, mark-failed, skip). If yes, `resumeWaveIndex` advances past that wave. But it never checks `persistedState.mergeResults` to verify merge succeeded.
+- Resume wave loop (resume.ts ~L1200): filters out completed/failed tasks → `waveTasks` is empty → `continue` skips the wave entirely, including merge.
+- **Fix location**: `computeResumePoint()` — a wave should NOT be skipped if its merge is missing or failed in `persistedState.mergeResults`. The `ResumePoint` type should carry `mergeRetryWaveIndexes` for waves needing merge retry.
+- **Engine-side**: resume wave loop needs to detect merge-retry waves and run `mergeWaveByRepo()` without executing tasks.
+
+### Bug #102b (Stale Session Names)
+- `reconcileTaskStates()` (resume.ts ~L370): Precedence 5 condition is `task.status === "pending" && !task.sessionName`. If a pending task was allocated a session in a prior failed resume but never started, it has `sessionName` set but the session is dead → falls to Precedence 6 → `mark-failed`.
+- **Fix location**: Precedence 5 condition should be: `task.status === "pending" && (!task.sessionName || (!sessionAlive && !worktreeExists))`. Also clear stale `sessionName`/`laneNumber` in the reconciliation output or during state reconstruction.
