@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 2
 **Size:** M
 
@@ -19,12 +19,14 @@
 ---
 
 ### Step 1: /orch Routing Logic
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Implement `detectOrchState()` helper with explicit state enum and precedence: no-config → active-batch → completed-batch-needs-integration → pending-tasks → no-tasks
 - [x] Modify /orch handler: when args is empty, call detectOrchState and route to supervisor activation with appropriate context message
 - [x] Preserve existing /orch WITH args behavior (start batch directly, no changes)
 - [x] R001-1: Include "completed batch, not integrated" state with orch branch check
 - [x] R001-2: Enforce explicit evaluation order matching PROMPT.md routing matrix
+- [ ] R002-1: Fix root selection — use pointer configRoot for config detection, repoRoot for batch-state detection
+- [ ] R002-2: Validate orch branch existence in completed-batch state (don't trust stale batchState.orchBranch)
 
 ---
 
@@ -67,6 +69,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -100,6 +104,9 @@
 | 2026-03-22 23:11 | Review R001 | plan Step 1: REVISE |
 | 2026-03-22 23:12 | Review R001 | plan Step 1: REVISE |
 | 2026-03-22 23:26 | Worker iter 2 | done in 839s, ctx: 46%, tools: 86 |
+| 2026-03-22 23:26 | Worker iter 3 | done in 884s, ctx: 51%, tools: 84 |
+| 2026-03-22 23:29 | Review R002 | code Step 1: REVISE |
+| 2026-03-22 23:30 | Review R002 | code Step 1: REVISE |
 
 ## Blockers
 
