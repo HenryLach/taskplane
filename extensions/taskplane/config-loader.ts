@@ -261,6 +261,9 @@ function mapOrchestratorYaml(raw: any): Partial<OrchestratorSection> {
 	// verification: all keys are structural (TP-032)
 	if (raw.verification) result.verification = convertStructuralKeys(raw.verification);
 
+	// supervisor: all keys are structural (TP-041)
+	if (raw.supervisor) result.supervisor = convertStructuralKeys(raw.supervisor);
+
 	return result;
 }
 
@@ -515,6 +518,7 @@ function extractAllowlistedPreferences(raw: Record<string, any>): UserPreference
 	if (typeof raw.workerModel === "string") prefs.workerModel = raw.workerModel;
 	if (typeof raw.reviewerModel === "string") prefs.reviewerModel = raw.reviewerModel;
 	if (typeof raw.mergeModel === "string") prefs.mergeModel = raw.mergeModel;
+	if (typeof raw.supervisorModel === "string") prefs.supervisorModel = raw.supervisorModel;
 	if (typeof raw.dashboardPort === "number" && Number.isFinite(raw.dashboardPort)) {
 		prefs.dashboardPort = raw.dashboardPort;
 	}
@@ -541,6 +545,7 @@ function extractAllowlistedPreferences(raw: Record<string, any>): UserPreference
  *   prefs.workerModel   → config.taskRunner.worker.model
  *   prefs.reviewerModel → config.taskRunner.reviewer.model
  *   prefs.mergeModel    → config.orchestrator.merge.model
+ *   prefs.supervisorModel → config.orchestrator.supervisor.model
  *   prefs.dashboardPort → (no config target yet — stored only)
  */
 export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPreferences): TaskplaneConfig {
@@ -554,6 +559,7 @@ export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPrefere
 	applyStr(prefs.workerModel, (v) => { config.taskRunner.worker.model = v; });
 	applyStr(prefs.reviewerModel, (v) => { config.taskRunner.reviewer.model = v; });
 	applyStr(prefs.mergeModel, (v) => { config.orchestrator.merge.model = v; });
+	applyStr(prefs.supervisorModel, (v) => { config.orchestrator.supervisor.model = v; });
 
 	// spawnMode: enum — apply if defined (not a string-empty check)
 	if (prefs.spawnMode !== undefined) {

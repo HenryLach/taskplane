@@ -13,6 +13,8 @@
 
 import { loadProjectConfig, toOrchestratorConfig, toTaskRunnerConfig } from "./config-loader.ts";
 import type { OrchestratorConfig, TaskRunnerConfig } from "./types.ts";
+import type { SupervisorConfig } from "./supervisor.ts";
+import { DEFAULT_SUPERVISOR_CONFIG } from "./supervisor.ts";
 
 // ── Config Loading ───────────────────────────────────────────────────
 
@@ -48,4 +50,23 @@ export function loadOrchestratorConfig(cwd: string, pointerConfigRoot?: string):
 export function loadTaskRunnerConfig(cwd: string, pointerConfigRoot?: string): TaskRunnerConfig {
 	const unified = loadProjectConfig(cwd, pointerConfigRoot);
 	return toTaskRunnerConfig(unified);
+}
+
+/**
+ * Load supervisor config from unified project config.
+ *
+ * Extracts the `orchestrator.supervisor` section from the unified config.
+ * Falls back to defaults if the section is missing (backward compatibility
+ * with configs created before TP-041).
+ *
+ * @since TP-041
+ */
+export function loadSupervisorConfig(cwd: string, pointerConfigRoot?: string): SupervisorConfig {
+	const unified = loadProjectConfig(cwd, pointerConfigRoot);
+	const section = unified.orchestrator.supervisor;
+	if (!section) return { ...DEFAULT_SUPERVISOR_CONFIG };
+	return {
+		model: section.model ?? DEFAULT_SUPERVISOR_CONFIG.model,
+		autonomy: section.autonomy ?? DEFAULT_SUPERVISOR_CONFIG.autonomy,
+	};
 }

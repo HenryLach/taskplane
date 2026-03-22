@@ -29,6 +29,7 @@ import {
 	listWorktrees,
 	loadBatchState,
 	loadOrchestratorConfig,
+	loadSupervisorConfig,
 	loadTaskRunnerConfig,
 	parseOrchSessionNames,
 	resolveOperatorId,
@@ -40,6 +41,17 @@ import {
 } from "./index.ts";
 import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
+import {
+	activateSupervisor,
+	deactivateSupervisor,
+	freshSupervisorState,
+	registerSupervisorPromptHook,
+	checkSupervisorLockOnStartup,
+	buildTakeoverSummary,
+	isProcessAlive,
+	DEFAULT_SUPERVISOR_CONFIG,
+} from "./supervisor.ts";
+import type { SupervisorConfig } from "./supervisor.ts";
 import type {
 	AbortMode,
 	ExecutionContext,
@@ -707,6 +719,7 @@ export function startBatchAsync(
 	batchState: import("./types.ts").OrchBatchRuntimeState,
 	ctx: ExtensionContext,
 	updateWidget: () => void,
+	onTerminal?: () => void,
 ): void {
 	// Detach engine start to the next tick so the command handler returns
 	// immediately. Without this, the synchronous planning/discovery phase
@@ -716,6 +729,8 @@ export function startBatchAsync(
 			.then(() => {
 				// Engine completed normally — final widget update
 				updateWidget();
+				// TP-041 R002-3: Deactivate supervisor on all terminal paths
+				onTerminal?.();
 			})
 			.catch((err: unknown) => {
 				// Unhandled engine rejection — surface to operator and update state
@@ -731,6 +746,8 @@ export function startBatchAsync(
 					"error",
 				);
 				updateWidget();
+				// TP-041 R002-3: Deactivate supervisor on all terminal paths
+				onTerminal?.();
 			});
 	}, 0);
 }
@@ -743,6 +760,14 @@ export default function (pi: ExtensionAPI) {
 	let runnerConfig: TaskRunnerConfig = { ...DEFAULT_TASK_RUNNER_CONFIG };
 	let orchWidgetCtx: ExtensionContext | undefined;
 	let latestMonitorState: MonitorState | null = null;
+
+	// ── Supervisor State (TP-041) ────────────────────────────────────
+	let supervisorState = freshSupervisorState();
+	let supervisorConfig: SupervisorConfig = { ...DEFAULT_SUPERVISOR_CONFIG };
+
+	// Register supervisor prompt hook: while active, injects supervisor
+	// system prompt on every LLM turn. No-op when supervisor is inactive.
+	registerSupervisorPromptHook(pi, supervisorState);
 
 	/**
 	 * Execution context loaded at session start. Null if startup failed
@@ -933,6 +958,29 @@ export default function (pi: ExtensionAPI) {
 				orchBatchState,
 				ctx,
 				updateOrchWidget,
+				// TP-041: Deactivate supervisor on all terminal paths
+				// (completed, failed, stopped, crashed). Idempotent — safe
+				// to call even if supervisor was never activated.
+				() => { deactivateSupervisor(pi, supervisorState); },
+			);
+
+			// ── TP-041: Activate supervisor agent ────────────────────
+			// After the engine is launched (non-blocking), activate the
+			// supervisor in this pi session. The system prompt is rebuilt
+			// dynamically on each LLM turn from the live batchState ref,
+			// ensuring batch metadata (batchId, wave/task counts) is always
+			// current even though the engine populates it asynchronously.
+			// Model override is resolved inside activateSupervisor via ctx.
+			// Uses workspaceRoot (not repoRoot) so lockfile/events/batch-state
+			// all resolve to the same .pi tree the engine writes to (R006-1).
+			activateSupervisor(
+				pi,
+				supervisorState,
+				orchBatchState,
+				orchConfig,
+				supervisorConfig,
+				execCtx!.workspaceRoot,
+				ctx,
 			);
 		},
 	});
@@ -1179,6 +1227,21 @@ export default function (pi: ExtensionAPI) {
 				orchBatchState,
 				ctx,
 				updateOrchWidget,
+				// TP-041: Deactivate supervisor on all terminal paths
+				() => { deactivateSupervisor(pi, supervisorState); },
+			);
+
+			// ── TP-041: Activate supervisor agent on resume ──────────
+			// supervisorConfig is loaded at session_start from unified config.
+			// Uses workspaceRoot so supervisor state root matches engine (R006-1).
+			activateSupervisor(
+				pi,
+				supervisorState,
+				orchBatchState,
+				orchConfig,
+				supervisorConfig,
+				execCtx!.workspaceRoot,
+				ctx,
 			);
 		},
 	});
@@ -1295,6 +1358,9 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				// ── Step 6: Clean up batch state ────────────────────────
+				// TP-041: Deactivate supervisor on abort
+				deactivateSupervisor(pi, supervisorState);
+
 				try {
 					orchBatchState.phase = "stopped";
 					orchBatchState.endedAt = Date.now();
@@ -1416,6 +1482,136 @@ export default function (pi: ExtensionAPI) {
 		handler: async (_args, ctx) => {
 			const sessions = listOrchSessions(orchConfig.orchestrator.tmux_prefix, orchBatchState);
 			ctx.ui.notify(formatOrchSessions(sessions), "info");
+		},
+	});
+
+	// ── TP-041 Step 2: /orch-takeover — force supervisor takeover ────
+	pi.registerCommand("orch-takeover", {
+		description: "Force takeover supervisor from another session: /orch-takeover",
+		handler: async (_args, ctx) => {
+			// Use workspaceRoot so supervisor state root matches engine (R006-1).
+			const stateRoot = execCtx.workspaceRoot;
+
+			// If this session already owns the supervisor, nothing to do.
+			if (supervisorState.active) {
+				ctx.ui.notify(
+					"✅ This session is already the active supervisor.\n\n" +
+					`  Session: ${supervisorState.lockSessionId}\n` +
+					`  Batch: ${supervisorState.batchId || orchBatchState.batchId}`,
+					"info",
+				);
+				return;
+			}
+
+			// Re-check lock state (may have changed since session_start).
+			const lockResult = checkSupervisorLockOnStartup(stateRoot, loadBatchState);
+
+			switch (lockResult.status) {
+				case "no-active-batch":
+					ctx.ui.notify(
+						"No active batch to supervise.\n\nStart a batch with /orch first.",
+						"info",
+					);
+					return;
+
+				case "no-lockfile":
+				case "corrupt":
+				case "stale": {
+					// No live lock to take over — just activate normally.
+					const batchState = lockResult.batchState;
+					const summary = buildTakeoverSummary(stateRoot, batchState);
+					const reason =
+						lockResult.status === "stale"
+							? (isProcessAlive(lockResult.lock.pid)
+								? `Previous supervisor (PID ${lockResult.lock.pid}) has a stale heartbeat (last: ${lockResult.lock.heartbeat}).`
+								: `Previous supervisor (PID ${lockResult.lock.pid}) process is dead.`)
+							: lockResult.status === "corrupt"
+								? "Found a corrupt supervisor lockfile."
+								: "No supervisor lockfile found.";
+
+					ctx.ui.notify(
+						`🔄 **${reason}** Activating supervisor.\n\n` + summary,
+						"info",
+					);
+
+					// Populate orchBatchState from persisted state
+					orchBatchState.batchId = batchState.batchId;
+					orchBatchState.phase = batchState.phase as typeof orchBatchState.phase;
+					orchBatchState.baseBranch = batchState.baseBranch;
+					orchBatchState.orchBranch = batchState.orchBranch ?? "";
+					orchBatchState.currentWaveIndex = batchState.currentWaveIndex;
+					orchBatchState.totalWaves = batchState.wavePlan?.length ?? batchState.totalWaves ?? 0;
+					orchBatchState.totalTasks = batchState.totalTasks ?? 0;
+					orchBatchState.succeededTasks = batchState.succeededTasks ?? 0;
+					orchBatchState.failedTasks = batchState.failedTasks ?? 0;
+					orchBatchState.skippedTasks = batchState.skippedTasks ?? 0;
+					orchBatchState.blockedTasks = batchState.blockedTasks ?? 0;
+					orchBatchState.startedAt = batchState.startedAt;
+					orchBatchState.endedAt = batchState.endedAt ?? null;
+
+					await activateSupervisor(
+						pi,
+						supervisorState,
+						orchBatchState,
+						orchConfig,
+						supervisorConfig,
+						stateRoot,
+						ctx,
+					);
+
+					updateOrchWidget();
+					break;
+				}
+
+				case "live": {
+					// Force takeover from another live session.
+					// Write a new lock — the old session's heartbeat will detect
+					// the sessionId mismatch and yield gracefully.
+					const lock = lockResult.lock;
+					const batchState = lockResult.batchState;
+					const summary = buildTakeoverSummary(stateRoot, batchState);
+
+					ctx.ui.notify(
+						`⚡ **Forcing supervisor takeover from PID ${lock.pid}.**\n\n` +
+						`  Previous session: ${lock.sessionId}\n` +
+						`  Previous heartbeat: ${lock.heartbeat}\n\n` +
+						`The other session will yield on its next heartbeat check.\n\n` +
+						summary,
+						"warning",
+					);
+
+					// Populate orchBatchState from persisted state
+					orchBatchState.batchId = batchState.batchId;
+					orchBatchState.phase = batchState.phase as typeof orchBatchState.phase;
+					orchBatchState.baseBranch = batchState.baseBranch;
+					orchBatchState.orchBranch = batchState.orchBranch ?? "";
+					orchBatchState.currentWaveIndex = batchState.currentWaveIndex;
+					orchBatchState.totalWaves = batchState.wavePlan?.length ?? batchState.totalWaves ?? 0;
+					orchBatchState.totalTasks = batchState.totalTasks ?? 0;
+					orchBatchState.succeededTasks = batchState.succeededTasks ?? 0;
+					orchBatchState.failedTasks = batchState.failedTasks ?? 0;
+					orchBatchState.skippedTasks = batchState.skippedTasks ?? 0;
+					orchBatchState.blockedTasks = batchState.blockedTasks ?? 0;
+					orchBatchState.startedAt = batchState.startedAt;
+					orchBatchState.endedAt = batchState.endedAt ?? null;
+
+					// activateSupervisor writes a new lock with this session's ID.
+					// The old session's heartbeat timer will detect the sessionId
+					// mismatch and deactivate automatically.
+					await activateSupervisor(
+						pi,
+						supervisorState,
+						orchBatchState,
+						orchConfig,
+						supervisorConfig,
+						stateRoot,
+						ctx,
+					);
+
+					updateOrchWidget();
+					break;
+				}
+			}
 		},
 	});
 
@@ -1678,6 +1874,20 @@ export default function (pi: ExtensionAPI) {
 		orchConfig = execCtx.orchestratorConfig;
 		runnerConfig = execCtx.taskRunnerConfig;
 
+		// TP-041: Load supervisor config from unified config.
+		// Uses execCtx.repoRoot (not ctx.cwd) for consistency with the
+		// established pattern — all config loading after buildExecutionContext
+		// uses the resolved execution context paths.
+		try {
+			supervisorConfig = loadSupervisorConfig(
+				execCtx.repoRoot,
+				execCtx.pointer?.configRoot,
+			);
+		} catch {
+			// Non-fatal — use defaults if supervisor config fails to load
+			supervisorConfig = { ...DEFAULT_SUPERVISOR_CONFIG };
+		}
+
 		// Set status line
 		const areaCount = Object.keys(runnerConfig.task_areas).length;
 		const modeLabel = execCtx.mode === "workspace" ? "workspace" : "repo";
@@ -1688,6 +1898,109 @@ export default function (pi: ExtensionAPI) {
 
 		// Register initial dashboard widget (idle state)
 		updateOrchWidget();
+
+		// ── TP-041 Step 2: Supervisor startup gate ───────────────────
+		// Check for an active batch with an existing lockfile. This covers
+		// session reconnection scenarios (pi restarted while a batch runs
+		// in tmux lanes) and crashed supervisor recovery.
+		// Uses workspaceRoot so supervisor state root matches engine (R006-1).
+		{
+			const stateRoot = execCtx.workspaceRoot;
+			const lockResult = checkSupervisorLockOnStartup(stateRoot, loadBatchState);
+
+			switch (lockResult.status) {
+				case "no-active-batch":
+					// Nothing to do — normal startup
+					break;
+
+				case "no-lockfile":
+				case "corrupt":
+				case "stale": {
+					// Become the supervisor for the existing batch.
+					// Stale = previous supervisor crashed (pid dead or heartbeat expired).
+					// Corrupt = lockfile malformed (treat as stale per R003).
+					// No lockfile = active batch without a supervisor (e.g., engine running
+					// from a previous /orch that didn't have supervisor support yet).
+					const batchState = lockResult.batchState;
+					const summary = buildTakeoverSummary(stateRoot, batchState);
+					const reason =
+						lockResult.status === "stale"
+							? (isProcessAlive(lockResult.lock.pid)
+								? `Previous supervisor (PID ${lockResult.lock.pid}) has a stale heartbeat (last: ${lockResult.lock.heartbeat}). Process may be hung.`
+								: `Previous supervisor (PID ${lockResult.lock.pid}) process is dead.`)
+							: lockResult.status === "corrupt"
+								? "Found a corrupt supervisor lockfile (treating as stale)."
+								: "No supervisor lockfile found for the active batch.";
+
+					ctx.ui.notify(
+						`🔄 **Active batch detected — ${reason}**\n\n` +
+						`Taking over supervisor duties for batch ${batchState.batchId}.\n\n` +
+						summary,
+						"info",
+					);
+
+					// Populate orchBatchState from persisted state for the supervisor
+					// prompt rebuild. We copy the key fields used by the system prompt.
+					orchBatchState.batchId = batchState.batchId;
+					orchBatchState.phase = batchState.phase as typeof orchBatchState.phase;
+					orchBatchState.baseBranch = batchState.baseBranch;
+					orchBatchState.orchBranch = batchState.orchBranch ?? "";
+					orchBatchState.currentWaveIndex = batchState.currentWaveIndex;
+					orchBatchState.totalWaves = batchState.wavePlan?.length ?? batchState.totalWaves ?? 0;
+					orchBatchState.totalTasks = batchState.totalTasks ?? 0;
+					orchBatchState.succeededTasks = batchState.succeededTasks ?? 0;
+					orchBatchState.failedTasks = batchState.failedTasks ?? 0;
+					orchBatchState.skippedTasks = batchState.skippedTasks ?? 0;
+					orchBatchState.blockedTasks = batchState.blockedTasks ?? 0;
+					orchBatchState.startedAt = batchState.startedAt;
+					orchBatchState.endedAt = batchState.endedAt ?? null;
+
+					// Activate supervisor with rehydration context.
+					// activateSupervisor writes the lockfile and starts heartbeat.
+					activateSupervisor(
+						pi,
+						supervisorState,
+						orchBatchState,
+						orchConfig,
+						supervisorConfig,
+						stateRoot,
+						ctx,
+					);
+
+					updateOrchWidget();
+					break;
+				}
+
+				case "live": {
+					// Another supervisor is actively running (pid alive, heartbeat fresh).
+					// Warn the operator and offer force takeover via /orch-takeover.
+					const lock = lockResult.lock;
+					const batchState = lockResult.batchState;
+					ctx.ui.notify(
+						`⚠️ **Another supervisor is already monitoring batch ${batchState.batchId}.**\n\n` +
+						`  PID: ${lock.pid}\n` +
+						`  Session: ${lock.sessionId}\n` +
+						`  Started: ${lock.startedAt}\n` +
+						`  Last heartbeat: ${lock.heartbeat}\n\n` +
+						`To force takeover, run \`/orch-takeover\`.\n` +
+						`The other session will yield on its next heartbeat.\n\n` +
+						`Otherwise, use the other terminal or the dashboard to monitor the batch.`,
+						"warning",
+					);
+
+					// Store the live lock info so the /orch handler can detect it
+					// (preventing a second /orch from starting a concurrent batch).
+					orchBatchState.batchId = batchState.batchId;
+					orchBatchState.phase = batchState.phase as typeof orchBatchState.phase;
+					orchBatchState.baseBranch = batchState.baseBranch;
+					orchBatchState.orchBranch = batchState.orchBranch ?? "";
+					orchBatchState.startedAt = batchState.startedAt;
+
+					updateOrchWidget();
+					break;
+				}
+			}
+		}
 
 		// Notify user of available commands
 		ctx.ui.notify(
@@ -1701,6 +2014,7 @@ export default function (pi: ExtensionAPI) {
 			"/orch-plan <areas|all>   Preview execution plan\n" +
 			"/orch-deps <areas|all>   Show dependency graph\n" +
 			"/orch-sessions           List TMUX sessions\n" +
+			"/orch-takeover           Force supervisor takeover\n" +
 			"/orch-integrate          Integrate orch branch into working branch",
 			"info",
 		);

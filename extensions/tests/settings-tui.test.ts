@@ -518,8 +518,8 @@ describe("11. validateFieldInput", () => {
 // ── 12.x SECTIONS coverage ──────────────────────────────────────────
 
 describe("12. SECTIONS schema coverage", () => {
-	it("12.1 has 12 sections defined", () => {
-		expect(SECTIONS).toHaveLength(12);
+	it("12.1 has 13 sections defined", () => {
+		expect(SECTIONS).toHaveLength(13);
 	});
 
 	it("12.2 last section is Advanced (JSON Only) read-only", () => {
