@@ -806,19 +806,16 @@ a second supervisor. The user can:
 
 ---
 
-### 13.11 Remaining Open Questions
+### 13.11 Deferred Implementation Details
 
-1. **Dashboard conversation UX:** How should the supervisor conversation
-   render in the dashboard? Scrolling log? Chat-style bubbles? Collapsible
-   panel? Needs design exploration.
+The following will be resolved during implementation, not upfront:
 
-2. **Supervisor prompt size:** The primer is ~650 lines. Combined with batch
-   state, telemetry, and audit trail, the supervisor's context could be large
-   on startup. Need to measure and optimize if necessary.
-
-3. **Extension UI sub-protocol:** When the supervisor executes recovery actions
-   that involve spawning agents (e.g., re-running a merge agent), how does it
-   handle pi's extension UI requests (select/confirm dialogs)?
+- **Dashboard conversation UX** — design after the supervisor is working and
+  we can see what conversations actually look like in practice.
+- **Supervisor prompt size** — not a concern at current context window sizes
+  (Opus 1M, Codex 400K). Optimize if it becomes a problem.
+- **Extension UI sub-protocol** — workers and merge agents run headless.
+  Auto-resolve with defaults if edge cases arise.
 
 ## 14. `/orch` as the Universal Entry Point
 
