@@ -310,7 +310,7 @@ export function persistRuntimeState(
 
 /** All valid OrchBatchPhase values for validation. */
 export const VALID_BATCH_PHASES: ReadonlySet<string> = new Set([
-	"idle", "planning", "executing", "merging", "paused", "stopped", "completed", "failed",
+	"idle", "launching", "planning", "executing", "merging", "paused", "stopped", "completed", "failed",
 ]);
 
 /** All valid LaneTaskStatus values for validation. */

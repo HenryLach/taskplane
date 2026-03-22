@@ -3,16 +3,16 @@
 ### Verdict: REVISE
 
 ### Summary
-The Step 3 checklist captures the right high-level compatibility outcomes, but it currently misses two blocking risks introduced by the detached launch model. In particular, command behavior during the pre-launch window is not accounted for, and the prompt’s explicit `/orch-status` disk-state requirement is not represented. Without these additions, the step can be marked complete while still regressing core `/orch-*` operator flows.
+The Step 3 checklist captures the right compatibility goals, but it is still too broad to guarantee them under the new detached-launch model. The current plan can be marked complete while `/orch-status`, `/orch-pause`, and `/orch-abort` regress in the immediate post-launch window. It also does not explicitly cover the prompt requirement that `/orch-status` reflect persisted state from disk.
 
 ### Issues Found
-1. **[Severity: critical]** — The plan does not cover the new pre-launch race window created by `startBatchAsync(...setTimeout...)` in `extensions/taskplane/extension.ts`. Right after `/orch` returns, `orchBatchState` can still be `idle` until the timer fires and `executeOrchBatch()` sets phase, which can make `/orch-status` report “No batch,” let `/orch-pause` no-op, and let `/orch-abort` treat the run as nonexistent. **Suggested fix:** add an explicit outcome to preserve command correctness during launch handoff (e.g., synchronous launch marker/state + queued pause/abort semantics before engine boot).
-2. **[Severity: important]** — The plan does not explicitly include the prompt requirement that `/orch-status` should read batch state from disk. The current Step 3 text only says commands “still work,” which is too broad to guarantee this contract. **Suggested fix:** add a concrete Step 3 outcome for `/orch-status` disk-backed behavior (including fallback/precedence rules vs in-memory state).
+1. **[Severity: critical]** — The plan does not include an outcome for the launch-handoff race introduced by `setTimeout(..., 0)` in `extensions/taskplane/extension.ts:705-735`. `/orch` resets runtime state (`extension.ts:886-889`) and returns before `executeOrchBatch()` sets `phase="planning"` (`engine.ts:533-535`), leaving a window where follow-up commands can see `idle` and behave as if no batch exists. **Suggested fix:** add an explicit Step 3 outcome for immediate post-`/orch` correctness (`/orch-status`, `/orch-pause`, `/orch-abort`, duplicate `/orch`) during pre-engine boot.
+2. **[Severity: important]** — The plan still does not explicitly cover the prompt contract: `/orch-status` should read batch state from disk. Current status handling is in-memory only (`extensions/taskplane/extension.ts:1038-1062`), so a broad “still works” checkbox is insufficient to ensure disk-backed behavior is preserved/validated. **Suggested fix:** add a concrete outcome for persisted-state status semantics (load/validate `.pi/batch-state.json`, with defined precedence/fallback behavior).
 
 ### Missing Items
-- Explicit compatibility outcome for immediate post-`/orch` command calls (`/orch-status`, `/orch-pause`, `/orch-abort`, second `/orch`) before the engine’s first tick.
-- Explicit `/orch-status` persisted-state validation path aligned to `.pi/batch-state.json` behavior.
+- Explicit compatibility outcome for command behavior in the detached launch window before engine phase transition.
+- Explicit `/orch-status` disk-state requirement and validation path.
 
 ### Suggestions
-- Reuse one shared “launching” state path for both `/orch` and `/orch-resume` so compatibility fixes and tests apply uniformly.
-- Add a targeted compatibility test intent for “command invoked immediately after non-blocking launch” rather than relying only on “existing tests pass.”
+- Use one shared “launching/starting” compatibility path for both `/orch` and `/orch-resume` so behavior and tests stay aligned.
+- Add a targeted test intent for “command issued immediately after non-blocking launch” instead of relying only on “existing tests pass.”

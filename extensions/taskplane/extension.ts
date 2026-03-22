@@ -886,6 +886,15 @@ export default function (pi: ExtensionAPI) {
 			// Reset batch state for new execution
 			orchBatchState = freshOrchBatchState();
 			latestMonitorState = null;
+
+			// ── TP-040: Set launching phase synchronously ────────────
+			// Mark as "launching" before the setTimeout detach so that
+			// /orch-status, /orch-pause, /orch-abort issued immediately
+			// after /orch returns can see that a batch is being started.
+			// The engine will transition from "launching" → "planning"
+			// on the next tick when it actually begins work.
+			orchBatchState.phase = "launching";
+			orchBatchState.startedAt = Date.now();
 			updateOrchWidget();
 
 			// ── TP-040: Non-blocking engine launch ───────────────────
@@ -1038,8 +1047,42 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("orch-status", {
 		description: "Show current batch progress",
 		handler: async (_args, ctx) => {
+			// ── TP-040: Disk fallback for idle in-memory state ────────
+			// When in-memory state is idle, try loading from persisted
+			// batch-state.json. This covers fresh-session queries (pi
+			// restarted while a batch was running in tmux lanes) and
+			// post-crash recovery where in-memory state was lost.
 			if (orchBatchState.phase === "idle") {
-				ctx.ui.notify("No batch is running. Use /orch <areas|paths|all> to start.", "info");
+				const stateRoot = execCtx?.repoRoot ?? ctx.cwd;
+				let diskState: PersistedBatchState | null = null;
+				try {
+					diskState = loadBatchState(stateRoot);
+				} catch {
+					// Ignore errors — fall through to "no batch" message
+				}
+
+				if (!diskState) {
+					ctx.ui.notify("No batch is running. Use /orch <areas|paths|all> to start.", "info");
+					return;
+				}
+
+				// Show status from persisted state
+				const elapsedSec = diskState.endedAt
+					? Math.round((diskState.endedAt - diskState.startedAt) / 1000)
+					: Math.round((Date.now() - diskState.startedAt) / 1000);
+
+				const lines: string[] = [
+					`📊 Batch ${diskState.batchId} — ${diskState.phase} (from disk)`,
+					`   Wave: ${diskState.currentWaveIndex + 1}/${diskState.totalWaves}`,
+					`   Tasks: ${diskState.succeededTasks} succeeded, ${diskState.failedTasks} failed, ${diskState.skippedTasks} skipped, ${diskState.blockedTasks} blocked / ${diskState.totalTasks} total`,
+					`   Elapsed: ${elapsedSec}s`,
+				];
+
+				if (diskState.errors.length > 0) {
+					lines.push(`   Errors: ${diskState.errors.length}`);
+				}
+
+				ctx.ui.notify(lines.join("\n"), "info");
 				return;
 			}
 
@@ -1092,8 +1135,8 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// Prevent resume if a batch is actively running
-			if (orchBatchState.phase === "executing" || orchBatchState.phase === "merging" || orchBatchState.phase === "planning") {
+			// Prevent resume if a batch is actively running (includes "launching" from non-blocking detach)
+			if (orchBatchState.phase === "launching" || orchBatchState.phase === "executing" || orchBatchState.phase === "merging" || orchBatchState.phase === "planning") {
 				ctx.ui.notify(
 					`⚠️ A batch is currently ${orchBatchState.phase} (${orchBatchState.batchId}). Cannot resume.`,
 					"warning",
@@ -1104,6 +1147,12 @@ export default function (pi: ExtensionAPI) {
 			// Reset batch state for resume
 			orchBatchState = freshOrchBatchState();
 			latestMonitorState = null;
+
+			// ── TP-040: Set launching phase synchronously ────────────
+			// Same as /orch — mark as "launching" before setTimeout detach
+			// so commands issued immediately see an active batch.
+			orchBatchState.phase = "launching";
+			orchBatchState.startedAt = Date.now();
 			updateOrchWidget();
 
 			// ── TP-040: Non-blocking resume launch ───────────────────

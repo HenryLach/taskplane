@@ -864,7 +864,7 @@ export interface WaveExecutionResult {
  *                   → paused (via /orch-pause)
  *   Any active state → idle (via cleanup after completion/failure)
  */
-export type OrchBatchPhase = "idle" | "planning" | "executing" | "merging" | "paused" | "stopped" | "completed" | "failed";
+export type OrchBatchPhase = "idle" | "launching" | "planning" | "executing" | "merging" | "paused" | "stopped" | "completed" | "failed";
 
 /**
  * Runtime state for a batch execution.

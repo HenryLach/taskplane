@@ -285,6 +285,14 @@ export function checkResumeEligibility(state: PersistedBatchState, force: boolea
 				batchId,
 			};
 
+		case "launching":
+			return {
+				eligible: false,
+				reason: `Batch ${batchId} is currently launching. Wait for it to start or use /orch-abort.`,
+				phase,
+				batchId,
+			};
+
 		case "planning":
 			return {
 				eligible: false,
@@ -936,7 +944,8 @@ export async function resumeOrchBatch(
 
 	batchState.mode = persistedState.mode;
 	batchState.startedAt = persistedState.startedAt;
-	batchState.pauseSignal = { paused: false };
+	// Preserve pauseSignal if already set during "launching" phase (TP-040)
+	if (!batchState.pauseSignal?.paused) batchState.pauseSignal = { paused: false };
 	batchState.totalWaves = persistedState.totalWaves;
 	batchState.totalTasks = persistedState.totalTasks;
 	batchState.succeededTasks = resumePoint.completedTaskIds.length;

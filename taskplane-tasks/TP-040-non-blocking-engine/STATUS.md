@@ -1,11 +1,11 @@
 # TP-040: Non-Blocking Engine Refactor — Status
 
 **Current Step:** Step 3: Preserve Existing Behavior
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-22
 **Review Level:** 2
 **Review Counter:** 5
-**Iteration:** 5
+**Iteration:** 4
 **Size:** L
 
 ---
@@ -44,12 +44,12 @@
 ---
 
 ### Step 3: Preserve Existing Behavior
-**Status:** 🟨 In Progress
-- [ ] R005-1: Fix pre-launch race window — set orchBatchState.phase to "launching" synchronously before setTimeout detach so /orch-status, /orch-pause, /orch-abort recognize the batch immediately
-- [ ] R005-2: Make /orch-status fall back to disk-persisted batch-state.json when in-memory state is idle (covers fresh-session queries and post-crash recovery)
-- [ ] Verify /orch all still works end-to-end (handler returns immediately, engine runs in background)
-- [ ] Verify /orch-pause, /orch-resume, /orch-abort work with launching phase
-- [ ] Existing tests pass
+**Status:** ✅ Complete
+- [x] R005-1: Fix pre-launch race window — set orchBatchState.phase to "launching" synchronously before setTimeout detach so /orch-status, /orch-pause, /orch-abort recognize the batch immediately
+- [x] R005-2: Make /orch-status fall back to disk-persisted batch-state.json when in-memory state is idle (covers fresh-session queries and post-crash recovery)
+- [x] Verify /orch all still works end-to-end (handler returns immediately, engine runs in background)
+- [x] Verify /orch-pause, /orch-resume, /orch-abort work with launching phase
+- [x] Existing tests pass
 
 ---
 
@@ -81,6 +81,7 @@
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
+| R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 |---|------|------|---------|------|
 
@@ -136,6 +137,8 @@
 | 2026-03-22 19:59 | Worker iter 3 | done in 341s, ctx: 15%, tools: 29 |
 | 2026-03-22 19:59 | Step 2 complete | Make Engine Non-Blocking |
 | 2026-03-22 19:59 | Step 3 started | Preserve Existing Behavior |
+| 2026-03-22 20:01 | Review R005 | plan Step 3: REVISE |
+| 2026-03-22 20:05 | Step 3 impl | R005-1 verified (already done), R005-2 /orch-status disk fallback added, all 1815 tests pass |
 
 ## Blockers
 

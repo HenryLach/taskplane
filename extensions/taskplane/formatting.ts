@@ -567,7 +567,8 @@ export function createOrchWidget(
 
 				// ── Phase-specific rendering ──────────────────
 				const phaseIcon =
-					vm.phase === "planning" ? "◌"
+					vm.phase === "launching" ? "◌"
+					: vm.phase === "planning" ? "◌"
 					: vm.phase === "executing" ? "●"
 					: vm.phase === "merging" ? "🔀"
 					: vm.phase === "paused" ? "⏸"

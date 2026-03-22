@@ -532,8 +532,11 @@ export async function executeOrchBatch(
 	// ── Phase 1: Planning ────────────────────────────────────────
 	batchState.phase = "planning";
 	batchState.batchId = generateBatchId();
-	batchState.startedAt = Date.now();
-	batchState.pauseSignal = { paused: false };
+	// Preserve startedAt if set during "launching" phase (TP-040)
+	if (!batchState.startedAt) batchState.startedAt = Date.now();
+	// Preserve pauseSignal if already set during "launching" phase (TP-040)
+	// — e.g., /orch-pause issued between /orch return and engine start
+	if (!batchState.pauseSignal?.paused) batchState.pauseSignal = { paused: false };
 	batchState.mergeResults = [];
 	batchState.mode = workspaceConfig ? "workspace" : "repo";
 
