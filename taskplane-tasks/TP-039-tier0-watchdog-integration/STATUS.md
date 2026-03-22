@@ -1,6 +1,6 @@
 # TP-039: Tier 0 Watchdog Engine Integration — Status
 
-**Current Step:** Step 1: Wire Automatic Recovery into Engine
+**Current Step:** Step 2: Tier 0 Event Logging
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
@@ -20,7 +20,7 @@
 ---
 
 ### Step 1: Wire Automatic Recovery into Engine
-**Status:** ✅ Complete (R002 revisions applied)
+**Status:** ✅ Complete
 - [x] Define Tier 0 retry scope keys and retryable classification set in types.ts (non-merge retry scopes distinct from merge scopes)
 - [x] Add `classifyAndRetryWorkerCrash()` helper in engine.ts: after wave execution, for each failed task, populate exitDiagnostic via classifyExit(), check if retryable (api_error, process_crash, session_vanished), preserve partial progress, then re-execute the lane if budget allows
 - [x] Add `retryStaleWorktreeAllocation()` helper: when executeWave returns allocation failure with ALLOC_WORKTREE_FAILED, force cleanup + prune + retry allocation once before marking wave failed
@@ -34,7 +34,7 @@
 ---
 
 ### Step 2: Tier 0 Event Logging
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Create .pi/supervisor/ directory
 - [ ] Write JSONL events for recovery attempts/success/exhaustion
 - [ ] Include full context in events
@@ -106,6 +106,9 @@
 | 2026-03-22 18:07 | Worker iter 2 | done in 731s, ctx: 44%, tools: 86 |
 | 2026-03-22 18:12 | Review R002 | code Step 1: REVISE |
 | 2026-03-22 18:12 | Review R002 | code Step 1: REVISE |
+| 2026-03-22 18:21 | Worker iter 3 | done in 528s, ctx: 33%, tools: 64 |
+| 2026-03-22 18:21 | Step 1 complete | Wire Automatic Recovery into Engine |
+| 2026-03-22 18:21 | Step 2 started | Tier 0 Event Logging |
 
 ## Blockers
 
