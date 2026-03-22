@@ -1,21 +1,21 @@
 # TP-041: Supervisor Agent — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-21
+**Current Step:** Step 0: Preflight
+**Status:** ✅ Complete
+**Last Updated:** 2026-03-22
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** L
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read supervisor primer
-- [ ] Read extension.ts session lifecycle
-- [ ] Read spec Sections 4.2-4.5, 6.1-6.4
-- [ ] Understand pi sendMessage() API
+**Status:** ✅ Complete
+- [x] Read supervisor primer
+- [x] Read extension.ts session lifecycle
+- [x] Read spec Sections 4.2-4.5, 6.1-6.4
+- [x] Understand pi sendMessage() API
 
 ---
 
@@ -83,12 +83,22 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| pi API: `sendMessage({triggerTurn:true})` injects message and triggers LLM turn; `before_agent_start` event can return `{systemPrompt}` to override/augment system prompt per turn | Use both: sendMessage for activation, before_agent_start for persistent system prompt injection | pi types.d.ts |
+| `/orch` already non-blocking via TP-040 `startBatchAsync()` — returns immediately, session is interactive | Supervisor activation can be added right after startBatchAsync call | extension.ts |
+| `pi.sendUserMessage()` sends as if user typed it — could be used for supervisor self-prompting on events | Consider for event-triggered supervisor notifications | pi types.d.ts |
 
 ## Execution Log
 
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-21 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-22 20:44 | Task started | Extension-driven execution |
+| 2026-03-22 20:44 | Step 0 started | Preflight |
+| 2026-03-22 20:44 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 20:44 | Task started | Extension-driven execution |
+| 2026-03-22 20:44 | Step 0 started | Preflight |
+| 2026-03-22 20:44 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 | Step 0 complete | Read primer, extension.ts, spec sections 4.2-4.5/6.1-6.4, pi sendMessage API |
 
 ## Blockers
 
