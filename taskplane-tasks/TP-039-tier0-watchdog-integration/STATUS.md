@@ -20,12 +20,12 @@
 ---
 
 ### Step 1: Wire Automatic Recovery into Engine
-**Status:** 🟨 In Progress
-- [ ] Define Tier 0 retry scope keys and retryable classification set in types.ts (non-merge retry scopes distinct from merge scopes)
-- [ ] Add `classifyAndRetryWorkerCrash()` helper in engine.ts: after wave execution, for each failed task, populate exitDiagnostic via classifyExit(), check if retryable (api_error, process_crash, session_vanished), preserve partial progress, then re-execute the lane if budget allows
-- [ ] Add `retryStaleWorktreeAllocation()` helper: when executeWave returns allocation failure with ALLOC_WORKTREE_FAILED, force cleanup + prune + retry allocation once before marking wave failed
-- [ ] Add cleanup gate retry: when post-merge cleanup gate fires, retry force cleanup once before pausing
-- [ ] Persist non-merge retry counters in resilience.retryCountByScope after each attempt
+**Status:** ✅ Complete
+- [x] Define Tier 0 retry scope keys and retryable classification set in types.ts (non-merge retry scopes distinct from merge scopes)
+- [x] Add `classifyAndRetryWorkerCrash()` helper in engine.ts: after wave execution, for each failed task, populate exitDiagnostic via classifyExit(), check if retryable (api_error, process_crash, session_vanished), preserve partial progress, then re-execute the lane if budget allows
+- [x] Add `retryStaleWorktreeAllocation()` helper: when executeWave returns allocation failure with ALLOC_WORKTREE_FAILED, force cleanup + prune + retry allocation once before marking wave failed
+- [x] Add cleanup gate retry: when post-merge cleanup gate fires, retry force cleanup once before pausing
+- [x] Persist non-merge retry counters in resilience.retryCountByScope after each attempt
 
 ---
 
