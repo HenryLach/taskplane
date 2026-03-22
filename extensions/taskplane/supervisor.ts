@@ -14,6 +14,10 @@
  * - Model inheritance + config override
  * - Lockfile + heartbeat for session takeover prevention (Step 2)
  * - Startup detection + stale lock takeover with rehydration (Step 2)
+ * - Event tailer: batch-scoped consumption of events.jsonl (Step 3)
+ * - Proactive notifications with autonomy-aware verbosity (Step 3)
+ * - Task completion digest coalescing (Step 3)
+ * - Engine event consumption + proactive notifications (Step 3)
  *
  * @module supervisor
  * @since TP-041
@@ -21,10 +25,11 @@
 
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync, statSync, openSync, readSync, closeSync } from "fs";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Model, Api } from "@mariozechner/pi-ai";
-import type { OrchBatchRuntimeState, OrchestratorConfig, PersistedBatchState } from "./types.ts";
+import type { OrchBatchRuntimeState, OrchestratorConfig, PersistedBatchState, EngineEvent, EngineEventType } from "./types.ts";
+import type { Tier0Event, Tier0EventType } from "./persistence.ts";
 
 // ── Supervisor Config Types ──────────────────────────────────────────
 
@@ -251,6 +256,10 @@ export interface SupervisorState {
 	lockSessionId: string;
 	/** Heartbeat timer handle (null when not active) */
 	heartbeatTimer: ReturnType<typeof setInterval> | null;
+
+	// ── Event Tailer (Step 3) ──────────────────────────────────────
+	/** Event tailer state for consuming engine events */
+	eventTailer: EventTailerState;
 }
 
 /**
@@ -268,6 +277,7 @@ export function freshSupervisorState(): SupervisorState {
 		didSwitchModel: false,
 		lockSessionId: "",
 		heartbeatTimer: null,
+		eventTailer: freshEventTailerState(),
 	};
 }
 
@@ -378,6 +388,13 @@ export async function activateSupervisor(
 	// Start heartbeat timer — updates lockfile every 30s, detects takeover
 	state.heartbeatTimer = startHeartbeat(stateRoot, state, pi);
 
+	// ── Event tailer (Step 3) ────────────────────────────────────
+	// Start tailing events.jsonl for proactive notifications.
+	// Initializes byte offset to current file size so we skip stale events.
+	// Idempotent — safe even if called from takeover paths that may have
+	// started a tailer previously (stopEventTailer is called in deactivate).
+	startEventTailer(pi, state.eventTailer, state);
+
 	// Send activation message to trigger the supervisor's first turn.
 	// The content is generic — specific counts may not be available yet
 	// since the engine sets batchId/totalWaves/totalTasks asynchronously.
@@ -421,6 +438,9 @@ export async function deactivateSupervisor(
 	state: SupervisorState,
 ): Promise<void> {
 	if (!state.active) return; // Already inactive — idempotent guard
+
+	// ── Stop event tailer (Step 3) ───────────────────────────────
+	stopEventTailer(state.eventTailer);
 
 	// ── Stop heartbeat timer (Step 2) ────────────────────────────
 	if (state.heartbeatTimer) {
@@ -924,4 +944,672 @@ export function startHeartbeat(
 	}
 
 	return timer;
+}
+
+
+// ── Engine Event Consumption + Notifications (TP-041 Step 3) ─────────
+
+/**
+ * Polling interval for the event tailer (10 seconds).
+ *
+ * Balances responsiveness (operator sees events quickly) with resource
+ * efficiency (avoid excessive file reads). Chosen to be shorter than
+ * the heartbeat interval (30s) so the supervisor reports events before
+ * the next heartbeat.
+ *
+ * @since TP-041
+ */
+export const EVENT_POLL_INTERVAL_MS = 10_000;
+
+/**
+ * Coalescing window for task_complete digests (30 seconds).
+ *
+ * Instead of emitting one notification per task completion, the tailer
+ * buffers completions and emits a periodic digest. This prevents turn
+ * spam when many tasks complete in quick succession.
+ *
+ * @since TP-041
+ */
+export const TASK_DIGEST_INTERVAL_MS = 30_000;
+
+/**
+ * All known event types that appear in the unified events.jsonl.
+ * Used for type narrowing when parsing lines.
+ *
+ * @since TP-041
+ */
+type UnifiedEventType = EngineEventType | Tier0EventType;
+
+/**
+ * A parsed event from the unified events.jsonl file.
+ *
+ * The file contains both EngineEvent and Tier0Event entries; we use
+ * a discriminated union on the `type` field. For parsing safety, we
+ * use a minimal common shape plus the union type.
+ *
+ * @since TP-041
+ */
+interface ParsedEvent {
+	timestamp: string;
+	type: UnifiedEventType;
+	batchId: string;
+	waveIndex: number;
+	// ── EngineEvent-specific optional fields ─────────────────────
+	phase?: string;
+	taskIds?: string[];
+	laneCount?: number;
+	taskId?: string;
+	durationMs?: number;
+	outcome?: string;
+	reason?: string;
+	partialProgress?: boolean;
+	laneNumber?: number;
+	error?: string;
+	testCount?: number;
+	totalWaves?: number;
+	succeededTasks?: number;
+	failedTasks?: number;
+	skippedTasks?: number;
+	blockedTasks?: number;
+	batchDurationMs?: number;
+	// ── Tier0Event-specific optional fields ──────────────────────
+	pattern?: string;
+	attempt?: number;
+	maxAttempts?: number;
+	classification?: string;
+	resolution?: string;
+	suggestion?: string;
+	affectedTaskIds?: string[];
+	message?: string;
+}
+
+/**
+ * Event types that are considered "significant" for proactive notification.
+ *
+ * - Engine lifecycle: wave_start, merge_success, merge_failed, batch_complete, batch_paused
+ * - Tier 0 escalation: tier0_escalation (requires supervisor/operator attention)
+ *
+ * task_complete and task_failed are coalesced into periodic digests
+ * rather than individual notifications.
+ *
+ * @since TP-041
+ */
+const SIGNIFICANT_EVENT_TYPES = new Set<UnifiedEventType>([
+	"wave_start",
+	"merge_start",
+	"merge_success",
+	"merge_failed",
+	"batch_complete",
+	"batch_paused",
+	"tier0_escalation",
+]);
+
+/**
+ * Event types that are coalesced into periodic digests.
+ *
+ * @since TP-041
+ */
+const DIGEST_EVENT_TYPES = new Set<UnifiedEventType>([
+	"task_complete",
+	"task_failed",
+	"tier0_recovery_attempt",
+	"tier0_recovery_success",
+	"tier0_recovery_exhausted",
+]);
+
+/**
+ * Buffered task events for digest coalescing.
+ *
+ * @since TP-041
+ */
+interface TaskDigestBuffer {
+	/** Completed task IDs since last digest */
+	completed: string[];
+	/** Failed task IDs since last digest */
+	failed: string[];
+	/** Tier 0 recovery attempts since last digest */
+	recoveryAttempts: number;
+	/** Tier 0 recovery successes since last digest */
+	recoverySuccesses: number;
+	/** Tier 0 recovery exhausted since last digest */
+	recoveryExhausted: number;
+}
+
+/**
+ * Event tailer state — tracks the byte offset cursor, digest buffer,
+ * and timer handles for the polling loop and digest flush.
+ *
+ * @since TP-041
+ */
+export interface EventTailerState {
+	/** Whether the tailer is currently running */
+	running: boolean;
+	/** Byte offset into events.jsonl — only bytes after this are new */
+	byteOffset: number;
+	/** Partial line buffer (when a read ends mid-line) */
+	partialLine: string;
+	/** Active batch ID to filter events against */
+	batchId: string;
+	/** Task digest buffer for coalescing task_complete/task_failed */
+	digestBuffer: TaskDigestBuffer;
+	/** Polling timer handle */
+	pollTimer: ReturnType<typeof setInterval> | null;
+	/** Digest flush timer handle */
+	digestTimer: ReturnType<typeof setInterval> | null;
+}
+
+/**
+ * Create a fresh (stopped) event tailer state.
+ *
+ * @since TP-041
+ */
+export function freshEventTailerState(): EventTailerState {
+	return {
+		running: false,
+		byteOffset: 0,
+		partialLine: "",
+		batchId: "",
+		digestBuffer: freshDigestBuffer(),
+		pollTimer: null,
+		digestTimer: null,
+	};
+}
+
+/**
+ * Create a fresh digest buffer.
+ *
+ * @since TP-041
+ */
+function freshDigestBuffer(): TaskDigestBuffer {
+	return {
+		completed: [],
+		failed: [],
+		recoveryAttempts: 0,
+		recoverySuccesses: 0,
+		recoveryExhausted: 0,
+	};
+}
+
+/**
+ * Check if a digest buffer has any content worth flushing.
+ *
+ * @since TP-041
+ */
+function isDigestEmpty(buf: TaskDigestBuffer): boolean {
+	return (
+		buf.completed.length === 0 &&
+		buf.failed.length === 0 &&
+		buf.recoveryAttempts === 0 &&
+		buf.recoverySuccesses === 0 &&
+		buf.recoveryExhausted === 0
+	);
+}
+
+/**
+ * Read new bytes from the events JSONL file starting at the given offset.
+ *
+ * Uses low-level file descriptor operations for efficient tailing without
+ * reading the entire file. Returns the raw UTF-8 string of new bytes,
+ * or empty string if no new data.
+ *
+ * @param eventsPath - Full path to events.jsonl
+ * @param byteOffset - Start reading from this byte offset
+ * @returns [newData, newByteOffset] — the new data and the updated offset
+ *
+ * @since TP-041
+ */
+export function readNewBytes(eventsPath: string, byteOffset: number): [string, number] {
+	if (!existsSync(eventsPath)) return ["", byteOffset];
+
+	let fileSize: number;
+	try {
+		fileSize = statSync(eventsPath).size;
+	} catch {
+		return ["", byteOffset];
+	}
+
+	if (fileSize <= byteOffset) return ["", byteOffset];
+
+	const bytesToRead = fileSize - byteOffset;
+	const buffer = Buffer.alloc(bytesToRead);
+
+	let fd: number | null = null;
+	try {
+		fd = openSync(eventsPath, "r");
+		readSync(fd, buffer, 0, bytesToRead, byteOffset);
+	} catch {
+		return ["", byteOffset];
+	} finally {
+		if (fd !== null) {
+			try { closeSync(fd); } catch { /* best-effort */ }
+		}
+	}
+
+	return [buffer.toString("utf-8"), fileSize];
+}
+
+/**
+ * Parse JSONL lines from raw data, handling partial lines.
+ *
+ * Returns parsed events and any remaining partial line (incomplete
+ * trailing data that doesn't end with a newline).
+ *
+ * Malformed/partial JSON lines are skipped (best-effort, per R005 suggestion).
+ *
+ * @param data - Raw string data from the file
+ * @param partialLine - Leftover partial line from previous read
+ * @returns [parsedEvents, remainingPartialLine]
+ *
+ * @since TP-041
+ */
+export function parseJsonlLines(
+	data: string,
+	partialLine: string,
+): [ParsedEvent[], string] {
+	const combined = partialLine + data;
+	const lines = combined.split("\n");
+
+	// Last element is either empty (if data ended with \n) or a partial line
+	const remaining = lines.pop() ?? "";
+
+	const events: ParsedEvent[] = [];
+	for (const line of lines) {
+		const trimmed = line.trim();
+		if (!trimmed) continue; // Skip empty lines
+
+		try {
+			const parsed = JSON.parse(trimmed) as Record<string, unknown>;
+			// Minimal validation: must have timestamp, type, batchId
+			if (
+				typeof parsed.timestamp === "string" &&
+				typeof parsed.type === "string" &&
+				typeof parsed.batchId === "string"
+			) {
+				events.push(parsed as unknown as ParsedEvent);
+			}
+		} catch {
+			// Malformed line — skip and continue (R005 suggestion)
+		}
+	}
+
+	return [events, remaining];
+}
+
+/**
+ * Format a significant event into an operator-facing notification string.
+ *
+ * The notification style varies by event type and autonomy level.
+ *
+ * @param event - The parsed event to format
+ * @param autonomy - Current autonomy level
+ * @returns Formatted notification string
+ *
+ * @since TP-041
+ */
+export function formatEventNotification(
+	event: ParsedEvent,
+	autonomy: SupervisorAutonomyLevel,
+): string {
+	const waveNum = event.waveIndex >= 0 ? event.waveIndex + 1 : "?";
+
+	switch (event.type) {
+		case "wave_start": {
+			const taskCount = event.taskIds?.length ?? 0;
+			const laneInfo = event.laneCount ? ` across ${event.laneCount} lanes` : "";
+			return `🌊 **Wave ${waveNum} starting** with ${taskCount} task(s)${laneInfo}.`;
+		}
+		case "merge_start": {
+			return `🔀 Wave ${waveNum} merge starting...`;
+		}
+		case "merge_success": {
+			const waveProg = event.totalWaves
+				? ` (${waveNum}/${event.totalWaves})`
+				: "";
+			const testInfo = event.testCount ? ` Tests pass (${event.testCount}).` : " Tests pass.";
+			return `✅ **Wave ${waveNum} merged successfully**${waveProg}.${testInfo}`;
+		}
+		case "merge_failed": {
+			const reason = event.reason || event.error || "unknown reason";
+			const laneInfo = event.laneNumber !== undefined ? ` (lane ${event.laneNumber})` : "";
+			if (autonomy === "autonomous") {
+				return `⚠️ Wave ${waveNum} merge failed${laneInfo}: ${reason}. Attempting recovery...`;
+			}
+			return `⚠️ **Wave ${waveNum} merge failed**${laneInfo}: ${reason}.\n` +
+				`   Recovery may be needed. Check the merge logs for details.`;
+		}
+		case "batch_complete": {
+			const parts: string[] = [];
+			if (event.succeededTasks !== undefined) parts.push(`${event.succeededTasks} succeeded`);
+			if (event.failedTasks !== undefined && event.failedTasks > 0) parts.push(`${event.failedTasks} failed`);
+			if (event.skippedTasks !== undefined && event.skippedTasks > 0) parts.push(`${event.skippedTasks} skipped`);
+			if (event.blockedTasks !== undefined && event.blockedTasks > 0) parts.push(`${event.blockedTasks} blocked`);
+			const summary = parts.length > 0 ? parts.join(", ") : "all tasks processed";
+			const duration = event.batchDurationMs
+				? ` in ${formatDuration(event.batchDurationMs)}`
+				: "";
+			return `🏁 **Batch complete!** ${summary}${duration}.`;
+		}
+		case "batch_paused": {
+			const reason = event.reason || "unknown reason";
+			if (autonomy === "interactive") {
+				return `⏸️ **Batch paused:** ${reason}\n` +
+					`   What would you like to do? Options: fix the issue, skip the task, or abort.`;
+			}
+			return `⏸️ **Batch paused:** ${reason}`;
+		}
+		case "tier0_escalation": {
+			const pattern = event.pattern || "unknown";
+			const suggestion = event.suggestion || "Manual intervention needed.";
+			if (autonomy === "autonomous") {
+				return `⚡ **Tier 0 escalation** (${pattern}): Investigating automatically. ${suggestion}`;
+			}
+			if (autonomy === "interactive") {
+				return `❌ **Tier 0 escalation** (${pattern}): ${suggestion}\n` +
+					`   Need your input on how to proceed.`;
+			}
+			// supervised
+			return `⚡ **Tier 0 escalation** (${pattern}): ${suggestion}\n` +
+				`   Diagnosing — will ask if novel recovery is needed.`;
+		}
+		default:
+			return `📌 Event: ${event.type} (wave ${waveNum})`;
+	}
+}
+
+/**
+ * Format a task digest buffer into a summary notification.
+ *
+ * @param buf - Digest buffer to format
+ * @param autonomy - Current autonomy level
+ * @returns Formatted digest string, or null if buffer is empty
+ *
+ * @since TP-041
+ */
+export function formatTaskDigest(
+	buf: TaskDigestBuffer,
+	autonomy: SupervisorAutonomyLevel,
+): string | null {
+	if (isDigestEmpty(buf)) return null;
+
+	const parts: string[] = [];
+
+	if (buf.completed.length > 0) {
+		if (autonomy === "interactive") {
+			// Show individual task IDs in interactive mode
+			parts.push(`✓ ${buf.completed.length} task(s) completed: ${buf.completed.join(", ")}`);
+		} else {
+			parts.push(`✓ ${buf.completed.length} task(s) completed`);
+		}
+	}
+
+	if (buf.failed.length > 0) {
+		// Always show failed task IDs — they need attention
+		parts.push(`✗ ${buf.failed.length} task(s) failed: ${buf.failed.join(", ")}`);
+	}
+
+	if (buf.recoveryAttempts > 0 && autonomy !== "autonomous") {
+		const successRate = buf.recoverySuccesses > 0
+			? ` (${buf.recoverySuccesses} succeeded)`
+			: "";
+		parts.push(`🔄 ${buf.recoveryAttempts} recovery attempt(s)${successRate}`);
+	}
+
+	if (buf.recoveryExhausted > 0) {
+		parts.push(`⚠️ ${buf.recoveryExhausted} recovery budget(s) exhausted`);
+	}
+
+	if (parts.length === 0) return null;
+
+	return `📊 **Progress update:**\n   ${parts.join("\n   ")}`;
+}
+
+/**
+ * Format a duration in milliseconds to a human-readable string.
+ *
+ * @since TP-041
+ */
+function formatDuration(ms: number): string {
+	const secs = Math.floor(ms / 1000);
+	if (secs < 60) return `${secs}s`;
+	const mins = Math.floor(secs / 60);
+	const remainSecs = secs % 60;
+	if (mins < 60) return `${mins}m${remainSecs > 0 ? ` ${remainSecs}s` : ""}`;
+	const hours = Math.floor(mins / 60);
+	const remainMins = mins % 60;
+	return `${hours}h${remainMins > 0 ? ` ${remainMins}m` : ""}`;
+}
+
+/**
+ * Should a notification for this event type be sent at the given autonomy level?
+ *
+ * Controls notification frequency:
+ * - **interactive**: all significant events + verbose digests
+ * - **supervised**: all significant events + concise digests
+ * - **autonomous**: only failures, escalations, and batch completion; skip routine
+ *
+ * @since TP-041
+ */
+export function shouldNotify(
+	eventType: UnifiedEventType,
+	autonomy: SupervisorAutonomyLevel,
+): boolean {
+	// Always notify for terminal/failure events regardless of autonomy
+	if (
+		eventType === "batch_complete" ||
+		eventType === "batch_paused" ||
+		eventType === "merge_failed" ||
+		eventType === "tier0_escalation"
+	) {
+		return true;
+	}
+
+	// Autonomous mode: skip routine progress events
+	if (autonomy === "autonomous") {
+		return false;
+	}
+
+	// Interactive and supervised: notify for all significant events
+	return SIGNIFICANT_EVENT_TYPES.has(eventType);
+}
+
+/**
+ * Process a batch of parsed events: filter to active batch, classify,
+ * and emit notifications or buffer for digest.
+ *
+ * @param events - Parsed events from the JSONL file
+ * @param tailer - Event tailer state (for batchId filter + digest buffer)
+ * @param autonomy - Current autonomy level
+ * @param notify - Callback to emit a notification to the operator
+ *
+ * @since TP-041
+ */
+export function processEvents(
+	events: ParsedEvent[],
+	tailer: EventTailerState,
+	autonomy: SupervisorAutonomyLevel,
+	notify: (text: string) => void,
+): void {
+	for (const event of events) {
+		// ── Batch-scoped filter (R005-1) ─────────────────────────
+		// Skip events from other batches. When batchId is empty
+		// (pre-planning), accept all events — we'll get the real
+		// batchId on the first event.
+		if (tailer.batchId && event.batchId && event.batchId !== tailer.batchId) {
+			continue;
+		}
+
+		// Update batchId if we were waiting for it (pre-planning)
+		if (!tailer.batchId && event.batchId) {
+			tailer.batchId = event.batchId;
+		}
+
+		// ── Classify: significant (immediate) vs digest (buffered) ──
+		if (DIGEST_EVENT_TYPES.has(event.type)) {
+			// Buffer for digest coalescing
+			bufferDigestEvent(event, tailer.digestBuffer);
+		} else if (shouldNotify(event.type, autonomy)) {
+			// Emit immediate notification
+			const text = formatEventNotification(event, autonomy);
+			notify(text);
+		}
+		// Other event types (merge_start in autonomous mode, etc.) are silently consumed
+	}
+}
+
+/**
+ * Buffer a digest-class event into the digest buffer.
+ *
+ * @since TP-041
+ */
+function bufferDigestEvent(event: ParsedEvent, buf: TaskDigestBuffer): void {
+	switch (event.type) {
+		case "task_complete":
+			if (event.taskId) buf.completed.push(event.taskId);
+			break;
+		case "task_failed":
+			if (event.taskId) buf.failed.push(event.taskId);
+			break;
+		case "tier0_recovery_attempt":
+			buf.recoveryAttempts++;
+			break;
+		case "tier0_recovery_success":
+			buf.recoverySuccesses++;
+			break;
+		case "tier0_recovery_exhausted":
+			buf.recoveryExhausted++;
+			break;
+	}
+}
+
+/**
+ * Start the event tailer — polls events.jsonl for new events and
+ * emits proactive notifications to the operator.
+ *
+ * The tailer:
+ * 1. Polls at EVENT_POLL_INTERVAL_MS for new bytes in events.jsonl
+ * 2. Parses new JSONL lines, filtering to active batchId
+ * 3. Significant events → immediate notification via pi.sendMessage
+ * 4. task_complete/task_failed → buffered into periodic digests
+ *
+ * Idempotent: safe to call when already running (no-op).
+ *
+ * @param pi - ExtensionAPI for sending notifications
+ * @param tailer - Event tailer state (mutated)
+ * @param supervisorState - Supervisor state (for config + stateRoot)
+ *
+ * @since TP-041
+ */
+export function startEventTailer(
+	pi: ExtensionAPI,
+	tailer: EventTailerState,
+	supervisorState: SupervisorState,
+): void {
+	if (tailer.running) return; // Idempotent guard (R005-2)
+
+	const stateRoot = supervisorState.stateRoot;
+	const eventsPath = join(stateRoot, ".pi", "supervisor", "events.jsonl");
+	const autonomy = supervisorState.config.autonomy;
+
+	tailer.running = true;
+	tailer.batchId = supervisorState.batchId;
+
+	// Initialize byte offset to current file size so we only process
+	// events emitted after activation (not stale events from previous batches).
+	// For takeover paths, the activation message's standing orders tell the
+	// supervisor to read the full events file manually for context.
+	if (existsSync(eventsPath)) {
+		try {
+			tailer.byteOffset = statSync(eventsPath).size;
+		} catch {
+			tailer.byteOffset = 0;
+		}
+	} else {
+		tailer.byteOffset = 0;
+	}
+
+	// Notification callback — sends as a supervisor event message
+	const notify = (text: string) => {
+		if (!supervisorState.active) return; // Guard: don't notify after deactivation
+		pi.sendMessage(
+			{
+				customType: "supervisor-event",
+				content: [{ type: "text", text }],
+				display: text.replace(/\*\*/g, "").substring(0, 80),
+			},
+			{ triggerTurn: true, deliverAs: "nextTurn" },
+		);
+	};
+
+	// ── Poll timer ───────────────────────────────────────────────
+	tailer.pollTimer = setInterval(() => {
+		if (!supervisorState.active || !tailer.running) {
+			stopEventTailer(tailer);
+			return;
+		}
+
+		const [newData, newOffset] = readNewBytes(eventsPath, tailer.byteOffset);
+		if (!newData) return; // No new data
+
+		tailer.byteOffset = newOffset;
+		const [events, remaining] = parseJsonlLines(newData, tailer.partialLine);
+		tailer.partialLine = remaining;
+
+		processEvents(events, tailer, autonomy, notify);
+	}, EVENT_POLL_INTERVAL_MS);
+
+	// ── Digest flush timer ───────────────────────────────────────
+	tailer.digestTimer = setInterval(() => {
+		if (!supervisorState.active || !tailer.running) {
+			stopEventTailer(tailer);
+			return;
+		}
+
+		if (isDigestEmpty(tailer.digestBuffer)) return;
+
+		const digest = formatTaskDigest(tailer.digestBuffer, autonomy);
+		if (digest) {
+			notify(digest);
+		}
+
+		// Reset buffer
+		tailer.digestBuffer = freshDigestBuffer();
+	}, TASK_DIGEST_INTERVAL_MS);
+
+	// Unref timers so they don't prevent Node.js exit
+	if (tailer.pollTimer && typeof tailer.pollTimer === "object" && "unref" in tailer.pollTimer) {
+		tailer.pollTimer.unref();
+	}
+	if (tailer.digestTimer && typeof tailer.digestTimer === "object" && "unref" in tailer.digestTimer) {
+		tailer.digestTimer.unref();
+	}
+}
+
+/**
+ * Stop the event tailer.
+ *
+ * Clears timers and flushes any remaining digest buffer (best-effort,
+ * the final digest is not sent — it would be stale).
+ *
+ * Idempotent: safe to call when already stopped (no-op).
+ *
+ * @param tailer - Event tailer state (mutated)
+ *
+ * @since TP-041
+ */
+export function stopEventTailer(tailer: EventTailerState): void {
+	if (!tailer.running) return; // Idempotent guard
+
+	if (tailer.pollTimer) {
+		clearInterval(tailer.pollTimer);
+		tailer.pollTimer = null;
+	}
+
+	if (tailer.digestTimer) {
+		clearInterval(tailer.digestTimer);
+		tailer.digestTimer = null;
+	}
+
+	tailer.running = false;
+	tailer.partialLine = "";
+	tailer.digestBuffer = freshDigestBuffer();
 }

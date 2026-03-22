@@ -5,7 +5,7 @@
 **Last Updated:** 2026-03-22
 **Review Level:** 2
 **Review Counter:** 5
-**Iteration:** 5
+**Iteration:** 4
 **Size:** L
 
 ---
@@ -47,11 +47,11 @@
 ---
 
 ### Step 3: Engine Event Consumption + Notifications
-**Status:** 🟨 In Progress
-- [ ] Implement event tailer with batch-scoped cursor (R005-1: tracks lastProcessedOffset, filters to active batchId, skips stale/foreign events)
-- [ ] Tie event tailer lifecycle to supervisor activation/deactivation/yield with idempotent start/stop (R005-2: single tailer, no duplicates across /orch, /orch-resume, takeover, /orch-takeover paths)
-- [ ] Implement proactive notification formatting for significant events (wave_start, merge_success, merge_failed, tier0_escalation, batch_complete, batch_paused) with coalesced task_complete digests
-- [ ] Adapt notification frequency and verbosity by autonomy level (interactive=more, autonomous=less)
+**Status:** ✅ Complete
+- [x] Implement event tailer with batch-scoped cursor (R005-1: tracks lastProcessedOffset, filters to active batchId, skips stale/foreign events)
+- [x] Tie event tailer lifecycle to supervisor activation/deactivation/yield with idempotent start/stop (R005-2: single tailer, no duplicates across /orch, /orch-resume, takeover, /orch-takeover paths)
+- [x] Implement proactive notification formatting for significant events (wave_start, merge_success, merge_failed, tier0_escalation, batch_complete, batch_paused) with coalesced task_complete digests
+- [x] Adapt notification frequency and verbosity by autonomy level (interactive=more, autonomous=less)
 
 ---
 
@@ -95,6 +95,7 @@
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
+| R005 | plan | Step 3 | APPROVE | .reviews/R005-plan-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -150,6 +151,7 @@
 | 2026-03-22 21:49 | Step 2 complete | Lockfile + Session Takeover |
 | 2026-03-22 21:49 | Step 3 started | Engine Event Consumption + Notifications |
 | 2026-03-22 21:50 | Review R005 | plan Step 3: REVISE |
+| 2026-03-22 21:52 | Review R005 | plan Step 3: APPROVE |
 
 ## Blockers
 
