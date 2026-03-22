@@ -57,14 +57,14 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] Non-blocking handler test: /orch starts engine and returns control immediately (startBatchAsync + setTimeout detach)
-- [ ] Event emission tests: engine events emitted at correct state transitions (wave_start, task_complete/failed, merge_start/success/failed)
-- [ ] Completion/failure event tests: batch_complete emitted for success/failure, batch_paused for pause/stop, terminal event guard prevents duplicates
-- [ ] Events persisted to .pi/supervisor/events.jsonl (JSONL file creation + correct entries including terminal events)
-- [ ] Command compatibility: immediate post-launch /orch-status, /orch-pause, /orch-abort behavior (launching phase recognized)
-- [ ] /orch-resume early-return paths reset phase from "launching" to "idle" (no stuck state)
-- [ ] Full test suite passes: cd extensions && npx vitest run
+**Status:** ✅ Complete
+- [x] Non-blocking handler test: /orch starts engine and returns control immediately (startBatchAsync + setTimeout detach)
+- [x] Event emission tests: engine events emitted at correct state transitions (wave_start, task_complete/failed, merge_start/success/failed)
+- [x] Completion/failure event tests: batch_complete emitted for success/failure, batch_paused for pause/stop, terminal event guard prevents duplicates
+- [x] Events persisted to .pi/supervisor/events.jsonl (JSONL file creation + correct entries including terminal events)
+- [x] Command compatibility: immediate post-launch /orch-status, /orch-pause, /orch-abort behavior (launching phase recognized)
+- [x] /orch-resume early-return paths reset phase from "launching" to "idle" (no stuck state)
+- [x] Full test suite passes: cd extensions && npx vitest run
 
 ---
 
