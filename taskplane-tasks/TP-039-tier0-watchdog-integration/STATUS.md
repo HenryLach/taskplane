@@ -1,11 +1,11 @@
 # TP-039: Tier 0 Watchdog Engine Integration — Status
 
-**Current Step:** Step 3: Escalation Interface
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 5
-**Iteration:** 5
+**Review Counter:** 7
+**Iteration:** 6
 **Size:** M
 
 ---
@@ -57,13 +57,14 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] Auto-retry test
-- [ ] Exhaustion-pauses test
-- [ ] Partial progress save test
-- [ ] Worktree cleanup retry test
-- [ ] Event logging test
-- [ ] Happy path unaffected test
+**Status:** 🟨 In Progress
+- [ ] Auto-retry test: worker crash with retryable classification triggers retry via attemptWorkerCrashRetry
+- [ ] Exhaustion-pauses test: retry exhaustion pauses batch AND emits both tier0_recovery_exhausted and tier0_escalation with populated EscalationContext (pattern, attempts, maxAttempts, lastError, affectedTasks, suggestion)
+- [ ] Per-pattern exhaustion coverage: table-driven test covering worker_crash, stale_worktree, merge_timeout, cleanup_gate exhaustion event emission with correct payloads
+- [ ] Partial progress save test: worker crash saves branch and records partial progress before retry
+- [ ] Worktree cleanup retry test: stale worktree cleaned and provisioning retried via attemptStaleWorktreeRecovery
+- [ ] Event logging test: events written to .pi/supervisor/events.jsonl with correct schema (timestamp, batchId, waveIndex, laneNumber, repoId, attempt/maxAttempts fields)
+- [ ] Happy path unaffected test: no failures → no events logged, no retries, supervisor events file absent
 - [ ] Full test suite passes
 
 ---
@@ -87,6 +88,10 @@
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
+| R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
+| R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
+| R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
+| R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -140,6 +145,15 @@
 | 2026-03-22 18:54 | Review R005 | plan Step 3: REVISE |
 | 2026-03-22 18:55 | Review R005 | plan Step 3: REVISE |
 | 2026-03-22 19:00 | Worker iter 5 | done in 290s, ctx: 26%, tools: 56 |
+| 2026-03-22 19:00 | Worker iter 4 | done in 381s, ctx: 27%, tools: 57 |
+| 2026-03-22 19:03 | Review R006 | code Step 3: APPROVE |
+| 2026-03-22 19:03 | Step 3 complete | Escalation Interface |
+| 2026-03-22 19:03 | Step 4 started | Testing & Verification |
+| 2026-03-22 19:03 | Review R006 | code Step 3: APPROVE |
+| 2026-03-22 19:03 | Step 3 complete | Escalation Interface |
+| 2026-03-22 19:03 | Step 4 started | Testing & Verification |
+| 2026-03-22 19:05 | Review R007 | plan Step 4: REVISE |
+| 2026-03-22 19:05 | Review R007 | plan Step 4: REVISE |
 
 ## Blockers
 
