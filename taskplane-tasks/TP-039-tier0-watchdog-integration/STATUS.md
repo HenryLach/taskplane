@@ -57,15 +57,15 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] Auto-retry test: worker crash with retryable classification triggers retry via attemptWorkerCrashRetry
-- [ ] Exhaustion-pauses test: retry exhaustion pauses batch AND emits both tier0_recovery_exhausted and tier0_escalation with populated EscalationContext (pattern, attempts, maxAttempts, lastError, affectedTasks, suggestion)
-- [ ] Per-pattern exhaustion coverage: table-driven test covering worker_crash, stale_worktree, merge_timeout, cleanup_gate exhaustion event emission with correct payloads
-- [ ] Partial progress save test: worker crash saves branch and records partial progress before retry
-- [ ] Worktree cleanup retry test: stale worktree cleaned and provisioning retried via attemptStaleWorktreeRecovery
-- [ ] Event logging test: events written to .pi/supervisor/events.jsonl with correct schema (timestamp, batchId, waveIndex, laneNumber, repoId, attempt/maxAttempts fields)
-- [ ] Happy path unaffected test: no failures → no events logged, no retries, supervisor events file absent
-- [ ] Full test suite passes
+**Status:** ✅ Complete
+- [x] Auto-retry test: worker crash with retryable classification triggers retry via attemptWorkerCrashRetry
+- [x] Exhaustion-pauses test: retry exhaustion pauses batch AND emits both tier0_recovery_exhausted and tier0_escalation with populated EscalationContext (pattern, attempts, maxAttempts, lastError, affectedTasks, suggestion)
+- [x] Per-pattern exhaustion coverage: table-driven test covering worker_crash, stale_worktree, merge_timeout, cleanup_gate exhaustion event emission with correct payloads
+- [x] Partial progress save test: worker crash saves branch and records partial progress before retry
+- [x] Worktree cleanup retry test: stale worktree cleaned and provisioning retried via attemptStaleWorktreeRecovery
+- [x] Event logging test: events written to .pi/supervisor/events.jsonl with correct schema (timestamp, batchId, waveIndex, laneNumber, repoId, attempt/maxAttempts fields)
+- [x] Happy path unaffected test: no failures → no events logged, no retries, supervisor events file absent
+- [x] Full test suite passes
 
 ---
 
