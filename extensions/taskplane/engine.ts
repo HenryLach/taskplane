@@ -501,6 +501,34 @@ export async function executeOrchBatch(
 	// batchState.batchId is read at call time (it's set in Phase 1).
 	const emitEvent: typeof emitEngineEvent = (sr, event, cb) => emitEngineEvent(sr, event, cb);
 
+	// ── TP-040 R002: Terminal event emission helper ──────────────
+	// Routes all early-return and terminal paths through consistent event
+	// emission so external consumers always receive a deterministic terminal
+	// signal (batch_complete for completed/failed, batch_paused for paused/stopped).
+	// Uses a guard flag to enforce one-transition/one-event semantics — once a
+	// terminal event has been emitted, subsequent calls are no-ops.
+	let terminalEventEmitted = false;
+	const emitTerminalEvent = (reason?: string): void => {
+		if (terminalEventEmitted) return;
+		terminalEventEmitted = true;
+		if (batchState.phase === "completed" || batchState.phase === "failed") {
+			emitEvent(stateRoot, {
+				...buildEngineEventBase("batch_complete", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
+				succeededTasks: batchState.succeededTasks,
+				failedTasks: batchState.failedTasks,
+				skippedTasks: batchState.skippedTasks,
+				blockedTasks: batchState.blockedTasks,
+				batchDurationMs: batchState.endedAt ? batchState.endedAt - batchState.startedAt : undefined,
+			}, onEngineEvent);
+		} else if (batchState.phase === "paused" || batchState.phase === "stopped") {
+			emitEvent(stateRoot, {
+				...buildEngineEventBase("batch_paused", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
+				reason: reason || (batchState.errors.length > 0 ? batchState.errors[batchState.errors.length - 1] : "paused"),
+				failedTasks: batchState.failedTasks,
+			}, onEngineEvent);
+		}
+	};
+
 	// ── Phase 1: Planning ────────────────────────────────────────
 	batchState.phase = "planning";
 	batchState.batchId = generateBatchId();
@@ -516,6 +544,7 @@ export async function executeOrchBatch(
 		batchState.endedAt = Date.now();
 		batchState.errors.push("Cannot determine current branch (detached HEAD or not a git repo)");
 		onNotify("❌ Cannot determine current branch. Ensure HEAD is on a branch (not detached).", "error");
+		emitTerminalEvent();
 		return;
 	}
 	batchState.baseBranch = detectedBranch;
@@ -551,6 +580,7 @@ export async function executeOrchBatch(
 		batchState.phase = "failed";
 		batchState.endedAt = Date.now();
 		batchState.errors.push("Preflight check failed");
+		emitTerminalEvent();
 		return;
 	}
 
@@ -593,6 +623,7 @@ export async function executeOrchBatch(
 				"info",
 			);
 		}
+		emitTerminalEvent();
 		return;
 	}
 
@@ -600,6 +631,7 @@ export async function executeOrchBatch(
 		batchState.phase = "completed";
 		batchState.endedAt = Date.now();
 		onNotify("No pending tasks found. Nothing to execute.", "info");
+		emitTerminalEvent();
 		return;
 	}
 
@@ -615,6 +647,7 @@ export async function executeOrchBatch(
 		const errMsgs = validation.errors.map(e => `[${e.code}] ${e.message}`).join("\n");
 		batchState.errors.push(`Graph validation failed:\n${errMsgs}`);
 		onNotify(`❌ Dependency graph errors:\n${errMsgs}`, "error");
+		emitTerminalEvent();
 		return;
 	}
 
@@ -626,6 +659,7 @@ export async function executeOrchBatch(
 		const errMsgs = waveErrors.map(e => `[${e.code}] ${e.message}`).join("\n");
 		batchState.errors.push(`Wave computation failed:\n${errMsgs}`);
 		onNotify(`❌ Wave computation errors:\n${errMsgs}`, "error");
+		emitTerminalEvent();
 		return;
 	}
 
@@ -666,7 +700,7 @@ export async function executeOrchBatch(
 				break;
 			}
 		}
-		if (orchBranchFailed) return;
+		if (orchBranchFailed) { emitTerminalEvent(); return; }
 	} else {
 		const branchResult = runGit(["branch", orchBranch, batchState.baseBranch], repoRoot);
 		if (!branchResult.ok) {
@@ -675,6 +709,7 @@ export async function executeOrchBatch(
 			const errDetail = branchResult.stderr || branchResult.stdout || "unknown error";
 			batchState.errors.push(`Failed to create orch branch '${orchBranch}': ${errDetail}`);
 			onNotify(`❌ Failed to create orch branch '${orchBranch}': ${errDetail}`, "error");
+			emitTerminalEvent();
 			return;
 		}
 		execLog("batch", batchState.batchId, "created orch branch", { orchBranch, baseBranch: batchState.baseBranch });
@@ -700,11 +735,8 @@ export async function executeOrchBatch(
 			onNotify(`⏸️  Batch paused before wave ${waveIdx + 1}. Resume not yet implemented (TS-009).`, "warning");
 			// ── TS-009: Persist state on pause ──
 			persistRuntimeState("pause-before-wave", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
-			// TP-040: Emit batch_paused event
-			emitEvent(stateRoot, {
-				...buildEngineEventBase("batch_paused", batchState.batchId, waveIdx, batchState.phase),
-				reason: `Paused before wave ${waveIdx + 1}`,
-			}, onEngineEvent);
+			// TP-040: Emit batch_paused event (via terminal helper for dedup)
+			emitTerminalEvent(`Paused before wave ${waveIdx + 1}`);
 			break;
 		}
 
@@ -968,13 +1000,8 @@ export async function executeOrchBatch(
 				// ── TS-009: Persist state on stop-all ──
 				persistRuntimeState("stop-all", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(ORCH_MESSAGES.orchBatchStopped(batchState.batchId, "stop-all"), "error");
-				// TP-040: Emit batch_paused event for stop-all policy
-				emitEvent(stateRoot, {
-					...buildEngineEventBase("batch_paused", batchState.batchId, waveIdx, batchState.phase),
-					reason: `Stopped by stop-all policy at wave ${waveIdx + 1}`,
-					failedTasks: batchState.failedTasks,
-					succeededTasks: batchState.succeededTasks,
-				}, onEngineEvent);
+				// TP-040: Emit batch_paused event (via terminal helper for dedup)
+				emitTerminalEvent(`Stopped by stop-all policy at wave ${waveIdx + 1}`);
 				break;
 			}
 			if (waveResult.policyApplied === "stop-wave") {
@@ -982,13 +1009,8 @@ export async function executeOrchBatch(
 				// ── TS-009: Persist state on stop-wave ──
 				persistRuntimeState("stop-wave", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(ORCH_MESSAGES.orchBatchStopped(batchState.batchId, "stop-wave"), "error");
-				// TP-040: Emit batch_paused event for stop-wave policy
-				emitEvent(stateRoot, {
-					...buildEngineEventBase("batch_paused", batchState.batchId, waveIdx, batchState.phase),
-					reason: `Stopped by stop-wave policy at wave ${waveIdx + 1}`,
-					failedTasks: batchState.failedTasks,
-					succeededTasks: batchState.succeededTasks,
-				}, onEngineEvent);
+				// TP-040: Emit batch_paused event (via terminal helper for dedup)
+				emitTerminalEvent(`Stopped by stop-wave policy at wave ${waveIdx + 1}`);
 				break;
 			}
 		}
@@ -1145,6 +1167,13 @@ export async function executeOrchBatch(
 					ORCH_MESSAGES.orchMergeFailed(waveIdx + 1, mergeResult.failedLane, mergeResult.failureReason || "unknown"),
 					"error",
 				);
+
+				// TP-040 R002: Emit merge_failed for mixed-outcome/no-mergeable-lane path
+				emitEvent(stateRoot, {
+					...buildEngineEventBase("merge_failed", batchState.batchId, waveIdx, batchState.phase),
+					laneNumber: mergeResult.failedLane,
+					error: mergeResult.failureReason,
+				}, onEngineEvent);
 			} else {
 				// No mergeable lanes and no mixed outcomes (e.g., only skipped tasks)
 				onNotify(ORCH_MESSAGES.orchMergeSkipped(waveIdx + 1), "info");
@@ -2002,23 +2031,8 @@ export async function executeOrchBatch(
 	// ── TS-009: Persist terminal state ──
 	persistRuntimeState("batch-terminal", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 
-	// ── TP-040: Emit batch terminal event ────────────────────────
-	if (batchState.phase === "completed" || batchState.phase === "failed") {
-		emitEvent(stateRoot, {
-			...buildEngineEventBase("batch_complete", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
-			succeededTasks: batchState.succeededTasks,
-			failedTasks: batchState.failedTasks,
-			skippedTasks: batchState.skippedTasks,
-			blockedTasks: batchState.blockedTasks,
-			batchDurationMs: batchState.endedAt ? batchState.endedAt - batchState.startedAt : undefined,
-		}, onEngineEvent);
-	} else if (batchState.phase === "paused" || batchState.phase === "stopped") {
-		emitEvent(stateRoot, {
-			...buildEngineEventBase("batch_paused", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
-			reason: batchState.errors.length > 0 ? batchState.errors[batchState.errors.length - 1] : "paused",
-			failedTasks: batchState.failedTasks,
-		}, onEngineEvent);
-	}
+	// ── TP-040: Emit batch terminal event (R002: unified via helper) ─
+	emitTerminalEvent();
 
 	// ── TP-031: Emit diagnostic reports (JSONL + markdown) ──
 	// Non-fatal: errors are logged but never crash batch finalization.

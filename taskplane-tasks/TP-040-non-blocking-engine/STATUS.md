@@ -20,15 +20,15 @@
 ---
 
 ### Step 1: Engine Event Infrastructure
-**Status:** 🟡 In Progress (R002 REVISE)
+**Status:** ✅ Complete (R002 revisions applied)
 - [x] Define engine event types in types.ts (extend existing Tier0EventType with engine lifecycle events: wave_start, task_complete, task_failed, merge_start, merge_success, merge_failed, batch_complete, batch_paused)
 - [x] Add EngineEvent interface and EngineEventCallback type in types.ts with shared base payload (timestamp, batchId, waveIndex)
 - [x] Extend emitTier0Event in persistence.ts to emit engine events (or add unified emitEngineEvent)
 - [x] Add event emission calls at state transitions in engine.ts (wave start/end, task transitions, merge phases, batch completion/pause)
 - [x] Add event callback parameter to executeOrchBatch signature and wire callback invocations
-- [ ] R002-1: Route all early-return paths (detached HEAD, preflight failure, fatal discovery, no pending tasks, graph validation, wave computation, orch branch creation) through terminal event emission before returning
-- [ ] R002-2: Emit merge_failed event in the mixedOutcomeLanes branch (mergeableLaneCount === 0 && mixedOutcomeLanes.length > 0)
-- [ ] R002-3: Deduplicate batch_paused emissions for stop policies to ensure one-transition/one-event semantics
+- [x] R002-1: Route all early-return paths (detached HEAD, preflight failure, fatal discovery, no pending tasks, graph validation, wave computation, orch branch creation) through terminal event emission before returning
+- [x] R002-2: Emit merge_failed event in the mixedOutcomeLanes branch (mergeableLaneCount === 0 && mixedOutcomeLanes.length > 0)
+- [x] R002-3: Deduplicate batch_paused emissions for stop policies to ensure one-transition/one-event semantics
 
 ---
 
@@ -73,6 +73,7 @@
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -105,6 +106,8 @@
 | 2026-03-22 19:34 | Worker iter 3 | done in 514s, ctx: 52%, tools: 75 |
 | 2026-03-22 19:38 | Worker iter 2 | done in 755s, ctx: 59%, tools: 85 |
 | 2026-03-22 19:38 | Review R002 | code Step 1: REVISE |
+| 2026-03-22 15:45 | Step 1 R002 fix | Applied R002 revisions: terminal event helper with guard flag, early-return emissions, merge_failed for mixed-outcome, batch_paused dedup |
+| 2026-03-22 19:43 | Review R002 | code Step 1: REVISE |
 
 ## Blockers
 
