@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 4
 **Size:** M
 
@@ -34,13 +34,15 @@
 ---
 
 ### Step 2: Tier 0 Event Logging
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Define Tier0Event type and `emitTier0Event()` utility in persistence.ts — write to `stateRoot/.pi/supervisor/events.jsonl` with best-effort semantics (mkdir + append, failures logged but don't crash batch)
 - [x] Instrument worker crash retry (attemptWorkerCrashRetry) with tier0_recovery_attempt / tier0_recovery_success / tier0_recovery_exhausted events
 - [x] Instrument stale worktree recovery (attemptStaleWorktreeRecovery) with tier0_recovery_attempt / tier0_recovery_success / tier0_recovery_exhausted events
 - [x] Instrument cleanup gate retry (inline in engine wave loop) with tier0_recovery_attempt / tier0_recovery_success / tier0_recovery_exhausted events
 - [x] Instrument merge retry loop (applyMergeRetryLoop integration point in engine.ts) with tier0 events — emit attempt/success/exhausted at the engine caller site
 - [x] Include full context in each event: timestamp, batchId, waveIndex, laneNumber, pattern, attempt, classification/error, and escalation-ready fields in exhausted events
+- [ ] R004-1: Add `repoId` field to Tier0Event and populate at all emit sites using lane/workspace metadata; add `buildTier0EventBase()` helper for consistent required fields
+- [ ] R004-2: Move merge attempt event emission to after retry decision — only emit when retry is actually scheduled, source attempt/maxAttempts/classification from retry decision data
 
 ---
 
@@ -79,6 +81,8 @@
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
+| R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -120,6 +124,9 @@
 | 2026-03-22 18:25 | Review R003 | plan Step 2: REVISE |
 | 2026-03-22 18:25 | Review R003 | plan Step 2: REVISE |
 | 2026-03-22 18:35 | Worker iter 3 | done in 642s, ctx: 36%, tools: 76 |
+| 2026-03-22 18:37 | Worker iter 4 | done in 741s, ctx: 36%, tools: 89 |
+| 2026-03-22 18:38 | Review R004 | code Step 2: REVISE |
+| 2026-03-22 18:39 | Review R004 | code Step 2: REVISE |
 
 ## Blockers
 
