@@ -1,10 +1,10 @@
 # TP-039: Tier 0 Watchdog Engine Integration — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Wire Automatic Recovery into Engine
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
@@ -20,12 +20,12 @@
 ---
 
 ### Step 1: Wire Automatic Recovery into Engine
-**Status:** ⬜ Not Started
-- [ ] Merge timeout → automatic retry
-- [ ] Session crash → partial progress save + retry if retryable
-- [ ] Stale worktree → force cleanup + retry
-- [ ] Cleanup failure → retry once, then wave gate
-- [ ] Persist retry counters
+**Status:** 🟨 In Progress
+- [ ] Define Tier 0 retry scope keys and retryable classification set in types.ts (non-merge retry scopes distinct from merge scopes)
+- [ ] Add `classifyAndRetryWorkerCrash()` helper in engine.ts: after wave execution, for each failed task, populate exitDiagnostic via classifyExit(), check if retryable (api_error, process_crash, session_vanished), preserve partial progress, then re-execute the lane if budget allows
+- [ ] Add `retryStaleWorktreeAllocation()` helper: when executeWave returns allocation failure with ALLOC_WORKTREE_FAILED, force cleanup + prune + retry allocation once before marking wave failed
+- [ ] Add cleanup gate retry: when post-merge cleanup gate fires, retry force cleanup once before pausing
+- [ ] Persist non-merge retry counters in resilience.retryCountByScope after each attempt
 
 ---
 
@@ -66,6 +66,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -84,6 +86,16 @@
 | 2026-03-22 17:49 | Task started | Extension-driven execution |
 | 2026-03-22 17:49 | Step 0 started | Preflight |
 | 2026-03-22 17:49 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 17:51 | Worker iter 2 | done in 87s, ctx: 37%, tools: 15 |
+| 2026-03-22 17:51 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 17:51 | Step 0 complete | Preflight |
+| 2026-03-22 17:51 | Step 1 started | Wire Automatic Recovery into Engine |
+| 2026-03-22 17:51 | Worker iter 1 | done in 89s, ctx: 46%, tools: 20 |
+| 2026-03-22 17:51 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 17:51 | Step 0 complete | Preflight |
+| 2026-03-22 17:51 | Step 1 started | Wire Automatic Recovery into Engine |
+| 2026-03-22 17:54 | Review R001 | plan Step 1: REVISE |
+| 2026-03-22 17:55 | Review R001 | plan Step 1: REVISE |
 
 ## Blockers
 
@@ -110,6 +122,9 @@
 - `preserveFailedLaneProgress()` in worktree.ts saves failed task commits as named branches
 - `applyPartialProgressToOutcomes()` stamps outcomes with saved branch/commit data
 - Called both at inter-wave reset and at terminal cleanup
+
+**R001 Suggestions (advisory, not blocking):**
+- Merge-timeout auto-recovery is already partially covered by TP-038 + applyMergeRetryLoop; keep Step 1 focused on worker crash + stale provisioning + cleanup gate retry, not reworking existing merge retry behavior.
 
 **What TP-039 needs to wire in (from spec §5.1-5.4):**
 - Pattern 1 (merge timeout): Already partially handled by TP-033/TP-038 retry loop. Need to ensure the engine auto-invokes this instead of immediate pause.
