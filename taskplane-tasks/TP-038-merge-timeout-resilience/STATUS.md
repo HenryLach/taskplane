@@ -1,11 +1,11 @@
 # TP-038: Merge Timeout Resilience — Status
 
-**Current Step:** Step 1: Check Result Before Kill + Config Reload
+**Current Step:** Step 2: Add Retry with Backoff
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 1
-**Review Counter:** 1
-**Iteration:** 2
+**Review Counter:** 2
+**Iteration:** 3
 **Size:** S
 
 ---
@@ -27,10 +27,10 @@
 ---
 
 ### Step 2: Add Retry with Backoff
-**Status:** ⬜ Not Started
-- [ ] Implement retry with 2x timeout backoff
-- [ ] Max 2 retries
-- [ ] Log retry attempts
+**Status:** ✅ Complete
+- [x] Implement retry with 2x timeout backoff
+- [x] Max 2 retries
+- [x] Log retry attempts
 
 ---
 
@@ -55,6 +55,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
+| R002 | plan | Step 2 | APPROVE | .reviews/R002-plan-step2.md |
+| R002 | plan | Step 2 | APPROVE | .reviews/R002-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -81,6 +83,14 @@
 | 2026-03-22 04:24 | Step 1 started | Check Result Before Kill + Config Reload |
 | 2026-03-22 04:26 | Review R001 | plan Step 1: APPROVE |
 | 2026-03-22 04:26 | Review R001 | plan Step 1: APPROVE |
+| 2026-03-22 04:30 | Worker iter 3 | done in 261s, ctx: 25%, tools: 28 |
+| 2026-03-22 04:30 | Step 1 complete | Check Result Before Kill + Config Reload |
+| 2026-03-22 04:30 | Step 2 started | Add Retry with Backoff |
+| 2026-03-22 04:32 | Review R002 | plan Step 2: APPROVE |
+| 2026-03-22 04:33 | Worker iter 2 | done in 412s, ctx: 28%, tools: 40 |
+| 2026-03-22 04:33 | Step 1 complete | Check Result Before Kill + Config Reload |
+| 2026-03-22 04:33 | Step 2 started | Add Retry with Backoff |
+| 2026-03-22 04:35 | Review R002 | plan Step 2: APPROVE |
 
 ## Blockers
 

@@ -8,7 +8,7 @@ import { join, dirname, resolve, relative } from "path";
 
 import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
+import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { generateMergeWorktreePath, sleepSync } from "./worktree.ts";
@@ -1128,12 +1128,66 @@ export function mergeWave(
 			// Write merge request to temp file
 			writeFileSync(requestFilePath, mergeRequestContent, "utf-8");
 
-			// Spawn merge agent in the isolated merge worktree
-			spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+			// ── TP-038: Spawn + wait with retry-on-timeout ──────────────
+			// On MERGE_TIMEOUT, retry with 2× the previous timeout (up to
+			// MERGE_TIMEOUT_MAX_RETRIES). Before each retry, re-read config
+			// from disk so operators can increase merge.timeoutMinutes without
+			// restarting the session.
+			let mergeResult: MergeResult;
+			{
+				const configRoot = stateRoot ?? repoRoot;
+				let currentTimeoutMs = (config.merge.timeout_minutes ?? 10) * 60 * 1000;
+				let lastTimeoutError: MergeError | null = null;
 
-			// Wait for result — use configured timeout (default 10 min, was 5 min)
-			const timeoutMs = (config.merge.timeout_minutes ?? 10) * 60 * 1000;
-			const mergeResult = waitForMergeResult(resultFilePath, sessionName, timeoutMs);
+				for (let attempt = 0; attempt <= MERGE_TIMEOUT_MAX_RETRIES; attempt++) {
+					// On retry: clean up stale result, re-read config, apply backoff
+					if (attempt > 0) {
+						// Re-read config from disk (TP-038: allows operator to adjust timeout)
+						const freshTimeoutMs = reloadMergeTimeoutMs(configRoot);
+						// Apply 2× backoff: double the timeout for each retry attempt
+						currentTimeoutMs = freshTimeoutMs * Math.pow(2, attempt);
+
+						execLog("merge", sessionName, `retry ${attempt}/${MERGE_TIMEOUT_MAX_RETRIES} after timeout — respawning merge agent`, {
+							newTimeoutMs: currentTimeoutMs,
+							newTimeoutMin: Math.round(currentTimeoutMs / 60_000),
+							attempt,
+						});
+
+						// Clean up stale result file from prior attempt
+						if (existsSync(resultFilePath)) {
+							try { unlinkSync(resultFilePath); } catch { /* best effort */ }
+						}
+
+						// Re-spawn merge agent for the retry
+						spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+					} else {
+						// First attempt: spawn merge agent
+						spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+					}
+
+					try {
+						mergeResult = waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs);
+						lastTimeoutError = null;
+						break; // Success — exit retry loop
+					} catch (waitErr: unknown) {
+						if (
+							waitErr instanceof MergeError &&
+							waitErr.code === "MERGE_TIMEOUT" &&
+							attempt < MERGE_TIMEOUT_MAX_RETRIES
+						) {
+							// Timeout — will retry on next loop iteration
+							lastTimeoutError = waitErr;
+							continue;
+						}
+						// Non-timeout error or final retry exhausted — propagate
+						throw waitErr;
+					}
+				}
+
+				// TypeScript: mergeResult is guaranteed to be assigned here
+				// (either break from loop or throw propagated the error)
+				mergeResult = mergeResult!;
+			}
 
 			// Clean up request file (leave result file for debugging)
 			try {
