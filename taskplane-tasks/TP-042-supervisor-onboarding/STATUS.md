@@ -19,12 +19,12 @@
 ---
 
 ### Step 1: /orch Routing Logic
-**Status:** 🟨 In Progress
-- [ ] Implement `detectOrchState()` helper with explicit state enum and precedence: no-config → active-batch → completed-batch-needs-integration → pending-tasks → no-tasks
-- [ ] Modify /orch handler: when args is empty, call detectOrchState and route to supervisor activation with appropriate context message
-- [ ] Preserve existing /orch WITH args behavior (start batch directly, no changes)
-- [ ] R001-1: Include "completed batch, not integrated" state with orch branch check
-- [ ] R001-2: Enforce explicit evaluation order matching PROMPT.md routing matrix
+**Status:** ✅ Complete
+- [x] Implement `detectOrchState()` helper with explicit state enum and precedence: no-config → active-batch → completed-batch-needs-integration → pending-tasks → no-tasks
+- [x] Modify /orch handler: when args is empty, call detectOrchState and route to supervisor activation with appropriate context message
+- [x] Preserve existing /orch WITH args behavior (start batch directly, no changes)
+- [x] R001-1: Include "completed batch, not integrated" state with orch branch check
+- [x] R001-2: Enforce explicit evaluation order matching PROMPT.md routing matrix
 
 ---
 

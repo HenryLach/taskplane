@@ -306,12 +306,14 @@ describe("1.x — Supervisor prompt injection in extension.ts", () => {
 			extSource.indexOf('registerCommand("orch-plan"'),
 		);
 		expect(orchHandler).toContain("activateSupervisor");
-		// Should be after startBatchAsync
+		// Should be after startBatchAsync in the with-args path
+		// (TP-042 adds an activateSupervisor call in the no-args routing block
+		// BEFORE startBatchAsync, so we find the one after startBatchAsync)
 		const startAsyncIdx = orchHandler.indexOf("startBatchAsync(");
-		const activateIdx = orchHandler.indexOf("activateSupervisor(");
 		expect(startAsyncIdx).not.toBe(-1);
-		expect(activateIdx).not.toBe(-1);
-		expect(activateIdx).toBeGreaterThan(startAsyncIdx);
+		const activateIdxAfterBatch = orchHandler.indexOf("activateSupervisor(", startAsyncIdx);
+		expect(activateIdxAfterBatch).not.toBe(-1);
+		expect(activateIdxAfterBatch).toBeGreaterThan(startAsyncIdx);
 	});
 
 	it("1.14: extension.ts registers before_agent_start hook for supervisor prompt", () => {

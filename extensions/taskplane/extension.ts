@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 
 import { execSync, execFileSync } from "child_process";
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync } from "fs";
-import { join, resolve } from "path";
+import { join } from "path";
 
 import {
 	DEFAULT_ORCHESTRATOR_CONFIG,
@@ -25,6 +25,7 @@ import {
 	formatWavePlan,
 	freshOrchBatchState,
 	getCurrentBranch,
+	hasConfigFiles,
 	listOrchSessions,
 	listWorktrees,
 	loadBatchState,
@@ -49,6 +50,7 @@ import {
 	checkSupervisorLockOnStartup,
 	buildTakeoverSummary,
 	isProcessAlive,
+	isBatchTerminal,
 	DEFAULT_SUPERVISOR_CONFIG,
 } from "./supervisor.ts";
 import type { SupervisorConfig } from "./supervisor.ts";
@@ -752,6 +754,181 @@ export function startBatchAsync(
 	}, 0);
 }
 
+// ── /orch Routing Logic (TP-042) ─────────────────────────────────────
+
+/**
+ * Project state for /orch no-args routing.
+ *
+ * Evaluated in strict precedence order (R001-3) — the first matching state wins:
+ *   1. active-batch    → Batch is running (non-terminal phase) → status report
+ *   2. completed-batch → Completed batch + orch branch exists → offer integration
+ *   3. no-config       → No taskplane config exists → onboarding flow
+ *   4. pending-tasks   → Config exists, pending tasks found → offer to start batch
+ *   5. no-tasks        → Config exists, no pending tasks → help create tasks
+ *
+ * Active batch and completed batch are checked before no-config so that an
+ * orphaned batch-state.json or orch branch isn't silently ignored even if
+ * the config file was deleted.
+ *
+ * @since TP-042
+ */
+export type OrchProjectState =
+	| "no-config"
+	| "active-batch"
+	| "completed-batch"
+	| "pending-tasks"
+	| "no-tasks";
+
+/**
+ * Result of detectOrchState — provides the detected state plus
+ * context data for supervisor routing (e.g., batch info, task count).
+ *
+ * @since TP-042
+ */
+export interface OrchStateDetection {
+	/** The detected project state */
+	state: OrchProjectState;
+	/** Human-readable context message for the supervisor activation prompt */
+	contextMessage: string;
+	/** Number of pending tasks (only set for pending-tasks state) */
+	pendingTaskCount?: number;
+	/** Batch ID (set for active-batch and completed-batch states) */
+	batchId?: string;
+	/** Batch phase (set for active-batch state) */
+	batchPhase?: string;
+	/** Orch branch name (set for completed-batch state) */
+	orchBranch?: string;
+}
+
+/**
+ * Dependencies injected into detectOrchState for testability.
+ *
+ * @since TP-042
+ */
+export interface OrchStateDetectionDeps {
+	/** Check if any taskplane config file exists (JSON or YAML) */
+	hasConfig: () => boolean;
+	/** Load persisted batch state (null if no state file) */
+	loadBatchState: () => PersistedBatchState | null;
+	/** List local orch/* branches */
+	listOrchBranches: () => string[];
+	/** Run task discovery to count pending tasks */
+	countPendingTasks: () => number;
+}
+
+/**
+ * Detect the current project state for /orch no-args routing.
+ *
+ * Evaluates state in strict precedence order (see OrchProjectState).
+ * The first matching condition wins — no further checks are performed.
+ *
+ * This is a pure function with injected dependencies for testability.
+ *
+ * @param deps - Injected dependencies for state detection
+ * @returns Detection result with state and context message
+ *
+ * @since TP-042
+ */
+export function detectOrchState(deps: OrchStateDetectionDeps): OrchStateDetection {
+	// Precedence order (R001-3): active batch → completed-needs-integration
+	// → no-config → pending tasks → no tasks. Active batch is checked first
+	// because an orphaned batch-state.json should be surfaced even if config
+	// was deleted. No-config (onboarding) is checked after batch states so
+	// an in-progress/completed batch isn't silently ignored.
+
+	// ── 1. Active batch (non-terminal phase) → status report ─────
+	try {
+		const batchState = deps.loadBatchState();
+		if (batchState && !isBatchTerminal(batchState.phase)) {
+			const elapsed = batchState.endedAt
+				? Math.round((batchState.endedAt - batchState.startedAt) / 1000)
+				: Math.round((Date.now() - batchState.startedAt) / 1000);
+
+			return {
+				state: "active-batch",
+				batchId: batchState.batchId,
+				batchPhase: batchState.phase,
+				contextMessage:
+					`Batch ${batchState.batchId} is currently ${batchState.phase}. ` +
+					`Wave ${batchState.currentWaveIndex + 1}/${batchState.totalWaves ?? "?"}, ` +
+					`${batchState.succeededTasks ?? 0} succeeded, ` +
+					`${batchState.failedTasks ?? 0} failed, ` +
+					`${batchState.skippedTasks ?? 0} skipped / ` +
+					`${batchState.totalTasks ?? "?"} total. ` +
+					`Elapsed: ${elapsed}s.`,
+			};
+		}
+
+		// ── 2. Completed batch + orch branch → offer integration ───
+		if (batchState && batchState.phase === "completed" && batchState.orchBranch) {
+			return {
+				state: "completed-batch",
+				batchId: batchState.batchId,
+				orchBranch: batchState.orchBranch,
+				contextMessage:
+					`Your last batch (${batchState.batchId}) completed — ` +
+					`${batchState.succeededTasks ?? 0}/${batchState.totalTasks ?? "?"} tasks succeeded. ` +
+					`The orch branch \`${batchState.orchBranch}\` is ready to integrate. ` +
+					`Want me to create a PR to ${batchState.baseBranch}, or integrate directly?`,
+			};
+		}
+	} catch {
+		// Batch state unreadable — fall through to check for orch branches
+	}
+
+	// ── 2b. No batch state but orch branches exist → offer integration
+	// Covers the case where batch-state.json was deleted but an orch branch remains.
+	const orchBranches = deps.listOrchBranches();
+	if (orchBranches.length > 0) {
+		const branchList = orchBranches.map(b => `\`${b}\``).join(", ");
+		return {
+			state: "completed-batch",
+			orchBranch: orchBranches[0],
+			contextMessage:
+				orchBranches.length === 1
+					? `I found an orch branch (${branchList}) that hasn't been integrated yet. ` +
+					  `Want me to integrate it, or would you like to start fresh?`
+					: `I found ${orchBranches.length} orch branches (${branchList}) that haven't been integrated. ` +
+					  `Would you like to integrate one, or start fresh?`,
+		};
+	}
+
+	// ── 3. No config exists → onboarding ─────────────────────────
+	if (!deps.hasConfig()) {
+		return {
+			state: "no-config",
+			contextMessage:
+				"Welcome to Taskplane! I don't see a configuration for this project yet. " +
+				"Let me help you get set up. I'll analyze your project structure, help you " +
+				"define task areas, check your git branching strategy, and generate the config files.",
+		};
+	}
+
+	// ── 4. Pending tasks exist → offer to start batch ────────────
+	const pendingCount = deps.countPendingTasks();
+	if (pendingCount > 0) {
+		return {
+			state: "pending-tasks",
+			pendingTaskCount: pendingCount,
+			contextMessage:
+				`Welcome back! You have ${pendingCount} pending task${pendingCount === 1 ? "" : "s"} ready to run. ` +
+				`Want me to start the batch, or would you like to review the plan first?`,
+		};
+	}
+
+	// ── 5. No pending tasks → help create tasks ──────────────────
+	return {
+		state: "no-tasks",
+		contextMessage:
+			"No pending tasks right now. Here's what I can help with:\n" +
+			"• Create tasks from a spec or design doc\n" +
+			"• Pull in GitHub Issues\n" +
+			"• Write a new spec for something you want to build\n" +
+			"• Run a project health check\n" +
+			"What interests you?",
+	};
+}
+
 // ── Extension ────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
@@ -812,18 +989,77 @@ export default function (pi: ExtensionAPI) {
 	// ── Commands ─────────────────────────────────────────────────────
 
 	pi.registerCommand("orch", {
-		description: "Start batch execution: /orch <areas|paths|all>",
+		description: "Start batch execution or supervisor: /orch [<areas|paths|all>]",
 		handler: async (args, ctx) => {
+			// ── TP-042: No-args → supervisor routing ─────────────────
+			// When /orch is called without arguments, detect project state
+			// and activate the supervisor with routing context instead of
+			// showing usage. The supervisor then guides the operator through
+			// the appropriate flow (onboarding, batch planning, etc.).
 			if (!args?.trim()) {
-				ctx.ui.notify(
-					"Usage: /orch <areas|paths|all>\n\n" +
-					"Examples:\n" +
-					"  /orch all                          Run all pending tasks\n" +
-					"  /orch time-off performance-management   Run specific areas\n" +
-					"  /orch path/to/tasks                Scan directory\n" +
-					"  /orch path/to/PROMPT.md            Single task with isolation",
-					"info",
+				// For "no-config" state we don't need execCtx — just send the
+				// routing context. For all other states, we need it.
+				const configCheckRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+				const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+				const repoRoot = execCtx?.repoRoot ?? ctx.cwd;
+
+				// Detect project state with strict precedence order
+				const detection = detectOrchState({
+					hasConfig: () => hasConfigFiles(configCheckRoot),
+					loadBatchState: () => {
+						try { return loadBatchState(stateRoot); }
+						catch { return null; }
+					},
+					listOrchBranches: () => {
+						const result = runGit(["branch", "--list", "orch/*"], repoRoot);
+						return result.ok
+							? result.stdout.split("\n").map(b => b.replace(/^\*?\s+/, "").trim()).filter(Boolean)
+							: [];
+					},
+					countPendingTasks: () => {
+						if (!execCtx) return 0;
+						try {
+							const discovery = runDiscovery("all", runnerConfig.task_areas, execCtx.workspaceRoot, {
+								dependencySource: orchConfig.dependencies.source,
+								useDependencyCache: orchConfig.dependencies.cache,
+								workspaceConfig: execCtx.workspaceConfig,
+							});
+							return discovery.pending.size;
+						} catch { return 0; }
+					},
+				});
+
+				// ── Active batch → show status only (supervisor already running) ─
+				if (detection.state === "active-batch") {
+					ctx.ui.notify(
+						`🔀 ${detection.contextMessage}\n\n` +
+						`Use /orch-status for full details, or /orch-pause to pause.`,
+						"info",
+					);
+					return;
+				}
+
+				// For non-onboarding states, we need execCtx
+				if (detection.state !== "no-config" && !requireExecCtx(ctx)) return;
+
+				// Activate supervisor with routing context.
+				// The routingContext parameter skips lockfile/heartbeat/event-tailer
+				// (no active batch to monitor) and sends a routing-specific activation
+				// message instead of the generic "Batch started" one.
+				activateSupervisor(
+					pi,
+					supervisorState,
+					orchBatchState,
+					orchConfig,
+					supervisorConfig,
+					stateRoot,
+					ctx,
+					{
+						routingState: detection.state,
+						contextMessage: detection.contextMessage,
+					},
 				);
+
 				return;
 			}
 

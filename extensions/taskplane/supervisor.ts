@@ -631,14 +631,37 @@ function resolveModelFromString(
 }
 
 /**
+ * Optional routing context for /orch no-args activation.
+ *
+ * When provided, the supervisor is activated in "routing mode" — it handles
+ * onboarding, batch planning, or other conversational flows instead of
+ * batch monitoring. Lockfile/heartbeat/event-tailer are skipped because
+ * there's no active batch to monitor.
+ *
+ * @since TP-042
+ */
+export interface SupervisorRoutingContext {
+	/** The detected project state (e.g., "no-config", "pending-tasks") */
+	routingState: string;
+	/** Human-readable context message for the supervisor's first turn */
+	contextMessage: string;
+}
+
+/**
  * Activate the supervisor agent in the current pi session.
  *
- * This is called after `startBatchAsync()` in the `/orch` command handler.
+ * This is called after `startBatchAsync()` in the `/orch` command handler,
+ * or directly by the `/orch` no-args routing logic (TP-042).
+ *
  * It:
  * 1. Stores live references to batchState/config for dynamic prompt rebuild
  * 2. Optionally switches model via pi.setModel() if supervisor.model is configured
  * 3. Sends an activation message via pi.sendMessage() with triggerTurn=true
  *    to kick off the supervisor's first turn
+ *
+ * When `routingContext` is provided (TP-042 no-args routing), lockfile/heartbeat
+ * and event tailer are skipped — there's no active batch to monitor. The
+ * activation message uses the routing context instead of batch metadata.
  *
  * The system prompt is NOT cached at activation time — it is rebuilt dynamically
  * on every LLM turn by the before_agent_start hook. This ensures the prompt
@@ -652,6 +675,7 @@ function resolveModelFromString(
  * @param supervisorConfig - Supervisor-specific configuration
  * @param stateRoot - Root path for .pi/ state directory
  * @param ctx - Extension context (for model resolution)
+ * @param routingContext - Optional routing context for /orch no-args (TP-042)
  *
  * @since TP-041
  */
@@ -663,6 +687,7 @@ export async function activateSupervisor(
 	supervisorConfig: SupervisorConfig,
 	stateRoot: string,
 	ctx: ExtensionContext,
+	routingContext?: SupervisorRoutingContext,
 ): Promise<void> {
 	// Store live references for dynamic prompt rebuild
 	state.active = true;
@@ -688,6 +713,28 @@ export async function activateSupervisor(
 			// If setModel fails (no API key), fall through to session model
 		}
 		// If model not found in registry, fall through to session model (inheritance)
+	}
+
+	// ── TP-042: Routing mode — skip batch monitoring infrastructure ──
+	// When activated via /orch no-args routing, there's no active batch.
+	// Skip lockfile/heartbeat/event-tailer and send routing context message.
+	if (routingContext) {
+		pi.sendMessage(
+			{
+				customType: "supervisor-routing",
+				content: [
+					{
+						type: "text",
+						text:
+							`🔀 **Supervisor activated** (${routingContext.routingState}).\n\n` +
+							routingContext.contextMessage,
+					},
+				],
+				display: `Supervisor activated — ${routingContext.routingState}`,
+			},
+			{ triggerTurn: true, deliverAs: "nextTurn" },
+		);
+		return;
 	}
 
 	// ── Lockfile + Heartbeat (Step 2) ────────────────────────────────
