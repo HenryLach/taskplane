@@ -4,7 +4,7 @@
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 3
 **Size:** L
 
@@ -34,13 +34,15 @@
 ---
 
 ### Step 2: Lockfile + Session Takeover
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 - [x] Lockfile types + write/read/cleanup helpers (atomic temp+rename, corrupt=stale)
 - [x] Write lockfile on activation, heartbeat timer (30s), yield detection on heartbeat
 - [x] Startup gate: check active batch first, then lockfile arbitration (R003-1)
 - [x] Stale-lock takeover with rehydration summary from batch-state + actions + events (R003-2)
 - [x] Live-lock detection: warn + offer force takeover
 - [x] Cleanup lockfile on deactivation (completion/exit/abort)
+- [ ] R004-1: Add /orch-takeover command that force-takes over live supervisor lock (writes new lock, activates local supervisor; prior session yields on heartbeat)
+- [ ] R004-2: Improve stale-lock messaging — distinguish stale-heartbeat (PID alive) vs dead-PID
 
 ---
 
@@ -89,6 +91,7 @@
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
+| R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -133,10 +136,16 @@
 | 2026-03-22 21:29 | Step 1 complete | Supervisor System Prompt + Activation |
 | 2026-03-22 21:29 | Step 2 started | Lockfile + Session Takeover |
 | 2026-03-22 21:30 | Review R003 | plan Step 2: APPROVE |
+| 2026-03-22 21:38 | Worker iter 3 | done in 523s, ctx: 38%, tools: 45 |
+| 2026-03-22 21:41 | Worker iter 4 | done in 817s, ctx: 36%, tools: 71 |
+| 2026-03-22 21:42 | Review R004 | code Step 2: REVISE |
 
 ## Blockers
 
 *None*
+
+### R004 Suggestions (advisory)
+- Minor: when stale is detected due to heartbeat expiry (PID still alive), avoid messaging that always says PID is dead; report stale-heartbeat vs dead-PID distinctly for operator clarity. → Tracked in R004-2 checkbox.
 
 ## Notes
 
