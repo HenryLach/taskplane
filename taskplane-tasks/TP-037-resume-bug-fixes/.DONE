@@ -1,1 +1,7 @@
-completed
+TP-037 complete — 2026-03-22
+
+Bug #102: Resume now retries merge when tasks succeeded but merge didn't.
+Bug #102b: Pending tasks with stale session names stay pending instead of being marked failed.
+State coherence validation added for mergeResults vs waveIndex alignment.
+
+All 1718 tests passing.
