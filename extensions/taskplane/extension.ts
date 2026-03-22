@@ -683,6 +683,53 @@ export function collectRepoCleanupFindings(
 	return findings;
 }
 
+// ── TP-040: Non-Blocking Engine Launch Helper ───────────────────────
+
+/**
+ * Start an engine execution (batch or resume) without blocking the caller.
+ *
+ * Launches `engineFn` as a fire-and-forget promise — the command handler
+ * returns immediately so the pi session stays interactive. All state
+ * transitions are communicated via the existing callback mechanism
+ * (onNotify, onMonitorUpdate) and engine events.
+ *
+ * The `.catch()` error boundary handles unexpected rejections from the
+ * engine by:
+ * 1. Setting the batch state to "failed" with the error
+ * 2. Notifying the operator
+ * 3. Refreshing the dashboard widget
+ *
+ * This prevents unhandled promise rejections from crashing the session
+ * or leaving batch state inconsistent.
+ */
+function startBatchAsync(
+	engineFn: () => Promise<void>,
+	batchState: import("./types.ts").OrchBatchRuntimeState,
+	ctx: ExtensionContext,
+	updateWidget: () => void,
+): void {
+	engineFn()
+		.then(() => {
+			// Engine completed normally — final widget update
+			updateWidget();
+		})
+		.catch((err: unknown) => {
+			// Unhandled engine rejection — surface to operator and update state
+			const errMsg = err instanceof Error ? err.message : String(err);
+			if (batchState.phase !== "completed" && batchState.phase !== "failed") {
+				batchState.phase = "failed";
+				batchState.endedAt = Date.now();
+				batchState.errors.push(`Unhandled engine error: ${errMsg}`);
+			}
+			ctx.ui.notify(
+				`❌ Engine crashed with unhandled error: ${errMsg}\n` +
+				`   Batch ${batchState.batchId} marked as failed.`,
+				"error",
+			);
+			updateWidget();
+		});
+}
+
 // ── Extension ────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
@@ -836,35 +883,43 @@ export default function (pi: ExtensionAPI) {
 			latestMonitorState = null;
 			updateOrchWidget();
 
-			await executeOrchBatch(
-				args,
-				orchConfig,
-				runnerConfig,
-				repoRoot,
+			// ── TP-040: Non-blocking engine launch ───────────────────
+			// Start the engine without awaiting — the command handler returns
+			// immediately so the pi session remains interactive (enables
+			// supervisor agent and operator conversation during batch).
+			// The .catch() error boundary ensures unhandled rejections from
+			// the engine are surfaced to the operator and reflected in state.
+			startBatchAsync(
+				() => executeOrchBatch(
+					args,
+					orchConfig,
+					runnerConfig,
+					repoRoot,
+					orchBatchState,
+					(message, level) => {
+						ctx.ui.notify(message, level);
+						updateOrchWidget(); // Refresh widget on every phase message
+					},
+					(monState: MonitorState) => {
+						const changed = !latestMonitorState ||
+							latestMonitorState.totalDone !== monState.totalDone ||
+							latestMonitorState.totalFailed !== monState.totalFailed ||
+							latestMonitorState.lanes.some((l, i) =>
+								l.currentTaskId !== monState.lanes[i]?.currentTaskId ||
+								l.currentStep !== monState.lanes[i]?.currentStep ||
+								l.completedChecks !== monState.lanes[i]?.completedChecks,
+							);
+						latestMonitorState = monState;
+						if (changed) updateOrchWidget(); // Only refresh on actual state change
+					},
+					execCtx!.workspaceConfig,
+					execCtx!.workspaceRoot,
+					execCtx!.pointer?.agentRoot,
+				),
 				orchBatchState,
-				(message, level) => {
-					ctx.ui.notify(message, level);
-					updateOrchWidget(); // Refresh widget on every phase message
-				},
-				(monState: MonitorState) => {
-					const changed = !latestMonitorState ||
-						latestMonitorState.totalDone !== monState.totalDone ||
-						latestMonitorState.totalFailed !== monState.totalFailed ||
-						latestMonitorState.lanes.some((l, i) =>
-							l.currentTaskId !== monState.lanes[i]?.currentTaskId ||
-							l.currentStep !== monState.lanes[i]?.currentStep ||
-							l.completedChecks !== monState.lanes[i]?.completedChecks,
-						);
-					latestMonitorState = monState;
-					if (changed) updateOrchWidget(); // Only refresh on actual state change
-				},
-				execCtx!.workspaceConfig,
-				execCtx!.workspaceRoot,
-				execCtx!.pointer?.agentRoot,
+				ctx,
+				updateOrchWidget,
 			);
-
-			// Final widget update after batch completes
-			updateOrchWidget();
 		},
 	});
 
@@ -1046,27 +1101,31 @@ export default function (pi: ExtensionAPI) {
 			latestMonitorState = null;
 			updateOrchWidget();
 
-			await resumeOrchBatch(
-				orchConfig,
-				runnerConfig,
-				execCtx!.repoRoot,
+			// ── TP-040: Non-blocking resume launch ───────────────────
+			// Same fire-and-forget pattern as /orch — see startBatchAsync.
+			startBatchAsync(
+				() => resumeOrchBatch(
+					orchConfig,
+					runnerConfig,
+					execCtx!.repoRoot,
+					orchBatchState,
+					(message, level) => {
+						ctx.ui.notify(message, level);
+						updateOrchWidget();
+					},
+					(monState: MonitorState) => {
+						latestMonitorState = monState;
+						updateOrchWidget();
+					},
+					execCtx!.workspaceConfig,
+					execCtx!.workspaceRoot,
+					execCtx!.pointer?.agentRoot,
+					parsed.force,
+				),
 				orchBatchState,
-				(message, level) => {
-					ctx.ui.notify(message, level);
-					updateOrchWidget();
-				},
-				(monState: MonitorState) => {
-					latestMonitorState = monState;
-					updateOrchWidget();
-				},
-				execCtx!.workspaceConfig,
-				execCtx!.workspaceRoot,
-				execCtx!.pointer?.agentRoot,
-				parsed.force,
+				ctx,
+				updateOrchWidget,
 			);
-
-			// Final widget update
-			updateOrchWidget();
 		},
 	});
 

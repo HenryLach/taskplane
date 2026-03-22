@@ -5,7 +5,7 @@
 **Last Updated:** 2026-03-22
 **Review Level:** 2
 **Review Counter:** 3
-**Iteration:** 4
+**Iteration:** 3
 **Size:** L
 
 ---
@@ -33,12 +33,12 @@
 ---
 
 ### Step 2: Make Engine Non-Blocking
-**Status:** 🟨 In Progress
-- [ ] Create startBatchAsync/startResumeAsync helpers with .catch() error boundary in extension.ts
-- [ ] /orch handler calls startBatchAsync (fire-and-forget), returns immediately
-- [ ] /orch-resume handler calls startResumeAsync (fire-and-forget), returns immediately
-- [ ] Error boundary sets batchState phase/error, notifies operator, refreshes widget on unhandled rejection
-- [ ] Dashboard widget updates continue working via existing callback mechanism
+**Status:** ✅ Complete
+- [x] Create startBatchAsync/startResumeAsync helpers with .catch() error boundary in extension.ts
+- [x] /orch handler calls startBatchAsync (fire-and-forget), returns immediately
+- [x] /orch-resume handler calls startResumeAsync (fire-and-forget), returns immediately
+- [x] Error boundary sets batchState phase/error, notifies operator, refreshes widget on unhandled rejection
+- [x] Dashboard widget updates continue working via existing callback mechanism
 
 ---
 
@@ -75,6 +75,7 @@
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
@@ -117,6 +118,8 @@
 | 2026-03-22 19:46 | Step 1 complete | Engine Event Infrastructure |
 | 2026-03-22 19:46 | Step 2 started | Make Engine Non-Blocking |
 | 2026-03-22 19:46 | Review R003 | plan Step 2: REVISE |
+| 2026-03-22 19:47 | Review R003 | plan Step 2: REVISE |
+| 2026-03-22 19:50 | Step 2 impl verified | startBatchAsync helper, fire-and-forget /orch and /orch-resume, error boundary — all already implemented by prev iteration |
 
 ## Blockers
 
