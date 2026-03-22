@@ -708,26 +708,31 @@ function startBatchAsync(
 	ctx: ExtensionContext,
 	updateWidget: () => void,
 ): void {
-	engineFn()
-		.then(() => {
-			// Engine completed normally — final widget update
-			updateWidget();
-		})
-		.catch((err: unknown) => {
-			// Unhandled engine rejection — surface to operator and update state
-			const errMsg = err instanceof Error ? err.message : String(err);
-			if (batchState.phase !== "completed" && batchState.phase !== "failed") {
-				batchState.phase = "failed";
-				batchState.endedAt = Date.now();
-				batchState.errors.push(`Unhandled engine error: ${errMsg}`);
-			}
-			ctx.ui.notify(
-				`❌ Engine crashed with unhandled error: ${errMsg}\n` +
-				`   Batch ${batchState.batchId} marked as failed.`,
-				"error",
-			);
-			updateWidget();
-		});
+	// Detach engine start to the next tick so the command handler returns
+	// immediately. Without this, the synchronous planning/discovery phase
+	// of the engine would block the handler until its first await.
+	setTimeout(() => {
+		engineFn()
+			.then(() => {
+				// Engine completed normally — final widget update
+				updateWidget();
+			})
+			.catch((err: unknown) => {
+				// Unhandled engine rejection — surface to operator and update state
+				const errMsg = err instanceof Error ? err.message : String(err);
+				if (batchState.phase !== "completed" && batchState.phase !== "failed") {
+					batchState.phase = "failed";
+					batchState.endedAt = Date.now();
+					batchState.errors.push(`Unhandled engine error: ${errMsg}`);
+				}
+				ctx.ui.notify(
+					`❌ Engine crashed with unhandled error: ${errMsg}\n` +
+					`   Batch ${batchState.batchId} marked as failed.`,
+					"error",
+				);
+				updateWidget();
+			});
+	}, 0);
 }
 
 // ── Extension ────────────────────────────────────────────────────────
