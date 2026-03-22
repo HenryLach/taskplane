@@ -1,7 +1,7 @@
 # TP-041: Supervisor Agent — Status
 
 **Current Step:** Step 2: Lockfile + Session Takeover
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
 **Review Counter:** 3
@@ -35,11 +35,12 @@
 
 ### Step 2: Lockfile + Session Takeover
 **Status:** 🟨 In Progress
-- [ ] Write lockfile on activation
-- [ ] Heartbeat every 30s
-- [ ] Startup detection (live vs stale lockfile)
-- [ ] Force takeover mechanism
-- [ ] Cleanup on completion/exit
+- [ ] Lockfile types + write/read/cleanup helpers (atomic temp+rename, corrupt=stale)
+- [ ] Write lockfile on activation, heartbeat timer (30s), yield detection on heartbeat
+- [ ] Startup gate: check active batch first, then lockfile arbitration (R003-1)
+- [ ] Stale-lock takeover with rehydration summary from batch-state + actions + events (R003-2)
+- [ ] Live-lock detection: warn + offer force takeover
+- [ ] Cleanup lockfile on deactivation (completion/exit/abort)
 
 ---
 
