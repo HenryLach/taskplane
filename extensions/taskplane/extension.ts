@@ -2009,6 +2009,7 @@ export default function (pi: ExtensionAPI) {
 			"/orch-plan <areas|all>   Preview execution plan\n" +
 			"/orch-deps <areas|all>   Show dependency graph\n" +
 			"/orch-sessions           List TMUX sessions\n" +
+			"/orch-takeover           Force supervisor takeover\n" +
 			"/orch-integrate          Integrate orch branch into working branch",
 			"info",
 		);

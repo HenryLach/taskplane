@@ -1,6 +1,6 @@
 # TP-041: Supervisor Agent — Status
 
-**Current Step:** Step 2: Lockfile + Session Takeover
+**Current Step:** Step 3: Engine Event Consumption + Notifications
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
@@ -34,7 +34,7 @@
 ---
 
 ### Step 2: Lockfile + Session Takeover
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Lockfile types + write/read/cleanup helpers (atomic temp+rename, corrupt=stale)
 - [x] Write lockfile on activation, heartbeat timer (30s), yield detection on heartbeat
 - [x] Startup gate: check active batch first, then lockfile arbitration (R003-1)
@@ -47,7 +47,7 @@
 ---
 
 ### Step 3: Engine Event Consumption + Notifications
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Tail events JSONL
 - [ ] Proactive notifications for significant events
 - [ ] Notification frequency adapts to autonomy level
@@ -141,6 +141,9 @@
 | 2026-03-22 21:41 | Worker iter 4 | done in 817s, ctx: 36%, tools: 71 |
 | 2026-03-22 21:42 | Review R004 | code Step 2: REVISE |
 | 2026-03-22 21:45 | Review R004 | code Step 2: REVISE |
+| 2026-03-22 21:47 | Worker iter 4 | done in 115s, ctx: 19%, tools: 22 |
+| 2026-03-22 21:47 | Step 2 complete | Lockfile + Session Takeover |
+| 2026-03-22 21:47 | Step 3 started | Engine Event Consumption + Notifications |
 
 ## Blockers
 
