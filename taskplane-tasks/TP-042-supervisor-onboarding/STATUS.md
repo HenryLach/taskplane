@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 2
+**Review Counter:** 3
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -32,11 +32,11 @@
 
 ### Step 2: Onboarding Flow (Scripts 1-5)
 **Status:** 🟨 In Progress
-- [ ] Project detection and analysis
-- [ ] Task area setup conversation
-- [ ] Git branching assessment
-- [ ] Config generation
-- [ ] First-task guidance
+- [ ] Routing-aware system prompt: build onboarding/routing prompt (separate from batch-monitoring prompt) and wire into before_agent_start hook; add routingContext field to SupervisorState
+- [ ] Script 1/2/3 trigger discrimination in primer: add all three onboarding scripts to supervisor-primer.md with trigger conditions based on repo maturity (no .pi/ dir → Script 1; empty/new project → Script 2; established codebase → Script 3), with delegation to Scripts 4/5
+- [ ] Scripts 4 and 5 in primer: add Task Area Design and Git Branching & Protection scripts as delegated sub-flows
+- [ ] Returning-user script stubs in primer: add Scripts 6/7/8 trigger/goal summaries so the routing prompt can reference them for non-onboarding states (pending-tasks, no-tasks, completed-batch)
+- [ ] Full config/scaffolding artifact set: onboarding prompt instructs supervisor to create .pi/taskplane-config.json, area CONTEXT.md files, .pi/agents/ overrides, and .gitignore entries (idempotent, create-if-missing)
 
 ---
 
@@ -71,6 +71,8 @@
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -110,6 +112,11 @@
 | 2026-03-22 23:37 | Worker iter 3 | done in 483s, ctx: 15%, tools: 38 |
 | 2026-03-22 23:37 | Step 1 complete | /orch Routing Logic |
 | 2026-03-22 23:37 | Step 2 started | Onboarding Flow (Scripts 1-5) |
+| 2026-03-22 23:38 | Worker iter 2 | done in 512s, ctx: 21%, tools: 46 |
+| 2026-03-22 23:38 | Step 1 complete | /orch Routing Logic |
+| 2026-03-22 23:38 | Step 2 started | Onboarding Flow (Scripts 1-5) |
+| 2026-03-22 23:40 | Review R003 | plan Step 2: REVISE |
+| 2026-03-22 23:40 | Review R003 | plan Step 2: REVISE |
 
 ## Blockers
 
