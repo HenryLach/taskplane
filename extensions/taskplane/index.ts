@@ -23,3 +23,4 @@ export * from "./resume.ts";
 export * from "./abort.ts";
 export * from "./workspace.ts";
 export * from "./diagnostics.ts";
+export * from "./supervisor.ts";

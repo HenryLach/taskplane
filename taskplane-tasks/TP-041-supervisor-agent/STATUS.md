@@ -20,12 +20,12 @@
 ---
 
 ### Step 1: Supervisor System Prompt + Activation
-**Status:** 🟨 In Progress
-- [ ] Create supervisor.ts with system prompt builder and activation function
-- [ ] Add `before_agent_start` handler for persistent system prompt injection (guarded: only while batch is active)
-- [ ] Inject activation message via `sendMessage()` after `startBatchAsync()` in /orch handler
-- [ ] Add supervisor.model to config schema + user preferences + config loader
-- [ ] Export supervisor module from index.ts
+**Status:** ✅ Complete
+- [x] Create supervisor.ts with system prompt builder and activation function
+- [x] Add `before_agent_start` handler for persistent system prompt injection (guarded: only while batch is active)
+- [x] Inject activation message via `sendMessage()` after `startBatchAsync()` in /orch handler
+- [x] Add supervisor.model to config schema + user preferences + config loader
+- [x] Export supervisor module from index.ts
 
 ---
 

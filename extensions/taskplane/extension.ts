@@ -29,6 +29,7 @@ import {
 	listWorktrees,
 	loadBatchState,
 	loadOrchestratorConfig,
+	loadSupervisorConfig,
 	loadTaskRunnerConfig,
 	parseOrchSessionNames,
 	resolveOperatorId,
@@ -40,6 +41,14 @@ import {
 } from "./index.ts";
 import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
+import {
+	activateSupervisor,
+	deactivateSupervisor,
+	freshSupervisorState,
+	registerSupervisorPromptHook,
+	DEFAULT_SUPERVISOR_CONFIG,
+} from "./supervisor.ts";
+import type { SupervisorConfig } from "./supervisor.ts";
 import type {
 	AbortMode,
 	ExecutionContext,
@@ -744,6 +753,14 @@ export default function (pi: ExtensionAPI) {
 	let orchWidgetCtx: ExtensionContext | undefined;
 	let latestMonitorState: MonitorState | null = null;
 
+	// ── Supervisor State (TP-041) ────────────────────────────────────
+	let supervisorState = freshSupervisorState();
+	let supervisorConfig: SupervisorConfig = { ...DEFAULT_SUPERVISOR_CONFIG };
+
+	// Register supervisor prompt hook: while active, injects supervisor
+	// system prompt on every LLM turn. No-op when supervisor is inactive.
+	registerSupervisorPromptHook(pi, supervisorState);
+
 	/**
 	 * Execution context loaded at session start. Null if startup failed
 	 * (e.g., workspace config present but invalid). Commands check this
@@ -933,6 +950,20 @@ export default function (pi: ExtensionAPI) {
 				orchBatchState,
 				ctx,
 				updateOrchWidget,
+			);
+
+			// ── TP-041: Activate supervisor agent ────────────────────
+			// After the engine is launched (non-blocking), activate the
+			// supervisor in this pi session. The supervisor's system prompt
+			// is injected on every turn via before_agent_start while active.
+			// supervisorConfig is loaded at session_start from unified config.
+			activateSupervisor(
+				pi,
+				supervisorState,
+				orchBatchState,
+				orchConfig,
+				supervisorConfig,
+				repoRoot,
 			);
 		},
 	});
@@ -1180,6 +1211,17 @@ export default function (pi: ExtensionAPI) {
 				ctx,
 				updateOrchWidget,
 			);
+
+			// ── TP-041: Activate supervisor agent on resume ──────────
+			// supervisorConfig is loaded at session_start from unified config.
+			activateSupervisor(
+				pi,
+				supervisorState,
+				orchBatchState,
+				orchConfig,
+				supervisorConfig,
+				execCtx!.repoRoot,
+			);
 		},
 	});
 
@@ -1295,6 +1337,9 @@ export default function (pi: ExtensionAPI) {
 				}
 
 				// ── Step 6: Clean up batch state ────────────────────────
+				// TP-041: Deactivate supervisor on abort
+				deactivateSupervisor(supervisorState);
+
 				try {
 					orchBatchState.phase = "stopped";
 					orchBatchState.endedAt = Date.now();
@@ -1677,6 +1722,20 @@ export default function (pi: ExtensionAPI) {
 		// Populate module-level config refs from the loaded context
 		orchConfig = execCtx.orchestratorConfig;
 		runnerConfig = execCtx.taskRunnerConfig;
+
+		// TP-041: Load supervisor config from unified config.
+		// Uses execCtx.repoRoot (not ctx.cwd) for consistency with the
+		// established pattern — all config loading after buildExecutionContext
+		// uses the resolved execution context paths.
+		try {
+			supervisorConfig = loadSupervisorConfig(
+				execCtx.repoRoot,
+				execCtx.pointer?.configRoot,
+			);
+		} catch {
+			// Non-fatal — use defaults if supervisor config fails to load
+			supervisorConfig = { ...DEFAULT_SUPERVISOR_CONFIG };
+		}
 
 		// Set status line
 		const areaCount = Object.keys(runnerConfig.task_areas).length;

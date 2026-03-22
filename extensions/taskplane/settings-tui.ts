@@ -150,6 +150,13 @@ export const SECTIONS: SectionDef[] = [
 		],
 	},
 	{
+		name: "Supervisor",
+		fields: [
+			{ configPath: "orchestrator.supervisor.model", label: "Supervisor Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "supervisorModel", description: "Supervisor model (empty = inherit session)" },
+			{ configPath: "orchestrator.supervisor.autonomy", label: "Autonomy Level", control: "toggle", layer: "L1", fieldType: "enum", values: ["interactive", "supervised", "autonomous"], description: "Recovery action confirmation behavior" },
+		],
+	},
+	{
 		name: "Worker",
 		fields: [
 			{ configPath: "taskRunner.worker.model", label: "Worker Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "workerModel", description: "Worker model (empty = inherit session)" },
