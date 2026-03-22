@@ -701,7 +701,7 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 		expect(["mark-failed", "pending"]).toContain(sh002.action);
 	});
 
-	it("5.3: computeResumePoint: all sessions dead, wave-1 done, wave-2/3 terminal → past end", () => {
+	it("5.3: computeResumePoint: all sessions dead, wave-1 done, wave-2 terminal, wave-3 pending → resumes at wave 2", () => {
 		const aliveSessions = new Set<string>();
 		const doneTaskIds = new Set(["SH-001", "AP-001", "UI-001"]);
 
@@ -710,14 +710,14 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 
 		// Wave 0: all mark-complete → terminal (skipped)
 		// Wave 1: AP-002/UI-002 mark-failed → terminal (skipped)
-		// Wave 2: SH-002 mark-failed → terminal (skipped)
-		// All waves are terminal → resumeWaveIndex = wavePlan.length (past end)
-		expect(resumePoint.resumeWaveIndex).toBe(3);
+		// Wave 2: SH-002 is pending (stale session cleared by TP-037 #102b) → NOT terminal
+		// resumeWaveIndex = 2 (first non-terminal wave)
+		expect(resumePoint.resumeWaveIndex).toBe(2);
 		expect(resumePoint.completedTaskIds.sort()).toEqual(["AP-001", "SH-001", "UI-001"]);
 		expect(resumePoint.failedTaskIds).toContain("AP-002");
 		expect(resumePoint.failedTaskIds).toContain("UI-002");
-		// SH-002 was pending with session name → mark-failed
-		expect(resumePoint.failedTaskIds).toContain("SH-002");
+		// TP-037 (Bug #102b): SH-002 was pending with stale session name → stays pending, not failed
+		expect(resumePoint.pendingTaskIds).toContain("SH-002");
 	});
 
 	it("5.4: reconcileTaskStates with alive sessions → reconnect", () => {
@@ -814,9 +814,9 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 		const ui002 = reconciled.find(t => t.taskId === "UI-002")!;
 		expect(ui002.action).toBe("mark-failed");
 
-		// SH-002 had session seeded but never started → mark-failed (dead session)
+		// TP-037 (Bug #102b): SH-002 had session seeded but never started → stays pending
 		const sh002 = reconciled.find(t => t.taskId === "SH-002")!;
-		expect(sh002.action).toBe("mark-failed");
+		expect(sh002.action).toBe("pending");
 
 		// TP-037: Wave 1 has succeeded task (AP-002) but no merge result → flagged for merge retry
 		// resumeWaveIndex = 1 (first wave needing merge retry)
@@ -824,7 +824,8 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 		expect(resumePoint.mergeRetryWaveIndexes).toEqual([1]);
 		expect(resumePoint.completedTaskIds.sort()).toEqual(["AP-001", "AP-002", "SH-001", "UI-001"]);
 		expect(resumePoint.failedTaskIds).toContain("UI-002");
-		expect(resumePoint.failedTaskIds).toContain("SH-002");
+		// SH-002 is pending (not failed) — will be re-queued for execution
+		expect(resumePoint.pendingTaskIds).toContain("SH-002");
 	});
 
 	it("5.10: resume with alive wave-2 session keeps resumeWaveIndex at wave 1", () => {

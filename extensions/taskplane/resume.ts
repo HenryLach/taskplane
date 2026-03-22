@@ -388,10 +388,14 @@ export function reconcileTaskStates(
 			};
 		}
 
-		// Precedence 5: Never-started task (pending + no session assigned) → remain pending
-		// These are future-wave tasks that were never allocated to a lane.
-		// They should be re-queued for execution, not failed.
-		if (task.status === "pending" && !task.sessionName) {
+		// Precedence 5: Pending task that was never started → remain pending
+		// Matches two cases:
+		//   (a) No session assigned at all (future-wave task never allocated)
+		//   (b) Session assigned from a prior failed resume, but session is dead
+		//       and worktree doesn't exist — task was allocated but never actually
+		//       started (TP-037 bug #102b fix)
+		// In both cases the task should be re-queued for execution, not failed.
+		if (task.status === "pending" && (!task.sessionName || (!sessionAlive && !worktreeExists))) {
 			return {
 				taskId: task.taskId,
 				persistedStatus: task.status,
@@ -533,7 +537,11 @@ export function computeResumePoint(
 		});
 
 		if (!allDone) {
-			resumeWaveIndex = i;
+			// Only set resumeWaveIndex if not already set by a merge retry
+			// (merge retry at an earlier wave takes precedence)
+			if (resumeWaveIndex === persistedState.wavePlan.length) {
+				resumeWaveIndex = i;
+			}
 			break;
 		}
 
@@ -837,6 +845,33 @@ export async function resumeOrchBatch(
 
 	// ── 4. Reconcile task states ─────────────────────────────────
 	const reconciledTasks = reconcileTaskStates(persistedState, aliveSessions, doneTaskIds, existingWorktreeTaskIds);
+
+	// ── 4b. Clear stale session allocation for tasks reconciled as pending ──
+	// TP-037 (Bug #102b): Pending tasks that had a sessionName from a prior
+	// failed resume but were never actually started need their allocation
+	// metadata cleared so they can be freshly assigned to new lanes.
+	// We also prune these tasks from persisted lane records so that
+	// serializeBatchState() doesn't reintroduce stale sessionName via the
+	// `outcome?.sessionName || lane?.tmuxSessionName` fallback path.
+	const stalePendingTaskIds = new Set<string>();
+	for (const reconciled of reconciledTasks) {
+		if (reconciled.action === "pending") {
+			const persistedTask = persistedState.tasks.find(t => t.taskId === reconciled.taskId);
+			if (persistedTask && persistedTask.sessionName) {
+				execLog("resume", persistedState.batchId, `clear-stale-session: ${reconciled.taskId} had stale session "${persistedTask.sessionName}" (lane ${persistedTask.laneNumber})`);
+				stalePendingTaskIds.add(reconciled.taskId);
+				persistedTask.sessionName = "";
+				persistedTask.laneNumber = 0;
+			}
+		}
+	}
+	// Prune stale-pending tasks from lane records so reconstructAllocatedLanes()
+	// (and subsequent serializeBatchState()) won't map them back to the old lane.
+	if (stalePendingTaskIds.size > 0) {
+		for (const lane of persistedState.lanes) {
+			lane.taskIds = lane.taskIds.filter(id => !stalePendingTaskIds.has(id));
+		}
+	}
 
 	// ── 5. Compute resume point ──────────────────────────────────
 	const resumePoint = computeResumePoint(persistedState, reconciledTasks);
