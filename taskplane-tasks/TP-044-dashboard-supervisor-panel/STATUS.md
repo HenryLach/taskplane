@@ -20,12 +20,12 @@
 
 ### Step 1: Dashboard Server — Serve Supervisor Data
 **Status:** 🟨 In Progress
-- [ ] Read lockfile for status (active/inactive, autonomy level, batchId, heartbeat)
-- [ ] Tail actions.jsonl with incremental reader (reuse telemetry tail pattern), batch-scoped filtering
-- [ ] Read events.jsonl with incremental reader, batch-scoped filtering
-- [ ] Read batch summary file (.pi/supervisor/summary.md) when available
-- [ ] Include supervisor data object in SSE/buildDashboardState alongside existing wave/lane data
-- [ ] Handle missing supervisor files gracefully (pre-supervisor batches → null/empty)
+- [ ] Read lockfile for active/inactive status + derive autonomy from config (lockfile has no autonomy field; fall back to config default or "unknown")
+- [ ] Tail actions.jsonl for recovery action audit trail (bounded to last 100 entries)
+- [ ] Read events.jsonl for engine + tier 0 events (bounded to last 200 entries)
+- [ ] Read batch summary from batch-state terminal fields (no separate summary.md file exists)
+- [ ] Include supervisor data object in SSE buildDashboardState payload
+- [ ] Handle missing .pi/supervisor/ directory and files gracefully (pre-supervisor batches return null/empty)
 
 ---
 
@@ -93,4 +93,6 @@
 
 ## Notes
 
-*Reserved for execution notes*
+- R001 requested conversation history serving. Supervisor is an interactive pi session — no separate conversation JSONL file exists for it (unlike worker-conversation-*.jsonl for lane workers). The audit trail (actions.jsonl) is the closest proxy for "what the supervisor did." Frontend Step 2 can display actions timeline as the supervisor activity log.
+- R001 noted autonomy level is not in the lockfile. Will derive from config (loadSupervisorConfig) with fallback to "unknown" if config unavailable.
+- R001 suggested bounding payloads — will cap actions at 100 entries and events at 200 entries to prevent unbounded growth.
