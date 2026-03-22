@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 2
+**Review Counter:** 3
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -35,9 +35,12 @@
 
 ### Step 2: Tier 0 Event Logging
 **Status:** 🟨 In Progress
-- [ ] Create .pi/supervisor/ directory
-- [ ] Write JSONL events for recovery attempts/success/exhaustion
-- [ ] Include full context in events
+- [ ] Define Tier0Event type and `emitTier0Event()` utility in persistence.ts — write to `stateRoot/.pi/supervisor/events.jsonl` with best-effort semantics (mkdir + append, failures logged but don't crash batch)
+- [ ] Instrument worker crash retry (attemptWorkerCrashRetry) with tier0_recovery_attempt / tier0_recovery_success / tier0_recovery_exhausted events
+- [ ] Instrument stale worktree recovery (attemptStaleWorktreeRecovery) with tier0_recovery_attempt / tier0_recovery_success / tier0_recovery_exhausted events
+- [ ] Instrument cleanup gate retry (inline in engine wave loop) with tier0_recovery_attempt / tier0_recovery_success / tier0_recovery_exhausted events
+- [ ] Instrument merge retry loop (applyMergeRetryLoop integration point in engine.ts) with tier0 events — emit attempt/success/exhausted at the engine caller site
+- [ ] Include full context in each event: timestamp, batchId, waveIndex, laneNumber, pattern, attempt, classification/error, and escalation-ready fields in exhausted events
 
 ---
 
@@ -74,6 +77,8 @@
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -109,6 +114,11 @@
 | 2026-03-22 18:21 | Worker iter 3 | done in 528s, ctx: 33%, tools: 64 |
 | 2026-03-22 18:21 | Step 1 complete | Wire Automatic Recovery into Engine |
 | 2026-03-22 18:21 | Step 2 started | Tier 0 Event Logging |
+| 2026-03-22 18:21 | Worker iter 2 | done in 535s, ctx: 32%, tools: 83 |
+| 2026-03-22 18:21 | Step 1 complete | Wire Automatic Recovery into Engine |
+| 2026-03-22 18:21 | Step 2 started | Tier 0 Event Logging |
+| 2026-03-22 18:25 | Review R003 | plan Step 2: REVISE |
+| 2026-03-22 18:25 | Review R003 | plan Step 2: REVISE |
 
 ## Blockers
 
