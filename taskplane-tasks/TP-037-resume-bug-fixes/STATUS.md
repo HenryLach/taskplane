@@ -1,6 +1,6 @@
 # TP-037: Resume Bug Fixes & State Coherence — Status
 
-**Current Step:** Step 2: Fix Stale Session Names (Bug #102b)
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 1
@@ -36,7 +36,7 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Merge skip detection test
 - [ ] Stale session name test
 - [ ] State coherence test
@@ -91,6 +91,9 @@
 | 2026-03-22 04:38 | Step 2 started | Fix Stale Session Names (Bug #102b) |
 | 2026-03-22 04:39 | Review R002 | plan Step 2: APPROVE |
 | 2026-03-22 04:39 | Review R002 | plan Step 2: REVISE |
+| 2026-03-22 04:50 | Worker iter 4 | done in 632s, ctx: 26%, tools: 45 |
+| 2026-03-22 04:50 | Step 2 complete | Fix Stale Session Names (Bug #102b) |
+| 2026-03-22 04:50 | Step 3 started | Testing & Verification |
 
 ## Blockers
 
