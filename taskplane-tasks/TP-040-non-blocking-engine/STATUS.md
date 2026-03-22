@@ -4,7 +4,7 @@
 **Status:** ✅ Step 4 Complete
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 6
 **Size:** L
 
@@ -57,7 +57,7 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ✅ Complete
+**Status:** 🔄 In Progress (R008 revisions)
 - [x] Non-blocking handler test: /orch starts engine and returns control immediately (startBatchAsync + setTimeout detach)
 - [x] Event emission tests: engine events emitted at correct state transitions (wave_start, task_complete/failed, merge_start/success/failed)
 - [x] Completion/failure event tests: batch_complete emitted for success/failure, batch_paused for pause/stop, terminal event guard prevents duplicates
@@ -65,6 +65,10 @@
 - [x] Command compatibility: immediate post-launch /orch-status, /orch-pause, /orch-abort behavior (launching phase recognized)
 - [x] /orch-resume early-return paths reset phase from "launching" to "idle" (no stuck state)
 - [x] Full test suite passes: cd extensions && npx vitest run
+- [ ] R008-1: Add behavioral tests with fake timers for startBatchAsync (invoke function, assert handler returns before engine work, verify error boundary sets phase to failed)
+- [ ] R008-2: Add behavioral tests for launch-window command logic (create in-memory batchState at "launching" phase, verify status/pause/abort/resume logic outcomes)
+- [ ] R008-3: Add behavioral test for resumeOrchBatch early-return phase reset (call function with missing state, verify phase transitions from "launching" to "idle")
+- [ ] R008-4: Clean up unused imports and full test suite passes
 
 ---
 
@@ -92,6 +96,8 @@
 | R006 | code | Step 3 | REVISE | .reviews/R006-code-step3.md |
 | R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
 | R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
+| R008 | code | Step 4 | REVISE | .reviews/R008-code-step4.md |
+| R008 | code | Step 4 | REVISE | .reviews/R008-code-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -160,6 +166,10 @@
 | 2026-03-22 20:16 | Step 4 started | Testing & Verification |
 | 2026-03-22 20:18 | Review R007 | plan Step 4: REVISE |
 | 2026-03-22 20:19 | Review R007 | plan Step 4: REVISE |
+| 2026-03-22 20:27 | Worker iter 6 | done in 501s, ctx: 40%, tools: 53 |
+| 2026-03-22 20:28 | Worker iter 5 | done in 606s, ctx: 40%, tools: 73 |
+| 2026-03-22 20:31 | Review R008 | code Step 4: REVISE |
+| 2026-03-22 20:32 | Review R008 | code Step 4: REVISE |
 
 ## Blockers
 
