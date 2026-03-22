@@ -26,6 +26,7 @@ import {
 	freshOrchBatchState,
 	getCurrentBranch,
 	hasConfigFiles,
+	resolveConfigRoot,
 	listOrchSessions,
 	listWorktrees,
 	loadBatchState,
@@ -860,17 +861,24 @@ export function detectOrchState(deps: OrchStateDetectionDeps): OrchStateDetectio
 		}
 
 		// ── 2. Completed batch + orch branch → offer integration ───
+		// R002-2: Validate that the orch branch still exists in git before
+		// offering integration. Stale batch-state can reference a deleted branch.
 		if (batchState && batchState.phase === "completed" && batchState.orchBranch) {
-			return {
-				state: "completed-batch",
-				batchId: batchState.batchId,
-				orchBranch: batchState.orchBranch,
-				contextMessage:
-					`Your last batch (${batchState.batchId}) completed — ` +
-					`${batchState.succeededTasks ?? 0}/${batchState.totalTasks ?? "?"} tasks succeeded. ` +
-					`The orch branch \`${batchState.orchBranch}\` is ready to integrate. ` +
-					`Want me to create a PR to ${batchState.baseBranch}, or integrate directly?`,
-			};
+			const existingBranches = deps.listOrchBranches();
+			const branchExists = existingBranches.includes(batchState.orchBranch);
+			if (branchExists) {
+				return {
+					state: "completed-batch",
+					batchId: batchState.batchId,
+					orchBranch: batchState.orchBranch,
+					contextMessage:
+						`Your last batch (${batchState.batchId}) completed — ` +
+						`${batchState.succeededTasks ?? 0}/${batchState.totalTasks ?? "?"} tasks succeeded. ` +
+						`The orch branch \`${batchState.orchBranch}\` is ready to integrate. ` +
+						`Want me to create a PR to ${batchState.baseBranch}, or integrate directly?`,
+				};
+			}
+			// Branch was deleted — fall through to remaining checks
 		}
 	} catch {
 		// Batch state unreadable — fall through to check for orch branches
@@ -999,13 +1007,19 @@ export default function (pi: ExtensionAPI) {
 			if (!args?.trim()) {
 				// For "no-config" state we don't need execCtx — just send the
 				// routing context. For all other states, we need it.
-				const configCheckRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
-				const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+				// R002-1: Mirror the config loading resolution chain (resolveConfigRoot)
+				// so /orch routing detects config in the same location the loader uses.
+				// This handles pointer-based workspace setups where config lives at
+				// pointer.configRoot, not at the worktree cwd.
+				const cwd = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+				const pointerConfigRoot = execCtx?.pointer?.configRoot;
+				const resolvedConfigRoot = resolveConfigRoot(cwd, pointerConfigRoot);
+				const stateRoot = execCtx?.repoRoot ?? ctx.cwd;
 				const repoRoot = execCtx?.repoRoot ?? ctx.cwd;
 
 				// Detect project state with strict precedence order
 				const detection = detectOrchState({
-					hasConfig: () => hasConfigFiles(configCheckRoot),
+					hasConfig: () => hasConfigFiles(resolvedConfigRoot),
 					loadBatchState: () => {
 						try { return loadBatchState(stateRoot); }
 						catch { return null; }

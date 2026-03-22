@@ -19,14 +19,14 @@
 ---
 
 ### Step 1: /orch Routing Logic
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 - [x] Implement `detectOrchState()` helper with explicit state enum and precedence: no-config → active-batch → completed-batch-needs-integration → pending-tasks → no-tasks
 - [x] Modify /orch handler: when args is empty, call detectOrchState and route to supervisor activation with appropriate context message
 - [x] Preserve existing /orch WITH args behavior (start batch directly, no changes)
 - [x] R001-1: Include "completed batch, not integrated" state with orch branch check
 - [x] R001-2: Enforce explicit evaluation order matching PROMPT.md routing matrix
-- [ ] R002-1: Fix root selection — use pointer configRoot for config detection, repoRoot for batch-state detection
-- [ ] R002-2: Validate orch branch existence in completed-batch state (don't trust stale batchState.orchBranch)
+- [x] R002-1: Fix root selection — use pointer configRoot for config detection, repoRoot for batch-state detection
+- [x] R002-2: Validate orch branch existence in completed-batch state (don't trust stale batchState.orchBranch)
 
 ---
 
