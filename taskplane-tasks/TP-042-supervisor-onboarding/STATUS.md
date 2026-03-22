@@ -1,6 +1,6 @@
 # TP-042: Supervisor Onboarding & /orch Routing — Status
 
-**Current Step:** Step 1: /orch Routing Logic
+**Current Step:** Step 2: Onboarding Flow (Scripts 1-5)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
@@ -31,7 +31,7 @@
 ---
 
 ### Step 2: Onboarding Flow (Scripts 1-5)
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Project detection and analysis
 - [ ] Task area setup conversation
 - [ ] Git branching assessment
@@ -107,6 +107,9 @@
 | 2026-03-22 23:26 | Worker iter 3 | done in 884s, ctx: 51%, tools: 84 |
 | 2026-03-22 23:29 | Review R002 | code Step 1: REVISE |
 | 2026-03-22 23:30 | Review R002 | code Step 1: REVISE |
+| 2026-03-22 23:37 | Worker iter 3 | done in 483s, ctx: 15%, tools: 38 |
+| 2026-03-22 23:37 | Step 1 complete | /orch Routing Logic |
+| 2026-03-22 23:37 | Step 2 started | Onboarding Flow (Scripts 1-5) |
 
 ## Blockers
 
