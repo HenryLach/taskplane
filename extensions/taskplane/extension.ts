@@ -971,13 +971,15 @@ export default function (pi: ExtensionAPI) {
 			// ensuring batch metadata (batchId, wave/task counts) is always
 			// current even though the engine populates it asynchronously.
 			// Model override is resolved inside activateSupervisor via ctx.
+			// Uses workspaceRoot (not repoRoot) so lockfile/events/batch-state
+			// all resolve to the same .pi tree the engine writes to (R006-1).
 			activateSupervisor(
 				pi,
 				supervisorState,
 				orchBatchState,
 				orchConfig,
 				supervisorConfig,
-				repoRoot,
+				execCtx!.workspaceRoot,
 				ctx,
 			);
 		},
@@ -1231,13 +1233,14 @@ export default function (pi: ExtensionAPI) {
 
 			// ── TP-041: Activate supervisor agent on resume ──────────
 			// supervisorConfig is loaded at session_start from unified config.
+			// Uses workspaceRoot so supervisor state root matches engine (R006-1).
 			activateSupervisor(
 				pi,
 				supervisorState,
 				orchBatchState,
 				orchConfig,
 				supervisorConfig,
-				execCtx!.repoRoot,
+				execCtx!.workspaceRoot,
 				ctx,
 			);
 		},
@@ -1486,7 +1489,8 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("orch-takeover", {
 		description: "Force takeover supervisor from another session: /orch-takeover",
 		handler: async (_args, ctx) => {
-			const stateRoot = execCtx.repoRoot;
+			// Use workspaceRoot so supervisor state root matches engine (R006-1).
+			const stateRoot = execCtx.workspaceRoot;
 
 			// If this session already owns the supervisor, nothing to do.
 			if (supervisorState.active) {
@@ -1899,8 +1903,9 @@ export default function (pi: ExtensionAPI) {
 		// Check for an active batch with an existing lockfile. This covers
 		// session reconnection scenarios (pi restarted while a batch runs
 		// in tmux lanes) and crashed supervisor recovery.
+		// Uses workspaceRoot so supervisor state root matches engine (R006-1).
 		{
-			const stateRoot = execCtx.repoRoot;
+			const stateRoot = execCtx.workspaceRoot;
 			const lockResult = checkSupervisorLockOnStartup(stateRoot, loadBatchState);
 
 			switch (lockResult.status) {

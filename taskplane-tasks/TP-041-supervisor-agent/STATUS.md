@@ -4,8 +4,8 @@
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 4
+**Review Counter:** 7
+**Iteration:** 6
 **Size:** L
 
 ---
@@ -58,9 +58,10 @@
 
 ### Step 4: Recovery Action Execution + Audit Trail
 **Status:** 🟨 In Progress
-- [ ] Recovery via standard tools
-- [ ] Audit trail logging
-- [ ] Autonomy level controls confirmation behavior
+- [ ] Define recovery-action classification model (destructive vs non-destructive) and autonomy decision table that drives confirmation behavior per autonomy level
+- [ ] Define stable actions.jsonl schema (action identity, reason/context, timestamp, result) with pre-action logging guaranteed before destructive execution; implement appendAuditEntry + logRecoveryAction helpers
+- [ ] Wire audit trail guidance into the supervisor system prompt so the LLM logs actions appropriately, and add autonomy-level decision instructions to the system prompt
+- [ ] Add supervisor.autonomy config to config-schema, config-loader, settings-tui, and types (if not already present from Step 1)
 
 ---
 
@@ -99,6 +100,7 @@
 | R005 | plan | Step 3 | APPROVE | .reviews/R005-plan-step3.md |
 | R006 | code | Step 3 | REVISE | .reviews/R006-code-step3.md |
 | R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
+| R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -161,6 +163,7 @@
 | 2026-03-22 22:02 | Review R006 | code Step 3: APPROVE |
 | 2026-03-22 22:02 | Step 3 complete | Engine Event Consumption + Notifications |
 | 2026-03-22 22:02 | Step 4 started | Recovery Action Execution + Audit Trail |
+| 2026-03-22 22:04 | Review R007 | plan Step 4: REVISE |
 
 ## Blockers
 
