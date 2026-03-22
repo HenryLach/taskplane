@@ -1,18 +1,16 @@
 ## Plan Review: Step 4: Recovery Action Execution + Audit Trail
 
-### Verdict: REVISE
+### Verdict: APPROVE
 
 ### Summary
-The Step 4 plan captures the three broad goals (recovery actions, audit logging, autonomy-driven confirmations), but it is missing two outcome-level commitments needed to make those goals reliably implementable. In particular, the plan does not yet define how actions are classified as destructive vs non-destructive, nor the structured audit contract needed for reliable takeover/replay behavior. Without those, the step can easily ship with inconsistent confirmation behavior and weak auditability.
+The Step 4 plan now covers the key required outcomes: a concrete recovery-action classification model for autonomy decisions, a structured `actions.jsonl` audit contract, and remaining work to wire those rules into the supervisor system prompt. This addresses the two blocking gaps from the earlier review and is sufficient to achieve the step’s objectives. No blocking plan defects remain.
 
 ### Issues Found
-1. **Severity: important** — The plan does not define the destructive-action boundary and autonomy decision model. Step 4 requires different behavior in `interactive`, `supervised`, and `autonomous` modes, but without an explicit classification outcome (what is destructive, what is Tier-0-known vs novel), the implementation cannot consistently satisfy "ask before everything" vs "auto known / ask novel" behavior.
-2. **Severity: important** — The plan does not specify a structured `actions.jsonl` entry contract for pre-action logging + outcome reporting. This is necessary for operator auditability and for takeover context (current takeover summary already reads action records in `extensions/taskplane/supervisor.ts`, around the `buildTakeoverSummary()` actions section). A vague "audit trail logging" item risks inconsistent/partial records.
+1. **Severity: minor** — The checkbox wording `"Add supervisor.autonomy ... (if not already present from Step 1)"` is slightly ambiguous and could allow skipping explicit verification. Keep the outcome but ensure the worker still validates schema + loader + settings UI wiring end-to-end.
 
 ### Missing Items
-- Explicit outcome: a recovery-action classification model that drives confirmation behavior per autonomy level.
-- Explicit outcome: a stable `actions.jsonl` schema (at minimum action identity, reason/context, timestamp, and result) with pre-action logging guaranteed before destructive execution.
+- None.
 
 ### Suggestions
-- Keep audit logging best-effort/non-fatal so logging failures do not crash or deadlock recovery.
-- Call out that non-destructive diagnostics (read/log/test/status) remain always-allowed across autonomy levels.
+- In Step 5, add explicit tests for autonomy confirmation behavior across `interactive`, `supervised`, and `autonomous` modes (especially destructive vs non-destructive actions).
+- Add a focused test/assertion that destructive actions produce a pre-action audit entry before execution, not only a post-result record.
