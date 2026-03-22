@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** L
 
@@ -21,10 +21,11 @@
 
 ### Step 1: Engine Event Infrastructure
 **Status:** 🟨 In Progress
-- [ ] Define engine event types
-- [ ] Add event callback interface
-- [ ] Engine emits events at state transitions
-- [ ] Events written to supervisor events JSONL
+- [ ] Define engine event types in types.ts (extend existing Tier0EventType with engine lifecycle events: wave_start, task_complete, task_failed, merge_start, merge_success, merge_failed, batch_complete, batch_paused)
+- [ ] Add EngineEvent interface and EngineEventCallback type in types.ts with shared base payload (timestamp, batchId, waveIndex)
+- [ ] Extend emitTier0Event in persistence.ts to emit engine events (or add unified emitEngineEvent)
+- [ ] Add event emission calls at state transitions in engine.ts (wave start/end, task transitions, merge phases, batch completion/pause)
+- [ ] Add event callback parameter to executeOrchBatch signature and wire callback invocations
 
 ---
 
@@ -66,6 +67,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -88,6 +91,12 @@
 | 2026-03-22 19:23 | Skip code review | Step 0 (Preflight) — low-risk |
 | 2026-03-22 19:23 | Step 0 complete | Preflight |
 | 2026-03-22 19:23 | Step 1 started | Engine Event Infrastructure |
+| 2026-03-22 19:24 | Worker iter 1 | done in 163s, ctx: 41%, tools: 30 |
+| 2026-03-22 19:24 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 19:24 | Step 0 complete | Preflight |
+| 2026-03-22 19:24 | Step 1 started | Engine Event Infrastructure |
+| 2026-03-22 19:25 | Review R001 | plan Step 1: APPROVE |
+| 2026-03-22 19:25 | Review R001 | plan Step 1: APPROVE |
 
 ## Blockers
 
