@@ -1,6 +1,6 @@
 # TP-040: Non-Blocking Engine Refactor — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Engine Event Infrastructure
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
@@ -20,7 +20,7 @@
 ---
 
 ### Step 1: Engine Event Infrastructure
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Define engine event types
 - [ ] Add event callback interface
 - [ ] Engine emits events at state transitions
@@ -84,6 +84,10 @@
 | 2026-03-22 19:21 | Task started | Extension-driven execution |
 | 2026-03-22 19:21 | Step 0 started | Preflight |
 | 2026-03-22 19:21 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 19:23 | Worker iter 2 | done in 128s, ctx: 40%, tools: 25 |
+| 2026-03-22 19:23 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 19:23 | Step 0 complete | Preflight |
+| 2026-03-22 19:23 | Step 1 started | Engine Event Infrastructure |
 
 ## Blockers
 
