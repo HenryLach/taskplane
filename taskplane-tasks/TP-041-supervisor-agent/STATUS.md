@@ -5,7 +5,7 @@
 **Last Updated:** 2026-03-22
 **Review Level:** 2
 **Review Counter:** 3
-**Iteration:** 4
+**Iteration:** 3
 **Size:** L
 
 ---
@@ -34,13 +34,13 @@
 ---
 
 ### Step 2: Lockfile + Session Takeover
-**Status:** 🟨 In Progress
-- [ ] Lockfile types + write/read/cleanup helpers (atomic temp+rename, corrupt=stale)
-- [ ] Write lockfile on activation, heartbeat timer (30s), yield detection on heartbeat
-- [ ] Startup gate: check active batch first, then lockfile arbitration (R003-1)
-- [ ] Stale-lock takeover with rehydration summary from batch-state + actions + events (R003-2)
-- [ ] Live-lock detection: warn + offer force takeover
-- [ ] Cleanup lockfile on deactivation (completion/exit/abort)
+**Status:** ✅ Complete
+- [x] Lockfile types + write/read/cleanup helpers (atomic temp+rename, corrupt=stale)
+- [x] Write lockfile on activation, heartbeat timer (30s), yield detection on heartbeat
+- [x] Startup gate: check active batch first, then lockfile arbitration (R003-1)
+- [x] Stale-lock takeover with rehydration summary from batch-state + actions + events (R003-2)
+- [x] Live-lock detection: warn + offer force takeover
+- [x] Cleanup lockfile on deactivation (completion/exit/abort)
 
 ---
 
@@ -88,6 +88,7 @@
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -128,6 +129,10 @@
 | 2026-03-22 21:24 | Step 1 complete | Supervisor System Prompt + Activation |
 | 2026-03-22 21:24 | Step 2 started | Lockfile + Session Takeover |
 | 2026-03-22 21:27 | Review R003 | plan Step 2: REVISE |
+| 2026-03-22 21:29 | Worker iter 2 | done in 1174s, ctx: 53%, tools: 129 |
+| 2026-03-22 21:29 | Step 1 complete | Supervisor System Prompt + Activation |
+| 2026-03-22 21:29 | Step 2 started | Lockfile + Session Takeover |
+| 2026-03-22 21:30 | Review R003 | plan Step 2: APPROVE |
 
 ## Blockers
 

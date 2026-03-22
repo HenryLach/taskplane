@@ -7,11 +7,13 @@
  * naturally ("how's it going?", "fix it", "I'm going to bed") while the
  * batch runs.
  *
- * Key components (this step — Step 1):
+ * Key components:
  * - System prompt design (identity, context, capabilities, standing orders)
  * - Activation after engine starts (via pi.sendMessage with triggerTurn)
  * - System prompt persistence across turns (via before_agent_start event)
  * - Model inheritance + config override
+ * - Lockfile + heartbeat for session takeover prevention (Step 2)
+ * - Startup detection + stale lock takeover with rehydration (Step 2)
  *
  * @module supervisor
  * @since TP-041
@@ -19,9 +21,10 @@
 
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync } from "fs";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Model, Api } from "@mariozechner/pi-ai";
-import type { OrchBatchRuntimeState, OrchestratorConfig } from "./types.ts";
+import type { OrchBatchRuntimeState, OrchestratorConfig, PersistedBatchState } from "./types.ts";
 
 // ── Supervisor Config Types ──────────────────────────────────────────
 
@@ -242,6 +245,12 @@ export interface SupervisorState {
 	previousModel: Model<Api> | null;
 	/** Whether we switched models on activation (determines if we restore) */
 	didSwitchModel: boolean;
+
+	// ── Lockfile + Heartbeat (Step 2) ──────────────────────────────
+	/** Session ID written to the lockfile (for yield detection) */
+	lockSessionId: string;
+	/** Heartbeat timer handle (null when not active) */
+	heartbeatTimer: ReturnType<typeof setInterval> | null;
 }
 
 /**
@@ -257,6 +266,8 @@ export function freshSupervisorState(): SupervisorState {
 		stateRoot: "",
 		previousModel: null,
 		didSwitchModel: false,
+		lockSessionId: "",
+		heartbeatTimer: null,
 	};
 }
 
@@ -348,6 +359,25 @@ export async function activateSupervisor(
 		// If model not found in registry, fall through to session model (inheritance)
 	}
 
+	// ── Lockfile + Heartbeat (Step 2) ────────────────────────────────
+	// Write lockfile to claim supervisor role. Generate a unique session ID
+	// for yield detection (if another session force-takes over, our heartbeat
+	// will detect the sessionId mismatch and yield).
+	const sessionId = `pi-${process.pid}-${Date.now()}`;
+	state.lockSessionId = sessionId;
+
+	const lock: SupervisorLockfile = {
+		pid: process.pid,
+		sessionId,
+		batchId: batchState.batchId || "(initializing)",
+		startedAt: new Date().toISOString(),
+		heartbeat: new Date().toISOString(),
+	};
+	writeLockfile(stateRoot, lock);
+
+	// Start heartbeat timer — updates lockfile every 30s, detects takeover
+	state.heartbeatTimer = startHeartbeat(stateRoot, state, pi);
+
 	// Send activation message to trigger the supervisor's first turn.
 	// The content is generic — specific counts may not be available yet
 	// since the engine sets batchId/totalWaves/totalTasks asynchronously.
@@ -392,6 +422,22 @@ export async function deactivateSupervisor(
 ): Promise<void> {
 	if (!state.active) return; // Already inactive — idempotent guard
 
+	// ── Stop heartbeat timer (Step 2) ────────────────────────────
+	if (state.heartbeatTimer) {
+		clearInterval(state.heartbeatTimer);
+		state.heartbeatTimer = null;
+	}
+
+	// ── Remove lockfile (Step 2) ─────────────────────────────────
+	// Only remove if we still own it (our sessionId matches).
+	// If another session force-took-over, the lockfile belongs to them.
+	if (state.stateRoot && state.lockSessionId) {
+		const currentLock = readLockfile(state.stateRoot);
+		if (!currentLock || currentLock.sessionId === state.lockSessionId) {
+			removeLockfile(state.stateRoot);
+		}
+	}
+
 	// Restore previous model if we switched on activation
 	if (state.didSwitchModel && state.previousModel) {
 		try {
@@ -408,6 +454,7 @@ export async function deactivateSupervisor(
 	state.stateRoot = "";
 	state.previousModel = null;
 	state.didSwitchModel = false;
+	state.lockSessionId = "";
 }
 
 /**
@@ -476,4 +523,405 @@ export function resolveSupervisorConfig(
 		model: supervisorSection.model ?? DEFAULT_SUPERVISOR_CONFIG.model,
 		autonomy: supervisorSection.autonomy ?? DEFAULT_SUPERVISOR_CONFIG.autonomy,
 	};
+}
+
+
+// ── Lockfile Types + Helpers (TP-041 Step 2) ─────────────────────────
+
+/** Heartbeat interval in milliseconds (30 seconds). */
+export const HEARTBEAT_INTERVAL_MS = 30_000;
+
+/** Staleness threshold: if heartbeat is older than this, lock is stale (90s = 3 missed heartbeats). */
+export const STALE_LOCK_THRESHOLD_MS = 90_000;
+
+/**
+ * Supervisor lockfile shape — written to `.pi/supervisor/lock.json`.
+ *
+ * The lockfile enforces a 1:1 ratio between supervisors and batches.
+ * Only one supervisor session may be active per project at a time.
+ *
+ * @since TP-041
+ */
+export interface SupervisorLockfile {
+	/** Process ID of the supervisor session */
+	pid: number;
+	/** Unique session identifier (from pi session) */
+	sessionId: string;
+	/** Batch ID being supervised */
+	batchId: string;
+	/** ISO 8601 timestamp when this supervisor started */
+	startedAt: string;
+	/** ISO 8601 timestamp of most recent heartbeat */
+	heartbeat: string;
+}
+
+/**
+ * Result of checking the supervisor lockfile on startup.
+ *
+ * @since TP-041
+ */
+export type LockfileCheckResult =
+	| { status: "no-active-batch" }
+	| { status: "no-lockfile"; batchState: PersistedBatchState }
+	| { status: "stale"; lock: SupervisorLockfile; batchState: PersistedBatchState }
+	| { status: "live"; lock: SupervisorLockfile; batchState: PersistedBatchState }
+	| { status: "corrupt"; batchState: PersistedBatchState };
+
+/**
+ * Resolve the lockfile path for a given state root.
+ */
+export function lockfilePath(stateRoot: string): string {
+	return join(stateRoot, ".pi", "supervisor", "lock.json");
+}
+
+/**
+ * Read and parse the supervisor lockfile.
+ *
+ * Returns null if the file doesn't exist. If the file is corrupt/malformed,
+ * returns null (treat as stale per R003 suggestion — caller should rewrite).
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ * @returns Parsed lockfile or null
+ *
+ * @since TP-041
+ */
+export function readLockfile(stateRoot: string): SupervisorLockfile | null {
+	const path = lockfilePath(stateRoot);
+	if (!existsSync(path)) return null;
+
+	try {
+		const raw = readFileSync(path, "utf-8");
+		const parsed = JSON.parse(raw) as Record<string, unknown>;
+
+		// Validate required fields
+		if (
+			typeof parsed.pid !== "number" ||
+			typeof parsed.sessionId !== "string" ||
+			typeof parsed.batchId !== "string" ||
+			typeof parsed.startedAt !== "string" ||
+			typeof parsed.heartbeat !== "string"
+		) {
+			return null; // Malformed — treat as stale/absent
+		}
+
+		return parsed as unknown as SupervisorLockfile;
+	} catch {
+		return null; // Corrupt JSON — treat as stale/absent
+	}
+}
+
+/**
+ * Write the supervisor lockfile atomically (temp file + rename).
+ *
+ * Creates the `.pi/supervisor/` directory if it doesn't exist.
+ * Uses temp+rename to prevent partial writes from corrupting the file.
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ * @param lock - Lockfile data to write
+ *
+ * @since TP-041
+ */
+export function writeLockfile(stateRoot: string, lock: SupervisorLockfile): void {
+	const dir = join(stateRoot, ".pi", "supervisor");
+	if (!existsSync(dir)) {
+		mkdirSync(dir, { recursive: true });
+	}
+
+	const finalPath = lockfilePath(stateRoot);
+	const tmpPath = finalPath + ".tmp";
+	const json = JSON.stringify(lock, null, 2) + "\n";
+
+	writeFileSync(tmpPath, json, "utf-8");
+	renameSync(tmpPath, finalPath);
+}
+
+/**
+ * Remove the supervisor lockfile.
+ *
+ * Safe to call when the file doesn't exist (no-op).
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ *
+ * @since TP-041
+ */
+export function removeLockfile(stateRoot: string): void {
+	const path = lockfilePath(stateRoot);
+	try {
+		if (existsSync(path)) {
+			unlinkSync(path);
+		}
+	} catch {
+		// Best-effort — if we can't remove it, it'll be detected as stale on next startup
+	}
+}
+
+/**
+ * Check whether a process with the given PID is alive.
+ *
+ * Uses `process.kill(pid, 0)` which sends signal 0 (no-op) — throws
+ * if the process doesn't exist, returns true if it does.
+ *
+ * @param pid - Process ID to check
+ * @returns true if the process is alive
+ *
+ * @since TP-041
+ */
+export function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Check whether a lockfile's heartbeat is stale.
+ *
+ * A heartbeat is stale if it's older than STALE_LOCK_THRESHOLD_MS (90s).
+ * This accounts for 3 missed 30-second heartbeat intervals.
+ *
+ * @param lock - Lockfile to check
+ * @returns true if the heartbeat is stale
+ *
+ * @since TP-041
+ */
+export function isLockStale(lock: SupervisorLockfile): boolean {
+	const heartbeatTime = new Date(lock.heartbeat).getTime();
+	if (isNaN(heartbeatTime)) return true; // Invalid date — treat as stale
+	return Date.now() - heartbeatTime > STALE_LOCK_THRESHOLD_MS;
+}
+
+// ── Terminal Phase Detection ─────────────────────────────────────────
+
+/**
+ * Phases that indicate a batch is terminal (no longer active).
+ * If batch-state.json has one of these phases, there's no active batch
+ * and no lockfile arbitration is needed.
+ */
+const TERMINAL_PHASES = new Set<string>([
+	"idle", "completed", "failed", "stopped",
+]);
+
+/**
+ * Check whether a batch phase is terminal (no active batch).
+ *
+ * @since TP-041
+ */
+export function isBatchTerminal(phase: string): boolean {
+	return TERMINAL_PHASES.has(phase);
+}
+
+// ── Startup Detection (Section 13.10) ────────────────────────────────
+
+/**
+ * Check startup state: is there an active batch and an existing lockfile?
+ *
+ * Implements the startup gate from spec Section 13.10:
+ * 1. Check for active batch (.pi/batch-state.json with non-terminal phase)
+ * 2. If no active batch, return early (no lockfile arbitration needed)
+ * 3. If active batch, check lockfile state (absent, stale, live, corrupt)
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ * @param loadBatchStateFn - Function to load batch state (injectable for testing)
+ * @returns LockfileCheckResult describing the current state
+ *
+ * @since TP-041
+ */
+export function checkSupervisorLockOnStartup(
+	stateRoot: string,
+	loadBatchStateFn: (root: string) => PersistedBatchState | null,
+): LockfileCheckResult {
+	// ── Step 1: Check for active batch ───────────────────────────
+	let batchState: PersistedBatchState | null;
+	try {
+		batchState = loadBatchStateFn(stateRoot);
+	} catch {
+		// Batch state unreadable — no active batch to supervise
+		return { status: "no-active-batch" };
+	}
+
+	if (!batchState || isBatchTerminal(batchState.phase)) {
+		return { status: "no-active-batch" };
+	}
+
+	// ── Step 2: Active batch exists — check lockfile ─────────────
+	const lock = readLockfile(stateRoot);
+
+	if (!lock) {
+		// No lockfile (or corrupt) — check if the file exists but was corrupt
+		const lockPath = lockfilePath(stateRoot);
+		if (existsSync(lockPath)) {
+			// File exists but couldn't be parsed — corrupt
+			return { status: "corrupt", batchState };
+		}
+		// No lockfile at all — become the supervisor
+		return { status: "no-lockfile", batchState };
+	}
+
+	// ── Step 3: Lockfile exists — live or stale? ─────────────────
+	if (!isProcessAlive(lock.pid) || isLockStale(lock)) {
+		return { status: "stale", lock, batchState };
+	}
+
+	return { status: "live", lock, batchState };
+}
+
+// ── Rehydration Summary ──────────────────────────────────────────────
+
+/**
+ * Build a rehydration summary for the operator after a takeover.
+ *
+ * Reads:
+ * 1. Batch state for current wave, task statuses, phase
+ * 2. `.pi/supervisor/actions.jsonl` for what the previous supervisor did
+ * 3. `.pi/supervisor/events.jsonl` for recent engine events
+ *
+ * Returns a human-readable summary string.
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ * @param batchState - Current batch state
+ * @returns Summary string for the operator
+ *
+ * @since TP-041
+ */
+export function buildTakeoverSummary(
+	stateRoot: string,
+	batchState: PersistedBatchState,
+): string {
+	const lines: string[] = [];
+
+	lines.push(`📋 **Taking over batch ${batchState.batchId}**`);
+	lines.push("");
+	lines.push(`**Phase:** ${batchState.phase}`);
+	lines.push(`**Wave:** ${batchState.currentWaveIndex + 1}/${batchState.wavePlan?.length ?? batchState.totalWaves ?? "?"}`);
+	lines.push(`**Base branch:** ${batchState.baseBranch}`);
+
+	// Task summary from persisted state
+	const tasks = batchState.tasks ?? [];
+	const succeeded = tasks.filter((t) => t.status === "succeeded").length;
+	const failed = tasks.filter((t) => t.status === "failed").length;
+	const running = tasks.filter((t) => t.status === "running").length;
+	const pending = tasks.filter((t) => t.status === "pending").length;
+	lines.push(`**Tasks:** ${succeeded} succeeded, ${failed} failed, ${running} running, ${pending} pending`);
+
+	// Recent actions from audit trail
+	const actionsPath = join(stateRoot, ".pi", "supervisor", "actions.jsonl");
+	if (existsSync(actionsPath)) {
+		try {
+			const actionsRaw = readFileSync(actionsPath, "utf-8").trim();
+			if (actionsRaw) {
+				const actionLines = actionsRaw.split("\n");
+				const recentActions = actionLines.slice(-5); // Last 5 actions
+				lines.push("");
+				lines.push(`**Previous supervisor actions** (last ${recentActions.length}):`);
+				for (const line of recentActions) {
+					try {
+						const action = JSON.parse(line) as Record<string, unknown>;
+						lines.push(`  - ${action.action ?? "unknown"}: ${action.context ?? ""}`);
+					} catch {
+						lines.push(`  - (unparseable entry)`);
+					}
+				}
+			}
+		} catch {
+			// Best-effort — actions file may not exist
+		}
+	}
+
+	// Recent engine events
+	const eventsPath = join(stateRoot, ".pi", "supervisor", "events.jsonl");
+	if (existsSync(eventsPath)) {
+		try {
+			const eventsRaw = readFileSync(eventsPath, "utf-8").trim();
+			if (eventsRaw) {
+				const eventLines = eventsRaw.split("\n");
+				const recentEvents = eventLines.slice(-5); // Last 5 events
+				lines.push("");
+				lines.push(`**Recent engine events** (last ${recentEvents.length}):`);
+				for (const line of recentEvents) {
+					try {
+						const event = JSON.parse(line) as Record<string, unknown>;
+						lines.push(`  - [${event.type ?? "?"}] ${event.message ?? event.taskId ?? ""}`);
+					} catch {
+						lines.push(`  - (unparseable event)`);
+					}
+				}
+			}
+		} catch {
+			// Best-effort — events file may not exist
+		}
+	}
+
+	return lines.join("\n");
+}
+
+// ── Heartbeat Timer ──────────────────────────────────────────────────
+
+/**
+ * Start the heartbeat timer for the supervisor lockfile.
+ *
+ * Updates the lockfile's `heartbeat` field every HEARTBEAT_INTERVAL_MS.
+ * Also checks if the lockfile has been taken over by another session
+ * (force takeover detection) — if the sessionId no longer matches,
+ * the previous session yields gracefully.
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ * @param state - Supervisor state (used for yield detection)
+ * @param pi - ExtensionAPI for deactivation on yield
+ * @returns Timer handle (for cleanup via clearInterval)
+ *
+ * @since TP-041
+ */
+export function startHeartbeat(
+	stateRoot: string,
+	state: SupervisorState,
+	pi: ExtensionAPI,
+): ReturnType<typeof setInterval> {
+	const sessionId = state.lockSessionId;
+
+	const timer = setInterval(() => {
+		if (!state.active) {
+			clearInterval(timer);
+			return;
+		}
+
+		// Read current lockfile to detect force takeover
+		const currentLock = readLockfile(stateRoot);
+		if (currentLock && currentLock.sessionId !== sessionId) {
+			// Another session has taken over — yield gracefully
+			clearInterval(timer);
+			pi.sendMessage(
+				{
+					customType: "supervisor-yield",
+					content: [{
+						type: "text",
+						text: "⚡ Another session has taken over supervisor duties. Yielding.",
+					}],
+					display: "Supervisor yielded to another session",
+				},
+				{ triggerTurn: false },
+			);
+			deactivateSupervisor(pi, state);
+			return;
+		}
+
+		// Update heartbeat
+		try {
+			const lock = readLockfile(stateRoot);
+			if (lock && lock.sessionId === sessionId) {
+				lock.heartbeat = new Date().toISOString();
+				writeLockfile(stateRoot, lock);
+			}
+		} catch {
+			// Best-effort heartbeat — don't crash the supervisor
+		}
+	}, HEARTBEAT_INTERVAL_MS);
+
+	// Unref the timer so it doesn't prevent Node.js from exiting
+	if (timer && typeof timer === "object" && "unref" in timer) {
+		timer.unref();
+	}
+
+	return timer;
 }
