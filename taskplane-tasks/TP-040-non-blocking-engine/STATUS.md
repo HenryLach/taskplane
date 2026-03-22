@@ -1,11 +1,11 @@
 # TP-040: Non-Blocking Engine Refactor — Status
 
-**Current Step:** Step 1: Engine Event Infrastructure
+**Current Step:** Step 2: Make Engine Non-Blocking
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 3
+**Review Counter:** 3
+**Iteration:** 4
 **Size:** L
 
 ---
@@ -20,7 +20,7 @@
 ---
 
 ### Step 1: Engine Event Infrastructure
-**Status:** ✅ Complete (R002 revisions applied)
+**Status:** ✅ Complete
 - [x] Define engine event types in types.ts (extend existing Tier0EventType with engine lifecycle events: wave_start, task_complete, task_failed, merge_start, merge_success, merge_failed, batch_complete, batch_paused)
 - [x] Add EngineEvent interface and EngineEventCallback type in types.ts with shared base payload (timestamp, batchId, waveIndex)
 - [x] Extend emitTier0Event in persistence.ts to emit engine events (or add unified emitEngineEvent)
@@ -33,11 +33,12 @@
 ---
 
 ### Step 2: Make Engine Non-Blocking
-**Status:** ⬜ Not Started
-- [ ] Refactor wave loop to not block caller
-- [ ] Command handler starts engine and returns
-- [ ] State communicated via events, not return value
-- [ ] Dashboard updates continue working
+**Status:** 🟨 In Progress
+- [ ] Create startBatchAsync/startResumeAsync helpers with .catch() error boundary in extension.ts
+- [ ] /orch handler calls startBatchAsync (fire-and-forget), returns immediately
+- [ ] /orch-resume handler calls startResumeAsync (fire-and-forget), returns immediately
+- [ ] Error boundary sets batchState phase/error, notifies operator, refreshes widget on unhandled rejection
+- [ ] Dashboard widget updates continue working via existing callback mechanism
 
 ---
 
@@ -74,6 +75,7 @@
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -108,6 +110,13 @@
 | 2026-03-22 19:38 | Review R002 | code Step 1: REVISE |
 | 2026-03-22 15:45 | Step 1 R002 fix | Applied R002 revisions: terminal event helper with guard flag, early-return emissions, merge_failed for mixed-outcome, batch_paused dedup |
 | 2026-03-22 19:43 | Review R002 | code Step 1: REVISE |
+| 2026-03-22 19:44 | Worker iter 3 | done in 351s, ctx: 24%, tools: 47 |
+| 2026-03-22 19:44 | Step 1 complete | Engine Event Infrastructure |
+| 2026-03-22 19:44 | Step 2 started | Make Engine Non-Blocking |
+| 2026-03-22 19:46 | Worker iter 2 | done in 179s, ctx: 12%, tools: 20 |
+| 2026-03-22 19:46 | Step 1 complete | Engine Event Infrastructure |
+| 2026-03-22 19:46 | Step 2 started | Make Engine Non-Blocking |
+| 2026-03-22 19:46 | Review R003 | plan Step 2: REVISE |
 
 ## Blockers
 
