@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 2
 **Size:** M
 
@@ -20,12 +20,16 @@
 ---
 
 ### Step 1: Wire Automatic Recovery into Engine
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress (R002 Revisions)
 - [x] Define Tier 0 retry scope keys and retryable classification set in types.ts (non-merge retry scopes distinct from merge scopes)
 - [x] Add `classifyAndRetryWorkerCrash()` helper in engine.ts: after wave execution, for each failed task, populate exitDiagnostic via classifyExit(), check if retryable (api_error, process_crash, session_vanished), preserve partial progress, then re-execute the lane if budget allows
 - [x] Add `retryStaleWorktreeAllocation()` helper: when executeWave returns allocation failure with ALLOC_WORKTREE_FAILED, force cleanup + prune + retry allocation once before marking wave failed
 - [x] Add cleanup gate retry: when post-merge cleanup gate fires, retry force cleanup once before pausing
 - [x] Persist non-merge retry counters in resilience.retryCountByScope after each attempt
+- [ ] R002-1: Fix worker-failure classification — use outcome.exitDiagnostic.classification when available; when unavailable, skip auto-retry instead of synthesizing null input that always yields session_vanished
+- [ ] R002-2: Fix blocked task reconciliation — move retry before blocked task accumulation, or recompute blockedTaskIds from remaining failures after retries
+- [ ] R002-3: Fix stale-worktree recovery to scope cleanup to workspace repos (not just primary repoRoot) using encounteredRepoRoots or parsing allocation error
+- [ ] R002-4: Fix stop-wave pause gate — allow Tier 0 retry before policy-induced pause takes effect
 
 ---
 
@@ -68,6 +72,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -96,6 +102,10 @@
 | 2026-03-22 17:51 | Step 1 started | Wire Automatic Recovery into Engine |
 | 2026-03-22 17:54 | Review R001 | plan Step 1: REVISE |
 | 2026-03-22 17:55 | Review R001 | plan Step 1: REVISE |
+| 2026-03-22 18:06 | Worker iter 3 | done in 743s, ctx: 48%, tools: 94 |
+| 2026-03-22 18:07 | Worker iter 2 | done in 731s, ctx: 44%, tools: 86 |
+| 2026-03-22 18:12 | Review R002 | code Step 1: REVISE |
+| 2026-03-22 18:12 | Review R002 | code Step 1: REVISE |
 
 ## Blockers
 
