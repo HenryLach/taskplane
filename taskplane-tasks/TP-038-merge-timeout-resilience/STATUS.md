@@ -1,6 +1,6 @@
 # TP-038: Merge Timeout Resilience — Status
 
-**Current Step:** Step 2: Add Retry with Backoff
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 1
@@ -35,9 +35,10 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Result-exists-at-timeout test
-- [ ] Kill-and-retry test
+- [ ] Kill-and-retry test (2x timeout on first retry)
+- [ ] Second retry uses 4x timeout (R003 revision)
 - [ ] All-retries-exhausted test
 - [ ] Config re-read test
 - [ ] Full test suite passes
@@ -91,6 +92,9 @@
 | 2026-03-22 04:33 | Step 1 complete | Check Result Before Kill + Config Reload |
 | 2026-03-22 04:33 | Step 2 started | Add Retry with Backoff |
 | 2026-03-22 04:35 | Review R002 | plan Step 2: APPROVE |
+| 2026-03-22 04:37 | Worker iter 4 | done in 322s, ctx: 26%, tools: 34 |
+| 2026-03-22 04:37 | Step 2 complete | Add Retry with Backoff |
+| 2026-03-22 04:37 | Step 3 started | Testing & Verification |
 
 ## Blockers
 
