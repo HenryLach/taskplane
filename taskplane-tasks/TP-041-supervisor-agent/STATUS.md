@@ -1,10 +1,10 @@
 # TP-041: Supervisor Agent — Status
 
-**Current Step:** Step 3: Engine Event Consumption + Notifications
+**Current Step:** Step 4: Recovery Action Execution + Audit Trail
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 4
 **Size:** L
 
@@ -47,16 +47,17 @@
 ---
 
 ### Step 3: Engine Event Consumption + Notifications
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 - [x] Implement event tailer with batch-scoped cursor (R005-1: tracks lastProcessedOffset, filters to active batchId, skips stale/foreign events)
 - [x] Tie event tailer lifecycle to supervisor activation/deactivation/yield with idempotent start/stop (R005-2: single tailer, no duplicates across /orch, /orch-resume, takeover, /orch-takeover paths)
 - [x] Implement proactive notification formatting for significant events (wave_start, merge_success, merge_failed, tier0_escalation, batch_complete, batch_paused) with coalesced task_complete digests
 - [x] Adapt notification frequency and verbosity by autonomy level (interactive=more, autonomous=less)
+- [ ] R006-1: Fix state-root mismatch — all supervisor activation/startup/takeover paths must use workspaceRoot-first resolver (matching engine.ts stateRoot = workspaceRoot ?? cwd) so lockfile, batch-state, and events all point to the same .pi tree
 
 ---
 
 ### Step 4: Recovery Action Execution + Audit Trail
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Recovery via standard tools
 - [ ] Audit trail logging
 - [ ] Autonomy level controls confirmation behavior
@@ -96,6 +97,8 @@
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 | R005 | plan | Step 3 | APPROVE | .reviews/R005-plan-step3.md |
+| R006 | code | Step 3 | REVISE | .reviews/R006-code-step3.md |
+| R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -152,6 +155,12 @@
 | 2026-03-22 21:49 | Step 3 started | Engine Event Consumption + Notifications |
 | 2026-03-22 21:50 | Review R005 | plan Step 3: REVISE |
 | 2026-03-22 21:52 | Review R005 | plan Step 3: APPROVE |
+| 2026-03-22 21:58 | Worker iter 4 | done in 362s, ctx: 34%, tools: 44 |
+| 2026-03-22 21:59 | Worker iter 5 | done in 566s, ctx: 33%, tools: 51 |
+| 2026-03-22 22:02 | Review R006 | code Step 3: REVISE |
+| 2026-03-22 22:02 | Review R006 | code Step 3: APPROVE |
+| 2026-03-22 22:02 | Step 3 complete | Engine Event Consumption + Notifications |
+| 2026-03-22 22:02 | Step 4 started | Recovery Action Execution + Audit Trail |
 
 ## Blockers
 
