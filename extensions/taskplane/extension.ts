@@ -702,7 +702,7 @@ export function collectRepoCleanupFindings(
  * This prevents unhandled promise rejections from crashing the session
  * or leaving batch state inconsistent.
  */
-function startBatchAsync(
+export function startBatchAsync(
 	engineFn: () => Promise<void>,
 	batchState: import("./types.ts").OrchBatchRuntimeState,
 	ctx: ExtensionContext,

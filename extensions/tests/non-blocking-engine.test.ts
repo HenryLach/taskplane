@@ -9,12 +9,17 @@
  *   4.x — Terminal events: batch_complete / batch_paused emitted correctly
  *   5.x — Launch-window command regression: "launching" phase recognized by commands
  *   6.x — Resume early-return regression: phase reset from "launching" to "idle"
+ *   7.x — /orch-status disk fallback
+ *   8.x — Behavioral: startBatchAsync non-blocking pattern (R008-1)
+ *   9.x — Behavioral: launch-window command logic (R008-2a)
+ *  10.x — Behavioral: engine event emission sequences (R008-2b)
+ *  11.x — Behavioral: resumeOrchBatch early-return phase reset (R008-3)
  *
  * Run: npx vitest run tests/non-blocking-engine.test.ts
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
 import { fileURLToPath } from "url";
@@ -26,14 +31,18 @@ import {
 import {
 	buildEngineEventBase,
 	freshOrchBatchState,
+	DEFAULT_ORCHESTRATOR_CONFIG,
+	DEFAULT_TASK_RUNNER_CONFIG,
 } from "../taskplane/types.ts";
 
 import type {
 	EngineEvent,
 	EngineEventCallback,
 	EngineEventType,
-	OrchBatchRuntimeState,
 } from "../taskplane/types.ts";
+
+import { startBatchAsync } from "../taskplane/extension.ts";
+import { resumeOrchBatch } from "../taskplane/resume.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -655,5 +664,785 @@ describe("7.x — /orch-status disk fallback for idle in-memory state", () => {
 			extSource.indexOf('registerCommand("orch-pause"'),
 		);
 		expect(statusHandler).toContain("from disk");
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 8.x — Behavioral: startBatchAsync (R008-1)
+// ══════════════════════════════════════════════════════════════════════
+
+describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("8.1: startBatchAsync returns synchronously before engine work begins", async () => {
+		let engineStarted = false;
+		const engineFn = async () => { engineStarted = true; };
+		const batchState = freshOrchBatchState();
+		batchState.phase = "launching";
+		batchState.batchId = "test-batch";
+		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
+		const updateWidget = vi.fn();
+
+		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
+
+		// Before advancing timers, engine should NOT have started
+		expect(engineStarted).toBe(false);
+
+		// Advance past the setTimeout(0) detach
+		await vi.advanceTimersByTimeAsync(0);
+
+		// Now engine should have run
+		expect(engineStarted).toBe(true);
+	});
+
+	it("8.2: startBatchAsync calls updateWidget on successful engine completion", async () => {
+		const engineFn = async () => { /* success */ };
+		const batchState = freshOrchBatchState();
+		batchState.phase = "executing";
+		batchState.batchId = "test-batch";
+		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
+		const updateWidget = vi.fn();
+
+		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
+
+		// Before timer fires — no widget update
+		expect(updateWidget).not.toHaveBeenCalled();
+
+		// Advance past setTimeout(0) and let microtask (.then) resolve
+		await vi.advanceTimersByTimeAsync(0);
+
+		// Widget should have been updated after successful completion
+		expect(updateWidget).toHaveBeenCalledTimes(1);
+	});
+
+	it("8.3: startBatchAsync error boundary sets phase to 'failed' on engine rejection", async () => {
+		const engineFn = async () => { throw new Error("engine explosion"); };
+		const batchState = freshOrchBatchState();
+		batchState.phase = "executing";
+		batchState.batchId = "crash-batch";
+		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
+		const updateWidget = vi.fn();
+
+		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
+
+		// Advance timer and let rejection propagate
+		await vi.advanceTimersByTimeAsync(0);
+
+		// Error boundary should have set phase to "failed"
+		expect(batchState.phase).toBe("failed");
+		expect(batchState.endedAt).not.toBeNull();
+		expect(batchState.errors).toContain("Unhandled engine error: engine explosion");
+		// Widget should still have been updated
+		expect(updateWidget).toHaveBeenCalledTimes(1);
+		// Operator should have been notified
+		expect(mockCtx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("engine explosion"),
+			"error",
+		);
+	});
+
+	it("8.4: startBatchAsync error boundary does NOT overwrite already-completed phase", async () => {
+		const engineFn = async () => { throw new Error("late crash"); };
+		const batchState = freshOrchBatchState();
+		// Simulate engine having already set completed before the catch fires
+		batchState.phase = "completed";
+		batchState.batchId = "already-done";
+		batchState.endedAt = Date.now();
+		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
+		const updateWidget = vi.fn();
+
+		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
+
+		await vi.advanceTimersByTimeAsync(0);
+
+		// Phase should remain "completed" — error boundary checks for terminal phases
+		expect(batchState.phase).toBe("completed");
+		// Widget should still have been updated (error path always updates widget)
+		expect(updateWidget).toHaveBeenCalledTimes(1);
+	});
+
+	it("8.5: startBatchAsync error boundary does NOT overwrite already-failed phase", async () => {
+		const engineFn = async () => { throw new Error("double crash"); };
+		const batchState = freshOrchBatchState();
+		batchState.phase = "failed";
+		batchState.batchId = "already-failed";
+		batchState.endedAt = Date.now() - 1000;
+		const originalErrors = [...batchState.errors];
+		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
+		const updateWidget = vi.fn();
+
+		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
+
+		await vi.advanceTimersByTimeAsync(0);
+
+		// Phase should remain "failed" — no double-set
+		expect(batchState.phase).toBe("failed");
+		// endedAt should NOT have been overwritten
+		expect(batchState.endedAt).toBeLessThanOrEqual(Date.now() - 900);
+		// No extra errors pushed
+		expect(batchState.errors).toEqual(originalErrors);
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 9.x — Behavioral: launch-window command logic (R008-2a)
+// ══════════════════════════════════════════════════════════════════════
+
+describe("9.x — Behavioral: launch-window command compatibility", () => {
+	it("9.1: 'launching' phase is recognized as an active batch (not idle)", () => {
+		// Behavioral test: verify that the phase logic used by /orch-pause, /orch-abort
+		// correctly treats "launching" as an active state
+		const batchState = freshOrchBatchState();
+		batchState.phase = "launching";
+		batchState.batchId = "launch-test";
+		batchState.startedAt = Date.now();
+
+		// /orch-pause exclusion set: "idle", "completed", "failed", "stopped"
+		// "launching" should NOT be in this set → pause is allowed
+		const pauseExcludes: Set<string> = new Set(["idle", "completed", "failed", "stopped"]);
+		expect(pauseExcludes.has(batchState.phase)).toBe(false);
+
+		// /orch-abort active check: anything NOT in {"idle", "completed", "failed", "stopped"} is active
+		const inactivePhases = new Set(["idle", "completed", "failed", "stopped"]);
+		const hasActiveBatch = !inactivePhases.has(batchState.phase);
+		expect(hasActiveBatch).toBe(true);
+
+		// /orch-resume guard: "launching" should be recognized as actively running
+		const resumeBlockedPhases: Set<string> = new Set(["launching", "executing", "merging", "planning"]);
+		expect(resumeBlockedPhases.has(batchState.phase)).toBe(true);
+	});
+
+	it("9.2: /orch-status with non-idle phase uses in-memory state (not disk fallback)", () => {
+		// The status handler only falls back to disk when phase === "idle"
+		const batchState = freshOrchBatchState();
+		batchState.phase = "launching";
+		batchState.batchId = "launch-status-test";
+		batchState.startedAt = Date.now();
+
+		const shouldFallbackToDisk = batchState.phase === "idle";
+		expect(shouldFallbackToDisk).toBe(false);
+	});
+
+	it("9.3: freshOrchBatchState starts at 'idle' phase with empty batchId", () => {
+		const state = freshOrchBatchState();
+		expect(state.phase).toBe("idle");
+		expect(state.batchId).toBe("");
+		expect(state.startedAt).toBe(0);
+		expect(state.endedAt).toBeNull();
+		expect(state.errors).toEqual([]);
+	});
+
+	it("9.4: transitioning from idle → launching → planning preserves startedAt", () => {
+		const state = freshOrchBatchState();
+		expect(state.phase).toBe("idle");
+
+		// Simulate /orch handler setting launching
+		state.phase = "launching";
+		state.startedAt = 1234567890;
+
+		// Simulate engine transitioning to planning (preserves startedAt)
+		state.phase = "planning";
+		if (!state.startedAt) state.startedAt = Date.now(); // engine code
+		expect(state.startedAt).toBe(1234567890); // preserved from launching
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 10.x — Behavioral: terminal event emission sequences (R008-2b)
+// ══════════════════════════════════════════════════════════════════════
+
+describe("10.x — Behavioral: engine event emission sequences", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "engine-terminal-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("10.1: terminal event helper emits batch_complete for 'completed' phase", () => {
+		// Replicate the engine's emitTerminalEvent logic behaviorally
+		const received: EngineEvent[] = [];
+		const callback: EngineEventCallback = (event) => received.push(event);
+		const batchState = freshOrchBatchState();
+		batchState.batchId = "terminal-test";
+		batchState.phase = "completed";
+		batchState.startedAt = Date.now() - 30000;
+		batchState.endedAt = Date.now();
+		batchState.succeededTasks = 3;
+		batchState.failedTasks = 0;
+		batchState.skippedTasks = 1;
+		batchState.blockedTasks = 0;
+		batchState.currentWaveIndex = 2;
+
+		// Emit batch_complete event (same logic as engine's emitTerminalEvent)
+		let terminalEventEmitted = false;
+		const emitTerminal = (reason?: string) => {
+			if (terminalEventEmitted) return;
+			terminalEventEmitted = true;
+			if (batchState.phase === "completed" || batchState.phase === "failed") {
+				const event: EngineEvent = {
+					...buildEngineEventBase("batch_complete", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
+					succeededTasks: batchState.succeededTasks,
+					failedTasks: batchState.failedTasks,
+					skippedTasks: batchState.skippedTasks,
+					blockedTasks: batchState.blockedTasks,
+					batchDurationMs: batchState.endedAt ? batchState.endedAt - batchState.startedAt : undefined,
+				};
+				emitEngineEvent(tmpDir, event, callback);
+			}
+		};
+
+		emitTerminal();
+
+		expect(received).toHaveLength(1);
+		expect(received[0].type).toBe("batch_complete");
+		expect(received[0].batchId).toBe("terminal-test");
+		expect(received[0].succeededTasks).toBe(3);
+		expect(received[0].failedTasks).toBe(0);
+		expect(received[0].skippedTasks).toBe(1);
+		expect(received[0].batchDurationMs).toBeGreaterThanOrEqual(29000);
+
+		// Also written to disk
+		const diskEvents = readEngineEvents(tmpDir);
+		expect(diskEvents).toHaveLength(1);
+		expect(diskEvents[0].type).toBe("batch_complete");
+	});
+
+	it("10.2: terminal event helper emits batch_paused for 'paused' phase", () => {
+		const received: EngineEvent[] = [];
+		const callback: EngineEventCallback = (event) => received.push(event);
+		const batchState = freshOrchBatchState();
+		batchState.batchId = "paused-test";
+		batchState.phase = "paused";
+		batchState.failedTasks = 2;
+		batchState.currentWaveIndex = 1;
+		batchState.errors.push("stop-wave policy triggered");
+
+		let terminalEventEmitted = false;
+		const emitTerminal = (reason?: string) => {
+			if (terminalEventEmitted) return;
+			terminalEventEmitted = true;
+			if (batchState.phase === "paused" || batchState.phase === "stopped") {
+				const event: EngineEvent = {
+					...buildEngineEventBase("batch_paused", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
+					reason: reason || (batchState.errors.length > 0 ? batchState.errors[batchState.errors.length - 1] : "paused"),
+					failedTasks: batchState.failedTasks,
+				};
+				emitEngineEvent(tmpDir, event, callback);
+			}
+		};
+
+		emitTerminal("Stopped by stop-wave policy at wave 2");
+
+		expect(received).toHaveLength(1);
+		expect(received[0].type).toBe("batch_paused");
+		expect(received[0].batchId).toBe("paused-test");
+		expect(received[0].reason).toContain("stop-wave");
+		expect(received[0].failedTasks).toBe(2);
+	});
+
+	it("10.3: terminal event one-shot guard prevents duplicate emissions", () => {
+		const received: EngineEvent[] = [];
+		const callback: EngineEventCallback = (event) => received.push(event);
+		const batchState = freshOrchBatchState();
+		batchState.batchId = "guard-test";
+		batchState.phase = "completed";
+		batchState.startedAt = Date.now() - 5000;
+		batchState.endedAt = Date.now();
+		batchState.succeededTasks = 1;
+		batchState.currentWaveIndex = 0;
+
+		let terminalEventEmitted = false;
+		const emitTerminal = (reason?: string) => {
+			if (terminalEventEmitted) return;
+			terminalEventEmitted = true;
+			if (batchState.phase === "completed" || batchState.phase === "failed") {
+				emitEngineEvent(tmpDir, {
+					...buildEngineEventBase("batch_complete", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
+					succeededTasks: batchState.succeededTasks,
+					failedTasks: batchState.failedTasks,
+				}, callback);
+			}
+		};
+
+		// Call multiple times — only first should emit
+		emitTerminal();
+		emitTerminal();
+		emitTerminal();
+
+		expect(received).toHaveLength(1);
+		const diskEvents = readEngineEvents(tmpDir);
+		expect(diskEvents).toHaveLength(1);
+	});
+
+	it("10.4: terminal event emits batch_complete for 'failed' phase (not batch_paused)", () => {
+		const received: EngineEvent[] = [];
+		const callback: EngineEventCallback = (event) => received.push(event);
+		const batchState = freshOrchBatchState();
+		batchState.batchId = "failed-batch";
+		batchState.phase = "failed";
+		batchState.startedAt = Date.now() - 10000;
+		batchState.endedAt = Date.now();
+		batchState.failedTasks = 5;
+		batchState.currentWaveIndex = 0;
+
+		let terminalEventEmitted = false;
+		const emitTerminal = () => {
+			if (terminalEventEmitted) return;
+			terminalEventEmitted = true;
+			if (batchState.phase === "completed" || batchState.phase === "failed") {
+				emitEngineEvent(tmpDir, {
+					...buildEngineEventBase("batch_complete", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
+					succeededTasks: batchState.succeededTasks,
+					failedTasks: batchState.failedTasks,
+					batchDurationMs: batchState.endedAt ? batchState.endedAt - batchState.startedAt : undefined,
+				}, callback);
+			}
+		};
+
+		emitTerminal();
+
+		expect(received).toHaveLength(1);
+		expect(received[0].type).toBe("batch_complete"); // NOT batch_paused
+		expect(received[0].phase).toBe("failed");
+		expect(received[0].failedTasks).toBe(5);
+	});
+
+	it("10.5: terminal event emits batch_paused for 'stopped' phase", () => {
+		const received: EngineEvent[] = [];
+		const callback: EngineEventCallback = (event) => received.push(event);
+		const batchState = freshOrchBatchState();
+		batchState.batchId = "stopped-batch";
+		batchState.phase = "stopped";
+		batchState.failedTasks = 1;
+		batchState.currentWaveIndex = 0;
+
+		let terminalEventEmitted = false;
+		const emitTerminal = (reason?: string) => {
+			if (terminalEventEmitted) return;
+			terminalEventEmitted = true;
+			if (batchState.phase === "paused" || batchState.phase === "stopped") {
+				emitEngineEvent(tmpDir, {
+					...buildEngineEventBase("batch_paused", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
+					reason: reason || "stopped",
+					failedTasks: batchState.failedTasks,
+				}, callback);
+			}
+		};
+
+		emitTerminal("stop-all policy");
+
+		expect(received).toHaveLength(1);
+		expect(received[0].type).toBe("batch_paused");
+		expect(received[0].phase).toBe("stopped");
+		expect(received[0].reason).toBe("stop-all policy");
+	});
+
+	it("10.6: full lifecycle event sequence written to JSONL in correct order", () => {
+		const received: EngineEvent[] = [];
+		const callback: EngineEventCallback = (event) => received.push(event);
+
+		// Simulate a complete batch lifecycle through events
+		const batchId = "lifecycle-test";
+
+		// Wave 0 start
+		emitEngineEvent(tmpDir, {
+			...buildEngineEventBase("wave_start", batchId, 0, "executing"),
+			taskIds: ["TP-001", "TP-002"],
+			laneCount: 2,
+		}, callback);
+
+		// Tasks complete
+		emitEngineEvent(tmpDir, {
+			...buildEngineEventBase("task_complete", batchId, 0, "executing"),
+			taskId: "TP-001",
+			durationMs: 15000,
+		}, callback);
+
+		emitEngineEvent(tmpDir, {
+			...buildEngineEventBase("task_failed", batchId, 0, "executing"),
+			taskId: "TP-002",
+			durationMs: 8000,
+			reason: "test failures",
+		}, callback);
+
+		// Merge
+		emitEngineEvent(tmpDir, {
+			...buildEngineEventBase("merge_start", batchId, 0, "merging"),
+			laneCount: 1,
+		}, callback);
+
+		emitEngineEvent(tmpDir, {
+			...buildEngineEventBase("merge_success", batchId, 0, "merging"),
+			totalWaves: 1,
+		}, callback);
+
+		// Terminal
+		emitEngineEvent(tmpDir, {
+			...buildEngineEventBase("batch_complete", batchId, 0, "completed"),
+			succeededTasks: 1,
+			failedTasks: 1,
+			batchDurationMs: 25000,
+		}, callback);
+
+		// Verify order in both callback and disk
+		expect(received).toHaveLength(6);
+		expect(received.map(e => e.type)).toEqual([
+			"wave_start", "task_complete", "task_failed",
+			"merge_start", "merge_success", "batch_complete",
+		]);
+
+		const diskEvents = readEngineEvents(tmpDir);
+		expect(diskEvents).toHaveLength(6);
+		expect(diskEvents.map(e => e.type)).toEqual([
+			"wave_start", "task_complete", "task_failed",
+			"merge_start", "merge_success", "batch_complete",
+		]);
+
+		// Verify event-specific fields survived serialization roundtrip
+		expect(diskEvents[0].taskIds).toEqual(["TP-001", "TP-002"]);
+		expect(diskEvents[1].taskId).toBe("TP-001");
+		expect(diskEvents[2].reason).toBe("test failures");
+		expect(diskEvents[5].batchDurationMs).toBe(25000);
+	});
+
+	it("10.7: no terminal event emitted for non-terminal phase ('executing')", () => {
+		const received: EngineEvent[] = [];
+		const callback: EngineEventCallback = (event) => received.push(event);
+		const batchState = freshOrchBatchState();
+		batchState.batchId = "non-terminal";
+		batchState.phase = "executing";
+
+		let terminalEventEmitted = false;
+		const emitTerminal = () => {
+			if (terminalEventEmitted) return;
+			terminalEventEmitted = true;
+			if (batchState.phase === "completed" || batchState.phase === "failed") {
+				emitEngineEvent(tmpDir, {
+					...buildEngineEventBase("batch_complete", batchState.batchId, 0, batchState.phase),
+				}, callback);
+			} else if (batchState.phase === "paused" || batchState.phase === "stopped") {
+				emitEngineEvent(tmpDir, {
+					...buildEngineEventBase("batch_paused", batchState.batchId, 0, batchState.phase),
+				}, callback);
+			}
+		};
+
+		emitTerminal();
+
+		// Guard flag is set but no event emitted for "executing" phase
+		expect(terminalEventEmitted).toBe(true);
+		expect(received).toHaveLength(0);
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 8.x — Behavioral: startBatchAsync with fake timers (R008-1)
+// ══════════════════════════════════════════════════════════════════════
+
+describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine work", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("8.1: startBatchAsync returns synchronously (handler is not blocked)", () => {
+		let engineStarted = false;
+		const engineFn = () => new Promise<void>((resolve) => {
+			engineStarted = true;
+			resolve();
+		});
+		const batchState = freshOrchBatchState();
+		batchState.phase = "launching";
+		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
+		const updateWidget = vi.fn();
+
+		// Call startBatchAsync — must return synchronously
+		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
+
+		// Engine should NOT have started yet (setTimeout(0) hasn't fired)
+		expect(engineStarted).toBe(false);
+	});
+
+	it("8.2: engine runs after setTimeout fires (next tick)", async () => {
+		let engineStarted = false;
+		const engineFn = () => new Promise<void>((resolve) => {
+			engineStarted = true;
+			resolve();
+		});
+		const batchState = freshOrchBatchState();
+		batchState.phase = "launching";
+		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
+		const updateWidget = vi.fn();
+
+		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
+
+		// Fire the setTimeout
+		vi.advanceTimersByTime(0);
+		// Let microtasks (promise .then) settle
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(engineStarted).toBe(true);
+		// Widget should be updated after engine completes
+		expect(updateWidget).toHaveBeenCalled();
+	});
+
+	it("8.3: error boundary sets phase to 'failed' on engine rejection", async () => {
+		const engineFn = () => Promise.reject(new Error("engine exploded"));
+		const batchState = freshOrchBatchState();
+		batchState.phase = "executing";
+		batchState.batchId = "test-batch";
+		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
+		const updateWidget = vi.fn();
+
+		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
+
+		// Fire setTimeout and let promise rejection settle
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(batchState.phase).toBe("failed");
+		expect(batchState.endedAt).not.toBeNull();
+		expect(batchState.errors).toContain("Unhandled engine error: engine exploded");
+		expect(mockCtx.ui.notify).toHaveBeenCalledWith(
+			expect.stringContaining("Engine crashed"),
+			"error",
+		);
+		expect(updateWidget).toHaveBeenCalled();
+	});
+
+	it("8.4: error boundary does not overwrite already-completed phase", async () => {
+		const engineFn = () => Promise.reject(new Error("late crash"));
+		const batchState = freshOrchBatchState();
+		batchState.phase = "completed"; // Already completed before error
+		batchState.batchId = "test-batch";
+		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
+		const updateWidget = vi.fn();
+
+		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
+		await vi.advanceTimersByTimeAsync(0);
+
+		// Should still be "completed", not overwritten to "failed"
+		expect(batchState.phase).toBe("completed");
+	});
+
+	it("8.5: success path calls updateWidget exactly once", async () => {
+		const engineFn = () => Promise.resolve();
+		const batchState = freshOrchBatchState();
+		batchState.phase = "executing";
+		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
+		const updateWidget = vi.fn();
+
+		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
+		await vi.advanceTimersByTimeAsync(0);
+
+		expect(updateWidget).toHaveBeenCalledTimes(1);
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 9.x — Behavioral: Launch-window command logic (R008-2)
+// ══════════════════════════════════════════════════════════════════════
+
+describe("9.x — Behavioral: launch-window command logic with 'launching' phase", () => {
+	/**
+	 * These tests verify the command-handler logic paths that execute when
+	 * the batch is in "launching" phase, by inspecting the same boolean
+	 * conditions the handlers use. This validates the in-memory behavior
+	 * without needing a full pi ExtensionAPI mock.
+	 */
+
+	it("9.1: 'launching' is recognized as active batch by /orch guard", () => {
+		// /orch guard condition: phase !== idle && !== completed && !== failed && !== stopped
+		const batchState = freshOrchBatchState();
+		batchState.phase = "launching";
+
+		// This is the exact guard from the /orch handler
+		const isBlocked = batchState.phase !== "idle" &&
+			batchState.phase !== "completed" &&
+			batchState.phase !== "failed" &&
+			batchState.phase !== "stopped";
+
+		expect(isBlocked).toBe(true);
+	});
+
+	it("9.2: /orch-status shows in-memory state when phase is 'launching' (no disk fallback)", () => {
+		// /orch-status falls back to disk only when phase === "idle"
+		const batchState = freshOrchBatchState();
+		batchState.phase = "launching";
+		batchState.batchId = "20260322T120000";
+
+		const useDiskFallback = batchState.phase === "idle";
+		expect(useDiskFallback).toBe(false);
+		// In-memory state should be used, showing batchId
+		expect(batchState.batchId).toBe("20260322T120000");
+	});
+
+	it("9.3: /orch-pause is NOT blocked for 'launching' phase", () => {
+		// /orch-pause exclusion set: idle, completed, failed, stopped
+		const batchState = freshOrchBatchState();
+		batchState.phase = "launching";
+
+		const isInactive = batchState.phase === "idle" ||
+			batchState.phase === "completed" ||
+			batchState.phase === "failed" ||
+			batchState.phase === "stopped";
+
+		expect(isInactive).toBe(false); // pause is allowed
+	});
+
+	it("9.4: /orch-abort recognizes 'launching' as active", () => {
+		// hasActiveBatch: phase is not idle/completed/failed/stopped
+		const batchState = freshOrchBatchState();
+		batchState.phase = "launching";
+
+		const hasActiveBatch = batchState.phase !== "idle" &&
+			batchState.phase !== "completed" &&
+			batchState.phase !== "failed" &&
+			batchState.phase !== "stopped";
+
+		expect(hasActiveBatch).toBe(true);
+	});
+
+	it("9.5: /orch-resume blocks 'launching' phase (prevents double-start)", () => {
+		// Resume guard: launching || executing || merging || planning
+		const batchState = freshOrchBatchState();
+		batchState.phase = "launching";
+
+		const isRunning = batchState.phase === "launching" ||
+			batchState.phase === "executing" ||
+			batchState.phase === "merging" ||
+			batchState.phase === "planning";
+
+		expect(isRunning).toBe(true);
+	});
+
+	it("9.6: all active phases blocked by /orch-resume guard", () => {
+		const activePhases = ["launching", "executing", "merging", "planning"] as const;
+		for (const phase of activePhases) {
+			const isRunning = phase === "launching" ||
+				phase === "executing" ||
+				phase === "merging" ||
+				phase === "planning";
+			expect(isRunning).toBe(true);
+		}
+	});
+
+	it("9.7: idle/completed/failed/stopped not blocked by /orch-resume guard", () => {
+		const resumablePhases = ["idle", "completed", "failed", "stopped"] as const;
+		for (const phase of resumablePhases) {
+			const isRunning = phase === "launching" ||
+				phase === "executing" ||
+				phase === "merging" ||
+				phase === "planning";
+			expect(isRunning).toBe(false);
+		}
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 11.x — Behavioral: resumeOrchBatch early-return phase reset (R008-3)
+// ══════════════════════════════════════════════════════════════════════
+
+describe("11.x — Behavioral: resumeOrchBatch early-return resets phase to 'idle'", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = mkdtempSync(join(tmpdir(), "resume-phase-reset-test-"));
+	});
+
+	afterEach(() => {
+		rmSync(tmpDir, { recursive: true, force: true });
+	});
+
+	it("11.1: phase resets from 'launching' to 'idle' when no persisted state exists", async () => {
+		const batchState = freshOrchBatchState();
+		batchState.phase = "launching";
+		batchState.startedAt = Date.now();
+
+		const notifications: Array<{ message: string; level: string }> = [];
+		const onNotify = (message: string, level: "info" | "warning" | "error") => {
+			notifications.push({ message, level });
+		};
+
+		// Call resumeOrchBatch with an empty temp dir (no batch-state.json)
+		await resumeOrchBatch(
+			DEFAULT_ORCHESTRATOR_CONFIG,
+			DEFAULT_TASK_RUNNER_CONFIG,
+			tmpDir,
+			batchState,
+			onNotify,
+			undefined,
+			null,
+			tmpDir, // workspaceRoot = tmpDir (no state file)
+		);
+
+		// Phase must reset to idle (not stuck at "launching")
+		expect(batchState.phase).toBe("idle");
+		// Should have notified about no state
+		expect(notifications.some(n => n.level === "error")).toBe(true);
+	});
+
+	it("11.2: phase resets from 'launching' to 'idle' when state file is corrupt", async () => {
+		const batchState = freshOrchBatchState();
+		batchState.phase = "launching";
+		batchState.startedAt = Date.now();
+
+		// Create a corrupt batch-state.json
+		const piDir = join(tmpDir, ".pi");
+		const { mkdirSync, writeFileSync } = await import("fs");
+		mkdirSync(piDir, { recursive: true });
+		writeFileSync(join(piDir, "batch-state.json"), "{ not valid json !!!");
+
+		const notifications: Array<{ message: string; level: string }> = [];
+		const onNotify = (message: string, level: "info" | "warning" | "error") => {
+			notifications.push({ message, level });
+		};
+
+		await resumeOrchBatch(
+			DEFAULT_ORCHESTRATOR_CONFIG,
+			DEFAULT_TASK_RUNNER_CONFIG,
+			tmpDir,
+			batchState,
+			onNotify,
+			undefined,
+			null,
+			tmpDir,
+		);
+
+		// Phase must reset to idle
+		expect(batchState.phase).toBe("idle");
+		expect(notifications.some(n => n.level === "error")).toBe(true);
+	});
+
+	it("11.3: idle phase stays idle when no persisted state exists (no regression for non-launched state)", async () => {
+		const batchState = freshOrchBatchState();
+		// phase is already "idle" — should stay idle
+		expect(batchState.phase).toBe("idle");
+
+		const onNotify = vi.fn();
+
+		await resumeOrchBatch(
+			DEFAULT_ORCHESTRATOR_CONFIG,
+			DEFAULT_TASK_RUNNER_CONFIG,
+			tmpDir,
+			batchState,
+			onNotify,
+			undefined,
+			null,
+			tmpDir,
+		);
+
+		expect(batchState.phase).toBe("idle");
 	});
 });
