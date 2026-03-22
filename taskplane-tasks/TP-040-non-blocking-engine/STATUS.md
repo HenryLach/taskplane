@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 3
 **Size:** L
 
@@ -33,12 +33,13 @@
 ---
 
 ### Step 2: Make Engine Non-Blocking
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Create startBatchAsync/startResumeAsync helpers with .catch() error boundary in extension.ts
 - [x] /orch handler calls startBatchAsync (fire-and-forget), returns immediately
 - [x] /orch-resume handler calls startResumeAsync (fire-and-forget), returns immediately
 - [x] Error boundary sets batchState phase/error, notifies operator, refreshes widget on unhandled rejection
 - [x] Dashboard widget updates continue working via existing callback mechanism
+- [ ] R004-1: Detach engine start to next tick via setImmediate/setTimeout so handler returns before synchronous planning work begins
 
 ---
 
@@ -77,6 +78,7 @@
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -120,6 +122,9 @@
 | 2026-03-22 19:46 | Review R003 | plan Step 2: REVISE |
 | 2026-03-22 19:47 | Review R003 | plan Step 2: REVISE |
 | 2026-03-22 19:50 | Step 2 impl verified | startBatchAsync helper, fire-and-forget /orch and /orch-resume, error boundary — all already implemented by prev iteration |
+| 2026-03-22 19:51 | Worker iter 3 | done in 205s, ctx: 25%, tools: 42 |
+| 2026-03-22 19:51 | Worker iter 4 | done in 317s, ctx: 33%, tools: 40 |
+| 2026-03-22 19:54 | Review R004 | code Step 2: REVISE |
 
 ## Blockers
 
