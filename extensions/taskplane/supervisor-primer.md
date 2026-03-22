@@ -949,7 +949,7 @@ before writing** — if files already exist (partial setup), read and merge.
   "taskRunner": {
     "project": { "name": "<project-name>", "description": "<one-liner>" },
     "paths": { "tasks": "<task-area-path>" },
-    "testing": { "commands": ["<detected-test-command>"] },
+    "testing": { "commands": { "test": "<detected-test-command>" } },
     "standards": { "docs": [], "rules": [] },
     "standardsOverrides": {},
     "worker": { "model": "", "tools": "read,write,edit,bash,grep,find,ls", "thinking": "off" },

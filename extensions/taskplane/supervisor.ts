@@ -624,7 +624,7 @@ Follow the primer's **"Script 6: Returning User — Batch Planning"** section
 4. **Offer to pull from GitHub Issues** if \`gh\` CLI is available`;
 			break;
 
-		case "completed-batch-needs-integration":
+		case "completed-batch":
 			scriptGuidance = `## Your Mission: Integration Guidance
 
 A completed batch exists that hasn't been integrated yet.
@@ -876,6 +876,12 @@ export async function activateSupervisor(
 	state.orchConfigRef = orchConfig;
 	state.stateRoot = stateRoot;
 
+	// ── TP-042 R004: Clear routing context on non-routing activation ──
+	// If a previous activation set routingContext (onboarding/returning-user),
+	// clear it now so the before_agent_start hook switches to batch-monitoring
+	// prompt instead of keeping the stale routing prompt.
+	state.routingContext = routingContext ?? null;
+
 	// ── Model override ───────────────────────────────────────────────
 	// If supervisor.model is configured, switch to it. Store the previous
 	// model for restoration on deactivation.
@@ -897,10 +903,8 @@ export async function activateSupervisor(
 	// ── TP-042: Routing mode — skip batch monitoring infrastructure ──
 	// When activated via /orch no-args routing, there's no active batch.
 	// Skip lockfile/heartbeat/event-tailer and send routing context message.
-	// Store routingContext so the before_agent_start hook can build the
-	// appropriate system prompt (onboarding vs batch-monitoring).
+	// routingContext was already stored above (via routingContext ?? null).
 	if (routingContext) {
-		state.routingContext = routingContext;
 		pi.sendMessage(
 			{
 				customType: "supervisor-routing",
