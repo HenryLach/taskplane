@@ -935,6 +935,132 @@ issues.
 
 ---
 
+### Config Generation Reference
+
+When the onboarding conversation reaches the config generation phase, create
+all artifacts using the standard schema. **Always check if each file exists
+before writing** — if files already exist (partial setup), read and merge.
+
+#### `.pi/taskplane-config.json` Template
+
+```json
+{
+  "configVersion": 1,
+  "taskRunner": {
+    "project": { "name": "<project-name>", "description": "<one-liner>" },
+    "paths": { "tasks": "<task-area-path>" },
+    "testing": { "commands": ["<detected-test-command>"] },
+    "standards": { "docs": [], "rules": [] },
+    "standardsOverrides": {},
+    "worker": { "model": "", "tools": "read,write,edit,bash,grep,find,ls", "thinking": "off" },
+    "reviewer": { "model": "openai/gpt-5.3-codex", "tools": "read,bash,grep,find,ls", "thinking": "on" },
+    "context": {
+      "workerContextWindow": 200000,
+      "warnPercent": 70,
+      "killPercent": 85,
+      "maxWorkerIterations": 20,
+      "maxReviewCycles": 2,
+      "noProgressLimit": 3
+    },
+    "taskAreas": {
+      "<area-name>": {
+        "path": "<task-area-path>",
+        "prefix": "<PREFIX>",
+        "context": "<task-area-path>/CONTEXT.md"
+      }
+    },
+    "referenceDocs": {},
+    "neverLoad": [],
+    "selfDocTargets": {},
+    "protectedDocs": []
+  },
+  "orchestrator": {
+    "orchestrator": {
+      "maxLanes": 2,
+      "worktreeLocation": "subdirectory",
+      "worktreePrefix": ".worktrees",
+      "batchIdFormat": "timestamp",
+      "spawnMode": "tmux",
+      "tmuxPrefix": "tp",
+      "operatorId": ""
+    },
+    "dependencies": { "source": "prompt", "cache": true },
+    "assignment": { "strategy": "affinity-first", "sizeWeights": { "S": 1, "M": 2, "L": 4 } },
+    "preWarm": { "autoDetect": false, "commands": {}, "always": [] },
+    "merge": {
+      "model": "",
+      "tools": "read,write,edit,bash,grep,find,ls",
+      "verify": [],
+      "order": "fewest-files-first",
+      "timeoutMinutes": 10
+    },
+    "supervisor": { "model": "", "autonomy": "supervised" }
+  }
+}
+```
+
+**Customization notes:**
+- `project.name`: Use the actual project name (from package.json, README, etc.)
+- `paths.tasks` and `taskAreas`: Match what was agreed in the task area discussion
+- `testing.commands`: Use the detected test command (e.g., `["cd extensions && npx vitest run"]`)
+- `orchestrator.spawnMode`: Use `"tmux"` if tmux is available, `"subprocess"` otherwise
+- `orchestrator.maxLanes`: Start with 2 for first-time users (safe default)
+- `merge.verify`: Add the project's test command for post-merge verification
+
+#### `{task_area}/CONTEXT.md` Template
+
+```markdown
+# {Area Name} — Task Context
+
+## Project Overview
+{1-2 paragraph description of what this area of the project does}
+
+## Key Files & Directories
+- `src/` — {description}
+- `tests/` — {description}
+- {other key paths}
+
+## Conventions
+- {commit format, branch naming, code style, etc.}
+- {test framework and run command}
+
+## Tech Debt & Known Issues
+- [ ] {any discovered issues}
+
+## Next Task ID
+{PREFIX}-001
+```
+
+#### `.pi/agents/` Directory
+
+Create the directory and add thin override files:
+
+- `.pi/agents/task-worker.md` — worker prompt overrides (can be empty initially)
+- `.pi/agents/task-reviewer.md` — reviewer prompt overrides (can be empty initially)
+- `.pi/agents/task-merger.md` — merger prompt overrides (can be empty initially)
+
+Each file can start with a brief comment explaining its purpose:
+```markdown
+<!-- Agent prompt overrides for {project-name}. -->
+<!-- Add project-specific instructions here. Base prompts are maintained by Taskplane. -->
+```
+
+#### `.gitignore` Entries
+
+Add these patterns if not already present:
+
+```gitignore
+# Taskplane working files
+.pi/batch-state.json
+.pi/supervisor/
+.pi/lane-state-*.json
+.pi/merge-result-*.json
+.pi/merge-request-*.txt
+.worktrees/
+```
+
+---
+
 ## 16. Returning User Scripts (Scripts 6-8)
 
 When activated via `/orch` with no arguments and config already exists, you guide

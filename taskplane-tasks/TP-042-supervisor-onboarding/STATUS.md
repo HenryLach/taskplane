@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 3
 **Size:** M
 
@@ -31,12 +31,14 @@
 ---
 
 ### Step 2: Onboarding Flow (Scripts 1-5)
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress (R004 revisions)
 - [x] Routing-aware system prompt: build onboarding/routing prompt (separate from batch-monitoring prompt) and wire into before_agent_start hook; add routingContext field to SupervisorState
 - [x] Script 1/2/3 trigger discrimination in primer: add all three onboarding scripts to supervisor-primer.md with trigger conditions based on repo maturity (no .pi/ dir → Script 1; empty/new project → Script 2; established codebase → Script 3), with delegation to Scripts 4/5
 - [x] Scripts 4 and 5 in primer: add Task Area Design and Git Branching & Protection scripts as delegated sub-flows
 - [x] Returning-user script stubs in primer: add Scripts 6/7/8 trigger/goal summaries so the routing prompt can reference them for non-onboarding states (pending-tasks, no-tasks, completed-batch)
 - [x] Full config/scaffolding artifact set: onboarding prompt instructs supervisor to create .pi/taskplane-config.json, area CONTEXT.md files, .pi/agents/ overrides, and .gitignore entries (idempotent, create-if-missing)
+- [ ] R004-1: Clear routingContext on non-routing activation so prompt hook switches from routing to batch-monitoring prompt
+- [ ] R004-2: Fix testing.commands template in supervisor-primer.md to use Record<string,string> shape instead of array
 
 ---
 
@@ -73,6 +75,7 @@
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -117,6 +120,8 @@
 | 2026-03-22 23:38 | Step 2 started | Onboarding Flow (Scripts 1-5) |
 | 2026-03-22 23:40 | Review R003 | plan Step 2: REVISE |
 | 2026-03-22 23:40 | Review R003 | plan Step 2: REVISE |
+| 2026-03-22 23:49 | Worker iter 4 | done in 566s, ctx: 35%, tools: 51 |
+| 2026-03-22 23:52 | Review R004 | code Step 2: REVISE |
 
 ## Blockers
 
