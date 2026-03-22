@@ -755,6 +755,10 @@ export function applyMergeRetryLoop(
 		});
 
 		callbacks.persist("merge-retry-increment");
+
+		// Emit Tier 0 attempt event via callback (TP-039 R004: emit only when retry is scheduled)
+		callbacks.onRetryAttempt?.(lastDecision);
+
 		callbacks.notify(
 			`🔄 Merge retry (${lastDecision.reason}) at wave ${waveIdx + 1}. ` +
 			(lastDecision.cooldownMs > 0 ? `Waiting ${lastDecision.cooldownMs}ms before retry...` : "Retrying immediately..."),
@@ -777,6 +781,9 @@ export function applyMergeRetryLoop(
 			return {
 				kind: "retry_succeeded",
 				mergeResult: currentResult,
+				classification,
+				scopeKey,
+				lastDecision,
 			};
 		}
 
@@ -790,6 +797,9 @@ export function applyMergeRetryLoop(
 			return {
 				kind: "safe_stop",
 				mergeResult: currentResult,
+				classification,
+				scopeKey,
+				lastDecision,
 				errorMessage:
 					`Safe-stop at wave ${waveIdx + 1}: verification rollback failed after retry. ` +
 					`Merge worktree and temp branch preserved for recovery.` + persistWarning,

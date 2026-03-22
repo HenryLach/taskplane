@@ -838,6 +838,17 @@ export interface WaveExecutionResult {
 	finalMonitorState: MonitorState | null;
 	/** Allocated lanes used in this wave (preserved for merge and cleanup) */
 	allocatedLanes: AllocatedLane[];
+	/**
+	 * Structured allocation error when lane provisioning failed.
+	 * Null when allocation succeeded or wave failed for other reasons.
+	 * Used by Tier 0 to detect stale worktree failures and retry.
+	 * @since TP-039
+	 */
+	allocationError?: {
+		code: AllocationErrorCode;
+		message: string;
+		details?: string;
+	} | null;
 }
 
 
@@ -1359,6 +1370,144 @@ export const MERGE_FAILURE_CLASSIFICATIONS: readonly MergeFailureClassification[
 	"git_lock_file",
 ] as const;
 
+
+// ── Tier 0 Watchdog Recovery Types (TP-039) ──────────────────────────
+
+/**
+ * Tier 0 recovery pattern identifiers.
+ *
+ * Each pattern corresponds to a failure class that the engine can
+ * handle automatically without supervisor intervention.
+ *
+ * @since TP-039
+ */
+export type Tier0RecoveryPattern =
+	| "worker_crash"
+	| "stale_worktree"
+	| "cleanup_gate";
+
+/**
+ * Exit classifications that are eligible for automatic Tier 0 retry.
+ *
+ * These are transient failures where re-running the task has a reasonable
+ * chance of success. Classifications NOT in this set (e.g., user_killed,
+ * stall_timeout, context_overflow) indicate persistent problems that
+ * won't be fixed by retrying.
+ *
+ * @since TP-039
+ */
+export const TIER0_RETRYABLE_CLASSIFICATIONS: ReadonlySet<string> = new Set([
+	"api_error",
+	"process_crash",
+	"session_vanished",
+]);
+
+/**
+ * Retry budget for Tier 0 recovery patterns.
+ *
+ * Defines max retries, cooldown between attempts, and backoff
+ * multiplier for each pattern. Values from spec §5.3.
+ *
+ * @since TP-039
+ */
+export interface Tier0RetryBudget {
+	/** Maximum number of retry attempts */
+	maxRetries: number;
+	/** Cooldown delay between retries in milliseconds */
+	cooldownMs: number;
+	/** Multiplier applied to cooldown on each subsequent retry */
+	backoffMultiplier: number;
+}
+
+/**
+ * Centralized retry budgets for Tier 0 recovery patterns.
+ *
+ * These are the defaults from spec §5.3. They are NOT configurable
+ * via user config in Tier 0 — the supervisor (Tier 1) can override
+ * them in future iterations.
+ *
+ * @since TP-039
+ */
+export const TIER0_RETRY_BUDGETS: Readonly<Record<Tier0RecoveryPattern, Tier0RetryBudget>> = {
+	worker_crash: {
+		maxRetries: 1,
+		cooldownMs: 5_000,
+		backoffMultiplier: 1.0,
+	},
+	stale_worktree: {
+		maxRetries: 1,
+		cooldownMs: 2_000,
+		backoffMultiplier: 1.0,
+	},
+	cleanup_gate: {
+		maxRetries: 1,
+		cooldownMs: 2_000,
+		backoffMultiplier: 1.0,
+	},
+};
+
+/**
+ * All Tier 0 escalation-eligible pattern identifiers.
+ *
+ * Extends `Tier0RecoveryPattern` with `merge_timeout` so that
+ * `EscalationContext` can describe escalations from every exhaustion
+ * path, including the merge retry loop (which uses its own retry
+ * matrix but still triggers Tier 0 escalation on exhaustion).
+ *
+ * @since TP-039
+ */
+export type Tier0EscalationPattern = Tier0RecoveryPattern | "merge_timeout";
+
+/**
+ * Context payload emitted when Tier 0 retries are exhausted and the
+ * engine must escalate to the supervisor (future TP-041).
+ *
+ * This is the structured data that a Tier 1 supervisor agent uses to
+ * decide what to do next.  In Tier 0, escalation simply falls through
+ * to the existing pause behaviour.
+ *
+ * @since TP-039
+ */
+export interface EscalationContext {
+	/** Which recovery pattern was attempted */
+	pattern: Tier0EscalationPattern;
+	/** Number of retry attempts that were made (1-based) */
+	attempts: number;
+	/** Maximum attempts that were allowed */
+	maxAttempts: number;
+	/** Human-readable last error / failure reason */
+	lastError: string;
+	/** Task IDs affected by this failure */
+	affectedTasks: string[];
+	/** Suggested remediation for an operator or supervisor */
+	suggestion: string;
+}
+
+/**
+ * Scope key prefix for Tier 0 (non-merge) retry counters.
+ *
+ * Format: `t0:{pattern}:{taskId}:w{waveIndex}`
+ * This namespace prevents collisions with merge retry scope keys
+ * (which use `{taskId}:w{waveIndex}:l{laneNumber}`).
+ *
+ * @since TP-039
+ */
+export function tier0ScopeKey(pattern: Tier0RecoveryPattern, taskId: string, waveIndex: number): string {
+	return `t0:${pattern}:${taskId}:w${waveIndex}`;
+}
+
+/**
+ * Wave-level scope key for Tier 0 patterns that operate at wave granularity
+ * (stale_worktree, cleanup_gate).
+ *
+ * Format: `t0:{pattern}:w{waveIndex}`
+ *
+ * @since TP-039
+ */
+export function tier0WaveScopeKey(pattern: Tier0RecoveryPattern, waveIndex: number): string {
+	return `t0:${pattern}:w${waveIndex}`;
+}
+
 /**
  * Decision output from the merge retry policy evaluator.
  *
@@ -1398,11 +1547,23 @@ export type MergeRetryLoopOutcome =
 		/** Retry succeeded — caller should continue normal post-merge flow */
 		kind: "retry_succeeded";
 		mergeResult: MergeWaveResult;
+		/** Classification of the failure that was retried */
+		classification: MergeFailureClassification | null;
+		/** Scope key used for retry counter tracking */
+		scopeKey: string;
+		/** Last retry decision (carries attempt/maxAttempts for event emission) */
+		lastDecision: MergeRetryDecision;
 	}
 	| {
 		/** Safe-stop triggered during retry — caller should break the wave loop */
 		kind: "safe_stop";
 		mergeResult: MergeWaveResult;
+		/** Classification of the failure that was retried */
+		classification: MergeFailureClassification | null;
+		/** Scope key used for retry counter tracking */
+		scopeKey: string;
+		/** Last retry decision (carries attempt/maxAttempts for event emission) */
+		lastDecision: MergeRetryDecision;
 		errorMessage: string;
 		notifyMessage: string;
 	}
@@ -1447,6 +1608,13 @@ export interface MergeRetryCallbacks {
 	updateMergeResult: (result: MergeWaveResult) => void;
 	/** Sleep for cooldown (allows test injection) */
 	sleep: (ms: number) => void;
+	/**
+	 * Optional callback fired when a retry attempt is about to be executed.
+	 * Provides the retry decision with classification, attempt count, and cooldown
+	 * so callers can emit structured Tier 0 events at the right time.
+	 * @since TP-039 R004
+	 */
+	onRetryAttempt?: (decision: MergeRetryDecision) => void;
 }
 
 // ── View-Model Types ─────────────────────────────────────────────────

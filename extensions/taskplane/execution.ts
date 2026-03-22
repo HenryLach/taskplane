@@ -1810,6 +1810,7 @@ export async function executeWave(
 			overallStatus: "failed",
 			finalMonitorState: null,
 			allocatedLanes: [],
+			allocationError: allocResult.error,
 		};
 	}
 
