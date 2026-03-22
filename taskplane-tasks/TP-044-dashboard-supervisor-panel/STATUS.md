@@ -1,11 +1,11 @@
 # TP-044: Dashboard Supervisor Panel — Status
 
-**Current Step:** Step 1: Dashboard Server — Serve Supervisor Data
+**Current Step:** Step 2: Dashboard Frontend — Supervisor Panel
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 1
-**Review Counter:** 1
-**Iteration:** 3
+**Review Counter:** 2
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -30,12 +30,15 @@
 ---
 
 ### Step 2: Dashboard Frontend — Supervisor Panel
-**Status:** ⬜ Not Started
-- [ ] Supervisor status indicator
-- [ ] Recovery action timeline
-- [ ] Batch summary section
-- [ ] Styling and integration
-- [ ] Graceful degradation
+**Status:** 🟨 In Progress
+- [ ] Add supervisor panel HTML skeleton to index.html
+- [ ] Supervisor status indicator (active/inactive badge with autonomy level, heartbeat)
+- [ ] Recovery action timeline (chronological list from actions array)
+- [ ] Conversation history section (from supervisor.conversation, R002 requirement)
+- [ ] Batch summary section (rendered from summary markdown when available)
+- [ ] CSS styling to integrate with existing dashboard aesthetic (collapsible, secondary to wave view)
+- [ ] Wire render function into main render() loop
+- [ ] Graceful degradation (hide panel when supervisor data is null)
 
 ---
 
@@ -60,6 +63,7 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R002 | plan | Step 2 | REVISE | .reviews/R002-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -86,6 +90,13 @@
 | 2026-03-22 23:09 | Step 1 started | Dashboard Server — Serve Supervisor Data |
 | 2026-03-22 23:11 | Review R001 | plan Step 1: REVISE |
 | 2026-03-22 23:12 | Review R001 | plan Step 1: REVISE |
+| 2026-03-22 23:20 | Worker iter 3 | done in 504s, ctx: 34%, tools: 76 |
+| 2026-03-22 23:20 | Step 1 complete | Dashboard Server — Serve Supervisor Data |
+| 2026-03-22 23:20 | Step 2 started | Dashboard Frontend — Supervisor Panel |
+| 2026-03-22 23:21 | Review R002 | plan Step 2: REVISE |
+| 2026-03-22 23:22 | Worker iter 2 | done in 637s, ctx: 30%, tools: 61 |
+| 2026-03-22 23:22 | Step 1 complete | Dashboard Server — Serve Supervisor Data |
+| 2026-03-22 23:22 | Step 2 started | Dashboard Frontend — Supervisor Panel |
 
 ## Blockers
 
