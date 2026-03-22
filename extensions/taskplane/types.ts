@@ -2050,6 +2050,13 @@ export interface ResumePoint {
 	reconnectTaskIds: string[];
 	/** Task IDs with dead sessions but existing worktrees that need re-execution */
 	reExecuteTaskIds: string[];
+	/**
+	 * Wave indexes (0-based) where all tasks are terminal but the merge
+	 * is missing or failed. These waves should be retried for merge only
+	 * (no task re-execution). Empty when all completed waves have
+	 * successful merges. (TP-037, Bug #102)
+	 */
+	mergeRetryWaveIndexes: number[];
 }
 
 // ── Abort (TS-009 Step 5) ────────────────────────────────────────────
