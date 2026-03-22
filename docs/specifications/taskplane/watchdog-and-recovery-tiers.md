@@ -669,54 +669,156 @@ monitoring sessions.
 
 ---
 
-## 13. Open Questions
 
-1. **Non-blocking engine complexity:** How much refactoring does the engine
-   need to become event-driven? The current blocking await is deeply embedded
-   in the wave loop. This may be the hardest implementation task.
+## 13. Design Decisions
 
-2. **Supervisor context management:** Long batches (10+ hours) will accumulate
-   significant context in the supervisor session. How do we handle compaction
-   without losing incident history? Perhaps the audit trail files serve as
-   persistent memory that survives compaction.
+Resolved questions that inform implementation.
 
-3. **Multiple batches:** If the operator starts a second batch while the first
-   is running (different workspace), should there be one supervisor per batch
-   or one supervisor managing multiple batches?
+### 13.1 Non-blocking engine complexity
 
-4. **Supervisor model selection:** Should the supervisor use the same model as
-   workers, or a different model? A reasoning-heavy model (Claude Opus) might
-   be better for complex incident diagnosis, while workers use a faster model.
+The engine refactor (blocking `await` → event-driven) is the hardest
+implementation task. The wave loop is deeply embedded. This is critical to
+achieving the interactive supervisor vision and must be done carefully as a
+dedicated phase (Phase 2).
 
-5. **Testing the supervisor:** How do we test supervisor behavior? Simulated
-   failure injection? Recorded incident replay? This is inherently harder to
-   test than deterministic code.
+### 13.2 Supervisor context management
 
-6. **Graceful degradation:** If the supervisor's own LLM call fails (API
-   error), the system should fall back to Tier 0 behavior (pause on failure)
-   rather than cascading failures.
+Long batches (10+ hours) will accumulate significant context. The audit trail
+files (`.pi/supervisor/actions.jsonl`, `events.jsonl`) serve as persistent
+memory that survives compaction. Compaction must be enabled for the supervisor
+agent — having it fail outright is not acceptable. The supervisor's system
+prompt must include instructions for re-hydrating from audit trail files
+after compaction occurs.
 
-7. **Dashboard integration:** Should the dashboard show supervisor status and
-   conversation history? Or is the terminal sufficient?
+### 13.3 One supervisor per batch
 
-8. **Supervisor and `/task` mode:** Should the supervisor also activate for
-   single-task `/task` execution? Currently `/task` is a simpler flow, but
-   it still benefits from crash recovery and progress monitoring. The
-   supervisor could offer a lighter-touch mode for single tasks.
+**Decision:** Each supervisor manages exactly one batch. No cross-batch
+supervision. This keeps the scope bounded and avoids confusion about which
+batch is being discussed.
 
-9. **Multi-project operation:** An operator may have Taskplane set up in
-   multiple projects. Should the supervisor maintain awareness across
-   projects (e.g., "your other project's batch finished 2 hours ago"),
-   or is each pi session fully independent?
+### 13.4 Model selection
 
-10. **Supervisor handoff on session restart:** If the operator closes their
-    terminal and reopens pi later, the supervisor needs to reconstruct its
-    context from the audit trail and batch state. How smooth is this
-    re-hydration? The primer + audit files should make it work, but it
-    needs explicit design for the "I'm back, what happened while I was
-    gone?" scenario.
+**Decision:** The supervisor inherits the model of the pi session it runs in
+by default, unless a specific model is configured in taskplane-settings for
+the supervisor agent. This is consistent with how worker, reviewer, and merger
+agents handle model selection.
+
+Users must be able to specify which model each agent uses independently:
+
+```yaml
+supervisor:
+  model: ""        # empty = inherit session model
+```
+
+### 13.5 Testing strategy
+
+Initial testing will be manual — run batches and evaluate supervisor behavior.
+Automated testing is a future goal. Potential approaches:
+- Simulated failure injection (mock tmux crashes, inject timeout events)
+- Recorded incident replay (replay real `.pi/supervisor/events.jsonl` traces)
+- Integration tests with mock engine events
+
+### 13.6 Graceful degradation
+
+**Decision:** If the supervisor's own LLM call fails (API error), the system
+falls back to Tier 0 behavior (deterministic recovery for known patterns,
+pause for unknown). The batch continues — supervisor failure is not batch
+failure.
+
+### 13.7 Dashboard integration
+
+**Decision:** Both supervisor status and conversation history should appear in
+the dashboard. Transparency is a core Taskplane differentiator. Implementation
+should integrate naturally into the existing dashboard UX — supervisor
+conversation as a panel or tab, not a replacement for existing wave/lane views.
+UX design should prioritize clarity while maintaining the dashboard's clean
+look and effectiveness.
+
+### 13.8 `/task` mode stays separate
+
+**Decision:** The supervisor does NOT activate for `/task` mode. Users should
+be encouraged to use `/orch` even for single tasks — this gives them the
+supervisor, worktree isolation, merge agent, and dashboard visibility.
+
+`/task` remains as the internal mechanism that the task-runner uses to execute
+individual tasks within lanes. It's an implementation detail, not a user-facing
+workflow. The `/task` command stays available as-is for advanced users and
+internal use, but is not the recommended path.
+
+### 13.9 Independent per-project
+
+**Decision:** Each supervisor is independent. Each pi session manages one
+project. No cross-project awareness. Most users will want project sandboxing.
+
+### 13.10 Session restart and supervisor takeover
+
+**Decision:** When the operator opens a pi session in a project with an active
+batch, the supervisor must detect it and offer to take over. Accidental terminal
+closure is a common scenario that must be handled gracefully.
+
+**Startup behavior:**
+1. On extension load, check for active batch (`.pi/batch-state.json` with
+   non-terminal phase)
+2. If found, check for a supervisor lockfile (`.pi/supervisor/lock.json`)
+3. If lockfile exists and is stale (process dead), take over
+4. If lockfile exists and process is alive, warn and offer options
+5. If no lockfile, become the supervisor
+
+**Supervisor lockfile (`.pi/supervisor/lock.json`):**
+
+```json
+{
+  "pid": 12345,
+  "sessionId": "pi-session-abc123",
+  "batchId": "20260320T140046",
+  "startedAt": "2026-03-20T14:00:46Z",
+  "heartbeat": "2026-03-20T15:30:00Z"
+}
+```
+
+The supervisor writes this file on activation and updates the `heartbeat`
+timestamp periodically (every 30s). On startup, a new supervisor checks:
+
+- If `pid` is alive → another supervisor is running. Warn:
+  "A supervisor is already monitoring batch {batchId} in another session.
+  Want to view the dashboard instead, or force takeover?"
+- If `pid` is dead → previous supervisor crashed. Take over:
+  "Found an active batch with a crashed supervisor. Reconstructing
+  context from audit trail... Here's what happened since you left: [...]"
+
+**Force takeover:** The operator can say "take over" to claim the supervisor
+role, which updates the lockfile. The previous session (if still alive)
+detects the lockfile change on its next heartbeat and yields gracefully.
+
+**Preventing dual supervisors:** The lockfile enforces a 1:1 ratio between
+supervisors and batches. If a user opens a second terminal and types `/orch`,
+the startup check finds the lockfile with a live process and refuses to start
+a second supervisor. The user can:
+- Force takeover (kills the other supervisor's lock)
+- View the dashboard instead
+- Wait for the other session to finish
+
+**Re-hydration on takeover:**
+1. Read batch state for current wave, task statuses, phase
+2. Read `.pi/supervisor/actions.jsonl` for what the previous supervisor did
+3. Read `.pi/supervisor/events.jsonl` for recent engine events
+4. Summarize for operator: "I'm taking over batch {id}. Here's what happened..."
 
 ---
+
+### 13.11 Remaining Open Questions
+
+1. **Dashboard conversation UX:** How should the supervisor conversation
+   render in the dashboard? Scrolling log? Chat-style bubbles? Collapsible
+   panel? Needs design exploration.
+
+2. **Supervisor prompt size:** The primer is ~650 lines. Combined with batch
+   state, telemetry, and audit trail, the supervisor's context could be large
+   on startup. Need to measure and optimize if necessary.
+
+3. **Extension UI sub-protocol:** When the supervisor executes recovery actions
+   that involve spawning agents (e.g., re-running a merge agent), how does it
+   handle pi's extension UI requests (select/confirm dialogs)?
 
 ## 14. `/orch` as the Universal Entry Point
 
