@@ -3,16 +3,15 @@
 ### Verdict: REVISE
 
 ### Summary
-The Step 2 checklist covers core UI pieces (status indicator, recovery timeline, summary, styling, graceful degradation), and the scope is appropriately frontend-focused. However, it omits an explicit outcome for rendering supervisor conversation history, which is a stated mission requirement for this task. As written, the step could be marked complete while still missing a required operator visibility surface.
+The Step 2 plan now covers the core frontend surfaces (status, conversation, summary, styling, render wiring, and graceful degradation) and is close to complete. However, the recovery timeline outcome is currently scoped to `actions` only, which does not fully meet the stated requirement to show both Tier 0 and supervisor actions. Without adding Tier 0 entries, the timeline will omit part of the required recovery visibility.
 
 ### Issues Found
-1. **Severity: important** — Missing explicit plan outcome for supervisor conversation history UI.
-   - Evidence: Task mission requires “Conversation history (operator ↔ supervisor messages)” (`PROMPT.md:29-33`), but Step 2 plan items in `STATUS.md` only list status/timeline/summary/styling/degradation (`STATUS.md:34-38`).
-   - Suggested fix: Add a Step 2 outcome to render supervisor conversation history (from `supervisor.conversation` when present, with graceful fallback to empty/hidden state for pre-supervisor or older runs).
+1. **Severity: important** — Recovery timeline plan excludes Tier 0 actions.
+   - Evidence: `PROMPT.md:84` requires a chronological timeline of **Tier 0 and supervisor actions**. Current plan item is “chronological list from actions array” (`STATUS.md:36`), while Step 1 already provides Tier 0 events from `events.jsonl` (`STATUS.md:25`; server payload includes `supervisor.events` in `dashboard/server.cjs:687-688`).
+   - Suggested fix: Update Step 2 outcome to build the timeline from both sources (e.g., merge `supervisor.actions` + Tier 0 recovery events from `supervisor.events`), normalize timestamp/outcome fields, and sort chronologically.
 
 ### Missing Items
-- Explicit Step 2 outcome for displaying supervisor conversation history in the dashboard panel.
+- Explicit Step 2 outcome to include Tier 0 recovery events in the recovery timeline (not just supervisor actions).
 
 ### Suggestions
-- Keep the supervisor panel visually secondary (collapsible or compact sections) so wave/lane execution remains the primary focus.
-- Reuse existing panel/empty-state patterns (`panel`, `empty-state`) for consistency and lower implementation risk.
+- Consider surfacing “current activity” in the status area using the latest merged timeline/event entry to align with the mission-level visibility goal.

@@ -5,7 +5,7 @@
 **Last Updated:** 2026-03-22
 **Review Level:** 1
 **Review Counter:** 2
-**Iteration:** 4
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -30,15 +30,15 @@
 ---
 
 ### Step 2: Dashboard Frontend — Supervisor Panel
-**Status:** 🟨 In Progress
-- [ ] Add supervisor panel HTML skeleton to index.html
-- [ ] Supervisor status indicator (active/inactive badge with autonomy level, heartbeat)
-- [ ] Recovery action timeline (chronological list from actions array)
-- [ ] Conversation history section (from supervisor.conversation, R002 requirement)
-- [ ] Batch summary section (rendered from summary markdown when available)
-- [ ] CSS styling to integrate with existing dashboard aesthetic (collapsible, secondary to wave view)
-- [ ] Wire render function into main render() loop
-- [ ] Graceful degradation (hide panel when supervisor data is null)
+**Status:** ✅ Complete
+- [x] Add supervisor panel HTML skeleton to index.html
+- [x] Supervisor status indicator (active/inactive badge with autonomy level, heartbeat)
+- [x] Recovery action timeline (chronological list from actions array)
+- [x] Conversation history section (from supervisor.conversation, R002 requirement)
+- [x] Batch summary section (rendered from summary markdown when available)
+- [x] CSS styling to integrate with existing dashboard aesthetic (collapsible, secondary to wave view)
+- [x] Wire render function into main render() loop
+- [x] Graceful degradation (hide panel when supervisor data is null)
 
 ---
 
@@ -63,6 +63,7 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R002 | plan | Step 2 | REVISE | .reviews/R002-plan-step2.md |
 | R002 | plan | Step 2 | REVISE | .reviews/R002-plan-step2.md |
 |---|------|------|---------|------|
 
@@ -97,6 +98,7 @@
 | 2026-03-22 23:22 | Worker iter 2 | done in 637s, ctx: 30%, tools: 61 |
 | 2026-03-22 23:22 | Step 1 complete | Dashboard Server — Serve Supervisor Data |
 | 2026-03-22 23:22 | Step 2 started | Dashboard Frontend — Supervisor Panel |
+| 2026-03-22 23:24 | Review R002 | plan Step 2: REVISE |
 
 ## Blockers
 

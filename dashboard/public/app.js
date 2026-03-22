@@ -722,6 +722,231 @@ function ensureContentPanels() {
   }
 }
 
+// ─── Supervisor Panel ───────────────────────────────────────────────────────
+
+const $supervisorPanel        = $("supervisor-panel");
+const $supervisorStatusBadge  = $("supervisor-status-badge");
+const $supervisorCollapseBtn  = $("supervisor-collapse-btn");
+const $supervisorPanelBody    = $("supervisor-panel-body");
+const $supervisorStatusSection       = $("supervisor-status-section");
+const $supervisorConversationSection = $("supervisor-conversation-section");
+const $supervisorActionsSection      = $("supervisor-actions-section");
+const $supervisorSummarySection      = $("supervisor-summary-section");
+
+let supervisorCollapsed = false;
+
+// Toggle collapse on header click
+$("supervisor-panel-toggle").addEventListener("click", (e) => {
+  // Don't toggle when clicking the collapse button itself (it has its own handler)
+  if (e.target.id === "supervisor-collapse-btn") return;
+  toggleSupervisorPanel();
+});
+
+$supervisorCollapseBtn.addEventListener("click", toggleSupervisorPanel);
+
+function toggleSupervisorPanel() {
+  supervisorCollapsed = !supervisorCollapsed;
+  $supervisorPanelBody.style.display = supervisorCollapsed ? "none" : "";
+  $supervisorCollapseBtn.textContent = supervisorCollapsed ? "▸" : "▾";
+}
+
+/** Determine supervisor status from lock data. */
+function supervisorStatusInfo(lock) {
+  if (!lock) return { status: "inactive", label: "Inactive", cls: "supervisor-inactive" };
+  if (lock.stale) return { status: "stale", label: "Stale", cls: "supervisor-stale" };
+  return { status: "active", label: "Active", cls: "supervisor-active" };
+}
+
+/** Format a timestamp for the supervisor timeline. */
+function formatSupervisorTime(ts) {
+  if (!ts) return "";
+  const d = new Date(ts);
+  return d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+/** Render the supervisor status indicator section. */
+function renderSupervisorStatus(supervisor) {
+  const lock = supervisor.lock;
+  const info = supervisorStatusInfo(lock);
+
+  // Update the header badge
+  $supervisorStatusBadge.textContent = info.label;
+  $supervisorStatusBadge.className = `supervisor-status-badge ${info.cls}`;
+
+  let html = '<div class="supervisor-status-row">';
+  html += `<span class="supervisor-status-dot ${info.cls}"></span>`;
+  html += `<span class="supervisor-status-label">${info.label}</span>`;
+
+  if (lock) {
+    if (lock.autonomy) {
+      html += `<span class="supervisor-autonomy-badge">${escapeHtml(lock.autonomy)}</span>`;
+    }
+    if (lock.heartbeat) {
+      html += `<span class="supervisor-heartbeat" title="Last heartbeat">♡ ${relativeTime(lock.heartbeat)}</span>`;
+    }
+    if (lock.sessionId) {
+      html += `<span class="supervisor-session-id" title="Session: ${escapeHtml(lock.sessionId)}">${escapeHtml(lock.sessionId)}</span>`;
+    }
+  }
+
+  html += '</div>';
+  $supervisorStatusSection.innerHTML = html;
+}
+
+/** Render the conversation history section. */
+function renderSupervisorConversation(supervisor) {
+  const conversation = supervisor.conversation || [];
+
+  if (conversation.length === 0) {
+    $supervisorConversationSection.innerHTML = '';
+    return;
+  }
+
+  let html = '<div class="supervisor-subsection-title">Conversation</div>';
+  html += '<div class="supervisor-conversation-list">';
+
+  for (const entry of conversation) {
+    const time = formatSupervisorTime(entry.ts || entry.timestamp);
+    const role = entry.role || "unknown";
+    const content = entry.content || entry.message || "";
+    const roleCls = role === "operator" ? "conv-role-operator" : "conv-role-supervisor";
+    const roleLabel = role === "operator" ? "Operator" : "Supervisor";
+
+    html += `<div class="supervisor-conv-entry ${roleCls}">`;
+    html += `  <div class="supervisor-conv-header">`;
+    html += `    <span class="supervisor-conv-role">${roleLabel}</span>`;
+    if (time) html += `<span class="supervisor-conv-time">${time}</span>`;
+    html += `  </div>`;
+    html += `  <div class="supervisor-conv-content">${escapeHtml(content)}</div>`;
+    html += `</div>`;
+  }
+
+  html += '</div>';
+  $supervisorConversationSection.innerHTML = html;
+}
+
+/** Merge supervisor actions and Tier 0 recovery events into a unified timeline.
+ *  Actions from actions.jsonl and recovery events from events.jsonl are combined
+ *  and sorted chronologically (per R002: show both Tier 0 and supervisor actions).
+ */
+function buildRecoveryTimeline(supervisor) {
+  const actions = (supervisor.actions || []).map(a => ({
+    ts: a.ts || a.timestamp || 0,
+    tier: a.tier,
+    type: a.type || a.action || "unknown",
+    target: a.target || a.lane || a.taskId || "",
+    outcome: a.outcome || a.result || "",
+    reason: a.reason || "",
+    source: "action"
+  }));
+
+  // Include Tier 0 recovery events from events.jsonl
+  const events = (supervisor.events || [])
+    .filter(e => e.tier === 0 || e.type === "recovery" || e.type === "tier0_recovery")
+    .map(e => ({
+      ts: e.ts || e.timestamp || 0,
+      tier: e.tier != null ? e.tier : 0,
+      type: e.type || "event",
+      target: e.target || e.lane || e.taskId || "",
+      outcome: e.outcome || e.result || "",
+      reason: e.reason || e.message || "",
+      source: "event"
+    }));
+
+  const timeline = [...actions, ...events];
+  timeline.sort((a, b) => {
+    const tA = typeof a.ts === "string" ? new Date(a.ts).getTime() : a.ts;
+    const tB = typeof b.ts === "string" ? new Date(b.ts).getTime() : b.ts;
+    return tA - tB;
+  });
+
+  return timeline;
+}
+
+/** Render the recovery action timeline section. */
+function renderSupervisorActions(supervisor) {
+  const timeline = buildRecoveryTimeline(supervisor);
+
+  if (timeline.length === 0) {
+    $supervisorActionsSection.innerHTML = '';
+    return;
+  }
+
+  let html = '<div class="supervisor-subsection-title">Recovery Actions</div>';
+  html += '<div class="supervisor-timeline">';
+
+  for (const entry of timeline) {
+    const time = formatSupervisorTime(entry.ts);
+    const tier = entry.tier != null ? `T${entry.tier}` : "";
+    const type = entry.type;
+    const target = entry.target;
+    const outcome = entry.outcome;
+    const reason = entry.reason;
+
+    const outcomeCls = outcome === "success" || outcome === "recovered"
+      ? "action-success"
+      : outcome === "failed" || outcome === "error"
+        ? "action-failed"
+        : "action-pending";
+
+    html += `<div class="supervisor-action-entry">`;
+    html += `  <div class="supervisor-action-left">`;
+    html += `    <span class="supervisor-action-time">${time}</span>`;
+    html += `    <span class="supervisor-action-dot ${outcomeCls}"></span>`;
+    html += `  </div>`;
+    html += `  <div class="supervisor-action-right">`;
+    html += `    <div class="supervisor-action-header">`;
+    if (tier) html += `<span class="supervisor-action-tier">${tier}</span>`;
+    html += `      <span class="supervisor-action-type">${escapeHtml(type)}</span>`;
+    if (target) html += `<span class="supervisor-action-target">${escapeHtml(target)}</span>`;
+    if (outcome) html += `<span class="supervisor-action-outcome ${outcomeCls}">${escapeHtml(outcome)}</span>`;
+    html += `    </div>`;
+    if (reason) {
+      html += `<div class="supervisor-action-reason">${escapeHtml(reason)}</div>`;
+    }
+    html += `  </div>`;
+    html += `</div>`;
+  }
+
+  html += '</div>';
+  $supervisorActionsSection.innerHTML = html;
+}
+
+/** Render the batch summary section (from summary.md). */
+function renderSupervisorSummary(supervisor) {
+  const summary = supervisor.summary;
+
+  if (!summary) {
+    $supervisorSummarySection.innerHTML = '';
+    return;
+  }
+
+  let html = '<div class="supervisor-subsection-title">Batch Summary</div>';
+  html += '<div class="supervisor-summary-content">';
+  // Render the summary markdown using the STATUS.md renderer (reuse)
+  const { html: renderedMd } = renderStatusMd(summary);
+  html += renderedMd;
+  html += '</div>';
+  $supervisorSummarySection.innerHTML = html;
+}
+
+/** Main supervisor panel render function. */
+function renderSupervisor(data) {
+  const supervisor = data.supervisor;
+
+  if (!supervisor) {
+    $supervisorPanel.style.display = "none";
+    return;
+  }
+
+  $supervisorPanel.style.display = "";
+
+  renderSupervisorStatus(supervisor);
+  renderSupervisorConversation(supervisor);
+  renderSupervisorActions(supervisor);
+  renderSupervisorSummary(supervisor);
+}
+
 // ─── Full Render ────────────────────────────────────────────────────────────
 
 // ─── Current data (stored for conversation viewer) ──────────────────────────
@@ -738,6 +963,7 @@ function render(data) {
   if (!batch) {
     renderHeader(null);
     renderSummary(null);
+    renderSupervisor(data);
     // Refresh history list (batch may have just finished)
     if (!noBatchRendered) loadHistoryList();
     renderNoBatch();
@@ -763,6 +989,7 @@ function render(data) {
   const repos = buildRepoSet(batch);
   updateRepoFilter(repos);
 
+  renderSupervisor(data);
   renderLanesTasks(batch, tmux);
   renderMergeAgents(batch, tmux);
   renderErrors(batch);

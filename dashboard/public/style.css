@@ -1038,6 +1038,325 @@ body {
   border-bottom: none;
 }
 
+/* ─── Supervisor Panel ──────────────────────────────────────────────────── */
+
+.supervisor-panel {
+  border-color: var(--border);
+}
+
+.supervisor-panel-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.supervisor-panel-header:hover {
+  background: var(--bg-surface-hover);
+}
+
+.supervisor-collapse-btn {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.supervisor-collapse-btn:hover {
+  color: var(--text);
+}
+
+.supervisor-panel-body {
+  padding: 0;
+}
+
+.supervisor-section {
+  padding: 0;
+}
+
+.supervisor-section:empty {
+  display: none;
+}
+
+/* Supervisor status badge (in panel header) */
+.supervisor-status-badge {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.supervisor-status-badge.supervisor-active {
+  background: rgba(63,185,80,0.15);
+  color: var(--green);
+}
+
+.supervisor-status-badge.supervisor-stale {
+  background: rgba(210,153,34,0.15);
+  color: var(--yellow);
+}
+
+.supervisor-status-badge.supervisor-inactive {
+  background: rgba(139,148,158,0.1);
+  color: var(--text-muted);
+}
+
+/* Status row inside the panel */
+.supervisor-status-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex-wrap: wrap;
+}
+
+.supervisor-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.supervisor-status-dot.supervisor-active {
+  background: var(--green);
+  animation: pulse 2s infinite;
+}
+
+.supervisor-status-dot.supervisor-stale {
+  background: var(--yellow);
+}
+
+.supervisor-status-dot.supervisor-inactive {
+  background: var(--text-faint);
+}
+
+.supervisor-status-label {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.supervisor-autonomy-badge {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 8px;
+  background: rgba(188,140,255,0.12);
+  color: var(--magenta);
+}
+
+.supervisor-heartbeat {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.supervisor-session-id {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+  white-space: nowrap;
+}
+
+/* Subsection titles */
+.supervisor-subsection-title {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+  padding: 8px 14px 4px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ── Conversation List ─────────────────────────────────────────────────── */
+
+.supervisor-conversation-list {
+  max-height: 250px;
+  overflow-y: auto;
+  padding: 4px 14px 8px;
+}
+
+.supervisor-conv-entry {
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  border-radius: var(--radius-sm);
+  font-size: 0.82rem;
+}
+
+.supervisor-conv-entry.conv-role-operator {
+  background: rgba(88,166,255,0.06);
+  border-left: 3px solid var(--accent-dim);
+}
+
+.supervisor-conv-entry.conv-role-supervisor {
+  background: rgba(63,185,80,0.06);
+  border-left: 3px solid var(--green-dim);
+}
+
+.supervisor-conv-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.supervisor-conv-role {
+  font-weight: 600;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.conv-role-operator .supervisor-conv-role { color: var(--accent); }
+.conv-role-supervisor .supervisor-conv-role { color: var(--green); }
+
+.supervisor-conv-time {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-faint);
+}
+
+.supervisor-conv-content {
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── Recovery Actions Timeline ─────────────────────────────────────────── */
+
+.supervisor-timeline {
+  max-height: 300px;
+  overflow-y: auto;
+  padding: 4px 14px 8px;
+}
+
+.supervisor-action-entry {
+  display: flex;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.supervisor-action-entry:last-child {
+  border-bottom: none;
+}
+
+.supervisor-action-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 60px;
+  flex-shrink: 0;
+}
+
+.supervisor-action-time {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.supervisor-action-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.supervisor-action-dot.action-success { background: var(--green); }
+.supervisor-action-dot.action-failed  { background: var(--red); }
+.supervisor-action-dot.action-pending { background: var(--yellow); }
+
+.supervisor-action-right {
+  flex: 1;
+  min-width: 0;
+}
+
+.supervisor-action-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.supervisor-action-tier {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(188,140,255,0.12);
+  color: var(--magenta);
+}
+
+.supervisor-action-type {
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.supervisor-action-target {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.supervisor-action-outcome {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+}
+
+.supervisor-action-outcome.action-success {
+  background: rgba(63,185,80,0.15);
+  color: var(--green);
+}
+
+.supervisor-action-outcome.action-failed {
+  background: rgba(248,81,73,0.15);
+  color: var(--red);
+}
+
+.supervisor-action-outcome.action-pending {
+  background: rgba(210,153,34,0.15);
+  color: var(--yellow);
+}
+
+.supervisor-action-reason {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+/* ── Batch Summary ─────────────────────────────────────────────────────── */
+
+.supervisor-summary-content {
+  padding: 0 14px 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.supervisor-summary-content .status-md-content {
+  padding: 4px 0;
+}
+
 /* ─── Scrollbar ────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar { width: 6px; }
