@@ -1447,6 +1447,43 @@ export const TIER0_RETRY_BUDGETS: Readonly<Record<Tier0RecoveryPattern, Tier0Ret
 };
 
 /**
+ * All Tier 0 escalation-eligible pattern identifiers.
+ *
+ * Extends `Tier0RecoveryPattern` with `merge_timeout` so that
+ * `EscalationContext` can describe escalations from every exhaustion
+ * path, including the merge retry loop (which uses its own retry
+ * matrix but still triggers Tier 0 escalation on exhaustion).
+ *
+ * @since TP-039
+ */
+export type Tier0EscalationPattern = Tier0RecoveryPattern | "merge_timeout";
+
+/**
+ * Context payload emitted when Tier 0 retries are exhausted and the
+ * engine must escalate to the supervisor (future TP-041).
+ *
+ * This is the structured data that a Tier 1 supervisor agent uses to
+ * decide what to do next.  In Tier 0, escalation simply falls through
+ * to the existing pause behaviour.
+ *
+ * @since TP-039
+ */
+export interface EscalationContext {
+	/** Which recovery pattern was attempted */
+	pattern: Tier0EscalationPattern;
+	/** Number of retry attempts that were made (1-based) */
+	attempts: number;
+	/** Maximum attempts that were allowed */
+	maxAttempts: number;
+	/** Human-readable last error / failure reason */
+	lastError: string;
+	/** Task IDs affected by this failure */
+	affectedTasks: string[];
+	/** Suggested remediation for an operator or supervisor */
+	suggestion: string;
+}
+
+/**
  * Scope key prefix for Tier 0 (non-merge) retry counters.
  *
  * Format: `t0:{pattern}:{taskId}:w{waveIndex}`

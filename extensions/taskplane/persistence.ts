@@ -9,7 +9,7 @@ import { join, dirname, basename } from "path";
 import { execLog } from "./execution.ts";
 import { BATCH_STATE_SCHEMA_VERSION, StateFileError, batchStatePath, BATCH_HISTORY_MAX_ENTRIES, defaultResilienceState, defaultBatchDiagnostics } from "./types.ts";
 import type { BatchHistorySummary } from "./types.ts";
-import type { AllocatedLane, DiscoveryResult, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedTaskRecord, TaskMonitorSnapshot, Tier0RecoveryPattern, WorkspaceMode } from "./types.ts";
+import type { AllocatedLane, DiscoveryResult, EscalationContext, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedTaskRecord, TaskMonitorSnapshot, Tier0RecoveryPattern, WorkspaceMode } from "./types.ts";
 import { sleepSync } from "./worktree.ts";
 import type { PreserveFailedLaneProgressResult } from "./worktree.ts";
 
@@ -1629,13 +1629,15 @@ export function saveBatchHistory(repoRoot: string, summary: BatchHistorySummary)
  * - `tier0_recovery_attempt` — A recovery action is being tried
  * - `tier0_recovery_success` — Recovery succeeded
  * - `tier0_recovery_exhausted` — Retry budget exhausted, escalation needed
+ * - `tier0_escalation` — Escalation to supervisor (emitted alongside exhausted)
  *
  * @since TP-039
  */
 export type Tier0EventType =
 	| "tier0_recovery_attempt"
 	| "tier0_recovery_success"
-	| "tier0_recovery_exhausted";
+	| "tier0_recovery_exhausted"
+	| "tier0_escalation";
 
 /**
  * Structured event written to `.pi/supervisor/events.jsonl`.
@@ -1680,6 +1682,8 @@ export interface Tier0Event {
 	affectedTaskIds?: string[];
 	/** Suggested remediation (for exhausted events) */
 	suggestion?: string;
+	/** Typed escalation payload (present only on `tier0_escalation` events) */
+	escalation?: EscalationContext;
 }
 
 /**

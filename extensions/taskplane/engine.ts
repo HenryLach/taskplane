@@ -19,11 +19,48 @@ import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitTier0Event, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
 import { defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaves, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 
 // ── Tier 0: Automatic Recovery Helpers (TP-039) ─────────────────────
+
+/**
+ * Emit a `tier0_escalation` event with a typed `EscalationContext` payload.
+ *
+ * Called at every exhaustion path alongside the existing `tier0_recovery_exhausted`
+ * event.  The escalation event carries a structured payload for the future
+ * supervisor agent (TP-041).  In Tier 0, no automated action is taken on the
+ * escalation — the engine falls through to its existing pause behaviour.
+ *
+ * @since TP-039
+ */
+function emitTier0Escalation(
+	stateRoot: string,
+	batchId: string,
+	waveIndex: number,
+	pattern: Tier0EscalationPattern,
+	attempts: number,
+	maxAttempts: number,
+	lastError: string,
+	affectedTasks: string[],
+	suggestion: string,
+	extra?: Partial<Pick<import("./persistence.ts").Tier0Event, "taskId" | "laneNumber" | "repoId" | "classification" | "scopeKey">>,
+): void {
+	const escalation: EscalationContext = {
+		pattern,
+		attempts,
+		maxAttempts,
+		lastError,
+		affectedTasks,
+		suggestion,
+	};
+	emitTier0Event(stateRoot, {
+		...buildTier0EventBase("tier0_escalation", batchId, waveIndex, pattern, attempts, maxAttempts),
+		...extra,
+		escalation,
+	});
+}
 
 /**
  * Attempt automatic retry for failed tasks with retryable exit classifications.
@@ -117,6 +154,11 @@ async function attemptWorkerCrashRetry(
 				affectedTaskIds: [taskId],
 				suggestion: `Task ${taskId} failed with ${classification} and exhausted ${budget.maxRetries} retry attempt(s). Consider investigating the root cause or manually re-running the task.`,
 			});
+			emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "worker_crash", currentCount, budget.maxRetries,
+				`Retry budget exhausted for task ${taskId} (${classification})`, [taskId],
+				`Task ${taskId} failed with ${classification} and exhausted ${budget.maxRetries} retry attempt(s). Consider investigating the root cause or manually re-running the task.`,
+				{ taskId, laneNumber: lane.laneNumber, repoId: lane.repoId ?? null, classification, scopeKey },
+			);
 			continue;
 		}
 
@@ -229,17 +271,23 @@ async function attemptWorkerCrashRetry(
 				);
 
 				// Emit exhausted event (retry failed and budget now consumed)
+				const retryFailError = retryOutcome?.exitReason ?? `Task ${taskId} retry failed again`;
+				const retryFailSuggestion = `Task ${taskId} failed again after retry (${classification}). The failure may be persistent — investigate task logs.`;
 				emitTier0Event(stateRoot, {
 					...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries),
 					taskId,
 					laneNumber: lane.laneNumber,
 					repoId: lane.repoId ?? null,
 					classification,
-					error: retryOutcome?.exitReason ?? `Task ${taskId} retry failed again`,
+					error: retryFailError,
 					scopeKey,
 					affectedTaskIds: [taskId],
-					suggestion: `Task ${taskId} failed again after retry (${classification}). The failure may be persistent — investigate task logs.`,
+					suggestion: retryFailSuggestion,
 				});
+				emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries,
+					retryFailError, [taskId], retryFailSuggestion,
+					{ taskId, laneNumber: lane.laneNumber, repoId: lane.repoId ?? null, classification, scopeKey },
+				);
 			}
 		} catch (err: unknown) {
 			failedRetries.push(taskId);
@@ -250,6 +298,7 @@ async function attemptWorkerCrashRetry(
 			);
 
 			// Emit exhausted event for exception during retry
+			const exceptionSuggestion = `Task ${taskId} retry threw an exception: ${errMsg}. Investigate the execution environment.`;
 			emitTier0Event(stateRoot, {
 				...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries),
 				taskId,
@@ -259,8 +308,12 @@ async function attemptWorkerCrashRetry(
 				error: errMsg,
 				scopeKey,
 				affectedTaskIds: [taskId],
-				suggestion: `Task ${taskId} retry threw an exception: ${errMsg}. Investigate the execution environment.`,
+				suggestion: exceptionSuggestion,
 			});
+			emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries,
+				errMsg, [taskId], exceptionSuggestion,
+				{ taskId, laneNumber: lane.laneNumber, repoId: lane.repoId ?? null, classification, scopeKey },
+			);
 		}
 	}
 
@@ -320,14 +373,20 @@ async function attemptStaleWorktreeRecovery(
 			`tier0: stale worktree retry budget exhausted (${currentCount}/${budget.maxRetries})`,
 			{ scopeKey },
 		);
+		const staleExhaustedError = waveResult.allocationError.message;
+		const staleExhaustedSuggestion = `Stale worktree cleanup exhausted ${budget.maxRetries} retry(s). Manually remove worktrees and prune git state.`;
 		emitTier0Event(stateRoot, {
 			...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "stale_worktree", currentCount, budget.maxRetries),
 			repoId: null, // wave-scoped
-			error: waveResult.allocationError.message,
+			error: staleExhaustedError,
 			scopeKey,
 			affectedTaskIds: waveTasks,
-			suggestion: `Stale worktree cleanup exhausted ${budget.maxRetries} retry(s). Manually remove worktrees and prune git state.`,
+			suggestion: staleExhaustedSuggestion,
 		});
+		emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "stale_worktree", currentCount, budget.maxRetries,
+			staleExhaustedError, waveTasks, staleExhaustedSuggestion,
+			{ repoId: null, scopeKey },
+		);
 		return null;
 	}
 
@@ -740,14 +799,20 @@ export async function executeOrchBatch(
 						scopeKey: staleScopeKey,
 					});
 				} else {
+					const staleRetryError = retryResult.allocationError?.message ?? "Allocation failed again after cleanup";
+					const staleRetrySuggestion = "Stale worktree cleanup did not resolve the allocation failure. Manually inspect and remove worktrees.";
 					emitTier0Event(stateRoot, {
 						...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "stale_worktree", staleCount, TIER0_RETRY_BUDGETS.stale_worktree.maxRetries),
 						repoId: null, // wave-scoped
-						error: retryResult.allocationError?.message ?? "Allocation failed again after cleanup",
+						error: staleRetryError,
 						scopeKey: staleScopeKey,
 						affectedTaskIds: waveTasks,
-						suggestion: "Stale worktree cleanup did not resolve the allocation failure. Manually inspect and remove worktrees.",
+						suggestion: staleRetrySuggestion,
 					});
+					emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "stale_worktree", staleCount, TIER0_RETRY_BUDGETS.stale_worktree.maxRetries,
+						staleRetryError, waveTasks, staleRetrySuggestion,
+						{ repoId: null, scopeKey: staleScopeKey },
+					);
 				}
 
 				waveResult = retryResult;
@@ -1124,6 +1189,7 @@ export async function executeOrchBatch(
 				onNotify(retryOutcome.notifyMessage, "error");
 
 				// Emit merge safe-stop event (treated as exhausted — no further automatic recovery possible)
+				const mergeSafeStopSuggestion = "Merge rollback failed — batch force-paused for manual recovery. Check .pi/verification/ for recovery commands.";
 				emitTier0Event(stateRoot, {
 					...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "merge_timeout", retryOutcome.lastDecision.currentAttempt, retryOutcome.lastDecision.maxAttempts),
 					laneNumber: mergeFailedLane,
@@ -1131,8 +1197,13 @@ export async function executeOrchBatch(
 					classification: retryOutcome.classification ?? undefined,
 					error: retryOutcome.errorMessage,
 					scopeKey: retryOutcome.scopeKey,
-					suggestion: "Merge rollback failed — batch force-paused for manual recovery. Check .pi/verification/ for recovery commands.",
+					suggestion: mergeSafeStopSuggestion,
 				});
+				emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "merge_timeout",
+					retryOutcome.lastDecision.currentAttempt, retryOutcome.lastDecision.maxAttempts,
+					retryOutcome.errorMessage, [], mergeSafeStopSuggestion,
+					{ laneNumber: mergeFailedLane, repoId: mergeRepoId, classification: retryOutcome.classification ?? undefined, scopeKey: retryOutcome.scopeKey },
+				);
 
 				preserveWorktreesForResume = true;
 				break;
@@ -1151,6 +1222,7 @@ export async function executeOrchBatch(
 				});
 
 				// Emit merge retry exhausted event
+				const mergeExhaustedSuggestion = `Merge retry exhausted (${retryOutcome.classification ?? "unknown"}) after ${retryOutcome.lastDecision.currentAttempt} attempt(s). Investigate merge failure and retry manually.`;
 				emitTier0Event(stateRoot, {
 					...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "merge_timeout", retryOutcome.lastDecision.currentAttempt, retryOutcome.lastDecision.maxAttempts),
 					laneNumber: mergeFailedLane,
@@ -1158,8 +1230,13 @@ export async function executeOrchBatch(
 					classification: retryOutcome.classification ?? undefined,
 					error: exhaustionMsg,
 					scopeKey: retryOutcome.scopeKey,
-					suggestion: `Merge retry exhausted (${retryOutcome.classification ?? "unknown"}) after ${retryOutcome.lastDecision.currentAttempt} attempt(s). Investigate merge failure and retry manually.`,
+					suggestion: mergeExhaustedSuggestion,
 				});
+				emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "merge_timeout",
+					retryOutcome.lastDecision.currentAttempt, retryOutcome.lastDecision.maxAttempts,
+					exhaustionMsg, [], mergeExhaustedSuggestion,
+					{ laneNumber: mergeFailedLane, repoId: mergeRepoId, classification: retryOutcome.classification ?? undefined, scopeKey: retryOutcome.scopeKey },
+				);
 
 				batchState.phase = "paused";
 				batchState.errors.push(exhaustionMsg);
@@ -1435,15 +1512,22 @@ export async function executeOrchBatch(
 						);
 
 						const stillStaleCount = retriedGateFailures.reduce((n, f) => n + f.staleWorktrees.length, 0);
+						const cleanupRetryError = `Cleanup gate retry failed — ${stillStaleCount} stale worktree(s) remain`;
+						const cleanupRetrySuggestion = `Post-merge cleanup retry did not remove all stale worktrees. Manually remove the remaining ${stillStaleCount} worktree(s) and prune git state.`;
+						const cleanupRetryAffected = retriedGateFailures.flatMap(f => f.staleWorktrees);
 						// Emit exhausted event (retry attempted but failed)
 						emitTier0Event(stateRoot, {
 							...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount + 1, cleanupBudget.maxRetries),
 							repoId: null, // wave-scoped
-							error: `Cleanup gate retry failed — ${stillStaleCount} stale worktree(s) remain`,
+							error: cleanupRetryError,
 							scopeKey: cleanupScopeKey,
-							affectedTaskIds: retriedGateFailures.flatMap(f => f.staleWorktrees),
-							suggestion: `Post-merge cleanup retry did not remove all stale worktrees. Manually remove the remaining ${stillStaleCount} worktree(s) and prune git state.`,
+							affectedTaskIds: cleanupRetryAffected,
+							suggestion: cleanupRetrySuggestion,
 						});
+						emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount + 1, cleanupBudget.maxRetries,
+							cleanupRetryError, cleanupRetryAffected, cleanupRetrySuggestion,
+							{ repoId: null, scopeKey: cleanupScopeKey },
+						);
 
 						batchState.phase = gatePolicyResult.targetPhase;
 						batchState.errors.push(gatePolicyResult.errorMessage);
@@ -1459,14 +1543,21 @@ export async function executeOrchBatch(
 					execLog("batch", batchState.batchId, `cleanup gate failed — pausing batch (retry budget exhausted)`, gatePolicyResult.logDetails);
 
 					// Emit exhausted event (budget already consumed from prior waves)
+					const cleanupBudgetError = `Cleanup gate retry budget exhausted (${cleanupRetryCount}/${cleanupBudget.maxRetries})`;
+					const cleanupBudgetSuggestion = `Cleanup gate retry budget was already consumed. Manually remove stale worktrees and prune git state.`;
+					const cleanupBudgetAffected = cleanupGateFailures.flatMap(f => f.staleWorktrees);
 					emitTier0Event(stateRoot, {
 						...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount, cleanupBudget.maxRetries),
 						repoId: null, // wave-scoped
-						error: `Cleanup gate retry budget exhausted (${cleanupRetryCount}/${cleanupBudget.maxRetries})`,
+						error: cleanupBudgetError,
 						scopeKey: cleanupScopeKey,
-						affectedTaskIds: cleanupGateFailures.flatMap(f => f.staleWorktrees),
-						suggestion: `Cleanup gate retry budget was already consumed. Manually remove stale worktrees and prune git state.`,
+						affectedTaskIds: cleanupBudgetAffected,
+						suggestion: cleanupBudgetSuggestion,
 					});
+					emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount, cleanupBudget.maxRetries,
+						cleanupBudgetError, cleanupBudgetAffected, cleanupBudgetSuggestion,
+						{ repoId: null, scopeKey: cleanupScopeKey },
+					);
 
 					batchState.phase = gatePolicyResult.targetPhase;
 					batchState.errors.push(gatePolicyResult.errorMessage);

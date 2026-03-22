@@ -5,7 +5,7 @@
 **Last Updated:** 2026-03-22
 **Review Level:** 2
 **Review Counter:** 5
-**Iteration:** 4
+**Iteration:** 5
 **Size:** M
 
 ---
@@ -47,12 +47,12 @@
 ---
 
 ### Step 3: Escalation Interface
-**Status:** 🟨 In Progress
-- [ ] Define `EscalationContext` interface in types.ts with pattern, attempts, lastError, affectedTasks, suggestion fields; ensure pattern type includes `merge_timeout`
-- [ ] Extend Tier0EventType with `tier0_escalation` and add optional `escalation` field (typed as `EscalationContext`) to `Tier0Event` in persistence.ts
-- [ ] Create `emitTier0Escalation()` helper in engine.ts that emits a `tier0_escalation` event with full EscalationContext
-- [ ] Emit `tier0_escalation` at all exhaustion paths: worker_crash (3 sites), stale_worktree (2 sites), merge_timeout (2 sites), cleanup_gate (2 sites)
-- [ ] Verify fall-through to existing pause behavior remains unchanged
+**Status:** ✅ Complete
+- [x] Define `EscalationContext` interface in types.ts with pattern, attempts, lastError, affectedTasks, suggestion fields; ensure pattern type includes `merge_timeout`
+- [x] Extend Tier0EventType with `tier0_escalation` and add optional `escalation` field (typed as `EscalationContext`) to `Tier0Event` in persistence.ts
+- [x] Create `emitTier0Escalation()` helper in engine.ts that emits a `tier0_escalation` event with full EscalationContext
+- [x] Emit `tier0_escalation` at all exhaustion paths: worker_crash (3 sites), stale_worktree (2 sites), merge_timeout (2 sites), cleanup_gate (2 sites)
+- [x] Verify fall-through to existing pause behavior remains unchanged
 
 ---
 
@@ -85,6 +85,7 @@
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
+| R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 |---|------|------|---------|------|
 
@@ -137,6 +138,7 @@
 | 2026-03-22 18:53 | Step 2 complete | Tier 0 Event Logging |
 | 2026-03-22 18:53 | Step 3 started | Escalation Interface |
 | 2026-03-22 18:54 | Review R005 | plan Step 3: REVISE |
+| 2026-03-22 18:55 | Review R005 | plan Step 3: REVISE |
 
 ## Blockers
 
