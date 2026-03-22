@@ -236,6 +236,63 @@ export function logRecoveryAction(
 	appendAuditEntry(stateRoot, entry);
 }
 
+/**
+ * Read audit trail entries from actions.jsonl.
+ *
+ * Returns parsed entries, skipping malformed lines (best-effort).
+ * Useful for:
+ * - Takeover rehydration (buildTakeoverSummary)
+ * - Test verification
+ * - Operator "what happened?" queries
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ * @param options - Optional filters: limit (max entries, from tail), batchId (filter by batch)
+ * @returns Array of parsed audit entries (most recent last)
+ *
+ * @since TP-041
+ */
+export function readAuditTrail(
+	stateRoot: string,
+	options?: { limit?: number; batchId?: string },
+): AuditTrailEntry[] {
+	const path = auditTrailPath(stateRoot);
+	if (!existsSync(path)) return [];
+
+	try {
+		const raw = readFileSync(path, "utf-8").trim();
+		if (!raw) return [];
+
+		const lines = raw.split("\n");
+		const entries: AuditTrailEntry[] = [];
+
+		for (const line of lines) {
+			const trimmed = line.trim();
+			if (!trimmed) continue;
+			try {
+				const parsed = JSON.parse(trimmed) as AuditTrailEntry;
+				// Minimal validation: must have ts, action, batchId
+				if (typeof parsed.ts !== "string" || typeof parsed.action !== "string") continue;
+
+				// Apply batchId filter if specified
+				if (options?.batchId && parsed.batchId !== options.batchId) continue;
+
+				entries.push(parsed);
+			} catch {
+				// Skip malformed lines
+			}
+		}
+
+		// Apply tail limit if specified
+		if (options?.limit && entries.length > options.limit) {
+			return entries.slice(-options.limit);
+		}
+
+		return entries;
+	} catch {
+		return [];
+	}
+}
+
 
 // ── Supervisor Config Types ──────────────────────────────────────────
 
@@ -1089,27 +1146,13 @@ export function buildTakeoverSummary(
 	const pending = tasks.filter((t) => t.status === "pending").length;
 	lines.push(`**Tasks:** ${succeeded} succeeded, ${failed} failed, ${running} running, ${pending} pending`);
 
-	// Recent actions from audit trail
-	const actionsPath = join(stateRoot, ".pi", "supervisor", "actions.jsonl");
-	if (existsSync(actionsPath)) {
-		try {
-			const actionsRaw = readFileSync(actionsPath, "utf-8").trim();
-			if (actionsRaw) {
-				const actionLines = actionsRaw.split("\n");
-				const recentActions = actionLines.slice(-5); // Last 5 actions
-				lines.push("");
-				lines.push(`**Previous supervisor actions** (last ${recentActions.length}):`);
-				for (const line of recentActions) {
-					try {
-						const action = JSON.parse(line) as Record<string, unknown>;
-						lines.push(`  - ${action.action ?? "unknown"}: ${action.context ?? ""}`);
-					} catch {
-						lines.push(`  - (unparseable entry)`);
-					}
-				}
-			}
-		} catch {
-			// Best-effort — actions file may not exist
+	// Recent actions from audit trail (using readAuditTrail helper)
+	const recentActions = readAuditTrail(stateRoot, { limit: 5 });
+	if (recentActions.length > 0) {
+		lines.push("");
+		lines.push(`**Previous supervisor actions** (last ${recentActions.length}):`);
+		for (const action of recentActions) {
+			lines.push(`  - ${action.action ?? "unknown"}: ${action.context ?? ""}`);
 		}
 	}
 

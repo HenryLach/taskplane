@@ -1,18 +1,19 @@
 ## Code Review: Step 4: Recovery Action Execution + Audit Trail
 
-### Verdict: REVISE
+### Verdict: APPROVE
 
 ### Summary
-The reviewed range (`d034db7..HEAD`) does not contain any implementation changes for Step 4; it only updates task bookkeeping files (`STATUS.md` and the prior plan-review note). Because Step 4 is marked complete in status, but no runtime/config/test files changed in this step range, the step cannot be accepted as implemented from this checkpoint. Either include the actual Step 4 code changes in-range or re-baseline the review to the commit where those changes were introduced.
+The Step 4 changes are present in-range and implement the core outcomes: a recovery-action classification model, an `actions.jsonl` audit schema/helpers, and prompt wiring that instructs autonomy-dependent confirmation behavior plus audit logging. I also verified all tests pass on this branch (`cd extensions && npx vitest run`: 46 files / 1891 tests passed). No blocking correctness issues were found for this step.
 
 ### Issues Found
-1. **[taskplane-tasks/TP-041-supervisor-agent/STATUS.md:60] [important]** — Step 4 is marked `✅ Complete`, but `git diff d034db7..HEAD --name-only` shows no changes to required implementation artifacts (`extensions/taskplane/supervisor.ts`, `extensions/taskplane/types.ts`) called out in the task prompt (`taskplane-tasks/TP-041-supervisor-agent/PROMPT.md:127-129`). This step, as committed in-range, does not provide the claimed code outcomes. **Fix:** add the actual Step 4 source/config changes to this step range (or adjust the baseline to include the commit that introduced them) and rerun code review.
+1. **[extensions/taskplane/supervisor.ts:304] [minor]** — The `SupervisorAutonomyLevel` docstring says interactive mode asks before "any recovery action," but the new decision matrix and `requiresConfirmation()` allow diagnostic actions without confirmation. **Fix:** update the docstring to match the implemented matrix (or vice versa) so behavior expectations are unambiguous.
 
 ### Pattern Violations
-- Step completion checkpoint contains only task-tracking metadata updates and no product code changes for the step’s declared artifacts.
+- None identified.
 
 ### Test Gaps
-- No new/updated tests in `extensions/tests/**` were included in this range for Step 4 behaviors (audit trail writes and autonomy confirmation behavior).
+- No focused tests yet for `requiresConfirmation()` matrix behavior across all autonomy/classification combinations.
+- No focused tests yet for `appendAuditEntry` / `logRecoveryAction` schema output and ordering expectations (e.g., destructive pre-action `pending` entry before result entry).
 
 ### Suggestions
-- If Step 4 logic was intentionally delivered earlier (e.g., bundled into Step 3), record that explicitly in `STATUS.md` execution notes and use a baseline commit that captures those code changes so the code review can validate the actual implementation diff.
+- Consider generating the prompt’s classification examples from `ACTION_CLASSIFICATION_EXAMPLES` to avoid drift between constant definitions and prompt text.
