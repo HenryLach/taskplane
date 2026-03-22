@@ -535,6 +535,180 @@ Now that you've activated:
 }
 
 
+// ── Routing System Prompt (TP-042) ───────────────────────────────────
+
+/**
+ * Build the supervisor system prompt for routing mode (no active batch).
+ *
+ * Used when `/orch` is called with no arguments and the supervisor is activated
+ * to guide the operator through onboarding, batch planning, or other
+ * conversational flows. The prompt includes:
+ *
+ * 1. **Identity**: "You are the project supervisor"
+ * 2. **Routing state**: What was detected (no-config, pending-tasks, etc.)
+ * 3. **Script guidance**: Which onboarding/returning-user script to follow
+ * 4. **Primer reference**: Read supervisor-primer.md for detailed scripts
+ * 5. **Capabilities**: Full tool access for project analysis and config generation
+ *
+ * The prompt directs the supervisor to the correct script in the primer based
+ * on the routing state, implementing the Script 1/2/3 trigger discrimination
+ * from spec §14.4.
+ *
+ * @param routingContext - The routing context from /orch no-args detection
+ * @param stateRoot - Root path for .pi/ state directory (may be empty for no-config)
+ * @returns The complete system prompt string
+ *
+ * @since TP-042
+ */
+export function buildRoutingSystemPrompt(
+	routingContext: SupervisorRoutingContext,
+	stateRoot: string,
+): string {
+	const primerPath = resolvePrimerPath();
+
+	// Map routing state to the appropriate script section in the primer
+	let scriptGuidance: string;
+	switch (routingContext.routingState) {
+		case "no-config":
+			scriptGuidance = `## Your Mission: Onboarding
+
+This project has no Taskplane configuration. You need to determine which
+onboarding script to follow from the primer's "Onboarding Scripts" section:
+
+1. **Read the primer** at \`${primerPath}\` — specifically the "Onboarding Scripts" section
+2. **Analyze the project** to determine its maturity:
+   - No \`.pi/\` directory AND minimal code → **Script 1: First Time Ever** or **Script 2: New/Empty Project**
+   - No \`.pi/\` directory AND substantial code → **Script 3: Established Project**
+   - The scripts describe specific triggers and exploration steps
+3. **Follow the matched script** — it guides the conversation, exploration,
+   and artifact generation
+4. **Delegate to Script 4** (Task Area Design) and **Script 5** (Git Branching)
+   as sub-flows during onboarding — the main scripts tell you when
+
+### Key Onboarding Artifacts to Create
+
+When the conversation reaches the config generation phase, create ALL of these
+(idempotent — create only if they don't already exist):
+
+- \`.pi/taskplane-config.json\` — project configuration (task areas, lanes, review level, etc.)
+- \`{task_area}/CONTEXT.md\` — one per task area, describing scope and conventions
+- \`.pi/agents/\` — directory for agent prompt overrides (create dir + README)
+- \`.gitignore\` entries — add Taskplane working file patterns if not already present
+
+Use conservative creation: check if each file exists before writing. If files
+already exist (partial setup), read and merge rather than overwrite.`;
+			break;
+
+		case "pending-tasks":
+			scriptGuidance = `## Your Mission: Batch Planning
+
+This project has Taskplane configured and has pending tasks ready to execute.
+Follow the primer's **"Script 6: Returning User — Batch Planning"** section.
+
+1. **Read the primer** at \`${primerPath}\` — specifically Script 6
+2. **Review pending tasks** — scan task areas, summarize what's available
+3. **Offer to plan and start a batch** — suggest \`/orch-plan all\` or \`/orch all\`
+4. **Surface related context** — GitHub Issues, tech debt, dependencies`;
+			break;
+
+		case "no-tasks":
+			scriptGuidance = `## Your Mission: Task Creation Guidance
+
+This project has Taskplane configured but no pending tasks.
+Follow the primer's **"Script 6: Returning User — Batch Planning"** section
+(specifically the "no pending tasks" path).
+
+1. **Read the primer** at \`${primerPath}\` — specifically Script 6
+2. **Help the operator create tasks** — from GitHub Issues, specs, or conversation
+3. **Check for tech debt** in CONTEXT.md files
+4. **Offer to pull from GitHub Issues** if \`gh\` CLI is available`;
+			break;
+
+		case "completed-batch-needs-integration":
+			scriptGuidance = `## Your Mission: Integration Guidance
+
+A completed batch exists that hasn't been integrated yet.
+
+1. **Read the primer** at \`${primerPath}\`
+2. **Explain the orch branch model** — work is on the orch branch, not yet on the working branch
+3. **Guide the operator** toward \`/orch-integrate\` to bring the batch's work into their branch
+4. **Offer to run a health check** (Script 7) if they want to verify state first`;
+			break;
+
+		default:
+			scriptGuidance = `## Your Mission: Project Assistance
+
+Detected state: ${routingContext.routingState}
+
+1. **Read the primer** at \`${primerPath}\`
+2. **Assess the situation** and help the operator with their next step
+3. **Offer relevant guidance** based on what you discover`;
+			break;
+	}
+
+	const prompt = `# Project Supervisor
+
+You are the **project supervisor** — a conversational agent that helps operators
+set up, plan, and manage their Taskplane project. You were activated because the
+operator typed \`/orch\` without arguments, and I detected the project state.
+
+## Identity
+
+You share this terminal session with the human operator. You are a senior
+engineer helping them get the most out of Taskplane. Be conversational, helpful,
+and adaptive — follow the scripts as guides, not rigid templates. If the
+operator wants to skip ahead or go minimal, respect that.
+
+## Detected State
+
+**Routing state:** ${routingContext.routingState}
+**Context:** ${routingContext.contextMessage}
+
+${scriptGuidance}
+
+## Capabilities
+
+You have full tool access: \`read\`, \`write\`, \`edit\`, \`bash\`, \`grep\`, \`find\`, \`ls\`.
+Use these to:
+- Analyze project structure (read files, list directories, grep for patterns)
+- Read existing configuration and docs
+- Generate configuration files and CONTEXT.md documents
+- Run git commands for branch analysis
+- Run \`gh\` CLI commands for GitHub integration (issues, branch protection)
+- Create task folders and PROMPT.md files
+
+## Operational Knowledge
+
+**IMPORTANT:** Read \`${primerPath}\` for your complete operational runbook.
+It contains:
+- Onboarding scripts (Scripts 1-5) with detailed conversation guides
+- Returning user scripts (Scripts 6-8) for batch planning, health checks, and retrospectives
+- Project detection heuristics and exploration checklists
+- Config generation templates and conventions
+
+Read the relevant script section now before starting the conversation.
+
+## Communication Style
+
+- Be conversational, not robotic — you're having a dialog, not running a wizard
+- Show what you discover as you explore ("I can see you have a TypeScript project with...")
+- Ask questions when choices matter, propose defaults when they don't
+- Summarize what you'll create before writing files — let the operator confirm
+- If the operator says "just give me defaults", do it and move on
+
+## What You Must NEVER Do
+
+1. Never start a batch execution (that's \`/orch all\` or \`/orch <areas>\`)
+2. Never modify existing code files (only create config/scaffolding)
+3. Never \`git push\` to any remote
+4. Never overwrite existing config files without asking
+5. Never make assumptions about project conventions — detect them
+`;
+
+	return prompt;
+}
+
+
 // ── Activation ───────────────────────────────────────────────────────
 
 /**
@@ -581,6 +755,10 @@ export interface SupervisorState {
 	// ── Event Tailer (Step 3) ──────────────────────────────────────
 	/** Event tailer state for consuming engine events */
 	eventTailer: EventTailerState;
+
+	// ── Routing Context (TP-042) ───────────────────────────────────
+	/** When non-null, supervisor is in routing mode (onboarding / returning-user flows) */
+	routingContext: SupervisorRoutingContext | null;
 }
 
 /**
@@ -599,6 +777,7 @@ export function freshSupervisorState(): SupervisorState {
 		lockSessionId: "",
 		heartbeatTimer: null,
 		eventTailer: freshEventTailerState(),
+		routingContext: null,
 	};
 }
 
@@ -718,7 +897,10 @@ export async function activateSupervisor(
 	// ── TP-042: Routing mode — skip batch monitoring infrastructure ──
 	// When activated via /orch no-args routing, there's no active batch.
 	// Skip lockfile/heartbeat/event-tailer and send routing context message.
+	// Store routingContext so the before_agent_start hook can build the
+	// appropriate system prompt (onboarding vs batch-monitoring).
 	if (routingContext) {
+		state.routingContext = routingContext;
 		pi.sendMessage(
 			{
 				customType: "supervisor-routing",
@@ -843,6 +1025,7 @@ export async function deactivateSupervisor(
 	state.previousModel = null;
 	state.didSwitchModel = false;
 	state.lockSessionId = "";
+	state.routingContext = null;
 }
 
 /**
@@ -866,8 +1049,25 @@ export function registerSupervisorPromptHook(
 	state: SupervisorState,
 ): void {
 	pi.on("before_agent_start", (_event) => {
-		if (!state.active || !state.batchStateRef || !state.orchConfigRef) {
+		if (!state.active) {
 			return undefined; // No-op: don't modify system prompt
+		}
+
+		// ── TP-042: Routing mode — use onboarding/returning-user prompt ──
+		// When routingContext is set, we're in a conversational flow (onboarding,
+		// batch planning, etc.), not batch monitoring. Use the routing prompt
+		// which includes script guidance from the primer.
+		if (state.routingContext) {
+			const systemPrompt = buildRoutingSystemPrompt(
+				state.routingContext,
+				state.stateRoot,
+			);
+			return { systemPrompt };
+		}
+
+		// ── Batch monitoring mode — use standard supervisor prompt ──
+		if (!state.batchStateRef || !state.orchConfigRef) {
+			return undefined; // No-op: missing batch state for prompt rebuild
 		}
 
 		// Rebuild prompt dynamically from live batchState reference.
