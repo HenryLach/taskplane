@@ -4,8 +4,8 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 6
-**Iteration:** 4
+**Review Counter:** 7
+**Iteration:** 6
 **Size:** L
 
 ---
@@ -58,11 +58,13 @@
 
 ### Step 4: Testing & Verification
 **Status:** 🟨 In Progress
-- [ ] Non-blocking handler test
-- [ ] Event emission tests
-- [ ] Completion/failure event tests
-- [ ] Command compatibility tests
-- [ ] Full test suite passes
+- [ ] Non-blocking handler test: /orch starts engine and returns control immediately (startBatchAsync + setTimeout detach)
+- [ ] Event emission tests: engine events emitted at correct state transitions (wave_start, task_complete/failed, merge_start/success/failed)
+- [ ] Completion/failure event tests: batch_complete emitted for success/failure, batch_paused for pause/stop, terminal event guard prevents duplicates
+- [ ] Events persisted to .pi/supervisor/events.jsonl (JSONL file creation + correct entries including terminal events)
+- [ ] Command compatibility: immediate post-launch /orch-status, /orch-pause, /orch-abort behavior (launching phase recognized)
+- [ ] /orch-resume early-return paths reset phase from "launching" to "idle" (no stuck state)
+- [ ] Full test suite passes: cd extensions && npx vitest run
 
 ---
 
@@ -88,6 +90,8 @@
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 | R006 | code | Step 3 | REVISE | .reviews/R006-code-step3.md |
 | R006 | code | Step 3 | REVISE | .reviews/R006-code-step3.md |
+| R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
+| R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -151,6 +155,11 @@
 | 2026-03-22 20:15 | Worker iter 4 | done in 282s, ctx: 18%, tools: 46 |
 | 2026-03-22 20:15 | Step 3 complete | Preserve Existing Behavior |
 | 2026-03-22 20:15 | Step 4 started | Testing & Verification |
+| 2026-03-22 20:16 | Worker iter 5 | done in 339s, ctx: 22%, tools: 48 |
+| 2026-03-22 20:16 | Step 3 complete | Preserve Existing Behavior |
+| 2026-03-22 20:16 | Step 4 started | Testing & Verification |
+| 2026-03-22 20:18 | Review R007 | plan Step 4: REVISE |
+| 2026-03-22 20:19 | Review R007 | plan Step 4: REVISE |
 
 ## Blockers
 
