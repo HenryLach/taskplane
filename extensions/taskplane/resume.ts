@@ -766,6 +766,11 @@ export async function resumeOrchBatch(
 				`❌ Cannot resume: ${err.message}`,
 				"error",
 			);
+			// ── TP-040 R006: Reset phase on pre-execution early return ──
+			// The caller may have set batchState.phase = "launching" before
+			// calling this function. Since we're returning without starting
+			// any work, reset to "idle" so the batch isn't stuck.
+			batchState.phase = "idle";
 			return;
 		}
 		throw err;
@@ -776,6 +781,8 @@ export async function resumeOrchBatch(
 			ORCH_MESSAGES.resumeNoState(),
 			"error",
 		);
+		// TP-040 R006: Reset phase on pre-execution early return
+		batchState.phase = "idle";
 		return;
 	}
 
@@ -786,6 +793,8 @@ export async function resumeOrchBatch(
 			ORCH_MESSAGES.resumePhaseNotResumable(persistedState.batchId, persistedState.phase, eligibility.reason),
 			"error",
 		);
+		// TP-040 R006: Reset phase on pre-execution early return
+		batchState.phase = "idle";
 		return;
 	}
 
@@ -806,6 +815,8 @@ export async function resumeOrchBatch(
 				ORCH_MESSAGES.forceResumeDiagnosticsFailed(persistedState.batchId),
 				"error",
 			);
+			// TP-040 R006: Reset phase on pre-execution early return
+			batchState.phase = "idle";
 			return;
 		}
 
@@ -934,6 +945,8 @@ export async function resumeOrchBatch(
 			`Use /orch-abort to clean up, then start a new batch.`,
 			"error",
 		);
+		// TP-040 R006: Reset phase on pre-execution early return
+		batchState.phase = "idle";
 		return;
 	}
 

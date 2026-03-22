@@ -44,15 +44,15 @@
 ---
 
 ### Step 3: Preserve Existing Behavior
-**Status:** 🔄 In Progress
+**Status:** ✅ Complete
 - [x] R005-1: Fix pre-launch race window — set orchBatchState.phase to "launching" synchronously before setTimeout detach so /orch-status, /orch-pause, /orch-abort recognize the batch immediately
 - [x] R005-2: Make /orch-status fall back to disk-persisted batch-state.json when in-memory state is idle (covers fresh-session queries and post-crash recovery)
 - [x] Verify /orch all still works end-to-end (handler returns immediately, engine runs in background)
 - [x] Verify /orch-pause, /orch-resume, /orch-abort work with launching phase
 - [x] Existing tests pass
 - [x] R006-1: Fix /orch-status disk fallback to resolve state root from workspaceRoot first, matching engine/resume persistence paths
-- [ ] R006-2: Fix /orch-resume early-return paths so batchState.phase doesn't stay stuck at "launching" when resumeOrchBatch returns early
-- [ ] R006-3: Verify all existing tests still pass after fixes
+- [x] R006-2: Fix /orch-resume early-return paths so batchState.phase doesn't stay stuck at "launching" when resumeOrchBatch returns early
+- [x] R006-3: Verify all existing tests still pass after fixes
 
 ---
 
