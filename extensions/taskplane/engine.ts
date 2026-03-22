@@ -6,10 +6,10 @@ import { existsSync, readdirSync, readFileSync, unlinkSync } from "fs";
 import { join, resolve } from "path";
 
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
-import { execLog, executeLane, executeWave, tmuxKillSession } from "./execution.ts";
+import { computeTransitiveDependents, execLog, executeLane, executeWave, tmuxKillSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
-import { classifyExit } from "./diagnostics.ts";
-import type { ExitClassification, ExitClassificationInput } from "./diagnostics.ts";
+// classifyExit no longer called directly — Tier 0 uses exitDiagnostic.classification
+// from the diagnostic-reports pipeline (populated by assembleDiagnosticInput).
 import { getCurrentBranch, runGit } from "./git.ts";
 import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
 import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
@@ -28,8 +28,8 @@ import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, l
 /**
  * Attempt automatic retry for failed tasks with retryable exit classifications.
  *
- * After a wave completes, this function inspects each failed task's exit reason,
- * classifies it via `classifyExit()`, and re-executes the task if:
+ * After a wave completes, this function inspects each failed task's canonical
+ * `exitDiagnostic.classification` and re-executes the task if:
  * - The classification is in TIER0_RETRYABLE_CLASSIFICATIONS (api_error, process_crash, session_vanished)
  * - The retry budget for this scope has not been exhausted
  *
@@ -74,19 +74,19 @@ async function attemptWorkerCrashRetry(
 		const outcome = allTaskOutcomes.find(o => o.taskId === taskId);
 		if (!outcome) continue;
 
-		// Classify the exit — since executeLane doesn't populate exitDiagnostic,
-		// we build a classification input from the outcome's exitReason string.
-		// In the absence of a structured exit summary, we heuristically detect
-		// session_vanished (no .DONE, session exited) and process_crash.
-		const classification = outcome.exitDiagnostic?.classification
-			?? classifyExit({
-				exitSummary: null,  // No RPC summary available at engine level
-				doneFileFound: outcome.doneFileFound,
-				timerKilled: false,
-				stallDetected: false,
-				userKilled: false,
-				contextPct: null,
-			} as ExitClassificationInput);
+		// Use the canonical exit diagnostic classification when available.
+		// If exitDiagnostic is not populated (executeLane doesn't set it),
+		// we conservatively skip auto-retry rather than synthesizing a
+		// classification from incomplete data — which could incorrectly
+		// retry non-retryable failures (e.g., deterministic task errors).
+		const classification = outcome.exitDiagnostic?.classification;
+
+		if (!classification) {
+			execLog("batch", batchState.batchId,
+				`tier0: task ${taskId} has no exit diagnostic classification — skipping auto-retry (conservative)`,
+			);
+			continue;
+		}
 
 		// Check if retryable
 		if (!TIER0_RETRYABLE_CLASSIFICATIONS.has(classification)) {
@@ -141,11 +141,15 @@ async function attemptWorkerCrashRetry(
 			: undefined;
 
 		try {
+			// Use a fresh pause signal for the retry — the batch pauseSignal
+			// may be paused due to stop-wave policy, but Tier 0 retry should
+			// attempt recovery before the stop decision takes effect (R002-4).
+			const retryPauseSignal = { paused: false };
 			const retryResult = await executeLane(
 				retryLane,
 				orchConfig,
 				repoRoot,
-				batchState.pauseSignal,
+				retryPauseSignal,
 				wsRoot,
 				isWsMode,
 			);
@@ -199,12 +203,11 @@ async function attemptWorkerCrashRetry(
 		}
 	}
 
-	// Update batch-level counters if retries changed outcomes
+	// Recalculate wave-level status if retries changed outcomes.
+	// NOTE: Batch-level counters (succeededTasks, failedTasks) are NOT updated
+	// here — the caller accumulates them from waveResult AFTER retry so that
+	// counts are only applied once (R002-2 fix).
 	if (succeededRetries.length > 0) {
-		batchState.succeededTasks += succeededRetries.length;
-		batchState.failedTasks -= succeededRetries.length;
-
-		// Recalculate overall wave status
 		if (waveResult.failedTaskIds.length === 0) {
 			waveResult.overallStatus = "succeeded";
 			waveResult.stoppedEarly = false;
@@ -265,17 +268,29 @@ async function attemptStaleWorktreeRecovery(
 		{ scopeKey, allocationError: waveResult.allocationError.message },
 	);
 
-	// Force cleanup: remove all worktrees for this batch and prune
+	// Force cleanup: remove all worktrees for this batch and prune.
+	// In workspace mode, iterate ALL workspace repos — allocation failures
+	// can come from non-default repos (R002-3 fix).
 	const prefix = orchConfig.orchestrator.worktree_prefix;
 	const opId = resolveOperatorId(orchConfig);
-	const existingWorktrees = listWorktrees(prefix, repoRoot, opId, batchState.batchId);
 
-	for (const wt of existingWorktrees) {
-		forceCleanupWorktree(wt, repoRoot, batchState.batchId);
+	const repoRootsToClean: string[] = [repoRoot];
+	if (workspaceConfig) {
+		for (const [, repoConf] of workspaceConfig.repos) {
+			if (repoConf.path !== repoRoot && !repoRootsToClean.includes(repoConf.path)) {
+				repoRootsToClean.push(repoConf.path);
+			}
+		}
 	}
 
-	// Also prune git worktree state in case of orphaned references
-	runGit(["worktree", "prune"], repoRoot);
+	for (const cleanRoot of repoRootsToClean) {
+		const existingWorktrees = listWorktrees(prefix, cleanRoot, opId, batchState.batchId);
+		for (const wt of existingWorktrees) {
+			forceCleanupWorktree(wt, cleanRoot, batchState.batchId);
+		}
+		// Also prune git worktree state in case of orphaned references
+		runGit(["worktree", "prune"], cleanRoot);
+	}
 
 	// Cooldown before retry
 	if (budget.cooldownMs > 0) {
@@ -647,22 +662,11 @@ export async function executeOrchBatch(
 			}
 		}
 
-		// Accumulate results
-		batchState.succeededTasks += waveResult.succeededTaskIds.length;
-		batchState.failedTasks += waveResult.failedTaskIds.length;
-		batchState.skippedTasks += waveResult.skippedTaskIds.length;
-
-		// Add newly blocked tasks
-		for (const blocked of waveResult.blockedTaskIds) {
-			batchState.blockedTaskIds.add(blocked);
-		}
-
 		// ── TP-039: Tier 0 — Worker crash retry ─────────────────
-		// After accumulating results, attempt automatic retry for failed
-		// tasks with retryable exit classifications. Must happen before
-		// the stop-early check so successfully retried tasks don't
-		// trigger unnecessary batch stops.
-		if (waveResult.failedTaskIds.length > 0 && !batchState.pauseSignal.paused) {
+		// Run retry BEFORE accumulating counts and blocked tasks so that
+		// successfully retried tasks don't inflate failedTasks count and
+		// their dependents aren't incorrectly blocked (R002-2 fix).
+		if (waveResult.failedTaskIds.length > 0) {
 			const retryOutcome = await attemptWorkerCrashRetry(
 				waveResult,
 				waveIdx,
@@ -673,10 +677,54 @@ export async function executeOrchBatch(
 				allTaskOutcomes,
 				onNotify,
 			);
+			if (retryOutcome.succeededRetries.length > 0) {
+				// Recompute blockedTaskIds from remaining failures (R002-2).
+				// attemptWorkerCrashRetry already updated waveResult.failedTaskIds
+				// and waveResult.succeededTaskIds in-place.
+				if (waveResult.policyApplied === "skip-dependents" && waveResult.failedTaskIds.length > 0) {
+					const recomputed = computeTransitiveDependents(
+						new Set(waveResult.failedTaskIds),
+						depGraph,
+					);
+					waveResult.blockedTaskIds = [...recomputed].sort();
+				} else if (waveResult.failedTaskIds.length === 0) {
+					// All failures recovered — no blocked tasks
+					waveResult.blockedTaskIds = [];
+				}
+			}
 			if (retryOutcome.retriedCount > 0) {
 				// Persist updated state after retries
 				persistRuntimeState("tier0-worker-retry", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 			}
+
+			// If stop-wave had paused the batch but Tier 0 retry recovered all
+			// failures, clear the policy-induced pause so subsequent waves can
+			// proceed. attemptWorkerCrashRetry already set stoppedEarly=false
+			// and overallStatus="succeeded" on the waveResult (R002-4 fix).
+			if (
+				waveResult.failedTaskIds.length === 0
+				&& batchState.pauseSignal.paused
+				&& waveResult.policyApplied === "stop-wave"
+			) {
+				batchState.pauseSignal.paused = false;
+				execLog("batch", batchState.batchId,
+					`tier0: all failed tasks recovered — clearing stop-wave pause`,
+				);
+				onNotify(
+					`✅ Tier 0: All failed tasks recovered — batch continuing past stop-wave`,
+					"info",
+				);
+			}
+		}
+
+		// Accumulate results (after retry so counts reflect recovered tasks)
+		batchState.succeededTasks += waveResult.succeededTaskIds.length;
+		batchState.failedTasks += waveResult.failedTaskIds.length;
+		batchState.skippedTasks += waveResult.skippedTaskIds.length;
+
+		// Add newly blocked tasks (after retry so recovered tasks don't block dependents)
+		for (const blocked of waveResult.blockedTaskIds) {
+			batchState.blockedTaskIds.add(blocked);
 		}
 
 		// ── TS-009: Persist state after wave execution ──
