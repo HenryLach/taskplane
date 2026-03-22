@@ -141,8 +141,10 @@ Start parallel batch execution.
 - Discovers tasks and dependencies
 - Computes waves and lane assignments
 - Creates an **orch branch** (`orch/<operator>-<batchId>`) from the current branch — all batch work lands here, not on your working branch
+- **Starts the engine asynchronously and returns control to the pi session immediately** — the wave loop runs in the background while you continue interacting with the session
 - Executes tasks in isolated worktrees
 - Merges successful lane branches into the orch branch
+- Engine emits structured lifecycle events to `.pi/supervisor/events.jsonl` for observability
 - On completion, shows integration guidance (or auto-integrates if `integration` is set to `auto`)
 - Can be used with a single task path when you want `/task` semantics with worktree isolation
 
@@ -255,6 +257,7 @@ Resume a paused or interrupted batch from persisted state.
 - Loads `.pi/batch-state.json`
 - Validates resumable phase (see eligibility matrix below)
 - Reconciles `.DONE` markers and live sessions
+- **Starts the engine asynchronously and returns control immediately** (same non-blocking model as `/orch`)
 - Reconnects/re-executes tasks as needed
 - Continues from first incomplete wave
 

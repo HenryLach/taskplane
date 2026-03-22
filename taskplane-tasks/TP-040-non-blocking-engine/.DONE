@@ -1,0 +1,11 @@
+completed: 2026-03-22
+task: TP-040
+summary: >
+  Refactored /orch and /orch-resume from blocking (await engine) to non-blocking
+  (fire-and-forget async). Engine runs wave loop in background, emits structured
+  lifecycle events (wave_start, task_complete, task_failed, merge_start,
+  merge_success, merge_failed, batch_complete, batch_paused) to
+  .pi/supervisor/events.jsonl. Pi session returns to prompt immediately, enabling
+  operator interaction during batch execution. All existing commands (/orch-status,
+  /orch-pause, /orch-resume, /orch-abort) continue working. Full test suite passes
+  including new non-blocking engine tests.

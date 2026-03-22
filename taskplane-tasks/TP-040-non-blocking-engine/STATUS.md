@@ -1,11 +1,11 @@
 # TP-040: Non-Blocking Engine Refactor — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** ✅ Step 4 Complete
 **Last Updated:** 2026-03-22
 **Review Level:** 2
 **Review Counter:** 8
-**Iteration:** 6
+**Iteration:** 7
 **Size:** L
 
 ---
@@ -73,8 +73,8 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Architecture docs updated
+**Status:** 🟨 In Progress
+- [x] Architecture docs updated
 - [ ] `.DONE` created
 
 ---
@@ -170,6 +170,10 @@
 | 2026-03-22 20:28 | Worker iter 5 | done in 606s, ctx: 40%, tools: 73 |
 | 2026-03-22 20:31 | Review R008 | code Step 4: REVISE |
 | 2026-03-22 20:32 | Review R008 | code Step 4: REVISE |
+| 2026-03-22 20:40 | Worker iter 6 | done in 527s, ctx: 28%, tools: 59 |
+| 2026-03-22 20:40 | Step 4 complete | Testing & Verification |
+| 2026-03-22 20:40 | Step 5 started | Documentation & Delivery |
+| 2026-03-22 20:40 | Skip plan review | Step 5 (final step) — low-risk |
 
 ## Blockers
 
