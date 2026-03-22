@@ -50,8 +50,9 @@
 - [x] Verify /orch all still works end-to-end (handler returns immediately, engine runs in background)
 - [x] Verify /orch-pause, /orch-resume, /orch-abort work with launching phase
 - [x] Existing tests pass
-- [ ] R006-1: Fix /orch-status disk fallback to resolve state root from workspaceRoot first, matching engine/resume persistence paths
-- [ ] R006-2: Verify all existing tests still pass after fix
+- [x] R006-1: Fix /orch-status disk fallback to resolve state root from workspaceRoot first, matching engine/resume persistence paths
+- [ ] R006-2: Fix /orch-resume early-return paths so batchState.phase doesn't stay stuck at "launching" when resumeOrchBatch returns early
+- [ ] R006-3: Verify all existing tests still pass after fixes
 
 ---
 
