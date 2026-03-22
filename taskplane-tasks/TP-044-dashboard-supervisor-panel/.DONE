@@ -1,0 +1,8 @@
+Task TP-044 complete.
+
+Delivered:
+- Dashboard server serves supervisor data (lock, actions, events) via SSE
+- Supervisor panel in frontend with status, recovery timeline, conversation history, batch summary
+- Graceful degradation for pre-supervisor batches
+- Dashboard tutorial updated with supervisor panel documentation
+- All tests passing
