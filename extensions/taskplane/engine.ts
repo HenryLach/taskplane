@@ -16,10 +16,10 @@ import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolic
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitTier0Event, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
+import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
-import { defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
+import { buildEngineEventBase, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaves, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 
@@ -475,6 +475,8 @@ async function attemptStaleWorktreeRecovery(
  * @param onMonitorUpdate - Optional callback for dashboard updates
  * @param workspaceConfig - Workspace configuration for repo routing (null = repo mode)
  * @param workspaceRoot - Workspace root for resolving task area paths (defaults to cwd)
+ * @param agentRoot   - Agent root for config resolution
+ * @param onEngineEvent - Optional callback for engine lifecycle events (TP-040)
  */
 export async function executeOrchBatch(
 	args: string,
@@ -487,11 +489,17 @@ export async function executeOrchBatch(
 	workspaceConfig?: WorkspaceConfig | null,
 	workspaceRoot?: string,
 	agentRoot?: string,
+	onEngineEvent?: EngineEventCallback | null,
 ): Promise<void> {
 	const repoRoot = cwd;
 	// State files (.pi/batch-state.json, lane-state, etc.) belong in the workspace root,
 	// which is where .pi/ config lives. In repo mode, workspaceRoot === repoRoot.
 	const stateRoot = workspaceRoot ?? cwd;
+
+	// ── TP-040: Engine event emission helper ─────────────────────
+	// Closure over stateRoot and onEngineEvent to keep emit calls terse.
+	// batchState.batchId is read at call time (it's set in Phase 1).
+	const emitEvent: typeof emitEngineEvent = (sr, event, cb) => emitEngineEvent(sr, event, cb);
 
 	// ── Phase 1: Planning ────────────────────────────────────────
 	batchState.phase = "planning";
@@ -692,6 +700,11 @@ export async function executeOrchBatch(
 			onNotify(`⏸️  Batch paused before wave ${waveIdx + 1}. Resume not yet implemented (TS-009).`, "warning");
 			// ── TS-009: Persist state on pause ──
 			persistRuntimeState("pause-before-wave", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+			// TP-040: Emit batch_paused event
+			emitEvent(stateRoot, {
+				...buildEngineEventBase("batch_paused", batchState.batchId, waveIdx, batchState.phase),
+				reason: `Paused before wave ${waveIdx + 1}`,
+			}, onEngineEvent);
 			break;
 		}
 
@@ -725,6 +738,13 @@ export async function executeOrchBatch(
 			ORCH_MESSAGES.orchWaveStart(waveIdx + 1, rawWaves.length, waveTasks.length, Math.min(waveTasks.length, orchConfig.orchestrator.max_lanes)),
 			"info",
 		);
+
+		// TP-040: Emit wave_start event
+		emitEvent(stateRoot, {
+			...buildEngineEventBase("wave_start", batchState.batchId, waveIdx, batchState.phase),
+			taskIds: waveTasks,
+			laneCount: Math.min(waveTasks.length, orchConfig.orchestrator.max_lanes),
+		}, onEngineEvent);
 
 		const handleWaveMonitorUpdate: MonitorUpdateCallback = (monitorState) => {
 			const changed = syncTaskOutcomesFromMonitor(monitorState, allTaskOutcomes);
@@ -896,6 +916,32 @@ export async function executeOrchBatch(
 			batchState.blockedTaskIds.add(blocked);
 		}
 
+		// ── TP-040: Emit task_complete / task_failed events ──────
+		// Emitted after Tier 0 retry so events reflect final status.
+		for (const taskId of waveResult.succeededTaskIds) {
+			const outcome = allTaskOutcomes.find(o => o.taskId === taskId);
+			emitEvent(stateRoot, {
+				...buildEngineEventBase("task_complete", batchState.batchId, waveIdx, batchState.phase),
+				taskId,
+				durationMs: outcome?.startTime && outcome?.endTime
+					? outcome.endTime - outcome.startTime
+					: undefined,
+				outcome: "succeeded",
+			}, onEngineEvent);
+		}
+		for (const taskId of waveResult.failedTaskIds) {
+			const outcome = allTaskOutcomes.find(o => o.taskId === taskId);
+			emitEvent(stateRoot, {
+				...buildEngineEventBase("task_failed", batchState.batchId, waveIdx, batchState.phase),
+				taskId,
+				durationMs: outcome?.startTime && outcome?.endTime
+					? outcome.endTime - outcome.startTime
+					: undefined,
+				reason: outcome?.exitReason || "unknown",
+				partialProgress: (outcome?.partialProgressCommits ?? 0) > 0,
+			}, onEngineEvent);
+		}
+
 		// ── TS-009: Persist state after wave execution ──
 		persistRuntimeState("wave-execution-complete", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 
@@ -911,6 +957,10 @@ export async function executeOrchBatch(
 			waveResult.failedTaskIds.length > 0 ? "warning" : "info",
 		);
 
+		// NOTE: No explicit wave_complete event in the spec event set. The supervisor
+		// infers wave completion from the sequence of task_complete/task_failed events
+		// followed by merge_start or the next wave_start.
+
 		// Check if we should stop based on task failure policy
 		if (waveResult.stoppedEarly) {
 			if (waveResult.policyApplied === "stop-all") {
@@ -918,6 +968,13 @@ export async function executeOrchBatch(
 				// ── TS-009: Persist state on stop-all ──
 				persistRuntimeState("stop-all", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(ORCH_MESSAGES.orchBatchStopped(batchState.batchId, "stop-all"), "error");
+				// TP-040: Emit batch_paused event for stop-all policy
+				emitEvent(stateRoot, {
+					...buildEngineEventBase("batch_paused", batchState.batchId, waveIdx, batchState.phase),
+					reason: `Stopped by stop-all policy at wave ${waveIdx + 1}`,
+					failedTasks: batchState.failedTasks,
+					succeededTasks: batchState.succeededTasks,
+				}, onEngineEvent);
 				break;
 			}
 			if (waveResult.policyApplied === "stop-wave") {
@@ -925,6 +982,13 @@ export async function executeOrchBatch(
 				// ── TS-009: Persist state on stop-wave ──
 				persistRuntimeState("stop-wave", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(ORCH_MESSAGES.orchBatchStopped(batchState.batchId, "stop-wave"), "error");
+				// TP-040: Emit batch_paused event for stop-wave policy
+				emitEvent(stateRoot, {
+					...buildEngineEventBase("batch_paused", batchState.batchId, waveIdx, batchState.phase),
+					reason: `Stopped by stop-wave policy at wave ${waveIdx + 1}`,
+					failedTasks: batchState.failedTasks,
+					succeededTasks: batchState.succeededTasks,
+				}, onEngineEvent);
 				break;
 			}
 		}
@@ -963,6 +1027,11 @@ export async function executeOrchBatch(
 				// ── TS-009: Persist state on executing→merging transition ──
 				persistRuntimeState("merge-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(ORCH_MESSAGES.orchMergeStart(waveIdx + 1, mergeableLaneCount), "info");
+				// TP-040: Emit merge_start event
+				emitEvent(stateRoot, {
+					...buildEngineEventBase("merge_start", batchState.batchId, waveIdx, batchState.phase),
+					laneCount: mergeableLaneCount,
+				}, onEngineEvent);
 
 				mergeResult = mergeWaveByRepo(
 					waveResult.allocatedLanes,
@@ -1026,11 +1095,26 @@ export async function executeOrchBatch(
 
 				if (mergeResult.status === "succeeded") {
 					onNotify(ORCH_MESSAGES.orchMergeComplete(waveIdx + 1, mergedCount, mergeTotalSec), "info");
+
+					// TP-040: Emit merge_success event
+					emitEvent(stateRoot, {
+						...buildEngineEventBase("merge_success", batchState.batchId, waveIdx, batchState.phase),
+						laneCount: mergedCount,
+						durationMs: mergeResult.totalDurationMs,
+						totalWaves: rawWaves.length,
+					}, onEngineEvent);
 				} else {
 					onNotify(
 						ORCH_MESSAGES.orchMergeFailed(waveIdx + 1, mergeResult.failedLane ?? 0, mergeResult.failureReason || "unknown"),
 						"error",
 					);
+
+					// TP-040: Emit merge_failed event
+					emitEvent(stateRoot, {
+						...buildEngineEventBase("merge_failed", batchState.batchId, waveIdx, batchState.phase),
+						laneNumber: mergeResult.failedLane ?? undefined,
+						error: mergeResult.failureReason || "unknown",
+					}, onEngineEvent);
 
 					// Emit repo-divergence summary when partial is caused by cross-repo outcome differences
 					if (mergeResult.status === "partial") {
@@ -1917,6 +2001,24 @@ export async function executeOrchBatch(
 
 	// ── TS-009: Persist terminal state ──
 	persistRuntimeState("batch-terminal", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+
+	// ── TP-040: Emit batch terminal event ────────────────────────
+	if (batchState.phase === "completed" || batchState.phase === "failed") {
+		emitEvent(stateRoot, {
+			...buildEngineEventBase("batch_complete", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
+			succeededTasks: batchState.succeededTasks,
+			failedTasks: batchState.failedTasks,
+			skippedTasks: batchState.skippedTasks,
+			blockedTasks: batchState.blockedTasks,
+			batchDurationMs: batchState.endedAt ? batchState.endedAt - batchState.startedAt : undefined,
+		}, onEngineEvent);
+	} else if (batchState.phase === "paused" || batchState.phase === "stopped") {
+		emitEvent(stateRoot, {
+			...buildEngineEventBase("batch_paused", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
+			reason: batchState.errors.length > 0 ? batchState.errors[batchState.errors.length - 1] : "paused",
+			failedTasks: batchState.failedTasks,
+		}, onEngineEvent);
+	}
 
 	// ── TP-031: Emit diagnostic reports (JSONL + markdown) ──
 	// Non-fatal: errors are logged but never crash batch finalization.

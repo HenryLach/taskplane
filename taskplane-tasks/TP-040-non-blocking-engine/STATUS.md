@@ -20,12 +20,12 @@
 ---
 
 ### Step 1: Engine Event Infrastructure
-**Status:** 🟨 In Progress
-- [ ] Define engine event types in types.ts (extend existing Tier0EventType with engine lifecycle events: wave_start, task_complete, task_failed, merge_start, merge_success, merge_failed, batch_complete, batch_paused)
-- [ ] Add EngineEvent interface and EngineEventCallback type in types.ts with shared base payload (timestamp, batchId, waveIndex)
-- [ ] Extend emitTier0Event in persistence.ts to emit engine events (or add unified emitEngineEvent)
-- [ ] Add event emission calls at state transitions in engine.ts (wave start/end, task transitions, merge phases, batch completion/pause)
-- [ ] Add event callback parameter to executeOrchBatch signature and wire callback invocations
+**Status:** ✅ Complete
+- [x] Define engine event types in types.ts (extend existing Tier0EventType with engine lifecycle events: wave_start, task_complete, task_failed, merge_start, merge_success, merge_failed, batch_complete, batch_paused)
+- [x] Add EngineEvent interface and EngineEventCallback type in types.ts with shared base payload (timestamp, batchId, waveIndex)
+- [x] Extend emitTier0Event in persistence.ts to emit engine events (or add unified emitEngineEvent)
+- [x] Add event emission calls at state transitions in engine.ts (wave start/end, task transitions, merge phases, batch completion/pause)
+- [x] Add event callback parameter to executeOrchBatch signature and wire callback invocations
 
 ---
 
@@ -97,6 +97,7 @@
 | 2026-03-22 19:24 | Step 1 started | Engine Event Infrastructure |
 | 2026-03-22 19:25 | Review R001 | plan Step 1: APPROVE |
 | 2026-03-22 19:25 | Review R001 | plan Step 1: APPROVE |
+| 2026-03-22 19:35 | Step 1 impl | Engine event types, emitter, and emissions wired in types.ts, persistence.ts, engine.ts |
 
 ## Blockers
 

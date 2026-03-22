@@ -1508,6 +1508,145 @@ export function tier0WaveScopeKey(pattern: Tier0RecoveryPattern, waveIndex: numb
 	return `t0:${pattern}:w${waveIndex}`;
 }
 
+// ── Engine Event Types (TP-040) ──────────────────────────────────────
+
+/**
+ * Engine lifecycle event types emitted during batch execution.
+ *
+ * These events are the primary coordination mechanism between the
+ * non-blocking engine and external consumers (supervisor agent,
+ * dashboard, command handlers).
+ *
+ * Event semantics (from spec §7.3):
+ * - `wave_start`      — Wave execution begins
+ * - `task_complete`    — Task .DONE detected (succeeded)
+ * - `task_failed`      — Task failed or stalled
+ * - `merge_start`      — Wave merge begins
+ * - `merge_success`    — Merge and verification pass
+ * - `merge_failed`     — Merge or verification fails
+ * - `batch_complete`   — All waves done (terminal)
+ * - `batch_paused`     — Batch paused (failure or manual)
+ *
+ * Tier 0 recovery events (`tier0_recovery_attempt`, `tier0_recovery_success`,
+ * `tier0_recovery_exhausted`, `tier0_escalation`) continue to use the
+ * existing `Tier0EventType` from persistence.ts and share the same JSONL
+ * file. Engine events extend the same stream with lifecycle context.
+ *
+ * @since TP-040
+ */
+export type EngineEventType =
+	| "wave_start"
+	| "task_complete"
+	| "task_failed"
+	| "merge_start"
+	| "merge_success"
+	| "merge_failed"
+	| "batch_complete"
+	| "batch_paused";
+
+/**
+ * Structured engine event written to `.pi/supervisor/events.jsonl`.
+ *
+ * Shares the same JSONL file as Tier 0 events, with a consistent
+ * base payload (`timestamp`, `batchId`, `waveIndex`) for uniform
+ * consumption by the supervisor agent.
+ *
+ * Design: follows reviewer suggestion (R001) to use a shared base
+ * payload and extend the existing event-writing infrastructure rather
+ * than introducing a parallel writer.
+ *
+ * @since TP-040
+ */
+export interface EngineEvent {
+	/** ISO 8601 timestamp */
+	timestamp: string;
+	/** Engine event type */
+	type: EngineEventType;
+	/** Batch identifier */
+	batchId: string;
+	/** Wave index (0-based, -1 if not wave-scoped) */
+	waveIndex: number;
+	/** Current batch phase at event emission time */
+	phase: OrchBatchPhase;
+
+	// ── Event-specific fields (all optional) ─────────────────────
+
+	/** Task IDs in the wave (for wave_start) */
+	taskIds?: string[];
+	/** Number of lanes used (for wave_start, merge_start) */
+	laneCount?: number;
+	/** Task ID (for task_complete, task_failed) */
+	taskId?: string;
+	/** Task execution duration in milliseconds (for task_complete, task_failed) */
+	durationMs?: number;
+	/** Task outcome summary (for task_complete) */
+	outcome?: string;
+	/** Failure reason (for task_failed, merge_failed, batch_paused) */
+	reason?: string;
+	/** Whether partial progress was preserved (for task_failed) */
+	partialProgress?: boolean;
+	/** Lane number (for merge_failed) */
+	laneNumber?: number;
+	/** Merge error details (for merge_failed) */
+	error?: string;
+	/** Number of merge test verifications (for merge_success) */
+	testCount?: number;
+	/** Wave count for total waves (for merge_success) */
+	totalWaves?: number;
+
+	// ── Batch summary fields (for batch_complete, batch_paused) ──
+
+	/** Total succeeded tasks (for batch_complete) */
+	succeededTasks?: number;
+	/** Total failed tasks (for batch_complete, batch_paused) */
+	failedTasks?: number;
+	/** Total skipped tasks (for batch_complete) */
+	skippedTasks?: number;
+	/** Total blocked tasks (for batch_complete) */
+	blockedTasks?: number;
+	/** Batch duration in milliseconds (for batch_complete) */
+	batchDurationMs?: number;
+}
+
+/**
+ * Callback type for engine event consumers.
+ *
+ * The command handler (extension.ts) subscribes to this to receive
+ * real-time engine state transitions. In the non-blocking architecture
+ * (Step 2), this is the primary way the caller observes engine progress
+ * instead of awaiting the return value.
+ *
+ * The callback is invoked synchronously in the engine's event loop.
+ * Consumers MUST NOT perform blocking I/O in the callback.
+ *
+ * @since TP-040
+ */
+export type EngineEventCallback = (event: EngineEvent) => void;
+
+/**
+ * Build the base fields for an engine event.
+ *
+ * Ensures consistent field population across all emit sites.
+ * Analogous to `buildTier0EventBase()` for Tier 0 events.
+ *
+ * @since TP-040
+ */
+export function buildEngineEventBase(
+	type: EngineEventType,
+	batchId: string,
+	waveIndex: number,
+	phase: OrchBatchPhase,
+): Pick<EngineEvent, "timestamp" | "type" | "batchId" | "waveIndex" | "phase"> {
+	return {
+		timestamp: new Date().toISOString(),
+		type,
+		batchId,
+		waveIndex,
+		phase,
+	};
+}
+
+
 /**
  * Decision output from the merge retry policy evaluator.
  *

@@ -9,7 +9,7 @@ import { join, dirname, basename } from "path";
 import { execLog } from "./execution.ts";
 import { BATCH_STATE_SCHEMA_VERSION, StateFileError, batchStatePath, BATCH_HISTORY_MAX_ENTRIES, defaultResilienceState, defaultBatchDiagnostics } from "./types.ts";
 import type { BatchHistorySummary } from "./types.ts";
-import type { AllocatedLane, DiscoveryResult, EscalationContext, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedTaskRecord, TaskMonitorSnapshot, Tier0RecoveryPattern, WorkspaceMode } from "./types.ts";
+import type { AllocatedLane, DiscoveryResult, EngineEvent, EscalationContext, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedTaskRecord, TaskMonitorSnapshot, Tier0RecoveryPattern, WorkspaceMode } from "./types.ts";
 import { sleepSync } from "./worktree.ts";
 import type { PreserveFailedLaneProgressResult } from "./worktree.ts";
 
@@ -1740,6 +1740,63 @@ export function emitTier0Event(stateRoot: string, event: Tier0Event): void {
 			eventType: event.type,
 			pattern: event.pattern,
 		});
+	}
+}
+
+
+// ── Engine Event Logging (TP-040) ───────────────────────────────────
+
+/**
+ * Emit an engine lifecycle event to `.pi/supervisor/events.jsonl`.
+ *
+ * Shares the same JSONL file as Tier 0 events for unified consumption
+ * by the supervisor agent. Engine events cover batch lifecycle transitions
+ * (wave start/end, task completion, merge phases, batch terminal states).
+ *
+ * Best-effort: creates the directory if needed, appends the event as a
+ * single JSONL line. Failures are logged but never crash the batch.
+ *
+ * Also invokes the optional event callback for in-process consumers
+ * (command handler, dashboard).
+ *
+ * @param stateRoot - Root directory for state files (workspace root or repo root)
+ * @param event     - The engine event to emit
+ * @param callback  - Optional in-process event callback
+ *
+ * @since TP-040
+ */
+export function emitEngineEvent(
+	stateRoot: string,
+	event: EngineEvent,
+	callback?: ((event: EngineEvent) => void) | null,
+): void {
+	// Write to JSONL file (same path as Tier 0 events)
+	try {
+		const supervisorDir = join(stateRoot, ".pi", "supervisor");
+		if (!existsSync(supervisorDir)) {
+			mkdirSync(supervisorDir, { recursive: true });
+		}
+		const eventsPath = join(supervisorDir, "events.jsonl");
+		const line = JSON.stringify(event) + "\n";
+		appendFileSync(eventsPath, line);
+	} catch (err: unknown) {
+		// Best-effort: log but don't crash the batch
+		const msg = err instanceof Error ? err.message : String(err);
+		execLog("batch", event.batchId, `engine event write failed: ${msg}`, {
+			eventType: event.type,
+		});
+	}
+
+	// Invoke in-process callback
+	if (callback) {
+		try {
+			callback(event);
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			execLog("batch", event.batchId, `engine event callback failed: ${msg}`, {
+				eventType: event.type,
+			});
+		}
 	}
 }
 
