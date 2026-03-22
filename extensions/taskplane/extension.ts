@@ -48,11 +48,10 @@ import {
 	registerSupervisorPromptHook,
 	checkSupervisorLockOnStartup,
 	buildTakeoverSummary,
-	writeLockfile,
-	removeLockfile,
+	isProcessAlive,
 	DEFAULT_SUPERVISOR_CONFIG,
 } from "./supervisor.ts";
-import type { SupervisorConfig, SupervisorLockfile } from "./supervisor.ts";
+import type { SupervisorConfig } from "./supervisor.ts";
 import type {
 	AbortMode,
 	ExecutionContext,
@@ -1483,6 +1482,135 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// ── TP-041 Step 2: /orch-takeover — force supervisor takeover ────
+	pi.registerCommand("orch-takeover", {
+		description: "Force takeover supervisor from another session: /orch-takeover",
+		handler: async (_args, ctx) => {
+			const stateRoot = execCtx.repoRoot;
+
+			// If this session already owns the supervisor, nothing to do.
+			if (supervisorState.active) {
+				ctx.ui.notify(
+					"✅ This session is already the active supervisor.\n\n" +
+					`  Session: ${supervisorState.lockSessionId}\n` +
+					`  Batch: ${supervisorState.batchId || orchBatchState.batchId}`,
+					"info",
+				);
+				return;
+			}
+
+			// Re-check lock state (may have changed since session_start).
+			const lockResult = checkSupervisorLockOnStartup(stateRoot, loadBatchState);
+
+			switch (lockResult.status) {
+				case "no-active-batch":
+					ctx.ui.notify(
+						"No active batch to supervise.\n\nStart a batch with /orch first.",
+						"info",
+					);
+					return;
+
+				case "no-lockfile":
+				case "corrupt":
+				case "stale": {
+					// No live lock to take over — just activate normally.
+					const batchState = lockResult.batchState;
+					const summary = buildTakeoverSummary(stateRoot, batchState);
+					const reason =
+						lockResult.status === "stale"
+							? (isProcessAlive(lockResult.lock.pid)
+								? `Previous supervisor (PID ${lockResult.lock.pid}) has a stale heartbeat (last: ${lockResult.lock.heartbeat}).`
+								: `Previous supervisor (PID ${lockResult.lock.pid}) process is dead.`)
+							: lockResult.status === "corrupt"
+								? "Found a corrupt supervisor lockfile."
+								: "No supervisor lockfile found.";
+
+					ctx.ui.notify(
+						`🔄 **${reason}** Activating supervisor.\n\n` + summary,
+						"info",
+					);
+
+					// Populate orchBatchState from persisted state
+					orchBatchState.batchId = batchState.batchId;
+					orchBatchState.phase = batchState.phase as typeof orchBatchState.phase;
+					orchBatchState.baseBranch = batchState.baseBranch;
+					orchBatchState.orchBranch = batchState.orchBranch ?? "";
+					orchBatchState.currentWaveIndex = batchState.currentWaveIndex;
+					orchBatchState.totalWaves = batchState.wavePlan?.length ?? batchState.totalWaves ?? 0;
+					orchBatchState.totalTasks = batchState.totalTasks ?? 0;
+					orchBatchState.succeededTasks = batchState.succeededTasks ?? 0;
+					orchBatchState.failedTasks = batchState.failedTasks ?? 0;
+					orchBatchState.skippedTasks = batchState.skippedTasks ?? 0;
+					orchBatchState.blockedTasks = batchState.blockedTasks ?? 0;
+					orchBatchState.startedAt = batchState.startedAt;
+					orchBatchState.endedAt = batchState.endedAt ?? null;
+
+					await activateSupervisor(
+						pi,
+						supervisorState,
+						orchBatchState,
+						orchConfig,
+						supervisorConfig,
+						stateRoot,
+						ctx,
+					);
+
+					updateOrchWidget();
+					break;
+				}
+
+				case "live": {
+					// Force takeover from another live session.
+					// Write a new lock — the old session's heartbeat will detect
+					// the sessionId mismatch and yield gracefully.
+					const lock = lockResult.lock;
+					const batchState = lockResult.batchState;
+					const summary = buildTakeoverSummary(stateRoot, batchState);
+
+					ctx.ui.notify(
+						`⚡ **Forcing supervisor takeover from PID ${lock.pid}.**\n\n` +
+						`  Previous session: ${lock.sessionId}\n` +
+						`  Previous heartbeat: ${lock.heartbeat}\n\n` +
+						`The other session will yield on its next heartbeat check.\n\n` +
+						summary,
+						"warning",
+					);
+
+					// Populate orchBatchState from persisted state
+					orchBatchState.batchId = batchState.batchId;
+					orchBatchState.phase = batchState.phase as typeof orchBatchState.phase;
+					orchBatchState.baseBranch = batchState.baseBranch;
+					orchBatchState.orchBranch = batchState.orchBranch ?? "";
+					orchBatchState.currentWaveIndex = batchState.currentWaveIndex;
+					orchBatchState.totalWaves = batchState.wavePlan?.length ?? batchState.totalWaves ?? 0;
+					orchBatchState.totalTasks = batchState.totalTasks ?? 0;
+					orchBatchState.succeededTasks = batchState.succeededTasks ?? 0;
+					orchBatchState.failedTasks = batchState.failedTasks ?? 0;
+					orchBatchState.skippedTasks = batchState.skippedTasks ?? 0;
+					orchBatchState.blockedTasks = batchState.blockedTasks ?? 0;
+					orchBatchState.startedAt = batchState.startedAt;
+					orchBatchState.endedAt = batchState.endedAt ?? null;
+
+					// activateSupervisor writes a new lock with this session's ID.
+					// The old session's heartbeat timer will detect the sessionId
+					// mismatch and deactivate automatically.
+					await activateSupervisor(
+						pi,
+						supervisorState,
+						orchBatchState,
+						orchConfig,
+						supervisorConfig,
+						stateRoot,
+						ctx,
+					);
+
+					updateOrchWidget();
+					break;
+				}
+			}
+		},
+	});
+
 	pi.registerCommand("orch-integrate", {
 		description: "Integrate completed orch batch into your working branch",
 		handler: async (args, ctx) => {
@@ -1792,7 +1920,9 @@ export default function (pi: ExtensionAPI) {
 					const summary = buildTakeoverSummary(stateRoot, batchState);
 					const reason =
 						lockResult.status === "stale"
-							? `Previous supervisor (PID ${lockResult.lock.pid}) is no longer running.`
+							? (isProcessAlive(lockResult.lock.pid)
+								? `Previous supervisor (PID ${lockResult.lock.pid}) has a stale heartbeat (last: ${lockResult.lock.heartbeat}). Process may be hung.`
+								: `Previous supervisor (PID ${lockResult.lock.pid}) process is dead.`)
 							: lockResult.status === "corrupt"
 								? "Found a corrupt supervisor lockfile (treating as stale)."
 								: "No supervisor lockfile found for the active batch.";
@@ -1838,7 +1968,7 @@ export default function (pi: ExtensionAPI) {
 
 				case "live": {
 					// Another supervisor is actively running (pid alive, heartbeat fresh).
-					// Warn the operator and offer force takeover via natural language.
+					// Warn the operator and offer force takeover via /orch-takeover.
 					const lock = lockResult.lock;
 					const batchState = lockResult.batchState;
 					ctx.ui.notify(
@@ -1847,8 +1977,8 @@ export default function (pi: ExtensionAPI) {
 						`  Session: ${lock.sessionId}\n` +
 						`  Started: ${lock.startedAt}\n` +
 						`  Last heartbeat: ${lock.heartbeat}\n\n` +
-						`If the other session is gone, you can force takeover by saying ` +
-						`"take over the supervisor" or running \`/orch-abort\` + \`/orch-resume\`.\n\n` +
+						`To force takeover, run \`/orch-takeover\`.\n` +
+						`The other session will yield on its next heartbeat.\n\n` +
 						`Otherwise, use the other terminal or the dashboard to monitor the batch.`,
 						"warning",
 					);

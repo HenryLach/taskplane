@@ -41,8 +41,8 @@
 - [x] Stale-lock takeover with rehydration summary from batch-state + actions + events (R003-2)
 - [x] Live-lock detection: warn + offer force takeover
 - [x] Cleanup lockfile on deactivation (completion/exit/abort)
-- [ ] R004-1: Add /orch-takeover command that force-takes over live supervisor lock (writes new lock, activates local supervisor; prior session yields on heartbeat)
-- [ ] R004-2: Improve stale-lock messaging — distinguish stale-heartbeat (PID alive) vs dead-PID
+- [x] R004-1: Add /orch-takeover command that force-takes over live supervisor lock (writes new lock, activates local supervisor; prior session yields on heartbeat)
+- [x] R004-2: Improve stale-lock messaging — distinguish stale-heartbeat (PID alive) vs dead-PID
 
 ---
 
@@ -92,6 +92,7 @@
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
+| R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -139,6 +140,7 @@
 | 2026-03-22 21:38 | Worker iter 3 | done in 523s, ctx: 38%, tools: 45 |
 | 2026-03-22 21:41 | Worker iter 4 | done in 817s, ctx: 36%, tools: 71 |
 | 2026-03-22 21:42 | Review R004 | code Step 2: REVISE |
+| 2026-03-22 21:45 | Review R004 | code Step 2: REVISE |
 
 ## Blockers
 

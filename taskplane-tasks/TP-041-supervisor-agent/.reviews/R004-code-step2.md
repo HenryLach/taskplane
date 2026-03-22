@@ -3,20 +3,21 @@
 ### Verdict: REVISE
 
 ### Summary
-The lockfile lifecycle, heartbeat updates, stale/corrupt lock takeover, and startup arbitration are mostly implemented as intended. However, the required **force takeover** path is not actually implemented in code: live-lock detection only notifies the user and does not provide any executable takeover flow in this session. As written, this step does not fully satisfy the Step 2 requirement for force takeover behavior.
+The lockfile helpers, heartbeat loop, startup arbitration, and stale/corrupt takeover flow are mostly in place and aligned with the step intent. However, one required outcome is still missing: there is no actual force-takeover path when a live lock is detected. In addition, lockfile cleanup is only wired to batch terminal paths/abort and not to session exit.
 
 ### Issues Found
-1. **[extensions/taskplane/extension.ts:1839-1853] [important]** — Live-lock handling only displays a warning and suggested wording ("take over the supervisor") but no command/event handler actually performs takeover (rewrite lock + activate local supervisor). This misses the prompt requirement: "On force takeover: update lockfile, previous session yields on next heartbeat check."  
-   **Fix:** Add an explicit takeover path (e.g., dedicated command/flag or clear interactive flow) that, when confirmed, writes a new lock (new `sessionId`), activates the local supervisor, and updates in-memory batch state. The existing heartbeat mismatch logic in `startHeartbeat()` will then make the prior supervisor yield.
+1. **[extensions/taskplane/extension.ts:1839] [important]** — Live-lock handling only warns and suggests natural-language takeover, but there is no command/event handler that actually performs force takeover (rewrite lockfile + activate supervisor). This misses the Step 2 requirement: “On force takeover: update lockfile, previous session yields on next heartbeat check.”  
+   **Fix:** Add an explicit takeover action (e.g., `/orch-supervisor-takeover` or an existing command flag) that writes a new lock with a new `sessionId`, hydrates supervisor state, and calls `activateSupervisor(...)`. Keep the heartbeat-based yield path in `startHeartbeat()` as the handoff mechanism.
+
+2. **[extensions/taskplane/extension.ts:1712] [important]** — Lock cleanup is implemented for batch terminal/abort paths, but not for session exit. If the session ends cleanly while a batch is still running, lockfile removal is not attempted, which does not satisfy “cleanup on batch completion or session exit.”  
+   **Fix:** Register a session/process shutdown cleanup path (if pi exposes a session-end event, use it; otherwise use `process.on("exit"|"SIGINT"|"SIGTERM")` best-effort cleanup) that calls `deactivateSupervisor(...)`.
 
 ### Pattern Violations
-- `extensions/taskplane/extension.ts` imports `writeLockfile`, `removeLockfile`, and `SupervisorLockfile` but does not use them, which suggests incomplete/abandoned takeover wiring.
+- None beyond the missing required takeover/exit outcomes above.
 
 ### Test Gaps
-- No tests were added for Step 2 behaviors, especially:
-  - startup with live lock (must block duplicate supervisor)
-  - explicit force takeover path (new session claims lock; old session yields on heartbeat)
-  - stale/corrupt lock takeover rehydration summary
+- No automated test covering **live lock → force takeover → prior supervisor yields on next heartbeat**.
+- No automated test covering **session-exit cleanup path** for lockfile removal.
 
 ### Suggestions
-- Minor: when stale is detected due heartbeat expiry (PID still alive), avoid messaging that always says PID is dead; report stale-heartbeat vs dead-PID distinctly for operator clarity.
+- Consider updating lockfile `batchId` after engine initialization (currently it can stay `"(initializing)"` if activation happens before `batchId` is populated).
