@@ -1,6 +1,6 @@
 # TP-039: Tier 0 Watchdog Engine Integration — Status
 
-**Current Step:** Step 2: Tier 0 Event Logging
+**Current Step:** Step 3: Escalation Interface
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
@@ -47,7 +47,7 @@
 ---
 
 ### Step 3: Escalation Interface
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Define EscalationContext interface
 - [ ] Emit escalation event on retry exhaustion
 - [ ] Fall through to pause behavior
@@ -127,6 +127,9 @@
 | 2026-03-22 18:37 | Worker iter 4 | done in 741s, ctx: 36%, tools: 89 |
 | 2026-03-22 18:38 | Review R004 | code Step 2: REVISE |
 | 2026-03-22 18:39 | Review R004 | code Step 2: REVISE |
+| 2026-03-22 18:52 | Worker iter 3 | done in 797s, ctx: 40%, tools: 98 |
+| 2026-03-22 18:52 | Step 2 complete | Tier 0 Event Logging |
+| 2026-03-22 18:52 | Step 3 started | Escalation Interface |
 
 ## Blockers
 
