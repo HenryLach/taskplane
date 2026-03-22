@@ -1,15 +1,16 @@
 ## Plan Review: Step 3: Testing & Verification
 
-### Verdict: REVISE
+### Verdict: APPROVE
 
 ### Summary
-The Step 3 plan captures most required verification outcomes (timeout success acceptance, timeout-triggered retry, retry exhaustion, config reload, and full-suite validation). However, it omits one explicit PROMPT requirement: validating the **second** timeout retry uses a **4x** timeout multiplier. Without that test outcome, the backoff contract from TP-038 is not fully covered.
+The Step 3 plan now matches the required TP-038 verification outcomes from `PROMPT.md:92-97`, including the previously-missing explicit `4x` second-retry case. The checklist in `STATUS.md:39-44` covers all required behaviors (timeout-success acceptance, retry escalation, exhaustion failure, config reload, and full-suite validation). This is sufficient to proceed.
 
 ### Issues Found
-1. **[Severity: important]** — Missing explicit coverage for the second retry backoff (`4x` timeout). `PROMPT.md:94` requires a dedicated test for “retry also times out → second retry with 4x timeout,” but Step 3 in `STATUS.md:39-43` only lists a generic “Kill-and-retry test” and “All-retries-exhausted test.” Suggested fix: add a distinct Step 3 checkbox/test outcome asserting timeout values across retries (initial, 2x, then 4x) before exhaustion.
+1. **[Severity: minor]** — The “result-exists-at-timeout” item (`STATUS.md:39`) is concise but does not explicitly restate the “without kill” assertion from `PROMPT.md:92`. Suggested fix: when implementing the test, explicitly assert the timeout-success path is accepted before timeout-failure kill handling is triggered.
 
 ### Missing Items
-- Add a Step 3 outcome explicitly validating retry attempt 2 uses `4x` timeout after a second timeout (per `PROMPT.md:94`).
+- None blocking for Step 3 outcomes.
 
 ### Suggestions
-- When adding the 4x test, assert the exact timeout values passed to `waitForMergeResult` (or equivalent seam) across attempts so regressions in backoff math are caught directly.
+- In retry-path tests, assert the exact timeout sequence passed into the wait path (`1x`, `2x`, `4x`) to guard against backoff regressions.
+- In the config reload test, assert the retry path reads fresh timeout values from disk per attempt (not from the original in-memory config object).
