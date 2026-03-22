@@ -832,8 +832,10 @@ describe("8.x — Per-pattern exhaustion coverage", () => {
 		},
 	];
 
-	for (const { pattern, sourceSection, description } of patterns) {
-		it(`8.${patterns.indexOf({ pattern, sourceSection, description }) + 1}: ${description} exhaustion emits tier0_recovery_exhausted event`, () => {
+	for (let i = 0; i < patterns.length; i++) {
+		const { pattern, sourceSection, description } = patterns[i];
+
+		it(`8.${i + 1}: ${description} exhaustion emits tier0_recovery_exhausted event`, () => {
 			const engineSource = readSource("engine.ts");
 			// Find the section handling this pattern
 			const sectionIdx = engineSource.indexOf(sourceSection);
@@ -843,7 +845,7 @@ describe("8.x — Per-pattern exhaustion coverage", () => {
 			expect(section).toContain("tier0_recovery_exhausted");
 		});
 
-		it(`8.${patterns.indexOf({ pattern, sourceSection, description }) + 5}: ${description} exhaustion emits tier0_escalation`, () => {
+		it(`8.${i + 5}: ${description} exhaustion emits tier0_escalation`, () => {
 			const engineSource = readSource("engine.ts");
 			const sectionIdx = engineSource.indexOf(sourceSection);
 			expect(sectionIdx).not.toBe(-1);
