@@ -1,21 +1,21 @@
 # TP-039: Tier 0 Watchdog Engine Integration — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-21
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-03-22
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read engine wave loop failure handling
-- [ ] Read retry matrix from TP-033
-- [ ] Read partial progress code from TP-028
-- [ ] Read spec Sections 5.1-5.4
+**Status:** ✅ Complete
+- [x] Read engine wave loop failure handling
+- [x] Read retry matrix from TP-033
+- [x] Read partial progress code from TP-028
+- [x] Read spec Sections 5.1-5.4
 
 ---
 
@@ -78,6 +78,12 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-21 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-22 17:49 | Task started | Extension-driven execution |
+| 2026-03-22 17:49 | Step 0 started | Preflight |
+| 2026-03-22 17:49 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 17:49 | Task started | Extension-driven execution |
+| 2026-03-22 17:49 | Step 0 started | Preflight |
+| 2026-03-22 17:49 | Skip plan review | Step 0 (Preflight) — low-risk |
 
 ## Blockers
 
@@ -85,4 +91,30 @@
 
 ## Notes
 
-*Reserved for execution notes*
+### Preflight Findings
+
+**Engine wave loop (engine.ts):**
+- Merge failure handling already uses `applyMergeRetryLoop()` from TP-033 with classification-based retry matrix
+- `preserveWorktreesForResume` flag guards worktree cleanup for failed batches
+- Post-merge cleanup gate (`cleanupGateFailures`) pauses on stale worktrees after inter-wave reset
+- Worker session crash: currently marks task as failed via executeLane(), no automatic retry
+- Merge timeout: handled by retry loop, but only for merge-phase failures
+
+**Retry matrix (types.ts TP-033):**
+- `MERGE_RETRY_POLICY_MATRIX` covers 5 merge failure classifications
+- `ResilienceState.retryCountByScope` persists retry counts in batch state
+- Scope key format: `{taskId}:w{waveIndex}:l{laneNumber}`
+- `MergeRetryDecision` is the decision output type
+
+**Partial progress (TP-028):**
+- `preserveFailedLaneProgress()` in worktree.ts saves failed task commits as named branches
+- `applyPartialProgressToOutcomes()` stamps outcomes with saved branch/commit data
+- Called both at inter-wave reset and at terminal cleanup
+
+**What TP-039 needs to wire in (from spec §5.1-5.4):**
+- Pattern 1 (merge timeout): Already partially handled by TP-033/TP-038 retry loop. Need to ensure the engine auto-invokes this instead of immediate pause.
+- Pattern 2 (worker session crash): Need to add partial progress save + exit classification + conditional retry in the execution path. Currently execution.ts just marks failed.
+- Pattern 4 (stale worktree): Need force cleanup + retry before failing during provisioning.
+- Pattern 6 (cleanup failure): Need retry-once + wave gate on post-merge cleanup failure. Inter-wave cleanup gate already exists but may need enhancement.
+- Tier 0 event logging: New `.pi/supervisor/events.jsonl` file with structured JSONL events
+- Escalation interface: New `EscalationContext` type + event emission on retry exhaustion
