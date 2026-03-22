@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 3
+**Review Counter:** 5
+**Iteration:** 5
 **Size:** L
 
 ---
@@ -44,10 +44,11 @@
 ---
 
 ### Step 3: Preserve Existing Behavior
-**Status:** ⬜ Not Started
-- [ ] /orch all still works
-- [ ] /orch-status, /orch-pause, /orch-resume, /orch-abort still work
-- [ ] Dashboard shows live progress
+**Status:** 🟨 In Progress
+- [ ] R005-1: Fix pre-launch race window — set orchBatchState.phase to "launching" synchronously before setTimeout detach so /orch-status, /orch-pause, /orch-abort recognize the batch immediately
+- [ ] R005-2: Make /orch-status fall back to disk-persisted batch-state.json when in-memory state is idle (covers fresh-session queries and post-crash recovery)
+- [ ] Verify /orch all still works end-to-end (handler returns immediately, engine runs in background)
+- [ ] Verify /orch-pause, /orch-resume, /orch-abort work with launching phase
 - [ ] Existing tests pass
 
 ---
@@ -80,6 +81,7 @@
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
+| R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -127,6 +129,13 @@
 | 2026-03-22 19:51 | Worker iter 4 | done in 317s, ctx: 33%, tools: 40 |
 | 2026-03-22 19:54 | Review R004 | code Step 2: REVISE |
 | 2026-03-22 19:56 | Review R004 | code Step 2: REVISE |
+| 2026-03-22 19:57 | Worker iter 4 | done in 52s, ctx: 17%, tools: 11 |
+| 2026-03-22 19:57 | Step 2 complete | Make Engine Non-Blocking |
+| 2026-03-22 19:57 | Step 3 started | Preserve Existing Behavior |
+| 2026-03-22 19:59 | Review R005 | plan Step 3: REVISE |
+| 2026-03-22 19:59 | Worker iter 3 | done in 341s, ctx: 15%, tools: 29 |
+| 2026-03-22 19:59 | Step 2 complete | Make Engine Non-Blocking |
+| 2026-03-22 19:59 | Step 3 started | Preserve Existing Behavior |
 
 ## Blockers
 
