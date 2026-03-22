@@ -18,6 +18,9 @@
  * - Proactive notifications with autonomy-aware verbosity (Step 3)
  * - Task completion digest coalescing (Step 3)
  * - Engine event consumption + proactive notifications (Step 3)
+ * - Recovery action classification model (Step 4)
+ * - Audit trail logging to actions.jsonl (Step 4)
+ * - Autonomy-driven confirmation behavior (Step 4)
  *
  * @module supervisor
  * @since TP-041
@@ -25,11 +28,214 @@
 
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync, statSync, openSync, readSync, closeSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync, statSync, openSync, readSync, closeSync, appendFileSync } from "fs";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Model, Api } from "@mariozechner/pi-ai";
 import type { OrchBatchRuntimeState, OrchestratorConfig, PersistedBatchState, EngineEvent, EngineEventType } from "./types.ts";
 import type { Tier0Event, Tier0EventType } from "./persistence.ts";
+
+// ── Recovery Action Classification (TP-041 Step 4) ───────────────────
+
+/**
+ * Recovery action classification.
+ *
+ * Determines whether an action requires operator confirmation based
+ * on the current autonomy level. From spec §6.3:
+ *
+ * - **diagnostic**: Reading state, running non-mutating commands.
+ *   Always allowed at all autonomy levels.
+ * - **tier0_known**: Known recovery patterns (session restart, worktree
+ *   cleanup, merge retry). Automatic in supervised/autonomous modes.
+ * - **destructive**: State mutations, git operations that alter history,
+ *   session kills, batch-state edits. Requires confirmation in
+ *   interactive mode, conditional in supervised mode.
+ *
+ * Decision matrix:
+ *
+ * | Classification | Interactive | Supervised    | Autonomous |
+ * |----------------|-------------|---------------|------------|
+ * | diagnostic     | auto        | auto          | auto       |
+ * | tier0_known    | ASK         | auto          | auto       |
+ * | destructive    | ASK         | ASK           | auto       |
+ *
+ * @since TP-041
+ */
+export type RecoveryActionClassification = "diagnostic" | "tier0_known" | "destructive";
+
+/**
+ * Determines whether operator confirmation is required for a given
+ * action classification at a given autonomy level.
+ *
+ * @param classification - The action's classification
+ * @param autonomy - Current supervisor autonomy level
+ * @returns true if the supervisor should ask the operator before executing
+ *
+ * @since TP-041
+ */
+export function requiresConfirmation(
+	classification: RecoveryActionClassification,
+	autonomy: SupervisorAutonomyLevel,
+): boolean {
+	// Diagnostics never require confirmation
+	if (classification === "diagnostic") return false;
+
+	// Autonomous mode never asks
+	if (autonomy === "autonomous") return false;
+
+	// Interactive mode asks for everything non-diagnostic
+	if (autonomy === "interactive") return true;
+
+	// Supervised mode: auto for tier0_known, ask for destructive
+	return classification === "destructive";
+}
+
+/**
+ * Examples of actions in each classification category.
+ *
+ * Used by the system prompt to give the supervisor concrete guidance
+ * on how to classify its recovery actions.
+ *
+ * @since TP-041
+ */
+export const ACTION_CLASSIFICATION_EXAMPLES: Readonly<Record<RecoveryActionClassification, readonly string[]>> = {
+	diagnostic: [
+		"Reading batch-state.json, STATUS.md, events.jsonl, merge results",
+		"Running git status, git log, git diff",
+		"Running test suites (npx vitest run, etc.)",
+		"Listing tmux sessions (tmux list-sessions)",
+		"Checking worktree health (git worktree list)",
+		"Reading any file for diagnostics",
+	],
+	tier0_known: [
+		"Restarting a crashed tmux worker session",
+		"Cleaning up stale worktrees for retry",
+		"Retrying a timed-out merge",
+		"Resetting a session name collision",
+		"Clearing a git lock file (.git/index.lock)",
+	],
+	destructive: [
+		"Killing a tmux session (tmux kill-session)",
+		"Editing batch-state.json fields",
+		"Running git reset, git merge, git checkout -B",
+		"Removing worktrees (git worktree remove)",
+		"Modifying STATUS.md or .DONE files",
+		"Deleting git branches (git branch -D)",
+		"Skipping tasks or waves",
+	],
+};
+
+
+// ── Audit Trail (TP-041 Step 4) ──────────────────────────────────────
+
+/**
+ * Structured audit trail entry written to `.pi/supervisor/actions.jsonl`.
+ *
+ * Every supervisor recovery action produces one entry. Destructive actions
+ * MUST be logged **before** execution (pre-action entry with result="pending"),
+ * then updated with the outcome after execution (result entry).
+ *
+ * Non-destructive diagnostics may be logged post-execution for completeness,
+ * but pre-action logging is not required.
+ *
+ * Schema contract: these fields are stable for takeover rehydration
+ * (buildTakeoverSummary reads this file). Adding new optional fields
+ * is safe; removing or renaming existing fields is a breaking change.
+ *
+ * @since TP-041
+ */
+export interface AuditTrailEntry {
+	/** ISO 8601 timestamp of this log entry */
+	ts: string;
+	/** Action identifier — what the supervisor did (e.g., "merge_retry", "kill_session", "read_state") */
+	action: string;
+	/** Recovery action classification */
+	classification: RecoveryActionClassification;
+	/** Human-readable context — why this action was taken */
+	context: string;
+	/** Command or operation executed (e.g., "git merge --no-ff task/lane-2", "read batch-state.json") */
+	command: string;
+	/** Outcome of the action: "pending" (pre-action), "success", "failure", "skipped" */
+	result: "pending" | "success" | "failure" | "skipped";
+	/** Result detail — error message on failure, summary on success */
+	detail: string;
+	/** Batch ID for correlation */
+	batchId: string;
+	/** Optional: wave index if the action is wave-scoped */
+	waveIndex?: number;
+	/** Optional: lane number if the action is lane-scoped */
+	laneNumber?: number;
+	/** Optional: task ID if the action is task-scoped */
+	taskId?: string;
+	/** Optional: duration in milliseconds (populated on result entries) */
+	durationMs?: number;
+}
+
+/**
+ * Resolve the audit trail file path.
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ * @returns Absolute path to actions.jsonl
+ *
+ * @since TP-041
+ */
+export function auditTrailPath(stateRoot: string): string {
+	return join(stateRoot, ".pi", "supervisor", "actions.jsonl");
+}
+
+/**
+ * Append a single audit trail entry to actions.jsonl.
+ *
+ * Best-effort and non-fatal: logging failures do not crash or block
+ * recovery actions. If the file or directory doesn't exist, it is
+ * created. If the append fails, the error is silently swallowed.
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ * @param entry - The audit entry to append
+ *
+ * @since TP-041
+ */
+export function appendAuditEntry(stateRoot: string, entry: AuditTrailEntry): void {
+	try {
+		const dir = join(stateRoot, ".pi", "supervisor");
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true });
+		}
+		const path = auditTrailPath(stateRoot);
+		const line = JSON.stringify(entry) + "\n";
+		appendFileSync(path, line, "utf-8");
+	} catch {
+		// Best-effort: logging failures must not crash recovery
+	}
+}
+
+/**
+ * Log a recovery action to the audit trail.
+ *
+ * Convenience wrapper around appendAuditEntry that fills in timestamp
+ * and batchId automatically from the supervisor state.
+ *
+ * For destructive actions, call this BEFORE execution with result="pending",
+ * then call again AFTER execution with the actual result.
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ * @param batchId - Current batch ID
+ * @param fields - Action fields (action, classification, context, command, result, detail, etc.)
+ *
+ * @since TP-041
+ */
+export function logRecoveryAction(
+	stateRoot: string,
+	batchId: string,
+	fields: Omit<AuditTrailEntry, "ts" | "batchId">,
+): void {
+	const entry: AuditTrailEntry = {
+		ts: new Date().toISOString(),
+		batchId,
+		...fields,
+	};
+	appendAuditEntry(stateRoot, entry);
+}
+
 
 // ── Supervisor Config Types ──────────────────────────────────────────
 
@@ -118,6 +324,8 @@ export function buildSupervisorSystemPrompt(
 		? `${batchState.currentWaveIndex + 1}/${batchState.totalWaves} waves`
 		: "planning";
 
+	const actionsPath = auditTrailPath(stateRoot);
+
 	const prompt = `# Supervisor Agent
 
 You are the **batch supervisor** — a persistent agent that monitors a Taskplane
@@ -143,6 +351,7 @@ at any time. You are a senior engineer on call for this batch.
 
 - **Batch state:** \`${batchStatePath}\`
 - **Engine events:** \`${eventsPath}\`
+- **Audit trail:** \`${actionsPath}\`
 - **State root:** \`${stateRoot}\`
 
 ## Capabilities
@@ -171,13 +380,68 @@ Use these to:
 3. **Keep the operator informed.** Provide clear, natural status updates.
    When the operator asks "how's it going?" — read batch state and summarize.
 
-4. **Log all recovery actions.** Before any recovery action, document what
-   you're doing and why. After, document the outcome.
+4. **Log all recovery actions** to the audit trail (see Audit Trail section below).
 
-5. **Respect autonomy level (${autonomyLabel}).**
-${autonomyLabel === "interactive" ? `   - ASK before every recovery action. Explain options, let operator decide.` : ""}${autonomyLabel === "supervised" ? `   - Execute known Tier 0 recovery patterns automatically (retries, cleanup).
-   - ASK before novel recovery (manual merges, state editing, skipping tasks).` : ""}${autonomyLabel === "autonomous" ? `   - Handle everything you can. Pause and summarize only when genuinely stuck.
-   - The operator trusts you to make reasonable decisions.` : ""}
+5. **Respect your autonomy level** (see Recovery Action Classification below).
+
+## Recovery Action Classification
+
+Every action you take falls into one of three categories:
+
+### Diagnostic (always allowed — no confirmation needed)
+- Reading batch-state.json, STATUS.md, events.jsonl, merge results
+- Running \`git status\`, \`git log\`, \`git diff\`
+- Running test suites (\`npx vitest run\`, etc.)
+- Listing tmux sessions (\`tmux list-sessions\`)
+- Checking worktree health (\`git worktree list\`)
+- Reading any file for diagnostics
+
+### Tier 0 Known (known recovery patterns)
+- Restarting a crashed tmux worker session
+- Cleaning up stale worktrees for retry
+- Retrying a timed-out merge
+- Resetting a session name collision
+- Clearing a git lock file (\`.git/index.lock\`)
+
+### Destructive (state mutations, irreversible operations)
+- Killing a tmux session (\`tmux kill-session\`)
+- Editing batch-state.json fields
+- Running \`git reset\`, \`git merge\`, \`git checkout -B\`
+- Removing worktrees (\`git worktree remove\`)
+- Modifying STATUS.md or .DONE files
+- Deleting git branches (\`git branch -D\`)
+- Skipping tasks or waves
+
+### Autonomy Decision Table (current level: ${autonomyLabel})
+
+| Classification | Interactive | Supervised | Autonomous |
+|----------------|-------------|------------|------------|
+| Diagnostic     | ✅ auto     | ✅ auto    | ✅ auto    |
+| Tier 0 Known   | ❓ ASK      | ✅ auto    | ✅ auto    |
+| Destructive    | ❓ ASK      | ❓ ASK     | ✅ auto    |
+
+${autonomyLabel === "interactive" ? `**Your current level is INTERACTIVE.** ASK the operator before any Tier 0 Known or Destructive action. Explain what you want to do, why, and what the alternatives are. Let the operator decide.` : ""}${autonomyLabel === "supervised" ? `**Your current level is SUPERVISED.** Execute Tier 0 Known patterns automatically (retries, cleanup, session restarts). ASK before Destructive actions (manual merges, state editing, skipping tasks, killing sessions). Always explain what you did and why.` : ""}${autonomyLabel === "autonomous" ? `**Your current level is AUTONOMOUS.** Execute all recovery actions automatically. Pause and summarize only when you're genuinely stuck and cannot resolve the issue. The operator trusts you to make reasonable decisions.` : ""}
+
+## Audit Trail
+
+Log every recovery action to \`${actionsPath}\` as a single-line JSON entry.
+
+**Format** (one JSON object per line):
+\`\`\`json
+{"ts":"<ISO 8601>","action":"<action_name>","classification":"<diagnostic|tier0_known|destructive>","context":"<why>","command":"<what>","result":"<pending|success|failure|skipped>","detail":"<outcome>","batchId":"${batchState.batchId || "BATCH_ID"}"}
+\`\`\`
+
+**Rules:**
+1. For **destructive** actions: write a "pending" entry BEFORE executing, then
+   write a result entry AFTER with "success" or "failure" and detail.
+2. For **diagnostic** and **tier0_known** actions: write a single result entry
+   AFTER execution.
+3. Include optional fields when relevant: \`waveIndex\`, \`laneNumber\`, \`taskId\`, \`durationMs\`.
+4. Use the \`bash\` tool to append entries. Example:
+   \`echo '{"ts":"...","action":"merge_retry","classification":"tier0_known","context":"merge timeout on wave 2","command":"git merge --no-ff task/lane-2","result":"success","detail":"merged with 0 conflicts","batchId":"..."}' >> ${actionsPath}\`
+
+**Why this matters:** When you're taken over by another session or the operator
+asks "what did you do?", the audit trail is the definitive record.
 
 ## Operational Knowledge
 

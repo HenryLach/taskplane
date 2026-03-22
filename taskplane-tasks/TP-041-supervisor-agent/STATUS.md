@@ -47,19 +47,19 @@
 ---
 
 ### Step 3: Engine Event Consumption + Notifications
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Implement event tailer with batch-scoped cursor (R005-1: tracks lastProcessedOffset, filters to active batchId, skips stale/foreign events)
 - [x] Tie event tailer lifecycle to supervisor activation/deactivation/yield with idempotent start/stop (R005-2: single tailer, no duplicates across /orch, /orch-resume, takeover, /orch-takeover paths)
 - [x] Implement proactive notification formatting for significant events (wave_start, merge_success, merge_failed, tier0_escalation, batch_complete, batch_paused) with coalesced task_complete digests
 - [x] Adapt notification frequency and verbosity by autonomy level (interactive=more, autonomous=less)
-- [ ] R006-1: Fix state-root mismatch — all supervisor activation/startup/takeover paths must use workspaceRoot-first resolver (matching engine.ts stateRoot = workspaceRoot ?? cwd) so lockfile, batch-state, and events all point to the same .pi tree
+- [x] R006-1: Fix state-root mismatch — all supervisor activation/startup/takeover paths must use workspaceRoot-first resolver (matching engine.ts stateRoot = workspaceRoot ?? cwd) so lockfile, batch-state, and events all point to the same .pi tree
 
 ---
 
 ### Step 4: Recovery Action Execution + Audit Trail
 **Status:** 🟨 In Progress
-- [ ] Define recovery-action classification model (destructive vs non-destructive) and autonomy decision table that drives confirmation behavior per autonomy level
-- [ ] Define stable actions.jsonl schema (action identity, reason/context, timestamp, result) with pre-action logging guaranteed before destructive execution; implement appendAuditEntry + logRecoveryAction helpers
+- [x] Define recovery-action classification model (destructive vs non-destructive) and autonomy decision table that drives confirmation behavior per autonomy level
+- [x] Define stable actions.jsonl schema (action identity, reason/context, timestamp, result) with pre-action logging guaranteed before destructive execution; implement appendAuditEntry + logRecoveryAction helpers
 - [ ] Wire audit trail guidance into the supervisor system prompt so the LLM logs actions appropriately, and add autonomy-level decision instructions to the system prompt
 - [ ] Add supervisor.autonomy config to config-schema, config-loader, settings-tui, and types (if not already present from Step 1)
 
