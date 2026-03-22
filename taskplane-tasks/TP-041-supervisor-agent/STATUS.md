@@ -1,11 +1,11 @@
 # TP-041: Supervisor Agent — Status
 
-**Current Step:** Step 1: Supervisor System Prompt + Activation
+**Current Step:** Step 2: Lockfile + Session Takeover
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 2
+**Review Counter:** 3
+**Iteration:** 4
 **Size:** L
 
 ---
@@ -34,7 +34,7 @@
 ---
 
 ### Step 2: Lockfile + Session Takeover
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Write lockfile on activation
 - [ ] Heartbeat every 30s
 - [ ] Startup detection (live vs stale lockfile)
@@ -86,6 +86,7 @@
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -122,6 +123,10 @@
 | 2026-03-22 21:07 | Worker iter 3 | done in 1104s, ctx: 75%, tools: 113 |
 | 2026-03-22 21:10 | Review R002 | code Step 1: REVISE |
 | 2026-03-22 21:12 | Review R002 | code Step 1: REVISE |
+| 2026-03-22 21:24 | Worker iter 3 | done in 766s, ctx: 43%, tools: 86 |
+| 2026-03-22 21:24 | Step 1 complete | Supervisor System Prompt + Activation |
+| 2026-03-22 21:24 | Step 2 started | Lockfile + Session Takeover |
+| 2026-03-22 21:27 | Review R003 | plan Step 2: REVISE |
 
 ## Blockers
 
