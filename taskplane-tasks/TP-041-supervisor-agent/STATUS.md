@@ -4,7 +4,7 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 2
 **Size:** L
 
@@ -20,12 +20,16 @@
 ---
 
 ### Step 1: Supervisor System Prompt + Activation
-**Status:** ✅ Complete
+**Status:** 🔄 In Progress (R002 revisions)
 - [x] Create supervisor.ts with system prompt builder and activation function
 - [x] Add `before_agent_start` handler for persistent system prompt injection (guarded: only while batch is active)
 - [x] Inject activation message via `sendMessage()` after `startBatchAsync()` in /orch handler
 - [x] Add supervisor.model to config schema + user preferences + config loader
 - [x] Export supervisor module from index.ts
+- [ ] R002-1: Fix activation timing — defer activateSupervisor until batch metadata is initialized (batchId, tasks, waves populated)
+- [ ] R002-2: Apply supervisor.model at runtime — use pi.setModel() on activation when configured, restore on deactivation
+- [ ] R002-3: Add deactivation on all terminal paths (completed, failed, stopped) — not just abort
+- [ ] R002-4: Fix settings-tui.ts "12 sections" comment → "13 sections"
 
 ---
 
@@ -80,6 +84,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -113,6 +119,9 @@
 | 2026-03-22 20:48 | Review R001 | plan Step 1: REVISE |
 | 2026-03-22 20:48 | Review R001 | plan Step 1: APPROVE |
 | 2026-03-22 21:03 | Worker iter 2 | done in 863s, ctx: 67%, tools: 107 |
+| 2026-03-22 21:07 | Worker iter 3 | done in 1104s, ctx: 75%, tools: 113 |
+| 2026-03-22 21:10 | Review R002 | code Step 1: REVISE |
+| 2026-03-22 21:12 | Review R002 | code Step 1: REVISE |
 
 ## Blockers
 
