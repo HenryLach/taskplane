@@ -4,7 +4,7 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 5
 **Size:** L
 
@@ -57,11 +57,12 @@
 ---
 
 ### Step 4: Recovery Action Execution + Audit Trail
-**Status:** ✅ Complete
+**Status:** 🔄 In Progress
 - [x] Define recovery-action classification model (destructive vs non-destructive) and autonomy decision table that drives confirmation behavior per autonomy level
 - [x] Define stable actions.jsonl schema (action identity, reason/context, timestamp, result) with pre-action logging guaranteed before destructive execution; implement appendAuditEntry + logRecoveryAction helpers
 - [x] Wire audit trail guidance into the supervisor system prompt so the LLM logs actions appropriately, and add autonomy-level decision instructions to the system prompt
 - [x] Add supervisor.autonomy config to config-schema, config-loader, settings-tui, and types (if not already present from Step 1)
+- [ ] R008-1: Ensure Step 4 implementation artifacts (supervisor.ts, types.ts) are included in the step commit range — the prior commit placed code in the hydration commit before the reviewer's baseline, so the code review could not validate them
 
 ---
 
@@ -102,6 +103,8 @@
 | R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
 | R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
 | R007 | plan | Step 4 | APPROVE | .reviews/R007-plan-step4.md |
+| R008 | code | Step 4 | REVISE | .reviews/R008-code-step4.md |
+| R008 | code | Step 4 | (pending re-review) | .reviews/R008-code-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -169,6 +172,9 @@
 | 2026-03-22 22:08 | Step 3 complete | Engine Event Consumption + Notifications |
 | 2026-03-22 22:08 | Step 4 started | Recovery Action Execution + Audit Trail |
 | 2026-03-22 22:09 | Review R007 | plan Step 4: APPROVE |
+| 2026-03-22 22:11 | Worker iter 5 | done in 120s, ctx: 29%, tools: 23 |
+| 2026-03-22 22:13 | Worker iter 6 | done in 499s, ctx: 38%, tools: 59 |
+| 2026-03-22 22:13 | Review R008 | code Step 4: REVISE |
 
 ## Blockers
 
