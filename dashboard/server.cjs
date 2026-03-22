@@ -507,6 +507,222 @@ function loadTelemetryData(batchState) {
   return result;
 }
 
+// ─── Supervisor Data Loading ────────────────────────────────────────────────
+
+/**
+ * Module-level tail state for supervisor JSONL files (actions.jsonl, events.jsonl).
+ * Reuses the same incremental tailing pattern as telemetry.
+ * Key: absolute file path → { offset, partial, entries }
+ */
+const supervisorTailStates = {
+  actions: { offset: 0, partial: "", entries: [] },
+  events: { offset: 0, partial: "", entries: [] },
+  conversation: { offset: 0, partial: "", entries: [] },
+};
+
+/**
+ * The last known batchId — used to detect batch changes and reset accumulators.
+ */
+let supervisorLastBatchId = "";
+
+/**
+ * Incrementally tail a JSONL file, accumulating parsed entries.
+ * Filters entries by batchId when provided.
+ *
+ * @param {string} filePath - Absolute path to the JSONL file
+ * @param {object} tailState - Mutable tail state { offset, partial, entries }
+ * @param {string} batchId - Batch ID to filter by (empty = no filter)
+ * @returns {object[]} The accumulated entries array (same reference as tailState.entries)
+ */
+function tailSupervisorJsonl(filePath, tailState, batchId) {
+  // Check file size
+  let fileSize;
+  try {
+    fileSize = fs.statSync(filePath).size;
+  } catch {
+    return tailState.entries; // File doesn't exist yet — return accumulated
+  }
+
+  // Handle file truncation/recreation
+  if (fileSize < tailState.offset) {
+    tailState.offset = 0;
+    tailState.partial = "";
+    tailState.entries = [];
+  }
+
+  if (fileSize <= tailState.offset) {
+    return tailState.entries; // No new data
+  }
+
+  // Read new bytes from offset
+  const bytesToRead = fileSize - tailState.offset;
+  const buf = Buffer.alloc(bytesToRead);
+  let fd;
+  try {
+    fd = fs.openSync(filePath, "r");
+  } catch {
+    return tailState.entries;
+  }
+  try {
+    fs.readSync(fd, buf, 0, bytesToRead, tailState.offset);
+  } catch {
+    fs.closeSync(fd);
+    return tailState.entries;
+  }
+  fs.closeSync(fd);
+  tailState.offset = fileSize;
+
+  // Split into lines, preserving partial trailing line
+  const chunk = tailState.partial + buf.toString("utf-8");
+  const lines = chunk.split("\n");
+  tailState.partial = lines.pop() || "";
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const entry = JSON.parse(trimmed);
+      // Filter by batchId if provided
+      if (batchId && entry.batchId && entry.batchId !== batchId) continue;
+      tailState.entries.push(entry);
+    } catch {
+      // Malformed JSON — skip
+    }
+  }
+
+  // Cap accumulated entries to prevent unbounded growth (keep last 500)
+  if (tailState.entries.length > 500) {
+    tailState.entries = tailState.entries.slice(-500);
+  }
+
+  return tailState.entries;
+}
+
+/**
+ * Read supervisor autonomy level from project config.
+ *
+ * Checks `.pi/taskplane-config.json` for `orchestrator.supervisor.autonomy`.
+ * Falls back to "supervised" (the default) if config is missing or malformed.
+ * This is needed because the lockfile does not contain the autonomy level.
+ *
+ * @returns {string} Autonomy level: "interactive" | "supervised" | "autonomous"
+ */
+function loadSupervisorAutonomy() {
+  try {
+    const configPath = path.join(REPO_ROOT, ".pi", "taskplane-config.json");
+    const raw = fs.readFileSync(configPath, "utf-8");
+    const config = JSON.parse(raw);
+    const autonomy = config?.orchestrator?.supervisor?.autonomy;
+    if (autonomy === "interactive" || autonomy === "supervised" || autonomy === "autonomous") {
+      return autonomy;
+    }
+  } catch {
+    // Config missing or malformed — use default
+  }
+  return "supervised"; // Default per DEFAULT_SUPERVISOR_CONFIG
+}
+
+/**
+ * Load supervisor data for the dashboard.
+ *
+ * Reads (all from .pi/supervisor/):
+ * - lock.json: supervisor active/stale status, heartbeat, autonomy (from config)
+ * - actions.jsonl: recovery action audit trail (batch-scoped, incremental)
+ * - events.jsonl: engine + tier 0 events (batch-scoped, incremental)
+ * - conversation.jsonl: operator ↔ supervisor interaction log (spec §9.1)
+ * - summary.md: human-readable batch summary (generated on completion)
+ *
+ * Returns null when no supervisor files exist (pre-supervisor batches).
+ *
+ * @param {object|null} batchState - The batch state from batch-state.json
+ * @returns {object|null} Supervisor data object or null
+ */
+function loadSupervisorData(batchState) {
+  const supervisorDir = path.join(REPO_ROOT, ".pi", "supervisor");
+  const batchId = batchState ? (batchState.batchId || "") : "";
+
+  // Detect batch change — reset tail state accumulators
+  if (batchId && batchId !== supervisorLastBatchId) {
+    supervisorLastBatchId = batchId;
+    supervisorTailStates.actions = { offset: 0, partial: "", entries: [] };
+    supervisorTailStates.events = { offset: 0, partial: "", entries: [] };
+    supervisorTailStates.conversation = { offset: 0, partial: "", entries: [] };
+  }
+
+  // ── Lockfile: supervisor status ──
+  // The lockfile contains pid, sessionId, batchId, startedAt, heartbeat.
+  // It does NOT contain autonomy — that comes from project config.
+  let lock = null;
+  try {
+    const lockPath = path.join(supervisorDir, "lock.json");
+    const raw = fs.readFileSync(lockPath, "utf-8");
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.pid && parsed.sessionId) {
+      // Determine if lock is stale (heartbeat older than 90s)
+      const heartbeatAge = parsed.heartbeat
+        ? Date.now() - new Date(parsed.heartbeat).getTime()
+        : Infinity;
+      const isStale = heartbeatAge > 90_000;
+
+      lock = {
+        active: !isStale,
+        pid: parsed.pid,
+        sessionId: parsed.sessionId,
+        batchId: parsed.batchId || "",
+        startedAt: parsed.startedAt || "",
+        heartbeat: parsed.heartbeat || "",
+        // Autonomy is NOT in the lockfile — derive from project config
+        autonomy: loadSupervisorAutonomy(),
+      };
+    }
+  } catch {
+    // No lockfile or malformed — supervisor is inactive
+  }
+
+  // ── Actions JSONL: recovery audit trail (batch-scoped, incremental) ──
+  const actionsPath = path.join(supervisorDir, "actions.jsonl");
+  const actions = tailSupervisorJsonl(actionsPath, supervisorTailStates.actions, batchId);
+
+  // ── Events JSONL: engine events (batch-scoped, incremental) ──
+  const eventsPath = path.join(supervisorDir, "events.jsonl");
+  const events = tailSupervisorJsonl(eventsPath, supervisorTailStates.events, batchId);
+
+  // ── Conversation JSONL: operator interaction log (spec §9.1) ──
+  // The supervisor writes operator↔supervisor messages to conversation.jsonl.
+  // Not yet implemented in all supervisor versions — degrade gracefully.
+  const conversationPath = path.join(supervisorDir, "conversation.jsonl");
+  const conversation = tailSupervisorJsonl(conversationPath, supervisorTailStates.conversation, batchId);
+
+  // ── Summary: human-readable batch summary (generated on completion) ──
+  // Per spec §9.1, the supervisor writes .pi/supervisor/summary.md when the
+  // batch completes or is abandoned. Read the file if it exists.
+  let summary = null;
+  try {
+    const summaryPath = path.join(supervisorDir, "summary.md");
+    summary = fs.readFileSync(summaryPath, "utf-8");
+  } catch {
+    // No summary yet — batch may still be running, or pre-supervisor batch
+  }
+
+  // If nothing exists at all, return null (pre-supervisor batch)
+  if (!lock && actions.length === 0 && events.length === 0 && conversation.length === 0 && !summary) {
+    // Check if the supervisor directory even exists
+    try {
+      fs.statSync(supervisorDir);
+    } catch {
+      return null; // No supervisor dir → pre-supervisor batch
+    }
+  }
+
+  return {
+    lock,
+    actions,
+    events,
+    conversation,
+    summary,
+  };
+}
+
 /**
  * Compute batch total cost from lane states (primary) and telemetry (supplementary).
  * Lane states are authoritative — telemetry provides additional data only for lanes
@@ -541,9 +757,10 @@ function buildDashboardState() {
   const laneStates = loadLaneStates();
   const telemetry = loadTelemetryData(state);
   const batchTotalCost = computeBatchTotalCost(laneStates, telemetry);
+  const supervisor = loadSupervisorData(state);
 
   if (!state) {
-    return { batch: null, tmuxSessions, laneStates: {}, telemetry: {}, batchTotalCost: 0, timestamp: Date.now() };
+    return { batch: null, tmuxSessions, laneStates: {}, telemetry: {}, batchTotalCost: 0, supervisor: null, timestamp: Date.now() };
   }
 
   const tasks = (state.tasks || []).map((task) => {
@@ -562,6 +779,7 @@ function buildDashboardState() {
     laneStates,
     telemetry,
     batchTotalCost,
+    supervisor,
     batch: {
       batchId: state.batchId,
       phase: state.phase,

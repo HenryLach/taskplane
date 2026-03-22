@@ -19,13 +19,13 @@
 ---
 
 ### Step 1: Dashboard Server — Serve Supervisor Data
-**Status:** 🟨 In Progress
-- [ ] Read lockfile for active/inactive status + derive autonomy from config (lockfile has no autonomy field; fall back to config default or "unknown")
-- [ ] Tail actions.jsonl for recovery action audit trail (bounded to last 100 entries)
-- [ ] Read events.jsonl for engine + tier 0 events (bounded to last 200 entries)
-- [ ] Read batch summary from batch-state terminal fields (no separate summary.md file exists)
-- [ ] Include supervisor data object in SSE buildDashboardState payload
-- [ ] Handle missing .pi/supervisor/ directory and files gracefully (pre-supervisor batches return null/empty)
+**Status:** ✅ Complete
+- [x] Read lockfile for active/inactive status + derive autonomy from config (lockfile has no autonomy field; fall back to config default or "unknown")
+- [x] Tail actions.jsonl for recovery action audit trail (bounded to last 100 entries)
+- [x] Read events.jsonl for engine + tier 0 events (bounded to last 200 entries)
+- [x] Read batch summary from batch-state terminal fields (no separate summary.md file exists)
+- [x] Include supervisor data object in SSE buildDashboardState payload
+- [x] Handle missing .pi/supervisor/ directory and files gracefully (pre-supervisor batches return null/empty)
 
 ---
 
