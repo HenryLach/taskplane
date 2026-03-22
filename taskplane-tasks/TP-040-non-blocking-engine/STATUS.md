@@ -1,6 +1,6 @@
 # TP-040: Non-Blocking Engine Refactor — Status
 
-**Current Step:** Step 3: Preserve Existing Behavior
+**Current Step:** Step 4: Testing & Verification
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-22
 **Review Level:** 2
@@ -57,7 +57,7 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Non-blocking handler test
 - [ ] Event emission tests
 - [ ] Completion/failure event tests
@@ -148,6 +148,9 @@
 | 2026-03-22 20:07 | Worker iter 5 | done in 489s, ctx: 27%, tools: 79 |
 | 2026-03-22 20:10 | Review R006 | code Step 3: REVISE |
 | 2026-03-22 20:11 | Review R006 | code Step 3: REVISE |
+| 2026-03-22 20:15 | Worker iter 4 | done in 282s, ctx: 18%, tools: 46 |
+| 2026-03-22 20:15 | Step 3 complete | Preserve Existing Behavior |
+| 2026-03-22 20:15 | Step 4 started | Testing & Verification |
 
 ## Blockers
 
