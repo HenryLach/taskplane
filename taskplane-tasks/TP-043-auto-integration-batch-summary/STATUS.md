@@ -34,12 +34,12 @@
 ---
 
 ### Step 2: Batch Summary Generation
-**Status:** 🔄 In Progress (R004 revisions)
+**Status:** ✅ Complete
 - [x] Implement `generateBatchSummary()` pure formatter — assembles markdown from batch state, audit trail, and diagnostics. Writes to `.pi/supervisor/{opId}-{batchId}-summary.md`. Includes: results table, duration, cost, wave timeline, incidents/recoveries from audit trail (fallback: "not available"), recommendations, cost breakdown by wave (from diagnostics.taskExits, fallback: "not available")
 - [x] R003: Add Tier 0 event ingestion — read and batch-filter events.jsonl for tier0_recovery_attempt|success|exhausted|escalation events, merge with audit trail in Incidents section
 - [x] Wire summary generation into terminal flow — runs BEFORE deactivateSupervisor in manual mode and AFTER integration lifecycle completes in supervised/auto mode (including all PR/CI/error/fallback paths). Covers both /orch and /orch-resume onTerminal callbacks
 - [x] Present summary in conversation — supervisor sends summary content via pi.sendMessage after generation
-- [ ] R004: Fix supervised-mode summary sequencing — move presentBatchSummary out of supervised branch in triggerSupervisorIntegration; store pending summary deps on SupervisorState; trigger summary+deactivation from /orch-integrate completion (and operator-decline path in deactivateSupervisor)
+- [x] R004: Fix supervised-mode summary sequencing — move presentBatchSummary out of supervised branch in triggerSupervisorIntegration; store pending summary deps on SupervisorState; trigger summary+deactivation from /orch-integrate completion (and operator-decline path in deactivateSupervisor)
 
 ---
 
@@ -70,6 +70,7 @@
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 |---|------|------|---------|------|
 
@@ -114,6 +115,7 @@
 | 2026-03-23 01:12 | Worker iter 3 | done in 596s, ctx: 39%, tools: 85 |
 | 2026-03-23 01:12 | Worker iter 4 | done in 766s, ctx: 57%, tools: 92 |
 | 2026-03-23 01:15 | Review R004 | code Step 2: REVISE |
+| 2026-03-23 01:18 | Review R004 | code Step 2: REVISE |
 
 ## Blockers
 

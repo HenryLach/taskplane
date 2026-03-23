@@ -2293,6 +2293,17 @@ export default function (pi: ExtensionAPI) {
 			const summary = integrationSummary + "\n" + cleanupResult.report;
 
 			ctx.ui.notify(summary, cleanupResult.notifyLevel);
+
+			// TP-043 R004: If supervisor has a deferred batch summary (supervised mode),
+			// present it now that integration is complete, then deactivate.
+			if (supervisorState.active && supervisorState.pendingSummaryDeps) {
+				const deps = supervisorState.pendingSummaryDeps;
+				supervisorState.pendingSummaryDeps = null;
+				if (supervisorState.batchStateRef && supervisorState.stateRoot) {
+					presentBatchSummary(pi, supervisorState.batchStateRef, supervisorState.stateRoot, deps.opId, deps.diagnostics, deps.mergeResults);
+				}
+				deactivateSupervisor(pi, supervisorState);
+			}
 		},
 	});
 

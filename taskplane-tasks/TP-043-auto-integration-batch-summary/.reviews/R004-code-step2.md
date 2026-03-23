@@ -3,19 +3,20 @@
 ### Verdict: REVISE
 
 ### Summary
-The step adds a substantial summary pipeline (collection, formatting, file write, and operator presentation) and correctly wires summary generation into most terminal paths, including auto-mode PR lifecycle completion. However, supervised-mode sequencing does not match the step requirement: the summary is emitted before integration is executed/confirmed. That means the implementation can produce a “post-integration” summary prior to integration outcomes.
+The summary formatter/file emission work is substantial and generally follows the Step 2 shape (structured markdown, Tier 0 + audit ingestion, and conversation presentation). However, the supervised integration path currently emits the batch summary **before** integration is confirmed/executed, which misses the prompt’s sequencing requirement for non-manual modes. This should be fixed before considering Step 2 complete.
 
 ### Issues Found
-1. **[extensions/taskplane/supervisor.ts:923-927] [important]** — In `triggerSupervisorIntegration(...)`, supervised mode calls `presentBatchSummary(...)` immediately after sending the confirmation plan, before `/orch-integrate` runs.
-   - **Why this is blocking:** Step 2 requires summary generation **after integration** (manual mode is the only exception for batch-complete timing) per `PROMPT.md:88`.
-   - **Suggested fix:** Remove immediate summary emission from supervised branch and trigger summary when supervised integration actually concludes (success/failure/decline), e.g., by hooking `/orch-integrate` completion path (or an explicit supervised-decline path) to call `presentBatchSummary(...)` before final supervisor deactivation.
+1. **[extensions/taskplane/supervisor.ts:894-928; extensions/taskplane/extension.ts:1340-1357]** [important] — In `integrationMode === "supervised"`, `presentBatchSummary(...)` is called immediately after posting the integration plan, then the function returns. Since `/orch`/`/orch-resume` terminal callbacks hand control to `triggerSupervisorIntegration(...)` and return, this produces the summary *before* supervised integration happens (or even if operator declines), rather than after integration lifecycle as required.
+   - **Why it matters:** Step 2 requires summary generation after integration for supervised/auto flows (manual is the batch-complete exception).
+   - **Suggested fix:** Remove eager summary emission from the supervised branch and trigger summary generation after supervised integration actually completes (e.g., add a post-`/orch-integrate` hook/path that calls `presentBatchSummary(...)` and deactivates).
 
 ### Pattern Violations
-- None major.
+- None blocking.
 
 ### Test Gaps
-- Missing regression test that supervised mode does **not** emit the batch summary until after operator-confirmed integration completes.
-- Missing sequencing test for supervised “operator declines integration” path (expected summary timing and supervisor teardown behavior).
+- No tests cover summary sequencing across terminal modes (manual vs supervised vs auto/PR lifecycle), so this regression was not caught.
+- No direct tests for `readTier0EventsForBatch` + `formatBatchSummary` composition (empty/malformed events.jsonl, mixed tier0 events, recommendation output branches).
 
 ### Suggestions
-- Add a focused unit/integration test around `triggerSupervisorIntegration(..., "supervised", ...)` to lock sequencing and prevent future regressions.
+- Add a focused unit test around supervised flow sequencing: assert no summary emission at plan prompt time, then summary emitted after integration completion path.
+- In `presentBatchSummary`, either use the generated markdown snippet in the message or avoid binding it to an unused local (`const summary = ...`).

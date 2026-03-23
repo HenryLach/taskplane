@@ -920,10 +920,11 @@ export function triggerSupervisorIntegration(
 			{ triggerTurn: true, deliverAs: "nextTurn" },
 		);
 
-		// TP-043: Generate summary even in supervised mode (file is useful for reference).
-		// Summary is presented as a separate message — operator sees both the plan and results.
-		if (summaryDeps && state.stateRoot) {
-			presentBatchSummary(pi, batchState, state.stateRoot, summaryDeps.opId, summaryDeps.diagnostics, summaryDeps.mergeResults);
+		// TP-043 R004: Defer summary until after integration completes (or operator declines).
+		// Store deps on supervisor state so /orch-integrate completion or deactivateSupervisor
+		// can present the summary at the correct time.
+		if (summaryDeps) {
+			state.pendingSummaryDeps = summaryDeps;
 		}
 		return;
 	}
@@ -2210,6 +2211,14 @@ export interface SupervisorState {
 	// ── Routing Context (TP-042) ───────────────────────────────────
 	/** When non-null, supervisor is in routing mode (onboarding / returning-user flows) */
 	routingContext: SupervisorRoutingContext | null;
+
+	// ── Deferred Summary (TP-043 R004) ─────────────────────────────
+	/**
+	 * When non-null, a batch summary is pending presentation. Used in supervised
+	 * mode where summary must wait until /orch-integrate completes (or operator
+	 * declines and supervisor deactivates).
+	 */
+	pendingSummaryDeps: SummaryDeps | null;
 }
 
 /**
@@ -2229,6 +2238,7 @@ export function freshSupervisorState(): SupervisorState {
 		heartbeatTimer: null,
 		eventTailer: freshEventTailerState(),
 		routingContext: null,
+		pendingSummaryDeps: null,
 	};
 }
 
@@ -2463,6 +2473,15 @@ export async function deactivateSupervisor(
 		}
 	}
 
+	// ── TP-043 R004: Present deferred batch summary ─────────────
+	// If a batch summary was deferred (supervised mode awaiting integration
+	// confirmation), present it now — before we clear state refs.
+	if (state.pendingSummaryDeps && state.batchStateRef && state.stateRoot) {
+		const deps = state.pendingSummaryDeps;
+		presentBatchSummary(pi, state.batchStateRef, state.stateRoot, deps.opId, deps.diagnostics, deps.mergeResults);
+		state.pendingSummaryDeps = null;
+	}
+
 	// Restore previous model if we switched on activation
 	if (state.didSwitchModel && state.previousModel) {
 		try {
@@ -2481,6 +2500,7 @@ export async function deactivateSupervisor(
 	state.didSwitchModel = false;
 	state.lockSessionId = "";
 	state.routingContext = null;
+	state.pendingSummaryDeps = null;
 }
 
 /**
