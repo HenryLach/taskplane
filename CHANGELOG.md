@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-03-23
+
+### New
+- **Model availability pre-flight check** — `/orch` validates all configured agent models (worker, reviewer, merger, supervisor) against the pi model registry before starting a batch. Misconfigured models block with a clear error instead of failing hours into a run.
+- **Unified supervisor mode (issue #128)** — routing-mode supervisor can now start batches via `/orch all`. Batch completion transitions back to conversational mode instead of deactivating. Enables continuous workflow: `/orch` → conversation → run tasks → complete → conversation continues.
+- **Async merge polling (TP-046, issue #136)** — `waitForMergeResult` converted from synchronous `sleepSync` to async `sleepAsync`. Supervisor, heartbeat, and user input remain responsive during the merge phase.
+- **Dashboard wave bar fix (TP-045, issue #101)** — completed wave segments now render green instead of black in the progress bar.
+
+### Fixed
+- **Agent model defaults** — removed hardcoded `openai/gpt-5.3-codex` from reviewer template and model-specific comments from local templates. All agents default to inheriting the session model.
+- **`resolveConfigRoot` export** — fixed `/orch` crash (`resolveConfigRoot is not a function`) caused by missing re-export from config barrel.
+- **Supervisor session cleanup** — extension deactivates supervisor on `session_end` to clean heartbeat/lock in normal shutdown paths.
+- **Merge result schema tolerance** — parser accepts `source`/`sourceBranch`/`source_branch` and equivalent variants. Merge request includes explicit JSON schema guidance.
+
+### Docs
+- Updated commands reference for unified supervisor mode.
+
 ## [0.7.0] - 2026-03-23
 
 ### New
@@ -330,7 +347,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/HenryLach/taskplane/compare/v0.7.1...v0.7.2
 [0.7.0]: https://github.com/HenryLach/taskplane/compare/v0.6.1...v0.7.0
 [0.1.14]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.14
 [0.1.13]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.13
