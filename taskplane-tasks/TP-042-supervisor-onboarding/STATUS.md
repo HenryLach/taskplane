@@ -5,7 +5,7 @@
 **Last Updated:** 2026-03-22
 **Review Level:** 2
 **Review Counter:** 6
-**Iteration:** 5
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -55,9 +55,10 @@
 
 ### Step 4: Testing & Verification
 **Status:** 🟨 In Progress
-- [ ] Routing tests for all project states
-- [ ] Existing behavior preserved test
-- [ ] Full test suite passes
+- [ ] Create supervisor-onboarding.test.ts with detectOrchState tests for all 5 states (no-config, active-batch, completed-batch, pending-tasks, no-tasks) and edge cases (stale orch branch, corrupt batch state)
+- [ ] Add tests for buildRoutingSystemPrompt — verify each routing state generates correct script guidance
+- [ ] Add tests verifying /orch with args still routes to batch start (existing behavior preserved)
+- [ ] Run full test suite (`cd extensions && npx vitest run`) and fix all failures
 
 ---
 
@@ -82,6 +83,8 @@
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R005 | plan | Step 3 | APPROVE | .reviews/R005-plan-step3.md |
+| R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
+| R007 | plan | Step 4 | APPROVE | .reviews/R007-plan-step4.md |
 | R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
 |---|------|------|---------|------|
 
@@ -142,6 +145,11 @@
 | 2026-03-23 00:06 | Review R006 | code Step 3: APPROVE |
 | 2026-03-23 00:06 | Step 3 complete | Returning User Flows (Scripts 6-8) |
 | 2026-03-23 00:06 | Step 4 started | Testing & Verification |
+| 2026-03-23 00:07 | Worker iter 5 | done in 353s, ctx: 38%, tools: 38 |
+| 2026-03-23 00:08 | Review R007 | plan Step 4: APPROVE |
+| 2026-03-23 00:09 | Review R006 | code Step 3: APPROVE |
+| 2026-03-23 00:09 | Step 3 complete | Returning User Flows (Scripts 6-8) |
+| 2026-03-23 00:09 | Step 4 started | Testing & Verification |
 
 ## Blockers
 

@@ -3,16 +3,18 @@
 ### Verdict: APPROVE
 
 ### Summary
-The Step 3 changes correctly wire returning-user routing guidance in `buildRoutingSystemPrompt()` so the supervisor now gives explicit Script 6/7/8 instructions for `pending-tasks`, `no-tasks`, and `completed-batch` states. The updated prompt text is consistent with the expanded primer content and addresses the prior gap where completed-batch routing only emphasized integration. I did not find blocking functional issues in this step’s code changes.
+Step 3 successfully expands the returning-user guidance in the supervisor primer and wires `/orch` no-args routing states to the correct Script 6/7/8 behavior in `buildRoutingSystemPrompt()`. The updated prompt content now covers pending-task planning, no-task work sourcing, health checks, and retrospective inputs in substantially more actionable detail. I did not find blocking correctness issues in this step.
 
 ### Issues Found
-1. **[extensions/taskplane/supervisor.ts:605-658] [minor]** — No blocking correctness issues identified in the modified routing prompt guidance.
+1. **[extensions/taskplane/supervisor.ts:654-657] [minor]** — Completed-batch routing currently says Script 8 can be presented "either before or after integration." The task/spec framing for Script 8 is post-integration by default, so this wording may create operator-flow ambiguity.
+   **Fix:** Prefer wording that defaults retrospective to post-integration, with pre-integration allowed only when explicitly requested.
 
 ### Pattern Violations
 - None identified.
 
 ### Test Gaps
-- No direct automated assertions currently validate the routing prompt text for returning-user states (especially completed-batch including retrospective guidance). Consider covering this in Step 4 with prompt-content/unit tests around `buildRoutingSystemPrompt()`.
+- `extensions/tests/supervisor.test.ts` currently validates `buildSupervisorSystemPrompt()` but has no direct assertions for `buildRoutingSystemPrompt()` content by routing state (`pending-tasks`, `no-tasks`, `completed-batch`).
+- No regression test currently verifies that completed-batch routing guidance includes both integration and retrospective instructions.
 
 ### Suggestions
-- `extensions/taskplane/supervisor.ts:654-657`: consider wording Script 8 as **post-integration by default** (while still allowing operator-requested pre-integration review) to align more tightly with the task prompt’s “triggered after integration” phrasing.
+- Add focused unit tests for `buildRoutingSystemPrompt()` that assert key required lines for Scripts 6/7/8 per routing state.
