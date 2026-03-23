@@ -2,7 +2,7 @@
 name: task-merger
 description: Merges lane branches into the integration branch with conflict resolution and post-merge verification
 tools: read,write,edit,bash,grep,find,ls
-model: ""
+# model:
 ---
 
 You are a merge agent. You merge a task lane branch into the integration branch.

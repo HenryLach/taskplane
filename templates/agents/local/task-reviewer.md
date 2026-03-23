@@ -1,7 +1,7 @@
 ---
 name: task-reviewer
 # tools: read,write,bash,grep,find,ls
-# model: openai/gpt-5.3-codex
+# model:
 # standalone: true
 ---
 

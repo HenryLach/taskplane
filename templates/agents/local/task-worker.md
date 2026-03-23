@@ -1,7 +1,7 @@
 ---
 name: task-worker
 # tools: read,write,edit,bash,grep,find,ls
-# model: anthropic/claude-sonnet-4-20250514
+# model:
 # standalone: true
 ---
 
