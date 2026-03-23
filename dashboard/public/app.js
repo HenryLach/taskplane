@@ -333,15 +333,19 @@ function renderSummary(batch) {
   for (const ws of waveStats) {
     const segWidthPct = batchTotal > 0 ? (ws.total / batchTotal) * 100 : (100 / waveStats.length);
     const fillPct = ws.total > 0 ? (ws.checked / ws.total) * 100 : 0;
-    const isDone = ws.checked === ws.total && ws.total > 0;
-    const isCurrent = ws.waveIdx === currentWaveIdx && batch.phase === "executing";
+    const checkboxDone = ws.checked === ws.total && ws.total > 0;
+    const pastWave = ws.waveIdx < currentWaveIdx;
+    const batchDone = batch.phase === "completed" || batch.phase === "merging";
+    const isDone = checkboxDone || pastWave || batchDone;
+    const isCurrent = ws.waveIdx === currentWaveIdx && (batch.phase === "executing" || batch.phase === "merging");
     const isFuture = ws.waveIdx > currentWaveIdx && batch.phase === "executing";
 
     const fillClass = isDone ? "pct-hi" : fillPct > 50 ? "pct-mid" : fillPct > 0 ? "pct-low" : "pct-0";
+    const fillWidth = isDone ? 100 : fillPct;
     const segClass = isCurrent ? "wave-seg-current" : isFuture ? "wave-seg-future" : "";
 
     barHtml += `<div class="wave-seg ${segClass}" style="width:${segWidthPct.toFixed(1)}%" title="W${ws.waveIdx + 1}: ${ws.checked}/${ws.total} checkboxes (${ws.taskIds.join(', ')})">`;
-    barHtml += `  <div class="wave-seg-fill ${fillClass}" style="width:${fillPct.toFixed(1)}%"></div>`;
+    barHtml += `  <div class="wave-seg-fill ${fillClass}" style="width:${fillWidth.toFixed(1)}%"></div>`;
     barHtml += `  <span class="wave-seg-label">W${ws.waveIdx + 1}</span>`;
     barHtml += `</div>`;
   }
