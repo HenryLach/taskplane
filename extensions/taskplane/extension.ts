@@ -56,6 +56,7 @@ import {
 	DEFAULT_SUPERVISOR_CONFIG,
 	triggerSupervisorIntegration,
 	presentBatchSummary,
+	resolveModelFromString,
 } from "./supervisor.ts";
 import type { SupervisorConfig, SupervisorRoutingContext, IntegrationExecutor, CiDeps, SummaryDeps } from "./supervisor.ts";
 import type {
@@ -720,6 +721,127 @@ export function collectRepoCleanupFindings(
  * This prevents unhandled promise rejections from crashing the session
  * or leaving batch state inconsistent.
  */
+
+// ── Model Availability Pre-Flight ───────────────────────────────────
+
+/**
+ * A single model configuration to validate.
+ */
+interface ModelCheckEntry {
+	/** Role label for display (e.g., "Worker", "Reviewer") */
+	role: string;
+	/** Model string from config (empty = inherit session model) */
+	modelStr: string;
+}
+
+/**
+ * Result of a single model availability check.
+ */
+export interface ModelCheckResult {
+	role: string;
+	modelStr: string;
+	status: "inherit" | "found" | "not-found";
+	resolvedName?: string;
+}
+
+/**
+ * Validate that all configured agent models are available in the model registry.
+ *
+ * Checks worker, reviewer, merger, and supervisor model settings. Models set to
+ * empty string ("") or not configured inherit the session model and are always valid.
+ *
+ * Does NOT validate API keys (that would require side-effectful setModel calls).
+ * This catches the most common misconfiguration: specifying a model that isn't
+ * registered in pi (wrong name, missing provider, etc.).
+ *
+ * @param orchConfig - Orchestrator configuration
+ * @param runnerConfig - Task runner configuration
+ * @param supervisorConfig - Supervisor configuration
+ * @param ctx - Extension context with model registry
+ * @returns Array of check results (one per role)
+ *
+ * @since v0.7.2
+ */
+export function validateModelAvailability(
+	orchConfig: OrchestratorConfig,
+	runnerConfig: TaskRunnerConfig,
+	supervisorConfig: SupervisorConfig,
+	ctx: ExtensionContext,
+): ModelCheckResult[] {
+	const entries: ModelCheckEntry[] = [
+		{ role: "Worker", modelStr: runnerConfig.worker?.model ?? "" },
+		{ role: "Reviewer", modelStr: runnerConfig.reviewer?.model ?? "" },
+		{ role: "Merger", modelStr: orchConfig.merge?.model ?? "" },
+		{ role: "Supervisor", modelStr: supervisorConfig.model ?? "" },
+	];
+
+	const sessionModel = ctx.model;
+	const results: ModelCheckResult[] = [];
+
+	for (const entry of entries) {
+		if (!entry.modelStr) {
+			// Empty = inherit session model
+			results.push({
+				role: entry.role,
+				modelStr: "(inherit)",
+				status: "inherit",
+				resolvedName: sessionModel
+					? `${(sessionModel as any).provider ?? ""}/${sessionModel.id}`.replace(/^\//, "")
+					: "session default",
+			});
+			continue;
+		}
+
+		const resolved = resolveModelFromString(entry.modelStr, ctx);
+		if (resolved) {
+			results.push({
+				role: entry.role,
+				modelStr: entry.modelStr,
+				status: "found",
+				resolvedName: `${(resolved as any).provider ?? ""}/${resolved.id}`.replace(/^\//, ""),
+			});
+		} else {
+			results.push({
+				role: entry.role,
+				modelStr: entry.modelStr,
+				status: "not-found",
+			});
+		}
+	}
+
+	return results;
+}
+
+/**
+ * Format model validation results for display.
+ *
+ * @param results - Model check results from validateModelAvailability
+ * @returns Formatted string for ctx.ui.notify
+ */
+export function formatModelValidation(results: ModelCheckResult[]): string {
+	const lines: string[] = ["Model Configuration:"];
+	let hasFailure = false;
+
+	for (const r of results) {
+		if (r.status === "inherit") {
+			lines.push(`  ✅ ${r.role.padEnd(12)} inherit → ${r.resolvedName}`);
+		} else if (r.status === "found") {
+			lines.push(`  ✅ ${r.role.padEnd(12)} ${r.modelStr} → ${r.resolvedName}`);
+		} else {
+			lines.push(`  ❌ ${r.role.padEnd(12)} ${r.modelStr} — NOT FOUND in model registry`);
+			hasFailure = true;
+		}
+	}
+
+	if (hasFailure) {
+		lines.push("");
+		lines.push("  Fix: update the model in .pi/taskplane-config.json or /taskplane-settings,");
+		lines.push("  or remove the override to inherit the session model.");
+	}
+
+	return lines.join("\n");
+}
+
 export function startBatchAsync(
 	engineFn: () => Promise<void>,
 	batchState: import("./types.ts").OrchBatchRuntimeState,
@@ -1273,6 +1395,23 @@ export default function (pi: ExtensionAPI) {
 				case "start-fresh":
 					// No orphans, no state file — proceed normally
 					break;
+			}
+
+			// ── Model availability pre-flight ────────────────────────
+			// Validate that all configured agent models are resolvable in
+			// the model registry before starting. Catches misconfigured
+			// model names early instead of failing hours into a batch.
+			const modelResults = validateModelAvailability(orchConfig, runnerConfig, supervisorConfig, ctx);
+			const modelFailures = modelResults.filter(r => r.status === "not-found");
+			ctx.ui.notify(formatModelValidation(modelResults), modelFailures.length > 0 ? "error" : "info");
+			if (modelFailures.length > 0) {
+				ctx.ui.notify(
+					`❌ Cannot start batch — ${modelFailures.length} model(s) not found: ` +
+					modelFailures.map(f => `${f.role} (${f.modelStr})`).join(", ") +
+					`.\n\nFix the model configuration and try again.`,
+					"error",
+				);
+				return;
 			}
 
 			// Reset batch state for new execution

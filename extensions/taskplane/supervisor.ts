@@ -2269,7 +2269,7 @@ export function freshSupervisorState(): SupervisorState {
  * @returns The resolved Model, or undefined if not found
  * @since TP-041
  */
-function resolveModelFromString(
+export function resolveModelFromString(
 	modelStr: string,
 	ctx: ExtensionContext,
 ): Model<Api> | undefined {
