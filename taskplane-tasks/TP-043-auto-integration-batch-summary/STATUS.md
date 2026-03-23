@@ -1,11 +1,11 @@
 # TP-043: Auto-Integration & Batch Summary — Status
 
-**Current Step:** Step 3: Testing & Verification
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** ✅ Step 3 Complete
 **Last Updated:** 2026-03-23
 **Review Level:** 2
 **Review Counter:** 6
-**Iteration:** 4
+**Iteration:** 5
 **Size:** M
 
 ---
@@ -44,7 +44,7 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ✅ Complete (R006 revisions applied)
+**Status:** ✅ Complete
 - [x] Integration plan + format + outcome tests (buildIntegrationPlan, formatIntegrationPlan, formatIntegrationOutcome, pollPrCiStatus, mergePr)
 - [x] Auto mode integration test (triggerSupervisorIntegration auto path: ff success, PR+CI lifecycle, no-executor fallback, no-plan deactivation)
 - [x] Integration conflict handling test (R005: ff fails → auto fallback to merge; merge also fails → error reported)
@@ -59,8 +59,8 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Settings reference updated
+**Status:** 🟨 In Progress
+- [x] Settings reference updated
 - [ ] `.DONE` created
 
 ---
@@ -136,6 +136,10 @@
 | 2026-03-23 01:32 | Worker iter 5 | done in 620s, ctx: 44%, tools: 61 |
 | 2026-03-23 01:35 | Review R006 | code Step 3: REVISE |
 | 2026-03-23 01:36 | Review R006 | code Step 3: REVISE |
+| 2026-03-23 01:45 | Worker iter 4 | done in 573s, ctx: 38%, tools: 56 |
+| 2026-03-23 01:45 | Step 3 complete | Testing & Verification |
+| 2026-03-23 01:45 | Step 4 started | Documentation & Delivery |
+| 2026-03-23 01:45 | Skip plan review | Step 4 (final step) — low-risk |
 
 ## Blockers
 

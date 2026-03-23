@@ -505,6 +505,17 @@ The command determines which orch branch to integrate using this priority:
 /orch-integrate --force                  # Skip branch safety check
 ```
 
+**Supervisor-managed integration**
+
+When the integration setting is `supervised` or `auto`, the supervisor automatically handles integration after the batch completes — you don't need to run `/orch-integrate` manually.
+
+- **`supervised`** — the supervisor builds an integration plan (mode, branches, protection status), presents it for your confirmation, then executes it.
+- **`auto`** — the supervisor executes integration immediately without asking, pausing only if issues arise (conflicts, CI failures, branch protection).
+
+Both modes detect branch protection via the GitHub API and default to PR mode when the target branch is protected. If fast-forward fails, the supervisor falls back to merge mode, then to PR mode. You can still run `/orch-integrate` manually at any time, regardless of the configured mode.
+
+See [Integration setting](configuration/taskplane-settings.md#orchestrator) for configuration details.
+
 **Common responses**
 
 - `⏳ Batch ... is currently in "running" phase.` — batch must complete before integration
