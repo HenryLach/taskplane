@@ -31,7 +31,7 @@
 ---
 
 ### Step 2: Onboarding Flow (Scripts 1-5)
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 - [x] Routing-aware system prompt: build onboarding/routing prompt (separate from batch-monitoring prompt) and wire into before_agent_start hook; add routingContext field to SupervisorState
 - [x] Script 1/2/3 trigger discrimination in primer: add all three onboarding scripts to supervisor-primer.md with trigger conditions based on repo maturity (no .pi/ dir → Script 1; empty/new project → Script 2; established codebase → Script 3), with delegation to Scripts 4/5
 - [x] Scripts 4 and 5 in primer: add Task Area Design and Git Branching & Protection scripts as delegated sub-flows
@@ -39,6 +39,8 @@
 - [x] Full config/scaffolding artifact set: onboarding prompt instructs supervisor to create .pi/taskplane-config.json, area CONTEXT.md files, .pi/agents/ overrides, and .gitignore entries (idempotent, create-if-missing)
 - [x] R004-1: Clear routingContext on non-routing activation so prompt hook switches from routing to batch-monitoring prompt
 - [x] R004-2: Fix testing.commands template in supervisor-primer.md to use Record<string,string> shape instead of array
+- [ ] R004-3: Fix testing.commands example at primer line ~1005 to use object shape `{"test":"..."}` not array `["..."]`; ensure all onboarding references use Record<string,string>
+- [ ] R004-4: Update artifact lists in routing prompt (supervisor.ts:595) and Script 1 (primer:756) to explicitly require task-worker.md, task-reviewer.md, task-merger.md instead of just "dir + README"
 
 ---
 
