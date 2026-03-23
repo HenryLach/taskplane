@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-23
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 4
 **Size:** M
 
@@ -28,10 +28,11 @@
 ---
 
 ### Step 2: Convert waitForMergeResult to Async
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 - [x] Make waitForMergeResult async
 - [x] Replace sleepSync with sleepAsync in polling loop
 - [x] Preserve timeout/retry/grace period behavior
+- [ ] R004: Add `await` at waitForMergeResult call site in mergeWave (make mergeWave async) so Promise is consumed correctly and timeout/retry semantics are preserved
 
 ---
 
@@ -69,6 +70,8 @@
 | R002 | code | Step 1 | APPROVE | .reviews/R002-code-step1.md |
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
+| R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -107,6 +110,10 @@
 | 2026-03-23 21:14 | Step 2 started | Convert waitForMergeResult to Async |
 | 2026-03-23 21:15 | Review R003 | plan Step 2: APPROVE |
 | 2026-03-23 21:15 | Review R003 | plan Step 2: REVISE |
+| 2026-03-23 21:17 | Worker iter 3 | done in 130s, ctx: 12%, tools: 22 |
+| 2026-03-23 21:18 | Worker iter 4 | done in 133s, ctx: 13%, tools: 21 |
+| 2026-03-23 21:21 | Review R004 | code Step 2: REVISE |
+| 2026-03-23 21:21 | Review R004 | code Step 2: REVISE |
 
 ## Blockers
 
