@@ -5,7 +5,7 @@
 **Last Updated:** 2026-03-23
 **Review Level:** 2
 **Review Counter:** 3
-**Iteration:** 4
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -35,7 +35,8 @@
 
 ### Step 2: Batch Summary Generation
 **Status:** 🟨 In Progress
-- [ ] Implement `generateBatchSummary()` pure formatter — assembles markdown from batch state, audit trail, and diagnostics. Writes to `.pi/supervisor/{opId}-{batchId}-summary.md`. Includes: results table, duration, cost, wave timeline, incidents/recoveries from audit trail (fallback: "not available"), recommendations, cost breakdown by wave (from diagnostics.taskExits, fallback: "not available")
+- [x] Implement `generateBatchSummary()` pure formatter — assembles markdown from batch state, audit trail, and diagnostics. Writes to `.pi/supervisor/{opId}-{batchId}-summary.md`. Includes: results table, duration, cost, wave timeline, incidents/recoveries from audit trail (fallback: "not available"), recommendations, cost breakdown by wave (from diagnostics.taskExits, fallback: "not available")
+- [ ] R003: Add Tier 0 event ingestion — read and batch-filter events.jsonl for tier0_recovery_attempt|success|exhausted|escalation events, merge with audit trail in Incidents section
 - [ ] Wire summary generation into terminal flow — runs BEFORE deactivateSupervisor in manual mode and AFTER integration lifecycle completes in supervised/auto mode (including all PR/CI/error/fallback paths). Covers both /orch and /orch-resume onTerminal callbacks
 - [ ] Present summary in conversation — supervisor sends summary content via pi.sendMessage after generation
 
@@ -66,6 +67,7 @@
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 | R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
@@ -106,6 +108,7 @@
 | 2026-03-23 01:00 | Worker iter 2 | done in 735s, ctx: 50%, tools: 73 |
 | 2026-03-23 01:00 | Step 1 complete | Supervisor-Managed Integration |
 | 2026-03-23 01:00 | Step 2 started | Batch Summary Generation |
+| 2026-03-23 01:02 | Review R003 | plan Step 2: REVISE |
 
 ## Blockers
 

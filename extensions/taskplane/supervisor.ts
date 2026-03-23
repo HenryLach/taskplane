@@ -699,16 +699,36 @@ export function mergePr(
 }
 
 /**
+ * Dependencies for batch summary generation within integration flows.
+ *
+ * Passed through triggerSupervisorIntegration to ensure summary is
+ * generated before supervisor deactivation on all terminal paths.
+ *
+ * @since TP-043
+ */
+export interface SummaryDeps {
+	/** Operator identifier for file naming */
+	opId: string;
+	/** Batch diagnostics (taskExits, batchCost) — null if unavailable */
+	diagnostics: { taskExits: Record<string, { classification: string; cost: number; durationSec: number }>; batchCost: number } | null;
+	/** Merge results for cost breakdown */
+	mergeResults: Array<{ waveIndex: number; status: string; failedLane: number | null; failureReason: string | null }>;
+}
+
+/**
  * Execute the full PR lifecycle: poll CI, merge on success, clean up.
  *
  * Called after `executeIntegration("pr", ...)` succeeds (PR created).
  * Polls CI status, merges when checks pass, reports failures.
- * Always deactivates the supervisor at the end (deterministic shutdown).
+ * Always generates batch summary and deactivates the supervisor at
+ * the end (deterministic shutdown).
  *
  * @param plan - Integration plan (for branch/batch info)
  * @param ciDeps - CI deps for gh CLI operations
  * @param pi - ExtensionAPI for messaging
  * @param state - Supervisor state (for deactivation)
+ * @param batchState - Runtime batch state (for summary generation)
+ * @param summaryDeps - Summary generation dependencies (optional, skipped if null)
  *
  * @since TP-043
  */
@@ -717,6 +737,8 @@ async function handlePrLifecycle(
 	ciDeps: CiDeps,
 	pi: ExtensionAPI,
 	state: SupervisorState,
+	batchState?: OrchBatchRuntimeState,
+	summaryDeps?: SummaryDeps | null,
 ): Promise<void> {
 	// Poll CI status
 	const ciResult = await pollPrCiStatus(plan.orchBranch, ciDeps);
@@ -785,6 +807,11 @@ async function handlePrLifecycle(
 			},
 			{ triggerTurn: false },
 		);
+	}
+
+	// TP-043: Generate batch summary before deactivation
+	if (batchState && summaryDeps && state.stateRoot) {
+		presentBatchSummary(pi, batchState, state.stateRoot, summaryDeps.opId, summaryDeps.diagnostics, summaryDeps.mergeResults);
 	}
 
 	// Always deactivate after PR lifecycle completes (R002 issue #3)
@@ -1017,6 +1044,450 @@ export function triggerSupervisorIntegration(
 		);
 		deactivateSupervisor(pi, state);
 	}
+}
+
+
+// ── Batch Summary Generation (TP-043 Step 2) ────────────────────────
+
+/**
+ * Data required to generate a batch summary.
+ *
+ * Assembled from runtime and persisted state. Pure data — no side effects.
+ *
+ * @since TP-043
+ */
+export interface BatchSummaryData {
+	/** Batch ID */
+	batchId: string;
+	/** Batch phase at summary generation time */
+	phase: string;
+	/** Epoch ms when batch started */
+	startedAt: number;
+	/** Epoch ms when batch ended (null if still running) */
+	endedAt: number | null;
+	/** Total tasks in batch */
+	totalTasks: number;
+	/** Tasks completed successfully */
+	succeededTasks: number;
+	/** Tasks that failed */
+	failedTasks: number;
+	/** Tasks skipped */
+	skippedTasks: number;
+	/** Tasks blocked */
+	blockedTasks: number;
+	/** Batch cost in USD (from diagnostics) */
+	batchCost: number;
+	/** Wave plan (array of arrays of task IDs per wave) */
+	wavePlan: string[][];
+	/** Wave results with timing data */
+	waveResults: Array<{
+		waveIndex: number;
+		startedAt: number;
+		endedAt: number;
+		succeededTaskIds: string[];
+		failedTaskIds: string[];
+		skippedTaskIds: string[];
+		overallStatus: string;
+	}>;
+	/** Per-task exit summaries keyed by task ID (from diagnostics) */
+	taskExits: Record<string, { classification: string; cost: number; durationSec: number }>;
+	/** Merge results per wave */
+	mergeResults: Array<{
+		waveIndex: number;
+		status: string;
+		failedLane: number | null;
+		failureReason: string | null;
+	}>;
+	/** Audit trail entries for the batch */
+	auditEntries: AuditTrailEntry[];
+	/** Errors accumulated during the batch */
+	errors: string[];
+}
+
+/**
+ * Format a duration in milliseconds to a human-readable string.
+ *
+ * @since TP-043
+ */
+function formatDurationMs(ms: number): string {
+	if (ms < 0) ms = 0;
+	const totalSecs = Math.floor(ms / 1000);
+	if (totalSecs < 60) return `${totalSecs}s`;
+	const mins = Math.floor(totalSecs / 60);
+	const secs = totalSecs % 60;
+	if (mins < 60) return `${mins}m${secs > 0 ? ` ${secs}s` : ""}`;
+	const hours = Math.floor(mins / 60);
+	const remainMins = mins % 60;
+	return `${hours}h${remainMins > 0 ? ` ${remainMins}m` : ""}`;
+}
+
+/**
+ * Collect summary data from runtime batch state.
+ *
+ * Gathers data from OrchBatchRuntimeState, BatchDiagnostics, merge results,
+ * and the audit trail. This function reads state — the formatter
+ * (`formatBatchSummary`) is pure.
+ *
+ * @param batchState - Runtime batch state
+ * @param stateRoot - Root path for .pi/ state directory
+ * @param diagnostics - Batch diagnostics (taskExits, batchCost) or null
+ * @param mergeResults - Persisted merge results or empty array
+ * @returns Summary data ready for formatting
+ *
+ * @since TP-043
+ */
+export function collectBatchSummaryData(
+	batchState: OrchBatchRuntimeState,
+	stateRoot: string,
+	diagnostics?: { taskExits: Record<string, { classification: string; cost: number; durationSec: number }>; batchCost: number } | null,
+	mergeResults?: Array<{ waveIndex: number; status: string; failedLane: number | null; failureReason: string | null }>,
+): BatchSummaryData {
+	// Read audit trail for incidents
+	const auditEntries = readAuditTrail(stateRoot, { batchId: batchState.batchId });
+
+	// Extract wave results (may not exist if batch failed during planning)
+	const waveResults = (batchState.waveResults || []).map(wr => ({
+		waveIndex: wr.waveIndex,
+		startedAt: wr.startedAt,
+		endedAt: wr.endedAt,
+		succeededTaskIds: wr.succeededTaskIds || [],
+		failedTaskIds: wr.failedTaskIds || [],
+		skippedTaskIds: wr.skippedTaskIds || [],
+		overallStatus: wr.overallStatus || "unknown",
+	}));
+
+	return {
+		batchId: batchState.batchId,
+		phase: batchState.phase,
+		startedAt: batchState.startedAt,
+		endedAt: batchState.endedAt,
+		totalTasks: batchState.totalTasks,
+		succeededTasks: batchState.succeededTasks,
+		failedTasks: batchState.failedTasks,
+		skippedTasks: batchState.skippedTasks,
+		blockedTasks: batchState.blockedTasks,
+		batchCost: diagnostics?.batchCost ?? 0,
+		wavePlan: [], // Not directly available on runtime state — use waveResults
+		waveResults,
+		taskExits: diagnostics?.taskExits ?? {},
+		mergeResults: mergeResults ?? [],
+		auditEntries,
+		errors: batchState.errors || [],
+	};
+}
+
+/**
+ * Format a batch summary as a structured markdown string.
+ *
+ * Pure function — no I/O, no side effects. Follows the format specified
+ * in spec §9.2: header with duration/cost/result, wave timeline, incidents,
+ * recommendations, and cost breakdown by wave.
+ *
+ * When data is unavailable (no diagnostics, no audit trail, etc.), sections
+ * are emitted with "Not available" rather than omitted — ensuring a complete
+ * skeleton is always produced.
+ *
+ * @param data - Collected batch summary data
+ * @returns Formatted markdown string
+ *
+ * @since TP-043
+ */
+export function formatBatchSummary(data: BatchSummaryData): string {
+	const lines: string[] = [];
+
+	// ── Header ───────────────────────────────────────────────────
+	lines.push(`# Batch Summary: ${data.batchId}`);
+	lines.push("");
+
+	// Duration
+	const duration = data.endedAt && data.startedAt
+		? formatDurationMs(data.endedAt - data.startedAt)
+		: "In progress";
+	lines.push(`**Duration:** ${duration}`);
+
+	// Cost
+	if (data.batchCost > 0) {
+		lines.push(`**Cost:** $${data.batchCost.toFixed(2)}`);
+	} else {
+		lines.push(`**Cost:** Not available`);
+	}
+
+	// Result
+	const resultParts: string[] = [];
+	resultParts.push(`${data.succeededTasks}/${data.totalTasks} tasks succeeded`);
+	if (data.failedTasks > 0) resultParts.push(`${data.failedTasks} failed`);
+	if (data.skippedTasks > 0) resultParts.push(`${data.skippedTasks} skipped`);
+	if (data.blockedTasks > 0) resultParts.push(`${data.blockedTasks} blocked`);
+	lines.push(`**Result:** ${resultParts.join(", ")}`);
+	lines.push(`**Phase:** ${data.phase}`);
+	lines.push("");
+
+	// ── Wave Timeline ────────────────────────────────────────────
+	lines.push("## Wave Timeline");
+	lines.push("");
+
+	if (data.waveResults.length === 0) {
+		lines.push("No wave data available.");
+	} else {
+		for (const wave of data.waveResults) {
+			const waveNum = wave.waveIndex + 1;
+			const taskCount = wave.succeededTaskIds.length + wave.failedTaskIds.length + wave.skippedTaskIds.length;
+			const waveDuration = formatDurationMs(wave.endedAt - wave.startedAt);
+
+			// Check for merge result for this wave
+			const mergeResult = data.mergeResults.find(mr => mr.waveIndex === wave.waveIndex);
+			let mergeInfo = "";
+			if (mergeResult) {
+				if (mergeResult.status === "succeeded") {
+					mergeInfo = " ✅";
+				} else if (mergeResult.status === "failed") {
+					mergeInfo = ` ❌ (merge failed: ${mergeResult.failureReason || "unknown"})`;
+				} else if (mergeResult.status === "partial") {
+					mergeInfo = ` ⚠️ (partial merge)`;
+				}
+			}
+
+			const statusIcon = wave.overallStatus === "succeeded" ? "✅"
+				: wave.overallStatus === "failed" ? "❌"
+				: wave.overallStatus === "partial" ? "⚠️"
+				: wave.overallStatus === "aborted" ? "🛑"
+				: "❓";
+
+			lines.push(`- Wave ${waveNum} (${taskCount} tasks): ${waveDuration} ${statusIcon}${mergeInfo}`);
+
+			// Show failed tasks inline
+			if (wave.failedTaskIds.length > 0) {
+				lines.push(`  - Failed: ${wave.failedTaskIds.join(", ")}`);
+			}
+		}
+	}
+	lines.push("");
+
+	// ── Incidents & Recoveries ───────────────────────────────────
+	lines.push("## Incidents");
+	lines.push("");
+
+	// Extract incidents from audit trail: non-diagnostic actions
+	const incidents = data.auditEntries.filter(
+		e => e.classification !== "diagnostic" && e.result !== "pending",
+	);
+
+	if (incidents.length === 0 && data.errors.length === 0) {
+		lines.push("No incidents recorded.");
+	} else {
+		let incidentNum = 0;
+
+		// Group audit trail actions by action type for readability
+		for (const entry of incidents) {
+			incidentNum++;
+			const resultIcon = entry.result === "success" ? "✅"
+				: entry.result === "failure" ? "❌"
+				: entry.result === "skipped" ? "⏭️"
+				: "❓";
+			lines.push(`${incidentNum}. **${entry.action}** (${entry.classification}) ${resultIcon}`);
+			lines.push(`   ${entry.context}`);
+			if (entry.detail && entry.detail !== entry.context) {
+				lines.push(`   Result: ${entry.detail}`);
+			}
+			if (entry.durationMs !== undefined) {
+				lines.push(`   Duration: ${formatDurationMs(entry.durationMs)}`);
+			}
+		}
+
+		// Add errors that weren't captured in audit trail
+		if (data.errors.length > 0) {
+			lines.push("");
+			lines.push("### Errors");
+			for (const error of data.errors) {
+				lines.push(`- ${error}`);
+			}
+		}
+	}
+	lines.push("");
+
+	// ── Recommendations ──────────────────────────────────────────
+	lines.push("## Recommendations");
+	lines.push("");
+
+	const recommendations: string[] = [];
+
+	// Timeout recommendations: look for merge failures in audit trail
+	const mergeFailures = data.mergeResults.filter(mr => mr.status === "failed");
+	if (mergeFailures.length > 0) {
+		recommendations.push("- Consider increasing `merge.timeoutMinutes` — merge failures were detected during this batch.");
+	}
+
+	// Failure rate recommendations
+	if (data.totalTasks > 0 && data.failedTasks > 0) {
+		const failureRate = data.failedTasks / data.totalTasks;
+		if (failureRate > 0.3) {
+			recommendations.push("- High failure rate (" + Math.round(failureRate * 100) + "%) — consider reducing task scope or adding more context to PROMPT.md files.");
+		}
+	}
+
+	// Long-running task recommendations
+	const longTasks = Object.entries(data.taskExits).filter(([, exit]) => exit.durationSec > 3600);
+	if (longTasks.length > 0) {
+		const names = longTasks.map(([id]) => id).join(", ");
+		recommendations.push(`- Long-running tasks detected (${names}): ${longTasks.length} task(s) exceeded 1 hour — consider splitting into smaller tasks.`);
+	}
+
+	// Recovery recommendations
+	const recoveryExhausted = data.auditEntries.filter(e => e.action === "tier0_recovery_exhausted" || (e.classification === "tier0_known" && e.result === "failure"));
+	if (recoveryExhausted.length > 0) {
+		recommendations.push("- Recovery budget was exhausted for some issues — review recurring failures and consider addressing root causes.");
+	}
+
+	// Blocked tasks recommendations
+	if (data.blockedTasks > 0) {
+		recommendations.push(`- ${data.blockedTasks} task(s) were blocked due to upstream failures — fix failed tasks and re-run with \`/orch-resume\`.`);
+	}
+
+	if (recommendations.length === 0) {
+		lines.push("No recommendations — batch ran smoothly.");
+	} else {
+		for (const rec of recommendations) {
+			lines.push(rec);
+		}
+	}
+	lines.push("");
+
+	// ── Cost Breakdown by Wave ───────────────────────────────────
+	lines.push("## Cost Breakdown");
+	lines.push("");
+
+	if (Object.keys(data.taskExits).length === 0) {
+		lines.push("Cost data not available (no telemetry recorded).");
+	} else {
+		// Build per-wave cost table
+		lines.push("| Wave | Tasks | Cost | Duration |");
+		lines.push("|------|-------|------|----------|");
+
+		let totalCost = 0;
+		for (const wave of data.waveResults) {
+			const waveNum = wave.waveIndex + 1;
+			const allTaskIds = [...wave.succeededTaskIds, ...wave.failedTaskIds, ...wave.skippedTaskIds];
+			let waveCost = 0;
+			let waveDurationSec = 0;
+
+			for (const taskId of allTaskIds) {
+				const exit = data.taskExits[taskId];
+				if (exit) {
+					waveCost += exit.cost;
+					waveDurationSec += exit.durationSec;
+				}
+			}
+
+			totalCost += waveCost;
+			const waveDurationStr = formatDurationMs(waveDurationSec * 1000);
+			lines.push(`| ${waveNum} | ${allTaskIds.length} | $${waveCost.toFixed(2)} | ${waveDurationStr} |`);
+		}
+
+		lines.push(`| **Total** | **${data.totalTasks}** | **$${totalCost.toFixed(2)}** | **${duration}** |`);
+	}
+	lines.push("");
+
+	// ── Footer ───────────────────────────────────────────────────
+	lines.push("---");
+	lines.push(`*Generated at ${new Date().toISOString()}*`);
+
+	return lines.join("\n");
+}
+
+/**
+ * Generate and write the batch summary file.
+ *
+ * Collects data from the runtime batch state, formats it, and writes to
+ * `.pi/supervisor/{opId}-{batchId}-summary.md`.
+ *
+ * Best-effort and non-fatal: if the file cannot be written, the error is
+ * swallowed. The caller should also present the summary in conversation.
+ *
+ * @param batchState - Runtime batch state
+ * @param stateRoot - Root path for .pi/ state directory
+ * @param opId - Operator identifier (for file naming)
+ * @param diagnostics - Batch diagnostics or null
+ * @param mergeResults - Persisted merge results or empty array
+ * @returns The formatted summary markdown string (for conversation presentation)
+ *
+ * @since TP-043
+ */
+export function generateBatchSummary(
+	batchState: OrchBatchRuntimeState,
+	stateRoot: string,
+	opId: string,
+	diagnostics?: { taskExits: Record<string, { classification: string; cost: number; durationSec: number }>; batchCost: number } | null,
+	mergeResults?: Array<{ waveIndex: number; status: string; failedLane: number | null; failureReason: string | null }>,
+): string {
+	const data = collectBatchSummaryData(batchState, stateRoot, diagnostics, mergeResults);
+	const markdown = formatBatchSummary(data);
+
+	// Write to file — best-effort, non-fatal
+	try {
+		const dir = join(stateRoot, ".pi", "supervisor");
+		if (!existsSync(dir)) {
+			mkdirSync(dir, { recursive: true });
+		}
+		const filename = `${opId}-${batchState.batchId}-summary.md`;
+		const filepath = join(dir, filename);
+		writeFileSync(filepath, markdown, "utf-8");
+	} catch {
+		// Best-effort: file write failure must not block summary presentation
+	}
+
+	return markdown;
+}
+
+/**
+ * Present a batch summary to the operator via a supervisor message.
+ *
+ * Generates the summary file and sends a concise version in conversation.
+ * The full summary is available in the written file.
+ *
+ * @param pi - ExtensionAPI for sending messages
+ * @param batchState - Runtime batch state
+ * @param stateRoot - Root path for .pi/ state directory
+ * @param opId - Operator identifier
+ * @param diagnostics - Batch diagnostics or null
+ * @param mergeResults - Persisted merge results or empty array
+ *
+ * @since TP-043
+ */
+export function presentBatchSummary(
+	pi: ExtensionAPI,
+	batchState: OrchBatchRuntimeState,
+	stateRoot: string,
+	opId: string,
+	diagnostics?: { taskExits: Record<string, { classification: string; cost: number; durationSec: number }>; batchCost: number } | null,
+	mergeResults?: Array<{ waveIndex: number; status: string; failedLane: number | null; failureReason: string | null }>,
+): void {
+	const summary = generateBatchSummary(batchState, stateRoot, opId, diagnostics, mergeResults);
+
+	// Build a concise conversation message (full details in the file)
+	const duration = batchState.endedAt && batchState.startedAt
+		? formatDurationMs(batchState.endedAt - batchState.startedAt)
+		: "in progress";
+	const cost = (diagnostics?.batchCost ?? 0) > 0
+		? `$${(diagnostics?.batchCost ?? 0).toFixed(2)}`
+		: "not tracked";
+	const filename = `${opId}-${batchState.batchId}-summary.md`;
+
+	const conciseText =
+		`📊 **Batch Summary** — ${batchState.batchId}\n\n` +
+		`- **Result:** ${batchState.succeededTasks}/${batchState.totalTasks} tasks succeeded\n` +
+		`- **Duration:** ${duration}\n` +
+		`- **Cost:** ${cost}\n` +
+		(batchState.failedTasks > 0 ? `- **Failed:** ${batchState.failedTasks} task(s)\n` : "") +
+		`\nFull summary written to \`.pi/supervisor/${filename}\`.`;
+
+	pi.sendMessage(
+		{
+			customType: "supervisor-batch-summary",
+			content: [{ type: "text", text: conciseText }],
+			display: `Batch summary: ${batchState.succeededTasks}/${batchState.totalTasks} succeeded`,
+		},
+		{ triggerTurn: false },
+	);
 }
 
 
