@@ -3,25 +3,23 @@
 ### Verdict: REVISE
 
 ### Summary
-The new `auto-integration.test.ts` suite is extensive and all tests pass locally (`49 files / 2109 tests`). However, several Step 3 outcomes from `PROMPT.md` are not actually verified by deterministic behavior tests yet. As written, this can report Step 3 complete while missing required coverage for core integration paths.
+The new test file adds broad coverage across integration planning, CI/PR lifecycle, supervisor integration, and batch summary rendering, and the suite currently passes. However, several Step 3 PROMPT outcomes are still not actually verified by deterministic assertions. As written, key scenarios can regress without failing tests.
 
 ### Issues Found
-1. **[extensions/tests/auto-integration.test.ts:169-190] [important]** — `buildIntegrationPlan` “coverage” does not test planning logic (protected/unknown → PR, linear → ff, diverged → merge); it only validates null guards and a hand-constructed object shape.  
-   **Fix:** Add deterministic tests that exercise real `buildIntegrationPlan` branches (e.g., temp git repo for merge-base cases + controlled/mocked branch-protection responses).
+1. **[extensions/tests/auto-integration.test.ts:169-190] [important]** — Branch-protection behavior is not actually tested.
+   - The `buildIntegrationPlan` block never asserts the required behavior “branch protection detected → defaults to PR mode.” Test 10.4 only validates a hand-constructed object shape.
+   - **Fix:** Add deterministic tests for `buildIntegrationPlan`/`detectBranchProtection` by mocking `execFileSync` (or refactoring for dependency injection) to cover: protected → `pr`, unknown → `pr` safety fallback, unprotected+ancestor → `ff`, unprotected+diverged → `merge`.
 
-2. **[extensions/tests/auto-integration.test.ts:497-533] [important]** — Auto-mode tests are non-deterministic/vacuous for the main requirement “integration executed without asking.” `12.2` accepts multiple unrelated outcomes, and `12.3` only asserts deactivation, so they can pass even when integration is never executed.  
-   **Fix:** Force a known non-null plan path and assert executor call order, sent message type/content, and no confirmation prompt (`triggerTurn: false`) for auto mode.
-
-3. **[taskplane-tasks/TP-043-auto-integration-batch-summary/STATUS.md:47-54] [important]** — Step 3 is marked complete, but required PROMPT outcomes are still missing from verified tests (manual-mode `/orch-integrate` guidance and branch-protection-detected default-to-PR behavior).  
-   **Fix:** Add explicit tests for those two outcomes, then keep Step 3 marked complete.
+2. **[extensions/tests/auto-integration.test.ts:481-507,510-533] [important]** — Auto-mode execution path is under-asserted and can pass without proving integration execution.
+   - 12.2 allows success even when no message is emitted (`if (pi.messages.length > 0)` guard), and 12.3 asserts only `state.active === false` without checking executor invocation/outcome messaging.
+   - **Fix:** Make the plan path deterministic, then assert executor call count/mode/context and emitted message semantics (no confirmation prompt, success/failure text, proper `triggerTurn` behavior).
 
 ### Pattern Violations
-- Heavy reliance on source-string assertions for behavior-critical paths that are testable via dependency control; this reduces regression detection quality for runtime behavior.
+- Heavy reliance on source-string assertions for behavior-critical paths (e.g., 12.4/13.1/14.1) reduces regression protection compared with runtime behavior tests.
 
 ### Test Gaps
-- `batch_complete` in **manual** mode → operator is told to run `/orch-integrate`.
-- Branch protection detected (or unknown protection fallback) → integration defaults to **PR** mode.
-- Deterministic auto-mode execution path asserting integration runs (not just supervisor deactivation).
+- Missing explicit Step 3 manual-mode batch completion test: operator is told to run `/orch-integrate`.
+- Missing deterministic test for “branch protection detected → PR mode default” outcome from PROMPT Step 3.
 
 ### Suggestions
-- Consider extracting a small planning dependency layer (or injectable shell runner) so `detectBranchProtection`/`buildIntegrationPlan` can be tested without brittle source inspection.
+- Keep the source-structure checks as supplemental guards, but pair each with at least one behavior-level assertion against function outputs/messages.

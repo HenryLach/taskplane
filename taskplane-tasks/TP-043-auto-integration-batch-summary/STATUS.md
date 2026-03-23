@@ -44,7 +44,7 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** 🔄 In Progress (R006 revisions)
+**Status:** ✅ Complete (R006 revisions applied)
 - [x] Integration plan + format + outcome tests (buildIntegrationPlan, formatIntegrationPlan, formatIntegrationOutcome, pollPrCiStatus, mergePr)
 - [x] Auto mode integration test (triggerSupervisorIntegration auto path: ff success, PR+CI lifecycle, no-executor fallback, no-plan deactivation)
 - [x] Integration conflict handling test (R005: ff fails → auto fallback to merge; merge also fails → error reported)
@@ -52,9 +52,9 @@
 - [x] Summary generation test (collectBatchSummaryData, formatBatchSummary, generateBatchSummary writes file, presentBatchSummary sends message, readTier0EventsForBatch)
 - [x] Manual/supervised/auto config type test + source verification
 - [x] Full test suite passes (49 files, 2109 tests — 0 failures)
-- [ ] R006-1: Add deterministic buildIntegrationPlan branch tests (protected→PR, linear→ff, diverged→merge) and fix auto-mode tests to assert executor call order + no confirmation prompt
-- [ ] R006-2: Add manual-mode guidance test and branch-protection-detected default-to-PR test
-- [ ] R006-3: Full test suite passes with all R006 fixes
+- [x] R006-1: Add deterministic buildIntegrationPlan branch tests (protected→PR, linear→ff, diverged→merge) and fix auto-mode tests to assert executor call order + no confirmation prompt
+- [x] R006-2: Add manual-mode guidance test and branch-protection-detected default-to-PR test
+- [x] R006-3: Full test suite passes with all R006 fixes (50 files, 2143 tests — 0 failures)
 
 ---
 
@@ -78,6 +78,7 @@
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
+| R006 | code | Step 3 | REVISE | .reviews/R006-code-step3.md |
 | R006 | code | Step 3 | REVISE | .reviews/R006-code-step3.md |
 |---|------|------|---------|------|
 
@@ -134,6 +135,7 @@
 | 2026-03-23 01:31 | Worker iter 4 | done in 541s, ctx: 42%, tools: 47 |
 | 2026-03-23 01:32 | Worker iter 5 | done in 620s, ctx: 44%, tools: 61 |
 | 2026-03-23 01:35 | Review R006 | code Step 3: REVISE |
+| 2026-03-23 01:36 | Review R006 | code Step 3: REVISE |
 
 ## Blockers
 

@@ -413,6 +413,7 @@ export interface IntegrationPlan {
 export function buildIntegrationPlan(
 	batchState: OrchBatchRuntimeState,
 	cwd: string,
+	protectionOverride?: BranchProtectionStatus,
 ): IntegrationPlan | null {
 	if (!batchState.orchBranch || !batchState.baseBranch) {
 		return null;
@@ -426,8 +427,8 @@ export function buildIntegrationPlan(
 	const baseBranch = batchState.baseBranch;
 	const batchId = batchState.batchId;
 
-	// Step 1: Check branch protection
-	const protection = detectBranchProtection(baseBranch, cwd);
+	// Step 1: Check branch protection (injectable for testing)
+	const protection = protectionOverride ?? detectBranchProtection(baseBranch, cwd);
 
 	if (protection === "protected") {
 		return {
