@@ -3,7 +3,7 @@
 ### Verdict: APPROVE
 
 ### Summary
-The Step 4 plan is appropriately outcome-focused and maps to the required testing goals in `PROMPT.md` (`PROMPT.md:112-119`). The three checklist items in `STATUS.md` (`STATUS.md:58-60`) are broad, but they are sufficient to cover routing-state validation, no-regression behavior for `/orch` with args, and full-suite verification. I do not see blocking gaps that would force rework if implementation follows this plan.
+The Step 4 plan is outcome-aligned with the required verification goals in `PROMPT.md` (routing behavior for `/orch` no-args states, no regression for args, and full-suite pass). The proposed coverage in `STATUS.md` (state detection matrix, routing-prompt mapping, and args-preservation tests) is sufficient to validate the TP-042 behavior changes without over-specifying implementation details. I do not see blocking gaps that would force rework later.
 
 ### Issues Found
 1. **[Severity: minor]** — No blocking plan-level issues identified.
@@ -12,6 +12,6 @@ The Step 4 plan is appropriately outcome-focused and maps to the required testin
 - None.
 
 ### Suggestions
-- When implementing "Routing tests for all project states" (`STATUS.md:58`), make sure the matrix explicitly includes the **completed-batch needing integration** path (from Step 1 outcomes) in addition to no-config/pending/no-tasks/active-batch.
-- Add one regression case for the previously fixed root-resolution edge case (pointer `configRoot` vs repo root) so `/orch` no-args detection remains correct in workspace/pointer setups.
-- Consider one focused assertion that routing state → primer script guidance remains wired for returning-user flows (especially completed-batch → Script 8) to protect Step 3 behavior.
+- In the “/orch with args” regression tests (`STATUS.md:60`), include one explicit `/orch all` assertion so the PROMPT’s dedicated `/orch all` requirement is visibly covered.
+- Add one focused handler-level assertion around the no-args active-batch path (`extensions/taskplane/extension.ts:1046-1054`) to ensure it reports status and does not activate routing-mode supervisor flow.
+- Keep one test that protects the completed-batch → Script 8 guidance mapping (`extensions/taskplane/supervisor.ts:644-659`) since that was a key Step 3 contract.
