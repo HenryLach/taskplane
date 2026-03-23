@@ -11,7 +11,7 @@ import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
-import { generateMergeWorktreePath, sleepSync } from "./worktree.ts";
+import { generateMergeWorktreePath, sleepAsync, sleepSync } from "./worktree.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
 import { loadOrchestratorConfig } from "./config.ts";
@@ -353,7 +353,7 @@ export function buildMergeRequest(
  * @param agentRoot       - Root for agent prompts. When pointer is resolved, this is the config repo's agent dir. Falls back to `<stateRoot>/.pi/agents/` or `<repoRoot>/.pi/agents/`.
  * @throws MergeError if spawn fails after retries
  */
-export function spawnMergeAgent(
+export async function spawnMergeAgent(
 	sessionName: string,
 	repoRoot: string,
 	mergeWorkDir: string,
@@ -361,7 +361,7 @@ export function spawnMergeAgent(
 	config: OrchestratorConfig,
 	stateRoot?: string,
 	agentRoot?: string,
-): void {
+): Promise<void> {
 	execLog("merge", sessionName, "preparing to spawn merge agent", {
 		mergeWorkDir,
 		mergeRequestPath,
@@ -371,7 +371,7 @@ export function spawnMergeAgent(
 	if (tmuxHasSession(sessionName)) {
 		execLog("merge", sessionName, "killing stale merge session");
 		tmuxKillSession(sessionName);
-		sleepSync(500);
+		await sleepAsync(500);
 	}
 
 	// Build the pi command for the merge agent.
@@ -424,7 +424,7 @@ export function spawnMergeAgent(
 		execLog("merge", sessionName, `merge spawn attempt ${attempt} failed: ${lastError}`);
 
 		if (attempt <= MERGE_SPAWN_RETRY_MAX) {
-			sleepSync(attempt * 1000);
+			await sleepAsync(attempt * 1000);
 		}
 	}
 
@@ -480,11 +480,11 @@ const SUCCESSFUL_MERGE_STATUSES = new Set<string>(["SUCCESS", "CONFLICT_RESOLVED
  * @returns Validated MergeResult
  * @throws MergeError on timeout, session death, or invalid result
  */
-export function waitForMergeResult(
+export async function waitForMergeResult(
 	resultPath: string,
 	sessionName: string,
 	timeoutMs: number = MERGE_TIMEOUT_MS,
-): MergeResult {
+): Promise<MergeResult> {
 	const startTime = Date.now();
 	let sessionDiedAt: number | null = null;
 
@@ -559,7 +559,7 @@ export function waitForMergeResult(
 				// parseMergeResult already retries, so if it throws, it's final.
 				if (err instanceof MergeError && err.code === "MERGE_RESULT_INVALID") {
 					// Wait a bit and try once more (file might still be in flight)
-					sleepSync(MERGE_RESULT_READ_RETRY_DELAY_MS);
+					await sleepAsync(MERGE_RESULT_READ_RETRY_DELAY_MS);
 					if (existsSync(resultPath)) {
 						try {
 							return parseMergeResult(resultPath);
@@ -605,7 +605,7 @@ export function waitForMergeResult(
 		}
 
 		// Poll interval
-		sleepSync(MERGE_POLL_INTERVAL_MS);
+		await sleepAsync(MERGE_POLL_INTERVAL_MS);
 	}
 }
 
@@ -931,7 +931,7 @@ function runPostMergeVerification(
  * @param baseBranch       - Branch to merge into (captured at batch start)
  * @returns MergeWaveResult with per-lane outcomes
  */
-export function mergeWave(
+export async function mergeWave(
 	completedLanes: AllocatedLane[],
 	waveResult: WaveExecutionResult,
 	waveIndex: number,
@@ -943,7 +943,7 @@ export function mergeWave(
 	agentRoot?: string,
 	testingCommands?: Record<string, string>,
 	repoId?: string,
-): MergeWaveResult {
+): Promise<MergeWaveResult> {
 	const startTime = Date.now();
 	const tmuxPrefix = config.orchestrator.tmux_prefix;
 	const opId = resolveOperatorId(config);
@@ -1008,7 +1008,7 @@ export function mergeWave(
 	forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
 	if (existsSync(mergeWorkDir)) {
 		// Force cleanup didn't fully remove — wait and retry once
-		sleepSync(500);
+		await sleepAsync(500);
 		forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
 	}
 	try {
@@ -1242,14 +1242,14 @@ export function mergeWave(
 						}
 
 						// Re-spawn merge agent for the retry
-						spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
 					} else {
 						// First attempt: spawn merge agent
-						spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
 					}
 
 					try {
-						mergeResult = waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs);
+						mergeResult = await waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs);
 						lastTimeoutError = null;
 						break; // Success — exit retry loop
 					} catch (waitErr: unknown) {
@@ -1732,7 +1732,7 @@ export function mergeWave(
 		forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
 		try {
 			// Small delay to ensure worktree lock is released
-			sleepSync(500);
+			await sleepAsync(500);
 			spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot });
 		} catch { /* best effort */ }
 	}
@@ -1845,7 +1845,7 @@ export function groupLanesByRepo(
  * @param workspaceConfig  - Workspace configuration (null in repo mode)
  * @returns MergeWaveResult with per-lane and per-repo outcomes
  */
-export function mergeWaveByRepo(
+export async function mergeWaveByRepo(
 	completedLanes: AllocatedLane[],
 	waveResult: WaveExecutionResult,
 	waveIndex: number,
@@ -1857,7 +1857,7 @@ export function mergeWaveByRepo(
 	stateRoot?: string,
 	agentRoot?: string,
 	testingCommands?: Record<string, string>,
-): MergeWaveResult {
+): Promise<MergeWaveResult> {
 	const startTime = Date.now();
 
 	// Build lane outcome lookup for merge eligibility (same logic as mergeWave).
@@ -1901,7 +1901,7 @@ export function mergeWaveByRepo(
 	// In repo mode (single group with repoId=undefined), delegate directly
 	// to mergeWave() for zero-overhead backward compatibility.
 	if (repoGroups.length === 1 && repoGroups[0].repoId === undefined) {
-		const result = mergeWave(
+		const result = await mergeWave(
 			completedLanes,
 			waveResult,
 			waveIndex,
@@ -1956,7 +1956,7 @@ export function mergeWaveByRepo(
 			allocatedLanes: waveResult.allocatedLanes.filter(l => groupLaneNumbers.has(l.laneNumber)),
 		};
 
-		const groupResult = mergeWave(
+		const groupResult = await mergeWave(
 			group.lanes,
 			filteredWaveResult,
 			waveIndex,

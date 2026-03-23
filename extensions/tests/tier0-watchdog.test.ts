@@ -271,7 +271,7 @@ describe("2.7+ — Merge timeout triggers automatic retry (not immediate pause)"
 		};
 	}
 
-	it("2.7: first merge failure with retriable classification retries instead of immediately pausing", () => {
+	it("2.7: first merge failure with retriable classification retries instead of immediately pausing", async () => {
 		// git_lock_file is retriable with maxAttempts=2
 		const failedResult = buildFailedMergeResult(0, "Unable to create lock file");
 		const succeededResult = buildSucceededMergeResult(0);
@@ -298,7 +298,7 @@ describe("2.7+ — Merge timeout triggers automatic retry (not immediate pause)"
 			},
 		};
 
-		const outcome = applyMergeRetryLoop(failedResult, 0, retryCountByScope, callbacks);
+		const outcome = await applyMergeRetryLoop(failedResult, 0, retryCountByScope, callbacks);
 
 		// Should retry and succeed — NOT pause
 		expect(outcome.kind).toBe("retry_succeeded");
@@ -310,11 +310,11 @@ describe("2.7+ — Merge timeout triggers automatic retry (not immediate pause)"
 		expect(retryCountByScope[scopeKeys[0]]).toBe(1);
 	});
 
-	it("2.8: merge retry success returns the successful MergeWaveResult", () => {
+	it("2.8: merge retry success returns the successful MergeWaveResult", async () => {
 		const failedResult = buildFailedMergeResult(0, "Unable to create lock file");
 		const succeededResult = buildSucceededMergeResult(0);
 
-		const outcome = applyMergeRetryLoop(failedResult, 0, {}, {
+		const outcome = await applyMergeRetryLoop(failedResult, 0, {}, {
 			performMerge: () => succeededResult,
 			persist: () => {},
 			log: () => {},
@@ -330,13 +330,13 @@ describe("2.7+ — Merge timeout triggers automatic retry (not immediate pause)"
 		}
 	});
 
-	it("2.9: merge retry exhaustion returns 'exhausted' (not immediate no_retry)", () => {
+	it("2.9: merge retry exhaustion returns 'exhausted' (not immediate no_retry)", async () => {
 		// git_lock_file: maxAttempts=2. Pre-set counter to 2 so budget is exhausted.
 		const failedResult = buildFailedMergeResult(0, "Unable to create lock file");
 		const retryCountByScope: Record<string, number> = {};
 
 		// First call — will succeed on retry, consuming attempt 1
-		const firstOutcome = applyMergeRetryLoop(
+		const firstOutcome = await applyMergeRetryLoop(
 			failedResult, 0, retryCountByScope,
 			{
 				performMerge: () => buildFailedMergeResult(0, "Unable to create lock file"),
@@ -356,7 +356,7 @@ describe("2.7+ — Merge timeout triggers automatic retry (not immediate pause)"
 		}
 	});
 
-	it("2.10: non-retriable merge failure returns no_retry (not retried)", () => {
+	it("2.10: non-retriable merge failure returns no_retry (not retried)", async () => {
 		// merge_conflict_unresolved is non-retriable
 		const failedResult: MergeWaveResult = {
 			waveIndex: 0,
@@ -378,7 +378,7 @@ describe("2.7+ — Merge timeout triggers automatic retry (not immediate pause)"
 		};
 
 		let performMergeCalled = false;
-		const outcome = applyMergeRetryLoop(failedResult, 0, {}, {
+		const outcome = await applyMergeRetryLoop(failedResult, 0, {}, {
 			performMerge: () => { performMergeCalled = true; return failedResult; },
 			persist: () => {},
 			log: () => {},

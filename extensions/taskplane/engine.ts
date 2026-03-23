@@ -1058,7 +1058,7 @@ export async function executeOrchBatch(
 					laneCount: mergeableLaneCount,
 				}, onEngineEvent);
 
-				mergeResult = mergeWaveByRepo(
+				mergeResult = await mergeWaveByRepo(
 					waveResult.allocatedLanes,
 					waveResult,
 					waveIdx + 1,
@@ -1237,14 +1237,14 @@ export async function executeOrchBatch(
 			const mergeRepoId = extractFailedRepoId(mergeResult) ?? null;
 			const mergeFailedLane = mergeResult.failedLane ?? undefined;
 
-			const retryOutcome = applyMergeRetryLoop(
+			const retryOutcome = await applyMergeRetryLoop(
 				mergeResult,
 				waveIdx,
 				batchState.resilience.retryCountByScope,
 				{
-					performMerge: () => {
+					performMerge: async () => {
 						batchState.phase = "merging";
-						return mergeWaveByRepo(
+						return await mergeWaveByRepo(
 							waveResult.allocatedLanes,
 							waveResult,
 							waveIdx + 1,
@@ -1986,8 +1986,8 @@ export async function executeOrchBatch(
 	const totalElapsedSec = Math.round((batchState.endedAt - batchState.startedAt) / 1000);
 
 	// Determine final batch state. Cast to OrchBatchPhase to bypass control-flow
-	// narrowing — mergeWave() is synchronous but could leave phase as "merging"
-	// if an unexpected throw occurs between setting "merging" and restoring "executing".
+	// narrowing — mergeWave() could leave phase as "merging" if an unexpected
+	// throw occurs between setting "merging" and restoring "executing".
 	if ((batchState.phase as OrchBatchPhase) === "executing" || (batchState.phase as OrchBatchPhase) === "merging") {
 		// Normal completion (not stopped, paused, or aborted)
 		if (batchState.failedTasks > 0) {

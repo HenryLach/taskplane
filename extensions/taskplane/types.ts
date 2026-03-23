@@ -1736,7 +1736,7 @@ export type MergeRetryLoopOutcome =
  */
 export interface MergeRetryCallbacks {
 	/** Re-invoke mergeWaveByRepo and return the new result */
-	performMerge: () => MergeWaveResult;
+	performMerge: () => MergeWaveResult | Promise<MergeWaveResult>;
 	/** Persist batch state with a trigger label */
 	persist: (trigger: string) => void;
 	/** Log a message */
@@ -1746,7 +1746,7 @@ export interface MergeRetryCallbacks {
 	/** Update the merge result in tracking arrays */
 	updateMergeResult: (result: MergeWaveResult) => void;
 	/** Sleep for cooldown (allows test injection) */
-	sleep: (ms: number) => void;
+	sleep: (ms: number) => void | Promise<void>;
 	/**
 	 * Optional callback fired when a retry attempt is about to be executed.
 	 * Provides the retry decision with classification, attempt count, and cooldown
