@@ -308,9 +308,17 @@ function renderSummary(batch) {
   let batchChecked = 0, batchTotal = 0;
   const waveStats = wavePlan.map((taskIds, waveIdx) => {
     let wChecked = 0, wTotal = 0;
+    let allSucceeded = taskIds.length > 0;
     for (const tid of taskIds) {
       const t = taskMap.get(tid);
-      if (t && t.statusData) {
+      if (!t || t.status !== "succeeded") allSucceeded = false;
+      if (t && t.status === "succeeded" && t.statusData) {
+        // Succeeded task with statusData: count as fully done even if
+        // STATUS.md checkboxes weren't all ticked before .DONE was created
+        const total = t.statusData.total || 1;
+        wChecked += total;
+        wTotal += total;
+      } else if (t && t.statusData) {
         wChecked += t.statusData.checked || 0;
         wTotal += t.statusData.total || 0;
       } else if (t && t.status === "succeeded") {
@@ -322,7 +330,7 @@ function renderSummary(batch) {
     }
     batchChecked += wChecked;
     batchTotal += wTotal;
-    return { waveIdx, taskIds, checked: wChecked, total: wTotal };
+    return { waveIdx, taskIds, checked: wChecked, total: wTotal, allSucceeded };
   });
 
   const overallPct = batchTotal > 0 ? Math.round((batchChecked / batchTotal) * 100) : 0;
@@ -336,7 +344,7 @@ function renderSummary(batch) {
     const checkboxDone = ws.checked === ws.total && ws.total > 0;
     const pastWave = ws.waveIdx < currentWaveIdx;
     const batchDone = batch.phase === "completed" || batch.phase === "merging";
-    const isDone = checkboxDone || pastWave || batchDone;
+    const isDone = checkboxDone || pastWave || batchDone || ws.allSucceeded;
     const isCurrent = ws.waveIdx === currentWaveIdx && (batch.phase === "executing" || batch.phase === "merging");
     const isFuture = ws.waveIdx > currentWaveIdx && batch.phase === "executing";
 
