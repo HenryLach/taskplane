@@ -584,7 +584,7 @@ export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPrefere
  * `<configRepo>/.taskplane/`) where files are scaffolded directly
  * without a `.pi/` subdirectory.
  */
-function hasConfigFiles(root: string): boolean {
+export function hasConfigFiles(root: string): boolean {
 	const files = [PROJECT_CONFIG_FILENAME, "task-runner.yaml", "task-orchestrator.yaml"];
 	for (const f of files) {
 		if (existsSync(join(root, ".pi", f)) || existsSync(join(root, f))) return true;

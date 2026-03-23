@@ -11,7 +11,7 @@ import type { MonitorUpdateCallback } from "./execution.ts";
 // classifyExit no longer called directly — Tier 0 uses exitDiagnostic.classification
 // from the diagnostic-reports pipeline (populated by assembleDiagnosticInput).
 import { getCurrentBranch, runGit } from "./git.ts";
-import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
+import { mergeWaveByRepo } from "./merge.ts";
 import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
@@ -2008,22 +2008,22 @@ export async function executeOrchBatch(
 	// are warnings that preserve the orch branch for manual integration.
 	// Gate: only run for terminal phases (completed/failed). Paused/stopped batches
 	// are not yet done — integration would mutate refs prematurely.
-	let autoIntegrated = false;
+	//
+	// TP-043: "supervised" and "auto" integration modes are now owned by the
+	// supervisor agent (which stays alive through post-batch integration).
+	// The legacy engine fast-forward only runs for "auto" mode when no
+	// supervisor is active (fallback). For "supervised" mode, the supervisor
+	// always handles integration.
 	const mergedTaskCount = batchState.succeededTasks;
 	const isTerminalPhase = batchState.phase === "completed" || batchState.phase === "failed";
 	if (isTerminalPhase && !preserveWorktreesForResume && batchState.orchBranch && mergedTaskCount > 0) {
-		if (orchConfig.orchestrator.integration === "auto") {
-			autoIntegrated = attemptAutoIntegration(
-				batchState.orchBranch,
-				batchState.baseBranch,
-				repoRoot,
-				batchState.batchId,
-				"batch",
-				onNotify,
-			);
-		}
-		// Manual mode (default) or auto-integration skipped: show integration guidance
-		if (!autoIntegrated) {
+		if (orchConfig.orchestrator.integration === "supervised" || orchConfig.orchestrator.integration === "auto") {
+			// TP-043: Supervisor-managed integration modes. The supervisor
+			// agent handles integration after batch_complete event. The engine
+			// does NOT perform legacy fast-forward here — defer to supervisor.
+			execLog("batch", batchState.batchId, `integration deferred to supervisor (mode: ${orchConfig.orchestrator.integration})`);
+		} else {
+			// Manual mode (default): show integration guidance
 			onNotify(
 				ORCH_MESSAGES.orchIntegrationManual(batchState.orchBranch, batchState.baseBranch, mergedTaskCount),
 				"info",

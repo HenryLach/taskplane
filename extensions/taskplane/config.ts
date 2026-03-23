@@ -11,7 +11,8 @@
  * @module orch/config
  */
 
-import { loadProjectConfig, toOrchestratorConfig, toTaskRunnerConfig } from "./config-loader.ts";
+import { loadProjectConfig, toOrchestratorConfig, toTaskRunnerConfig, hasConfigFiles } from "./config-loader.ts";
+export { hasConfigFiles } from "./config-loader.ts";
 import type { OrchestratorConfig, TaskRunnerConfig } from "./types.ts";
 import type { SupervisorConfig } from "./supervisor.ts";
 import { DEFAULT_SUPERVISOR_CONFIG } from "./supervisor.ts";

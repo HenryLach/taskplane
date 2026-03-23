@@ -109,12 +109,13 @@ pi
 Inside the pi session:
 
 ```
-/orch-plan all     # Preview waves, lanes, and dependencies
-/orch all          # Execute all pending tasks in parallel
-/orch-status       # Monitor batch progress
+/orch               # Detect project state — guides onboarding or offers to start a batch
+/orch-plan all      # Preview waves, lanes, and dependencies
+/orch all           # Execute all pending tasks in parallel
+/orch-status        # Monitor batch progress
 ```
 
-The default scaffold includes two independent example tasks, so `/orch all` gives you an immediate orchestrator + dashboard experience.
+`/orch` with no arguments is the universal entry point — it detects your project state and activates the supervisor for guided interaction (onboarding, batch planning, health checks, or retrospective). The default scaffold includes two independent example tasks, so `/orch all` gives you an immediate orchestrator + dashboard experience.
 
 ### 4. Optional: run one task directly
 
@@ -148,7 +149,7 @@ Orchestrator lanes execute tasks through task-runner under the hood, so `/task` 
 | `/task-status` | Show current task progress |
 | `/task-pause` | Pause after current worker iteration finishes |
 | `/task-resume` | Resume a paused task |
-| `/orch <areas\|paths\|all>` | Execute tasks via isolated worktrees (recommended default) |
+| `/orch [<areas\|paths\|all>]` | No args: detect state & guide (onboarding, batch planning, etc.); with args: execute tasks via isolated worktrees |
 | `/orch-plan <areas\|paths\|all>` | Preview execution plan without running |
 | `/orch-status` | Show batch progress |
 | `/orch-pause` | Pause batch after current tasks finish |

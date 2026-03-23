@@ -241,8 +241,8 @@ export interface OrchestratorCoreConfig {
 	tmuxPrefix: string;
 	/** Operator identifier. Auto-detected from OS username if empty */
 	operatorId: string;
-	/** How completed batches are integrated. manual = user runs /orch-integrate. auto = fast-forward on completion. */
-	integration: "manual" | "auto";
+	/** How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking. */
+	integration: "manual" | "supervised" | "auto";
 }
 
 /** Dependency resolution settings */

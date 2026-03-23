@@ -1,61 +1,71 @@
 # TP-042: Supervisor Onboarding & /orch Routing — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-21
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 8
+**Iteration:** 6
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read spec Section 14
-- [ ] Read /orch command handler
-- [ ] Read supervisor.ts
+**Status:** ✅ Complete
+- [x] Read spec Section 14
+- [x] Read /orch command handler
+- [x] Read supervisor.ts
 
 ---
 
 ### Step 1: /orch Routing Logic
-**Status:** ⬜ Not Started
-- [ ] Implement state detection (config, batch, tasks)
-- [ ] Route to appropriate supervisor flow
-- [ ] Preserve existing /orch with args behavior
+**Status:** ✅ Complete
+- [x] Implement `detectOrchState()` helper with explicit state enum and precedence: no-config → active-batch → completed-batch-needs-integration → pending-tasks → no-tasks
+- [x] Modify /orch handler: when args is empty, call detectOrchState and route to supervisor activation with appropriate context message
+- [x] Preserve existing /orch WITH args behavior (start batch directly, no changes)
+- [x] R001-1: Include "completed batch, not integrated" state with orch branch check
+- [x] R001-2: Enforce explicit evaluation order matching PROMPT.md routing matrix
+- [x] R002-1: Fix root selection — use pointer configRoot for config detection, repoRoot for batch-state detection
+- [x] R002-2: Validate orch branch existence in completed-batch state (don't trust stale batchState.orchBranch)
 
 ---
 
 ### Step 2: Onboarding Flow (Scripts 1-5)
-**Status:** ⬜ Not Started
-- [ ] Project detection and analysis
-- [ ] Task area setup conversation
-- [ ] Git branching assessment
-- [ ] Config generation
-- [ ] First-task guidance
+**Status:** ✅ Complete
+- [x] Routing-aware system prompt: build onboarding/routing prompt (separate from batch-monitoring prompt) and wire into before_agent_start hook; add routingContext field to SupervisorState
+- [x] Script 1/2/3 trigger discrimination in primer: add all three onboarding scripts to supervisor-primer.md with trigger conditions based on repo maturity (no .pi/ dir → Script 1; empty/new project → Script 2; established codebase → Script 3), with delegation to Scripts 4/5
+- [x] Scripts 4 and 5 in primer: add Task Area Design and Git Branching & Protection scripts as delegated sub-flows
+- [x] Returning-user script stubs in primer: add Scripts 6/7/8 trigger/goal summaries so the routing prompt can reference them for non-onboarding states (pending-tasks, no-tasks, completed-batch)
+- [x] Full config/scaffolding artifact set: onboarding prompt instructs supervisor to create .pi/taskplane-config.json, area CONTEXT.md files, .pi/agents/ overrides, and .gitignore entries (idempotent, create-if-missing)
+- [x] R004-1: Clear routingContext on non-routing activation so prompt hook switches from routing to batch-monitoring prompt
+- [x] R004-2: Fix testing.commands template in supervisor-primer.md to use Record<string,string> shape instead of array
+- [x] R004-3: Fix testing.commands example at primer line ~1005 to use object shape `{"test":"..."}` not array `["..."]`; ensure all onboarding references use Record<string,string>
+- [x] R004-4: Update artifact lists in routing prompt (supervisor.ts:595) and Script 1 (primer:756) to explicitly require task-worker.md, task-reviewer.md, task-merger.md instead of just "dir + README"
 
 ---
 
 ### Step 3: Returning User Flows (Scripts 6-8)
-**Status:** ⬜ Not Started
-- [ ] Batch planning flow
-- [ ] Health check flow
-- [ ] Retrospective flow
+**Status:** ✅ Complete
+- [x] Script 6 (Batch Planning): Expand primer Script 6 with full conversation flow — pending-tasks path lists tasks with sizes/deps and suggests `/orch-plan all`; no-tasks path surfaces GitHub Issues, CONTEXT.md tech debt, TODO comments and offers to create task packets; graceful fallback when `gh` CLI unavailable
+- [x] Script 7 (Health Check): Expand primer Script 7 with full health check checklist — config validity, git state, stale worktrees/branches, orphaned batch state, tmux availability, disk space; report with ✅/⚠️/❌ indicators, task inventory, and actionable recommendations
+- [x] Script 8 (Retrospective): Expand primer Script 8 with post-integration trigger strategy and full conversation flow — reads batch diagnostic report (batch-state.json) + audit trail (actions.jsonl) for results/duration/cost; highlights incidents/review pass rates; recommends config adjustments and task sizing; surfaces next steps (pending tasks or new task creation)
+- [x] Routing prompt wiring: Ensure buildRoutingSystemPrompt maps completed-batch state to Script 8 retrospective guidance (not just integration guidance), and verify all returning-user states correctly reference Scripts 6-8 in the primer
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] Routing tests for all project states
-- [ ] Existing behavior preserved test
-- [ ] Full test suite passes
+**Status:** ✅ Complete
+- [x] Create supervisor-onboarding.test.ts with detectOrchState tests for all 5 states (no-config, active-batch, completed-batch, pending-tasks, no-tasks) and edge cases (stale orch branch, corrupt batch state)
+- [x] Add tests for buildRoutingSystemPrompt — verify each routing state generates correct script guidance
+- [x] Add tests verifying /orch with args still routes to batch start (existing behavior preserved)
+- [x] Run full test suite (`cd extensions && npx vitest run`) and fix all failures
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Commands reference updated
-- [ ] Tutorial updated
+**Status:** 🟨 In Progress
+- [x] Commands reference updated
+- [x] Tutorial updated
 - [ ] `.DONE` created
 
 ---
@@ -63,18 +73,93 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
+| R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
+| R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
+| R005 | plan | Step 3 | APPROVE | .reviews/R005-plan-step3.md |
+| R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
+| R007 | plan | Step 4 | APPROVE | .reviews/R007-plan-step4.md |
+| R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
+| R007 | plan | Step 4 | APPROVE | .reviews/R007-plan-step4.md |
+| R008 | code | Step 4 | APPROVE | .reviews/R008-code-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| /orch handler currently returns usage message when no args — routing logic replaces this | In scope (Step 1) | extension.ts:L470-480 |
+| supervisor.ts already has full activation/deactivation/lockfile/event-tailing — onboarding adds scripts to primer, routing in extension | In scope (Step 2-3) | supervisor.ts |
+| Spec Section 14 defines 9 scripts — Scripts 1-5 are onboarding (Step 2), Scripts 6-8 are returning user (Step 3), Script 9 is integration (out of scope per PROMPT) | Noted | spec §14.4 |
 
 ## Execution Log
 
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-21 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-22 23:08 | Task started | Extension-driven execution |
+| 2026-03-22 23:08 | Step 0 started | Preflight |
+| 2026-03-22 23:08 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 23:08 | Task started | Extension-driven execution |
+| 2026-03-22 23:08 | Step 0 started | Preflight |
+| 2026-03-22 23:08 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 | Step 0 complete | Read spec §14 (all scripts), extension.ts /orch handler, supervisor.ts |
+| 2026-03-22 23:09 | Worker iter 1 | done in 82s, ctx: 20%, tools: 17 |
+| 2026-03-22 23:09 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 23:09 | Step 0 complete | Preflight |
+| 2026-03-22 23:09 | Step 1 started | /orch Routing Logic |
+| 2026-03-22 23:09 | Worker iter 2 | done in 94s, ctx: 40%, tools: 21 |
+| 2026-03-22 23:09 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-22 23:09 | Step 0 complete | Preflight |
+| 2026-03-22 23:09 | Step 1 started | /orch Routing Logic |
+| 2026-03-22 23:11 | Review R001 | plan Step 1: REVISE |
+| 2026-03-22 23:12 | Review R001 | plan Step 1: REVISE |
+| 2026-03-22 23:26 | Worker iter 2 | done in 839s, ctx: 46%, tools: 86 |
+| 2026-03-22 23:26 | Worker iter 3 | done in 884s, ctx: 51%, tools: 84 |
+| 2026-03-22 23:29 | Review R002 | code Step 1: REVISE |
+| 2026-03-22 23:30 | Review R002 | code Step 1: REVISE |
+| 2026-03-22 23:37 | Worker iter 3 | done in 483s, ctx: 15%, tools: 38 |
+| 2026-03-22 23:37 | Step 1 complete | /orch Routing Logic |
+| 2026-03-22 23:37 | Step 2 started | Onboarding Flow (Scripts 1-5) |
+| 2026-03-22 23:38 | Worker iter 2 | done in 512s, ctx: 21%, tools: 46 |
+| 2026-03-22 23:38 | Step 1 complete | /orch Routing Logic |
+| 2026-03-22 23:38 | Step 2 started | Onboarding Flow (Scripts 1-5) |
+| 2026-03-22 23:40 | Review R003 | plan Step 2: REVISE |
+| 2026-03-22 23:40 | Review R003 | plan Step 2: REVISE |
+| 2026-03-22 23:49 | Worker iter 4 | done in 566s, ctx: 35%, tools: 51 |
+| 2026-03-22 23:52 | Review R004 | code Step 2: REVISE |
+| 2026-03-22 23:57 | Worker iter 3 | done in 1017s, ctx: 46%, tools: 71 |
+| 2026-03-22 23:58 | Worker iter 4 | done in 355s, ctx: 13%, tools: 22 |
+| 2026-03-22 23:58 | Step 2 complete | Onboarding Flow (Scripts 1-5) |
+| 2026-03-22 23:58 | Step 3 started | Returning User Flows (Scripts 6-8) |
+| 2026-03-23 00:01 | Review R005 | plan Step 3: REVISE |
+| 2026-03-23 00:01 | Review R004 | code Step 2: REVISE |
+| 2026-03-23 00:04 | Worker iter 3 | done in 140s, ctx: 14%, tools: 29 |
+| 2026-03-23 00:04 | Step 2 complete | Onboarding Flow (Scripts 1-5) |
+| 2026-03-23 00:04 | Step 3 started | Returning User Flows (Scripts 6-8) |
+| 2026-03-23 00:04 | Review R005 | plan Step 3: APPROVE |
+| 2026-03-23 00:06 | Review R006 | code Step 3: APPROVE |
+| 2026-03-23 00:06 | Step 3 complete | Returning User Flows (Scripts 6-8) |
+| 2026-03-23 00:06 | Step 4 started | Testing & Verification |
+| 2026-03-23 00:07 | Worker iter 5 | done in 353s, ctx: 38%, tools: 38 |
+| 2026-03-23 00:08 | Review R007 | plan Step 4: APPROVE |
+| 2026-03-23 00:09 | Review R006 | code Step 3: APPROVE |
+| 2026-03-23 00:09 | Step 3 complete | Returning User Flows (Scripts 6-8) |
+| 2026-03-23 00:09 | Step 4 started | Testing & Verification |
+| 2026-03-23 00:10 | Review R007 | plan Step 4: APPROVE |
+| 2026-03-23 00:14 | Worker iter 4 | done in 367s, ctx: 29%, tools: 35 |
+| 2026-03-23 00:17 | Worker iter 6 | done in 394s, ctx: 28%, tools: 32 |
+| 2026-03-23 00:18 | Review R008 | code Step 4: APPROVE |
+| 2026-03-23 00:18 | Step 4 complete | Testing & Verification |
+| 2026-03-23 00:18 | Step 5 started | Documentation & Delivery |
+| 2026-03-23 00:18 | Skip plan review | Step 5 (final step) — low-risk |
+| 2026-03-23 00:20 | Worker iter 5 | error (code 3221225786) in 125s, ctx: 17%, tools: 22 |
 
 ## Blockers
 
