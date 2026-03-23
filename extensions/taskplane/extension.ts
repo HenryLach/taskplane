@@ -55,7 +55,7 @@ import {
 	DEFAULT_SUPERVISOR_CONFIG,
 	triggerSupervisorIntegration,
 } from "./supervisor.ts";
-import type { SupervisorConfig } from "./supervisor.ts";
+import type { SupervisorConfig, IntegrationExecutor } from "./supervisor.ts";
 import type {
 	AbortMode,
 	ExecutionContext,
@@ -756,6 +756,73 @@ export function startBatchAsync(
 	}, 0);
 }
 
+// ── TP-043 R002-2: Integration Executor Builder ─────────────────────
+
+/**
+ * Build an integration executor callback for `triggerSupervisorIntegration`.
+ *
+ * Wraps `executeIntegration` with the appropriate deps (runGit, runCommand,
+ * deleteBatchState) so the supervisor module can execute integration without
+ * importing from extension.ts (avoiding circular dependencies).
+ *
+ * The executor ensures the working directory is on the base branch before
+ * executing, matching the behavior of `/orch-integrate`.
+ *
+ * @param repoRoot - Repository root directory for git operations
+ * @returns Integration executor callback
+ *
+ * @since TP-043 R002
+ */
+export function buildIntegrationExecutor(repoRoot: string): IntegrationExecutor {
+	return (mode, context) => {
+		// Ensure we're on the base branch before integrating
+		const currentBranch = getCurrentBranch(repoRoot);
+		if (currentBranch && currentBranch !== context.baseBranch) {
+			const checkoutResult = runGit(["checkout", context.baseBranch], repoRoot);
+			if (!checkoutResult.ok) {
+				return {
+					success: false,
+					integratedLocally: false,
+					commitCount: "0",
+					message: "",
+					error: `Failed to switch to base branch ${context.baseBranch}: ${checkoutResult.stderr}`,
+				};
+			}
+		}
+
+		// Build deps matching the /orch-integrate handler pattern
+		const deps: IntegrationExecDeps = {
+			runGit: (gitArgs: string[]) => runGit(gitArgs, repoRoot),
+			runCommand: (cmd: string, cmdArgs: string[]) => {
+				try {
+					const stdout = execFileSync(cmd, cmdArgs, {
+						encoding: "utf-8",
+						timeout: 60_000,
+						cwd: repoRoot,
+						stdio: ["pipe", "pipe", "pipe"],
+					}).trim();
+					return { ok: true, stdout, stderr: "" };
+				} catch (err: unknown) {
+					const e = err as { stdout?: string; stderr?: string; message?: string };
+					return {
+						ok: false,
+						stdout: (e.stdout ?? "").toString().trim(),
+						stderr: (e.stderr ?? e.message ?? "unknown error").toString().trim(),
+					};
+				}
+			},
+			deleteBatchState: () => {
+				try { deleteBatchState(repoRoot); } catch { /* best effort */ }
+			},
+		};
+
+		return executeIntegration(mode as IntegrateMode, {
+			...context,
+			currentBranch: context.baseBranch,
+		}, deps);
+	};
+}
+
 // ── /orch Routing Logic (TP-042) ─────────────────────────────────────
 
 /**
@@ -1209,24 +1276,53 @@ export default function (pi: ExtensionAPI) {
 				orchBatchState,
 				ctx,
 				updateOrchWidget,
-				// TP-043: Deferred supervisor deactivation.
-				// For "supervised" and "auto" integration modes, the supervisor
-				// stays alive after engine completion to handle post-batch
-				// integration. It deactivates itself after integration completes.
-				// For "manual" mode, deactivate immediately (original behavior).
+				// TP-043: Deferred supervisor deactivation (R002-1).
+				// Integration is ONLY triggered when batch completes successfully
+				// (phase === "completed"). For paused/stopped/crash states, the
+				// supervisor is deactivated immediately — no integration on partial
+				// batches.
 				() => {
 					const mode = orchConfig.orchestrator.integration;
-					if (mode === "supervised" || mode === "auto") {
-						// Supervisor stays alive — send it the integration plan
-						// so it can execute or confirm the integration flow.
+					if (
+						orchBatchState.phase === "completed" &&
+						(mode === "supervised" || mode === "auto")
+					) {
+						// Supervisor stays alive — trigger programmatic integration
+						// flow. Supervisor deactivates itself after integration
+						// completes (or fails) via the callback in
+						// triggerSupervisorIntegration.
 						triggerSupervisorIntegration(
 							pi,
 							supervisorState,
 							orchBatchState,
 							mode,
 							repoRoot,
+							// R002-2: Pass integration executor that wraps executeIntegration
+							// to avoid circular imports (supervisor.ts ← extension.ts).
+							buildIntegrationExecutor(repoRoot),
 						);
 						return;
+					}
+					// Non-completed phase or manual mode — deactivate immediately.
+					// Inform operator if integration was expected but skipped.
+					if (
+						(mode === "supervised" || mode === "auto") &&
+						orchBatchState.phase !== "completed"
+					) {
+						pi.sendMessage(
+							{
+								customType: "supervisor-integration-skipped",
+								content: [{
+									type: "text",
+									text:
+										`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
+										`Integration skipped — only completed batches are eligible.\n` +
+										`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
+								}],
+								display: `Integration skipped — batch ${orchBatchState.phase}`,
+							},
+							{ triggerTurn: false },
+						);
 					}
 					deactivateSupervisor(pi, supervisorState);
 				},
@@ -1495,19 +1591,43 @@ export default function (pi: ExtensionAPI) {
 				orchBatchState,
 				ctx,
 				updateOrchWidget,
-				// TP-043: Deferred supervisor deactivation (parity with /orch).
-				// See /orch handler comment for rationale.
+				// TP-043: Deferred supervisor deactivation (R002-1, parity with /orch).
+				// Only trigger integration on completed batches.
 				() => {
 					const mode = orchConfig.orchestrator.integration;
-					if (mode === "supervised" || mode === "auto") {
+					if (
+						orchBatchState.phase === "completed" &&
+						(mode === "supervised" || mode === "auto")
+					) {
 						triggerSupervisorIntegration(
 							pi,
 							supervisorState,
 							orchBatchState,
 							mode,
 							execCtx!.repoRoot,
+							// R002-2: Pass integration executor (parity with /orch handler)
+							buildIntegrationExecutor(execCtx!.repoRoot),
 						);
 						return;
+					}
+					if (
+						(mode === "supervised" || mode === "auto") &&
+						orchBatchState.phase !== "completed"
+					) {
+						pi.sendMessage(
+							{
+								customType: "supervisor-integration-skipped",
+								content: [{
+									type: "text",
+									text:
+										`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
+										`Integration skipped — only completed batches are eligible.\n` +
+										`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
+								}],
+								display: `Integration skipped — batch ${orchBatchState.phase}`,
+							},
+							{ triggerTurn: false },
+						);
 					}
 					deactivateSupervisor(pi, supervisorState);
 				},

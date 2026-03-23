@@ -20,7 +20,7 @@
 ---
 
 ### Step 1: Supervisor-Managed Integration
-**Status:** 🔄 In Progress (R002 revisions)
+**Status:** ✅ Complete
 - [x] Add "supervised" to integration mode type in types.ts, config-schema.ts, config-loader.ts, and settings-tui.ts
 - [x] Gate legacy attemptAutoIntegration in engine.ts and resume.ts — only run for "auto" mode, not "supervised" (R001-1: single owner for integration)
 - [x] Replace immediate deactivateSupervisor in startBatchAsync onTerminal with deferred deactivation — keep supervisor alive through post-batch integration/summary flow (R001-2)
@@ -28,8 +28,8 @@
 - [x] Implement detectBranchProtection helper: gh api repos/{owner}/{repo}/branches/{branch}/protection → protected/unprotected/unknown
 - [x] Implement supervisor-managed integration flow: on batch_complete event, supervisor triggers integration based on mode (manual=guidance, supervised=confirm-then-execute, auto=execute-directly)
 - [x] Handle integration outcomes: conflict detection, CI failure reporting, fallback to PR mode when branch is protected
-- [ ] R002-1: Gate integration on batch_complete only — not triggered for paused/stopped/crash states; use phase check or onBatchComplete callback
-- [ ] R002-2: Implement CI wait/check/merge path — reuse executeIntegration from extension.ts, add PR status checks and CI failure handling
+- [x] R002-1: Gate integration on batch_complete only — not triggered for paused/stopped/crash states; use phase check or onBatchComplete callback
+- [x] R002-2: Implement CI wait/check/merge path — reuse executeIntegration from extension.ts, add PR status checks and CI failure handling
 
 ---
 
