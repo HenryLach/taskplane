@@ -4,7 +4,7 @@
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-23
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 3
 **Size:** M
 
@@ -20,7 +20,7 @@
 ---
 
 ### Step 1: Supervisor-Managed Integration
-**Status:** ✅ Complete
+**Status:** 🔄 In Progress (R002 revisions)
 - [x] Add "supervised" to integration mode type in types.ts, config-schema.ts, config-loader.ts, and settings-tui.ts
 - [x] Gate legacy attemptAutoIntegration in engine.ts and resume.ts — only run for "auto" mode, not "supervised" (R001-1: single owner for integration)
 - [x] Replace immediate deactivateSupervisor in startBatchAsync onTerminal with deferred deactivation — keep supervisor alive through post-batch integration/summary flow (R001-2)
@@ -28,6 +28,8 @@
 - [x] Implement detectBranchProtection helper: gh api repos/{owner}/{repo}/branches/{branch}/protection → protected/unprotected/unknown
 - [x] Implement supervisor-managed integration flow: on batch_complete event, supervisor triggers integration based on mode (manual=guidance, supervised=confirm-then-execute, auto=execute-directly)
 - [x] Handle integration outcomes: conflict detection, CI failure reporting, fallback to PR mode when branch is protected
+- [ ] R002-1: Gate integration on batch_complete only — not triggered for paused/stopped/crash states; use phase check or onBatchComplete callback
+- [ ] R002-2: Implement CI wait/check/merge path — reuse executeIntegration from extension.ts, add PR status checks and CI failure handling
 
 ---
 
@@ -64,6 +66,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -92,6 +96,10 @@
 | 2026-03-23 00:22 | Step 1 started | Supervisor-Managed Integration |
 | 2026-03-23 00:26 | Review R001 | plan Step 1: REVISE |
 | 2026-03-23 00:27 | Review R001 | plan Step 1: REVISE |
+| 2026-03-23 00:43 | Worker iter 3 | done in 972s, ctx: 52%, tools: 105 |
+| 2026-03-23 00:43 | Worker iter 2 | done in 1021s, ctx: 55%, tools: 142 |
+| 2026-03-23 00:47 | Review R002 | code Step 1: REVISE |
+| 2026-03-23 00:47 | Review R002 | code Step 1: REVISE |
 
 ## Blockers
 
