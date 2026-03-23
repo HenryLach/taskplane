@@ -54,8 +54,9 @@ import {
 	isBatchTerminal,
 	DEFAULT_SUPERVISOR_CONFIG,
 	triggerSupervisorIntegration,
+	presentBatchSummary,
 } from "./supervisor.ts";
-import type { SupervisorConfig, IntegrationExecutor, CiDeps } from "./supervisor.ts";
+import type { SupervisorConfig, IntegrationExecutor, CiDeps, SummaryDeps } from "./supervisor.ts";
 import type {
 	AbortMode,
 	ExecutionContext,
@@ -1319,8 +1320,22 @@ export default function (pi: ExtensionAPI) {
 				// (phase === "completed"). For paused/stopped/crash states, the
 				// supervisor is deactivated immediately — no integration on partial
 				// batches.
+				// TP-043 Step 2: Batch summary is generated on all terminal paths
+				// before supervisor deactivation.
 				() => {
 					const mode = orchConfig.orchestrator.integration;
+					// TP-043: Build summary deps for all terminal paths
+					const opId = resolveOperatorId(orchConfig);
+					const sDeps: SummaryDeps = {
+						opId,
+						diagnostics: orchBatchState.diagnostics ?? null,
+						mergeResults: (orchBatchState.mergeResults || []).map(mr => ({
+							waveIndex: mr.waveIndex,
+							status: mr.status,
+							failedLane: mr.failedLane,
+							failureReason: mr.failureReason,
+						})),
+					};
 					if (
 						orchBatchState.phase === "completed" &&
 						(mode === "supervised" || mode === "auto")
@@ -1328,7 +1343,7 @@ export default function (pi: ExtensionAPI) {
 						// Supervisor stays alive — trigger programmatic integration
 						// flow. Supervisor deactivates itself after integration
 						// completes (or fails) via the callback in
-						// triggerSupervisorIntegration.
+						// triggerSupervisorIntegration. Summary generated there.
 						triggerSupervisorIntegration(
 							pi,
 							supervisorState,
@@ -1337,6 +1352,7 @@ export default function (pi: ExtensionAPI) {
 							repoRoot,
 							buildIntegrationExecutor(repoRoot),
 							buildCiDeps(repoRoot),
+							sDeps,
 						);
 						return;
 					}
@@ -1361,6 +1377,8 @@ export default function (pi: ExtensionAPI) {
 							{ triggerTurn: false },
 						);
 					}
+					// TP-043: Generate summary before deactivation (manual mode or non-completed)
+					presentBatchSummary(pi, orchBatchState, execCtx!.workspaceRoot, opId, orchBatchState.diagnostics, sDeps.mergeResults);
 					deactivateSupervisor(pi, supervisorState);
 				},
 			);
@@ -1630,8 +1648,20 @@ export default function (pi: ExtensionAPI) {
 				updateOrchWidget,
 				// TP-043: Deferred supervisor deactivation (R002-1, parity with /orch).
 				// Only trigger integration on completed batches.
+				// TP-043 Step 2: Batch summary on all terminal paths.
 				() => {
 					const mode = orchConfig.orchestrator.integration;
+					const opId = resolveOperatorId(orchConfig);
+					const sDeps: SummaryDeps = {
+						opId,
+						diagnostics: orchBatchState.diagnostics ?? null,
+						mergeResults: (orchBatchState.mergeResults || []).map(mr => ({
+							waveIndex: mr.waveIndex,
+							status: mr.status,
+							failedLane: mr.failedLane,
+							failureReason: mr.failureReason,
+						})),
+					};
 					if (
 						orchBatchState.phase === "completed" &&
 						(mode === "supervised" || mode === "auto")
@@ -1644,6 +1674,7 @@ export default function (pi: ExtensionAPI) {
 							execCtx!.repoRoot,
 							buildIntegrationExecutor(execCtx!.repoRoot),
 							buildCiDeps(execCtx!.repoRoot),
+							sDeps,
 						);
 						return;
 					}
@@ -1666,6 +1697,8 @@ export default function (pi: ExtensionAPI) {
 							{ triggerTurn: false },
 						);
 					}
+					// TP-043: Generate summary before deactivation
+					presentBatchSummary(pi, orchBatchState, execCtx!.workspaceRoot, opId, orchBatchState.diagnostics, sDeps.mergeResults);
 					deactivateSupervisor(pi, supervisorState);
 				},
 			);

@@ -846,6 +846,7 @@ async function handlePrLifecycle(
  * @param cwd - Working directory for git operations
  * @param executor - Integration executor callback (wraps executeIntegration to avoid circular imports)
  * @param ciDeps - CI deps for programmatic PR polling and merge (auto/PR mode)
+ * @param summaryDeps - Optional summary deps for batch summary generation on all terminal paths
  *
  * @since TP-043
  */
@@ -857,7 +858,16 @@ export function triggerSupervisorIntegration(
 	cwd: string,
 	executor?: IntegrationExecutor,
 	ciDeps?: CiDeps,
+	summaryDeps?: SummaryDeps | null,
 ): void {
+	// TP-043: Helper to generate summary before deactivation
+	const summarizeAndDeactivate = () => {
+		if (summaryDeps && state.stateRoot) {
+			presentBatchSummary(pi, batchState, state.stateRoot, summaryDeps.opId, summaryDeps.diagnostics, summaryDeps.mergeResults);
+		}
+		deactivateSupervisor(pi, state);
+	};
+
 	// Build integration plan
 	const plan = buildIntegrationPlan(batchState, cwd);
 
@@ -874,7 +884,7 @@ export function triggerSupervisorIntegration(
 			},
 			{ triggerTurn: false },
 		);
-		deactivateSupervisor(pi, state);
+		summarizeAndDeactivate();
 		return;
 	}
 
@@ -909,6 +919,12 @@ export function triggerSupervisorIntegration(
 			},
 			{ triggerTurn: true, deliverAs: "nextTurn" },
 		);
+
+		// TP-043: Generate summary even in supervised mode (file is useful for reference).
+		// Summary is presented as a separate message — operator sees both the plan and results.
+		if (summaryDeps && state.stateRoot) {
+			presentBatchSummary(pi, batchState, state.stateRoot, summaryDeps.opId, summaryDeps.diagnostics, summaryDeps.mergeResults);
+		}
 		return;
 	}
 
@@ -932,7 +948,7 @@ export function triggerSupervisorIntegration(
 			},
 			{ triggerTurn: false },
 		);
-		deactivateSupervisor(pi, state);
+		summarizeAndDeactivate();
 		return;
 	}
 
@@ -976,9 +992,9 @@ export function triggerSupervisorIntegration(
 			);
 
 			if (ciDeps) {
-				// Fire-and-forget — handlePrLifecycle handles messaging
-				// and deterministic deactivation internally.
-				handlePrLifecycle(plan, ciDeps, pi, state).catch((err: unknown) => {
+				// Fire-and-forget — handlePrLifecycle handles messaging,
+				// summary generation, and deterministic deactivation internally.
+				handlePrLifecycle(plan, ciDeps, pi, state, batchState, summaryDeps).catch((err: unknown) => {
 					const msg = err instanceof Error ? err.message : String(err);
 					pi.sendMessage(
 						{
@@ -991,7 +1007,7 @@ export function triggerSupervisorIntegration(
 						},
 						{ triggerTurn: false },
 					);
-					deactivateSupervisor(pi, state);
+					summarizeAndDeactivate();
 				});
 			} else {
 				// No CI deps — can't poll. Report and deactivate.
@@ -1006,7 +1022,7 @@ export function triggerSupervisorIntegration(
 					},
 					{ triggerTurn: false },
 				);
-				deactivateSupervisor(pi, state);
+				summarizeAndDeactivate();
 			}
 			return;
 		}
@@ -1023,7 +1039,7 @@ export function triggerSupervisorIntegration(
 			},
 			{ triggerTurn: false },
 		);
-		deactivateSupervisor(pi, state);
+		summarizeAndDeactivate();
 	} else {
 		// Integration failed — report the error and deactivate
 		const errorDetail = result.error || result.message || "Unknown integration error";
@@ -1042,7 +1058,7 @@ export function triggerSupervisorIntegration(
 			},
 			{ triggerTurn: false },
 		);
-		deactivateSupervisor(pi, state);
+		summarizeAndDeactivate();
 	}
 }
 
@@ -1100,8 +1116,113 @@ export interface BatchSummaryData {
 	}>;
 	/** Audit trail entries for the batch */
 	auditEntries: AuditTrailEntry[];
+	/** Tier 0 events from events.jsonl (recovery attempts, successes, exhausted, escalations) */
+	tier0Events: Tier0EventSummary[];
 	/** Errors accumulated during the batch */
 	errors: string[];
+}
+
+/**
+ * Compact representation of a Tier 0 event for batch summary display.
+ *
+ * Extracted from events.jsonl, filtered to tier0_* event types and
+ * the current batchId.
+ *
+ * @since TP-043
+ */
+export interface Tier0EventSummary {
+	/** ISO 8601 timestamp */
+	timestamp: string;
+	/** Event type (tier0_recovery_attempt, tier0_recovery_success, etc.) */
+	type: string;
+	/** Recovery pattern being applied */
+	pattern: string;
+	/** Current attempt number (1-based) */
+	attempt: number;
+	/** Maximum attempts allowed */
+	maxAttempts: number;
+	/** Affected task ID (if task-scoped) */
+	taskId?: string;
+	/** Resolution description (for success events) */
+	resolution?: string;
+	/** Error message (for exhausted events) */
+	error?: string;
+	/** Suggested remediation (for exhausted events) */
+	suggestion?: string;
+	/** Affected task IDs (for escalation context) */
+	affectedTaskIds?: string[];
+}
+
+/**
+ * Tier 0 event types relevant to batch summary incidents.
+ *
+ * @since TP-043
+ */
+const TIER0_SUMMARY_TYPES = new Set([
+	"tier0_recovery_attempt",
+	"tier0_recovery_success",
+	"tier0_recovery_exhausted",
+	"tier0_escalation",
+]);
+
+/**
+ * Read Tier 0 events from events.jsonl, filtered by batchId.
+ *
+ * Parses each line as JSON, filters for tier0_* event types matching
+ * the given batchId. Returns compact summaries sorted by timestamp.
+ *
+ * Best-effort: returns empty array if file doesn't exist or parsing fails.
+ * Reuses the same parsing pattern as the event tailer (supervisor.ts:2493+).
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ * @param batchId - Batch ID to filter events
+ * @returns Array of Tier 0 event summaries (chronological order)
+ *
+ * @since TP-043
+ */
+export function readTier0EventsForBatch(
+	stateRoot: string,
+	batchId: string,
+): Tier0EventSummary[] {
+	const eventsPath = join(stateRoot, ".pi", "supervisor", "events.jsonl");
+	if (!existsSync(eventsPath)) return [];
+
+	try {
+		const raw = readFileSync(eventsPath, "utf-8").trim();
+		if (!raw) return [];
+
+		const results: Tier0EventSummary[] = [];
+
+		for (const line of raw.split("\n")) {
+			const trimmed = line.trim();
+			if (!trimmed) continue;
+			try {
+				const parsed = JSON.parse(trimmed);
+				// Must match batchId and be a Tier 0 event type
+				if (parsed.batchId !== batchId) continue;
+				if (!TIER0_SUMMARY_TYPES.has(parsed.type)) continue;
+
+				results.push({
+					timestamp: parsed.timestamp ?? "",
+					type: parsed.type,
+					pattern: parsed.pattern ?? "unknown",
+					attempt: parsed.attempt ?? 0,
+					maxAttempts: parsed.maxAttempts ?? 0,
+					...(parsed.taskId ? { taskId: parsed.taskId } : {}),
+					...(parsed.resolution ? { resolution: parsed.resolution } : {}),
+					...(parsed.error ? { error: parsed.error } : {}),
+					...(parsed.suggestion ? { suggestion: parsed.suggestion } : {}),
+					...(parsed.affectedTaskIds?.length ? { affectedTaskIds: parsed.affectedTaskIds } : {}),
+				});
+			} catch {
+				// Skip malformed lines
+			}
+		}
+
+		return results;
+	} catch {
+		return [];
+	}
 }
 
 /**
@@ -1145,6 +1266,9 @@ export function collectBatchSummaryData(
 	// Read audit trail for incidents
 	const auditEntries = readAuditTrail(stateRoot, { batchId: batchState.batchId });
 
+	// Read Tier 0 events from events.jsonl for recovery/escalation incidents (R003)
+	const tier0Events = readTier0EventsForBatch(stateRoot, batchState.batchId);
+
 	// Extract wave results (may not exist if batch failed during planning)
 	const waveResults = (batchState.waveResults || []).map(wr => ({
 		waveIndex: wr.waveIndex,
@@ -1172,6 +1296,7 @@ export function collectBatchSummaryData(
 		taskExits: diagnostics?.taskExits ?? {},
 		mergeResults: mergeResults ?? [],
 		auditEntries,
+		tier0Events,
 		errors: batchState.errors || [],
 	};
 }
@@ -1272,31 +1397,102 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 		e => e.classification !== "diagnostic" && e.result !== "pending",
 	);
 
-	if (incidents.length === 0 && data.errors.length === 0) {
+	const hasTier0Events = data.tier0Events.length > 0;
+	const hasAuditIncidents = incidents.length > 0;
+	const hasErrors = data.errors.length > 0;
+
+	if (!hasAuditIncidents && !hasTier0Events && !hasErrors) {
 		lines.push("No incidents recorded.");
 	} else {
-		let incidentNum = 0;
+		// ── Tier 0 Recovery Events (from events.jsonl) ───────────
+		if (hasTier0Events) {
+			lines.push("### Tier 0 Recoveries");
+			lines.push("");
 
-		// Group audit trail actions by action type for readability
-		for (const entry of incidents) {
-			incidentNum++;
-			const resultIcon = entry.result === "success" ? "✅"
-				: entry.result === "failure" ? "❌"
-				: entry.result === "skipped" ? "⏭️"
-				: "❓";
-			lines.push(`${incidentNum}. **${entry.action}** (${entry.classification}) ${resultIcon}`);
-			lines.push(`   ${entry.context}`);
-			if (entry.detail && entry.detail !== entry.context) {
-				lines.push(`   Result: ${entry.detail}`);
+			// Group Tier 0 events by pattern for readability
+			const byPattern = new Map<string, typeof data.tier0Events>();
+			for (const evt of data.tier0Events) {
+				const key = evt.pattern;
+				if (!byPattern.has(key)) byPattern.set(key, []);
+				byPattern.get(key)!.push(evt);
 			}
-			if (entry.durationMs !== undefined) {
-				lines.push(`   Duration: ${formatDurationMs(entry.durationMs)}`);
+
+			for (const [pattern, events] of byPattern) {
+				const attempts = events.filter(e => e.type === "tier0_recovery_attempt").length;
+				const successes = events.filter(e => e.type === "tier0_recovery_success").length;
+				const exhausted = events.filter(e => e.type === "tier0_recovery_exhausted").length;
+				const escalations = events.filter(e => e.type === "tier0_escalation").length;
+
+				const statusIcon = exhausted > 0 || escalations > 0 ? "❌"
+					: successes > 0 ? "✅"
+					: "⏳";
+
+				lines.push(`- **${pattern}** ${statusIcon} — ${attempts} attempt(s), ${successes} success(es), ${exhausted} exhausted`);
+
+				// Show affected tasks
+				const taskIds = new Set<string>();
+				for (const evt of events) {
+					if (evt.taskId) taskIds.add(evt.taskId);
+					if (evt.affectedTaskIds) {
+						for (const tid of evt.affectedTaskIds) taskIds.add(tid);
+					}
+				}
+				if (taskIds.size > 0) {
+					lines.push(`  - Affected tasks: ${[...taskIds].join(", ")}`);
+				}
+
+				// Show escalation details
+				for (const evt of events.filter(e => e.type === "tier0_escalation")) {
+					if (evt.suggestion) {
+						lines.push(`  - Escalation: ${evt.suggestion}`);
+					}
+				}
+
+				// Show resolution details
+				for (const evt of events.filter(e => e.type === "tier0_recovery_success")) {
+					if (evt.resolution) {
+						lines.push(`  - Resolution: ${evt.resolution}`);
+					}
+				}
+
+				// Show error details for exhausted
+				for (const evt of events.filter(e => e.type === "tier0_recovery_exhausted")) {
+					if (evt.error) {
+						lines.push(`  - Error: ${evt.error}`);
+					}
+				}
 			}
+			lines.push("");
+		}
+
+		// ── Supervisor Actions (from audit trail) ────────────────
+		if (hasAuditIncidents) {
+			if (hasTier0Events) {
+				lines.push("### Supervisor Actions");
+				lines.push("");
+			}
+
+			let incidentNum = 0;
+			for (const entry of incidents) {
+				incidentNum++;
+				const resultIcon = entry.result === "success" ? "✅"
+					: entry.result === "failure" ? "❌"
+					: entry.result === "skipped" ? "⏭️"
+					: "❓";
+				lines.push(`${incidentNum}. **${entry.action}** (${entry.classification}) ${resultIcon}`);
+				lines.push(`   ${entry.context}`);
+				if (entry.detail && entry.detail !== entry.context) {
+					lines.push(`   Result: ${entry.detail}`);
+				}
+				if (entry.durationMs !== undefined) {
+					lines.push(`   Duration: ${formatDurationMs(entry.durationMs)}`);
+				}
+			}
+			lines.push("");
 		}
 
 		// Add errors that weren't captured in audit trail
-		if (data.errors.length > 0) {
-			lines.push("");
+		if (hasErrors) {
 			lines.push("### Errors");
 			for (const error of data.errors) {
 				lines.push(`- ${error}`);
@@ -1332,10 +1528,20 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 		recommendations.push(`- Long-running tasks detected (${names}): ${longTasks.length} task(s) exceeded 1 hour — consider splitting into smaller tasks.`);
 	}
 
-	// Recovery recommendations
-	const recoveryExhausted = data.auditEntries.filter(e => e.action === "tier0_recovery_exhausted" || (e.classification === "tier0_known" && e.result === "failure"));
-	if (recoveryExhausted.length > 0) {
+	// Recovery recommendations — check both audit trail and Tier 0 events
+	const recoveryExhaustedAudit = data.auditEntries.filter(e => e.action === "tier0_recovery_exhausted" || (e.classification === "tier0_known" && e.result === "failure"));
+	const recoveryExhaustedTier0 = data.tier0Events.filter(e => e.type === "tier0_recovery_exhausted");
+	const escalationsTier0 = data.tier0Events.filter(e => e.type === "tier0_escalation");
+	if (recoveryExhaustedAudit.length > 0 || recoveryExhaustedTier0.length > 0) {
 		recommendations.push("- Recovery budget was exhausted for some issues — review recurring failures and consider addressing root causes.");
+	}
+	if (escalationsTier0.length > 0) {
+		const uniqueSuggestions = [...new Set(escalationsTier0.map(e => e.suggestion).filter(Boolean))];
+		if (uniqueSuggestions.length > 0) {
+			for (const suggestion of uniqueSuggestions) {
+				recommendations.push(`- Tier 0 escalation: ${suggestion}`);
+			}
+		}
 	}
 
 	// Blocked tasks recommendations

@@ -1,7 +1,7 @@
 # TP-043: Auto-Integration & Batch Summary — Status
 
 **Current Step:** Step 2: Batch Summary Generation
-**Status:** ✅ Complete
+**Status:** ✅ Step 2 Complete
 **Last Updated:** 2026-03-23
 **Review Level:** 2
 **Review Counter:** 3
@@ -34,11 +34,11 @@
 ---
 
 ### Step 2: Batch Summary Generation
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Implement `generateBatchSummary()` pure formatter — assembles markdown from batch state, audit trail, and diagnostics. Writes to `.pi/supervisor/{opId}-{batchId}-summary.md`. Includes: results table, duration, cost, wave timeline, incidents/recoveries from audit trail (fallback: "not available"), recommendations, cost breakdown by wave (from diagnostics.taskExits, fallback: "not available")
-- [ ] R003: Add Tier 0 event ingestion — read and batch-filter events.jsonl for tier0_recovery_attempt|success|exhausted|escalation events, merge with audit trail in Incidents section
-- [ ] Wire summary generation into terminal flow — runs BEFORE deactivateSupervisor in manual mode and AFTER integration lifecycle completes in supervised/auto mode (including all PR/CI/error/fallback paths). Covers both /orch and /orch-resume onTerminal callbacks
-- [ ] Present summary in conversation — supervisor sends summary content via pi.sendMessage after generation
+- [x] R003: Add Tier 0 event ingestion — read and batch-filter events.jsonl for tier0_recovery_attempt|success|exhausted|escalation events, merge with audit trail in Incidents section
+- [x] Wire summary generation into terminal flow — runs BEFORE deactivateSupervisor in manual mode and AFTER integration lifecycle completes in supervised/auto mode (including all PR/CI/error/fallback paths). Covers both /orch and /orch-resume onTerminal callbacks
+- [x] Present summary in conversation — supervisor sends summary content via pi.sendMessage after generation
 
 ---
 
