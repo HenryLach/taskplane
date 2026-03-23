@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-03-23
+
+### New
+- **Resume coherence and merge-retry recovery (TP-037)** — resume now checks wave merge outcomes (not just task `.DONE`) so completed-task waves with missing/failed merges are retried instead of skipped; stale pending-task session allocations are cleared to avoid false failure classification on resume.
+- **Merge-timeout resilience (TP-038)** — merge timeout handling now checks for a written result file before killing the session, supports timeout retries with exponential backoff, and re-reads config on retry so updated `merge.timeoutMinutes` is respected without restarting.
+- **Tier 0 watchdog integration (TP-039)** — deterministic recovery paths are wired into the engine loop with retry budgets, recovery/exhaustion/escalation event emission, and pause-on-exhaustion behavior for operator visibility.
+- **Non-blocking orchestration runtime (TP-040)** — `/orch` and `/orch-resume` now return control immediately while batch execution continues asynchronously; engine lifecycle events are persisted to `.pi/supervisor/events.jsonl` for live supervision and dashboard consumption.
+- **Supervisor agent (TP-041)** — added `extensions/taskplane/supervisor.ts` with dynamic supervisor prompt injection, lockfile + heartbeat ownership (`.pi/supervisor/lock.json`), startup takeover recovery, `/orch-takeover`, autonomy-level behavior controls, and structured action audit logging.
+- **Universal `/orch` routing and onboarding flows (TP-042)** — `/orch` with no args now routes by detected project state (active batch, pending integration, no config, pending tasks, no tasks) and launches supervisor-led onboarding/returning-user conversational flows.
+- **Supervisor-managed integration + batch summaries (TP-043)** — supervised/auto integration modes now run from terminal batch callbacks, detect branch protection, execute PR/CI lifecycle flows, and generate structured supervisor batch summaries.
+- **Dashboard supervisor panel (TP-044)** — dashboard now surfaces supervisor status, recovery timelines, event context, conversation stream data (when available), and summary content with graceful degradation for pre-supervisor batches.
+
+### Fixed
+- **Merge result schema compatibility hardening** — merge result parsing now tolerates known key variants (`source_branch`/`sourceBranch`/`source`, `target_*`, `merge_commit`/`mergeCommit`) and normalizes verification payload variants to prevent false merge hangs/timeouts when agents produce non-canonical keys.
+- **Merger prompt schema precision** — merge request generation now embeds an explicit required snake_case JSON schema to reduce model drift in merge result files.
+- **Supervisor shutdown cleanup** — extension now deactivates supervisor on session end to clean heartbeat/lock ownership in normal shutdown paths.
+- **Task status artifact reconciliation** — TP-037..TP-044 `STATUS.md` files were reconciled after batch completion so staged task records no longer incorrectly show "Not Started".
+
+### Docs
+- Updated architecture, command reference, settings reference, first-run orchestration tutorial, and dashboard tutorial for non-blocking engine + supervisor-led workflows.
+- Watchdog/supervisor specification docs were finalized and synchronized ahead of implementation.
+
+### Internal
+- Added extensive deterministic regression coverage for resume bugs, timeout resilience, watchdog behavior, non-blocking engine flow, supervisor routing/behavior, auto-integration, and merge-result schema compatibility.
+- Test suite expanded to **51 files / 2151 tests** at release cut.
+
 ## [0.6.1] - 2026-03-20
 
 ### New
@@ -304,7 +330,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.1.14...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/HenryLach/taskplane/compare/v0.6.1...v0.7.0
 [0.1.14]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.14
 [0.1.13]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.13
 [0.1.12]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.12
