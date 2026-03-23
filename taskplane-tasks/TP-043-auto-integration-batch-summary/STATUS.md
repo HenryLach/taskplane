@@ -35,11 +35,9 @@
 
 ### Step 2: Batch Summary Generation
 **Status:** 🟨 In Progress
-- [ ] Generate summary file
-- [ ] Include results, duration, cost, timeline
-- [ ] Include incidents and recoveries
-- [ ] Include recommendations
-- [ ] Present summary in conversation
+- [ ] Implement `generateBatchSummary()` pure formatter — assembles markdown from batch state, audit trail, and diagnostics. Writes to `.pi/supervisor/{opId}-{batchId}-summary.md`. Includes: results table, duration, cost, wave timeline, incidents/recoveries from audit trail (fallback: "not available"), recommendations, cost breakdown by wave (from diagnostics.taskExits, fallback: "not available")
+- [ ] Wire summary generation into terminal flow — runs BEFORE deactivateSupervisor in manual mode and AFTER integration lifecycle completes in supervised/auto mode (including all PR/CI/error/fallback paths). Covers both /orch and /orch-resume onTerminal callbacks
+- [ ] Present summary in conversation — supervisor sends summary content via pi.sendMessage after generation
 
 ---
 
@@ -105,6 +103,9 @@
 | 2026-03-23 00:55 | Step 1 complete | Supervisor-Managed Integration |
 | 2026-03-23 00:55 | Step 2 started | Batch Summary Generation |
 | 2026-03-23 00:59 | Review R003 | plan Step 2: REVISE |
+| 2026-03-23 01:00 | Worker iter 2 | done in 735s, ctx: 50%, tools: 73 |
+| 2026-03-23 01:00 | Step 1 complete | Supervisor-Managed Integration |
+| 2026-03-23 01:00 | Step 2 started | Batch Summary Generation |
 
 ## Blockers
 
