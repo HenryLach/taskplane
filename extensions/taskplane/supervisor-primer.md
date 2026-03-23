@@ -753,7 +753,7 @@ what Taskplane does.
 5. **Config generation**: Summarize what you'll create, then generate all artifacts:
    - `.pi/taskplane-config.json`
    - `{task_area}/CONTEXT.md` per area
-   - `.pi/agents/` directory with README
+   - `.pi/agents/task-worker.md`, `.pi/agents/task-reviewer.md`, `.pi/agents/task-merger.md` (agent prompt overrides)
    - `.gitignore` entries for Taskplane working files
 
 6. **First task**: Offer options:
@@ -1002,7 +1002,7 @@ before writing** — if files already exist (partial setup), read and merge.
 **Customization notes:**
 - `project.name`: Use the actual project name (from package.json, README, etc.)
 - `paths.tasks` and `taskAreas`: Match what was agreed in the task area discussion
-- `testing.commands`: Use the detected test command (e.g., `["cd extensions && npx vitest run"]`)
+- `testing.commands`: Use the detected test command as a named object (e.g., `{"test": "cd extensions && npx vitest run"}`)
 - `orchestrator.spawnMode`: Use `"tmux"` if tmux is available, `"subprocess"` otherwise
 - `orchestrator.maxLanes`: Start with 2 for first-time users (safe default)
 - `merge.verify`: Add the project's test command for post-merge verification
@@ -1070,57 +1070,221 @@ the operator based on the detected project state.
 
 ### Script 6: Batch Planning
 
-**Trigger:** Config exists. User types `/orch` with no arguments.
+**Trigger:** Config exists. User types `/orch` with no arguments. This script
+covers both the "pending tasks exist" and "no pending tasks" paths.
 
-**Conversation flow:**
+**Exploration phase:**
+1. Scan all configured task areas for task folders without `.DONE` files
+2. For each pending task, read `PROMPT.md` header to extract: size, dependencies,
+   task area, and title
+3. Read each task area's `CONTEXT.md` — look for the "Tech Debt & Known Issues"
+   section for unchecked items (`- [ ]`)
+4. If `gh` CLI is available (`which gh` succeeds and `gh auth status` succeeds):
+   - List open issues: `gh issue list --state open --limit 20 --json number,title,labels`
+   - Look for issues with labels like `status:ready-to-task`, `ready`,
+     `good first issue`, or similar
+   - Note: If `gh` is unavailable, skip GitHub issue checks gracefully and
+     mention it to the operator ("I couldn't check GitHub Issues — `gh` CLI
+     isn't configured")
+5. Optionally grep for TODO/FIXME/HACK comments: `grep -rn "TODO\|FIXME\|HACK"
+   --include="*.ts" --include="*.js" --include="*.py" --include="*.go" -l`
+   (limit to 20 files)
 
-1. **Status check**: Scan task areas for pending tasks, check GitHub Issues,
-   read CONTEXT.md tech debt sections.
+**Conversation flow — pending tasks exist:**
 
-2. **If pending tasks exist**: "You have [N] pending tasks: [list with sizes
-   and dependencies]. Want me to plan a batch? `/orch-plan all` will show you
-   the wave breakdown."
+1. **Summary**: "Welcome back! You have [N] pending tasks ready to run:"
+2. **Task list**: Present each task with its ID, title, size, and dependencies:
+   ```
+   - TP-042 (M) — Supervisor Onboarding & /orch Routing [depends: TP-041]
+   - TP-043 (S) — Auto-Integration Flow [depends: TP-042]
+   - TP-044 (S) — Dashboard Refresh [no deps]
+   ```
+3. **Dependency insight**: If tasks have dependencies, briefly explain wave
+   structure: "These will run in [N] waves based on dependencies. TP-044 can
+   run in parallel with TP-042."
+4. **Offer batch planning**: "Want me to plan the batch? `/orch-plan all` will
+   show you the full wave breakdown before starting."
+5. **Supplementary items**: If tech debt or GitHub Issues were found, mention
+   them: "I also found [M] tech debt items and [K] GitHub Issues that could
+   become additional tasks. Want to add any before starting?"
 
-3. **If no pending tasks**: "No pending tasks right now. Here's what I found
-   that could become tasks: [GitHub Issues, tech debt items, TODO comments].
-   Want me to turn some of these into tasks?"
+**Conversation flow — no pending tasks:**
 
-4. **If issues exist**: "I can pull in GitHub Issues and create task packets.
-   Which ones should we tackle?"
+1. **Summary**: "No pending tasks right now. Let me check what could become
+   tasks..."
+2. **Source inventory**: Present found items grouped by source:
+   ```
+   📋 Potential work items:
+   • GitHub Issues: [N] open ([M] labeled 'ready')
+   • Tech debt: [K] items across CONTEXT.md files
+   • TODO comments: [J] files with TODO/FIXME markers
+   ```
+3. **Task creation offer**: Based on what's available:
+   - If GitHub Issues exist: "I can create task packets from these GitHub
+     Issues. Which ones should we tackle?"
+   - If tech debt exists: "Want me to turn some tech debt items into tasks?
+     I'll create PROMPT.md files with the right context."
+   - If nothing found: "Your project looks clean! Want to describe something
+     you'd like to build? I'll help create a task for it."
+4. **Guided creation**: If the operator wants to create tasks from conversation:
+   - Ask about the goal and scope
+   - Propose a task breakdown (one or more tasks with sizes)
+   - Generate task folders with PROMPT.md and STATUS.md
+   - Offer to start the batch when ready
 
 ---
 
 ### Script 7: Project Health Check
 
 **Trigger:** User asks "how's the project doing?" or supervisor detects
-potential issues.
+potential issues. Can also be triggered explicitly from the routing prompt
+when the supervisor suggests it.
 
-**Conversation flow:**
+**Exploration phase — run ALL of these checks:**
 
-1. **Health assessment:**
-   - Check config validity
-   - Check git state (clean working tree, correct branch)
-   - Check for stale worktrees or branches from prior batches
-   - Check for orphaned batch state
-   - Check tmux availability
-   - Check disk space for worktrees
+1. **Config validity**: Read `.pi/taskplane-config.json`, verify it parses as
+   valid JSON, check that required fields exist (`configVersion`, `taskRunner`,
+   `orchestrator`), check that configured task area paths exist on disk
+2. **Git state**: Run `git status --porcelain` (clean = ✅, dirty = ⚠️),
+   check current branch (`git rev-parse --abbrev-ref HEAD`), verify the
+   configured base branch exists
+3. **Stale worktrees**: Run `git worktree list --porcelain`, check for
+   worktrees under `.worktrees/` that are from previous batches (compare
+   batch IDs). List any stale worktree paths.
+4. **Stale branches**: Run `git branch --list "orch/*" "task/*"`, check if
+   any branches are from batches that no longer have an active batch-state.
+   These are orphaned and can be cleaned up.
+5. **Orphaned batch state**: Read `.pi/batch-state.json` — if it exists and
+   phase is terminal (`completed`, `failed`, `stopped`), check if it's old
+   (> 7 days since `endedAt`) and suggest cleanup
+6. **tmux availability**: Run `which tmux` — if unavailable, warn that
+   orchestrator will use subprocess mode (less observable)
+7. **Disk space**: Run `df -h .` (Unix) or `wmic logicaldisk get size,freespace`
+   (Windows) — warn if less than 5GB free (worktrees use space)
+8. **Supervisor lockfile**: Check `.pi/supervisor/lock.json` — if it exists
+   but no batch is active, it's stale and can be removed
 
-2. **Report**: Present findings with ✅/⚠️/❌ indicators, task inventory,
-   and recommendations.
+**Graceful fallback:** If any individual check fails (e.g., `gh` not installed,
+`df` not available on Windows), skip that check and note it in the report
+rather than failing the entire health check.
+
+**Report format:**
+
+Present results as a structured health report:
+
+```
+🏥 Project Health Check
+
+Infrastructure:
+  ✅ Config valid (3 task areas configured)
+  ✅ Git clean, on 'develop'
+  ⚠️ 2 stale worktree directories from batch 20260315T093012
+  ✅ tmux available
+  ✅ No orphaned batch state
+  ❌ Stale supervisor lockfile found (no active batch)
+
+Task Inventory:
+  • 3 pending tasks (TP-042, TP-043, TP-044)
+  • 41 completed tasks across all areas
+  • 5 tech debt items logged in CONTEXT.md files
+  • 12 open GitHub Issues (4 labeled 'status:ready-to-task')
+
+Recommendations:
+  1. Clean stale worktrees: `git worktree remove --force .worktrees/...`
+  2. Remove stale lockfile: delete .pi/supervisor/lock.json
+  3. Consider creating tasks from the 4 ready GitHub Issues
+  4. TP-042 has been pending for 5 days — still relevant?
+```
+
+**Follow-up actions:** Offer to execute safe cleanup actions directly:
+- Stale worktree removal (tier0_known classification)
+- Stale lockfile removal (tier0_known classification)
+- Stale branch cleanup (destructive classification — ask first)
 
 ---
 
 ### Script 8: Post-Batch Retrospective
 
-**Trigger:** After `/orch-integrate` completes, or operator asks "how did that
-batch go?"
+**Trigger:** This script is activated in two ways:
+1. **Post-integration:** After `/orch-integrate` completes successfully, the
+   operator asks "how did that batch go?" or the supervisor proactively offers
+   a retrospective
+2. **Completed-batch routing:** When `/orch` with no arguments detects a
+   completed batch (state: `completed-batch`), after guiding integration the
+   supervisor offers a retrospective
+
+**Data sources — read ALL of these before presenting:**
+
+1. **Batch state** (`.pi/batch-state.json`):
+   - `batchId`, `phase`, `startedAt`, `endedAt` → duration calculation
+   - `succeededTasks`, `failedTasks`, `skippedTasks`, `blockedTasks`, `totalTasks`
+   - `wavePlan` → wave count and structure
+   - `tasks[]` → per-task status, timing, exit reasons
+   - `mergeResults[]` → merge outcomes per wave
+   - `errors[]` → batch-level errors encountered
+
+2. **Audit trail** (`.pi/supervisor/actions.jsonl`):
+   - Filter by `batchId` for this batch's entries
+   - Count recovery actions by classification (diagnostic, tier0_known, destructive)
+   - Identify incidents: failed tasks that were retried, merge timeouts, escalations
+   - Note any manual interventions by the operator
+
+3. **Engine events** (`.pi/supervisor/events.jsonl`):
+   - Filter by `batchId`
+   - Extract wave timing, merge durations, task completion patterns
+
+4. **Task STATUS.md files** (from task folders referenced in batch state):
+   - Check review verdicts: count APPROVE vs REVISE across tasks
+   - Note worker iteration counts per step (high iteration count = hard step)
+   - Look for discoveries and blockers logged by workers
 
 **Conversation flow:**
 
-1. **Summary**: Read batch diagnostic report and audit trail.
+1. **Summary banner:**
+   ```
+   📊 Batch Retrospective — {batchId}
 
-2. **Report**: Present results (tasks succeeded/failed, duration, cost),
-   highlights (incidents, review pass rates), and recommendations
-   (config adjustments, task sizing insights).
+   Results: {succeeded}/{total} tasks succeeded
+   Duration: {hours}h {minutes}m
+   Waves: {waveCount} ({wavePlan description})
+   ```
 
-3. **Next steps**: Surface pending tasks or suggest creating new ones.
+2. **Outcome breakdown:**
+   - Per-task results table: task ID, status, duration, iterations, review passes
+   - Failed tasks: explain exit reasons
+   - Skipped/blocked tasks: explain why (dependency failures)
+
+3. **Incident highlights:**
+   - Merge timeouts or failures (from mergeResults + audit trail)
+   - Tasks that required many iterations (> 2× average)
+   - Tier 0 recovery actions taken
+   - Operator interventions from audit trail
+
+4. **Review insights:**
+   - First-pass approval rate (tasks where plan review passed on first attempt)
+   - Code review REVISE rate
+   - Common REVISE reasons (if patterns are visible)
+
+5. **Recommendations:**
+   Based on what was observed, suggest concrete config adjustments:
+   - If merge timeouts occurred: "Consider increasing `merge.timeoutMinutes`
+     from {current} to {suggested}"
+   - If a task took many iterations: "Task {id} took {N} iterations on Step {S} —
+     consider splitting similar tasks into smaller pieces"
+   - If review REVISE rate was high: "Review level might be too strict for
+     straightforward tasks — consider level 1 for S-size tasks"
+   - If first-pass approval rate improved: "Great improvement! {rate}% of tasks
+     passed plan review on first attempt (up from {previous} last batch)"
+
+6. **Next steps:**
+   - Check for pending tasks: "You have [N] new tasks staged. Ready for the
+     next batch?"
+   - Check for tech debt discoveries: "Workers discovered [M] tech debt items
+     during this batch (logged in CONTEXT.md files). Want to review them?"
+   - If no pending work: "Project looks clean. Want to pull in GitHub Issues
+     or plan the next milestone?"
+
+**When data is unavailable:** If batch-state.json or audit trail files are
+missing or incomplete (e.g., batch was run before supervisor existed), present
+what you can and note what's missing: "I don't have audit trail data for this
+batch (pre-supervisor). Here's what I can see from batch state alone..."

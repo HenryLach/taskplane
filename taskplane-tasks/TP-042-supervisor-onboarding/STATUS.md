@@ -31,7 +31,7 @@
 ---
 
 ### Step 2: Onboarding Flow (Scripts 1-5)
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Routing-aware system prompt: build onboarding/routing prompt (separate from batch-monitoring prompt) and wire into before_agent_start hook; add routingContext field to SupervisorState
 - [x] Script 1/2/3 trigger discrimination in primer: add all three onboarding scripts to supervisor-primer.md with trigger conditions based on repo maturity (no .pi/ dir → Script 1; empty/new project → Script 2; established codebase → Script 3), with delegation to Scripts 4/5
 - [x] Scripts 4 and 5 in primer: add Task Area Design and Git Branching & Protection scripts as delegated sub-flows
@@ -39,16 +39,16 @@
 - [x] Full config/scaffolding artifact set: onboarding prompt instructs supervisor to create .pi/taskplane-config.json, area CONTEXT.md files, .pi/agents/ overrides, and .gitignore entries (idempotent, create-if-missing)
 - [x] R004-1: Clear routingContext on non-routing activation so prompt hook switches from routing to batch-monitoring prompt
 - [x] R004-2: Fix testing.commands template in supervisor-primer.md to use Record<string,string> shape instead of array
-- [ ] R004-3: Fix testing.commands example at primer line ~1005 to use object shape `{"test":"..."}` not array `["..."]`; ensure all onboarding references use Record<string,string>
-- [ ] R004-4: Update artifact lists in routing prompt (supervisor.ts:595) and Script 1 (primer:756) to explicitly require task-worker.md, task-reviewer.md, task-merger.md instead of just "dir + README"
+- [x] R004-3: Fix testing.commands example at primer line ~1005 to use object shape `{"test":"..."}` not array `["..."]`; ensure all onboarding references use Record<string,string>
+- [x] R004-4: Update artifact lists in routing prompt (supervisor.ts:595) and Script 1 (primer:756) to explicitly require task-worker.md, task-reviewer.md, task-merger.md instead of just "dir + README"
 
 ---
 
 ### Step 3: Returning User Flows (Scripts 6-8)
 **Status:** 🟨 In Progress
-- [ ] Script 6 (Batch Planning): Expand primer Script 6 with full conversation flow — pending-tasks path lists tasks with sizes/deps and suggests `/orch-plan all`; no-tasks path surfaces GitHub Issues, CONTEXT.md tech debt, TODO comments and offers to create task packets; graceful fallback when `gh` CLI unavailable
-- [ ] Script 7 (Health Check): Expand primer Script 7 with full health check checklist — config validity, git state, stale worktrees/branches, orphaned batch state, tmux availability, disk space; report with ✅/⚠️/❌ indicators, task inventory, and actionable recommendations
-- [ ] Script 8 (Retrospective): Expand primer Script 8 with post-integration trigger strategy and full conversation flow — reads batch diagnostic report (batch-state.json) + audit trail (actions.jsonl) for results/duration/cost; highlights incidents/review pass rates; recommends config adjustments and task sizing; surfaces next steps (pending tasks or new task creation)
+- [x] Script 6 (Batch Planning): Expand primer Script 6 with full conversation flow — pending-tasks path lists tasks with sizes/deps and suggests `/orch-plan all`; no-tasks path surfaces GitHub Issues, CONTEXT.md tech debt, TODO comments and offers to create task packets; graceful fallback when `gh` CLI unavailable
+- [x] Script 7 (Health Check): Expand primer Script 7 with full health check checklist — config validity, git state, stale worktrees/branches, orphaned batch state, tmux availability, disk space; report with ✅/⚠️/❌ indicators, task inventory, and actionable recommendations
+- [x] Script 8 (Retrospective): Expand primer Script 8 with post-integration trigger strategy and full conversation flow — reads batch diagnostic report (batch-state.json) + audit trail (actions.jsonl) for results/duration/cost; highlights incidents/review pass rates; recommends config adjustments and task sizing; surfaces next steps (pending tasks or new task creation)
 - [ ] Routing prompt wiring: Ensure buildRoutingSystemPrompt maps completed-batch state to Script 8 retrospective guidance (not just integration guidance), and verify all returning-user states correctly reference Scripts 6-8 in the primer
 
 ---

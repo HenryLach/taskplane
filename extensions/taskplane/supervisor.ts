@@ -592,7 +592,9 @@ When the conversation reaches the config generation phase, create ALL of these
 
 - \`.pi/taskplane-config.json\` — project configuration (task areas, lanes, review level, etc.)
 - \`{task_area}/CONTEXT.md\` — one per task area, describing scope and conventions
-- \`.pi/agents/\` — directory for agent prompt overrides (create dir + README)
+- \`.pi/agents/task-worker.md\` — worker prompt overrides (can start empty with a brief comment)
+- \`.pi/agents/task-reviewer.md\` — reviewer prompt overrides (can start empty with a brief comment)
+- \`.pi/agents/task-merger.md\` — merger prompt overrides (can start empty with a brief comment)
 - \`.gitignore\` entries — add Taskplane working file patterns if not already present
 
 Use conservative creation: check if each file exists before writing. If files
