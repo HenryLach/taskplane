@@ -3,21 +3,20 @@
 ### Verdict: REVISE
 
 ### Summary
-Step 2 makes solid progress by adding a dedicated routing-mode supervisor prompt and expanding the supervisor primer with Scripts 1-8 guidance. However, there is a state-transition bug that breaks the onboarding-to-execution handoff, and the onboarding config template currently conflicts with the project’s JSON config schema. These are correctness issues that should be fixed before moving on.
+The routing-mode supervisor prompt and onboarding script coverage are substantially improved, and the prior routing-context transition bug in `activateSupervisor()` is fixed. However, the onboarding guidance still contains conflicting config-shape instructions, and the required `.pi/agents` override artifacts are not consistently required in the high-priority artifact lists. These conflicts can cause onboarding to generate incomplete or malformed setup output.
 
 ### Issues Found
-1. **[extensions/taskplane/supervisor.ts:902-903,1060-1076] [critical]** — `activateSupervisor()` sets `state.routingContext` when routing mode is used, but never clears it when later activating in normal batch-monitoring mode. If a user runs `/orch` (no args) for onboarding and then starts a batch with `/orch all`, `registerSupervisorPromptHook()` will keep injecting the routing prompt instead of the batch supervisor prompt.
-   **Fix:** Clear routing mode on non-routing activation (e.g., set `state.routingContext = routingContext ?? null` near activation start, or explicitly set `state.routingContext = null` before the non-routing path).
+1. **[extensions/taskplane/supervisor-primer.md:1005] [important]** — `testing.commands` is still documented with an array example (`["cd extensions && npx vitest run"]`), which conflicts with the schema contract (`Record<string,string>`) in `extensions/taskplane/config-schema.ts:85`.
+   **Fix:** Change the example to object form, e.g. ``{"test":"cd extensions && npx vitest run"}``, and ensure all onboarding references use the same shape.
 
-2. **[extensions/taskplane/supervisor-primer.md:952] [important]** — The onboarding config template shows `taskRunner.testing.commands` as an array (`["<detected-test-command>"]`), but the schema expects a map/object (`Record<string, string>`) (`extensions/taskplane/config-schema.ts:85`). This can produce malformed config shape during onboarding.
-   **Fix:** Update the template/example to object form, e.g. `"testing": { "commands": { "test": "<detected-test-command>" } }`, and keep examples consistent with config docs.
+2. **[extensions/taskplane/supervisor.ts:595] [important]** — The routing prompt’s required artifact list says `.pi/agents/` should be created as “dir + README”, and Script 1 mirrors that (`extensions/taskplane/supervisor-primer.md:756`), while the detailed config section expects actual override files (`extensions/taskplane/supervisor-primer.md:1036-1040`). This inconsistency can miss the Step 2 requirement to generate `.pi/agents` overrides.
+   **Fix:** Update the top-level artifact lists (routing prompt + Script 1, and thus Script 2/3 by inheritance) to explicitly require `task-worker.md`, `task-reviewer.md`, and `task-merger.md` (README optional).
 
 ### Pattern Violations
-- Onboarding template content in `supervisor-primer.md` diverges from canonical config schema (`taskRunner.testing.commands` type mismatch).
+- Onboarding guidance is internally inconsistent about required artifact shape/content (schema examples and artifact lists disagree).
 
 ### Test Gaps
-- No regression test for the routing→batch transition ensuring the prompt hook switches from `buildRoutingSystemPrompt()` to `buildSupervisorSystemPrompt()` after `/orch all`.
-- No test/assertion validating onboarding-generated config shape for `taskRunner.testing.commands`.
+- No focused test asserts the onboarding prompt/primer contract for generated artifacts (`.pi/agents` override files + `testing.commands` object shape).
 
 ### Suggestions
-- Add a small unit test around `activateSupervisor()` that exercises both routing and non-routing activations in sequence and asserts `state.routingContext` transitions correctly.
+- Add a small prompt-generation unit test that snapshots key required lines in `buildRoutingSystemPrompt()` for the `no-config` route so future edits don’t regress required onboarding artifacts.
