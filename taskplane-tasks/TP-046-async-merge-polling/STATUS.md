@@ -1,10 +1,10 @@
 # TP-046: Async Merge Polling — Status
 
-**Current Step:** Step 2: Convert waitForMergeResult to Async
+**Current Step:** Step 3: Convert mergeWave and Callers to Async
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-23
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 4
 **Size:** M
 
@@ -37,12 +37,12 @@
 ---
 
 ### Step 3: Convert mergeWave and Callers to Async
-**Status:** ⬜ Not Started
-- [ ] Make mergeWave async
-- [ ] Update mergeWaveByRepo
-- [ ] Update engine.ts callers
-- [ ] Update resume.ts callers
-- [ ] Convert spawnMergeAgent retry delays
+**Status:** 🟨 In Progress
+- [ ] Convert spawnMergeAgent to async and await at all call sites in mergeWave
+- [ ] Convert remaining sleepSync(500) cleanup delays in mergeWave to async
+- [ ] Verify mergeWave and mergeWaveByRepo are async with correct await propagation
+- [ ] Verify engine.ts and resume.ts callers await mergeWaveByRepo correctly
+- [ ] Update stale synchronous comments in engine.ts/merge.ts
 
 ---
 
@@ -72,6 +72,7 @@
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
+| R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -114,6 +115,10 @@
 | 2026-03-23 21:18 | Worker iter 4 | done in 133s, ctx: 13%, tools: 21 |
 | 2026-03-23 21:21 | Review R004 | code Step 2: REVISE |
 | 2026-03-23 21:21 | Review R004 | code Step 2: REVISE |
+| 2026-03-23 21:32 | Worker iter 3 | done in 680s, ctx: 32%, tools: 69 |
+| 2026-03-23 21:32 | Step 2 complete | Convert waitForMergeResult to Async |
+| 2026-03-23 21:32 | Step 3 started | Convert mergeWave and Callers to Async |
+| 2026-03-23 21:34 | Review R005 | plan Step 3: REVISE |
 
 ## Blockers
 
