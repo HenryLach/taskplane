@@ -1,11 +1,11 @@
 # TP-043: Auto-Integration & Batch Summary — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Supervisor-Managed Integration
 **Status:** ✅ Complete
 **Last Updated:** 2026-03-23
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 2
+**Review Counter:** 1
+**Iteration:** 3
 **Size:** M
 
 ---
@@ -20,12 +20,14 @@
 ---
 
 ### Step 1: Supervisor-Managed Integration
-**Status:** ⬜ Not Started
-- [ ] Integration triggered on batch_complete event
-- [ ] Branch protection detection
-- [ ] Supervised and auto mode execution
-- [ ] Conflict handling
-- [ ] Integration mode config
+**Status:** 🟨 In Progress
+- [ ] Add "supervised" to integration mode type in types.ts, config-schema.ts, config-loader.ts, and settings-tui.ts
+- [ ] Gate legacy attemptAutoIntegration in engine.ts and resume.ts — only run for "auto" mode, not "supervised" (R001-1: single owner for integration)
+- [ ] Replace immediate deactivateSupervisor in startBatchAsync onTerminal with deferred deactivation — keep supervisor alive through post-batch integration/summary flow (R001-2)
+- [ ] Update supervisor system prompt guardrails: conditionally allow push/PR operations in supervised/auto integration modes (R001-3)
+- [ ] Implement detectBranchProtection helper: gh api repos/{owner}/{repo}/branches/{branch}/protection → protected/unprotected/unknown
+- [ ] Implement supervisor-managed integration flow: on batch_complete event, supervisor triggers integration based on mode (manual=guidance, supervised=confirm-then-execute, auto=execute-directly)
+- [ ] Handle integration outcomes: conflict detection, CI failure reporting, fallback to PR mode when branch is protected
 
 ---
 
@@ -60,6 +62,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -78,6 +82,16 @@
 | 2026-03-23 00:20 | Task started | Extension-driven execution |
 | 2026-03-23 00:20 | Step 0 started | Preflight |
 | 2026-03-23 00:20 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-23 00:22 | Worker iter 2 | done in 115s, ctx: 36%, tools: 25 |
+| 2026-03-23 00:22 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-23 00:22 | Step 0 complete | Preflight |
+| 2026-03-23 00:22 | Step 1 started | Supervisor-Managed Integration |
+| 2026-03-23 00:22 | Worker iter 1 | done in 120s, ctx: 39%, tools: 22 |
+| 2026-03-23 00:22 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-23 00:22 | Step 0 complete | Preflight |
+| 2026-03-23 00:22 | Step 1 started | Supervisor-Managed Integration |
+| 2026-03-23 00:26 | Review R001 | plan Step 1: REVISE |
+| 2026-03-23 00:27 | Review R001 | plan Step 1: REVISE |
 
 ## Blockers
 
