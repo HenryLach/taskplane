@@ -1005,11 +1005,12 @@ function runAllTests(): void {
 		assert(resumeSource.includes('orchestrator.integration === "auto"'),
 			"resume.ts gates auto-integration by config.orchestrator.integration");
 
-		// b) resume.ts imports shared attemptAutoIntegration from merge.ts (no local duplicate)
-		assert(resumeSource.includes("attemptAutoIntegration, mergeWaveByRepo"),
-			"resume.ts imports attemptAutoIntegration from merge.ts");
+		// b) TP-043: resume.ts defers integration to supervisor for supervised/auto modes.
+		// attemptAutoIntegration is no longer imported — integration is supervisor-managed.
+		assert(resumeSource.includes("integration deferred to supervisor"),
+			"resume.ts defers supervised/auto integration to supervisor");
 		assert(!resumeSource.includes("function attemptAutoIntegrationResume"),
-			"resume.ts does NOT have a local duplicate — uses shared helper from merge.ts");
+			"resume.ts does NOT have a local duplicate auto-integration function");
 
 		// c) resume.ts shows manual integration guidance on non-auto path
 		assert(resumeSource.includes("orchIntegrationManual"),
@@ -1040,11 +1041,11 @@ function runAllTests(): void {
 		assert(sharedAutoFn.includes("logCategory"),
 			"shared auto-integration accepts logCategory parameter for engine/resume disambiguation");
 
-		// f) Both engine and resume import the same shared function
-		assert(engineSource.includes("attemptAutoIntegration, mergeWaveByRepo"),
-			"engine.ts imports attemptAutoIntegration from merge.ts");
+		// f) TP-043: Both engine and resume defer integration to supervisor for supervised/auto modes
+		assert(engineSource.includes("integration deferred to supervisor"),
+			"engine.ts defers supervised/auto integration to supervisor");
 		assert(engineSource.includes("orchIntegrationManual") && resumeSource.includes("orchIntegrationManual"),
-			"both engine.ts and resume.ts use orchIntegrationManual message");
+			"both engine.ts and resume.ts use orchIntegrationManual message for manual mode");
 	}
 
 	// 23) Behavioral: auto-integration via update-ref when baseBranch is NOT checked out

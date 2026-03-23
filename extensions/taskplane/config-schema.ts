@@ -241,8 +241,8 @@ export interface OrchestratorCoreConfig {
 	tmuxPrefix: string;
 	/** Operator identifier. Auto-detected from OS username if empty */
 	operatorId: string;
-	/** How completed batches are integrated. manual = user runs /orch-integrate. auto = fast-forward on completion. */
-	integration: "manual" | "auto";
+	/** How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking. */
+	integration: "manual" | "supervised" | "auto";
 }
 
 /** Dependency resolution settings */
@@ -360,6 +360,14 @@ export interface VerificationConfig {
 /**
  * All orchestrator settings, previously from `.pi/task-orchestrator.yaml`.
  */
+/** Supervisor agent settings (TP-041). */
+export interface SupervisorSectionConfig {
+	/** Supervisor model (empty = inherit active session model) */
+	model: string;
+	/** Autonomy level for recovery actions */
+	autonomy: "interactive" | "supervised" | "autonomous";
+}
+
 export interface OrchestratorSection {
 	/** Core orchestrator settings */
 	orchestrator: OrchestratorCoreConfig;
@@ -377,6 +385,8 @@ export interface OrchestratorSection {
 	monitoring: MonitoringConfig;
 	/** Verification baseline fingerprinting (TP-032) */
 	verification: VerificationConfig;
+	/** Supervisor agent (TP-041) */
+	supervisor: SupervisorSectionConfig;
 }
 
 
@@ -435,6 +445,7 @@ export interface TaskplaneConfig {
  * | workerModel        | taskRunner.worker.model              | string  |
  * | reviewerModel      | taskRunner.reviewer.model            | string  |
  * | mergeModel         | orchestrator.merge.model             | string  |
+ * | supervisorModel    | orchestrator.supervisor.model        | string  |
  * | dashboardPort      | (preferences-only; not yet in schema)| number  |
  */
 export interface UserPreferences {
@@ -450,6 +461,8 @@ export interface UserPreferences {
 	reviewerModel?: string;
 	/** Merge model override (overrides orchestrator.merge.model) */
 	mergeModel?: string;
+	/** Supervisor model override (overrides orchestrator.supervisor.model) (TP-041) */
+	supervisorModel?: string;
 	/** Dashboard port (preferences-only; not yet wired into config schema) */
 	dashboardPort?: number;
 }
@@ -548,6 +561,10 @@ export const DEFAULT_ORCHESTRATOR_SECTION: OrchestratorSection = {
 		enabled: false,
 		mode: "permissive",
 		flakyReruns: 1,
+	},
+	supervisor: {
+		model: "",
+		autonomy: "supervised",
 	},
 };
 

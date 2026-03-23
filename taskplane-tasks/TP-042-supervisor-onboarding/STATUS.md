@@ -1,8 +1,8 @@
 # TP-042: Supervisor Onboarding & /orch Routing — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-21
+**Current Step:** Complete
+**Status:** ✅ Complete
+**Last Updated:** 2026-03-23
 **Review Level:** 2
 **Review Counter:** 0
 **Iteration:** 0
@@ -11,52 +11,52 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read spec Section 14
-- [ ] Read /orch command handler
-- [ ] Read supervisor.ts
+**Status:** ✅ Complete
+- [x] Read spec Section 14
+- [x] Read /orch command handler
+- [x] Read supervisor.ts
 
 ---
 
 ### Step 1: /orch Routing Logic
-**Status:** ⬜ Not Started
-- [ ] Implement state detection (config, batch, tasks)
-- [ ] Route to appropriate supervisor flow
-- [ ] Preserve existing /orch with args behavior
+**Status:** ✅ Complete
+- [x] Implement state detection (config, batch, tasks)
+- [x] Route to appropriate supervisor flow
+- [x] Preserve existing /orch with args behavior
 
 ---
 
 ### Step 2: Onboarding Flow (Scripts 1-5)
-**Status:** ⬜ Not Started
-- [ ] Project detection and analysis
-- [ ] Task area setup conversation
-- [ ] Git branching assessment
-- [ ] Config generation
-- [ ] First-task guidance
+**Status:** ✅ Complete
+- [x] Project detection and analysis
+- [x] Task area setup conversation
+- [x] Git branching assessment
+- [x] Config generation
+- [x] First-task guidance
 
 ---
 
 ### Step 3: Returning User Flows (Scripts 6-8)
-**Status:** ⬜ Not Started
-- [ ] Batch planning flow
-- [ ] Health check flow
-- [ ] Retrospective flow
+**Status:** ✅ Complete
+- [x] Batch planning flow
+- [x] Health check flow
+- [x] Retrospective flow
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] Routing tests for all project states
-- [ ] Existing behavior preserved test
-- [ ] Full test suite passes
+**Status:** ✅ Complete
+- [x] Routing tests for all project states
+- [x] Existing behavior preserved test
+- [x] Full test suite passes
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Commands reference updated
-- [ ] Tutorial updated
-- [ ] `.DONE` created
+**Status:** ✅ Complete
+- [x] Commands reference updated
+- [x] Tutorial updated
+- [x] `.DONE` created
 
 ---
 
@@ -75,6 +75,7 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-21 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-22 | Batch execution completed | Task completed in orchestrated run; see `.reviews/` and `.DONE` |
 
 ## Blockers
 

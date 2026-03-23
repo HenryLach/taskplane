@@ -51,6 +51,25 @@
         </div>
       </div>
 
+      <!-- Supervisor Panel (hidden when no supervisor data) -->
+      <div class="panel supervisor-panel" id="supervisor-panel" style="display:none;">
+        <div class="panel-header supervisor-panel-header" id="supervisor-panel-toggle">
+          <span>Supervisor</span>
+          <span class="supervisor-status-badge" id="supervisor-status-badge"></span>
+          <button class="supervisor-collapse-btn" id="supervisor-collapse-btn" title="Toggle supervisor panel">▾</button>
+        </div>
+        <div class="panel-body supervisor-panel-body" id="supervisor-panel-body">
+          <!-- Status Section -->
+          <div class="supervisor-section" id="supervisor-status-section"></div>
+          <!-- Conversation Section -->
+          <div class="supervisor-section" id="supervisor-conversation-section"></div>
+          <!-- Actions Timeline Section -->
+          <div class="supervisor-section" id="supervisor-actions-section"></div>
+          <!-- Batch Summary Section -->
+          <div class="supervisor-section" id="supervisor-summary-section"></div>
+        </div>
+      </div>
+
       <!-- Lanes + Tasks (integrated) -->
       <div class="panel" id="lanes-tasks-panel">
         <div class="panel-header">Lanes &amp; Tasks</div>

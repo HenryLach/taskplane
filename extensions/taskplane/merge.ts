@@ -8,12 +8,13 @@ import { join, dirname, resolve, relative } from "path";
 
 import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
+import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { generateMergeWorktreePath, sleepSync } from "./worktree.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
+import { loadOrchestratorConfig } from "./config.ts";
 import { captureBaseline, diffFingerprints, runVerificationCommands, parseTestOutput, deduplicateFingerprints } from "./verification.ts";
 import type { VerificationBaseline, FingerprintDiff, TestFingerprint } from "./verification.ts";
 
@@ -43,6 +44,66 @@ export function parseMergeResult(resultPath: string): MergeResult {
 		);
 	}
 
+	const pickString = (obj: Record<string, unknown>, ...keys: string[]): string | null => {
+		for (const key of keys) {
+			const value = obj[key];
+			if (typeof value === "string" && value.trim().length > 0) {
+				return value;
+			}
+		}
+		return null;
+	};
+
+	const hasFlatVerification = (obj: Record<string, unknown>): boolean =>
+		typeof obj.verification_passed === "boolean"
+		|| Array.isArray(obj.verification_commands)
+		|| typeof obj.verification_output === "string"
+		|| typeof obj.verification_exit_code === "number";
+
+	const normalizeVerification = (obj: Record<string, unknown>): MergeResult["verification"] | null => {
+		const nested = (obj.verification && typeof obj.verification === "object")
+			? obj.verification as Record<string, unknown>
+			: null;
+
+		if (!nested && !hasFlatVerification(obj)) {
+			return null;
+		}
+
+		const passedFromBool =
+			(nested && typeof nested.passed === "boolean" ? nested.passed : undefined)
+			?? (nested && typeof nested.all_passed === "boolean" ? nested.all_passed : undefined)
+			?? (typeof obj.verification_passed === "boolean" ? obj.verification_passed : undefined);
+
+		const exitCode =
+			(nested && typeof nested.exitCode === "number" ? nested.exitCode : undefined)
+			?? (nested && typeof nested.exit_code === "number" ? nested.exit_code : undefined)
+			?? (typeof obj.verification_exit_code === "number" ? obj.verification_exit_code : undefined);
+
+		const passed = typeof passedFromBool === "boolean"
+			? passedFromBool
+			: (typeof exitCode === "number" ? exitCode === 0 : false);
+
+		const ran = (nested && typeof nested.ran === "boolean")
+			? nested.ran
+			: (
+				typeof passedFromBool === "boolean"
+				|| typeof exitCode === "number"
+				|| (nested && typeof nested.command === "string")
+				|| (nested && typeof nested.summary === "string")
+				|| typeof obj.verification_output === "string"
+				|| Array.isArray(obj.verification_commands)
+			);
+
+		const output = (
+			(nested && typeof nested.output === "string" ? nested.output : undefined)
+			?? (nested && typeof nested.summary === "string" ? nested.summary : undefined)
+			?? (nested && typeof nested.notes === "string" ? nested.notes : undefined)
+			?? (typeof obj.verification_output === "string" ? obj.verification_output : "")
+		).slice(0, 2000);
+
+		return { ran, passed, output };
+	};
+
 	// Retry-read loop for partially-written files
 	let lastParseError = "";
 	for (let attempt = 1; attempt <= MERGE_RESULT_READ_RETRIES; attempt++) {
@@ -60,7 +121,7 @@ export function parseMergeResult(resultPath: string): MergeResult {
 				);
 			}
 
-			const parsed = JSON.parse(raw);
+			const parsed = JSON.parse(raw) as Record<string, unknown>;
 
 			// Validate required fields
 			if (typeof parsed.status !== "string") {
@@ -69,29 +130,23 @@ export function parseMergeResult(resultPath: string): MergeResult {
 					`Merge result missing required field "status": ${resultPath}`,
 				);
 			}
-			if (typeof parsed.source_branch !== "string") {
+
+			// Accept known source-field variants written by different merge agents.
+			// Canonical field remains source_branch.
+			const sourceBranch = pickString(parsed, "source_branch", "sourceBranch", "source");
+			if (!sourceBranch) {
 				throw new MergeError(
 					"MERGE_RESULT_MISSING_FIELDS",
-					`Merge result missing required field "source_branch": ${resultPath}`,
+					`Merge result missing required field "source_branch" (accepted aliases: sourceBranch, source): ${resultPath}`,
 				);
 			}
-			// Normalize verification: accept either a nested object or flat fields
-			if (!parsed.verification || typeof parsed.verification !== "object") {
-				// Merge agents may write flat verification_passed/verification_commands fields
-				// instead of a nested verification object. Normalize to the expected shape.
-				if (typeof parsed.verification_passed === "boolean" || Array.isArray(parsed.verification_commands)) {
-					parsed.verification = {
-						commands_run: parsed.verification_commands || [],
-						all_passed: parsed.verification_passed !== false,
-						output: "",
-						notes: "",
-					};
-				} else {
-					throw new MergeError(
-						"MERGE_RESULT_MISSING_FIELDS",
-						`Merge result missing required field "verification": ${resultPath}`,
-					);
-				}
+
+			const verification = normalizeVerification(parsed);
+			if (!verification) {
+				throw new MergeError(
+					"MERGE_RESULT_MISSING_FIELDS",
+					`Merge result missing required field "verification": ${resultPath}`,
+				);
 			}
 
 			// Normalize status to uppercase (merge agents may write lowercase)
@@ -105,20 +160,33 @@ export function parseMergeResult(resultPath: string): MergeResult {
 				parsed.status = "BUILD_FAILURE";
 			}
 
+			const targetBranch = pickString(parsed, "target_branch", "targetBranch", "target") ?? "";
+			const mergeCommit = pickString(parsed, "merge_commit", "mergeCommit") ?? "";
+			const conflicts = Array.isArray(parsed.conflicts)
+				? parsed.conflicts
+					.filter((c): c is { file: string; type: string; resolved: boolean; resolution?: string } => (
+						typeof c === "object"
+						&& c !== null
+						&& typeof (c as { file?: unknown }).file === "string"
+						&& typeof (c as { type?: unknown }).type === "string"
+						&& typeof (c as { resolved?: unknown }).resolved === "boolean"
+					))
+					.map(c => ({
+						file: c.file,
+						type: c.type,
+						resolved: c.resolved,
+						...(typeof c.resolution === "string" ? { resolution: c.resolution } : {}),
+					}))
+				: [];
+
 			// Normalize optional fields with defaults
 			return {
 				status: parsed.status as MergeResultStatus,
-				source_branch: parsed.source_branch,
-				target_branch: parsed.target_branch || "",
-				merge_commit: parsed.merge_commit || "",
-				conflicts: Array.isArray(parsed.conflicts) ? parsed.conflicts : [],
-				verification: {
-					ran: !!parsed.verification.ran,
-					passed: !!parsed.verification.passed,
-					output: typeof parsed.verification.output === "string"
-						? parsed.verification.output.slice(0, 2000)
-						: "",
-				},
+				source_branch: sourceBranch,
+				target_branch: targetBranch,
+				merge_commit: mergeCommit,
+				conflicts,
+				verification,
 			};
 		} catch (err: unknown) {
 			if (err instanceof MergeError) throw err;
@@ -237,7 +305,23 @@ export function buildMergeRequest(
 		`result_file: ${resultFilePath}`,
 		`Write your JSON result to: ${resultFilePath}`,
 		"",
-
+		"## Result JSON Schema (required)",
+		"Use EXACT snake_case keys shown below. Do not use camelCase or shortened keys.",
+		"",
+		"```json",
+		"{",
+		"  \"status\": \"SUCCESS\" | \"CONFLICT_RESOLVED\" | \"CONFLICT_UNRESOLVED\" | \"BUILD_FAILURE\",",
+		"  \"source_branch\": \"<source branch name>\",",
+		"  \"target_branch\": \"<target branch name>\",",
+		"  \"merge_commit\": \"<merge commit sha or empty string>\",",
+		"  \"conflicts\": [{ \"file\": \"...\", \"type\": \"...\", \"resolved\": true|false }],",
+		"  \"verification\": { \"ran\": true|false, \"passed\": true|false, \"output\": \"...\" }",
+		"}",
+		"```",
+		"",
+		"Do NOT use keys like source/sourceBranch/target/mergeCommit.",
+		"Write valid JSON only (no markdown around the final file).",
+		"",
 		"## Important",
 		"- You are working in an ISOLATED MERGE WORKTREE (not the user's main repo)",
 		"- The correct branch is ALREADY checked out — do NOT checkout any other branch",
@@ -352,13 +436,43 @@ export function spawnMergeAgent(
 }
 
 /**
+ * Re-read merge timeout from config on disk.
+ *
+ * TP-038: Allows the operator to increase `merge.timeoutMinutes` without
+ * restarting the pi session. Called before each retry attempt so the
+ * retry loop picks up any config changes made while the batch was running.
+ *
+ * @param configRoot - The directory containing `.pi/taskplane-config.json`
+ * @param pointerConfigRoot - Optional pointer config root (workspace mode)
+ * @returns Fresh timeout in milliseconds
+ */
+export function reloadMergeTimeoutMs(configRoot: string, pointerConfigRoot?: string): number {
+	try {
+		const freshConfig = loadOrchestratorConfig(configRoot, pointerConfigRoot);
+		const minutes = freshConfig.merge.timeout_minutes ?? 10;
+		return minutes * 60 * 1000;
+	} catch (err: unknown) {
+		// Config re-read is best-effort — fall back to default on failure
+		const errMsg = err instanceof Error ? err.message : String(err);
+		execLog("merge", "config-reload", `failed to re-read merge timeout from config: ${errMsg} — using default`);
+		return MERGE_TIMEOUT_MS;
+	}
+}
+
+/** Merge result statuses that indicate the merge agent completed successfully. */
+const SUCCESSFUL_MERGE_STATUSES = new Set<string>(["SUCCESS", "CONFLICT_RESOLVED"]);
+
+/**
  * Wait for merge agent to produce a result file.
  *
  * Polling loop with timeout and session liveness detection:
  * 1. Check if result file exists → parse and return
  * 2. Check if TMUX session is still alive
  * 3. If session died without result → grace period → check again → fail
- * 4. If timeout exceeded → kill session → fail
+ * 4. If timeout exceeded → check result before killing:
+ *    a. If result exists with SUCCESS/CONFLICT_RESOLVED: accept it
+ *       (merge agent slow but succeeded)
+ *    b. If result missing or non-success: kill session → fail
  *
  * @param resultPath   - Path to the expected result JSON file
  * @param sessionName  - TMUX session name for liveness checking
@@ -384,20 +498,40 @@ export function waitForMergeResult(
 
 		// Check timeout
 		if (elapsed >= timeoutMs) {
+			// TP-038: Check result file BEFORE killing the session.
+			// The merge may have actually succeeded — the verification tests
+			// just pushed past the timeout. Accept successful results without killing.
+			if (existsSync(resultPath)) {
+				try {
+					const lateResult = parseMergeResult(resultPath);
+					if (SUCCESSFUL_MERGE_STATUSES.has(lateResult.status)) {
+						execLog("merge", sessionName, "merge agent slow but succeeded — accepting result at timeout", {
+							status: lateResult.status,
+							elapsed,
+							timeoutMs,
+						});
+						// Clean up session (agent may still be running post-write)
+						if (tmuxHasSession(sessionName)) {
+							tmuxKillSession(sessionName);
+						}
+						return lateResult;
+					}
+					// Non-success result at timeout — fall through to kill
+					execLog("merge", sessionName, "merge result exists at timeout but non-success — killing session", {
+						status: lateResult.status,
+						elapsed,
+						timeoutMs,
+					});
+				} catch {
+					// Result file unreadable — fall through to kill
+				}
+			}
+
 			execLog("merge", sessionName, "merge timeout — killing session", {
 				elapsed,
 				timeoutMs,
 			});
 			tmuxKillSession(sessionName);
-
-			// One final check for result file (agent may have written it just before timeout)
-			if (existsSync(resultPath)) {
-				try {
-					return parseMergeResult(resultPath);
-				} catch {
-					// Fall through to timeout error
-				}
-			}
 
 			throw new MergeError(
 				"MERGE_TIMEOUT",
@@ -1077,12 +1211,66 @@ export function mergeWave(
 			// Write merge request to temp file
 			writeFileSync(requestFilePath, mergeRequestContent, "utf-8");
 
-			// Spawn merge agent in the isolated merge worktree
-			spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+			// ── TP-038: Spawn + wait with retry-on-timeout ──────────────
+			// On MERGE_TIMEOUT, retry with 2× the previous timeout (up to
+			// MERGE_TIMEOUT_MAX_RETRIES). Before each retry, re-read config
+			// from disk so operators can increase merge.timeoutMinutes without
+			// restarting the session.
+			let mergeResult: MergeResult;
+			{
+				const configRoot = stateRoot ?? repoRoot;
+				let currentTimeoutMs = (config.merge.timeout_minutes ?? 10) * 60 * 1000;
+				let lastTimeoutError: MergeError | null = null;
 
-			// Wait for result — use configured timeout (default 10 min, was 5 min)
-			const timeoutMs = (config.merge.timeout_minutes ?? 10) * 60 * 1000;
-			const mergeResult = waitForMergeResult(resultFilePath, sessionName, timeoutMs);
+				for (let attempt = 0; attempt <= MERGE_TIMEOUT_MAX_RETRIES; attempt++) {
+					// On retry: clean up stale result, re-read config, apply backoff
+					if (attempt > 0) {
+						// Re-read config from disk (TP-038: allows operator to adjust timeout)
+						const freshTimeoutMs = reloadMergeTimeoutMs(configRoot);
+						// Apply 2× backoff: double the timeout for each retry attempt
+						currentTimeoutMs = freshTimeoutMs * Math.pow(2, attempt);
+
+						execLog("merge", sessionName, `retry ${attempt}/${MERGE_TIMEOUT_MAX_RETRIES} after timeout — respawning merge agent`, {
+							newTimeoutMs: currentTimeoutMs,
+							newTimeoutMin: Math.round(currentTimeoutMs / 60_000),
+							attempt,
+						});
+
+						// Clean up stale result file from prior attempt
+						if (existsSync(resultFilePath)) {
+							try { unlinkSync(resultFilePath); } catch { /* best effort */ }
+						}
+
+						// Re-spawn merge agent for the retry
+						spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+					} else {
+						// First attempt: spawn merge agent
+						spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+					}
+
+					try {
+						mergeResult = waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs);
+						lastTimeoutError = null;
+						break; // Success — exit retry loop
+					} catch (waitErr: unknown) {
+						if (
+							waitErr instanceof MergeError &&
+							waitErr.code === "MERGE_TIMEOUT" &&
+							attempt < MERGE_TIMEOUT_MAX_RETRIES
+						) {
+							// Timeout — will retry on next loop iteration
+							lastTimeoutError = waitErr;
+							continue;
+						}
+						// Non-timeout error or final retry exhausted — propagate
+						throw waitErr;
+					}
+				}
+
+				// TypeScript: mergeResult is guaranteed to be assigned here
+				// (either break from loop or throw propagated the error)
+				mergeResult = mergeResult!;
+			}
 
 			// Clean up request file (leave result file for debugging)
 			try {

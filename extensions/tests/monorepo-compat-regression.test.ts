@@ -701,8 +701,10 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 		const reconciled = reconcileTaskStates(repoState, aliveSessions, doneTaskIds);
 		const resumePoint = computeResumePoint(repoState, reconciled);
 
-		// All tasks complete → past end
-		expect(resumePoint.resumeWaveIndex).toBe(1);
+		// TP-037: All tasks complete BUT merge never happened (mergeResults: [])
+		// → wave flagged for merge retry, resumeWaveIndex = 0
+		expect(resumePoint.resumeWaveIndex).toBe(0);
+		expect(resumePoint.mergeRetryWaveIndexes).toEqual([0]);
 		expect(resumePoint.completedTaskIds).toContain("TP-100");
 		expect(resumePoint.failedTaskIds).toHaveLength(0);
 	});

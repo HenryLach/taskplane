@@ -10,6 +10,7 @@ Taskplane includes a web dashboard for monitoring orchestration in real time.
 - lane sidecar state (`.pi/lane-state-*.json`)
 - batch history (`.pi/batch-history.json`)
 - repo-aware filtering and grouping (workspace mode)
+- supervisor status, recovery actions, and conversation history (when supervisor is active)
 
 ---
 
@@ -60,6 +61,22 @@ Dashboard updates live while orchestration runs.
 
 ---
 
+## Supervisor panel
+
+When the supervisor agent is active, the dashboard shows a collapsible
+**Supervisor** panel with:
+
+- **Status indicator** — active/inactive badge with autonomy level and heartbeat age
+- **Recovery actions** — chronological timeline of supervisor interventions (from `actions.jsonl`)
+- **Conversation history** — operator ↔ supervisor messages
+- **Batch summary** — rendered when available (post-batch)
+
+The panel appears automatically when supervisor data is available. For
+pre-supervisor batches (or when no supervisor files exist), the panel is
+hidden — no extra clutter.
+
+---
+
 ## Data sources
 
 Dashboard server reads:
@@ -68,6 +85,9 @@ Dashboard server reads:
 - `.pi/lane-state-*.json`
 - task `STATUS.md` files
 - `.pi/batch-history.json`
+- `.pi/supervisor/lock.json` (supervisor status)
+- `.pi/supervisor/actions.jsonl` (recovery actions)
+- `.pi/supervisor/events.jsonl` (supervisor events)
 
 Updates are pushed to browser clients via Server-Sent Events (SSE).
 

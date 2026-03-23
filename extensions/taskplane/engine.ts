@@ -6,20 +6,458 @@ import { existsSync, readdirSync, readFileSync, unlinkSync } from "fs";
 import { join, resolve } from "path";
 
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
-import { execLog, executeWave, tmuxKillSession } from "./execution.ts";
+import { computeTransitiveDependents, execLog, executeLane, executeWave, tmuxKillSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
+// classifyExit no longer called directly — Tier 0 uses exitDiagnostic.classification
+// from the diagnostic-reports pipeline (populated by assembleDiagnosticInput).
 import { getCurrentBranch, runGit } from "./git.ts";
-import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
-import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { mergeWaveByRepo } from "./merge.ts";
+import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { applyPartialProgressToOutcomes, deleteBatchState, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
+import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
-import { defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId } from "./types.ts";
-import type { AllocatedLane, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, TokenCounts, WorkspaceConfig } from "./types.ts";
+import { buildEngineEventBase, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaves, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
+
+// ── Tier 0: Automatic Recovery Helpers (TP-039) ─────────────────────
+
+/**
+ * Emit a `tier0_escalation` event with a typed `EscalationContext` payload.
+ *
+ * Called at every exhaustion path alongside the existing `tier0_recovery_exhausted`
+ * event.  The escalation event carries a structured payload for the future
+ * supervisor agent (TP-041).  In Tier 0, no automated action is taken on the
+ * escalation — the engine falls through to its existing pause behaviour.
+ *
+ * @since TP-039
+ */
+function emitTier0Escalation(
+	stateRoot: string,
+	batchId: string,
+	waveIndex: number,
+	pattern: Tier0EscalationPattern,
+	attempts: number,
+	maxAttempts: number,
+	lastError: string,
+	affectedTasks: string[],
+	suggestion: string,
+	extra?: Partial<Pick<import("./persistence.ts").Tier0Event, "taskId" | "laneNumber" | "repoId" | "classification" | "scopeKey">>,
+): void {
+	const escalation: EscalationContext = {
+		pattern,
+		attempts,
+		maxAttempts,
+		lastError,
+		affectedTasks,
+		suggestion,
+	};
+	emitTier0Event(stateRoot, {
+		...buildTier0EventBase("tier0_escalation", batchId, waveIndex, pattern, attempts, maxAttempts),
+		...extra,
+		escalation,
+	});
+}
+
+/**
+ * Attempt automatic retry for failed tasks with retryable exit classifications.
+ *
+ * After a wave completes, this function inspects each failed task's canonical
+ * `exitDiagnostic.classification` and re-executes the task if:
+ * - The classification is in TIER0_RETRYABLE_CLASSIFICATIONS (api_error, process_crash, session_vanished)
+ * - The retry budget for this scope has not been exhausted
+ *
+ * Partial progress is preserved before retry. On success, the task is moved from
+ * failedTaskIds to succeededTaskIds and the waveResult counts are updated in-place.
+ *
+ * @returns Object with retried count and updated task outcomes
+ */
+async function attemptWorkerCrashRetry(
+	waveResult: WaveExecutionResult,
+	waveIdx: number,
+	batchState: OrchBatchRuntimeState,
+	orchConfig: OrchestratorConfig,
+	repoRoot: string,
+	workspaceConfig: WorkspaceConfig | null | undefined,
+	allTaskOutcomes: LaneTaskOutcome[],
+	onNotify: (message: string, level: "info" | "warning" | "error") => void,
+	stateRoot: string,
+): Promise<{ retriedCount: number; succeededRetries: string[]; failedRetries: string[] }> {
+	if (!batchState.resilience) {
+		batchState.resilience = defaultResilienceState();
+	}
+
+	const budget = TIER0_RETRY_BUDGETS.worker_crash;
+	const succeededRetries: string[] = [];
+	const failedRetries: string[] = [];
+	let retriedCount = 0;
+
+	// Build a map from taskId → lane for re-execution
+	const taskToLane = new Map<string, AllocatedLane>();
+	for (const lane of waveResult.allocatedLanes) {
+		for (const task of lane.tasks) {
+			taskToLane.set(task.taskId, lane);
+		}
+	}
+
+	// Check each failed task for retryability
+	for (const taskId of [...waveResult.failedTaskIds]) {
+		const lane = taskToLane.get(taskId);
+		if (!lane) continue;
+
+		// Find the task outcome to get exit info
+		const outcome = allTaskOutcomes.find(o => o.taskId === taskId);
+		if (!outcome) continue;
+
+		// Use the canonical exit diagnostic classification when available.
+		// If exitDiagnostic is not populated (executeLane doesn't set it),
+		// we conservatively skip auto-retry rather than synthesizing a
+		// classification from incomplete data — which could incorrectly
+		// retry non-retryable failures (e.g., deterministic task errors).
+		const classification = outcome.exitDiagnostic?.classification;
+
+		if (!classification) {
+			execLog("batch", batchState.batchId,
+				`tier0: task ${taskId} has no exit diagnostic classification — skipping auto-retry (conservative)`,
+			);
+			continue;
+		}
+
+		// Check if retryable
+		if (!TIER0_RETRYABLE_CLASSIFICATIONS.has(classification)) {
+			execLog("batch", batchState.batchId,
+				`tier0: task ${taskId} exit classification "${classification}" is not retryable — skipping`,
+			);
+			continue;
+		}
+
+		// Check retry budget
+		const scopeKey = tier0ScopeKey("worker_crash", taskId, waveIdx);
+		const currentCount = batchState.resilience.retryCountByScope[scopeKey] ?? 0;
+		if (currentCount >= budget.maxRetries) {
+			execLog("batch", batchState.batchId,
+				`tier0: task ${taskId} retry budget exhausted (${currentCount}/${budget.maxRetries}) — skipping`,
+				{ scopeKey },
+			);
+			// Emit exhausted event
+			emitTier0Event(stateRoot, {
+				...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "worker_crash", currentCount, budget.maxRetries),
+				taskId,
+				laneNumber: lane.laneNumber,
+				repoId: lane.repoId ?? null,
+				classification,
+				error: `Retry budget exhausted for task ${taskId} (${classification})`,
+				scopeKey,
+				affectedTaskIds: [taskId],
+				suggestion: `Task ${taskId} failed with ${classification} and exhausted ${budget.maxRetries} retry attempt(s). Consider investigating the root cause or manually re-running the task.`,
+			});
+			emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "worker_crash", currentCount, budget.maxRetries,
+				`Retry budget exhausted for task ${taskId} (${classification})`, [taskId],
+				`Task ${taskId} failed with ${classification} and exhausted ${budget.maxRetries} retry attempt(s). Consider investigating the root cause or manually re-running the task.`,
+				{ taskId, laneNumber: lane.laneNumber, repoId: lane.repoId ?? null, classification, scopeKey },
+			);
+			continue;
+		}
+
+		// Increment retry counter
+		batchState.resilience.retryCountByScope[scopeKey] = currentCount + 1;
+		retriedCount++;
+
+		execLog("batch", batchState.batchId,
+			`tier0: retrying task ${taskId} (worker_crash, attempt ${currentCount + 1}/${budget.maxRetries}, classification=${classification})`,
+			{ scopeKey, classification },
+		);
+		onNotify(
+			`🔄 Tier 0: Retrying task ${taskId} (${classification}, attempt ${currentCount + 1}/${budget.maxRetries})`,
+			"info",
+		);
+
+		// Emit attempt event
+		emitTier0Event(stateRoot, {
+			...buildTier0EventBase("tier0_recovery_attempt", batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries),
+			taskId,
+			laneNumber: lane.laneNumber,
+			repoId: lane.repoId ?? null,
+			classification,
+			cooldownMs: budget.cooldownMs,
+			scopeKey,
+		});
+
+		// Cooldown before retry
+		if (budget.cooldownMs > 0) {
+			sleepSync(budget.cooldownMs);
+		}
+
+		// Find the specific AllocatedTask
+		const allocatedTask = lane.tasks.find(t => t.taskId === taskId);
+		if (!allocatedTask) continue;
+
+		// Re-execute: create a single-task lane config for executeLane
+		const retryLane: AllocatedLane = {
+			...lane,
+			tasks: [allocatedTask],
+		};
+
+		const isWsMode = !!workspaceConfig;
+		const wsRoot = workspaceConfig
+			? resolve(workspaceConfig.configPath, "..", "..")
+			: undefined;
+
+		try {
+			// Use a fresh pause signal for the retry — the batch pauseSignal
+			// may be paused due to stop-wave policy, but Tier 0 retry should
+			// attempt recovery before the stop decision takes effect (R002-4).
+			const retryPauseSignal = { paused: false };
+			const retryResult = await executeLane(
+				retryLane,
+				orchConfig,
+				repoRoot,
+				retryPauseSignal,
+				wsRoot,
+				isWsMode,
+			);
+
+			const retryOutcome = retryResult.tasks[0];
+			if (retryOutcome && retryOutcome.status === "succeeded") {
+				succeededRetries.push(taskId);
+
+				// Update waveResult: move from failed to succeeded
+				const failIdx = waveResult.failedTaskIds.indexOf(taskId);
+				if (failIdx !== -1) waveResult.failedTaskIds.splice(failIdx, 1);
+				waveResult.succeededTaskIds.push(taskId);
+
+				// Update lane results — replace the failed task outcome
+				for (const lr of waveResult.laneResults) {
+					const taskIdx = lr.tasks.findIndex(t => t.taskId === taskId);
+					if (taskIdx !== -1) {
+						lr.tasks[taskIdx] = retryOutcome;
+						break;
+					}
+				}
+
+				// Update allTaskOutcomes
+				upsertTaskOutcome(allTaskOutcomes, retryOutcome);
+
+				execLog("batch", batchState.batchId,
+					`tier0: task ${taskId} retry succeeded`,
+					{ scopeKey },
+				);
+				onNotify(
+					`✅ Tier 0: Task ${taskId} retry succeeded`,
+					"info",
+				);
+
+				// Emit success event
+				emitTier0Event(stateRoot, {
+					...buildTier0EventBase("tier0_recovery_success", batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries),
+					taskId,
+					laneNumber: lane.laneNumber,
+					repoId: lane.repoId ?? null,
+					classification,
+					resolution: `Task ${taskId} succeeded on retry attempt ${currentCount + 1}`,
+					scopeKey,
+				});
+			} else {
+				failedRetries.push(taskId);
+				if (retryOutcome) {
+					upsertTaskOutcome(allTaskOutcomes, retryOutcome);
+				}
+				execLog("batch", batchState.batchId,
+					`tier0: task ${taskId} retry failed again`,
+					{ scopeKey, exitReason: retryOutcome?.exitReason },
+				);
+
+				// Emit exhausted event (retry failed and budget now consumed)
+				const retryFailError = retryOutcome?.exitReason ?? `Task ${taskId} retry failed again`;
+				const retryFailSuggestion = `Task ${taskId} failed again after retry (${classification}). The failure may be persistent — investigate task logs.`;
+				emitTier0Event(stateRoot, {
+					...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries),
+					taskId,
+					laneNumber: lane.laneNumber,
+					repoId: lane.repoId ?? null,
+					classification,
+					error: retryFailError,
+					scopeKey,
+					affectedTaskIds: [taskId],
+					suggestion: retryFailSuggestion,
+				});
+				emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries,
+					retryFailError, [taskId], retryFailSuggestion,
+					{ taskId, laneNumber: lane.laneNumber, repoId: lane.repoId ?? null, classification, scopeKey },
+				);
+			}
+		} catch (err: unknown) {
+			failedRetries.push(taskId);
+			const errMsg = err instanceof Error ? err.message : String(err);
+			execLog("batch", batchState.batchId,
+				`tier0: task ${taskId} retry threw error: ${errMsg}`,
+				{ scopeKey },
+			);
+
+			// Emit exhausted event for exception during retry
+			const exceptionSuggestion = `Task ${taskId} retry threw an exception: ${errMsg}. Investigate the execution environment.`;
+			emitTier0Event(stateRoot, {
+				...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries),
+				taskId,
+				laneNumber: lane.laneNumber,
+				repoId: lane.repoId ?? null,
+				classification,
+				error: errMsg,
+				scopeKey,
+				affectedTaskIds: [taskId],
+				suggestion: exceptionSuggestion,
+			});
+			emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "worker_crash", currentCount + 1, budget.maxRetries,
+				errMsg, [taskId], exceptionSuggestion,
+				{ taskId, laneNumber: lane.laneNumber, repoId: lane.repoId ?? null, classification, scopeKey },
+			);
+		}
+	}
+
+	// Recalculate wave-level status if retries changed outcomes.
+	// NOTE: Batch-level counters (succeededTasks, failedTasks) are NOT updated
+	// here — the caller accumulates them from waveResult AFTER retry so that
+	// counts are only applied once (R002-2 fix).
+	if (succeededRetries.length > 0) {
+		if (waveResult.failedTaskIds.length === 0) {
+			waveResult.overallStatus = "succeeded";
+			waveResult.stoppedEarly = false;
+		} else if (waveResult.succeededTaskIds.length > 0) {
+			waveResult.overallStatus = "partial";
+		}
+	}
+
+	return { retriedCount, succeededRetries, failedRetries };
+}
+
+/**
+ * Attempt stale worktree recovery when lane allocation fails with ALLOC_WORKTREE_FAILED.
+ *
+ * Forces cleanup of all matching worktrees, prunes git state, then retries
+ * the wave execution.
+ *
+ * @returns The retry waveResult, or null if recovery was not attempted
+ */
+async function attemptStaleWorktreeRecovery(
+	waveResult: WaveExecutionResult,
+	waveTasks: string[],
+	waveIdx: number,
+	discovery: DiscoveryResult,
+	orchConfig: OrchestratorConfig,
+	repoRoot: string,
+	batchState: OrchBatchRuntimeState,
+	depGraph: ReturnType<typeof buildDependencyGraph>,
+	workspaceConfig: WorkspaceConfig | null | undefined,
+	onMonitorUpdate: MonitorUpdateCallback | undefined,
+	onLanesAllocated: (lanes: AllocatedLane[]) => void,
+	stateRoot: string,
+): Promise<WaveExecutionResult | null> {
+	// Only attempt recovery for ALLOC_WORKTREE_FAILED
+	if (!waveResult.allocationError || waveResult.allocationError.code !== "ALLOC_WORKTREE_FAILED") {
+		return null;
+	}
+
+	if (!batchState.resilience) {
+		batchState.resilience = defaultResilienceState();
+	}
+
+	const budget = TIER0_RETRY_BUDGETS.stale_worktree;
+	const scopeKey = tier0WaveScopeKey("stale_worktree", waveIdx);
+	const currentCount = batchState.resilience.retryCountByScope[scopeKey] ?? 0;
+
+	if (currentCount >= budget.maxRetries) {
+		execLog("batch", batchState.batchId,
+			`tier0: stale worktree retry budget exhausted (${currentCount}/${budget.maxRetries})`,
+			{ scopeKey },
+		);
+		const staleExhaustedError = waveResult.allocationError.message;
+		const staleExhaustedSuggestion = `Stale worktree cleanup exhausted ${budget.maxRetries} retry(s). Manually remove worktrees and prune git state.`;
+		emitTier0Event(stateRoot, {
+			...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "stale_worktree", currentCount, budget.maxRetries),
+			repoId: null, // wave-scoped
+			error: staleExhaustedError,
+			scopeKey,
+			affectedTaskIds: waveTasks,
+			suggestion: staleExhaustedSuggestion,
+		});
+		emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "stale_worktree", currentCount, budget.maxRetries,
+			staleExhaustedError, waveTasks, staleExhaustedSuggestion,
+			{ repoId: null, scopeKey },
+		);
+		return null;
+	}
+
+	batchState.resilience.retryCountByScope[scopeKey] = currentCount + 1;
+
+	execLog("batch", batchState.batchId,
+		`tier0: attempting stale worktree recovery (attempt ${currentCount + 1}/${budget.maxRetries})`,
+		{ scopeKey, allocationError: waveResult.allocationError.message },
+	);
+
+	// Emit attempt event
+	emitTier0Event(stateRoot, {
+		...buildTier0EventBase("tier0_recovery_attempt", batchState.batchId, waveIdx, "stale_worktree", currentCount + 1, budget.maxRetries),
+		repoId: null, // wave-scoped: allocation failure may span multiple repos
+		classification: waveResult.allocationError.code,
+		cooldownMs: budget.cooldownMs,
+		scopeKey,
+	});
+
+	// Force cleanup: remove all worktrees for this batch and prune.
+	// In workspace mode, iterate ALL workspace repos — allocation failures
+	// can come from non-default repos (R002-3 fix).
+	const prefix = orchConfig.orchestrator.worktree_prefix;
+	const opId = resolveOperatorId(orchConfig);
+
+	const repoRootsToClean: string[] = [repoRoot];
+	if (workspaceConfig) {
+		for (const [, repoConf] of workspaceConfig.repos) {
+			if (repoConf.path !== repoRoot && !repoRootsToClean.includes(repoConf.path)) {
+				repoRootsToClean.push(repoConf.path);
+			}
+		}
+	}
+
+	for (const cleanRoot of repoRootsToClean) {
+		const existingWorktrees = listWorktrees(prefix, cleanRoot, opId, batchState.batchId);
+		for (const wt of existingWorktrees) {
+			forceCleanupWorktree(wt, cleanRoot, batchState.batchId);
+		}
+		// Also prune git worktree state in case of orphaned references
+		runGit(["worktree", "prune"], cleanRoot);
+	}
+
+	// Cooldown before retry
+	if (budget.cooldownMs > 0) {
+		sleepSync(budget.cooldownMs);
+	}
+
+	// Retry the wave execution
+	execLog("batch", batchState.batchId,
+		`tier0: retrying wave ${waveIdx + 1} after stale worktree cleanup`,
+	);
+
+	const retryResult = await executeWave(
+		waveTasks,
+		waveIdx + 1,
+		discovery.pending,
+		orchConfig,
+		repoRoot,
+		batchState.batchId,
+		batchState.pauseSignal,
+		depGraph,
+		batchState.orchBranch,
+		onMonitorUpdate,
+		onLanesAllocated,
+		workspaceConfig,
+	);
+
+	return retryResult;
+}
+
 
 // ── /orch Execution Engine ───────────────────────────────────────────
 
@@ -37,6 +475,8 @@ import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, l
  * @param onMonitorUpdate - Optional callback for dashboard updates
  * @param workspaceConfig - Workspace configuration for repo routing (null = repo mode)
  * @param workspaceRoot - Workspace root for resolving task area paths (defaults to cwd)
+ * @param agentRoot   - Agent root for config resolution
+ * @param onEngineEvent - Optional callback for engine lifecycle events (TP-040)
  */
 export async function executeOrchBatch(
 	args: string,
@@ -49,17 +489,54 @@ export async function executeOrchBatch(
 	workspaceConfig?: WorkspaceConfig | null,
 	workspaceRoot?: string,
 	agentRoot?: string,
+	onEngineEvent?: EngineEventCallback | null,
 ): Promise<void> {
 	const repoRoot = cwd;
 	// State files (.pi/batch-state.json, lane-state, etc.) belong in the workspace root,
 	// which is where .pi/ config lives. In repo mode, workspaceRoot === repoRoot.
 	const stateRoot = workspaceRoot ?? cwd;
 
+	// ── TP-040: Engine event emission helper ─────────────────────
+	// Closure over stateRoot and onEngineEvent to keep emit calls terse.
+	// batchState.batchId is read at call time (it's set in Phase 1).
+	const emitEvent: typeof emitEngineEvent = (sr, event, cb) => emitEngineEvent(sr, event, cb);
+
+	// ── TP-040 R002: Terminal event emission helper ──────────────
+	// Routes all early-return and terminal paths through consistent event
+	// emission so external consumers always receive a deterministic terminal
+	// signal (batch_complete for completed/failed, batch_paused for paused/stopped).
+	// Uses a guard flag to enforce one-transition/one-event semantics — once a
+	// terminal event has been emitted, subsequent calls are no-ops.
+	let terminalEventEmitted = false;
+	const emitTerminalEvent = (reason?: string): void => {
+		if (terminalEventEmitted) return;
+		terminalEventEmitted = true;
+		if (batchState.phase === "completed" || batchState.phase === "failed") {
+			emitEvent(stateRoot, {
+				...buildEngineEventBase("batch_complete", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
+				succeededTasks: batchState.succeededTasks,
+				failedTasks: batchState.failedTasks,
+				skippedTasks: batchState.skippedTasks,
+				blockedTasks: batchState.blockedTasks,
+				batchDurationMs: batchState.endedAt ? batchState.endedAt - batchState.startedAt : undefined,
+			}, onEngineEvent);
+		} else if (batchState.phase === "paused" || batchState.phase === "stopped") {
+			emitEvent(stateRoot, {
+				...buildEngineEventBase("batch_paused", batchState.batchId, batchState.currentWaveIndex, batchState.phase),
+				reason: reason || (batchState.errors.length > 0 ? batchState.errors[batchState.errors.length - 1] : "paused"),
+				failedTasks: batchState.failedTasks,
+			}, onEngineEvent);
+		}
+	};
+
 	// ── Phase 1: Planning ────────────────────────────────────────
 	batchState.phase = "planning";
 	batchState.batchId = generateBatchId();
-	batchState.startedAt = Date.now();
-	batchState.pauseSignal = { paused: false };
+	// Preserve startedAt if set during "launching" phase (TP-040)
+	if (!batchState.startedAt) batchState.startedAt = Date.now();
+	// Preserve pauseSignal if already set during "launching" phase (TP-040)
+	// — e.g., /orch-pause issued between /orch return and engine start
+	if (!batchState.pauseSignal?.paused) batchState.pauseSignal = { paused: false };
 	batchState.mergeResults = [];
 	batchState.mode = workspaceConfig ? "workspace" : "repo";
 
@@ -70,6 +547,7 @@ export async function executeOrchBatch(
 		batchState.endedAt = Date.now();
 		batchState.errors.push("Cannot determine current branch (detached HEAD or not a git repo)");
 		onNotify("❌ Cannot determine current branch. Ensure HEAD is on a branch (not detached).", "error");
+		emitTerminalEvent();
 		return;
 	}
 	batchState.baseBranch = detectedBranch;
@@ -105,6 +583,7 @@ export async function executeOrchBatch(
 		batchState.phase = "failed";
 		batchState.endedAt = Date.now();
 		batchState.errors.push("Preflight check failed");
+		emitTerminalEvent();
 		return;
 	}
 
@@ -147,6 +626,7 @@ export async function executeOrchBatch(
 				"info",
 			);
 		}
+		emitTerminalEvent();
 		return;
 	}
 
@@ -154,6 +634,7 @@ export async function executeOrchBatch(
 		batchState.phase = "completed";
 		batchState.endedAt = Date.now();
 		onNotify("No pending tasks found. Nothing to execute.", "info");
+		emitTerminalEvent();
 		return;
 	}
 
@@ -169,6 +650,7 @@ export async function executeOrchBatch(
 		const errMsgs = validation.errors.map(e => `[${e.code}] ${e.message}`).join("\n");
 		batchState.errors.push(`Graph validation failed:\n${errMsgs}`);
 		onNotify(`❌ Dependency graph errors:\n${errMsgs}`, "error");
+		emitTerminalEvent();
 		return;
 	}
 
@@ -180,6 +662,7 @@ export async function executeOrchBatch(
 		const errMsgs = waveErrors.map(e => `[${e.code}] ${e.message}`).join("\n");
 		batchState.errors.push(`Wave computation failed:\n${errMsgs}`);
 		onNotify(`❌ Wave computation errors:\n${errMsgs}`, "error");
+		emitTerminalEvent();
 		return;
 	}
 
@@ -220,7 +703,7 @@ export async function executeOrchBatch(
 				break;
 			}
 		}
-		if (orchBranchFailed) return;
+		if (orchBranchFailed) { emitTerminalEvent(); return; }
 	} else {
 		const branchResult = runGit(["branch", orchBranch, batchState.baseBranch], repoRoot);
 		if (!branchResult.ok) {
@@ -229,6 +712,7 @@ export async function executeOrchBatch(
 			const errDetail = branchResult.stderr || branchResult.stdout || "unknown error";
 			batchState.errors.push(`Failed to create orch branch '${orchBranch}': ${errDetail}`);
 			onNotify(`❌ Failed to create orch branch '${orchBranch}': ${errDetail}`, "error");
+			emitTerminalEvent();
 			return;
 		}
 		execLog("batch", batchState.batchId, "created orch branch", { orchBranch, baseBranch: batchState.baseBranch });
@@ -254,6 +738,8 @@ export async function executeOrchBatch(
 			onNotify(`⏸️  Batch paused before wave ${waveIdx + 1}. Resume not yet implemented (TS-009).`, "warning");
 			// ── TS-009: Persist state on pause ──
 			persistRuntimeState("pause-before-wave", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+			// TP-040: Emit batch_paused event (via terminal helper for dedup)
+			emitTerminalEvent(`Paused before wave ${waveIdx + 1}`);
 			break;
 		}
 
@@ -288,6 +774,13 @@ export async function executeOrchBatch(
 			"info",
 		);
 
+		// TP-040: Emit wave_start event
+		emitEvent(stateRoot, {
+			...buildEngineEventBase("wave_start", batchState.batchId, waveIdx, batchState.phase),
+			taskIds: waveTasks,
+			laneCount: Math.min(waveTasks.length, orchConfig.orchestrator.max_lanes),
+		}, onEngineEvent);
+
 		const handleWaveMonitorUpdate: MonitorUpdateCallback = (monitorState) => {
 			const changed = syncTaskOutcomesFromMonitor(monitorState, allTaskOutcomes);
 			if (changed) {
@@ -297,7 +790,20 @@ export async function executeOrchBatch(
 		};
 
 		// Execute the wave
-		const waveResult = await executeWave(
+		const onLanesAllocatedCb = (lanes: AllocatedLane[]) => {
+			latestAllocatedLanes = lanes;
+			batchState.currentLanes = lanes;
+			// TP-029: Track repos from newly allocated lanes for cleanup coverage
+			for (const lane of lanes) {
+				const laneRepoRoot = resolveRepoRoot(lane.repoId, repoRoot, workspaceConfig);
+				encounteredRepoRoots.set(laneRepoRoot, lane.repoId);
+			}
+			if (seedPendingOutcomesForAllocatedLanes(lanes, allTaskOutcomes)) {
+				persistRuntimeState("wave-lanes-allocated", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+			}
+		};
+
+		let waveResult = await executeWave(
 			waveTasks,
 			waveIdx + 1,
 			discovery.pending,
@@ -308,20 +814,65 @@ export async function executeOrchBatch(
 			depGraph,
 			batchState.orchBranch,
 			handleWaveMonitorUpdate,
-			(lanes) => {
-				latestAllocatedLanes = lanes;
-				batchState.currentLanes = lanes;
-				// TP-029: Track repos from newly allocated lanes for cleanup coverage
-				for (const lane of lanes) {
-					const laneRepoRoot = resolveRepoRoot(lane.repoId, repoRoot, workspaceConfig);
-					encounteredRepoRoots.set(laneRepoRoot, lane.repoId);
-				}
-				if (seedPendingOutcomesForAllocatedLanes(lanes, allTaskOutcomes)) {
-					persistRuntimeState("wave-lanes-allocated", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
-				}
-			},
+			onLanesAllocatedCb,
 			workspaceConfig,
 		);
+
+		// ── TP-039: Tier 0 — Stale worktree recovery ────────────
+		// If allocation failed with ALLOC_WORKTREE_FAILED, force cleanup
+		// and retry the entire wave execution once.
+		if (waveResult.allocationError?.code === "ALLOC_WORKTREE_FAILED") {
+			const retryResult = await attemptStaleWorktreeRecovery(
+				waveResult,
+				waveTasks,
+				waveIdx,
+				discovery,
+				orchConfig,
+				repoRoot,
+				batchState,
+				depGraph,
+				workspaceConfig,
+				handleWaveMonitorUpdate,
+				onLanesAllocatedCb,
+				stateRoot,
+			);
+			if (retryResult) {
+				const staleRecovered = !retryResult.allocationError;
+				onNotify(
+					`🔄 Tier 0: Stale worktree recovery ${staleRecovered ? "succeeded" : "failed"} for wave ${waveIdx + 1}`,
+					staleRecovered ? "info" : "warning",
+				);
+
+				// Emit success or exhausted event based on retry result
+				const staleScopeKey = tier0WaveScopeKey("stale_worktree", waveIdx);
+				const staleCount = batchState.resilience?.retryCountByScope[staleScopeKey] ?? 1;
+				if (staleRecovered) {
+					emitTier0Event(stateRoot, {
+						...buildTier0EventBase("tier0_recovery_success", batchState.batchId, waveIdx, "stale_worktree", staleCount, TIER0_RETRY_BUDGETS.stale_worktree.maxRetries),
+						repoId: null, // wave-scoped
+						resolution: `Stale worktree cleanup succeeded — wave ${waveIdx + 1} re-executed successfully`,
+						scopeKey: staleScopeKey,
+					});
+				} else {
+					const staleRetryError = retryResult.allocationError?.message ?? "Allocation failed again after cleanup";
+					const staleRetrySuggestion = "Stale worktree cleanup did not resolve the allocation failure. Manually inspect and remove worktrees.";
+					emitTier0Event(stateRoot, {
+						...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "stale_worktree", staleCount, TIER0_RETRY_BUDGETS.stale_worktree.maxRetries),
+						repoId: null, // wave-scoped
+						error: staleRetryError,
+						scopeKey: staleScopeKey,
+						affectedTaskIds: waveTasks,
+						suggestion: staleRetrySuggestion,
+					});
+					emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "stale_worktree", staleCount, TIER0_RETRY_BUDGETS.stale_worktree.maxRetries,
+						staleRetryError, waveTasks, staleRetrySuggestion,
+						{ repoId: null, scopeKey: staleScopeKey },
+					);
+				}
+
+				waveResult = retryResult;
+			}
+		}
 
 		batchState.waveResults.push(waveResult);
 		batchState.currentLanes = []; // Clear current lanes after wave completes
@@ -334,14 +885,96 @@ export async function executeOrchBatch(
 			}
 		}
 
-		// Accumulate results
+		// ── TP-039: Tier 0 — Worker crash retry ─────────────────
+		// Run retry BEFORE accumulating counts and blocked tasks so that
+		// successfully retried tasks don't inflate failedTasks count and
+		// their dependents aren't incorrectly blocked (R002-2 fix).
+		if (waveResult.failedTaskIds.length > 0) {
+			const retryOutcome = await attemptWorkerCrashRetry(
+				waveResult,
+				waveIdx,
+				batchState,
+				orchConfig,
+				repoRoot,
+				workspaceConfig,
+				allTaskOutcomes,
+				onNotify,
+				stateRoot,
+			);
+			if (retryOutcome.succeededRetries.length > 0) {
+				// Recompute blockedTaskIds from remaining failures (R002-2).
+				// attemptWorkerCrashRetry already updated waveResult.failedTaskIds
+				// and waveResult.succeededTaskIds in-place.
+				if (waveResult.policyApplied === "skip-dependents" && waveResult.failedTaskIds.length > 0) {
+					const recomputed = computeTransitiveDependents(
+						new Set(waveResult.failedTaskIds),
+						depGraph,
+					);
+					waveResult.blockedTaskIds = [...recomputed].sort();
+				} else if (waveResult.failedTaskIds.length === 0) {
+					// All failures recovered — no blocked tasks
+					waveResult.blockedTaskIds = [];
+				}
+			}
+			if (retryOutcome.retriedCount > 0) {
+				// Persist updated state after retries
+				persistRuntimeState("tier0-worker-retry", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+			}
+
+			// If stop-wave had paused the batch but Tier 0 retry recovered all
+			// failures, clear the policy-induced pause so subsequent waves can
+			// proceed. attemptWorkerCrashRetry already set stoppedEarly=false
+			// and overallStatus="succeeded" on the waveResult (R002-4 fix).
+			if (
+				waveResult.failedTaskIds.length === 0
+				&& batchState.pauseSignal.paused
+				&& waveResult.policyApplied === "stop-wave"
+			) {
+				batchState.pauseSignal.paused = false;
+				execLog("batch", batchState.batchId,
+					`tier0: all failed tasks recovered — clearing stop-wave pause`,
+				);
+				onNotify(
+					`✅ Tier 0: All failed tasks recovered — batch continuing past stop-wave`,
+					"info",
+				);
+			}
+		}
+
+		// Accumulate results (after retry so counts reflect recovered tasks)
 		batchState.succeededTasks += waveResult.succeededTaskIds.length;
 		batchState.failedTasks += waveResult.failedTaskIds.length;
 		batchState.skippedTasks += waveResult.skippedTaskIds.length;
 
-		// Add newly blocked tasks
+		// Add newly blocked tasks (after retry so recovered tasks don't block dependents)
 		for (const blocked of waveResult.blockedTaskIds) {
 			batchState.blockedTaskIds.add(blocked);
+		}
+
+		// ── TP-040: Emit task_complete / task_failed events ──────
+		// Emitted after Tier 0 retry so events reflect final status.
+		for (const taskId of waveResult.succeededTaskIds) {
+			const outcome = allTaskOutcomes.find(o => o.taskId === taskId);
+			emitEvent(stateRoot, {
+				...buildEngineEventBase("task_complete", batchState.batchId, waveIdx, batchState.phase),
+				taskId,
+				durationMs: outcome?.startTime && outcome?.endTime
+					? outcome.endTime - outcome.startTime
+					: undefined,
+				outcome: "succeeded",
+			}, onEngineEvent);
+		}
+		for (const taskId of waveResult.failedTaskIds) {
+			const outcome = allTaskOutcomes.find(o => o.taskId === taskId);
+			emitEvent(stateRoot, {
+				...buildEngineEventBase("task_failed", batchState.batchId, waveIdx, batchState.phase),
+				taskId,
+				durationMs: outcome?.startTime && outcome?.endTime
+					? outcome.endTime - outcome.startTime
+					: undefined,
+				reason: outcome?.exitReason || "unknown",
+				partialProgress: (outcome?.partialProgressCommits ?? 0) > 0,
+			}, onEngineEvent);
 		}
 
 		// ── TS-009: Persist state after wave execution ──
@@ -359,6 +992,10 @@ export async function executeOrchBatch(
 			waveResult.failedTaskIds.length > 0 ? "warning" : "info",
 		);
 
+		// NOTE: No explicit wave_complete event in the spec event set. The supervisor
+		// infers wave completion from the sequence of task_complete/task_failed events
+		// followed by merge_start or the next wave_start.
+
 		// Check if we should stop based on task failure policy
 		if (waveResult.stoppedEarly) {
 			if (waveResult.policyApplied === "stop-all") {
@@ -366,6 +1003,8 @@ export async function executeOrchBatch(
 				// ── TS-009: Persist state on stop-all ──
 				persistRuntimeState("stop-all", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(ORCH_MESSAGES.orchBatchStopped(batchState.batchId, "stop-all"), "error");
+				// TP-040: Emit batch_paused event (via terminal helper for dedup)
+				emitTerminalEvent(`Stopped by stop-all policy at wave ${waveIdx + 1}`);
 				break;
 			}
 			if (waveResult.policyApplied === "stop-wave") {
@@ -373,6 +1012,8 @@ export async function executeOrchBatch(
 				// ── TS-009: Persist state on stop-wave ──
 				persistRuntimeState("stop-wave", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(ORCH_MESSAGES.orchBatchStopped(batchState.batchId, "stop-wave"), "error");
+				// TP-040: Emit batch_paused event (via terminal helper for dedup)
+				emitTerminalEvent(`Stopped by stop-wave policy at wave ${waveIdx + 1}`);
 				break;
 			}
 		}
@@ -411,6 +1052,11 @@ export async function executeOrchBatch(
 				// ── TS-009: Persist state on executing→merging transition ──
 				persistRuntimeState("merge-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(ORCH_MESSAGES.orchMergeStart(waveIdx + 1, mergeableLaneCount), "info");
+				// TP-040: Emit merge_start event
+				emitEvent(stateRoot, {
+					...buildEngineEventBase("merge_start", batchState.batchId, waveIdx, batchState.phase),
+					laneCount: mergeableLaneCount,
+				}, onEngineEvent);
 
 				mergeResult = mergeWaveByRepo(
 					waveResult.allocatedLanes,
@@ -474,11 +1120,26 @@ export async function executeOrchBatch(
 
 				if (mergeResult.status === "succeeded") {
 					onNotify(ORCH_MESSAGES.orchMergeComplete(waveIdx + 1, mergedCount, mergeTotalSec), "info");
+
+					// TP-040: Emit merge_success event
+					emitEvent(stateRoot, {
+						...buildEngineEventBase("merge_success", batchState.batchId, waveIdx, batchState.phase),
+						laneCount: mergedCount,
+						durationMs: mergeResult.totalDurationMs,
+						totalWaves: rawWaves.length,
+					}, onEngineEvent);
 				} else {
 					onNotify(
 						ORCH_MESSAGES.orchMergeFailed(waveIdx + 1, mergeResult.failedLane ?? 0, mergeResult.failureReason || "unknown"),
 						"error",
 					);
+
+					// TP-040: Emit merge_failed event
+					emitEvent(stateRoot, {
+						...buildEngineEventBase("merge_failed", batchState.batchId, waveIdx, batchState.phase),
+						laneNumber: mergeResult.failedLane ?? undefined,
+						error: mergeResult.failureReason || "unknown",
+					}, onEngineEvent);
 
 					// Emit repo-divergence summary when partial is caused by cross-repo outcome differences
 					if (mergeResult.status === "partial") {
@@ -509,6 +1170,13 @@ export async function executeOrchBatch(
 					ORCH_MESSAGES.orchMergeFailed(waveIdx + 1, mergeResult.failedLane, mergeResult.failureReason || "unknown"),
 					"error",
 				);
+
+				// TP-040 R002: Emit merge_failed for mixed-outcome/no-mergeable-lane path
+				emitEvent(stateRoot, {
+					...buildEngineEventBase("merge_failed", batchState.batchId, waveIdx, batchState.phase),
+					laneNumber: mergeResult.failedLane,
+					error: mergeResult.failureReason,
+				}, onEngineEvent);
 			} else {
 				// No mergeable lanes and no mixed outcomes (e.g., only skipped tasks)
 				onNotify(ORCH_MESSAGES.orchMergeSkipped(waveIdx + 1), "info");
@@ -565,6 +1233,10 @@ export async function executeOrchBatch(
 				batchState.resilience = defaultResilienceState();
 			}
 
+			// Extract repoId and lane for event attribution before entering retry loop
+			const mergeRepoId = extractFailedRepoId(mergeResult) ?? null;
+			const mergeFailedLane = mergeResult.failedLane ?? undefined;
+
 			const retryOutcome = applyMergeRetryLoop(
 				mergeResult,
 				waveIdx,
@@ -595,6 +1267,17 @@ export async function executeOrchBatch(
 						batchState.mergeResults[batchState.mergeResults.length - 1] = result;
 					},
 					sleep: sleepSync,
+					// TP-039 R004: Emit attempt event only when retry is actually scheduled,
+					// with accurate classification/attempt data from the retry decision.
+					onRetryAttempt: (decision) => {
+						emitTier0Event(stateRoot, {
+							...buildTier0EventBase("tier0_recovery_attempt", batchState.batchId, waveIdx, "merge_timeout", decision.currentAttempt, decision.maxAttempts),
+							laneNumber: mergeFailedLane,
+							repoId: mergeRepoId,
+							classification: decision.classification,
+							cooldownMs: decision.cooldownMs,
+						});
+					},
 				},
 			);
 
@@ -602,6 +1285,17 @@ export async function executeOrchBatch(
 				mergeResult = retryOutcome.mergeResult;
 				batchState.phase = "executing";
 				persistRuntimeState("merge-retry-succeeded", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+
+				// Emit merge retry success event
+				emitTier0Event(stateRoot, {
+					...buildTier0EventBase("tier0_recovery_success", batchState.batchId, waveIdx, "merge_timeout", retryOutcome.lastDecision.currentAttempt, retryOutcome.lastDecision.maxAttempts),
+					laneNumber: mergeFailedLane,
+					repoId: mergeRepoId,
+					classification: retryOutcome.classification ?? undefined,
+					resolution: `Merge retry succeeded at wave ${waveIdx + 1}`,
+					scopeKey: retryOutcome.scopeKey,
+				});
+
 				// Fall through to normal post-merge flow (worktree cleanup, etc.)
 			} else if (retryOutcome.kind === "safe_stop") {
 				mergeResult = retryOutcome.mergeResult;
@@ -609,6 +1303,24 @@ export async function executeOrchBatch(
 				batchState.errors.push(retryOutcome.errorMessage);
 				persistRuntimeState("merge-rollback-safe-stop", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(retryOutcome.notifyMessage, "error");
+
+				// Emit merge safe-stop event (treated as exhausted — no further automatic recovery possible)
+				const mergeSafeStopSuggestion = "Merge rollback failed — batch force-paused for manual recovery. Check .pi/verification/ for recovery commands.";
+				emitTier0Event(stateRoot, {
+					...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "merge_timeout", retryOutcome.lastDecision.currentAttempt, retryOutcome.lastDecision.maxAttempts),
+					laneNumber: mergeFailedLane,
+					repoId: mergeRepoId,
+					classification: retryOutcome.classification ?? undefined,
+					error: retryOutcome.errorMessage,
+					scopeKey: retryOutcome.scopeKey,
+					suggestion: mergeSafeStopSuggestion,
+				});
+				emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "merge_timeout",
+					retryOutcome.lastDecision.currentAttempt, retryOutcome.lastDecision.maxAttempts,
+					retryOutcome.errorMessage, [], mergeSafeStopSuggestion,
+					{ laneNumber: mergeFailedLane, repoId: mergeRepoId, classification: retryOutcome.classification ?? undefined, scopeKey: retryOutcome.scopeKey },
+				);
+
 				preserveWorktreesForResume = true;
 				break;
 			} else if (retryOutcome.kind === "exhausted") {
@@ -624,6 +1336,23 @@ export async function executeOrchBatch(
 					attempts: retryOutcome.lastDecision.currentAttempt,
 					maxAttempts: retryOutcome.lastDecision.maxAttempts,
 				});
+
+				// Emit merge retry exhausted event
+				const mergeExhaustedSuggestion = `Merge retry exhausted (${retryOutcome.classification ?? "unknown"}) after ${retryOutcome.lastDecision.currentAttempt} attempt(s). Investigate merge failure and retry manually.`;
+				emitTier0Event(stateRoot, {
+					...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "merge_timeout", retryOutcome.lastDecision.currentAttempt, retryOutcome.lastDecision.maxAttempts),
+					laneNumber: mergeFailedLane,
+					repoId: mergeRepoId,
+					classification: retryOutcome.classification ?? undefined,
+					error: exhaustionMsg,
+					scopeKey: retryOutcome.scopeKey,
+					suggestion: mergeExhaustedSuggestion,
+				});
+				emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "merge_timeout",
+					retryOutcome.lastDecision.currentAttempt, retryOutcome.lastDecision.maxAttempts,
+					exhaustionMsg, [], mergeExhaustedSuggestion,
+					{ laneNumber: mergeFailedLane, repoId: mergeRepoId, classification: retryOutcome.classification ?? undefined, scopeKey: retryOutcome.scopeKey },
+				);
 
 				batchState.phase = "paused";
 				batchState.errors.push(exhaustionMsg);
@@ -807,17 +1536,152 @@ export async function executeOrchBatch(
 			}
 
 			if (cleanupGateFailures.length > 0) {
-				const gatePolicyResult = computeCleanupGatePolicy(waveIdx, cleanupGateFailures);
+				// ── TP-039: Tier 0 — Cleanup gate retry ──────────────
+				// Before pausing, attempt one more force cleanup + prune
+				// on the stale worktrees. This handles cases where the
+				// first force cleanup partially succeeded (e.g., directory
+				// removed but git state not yet pruned).
+				if (!batchState.resilience) {
+					batchState.resilience = defaultResilienceState();
+				}
 
-				execLog("batch", batchState.batchId, `cleanup gate failed — pausing batch`, gatePolicyResult.logDetails);
+				const cleanupBudget = TIER0_RETRY_BUDGETS.cleanup_gate;
+				const cleanupScopeKey = tier0WaveScopeKey("cleanup_gate", waveIdx);
+				const cleanupRetryCount = batchState.resilience.retryCountByScope[cleanupScopeKey] ?? 0;
 
-				batchState.phase = gatePolicyResult.targetPhase;
-				batchState.errors.push(gatePolicyResult.errorMessage);
-				persistRuntimeState(gatePolicyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
-				onNotify(gatePolicyResult.notifyMessage, gatePolicyResult.notifyLevel);
-				// Preserve remaining worktrees for manual cleanup — do NOT remove them
-				preserveWorktreesForResume = true;
-				break;
+				if (cleanupRetryCount < cleanupBudget.maxRetries) {
+					batchState.resilience.retryCountByScope[cleanupScopeKey] = cleanupRetryCount + 1;
+
+					execLog("batch", batchState.batchId,
+						`tier0: retrying cleanup gate (attempt ${cleanupRetryCount + 1}/${cleanupBudget.maxRetries})`,
+						{ cleanupScopeKey, staleCount: cleanupGateFailures.reduce((n, f) => n + f.staleWorktrees.length, 0) },
+					);
+
+					// Emit attempt event
+					const staleWorktreeCount = cleanupGateFailures.reduce((n, f) => n + f.staleWorktrees.length, 0);
+					emitTier0Event(stateRoot, {
+						...buildTier0EventBase("tier0_recovery_attempt", batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount + 1, cleanupBudget.maxRetries),
+						repoId: null, // wave-scoped: cleanup gate spans all repos
+						classification: `stale_worktrees:${staleWorktreeCount}`,
+						cooldownMs: cleanupBudget.cooldownMs,
+						scopeKey: cleanupScopeKey,
+					});
+
+					if (cleanupBudget.cooldownMs > 0) {
+						sleepSync(cleanupBudget.cooldownMs);
+					}
+
+					// Force-cleanup each stale worktree again
+					for (const failure of cleanupGateFailures) {
+						const remaining = listWorktrees(resetPrefix, failure.repoRoot, resetOpId, batchState.batchId);
+						for (const wt of remaining) {
+							if (failure.staleWorktrees.includes(wt.path)) {
+								forceCleanupWorktree(wt, failure.repoRoot, batchState.batchId);
+							}
+						}
+						// Prune after force cleanup
+						runGit(["worktree", "prune"], failure.repoRoot);
+					}
+
+					// Re-check: are any worktrees still stale?
+					const retriedGateFailures: CleanupGateRepoFailure[] = [];
+					for (const failure of cleanupGateFailures) {
+						const remaining = listWorktrees(resetPrefix, failure.repoRoot, resetOpId, batchState.batchId);
+						const remainingPaths = new Set(remaining.map(wt => wt.path));
+						const stillStale = failure.staleWorktrees.filter(p => remainingPaths.has(p));
+						if (stillStale.length > 0) {
+							retriedGateFailures.push({
+								repoRoot: failure.repoRoot,
+								repoId: failure.repoId,
+								staleWorktrees: stillStale,
+							});
+						}
+					}
+
+					if (retriedGateFailures.length === 0) {
+						execLog("batch", batchState.batchId,
+							`tier0: cleanup gate retry succeeded — all stale worktrees removed`,
+							{ cleanupScopeKey },
+						);
+						onNotify(
+							`✅ Tier 0: Cleanup gate retry succeeded at wave ${waveIdx + 1} — continuing`,
+							"info",
+						);
+
+						// Emit success event
+						emitTier0Event(stateRoot, {
+							...buildTier0EventBase("tier0_recovery_success", batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount + 1, cleanupBudget.maxRetries),
+							repoId: null, // wave-scoped
+							resolution: `Cleanup gate retry succeeded — all stale worktrees removed at wave ${waveIdx + 1}`,
+							scopeKey: cleanupScopeKey,
+						});
+
+						persistRuntimeState("tier0-cleanup-retry-success", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+						// Fall through to continue the wave loop (don't break)
+					} else {
+						// Retry failed — fall through to pausing
+						const gatePolicyResult = computeCleanupGatePolicy(waveIdx, retriedGateFailures);
+
+						execLog("batch", batchState.batchId,
+							`tier0: cleanup gate retry failed — still ${retriedGateFailures.reduce((n, f) => n + f.staleWorktrees.length, 0)} stale worktree(s), pausing batch`,
+							gatePolicyResult.logDetails,
+						);
+
+						const stillStaleCount = retriedGateFailures.reduce((n, f) => n + f.staleWorktrees.length, 0);
+						const cleanupRetryError = `Cleanup gate retry failed — ${stillStaleCount} stale worktree(s) remain`;
+						const cleanupRetrySuggestion = `Post-merge cleanup retry did not remove all stale worktrees. Manually remove the remaining ${stillStaleCount} worktree(s) and prune git state.`;
+						const cleanupRetryAffected = retriedGateFailures.flatMap(f => f.staleWorktrees);
+						// Emit exhausted event (retry attempted but failed)
+						emitTier0Event(stateRoot, {
+							...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount + 1, cleanupBudget.maxRetries),
+							repoId: null, // wave-scoped
+							error: cleanupRetryError,
+							scopeKey: cleanupScopeKey,
+							affectedTaskIds: cleanupRetryAffected,
+							suggestion: cleanupRetrySuggestion,
+						});
+						emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount + 1, cleanupBudget.maxRetries,
+							cleanupRetryError, cleanupRetryAffected, cleanupRetrySuggestion,
+							{ repoId: null, scopeKey: cleanupScopeKey },
+						);
+
+						batchState.phase = gatePolicyResult.targetPhase;
+						batchState.errors.push(gatePolicyResult.errorMessage);
+						persistRuntimeState(gatePolicyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+						onNotify(gatePolicyResult.notifyMessage, gatePolicyResult.notifyLevel);
+						preserveWorktreesForResume = true;
+						break;
+					}
+				} else {
+					// Cleanup retry budget exhausted — pause immediately
+					const gatePolicyResult = computeCleanupGatePolicy(waveIdx, cleanupGateFailures);
+
+					execLog("batch", batchState.batchId, `cleanup gate failed — pausing batch (retry budget exhausted)`, gatePolicyResult.logDetails);
+
+					// Emit exhausted event (budget already consumed from prior waves)
+					const cleanupBudgetError = `Cleanup gate retry budget exhausted (${cleanupRetryCount}/${cleanupBudget.maxRetries})`;
+					const cleanupBudgetSuggestion = `Cleanup gate retry budget was already consumed. Manually remove stale worktrees and prune git state.`;
+					const cleanupBudgetAffected = cleanupGateFailures.flatMap(f => f.staleWorktrees);
+					emitTier0Event(stateRoot, {
+						...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount, cleanupBudget.maxRetries),
+						repoId: null, // wave-scoped
+						error: cleanupBudgetError,
+						scopeKey: cleanupScopeKey,
+						affectedTaskIds: cleanupBudgetAffected,
+						suggestion: cleanupBudgetSuggestion,
+					});
+					emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "cleanup_gate", cleanupRetryCount, cleanupBudget.maxRetries,
+						cleanupBudgetError, cleanupBudgetAffected, cleanupBudgetSuggestion,
+						{ repoId: null, scopeKey: cleanupScopeKey },
+					);
+
+					batchState.phase = gatePolicyResult.targetPhase;
+					batchState.errors.push(gatePolicyResult.errorMessage);
+					persistRuntimeState(gatePolicyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+					onNotify(gatePolicyResult.notifyMessage, gatePolicyResult.notifyLevel);
+					preserveWorktreesForResume = true;
+					break;
+				}
 			}
 		}
 	}
@@ -1144,22 +2008,22 @@ export async function executeOrchBatch(
 	// are warnings that preserve the orch branch for manual integration.
 	// Gate: only run for terminal phases (completed/failed). Paused/stopped batches
 	// are not yet done — integration would mutate refs prematurely.
-	let autoIntegrated = false;
+	//
+	// TP-043: "supervised" and "auto" integration modes are now owned by the
+	// supervisor agent (which stays alive through post-batch integration).
+	// The legacy engine fast-forward only runs for "auto" mode when no
+	// supervisor is active (fallback). For "supervised" mode, the supervisor
+	// always handles integration.
 	const mergedTaskCount = batchState.succeededTasks;
 	const isTerminalPhase = batchState.phase === "completed" || batchState.phase === "failed";
 	if (isTerminalPhase && !preserveWorktreesForResume && batchState.orchBranch && mergedTaskCount > 0) {
-		if (orchConfig.orchestrator.integration === "auto") {
-			autoIntegrated = attemptAutoIntegration(
-				batchState.orchBranch,
-				batchState.baseBranch,
-				repoRoot,
-				batchState.batchId,
-				"batch",
-				onNotify,
-			);
-		}
-		// Manual mode (default) or auto-integration skipped: show integration guidance
-		if (!autoIntegrated) {
+		if (orchConfig.orchestrator.integration === "supervised" || orchConfig.orchestrator.integration === "auto") {
+			// TP-043: Supervisor-managed integration modes. The supervisor
+			// agent handles integration after batch_complete event. The engine
+			// does NOT perform legacy fast-forward here — defer to supervisor.
+			execLog("batch", batchState.batchId, `integration deferred to supervisor (mode: ${orchConfig.orchestrator.integration})`);
+		} else {
+			// Manual mode (default): show integration guidance
 			onNotify(
 				ORCH_MESSAGES.orchIntegrationManual(batchState.orchBranch, batchState.baseBranch, mergedTaskCount),
 				"info",
@@ -1169,6 +2033,9 @@ export async function executeOrchBatch(
 
 	// ── TS-009: Persist terminal state ──
 	persistRuntimeState("batch-terminal", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+
+	// ── TP-040: Emit batch terminal event (R002: unified via helper) ─
+	emitTerminalEvent();
 
 	// ── TP-031: Emit diagnostic reports (JSONL + markdown) ──
 	// Non-fatal: errors are logged but never crash batch finalization.

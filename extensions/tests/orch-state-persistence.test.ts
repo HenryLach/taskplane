@@ -98,7 +98,7 @@ const BATCH_STATE_SCHEMA_VERSION = 2;
 
 // Valid enum sets (must match source)
 const VALID_BATCH_PHASES = new Set([
-	"idle", "planning", "executing", "merging", "paused", "stopped", "completed", "failed",
+	"idle", "launching", "planning", "executing", "merging", "paused", "stopped", "completed", "failed",
 ]);
 
 const VALID_TASK_STATUSES = new Set([
@@ -760,8 +760,8 @@ console.log("\n── 1.1: validatePersistedState ──");
 }
 
 {
-	console.log("  ▸ validates all 8 batch phases");
-	const phases = ["idle", "planning", "executing", "merging", "paused", "stopped", "completed", "failed"];
+	console.log("  ▸ validates all 9 batch phases");
+	const phases = ["idle", "launching", "planning", "executing", "merging", "paused", "stopped", "completed", "failed"];
 	let allValid = true;
 	for (const phase of phases) {
 		const validBase = JSON.parse(loadFixture("batch-state-valid.json"));

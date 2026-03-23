@@ -77,6 +77,14 @@ Responsibilities:
 - provide integration path back to working branch (`/orch-integrate`)
 - persist/reconcile state for resume
 
+**Non-blocking execution model:** `/orch` and `/orch-resume` start the engine
+asynchronously and return control to the pi session immediately. The engine runs
+its wave loop in the background, communicating state transitions via structured
+events emitted to `.pi/supervisor/events.jsonl` and in-memory callbacks that
+drive the dashboard widget. This keeps the pi session free for the operator to
+run `/orch-status`, `/orch-pause`, or interact with the supervisor agent while
+the batch executes.
+
 ### 3) CLI (`bin/taskplane.mjs`)
 
 Owns project scaffolding and diagnostics:
@@ -134,7 +142,10 @@ Customized per repository.
 1. User invokes command in pi (`/task` or `/orch*`)
 2. Extension loads config from `.pi/taskplane-config.json` (or YAML fallback)
 3. Runner/orchestrator performs execution
-4. Progress is persisted to files (`STATUS.md`, `.DONE`, `.pi/batch-state.json`, lane sidecars)
+   - `/orch` and `/orch-resume` launch the engine asynchronously — the command handler returns immediately, and the engine runs its wave loop in the background
+   - Engine state transitions emit structured events (`wave_start`, `task_complete`, `task_failed`, `merge_start`, `merge_success`, `merge_failed`, `batch_complete`, `batch_paused`) to `.pi/supervisor/events.jsonl`
+   - In-memory callbacks update the dashboard widget in real time
+4. Progress is persisted to files (`STATUS.md`, `.DONE`, `.pi/batch-state.json`, lane sidecars, `.pi/supervisor/events.jsonl`)
 5. Dashboard reads persisted/sidecar state for live visualization
 
 **Orch branch model:** `/orch` creates a dedicated orch branch (e.g. `orch/op-<id>`) and merges completed lane work there — the user's working branch is never modified during execution. When the batch completes, the user integrates results via `/orch-integrate` (merge, fast-forward, or PR) or configures auto-integration.

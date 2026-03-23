@@ -101,7 +101,7 @@ describe("parseResumeArgs", () => {
 
 describe("checkResumeEligibility — normal resume (force=false)", () => {
 	const normalEligible: OrchBatchPhase[] = ["paused", "executing", "merging"];
-	const normalIneligible: OrchBatchPhase[] = ["stopped", "failed", "completed", "idle", "planning"];
+	const normalIneligible: OrchBatchPhase[] = ["stopped", "failed", "completed", "idle", "launching", "planning"];
 
 	for (const phase of normalEligible) {
 		it(`${phase} → eligible without force`, () => {

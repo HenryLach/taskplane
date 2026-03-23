@@ -2,14 +2,14 @@
  * State persistence, serialization, orphan detection
  * @module orch/persistence
  */
-import { readFileSync, writeFileSync, existsSync, unlinkSync, renameSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, unlinkSync, renameSync, mkdirSync, appendFileSync } from "fs";
 import { execSync } from "child_process";
 import { join, dirname, basename } from "path";
 
 import { execLog } from "./execution.ts";
 import { BATCH_STATE_SCHEMA_VERSION, StateFileError, batchStatePath, BATCH_HISTORY_MAX_ENTRIES, defaultResilienceState, defaultBatchDiagnostics } from "./types.ts";
 import type { BatchHistorySummary } from "./types.ts";
-import type { AllocatedLane, DiscoveryResult, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedTaskRecord, TaskMonitorSnapshot, WorkspaceMode } from "./types.ts";
+import type { AllocatedLane, DiscoveryResult, EngineEvent, EscalationContext, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedTaskRecord, TaskMonitorSnapshot, Tier0RecoveryPattern, WorkspaceMode } from "./types.ts";
 import { sleepSync } from "./worktree.ts";
 import type { PreserveFailedLaneProgressResult } from "./worktree.ts";
 
@@ -310,7 +310,7 @@ export function persistRuntimeState(
 
 /** All valid OrchBatchPhase values for validation. */
 export const VALID_BATCH_PHASES: ReadonlySet<string> = new Set([
-	"idle", "planning", "executing", "merging", "paused", "stopped", "completed", "failed",
+	"idle", "launching", "planning", "executing", "merging", "paused", "stopped", "completed", "failed",
 ]);
 
 /** All valid LaneTaskStatus values for validation. */
@@ -1617,6 +1617,186 @@ export function saveBatchHistory(repoRoot: string, summary: BatchHistorySummary)
 		execLog("batch", "history", `saved batch summary (${history.length} entries)`);
 	} catch (err) {
 		execLog("batch", "history", `failed to save batch history: ${err}`);
+	}
+}
+
+
+// ── Tier 0 Supervisor Event Logging (TP-039 Step 2) ─────────────────
+
+/**
+ * Event types emitted by Tier 0 recovery actions.
+ *
+ * - `tier0_recovery_attempt` — A recovery action is being tried
+ * - `tier0_recovery_success` — Recovery succeeded
+ * - `tier0_recovery_exhausted` — Retry budget exhausted, escalation needed
+ * - `tier0_escalation` — Escalation to supervisor (emitted alongside exhausted)
+ *
+ * @since TP-039
+ */
+export type Tier0EventType =
+	| "tier0_recovery_attempt"
+	| "tier0_recovery_success"
+	| "tier0_recovery_exhausted"
+	| "tier0_escalation";
+
+/**
+ * Structured event written to `.pi/supervisor/events.jsonl`.
+ *
+ * Each event contains enough context for the supervisor agent (Tier 1)
+ * to understand what happened and decide next actions.
+ *
+ * @since TP-039
+ */
+export interface Tier0Event {
+	/** ISO 8601 timestamp */
+	timestamp: string;
+	/** Event type */
+	type: Tier0EventType;
+	/** Batch identifier */
+	batchId: string;
+	/** Wave index (0-based) */
+	waveIndex: number;
+	/** Recovery pattern being applied */
+	pattern: Tier0RecoveryPattern | "merge_timeout";
+	/** Current attempt number (1-based) */
+	attempt: number;
+	/** Maximum attempts allowed */
+	maxAttempts: number;
+	/** Affected task ID (for task-scoped patterns like worker_crash) */
+	taskId?: string;
+	/** Lane number (for lane-scoped patterns) */
+	laneNumber?: number;
+	/** Repo ID (for workspace-mode attribution; null/undefined for repo-mode) */
+	repoId?: string | null;
+	/** Exit classification or error type */
+	classification?: string;
+	/** Error message (for exhausted events) */
+	error?: string;
+	/** Resolution description (for success events) */
+	resolution?: string;
+	/** Cooldown/timeout in milliseconds before retry (for attempt events) */
+	cooldownMs?: number;
+	/** Scope key used for retry counter tracking */
+	scopeKey?: string;
+	/** Affected task IDs (for escalation context in exhausted events) */
+	affectedTaskIds?: string[];
+	/** Suggested remediation (for exhausted events) */
+	suggestion?: string;
+	/** Typed escalation payload (present only on `tier0_escalation` events) */
+	escalation?: EscalationContext;
+}
+
+/**
+ * Build the required base fields for a Tier 0 event.
+ *
+ * Ensures consistent field population across all emit sites so
+ * supervisor consumers get a deterministic event shape.
+ *
+ * @since TP-039 R004
+ */
+export function buildTier0EventBase(
+	type: Tier0EventType,
+	batchId: string,
+	waveIndex: number,
+	pattern: Tier0RecoveryPattern | "merge_timeout",
+	attempt: number,
+	maxAttempts: number,
+): Pick<Tier0Event, "timestamp" | "type" | "batchId" | "waveIndex" | "pattern" | "attempt" | "maxAttempts"> {
+	return {
+		timestamp: new Date().toISOString(),
+		type,
+		batchId,
+		waveIndex,
+		pattern,
+		attempt,
+		maxAttempts,
+	};
+}
+
+/**
+ * Emit a Tier 0 event to `.pi/supervisor/events.jsonl`.
+ *
+ * Best-effort: creates the directory if needed, appends the event as a
+ * single JSONL line. Failures are logged but never crash the batch.
+ *
+ * @param stateRoot - Root directory for state files (workspace root or repo root)
+ * @param event     - The event to emit
+ *
+ * @since TP-039
+ */
+export function emitTier0Event(stateRoot: string, event: Tier0Event): void {
+	try {
+		const supervisorDir = join(stateRoot, ".pi", "supervisor");
+		if (!existsSync(supervisorDir)) {
+			mkdirSync(supervisorDir, { recursive: true });
+		}
+		const eventsPath = join(supervisorDir, "events.jsonl");
+		const line = JSON.stringify(event) + "\n";
+		appendFileSync(eventsPath, line);
+	} catch (err: unknown) {
+		// Best-effort: log but don't crash the batch
+		const msg = err instanceof Error ? err.message : String(err);
+		execLog("batch", event.batchId, `tier0 event write failed: ${msg}`, {
+			eventType: event.type,
+			pattern: event.pattern,
+		});
+	}
+}
+
+
+// ── Engine Event Logging (TP-040) ───────────────────────────────────
+
+/**
+ * Emit an engine lifecycle event to `.pi/supervisor/events.jsonl`.
+ *
+ * Shares the same JSONL file as Tier 0 events for unified consumption
+ * by the supervisor agent. Engine events cover batch lifecycle transitions
+ * (wave start/end, task completion, merge phases, batch terminal states).
+ *
+ * Best-effort: creates the directory if needed, appends the event as a
+ * single JSONL line. Failures are logged but never crash the batch.
+ *
+ * Also invokes the optional event callback for in-process consumers
+ * (command handler, dashboard).
+ *
+ * @param stateRoot - Root directory for state files (workspace root or repo root)
+ * @param event     - The engine event to emit
+ * @param callback  - Optional in-process event callback
+ *
+ * @since TP-040
+ */
+export function emitEngineEvent(
+	stateRoot: string,
+	event: EngineEvent,
+	callback?: ((event: EngineEvent) => void) | null,
+): void {
+	// Write to JSONL file (same path as Tier 0 events)
+	try {
+		const supervisorDir = join(stateRoot, ".pi", "supervisor");
+		if (!existsSync(supervisorDir)) {
+			mkdirSync(supervisorDir, { recursive: true });
+		}
+		const eventsPath = join(supervisorDir, "events.jsonl");
+		const line = JSON.stringify(event) + "\n";
+		appendFileSync(eventsPath, line);
+	} catch (err: unknown) {
+		// Best-effort: log but don't crash the batch
+		const msg = err instanceof Error ? err.message : String(err);
+		execLog("batch", event.batchId, `engine event write failed: ${msg}`, {
+			eventType: event.type,
+		});
+	}
+
+	// Invoke in-process callback
+	if (callback) {
+		try {
+			callback(event);
+		} catch (err: unknown) {
+			const msg = err instanceof Error ? err.message : String(err);
+			execLog("batch", event.batchId, `engine event callback failed: ${msg}`, {
+				eventType: event.type,
+			});
+		}
 	}
 }
 

@@ -2,7 +2,7 @@
  * Settings TUI — interactive configuration viewer and editor.
  *
  * Provides a `/taskplane-settings` command that renders a two-level navigation:
- *   1. Section selector (12 sections)
+ *   1. Section selector (13 sections)
  *   2. Per-section SettingsList with field display, source badges,
  *      and inline editing for enum/boolean/string/number fields
  *
@@ -87,7 +87,7 @@ export interface SectionDef {
 // ── Section & Field Definitions ──────────────────────────────────────
 
 /**
- * Canonical navigation map — 12 sections.
+ * Canonical navigation map — 13 sections.
  * Order matches the Step 1 design in STATUS.md.
  */
 export const SECTIONS: SectionDef[] = [
@@ -102,7 +102,7 @@ export const SECTIONS: SectionDef[] = [
 			// The user-facing spawn mode setting is under Worker (controls /task behavior).
 			{ configPath: "orchestrator.orchestrator.tmuxPrefix", label: "Tmux Prefix", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "tmuxPrefix", description: "Prefix for orchestrator tmux sessions" },
 			{ configPath: "orchestrator.orchestrator.operatorId", label: "Operator ID", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "operatorId", description: "Operator identifier (empty = auto-detect)" },
-			{ configPath: "orchestrator.orchestrator.integration", label: "Integration", control: "toggle", layer: "L1", fieldType: "enum", values: ["manual", "auto"], description: "How completed batches are integrated. manual = user runs /orch-integrate. auto = fast-forward on completion." },
+			{ configPath: "orchestrator.orchestrator.integration", label: "Integration", control: "toggle", layer: "L1", fieldType: "enum", values: ["manual", "supervised", "auto"], description: "How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking." },
 		],
 	},
 	{
@@ -147,6 +147,13 @@ export const SECTIONS: SectionDef[] = [
 		name: "Monitoring",
 		fields: [
 			{ configPath: "orchestrator.monitoring.pollInterval", label: "Poll Interval (sec)", control: "input", layer: "L1", fieldType: "number", description: "Poll interval for lane/task monitoring (seconds)" },
+		],
+	},
+	{
+		name: "Supervisor",
+		fields: [
+			{ configPath: "orchestrator.supervisor.model", label: "Supervisor Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "supervisorModel", description: "Supervisor model (empty = inherit session)" },
+			{ configPath: "orchestrator.supervisor.autonomy", label: "Autonomy Level", control: "toggle", layer: "L1", fieldType: "enum", values: ["interactive", "supervised", "autonomous"], description: "Recovery action confirmation behavior" },
 		],
 	},
 	{

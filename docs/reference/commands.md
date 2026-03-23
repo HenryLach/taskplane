@@ -119,32 +119,75 @@ Resume a paused task.
 
 ## Orchestrator Commands
 
-### `/orch <areas|paths|all>`
+### `/orch [<areas|paths|all>]`
 
-Start parallel batch execution.
+Universal entry point for Taskplane. When called without arguments, detects project state and activates the supervisor for guided interaction. When called with arguments, starts parallel batch execution.
 
 **Syntax**
 
 ```text
-/orch <areas|paths|all>
+/orch                      # Detect state → supervisor routing
+/orch <areas|paths|all>    # Start batch execution directly
 ```
 
-**Arguments**
+**No-argument routing**
+
+When `/orch` is called without arguments, it detects the current project state and routes to the appropriate supervisor flow:
+
+| Detected state | Condition | Supervisor action |
+|----------------|-----------|-------------------|
+| **Active batch** | `batch-state.json` with non-terminal phase | Shows status summary (supervisor already running) |
+| **Completed batch** | Completed batch + orch branch exists | Offers retrospective and integration guidance |
+| **No config** | No `.pi/taskplane-config.json` found | Starts onboarding flow (project setup, task areas, git branching) |
+| **Pending tasks** | Config exists, pending tasks found | Offers to plan and start a batch |
+| **No tasks** | Config exists, no pending tasks | Helps create tasks from specs, GitHub Issues, or conversation |
+
+States are evaluated in the order shown above (active batch and completed batch take priority over config checks).
+
+**Arguments (batch execution mode)**
 
 - `all` — scan all configured task areas
 - one or more area names (e.g. `auth billing`)
 - one or more filesystem paths (area dir or specific task prompt path)
 
-**Behavior**
+**Behavior (with arguments)**
 
 - Runs orphan-session/state detection before starting
 - Discovers tasks and dependencies
 - Computes waves and lane assignments
 - Creates an **orch branch** (`orch/<operator>-<batchId>`) from the current branch — all batch work lands here, not on your working branch
+- **Starts the engine asynchronously and returns control to the pi session immediately** — the wave loop runs in the background while you continue interacting with the session
 - Executes tasks in isolated worktrees
 - Merges successful lane branches into the orch branch
+- Engine emits structured lifecycle events to `.pi/supervisor/events.jsonl` for observability
 - On completion, shows integration guidance (or auto-integrates if `integration` is set to `auto`)
 - Can be used with a single task path when you want `/task` semantics with worktree isolation
+
+**Onboarding flow (no config)**
+
+When `/orch` detects no Taskplane configuration, the supervisor walks the operator through first-time setup:
+
+1. **Project assessment** — analyzes repo structure, package files, and existing docs
+2. **Task area design** — proposes task areas based on project structure; operator refines
+3. **Git branching** — detects branch strategy and protection rules; recommends configuration
+4. **Config generation** — creates `.pi/taskplane-config.json`, area `CONTEXT.md` files, `.pi/agents/` overrides, and `.gitignore` entries
+5. **First task guidance** — offers to create a starter task, pull from GitHub Issues, or run a smoke test
+
+The onboarding adapts based on project maturity — a greenfield project gets full scaffolding guidance, while an established codebase gets a streamlined setup focused on task areas and config.
+
+**Supervisor activation**
+
+After starting the engine, `/orch` activates the **supervisor agent** in the same pi session. The supervisor:
+
+- Monitors engine events (wave starts, task completions, merge results, failures)
+- Provides proactive status notifications to the operator
+- Handles failure recovery based on its autonomy level
+- Responds to natural-language questions ("how's it going?", "what failed?")
+- Logs all recovery actions to `.pi/supervisor/actions.jsonl`
+
+The supervisor persists until the batch completes, fails, is stopped, or is aborted. A lockfile at `.pi/supervisor/lock.json` prevents duplicate supervisors across sessions.
+
+See also: [`/orch-takeover`](#orch-takeover) for session takeover, [Supervisor config](#supervisor-settings) for model and autonomy settings.
 
 **Orch branch model**
 
@@ -155,8 +198,9 @@ See also: [`/orch-integrate`](#orch-integrate-orch-branch---merge---pr---force)
 **Examples**
 
 ```text
-/orch all
-/orch auth billing
+/orch                                    # Detect state, activate supervisor
+/orch all                                # Start batch for all task areas
+/orch auth billing                       # Start batch for specific areas
 /orch taskplane-tasks/auth/tasks
 /orch taskplane-tasks/auth/tasks/AUTH-001-login/PROMPT.md
 ```
@@ -255,6 +299,8 @@ Resume a paused or interrupted batch from persisted state.
 - Loads `.pi/batch-state.json`
 - Validates resumable phase (see eligibility matrix below)
 - Reconciles `.DONE` markers and live sessions
+- **Starts the engine asynchronously and returns control immediately** (same non-blocking model as `/orch`)
+- Reactivates the supervisor agent in the session
 - Reconnects/re-executes tasks as needed
 - Continues from first incomplete wave
 
@@ -363,6 +409,46 @@ List active orchestrator tmux sessions.
 
 ---
 
+### `/orch-takeover`
+
+Force takeover of the supervisor from another pi session.
+
+**Syntax**
+
+```text
+/orch-takeover
+```
+
+**Behavior**
+
+When a batch is running, exactly one pi session owns the supervisor role. If you open a new pi session and want to take over supervisor duties (e.g., the original session is unresponsive or you've switched terminals), use `/orch-takeover`.
+
+The command checks the supervisor lockfile at `.pi/supervisor/lock.json` and handles four cases:
+
+| Lockfile state | Action |
+|----------------|--------|
+| No active batch | Informs you — run `/orch` first |
+| No lockfile / corrupt / stale heartbeat | Activates supervisor normally (no takeover needed) |
+| Live lock (PID alive, heartbeat recent) | Force takeover — writes a new lock; the previous session yields on its next heartbeat check |
+| Already the active supervisor | No-op — informs you this session already owns it |
+
+**Rehydration**
+
+On takeover, the supervisor reads batch state, recent engine events, and the audit trail to reconstruct context. A summary is displayed so you know where the batch stands.
+
+**Yield mechanism**
+
+The previous supervisor's heartbeat timer (30-second interval) detects that the lockfile's `sessionId` no longer matches its own. It yields gracefully — clearing its supervisor state and notifying the operator in that session.
+
+**Common responses**
+
+- `✅ This session is already the active supervisor.`
+- `No active batch to supervise.`
+- `🔄 Previous supervisor (PID ...) process is dead. Activating supervisor.`
+- `⚡ Forcing supervisor takeover from PID ...`
+
+---
+
 ### `/orch-integrate [<orch-branch>] [--merge] [--pr] [--force]`
 
 Integrate a completed orch batch into your working branch.
@@ -419,6 +505,17 @@ The command determines which orch branch to integrate using this priority:
 /orch-integrate --force                  # Skip branch safety check
 ```
 
+**Supervisor-managed integration**
+
+When the integration setting is `supervised` or `auto`, the supervisor automatically handles integration after the batch completes — you don't need to run `/orch-integrate` manually.
+
+- **`supervised`** — the supervisor builds an integration plan (mode, branches, protection status), presents it for your confirmation, then executes it.
+- **`auto`** — the supervisor executes integration immediately without asking, pausing only if issues arise (conflicts, CI failures, branch protection).
+
+Both modes detect branch protection via the GitHub API and default to PR mode when the target branch is protected. If fast-forward fails, the supervisor falls back to merge mode, then to PR mode. You can still run `/orch-integrate` manually at any time, regardless of the configured mode.
+
+See [Integration setting](configuration/taskplane-settings.md#orchestrator) for configuration details.
+
 **Common responses**
 
 - `⏳ Batch ... is currently in "running" phase.` — batch must complete before integration
@@ -444,7 +541,7 @@ Open the interactive settings TUI for viewing and editing taskplane configuratio
 **Behavior**
 
 - Shows a two-level navigation: section selector → field list
-- Displays 12 sections covering orchestrator, task-runner, user preferences, and advanced (JSON-only) fields
+- Displays 13 sections covering orchestrator, supervisor, task-runner, user preferences, and advanced (JSON-only) fields
 - Each field shows its current value and source indicator: `(project)`, `(user)`, or `(default)`
 - Enum and boolean fields use toggleable controls; strings and numbers use text input
 - Layer 1 (project) changes write to `.pi/taskplane-config.json`
@@ -465,6 +562,7 @@ Open the interactive settings TUI for viewing and editing taskplane configuratio
 | Merge | Merge model, tools, and ordering |
 | Failure Policy | Task/merge failure handling, timeouts |
 | Monitoring | Poll interval |
+| Supervisor | Supervisor model and autonomy level |
 | Worker | Worker model, tools, thinking, spawn mode |
 | Reviewer | Reviewer model, tools, thinking |
 | Context Limits | Context window, iteration limits, progress limits |

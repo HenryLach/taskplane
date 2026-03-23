@@ -43,7 +43,7 @@ Settings that control how `/orch` runs parallel task batches.
 | **Batch ID Format** | enum | `timestamp` | `timestamp`, `sequential` | Format for batch identifiers used in branch names and logs. `timestamp` = `20260317T140000`. `sequential` = incrementing number. |
 | **Tmux Prefix** | string | `orch` | Any string | Prefix for orchestrator tmux session names. Sessions are named `{prefix}-{opId}-lane-{N}`. Change if you run multiple taskplane instances and need distinct session names. *(L1+L2)* |
 | **Operator ID** | string | *(auto-detect)* | Any string | Identifier for this operator. Auto-detected from OS username if empty. Used in session names, worktree paths, and branch names for collision resistance when multiple people run batches on the same repo. *(L1+L2)* |
-| **Integration** | enum | `manual` | `manual`, `auto` | How completed batches are integrated into your working branch. `manual` = you run `/orch-integrate` after the batch completes (gives you full control over timing and integration mode). `auto` = the orchestrator attempts a fast-forward of your base branch when the batch completes (falls back to manual guidance if fast-forward isn't possible). See [`/orch-integrate`](../commands.md) for details on the manual integration flow. |
+| **Integration** | enum | `manual` | `manual`, `supervised`, `auto` | How completed batches are integrated into your working branch. `manual` = you run `/orch-integrate` after the batch completes (gives you full control over timing and integration mode). `supervised` = the supervisor proposes an integration plan, asks for your confirmation, then executes it. `auto` = the supervisor executes integration automatically without asking, pausing only if issues arise (conflicts, CI failures). Both `supervised` and `auto` detect branch protection and default to PR mode when the target branch is protected. See [`/orch-integrate`](../commands.md) for details on the manual integration flow. |
 
 ---
 
@@ -121,6 +121,29 @@ Settings for the orchestrator's monitoring loop.
 | Setting | Type | Default | Options | Description |
 |---------|------|---------|---------|-------------|
 | **Poll Interval (sec)** | number | `5` | Any positive number | How often (in seconds) the orchestrator checks lane/task status. Lower = more responsive dashboard updates but more filesystem reads. Higher = less overhead. |
+
+---
+
+## Supervisor
+
+Settings for the supervisor agent that monitors batches and handles failures.
+
+The supervisor activates automatically when `/orch` starts a batch. It shares the operator's pi session, monitoring engine events and providing proactive status updates.
+
+| Setting | Type | Default | Options | Description |
+|---------|------|---------|---------|-------------|
+| **Supervisor Model** | string | *(inherit)* | Any model ID | Model for the supervisor agent. Empty = inherits the active session's model. Set explicitly if you want a different model for supervision (e.g., a model with stronger reasoning for failure recovery). *(L1+L2)* |
+| **Autonomy Level** | enum | `supervised` | `interactive`, `supervised`, `autonomous` | Controls how much the supervisor does automatically vs. asking the operator. `interactive` = ask before any recovery action. `supervised` = known recovery patterns auto, novel recovery asks. `autonomous` = handle everything, pause only when stuck. |
+
+### Autonomy level details
+
+| Classification | Interactive | Supervised | Autonomous |
+|----------------|-------------|------------|------------|
+| **Diagnostic** (reading state, running tests) | ✅ Auto | ✅ Auto | ✅ Auto |
+| **Tier 0 Known** (session restart, worktree cleanup, merge retry) | ❓ Ask | ✅ Auto | ✅ Auto |
+| **Destructive** (state edits, git operations, session kills) | ❓ Ask | ❓ Ask | ✅ Auto |
+
+In all modes, the supervisor logs every recovery action to `.pi/supervisor/actions.jsonl` for audit trail purposes.
 
 ---
 

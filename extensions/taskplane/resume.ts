@@ -11,7 +11,7 @@ import { executeOrchBatch } from "./engine.ts";
 import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
-import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
+import { mergeWaveByRepo } from "./merge.ts";
 import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
@@ -285,6 +285,14 @@ export function checkResumeEligibility(state: PersistedBatchState, force: boolea
 				batchId,
 			};
 
+		case "launching":
+			return {
+				eligible: false,
+				reason: `Batch ${batchId} is currently launching. Wait for it to start or use /orch-abort.`,
+				phase,
+				batchId,
+			};
+
 		case "planning":
 			return {
 				eligible: false,
@@ -388,10 +396,14 @@ export function reconcileTaskStates(
 			};
 		}
 
-		// Precedence 5: Never-started task (pending + no session assigned) → remain pending
-		// These are future-wave tasks that were never allocated to a lane.
-		// They should be re-queued for execution, not failed.
-		if (task.status === "pending" && !task.sessionName) {
+		// Precedence 5: Pending task that was never started → remain pending
+		// Matches two cases:
+		//   (a) No session assigned at all (future-wave task never allocated)
+		//   (b) Session assigned from a prior failed resume, but session is dead
+		//       and worktree doesn't exist — task was allocated but never actually
+		//       started (TP-037 bug #102b fix)
+		// In both cases the task should be re-queued for execution, not failed.
+		if (task.status === "pending" && (!task.sessionName || (!sessionAlive && !worktreeExists))) {
 			return {
 				taskId: task.taskId,
 				persistedStatus: task.status,
@@ -418,10 +430,41 @@ export function reconcileTaskStates(
 }
 
 /**
+ * Get the latest merge status for a specific wave index (0-based).
+ *
+ * Persisted merge results may contain multiple entries for the same wave
+ * (e.g., re-exec sentinel merges clamped to wave 0, or retry attempts).
+ * This helper returns the latest entry's status for the given wave,
+ * preferring the last entry in array order (which is the most recent).
+ *
+ * @param mergeResults - Persisted merge results array
+ * @param waveIndex    - 0-based wave index to look up
+ * @returns The merge status ("succeeded" | "failed" | "partial") or null if no entry exists
+ */
+export function getMergeStatusForWave(
+	mergeResults: ReadonlyArray<{ waveIndex: number; status: "succeeded" | "failed" | "partial" }>,
+	waveIndex: number,
+): "succeeded" | "failed" | "partial" | null {
+	// Walk in reverse to find the latest entry for this wave
+	for (let i = mergeResults.length - 1; i >= 0; i--) {
+		if (mergeResults[i].waveIndex === waveIndex) {
+			return mergeResults[i].status;
+		}
+	}
+	return null;
+}
+
+/**
  * Compute the resume point from reconciled task states and wave plan.
  *
  * Determines which wave to resume from by finding the first wave that
- * has any incomplete tasks. Skips fully completed waves.
+ * has any incomplete tasks. Skips fully completed waves only when
+ * their merge also succeeded.
+ *
+ * TP-037 (Bug #102): A wave where all tasks are terminal but the merge
+ * is missing or failed is NOT skipped — it is flagged for merge retry
+ * via `mergeRetryWaveIndexes`. The `resumeWaveIndex` is set to the
+ * earliest such wave so the resume loop can process it.
  *
  * Pure function — no process or filesystem access.
  *
@@ -477,8 +520,11 @@ export function computeResumePoint(
 		}
 	}
 
-	// Find resume wave: first wave with any non-completed tasks
+	// Find resume wave: first wave with any non-completed tasks OR missing/failed merge.
+	// TP-037 (Bug #102): A wave where all tasks are terminal but the merge
+	// hasn't succeeded is flagged for merge retry, not skipped.
 	let resumeWaveIndex = persistedState.wavePlan.length; // default: past end = all done
+	const mergeRetryWaveIndexes: number[] = [];
 
 	for (let i = 0; i < persistedState.wavePlan.length; i++) {
 		const waveTasks = persistedState.wavePlan[i];
@@ -499,8 +545,35 @@ export function computeResumePoint(
 		});
 
 		if (!allDone) {
-			resumeWaveIndex = i;
+			// Only set resumeWaveIndex if not already set by a merge retry
+			// (merge retry at an earlier wave takes precedence)
+			if (resumeWaveIndex === persistedState.wavePlan.length) {
+				resumeWaveIndex = i;
+			}
 			break;
+		}
+
+		// TP-037 (Bug #102): All tasks are terminal — but did the merge succeed?
+		// Only check merge status if the wave had any succeeded tasks (waves with
+		// only failures/skips don't produce merges and can be safely skipped).
+		const hasSucceededTasks = waveTasks.some((taskId) => {
+			const reconciled = reconciledMap.get(taskId);
+			if (!reconciled) return false;
+			if (reconciled.action === "mark-complete") return true;
+			if (reconciled.action === "skip" && (reconciled.liveStatus === "succeeded" || reconciled.persistedStatus === "succeeded")) return true;
+			return false;
+		});
+
+		if (hasSucceededTasks && persistedState.mergeResults) {
+			const mergeStatus = getMergeStatusForWave(persistedState.mergeResults, i);
+			if (mergeStatus !== "succeeded") {
+				// Merge missing or failed — flag for retry, don't skip past this wave
+				mergeRetryWaveIndexes.push(i);
+				if (resumeWaveIndex === persistedState.wavePlan.length) {
+					// This is the first wave needing attention — set resume point here
+					resumeWaveIndex = i;
+				}
+			}
 		}
 	}
 
@@ -539,6 +612,7 @@ export function computeResumePoint(
 		failedTaskIds,
 		reconnectTaskIds,
 		reExecuteTaskIds,
+		mergeRetryWaveIndexes,
 	};
 }
 
@@ -692,6 +766,11 @@ export async function resumeOrchBatch(
 				`❌ Cannot resume: ${err.message}`,
 				"error",
 			);
+			// ── TP-040 R006: Reset phase on pre-execution early return ──
+			// The caller may have set batchState.phase = "launching" before
+			// calling this function. Since we're returning without starting
+			// any work, reset to "idle" so the batch isn't stuck.
+			batchState.phase = "idle";
 			return;
 		}
 		throw err;
@@ -702,6 +781,8 @@ export async function resumeOrchBatch(
 			ORCH_MESSAGES.resumeNoState(),
 			"error",
 		);
+		// TP-040 R006: Reset phase on pre-execution early return
+		batchState.phase = "idle";
 		return;
 	}
 
@@ -712,6 +793,8 @@ export async function resumeOrchBatch(
 			ORCH_MESSAGES.resumePhaseNotResumable(persistedState.batchId, persistedState.phase, eligibility.reason),
 			"error",
 		);
+		// TP-040 R006: Reset phase on pre-execution early return
+		batchState.phase = "idle";
 		return;
 	}
 
@@ -732,6 +815,8 @@ export async function resumeOrchBatch(
 				ORCH_MESSAGES.forceResumeDiagnosticsFailed(persistedState.batchId),
 				"error",
 			);
+			// TP-040 R006: Reset phase on pre-execution early return
+			batchState.phase = "idle";
 			return;
 		}
 
@@ -780,6 +865,33 @@ export async function resumeOrchBatch(
 	// ── 4. Reconcile task states ─────────────────────────────────
 	const reconciledTasks = reconcileTaskStates(persistedState, aliveSessions, doneTaskIds, existingWorktreeTaskIds);
 
+	// ── 4b. Clear stale session allocation for tasks reconciled as pending ──
+	// TP-037 (Bug #102b): Pending tasks that had a sessionName from a prior
+	// failed resume but were never actually started need their allocation
+	// metadata cleared so they can be freshly assigned to new lanes.
+	// We also prune these tasks from persisted lane records so that
+	// serializeBatchState() doesn't reintroduce stale sessionName via the
+	// `outcome?.sessionName || lane?.tmuxSessionName` fallback path.
+	const stalePendingTaskIds = new Set<string>();
+	for (const reconciled of reconciledTasks) {
+		if (reconciled.action === "pending") {
+			const persistedTask = persistedState.tasks.find(t => t.taskId === reconciled.taskId);
+			if (persistedTask && persistedTask.sessionName) {
+				execLog("resume", persistedState.batchId, `clear-stale-session: ${reconciled.taskId} had stale session "${persistedTask.sessionName}" (lane ${persistedTask.laneNumber})`);
+				stalePendingTaskIds.add(reconciled.taskId);
+				persistedTask.sessionName = "";
+				persistedTask.laneNumber = 0;
+			}
+		}
+	}
+	// Prune stale-pending tasks from lane records so reconstructAllocatedLanes()
+	// (and subsequent serializeBatchState()) won't map them back to the old lane.
+	if (stalePendingTaskIds.size > 0) {
+		for (const lane of persistedState.lanes) {
+			lane.taskIds = lane.taskIds.filter(id => !stalePendingTaskIds.has(id));
+		}
+	}
+
 	// ── 5. Compute resume point ──────────────────────────────────
 	const resumePoint = computeResumePoint(persistedState, reconciledTasks);
 	const completedTaskSet = new Set(resumePoint.completedTaskIds);
@@ -813,6 +925,13 @@ export async function resumeOrchBatch(
 		);
 	}
 
+	if (resumePoint.mergeRetryWaveIndexes.length > 0) {
+		onNotify(
+			`🔀 ${resumePoint.mergeRetryWaveIndexes.length} wave(s) need merge retry: ${resumePoint.mergeRetryWaveIndexes.map(i => `W${i + 1}`).join(", ")}`,
+			"warning",
+		);
+	}
+
 	// ── 6. Reconstruct runtime state ─────────────────────────────
 
 	// Guard: orchBranch must be present for routing. Persisted states from
@@ -826,6 +945,8 @@ export async function resumeOrchBatch(
 			`Use /orch-abort to clean up, then start a new batch.`,
 			"error",
 		);
+		// TP-040 R006: Reset phase on pre-execution early return
+		batchState.phase = "idle";
 		return;
 	}
 
@@ -836,7 +957,8 @@ export async function resumeOrchBatch(
 
 	batchState.mode = persistedState.mode;
 	batchState.startedAt = persistedState.startedAt;
-	batchState.pauseSignal = { paused: false };
+	// Preserve pauseSignal if already set during "launching" phase (TP-040)
+	if (!batchState.pauseSignal?.paused) batchState.pauseSignal = { paused: false };
 	batchState.totalWaves = persistedState.totalWaves;
 	batchState.totalTasks = persistedState.totalTasks;
 	batchState.succeededTasks = resumePoint.completedTaskIds.length;
@@ -1275,7 +1397,105 @@ export async function resumeOrchBatch(
 		}
 
 		if (waveTasks.length === 0) {
-			execLog("resume", batchState.batchId, `wave ${waveIdx + 1}: no tasks to execute (all completed/blocked)`);
+			// TP-037 Bug #102: Check if this wave needs merge retry.
+			// All tasks are terminal but the merge may have failed/been interrupted.
+			if (resumePoint.mergeRetryWaveIndexes.includes(waveIdx)) {
+				execLog("resume", batchState.batchId, `wave ${waveIdx + 1}: all tasks done but merge needs retry`);
+				onNotify(`🔀 Wave ${waveIdx + 1}: retrying merge (tasks already complete, merge was missing/failed)`, "info");
+
+				// Reconstruct lanes for this wave from persisted state
+				const waveTaskIds = new Set(persistedState.wavePlan[waveIdx]);
+				const waveLaneRecords = persistedState.lanes.filter(
+					lane => lane.taskIds.some(tid => waveTaskIds.has(tid)),
+				);
+				const mergeRetryLanes = reconstructAllocatedLanes(waveLaneRecords, persistedState.tasks);
+
+				// Build synthetic WaveExecutionResult with succeeded tasks
+				const succeededTaskIds = persistedState.wavePlan[waveIdx].filter(
+					taskId => completedTaskSet.has(taskId),
+				);
+				const syntheticLaneResults: LaneExecutionResult[] = mergeRetryLanes.map(lane => ({
+					laneNumber: lane.laneNumber,
+					laneId: lane.laneId,
+					tasks: lane.tasks.map(t => ({
+						taskId: t.taskId,
+						status: (completedTaskSet.has(t.taskId) ? "succeeded" : "failed") as LaneTaskStatus,
+						startTime: Date.now(),
+						endTime: Date.now(),
+						exitReason: completedTaskSet.has(t.taskId) ? "Task completed (merge retry)" : "Task failed (merge retry)",
+						sessionName: lane.tmuxSessionName,
+						doneFileFound: completedTaskSet.has(t.taskId),
+					})),
+					overallStatus: lane.tasks.every(t => completedTaskSet.has(t.taskId)) ? "succeeded" as const : "partial" as const,
+					startTime: Date.now(),
+					endTime: Date.now(),
+				}));
+
+				const syntheticWaveResult: WaveExecutionResult = {
+					waveIndex: waveIdx + 1,
+					startedAt: Date.now(),
+					endedAt: Date.now(),
+					laneResults: syntheticLaneResults,
+					policyApplied: orchConfig.failure.on_task_failure,
+					stoppedEarly: false,
+					failedTaskIds: [],
+					skippedTaskIds: [],
+					succeededTaskIds,
+					blockedTaskIds: [],
+					laneCount: mergeRetryLanes.length,
+					overallStatus: "succeeded",
+					finalMonitorState: null,
+					allocatedLanes: mergeRetryLanes,
+				};
+
+				batchState.phase = "merging";
+				persistRuntimeState("merge-retry-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+
+				const mergeRetryResult = mergeWaveByRepo(
+					mergeRetryLanes,
+					syntheticWaveResult,
+					waveIdx + 1,
+					orchConfig,
+					repoRoot,
+					batchState.batchId,
+					batchState.orchBranch,
+					workspaceConfig,
+					stateRoot,
+					agentRoot,
+					runnerConfig.testing_commands,
+				);
+				batchState.mergeResults.push(mergeRetryResult);
+
+				if (mergeRetryResult.status === "succeeded") {
+					onNotify(`✅ Wave ${waveIdx + 1} merge retry succeeded`, "info");
+					// Clean up merged branches
+					for (const lr of mergeRetryResult.laneResults) {
+						if (!lr.error && (lr.result?.status === "SUCCESS" || lr.result?.status === "CONFLICT_RESOLVED")) {
+							const laneRepoRoot = resolveRepoRoot(lr.repoId, repoRoot, workspaceConfig);
+							deleteBranchBestEffort(lr.sourceBranch, laneRepoRoot);
+						}
+					}
+				} else {
+					onNotify(
+						`⚠️ Wave ${waveIdx + 1} merge retry ${mergeRetryResult.status}: ${mergeRetryResult.failureReason || "unknown"}`,
+						"warning",
+					);
+					// Apply merge failure policy (same as normal wave merge failure)
+					const policyResult = computeMergeFailurePolicy(mergeRetryResult, waveIdx, orchConfig);
+					execLog("batch", batchState.batchId, `merge retry failure — applying ${policyResult.policy} policy`, policyResult.logDetails);
+					batchState.phase = policyResult.targetPhase;
+					batchState.errors.push(policyResult.errorMessage);
+					persistRuntimeState(policyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+					onNotify(policyResult.notifyMessage, policyResult.notifyLevel);
+					preserveWorktreesForResume = true;
+					break;
+				}
+
+				batchState.phase = "executing";
+				persistRuntimeState("merge-retry-complete", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
+			} else {
+				execLog("resume", batchState.batchId, `wave ${waveIdx + 1}: no tasks to execute (all completed/blocked)`);
+			}
 			continue;
 		}
 
@@ -1891,21 +2111,18 @@ export async function resumeOrchBatch(
 	// Parity with engine.ts: auto-integrate if configured, else show manual guidance.
 	// Gate: only run for terminal phases (completed/failed). Paused/stopped batches
 	// are not yet done — integration would mutate refs prematurely.
-	let autoIntegrated = false;
+	//
+	// TP-043: "supervised" and "auto" integration modes are now owned by the
+	// supervisor agent. Legacy engine fast-forward is removed — supervisor
+	// handles all non-manual integration after batch_complete event.
 	const mergedTaskCount = batchState.succeededTasks;
 	const isTerminalPhase = batchState.phase === "completed" || batchState.phase === "failed";
 	if (isTerminalPhase && !preserveWorktreesForResume && batchState.orchBranch && mergedTaskCount > 0) {
-		if (orchConfig.orchestrator.integration === "auto") {
-			autoIntegrated = attemptAutoIntegration(
-				batchState.orchBranch,
-				batchState.baseBranch,
-				repoRoot,
-				batchState.batchId,
-				"resume",
-				onNotify,
-			);
-		}
-		if (!autoIntegrated) {
+		if (orchConfig.orchestrator.integration === "supervised" || orchConfig.orchestrator.integration === "auto") {
+			// TP-043: Supervisor-managed integration modes. Defer to supervisor.
+			execLog("resume", batchState.batchId, `integration deferred to supervisor (mode: ${orchConfig.orchestrator.integration})`);
+		} else {
+			// Manual mode (default): show integration guidance
 			onNotify(
 				ORCH_MESSAGES.orchIntegrationManual(batchState.orchBranch, batchState.baseBranch, mergedTaskCount),
 				"info",
@@ -1946,6 +2163,8 @@ export async function resumeOrchBatch(
 }
 
 
-// attemptAutoIntegration is now a shared helper in merge.ts (TP-022 Step 4).
-// Both engine.ts and resume.ts import it from there to eliminate parity drift.
+// TP-043: attemptAutoIntegration is no longer called from engine.ts or resume.ts.
+// Supervisor-managed integration ("supervised" and "auto" modes) is handled by
+// the supervisor agent after batch_complete. The helper remains in merge.ts for
+// use by the supervisor's integration flow.
 

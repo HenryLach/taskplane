@@ -18,8 +18,8 @@ export interface OrchestratorConfig {
 		tmux_prefix: string;
 		/** Optional operator identifier. Auto-detected from OS username if empty. */
 		operator_id: string;
-		/** How completed batches are integrated. manual = user runs /orch-integrate. auto = fast-forward on completion. */
-		integration: "manual" | "auto";
+		/** How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking. */
+		integration: "manual" | "supervised" | "auto";
 	};
 	dependencies: {
 		source: "prompt" | "agent";
@@ -838,6 +838,17 @@ export interface WaveExecutionResult {
 	finalMonitorState: MonitorState | null;
 	/** Allocated lanes used in this wave (preserved for merge and cleanup) */
 	allocatedLanes: AllocatedLane[];
+	/**
+	 * Structured allocation error when lane provisioning failed.
+	 * Null when allocation succeeded or wave failed for other reasons.
+	 * Used by Tier 0 to detect stale worktree failures and retry.
+	 * @since TP-039
+	 */
+	allocationError?: {
+		code: AllocationErrorCode;
+		message: string;
+		details?: string;
+	} | null;
 }
 
 
@@ -853,7 +864,7 @@ export interface WaveExecutionResult {
  *                   → paused (via /orch-pause)
  *   Any active state → idle (via cleanup after completion/failure)
  */
-export type OrchBatchPhase = "idle" | "planning" | "executing" | "merging" | "paused" | "stopped" | "completed" | "failed";
+export type OrchBatchPhase = "idle" | "launching" | "planning" | "executing" | "merging" | "paused" | "stopped" | "completed" | "failed";
 
 /**
  * Runtime state for a batch execution.
@@ -1244,6 +1255,19 @@ export const MERGE_RESULT_READ_RETRY_DELAY_MS = 1_000;
  */
 export const MERGE_SPAWN_RETRY_MAX = 2;
 
+/**
+ * Maximum retries for merge agent timeout (TP-038).
+ *
+ * When a merge agent times out, the orchestrator retries with 2× the
+ * previous timeout. This allows recovery from transient slowness without
+ * operator intervention.
+ *
+ * Retry 0: original timeout (e.g., 10 min)
+ * Retry 1: 2× original (e.g., 20 min)
+ * Retry 2: 4× original (e.g., 40 min)
+ */
+export const MERGE_TIMEOUT_MAX_RETRIES = 2;
+
 
 // ── Merge Retry Policy Matrix (TP-033 Step 2) ───────────────────────
 
@@ -1346,6 +1370,283 @@ export const MERGE_FAILURE_CLASSIFICATIONS: readonly MergeFailureClassification[
 	"git_lock_file",
 ] as const;
 
+
+// ── Tier 0 Watchdog Recovery Types (TP-039) ──────────────────────────
+
+/**
+ * Tier 0 recovery pattern identifiers.
+ *
+ * Each pattern corresponds to a failure class that the engine can
+ * handle automatically without supervisor intervention.
+ *
+ * @since TP-039
+ */
+export type Tier0RecoveryPattern =
+	| "worker_crash"
+	| "stale_worktree"
+	| "cleanup_gate";
+
+/**
+ * Exit classifications that are eligible for automatic Tier 0 retry.
+ *
+ * These are transient failures where re-running the task has a reasonable
+ * chance of success. Classifications NOT in this set (e.g., user_killed,
+ * stall_timeout, context_overflow) indicate persistent problems that
+ * won't be fixed by retrying.
+ *
+ * @since TP-039
+ */
+export const TIER0_RETRYABLE_CLASSIFICATIONS: ReadonlySet<string> = new Set([
+	"api_error",
+	"process_crash",
+	"session_vanished",
+]);
+
+/**
+ * Retry budget for Tier 0 recovery patterns.
+ *
+ * Defines max retries, cooldown between attempts, and backoff
+ * multiplier for each pattern. Values from spec §5.3.
+ *
+ * @since TP-039
+ */
+export interface Tier0RetryBudget {
+	/** Maximum number of retry attempts */
+	maxRetries: number;
+	/** Cooldown delay between retries in milliseconds */
+	cooldownMs: number;
+	/** Multiplier applied to cooldown on each subsequent retry */
+	backoffMultiplier: number;
+}
+
+/**
+ * Centralized retry budgets for Tier 0 recovery patterns.
+ *
+ * These are the defaults from spec §5.3. They are NOT configurable
+ * via user config in Tier 0 — the supervisor (Tier 1) can override
+ * them in future iterations.
+ *
+ * @since TP-039
+ */
+export const TIER0_RETRY_BUDGETS: Readonly<Record<Tier0RecoveryPattern, Tier0RetryBudget>> = {
+	worker_crash: {
+		maxRetries: 1,
+		cooldownMs: 5_000,
+		backoffMultiplier: 1.0,
+	},
+	stale_worktree: {
+		maxRetries: 1,
+		cooldownMs: 2_000,
+		backoffMultiplier: 1.0,
+	},
+	cleanup_gate: {
+		maxRetries: 1,
+		cooldownMs: 2_000,
+		backoffMultiplier: 1.0,
+	},
+};
+
+/**
+ * All Tier 0 escalation-eligible pattern identifiers.
+ *
+ * Extends `Tier0RecoveryPattern` with `merge_timeout` so that
+ * `EscalationContext` can describe escalations from every exhaustion
+ * path, including the merge retry loop (which uses its own retry
+ * matrix but still triggers Tier 0 escalation on exhaustion).
+ *
+ * @since TP-039
+ */
+export type Tier0EscalationPattern = Tier0RecoveryPattern | "merge_timeout";
+
+/**
+ * Context payload emitted when Tier 0 retries are exhausted and the
+ * engine must escalate to the supervisor (future TP-041).
+ *
+ * This is the structured data that a Tier 1 supervisor agent uses to
+ * decide what to do next.  In Tier 0, escalation simply falls through
+ * to the existing pause behaviour.
+ *
+ * @since TP-039
+ */
+export interface EscalationContext {
+	/** Which recovery pattern was attempted */
+	pattern: Tier0EscalationPattern;
+	/** Number of retry attempts that were made (1-based) */
+	attempts: number;
+	/** Maximum attempts that were allowed */
+	maxAttempts: number;
+	/** Human-readable last error / failure reason */
+	lastError: string;
+	/** Task IDs affected by this failure */
+	affectedTasks: string[];
+	/** Suggested remediation for an operator or supervisor */
+	suggestion: string;
+}
+
+/**
+ * Scope key prefix for Tier 0 (non-merge) retry counters.
+ *
+ * Format: `t0:{pattern}:{taskId}:w{waveIndex}`
+ * This namespace prevents collisions with merge retry scope keys
+ * (which use `{taskId}:w{waveIndex}:l{laneNumber}`).
+ *
+ * @since TP-039
+ */
+export function tier0ScopeKey(pattern: Tier0RecoveryPattern, taskId: string, waveIndex: number): string {
+	return `t0:${pattern}:${taskId}:w${waveIndex}`;
+}
+
+/**
+ * Wave-level scope key for Tier 0 patterns that operate at wave granularity
+ * (stale_worktree, cleanup_gate).
+ *
+ * Format: `t0:{pattern}:w{waveIndex}`
+ *
+ * @since TP-039
+ */
+export function tier0WaveScopeKey(pattern: Tier0RecoveryPattern, waveIndex: number): string {
+	return `t0:${pattern}:w${waveIndex}`;
+}
+
+// ── Engine Event Types (TP-040) ──────────────────────────────────────
+
+/**
+ * Engine lifecycle event types emitted during batch execution.
+ *
+ * These events are the primary coordination mechanism between the
+ * non-blocking engine and external consumers (supervisor agent,
+ * dashboard, command handlers).
+ *
+ * Event semantics (from spec §7.3):
+ * - `wave_start`      — Wave execution begins
+ * - `task_complete`    — Task .DONE detected (succeeded)
+ * - `task_failed`      — Task failed or stalled
+ * - `merge_start`      — Wave merge begins
+ * - `merge_success`    — Merge and verification pass
+ * - `merge_failed`     — Merge or verification fails
+ * - `batch_complete`   — All waves done (terminal)
+ * - `batch_paused`     — Batch paused (failure or manual)
+ *
+ * Tier 0 recovery events (`tier0_recovery_attempt`, `tier0_recovery_success`,
+ * `tier0_recovery_exhausted`, `tier0_escalation`) continue to use the
+ * existing `Tier0EventType` from persistence.ts and share the same JSONL
+ * file. Engine events extend the same stream with lifecycle context.
+ *
+ * @since TP-040
+ */
+export type EngineEventType =
+	| "wave_start"
+	| "task_complete"
+	| "task_failed"
+	| "merge_start"
+	| "merge_success"
+	| "merge_failed"
+	| "batch_complete"
+	| "batch_paused";
+
+/**
+ * Structured engine event written to `.pi/supervisor/events.jsonl`.
+ *
+ * Shares the same JSONL file as Tier 0 events, with a consistent
+ * base payload (`timestamp`, `batchId`, `waveIndex`) for uniform
+ * consumption by the supervisor agent.
+ *
+ * Design: follows reviewer suggestion (R001) to use a shared base
+ * payload and extend the existing event-writing infrastructure rather
+ * than introducing a parallel writer.
+ *
+ * @since TP-040
+ */
+export interface EngineEvent {
+	/** ISO 8601 timestamp */
+	timestamp: string;
+	/** Engine event type */
+	type: EngineEventType;
+	/** Batch identifier */
+	batchId: string;
+	/** Wave index (0-based, -1 if not wave-scoped) */
+	waveIndex: number;
+	/** Current batch phase at event emission time */
+	phase: OrchBatchPhase;
+
+	// ── Event-specific fields (all optional) ─────────────────────
+
+	/** Task IDs in the wave (for wave_start) */
+	taskIds?: string[];
+	/** Number of lanes used (for wave_start, merge_start) */
+	laneCount?: number;
+	/** Task ID (for task_complete, task_failed) */
+	taskId?: string;
+	/** Task execution duration in milliseconds (for task_complete, task_failed) */
+	durationMs?: number;
+	/** Task outcome summary (for task_complete) */
+	outcome?: string;
+	/** Failure reason (for task_failed, merge_failed, batch_paused) */
+	reason?: string;
+	/** Whether partial progress was preserved (for task_failed) */
+	partialProgress?: boolean;
+	/** Lane number (for merge_failed) */
+	laneNumber?: number;
+	/** Merge error details (for merge_failed) */
+	error?: string;
+	/** Number of merge test verifications (for merge_success) */
+	testCount?: number;
+	/** Wave count for total waves (for merge_success) */
+	totalWaves?: number;
+
+	// ── Batch summary fields (for batch_complete, batch_paused) ──
+
+	/** Total succeeded tasks (for batch_complete) */
+	succeededTasks?: number;
+	/** Total failed tasks (for batch_complete, batch_paused) */
+	failedTasks?: number;
+	/** Total skipped tasks (for batch_complete) */
+	skippedTasks?: number;
+	/** Total blocked tasks (for batch_complete) */
+	blockedTasks?: number;
+	/** Batch duration in milliseconds (for batch_complete) */
+	batchDurationMs?: number;
+}
+
+/**
+ * Callback type for engine event consumers.
+ *
+ * The command handler (extension.ts) subscribes to this to receive
+ * real-time engine state transitions. In the non-blocking architecture
+ * (Step 2), this is the primary way the caller observes engine progress
+ * instead of awaiting the return value.
+ *
+ * The callback is invoked synchronously in the engine's event loop.
+ * Consumers MUST NOT perform blocking I/O in the callback.
+ *
+ * @since TP-040
+ */
+export type EngineEventCallback = (event: EngineEvent) => void;
+
+/**
+ * Build the base fields for an engine event.
+ *
+ * Ensures consistent field population across all emit sites.
+ * Analogous to `buildTier0EventBase()` for Tier 0 events.
+ *
+ * @since TP-040
+ */
+export function buildEngineEventBase(
+	type: EngineEventType,
+	batchId: string,
+	waveIndex: number,
+	phase: OrchBatchPhase,
+): Pick<EngineEvent, "timestamp" | "type" | "batchId" | "waveIndex" | "phase"> {
+	return {
+		timestamp: new Date().toISOString(),
+		type,
+		batchId,
+		waveIndex,
+		phase,
+	};
+}
+
+
 /**
  * Decision output from the merge retry policy evaluator.
  *
@@ -1385,11 +1686,23 @@ export type MergeRetryLoopOutcome =
 		/** Retry succeeded — caller should continue normal post-merge flow */
 		kind: "retry_succeeded";
 		mergeResult: MergeWaveResult;
+		/** Classification of the failure that was retried */
+		classification: MergeFailureClassification | null;
+		/** Scope key used for retry counter tracking */
+		scopeKey: string;
+		/** Last retry decision (carries attempt/maxAttempts for event emission) */
+		lastDecision: MergeRetryDecision;
 	}
 	| {
 		/** Safe-stop triggered during retry — caller should break the wave loop */
 		kind: "safe_stop";
 		mergeResult: MergeWaveResult;
+		/** Classification of the failure that was retried */
+		classification: MergeFailureClassification | null;
+		/** Scope key used for retry counter tracking */
+		scopeKey: string;
+		/** Last retry decision (carries attempt/maxAttempts for event emission) */
+		lastDecision: MergeRetryDecision;
 		errorMessage: string;
 		notifyMessage: string;
 	}
@@ -1434,6 +1747,13 @@ export interface MergeRetryCallbacks {
 	updateMergeResult: (result: MergeWaveResult) => void;
 	/** Sleep for cooldown (allows test injection) */
 	sleep: (ms: number) => void;
+	/**
+	 * Optional callback fired when a retry attempt is about to be executed.
+	 * Provides the retry decision with classification, attempt count, and cooldown
+	 * so callers can emit structured Tier 0 events at the right time.
+	 * @since TP-039 R004
+	 */
+	onRetryAttempt?: (decision: MergeRetryDecision) => void;
 }
 
 // ── View-Model Types ─────────────────────────────────────────────────
@@ -2037,6 +2357,13 @@ export interface ResumePoint {
 	reconnectTaskIds: string[];
 	/** Task IDs with dead sessions but existing worktrees that need re-execution */
 	reExecuteTaskIds: string[];
+	/**
+	 * Wave indexes (0-based) where all tasks are terminal but the merge
+	 * is missing or failed. These waves should be retried for merge only
+	 * (no task re-execution). Empty when all completed waves have
+	 * successful merges. (TP-037, Bug #102)
+	 */
+	mergeRetryWaveIndexes: number[];
 }
 
 // ── Abort (TS-009 Step 5) ────────────────────────────────────────────

@@ -336,7 +336,7 @@ describe("resolveIntegrationContext — phase gating", () => {
 		expect(ctx.currentBranch).toBe("main");
 	});
 
-	const nonCompletedPhases: OrchBatchPhase[] = ["idle", "planning", "executing", "merging", "paused", "stopped", "failed"];
+	const nonCompletedPhases: OrchBatchPhase[] = ["idle", "launching", "planning", "executing", "merging", "paused", "stopped", "failed"];
 	for (const phase of nonCompletedPhases) {
 		it(`rejects phase "${phase}" with info severity`, () => {
 			const deps = makeDeps({
