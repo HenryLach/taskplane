@@ -599,6 +599,19 @@ export function sleepSync(ms: number): void {
 }
 
 /**
+ * Async sleep for a given number of milliseconds.
+ *
+ * Unlike `sleepSync`, this yields the event loop so that other async work
+ * (supervisor heartbeats, user input, dashboard updates) can proceed while
+ * waiting. Use this in async code paths such as merge polling.
+ *
+ * @param ms - Milliseconds to sleep
+ */
+export function sleepAsync(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
  * Determine if a git worktree remove error is retriable.
  *
  * Retriable errors are typically filesystem/lock issues on Windows

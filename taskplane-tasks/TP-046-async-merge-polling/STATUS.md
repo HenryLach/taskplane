@@ -1,10 +1,10 @@
 # TP-046: Async Merge Polling — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Add Async Sleep Utility
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-23
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
@@ -21,9 +21,9 @@
 ---
 
 ### Step 1: Add Async Sleep Utility
-**Status:** ⬜ Not Started
-- [ ] Add sleepAsync to worktree.ts
-- [ ] Keep sleepSync for non-merge callers
+**Status:** ✅ Complete
+- [x] Add sleepAsync to worktree.ts
+- [x] Keep sleepSync for non-merge callers
 
 ---
 
@@ -63,6 +63,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -81,6 +83,16 @@
 | 2026-03-23 21:05 | Task started | Extension-driven execution |
 | 2026-03-23 21:05 | Step 0 started | Preflight |
 | 2026-03-23 21:05 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-23 21:07 | Worker iter 2 | done in 117s, ctx: 32%, tools: 20 |
+| 2026-03-23 21:07 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-23 21:07 | Step 0 complete | Preflight |
+| 2026-03-23 21:07 | Step 1 started | Add Async Sleep Utility |
+| 2026-03-23 21:07 | Worker iter 1 | done in 122s, ctx: 40%, tools: 25 |
+| 2026-03-23 21:07 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-23 21:07 | Step 0 complete | Preflight |
+| 2026-03-23 21:07 | Step 1 started | Add Async Sleep Utility |
+| 2026-03-23 21:08 | Review R001 | plan Step 1: APPROVE |
+| 2026-03-23 21:08 | Review R001 | plan Step 1: APPROVE |
 
 ## Blockers
 
