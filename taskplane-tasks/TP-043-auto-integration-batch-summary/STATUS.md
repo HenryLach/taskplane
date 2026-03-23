@@ -45,12 +45,12 @@
 
 ### Step 3: Testing & Verification
 **Status:** 🟨 In Progress
-- [ ] Auto mode integration test
-- [ ] Supervised mode confirmation test
-- [ ] Manual mode behavior test
-- [ ] Branch protection detection test
-- [ ] Summary generation test
-- [ ] Integration conflict handling test (R005: ff fails → auto fallback to merge)
+- [ ] Integration plan + format + outcome tests (buildIntegrationPlan, formatIntegrationPlan, formatIntegrationOutcome, pollPrCiStatus, mergePr)
+- [ ] Auto mode integration test (triggerSupervisorIntegration auto path: ff success, PR+CI lifecycle, no-executor fallback, no-plan deactivation)
+- [ ] Integration conflict handling test (R005: ff fails → auto fallback to merge; merge also fails → error reported)
+- [ ] Supervised mode confirmation test (plan presented with triggerTurn, pendingSummaryDeps stored)
+- [ ] Summary generation test (collectBatchSummaryData, formatBatchSummary, generateBatchSummary writes file, presentBatchSummary sends message, readTier0EventsForBatch)
+- [ ] Manual/supervised/auto config type test + source verification
 - [ ] Full test suite passes
 
 ---
