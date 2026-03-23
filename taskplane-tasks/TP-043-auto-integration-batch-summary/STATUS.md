@@ -1,7 +1,7 @@
 # TP-043: Auto-Integration & Batch Summary — Status
 
 **Current Step:** Step 3: Testing & Verification
-**Status:** ✅ Step 2 Complete
+**Status:** ✅ Step 3 Complete
 **Last Updated:** 2026-03-23
 **Review Level:** 2
 **Review Counter:** 5
@@ -44,14 +44,14 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] Integration plan + format + outcome tests (buildIntegrationPlan, formatIntegrationPlan, formatIntegrationOutcome, pollPrCiStatus, mergePr)
-- [ ] Auto mode integration test (triggerSupervisorIntegration auto path: ff success, PR+CI lifecycle, no-executor fallback, no-plan deactivation)
-- [ ] Integration conflict handling test (R005: ff fails → auto fallback to merge; merge also fails → error reported)
-- [ ] Supervised mode confirmation test (plan presented with triggerTurn, pendingSummaryDeps stored)
-- [ ] Summary generation test (collectBatchSummaryData, formatBatchSummary, generateBatchSummary writes file, presentBatchSummary sends message, readTier0EventsForBatch)
-- [ ] Manual/supervised/auto config type test + source verification
-- [ ] Full test suite passes
+**Status:** ✅ Complete
+- [x] Integration plan + format + outcome tests (buildIntegrationPlan, formatIntegrationPlan, formatIntegrationOutcome, pollPrCiStatus, mergePr)
+- [x] Auto mode integration test (triggerSupervisorIntegration auto path: ff success, PR+CI lifecycle, no-executor fallback, no-plan deactivation)
+- [x] Integration conflict handling test (R005: ff fails → auto fallback to merge; merge also fails → error reported)
+- [x] Supervised mode confirmation test (plan presented with triggerTurn, pendingSummaryDeps stored)
+- [x] Summary generation test (collectBatchSummaryData, formatBatchSummary, generateBatchSummary writes file, presentBatchSummary sends message, readTier0EventsForBatch)
+- [x] Manual/supervised/auto config type test + source verification
+- [x] Full test suite passes (49 files, 2109 tests — 0 failures)
 
 ---
 
