@@ -3,13 +3,13 @@
 ### Verdict: APPROVE
 
 ### Summary
-The Step 2 plan is aligned with the task requirements and project standards: it includes syntax checks for the touched dashboard files and a full extension test run. For this small frontend bugfix, these checks are sufficient to validate no accidental regressions were introduced. The planned outcomes are clear and should support safe completion of the task.
+The Step 2 plan covers the required validation outcomes for this small dashboard-only fix: syntax checks for the touched JS files and a full extension test run. This is consistent with the task prompt and project guidance for minimum validation. The plan should reliably catch regressions before completion.
 
 ### Issues Found
-1. **[Severity: minor]** — No blocking issues found in the current plan.
+1. **[Severity: minor]** — No blocking issues found.
 
 ### Missing Items
 - None.
 
 ### Suggestions
-- After the automated checks, do a quick manual dashboard smoke check (wave bar + wave pills) to confirm the visual behavior still matches the intended green/completed, active/current, and muted/pending states.
+- Add a quick manual dashboard smoke check after automated tests (verify completed wave segments are green, current wave is active/cyan, and pending waves are muted) to confirm the visual behavior end-to-end.
