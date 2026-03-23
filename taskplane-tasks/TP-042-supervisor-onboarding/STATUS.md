@@ -1,10 +1,10 @@
 # TP-042: Supervisor Onboarding & /orch Routing — Status
 
-**Current Step:** Step 3: Returning User Flows (Scripts 6-8)
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 6
 **Iteration:** 5
 **Size:** M
 
@@ -45,16 +45,16 @@
 ---
 
 ### Step 3: Returning User Flows (Scripts 6-8)
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Script 6 (Batch Planning): Expand primer Script 6 with full conversation flow — pending-tasks path lists tasks with sizes/deps and suggests `/orch-plan all`; no-tasks path surfaces GitHub Issues, CONTEXT.md tech debt, TODO comments and offers to create task packets; graceful fallback when `gh` CLI unavailable
 - [x] Script 7 (Health Check): Expand primer Script 7 with full health check checklist — config validity, git state, stale worktrees/branches, orphaned batch state, tmux availability, disk space; report with ✅/⚠️/❌ indicators, task inventory, and actionable recommendations
 - [x] Script 8 (Retrospective): Expand primer Script 8 with post-integration trigger strategy and full conversation flow — reads batch diagnostic report (batch-state.json) + audit trail (actions.jsonl) for results/duration/cost; highlights incidents/review pass rates; recommends config adjustments and task sizing; surfaces next steps (pending tasks or new task creation)
-- [ ] Routing prompt wiring: Ensure buildRoutingSystemPrompt maps completed-batch state to Script 8 retrospective guidance (not just integration guidance), and verify all returning-user states correctly reference Scripts 6-8 in the primer
+- [x] Routing prompt wiring: Ensure buildRoutingSystemPrompt maps completed-batch state to Script 8 retrospective guidance (not just integration guidance), and verify all returning-user states correctly reference Scripts 6-8 in the primer
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Routing tests for all project states
 - [ ] Existing behavior preserved test
 - [ ] Full test suite passes
@@ -81,6 +81,8 @@
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
+| R005 | plan | Step 3 | APPROVE | .reviews/R005-plan-step3.md |
+| R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -133,6 +135,13 @@
 | 2026-03-22 23:58 | Step 3 started | Returning User Flows (Scripts 6-8) |
 | 2026-03-23 00:01 | Review R005 | plan Step 3: REVISE |
 | 2026-03-23 00:01 | Review R004 | code Step 2: REVISE |
+| 2026-03-23 00:04 | Worker iter 3 | done in 140s, ctx: 14%, tools: 29 |
+| 2026-03-23 00:04 | Step 2 complete | Onboarding Flow (Scripts 1-5) |
+| 2026-03-23 00:04 | Step 3 started | Returning User Flows (Scripts 6-8) |
+| 2026-03-23 00:04 | Review R005 | plan Step 3: APPROVE |
+| 2026-03-23 00:06 | Review R006 | code Step 3: APPROVE |
+| 2026-03-23 00:06 | Step 3 complete | Returning User Flows (Scripts 6-8) |
+| 2026-03-23 00:06 | Step 4 started | Testing & Verification |
 
 ## Blockers
 

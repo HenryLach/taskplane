@@ -605,36 +605,57 @@ already exist (partial setup), read and merge rather than overwrite.`;
 			scriptGuidance = `## Your Mission: Batch Planning
 
 This project has Taskplane configured and has pending tasks ready to execute.
-Follow the primer's **"Script 6: Returning User — Batch Planning"** section.
+Follow the primer's **"Script 6: Batch Planning"** section (pending-tasks path).
 
-1. **Read the primer** at \`${primerPath}\` — specifically Script 6
-2. **Review pending tasks** — scan task areas, summarize what's available
-3. **Offer to plan and start a batch** — suggest \`/orch-plan all\` or \`/orch all\`
-4. **Surface related context** — GitHub Issues, tech debt, dependencies`;
+1. **Read the primer** at \`${primerPath}\` — specifically Script 6's exploration
+   phase and "pending tasks exist" conversation flow
+2. **Review pending tasks** — scan task areas for folders without \`.DONE\` files,
+   read each PROMPT.md header for size/deps/title, list them for the operator
+3. **Explain dependencies and wave structure** if tasks have dependency chains
+4. **Offer to plan and start a batch** — suggest \`/orch-plan all\` to preview
+   wave breakdown, or \`/orch all\` to start directly
+5. **Surface supplementary items** — check CONTEXT.md tech debt sections and
+   GitHub Issues (\`gh issue list\` if available) for additional work to include
+6. **Offer a health check** (Script 7) if the operator wants to verify project
+   state before starting`;
 			break;
 
 		case "no-tasks":
 			scriptGuidance = `## Your Mission: Task Creation Guidance
 
 This project has Taskplane configured but no pending tasks.
-Follow the primer's **"Script 6: Returning User — Batch Planning"** section
-(specifically the "no pending tasks" path).
+Follow the primer's **"Script 6: Batch Planning"** section
+(specifically the "no pending tasks" conversation flow).
 
-1. **Read the primer** at \`${primerPath}\` — specifically Script 6
-2. **Help the operator create tasks** — from GitHub Issues, specs, or conversation
-3. **Check for tech debt** in CONTEXT.md files
-4. **Offer to pull from GitHub Issues** if \`gh\` CLI is available`;
+1. **Read the primer** at \`${primerPath}\` — specifically Script 6's exploration
+   phase and "no pending tasks" conversation flow
+2. **Run the exploration phase** — scan CONTEXT.md tech debt sections, check
+   GitHub Issues (\`gh issue list\` if available), grep for TODO/FIXME comments
+3. **Present a source inventory** — group potential work items by source
+   (GitHub Issues, tech debt, TODOs) with counts
+4. **Help the operator create tasks** — offer to generate task packets from
+   GitHub Issues, tech debt items, or a new spec described in conversation
+5. **Offer a health check** (Script 7) if the operator prefers to assess
+   project state rather than create tasks
+6. **Graceful fallback**: If \`gh\` CLI is unavailable, skip GitHub checks and
+   mention it to the operator — continue with CONTEXT.md and TODO scanning`;
 			break;
 
 		case "completed-batch":
-			scriptGuidance = `## Your Mission: Integration Guidance
+			scriptGuidance = `## Your Mission: Integration & Retrospective
 
 A completed batch exists that hasn't been integrated yet.
 
-1. **Read the primer** at \`${primerPath}\`
+1. **Read the primer** at \`${primerPath}\` — specifically Script 8 (Post-Batch Retrospective)
+   and Script 7 (Health Check) sections
 2. **Explain the orch branch model** — work is on the orch branch, not yet on the working branch
 3. **Guide the operator** toward \`/orch-integrate\` to bring the batch's work into their branch
-4. **Offer to run a health check** (Script 7) if they want to verify state first`;
+4. **Offer to run a health check** (Script 7) if they want to verify state first
+5. **Run a retrospective** (Script 8) — read batch-state.json and the audit
+   trail (\`.pi/supervisor/actions.jsonl\`) to summarize batch outcomes, highlight
+   incidents, and recommend improvements. Present this either before or after
+   integration based on what the operator prefers.
+6. **Surface next steps** — check for pending tasks and offer to plan the next batch`;
 			break;
 
 		default:
