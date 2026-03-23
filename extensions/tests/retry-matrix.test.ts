@@ -287,7 +287,7 @@ describe("3.x — Non-retriable class: merge_conflict_unresolved", () => {
 		expect(decision.reason).toContain("not retriable");
 	});
 
-	it("3.3: applyMergeRetryLoop returns no_retry for merge_conflict_unresolved", () => {
+	it("3.3: applyMergeRetryLoop returns no_retry for merge_conflict_unresolved", async () => {
 		const result = makeWaveResult({
 			laneResults: [
 				makeLaneResult({
@@ -305,7 +305,7 @@ describe("3.x — Non-retriable class: merge_conflict_unresolved", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks();
 
-		const outcome = applyMergeRetryLoop(result, 0, counters, mock.callbacks);
+		const outcome = await applyMergeRetryLoop(result, 0, counters, mock.callbacks);
 
 		expect(outcome.kind).toBe("no_retry");
 		if (outcome.kind === "no_retry") {
@@ -313,7 +313,7 @@ describe("3.x — Non-retriable class: merge_conflict_unresolved", () => {
 		}
 	});
 
-	it("3.4: non-retriable class does NOT increment retry counter", () => {
+	it("3.4: non-retriable class does NOT increment retry counter", async () => {
 		const result = makeWaveResult({
 			laneResults: [
 				makeLaneResult({
@@ -331,7 +331,7 @@ describe("3.x — Non-retriable class: merge_conflict_unresolved", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks();
 
-		applyMergeRetryLoop(result, 0, counters, mock.callbacks);
+		await applyMergeRetryLoop(result, 0, counters, mock.callbacks);
 
 		// Counter should NOT have been incremented
 		expect(Object.keys(counters)).toHaveLength(0);
@@ -351,7 +351,7 @@ describe("4.x — Multi-attempt retry: git_lock_file (maxAttempts=2)", () => {
 		expect(policy.cooldownMs).toBe(3000);
 	});
 
-	it("4.2: first retry succeeds → retry_succeeded outcome", () => {
+	it("4.2: first retry succeeds → retry_succeeded outcome", async () => {
 		const failResult = makeWaveResult({
 			failureReason: "Unable to create lock file",
 		});
@@ -360,13 +360,13 @@ describe("4.x — Multi-attempt retry: git_lock_file (maxAttempts=2)", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
 
-		const outcome = applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
+		const outcome = await applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
 
 		expect(outcome.kind).toBe("retry_succeeded");
 		expect(counters["default:w0:l1"]).toBe(1);
 	});
 
-	it("4.3: first retry fails with same error, second retry succeeds", () => {
+	it("4.3: first retry fails with same error, second retry succeeds", async () => {
 		const failResult1 = makeWaveResult({
 			failureReason: "Unable to create lock file",
 		});
@@ -378,13 +378,13 @@ describe("4.x — Multi-attempt retry: git_lock_file (maxAttempts=2)", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [failResult2, successResult] });
 
-		const outcome = applyMergeRetryLoop(failResult1, 0, counters, mock.callbacks);
+		const outcome = await applyMergeRetryLoop(failResult1, 0, counters, mock.callbacks);
 
 		expect(outcome.kind).toBe("retry_succeeded");
 		expect(counters["default:w0:l1"]).toBe(2); // Two attempts used
 	});
 
-	it("4.4: both retries fail → exhausted outcome", () => {
+	it("4.4: both retries fail → exhausted outcome", async () => {
 		const failResult1 = makeWaveResult({
 			failureReason: "Unable to create lock file",
 		});
@@ -398,7 +398,7 @@ describe("4.x — Multi-attempt retry: git_lock_file (maxAttempts=2)", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [failResult2, failResult3] });
 
-		const outcome = applyMergeRetryLoop(failResult1, 0, counters, mock.callbacks);
+		const outcome = await applyMergeRetryLoop(failResult1, 0, counters, mock.callbacks);
 
 		expect(outcome.kind).toBe("exhausted");
 		if (outcome.kind === "exhausted") {
@@ -408,7 +408,7 @@ describe("4.x — Multi-attempt retry: git_lock_file (maxAttempts=2)", () => {
 		}
 	});
 
-	it("4.5: multi-attempt retry uses correct scope key", () => {
+	it("4.5: multi-attempt retry uses correct scope key", async () => {
 		const failResult = makeWaveResult({
 			failureReason: "Unable to create lock file",
 		});
@@ -417,7 +417,7 @@ describe("4.x — Multi-attempt retry: git_lock_file (maxAttempts=2)", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
 
-		applyMergeRetryLoop(failResult, 2, counters, mock.callbacks);
+		await applyMergeRetryLoop(failResult, 2, counters, mock.callbacks);
 
 		// Scope key should be default:w2:l1 (waveIdx=2, laneNumber=1)
 		expect(counters["default:w2:l1"]).toBe(1);
@@ -449,7 +449,7 @@ describe("5.x — Cooldown delay enforcement", () => {
 		expect(policy.cooldownMs).toBe(2000);
 	});
 
-	it("5.5: applyMergeRetryLoop calls sleep with correct cooldown for git_lock_file", () => {
+	it("5.5: applyMergeRetryLoop calls sleep with correct cooldown for git_lock_file", async () => {
 		const failResult = makeWaveResult({
 			failureReason: "Unable to create lock file",
 		});
@@ -458,13 +458,13 @@ describe("5.x — Cooldown delay enforcement", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
 
-		applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
+		await applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
 
 		// Should have called sleep(3000) once
 		expect(mock.sleepCalls).toEqual([3000]);
 	});
 
-	it("5.6: applyMergeRetryLoop does NOT call sleep for verification_new_failure (cooldown=0)", () => {
+	it("5.6: applyMergeRetryLoop does NOT call sleep for verification_new_failure (cooldown=0)", async () => {
 		const failResult = makeWaveResult({
 			laneResults: [
 				makeLaneResult({ error: "verification_new_failure: 1 new failure(s)" }),
@@ -475,13 +475,13 @@ describe("5.x — Cooldown delay enforcement", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
 
-		applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
+		await applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
 
 		// No sleep calls — cooldown is 0
 		expect(mock.sleepCalls).toEqual([]);
 	});
 
-	it("5.7: multi-attempt retry calls sleep for each attempt", () => {
+	it("5.7: multi-attempt retry calls sleep for each attempt", async () => {
 		const failResult1 = makeWaveResult({ failureReason: "lock file" });
 		const failResult2 = makeWaveResult({ failureReason: "lock file" });
 		const failResult3 = makeWaveResult({ failureReason: "lock file" });
@@ -489,7 +489,7 @@ describe("5.x — Cooldown delay enforcement", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [failResult2, failResult3] });
 
-		applyMergeRetryLoop(failResult1, 0, counters, mock.callbacks);
+		await applyMergeRetryLoop(failResult1, 0, counters, mock.callbacks);
 
 		// Two retry attempts, each with 3000ms cooldown
 		expect(mock.sleepCalls).toEqual([3000, 3000]);
@@ -511,7 +511,7 @@ describe("6.x — Retry counter persistence", () => {
 		expect(buildMergeRetryScopeKey("frontend", 1, 2)).toBe("frontend:w1:l2");
 	});
 
-	it("6.3: retry loop increments counter in retryCountByScope", () => {
+	it("6.3: retry loop increments counter in retryCountByScope", async () => {
 		const failResult = makeWaveResult({
 			laneResults: [
 				makeLaneResult({ error: "verification_new_failure: 1 new failure" }),
@@ -522,12 +522,12 @@ describe("6.x — Retry counter persistence", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
 
-		applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
+		await applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
 
 		expect(counters["default:w0:l1"]).toBe(1);
 	});
 
-	it("6.4: retry loop persists state after increment (merge-retry-increment trigger)", () => {
+	it("6.4: retry loop persists state after increment (merge-retry-increment trigger)", async () => {
 		const failResult = makeWaveResult({
 			laneResults: [
 				makeLaneResult({ error: "verification_new_failure: 1 new failure" }),
@@ -538,7 +538,7 @@ describe("6.x — Retry counter persistence", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
 
-		applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
+		await applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
 
 		expect(mock.persistTriggers).toContain("merge-retry-increment");
 		expect(mock.persistTriggers).toContain("merge-retry-start");
@@ -578,7 +578,7 @@ describe("6.x — Retry counter persistence", () => {
 // ══════════════════════════════════════════════════════════════════════
 
 describe("7.x — Exhaustion forces paused", () => {
-	it("7.1: exhaustion outcome from applyMergeRetryLoop includes classification diagnostics", () => {
+	it("7.1: exhaustion outcome from applyMergeRetryLoop includes classification diagnostics", async () => {
 		const failResult1 = makeWaveResult({
 			laneResults: [
 				makeLaneResult({ error: "verification_new_failure: 2 new failure(s)" }),
@@ -593,7 +593,7 @@ describe("7.x — Exhaustion forces paused", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [failResult2] });
 
-		const outcome = applyMergeRetryLoop(failResult1, 0, counters, mock.callbacks);
+		const outcome = await applyMergeRetryLoop(failResult1, 0, counters, mock.callbacks);
 
 		expect(outcome.kind).toBe("exhausted");
 		if (outcome.kind === "exhausted") {
@@ -838,7 +838,7 @@ describe("9.x — Workspace-scoped counters (repoId in scope key)", () => {
 // ══════════════════════════════════════════════════════════════════════
 
 describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
-	it("10.1: safe-stop during retry returns safe_stop outcome", () => {
+	it("10.1: safe-stop during retry returns safe_stop outcome", async () => {
 		const failResult = makeWaveResult({
 			laneResults: [
 				makeLaneResult({ error: "verification_new_failure: 1 failure" }),
@@ -852,7 +852,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [rollbackFailResult] });
 
-		const outcome = applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
+		const outcome = await applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
 
 		expect(outcome.kind).toBe("safe_stop");
 		if (outcome.kind === "safe_stop") {
@@ -861,7 +861,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		}
 	});
 
-	it("10.2: safe-stop with persistence errors includes warning in message", () => {
+	it("10.2: safe-stop with persistence errors includes warning in message", async () => {
 		const failResult = makeWaveResult({
 			laneResults: [
 				makeLaneResult({ error: "verification_new_failure: 1 failure" }),
@@ -876,7 +876,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [rollbackFailResult] });
 
-		const outcome = applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
+		const outcome = await applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
 
 		expect(outcome.kind).toBe("safe_stop");
 		if (outcome.kind === "safe_stop") {
@@ -885,7 +885,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		}
 	});
 
-	it("10.3: classification changes between retries are handled correctly", () => {
+	it("10.3: classification changes between retries are handled correctly", async () => {
 		// First failure: lock file. Retry returns: cleanup failure.
 		const lockFailResult = makeWaveResult({
 			failureReason: "lock file error",
@@ -897,7 +897,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [cleanupFailResult] });
 
-		const outcome = applyMergeRetryLoop(lockFailResult, 0, counters, mock.callbacks);
+		const outcome = await applyMergeRetryLoop(lockFailResult, 0, counters, mock.callbacks);
 
 		// After the first retry fails with a different classification,
 		// the loop re-classifies and checks the new class's policy.
@@ -908,7 +908,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		}
 	});
 
-	it("10.4: retry loop emits notifications for each attempt", () => {
+	it("10.4: retry loop emits notifications for each attempt", async () => {
 		const failResult = makeWaveResult({
 			failureReason: "lock file error",
 		});
@@ -920,7 +920,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [failResult2, successResult] });
 
-		applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
+		await applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
 
 		// Should have received retry notifications (🔄 for each attempt, ✅ for success)
 		const retryNotifs = mock.notifications.filter(n => n.message.includes("🔄"));
@@ -930,7 +930,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		expect(successNotifs.length).toBe(1);
 	});
 
-	it("10.5: retry loop persists state at correct points (increment, start, complete)", () => {
+	it("10.5: retry loop persists state at correct points (increment, start, complete)", async () => {
 		const failResult = makeWaveResult({
 			laneResults: [
 				makeLaneResult({ error: "verification_new_failure: 1 failure" }),
@@ -941,7 +941,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		const counters: Record<string, number> = {};
 		const mock = makeMockCallbacks({ performMergeResults: [successResult] });
 
-		applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
+		await applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
 
 		// Persistence should happen in order: increment → start → complete
 		const idx_inc = mock.persistTriggers.indexOf("merge-retry-increment");

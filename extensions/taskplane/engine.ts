@@ -1058,7 +1058,7 @@ export async function executeOrchBatch(
 					laneCount: mergeableLaneCount,
 				}, onEngineEvent);
 
-				mergeResult = mergeWaveByRepo(
+				mergeResult = await mergeWaveByRepo(
 					waveResult.allocatedLanes,
 					waveResult,
 					waveIdx + 1,
@@ -1237,14 +1237,14 @@ export async function executeOrchBatch(
 			const mergeRepoId = extractFailedRepoId(mergeResult) ?? null;
 			const mergeFailedLane = mergeResult.failedLane ?? undefined;
 
-			const retryOutcome = applyMergeRetryLoop(
+			const retryOutcome = await applyMergeRetryLoop(
 				mergeResult,
 				waveIdx,
 				batchState.resilience.retryCountByScope,
 				{
-					performMerge: () => {
+					performMerge: async () => {
 						batchState.phase = "merging";
-						return mergeWaveByRepo(
+						return await mergeWaveByRepo(
 							waveResult.allocatedLanes,
 							waveResult,
 							waveIdx + 1,

@@ -28,11 +28,11 @@
 ---
 
 ### Step 2: Convert waitForMergeResult to Async
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 - [x] Make waitForMergeResult async
 - [x] Replace sleepSync with sleepAsync in polling loop
 - [x] Preserve timeout/retry/grace period behavior
-- [ ] R004: Add `await` at waitForMergeResult call site in mergeWave (make mergeWave async) so Promise is consumed correctly and timeout/retry semantics are preserved
+- [x] R004: Add `await` at waitForMergeResult call site in mergeWave (make mergeWave async) so Promise is consumed correctly and timeout/retry semantics are preserved
 
 ---
 

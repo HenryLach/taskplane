@@ -698,12 +698,12 @@ export function extractFailedRepoId(mergeResult: MergeWaveResult): string | unde
  * @returns Outcome describing what happened during the retry cycle
  * @since TP-033 R006
  */
-export function applyMergeRetryLoop(
+export async function applyMergeRetryLoop(
 	mergeResult: MergeWaveResult,
 	waveIdx: number,
 	retryCountByScope: Record<string, number>,
 	callbacks: MergeRetryCallbacks,
-): MergeRetryLoopOutcome {
+): Promise<MergeRetryLoopOutcome> {
 	let currentResult = mergeResult;
 
 	// Classify the initial failure
@@ -766,12 +766,12 @@ export function applyMergeRetryLoop(
 		);
 
 		if (lastDecision.cooldownMs > 0) {
-			callbacks.sleep(lastDecision.cooldownMs);
+			await callbacks.sleep(lastDecision.cooldownMs);
 		}
 
 		// Re-invoke merge
 		callbacks.persist("merge-retry-start");
-		currentResult = callbacks.performMerge();
+		currentResult = await callbacks.performMerge();
 		callbacks.updateMergeResult(currentResult);
 		callbacks.persist("merge-retry-complete");
 

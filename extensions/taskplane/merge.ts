@@ -931,7 +931,7 @@ function runPostMergeVerification(
  * @param baseBranch       - Branch to merge into (captured at batch start)
  * @returns MergeWaveResult with per-lane outcomes
  */
-export function mergeWave(
+export async function mergeWave(
 	completedLanes: AllocatedLane[],
 	waveResult: WaveExecutionResult,
 	waveIndex: number,
@@ -943,7 +943,7 @@ export function mergeWave(
 	agentRoot?: string,
 	testingCommands?: Record<string, string>,
 	repoId?: string,
-): MergeWaveResult {
+): Promise<MergeWaveResult> {
 	const startTime = Date.now();
 	const tmuxPrefix = config.orchestrator.tmux_prefix;
 	const opId = resolveOperatorId(config);
@@ -1249,7 +1249,7 @@ export function mergeWave(
 					}
 
 					try {
-						mergeResult = waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs);
+						mergeResult = await waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs);
 						lastTimeoutError = null;
 						break; // Success — exit retry loop
 					} catch (waitErr: unknown) {
@@ -1845,7 +1845,7 @@ export function groupLanesByRepo(
  * @param workspaceConfig  - Workspace configuration (null in repo mode)
  * @returns MergeWaveResult with per-lane and per-repo outcomes
  */
-export function mergeWaveByRepo(
+export async function mergeWaveByRepo(
 	completedLanes: AllocatedLane[],
 	waveResult: WaveExecutionResult,
 	waveIndex: number,
@@ -1857,7 +1857,7 @@ export function mergeWaveByRepo(
 	stateRoot?: string,
 	agentRoot?: string,
 	testingCommands?: Record<string, string>,
-): MergeWaveResult {
+): Promise<MergeWaveResult> {
 	const startTime = Date.now();
 
 	// Build lane outcome lookup for merge eligibility (same logic as mergeWave).
@@ -1901,7 +1901,7 @@ export function mergeWaveByRepo(
 	// In repo mode (single group with repoId=undefined), delegate directly
 	// to mergeWave() for zero-overhead backward compatibility.
 	if (repoGroups.length === 1 && repoGroups[0].repoId === undefined) {
-		const result = mergeWave(
+		const result = await mergeWave(
 			completedLanes,
 			waveResult,
 			waveIndex,
@@ -1956,7 +1956,7 @@ export function mergeWaveByRepo(
 			allocatedLanes: waveResult.allocatedLanes.filter(l => groupLaneNumbers.has(l.laneNumber)),
 		};
 
-		const groupResult = mergeWave(
+		const groupResult = await mergeWave(
 			group.lanes,
 			filteredWaveResult,
 			waveIndex,
