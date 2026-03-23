@@ -1,11 +1,11 @@
 # TP-046: Async Merge Polling — Status
 
-**Current Step:** Step 3: Convert mergeWave and Callers to Async
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-23
 **Review Level:** 2
-**Review Counter:** 5
-**Iteration:** 4
+**Review Counter:** 7
+**Iteration:** 5
 **Size:** M
 
 ---
@@ -47,11 +47,11 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] Merge timeout tests pass
-- [ ] Merge repo-scoped tests pass
-- [ ] Cleanup resilience tests pass
-- [ ] Full test suite passes
+**Status:** ✅ Complete
+- [x] Merge timeout tests pass
+- [x] Merge repo-scoped tests pass
+- [x] Cleanup resilience tests pass
+- [x] Full test suite passes
 
 ---
 
@@ -73,6 +73,11 @@
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
 | R005 | plan | Step 3 | REVISE | .reviews/R005-plan-step3.md |
+| R005 | plan | Step 3 | APPROVE | .reviews/R005-plan-step3.md |
+| R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
+| R007 | plan | Step 4 | APPROVE | .reviews/R007-plan-step4.md |
+| R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
+| R007 | plan | Step 4 | APPROVE | .reviews/R007-plan-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -122,6 +127,16 @@
 | 2026-03-23 21:37 | Worker iter 4 | done in 924s, ctx: 21%, tools: 65 |
 | 2026-03-23 21:37 | Step 2 complete | Convert waitForMergeResult to Async |
 | 2026-03-23 21:37 | Step 3 started | Convert mergeWave and Callers to Async |
+| 2026-03-23 21:38 | Review R005 | plan Step 3: APPROVE |
+| 2026-03-23 21:38 | Worker iter 4 | done in 254s, ctx: 28%, tools: 43 |
+| 2026-03-23 21:39 | Review R006 | code Step 3: APPROVE |
+| 2026-03-23 21:39 | Step 3 complete | Convert mergeWave and Callers to Async |
+| 2026-03-23 21:39 | Step 4 started | Testing & Verification |
+| 2026-03-23 21:40 | Review R007 | plan Step 4: APPROVE |
+| 2026-03-23 21:40 | Review R006 | code Step 3: APPROVE |
+| 2026-03-23 21:40 | Step 3 complete | Convert mergeWave and Callers to Async |
+| 2026-03-23 21:40 | Step 4 started | Testing & Verification |
+| 2026-03-23 21:41 | Review R007 | plan Step 4: APPROVE |
 
 ## Blockers
 
