@@ -37,12 +37,12 @@
 ---
 
 ### Step 3: Convert mergeWave and Callers to Async
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Convert spawnMergeAgent to async and await at all call sites in mergeWave
 - [x] Convert remaining sleepSync(500) cleanup delays in mergeWave to async
-- [ ] Verify mergeWave and mergeWaveByRepo are async with correct await propagation
-- [ ] Verify engine.ts and resume.ts callers await mergeWaveByRepo correctly
-- [ ] Update stale synchronous comments in engine.ts/merge.ts
+- [x] Verify mergeWave and mergeWaveByRepo are async with correct await propagation
+- [x] Verify engine.ts and resume.ts callers await mergeWaveByRepo correctly
+- [x] Update stale synchronous comments in engine.ts/merge.ts
 
 ---
 
@@ -119,6 +119,9 @@
 | 2026-03-23 21:32 | Step 2 complete | Convert waitForMergeResult to Async |
 | 2026-03-23 21:32 | Step 3 started | Convert mergeWave and Callers to Async |
 | 2026-03-23 21:34 | Review R005 | plan Step 3: REVISE |
+| 2026-03-23 21:37 | Worker iter 4 | done in 924s, ctx: 21%, tools: 65 |
+| 2026-03-23 21:37 | Step 2 complete | Convert waitForMergeResult to Async |
+| 2026-03-23 21:37 | Step 3 started | Convert mergeWave and Callers to Async |
 
 ## Blockers
 
