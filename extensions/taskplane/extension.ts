@@ -55,7 +55,7 @@ import {
 	DEFAULT_SUPERVISOR_CONFIG,
 	triggerSupervisorIntegration,
 } from "./supervisor.ts";
-import type { SupervisorConfig, IntegrationExecutor } from "./supervisor.ts";
+import type { SupervisorConfig, IntegrationExecutor, CiDeps } from "./supervisor.ts";
 import type {
 	AbortMode,
 	ExecutionContext,
@@ -823,6 +823,44 @@ export function buildIntegrationExecutor(repoRoot: string): IntegrationExecutor 
 	};
 }
 
+/**
+ * Build CI deps for programmatic PR polling and merge (R002-2).
+ *
+ * Creates the `CiDeps` object needed by `triggerSupervisorIntegration`
+ * for auto/PR mode CI status polling and PR merge operations.
+ *
+ * @param repoRoot - Repository root directory
+ * @returns CiDeps with gh CLI and git wrappers
+ *
+ * @since TP-043
+ */
+export function buildCiDeps(repoRoot: string): CiDeps {
+	return {
+		runCommand: (cmd: string, cmdArgs: string[]) => {
+			try {
+				const stdout = execFileSync(cmd, cmdArgs, {
+					encoding: "utf-8",
+					timeout: 60_000,
+					cwd: repoRoot,
+					stdio: ["pipe", "pipe", "pipe"],
+				}).trim();
+				return { ok: true, stdout, stderr: "" };
+			} catch (err: unknown) {
+				const e = err as { stdout?: string; stderr?: string; message?: string };
+				return {
+					ok: false,
+					stdout: (e.stdout ?? "").toString().trim(),
+					stderr: (e.stderr ?? e.message ?? "unknown error").toString().trim(),
+				};
+			}
+		},
+		runGit: (gitArgs: string[]) => runGit(gitArgs, repoRoot),
+		deleteBatchState: () => {
+			try { deleteBatchState(repoRoot); } catch { /* best effort */ }
+		},
+	};
+}
+
 // ── /orch Routing Logic (TP-042) ─────────────────────────────────────
 
 /**
@@ -1297,9 +1335,8 @@ export default function (pi: ExtensionAPI) {
 							orchBatchState,
 							mode,
 							repoRoot,
-							// R002-2: Pass integration executor that wraps executeIntegration
-							// to avoid circular imports (supervisor.ts ← extension.ts).
 							buildIntegrationExecutor(repoRoot),
+							buildCiDeps(repoRoot),
 						);
 						return;
 					}
@@ -1605,8 +1642,8 @@ export default function (pi: ExtensionAPI) {
 							orchBatchState,
 							mode,
 							execCtx!.repoRoot,
-							// R002-2: Pass integration executor (parity with /orch handler)
 							buildIntegrationExecutor(execCtx!.repoRoot),
+							buildCiDeps(execCtx!.repoRoot),
 						);
 						return;
 					}

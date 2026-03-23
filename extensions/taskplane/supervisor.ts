@@ -561,19 +561,253 @@ export type IntegrationExecutor = (
 ) => { success: boolean; integratedLocally: boolean; commitCount: string; message: string; error?: string };
 
 /**
+ * Dependencies for programmatic CI polling and PR merge (R002-2).
+ *
+ * Injected alongside the IntegrationExecutor to provide gh CLI access
+ * for CI status checks and PR merge operations.
+ *
+ * @since TP-043
+ */
+export interface CiDeps {
+	/** Run an arbitrary command (e.g., gh CLI) in the repo root. */
+	runCommand: (cmd: string, args: string[]) => { ok: boolean; stdout: string; stderr: string };
+	/** Run a git command in the repo root. */
+	runGit: (args: string[]) => { ok: boolean; stdout: string; stderr: string };
+	/** Delete the batch state file. */
+	deleteBatchState: () => void;
+}
+
+/**
+ * Poll PR CI status checks programmatically.
+ *
+ * Polls `gh pr checks <branch> --json name,state,conclusion` up to
+ * maxAttempts times with a delay between each poll. Returns a summary
+ * of the CI outcome.
+ *
+ * @param orchBranch - The branch the PR was created from
+ * @param deps - CI deps (runCommand for gh CLI)
+ * @param maxAttempts - Maximum polling attempts (default: 30 → ~5 min at 10s intervals)
+ * @param delayMs - Delay between polls in ms (default: 10_000 → 10s)
+ * @returns CI check result
+ *
+ * @since TP-043
+ */
+export async function pollPrCiStatus(
+	orchBranch: string,
+	deps: CiDeps,
+	maxAttempts: number = 30,
+	delayMs: number = 10_000,
+): Promise<{ status: "pass" | "fail" | "timeout" | "no-checks"; detail: string }> {
+	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+		// Wait before polling (except first attempt — check immediately)
+		if (attempt > 1) {
+			await new Promise(resolve => setTimeout(resolve, delayMs));
+		}
+
+		const result = deps.runCommand("gh", [
+			"pr", "checks", orchBranch, "--json", "name,state,conclusion",
+		]);
+
+		if (!result.ok) {
+			// gh pr checks failed — may be no PR or no checks configured
+			if (result.stderr.includes("no checks") || result.stderr.includes("no status checks")) {
+				return { status: "no-checks", detail: "No CI checks are configured for this repository." };
+			}
+			// On first attempt, the PR may not be fully created yet — retry
+			if (attempt === 1) continue;
+			return { status: "fail", detail: `Failed to query PR checks: ${result.stderr}` };
+		}
+
+		// Parse the JSON array of checks
+		let checks: Array<{ name: string; state: string; conclusion: string }>;
+		try {
+			checks = JSON.parse(result.stdout);
+		} catch {
+			continue; // Malformed output — retry
+		}
+
+		if (checks.length === 0) {
+			return { status: "no-checks", detail: "No CI checks are configured for this repository." };
+		}
+
+		// Check if all checks are complete
+		const allComplete = checks.every(c =>
+			c.state === "COMPLETED" || c.state === "completed",
+		);
+		if (!allComplete) continue; // Some still pending — keep polling
+
+		// All complete — check conclusions
+		const allPassing = checks.every(c =>
+			c.conclusion === "SUCCESS" || c.conclusion === "success" ||
+			c.conclusion === "NEUTRAL" || c.conclusion === "neutral" ||
+			c.conclusion === "SKIPPED" || c.conclusion === "skipped",
+		);
+
+		if (allPassing) {
+			return { status: "pass", detail: `All ${checks.length} CI check(s) passed.` };
+		}
+
+		// Some checks failed
+		const failed = checks.filter(c =>
+			c.conclusion !== "SUCCESS" && c.conclusion !== "success" &&
+			c.conclusion !== "NEUTRAL" && c.conclusion !== "neutral" &&
+			c.conclusion !== "SKIPPED" && c.conclusion !== "skipped",
+		);
+		const failedNames = failed.map(c => `${c.name}: ${c.conclusion}`).join(", ");
+		return { status: "fail", detail: `CI check(s) failed: ${failedNames}` };
+	}
+
+	return { status: "timeout", detail: `CI checks did not complete within ${maxAttempts} polling attempts.` };
+}
+
+/**
+ * Merge a PR via gh CLI after CI passes.
+ *
+ * Tries squash merge first (cleanest for integration PRs), then falls
+ * back to regular merge if squash is not allowed by repo rules.
+ *
+ * @param orchBranch - The branch the PR was created from
+ * @param deps - CI deps (runCommand for gh CLI)
+ * @returns Merge result
+ *
+ * @since TP-043
+ */
+export function mergePr(
+	orchBranch: string,
+	deps: CiDeps,
+): { success: boolean; detail: string } {
+	// Try squash merge first
+	const squashResult = deps.runCommand("gh", [
+		"pr", "merge", orchBranch, "--squash", "--delete-branch",
+	]);
+	if (squashResult.ok) {
+		return { success: true, detail: "PR merged (squash) and remote branch deleted." };
+	}
+
+	// Squash not allowed — try regular merge
+	const mergeResult = deps.runCommand("gh", [
+		"pr", "merge", orchBranch, "--merge", "--delete-branch",
+	]);
+	if (mergeResult.ok) {
+		return { success: true, detail: "PR merged and remote branch deleted." };
+	}
+
+	return {
+		success: false,
+		detail: `PR merge failed: ${mergeResult.stderr || squashResult.stderr}`,
+	};
+}
+
+/**
+ * Execute the full PR lifecycle: poll CI, merge on success, clean up.
+ *
+ * Called after `executeIntegration("pr", ...)` succeeds (PR created).
+ * Polls CI status, merges when checks pass, reports failures.
+ * Always deactivates the supervisor at the end (deterministic shutdown).
+ *
+ * @param plan - Integration plan (for branch/batch info)
+ * @param ciDeps - CI deps for gh CLI operations
+ * @param pi - ExtensionAPI for messaging
+ * @param state - Supervisor state (for deactivation)
+ *
+ * @since TP-043
+ */
+async function handlePrLifecycle(
+	plan: IntegrationPlan,
+	ciDeps: CiDeps,
+	pi: ExtensionAPI,
+	state: SupervisorState,
+): Promise<void> {
+	// Poll CI status
+	const ciResult = await pollPrCiStatus(plan.orchBranch, ciDeps);
+
+	if (ciResult.status === "pass" || ciResult.status === "no-checks") {
+		// CI passed (or no checks) — merge the PR
+		const mergeOutcome = mergePr(plan.orchBranch, ciDeps);
+		if (mergeOutcome.success) {
+			// Clean up local state after remote merge
+			ciDeps.deleteBatchState();
+			ciDeps.runGit(["branch", "-D", plan.orchBranch]);
+			pi.sendMessage(
+				{
+					customType: "supervisor-integration-result",
+					content: [{
+						type: "text",
+						text:
+							`✅ **Integration complete!** PR merged into \`${plan.baseBranch}\`.\n` +
+							`${ciResult.detail}\n${mergeOutcome.detail}`,
+					}],
+					display: "Integration complete — PR merged",
+				},
+				{ triggerTurn: false },
+			);
+		} else {
+			pi.sendMessage(
+				{
+					customType: "supervisor-integration-result",
+					content: [{
+						type: "text",
+						text:
+							`⚠️ **CI passed but merge failed.** ${mergeOutcome.detail}\n` +
+							`The PR is still open — merge manually on GitHub.`,
+					}],
+					display: "CI passed but PR merge failed",
+				},
+				{ triggerTurn: false },
+			);
+		}
+	} else if (ciResult.status === "fail") {
+		pi.sendMessage(
+			{
+				customType: "supervisor-integration-result",
+				content: [{
+					type: "text",
+					text:
+						`❌ **CI checks failed.** ${ciResult.detail}\n` +
+						`The PR is still open. Fix the issues and merge manually, or close and retry.`,
+				}],
+				display: "CI checks failed — manual intervention needed",
+			},
+			{ triggerTurn: false },
+		);
+	} else {
+		// timeout
+		pi.sendMessage(
+			{
+				customType: "supervisor-integration-result",
+				content: [{
+					type: "text",
+					text:
+						`⏰ **CI check timeout.** ${ciResult.detail}\n` +
+						`The PR is still open. Check CI status manually and merge when ready.`,
+				}],
+				display: "CI check timeout — check manually",
+			},
+			{ triggerTurn: false },
+		);
+	}
+
+	// Always deactivate after PR lifecycle completes (R002 issue #3)
+	deactivateSupervisor(pi, state);
+}
+
+/**
  * Trigger the supervisor-managed integration flow after batch completion.
  *
  * Called from the engine's onTerminal callback when integration mode is
  * "supervised" or "auto" and batch phase is "completed" (R002-1).
  *
- * For **auto** mode: executes integration programmatically via the provided
- * executor (which wraps `executeIntegration` from extension.ts), then reports
- * the outcome to the operator. If the plan selects PR mode, the supervisor
- * stays alive to monitor CI status and attempt merge (R002-2).
+ * **Auto mode (R002-2):** Executes integration programmatically via the
+ * provided executor (which wraps `executeIntegration` from extension.ts).
+ * For PR mode, programmatically polls CI status and merges on success.
+ * Reports outcome and deactivates supervisor deterministically — no path
+ * leaves the supervisor alive without a code-driven shutdown.
  *
- * For **supervised** mode: presents the plan and asks for operator confirmation.
- * Once confirmed, the supervisor executes using bash commands, with CI
- * monitoring guidance for PR mode.
+ * **Supervised mode:** Presents the integration plan and asks the LLM to
+ * confirm with the operator. After confirmation, directs the LLM to run
+ * `/orch-integrate --{mode}` which uses the established execution path
+ * (resolveIntegrationContext + executeIntegration). This avoids duplicating
+ * integration logic via free-form git/gh instructions.
  *
  * If no integration is possible (no orch branch, no succeeded tasks),
  * the supervisor is deactivated immediately.
@@ -584,6 +818,7 @@ export type IntegrationExecutor = (
  * @param integrationMode - "supervised" or "auto"
  * @param cwd - Working directory for git operations
  * @param executor - Integration executor callback (wraps executeIntegration to avoid circular imports)
+ * @param ciDeps - CI deps for programmatic PR polling and merge (auto/PR mode)
  *
  * @since TP-043
  */
@@ -594,6 +829,7 @@ export function triggerSupervisorIntegration(
 	integrationMode: "supervised" | "auto",
 	cwd: string,
 	executor?: IntegrationExecutor,
+	ciDeps?: CiDeps,
 ): void {
 	// Build integration plan
 	const plan = buildIntegrationPlan(batchState, cwd);
@@ -615,22 +851,13 @@ export function triggerSupervisorIntegration(
 		return;
 	}
 
-	// Format the plan for the supervisor
+	// Format the plan for reporting
 	const planText = formatIntegrationPlan(plan);
 
-	// ── CI monitoring instructions (shared between modes for PR) ──
-	const ciMonitorInstructions =
-		`\n**CI monitoring (PR mode):**\n` +
-		`1. After PR is created, poll CI status: \`gh pr checks <PR_NUMBER> --watch\` or \`gh pr view <PR_NUMBER> --json statusCheckRollup\`\n` +
-		`2. If all checks pass → merge the PR: \`gh pr merge <PR_NUMBER> --squash --delete-branch\`\n` +
-		`3. If checks fail → report the failing checks to the operator with details:\n` +
-		`   - Run \`gh pr checks <PR_NUMBER>\` to list check statuses\n` +
-		`   - Summarize which checks failed and why (if log URLs available)\n` +
-		`   - Ask operator whether to retry, fix, or close the PR\n` +
-		`4. If checks are pending after 10 minutes → notify operator of delay\n`;
-
 	if (integrationMode === "supervised") {
-		// Supervised mode: present plan and ask for confirmation
+		// Supervised mode: present plan, ask LLM to confirm with operator,
+		// then direct it to /orch-integrate (established execution path).
+		const modeFlag = plan.mode === "ff" ? "" : plan.mode === "merge" ? " --merge" : " --pr";
 		pi.sendMessage(
 			{
 				customType: "supervisor-integration",
@@ -639,21 +866,19 @@ export function triggerSupervisorIntegration(
 					text:
 						`🏁 **Batch complete!** Ready to integrate.\n\n` +
 						planText + `\n\n` +
-						`**Action required:** Review the plan above. To proceed with integration:\n` +
-						`1. Analyze the plan and check for any issues\n` +
-						`2. Ask the operator: "Shall I proceed with ${plan.mode === "ff" ? "fast-forward" : plan.mode === "merge" ? "merge" : "PR"} integration?"\n` +
-						`3. If confirmed, execute the integration using the appropriate git/gh commands\n` +
-						`4. Report the outcome and clean up (delete orch branch if local integration)\n` +
-						`5. After integration is complete, you may deactivate\n\n` +
-						`If the operator declines or wants a different approach, suggest alternatives (ff/merge/pr).\n\n` +
-						`**Conflict handling:**\n` +
-						`- If ff fails → offer merge mode as fallback\n` +
-						`- If merge has conflicts → report conflicts to operator with file list and ask for guidance\n` +
-						`- If PR creation fails → suggest manual PR creation with the branch name\n` +
-						`- If push fails → check remote auth and report the error` +
-						(plan.mode === "pr" ? ciMonitorInstructions : ``),
+						`**Action required:** Ask the operator for confirmation.\n\n` +
+						`Say something like: "The batch completed successfully. I'd like to integrate ` +
+						`the changes from \`${plan.orchBranch}\` into \`${plan.baseBranch}\` using ` +
+						`${plan.mode === "ff" ? "fast-forward" : plan.mode === "merge" ? "a merge commit" : "a pull request"}. ` +
+						`${plan.rationale} Shall I proceed?"\n\n` +
+						`If the operator confirms, run: \`/orch-integrate${modeFlag}\`\n` +
+						`If the operator declines, acknowledge and deactivate.\n` +
+						`If the operator wants a different mode, adjust the flag:\n` +
+						`  - Fast-forward: \`/orch-integrate\`\n` +
+						`  - Merge commit: \`/orch-integrate --merge\`\n` +
+						`  - Pull request: \`/orch-integrate --pr\``,
 				}],
-				display: `Integration plan ready — awaiting operator confirmation`,
+				display: "Integration plan ready — awaiting operator confirmation",
 			},
 			{ triggerTurn: true, deliverAs: "nextTurn" },
 		);
@@ -663,23 +888,24 @@ export function triggerSupervisorIntegration(
 	// ── Auto mode: execute integration programmatically (R002-2) ──
 
 	if (!executor) {
-		// Fallback: no executor provided — instruct supervisor to execute manually
+		// Fallback: no executor provided — instruct operator to use /orch-integrate.
 		// This should not happen in normal operation but prevents a crash.
+		const modeFlag = plan.mode === "ff" ? "" : plan.mode === "merge" ? " --merge" : " --pr";
 		pi.sendMessage(
 			{
 				customType: "supervisor-integration",
 				content: [{
 					type: "text",
 					text:
-						`🏁 **Batch complete!** Integration executor unavailable — execute manually.\n\n` +
+						`🏁 **Batch complete!** Integration executor unavailable.\n\n` +
 						planText + `\n\n` +
-						`Execute the integration using the appropriate git/gh commands, then report the outcome.\n` +
-						(plan.mode === "pr" ? ciMonitorInstructions : ``),
+						`Run \`/orch-integrate${modeFlag}\` to integrate manually.`,
 				}],
-				display: `Auto-integration fallback — manual execution needed`,
+				display: "Auto-integration fallback — run /orch-integrate",
 			},
-			{ triggerTurn: true, deliverAs: "nextTurn" },
+			{ triggerTurn: false },
 		);
+		deactivateSupervisor(pi, state);
 		return;
 	}
 
@@ -707,65 +933,89 @@ export function triggerSupervisorIntegration(
 	if (result.success) {
 		const outcomeText = formatIntegrationOutcome(plan, true, result.message);
 
-		if (plan.mode === "pr" || (!result.integratedLocally && result.success)) {
+		if (plan.mode === "pr" || !result.integratedLocally) {
 			// PR mode: integration created a PR but didn't merge locally.
-			// Supervisor stays alive to monitor CI and merge.
+			// Programmatically poll CI status and merge (R002-2).
 			pi.sendMessage(
 				{
-					customType: "supervisor-integration",
+					customType: "supervisor-integration-progress",
 					content: [{
 						type: "text",
-						text:
-							outcomeText + `\n\n` +
-							`**Next steps — CI monitoring:**\n` +
-							ciMonitorInstructions + `\n` +
-							`After successful merge (or operator decision), generate the batch summary and deactivate.`,
+						text: `${outcomeText}\n\n⏳ Waiting for CI checks to complete...`,
 					}],
-					display: `PR created — supervisor monitoring CI`,
+					display: "PR created — polling CI status",
 				},
-				{ triggerTurn: true, deliverAs: "nextTurn" },
+				{ triggerTurn: false },
 			);
-			// Supervisor stays alive for CI monitoring — don't deactivate
+
+			if (ciDeps) {
+				// Fire-and-forget — handlePrLifecycle handles messaging
+				// and deterministic deactivation internally.
+				handlePrLifecycle(plan, ciDeps, pi, state).catch((err: unknown) => {
+					const msg = err instanceof Error ? err.message : String(err);
+					pi.sendMessage(
+						{
+							customType: "supervisor-integration-result",
+							content: [{
+								type: "text",
+								text: `❌ **CI monitoring crashed:** ${msg}\nThe PR is still open — check status and merge manually.`,
+							}],
+							display: "CI monitoring crashed",
+						},
+						{ triggerTurn: false },
+					);
+					deactivateSupervisor(pi, state);
+				});
+			} else {
+				// No CI deps — can't poll. Report and deactivate.
+				pi.sendMessage(
+					{
+						customType: "supervisor-integration-result",
+						content: [{
+							type: "text",
+							text: `PR created. CI polling unavailable — check status and merge manually on GitHub.`,
+						}],
+						display: "PR created — merge manually",
+					},
+					{ triggerTurn: false },
+				);
+				deactivateSupervisor(pi, state);
+			}
 			return;
 		}
 
 		// Local integration succeeded (ff or merge) — report and deactivate
 		pi.sendMessage(
 			{
-				customType: "supervisor-integration",
+				customType: "supervisor-integration-result",
 				content: [{
 					type: "text",
-					text:
-						outcomeText + `\n\n` +
-						`Integration complete. Generate the batch summary and deactivate.`,
+					text: outcomeText,
 				}],
-				display: `Integration succeeded — ${plan.mode} merge complete`,
+				display: `Integration complete (${plan.mode})`,
 			},
-			{ triggerTurn: true, deliverAs: "nextTurn" },
+			{ triggerTurn: false },
 		);
+		deactivateSupervisor(pi, state);
 	} else {
-		// Integration failed — report the error and ask supervisor to diagnose
+		// Integration failed — report the error and deactivate
 		const errorDetail = result.error || result.message || "Unknown integration error";
 		const outcomeText = formatIntegrationOutcome(plan, false, errorDetail);
 
 		pi.sendMessage(
 			{
-				customType: "supervisor-integration",
+				customType: "supervisor-integration-result",
 				content: [{
 					type: "text",
 					text:
 						outcomeText + `\n\n` +
-						`**Diagnosis required:**\n` +
-						`1. Analyze the error above\n` +
-						`2. If there are merge conflicts, run \`git merge --abort\` and report the conflicting files to the operator\n` +
-						`3. If it's a push/auth failure, check remote configuration\n` +
-						`4. Suggest alternatives to the operator (different mode, manual resolution)\n` +
-						`5. Do NOT retry automatically — wait for operator guidance`,
+						`Run \`/orch-integrate\` manually to retry with a different mode.`,
 				}],
-				display: `Integration failed — supervisor diagnosing`,
+				display: "Integration failed — run /orch-integrate manually",
 			},
-			{ triggerTurn: true, deliverAs: "nextTurn" },
+			{ triggerTurn: false },
 		);
+		deactivateSupervisor(pi, state);
 	}
 }
 
