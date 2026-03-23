@@ -18,8 +18,8 @@ export interface OrchestratorConfig {
 		tmux_prefix: string;
 		/** Optional operator identifier. Auto-detected from OS username if empty. */
 		operator_id: string;
-		/** How completed batches are integrated. manual = user runs /orch-integrate. auto = fast-forward on completion. */
-		integration: "manual" | "auto";
+		/** How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking. */
+		integration: "manual" | "supervised" | "auto";
 	};
 	dependencies: {
 		source: "prompt" | "agent";

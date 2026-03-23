@@ -29,6 +29,7 @@
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync, statSync, openSync, readSync, closeSync, appendFileSync } from "fs";
+import { execFileSync } from "child_process";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Model, Api } from "@mariozechner/pi-ai";
 import type { OrchBatchRuntimeState, OrchestratorConfig, PersistedBatchState, EngineEvent, EngineEventType } from "./types.ts";
@@ -294,6 +295,368 @@ export function readAuditTrail(
 }
 
 
+// ── Branch Protection Detection (TP-043) ─────────────────────────────
+
+/**
+ * Result of branch protection detection.
+ *
+ * - `protected`: Branch has protection rules enabled (require PRs)
+ * - `unprotected`: No protection rules found (direct push/merge OK)
+ * - `unknown`: Detection failed (no `gh` CLI, no remote, auth issues, etc.)
+ *
+ * @since TP-043
+ */
+export type BranchProtectionStatus = "protected" | "unprotected" | "unknown";
+
+/**
+ * Detect whether a branch has protection rules on GitHub.
+ *
+ * Uses `gh api repos/{owner}/{repo}/branches/{branch}/protection`:
+ * - HTTP 200 → protected (rules exist)
+ * - HTTP 404 → unprotected (no rules)
+ * - Any error → unknown (gh unavailable, no remote, auth issue, etc.)
+ *
+ * Extracts owner/repo from the git remote URL via `gh repo view`.
+ *
+ * @param branch - Branch name to check (e.g., "main")
+ * @param cwd - Working directory with the git repo
+ * @returns Branch protection status
+ *
+ * @since TP-043
+ */
+export function detectBranchProtection(
+	branch: string,
+	cwd: string,
+): BranchProtectionStatus {
+	try {
+		// Get owner/repo from gh (handles SSH, HTTPS, and gh-specific remotes)
+		const repoInfo = execFileSync("gh", ["repo", "view", "--json", "owner,name", "--jq", ".owner.login + \"/\" + .name"], {
+			encoding: "utf-8",
+			timeout: 15_000,
+			cwd,
+			stdio: ["pipe", "pipe", "pipe"],
+		}).trim();
+
+		if (!repoInfo || !repoInfo.includes("/")) {
+			return "unknown";
+		}
+
+		// Check branch protection via GitHub API
+		const result = execFileSync("gh", ["api", `repos/${repoInfo}/branches/${branch}/protection`, "--silent"], {
+			encoding: "utf-8",
+			timeout: 15_000,
+			cwd,
+			stdio: ["pipe", "pipe", "pipe"],
+		});
+
+		// If we get here (no error), the API returned 200 → branch is protected
+		return "protected";
+	} catch (err: unknown) {
+		const e = err as { stderr?: string; status?: number };
+		const stderr = e.stderr || "";
+
+		// gh api returns exit code 1 with "HTTP 404" for unprotected branches
+		if (stderr.includes("HTTP 404") || stderr.includes("Not Found")) {
+			return "unprotected";
+		}
+
+		// Any other error (no gh, no auth, no remote, network, etc.)
+		return "unknown";
+	}
+}
+
+
+// ── Supervisor-Managed Integration Flow (TP-043) ─────────────────────
+
+/**
+ * Integration plan describes the supervisor's proposed integration action.
+ *
+ * Built after analyzing the batch state, branch relationships, and
+ * branch protection status. Presented to the operator in supervised mode;
+ * executed directly in auto mode.
+ *
+ * @since TP-043
+ */
+export interface IntegrationPlan {
+	/** The integration mode to use: ff, merge, or pr */
+	mode: "ff" | "merge" | "pr";
+	/** Orch branch to integrate from */
+	orchBranch: string;
+	/** Base branch to integrate into */
+	baseBranch: string;
+	/** Batch ID for logging/audit */
+	batchId: string;
+	/** Whether the base branch is protected */
+	branchProtection: BranchProtectionStatus;
+	/** Human-readable rationale for the chosen mode */
+	rationale: string;
+	/** Number of succeeded tasks (for summary) */
+	succeededTasks: number;
+	/** Number of failed tasks (for summary) */
+	failedTasks: number;
+}
+
+/**
+ * Build an integration plan based on the batch state and branch status.
+ *
+ * Mode selection logic:
+ * 1. If base branch is protected → PR mode (can't push directly)
+ * 2. If branches have diverged → merge mode (ff not possible)
+ * 3. Otherwise → ff mode (cleanest)
+ *
+ * @param batchState - Runtime batch state (orchBranch, baseBranch, counts)
+ * @param cwd - Working directory with the git repo
+ * @returns Integration plan, or null if integration is not possible
+ *
+ * @since TP-043
+ */
+export function buildIntegrationPlan(
+	batchState: OrchBatchRuntimeState,
+	cwd: string,
+): IntegrationPlan | null {
+	if (!batchState.orchBranch || !batchState.baseBranch) {
+		return null;
+	}
+
+	if (batchState.succeededTasks === 0) {
+		return null; // Nothing to integrate
+	}
+
+	const orchBranch = batchState.orchBranch;
+	const baseBranch = batchState.baseBranch;
+	const batchId = batchState.batchId;
+
+	// Step 1: Check branch protection
+	const protection = detectBranchProtection(baseBranch, cwd);
+
+	if (protection === "protected") {
+		return {
+			mode: "pr",
+			orchBranch,
+			baseBranch,
+			batchId,
+			branchProtection: protection,
+			rationale: `Base branch \`${baseBranch}\` is protected — creating a pull request for review.`,
+			succeededTasks: batchState.succeededTasks,
+			failedTasks: batchState.failedTasks,
+		};
+	}
+
+	if (protection === "unknown") {
+		// Safe fallback: when protection status can't be determined
+		// (gh CLI unavailable, no remote, etc.), default to PR mode
+		// to avoid accidentally pushing to a protected branch.
+		return {
+			mode: "pr",
+			orchBranch,
+			baseBranch,
+			batchId,
+			branchProtection: protection,
+			rationale: `Could not detect branch protection for \`${baseBranch}\` — defaulting to PR mode for safety.`,
+			succeededTasks: batchState.succeededTasks,
+			failedTasks: batchState.failedTasks,
+		};
+	}
+
+	// Step 2: Check ff-ability (is baseBranch ancestor of orchBranch?)
+	try {
+		execFileSync("git", ["merge-base", "--is-ancestor", baseBranch, orchBranch], {
+			encoding: "utf-8",
+			timeout: 10_000,
+			cwd,
+			stdio: ["pipe", "pipe", "pipe"],
+		});
+		// If no error, baseBranch is ancestor → ff is possible
+		return {
+			mode: "ff",
+			orchBranch,
+			baseBranch,
+			batchId,
+			branchProtection: protection,
+			rationale: `Branches are linear — fast-forward merge (cleanest history).`,
+			succeededTasks: batchState.succeededTasks,
+			failedTasks: batchState.failedTasks,
+		};
+	} catch {
+		// Branches have diverged — need merge commit
+		return {
+			mode: "merge",
+			orchBranch,
+			baseBranch,
+			batchId,
+			branchProtection: protection,
+			rationale: `Branches have diverged — creating a merge commit.`,
+			succeededTasks: batchState.succeededTasks,
+			failedTasks: batchState.failedTasks,
+		};
+	}
+}
+
+/**
+ * Format an integration plan as a human-readable notification.
+ *
+ * Used in supervised mode to present the plan for operator confirmation.
+ *
+ * @param plan - The integration plan to format
+ * @returns Formatted notification string
+ *
+ * @since TP-043
+ */
+export function formatIntegrationPlan(plan: IntegrationPlan): string {
+	const modeLabels: Record<string, string> = {
+		ff: "fast-forward merge",
+		merge: "merge commit",
+		pr: "pull request",
+	};
+
+	const lines: string[] = [];
+	lines.push(`🔀 **Integration Plan**`);
+	lines.push(``);
+	lines.push(`- **Mode:** ${modeLabels[plan.mode] || plan.mode}`);
+	lines.push(`- **From:** \`${plan.orchBranch}\` → \`${plan.baseBranch}\``);
+	lines.push(`- **Tasks:** ${plan.succeededTasks} succeeded${plan.failedTasks > 0 ? `, ${plan.failedTasks} failed` : ""}`);
+	lines.push(`- **Rationale:** ${plan.rationale}`);
+
+	if (plan.branchProtection === "protected") {
+		lines.push(`- **Note:** Branch protection detected — PR mode is required.`);
+	}
+
+	return lines.join("\n");
+}
+
+/**
+ * Format a message describing the integration outcome for the supervisor
+ * to present to the operator.
+ *
+ * @param plan - The integration plan that was executed
+ * @param success - Whether the integration succeeded
+ * @param detail - Additional detail (PR URL, error message, etc.)
+ * @returns Formatted outcome message
+ *
+ * @since TP-043
+ */
+export function formatIntegrationOutcome(
+	plan: IntegrationPlan,
+	success: boolean,
+	detail: string,
+): string {
+	if (success) {
+		const modeLabel = plan.mode === "ff" ? "Fast-forwarded" : plan.mode === "merge" ? "Merged" : "Created PR for";
+		return `✅ **Integration complete!** ${modeLabel} \`${plan.orchBranch}\` → \`${plan.baseBranch}\`.\n${detail}`;
+	}
+	return `❌ **Integration failed** (\`${plan.orchBranch}\` → \`${plan.baseBranch}\`).\n${detail}`;
+}
+
+/**
+ * Trigger the supervisor-managed integration flow after batch completion.
+ *
+ * Called from the engine's onTerminal callback when integration mode is
+ * "supervised" or "auto". Builds an integration plan and sends it to the
+ * supervisor as a message, triggering an LLM turn where the supervisor
+ * will either ask for confirmation (supervised) or execute directly (auto).
+ *
+ * If no integration is possible (no orch branch, no succeeded tasks),
+ * the supervisor is deactivated immediately.
+ *
+ * @param pi - ExtensionAPI for sending messages and deactivation
+ * @param state - Supervisor state (for deactivation if no integration needed)
+ * @param batchState - Runtime batch state
+ * @param integrationMode - "supervised" or "auto"
+ * @param cwd - Working directory for git operations
+ *
+ * @since TP-043
+ */
+export function triggerSupervisorIntegration(
+	pi: ExtensionAPI,
+	state: SupervisorState,
+	batchState: OrchBatchRuntimeState,
+	integrationMode: "supervised" | "auto",
+	cwd: string,
+): void {
+	// Build integration plan
+	const plan = buildIntegrationPlan(batchState, cwd);
+
+	if (!plan) {
+		// No integration possible — deactivate supervisor
+		pi.sendMessage(
+			{
+				customType: "supervisor-integration",
+				content: [{
+					type: "text",
+					text: `📋 **Batch complete.** No integration needed (no orch branch or no succeeded tasks). Supervisor deactivating.`,
+				}],
+				display: "No integration needed — supervisor deactivating",
+			},
+			{ triggerTurn: false },
+		);
+		deactivateSupervisor(pi, state);
+		return;
+	}
+
+	// Format the plan for the supervisor
+	const planText = formatIntegrationPlan(plan);
+
+	if (integrationMode === "supervised") {
+		// Supervised mode: present plan and ask for confirmation
+		pi.sendMessage(
+			{
+				customType: "supervisor-integration",
+				content: [{
+					type: "text",
+					text:
+						`🏁 **Batch complete!** Ready to integrate.\n\n` +
+						planText + `\n\n` +
+						`**Action required:** Review the plan above. To proceed with integration:\n` +
+						`1. Analyze the plan and check for any issues\n` +
+						`2. Ask the operator: "Shall I proceed with ${plan.mode === "ff" ? "fast-forward" : plan.mode === "merge" ? "merge" : "PR"} integration?"\n` +
+						`3. If confirmed, execute the integration using the appropriate git/gh commands\n` +
+						`4. Report the outcome and clean up (delete orch branch if local integration)\n` +
+						`5. After integration is complete, you may deactivate\n\n` +
+						`If the operator declines or wants a different approach, suggest alternatives (ff/merge/pr).\n\n` +
+						`**Conflict handling:**\n` +
+						`- If ff fails → offer merge mode as fallback\n` +
+						`- If merge has conflicts → report conflicts to operator with file list and ask for guidance\n` +
+						`- If PR creation fails → suggest manual PR creation with the branch name\n` +
+						`- If push fails → check remote auth and report the error`,
+				}],
+				display: `Integration plan ready — awaiting operator confirmation`,
+			},
+			{ triggerTurn: true, deliverAs: "nextTurn" },
+		);
+	} else {
+		// Auto mode: tell supervisor to execute directly
+		pi.sendMessage(
+			{
+				customType: "supervisor-integration",
+				content: [{
+					type: "text",
+					text:
+						`🏁 **Batch complete!** Executing integration automatically.\n\n` +
+						planText + `\n\n` +
+						`**Execute now:**\n` +
+						(plan.mode === "ff"
+							? `1. Run \`git merge --ff-only ${plan.orchBranch}\` on branch \`${plan.baseBranch}\`\n`
+							: plan.mode === "merge"
+								? `1. Run \`git merge ${plan.orchBranch} --no-edit\` on branch \`${plan.baseBranch}\`\n`
+								: `1. Run \`git push origin ${plan.orchBranch}\`\n2. Run \`gh pr create --base ${plan.baseBranch} --head ${plan.orchBranch} --title "Integrate orch batch ${plan.batchId}" --fill\`\n`) +
+						(plan.mode !== "pr" ? `2. Delete the orch branch: \`git branch -D ${plan.orchBranch}\`\n` : ``) +
+						`${plan.mode !== "pr" ? "3" : "3"}. Report the outcome to the operator\n` +
+						`${plan.mode !== "pr" ? "4" : "4"}. If integration fails, diagnose and report — do NOT retry without checking\n\n` +
+						`**Conflict handling:**\n` +
+						`- If ff fails → fall back to merge mode automatically\n` +
+						`- If merge has conflicts → abort the merge (\`git merge --abort\`), report conflicting files to operator, and pause for guidance\n` +
+						`- If PR creation fails → report the error and suggest manual PR creation\n` +
+						`- If push fails → check remote auth and report\n\n` +
+						`After integration, generate the batch summary and deactivate.`,
+				}],
+				display: `Auto-integrating ${plan.orchBranch} → ${plan.baseBranch} (${plan.mode})`,
+			},
+			{ triggerTurn: true, deliverAs: "nextTurn" },
+		);
+	}
+}
+
+
 // ── Supervisor Config Types ──────────────────────────────────────────
 
 /**
@@ -382,6 +745,39 @@ export function buildSupervisorSystemPrompt(
 		: "planning";
 
 	const actionsPath = auditTrailPath(stateRoot);
+	const integrationMode = config.orchestrator.integration;
+
+	// TP-043: Build guardrails section dynamically based on integration mode.
+	// When integration is "supervised" or "auto", the supervisor is allowed to
+	// push branches and create PRs as part of post-batch integration.
+	const guardrailsSection = integrationMode === "supervised" || integrationMode === "auto"
+		? `## What You Must NEVER Do
+
+1. Never delete \`.pi/batch-state.json\` without operator approval
+2. Never modify task code (files that workers wrote)
+3. Never modify PROMPT.md files
+4. Never \`git reset --hard\` with uncommitted changes
+5. Never skip tasks/waves without telling the operator
+6. Never create GitHub releases
+
+## Integration Permissions (mode: ${integrationMode})
+
+You are authorized to perform integration operations after batch completion:
+- \`git push origin <orch-branch>\` — push the orch branch for PR creation
+- \`gh pr create\` — create pull requests for integration
+- \`git merge --ff-only\` or \`git merge --no-edit\` — local branch integration
+- \`git branch -D <orch-branch>\` — cleanup after successful integration
+
+${integrationMode === "supervised" ? `**Supervised mode:** Before executing integration, describe your plan and ask the operator for confirmation.` : `**Auto mode:** Execute integration directly. Report the outcome to the operator. Pause only on errors or conflicts.`}`
+		: `## What You Must NEVER Do
+
+1. Never \`git push\` to any remote
+2. Never delete \`.pi/batch-state.json\` without operator approval
+3. Never modify task code (files that workers wrote)
+4. Never modify PROMPT.md files
+5. Never \`git reset --hard\` with uncommitted changes
+6. Never skip tasks/waves without telling the operator
+7. Never create PRs or GitHub releases`;
 
 	const prompt = `# Supervisor Agent
 
@@ -512,15 +908,7 @@ It contains:
 
 Read it now before doing anything else. It is your primary reference.
 
-## What You Must NEVER Do
-
-1. Never \`git push\` to any remote
-2. Never delete \`.pi/batch-state.json\` without operator approval
-3. Never modify task code (files that workers wrote)
-4. Never modify PROMPT.md files
-5. Never \`git reset --hard\` with uncommitted changes
-6. Never skip tasks/waves without telling the operator
-7. Never create PRs or GitHub releases
+${guardrailsSection}
 
 ## Startup Checklist
 
@@ -2001,6 +2389,7 @@ export function shouldNotify(
  * @param tailer - Event tailer state (for batchId filter + digest buffer)
  * @param autonomy - Current autonomy level
  * @param notify - Callback to emit a notification to the operator
+ * @param onBatchComplete - Optional callback fired when batch_complete event is detected (TP-043)
  *
  * @since TP-041
  */
@@ -2009,6 +2398,7 @@ export function processEvents(
 	tailer: EventTailerState,
 	autonomy: SupervisorAutonomyLevel,
 	notify: (text: string) => void,
+	onBatchComplete?: (event: ParsedEvent) => void,
 ): void {
 	for (const event of events) {
 		// ── Batch-scoped filter (R005-1) ─────────────────────────
@@ -2022,6 +2412,11 @@ export function processEvents(
 		// Update batchId if we were waiting for it (pre-planning)
 		if (!tailer.batchId && event.batchId) {
 			tailer.batchId = event.batchId;
+		}
+
+		// ── TP-043: Trigger integration flow on batch_complete ──
+		if (event.type === "batch_complete" && onBatchComplete) {
+			onBatchComplete(event);
 		}
 
 		// ── Classify: significant (immediate) vs digest (buffered) ──
@@ -2120,6 +2515,11 @@ export function startEventTailer(
 			{ triggerTurn: true, deliverAs: "nextTurn" },
 		);
 	};
+
+	// ── TP-043: Integration is triggered by triggerSupervisorIntegration() ──
+	// called from the onTerminal callback in startBatchAsync (extension.ts).
+	// The event tailer does NOT duplicate the integration trigger — batch_complete
+	// events are handled via the normal notification path (formatEventNotification).
 
 	// ── Poll timer ───────────────────────────────────────────────
 	tailer.pollTimer = setInterval(() => {

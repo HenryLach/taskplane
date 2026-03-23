@@ -20,14 +20,14 @@
 ---
 
 ### Step 1: Supervisor-Managed Integration
-**Status:** 🟨 In Progress
-- [ ] Add "supervised" to integration mode type in types.ts, config-schema.ts, config-loader.ts, and settings-tui.ts
-- [ ] Gate legacy attemptAutoIntegration in engine.ts and resume.ts — only run for "auto" mode, not "supervised" (R001-1: single owner for integration)
-- [ ] Replace immediate deactivateSupervisor in startBatchAsync onTerminal with deferred deactivation — keep supervisor alive through post-batch integration/summary flow (R001-2)
-- [ ] Update supervisor system prompt guardrails: conditionally allow push/PR operations in supervised/auto integration modes (R001-3)
-- [ ] Implement detectBranchProtection helper: gh api repos/{owner}/{repo}/branches/{branch}/protection → protected/unprotected/unknown
-- [ ] Implement supervisor-managed integration flow: on batch_complete event, supervisor triggers integration based on mode (manual=guidance, supervised=confirm-then-execute, auto=execute-directly)
-- [ ] Handle integration outcomes: conflict detection, CI failure reporting, fallback to PR mode when branch is protected
+**Status:** ✅ Complete
+- [x] Add "supervised" to integration mode type in types.ts, config-schema.ts, config-loader.ts, and settings-tui.ts
+- [x] Gate legacy attemptAutoIntegration in engine.ts and resume.ts — only run for "auto" mode, not "supervised" (R001-1: single owner for integration)
+- [x] Replace immediate deactivateSupervisor in startBatchAsync onTerminal with deferred deactivation — keep supervisor alive through post-batch integration/summary flow (R001-2)
+- [x] Update supervisor system prompt guardrails: conditionally allow push/PR operations in supervised/auto integration modes (R001-3)
+- [x] Implement detectBranchProtection helper: gh api repos/{owner}/{repo}/branches/{branch}/protection → protected/unprotected/unknown
+- [x] Implement supervisor-managed integration flow: on batch_complete event, supervisor triggers integration based on mode (manual=guidance, supervised=confirm-then-execute, auto=execute-directly)
+- [x] Handle integration outcomes: conflict detection, CI failure reporting, fallback to PR mode when branch is protected
 
 ---
 

@@ -53,6 +53,7 @@ import {
 	isProcessAlive,
 	isBatchTerminal,
 	DEFAULT_SUPERVISOR_CONFIG,
+	triggerSupervisorIntegration,
 } from "./supervisor.ts";
 import type { SupervisorConfig } from "./supervisor.ts";
 import type {
@@ -1208,10 +1209,27 @@ export default function (pi: ExtensionAPI) {
 				orchBatchState,
 				ctx,
 				updateOrchWidget,
-				// TP-041: Deactivate supervisor on all terminal paths
-				// (completed, failed, stopped, crashed). Idempotent — safe
-				// to call even if supervisor was never activated.
-				() => { deactivateSupervisor(pi, supervisorState); },
+				// TP-043: Deferred supervisor deactivation.
+				// For "supervised" and "auto" integration modes, the supervisor
+				// stays alive after engine completion to handle post-batch
+				// integration. It deactivates itself after integration completes.
+				// For "manual" mode, deactivate immediately (original behavior).
+				() => {
+					const mode = orchConfig.orchestrator.integration;
+					if (mode === "supervised" || mode === "auto") {
+						// Supervisor stays alive — send it the integration plan
+						// so it can execute or confirm the integration flow.
+						triggerSupervisorIntegration(
+							pi,
+							supervisorState,
+							orchBatchState,
+							mode,
+							repoRoot,
+						);
+						return;
+					}
+					deactivateSupervisor(pi, supervisorState);
+				},
 			);
 
 			// ── TP-041: Activate supervisor agent ────────────────────
@@ -1477,8 +1495,22 @@ export default function (pi: ExtensionAPI) {
 				orchBatchState,
 				ctx,
 				updateOrchWidget,
-				// TP-041: Deactivate supervisor on all terminal paths
-				() => { deactivateSupervisor(pi, supervisorState); },
+				// TP-043: Deferred supervisor deactivation (parity with /orch).
+				// See /orch handler comment for rationale.
+				() => {
+					const mode = orchConfig.orchestrator.integration;
+					if (mode === "supervised" || mode === "auto") {
+						triggerSupervisorIntegration(
+							pi,
+							supervisorState,
+							orchBatchState,
+							mode,
+							execCtx!.repoRoot,
+						);
+						return;
+					}
+					deactivateSupervisor(pi, supervisorState);
+				},
 			);
 
 			// ── TP-041: Activate supervisor agent on resume ──────────

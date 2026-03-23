@@ -11,7 +11,7 @@ import { executeOrchBatch } from "./engine.ts";
 import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasSession } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
-import { attemptAutoIntegration, mergeWaveByRepo } from "./merge.ts";
+import { mergeWaveByRepo } from "./merge.ts";
 import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
@@ -2111,21 +2111,18 @@ export async function resumeOrchBatch(
 	// Parity with engine.ts: auto-integrate if configured, else show manual guidance.
 	// Gate: only run for terminal phases (completed/failed). Paused/stopped batches
 	// are not yet done — integration would mutate refs prematurely.
-	let autoIntegrated = false;
+	//
+	// TP-043: "supervised" and "auto" integration modes are now owned by the
+	// supervisor agent. Legacy engine fast-forward is removed — supervisor
+	// handles all non-manual integration after batch_complete event.
 	const mergedTaskCount = batchState.succeededTasks;
 	const isTerminalPhase = batchState.phase === "completed" || batchState.phase === "failed";
 	if (isTerminalPhase && !preserveWorktreesForResume && batchState.orchBranch && mergedTaskCount > 0) {
-		if (orchConfig.orchestrator.integration === "auto") {
-			autoIntegrated = attemptAutoIntegration(
-				batchState.orchBranch,
-				batchState.baseBranch,
-				repoRoot,
-				batchState.batchId,
-				"resume",
-				onNotify,
-			);
-		}
-		if (!autoIntegrated) {
+		if (orchConfig.orchestrator.integration === "supervised" || orchConfig.orchestrator.integration === "auto") {
+			// TP-043: Supervisor-managed integration modes. Defer to supervisor.
+			execLog("resume", batchState.batchId, `integration deferred to supervisor (mode: ${orchConfig.orchestrator.integration})`);
+		} else {
+			// Manual mode (default): show integration guidance
 			onNotify(
 				ORCH_MESSAGES.orchIntegrationManual(batchState.orchBranch, batchState.baseBranch, mergedTaskCount),
 				"info",
@@ -2166,6 +2163,8 @@ export async function resumeOrchBatch(
 }
 
 
-// attemptAutoIntegration is now a shared helper in merge.ts (TP-022 Step 4).
-// Both engine.ts and resume.ts import it from there to eliminate parity drift.
+// TP-043: attemptAutoIntegration is no longer called from engine.ts or resume.ts.
+// Supervisor-managed integration ("supervised" and "auto" modes) is handled by
+// the supervisor agent after batch_complete. The helper remains in merge.ts for
+// use by the supervisor's integration flow.
 
