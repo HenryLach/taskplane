@@ -353,7 +353,7 @@ export function buildMergeRequest(
  * @param agentRoot       - Root for agent prompts. When pointer is resolved, this is the config repo's agent dir. Falls back to `<stateRoot>/.pi/agents/` or `<repoRoot>/.pi/agents/`.
  * @throws MergeError if spawn fails after retries
  */
-export function spawnMergeAgent(
+export async function spawnMergeAgent(
 	sessionName: string,
 	repoRoot: string,
 	mergeWorkDir: string,
@@ -361,7 +361,7 @@ export function spawnMergeAgent(
 	config: OrchestratorConfig,
 	stateRoot?: string,
 	agentRoot?: string,
-): void {
+): Promise<void> {
 	execLog("merge", sessionName, "preparing to spawn merge agent", {
 		mergeWorkDir,
 		mergeRequestPath,
@@ -371,7 +371,7 @@ export function spawnMergeAgent(
 	if (tmuxHasSession(sessionName)) {
 		execLog("merge", sessionName, "killing stale merge session");
 		tmuxKillSession(sessionName);
-		sleepSync(500);
+		await sleepAsync(500);
 	}
 
 	// Build the pi command for the merge agent.
@@ -424,7 +424,7 @@ export function spawnMergeAgent(
 		execLog("merge", sessionName, `merge spawn attempt ${attempt} failed: ${lastError}`);
 
 		if (attempt <= MERGE_SPAWN_RETRY_MAX) {
-			sleepSync(attempt * 1000);
+			await sleepAsync(attempt * 1000);
 		}
 	}
 
@@ -1008,7 +1008,7 @@ export async function mergeWave(
 	forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
 	if (existsSync(mergeWorkDir)) {
 		// Force cleanup didn't fully remove — wait and retry once
-		sleepSync(500);
+		await sleepAsync(500);
 		forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
 	}
 	try {
@@ -1242,10 +1242,10 @@ export async function mergeWave(
 						}
 
 						// Re-spawn merge agent for the retry
-						spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
 					} else {
 						// First attempt: spawn merge agent
-						spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
 					}
 
 					try {
@@ -1732,7 +1732,7 @@ export async function mergeWave(
 		forceRemoveMergeWorktree(mergeWorkDir, repoRoot, `W${waveIndex}`);
 		try {
 			// Small delay to ensure worktree lock is released
-			sleepSync(500);
+			await sleepAsync(500);
 			spawnSync("git", ["branch", "-D", tempBranch], { cwd: repoRoot });
 		} catch { /* best effort */ }
 	}
