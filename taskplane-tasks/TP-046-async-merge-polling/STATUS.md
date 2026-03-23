@@ -1,11 +1,11 @@
 # TP-046: Async Merge Polling — Status
 
-**Current Step:** Step 1: Add Async Sleep Utility
+**Current Step:** Step 2: Convert waitForMergeResult to Async
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-23
 **Review Level:** 2
-**Review Counter:** 1
-**Iteration:** 2
+**Review Counter:** 3
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -28,10 +28,10 @@
 ---
 
 ### Step 2: Convert waitForMergeResult to Async
-**Status:** ⬜ Not Started
-- [ ] Make waitForMergeResult async
-- [ ] Replace sleepSync with sleepAsync in polling loop
-- [ ] Preserve timeout/retry/grace period behavior
+**Status:** ✅ Complete
+- [x] Make waitForMergeResult async
+- [x] Replace sleepSync with sleepAsync in polling loop
+- [x] Preserve timeout/retry/grace period behavior
 
 ---
 
@@ -65,6 +65,10 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
+| R002 | code | Step 1 | APPROVE | .reviews/R002-code-step1.md |
+| R002 | code | Step 1 | APPROVE | .reviews/R002-code-step1.md |
+| R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -93,6 +97,16 @@
 | 2026-03-23 21:07 | Step 1 started | Add Async Sleep Utility |
 | 2026-03-23 21:08 | Review R001 | plan Step 1: APPROVE |
 | 2026-03-23 21:08 | Review R001 | plan Step 1: APPROVE |
+| 2026-03-23 21:09 | Worker iter 2 | done in 63s, ctx: 9%, tools: 11 |
+| 2026-03-23 21:13 | Worker iter 3 | done in 286s, ctx: 13%, tools: 21 |
+| 2026-03-23 21:13 | Review R002 | code Step 1: APPROVE |
+| 2026-03-23 21:13 | Step 1 complete | Add Async Sleep Utility |
+| 2026-03-23 21:13 | Step 2 started | Convert waitForMergeResult to Async |
+| 2026-03-23 21:14 | Review R002 | code Step 1: APPROVE |
+| 2026-03-23 21:14 | Step 1 complete | Add Async Sleep Utility |
+| 2026-03-23 21:14 | Step 2 started | Convert waitForMergeResult to Async |
+| 2026-03-23 21:15 | Review R003 | plan Step 2: APPROVE |
+| 2026-03-23 21:15 | Review R003 | plan Step 2: REVISE |
 
 ## Blockers
 

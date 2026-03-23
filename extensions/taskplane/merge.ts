@@ -11,7 +11,7 @@ import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
-import { generateMergeWorktreePath, sleepSync } from "./worktree.ts";
+import { generateMergeWorktreePath, sleepAsync, sleepSync } from "./worktree.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
 import { loadOrchestratorConfig } from "./config.ts";
@@ -480,11 +480,11 @@ const SUCCESSFUL_MERGE_STATUSES = new Set<string>(["SUCCESS", "CONFLICT_RESOLVED
  * @returns Validated MergeResult
  * @throws MergeError on timeout, session death, or invalid result
  */
-export function waitForMergeResult(
+export async function waitForMergeResult(
 	resultPath: string,
 	sessionName: string,
 	timeoutMs: number = MERGE_TIMEOUT_MS,
-): MergeResult {
+): Promise<MergeResult> {
 	const startTime = Date.now();
 	let sessionDiedAt: number | null = null;
 
@@ -559,7 +559,7 @@ export function waitForMergeResult(
 				// parseMergeResult already retries, so if it throws, it's final.
 				if (err instanceof MergeError && err.code === "MERGE_RESULT_INVALID") {
 					// Wait a bit and try once more (file might still be in flight)
-					sleepSync(MERGE_RESULT_READ_RETRY_DELAY_MS);
+					await sleepAsync(MERGE_RESULT_READ_RETRY_DELAY_MS);
 					if (existsSync(resultPath)) {
 						try {
 							return parseMergeResult(resultPath);
@@ -605,7 +605,7 @@ export function waitForMergeResult(
 		}
 
 		// Poll interval
-		sleepSync(MERGE_POLL_INTERVAL_MS);
+		await sleepAsync(MERGE_POLL_INTERVAL_MS);
 	}
 }
 
