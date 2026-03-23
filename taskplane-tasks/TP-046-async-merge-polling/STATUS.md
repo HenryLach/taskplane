@@ -1,11 +1,11 @@
 # TP-046: Async Merge Polling — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-23
 **Review Level:** 2
-**Review Counter:** 7
-**Iteration:** 5
+**Review Counter:** 8
+**Iteration:** 6
 **Size:** M
 
 ---
@@ -56,7 +56,7 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] `.DONE` created
 
 ---
@@ -78,6 +78,8 @@
 | R007 | plan | Step 4 | APPROVE | .reviews/R007-plan-step4.md |
 | R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
 | R007 | plan | Step 4 | APPROVE | .reviews/R007-plan-step4.md |
+| R008 | code | Step 4 | APPROVE | .reviews/R008-code-step4.md |
+| R008 | code | Step 4 | APPROVE | .reviews/R008-code-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -138,6 +140,15 @@
 | 2026-03-23 21:40 | Step 4 started | Testing & Verification |
 | 2026-03-23 21:41 | Review R007 | plan Step 4: APPROVE |
 | 2026-03-23 21:47 | Worker iter 5 | done in 396s, ctx: 12%, tools: 14 |
+| 2026-03-23 21:48 | Worker iter 5 | done in 405s, ctx: 13%, tools: 19 |
+| 2026-03-23 21:52 | Review R008 | code Step 4: APPROVE |
+| 2026-03-23 21:52 | Step 4 complete | Testing & Verification |
+| 2026-03-23 21:52 | Step 5 started | Documentation & Delivery |
+| 2026-03-23 21:52 | Skip plan review | Step 5 (final step) — low-risk |
+| 2026-03-23 21:53 | Review R008 | code Step 4: APPROVE |
+| 2026-03-23 21:53 | Step 4 complete | Testing & Verification |
+| 2026-03-23 21:53 | Step 5 started | Documentation & Delivery |
+| 2026-03-23 21:53 | Skip plan review | Step 5 (final step) — low-risk |
 
 ## Blockers
 
