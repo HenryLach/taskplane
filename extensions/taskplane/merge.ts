@@ -44,6 +44,66 @@ export function parseMergeResult(resultPath: string): MergeResult {
 		);
 	}
 
+	const pickString = (obj: Record<string, unknown>, ...keys: string[]): string | null => {
+		for (const key of keys) {
+			const value = obj[key];
+			if (typeof value === "string" && value.trim().length > 0) {
+				return value;
+			}
+		}
+		return null;
+	};
+
+	const hasFlatVerification = (obj: Record<string, unknown>): boolean =>
+		typeof obj.verification_passed === "boolean"
+		|| Array.isArray(obj.verification_commands)
+		|| typeof obj.verification_output === "string"
+		|| typeof obj.verification_exit_code === "number";
+
+	const normalizeVerification = (obj: Record<string, unknown>): MergeResult["verification"] | null => {
+		const nested = (obj.verification && typeof obj.verification === "object")
+			? obj.verification as Record<string, unknown>
+			: null;
+
+		if (!nested && !hasFlatVerification(obj)) {
+			return null;
+		}
+
+		const passedFromBool =
+			(nested && typeof nested.passed === "boolean" ? nested.passed : undefined)
+			?? (nested && typeof nested.all_passed === "boolean" ? nested.all_passed : undefined)
+			?? (typeof obj.verification_passed === "boolean" ? obj.verification_passed : undefined);
+
+		const exitCode =
+			(nested && typeof nested.exitCode === "number" ? nested.exitCode : undefined)
+			?? (nested && typeof nested.exit_code === "number" ? nested.exit_code : undefined)
+			?? (typeof obj.verification_exit_code === "number" ? obj.verification_exit_code : undefined);
+
+		const passed = typeof passedFromBool === "boolean"
+			? passedFromBool
+			: (typeof exitCode === "number" ? exitCode === 0 : false);
+
+		const ran = (nested && typeof nested.ran === "boolean")
+			? nested.ran
+			: (
+				typeof passedFromBool === "boolean"
+				|| typeof exitCode === "number"
+				|| (nested && typeof nested.command === "string")
+				|| (nested && typeof nested.summary === "string")
+				|| typeof obj.verification_output === "string"
+				|| Array.isArray(obj.verification_commands)
+			);
+
+		const output = (
+			(nested && typeof nested.output === "string" ? nested.output : undefined)
+			?? (nested && typeof nested.summary === "string" ? nested.summary : undefined)
+			?? (nested && typeof nested.notes === "string" ? nested.notes : undefined)
+			?? (typeof obj.verification_output === "string" ? obj.verification_output : "")
+		).slice(0, 2000);
+
+		return { ran, passed, output };
+	};
+
 	// Retry-read loop for partially-written files
 	let lastParseError = "";
 	for (let attempt = 1; attempt <= MERGE_RESULT_READ_RETRIES; attempt++) {
@@ -61,7 +121,7 @@ export function parseMergeResult(resultPath: string): MergeResult {
 				);
 			}
 
-			const parsed = JSON.parse(raw);
+			const parsed = JSON.parse(raw) as Record<string, unknown>;
 
 			// Validate required fields
 			if (typeof parsed.status !== "string") {
@@ -70,29 +130,23 @@ export function parseMergeResult(resultPath: string): MergeResult {
 					`Merge result missing required field "status": ${resultPath}`,
 				);
 			}
-			if (typeof parsed.source_branch !== "string") {
+
+			// Accept known source-field variants written by different merge agents.
+			// Canonical field remains source_branch.
+			const sourceBranch = pickString(parsed, "source_branch", "sourceBranch", "source");
+			if (!sourceBranch) {
 				throw new MergeError(
 					"MERGE_RESULT_MISSING_FIELDS",
-					`Merge result missing required field "source_branch": ${resultPath}`,
+					`Merge result missing required field "source_branch" (accepted aliases: sourceBranch, source): ${resultPath}`,
 				);
 			}
-			// Normalize verification: accept either a nested object or flat fields
-			if (!parsed.verification || typeof parsed.verification !== "object") {
-				// Merge agents may write flat verification_passed/verification_commands fields
-				// instead of a nested verification object. Normalize to the expected shape.
-				if (typeof parsed.verification_passed === "boolean" || Array.isArray(parsed.verification_commands)) {
-					parsed.verification = {
-						commands_run: parsed.verification_commands || [],
-						all_passed: parsed.verification_passed !== false,
-						output: "",
-						notes: "",
-					};
-				} else {
-					throw new MergeError(
-						"MERGE_RESULT_MISSING_FIELDS",
-						`Merge result missing required field "verification": ${resultPath}`,
-					);
-				}
+
+			const verification = normalizeVerification(parsed);
+			if (!verification) {
+				throw new MergeError(
+					"MERGE_RESULT_MISSING_FIELDS",
+					`Merge result missing required field "verification": ${resultPath}`,
+				);
 			}
 
 			// Normalize status to uppercase (merge agents may write lowercase)
@@ -106,20 +160,33 @@ export function parseMergeResult(resultPath: string): MergeResult {
 				parsed.status = "BUILD_FAILURE";
 			}
 
+			const targetBranch = pickString(parsed, "target_branch", "targetBranch", "target") ?? "";
+			const mergeCommit = pickString(parsed, "merge_commit", "mergeCommit") ?? "";
+			const conflicts = Array.isArray(parsed.conflicts)
+				? parsed.conflicts
+					.filter((c): c is { file: string; type: string; resolved: boolean; resolution?: string } => (
+						typeof c === "object"
+						&& c !== null
+						&& typeof (c as { file?: unknown }).file === "string"
+						&& typeof (c as { type?: unknown }).type === "string"
+						&& typeof (c as { resolved?: unknown }).resolved === "boolean"
+					))
+					.map(c => ({
+						file: c.file,
+						type: c.type,
+						resolved: c.resolved,
+						...(typeof c.resolution === "string" ? { resolution: c.resolution } : {}),
+					}))
+				: [];
+
 			// Normalize optional fields with defaults
 			return {
 				status: parsed.status as MergeResultStatus,
-				source_branch: parsed.source_branch,
-				target_branch: parsed.target_branch || "",
-				merge_commit: parsed.merge_commit || "",
-				conflicts: Array.isArray(parsed.conflicts) ? parsed.conflicts : [],
-				verification: {
-					ran: !!parsed.verification.ran,
-					passed: !!parsed.verification.passed,
-					output: typeof parsed.verification.output === "string"
-						? parsed.verification.output.slice(0, 2000)
-						: "",
-				},
+				source_branch: sourceBranch,
+				target_branch: targetBranch,
+				merge_commit: mergeCommit,
+				conflicts,
+				verification,
 			};
 		} catch (err: unknown) {
 			if (err instanceof MergeError) throw err;
@@ -238,7 +305,23 @@ export function buildMergeRequest(
 		`result_file: ${resultFilePath}`,
 		`Write your JSON result to: ${resultFilePath}`,
 		"",
-
+		"## Result JSON Schema (required)",
+		"Use EXACT snake_case keys shown below. Do not use camelCase or shortened keys.",
+		"",
+		"```json",
+		"{",
+		"  \"status\": \"SUCCESS\" | \"CONFLICT_RESOLVED\" | \"CONFLICT_UNRESOLVED\" | \"BUILD_FAILURE\",",
+		"  \"source_branch\": \"<source branch name>\",",
+		"  \"target_branch\": \"<target branch name>\",",
+		"  \"merge_commit\": \"<merge commit sha or empty string>\",",
+		"  \"conflicts\": [{ \"file\": \"...\", \"type\": \"...\", \"resolved\": true|false }],",
+		"  \"verification\": { \"ran\": true|false, \"passed\": true|false, \"output\": \"...\" }",
+		"}",
+		"```",
+		"",
+		"Do NOT use keys like source/sourceBranch/target/mergeCommit.",
+		"Write valid JSON only (no markdown around the final file).",
+		"",
 		"## Important",
 		"- You are working in an ISOLATED MERGE WORKTREE (not the user's main repo)",
 		"- The correct branch is ALREADY checked out — do NOT checkout any other branch",

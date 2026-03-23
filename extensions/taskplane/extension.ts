@@ -2505,6 +2505,17 @@ export default function (pi: ExtensionAPI) {
 		// Check for taskplane updates (non-blocking)
 		checkForUpdate(ctx);
 	});
+
+	// ── Session shutdown cleanup ─────────────────────────────────────
+	// Ensure supervisor lockfile/heartbeat are cleaned up on normal session exit.
+	// This avoids leaving a live-looking lock when the process exits cleanly.
+	pi.on("session_end", async () => {
+		try {
+			await deactivateSupervisor(pi, supervisorState);
+		} catch {
+			// Best effort only — session is already ending.
+		}
+	});
 }
 
 // ── Update Check ─────────────────────────────────────────────────────

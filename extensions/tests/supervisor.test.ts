@@ -49,6 +49,7 @@ import {
 	freshEventTailerState,
 	startEventTailer,
 	stopEventTailer,
+	startHeartbeat,
 	EVENT_POLL_INTERVAL_MS,
 	TASK_DIGEST_INTERVAL_MS,
 	// Audit trail
@@ -527,7 +528,42 @@ describe("3.x — Heartbeat: isLockStale detection", () => {
 		expect(STALE_LOCK_THRESHOLD_MS).toBe(HEARTBEAT_INTERVAL_MS * 3);
 	});
 
-	it("3.9: heartbeat timer is started on activation and writes lockfile updates", () => {
+	it("3.9: heartbeat updates lockfile timestamp on interval (behavioral)", async () => {
+		vi.useFakeTimers();
+		const dir = makeTmpDir();
+		try {
+			const state = freshSupervisorState();
+			state.active = true;
+			state.stateRoot = dir;
+			state.lockSessionId = "session-1";
+
+			writeLockfile(dir, {
+				pid: process.pid,
+				sessionId: "session-1",
+				batchId: "batch-1",
+				startedAt: "2026-01-01T00:00:00.000Z",
+				heartbeat: "2026-01-01T00:00:00.000Z",
+			});
+
+			const pi = { sendMessage: vi.fn(), setModel: vi.fn().mockResolvedValue(true) } as any;
+			const timer = startHeartbeat(dir, state, pi);
+			const before = readLockfile(dir)?.heartbeat;
+			expect(before).toBe("2026-01-01T00:00:00.000Z");
+
+			await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 5);
+			const after = readLockfile(dir)?.heartbeat;
+			expect(after).toBeDefined();
+			expect(after).not.toBe(before);
+
+			state.active = false;
+			clearInterval(timer);
+		} finally {
+			vi.useRealTimers();
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	it("3.10: heartbeat timer is started on activation and stored on state", () => {
 		const supervisorSource = readSource("supervisor.ts");
 		// activateSupervisor must start heartbeat
 		const activateFn = supervisorSource.substring(
@@ -538,7 +574,7 @@ describe("3.x — Heartbeat: isLockStale detection", () => {
 		expect(activateFn).toContain("state.heartbeatTimer");
 	});
 
-	it("3.10: deactivation clears heartbeat timer", () => {
+	it("3.11: deactivation clears heartbeat timer", () => {
 		const supervisorSource = readSource("supervisor.ts");
 		const deactivateFn = supervisorSource.substring(
 			supervisorSource.indexOf("async function deactivateSupervisor("),
@@ -1385,12 +1421,18 @@ describe("8.x — Activation/deactivation: state lifecycle", () => {
 		expect(deactivateFn).toContain("if (!state.active) return");
 	});
 
-	it("8.11: /orch-takeover command exists in extension.ts", () => {
+	it("8.11: extension registers session_end cleanup for supervisor lock/heartbeat", () => {
+		const extSource = readSource("extension.ts");
+		expect(extSource).toContain('pi.on("session_end"');
+		expect(extSource).toContain("deactivateSupervisor(pi, supervisorState)");
+	});
+
+	it("8.12: /orch-takeover command exists in extension.ts", () => {
 		const extSource = readSource("extension.ts");
 		expect(extSource).toContain('registerCommand("orch-takeover"');
 	});
 
-	it("8.12: heartbeat detects force takeover (sessionId mismatch)", () => {
+	it("8.13: heartbeat detects force takeover (sessionId mismatch)", () => {
 		const supervisorSource = readSource("supervisor.ts");
 		const heartbeatFn = supervisorSource.substring(
 			supervisorSource.indexOf("function startHeartbeat("),
