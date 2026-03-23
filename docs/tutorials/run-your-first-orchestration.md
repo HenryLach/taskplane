@@ -16,6 +16,8 @@ You should already have:
   - `taskplane-tasks/EXAMPLE-001-hello-world/`
   - `taskplane-tasks/EXAMPLE-002-parallel-smoke/`
 
+> **New project?** If you haven't set up Taskplane yet, just run `/orch` with no arguments. The supervisor detects that no configuration exists and walks you through onboarding — project assessment, task area design, git branching, and config generation. See [Commands Reference: /orch](../reference/commands.md#orch-areaspathsall) for details.
+
 ---
 
 ## Step 1: Understand Task Areas
@@ -77,7 +79,15 @@ Keep it open while running `/orch` so you can watch lanes and task progress live
 
 ## Step 4: Start the Batch
 
-Run one of these in pi:
+The simplest way to start is:
+
+```text
+/orch
+```
+
+When you have pending tasks and a valid configuration, `/orch` with no arguments detects this state and offers to start a batch. You can confirm and the supervisor takes care of the rest.
+
+Alternatively, start directly with explicit arguments:
 
 ```text
 /orch all

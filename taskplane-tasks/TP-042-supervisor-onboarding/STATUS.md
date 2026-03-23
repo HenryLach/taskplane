@@ -1,11 +1,11 @@
 # TP-042: Supervisor Onboarding & /orch Routing — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-22
 **Review Level:** 2
-**Review Counter:** 7
-**Iteration:** 6
+**Review Counter:** 8
+**Iteration:** 5
 **Size:** M
 
 ---
@@ -63,9 +63,9 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Commands reference updated
-- [ ] Tutorial updated
+**Status:** 🟨 In Progress
+- [x] Commands reference updated
+- [x] Tutorial updated
 - [ ] `.DONE` created
 
 ---
@@ -87,6 +87,7 @@
 | R007 | plan | Step 4 | APPROVE | .reviews/R007-plan-step4.md |
 | R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
 | R007 | plan | Step 4 | APPROVE | .reviews/R007-plan-step4.md |
+| R008 | code | Step 4 | APPROVE | .reviews/R008-code-step4.md |
 |---|------|------|---------|------|
 
 ## Discoveries
@@ -152,6 +153,12 @@
 | 2026-03-23 00:09 | Step 3 complete | Returning User Flows (Scripts 6-8) |
 | 2026-03-23 00:09 | Step 4 started | Testing & Verification |
 | 2026-03-23 00:10 | Review R007 | plan Step 4: APPROVE |
+| 2026-03-23 00:14 | Worker iter 4 | done in 367s, ctx: 29%, tools: 35 |
+| 2026-03-23 00:17 | Worker iter 6 | done in 394s, ctx: 28%, tools: 32 |
+| 2026-03-23 00:18 | Review R008 | code Step 4: APPROVE |
+| 2026-03-23 00:18 | Step 4 complete | Testing & Verification |
+| 2026-03-23 00:18 | Step 5 started | Documentation & Delivery |
+| 2026-03-23 00:18 | Skip plan review | Step 5 (final step) — low-risk |
 
 ## Blockers
 

@@ -119,23 +119,38 @@ Resume a paused task.
 
 ## Orchestrator Commands
 
-### `/orch <areas|paths|all>`
+### `/orch [<areas|paths|all>]`
 
-Start parallel batch execution.
+Universal entry point for Taskplane. When called without arguments, detects project state and activates the supervisor for guided interaction. When called with arguments, starts parallel batch execution.
 
 **Syntax**
 
 ```text
-/orch <areas|paths|all>
+/orch                      # Detect state → supervisor routing
+/orch <areas|paths|all>    # Start batch execution directly
 ```
 
-**Arguments**
+**No-argument routing**
+
+When `/orch` is called without arguments, it detects the current project state and routes to the appropriate supervisor flow:
+
+| Detected state | Condition | Supervisor action |
+|----------------|-----------|-------------------|
+| **Active batch** | `batch-state.json` with non-terminal phase | Shows status summary (supervisor already running) |
+| **Completed batch** | Completed batch + orch branch exists | Offers retrospective and integration guidance |
+| **No config** | No `.pi/taskplane-config.json` found | Starts onboarding flow (project setup, task areas, git branching) |
+| **Pending tasks** | Config exists, pending tasks found | Offers to plan and start a batch |
+| **No tasks** | Config exists, no pending tasks | Helps create tasks from specs, GitHub Issues, or conversation |
+
+States are evaluated in the order shown above (active batch and completed batch take priority over config checks).
+
+**Arguments (batch execution mode)**
 
 - `all` — scan all configured task areas
 - one or more area names (e.g. `auth billing`)
 - one or more filesystem paths (area dir or specific task prompt path)
 
-**Behavior**
+**Behavior (with arguments)**
 
 - Runs orphan-session/state detection before starting
 - Discovers tasks and dependencies
@@ -147,6 +162,18 @@ Start parallel batch execution.
 - Engine emits structured lifecycle events to `.pi/supervisor/events.jsonl` for observability
 - On completion, shows integration guidance (or auto-integrates if `integration` is set to `auto`)
 - Can be used with a single task path when you want `/task` semantics with worktree isolation
+
+**Onboarding flow (no config)**
+
+When `/orch` detects no Taskplane configuration, the supervisor walks the operator through first-time setup:
+
+1. **Project assessment** — analyzes repo structure, package files, and existing docs
+2. **Task area design** — proposes task areas based on project structure; operator refines
+3. **Git branching** — detects branch strategy and protection rules; recommends configuration
+4. **Config generation** — creates `.pi/taskplane-config.json`, area `CONTEXT.md` files, `.pi/agents/` overrides, and `.gitignore` entries
+5. **First task guidance** — offers to create a starter task, pull from GitHub Issues, or run a smoke test
+
+The onboarding adapts based on project maturity — a greenfield project gets full scaffolding guidance, while an established codebase gets a streamlined setup focused on task areas and config.
 
 **Supervisor activation**
 
@@ -171,8 +198,9 @@ See also: [`/orch-integrate`](#orch-integrate-orch-branch---merge---pr---force)
 **Examples**
 
 ```text
-/orch all
-/orch auth billing
+/orch                                    # Detect state, activate supervisor
+/orch all                                # Start batch for all task areas
+/orch auth billing                       # Start batch for specific areas
 /orch taskplane-tasks/auth/tasks
 /orch taskplane-tasks/auth/tasks/AUTH-001-login/PROMPT.md
 ```
