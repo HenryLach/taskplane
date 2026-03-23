@@ -2149,13 +2149,30 @@ Read the relevant script section now before starting the conversation.
 - Summarize what you'll create before writing files — let the operator confirm
 - If the operator says "just give me defaults", do it and move on
 
+## Starting a Batch
+
+When the operator wants to run pending tasks, use the \`/orch all\` command.
+You can invoke it directly — it will seamlessly transition you from conversational
+mode to batch monitoring mode. Examples of operator intent:
+
+- "run the open tasks" → respond with a brief confirmation, then invoke \`/orch all\`
+- "start the batch" → invoke \`/orch all\`
+- "run just the platform tasks" → invoke \`/orch platform\` (with the area name)
+
+Before starting, you may optionally:
+- Show a quick summary of pending tasks and wave plan (\`/orch-plan all\`)
+- Ask for confirmation if the operator's intent was ambiguous
+
+After \`/orch all\` starts, your system prompt will automatically switch to
+batch monitoring mode. You'll have full visibility into wave progress, task
+outcomes, and can handle failures.
+
 ## What You Must NEVER Do
 
-1. Never start a batch execution (that's \`/orch all\` or \`/orch <areas>\`)
-2. Never modify existing code files (only create config/scaffolding)
-3. Never \`git push\` to any remote
-4. Never overwrite existing config files without asking
-5. Never make assumptions about project conventions — detect them
+1. Never modify existing code files (only create config/scaffolding)
+2. Never \`git push\` to any remote
+3. Never overwrite existing config files without asking
+4. Never make assumptions about project conventions — detect them
 `;
 
 	return prompt;
@@ -2502,6 +2519,78 @@ export async function deactivateSupervisor(
 	state.lockSessionId = "";
 	state.routingContext = null;
 	state.pendingSummaryDeps = null;
+}
+
+/**
+ * Transition the supervisor from batch-monitoring mode back to routing mode.
+ *
+ * Called after a batch completes (or fails/pauses) instead of fully deactivating.
+ * Tears down batch-monitoring infrastructure (lockfile, heartbeat, event tailer)
+ * but keeps the supervisor active with a routing context — so the operator can
+ * continue the conversation (plan next batch, create tasks, integrate, etc.)
+ * without needing to re-invoke `/orch`.
+ *
+ * This enables the continuous workflow:
+ *   /orch → conversation → "run the tasks" → batch runs → batch completes →
+ *   conversation continues → "create more tasks" → "run them" → repeat
+ *
+ * @param pi - The ExtensionAPI instance
+ * @param state - Supervisor state to transition
+ * @param routingContext - The routing context for the new conversational mode
+ *
+ * @since TP-128
+ */
+export async function transitionToRoutingMode(
+	pi: ExtensionAPI,
+	state: SupervisorState,
+	routingContext: SupervisorRoutingContext,
+): Promise<void> {
+	if (!state.active) return;
+
+	// Tear down batch-monitoring infrastructure
+	stopEventTailer(state.eventTailer);
+
+	if (state.heartbeatTimer) {
+		clearInterval(state.heartbeatTimer);
+		state.heartbeatTimer = null;
+	}
+
+	// Remove lockfile (no active batch to protect)
+	if (state.stateRoot && state.lockSessionId) {
+		const currentLock = readLockfile(state.stateRoot);
+		if (!currentLock || currentLock.sessionId === state.lockSessionId) {
+			removeLockfile(state.stateRoot);
+		}
+	}
+	state.lockSessionId = "";
+
+	// Present deferred batch summary if any
+	if (state.pendingSummaryDeps && state.batchStateRef && state.stateRoot) {
+		const deps = state.pendingSummaryDeps;
+		presentBatchSummary(pi, state.batchStateRef, state.stateRoot, deps.opId, deps.diagnostics, deps.mergeResults);
+		state.pendingSummaryDeps = null;
+	}
+
+	// Switch to routing mode — keep supervisor active with new context
+	state.routingContext = routingContext;
+	state.batchId = "";
+	// Keep batchStateRef/orchConfigRef/stateRoot — routing prompt may need them
+	// Keep model override — don't switch models mid-conversation
+
+	// Notify the operator that conversational mode is back
+	pi.sendMessage(
+		{
+			customType: "supervisor-routing-transition",
+			content: [{
+				type: "text",
+				text:
+					`🔀 **Supervisor returning to conversational mode.**\n\n` +
+					routingContext.contextMessage,
+			}],
+			display: `Supervisor — ${routingContext.routingState}`,
+		},
+		{ triggerTurn: true, deliverAs: "nextTurn" },
+	);
 }
 
 /**

@@ -46,6 +46,7 @@ import { openSettingsTui } from "./settings-tui.ts";
 import {
 	activateSupervisor,
 	deactivateSupervisor,
+	transitionToRoutingMode,
 	freshSupervisorState,
 	registerSupervisorPromptHook,
 	checkSupervisorLockOnStartup,
@@ -56,7 +57,7 @@ import {
 	triggerSupervisorIntegration,
 	presentBatchSummary,
 } from "./supervisor.ts";
-import type { SupervisorConfig, IntegrationExecutor, CiDeps, SummaryDeps } from "./supervisor.ts";
+import type { SupervisorConfig, SupervisorRoutingContext, IntegrationExecutor, CiDeps, SummaryDeps } from "./supervisor.ts";
 import type {
 	AbortMode,
 	ExecutionContext,
@@ -1186,6 +1187,15 @@ export default function (pi: ExtensionAPI) {
 
 			if (!requireExecCtx(ctx)) return;
 
+			// ── TP-128: Transition from routing-mode supervisor to batch execution ──
+			// If the supervisor is active in routing mode (conversational, no batch),
+			// deactivate it so the batch can start fresh with monitoring-mode supervisor.
+			// This enables the workflow: /orch → conversation → "run the tasks" → /orch all
+			// without the operator needing to know about internal mode distinctions.
+			if (supervisorState.active && supervisorState.routingContext) {
+				await deactivateSupervisor(pi, supervisorState);
+			}
+
 			// Prevent concurrent batch execution (merging is an active state)
 			if (orchBatchState.phase !== "idle" && orchBatchState.phase !== "completed" && orchBatchState.phase !== "failed" && orchBatchState.phase !== "stopped") {
 				ctx.ui.notify(
@@ -1377,9 +1387,33 @@ export default function (pi: ExtensionAPI) {
 							{ triggerTurn: false },
 						);
 					}
-					// TP-043: Generate summary before deactivation (manual mode or non-completed)
+					// TP-043: Generate summary before transition
 					presentBatchSummary(pi, orchBatchState, execCtx!.workspaceRoot, opId, orchBatchState.diagnostics, sDeps.mergeResults);
-					deactivateSupervisor(pi, supervisorState);
+					// TP-128: Transition to routing mode instead of deactivating.
+					// The operator can continue the conversation (integrate, plan
+					// next batch, create tasks) without re-invoking /orch.
+					const postBatchContext: SupervisorRoutingContext = orchBatchState.phase === "completed"
+						? {
+							routingState: "completed-batch",
+							contextMessage:
+								`Batch **${orchBatchState.batchId}** completed — ` +
+								`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
+								`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
+								`Would you like me to integrate it, or would you prefer to review first?\n\n` +
+								`You can also:\n` +
+								`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
+								`• Create new tasks for the next batch\n` +
+								`• Run a health check`,
+						}
+						: {
+							routingState: "no-tasks",
+							contextMessage:
+								`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
+								`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
+								`${orchBatchState.skippedTasks} skipped.\n\n` +
+								`What would you like to do next?`,
+						};
+					transitionToRoutingMode(pi, supervisorState, postBatchContext);
 				},
 			);
 
@@ -1697,9 +1731,25 @@ export default function (pi: ExtensionAPI) {
 							{ triggerTurn: false },
 						);
 					}
-					// TP-043: Generate summary before deactivation
+					// TP-043: Generate summary before transition
 					presentBatchSummary(pi, orchBatchState, execCtx!.workspaceRoot, opId, orchBatchState.diagnostics, sDeps.mergeResults);
-					deactivateSupervisor(pi, supervisorState);
+					// TP-128: Transition to routing mode (same as /orch onTerminal)
+					const postBatchContext: SupervisorRoutingContext = orchBatchState.phase === "completed"
+						? {
+							routingState: "completed-batch",
+							contextMessage:
+								`Batch **${orchBatchState.batchId}** completed — ` +
+								`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
+								`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
+								`Would you like me to integrate it, or would you prefer to review first?`,
+						}
+						: {
+							routingState: "no-tasks",
+							contextMessage:
+								`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
+								`What would you like to do next?`,
+						};
+					transitionToRoutingMode(pi, supervisorState, postBatchContext);
 				},
 			);
 
