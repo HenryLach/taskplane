@@ -43,6 +43,7 @@ import {
 } from "./index.ts";
 import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
+import { loadProjectConfig } from "./config-loader.ts";
 import {
 	activateSupervisor,
 	deactivateSupervisor,
@@ -767,10 +768,11 @@ export function validateModelAvailability(
 	runnerConfig: TaskRunnerConfig,
 	supervisorConfig: SupervisorConfig,
 	ctx: ExtensionContext,
+	agentModels?: { workerModel?: string; reviewerModel?: string },
 ): ModelCheckResult[] {
 	const entries: ModelCheckEntry[] = [
-		{ role: "Worker", modelStr: runnerConfig.worker?.model ?? "" },
-		{ role: "Reviewer", modelStr: runnerConfig.reviewer?.model ?? "" },
+		{ role: "Worker", modelStr: agentModels?.workerModel ?? (runnerConfig as any).worker?.model ?? "" },
+		{ role: "Reviewer", modelStr: agentModels?.reviewerModel ?? (runnerConfig as any).reviewer?.model ?? "" },
 		{ role: "Merger", modelStr: orchConfig.merge?.model ?? "" },
 		{ role: "Supervisor", modelStr: supervisorConfig.model ?? "" },
 	];
@@ -1401,7 +1403,18 @@ export default function (pi: ExtensionAPI) {
 			// Validate that all configured agent models are resolvable in
 			// the model registry before starting. Catches misconfigured
 			// model names early instead of failing hours into a batch.
-			const modelResults = validateModelAvailability(orchConfig, runnerConfig, supervisorConfig, ctx);
+			// Note: runnerConfig (TaskRunnerConfig) is a stripped type without
+			// worker/reviewer model fields. Load the full unified config to
+			// get the actual agent model strings (including user preferences).
+			let agentModels: { workerModel?: string; reviewerModel?: string } | undefined;
+			try {
+				const fullConfig = loadProjectConfig(execCtx!.repoRoot);
+				agentModels = {
+					workerModel: fullConfig.taskRunner.worker.model || "",
+					reviewerModel: fullConfig.taskRunner.reviewer.model || "",
+				};
+			} catch { /* fall through — validateModelAvailability handles empty strings */ }
+			const modelResults = validateModelAvailability(orchConfig, runnerConfig, supervisorConfig, ctx, agentModels);
 			const modelFailures = modelResults.filter(r => r.status === "not-found");
 			ctx.ui.notify(formatModelValidation(modelResults), modelFailures.length > 0 ? "error" : "info");
 			if (modelFailures.length > 0) {
