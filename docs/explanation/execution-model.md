@@ -135,7 +135,7 @@ of natural completion.
 
 When a configured model becomes unavailable mid-batch (401/403/429, model
 deprecated, API key expired), the exit is classified as `model_access_error`.
-If `failure.model_fallback` is `"inherit"` (default), the orchestrator
+If `taskRunner.modelFallback` is `"inherit"` (default), the orchestrator
 automatically retries the task with the session model — one attempt only.
 If the session model also fails, normal failure handling applies.
 
