@@ -420,6 +420,18 @@ function writeLaneState(state: TaskState): void {
 			workerLastRetryError: state.workerLastRetryError,
 			workerExitDiagnostic: state.workerExitDiagnostic || undefined,
 			reviewerStatus: state.reviewerStatus || "idle",
+			reviewerSessionName: state.reviewerSessionName || "",
+			reviewerType: state.reviewerType || "",
+			reviewerStep: state.reviewerStep || 0,
+			reviewerElapsed: state.reviewerElapsed || 0,
+			reviewerContextPct: state.reviewerContextPct || 0,
+			reviewerLastTool: state.reviewerLastTool || "",
+			reviewerToolCount: state.reviewerToolCount || 0,
+			reviewerCostUsd: state.reviewerCostUsd || 0,
+			reviewerInputTokens: state.reviewerInputTokens || 0,
+			reviewerOutputTokens: state.reviewerOutputTokens || 0,
+			reviewerCacheReadTokens: state.reviewerCacheReadTokens || 0,
+			reviewerCacheWriteTokens: state.reviewerCacheWriteTokens || 0,
 			timestamp: Date.now(),
 		};
 		writeFileSync(filePath, JSON.stringify(data) + "\n");

@@ -56,13 +56,13 @@
 ---
 
 ### Step 4: Update lane-state sidecar with reviewer metrics
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Extend writeLaneState() with reviewer telemetry fields
-- [ ] reviewerSessionName, reviewerType, reviewerStep exposed
-- [ ] reviewerElapsed, reviewerContextPct, reviewerLastTool, reviewerToolCount
-- [ ] reviewerCostUsd, reviewerInputTokens, reviewerOutputTokens
-- [ ] Fields zeroed when reviewer idle
+- [x] Extend writeLaneState() with reviewer telemetry fields
+- [x] reviewerSessionName, reviewerType, reviewerStep exposed
+- [x] reviewerElapsed, reviewerContextPct, reviewerLastTool, reviewerToolCount
+- [x] reviewerCostUsd, reviewerInputTokens, reviewerOutputTokens
+- [x] Fields zeroed when reviewer idle
 
 ---
 
