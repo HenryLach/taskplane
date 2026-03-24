@@ -24,12 +24,12 @@
 ---
 
 ### Step 1: Create Reviewer Extension with `wait_for_review` Tool
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Create `extensions/reviewer-extension.ts` with `wait_for_review` tool registration
-- [ ] Implement signal file polling with configurable interval (2-5s) and timeout
-- [ ] Handle shutdown signal for clean exit
-- [ ] Add reviewer polling constants to types.ts
+- [x] Create `extensions/reviewer-extension.ts` with `wait_for_review` tool registration
+- [x] Implement signal file polling with configurable interval (2-5s) and timeout
+- [x] Handle shutdown signal for clean exit
+- [x] Add reviewer polling constants to types.ts
 
 ---
 
