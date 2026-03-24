@@ -545,7 +545,7 @@ export const DEFAULT_ORCHESTRATOR_SECTION: OrchestratorSection = {
 		tools: "read,write,edit,bash,grep,find,ls",
 		verify: [],
 		order: "fewest-files-first",
-		timeoutMinutes: 10,
+		timeoutMinutes: 90,
 	},
 	failure: {
 		onTaskFailure: "skip-dependents",

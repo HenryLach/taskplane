@@ -182,7 +182,7 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 		tools: "read,write,edit,bash,grep,find,ls",
 		verify: [],
 		order: "fewest-files-first",
-		timeout_minutes: 10,
+		timeout_minutes: 90,
 	},
 	failure: {
 		on_task_failure: "skip-dependents",
@@ -1225,7 +1225,7 @@ export class MergeError extends Error {
  * is generous and covers verification (go build) on large codebases.
  */
 /** Default merge agent timeout. Use config.merge.timeout_minutes to override. */
-export const MERGE_TIMEOUT_MS = 10 * 60 * 1000;
+export const MERGE_TIMEOUT_MS = 90 * 60 * 1000;
 
 /**
  * Polling interval for merge result file (ms).

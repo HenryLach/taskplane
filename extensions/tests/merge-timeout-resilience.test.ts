@@ -353,15 +353,15 @@ describe("5.x — Config re-read: reloadMergeTimeoutMs on retry", () => {
 		expect(fnBody).toContain("minutes * 60 * 1000");
 	});
 
-	it("5.5: reloadMergeTimeoutMs defaults to 10 minutes when config field is missing", () => {
+	it("5.5: reloadMergeTimeoutMs defaults to 90 minutes when config field is missing", () => {
 		const mergeSource = readSource("merge.ts");
 
 		const fnBody = mergeSource.substring(
 			mergeSource.indexOf("export function reloadMergeTimeoutMs"),
 			mergeSource.indexOf("export function reloadMergeTimeoutMs") + 600,
 		);
-		// Default: freshConfig.merge.timeout_minutes ?? 10
-		expect(fnBody).toContain("?? 10");
+		// Default: freshConfig.merge.timeout_minutes ?? 90
+		expect(fnBody).toContain("?? 90");
 	});
 
 	it("5.6: retry path calls reloadMergeTimeoutMs before computing backoff", () => {
@@ -386,8 +386,8 @@ describe("5.x — Config re-read: reloadMergeTimeoutMs on retry", () => {
 		expect(mergeSource).toContain("const configRoot = stateRoot ?? repoRoot");
 	});
 
-	it("5.8: MERGE_TIMEOUT_MS default is 10 minutes (600000ms)", () => {
-		expect(MERGE_TIMEOUT_MS).toBe(10 * 60 * 1000);
-		expect(MERGE_TIMEOUT_MS).toBe(600_000);
+	it("5.8: MERGE_TIMEOUT_MS default is 90 minutes (5400000ms)", () => {
+		expect(MERGE_TIMEOUT_MS).toBe(90 * 60 * 1000);
+		expect(MERGE_TIMEOUT_MS).toBe(5_400_000);
 	});
 });

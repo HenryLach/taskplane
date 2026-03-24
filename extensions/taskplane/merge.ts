@@ -449,7 +449,7 @@ export async function spawnMergeAgent(
 export function reloadMergeTimeoutMs(configRoot: string, pointerConfigRoot?: string): number {
 	try {
 		const freshConfig = loadOrchestratorConfig(configRoot, pointerConfigRoot);
-		const minutes = freshConfig.merge.timeout_minutes ?? 10;
+		const minutes = freshConfig.merge.timeout_minutes ?? 90;
 		return minutes * 60 * 1000;
 	} catch (err: unknown) {
 		// Config re-read is best-effort — fall back to default on failure
