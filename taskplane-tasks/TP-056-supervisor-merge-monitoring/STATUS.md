@@ -25,12 +25,12 @@
 ---
 
 ### Step 1: Implement Merge Health Monitor
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Implement session liveness check via `tmux has-session`
-- [ ] Implement activity detection via pane capture + snapshot comparison
-- [ ] Implement escalation tiers (healthy → warning → dead → stuck)
-- [ ] Emit structured events for each escalation tier
+- [x] Implement session liveness check via `tmux has-session`
+- [x] Implement activity detection via pane capture + snapshot comparison
+- [x] Implement escalation tiers (healthy → warning → dead → stuck)
+- [x] Emit structured events for each escalation tier
 
 ---
 
