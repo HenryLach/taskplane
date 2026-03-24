@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-03-24
+
+### New
+- **`/task` deprecation (TP-054, #164)** — `/task`, `/task-status`, `/task-pause`, `/task-resume` now show deprecation warnings recommending `/orch`. Commands still work (soft deprecation). Docs updated.
+- **Runtime model fallback (TP-055, #134)** — when a configured agent model becomes unavailable mid-batch (rate limit, API key expired, model deprecated), tasks fall back to the session model instead of failing. Configurable via `modelFallback: "inherit"` (default) or `"fail"`. New `model_access_error` exit classification. 509 new tests.
+
 ## [0.10.2] - 2026-03-24
 
 ### Fixed
@@ -434,7 +440,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.10.2...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/HenryLach/taskplane/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/HenryLach/taskplane/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/HenryLach/taskplane/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/HenryLach/taskplane/compare/v0.9.3...v0.10.0
