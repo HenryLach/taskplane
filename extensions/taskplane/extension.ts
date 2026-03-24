@@ -2085,7 +2085,7 @@ export default function (pi: ExtensionAPI) {
 	async function doOrchIntegrate(
 		args: string | undefined,
 		ctx: ExtensionContext,
-	): Promise<{ message: string; error?: boolean }> {
+	): Promise<{ message: string; error?: boolean; level?: "info" | "warning" | "error" }> {
 		if (!execCtx) {
 			return {
 				message: "❌ Orchestrator not initialized. Workspace configuration failed at startup.\nFix the workspace config or remove it to use repo mode, then restart.",
@@ -2122,6 +2122,7 @@ export default function (pi: ExtensionAPI) {
 
 		const { orchBranch, baseBranch, batchId, currentBranch, notices } = resolution as IntegrationContext;
 		const outputLines: string[] = [];
+		let hasWarning = false;
 
 		for (const notice of notices) {
 			outputLines.push(notice);
@@ -2132,6 +2133,7 @@ export default function (pi: ExtensionAPI) {
 			const { detectBranchProtection } = await import("./supervisor.ts");
 			const protectionStatus = detectBranchProtection(baseBranch, repoRoot);
 			if (protectionStatus === "protected") {
+				hasWarning = true;
 				outputLines.push(
 					`⚠️ Branch \`${baseBranch}\` has branch protection rules enabled.\n` +
 					`Direct merges may be blocked by your repository settings.\n\n` +
