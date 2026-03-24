@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.2] - 2026-03-24
+
+### Fixed
+- **Telemetry temp file leak** — lane prompt files now written to `.pi/telemetry/` instead of system tmpdir, cleaned up with batch artifacts.
+- **Telemetry filename accuracy** — `generateTelemetryPaths()` accepts actual `batchId` and `repoId` instead of hardcoding timestamp and "default". Filenames now correlate correctly across agents in a batch.
+- **Shared opId resolution** — extracted `resolveTelemOpId()` helper to prevent divergence between lane and merge telemetry naming.
+- **Merge agent crash on fresh projects** — `spawnMergeAgent()` now checks `.pi/agents/task-merger.md` existence before passing `--system-prompt-file`. Falls back gracefully when agent definition is missing.
+
 ## [0.8.1] - 2026-03-24
 
 ### New
@@ -367,7 +375,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.8.2...HEAD
+[0.8.2]: https://github.com/HenryLach/taskplane/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/HenryLach/taskplane/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/HenryLach/taskplane/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/HenryLach/taskplane/compare/v0.7.1...v0.7.2
