@@ -3405,9 +3405,15 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("task", {
-		description: "Start executing a task: /task <path/to/PROMPT.md>",
+		description: "⚠️ [Deprecated] Start executing a task: /task <path/to/PROMPT.md>",
 		handler: async (args, ctx) => {
 			widgetCtx = ctx;
+			ctx.ui.notify(
+				"⚠️ /task is deprecated. Use /orch instead — it provides worktree isolation, " +
+				"dashboard, inline reviews, and supervisor monitoring. " +
+				"/task will be removed in a future major version.",
+				"warning",
+			);
 			const promptPath = args?.trim();
 			if (!promptPath) {
 				ctx.ui.notify("Usage: /task <path/to/PROMPT.md>", "error");
@@ -3425,9 +3431,13 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("task-status", {
-		description: "Show current task progress",
+		description: "⚠️ [Deprecated] Show current task progress",
 		handler: async (_args, ctx) => {
 			widgetCtx = ctx;
+			ctx.ui.notify(
+				"⚠️ /task-status is deprecated. Use the dashboard (`taskplane dashboard`) or `/orch-status` instead.",
+				"warning",
+			);
 			if (!state.task) {
 				ctx.ui.notify("No task loaded. Use /task <path/to/PROMPT.md>", "info");
 				return;
@@ -3459,9 +3469,13 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("task-pause", {
-		description: "Pause task after current worker finishes",
+		description: "⚠️ [Deprecated] Pause task after current worker finishes",
 		handler: async (_args, ctx) => {
 			widgetCtx = ctx;
+			ctx.ui.notify(
+				"⚠️ /task-pause is deprecated. Use `/orch-pause` instead.",
+				"warning",
+			);
 			if (state.phase !== "running") {
 				ctx.ui.notify("No task is running", "warning");
 				return;
@@ -3473,9 +3487,13 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("task-resume", {
-		description: "Resume a paused task",
+		description: "⚠️ [Deprecated] Resume a paused task",
 		handler: async (_args, ctx) => {
 			widgetCtx = ctx;
+			ctx.ui.notify(
+				"⚠️ /task-resume is deprecated. Use `/orch-resume` instead.",
+				"warning",
+			);
 			if (state.phase !== "paused") {
 				ctx.ui.notify("Task is not paused", "warning");
 				return;

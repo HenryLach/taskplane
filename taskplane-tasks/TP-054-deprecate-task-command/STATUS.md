@@ -1,6 +1,6 @@
 # TP-054: Deprecate /task Command — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Add Deprecation Warnings
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 1
@@ -24,12 +24,12 @@
 ---
 
 ### Step 1: Add Deprecation Warnings
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add deprecation warning to `/task` command handler
-- [ ] Add deprecation warning to `/task-status`, `/task-pause`, `/task-resume`
-- [ ] Warnings suggest specific `/orch` equivalents
-- [ ] Commands still function normally after warning
+- [x] Add deprecation warning to `/task` command handler
+- [x] Add deprecation warning to `/task-status`, `/task-pause`, `/task-resume`
+- [x] Warnings suggest specific `/orch` equivalents
+- [x] Commands still function normally after warning
 
 ---
 
