@@ -14,7 +14,7 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Understand spawnAgentTmux() pattern in task-runner.ts (RPC wrapper, sidecar, exit summary)
 - [x] Understand buildTmuxSpawnArgs() in execution.ts (current lane spawn)
