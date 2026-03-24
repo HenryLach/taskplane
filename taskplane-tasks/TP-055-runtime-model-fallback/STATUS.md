@@ -1,6 +1,6 @@
 # TP-055: Runtime Model Fallback — Status
 
-**Current Step:** Step 1: Add Exit Classification for Model Access Errors
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
@@ -56,11 +56,11 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Create `runtime-model-fallback.test.ts` with classification, config, and fallback tests
-- [ ] Full test suite passing
-- [ ] Build passes
+- [x] Create `runtime-model-fallback.test.ts` with classification, config, and fallback tests
+- [x] Full test suite passing
+- [x] Build passes
 
 ---
 
