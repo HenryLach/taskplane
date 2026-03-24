@@ -28,13 +28,11 @@
 ### Step 1: Register review_step extension tool
 **Status:** 🟨 In Progress
 
-> ⚠️ Hydrate: Expand based on pi tool registration API discovered in Step 0
+> ⚠️ Hydrate: Expanded based on pi tool registration API (pi.registerTool with Type.Object params, async execute returning AgentToolResult). Tool only registered in orchestrated mode (isOrchestratedMode()). Uses existing doReview()-like pattern: generateReviewRequest → spawnAgentTmux → extractVerdict → logReview.
 
-- [ ] Register review_step tool (orchestrated mode only)
-- [ ] Tool handler: generate review request, spawn reviewer via spawnAgentTmux
-- [ ] Tool handler: update lane-state sidecar with reviewer metrics via onTelemetry
-- [ ] Tool handler: extract verdict from review output, return to worker
-- [ ] Tool handler: log review in STATUS.md
+- [ ] Add Type import from @mariozechner/pi-ai and register review_step tool with pi.registerTool (gated on isOrchestratedMode())
+- [ ] Implement tool execute handler: generate review request, spawn reviewer via spawnAgentTmux, wire onTelemetry to update state, extract verdict, log review, return verdict string to worker
+- [ ] Add reviewer telemetry fields to TaskState (reviewerToolCount, reviewerInputTokens, etc.) for onTelemetry callback to populate
 
 ---
 
