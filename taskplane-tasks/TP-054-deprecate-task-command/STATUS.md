@@ -1,7 +1,7 @@
 # TP-054: Deprecate /task Command — Status
 
 **Current Step:** Step 4: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-24
 **Review Level:** 1
 **Review Counter:** 1
@@ -52,12 +52,12 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] "Must Update" docs modified
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
-- [ ] `.DONE` created
+- [x] "Must Update" docs modified
+- [x] "Check If Affected" docs reviewed
+- [x] Discoveries logged
+- [x] `.DONE` created
 
 ---
 
@@ -73,6 +73,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Previous iteration completed Steps 0-2 code changes but was interrupted before committing Step 2 docs | Recovered in iteration 2 | STATUS.md |
+| `/task` deprecation warning fires unconditionally (not gated by isOrchestratedMode) — acceptable since command handler is only hit by manual user input, not TASK_AUTOSTART | Keep as-is | task-runner.ts:3411 |
 
 ---
 
