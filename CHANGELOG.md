@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-03-24
+
+### New
+- **Worker-driven inline reviews (TP-050)** — workers now drive the review process via a `review_step` extension tool, preserving their full context across reviews. Reviewers spawn in named tmux sessions with RPC wrapper telemetry. REVISE feedback is addressed inline by the worker in the same context.
+- **Dashboard reviewer sub-row** — live reviewer activity (elapsed, tools, last tool, cost, context%) displayed as a sub-row under the worker row during reviews. Dashboard no longer appears frozen during review phases.
+- **Review protocol in worker template** — worker agent template includes review level interpretation (0-3), skip rules for low-risk steps, and verdict handling instructions.
+
+### Changed
+- **Review architecture** — reviews moved from outer-loop deferred model (post-worker-exit) to worker-driven inline model (mid-execution via tool call). Review level scoring (0-3) still determines which reviews run.
+- **Lane-state sidecar** — extended with reviewer metrics: `reviewerSessionName`, `reviewerType`, `reviewerStep`, `reviewerElapsed`, `reviewerContextPct`, `reviewerLastTool`, `reviewerToolCount`, `reviewerCostUsd`, `reviewerInputTokens`, `reviewerOutputTokens`.
+
 ## [0.8.2] - 2026-03-24
 
 ### Fixed
@@ -375,7 +386,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/HenryLach/taskplane/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/HenryLach/taskplane/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/HenryLach/taskplane/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/HenryLach/taskplane/compare/v0.7.2...v0.8.0
