@@ -23,15 +23,15 @@
 ### Step 1: Register orchestrator tools
 **Status:** 🟨 In Progress
 
-> ⚠️ Hydrate: Expand based on exact command handler structure found in Step 0
-
-- [ ] Extract shared logic from each command handler into internal functions
-- [ ] Register orch_resume tool with force parameter
-- [ ] Register orch_integrate tool with mode/force/branch parameters
-- [ ] Register orch_pause tool
-- [ ] Register orch_abort tool with hard parameter
-- [ ] Register orch_status tool
-- [ ] All tools return text results, catch errors gracefully
+- [ ] Add `Type` import from `@mariozechner/pi-ai` to extension.ts
+- [ ] Extract `doOrchStatus` helper (shared by command + tool)
+- [ ] Extract `doOrchPause` helper (shared by command + tool)
+- [ ] Extract `doOrchResume` helper (shared by command + tool) — returns status message, calls startBatchAsync internally
+- [ ] Extract `doOrchAbort` helper (shared by command + tool) — works without execCtx
+- [ ] Extract `doOrchIntegrate` helper (shared by command + tool) — wraps parseIntegrateArgs + resolveIntegrationContext + executeIntegration
+- [ ] Refactor existing command handlers to call the extracted helpers
+- [ ] Register all 5 tools with Type.Object parameters, description, promptSnippet, promptGuidelines
+- [ ] Verify all tools return `{content: [{type: "text", text}], details: undefined}` and catch errors
 
 ---
 
