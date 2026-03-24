@@ -17,9 +17,11 @@ function formatDuration(ms) {
   return `${m}m ${String(s).padStart(2, "0")}s`;
 }
 
-function relativeTime(epochMs) {
-  if (!epochMs) return "";
-  const diff = Date.now() - epochMs;
+function relativeTime(epochOrIso) {
+  if (!epochOrIso) return "";
+  const ts = typeof epochOrIso === "string" ? new Date(epochOrIso).getTime() : epochOrIso;
+  if (isNaN(ts)) return "";
+  const diff = Date.now() - ts;
   if (diff < 60000) return `${Math.floor(diff / 1000)}s ago`;
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
   return `${Math.floor(diff / 3600000)}h ago`;

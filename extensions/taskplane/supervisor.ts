@@ -3045,11 +3045,16 @@ export function startHeartbeat(
 			return;
 		}
 
-		// Update heartbeat
+		// Update heartbeat (and refresh batchId if it was initially unknown)
 		try {
 			const lock = readLockfile(stateRoot);
 			if (lock && lock.sessionId === sessionId) {
 				lock.heartbeat = new Date().toISOString();
+				// TP-130: batchId may have been "(initializing)" at lock creation
+				// because the batch hadn't started yet. Refresh from live state ref.
+				if (state.batchStateRef?.batchId && lock.batchId !== state.batchStateRef.batchId) {
+					lock.batchId = state.batchStateRef.batchId;
+				}
 				writeLockfile(stateRoot, lock);
 			}
 		} catch {
