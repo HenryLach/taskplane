@@ -589,6 +589,7 @@ function renderMergeAgents(batch, tmuxSessions) {
   const mergeResults = batch?.mergeResults || [];
   const tmuxSet = new Set(tmuxSessions || []);
   const showRepos = knownRepos.length >= 2;
+  const telemetry = currentData?.telemetry || {};
 
   // Check for active merge sessions (convention: orch-merge-*)
   const mergeSessions = (tmuxSessions || []).filter(s => s.startsWith("orch-merge"));
@@ -599,7 +600,7 @@ function renderMergeAgents(batch, tmuxSessions) {
   }
 
   let html = '<table class="merge-table"><thead><tr>';
-  html += '<th>Wave</th><th>Status</th><th>Session</th><th>Attach</th><th>Details</th>';
+  html += '<th>Wave</th><th>Status</th><th>Session</th><th>Telemetry</th><th>Attach</th><th>Details</th>';
   html += '</tr></thead><tbody>';
 
   // Show merge results
@@ -620,10 +621,29 @@ function renderMergeAgents(batch, tmuxSessions) {
     const sessionName = `orch-merge-w${mr.waveIndex + 1}`;
     const alive = tmuxSet.has(sessionName);
 
+    // Look for merge telemetry data
+    const mergeTel = telemetry[sessionName] || telemetry[`orch-merge-${mr.waveIndex + 1}`] || null;
+
     html += `<tr>`;
     html += `<td style="font-family:var(--font-mono);">Wave ${mr.waveIndex + 1}</td>`;
     html += `<td><span class="status-badge ${statusCls}">${mr.status}</span></td>`;
     html += `<td style="font-family:var(--font-mono);font-size:0.8rem;">${alive ? escapeHtml(sessionName) : "—"}</td>`;
+    // Telemetry cell
+    html += `<td style="font-size:0.75rem;">`;
+    if (mergeTel) {
+      const totalTok = (mergeTel.inputTokens || 0) + (mergeTel.outputTokens || 0);
+      const cost = mergeTel.cost || 0;
+      if (totalTok > 0 || cost > 0) {
+        html += `<span style="color:var(--text-muted);">${totalTok > 0 ? totalTok.toLocaleString() + " tok" : ""}`;
+        if (cost > 0) html += ` · $${cost.toFixed(4)}`;
+        html += `</span>`;
+      } else {
+        html += '<span style="color:var(--text-faint);">—</span>';
+      }
+    } else {
+      html += '<span style="color:var(--text-faint);">—</span>';
+    }
+    html += `</td>`;
     html += `<td>`;
     if (alive) {
       const cmd = `tmux attach -t ${sessionName}`;
@@ -652,7 +672,8 @@ function renderMergeAgents(batch, tmuxSessions) {
         html += `<td>${repoBadgeHtml(rr.repoId)}</td>`;
         html += `<td><span class="status-badge ${rrStatusCls}">${rr.status}</span></td>`;
         html += `<td style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-faint);">${rrLanes}</td>`;
-        html += `<td></td>`;
+        html += `<td></td>`; /* telemetry placeholder */
+        html += `<td></td>`; /* attach placeholder */
         html += `<td style="font-size:0.75rem;color:var(--text-faint);">${rrDetail}</td>`;
         html += `</tr>`;
       }
@@ -664,11 +685,28 @@ function renderMergeAgents(batch, tmuxSessions) {
     const alreadyShown = mergeResults.some((mr) => `orch-merge-w${mr.waveIndex + 1}` === sess);
     if (alreadyShown) continue;
 
+    const sessTel = telemetry[sess] || null;
     const cmd = `tmux attach -t ${sess}`;
     html += `<tr>`;
     html += `<td style="font-family:var(--font-mono);">—</td>`;
     html += `<td><span class="status-badge status-running"><span class="status-dot running"></span> merging</span></td>`;
     html += `<td style="font-family:var(--font-mono);font-size:0.8rem;">${escapeHtml(sess)}</td>`;
+    // Telemetry cell for active merge session
+    html += `<td style="font-size:0.75rem;">`;
+    if (sessTel) {
+      const totalTok = (sessTel.inputTokens || 0) + (sessTel.outputTokens || 0);
+      const cost = sessTel.cost || 0;
+      if (totalTok > 0 || cost > 0) {
+        html += `<span style="color:var(--text-muted);">${totalTok > 0 ? totalTok.toLocaleString() + " tok" : ""}`;
+        if (cost > 0) html += ` · $${cost.toFixed(4)}`;
+        html += `</span>`;
+      } else {
+        html += '<span style="color:var(--text-faint);">—</span>';
+      }
+    } else {
+      html += '<span style="color:var(--text-faint);">—</span>';
+    }
+    html += `</td>`;
     html += `<td><span class="tmux-cmd" data-tmux="${escapeHtml(sess)}" onclick="copyTmuxCmd('${escapeHtml(sess)}')" title="Click to copy">${escapeHtml(cmd)}</span></td>`;
     html += `<td>—</td>`;
     html += `</tr>`;

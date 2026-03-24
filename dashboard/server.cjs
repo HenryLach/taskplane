@@ -239,7 +239,8 @@ const telemetryPrefixFiles = new Map();
 /**
  * Parse a telemetry JSONL filename to extract lane number and role.
  * Pattern: {opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.jsonl
- * Returns { laneNumber: number|null, role: string } or null if unparseable.
+ * Roles: worker, reviewer, merger
+ * Returns { laneNumber: number|null, role: string, mergeNumber: number|null } or null if unparseable.
  */
 function parseTelemetryFilename(filename) {
   // Remove .jsonl extension
@@ -248,13 +249,17 @@ function parseTelemetryFilename(filename) {
   const lastDash = base.lastIndexOf("-");
   if (lastDash < 0) return null;
   const role = base.slice(lastDash + 1);
-  if (role !== "worker" && role !== "reviewer") return null;
+  if (role !== "worker" && role !== "reviewer" && role !== "merger") return null;
 
   // Extract lane number from -lane-{N}- pattern
   const laneMatch = base.match(/-lane-(\d+)-/);
   const laneNumber = laneMatch ? parseInt(laneMatch[1], 10) : null;
 
-  return { laneNumber, role };
+  // Extract merge number from -merge-{N}- pattern (merge agents)
+  const mergeMatch = base.match(/-merge-(\d+)-/);
+  const mergeNumber = mergeMatch ? parseInt(mergeMatch[1], 10) : null;
+
+  return { laneNumber, role, mergeNumber };
 }
 
 /**
@@ -375,7 +380,10 @@ function loadTelemetryData(batchState) {
 
     // Determine the key (tmux prefix)
     let prefix;
-    if (parsed.laneNumber != null && laneToPrefix[parsed.laneNumber]) {
+    if (parsed.role === "merger") {
+      // Merge agent — key by merge session number or generic "merge"
+      prefix = parsed.mergeNumber != null ? `orch-merge-${parsed.mergeNumber}` : "orch-merge";
+    } else if (parsed.laneNumber != null && laneToPrefix[parsed.laneNumber]) {
       prefix = laneToPrefix[parsed.laneNumber];
     } else if (parsed.laneNumber != null) {
       // Lane number found but no batch-state mapping — use heuristic
