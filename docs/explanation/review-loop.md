@@ -106,6 +106,50 @@ is deprecated in favor of `/orch` for all workflows).
 
 ---
 
+## Persistent reviewer context (v0.13.0+)
+
+By default, the reviewer is a **persistent agent** that stays alive across all
+`review_step` calls for a single task. This preserves the reviewer's accumulated
+context — it remembers what it reviewed in earlier steps and can reference
+previous findings (e.g., "I flagged X in Step 2's plan — checking if addressed").
+
+### How it works
+
+1. **First `review_step` call**: spawns a reviewer tmux session with the
+   `reviewer-extension.ts` loaded. The extension registers a `wait_for_review`
+   tool that blocks (via filesystem polling) until a review request arrives.
+2. **Subsequent calls**: the task-runner writes a request file and a signal file
+   to `.reviews/`. The persistent reviewer picks up the signal, reads the
+   request, performs the review, and calls `wait_for_review` again.
+3. **Task completion**: the task-runner writes a `.review-shutdown` signal. The
+   reviewer exits cleanly on the next poll cycle. If it doesn't exit within
+   the grace period (10s), the session is killed.
+
+### Signal protocol
+
+- **Request files**: `.reviews/request-R00N.md` — review request content
+- **Signal files**: `.reviews/.review-signal-NNN` — contains the request filename
+- **Shutdown**: `.reviews/.review-shutdown` — signals the reviewer to exit
+- **Verdict files**: `.reviews/R00N-{type}-step{N}.md` — reviewer output (same as before)
+
+### Fallback to fresh spawn
+
+If the persistent reviewer session dies (context limit, crash, timeout), the
+task-runner detects the dead session and falls back to spawning a fresh reviewer
+for that specific review — the same single-shot behavior used before persistent
+mode. This fallback is logged for visibility.
+
+### Benefits
+
+- **Context preservation**: reviewer remembers earlier reviews and code patterns
+- **Faster reviews**: no re-loading of codebase context for each review
+- **Cost savings**: the reviewer's system prompt and codebase understanding are
+  cached in context across reviews
+- **Cross-step awareness**: reviewer can detect regressions and verify that
+  earlier feedback was addressed
+
+---
+
 ## Review artifacts
 
 Typical on-disk artifacts:

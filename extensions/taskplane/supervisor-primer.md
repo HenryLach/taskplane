@@ -50,10 +50,12 @@ You (supervisor) ← operator talks to you
 │   └── Create .DONE file when all steps complete
 │
 ├── Reviewer Agents (LLM, cross-model)
-│   ├── Spawned by task-runner between worker iterations
-│   ├── Review plans (before implementation) and code (after)
+│   ├── Persistent: one reviewer per task, stays alive across all reviews
+│   ├── Receives review requests via wait_for_review tool (signal files)
+│   ├── Reviews plans (before implementation) and code (after)
 │   ├── Write structured verdict to .reviews/ directory
-│   └── APPROVE or REVISE (worker re-iterates on REVISE)
+│   ├── APPROVE or REVISE (worker addresses feedback inline)
+│   └── Falls back to fresh spawn if persistent session dies
 │
 └── Merge Agents (LLM)
     ├── Run in temporary merge worktrees

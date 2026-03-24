@@ -81,8 +81,9 @@ Each iteration:
 
 Reviews are driven by the **worker agent** via the `review_step` extension tool.
 The worker decides when to review based on the task's review level. The reviewer
-spawns in a separate tmux session with full RPC telemetry and the worker's
-context is preserved across the tool call.
+runs as a **persistent agent** — one per task, staying alive across all reviews
+via the `wait_for_review` tool. This preserves the reviewer's context across
+step reviews. If the persistent session dies, it falls back to a fresh spawn.
 
 - **Review Level 0:** No reviews
 - **Review Level 1:** Plan review before implementing each step
