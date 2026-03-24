@@ -1,10 +1,10 @@
 # TP-053: Expose Orchestrator Commands as Tools for Supervisor Agent — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 2: Update supervisor prompt with tool awareness
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
@@ -21,17 +21,17 @@
 ---
 
 ### Step 1: Register orchestrator tools
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add `Type` import from `@mariozechner/pi-ai` to extension.ts
-- [ ] Extract `doOrchStatus` helper (shared by command + tool)
-- [ ] Extract `doOrchPause` helper (shared by command + tool)
-- [ ] Extract `doOrchResume` helper (shared by command + tool) — returns status message, calls startBatchAsync internally
-- [ ] Extract `doOrchAbort` helper (shared by command + tool) — works without execCtx
-- [ ] Extract `doOrchIntegrate` helper (shared by command + tool) — wraps parseIntegrateArgs + resolveIntegrationContext + executeIntegration
-- [ ] Refactor existing command handlers to call the extracted helpers
-- [ ] Register all 5 tools with Type.Object parameters, description, promptSnippet, promptGuidelines
-- [ ] Verify all tools return `{content: [{type: "text", text}], details: undefined}` and catch errors
+- [x] Add `Type` import from `@mariozechner/pi-ai` to extension.ts
+- [x] Extract `doOrchStatus` helper (shared by command + tool)
+- [x] Extract `doOrchPause` helper (shared by command + tool)
+- [x] Extract `doOrchResume` helper (shared by command + tool) — returns status message, calls startBatchAsync internally
+- [x] Extract `doOrchAbort` helper (shared by command + tool) — works without execCtx
+- [x] Extract `doOrchIntegrate` helper (shared by command + tool) — wraps parseIntegrateArgs + resolveIntegrationContext + executeIntegration
+- [x] Refactor existing command handlers to call the extracted helpers
+- [x] Register all 5 tools with Type.Object parameters, description, promptSnippet, promptGuidelines
+- [x] Verify all tools return `{content: [{type: "text", text}], details: undefined}` and catch errors
 
 ---
 
@@ -66,6 +66,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -94,6 +95,7 @@
 | 2026-03-24 15:00 | Step 2 started | Update supervisor primer/prompt with tool awareness |
 | 2026-03-24 15:00 | Step 3 started | Testing & Verification |
 | 2026-03-24 15:00 | Step 4 started | Documentation & Delivery |
+| 2026-03-24 15:07 | Review R001 | plan Step 1: REVISE |
 
 ---
 

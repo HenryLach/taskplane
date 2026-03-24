@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { Type } from "@mariozechner/pi-ai";
 
 import { execSync, execFileSync } from "child_process";
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync } from "fs";
@@ -1729,82 +1730,585 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("orch-status", {
-		description: "Show current batch progress",
-		handler: async (_args, ctx) => {
-			// ── TP-040: Disk fallback for idle in-memory state ────────
-			// When in-memory state is idle, try loading from persisted
-			// batch-state.json. This covers fresh-session queries (pi
-			// restarted while a batch was running in tmux lanes) and
-			// post-crash recovery where in-memory state was lost.
-			if (orchBatchState.phase === "idle") {
-				const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
-				let diskState: PersistedBatchState | null = null;
-				try {
-					diskState = loadBatchState(stateRoot);
-				} catch {
-					// Ignore errors — fall through to "no batch" message
-				}
+	// ── TP-053: Shared helpers for command + tool handlers ────────────
+	// Each helper extracts the core logic from its command handler so both
+	// the slash command and the registered tool can call the same function.
 
-				if (!diskState) {
-					ctx.ui.notify("No batch is running. Use /orch <areas|paths|all> to start.", "info");
-					return;
-				}
-
-				// Show status from persisted state
-				const elapsedSec = diskState.endedAt
-					? Math.round((diskState.endedAt - diskState.startedAt) / 1000)
-					: Math.round((Date.now() - diskState.startedAt) / 1000);
-
-				const lines: string[] = [
-					`📊 Batch ${diskState.batchId} — ${diskState.phase} (from disk)`,
-					`   Wave: ${diskState.currentWaveIndex + 1}/${diskState.totalWaves}`,
-					`   Tasks: ${diskState.succeededTasks} succeeded, ${diskState.failedTasks} failed, ${diskState.skippedTasks} skipped, ${diskState.blockedTasks} blocked / ${diskState.totalTasks} total`,
-					`   Elapsed: ${elapsedSec}s`,
-				];
-
-				if (diskState.errors.length > 0) {
-					lines.push(`   Errors: ${diskState.errors.length}`);
-				}
-
-				ctx.ui.notify(lines.join("\n"), "info");
-				return;
+	/**
+	 * Core logic for orch-status. Returns a formatted status string.
+	 * Reads in-memory state first, falls back to disk if idle.
+	 */
+	function doOrchStatus(cwd: string): string {
+		if (orchBatchState.phase === "idle") {
+			const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? cwd;
+			let diskState: PersistedBatchState | null = null;
+			try {
+				diskState = loadBatchState(stateRoot);
+			} catch {
+				// Ignore errors — fall through to "no batch" message
 			}
 
-			const elapsedSec = orchBatchState.endedAt
-				? Math.round((orchBatchState.endedAt - orchBatchState.startedAt) / 1000)
-				: Math.round((Date.now() - orchBatchState.startedAt) / 1000);
+			if (!diskState) {
+				return "No batch is running. Use /orch <areas|paths|all> to start.";
+			}
+
+			const elapsedSec = diskState.endedAt
+				? Math.round((diskState.endedAt - diskState.startedAt) / 1000)
+				: Math.round((Date.now() - diskState.startedAt) / 1000);
 
 			const lines: string[] = [
-				`📊 Batch ${orchBatchState.batchId} — ${orchBatchState.phase}`,
-				`   Wave: ${orchBatchState.currentWaveIndex + 1}/${orchBatchState.totalWaves}`,
-				`   Tasks: ${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ${orchBatchState.skippedTasks} skipped, ${orchBatchState.blockedTasks} blocked / ${orchBatchState.totalTasks} total`,
+				`📊 Batch ${diskState.batchId} — ${diskState.phase} (from disk)`,
+				`   Wave: ${diskState.currentWaveIndex + 1}/${diskState.totalWaves}`,
+				`   Tasks: ${diskState.succeededTasks} succeeded, ${diskState.failedTasks} failed, ${diskState.skippedTasks} skipped, ${diskState.blockedTasks} blocked / ${diskState.totalTasks} total`,
 				`   Elapsed: ${elapsedSec}s`,
 			];
 
-			if (orchBatchState.errors.length > 0) {
-				lines.push(`   Errors: ${orchBatchState.errors.length}`);
+			if (diskState.errors.length > 0) {
+				lines.push(`   Errors: ${diskState.errors.length}`);
 			}
 
-			ctx.ui.notify(lines.join("\n"), "info");
+			return lines.join("\n");
+		}
+
+		const elapsedSec = orchBatchState.endedAt
+			? Math.round((orchBatchState.endedAt - orchBatchState.startedAt) / 1000)
+			: Math.round((Date.now() - orchBatchState.startedAt) / 1000);
+
+		const lines: string[] = [
+			`📊 Batch ${orchBatchState.batchId} — ${orchBatchState.phase}`,
+			`   Wave: ${orchBatchState.currentWaveIndex + 1}/${orchBatchState.totalWaves}`,
+			`   Tasks: ${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ${orchBatchState.skippedTasks} skipped, ${orchBatchState.blockedTasks} blocked / ${orchBatchState.totalTasks} total`,
+			`   Elapsed: ${elapsedSec}s`,
+		];
+
+		if (orchBatchState.errors.length > 0) {
+			lines.push(`   Errors: ${orchBatchState.errors.length}`);
+		}
+
+		return lines.join("\n");
+	}
+
+	/**
+	 * Core logic for orch-pause. Returns a status message string.
+	 */
+	function doOrchPause(): string {
+		if (orchBatchState.phase === "idle" || orchBatchState.phase === "completed" || orchBatchState.phase === "failed" || orchBatchState.phase === "stopped") {
+			return ORCH_MESSAGES.pauseNoBatch();
+		}
+		if (orchBatchState.phase === "paused" || orchBatchState.pauseSignal.paused) {
+			return ORCH_MESSAGES.pauseAlreadyPaused(orchBatchState.batchId);
+		}
+		orchBatchState.pauseSignal.paused = true;
+		updateOrchWidget();
+		return ORCH_MESSAGES.pauseActivated(orchBatchState.batchId);
+	}
+
+	/**
+	 * Core logic for orch-resume. Returns an immediate status message.
+	 * The actual batch resume runs asynchronously via startBatchAsync.
+	 * Returns null if execCtx is missing (caller must handle).
+	 */
+	function doOrchResume(force: boolean, ctx: ExtensionContext): { message: string; error?: boolean } {
+		if (!execCtx) {
+			return {
+				message: "❌ Orchestrator not initialized. Workspace configuration failed at startup.\nFix the workspace config or remove it to use repo mode, then restart.",
+				error: true,
+			};
+		}
+
+		// Prevent resume if a batch is actively running
+		if (orchBatchState.phase === "launching" || orchBatchState.phase === "executing" || orchBatchState.phase === "merging" || orchBatchState.phase === "planning") {
+			return {
+				message: `⚠️ A batch is currently ${orchBatchState.phase} (${orchBatchState.batchId}). Cannot resume.`,
+				error: true,
+			};
+		}
+
+		// Reset batch state for resume
+		orchBatchState = freshOrchBatchState();
+		latestMonitorState = null;
+
+		orchBatchState.phase = "launching";
+		orchBatchState.startedAt = Date.now();
+		updateOrchWidget();
+
+		// Fire-and-forget resume via startBatchAsync
+		startBatchAsync(
+			() => resumeOrchBatch(
+				orchConfig,
+				runnerConfig,
+				execCtx!.repoRoot,
+				orchBatchState,
+				(message, level) => {
+					ctx.ui.notify(message, level);
+					updateOrchWidget();
+				},
+				(monState: MonitorState) => {
+					latestMonitorState = monState;
+					updateOrchWidget();
+				},
+				execCtx!.workspaceConfig,
+				execCtx!.workspaceRoot,
+				execCtx!.pointer?.agentRoot,
+				force,
+			),
+			orchBatchState,
+			ctx,
+			updateOrchWidget,
+			() => {
+				const mode = orchConfig.orchestrator.integration;
+				const opId = resolveOperatorId(orchConfig);
+				const sDeps: SummaryDeps = {
+					opId,
+					diagnostics: orchBatchState.diagnostics ?? null,
+					mergeResults: (orchBatchState.mergeResults || []).map(mr => ({
+						waveIndex: mr.waveIndex,
+						status: mr.status,
+						failedLane: mr.failedLane,
+						failureReason: mr.failureReason,
+					})),
+				};
+				if (
+					orchBatchState.phase === "completed" &&
+					(mode === "supervised" || mode === "auto")
+				) {
+					triggerSupervisorIntegration(
+						pi,
+						supervisorState,
+						orchBatchState,
+						mode,
+						execCtx!.repoRoot,
+						buildIntegrationExecutor(execCtx!.repoRoot, opId),
+						buildCiDeps(execCtx!.repoRoot),
+						sDeps,
+					);
+					return;
+				}
+				if (
+					(mode === "supervised" || mode === "auto") &&
+					orchBatchState.phase !== "completed"
+				) {
+					pi.sendMessage(
+						{
+							customType: "supervisor-integration-skipped",
+							content: [{
+								type: "text",
+								text:
+									`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
+									`Integration skipped — only completed batches are eligible.\n` +
+									`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
+							}],
+							display: `Integration skipped — batch ${orchBatchState.phase}`,
+						},
+						{ triggerTurn: false },
+					);
+				}
+				presentBatchSummary(pi, orchBatchState, execCtx!.workspaceRoot, opId, orchBatchState.diagnostics, sDeps.mergeResults);
+				const postBatchContext: SupervisorRoutingContext = orchBatchState.phase === "completed"
+					? {
+						routingState: "completed-batch",
+						contextMessage:
+							`Batch **${orchBatchState.batchId}** completed — ` +
+							`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
+							`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
+							`Would you like me to integrate it, or would you prefer to review first?\n\n` +
+							`You can also:\n` +
+							`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
+							`• Create new tasks for the next batch\n` +
+							`• Run a health check`,
+					}
+					: {
+						routingState: "no-tasks",
+						contextMessage:
+							`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
+							`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
+							`${orchBatchState.skippedTasks} skipped.\n\n` +
+							`What would you like to do next?`,
+					};
+				transitionToRoutingMode(pi, supervisorState, postBatchContext);
+			},
+		);
+
+		// Activate supervisor agent on resume
+		activateSupervisor(
+			pi,
+			supervisorState,
+			orchBatchState,
+			orchConfig,
+			supervisorConfig,
+			execCtx!.workspaceRoot,
+			ctx,
+		);
+
+		return { message: `🔄 Resume initiated for batch. Phase: launching.` };
+	}
+
+	/**
+	 * Core logic for orch-abort. Returns accumulated status messages.
+	 * Works even without execCtx (safety-critical).
+	 */
+	function doOrchAbort(hard: boolean, ctx: ExtensionContext): string {
+		const mode: AbortMode = hard ? "hard" : "graceful";
+		const prefix = orchConfig.orchestrator.tmux_prefix;
+
+		const stateRoot = execCtx?.repoRoot ?? ctx.cwd;
+		const messages: string[] = [`🛑 Abort requested (${mode} mode, prefix: ${prefix})...`];
+
+		// Step 1: Write abort signal file
+		const abortSignalFile = join(stateRoot, ".pi", "orch-abort-signal");
+		try {
+			mkdirSync(join(stateRoot, ".pi"), { recursive: true });
+			writeFileSync(abortSignalFile, `abort requested at ${new Date().toISOString()} (mode: ${mode})`, "utf-8");
+			messages.push("  ✓ Abort signal file written (.pi/orch-abort-signal)");
+		} catch (err) {
+			messages.push(`  ⚠ Failed to write abort signal file: ${err instanceof Error ? err.message : String(err)}`);
+		}
+
+		// Step 2: Set pause signal
+		if (orchBatchState.pauseSignal) {
+			orchBatchState.pauseSignal.paused = true;
+			messages.push("  ✓ Pause signal set on in-memory batch state");
+		}
+
+		// Step 3: Check what we're aborting
+		const hasActiveBatch = orchBatchState.phase !== "idle" &&
+			orchBatchState.phase !== "completed" &&
+			orchBatchState.phase !== "failed" &&
+			orchBatchState.phase !== "stopped";
+
+		let persistedState: PersistedBatchState | null = null;
+		try {
+			persistedState = loadBatchState(stateRoot);
+		} catch {
+			// Ignore
+		}
+
+		messages.push(
+			`  Batch state: in-memory=${hasActiveBatch ? orchBatchState.phase : "none"}, ` +
+			`persisted=${persistedState ? persistedState.batchId : "none"}`,
+		);
+
+		// If no batch AND no sessions, nothing to abort
+		if (!hasActiveBatch && !persistedState) {
+			// Still check for sessions below, but short-circuit if none
+			let allSessionNames: string[] = [];
+			try {
+				const tmuxOutput = execSync('tmux list-sessions -F "#{session_name}"', {
+					encoding: "utf-8",
+					timeout: 5000,
+				}).trim();
+				const all = tmuxOutput ? tmuxOutput.split("\n").map(s => s.trim()).filter(Boolean) : [];
+				allSessionNames = all.filter(name => name.startsWith(`${prefix}-`));
+			} catch {
+				// tmux not available
+			}
+			if (allSessionNames.length === 0) {
+				try { unlinkSync(abortSignalFile); } catch {}
+				return ORCH_MESSAGES.abortNoBatch();
+			}
+		}
+
+		const batchId = orchBatchState.batchId || persistedState?.batchId || "unknown";
+
+		// Step 5: Kill sessions
+		let allSessionNames: string[] = [];
+		try {
+			const tmuxOutput = execSync('tmux list-sessions -F "#{session_name}"', {
+				encoding: "utf-8",
+				timeout: 5000,
+			}).trim();
+			const all = tmuxOutput ? tmuxOutput.split("\n").map(s => s.trim()).filter(Boolean) : [];
+			allSessionNames = all.filter(name => name.startsWith(`${prefix}-`));
+			messages.push(`  Found ${allSessionNames.length} session(s) matching prefix "${prefix}-"`);
+		} catch {
+			messages.push("  ⚠ Could not list tmux sessions (tmux not available?)");
+		}
+
+		if (allSessionNames.length > 0) {
+			messages.push(`  Killing ${allSessionNames.length} tmux session(s)...`);
+			let killed = 0;
+			for (const name of allSessionNames) {
+				try {
+					execSync(`tmux kill-session -t "${name}-worker" 2>/dev/null`, { timeout: 3000 }).toString();
+				} catch {}
+				try {
+					execSync(`tmux kill-session -t "${name}-reviewer" 2>/dev/null`, { timeout: 3000 }).toString();
+				} catch {}
+				try {
+					execSync(`tmux kill-session -t "${name}" 2>/dev/null`, { timeout: 3000 }).toString();
+					killed++;
+					messages.push(`    ✓ Killed: ${name}`);
+				} catch {
+					messages.push(`    · ${name} (already exited)`);
+					killed++;
+				}
+			}
+			messages.push(`  ✓ ${killed}/${allSessionNames.length} session(s) terminated`);
+		} else {
+			messages.push("  No tmux sessions to kill");
+		}
+
+		// Step 6: Clean up batch state
+		deactivateSupervisor(pi, supervisorState);
+
+		try {
+			orchBatchState.phase = "stopped";
+			orchBatchState.endedAt = Date.now();
+			updateOrchWidget();
+			messages.push("  ✓ In-memory batch state set to 'stopped'");
+		} catch (err) {
+			messages.push(`  ⚠ Failed to update in-memory state: ${err instanceof Error ? err.message : String(err)}`);
+		}
+
+		try {
+			deleteBatchState(stateRoot);
+			messages.push("  ✓ Batch state file deleted (.pi/batch-state.json)");
+		} catch (err) {
+			messages.push(`  ⚠ Failed to delete batch state file: ${err instanceof Error ? err.message : String(err)}`);
+		}
+
+		// Step 7: Clean up abort signal file
+		try { unlinkSync(abortSignalFile); } catch {}
+
+		messages.push(
+			`✅ Abort complete for batch ${batchId}. Sessions killed, state cleaned up.\n` +
+			`   Worktrees and branches are preserved for inspection.`,
+		);
+
+		return messages.join("\n");
+	}
+
+	/**
+	 * Core logic for orch-integrate. Returns a result message string.
+	 * On error, returns an object with error flag.
+	 */
+	async function doOrchIntegrate(
+		args: string | undefined,
+		ctx: ExtensionContext,
+	): Promise<{ message: string; error?: boolean }> {
+		if (!execCtx) {
+			return {
+				message: "❌ Orchestrator not initialized. Workspace configuration failed at startup.\nFix the workspace config or remove it to use repo mode, then restart.",
+				error: true,
+			};
+		}
+
+		// Parse arguments
+		const parsed = parseIntegrateArgs(args);
+		if ("error" in parsed) {
+			return { message: `❌ ${parsed.error}\n\nRun /orch-integrate --help for usage.`, error: true };
+		}
+
+		// Resolve integration context
+		const { repoRoot } = execCtx!;
+		const resolution = resolveIntegrationContext(parsed, {
+			loadBatchState: () => loadBatchState(repoRoot),
+			getCurrentBranch: () => getCurrentBranch(repoRoot),
+			listOrchBranches: () => {
+				const result = runGit(["branch", "--list", "orch/*"], repoRoot);
+				return result.ok
+					? result.stdout.split("\n").map(b => b.replace(/^\*?\s+/, "").trim()).filter(Boolean)
+					: [];
+			},
+			orchBranchExists: (branch: string) => {
+				return runGit(["rev-parse", "--verify", `refs/heads/${branch}`], repoRoot).ok;
+			},
+		});
+
+		if ("error" in resolution) {
+			const severity = (resolution as IntegrationContextError).severity;
+			return { message: resolution.error, error: severity !== "info" };
+		}
+
+		const { orchBranch, baseBranch, batchId, currentBranch, notices } = resolution as IntegrationContext;
+		const outputLines: string[] = [];
+
+		for (const notice of notices) {
+			outputLines.push(notice);
+		}
+
+		// Branch protection pre-check (TP-052)
+		if (parsed.mode !== "pr") {
+			const { detectBranchProtection } = await import("./supervisor.ts");
+			const protectionStatus = detectBranchProtection(baseBranch, repoRoot);
+			if (protectionStatus === "protected") {
+				outputLines.push(
+					`⚠️ Branch \`${baseBranch}\` has branch protection rules enabled.\n` +
+					`Direct merges may be blocked by your repository settings.\n\n` +
+					`Recommended: use \`/orch-integrate --pr\` to create a pull request instead.`,
+				);
+			}
+		}
+
+		// Pre-integration summary
+		const revListResult = runGit(
+			["rev-list", "--count", `${currentBranch}..${orchBranch}`],
+			repoRoot,
+		);
+		const commitsAhead = revListResult.ok ? revListResult.stdout.trim() : "?";
+
+		const diffStatResult = runGit(
+			["diff", "--stat", `${currentBranch}...${orchBranch}`],
+			repoRoot,
+		);
+		const diffSummary = diffStatResult.ok ? diffStatResult.stdout.trim() : "(unable to compute diff)";
+
+		outputLines.push(
+			`🔀 Integration Summary\n` +
+			`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+			`  Orch branch:  ${orchBranch}\n` +
+			`  Target:       ${currentBranch}\n` +
+			`  Commits:      ${commitsAhead} ahead\n` +
+			`  Mode:         ${parsed.mode === "ff" ? "fast-forward" : parsed.mode === "merge" ? "merge commit" : "pull request"}\n` +
+			(batchId ? `  Batch:        ${batchId}\n` : "") +
+			(parsed.force ? `  ⚠ Force:      branch safety check skipped\n` : "") +
+			`\n` +
+			(diffSummary ? `${diffSummary}\n` : "") +
+			`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
+		);
+
+		// Execute integration
+		const resolvedOrchBranch = (resolution as IntegrationContext).orchBranch;
+		const wsConfig = execCtx!.workspaceConfig;
+		const reposToIntegrate: { id: string; root: string }[] = [];
+
+		if (wsConfig) {
+			for (const [repoId, repoConf] of wsConfig.repos) {
+				const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${resolvedOrchBranch}`], repoConf.path);
+				if (branchCheck.ok) {
+					reposToIntegrate.push({ id: repoId, root: repoConf.path });
+				}
+			}
+		} else {
+			reposToIntegrate.push({ id: "(default)", root: repoRoot });
+		}
+
+		let totalCommits = 0;
+		let allSucceeded = true;
+		const repoMessages: string[] = [];
+
+		for (const repo of reposToIntegrate) {
+			const preCountResult = runGit(["rev-list", "--count", `HEAD..${resolvedOrchBranch}`], repo.root);
+			const repoCommitsBefore = preCountResult.ok ? parseInt(preCountResult.stdout) || 0 : 0;
+
+			const integrationResult = executeIntegration(parsed.mode, resolution as IntegrationContext, {
+				runGit: (gitArgs: string[]) => runGit(gitArgs, repo.root),
+				runCommand: (cmd: string, cmdArgs: string[]) => {
+					try {
+						const stdout = execFileSync(cmd, cmdArgs, {
+							encoding: "utf-8",
+							timeout: 60_000,
+							cwd: repo.root,
+							stdio: ["pipe", "pipe", "pipe"],
+						}).trim();
+						return { ok: true, stdout, stderr: "" };
+					} catch (err: unknown) {
+						const e = err as { stdout?: string; stderr?: string; message?: string };
+						return {
+							ok: false,
+							stdout: (e.stdout ?? "").toString().trim(),
+							stderr: (e.stderr ?? e.message ?? "unknown error").toString().trim(),
+						};
+					}
+				},
+				deleteBatchState: () => { /* handled once after all repos */ },
+			});
+
+			if (!integrationResult.success) {
+				return { message: `❌ Integration failed in ${repo.id}:\n${integrationResult.error}`, error: true };
+			}
+
+			totalCommits += repoCommitsBefore;
+			repoMessages.push(`  ${repo.id}: ${integrationResult.message}`);
+		}
+
+		// Post-integration cleanup & acceptance
+		const allRepos: { id: string; root: string }[] = [];
+		if (wsConfig) {
+			for (const [repoId, repoConf] of wsConfig.repos) {
+				allRepos.push({ id: repoId, root: repoConf.path });
+			}
+		} else {
+			allRepos.push({ id: "(default)", root: repoRoot });
+		}
+
+		const opId = resolveOperatorId(orchConfig);
+		const orchPrefix = orchConfig.orchestrator.worktree_prefix;
+
+		for (const repo of allRepos) {
+			dropBatchAutostash(repo.root, batchId);
+		}
+
+		const branchCleanupLines: string[] = [];
+		for (const repo of allRepos) {
+			const branchCleanup = deleteStaleBranches(repo.root, opId, batchId);
+			const totalDeleted = branchCleanup.deletedTaskBranches.length + branchCleanup.deletedSavedBranches.length;
+			if (totalDeleted > 0 || branchCleanup.failedDeletes.length > 0) {
+				const label = repo.id === "(default)" ? "" : ` (${repo.id})`;
+				if (branchCleanup.deletedTaskBranches.length > 0) {
+					branchCleanupLines.push(`  🗑️ Deleted ${branchCleanup.deletedTaskBranches.length} task branch(es)${label}`);
+				}
+				if (branchCleanup.deletedSavedBranches.length > 0) {
+					branchCleanupLines.push(`  🗑️ Deleted ${branchCleanup.deletedSavedBranches.length} saved branch(es)${label}`);
+				}
+				if (branchCleanup.failedDeletes.length > 0) {
+					branchCleanupLines.push(`  ⚠️ Failed to delete ${branchCleanup.failedDeletes.length} branch(es)${label}: ${branchCleanup.failedDeletes.join(", ")}`);
+				}
+			}
+		}
+		if (branchCleanupLines.length > 0) {
+			outputLines.push("Branch cleanup:\n" + branchCleanupLines.join("\n"));
+		}
+
+		const skipOrchBranch = parsed.mode === "pr";
+		const repoFindings: IntegrateCleanupRepoFindings[] = [];
+		for (const repo of allRepos) {
+			const findings = collectRepoCleanupFindings(
+				repo.root, repo.id === "(default)" ? undefined : repo.id,
+				opId, batchId, orchPrefix, resolvedOrchBranch, orchConfig,
+				{ skipOrchBranch },
+			);
+			repoFindings.push(findings);
+		}
+
+		const cleanupResult = computeIntegrateCleanupResult(repoFindings);
+
+		try { deleteBatchState(repoRoot); } catch { /* best effort */ }
+
+		const integrationSummary = wsConfig
+			? `✅ Integrated ${resolvedOrchBranch} across ${reposToIntegrate.length} repo(s).\n${repoMessages.join("\n")}\n${totalCommits} total commit(s) applied.`
+			: `${repoMessages[0] || "✅ Integrated."}\n${commitsAhead} commit(s) applied.`;
+
+		outputLines.push(integrationSummary + "\n" + cleanupResult.report);
+
+		// TP-043 R004: deferred batch summary
+		if (supervisorState.active && supervisorState.pendingSummaryDeps) {
+			const deps = supervisorState.pendingSummaryDeps;
+			supervisorState.pendingSummaryDeps = null;
+			if (supervisorState.batchStateRef && supervisorState.stateRoot) {
+				presentBatchSummary(pi, supervisorState.batchStateRef, supervisorState.stateRoot, deps.opId, deps.diagnostics, deps.mergeResults);
+			}
+			deactivateSupervisor(pi, supervisorState);
+		}
+
+		return { message: outputLines.join("\n\n") };
+	}
+
+	pi.registerCommand("orch-status", {
+		description: "Show current batch progress",
+		handler: async (_args, ctx) => {
+			const result = doOrchStatus(ctx.cwd);
+			ctx.ui.notify(result, "info");
 		},
 	});
 
 	pi.registerCommand("orch-pause", {
 		description: "Pause batch after current tasks finish",
 		handler: async (_args, ctx) => {
-			if (orchBatchState.phase === "idle" || orchBatchState.phase === "completed" || orchBatchState.phase === "failed" || orchBatchState.phase === "stopped") {
-				ctx.ui.notify(ORCH_MESSAGES.pauseNoBatch(), "warning");
-				return;
-			}
-			if (orchBatchState.phase === "paused" || orchBatchState.pauseSignal.paused) {
-				ctx.ui.notify(ORCH_MESSAGES.pauseAlreadyPaused(orchBatchState.batchId), "warning");
-				return;
-			}
-			// Set pause signal — executeLane() checks this between tasks
-			orchBatchState.pauseSignal.paused = true;
-			ctx.ui.notify(ORCH_MESSAGES.pauseActivated(orchBatchState.batchId), "info");
-			updateOrchWidget();
+			const result = doOrchPause();
+			// Determine notification level from result content
+			const level = result.includes("No batch") || result.includes("already paused") ? "warning" : "info";
+			ctx.ui.notify(result, level);
 		},
 	});
 
@@ -1820,141 +2324,8 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 
-			// Prevent resume if a batch is actively running (includes "launching" from non-blocking detach)
-			if (orchBatchState.phase === "launching" || orchBatchState.phase === "executing" || orchBatchState.phase === "merging" || orchBatchState.phase === "planning") {
-				ctx.ui.notify(
-					`⚠️ A batch is currently ${orchBatchState.phase} (${orchBatchState.batchId}). Cannot resume.`,
-					"warning",
-				);
-				return;
-			}
-
-			// Reset batch state for resume
-			orchBatchState = freshOrchBatchState();
-			latestMonitorState = null;
-
-			// ── TP-040: Set launching phase synchronously ────────────
-			// Same as /orch — mark as "launching" before setTimeout detach
-			// so commands issued immediately see an active batch.
-			orchBatchState.phase = "launching";
-			orchBatchState.startedAt = Date.now();
-			updateOrchWidget();
-
-			// ── TP-040: Non-blocking resume launch ───────────────────
-			// Same fire-and-forget pattern as /orch — see startBatchAsync.
-			startBatchAsync(
-				() => resumeOrchBatch(
-					orchConfig,
-					runnerConfig,
-					execCtx!.repoRoot,
-					orchBatchState,
-					(message, level) => {
-						ctx.ui.notify(message, level);
-						updateOrchWidget();
-					},
-					(monState: MonitorState) => {
-						latestMonitorState = monState;
-						updateOrchWidget();
-					},
-					execCtx!.workspaceConfig,
-					execCtx!.workspaceRoot,
-					execCtx!.pointer?.agentRoot,
-					parsed.force,
-				),
-				orchBatchState,
-				ctx,
-				updateOrchWidget,
-				// TP-043: Deferred supervisor deactivation (R002-1, parity with /orch).
-				// Only trigger integration on completed batches.
-				// TP-043 Step 2: Batch summary on all terminal paths.
-				() => {
-					const mode = orchConfig.orchestrator.integration;
-					const opId = resolveOperatorId(orchConfig);
-					const sDeps: SummaryDeps = {
-						opId,
-						diagnostics: orchBatchState.diagnostics ?? null,
-						mergeResults: (orchBatchState.mergeResults || []).map(mr => ({
-							waveIndex: mr.waveIndex,
-							status: mr.status,
-							failedLane: mr.failedLane,
-							failureReason: mr.failureReason,
-						})),
-					};
-					if (
-						orchBatchState.phase === "completed" &&
-						(mode === "supervised" || mode === "auto")
-					) {
-						triggerSupervisorIntegration(
-							pi,
-							supervisorState,
-							orchBatchState,
-							mode,
-							execCtx!.repoRoot,
-							buildIntegrationExecutor(execCtx!.repoRoot, opId),
-							buildCiDeps(execCtx!.repoRoot),
-							sDeps,
-						);
-						return;
-					}
-					if (
-						(mode === "supervised" || mode === "auto") &&
-						orchBatchState.phase !== "completed"
-					) {
-						pi.sendMessage(
-							{
-								customType: "supervisor-integration-skipped",
-								content: [{
-									type: "text",
-									text:
-										`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
-										`Integration skipped — only completed batches are eligible.\n` +
-										`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
-								}],
-								display: `Integration skipped — batch ${orchBatchState.phase}`,
-							},
-							{ triggerTurn: false },
-						);
-					}
-					// TP-043: Generate summary before transition
-					presentBatchSummary(pi, orchBatchState, execCtx!.workspaceRoot, opId, orchBatchState.diagnostics, sDeps.mergeResults);
-					// TP-128: Transition to routing mode (same as /orch onTerminal)
-					const postBatchContext: SupervisorRoutingContext = orchBatchState.phase === "completed"
-						? {
-							routingState: "completed-batch",
-							contextMessage:
-								`Batch **${orchBatchState.batchId}** completed — ` +
-								`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
-								`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
-								`Would you like me to integrate it, or would you prefer to review first?\n\n` +
-								`You can also:\n` +
-								`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
-								`• Create new tasks for the next batch\n` +
-								`• Run a health check`,
-						}
-						: {
-							routingState: "no-tasks",
-							contextMessage:
-								`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
-								`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
-								`${orchBatchState.skippedTasks} skipped.\n\n` +
-								`What would you like to do next?`,
-						};
-					transitionToRoutingMode(pi, supervisorState, postBatchContext);
-				},
-			);
-
-			// ── TP-041: Activate supervisor agent on resume ──────────
-			// supervisorConfig is loaded at session_start from unified config.
-			// Uses workspaceRoot so supervisor state root matches engine (R006-1).
-			activateSupervisor(
-				pi,
-				supervisorState,
-				orchBatchState,
-				orchConfig,
-				supervisorConfig,
-				execCtx!.workspaceRoot,
-				ctx,
-			);
+			const result = doOrchResume(parsed.force, ctx);
+			ctx.ui.notify(result.message, result.error ? "warning" : "info");
 		},
 	});
 
@@ -1963,141 +2334,8 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			try {
 				const hard = args?.trim() === "--hard";
-				const mode: AbortMode = hard ? "hard" : "graceful";
-				const prefix = orchConfig.orchestrator.tmux_prefix;
-				const gracePeriodMs = orchConfig.orchestrator.abort_grace_period * 1000;
-
-				// Abort must work even if execCtx failed to load (safety-critical).
-				// Fall back to ctx.cwd if no execution context is available.
-				// Uses repoRoot for consistency with engine/resume/execution
-				// which all persist state and poll abort signals from repoRoot.
-				const stateRoot = execCtx?.repoRoot ?? ctx.cwd;
-
-				ctx.ui.notify(`🛑 Abort requested (${mode} mode, prefix: ${prefix})...`, "info");
-
-				// ── Step 1: Write abort signal file immediately ──────────
-				// This is the primary abort mechanism. The orchestrator's polling
-				// loop checks for this file on every cycle, so even if this command
-				// handler runs concurrently with /orch (or is queued behind it),
-				// the signal file will be detected.
-				const abortSignalFile = join(stateRoot, ".pi", "orch-abort-signal");
-				try {
-					mkdirSync(join(stateRoot, ".pi"), { recursive: true });
-					writeFileSync(abortSignalFile, `abort requested at ${new Date().toISOString()} (mode: ${mode})`, "utf-8");
-					ctx.ui.notify("  ✓ Abort signal file written (.pi/orch-abort-signal)", "info");
-				} catch (err) {
-					ctx.ui.notify(`  ⚠ Failed to write abort signal file: ${err instanceof Error ? err.message : String(err)}`, "warning");
-				}
-
-				// ── Step 2: Set pause signal immediately ─────────────────
-				// Belt-and-suspenders: if the /orch polling loop can see this
-				// shared object, it will stop on the next iteration.
-				if (orchBatchState.pauseSignal) {
-					orchBatchState.pauseSignal.paused = true;
-					ctx.ui.notify("  ✓ Pause signal set on in-memory batch state", "info");
-				}
-
-				// ── Step 3: Check what we're aborting ────────────────────
-				const hasActiveBatch = orchBatchState.phase !== "idle" &&
-					orchBatchState.phase !== "completed" &&
-					orchBatchState.phase !== "failed" &&
-					orchBatchState.phase !== "stopped";
-
-				let persistedState: PersistedBatchState | null = null;
-				try {
-					persistedState = loadBatchState(stateRoot);
-				} catch {
-					// Ignore — we may still have in-memory state or orphan sessions
-				}
-
-				ctx.ui.notify(
-					`  Batch state: in-memory=${hasActiveBatch ? orchBatchState.phase : "none"}, ` +
-					`persisted=${persistedState ? persistedState.batchId : "none"}`,
-					"info",
-				);
-
-				// ── Step 4: Scan for tmux sessions ──────────────────────
-				let allSessionNames: string[] = [];
-				try {
-					const tmuxOutput = execSync('tmux list-sessions -F "#{session_name}"', {
-						encoding: "utf-8",
-						timeout: 5000,
-					}).trim();
-					const all = tmuxOutput ? tmuxOutput.split("\n").map(s => s.trim()).filter(Boolean) : [];
-					allSessionNames = all.filter(name => name.startsWith(`${prefix}-`));
-					ctx.ui.notify(`  Found ${allSessionNames.length} session(s) matching prefix "${prefix}-": ${allSessionNames.join(", ") || "(none)"}`, "info");
-				} catch {
-					ctx.ui.notify("  ⚠ Could not list tmux sessions (tmux not available?)", "warning");
-				}
-
-				// If no batch AND no sessions, nothing to abort
-				if (!hasActiveBatch && !persistedState && allSessionNames.length === 0) {
-					ctx.ui.notify(ORCH_MESSAGES.abortNoBatch(), "warning");
-					// Clean up signal file
-					try { unlinkSync(abortSignalFile); } catch {}
-					return;
-				}
-
-				const batchId = orchBatchState.batchId || persistedState?.batchId || "unknown";
-
-				// ── Step 5: Kill sessions directly (fast path) ──────────
-				// For hard mode or when sessions are found, kill them immediately
-				// rather than waiting through the full executeAbort flow.
-				if (allSessionNames.length > 0) {
-					ctx.ui.notify(`  Killing ${allSessionNames.length} tmux session(s)...`, "info");
-					let killed = 0;
-					for (const name of allSessionNames) {
-						try {
-							// Kill child sessions first (worker, reviewer)
-							execSync(`tmux kill-session -t "${name}-worker" 2>/dev/null`, { timeout: 3000 }).toString();
-						} catch {}
-						try {
-							execSync(`tmux kill-session -t "${name}-reviewer" 2>/dev/null`, { timeout: 3000 }).toString();
-						} catch {}
-						try {
-							execSync(`tmux kill-session -t "${name}" 2>/dev/null`, { timeout: 3000 }).toString();
-							killed++;
-							ctx.ui.notify(`    ✓ Killed: ${name}`, "info");
-						} catch {
-							// Session may have already exited
-							ctx.ui.notify(`    · ${name} (already exited)`, "info");
-							killed++;
-						}
-					}
-					ctx.ui.notify(`  ✓ ${killed}/${allSessionNames.length} session(s) terminated`, "info");
-				} else {
-					ctx.ui.notify("  No tmux sessions to kill", "info");
-				}
-
-				// ── Step 6: Clean up batch state ────────────────────────
-				// TP-041: Deactivate supervisor on abort
-				deactivateSupervisor(pi, supervisorState);
-
-				try {
-					orchBatchState.phase = "stopped";
-					orchBatchState.endedAt = Date.now();
-					updateOrchWidget();
-					ctx.ui.notify("  ✓ In-memory batch state set to 'stopped'", "info");
-				} catch (err) {
-					ctx.ui.notify(`  ⚠ Failed to update in-memory state: ${err instanceof Error ? err.message : String(err)}`, "warning");
-				}
-
-				try {
-					deleteBatchState(stateRoot);
-					ctx.ui.notify("  ✓ Batch state file deleted (.pi/batch-state.json)", "info");
-				} catch (err) {
-					ctx.ui.notify(`  ⚠ Failed to delete batch state file: ${err instanceof Error ? err.message : String(err)}`, "warning");
-				}
-
-				// ── Step 7: Clean up abort signal file ───────────────────
-				try { unlinkSync(abortSignalFile); } catch {}
-
-				// ── Done ─────────────────────────────────────────────────
-				ctx.ui.notify(
-					`✅ Abort complete for batch ${batchId}. Sessions killed, state cleaned up.\n` +
-					`   Worktrees and branches are preserved for inspection.`,
-					"info",
-				);
+				const result = doOrchAbort(hard, ctx);
+				ctx.ui.notify(result, "info");
 			} catch (err) {
 				// Top-level catch: ensure the user ALWAYS sees something
 				ctx.ui.notify(
@@ -2354,238 +2592,177 @@ export default function (pi: ExtensionAPI) {
 
 			if (!requireExecCtx(ctx)) return;
 
-			// Parse arguments
-			const parsed = parseIntegrateArgs(args);
-			if ("error" in parsed) {
-				ctx.ui.notify(`❌ ${parsed.error}\n\nRun /orch-integrate --help for usage.`, "error");
-				return;
+			const result = await doOrchIntegrate(args, ctx);
+			ctx.ui.notify(result.message, result.error ? "error" : "info");
+		},
+	});
+
+	// ── TP-053: Register orchestrator tools for supervisor agent ─────
+
+	pi.registerTool({
+		name: "orch_status",
+		label: "Orchestrator Status",
+		description:
+			"Check the current batch status. Returns batch phase, wave progress, " +
+			"task counts, and elapsed time. Works even when no batch is running.",
+		promptSnippet: "orch_status() — check current batch status",
+		promptGuidelines: [
+			"Call orch_status to get a snapshot of the current batch.",
+			"Use this when the operator asks 'how is the batch going?' or you need to check progress.",
+			"If no batch is running, the result will say so.",
+		],
+		parameters: Type.Object({}),
+		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doOrchStatus(ctx.cwd);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error checking status: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
 			}
+		},
+	});
 
-			// ── Step 2: Resolve integration context ──────────────────
-			const { repoRoot } = execCtx!;
-			const resolution = resolveIntegrationContext(parsed, {
-				loadBatchState: () => loadBatchState(repoRoot),
-				getCurrentBranch: () => getCurrentBranch(repoRoot),
-				listOrchBranches: () => {
-					const result = runGit(["branch", "--list", "orch/*"], repoRoot);
-					return result.ok
-						? result.stdout.split("\n").map(b => b.replace(/^\*?\s+/, "").trim()).filter(Boolean)
-						: [];
-				},
-				orchBranchExists: (branch: string) => {
-					return runGit(["rev-parse", "--verify", `refs/heads/${branch}`], repoRoot).ok;
-				},
-			});
-
-			if ("error" in resolution) {
-				const severity = (resolution as IntegrationContextError).severity;
-				ctx.ui.notify(resolution.error, severity === "info" ? "info" : "error");
-				return;
+	pi.registerTool({
+		name: "orch_pause",
+		label: "Pause Batch",
+		description:
+			"Pause the running batch after current tasks finish. " +
+			"Tasks already in progress will complete, but no new tasks will start.",
+		promptSnippet: "orch_pause() — pause the running batch",
+		promptGuidelines: [
+			"Call orch_pause to pause a running batch gracefully.",
+			"Current tasks will finish, but no new tasks will be launched.",
+			"Use this when you need to investigate an issue before more tasks run.",
+			"After pausing, use orch_resume to continue.",
+		],
+		parameters: Type.Object({}),
+		async execute(_toolCallId, _params, _signal, _onUpdate, _ctx) {
+			try {
+				const result = doOrchPause();
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error pausing batch: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
 			}
+		},
+	});
 
-			const { orchBranch, baseBranch, batchId, currentBranch, notices } = resolution as IntegrationContext;
-
-			// Show any notices from resolution (auto-detection messages, warnings)
-			for (const notice of notices) {
-				ctx.ui.notify(notice, "info");
+	pi.registerTool({
+		name: "orch_resume",
+		label: "Resume Batch",
+		description:
+			"Resume a paused or interrupted batch. " +
+			"The batch will continue from where it left off. " +
+			"Use force=true to resume from a stopped or failed state.",
+		promptSnippet: "orch_resume(force?) — resume a paused batch",
+		promptGuidelines: [
+			"Call orch_resume to continue a paused or interrupted batch.",
+			"Set force=true to resume from a stopped or failed state (runs pre-resume diagnostics).",
+			"Cannot resume if a batch is already actively running (launching, executing, merging, planning).",
+			"The resume happens asynchronously — the tool returns immediately with a status message.",
+		],
+		parameters: Type.Object({
+			force: Type.Optional(Type.Boolean({
+				description: "Resume from stopped or failed state (default: false)",
+			})),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doOrchResume(params.force ?? false, ctx);
+				return { content: [{ type: "text" as const, text: result.message }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error resuming batch: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
 			}
+		},
+	});
 
-			// ── Step 2a: Branch protection pre-check (TP-052) ───────
-			// When using ff or merge mode (direct push), check if the target
-			// branch has protection rules. If protected, warn and suggest --pr.
-			// Graceful degradation: if gh is unavailable, skip the check.
-			if (parsed.mode !== "pr") {
-				const { detectBranchProtection } = await import("./supervisor.ts");
-				const protectionStatus = detectBranchProtection(baseBranch, repoRoot);
-				if (protectionStatus === "protected") {
-					ctx.ui.notify(
-						`⚠️ Branch \`${baseBranch}\` has branch protection rules enabled.\n` +
-						`Direct merges may be blocked by your repository settings.\n\n` +
-						`Recommended: use \`/orch-integrate --pr\` to create a pull request instead.`,
-						"warning",
-					);
-					// Don't block — proceed with the attempt. The merge will fail
-					// gracefully and show a clear error if protection blocks it.
-				}
+	pi.registerTool({
+		name: "orch_abort",
+		label: "Abort Batch",
+		description:
+			"Abort the running batch. Kills tmux sessions, cleans up state. " +
+			"Use hard=true for immediate kill (no grace period). " +
+			"Works even without execution context (safety-critical).",
+		promptSnippet: "orch_abort(hard?) — abort the running batch",
+		promptGuidelines: [
+			"Call orch_abort to stop a running batch.",
+			"Default (hard=false) is graceful abort — writes signal file and kills sessions.",
+			"Set hard=true for immediate termination without grace period.",
+			"Use this when a batch is stuck, failing repeatedly, or the operator requests it.",
+			"Worktrees and branches are preserved for inspection after abort.",
+		],
+		parameters: Type.Object({
+			hard: Type.Optional(Type.Boolean({
+				description: "Hard abort — immediate kill without grace period (default: false)",
+			})),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doOrchAbort(params.hard ?? false, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error aborting batch: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
 			}
+		},
+	});
 
-			// ── Step 2b: Pre-integration summary ─────────────────────
-			// Count commits ahead
-			const revListResult = runGit(
-				["rev-list", "--count", `${currentBranch}..${orchBranch}`],
-				repoRoot,
-			);
-			const commitsAhead = revListResult.ok ? revListResult.stdout.trim() : "?";
+	pi.registerTool({
+		name: "orch_integrate",
+		label: "Integrate Batch",
+		description:
+			"Integrate a completed orch batch into the working branch. " +
+			"Supports fast-forward (default), merge commit, or pull request modes.",
+		promptSnippet: "orch_integrate(mode?, force?, branch?) — integrate completed batch",
+		promptGuidelines: [
+			"Call orch_integrate after a batch completes to merge changes into the working branch.",
+			"mode='fast-forward' (default) — cleanest history, requires linear history.",
+			"mode='merge' — creates a merge commit.",
+			"mode='pr' — pushes orch branch and creates a pull request (safest for protected branches).",
+			"Set force=true to skip branch safety checks.",
+			"The branch parameter is optional — auto-detected from batch state if omitted.",
+			"If the target branch has protection rules, prefer mode='pr'.",
+		],
+		parameters: Type.Object({
+			mode: Type.Optional(Type.Union(
+				[Type.Literal("fast-forward"), Type.Literal("merge"), Type.Literal("pr")],
+				{ description: 'Integration mode (default: "fast-forward")' },
+			)),
+			force: Type.Optional(Type.Boolean({
+				description: "Skip branch safety check (default: false)",
+			})),
+			branch: Type.Optional(Type.String({
+				description: "Orch branch name (auto-detected from batch state if omitted)",
+			})),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				// Build args string from tool parameters to pass to doOrchIntegrate
+				const argParts: string[] = [];
+				if (params.branch) argParts.push(params.branch);
+				const mode = params.mode ?? "fast-forward";
+				if (mode === "merge") argParts.push("--merge");
+				else if (mode === "pr") argParts.push("--pr");
+				if (params.force) argParts.push("--force");
 
-			// Get diff summary
-			const diffStatResult = runGit(
-				["diff", "--stat", `${currentBranch}...${orchBranch}`],
-				repoRoot,
-			);
-			const diffSummary = diffStatResult.ok ? diffStatResult.stdout.trim() : "(unable to compute diff)";
-
-			ctx.ui.notify(
-				`🔀 Integration Summary\n` +
-				`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
-				`  Orch branch:  ${orchBranch}\n` +
-				`  Target:       ${currentBranch}\n` +
-				`  Commits:      ${commitsAhead} ahead\n` +
-				`  Mode:         ${parsed.mode === "ff" ? "fast-forward" : parsed.mode === "merge" ? "merge commit" : "pull request"}\n` +
-				(batchId ? `  Batch:        ${batchId}\n` : "") +
-				(parsed.force ? `  ⚠ Force:      branch safety check skipped\n` : "") +
-				`\n` +
-				(diffSummary ? `${diffSummary}\n` : "") +
-				`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
-				"info",
-			);
-
-			// ── Step 3: Execute integration mode ─────────────────
-			// In workspace mode, integrate in every repo that has the orch branch.
-			const resolvedOrchBranch = (resolution as IntegrationContext).orchBranch;
-			const wsConfig = execCtx!.workspaceConfig;
-			const reposToIntegrate: { id: string; root: string }[] = [];
-
-			if (wsConfig) {
-				for (const [repoId, repoConf] of wsConfig.repos) {
-					// Check if orch branch exists in this repo
-					const branchCheck = runGit(["rev-parse", "--verify", `refs/heads/${resolvedOrchBranch}`], repoConf.path);
-					if (branchCheck.ok) {
-						reposToIntegrate.push({ id: repoId, root: repoConf.path });
-					}
-				}
-			} else {
-				reposToIntegrate.push({ id: "(default)", root: repoRoot });
-			}
-
-			let totalCommits = 0;
-			let allSucceeded = true;
-			const repoMessages: string[] = [];
-
-			for (const repo of reposToIntegrate) {
-				// Count commits BEFORE integration (after ff, HEAD === orch tip so count would be 0)
-				const preCountResult = runGit(["rev-list", "--count", `HEAD..${resolvedOrchBranch}`], repo.root);
-				const repoCommitsBefore = preCountResult.ok ? parseInt(preCountResult.stdout) || 0 : 0;
-
-				const integrationResult = executeIntegration(parsed.mode, resolution as IntegrationContext, {
-					runGit: (gitArgs: string[]) => runGit(gitArgs, repo.root),
-					runCommand: (cmd: string, cmdArgs: string[]) => {
-						try {
-							const stdout = execFileSync(cmd, cmdArgs, {
-								encoding: "utf-8",
-								timeout: 60_000,
-								cwd: repo.root,
-								stdio: ["pipe", "pipe", "pipe"],
-							}).trim();
-							return { ok: true, stdout, stderr: "" };
-						} catch (err: unknown) {
-							const e = err as { stdout?: string; stderr?: string; message?: string };
-							return {
-								ok: false,
-								stdout: (e.stdout ?? "").toString().trim(),
-								stderr: (e.stderr ?? e.message ?? "unknown error").toString().trim(),
-							};
-						}
-					},
-					deleteBatchState: () => { /* handled once after all repos */ },
-				});
-
-				if (!integrationResult.success) {
-					ctx.ui.notify(`❌ Integration failed in ${repo.id}:\n${integrationResult.error}`, "error");
-					allSucceeded = false;
-					break;
-				}
-
-				totalCommits += repoCommitsBefore;
-				repoMessages.push(`  ${repo.id}: ${integrationResult.message}`);
-			}
-
-			if (!allSucceeded) return;
-
-			// ── Step 4: Post-integration cleanup & acceptance ────────
-			// Run acceptance checks BEFORE deleting batch state so recovery
-			// context is still available if something goes wrong.
-
-			// Resolve all repos to verify (all workspace repos, not just those
-			// that had the orch branch — roadmap 2d requires "any workspace repo").
-			const allRepos: { id: string; root: string }[] = [];
-			if (wsConfig) {
-				for (const [repoId, repoConf] of wsConfig.repos) {
-					allRepos.push({ id: repoId, root: repoConf.path });
-				}
-			} else {
-				allRepos.push({ id: "(default)", root: repoRoot });
-			}
-
-			const opId = resolveOperatorId(orchConfig);
-			const orchPrefix = orchConfig.orchestrator.worktree_prefix;
-
-			// Drop batch-scoped autostash entries from all repos.
-			// Patterns: "orch-integrate-autostash-{batchId}" (from extension.ts)
-			//           "merge-agent-autostash-w*-{batchId}" (from merge.ts)
-			for (const repo of allRepos) {
-				dropBatchAutostash(repo.root, batchId);
-			}
-
-			// TP-051: Delete stale task/* and saved/task/* branches from all repos.
-			// These accumulate after each batch and clutter `git branch` output.
-			// Deletes both current-batch branches and orphans from previous batches.
-			const branchCleanupLines: string[] = [];
-			for (const repo of allRepos) {
-				const branchCleanup = deleteStaleBranches(repo.root, opId, batchId);
-				const totalDeleted = branchCleanup.deletedTaskBranches.length + branchCleanup.deletedSavedBranches.length;
-				if (totalDeleted > 0 || branchCleanup.failedDeletes.length > 0) {
-					const label = repo.id === "(default)" ? "" : ` (${repo.id})`;
-					if (branchCleanup.deletedTaskBranches.length > 0) {
-						branchCleanupLines.push(`  🗑️ Deleted ${branchCleanup.deletedTaskBranches.length} task branch(es)${label}`);
-					}
-					if (branchCleanup.deletedSavedBranches.length > 0) {
-						branchCleanupLines.push(`  🗑️ Deleted ${branchCleanup.deletedSavedBranches.length} saved branch(es)${label}`);
-					}
-					if (branchCleanup.failedDeletes.length > 0) {
-						branchCleanupLines.push(`  ⚠️ Failed to delete ${branchCleanup.failedDeletes.length} branch(es)${label}: ${branchCleanup.failedDeletes.join(", ")}`);
-					}
-				}
-			}
-			if (branchCleanupLines.length > 0) {
-				ctx.ui.notify("Branch cleanup:\n" + branchCleanupLines.join("\n"), "info");
-			}
-
-			// Run acceptance checks across all workspace repos.
-			// In PR mode, the orch branch is intentionally preserved for the PR,
-			// so we skip orch branch detection to avoid contradictory output.
-			const skipOrchBranch = parsed.mode === "pr";
-			const repoFindings: IntegrateCleanupRepoFindings[] = [];
-			for (const repo of allRepos) {
-				const findings = collectRepoCleanupFindings(
-					repo.root, repo.id === "(default)" ? undefined : repo.id,
-					opId, batchId, orchPrefix, resolvedOrchBranch, orchConfig,
-					{ skipOrchBranch },
-				);
-				repoFindings.push(findings);
-			}
-
-			const cleanupResult = computeIntegrateCleanupResult(repoFindings);
-
-			// NOW delete batch state (acceptance checks are done)
-			try { deleteBatchState(repoRoot); } catch { /* best effort */ }
-
-			const integrationSummary = wsConfig
-				? `✅ Integrated ${resolvedOrchBranch} across ${reposToIntegrate.length} repo(s).\n${repoMessages.join("\n")}\n${totalCommits} total commit(s) applied.`
-				: `${repoMessages[0] || "✅ Integrated."}\n${commitsAhead} commit(s) applied.`;
-
-			const summary = integrationSummary + "\n" + cleanupResult.report;
-
-			ctx.ui.notify(summary, cleanupResult.notifyLevel);
-
-			// TP-043 R004: If supervisor has a deferred batch summary (supervised mode),
-			// present it now that integration is complete, then deactivate.
-			if (supervisorState.active && supervisorState.pendingSummaryDeps) {
-				const deps = supervisorState.pendingSummaryDeps;
-				supervisorState.pendingSummaryDeps = null;
-				if (supervisorState.batchStateRef && supervisorState.stateRoot) {
-					presentBatchSummary(pi, supervisorState.batchStateRef, supervisorState.stateRoot, deps.opId, deps.diagnostics, deps.mergeResults);
-				}
-				deactivateSupervisor(pi, supervisorState);
+				const argsStr = argParts.length > 0 ? argParts.join(" ") : undefined;
+				const result = await doOrchIntegrate(argsStr, ctx);
+				return { content: [{ type: "text" as const, text: result.message }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error integrating batch: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
 			}
 		},
 	});
