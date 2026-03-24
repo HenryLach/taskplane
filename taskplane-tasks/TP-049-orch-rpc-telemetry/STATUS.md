@@ -78,8 +78,8 @@
 ### Step 6: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Check affected docs
-- [ ] Discoveries logged
+- [x] Check affected docs
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
@@ -95,6 +95,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| merge-timeout-resilience.test.ts 4.4 searched for `export function waitForMergeResult` (missing `async`), causing substring(-1) to silently read file start | Fixed in-place | `extensions/tests/merge-timeout-resilience.test.ts` |
+| task-runner-rpc.test.ts and task-runner-rpc-integration.test.ts asserted execution.ts has no rpc-wrapper refs; updated to only check polling loop excludes sidecar-tailing | Fixed in-place | `extensions/tests/task-runner-rpc*.test.ts` |
+| Lane sessions use TASK_RUNNER_SPAWN_MODE=subprocess (not tmux) so inner workers/reviewers use spawnAgent(), not spawnAgentTmux() | Noted — telemetry from outer RPC wrapper covers the lane session | `extensions/taskplane/execution.ts` |
 
 ---
 
