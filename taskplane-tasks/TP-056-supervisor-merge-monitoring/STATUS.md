@@ -1,6 +1,6 @@
 # TP-056: Supervisor Merge Monitoring — Status
 
-**Current Step:** Step 1: Implement Merge Health Monitor
+**Current Step:** Step 2: Integrate with Engine and Supervisor
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2

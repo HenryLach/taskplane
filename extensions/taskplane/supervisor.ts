@@ -3212,6 +3212,10 @@ interface ParsedEvent {
 	skippedTasks?: number;
 	blockedTasks?: number;
 	batchDurationMs?: number;
+	// ── Merge health monitoring fields (TP-056) ─────────────────
+	sessionName?: string;
+	healthStatus?: string;
+	stalledMinutes?: number;
 	// ── Tier0Event-specific optional fields ──────────────────────
 	pattern?: string;
 	attempt?: number;
@@ -3239,6 +3243,9 @@ const SIGNIFICANT_EVENT_TYPES = new Set<UnifiedEventType>([
 	"merge_start",
 	"merge_success",
 	"merge_failed",
+	"merge_health_warning",
+	"merge_health_dead",
+	"merge_health_stuck",
 	"batch_complete",
 	"batch_paused",
 	"tier0_escalation",
@@ -3477,6 +3484,20 @@ export function formatEventNotification(
 			return `⚠️ **Wave ${waveNum} merge failed**${laneInfo}: ${reason}.\n` +
 				`   Recovery may be needed. Check the merge logs for details.`;
 		}
+		case "merge_health_warning": {
+			const lane = event.laneNumber !== undefined ? event.laneNumber : "?";
+			const mins = event.stalledMinutes ?? "?";
+			return `⚠️ Merge agent on lane ${lane} may be stalled (no output for ${mins} min)`;
+		}
+		case "merge_health_dead": {
+			const lane = event.laneNumber !== undefined ? event.laneNumber : "?";
+			return `💀 Merge agent on lane ${lane} session died — triggering early retry`;
+		}
+		case "merge_health_stuck": {
+			const lane = event.laneNumber !== undefined ? event.laneNumber : "?";
+			const mins = event.stalledMinutes ?? "?";
+			return `🔒 Merge agent on lane ${lane} appears stuck (no output for ${mins} min). Consider killing and retrying.`;
+		}
 		case "batch_complete": {
 			const parts: string[] = [];
 			if (event.succeededTasks !== undefined) parts.push(`${event.succeededTasks} succeeded`);
@@ -3598,6 +3619,8 @@ export function shouldNotify(
 		eventType === "batch_complete" ||
 		eventType === "batch_paused" ||
 		eventType === "merge_failed" ||
+		eventType === "merge_health_dead" ||
+		eventType === "merge_health_stuck" ||
 		eventType === "tier0_escalation"
 	) {
 		return true;
