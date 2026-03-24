@@ -1,11 +1,11 @@
 # TP-057: Persistent Reviewer Context — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Create Reviewer Extension with `wait_for_review` Tool
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -15,16 +15,16 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read design spec (Option D: Tool-Driven Reviewer)
-- [ ] Read `review_step` tool handler and `spawnReviewerSession()` in task-runner.ts
-- [ ] Read reviewer template and RPC wrapper spawn pattern
+- [x] Read design spec (Option D: Tool-Driven Reviewer)
+- [x] Read `review_step` tool handler and `spawnReviewerSession()` in task-runner.ts
+- [x] Read reviewer template and RPC wrapper spawn pattern
 
 ---
 
 ### Step 1: Create Reviewer Extension with `wait_for_review` Tool
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Create `extensions/reviewer-extension.ts` with `wait_for_review` tool registration
 - [ ] Implement signal file polling with configurable interval (2-5s) and timeout
@@ -34,7 +34,7 @@
 ---
 
 ### Step 2: Update `review_step` Handler for Persistent Mode
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Hydrate: Expand based on actual review_step handler structure discovered in Step 0
 
@@ -46,7 +46,7 @@
 ---
 
 ### Step 3: Update Reviewer Template for Persistent Mode
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Update reviewer template for wait_for_review loop workflow
 - [ ] Ensure template works in both persistent and fallback (fresh spawn) modes
@@ -55,7 +55,7 @@
 ---
 
 ### Step 4: Path Resolution and Spawn Integration
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add reviewer-extension.ts to spawn command's --extensions list
 - [ ] Add to package.json files array
@@ -64,7 +64,7 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Create persistent-reviewer-context.test.ts with signal, session reuse, fallback, and cleanup tests
 - [ ] Full test suite passing
@@ -73,7 +73,7 @@
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Update review-loop.md with persistent reviewer section
 - [ ] Update supervisor-primer.md
@@ -102,6 +102,22 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-24 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-24 20:40 | Task started | Extension-driven execution |
+| 2026-03-24 20:40 | Step 0 started | Preflight |
+| 2026-03-24 20:40 | Step 1 started | Create Reviewer Extension with `wait_for_review` Tool |
+| 2026-03-24 20:40 | Step 2 started | Update `review_step` Handler for Persistent Mode |
+| 2026-03-24 20:40 | Step 3 started | Update Reviewer Template for Persistent Mode |
+| 2026-03-24 20:40 | Step 4 started | Path Resolution and Spawn Integration |
+| 2026-03-24 20:40 | Step 5 started | Testing & Verification |
+| 2026-03-24 20:40 | Step 6 started | Documentation & Delivery |
+| 2026-03-24 20:40 | Task started | Extension-driven execution |
+| 2026-03-24 20:40 | Step 0 started | Preflight |
+| 2026-03-24 20:40 | Step 1 started | Create Reviewer Extension with `wait_for_review` Tool |
+| 2026-03-24 20:40 | Step 2 started | Update `review_step` Handler for Persistent Mode |
+| 2026-03-24 20:40 | Step 3 started | Update Reviewer Template for Persistent Mode |
+| 2026-03-24 20:40 | Step 4 started | Path Resolution and Spawn Integration |
+| 2026-03-24 20:40 | Step 5 started | Testing & Verification |
+| 2026-03-24 20:40 | Step 6 started | Documentation & Delivery |
 
 ---
 
