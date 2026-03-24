@@ -1,6 +1,6 @@
 # TP-049: Orchestrator RPC Telemetry for All Agent Types — Status
 
-**Current Step:** Step 3: Route reviewer spawns through RPC wrapper (tmux mode)
+**Current Step:** Step 4: Ensure dashboard consumes all telemetry sources
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
