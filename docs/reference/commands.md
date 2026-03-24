@@ -524,6 +524,20 @@ See [Integration setting](configuration/taskplane-settings.md#orchestrator) for 
 - `ℹ️ Batch ... used legacy merge mode` — older batch that was already merged directly (no orch branch to integrate)
 - `❌ No completed batch found and no orch branches exist.` — run `/orch` first
 
+### Orchestrator Tools (Programmatic Access)
+
+The key orchestrator commands are also registered as **extension tools** that the supervisor agent (and any agent in the session) can invoke programmatically:
+
+| Tool | Equivalent Command | Parameters |
+|------|-------------------|------------|
+| `orch_status()` | `/orch-status` | — |
+| `orch_pause()` | `/orch-pause` | — |
+| `orch_resume(force?)` | `/orch-resume [--force]` | `force`: boolean (optional) |
+| `orch_abort(hard?)` | `/orch-abort [--hard]` | `hard`: boolean (optional) |
+| `orch_integrate(mode?, force?, branch?)` | `/orch-integrate [opts]` | `mode`: "fast-forward"\|"merge"\|"pr", `force`: boolean, `branch`: string |
+
+These tools share the same logic as the slash commands. They return text results and catch errors gracefully (never throw). The supervisor agent uses these to manage batches proactively during monitoring.
+
 ---
 
 ## Configuration Commands
