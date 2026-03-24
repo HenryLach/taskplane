@@ -1,11 +1,11 @@
 # TP-048: Persistent Worker Context Per Task — Status
 
-**Current Step:** Step 2: Update worker prompt for multi-step execution
+**Current Step:** Step 3: Update progress tracking and stall detection
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 4
-**Iteration:** 3
+**Review Counter:** 5
+**Iteration:** 4
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -39,18 +39,18 @@
 ---
 
 ### Step 2: Update worker prompt for multi-step execution
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] Change worker prompt from "Execute Step N only" to "Execute all remaining steps"
 - [x] Include list of remaining steps with completion status
 - [x] Add per-step commit and wrap-up check instructions
 - [x] Update task-worker.md and local/task-worker.md templates
-- [ ] R004: Verify all Step 2 deliverables are committed (not just STATUS.md) and document that implementation was delivered in Step 1 commits
+- [x] R004: Verify all Step 2 deliverables are committed (not just STATUS.md) and document that implementation was delivered in Step 1 commits
 
 ---
 
 ### Step 3: Update progress tracking and stall detection
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Track total checkboxes across all steps before/after each iteration
 - [ ] noProgressCount applies per iteration (not per step)
@@ -100,6 +100,8 @@
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
 | R003 | plan | Step 2 | APPROVE | .reviews/R003-plan-step2.md |
 | R004 | code | Step 2 | REVISE | .reviews/R004-code-step2.md |
+| R004 | code | Step 2 | APPROVE | .reviews/R004-code-step2.md |
+| R005 | plan | Step 3 | APPROVE | .reviews/R005-plan-step3.md |
 |---|------|------|---------|------|
 
 ---
@@ -146,6 +148,10 @@
 | 2026-03-24 01:11 | Review R003 | plan Step 2: APPROVE |
 | 2026-03-24 01:11 | Worker iter 3 | done in 511s, ctx: 19%, tools: 45 |
 | 2026-03-24 01:14 | Review R004 | code Step 2: REVISE |
+| 2026-03-24 01:15 | Review R004 | code Step 2: APPROVE |
+| 2026-03-24 01:15 | Step 2 complete | Update worker prompt for multi-step execution |
+| 2026-03-24 01:15 | Step 3 started | Update progress tracking and stall detection |
+| 2026-03-24 01:16 | Review R005 | plan Step 3: APPROVE |
 
 ---
 
@@ -156,6 +162,20 @@
 ---
 
 ## Notes
+
+### Step 2 R004 Revision Note
+
+Step 2 deliverables (worker prompt multi-step format, template updates) were all implemented
+during Step 1 commits. Specifically:
+- `extensions/task-runner.ts` — worker prompt changed to "Execute all remaining steps" with step listing, per-step commit/wrap-up instructions (commits `602146d` through `a8d6892`)
+- `templates/agents/task-worker.md` — rewritten for multi-step awareness (same commits)
+- `templates/agents/local/task-worker.md` — updated comments to describe multi-step composition (same commits)
+
+The Step 1 refactoring necessarily included the prompt/template changes because the worker
+prompt construction is integral to the `runWorker()` function that was restructured. Separating
+them would have left the worker broken between Step 1 and Step 2.
+
+Verified in this iteration: all four Step 2 requirements are confirmed present in the committed code.
 
 ### Step 0 Preflight Findings
 

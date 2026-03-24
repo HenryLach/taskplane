@@ -1,19 +1,20 @@
 ## Code Review: Step 2: Update worker prompt for multi-step execution
 
-### Verdict: REVISE
+### Verdict: APPROVE
 
 ### Summary
-This checkpoint does not contain the Step 2 implementation changes. The commit range (`a8d6892..HEAD`) only modifies `STATUS.md`; there are no edits to `extensions/task-runner.ts` or worker templates, which are explicit Step 2 scope items. As committed, this step does not demonstrate delivery of the required prompt/template updates.
+The Step 2 implementation meets the stated outcomes: the worker prompt now targets all remaining steps, includes explicit completion/skip status in the step list, and instructs per-step commit plus wrap-up checks between steps. Both worker templates were updated to remove stale single-step guidance and align with multi-step execution/resume behavior. I also spot-checked related task-runner tests, and they pass.
 
 ### Issues Found
-1. **[PROMPT.md:57-59,100-127,181-183] [critical]** — Step 2 requires updates in `extensions/task-runner.ts`, `templates/agents/task-worker.md`, and `templates/agents/local/task-worker.md`, but `git diff a8d6892..HEAD --name-only` shows only `taskplane-tasks/TP-048-persistent-worker-context/STATUS.md` changed. Add the actual code/template changes for Step 2 (or clearly document and justify why Step 2 is a no-op because the outcomes were already delivered earlier).
-2. **[taskplane-tasks/TP-048-persistent-worker-context/STATUS.md:42] [important]** — The step section is marked `🟨 In Progress` despite all Step 2 checkboxes being checked and the commit message claiming completion. Make step status consistent with actual completion state to avoid incorrect operator visibility.
+1. **[extensions/task-runner.ts:931] [minor]** `git log` uses both `--oneline` and `--format=%H`; `--oneline` is redundant here. Suggested fix: remove `--oneline` to make intent clearer and avoid mixed formatting flags.
 
 ### Pattern Violations
-- Checkpoint labeled as completing Step 2 without corresponding in-scope implementation changes.
+- None observed.
 
 ### Test Gaps
-- No validation evidence tied to Step 2 prompt/template behavior changes in this checkpoint.
+- No targeted test currently validates the new worker prompt content (all-steps listing + `[already complete — skip]` annotation).
+- No targeted test currently validates step-boundary baseline propagation when multiple steps are completed in one worker iteration.
 
 ### Suggestions
-- If Step 2 outcomes were already implemented in earlier Step 1 commits, note that explicitly in `STATUS.md` Notes/Execution Log and avoid a "complete Step 2" code checkpoint with only status churn.
+- Add focused tests around prompt construction in `runWorker()` to lock in the new multi-step instruction contract.
+- Consider extending review diff generation to support an explicit upper commit boundary for step-specific diffs when several steps complete in one iteration.
