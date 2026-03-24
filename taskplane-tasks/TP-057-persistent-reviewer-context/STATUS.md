@@ -1,6 +1,6 @@
 # TP-057: Persistent Reviewer Context — Status
 
-**Current Step:** Step 3: Update Reviewer Template for Persistent Mode
+**Current Step:** Step 4: Path Resolution and Spawn Integration
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
@@ -48,9 +48,9 @@
 ### Step 3: Update Reviewer Template for Persistent Mode
 **Status:** 🟨 In Progress
 
-- [ ] Update reviewer template for wait_for_review loop workflow
-- [ ] Ensure template works in both persistent and fallback (fresh spawn) modes
-- [ ] Instruct reviewer to reference previous reviews when relevant
+- [x] Update reviewer template for wait_for_review loop workflow
+- [x] Ensure template works in both persistent and fallback (fresh spawn) modes
+- [x] Instruct reviewer to reference previous reviews when relevant
 
 ---
 
