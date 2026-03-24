@@ -288,13 +288,14 @@ describe("/orch subprocess path no-regression (source extraction)", () => {
 		expect(spawnAgentBody).not.toContain('"--system-prompt-file"');
 	});
 
-	it("pollUntilTaskComplete in execution.ts has no rpc-wrapper references", () => {
+	it("pollUntilTaskComplete in execution.ts has no sidecar-tailing references", () => {
 		const execSrc = readFileSync(
 			resolve(__dirname, "../taskplane/execution.ts"),
 			"utf-8",
 		);
 		expect(execSrc).toContain("export async function pollUntilTaskComplete(");
-		expect(execSrc).not.toContain("rpc-wrapper");
+		// The polling loop should NOT directly tail sidecar files or build exit diagnostics.
+		// Those are task-runner concerns; execution.ts only spawns via rpc-wrapper.
 		expect(execSrc).not.toContain("tailSidecarJsonl");
 		expect(execSrc).not.toContain("readExitSummary");
 		expect(execSrc).not.toContain("buildExitDiagnostic");

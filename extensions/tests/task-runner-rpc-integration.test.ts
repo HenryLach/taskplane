@@ -128,7 +128,7 @@ describe("/orch subprocess path non-regression", () => {
 		expect(body).toContain('"--no-skills"');
 	});
 
-	it("pollUntilTaskComplete in execution.ts is unmodified by TP-026", () => {
+	it("pollUntilTaskComplete in execution.ts has no sidecar-tailing references", () => {
 		const src = readFileSync(
 			resolve(__dirname, "../taskplane/execution.ts"),
 			"utf-8",
@@ -137,10 +137,8 @@ describe("/orch subprocess path non-regression", () => {
 		// Confirm the function exists and is exported
 		expect(src).toContain("export async function pollUntilTaskComplete(");
 
-		// Confirm it does NOT contain any rpc-wrapper or sidecar references
-		expect(src).not.toContain("rpc-wrapper");
-		expect(src).not.toContain("sidecar-path");
-		expect(src).not.toContain("exit-summary-path");
+		// execution.ts now uses rpc-wrapper for spawn (TP-049) but the polling
+		// loop should NOT directly tail sidecar files or build exit diagnostics.
 		expect(src).not.toContain("tailSidecarJsonl");
 		expect(src).not.toContain("readExitSummary");
 		expect(src).not.toContain("buildExitDiagnostic");

@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdi
 import { execSync, spawnSync } from "child_process";
 import { join, dirname, resolve, relative } from "path";
 
-import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
+import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, generateTelemetryPaths, resolveRpcWrapperPath, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
@@ -17,6 +17,58 @@ import { ORCH_MESSAGES } from "./messages.ts";
 import { loadOrchestratorConfig } from "./config.ts";
 import { captureBaseline, diffFingerprints, runVerificationCommands, parseTestOutput, deduplicateFingerprints } from "./verification.ts";
 import type { VerificationBaseline, FingerprintDiff, TestFingerprint } from "./verification.ts";
+
+// ── Merge Telemetry Helpers ───────────────────────────────────────────
+
+import { userInfo } from "os";
+
+/**
+ * Generate telemetry file paths for a merge agent session.
+ *
+ * Naming: {opId}-{batchId}-{repoId}[-merge-w{N}-lane-{N}]-merger.{ext}
+ * Role is always "merger" to distinguish from worker/reviewer in the dashboard.
+ *
+ * @param sessionName  - TMUX session name (e.g., "orch-merge-1")
+ * @param sidecarRoot  - Root dir for sidecar files (e.g., <workspace>/.pi)
+ * @returns { sidecarPath, exitSummaryPath }
+ */
+function generateMergeTelemetryPaths(
+	sessionName: string,
+	sidecarRoot: string,
+): { sidecarPath: string; exitSummaryPath: string } {
+	const telemetryTs = Date.now();
+
+	// Resolve opId: same priority chain as execution.ts
+	let opId = "op";
+	const envOpId = process.env.TASKPLANE_OPERATOR_ID;
+	if (envOpId?.trim()) {
+		opId = envOpId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+	} else {
+		try {
+			const username = userInfo().username;
+			if (username?.trim()) {
+				opId = username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+			}
+		} catch { /* userInfo() can throw on some platforms */ }
+	}
+
+	const batchId = String(telemetryTs);
+	const repoId = "default";
+
+	// Extract merge-specific info from sessionName (e.g., "orch-merge-1")
+	const mergeMatch = sessionName.match(/merge-(\d+)/);
+	const mergeSuffix = mergeMatch ? `-merge-${mergeMatch[1]}` : "";
+
+	const role = "merger";
+	const telemetryBasename = `${opId}-${batchId}-${repoId}${mergeSuffix}-${role}`;
+	const telemetryDir = join(sidecarRoot, "telemetry");
+	if (!existsSync(telemetryDir)) mkdirSync(telemetryDir, { recursive: true });
+
+	return {
+		sidecarPath: join(telemetryDir, `${telemetryBasename}.jsonl`),
+		exitSummaryPath: join(telemetryDir, `${telemetryBasename}-exit.json`),
+	};
+}
 
 // ── Merge Implementation ─────────────────────────────────────────────
 
@@ -374,10 +426,10 @@ export async function spawnMergeAgent(
 		await sleepAsync(500);
 	}
 
-	// Build the pi command for the merge agent.
-	// Uses --no-session to prevent interactive session management.
-	// --append-system-prompt loads the merger agent definition.
-	// The merge request file is passed as a prompt via @file syntax.
+	// Build the merge agent command.
+	// Uses rpc-wrapper.mjs to produce structured telemetry (sidecar JSONL + exit summary).
+	// The merger agent definition is loaded via --system-prompt-file.
+	// The merge request is passed as the --prompt-file.
 	const shellQuote = (s: string): string => {
 		if (/[\s"'`$\\!&|;()<>{}#*?~]/.test(s)) {
 			return `'${s.replace(/'/g, "'\\''")}'`;
@@ -385,25 +437,43 @@ export async function spawnMergeAgent(
 		return s;
 	};
 
-	// Build model args if specified
-	const modelArgs = config.merge.model ? `--model ${shellQuote(config.merge.model)}` : "";
+	// Generate telemetry paths for this merge session
+	// Naming: {opId}-{batchId}-{repoId}-merger.jsonl (or with wave/lane info from sessionName)
+	const sidecarRoot = join(stateRoot ?? repoRoot, ".pi");
+	const telemetry = generateMergeTelemetryPaths(sessionName, sidecarRoot);
+	execLog("merge", sessionName, "telemetry paths generated", {
+		sidecar: telemetry.sidecarPath,
+		exitSummary: telemetry.exitSummaryPath,
+	});
 
-	// Build tools override if specified
-	const toolsArgs = config.merge.tools ? `--tools ${shellQuote(config.merge.tools)}` : "";
+	// Resolve paths
+	const rpcWrapperPath = resolveRpcWrapperPath(repoRoot);
+	const systemPromptPath = agentRoot ? join(agentRoot, "task-merger.md") : join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md");
 
-	const piCommand = [
-		"pi --no-session",
-		modelArgs,
-		toolsArgs,
-		`--append-system-prompt ${shellQuote(agentRoot ? join(agentRoot, "task-merger.md") : join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md"))}`,
-		`@${shellQuote(mergeRequestPath)}`,
-	].filter(Boolean).join(" ");
+	// Build RPC wrapper command
+	const wrapperParts = [
+		"TERM=xterm-256color",
+		"node", shellQuote(rpcWrapperPath),
+		"--sidecar-path", shellQuote(telemetry.sidecarPath),
+		"--exit-summary-path", shellQuote(telemetry.exitSummaryPath),
+		"--prompt-file", shellQuote(mergeRequestPath),
+		"--system-prompt-file", shellQuote(systemPromptPath),
+	];
+
+	// Add model args if specified
+	if (config.merge.model) {
+		wrapperParts.push("--model", shellQuote(config.merge.model));
+	}
+
+	// Add tools override if specified
+	if (config.merge.tools) {
+		wrapperParts.push("--tools", shellQuote(config.merge.tools));
+	}
+
+	const piCommand = wrapperParts.filter(Boolean).join(" ");
 
 	const tmuxMergeDir = toTmuxPath(mergeWorkDir);
-	// Pi's TUI (ink/react) hangs silently with TERM=tmux-256color (tmux default).
-	// Force xterm-256color so pi can render and start execution.
-	// Same fix as buildTmuxSpawnArgs / buildLaneEnvVars.
-	const wrappedCommand = `cd ${shellQuote(tmuxMergeDir)} && TERM=xterm-256color ${piCommand}`;
+	const wrappedCommand = `cd ${shellQuote(tmuxMergeDir)} && ${piCommand}`;
 	const tmuxArgs = [
 		"new-session", "-d",
 		"-s", sessionName,
