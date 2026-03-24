@@ -19,10 +19,12 @@ The taskplane dashboard runs on a local port on your system and gives you elegan
 ### Key Features
 
 - **Task Orchestrator** — Parallel multi-task execution using git worktrees for full filesystem isolation. Dependency-aware wave scheduling. Automated merges into a dedicated orch branch — your working branch stays stable until you choose to integrate.
-- **Task Runner** — What the Orchestrator uses for autonomous single-task execution. Worker agents run in fresh-context loops with STATUS.md as persistent memory. Every checkbox gets a git checkpoint. Cross-model reviewer agents catch what the worker agents missed.
-- **Web Dashboard** — Live browser-based monitoring via `taskplane dashboard`. SSE streaming, lane/task progress, wave visualization, batch history.
+- **Persistent Worker Context** — Workers handle all steps in a single context, auto-detecting the model's context window (1M for Claude 4.6 Opus, 200K for Bedrock). Only iterates on context overflow. Dramatic reduction in spawn count and token cost.
+- **Worker-Driven Inline Reviews** — Workers invoke a `review_step` tool at step boundaries. Reviewer agents spawn in tmux sessions with full telemetry. REVISE feedback is addressed inline without losing context.
+- **Supervisor Agent** — Conversational supervisor monitors batch progress, handles failures, and can invoke orchestrator commands autonomously (resume, integrate, pause, abort).
+- **Web Dashboard** — Live browser-based monitoring via `taskplane dashboard`. SSE streaming, lane/task progress, reviewer activity, merge telemetry, batch history.
 - **Structured Tasks** — PROMPT.md defines the mission, steps, and constraints. STATUS.md tracks progress. Agents follow the plan, not vibes.
-- **Checkpoint Discipline** — Every completed checkbox item triggers a git commit. Work is never lost, even if a worker crashes mid-task.
+- **Checkpoint Discipline** — Step boundary commits ensure work is never lost, even if a worker crashes mid-task.
 - **Cross-Model Review** — Reviewer agent uses a different model than the worker agent (highly recommended, not enforced). Independent quality gate before merge.
 
 ## Install
@@ -117,27 +119,17 @@ Inside the pi session:
 
 `/orch` with no arguments is the universal entry point — it detects your project state and activates the supervisor for guided interaction (onboarding, batch planning, health checks, or retrospective). The default scaffold includes two independent example tasks, so `/orch all` gives you an immediate orchestrator + dashboard experience.
 
-### 4. Optional: run one task directly
+### 4. Run a single task with isolation
 
-`/task` is still useful for single-task execution and focused debugging:
-
-```
-/task taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
-/task-status
-```
-
-Important distinction:
-
-- `/task` runs in your **current branch/worktree**.
-- `/orch` runs tasks in **isolated worktrees** on a dedicated orch branch — your working branch is never touched until you integrate.
-
-Because workers checkpoint with git commits, `/task` can capture unrelated local edits if you're changing files in parallel. For safer isolation (even with one task), prefer:
+For a single task with full worktree isolation, dashboard, and reviews:
 
 ```text
 /orch taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
 ```
 
-Orchestrator lanes execute tasks through task-runner under the hood, so `/task` and `/orch` share the same core task execution model.
+This uses the same orchestrator infrastructure as a full batch — isolated worktree, orch branch, supervisor, dashboard, inline reviews — but for just one task.
+
+> **Note:** The `/task` command still exists for direct single-task execution in the current branch, but `/orch` is recommended for all workflows. `/task` does not provide worktree isolation, dashboard, or inline reviews.
 
 ## Commands
 
@@ -200,9 +192,7 @@ Orchestrator lanes execute tasks through task-runner under the hood, so `/task` 
           └─────────────┘
 ```
 
-**Single task** (`/task`): Worker iterates in fresh-context loops. STATUS.md is persistent memory. Each checkbox → git checkpoint. Reviewer validates on completion.
-
-**Parallel batch** (`/orch`): Tasks are sorted into dependency waves. Each wave runs in parallel across lanes (git worktrees). Completed lanes merge into a dedicated orch branch. When the batch completes, use `/orch-integrate` to bring the results into your working branch (or configure auto-integration).
+**How it works:** Tasks are sorted into dependency waves. Each wave runs in parallel across lanes (git worktrees). Workers handle all steps in a single context, calling `review_step` at step boundaries for inline reviews. Completed lanes merge into a dedicated orch branch. A supervisor agent monitors progress and can autonomously resume, integrate, or abort. When the batch completes, use `/orch-integrate` to bring the results into your working branch (or configure auto-integration).
 
 ## Documentation
 

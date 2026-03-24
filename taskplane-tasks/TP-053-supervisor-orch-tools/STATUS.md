@@ -1,7 +1,7 @@
 # TP-053: Expose Orchestrator Commands as Tools for Supervisor Agent — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
 **Review Counter:** 0
@@ -11,27 +11,41 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Done
 
-- [ ] Read each command handler (resume, integrate, pause, abort, status)
-- [ ] Read review_step tool registration as pattern reference
-- [ ] Understand pi registerTool() API
-- [ ] Identify execCtx dependencies per command
+- [x] Read each command handler (resume, integrate, pause, abort, status)
+- [x] Read review_step tool registration as pattern reference
+- [x] Understand pi registerTool() API
+- [x] Identify execCtx dependencies per command
 
 ---
 
 ### Step 1: Register orchestrator tools
-**Status:** ⬜ Not Started
+**Status:** 🟡 In Progress
 
-> ⚠️ Hydrate: Expand based on exact command handler structure found in Step 0
+**Design decisions (from R001 review):**
+- **Shared reporter pattern:** Each extracted helper takes a `report(text, level)` callback. Command handlers pass `ctx.ui.notify`. Tool handlers accumulate messages into an array and return them as a single text result.
+- **Integrate mode mapping:** Tool param `mode: "fast-forward"|"merge"|"pr"` maps to internal `"ff"|"merge"|"pr"`. Default `"fast-forward"`.
+- **Resume return semantics:** Tool returns **immediate initiation/guard result only** (e.g., "Batch resume initiated" or guard rejection). Downstream progress is asynchronous via engine events.
+- **Integrate helper boundary:** Full command parity — includes branch-protection check, multi-repo iteration, cleanup/acceptance, supervisor summary/deactivation.
+- **Tools registered unconditionally** (not gated on orchestrated mode — supervisor runs in main session).
 
-- [ ] Extract shared logic from each command handler into internal functions
-- [ ] Register orch_resume tool with force parameter
-- [ ] Register orch_integrate tool with mode/force/branch parameters
-- [ ] Register orch_pause tool
-- [ ] Register orch_abort tool with hard parameter
-- [ ] Register orch_status tool
-- [ ] All tools return text results, catch errors gracefully
+**Checklist:**
+
+- [ ] Add `import { Type } from "@mariozechner/pi-ai"` to extension.ts
+- [ ] Extract `doOrchStatus(orchBatchState, execCtx, stateRoot)` → returns formatted text
+- [ ] Extract `doOrchPause(orchBatchState, updateOrchWidget)` → returns status message
+- [ ] Extract `doOrchAbort(...)` → captures all notify output, returns collected text
+- [ ] Extract `doOrchResume(force, ...)` → guard checks + fire-and-forget launch, returns immediate result
+- [ ] Extract `doOrchIntegrate(mode, force, branch, ...)` → full parity with command handler including cleanup and supervisor lifecycle
+- [ ] Register `orch_status` tool (no params)
+- [ ] Register `orch_pause` tool (no params)
+- [ ] Register `orch_abort` tool (`hard?: boolean`)
+- [ ] Register `orch_resume` tool (`force?: boolean`)
+- [ ] Register `orch_integrate` tool (`mode?: "fast-forward"|"merge"|"pr"`, `force?: boolean`, `branch?: string`)
+- [ ] Each tool has description, promptSnippet, promptGuidelines
+- [ ] All tools catch errors and return text (no throws)
+- [ ] Existing command handlers call the shared helpers (no duplication)
 
 ---
 
@@ -74,6 +88,11 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| `Type` from `@mariozechner/pi-ai` must be imported in extension.ts (not currently imported) | Add import | extension.ts:1 |
+| `orchBatchState`, `execCtx`, `orchConfig`, etc. are all closure-scoped inside `export default function(pi)` | Tools must be registered inside the same closure | extension.ts:1206 |
+| `orch-pause` doesn't need execCtx, `orch-status` doesn't need execCtx, `orch-abort` doesn't need execCtx | Only resume/integrate need execCtx guard | Command handlers |
+| `orch-resume` has complex onTerminal callback with supervisor integration—tool should wrap the command handler pattern but return a simple result | Extract doResume as internal function | extension.ts:1811 |
+| `orch-integrate` is the most complex—depends on execCtx, ws config, repo iteration, cleanup | Tool handler can invoke the same code path | extension.ts:2330 |
 
 ---
 

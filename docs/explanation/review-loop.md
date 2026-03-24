@@ -30,12 +30,14 @@ Reviewer verdicts:
 - `APPROVE`
 - `REVISE`
 - `RETHINK`
+- `UNAVAILABLE`
 
 Interpretation:
 
-- `APPROVE`: continue
-- `REVISE`: run remediation pass
-- `RETHINK`: approach concerns (warning/escalation path)
+- `APPROVE`: continue to next step
+- `REVISE`: worker addresses feedback inline (same context), then proceeds
+- `RETHINK`: plan concerns — worker reconsiders approach
+- `UNAVAILABLE`: reviewer failed to produce output — worker proceeds with caution
 
 ---
 
@@ -44,11 +46,9 @@ Interpretation:
 Task `Review Level` controls review rigor:
 
 - `0`: no review loop
-- `1`: plan review
+- `1`: plan review only
 - `2`: plan + code review
 - `3`: full rigor policy level (project may treat as highest scrutiny)
-
-Current runner behavior applies plan review at `>=1` and code review at `>=2`.
 
 **Exception:** Step 0 (Preflight) and the final step (Documentation & Delivery)
 always skip both plan and code reviews, regardless of review level. These
@@ -56,31 +56,53 @@ low-risk steps don't benefit from cross-model review.
 
 ---
 
-## Loop mechanics in task-runner
+## Worker-driven inline reviews (v0.9.0+)
 
-Reviews are **transition-based**: they run after the worker exits, for each step
-that was newly completed during that iteration.
+Reviews are **worker-driven**: the worker agent invokes the `review_step` tool
+at step boundaries, based on the task's review level. The reviewer spawns in
+a separate tmux session with full RPC telemetry, and the worker's context is
+preserved across the tool call.
 
 ```text
-After worker exits:
-    for each step that changed from incomplete → complete:
-        plan review (if level ≥ 1, not low-risk, first completion only)
-        code review (if level ≥ 2, not low-risk)
-        if REVISE: mark step incomplete → rework in next iteration
+Worker executing all steps in one context:
+
+  For each substantive step (not Step 0 or final step):
+    if review level ≥ 1:
+      call review_step(step=N, type="plan")    → plan feedback
+    implement the step
+    commit changes
+    if review level ≥ 2:
+      call review_step(step=N, type="code", baseline=<pre-step SHA>)    → code feedback
+      if REVISE: address feedback, commit fixes
+    proceed to next step
 ```
 
 Key behaviors:
 
-- **Plan review** runs only on a step's first completion (not on rework cycles)
-- **Code review** runs on every completion (including after rework)
-- **REVISE** marks the step incomplete; the next worker iteration addresses
-  the reviewer's feedback alongside any other remaining steps
+- **Worker keeps context** — reviews happen mid-execution via a tool call.
+  The worker doesn't lose its accumulated understanding of the codebase.
+- **Reviewer spawns in tmux** — named session (e.g., `orch-lane-1-reviewer`)
+  with RPC wrapper for structured telemetry. Attachable for operator inspection.
+- **REVISE handled inline** — the worker reads the review file in `.reviews/`
+  and addresses feedback immediately, in the same context that wrote the code.
+- **Plan reviews** run before implementation to catch design issues early.
+- **Code reviews** receive a baseline commit SHA so the reviewer sees only
+  the step's changes (not the full cumulative diff).
 - **Low-risk steps** (Step 0/Preflight and final step) skip all reviews
+  automatically — both in the worker's review protocol and as a safety net
+  in the tool handler.
 
-Counters/limits:
+### Dashboard visibility
 
-- `max_review_cycles`
-- `review_counter` in `STATUS.md`
+During a review, the dashboard shows a **reviewer sub-row** below the active
+task with live metrics: elapsed time, tool count, last tool, cost, and context%.
+The worker row shows `[awaiting review]` until the reviewer finishes.
+
+### Orchestrated vs standalone mode
+
+The `review_step` tool is only registered in orchestrated mode (`/orch`).
+In standalone `/task` mode, reviews are not available (the `/task` command
+is deprecated in favor of `/orch` for all workflows).
 
 ---
 
@@ -89,10 +111,11 @@ Counters/limits:
 Typical on-disk artifacts:
 
 - `.reviews/` directory in task folder
-- review output files containing structured verdict and findings
-- review rows appended to `STATUS.md`
+- `request-R00N.md` — generated review request
+- `R00N-plan-stepN.md` / `R00N-code-stepN.md` — reviewer output with verdict
+- Review rows appended to `STATUS.md` Reviews table
 
-This keeps audit trail local to the task.
+This keeps the audit trail local to the task.
 
 ---
 
@@ -102,12 +125,13 @@ Benefits:
 
 - catches mistakes before merge
 - enforces standards consistently
-- provides explainable quality gates
+- worker addresses REVISE feedback with full context (no re-hydration)
+- reviewer activity visible in dashboard
 
 Costs:
 
-- additional tokens/time
-- more operational complexity
+- additional tokens/time per step
+- reviewer model cost (mitigated by skipping low-risk steps)
 
 Projects tune this via review levels and review-cycle limits.
 
