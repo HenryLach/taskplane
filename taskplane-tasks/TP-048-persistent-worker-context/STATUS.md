@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 2
 **Size:** L
 
@@ -24,7 +24,7 @@
 ---
 
 ### Step 1: Restructure the step loop to spawn worker once per task
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 > ⚠️ Hydrate: Expand based on exact loop structure found in Step 0
 
@@ -34,6 +34,7 @@
 - [x] After worker exits, determine which steps were newly completed and run reviews for each
 - [x] Integrate plan reviews into the new loop (run before first worker iteration for non-low-risk steps)
 - [x] Preserve wrap-up signal, kill mechanics, progress tracking, and stall detection
+- [ ] R002: Fix REVISE rework bypass — make completion checks respect explicit rework state (needsRework set or status === "in-progress" as authoritative) in remainingSteps, completedBefore, newlyCompleted, and allComplete
 
 ---
 
@@ -93,6 +94,7 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -126,6 +128,8 @@
 | 2026-03-24 00:42 | Review R001 | plan Step 1: APPROVE |
 | 2026-03-24 00:42 | Review R001 | plan Step 1: APPROVE |
 | 2026-03-24 00:53 | Worker iter 2 | done in 622s, ctx: 34%, tools: 50 |
+| 2026-03-24 00:54 | Worker iter 3 | done in 689s, ctx: 33%, tools: 66 |
+| 2026-03-24 00:56 | Review R002 | code Step 1: REVISE |
 
 ---
 
