@@ -174,7 +174,7 @@ const DEFAULT_CONFIG: TaskConfig = {
 	standards_overrides: {},
 	task_areas: {},
 	worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "off" },
-	reviewer: { model: "openai/gpt-5.3-codex", tools: "read,bash,grep,find,ls", thinking: "on" },
+	reviewer: { model: "", tools: "read,bash,grep,find,ls", thinking: "on" },
 	context: {
 		worker_context_window: 0, warn_percent: 85, kill_percent: 95,
 		max_worker_iterations: 20, max_review_cycles: 2, no_progress_limit: 3,
@@ -631,56 +631,6 @@ function resolveRpcWrapperPath(): string {
 		"Cannot find rpc-wrapper.mjs. Ensure taskplane is installed correctly. " +
 		`Searched: ${searched.join(", ")}`
 	);
-}
-
-/**
- * Resolve the path to this extension file (task-runner.ts).
- * Used to pass the extension to worker subprocesses so they have access
- * to the review_step tool in orchestrated mode.
- *
- * Resolution strategy:
- *   1. Derive from -e argument that loaded this extension
- *   2. Package root + extensions/task-runner.ts
- *   3. cwd/extensions/task-runner.ts (development fallback)
- *
- * Returns null if the extension path cannot be found (non-fatal — worker
- * runs without review_step tool).
- */
-function resolveExtensionPath(): string | null {
-	const extRelPath = join("extensions", "task-runner.ts");
-
-	// 1. Derive from the -e argument that loaded this file
-	try {
-		const args = process.argv;
-		for (let i = 0; i < args.length - 1; i++) {
-			if (args[i] === "-e" && args[i + 1]?.includes("task-runner")) {
-				const extPath = resolve(args[i + 1]);
-				if (existsSync(extPath)) return extPath;
-			}
-		}
-	} catch { /* ignore argv parsing errors */ }
-
-	// 2. Package root
-	const root = findPackageRoot();
-	if (root) {
-		const p = join(root, extRelPath);
-		if (existsSync(p)) return p;
-	}
-
-	// 3. Development fallback
-	const devPath = join(process.cwd(), extRelPath);
-	if (existsSync(devPath)) return devPath;
-
-	return null;
-}
-
-/**
- * Detect whether this extension instance is running inside a worker subprocess
- * (set via TASK_RUNNER_WORKER_TOOL_MODE env var). When true, the extension only
- * registers the review_step tool — no commands, widgets, or auto-start.
- */
-function isWorkerToolMode(): boolean {
-	return process.env.TASK_RUNNER_WORKER_TOOL_MODE === "1";
 }
 
 /**
@@ -2080,6 +2030,7 @@ export default function (pi: ExtensionAPI) {
 				"Call review_step at step boundaries based on the task's Review Level (from STATUS.md header).",
 				"Review Level 0: skip all reviews. Level 1: plan review before implementing. Level 2: plan + code review. Level 3: plan + code + test review.",
 				"Skip reviews for Step 0 (Preflight) and the final documentation/delivery step.",
+				"For code reviews: before starting a step, capture the current HEAD commit with `git rev-parse HEAD` and pass it as the `baseline` parameter. This lets the reviewer see only that step's changes.",
 				"On REVISE: read the review file in .reviews/ for detailed feedback, address the issues, commit fixes, then proceed.",
 				"On RETHINK: reconsider your plan approach, adjust, then implement.",
 				"On UNAVAILABLE: reviewer failed — proceed with caution.",
@@ -2090,9 +2041,14 @@ export default function (pi: ExtensionAPI) {
 					[Type.Literal("plan"), Type.Literal("code")],
 					{ description: 'Review type: "plan" or "code"' },
 				),
+				baseline: Type.Optional(Type.String({
+					description: "Git commit SHA to use as the diff baseline for code reviews. " +
+						"Capture HEAD before starting a step and pass it here so the reviewer " +
+						"sees only that step's changes. If omitted, the reviewer sees the full diff against HEAD.",
+				})),
 			}),
 			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
-				const { step: stepNum, type: reviewType } = params;
+				const { step: stepNum, type: reviewType, baseline } = params;
 
 				if (!state.task || !state.config) {
 					return {
@@ -2123,11 +2079,12 @@ export default function (pi: ExtensionAPI) {
 				const requestPath = join(reviewsDir, `request-R${num}.md`);
 				const outputPath = join(reviewsDir, `R${num}-${reviewType}-step${stepNum}.md`);
 
-				// Find step baseline commit for code reviews
-				let stepBaselineCommit: string | undefined;
-				if (reviewType === "code") {
-					stepBaselineCommit = getHeadCommitSha();
-				}
+				// Resolve step baseline commit for code reviews.
+				// The worker should pass the pre-step HEAD SHA as `baseline` so the
+				// reviewer sees only this step's changes (not cumulative diff).
+				// Falls back to undefined (full diff) if baseline is not provided.
+				const stepBaselineCommit: string | undefined =
+					reviewType === "code" ? (baseline || undefined) : undefined;
 
 				// Find step info for the name
 				const stepInfo = task.steps.find(s => s.number === stepNum);
@@ -2143,7 +2100,7 @@ export default function (pi: ExtensionAPI) {
 				const reviewerDef = loadAgentDef(ctx.cwd, "task-reviewer");
 				const reviewerModel = config.reviewer.model
 					|| reviewerDef?.model
-					|| "openai/gpt-5.3-codex";
+					|| (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514");
 				const reviewerPrompt = reviewerDef?.systemPrompt
 					|| "You are a code reviewer. Read the request and write your review to the specified output file.";
 				const systemPrompt = reviewerPrompt + "\n\n" + buildProjectContext(config, task.taskFolder);
@@ -2947,7 +2904,7 @@ export default function (pi: ExtensionAPI) {
 		writeFileSync(requestPath, request);
 
 		const reviewerDef = loadAgentDef(ctx.cwd, "task-reviewer");
-		const reviewerModel = config.reviewer.model || reviewerDef?.model || "openai/gpt-5.3-codex";
+		const reviewerModel = config.reviewer.model || reviewerDef?.model || (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514");
 		const reviewerPrompt = reviewerDef?.systemPrompt || "You are a code reviewer. Read the request and write your review to the specified output file.";
 		const systemPrompt = reviewerPrompt + "\n\n" + buildProjectContext(config, task.taskFolder);
 
@@ -3086,7 +3043,7 @@ export default function (pi: ExtensionAPI) {
 		const reviewModel = config.quality_gate.review_model
 			|| config.reviewer.model
 			|| reviewerDef?.model
-			|| "openai/gpt-5.3-codex";
+			|| (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514");
 
 		const reviewerPrompt = reviewerDef?.systemPrompt
 			|| "You are a quality gate reviewer. Read the review request and write your JSON verdict to the specified file.";

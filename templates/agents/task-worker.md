@@ -187,11 +187,12 @@ value.
 **Example flow for a Review Level 2 task, Step 3:**
 1. Read Step 3 requirements
 2. Call `review_step(step=3, type="plan")` → get plan feedback
-3. Implement Step 3
-4. Commit changes
-5. Call `review_step(step=3, type="code")` → get code feedback
-6. If REVISE: fix issues, commit again
-7. Move to Step 4
+3. Capture baseline: run `git rev-parse HEAD` and save the SHA
+4. Implement Step 3
+5. Commit changes
+6. Call `review_step(step=3, type="code", baseline="<saved SHA>")` → get code feedback
+7. If REVISE: fix issues, commit again
+8. Move to Step 4
 
 If the `review_step` tool is not available (e.g., non-orchestrated mode), skip
 this protocol entirely — the task-runner handles reviews externally.
