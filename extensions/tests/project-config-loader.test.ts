@@ -709,7 +709,7 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 
 		// DEFAULT_PROJECT_CONFIG should be unchanged
 		expect(DEFAULT_PROJECT_CONFIG.taskRunner.project.name).toBe("Project");
-		expect(DEFAULT_PROJECT_CONFIG.taskRunner.context.workerContextWindow).toBe(200000);
+		expect(DEFAULT_PROJECT_CONFIG.taskRunner.context.workerContextWindow).toBe(0);
 	});
 
 	it("4.3: loadOrchestratorConfig wrapper returns correct snake_case shape", () => {
@@ -768,9 +768,9 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 		expect(result.project.description).toBe("");
 		expect(result.worker.model).toBe("");
 		expect(result.worker.tools).toBe("read,write,edit,bash,grep,find,ls");
-		expect(result.context.worker_context_window).toBe(200000);
-		expect(result.context.warn_percent).toBe(70);
-		expect(result.context.kill_percent).toBe(85);
+		expect(result.context.worker_context_window).toBe(0);
+		expect(result.context.warn_percent).toBe(85);
+		expect(result.context.kill_percent).toBe(95);
 		expect(result.context.max_worker_iterations).toBe(20);
 		expect(result.context.max_review_cycles).toBe(2);
 		expect(result.context.no_progress_limit).toBe(3);

@@ -164,7 +164,7 @@ const DEFAULT_CONFIG: TaskConfig = {
 	worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "off" },
 	reviewer: { model: "openai/gpt-5.3-codex", tools: "read,bash,grep,find,ls", thinking: "on" },
 	context: {
-		worker_context_window: 0, warn_percent: 70, kill_percent: 85,
+		worker_context_window: 0, warn_percent: 85, kill_percent: 95,
 		max_worker_iterations: 20, max_review_cycles: 2, no_progress_limit: 3,
 	},
 	quality_gate: {

@@ -1,11 +1,11 @@
 # TP-047: Context Window Auto-Detect — Status
 
-**Current Step:** Step 1: Auto-detect context window from pi model registry
+**Current Step:** Step 2: Update warn_percent and kill_percent defaults
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 1
-**Review Counter:** 1
-**Iteration:** 2
+**Review Counter:** 2
+**Iteration:** 3
 **Size:** S
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -33,12 +33,12 @@
 ---
 
 ### Step 2: Update warn_percent and kill_percent defaults
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Change warn_percent default from 70 to 85
-- [ ] Change kill_percent default from 85 to 95
-- [ ] Update all three source locations (task-runner.ts, config-schema.ts, config-loader.ts)
-- [ ] Update template task-runner.yaml
+- [x] Change warn_percent default from 70 to 85
+- [x] Change kill_percent default from 85 to 95
+- [x] Update all three source locations (task-runner.ts, config-schema.ts, config-loader.ts)
+- [x] Update template task-runner.yaml
 
 ---
 
@@ -66,6 +66,7 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
+| R002 | plan | Step 2 | APPROVE | .reviews/R002-plan-step2.md |
 |---|------|------|---------|------|
 
 ---
@@ -96,6 +97,10 @@
 | 2026-03-24 00:16 | Step 1 started | Auto-detect context window from pi model registry |
 | 2026-03-24 00:17 | Review R001 | plan Step 1: APPROVE |
 | 2026-03-24 00:18 | Review R001 | plan Step 1: APPROVE |
+| 2026-03-24 00:22 | Worker iter 2 | done in 242s, ctx: 26%, tools: 52 |
+| 2026-03-24 00:22 | Step 1 complete | Auto-detect context window from pi model registry |
+| 2026-03-24 00:22 | Step 2 started | Update warn_percent and kill_percent defaults |
+| 2026-03-24 00:23 | Review R002 | plan Step 2: APPROVE |
 
 ---
 

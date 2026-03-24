@@ -497,8 +497,8 @@ export const DEFAULT_TASK_RUNNER_SECTION: TaskRunnerSection = {
 	reviewer: { model: "openai/gpt-5.3-codex", tools: "read,bash,grep,find,ls", thinking: "on" },
 	context: {
 		workerContextWindow: 0,
-		warnPercent: 70,
-		killPercent: 85,
+		warnPercent: 85,
+		killPercent: 95,
 		maxWorkerIterations: 20,
 		maxReviewCycles: 2,
 		noProgressLimit: 3,
