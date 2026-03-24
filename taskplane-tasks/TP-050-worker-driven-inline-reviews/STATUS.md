@@ -1,11 +1,11 @@
 # TP-050: Worker-Driven Inline Reviews — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -14,19 +14,19 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Understand current step loop and deferred review mechanism
-- [ ] Understand doReview() and reviewer spawn infrastructure
-- [ ] Understand spawnAgentTmux() and onTelemetry callback pattern
-- [ ] Understand lane-state sidecar structure and reviewer fields
-- [ ] Understand dashboard lane rendering
-- [ ] Understand pi extension tool registration API
+- [x] Understand current step loop and deferred review mechanism
+- [x] Understand doReview() and reviewer spawn infrastructure
+- [x] Understand spawnAgentTmux() and onTelemetry callback pattern
+- [x] Understand lane-state sidecar structure and reviewer fields
+- [x] Understand dashboard lane rendering
+- [x] Understand pi extension tool registration API
 
 ---
 
 ### Step 1: Register review_step extension tool
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Hydrate: Expand based on pi tool registration API discovered in Step 0
 
@@ -39,7 +39,7 @@
 ---
 
 ### Step 2: Remove deferred review logic from step loop
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Remove post-worker-exit deferred review block
 - [ ] Remove REVISE → mark-incomplete-for-rework logic
@@ -48,7 +48,7 @@
 ---
 
 ### Step 3: Update worker agent template with review protocol
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add review protocol section to task-worker.md
 - [ ] Add review protocol section to local/task-worker.md
@@ -58,7 +58,7 @@
 ---
 
 ### Step 4: Update lane-state sidecar with reviewer metrics
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Extend writeLaneState() with reviewer telemetry fields
 - [ ] reviewerSessionName, reviewerType, reviewerStep exposed
@@ -69,7 +69,7 @@
 ---
 
 ### Step 5: Dashboard reviewer sub-row
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Server passes reviewer fields through to client
 - [ ] Client renders reviewer sub-row when reviewerStatus === "running"
@@ -81,7 +81,7 @@
 ---
 
 ### Step 6: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] All existing tests pass
 - [ ] Tests for review_step tool registration (orchestrated mode only)
@@ -93,7 +93,7 @@
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Check affected docs (execution-model.md, review-loop.md)
 - [ ] Discoveries logged
@@ -120,6 +120,24 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-24 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-24 04:23 | Task started | Extension-driven execution |
+| 2026-03-24 04:23 | Step 0 started | Preflight |
+| 2026-03-24 04:23 | Step 1 started | Register `review_step` extension tool |
+| 2026-03-24 04:23 | Step 2 started | Remove deferred review logic from the step loop |
+| 2026-03-24 04:23 | Step 3 started | Update worker agent template with review protocol |
+| 2026-03-24 04:23 | Step 4 started | Update lane-state sidecar with reviewer metrics |
+| 2026-03-24 04:23 | Step 5 started | Dashboard reviewer sub-row |
+| 2026-03-24 04:23 | Step 6 started | Testing & Verification |
+| 2026-03-24 04:23 | Step 7 started | Documentation & Delivery |
+| 2026-03-24 04:23 | Task started | Extension-driven execution |
+| 2026-03-24 04:23 | Step 0 started | Preflight |
+| 2026-03-24 04:23 | Step 1 started | Register `review_step` extension tool |
+| 2026-03-24 04:23 | Step 2 started | Remove deferred review logic from the step loop |
+| 2026-03-24 04:23 | Step 3 started | Update worker agent template with review protocol |
+| 2026-03-24 04:23 | Step 4 started | Update lane-state sidecar with reviewer metrics |
+| 2026-03-24 04:23 | Step 5 started | Dashboard reviewer sub-row |
+| 2026-03-24 04:23 | Step 6 started | Testing & Verification |
+| 2026-03-24 04:23 | Step 7 started | Documentation & Delivery |
 
 ---
 
