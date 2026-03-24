@@ -2629,6 +2629,7 @@ export default function (pi: ExtensionAPI) {
 			if (state.phase === "paused") {
 				logExecution(statusPath, "Paused", `User paused at iteration ${iter + 1}`);
 				ctx.ui.notify(`Task paused at iteration ${iter + 1}`, "info");
+				await shutdownPersistentReviewer("task paused");
 				return;
 			}
 
@@ -2660,7 +2661,10 @@ export default function (pi: ExtensionAPI) {
 
 			await runWorker(remainingSteps, ctx);
 
-			if (state.phase === "error") return;
+			if (state.phase === "error") {
+				await shutdownPersistentReviewer("worker error");
+				return;
+			}
 
 			// ── Post-worker: determine which steps were newly completed ──
 			const afterStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
@@ -2676,6 +2680,7 @@ export default function (pi: ExtensionAPI) {
 					logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
 					ctx.ui.notify(`⚠️ Task blocked — no progress after ${noProgressCount} iterations`, "error");
 					state.phase = "error";
+					await shutdownPersistentReviewer("task stalled");
 					return;
 				}
 			} else {
@@ -2740,41 +2745,13 @@ export default function (pi: ExtensionAPI) {
 				logExecution(statusPath, "Task incomplete", `Max iterations (${config.context.max_worker_iterations}) reached with incomplete steps: ${incomplete}`);
 				ctx.ui.notify(`⚠️ Task incomplete — max iterations reached. Incomplete: ${incomplete}`, "error");
 				state.phase = "error";
+				await shutdownPersistentReviewer("max iterations reached");
 				return;
 			}
 		}
 
 		// ── TP-057: Shutdown persistent reviewer ────────────────────────
-		// Send shutdown signal and wait for clean exit, then force kill.
-		if (state.persistentReviewerSession) {
-			const reviewsDir = join(task.taskFolder, ".reviews");
-			const shutdownPath = join(reviewsDir, REVIEWER_SHUTDOWN_SIGNAL);
-			try {
-				writeFileSync(shutdownPath, "shutdown");
-				console.error(`[task-runner] persistent reviewer: shutdown signal written`);
-			} catch (err: any) {
-				console.error(`[task-runner] persistent reviewer: failed to write shutdown signal: ${err?.message}`);
-			}
-			// Poll for session death within grace period
-			const graceStart = Date.now();
-			while (Date.now() - graceStart < REVIEWER_SHUTDOWN_GRACE_MS) {
-				const alive = spawnSync("tmux", ["has-session", "-t", state.persistentReviewerSession]);
-				if (alive.status !== 0) break;
-				await new Promise(r => setTimeout(r, 1000));
-			}
-			// Force kill if still alive after grace period
-			const finalCheck = spawnSync("tmux", ["has-session", "-t", state.persistentReviewerSession]);
-			if (finalCheck.status === 0) {
-				console.error(`[task-runner] persistent reviewer: killing session after grace period`);
-				spawnSync("tmux", ["kill-session", "-t", state.persistentReviewerSession]);
-			}
-			state.persistentReviewerSession = null;
-			state.persistentReviewerKill = null;
-			state.persistentReviewerSignalNum = 0;
-			clearReviewerState();
-			writeLaneState(state);
-			logExecution(statusPath, "Persistent reviewer", "Shutdown complete");
-		}
+		await shutdownPersistentReviewer("task complete");
 
 		// All steps done — run quality gate if enabled, then create .DONE
 		if (config.quality_gate.enabled) {
