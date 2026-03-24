@@ -1,7 +1,7 @@
 # TP-053: Expose Orchestrator Commands as Tools for Supervisor Agent — Status
 
 **Current Step:** Step 4: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-24
 **Review Level:** 2
 **Review Counter:** 2
@@ -55,11 +55,11 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Check affected docs
-- [ ] Discoveries logged
-- [ ] `.DONE` created
+- [x] Check affected docs
+- [x] Discoveries logged
+- [x] `.DONE` created
 
 ---
 
@@ -76,6 +76,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Prior iteration created helpers + tool registrations, but duplicated both | Fixed — removed duplicates in iteration 2 | extension.ts |
+| Tools also added to routing prompt since supervisor transitions between modes | Included in Step 2 | supervisor.ts |
 
 ---
 
