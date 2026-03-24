@@ -1276,6 +1276,100 @@ export const MERGE_SPAWN_RETRY_MAX = 2;
  */
 export const MERGE_TIMEOUT_MAX_RETRIES = 2;
 
+// ── Merge Health Monitoring Constants (TP-056) ───────────────────────
+
+/**
+ * Polling interval for merge health monitor (ms).
+ * Independent of the merge result poll — runs on its own cadence.
+ * @since TP-056
+ */
+export const MERGE_HEALTH_POLL_INTERVAL_MS = 2 * 60 * 1000; // 2 minutes
+
+/**
+ * Threshold (ms) after which a merge session with no new output
+ * is classified as "possibly stalled" and a warning event is emitted.
+ * @since TP-056
+ */
+export const MERGE_HEALTH_WARNING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+
+/**
+ * Threshold (ms) after which a merge session with no new output
+ * is classified as "stuck" and a stuck event is emitted.
+ * @since TP-056
+ */
+export const MERGE_HEALTH_STUCK_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
+
+/**
+ * Number of lines to capture from the bottom of a tmux pane
+ * for activity detection via snapshot comparison.
+ * @since TP-056
+ */
+export const MERGE_HEALTH_CAPTURE_LINES = 10;
+
+// ── Merge Health Event Types (TP-056) ────────────────────────────────
+
+/**
+ * Health classification for a merge session.
+ *
+ * - `healthy`:  Session alive, output changing
+ * - `warning`:  Session alive, no new output for MERGE_HEALTH_WARNING_THRESHOLD_MS
+ * - `dead`:     Session gone, no result file
+ * - `stuck`:    Session alive, no new output for MERGE_HEALTH_STUCK_THRESHOLD_MS
+ *
+ * @since TP-056
+ */
+export type MergeHealthStatus = "healthy" | "warning" | "dead" | "stuck";
+
+/**
+ * Engine event types for merge health monitoring.
+ *
+ * These extend the EngineEventType union and are emitted to the
+ * unified events.jsonl for supervisor consumption.
+ *
+ * @since TP-056
+ */
+export type MergeHealthEventType =
+	| "merge_health_warning"
+	| "merge_health_dead"
+	| "merge_health_stuck";
+
+/**
+ * Snapshot of a merge session's pane output at a point in time.
+ * Used for activity detection by comparing successive snapshots.
+ *
+ * @since TP-056
+ */
+export interface MergeSessionSnapshot {
+	/** Captured pane content (last N lines) */
+	content: string;
+	/** Epoch ms when the snapshot was taken */
+	capturedAt: number;
+}
+
+/**
+ * Per-session health tracking state.
+ *
+ * @since TP-056
+ */
+export interface MergeSessionHealthState {
+	/** TMUX session name */
+	sessionName: string;
+	/** Lane number this session belongs to */
+	laneNumber: number;
+	/** Last captured pane snapshot */
+	lastSnapshot: MergeSessionSnapshot | null;
+	/** Epoch ms when the last output change was detected */
+	lastActivityAt: number;
+	/** Current health classification */
+	status: MergeHealthStatus;
+	/** Whether a warning event has been emitted (prevent duplicates) */
+	warningEmitted: boolean;
+	/** Whether a stuck event has been emitted (prevent duplicates) */
+	stuckEmitted: boolean;
+	/** Whether a dead event has been emitted (prevent duplicates) */
+	deadEmitted: boolean;
+}
+
 
 // ── Merge Retry Policy Matrix (TP-033 Step 2) ───────────────────────
 
@@ -1557,6 +1651,9 @@ export type EngineEventType =
 	| "merge_start"
 	| "merge_success"
 	| "merge_failed"
+	| "merge_health_warning"
+	| "merge_health_dead"
+	| "merge_health_stuck"
 	| "batch_complete"
 	| "batch_paused";
 
@@ -1622,6 +1719,15 @@ export interface EngineEvent {
 	blockedTasks?: number;
 	/** Batch duration in milliseconds (for batch_complete) */
 	batchDurationMs?: number;
+
+	// ── Merge health monitoring fields (TP-056) ──────────────────
+
+	/** TMUX session name (for merge_health_* events) */
+	sessionName?: string;
+	/** Merge health status classification (for merge_health_* events) */
+	healthStatus?: MergeHealthStatus;
+	/** Minutes since last activity (for merge_health_warning, merge_health_stuck) */
+	stalledMinutes?: number;
 }
 
 /**

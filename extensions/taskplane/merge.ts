@@ -8,12 +8,13 @@ import { join, dirname, resolve, relative } from "path";
 
 import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, generateTelemetryPaths, resolveRpcWrapperPath, resolveTelemOpId, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
-import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
+import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MERGE_HEALTH_POLL_INTERVAL_MS, MERGE_HEALTH_WARNING_THRESHOLD_MS, MERGE_HEALTH_STUCK_THRESHOLD_MS, MERGE_HEALTH_CAPTURE_LINES, MergeError, VALID_MERGE_STATUSES, buildEngineEventBase } from "./types.ts";
+import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig, MergeHealthStatus, MergeHealthEventType, MergeSessionSnapshot, MergeSessionHealthState, EngineEvent, OrchBatchPhase } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { generateMergeWorktreePath, sleepAsync, sleepSync } from "./worktree.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
+import { emitEngineEvent } from "./persistence.ts";
 import { loadOrchestratorConfig } from "./config.ts";
 import { captureBaseline, diffFingerprints, runVerificationCommands, parseTestOutput, deduplicateFingerprints } from "./verification.ts";
 import type { VerificationBaseline, FingerprintDiff, TestFingerprint } from "./verification.ts";
@@ -1019,6 +1020,7 @@ export async function mergeWave(
 	agentRoot?: string,
 	testingCommands?: Record<string, string>,
 	repoId?: string,
+	healthMonitor?: MergeHealthMonitor | null,
 ): Promise<MergeWaveResult> {
 	const startTime = Date.now();
 	const tmuxPrefix = config.orchestrator.tmux_prefix;
@@ -1319,13 +1321,19 @@ export async function mergeWave(
 
 						// Re-spawn merge agent for the retry
 						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+						// TP-056: Re-register with health monitor after respawn
+						if (healthMonitor) healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
 					} else {
 						// First attempt: spawn merge agent
 						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+						// TP-056: Register session with health monitor
+						if (healthMonitor) healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
 					}
 
 					try {
 						mergeResult = await waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs);
+						// TP-056: Deregister session from health monitor on completion
+						if (healthMonitor) healthMonitor.removeSession(sessionName);
 						lastTimeoutError = null;
 						break; // Success — exit retry loop
 					} catch (waitErr: unknown) {
@@ -1336,9 +1344,13 @@ export async function mergeWave(
 						) {
 							// Timeout — will retry on next loop iteration
 							lastTimeoutError = waitErr;
+							// TP-056: Deregister before retry (will re-register on respawn)
+							if (healthMonitor) healthMonitor.removeSession(sessionName);
 							continue;
 						}
 						// Non-timeout error or final retry exhausted — propagate
+						// TP-056: Deregister session from health monitor on error
+						if (healthMonitor) healthMonitor.removeSession(sessionName);
 						throw waitErr;
 					}
 				}
@@ -1933,6 +1945,7 @@ export async function mergeWaveByRepo(
 	stateRoot?: string,
 	agentRoot?: string,
 	testingCommands?: Record<string, string>,
+	healthMonitor?: MergeHealthMonitor | null,
 ): Promise<MergeWaveResult> {
 	const startTime = Date.now();
 
@@ -1988,6 +2001,8 @@ export async function mergeWaveByRepo(
 			stateRoot,
 			agentRoot,
 			testingCommands,
+			undefined, // repoId
+			healthMonitor,
 		);
 		// Attach empty repoResults for consistent shape
 		return { ...result, repoResults: [] };
@@ -2044,6 +2059,7 @@ export async function mergeWaveByRepo(
 			agentRoot,
 			testingCommands,
 			group.repoId,
+			healthMonitor,
 		);
 
 		// Accumulate lane results
@@ -2154,6 +2170,8 @@ export async function mergeWaveByRepo(
 	return aggregateResult;
 }
 
+
+
 // ── Auto-Integration ─────────────────────────────────────────────────
 
 /**
@@ -2254,5 +2272,343 @@ export function attemptAutoIntegration(
 	execLog(logCategory, batchId, `auto-integrated: ${baseBranch} advanced to ${orchBranch}`, { orchHead });
 	onNotify(ORCH_MESSAGES.orchIntegrationAutoSuccess(orchBranch, baseBranch), "info");
 	return true;
+}
+
+// ── Merge Health Monitor (TP-056) ────────────────────────────────────
+
+/**
+ * Capture the last N lines of a tmux pane for activity detection.
+ *
+ * Uses `tmux capture-pane` with `-p` (stdout) and `-S -N` (last N lines).
+ * Returns null if the session doesn't exist or capture fails.
+ *
+ * @param sessionName - TMUX session name
+ * @param lines       - Number of lines to capture from the bottom
+ * @returns Captured text, or null on failure
+ *
+ * @since TP-056
+ */
+export function captureMergePaneOutput(
+	sessionName: string,
+	lines: number = MERGE_HEALTH_CAPTURE_LINES,
+): string | null {
+	try {
+		const result = spawnSync("tmux", [
+			"capture-pane",
+			"-t", sessionName,
+			"-p",           // print to stdout
+			"-S", `-${lines}`, // last N lines
+		], { encoding: "utf-8", timeout: 5_000 });
+
+		if (result.status !== 0) {
+			return null;
+		}
+
+		return result.stdout ?? null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Classify the health of a merge session based on session liveness
+ * and pane output activity.
+ *
+ * Pure function — no side effects. Takes the current state and produces
+ * a health classification.
+ *
+ * @param sessionAlive   - Whether the tmux session is alive
+ * @param hasResultFile  - Whether the merge result file exists
+ * @param currentOutput  - Current pane capture (null if session dead or capture failed)
+ * @param healthState    - Tracked health state for this session
+ * @param now            - Current epoch ms
+ * @returns Updated health status
+ *
+ * @since TP-056
+ */
+export function classifyMergeHealth(
+	sessionAlive: boolean,
+	hasResultFile: boolean,
+	currentOutput: string | null,
+	healthState: MergeSessionHealthState,
+	now: number,
+): MergeHealthStatus {
+	// Dead session with no result file → immediate detection
+	if (!sessionAlive && !hasResultFile) {
+		return "dead";
+	}
+
+	// Session dead but result file exists → merge completed, healthy
+	if (!sessionAlive && hasResultFile) {
+		return "healthy";
+	}
+
+	// Session alive — check activity
+	const lastContent = healthState.lastSnapshot?.content ?? null;
+	const outputChanged = currentOutput !== null
+		&& (lastContent === null || currentOutput !== lastContent);
+
+	if (outputChanged) {
+		return "healthy";
+	}
+
+	// No output change — compute stale duration
+	const staleDuration = now - healthState.lastActivityAt;
+
+	if (staleDuration >= MERGE_HEALTH_STUCK_THRESHOLD_MS) {
+		return "stuck";
+	}
+
+	if (staleDuration >= MERGE_HEALTH_WARNING_THRESHOLD_MS) {
+		return "warning";
+	}
+
+	return "healthy";
+}
+
+/**
+ * Active merge session health monitor.
+ *
+ * Runs on its own polling interval during the merge phase, checking each
+ * active merge session for liveness and activity. Emits structured events
+ * for the supervisor to consume.
+ *
+ * Design principles (from PROMPT.md):
+ * - Does NOT kill sessions autonomously — emits events for operator decision
+ * - Runs independently of the merge result poll
+ * - Stores session snapshots in memory (ephemeral, not persisted)
+ * - Emits structured events to the unified events.jsonl
+ *
+ * @since TP-056
+ */
+export class MergeHealthMonitor {
+	/** Per-session health state, keyed by session name */
+	private sessions: Map<string, MergeSessionHealthState> = new Map();
+
+	/** Timer handle for the polling loop */
+	private pollTimer: ReturnType<typeof setInterval> | null = null;
+
+	/** Whether the monitor is currently running */
+	private _running = false;
+
+	/** Callback invoked when a dead session is detected (for early exit signaling) */
+	private _onDeadSession: ((sessionName: string, laneNumber: number) => void) | null = null;
+
+	/** Event emission context */
+	private stateRoot: string;
+	private batchId: string;
+	private waveIndex: number;
+	private phase: OrchBatchPhase;
+
+	/** Polling interval override (for testing) */
+	private pollIntervalMs: number;
+
+	constructor(opts: {
+		stateRoot: string;
+		batchId: string;
+		waveIndex: number;
+		phase: OrchBatchPhase;
+		pollIntervalMs?: number;
+		onDeadSession?: (sessionName: string, laneNumber: number) => void;
+	}) {
+		this.stateRoot = opts.stateRoot;
+		this.batchId = opts.batchId;
+		this.waveIndex = opts.waveIndex;
+		this.phase = opts.phase;
+		this.pollIntervalMs = opts.pollIntervalMs ?? MERGE_HEALTH_POLL_INTERVAL_MS;
+		this._onDeadSession = opts.onDeadSession ?? null;
+	}
+
+	/** Whether the monitor is currently running */
+	get running(): boolean {
+		return this._running;
+	}
+
+	/**
+	 * Register a merge session for monitoring.
+	 *
+	 * @param sessionName - TMUX session name
+	 * @param laneNumber  - Lane number the session belongs to
+	 * @param resultPath  - Path to the expected merge result file
+	 */
+	addSession(sessionName: string, laneNumber: number, resultPath: string): void {
+		const now = Date.now();
+		this.sessions.set(sessionName, {
+			sessionName,
+			laneNumber,
+			lastSnapshot: null,
+			lastActivityAt: now,
+			status: "healthy",
+			warningEmitted: false,
+			stuckEmitted: false,
+			deadEmitted: false,
+		});
+		// Store resultPath for later lookup
+		this._resultPaths.set(sessionName, resultPath);
+	}
+
+	/** Result file paths for each session (for dead-session detection) */
+	private _resultPaths: Map<string, string> = new Map();
+
+	/**
+	 * Remove a session from monitoring (e.g., merge completed for this lane).
+	 */
+	removeSession(sessionName: string): void {
+		this.sessions.delete(sessionName);
+		this._resultPaths.delete(sessionName);
+	}
+
+	/**
+	 * Start the health monitoring polling loop.
+	 */
+	start(): void {
+		if (this._running) return;
+		this._running = true;
+
+		execLog("merge-health", "monitor", "merge health monitor started", {
+			sessionCount: this.sessions.size,
+			pollIntervalMs: this.pollIntervalMs,
+		});
+
+		this.pollTimer = setInterval(() => {
+			this.poll();
+		}, this.pollIntervalMs);
+	}
+
+	/**
+	 * Stop the health monitoring polling loop.
+	 */
+	stop(): void {
+		if (!this._running) return;
+		this._running = false;
+
+		if (this.pollTimer !== null) {
+			clearInterval(this.pollTimer);
+			this.pollTimer = null;
+		}
+
+		execLog("merge-health", "monitor", "merge health monitor stopped", {
+			sessionCount: this.sessions.size,
+		});
+
+		this.sessions.clear();
+		this._resultPaths.clear();
+	}
+
+	/**
+	 * Run a single poll cycle across all monitored sessions.
+	 *
+	 * Exposed as public for testing — normally called by the interval timer.
+	 */
+	poll(): void {
+		const now = Date.now();
+
+		for (const [sessionName, state] of this.sessions) {
+			const sessionAlive = tmuxHasSession(sessionName);
+			const resultPath = this._resultPaths.get(sessionName) ?? "";
+			const hasResultFile = resultPath ? existsSync(resultPath) : false;
+
+			// Capture pane output for activity detection
+			const currentOutput = sessionAlive
+				? captureMergePaneOutput(sessionName)
+				: null;
+
+			// Classify health
+			const newStatus = classifyMergeHealth(
+				sessionAlive,
+				hasResultFile,
+				currentOutput,
+				state,
+				now,
+			);
+
+			// Update snapshot if output changed
+			if (currentOutput !== null && (
+				state.lastSnapshot === null || currentOutput !== state.lastSnapshot.content
+			)) {
+				state.lastSnapshot = { content: currentOutput, capturedAt: now };
+				state.lastActivityAt = now;
+			}
+
+			const prevStatus = state.status;
+			state.status = newStatus;
+
+			// Emit events based on status transitions
+			this._emitHealthEvents(state, now);
+
+			// Signal dead session for early exit
+			if (newStatus === "dead" && !state.deadEmitted) {
+				state.deadEmitted = true;
+				if (this._onDeadSession) {
+					this._onDeadSession(sessionName, state.laneNumber);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Emit health events based on current state.
+	 * De-duplicates: each event type emitted at most once per session.
+	 */
+	private _emitHealthEvents(state: MergeSessionHealthState, now: number): void {
+		const stalledMinutes = Math.round((now - state.lastActivityAt) / 60_000);
+
+		if (state.status === "warning" && !state.warningEmitted) {
+			state.warningEmitted = true;
+			const event: EngineEvent = {
+				...buildEngineEventBase("merge_health_warning", this.batchId, this.waveIndex, this.phase),
+				laneNumber: state.laneNumber,
+				sessionName: state.sessionName,
+				healthStatus: "warning",
+				stalledMinutes,
+				reason: `Merge agent on lane ${state.laneNumber} may be stalled (no output for ${stalledMinutes} min)`,
+			};
+			emitEngineEvent(this.stateRoot, event);
+			execLog("merge-health", state.sessionName, `⚠️ merge session possibly stalled`, {
+				stalledMinutes,
+				laneNumber: state.laneNumber,
+			});
+		}
+
+		if (state.status === "dead" && !state.deadEmitted) {
+			// deadEmitted is set in poll() after onDeadSession callback
+			const event: EngineEvent = {
+				...buildEngineEventBase("merge_health_dead", this.batchId, this.waveIndex, this.phase),
+				laneNumber: state.laneNumber,
+				sessionName: state.sessionName,
+				healthStatus: "dead",
+				reason: `Merge agent on lane ${state.laneNumber} session died without producing a result`,
+			};
+			emitEngineEvent(this.stateRoot, event);
+			execLog("merge-health", state.sessionName, `💀 merge session dead — no result file`, {
+				laneNumber: state.laneNumber,
+			});
+		}
+
+		if (state.status === "stuck" && !state.stuckEmitted) {
+			state.stuckEmitted = true;
+			const event: EngineEvent = {
+				...buildEngineEventBase("merge_health_stuck", this.batchId, this.waveIndex, this.phase),
+				laneNumber: state.laneNumber,
+				sessionName: state.sessionName,
+				healthStatus: "stuck",
+				stalledMinutes,
+				reason: `Merge agent on lane ${state.laneNumber} appears stuck (no output for ${stalledMinutes} min). Consider killing and retrying.`,
+			};
+			emitEngineEvent(this.stateRoot, event);
+			execLog("merge-health", state.sessionName, `🔒 merge session stuck`, {
+				stalledMinutes,
+				laneNumber: state.laneNumber,
+			});
+		}
+	}
+
+	/**
+	 * Get the current health states for all monitored sessions.
+	 * Used for testing and inspection.
+	 */
+	getSessionStates(): Map<string, MergeSessionHealthState> {
+		return new Map(this.sessions);
+	}
 }
 

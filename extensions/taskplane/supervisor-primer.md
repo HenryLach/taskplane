@@ -189,6 +189,8 @@ detects the sessionId mismatch and yields gracefully.
 
 Engine lifecycle events (wave_start, task_complete, merge_success, etc.)
 are written here as JSONL. You tail this file for proactive monitoring.
+Merge health monitoring events (merge_health_warning, merge_health_dead,
+merge_health_stuck) are also written here when merge agents stall or die.
 
 **Audit trail:** `.pi/supervisor/actions.jsonl`
 
@@ -244,6 +246,8 @@ Wave N starts
 | Execute | Worker makes no progress | STATUS.md unchanged for `stallTimeout` minutes |
 | Execute | API error (rate limit, overload) | Session exits, pi handles retry internally |
 | Merge | Merge agent times out | No result JSON within `merge.timeoutMinutes` |
+| Merge | Merge agent stalls silently | `merge_health_warning` or `merge_health_stuck` event |
+| Merge | Merge agent session dies | `merge_health_dead` event — no result file |
 | Merge | Merge conflicts too complex | Merge agent can't resolve |
 | Merge | Verification tests fail | Tests fail in merge worktree |
 | Cleanup | Windows file locks | `git worktree remove` fails |
@@ -323,6 +327,32 @@ git log --oneline orch/{branch}..task/{lane-branch}  # empty = already merged
    cd /tmp/verify && cd extensions && npx vitest run
    ```
 5. Update batch state and advance.
+
+### Pattern 1b: Merge Agent Stall (TP-056)
+
+**Symptom:** Supervisor notification: "⚠️ Merge agent on lane N may be stalled (no output for 10 min)"
+or "🔒 Merge agent on lane N appears stuck (no output for 20 min)."
+
+**How it works:** The merge health monitor (TP-056) actively polls merge agent
+tmux sessions every 2 minutes during the merge phase. It checks:
+- **Session liveness:** `tmux has-session` — is the session alive?
+- **Activity detection:** Captures the last 10 lines of pane output and compares
+  with the previous snapshot. If output hasn't changed, the session may be stalled.
+
+**Escalation tiers:**
+- **Healthy:** Session alive, output changing → no action
+- **Warning** (10 min no output): `merge_health_warning` event → supervisor notification
+- **Dead** (session gone, no result file): `merge_health_dead` event → immediate detection
+- **Stuck** (20 min no output): `merge_health_stuck` event → recommendation to kill
+
+**Recovery:**
+1. Attach to the session to inspect: `tmux attach -t {sessionName}`
+2. If truly stuck, kill the session: `tmux kill-session -t {sessionName}`
+3. The engine detects the dead session and applies the `on_merge_failure` policy
+4. Resume with `/orch-resume` if needed
+
+**Note:** The monitor does NOT kill sessions autonomously — it emits events for
+the operator or supervisor to decide.
 
 ### Pattern 2: Resume Skips Wave Merge (Bug #102)
 

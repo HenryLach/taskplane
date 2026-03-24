@@ -11,7 +11,7 @@ import type { MonitorUpdateCallback } from "./execution.ts";
 // classifyExit no longer called directly — Tier 0 uses exitDiagnostic.classification
 // from the diagnostic-reports pipeline (populated by assembleDiagnosticInput).
 import { getCurrentBranch, runGit } from "./git.ts";
-import { mergeWaveByRepo } from "./merge.ts";
+import { mergeWaveByRepo, MergeHealthMonitor } from "./merge.ts";
 import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
@@ -1358,19 +1358,41 @@ export async function executeOrchBatch(
 					laneCount: mergeableLaneCount,
 				}, onEngineEvent);
 
-				mergeResult = await mergeWaveByRepo(
-					waveResult.allocatedLanes,
-					waveResult,
-					waveIdx + 1,
-					orchConfig,
-					repoRoot,
-					batchState.batchId,
-					batchState.orchBranch,
-					workspaceConfig,
+				// TP-056: Start merge health monitor during merge phase
+				const mergeHealthMonitor = new MergeHealthMonitor({
 					stateRoot,
-					agentRoot,
-					runnerConfig.testing_commands,
-				);
+					batchId: batchState.batchId,
+					waveIndex: waveIdx,
+					phase: batchState.phase,
+					onDeadSession: (sessionName, laneNumber) => {
+						execLog("batch", batchState.batchId, `merge health monitor detected dead session`, {
+							sessionName,
+							laneNumber,
+							waveIndex: waveIdx,
+						});
+					},
+				});
+				mergeHealthMonitor.start();
+
+				try {
+					mergeResult = await mergeWaveByRepo(
+						waveResult.allocatedLanes,
+						waveResult,
+						waveIdx + 1,
+						orchConfig,
+						repoRoot,
+						batchState.batchId,
+						batchState.orchBranch,
+						workspaceConfig,
+						stateRoot,
+						agentRoot,
+						runnerConfig.testing_commands,
+						mergeHealthMonitor,
+					);
+				} finally {
+					// TP-056: Always stop the health monitor when merge phase ends
+					mergeHealthMonitor.stop();
+				}
 				allMergeResults.push(mergeResult);
 				batchState.mergeResults.push(mergeResult);
 
