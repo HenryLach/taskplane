@@ -12,43 +12,81 @@ import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult
 import { allocateLanes } from "./waves.ts";
 import { runGit } from "./git.ts";
 
-// ── Task Runner Extension Path Resolution ────────────────────────────
+// ── Taskplane Package File Resolution ────────────────────────────────
 
 /**
- * Find the task-runner extension path for lane sessions.
+ * Cached result of `npm root -g` to avoid repeated child process spawns.
+ * null = not yet resolved, "" = resolution failed.
+ */
+let _npmGlobalRoot: string | null = null;
+
+/**
+ * Get the global npm root directory via `npm root -g`.
+ * Result is cached for the process lifetime.
+ */
+function getNpmGlobalRoot(): string {
+	if (_npmGlobalRoot !== null) return _npmGlobalRoot;
+	try {
+		const result = spawnSync("npm", ["root", "-g"], {
+			encoding: "utf-8",
+			timeout: 5000,
+			shell: true,
+		});
+		_npmGlobalRoot = result.stdout?.trim() || "";
+	} catch {
+		_npmGlobalRoot = "";
+	}
+	return _npmGlobalRoot;
+}
+
+/**
+ * Resolve a file path within the taskplane package.
  *
  * Resolution order:
- *   1. Local project: {repoRoot}/extensions/task-runner.ts (for taskplane dev)
- *   2. Global npm (Windows): {APPDATA}/npm/node_modules/taskplane/extensions/task-runner.ts
- *   3. Global npm (Unix): /usr/local/lib/node_modules/taskplane/extensions/task-runner.ts
- *   4. npm peer: resolve from pi's location
+ *   1. Local project: {repoRoot}/{relPath} (for taskplane development)
+ *   2. `npm root -g` based: {npmGlobalRoot}/taskplane/{relPath}
+ *      (covers Homebrew, nvm, volta, pnpm, and any custom npm prefix)
+ *   3. Well-known global npm paths (Windows/macOS/Linux):
+ *      - {APPDATA}/npm/node_modules/taskplane/{relPath}
+ *      - {HOME}/.npm-global/lib/node_modules/taskplane/{relPath}
+ *      - /usr/local/lib/node_modules/taskplane/{relPath}
+ *      - /opt/homebrew/lib/node_modules/taskplane/{relPath}
+ *   4. Peer of pi's package: resolve from pi's binary location
  *
- * @throws ExecutionError if task-runner.ts cannot be found anywhere
+ * @param repoRoot - Absolute path to the project root
+ * @param relPath  - Relative path within the taskplane package (e.g., "bin/rpc-wrapper.mjs")
+ * @returns Absolute path to the resolved file
  */
-function resolveTaskRunnerExtensionPath(repoRoot: string): string {
-	const extFile = join("extensions", "task-runner.ts");
-
+function resolveTaskplanePackageFile(repoRoot: string, relPath: string): string {
 	// 1. Local project (taskplane development)
-	const localPath = join(resolve(repoRoot), extFile);
+	const localPath = join(resolve(repoRoot), relPath);
 	if (existsSync(localPath)) return localPath;
 
-	// 2. Global npm install paths
-	const home = process.env.HOME || process.env.USERPROFILE || "";
 	const candidates: string[] = [];
+
+	// 2. Dynamic: `npm root -g` (covers ALL npm setups: nvm, Homebrew, volta, etc.)
+	const npmRoot = getNpmGlobalRoot();
+	if (npmRoot) {
+		candidates.push(join(npmRoot, "taskplane", relPath));
+	}
+
+	// 3. Well-known static paths
+	const home = process.env.HOME || process.env.USERPROFILE || "";
 	if (process.env.APPDATA) {
-		candidates.push(join(process.env.APPDATA, "npm", "node_modules", "taskplane", extFile));
+		candidates.push(join(process.env.APPDATA, "npm", "node_modules", "taskplane", relPath));
 	}
 	if (home) {
-		candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", "taskplane", extFile));
-		candidates.push(join(home, ".npm-global", "lib", "node_modules", "taskplane", extFile));
+		candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", "taskplane", relPath));
+		candidates.push(join(home, ".npm-global", "lib", "node_modules", "taskplane", relPath));
 	}
-	candidates.push(join("/usr", "local", "lib", "node_modules", "taskplane", extFile));
+	candidates.push(join("/usr", "local", "lib", "node_modules", "taskplane", relPath));
+	candidates.push(join("/opt", "homebrew", "lib", "node_modules", "taskplane", relPath));
 
-	// 3. Peer of pi's package
+	// 4. Peer of pi's package
 	try {
 		const piPath = process.argv[1] || "";
 		const piPkgDir = resolve(piPath, "..", "..");
-		candidates.push(join(piPkgDir, "..", "taskplane", extFile));
+		candidates.push(join(piPkgDir, "..", "taskplane", relPath));
 	} catch { /* ignore */ }
 
 	for (const candidate of candidates) {
@@ -59,51 +97,24 @@ function resolveTaskRunnerExtensionPath(repoRoot: string): string {
 	return localPath;
 }
 
+// ── Task Runner Extension Path Resolution ────────────────────────────
+
+/**
+ * Find the task-runner extension path for lane sessions.
+ * @see resolveTaskplanePackageFile for resolution order
+ */
+function resolveTaskRunnerExtensionPath(repoRoot: string): string {
+	return resolveTaskplanePackageFile(repoRoot, join("extensions", "task-runner.ts"));
+}
+
 // ── RPC Wrapper Path Resolution ──────────────────────────────────────
 
 /**
  * Find the rpc-wrapper.mjs path for lane sessions.
- *
- * Resolution order mirrors resolveTaskRunnerExtensionPath:
- *   1. Local project: {repoRoot}/bin/rpc-wrapper.mjs (for taskplane dev)
- *   2. Global npm (Windows): {APPDATA}/npm/node_modules/taskplane/bin/rpc-wrapper.mjs
- *   3. Global npm (Unix): /usr/local/lib/node_modules/taskplane/bin/rpc-wrapper.mjs
- *   4. npm peer: resolve from pi's location
- *
- * @throws ExecutionError if rpc-wrapper.mjs cannot be found anywhere
+ * @see resolveTaskplanePackageFile for resolution order
  */
 export function resolveRpcWrapperPath(repoRoot: string): string {
-	const wrapperFile = join("bin", "rpc-wrapper.mjs");
-
-	// 1. Local project (taskplane development)
-	const localPath = join(resolve(repoRoot), wrapperFile);
-	if (existsSync(localPath)) return localPath;
-
-	// 2. Global npm install paths
-	const home = process.env.HOME || process.env.USERPROFILE || "";
-	const candidates: string[] = [];
-	if (process.env.APPDATA) {
-		candidates.push(join(process.env.APPDATA, "npm", "node_modules", "taskplane", wrapperFile));
-	}
-	if (home) {
-		candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", "taskplane", wrapperFile));
-		candidates.push(join(home, ".npm-global", "lib", "node_modules", "taskplane", wrapperFile));
-	}
-	candidates.push(join("/usr", "local", "lib", "node_modules", "taskplane", wrapperFile));
-
-	// 3. Peer of pi's package
-	try {
-		const piPath = process.argv[1] || "";
-		const piPkgDir = resolve(piPath, "..", "..");
-		candidates.push(join(piPkgDir, "..", "taskplane", wrapperFile));
-	} catch { /* ignore */ }
-
-	for (const candidate of candidates) {
-		if (existsSync(candidate)) return candidate;
-	}
-
-	// Fallback: return the local path (will fail at spawn time with a clear error)
-	return localPath;
+	return resolveTaskplanePackageFile(repoRoot, join("bin", "rpc-wrapper.mjs"));
 }
 
 // ── Telemetry Helpers ────────────────────────────────────────────────

@@ -100,6 +100,24 @@ describe("lane spawn via RPC wrapper (source extraction)", () => {
 		const funcBody = extractFunctionRegion(execSrc, "export function resolveRpcWrapperPath(");
 		expect(funcBody).toContain("rpc-wrapper.mjs");
 	});
+
+	it("resolveTaskplanePackageFile uses npm root -g for dynamic resolution", () => {
+		const funcBody = extractFunctionRegion(execSrc, "function resolveTaskplanePackageFile(");
+		expect(funcBody).toContain("getNpmGlobalRoot");
+		expect(funcBody).toContain("npmRoot");
+	});
+
+	it("getNpmGlobalRoot calls npm root -g", () => {
+		const funcBody = extractFunctionRegion(execSrc, "function getNpmGlobalRoot(");
+		expect(funcBody).toContain("npm");
+		expect(funcBody).toContain("root");
+		expect(funcBody).toContain("-g");
+	});
+
+	it("resolveTaskplanePackageFile includes Homebrew path", () => {
+		const funcBody = extractFunctionRegion(execSrc, "function resolveTaskplanePackageFile(");
+		expect(funcBody).toContain("homebrew");
+	});
 });
 
 // ── 2. Merge spawn via RPC wrapper (merge.ts) ───────────────────────
