@@ -1986,30 +1986,22 @@ export default function (pi: ExtensionAPI) {
 		// before the worker has had a chance to address reviewer feedback.
 		const needsRework = new Set<number>();
 
-		// Run plan reviews up-front for all non-low-risk incomplete steps
+		// Track which steps have already received a plan review so we don't
+		// re-run plan review on rework cycles (only code review reruns).
+		const planReviewedSteps = new Set<number>();
+
+		// Mark all incomplete steps as in-progress and capture the baseline
+		// commit for the first one. Reviews are transition-based: they run
+		// when a step newly completes after the worker exits, not up-front.
 		{
 			const currentStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
 			for (const step of task.steps) {
 				const ss = currentStatus.steps.find(s => s.number === step.number);
 				if (ss?.status === "complete") continue;
-				const lowRisk = isLowRiskStep(step.number, task.steps.length);
 
 				// Mark step as in-progress and log its start
 				updateStepStatus(statusPath, step.number, "in-progress");
 				logExecution(statusPath, `Step ${step.number} started`, step.name);
-
-				if (task.reviewLevel >= 1) {
-					if (lowRisk) {
-						const label = step.number === 0 ? "Preflight" : "final step";
-						logExecution(statusPath, `Skip plan review`, `Step ${step.number} (${label}) — low-risk`);
-						ctx.ui.notify(`⏭️ Skipping plan review for Step ${step.number} (${label})`, "info");
-					} else {
-						const verdict = await doReview("plan", step, ctx);
-						if (verdict === "RETHINK") {
-							ctx.ui.notify(`Reviewer: RETHINK on Step ${step.number} plan. Proceeding with caution.`, "warning");
-						}
-					}
-				}
 
 				// Capture baseline commit for the FIRST incomplete step only.
 				// Later steps get their baselines when the prior step completes
@@ -2151,29 +2143,51 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(`Iteration ${iter + 1}: +${progressDelta} checkboxes (no steps fully completed)`, "info");
 			}
 
-			// ── Run code reviews for newly completed steps ──
-			if (task.reviewLevel >= 2 && state.phase === "running") {
+			// ── Run reviews for newly completed steps (transition-based) ──
+			// Plan reviews run once per step (first completion); code reviews
+			// run on every completion (including rework). Both respect review
+			// level and low-risk skip logic.
+			if (state.phase === "running") {
 				for (const step of newlyCompleted) {
 					const lowRisk = isLowRiskStep(step.number, task.steps.length);
-					if (lowRisk) {
-						const label = step.number === 0 ? "Preflight" : "final step";
-						logExecution(statusPath, `Skip code review`, `Step ${step.number} (${label}) — low-risk`);
-						ctx.ui.notify(`⏭️ Skipping code review for Step ${step.number} (${label})`, "info");
-					} else {
-						const baseline = stepBaselineCommits.get(step.number);
-						const verdict = await doReview("code", step, ctx, baseline);
-						if (verdict === "REVISE") {
-							ctx.ui.notify(`Reviewer: REVISE on Step ${step.number}. Will rework in next iteration.`, "warning");
-							// Mark step as needing rework — undo the "complete" status.
-							// needsRework ensures isStepComplete() won't re-complete this
-							// step based on checkbox counts alone; the worker must address
-							// the reviewer feedback first, which will update STATUS.md and
-							// clear the rework flag when the step is newly completed again.
-							needsRework.add(step.number);
-							updateStepStatus(statusPath, step.number, "in-progress");
-							// Update baseline so the next code review for this step
-							// diffs only the rework changes, not the original step work
-							stepBaselineCommits.set(step.number, getHeadCommitSha());
+
+					// ── Plan review (level ≥ 1, first completion only) ──
+					if (task.reviewLevel >= 1 && !planReviewedSteps.has(step.number)) {
+						if (lowRisk) {
+							const label = step.number === 0 ? "Preflight" : "final step";
+							logExecution(statusPath, `Skip plan review`, `Step ${step.number} (${label}) — low-risk`);
+							ctx.ui.notify(`⏭️ Skipping plan review for Step ${step.number} (${label})`, "info");
+						} else {
+							const verdict = await doReview("plan", step, ctx);
+							if (verdict === "RETHINK") {
+								ctx.ui.notify(`Reviewer: RETHINK on Step ${step.number} plan. Proceeding with caution.`, "warning");
+							}
+						}
+						planReviewedSteps.add(step.number);
+					}
+
+					// ── Code review (level ≥ 2) ──
+					if (task.reviewLevel >= 2) {
+						if (lowRisk) {
+							const label = step.number === 0 ? "Preflight" : "final step";
+							logExecution(statusPath, `Skip code review`, `Step ${step.number} (${label}) — low-risk`);
+							ctx.ui.notify(`⏭️ Skipping code review for Step ${step.number} (${label})`, "info");
+						} else {
+							const baseline = stepBaselineCommits.get(step.number);
+							const verdict = await doReview("code", step, ctx, baseline);
+							if (verdict === "REVISE") {
+								ctx.ui.notify(`Reviewer: REVISE on Step ${step.number}. Will rework in next iteration.`, "warning");
+								// Mark step as needing rework — undo the "complete" status.
+								// needsRework ensures isStepComplete() won't re-complete this
+								// step based on checkbox counts alone; the worker must address
+								// the reviewer feedback first, which will update STATUS.md and
+								// clear the rework flag when the step is newly completed again.
+								needsRework.add(step.number);
+								updateStepStatus(statusPath, step.number, "in-progress");
+								// Update baseline so the next code review for this step
+								// diffs only the rework changes, not the original step work
+								stepBaselineCommits.set(step.number, getHeadCommitSha());
+							}
 						}
 					}
 				}

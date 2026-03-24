@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 6
+**Review Counter:** 7
 **Iteration:** 5
 **Size:** L
 
@@ -59,12 +59,12 @@
 ---
 
 ### Step 4: Integrate reviews with the new loop
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] R007: Remove up-front plan review sweep; make all reviews transition-based (run when step newly completes after worker exits)
-- [ ] After worker exits, run plan review (level ≥ 1) then code review (level ≥ 2) for each newly completed step; track planReviewedSteps so plan review only runs on first completion (not rework)
-- [ ] REVISE verdict marks step incomplete for rework in next iteration (already implemented — verify preserved)
-- [ ] Plan and code reviews still respect review level and low-risk skip logic (already implemented — verify preserved)
+- [x] R007: Remove up-front plan review sweep; make all reviews transition-based (run when step newly completes after worker exits)
+- [x] After worker exits, run plan review (level ≥ 1) then code review (level ≥ 2) for each newly completed step; track planReviewedSteps so plan review only runs on first completion (not rework)
+- [x] REVISE verdict marks step incomplete for rework in next iteration (already implemented — verify preserved)
+- [x] Plan and code reviews still respect review level and low-risk skip logic (already implemented — verify preserved)
 
 ---
 
@@ -107,6 +107,7 @@
 | R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
 | R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
 | R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
+| R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
 |---|------|------|---------|------|
 
 ---
@@ -170,6 +171,7 @@
 | 2026-03-24 01:29 | Review R006 | code Step 3: APPROVE |
 | 2026-03-24 01:29 | Step 3 complete | Update progress tracking and stall detection |
 | 2026-03-24 01:29 | Step 4 started | Integrate reviews with the new loop |
+| 2026-03-24 01:30 | Review R007 | plan Step 4: REVISE |
 
 ---
 
