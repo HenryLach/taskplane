@@ -437,6 +437,10 @@ function loadTelemetryData(batchState) {
     for (const event of events) {
       switch (event.type) {
         case "message_end": {
+          // A successful message_end means any prior retry resolved.
+          // Clear retryActive to prevent stale retry badges from persisting
+          // across batches or after transient API errors recover.
+          acc.retryActive = false;
           const usage = event.message?.usage;
           if (usage) {
             acc.inputTokens += usage.input || 0;
