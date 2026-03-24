@@ -87,8 +87,12 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
-| model_fallback config lives in orchestrator.failure section (not task-runner) | By design — it's an orchestrator-level failure policy | config-schema.ts |
+| modelFallback config lives in taskRunner section (not orchestrator.failure) | Fixed in iter 2 — docs corrected to reference taskRunner.modelFallback | config-schema.ts, docs/ |
 | TASKPLANE_MODEL_FALLBACK env var bridges orchestrator→task-runner for model override | Documented in code comments | engine.ts, task-runner.ts |
+| Previous iteration's docs incorrectly placed modelFallback under orchestrator.failure | Fixed in iter 2 — all 4 doc files corrected | docs/reference/configuration/ |
+| exit-classification tests needed updates for 10th classification value | Fixed in iter 2 — test expectations updated | extensions/tests/exit-classification.test.ts |
+| attemptModelFallbackRetry was reading from orchConfig instead of runnerConfig | Fixed in iter 2 — now reads runnerConfig?.model_fallback | engine.ts |
+| extraEnvVars threading through executeLane/spawnLaneSession replaces process.env mutation | Cleaner than mutating global env; added in iter 2 | execution.ts |
 
 ---
 
@@ -122,6 +126,15 @@
 | 2026-03-24 17:41 | Step 5 complete | Documentation & Delivery |
 | 2026-03-24 17:41 | Iteration 1 summary | +22 checkboxes, completed: Step 0, Step 1, Step 2, Step 3, Step 4, Step 5 |
 | 2026-03-24 17:41 | Task complete | .DONE created |
+| 2026-03-24 17:48 | Worker iter 2 | done in 2225s, ctx: 18%, tools: 215 |
+| 2026-03-24 17:48 | Step 0 complete | Preflight |
+| 2026-03-24 17:48 | Step 1 complete | Add Exit Classification for Model Access Errors |
+| 2026-03-24 17:48 | Step 2 complete | Add Model Fallback Config |
+| 2026-03-24 17:48 | Step 3 complete | Implement Fallback in Execution |
+| 2026-03-24 17:48 | Step 4 complete | Testing & Verification |
+| 2026-03-24 17:48 | Step 5 complete | Documentation & Delivery |
+| 2026-03-24 17:48 | Iteration 1 summary | +22 checkboxes, completed: Step 0, Step 1, Step 2, Step 3, Step 4, Step 5 |
+| 2026-03-24 17:48 | Task complete | .DONE created |
 
 ---
 
