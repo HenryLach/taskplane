@@ -1,6 +1,6 @@
 # TP-051: Fix Stale Branches After Integrate and Task Timing — Status
 
-**Current Step:** Step 1: Delete stale task/saved branches after integrate
+**Current Step:** Step 2: Fix task startedAt to use actual execution start
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
@@ -21,12 +21,12 @@
 ---
 
 ### Step 1: Delete stale task/saved branches after integrate
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add `deleteStaleTaskBranches()` function in worktree.ts that deletes task/* and saved/* branches for a given opId/batchId, plus orphaned branches from any batch
-- [ ] Call `deleteStaleTaskBranches()` from the /orch-integrate handler in extension.ts after successful integration, for all repos
-- [ ] Include deleted branches in the cleanup report for operator visibility
-- [ ] Ensure orch/* branch in PR mode is preserved (already handled by existing skipOrchBranch logic)
+- [x] Add `deleteStaleTaskBranches()` function in worktree.ts that deletes task/* and saved/* branches for a given opId/batchId, plus orphaned branches from any batch
+- [x] Call `deleteStaleTaskBranches()` from the /orch-integrate handler in extension.ts after successful integration, for all repos
+- [x] Include deleted branches in the cleanup report for operator visibility
+- [x] Ensure orch/* branch in PR mode is preserved (already handled by existing skipOrchBranch logic)
 
 ---
 

@@ -15,6 +15,7 @@ import {
 	computeWaveAssignments,
 	createOrchWidget,
 	deleteBatchState,
+	deleteStaleBranches,
 	detectOrphanSessions,
 	executeLane,
 	executeOrchBatch,
@@ -2467,6 +2468,30 @@ export default function (pi: ExtensionAPI) {
 			//           "merge-agent-autostash-w*-{batchId}" (from merge.ts)
 			for (const repo of allRepos) {
 				dropBatchAutostash(repo.root, batchId);
+			}
+
+			// TP-051: Delete stale task/* and saved/task/* branches from all repos.
+			// These accumulate after each batch and clutter `git branch` output.
+			// Deletes both current-batch branches and orphans from previous batches.
+			const branchCleanupLines: string[] = [];
+			for (const repo of allRepos) {
+				const branchCleanup = deleteStaleBranches(repo.root, opId, batchId);
+				const totalDeleted = branchCleanup.deletedTaskBranches.length + branchCleanup.deletedSavedBranches.length;
+				if (totalDeleted > 0 || branchCleanup.failedDeletes.length > 0) {
+					const label = repo.id === "(default)" ? "" : ` (${repo.id})`;
+					if (branchCleanup.deletedTaskBranches.length > 0) {
+						branchCleanupLines.push(`  🗑️ Deleted ${branchCleanup.deletedTaskBranches.length} task branch(es)${label}`);
+					}
+					if (branchCleanup.deletedSavedBranches.length > 0) {
+						branchCleanupLines.push(`  🗑️ Deleted ${branchCleanup.deletedSavedBranches.length} saved branch(es)${label}`);
+					}
+					if (branchCleanup.failedDeletes.length > 0) {
+						branchCleanupLines.push(`  ⚠️ Failed to delete ${branchCleanup.failedDeletes.length} branch(es)${label}: ${branchCleanup.failedDeletes.join(", ")}`);
+					}
+				}
+			}
+			if (branchCleanupLines.length > 0) {
+				ctx.ui.notify("Branch cleanup:\n" + branchCleanupLines.join("\n"), "info");
 			}
 
 			// Run acceptance checks across all workspace repos.
