@@ -42,11 +42,11 @@
 ---
 
 ### Step 3: Fix post-batch input prompt visibility
-**Status:** 🟨 In Progress
+**Status:** 🟨 Complete
 
 - [x] Supervisor sends visible conversational message on routing transition
 - [x] Ensure pi input prompt is visible after batch output
-- [ ] Clear signal that supervisor is ready for input
+- [x] Clear signal that supervisor is ready for input
 
 ---
 
