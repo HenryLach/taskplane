@@ -67,9 +67,9 @@
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Config reference docs updated with `modelFallback`
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
+- [x] Config reference docs updated with `modelFallback`
+- [x] "Check If Affected" docs reviewed
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
@@ -87,6 +87,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| model_fallback config lives in orchestrator.failure section (not task-runner) | By design — it's an orchestrator-level failure policy | config-schema.ts |
+| TASKPLANE_MODEL_FALLBACK env var bridges orchestrator→task-runner for model override | Documented in code comments | engine.ts, task-runner.ts |
 
 ---
 

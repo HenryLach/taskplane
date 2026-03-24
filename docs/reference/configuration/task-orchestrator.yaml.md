@@ -84,6 +84,7 @@ verification:
 | `failure.stall_timeout` | number | `30` | Stall detection threshold (minutes-equivalent logic in monitor cycle). |
 | `failure.max_worker_minutes` | number | `30` | Max worker runtime budget per task in orchestrated mode. |
 | `failure.abort_grace_period` | number | `60` | Graceful abort wait time (seconds) before forced termination. |
+| `failure.model_fallback` | `"inherit"` \| `"fail"` | `"inherit"` | Model fallback on `model_access_error`: `"inherit"` retries with session model; `"fail"` uses normal failure handling. (TP-055) |
 
 #### Merge retry policy matrix
 
@@ -253,6 +254,7 @@ The JSON format uses **camelCase** keys. YAML snake_case keys are mapped automat
 | `stall_timeout` | `stallTimeout` |
 | `max_worker_minutes` | `maxWorkerMinutes` |
 | `abort_grace_period` | `abortGracePeriod` |
+| `model_fallback` | `modelFallback` |
 | `poll_interval` | `pollInterval` |
 | `flaky_reruns` | `flakyReruns` |
 
@@ -312,7 +314,8 @@ In the JSON file, orchestrator settings live under the `orchestrator` key:
       "onMergeFailure": "pause",
       "stallTimeout": 30,
       "maxWorkerMinutes": 30,
-      "abortGracePeriod": 60
+      "abortGracePeriod": 60,
+      "modelFallback": "inherit"
     },
     "monitoring": {
       "pollInterval": 5
