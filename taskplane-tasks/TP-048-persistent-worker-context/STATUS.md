@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 7
-**Iteration:** 5
+**Review Counter:** 8
+**Iteration:** 6
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -59,17 +59,18 @@
 ---
 
 ### Step 4: Integrate reviews with the new loop
-**Status:** ✅ Complete
+**Status:** 🟡 In Progress
 
 - [x] R007: Remove up-front plan review sweep; make all reviews transition-based (run when step newly completes after worker exits)
 - [x] After worker exits, run plan review (level ≥ 1) then code review (level ≥ 2) for each newly completed step; track planReviewedSteps so plan review only runs on first completion (not rework)
 - [x] REVISE verdict marks step incomplete for rework in next iteration (already implemented — verify preserved)
 - [x] Plan and code reviews still respect review level and low-risk skip logic (already implemented — verify preserved)
+- [ ] R008: Fix pause-flow review gap — allow post-worker transition reviews to run when paused (gate on `phase !== "error"` instead of `phase === "running"`), then honor pause by returning before launching next iteration
 
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] All existing tests pass
 - [ ] Tests for single-spawn-per-task behavior
@@ -108,6 +109,9 @@
 | R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
 | R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
 | R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
+| R008 | code | Step 4 | APPROVE | .reviews/R008-code-step4.md |
+| R009 | plan | Step 5 | APPROVE | .reviews/R009-plan-step5.md |
+| R008 | code | Step 4 | REVISE | .reviews/R008-code-step4.md |
 |---|------|------|---------|------|
 
 ---
@@ -172,6 +176,13 @@
 | 2026-03-24 01:29 | Step 3 complete | Update progress tracking and stall detection |
 | 2026-03-24 01:29 | Step 4 started | Integrate reviews with the new loop |
 | 2026-03-24 01:30 | Review R007 | plan Step 4: REVISE |
+| 2026-03-24 01:41 | Worker iter 5 | done in 687s, ctx: 16%, tools: 27 |
+| 2026-03-24 01:42 | Worker iter 5 | done in 809s, ctx: 22%, tools: 41 |
+| 2026-03-24 01:44 | Review R008 | code Step 4: APPROVE |
+| 2026-03-24 01:44 | Step 4 complete | Integrate reviews with the new loop |
+| 2026-03-24 01:44 | Step 5 started | Testing & Verification |
+| 2026-03-24 01:46 | Review R009 | plan Step 5: APPROVE |
+| 2026-03-24 01:47 | Review R008 | code Step 4: REVISE |
 
 ---
 
