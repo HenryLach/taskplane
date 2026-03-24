@@ -1,6 +1,6 @@
 # TP-055: Runtime Model Fallback — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Add Exit Classification for Model Access Errors
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
@@ -25,11 +25,11 @@
 ---
 
 ### Step 1: Add Exit Classification for Model Access Errors
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add `model_access_error` to exit classification type
-- [ ] Update `classifyExit()` to detect model access error patterns (401/403/429, model not found)
-- [ ] Ensure classification is distinct from generic `agent_error`
+- [x] Add `model_access_error` to exit classification type
+- [x] Update `classifyExit()` to detect model access error patterns (401/403/429, model not found)
+- [x] Ensure classification is distinct from generic `agent_error`
 
 ---
 

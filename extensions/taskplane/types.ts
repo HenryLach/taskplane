@@ -1398,6 +1398,7 @@ export type Tier0RecoveryPattern =
  */
 export const TIER0_RETRYABLE_CLASSIFICATIONS: ReadonlySet<string> = new Set([
 	"api_error",
+	"model_access_error",
 	"process_crash",
 	"session_vanished",
 ]);

@@ -45,6 +45,7 @@ export interface SessionTokenCounts {
  * |----------------------|------------------------------------------------------|
  * | `completed`          | `.DONE` file found — task finished successfully      |
  * | `api_error`          | API returned error (auth, rate limit, overload)      |
+ * | `model_access_error` | Model unavailable (401/403/429, model not found)     |
  * | `context_overflow`   | Hit context window limit (compactions + high ctx %)  |
  * | `wall_clock_timeout` | Killed by task-runner's max_worker_minutes timer     |
  * | `process_crash`      | Non-zero exit code with no API error indicators      |
@@ -56,6 +57,7 @@ export interface SessionTokenCounts {
 export type ExitClassification =
 	| "completed"
 	| "api_error"
+	| "model_access_error"
 	| "context_overflow"
 	| "wall_clock_timeout"
 	| "process_crash"
@@ -70,6 +72,7 @@ export type ExitClassification =
 export const EXIT_CLASSIFICATIONS: readonly ExitClassification[] = [
 	"completed",
 	"api_error",
+	"model_access_error",
 	"context_overflow",
 	"wall_clock_timeout",
 	"process_crash",
@@ -224,6 +227,51 @@ export interface TaskExitDiagnostic {
 export const CONTEXT_OVERFLOW_THRESHOLD_PCT = 90;
 
 /**
+ * Patterns that indicate a model access error (as opposed to a generic API error).
+ *
+ * These patterns match error messages from API providers when:
+ * - The model is not found or deprecated
+ * - Authentication/authorization fails (HTTP 401/403)
+ * - Rate limits are hit specifically for the model (HTTP 429)
+ * - API key is expired or invalid
+ *
+ * The patterns are case-insensitive and tested against the error string.
+ *
+ * @since TP-055
+ */
+export const MODEL_ACCESS_ERROR_PATTERNS: readonly RegExp[] = [
+	/\b(?:401|403)\b/,                          // HTTP auth/forbidden status codes
+	/\b429\b/,                                   // HTTP rate limit
+	/model[_ ]not[_ ]found/i,                    // Model not found
+	/model[_ ](?:is[_ ])?unavailable/i,          // Model unavailable
+	/model[_ ](?:has[_ ]been[_ ])?deprecated/i,  // Model deprecated
+	/api[_ ]key[_ ](?:expired|invalid|revoked)/i, // API key issues
+	/invalid[_ ]api[_ ]key/i,                     // Invalid API key (alternate phrasing)
+	/authentication[_ ](?:failed|error|required)/i, // Auth failures
+	/authorization[_ ](?:failed|error|denied)/i,    // Authz failures
+	/access[_ ]denied/i,                          // Generic access denied
+	/permission[_ ]denied/i,                      // Permission denied
+	/quota[_ ]exceeded/i,                         // Quota exceeded
+	/rate[_ ]limit/i,                             // Rate limit (phrase)
+	/insufficient[_ ]quota/i,                     // Insufficient quota
+];
+
+/**
+ * Test whether an error message indicates a model access error.
+ *
+ * Used by `classifyExit()` to distinguish model-specific failures from
+ * generic API errors, enabling targeted fallback to the session model.
+ *
+ * @param errorMessage - Error message to test
+ * @returns true if the error matches a model access pattern
+ * @since TP-055
+ */
+export function isModelAccessError(errorMessage: string): boolean {
+	if (!errorMessage) return false;
+	return MODEL_ACCESS_ERROR_PATTERNS.some(pattern => pattern.test(errorMessage));
+}
+
+/**
  * Classify a task session's exit into a deterministic category.
  *
  * Uses a strict precedence order — the first matching condition wins.
@@ -232,22 +280,26 @@ export const CONTEXT_OVERFLOW_THRESHOLD_PCT = 90;
  *
  * **Classification precedence (highest → lowest):**
  *
- * | Priority | Condition                                            | Result              |
- * |----------|------------------------------------------------------|---------------------|
- * | 1        | `.DONE` file found                                   | `completed`         |
- * | 2        | Retries present with final retry failed               | `api_error`         |
- * | 3        | Compactions > 0 AND contextPct ≥ 90%                  | `context_overflow`  |
- * | 3b       | Task-runner explicitly context-killed                  | `context_overflow`  |
- * | 4        | Timer killed the session                              | `wall_clock_timeout`|
- * | 5        | Non-zero exit code, no API error                      | `process_crash`     |
- * | 6        | No exit summary file (session vanished)               | `session_vanished`  |
- * | 7        | Stall detected (no STATUS.md progress)                | `stall_timeout`     |
- * | 8        | User manually killed the session                      | `user_killed`       |
- * | 9        | None of the above                                    | `unknown`           |
+ * | Priority | Condition                                            | Result               |
+ * |----------|------------------------------------------------------|----------------------|
+ * | 1        | `.DONE` file found                                   | `completed`          |
+ * | 2a       | Retries with model-access error pattern               | `model_access_error` |
+ * | 2b       | Retries present with final retry failed               | `api_error`          |
+ * | 2c       | Error message has model-access pattern (no retries)   | `model_access_error` |
+ * | 3        | Compactions > 0 AND contextPct ≥ 90%                  | `context_overflow`   |
+ * | 3b       | Task-runner explicitly context-killed                  | `context_overflow`   |
+ * | 4        | Timer killed the session                              | `wall_clock_timeout` |
+ * | 5        | Non-zero exit code, no API error                      | `process_crash`      |
+ * | 6        | No exit summary file (session vanished)               | `session_vanished`   |
+ * | 7        | Stall detected (no STATUS.md progress)                | `stall_timeout`      |
+ * | 8        | User manually killed the session                      | `user_killed`        |
+ * | 9        | None of the above                                    | `unknown`            |
  *
  * **Tie-break rationale:**
  * - `.DONE` always wins because the task succeeded regardless of how messy
  *   the session was (retries, compactions, etc.).
+ * - `model_access_error` beats generic `api_error` because it's more specific
+ *   and enables targeted fallback (retry with session model).
  * - `api_error` beats `context_overflow` because API failures are more
  *   actionable (auth fix, rate limit backoff).
  * - `wall_clock_timeout` beats `process_crash` because the timer kill
@@ -269,12 +321,22 @@ export function classifyExit(input: ExitClassificationInput): ExitClassification
 		return "completed";
 	}
 
-	// 2. Retries present with final retry failed → api_error
+	// 2a. Retries present with model-access error pattern → model_access_error
+	// 2b. Retries present with final retry failed → api_error
 	if (exitSummary?.retries && exitSummary.retries.length > 0) {
 		const lastRetry = exitSummary.retries[exitSummary.retries.length - 1];
 		if (!lastRetry.succeeded) {
+			// Check if the retry error indicates a model access issue
+			if (isModelAccessError(lastRetry.error)) {
+				return "model_access_error";
+			}
 			return "api_error";
 		}
+	}
+
+	// 2c. Error message (no retries) indicates model access issue → model_access_error
+	if (exitSummary?.error && isModelAccessError(exitSummary.error)) {
+		return "model_access_error";
 	}
 
 	// 3. Compactions > 0 AND high context utilization → context_overflow
