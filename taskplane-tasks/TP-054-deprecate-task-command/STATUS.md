@@ -1,6 +1,6 @@
 # TP-054: Deprecate /task Command — Status
 
-**Current Step:** Step 2: Update Documentation
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 1
