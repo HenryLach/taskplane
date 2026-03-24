@@ -278,8 +278,8 @@ describe("4.x — All retries exhausted: failure propagation", () => {
 		expect(mergeSource).toContain('"MERGE_TIMEOUT"');
 		// Both patterns appear in the same function (waitForMergeResult)
 		const waitFn = mergeSource.substring(
-			mergeSource.indexOf("export function waitForMergeResult"),
-			mergeSource.indexOf("export function waitForMergeResult") + 3000,
+			mergeSource.indexOf("export async function waitForMergeResult"),
+			mergeSource.indexOf("export async function waitForMergeResult") + 3000,
 		);
 		expect(waitFn).toContain("MERGE_TIMEOUT");
 		expect(waitFn).toContain("throw new MergeError");
