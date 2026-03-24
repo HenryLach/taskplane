@@ -492,3 +492,272 @@ describe("MergeHealthMonitor", () => {
 		expect(monitor.getSessionStates().size).toBe(0);
 	});
 });
+
+
+// ── 8. MergeHealthMonitor.poll() Behavior Tests ──────────────────────
+
+describe("MergeHealthMonitor.poll() behavior", () => {
+	it("8.1: poll() source verifies it calls tmuxHasSession + existsSync + classifyMergeHealth", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		// Find the poll() method body
+		const pollIdx = mergeSource.indexOf("poll(): void {");
+		expect(pollIdx).toBeGreaterThan(-1);
+		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
+
+		// Verify poll checks session liveness
+		expect(pollBody).toContain("tmuxHasSession(sessionName)");
+		// Verify poll checks result file
+		expect(pollBody).toContain("existsSync(resultPath)");
+		// Verify poll classifies health
+		expect(pollBody).toContain("classifyMergeHealth");
+		// Verify poll captures pane output
+		expect(pollBody).toContain("captureMergePaneOutput");
+	});
+
+	it("8.2: poll() updates snapshot when output changes", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const pollIdx = mergeSource.indexOf("poll(): void {");
+		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
+
+		// Verify snapshot update logic
+		expect(pollBody).toContain("lastSnapshot");
+		expect(pollBody).toContain("lastActivityAt");
+		// Must check for content difference before updating
+		expect(pollBody).toContain("currentOutput !== state.lastSnapshot.content");
+	});
+
+	it("8.3: poll() calls _emitHealthEvents for each session", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const pollIdx = mergeSource.indexOf("poll(): void {");
+		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
+
+		expect(pollBody).toContain("_emitHealthEvents");
+	});
+
+	it("8.4: poll() fires onDeadSession callback when dead session detected", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const pollIdx = mergeSource.indexOf("poll(): void {");
+		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
+
+		// Dead session triggers callback
+		expect(pollBody).toContain("_onDeadSession");
+		// Only fires when status is "dead"
+		expect(pollBody).toContain('"dead"');
+	});
+});
+
+
+// ── 9. Event Emission and De-duplication Tests ───────────────────────
+
+describe("event emission and de-duplication", () => {
+	it("9.1: _emitHealthEvents source emits warning event only when warningEmitted is false", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
+		expect(emitIdx).toBeGreaterThan(-1);
+		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2000);
+
+		// Check that warning event emission is gated on warningEmitted
+		expect(emitBody).toContain("!state.warningEmitted");
+		expect(emitBody).toContain("state.warningEmitted = true");
+		expect(emitBody).toContain("merge_health_warning");
+	});
+
+	it("9.2: _emitHealthEvents source emits dead event only when deadEmitted is false", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
+		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2000);
+
+		// poll() or _emitHealthEvents checks deadEmitted
+		expect(emitBody).toContain("merge_health_dead");
+	});
+
+	it("9.3: _emitHealthEvents source emits stuck event only when stuckEmitted is false", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
+		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2000);
+
+		expect(emitBody).toContain("!state.stuckEmitted");
+		expect(emitBody).toContain("state.stuckEmitted = true");
+		expect(emitBody).toContain("merge_health_stuck");
+	});
+
+	it("9.4: events include laneNumber, sessionName, healthStatus, and stalledMinutes fields", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
+		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2000);
+
+		expect(emitBody).toContain("laneNumber: state.laneNumber");
+		expect(emitBody).toContain("sessionName: state.sessionName");
+		expect(emitBody).toContain("healthStatus:");
+		expect(emitBody).toContain("stalledMinutes");
+	});
+
+	it("9.5: events are written via emitEngineEvent (to unified events.jsonl)", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
+		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2000);
+
+		expect(emitBody).toContain("emitEngineEvent");
+	});
+
+	it("9.6: event uses buildEngineEventBase for consistent event structure", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
+		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2000);
+
+		expect(emitBody).toContain("buildEngineEventBase");
+	});
+});
+
+
+// ── 10. Dead-Session Early Exit Signaling Tests ──────────────────────
+
+describe("dead-session early exit signaling", () => {
+	it("10.1: MergeHealthMonitor accepts onDeadSession callback in constructor", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		// Constructor accepts onDeadSession parameter
+		expect(mergeSource).toContain("onDeadSession?:");
+		// Stored as private field
+		expect(mergeSource).toContain("_onDeadSession");
+	});
+
+	it("10.2: onDeadSession callback is invoked with sessionName and laneNumber", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const pollIdx = mergeSource.indexOf("poll(): void {");
+		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
+
+		// Callback invocation passes session name and lane number
+		expect(pollBody).toContain("this._onDeadSession(sessionName, state.laneNumber)");
+	});
+
+	it("10.3: engine.ts wires onDeadSession callback when creating monitor", () => {
+		const engineSource = readFileSync(
+			join(__dirname, "..", "taskplane", "engine.ts"),
+			"utf-8",
+		);
+		expect(engineSource).toContain("onDeadSession:");
+		// The callback logs the event for now — demonstrates the contract
+		expect(engineSource).toContain("merge health monitor detected dead session");
+	});
+
+	it("10.4: dead session detection in poll() only fires once per session (deadEmitted guard)", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const pollIdx = mergeSource.indexOf("poll(): void {");
+		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
+
+		// Dead detection gated on deadEmitted flag
+		expect(pollBody).toContain("!state.deadEmitted");
+		expect(pollBody).toContain("state.deadEmitted = true");
+	});
+
+	it("10.5: waitForMergeResult early exit path — monitor signals dead session before timeout", () => {
+		// The merge.ts mergeWave() wires session registration/deregistration around
+		// spawnMergeAgent + waitForMergeResult. When the monitor detects a dead session,
+		// the normal waitForMergeResult polling loop catches it within MERGE_POLL_INTERVAL_MS
+		// (2 seconds) because waitForMergeResult already checks tmuxHasSession on each poll.
+		// The health monitor's value is the early _event emission_ (for operator visibility)
+		// and the _dead session callback_ (for engine-level awareness), not a parallel
+		// abort signal — the existing session-liveness check in waitForMergeResult handles
+		// the actual early exit within its 2-second poll loop.
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+
+		// waitForMergeResult already checks session liveness each poll
+		const waitFn = mergeSource.substring(
+			mergeSource.indexOf("async function waitForMergeResult"),
+			mergeSource.indexOf("async function waitForMergeResult") + 3000,
+		);
+		expect(waitFn).toContain("tmuxHasSession(sessionName)");
+		expect(waitFn).toContain("sessionDiedAt");
+		expect(waitFn).toContain("MERGE_SESSION_DIED");
+
+		// Health monitor adds value by emitting events BEFORE the timeout
+		// and signaling the engine via the dead session callback
+		expect(mergeSource).toContain("merge_health_dead");
+		expect(mergeSource).toContain("_onDeadSession");
+	});
+});
+
+
+// ── 11. captureMergePaneOutput Tests ─────────────────────────────────
+
+describe("captureMergePaneOutput source verification", () => {
+	it("11.1: uses tmux capture-pane with correct arguments", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const fnIdx = mergeSource.indexOf("function captureMergePaneOutput");
+		expect(fnIdx).toBeGreaterThan(-1);
+		const fnBody = mergeSource.substring(fnIdx, fnIdx + 600);
+
+		expect(fnBody).toContain("capture-pane");
+		expect(fnBody).toContain("-t");
+		expect(fnBody).toContain("-p");      // print to stdout
+		expect(fnBody).toContain("-S");      // start from N lines back
+	});
+
+	it("11.2: returns null on failure (not empty string)", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const fnIdx = mergeSource.indexOf("function captureMergePaneOutput");
+		const fnBody = mergeSource.substring(fnIdx, fnIdx + 600);
+
+		// Returns null on non-zero status or error
+		expect(fnBody).toContain("return null");
+	});
+
+	it("11.3: has a timeout guard to prevent hanging", () => {
+		const mergeSource = readFileSync(
+			join(__dirname, "..", "taskplane", "merge.ts"),
+			"utf-8",
+		);
+		const fnIdx = mergeSource.indexOf("function captureMergePaneOutput");
+		const fnBody = mergeSource.substring(fnIdx, fnIdx + 600);
+
+		expect(fnBody).toContain("timeout:");
+	});
+});

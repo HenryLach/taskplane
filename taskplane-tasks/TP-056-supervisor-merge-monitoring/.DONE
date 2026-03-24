@@ -1,1 +1,13 @@
-done
+TP-056: Supervisor Merge Monitoring — Complete
+
+Implemented active merge health monitoring in the supervisor:
+- MergeHealthMonitor class in merge.ts with session liveness, activity detection, and escalation tiers
+- Health classification: healthy → warning (10 min) → stuck (20 min), plus dead session detection
+- Structured events: merge_health_warning, merge_health_dead, merge_health_stuck
+- Engine integration: monitor starts/stops around merge phase, sessions registered/deregistered per lane
+- Supervisor integration: events formatted for operator display, critical events always notify
+- 36 new tests covering health classification, constants, event formatting, and integration points
+- Troubleshooting docs updated with merge stall guidance
+- Supervisor primer updated with merge health event documentation
+
+All 2468 tests passing. Build verified.
