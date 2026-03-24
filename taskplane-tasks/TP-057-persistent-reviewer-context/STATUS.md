@@ -1,7 +1,7 @@
 # TP-057: Persistent Reviewer Context — Status
 
-**Current Step:** Step 6: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-24
 **Review Level:** 2
 **Review Counter:** 2
@@ -75,11 +75,11 @@
 ### Step 6: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Update review-loop.md with persistent reviewer section
-- [ ] Update supervisor-primer.md
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
-- [ ] `.DONE` created
+- [x] Update review-loop.md with persistent reviewer section
+- [x] Update supervisor-primer.md
+- [x] "Check If Affected" docs reviewed (execution-model.md updated)
+- [x] Discoveries logged
+- [x] `.DONE` created
 
 ---
 
@@ -96,6 +96,10 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Design spec file missing from worktree (.pi/local/docs/taskplane/persistent-reviewer-context-spec.md) | Used PROMPT.md as source of truth | PROMPT.md |
+| tmux set-environment doesn't affect running processes — env vars must be in command prefix | Fixed: added `env` option to spawnAgentTmux | extensions/task-runner.ts |
+| Signal number and review counter can diverge after respawns — reviewer must read filename from signal content | Fixed: signal file contains request filename | extensions/reviewer-extension.ts |
+| 2 pre-existing test failures in supervisor-merge-monitoring.test.ts (TP-056) | Pre-existing, not caused by TP-057 | extensions/tests/ |
 
 ---
 
