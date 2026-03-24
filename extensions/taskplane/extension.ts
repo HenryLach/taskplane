@@ -900,7 +900,7 @@ export function startBatchAsync(
  *
  * @since TP-043 R002
  */
-export function buildIntegrationExecutor(repoRoot: string): IntegrationExecutor {
+export function buildIntegrationExecutor(repoRoot: string, opId?: string): IntegrationExecutor {
 	return (mode, context) => {
 		// Ensure we're on the base branch before integrating
 		const currentBranch = getCurrentBranch(repoRoot);
@@ -943,10 +943,22 @@ export function buildIntegrationExecutor(repoRoot: string): IntegrationExecutor 
 			},
 		};
 
-		return executeIntegration(mode as IntegrateMode, {
+		const result = executeIntegration(mode as IntegrateMode, {
 			...context,
 			currentBranch: context.baseBranch,
 		}, deps);
+
+		// TP-051: Clean up stale task/* and saved/* branches after successful integration.
+		// This ensures auto-mode integration (supervisor path) gets the same cleanup
+		// as the manual /orch-integrate handler.
+		if (result.success && result.integratedLocally && context.batchId && opId) {
+			try {
+				deleteStaleBranches(repoRoot, opId, context.batchId);
+				dropBatchAutostash(repoRoot, context.batchId);
+			} catch { /* best effort — don't fail integration for cleanup errors */ }
+		}
+
+		return result;
 	};
 }
 

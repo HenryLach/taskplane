@@ -219,10 +219,14 @@ export function syncTaskOutcomesFromMonitor(
 			const mappedStatus = monitorToLane[snap.status];
 			const terminal = mappedStatus === "succeeded" || mappedStatus === "failed" || mappedStatus === "stalled" || mappedStatus === "skipped";
 
+			// TP-051: Use snap.observedAt (Date.now() from monitor poll) instead of
+			// snap.lastHeartbeat (STATUS.md mtime) for task start time. The mtime
+			// reflects when STATUS.md was last edited, which may be long before
+			// actual execution started (e.g., during task staging).
 			changed = upsertTaskOutcome(outcomes, {
 				taskId: lane.currentTaskId,
 				status: mappedStatus,
-				startTime: existing?.startTime ?? snap.lastHeartbeat ?? snap.observedAt,
+				startTime: existing?.startTime ?? snap.observedAt,
 				endTime: terminal ? (existing?.endTime ?? snap.observedAt) : null,
 				exitReason: existing?.exitReason || (mappedStatus === "running" ? "Task in progress" : (snap.stallReason || "Task reached terminal state")),
 				sessionName: existing?.sessionName || lane.sessionName,

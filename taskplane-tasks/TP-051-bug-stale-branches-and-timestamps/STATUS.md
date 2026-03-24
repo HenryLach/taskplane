@@ -1,6 +1,6 @@
 # TP-051: Fix Stale Branches After Integrate and Task Timing — Status
 
-**Current Step:** Step 2: Fix task startedAt to use actual execution start
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
@@ -31,11 +31,11 @@
 ---
 
 ### Step 2: Fix task startedAt to use actual execution start
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Find where startedAt uses STATUS.md mtime
-- [ ] Replace with Date.now() at actual execution start
-- [ ] Ensure fix applies to both dashboard and batch history
+- [x] Find where startedAt uses STATUS.md mtime
+- [x] Replace with Date.now() at actual execution start
+- [x] Ensure fix applies to both dashboard and batch history
 
 ---
 
