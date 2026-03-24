@@ -1,6 +1,6 @@
 # TP-054: Deprecate /task Command — Status
 
-**Current Step:** Step 1: Add Deprecation Warnings
+**Current Step:** Step 2: Update Documentation
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 1
@@ -34,11 +34,11 @@
 ---
 
 ### Step 2: Update Documentation
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Mark `/task*` commands as deprecated in `commands.md`
-- [ ] Add deprecation note to `/task` mention in `README.md`
-- [ ] Check `docs/tutorials/install.md` for `/task` references
+- [x] Mark `/task*` commands as deprecated in `commands.md`
+- [x] Add deprecation note to `/task` mention in `README.md`
+- [x] Check `docs/tutorials/install.md` for `/task` references
 
 ---
 
