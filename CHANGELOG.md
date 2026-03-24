@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-03-23
+
+### New
+- **Persistent worker context (TP-048, issue #140)** — workers now spawn once per task instead of once per step. The worker handles all remaining steps in a single context window, committing at each step boundary. If context runs out mid-task, the next iteration picks up from the last completed step. Typical tasks complete in a single iteration.
+- **Context window auto-detect (TP-047, issue #140)** — `worker_context_window` is now auto-detected from pi's model registry instead of hardcoded at 200K. Claude 4.6 Opus correctly uses its 1M context window. Explicit config overrides still take precedence.
+- **Updated context defaults** — `warn_percent` raised from 70% to 85%, `kill_percent` from 85% to 95%, maximizing useful context utilization.
+
+### Fixed
+- **Model pre-flight display** — worker/reviewer models now read from the full unified config (including user preferences), not the stripped orchestrator config. Previously always showed "inherit" regardless of `/settings`.
+- **Dashboard NaN heartbeat (issue #129)** — `relativeTime()` now handles ISO string timestamps from the supervisor lockfile.
+- **Lockfile batchId stuck (issue #130)** — heartbeat tick refreshes batchId from live batch state when it was initially "(initializing)".
+- **Dashboard shows wrong batch (issue #20)** — after batch completion, dashboard now shows the just-finished batch instead of the previous one. Fixed async race between history fetch and view rendering.
+- **Onboarding task area registration (issue #138)** — supervisor onboarding script now explicitly requires registering task areas in config, with example JSON and verification step.
+- **Merge timeout default** — increased from 10 to 90 minutes to accommodate large batches with tests.
+
 ## [0.7.2] - 2026-03-23
 
 ### New
@@ -347,7 +362,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/HenryLach/taskplane/compare/v0.7.2...v0.8.0
 [0.7.2]: https://github.com/HenryLach/taskplane/compare/v0.7.1...v0.7.2
 [0.7.0]: https://github.com/HenryLach/taskplane/compare/v0.6.1...v0.7.0
 [0.1.14]: https://github.com/HenryLach/taskplane/releases/tag/v0.1.14
