@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-03-24
+
+### New
+- **Supervisor orchestrator tools (TP-053)** — the supervisor agent can now invoke `orch_resume`, `orch_integrate`, `orch_pause`, `orch_abort`, and `orch_status` as extension tools. No more asking the user to type slash commands — the supervisor acts autonomously.
+- **Shared command/tool helpers** — orchestrator command logic extracted into shared internal functions called by both slash commands and tools. Ensures behavior parity.
+
+### Fixed
+- **Retrying badge during reviews (#174)** — dashboard no longer shows a flashing "retrying" badge during `review_step` tool calls.
+
+### Docs
+- **execution-model.md** — rewritten for persistent-context + worker-driven inline reviews.
+- **review-loop.md** — rewritten for `review_step` tool model.
+- **README.md** — updated key features, single-task guidance, architecture description.
+
 ## [0.9.3] - 2026-03-24
 
 ### Fixed
@@ -410,7 +424,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.9.3...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/HenryLach/taskplane/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/HenryLach/taskplane/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/HenryLach/taskplane/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/HenryLach/taskplane/compare/v0.9.0...v0.9.1
