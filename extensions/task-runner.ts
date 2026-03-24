@@ -19,6 +19,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
+import { Type } from "@mariozechner/pi-ai";
 import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "child_process";
 import {
@@ -128,8 +129,17 @@ interface TaskState {
 	workerExitDiagnostic: TaskExitDiagnostic | null;
 	reviewerStatus: "idle" | "running" | "done" | "error";
 	reviewerType: string;
+	reviewerStep: number;
+	reviewerSessionName: string;
 	reviewerElapsed: number;
 	reviewerLastTool: string;
+	reviewerToolCount: number;
+	reviewerInputTokens: number;
+	reviewerOutputTokens: number;
+	reviewerCacheReadTokens: number;
+	reviewerCacheWriteTokens: number;
+	reviewerCostUsd: number;
+	reviewerContextPct: number;
 	reviewerProc: any;
 	reviewerTimer: any;
 	reviewCounter: number;
@@ -146,8 +156,10 @@ function freshState(): TaskState {
 		workerProc: null, workerTimer: null,
 		workerRetryActive: false, workerRetryCount: 0, workerLastRetryError: "",
 		workerExitDiagnostic: null,
-		reviewerStatus: "idle", reviewerType: "", reviewerElapsed: 0,
-		reviewerLastTool: "", reviewerProc: null, reviewerTimer: null,
+		reviewerStatus: "idle", reviewerType: "", reviewerStep: 0, reviewerSessionName: "",
+		reviewerElapsed: 0, reviewerLastTool: "", reviewerToolCount: 0,
+		reviewerInputTokens: 0, reviewerOutputTokens: 0, reviewerCacheReadTokens: 0, reviewerCacheWriteTokens: 0,
+		reviewerCostUsd: 0, reviewerContextPct: 0, reviewerProc: null, reviewerTimer: null,
 		reviewCounter: 0, totalIterations: 0, stepStatuses: new Map(),
 	};
 }
@@ -1780,6 +1792,231 @@ function displayName(name: string): string {
 export default function (pi: ExtensionAPI) {
 	let state = freshState();
 	let widgetCtx: ExtensionContext | undefined;
+
+	// ── Inline Review Tool (orchestrated mode only) ──────────────────
+	//
+	// The worker agent calls this tool at step boundaries to spawn a
+	// reviewer. The worker's context is preserved across the tool call
+	// (it's a normal tool invocation, not a subprocess boundary).
+
+	if (isOrchestratedMode()) {
+		pi.registerTool({
+			name: "review_step",
+			label: "Review Step",
+			description:
+				"Spawn a reviewer agent to evaluate the current step's plan or code. " +
+				"Call this at step boundaries based on the task's review level. " +
+				"Returns the verdict: APPROVE, REVISE, RETHINK, or UNAVAILABLE.",
+			promptSnippet:
+				"review_step — Spawn a reviewer to evaluate a step's plan or code. " +
+				"Parameters: step (number), type ('plan' or 'code'). " +
+				"Returns verdict string. Use based on review level in STATUS.md.",
+			promptGuidelines: [
+				"Call review_step at step boundaries based on the task's review level (0-3).",
+				"Review Level 0: skip all reviews.",
+				"Review Level 1: call with type 'plan' before implementing each step.",
+				"Review Level 2: plan review before implementing + code review after implementing and committing.",
+				"Review Level 3: plan + code + test reviews.",
+				"Skip reviews for Step 0 (Preflight) and the final documentation/delivery step.",
+				"On REVISE: read the review file in .reviews/ for detailed feedback, address issues, commit fixes, then proceed.",
+				"On RETHINK: reconsider your plan approach, adjust, then implement.",
+				"On APPROVE: proceed to next step.",
+				"On UNAVAILABLE: reviewer failed, proceed with caution.",
+			],
+			parameters: Type.Object({
+				step: Type.Number({ description: "The step number to review" }),
+				type: Type.Union([Type.Literal("plan"), Type.Literal("code")], {
+					description: "The review type: 'plan' (before implementation) or 'code' (after implementation)",
+				}),
+			}),
+
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+				const { step: stepNum, type: reviewType } = params as { step: number; type: "plan" | "code" };
+
+				// Validate state
+				if (!state.task || !state.config) {
+					return {
+						content: [{ type: "text" as const, text: "UNAVAILABLE — no task loaded" }],
+					};
+				}
+
+				const task = state.task;
+				const config = state.config;
+				const statusPath = join(task.taskFolder, "STATUS.md");
+				const reviewsDir = join(task.taskFolder, ".reviews");
+				if (!existsSync(reviewsDir)) mkdirSync(reviewsDir, { recursive: true });
+
+				// Low-risk step check (safety net — worker template also skips)
+				if (isLowRiskStep(stepNum, task.steps.length)) {
+					const label = stepNum === 0 ? "Preflight" : "final step";
+					logExecution(statusPath, `Skip ${reviewType} review`, `Step ${stepNum} (${label}) — low-risk`);
+					return {
+						content: [{ type: "text" as const, text: `APPROVE — Step ${stepNum} is low-risk (${label}), review skipped` }],
+					};
+				}
+
+				// Increment review counter
+				state.reviewCounter++;
+				const num = String(state.reviewCounter).padStart(3, "0");
+				const requestPath = join(reviewsDir, `request-R${num}.md`);
+				const outputPath = join(reviewsDir, `R${num}-${reviewType}-step${stepNum}.md`);
+
+				// Find step info
+				const stepInfo = task.steps.find(s => s.number === stepNum);
+				const stepName = stepInfo?.name || `Step ${stepNum}`;
+
+				// Generate baseline commit for code reviews
+				let stepBaselineCommit: string | undefined;
+				if (reviewType === "code") {
+					stepBaselineCommit = getHeadCommitSha();
+					// TODO: Could track per-step baselines if needed, but for inline
+					// reviews the worker commits before calling code review, so HEAD~
+					// or a tracked baseline would be more precise. For now, the worker
+					// is expected to have committed, so we diff from the step start.
+				}
+
+				// Generate review request
+				const request = generateReviewRequest(
+					reviewType, stepNum, stepName, task, config, outputPath, stepBaselineCommit,
+				);
+				writeFileSync(requestPath, request);
+
+				// Load reviewer agent def
+				const reviewerDef = loadAgentDef(ctx.cwd, "task-reviewer");
+				const reviewerModel = config.reviewer.model || reviewerDef?.model || "openai/gpt-5.3-codex";
+				const reviewerPrompt = reviewerDef?.systemPrompt
+					|| "You are a code reviewer. Read the request and write your review to the specified output file.";
+				const systemPrompt = reviewerPrompt + "\n\n" + buildProjectContext(config, task.taskFolder);
+
+				// Update lane-state: reviewer starting
+				const sessionName = `${getTmuxPrefix()}-reviewer`;
+				state.reviewerStatus = "running";
+				state.reviewerType = `${reviewType} review`;
+				state.reviewerStep = stepNum;
+				state.reviewerSessionName = sessionName;
+				state.reviewerElapsed = 0;
+				state.reviewerContextPct = 0;
+				state.reviewerLastTool = "";
+				state.reviewerToolCount = 0;
+				state.reviewerInputTokens = 0;
+				state.reviewerOutputTokens = 0;
+				state.reviewerCacheReadTokens = 0;
+				state.reviewerCacheWriteTokens = 0;
+				state.reviewerCostUsd = 0;
+				updateWidgets();
+
+				const startTime = Date.now();
+				state.reviewerTimer = setInterval(() => {
+					state.reviewerElapsed = Date.now() - startTime;
+					updateWidgets();
+				}, 1000);
+
+				// Read the request file content as the prompt
+				const promptContent = readFileSync(requestPath, "utf-8");
+
+				// Resolve context window for reviewer context% tracking
+				const { contextWindow: reviewerContextWindow } = resolveContextWindow(config, ctx);
+
+				try {
+					// Spawn reviewer via spawnAgentTmux with onTelemetry
+					const spawned = spawnAgentTmux({
+						sessionName,
+						cwd: ctx.cwd,
+						systemPrompt,
+						prompt: promptContent,
+						model: reviewerModel,
+						tools: config.reviewer.tools || reviewerDef?.tools || "read,write,bash,grep,find,ls",
+						thinking: config.reviewer.thinking || "on",
+						taskId: state.task?.taskId,
+						onTelemetry: (delta) => {
+							// Accumulate reviewer tokens and cost
+							state.reviewerInputTokens += delta.inputTokens;
+							state.reviewerOutputTokens += delta.outputTokens;
+							state.reviewerCacheReadTokens += delta.cacheReadTokens;
+							state.reviewerCacheWriteTokens += delta.cacheWriteTokens;
+							state.reviewerCostUsd += delta.cost;
+
+							// Tool tracking
+							state.reviewerToolCount += delta.toolCalls;
+							if (delta.lastTool) {
+								state.reviewerLastTool = delta.lastTool;
+							}
+
+							// Context %
+							if (delta.latestTotalTokens > 0 && reviewerContextWindow > 0) {
+								state.reviewerContextPct = (delta.latestTotalTokens / reviewerContextWindow) * 100;
+							}
+
+							updateWidgets();
+						},
+					});
+					state.reviewerProc = { kill: spawned.kill };
+
+					// Await reviewer completion
+					const result = await spawned.promise;
+
+					clearInterval(state.reviewerTimer);
+					state.reviewerElapsed = Date.now() - startTime;
+					state.reviewerStatus = result.exitCode === 0 ? "done" : "error";
+					state.reviewerProc = null;
+				} catch (err: any) {
+					clearInterval(state.reviewerTimer);
+					state.reviewerStatus = "error";
+					state.reviewerProc = null;
+					console.error(`[task-runner] review_step: reviewer spawn error: ${err?.message || err}`);
+				}
+
+				// Clear reviewer live metrics (keep status until next update cycle)
+				state.reviewerContextPct = 0;
+				state.reviewerLastTool = "";
+				state.reviewerToolCount = 0;
+				state.reviewerSessionName = "";
+				state.reviewerStep = 0;
+				updateWidgets();
+
+				// Read verdict
+				let verdict = "UNKNOWN";
+				if (existsSync(outputPath)) {
+					const review = readFileSync(outputPath, "utf-8");
+					verdict = extractVerdict(review);
+				} else {
+					verdict = "UNAVAILABLE";
+					logExecution(statusPath, `Reviewer R${num}`, `${reviewType} review — reviewer did not produce output`);
+				}
+
+				// Log the review
+				logReview(statusPath, `R${num}`, reviewType, stepNum, verdict, `.reviews/R${num}-${reviewType}-step${stepNum}.md`);
+				logExecution(statusPath, `Review R${num}`, `${reviewType} Step ${stepNum}: ${verdict}`);
+				updateStatusField(statusPath, "Review Counter", `${state.reviewCounter}`);
+
+				// Build result text for the worker
+				let resultText: string;
+				if (verdict === "APPROVE") {
+					resultText = "APPROVE";
+				} else if (verdict === "REVISE") {
+					// Include a summary so the worker knows what to address
+					let summary = "";
+					if (existsSync(outputPath)) {
+						const review = readFileSync(outputPath, "utf-8");
+						// Extract first few issues from the review
+						const issuesMatch = review.match(/###?\s*Issues?\s*Found[\s\S]*?(?=###|$)/i);
+						if (issuesMatch) {
+							summary = issuesMatch[0].slice(0, 500).trim();
+						}
+					}
+					resultText = `REVISE: ${summary || "See review file for details."}. Full review: .reviews/R${num}-${reviewType}-step${stepNum}.md`;
+				} else if (verdict === "RETHINK") {
+					resultText = `RETHINK: Reviewer suggests reconsidering the plan approach. See .reviews/R${num}-${reviewType}-step${stepNum}.md`;
+				} else {
+					resultText = `UNAVAILABLE: Reviewer did not produce a usable verdict. Proceed with caution.`;
+				}
+
+				return {
+					content: [{ type: "text" as const, text: resultText }],
+				};
+			},
+		});
+	}
 
 	// ── Widget Rendering ─────────────────────────────────────────────
 

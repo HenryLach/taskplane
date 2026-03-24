@@ -1,6 +1,6 @@
 # TP-050: Worker-Driven Inline Reviews — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Register review_step extension tool
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
@@ -26,13 +26,13 @@
 ---
 
 ### Step 1: Register review_step extension tool
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Hydrate: Expanded based on pi tool registration API (pi.registerTool with Type.Object params, async execute returning AgentToolResult). Tool only registered in orchestrated mode (isOrchestratedMode()). Uses existing doReview()-like pattern: generateReviewRequest → spawnAgentTmux → extractVerdict → logReview.
 
-- [ ] Add Type import from @mariozechner/pi-ai and register review_step tool with pi.registerTool (gated on isOrchestratedMode())
-- [ ] Implement tool execute handler: generate review request, spawn reviewer via spawnAgentTmux, wire onTelemetry to update state, extract verdict, log review, return verdict string to worker
-- [ ] Add reviewer telemetry fields to TaskState (reviewerToolCount, reviewerInputTokens, etc.) for onTelemetry callback to populate
+- [x] Add Type import from @mariozechner/pi-ai and register review_step tool with pi.registerTool (gated on isOrchestratedMode())
+- [x] Implement tool execute handler: generate review request, spawn reviewer via spawnAgentTmux, wire onTelemetry to update state, extract verdict, log review, return verdict string to worker
+- [x] Add reviewer telemetry fields to TaskState (reviewerToolCount, reviewerInputTokens, etc.) for onTelemetry callback to populate
 
 ---
 
