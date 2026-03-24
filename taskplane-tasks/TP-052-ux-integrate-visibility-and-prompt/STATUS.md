@@ -63,7 +63,7 @@
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Discoveries logged
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
@@ -80,6 +80,10 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| orchBatchComplete already had integrate guidance — enhanced with visual box | In scope — improved | messages.ts |
+| detectBranchProtection already existed in supervisor.ts — wired into /orch-integrate handler | In scope — integrated | extension.ts |
+| transitionToRoutingMode already triggers LLM turn — enhanced with visual separator | In scope — improved | supervisor.ts |
+| /orch-resume onTerminal callback was missing some guidance lines vs /orch — aligned | In scope — fixed | extension.ts |
 
 ---
 
