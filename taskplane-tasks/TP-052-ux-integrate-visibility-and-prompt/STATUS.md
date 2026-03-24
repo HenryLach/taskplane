@@ -1,77 +1,76 @@
 # TP-052: UX: Integrate Visibility, Branch Protection, and Post-Batch Prompt — Status
 
-**Current Step:** Complete
-**Status:** ✅ Done
+**Current Step:** Not Started
+**Status:** 🔵 Ready for Execution
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 1
-**Iteration:** 2
+**Review Counter:** 0
+**Iteration:** 0
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Read batch completion flow in extension.ts
-- [x] Read transitionToRoutingMode() in supervisor.ts
-- [x] Read /orch-integrate command handler
-- [x] Read ORCH_MESSAGES in messages.ts
-- [x] Check gh api availability for branch protection
+- [ ] Read batch completion flow in extension.ts
+- [ ] Read transitionToRoutingMode() in supervisor.ts
+- [ ] Read /orch-integrate command handler
+- [ ] Read ORCH_MESSAGES in messages.ts
+- [ ] Check gh api availability for branch protection
 
 ---
 
 ### Step 1: Make /orch-integrate obvious after batch completion
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Add prominent integrate guidance message after batch completion
-- [x] Include in supervisor batch summary and engine completion output
-- [x] Show exact commands (/orch-integrate and --pr variant)
-- [x] Message appears even without active supervisor
+- [ ] Add prominent integrate guidance message after batch completion
+- [ ] Include in supervisor batch summary and engine completion output
+- [ ] Show exact commands (/orch-integrate and --pr variant)
+- [ ] Message appears even without active supervisor
 
 ---
 
 ### Step 2: Detect branch protection and guide to --pr
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Pre-merge branch protection check via gh api
-- [x] Graceful degradation when gh unavailable
-- [x] Clear error message on protection-related merge failure
-- [x] Suggest --pr in both pre-check warning and failure message
+- [ ] Pre-merge branch protection check via gh api
+- [ ] Graceful degradation when gh unavailable
+- [ ] Clear error message on protection-related merge failure
+- [ ] Suggest --pr in both pre-check warning and failure message
 
 ---
 
 ### Step 3: Fix post-batch input prompt visibility
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Supervisor sends visible conversational message on routing transition
-- [x] Ensure pi input prompt is visible after batch output
-- [x] Clear signal that supervisor is ready for input
+- [ ] Supervisor sends visible conversational message on routing transition
+- [ ] Ensure pi input prompt is visible after batch output
+- [ ] Clear signal that supervisor is ready for input
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] All existing tests pass
-- [x] Tests for integrate message after batch
-- [x] Tests for branch protection detection
-- [x] Tests for protection warning in integrate command
+- [ ] All existing tests pass
+- [ ] Tests for integrate message after batch
+- [ ] Tests for branch protection detection
+- [ ] Tests for protection warning in integrate command
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Discoveries logged
-- [x] `.DONE` created
+- [ ] Discoveries logged
+- [ ] `.DONE` created
 
 ---
 
 ## Reviews
 
 | # | Type | Step | Verdict | File |
-| R001 | plan | Step 1 | UNKNOWN | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -80,10 +79,6 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
-| orchBatchComplete already had integrate guidance — enhanced with visual box | In scope — improved | messages.ts |
-| detectBranchProtection already existed in supervisor.ts — wired into /orch-integrate handler | In scope — integrated | extension.ts |
-| transitionToRoutingMode already triggers LLM turn — enhanced with visual separator | In scope — improved | supervisor.ts |
-| /orch-resume onTerminal callback was missing some guidance lines vs /orch — aligned | In scope — fixed | extension.ts |
 
 ---
 
@@ -92,21 +87,6 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-24 | Task staged | PROMPT.md and STATUS.md created |
-| 2026-03-24 13:13 | Task started | Extension-driven execution |
-| 2026-03-24 13:13 | Step 0 started | Preflight |
-| 2026-03-24 13:13 | Step 1 started | Make /orch-integrate obvious after batch completion |
-| 2026-03-24 13:13 | Step 2 started | Detect branch protection and guide to --pr |
-| 2026-03-24 13:13 | Step 3 started | Fix post-batch input prompt visibility |
-| 2026-03-24 13:13 | Step 4 started | Testing & Verification |
-| 2026-03-24 13:13 | Step 5 started | Documentation & Delivery |
-| 2026-03-24 13:13 | Task started | Extension-driven execution |
-| 2026-03-24 13:13 | Step 0 started | Preflight |
-| 2026-03-24 13:13 | Step 1 started | Make /orch-integrate obvious after batch completion |
-| 2026-03-24 13:13 | Step 2 started | Detect branch protection and guide to --pr |
-| 2026-03-24 13:13 | Step 3 started | Fix post-batch input prompt visibility |
-| 2026-03-24 13:13 | Step 4 started | Testing & Verification |
-| 2026-03-24 13:13 | Step 5 started | Documentation & Delivery |
-| 2026-03-24 13:19 | Review R001 | plan Step 1: UNKNOWN |
 
 ---
 
