@@ -103,9 +103,9 @@ Notes:
 
 | Field | Type | Template default | Description |
 |---|---|---|---|
-| `context.worker_context_window` | number | `200000` | Context window size used for worker context pressure tracking. |
-| `context.warn_percent` | number | `70` | Warn threshold for context utilization. |
-| `context.kill_percent` | number | `85` | Hard-stop threshold for context utilization. |
+| `context.worker_context_window` | number | `0` (auto-detect) | Context window size for worker context pressure tracking. `0` or omitted = auto-detect from pi model registry (`ctx.model.contextWindow`), falling back to 200K if unavailable. Set explicitly to override. |
+| `context.warn_percent` | number | `85` | Warn threshold for context utilization. |
+| `context.kill_percent` | number | `95` | Hard-stop threshold for context utilization. |
 | `context.max_worker_iterations` | number | `20` | Max worker iterations per step before failure. |
 | `context.max_review_cycles` | number | `2` | Max revise loops per review stage. |
 | `context.no_progress_limit` | number | `3` | Max no-progress iterations before marking failure. |
@@ -316,9 +316,9 @@ In the JSON file, task-runner settings live under the `taskRunner` key:
       "thinking": "on"
     },
     "context": {
-      "workerContextWindow": 200000,
-      "warnPercent": 70,
-      "killPercent": 85,
+      "workerContextWindow": 0,
+      "warnPercent": 85,
+      "killPercent": 95,
       "maxWorkerIterations": 20,
       "maxReviewCycles": 2,
       "noProgressLimit": 3

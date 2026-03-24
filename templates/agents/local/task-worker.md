@@ -13,8 +13,9 @@ name: task-worker
 
   The base prompt (maintained by taskplane) handles:
   - STATUS.md-first workflow and checkpoint discipline
-  - Fresh-context loop behavior and iteration rules
-  - Git commit conventions and .DONE file creation
+  - Multi-step execution (worker handles all remaining steps per invocation)
+  - Iteration recovery (context limit → next invocation resumes from STATUS.md)
+  - Git commit conventions (per-step commits) and .DONE file creation
   - Review response handling
 
   Add project-specific rules below. Common examples:

@@ -57,9 +57,9 @@ reviewer:
   thinking: "off"
 
 context:
-  worker_context_window: 200000
-  warn_percent: 70
-  kill_percent: 85
+  # worker_context_window: 200000  # 0 or omit = auto-detect from model registry; set explicitly to override
+  warn_percent: 85
+  kill_percent: 95
   max_worker_iterations: 20
   max_review_cycles: 2
   no_progress_limit: 3

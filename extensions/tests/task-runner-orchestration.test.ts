@@ -266,7 +266,7 @@ function runAllTests(): void {
 	// Verify archiveSuppression is used in prompt assembly
 	const promptAssemblyBlock = source.slice(
 		source.indexOf("const prompt = ["),
-		source.indexOf("const prompt = [") + 1000,
+		source.indexOf("const prompt = [") + 1500,
 	);
 	assert(
 		promptAssemblyBlock.includes("archiveSuppression"),
