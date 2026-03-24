@@ -1,11 +1,11 @@
 # TP-048: Persistent Worker Context Per Task — Status
 
-**Current Step:** Step 5: Testing & Verification
+**Current Step:** Step 6: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 9
-**Iteration:** 6
+**Review Counter:** 10
+**Iteration:** 7
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -83,11 +83,11 @@
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Worker agent templates updated
-- [ ] Check affected docs (execution-model.md, review-loop.md)
-- [ ] Discoveries logged
+- [x] Worker agent templates updated
+- [x] Check affected docs (execution-model.md, review-loop.md)
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
@@ -113,6 +113,8 @@
 | R009 | plan | Step 5 | APPROVE | .reviews/R009-plan-step5.md |
 | R008 | code | Step 4 | REVISE | .reviews/R008-code-step4.md |
 | R009 | plan | Step 5 | APPROVE | .reviews/R009-plan-step5.md |
+| R010 | code | Step 5 | APPROVE | .reviews/R010-code-step5.md |
+| R010 | code | Step 5 | APPROVE | .reviews/R010-code-step5.md |
 |---|------|------|---------|------|
 
 ---
@@ -121,6 +123,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Worker prompt + template changes were inseparable from Step 1 loop refactoring — couldn't implement Step 2 independently | Noted in STATUS.md Notes | N/A |
+| Pause-flow review gap: reviews gated on `phase === "running"` blocked post-worker reviews when paused | Fixed in Step 4 (R008) | `extensions/task-runner.ts` |
+| Plan reviews should only run on first completion, not rework cycles (tracked via `planReviewedSteps`) | Implemented in Step 4 | `extensions/task-runner.ts` |
 
 ---
 
@@ -189,6 +194,15 @@
 | 2026-03-24 01:54 | Step 5 started | Testing & Verification |
 | 2026-03-24 01:56 | Review R009 | plan Step 5: APPROVE |
 | 2026-03-24 02:02 | Worker iter 6 | done in 977s, ctx: 67%, tools: 59 |
+| 2026-03-24 02:02 | Worker iter 6 | done in 393s, ctx: 17%, tools: 19 |
+| 2026-03-24 02:06 | Review R010 | code Step 5: APPROVE |
+| 2026-03-24 02:06 | Step 5 complete | Testing & Verification |
+| 2026-03-24 02:06 | Step 6 started | Documentation & Delivery |
+| 2026-03-24 02:06 | Skip plan review | Step 6 (final step) — low-risk |
+| 2026-03-24 02:06 | Review R010 | code Step 5: APPROVE |
+| 2026-03-24 02:06 | Step 5 complete | Testing & Verification |
+| 2026-03-24 02:06 | Step 6 started | Documentation & Delivery |
+| 2026-03-24 02:06 | Skip plan review | Step 6 (final step) — low-risk |
 
 ---
 

@@ -58,12 +58,24 @@ low-risk steps don't benefit from cross-model review.
 
 ## Loop mechanics in task-runner
 
-Per step:
+Reviews are **transition-based**: they run after the worker exits, for each step
+that was newly completed during that iteration.
 
-1. Plan review (if enabled)
-2. Worker implementation loop
-3. Code review (if enabled)
-4. If `REVISE`, run additional worker fix pass
+```text
+After worker exits:
+    for each step that changed from incomplete → complete:
+        plan review (if level ≥ 1, not low-risk, first completion only)
+        code review (if level ≥ 2, not low-risk)
+        if REVISE: mark step incomplete → rework in next iteration
+```
+
+Key behaviors:
+
+- **Plan review** runs only on a step's first completion (not on rework cycles)
+- **Code review** runs on every completion (including after rework)
+- **REVISE** marks the step incomplete; the next worker iteration addresses
+  the reviewer's feedback alongside any other remaining steps
+- **Low-risk steps** (Step 0/Preflight and final step) skip all reviews
 
 Counters/limits:
 

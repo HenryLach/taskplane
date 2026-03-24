@@ -5,6 +5,7 @@ Taskplane task execution is a **fresh-context loop** with file-backed memory.
 Core idea:
 
 - each worker iteration starts with fresh model context
+- the worker handles **all remaining steps** in a single context
 - `STATUS.md` is the persistent execution memory
 - progress is checkpointed continuously
 
@@ -16,10 +17,12 @@ Core idea:
 /task <PROMPT.md>
   → parse task
   → load or generate STATUS.md
-  → for each step:
-      (optional) plan review
-      worker iteration loop
-      (optional) code review + revise pass
+  → iteration loop:
+      spawn worker with all remaining steps
+      worker works through steps in order, committing at each step boundary
+      after worker exits, run reviews for each newly completed step
+      if REVISE → mark step incomplete for rework in next iteration
+      if all steps complete → break
   → (optional) quality gate review
   → create .DONE
   → complete
@@ -45,19 +48,32 @@ If `STATUS.md` already exists, review counter and iteration values are rehydrate
 
 Steps are parsed from `### Step N: ...` headings.
 
-For each step:
+The worker is spawned **once per iteration** and told to work through all
+remaining (incomplete) steps in order. This preserves accumulated context across
+step boundaries, avoiding the re-hydration cost of spawning a fresh worker per
+step.
 
-1. Mark step in progress in `STATUS.md`
-2. Optionally run plan review (`reviewLevel >= 1`)
-3. Run worker iteration loop until step complete/error/pause
-4. Optionally run code review (`reviewLevel >= 2`)
-5. Mark step complete and log execution
+Each iteration:
 
-### Review levels (current behavior)
+1. Identify all incomplete steps
+2. Spawn worker with the full list of remaining steps
+3. Worker works through steps sequentially, committing at each step boundary
+4. Worker exits (naturally, via wrap-up signal, or context limit)
+5. Runner determines which steps were newly completed
+6. For each newly completed step, run transition reviews (plan + code)
+7. If a review returns REVISE, mark the step incomplete for rework
+8. If all steps complete, task is done; otherwise start next iteration
+
+### Review levels
 
 - `0`: no review
-- `1`: plan review before implementation
-- `2+`: plan review + code review
+- `1`: plan review on first completion of a step
+- `2+`: plan review + code review on step completion
+
+Reviews are **transition-based**: they run after the worker exits, for each step
+that transitioned from incomplete to complete during that iteration. Plan reviews
+run only on first completion (not on rework cycles). Code reviews run on every
+completion.
 
 **Low-risk step exception:** Step 0 (Preflight) and the final step
 (Documentation & Delivery) always skip both plan and code reviews, regardless
@@ -72,20 +88,27 @@ meaningful issues. Middle steps are unaffected by this exception.
 Each iteration:
 
 1. Re-read `STATUS.md`
-2. Find first unchecked item in current step
-3. Spawn worker agent with task context + project context
-4. Worker performs one unit of progress
-5. Worker updates `STATUS.md` and checkpoints changes
-6. Runner checks whether progress was made
+2. Determine all remaining incomplete steps
+3. Spawn worker agent with task context + project context + remaining steps list
+4. Worker works through steps in order, checking off items and committing per step
+5. Worker updates `STATUS.md` and checkpoints changes continuously
+6. Runner checks total progress across all steps after worker exits
 
 Guardrails:
 
 - `max_worker_iterations`
-- `no_progress_limit`
+- `no_progress_limit` (checked per iteration across all steps)
 - context pressure thresholds (`warn_percent`, `kill_percent`)
 - optional wall-clock cap (`max_worker_minutes`)
 
-If no progress repeats beyond limit, step is marked blocked/error.
+If no progress repeats beyond limit, the task is marked blocked/error.
+
+### Context overflow recovery
+
+If the worker hits the context limit mid-task, it exits and the next iteration
+picks up from the first incomplete step via STATUS.md — the same recovery
+mechanism as any other worker exit, just triggered by context pressure instead
+of natural completion.
 
 ---
 

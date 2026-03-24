@@ -1,0 +1,2 @@
+Task TP-048 completed: 2026-03-24
+Persistent Worker Context Per Task — worker spawns once per task, handles all remaining steps in a single context.
