@@ -3,14 +3,14 @@
 ### Verdict: APPROVE
 
 ### Summary
-The Step 3 plan is aligned with PROMPT.md outcomes: it moves progress accounting to the task-iteration boundary, uses total checked checkboxes across all steps as the progress signal, and keeps `no_progress_limit` semantics at the iteration level. It also includes iteration-level completion reporting, which is the key operator-visibility requirement introduced by the one-worker-per-task model. This is outcome-complete for the step.
+The Step 3 plan matches the required outcomes in PROMPT.md: progress is measured at iteration scope across all steps, stall detection is based on full-iteration no-progress events, and operator visibility is improved by reporting completed steps per iteration. Given the Step 1 loop refactor already in place, this plan is sufficient and correctly scoped for the Step 3 objective. No blocking gaps were identified.
 
 ### Issues Found
-1. **[Severity: minor]** — The plan says to "log which steps completed" but does not explicitly call out durable STATUS logging versus transient UI notification. Suggested fix: ensure iteration summaries are written via the existing execution log path (`logExecution`) so visibility survives restarts/resume.
+1. **[Severity: minor]** — The plan says to "log which steps completed in each iteration" but does not explicitly state that this should be persisted in `STATUS.md` execution log (not only UI notify). Suggested fix: include durable `logExecution(...)` entries for iteration summaries.
 
 ### Missing Items
 - None blocking for Step 3 outcomes.
 
 ### Suggestions
-- When implementing the no-progress check, keep it strictly "post-worker, pre-next-iteration" so review-side status toggles do not accidentally count as worker progress.
-- Include at least one targeted test case where a single worker iteration completes multiple steps, and verify iteration summary output includes all completed step numbers.
+- Keep the no-progress comparison strictly around worker execution (`before runWorker` vs `after runWorker`) so review-phase status edits do not mask true worker stalls.
+- Add/retain a targeted test where one iteration completes multiple steps and verify the iteration summary reports all completed step numbers.

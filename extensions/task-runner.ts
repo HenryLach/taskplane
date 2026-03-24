@@ -2082,8 +2082,11 @@ export default function (pi: ExtensionAPI) {
 			const afterTotalChecked = afterStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
 
 			// Progress tracking: compare total checked across ALL steps
-			if (afterTotalChecked <= prevTotalChecked) {
+			const progressDelta = afterTotalChecked - prevTotalChecked;
+			if (progressDelta <= 0) {
 				noProgressCount++;
+				logExecution(statusPath, "No progress", `Iteration ${iter + 1}: 0 new checkboxes (${noProgressCount}/${config.context.no_progress_limit} stall limit)`);
+				ctx.ui.notify(`⚠️ No progress in iteration ${iter + 1} (${noProgressCount}/${config.context.no_progress_limit})`, "warning");
 				if (noProgressCount >= config.context.no_progress_limit) {
 					logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
 					ctx.ui.notify(`⚠️ Task blocked — no progress after ${noProgressCount} iterations`, "error");
@@ -2138,10 +2141,14 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
-			// Log iteration summary
+			// Log iteration summary with progress delta and completed steps
 			const completedNames = newlyCompleted.map(s => `Step ${s.number}`).join(", ");
 			if (newlyCompleted.length > 0) {
-				ctx.ui.notify(`Iteration ${iter + 1}: completed ${completedNames}`, "info");
+				logExecution(statusPath, `Iteration ${iter + 1} summary`, `+${progressDelta} checkboxes, completed: ${completedNames}`);
+				ctx.ui.notify(`Iteration ${iter + 1}: completed ${completedNames} (+${progressDelta} checkboxes)`, "info");
+			} else if (progressDelta > 0) {
+				logExecution(statusPath, `Iteration ${iter + 1} summary`, `+${progressDelta} checkboxes, no steps fully completed`);
+				ctx.ui.notify(`Iteration ${iter + 1}: +${progressDelta} checkboxes (no steps fully completed)`, "info");
 			}
 
 			// ── Run code reviews for newly completed steps ──
