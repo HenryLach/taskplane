@@ -2,9 +2,10 @@
  * Lane execution, monitoring, wave execution loop
  * @module orch/execution
  */
-import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync } from "fs";
+import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { join, dirname, resolve, relative, delimiter as pathDelimiter } from "path";
+import { tmpdir, userInfo } from "os";
 
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
@@ -56,6 +57,108 @@ function resolveTaskRunnerExtensionPath(repoRoot: string): string {
 
 	// Fallback: return the local path (will fail at spawn time with a clear error)
 	return localPath;
+}
+
+// ── RPC Wrapper Path Resolution ──────────────────────────────────────
+
+/**
+ * Find the rpc-wrapper.mjs path for lane sessions.
+ *
+ * Resolution order mirrors resolveTaskRunnerExtensionPath:
+ *   1. Local project: {repoRoot}/bin/rpc-wrapper.mjs (for taskplane dev)
+ *   2. Global npm (Windows): {APPDATA}/npm/node_modules/taskplane/bin/rpc-wrapper.mjs
+ *   3. Global npm (Unix): /usr/local/lib/node_modules/taskplane/bin/rpc-wrapper.mjs
+ *   4. npm peer: resolve from pi's location
+ *
+ * @throws ExecutionError if rpc-wrapper.mjs cannot be found anywhere
+ */
+export function resolveRpcWrapperPath(repoRoot: string): string {
+	const wrapperFile = join("bin", "rpc-wrapper.mjs");
+
+	// 1. Local project (taskplane development)
+	const localPath = join(resolve(repoRoot), wrapperFile);
+	if (existsSync(localPath)) return localPath;
+
+	// 2. Global npm install paths
+	const home = process.env.HOME || process.env.USERPROFILE || "";
+	const candidates: string[] = [];
+	if (process.env.APPDATA) {
+		candidates.push(join(process.env.APPDATA, "npm", "node_modules", "taskplane", wrapperFile));
+	}
+	if (home) {
+		candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", "taskplane", wrapperFile));
+		candidates.push(join(home, ".npm-global", "lib", "node_modules", "taskplane", wrapperFile));
+	}
+	candidates.push(join("/usr", "local", "lib", "node_modules", "taskplane", wrapperFile));
+
+	// 3. Peer of pi's package
+	try {
+		const piPath = process.argv[1] || "";
+		const piPkgDir = resolve(piPath, "..", "..");
+		candidates.push(join(piPkgDir, "..", "taskplane", wrapperFile));
+	} catch { /* ignore */ }
+
+	for (const candidate of candidates) {
+		if (existsSync(candidate)) return candidate;
+	}
+
+	// Fallback: return the local path (will fail at spawn time with a clear error)
+	return localPath;
+}
+
+// ── Telemetry Path Generation ────────────────────────────────────────
+
+/**
+ * Generate telemetry file paths for a lane session.
+ *
+ * Naming contract from resilience roadmap:
+ *   .pi/telemetry/{opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.{ext}
+ *
+ * @param sessionName  - TMUX session name (e.g., "orch-lane-1")
+ * @param sidecarRoot  - Root dir for sidecar files (e.g., <workspace>/.pi or <repo>/.pi)
+ * @param taskId       - Task identifier (e.g., "TP-049")
+ * @returns { sidecarPath, exitSummaryPath, telemetryDir }
+ */
+export function generateTelemetryPaths(
+	sessionName: string,
+	sidecarRoot: string,
+	taskId?: string,
+): { sidecarPath: string; exitSummaryPath: string; telemetryDir: string } {
+	const telemetryTs = Date.now();
+
+	// Resolve opId: same priority chain as naming.ts resolveOperatorId()
+	let opId = "op";
+	const envOpId = process.env.TASKPLANE_OPERATOR_ID;
+	if (envOpId?.trim()) {
+		opId = envOpId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+	} else {
+		try {
+			const username = userInfo().username;
+			if (username?.trim()) {
+				opId = username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+			}
+		} catch { /* userInfo() can throw on some platforms */ }
+	}
+
+	const batchId = String(telemetryTs);
+	const repoId = "default";
+
+	// Extract role from sessionName — lane sessions are "worker" role
+	const role = "worker";
+	const laneMatch = sessionName.match(/lane-(\d+)/);
+	const laneSuffix = laneMatch ? `-lane-${laneMatch[1]}` : "";
+
+	// Include taskId when available
+	const taskIdSegment = taskId
+		? `-${taskId.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30)}`
+		: "";
+	const telemetryBasename = `${opId}-${batchId}-${repoId}${taskIdSegment}${laneSuffix}-${role}`;
+	const telemetryDir = join(sidecarRoot, "telemetry");
+	if (!existsSync(telemetryDir)) mkdirSync(telemetryDir, { recursive: true });
+	const sidecarPath = join(telemetryDir, `${telemetryBasename}.jsonl`);
+	const exitSummaryPath = join(telemetryDir, `${telemetryBasename}-exit.json`);
+
+	return { sidecarPath, exitSummaryPath, telemetryDir };
 }
 
 // ── Execution Helpers ────────────────────────────────────────────────
@@ -231,7 +334,12 @@ export function toTmuxPath(pathValue: string): string {
  *
  * Constructs a properly escaped command that:
  * 1. Sets env vars (TASK_AUTOSTART, TASK_RUNNER_SPAWN_MODE, TASK_RUNNER_TMUX_PREFIX)
- * 2. Runs `pi --no-session -e extensions/task-runner.ts` in the worktree directory
+ * 2. Runs `node rpc-wrapper.mjs` to spawn pi with the task-runner extension,
+ *    producing structured telemetry (sidecar JSONL + exit summary JSON).
+ *
+ * The RPC wrapper spawns pi in RPC mode with the task-runner extension loaded.
+ * The extension's TASK_AUTOSTART env var triggers task execution on init.
+ * A minimal prompt file is created to satisfy the wrapper's --prompt-file requirement.
  *
  * Shell escaping: env var values are single-quoted to prevent expansion.
  * Path args are single-quoted to handle spaces and special characters.
@@ -241,6 +349,8 @@ export function toTmuxPath(pathValue: string): string {
  * @param repoRoot     - Absolute path to main repo (for extension absolute path)
  * @param envVars      - Environment variables to set
  * @param laneLogPath  - Optional path to write lane session stdout/stderr
+ * @param sidecarPath  - Path for RPC telemetry sidecar JSONL file
+ * @param exitSummaryPath - Path for RPC telemetry exit summary JSON file
  * @returns Array of arguments for spawnSync("tmux", args)
  */
 export function buildTmuxSpawnArgs(
@@ -249,6 +359,8 @@ export function buildTmuxSpawnArgs(
 	repoRoot: string,
 	envVars: Record<string, string>,
 	laneLogPath?: string,
+	sidecarPath?: string,
+	exitSummaryPath?: string,
 ): string[] {
 	// Shell-quote a value for safe embedding in a command string.
 	// Wraps in single quotes, escaping any internal single quotes.
@@ -260,18 +372,44 @@ export function buildTmuxSpawnArgs(
 	};
 
 	// Build the command string that runs inside the TMUX session.
-	// Format: ENV_VAR1=value1 ENV_VAR2=value2 pi --no-session -e extensions/task-runner.ts
 	const envParts = Object.entries(envVars)
 		.map(([key, val]) => `${key}=${shellQuote(val)}`)
 		.join(" ");
 
 	const taskRunnerExtPath = resolveTaskRunnerExtensionPath(repoRoot);
-	const basePiCommand = `${envParts} pi --no-session -e ${shellQuote(taskRunnerExtPath)}`;
+
+	let piCommand: string;
+
+	if (sidecarPath && exitSummaryPath) {
+		// ── RPC Wrapper mode: structured telemetry ──────────────
+		// Spawn `node rpc-wrapper.mjs` instead of `pi` directly.
+		// The wrapper runs pi in RPC mode, captures telemetry to
+		// sidecar JSONL, and writes exit summary on process exit.
+		const rpcWrapperPath = resolveRpcWrapperPath(repoRoot);
+
+		// Create a minimal prompt file for the RPC wrapper.
+		// The task-runner extension handles execution via TASK_AUTOSTART;
+		// this prompt satisfies the wrapper's --prompt-file requirement.
+		const promptId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const promptTmpFile = join(tmpdir(), `pi-lane-prompt-${promptId}.txt`);
+		writeFileSync(promptTmpFile, "Execute the task as configured by the task-runner extension.");
+
+		piCommand = [
+			envParts,
+			"node", shellQuote(rpcWrapperPath),
+			"--sidecar-path", shellQuote(sidecarPath),
+			"--exit-summary-path", shellQuote(exitSummaryPath),
+			"--prompt-file", shellQuote(promptTmpFile),
+			"--extensions", shellQuote(taskRunnerExtPath),
+		].filter(Boolean).join(" ");
+	} else {
+		// ── Legacy mode: direct pi spawn (no telemetry) ─────────
+		piCommand = `${envParts} pi --no-session -e ${shellQuote(taskRunnerExtPath)}`;
+	}
 
 	// NOTE: Do not redirect lane output here. Shell redirection has proven
 	// fragile across Windows + tmux environments and can prevent session spawn.
 	// Diagnostics use tmux pane capture + STATUS tail in pollUntilTaskComplete().
-	const piCommand = basePiCommand;
 
 	const tmuxWorktreePath = toTmuxPath(worktreePath);
 	const wrappedCommand = `cd ${shellQuote(tmuxWorktreePath)} && ${piCommand}`;
@@ -550,8 +688,16 @@ export function spawnLaneSession(
 		// Best effort — session can still run without log file setup
 	}
 
-	// Build tmux args
-	const tmuxArgs = buildTmuxSpawnArgs(sessionName, lane.worktreePath, repoRoot, envVars, laneLogRelativePath);
+	// Generate telemetry file paths for RPC wrapper sidecar
+	const sidecarRoot = join(workspaceRoot || repoRoot, ".pi");
+	const telemetry = generateTelemetryPaths(sessionName, sidecarRoot, task.taskId);
+	execLog(laneId, task.taskId, "telemetry paths generated", {
+		sidecar: telemetry.sidecarPath,
+		exitSummary: telemetry.exitSummaryPath,
+	});
+
+	// Build tmux args (with RPC wrapper telemetry)
+	const tmuxArgs = buildTmuxSpawnArgs(sessionName, lane.worktreePath, repoRoot, envVars, laneLogRelativePath, telemetry.sidecarPath, telemetry.exitSummaryPath);
 
 	// Clean up stale session if exists
 	if (tmuxHasSession(sessionName)) {

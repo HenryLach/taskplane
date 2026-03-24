@@ -1,6 +1,6 @@
 # TP-049: Orchestrator RPC Telemetry for All Agent Types — Status
 
-**Current Step:** Step 1: Route lane worker spawns through RPC wrapper
+**Current Step:** Step 2: Route merge agent spawns through RPC wrapper
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
@@ -30,10 +30,10 @@
 
 > ⚠️ Hydrate: Expand based on exact command structure discovered in Step 0
 
-- [ ] Update buildTmuxSpawnArgs() to spawn node rpc-wrapper.mjs instead of pi directly
-- [ ] Generate telemetry file paths with dashboard-compatible naming
-- [ ] Ensure env vars (TASK_AUTOSTART, etc.) still passed correctly
-- [ ] Ensure -e task-runner.ts extension still loaded
+- [x] Update buildTmuxSpawnArgs() to spawn node rpc-wrapper.mjs instead of pi directly
+- [x] Generate telemetry file paths with dashboard-compatible naming
+- [x] Ensure env vars (TASK_AUTOSTART, etc.) still passed correctly
+- [x] Ensure -e task-runner.ts extension still loaded
 
 ---
 
