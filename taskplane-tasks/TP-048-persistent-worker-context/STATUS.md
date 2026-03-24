@@ -1,11 +1,11 @@
 # TP-048: Persistent Worker Context Per Task — Status
 
-**Current Step:** Step 3: Update progress tracking and stall detection
+**Current Step:** Step 4: Integrate reviews with the new loop
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 5
-**Iteration:** 4
+**Review Counter:** 6
+**Iteration:** 5
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -59,11 +59,12 @@
 ---
 
 ### Step 4: Integrate reviews with the new loop
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] After worker exits, run reviews for each newly completed step
-- [ ] REVISE verdict marks step incomplete for rework in next iteration
-- [ ] Plan and code reviews still respect review level and low-risk skip logic
+- [ ] R007: Remove up-front plan review sweep; make all reviews transition-based (run when step newly completes after worker exits)
+- [ ] After worker exits, run plan review (level ≥ 1) then code review (level ≥ 2) for each newly completed step; track planReviewedSteps so plan review only runs on first completion (not rework)
+- [ ] REVISE verdict marks step incomplete for rework in next iteration (already implemented — verify preserved)
+- [ ] Plan and code reviews still respect review level and low-risk skip logic (already implemented — verify preserved)
 
 ---
 
@@ -103,6 +104,9 @@
 | R004 | code | Step 2 | APPROVE | .reviews/R004-code-step2.md |
 | R005 | plan | Step 3 | APPROVE | .reviews/R005-plan-step3.md |
 | R005 | plan | Step 3 | APPROVE | .reviews/R005-plan-step3.md |
+| R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
+| R007 | plan | Step 4 | REVISE | .reviews/R007-plan-step4.md |
+| R006 | code | Step 3 | APPROVE | .reviews/R006-code-step3.md |
 |---|------|------|---------|------|
 
 ---
@@ -158,6 +162,14 @@
 | 2026-03-24 01:17 | Step 3 started | Update progress tracking and stall detection |
 | 2026-03-24 01:18 | Review R005 | plan Step 3: APPROVE |
 | 2026-03-24 01:25 | Worker iter 4 | done in 490s, ctx: 26%, tools: 25 |
+| 2026-03-24 01:27 | Worker iter 4 | done in 532s, ctx: 16%, tools: 23 |
+| 2026-03-24 01:27 | Review R006 | code Step 3: APPROVE |
+| 2026-03-24 01:27 | Step 3 complete | Update progress tracking and stall detection |
+| 2026-03-24 01:27 | Step 4 started | Integrate reviews with the new loop |
+| 2026-03-24 01:29 | Review R007 | plan Step 4: REVISE |
+| 2026-03-24 01:29 | Review R006 | code Step 3: APPROVE |
+| 2026-03-24 01:29 | Step 3 complete | Update progress tracking and stall detection |
+| 2026-03-24 01:29 | Step 4 started | Integrate reviews with the new loop |
 
 ---
 
@@ -182,6 +194,13 @@ prompt construction is integral to the `runWorker()` function that was restructu
 them would have left the worker broken between Step 1 and Step 2.
 
 Verified in this iteration: all four Step 2 requirements are confirmed present in the committed code.
+
+### Step 4 R007 Revision Note
+
+R007 plan review requested transition-based reviews only (no up-front plan sweep). Implementation:
+- Remove the up-front plan review block
+- Add plan reviews to the post-worker newly-completed-step loop
+- Track `planReviewedSteps` to avoid re-running plan review on rework cycles (suggestion from R007)
 
 ### Step 0 Preflight Findings
 
