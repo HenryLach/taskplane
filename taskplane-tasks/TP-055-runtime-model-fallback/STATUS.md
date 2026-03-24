@@ -34,11 +34,11 @@
 ---
 
 ### Step 2: Add Model Fallback Config
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add `modelFallback` setting to config schema with `"inherit"` default
-- [ ] Update config loader to read and default the new field
-- [ ] Thread setting through to execution context
+- [x] Add `modelFallback` setting to config schema with `"inherit"` default
+- [x] Update config loader to read and default the new field
+- [x] Thread setting through to execution context
 
 ---
 

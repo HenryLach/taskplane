@@ -170,6 +170,19 @@ export interface SelfDocTarget {
  */
 export type PassThreshold = "no_critical" | "no_important" | "all_clear";
 
+/**
+ * Model fallback behavior when a configured agent model becomes unavailable mid-batch.
+ *
+ * - `"inherit"`: Fall back to the session model and retry (default). The task is
+ *   retried without an explicit --model flag, so pi uses whatever model the
+ *   session is configured with.
+ * - `"fail"`: Fail immediately — the normal failure/retry path handles the error
+ *   without any model substitution.
+ *
+ * @since TP-055
+ */
+export type ModelFallbackMode = "inherit" | "fail";
+
 /** Quality gate configuration — opt-in post-completion review */
 export interface QualityGateConfig {
 	/** Enable quality gate review before .DONE creation (default: false) */
@@ -222,6 +235,16 @@ export interface TaskRunnerSection {
 	protectedDocs: string[];
 	/** Quality gate configuration — opt-in post-completion review */
 	qualityGate: QualityGateConfig;
+	/**
+	 * Model fallback behavior when a configured model becomes unavailable mid-batch.
+	 *
+	 * - `"inherit"` (default): Retry the task without an explicit model flag,
+	 *   falling back to the session model.
+	 * - `"fail"`: Fail immediately without model substitution.
+	 *
+	 * @since TP-055
+	 */
+	modelFallback: ModelFallbackMode;
 }
 
 
@@ -299,6 +322,16 @@ export interface FailureConfig {
 	maxWorkerMinutes: number;
 	/** Graceful abort wait time (seconds) before forced termination */
 	abortGracePeriod: number;
+	/**
+	 * Model fallback behavior when a configured model becomes unavailable mid-batch.
+	 *
+	 * - `"inherit"` (default): On model_access_error, retry the task without an explicit
+	 *   --model flag, falling back to the session model. Limited to 1 retry attempt.
+	 * - `"fail"`: Behave as today — let the normal failure/retry path handle it.
+	 *
+	 * @since TP-055
+	 */
+	modelFallback: "inherit" | "fail";
 }
 
 /** Monitoring settings */
@@ -515,6 +548,7 @@ export const DEFAULT_TASK_RUNNER_SECTION: TaskRunnerSection = {
 		maxFixCycles: 1,
 		passThreshold: "no_critical",
 	},
+	modelFallback: "inherit",
 };
 
 /** Default orchestrator section values */
@@ -555,6 +589,7 @@ export const DEFAULT_ORCHESTRATOR_SECTION: OrchestratorSection = {
 		stallTimeout: 30,
 		maxWorkerMinutes: 30,
 		abortGracePeriod: 60,
+		modelFallback: "inherit",
 	},
 	monitoring: {
 		pollInterval: 5,

@@ -48,6 +48,8 @@ export interface OrchestratorConfig {
 		stall_timeout: number;
 		max_worker_minutes: number;
 		abort_grace_period: number;
+		/** Model fallback behavior: "inherit" = fall back to session model; "fail" = no fallback. @since TP-055 */
+		model_fallback: "inherit" | "fail";
 	};
 	monitoring: {
 		poll_interval: number;
@@ -190,6 +192,7 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 		stall_timeout: 30,
 		max_worker_minutes: 30,
 		abort_grace_period: 60,
+		model_fallback: "inherit",
 	},
 	monitoring: {
 		poll_interval: 5,

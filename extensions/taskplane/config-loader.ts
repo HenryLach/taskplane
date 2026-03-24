@@ -768,6 +768,7 @@ export function toOrchestratorConfig(config: TaskplaneConfig): import("./types.t
 			stall_timeout: o.failure.stallTimeout,
 			max_worker_minutes: o.failure.maxWorkerMinutes,
 			abort_grace_period: o.failure.abortGracePeriod,
+			model_fallback: o.failure.modelFallback,
 		},
 		monitoring: {
 			poll_interval: o.monitoring.pollInterval,
