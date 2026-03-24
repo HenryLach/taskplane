@@ -3,14 +3,14 @@
 ### Verdict: APPROVE
 
 ### Summary
-The Step 2 plan covers the required outcomes from PROMPT.md: shifting worker instructions from single-step execution to processing all remaining steps in order, including per-step commit behavior and wrap-up checks. It also explicitly includes updating both worker templates, which is necessary to remove conflicting single-step guidance from the system prompt layer. The scope is appropriately outcome-focused and does not over-specify implementation details.
+The Step 2 plan is aligned with PROMPT.md outcomes: it replaces single-step worker instructions with all-remaining-steps guidance, includes completion-status step listing, and adds explicit per-step commit plus wrap-up checks. It also includes updating both worker templates, which is necessary to remove conflicting single-step behavior at the system-prompt layer. The scope is appropriately outcome-focused and sufficient for this step.
 
 ### Issues Found
-1. **[Severity: minor]** — The plan could more explicitly call out removing all stale “assigned step only” language in `templates/agents/task-worker.md` (resume algorithm + scope rules), not just updating general wording. Suggested fix: make this an explicit acceptance note while implementing the template update.
+1. **[Severity: minor]** — The plan could explicitly call out removing all residual “assigned step only” language in `templates/agents/task-worker.md` to avoid mixed instructions. Suggested fix: treat this as an implementation acceptance check while updating templates.
 
 ### Missing Items
 - None blocking for Step 2 outcomes.
 
 ### Suggestions
-- When implementing “completion status” in the step list, include clear skip semantics for already complete steps (e.g., `already complete — skip`) so resumed iterations are unambiguous.
-- In `templates/agents/local/task-worker.md`, update the explanatory comments to reflect the new multi-step/persistent-context behavior (currently phrased as fresh-context loop behavior).
+- In the worker prompt step list, keep explicit skip markers for completed steps (e.g., `[already complete — skip]`) so resume behavior is unambiguous.
+- Ensure `templates/agents/local/task-worker.md` comments stay consistent with persistent-context multi-step execution wording.
