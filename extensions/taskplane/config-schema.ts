@@ -125,7 +125,9 @@ export interface ReviewerConfig {
 
 /** Context/resource limits for task execution */
 export interface ContextConfig {
-	/** Context window size used for worker context pressure tracking */
+	/** Context window size used for worker context pressure tracking.
+	 *  Set to 0 (default) for auto-detection from the pi model registry.
+	 *  When 0, the task-runner resolves at runtime: ctx.model.contextWindow → 200K fallback. */
 	workerContextWindow: number;
 	/** Warn threshold for context utilization (percent) */
 	warnPercent: number;
@@ -494,7 +496,7 @@ export const DEFAULT_TASK_RUNNER_SECTION: TaskRunnerSection = {
 	worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "off" },
 	reviewer: { model: "openai/gpt-5.3-codex", tools: "read,bash,grep,find,ls", thinking: "on" },
 	context: {
-		workerContextWindow: 200000,
+		workerContextWindow: 0,
 		warnPercent: 70,
 		killPercent: 85,
 		maxWorkerIterations: 20,

@@ -164,7 +164,7 @@ const DEFAULT_CONFIG: TaskConfig = {
 	worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "off" },
 	reviewer: { model: "openai/gpt-5.3-codex", tools: "read,bash,grep,find,ls", thinking: "on" },
 	context: {
-		worker_context_window: 200000, warn_percent: 70, kill_percent: 85,
+		worker_context_window: 0, warn_percent: 70, kill_percent: 85,
 		max_worker_iterations: 20, max_review_cycles: 2, no_progress_limit: 3,
 	},
 	quality_gate: {
@@ -307,6 +307,46 @@ function getMaxWorkerMinutes(config: TaskConfig): number {
 	const configVal = config.context.max_worker_minutes;
 	if (typeof configVal === "number" && configVal > 0) return configVal;
 	return 30;
+}
+
+// ── Context Window Resolution ─────────────────────────────────────────
+
+/** Default fallback context window when neither config nor model provides a value. */
+const FALLBACK_CONTEXT_WINDOW = 200_000;
+
+/**
+ * Resolve the effective context window size for worker spawning.
+ *
+ * Resolution order (first non-zero value wins):
+ *   1. Explicit user config (worker_context_window > 0 in config)
+ *   2. Auto-detect from pi model registry (ctx.model.contextWindow)
+ *   3. Fallback to 200K tokens
+ *
+ * A config value of 0 signals "auto-detect" — the default when no explicit
+ * value is configured. This allows pi's model registry to provide the real
+ * context window for the active model.
+ *
+ * @returns Object with `contextWindow` (resolved size) and `source` (diagnostic label)
+ */
+function resolveContextWindow(
+	config: TaskConfig,
+	ctx: ExtensionContext,
+): { contextWindow: number; source: string } {
+	// 1. Explicit user config — non-zero means the user set it deliberately
+	const configVal = config.context.worker_context_window;
+	if (configVal > 0) {
+		return { contextWindow: configVal, source: "explicit config" };
+	}
+
+	// 2. Auto-detect from pi model registry
+	const modelWindow = ctx.model?.contextWindow;
+	if (modelWindow && modelWindow > 0) {
+		const modelId = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "unknown";
+		return { contextWindow: modelWindow, source: `auto-detected from ${modelId}` };
+	}
+
+	// 3. Fallback
+	return { contextWindow: FALLBACK_CONTEXT_WINDOW, source: `fallback ${FALLBACK_CONTEXT_WINDOW}` };
 }
 
 // ── Orchestrator Sidecar Files ────────────────────────────────────────
@@ -1296,6 +1336,8 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 export const _tailSidecarJsonl = tailSidecarJsonl;
 export const _createSidecarTailState = createSidecarTailState;
 export const _getSidecarDir = getSidecarDir;
+export const _resolveContextWindow = resolveContextWindow;
+export const _FALLBACK_CONTEXT_WINDOW = FALLBACK_CONTEXT_WINDOW;
 export type { SidecarTailState, SidecarTelemetryDelta };
 
 // ── Exit Summary & Diagnostic ────────────────────────────────────────
@@ -2273,15 +2315,18 @@ export default function (pi: ExtensionAPI) {
 		// Exit summary path — set only in tmux mode (rpc-wrapper produces this file).
 		let exitSummaryPath: string | null = null;
 
+		// Resolve context window: explicit config → model registry → 200K fallback
+		const { contextWindow, source: contextWindowSource } = resolveContextWindow(config, ctx);
+		const warnPct = config.context.warn_percent;
+		const killPct = config.context.kill_percent;
+		console.error(`[task-runner] worker context window: ${contextWindow} (${contextWindowSource})`);
+
 		if (spawnMode === "tmux") {
 			// ── TMUX mode ────────────────────────────────────────
 			// Sidecar JSONL provides telemetry parity: tokens, cost, context%,
 			// tool calls, and retry events — same signals as subprocess mode.
 			// Kill via wall-clock timeout (context-% wrap-up also available via sidecar).
 			const sessionName = `${getTmuxPrefix()}-worker`;
-			const contextWindow = config.context.worker_context_window;
-			const warnPct = config.context.warn_percent;
-			const killPct = config.context.kill_percent;
 
 			const spawned = spawnAgentTmux({
 				sessionName,
@@ -2373,9 +2418,9 @@ export default function (pi: ExtensionAPI) {
 				thinking: config.worker.thinking || "off",
 				systemPrompt,
 				prompt,
-				contextWindow: config.context.worker_context_window,
-				warnPct: config.context.warn_percent,
-				killPct: config.context.kill_percent,
+				contextWindow,
+				warnPct,
+				killPct,
 				wrapUpFile,
 				onToolCall: (toolName, args) => {
 					state.workerToolCount++;
@@ -2405,7 +2450,7 @@ export default function (pi: ExtensionAPI) {
 				},
 				onContextPct: (pct) => {
 					state.workerContextPct = pct;
-					if (pct >= config.context.warn_percent) {
+					if (pct >= warnPct) {
 						writeWrapUpSignal(`Wrap up (context ${Math.round(pct)}%)`);
 					}
 					updateWidgets();
