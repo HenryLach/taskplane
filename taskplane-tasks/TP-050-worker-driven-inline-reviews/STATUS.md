@@ -1,7 +1,7 @@
 # TP-050: Worker-Driven Inline Reviews — Status
 
-**Current Step:** Step 1: Register review_step extension tool
-**Status:** 🟡 In Progress
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-24
 **Review Level:** 2
 **Review Counter:** 0
@@ -79,23 +79,23 @@
 ---
 
 ### Step 6: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] All existing tests pass
-- [ ] Tests for review_step tool registration (orchestrated mode only)
-- [ ] Tests for review_step handler (request generation, spawn, verdict)
-- [ ] Tests for lane-state sidecar reviewer metrics
-- [ ] Tests for step loop no longer runs deferred reviews
-- [ ] Tests for worker template review protocol
+- [x] All existing tests pass
+- [x] Tests for review_step tool registration (orchestrated mode only)
+- [x] Tests for review_step handler (request generation, spawn, verdict)
+- [x] Tests for lane-state sidecar reviewer metrics
+- [x] Tests for step loop no longer runs deferred reviews
+- [x] Tests for worker template review protocol
 
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Check affected docs (execution-model.md, review-loop.md)
-- [ ] Discoveries logged
-- [ ] `.DONE` created
+- [x] Check affected docs (execution-model.md, review-loop.md)
+- [x] Discoveries logged
+- [x] `.DONE` created
 
 ---
 
