@@ -3,15 +3,19 @@
  *
  * Tests for:
  * - Health classification logic (classifyMergeHealth)
- * - MergeHealthMonitor session tracking and event emission
+ * - MergeHealthMonitor session tracking, polling, and event emission
  * - Supervisor event formatting for merge health events
  * - Source-level integration verification (engine starts/stops monitor, supervisor handles events)
+ * - Dead-session callback / early-exit signaling
+ * - Event de-duplication (each tier emitted at most once)
+ *
+ * Run: npx vitest run tests/supervisor-merge-monitoring.test.ts
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { join } from "path";
 
-import { classifyMergeHealth, MergeHealthMonitor } from "../taskplane/merge.ts";
+import { classifyMergeHealth, captureMergePaneOutput, MergeHealthMonitor } from "../taskplane/merge.ts";
 import { formatEventNotification, shouldNotify } from "../taskplane/supervisor.ts";
 import {
 	MERGE_HEALTH_WARNING_THRESHOLD_MS,

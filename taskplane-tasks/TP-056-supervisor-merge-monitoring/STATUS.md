@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 3
 **Size:** M
 
@@ -56,11 +56,11 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Update troubleshooting docs with merge stall guidance
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
+- [x] Update troubleshooting docs with merge stall guidance
+- [x] "Check If Affected" docs reviewed
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
@@ -68,6 +68,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 3 | REVISE | .reviews/R001-plan-step3.md |
 |---|------|------|---------|------|
 
 ---
@@ -76,6 +77,10 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Previous iteration left duplicate MergeHealthMonitor implementations in merge.ts | Fixed in this iteration — removed duplicate code | `extensions/taskplane/merge.ts` |
+| waitForMergeResult already has built-in dead session detection via tmuxHasSession + grace period | No change needed — health monitor adds supervisor visibility on top of existing detection | `extensions/taskplane/merge.ts:waitForMergeResult()` |
+| waitForMergeResult already detects dead sessions via tmuxHasSession — health monitor adds stall detection and structured events, not redundant dead detection | Noted | merge.ts |
+| mergeWave runs sequentially per-lane — health monitor polls independently via setInterval alongside the sequential merge loop | Noted | merge.ts, engine.ts |
 
 ---
 
@@ -87,6 +92,7 @@
 | 2026-03-24 18:37 | Step 0 completed | Preflight — read all relevant code |
 | 2026-03-24 18:42 | Step 1 completed | MergeHealthMonitor class, classifyMergeHealth, captureMergePaneOutput |
 | 2026-03-24 18:45 | Step 2 completed | Engine/supervisor integration, event handling |
+| 2026-03-24 18:58 | Review R001 | plan Step 3: REVISE |
 
 ---
 
