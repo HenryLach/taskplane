@@ -170,13 +170,15 @@ export function syncTaskOutcomesFromMonitor(
 		}
 
 		// Completed tasks => succeeded
+		// Use existing endTime if already set — prevents changed=true on every
+		// poll tick (lastPollTime differs each tick, causing persist log spam).
 		for (const taskId of lane.completedTasks) {
 			const existing = outcomes.find(o => o.taskId === taskId);
 			changed = upsertTaskOutcome(outcomes, {
 				taskId,
 				status: "succeeded",
 				startTime: existing?.startTime ?? null,
-				endTime: monitorState.lastPollTime,
+				endTime: existing?.endTime ?? monitorState.lastPollTime,
 				exitReason: existing?.exitReason || ".DONE file created by task-runner",
 				sessionName: existing?.sessionName || lane.sessionName,
 				doneFileFound: true,
@@ -193,7 +195,7 @@ export function syncTaskOutcomesFromMonitor(
 				taskId,
 				status: "failed",
 				startTime: existing?.startTime ?? null,
-				endTime: monitorState.lastPollTime,
+				endTime: existing?.endTime ?? monitorState.lastPollTime,
 				exitReason: existing?.exitReason || "Task failed or stalled",
 				sessionName: existing?.sessionName || lane.sessionName,
 				doneFileFound: false,
