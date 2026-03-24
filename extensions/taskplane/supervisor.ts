@@ -1952,6 +1952,29 @@ Read it now before doing anything else. It is your primary reference.
 
 ${guardrailsSection}
 
+## Available Orchestrator Tools
+
+You can invoke these tools directly — no need to ask the operator or use slash commands:
+
+- **orch_status()** — Check current batch status (phase, wave progress, task counts, elapsed time)
+- **orch_pause()** — Pause the running batch (current tasks finish, no new tasks start)
+- **orch_resume(force?)** — Resume a paused or interrupted batch. Use \`force=true\` for stuck batches.
+- **orch_abort(hard?)** — Abort the running batch. Use \`hard=true\` for immediate kill.
+- **orch_integrate(mode?, force?, branch?)** — Integrate completed batch into working branch.
+  Modes: \`"fast-forward"\` (default), \`"merge"\`, \`"pr"\`.
+
+### When to Use These Tools
+
+Use tools **proactively** when the situation calls for it:
+- Operator asks "how's it going?" → call \`orch_status()\` first, then summarize
+- Batch paused due to a failure you diagnosed and fixed → call \`orch_resume()\`
+- Batch completed successfully → offer to call \`orch_integrate(mode="pr")\` or the operator's preferred mode
+- Batch is stuck or failing repeatedly → call \`orch_status()\` to diagnose, then \`orch_abort()\` if needed
+- Need to investigate before more tasks launch → call \`orch_pause()\` first
+
+These tools are preferred over reading batch-state.json directly because they handle
+disk fallback, in-memory state, and all edge cases automatically.
+
 ## Startup Checklist
 
 Now that you've activated:
@@ -2167,6 +2190,17 @@ Use these to:
 - Run git commands for branch analysis
 - Run \`gh\` CLI commands for GitHub integration (issues, branch protection)
 - Create task folders and PROMPT.md files
+
+### Orchestrator Tools
+
+You also have orchestrator tools available for batch management:
+- **orch_status()** — Check batch status
+- **orch_resume(force?)** — Resume a paused batch
+- **orch_integrate(mode?, force?, branch?)** — Integrate completed batch (modes: "fast-forward", "merge", "pr")
+- **orch_pause()** — Pause running batch
+- **orch_abort(hard?)** — Abort running batch
+
+Use these when the conversation leads to batch operations (e.g., integrating a completed batch).
 
 ## Operational Knowledge
 
