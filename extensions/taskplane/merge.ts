@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdi
 import { execSync, spawnSync } from "child_process";
 import { join, dirname, resolve, relative } from "path";
 
-import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, generateTelemetryPaths, resolveRpcWrapperPath, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
+import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, generateTelemetryPaths, resolveRpcWrapperPath, resolveTelemOpId, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MergeError, VALID_MERGE_STATUSES } from "./types.ts";
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
@@ -20,47 +20,37 @@ import type { VerificationBaseline, FingerprintDiff, TestFingerprint } from "./v
 
 // ── Merge Telemetry Helpers ───────────────────────────────────────────
 
-import { userInfo } from "os";
-
 /**
  * Generate telemetry file paths for a merge agent session.
  *
- * Naming: {opId}-{batchId}-{repoId}[-merge-w{N}-lane-{N}]-merger.{ext}
+ * Uses the shared resolveTelemOpId() from execution.ts to avoid
+ * opId resolution divergence.
+ *
+ * Naming: {opId}-{batchId}-{repoId}[-merge-{N}]-merger.{ext}
  * Role is always "merger" to distinguish from worker/reviewer in the dashboard.
  *
  * @param sessionName  - TMUX session name (e.g., "orch-merge-1")
  * @param sidecarRoot  - Root dir for sidecar files (e.g., <workspace>/.pi)
+ * @param batchId      - Actual batch ID from batch state (falls back to timestamp)
+ * @param repoId       - Repo ID for workspace mode (falls back to "default")
  * @returns { sidecarPath, exitSummaryPath }
  */
 function generateMergeTelemetryPaths(
 	sessionName: string,
 	sidecarRoot: string,
+	batchId?: string,
+	repoId?: string,
 ): { sidecarPath: string; exitSummaryPath: string } {
-	const telemetryTs = Date.now();
-
-	// Resolve opId: same priority chain as execution.ts
-	let opId = "op";
-	const envOpId = process.env.TASKPLANE_OPERATOR_ID;
-	if (envOpId?.trim()) {
-		opId = envOpId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
-	} else {
-		try {
-			const username = userInfo().username;
-			if (username?.trim()) {
-				opId = username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
-			}
-		} catch { /* userInfo() can throw on some platforms */ }
-	}
-
-	const batchId = String(telemetryTs);
-	const repoId = "default";
+	const opId = resolveTelemOpId();
+	const effectiveBatchId = batchId || String(Date.now());
+	const effectiveRepoId = repoId || "default";
 
 	// Extract merge-specific info from sessionName (e.g., "orch-merge-1")
 	const mergeMatch = sessionName.match(/merge-(\d+)/);
 	const mergeSuffix = mergeMatch ? `-merge-${mergeMatch[1]}` : "";
 
 	const role = "merger";
-	const telemetryBasename = `${opId}-${batchId}-${repoId}${mergeSuffix}-${role}`;
+	const telemetryBasename = `${opId}-${effectiveBatchId}-${effectiveRepoId}${mergeSuffix}-${role}`;
 	const telemetryDir = join(sidecarRoot, "telemetry");
 	if (!existsSync(telemetryDir)) mkdirSync(telemetryDir, { recursive: true });
 
@@ -438,7 +428,6 @@ export async function spawnMergeAgent(
 	};
 
 	// Generate telemetry paths for this merge session
-	// Naming: {opId}-{batchId}-{repoId}-merger.jsonl (or with wave/lane info from sessionName)
 	const sidecarRoot = join(stateRoot ?? repoRoot, ".pi");
 	const telemetry = generateMergeTelemetryPaths(sessionName, sidecarRoot);
 	execLog("merge", sessionName, "telemetry paths generated", {
@@ -448,7 +437,19 @@ export async function spawnMergeAgent(
 
 	// Resolve paths
 	const rpcWrapperPath = resolveRpcWrapperPath(repoRoot);
-	const systemPromptPath = agentRoot ? join(agentRoot, "task-merger.md") : join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md");
+
+	// Resolve merger agent definition — check existence and fall back gracefully.
+	// Fresh projects that haven't run `taskplane init` may not have .pi/agents/task-merger.md.
+	const systemPromptCandidates = [
+		agentRoot ? join(agentRoot, "task-merger.md") : "",
+		join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md"),
+	].filter(Boolean);
+	let systemPromptPath = systemPromptCandidates.find(p => existsSync(p)) || "";
+	if (!systemPromptPath) {
+		execLog("merge", sessionName, "WARNING: merger agent definition not found — merge agent will use default system prompt", {
+			candidates: systemPromptCandidates,
+		});
+	}
 
 	// Build RPC wrapper command
 	const wrapperParts = [
@@ -457,8 +458,13 @@ export async function spawnMergeAgent(
 		"--sidecar-path", shellQuote(telemetry.sidecarPath),
 		"--exit-summary-path", shellQuote(telemetry.exitSummaryPath),
 		"--prompt-file", shellQuote(mergeRequestPath),
-		"--system-prompt-file", shellQuote(systemPromptPath),
 	];
+
+	// Only pass --system-prompt-file when the file exists (fresh projects
+	// may not have .pi/agents/task-merger.md — rpc-wrapper would crash).
+	if (systemPromptPath) {
+		wrapperParts.push("--system-prompt-file", shellQuote(systemPromptPath));
+	}
 
 	// Add model args if specified
 	if (config.merge.model) {

@@ -5,7 +5,7 @@
 import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { join, dirname, resolve, relative, delimiter as pathDelimiter } from "path";
-import { tmpdir, userInfo } from "os";
+import { userInfo } from "os";
 
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
@@ -106,6 +106,35 @@ export function resolveRpcWrapperPath(repoRoot: string): string {
 	return localPath;
 }
 
+// ── Telemetry Helpers ────────────────────────────────────────────────
+
+/**
+ * Resolve the operator ID for telemetry filenames.
+ *
+ * Priority: TASKPLANE_OPERATOR_ID env → OS username → "op" fallback.
+ * Shared by lane and merge telemetry path generators to avoid divergence.
+ */
+export function resolveTelemOpId(): string {
+	const envOpId = process.env.TASKPLANE_OPERATOR_ID;
+	if (envOpId?.trim()) {
+		return envOpId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+	}
+	try {
+		const username = userInfo().username;
+		if (username?.trim()) {
+			return username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+		}
+	} catch { /* userInfo() can throw on some platforms */ }
+	return "op";
+}
+
+/**
+ * Sanitize a string for use in telemetry filenames.
+ */
+function sanitizeForFilename(s: string, maxLen: number = 30): string {
+	return s.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, maxLen);
+}
+
 // ── Telemetry Path Generation ────────────────────────────────────────
 
 /**
@@ -117,31 +146,20 @@ export function resolveRpcWrapperPath(repoRoot: string): string {
  * @param sessionName  - TMUX session name (e.g., "orch-lane-1")
  * @param sidecarRoot  - Root dir for sidecar files (e.g., <workspace>/.pi or <repo>/.pi)
  * @param taskId       - Task identifier (e.g., "TP-049")
+ * @param batchId      - Actual batch ID from batch state (falls back to timestamp)
+ * @param repoId       - Repo ID for workspace mode (falls back to "default")
  * @returns { sidecarPath, exitSummaryPath, telemetryDir }
  */
 export function generateTelemetryPaths(
 	sessionName: string,
 	sidecarRoot: string,
 	taskId?: string,
+	batchId?: string,
+	repoId?: string,
 ): { sidecarPath: string; exitSummaryPath: string; telemetryDir: string } {
-	const telemetryTs = Date.now();
-
-	// Resolve opId: same priority chain as naming.ts resolveOperatorId()
-	let opId = "op";
-	const envOpId = process.env.TASKPLANE_OPERATOR_ID;
-	if (envOpId?.trim()) {
-		opId = envOpId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
-	} else {
-		try {
-			const username = userInfo().username;
-			if (username?.trim()) {
-				opId = username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
-			}
-		} catch { /* userInfo() can throw on some platforms */ }
-	}
-
-	const batchId = String(telemetryTs);
-	const repoId = "default";
+	const opId = resolveTelemOpId();
+	const effectiveBatchId = batchId || String(Date.now());
+	const effectiveRepoId = repoId || "default";
 
 	// Extract role from sessionName — lane sessions are "worker" role
 	const role = "worker";
@@ -149,10 +167,8 @@ export function generateTelemetryPaths(
 	const laneSuffix = laneMatch ? `-lane-${laneMatch[1]}` : "";
 
 	// Include taskId when available
-	const taskIdSegment = taskId
-		? `-${taskId.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30)}`
-		: "";
-	const telemetryBasename = `${opId}-${batchId}-${repoId}${taskIdSegment}${laneSuffix}-${role}`;
+	const taskIdSegment = taskId ? `-${sanitizeForFilename(taskId)}` : "";
+	const telemetryBasename = `${opId}-${effectiveBatchId}-${effectiveRepoId}${taskIdSegment}${laneSuffix}-${role}`;
 	const telemetryDir = join(sidecarRoot, "telemetry");
 	if (!existsSync(telemetryDir)) mkdirSync(telemetryDir, { recursive: true });
 	const sidecarPath = join(telemetryDir, `${telemetryBasename}.jsonl`);
@@ -390,8 +406,12 @@ export function buildTmuxSpawnArgs(
 		// Create a minimal prompt file for the RPC wrapper.
 		// The task-runner extension handles execution via TASK_AUTOSTART;
 		// this prompt satisfies the wrapper's --prompt-file requirement.
+		// Written to the sidecar dir (not tmpdir) so it's co-located with
+		// telemetry artifacts and cleaned up with them after the batch.
 		const promptId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-		const promptTmpFile = join(tmpdir(), `pi-lane-prompt-${promptId}.txt`);
+		const promptDir = dirname(sidecarPath);
+		if (!existsSync(promptDir)) mkdirSync(promptDir, { recursive: true });
+		const promptTmpFile = join(promptDir, `lane-prompt-${promptId}.txt`);
 		writeFileSync(promptTmpFile, "Execute the task as configured by the task-runner extension.");
 
 		piCommand = [
@@ -690,7 +710,7 @@ export function spawnLaneSession(
 
 	// Generate telemetry file paths for RPC wrapper sidecar
 	const sidecarRoot = join(workspaceRoot || repoRoot, ".pi");
-	const telemetry = generateTelemetryPaths(sessionName, sidecarRoot, task.taskId);
+	const telemetry = generateTelemetryPaths(sessionName, sidecarRoot, task.taskId, config.orchestrator?.batchId, lane.repoId);
 	execLog(laneId, task.taskId, "telemetry paths generated", {
 		sidecar: telemetry.sidecarPath,
 		exitSummary: telemetry.exitSummaryPath,
