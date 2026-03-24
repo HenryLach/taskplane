@@ -1,11 +1,11 @@
 # TP-055: Runtime Model Fallback — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -15,17 +15,17 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read `classifyExit()` in `diagnostics.ts`
-- [ ] Read agent spawn flow in `execution.ts`
-- [ ] Read Tier 0 recovery patterns in `engine.ts`
-- [ ] Read config schema in `config-schema.ts`
+- [x] Read `classifyExit()` in `diagnostics.ts`
+- [x] Read agent spawn flow in `execution.ts`
+- [x] Read Tier 0 recovery patterns in `engine.ts`
+- [x] Read config schema in `config-schema.ts`
 
 ---
 
 ### Step 1: Add Exit Classification for Model Access Errors
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add `model_access_error` to exit classification type
 - [ ] Update `classifyExit()` to detect model access error patterns (401/403/429, model not found)
@@ -34,7 +34,7 @@
 ---
 
 ### Step 2: Add Model Fallback Config
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add `modelFallback` setting to config schema with `"inherit"` default
 - [ ] Update config loader to read and default the new field
@@ -43,7 +43,7 @@
 ---
 
 ### Step 3: Implement Fallback in Execution
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Hydrate: Expand based on exact spawn/retry patterns discovered in Steps 0-1
 
@@ -55,7 +55,7 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Create `runtime-model-fallback.test.ts` with classification, config, and fallback tests
 - [ ] Full test suite passing
@@ -64,7 +64,7 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Config reference docs updated with `modelFallback`
 - [ ] "Check If Affected" docs reviewed
@@ -92,6 +92,20 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-24 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-24 17:11 | Task started | Extension-driven execution |
+| 2026-03-24 17:11 | Step 0 started | Preflight |
+| 2026-03-24 17:11 | Step 1 started | Add Exit Classification for Model Access Errors |
+| 2026-03-24 17:11 | Step 2 started | Add Model Fallback Config |
+| 2026-03-24 17:11 | Step 3 started | Implement Fallback in Execution |
+| 2026-03-24 17:11 | Step 4 started | Testing & Verification |
+| 2026-03-24 17:11 | Step 5 started | Documentation & Delivery |
+| 2026-03-24 17:11 | Task started | Extension-driven execution |
+| 2026-03-24 17:11 | Step 0 started | Preflight |
+| 2026-03-24 17:11 | Step 1 started | Add Exit Classification for Model Access Errors |
+| 2026-03-24 17:11 | Step 2 started | Add Model Fallback Config |
+| 2026-03-24 17:11 | Step 3 started | Implement Fallback in Execution |
+| 2026-03-24 17:11 | Step 4 started | Testing & Verification |
+| 2026-03-24 17:11 | Step 5 started | Documentation & Delivery |
 
 ---
 
