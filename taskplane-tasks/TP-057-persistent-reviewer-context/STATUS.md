@@ -1,6 +1,6 @@
 # TP-057: Persistent Reviewer Context — Status
 
-**Current Step:** Step 1: Create Reviewer Extension with `wait_for_review` Tool
+**Current Step:** Step 2: Update `review_step` Handler for Persistent Mode
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
