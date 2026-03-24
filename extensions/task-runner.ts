@@ -916,6 +916,27 @@ function getHeadCommitSha(): string {
 	}
 }
 
+/**
+ * Find the git commit SHA where a specific step was completed.
+ * Workers commit at step boundaries with messages like:
+ *   feat(TP-048): complete Step N — description
+ * Returns the commit SHA if found, or empty string.
+ */
+function findStepBoundaryCommit(stepNumber: number, taskId: string, since?: string): string {
+	try {
+		// Search git log for the step completion commit
+		const args = ["log", "--oneline", "--grep", `complete Step ${stepNumber}`, "--grep", taskId, "--all-match", "-1", "--format=%H"];
+		if (since) args.push(`${since}..HEAD`);
+		const result = spawnSync("git", args, {
+			encoding: "utf-8",
+			timeout: 5000,
+		});
+		return result.status === 0 ? (result.stdout || "").trim() : "";
+	} catch {
+		return "";
+	}
+}
+
 // ── Standards Resolution ─────────────────────────────────────────────
 
 /**
@@ -2100,6 +2121,23 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
+			// Update baselines for subsequent steps using step boundary commits.
+			// When the worker completes multiple steps in one iteration, each step's
+			// commit becomes the baseline for the next step's code review.
+			if (newlyCompleted.length > 1) {
+				for (let i = 0; i < newlyCompleted.length; i++) {
+					const completedStep = newlyCompleted[i];
+					const boundaryCommit = findStepBoundaryCommit(
+						completedStep.number, task.taskId,
+						stepBaselineCommits.get(completedStep.number)
+					);
+					if (boundaryCommit && i + 1 < newlyCompleted.length) {
+						// Use this step's completion commit as the next step's baseline
+						stepBaselineCommits.set(newlyCompleted[i + 1].number, boundaryCommit);
+					}
+				}
+			}
+
 			// Log iteration summary
 			const completedNames = newlyCompleted.map(s => `Step ${s.number}`).join(", ");
 			if (newlyCompleted.length > 0) {
@@ -2365,9 +2403,12 @@ export default function (pi: ExtensionAPI) {
 			  "Just create the .DONE file in the task folder when complete."
 			: "";
 
-		// Build step listing for the worker prompt
-		const stepListing = remainingSteps.map(s =>
-			`  - Step ${s.number}: ${s.name}`
+		// Build step listing for the worker prompt — show ALL steps with status
+		const remainingSet = new Set(remainingSteps.map(s => s.number));
+		const stepListing = task.steps.map(s =>
+			remainingSet.has(s.number)
+				? `  - Step ${s.number}: ${s.name}`
+				: `  - Step ${s.number}: ${s.name}  [already complete — skip]`
 		).join("\n");
 
 		const prompt = [
@@ -2381,7 +2422,7 @@ export default function (pi: ExtensionAPI) {
 			`This is iteration ${state.totalIterations}.`,
 			`Read STATUS.md FIRST to find where you left off.`,
 			``,
-			`Steps remaining:`,
+			`Steps:`,
 			stepListing,
 			``,
 			`Work through these steps in order. For each step:`,
