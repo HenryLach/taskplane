@@ -37,12 +37,12 @@
 ### Step 2: Integrate with Engine and Supervisor
 **Status:** 🟨 In Progress
 
-> ⚠️ Hydrate: Expand based on actual engine merge-phase flow discovered in Step 0
+> Hydrated based on engine merge flow: engine.ts calls mergeWaveByRepo() which calls mergeWave() which runs a sequential loop of spawnMergeAgent() + waitForMergeResult() per lane. Health monitor needs to run alongside the waitForMergeResult() polling loop. Engine emits events via emitEngineEvent(). Supervisor processes events via processEvents() which uses SIGNIFICANT_EVENT_TYPES set and shouldNotify() for filtering.
 
-- [ ] Start/stop health monitor during engine merge phase
-- [ ] Signal early exit from `waitForMergeResult` on dead session detection
-- [ ] Handle new merge health event types in supervisor
-- [ ] Format health events for operator display
+- [ ] Start/stop health monitor during engine merge phase (wrap mergeWaveByRepo call)
+- [ ] Pass abort signal from health monitor dead-session detection into waitForMergeResult
+- [ ] Add merge_health_warning, merge_health_dead, merge_health_stuck to EngineEventType union and event infrastructure
+- [ ] Handle new event types in supervisor formatEventNotification() and shouldNotify()
 
 ---
 
