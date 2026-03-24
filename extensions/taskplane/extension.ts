@@ -2274,6 +2274,9 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const cleanupResult = computeIntegrateCleanupResult(repoFindings);
+		if (cleanupResult.notifyLevel === "warning") {
+			hasWarning = true;
+		}
 
 		try { deleteBatchState(repoRoot); } catch { /* best effort */ }
 
@@ -2293,7 +2296,7 @@ export default function (pi: ExtensionAPI) {
 			deactivateSupervisor(pi, supervisorState);
 		}
 
-		return { message: outputLines.join("\n\n") };
+		return { message: outputLines.join("\n\n"), level: hasWarning ? "warning" : "info" };
 	}
 
 	pi.registerCommand("orch-status", {
@@ -2595,7 +2598,7 @@ export default function (pi: ExtensionAPI) {
 			if (!requireExecCtx(ctx)) return;
 
 			const result = await doOrchIntegrate(args, ctx);
-			ctx.ui.notify(result.message, result.error ? "error" : "info");
+			ctx.ui.notify(result.message, result.error ? "error" : (result.level ?? "info"));
 		},
 	});
 
