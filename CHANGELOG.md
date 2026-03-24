@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-03-24
+
+### New
+- **Supervisor merge monitoring (TP-056, #145)** — the supervisor actively monitors merge agent health during the merge phase. Detects dead sessions (tmux died, no result file) within 2-3 minutes instead of waiting for the 90-minute timeout. Escalation tiers: healthy → possibly stalled (10 min) → dead → stuck (20 min). 763 new tests.
+
+### Fixed
+- **Stale retrying badge (#189)** — the dashboard telemetry accumulator never cleared `retryActive` when a retry resolved via `message_end`. Stale retry state from previous batches persisted, causing a permanently flashing "retrying" badge. Server-side fix: clear `retryActive` on every successful `message_end`.
+
 ## [0.11.0] - 2026-03-24
 
 ### New
@@ -440,7 +448,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/HenryLach/taskplane/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/HenryLach/taskplane/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/HenryLach/taskplane/compare/v0.10.1...v0.10.2
 [0.10.1]: https://github.com/HenryLach/taskplane/compare/v0.10.0...v0.10.1
