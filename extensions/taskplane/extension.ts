@@ -408,6 +408,10 @@ export function executeIntegration(
 		}
 
 		if (!result.ok) {
+			// TP-052: Include branch protection hint when merge fails
+			const protectionHint = result.stderr.includes("protected") || result.stderr.includes("permission")
+				? `\n\n  💡 If the branch is protected, use --pr to create a pull request.`
+				: "";
 			return {
 				success: false,
 				integratedLocally: false,
@@ -418,7 +422,8 @@ export function executeIntegration(
 					`${result.stderr}\n\n` +
 					`Try:\n` +
 					`  /orch-integrate --merge    Create a merge commit\n` +
-					`  /orch-integrate --pr       Create a pull request instead`,
+					`  /orch-integrate --pr       Create a pull request instead` +
+					protectionHint,
 			};
 		}
 		// Count commits that were applied
@@ -452,6 +457,10 @@ export function executeIntegration(
 		}
 
 		if (!result.ok) {
+			// TP-052: Include branch protection hint when merge fails
+			const mergeProtectionHint = result.stderr.includes("protected") || result.stderr.includes("permission")
+				? `\n\n  💡 If the branch is protected, use --pr to create a pull request.`
+				: "";
 			return {
 				success: false,
 				integratedLocally: false,
@@ -461,7 +470,8 @@ export function executeIntegration(
 					`❌ Merge failed — there may be conflicts.\n` +
 					`${result.stderr}\n\n` +
 					`Resolve conflicts manually, or try:\n` +
-					`  /orch-integrate --pr       Create a pull request instead`,
+					`  /orch-integrate --pr       Create a pull request instead` +
+					mergeProtectionHint,
 			};
 		}
 		return performCleanup(deps, orchBranch, {
@@ -2380,7 +2390,26 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(notice, "info");
 			}
 
-			// ── Step 2: Pre-integration summary ──────────────────────
+			// ── Step 2a: Branch protection pre-check (TP-052) ───────
+			// When using ff or merge mode (direct push), check if the target
+			// branch has protection rules. If protected, warn and suggest --pr.
+			// Graceful degradation: if gh is unavailable, skip the check.
+			if (parsed.mode !== "pr") {
+				const { detectBranchProtection } = await import("./supervisor.ts");
+				const protectionStatus = detectBranchProtection(baseBranch, repoRoot);
+				if (protectionStatus === "protected") {
+					ctx.ui.notify(
+						`⚠️ Branch \`${baseBranch}\` has branch protection rules enabled.\n` +
+						`Direct merges may be blocked by your repository settings.\n\n` +
+						`Recommended: use \`/orch-integrate --pr\` to create a pull request instead.`,
+						"warning",
+					);
+					// Don't block — proceed with the attempt. The merge will fail
+					// gracefully and show a clear error if protection blocks it.
+				}
+			}
+
+			// ── Step 2b: Pre-integration summary ─────────────────────
 			// Count commits ahead
 			const revListResult = runGit(
 				["rev-list", "--count", `${currentBranch}..${orchBranch}`],

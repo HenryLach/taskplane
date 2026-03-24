@@ -32,12 +32,12 @@
 ---
 
 ### Step 2: Detect branch protection and guide to --pr
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Pre-merge branch protection check via gh api
-- [ ] Graceful degradation when gh unavailable
-- [ ] Clear error message on protection-related merge failure
-- [ ] Suggest --pr in both pre-check warning and failure message
+- [x] Pre-merge branch protection check via gh api
+- [x] Graceful degradation when gh unavailable
+- [x] Clear error message on protection-related merge failure
+- [x] Suggest --pr in both pre-check warning and failure message
 
 ---
 
