@@ -19,6 +19,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { DynamicBorder } from "@mariozechner/pi-coding-agent";
+import { Type } from "@mariozechner/pi-ai";
 import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "child_process";
 import {
@@ -128,8 +129,17 @@ interface TaskState {
 	workerExitDiagnostic: TaskExitDiagnostic | null;
 	reviewerStatus: "idle" | "running" | "done" | "error";
 	reviewerType: string;
+	reviewerStep: number;
+	reviewerSessionName: string;
 	reviewerElapsed: number;
 	reviewerLastTool: string;
+	reviewerToolCount: number;
+	reviewerInputTokens: number;
+	reviewerOutputTokens: number;
+	reviewerCacheReadTokens: number;
+	reviewerCacheWriteTokens: number;
+	reviewerCostUsd: number;
+	reviewerContextPct: number;
 	reviewerProc: any;
 	reviewerTimer: any;
 	reviewCounter: number;
@@ -146,8 +156,10 @@ function freshState(): TaskState {
 		workerProc: null, workerTimer: null,
 		workerRetryActive: false, workerRetryCount: 0, workerLastRetryError: "",
 		workerExitDiagnostic: null,
-		reviewerStatus: "idle", reviewerType: "", reviewerElapsed: 0,
-		reviewerLastTool: "", reviewerProc: null, reviewerTimer: null,
+		reviewerStatus: "idle", reviewerType: "", reviewerStep: 0, reviewerSessionName: "",
+		reviewerElapsed: 0, reviewerLastTool: "", reviewerToolCount: 0,
+		reviewerInputTokens: 0, reviewerOutputTokens: 0, reviewerCacheReadTokens: 0, reviewerCacheWriteTokens: 0,
+		reviewerCostUsd: 0, reviewerContextPct: 0, reviewerProc: null, reviewerTimer: null,
 		reviewCounter: 0, totalIterations: 0, stepStatuses: new Map(),
 	};
 }
@@ -408,6 +420,18 @@ function writeLaneState(state: TaskState): void {
 			workerLastRetryError: state.workerLastRetryError,
 			workerExitDiagnostic: state.workerExitDiagnostic || undefined,
 			reviewerStatus: state.reviewerStatus || "idle",
+			reviewerSessionName: state.reviewerSessionName || "",
+			reviewerType: state.reviewerType || "",
+			reviewerStep: state.reviewerStep || 0,
+			reviewerElapsed: state.reviewerElapsed || 0,
+			reviewerContextPct: state.reviewerContextPct || 0,
+			reviewerLastTool: state.reviewerLastTool || "",
+			reviewerToolCount: state.reviewerToolCount || 0,
+			reviewerCostUsd: state.reviewerCostUsd || 0,
+			reviewerInputTokens: state.reviewerInputTokens || 0,
+			reviewerOutputTokens: state.reviewerOutputTokens || 0,
+			reviewerCacheReadTokens: state.reviewerCacheReadTokens || 0,
+			reviewerCacheWriteTokens: state.reviewerCacheWriteTokens || 0,
 			timestamp: Date.now(),
 		};
 		writeFileSync(filePath, JSON.stringify(data) + "\n");
@@ -607,6 +631,56 @@ function resolveRpcWrapperPath(): string {
 		"Cannot find rpc-wrapper.mjs. Ensure taskplane is installed correctly. " +
 		`Searched: ${searched.join(", ")}`
 	);
+}
+
+/**
+ * Resolve the path to this extension file (task-runner.ts).
+ * Used to pass the extension to worker subprocesses so they have access
+ * to the review_step tool in orchestrated mode.
+ *
+ * Resolution strategy:
+ *   1. Derive from -e argument that loaded this extension
+ *   2. Package root + extensions/task-runner.ts
+ *   3. cwd/extensions/task-runner.ts (development fallback)
+ *
+ * Returns null if the extension path cannot be found (non-fatal — worker
+ * runs without review_step tool).
+ */
+function resolveExtensionPath(): string | null {
+	const extRelPath = join("extensions", "task-runner.ts");
+
+	// 1. Derive from the -e argument that loaded this file
+	try {
+		const args = process.argv;
+		for (let i = 0; i < args.length - 1; i++) {
+			if (args[i] === "-e" && args[i + 1]?.includes("task-runner")) {
+				const extPath = resolve(args[i + 1]);
+				if (existsSync(extPath)) return extPath;
+			}
+		}
+	} catch { /* ignore argv parsing errors */ }
+
+	// 2. Package root
+	const root = findPackageRoot();
+	if (root) {
+		const p = join(root, extRelPath);
+		if (existsSync(p)) return p;
+	}
+
+	// 3. Development fallback
+	const devPath = join(process.cwd(), extRelPath);
+	if (existsSync(devPath)) return devPath;
+
+	return null;
+}
+
+/**
+ * Detect whether this extension instance is running inside a worker subprocess
+ * (set via TASK_RUNNER_WORKER_TOOL_MODE env var). When true, the extension only
+ * registers the review_step tool — no commands, widgets, or auto-start.
+ */
+function isWorkerToolMode(): boolean {
+	return process.env.TASK_RUNNER_WORKER_TOOL_MODE === "1";
 }
 
 /**
@@ -1540,6 +1614,9 @@ function spawnAgentTmux(opts: {
 	tools: string;
 	thinking: string;
 	taskId?: string;
+	/** Optional extension paths to load in the spawned pi session (via rpc-wrapper --extensions).
+	 *  When provided, --no-extensions is NOT passed to pi (would conflict). */
+	extensions?: string[];
 	/** Called on each poll tick with accumulated telemetry from the sidecar JSONL.
 	 *  Enables the tmux poll loop to update TaskState (tokens, cost, context%, tools, retries)
 	 *  with the same signals that subprocess mode gets from onTokenUpdate/onContextPct/onToolCall. */
@@ -1652,12 +1729,20 @@ function spawnAgentTmux(opts: {
 		"--system-prompt-file", quoteArg(sysTmpFile),
 		"--prompt-file", quoteArg(promptTmpFile),
 		"--tools", quoteArg(opts.tools),
-		// Passthrough pi args: flags forwarded to the underlying pi --mode rpc process.
-		// Note: --no-session is NOT passed here — rpc-wrapper.mjs already injects it.
-		"--",
-		"--thinking", quoteArg(opts.thinking),
-		"--no-extensions", "--no-skills",
 	];
+	// When extensions are provided, pass them to rpc-wrapper (which translates to `pi -e`)
+	// and do NOT pass --no-extensions (would conflict).
+	if (opts.extensions && opts.extensions.length > 0) {
+		wrapperArgs.push("--extensions", quoteArg(opts.extensions.join(",")));
+	}
+	// Passthrough pi args: flags forwarded to the underlying pi --mode rpc process.
+	// Note: --no-session is NOT passed here — rpc-wrapper.mjs already injects it.
+	wrapperArgs.push("--");
+	wrapperArgs.push("--thinking", quoteArg(opts.thinking));
+	if (!opts.extensions || opts.extensions.length === 0) {
+		wrapperArgs.push("--no-extensions");
+	}
+	wrapperArgs.push("--no-skills");
 	const wrapperCommand = wrapperArgs.join(" ");
 
 	// ── Handle stale session ─────────────────────────────────────────
@@ -1957,6 +2042,255 @@ export default function (pi: ExtensionAPI) {
 		});
 	}
 
+	// ── review_step Tool (orchestrated mode only) ───────────────────
+
+	/**
+	 * Reset reviewer telemetry fields on state to idle/zero.
+	 * Called after a review completes to clear dashboard metrics.
+	 */
+	function clearReviewerState(): void {
+		state.reviewerStatus = "idle";
+		state.reviewerType = "";
+		state.reviewerStep = 0;
+		state.reviewerSessionName = "";
+		state.reviewerElapsed = 0;
+		state.reviewerLastTool = "";
+		state.reviewerToolCount = 0;
+		state.reviewerInputTokens = 0;
+		state.reviewerOutputTokens = 0;
+		state.reviewerCacheReadTokens = 0;
+		state.reviewerCacheWriteTokens = 0;
+		state.reviewerCostUsd = 0;
+		state.reviewerContextPct = 0;
+		state.reviewerProc = null;
+		if (state.reviewerTimer) clearInterval(state.reviewerTimer);
+		state.reviewerTimer = null;
+	}
+
+	if (isOrchestratedMode()) {
+		pi.registerTool({
+			name: "review_step",
+			label: "Review Step",
+			description:
+				"Spawn a reviewer agent to evaluate your work on a step. " +
+				"Returns APPROVE, REVISE, RETHINK, or UNAVAILABLE. " +
+				"Use at step boundaries based on the task's review level.",
+			promptSnippet: "review_step(step, type) — spawn reviewer for a step (plan/code review)",
+			promptGuidelines: [
+				"Call review_step at step boundaries based on the task's Review Level (from STATUS.md header).",
+				"Review Level 0: skip all reviews. Level 1: plan review before implementing. Level 2: plan + code review. Level 3: plan + code + test review.",
+				"Skip reviews for Step 0 (Preflight) and the final documentation/delivery step.",
+				"On REVISE: read the review file in .reviews/ for detailed feedback, address the issues, commit fixes, then proceed.",
+				"On RETHINK: reconsider your plan approach, adjust, then implement.",
+				"On UNAVAILABLE: reviewer failed — proceed with caution.",
+			],
+			parameters: Type.Object({
+				step: Type.Number({ description: "Step number to review" }),
+				type: Type.Union(
+					[Type.Literal("plan"), Type.Literal("code")],
+					{ description: 'Review type: "plan" or "code"' },
+				),
+			}),
+			async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+				const { step: stepNum, type: reviewType } = params;
+
+				if (!state.task || !state.config) {
+					return {
+						content: [{ type: "text" as const, text: "UNAVAILABLE — no task loaded" }],
+						details: undefined,
+					};
+				}
+
+				const task = state.task;
+				const config = state.config;
+				const statusPath = join(task.taskFolder, "STATUS.md");
+				const reviewsDir = join(task.taskFolder, ".reviews");
+				if (!existsSync(reviewsDir)) mkdirSync(reviewsDir, { recursive: true });
+
+				// Low-risk step check (safety net — worker template also skips)
+				if (isLowRiskStep(stepNum, task.steps.length)) {
+					const label = stepNum === 0 ? "Preflight" : "final step";
+					logExecution(statusPath, `Skip ${reviewType} review`, `Step ${stepNum} (${label}) — low-risk`);
+					return {
+						content: [{ type: "text" as const, text: `APPROVE — Step ${stepNum} is low-risk (${label}), review skipped` }],
+						details: undefined,
+					};
+				}
+
+				// Increment review counter
+				state.reviewCounter++;
+				const num = String(state.reviewCounter).padStart(3, "0");
+				const requestPath = join(reviewsDir, `request-R${num}.md`);
+				const outputPath = join(reviewsDir, `R${num}-${reviewType}-step${stepNum}.md`);
+
+				// Find step baseline commit for code reviews
+				let stepBaselineCommit: string | undefined;
+				if (reviewType === "code") {
+					stepBaselineCommit = getHeadCommitSha();
+				}
+
+				// Find step info for the name
+				const stepInfo = task.steps.find(s => s.number === stepNum);
+				const stepName = stepInfo?.name || `Step ${stepNum}`;
+
+				// Generate review request
+				const request = generateReviewRequest(
+					reviewType, stepNum, stepName, task, config, outputPath, stepBaselineCommit,
+				);
+				writeFileSync(requestPath, request);
+
+				// Load reviewer agent definition
+				const reviewerDef = loadAgentDef(ctx.cwd, "task-reviewer");
+				const reviewerModel = config.reviewer.model
+					|| reviewerDef?.model
+					|| "openai/gpt-5.3-codex";
+				const reviewerPrompt = reviewerDef?.systemPrompt
+					|| "You are a code reviewer. Read the request and write your review to the specified output file.";
+				const systemPrompt = reviewerPrompt + "\n\n" + buildProjectContext(config, task.taskFolder);
+
+				// Update state for dashboard visibility
+				const sessionName = `${getTmuxPrefix()}-reviewer`;
+				state.reviewerStatus = "running";
+				state.reviewerType = `${reviewType} review`;
+				state.reviewerStep = stepNum;
+				state.reviewerSessionName = sessionName;
+				state.reviewerElapsed = 0;
+				state.reviewerLastTool = "";
+				state.reviewerToolCount = 0;
+				state.reviewerInputTokens = 0;
+				state.reviewerOutputTokens = 0;
+				state.reviewerCacheReadTokens = 0;
+				state.reviewerCacheWriteTokens = 0;
+				state.reviewerCostUsd = 0;
+				state.reviewerContextPct = 0;
+				updateWidgets();
+
+				const startTime = Date.now();
+				state.reviewerTimer = setInterval(() => {
+					state.reviewerElapsed = Date.now() - startTime;
+					updateWidgets();
+				}, 1000);
+
+				// Read the request file content as the prompt
+				const promptContent = readFileSync(requestPath, "utf-8");
+
+				// Resolve context window for reviewer context% calculation
+				const { contextWindow } = resolveContextWindow(config, ctx);
+
+				try {
+					// Spawn reviewer via spawnAgentTmux with onTelemetry for live metrics
+					const spawned = spawnAgentTmux({
+						sessionName,
+						cwd: ctx.cwd,
+						systemPrompt,
+						prompt: promptContent,
+						model: reviewerModel,
+						tools: config.reviewer.tools || reviewerDef?.tools || "read,write,bash,grep,find,ls",
+						thinking: config.reviewer.thinking || "on",
+						taskId: task.taskId,
+						onTelemetry: (delta) => {
+							// Accumulate tokens and cost
+							state.reviewerInputTokens += delta.inputTokens;
+							state.reviewerOutputTokens += delta.outputTokens;
+							state.reviewerCacheReadTokens += delta.cacheReadTokens;
+							state.reviewerCacheWriteTokens += delta.cacheWriteTokens;
+							state.reviewerCostUsd += delta.cost;
+
+							// Tool tracking
+							state.reviewerToolCount += delta.toolCalls;
+							if (delta.lastTool) {
+								state.reviewerLastTool = delta.lastTool;
+							}
+
+							// Context %
+							if (delta.latestTotalTokens > 0 && contextWindow > 0) {
+								state.reviewerContextPct = (delta.latestTotalTokens / contextWindow) * 100;
+							}
+
+							writeLaneState(state);
+							updateWidgets();
+						},
+					});
+
+					state.reviewerProc = { kill: spawned.kill };
+
+					// Await reviewer completion
+					const result = await spawned.promise;
+
+					clearInterval(state.reviewerTimer);
+					state.reviewerElapsed = Date.now() - startTime;
+					state.reviewerStatus = result.exitCode === 0 ? "done" : "error";
+					state.reviewerProc = null;
+					writeLaneState(state);
+					updateWidgets();
+
+					// Extract verdict from review output
+					let verdict = "UNKNOWN";
+					let reviseDetails = "";
+					if (existsSync(outputPath)) {
+						const review = readFileSync(outputPath, "utf-8");
+						verdict = extractVerdict(review);
+						if (verdict === "REVISE") {
+							// Extract a brief summary from the review for the worker
+							const summaryMatch = review.match(/###?\s*Summary[:\s]*([\s\S]*?)(?=###|$)/i);
+							reviseDetails = summaryMatch
+								? summaryMatch[1].trim().slice(0, 500)
+								: "See review file for details.";
+						}
+					} else {
+						verdict = "UNAVAILABLE";
+						logExecution(statusPath, `Reviewer R${num}`,
+							`${reviewType} review — reviewer did not produce output`);
+					}
+
+					// Log the review in STATUS.md
+					logReview(statusPath, `R${num}`, reviewType, stepNum, verdict,
+						`.reviews/R${num}-${reviewType}-step${stepNum}.md`);
+					logExecution(statusPath, `Review R${num}`,
+						`${reviewType} Step ${stepNum}: ${verdict}`);
+					updateStatusField(statusPath, "Review Counter", `${state.reviewCounter}`);
+
+					// Clear reviewer state for dashboard
+					clearReviewerState();
+					writeLaneState(state);
+					updateWidgets();
+
+					// Return verdict to the worker
+					let resultText: string;
+					if (verdict === "APPROVE") {
+						resultText = "APPROVE";
+					} else if (verdict === "REVISE") {
+						resultText = `REVISE: ${reviseDetails}\n\nFull review: .reviews/R${num}-${reviewType}-step${stepNum}.md`;
+					} else if (verdict === "RETHINK") {
+						resultText = `RETHINK — reconsider your approach. See .reviews/R${num}-${reviewType}-step${stepNum}.md`;
+					} else {
+						resultText = `UNAVAILABLE — reviewer did not produce a usable verdict.`;
+					}
+
+					return {
+						content: [{ type: "text" as const, text: resultText }],
+						details: undefined,
+					};
+				} catch (err: any) {
+					// Reviewer crashed
+					clearInterval(state.reviewerTimer);
+					clearReviewerState();
+					state.reviewerStatus = "error";
+					writeLaneState(state);
+					updateWidgets();
+
+					logExecution(statusPath, `Reviewer R${num}`,
+						`${reviewType} review — reviewer crashed: ${err?.message || err}`);
+
+					return {
+						content: [{ type: "text" as const, text: `UNAVAILABLE — reviewer error: ${err?.message || err}` }],
+						details: undefined,
+					};
+				}
+			},
+		});
+	}
+
 	// ── Execution Engine ─────────────────────────────────────────────
 
 	async function executeTask(ctx: ExtensionContext): Promise<void> {
@@ -1972,27 +2306,12 @@ export default function (pi: ExtensionAPI) {
 
 		// ── Per-task worker loop ─────────────────────────────────────
 		// Spawn one worker per iteration; each worker handles ALL remaining
-		// steps.  Reviews run after the worker exits, per newly-completed step.
+		// steps.  The worker drives reviews inline via the review_step tool
+		// (in orchestrated mode) — no deferred reviews after worker exit.
 		// If context limit is hit mid-task, the next iteration picks up from
 		// the first incomplete step via STATUS.md — same recovery mechanism.
 
-		// Collect baseline commits per step (for code review diffs).
-		// Baselines are updated at step boundaries so each code review
-		// sees only that step's changes, not cumulative diffs.
-		const stepBaselineCommits = new Map<number, string>();
-
-		// Track steps that received a REVISE verdict and need rework.
-		// This prevents the checkbox-count heuristic from re-completing them
-		// before the worker has had a chance to address reviewer feedback.
-		const needsRework = new Set<number>();
-
-		// Track which steps have already received a plan review so we don't
-		// re-run plan review on rework cycles (only code review reruns).
-		const planReviewedSteps = new Set<number>();
-
-		// Mark all incomplete steps as in-progress and capture the baseline
-		// commit for the first one. Reviews are transition-based: they run
-		// when a step newly completes after the worker exits, not up-front.
+		// Mark all incomplete steps as in-progress
 		{
 			const currentStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
 			for (const step of task.steps) {
@@ -2002,23 +2321,12 @@ export default function (pi: ExtensionAPI) {
 				// Mark step as in-progress and log its start
 				updateStepStatus(statusPath, step.number, "in-progress");
 				logExecution(statusPath, `Step ${step.number} started`, step.name);
-
-				// Capture baseline commit for the FIRST incomplete step only.
-				// Later steps get their baselines when the prior step completes
-				// (see the newlyCompleted handler in the iteration loop).
-				// This prevents cross-step diff bleeding in code reviews.
-				if (!stepBaselineCommits.size) {
-					stepBaselineCommits.set(step.number, getHeadCommitSha());
-				}
 			}
 		}
 
 		// Helper: determine if a parsed step is complete.
-		// A step in needsRework (set after REVISE) is never complete, even if
-		// all checkboxes are checked — the worker must address the feedback first.
 		function isStepComplete(ss: StepInfo | undefined): boolean {
 			if (!ss) return false;
-			if (needsRework.has(ss.number)) return false;
 			if (ss.status === "complete") return true;
 			// Fallback: infer from checkboxes (covers "in-progress" and "not-started")
 			return ss.totalChecked === ss.totalItems && ss.totalItems > 0;
@@ -2058,13 +2366,6 @@ export default function (pi: ExtensionAPI) {
 				if (isStepComplete(ss)) completedBefore.add(ss.number);
 			}
 
-			// Ensure the first remaining step has a baseline. On subsequent
-			// iterations (after context-limit recovery), the first remaining step
-			// may not have a baseline yet if it wasn't the first step originally.
-			if (remainingSteps.length > 0 && !stepBaselineCommits.has(remainingSteps[0].number)) {
-				stepBaselineCommits.set(remainingSteps[0].number, getHeadCommitSha());
-			}
-
 			await runWorker(remainingSteps, ctx);
 
 			if (state.phase === "error") return;
@@ -2090,46 +2391,14 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// Find newly completed steps.
-			// For steps in needsRework, the worker must have addressed the
-			// reviewer feedback — we detect this by checking if STATUS.md was
-			// updated (the worker adds/checks revision items). We temporarily
-			// remove the step from needsRework to let isStepComplete() evaluate
-			// the checkbox state, then re-add if it's still not complete.
 			const newlyCompleted: StepInfo[] = [];
 			for (const step of task.steps) {
 				if (completedBefore.has(step.number)) continue;
 				const ss = afterStatus.steps.find(s => s.number === step.number);
-				if (needsRework.has(step.number)) {
-					// For rework steps, check if the worker set status to "complete"
-					// or if the step now has all checkboxes checked (worker addressed feedback)
-					if (ss?.status === "complete" ||
-						(ss && ss.totalChecked === ss.totalItems && ss.totalItems > 0)) {
-						needsRework.delete(step.number);
-						updateStepStatus(statusPath, step.number, "complete");
-						logExecution(statusPath, `Step ${step.number} complete`, `${step.name} (rework)`);
-						newlyCompleted.push(step);
-					}
-				} else if (isStepComplete(ss)) {
+				if (isStepComplete(ss)) {
 					updateStepStatus(statusPath, step.number, "complete");
 					logExecution(statusPath, `Step ${step.number} complete`, step.name);
 					newlyCompleted.push(step);
-				}
-			}
-
-			// Update baselines for subsequent steps using step boundary commits.
-			// When the worker completes multiple steps in one iteration, each step's
-			// commit becomes the baseline for the next step's code review.
-			if (newlyCompleted.length > 1) {
-				for (let i = 0; i < newlyCompleted.length; i++) {
-					const completedStep = newlyCompleted[i];
-					const boundaryCommit = findStepBoundaryCommit(
-						completedStep.number, task.taskId,
-						stepBaselineCommits.get(completedStep.number)
-					);
-					if (boundaryCommit && i + 1 < newlyCompleted.length) {
-						// Use this step's completion commit as the next step's baseline
-						stepBaselineCommits.set(newlyCompleted[i + 1].number, boundaryCommit);
-					}
 				}
 			}
 
@@ -2143,57 +2412,8 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(`Iteration ${iter + 1}: +${progressDelta} checkboxes (no steps fully completed)`, "info");
 			}
 
-			// ── Run reviews for newly completed steps (transition-based) ──
-			// Plan reviews run once per step (first completion); code reviews
-			// run on every completion (including rework). Both respect review
-			// level and low-risk skip logic.
-			// Gate on phase !== "error" so reviews still run when paused
-			// (pause is honored after reviews, before next iteration).
-			if (state.phase !== "error") {
-				for (const step of newlyCompleted) {
-					const lowRisk = isLowRiskStep(step.number, task.steps.length);
-
-					// ── Plan review (level ≥ 1, first completion only) ──
-					if (task.reviewLevel >= 1 && !planReviewedSteps.has(step.number)) {
-						if (lowRisk) {
-							const label = step.number === 0 ? "Preflight" : "final step";
-							logExecution(statusPath, `Skip plan review`, `Step ${step.number} (${label}) — low-risk`);
-							ctx.ui.notify(`⏭️ Skipping plan review for Step ${step.number} (${label})`, "info");
-						} else {
-							const verdict = await doReview("plan", step, ctx);
-							if (verdict === "RETHINK") {
-								ctx.ui.notify(`Reviewer: RETHINK on Step ${step.number} plan. Proceeding with caution.`, "warning");
-							}
-						}
-						planReviewedSteps.add(step.number);
-					}
-
-					// ── Code review (level ≥ 2) ──
-					if (task.reviewLevel >= 2) {
-						if (lowRisk) {
-							const label = step.number === 0 ? "Preflight" : "final step";
-							logExecution(statusPath, `Skip code review`, `Step ${step.number} (${label}) — low-risk`);
-							ctx.ui.notify(`⏭️ Skipping code review for Step ${step.number} (${label})`, "info");
-						} else {
-							const baseline = stepBaselineCommits.get(step.number);
-							const verdict = await doReview("code", step, ctx, baseline);
-							if (verdict === "REVISE") {
-								ctx.ui.notify(`Reviewer: REVISE on Step ${step.number}. Will rework in next iteration.`, "warning");
-								// Mark step as needing rework — undo the "complete" status.
-								// needsRework ensures isStepComplete() won't re-complete this
-								// step based on checkbox counts alone; the worker must address
-								// the reviewer feedback first, which will update STATUS.md and
-								// clear the rework flag when the step is newly completed again.
-								needsRework.add(step.number);
-								updateStepStatus(statusPath, step.number, "in-progress");
-								// Update baseline so the next code review for this step
-								// diffs only the rework changes, not the original step work
-								stepBaselineCommits.set(step.number, getHeadCommitSha());
-							}
-						}
-					}
-				}
-			}
+			// Reviews are now driven inline by the worker via the review_step
+			// tool (orchestrated mode). No deferred review logic here.
 
 			// Update local cache
 			const refreshed = parseStatusMd(readFileSync(statusPath, "utf-8"));

@@ -740,11 +740,14 @@ function computeBatchTotalCost(laneStates, telemetry) {
   let totalCost = 0;
   const coveredPrefixes = new Set();
 
-  // Primary: sum cost from lane states
+  // Primary: sum cost from lane states (worker + reviewer)
   for (const [prefix, ls] of Object.entries(laneStates)) {
     if (ls.workerCostUsd) {
       totalCost += ls.workerCostUsd;
       coveredPrefixes.add(prefix);
+    }
+    if (ls.reviewerCostUsd) {
+      totalCost += ls.reviewerCostUsd;
     }
   }
 

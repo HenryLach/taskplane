@@ -16,6 +16,7 @@ name: task-worker
   - Multi-step execution (worker handles all remaining steps per invocation)
   - Iteration recovery (context limit → next invocation resumes from STATUS.md)
   - Git commit conventions (per-step commits) and .DONE file creation
+  - Review protocol (inline reviews via review_step tool when available)
   - Review response handling
 
   Add project-specific rules below. Common examples:

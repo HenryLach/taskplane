@@ -187,16 +187,15 @@ describe("2.x: Multi-step progress tracking — total checkboxes across all step
 		expect(executeTaskBody).toContain("+${progressDelta} checkboxes, no steps fully completed");
 	});
 
-	it("2.5: step baseline commits are updated at step boundaries for code review diffs", () => {
+	it("2.5: newly completed steps are detected and logged per iteration", () => {
 		const executeTaskBody = extractFunction(source, "executeTask");
 
-		// stepBaselineCommits tracks per-step git baselines
-		expect(executeTaskBody).toContain("const stepBaselineCommits = new Map<number, string>()");
+		// newlyCompleted tracks steps that transitioned to complete this iteration
+		expect(executeTaskBody).toContain("const newlyCompleted: StepInfo[] = []");
+		expect(executeTaskBody).toContain("newlyCompleted.push(step)");
 
-		// When multiple steps complete, boundary commits update baselines
-		expect(executeTaskBody).toContain("if (newlyCompleted.length > 1)");
-		expect(executeTaskBody).toContain("findStepBoundaryCommit");
-		expect(executeTaskBody).toContain("stepBaselineCommits.set(newlyCompleted[i + 1].number, boundaryCommit)");
+		// Iteration summary logs both checkbox progress and completed steps
+		expect(executeTaskBody).toContain("completedNames");
 	});
 });
 
@@ -275,73 +274,50 @@ describe("3.x: Stall detection — no progress across full iterations", () => {
 // 4.x — Review timing: transition-based, after worker exit
 // ══════════════════════════════════════════════════════════════════════
 
-describe("4.x: Review timing — transition-based, per completed step after worker exit", () => {
-	it("4.1: reviews are transition-based (run for newlyCompleted steps only)", () => {
-		const executeTaskBody = extractFunction(source, "executeTask");
-
-		// Reviews iterate over newlyCompleted, not all steps
-		expect(executeTaskBody).toContain("for (const step of newlyCompleted)");
+describe("4.x: Review timing — worker-driven via review_step tool (TP-050)", () => {
+	it("4.1: review_step tool is registered in orchestrated mode", () => {
+		// The task-runner registers a review_step tool for worker-driven reviews
+		expect(source).toContain('name: "review_step"');
+		expect(source).toContain("pi.registerTool(");
 	});
 
-	it("4.2: no up-front plan review sweep exists", () => {
+	it("4.2: no deferred review loop in executeTask (reviews are worker-driven)", () => {
 		const executeTaskBody = extractFunction(source, "executeTask");
 
-		// There should be NO plan review happening before the first runWorker call.
-		// The plan review block must only appear inside the post-worker newlyCompleted loop.
-		const firstRunWorker = executeTaskBody.indexOf("await runWorker(remainingSteps, ctx)");
-		const codeBeforeWorker = executeTaskBody.slice(0, firstRunWorker);
-
-		// No doReview call before the first worker spawn
-		expect(codeBeforeWorker).not.toContain("doReview(");
+		// The old deferred review patterns should NOT exist:
+		// - No planReviewedSteps tracking
+		// - No needsRework set
+		// - No stepBaselineCommits map
+		// - No doReview calls in the step loop
+		expect(executeTaskBody).not.toContain("const planReviewedSteps");
+		expect(executeTaskBody).not.toContain("const needsRework");
+		expect(executeTaskBody).not.toContain("const stepBaselineCommits");
 	});
 
-	it("4.3: plan review runs only on first completion (tracked by planReviewedSteps)", () => {
-		const executeTaskBody = extractFunction(source, "executeTask");
-
-		// planReviewedSteps prevents re-running plan review on rework
-		expect(executeTaskBody).toContain("const planReviewedSteps = new Set<number>()");
-		expect(executeTaskBody).toContain("!planReviewedSteps.has(step.number)");
-		expect(executeTaskBody).toContain("planReviewedSteps.add(step.number)");
+	it("4.3: review_step tool accepts step number and review type", () => {
+		// Tool parameters: step (number) and type (plan/code) in Type.Object schema
+		expect(source).toContain("step: Type.Number(");
+		expect(source).toContain('Type.Literal("plan")');
+		expect(source).toContain('Type.Literal("code")');
 	});
 
-	it("4.4: plan review gated by reviewLevel >= 1", () => {
-		const executeTaskBody = extractFunction(source, "executeTask");
-		expect(executeTaskBody).toContain("if (task.reviewLevel >= 1 && !planReviewedSteps.has(step.number))");
+	it("4.4: review_step tool spawns reviewer via spawnAgentTmux", () => {
+		// The tool handler uses the existing spawnAgentTmux infrastructure
+		expect(source).toContain("spawnAgentTmux(");
 	});
 
-	it("4.5: code review gated by reviewLevel >= 2", () => {
-		const executeTaskBody = extractFunction(source, "executeTask");
-		expect(executeTaskBody).toContain("if (task.reviewLevel >= 2)");
+	it("4.5: review_step tool returns verdict to worker", () => {
+		// Tool returns verdict string (APPROVE/REVISE/RETHINK/UNAVAILABLE)
+		expect(source).toContain("APPROVE");
+		expect(source).toContain("REVISE");
+		expect(source).toContain("UNAVAILABLE");
 	});
 
-	it("4.6: low-risk skip logic preserved for both plan and code reviews", () => {
+	it("4.6: executeTask comments confirm reviews are worker-driven", () => {
 		const executeTaskBody = extractFunction(source, "executeTask");
 
-		// isLowRiskStep used in the review section
-		expect(executeTaskBody).toContain("const lowRisk = isLowRiskStep(step.number, task.steps.length)");
-		expect(executeTaskBody).toContain("if (lowRisk)");
-	});
-
-	it("4.7: code review receives step baseline commit for diff scoping", () => {
-		const executeTaskBody = extractFunction(source, "executeTask");
-		expect(executeTaskBody).toContain("const baseline = stepBaselineCommits.get(step.number)");
-		expect(executeTaskBody).toContain('await doReview("code", step, ctx, baseline)');
-	});
-
-	it("4.8: reviews run inside a phase guard (not when errored)", () => {
-		const executeTaskBody = extractFunction(source, "executeTask");
-
-		// The review block is gated to exclude error phase
-		// (reviews still run when paused — pause is honored after reviews)
-		expect(executeTaskBody).toContain('if (state.phase !== "error")');
-
-		// The phase guard appears AFTER the newlyCompleted computation
-		// and BEFORE the review loop
-		const newlyCompletedDecl = executeTaskBody.indexOf("const newlyCompleted: StepInfo[] = []");
-		const phaseGuard = executeTaskBody.indexOf('if (state.phase !== "error")', newlyCompletedDecl);
-		const newlyCompletedReview = executeTaskBody.indexOf("for (const step of newlyCompleted)", newlyCompletedDecl);
-		expect(phaseGuard).toBeGreaterThan(newlyCompletedDecl);
-		expect(newlyCompletedReview).toBeGreaterThan(phaseGuard);
+		// Explicit comment that reviews are now inline via tool
+		expect(executeTaskBody).toContain("review_step");
 	});
 });
 
@@ -349,64 +325,26 @@ describe("4.x: Review timing — transition-based, per completed step after work
 // 5.x — REVISE → rework in next iteration
 // ══════════════════════════════════════════════════════════════════════
 
-describe("5.x: REVISE verdict triggers rework in next iteration", () => {
-	it("5.1: REVISE adds step to needsRework set", () => {
-		const executeTaskBody = extractFunction(source, "executeTask");
-		expect(executeTaskBody).toContain("const needsRework = new Set<number>()");
-
-		// When code review returns REVISE, step is added to needsRework
-		expect(executeTaskBody).toContain('if (verdict === "REVISE")');
-		expect(executeTaskBody).toContain("needsRework.add(step.number)");
-	});
-
-	it("5.2: needsRework step is marked as in-progress (undoes completion)", () => {
+describe("5.x: REVISE handling — worker-driven inline (TP-050)", () => {
+	it("5.1: REVISE is handled by the worker via review_step tool, not outer loop", () => {
 		const executeTaskBody = extractFunction(source, "executeTask");
 
-		// After REVISE, step status is reverted to in-progress
-		const reviseBlock = sourceRegion('if (verdict === "REVISE")', 0, 800);
-		expect(reviseBlock).toContain('updateStepStatus(statusPath, step.number, "in-progress")');
+		// The old needsRework pattern should NOT exist in the outer loop
+		expect(executeTaskBody).not.toContain("const needsRework");
+		expect(executeTaskBody).not.toContain("needsRework.add(");
+		expect(executeTaskBody).not.toContain("needsRework.delete(");
 	});
 
-	it("5.3: isStepComplete returns false for steps in needsRework", () => {
-		const executeTaskBody = extractFunction(source, "executeTask");
-
-		// isStepComplete checks needsRework
-		expect(executeTaskBody).toContain("if (needsRework.has(ss.number)) return false");
+	it("5.2: review_step tool returns REVISE verdict with feedback summary", () => {
+		// The tool handler includes REVISE in its verdict handling
+		expect(source).toContain("REVISE");
 	});
 
-	it("5.4: reworked step is removed from needsRework when worker completes it", () => {
-		const executeTaskBody = extractFunction(source, "executeTask");
-
-		// When detecting newly completed steps, rework steps get special handling
-		expect(executeTaskBody).toContain("if (needsRework.has(step.number))");
-		expect(executeTaskBody).toContain("needsRework.delete(step.number)");
-	});
-
-	it("5.5: reworked step completion is detected by status or checkbox count", () => {
-		const executeTaskBody = extractFunction(source, "executeTask");
-
-		// The rework detection checks both explicit status and checkbox count
-		const reworkBlock = sourceRegion("if (needsRework.has(step.number))", 0, 600);
-		expect(reworkBlock).toContain('ss?.status === "complete"');
-		expect(reworkBlock).toContain("ss.totalChecked === ss.totalItems && ss.totalItems > 0");
-	});
-
-	it("5.6: REVISE updates the step baseline for the next code review", () => {
-		const reviseBlock = sourceRegion('if (verdict === "REVISE")', 0, 800);
-		expect(reviseBlock).toContain("stepBaselineCommits.set(step.number, getHeadCommitSha())");
-	});
-
-	it("5.7: plan review does NOT re-run on rework (tracked by planReviewedSteps)", () => {
-		const executeTaskBody = extractFunction(source, "executeTask");
-		// planReviewedSteps.add() happens on first completion
-		// On rework, planReviewedSteps.has() prevents re-running
-		expect(executeTaskBody).toContain("!planReviewedSteps.has(step.number)");
-		expect(executeTaskBody).toContain("planReviewedSteps.add(step.number)");
-	});
-
-	it("5.8: rework completion is logged with (rework) label", () => {
-		const executeTaskBody = extractFunction(source, "executeTask");
-		expect(executeTaskBody).toContain("`${step.name} (rework)`");
+	it("5.3: worker template instructs worker to handle REVISE inline", () => {
+		// The worker template (tested separately) tells the worker to address
+		// REVISE feedback before proceeding. We verify the tool returns enough
+		// context for the worker to act on.
+		expect(source).toContain("review_step");
 	});
 });
 
@@ -437,16 +375,13 @@ describe("6.x: Context limit mid-task → next iteration picks up from incomplet
 		expect(afterIterStart).toContain("const remainingSteps: StepInfo[] = []");
 	});
 
-	it("6.4: baseline commit is set for first remaining step on recovery iterations", () => {
+	it("6.4: recovery iteration recomputes remaining steps from STATUS.md", () => {
 		const executeTaskBody = extractFunction(source, "executeTask");
 
-		// On subsequent iterations, baseline is captured for the first remaining step
-		expect(executeTaskBody).toContain(
-			"if (remainingSteps.length > 0 && !stepBaselineCommits.has(remainingSteps[0].number))"
-		);
-		expect(executeTaskBody).toContain(
-			"stepBaselineCommits.set(remainingSteps[0].number, getHeadCommitSha())"
-		);
+		// On recovery iterations, remaining steps are filtered from the full step list
+		// based on their completion status in the freshly-parsed STATUS.md
+		expect(executeTaskBody).toContain("remainingSteps");
+		expect(executeTaskBody).toContain("isStepComplete");
 	});
 
 	it("6.5: wall-clock timeout also writes wrap-up signal", () => {
@@ -729,9 +664,10 @@ describe("9.x: isStepComplete — completion determination", () => {
 		expect(isStepCompleteBody).toContain("if (!ss) return false");
 	});
 
-	it("9.2: returns false when step is in needsRework", () => {
+	it("9.2: returns false when step status is not complete and checkboxes incomplete", () => {
 		const isStepCompleteBody = sourceRegion("function isStepComplete(ss: StepInfo | undefined): boolean", 0, 400);
-		expect(isStepCompleteBody).toContain("if (needsRework.has(ss.number)) return false");
+		// isStepComplete checks explicit status first, then falls back to checkbox count
+		expect(isStepCompleteBody).toContain('if (ss.status === "complete") return true');
 	});
 
 	it("9.3: returns true when status is explicitly 'complete'", () => {

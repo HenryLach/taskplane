@@ -530,18 +530,19 @@ function renderLanesTasks(batch, tmuxSessions) {
       // Worker stats from lane state sidecar + telemetry badges
       let workerHtml = "";
       const telemBadges = task.status !== "pending" ? telemetryBadgesHtml(tel) : "";
+      const reviewerActive = ls && ls.reviewerStatus === "running";
       if (ls && ls.workerStatus === "running" && task.status === "running") {
         const elapsed = ls.workerElapsed ? `${Math.round(ls.workerElapsed / 1000)}s` : "";
         const tools = ls.workerToolCount || 0;
         const ctx = ls.workerContextPct ? `${Math.round(ls.workerContextPct)}%` : "";
-        const lastTool = ls.workerLastTool || "";
+        const lastTool = reviewerActive ? "[awaiting review]" : (ls.workerLastTool || "");
         const tokenStr = tokenSummaryFromLaneState(ls);
         workerHtml = `<div class="worker-stats">`;
         workerHtml += `<span class="worker-stat" title="Worker elapsed">⏱ ${elapsed}</span>`;
         workerHtml += `<span class="worker-stat" title="Tool calls">🔧 ${tools}</span>`;
         if (ctx) workerHtml += `<span class="worker-stat" title="Context window used">📊 ${ctx}</span>`;
         if (tokenStr) workerHtml += `<span class="worker-stat" title="Tokens: input↑ output↓ cacheRead(R) cacheWrite(W)">🪙 ${tokenStr}</span>`;
-        if (lastTool) workerHtml += `<span class="worker-stat worker-last-tool" title="Last tool call">${escapeHtml(lastTool)}</span>`;
+        if (lastTool) workerHtml += `<span class="worker-stat worker-last-tool" title="${reviewerActive ? 'Waiting for reviewer' : 'Last tool call'}">${reviewerActive ? '<span style="color:var(--yellow)">' + escapeHtml(lastTool) + '</span>' : escapeHtml(lastTool)}</span>`;
         workerHtml += telemBadges;
         workerHtml += `</div>`;
       } else if (!ls && tel && task.status === "running") {
@@ -560,6 +561,35 @@ function renderLanesTasks(batch, tmuxSessions) {
         workerHtml = `<div class="worker-stats">${telemBadges}</div>`;
       }
 
+      // Reviewer sub-row: shown when reviewer is actively running
+      let reviewerRowHtml = "";
+      if (reviewerActive) {
+        const rElapsed = ls.reviewerElapsed ? `${Math.round(ls.reviewerElapsed / 1000)}s` : "";
+        const rTools = ls.reviewerToolCount || 0;
+        const rCtx = ls.reviewerContextPct ? `${Math.round(ls.reviewerContextPct)}%` : "";
+        const rLastTool = ls.reviewerLastTool || "";
+        const rCost = ls.reviewerCostUsd ? `$${ls.reviewerCostUsd.toFixed(2)}` : "";
+        const rType = ls.reviewerType || "review";
+        const rStep = ls.reviewerStep || "?";
+        reviewerRowHtml = `
+          <div class="task-row reviewer-sub-row">
+            <span class="task-icon"></span>
+            <span class="task-actions"></span>
+            <span class="reviewer-label">📋 Reviewer</span>
+            <span class="reviewer-type">${escapeHtml(rType)} · Step ${rStep}</span>
+            <span class="task-duration">${rElapsed}</span>
+            <span></span>
+            <span class="task-step">
+              <div class="worker-stats reviewer-stats">
+                <span class="worker-stat" title="Reviewer tool calls">🔧 ${rTools}</span>
+                ${rCtx ? `<span class="worker-stat" title="Reviewer context used">📊 ${rCtx}</span>` : ""}
+                ${rCost ? `<span class="worker-stat" title="Reviewer cost">${rCost}</span>` : ""}
+                ${rLastTool ? `<span class="worker-stat worker-last-tool" title="Reviewer last tool">${escapeHtml(rLastTool)}</span>` : ""}
+              </div>
+            </span>
+          </div>`;
+      }
+
       const isViewingStatus = viewerMode === 'status-md' && viewerTarget === task.taskId;
       const eyeHtml = task.status !== 'pending'
         ? `<button class="viewer-eye-btn${isViewingStatus ? ' active' : ''}" onclick="viewStatusMd('${escapeHtml(task.taskId)}')" title="View STATUS.md">👁</button>`
@@ -575,6 +605,7 @@ function renderLanesTasks(batch, tmuxSessions) {
           <span>${progressHtml}</span>
           <span class="task-step">${stepHtml}${workerHtml}</span>
         </div>`;
+      html += reviewerRowHtml;
     }
 
     html += `</div>`; // close lane-group
