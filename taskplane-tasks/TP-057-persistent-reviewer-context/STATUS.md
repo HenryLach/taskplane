@@ -1,10 +1,10 @@
 # TP-057: Persistent Reviewer Context — Status
 
-**Current Step:** Step 2: Update `review_step` Handler for Persistent Mode
+**Current Step:** Step 3: Update Reviewer Template for Persistent Mode
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 2
 **Iteration:** 2
 **Size:** L
 
@@ -38,10 +38,10 @@
 
 > ⚠️ Hydrate: Expand based on actual review_step handler structure discovered in Step 0
 
-- [ ] First call: spawn reviewer with reviewer-extension, write request + signal, poll for verdict
-- [ ] Subsequent calls: reuse session, increment counter, write request + signal, poll for verdict
-- [ ] Fallback: detect dead session, log warning, spawn fresh reviewer
-- [ ] Cleanup: shutdown signal on task completion, kill session after grace period
+- [x] First call: spawn reviewer with reviewer-extension, write request + signal, poll for verdict
+- [x] Subsequent calls: reuse session, increment counter, write request + signal, poll for verdict
+- [x] Fallback: detect dead session, log warning, spawn fresh reviewer
+- [x] Cleanup: shutdown signal on task completion, kill session after grace period
 
 ---
 
@@ -86,6 +86,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R002 | plan | Step 2 | REVISE | .reviews/R002-plan-step2.md |
 |---|------|------|---------|------|
 
 ---
@@ -118,6 +120,8 @@
 | 2026-03-24 20:40 | Step 4 started | Path Resolution and Spawn Integration |
 | 2026-03-24 20:40 | Step 5 started | Testing & Verification |
 | 2026-03-24 20:40 | Step 6 started | Documentation & Delivery |
+| 2026-03-24 20:46 | Review R001 | plan Step 1: REVISE |
+| 2026-03-24 20:50 | Review R002 | plan Step 2: REVISE |
 
 ---
 

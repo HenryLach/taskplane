@@ -31,6 +31,11 @@ import { join, dirname, basename, resolve } from "path";
 import { loadProjectConfig, toTaskConfig } from "./taskplane/config-loader.ts";
 import { loadWorkspaceConfig, resolvePointer } from "./taskplane/workspace.ts";
 import type { PointerResolution } from "./taskplane/types.ts";
+import {
+	REVIEWER_SHUTDOWN_GRACE_MS,
+	REVIEWER_SIGNAL_PREFIX,
+	REVIEWER_SHUTDOWN_SIGNAL,
+} from "./taskplane/types.ts";
 import { classifyExit } from "./taskplane/diagnostics.ts";
 import type { TaskExitDiagnostic, ExitSummary } from "./taskplane/diagnostics.ts";
 import {
@@ -143,6 +148,12 @@ interface TaskState {
 	reviewerProc: any;
 	reviewerTimer: any;
 	reviewCounter: number;
+	/** TP-057: Persistent reviewer session — tracks the long-lived reviewer tmux session. */
+	persistentReviewerSession: string | null;
+	/** TP-057: Kill function for the persistent reviewer (to stop sidecar polling). */
+	persistentReviewerKill: (() => void) | null;
+	/** TP-057: Signal counter for the persistent reviewer (monotonically increasing). */
+	persistentReviewerSignalNum: number;
 	totalIterations: number;
 	stepStatuses: Map<number, StepInfo>;
 }
@@ -160,7 +171,9 @@ function freshState(): TaskState {
 		reviewerElapsed: 0, reviewerLastTool: "", reviewerToolCount: 0,
 		reviewerInputTokens: 0, reviewerOutputTokens: 0, reviewerCacheReadTokens: 0, reviewerCacheWriteTokens: 0,
 		reviewerCostUsd: 0, reviewerContextPct: 0, reviewerProc: null, reviewerTimer: null,
-		reviewCounter: 0, totalIterations: 0, stepStatuses: new Map(),
+		reviewCounter: 0,
+		persistentReviewerSession: null, persistentReviewerKill: null, persistentReviewerSignalNum: 0,
+		totalIterations: 0, stepStatuses: new Map(),
 	};
 }
 
@@ -631,6 +644,43 @@ function resolveRpcWrapperPath(): string {
 		"Cannot find rpc-wrapper.mjs. Ensure taskplane is installed correctly. " +
 		`Searched: ${searched.join(", ")}`
 	);
+}
+
+/**
+ * Resolve the path to reviewer-extension.ts from the installed taskplane package.
+ * Mirrors resolveRpcWrapperPath() resolution strategy.
+ *
+ * @returns Absolute path to reviewer-extension.ts, or null if not found
+ * @since TP-057
+ */
+function resolveReviewerExtensionPath(): string | null {
+	const extRelPath = join("extensions", "reviewer-extension.ts");
+
+	// 1. Package root
+	const root = findPackageRoot();
+	if (root) {
+		const p = join(root, extRelPath);
+		if (existsSync(p)) return p;
+	}
+
+	// 2. Extension-file-relative (dev scenario: task-runner.ts is sibling)
+	try {
+		const args = process.argv;
+		for (let i = 0; i < args.length - 1; i++) {
+			if (args[i] === "-e" && args[i + 1]?.includes("task-runner")) {
+				const extPath = resolve(args[i + 1]);
+				const derivedRoot = resolve(extPath, "..", "..");
+				const p = join(derivedRoot, extRelPath);
+				if (existsSync(p)) return p;
+			}
+		}
+	} catch { /* ignore */ }
+
+	// 3. Development fallback: cwd
+	const cwdDev = join(process.cwd(), extRelPath);
+	if (existsSync(cwdDev)) return cwdDev;
+
+	return null;
 }
 
 /**
@@ -1567,6 +1617,9 @@ function spawnAgentTmux(opts: {
 	/** Optional extension paths to load in the spawned pi session (via rpc-wrapper --extensions).
 	 *  When provided, --no-extensions is NOT passed to pi (would conflict). */
 	extensions?: string[];
+	/** Optional extra environment variables to set in the spawned tmux session.
+	 *  Injected as `KEY=VALUE` prefixes in the shell command. @since TP-057 */
+	env?: Record<string, string>;
 	/** Called on each poll tick with accumulated telemetry from the sidecar JSONL.
 	 *  Enables the tmux poll loop to update TaskState (tokens, cost, context%, tools, retries)
 	 *  with the same signals that subprocess mode gets from onTokenUpdate/onContextPct/onToolCall. */
@@ -1710,7 +1763,11 @@ function spawnAgentTmux(opts: {
 	// Pi's ink/react TUI hangs with TERM=tmux-256color (tmux default), so we
 	// force xterm-256color.
 	const tmuxCwd = opts.cwd.replace(/^([A-Za-z]):\\/, (_, d: string) => `/${d.toLowerCase()}/`).replace(/\\/g, "/");
-	const wrappedCommand = `cd ${quoteArg(tmuxCwd)} && TERM=xterm-256color ${wrapperCommand}`;
+	// Build extra env var prefix (TP-057: e.g., REVIEWER_SIGNAL_DIR for persistent reviewer)
+	const extraEnv = opts.env
+		? Object.entries(opts.env).map(([k, v]) => `${k}=${quoteArg(v)}`).join(" ") + " "
+		: "";
+	const wrappedCommand = `cd ${quoteArg(tmuxCwd)} && ${extraEnv}TERM=xterm-256color ${wrapperCommand}`;
 	const createResult = spawnSync("tmux", [
 		"new-session", "-d",
 		"-s", opts.sessionName,
@@ -2080,9 +2137,6 @@ export default function (pi: ExtensionAPI) {
 				const outputPath = join(reviewsDir, `R${num}-${reviewType}-step${stepNum}.md`);
 
 				// Resolve step baseline commit for code reviews.
-				// The worker should pass the pre-step HEAD SHA as `baseline` so the
-				// reviewer sees only this step's changes (not cumulative diff).
-				// Falls back to undefined (full diff) if baseline is not provided.
 				const stepBaselineCommit: string | undefined =
 					reviewType === "code" ? (baseline || undefined) : undefined;
 
@@ -2118,12 +2172,15 @@ export default function (pi: ExtensionAPI) {
 				state.reviewerElapsed = 0;
 				state.reviewerLastTool = "";
 				state.reviewerToolCount = 0;
-				state.reviewerInputTokens = 0;
-				state.reviewerOutputTokens = 0;
-				state.reviewerCacheReadTokens = 0;
-				state.reviewerCacheWriteTokens = 0;
-				state.reviewerCostUsd = 0;
-				state.reviewerContextPct = 0;
+				// Don't reset cumulative token counts for persistent reviewer — they accumulate
+				if (!state.persistentReviewerSession) {
+					state.reviewerInputTokens = 0;
+					state.reviewerOutputTokens = 0;
+					state.reviewerCacheReadTokens = 0;
+					state.reviewerCacheWriteTokens = 0;
+					state.reviewerCostUsd = 0;
+					state.reviewerContextPct = 0;
+				}
 				updateWidgets();
 
 				const startTime = Date.now();
@@ -2132,23 +2189,51 @@ export default function (pi: ExtensionAPI) {
 					updateWidgets();
 				}, 1000);
 
-				// Read the request file content as the prompt
-				const promptContent = readFileSync(requestPath, "utf-8");
-
 				// Resolve context window for reviewer context% calculation
 				const { contextWindow } = resolveContextWindow(config, ctx);
 
-				try {
-					// Spawn reviewer via spawnAgentTmux with onTelemetry for live metrics
+				// ── TP-057: Persistent Reviewer Session ─────────────────
+				// On the first review_step call, spawn a persistent reviewer
+				// that stays alive via the wait_for_review tool. On subsequent
+				// calls, reuse the existing session by writing signal files.
+				// Fall back to fresh-spawn if the persistent session dies.
+
+				/**
+				 * Check if the persistent reviewer tmux session is still alive.
+				 */
+				function isPersistentReviewerAlive(): boolean {
+					if (!state.persistentReviewerSession) return false;
+					const result = spawnSync("tmux", ["has-session", "-t", state.persistentReviewerSession]);
+					return result.status === 0;
+				}
+
+				/**
+				 * Spawn a persistent reviewer session with the reviewer-extension
+				 * loaded, so the reviewer can use wait_for_review to receive requests.
+				 */
+				function spawnPersistentReviewer(): void {
+					const reviewerExtPath = resolveReviewerExtensionPath();
+					if (!reviewerExtPath) {
+						throw new Error("Cannot find reviewer-extension.ts. Ensure taskplane is installed correctly.");
+					}
+
+					// Initial prompt tells the reviewer to call wait_for_review
+					const initialPrompt =
+						"You are a persistent reviewer for this task. " +
+						"Call the `wait_for_review` tool now to receive your first review request. " +
+						"After writing each review, call `wait_for_review` again for the next one.";
+
 					const spawned = spawnAgentTmux({
 						sessionName,
 						cwd: ctx.cwd,
 						systemPrompt,
-						prompt: promptContent,
+						prompt: initialPrompt,
 						model: reviewerModel,
 						tools: config.reviewer.tools || reviewerDef?.tools || "read,write,bash,grep,find,ls",
 						thinking: config.reviewer.thinking || "on",
 						taskId: task.taskId,
+						extensions: [reviewerExtPath],
+						env: { REVIEWER_SIGNAL_DIR: reviewsDir },
 						onTelemetry: (delta) => {
 							// Accumulate tokens and cost
 							state.reviewerInputTokens += delta.inputTokens;
@@ -2173,27 +2258,96 @@ export default function (pi: ExtensionAPI) {
 						},
 					});
 
+					// Store persistent session state
+					state.persistentReviewerSession = sessionName;
+					state.persistentReviewerKill = spawned.kill;
+					state.persistentReviewerSignalNum = 0;
 					state.reviewerProc = { kill: spawned.kill };
 
-					// Await reviewer completion
-					const result = await spawned.promise;
+					// Don't await spawned.promise — the session stays alive across reviews.
+					// Handle session death via isPersistentReviewerAlive() checks.
+					spawned.promise.then(() => {
+						// Session ended (reviewer exited or was killed)
+						console.error(`[task-runner] persistent reviewer session '${sessionName}' ended`);
+					}).catch((err: any) => {
+						console.error(`[task-runner] persistent reviewer session error: ${err?.message || err}`);
+					});
+				}
 
-					clearInterval(state.reviewerTimer);
+				/**
+				 * Write signal file to notify the persistent reviewer of a new request.
+				 * Returns the signal number used.
+				 */
+				function signalPersistentReviewer(): number {
+					state.persistentReviewerSignalNum++;
+					const sigNum = String(state.persistentReviewerSignalNum).padStart(3, "0");
+					const signalPath = join(reviewsDir, `${REVIEWER_SIGNAL_PREFIX}${sigNum}`);
+					// Write the request filename so the reviewer can find it
+					// (signal num and review counter may diverge after respawns)
+					writeFileSync(signalPath, `request-R${num}.md`);
+					return state.persistentReviewerSignalNum;
+				}
+
+				/**
+				 * Poll for the verdict file to appear (written by the reviewer).
+				 * Same pattern as the original review_step handler.
+				 */
+				async function pollForVerdict(): Promise<string> {
+					const verdictTimeout = 30 * 60 * 1000; // 30 minutes
+					const pollStart = Date.now();
+					while (Date.now() - pollStart < verdictTimeout) {
+						if (existsSync(outputPath)) {
+							return readFileSync(outputPath, "utf-8");
+						}
+						// Also check if persistent reviewer died while we're waiting
+						if (state.persistentReviewerSession && !isPersistentReviewerAlive()) {
+							throw new Error("Persistent reviewer session died while waiting for verdict");
+						}
+						await new Promise(r => setTimeout(r, 2000));
+					}
+					throw new Error("Reviewer verdict timeout — no output file after 30 minutes");
+				}
+
+				try {
+					// ── Persistent reviewer: spawn or reuse ─────────────
+					const needsSpawn = !state.persistentReviewerSession || !isPersistentReviewerAlive();
+
+					if (needsSpawn && state.persistentReviewerSession) {
+						// Session was previously active but died — log fallback
+						console.error(`[task-runner] persistent reviewer session dead — respawning`);
+						logExecution(statusPath, `Reviewer R${num}`,
+							`persistent reviewer dead — respawning for ${reviewType} review`);
+						state.persistentReviewerSession = null;
+						state.persistentReviewerKill = null;
+						state.persistentReviewerSignalNum = 0;
+					}
+
+					if (needsSpawn) {
+						spawnPersistentReviewer();
+						// Give the reviewer a moment to start and call wait_for_review
+						await new Promise(r => setTimeout(r, 5000));
+					}
+
+					// Signal the reviewer with the new request
+					signalPersistentReviewer();
+
+					// Poll for the verdict file
+					const reviewContent = await pollForVerdict();
+
+					// Stop the per-review timer
+					if (state.reviewerTimer) clearInterval(state.reviewerTimer);
 					state.reviewerElapsed = Date.now() - startTime;
-					state.reviewerStatus = result.exitCode === 0 ? "done" : "error";
-					state.reviewerProc = null;
+					state.reviewerStatus = "done";
 					writeLaneState(state);
 					updateWidgets();
 
 					// Extract verdict from review output
 					let verdict = "UNKNOWN";
 					let reviseDetails = "";
-					if (existsSync(outputPath)) {
-						const review = readFileSync(outputPath, "utf-8");
-						verdict = extractVerdict(review);
+					if (reviewContent) {
+						verdict = extractVerdict(reviewContent);
 						if (verdict === "REVISE") {
-							// Extract a brief summary from the review for the worker
-							const summaryMatch = review.match(/###?\s*Summary[:\s]*([\s\S]*?)(?=###|$)/i);
+							const summaryMatch = reviewContent.match(/###?\s*Summary[:\s]*([\s\S]*?)(?=###|$)/i);
 							reviseDetails = summaryMatch
 								? summaryMatch[1].trim().slice(0, 500)
 								: "See review file for details.";
@@ -2211,8 +2365,12 @@ export default function (pi: ExtensionAPI) {
 						`${reviewType} Step ${stepNum}: ${verdict}`);
 					updateStatusField(statusPath, "Review Counter", `${state.reviewCounter}`);
 
-					// Clear reviewer state for dashboard
-					clearReviewerState();
+					// Set reviewer to idle (NOT clear — persistent session stays alive)
+					state.reviewerStatus = "idle";
+					state.reviewerType = "";
+					state.reviewerStep = 0;
+					if (state.reviewerTimer) clearInterval(state.reviewerTimer);
+					state.reviewerTimer = null;
 					writeLaneState(state);
 					updateWidgets();
 
@@ -2233,20 +2391,116 @@ export default function (pi: ExtensionAPI) {
 						details: undefined,
 					};
 				} catch (err: any) {
-					// Reviewer crashed
-					clearInterval(state.reviewerTimer);
-					clearReviewerState();
-					state.reviewerStatus = "error";
-					writeLaneState(state);
-					updateWidgets();
-
+					// ── Fallback: kill persistent session, try fresh spawn ──
+					console.error(`[task-runner] persistent reviewer error: ${err?.message || err}`);
 					logExecution(statusPath, `Reviewer R${num}`,
-						`${reviewType} review — reviewer crashed: ${err?.message || err}`);
+						`persistent reviewer failed — falling back to fresh spawn: ${err?.message || err}`);
 
-					return {
-						content: [{ type: "text" as const, text: `UNAVAILABLE — reviewer error: ${err?.message || err}` }],
-						details: undefined,
-					};
+					// Kill the dead/broken persistent session
+					if (state.persistentReviewerKill) {
+						try { state.persistentReviewerKill(); } catch {}
+					}
+					state.persistentReviewerSession = null;
+					state.persistentReviewerKill = null;
+					state.persistentReviewerSignalNum = 0;
+
+					// ── Fresh spawn fallback (original behavior) ────────
+					try {
+						const promptContent = readFileSync(requestPath, "utf-8");
+						const spawned = spawnAgentTmux({
+							sessionName,
+							cwd: ctx.cwd,
+							systemPrompt,
+							prompt: promptContent,
+							model: reviewerModel,
+							tools: config.reviewer.tools || reviewerDef?.tools || "read,write,bash,grep,find,ls",
+							thinking: config.reviewer.thinking || "on",
+							taskId: task.taskId,
+							onTelemetry: (delta) => {
+								state.reviewerInputTokens += delta.inputTokens;
+								state.reviewerOutputTokens += delta.outputTokens;
+								state.reviewerCacheReadTokens += delta.cacheReadTokens;
+								state.reviewerCacheWriteTokens += delta.cacheWriteTokens;
+								state.reviewerCostUsd += delta.cost;
+								state.reviewerToolCount += delta.toolCalls;
+								if (delta.lastTool) state.reviewerLastTool = delta.lastTool;
+								if (delta.latestTotalTokens > 0 && contextWindow > 0) {
+									state.reviewerContextPct = (delta.latestTotalTokens / contextWindow) * 100;
+								}
+								writeLaneState(state);
+								updateWidgets();
+							},
+						});
+
+						state.reviewerProc = { kill: spawned.kill };
+						const result = await spawned.promise;
+
+						clearInterval(state.reviewerTimer);
+						state.reviewerElapsed = Date.now() - startTime;
+						state.reviewerStatus = result.exitCode === 0 ? "done" : "error";
+						state.reviewerProc = null;
+						writeLaneState(state);
+						updateWidgets();
+
+						// Extract verdict from fallback review
+						let verdict = "UNKNOWN";
+						let reviseDetails = "";
+						if (existsSync(outputPath)) {
+							const review = readFileSync(outputPath, "utf-8");
+							verdict = extractVerdict(review);
+							if (verdict === "REVISE") {
+								const summaryMatch = review.match(/###?\s*Summary[:\s]*([\s\S]*?)(?=###|$)/i);
+								reviseDetails = summaryMatch
+									? summaryMatch[1].trim().slice(0, 500)
+									: "See review file for details.";
+							}
+						} else {
+							verdict = "UNAVAILABLE";
+							logExecution(statusPath, `Reviewer R${num}`,
+								`${reviewType} review — fallback reviewer did not produce output`);
+						}
+
+						logReview(statusPath, `R${num}`, reviewType, stepNum, verdict,
+							`.reviews/R${num}-${reviewType}-step${stepNum}.md`);
+						logExecution(statusPath, `Review R${num}`,
+							`${reviewType} Step ${stepNum}: ${verdict} (fallback)`);
+						updateStatusField(statusPath, "Review Counter", `${state.reviewCounter}`);
+
+						clearReviewerState();
+						writeLaneState(state);
+						updateWidgets();
+
+						let resultText: string;
+						if (verdict === "APPROVE") {
+							resultText = "APPROVE";
+						} else if (verdict === "REVISE") {
+							resultText = `REVISE: ${reviseDetails}\n\nFull review: .reviews/R${num}-${reviewType}-step${stepNum}.md`;
+						} else if (verdict === "RETHINK") {
+							resultText = `RETHINK — reconsider your approach. See .reviews/R${num}-${reviewType}-step${stepNum}.md`;
+						} else {
+							resultText = `UNAVAILABLE — reviewer did not produce a usable verdict.`;
+						}
+
+						return {
+							content: [{ type: "text" as const, text: resultText }],
+							details: undefined,
+						};
+					} catch (fallbackErr: any) {
+						// Both persistent and fallback failed
+						clearInterval(state.reviewerTimer);
+						clearReviewerState();
+						state.reviewerStatus = "error";
+						writeLaneState(state);
+						updateWidgets();
+
+						logExecution(statusPath, `Reviewer R${num}`,
+							`${reviewType} review — both persistent and fallback failed: ${fallbackErr?.message || fallbackErr}`);
+
+						return {
+							content: [{ type: "text" as const, text: `UNAVAILABLE — reviewer error: ${fallbackErr?.message || fallbackErr}` }],
+							details: undefined,
+						};
+					}
 				}
 			},
 		});
@@ -2411,6 +2665,38 @@ export default function (pi: ExtensionAPI) {
 				state.phase = "error";
 				return;
 			}
+		}
+
+		// ── TP-057: Shutdown persistent reviewer ────────────────────────
+		// Send shutdown signal and wait for clean exit, then force kill.
+		if (state.persistentReviewerSession) {
+			const reviewsDir = join(task.taskFolder, ".reviews");
+			const shutdownPath = join(reviewsDir, REVIEWER_SHUTDOWN_SIGNAL);
+			try {
+				writeFileSync(shutdownPath, "shutdown");
+				console.error(`[task-runner] persistent reviewer: shutdown signal written`);
+			} catch (err: any) {
+				console.error(`[task-runner] persistent reviewer: failed to write shutdown signal: ${err?.message}`);
+			}
+			// Poll for session death within grace period
+			const graceStart = Date.now();
+			while (Date.now() - graceStart < REVIEWER_SHUTDOWN_GRACE_MS) {
+				const alive = spawnSync("tmux", ["has-session", "-t", state.persistentReviewerSession]);
+				if (alive.status !== 0) break;
+				await new Promise(r => setTimeout(r, 1000));
+			}
+			// Force kill if still alive after grace period
+			const finalCheck = spawnSync("tmux", ["has-session", "-t", state.persistentReviewerSession]);
+			if (finalCheck.status === 0) {
+				console.error(`[task-runner] persistent reviewer: killing session after grace period`);
+				spawnSync("tmux", ["kill-session", "-t", state.persistentReviewerSession]);
+			}
+			state.persistentReviewerSession = null;
+			state.persistentReviewerKill = null;
+			state.persistentReviewerSignalNum = 0;
+			clearReviewerState();
+			writeLaneState(state);
+			logExecution(statusPath, "Persistent reviewer", "Shutdown complete");
 		}
 
 		// All steps done — run quality gate if enabled, then create .DONE
@@ -3545,6 +3831,11 @@ export default function (pi: ExtensionAPI) {
 		// Kill any running subprocesses
 		if (state.workerProc) try { state.workerProc.kill(); } catch {}
 		if (state.reviewerProc) try { state.reviewerProc.kill(); } catch {}
+		// TP-057: Kill persistent reviewer session if alive
+		if (state.persistentReviewerKill) try { state.persistentReviewerKill(); } catch {}
+		state.persistentReviewerSession = null;
+		state.persistentReviewerKill = null;
+		state.persistentReviewerSignalNum = 0;
 		if (state.workerTimer) clearInterval(state.workerTimer);
 		if (state.reviewerTimer) clearInterval(state.reviewerTimer);
 

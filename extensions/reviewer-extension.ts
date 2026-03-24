@@ -74,8 +74,10 @@ export default function reviewerExtension(pi: ExtensionAPI) {
 
 				// Check for review signal
 				if (existsSync(signalPath)) {
-					// Signal found — read the corresponding request file
-					const requestPath = join(signalDir, `request-R${signalNum}.md`);
+					// Signal found — read the request file path from signal content.
+					// Signal file content is the request filename (e.g., "request-R003.md").
+					const signalContent = readFileSync(signalPath, "utf-8").trim();
+					const requestPath = join(signalDir, signalContent);
 
 					if (!existsSync(requestPath)) {
 						// Signal fired but request file doesn't exist (race condition or error)
@@ -83,7 +85,7 @@ export default function reviewerExtension(pi: ExtensionAPI) {
 							content: [{
 								type: "text" as const,
 								text: `ERROR — Signal file ${REVIEWER_SIGNAL_PREFIX}${signalNum} found but ` +
-									`request-R${signalNum}.md does not exist. Waiting for next signal.`,
+									`${signalContent} does not exist. Waiting for next signal.`,
 							}],
 							details: undefined,
 						};
