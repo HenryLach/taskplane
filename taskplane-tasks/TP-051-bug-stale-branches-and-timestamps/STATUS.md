@@ -23,11 +23,10 @@
 ### Step 1: Delete stale task/saved branches after integrate
 **Status:** 🟨 In Progress
 
-- [ ] Delete task/* branches for the integrated batch
-- [ ] Delete saved/* branches for the integrated batch
-- [ ] Best-effort cleanup of orphaned branches from previous batches
-- [ ] Log deleted branches for operator visibility
-- [ ] Preserve orch/* branch in PR mode
+- [ ] Add `deleteStaleTaskBranches()` function in worktree.ts that deletes task/* and saved/* branches for a given opId/batchId, plus orphaned branches from any batch
+- [ ] Call `deleteStaleTaskBranches()` from the /orch-integrate handler in extension.ts after successful integration, for all repos
+- [ ] Include deleted branches in the cleanup report for operator visibility
+- [ ] Ensure orch/* branch in PR mode is preserved (already handled by existing skipOrchBranch logic)
 
 ---
 
