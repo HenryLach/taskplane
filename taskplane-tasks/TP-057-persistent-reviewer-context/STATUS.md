@@ -1,6 +1,6 @@
 # TP-057: Persistent Reviewer Context — Status
 
-**Current Step:** Step 4: Path Resolution and Spawn Integration
+**Current Step:** Step 5: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
@@ -57,9 +57,9 @@
 ### Step 4: Path Resolution and Spawn Integration
 **Status:** 🟨 In Progress
 
-- [ ] Add reviewer-extension.ts to spawn command's --extensions list
-- [ ] Add to package.json files array
-- [ ] Verify path resolution works for global npm installs
+- [x] Add reviewer-extension.ts to spawn command's --extensions list
+- [x] Add to package.json files array
+- [x] Verify path resolution works for global npm installs
 
 ---
 

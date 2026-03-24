@@ -31,6 +31,7 @@
     "dashboard/",
     "extensions/task-runner.ts",
     "extensions/task-orchestrator.ts",
+    "extensions/reviewer-extension.ts",
     "extensions/taskplane/",
     "skills/",
     "templates/"
