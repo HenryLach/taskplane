@@ -1,6 +1,6 @@
 # TP-047: Context Window Auto-Detect — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Auto-detect context window from pi model registry
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 1
@@ -14,7 +14,7 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Read task-runner.ts and locate all `worker_context_window`, `warn_percent`, `kill_percent` references
 - [x] Read config-schema.ts and config-loader.ts to understand config chain
@@ -23,7 +23,7 @@
 ---
 
 ### Step 1: Auto-detect context window from pi model registry
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Change config default to signal "auto-detect" (0 or undefined)
 - [ ] Add runtime resolution: user config → ctx.model.contextWindow → 200K fallback
@@ -86,6 +86,9 @@
 | 2026-03-24 00:14 | Task started | Extension-driven execution |
 | 2026-03-24 00:14 | Step 0 started | Preflight |
 | 2026-03-24 00:14 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-24 00:16 | Worker iter 2 | done in 127s, ctx: 37%, tools: 24 |
+| 2026-03-24 00:16 | Step 0 complete | Preflight |
+| 2026-03-24 00:16 | Step 1 started | Auto-detect context window from pi model registry |
 
 ---
 
