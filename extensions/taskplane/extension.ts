@@ -645,7 +645,7 @@ export function collectRepoCleanupFindings(
 		findings.staleWorktrees = wts.map(wt => wt.path);
 	} catch { /* best effort — git worktree list may fail in unusual states */ }
 
-	// 2. Lane branches — task/{opId}-lane-*
+	// 2. Lane branches — task/{opId}-lane-* and saved/task/{opId}-lane-*
 	try {
 		const branchResult = runGit(["branch", "--list", `task/${opId}-lane-*`], repoRoot);
 		if (branchResult.ok && branchResult.stdout.trim()) {
@@ -653,6 +653,15 @@ export function collectRepoCleanupFindings(
 				.split("\n")
 				.map(b => b.replace(/^\*?\s+/, "").trim())
 				.filter(Boolean);
+		}
+		// Also detect saved lane branches (preserved refs from worktree removal)
+		const savedBranchResult = runGit(["branch", "--list", `saved/task/${opId}-lane-*`], repoRoot);
+		if (savedBranchResult.ok && savedBranchResult.stdout.trim()) {
+			const savedBranches = savedBranchResult.stdout
+				.split("\n")
+				.map(b => b.replace(/^\*?\s+/, "").trim())
+				.filter(Boolean);
+			findings.staleLaneBranches.push(...savedBranches);
 		}
 	} catch { /* best effort */ }
 
@@ -1525,7 +1534,7 @@ export default function (pi: ExtensionAPI) {
 							orchBatchState,
 							mode,
 							repoRoot,
-							buildIntegrationExecutor(repoRoot),
+							buildIntegrationExecutor(repoRoot, opId),
 							buildCiDeps(repoRoot),
 							sDeps,
 						);
@@ -1871,7 +1880,7 @@ export default function (pi: ExtensionAPI) {
 							orchBatchState,
 							mode,
 							execCtx!.repoRoot,
-							buildIntegrationExecutor(execCtx!.repoRoot),
+							buildIntegrationExecutor(execCtx!.repoRoot, opId),
 							buildCiDeps(execCtx!.repoRoot),
 							sDeps,
 						);

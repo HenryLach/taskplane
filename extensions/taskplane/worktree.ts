@@ -2407,8 +2407,10 @@ export function deleteStaleBranches(
 		}
 	}
 
-	// 3. Delete saved/{opId}-* branches (partial-progress refs)
+	// 3. Delete saved/{opId}-*-{batchId} branches (partial-progress refs from this batch)
 	// Pattern: saved/{opId}-{taskId}-{batchId} or saved/{opId}-{repoId}-{taskId}-{batchId}
+	// Only deletes branches ending with the current batchId to avoid removing
+	// partial-progress refs from other batches that the operator may still need.
 	const savedProgressResult = runGit(["branch", "--list", `saved/${opId}-*`], repoRoot);
 	if (savedProgressResult.ok && savedProgressResult.stdout.trim()) {
 		const branches = savedProgressResult.stdout
@@ -2416,9 +2418,12 @@ export function deleteStaleBranches(
 			.map(b => b.replace(/^\*?\s+/, "").trim())
 			.filter(Boolean);
 
+		const batchSuffix = `-${batchId}`;
 		for (const branch of branches) {
 			// Avoid double-deleting saved/task/* already handled above
 			if (branch.startsWith("saved/task/")) continue;
+			// Only delete partial-progress refs from the current batch
+			if (!branch.endsWith(batchSuffix)) continue;
 			const deleted = deleteBranchBestEffort(branch, repoRoot);
 			if (deleted) {
 				deletedSavedBranches.push(branch);
