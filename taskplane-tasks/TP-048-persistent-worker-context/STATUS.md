@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** L
 
@@ -28,10 +28,12 @@
 
 > ⚠️ Hydrate: Expand based on exact loop structure found in Step 0
 
-- [ ] Refactor outer loop: iterate on worker iterations, not steps
-- [ ] Worker receives all remaining steps in prompt, not single step
-- [ ] After worker exits, determine which steps were completed
-- [ ] Preserve wrap-up signal and kill mechanics across the new loop
+- [ ] Refactor `executeTask()` to replace per-step loop with per-iteration loop that spawns worker for all remaining steps
+- [ ] Refactor `runWorker()` signature to accept remaining steps array instead of single step
+- [ ] Build multi-step worker prompt (all remaining steps, iteration info, per-step commit instructions)
+- [ ] After worker exits, determine which steps were newly completed and run reviews for each
+- [ ] Integrate plan reviews into the new loop (run before first worker iteration for non-low-risk steps)
+- [ ] Preserve wrap-up signal, kill mechanics, progress tracking, and stall detection
 
 ---
 
@@ -89,6 +91,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -115,6 +119,12 @@
 | 2026-03-24 00:41 | Skip code review | Step 0 (Preflight) — low-risk |
 | 2026-03-24 00:41 | Step 0 complete | Preflight |
 | 2026-03-24 00:41 | Step 1 started | Restructure the step loop to spawn worker once per task |
+| 2026-03-24 00:42 | Worker iter 2 | done in 128s, ctx: 16%, tools: 26 |
+| 2026-03-24 00:42 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-24 00:42 | Step 0 complete | Preflight |
+| 2026-03-24 00:42 | Step 1 started | Restructure the step loop to spawn worker once per task |
+| 2026-03-24 00:42 | Review R001 | plan Step 1: APPROVE |
+| 2026-03-24 00:42 | Review R001 | plan Step 1: APPROVE |
 
 ---
 
