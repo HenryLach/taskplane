@@ -1460,12 +1460,12 @@ describe("orchestrator pointer threading", () => {
 		expect(funcSignature).toContain("agentRoot");
 		expect(funcSignature).toContain("stateRoot");
 
-		// The pi command should use agentRoot for task-merger.md when available
-		const piCommandLines = mergeSrc
+		// The system prompt resolution should use agentRoot for task-merger.md when available.
+		// The code uses a candidates array where agentRoot is the preferred source.
+		const mergerRefLines = mergeSrc
 			.split("\n")
-			.filter(l => l.includes("task-merger.md"));
-		expect(piCommandLines.length).toBeGreaterThan(0);
-		expect(piCommandLines[0]).toContain("agentRoot");
+			.filter(l => l.includes("task-merger.md") && l.includes("agentRoot"));
+		expect(mergerRefLines.length).toBeGreaterThan(0);
 	});
 
 	it("7.7: merge request/result files use stateRoot (piDir), not agentRoot", () => {
