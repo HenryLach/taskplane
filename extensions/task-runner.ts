@@ -1955,8 +1955,15 @@ export default function (pi: ExtensionAPI) {
 		// If context limit is hit mid-task, the next iteration picks up from
 		// the first incomplete step via STATUS.md — same recovery mechanism.
 
-		// Collect baseline commits per step (for code review diffs)
+		// Collect baseline commits per step (for code review diffs).
+		// Baselines are updated at step boundaries so each code review
+		// sees only that step's changes, not cumulative diffs.
 		const stepBaselineCommits = new Map<number, string>();
+
+		// Track steps that received a REVISE verdict and need rework.
+		// This prevents the checkbox-count heuristic from re-completing them
+		// before the worker has had a chance to address reviewer feedback.
+		const needsRework = new Set<number>();
 
 		// Run plan reviews up-front for all non-low-risk incomplete steps
 		{
@@ -1983,9 +1990,25 @@ export default function (pi: ExtensionAPI) {
 					}
 				}
 
-				// Capture baseline commit after plan review (plan reviewer may commit)
-				stepBaselineCommits.set(step.number, getHeadCommitSha());
+				// Capture baseline commit for the FIRST incomplete step only.
+				// Later steps get their baselines when the prior step completes
+				// (see the newlyCompleted handler in the iteration loop).
+				// This prevents cross-step diff bleeding in code reviews.
+				if (!stepBaselineCommits.size) {
+					stepBaselineCommits.set(step.number, getHeadCommitSha());
+				}
 			}
+		}
+
+		// Helper: determine if a parsed step is complete.
+		// A step in needsRework (set after REVISE) is never complete, even if
+		// all checkboxes are checked — the worker must address the feedback first.
+		function isStepComplete(ss: StepInfo | undefined): boolean {
+			if (!ss) return false;
+			if (needsRework.has(ss.number)) return false;
+			if (ss.status === "complete") return true;
+			// Fallback: infer from checkboxes (covers "in-progress" and "not-started")
+			return ss.totalChecked === ss.totalItems && ss.totalItems > 0;
 		}
 
 		let noProgressCount = 0;
@@ -2001,9 +2024,7 @@ export default function (pi: ExtensionAPI) {
 			const remainingSteps: StepInfo[] = [];
 			for (const step of task.steps) {
 				const ss = currentStatus.steps.find(s => s.number === step.number);
-				const isComplete = ss?.status === "complete" ||
-					(ss && ss.totalChecked === ss.totalItems && ss.totalItems > 0);
-				if (!isComplete) remainingSteps.push(step);
+				if (!isStepComplete(ss)) remainingSteps.push(step);
 			}
 
 			if (remainingSteps.length === 0) break; // All steps done
@@ -2021,9 +2042,14 @@ export default function (pi: ExtensionAPI) {
 			// Track which steps are complete before the worker runs
 			const completedBefore = new Set<number>();
 			for (const ss of currentStatus.steps) {
-				const isComplete = ss.status === "complete" ||
-					(ss.totalChecked === ss.totalItems && ss.totalItems > 0);
-				if (isComplete) completedBefore.add(ss.number);
+				if (isStepComplete(ss)) completedBefore.add(ss.number);
+			}
+
+			// Ensure the first remaining step has a baseline. On subsequent
+			// iterations (after context-limit recovery), the first remaining step
+			// may not have a baseline yet if it wasn't the first step originally.
+			if (remainingSteps.length > 0 && !stepBaselineCommits.has(remainingSteps[0].number)) {
+				stepBaselineCommits.set(remainingSteps[0].number, getHeadCommitSha());
 			}
 
 			await runWorker(remainingSteps, ctx);
@@ -2047,14 +2073,27 @@ export default function (pi: ExtensionAPI) {
 				noProgressCount = 0;
 			}
 
-			// Find newly completed steps
+			// Find newly completed steps.
+			// For steps in needsRework, the worker must have addressed the
+			// reviewer feedback — we detect this by checking if STATUS.md was
+			// updated (the worker adds/checks revision items). We temporarily
+			// remove the step from needsRework to let isStepComplete() evaluate
+			// the checkbox state, then re-add if it's still not complete.
 			const newlyCompleted: StepInfo[] = [];
 			for (const step of task.steps) {
 				if (completedBefore.has(step.number)) continue;
 				const ss = afterStatus.steps.find(s => s.number === step.number);
-				const isComplete = ss?.status === "complete" ||
-					(ss && ss.totalChecked === ss.totalItems && ss.totalItems > 0);
-				if (isComplete) {
+				if (needsRework.has(step.number)) {
+					// For rework steps, check if the worker set status to "complete"
+					// or if the step now has all checkboxes checked (worker addressed feedback)
+					if (ss?.status === "complete" ||
+						(ss && ss.totalChecked === ss.totalItems && ss.totalItems > 0)) {
+						needsRework.delete(step.number);
+						updateStepStatus(statusPath, step.number, "complete");
+						logExecution(statusPath, `Step ${step.number} complete`, `${step.name} (rework)`);
+						newlyCompleted.push(step);
+					}
+				} else if (isStepComplete(ss)) {
 					updateStepStatus(statusPath, step.number, "complete");
 					logExecution(statusPath, `Step ${step.number} complete`, step.name);
 					newlyCompleted.push(step);
@@ -2080,8 +2119,16 @@ export default function (pi: ExtensionAPI) {
 						const verdict = await doReview("code", step, ctx, baseline);
 						if (verdict === "REVISE") {
 							ctx.ui.notify(`Reviewer: REVISE on Step ${step.number}. Will rework in next iteration.`, "warning");
-							// Mark step as needing rework — undo the "complete" status
+							// Mark step as needing rework — undo the "complete" status.
+							// needsRework ensures isStepComplete() won't re-complete this
+							// step based on checkbox counts alone; the worker must address
+							// the reviewer feedback first, which will update STATUS.md and
+							// clear the rework flag when the step is newly completed again.
+							needsRework.add(step.number);
 							updateStepStatus(statusPath, step.number, "in-progress");
+							// Update baseline so the next code review for this step
+							// diffs only the rework changes, not the original step work
+							stepBaselineCommits.set(step.number, getHeadCommitSha());
 						}
 					}
 				}
@@ -2095,10 +2142,33 @@ export default function (pi: ExtensionAPI) {
 			// Check if all steps are now complete
 			const allComplete = task.steps.every(step => {
 				const ss = refreshed.steps.find(s => s.number === step.number);
-				return ss?.status === "complete" ||
-					(ss && ss.totalChecked === ss.totalItems && ss.totalItems > 0);
+				return isStepComplete(ss);
 			});
 			if (allComplete) break;
+		}
+
+		// ── Post-loop safety check: ensure all steps are actually complete ──
+		// If the iteration cap was hit without completing all steps, fail explicitly
+		// rather than falling through to quality gate / .DONE creation.
+		if (state.phase === "running") {
+			const finalStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
+			const allStepsComplete = task.steps.every(step => {
+				const ss = finalStatus.steps.find(s => s.number === step.number);
+				return isStepComplete(ss);
+			});
+			if (!allStepsComplete) {
+				const incomplete = task.steps
+					.filter(step => {
+						const ss = finalStatus.steps.find(s => s.number === step.number);
+						return !isStepComplete(ss);
+					})
+					.map(s => `Step ${s.number}`)
+					.join(", ");
+				logExecution(statusPath, "Task incomplete", `Max iterations (${config.context.max_worker_iterations}) reached with incomplete steps: ${incomplete}`);
+				ctx.ui.notify(`⚠️ Task incomplete — max iterations reached. Incomplete: ${incomplete}`, "error");
+				state.phase = "error";
+				return;
+			}
 		}
 
 		// All steps done — run quality gate if enabled, then create .DONE

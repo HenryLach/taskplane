@@ -3,17 +3,18 @@
 ### Verdict: REVISE
 
 ### Summary
-The loop refactor successfully moves worker spawning to iteration scope and updates the worker prompt to include all remaining steps. However, there is a blocking correctness issue in the new completion logic: a step marked back to `in-progress` after a `REVISE` verdict is still treated as complete when all its checkboxes are checked. That causes premature task completion and prevents the intended rework-on-next-iteration behavior.
+The refactor correctly moves worker spawning to a task-level iteration loop and passes remaining steps into a single worker prompt, which matches the Step 1 intent. However, two blocking regressions were introduced: the task can be marked complete even when steps remain incomplete, and per-step code review diffs are no longer scoped to each step’s actual work window. These need fixes before this step is considered safe.
 
 ### Issues Found
-1. **[extensions/task-runner.ts:2004-2006, 2024-2026, 2084, 2096-2100] [critical]** — `REVISE` rework is bypassed by checkbox-based completion heuristics. After code review returns `REVISE`, the code sets step status to `in-progress` (`updateStepStatus(..., "in-progress")`), but `remainingSteps`/`completedBefore`/`allComplete` still consider `totalChecked === totalItems` as complete. Result: revised steps are excluded from the next worker pass and the task can exit as complete anyway. **Fix:** make completion checks respect explicit rework state (e.g., track a `needsRework` set, or treat `status === "in-progress"` as authoritative non-complete even when all checkboxes are checked) in all three places.
+1. **[extensions/task-runner.ts:1992-2104] [critical]** — If the `for (iter < max_worker_iterations)` loop exits by hitting the iteration cap (not by `allComplete`), execution still falls through to the quality gate / `.DONE` path. This can complete the task with unfinished steps. **Fix:** after the iteration loop, re-read `STATUS.md` and hard-fail (set error phase + log + return) when any step is still incomplete; only continue to quality gate when all steps are complete.
+2. **[extensions/task-runner.ts:1987,2079] [important]** — `stepBaselineCommits` is captured up-front for all steps before worker execution. For later steps completed in the same task run, `git diff <baseline>..HEAD` includes earlier steps’ commits, so step-level code reviews receive cross-step diffs. **Fix:** capture baselines at step start boundaries (not globally up-front), or derive per-step diff ranges from step-boundary commits (the worker is already instructed to commit per step).
 
 ### Pattern Violations
-- None beyond the blocking logic mismatch above.
+- Step-level review isolation is broken: existing review request semantics assume `Step N` diff reflects that step’s changes, not cumulative prior steps.
 
 ### Test Gaps
-- Missing regression test for: code review returns `REVISE` after a step is marked complete; next iteration must include that step again and must not allow task-level `allComplete` to pass.
-- Missing regression test for: step with all checkboxes checked but explicit `in-progress` status should remain incomplete for scheduling/completion checks.
+- Missing regression test: reaching `max_worker_iterations` with incomplete steps must fail and must not create `.DONE`.
+- Missing regression test: when one worker iteration completes multiple steps, each step review should receive only that step’s diff scope.
 
 ### Suggestions
-- Add a small shared helper for step completion classification (instead of repeating inline checks) so review-state rules stay consistent across `remainingSteps`, `completedBefore`, `newlyCompleted`, and `allComplete`.
+- Consider not marking every incomplete step as `in-progress` during up-front plan review; mark only the currently active step for clearer STATUS/operator visibility.
