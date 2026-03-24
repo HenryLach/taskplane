@@ -222,6 +222,9 @@ function mapTaskRunnerYaml(raw: any): Partial<TaskRunnerSection> {
 	// Quality gate (structural — all keys are schema-defined)
 	if (raw.quality_gate) result.qualityGate = convertStructuralKeys(raw.quality_gate);
 
+	// Model fallback (scalar — "inherit" or "fail")
+	if (raw.model_fallback) result.modelFallback = raw.model_fallback;
+
 	return result;
 }
 
@@ -768,7 +771,6 @@ export function toOrchestratorConfig(config: TaskplaneConfig): import("./types.t
 			stall_timeout: o.failure.stallTimeout,
 			max_worker_minutes: o.failure.maxWorkerMinutes,
 			abort_grace_period: o.failure.abortGracePeriod,
-			model_fallback: o.failure.modelFallback,
 		},
 		monitoring: {
 			poll_interval: o.monitoring.pollInterval,
@@ -815,6 +817,7 @@ export function toTaskRunnerConfig(config: TaskplaneConfig): import("./types.ts"
 		task_areas: taskAreas,
 		reference_docs: { ...config.taskRunner.referenceDocs },
 		...(hasTestingCommands ? { testing_commands: { ...testingCommands } } : {}),
+		model_fallback: config.taskRunner.modelFallback ?? "inherit",
 	};
 }
 

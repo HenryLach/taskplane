@@ -2098,9 +2098,13 @@ export default function (pi: ExtensionAPI) {
 
 				// Load reviewer agent definition
 				const reviewerDef = loadAgentDef(ctx.cwd, "task-reviewer");
-				const reviewerModel = config.reviewer.model
-					|| reviewerDef?.model
-					|| (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514");
+				// TP-055: model fallback — use session model when TASKPLANE_MODEL_FALLBACK=1
+				const reviewerModelFallback = process.env.TASKPLANE_MODEL_FALLBACK === "1";
+				const reviewerModel = reviewerModelFallback
+					? (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514")
+					: (config.reviewer.model
+						|| reviewerDef?.model
+						|| (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514"));
 				const reviewerPrompt = reviewerDef?.systemPrompt
 					|| "You are a code reviewer. Read the request and write your review to the specified output file.";
 				const systemPrompt = reviewerPrompt + "\n\n" + buildProjectContext(config, task.taskFolder);
@@ -2585,9 +2589,15 @@ export default function (pi: ExtensionAPI) {
 		const basePrompt = workerDef?.systemPrompt || "You are a task execution agent. Read STATUS.md first, find unchecked items, work on them, checkpoint after each.";
 		const systemPrompt = basePrompt + "\n\n" + buildProjectContext(config, task.taskFolder);
 
-		const model = config.worker.model
-			|| workerDef?.model
-			|| (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514");
+		// TP-055: When TASKPLANE_MODEL_FALLBACK=1 is set, skip configured model
+		// and fall back to the session model. This is set by the orchestrator's
+		// model fallback retry when the configured model becomes unavailable.
+		const modelFallbackActive = process.env.TASKPLANE_MODEL_FALLBACK === "1";
+		const model = modelFallbackActive
+			? (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514")
+			: (config.worker.model
+				|| workerDef?.model
+				|| (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514"));
 
 		const contextDocsList = task.contextDocs.length > 0
 			? "\n\nContext docs to read if needed:\n" + task.contextDocs.map(d => `- ${d}`).join("\n")
@@ -2904,7 +2914,11 @@ export default function (pi: ExtensionAPI) {
 		writeFileSync(requestPath, request);
 
 		const reviewerDef = loadAgentDef(ctx.cwd, "task-reviewer");
-		const reviewerModel = config.reviewer.model || reviewerDef?.model || (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514");
+		// TP-055: model fallback — use session model when TASKPLANE_MODEL_FALLBACK=1
+		const reviewerModelFallback2 = process.env.TASKPLANE_MODEL_FALLBACK === "1";
+		const reviewerModel = reviewerModelFallback2
+			? (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514")
+			: (config.reviewer.model || reviewerDef?.model || (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514"));
 		const reviewerPrompt = reviewerDef?.systemPrompt || "You are a code reviewer. Read the request and write your review to the specified output file.";
 		const systemPrompt = reviewerPrompt + "\n\n" + buildProjectContext(config, task.taskFolder);
 
@@ -3040,10 +3054,14 @@ export default function (pi: ExtensionAPI) {
 		// Determine review model with fallback chain:
 		// quality_gate.review_model → reviewer.model → agent def → default
 		const reviewerDef = loadAgentDef(ctx.cwd, "task-reviewer");
-		const reviewModel = config.quality_gate.review_model
-			|| config.reviewer.model
-			|| reviewerDef?.model
-			|| (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514");
+		// TP-055: model fallback — use session model when TASKPLANE_MODEL_FALLBACK=1
+		const qgModelFallback = process.env.TASKPLANE_MODEL_FALLBACK === "1";
+		const reviewModel = qgModelFallback
+			? (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514")
+			: (config.quality_gate.review_model
+				|| config.reviewer.model
+				|| reviewerDef?.model
+				|| (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514"));
 
 		const reviewerPrompt = reviewerDef?.systemPrompt
 			|| "You are a quality gate reviewer. Read the review request and write your JSON verdict to the specified file.";
@@ -3210,9 +3228,13 @@ export default function (pi: ExtensionAPI) {
 
 		// Use worker model and tools for fix agent (it needs to edit code)
 		const workerDef = loadAgentDef(ctx.cwd, "task-worker");
-		const fixModel = config.worker.model
-			|| workerDef?.model
-			|| "anthropic/claude-sonnet-4-20250514";
+		// TP-055: model fallback — use session model when TASKPLANE_MODEL_FALLBACK=1
+		const fixModelFallback = process.env.TASKPLANE_MODEL_FALLBACK === "1";
+		const fixModel = fixModelFallback
+			? (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514")
+			: (config.worker.model
+				|| workerDef?.model
+				|| "anthropic/claude-sonnet-4-20250514");
 
 		const basePrompt = workerDef?.systemPrompt
 			|| "You are a fix agent addressing quality gate findings. Read the feedback and make targeted code fixes.";

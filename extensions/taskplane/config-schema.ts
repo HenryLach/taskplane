@@ -322,16 +322,6 @@ export interface FailureConfig {
 	maxWorkerMinutes: number;
 	/** Graceful abort wait time (seconds) before forced termination */
 	abortGracePeriod: number;
-	/**
-	 * Model fallback behavior when a configured model becomes unavailable mid-batch.
-	 *
-	 * - `"inherit"` (default): On model_access_error, retry the task without an explicit
-	 *   --model flag, falling back to the session model. Limited to 1 retry attempt.
-	 * - `"fail"`: Behave as today — let the normal failure/retry path handle it.
-	 *
-	 * @since TP-055
-	 */
-	modelFallback: "inherit" | "fail";
 }
 
 /** Monitoring settings */
@@ -589,7 +579,6 @@ export const DEFAULT_ORCHESTRATOR_SECTION: OrchestratorSection = {
 		stallTimeout: 30,
 		maxWorkerMinutes: 30,
 		abortGracePeriod: 60,
-		modelFallback: "inherit",
 	},
 	monitoring: {
 		pollInterval: 5,

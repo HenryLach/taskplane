@@ -63,11 +63,22 @@ describe("classifyExit — all 9 classification paths", () => {
 			expected: "completed",
 		},
 		{
-			name: "api_error — retries present, last retry failed",
+			name: "model_access_error — retries with rate_limit_exceeded pattern",
 			input: makeInput({
 				exitSummary: makeSummary({
 					retries: [
 						{ attempt: 1, error: "rate_limit_exceeded", delayMs: 5000, succeeded: false },
+					],
+				}),
+			}),
+			expected: "model_access_error",
+		},
+		{
+			name: "api_error — retries present, last retry failed, non-model error",
+			input: makeInput({
+				exitSummary: makeSummary({
+					retries: [
+						{ attempt: 1, error: "server_overloaded_please_retry", delayMs: 5000, succeeded: false },
 					],
 				}),
 			}),

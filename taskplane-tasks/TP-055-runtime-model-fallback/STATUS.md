@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
@@ -43,15 +43,15 @@
 ---
 
 ### Step 3: Implement Fallback in Execution
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Hydrate: Expand based on exact spawn/retry patterns discovered in Steps 0-1
 
-- [ ] Add `model_fallback` Tier0RecoveryPattern + budget in types.ts
-- [ ] In engine.ts `attemptWorkerCrashRetry()`, add model_access_error-specific retry path that sets TASKPLANE_MODEL_FALLBACK=1 env var on the retry lane
-- [ ] In task-runner.ts, read TASKPLANE_MODEL_FALLBACK env var and override worker/reviewer model to empty (inherit session model)
-- [ ] Emit Tier 0 supervisor event (`model_fallback` pattern) on fallback attempt/success/exhaustion
-- [ ] Ensure fallback is limited to 1 retry attempt via budget
+- [x] Add `model_fallback` Tier0RecoveryPattern + budget in types.ts
+- [x] In engine.ts `attemptWorkerCrashRetry()`, add model_access_error-specific retry path that sets TASKPLANE_MODEL_FALLBACK=1 env var on the retry lane
+- [x] In task-runner.ts, read TASKPLANE_MODEL_FALLBACK env var and override worker/reviewer model to empty (inherit session model)
+- [x] Emit Tier 0 supervisor event (`model_fallback` pattern) on fallback attempt/success/exhaustion
+- [x] Ensure fallback is limited to 1 retry attempt via budget
 
 ---
 
@@ -77,6 +77,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -107,6 +108,7 @@
 | 2026-03-24 17:11 | Step 3 started | Implement Fallback in Execution |
 | 2026-03-24 17:11 | Step 4 started | Testing & Verification |
 | 2026-03-24 17:11 | Step 5 started | Documentation & Delivery |
+| 2026-03-24 17:19 | Review R001 | plan Step 1: REVISE |
 
 ---
 

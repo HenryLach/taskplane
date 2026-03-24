@@ -48,8 +48,6 @@ export interface OrchestratorConfig {
 		stall_timeout: number;
 		max_worker_minutes: number;
 		abort_grace_period: number;
-		/** Model fallback behavior: "inherit" = fall back to session model; "fail" = no fallback. @since TP-055 */
-		model_fallback: "inherit" | "fail";
 	};
 	monitoring: {
 		poll_interval: number;
@@ -136,6 +134,13 @@ export interface TaskRunnerConfig {
 	reference_docs: Record<string, string>;
 	/** Named testing/verification commands (e.g., { test: "npx vitest run" }). Used for baseline fingerprinting (TP-032). */
 	testing_commands?: Record<string, string>;
+	/**
+	 * Model fallback behavior when a configured model becomes unavailable mid-batch.
+	 * - `"inherit"` (default): Retry without explicit model (session model fallback).
+	 * - `"fail"`: No model substitution — normal failure path.
+	 * @since TP-055
+	 */
+	model_fallback?: "inherit" | "fail";
 }
 
 /** Result of a preflight check */
@@ -192,7 +197,6 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 		stall_timeout: 30,
 		max_worker_minutes: 30,
 		abort_grace_period: 60,
-		model_fallback: "inherit",
 	},
 	monitoring: {
 		poll_interval: 5,
@@ -207,6 +211,7 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 export const DEFAULT_TASK_RUNNER_CONFIG: TaskRunnerConfig = {
 	task_areas: {},
 	reference_docs: {},
+	model_fallback: "inherit",
 };
 
 
@@ -1387,7 +1392,8 @@ export const MERGE_FAILURE_CLASSIFICATIONS: readonly MergeFailureClassification[
 export type Tier0RecoveryPattern =
 	| "worker_crash"
 	| "stale_worktree"
-	| "cleanup_gate";
+	| "cleanup_gate"
+	| "model_fallback";
 
 /**
  * Exit classifications that are eligible for automatic Tier 0 retry.
@@ -1448,6 +1454,11 @@ export const TIER0_RETRY_BUDGETS: Readonly<Record<Tier0RecoveryPattern, Tier0Ret
 		cooldownMs: 2_000,
 		backoffMultiplier: 1.0,
 	},
+	model_fallback: {
+		maxRetries: 1,
+		cooldownMs: 3_000,
+		backoffMultiplier: 1.0,
+	},
 };
 
 /**
@@ -1461,6 +1472,7 @@ export const TIER0_RETRY_BUDGETS: Readonly<Record<Tier0RecoveryPattern, Tier0Ret
  * @since TP-039
  */
 export type Tier0EscalationPattern = Tier0RecoveryPattern | "merge_timeout";
+// Note: model_fallback is already included via Tier0RecoveryPattern
 
 /**
  * Context payload emitted when Tier 0 retries are exhausted and the
