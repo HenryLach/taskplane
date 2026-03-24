@@ -1,11 +1,11 @@
 # TP-056: Supervisor Merge Monitoring — Status
 
-**Current Step:** Step 2: Integrate with Engine and Supervisor
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 2
+**Iteration:** 3
 **Size:** M
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -35,14 +35,14 @@
 ---
 
 ### Step 2: Integrate with Engine and Supervisor
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > Hydrated based on engine merge flow: engine.ts calls mergeWaveByRepo() which calls mergeWave() which runs a sequential loop of spawnMergeAgent() + waitForMergeResult() per lane. Health monitor needs to run alongside the waitForMergeResult() polling loop. Engine emits events via emitEngineEvent(). Supervisor processes events via processEvents() which uses SIGNIFICANT_EVENT_TYPES set and shouldNotify() for filtering.
 
-- [ ] Start/stop health monitor during engine merge phase (wrap mergeWaveByRepo call)
-- [ ] Pass abort signal from health monitor dead-session detection into waitForMergeResult
-- [ ] Add merge_health_warning, merge_health_dead, merge_health_stuck to EngineEventType union and event infrastructure
-- [ ] Handle new event types in supervisor formatEventNotification() and shouldNotify()
+- [x] Start/stop health monitor during engine merge phase (wrap mergeWaveByRepo call)
+- [x] Pass health monitor through mergeWaveByRepo→mergeWave with session registration/deregistration
+- [x] Add merge_health_warning, merge_health_dead, merge_health_stuck to EngineEventType union and event infrastructure
+- [x] Handle new event types in supervisor formatEventNotification() and shouldNotify()
 
 ---
 
@@ -56,7 +56,7 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ⬜ Not Started
 
 - [ ] Update troubleshooting docs with merge stall guidance
 - [ ] "Check If Affected" docs reviewed
@@ -84,18 +84,9 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-24 | Task staged | PROMPT.md and STATUS.md created |
-| 2026-03-24 18:37 | Task started | Extension-driven execution |
-| 2026-03-24 18:37 | Step 0 started | Preflight |
-| 2026-03-24 18:37 | Step 1 started | Implement Merge Health Monitor |
-| 2026-03-24 18:37 | Step 2 started | Integrate with Engine and Supervisor |
-| 2026-03-24 18:37 | Step 3 started | Testing & Verification |
-| 2026-03-24 18:37 | Step 4 started | Documentation & Delivery |
-| 2026-03-24 18:37 | Task started | Extension-driven execution |
-| 2026-03-24 18:37 | Step 0 started | Preflight |
-| 2026-03-24 18:37 | Step 1 started | Implement Merge Health Monitor |
-| 2026-03-24 18:37 | Step 2 started | Integrate with Engine and Supervisor |
-| 2026-03-24 18:37 | Step 3 started | Testing & Verification |
-| 2026-03-24 18:37 | Step 4 started | Documentation & Delivery |
+| 2026-03-24 18:37 | Step 0 completed | Preflight — read all relevant code |
+| 2026-03-24 18:42 | Step 1 completed | MergeHealthMonitor class, classifyMergeHealth, captureMergePaneOutput |
+| 2026-03-24 18:45 | Step 2 completed | Engine/supervisor integration, event handling |
 
 ---
 
