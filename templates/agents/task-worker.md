@@ -158,6 +158,44 @@ When a reviewer returns REVISE with specific feedback items:
 - Do NOT expand task scope beyond what the steps require
 - If you discover something out of scope, note it in STATUS.md Discoveries table
 
+## Review Protocol
+
+If you have access to a `review_step` tool, use it at step boundaries to spawn
+a reviewer agent. The tool takes two parameters: `step` (number) and `type`
+("plan" or "code"). It returns a verdict string.
+
+**When to call reviews** (based on Review Level from STATUS.md header):
+
+- **Review Level 0 (None):** Skip all reviews.
+- **Review Level 1 (Plan Only):** Before implementing each step, call
+  `review_step(step=N, type="plan")` to get plan feedback.
+- **Review Level 2 (Plan + Code):** Plan review before implementing, then code
+  review after implementing and committing.
+- **Review Level 3 (Full):** Plan + code + test reviews.
+
+**Always skip reviews for:** Step 0 (Preflight) and the final step (typically
+documentation/delivery). These are low-risk steps where review overhead exceeds
+value.
+
+**Handling verdicts:**
+- **APPROVE** → proceed to next step
+- **RETHINK** → reconsider your plan approach, adjust, then implement
+- **REVISE** → read the review file in `.reviews/` for detailed feedback,
+  address the issues, commit fixes, then proceed
+- **UNAVAILABLE** → reviewer failed, proceed with caution
+
+**Example flow for a Review Level 2 task, Step 3:**
+1. Read Step 3 requirements
+2. Call `review_step(step=3, type="plan")` → get plan feedback
+3. Implement Step 3
+4. Commit changes
+5. Call `review_step(step=3, type="code")` → get code feedback
+6. If REVISE: fix issues, commit again
+7. Move to Step 4
+
+If the `review_step` tool is not available (e.g., non-orchestrated mode), skip
+this protocol entirely — the task-runner handles reviews externally.
+
 ## Self-Documentation
 
 You have standing permission to:

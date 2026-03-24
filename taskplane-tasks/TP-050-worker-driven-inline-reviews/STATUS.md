@@ -46,12 +46,12 @@
 ---
 
 ### Step 3: Update worker agent template with review protocol
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add review protocol section to task-worker.md
-- [ ] Add review protocol section to local/task-worker.md
-- [ ] Include review level interpretation and skip rules
-- [ ] Include verdict handling instructions
+- [x] Add review protocol section to task-worker.md
+- [x] Add review protocol section to local/task-worker.md
+- [x] Include review level interpretation and skip rules
+- [x] Include verdict handling instructions
 
 ---
 

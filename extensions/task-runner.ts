@@ -622,6 +622,56 @@ function resolveRpcWrapperPath(): string {
 }
 
 /**
+ * Resolve the path to this extension file (task-runner.ts).
+ * Used to pass the extension to worker subprocesses so they have access
+ * to the review_step tool in orchestrated mode.
+ *
+ * Resolution strategy:
+ *   1. Derive from -e argument that loaded this extension
+ *   2. Package root + extensions/task-runner.ts
+ *   3. cwd/extensions/task-runner.ts (development fallback)
+ *
+ * Returns null if the extension path cannot be found (non-fatal — worker
+ * runs without review_step tool).
+ */
+function resolveExtensionPath(): string | null {
+	const extRelPath = join("extensions", "task-runner.ts");
+
+	// 1. Derive from the -e argument that loaded this file
+	try {
+		const args = process.argv;
+		for (let i = 0; i < args.length - 1; i++) {
+			if (args[i] === "-e" && args[i + 1]?.includes("task-runner")) {
+				const extPath = resolve(args[i + 1]);
+				if (existsSync(extPath)) return extPath;
+			}
+		}
+	} catch { /* ignore argv parsing errors */ }
+
+	// 2. Package root
+	const root = findPackageRoot();
+	if (root) {
+		const p = join(root, extRelPath);
+		if (existsSync(p)) return p;
+	}
+
+	// 3. Development fallback
+	const devPath = join(process.cwd(), extRelPath);
+	if (existsSync(devPath)) return devPath;
+
+	return null;
+}
+
+/**
+ * Detect whether this extension instance is running inside a worker subprocess
+ * (set via TASK_RUNNER_WORKER_TOOL_MODE env var). When true, the extension only
+ * registers the review_step tool — no commands, widgets, or auto-start.
+ */
+function isWorkerToolMode(): boolean {
+	return process.env.TASK_RUNNER_WORKER_TOOL_MODE === "1";
+}
+
+/**
  * Load an agent definition with prompt inheritance.
  *
  * Inheritance model (default: compose base + local):
