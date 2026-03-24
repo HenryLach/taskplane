@@ -51,7 +51,7 @@
 ### Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Discoveries logged
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
