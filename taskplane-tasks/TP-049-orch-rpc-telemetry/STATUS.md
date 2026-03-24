@@ -47,11 +47,11 @@
 ---
 
 ### Step 3: Route reviewer spawns through RPC wrapper (tmux mode)
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Verify reviewer tmux spawn uses RPC wrapper in doReview()
-- [ ] If not, update to use spawnAgentTmux() pattern
-- [ ] Verify reviewer telemetry files produced with recognizable names
+- [x] Verify reviewer tmux spawn uses RPC wrapper in doReview()
+- [x] If not, update to use spawnAgentTmux() pattern
+- [x] Verify reviewer telemetry files produced with recognizable names
 
 ---
 
