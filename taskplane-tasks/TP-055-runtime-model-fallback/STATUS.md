@@ -47,10 +47,11 @@
 
 > ⚠️ Hydrate: Expand based on exact spawn/retry patterns discovered in Steps 0-1
 
-- [ ] Implement model fallback retry for lane workers
-- [ ] Implement model fallback for reviewers and merge agents
-- [ ] Emit Tier 0 supervisor event on fallback
-- [ ] Limit fallback to 1 retry attempt
+- [ ] Add `model_fallback` Tier0RecoveryPattern + budget in types.ts
+- [ ] In engine.ts `attemptWorkerCrashRetry()`, add model_access_error-specific retry path that sets TASKPLANE_MODEL_FALLBACK=1 env var on the retry lane
+- [ ] In task-runner.ts, read TASKPLANE_MODEL_FALLBACK env var and override worker/reviewer model to empty (inherit session model)
+- [ ] Emit Tier 0 supervisor event (`model_fallback` pattern) on fallback attempt/success/exhaustion
+- [ ] Ensure fallback is limited to 1 retry attempt via budget
 
 ---
 
