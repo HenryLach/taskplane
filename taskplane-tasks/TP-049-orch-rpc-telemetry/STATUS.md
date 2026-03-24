@@ -1,6 +1,6 @@
 # TP-049: Orchestrator RPC Telemetry for All Agent Types — Status
 
-**Current Step:** Step 2: Route merge agent spawns through RPC wrapper
+**Current Step:** Step 3: Route reviewer spawns through RPC wrapper (tmux mode)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
@@ -26,7 +26,7 @@
 ---
 
 ### Step 1: Route lane worker spawns through RPC wrapper
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Hydrate: Expand based on exact command structure discovered in Step 0
 
@@ -38,11 +38,11 @@
 ---
 
 ### Step 2: Route merge agent spawns through RPC wrapper
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Update spawnMergeAgent() to spawn via RPC wrapper
-- [ ] Generate merge-specific telemetry file paths
-- [ ] Preserve existing merge agent CLI args (system prompt, prompt file)
+- [x] Update spawnMergeAgent() to spawn via RPC wrapper
+- [x] Generate merge-specific telemetry file paths
+- [x] Preserve existing merge agent CLI args (system prompt, prompt file)
 
 ---
 
