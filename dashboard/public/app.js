@@ -713,17 +713,16 @@ function renderNoBatch() {
   if ($mergePanel) $mergePanel.style.display = "none";
   if ($errorsPanel) $errorsPanel.style.display = "none";
 
-  // Try to show the latest history entry
-  if (historyList.length > 0 && !viewingHistoryId) {
-    viewHistoryEntry(historyList[0].batchId);
-    $historySelect.value = historyList[0].batchId;
-  } else if (historyList.length === 0) {
-    // No history yet — show placeholder in the history panel
+  // Show a placeholder while history loads. loadHistoryList() (called in
+  // render() just before this) is async — the fresh list may not be
+  // available yet. The loadHistoryList callback will replace this with
+  // the actual latest entry once it resolves.
+  if (!viewingHistoryId) {
     $historyBody.innerHTML = `
       <div class="no-batch">
         <div class="no-batch-icon">⏳</div>
-        <div class="no-batch-title">No batch running</div>
-        <div class="no-batch-hint">.pi/batch-state.json not found<br>Start an orchestrator batch to see the dashboard.</div>
+        <div class="no-batch-title">Batch complete</div>
+        <div class="no-batch-hint">Loading history…</div>
       </div>`;
     $historyPanel.style.display = "";
   }
@@ -1407,10 +1406,22 @@ function loadHistoryList() {
     .then(list => {
       historyList = list || [];
       renderHistoryDropdown();
-      // If no live batch and no history shown yet, auto-select latest
-      if (noBatchRendered && !viewingHistoryId && historyList.length > 0) {
+      // Auto-select the latest history entry when no live batch is running.
+      // Always update the view here — renderNoBatch() shows a placeholder
+      // while this async fetch completes, so we need to replace it with
+      // the actual latest entry. This fixes #20 where the stale cached
+      // historyList caused the previous batch to be shown.
+      if (noBatchRendered && historyList.length > 0) {
         viewHistoryEntry(historyList[0].batchId);
         $historySelect.value = historyList[0].batchId;
+      } else if (noBatchRendered && historyList.length === 0) {
+        $historyBody.innerHTML = `
+          <div class="no-batch">
+            <div class="no-batch-icon">⏳</div>
+            <div class="no-batch-title">No batch running</div>
+            <div class="no-batch-hint">.pi/batch-state.json not found<br>Start an orchestrator batch to see the dashboard.</div>
+          </div>`;
+        $historyPanel.style.display = "";
       }
     })
     .catch(() => {});
