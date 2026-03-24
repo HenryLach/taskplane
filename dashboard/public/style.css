@@ -631,6 +631,32 @@ body {
   text-overflow: ellipsis;
 }
 
+/* ─── Reviewer Sub-Row ─────────────────────────────────────────────── */
+
+.reviewer-sub-row {
+  background: var(--bg-surface-hover);
+  border-left: 3px solid var(--yellow, #e5c07b);
+  padding-left: 11px; /* compensate for border */
+  font-size: 0.85em;
+}
+
+.reviewer-sub-row .reviewer-label {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--yellow, #e5c07b);
+  font-weight: 600;
+}
+
+.reviewer-sub-row .reviewer-type {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.reviewer-stats {
+  margin-top: 0;
+}
+
 /* ─── Telemetry Badges (retry, compaction) ─────────────────────────────── */
 
 .telem-badge {

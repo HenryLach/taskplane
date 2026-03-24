@@ -67,14 +67,14 @@
 ---
 
 ### Step 5: Dashboard reviewer sub-row
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Server passes reviewer fields through to client
-- [ ] Client renders reviewer sub-row when reviewerStatus === "running"
-- [ ] Worker row shows [awaiting review] during review
-- [ ] Reviewer sub-row shows elapsed, tools, last tool, cost, context%
-- [ ] Reviewer row disappears when review completes
-- [ ] Reviewer cost included in lane total
+- [x] Server passes reviewer fields through to client
+- [x] Client renders reviewer sub-row when reviewerStatus === "running"
+- [x] Worker row shows [awaiting review] during review
+- [x] Reviewer sub-row shows elapsed, tools, last tool, cost, context%
+- [x] Reviewer row disappears when review completes
+- [x] Reviewer cost included in lane total
 
 ---
 
