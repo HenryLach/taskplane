@@ -24,7 +24,7 @@ import { Container, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { spawn, spawnSync } from "child_process";
 import {
 	readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, unlinkSync,
-	statSync, openSync, readSync, closeSync,
+	readdirSync, statSync, openSync, readSync, closeSync,
 } from "fs";
 import { tmpdir, userInfo } from "os";
 import { join, dirname, basename, resolve } from "path";
@@ -2074,6 +2074,80 @@ export default function (pi: ExtensionAPI) {
 		state.reviewerTimer = null;
 	}
 
+	/**
+	 * TP-057: Remove stale signal and shutdown files from .reviews/ directory.
+	 * Called before spawning a new persistent reviewer to prevent the reviewer
+	 * from consuming old signals or immediately seeing a stale shutdown marker.
+	 */
+	function cleanStaleReviewerSignals(reviewsDir: string): void {
+		try {
+			const files = readdirSync(reviewsDir);
+			for (const f of files) {
+				if (f.startsWith(REVIEWER_SIGNAL_PREFIX) || f === REVIEWER_SHUTDOWN_SIGNAL) {
+					try { unlinkSync(join(reviewsDir, f)); } catch {}
+				}
+			}
+		} catch {
+			// Directory may not exist yet — not an error
+		}
+	}
+
+	/**
+	 * TP-057: Shut down the persistent reviewer session cleanly.
+	 * Writes shutdown signal, waits for clean exit within grace period,
+	 * then force-kills the session if still alive.
+	 *
+	 * Called from all executeTask exit paths (success, pause, error, stall)
+	 * to prevent orphan tmux sessions.
+	 *
+	 * @param reason - Why the reviewer is being shut down (for logging)
+	 */
+	async function shutdownPersistentReviewer(reason: string): Promise<void> {
+		if (!state.persistentReviewerSession) return;
+
+		const sessionName = state.persistentReviewerSession;
+		console.error(`[task-runner] persistent reviewer: shutting down (${reason})`);
+
+		// Write shutdown signal so the reviewer exits cleanly
+		if (state.task) {
+			const reviewsDir = join(state.task.taskFolder, ".reviews");
+			const shutdownPath = join(reviewsDir, REVIEWER_SHUTDOWN_SIGNAL);
+			try {
+				if (!existsSync(reviewsDir)) mkdirSync(reviewsDir, { recursive: true });
+				writeFileSync(shutdownPath, "shutdown");
+			} catch (err: any) {
+				console.error(`[task-runner] persistent reviewer: failed to write shutdown signal: ${err?.message}`);
+			}
+		}
+
+		// Poll for session death within grace period
+		const graceStart = Date.now();
+		while (Date.now() - graceStart < REVIEWER_SHUTDOWN_GRACE_MS) {
+			const alive = spawnSync("tmux", ["has-session", "-t", sessionName]);
+			if (alive.status !== 0) break;
+			await new Promise(r => setTimeout(r, 1000));
+		}
+
+		// Force kill if still alive after grace period
+		const finalCheck = spawnSync("tmux", ["has-session", "-t", sessionName]);
+		if (finalCheck.status === 0) {
+			console.error(`[task-runner] persistent reviewer: killing session after grace period`);
+			spawnSync("tmux", ["kill-session", "-t", sessionName]);
+		}
+
+		// Reset state
+		state.persistentReviewerSession = null;
+		state.persistentReviewerKill = null;
+		state.persistentReviewerSignalNum = 0;
+		clearReviewerState();
+		writeLaneState(state);
+
+		if (state.task) {
+			const statusPath = join(state.task.taskFolder, "STATUS.md");
+			logExecution(statusPath, "Persistent reviewer", `Shutdown complete (${reason})`);
+		}
+	}
+
 	if (isOrchestratedMode()) {
 		pi.registerTool({
 			name: "review_step",
@@ -2216,6 +2290,9 @@ export default function (pi: ExtensionAPI) {
 					if (!reviewerExtPath) {
 						throw new Error("Cannot find reviewer-extension.ts. Ensure taskplane is installed correctly.");
 					}
+
+					// Clean stale signal/shutdown files before spawning
+					cleanStaleReviewerSignals(reviewsDir);
 
 					// Initial prompt tells the reviewer to call wait_for_review
 					const initialPrompt =
