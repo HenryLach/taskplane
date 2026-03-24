@@ -91,13 +91,14 @@ describe("1.x — startBatchAsync: non-blocking handler pattern", () => {
 
 	it("1.3: /orch-resume handler uses startBatchAsync (fire-and-forget)", () => {
 		const extSource = readSource("extension.ts");
-		const resumeHandler = extSource.substring(
-			extSource.indexOf('registerCommand("orch-resume"'),
-			extSource.indexOf('registerCommand("orch-abort"'),
+		// Logic lives in doOrchResume helper (TP-053 refactor)
+		const resumeHelper = extSource.substring(
+			extSource.indexOf("function doOrchResume("),
+			extSource.indexOf("function doOrchAbort("),
 		);
-		expect(resumeHandler).toContain("startBatchAsync(");
+		expect(resumeHelper).toContain("startBatchAsync(");
 		// Must NOT await resumeOrchBatch directly
-		expect(resumeHandler).not.toContain("await resumeOrchBatch(");
+		expect(resumeHelper).not.toContain("await resumeOrchBatch(");
 	});
 
 	it("1.4: startBatchAsync has .catch() error boundary that sets phase to failed", () => {
@@ -473,50 +474,51 @@ describe("4.x — Terminal event emission in engine", () => {
 describe("5.x — Launch-window command behavior with 'launching' phase", () => {
 	it("5.1: /orch-status reports batch status when phase is 'launching'", () => {
 		const extSource = readSource("extension.ts");
-		const statusHandler = extSource.substring(
-			extSource.indexOf('registerCommand("orch-status"'),
-			extSource.indexOf('registerCommand("orch-pause"'),
+		// Logic lives in doOrchStatus helper (TP-053 refactor)
+		const statusHelper = extSource.substring(
+			extSource.indexOf("function doOrchStatus("),
+			extSource.indexOf("function doOrchPause("),
 		);
 		// When phase is NOT idle, it should display in-memory state
 		// The handler checks orchBatchState.phase === "idle" for disk fallback
-		expect(statusHandler).toContain('orchBatchState.phase === "idle"');
+		expect(statusHelper).toContain('orchBatchState.phase === "idle"');
 		// So "launching" won't trigger disk fallback — it will show in-memory
 	});
 
 	it("5.2: /orch-pause accepts 'launching' phase (not in exclusion set)", () => {
 		const extSource = readSource("extension.ts");
-		const pauseHandler = extSource.substring(
-			extSource.indexOf('registerCommand("orch-pause"'),
-			extSource.indexOf('registerCommand("orch-resume"'),
+		// Logic lives in doOrchPause helper (TP-053 refactor)
+		const pauseHelper = extSource.substring(
+			extSource.indexOf("function doOrchPause("),
+			extSource.indexOf("function doOrchResume("),
 		);
 		// Pause handler excludes idle, completed, failed, stopped
 		// It should NOT exclude "launching" — pause during launching is valid
-		expect(pauseHandler).toContain('"idle"');
-		expect(pauseHandler).toContain('"completed"');
-		expect(pauseHandler).toContain('"failed"');
-		expect(pauseHandler).toContain('"stopped"');
+		expect(pauseHelper).toContain('"idle"');
+		expect(pauseHelper).toContain('"completed"');
+		expect(pauseHelper).toContain('"failed"');
+		expect(pauseHelper).toContain('"stopped"');
 		// "launching" should not appear in the exclusion set
-		const exclusionLine = pauseHandler.substring(
-			pauseHandler.indexOf('orchBatchState.phase === "idle"'),
-			pauseHandler.indexOf("ORCH_MESSAGES.pauseNoBatch"),
+		const exclusionLine = pauseHelper.substring(
+			pauseHelper.indexOf('orchBatchState.phase === "idle"'),
+			pauseHelper.indexOf("ORCH_MESSAGES.pauseNoBatch"),
 		);
 		expect(exclusionLine).not.toContain('"launching"');
 	});
 
 	it("5.3: /orch-abort recognizes 'launching' as an active batch phase", () => {
 		const extSource = readSource("extension.ts");
-		const abortHandler = extSource.substring(
-			extSource.indexOf('registerCommand("orch-abort"'),
-			extSource.indexOf('registerCommand("orch-deps"') !== -1
-				? extSource.indexOf('registerCommand("orch-deps"')
-				: extSource.indexOf('registerCommand("orch-sessions"'),
+		// Logic lives in doOrchAbort helper (TP-053 refactor)
+		const abortHelper = extSource.substring(
+			extSource.indexOf("function doOrchAbort("),
+			extSource.indexOf("function doOrchIntegrate("),
 		);
 		// abort checks hasActiveBatch — launching should not be in inactive set
-		expect(abortHandler).toContain("hasActiveBatch");
+		expect(abortHelper).toContain("hasActiveBatch");
 		// hasActiveBatch excludes only idle, completed, failed, stopped
-		const activeCheck = abortHandler.substring(
-			abortHandler.indexOf("hasActiveBatch"),
-			abortHandler.indexOf("hasActiveBatch") + 400,
+		const activeCheck = abortHelper.substring(
+			abortHelper.indexOf("hasActiveBatch"),
+			abortHelper.indexOf("hasActiveBatch") + 400,
 		);
 		expect(activeCheck).toContain('"idle"');
 		expect(activeCheck).toContain('"completed"');
@@ -526,15 +528,16 @@ describe("5.x — Launch-window command behavior with 'launching' phase", () => 
 
 	it("5.4: /orch-resume blocks 'launching' phase (prevents double-start)", () => {
 		const extSource = readSource("extension.ts");
-		const resumeHandler = extSource.substring(
-			extSource.indexOf('registerCommand("orch-resume"'),
-			extSource.indexOf('registerCommand("orch-abort"'),
+		// Logic lives in doOrchResume helper (TP-053 refactor)
+		const resumeHelper = extSource.substring(
+			extSource.indexOf("function doOrchResume("),
+			extSource.indexOf("function doOrchAbort("),
 		);
 		// Resume must explicitly check for "launching" as an active phase
-		expect(resumeHandler).toContain('"launching"');
+		expect(resumeHelper).toContain('"launching"');
 		// It should be in the active-batch guard that prevents resume
-		const guardStart = resumeHandler.indexOf('orchBatchState.phase === "launching"');
-		const guardSection = resumeHandler.substring(guardStart, guardStart + 400);
+		const guardStart = resumeHelper.indexOf('orchBatchState.phase === "launching"');
+		const guardSection = resumeHelper.substring(guardStart, guardStart + 400);
 		expect(guardSection).toContain("Cannot resume");
 	});
 
@@ -619,12 +622,13 @@ describe("6.x — /orch-resume early-return paths reset phase from 'launching' t
 
 	it("6.7: /orch-resume handler sets 'launching' phase before calling startBatchAsync", () => {
 		const extSource = readSource("extension.ts");
-		const resumeHandler = extSource.substring(
-			extSource.indexOf('registerCommand("orch-resume"'),
-			extSource.indexOf('registerCommand("orch-abort"'),
+		// Logic lives in doOrchResume helper (TP-053 refactor)
+		const resumeHelper = extSource.substring(
+			extSource.indexOf("function doOrchResume("),
+			extSource.indexOf("function doOrchAbort("),
 		);
-		const launchPhaseIdx = resumeHandler.indexOf('orchBatchState.phase = "launching"');
-		const startAsyncIdx = resumeHandler.indexOf("startBatchAsync(");
+		const launchPhaseIdx = resumeHelper.indexOf('orchBatchState.phase = "launching"');
+		const startAsyncIdx = resumeHelper.indexOf("startBatchAsync(");
 		expect(launchPhaseIdx).not.toBe(-1);
 		expect(startAsyncIdx).not.toBe(-1);
 		expect(launchPhaseIdx).toBeLessThan(startAsyncIdx);
@@ -638,32 +642,35 @@ describe("6.x — /orch-resume early-return paths reset phase from 'launching' t
 describe("7.x — /orch-status disk fallback for idle in-memory state", () => {
 	it("7.1: /orch-status falls back to disk state when in-memory phase is 'idle'", () => {
 		const extSource = readSource("extension.ts");
-		const statusHandler = extSource.substring(
-			extSource.indexOf('registerCommand("orch-status"'),
-			extSource.indexOf('registerCommand("orch-pause"'),
+		// Logic lives in doOrchStatus helper (TP-053 refactor)
+		const statusHelper = extSource.substring(
+			extSource.indexOf("function doOrchStatus("),
+			extSource.indexOf("function doOrchPause("),
 		);
-		expect(statusHandler).toContain("loadBatchState");
-		expect(statusHandler).toContain('orchBatchState.phase === "idle"');
+		expect(statusHelper).toContain("loadBatchState");
+		expect(statusHelper).toContain('orchBatchState.phase === "idle"');
 	});
 
 	it("7.2: disk fallback resolves stateRoot from workspaceRoot first", () => {
 		const extSource = readSource("extension.ts");
-		const statusHandler = extSource.substring(
-			extSource.indexOf('registerCommand("orch-status"'),
-			extSource.indexOf('registerCommand("orch-pause"'),
+		// Logic lives in doOrchStatus helper (TP-053 refactor)
+		const statusHelper = extSource.substring(
+			extSource.indexOf("function doOrchStatus("),
+			extSource.indexOf("function doOrchPause("),
 		);
 		// Must use workspaceRoot ?? repoRoot ?? cwd (matching engine persistence)
-		expect(statusHandler).toContain("workspaceRoot");
-		expect(statusHandler).toContain("repoRoot");
+		expect(statusHelper).toContain("workspaceRoot");
+		expect(statusHelper).toContain("repoRoot");
 	});
 
 	it("7.3: disk fallback shows '(from disk)' indicator in status output", () => {
 		const extSource = readSource("extension.ts");
-		const statusHandler = extSource.substring(
-			extSource.indexOf('registerCommand("orch-status"'),
-			extSource.indexOf('registerCommand("orch-pause"'),
+		// Logic lives in doOrchStatus helper (TP-053 refactor)
+		const statusHelper = extSource.substring(
+			extSource.indexOf("function doOrchStatus("),
+			extSource.indexOf("function doOrchPause("),
 		);
-		expect(statusHandler).toContain("from disk");
+		expect(statusHelper).toContain("from disk");
 	});
 });
 

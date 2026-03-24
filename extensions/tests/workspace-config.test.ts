@@ -688,13 +688,16 @@ describe("root-consistency regression", () => {
 		// ctx.cwd should only appear in specific allowed locations:
 		// - session_start (buildExecutionContext call)
 		// - orch-abort fallback (execCtx?.repoRoot ?? ctx.cwd)
+		// - doOrchStatus/tool fallback (ctx.cwd passed as fallback parameter)
 		// Verify no ctx.cwd in discovery/state/orphan patterns
 		const lines = extensionSrc.split("\n");
 		const cwdLines = lines.filter(l => l.includes("ctx.cwd") && !l.trim().startsWith("//"));
 		for (const line of cwdLines) {
 			const isBuildContext = line.includes("buildExecutionContext");
 			const isAbortFallback = line.includes("execCtx?.repoRoot ?? ctx.cwd");
-			expect(isBuildContext || isAbortFallback).toBe(true);
+			// TP-053: doOrch* helpers and tool handlers pass ctx.cwd as fallback
+			const isDoOrchCall = line.includes("doOrchStatus(ctx.cwd") || line.includes("doOrchAbort(");
+			expect(isBuildContext || isAbortFallback || isDoOrchCall).toBe(true);
 		}
 	});
 

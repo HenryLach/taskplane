@@ -1,71 +1,73 @@
 # TP-053: Expose Orchestrator Commands as Tools for Supervisor Agent — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 2
+**Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read each command handler (resume, integrate, pause, abort, status)
-- [ ] Read review_step tool registration as pattern reference
-- [ ] Understand pi registerTool() API
-- [ ] Identify execCtx dependencies per command
+- [x] Read each command handler (resume, integrate, pause, abort, status)
+- [x] Read review_step tool registration as pattern reference
+- [x] Understand pi registerTool() API
+- [x] Identify execCtx dependencies per command
 
 ---
 
 ### Step 1: Register orchestrator tools
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-> ⚠️ Hydrate: Expand based on exact command handler structure found in Step 0
-
-- [ ] Extract shared logic from each command handler into internal functions
-- [ ] Register orch_resume tool with force parameter
-- [ ] Register orch_integrate tool with mode/force/branch parameters
-- [ ] Register orch_pause tool
-- [ ] Register orch_abort tool with hard parameter
-- [ ] Register orch_status tool
-- [ ] All tools return text results, catch errors gracefully
+- [x] Add `Type` import from `@mariozechner/pi-ai` to extension.ts
+- [x] Extract `doOrchStatus` helper (shared by command + tool)
+- [x] Extract `doOrchPause` helper (shared by command + tool)
+- [x] Extract `doOrchResume` helper (shared by command + tool) — returns status message, calls startBatchAsync internally
+- [x] Extract `doOrchAbort` helper (shared by command + tool) — works without execCtx
+- [x] Extract `doOrchIntegrate` helper (shared by command + tool) — wraps parseIntegrateArgs + resolveIntegrationContext + executeIntegration
+- [x] Refactor existing command handlers to call the extracted helpers
+- [x] Register all 5 tools with Type.Object parameters, description, promptSnippet, promptGuidelines
+- [x] Verify all tools return `{content: [{type: "text", text}], details: undefined}` and catch errors
 
 ---
 
 ### Step 2: Update supervisor prompt with tool awareness
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Add Available Orchestrator Tools section to supervisor monitoring prompt
-- [ ] Include tool names, parameters, and usage guidance
-- [ ] Add proactive usage examples
+- [x] Add Available Orchestrator Tools section to supervisor monitoring prompt
+- [x] Include tool names, parameters, and usage guidance
+- [x] Add proactive usage examples
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] All existing tests pass
-- [ ] Tests for each tool registration (5 tools)
-- [ ] Tests for tool parameter schemas
-- [ ] Tests for supervisor prompt mentions tools
+- [x] All existing tests pass
+- [x] Tests for each tool registration (5 tools)
+- [x] Tests for tool parameter schemas
+- [x] Tests for supervisor prompt mentions tools
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Check affected docs
-- [ ] Discoveries logged
-- [ ] `.DONE` created
+- [x] Check affected docs
+- [x] Discoveries logged
+- [x] `.DONE` created
 
 ---
 
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R002 | code | Step 1 | REVISE | .reviews/R002-code-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -74,6 +76,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Prior iteration created helpers + tool registrations, but duplicated both | Fixed — removed duplicates in iteration 2 | extension.ts |
+| Tools also added to routing prompt since supervisor transitions between modes | Included in Step 2 | supervisor.ts |
 
 ---
 
@@ -82,6 +86,20 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-24 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-24 15:00 | Task started | Extension-driven execution |
+| 2026-03-24 15:00 | Step 0 started | Preflight |
+| 2026-03-24 15:00 | Step 1 started | Register orchestrator tools |
+| 2026-03-24 15:00 | Step 2 started | Update supervisor primer/prompt with tool awareness |
+| 2026-03-24 15:00 | Step 3 started | Testing & Verification |
+| 2026-03-24 15:00 | Step 4 started | Documentation & Delivery |
+| 2026-03-24 15:00 | Task started | Extension-driven execution |
+| 2026-03-24 15:00 | Step 0 started | Preflight |
+| 2026-03-24 15:00 | Step 1 started | Register orchestrator tools |
+| 2026-03-24 15:00 | Step 2 started | Update supervisor primer/prompt with tool awareness |
+| 2026-03-24 15:00 | Step 3 started | Testing & Verification |
+| 2026-03-24 15:00 | Step 4 started | Documentation & Delivery |
+| 2026-03-24 15:07 | Review R001 | plan Step 1: REVISE |
+| 2026-03-24 15:26 | Review R002 | code Step 1: REVISE |
 
 ---
 
