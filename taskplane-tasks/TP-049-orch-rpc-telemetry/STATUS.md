@@ -1,6 +1,6 @@
 # TP-049: Orchestrator RPC Telemetry for All Agent Types — Status
 
-**Current Step:** Step 4: Ensure dashboard consumes all telemetry sources
+**Current Step:** Step 5: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
