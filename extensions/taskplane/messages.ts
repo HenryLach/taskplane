@@ -51,15 +51,18 @@ export const ORCH_MESSAGES = {
 		}
 		if (orchBranch && succeeded > 0) {
 			lines.push("");
-			lines.push(`   ℹ All work is on orch branch: ${orchBranch}`);
-			lines.push(`   Your ${baseBranch || "working"} branch was not modified.`);
+			lines.push("   ┌─────────────────────────────────────────────────┐");
+			lines.push(`   │  Your changes are on branch: ${orchBranch}`);
+			lines.push(`   │  Your ${baseBranch || "working"} branch was not modified.`);
 			if (baseBranch) {
-				lines.push(`   Preview: git log ${baseBranch}..${orchBranch}`);
+				lines.push(`   │  Preview: git log ${baseBranch}..${orchBranch}`);
 			}
-			lines.push("");
-			lines.push("   To apply the changes:");
-			lines.push("   • /orch-integrate           Apply now (fast-forward, recommended)");
-			lines.push("   • /orch-integrate --pr      Push orch branch & open a PR for team review");
+			lines.push("   │");
+			lines.push("   │  👉 To bring changes into your working branch:");
+			lines.push("   │");
+			lines.push("   │    /orch-integrate        — merge directly (recommended)");
+			lines.push("   │    /orch-integrate --pr   — create a pull request");
+			lines.push("   └─────────────────────────────────────────────────┘");
 		}
 		return lines.join("\n");
 	},

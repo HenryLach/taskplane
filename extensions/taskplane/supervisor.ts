@@ -2615,15 +2615,19 @@ export async function transitionToRoutingMode(
 	// Keep batchStateRef/orchConfigRef/stateRoot — routing prompt may need them
 	// Keep model override — don't switch models mid-conversation
 
-	// Notify the operator that conversational mode is back
+	// TP-052: Send a prominent conversational message that clearly signals
+	// the supervisor is ready for input. Uses triggerTurn to force an LLM
+	// response, which ensures the pi TUI redraws and shows the input prompt.
 	pi.sendMessage(
 		{
 			customType: "supervisor-routing-transition",
 			content: [{
 				type: "text",
 				text:
-					`🔀 **Supervisor returning to conversational mode.**\n\n` +
-					routingContext.contextMessage,
+					`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n` +
+					`🔀 **Ready for your input.**\n\n` +
+					routingContext.contextMessage +
+					`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`,
 			}],
 			display: `Supervisor — ${routingContext.routingState}`,
 		},

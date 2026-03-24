@@ -2323,3 +2323,127 @@ export function preserveFailedLaneProgress(
 	return { results, preservedBranches, unsafeBranches };
 }
 
+
+// ── Stale Branch Cleanup (TP-051) ────────────────────────────────────
+
+/**
+ * Result of stale branch cleanup after integration.
+ */
+export interface StaleBranchCleanupResult {
+	/** task/* branches deleted */
+	deletedTaskBranches: string[];
+	/** saved/task/* branches deleted */
+	deletedSavedBranches: string[];
+	/** Branches that failed to delete (best-effort) */
+	failedDeletes: string[];
+}
+
+/**
+ * Delete stale task/* and saved/* branches after integration.
+ *
+ * After `/orch-integrate` merges or creates a PR, the lane branches
+ * (`task/{opId}-lane-{N}-{batchId}`) and their saved counterparts
+ * are no longer needed. This function cleans them up.
+ *
+ * Cleanup scope:
+ * 1. **Lane branches:** `task/{opId}-lane-*` (any batch from this operator)
+ * 2. **Saved lane branches:** `saved/task/{opId}-lane-*` (preserved lane refs)
+ * 3. **Partial-progress branches:** `saved/{opId}-*` (per-task partial progress refs)
+ *
+ * Targets all branches matching the operator's prefix, not just the current
+ * batch — this also cleans up orphans from previous batches that were never
+ * cleaned.
+ *
+ * All deletions are best-effort — individual failures are logged but don't
+ * prevent other branches from being cleaned.
+ *
+ * @param repoRoot - Repository root directory
+ * @param opId     - Operator identifier (e.g., "henrylach")
+ * @param batchId  - Current batch ID (for logging context)
+ * @returns Cleanup result with lists of deleted and failed branches
+ */
+export function deleteStaleBranches(
+	repoRoot: string,
+	opId: string,
+	batchId: string,
+): StaleBranchCleanupResult {
+	const deletedTaskBranches: string[] = [];
+	const deletedSavedBranches: string[] = [];
+	const failedDeletes: string[] = [];
+
+	// 1. Delete task/{opId}-lane-* branches
+	const taskBranchResult = runGit(["branch", "--list", `task/${opId}-lane-*`], repoRoot);
+	if (taskBranchResult.ok && taskBranchResult.stdout.trim()) {
+		const branches = taskBranchResult.stdout
+			.split("\n")
+			.map(b => b.replace(/^\*?\s+/, "").trim())
+			.filter(Boolean);
+
+		for (const branch of branches) {
+			const deleted = deleteBranchBestEffort(branch, repoRoot);
+			if (deleted) {
+				deletedTaskBranches.push(branch);
+			} else {
+				failedDeletes.push(branch);
+			}
+		}
+	}
+
+	// 2. Delete saved/task/{opId}-lane-* branches (preserved lane refs)
+	const savedTaskResult = runGit(["branch", "--list", `saved/task/${opId}-lane-*`], repoRoot);
+	if (savedTaskResult.ok && savedTaskResult.stdout.trim()) {
+		const branches = savedTaskResult.stdout
+			.split("\n")
+			.map(b => b.replace(/^\*?\s+/, "").trim())
+			.filter(Boolean);
+
+		for (const branch of branches) {
+			const deleted = deleteBranchBestEffort(branch, repoRoot);
+			if (deleted) {
+				deletedSavedBranches.push(branch);
+			} else {
+				failedDeletes.push(branch);
+			}
+		}
+	}
+
+	// 3. Delete saved/{opId}-*-{batchId} branches (partial-progress refs from this batch)
+	// Pattern: saved/{opId}-{taskId}-{batchId} or saved/{opId}-{repoId}-{taskId}-{batchId}
+	// Only deletes branches ending with the current batchId to avoid removing
+	// partial-progress refs from other batches that the operator may still need.
+	const savedProgressResult = runGit(["branch", "--list", `saved/${opId}-*`], repoRoot);
+	if (savedProgressResult.ok && savedProgressResult.stdout.trim()) {
+		const branches = savedProgressResult.stdout
+			.split("\n")
+			.map(b => b.replace(/^\*?\s+/, "").trim())
+			.filter(Boolean);
+
+		const batchSuffix = `-${batchId}`;
+		for (const branch of branches) {
+			// Avoid double-deleting saved/task/* already handled above
+			if (branch.startsWith("saved/task/")) continue;
+			// Only delete partial-progress refs from the current batch
+			if (!branch.endsWith(batchSuffix)) continue;
+			const deleted = deleteBranchBestEffort(branch, repoRoot);
+			if (deleted) {
+				deletedSavedBranches.push(branch);
+			} else {
+				failedDeletes.push(branch);
+			}
+		}
+	}
+
+	const totalDeleted = deletedTaskBranches.length + deletedSavedBranches.length;
+	if (totalDeleted > 0) {
+		execLog("cleanup", "branches", `deleted ${totalDeleted} stale branch(es) for batch ${batchId}`, {
+			taskBranches: deletedTaskBranches.length,
+			savedBranches: deletedSavedBranches.length,
+			failed: failedDeletes.length,
+		});
+	}
+
+	return { deletedTaskBranches, deletedSavedBranches, failedDeletes };
+}
+
+
+
