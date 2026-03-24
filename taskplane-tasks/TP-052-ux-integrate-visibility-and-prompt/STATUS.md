@@ -22,12 +22,12 @@
 ---
 
 ### Step 1: Make /orch-integrate obvious after batch completion
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add prominent integrate guidance message after batch completion
-- [ ] Include in supervisor batch summary and engine completion output
-- [ ] Show exact commands (/orch-integrate and --pr variant)
-- [ ] Message appears even without active supervisor
+- [x] Add prominent integrate guidance message after batch completion
+- [x] Include in supervisor batch summary and engine completion output
+- [x] Show exact commands (/orch-integrate and --pr variant)
+- [x] Message appears even without active supervisor
 
 ---
 

@@ -1915,12 +1915,18 @@ export default function (pi: ExtensionAPI) {
 								`Batch **${orchBatchState.batchId}** completed — ` +
 								`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
 								`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
-								`Would you like me to integrate it, or would you prefer to review first?`,
+								`Would you like me to integrate it, or would you prefer to review first?\n\n` +
+								`You can also:\n` +
+								`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
+								`• Create new tasks for the next batch\n` +
+								`• Run a health check`,
 						}
 						: {
 							routingState: "no-tasks",
 							contextMessage:
 								`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
+								`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
+								`${orchBatchState.skippedTasks} skipped.\n\n` +
 								`What would you like to do next?`,
 						};
 					transitionToRoutingMode(pi, supervisorState, postBatchContext);
