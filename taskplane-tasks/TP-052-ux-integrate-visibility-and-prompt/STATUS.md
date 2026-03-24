@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
@@ -44,8 +44,8 @@
 ### Step 3: Fix post-batch input prompt visibility
 **Status:** 🟨 In Progress
 
-- [ ] Supervisor sends visible conversational message on routing transition
-- [ ] Ensure pi input prompt is visible after batch output
+- [x] Supervisor sends visible conversational message on routing transition
+- [x] Ensure pi input prompt is visible after batch output
 - [ ] Clear signal that supervisor is ready for input
 
 ---
@@ -71,6 +71,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | UNKNOWN | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -101,6 +102,7 @@
 | 2026-03-24 13:13 | Step 3 started | Fix post-batch input prompt visibility |
 | 2026-03-24 13:13 | Step 4 started | Testing & Verification |
 | 2026-03-24 13:13 | Step 5 started | Documentation & Delivery |
+| 2026-03-24 13:19 | Review R001 | plan Step 1: UNKNOWN |
 
 ---
 
