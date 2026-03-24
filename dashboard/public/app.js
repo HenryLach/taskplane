@@ -531,11 +531,11 @@ function renderLanesTasks(batch, tmuxSessions) {
 
       // Worker stats from lane state sidecar + telemetry badges
       let workerHtml = "";
-      const telemBadges = task.status !== "pending" ? telemetryBadgesHtml(tel, reviewerActive) : "";
       // Reviewer sub-row should only appear under the task currently being reviewed,
       // not all tasks in the lane. The lane-state sidecar is per-lane (shared by all
       // tasks in the lane), so check that the sidecar's current taskId matches this task.
       const reviewerActive = ls && ls.reviewerStatus === "running" && ls.taskId === task.taskId;
+      const telemBadges = task.status !== "pending" ? telemetryBadgesHtml(tel, reviewerActive) : "";
       if (ls && ls.workerStatus === "running" && task.status === "running") {
         const elapsed = ls.workerElapsed ? `${Math.round(ls.workerElapsed / 1000)}s` : "";
         const tools = ls.workerToolCount || 0;
