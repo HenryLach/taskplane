@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-03-24
+
+### Fixed
+- **macOS path resolution (#177)** — workers crashed immediately on Homebrew/nvm npm installs because `rpc-wrapper.mjs` and `task-runner.ts` couldn't be found. Resolution now uses `npm root -g` as the primary dynamic lookup, covering all npm setups. Added `/opt/homebrew` static fallback.
+
 ## [0.10.0] - 2026-03-24
 
 ### New
@@ -424,7 +429,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.10.1...HEAD
+[0.10.1]: https://github.com/HenryLach/taskplane/compare/v0.10.0...v0.10.1
 [0.10.0]: https://github.com/HenryLach/taskplane/compare/v0.9.3...v0.10.0
 [0.9.3]: https://github.com/HenryLach/taskplane/compare/v0.9.2...v0.9.3
 [0.9.2]: https://github.com/HenryLach/taskplane/compare/v0.9.1...v0.9.2
