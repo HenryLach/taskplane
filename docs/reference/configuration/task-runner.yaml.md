@@ -148,6 +148,31 @@ quality_gate:
   pass_threshold: "no_critical"
 ```
 
+### `model_fallback`
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `model_fallback` | `"inherit"` \| `"fail"` | `"inherit"` | Model fallback behavior when a configured model becomes unavailable mid-batch. |
+
+**Values:**
+
+| Value | Behavior |
+|---|---|
+| `"inherit"` | On `model_access_error` exit classification (401/403/429, model not found, API key expired), automatically retry the task once with the session model (no explicit `--model` flag). |
+| `"fail"` | No model substitution — the task fails normally and the `on_task_failure` policy applies. |
+
+Model access errors are detected from RPC exit summaries: HTTP 401/403/429 status codes, "model not found"/"model unavailable"/"model deprecated" messages, API key expiration, authentication/authorization failures, rate limits, and quota exhaustion.
+
+The fallback uses a dedicated Tier 0 recovery budget with `maxRetries: 1`. If the session model also fails, the task fails normally.
+
+Example:
+
+```yaml
+model_fallback: "fail"   # disable automatic fallback
+```
+
+In JSON config (`.pi/taskplane-config.json`), this is `taskRunner.modelFallback`.
+
 ### `task_areas`
 
 | Field | Type | Template default | Description |
@@ -250,6 +275,7 @@ The JSON format uses **camelCase** keys. YAML snake_case keys are mapped automat
 | `quality_gate.max_review_cycles` | `qualityGate.maxReviewCycles` |
 | `quality_gate.max_fix_cycles` | `qualityGate.maxFixCycles` |
 | `quality_gate.pass_threshold` | `qualityGate.passThreshold` |
+| `model_fallback` | `modelFallback` |
 | `standards_overrides` | `standardsOverrides` |
 | `task_areas` | `taskAreas` |
 | `reference_docs` | `referenceDocs` |
@@ -274,6 +300,7 @@ In the JSON file, task-runner settings live under the `taskRunner` key:
 | `reviewer` | `taskRunner.reviewer` |
 | `context` | `taskRunner.context` |
 | `quality_gate` | `taskRunner.qualityGate` |
+| `model_fallback` | `taskRunner.modelFallback` |
 | `task_areas` | `taskRunner.taskAreas` |
 | `reference_docs` | `taskRunner.referenceDocs` |
 | `never_load` | `taskRunner.neverLoad` |
@@ -330,6 +357,7 @@ In the JSON file, task-runner settings live under the `taskRunner` key:
       "maxFixCycles": 1,
       "passThreshold": "no_critical"
     },
+    "modelFallback": "inherit",
     "taskAreas": {
       "core": {
         "path": "taskplane-tasks",

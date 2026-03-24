@@ -234,7 +234,7 @@ Inside pi, run:
 
 This confirms orchestrator commands are registered and shows a plan preview.
 
-Optional single-task check:
+Optional single-task check (deprecated — use `/orch` for all workflows):
 
 ```
 /task
@@ -275,7 +275,7 @@ Expected artifacts:
 - `taskplane-tasks/EXAMPLE-001-hello-world/.DONE`
 - `taskplane-tasks/EXAMPLE-002-parallel-smoke/.DONE`
 
-Optional single-task mode:
+Optional single-task mode (deprecated — prefer `/orch` with a single task path):
 
 ```text
 /task taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md

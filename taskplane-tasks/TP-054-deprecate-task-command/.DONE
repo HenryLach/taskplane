@@ -1,0 +1,3 @@
+completed: 2026-03-24
+task: TP-054
+summary: Deprecated /task, /task-status, /task-pause, /task-resume commands with visible warnings pointing to /orch equivalents. Documentation updated in commands.md, README.md, and install.md. All 2345 tests pass.

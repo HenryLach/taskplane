@@ -11,7 +11,11 @@ This page documents Taskplane command surfaces:
 
 ## Task Runner Commands
 
+> ⚠️ **Deprecated in v0.10.x.** The `/task*` commands below are deprecated and will be removed in a future major version. Use `/orch` for all workflows — it provides worktree isolation, dashboard, inline reviews, and supervisor monitoring.
+
 ### `/task <path/to/PROMPT.md>`
+
+> **Deprecated.** Use `/orch <path/to/PROMPT.md>` instead.
 
 Start autonomous execution of a single task.
 
@@ -53,6 +57,8 @@ Start autonomous execution of a single task.
 
 ### `/task-status`
 
+> **Deprecated.** Use the dashboard (`taskplane dashboard`) or `/orch-status` instead.
+
 Show current in-memory + STATUS.md task progress.
 
 **Syntax**
@@ -76,6 +82,8 @@ Show current in-memory + STATUS.md task progress.
 
 ### `/task-pause`
 
+> **Deprecated.** Use `/orch-pause` instead.
+
 Pause task execution after current worker iteration completes.
 
 **Syntax**
@@ -96,6 +104,8 @@ Pause task execution after current worker iteration completes.
 ---
 
 ### `/task-resume`
+
+> **Deprecated.** Use `/orch-resume` instead.
 
 Resume a paused task.
 

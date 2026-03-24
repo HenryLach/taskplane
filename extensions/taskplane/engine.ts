@@ -85,6 +85,7 @@ async function attemptWorkerCrashRetry(
 	allTaskOutcomes: LaneTaskOutcome[],
 	onNotify: (message: string, level: "info" | "warning" | "error") => void,
 	stateRoot: string,
+	runnerConfig?: TaskRunnerConfig,
 ): Promise<{ retriedCount: number; succeededRetries: string[]; failedRetries: string[] }> {
 	if (!batchState.resilience) {
 		batchState.resilience = defaultResilienceState();
@@ -130,6 +131,14 @@ async function attemptWorkerCrashRetry(
 		if (!TIER0_RETRYABLE_CLASSIFICATIONS.has(classification)) {
 			execLog("batch", batchState.batchId,
 				`tier0: task ${taskId} exit classification "${classification}" is not retryable — skipping`,
+			);
+			continue;
+		}
+
+		// model_access_error is handled by attemptModelFallbackRetry() — skip here
+		if (classification === "model_access_error") {
+			execLog("batch", batchState.batchId,
+				`tier0: task ${taskId} classified as model_access_error — deferring to model fallback handler`,
 			);
 			continue;
 		}
@@ -321,6 +330,263 @@ async function attemptWorkerCrashRetry(
 	// NOTE: Batch-level counters (succeededTasks, failedTasks) are NOT updated
 	// here — the caller accumulates them from waveResult AFTER retry so that
 	// counts are only applied once (R002-2 fix).
+	if (succeededRetries.length > 0) {
+		if (waveResult.failedTaskIds.length === 0) {
+			waveResult.overallStatus = "succeeded";
+			waveResult.stoppedEarly = false;
+		} else if (waveResult.succeededTaskIds.length > 0) {
+			waveResult.overallStatus = "partial";
+		}
+	}
+
+	return { retriedCount, succeededRetries, failedRetries };
+}
+
+/**
+ * Attempt model fallback retry for tasks that failed with `model_access_error`.
+ *
+ * When a configured agent model becomes unavailable mid-batch (API key expired,
+ * rate limit, model deprecated, provider outage), this function retries the task
+ * with the session model by setting `TASKPLANE_MODEL_FALLBACK=1` env var. The
+ * task-runner reads this var and omits the explicit `--model` flag, causing pi
+ * to use the session's default model.
+ *
+ * Only runs when `runnerConfig.model_fallback === "inherit"` (the default). When
+ * set to `"fail"`, model access errors fall through to normal failure handling.
+ *
+ * Separate from `attemptWorkerCrashRetry()` because:
+ * - Uses a different recovery pattern (`model_fallback` vs `worker_crash`)
+ * - Requires env var injection to change the model behavior
+ * - Has its own retry budget
+ *
+ * @since TP-055
+ */
+async function attemptModelFallbackRetry(
+	waveResult: WaveExecutionResult,
+	waveIdx: number,
+	batchState: OrchBatchRuntimeState,
+	orchConfig: OrchestratorConfig,
+	repoRoot: string,
+	workspaceConfig: WorkspaceConfig | null | undefined,
+	allTaskOutcomes: LaneTaskOutcome[],
+	onNotify: (message: string, level: "info" | "warning" | "error") => void,
+	stateRoot: string,
+	runnerConfig?: TaskRunnerConfig,
+): Promise<{ retriedCount: number; succeededRetries: string[]; failedRetries: string[] }> {
+	// Short-circuit: if model fallback is disabled, skip entirely
+	const modelFallbackMode = runnerConfig?.model_fallback ?? "inherit";
+	if (modelFallbackMode !== "inherit") {
+		return { retriedCount: 0, succeededRetries: [], failedRetries: [] };
+	}
+
+	if (!batchState.resilience) {
+		batchState.resilience = defaultResilienceState();
+	}
+
+	const budget = TIER0_RETRY_BUDGETS.model_fallback;
+	const succeededRetries: string[] = [];
+	const failedRetries: string[] = [];
+	let retriedCount = 0;
+
+	// Build a map from taskId → lane for re-execution
+	const taskToLane = new Map<string, AllocatedLane>();
+	for (const lane of waveResult.allocatedLanes) {
+		for (const task of lane.tasks) {
+			taskToLane.set(task.taskId, lane);
+		}
+	}
+
+	// Process only model_access_error tasks
+	for (const taskId of [...waveResult.failedTaskIds]) {
+		const lane = taskToLane.get(taskId);
+		if (!lane) continue;
+
+		const outcome = allTaskOutcomes.find(o => o.taskId === taskId);
+		if (!outcome) continue;
+
+		const classification = outcome.exitDiagnostic?.classification;
+		if (classification !== "model_access_error") continue;
+
+		// Check retry budget
+		const scopeKey = tier0ScopeKey("model_fallback", taskId, waveIdx);
+		const currentCount = batchState.resilience.retryCountByScope[scopeKey] ?? 0;
+		if (currentCount >= budget.maxRetries) {
+			execLog("batch", batchState.batchId,
+				`tier0: task ${taskId} model fallback retry budget exhausted (${currentCount}/${budget.maxRetries})`,
+				{ scopeKey },
+			);
+			emitTier0Event(stateRoot, {
+				...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "model_fallback", currentCount, budget.maxRetries),
+				taskId,
+				laneNumber: lane.laneNumber,
+				repoId: lane.repoId ?? null,
+				classification,
+				error: `Model fallback retry budget exhausted for task ${taskId}`,
+				scopeKey,
+				affectedTaskIds: [taskId],
+				suggestion: `Task ${taskId} failed with model_access_error and model fallback retry exhausted. Check API key validity and model availability.`,
+			});
+			emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "model_fallback", currentCount, budget.maxRetries,
+				`Model fallback retry budget exhausted for task ${taskId}`, [taskId],
+				`Task ${taskId} failed with model_access_error and model fallback retry exhausted. Check API key validity and model availability.`,
+				{ taskId, laneNumber: lane.laneNumber, repoId: lane.repoId ?? null, classification, scopeKey },
+			);
+			continue;
+		}
+
+		// Increment retry counter
+		batchState.resilience.retryCountByScope[scopeKey] = currentCount + 1;
+		retriedCount++;
+
+		const failedModel = outcome.exitDiagnostic?.errorMessage || "configured model";
+		execLog("batch", batchState.batchId,
+			`tier0: model fallback — retrying task ${taskId} without explicit model (${failedModel} unavailable)`,
+			{ scopeKey, classification },
+		);
+		onNotify(
+			`🔄 Model fallback: Retrying task ${taskId} with session model (${failedModel} unavailable)`,
+			"info",
+		);
+
+		// Emit attempt event
+		emitTier0Event(stateRoot, {
+			...buildTier0EventBase("tier0_recovery_attempt", batchState.batchId, waveIdx, "model_fallback", currentCount + 1, budget.maxRetries),
+			taskId,
+			laneNumber: lane.laneNumber,
+			repoId: lane.repoId ?? null,
+			classification,
+			cooldownMs: budget.cooldownMs,
+			scopeKey,
+		});
+
+		// Cooldown before retry
+		if (budget.cooldownMs > 0) {
+			sleepSync(budget.cooldownMs);
+		}
+
+		// Find the specific AllocatedTask
+		const allocatedTask = lane.tasks.find(t => t.taskId === taskId);
+		if (!allocatedTask) continue;
+
+		// Re-execute with model fallback env var
+		const retryLane: AllocatedLane = {
+			...lane,
+			tasks: [allocatedTask],
+		};
+
+		const isWsMode = !!workspaceConfig;
+		const wsRoot = workspaceConfig
+			? resolve(workspaceConfig.configPath, "..", "..")
+			: undefined;
+
+		try {
+			const retryPauseSignal = { paused: false };
+			// Pass TASKPLANE_MODEL_FALLBACK=1 as extra env var to signal
+			// the task-runner to use the session model instead of configured model.
+			const modelFallbackEnv = { TASKPLANE_MODEL_FALLBACK: "1" };
+			const retryResult = await executeLane(
+				retryLane,
+				orchConfig,
+				repoRoot,
+				retryPauseSignal,
+				wsRoot,
+				isWsMode,
+				modelFallbackEnv,
+			);
+
+			const retryOutcome = retryResult.tasks[0];
+			if (retryOutcome && retryOutcome.status === "succeeded") {
+				succeededRetries.push(taskId);
+
+				// Update waveResult: move from failed to succeeded
+				const failIdx = waveResult.failedTaskIds.indexOf(taskId);
+				if (failIdx !== -1) waveResult.failedTaskIds.splice(failIdx, 1);
+				waveResult.succeededTaskIds.push(taskId);
+
+				// Update lane results
+				for (const lr of waveResult.laneResults) {
+					const taskIdx = lr.tasks.findIndex(t => t.taskId === taskId);
+					if (taskIdx !== -1) {
+						lr.tasks[taskIdx] = retryOutcome;
+						break;
+					}
+				}
+
+				upsertTaskOutcome(allTaskOutcomes, retryOutcome);
+
+				execLog("batch", batchState.batchId,
+					`tier0: task ${taskId} model fallback retry succeeded`,
+					{ scopeKey },
+				);
+				onNotify(
+					`✅ Model fallback: Task ${taskId} succeeded with session model`,
+					"info",
+				);
+
+				emitTier0Event(stateRoot, {
+					...buildTier0EventBase("tier0_recovery_success", batchState.batchId, waveIdx, "model_fallback", currentCount + 1, budget.maxRetries),
+					taskId,
+					laneNumber: lane.laneNumber,
+					repoId: lane.repoId ?? null,
+					classification,
+					resolution: `Task ${taskId} succeeded after falling back to session model`,
+					scopeKey,
+				});
+			} else {
+				failedRetries.push(taskId);
+				if (retryOutcome) {
+					upsertTaskOutcome(allTaskOutcomes, retryOutcome);
+				}
+				execLog("batch", batchState.batchId,
+					`tier0: task ${taskId} model fallback retry failed`,
+					{ scopeKey, exitReason: retryOutcome?.exitReason },
+				);
+
+				const retryFailError = retryOutcome?.exitReason ?? `Task ${taskId} model fallback retry failed`;
+				emitTier0Event(stateRoot, {
+					...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "model_fallback", currentCount + 1, budget.maxRetries),
+					taskId,
+					laneNumber: lane.laneNumber,
+					repoId: lane.repoId ?? null,
+					classification,
+					error: retryFailError,
+					scopeKey,
+					affectedTaskIds: [taskId],
+					suggestion: `Task ${taskId} failed even with session model fallback. Investigate task logs.`,
+				});
+				emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "model_fallback", currentCount + 1, budget.maxRetries,
+					retryFailError, [taskId],
+					`Task ${taskId} failed even with session model fallback. Investigate task logs.`,
+					{ taskId, laneNumber: lane.laneNumber, repoId: lane.repoId ?? null, classification, scopeKey },
+				);
+			}
+		} catch (err: unknown) {
+			failedRetries.push(taskId);
+			const errMsg = err instanceof Error ? err.message : String(err);
+			execLog("batch", batchState.batchId,
+				`tier0: task ${taskId} model fallback retry threw error: ${errMsg}`,
+				{ scopeKey },
+			);
+			emitTier0Event(stateRoot, {
+				...buildTier0EventBase("tier0_recovery_exhausted", batchState.batchId, waveIdx, "model_fallback", currentCount + 1, budget.maxRetries),
+				taskId,
+				laneNumber: lane.laneNumber,
+				repoId: lane.repoId ?? null,
+				classification,
+				error: errMsg,
+				scopeKey,
+				affectedTaskIds: [taskId],
+				suggestion: `Model fallback retry for task ${taskId} threw an exception: ${errMsg}`,
+			});
+			emitTier0Escalation(stateRoot, batchState.batchId, waveIdx, "model_fallback", currentCount + 1, budget.maxRetries,
+				errMsg, [taskId],
+				`Model fallback retry for task ${taskId} threw an exception: ${errMsg}`,
+				{ taskId, laneNumber: lane.laneNumber, repoId: lane.repoId ?? null, classification, scopeKey },
+			);
+		}
+	}
+
+	// Recalculate wave-level status if retries changed outcomes
 	if (succeededRetries.length > 0) {
 		if (waveResult.failedTaskIds.length === 0) {
 			waveResult.overallStatus = "succeeded";
@@ -882,6 +1148,40 @@ export async function executeOrchBatch(
 		for (const lr of waveResult.laneResults) {
 			for (const taskOutcome of lr.tasks) {
 				upsertTaskOutcome(allTaskOutcomes, taskOutcome);
+			}
+		}
+
+		// ── TP-055: Tier 0 — Model fallback retry ───────────────
+		// Run model fallback BEFORE worker crash retry so that model_access_error
+		// tasks are retried with session model first. Worker crash retry skips
+		// model_access_error tasks (handled here instead).
+		if (waveResult.failedTaskIds.length > 0) {
+			const modelFallbackOutcome = await attemptModelFallbackRetry(
+				waveResult,
+				waveIdx,
+				batchState,
+				orchConfig,
+				repoRoot,
+				workspaceConfig,
+				allTaskOutcomes,
+				onNotify,
+				stateRoot,
+				runnerConfig,
+			);
+			if (modelFallbackOutcome.succeededRetries.length > 0) {
+				// Recompute blocked tasks after model fallback successes
+				if (waveResult.policyApplied === "skip-dependents" && waveResult.failedTaskIds.length > 0) {
+					const recomputed = computeTransitiveDependents(
+						new Set(waveResult.failedTaskIds),
+						depGraph,
+					);
+					waveResult.blockedTaskIds = [...recomputed].sort();
+				} else if (waveResult.failedTaskIds.length === 0) {
+					waveResult.blockedTaskIds = [];
+				}
+			}
+			if (modelFallbackOutcome.retriedCount > 0) {
+				persistRuntimeState("tier0-model-fallback", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 			}
 		}
 

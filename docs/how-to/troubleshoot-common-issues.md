@@ -162,6 +162,26 @@ Taskplane requires Node 22+ and compatible pi runtime.
 
 ---
 
+## Model becomes unavailable mid-batch
+
+If a configured worker/reviewer model becomes unavailable (API key expired, rate limit, model deprecated), the orchestrator will:
+
+1. Classify the exit as `model_access_error`
+2. Automatically retry the task with the session model (when `taskRunner.modelFallback: "inherit"`, which is the default)
+3. Log the fallback: `🔄 Tier 0: Retrying task TP-XXX (model_access_error, attempt 1/1)`
+
+**If you want to disable automatic fallback** (fail immediately instead):
+
+```json
+{
+  "taskRunner": {
+    "modelFallback": "fail"
+  }
+}
+```
+
+**If the session model also fails**, the task fails normally under the `on_task_failure` policy.
+
 ## If still blocked
 
 Collect:

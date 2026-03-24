@@ -131,6 +131,14 @@ picks up from the first incomplete step via STATUS.md — the same recovery
 mechanism as any other worker exit, just triggered by context pressure instead
 of natural completion.
 
+### Model fallback recovery (TP-055)
+
+When a configured model becomes unavailable mid-batch (401/403/429, model
+deprecated, API key expired), the exit is classified as `model_access_error`.
+If `taskRunner.modelFallback` is `"inherit"` (default), the orchestrator
+automatically retries the task with the session model — one attempt only.
+If the session model also fails, normal failure handling applies.
+
 ---
 
 ## STATUS.md as persistent memory

@@ -63,11 +63,22 @@ describe("classifyExit — all 9 classification paths", () => {
 			expected: "completed",
 		},
 		{
-			name: "api_error — retries present, last retry failed",
+			name: "model_access_error — retries with rate_limit_exceeded pattern",
 			input: makeInput({
 				exitSummary: makeSummary({
 					retries: [
 						{ attempt: 1, error: "rate_limit_exceeded", delayMs: 5000, succeeded: false },
+					],
+				}),
+			}),
+			expected: "model_access_error",
+		},
+		{
+			name: "api_error — retries present, last retry failed, non-model error",
+			input: makeInput({
+				exitSummary: makeSummary({
+					retries: [
+						{ attempt: 1, error: "server_overloaded_please_retry", delayMs: 5000, succeeded: false },
 					],
 				}),
 			}),
@@ -259,15 +270,26 @@ describe("classifyExit — precedence collisions", () => {
 			rationale: "API failures are more actionable than context overflow",
 		},
 		{
-			name: "api_error beats wall_clock_timeout",
+			name: "model_access_error beats wall_clock_timeout (rate_limit retry)",
 			input: makeInput({
 				exitSummary: makeSummary({
 					retries: [{ attempt: 1, error: "rate_limit", delayMs: 5000, succeeded: false }],
 				}),
 				timerKilled: true,
 			}),
+			expected: "model_access_error",
+			rationale: "Model access error (rate_limit) is the root cause; timeout is a side effect",
+		},
+		{
+			name: "api_error beats wall_clock_timeout (generic server error retry)",
+			input: makeInput({
+				exitSummary: makeSummary({
+					retries: [{ attempt: 1, error: "internal_server_error", delayMs: 5000, succeeded: false }],
+				}),
+				timerKilled: true,
+			}),
 			expected: "api_error",
-			rationale: "API error is the root cause; timeout is a side effect",
+			rationale: "Generic API error is the root cause; timeout is a side effect",
 		},
 		{
 			name: "context_overflow beats wall_clock_timeout",
@@ -454,13 +476,13 @@ describe("classifyExit — edge cases", () => {
 // ── 4. Constants Verification ────────────────────────────────────────
 
 describe("EXIT_CLASSIFICATIONS constant", () => {
-	it("contains exactly 9 values", () => {
-		expect(EXIT_CLASSIFICATIONS).toHaveLength(9);
+	it("contains exactly 10 values", () => {
+		expect(EXIT_CLASSIFICATIONS).toHaveLength(10);
 	});
 
 	it("includes all expected values", () => {
 		const expected: ExitClassification[] = [
-			"completed", "api_error", "context_overflow",
+			"completed", "api_error", "model_access_error", "context_overflow",
 			"wall_clock_timeout", "process_crash", "session_vanished",
 			"stall_timeout", "user_killed", "unknown",
 		];

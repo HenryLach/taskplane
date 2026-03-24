@@ -129,7 +129,7 @@ For a single task with full worktree isolation, dashboard, and reviews:
 
 This uses the same orchestrator infrastructure as a full batch — isolated worktree, orch branch, supervisor, dashboard, inline reviews — but for just one task.
 
-> **Note:** The `/task` command still exists for direct single-task execution in the current branch, but `/orch` is recommended for all workflows. `/task` does not provide worktree isolation, dashboard, or inline reviews.
+> **Deprecated:** The `/task` command is deprecated and will be removed in a future major version. It does not provide worktree isolation, dashboard, or inline reviews. Use `/orch` for all workflows — including single-task execution.
 
 ## Commands
 
@@ -137,10 +137,10 @@ This uses the same orchestrator infrastructure as a full batch — isolated work
 
 | Command | Description |
 |---------|-------------|
-| `/task <path/to/PROMPT.md>` | Execute one task in the current branch/worktree |
-| `/task-status` | Show current task progress |
-| `/task-pause` | Pause after current worker iteration finishes |
-| `/task-resume` | Resume a paused task |
+| `/task <path/to/PROMPT.md>` | ⚠️ **Deprecated.** Execute one task in the current branch/worktree. Use `/orch` instead. |
+| `/task-status` | ⚠️ **Deprecated.** Show current task progress. Use `/orch-status` or dashboard. |
+| `/task-pause` | ⚠️ **Deprecated.** Pause after current worker iteration finishes. Use `/orch-pause`. |
+| `/task-resume` | ⚠️ **Deprecated.** Resume a paused task. Use `/orch-resume`. |
 | `/orch [<areas\|paths\|all>]` | No args: detect state & guide (onboarding, batch planning, etc.); with args: execute tasks via isolated worktrees |
 | `/orch-plan <areas\|paths\|all>` | Preview execution plan without running |
 | `/orch-status` | Show batch progress |

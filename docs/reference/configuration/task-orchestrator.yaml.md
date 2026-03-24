@@ -85,6 +85,8 @@ verification:
 | `failure.max_worker_minutes` | number | `30` | Max worker runtime budget per task in orchestrated mode. |
 | `failure.abort_grace_period` | number | `60` | Graceful abort wait time (seconds) before forced termination. |
 
+> **Note:** Model fallback behavior (`modelFallback`) is configured under `taskRunner`, not `orchestrator.failure`. See [task-runner.yaml reference](./task-runner.yaml.md#model-fallback).
+
 #### Merge retry policy matrix
 
 When a merge fails, the orchestrator classifies the failure and consults a built-in retry policy matrix before applying the `on_merge_failure` policy. Retriable failures are automatically retried up to the class-specific limit; non-retriable failures immediately trigger pause or abort per policy.

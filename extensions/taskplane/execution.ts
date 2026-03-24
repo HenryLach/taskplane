@@ -683,6 +683,7 @@ export function spawnLaneSession(
 	config: OrchestratorConfig,
 	repoRoot: string,
 	workspaceRoot?: string,
+	extraEnvVars?: Record<string, string>,
 ): void {
 	const sessionName = lane.tmuxSessionName;
 	const laneId = lane.laneId;
@@ -706,6 +707,9 @@ export function spawnLaneSession(
 
 	// Build env vars
 	const envVars = buildLaneEnvVars(lane, task.task.promptPath, repoRoot, workspaceRoot);
+	if (extraEnvVars) {
+		Object.assign(envVars, extraEnvVars);
+	}
 
 	// Prepare per-task lane log path for post-mortem diagnostics
 	const laneLogPath = resolveLaneLogPath(lane, task);
@@ -1017,6 +1021,7 @@ export async function executeLane(
 	pauseSignal: { paused: boolean },
 	workspaceRoot?: string,
 	isWorkspaceMode?: boolean,
+	extraEnvVars?: Record<string, string>,
 ): Promise<LaneExecutionResult> {
 	const laneId = lane.laneId;
 	const laneStartTime = Date.now();
@@ -1053,7 +1058,7 @@ export async function executeLane(
 
 		try {
 			// Spawn TMUX session
-			spawnLaneSession(lane, task, config, repoRoot, workspaceRoot);
+			spawnLaneSession(lane, task, config, repoRoot, workspaceRoot, extraEnvVars);
 
 			// Poll until completion
 			const pollResult = await pollUntilTaskComplete(
