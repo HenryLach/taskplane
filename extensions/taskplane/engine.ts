@@ -85,6 +85,7 @@ async function attemptWorkerCrashRetry(
 	allTaskOutcomes: LaneTaskOutcome[],
 	onNotify: (message: string, level: "info" | "warning" | "error") => void,
 	stateRoot: string,
+	runnerConfig?: TaskRunnerConfig,
 ): Promise<{ retriedCount: number; succeededRetries: string[]; failedRetries: string[] }> {
 	if (!batchState.resilience) {
 		batchState.resilience = defaultResilienceState();
@@ -350,8 +351,8 @@ async function attemptWorkerCrashRetry(
  * task-runner reads this var and omits the explicit `--model` flag, causing pi
  * to use the session's default model.
  *
- * Only runs when `orchConfig.failure.model_fallback === "inherit"`. When set to
- * `"fail"`, model access errors fall through to normal failure handling.
+ * Only runs when `runnerConfig.model_fallback === "inherit"` (the default). When
+ * set to `"fail"`, model access errors fall through to normal failure handling.
  *
  * Separate from `attemptWorkerCrashRetry()` because:
  * - Uses a different recovery pattern (`model_fallback` vs `worker_crash`)
@@ -370,9 +371,11 @@ async function attemptModelFallbackRetry(
 	allTaskOutcomes: LaneTaskOutcome[],
 	onNotify: (message: string, level: "info" | "warning" | "error") => void,
 	stateRoot: string,
+	runnerConfig?: TaskRunnerConfig,
 ): Promise<{ retriedCount: number; succeededRetries: string[]; failedRetries: string[] }> {
 	// Short-circuit: if model fallback is disabled, skip entirely
-	if (orchConfig.failure.model_fallback !== "inherit") {
+	const modelFallbackMode = runnerConfig?.model_fallback ?? "inherit";
+	if (modelFallbackMode !== "inherit") {
 		return { retriedCount: 0, succeededRetries: [], failedRetries: [] };
 	}
 
@@ -476,12 +479,11 @@ async function attemptModelFallbackRetry(
 			? resolve(workspaceConfig.configPath, "..", "..")
 			: undefined;
 
-		// Set env var to signal task-runner to use session model instead of configured model
-		const prevFallbackEnv = process.env.TASKPLANE_MODEL_FALLBACK;
-		process.env.TASKPLANE_MODEL_FALLBACK = "1";
-
 		try {
 			const retryPauseSignal = { paused: false };
+			// Pass TASKPLANE_MODEL_FALLBACK=1 as extra env var to signal
+			// the task-runner to use the session model instead of configured model.
+			const modelFallbackEnv = { TASKPLANE_MODEL_FALLBACK: "1" };
 			const retryResult = await executeLane(
 				retryLane,
 				orchConfig,
@@ -489,6 +491,7 @@ async function attemptModelFallbackRetry(
 				retryPauseSignal,
 				wsRoot,
 				isWsMode,
+				modelFallbackEnv,
 			);
 
 			const retryOutcome = retryResult.tasks[0];
@@ -580,13 +583,6 @@ async function attemptModelFallbackRetry(
 				`Model fallback retry for task ${taskId} threw an exception: ${errMsg}`,
 				{ taskId, laneNumber: lane.laneNumber, repoId: lane.repoId ?? null, classification, scopeKey },
 			);
-		} finally {
-			// Restore env var
-			if (prevFallbackEnv === undefined) {
-				delete process.env.TASKPLANE_MODEL_FALLBACK;
-			} else {
-				process.env.TASKPLANE_MODEL_FALLBACK = prevFallbackEnv;
-			}
 		}
 	}
 
@@ -1170,6 +1166,7 @@ export async function executeOrchBatch(
 				allTaskOutcomes,
 				onNotify,
 				stateRoot,
+				runnerConfig,
 			);
 			if (modelFallbackOutcome.succeededRetries.length > 0) {
 				// Recompute blocked tasks after model fallback successes
