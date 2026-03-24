@@ -29,7 +29,7 @@
 
 - [x] Add `model_access_error` to exit classification type
 - [x] Update `classifyExit()` to detect model access error patterns (401/403/429, model not found)
-- [x] Ensure classification is distinct from generic `agent_error`
+- [x] Ensure classification is distinct from generic `api_error`
 
 ---
 
