@@ -2028,7 +2028,38 @@ When the conversation reaches the config generation phase, create ALL of these
 - \`.gitignore\` entries — add Taskplane working file patterns if not already present
 
 Use conservative creation: check if each file exists before writing. If files
-already exist (partial setup), read and merge rather than overwrite.`;
+already exist (partial setup), read and merge rather than overwrite.
+
+### CRITICAL: Task Area Registration
+
+**Every task folder MUST be registered in \`.pi/taskplane-config.json\` under
+\`taskRunner.taskAreas\`.** Without registration, \`/orch all\` will fail with
+"no task areas configured" — even if the folders and tasks physically exist.
+
+When creating a task folder (e.g., \`taskplane-tasks/\`):
+1. Create the folder and its \`CONTEXT.md\`
+2. Register it in \`.pi/taskplane-config.json\`:
+   \`\`\`json
+   {
+     "taskRunner": {
+       "taskAreas": {
+         "general": {
+           "path": "taskplane-tasks",
+           "prefix": "TP",
+           "context": "taskplane-tasks/CONTEXT.md"
+         }
+       }
+     }
+   }
+   \`\`\`
+3. **Verify** by reading the config back to confirm the area is registered
+
+When creating tasks inside an area, check that the area is registered first.
+If it's not (e.g., operator created the folder manually), register it before
+proceeding.
+
+This also applies when creating tasks later in the conversation — always verify
+the task area is registered in the config before offering to run \`/orch all\`.`;
 			break;
 
 		case "pending-tasks":
@@ -2068,7 +2099,14 @@ Follow the primer's **"Script 6: Batch Planning"** section
 5. **Offer a health check** (Script 7) if the operator prefers to assess
    project state rather than create tasks
 6. **Graceful fallback**: If \`gh\` CLI is unavailable, skip GitHub checks and
-   mention it to the operator — continue with CONTEXT.md and TODO scanning`;
+   mention it to the operator — continue with CONTEXT.md and TODO scanning
+
+### Important: Task Area Verification
+
+Before creating any tasks, verify that the target task area folder is registered
+in \`.pi/taskplane-config.json\` under \`taskRunner.taskAreas\`. If it's missing
+(e.g., the folder exists but was never registered), register it first. Without
+registration, \`/orch all\` will fail with "no task areas configured."`;
 			break;
 
 		case "completed-batch":
