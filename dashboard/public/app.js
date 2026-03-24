@@ -78,15 +78,17 @@ function tokenSummaryFromLaneState(ls) {
 /** Build compact telemetry badge HTML for retry/compaction indicators.
  *  Only shows badges when telemetry data has meaningful values.
  *  @param {object|null} tel - Telemetry data for a lane (from currentData.telemetry[prefix])
+ *  @param {boolean} [suppressRetry=false] - When true, hide the retrying badge
+ *    (used when reviewer is active — long tool calls trigger false retry signals)
  *  @returns {string} HTML string with badges, or "" if nothing to show
  */
-function telemetryBadgesHtml(tel) {
+function telemetryBadgesHtml(tel, suppressRetry) {
   if (!tel) return "";
   let badges = "";
-  if (tel.retryActive) {
+  if (tel.retryActive && !suppressRetry) {
     const err = tel.lastRetryError ? ` — ${tel.lastRetryError}` : "";
     badges += `<span class="telem-badge telem-retry-active" title="Retry in progress${escapeHtml(err)}">🔄 retrying</span>`;
-  } else if (tel.retries > 0) {
+  } else if (tel.retries > 0 && !suppressRetry) {
     badges += `<span class="telem-badge telem-retry" title="${tel.retries} auto-retry event(s)">🔄 ${tel.retries}</span>`;
   }
   if (tel.compactions > 0) {
@@ -529,7 +531,7 @@ function renderLanesTasks(batch, tmuxSessions) {
 
       // Worker stats from lane state sidecar + telemetry badges
       let workerHtml = "";
-      const telemBadges = task.status !== "pending" ? telemetryBadgesHtml(tel) : "";
+      const telemBadges = task.status !== "pending" ? telemetryBadgesHtml(tel, reviewerActive) : "";
       // Reviewer sub-row should only appear under the task currently being reviewed,
       // not all tasks in the lane. The lane-state sidecar is per-lane (shared by all
       // tasks in the lane), so check that the sidecar's current taskId matches this task.
