@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2] - 2026-03-24
+
+### Fixed
+- **Stale branches after integrate (TP-051, issue #142)** — `/orch-integrate` now deletes `task/*` and `saved/task/*` branches from the integrated batch. Also cleans orphaned branches from previous batches. Preserves `orch/*` in PR mode and partial-progress `saved/*` refs.
+- **Task startedAt timing (TP-051, issue #19)** — task start times now use actual execution timestamps instead of STATUS.md file mtime. Fixes incorrect timing in dashboard and batch history.
+
+### New
+- **Integrate guidance after batch completion (TP-052, issue #99)** — clear, prominent message shows exact `/orch-integrate` and `--pr` commands after every batch completion. Appears in engine output and supervisor routing.
+- **Branch protection detection (TP-052, issue #100)** — `/orch-integrate` checks for branch protection via `gh api` before attempting merge. Warns and suggests `--pr` when protection detected. Graceful degradation when `gh` unavailable.
+- **Post-batch prompt visibility (TP-052, issue #88)** — supervisor sends a clear conversational message when transitioning to routing mode after batch completion, ensuring the user sees an active input prompt.
+
 ## [0.9.1] - 2026-03-24
 
 ### Fixed
@@ -393,7 +404,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.9.1...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.9.2...HEAD
+[0.9.2]: https://github.com/HenryLach/taskplane/compare/v0.9.1...v0.9.2
 [0.9.1]: https://github.com/HenryLach/taskplane/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/HenryLach/taskplane/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/HenryLach/taskplane/compare/v0.8.1...v0.8.2
