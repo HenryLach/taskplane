@@ -1,11 +1,11 @@
 # TP-048: Persistent Worker Context Per Task — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-23
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-03-24
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -14,12 +14,12 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Understand current step loop structure (line ~2080-2190 in task-runner.ts)
-- [ ] Understand runWorker() and worker prompt construction
-- [ ] Understand worker agent template expectations
-- [ ] Identify all step-scoped instructions in prompts
+- [x] Understand current step loop structure (line ~2080-2190 in task-runner.ts)
+- [x] Understand runWorker() and worker prompt construction
+- [x] Understand worker agent template expectations
+- [x] Identify all step-scoped instructions in prompts
 
 ---
 
@@ -105,6 +105,12 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-23 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-24 00:39 | Task started | Extension-driven execution |
+| 2026-03-24 00:39 | Step 0 started | Preflight |
+| 2026-03-24 00:39 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-24 00:39 | Task started | Extension-driven execution |
+| 2026-03-24 00:39 | Step 0 started | Preflight |
+| 2026-03-24 00:39 | Skip plan review | Step 0 (Preflight) — low-risk |
 
 ---
 
@@ -116,4 +122,34 @@
 
 ## Notes
 
-*Reserved for execution notes*
+### Step 0 Preflight Findings
+
+**Current step loop architecture:**
+- `executeTask()` (line ~1940) iterates `task.steps[]`, calling `executeStep(step, ctx)` for each
+- `executeStep()` (line ~2130) has inner worker loop: up to `max_worker_iterations` per step
+- Each iteration calls `runWorker(step, ctx)` which spawns a FRESH agent context
+- Progress tracked per-step: checkbox count before/after each iteration
+- Plan review runs BEFORE worker loop; code review runs AFTER worker loop
+- REVISE verdict triggers one extra `runWorker(step, ctx)` call
+
+**`runWorker()` structure (line ~2225):**
+- Loads agent def via `loadAgentDef(ctx.cwd, "task-worker")`
+- System prompt = base template + `buildProjectContext(config, task.taskFolder)`
+- User prompt built at line 2274: `Execute Step N: name`, `Work ONLY on Step N`
+- Supports both tmux and subprocess spawn modes
+- Wall-clock timeout + context-% based wrap-up/kill safety nets
+- Wrap-up signal files: `.task-wrap-up` (primary), `.wiggum-wrap-up` (legacy)
+
+**Step-scoped instruction injection points (must change for multi-step):**
+1. `task-runner.ts:2274` — `Execute Step ${step.number}: ${step.name}`
+2. `task-runner.ts:2283` — `Work ONLY on Step ${step.number}. Do not proceed to other steps.`
+3. `task-worker.md:14` — "Find the step you have been assigned (specified in your prompt)"
+4. `task-worker.md:97` — "Read the PROMPT.md step details for your assigned step"
+5. `task-worker.md:152` — "Work ONLY on the step assigned in your prompt"
+6. `task-worker.md:153` — "Do NOT proceed to other steps"
+
+**Key refactoring observations:**
+- `executeStep()` currently owns both the worker loop AND review orchestration — these need to be separated
+- `runWorker()` takes a single `step: StepInfo` — signature needs to change to accept remaining steps
+- The `doReview()` call at line 2550 takes `step: StepInfo` — can still be called per-step after worker exits
+- `stepBaselineCommit` captured at start of `executeStep()` — need equivalent for per-step git diffs in new model
