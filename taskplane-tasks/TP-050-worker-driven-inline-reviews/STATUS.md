@@ -37,11 +37,11 @@
 ---
 
 ### Step 2: Remove deferred review logic from step loop
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Remove post-worker-exit deferred review block
-- [ ] Remove REVISE → mark-incomplete-for-rework logic
-- [ ] Preserve iteration mechanism and low-risk skip safety net
+- [x] Remove post-worker-exit deferred review block
+- [x] Remove REVISE → mark-incomplete-for-rework logic
+- [x] Preserve iteration mechanism and low-risk skip safety net
 
 ---
 
