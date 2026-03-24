@@ -2147,7 +2147,9 @@ export default function (pi: ExtensionAPI) {
 			// Plan reviews run once per step (first completion); code reviews
 			// run on every completion (including rework). Both respect review
 			// level and low-risk skip logic.
-			if (state.phase === "running") {
+			// Gate on phase !== "error" so reviews still run when paused
+			// (pause is honored after reviews, before next iteration).
+			if (state.phase !== "error") {
 				for (const step of newlyCompleted) {
 					const lowRisk = isLowRiskStep(step.number, task.steps.length);
 

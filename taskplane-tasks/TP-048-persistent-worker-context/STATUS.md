@@ -59,20 +59,20 @@
 ---
 
 ### Step 4: Integrate reviews with the new loop
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 
 - [x] R007: Remove up-front plan review sweep; make all reviews transition-based (run when step newly completes after worker exits)
 - [x] After worker exits, run plan review (level ≥ 1) then code review (level ≥ 2) for each newly completed step; track planReviewedSteps so plan review only runs on first completion (not rework)
 - [x] REVISE verdict marks step incomplete for rework in next iteration (already implemented — verify preserved)
 - [x] Plan and code reviews still respect review level and low-risk skip logic (already implemented — verify preserved)
-- [ ] R008: Fix pause-flow review gap — allow post-worker transition reviews to run when paused (gate on `phase !== "error"` instead of `phase === "running"`), then honor pause by returning before launching next iteration
+- [x] R008: Fix pause-flow review gap — allow post-worker transition reviews to run when paused (gate on `phase !== "error"` instead of `phase === "running"`), then honor pause by returning before launching next iteration
 
 ---
 
 ### Step 5: Testing & Verification
 **Status:** 🟨 In Progress
 
-- [ ] All existing tests pass
+- [x] All existing tests pass
 - [ ] Tests for single-spawn-per-task behavior
 - [ ] Tests for multi-step progress tracking
 - [ ] Tests for stall detection across iterations
