@@ -346,7 +346,7 @@ describe("spawnAgentTmux return shape contract", () => {
 		// Check the return type annotation
 		const tmuxRegion = src.slice(
 			src.indexOf("function spawnAgentTmux("),
-			src.indexOf("function spawnAgentTmux(") + 800,
+			src.indexOf("function spawnAgentTmux(") + 1200,
 		);
 		expect(tmuxRegion).toContain("promise:");
 		expect(tmuxRegion).toContain("kill:");
