@@ -1,6 +1,6 @@
 # TP-048: Persistent Worker Context Per Task — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Restructure the step loop to spawn worker once per task
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-24
 **Review Level:** 2
@@ -24,7 +24,7 @@
 ---
 
 ### Step 1: Restructure the step loop to spawn worker once per task
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 > ⚠️ Hydrate: Expand based on exact loop structure found in Step 0
 
@@ -111,6 +111,10 @@
 | 2026-03-24 00:39 | Task started | Extension-driven execution |
 | 2026-03-24 00:39 | Step 0 started | Preflight |
 | 2026-03-24 00:39 | Skip plan review | Step 0 (Preflight) — low-risk |
+| 2026-03-24 00:41 | Worker iter 1 | done in 112s, ctx: 15%, tools: 22 |
+| 2026-03-24 00:41 | Skip code review | Step 0 (Preflight) — low-risk |
+| 2026-03-24 00:41 | Step 0 complete | Preflight |
+| 2026-03-24 00:41 | Step 1 started | Restructure the step loop to spawn worker once per task |
 
 ---
 
