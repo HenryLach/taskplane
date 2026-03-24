@@ -24,16 +24,16 @@
 ---
 
 ### Step 1: Restructure the step loop to spawn worker once per task
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Hydrate: Expand based on exact loop structure found in Step 0
 
-- [ ] Refactor `executeTask()` to replace per-step loop with per-iteration loop that spawns worker for all remaining steps
-- [ ] Refactor `runWorker()` signature to accept remaining steps array instead of single step
-- [ ] Build multi-step worker prompt (all remaining steps, iteration info, per-step commit instructions)
-- [ ] After worker exits, determine which steps were newly completed and run reviews for each
-- [ ] Integrate plan reviews into the new loop (run before first worker iteration for non-low-risk steps)
-- [ ] Preserve wrap-up signal, kill mechanics, progress tracking, and stall detection
+- [x] Refactor `executeTask()` to replace per-step loop with per-iteration loop that spawns worker for all remaining steps
+- [x] Refactor `runWorker()` signature to accept remaining steps array instead of single step
+- [x] Build multi-step worker prompt (all remaining steps, iteration info, per-step commit instructions)
+- [x] After worker exits, determine which steps were newly completed and run reviews for each
+- [x] Integrate plan reviews into the new loop (run before first worker iteration for non-low-risk steps)
+- [x] Preserve wrap-up signal, kill mechanics, progress tracking, and stall detection
 
 ---
 

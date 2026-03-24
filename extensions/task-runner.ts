@@ -1949,29 +1949,156 @@ export default function (pi: ExtensionAPI) {
 		updateStatusField(statusPath, "Last Updated", new Date().toISOString().slice(0, 10));
 		logExecution(statusPath, "Task started", "Extension-driven execution");
 
-		// Find first incomplete step
-		const status = parseStatusMd(readFileSync(statusPath, "utf-8"));
-		let startStep = 0;
-		for (const s of status.steps) {
-			if (s.status === "complete") startStep = s.number + 1;
-			else break;
+		// ── Per-task worker loop ─────────────────────────────────────
+		// Spawn one worker per iteration; each worker handles ALL remaining
+		// steps.  Reviews run after the worker exits, per newly-completed step.
+		// If context limit is hit mid-task, the next iteration picks up from
+		// the first incomplete step via STATUS.md — same recovery mechanism.
+
+		// Collect baseline commits per step (for code review diffs)
+		const stepBaselineCommits = new Map<number, string>();
+
+		// Run plan reviews up-front for all non-low-risk incomplete steps
+		{
+			const currentStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
+			for (const step of task.steps) {
+				const ss = currentStatus.steps.find(s => s.number === step.number);
+				if (ss?.status === "complete") continue;
+				const lowRisk = isLowRiskStep(step.number, task.steps.length);
+
+				// Mark step as in-progress and log its start
+				updateStepStatus(statusPath, step.number, "in-progress");
+				logExecution(statusPath, `Step ${step.number} started`, step.name);
+
+				if (task.reviewLevel >= 1) {
+					if (lowRisk) {
+						const label = step.number === 0 ? "Preflight" : "final step";
+						logExecution(statusPath, `Skip plan review`, `Step ${step.number} (${label}) — low-risk`);
+						ctx.ui.notify(`⏭️ Skipping plan review for Step ${step.number} (${label})`, "info");
+					} else {
+						const verdict = await doReview("plan", step, ctx);
+						if (verdict === "RETHINK") {
+							ctx.ui.notify(`Reviewer: RETHINK on Step ${step.number} plan. Proceeding with caution.`, "warning");
+						}
+					}
+				}
+
+				// Capture baseline commit after plan review (plan reviewer may commit)
+				stepBaselineCommits.set(step.number, getHeadCommitSha());
+			}
 		}
 
-		for (let i = 0; i < task.steps.length; i++) {
-			const step = task.steps[i];
-			if (step.number < startStep) continue;
+		let noProgressCount = 0;
+		for (let iter = 0; iter < config.context.max_worker_iterations; iter++) {
 			if (state.phase === "paused") {
-				logExecution(statusPath, "Paused", `User paused at Step ${step.number}`);
-				ctx.ui.notify(`Task paused at Step ${step.number}`, "info");
+				logExecution(statusPath, "Paused", `User paused at iteration ${iter + 1}`);
+				ctx.ui.notify(`Task paused at iteration ${iter + 1}`, "info");
 				return;
 			}
 
-			state.currentStep = step.number;
+			// Determine remaining (incomplete) steps
+			const currentStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
+			const remainingSteps: StepInfo[] = [];
+			for (const step of task.steps) {
+				const ss = currentStatus.steps.find(s => s.number === step.number);
+				const isComplete = ss?.status === "complete" ||
+					(ss && ss.totalChecked === ss.totalItems && ss.totalItems > 0);
+				if (!isComplete) remainingSteps.push(step);
+			}
+
+			if (remainingSteps.length === 0) break; // All steps done
+
+			state.currentStep = remainingSteps[0].number;
+			updateStatusField(statusPath, "Current Step", `Step ${remainingSteps[0].number}: ${remainingSteps[0].name}`);
+			state.workerIteration = iter + 1;
+			state.totalIterations++;
+			updateStatusField(statusPath, "Iteration", `${state.totalIterations}`);
 			updateWidgets();
 
-			await executeStep(step, ctx);
+			// Count total checked checkboxes across all steps BEFORE worker runs
+			const prevTotalChecked = currentStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
 
-			if (state.phase === "error" || state.phase === "paused") return;
+			// Track which steps are complete before the worker runs
+			const completedBefore = new Set<number>();
+			for (const ss of currentStatus.steps) {
+				const isComplete = ss.status === "complete" ||
+					(ss.totalChecked === ss.totalItems && ss.totalItems > 0);
+				if (isComplete) completedBefore.add(ss.number);
+			}
+
+			await runWorker(remainingSteps, ctx);
+
+			if (state.phase === "error") return;
+
+			// ── Post-worker: determine which steps were newly completed ──
+			const afterStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
+			const afterTotalChecked = afterStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+
+			// Progress tracking: compare total checked across ALL steps
+			if (afterTotalChecked <= prevTotalChecked) {
+				noProgressCount++;
+				if (noProgressCount >= config.context.no_progress_limit) {
+					logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
+					ctx.ui.notify(`⚠️ Task blocked — no progress after ${noProgressCount} iterations`, "error");
+					state.phase = "error";
+					return;
+				}
+			} else {
+				noProgressCount = 0;
+			}
+
+			// Find newly completed steps
+			const newlyCompleted: StepInfo[] = [];
+			for (const step of task.steps) {
+				if (completedBefore.has(step.number)) continue;
+				const ss = afterStatus.steps.find(s => s.number === step.number);
+				const isComplete = ss?.status === "complete" ||
+					(ss && ss.totalChecked === ss.totalItems && ss.totalItems > 0);
+				if (isComplete) {
+					updateStepStatus(statusPath, step.number, "complete");
+					logExecution(statusPath, `Step ${step.number} complete`, step.name);
+					newlyCompleted.push(step);
+				}
+			}
+
+			// Log iteration summary
+			const completedNames = newlyCompleted.map(s => `Step ${s.number}`).join(", ");
+			if (newlyCompleted.length > 0) {
+				ctx.ui.notify(`Iteration ${iter + 1}: completed ${completedNames}`, "info");
+			}
+
+			// ── Run code reviews for newly completed steps ──
+			if (task.reviewLevel >= 2 && state.phase === "running") {
+				for (const step of newlyCompleted) {
+					const lowRisk = isLowRiskStep(step.number, task.steps.length);
+					if (lowRisk) {
+						const label = step.number === 0 ? "Preflight" : "final step";
+						logExecution(statusPath, `Skip code review`, `Step ${step.number} (${label}) — low-risk`);
+						ctx.ui.notify(`⏭️ Skipping code review for Step ${step.number} (${label})`, "info");
+					} else {
+						const baseline = stepBaselineCommits.get(step.number);
+						const verdict = await doReview("code", step, ctx, baseline);
+						if (verdict === "REVISE") {
+							ctx.ui.notify(`Reviewer: REVISE on Step ${step.number}. Will rework in next iteration.`, "warning");
+							// Mark step as needing rework — undo the "complete" status
+							updateStepStatus(statusPath, step.number, "in-progress");
+						}
+					}
+				}
+			}
+
+			// Update local cache
+			const refreshed = parseStatusMd(readFileSync(statusPath, "utf-8"));
+			for (const s of refreshed.steps) state.stepStatuses.set(s.number, s);
+			updateWidgets();
+
+			// Check if all steps are now complete
+			const allComplete = task.steps.every(step => {
+				const ss = refreshed.steps.find(s => s.number === step.number);
+				return ss?.status === "complete" ||
+					(ss && ss.totalChecked === ss.totalItems && ss.totalItems > 0);
+			});
+			if (allComplete) break;
 		}
 
 		// All steps done — run quality gate if enabled, then create .DONE
@@ -2121,111 +2248,9 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify(`✅ Task ${task.taskId} complete!`, "success");
 	}
 
-	async function executeStep(step: StepInfo, ctx: ExtensionContext): Promise<void> {
-		if (!state.task || !state.config) return;
-
-		const task = state.task;
-		const config = state.config;
-		const statusPath = join(task.taskFolder, "STATUS.md");
-
-		// Capture git HEAD before the step starts so code reviewers can
-		// diff the full step's changes (workers commit via checkpoints).
-		const stepBaselineCommit = getHeadCommitSha();
-
-		updateStepStatus(statusPath, step.number, "in-progress");
-		updateStatusField(statusPath, "Current Step", `Step ${step.number}: ${step.name}`);
-		logExecution(statusPath, `Step ${step.number} started`, step.name);
-		updateWidgets();
-
-		// Skip reviews for low-risk steps (Step 0 / Preflight and final step / Delivery)
-		const _isLowRiskStep = isLowRiskStep(step.number, task.steps.length);
-
-		// Plan review (level ≥ 1)
-		if (task.reviewLevel >= 1) {
-			if (_isLowRiskStep) {
-				const label = step.number === 0 ? "Preflight" : "final step";
-				logExecution(statusPath, `Skip plan review`, `Step ${step.number} (${label}) — low-risk`);
-				ctx.ui.notify(`⏭️ Skipping plan review for Step ${step.number} (${label})`, "info");
-			} else {
-				const verdict = await doReview("plan", step, ctx, stepBaselineCommit);
-				if (verdict === "RETHINK") {
-					ctx.ui.notify(`Reviewer: RETHINK on Step ${step.number} plan. Proceeding with caution.`, "warning");
-				}
-			}
-		}
-
-		// Worker loop
-		let noProgressCount = 0;
-		for (let iter = 0; iter < config.context.max_worker_iterations; iter++) {
-			if (state.phase === "paused") return;
-
-			// Re-read STATUS.md
-			const currentStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
-			const stepStatus = currentStatus.steps.find(s => s.number === step.number);
-			if (stepStatus?.status === "complete" || (stepStatus && stepStatus.totalChecked === stepStatus.totalItems && stepStatus.totalItems > 0)) {
-				updateStepStatus(statusPath, step.number, "complete");
-				break;
-			}
-
-			const prevChecked = stepStatus?.totalChecked || 0;
-			state.workerIteration = iter + 1;
-			state.totalIterations++;
-			updateStatusField(statusPath, "Iteration", `${state.totalIterations}`);
-			updateWidgets();
-
-			await runWorker(step, ctx);
-
-			// Check progress
-			const afterStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
-			const afterStep = afterStatus.steps.find(s => s.number === step.number);
-			const afterChecked = afterStep?.totalChecked || 0;
-
-			if (afterChecked <= prevChecked) {
-				noProgressCount++;
-				if (noProgressCount >= config.context.no_progress_limit) {
-					logExecution(statusPath, `Step ${step.number} blocked`, `No progress after ${noProgressCount} iterations`);
-					ctx.ui.notify(`⚠️ Step ${step.number} blocked — no progress after ${noProgressCount} iterations`, "error");
-					state.phase = "error";
-					return;
-				}
-			} else {
-				noProgressCount = 0;
-			}
-
-			if (afterStep?.status === "complete" || (afterStep && afterStep.totalChecked === afterStep.totalItems && afterStep.totalItems > 0)) {
-				updateStepStatus(statusPath, step.number, "complete");
-				break;
-			}
-		}
-
-		// Code review (level ≥ 2)
-		if (task.reviewLevel >= 2 && state.phase === "running") {
-			if (_isLowRiskStep) {
-				const label = step.number === 0 ? "Preflight" : "final step";
-				logExecution(statusPath, `Skip code review`, `Step ${step.number} (${label}) — low-risk`);
-				ctx.ui.notify(`⏭️ Skipping code review for Step ${step.number} (${label})`, "info");
-			} else {
-				const verdict = await doReview("code", step, ctx, stepBaselineCommit);
-				if (verdict === "REVISE") {
-					ctx.ui.notify(`Reviewer: REVISE on Step ${step.number}. Running worker to fix...`, "warning");
-					await runWorker(step, ctx); // One more pass to address issues
-				}
-			}
-		}
-
-		if (state.phase === "running") {
-			updateStepStatus(statusPath, step.number, "complete");
-			logExecution(statusPath, `Step ${step.number} complete`, step.name);
-			// Update local cache
-			const refreshed = parseStatusMd(readFileSync(statusPath, "utf-8"));
-			for (const s of refreshed.steps) state.stepStatuses.set(s.number, s);
-			updateWidgets();
-		}
-	}
-
 	// ── Worker ───────────────────────────────────────────────────────
 
-	async function runWorker(step: StepInfo, ctx: ExtensionContext): Promise<void> {
+	async function runWorker(remainingSteps: StepInfo[], ctx: ExtensionContext): Promise<void> {
 		if (!state.task || !state.config) return;
 
 		const task = state.task;
@@ -2270,8 +2295,13 @@ export default function (pi: ExtensionAPI) {
 			  "Just create the .DONE file in the task folder when complete."
 			: "";
 
+		// Build step listing for the worker prompt
+		const stepListing = remainingSteps.map(s =>
+			`  - Step ${s.number}: ${s.name}`
+		).join("\n");
+
 		const prompt = [
-			`Execute Step ${step.number}: ${step.name}`,
+			`Execute all remaining steps for task ${task.taskId}.`,
 			``,
 			`Task: ${task.taskId} — ${task.taskName}`,
 			`Task folder: ${task.taskFolder}/`,
@@ -2280,7 +2310,17 @@ export default function (pi: ExtensionAPI) {
 			``,
 			`This is iteration ${state.totalIterations}.`,
 			`Read STATUS.md FIRST to find where you left off.`,
-			`Work ONLY on Step ${step.number}. Do not proceed to other steps.`,
+			``,
+			`Steps remaining:`,
+			stepListing,
+			``,
+			`Work through these steps in order. For each step:`,
+			`1. Read STATUS.md to find unchecked items for that step`,
+			`2. Complete all items for the step`,
+			`3. Update STATUS.md step status to "complete"`,
+			`4. Commit your changes: feat(${task.taskId}): complete Step N — description`,
+			`5. Check for wrap-up signal files before starting the next step`,
+			`6. Proceed to the next incomplete step`,
 			``,
 			`Wrap-up signal files: ${wrapUpFile} (primary), ${legacyWrapUpFile} (legacy)`,
 			`Check for either file after each checkpoint. If one exists, stop.`,
