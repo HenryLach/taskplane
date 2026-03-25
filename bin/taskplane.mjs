@@ -507,6 +507,7 @@ async function cmdUninstall(args) {
 		".pi/agents/task-worker.md",
 		".pi/agents/task-reviewer.md",
 		".pi/agents/task-merger.md",
+		".pi/agents/supervisor.md",
 		".pi/batch-state.json",
 		".pi/batch-history.json",
 		".pi/orch-abort-signal",
@@ -1301,7 +1302,7 @@ async function cmdInit(args) {
 		const skipIfExists = !force && !userConfirmedOverwrite;
 
 		// Agent prompts
-		for (const agent of ["task-worker.md", "task-reviewer.md", "task-merger.md"]) {
+		for (const agent of ["task-worker.md", "task-reviewer.md", "task-merger.md", "supervisor.md"]) {
 			copyTemplate(
 				path.join(TEMPLATES_DIR, "agents", "local", agent),
 				path.join(taskplaneDir, "agents", agent),
@@ -1524,7 +1525,7 @@ async function cmdInit(args) {
 
 	// Agent prompts — copy thin local files (base prompts ship in the package
 	// and are composed automatically by the task-runner at runtime)
-	for (const agent of ["task-worker.md", "task-reviewer.md", "task-merger.md"]) {
+	for (const agent of ["task-worker.md", "task-reviewer.md", "task-merger.md", "supervisor.md"]) {
 		copyTemplate(
 			path.join(TEMPLATES_DIR, "agents", "local", agent),
 			path.join(projectRoot, ".pi", "agents", agent),
@@ -1685,6 +1686,7 @@ function printFileList(vars, noExamples, preset, exampleTemplateDirs = [], proje
 		".pi/agents/task-worker.md",
 		".pi/agents/task-reviewer.md",
 		".pi/agents/task-merger.md",
+		".pi/agents/supervisor.md",
 		".pi/task-runner.yaml",
 	];
 	if (preset !== "runner-only") files.push(".pi/task-orchestrator.yaml");
@@ -1723,6 +1725,7 @@ function printWorkspaceFileList(vars, noExamples, preset, exampleTemplateDirs, c
 		`${prefix}/agents/task-worker.md`,
 		`${prefix}/agents/task-reviewer.md`,
 		`${prefix}/agents/task-merger.md`,
+		`${prefix}/agents/supervisor.md`,
 		`${prefix}/task-runner.yaml`,
 	];
 	if (preset !== "runner-only") files.push(`${prefix}/task-orchestrator.yaml`);
@@ -2518,6 +2521,7 @@ function cmdDoctor() {
 		{ path: "agents/task-worker.md", required: true },
 		{ path: "agents/task-reviewer.md", required: true },
 		{ path: "agents/task-merger.md", required: true },
+		{ path: "agents/supervisor.md", required: false },
 		{ path: "taskplane.json", required: false },
 	];
 

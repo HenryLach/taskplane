@@ -1748,6 +1748,171 @@ function resolvePrimerPath(): string {
 	}
 }
 
+
+// ── Template Loading (TP-058) ────────────────────────────────────────
+
+/**
+ * Resolve the path to a base supervisor template shipped with the package.
+ *
+ * Templates live in `<package-root>/templates/agents/`. This function derives
+ * the package root from the extension file's location
+ * (`<package-root>/extensions/taskplane/supervisor.ts`).
+ *
+ * @param name - Template filename without extension (e.g. "supervisor", "supervisor-routing")
+ * @returns Absolute path to the template file
+ *
+ * @since TP-058
+ */
+function resolveBaseTemplatePath(name: string): string {
+	try {
+		const thisDir = dirname(fileURLToPath(import.meta.url));
+		// thisDir = <package-root>/extensions/taskplane/
+		return join(thisDir, "..", "..", "templates", "agents", `${name}.md`);
+	} catch {
+		return join(__dirname, "..", "..", "templates", "agents", `${name}.md`);
+	}
+}
+
+/**
+ * Parse a simple frontmatter+body markdown file.
+ * Returns null if the file doesn't exist or has no frontmatter.
+ *
+ * @since TP-058
+ */
+function parseSupervisorTemplate(filePath: string): { fm: Record<string, string>; body: string } | null {
+	if (!existsSync(filePath)) return null;
+	const raw = readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
+	const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+	if (!match) return null;
+	const fm: Record<string, string> = {};
+	for (const line of match[1].split("\n")) {
+		const idx = line.indexOf(":");
+		if (idx > 0) {
+			const key = line.slice(0, idx).trim();
+			if (!key.startsWith("#")) { // Skip commented-out frontmatter
+				fm[key] = line.slice(idx + 1).trim();
+			}
+		}
+	}
+	return { fm, body: match[2].trim() };
+}
+
+/**
+ * Load a supervisor template: base (from package) + local override (from project).
+ *
+ * Follows the same composition pattern as `loadAgentDef()` in task-runner.ts:
+ * - Base template: shipped in `templates/agents/{name}.md`
+ * - Local override: `.pi/agents/{name}.md` in the project
+ * - If local has `standalone: true`, use it exclusively
+ * - Otherwise, compose base + local with a separator
+ *
+ * @param name - Template name (e.g. "supervisor", "supervisor-routing")
+ * @param stateRoot - Root path for .pi/ state directory
+ * @returns The composed template body, or null if no template found
+ *
+ * @since TP-058
+ */
+export function loadSupervisorTemplate(name: string, stateRoot: string, localName?: string): string | null {
+	const basePath = resolveBaseTemplatePath(name);
+	const baseDef = parseSupervisorTemplate(basePath);
+
+	// Load local override from .pi/agents/{localName}.md (defaults to base name)
+	// This allows routing template (base: "supervisor-routing") to share the
+	// same local override as the main supervisor (local: "supervisor").
+	const effectiveLocalName = localName || name;
+	const localPath = stateRoot ? join(stateRoot, ".pi", "agents", `${effectiveLocalName}.md`) : "";
+	const localDef = localPath ? parseSupervisorTemplate(localPath) : null;
+
+	// No base and no local → null (triggers fallback to inline prompt)
+	if (!baseDef && !localDef) return null;
+
+	// Local with standalone: true → use local as-is, ignore base
+	if (localDef?.fm.standalone === "true") {
+		return localDef.body;
+	}
+
+	// Compose base + local
+	const baseBody = baseDef?.body || "";
+	const localBody = localDef?.body || "";
+	if (localBody) {
+		return baseBody + "\n\n---\n\n## Project-Specific Guidance\n\n" + localBody;
+	}
+	return baseBody;
+}
+
+/**
+ * Replace `{{variable}}` placeholders in a template string.
+ *
+ * @param template - Template string with `{{key}}` placeholders
+ * @param vars - Key-value map of variable replacements
+ * @returns Template with all known placeholders replaced
+ *
+ * @since TP-058
+ */
+function replaceTemplateVars(template: string, vars: Record<string, string>): string {
+	return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+		return key in vars ? vars[key] : match;
+	});
+}
+
+
+/**
+ * Build the guardrails section dynamically based on integration mode (TP-043).
+ * Extracted as a helper so both the template path and inline fallback can reuse it.
+ * @since TP-058
+ */
+function buildGuardrailsSection(integrationMode: string): string {
+	if (integrationMode === "supervised" || integrationMode === "auto") {
+		const modeNote = integrationMode === "supervised"
+			? `**Supervised mode:** Before executing integration, describe your plan and ask the operator for confirmation.`
+			: `**Auto mode:** Execute integration directly. Report the outcome to the operator. Pause only on errors or conflicts.`;
+		return `## What You Must NEVER Do
+
+1. Never delete \`.pi/batch-state.json\` without operator approval
+2. Never modify task code (files that workers wrote)
+3. Never modify PROMPT.md files
+4. Never \`git reset --hard\` with uncommitted changes
+5. Never skip tasks/waves without telling the operator
+6. Never create GitHub releases
+
+## Integration Permissions (mode: ${integrationMode})
+
+You are authorized to perform integration operations after batch completion:
+- \`git push origin <orch-branch>\` — push the orch branch for PR creation
+- \`gh pr create\` — create pull requests for integration
+- \`git merge --ff-only\` or \`git merge --no-edit\` — local branch integration
+- \`git branch -D <orch-branch>\` — cleanup after successful integration
+
+${modeNote}`;
+	}
+	return `## What You Must NEVER Do
+
+1. Never \`git push\` to any remote
+2. Never delete \`.pi/batch-state.json\` without operator approval
+3. Never modify task code (files that workers wrote)
+4. Never modify PROMPT.md files
+5. Never \`git reset --hard\` with uncommitted changes
+6. Never skip tasks/waves without telling the operator
+7. Never create PRs or GitHub releases`;
+}
+
+/**
+ * Build the autonomy level description for the current autonomy setting.
+ * @since TP-058
+ */
+function buildAutonomyDescription(autonomyLabel: string): string {
+	switch (autonomyLabel) {
+		case "interactive":
+			return `**Your current level is INTERACTIVE.** ASK the operator before any Tier 0 Known or Destructive action. Explain what you want to do, why, and what the alternatives are. Let the operator decide.`;
+		case "supervised":
+			return `**Your current level is SUPERVISED.** Execute Tier 0 Known patterns automatically (retries, cleanup, session restarts). ASK before Destructive actions (manual merges, state editing, skipping tasks, killing sessions). Always explain what you did and why.`;
+		case "autonomous":
+			return `**Your current level is AUTONOMOUS.** Execute all recovery actions automatically. Pause and summarize only when you're genuinely stuck and cannot resolve the issue. The operator trusts you to make reasonable decisions.`;
+		default:
+			return "";
+	}
+}
+
 /**
  * Build the supervisor system prompt.
  *
@@ -1789,38 +1954,37 @@ export function buildSupervisorSystemPrompt(
 	const actionsPath = auditTrailPath(stateRoot);
 	const integrationMode = config.orchestrator.integration;
 
-	// TP-043: Build guardrails section dynamically based on integration mode.
-	// When integration is "supervised" or "auto", the supervisor is allowed to
-	// push branches and create PRs as part of post-batch integration.
-	const guardrailsSection = integrationMode === "supervised" || integrationMode === "auto"
-		? `## What You Must NEVER Do
+	// Build dynamic sections
+	const guardrailsSection = buildGuardrailsSection(integrationMode);
+	const autonomyGuidance = buildAutonomyDescription(autonomyLabel);
 
-1. Never delete \`.pi/batch-state.json\` without operator approval
-2. Never modify task code (files that workers wrote)
-3. Never modify PROMPT.md files
-4. Never \`git reset --hard\` with uncommitted changes
-5. Never skip tasks/waves without telling the operator
-6. Never create GitHub releases
+	// TP-058: Try template-based prompt first, fall back to inline prompt.
+	const template = loadSupervisorTemplate("supervisor", stateRoot);
+	if (template) {
+		const vars: Record<string, string> = {
+			batchId: batchState.batchId || "(initializing — read batch state file)",
+			phase: batchState.phase,
+			baseBranch: batchState.baseBranch,
+			orchBranch: batchState.orchBranch || "(legacy mode)",
+			waveSummary,
+			totalTasks: String(batchState.totalTasks),
+			succeededTasks: String(batchState.succeededTasks),
+			failedTasks: String(batchState.failedTasks),
+			skippedTasks: String(batchState.skippedTasks),
+			blockedTasks: String(batchState.blockedTasks),
+			autonomy: autonomyLabel,
+			batchStatePath,
+			eventsPath,
+			actionsPath,
+			stateRoot,
+			primerPath,
+			guardrailsSection,
+			autonomyGuidance,
+		};
+		return replaceTemplateVars(template, vars);
+	}
 
-## Integration Permissions (mode: ${integrationMode})
-
-You are authorized to perform integration operations after batch completion:
-- \`git push origin <orch-branch>\` — push the orch branch for PR creation
-- \`gh pr create\` — create pull requests for integration
-- \`git merge --ff-only\` or \`git merge --no-edit\` — local branch integration
-- \`git branch -D <orch-branch>\` — cleanup after successful integration
-
-${integrationMode === "supervised" ? `**Supervised mode:** Before executing integration, describe your plan and ask the operator for confirmation.` : `**Auto mode:** Execute integration directly. Report the outcome to the operator. Pause only on errors or conflicts.`}`
-		: `## What You Must NEVER Do
-
-1. Never \`git push\` to any remote
-2. Never delete \`.pi/batch-state.json\` without operator approval
-3. Never modify task code (files that workers wrote)
-4. Never modify PROMPT.md files
-5. Never \`git reset --hard\` with uncommitted changes
-6. Never skip tasks/waves without telling the operator
-7. Never create PRs or GitHub releases`;
-
+	// ── Fallback: inline prompt (backward compatibility when template missing) ──
 	const prompt = `# Supervisor Agent
 
 You are the **batch supervisor** — a persistent agent that monitors a Taskplane
@@ -1915,7 +2079,7 @@ Every action you take falls into one of three categories:
 | Tier 0 Known   | ❓ ASK      | ✅ auto    | ✅ auto    |
 | Destructive    | ❓ ASK      | ❓ ASK     | ✅ auto    |
 
-${autonomyLabel === "interactive" ? `**Your current level is INTERACTIVE.** ASK the operator before any Tier 0 Known or Destructive action. Explain what you want to do, why, and what the alternatives are. Let the operator decide.` : ""}${autonomyLabel === "supervised" ? `**Your current level is SUPERVISED.** Execute Tier 0 Known patterns automatically (retries, cleanup, session restarts). ASK before Destructive actions (manual merges, state editing, skipping tasks, killing sessions). Always explain what you did and why.` : ""}${autonomyLabel === "autonomous" ? `**Your current level is AUTONOMOUS.** Execute all recovery actions automatically. Pause and summarize only when you're genuinely stuck and cannot resolve the issue. The operator trusts you to make reasonable decisions.` : ""}
+${autonomyGuidance}
 
 ## Audit Trail
 
@@ -2020,8 +2184,33 @@ export function buildRoutingSystemPrompt(
 	const primerPath = resolvePrimerPath();
 
 	// Map routing state to the appropriate script section in the primer
+	const scriptGuidance = buildRoutingScriptGuidance(routingContext.routingState, primerPath);
+
+	// TP-058: Try template-based prompt first, fall back to inline prompt.
+	const template = loadSupervisorTemplate("supervisor-routing", stateRoot, "supervisor");
+	if (template) {
+		const vars: Record<string, string> = {
+			routingState: routingContext.routingState,
+			contextMessage: routingContext.contextMessage,
+			scriptGuidance,
+			primerPath,
+		};
+		return replaceTemplateVars(template, vars);
+	}
+
+	// ── Fallback: inline prompt (backward compatibility when template missing) ──
+	return buildRoutingInlinePrompt(routingContext, primerPath, scriptGuidance);
+}
+
+/**
+ * Build the script guidance section for routing prompts.
+ * Contains the per-state instructions that guide the supervisor's behavior.
+ *
+ * @since TP-058
+ */
+function buildRoutingScriptGuidance(routingState: string, primerPath: string): string {
 	let scriptGuidance: string;
-	switch (routingContext.routingState) {
+	switch (routingState) {
 		case "no-config":
 			scriptGuidance = `## Your Mission: Onboarding
 
@@ -2048,6 +2237,7 @@ When the conversation reaches the config generation phase, create ALL of these
 - \`.pi/agents/task-worker.md\` — worker prompt overrides (can start empty with a brief comment)
 - \`.pi/agents/task-reviewer.md\` — reviewer prompt overrides (can start empty with a brief comment)
 - \`.pi/agents/task-merger.md\` — merger prompt overrides (can start empty with a brief comment)
+- \`.pi/agents/supervisor.md\` — supervisor prompt overrides (can start empty with a brief comment)
 - \`.gitignore\` entries — add Taskplane working file patterns if not already present
 
 Use conservative creation: check if each file exists before writing. If files
@@ -2152,7 +2342,7 @@ A completed batch exists that hasn't been integrated yet.
 		default:
 			scriptGuidance = `## Your Mission: Project Assistance
 
-Detected state: ${routingContext.routingState}
+Detected state: ${routingState}
 
 1. **Read the primer** at \`${primerPath}\`
 2. **Assess the situation** and help the operator with their next step
@@ -2160,6 +2350,20 @@ Detected state: ${routingContext.routingState}
 			break;
 	}
 
+	return scriptGuidance;
+}
+
+/**
+ * Inline fallback for the routing system prompt.
+ * Used when the base template file cannot be found.
+ *
+ * @since TP-058
+ */
+function buildRoutingInlinePrompt(
+	routingContext: SupervisorRoutingContext,
+	primerPath: string,
+	scriptGuidance: string,
+): string {
 	const prompt = `# Project Supervisor
 
 You are the **project supervisor** — a conversational agent that helps operators

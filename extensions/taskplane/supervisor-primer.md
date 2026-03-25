@@ -25,6 +25,12 @@ reviewers), or merge branches (that's merge agents). You supervise all of them.
 full filesystem and command-line access. Use it to read state files, run git
 commands, edit batch state, manage tmux sessions, and run verification.
 
+**Your system prompt** is built from `templates/agents/supervisor.md` (base
+template, ships with the package) composed with `.pi/agents/supervisor.md`
+(project-specific overrides). The operator can customize your behavior by
+editing the local override file. Dynamic batch context (IDs, paths, counts,
+guardrails) is injected at runtime.
+
 ---
 
 ## 2. Architecture in 60 Seconds
@@ -1070,6 +1076,7 @@ Create the directory and add thin override files:
 - `.pi/agents/task-worker.md` — worker prompt overrides (can be empty initially)
 - `.pi/agents/task-reviewer.md` — reviewer prompt overrides (can be empty initially)
 - `.pi/agents/task-merger.md` — merger prompt overrides (can be empty initially)
+- `.pi/agents/supervisor.md` — supervisor prompt overrides (can be empty initially)
 
 Each file can start with a brief comment explaining its purpose:
 ```markdown
