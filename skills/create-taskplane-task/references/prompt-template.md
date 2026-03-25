@@ -80,15 +80,17 @@ Copy this template when creating a new task. Replace all `[bracketed]` fields.
 - [ ] [Specific, verifiable task]
 - [ ] [Specific, verifiable task]
 - [ ] [Specific, verifiable task]
+- [ ] Run targeted tests: `[test command] --changed` or specific test files
 
 **Artifacts:**
 - `path/to/file` (new | modified)
 
 ### Step [N-1]: Testing & Verification
 
-> ZERO test failures allowed.
+> ZERO test failures allowed. This step runs the FULL test suite as a quality gate.
+> (Earlier steps should use targeted tests for fast feedback — see worker prompt.)
 
-- [ ] Run unit tests: `[test command from task-runner.yaml]`
+- [ ] Run FULL test suite: `[test command from task-runner.yaml]`
 - [ ] Run integration tests (if applicable)
 - [ ] Fix all failures
 - [ ] Build passes: `[build command]`
@@ -193,7 +195,7 @@ this from PROMPT.md.
 ### Step [N-1]: Testing & Verification
 **Status:** ⬜ Not Started
 
-- [ ] Unit tests passing
+- [ ] FULL test suite passing
 - [ ] Integration tests (if applicable)
 - [ ] All failures fixed
 - [ ] Build passes

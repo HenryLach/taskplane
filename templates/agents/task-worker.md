@@ -265,42 +265,4 @@ checkpoints protect against regressions even when intermediate steps use targete
 2. The merge agent (before merging to the orchestrator branch)
 3. CI (before merging to main)
 
-## Test Execution Strategy
 
-Use targeted tests during implementation for fast feedback. Save the full suite
-for the quality gate.
-
-### During implementation steps
-
-Run only tests related to your changes. Prefer `--changed` if available:
-
-```bash
-cd extensions && npx vitest run --changed
-```
-
-Alternatively, run specific test files that cover the code you modified:
-
-```bash
-cd extensions && npx vitest run tests/some-relevant.test.ts
-```
-
-- If targeted tests fail, fix the failure before proceeding. Don't accumulate
-  failures across steps.
-- If `--changed` returns no tests, that's fine — it means your changes don't
-  have directly related test files. The full suite in the Testing step will
-  catch any indirect regressions.
-
-### In the Testing & Verification step
-
-Run the **full** test suite. This is the quality gate — ALL tests must pass:
-
-```bash
-cd extensions && npx vitest run
-```
-
-### Why this balance works
-
-Fast feedback during implementation, full verification at the gate. The merge
-agent and CI run the full suite again after you — you have multiple safety nets.
-Running the full suite (~170s) at every step wastes minutes on unrelated tests
-when targeted runs give you the same signal in seconds.

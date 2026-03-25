@@ -1,10 +1,10 @@
 # TP-060: Targeted Test Execution — Status
 
-**Current Step:** Step 1: Update Worker Template — Test Strategy
+**Current Step:** Step 2: Update PROMPT Template — Testing Step
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
@@ -31,7 +31,7 @@
 ### Step 2: Update PROMPT Template — Testing Step
 **Status:** 🟨 In Progress
 
-- [ ] Update Testing & Verification step to emphasize full suite
+- [x] Update Testing & Verification step to emphasize full suite
 - [ ] Add targeted test suggestion to per-step template
 
 ---
@@ -63,6 +63,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -93,6 +94,7 @@
 | 2026-03-25 04:23 | Step 3 started | Update Skill Documentation |
 | 2026-03-25 04:23 | Step 4 started | Testing & Verification |
 | 2026-03-25 04:23 | Step 5 started | Documentation & Delivery |
+| 2026-03-25 04:26 | Review R001 | plan Step 1: APPROVE |
 
 ---
 
