@@ -311,7 +311,7 @@ Verify every task against this before reporting the launch command:
   - [ ] `## Context to Read First` lists only needed Tier 3 docs
   - [ ] `## File Scope` lists files/dirs the task will touch
   - [ ] Each step has checkboxes with verifiable outcomes
-  - [ ] Explicit testing step with commands
+  - [ ] Explicit testing step with full-suite command (per-step targeted tests are in the worker prompt)
   - [ ] `## Do NOT` guardrails
   - [ ] "Must Update" and "Check If Affected" doc lists
   - [ ] `## Git Commit Convention` section (from template)
@@ -360,6 +360,9 @@ files and make sure their file scopes reflect that.
   lists, docs drift from reality and future tasks work from stale context.
 - **Testing step required.** Workers can't distinguish pre-existing failures from
   regressions they caused — every task needs a clean test pass to stay unblocked.
+  The Testing & Verification step runs the **full** test suite as a quality gate.
+  Implementation steps should use **targeted tests** (e.g., `--changed` or
+  specific test files) for fast feedback — the worker prompt handles this.
 - **Self-contained PROMPT.md.** The worker starts with a fresh context and no
   memory of the conversation that created the task. Everything it needs to begin
   must be in PROMPT.md and the referenced docs.
