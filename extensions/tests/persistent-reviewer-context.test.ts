@@ -293,7 +293,10 @@ describe("5.x: Fallback — dead persistent session triggers fresh spawn", () =>
 	});
 
 	it("5.6: fallback logs verdict with (fallback) suffix", () => {
-		expect(taskRunnerSource).toContain("${verdict} (fallback)");
+		// processReviewVerdict helper appends suffix in parentheses to the log line
+		expect(taskRunnerSource).toContain("(${suffix})");
+		// The fallback call site passes "fallback" as the suffix argument
+		expect(taskRunnerSource).toContain('"fallback"');
 	});
 
 	it("5.7: fallback kills broken persistent session before fresh spawn", () => {
