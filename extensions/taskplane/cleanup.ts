@@ -357,3 +357,60 @@ export function formatLogRotation(result: LogRotationResult): string {
 	}
 	return parts.join("\n");
 }
+
+// ── Combined Preflight Cleanup ──────────────────────────────────────
+
+/**
+ * Combined result of preflight cleanup (Layer 2 + Layer 3).
+ */
+export interface PreflightCleanupResult {
+	sweep: PreflightSweepResult;
+	rotation: LogRotationResult;
+}
+
+/**
+ * Run all preflight cleanup operations (Layer 2 + Layer 3).
+ *
+ * Called from the engine's preflight phase before batch starts.
+ * Always non-fatal.
+ *
+ * @param stateRoot - Root directory containing .pi/
+ * @param deps - Sweep dependencies (active batch check)
+ * @returns Combined cleanup result
+ */
+export function runPreflightCleanup(
+	stateRoot: string,
+	deps: SweepDeps,
+): PreflightCleanupResult {
+	const sweep = sweepStaleArtifacts(stateRoot, deps);
+	const rotation = rotateSupervisorLogs(stateRoot);
+	return { sweep, rotation };
+}
+
+/**
+ * Format combined preflight cleanup result for user notification.
+ *
+ * Returns an empty string if nothing happened (no files cleaned/rotated).
+ */
+export function formatPreflightCleanup(result: PreflightCleanupResult): string {
+	const parts: string[] = [];
+
+	// Layer 2: age-based sweep
+	if (!result.sweep.skipped && result.sweep.staleFilesDeleted > 0) {
+		parts.push(`removed ${result.sweep.staleFilesDeleted} stale artifact(s) (>7 days old)`);
+	}
+
+	// Layer 3: log rotation
+	if (result.rotation.rotated.length > 0) {
+		parts.push(`rotated ${result.rotation.rotated.join(", ")} (>5 MB)`);
+	}
+
+	// Collect warnings from both layers
+	const warnings = [...result.sweep.warnings, ...result.rotation.warnings];
+	if (warnings.length > 0) {
+		parts.push(`⚠️ ${warnings.length} cleanup warning(s)`);
+	}
+
+	if (parts.length === 0) return "";
+	return `🧹 Preflight cleanup: ${parts.join("; ")}`;
+}
