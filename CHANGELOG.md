@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-03-24
+
+### New
+- **Persistent reviewer context (TP-057, #146)** — one reviewer per task instead of per review. The reviewer stays alive across all `review_step` calls via a `wait_for_review` blocking tool, maintaining full context about the task and previous reviews. ~50-60% reduction in reviewer token cost. Falls back to fresh spawn if the persistent reviewer crashes or hits the context limit.
+- **New file: `extensions/reviewer-extension.ts`** — registers the `wait_for_review` tool for persistent reviewer mode. Signal protocol uses numbered files (`.review-signal-{NNN}`) for request coordination and `.review-shutdown` for clean exit.
+
+### Changed
+- **Reviewer template updated** — supports both persistent mode (with `wait_for_review` tool) and fallback fresh-spawn mode. Cross-step awareness: reviewer references previous findings when reviewing later steps.
+
 ## [0.12.0] - 2026-03-24
 
 ### New
@@ -448,7 +457,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.12.0...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.13.0...HEAD
+[0.13.0]: https://github.com/HenryLach/taskplane/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/HenryLach/taskplane/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/HenryLach/taskplane/compare/v0.10.2...v0.11.0
 [0.10.2]: https://github.com/HenryLach/taskplane/compare/v0.10.1...v0.10.2
