@@ -35,7 +35,7 @@
 
 ### Step 3: Add Graceful Skip on Double Failure
 **Status:** ⬜ Not Started
-- [ ] Improve logging for skipped reviews
+- [x] Improve logging for skipped reviews
 - [ ] Make extractVerdict tolerate non-standard formats ("Changes requested" → REVISE)
 - [ ] Ensure shutdown signal written on all paths
 

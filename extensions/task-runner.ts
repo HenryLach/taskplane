@@ -1111,8 +1111,24 @@ function generateReviewRequest(
 }
 
 function extractVerdict(reviewContent: string): string {
+	// Primary: standard format "### Verdict: APPROVE|REVISE|RETHINK"
 	const match = reviewContent.match(/###?\s*Verdict[:\s]*(APPROVE|REVISE|RETHINK)/i);
-	return match ? match[1].toUpperCase() : "UNKNOWN";
+	if (match) return match[1].toUpperCase();
+
+	// TP-068: Tolerate non-standard verdict formats from models that don't
+	// follow the exact template (e.g., "Changes requested", "Needs revision").
+	const lower = reviewContent.toLowerCase();
+	if (/\b(changes?\s+requested|needs?\s+revision|please\s+revise|must\s+revise)\b/.test(lower)) {
+		return "REVISE";
+	}
+	if (/\b(looks?\s+good|no\s+issues?\s+found|approved?)\b/.test(lower)) {
+		return "APPROVE";
+	}
+	if (/\b(fundamentally\s+wrong|rethink|reconsider\s+the\s+approach)\b/.test(lower)) {
+		return "RETHINK";
+	}
+
+	return "UNKNOWN";
 }
 
 // ── Subagent Spawner ─────────────────────────────────────────────────
@@ -2589,18 +2605,27 @@ export default function (pi: ExtensionAPI) {
 							details: undefined,
 						};
 					} catch (fallbackErr: any) {
-						// Both persistent and fallback failed
+						// Both persistent and fallback failed — TP-068: clear logging
 						clearInterval(state.reviewerTimer);
 						clearReviewerState();
 						state.reviewerStatus = "error";
 						writeLaneState(state);
 						updateWidgets();
 
+						const skipMsg = `⚠️ Reviews skipped for Step ${stepNum} — reviewer model could not process ${reviewType} review request. Both persistent and fallback modes failed.`;
+						console.error(`[task-runner] ${skipMsg}`);
 						logExecution(statusPath, `Reviewer R${num}`,
-							`${reviewType} review — both persistent and fallback failed: ${fallbackErr?.message || fallbackErr}`);
+							`${skipMsg} Error: ${fallbackErr?.message || fallbackErr}`);
+
+						// TP-068: Ensure shutdown signal is written even on double failure
+						try {
+							const shutdownPath = join(reviewsDir, REVIEWER_SHUTDOWN_SIGNAL);
+							if (!existsSync(reviewsDir)) mkdirSync(reviewsDir, { recursive: true });
+							writeFileSync(shutdownPath, "shutdown");
+						} catch {}
 
 						return {
-							content: [{ type: "text" as const, text: `UNAVAILABLE — reviewer error: ${fallbackErr?.message || fallbackErr}` }],
+							content: [{ type: "text" as const, text: `UNAVAILABLE — ${skipMsg}` }],
 							details: undefined,
 						};
 					}
