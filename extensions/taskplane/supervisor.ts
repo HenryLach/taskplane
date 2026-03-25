@@ -1812,12 +1812,15 @@ function parseSupervisorTemplate(filePath: string): { fm: Record<string, string>
  *
  * @since TP-058
  */
-export function loadSupervisorTemplate(name: string, stateRoot: string): string | null {
+export function loadSupervisorTemplate(name: string, stateRoot: string, localName?: string): string | null {
 	const basePath = resolveBaseTemplatePath(name);
 	const baseDef = parseSupervisorTemplate(basePath);
 
-	// Load local override from .pi/agents/{name}.md
-	const localPath = stateRoot ? join(stateRoot, ".pi", "agents", `${name}.md`) : "";
+	// Load local override from .pi/agents/{localName}.md (defaults to base name)
+	// This allows routing template (base: "supervisor-routing") to share the
+	// same local override as the main supervisor (local: "supervisor").
+	const effectiveLocalName = localName || name;
+	const localPath = stateRoot ? join(stateRoot, ".pi", "agents", `${effectiveLocalName}.md`) : "";
 	const localDef = localPath ? parseSupervisorTemplate(localPath) : null;
 
 	// No base and no local → null (triggers fallback to inline prompt)
@@ -1969,7 +1972,7 @@ export function buildSupervisorSystemPrompt(
 			failedTasks: String(batchState.failedTasks),
 			skippedTasks: String(batchState.skippedTasks),
 			blockedTasks: String(batchState.blockedTasks),
-			autonomyLabel,
+			autonomy: autonomyLabel,
 			batchStatePath,
 			eventsPath,
 			actionsPath,
@@ -2184,7 +2187,7 @@ export function buildRoutingSystemPrompt(
 	const scriptGuidance = buildRoutingScriptGuidance(routingContext.routingState, primerPath);
 
 	// TP-058: Try template-based prompt first, fall back to inline prompt.
-	const template = loadSupervisorTemplate("supervisor-routing", stateRoot);
+	const template = loadSupervisorTemplate("supervisor-routing", stateRoot, "supervisor");
 	if (template) {
 		const vars: Record<string, string> = {
 			routingState: routingContext.routingState,
