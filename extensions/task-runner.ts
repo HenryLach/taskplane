@@ -2378,8 +2378,14 @@ export default function (pi: ExtensionAPI) {
 				/**
 				 * Poll for the verdict file to appear (written by the reviewer).
 				 * Same pattern as the original review_step handler.
+				 *
+				 * Early-exit detection (TP-068): If the reviewer exits within 30s
+				 * of spawn without producing a verdict, it likely failed to use the
+				 * wait_for_review tool correctly (e.g., called it via bash). This
+				 * triggers a faster fallback instead of waiting 30 minutes.
 				 */
-				async function pollForVerdict(): Promise<string> {
+				async function pollForVerdict(spawnTime?: number): Promise<string> {
+					const EARLY_EXIT_THRESHOLD_MS = 30_000; // 30 seconds
 					const verdictTimeout = 30 * 60 * 1000; // 30 minutes
 					const pollStart = Date.now();
 					while (Date.now() - pollStart < verdictTimeout) {
@@ -2388,6 +2394,13 @@ export default function (pi: ExtensionAPI) {
 						}
 						// Also check if persistent reviewer died while we're waiting
 						if (state.persistentReviewerSession && !isPersistentReviewerAlive()) {
+							// TP-068: Detect early exit as tool compatibility failure
+							if (spawnTime && (Date.now() - spawnTime) < EARLY_EXIT_THRESHOLD_MS) {
+								throw new Error(
+									"Persistent reviewer exited within 30s of spawn without producing a verdict — " +
+									"wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool)"
+								);
+							}
 							throw new Error("Persistent reviewer session died while waiting for verdict");
 						}
 						await new Promise(r => setTimeout(r, 2000));
@@ -2409,7 +2422,10 @@ export default function (pi: ExtensionAPI) {
 						state.persistentReviewerSignalNum = 0;
 					}
 
+					// Track spawn time for early-exit detection (TP-068)
+					let spawnTime: number | undefined;
 					if (needsSpawn) {
+						spawnTime = Date.now();
 						spawnPersistentReviewer();
 						// Give the reviewer a moment to start and call wait_for_review
 						await new Promise(r => setTimeout(r, 5000));
@@ -2418,8 +2434,8 @@ export default function (pi: ExtensionAPI) {
 					// Signal the reviewer with the new request
 					signalPersistentReviewer();
 
-					// Poll for the verdict file
-					const reviewContent = await pollForVerdict();
+					// Poll for the verdict file (pass spawnTime for early-exit detection)
+					const reviewContent = await pollForVerdict(spawnTime);
 
 					// Stop the per-review timer
 					if (state.reviewerTimer) clearInterval(state.reviewerTimer);

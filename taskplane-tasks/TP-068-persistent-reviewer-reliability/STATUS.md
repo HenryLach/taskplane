@@ -1,10 +1,10 @@
 # TP-068: Fix Persistent Reviewer Reliability — Status
 
-**Current Step:** Step 2: Add Early-Exit Detection
+**Current Step:** Step 3: Add Graceful Skip on Double Failure
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
@@ -27,9 +27,9 @@
 ---
 
 ### Step 2: Add Early-Exit Detection
-**Status:** ⬜ Not Started
-- [ ] Detect reviewer exit within 30s as tool compatibility failure
-- [ ] Trigger fallback immediately instead of waiting for verdict timeout
+**Status:** ✅ Complete
+- [x] Detect reviewer exit within 30s as tool compatibility failure
+- [x] Trigger fallback immediately instead of waiting for verdict timeout
 
 ---
 
@@ -59,6 +59,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -73,6 +74,7 @@
 | 2026-03-25 21:10 | Task started | Extension-driven execution |
 | 2026-03-25 21:10 | Step 0 started | Preflight |
 | 2026-03-25 21:12 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
+| 2026-03-25 21:13 | Review R001 | plan Step 1: APPROVE (fallback) |
 
 ---
 
