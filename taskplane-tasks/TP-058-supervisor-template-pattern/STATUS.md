@@ -1,6 +1,6 @@
 # TP-058: Supervisor Template Pattern — Status
 
-**Current Step:** Step 1: Create Base and Local Templates
+**Current Step:** Step 2: Refactor Prompt Building to Use Templates
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
@@ -24,7 +24,7 @@
 ---
 
 ### Step 1: Create Base and Local Templates
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Create `templates/agents/supervisor.md` with static prompt sections and template variables
 - [x] Create routing template (separate file or marked section)
