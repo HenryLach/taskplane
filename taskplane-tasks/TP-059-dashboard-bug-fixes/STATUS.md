@@ -1,11 +1,11 @@
 # TP-059: Dashboard Bug Fixes — Status
 
-**Current Step:** Complete
-**Status:** ✅ Done
+**Current Step:** Not Started
+**Status:** 🔵 Ready for Execution
 **Last Updated:** 2026-03-25
 **Review Level:** 1
-**Review Counter:** 1
-**Iteration:** 2
+**Review Counter:** 0
+**Iteration:** 0
 **Size:** S
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -15,59 +15,58 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Read formatting.ts:687 — hardcoded "develop"
-- [x] Read app.js:631+ — merge session filter and telemetry lookups
-- [x] Confirm two failing tests in supervisor-merge-monitoring.test.ts
+- [ ] Read formatting.ts:687 — hardcoded "develop"
+- [ ] Read app.js:631+ — merge session filter and telemetry lookups
+- [ ] Confirm two failing tests in supervisor-merge-monitoring.test.ts
 
 ---
 
 ### Step 1: Fix Merge Message (#201)
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Replace hardcoded "develop" with actual orch branch name
-- [x] Thread orch branch through to formatting function if needed
+- [ ] Replace hardcoded "develop" with actual orch branch name
+- [ ] Thread orch branch through to formatting function if needed
 
 ---
 
 ### Step 2: Fix Merge Agents Section (#202)
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Fix session filter at line 631 to match actual naming pattern
-- [x] Fix telemetry lookups at lines 657, 661, 721
+- [ ] Fix session filter at line 631 to match actual naming pattern
+- [ ] Fix telemetry lookups at lines 657, 661, 721
 
 ---
 
 ### Step 3: Fix Test Failures (#193)
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Fix test 9.3 to match current implementation
-- [x] Fix test 10.5 to match current implementation
+- [ ] Fix test 9.3 to match current implementation
+- [ ] Fix test 10.5 to match current implementation
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Previously failing tests now pass
-- [x] Full test suite passing
-- [x] Build passes
+- [ ] Previously failing tests now pass
+- [ ] Full test suite passing
+- [ ] Build passes
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Discoveries logged
-- [x] `.DONE` created
+- [ ] Discoveries logged
+- [ ] `.DONE` created
 
 ---
 
 ## Reviews
 
 | # | Type | Step | Verdict | File |
-| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -76,9 +75,6 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
-| Test 9.3 and 10.5 failures caused by source extraction window too small (2000/3000 chars) after implementation grew during TP-056 | Fixed: increased to 2500/4000 chars | `extensions/tests/supervisor-merge-monitoring.test.ts` |
-| Dashboard merge session filter assumed `orch-merge-*` prefix but actual naming is `{prefix}-{opId}-merge-{N}` | Fixed: use `includes("-merge-")` | `dashboard/public/app.js` |
-| `OrchDashboardViewModel` was missing `orchBranch` field needed for merge message | Fixed: added field, threaded from `batchState.orchBranch` | `extensions/taskplane/types.ts`, `formatting.ts` |
 
 ---
 
@@ -87,21 +83,6 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-25 | Task staged | PROMPT.md and STATUS.md created |
-| 2026-03-25 03:42 | Task started | Extension-driven execution |
-| 2026-03-25 03:42 | Step 0 started | Preflight |
-| 2026-03-25 03:42 | Step 1 started | Fix Merge Message (#201) |
-| 2026-03-25 03:42 | Step 2 started | Fix Merge Agents Section (#202) |
-| 2026-03-25 03:42 | Step 3 started | Fix Test Failures (#193) |
-| 2026-03-25 03:42 | Step 4 started | Testing & Verification |
-| 2026-03-25 03:42 | Step 5 started | Documentation & Delivery |
-| 2026-03-25 03:42 | Task started | Extension-driven execution |
-| 2026-03-25 03:42 | Step 0 started | Preflight |
-| 2026-03-25 03:42 | Step 1 started | Fix Merge Message (#201) |
-| 2026-03-25 03:42 | Step 2 started | Fix Merge Agents Section (#202) |
-| 2026-03-25 03:42 | Step 3 started | Fix Test Failures (#193) |
-| 2026-03-25 03:42 | Step 4 started | Testing & Verification |
-| 2026-03-25 03:42 | Step 5 started | Documentation & Delivery |
-| 2026-03-25 03:45 | Review R001 | plan Step 1: APPROVE |
 
 ---
 
