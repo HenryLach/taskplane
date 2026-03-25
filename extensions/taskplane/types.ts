@@ -1306,6 +1306,41 @@ export const MERGE_HEALTH_STUCK_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
  */
 export const MERGE_HEALTH_CAPTURE_LINES = 10;
 
+// ── Persistent Reviewer Constants (TP-057) ───────────────────────────
+
+/**
+ * Polling interval (ms) for the `wait_for_review` tool to check for signal files.
+ * Reviews take minutes; 3s latency is invisible to the user.
+ * @since TP-057
+ */
+export const REVIEWER_POLL_INTERVAL_MS = 3_000;
+
+/**
+ * Maximum time (ms) for the `wait_for_review` tool to wait for a review signal.
+ * 30 minutes — generous for long-running code reviews.
+ * @since TP-057
+ */
+export const REVIEWER_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
+
+/**
+ * Grace period (ms) after writing shutdown signal before killing the reviewer session.
+ * Allows the reviewer to exit cleanly after receiving the shutdown signal.
+ * @since TP-057
+ */
+export const REVIEWER_SHUTDOWN_GRACE_MS = 10_000;
+
+/**
+ * Signal file prefix for review requests. Full name: `.review-signal-{NNN}`
+ * @since TP-057
+ */
+export const REVIEWER_SIGNAL_PREFIX = ".review-signal-";
+
+/**
+ * Shutdown signal filename written to .reviews/ when the task is complete.
+ * @since TP-057
+ */
+export const REVIEWER_SHUTDOWN_SIGNAL = ".review-shutdown";
+
 // ── Merge Health Event Types (TP-056) ────────────────────────────────
 
 /**
