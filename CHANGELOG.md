@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-03-25
+
+### Fixed
+- **Merge message says "into develop" (#201)** — now shows the actual orch branch name.
+- **Dashboard merge agents section empty during merge (#202)** — session filter updated to match `orch-{operatorId}-merge-{N}` naming pattern. Telemetry lookups also fixed.
+- **Two pre-existing test failures (#193)** — `supervisor-merge-monitoring.test.ts` tests 9.3 and 10.5 updated to match current implementation.
+
 ## [0.14.0] - 2026-03-25
 
 ### New
@@ -467,7 +474,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/HenryLach/taskplane/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/HenryLach/taskplane/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/HenryLach/taskplane/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/HenryLach/taskplane/compare/v0.11.0...v0.12.0
