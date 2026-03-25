@@ -2304,8 +2304,11 @@ export default function (pi: ExtensionAPI) {
 					// Initial prompt tells the reviewer to call wait_for_review
 					const initialPrompt =
 						"You are a persistent reviewer for this task. " +
-						"Call the `wait_for_review` tool now to receive your first review request. " +
-						"After writing each review, call `wait_for_review` again for the next one.";
+						"Use the `wait_for_review` tool now to receive your first review request. " +
+						"IMPORTANT: `wait_for_review` is a REGISTERED EXTENSION TOOL — call it " +
+						"the same way you call `read`, `write`, `edit`, or `grep`. " +
+						"Do NOT run it via `bash` or any shell command. " +
+						"After writing each review, use `wait_for_review` again for the next one.";
 
 					const spawned = spawnAgentTmux({
 						sessionName,

@@ -1,6 +1,6 @@
 # TP-068: Fix Persistent Reviewer Reliability — Status
 
-**Current Step:** Step 1: Fix Reviewer Template Prompting
+**Current Step:** Step 2: Add Early-Exit Detection
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
@@ -19,10 +19,10 @@
 ---
 
 ### Step 1: Fix Reviewer Template Prompting
-**Status:** ⬜ Not Started
-- [ ] Update template: explicitly state wait_for_review is a registered tool, not bash
-- [ ] Update inline spawn prompt in task-runner.ts
-- [ ] Update local template comments
+**Status:** ✅ Complete
+- [x] Update template: explicitly state wait_for_review is a registered tool, not bash
+- [x] Update inline spawn prompt in task-runner.ts
+- [x] Update local template comments
 
 ---
 
@@ -72,6 +72,7 @@
 | 2026-03-25 21:10 | Step 0 started | Preflight |
 | 2026-03-25 21:10 | Task started | Extension-driven execution |
 | 2026-03-25 21:10 | Step 0 started | Preflight |
+| 2026-03-25 21:12 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
 
 ---
 

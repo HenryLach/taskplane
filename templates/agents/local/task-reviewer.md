@@ -16,7 +16,7 @@ name: task-reviewer
   - Verdict format (APPROVE / REVISE)
   - Review file output conventions
   - Plan granularity guidance
-  - Persistent reviewer mode (wait_for_review tool workflow)
+  - Persistent reviewer mode (wait_for_review registered tool workflow — NOT bash)
 
   Add project-specific review criteria below. Common examples:
   - Required test coverage thresholds
