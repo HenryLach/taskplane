@@ -1131,6 +1131,60 @@ function extractVerdict(reviewContent: string): string {
 	return "UNKNOWN";
 }
 
+/**
+ * Process a review verdict: extract the verdict from review content, log it,
+ * update the status file, and build the result text for the worker.
+ *
+ * Shared by the persistent reviewer path and the fallback fresh-spawn path
+ * in the review_step tool handler.
+ */
+function processReviewVerdict(
+	reviewContent: string | null,
+	statusPath: string,
+	num: string,
+	reviewType: string,
+	stepNum: number,
+	reviewCounter: number,
+	suffix?: string,
+): { verdict: string; resultText: string } {
+	let verdict = "UNKNOWN";
+	let reviseDetails = "";
+	if (reviewContent) {
+		verdict = extractVerdict(reviewContent);
+		if (verdict === "REVISE") {
+			const summaryMatch = reviewContent.match(/###?\s*Summary[:\s]*([\s\S]*?)(?=###|$)/i);
+			reviseDetails = summaryMatch
+				? summaryMatch[1].trim().slice(0, 500)
+				: "See review file for details.";
+		}
+	} else {
+		verdict = "UNAVAILABLE";
+		const label = suffix ? `${suffix} reviewer` : "reviewer";
+		logExecution(statusPath, `Reviewer R${num}`,
+			`${reviewType} review — ${label} did not produce output`);
+	}
+
+	const reviewFile = `.reviews/R${num}-${reviewType}-step${stepNum}.md`;
+	logReview(statusPath, `R${num}`, reviewType, stepNum, verdict, reviewFile);
+	const logSuffix = suffix ? ` (${suffix})` : "";
+	logExecution(statusPath, `Review R${num}`,
+		`${reviewType} Step ${stepNum}: ${verdict}${logSuffix}`);
+	updateStatusField(statusPath, "Review Counter", `${reviewCounter}`);
+
+	let resultText: string;
+	if (verdict === "APPROVE") {
+		resultText = "APPROVE";
+	} else if (verdict === "REVISE") {
+		resultText = `REVISE: ${reviseDetails}\n\nFull review: ${reviewFile}`;
+	} else if (verdict === "RETHINK") {
+		resultText = `RETHINK — reconsider your approach. See ${reviewFile}`;
+	} else {
+		resultText = `UNAVAILABLE — reviewer did not produce a usable verdict.`;
+	}
+
+	return { verdict, resultText };
+}
+
 // ── Subagent Spawner ─────────────────────────────────────────────────
 
 function spawnAgent(opts: {
@@ -2460,29 +2514,10 @@ export default function (pi: ExtensionAPI) {
 					writeLaneState(state);
 					updateWidgets();
 
-					// Extract verdict from review output
-					let verdict = "UNKNOWN";
-					let reviseDetails = "";
-					if (reviewContent) {
-						verdict = extractVerdict(reviewContent);
-						if (verdict === "REVISE") {
-							const summaryMatch = reviewContent.match(/###?\s*Summary[:\s]*([\s\S]*?)(?=###|$)/i);
-							reviseDetails = summaryMatch
-								? summaryMatch[1].trim().slice(0, 500)
-								: "See review file for details.";
-						}
-					} else {
-						verdict = "UNAVAILABLE";
-						logExecution(statusPath, `Reviewer R${num}`,
-							`${reviewType} review — reviewer did not produce output`);
-					}
-
-					// Log the review in STATUS.md
-					logReview(statusPath, `R${num}`, reviewType, stepNum, verdict,
-						`.reviews/R${num}-${reviewType}-step${stepNum}.md`);
-					logExecution(statusPath, `Review R${num}`,
-						`${reviewType} Step ${stepNum}: ${verdict}`);
-					updateStatusField(statusPath, "Review Counter", `${state.reviewCounter}`);
+					// Extract verdict and build result
+					const { resultText } = processReviewVerdict(
+						reviewContent, statusPath, num, reviewType, stepNum, state.reviewCounter,
+					);
 
 					// Set reviewer to idle (NOT clear — persistent session stays alive)
 					state.reviewerStatus = "idle";
@@ -2492,18 +2527,6 @@ export default function (pi: ExtensionAPI) {
 					state.reviewerTimer = null;
 					writeLaneState(state);
 					updateWidgets();
-
-					// Return verdict to the worker
-					let resultText: string;
-					if (verdict === "APPROVE") {
-						resultText = "APPROVE";
-					} else if (verdict === "REVISE") {
-						resultText = `REVISE: ${reviseDetails}\n\nFull review: .reviews/R${num}-${reviewType}-step${stepNum}.md`;
-					} else if (verdict === "RETHINK") {
-						resultText = `RETHINK — reconsider your approach. See .reviews/R${num}-${reviewType}-step${stepNum}.md`;
-					} else {
-						resultText = `UNAVAILABLE — reviewer did not produce a usable verdict.`;
-					}
 
 					return {
 						content: [{ type: "text" as const, text: resultText }],
@@ -2562,43 +2585,16 @@ export default function (pi: ExtensionAPI) {
 						updateWidgets();
 
 						// Extract verdict from fallback review
-						let verdict = "UNKNOWN";
-						let reviseDetails = "";
-						if (existsSync(outputPath)) {
-							const review = readFileSync(outputPath, "utf-8");
-							verdict = extractVerdict(review);
-							if (verdict === "REVISE") {
-								const summaryMatch = review.match(/###?\s*Summary[:\s]*([\s\S]*?)(?=###|$)/i);
-								reviseDetails = summaryMatch
-									? summaryMatch[1].trim().slice(0, 500)
-									: "See review file for details.";
-							}
-						} else {
-							verdict = "UNAVAILABLE";
-							logExecution(statusPath, `Reviewer R${num}`,
-								`${reviewType} review — fallback reviewer did not produce output`);
-						}
-
-						logReview(statusPath, `R${num}`, reviewType, stepNum, verdict,
-							`.reviews/R${num}-${reviewType}-step${stepNum}.md`);
-						logExecution(statusPath, `Review R${num}`,
-							`${reviewType} Step ${stepNum}: ${verdict} (fallback)`);
-						updateStatusField(statusPath, "Review Counter", `${state.reviewCounter}`);
+						const fallbackContent = existsSync(outputPath)
+							? readFileSync(outputPath, "utf-8")
+							: null;
+						const { resultText } = processReviewVerdict(
+							fallbackContent, statusPath, num, reviewType, stepNum, state.reviewCounter, "fallback",
+						);
 
 						clearReviewerState();
 						writeLaneState(state);
 						updateWidgets();
-
-						let resultText: string;
-						if (verdict === "APPROVE") {
-							resultText = "APPROVE";
-						} else if (verdict === "REVISE") {
-							resultText = `REVISE: ${reviseDetails}\n\nFull review: .reviews/R${num}-${reviewType}-step${stepNum}.md`;
-						} else if (verdict === "RETHINK") {
-							resultText = `RETHINK — reconsider your approach. See .reviews/R${num}-${reviewType}-step${stepNum}.md`;
-						} else {
-							resultText = `UNAVAILABLE — reviewer did not produce a usable verdict.`;
-						}
 
 						return {
 							content: [{ type: "text" as const, text: resultText }],

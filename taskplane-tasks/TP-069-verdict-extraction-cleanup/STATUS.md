@@ -1,6 +1,6 @@
 # TP-069: Extract Shared Verdict Helper — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 2: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 1
@@ -18,9 +18,9 @@
 ---
 
 ### Step 1: Extract Shared Helper
-**Status:** ⬜ Not Started
-- [ ] Create processReviewVerdict() helper
-- [ ] Replace both extraction blocks
+**Status:** ✅ Complete
+- [x] Create processReviewVerdict() helper
+- [x] Replace both extraction blocks
 
 ---
 
