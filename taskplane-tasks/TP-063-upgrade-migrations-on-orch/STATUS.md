@@ -52,8 +52,8 @@
 
 ### Step 5: Documentation & Delivery
 **Status:** ⬜ Not Started
-- [ ] Update docs if needed
-- [ ] Discoveries logged
+- [x] Update docs if needed
+- [x] Discoveries logged
 - [ ] .DONE created
 
 ---
@@ -70,6 +70,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Migration state stored in `.pi/taskplane.json` (not `migration-state.json`) to coexist with future version-tracker fields | In scope | `extensions/taskplane/migrations.ts` |
+| Barrel re-export added in `index.ts` for migrations module | In scope | `extensions/taskplane/index.ts` |
 
 ---
 
