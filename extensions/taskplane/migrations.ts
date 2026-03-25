@@ -1,116 +1,135 @@
 /**
- * Additive upgrade migrations for taskplane.
+ * Additive Upgrade Migrations for Taskplane
  *
- * Runs automatically on /orch preflight and extension load to ensure
- * project scaffolding stays up-to-date after package upgrades.
+ * Provides a lightweight migration runner that applies additive-only
+ * changes (e.g., creating missing scaffold files) when extensions load
+ * or `/orch` starts. Migrations never overwrite existing files.
  *
- * Design principles:
- * - Additive only: never overwrite or delete existing files
- * - Idempotent: safe to run multiple times
- * - Non-fatal: migration failures warn but don't block execution
- * - Tracked: applied migrations recorded in .pi/taskplane.json
+ * Migration state is tracked in `.pi/taskplane.json` under the
+ * `migrations` key, preserving all existing version-tracker fields.
  *
  * @module migrations
  * @since TP-063
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
 // ── Types ────────────────────────────────────────────────────────────
 
 /**
- * A single additive migration definition.
+ * Metadata for a single additive migration.
  */
 export interface Migration {
-	/** Unique stable ID — once shipped, never changes */
+	/** Unique, stable identifier (e.g., "add-supervisor-local-template-v1") */
 	id: string;
 	/** Human-readable description for logs */
 	description: string;
-	/** Execute the migration. Returns a message describing what was done, or null if skipped. */
-	run: (ctx: MigrationContext) => string | null;
+	/**
+	 * Execute the migration. Should only create files that don't exist.
+	 *
+	 * @param projectRoot - Project root directory
+	 * @param packageRoot - Taskplane package root (for template resolution)
+	 * @returns A short message describing what was created, or null if skipped (already exists)
+	 * @throws If the migration cannot complete (e.g., missing template source)
+	 */
+	run(projectRoot: string, packageRoot: string): string | null;
 }
 
 /**
- * Runtime context passed to each migration's run function.
+ * Record of a single applied migration in `.pi/taskplane.json`.
  */
-export interface MigrationContext {
-	/** Project root (where .pi/ lives) */
-	stateRoot: string;
-	/** Path to the taskplane package root (for templates) */
-	packageRoot: string;
+export interface AppliedMigration {
+	/** ISO timestamp when the migration was applied */
+	appliedAt: string;
 }
 
 /**
- * Migration tracking state, stored as the `migrations` field in .pi/taskplane.json.
+ * The `migrations` section within `.pi/taskplane.json`.
  */
 export interface MigrationState {
-	/** Map of migration ID → timestamp (ISO string) when it was applied */
-	applied: Record<string, string>;
+	applied: Record<string, AppliedMigration>;
 }
 
-// ── State Persistence ────────────────────────────────────────────────
-
-const TASKPLANE_JSON_FILENAME = "taskplane.json";
+/**
+ * Shape of `.pi/taskplane.json` (partial — only fields we read/write).
+ * Other fields (version, installedAt, lastUpgraded, components) are
+ * preserved as-is during read-modify-write.
+ */
+export interface TaskplaneMeta {
+	[key: string]: unknown;
+	migrations?: MigrationState;
+}
 
 /**
- * Load the full .pi/taskplane.json metadata file.
- * Returns null if the file doesn't exist, or an empty object if malformed.
- * Preserves all existing fields (version, installedAt, etc.).
+ * Result of running migrations.
  */
-export function loadTaskplaneMeta(stateRoot: string): Record<string, unknown> | null {
-	const filePath = join(stateRoot, ".pi", TASKPLANE_JSON_FILENAME);
-	if (!existsSync(filePath)) {
-		return null;
-	}
+export interface MigrationRunResult {
+	/** Migration IDs that were applied in this run */
+	applied: string[];
+	/** Migration IDs that were skipped (already applied or target exists) */
+	skipped: string[];
+	/** Migrations that failed with errors (non-fatal — logged and skipped) */
+	errors: Array<{ id: string; error: string }>;
+	/** Human-readable messages for each applied migration */
+	messages: string[];
+}
+
+// ── Meta File Helpers ────────────────────────────────────────────────
+
+const TASKPLANE_META_FILENAME = "taskplane.json";
+
+/**
+ * Load `.pi/taskplane.json`, returning its content or an empty object
+ * if the file doesn't exist or is malformed.
+ *
+ * Never throws — returns `{}` for any read/parse error.
+ */
+export function loadTaskplaneMeta(projectRoot: string): TaskplaneMeta {
+	const metaPath = join(projectRoot, ".pi", TASKPLANE_META_FILENAME);
 	try {
-		const raw = readFileSync(filePath, "utf-8");
+		if (!existsSync(metaPath)) return {};
+		const raw = readFileSync(metaPath, "utf-8");
 		const parsed = JSON.parse(raw);
-		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-			return parsed as Record<string, unknown>;
-		}
-		return {};
+		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+		return parsed as TaskplaneMeta;
 	} catch {
 		return {};
 	}
 }
 
 /**
- * Save the full .pi/taskplane.json metadata file.
- * Merges migration state into existing fields without overwriting them.
+ * Save `.pi/taskplane.json`, merging the provided meta with any
+ * existing content. Creates the `.pi/` directory if needed.
+ *
+ * Performs a shallow merge at the top level — existing keys not in
+ * `meta` are preserved. The `migrations` key is always taken from
+ * the provided `meta` object (deep replacement).
  */
-export function saveTaskplaneMeta(stateRoot: string, meta: Record<string, unknown>): void {
-	const dir = join(stateRoot, ".pi");
-	mkdirSync(dir, { recursive: true });
-	const filePath = join(dir, TASKPLANE_JSON_FILENAME);
-	writeFileSync(filePath, JSON.stringify(meta, null, 2) + "\n", "utf-8");
-}
+export function saveTaskplaneMeta(projectRoot: string, meta: TaskplaneMeta): void {
+	const piDir = join(projectRoot, ".pi");
+	mkdirSync(piDir, { recursive: true });
 
-/**
- * Load migration state from .pi/taskplane.json.
- * Returns empty state if file doesn't exist or migrations field is missing.
- */
-export function loadMigrationState(stateRoot: string): MigrationState {
-	const meta = loadTaskplaneMeta(stateRoot);
-	if (!meta) {
-		return { applied: {} };
-	}
-	const migrations = meta.migrations as MigrationState | undefined;
-	if (migrations && typeof migrations.applied === "object" && migrations.applied !== null) {
-		return { applied: migrations.applied };
-	}
-	return { applied: {} };
-}
+	const metaPath = join(piDir, TASKPLANE_META_FILENAME);
 
-/**
- * Save migration state to .pi/taskplane.json.
- * Merges into existing file content — preserves version, installedAt, etc.
- */
-export function saveMigrationState(stateRoot: string, state: MigrationState): void {
-	const meta = loadTaskplaneMeta(stateRoot) ?? {};
-	meta.migrations = state;
-	saveTaskplaneMeta(stateRoot, meta);
+	// Read existing content to preserve version-tracker fields
+	let existing: TaskplaneMeta = {};
+	try {
+		if (existsSync(metaPath)) {
+			const raw = readFileSync(metaPath, "utf-8");
+			const parsed = JSON.parse(raw);
+			if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+				existing = parsed as TaskplaneMeta;
+			}
+		}
+	} catch {
+		// Existing file unreadable — start fresh but we'll overwrite only our keys
+	}
+
+	// Merge: existing fields preserved, our fields override
+	const merged = { ...existing, ...meta };
+	writeFileSync(metaPath, JSON.stringify(merged, null, 2) + "\n", "utf-8");
 }
 
 // ── Package Root Resolution ──────────────────────────────────────────
@@ -118,43 +137,57 @@ export function saveMigrationState(stateRoot: string, state: MigrationState): vo
 /**
  * Resolve the taskplane package root directory.
  *
- * This module lives at `<package-root>/extensions/taskplane/migrations.ts`,
- * so package root is two directories up.
+ * Uses ESM `import.meta.url` to compute the path deterministically.
+ * The package root is two levels up from this file:
+ *   `<package-root>/extensions/taskplane/migrations.ts`
+ *
+ * @param importMetaUrl - Pass `import.meta.url` from the calling module
+ * @returns Absolute path to the package root
  */
-export function resolvePackageRoot(): string {
-	try {
-		const thisDir = dirname(fileURLToPath(import.meta.url));
-		return join(thisDir, "..", "..");
-	} catch {
-		return join(__dirname, "..", "..");
-	}
+export function resolvePackageRoot(importMetaUrl?: string): string {
+	const url = importMetaUrl ?? import.meta.url;
+	const thisDir = dirname(fileURLToPath(url));
+	// extensions/taskplane/ → extensions/ → package root
+	return join(thisDir, "..", "..");
 }
 
-// ── Migration Registry ───────────────────────────────────────────────
+// ── Migration Registry ──────────────────────────────────────────────
 
 /**
- * All registered migrations, in order. New migrations are appended at the end.
+ * Registry of all additive migrations, ordered by creation date.
  *
- * Once a migration ID is shipped, it must NEVER be removed or renamed —
- * the state file references IDs permanently.
+ * New migrations are appended to this array. Each migration must:
+ * - Have a unique, stable `id` (never renamed after release)
+ * - Only create files that don't exist (additive-only)
+ * - Throw on unrecoverable errors (e.g., missing template source)
+ * - Return null if the target already exists (skip)
  */
-export const MIGRATIONS: Migration[] = [
+export const MIGRATION_REGISTRY: Migration[] = [
 	{
 		id: "add-supervisor-local-template-v1",
 		description: "Create .pi/agents/supervisor.md from template if missing",
-		run: (ctx: MigrationContext): string | null => {
-			const targetPath = join(ctx.stateRoot, ".pi", "agents", "supervisor.md");
+		run(projectRoot: string, packageRoot: string): string | null {
+			const targetPath = join(projectRoot, ".pi", "agents", "supervisor.md");
+
+			// Skip if file already exists — never overwrite
 			if (existsSync(targetPath)) {
-				return null; // Already exists — skip without mutation
+				return null;
 			}
-			const sourcePath = join(ctx.packageRoot, "templates", "agents", "local", "supervisor.md");
-			if (!existsSync(sourcePath)) {
-				throw new Error(`Template not found at ${sourcePath} — package may be corrupted`);
+
+			// Resolve template source
+			const templatePath = join(packageRoot, "templates", "agents", "local", "supervisor.md");
+			if (!existsSync(templatePath)) {
+				throw new Error(
+					`Migration template not found: ${templatePath}. ` +
+					`This may indicate a packaging issue with the taskplane package.`,
+				);
 			}
-			const targetDir = dirname(targetPath);
-			mkdirSync(targetDir, { recursive: true });
-			copyFileSync(sourcePath, targetPath);
-			return `Created .pi/agents/supervisor.md from template`;
+
+			// Create target directory and copy template
+			mkdirSync(dirname(targetPath), { recursive: true });
+			copyFileSync(templatePath, targetPath);
+
+			return "Created .pi/agents/supervisor.md from template";
 		},
 	},
 ];
@@ -162,74 +195,79 @@ export const MIGRATIONS: Migration[] = [
 // ── Migration Runner ─────────────────────────────────────────────────
 
 /**
- * Result of a migration run.
- */
-export interface MigrationRunResult {
-	/** Number of migrations that ran successfully */
-	applied: number;
-	/** Messages from successful migrations */
-	messages: string[];
-	/** Errors from failed migrations (non-fatal) */
-	errors: string[];
-}
-
-/**
- * Run all pending migrations.
+ * Run all pending additive migrations.
  *
- * Loads state, runs each unapplied migration in order, saves state.
- * Failures are collected but do not stop subsequent migrations.
+ * Loads migration state from `.pi/taskplane.json`, runs only unapplied
+ * migrations from the registry, and persists applied IDs + timestamps.
  *
- * @param stateRoot - Project root where .pi/ lives
- * @param packageRoot - Package root for template resolution (optional, auto-resolved)
- * @returns Result with applied count, messages, and errors
+ * Each migration is individually try/caught:
+ * - Success → recorded as applied, message logged
+ * - Skip (returns null) → recorded as applied (target already exists)
+ * - Error → logged and skipped (NOT recorded — will be retried next time)
+ *
+ * @param projectRoot - Project root directory
+ * @param packageRoot - Taskplane package root (for template resolution).
+ *                      If omitted, resolved from import.meta.url.
+ * @returns Migration run result with applied/skipped/error details
  */
 export function runMigrations(
-	stateRoot: string,
+	projectRoot: string,
 	packageRoot?: string,
 ): MigrationRunResult {
-	const effectivePackageRoot = packageRoot ?? resolvePackageRoot();
-	const state = loadMigrationState(stateRoot);
-	const ctx: MigrationContext = { stateRoot, packageRoot: effectivePackageRoot };
-
+	const pkgRoot = packageRoot ?? resolvePackageRoot();
 	const result: MigrationRunResult = {
-		applied: 0,
-		messages: [],
+		applied: [],
+		skipped: [],
 		errors: [],
+		messages: [],
 	};
+
+	// Load current state
+	const meta = loadTaskplaneMeta(projectRoot);
+	const migrationState: MigrationState = meta.migrations ?? { applied: {} };
 
 	let stateChanged = false;
 
-	for (const migration of MIGRATIONS) {
+	for (const migration of MIGRATION_REGISTRY) {
 		// Skip already-applied migrations
-		if (state.applied[migration.id]) {
+		if (migrationState.applied[migration.id]) {
+			result.skipped.push(migration.id);
 			continue;
 		}
 
 		try {
-			const message = migration.run(ctx);
-			// Record as applied regardless of whether it created files
-			// (null means "nothing to do" which is still a successful run)
-			state.applied[migration.id] = new Date().toISOString();
+			const message = migration.run(projectRoot, pkgRoot);
+
+			// Record as applied (whether it created something or skipped)
+			migrationState.applied[migration.id] = {
+				appliedAt: new Date().toISOString(),
+			};
 			stateChanged = true;
 
 			if (message) {
-				result.applied++;
-				result.messages.push(message);
+				result.applied.push(migration.id);
+				result.messages.push(`📦 Migration: ${message}`);
+			} else {
+				// Target already existed — still mark as applied so we don't recheck
+				result.skipped.push(migration.id);
 			}
 		} catch (err: unknown) {
 			const errMsg = err instanceof Error ? err.message : String(err);
-			result.errors.push(`Migration "${migration.id}" failed: ${errMsg}`);
-			// Do NOT mark as applied — will retry on next run
+			result.errors.push({ id: migration.id, error: errMsg });
+			// NOT recorded as applied — will be retried next time
 		}
 	}
 
-	// Persist state only if something changed
+	// Persist state if anything changed
 	if (stateChanged) {
 		try {
-			saveMigrationState(stateRoot, state);
+			saveTaskplaneMeta(projectRoot, { ...meta, migrations: migrationState });
 		} catch (err: unknown) {
 			const errMsg = err instanceof Error ? err.message : String(err);
-			result.errors.push(`Failed to save migration state: ${errMsg}`);
+			result.errors.push({
+				id: "__state_save",
+				error: `Failed to persist migration state: ${errMsg}`,
+			});
 		}
 	}
 

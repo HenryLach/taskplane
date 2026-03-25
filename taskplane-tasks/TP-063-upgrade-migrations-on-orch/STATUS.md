@@ -1,6 +1,6 @@
 # TP-063: Add Additive Upgrade Migrations on /orch — Status
 
-**Current Step:** Step 3: Implement First Migration
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
@@ -27,7 +27,7 @@
 ---
 
 ### Step 2: Wire Trigger Points
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [x] Trigger on /orch preflight
 - [x] Add extension-load safety trigger
 - [x] Non-fatal warning behavior on failure
@@ -38,7 +38,7 @@
 **Status:** ⬜ Not Started
 - [x] add-supervisor-local-template-v1 migration
 - [x] Copy missing .pi/agents/supervisor.md only
-- [ ] Skip if file already exists
+- [x] Skip if file already exists
 
 ---
 
