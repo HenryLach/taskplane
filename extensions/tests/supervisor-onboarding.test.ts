@@ -487,36 +487,41 @@ describe("12.x — /orch with args: existing behavior preserved", () => {
 		expect(orchHandler).toContain("!args?.trim()");
 		expect(orchHandler).toContain("detectOrchState");
 
-		// With-args path: starts batch directly
-		expect(orchHandler).toContain("startBatchAsync(");
+		// With-args path: delegates to doOrchStart helper (TP-061 refactor)
+		expect(orchHandler).toContain("doOrchStart(");
 	});
 
-	it("12.2: /orch with args still calls startBatchAsync", () => {
+	it("12.2: /orch with args delegates to doOrchStart which calls startBatchAsync", () => {
 		const extSource = readSource("extension.ts");
 		const orchHandler = extSource.substring(
 			extSource.indexOf('registerCommand("orch"'),
 			extSource.indexOf('registerCommand("orch-plan"'),
 		);
 
-		// After the no-args block, the existing behavior calls startBatchAsync
+		// After the no-args block, the with-args path delegates to doOrchStart
 		const noArgsEnd = orchHandler.indexOf("return;\n\t\t\t}\n\n\t\t\tif (!requireExecCtx");
 		expect(noArgsEnd).not.toBe(-1);
 
-		// startBatchAsync should appear after the no-args return
-		const startBatchIdx = orchHandler.indexOf("startBatchAsync(", noArgsEnd);
-		expect(startBatchIdx).toBeGreaterThan(noArgsEnd);
+		// doOrchStart should appear after the no-args return
+		const doOrchStartIdx = orchHandler.indexOf("doOrchStart(", noArgsEnd);
+		expect(doOrchStartIdx).toBeGreaterThan(noArgsEnd);
+
+		// The doOrchStart helper itself calls startBatchAsync
+		const doOrchStartBody = extSource.substring(
+			extSource.indexOf("async function doOrchStart("),
+		);
+		expect(doOrchStartBody).toContain("startBatchAsync(");
 	});
 
-	it("12.3: /orch with args activates supervisor AFTER batch start (not routing)", () => {
+	it("12.3: doOrchStart helper activates supervisor AFTER batch start (not routing)", () => {
 		const extSource = readSource("extension.ts");
-		const orchHandler = extSource.substring(
-			extSource.indexOf('registerCommand("orch"'),
-			extSource.indexOf('registerCommand("orch-plan"'),
-		);
 
-		// The with-args path should activate supervisor after startBatchAsync
-		const startBatchIdx = orchHandler.indexOf("startBatchAsync(");
-		const activateAfterBatch = orchHandler.indexOf("activateSupervisor(", startBatchIdx);
+		// The doOrchStart helper should call startBatchAsync then activateSupervisor
+		const doOrchStartBody = extSource.substring(
+			extSource.indexOf("async function doOrchStart("),
+		);
+		const startBatchIdx = doOrchStartBody.indexOf("startBatchAsync(");
+		const activateAfterBatch = doOrchStartBody.indexOf("activateSupervisor(", startBatchIdx);
 		expect(activateAfterBatch).toBeGreaterThan(startBatchIdx);
 	});
 
