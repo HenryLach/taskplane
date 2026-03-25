@@ -18,6 +18,7 @@ name: task-worker
   - Git commit conventions (per-step commits) and .DONE file creation
   - Review protocol (inline reviews via review_step tool when available)
   - Review response handling
+  - Test execution strategy (targeted tests during steps, full suite at gate)
 
   Add project-specific rules below. Common examples:
   - Preferred package manager (pnpm, yarn, bun)

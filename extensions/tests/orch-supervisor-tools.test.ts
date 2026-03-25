@@ -1,9 +1,9 @@
 /**
- * Orchestrator Supervisor Tools Tests — TP-053
+ * Orchestrator Supervisor Tools Tests — TP-053 + TP-061
  *
  * Tests for the orchestrator tools exposed to the supervisor agent:
  *
- *   1.x — Tool registration: all 5 tools registered in extension.ts
+ *   1.x — Tool registration: all 6 tools registered in extension.ts
  *   2.x — Tool parameter schemas: correct Type.Object definitions
  *   3.x — Shared helpers: command handlers delegate to shared functions
  *   4.x — Supervisor prompt: tool awareness in system prompts
@@ -58,8 +58,12 @@ describe("1.x: Orchestrator tools are registered", () => {
 		expect(extensionSource).toContain('name: "orch_integrate"');
 	});
 
-	it("1.6: exactly 5 orchestrator tools registered (no duplicates)", () => {
-		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate"];
+	it("1.6: orch_start tool is registered", () => {
+		expect(extensionSource).toContain('name: "orch_start"');
+	});
+
+	it("1.7: exactly 6 orchestrator tools registered (no duplicates)", () => {
+		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate", "orch_start"];
 		for (const name of toolNames) {
 			const regex = new RegExp(`name:\\s*"${name}"`, "g");
 			const matches = extensionSource.match(regex);
@@ -67,8 +71,8 @@ describe("1.x: Orchestrator tools are registered", () => {
 		}
 	});
 
-	it("1.7: all tools have description, promptSnippet, and promptGuidelines", () => {
-		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate"];
+	it("1.8: all tools have description, promptSnippet, and promptGuidelines", () => {
+		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate", "orch_start"];
 		for (const name of toolNames) {
 			// Find the tool registration block
 			const idx = extensionSource.indexOf(`name: "${name}"`);
@@ -81,7 +85,7 @@ describe("1.x: Orchestrator tools are registered", () => {
 		}
 	});
 
-	it("1.8: tools are registered unconditionally (not inside isOrchestratedMode guard)", () => {
+	it("1.9: tools are registered unconditionally (not inside isOrchestratedMode guard)", () => {
 		// The tools should NOT be gated on orchestrated mode — they're for the
 		// supervisor which runs in the main session.
 		// Find the orch_status registration and check it's NOT preceded by isOrchestratedMode
@@ -146,8 +150,14 @@ describe("2.x: Tool parameter schemas are correct", () => {
 		expect(block).toContain('Type.Literal("pr")');
 	});
 
-	it("2.6: all tool execute handlers catch errors and return text results", () => {
-		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate"];
+	it("2.6: orch_start has required target string parameter", () => {
+		const block = getToolBlock("orch_start");
+		expect(block).toContain("target:");
+		expect(block).toContain("Type.String(");
+	});
+
+	it("2.7: all tool execute handlers catch errors and return text results", () => {
+		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate", "orch_start"];
 		for (const name of toolNames) {
 			const block = getToolBlock(name);
 			expect(block, `${name} should have try/catch`).toContain("} catch (err)");
@@ -181,38 +191,57 @@ describe("3.x: Shared helper functions exist and are used by both commands and t
 		expect(extensionSource).toContain("function doOrchIntegrate(");
 	});
 
-	it("3.6: orch-status command handler delegates to doOrchStatus", () => {
+	it("3.6: doOrchStart helper exists", () => {
+		expect(extensionSource).toContain("function doOrchStart(");
+	});
+
+	it("3.7: orch-status command handler delegates to doOrchStatus", () => {
 		// Find the command handler and check it calls the helper
 		const cmdIdx = extensionSource.indexOf('"orch-status"');
 		const cmdBlock = extensionSource.slice(cmdIdx, cmdIdx + 300);
 		expect(cmdBlock).toContain("doOrchStatus(");
 	});
 
-	it("3.7: orch-pause command handler delegates to doOrchPause", () => {
+	it("3.8: orch-pause command handler delegates to doOrchPause", () => {
 		const cmdIdx = extensionSource.indexOf('"orch-pause"');
 		const cmdBlock = extensionSource.slice(cmdIdx, cmdIdx + 300);
 		expect(cmdBlock).toContain("doOrchPause()");
 	});
 
-	it("3.8: orch-resume command handler delegates to doOrchResume", () => {
+	it("3.9: orch-resume command handler delegates to doOrchResume", () => {
 		const cmdIdx = extensionSource.indexOf('"orch-resume"');
 		const cmdBlock = extensionSource.slice(cmdIdx, cmdIdx + 500);
 		expect(cmdBlock).toContain("doOrchResume(");
 	});
 
-	it("3.9: orch-abort command handler delegates to doOrchAbort", () => {
+	it("3.10: orch-abort command handler delegates to doOrchAbort", () => {
 		const cmdIdx = extensionSource.indexOf('"orch-abort"');
 		const cmdBlock = extensionSource.slice(cmdIdx, cmdIdx + 300);
 		expect(cmdBlock).toContain("doOrchAbort(");
 	});
 
-	it("3.10: orch-integrate command handler delegates to doOrchIntegrate", () => {
+	it("3.11: orch-integrate command handler delegates to doOrchIntegrate", () => {
 		// There may be multiple mentions, find the registerCommand one.
 		// The integrate command has a --help section before the delegation,
 		// so use a larger window.
 		const registrationIdx = extensionSource.indexOf('registerCommand("orch-integrate"');
 		const cmdBlock = extensionSource.slice(registrationIdx, registrationIdx + 2000);
 		expect(cmdBlock).toContain("doOrchIntegrate(");
+	});
+
+	it("3.12: /orch command handler delegates to doOrchStart for batch start", () => {
+		// The /orch handler has a large routing section before the batch-start
+		// delegation, so use a larger window to find doOrchStart.
+		const registrationIdx = extensionSource.indexOf('registerCommand("orch"');
+		const cmdBlock = extensionSource.slice(registrationIdx, registrationIdx + 5000);
+		expect(cmdBlock).toContain("doOrchStart(");
+	});
+
+	it("3.13: orch_start tool delegates to doOrchStart", () => {
+		// Find the orch_start tool registration and verify it calls doOrchStart
+		const toolIdx = extensionSource.indexOf('name: "orch_start"');
+		const toolBlock = extensionSource.slice(toolIdx, toolIdx + 1500);
+		expect(toolBlock).toContain("doOrchStart(");
 	});
 });
 
@@ -241,46 +270,51 @@ describe("4.x: Supervisor prompt includes tool awareness", () => {
 		stateRoot,
 	);
 
-	it("4.1: monitoring prompt mentions orch_status tool", () => {
+	it("4.1: monitoring prompt mentions orch_start tool", () => {
+		expect(monitoringPrompt).toContain("orch_start(target)");
+	});
+
+	it("4.2: monitoring prompt mentions orch_status tool", () => {
 		expect(monitoringPrompt).toContain("orch_status()");
 	});
 
-	it("4.2: monitoring prompt mentions orch_pause tool", () => {
+	it("4.4: monitoring prompt mentions orch_pause tool", () => {
 		expect(monitoringPrompt).toContain("orch_pause()");
 	});
 
-	it("4.3: monitoring prompt mentions orch_resume tool", () => {
+	it("4.5: monitoring prompt mentions orch_resume tool", () => {
 		expect(monitoringPrompt).toContain("orch_resume(");
 	});
 
-	it("4.4: monitoring prompt mentions orch_abort tool", () => {
+	it("4.6: monitoring prompt mentions orch_abort tool", () => {
 		expect(monitoringPrompt).toContain("orch_abort(");
 	});
 
-	it("4.5: monitoring prompt mentions orch_integrate tool", () => {
+	it("4.7: monitoring prompt mentions orch_integrate tool", () => {
 		expect(monitoringPrompt).toContain("orch_integrate(");
 	});
 
-	it("4.6: monitoring prompt has 'Available Orchestrator Tools' section", () => {
+	it("4.8: monitoring prompt has 'Available Orchestrator Tools' section", () => {
 		expect(monitoringPrompt).toContain("Available Orchestrator Tools");
 	});
 
-	it("4.7: monitoring prompt includes proactive usage examples", () => {
+	it("4.9: monitoring prompt includes proactive usage examples", () => {
 		expect(monitoringPrompt).toContain("When to Use These Tools");
 	});
 
-	it("4.8: monitoring prompt describes integration modes", () => {
+	it("4.10: monitoring prompt describes integration modes", () => {
 		expect(monitoringPrompt).toContain('"fast-forward"');
 		expect(monitoringPrompt).toContain('"merge"');
 		expect(monitoringPrompt).toContain('"pr"');
 	});
 
-	it("4.9: routing prompt includes orchestrator tools section", () => {
+	it("4.11: routing prompt includes orchestrator tools section", () => {
 		const routingPrompt = buildRoutingSystemPrompt(
 			{ routingState: "no-tasks", contextMessage: "No pending tasks" },
 			stateRoot,
 		);
 		expect(routingPrompt).toContain("Orchestrator Tools");
+		expect(routingPrompt).toContain("orch_start(");
 		expect(routingPrompt).toContain("orch_status()");
 		expect(routingPrompt).toContain("orch_integrate(");
 	});

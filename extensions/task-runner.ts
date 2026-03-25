@@ -2603,16 +2603,25 @@ export default function (pi: ExtensionAPI) {
 		// If context limit is hit mid-task, the next iteration picks up from
 		// the first incomplete step via STATUS.md — same recovery mechanism.
 
-		// Mark all incomplete steps as in-progress
+		// Mark only the first incomplete step as in-progress
 		{
 			const currentStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
+			let foundFirstIncomplete = false;
 			for (const step of task.steps) {
 				const ss = currentStatus.steps.find(s => s.number === step.number);
 				if (ss?.status === "complete") continue;
 
-				// Mark step as in-progress and log its start
-				updateStepStatus(statusPath, step.number, "in-progress");
-				logExecution(statusPath, `Step ${step.number} started`, step.name);
+				if (!foundFirstIncomplete) {
+					// Mark the first incomplete step as in-progress
+					updateStepStatus(statusPath, step.number, "in-progress");
+					logExecution(statusPath, `Step ${step.number} started`, step.name);
+					foundFirstIncomplete = true;
+				} else {
+					// Ensure future steps show as not-started, not in-progress
+					if (ss?.status === "in-progress") {
+						updateStepStatus(statusPath, step.number, "not-started");
+					}
+				}
 			}
 		}
 

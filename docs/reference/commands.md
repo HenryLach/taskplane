@@ -540,6 +540,7 @@ The key orchestrator commands are also registered as **extension tools** that th
 
 | Tool | Equivalent Command | Parameters |
 |------|-------------------|------------|
+| `orch_start(target)` | `/orch <target>` | `target`: string (required) — `"all"` or task area name/path |
 | `orch_status()` | `/orch-status` | — |
 | `orch_pause()` | `/orch-pause` | — |
 | `orch_resume(force?)` | `/orch-resume [--force]` | `force`: boolean (optional) |

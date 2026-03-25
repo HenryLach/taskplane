@@ -219,3 +219,50 @@ Do NOT:
   Blockers section and move to the next checkbox
 - If a test fails, fix it. If the fix is out of scope, document and continue.
 - If a dependency is missing, document in STATUS.md and stop.
+
+## Test Execution Strategy
+
+Run tests at two different scopes depending on where you are in the task:
+
+### During implementation steps (targeted tests)
+
+After implementing each step, run **targeted tests** for fast feedback:
+
+```bash
+cd extensions && npx vitest run --changed
+```
+
+- Vitest's `--changed` flag uses git to find modified files since the last commit
+  and runs only tests related to those files.
+- Workers commit at step boundaries, so between commits the changed set is
+  exactly "what this step modified" — this naturally targets the right tests.
+- Alternatively, run specific test files that cover the code you modified:
+  `npx vitest run tests/some-specific.test.ts`
+- **If `--changed` returns no tests:** That's fine — it means your changes don't
+  have directly related test files. The full suite in the Testing step will catch
+  any indirect regressions.
+- **If targeted tests fail:** Fix the failure before proceeding. Don't accumulate
+  failures across steps.
+
+### During the Testing & Verification step (full suite)
+
+Run the **full test suite** as a quality gate:
+
+```bash
+cd extensions && npx vitest run
+```
+
+- ALL tests must pass — zero failures allowed.
+- This is the definitive check before marking the task complete.
+- The merge agent and CI run the full suite again after this — you have safety nets,
+  but catch issues here first.
+
+### Key principle
+
+Fast feedback during implementation, full verification at the gate. Three full-suite
+checkpoints protect against regressions even when intermediate steps use targeted tests:
+1. The Testing & Verification step (before `.DONE`)
+2. The merge agent (before merging to the orchestrator branch)
+3. CI (before merging to main)
+
+

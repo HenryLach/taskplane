@@ -1344,282 +1344,11 @@ export default function (pi: ExtensionAPI) {
 
 			if (!requireExecCtx(ctx)) return;
 
-			// ── TP-128: Transition from routing-mode supervisor to batch execution ──
-			// If the supervisor is active in routing mode (conversational, no batch),
-			// deactivate it so the batch can start fresh with monitoring-mode supervisor.
-			// This enables the workflow: /orch → conversation → "run the tasks" → /orch all
-			// without the operator needing to know about internal mode distinctions.
-			if (supervisorState.active && supervisorState.routingContext) {
-				await deactivateSupervisor(pi, supervisorState);
+			// ── TP-061: Delegate to shared helper ────────────────────
+			const result = await doOrchStart(args, ctx);
+			if (result.error) {
+				ctx.ui.notify(result.message, "warning");
 			}
-
-			// Prevent concurrent batch execution (merging is an active state)
-			if (orchBatchState.phase !== "idle" && orchBatchState.phase !== "completed" && orchBatchState.phase !== "failed" && orchBatchState.phase !== "stopped") {
-				ctx.ui.notify(
-					`⚠️ A batch is already ${orchBatchState.phase} (${orchBatchState.batchId}). ` +
-					`Use /orch-pause to pause or wait for completion.`,
-					"warning",
-				);
-				return;
-			}
-
-			// Root references from execution context.
-			// Currently all .pi state, orphan detection, batch state, abort signal,
-			// and discovery operations use repoRoot for consistency with engine.ts,
-			// resume.ts, and execution.ts which all alias cwd → repoRoot.
-			// In repo mode workspaceRoot === repoRoot, so this is safe.
-			// TODO(workspace-mode): when workspace mode is fully threaded through
-			// engine/resume/execution, split state root from git root.
-			const { repoRoot } = execCtx!;
-
-			// ── Orphan detection (TS-009 Step 3) ─────────────────────
-			const orphanResult = detectOrphanSessions(
-				orchConfig.orchestrator.tmux_prefix,
-				repoRoot,
-			);
-
-			switch (orphanResult.recommendedAction) {
-				case "resume": {
-					// Safety net: if the persisted phase is not actually resumable (e.g. "failed",
-					// "stopped") — which can happen when the batch crashed after writing a terminal
-					// phase but before /orch-abort cleaned up — auto-delete the state file and
-					// fall through to start fresh rather than blocking the user with a catch-22.
-					const resumablePhases = ["paused", "executing", "merging"];
-					const phase = orphanResult.loadedState?.phase ?? "";
-					const hasOrphans = orphanResult.orphanSessions.length > 0;
-					if (!hasOrphans && !resumablePhases.includes(phase)) {
-						try { deleteBatchState(repoRoot); } catch { /* best effort */ }
-						ctx.ui.notify(
-							`🧹 Cleared non-resumable stale batch (${orphanResult.loadedState?.batchId}, phase=${phase}). Starting fresh.`,
-							"info",
-						);
-						break; // fall through to start a new batch
-					}
-					// Genuinely resumable or has live orphan sessions — prompt user
-					ctx.ui.notify(orphanResult.userMessage, "warning");
-					return;
-				}
-
-				case "abort-orphans":
-					// Orphan sessions without usable state
-					ctx.ui.notify(orphanResult.userMessage, "warning");
-					return;
-
-				case "cleanup-stale":
-					// No orphans + stale/completed state file — auto-delete and continue
-					try {
-						deleteBatchState(repoRoot);
-					} catch {
-						// Best-effort cleanup — proceed even if delete fails
-					}
-					if (orphanResult.userMessage) {
-						ctx.ui.notify(orphanResult.userMessage, "info");
-					}
-					break;
-
-				case "paused-corrupt":
-					// Corrupt/unreadable state file — do NOT auto-delete.
-					// Enter paused phase so operator-visible state reflects the issue,
-					// notify user, refresh widget, then stop.
-					orchBatchState.phase = "paused";
-					orchBatchState.errors.push(orphanResult.userMessage);
-					updateOrchWidget();
-					ctx.ui.notify(orphanResult.userMessage, "warning");
-					return;
-
-				case "start-fresh":
-					// No orphans, no state file — proceed normally
-					break;
-			}
-
-			// ── Model availability pre-flight ────────────────────────
-			// Validate that all configured agent models are resolvable in
-			// the model registry before starting. Catches misconfigured
-			// model names early instead of failing hours into a batch.
-			// Note: runnerConfig (TaskRunnerConfig) is a stripped type without
-			// worker/reviewer model fields. Load the full unified config to
-			// get the actual agent model strings (including user preferences).
-			let agentModels: { workerModel?: string; reviewerModel?: string } | undefined;
-			try {
-				const fullConfig = loadProjectConfig(execCtx!.repoRoot);
-				agentModels = {
-					workerModel: fullConfig.taskRunner.worker.model || "",
-					reviewerModel: fullConfig.taskRunner.reviewer.model || "",
-				};
-			} catch { /* fall through — validateModelAvailability handles empty strings */ }
-			const modelResults = validateModelAvailability(orchConfig, runnerConfig, supervisorConfig, ctx, agentModels);
-			const modelFailures = modelResults.filter(r => r.status === "not-found");
-			ctx.ui.notify(formatModelValidation(modelResults), modelFailures.length > 0 ? "error" : "info");
-			if (modelFailures.length > 0) {
-				ctx.ui.notify(
-					`❌ Cannot start batch — ${modelFailures.length} model(s) not found: ` +
-					modelFailures.map(f => `${f.role} (${f.modelStr})`).join(", ") +
-					`.\n\nFix the model configuration and try again.`,
-					"error",
-				);
-				return;
-			}
-
-			// Reset batch state for new execution
-			orchBatchState = freshOrchBatchState();
-			latestMonitorState = null;
-
-			// ── TP-040: Set launching phase synchronously ────────────
-			// Mark as "launching" before the setTimeout detach so that
-			// /orch-status, /orch-pause, /orch-abort issued immediately
-			// after /orch returns can see that a batch is being started.
-			// The engine will transition from "launching" → "planning"
-			// on the next tick when it actually begins work.
-			orchBatchState.phase = "launching";
-			orchBatchState.startedAt = Date.now();
-			updateOrchWidget();
-
-			// ── TP-040: Non-blocking engine launch ───────────────────
-			// Start the engine without awaiting — the command handler returns
-			// immediately so the pi session remains interactive (enables
-			// supervisor agent and operator conversation during batch).
-			// The .catch() error boundary ensures unhandled rejections from
-			// the engine are surfaced to the operator and reflected in state.
-			startBatchAsync(
-				() => executeOrchBatch(
-					args,
-					orchConfig,
-					runnerConfig,
-					repoRoot,
-					orchBatchState,
-					(message, level) => {
-						ctx.ui.notify(message, level);
-						updateOrchWidget(); // Refresh widget on every phase message
-					},
-					(monState: MonitorState) => {
-						const changed = !latestMonitorState ||
-							latestMonitorState.totalDone !== monState.totalDone ||
-							latestMonitorState.totalFailed !== monState.totalFailed ||
-							latestMonitorState.lanes.some((l, i) =>
-								l.currentTaskId !== monState.lanes[i]?.currentTaskId ||
-								l.currentStep !== monState.lanes[i]?.currentStep ||
-								l.completedChecks !== monState.lanes[i]?.completedChecks,
-							);
-						latestMonitorState = monState;
-						if (changed) updateOrchWidget(); // Only refresh on actual state change
-					},
-					execCtx!.workspaceConfig,
-					execCtx!.workspaceRoot,
-					execCtx!.pointer?.agentRoot,
-				),
-				orchBatchState,
-				ctx,
-				updateOrchWidget,
-				// TP-043: Deferred supervisor deactivation (R002-1).
-				// Integration is ONLY triggered when batch completes successfully
-				// (phase === "completed"). For paused/stopped/crash states, the
-				// supervisor is deactivated immediately — no integration on partial
-				// batches.
-				// TP-043 Step 2: Batch summary is generated on all terminal paths
-				// before supervisor deactivation.
-				() => {
-					const mode = orchConfig.orchestrator.integration;
-					// TP-043: Build summary deps for all terminal paths
-					const opId = resolveOperatorId(orchConfig);
-					const sDeps: SummaryDeps = {
-						opId,
-						diagnostics: orchBatchState.diagnostics ?? null,
-						mergeResults: (orchBatchState.mergeResults || []).map(mr => ({
-							waveIndex: mr.waveIndex,
-							status: mr.status,
-							failedLane: mr.failedLane,
-							failureReason: mr.failureReason,
-						})),
-					};
-					if (
-						orchBatchState.phase === "completed" &&
-						(mode === "supervised" || mode === "auto")
-					) {
-						// Supervisor stays alive — trigger programmatic integration
-						// flow. Supervisor deactivates itself after integration
-						// completes (or fails) via the callback in
-						// triggerSupervisorIntegration. Summary generated there.
-						triggerSupervisorIntegration(
-							pi,
-							supervisorState,
-							orchBatchState,
-							mode,
-							repoRoot,
-							buildIntegrationExecutor(repoRoot, opId),
-							buildCiDeps(repoRoot),
-							sDeps,
-						);
-						return;
-					}
-					// Non-completed phase or manual mode — deactivate immediately.
-					// Inform operator if integration was expected but skipped.
-					if (
-						(mode === "supervised" || mode === "auto") &&
-						orchBatchState.phase !== "completed"
-					) {
-						pi.sendMessage(
-							{
-								customType: "supervisor-integration-skipped",
-								content: [{
-									type: "text",
-									text:
-										`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
-										`Integration skipped — only completed batches are eligible.\n` +
-										`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
-								}],
-								display: `Integration skipped — batch ${orchBatchState.phase}`,
-							},
-							{ triggerTurn: false },
-						);
-					}
-					// TP-043: Generate summary before transition
-					presentBatchSummary(pi, orchBatchState, execCtx!.workspaceRoot, opId, orchBatchState.diagnostics, sDeps.mergeResults);
-					// TP-128: Transition to routing mode instead of deactivating.
-					// The operator can continue the conversation (integrate, plan
-					// next batch, create tasks) without re-invoking /orch.
-					const postBatchContext: SupervisorRoutingContext = orchBatchState.phase === "completed"
-						? {
-							routingState: "completed-batch",
-							contextMessage:
-								`Batch **${orchBatchState.batchId}** completed — ` +
-								`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
-								`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
-								`Would you like me to integrate it, or would you prefer to review first?\n\n` +
-								`You can also:\n` +
-								`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
-								`• Create new tasks for the next batch\n` +
-								`• Run a health check`,
-						}
-						: {
-							routingState: "no-tasks",
-							contextMessage:
-								`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
-								`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
-								`${orchBatchState.skippedTasks} skipped.\n\n` +
-								`What would you like to do next?`,
-						};
-					transitionToRoutingMode(pi, supervisorState, postBatchContext);
-				},
-			);
-
-			// ── TP-041: Activate supervisor agent ────────────────────
-			// After the engine is launched (non-blocking), activate the
-			// supervisor in this pi session. The system prompt is rebuilt
-			// dynamically on each LLM turn from the live batchState ref,
-			// ensuring batch metadata (batchId, wave/task counts) is always
-			// current even though the engine populates it asynchronously.
-			// Model override is resolved inside activateSupervisor via ctx.
-			// Uses workspaceRoot (not repoRoot) so lockfile/events/batch-state
-			// all resolve to the same .pi tree the engine writes to (R006-1).
-			activateSupervisor(
-				pi,
-				supervisorState,
-				orchBatchState,
-				orchConfig,
-				supervisorConfig,
-				execCtx!.workspaceRoot,
-				ctx,
-			);
 		},
 	});
 
@@ -1733,6 +1462,261 @@ export default function (pi: ExtensionAPI) {
 	// ── TP-053: Shared helpers for command + tool handlers ────────────
 	// Each helper extracts the core logic from its command handler so both
 	// the slash command and the registered tool can call the same function.
+
+	/**
+	 * Core logic for starting a batch. Used by both `/orch <target>` command
+	 * and the `orch_start` tool.
+	 *
+	 * Performs all pre-start guards (execution context, concurrent batch,
+	 * routing-mode transition, orphan detection, model validation), then
+	 * launches the engine asynchronously and activates the supervisor.
+	 *
+	 * Returns an immediate ACK with batch ID, task count, and wave info,
+	 * or an error message if the batch cannot be started.
+	 *
+	 * @since TP-061
+	 */
+	async function doOrchStart(target: string, ctx: ExtensionContext): Promise<{ message: string; error?: boolean }> {
+		// Target validation
+		const trimmedTarget = target?.trim();
+		if (!trimmedTarget) {
+			return {
+				message: "❌ Target is required. Use \"all\" to run all pending tasks, or specify a task area name or path.",
+				error: true,
+			};
+		}
+
+		if (!execCtx) {
+			return {
+				message: "❌ Orchestrator not initialized. Workspace configuration failed at startup.\nFix the workspace config or remove it to use repo mode, then restart.",
+				error: true,
+			};
+		}
+
+		// TP-128: Transition from routing-mode supervisor to batch execution
+		if (supervisorState.active && supervisorState.routingContext) {
+			await deactivateSupervisor(pi, supervisorState);
+		}
+
+		// Prevent concurrent batch execution
+		if (orchBatchState.phase !== "idle" && orchBatchState.phase !== "completed" && orchBatchState.phase !== "failed" && orchBatchState.phase !== "stopped") {
+			return {
+				message: `⚠️ A batch is already ${orchBatchState.phase} (${orchBatchState.batchId}). Use /orch-pause to pause or wait for completion.`,
+				error: true,
+			};
+		}
+
+		const { repoRoot } = execCtx;
+
+		// Orphan detection
+		const orphanResult = detectOrphanSessions(
+			orchConfig.orchestrator.tmux_prefix,
+			repoRoot,
+		);
+
+		switch (orphanResult.recommendedAction) {
+			case "resume": {
+				const resumablePhases = ["paused", "executing", "merging"];
+				const phase = orphanResult.loadedState?.phase ?? "";
+				const hasOrphans = orphanResult.orphanSessions.length > 0;
+				if (!hasOrphans && !resumablePhases.includes(phase)) {
+					try { deleteBatchState(repoRoot); } catch { /* best effort */ }
+					ctx.ui.notify(
+						`🧹 Cleared non-resumable stale batch (${orphanResult.loadedState?.batchId}, phase=${phase}). Starting fresh.`,
+						"info",
+					);
+					break;
+				}
+				return { message: orphanResult.userMessage, error: true };
+			}
+			case "abort-orphans":
+				return { message: orphanResult.userMessage, error: true };
+			case "cleanup-stale":
+				try { deleteBatchState(repoRoot); } catch { /* best effort */ }
+				if (orphanResult.userMessage) {
+					ctx.ui.notify(orphanResult.userMessage, "info");
+				}
+				break;
+			case "paused-corrupt":
+				orchBatchState.phase = "paused";
+				orchBatchState.errors.push(orphanResult.userMessage);
+				updateOrchWidget();
+				return { message: orphanResult.userMessage, error: true };
+			case "start-fresh":
+				break;
+		}
+
+		// Model availability pre-flight
+		let agentModels: { workerModel?: string; reviewerModel?: string } | undefined;
+		try {
+			const fullConfig = loadProjectConfig(execCtx.repoRoot);
+			agentModels = {
+				workerModel: fullConfig.taskRunner.worker.model || "",
+				reviewerModel: fullConfig.taskRunner.reviewer.model || "",
+			};
+		} catch { /* fall through */ }
+		const modelResults = validateModelAvailability(orchConfig, runnerConfig, supervisorConfig, ctx, agentModels);
+		const modelFailures = modelResults.filter(r => r.status === "not-found");
+		ctx.ui.notify(formatModelValidation(modelResults), modelFailures.length > 0 ? "error" : "info");
+		if (modelFailures.length > 0) {
+			return {
+				message: `❌ Cannot start batch — ${modelFailures.length} model(s) not found: ` +
+					modelFailures.map(f => `${f.role} (${f.modelStr})`).join(", ") +
+					`.\n\nFix the model configuration and try again.`,
+				error: true,
+			};
+		}
+
+		// Pre-discovery: count pending tasks for the ACK response.
+		// This is a lightweight synchronous check before launching the async engine.
+		let pendingTaskCount = 0;
+		try {
+			const preDiscovery = runDiscovery(trimmedTarget, runnerConfig.task_areas, execCtx.workspaceRoot, {
+				dependencySource: orchConfig.dependencies.source,
+				useDependencyCache: orchConfig.dependencies.cache,
+				workspaceConfig: execCtx.workspaceConfig,
+			});
+			pendingTaskCount = preDiscovery.pending.size;
+			if (pendingTaskCount === 0) {
+				return {
+					message: `No pending tasks found for target "${trimmedTarget}". Nothing to execute.`,
+					error: true,
+				};
+			}
+		} catch {
+			// Non-fatal — engine will re-run discovery and handle errors
+		}
+
+		// Reset batch state for new execution
+		orchBatchState = freshOrchBatchState();
+		latestMonitorState = null;
+
+		orchBatchState.phase = "launching";
+		orchBatchState.startedAt = Date.now();
+		updateOrchWidget();
+
+		// Non-blocking engine launch
+		startBatchAsync(
+			() => executeOrchBatch(
+				trimmedTarget,
+				orchConfig,
+				runnerConfig,
+				repoRoot,
+				orchBatchState,
+				(message, level) => {
+					ctx.ui.notify(message, level);
+					updateOrchWidget();
+				},
+				(monState: MonitorState) => {
+					const changed = !latestMonitorState ||
+						latestMonitorState.totalDone !== monState.totalDone ||
+						latestMonitorState.totalFailed !== monState.totalFailed ||
+						latestMonitorState.lanes.some((l, i) =>
+							l.currentTaskId !== monState.lanes[i]?.currentTaskId ||
+							l.currentStep !== monState.lanes[i]?.currentStep ||
+							l.completedChecks !== monState.lanes[i]?.completedChecks,
+						);
+					latestMonitorState = monState;
+					if (changed) updateOrchWidget();
+				},
+				execCtx!.workspaceConfig,
+				execCtx!.workspaceRoot,
+				execCtx!.pointer?.agentRoot,
+			),
+			orchBatchState,
+			ctx,
+			updateOrchWidget,
+			() => {
+				const mode = orchConfig.orchestrator.integration;
+				const opId = resolveOperatorId(orchConfig);
+				const sDeps: SummaryDeps = {
+					opId,
+					diagnostics: orchBatchState.diagnostics ?? null,
+					mergeResults: (orchBatchState.mergeResults || []).map(mr => ({
+						waveIndex: mr.waveIndex,
+						status: mr.status,
+						failedLane: mr.failedLane,
+						failureReason: mr.failureReason,
+					})),
+				};
+				if (
+					orchBatchState.phase === "completed" &&
+					(mode === "supervised" || mode === "auto")
+				) {
+					triggerSupervisorIntegration(
+						pi,
+						supervisorState,
+						orchBatchState,
+						mode,
+						repoRoot,
+						buildIntegrationExecutor(repoRoot, opId),
+						buildCiDeps(repoRoot),
+						sDeps,
+					);
+					return;
+				}
+				if (
+					(mode === "supervised" || mode === "auto") &&
+					orchBatchState.phase !== "completed"
+				) {
+					pi.sendMessage(
+						{
+							customType: "supervisor-integration-skipped",
+							content: [{
+								type: "text",
+								text:
+									`📋 **Batch ended** (phase: ${orchBatchState.phase}). ` +
+									`Integration skipped — only completed batches are eligible.\n` +
+									`Use \`/orch-resume\` to continue or \`/orch-integrate\` manually after resolving issues.`,
+							}],
+							display: `Integration skipped — batch ${orchBatchState.phase}`,
+						},
+						{ triggerTurn: false },
+					);
+				}
+				presentBatchSummary(pi, orchBatchState, execCtx!.workspaceRoot, opId, orchBatchState.diagnostics, sDeps.mergeResults);
+				const postBatchContext: SupervisorRoutingContext = orchBatchState.phase === "completed"
+					? {
+						routingState: "completed-batch",
+						contextMessage:
+							`Batch **${orchBatchState.batchId}** completed — ` +
+							`${orchBatchState.succeededTasks}/${orchBatchState.totalTasks} tasks succeeded.\n\n` +
+							`The orch branch \`${orchBatchState.orchBranch}\` is ready to integrate.\n` +
+							`Would you like me to integrate it, or would you prefer to review first?\n\n` +
+							`You can also:\n` +
+							`• Run \`/orch-integrate\` (or \`/orch-integrate --pr\`) to integrate\n` +
+							`• Create new tasks for the next batch\n` +
+							`• Run a health check`,
+					}
+					: {
+						routingState: "no-tasks",
+						contextMessage:
+							`Batch **${orchBatchState.batchId}** ended (${orchBatchState.phase}).\n\n` +
+							`${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ` +
+							`${orchBatchState.skippedTasks} skipped.\n\n` +
+							`What would you like to do next?`,
+					};
+				transitionToRoutingMode(pi, supervisorState, postBatchContext);
+			},
+		);
+
+		// Activate supervisor agent
+		activateSupervisor(
+			pi,
+			supervisorState,
+			orchBatchState,
+			orchConfig,
+			supervisorConfig,
+			execCtx!.workspaceRoot,
+			ctx,
+		);
+
+		return {
+			message: `🚀 Batch launching (target: "${trimmedTarget}", ${pendingTaskCount} pending task${pendingTaskCount === 1 ? "" : "s"}). ` +
+				`Batch ID will be assigned during planning. ` +
+				`The engine is running asynchronously — use orch_status() to check progress.`,
+		};
+	}
 
 	/**
 	 * Core logic for orch-status. Returns a formatted status string.
@@ -2766,6 +2750,39 @@ export default function (pi: ExtensionAPI) {
 			} catch (err) {
 				return {
 					content: [{ type: "text" as const, text: `Error integrating batch: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "orch_start",
+		label: "Start Batch",
+		description:
+			"Start a new orchestration batch. Target is \"all\" to run all pending tasks, " +
+			"or a specific task area name or path. The batch runs asynchronously — " +
+			"use orch_status() to monitor progress.",
+		promptSnippet: "orch_start(target) — start a new batch",
+		promptGuidelines: [
+			"Call orch_start to begin executing pending tasks as a batch.",
+			'Use target="all" to run all pending tasks, or specify a task area name or path.',
+			"Cannot start if a batch is already running — check orch_status() first.",
+			"The batch runs asynchronously. The tool returns immediately with an ACK.",
+			"After starting, use orch_status() to track progress.",
+		],
+		parameters: Type.Object({
+			target: Type.String({
+				description: 'Target to run: "all" for all pending tasks, or a task area name/path',
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = await doOrchStart(params.target, ctx);
+				return { content: [{ type: "text" as const, text: result.message }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error starting batch: ${err instanceof Error ? err.message : String(err)}` }],
 					details: undefined,
 				};
 			}
