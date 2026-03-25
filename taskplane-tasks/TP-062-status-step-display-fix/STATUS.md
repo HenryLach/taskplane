@@ -1,51 +1,52 @@
 # TP-062: Fix STATUS.md Step Display — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-25
 **Review Level:** 1
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 2
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read step status initialization loop at task-runner.ts ~line 2608-2617
-- [ ] Confirm bug: all non-complete steps marked as in-progress
+- [x] Read step status initialization loop at task-runner.ts ~line 2608-2617
+- [x] Confirm bug: all non-complete steps marked as in-progress
 
 ---
 
 ### Step 1: Fix Step Status Initialization
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Only mark first incomplete step as in-progress
-- [ ] Ensure subsequent steps remain/revert to not-started
+- [x] Only mark first incomplete step as in-progress
+- [x] Ensure subsequent steps remain/revert to not-started
 
 ---
 
 ### Step 2: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Add source-based test for step status logic
-- [ ] Full test suite passing
-- [ ] Build passes
+- [x] Add source-based test for step status logic
+- [x] Full test suite passing
+- [x] Build passes
 
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Discoveries logged
-- [ ] `.DONE` created
+- [x] Discoveries logged
+- [x] `.DONE` created
 
 ---
 
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | UNKNOWN | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -54,6 +55,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Fix was already merged from prior batch (commit bed9a7a) | Verified correct, added tests | extensions/task-runner.ts:2605 |
+| No separate "enter step" status update exists — only the init loop sets in-progress | Confirmed expected | task-runner.ts ~line 2605-2626 |
+| Steps are marked complete after worker exit via isStepComplete check | No change needed | task-runner.ts ~line 2694-2698 |
 
 ---
 
@@ -62,6 +66,32 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-25 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-25 04:23 | Task started | Extension-driven execution |
+| 2026-03-25 04:23 | Step 0 started | Preflight |
+| 2026-03-25 04:23 | Step 1 started | Fix Step Status Initialization |
+| 2026-03-25 04:23 | Step 2 started | Testing & Verification |
+| 2026-03-25 04:23 | Step 3 started | Documentation & Delivery |
+| 2026-03-25 04:23 | Task started | Extension-driven execution |
+| 2026-03-25 04:23 | Step 0 started | Preflight |
+| 2026-03-25 04:23 | Step 1 started | Fix Step Status Initialization |
+| 2026-03-25 04:23 | Step 2 started | Testing & Verification |
+| 2026-03-25 04:23 | Step 3 started | Documentation & Delivery |
+| 2026-03-25 04:25 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
+| 2026-03-25 04:27 | Review R001 | plan Step 1: UNKNOWN (fallback) |
+| 2026-03-25 04:38 | Worker iter 2 | done in 876s, ctx: 5%, tools: 62 |
+| 2026-03-25 04:38 | Step 0 complete | Preflight |
+| 2026-03-25 04:38 | Step 1 complete | Fix Step Status Initialization |
+| 2026-03-25 04:38 | Step 2 complete | Testing & Verification |
+| 2026-03-25 04:38 | Step 3 complete | Documentation & Delivery |
+| 2026-03-25 04:38 | Iteration 1 summary | +9 checkboxes, completed: Step 0, Step 1, Step 2, Step 3 |
+| 2026-03-25 04:38 | Task complete | .DONE created |
+| 2026-03-25 04:40 | Worker iter 1 | done in 987s, ctx: 4%, tools: 52 |
+| 2026-03-25 04:40 | Step 0 complete | Preflight |
+| 2026-03-25 04:40 | Step 1 complete | Fix Step Status Initialization |
+| 2026-03-25 04:40 | Step 2 complete | Testing & Verification |
+| 2026-03-25 04:40 | Step 3 complete | Documentation & Delivery |
+| 2026-03-25 04:40 | Iteration 1 summary | +9 checkboxes, completed: Step 0, Step 1, Step 2, Step 3 |
+| 2026-03-25 04:40 | Task complete | .DONE created |
 
 ---
 
