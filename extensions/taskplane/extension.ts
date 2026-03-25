@@ -46,6 +46,7 @@ import {
 import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
+import { runMigrations } from "./migrations.ts";
 import {
 	activateSupervisor,
 	deactivateSupervisor,
