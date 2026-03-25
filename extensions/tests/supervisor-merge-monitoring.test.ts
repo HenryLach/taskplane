@@ -595,7 +595,7 @@ describe("event emission and de-duplication", () => {
 			"utf-8",
 		);
 		const emitIdx = mergeSource.indexOf("_emitHealthEvents");
-		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2000);
+		const emitBody = mergeSource.substring(emitIdx, emitIdx + 2500);
 
 		expect(emitBody).toContain("!state.stuckEmitted");
 		expect(emitBody).toContain("state.stuckEmitted = true");
@@ -706,7 +706,7 @@ describe("dead-session early exit signaling", () => {
 		// waitForMergeResult already checks session liveness each poll
 		const waitFn = mergeSource.substring(
 			mergeSource.indexOf("async function waitForMergeResult"),
-			mergeSource.indexOf("async function waitForMergeResult") + 3000,
+			mergeSource.indexOf("async function waitForMergeResult") + 4000,
 		);
 		expect(waitFn).toContain("tmuxHasSession(sessionName)");
 		expect(waitFn).toContain("sessionDiedAt");

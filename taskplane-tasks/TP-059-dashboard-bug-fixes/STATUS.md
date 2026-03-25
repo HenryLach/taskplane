@@ -40,10 +40,10 @@
 ---
 
 ### Step 3: Fix Test Failures (#193)
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Fix test 9.3 to match current implementation
-- [ ] Fix test 10.5 to match current implementation
+- [x] Fix test 9.3 to match current implementation
+- [x] Fix test 10.5 to match current implementation
 
 ---
 
