@@ -53,7 +53,7 @@
 **Status:** ✅ Complete
 
 - [x] Create `supervisor-template.test.ts` with template, composition, fallback, and init tests
-- [x] Full test suite passing (2589/2592 — 3 pre-existing failures in supervisor-merge-monitoring and parallel test interference)
+- [x] Full test suite passing (2590/2592 — 2 pre-existing failures in supervisor-merge-monitoring.test.ts tests 9.3 and 10.5)
 - [x] Build passes
 
 ---
@@ -61,7 +61,7 @@
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Update supervisor-primer.md
+- [x] Update supervisor-primer.md
 - [ ] "Check If Affected" docs reviewed
 - [ ] Discoveries logged
 - [ ] `.DONE` created
