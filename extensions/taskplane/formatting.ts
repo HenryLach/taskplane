@@ -436,6 +436,7 @@ export function buildDashboardViewModel(
 	return {
 		phase: batchState.phase,
 		batchId: batchState.batchId,
+		orchBranch: batchState.orchBranch || batchState.baseBranch || "",
 		waveProgress,
 		elapsed,
 		summary,
@@ -684,7 +685,7 @@ export function createOrchWidget(
 				} else if (vm.phase === "merging") {
 					lines.push("");
 					lines.push(truncateToWidth(
-						theme.fg("accent", "  🔀 Merging lane branches into develop..."),
+						theme.fg("accent", `  🔀 Merging lane branches into ${vm.orchBranch || "orch branch"}...`),
 						width,
 					));
 				} else if (vm.phase === "paused") {
