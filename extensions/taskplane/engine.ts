@@ -16,12 +16,13 @@ import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolic
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
+import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, loadBatchState, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
 import { buildEngineEventBase, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaves, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
+import { runPreflightCleanup, formatPreflightCleanup } from "./cleanup.ts";
 
 // ── Tier 0: Automatic Recovery Helpers (TP-039) ─────────────────────
 
@@ -851,6 +852,39 @@ export async function executeOrchBatch(
 		batchState.errors.push("Preflight check failed");
 		emitTerminalEvent();
 		return;
+	}
+
+	// ── TP-065: Preflight artifact cleanup (Layer 2 + Layer 3) ───
+	// Sweep stale artifacts and rotate oversized logs before batch starts.
+	// Always non-fatal — failures warn but never block batch execution.
+	try {
+		// Layer 2: Age-based sweep of stale telemetry/merge artifacts (>7 days)
+		const sweepResult = sweepStaleArtifacts(stateRoot, {
+			isBatchActive: () => {
+				// Check persisted state — a prior batch may still be active
+				try {
+					const state = loadBatchState(stateRoot);
+					if (state && state.phase !== "completed" && state.phase !== "failed" && state.phase !== "stopped") {
+						return true;
+					}
+				} catch { /* state unreadable — safe to sweep */ }
+				return false;
+			},
+			now: () => Date.now(),
+		});
+		const sweepMsg = formatPreflightSweep(sweepResult);
+		if (sweepMsg) {
+			onNotify(sweepMsg, "info");
+		}
+
+		// Layer 3: Size-capped rotation of supervisor append-only logs
+		const rotationResult = rotateSupervisorLogs(stateRoot);
+		const rotationMsg = formatLogRotation(rotationResult);
+		if (rotationMsg) {
+			onNotify(rotationMsg, "info");
+		}
+	} catch {
+		// Non-fatal — never block batch start for cleanup errors
 	}
 
 	// Discovery — task area paths in task-runner.yaml are workspace-relative.

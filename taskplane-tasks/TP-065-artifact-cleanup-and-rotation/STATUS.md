@@ -1,6 +1,6 @@
 # TP-065: Artifact Cleanup and Log Rotation — Status
 
-**Current Step:** Step 2: Age-Based Sweep on Preflight (Layer 2)
+**Current Step:** Step 3: Size-Capped Rotation for Append-Only Logs (Layer 3)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
@@ -28,10 +28,10 @@
 ---
 
 ### Step 2: Age-Based Sweep on Preflight (Layer 2)
-**Status:** ⬜ Not Started
-- [ ] Sweep telemetry/merge files older than 7 days
-- [ ] Guard: skip if batch is actively executing
-- [ ] Non-fatal with logging
+**Status:** ✅ Complete
+- [x] Sweep telemetry/merge files older than 7 days
+- [x] Guard: skip if batch is actively executing
+- [x] Non-fatal with logging
 
 ---
 
