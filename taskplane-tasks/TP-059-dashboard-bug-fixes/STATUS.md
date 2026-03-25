@@ -59,7 +59,7 @@
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Discoveries logged
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
@@ -76,6 +76,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Test 9.3 and 10.5 failures caused by source extraction window too small (2000/3000 chars) after implementation grew during TP-056 | Fixed: increased to 2500/4000 chars | `extensions/tests/supervisor-merge-monitoring.test.ts` |
+| Dashboard merge session filter assumed `orch-merge-*` prefix but actual naming is `{prefix}-{opId}-merge-{N}` | Fixed: use `includes("-merge-")` | `dashboard/public/app.js` |
+| `OrchDashboardViewModel` was missing `orchBranch` field needed for merge message | Fixed: added field, threaded from `batchState.orchBranch` | `extensions/taskplane/types.ts`, `formatting.ts` |
 
 ---
 
