@@ -295,8 +295,18 @@ function tailJsonlFile(filePath) {
     return []; // No new data
   }
 
-  // Read new bytes from offset to end of file
-  const bytesToRead = fileSize - tailState.offset;
+  // Cap read size per tick to avoid ERR_STRING_TOO_LONG on large files.
+  // If there's more data remaining, the next SSE tick will pick up the rest.
+  const MAX_TAIL_BYTES = 10 * 1024 * 1024; // 10 MB per tick
+
+  // Skip-to-tail on fresh dashboard start with large files.
+  // The partial-line handling below already discards the first partial line.
+  if (tailState.offset === 0 && fileSize > MAX_TAIL_BYTES) {
+    tailState.offset = fileSize - MAX_TAIL_BYTES;
+  }
+
+  // Read new bytes from offset, capped to MAX_TAIL_BYTES
+  const bytesToRead = Math.min(fileSize - tailState.offset, MAX_TAIL_BYTES);
   const buf = Buffer.alloc(bytesToRead);
   let fd;
   try {
@@ -311,7 +321,7 @@ function tailJsonlFile(filePath) {
     return []; // Read error — try again next tick
   }
   fs.closeSync(fd);
-  tailState.offset = fileSize;
+  tailState.offset += bytesToRead;
 
   // Split into lines, preserving partial trailing line
   const chunk = tailState.partial + buf.toString("utf-8");
