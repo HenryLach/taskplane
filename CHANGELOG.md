@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-03-25
+
+### New
+- **Additive upgrade migrations (TP-063, #211)** — when users run `/orch` after a `pi update`, newly introduced scaffold files are created automatically. No more manual `taskplane init` after upgrades. Migration state tracked in `.pi/taskplane.json` so each migration runs once per repo. First migration: auto-create missing `.pi/agents/supervisor.md`.
+
 ## [0.15.0] - 2026-03-25
 
 ### New
@@ -483,7 +488,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/HenryLach/taskplane/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/HenryLach/taskplane/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/HenryLach/taskplane/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/HenryLach/taskplane/compare/v0.13.0...v0.14.0
