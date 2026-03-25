@@ -300,19 +300,18 @@ describe("1.x — Supervisor prompt injection in extension.ts", () => {
 		expect(extSource).toContain("registerSupervisorPromptHook");
 	});
 
-	it("1.13: /orch handler calls activateSupervisor after startBatchAsync", () => {
+	it("1.13: doOrchStart calls activateSupervisor after startBatchAsync", () => {
 		const extSource = readSource("extension.ts");
-		const orchHandler = extSource.substring(
-			extSource.indexOf('registerCommand("orch"'),
-			extSource.indexOf('registerCommand("orch-plan"'),
+		// The batch-start logic now lives in doOrchStart
+		const doOrchStartBody = extSource.substring(
+			extSource.indexOf("function doOrchStart("),
+			extSource.indexOf("function doOrchStatus("),
 		);
-		expect(orchHandler).toContain("activateSupervisor");
-		// Should be after startBatchAsync in the with-args path
-		// (TP-042 adds an activateSupervisor call in the no-args routing block
-		// BEFORE startBatchAsync, so we find the one after startBatchAsync)
-		const startAsyncIdx = orchHandler.indexOf("startBatchAsync(");
+		expect(doOrchStartBody).toContain("activateSupervisor");
+		// Should be after startBatchAsync
+		const startAsyncIdx = doOrchStartBody.indexOf("startBatchAsync(");
 		expect(startAsyncIdx).not.toBe(-1);
-		const activateIdxAfterBatch = orchHandler.indexOf("activateSupervisor(", startAsyncIdx);
+		const activateIdxAfterBatch = doOrchStartBody.indexOf("activateSupervisor(", startAsyncIdx);
 		expect(activateIdxAfterBatch).not.toBe(-1);
 		expect(activateIdxAfterBatch).toBeGreaterThan(startAsyncIdx);
 	});

@@ -230,16 +230,17 @@ describe("3.x: Shared helper functions exist and are used by both commands and t
 	});
 
 	it("3.12: /orch command handler delegates to doOrchStart for batch start", () => {
-		// Find the /orch command handler (with-args path) and check it calls doOrchStart
+		// The /orch handler has a large routing section before the batch-start
+		// delegation, so use a larger window to find doOrchStart.
 		const registrationIdx = extensionSource.indexOf('registerCommand("orch"');
-		const cmdBlock = extensionSource.slice(registrationIdx, registrationIdx + 1000);
+		const cmdBlock = extensionSource.slice(registrationIdx, registrationIdx + 5000);
 		expect(cmdBlock).toContain("doOrchStart(");
 	});
 
 	it("3.13: orch_start tool delegates to doOrchStart", () => {
 		// Find the orch_start tool registration and verify it calls doOrchStart
 		const toolIdx = extensionSource.indexOf('name: "orch_start"');
-		const toolBlock = extensionSource.slice(toolIdx, toolIdx + 800);
+		const toolBlock = extensionSource.slice(toolIdx, toolIdx + 1500);
 		expect(toolBlock).toContain("doOrchStart(");
 	});
 });
@@ -277,42 +278,43 @@ describe("4.x: Supervisor prompt includes tool awareness", () => {
 		expect(monitoringPrompt).toContain("orch_status()");
 	});
 
-	it("4.3: monitoring prompt mentions orch_pause tool", () => {
+	it("4.4: monitoring prompt mentions orch_pause tool", () => {
 		expect(monitoringPrompt).toContain("orch_pause()");
 	});
 
-	it("4.3: monitoring prompt mentions orch_resume tool", () => {
+	it("4.5: monitoring prompt mentions orch_resume tool", () => {
 		expect(monitoringPrompt).toContain("orch_resume(");
 	});
 
-	it("4.4: monitoring prompt mentions orch_abort tool", () => {
+	it("4.6: monitoring prompt mentions orch_abort tool", () => {
 		expect(monitoringPrompt).toContain("orch_abort(");
 	});
 
-	it("4.5: monitoring prompt mentions orch_integrate tool", () => {
+	it("4.7: monitoring prompt mentions orch_integrate tool", () => {
 		expect(monitoringPrompt).toContain("orch_integrate(");
 	});
 
-	it("4.6: monitoring prompt has 'Available Orchestrator Tools' section", () => {
+	it("4.8: monitoring prompt has 'Available Orchestrator Tools' section", () => {
 		expect(monitoringPrompt).toContain("Available Orchestrator Tools");
 	});
 
-	it("4.7: monitoring prompt includes proactive usage examples", () => {
+	it("4.9: monitoring prompt includes proactive usage examples", () => {
 		expect(monitoringPrompt).toContain("When to Use These Tools");
 	});
 
-	it("4.8: monitoring prompt describes integration modes", () => {
+	it("4.10: monitoring prompt describes integration modes", () => {
 		expect(monitoringPrompt).toContain('"fast-forward"');
 		expect(monitoringPrompt).toContain('"merge"');
 		expect(monitoringPrompt).toContain('"pr"');
 	});
 
-	it("4.9: routing prompt includes orchestrator tools section", () => {
+	it("4.11: routing prompt includes orchestrator tools section", () => {
 		const routingPrompt = buildRoutingSystemPrompt(
 			{ routingState: "no-tasks", contextMessage: "No pending tasks" },
 			stateRoot,
 		);
 		expect(routingPrompt).toContain("Orchestrator Tools");
+		expect(routingPrompt).toContain("orch_start(");
 		expect(routingPrompt).toContain("orch_status()");
 		expect(routingPrompt).toContain("orch_integrate(");
 	});
