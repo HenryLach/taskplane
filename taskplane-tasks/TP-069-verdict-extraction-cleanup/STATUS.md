@@ -1,6 +1,6 @@
 # TP-069: Extract Shared Verdict Helper — Status
 
-**Current Step:** Step 2: Testing & Verification
+**Current Step:** Step 3: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 1
@@ -33,8 +33,8 @@
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Discoveries logged
+**Status:** 🟨 In Progress
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
@@ -59,6 +59,14 @@
 | 2026-03-25 22:09 | Review R001 | plan Step 1: APPROVE |
 
 ---
+
+## Discoveries
+
+| Area | Discovery | Action |
+|------|-----------|--------|
+| Tests | `orch-direct-implementation.test.ts` has a pre-existing timeout issue (174 assertions in one test case, exceeds 60s vitest timeout) | Out of scope — pre-existing |
+| Tests | Test 5.6 checked for literal `${verdict} (fallback)` in source — updated to check for `(${suffix})` and `"fallback"` argument instead | Fixed in this task |
+| Code | Third `extractVerdict` usage at ~line 3390 (runReviewForStep helper) is a simpler pattern without REVISE details or resultText — not a candidate for this extraction | Noted, out of scope |
 
 ## Blockers
 
