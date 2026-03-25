@@ -26,9 +26,9 @@
 ### Step 1: Create Base and Local Templates
 **Status:** 🟨 In Progress
 
-- [ ] Create `templates/agents/supervisor.md` with static prompt sections and template variables
-- [ ] Create routing template (separate file or marked section)
-- [ ] Create `templates/agents/local/supervisor.md` scaffold following existing pattern
+- [x] Create `templates/agents/supervisor.md` with static prompt sections and template variables
+- [x] Create routing template (separate file or marked section)
+- [x] Create `templates/agents/local/supervisor.md` scaffold following existing pattern
 
 ---
 
