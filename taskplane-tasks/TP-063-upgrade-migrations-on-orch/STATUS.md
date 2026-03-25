@@ -1,6 +1,6 @@
 # TP-063: Add Additive Upgrade Migrations on /orch — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Add Migration Runner
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
