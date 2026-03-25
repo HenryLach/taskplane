@@ -1748,64 +1748,6 @@ function resolvePrimerPath(): string {
 	}
 }
 
-/**
- * Resolve the path to a base template file shipped with the package.
- * Templates live at `<package-root>/templates/agents/<name>.md`.
- *
- * Uses import.meta.url to resolve relative to this module's location:
- * `extensions/taskplane/` → `../../templates/agents/`
- */
-function resolveBaseTemplatePath(name: string): string {
-	try {
-		const thisDir = dirname(fileURLToPath(import.meta.url));
-		return join(thisDir, "..", "..", "templates", "agents", `${name}.md`);
-	} catch {
-		return join(__dirname, "..", "..", "templates", "agents", `${name}.md`);
-	}
-}
-
-/**
- * Load a template file body (content after YAML frontmatter).
- * Returns null if the file doesn't exist or has no frontmatter.
- */
-function loadTemplateBody(filePath: string): string | null {
-	if (!existsSync(filePath)) return null;
-	try {
-		const raw = readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
-		const match = raw.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
-		if (!match) return raw.trim(); // No frontmatter — use entire content
-		return match[1].trim();
-	} catch {
-		return null;
-	}
-}
-
-/**
- * Replace all `{{key}}` placeholders in a template with their values.
- * Unresolved placeholders are left as-is to avoid silent data loss.
- */
-function applyTemplateVars(template: string, vars: Record<string, string>): string {
-	let result = template;
-	for (const [key, value] of Object.entries(vars)) {
-		// Replace all occurrences of {{key}} — global replace
-		result = result.split(`{{${key}}}`).join(value);
-	}
-	return result;
-}
-
-/**
- * Load the local supervisor override from `.pi/agents/supervisor.md`.
- * Returns the body content (after frontmatter), or empty string if not found.
- */
-function loadLocalSupervisorOverride(stateRoot: string): string {
-	const localPath = join(stateRoot, ".pi", "agents", "supervisor.md");
-	const body = loadTemplateBody(localPath);
-	if (!body) return "";
-	// Strip HTML comments (scaffold guidance) — only return actual content
-	const stripped = body.replace(/<!--[\s\S]*?-->/g, "").trim();
-	return stripped;
-}
-
 
 // ── Template Loading (TP-058) ────────────────────────────────────────
 
@@ -1910,6 +1852,63 @@ function replaceTemplateVars(template: string, vars: Record<string, string>): st
 	});
 }
 
+
+/**
+ * Build the guardrails section dynamically based on integration mode (TP-043).
+ * Extracted as a helper so both the template path and inline fallback can reuse it.
+ * @since TP-058
+ */
+function buildGuardrailsSection(integrationMode: string): string {
+	if (integrationMode === "supervised" || integrationMode === "auto") {
+		const modeNote = integrationMode === "supervised"
+			? `**Supervised mode:** Before executing integration, describe your plan and ask the operator for confirmation.`
+			: `**Auto mode:** Execute integration directly. Report the outcome to the operator. Pause only on errors or conflicts.`;
+		return `## What You Must NEVER Do
+
+1. Never delete \`.pi/batch-state.json\` without operator approval
+2. Never modify task code (files that workers wrote)
+3. Never modify PROMPT.md files
+4. Never \`git reset --hard\` with uncommitted changes
+5. Never skip tasks/waves without telling the operator
+6. Never create GitHub releases
+
+## Integration Permissions (mode: ${integrationMode})
+
+You are authorized to perform integration operations after batch completion:
+- \`git push origin <orch-branch>\` — push the orch branch for PR creation
+- \`gh pr create\` — create pull requests for integration
+- \`git merge --ff-only\` or \`git merge --no-edit\` — local branch integration
+- \`git branch -D <orch-branch>\` — cleanup after successful integration
+
+${modeNote}`;
+	}
+	return `## What You Must NEVER Do
+
+1. Never \`git push\` to any remote
+2. Never delete \`.pi/batch-state.json\` without operator approval
+3. Never modify task code (files that workers wrote)
+4. Never modify PROMPT.md files
+5. Never \`git reset --hard\` with uncommitted changes
+6. Never skip tasks/waves without telling the operator
+7. Never create PRs or GitHub releases`;
+}
+
+/**
+ * Build the autonomy level description for the current autonomy setting.
+ * @since TP-058
+ */
+function buildAutonomyDescription(autonomyLabel: string): string {
+	switch (autonomyLabel) {
+		case "interactive":
+			return `**Your current level is INTERACTIVE.** ASK the operator before any Tier 0 Known or Destructive action. Explain what you want to do, why, and what the alternatives are. Let the operator decide.`;
+		case "supervised":
+			return `**Your current level is SUPERVISED.** Execute Tier 0 Known patterns automatically (retries, cleanup, session restarts). ASK before Destructive actions (manual merges, state editing, skipping tasks, killing sessions). Always explain what you did and why.`;
+		case "autonomous":
+			return `**Your current level is AUTONOMOUS.** Execute all recovery actions automatically. Pause and summarize only when you're genuinely stuck and cannot resolve the issue. The operator trusts you to make reasonable decisions.`;
+		default:
+			return "";
+	}
+}
 
 /**
  * Build the supervisor system prompt.
@@ -2211,6 +2210,7 @@ When the conversation reaches the config generation phase, create ALL of these
 - \`.pi/agents/task-worker.md\` — worker prompt overrides (can start empty with a brief comment)
 - \`.pi/agents/task-reviewer.md\` — reviewer prompt overrides (can start empty with a brief comment)
 - \`.pi/agents/task-merger.md\` — merger prompt overrides (can start empty with a brief comment)
+- \`.pi/agents/supervisor.md\` — supervisor prompt overrides (can start empty with a brief comment)
 - \`.gitignore\` entries — add Taskplane working file patterns if not already present
 
 Use conservative creation: check if each file exists before writing. If files

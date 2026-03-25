@@ -36,17 +36,16 @@
 **Status:** 🟨 In Progress
 
 - [x] Add `loadSupervisorTemplate()` helper that uses `findPackageRoot()` + `parseAgentFile()` patterns from task-runner.ts to load base template + compose local override
-- [x] Refactor `buildSupervisorSystemPrompt()` to load template and replace `{{placeholders}}` with dynamic values (batchContext, guardrails, autonomy, paths)
-- [x] Refactor `buildRoutingSystemPrompt()` to load routing template and replace `{{placeholders}}` (scriptGuidance, routingState, contextMessage, primerPath)
-- [x] Implement fallback: if template file missing, use current inline prompt unchanged
+- [ ] Refactor `buildSupervisorSystemPrompt()` to load template and replace `{{placeholders}}` with dynamic values (batchContext, guardrails, autonomy, paths), with fallback to inline prompt
+- [ ] Refactor `buildRoutingSystemPrompt()` to load routing template and replace `{{placeholders}}` (scriptGuidance, routingState, contextMessage, primerPath), with fallback to inline prompt
 
 ---
 
 ### Step 3: Update Init and Onboarding
 **Status:** 🟨 In Progress
 
-- [ ] Add supervisor template copy to `handleInit()` in extension.ts
-- [ ] Update `taskplane doctor` to check for supervisor template
+- [x] Add supervisor template copy to `handleInit()` in extension.ts
+- [x] Update `taskplane doctor` to check for supervisor template
 
 ---
 

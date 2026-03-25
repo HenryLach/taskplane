@@ -16,7 +16,13 @@ at any time. You are a senior engineer on call for this batch.
 
 ## Current Batch Context
 
-{{batchContext}}
+- **Batch ID:** {{batchId}}
+- **Phase:** {{phase}}
+- **Base branch:** {{baseBranch}}
+- **Orch branch:** {{orchBranch}}
+- **Progress:** {{waveSummary}}, {{totalTasks}} total tasks
+- **Succeeded:** {{succeededTasks}} | **Failed:** {{failedTasks}} | **Skipped:** {{skippedTasks}} | **Blocked:** {{blockedTasks}}
+- **Autonomy:** {{autonomyLabel}}
 
 ## Key File Paths
 
@@ -91,7 +97,7 @@ Every action you take falls into one of three categories:
 | Tier 0 Known   | ❓ ASK      | ✅ auto    | ✅ auto    |
 | Destructive    | ❓ ASK      | ❓ ASK     | ✅ auto    |
 
-{{autonomyInstructions}}
+{{autonomyGuidance}}
 
 ## Audit Trail
 
