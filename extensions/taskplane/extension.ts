@@ -1502,7 +1502,10 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify(migrationResult.messages.join("\n"), "info");
 			}
 			if (migrationResult.errors.length > 0) {
-				ctx.ui.notify(migrationResult.errors.join("\n"), "warning");
+				ctx.ui.notify(
+					`⚠️ Migration warnings:\n${migrationResult.errors.map(e => `  ⚠ ${e.id}: ${e.error}`).join("\n")}`,
+					"warning",
+				);
 			}
 		} catch {
 			// Swallow — migrations must never block /orch
