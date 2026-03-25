@@ -1,26 +1,26 @@
 # TP-061: Add orch_start Tool — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Register orch_start Tool
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 1
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read existing orch tool registrations pattern
-- [ ] Find /orch command handler and startBatchAsync() usage
-- [ ] Understand parameters and return values
+- [x] Read existing orch tool registrations pattern
+- [x] Find /orch command handler and startBatchAsync() usage
+- [x] Understand parameters and return values
 
 ---
 
 ### Step 1: Register orch_start Tool
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Extract shared helper for batch start
 - [ ] Register orch_start tool with target parameter and guards
@@ -29,14 +29,14 @@
 ---
 
 ### Step 2: Update Supervisor Prompt
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add orch_start to supervisor template tools section
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add orch_start tests to orch-supervisor-tools.test.ts
 - [ ] Full test suite passing
@@ -45,7 +45,7 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Discoveries logged
 - [ ] `.DONE` created
@@ -71,6 +71,18 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-25 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-25 04:23 | Task started | Extension-driven execution |
+| 2026-03-25 04:23 | Step 0 started | Preflight |
+| 2026-03-25 04:23 | Step 1 started | Register orch_start Tool |
+| 2026-03-25 04:23 | Step 2 started | Update Supervisor Prompt |
+| 2026-03-25 04:23 | Step 3 started | Testing & Verification |
+| 2026-03-25 04:23 | Step 4 started | Documentation & Delivery |
+| 2026-03-25 04:23 | Task started | Extension-driven execution |
+| 2026-03-25 04:23 | Step 0 started | Preflight |
+| 2026-03-25 04:23 | Step 1 started | Register orch_start Tool |
+| 2026-03-25 04:23 | Step 2 started | Update Supervisor Prompt |
+| 2026-03-25 04:23 | Step 3 started | Testing & Verification |
+| 2026-03-25 04:23 | Step 4 started | Documentation & Delivery |
 
 ---
 
