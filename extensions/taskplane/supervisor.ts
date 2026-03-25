@@ -1749,6 +1749,169 @@ function resolvePrimerPath(): string {
 }
 
 /**
+ * Resolve the path to a base template file shipped with the package.
+ * Templates live at `<package-root>/templates/agents/<name>.md`.
+ *
+ * Uses import.meta.url to resolve relative to this module's location:
+ * `extensions/taskplane/` → `../../templates/agents/`
+ */
+function resolveBaseTemplatePath(name: string): string {
+	try {
+		const thisDir = dirname(fileURLToPath(import.meta.url));
+		return join(thisDir, "..", "..", "templates", "agents", `${name}.md`);
+	} catch {
+		return join(__dirname, "..", "..", "templates", "agents", `${name}.md`);
+	}
+}
+
+/**
+ * Load a template file body (content after YAML frontmatter).
+ * Returns null if the file doesn't exist or has no frontmatter.
+ */
+function loadTemplateBody(filePath: string): string | null {
+	if (!existsSync(filePath)) return null;
+	try {
+		const raw = readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
+		const match = raw.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
+		if (!match) return raw.trim(); // No frontmatter — use entire content
+		return match[1].trim();
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Replace all `{{key}}` placeholders in a template with their values.
+ * Unresolved placeholders are left as-is to avoid silent data loss.
+ */
+function applyTemplateVars(template: string, vars: Record<string, string>): string {
+	let result = template;
+	for (const [key, value] of Object.entries(vars)) {
+		// Replace all occurrences of {{key}} — global replace
+		result = result.split(`{{${key}}}`).join(value);
+	}
+	return result;
+}
+
+/**
+ * Load the local supervisor override from `.pi/agents/supervisor.md`.
+ * Returns the body content (after frontmatter), or empty string if not found.
+ */
+function loadLocalSupervisorOverride(stateRoot: string): string {
+	const localPath = join(stateRoot, ".pi", "agents", "supervisor.md");
+	const body = loadTemplateBody(localPath);
+	if (!body) return "";
+	// Strip HTML comments (scaffold guidance) — only return actual content
+	const stripped = body.replace(/<!--[\s\S]*?-->/g, "").trim();
+	return stripped;
+}
+
+
+// ── Template Loading (TP-058) ────────────────────────────────────────
+
+/**
+ * Resolve the path to a base supervisor template shipped with the package.
+ *
+ * Templates live in `<package-root>/templates/agents/`. This function derives
+ * the package root from the extension file's location
+ * (`<package-root>/extensions/taskplane/supervisor.ts`).
+ *
+ * @param name - Template filename without extension (e.g. "supervisor", "supervisor-routing")
+ * @returns Absolute path to the template file
+ *
+ * @since TP-058
+ */
+function resolveBaseTemplatePath(name: string): string {
+	try {
+		const thisDir = dirname(fileURLToPath(import.meta.url));
+		// thisDir = <package-root>/extensions/taskplane/
+		return join(thisDir, "..", "..", "templates", "agents", `${name}.md`);
+	} catch {
+		return join(__dirname, "..", "..", "templates", "agents", `${name}.md`);
+	}
+}
+
+/**
+ * Parse a simple frontmatter+body markdown file.
+ * Returns null if the file doesn't exist or has no frontmatter.
+ *
+ * @since TP-058
+ */
+function parseSupervisorTemplate(filePath: string): { fm: Record<string, string>; body: string } | null {
+	if (!existsSync(filePath)) return null;
+	const raw = readFileSync(filePath, "utf-8").replace(/\r\n/g, "\n");
+	const match = raw.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
+	if (!match) return null;
+	const fm: Record<string, string> = {};
+	for (const line of match[1].split("\n")) {
+		const idx = line.indexOf(":");
+		if (idx > 0) {
+			const key = line.slice(0, idx).trim();
+			if (!key.startsWith("#")) { // Skip commented-out frontmatter
+				fm[key] = line.slice(idx + 1).trim();
+			}
+		}
+	}
+	return { fm, body: match[2].trim() };
+}
+
+/**
+ * Load a supervisor template: base (from package) + local override (from project).
+ *
+ * Follows the same composition pattern as `loadAgentDef()` in task-runner.ts:
+ * - Base template: shipped in `templates/agents/{name}.md`
+ * - Local override: `.pi/agents/{name}.md` in the project
+ * - If local has `standalone: true`, use it exclusively
+ * - Otherwise, compose base + local with a separator
+ *
+ * @param name - Template name (e.g. "supervisor", "supervisor-routing")
+ * @param stateRoot - Root path for .pi/ state directory
+ * @returns The composed template body, or null if no template found
+ *
+ * @since TP-058
+ */
+export function loadSupervisorTemplate(name: string, stateRoot: string): string | null {
+	const basePath = resolveBaseTemplatePath(name);
+	const baseDef = parseSupervisorTemplate(basePath);
+
+	// Load local override from .pi/agents/{name}.md
+	const localPath = stateRoot ? join(stateRoot, ".pi", "agents", `${name}.md`) : "";
+	const localDef = localPath ? parseSupervisorTemplate(localPath) : null;
+
+	// No base and no local → null (triggers fallback to inline prompt)
+	if (!baseDef && !localDef) return null;
+
+	// Local with standalone: true → use local as-is, ignore base
+	if (localDef?.fm.standalone === "true") {
+		return localDef.body;
+	}
+
+	// Compose base + local
+	const baseBody = baseDef?.body || "";
+	const localBody = localDef?.body || "";
+	if (localBody) {
+		return baseBody + "\n\n---\n\n## Project-Specific Guidance\n\n" + localBody;
+	}
+	return baseBody;
+}
+
+/**
+ * Replace `{{variable}}` placeholders in a template string.
+ *
+ * @param template - Template string with `{{key}}` placeholders
+ * @param vars - Key-value map of variable replacements
+ * @returns Template with all known placeholders replaced
+ *
+ * @since TP-058
+ */
+function replaceTemplateVars(template: string, vars: Record<string, string>): string {
+	return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
+		return key in vars ? vars[key] : match;
+	});
+}
+
+
+/**
  * Build the supervisor system prompt.
  *
  * The prompt establishes:

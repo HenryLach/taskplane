@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 2
 **Iteration:** 2
 **Size:** M
 
@@ -35,12 +35,10 @@
 ### Step 2: Refactor Prompt Building to Use Templates
 **Status:** 🟨 In Progress
 
-> ⚠️ Hydrate: Expand based on actual static vs dynamic content split discovered in Step 0
-
-- [ ] Refactor `buildSupervisorSystemPrompt()` to load base template and inject dynamic values
-- [ ] Refactor `buildRoutingSystemPrompt()` to load template and inject values
-- [ ] Append local override (`.pi/agents/supervisor.md`) when present
-- [ ] Implement fallback to inline prompt when template is missing
+- [ ] Add `loadSupervisorTemplate()` helper that uses `findPackageRoot()` + `parseAgentFile()` patterns from task-runner.ts to load base template + compose local override
+- [ ] Refactor `buildSupervisorSystemPrompt()` to load template and replace `{{placeholders}}` with dynamic values (batchContext, guardrails, autonomy, paths)
+- [ ] Refactor `buildRoutingSystemPrompt()` to load routing template and replace `{{placeholders}}` (scriptGuidance, routingState, contextMessage, primerPath)
+- [ ] Implement fallback: if template file missing, use current inline prompt unchanged
 
 ---
 
@@ -74,6 +72,8 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
+| R002 | plan | Step 2 | APPROVE | .reviews/R002-plan-step2.md |
 |---|------|------|---------|------|
 
 ---
@@ -104,6 +104,8 @@
 | 2026-03-25 02:24 | Step 3 started | Update Init and Onboarding |
 | 2026-03-25 02:24 | Step 4 started | Testing & Verification |
 | 2026-03-25 02:24 | Step 5 started | Documentation & Delivery |
+| 2026-03-25 02:29 | Review R001 | plan Step 1: APPROVE |
+| 2026-03-25 02:31 | Review R002 | plan Step 2: APPROVE |
 
 ---
 
