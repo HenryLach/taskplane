@@ -1,10 +1,10 @@
 # TP-063: Add Additive Upgrade Migrations on /orch — Status
 
-**Current Step:** Step 2: Wire Trigger Points
+**Current Step:** Step 3: Implement First Migration
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
@@ -28,9 +28,9 @@
 
 ### Step 2: Wire Trigger Points
 **Status:** ⬜ Not Started
-- [ ] Trigger on /orch preflight
-- [ ] Add extension-load safety trigger
-- [ ] Non-fatal warning behavior on failure
+- [x] Trigger on /orch preflight
+- [x] Add extension-load safety trigger
+- [x] Non-fatal warning behavior on failure
 
 ---
 
@@ -61,6 +61,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -81,6 +82,7 @@
 | 2026-03-25 15:13 | Step 0 started | Preflight |
 | 2026-03-25 15:13 | Task started | Extension-driven execution |
 | 2026-03-25 15:13 | Step 0 started | Preflight |
+| 2026-03-25 15:18 | Review R001 | plan Step 1: REVISE |
 
 ---
 
