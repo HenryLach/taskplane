@@ -1,6 +1,6 @@
 # TP-058: Supervisor Template Pattern — Status
 
-**Current Step:** Step 2: Refactor Prompt Building to Use Templates
+**Current Step:** Step 3: Update Init and Onboarding
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
@@ -33,11 +33,11 @@
 ---
 
 ### Step 2: Refactor Prompt Building to Use Templates
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Add `loadSupervisorTemplate()` helper that uses `findPackageRoot()` + `parseAgentFile()` patterns from task-runner.ts to load base template + compose local override
-- [ ] Refactor `buildSupervisorSystemPrompt()` to load template and replace `{{placeholders}}` with dynamic values (batchContext, guardrails, autonomy, paths), with fallback to inline prompt
-- [ ] Refactor `buildRoutingSystemPrompt()` to load routing template and replace `{{placeholders}}` (scriptGuidance, routingState, contextMessage, primerPath), with fallback to inline prompt
+- [x] Refactor `buildSupervisorSystemPrompt()` to load template and replace `{{placeholders}}` with dynamic values (batchContext, guardrails, autonomy, paths), with fallback to inline prompt
+- [x] Refactor `buildRoutingSystemPrompt()` to load routing template and replace `{{placeholders}}` (scriptGuidance, routingState, contextMessage, primerPath), with fallback to inline prompt
 
 ---
 

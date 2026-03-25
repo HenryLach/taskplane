@@ -1951,38 +1951,37 @@ export function buildSupervisorSystemPrompt(
 	const actionsPath = auditTrailPath(stateRoot);
 	const integrationMode = config.orchestrator.integration;
 
-	// TP-043: Build guardrails section dynamically based on integration mode.
-	// When integration is "supervised" or "auto", the supervisor is allowed to
-	// push branches and create PRs as part of post-batch integration.
-	const guardrailsSection = integrationMode === "supervised" || integrationMode === "auto"
-		? `## What You Must NEVER Do
+	// Build dynamic sections
+	const guardrailsSection = buildGuardrailsSection(integrationMode);
+	const autonomyGuidance = buildAutonomyDescription(autonomyLabel);
 
-1. Never delete \`.pi/batch-state.json\` without operator approval
-2. Never modify task code (files that workers wrote)
-3. Never modify PROMPT.md files
-4. Never \`git reset --hard\` with uncommitted changes
-5. Never skip tasks/waves without telling the operator
-6. Never create GitHub releases
+	// TP-058: Try template-based prompt first, fall back to inline prompt.
+	const template = loadSupervisorTemplate("supervisor", stateRoot);
+	if (template) {
+		const vars: Record<string, string> = {
+			batchId: batchState.batchId || "(initializing — read batch state file)",
+			phase: batchState.phase,
+			baseBranch: batchState.baseBranch,
+			orchBranch: batchState.orchBranch || "(legacy mode)",
+			waveSummary,
+			totalTasks: String(batchState.totalTasks),
+			succeededTasks: String(batchState.succeededTasks),
+			failedTasks: String(batchState.failedTasks),
+			skippedTasks: String(batchState.skippedTasks),
+			blockedTasks: String(batchState.blockedTasks),
+			autonomyLabel,
+			batchStatePath,
+			eventsPath,
+			actionsPath,
+			stateRoot,
+			primerPath,
+			guardrailsSection,
+			autonomyGuidance,
+		};
+		return replaceTemplateVars(template, vars);
+	}
 
-## Integration Permissions (mode: ${integrationMode})
-
-You are authorized to perform integration operations after batch completion:
-- \`git push origin <orch-branch>\` — push the orch branch for PR creation
-- \`gh pr create\` — create pull requests for integration
-- \`git merge --ff-only\` or \`git merge --no-edit\` — local branch integration
-- \`git branch -D <orch-branch>\` — cleanup after successful integration
-
-${integrationMode === "supervised" ? `**Supervised mode:** Before executing integration, describe your plan and ask the operator for confirmation.` : `**Auto mode:** Execute integration directly. Report the outcome to the operator. Pause only on errors or conflicts.`}`
-		: `## What You Must NEVER Do
-
-1. Never \`git push\` to any remote
-2. Never delete \`.pi/batch-state.json\` without operator approval
-3. Never modify task code (files that workers wrote)
-4. Never modify PROMPT.md files
-5. Never \`git reset --hard\` with uncommitted changes
-6. Never skip tasks/waves without telling the operator
-7. Never create PRs or GitHub releases`;
-
+	// ── Fallback: inline prompt (backward compatibility when template missing) ──
 	const prompt = `# Supervisor Agent
 
 You are the **batch supervisor** — a persistent agent that monitors a Taskplane
@@ -2077,7 +2076,7 @@ Every action you take falls into one of three categories:
 | Tier 0 Known   | ❓ ASK      | ✅ auto    | ✅ auto    |
 | Destructive    | ❓ ASK      | ❓ ASK     | ✅ auto    |
 
-${autonomyLabel === "interactive" ? `**Your current level is INTERACTIVE.** ASK the operator before any Tier 0 Known or Destructive action. Explain what you want to do, why, and what the alternatives are. Let the operator decide.` : ""}${autonomyLabel === "supervised" ? `**Your current level is SUPERVISED.** Execute Tier 0 Known patterns automatically (retries, cleanup, session restarts). ASK before Destructive actions (manual merges, state editing, skipping tasks, killing sessions). Always explain what you did and why.` : ""}${autonomyLabel === "autonomous" ? `**Your current level is AUTONOMOUS.** Execute all recovery actions automatically. Pause and summarize only when you're genuinely stuck and cannot resolve the issue. The operator trusts you to make reasonable decisions.` : ""}
+${autonomyGuidance}
 
 ## Audit Trail
 
@@ -2182,8 +2181,33 @@ export function buildRoutingSystemPrompt(
 	const primerPath = resolvePrimerPath();
 
 	// Map routing state to the appropriate script section in the primer
+	const scriptGuidance = buildRoutingScriptGuidance(routingContext.routingState, primerPath);
+
+	// TP-058: Try template-based prompt first, fall back to inline prompt.
+	const template = loadSupervisorTemplate("supervisor-routing", stateRoot);
+	if (template) {
+		const vars: Record<string, string> = {
+			routingState: routingContext.routingState,
+			contextMessage: routingContext.contextMessage,
+			scriptGuidance,
+			primerPath,
+		};
+		return replaceTemplateVars(template, vars);
+	}
+
+	// ── Fallback: inline prompt (backward compatibility when template missing) ──
+	return buildRoutingInlinePrompt(routingContext, primerPath, scriptGuidance);
+}
+
+/**
+ * Build the script guidance section for routing prompts.
+ * Contains the per-state instructions that guide the supervisor's behavior.
+ *
+ * @since TP-058
+ */
+function buildRoutingScriptGuidance(routingState: string, primerPath: string): string {
 	let scriptGuidance: string;
-	switch (routingContext.routingState) {
+	switch (routingState) {
 		case "no-config":
 			scriptGuidance = `## Your Mission: Onboarding
 
@@ -2315,7 +2339,7 @@ A completed batch exists that hasn't been integrated yet.
 		default:
 			scriptGuidance = `## Your Mission: Project Assistance
 
-Detected state: ${routingContext.routingState}
+Detected state: ${routingState}
 
 1. **Read the primer** at \`${primerPath}\`
 2. **Assess the situation** and help the operator with their next step
@@ -2323,6 +2347,20 @@ Detected state: ${routingContext.routingState}
 			break;
 	}
 
+	return scriptGuidance;
+}
+
+/**
+ * Inline fallback for the routing system prompt.
+ * Used when the base template file cannot be found.
+ *
+ * @since TP-058
+ */
+function buildRoutingInlinePrompt(
+	routingContext: SupervisorRoutingContext,
+	primerPath: string,
+	scriptGuidance: string,
+): string {
 	const prompt = `# Project Supervisor
 
 You are the **project supervisor** — a conversational agent that helps operators
