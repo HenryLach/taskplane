@@ -1,6 +1,6 @@
 # TP-068: Fix Persistent Reviewer Reliability — Status
 
-**Current Step:** Step 3: Add Graceful Skip on Double Failure
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
@@ -34,10 +34,10 @@
 ---
 
 ### Step 3: Add Graceful Skip on Double Failure
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [x] Improve logging for skipped reviews
-- [ ] Make extractVerdict tolerate non-standard formats ("Changes requested" → REVISE)
-- [ ] Ensure shutdown signal written on all paths
+- [x] Make extractVerdict tolerate non-standard formats ("Changes requested" → REVISE)
+- [x] Ensure shutdown signal written on all paths
 
 ---
 
