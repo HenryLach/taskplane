@@ -630,6 +630,21 @@ function renderMergeAgents(batch, tmuxSessions) {
   // Check for active merge sessions (convention: {prefix}-{opId}-merge-{N})
   const mergeSessions = (tmuxSessions || []).filter(s => s.includes("-merge-"));
 
+  // Derive merge session name from lane session naming pattern.
+  // Lane sessions: "{prefix}-{opId}-lane-{N}", merge sessions: "{prefix}-{opId}-merge-{N}".
+  // Extract the prefix-opId part from the first lane and use it to construct merge names.
+  const lanes = batch?.lanes || [];
+  let mergePrefix = "orch-merge"; // fallback for legacy/unknown patterns
+  if (lanes.length > 0 && lanes[0].tmuxSessionName) {
+    const laneName = lanes[0].tmuxSessionName;
+    const laneMatch = laneName.match(/^(.+)-lane-\d+$/);
+    if (laneMatch) {
+      mergePrefix = laneMatch[1] + "-merge";
+    }
+  }
+  // Helper: get merge session name for a lane number
+  const getMergeSessionName = (laneNum) => `${mergePrefix}-${laneNum}`;
+
   if (mergeResults.length === 0 && mergeSessions.length === 0) {
     $mergeBody.innerHTML = '<div class="empty-state">No merge agents active</div>';
     return;
