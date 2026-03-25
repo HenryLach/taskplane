@@ -24,10 +24,10 @@
 ---
 
 ### Step 1: Fix Merge Message (#201)
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Replace hardcoded "develop" with actual orch branch name
-- [ ] Thread orch branch through to formatting function if needed
+- [x] Replace hardcoded "develop" with actual orch branch name
+- [x] Thread orch branch through to formatting function if needed
 
 ---
 

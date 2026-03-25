@@ -1965,6 +1965,7 @@ export interface OrchDashboardViewModel {
 	attachHint: string; // e.g., "tmux attach -t orch-lane-1"
 	errors: string[];
 	failurePolicy: string | null; // e.g., "stop-wave" if stopped by policy
+	orchBranch: string; // e.g., "orch/henry-20260318T140000" — target branch for merging
 }
 
 
