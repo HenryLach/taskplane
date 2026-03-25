@@ -1,10 +1,10 @@
 # TP-064: Fix Dashboard Telemetry Crash — Status
 
-**Current Step:** Step 1: Fix tailJsonlFile for Large Files
+**Current Step:** Step 2: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** S
 
@@ -18,10 +18,10 @@
 ---
 
 ### Step 1: Fix tailJsonlFile for Large Files
-**Status:** ⬜ Not Started
-- [ ] Add MAX_TAIL_BYTES cap on read size per tick
-- [ ] Skip-to-tail on fresh dashboard start with large files
-- [ ] Guard Buffer allocation
+**Status:** ✅ Complete
+- [x] Add MAX_TAIL_BYTES cap on read size per tick
+- [x] Skip-to-tail on fresh dashboard start with large files
+- [x] Guard Buffer allocation
 
 ---
 
@@ -42,6 +42,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | UNKNOWN | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -55,6 +56,8 @@
 | 2026-03-25 17:39 | Step 0 started | Preflight |
 | 2026-03-25 17:39 | Task started | Extension-driven execution |
 | 2026-03-25 17:39 | Step 0 started | Preflight |
+| 2026-03-25 17:41 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
+| 2026-03-25 17:43 | Review R001 | plan Step 1: UNKNOWN (fallback) |
 
 ---
 
