@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
@@ -36,10 +36,10 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] Update context-window tests for cache-inclusive calculation
-- [ ] Full test suite passing
-- [ ] Build passes
+**Status:** ✅ Complete
+- [x] Update context-window tests for cache-inclusive calculation
+- [x] Full test suite passing
+- [x] Build passes
 
 ---
 
@@ -53,6 +53,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | UNKNOWN | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -67,6 +68,7 @@
 | 2026-03-25 19:09 | Task started | Extension-driven execution |
 | 2026-03-25 19:09 | Step 0 started | Preflight |
 | 2026-03-25 19:12 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
+| 2026-03-25 19:14 | Review R001 | plan Step 1: UNKNOWN (fallback) |
 
 ---
 

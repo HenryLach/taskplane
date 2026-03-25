@@ -144,6 +144,49 @@ describe("tailSidecarJsonl — basic event parsing", () => {
 		const delta = tailSidecarJsonl(sidecarPath, state);
 		expect(delta.latestTotalTokens).toBe(450);
 	});
+
+	it("includes cacheRead tokens in latestTotalTokens (TP-066 fix)", () => {
+		const state = createSidecarTailState();
+		// Simulate Anthropic-style usage: small input/output, large cacheRead
+		writeEvents({
+			type: "message_end",
+			message: { usage: { input: 5000, output: 2000, cacheRead: 180000, totalTokens: 7000 } },
+		});
+
+		const delta = tailSidecarJsonl(sidecarPath, state);
+		// totalTokens (7000) + cacheRead (180000) = 187000
+		expect(delta.latestTotalTokens).toBe(187000);
+	});
+
+	it("includes cacheRead in fallback when totalTokens is absent (TP-066 fix)", () => {
+		const state = createSidecarTailState();
+		// No totalTokens field — falls back to input + output, then adds cacheRead
+		writeEvents({
+			type: "message_end",
+			message: { usage: { input: 5000, output: 2000, cacheRead: 180000 } },
+		});
+
+		const delta = tailSidecarJsonl(sidecarPath, state);
+		// (input 5000 + output 2000) + cacheRead 180000 = 187000
+		expect(delta.latestTotalTokens).toBe(187000);
+	});
+
+	it("context pressure triggers at correct % with cache-heavy workload (TP-066 fix)", () => {
+		const state = createSidecarTailState();
+		// 200K context window, 170K cache reads → ~87% context usage
+		writeEvents({
+			type: "message_end",
+			message: { usage: { input: 3000, output: 1000, cacheRead: 170000, totalTokens: 4000 } },
+		});
+
+		const delta = tailSidecarJsonl(sidecarPath, state);
+		// totalTokens (4000) + cacheRead (170000) = 174000
+		expect(delta.latestTotalTokens).toBe(174000);
+		// 174000 / 200000 = 87% — would trigger 85% warn threshold
+		const contextWindow = 200000;
+		const pct = (delta.latestTotalTokens / contextWindow) * 100;
+		expect(pct).toBe(87);
+	});
 });
 
 // ── 3. Incremental reading across ticks ──────────────────────────────
