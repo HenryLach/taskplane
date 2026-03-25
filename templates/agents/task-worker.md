@@ -265,4 +265,41 @@ checkpoints protect against regressions even when intermediate steps use targete
 2. The merge agent (before merging to the orchestrator branch)
 3. CI (before merging to main)
 
+## File Reading Strategy (Context Budget)
+
+Your context window is finite. Reading large files whole wastes budget and risks
+triggering the context-pressure safety net (85% → wrap-up, 95% → kill).
+Use targeted reads instead:
+
+### Pattern: grep-first, read-with-offset
+
+1. **Locate** the relevant section with `grep` or `find`:
+   ```
+   grep -n "function buildPrompt" extensions/task-runner.ts
+   ```
+2. **Read** just that region with `offset` and `limit`:
+   ```
+   read extensions/task-runner.ts (offset: 1773, limit: 50)
+   ```
+3. **Edit** surgically with exact `oldText → newText`
+
+### When to read a full file
+
+- Files under ~500 lines — read the whole thing, it's fine
+- Config files, test files, templates — usually small enough to read fully
+- New files you're creating — read after writing to verify
+
+### When NOT to read a full file
+
+- Source files over ~1000 lines — grep first, read the relevant region
+- Generated files, lock files, large data files — almost never need full reads
+- Files you've already read this session — re-read only the changed region
+
+### Getting a file outline
+
+To understand a large file's structure without reading it all:
+```bash
+grep -n "^function\|^export\|^class\|^interface\|^const.*=" file.ts | head -50
+```
+
 

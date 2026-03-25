@@ -1,6 +1,6 @@
 # TP-066: Fix Context Pressure Safety Net — Status
 
-**Current Step:** Step 2: Add Worker Template Guidance for Large Files
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
@@ -28,10 +28,10 @@
 ---
 
 ### Step 2: Add Worker Template Guidance for Large Files
-**Status:** ⬜ Not Started
-- [ ] Add "File Reading Strategy" section to worker template
-- [ ] Include grep-first, read-with-offset pattern examples
-- [ ] Update local template comments
+**Status:** ✅ Complete
+- [x] Add "File Reading Strategy" section to worker template
+- [x] Include grep-first, read-with-offset pattern examples
+- [x] Update local template comments
 
 ---
 

@@ -19,6 +19,7 @@ name: task-worker
   - Review protocol (inline reviews via review_step tool when available)
   - Review response handling
   - Test execution strategy (targeted tests during steps, full suite at gate)
+  - File reading strategy (grep-first for large files, context budget awareness)
 
   Add project-specific rules below. Common examples:
   - Preferred package manager (pnpm, yarn, bun)
