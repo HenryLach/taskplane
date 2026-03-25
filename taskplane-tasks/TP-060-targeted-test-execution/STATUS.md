@@ -1,6 +1,6 @@
 # TP-060: Targeted Test Execution — Status
 
-**Current Step:** Step 3: Update Skill Documentation
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
