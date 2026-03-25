@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-03-25
+
+### New
+- **Supervisor template pattern (TP-058, #135)** — the supervisor agent now follows the same composable template pattern as workers, reviewers, and mergers. Base template (`templates/agents/supervisor.md`) ships with npm and auto-updates. Local override (`.pi/agents/supervisor.md`) enables project-specific customization without editing extension source.
+- **Routing template** — `templates/agents/supervisor-routing.md` for onboarding/no-batch mode.
+- **Init copies supervisor template** — `taskplane init` now creates `.pi/agents/supervisor.md` alongside other agent templates.
+
+### Changed
+- `buildSupervisorSystemPrompt()` and `buildRoutingSystemPrompt()` load templates with `{{placeholder}}` variable injection instead of inline string construction. Falls back to inline prompt when templates are missing.
+
 ## [0.13.0] - 2026-03-24
 
 ### New
@@ -457,7 +467,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/HenryLach/taskplane/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/HenryLach/taskplane/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/HenryLach/taskplane/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/HenryLach/taskplane/compare/v0.10.2...v0.11.0
