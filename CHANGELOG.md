@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-03-25
+
+### New
+- **Targeted test execution (TP-060, #200)** — worker template now instructs targeted tests (`--changed`) during implementation steps and full suite only in the Testing & Verification step. PROMPT template and create-taskplane-task skill updated to reflect the strategy. Reduces test time by ~60% per task.
+- **orch_start tool (TP-061, #183)** — supervisor can now start batches programmatically via `orch_start(target)`. Shared helper used by both `/orch` command and tool. Guards prevent starting when a batch is already running.
+
+### Fixed
+- **STATUS.md step display (#198)** — only the current step shows "🟨 In Progress". Future steps correctly show "⬜ Not Started" instead of all being marked in-progress.
+
 ## [0.14.1] - 2026-03-25
 
 ### Fixed
@@ -474,7 +483,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/HenryLach/taskplane/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/HenryLach/taskplane/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/HenryLach/taskplane/compare/v0.13.0...v0.14.0
 [0.13.0]: https://github.com/HenryLach/taskplane/compare/v0.12.0...v0.13.0
