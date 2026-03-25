@@ -24,7 +24,7 @@ import {
 	REVIEWER_WAIT_TIMEOUT_MS,
 	REVIEWER_SHUTDOWN_SIGNAL,
 	REVIEWER_SIGNAL_PREFIX,
-} from "./taskplane/types.js";
+} from "./taskplane/types.ts";
 
 // ── Extension ────────────────────────────────────────────────────────
 
