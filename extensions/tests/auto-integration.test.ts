@@ -1621,20 +1621,27 @@ describe("17.x — Manual mode: operator told to /orch-integrate (R006)", () => 
 		// In manual mode, the supervisor system prompt should NOT allow git push
 		// (only supervised/auto modes get push/PR permissions).
 		// The manual mode guardrails explicitly say "Never git push to any remote".
+		//
+		// TP-058: Guardrails extracted to buildGuardrailsSection() helper.
+		// The inline fallback still contains the full text, and the helper
+		// is called from buildSupervisorSystemPrompt.
 		const source = readSource("supervisor.ts");
-		const promptFn = source.substring(
-			source.indexOf("export function buildSupervisorSystemPrompt("),
-			source.indexOf("export function buildRoutingSystemPrompt("),
-		);
+
+		// buildGuardrailsSection contains the guardrails text
+		const guardrailsFnStart = source.indexOf("function buildGuardrailsSection(");
+		const guardrailsFnEnd = source.indexOf("function buildAutonomyDescription(");
+		expect(guardrailsFnStart).toBeGreaterThan(-1);
+		expect(guardrailsFnEnd).toBeGreaterThan(guardrailsFnStart);
+		const guardrailsFn = source.substring(guardrailsFnStart, guardrailsFnEnd);
 
 		// Manual mode guardrails block git push (the else branch)
 		// Source uses escaped backticks in template literal: \`git push\`
-		expect(promptFn).toContain("Never \\`git push\\` to any remote");
-		expect(promptFn).toContain("Never create PRs or GitHub releases");
+		expect(guardrailsFn).toContain("Never \\`git push\\` to any remote");
+		expect(guardrailsFn).toContain("Never create PRs or GitHub releases");
 
-		// System prompt references integration mode for dynamic guardrails
-		expect(promptFn).toContain("integrationMode");
-		expect(promptFn).toContain("Integration Permissions");
+		// Guardrails function references integration mode
+		expect(guardrailsFn).toContain("integrationMode");
+		expect(guardrailsFn).toContain("Integration Permissions");
 	});
 
 	it("17.4: extension.ts non-completed batches skip integration even in auto/supervised mode", () => {

@@ -78,9 +78,10 @@ describe("1.x — Template file existence", () => {
 // ═════════════════════════════════════════════════════════════════════
 
 describe("2.x — Template content: required sections and placeholders", () => {
-	const supervisorTemplate = readFileSync(join(TEMPLATES_DIR, "supervisor.md"), "utf-8");
-	const routingTemplate = readFileSync(join(TEMPLATES_DIR, "supervisor-routing.md"), "utf-8");
-	const localTemplate = readFileSync(join(TEMPLATES_DIR, "local", "supervisor.md"), "utf-8");
+	// Normalize CRLF→LF for cross-platform compatibility
+	const supervisorTemplate = readFileSync(join(TEMPLATES_DIR, "supervisor.md"), "utf-8").replace(/\r\n/g, "\n");
+	const routingTemplate = readFileSync(join(TEMPLATES_DIR, "supervisor-routing.md"), "utf-8").replace(/\r\n/g, "\n");
+	const localTemplate = readFileSync(join(TEMPLATES_DIR, "local", "supervisor.md"), "utf-8").replace(/\r\n/g, "\n");
 
 	it("2.1: supervisor template has frontmatter with name", () => {
 		expect(supervisorTemplate).toMatch(/^---\n/);
