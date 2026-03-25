@@ -1111,8 +1111,24 @@ function generateReviewRequest(
 }
 
 function extractVerdict(reviewContent: string): string {
+	// Primary: standard format "### Verdict: APPROVE|REVISE|RETHINK"
 	const match = reviewContent.match(/###?\s*Verdict[:\s]*(APPROVE|REVISE|RETHINK)/i);
-	return match ? match[1].toUpperCase() : "UNKNOWN";
+	if (match) return match[1].toUpperCase();
+
+	// TP-068: Tolerate non-standard verdict formats from models that don't
+	// follow the exact template (e.g., "Changes requested", "Needs revision").
+	const lower = reviewContent.toLowerCase();
+	if (/\b(changes?\s+requested|needs?\s+revision|please\s+revise|must\s+revise)\b/.test(lower)) {
+		return "REVISE";
+	}
+	if (/\b(looks?\s+good|no\s+issues?\s+found|approved?)\b/.test(lower)) {
+		return "APPROVE";
+	}
+	if (/\b(fundamentally\s+wrong|rethink|reconsider\s+the\s+approach)\b/.test(lower)) {
+		return "RETHINK";
+	}
+
+	return "UNKNOWN";
 }
 
 // ── Subagent Spawner ─────────────────────────────────────────────────
@@ -2304,8 +2320,11 @@ export default function (pi: ExtensionAPI) {
 					// Initial prompt tells the reviewer to call wait_for_review
 					const initialPrompt =
 						"You are a persistent reviewer for this task. " +
-						"Call the `wait_for_review` tool now to receive your first review request. " +
-						"After writing each review, call `wait_for_review` again for the next one.";
+						"Use the `wait_for_review` tool now to receive your first review request. " +
+						"IMPORTANT: `wait_for_review` is a REGISTERED EXTENSION TOOL — call it " +
+						"the same way you call `read`, `write`, `edit`, or `grep`. " +
+						"Do NOT run it via `bash` or any shell command. " +
+						"After writing each review, use `wait_for_review` again for the next one.";
 
 					const spawned = spawnAgentTmux({
 						sessionName,
@@ -2375,8 +2394,14 @@ export default function (pi: ExtensionAPI) {
 				/**
 				 * Poll for the verdict file to appear (written by the reviewer).
 				 * Same pattern as the original review_step handler.
+				 *
+				 * Early-exit detection (TP-068): If the reviewer exits within 30s
+				 * of spawn without producing a verdict, it likely failed to use the
+				 * wait_for_review tool correctly (e.g., called it via bash). This
+				 * triggers a faster fallback instead of waiting 30 minutes.
 				 */
-				async function pollForVerdict(): Promise<string> {
+				async function pollForVerdict(spawnTime?: number): Promise<string> {
+					const EARLY_EXIT_THRESHOLD_MS = 30_000; // 30 seconds
 					const verdictTimeout = 30 * 60 * 1000; // 30 minutes
 					const pollStart = Date.now();
 					while (Date.now() - pollStart < verdictTimeout) {
@@ -2385,6 +2410,13 @@ export default function (pi: ExtensionAPI) {
 						}
 						// Also check if persistent reviewer died while we're waiting
 						if (state.persistentReviewerSession && !isPersistentReviewerAlive()) {
+							// TP-068: Detect early exit as tool compatibility failure
+							if (spawnTime && (Date.now() - spawnTime) < EARLY_EXIT_THRESHOLD_MS) {
+								throw new Error(
+									"Persistent reviewer exited within 30s of spawn without producing a verdict — " +
+									"wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool)"
+								);
+							}
 							throw new Error("Persistent reviewer session died while waiting for verdict");
 						}
 						await new Promise(r => setTimeout(r, 2000));
@@ -2406,7 +2438,10 @@ export default function (pi: ExtensionAPI) {
 						state.persistentReviewerSignalNum = 0;
 					}
 
+					// Track spawn time for early-exit detection (TP-068)
+					let spawnTime: number | undefined;
 					if (needsSpawn) {
+						spawnTime = Date.now();
 						spawnPersistentReviewer();
 						// Give the reviewer a moment to start and call wait_for_review
 						await new Promise(r => setTimeout(r, 5000));
@@ -2415,8 +2450,8 @@ export default function (pi: ExtensionAPI) {
 					// Signal the reviewer with the new request
 					signalPersistentReviewer();
 
-					// Poll for the verdict file
-					const reviewContent = await pollForVerdict();
+					// Poll for the verdict file (pass spawnTime for early-exit detection)
+					const reviewContent = await pollForVerdict(spawnTime);
 
 					// Stop the per-review timer
 					if (state.reviewerTimer) clearInterval(state.reviewerTimer);
@@ -2570,18 +2605,27 @@ export default function (pi: ExtensionAPI) {
 							details: undefined,
 						};
 					} catch (fallbackErr: any) {
-						// Both persistent and fallback failed
+						// Both persistent and fallback failed — TP-068: clear logging
 						clearInterval(state.reviewerTimer);
 						clearReviewerState();
 						state.reviewerStatus = "error";
 						writeLaneState(state);
 						updateWidgets();
 
+						const skipMsg = `⚠️ Reviews skipped for Step ${stepNum} — reviewer model could not process ${reviewType} review request. Both persistent and fallback modes failed.`;
+						console.error(`[task-runner] ${skipMsg}`);
 						logExecution(statusPath, `Reviewer R${num}`,
-							`${reviewType} review — both persistent and fallback failed: ${fallbackErr?.message || fallbackErr}`);
+							`${skipMsg} Error: ${fallbackErr?.message || fallbackErr}`);
+
+						// TP-068: Ensure shutdown signal is written even on double failure
+						try {
+							const shutdownPath = join(reviewsDir, REVIEWER_SHUTDOWN_SIGNAL);
+							if (!existsSync(reviewsDir)) mkdirSync(reviewsDir, { recursive: true });
+							writeFileSync(shutdownPath, "shutdown");
+						} catch {}
 
 						return {
-							content: [{ type: "text" as const, text: `UNAVAILABLE — reviewer error: ${fallbackErr?.message || fallbackErr}` }],
+							content: [{ type: "text" as const, text: `UNAVAILABLE — ${skipMsg}` }],
 							details: undefined,
 						};
 					}
