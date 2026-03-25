@@ -29,10 +29,10 @@
 ---
 
 ### Step 2: Update PROMPT Template — Testing Step
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 - [x] Update Testing & Verification step to emphasize full suite
-- [ ] Add targeted test suggestion to per-step template
+- [x] Add targeted test suggestion to per-step template
 
 ---
 

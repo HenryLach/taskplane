@@ -76,6 +76,46 @@ file changes at meaningful milestones — one per completed step. Per-checkbox
 commits waste tool calls on git housekeeping without adding recovery value —
 the files are already on disk in the worktree.
 
+## Test Execution Strategy
+
+Run tests at two different levels depending on where you are in the task:
+
+### During implementation steps (targeted tests)
+
+After implementing each step, run **targeted tests** related to your changes.
+Use the `--changed` flag if the project uses Vitest:
+
+```bash
+cd extensions && npx vitest run --changed
+```
+
+Alternatively, run specific test files that cover the code you modified:
+
+```bash
+cd extensions && npx vitest run tests/specific-test.test.ts
+```
+
+- If targeted tests fail, fix the failure before proceeding. Don't accumulate
+  failures across steps.
+- If `--changed` returns no tests, that's fine — it means your changes don't
+  have directly related test files. The full suite in the Testing step will
+  catch any indirect regressions.
+
+### In the Testing & Verification step (full suite)
+
+Run the **full test suite** — this is the quality gate. ALL tests must pass:
+
+```bash
+cd extensions && npx vitest run
+```
+
+### Why this approach
+
+Fast feedback during implementation, full verification at the gate. The merge
+agent runs the full suite again before merging, and CI runs on the PR — you
+have multiple safety nets. Running the full suite (~170s) after every
+implementation step wastes time on unrelated tests without improving safety.
+
 ## STATUS.md Hydration (MANDATORY)
 
 STATUS.md is your ONLY memory. It needs enough structure so progress survives
