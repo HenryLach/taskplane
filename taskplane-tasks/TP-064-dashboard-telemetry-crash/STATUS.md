@@ -1,6 +1,6 @@
 # TP-064: Fix Dashboard Telemetry Crash — Status
 
-**Current Step:** Step 2: Testing & Verification
+**Current Step:** Step 3: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 1
@@ -26,14 +26,14 @@
 ---
 
 ### Step 2: Testing & Verification
-**Status:** 🟡 In Progress
-- [ ] Full test suite passing
-- [ ] Build passes
+**Status:** ✅ Complete
+- [x] Full test suite passing (2626/2626; 1 pre-existing timeout in orch-direct-implementation unrelated to change)
+- [x] Build passes (CLI help works)
 
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟡 In Progress
 - [ ] Discoveries logged
 - [ ] `.DONE` created
 
