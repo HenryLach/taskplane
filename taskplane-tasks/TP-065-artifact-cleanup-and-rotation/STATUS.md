@@ -1,6 +1,6 @@
 # TP-065: Artifact Cleanup and Log Rotation — Status
 
-**Current Step:** Step 1: Post-Integrate Cleanup (Layer 1)
+**Current Step:** Step 2: Age-Based Sweep on Preflight (Layer 2)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
@@ -20,10 +20,10 @@
 ---
 
 ### Step 1: Post-Integrate Cleanup (Layer 1)
-**Status:** ⬜ Not Started
-- [ ] Delete batch-specific telemetry files after integrate
-- [ ] Delete merge result files after integrate
-- [ ] Guard: only clean completed batches, log results
+**Status:** ✅ Complete
+- [x] Delete batch-specific telemetry files after integrate
+- [x] Delete merge result files after integrate
+- [x] Guard: only clean completed batches, log results
 
 ---
 
@@ -75,6 +75,7 @@
 | 2026-03-25 18:19 | Step 0 started | Preflight |
 | 2026-03-25 18:19 | Task started | Extension-driven execution |
 | 2026-03-25 18:19 | Step 0 started | Preflight |
+| 2026-03-25 18:22 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
 
 ---
 

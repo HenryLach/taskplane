@@ -47,6 +47,7 @@ import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
 import { runMigrations } from "./migrations.ts";
+import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, formatPreflightSweep, rotateSupervisorLogs, formatLogRotation } from "./cleanup.ts";
 import {
 	activateSupervisor,
 	deactivateSupervisor,
@@ -976,6 +977,12 @@ export function buildIntegrationExecutor(repoRoot: string, opId?: string): Integ
 			try {
 				deleteStaleBranches(repoRoot, opId, context.batchId);
 				dropBatchAutostash(repoRoot, context.batchId);
+			} catch { /* best effort — don't fail integration for cleanup errors */ }
+
+			// TP-065: Post-integrate artifact cleanup (Layer 1).
+			// Also runs on the supervisor auto-integration path.
+			try {
+				cleanupPostIntegrate(repoRoot, context.batchId);
 			} catch { /* best effort — don't fail integration for cleanup errors */ }
 		}
 
@@ -2281,6 +2288,29 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		try { deleteBatchState(repoRoot); } catch { /* best effort */ }
+
+		// ── TP-065: Post-integrate artifact cleanup (Layer 1) ────
+		// Delete batch-specific telemetry and merge result files.
+		// Non-fatal — failures warn but don't block integration.
+		if (batchId) {
+			try {
+				const artifactCleanup = cleanupPostIntegrate(repoRoot, batchId);
+				const totalCleaned = artifactCleanup.telemetryFilesDeleted + artifactCleanup.mergeFilesDeleted + artifactCleanup.promptFilesDeleted;
+				if (totalCleaned > 0) {
+					outputLines.push(
+						`🧹 Cleaned up ${artifactCleanup.telemetryFilesDeleted} telemetry file(s), ` +
+						`${artifactCleanup.mergeFilesDeleted} merge result(s), ` +
+						`${artifactCleanup.promptFilesDeleted} prompt file(s) for batch ${batchId}`,
+					);
+				}
+				if (artifactCleanup.warnings.length > 0) {
+					hasWarning = true;
+					outputLines.push(`⚠️ Artifact cleanup warnings: ${artifactCleanup.warnings.join("; ")}`);
+				}
+			} catch {
+				// Non-fatal — never block integration for cleanup failures
+			}
+		}
 
 		const integrationSummary = wsConfig
 			? `✅ Integrated ${resolvedOrchBranch} across ${reposToIntegrate.length} repo(s).\n${repoMessages.join("\n")}\n${totalCommits} total commit(s) applied.`
