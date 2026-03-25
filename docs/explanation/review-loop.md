@@ -139,6 +139,26 @@ task-runner detects the dead session and falls back to spawning a fresh reviewer
 for that specific review — the same single-shot behavior used before persistent
 mode. This fallback is logged for visibility.
 
+### Reliability defenses (v0.18.2+)
+
+The persistent reviewer includes multiple reliability layers:
+
+- **Explicit tool instructions**: The reviewer template and spawn prompt
+  unambiguously instruct the model to call `wait_for_review` as a registered
+  extension tool (not via `bash` or shell). Some models (e.g., OpenAI Codex
+  variants) previously called it via bash, causing silent failures.
+- **Early-exit detection**: If the reviewer exits within 30 seconds of spawn
+  without producing a verdict, the task-runner treats this as a tool
+  compatibility failure and immediately falls back to fresh-spawn mode instead
+  of waiting for the 30-minute verdict timeout.
+- **Verdict extraction tolerance**: The `extractVerdict` function tolerates
+  non-standard verdict formats (e.g., "Changes requested" → REVISE, "Looks
+  good" → APPROVE) so models that don't use the exact `### Verdict: X` format
+  still produce usable verdicts.
+- **Graceful double-failure skip**: If both persistent and fallback reviewers
+  fail, the task continues with a clear operator notification in STATUS.md.
+  Reviews are quality assurance, not a blocking gate.
+
 ### Benefits
 
 - **Context preservation**: reviewer remembers earlier reviews and code patterns
