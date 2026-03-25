@@ -1,6 +1,6 @@
 # TP-067: Fix Merge Agent Telemetry Key Mismatch — Status
 
-**Current Step:** Step 1: Fix Telemetry Key for Merge Agents
+**Current Step:** Step 2: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 1
@@ -18,9 +18,9 @@
 ---
 
 ### Step 1: Fix Telemetry Key for Merge Agents
-**Status:** 🟨 In Progress
-- [ ] Derive merge telemetry prefix from lane session naming
-- [ ] Fix any remaining hardcoded patterns in app.js
+**Status:** ✅ Complete
+- [x] Derive merge telemetry prefix from lane session naming
+- [x] Fix any remaining hardcoded patterns in app.js (none needed — client already derives prefix correctly)
 
 ---
 
@@ -54,6 +54,7 @@
 | 2026-03-25 19:42 | Step 0 started | Preflight |
 | 2026-03-25 19:42 | Task started | Extension-driven execution |
 | 2026-03-25 19:42 | Step 0 started | Preflight |
+| 2026-03-25 19:44 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
 
 ---
 

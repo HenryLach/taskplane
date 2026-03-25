@@ -391,8 +391,18 @@ function loadTelemetryData(batchState) {
     // Determine the key (tmux prefix)
     let prefix;
     if (parsed.role === "merger") {
-      // Merge agent — key by merge session number or generic "merge"
-      prefix = parsed.mergeNumber != null ? `orch-merge-${parsed.mergeNumber}` : "orch-merge";
+      // Merge agent — derive prefix from lane naming so it matches the tmux
+      // session name used by the client (e.g. "orch-henrylach-merge-1").
+      // Lane sessions: "orch-{opId}-lane-{N}" → merge sessions: "orch-{opId}-merge-{N}".
+      const firstLanePrefix = Object.values(laneToPrefix)[0]; // e.g. "orch-henrylach-lane-1"
+      const opPrefix = firstLanePrefix?.replace(/-lane-\d+$/, ""); // "orch-henrylach"
+      if (parsed.mergeNumber != null && opPrefix) {
+        prefix = `${opPrefix}-merge-${parsed.mergeNumber}`;
+      } else if (parsed.mergeNumber != null) {
+        prefix = `orch-merge-${parsed.mergeNumber}`;
+      } else {
+        prefix = "orch-merge";
+      }
     } else if (parsed.laneNumber != null && laneToPrefix[parsed.laneNumber]) {
       prefix = laneToPrefix[parsed.laneNumber];
     } else if (parsed.laneNumber != null) {
