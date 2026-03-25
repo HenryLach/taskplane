@@ -1,0 +1,2 @@
+Fixed merge telemetry key to derive operator prefix from lane session naming.
+Steps 0-1 completed by worker. Steps 2-3 completed manually after worker context exhaustion.
