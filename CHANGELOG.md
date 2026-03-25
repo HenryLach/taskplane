@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-03-25
+
+### Fixed
+- **Merge agent telemetry in dashboard (#215, TP-067)** — telemetry key now derived from lane session naming pattern, matching actual tmux session names. Dashboard merge section shows token/cost data during merges.
+
 ## [0.18.0] - 2026-03-25
 
 ### Fixed
@@ -509,7 +514,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/HenryLach/taskplane/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/HenryLach/taskplane/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/HenryLach/taskplane/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/HenryLach/taskplane/compare/v0.15.0...v0.16.0
