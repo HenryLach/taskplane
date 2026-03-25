@@ -36,8 +36,8 @@
 
 ### Step 3: Implement First Migration
 **Status:** ⬜ Not Started
-- [ ] add-supervisor-local-template-v1 migration
-- [ ] Copy missing .pi/agents/supervisor.md only
+- [x] add-supervisor-local-template-v1 migration
+- [x] Copy missing .pi/agents/supervisor.md only
 - [ ] Skip if file already exists
 
 ---

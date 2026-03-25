@@ -8,7 +8,7 @@
  * - Additive only: never overwrite or delete existing files
  * - Idempotent: safe to run multiple times
  * - Non-fatal: migration failures warn but don't block execution
- * - Tracked: applied migrations recorded in .pi/migration-state.json
+ * - Tracked: applied migrations recorded in .pi/taskplane.json
  *
  * @module migrations
  * @since TP-063
@@ -43,7 +43,7 @@ export interface MigrationContext {
 }
 
 /**
- * Persisted migration state stored in .pi/migration-state.json.
+ * Migration tracking state, stored as the `migrations` field in .pi/taskplane.json.
  */
 export interface MigrationState {
 	/** Map of migration ID → timestamp (ISO string) when it was applied */
@@ -52,37 +52,65 @@ export interface MigrationState {
 
 // ── State Persistence ────────────────────────────────────────────────
 
-const MIGRATION_STATE_FILENAME = "migration-state.json";
+const TASKPLANE_JSON_FILENAME = "taskplane.json";
 
 /**
- * Load migration state from .pi/migration-state.json.
- * Returns empty state if file doesn't exist or is malformed.
+ * Load the full .pi/taskplane.json metadata file.
+ * Returns null if the file doesn't exist, or an empty object if malformed.
+ * Preserves all existing fields (version, installedAt, etc.).
  */
-export function loadMigrationState(stateRoot: string): MigrationState {
-	const filePath = join(stateRoot, ".pi", MIGRATION_STATE_FILENAME);
+export function loadTaskplaneMeta(stateRoot: string): Record<string, unknown> | null {
+	const filePath = join(stateRoot, ".pi", TASKPLANE_JSON_FILENAME);
 	if (!existsSync(filePath)) {
-		return { applied: {} };
+		return null;
 	}
 	try {
 		const raw = readFileSync(filePath, "utf-8");
 		const parsed = JSON.parse(raw);
-		if (parsed && typeof parsed.applied === "object" && parsed.applied !== null) {
-			return { applied: parsed.applied };
+		if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+			return parsed as Record<string, unknown>;
 		}
-		return { applied: {} };
+		return {};
 	} catch {
-		return { applied: {} };
+		return {};
 	}
 }
 
 /**
- * Save migration state to .pi/migration-state.json.
+ * Save the full .pi/taskplane.json metadata file.
+ * Merges migration state into existing fields without overwriting them.
  */
-export function saveMigrationState(stateRoot: string, state: MigrationState): void {
+export function saveTaskplaneMeta(stateRoot: string, meta: Record<string, unknown>): void {
 	const dir = join(stateRoot, ".pi");
 	mkdirSync(dir, { recursive: true });
-	const filePath = join(dir, MIGRATION_STATE_FILENAME);
-	writeFileSync(filePath, JSON.stringify(state, null, 2) + "\n", "utf-8");
+	const filePath = join(dir, TASKPLANE_JSON_FILENAME);
+	writeFileSync(filePath, JSON.stringify(meta, null, 2) + "\n", "utf-8");
+}
+
+/**
+ * Load migration state from .pi/taskplane.json.
+ * Returns empty state if file doesn't exist or migrations field is missing.
+ */
+export function loadMigrationState(stateRoot: string): MigrationState {
+	const meta = loadTaskplaneMeta(stateRoot);
+	if (!meta) {
+		return { applied: {} };
+	}
+	const migrations = meta.migrations as MigrationState | undefined;
+	if (migrations && typeof migrations.applied === "object" && migrations.applied !== null) {
+		return { applied: migrations.applied };
+	}
+	return { applied: {} };
+}
+
+/**
+ * Save migration state to .pi/taskplane.json.
+ * Merges into existing file content — preserves version, installedAt, etc.
+ */
+export function saveMigrationState(stateRoot: string, state: MigrationState): void {
+	const meta = loadTaskplaneMeta(stateRoot) ?? {};
+	meta.migrations = state;
+	saveTaskplaneMeta(stateRoot, meta);
 }
 
 // ── Package Root Resolution ──────────────────────────────────────────
@@ -121,7 +149,7 @@ export const MIGRATIONS: Migration[] = [
 			}
 			const sourcePath = join(ctx.packageRoot, "templates", "agents", "local", "supervisor.md");
 			if (!existsSync(sourcePath)) {
-				return null; // Template not found in package — skip silently
+				throw new Error(`Template not found at ${sourcePath} — package may be corrupted`);
 			}
 			const targetDir = dirname(targetPath);
 			mkdirSync(targetDir, { recursive: true });
