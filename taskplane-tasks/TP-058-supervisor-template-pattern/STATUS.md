@@ -1,7 +1,7 @@
 # TP-058: Supervisor Template Pattern — Status
 
-**Current Step:** Step 5: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-25
 **Review Level:** 2
 **Review Counter:** 7
@@ -62,8 +62,8 @@
 **Status:** 🟨 In Progress
 
 - [x] Update supervisor-primer.md
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
+- [x] "Check If Affected" docs reviewed (commands.md and architecture.md — no changes needed)
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
@@ -84,6 +84,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| supervisor-merge-monitoring.test.ts has 2 pre-existing failures (9.3, 10.5) | Not related to TP-058 | extensions/tests/supervisor-merge-monitoring.test.ts |
+| Template placeholder naming: template uses `{{autonomy}}`, code var map key must match | Fixed in TP-058 | templates/agents/supervisor.md |
 
 ---
 

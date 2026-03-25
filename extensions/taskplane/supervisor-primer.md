@@ -1076,6 +1076,7 @@ Create the directory and add thin override files:
 - `.pi/agents/task-worker.md` — worker prompt overrides (can be empty initially)
 - `.pi/agents/task-reviewer.md` — reviewer prompt overrides (can be empty initially)
 - `.pi/agents/task-merger.md` — merger prompt overrides (can be empty initially)
+- `.pi/agents/supervisor.md` — supervisor prompt overrides (can be empty initially)
 
 Each file can start with a brief comment explaining its purpose:
 ```markdown
