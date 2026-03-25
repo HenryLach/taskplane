@@ -191,38 +191,56 @@ describe("3.x: Shared helper functions exist and are used by both commands and t
 		expect(extensionSource).toContain("function doOrchIntegrate(");
 	});
 
-	it("3.6: orch-status command handler delegates to doOrchStatus", () => {
+	it("3.6: doOrchStart helper exists", () => {
+		expect(extensionSource).toContain("function doOrchStart(");
+	});
+
+	it("3.7: orch-status command handler delegates to doOrchStatus", () => {
 		// Find the command handler and check it calls the helper
 		const cmdIdx = extensionSource.indexOf('"orch-status"');
 		const cmdBlock = extensionSource.slice(cmdIdx, cmdIdx + 300);
 		expect(cmdBlock).toContain("doOrchStatus(");
 	});
 
-	it("3.7: orch-pause command handler delegates to doOrchPause", () => {
+	it("3.8: orch-pause command handler delegates to doOrchPause", () => {
 		const cmdIdx = extensionSource.indexOf('"orch-pause"');
 		const cmdBlock = extensionSource.slice(cmdIdx, cmdIdx + 300);
 		expect(cmdBlock).toContain("doOrchPause()");
 	});
 
-	it("3.8: orch-resume command handler delegates to doOrchResume", () => {
+	it("3.9: orch-resume command handler delegates to doOrchResume", () => {
 		const cmdIdx = extensionSource.indexOf('"orch-resume"');
 		const cmdBlock = extensionSource.slice(cmdIdx, cmdIdx + 500);
 		expect(cmdBlock).toContain("doOrchResume(");
 	});
 
-	it("3.9: orch-abort command handler delegates to doOrchAbort", () => {
+	it("3.10: orch-abort command handler delegates to doOrchAbort", () => {
 		const cmdIdx = extensionSource.indexOf('"orch-abort"');
 		const cmdBlock = extensionSource.slice(cmdIdx, cmdIdx + 300);
 		expect(cmdBlock).toContain("doOrchAbort(");
 	});
 
-	it("3.10: orch-integrate command handler delegates to doOrchIntegrate", () => {
+	it("3.11: orch-integrate command handler delegates to doOrchIntegrate", () => {
 		// There may be multiple mentions, find the registerCommand one.
 		// The integrate command has a --help section before the delegation,
 		// so use a larger window.
 		const registrationIdx = extensionSource.indexOf('registerCommand("orch-integrate"');
 		const cmdBlock = extensionSource.slice(registrationIdx, registrationIdx + 2000);
 		expect(cmdBlock).toContain("doOrchIntegrate(");
+	});
+
+	it("3.12: /orch command handler delegates to doOrchStart for batch start", () => {
+		// Find the /orch command handler (with-args path) and check it calls doOrchStart
+		const registrationIdx = extensionSource.indexOf('registerCommand("orch"');
+		const cmdBlock = extensionSource.slice(registrationIdx, registrationIdx + 1000);
+		expect(cmdBlock).toContain("doOrchStart(");
+	});
+
+	it("3.13: orch_start tool delegates to doOrchStart", () => {
+		// Find the orch_start tool registration and verify it calls doOrchStart
+		const toolIdx = extensionSource.indexOf('name: "orch_start"');
+		const toolBlock = extensionSource.slice(toolIdx, toolIdx + 800);
+		expect(toolBlock).toContain("doOrchStart(");
 	});
 });
 
@@ -251,11 +269,15 @@ describe("4.x: Supervisor prompt includes tool awareness", () => {
 		stateRoot,
 	);
 
-	it("4.1: monitoring prompt mentions orch_status tool", () => {
+	it("4.1: monitoring prompt mentions orch_start tool", () => {
+		expect(monitoringPrompt).toContain("orch_start(target)");
+	});
+
+	it("4.2: monitoring prompt mentions orch_status tool", () => {
 		expect(monitoringPrompt).toContain("orch_status()");
 	});
 
-	it("4.2: monitoring prompt mentions orch_pause tool", () => {
+	it("4.3: monitoring prompt mentions orch_pause tool", () => {
 		expect(monitoringPrompt).toContain("orch_pause()");
 	});
 
