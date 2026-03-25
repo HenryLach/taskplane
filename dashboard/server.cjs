@@ -462,8 +462,11 @@ function loadTelemetryData(batchState) {
                 ? (usage.cost.total || 0)
                 : (typeof usage.cost === "number" ? usage.cost : 0);
             }
-            const totalTokens = usage.totalTokens
+            // Include cacheRead: totalTokens from pi excludes cache reads,
+            // but cached tokens still consume context window capacity.
+            const rawTotal = usage.totalTokens
               || ((usage.input || 0) + (usage.output || 0));
+            const totalTokens = rawTotal + (usage.cacheRead || 0);
             if (totalTokens > acc.latestTotalTokens) {
               acc.latestTotalTokens = totalTokens;
             }

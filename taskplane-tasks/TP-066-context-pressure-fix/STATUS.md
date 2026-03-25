@@ -1,6 +1,6 @@
 # TP-066: Fix Context Pressure Safety Net — Status
 
-**Current Step:** Step 1: Fix Context Percentage Calculation
+**Current Step:** Step 2: Add Worker Template Guidance for Large Files
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
@@ -20,10 +20,10 @@
 ---
 
 ### Step 1: Fix Context Percentage Calculation
-**Status:** ⬜ Not Started
-- [ ] Include cache read tokens in context pressure calculation
-- [ ] Fix in both tmux and subprocess modes
-- [ ] Fix dashboard server accumulator if needed
+**Status:** ✅ Complete
+- [x] Include cache read tokens in context pressure calculation
+- [x] Fix in both tmux and subprocess modes
+- [x] Fix dashboard server accumulator if needed
 
 ---
 
@@ -66,6 +66,7 @@
 | 2026-03-25 19:09 | Step 0 started | Preflight |
 | 2026-03-25 19:09 | Task started | Extension-driven execution |
 | 2026-03-25 19:09 | Step 0 started | Preflight |
+| 2026-03-25 19:12 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
 
 ---
 

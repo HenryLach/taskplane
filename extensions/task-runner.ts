@@ -1204,7 +1204,10 @@ function spawnAgent(opts: {
 								// Use totalTokens (cumulative) — works across providers.
 								// Anthropic reports small `input` per-turn but growing `totalTokens`.
 								// OpenAI reports growing `input` but also growing `totalTokens`.
-								const tokens = (usage as any).totalTokens || ((usage as any).input + (usage as any).output) || 0;
+								// Include cacheRead: pi's totalTokens excludes cache reads,
+								// but cached tokens still consume context window capacity.
+								const rawTokens = (usage as any).totalTokens || ((usage as any).input + (usage as any).output) || 0;
+								const tokens = rawTokens + ((usage as any).cacheRead || 0);
 								if (tokens > 0) {
 									const pct = (tokens / opts.contextWindow) * 100;
 									opts.onContextPct?.(pct);
@@ -1380,9 +1383,13 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 							? (usage.cost.total || 0)
 							: (typeof usage.cost === "number" ? usage.cost : 0);
 					}
-					// totalTokens is cumulative (grows each turn) — use latest value
-					const totalTokens = usage.totalTokens
+					// totalTokens is cumulative (grows each turn) — use latest value.
+					// Include cacheRead tokens: pi's totalTokens and the
+					// input+output fallback both exclude cache reads, but cached
+					// tokens still consume context window capacity.
+					const rawTotal = usage.totalTokens
 						|| ((usage.input || 0) + (usage.output || 0));
+					const totalTokens = rawTotal + (usage.cacheRead || 0);
 					if (totalTokens > delta.latestTotalTokens) {
 						delta.latestTotalTokens = totalTokens;
 					}
