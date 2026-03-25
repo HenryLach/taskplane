@@ -1,7 +1,7 @@
 # TP-066: Fix Context Pressure Safety Net — Status
 
-**Current Step:** Step 4: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-25
 **Review Level:** 2
 **Review Counter:** 1
@@ -44,9 +44,9 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Discoveries logged
-- [ ] `.DONE` created
+**Status:** ✅ Complete
+- [x] Discoveries logged
+- [x] `.DONE` created
 
 ---
 
@@ -69,6 +69,16 @@
 | 2026-03-25 19:09 | Step 0 started | Preflight |
 | 2026-03-25 19:12 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
 | 2026-03-25 19:14 | Review R001 | plan Step 1: UNKNOWN (fallback) |
+| 2026-03-25 19:26 | Reviewer R002 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
+
+---
+
+## Discoveries
+
+| Discovery | Impact | Action |
+|-----------|--------|--------|
+| `orch-direct-implementation.test.ts` times out at 60s default | Pre-existing, unrelated to TP-066 | Logged as tech debt |
+| Previous iteration (iter 1) applied all code fixes but failed to commit Steps 2+ | Iteration boundary issue — STATUS.md checkboxes were updated but git commits were incomplete | Committed in iter 2 |
 
 ---
 
