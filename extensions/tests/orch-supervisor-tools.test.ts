@@ -1,9 +1,9 @@
 /**
- * Orchestrator Supervisor Tools Tests — TP-053
+ * Orchestrator Supervisor Tools Tests — TP-053 + TP-061
  *
  * Tests for the orchestrator tools exposed to the supervisor agent:
  *
- *   1.x — Tool registration: all 5 tools registered in extension.ts
+ *   1.x — Tool registration: all 6 tools registered in extension.ts
  *   2.x — Tool parameter schemas: correct Type.Object definitions
  *   3.x — Shared helpers: command handlers delegate to shared functions
  *   4.x — Supervisor prompt: tool awareness in system prompts
@@ -58,8 +58,12 @@ describe("1.x: Orchestrator tools are registered", () => {
 		expect(extensionSource).toContain('name: "orch_integrate"');
 	});
 
-	it("1.6: exactly 5 orchestrator tools registered (no duplicates)", () => {
-		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate"];
+	it("1.6: orch_start tool is registered", () => {
+		expect(extensionSource).toContain('name: "orch_start"');
+	});
+
+	it("1.7: exactly 6 orchestrator tools registered (no duplicates)", () => {
+		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate", "orch_start"];
 		for (const name of toolNames) {
 			const regex = new RegExp(`name:\\s*"${name}"`, "g");
 			const matches = extensionSource.match(regex);
@@ -67,8 +71,8 @@ describe("1.x: Orchestrator tools are registered", () => {
 		}
 	});
 
-	it("1.7: all tools have description, promptSnippet, and promptGuidelines", () => {
-		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate"];
+	it("1.8: all tools have description, promptSnippet, and promptGuidelines", () => {
+		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate", "orch_start"];
 		for (const name of toolNames) {
 			// Find the tool registration block
 			const idx = extensionSource.indexOf(`name: "${name}"`);
@@ -81,7 +85,7 @@ describe("1.x: Orchestrator tools are registered", () => {
 		}
 	});
 
-	it("1.8: tools are registered unconditionally (not inside isOrchestratedMode guard)", () => {
+	it("1.9: tools are registered unconditionally (not inside isOrchestratedMode guard)", () => {
 		// The tools should NOT be gated on orchestrated mode — they're for the
 		// supervisor which runs in the main session.
 		// Find the orch_status registration and check it's NOT preceded by isOrchestratedMode
@@ -146,8 +150,14 @@ describe("2.x: Tool parameter schemas are correct", () => {
 		expect(block).toContain('Type.Literal("pr")');
 	});
 
-	it("2.6: all tool execute handlers catch errors and return text results", () => {
-		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate"];
+	it("2.6: orch_start has required target string parameter", () => {
+		const block = getToolBlock("orch_start");
+		expect(block).toContain("target:");
+		expect(block).toContain("Type.String(");
+	});
+
+	it("2.7: all tool execute handlers catch errors and return text results", () => {
+		const toolNames = ["orch_status", "orch_pause", "orch_resume", "orch_abort", "orch_integrate", "orch_start"];
 		for (const name of toolNames) {
 			const block = getToolBlock(name);
 			expect(block, `${name} should have try/catch`).toContain("} catch (err)");

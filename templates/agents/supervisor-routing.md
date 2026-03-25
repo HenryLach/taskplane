@@ -38,6 +38,7 @@ Use these to:
 ### Orchestrator Tools
 
 You also have orchestrator tools available for batch management:
+- **orch_start(target)** — Start a new batch (target: "all" or a task area name/path)
 - **orch_status()** — Check batch status
 - **orch_resume(force?)** — Resume a paused batch
 - **orch_integrate(mode?, force?, branch?)** — Integrate completed batch (modes: "fast-forward", "merge", "pr")
