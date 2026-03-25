@@ -1,7 +1,7 @@
 # TP-062: Fix STATUS.md Step Display — Status
 
-**Current Step:** Step 3: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-25
 **Review Level:** 1
 **Review Counter:** 1
@@ -36,10 +36,10 @@
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Discoveries logged
-- [ ] `.DONE` created
+- [x] Discoveries logged
+- [x] `.DONE` created
 
 ---
 
@@ -55,6 +55,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| No separate "enter step" status update exists — only the init loop sets in-progress | Confirmed expected | task-runner.ts ~line 2605-2626 |
+| Steps are marked complete after worker exit via isStepComplete check | No change needed | task-runner.ts ~line 2694-2698 |
 
 ---
 

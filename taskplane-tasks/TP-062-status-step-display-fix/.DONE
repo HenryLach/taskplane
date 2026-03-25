@@ -1,0 +1,1 @@
+TP-062 complete — Fixed STATUS.md step display bug where all incomplete steps were shown as "In Progress" instead of only the first incomplete step.
