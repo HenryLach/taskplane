@@ -1,6 +1,6 @@
 # TP-063: Add Additive Upgrade Migrations on /orch — Status
 
-**Current Step:** Step 1: Add Migration Runner
+**Current Step:** Step 2: Wire Trigger Points
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
@@ -19,10 +19,10 @@
 ---
 
 ### Step 1: Add Migration Runner
-**Status:** ⬜ Not Started
-- [ ] Create migrations.ts registry + runner
-- [ ] Persist applied migration IDs in .pi/taskplane.json
-- [ ] Ensure idempotent, additive-only behavior
+**Status:** ✅ Complete
+- [x] Create migrations.ts registry + runner
+- [x] Persist applied migration IDs in .pi/taskplane.json
+- [x] Ensure idempotent, additive-only behavior
 
 ---
 
