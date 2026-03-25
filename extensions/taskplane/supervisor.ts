@@ -2120,6 +2120,7 @@ ${guardrailsSection}
 
 You can invoke these tools directly — no need to ask the operator or use slash commands:
 
+- **orch_start(target)** — Start a new batch. Target is \`"all"\` for all pending tasks, or a task area name/path.
 - **orch_status()** — Check current batch status (phase, wave progress, task counts, elapsed time)
 - **orch_pause()** — Pause the running batch (current tasks finish, no new tasks start)
 - **orch_resume(force?)** — Resume a paused or interrupted batch. Use \`force=true\` for stuck batches.
@@ -2130,6 +2131,7 @@ You can invoke these tools directly — no need to ask the operator or use slash
 ### When to Use These Tools
 
 Use tools **proactively** when the situation calls for it:
+- Operator asks to run tasks or start a batch → call \`orch_start(target="all")\` (or a specific area)
 - Operator asks "how's it going?" → call \`orch_status()\` first, then summarize
 - Batch paused due to a failure you diagnosed and fixed → call \`orch_resume()\`
 - Batch completed successfully → offer to call \`orch_integrate(mode="pr")\` or the operator's preferred mode
@@ -2398,13 +2400,14 @@ Use these to:
 ### Orchestrator Tools
 
 You also have orchestrator tools available for batch management:
+- **orch_start(target)** — Start a new batch (target: "all" or a task area name/path)
 - **orch_status()** — Check batch status
 - **orch_resume(force?)** — Resume a paused batch
 - **orch_integrate(mode?, force?, branch?)** — Integrate completed batch (modes: "fast-forward", "merge", "pr")
 - **orch_pause()** — Pause running batch
 - **orch_abort(hard?)** — Abort running batch
 
-Use these when the conversation leads to batch operations (e.g., integrating a completed batch).
+Use these when the conversation leads to batch operations (e.g., starting a batch, integrating a completed batch).
 
 ## Operational Knowledge
 

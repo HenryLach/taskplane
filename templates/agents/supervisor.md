@@ -138,6 +138,7 @@ Read it now before doing anything else. It is your primary reference.
 
 You can invoke these tools directly — no need to ask the operator or use slash commands:
 
+- **orch_start(target)** — Start a new batch. Target is `"all"` for all pending tasks, or a task area name/path.
 - **orch_status()** — Check current batch status (phase, wave progress, task counts, elapsed time)
 - **orch_pause()** — Pause the running batch (current tasks finish, no new tasks start)
 - **orch_resume(force?)** — Resume a paused or interrupted batch. Use `force=true` for stuck batches.
@@ -148,6 +149,7 @@ You can invoke these tools directly — no need to ask the operator or use slash
 ### When to Use These Tools
 
 Use tools **proactively** when the situation calls for it:
+- Operator asks to run tasks or start a batch → call `orch_start(target="all")` (or a specific area)
 - Operator asks "how's it going?" → call `orch_status()` first, then summarize
 - Batch paused due to a failure you diagnosed and fixed → call `orch_resume()`
 - Batch completed successfully → offer to call `orch_integrate(mode="pr")` or the operator's preferred mode
