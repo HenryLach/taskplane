@@ -25,4 +25,3 @@ export * from "./workspace.ts";
 export * from "./diagnostics.ts";
 export * from "./supervisor.ts";
 export * from "./migrations.ts";
-export * from "./migrations.ts";
