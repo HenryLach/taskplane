@@ -1,5 +1,5 @@
 /**
- * Persistent Reviewer Context — TP-057
+ * Persistent Reviewer Context — TP-057, TP-068
  *
  * Tests for the persistent reviewer model:
  *   1.x — reviewer-extension.ts: wait_for_review tool structure
@@ -12,6 +12,10 @@
  *   8.x — Path resolution and package inclusion
  *   9.x — State management: persistentReviewerSession, signal counter, kill function
  *  10.x — Token accumulation: cumulative across persistent reviews
+ *  13.x — TP-068: Early-exit detection
+ *  14.x — TP-068: extractVerdict tolerance for non-standard formats
+ *  15.x — TP-068: Graceful skip on double failure
+ *  16.x — TP-068: Template explicitly instructs registered tool usage
  *
  * Run: npx vitest run tests/persistent-reviewer-context.test.ts
  */
@@ -232,7 +236,7 @@ describe("4.x: Session reuse — persistent reviewer spawned once per task", () 
 	it("4.6: subsequent review_step calls only write signal + poll for verdict", () => {
 		// After spawn, subsequent calls signal the existing reviewer
 		expect(taskRunnerSource).toContain("signalPersistentReviewer()");
-		expect(taskRunnerSource).toContain("pollForVerdict()");
+		expect(taskRunnerSource).toContain("pollForVerdict(spawnTime)");
 	});
 
 	it("4.7: persistent reviewer is spawned with reviewer-extension loaded", () => {
@@ -299,8 +303,8 @@ describe("5.x: Fallback — dead persistent session triggers fresh spawn", () =>
 	});
 
 	it("5.8: both persistent and fallback failure returns UNAVAILABLE", () => {
-		expect(taskRunnerSource).toContain("both persistent and fallback failed");
-		expect(taskRunnerSource).toContain("UNAVAILABLE — reviewer error");
+		expect(taskRunnerSource).toContain("Both persistent and fallback modes failed");
+		expect(taskRunnerSource).toContain("UNAVAILABLE");
 	});
 });
 
@@ -571,7 +575,7 @@ describe("11.x: Reviewer constants in types.ts", () => {
 
 describe("12.x: pollForVerdict — verdict file polling", () => {
 	it("12.1: pollForVerdict function exists in review_step handler", () => {
-		expect(taskRunnerSource).toContain("async function pollForVerdict()");
+		expect(taskRunnerSource).toContain("async function pollForVerdict(");
 	});
 
 	it("12.2: pollForVerdict checks for verdict file existence", () => {
@@ -580,14 +584,152 @@ describe("12.x: pollForVerdict — verdict file polling", () => {
 	});
 
 	it("12.3: pollForVerdict detects dead persistent reviewer while waiting", () => {
-		const fn = sourceRegion(taskRunnerSource, "function pollForVerdict", 0, 600);
+		const fn = sourceRegion(taskRunnerSource, "function pollForVerdict", 0, 1200);
 		expect(fn).toContain("isPersistentReviewerAlive()");
 		expect(fn).toContain("Persistent reviewer session died while waiting");
 	});
 
 	it("12.4: pollForVerdict has a timeout", () => {
-		const fn = sourceRegion(taskRunnerSource, "function pollForVerdict", 0, 600);
+		const fn = sourceRegion(taskRunnerSource, "function pollForVerdict", 0, 800);
 		expect(fn).toContain("verdictTimeout");
 		expect(fn).toContain("30 * 60 * 1000");
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 13.x — TP-068: Early-exit detection
+// ══════════════════════════════════════════════════════════════════════
+
+describe("13.x: TP-068 — Early-exit detection in pollForVerdict", () => {
+	it("13.1: pollForVerdict accepts optional spawnTime parameter", () => {
+		expect(taskRunnerSource).toContain("async function pollForVerdict(spawnTime?: number)");
+	});
+
+	it("13.2: early exit threshold is 30 seconds", () => {
+		const fn = sourceRegion(taskRunnerSource, "function pollForVerdict", 0, 1000);
+		expect(fn).toContain("EARLY_EXIT_THRESHOLD_MS");
+		expect(fn).toContain("30_000");
+	});
+
+	it("13.3: early exit produces specific tool-compatibility error message", () => {
+		const fn = sourceRegion(taskRunnerSource, "function pollForVerdict", 0, 1000);
+		expect(fn).toContain("wait_for_review tool may not be supported");
+		expect(fn).toContain("called via bash instead of as a registered tool");
+	});
+
+	it("13.4: spawnTime is tracked and passed to pollForVerdict at call site", () => {
+		expect(taskRunnerSource).toContain("let spawnTime: number | undefined");
+		expect(taskRunnerSource).toContain("spawnTime = Date.now()");
+		expect(taskRunnerSource).toContain("pollForVerdict(spawnTime)");
+	});
+
+	it("13.5: early exit detection only triggers when spawnTime is provided", () => {
+		const fn = sourceRegion(taskRunnerSource, "function pollForVerdict", 0, 1000);
+		// The check is guarded by spawnTime being truthy
+		expect(fn).toContain("if (spawnTime && (Date.now() - spawnTime)");
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 14.x — TP-068: extractVerdict tolerance for non-standard formats
+// ══════════════════════════════════════════════════════════════════════
+
+describe("14.x: TP-068 — extractVerdict tolerates non-standard verdict formats", () => {
+	it("14.1: extractVerdict still prioritizes standard format", () => {
+		const fn = sourceRegion(taskRunnerSource, "function extractVerdict", 0, 800);
+		// Standard format check comes first
+		expect(fn).toContain("###?\\s*Verdict");
+		expect(fn).toContain("if (match) return match[1].toUpperCase()");
+	});
+
+	it("14.2: extractVerdict maps 'Changes requested' to REVISE", () => {
+		const fn = sourceRegion(taskRunnerSource, "function extractVerdict", 0, 800);
+		expect(fn).toContain("changes?\\s+requested");
+		expect(fn).toContain('"REVISE"');
+	});
+
+	it("14.3: extractVerdict maps 'Needs revision' to REVISE", () => {
+		const fn = sourceRegion(taskRunnerSource, "function extractVerdict", 0, 800);
+		expect(fn).toContain("needs?\\s+revision");
+	});
+
+	it("14.4: extractVerdict maps 'Looks good' / 'approved' to APPROVE", () => {
+		const fn = sourceRegion(taskRunnerSource, "function extractVerdict", 0, 800);
+		expect(fn).toContain("looks?\\s+good");
+		expect(fn).toContain("approved?");
+		expect(fn).toContain('"APPROVE"');
+	});
+
+	it("14.5: extractVerdict maps 'fundamentally wrong' / 'rethink' to RETHINK", () => {
+		const fn = sourceRegion(taskRunnerSource, "function extractVerdict", 0, 800);
+		expect(fn).toContain("fundamentally\\s+wrong");
+		expect(fn).toContain("rethink");
+		expect(fn).toContain('"RETHINK"');
+	});
+
+	it("14.6: extractVerdict returns UNKNOWN when nothing matches", () => {
+		const fn = sourceRegion(taskRunnerSource, "function extractVerdict", 0, 800);
+		expect(fn).toContain('return "UNKNOWN"');
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 15.x — TP-068: Graceful skip on double failure
+// ══════════════════════════════════════════════════════════════════════
+
+describe("15.x: TP-068 — Graceful skip on double failure", () => {
+	it("15.1: double failure produces operator-friendly skip message", () => {
+		expect(taskRunnerSource).toContain("Reviews skipped for Step");
+		expect(taskRunnerSource).toContain("Both persistent and fallback modes failed");
+	});
+
+	it("15.2: double failure logs to STATUS.md execution log", () => {
+		const catchRegion = sourceRegion(taskRunnerSource, "Both persistent and fallback", 200, 500);
+		expect(catchRegion).toContain("logExecution(statusPath,");
+	});
+
+	it("15.3: double failure writes shutdown signal to prevent orphan reviewer", () => {
+		const catchRegion = sourceRegion(taskRunnerSource, "Both persistent and fallback", 0, 1200);
+		expect(catchRegion).toContain("REVIEWER_SHUTDOWN_SIGNAL");
+		expect(catchRegion).toContain("writeFileSync");
+	});
+
+	it("15.4: double failure returns UNAVAILABLE verdict to worker", () => {
+		const catchRegion = sourceRegion(taskRunnerSource, "Both persistent and fallback", 0, 1200);
+		expect(catchRegion).toContain("UNAVAILABLE");
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 16.x — TP-068: Template explicitly instructs registered tool usage
+// ══════════════════════════════════════════════════════════════════════
+
+describe("16.x: TP-068 — Template explicitly instructs registered tool usage", () => {
+	const templatePath = join(__dirname, "..", "..", "templates", "agents", "task-reviewer.md");
+	let templateContent: string;
+
+	try {
+		templateContent = readFileSync(templatePath, "utf8");
+	} catch {
+		templateContent = "";
+	}
+
+	it("16.1: template states wait_for_review is a REGISTERED EXTENSION TOOL", () => {
+		expect(templateContent).toContain("REGISTERED EXTENSION TOOL");
+	});
+
+	it("16.2: template warns against running via bash", () => {
+		expect(templateContent).toContain("Do NOT run it");
+		expect(templateContent).toContain("bash");
+	});
+
+	it("16.3: template instructs calling it like read, write, edit, grep", () => {
+		expect(templateContent).toContain("the same way you call `read`, `write`, `edit`, or `grep`");
+	});
+
+	it("16.4: initial spawn prompt in task-runner also instructs registered tool usage", () => {
+		const spawnFn = sourceRegion(taskRunnerSource, "function spawnPersistentReviewer", 0, 2000);
+		expect(spawnFn).toContain("REGISTERED EXTENSION TOOL");
+		expect(spawnFn).toContain("Do NOT run it via `bash`");
 	});
 });

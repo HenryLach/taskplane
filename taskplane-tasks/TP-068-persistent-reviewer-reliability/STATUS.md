@@ -1,10 +1,10 @@
 # TP-068: Fix Persistent Reviewer Reliability — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 2
 **Size:** M
 
@@ -42,15 +42,15 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] Update persistent-reviewer-context tests
-- [ ] Full test suite passing
-- [ ] Build passes
+**Status:** ✅ Complete
+- [x] Update persistent-reviewer-context tests
+- [x] Full test suite passing
+- [x] Build passes
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Discoveries logged
 - [ ] `.DONE` created
 
@@ -60,6 +60,7 @@
 
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
+| R002 | plan | Step 4 | REVISE | .reviews/R002-plan-step4.md |
 |---|------|------|---------|------|
 
 ---
@@ -75,6 +76,8 @@
 | 2026-03-25 21:10 | Step 0 started | Preflight |
 | 2026-03-25 21:12 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
 | 2026-03-25 21:13 | Review R001 | plan Step 1: APPROVE (fallback) |
+| 2026-03-25 21:16 | Reviewer R002 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
+| 2026-03-25 21:17 | Review R002 | plan Step 4: REVISE (fallback) |
 
 ---
 
