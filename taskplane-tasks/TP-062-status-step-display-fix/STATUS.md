@@ -55,6 +55,7 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Fix was already merged from prior batch (commit bed9a7a) | Verified correct, added tests | extensions/task-runner.ts:2605 |
 | No separate "enter step" status update exists — only the init loop sets in-progress | Confirmed expected | task-runner.ts ~line 2605-2626 |
 | Steps are marked complete after worker exit via isStepComplete check | No change needed | task-runner.ts ~line 2694-2698 |
 
