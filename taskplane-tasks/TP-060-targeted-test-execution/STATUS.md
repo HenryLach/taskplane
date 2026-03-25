@@ -55,7 +55,7 @@
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Discoveries logged
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
@@ -73,6 +73,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| polyrepo tests timeout in worktree (buildPolyrepoFixture) | Pre-existing, noted in CONTEXT.md tech debt | extensions/tests/polyrepo-*.test.ts |
+| orch-direct-implementation test timeout (60s) | Pre-existing infrastructure issue | extensions/tests/orch-direct-implementation.test.ts |
 
 ---
 
