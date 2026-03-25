@@ -1957,6 +1957,7 @@ export interface OrchLaneCardData {
 export interface OrchDashboardViewModel {
 	phase: OrchBatchPhase;
 	batchId: string;
+	orchBranch: string; // e.g., "orch/henry-20260318T140000" — merge target branch
 	waveProgress: string; // e.g., "2/3"
 	elapsed: string; // e.g., "2m 14s"
 	summary: OrchSummaryCounts;

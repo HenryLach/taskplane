@@ -627,8 +627,23 @@ function renderMergeAgents(batch, tmuxSessions) {
   const showRepos = knownRepos.length >= 2;
   const telemetry = currentData?.telemetry || {};
 
-  // Check for active merge sessions (convention: orch-merge-*)
-  const mergeSessions = (tmuxSessions || []).filter(s => s.startsWith("orch-merge"));
+  // Check for active merge sessions (convention: {prefix}-{opId}-merge-{N})
+  const mergeSessions = (tmuxSessions || []).filter(s => s.includes("-merge-"));
+
+  // Derive merge session name from lane session naming pattern.
+  // Lane sessions: "{prefix}-{opId}-lane-{N}", merge sessions: "{prefix}-{opId}-merge-{N}".
+  // Extract the prefix-opId part from the first lane and use it to construct merge names.
+  const lanes = batch?.lanes || [];
+  let mergePrefix = "orch-merge"; // fallback for legacy/unknown patterns
+  if (lanes.length > 0 && lanes[0].tmuxSessionName) {
+    const laneName = lanes[0].tmuxSessionName;
+    const laneMatch = laneName.match(/^(.+)-lane-\d+$/);
+    if (laneMatch) {
+      mergePrefix = laneMatch[1] + "-merge";
+    }
+  }
+  // Helper: get merge session name for a lane number
+  const getMergeSessionName = (laneNum) => `${mergePrefix}-${laneNum}`;
 
   if (mergeResults.length === 0 && mergeSessions.length === 0) {
     $mergeBody.innerHTML = '<div class="empty-state">No merge agents active</div>';
@@ -638,6 +653,9 @@ function renderMergeAgents(batch, tmuxSessions) {
   let html = '<table class="merge-table"><thead><tr>';
   html += '<th>Wave</th><th>Status</th><th>Session</th><th>Telemetry</th><th>Attach</th><th>Details</th>';
   html += '</tr></thead><tbody>';
+
+  // Track sessions shown in wave result rows so we don't duplicate them below
+  const shownSessions = new Set();
 
   // Show merge results
   for (const mr of mergeResults) {
@@ -653,12 +671,19 @@ function renderMergeAgents(batch, tmuxSessions) {
       : mr.status === "partial" ? "status-stalled"
       : "status-failed";
 
-    // Look for matching tmux session
-    const sessionName = `orch-merge-w${mr.waveIndex + 1}`;
-    const alive = tmuxSet.has(sessionName);
+    // Look for matching tmux merge sessions for this wave result.
+    // Merge sessions follow the naming pattern: {prefix}-{opId}-merge-{laneNumber}
+    // (e.g., "orch-henrylach-merge-1"). Find any alive merge sessions.
+    const waveMergeSessions = mergeSessions.filter(s => tmuxSet.has(s));
+    const sessionName = waveMergeSessions.length > 0 ? waveMergeSessions[0] : null;
+    const alive = sessionName !== null;
+    if (alive) shownSessions.add(sessionName);
 
-    // Look for merge telemetry data
-    const mergeTel = telemetry[sessionName] || telemetry[`orch-merge-${mr.waveIndex + 1}`] || null;
+    // Look for merge telemetry data — check all merge sessions
+    let mergeTel = null;
+    for (const ms of mergeSessions) {
+      if (telemetry[ms]) { mergeTel = telemetry[ms]; break; }
+    }
 
     html += `<tr>`;
     html += `<td style="font-family:var(--font-mono);">Wave ${mr.waveIndex + 1}</td>`;
@@ -718,8 +743,7 @@ function renderMergeAgents(batch, tmuxSessions) {
 
   // Show active merge sessions not yet in results
   for (const sess of mergeSessions) {
-    const alreadyShown = mergeResults.some((mr) => `orch-merge-w${mr.waveIndex + 1}` === sess);
-    if (alreadyShown) continue;
+    if (shownSessions.has(sess)) continue;
 
     const sessTel = telemetry[sess] || null;
     const cmd = `tmux attach -t ${sess}`;
