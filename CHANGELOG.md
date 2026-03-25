@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-03-25
+
+### Fixed
+- **Persistent reviewer reliability (#225, TP-068)** — three-layer defense against reviewer model incompatibility:
+  1. **Better prompting** — reviewer template explicitly states `wait_for_review` is a registered tool, not a bash command
+  2. **Early-exit detection** — if reviewer exits within 30 seconds with no verdict, triggers immediate fallback instead of waiting for 30-minute timeout
+  3. **Verdict tolerance** — `extractVerdict` now recognizes non-standard formats ("Changes requested" → REVISE, "Needs revision" → REVISE)
+  4. **Graceful skip** — double failure (persistent + fallback) continues task with operator notification instead of blocking
+
+### Changed
+- Reviewer template updated with explicit tool usage instructions for persistent mode
+- 156 new tests for persistent reviewer reliability scenarios
+
 ## [0.18.1] - 2026-03-25
 
 ### Fixed
@@ -514,7 +527,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/HenryLach/taskplane/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/HenryLach/taskplane/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/HenryLach/taskplane/compare/v0.17.0...v0.18.0
 [0.17.0]: https://github.com/HenryLach/taskplane/compare/v0.16.0...v0.17.0
