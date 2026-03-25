@@ -2705,7 +2705,9 @@ export async function activateSupervisor(
 	// Initializes byte offset to current file size so we skip stale events.
 	// Idempotent — safe even if called from takeover paths that may have
 	// started a tailer previously (stopEventTailer is called in deactivate).
-	startEventTailer(pi, state.eventTailer, state);
+	startEventTailer(pi, state.eventTailer, state, (key, text) => {
+		try { ctx.ui.setStatus(key, text); } catch { /* non-fatal */ }
+	});
 
 	// Send activation message to trigger the supervisor's first turn.
 	// The content is generic — specific counts may not be available yet
@@ -3940,6 +3942,8 @@ export function startEventTailer(
 	pi: ExtensionAPI,
 	tailer: EventTailerState,
 	supervisorState: SupervisorState,
+	/** Optional callback to update footer status immediately (bypasses sendMessage queue). @since TP-068/214 */
+	setStatus?: (key: string, text: string) => void,
 ): void {
 	if (tailer.running) return; // Idempotent guard (R005-2)
 
@@ -3967,6 +3971,15 @@ export function startEventTailer(
 	// Notification callback — sends as a supervisor event message
 	const notify = (text: string) => {
 		if (!supervisorState.active) return; // Guard: don't notify after deactivation
+
+		// TP-068/214: Update footer status immediately for visibility.
+		// setStatus renders in the TUI footer without waiting for user input,
+		// unlike sendMessage which queues until next turn.
+		if (setStatus) {
+			const statusText = text.replace(/\*\*/g, "").replace(/\n.*/s, "").substring(0, 120);
+			setStatus("supervisor", `🔀 ${statusText}`);
+		}
+
 		pi.sendMessage(
 			{
 				customType: "supervisor-event",
