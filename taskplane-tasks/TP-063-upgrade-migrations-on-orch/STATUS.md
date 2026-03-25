@@ -1,20 +1,20 @@
 # TP-063: Add Additive Upgrade Migrations on /orch — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read orch preflight/start paths in extension.ts
-- [ ] Locate taskplane.json read/write path
-- [ ] Confirm supervisor local template path
+**Status:** ✅ Complete
+- [x] Read orch preflight/start paths in extension.ts
+- [x] Locate taskplane.json read/write path
+- [x] Confirm supervisor local template path
 
 ---
 
@@ -77,6 +77,10 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-25 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-25 15:13 | Task started | Extension-driven execution |
+| 2026-03-25 15:13 | Step 0 started | Preflight |
+| 2026-03-25 15:13 | Task started | Extension-driven execution |
+| 2026-03-25 15:13 | Step 0 started | Preflight |
 
 ---
 
