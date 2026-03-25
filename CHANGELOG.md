@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-03-25
+
+### New
+- **Artifact cleanup and log rotation (TP-065)** — 3-layer defense against unbounded disk growth:
+  - **Layer 1:** Post-integrate cleanup deletes batch-specific telemetry and merge result files
+  - **Layer 2:** Age-based sweep on `/orch` preflight removes artifacts older than 7 days
+  - **Layer 3:** Size-capped rotation for `events.jsonl` and `actions.jsonl` at 5MB threshold
+  - All cleanup is non-fatal — failures warn and continue
+
+### Fixed
+- **Dashboard telemetry crash (#213, TP-064)** — `tailJsonlFile()` capped at 10MB per read tick. Fresh dashboard start on large files skips to tail instead of reading from offset 0. No more `ERR_STRING_TOO_LONG` crashes.
+
 ## [0.16.0] - 2026-03-25
 
 ### New
@@ -488,7 +500,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/HenryLach/taskplane/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/HenryLach/taskplane/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/HenryLach/taskplane/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/HenryLach/taskplane/compare/v0.14.0...v0.14.1
