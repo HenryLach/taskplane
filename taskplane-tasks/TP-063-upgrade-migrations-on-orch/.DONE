@@ -1,0 +1,8 @@
+TP-063 complete.
+
+Additive upgrade migration system implemented:
+- migrations.ts: Migration registry + runner with .pi/taskplane.json state tracking
+- Wired to /orch preflight (primary) and extension session_start (safety net)
+- First migration: add-supervisor-local-template-v1 (creates .pi/agents/supervisor.md)
+- 16 dedicated tests + full suite (2627 tests, 64 files) passing
+- CLI smoke passing

@@ -162,6 +162,7 @@ States are evaluated in the order shown above (active batch and completed batch 
 
 **Behavior (with arguments)**
 
+- Runs additive upgrade migrations (e.g., creating missing `.pi/agents/supervisor.md` from template). Migrations are tracked in `.pi/taskplane.json` and never overwrite existing files. Failures are non-fatal.
 - Runs orphan-session/state detection before starting
 - Discovers tasks and dependencies
 - Computes waves and lane assignments

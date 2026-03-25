@@ -46,6 +46,7 @@ import {
 import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
+import { runMigrations } from "./migrations.ts";
 import {
 	activateSupervisor,
 	deactivateSupervisor,
@@ -1493,6 +1494,23 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 
+		// TP-063: Run additive migrations before batch start (primary trigger).
+		// Non-fatal — failures warn but never block batch execution.
+		try {
+			const migrationResult = runMigrations(execCtx.repoRoot);
+			if (migrationResult.messages.length > 0) {
+				ctx.ui.notify(migrationResult.messages.join("\n"), "info");
+			}
+			if (migrationResult.errors.length > 0) {
+				ctx.ui.notify(
+					`⚠️ Migration warnings:\n${migrationResult.errors.map(e => `  ⚠ ${e.id}: ${e.error}`).join("\n")}`,
+					"warning",
+				);
+			}
+		} catch {
+			// Swallow — migrations must never block /orch
+		}
+
 		// TP-128: Transition from routing-mode supervisor to batch execution
 		if (supervisorState.active && supervisorState.routingContext) {
 			await deactivateSupervisor(pi, supervisorState);
@@ -2851,6 +2869,19 @@ export default function (pi: ExtensionAPI) {
 		} catch {
 			// Non-fatal — use defaults if supervisor config fails to load
 			supervisorConfig = { ...DEFAULT_SUPERVISOR_CONFIG };
+		}
+
+		// TP-063: Run additive migrations on session start (safety net trigger).
+		// This ensures migrations run even if the user doesn't invoke /orch.
+		// Non-fatal — failures are silently swallowed so startup is never blocked.
+		try {
+			const migrationResult = runMigrations(execCtx.repoRoot);
+			if (migrationResult.messages.length > 0) {
+				ctx.ui.notify(migrationResult.messages.join("\n"), "info");
+			}
+			// Errors on session_start are silent — avoid noisy warnings at startup
+		} catch {
+			// Swallow — migrations must never block session startup
 		}
 
 		// Set status line
