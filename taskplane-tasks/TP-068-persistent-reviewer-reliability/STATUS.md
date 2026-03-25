@@ -1,20 +1,20 @@
 # TP-068: Fix Persistent Reviewer Reliability — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Fix Reviewer Template Prompting
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read persistent mode instructions in reviewer template
-- [ ] Read spawnPersistentReviewer() in task-runner.ts
-- [ ] Read wait_for_review tool registration in reviewer-extension.ts
+**Status:** ✅ Complete
+- [x] Read persistent mode instructions in reviewer template
+- [x] Read spawnPersistentReviewer() in task-runner.ts
+- [x] Read wait_for_review tool registration in reviewer-extension.ts
 
 ---
 
@@ -68,6 +68,10 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-25 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-25 21:10 | Task started | Extension-driven execution |
+| 2026-03-25 21:10 | Step 0 started | Preflight |
+| 2026-03-25 21:10 | Task started | Extension-driven execution |
+| 2026-03-25 21:10 | Step 0 started | Preflight |
 
 ---
 
