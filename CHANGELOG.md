@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-03-26
+
+### New
+- **Node.js native test runner (TP-074, TP-075)** — migrated all 2690 tests from vitest to `node:test`. Tests run in **10 seconds** (was 156 seconds with vitest). vitest, vite, and esbuild removed from devDependencies. Custom `expect()` compatibility wrapper preserves assertion syntax.
+- **Artifact cleanup and log rotation (TP-065)** — 3-layer defense against unbounded disk growth: post-integrate cleanup, 7-day age-based sweep, 5MB log rotation.
+- **Additive upgrade migrations (TP-063, #211)** — `/orch` preflight auto-creates missing scaffold files after `pi update`. No more manual `taskplane init` after upgrades.
+- **Dashboard light mode (TP-072)** — sun/moon toggle in header, project-level theme persistence in `.pi/dashboard-preferences.json`.
+- **Taskplane logo** — dashboard header now shows the Taskplane word mark.
+- **orch_start tool (TP-061, #183)** — supervisor can start batches programmatically.
+- **Targeted test execution (TP-060, #200)** — worker template instructs `--changed` tests during steps, full suite only at the gate.
+
+### Fixed
+- **Context pressure safety net (#223, TP-066)** — context % calculation now includes cache read tokens. Workers no longer silently exhaust context without wrap-up signals.
+- **Persistent reviewer reliability (#225, TP-068)** — early-exit detection, verdict tolerance for non-standard formats, graceful skip on double failure.
+- **Merge telemetry in dashboard (#215, TP-067)** — telemetry key derived from lane session naming.
+- **Dashboard telemetry crash (#213, TP-064)** — reads capped at 10MB per tick, skip-to-tail on fresh start.
+- **Dashboard bug fixes (TP-059)** — merge message shows actual orch branch (#201), merge agents section populates (#202), test failures fixed (#193).
+- **STATUS.md step display (#198, TP-062)** — only current step shows "In Progress".
+- **Supervisor template pattern (#135, TP-058)** — composable base+local template, same as worker/reviewer/merger.
+- **Supervisor event visibility (#214)** — `setStatus` for immediate footer rendering.
+- **Worker premature exit** — template instructs always ending with tool call, not text-only response.
+- **Worker incomplete exit nudge (TP-073)** — subsequent iterations get explicit nudge listing remaining steps.
+- **Stale retrying badge (#189)** — `retryActive` cleared on `message_end`.
+- **.DONE checkbox removed** — task-runner creates it automatically, workers no longer checkpoint a redundant item.
+
+### Performance
+- **Engine worker thread (TP-071, #199)** — engine runs in a `worker_thread`, supervisor main thread stays responsive.
+- **Async I/O (TP-070, #199)** — all polling loops use async I/O, no more `spawnSync("tmux")` blocking the event loop.
+- **Test optimization** — `--pool=threads`, integration test separation, barrel import removal.
+
 ## [0.19.0] - 2026-03-25
 
 ### Fixed
@@ -527,7 +557,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Dashboard root resolution based on runtime `--root` instead of hardcoded repo path
 
-[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/HenryLach/taskplane/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/HenryLach/taskplane/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/HenryLach/taskplane/compare/v0.18.1...v0.19.0
 [0.18.1]: https://github.com/HenryLach/taskplane/compare/v0.18.0...v0.18.1
 [0.18.0]: https://github.com/HenryLach/taskplane/compare/v0.17.0...v0.18.0
