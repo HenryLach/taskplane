@@ -1,6 +1,6 @@
 # TP-075: Migrate Mock Tests + Remove Vitest — Status
 
-**Current Step:** Step 1: Migrate Mock-Heavy Test Files
+**Current Step:** Step 2: Remove Vitest
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 2
