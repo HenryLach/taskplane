@@ -9,8 +9,8 @@
  * Run: npx vitest run tests/context-window-resolution.test.ts
  */
 
-import { describe, it, expect } from "vitest";
-
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 import {
 	_resolveContextWindow as resolveContextWindow,
 	_FALLBACK_CONTEXT_WINDOW as FALLBACK_CONTEXT_WINDOW,

@@ -1,10 +1,11 @@
 {
   "type": "module",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.0.0"
   },
-  "devDependencies": {
-    "vitest": "^4.1.0"
+  "scripts": {
+    "test": "node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts tests/*.integration.test.ts",
+    "test:fast": "node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts"
   },
   "dependencies": {
     "yaml": "^2.8.2"

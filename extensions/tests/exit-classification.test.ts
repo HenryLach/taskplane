@@ -7,7 +7,8 @@
  * Run: npx vitest run extensions/tests/exit-classification.test.ts
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 import {
 	classifyExit,
 	EXIT_CLASSIFICATIONS,

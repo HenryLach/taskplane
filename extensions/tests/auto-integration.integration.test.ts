@@ -15,7 +15,8 @@
  * Run: npx vitest run tests/auto-integration.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, appendFileSync } from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
@@ -1659,7 +1660,7 @@ describe("17.x — Manual mode: operator told to /orch-integrate (R006)", () => 
 // ═════════════════════════════════════════════════════════════════════
 
 describe("18.x — Branch protection detected → defaults to PR mode (R006)", () => {
-	it("18.1: detectBranchProtection returns 'unknown' without gh/remote (test env fallback)", () => {
+	it("18.1: detectBranchProtection returns 'unknown' without gh/remote (test env fallback)", async () => {
 		const tmpDir = makeTmpDir();
 		try {
 			// Init a local-only git repo (no remote)
@@ -1672,7 +1673,7 @@ describe("18.x — Branch protection detected → defaults to PR mode (R006)", (
 			run(["commit", "-m", "init"]);
 
 			// Import detectBranchProtection
-			const { detectBranchProtection } = require("../taskplane/supervisor.ts");
+			const { detectBranchProtection } = await import("../taskplane/supervisor.ts");
 			const status = detectBranchProtection("main", tmpDir);
 			// Without a GitHub remote, gh repo view fails → "unknown"
 			expect(status).toBe("unknown");

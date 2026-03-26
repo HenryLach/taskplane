@@ -21,7 +21,7 @@ import {
 } from "../task-orchestrator.ts";
 
 // Detect vitest: if present, wrap everything in a describe/it block
-const isVitest = typeof globalThis.vi !== "undefined" || !!process.env.VITEST;
+const isTestRunner = !!(process.env.NODE_TEST_CONTEXT || process.env.VITEST);
 
 let passed = 0;
 let failed = 0;
@@ -1206,10 +1206,10 @@ function runAllTests(): void {
 } // end runAllTests
 
 // ── Dual-mode execution ──────────────────────────────────────────────
-// Under vitest: register as a proper test suite
+// Under node:test: register as a proper test suite
 // Standalone (npx tsx): run directly with process.exit
-if (isVitest) {
-	const { describe, it } = await import("vitest");
+if (isTestRunner) {
+	const { describe, it } = await import("node:test");
 	describe("Orchestrator Direct Implementation", () => {
 		it("passes all assertions", () => {
 			runAllTests();

@@ -15,7 +15,8 @@
  * Run: npx vitest run extensions/tests/polyrepo-regression.test.ts
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, before, after } from "node:test";
+import { expect } from "./expect.ts";
 import { readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -86,11 +87,11 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let fixture: PolyrepoFixture;
 
-beforeAll(() => {
+before(() => {
 	fixture = buildPolyrepoFixture();
 });
 
-afterAll(() => {
+after(() => {
 	fixture.cleanup();
 });
 

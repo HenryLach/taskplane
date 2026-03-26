@@ -15,7 +15,8 @@
  * Run: npx vitest run tests/tier0-watchdog.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";

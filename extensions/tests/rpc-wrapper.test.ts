@@ -12,9 +12,10 @@
  * Run: npx vitest run extensions/tests/rpc-wrapper.test.ts
  */
 
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, beforeEach } from "node:test";
+import { expect } from "./expect.ts";
 import { resolve, dirname, join } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { Readable } from "stream";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -26,7 +27,7 @@ let wrapperModule: any;
 beforeEach(async () => {
 	// Import once — the module guards main() behind an isMain check
 	if (!wrapperModule) {
-		wrapperModule = await import(wrapperPath);
+		wrapperModule = await import(pathToFileURL(wrapperPath).href);
 	}
 });
 

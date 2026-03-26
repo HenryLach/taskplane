@@ -32,7 +32,7 @@ import { fileURLToPath } from "url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Detect vitest: if present, wrap everything in a describe/it block
-const isVitest = typeof globalThis.vi !== "undefined" || !!process.env.VITEST;
+const isTestRunner = !!(process.env.NODE_TEST_CONTEXT || process.env.VITEST);
 
 // ── Test Helpers ──────────────────────────────────────────────────────
 
@@ -1116,10 +1116,10 @@ if (failed > 0) throw new Error(`${failed} test(s) failed`);
 } // end runAllTests
 
 // ── Dual-mode execution ──────────────────────────────────────────────
-// Under vitest: register as a proper test suite
+// Under node:test: register as a proper test suite
 // Standalone (npx tsx): run directly with process.exit
-if (isVitest) {
-	const { describe, it } = await import("vitest");
+if (isTestRunner) {
+	const { describe, it } = await import("node:test");
 	describe("Orchestrator Pure Functions", () => {
 		it("passes all 159 assertions", () => {
 			runAllTests();

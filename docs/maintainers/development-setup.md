@@ -105,10 +105,45 @@ Template changes affect `taskplane init` output and must be tested by running in
 
 ---
 
+## Running tests
+
+Tests use the Node.js native test runner (`node:test`) exclusively — no vitest or vite dependency.
+
+```bash
+cd extensions
+
+# Full suite (unit + integration)
+npm test
+
+# Fast suite (unit only, skip integration)
+npm run test:fast
+
+# Single file
+node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/some-file.test.ts
+```
+
+Key flags:
+- `--experimental-strip-types` — run TypeScript directly without transpilation
+- `--experimental-test-module-mocks` — enable `mock.module()` for ESM module mocking
+- `--import ./tests/loader.mjs` — register module resolution hooks
+
+The custom loader (`tests/loader.mjs`) redirects `@mariozechner/pi-coding-agent`
+and `@mariozechner/pi-tui` to local mock stubs so tests don't need the real packages.
+
+### Test authoring patterns
+
+- Use `import { describe, it, mock, beforeEach, afterEach } from "node:test"` for test structure
+- Use `import { expect } from "./expect.ts"` for vitest-compatible assertions (wraps `node:assert`)
+- Use `mock.fn()` for function mocks, `mock.method(obj, key)` for spies
+- Use `mock.module("mod", { namedExports: {...} })` for ESM module mocking (must be before `await import()` of consumer)
+- Use `mock.timers.enable()` / `mock.timers.tick(ms)` / `mock.timers.reset()` for fake timers
+
+---
+
 ## Recommended local dev loop
 
 1. Edit extension/CLI/template code
-2. Run tests (`cd extensions && npx vitest run`)
+2. Run tests (`cd extensions && npm test`)
 3. Run pi with local extension flags
 4. Execute manual smoke flows:
    - `/orch-plan all`

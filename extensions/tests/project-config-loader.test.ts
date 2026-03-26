@@ -12,15 +12,18 @@
  *   4.x — Defaults, cloning, non-mutation, backward-compat wrappers
  *   5.x — Pointer-threaded config resolution (standard + flat layout)
  *
- * Run: npx vitest run tests/project-config-loader.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/project-config-loader.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach, mock } from "node:test";
+import { expect } from "./expect.ts";
+import assert from "node:assert";
 import {
 	mkdirSync,
 	writeFileSync,
 	rmSync,
 } from "fs";
+import { execSync } from "child_process";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -124,7 +127,7 @@ describe("loadProjectConfig precedence/error matrix", () => {
 
 		try {
 			loadProjectConfig(dir);
-			expect.unreachable("should have thrown");
+			assert.fail("should have thrown");
 		} catch (err) {
 			expect(err).toBeInstanceOf(ConfigLoadError);
 			expect((err as ConfigLoadError).code).toBe("CONFIG_JSON_MALFORMED");
@@ -139,7 +142,7 @@ describe("loadProjectConfig precedence/error matrix", () => {
 
 		try {
 			loadProjectConfig(dir);
-			expect.unreachable("should have thrown");
+			assert.fail("should have thrown");
 		} catch (err) {
 			expect(err).toBeInstanceOf(ConfigLoadError);
 			expect((err as ConfigLoadError).code).toBe("CONFIG_VERSION_MISSING");
@@ -155,7 +158,7 @@ describe("loadProjectConfig precedence/error matrix", () => {
 
 		try {
 			loadProjectConfig(dir);
-			expect.unreachable("should have thrown");
+			assert.fail("should have thrown");
 		} catch (err) {
 			expect(err).toBeInstanceOf(ConfigLoadError);
 			expect((err as ConfigLoadError).code).toBe("CONFIG_VERSION_UNSUPPORTED");
@@ -219,7 +222,7 @@ describe("loadProjectConfig precedence/error matrix", () => {
 
 		try {
 			loadProjectConfig(dir);
-			expect.unreachable("should have thrown");
+			assert.fail("should have thrown");
 		} catch (err) {
 			expect(err).toBeInstanceOf(ConfigLoadError);
 			expect((err as ConfigLoadError).code).toBe("CONFIG_VERSION_MISSING");
@@ -1362,7 +1365,6 @@ import {
 	_loadAgentDef,
 	_resetPointerWarning,
 } from "../task-runner.ts";
-import { vi } from "vitest";
 
 describe("agent resolution precedence with pointer (TP-016)", () => {
 	/** Helper: write a minimal agent markdown file. */
@@ -1423,15 +1425,15 @@ describe("agent resolution precedence with pointer (TP-016)", () => {
 });
 
 describe("pointer warning surfacing (TP-016)", () => {
-	let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
+	let consoleErrorSpy: ReturnType<typeof mock.method>;
 
 	beforeEach(() => {
 		_resetPointerWarning();
-		consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		consoleErrorSpy = mock.method(console, "error", () => {});
 	});
 
 	afterEach(() => {
-		consoleErrorSpy.mockRestore();
+		consoleErrorSpy.mock.restore();
 		_resetPointerWarning();
 	});
 
@@ -1447,7 +1449,7 @@ describe("pointer warning surfacing (TP-016)", () => {
 		taskRunnerLoadConfig(cwdDir);
 
 		const pointerWarnings = consoleErrorSpy.mock.calls.filter(
-			(args) => typeof args[0] === "string" && args[0].includes("[task-runner] pointer:"),
+			(call: any) => typeof call.arguments[0] === "string" && call.arguments[0].includes("[task-runner] pointer:"),
 		);
 		expect(pointerWarnings.length).toBe(0);
 	});
@@ -1459,7 +1461,6 @@ describe("pointer warning surfacing (TP-016)", () => {
 		// Create a real git repo for the workspace YAML to reference
 		const gitRepoPath = join(testRoot, "warn-fake-repo");
 		mkdirSync(gitRepoPath, { recursive: true });
-		const { execSync } = require("child_process");
 		try {
 			execSync("git init", { cwd: gitRepoPath, stdio: "pipe" });
 		} catch {
@@ -1499,10 +1500,10 @@ describe("pointer warning surfacing (TP-016)", () => {
 
 		// Warning should be logged exactly once (dedup via _pointerWarningLogged)
 		const pointerWarnings = consoleErrorSpy.mock.calls.filter(
-			(args) => typeof args[0] === "string" && args[0].includes("[task-runner] pointer:"),
+			(call: any) => typeof call.arguments[0] === "string" && call.arguments[0].includes("[task-runner] pointer:"),
 		);
 		expect(pointerWarnings.length).toBe(1);
-		expect(pointerWarnings[0][0]).toContain("Pointer file not found");
+		expect(pointerWarnings[0].arguments[0]).toContain("Pointer file not found");
 	});
 
 	it("6.6: no pointer warning in repo mode", () => {
@@ -1513,7 +1514,7 @@ describe("pointer warning surfacing (TP-016)", () => {
 		taskRunnerLoadConfig(cwdDir);
 
 		const pointerWarnings = consoleErrorSpy.mock.calls.filter(
-			(args) => typeof args[0] === "string" && args[0].includes("[task-runner] pointer:"),
+			(call: any) => typeof call.arguments[0] === "string" && call.arguments[0].includes("[task-runner] pointer:"),
 		);
 		expect(pointerWarnings.length).toBe(0);
 	});

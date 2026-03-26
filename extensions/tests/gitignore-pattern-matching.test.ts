@@ -14,11 +14,11 @@
  * Run: npx vitest run tests/gitignore-pattern-matching.test.ts
  */
 
-import { describe, it, expect } from "vitest";
-
 // ─── Mirror of patternToRegex from bin/taskplane.mjs ──────────────────────
 // Keep in sync with the CLI implementation.
 
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 function patternToRegex(pattern: string): RegExp {
 	// Directory patterns (trailing slash) → prefix match
 	if (pattern.endsWith("/")) {

@@ -8,7 +8,8 @@
  * Run: npx vitest run extensions/tests/sidecar-tailing.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { join } from "path";
 import { tmpdir } from "os";
 import { writeFileSync, mkdirSync, rmSync, existsSync, appendFileSync } from "fs";

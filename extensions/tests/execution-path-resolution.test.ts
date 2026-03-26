@@ -27,7 +27,7 @@ import {
 	resolveTaskDonePath,
 } from "../task-orchestrator.ts";
 
-const isVitest = typeof globalThis.vi !== "undefined" || !!process.env.VITEST;
+const isTestRunner = !!(process.env.NODE_TEST_CONTEXT || process.env.VITEST);
 
 // ── Test Helpers ──────────────────────────────────────────────────────
 
@@ -510,8 +510,8 @@ function runEdgeCaseTests(): void {
 }
 
 // ── Dual-mode execution ──────────────────────────────────────────────
-if (isVitest) {
-	const { describe, it } = await import("vitest");
+if (isTestRunner) {
+	const { describe, it } = await import("node:test");
 	describe("Execution Path Resolution (TP-003)", () => {
 		it("passes all assertions", () => {
 			runAllTests();

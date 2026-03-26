@@ -14,7 +14,8 @@
  * Run: npx vitest run tests/user-preferences.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import {
 	mkdirSync,
 	writeFileSync,

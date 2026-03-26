@@ -12,7 +12,8 @@
  * Run: npx vitest run tests/task-runner-review-skip.test.ts
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 import { isLowRiskStep } from "../task-runner.ts";
 
 // ══════════════════════════════════════════════════════════════════════

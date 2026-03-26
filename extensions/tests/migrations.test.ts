@@ -8,7 +8,8 @@
  * - Failed migrations are reported but don't block subsequent ones
  * - State persistence merges safely with existing taskplane.json fields
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";

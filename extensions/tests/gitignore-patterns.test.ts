@@ -13,9 +13,10 @@
  * Run: npx vitest run tests/gitignore-patterns.test.ts
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 import { resolve, dirname } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const patternsPath = resolve(__dirname, "../../bin/gitignore-patterns.mjs");
@@ -27,7 +28,7 @@ const {
 	TASKPLANE_GITIGNORE_ENTRIES,
 	TASKPLANE_GITIGNORE_NPM_ENTRIES,
 	ALL_GITIGNORE_PATTERNS,
-} = await import(patternsPath);
+} = await import(pathToFileURL(patternsPath).href);
 
 // ─── 1.x: Directory patterns (trailing /) ──────────────────────────────────
 

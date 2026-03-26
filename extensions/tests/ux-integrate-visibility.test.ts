@@ -9,7 +9,8 @@
  * Run: npx vitest run extensions/tests/ux-integrate-visibility.test.ts
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 import { ORCH_MESSAGES } from "../taskplane/messages.ts";
 import { executeIntegration } from "../taskplane/extension.ts";
 import type { IntegrationExecDeps } from "../taskplane/extension.ts";

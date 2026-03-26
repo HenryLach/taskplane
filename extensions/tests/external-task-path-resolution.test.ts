@@ -17,11 +17,11 @@
  * Run: cd extensions && npx vitest run tests/external-task-path-resolution.test.ts
  */
 
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "fs";
 import { join, resolve } from "path";
 import { tmpdir } from "os";
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-
 import {
 	resolveCanonicalTaskPaths,
 	resolveTaskDonePath,

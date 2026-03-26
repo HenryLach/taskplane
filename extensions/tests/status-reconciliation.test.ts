@@ -11,9 +11,11 @@
  * Run: npx vitest run tests/status-reconciliation.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "fs";
-import { join, resolve, relative } from "path";
+import { join, resolve, relative, dirname } from "path";
+import { fileURLToPath } from "url";
 import { tmpdir } from "os";
 
 import {
@@ -24,6 +26,8 @@ import {
 
 // ── Fixture Helpers ──────────────────────────────────────────────────
 
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 let testRoot: string;
 let counter = 0;
 
@@ -408,9 +412,9 @@ describe("3.x: Reconciliation guard — gate enabled check", () => {
 	// (the else branch creates .DONE directly). We verify the config default
 	// and the guard conditions the task-runner checks.
 
-	it("3.1: quality gate disabled by default — reconciliation never reached", () => {
+	it("3.1: quality gate disabled by default — reconciliation never reached", async () => {
 		// Import the config loader to verify the default
-		const { loadProjectConfig, toTaskConfig } = require("../taskplane/config-loader.ts");
+		const { loadProjectConfig, toTaskConfig } = await import("../taskplane/config-loader.ts");
 		const dir = makeTestDir("guard-disabled");
 		const config = loadProjectConfig(dir);
 		const taskConfig = toTaskConfig(config);

@@ -7,20 +7,45 @@
  *   3. buildMarkdownReport — batch overview, per-task table, workspace breakdown, empty data
  *   4. emitDiagnosticReports — non-fatal write failures
  *
- * Run: npx vitest run extensions/tests/diagnostic-reports.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/diagnostic-reports.test.ts
  */
 
-import { describe, it, expect, vi, afterEach } from "vitest";
-import {
+import { describe, it, mock, afterEach } from "node:test";
+import { expect } from "./expect.ts";
+
+// ── fs mocking for emitDiagnosticReports tests ──────────────────────
+// We must mock 'fs' BEFORE any module that imports it is loaded.
+// Because ESM static imports execute before module body, we use top-level
+// await to set up mock.module() first, then dynamically import everything.
+
+const origFs = await import("node:fs");
+const mockExistsSync = mock.fn(origFs.existsSync);
+const mockMkdirSync = mock.fn(origFs.mkdirSync);
+const mockWriteFileSync = mock.fn(origFs.writeFileSync);
+
+mock.module("fs", {
+	namedExports: {
+		...origFs,
+		existsSync: mockExistsSync,
+		mkdirSync: mockMkdirSync,
+		writeFileSync: mockWriteFileSync,
+	},
+});
+
+// Dynamic imports so the module-under-test picks up the mocked 'fs'.
+// These MUST be after mock.module() to intercept the module's 'fs' import.
+const {
 	buildDiagnosticEvents,
 	eventsToJsonl,
 	buildMarkdownReport,
 	emitDiagnosticReports,
-	type DiagnosticReportInput,
-	type DiagnosticEvent,
-} from "../taskplane/diagnostic-reports.ts";
-import type { PersistedTaskRecord, BatchDiagnostics, OrchestratorConfig } from "../taskplane/types.ts";
-import { defaultBatchDiagnostics } from "../taskplane/types.ts";
+} = await import("../taskplane/diagnostic-reports.ts");
+type DiagnosticReportInput = import("../taskplane/diagnostic-reports.ts").DiagnosticReportInput;
+type DiagnosticEvent = import("../taskplane/diagnostic-reports.ts").DiagnosticEvent;
+
+const { defaultBatchDiagnostics } = await import("../taskplane/types.ts");
+type PersistedTaskRecord = import("../taskplane/types.ts").PersistedTaskRecord;
+type OrchestratorConfig = import("../taskplane/types.ts").OrchestratorConfig;
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -283,7 +308,7 @@ describe("eventsToJsonl", () => {
 		// Last line after trailing newline is empty
 		expect(lines[lines.length - 1]).toBe("");
 		// Two data lines
-		expect(lines.length).toBe(3); // 2 events + trailing newline
+		expect(lines).toHaveLength(3); // 2 events + trailing newline
 
 		// Each line parses as valid JSON
 		const parsed0 = JSON.parse(lines[0]);
@@ -436,33 +461,21 @@ describe("buildMarkdownReport", () => {
 
 // ── 4. emitDiagnosticReports — Robustness & Emission ─────────────────
 
-// Use vi.mock for deterministic interception of ESM-style named fs imports
-vi.mock("fs", async (importOriginal) => {
-	const original = await importOriginal<typeof import("fs")>();
-	return {
-		...original,
-		// By default, pass through to originals.
-		// Individual tests override via vi.mocked().
-		existsSync: vi.fn(original.existsSync),
-		mkdirSync: vi.fn(original.mkdirSync),
-		writeFileSync: vi.fn(original.writeFileSync),
-		readFileSync: original.readFileSync,
-	};
-});
-
-import { existsSync as mockExistsSync, mkdirSync as mockMkdirSync, writeFileSync as mockWriteFileSync } from "fs";
-
 describe("emitDiagnosticReports — robustness", () => {
 	afterEach(() => {
-		vi.mocked(mockExistsSync).mockReset();
-		vi.mocked(mockMkdirSync).mockReset();
-		vi.mocked(mockWriteFileSync).mockReset();
+		mockExistsSync.mock.resetCalls();
+		mockMkdirSync.mock.resetCalls();
+		mockWriteFileSync.mock.resetCalls();
+		// Restore to original implementations for isolation
+		mockExistsSync.mock.mockImplementation(origFs.existsSync);
+		mockMkdirSync.mock.mockImplementation(origFs.mkdirSync);
+		mockWriteFileSync.mock.mockImplementation(origFs.writeFileSync);
 	});
 
 	it("does not throw when writeFileSync fails, and writeFileSync was actually called", () => {
-		vi.mocked(mockExistsSync).mockReturnValue(true);
-		vi.mocked(mockMkdirSync).mockImplementation(() => undefined as any);
-		vi.mocked(mockWriteFileSync).mockImplementation(() => {
+		mockExistsSync.mock.mockImplementation(() => true);
+		mockMkdirSync.mock.mockImplementation(() => undefined as any);
+		mockWriteFileSync.mock.mockImplementation(() => {
 			throw new Error("disk full");
 		});
 
@@ -476,12 +489,12 @@ describe("emitDiagnosticReports — robustness", () => {
 		expect(() => emitDiagnosticReports(input)).not.toThrow();
 
 		// Verify the write-failure path was actually exercised (R010 fix)
-		expect(vi.mocked(mockWriteFileSync)).toHaveBeenCalled();
+		expect(mockWriteFileSync).toHaveBeenCalled();
 	});
 
 	it("does not throw when mkdirSync fails, and mkdirSync was actually called", () => {
-		vi.mocked(mockExistsSync).mockReturnValue(false);
-		vi.mocked(mockMkdirSync).mockImplementation(() => {
+		mockExistsSync.mock.mockImplementation(() => false);
+		mockMkdirSync.mock.mockImplementation(() => {
 			throw new Error("permission denied");
 		});
 
@@ -492,13 +505,13 @@ describe("emitDiagnosticReports — robustness", () => {
 		expect(() => emitDiagnosticReports(input)).not.toThrow();
 
 		// Verify the mkdir-failure path was actually exercised (R010 fix)
-		expect(vi.mocked(mockMkdirSync)).toHaveBeenCalled();
+		expect(mockMkdirSync).toHaveBeenCalled();
 	});
 
 	it("success path writes both JSONL and markdown files with expected filenames", () => {
-		vi.mocked(mockExistsSync).mockReturnValue(true);
-		vi.mocked(mockMkdirSync).mockImplementation(() => undefined as any);
-		vi.mocked(mockWriteFileSync).mockImplementation(() => {}); // no-op (success)
+		mockExistsSync.mock.mockImplementation(() => true);
+		mockMkdirSync.mock.mockImplementation(() => undefined as any);
+		mockWriteFileSync.mock.mockImplementation(() => {}); // no-op (success)
 
 		const input = makeInput({
 			batchId: "test-batch-001",
@@ -521,21 +534,21 @@ describe("emitDiagnosticReports — robustness", () => {
 		emitDiagnosticReports(input);
 
 		// Verify both files were written (R010 fix)
-		expect(vi.mocked(mockWriteFileSync)).toHaveBeenCalledTimes(2);
+		expect(mockWriteFileSync).toHaveBeenCalledTimes(2);
 
 		// Check JSONL file
-		const jsonlCall = vi.mocked(mockWriteFileSync).mock.calls.find(
-			(call) => String(call[0]).endsWith("-events.jsonl"),
+		const jsonlCall = mockWriteFileSync.mock.calls.find(
+			(call: any) => String(call.arguments[0]).endsWith("-events.jsonl"),
 		);
 		expect(jsonlCall).toBeDefined();
-		const jsonlPath = String(jsonlCall![0]);
+		const jsonlPath = String(jsonlCall!.arguments[0]);
 		expect(jsonlPath).toContain("test-batch-001");
 		expect(jsonlPath).toContain("-events.jsonl");
 
 		// Verify JSONL content has valid schema
-		const jsonlContent = String(jsonlCall![1]);
+		const jsonlContent = String(jsonlCall!.arguments[1]);
 		const jsonlLines = jsonlContent.trim().split("\n");
-		expect(jsonlLines.length).toBe(2); // 2 tasks
+		expect(jsonlLines).toHaveLength(2); // 2 tasks
 		for (const line of jsonlLines) {
 			const parsed = JSON.parse(line);
 			expect(parsed).toHaveProperty("batchId");
@@ -547,16 +560,16 @@ describe("emitDiagnosticReports — robustness", () => {
 		}
 
 		// Check markdown file
-		const mdCall = vi.mocked(mockWriteFileSync).mock.calls.find(
-			(call) => String(call[0]).endsWith("-report.md"),
+		const mdCall = mockWriteFileSync.mock.calls.find(
+			(call: any) => String(call.arguments[0]).endsWith("-report.md"),
 		);
 		expect(mdCall).toBeDefined();
-		const mdPath = String(mdCall![0]);
+		const mdPath = String(mdCall!.arguments[0]);
 		expect(mdPath).toContain("test-batch-001");
 		expect(mdPath).toContain("-report.md");
 
 		// Verify markdown content has expected sections
-		const mdContent = String(mdCall![1]);
+		const mdContent = String(mdCall!.arguments[1]);
 		expect(mdContent).toContain("# Batch Diagnostic Report");
 		expect(mdContent).toContain("## Per-Task Results");
 	});

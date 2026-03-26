@@ -17,9 +17,11 @@
  * Run: npx vitest run extensions/tests/polyrepo-fixture.test.ts
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, before, after } from "node:test";
+import { expect } from "./expect.ts";
 import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 
 import {
@@ -46,13 +48,15 @@ import type { ParsedTask } from "../taskplane/types.ts";
 
 // ── Shared Fixture ───────────────────────────────────────────────────
 
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 let fixture: PolyrepoFixture;
 
-beforeAll(() => {
+before(() => {
 	fixture = buildPolyrepoFixture();
 });
 
-afterAll(() => {
+after(() => {
 	fixture.cleanup();
 });
 

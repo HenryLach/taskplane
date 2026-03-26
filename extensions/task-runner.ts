@@ -3017,6 +3017,31 @@ export default function (pi: ExtensionAPI) {
 				: `  - Step ${s.number}: ${s.name}  [already complete — skip]`
 		).join("\n");
 
+		// TP-073: Build nudge for subsequent iterations (iter > 0)
+		// When the worker exited without completing all steps, the next iteration
+		// gets an explicit nudge listing completed/remaining steps and a warning
+		// not to exit prematurely again.
+		let iterationNudge = "";
+		if (state.totalIterations > 1 && remainingSteps.length > 0) {
+			const completedSteps = task.steps.filter(s => !remainingSet.has(s.number));
+			const completedList = completedSteps.length > 0
+				? completedSteps.map(s => `Step ${s.number}: ${s.name}`).join(", ")
+				: "(none)";
+			const remainingList = remainingSteps.map(s => `Step ${s.number}: ${s.name}`).join(", ");
+			iterationNudge = [
+				``,
+				`IMPORTANT: You exited on your previous iteration without completing all steps.`,
+				`Do NOT repeat this — you must complete all remaining steps before stopping.`,
+				``,
+				`Completed steps (do not redo): ${completedList}`,
+				`Remaining steps (focus here): ${remainingList}`,
+				``,
+				`Your final action MUST be a tool call (update STATUS.md). Do NOT produce a`,
+				`text-only response — that will terminate your session prematurely.`,
+				``,
+			].join("\n");
+		}
+
 		const prompt = [
 			`Execute all remaining steps for task ${task.taskId}.`,
 			``,
@@ -3027,7 +3052,7 @@ export default function (pi: ExtensionAPI) {
 			``,
 			`This is iteration ${state.totalIterations}.`,
 			`Read STATUS.md FIRST to find where you left off.`,
-			``,
+			iterationNudge,
 			`Steps:`,
 			stepListing,
 			``,

@@ -16,7 +16,8 @@
  * Run: npx vitest run tests/init-mode-detection.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import {
 	mkdirSync,
 	writeFileSync,
@@ -33,7 +34,7 @@ import { tmpdir } from "os";
 
 // Import gitignore constants from the shared module
 import { resolve as resolvePath, dirname } from "path";
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const patternsPath = resolvePath(__dirname, "../../bin/gitignore-patterns.mjs");
@@ -42,7 +43,7 @@ const {
 	TASKPLANE_GITIGNORE_NPM_ENTRIES,
 	TASKPLANE_GITIGNORE_HEADER,
 	TASKPLANE_GITIGNORE_NPM_HEADER,
-} = await import(patternsPath);
+} = await import(pathToFileURL(patternsPath).href);
 
 // ── Duplicated helpers from bin/taskplane.mjs ───────────────────────────────
 
