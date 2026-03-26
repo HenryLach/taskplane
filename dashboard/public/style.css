@@ -124,6 +124,29 @@ body {
   color: var(--text);
   min-height: 100vh;
   overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Smooth theme transition for key elements */
+.panel,
+.summary-bar,
+.header-badge,
+.status-badge,
+.count-chip,
+.wave-chip,
+.tmux-view-btn,
+.tmux-cmd,
+.repo-filter-select,
+.history-select,
+.task-row,
+.lane-header,
+.conv-tool-call,
+.conv-tool-result,
+.copy-toast,
+.auto-scroll-label input[type="checkbox"],
+.terminal-close,
+.stat-card {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
 /* ─── Layout Shell ─────────────────────────────────────────────────────── */
@@ -211,6 +234,30 @@ body {
 
 .connection-dot.connected { background: var(--green); }
 .connection-dot.disconnected { background: var(--red); }
+
+/* ─── Theme Toggle ─────────────────────────────────────────────────────── */
+
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  padding: 3px 8px;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--text-muted);
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+.theme-toggle-icon {
+  display: inline-block;
+}
 
 /* ─── Summary Bar ──────────────────────────────────────────────────────── */
 
@@ -1476,8 +1523,8 @@ body {
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
 /* ─── Pulse animation ──────────────────────────────────────────────────── */
 
