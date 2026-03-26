@@ -1,6 +1,6 @@
 # TP-071: Engine Worker Thread — Status
 
-**Current Step:** Step 1: Create Engine Worker Entry Point
+**Current Step:** Step 2: Update Extension to Spawn Worker
 **Status:** 🟡 In Progress
 **Iteration:** 3
 **Last Updated:** 2026-03-26
