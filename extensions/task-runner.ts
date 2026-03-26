@@ -3025,7 +3025,7 @@ export default function (pi: ExtensionAPI) {
 		if (state.totalIterations > 1 && remainingSteps.length > 0) {
 			const completedSteps = task.steps.filter(s => !remainingSet.has(s.number));
 			const completedList = completedSteps.length > 0
-				? completedSteps.map(s => `Step ${s.number}`).join(", ")
+				? completedSteps.map(s => `Step ${s.number}: ${s.name}`).join(", ")
 				: "(none)";
 			const remainingList = remainingSteps.map(s => `Step ${s.number}: ${s.name}`).join(", ");
 			iterationNudge = [
