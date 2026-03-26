@@ -27,13 +27,12 @@
 ---
 
 ### Step 2: Update Extension to Spawn Worker
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-> ⚠️ Hydrate: Expand based on actual startBatchAsync call pattern discovered in Step 0
-
-- [ ] Replace direct startBatchAsync() call with new Worker()
-- [ ] Wire worker message handlers (notify, engine-event, complete)
-- [ ] Handle worker error and exit events
+- [ ] Add startBatchInWorker() function in extension.ts that spawns Worker with serialized workerData, wires message handlers (notify→ctx.ui.notify, monitor-update→widget, engine-event→handler, batch-state-sync→orchBatchState, complete/error→terminal), and handles worker error/exit events
+- [ ] Update doOrchStart to call startBatchInWorker instead of startBatchAsync for new batch starts
+- [ ] Update doOrchResume to call startBatchInWorker instead of startBatchAsync for resume
+- [ ] Add serializeWorkspaceConfig helper and worker reference tracking (activeWorker)
 
 ---
 
