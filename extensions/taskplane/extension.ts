@@ -5,7 +5,7 @@ import { execSync, execFileSync } from "child_process";
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { Worker } from "worker_threads";
+import { fork, type ChildProcess } from "child_process";
 
 // Direct imports — avoid barrel (index.ts) to prevent loading the entire module graph.
 // Each import targets the specific module where the symbol is defined.
@@ -897,7 +897,7 @@ function resolveEngineWorkerPath(): string {
 	} catch {
 		thisDir = __dirname;
 	}
-	return join(thisDir, "engine-worker-entry.mjs");
+	return join(thisDir, "engine-worker.ts");
 }
 
 /**
@@ -935,19 +935,20 @@ export function startBatchInWorker(
 	updateWidget: () => void,
 	onMonitorUpdate?: (state: import("./types.ts").MonitorState) => void,
 	onTerminal?: () => void,
-): Worker | null {
+): ChildProcess | null {
 	const workerPath = resolveEngineWorkerPath();
 
-	let worker: Worker;
+	let child: ChildProcess;
 	try {
-		worker = new Worker(workerPath, {
-			workerData: wkData,
+		child = fork(workerPath, [], {
 			execArgv: ["--experimental-transform-types", "--no-warnings"],
+			env: { ...process.env, TASKPLANE_ENGINE_FORK: "1" },
+			serialization: "advanced",
 		});
 	} catch (spawnErr: unknown) {
 		const errMsg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
 		ctx.ui.notify(
-			`⚠️ Worker thread spawn failed: ${errMsg}\n   Falling back to main-thread execution.`,
+			`⚠️ Engine process spawn failed: ${errMsg}\n   Falling back to main-thread execution.`,
 			"warning",
 		);
 		// Construct fallback engine function from workerData and run on main thread
@@ -983,8 +984,11 @@ export function startBatchInWorker(
 		return null;
 	}
 
+	// Send workerData as first IPC message (fork doesn't have workerData)
+	child.send({ type: "init", data: wkData });
+
 	// Terminal settlement guard (R001 §3): ensures onTerminal fires at most once.
-	// The worker can emit error + complete messages, followed by exit event.
+	// The child can emit error + complete messages, followed by exit event.
 	// Without this guard, summary/integration/supervisor flows would fire multiple times.
 	let settled = false;
 	const settle = () => {
@@ -993,7 +997,7 @@ export function startBatchInWorker(
 		onTerminal?.();
 	};
 
-	worker.on("message", (msg: WorkerToMainMessage) => {
+	child.on("message", (msg: WorkerToMainMessage) => {
 		switch (msg.type) {
 			case "notify":
 				ctx.ui.notify(msg.msg, msg.level);
@@ -1005,7 +1009,7 @@ export function startBatchInWorker(
 				break;
 
 			case "engine-event":
-				// Engine events are already persisted to events.jsonl by the worker.
+				// Engine events are already persisted to events.jsonl by the child.
 				// No additional handling needed on the main thread.
 				break;
 
@@ -1036,15 +1040,15 @@ export function startBatchInWorker(
 		}
 	});
 
-	worker.on("error", (err: Error) => {
-		// Worker threw an uncaught exception
+	child.on("error", (err: Error) => {
+		// Child process encountered an error
 		if (batchState.phase !== "completed" && batchState.phase !== "failed") {
 			batchState.phase = "failed";
 			batchState.endedAt = Date.now();
-			batchState.errors.push(`Worker thread error: ${err.message}`);
+			batchState.errors.push(`Engine process error: ${err.message}`);
 		}
 		ctx.ui.notify(
-			`❌ Engine worker thread error: ${err.message}\n` +
+			`❌ Engine process error: ${err.message}\n` +
 			`   Batch ${batchState.batchId} marked as failed.`,
 			"error",
 		);
@@ -1052,16 +1056,16 @@ export function startBatchInWorker(
 		settle();
 	});
 
-	worker.on("exit", (code: number) => {
+	child.on("exit", (code: number | null) => {
 		if (code !== 0 && !settled) {
 			// Non-zero exit that wasn't handled by 'error' or 'complete'
 			if (batchState.phase !== "completed" && batchState.phase !== "failed") {
 				batchState.phase = "failed";
 				batchState.endedAt = Date.now();
-				batchState.errors.push(`Worker thread exited with code ${code}`);
+				batchState.errors.push(`Engine process exited with code ${code}`);
 			}
 			ctx.ui.notify(
-				`❌ Engine worker thread exited unexpectedly (code ${code}).`,
+				`❌ Engine process exited unexpectedly (code ${code}).`,
 				"error",
 			);
 			updateWidget();
@@ -1387,9 +1391,9 @@ export default function (pi: ExtensionAPI) {
 	let orchWidgetCtx: ExtensionContext | undefined;
 	let latestMonitorState: MonitorState | null = null;
 
-	// ── TP-071: Active engine worker thread ──────────────────────────
-	// Tracked so pause/abort can post control messages to the worker.
-	let activeWorker: Worker | null = null;
+	// ── TP-071: Active engine child process ──────────────────────────
+	// Tracked so pause/abort can send control messages to the engine.
+	let activeWorker: ChildProcess | null = null;
 
 	// ── Supervisor State (TP-041) ────────────────────────────────────
 	let supervisorState = freshSupervisorState();
@@ -2006,8 +2010,8 @@ export default function (pi: ExtensionAPI) {
 			return ORCH_MESSAGES.pauseAlreadyPaused(orchBatchState.batchId);
 		}
 		orchBatchState.pauseSignal.paused = true;
-		// TP-071: Forward pause to worker thread (its pauseSignal is separate)
-		activeWorker?.postMessage({ type: "pause" });
+		// TP-071: Forward pause to engine process (its pauseSignal is separate)
+		activeWorker?.send({ type: "pause" });
 		updateOrchWidget();
 		return ORCH_MESSAGES.pauseActivated(orchBatchState.batchId);
 	}
@@ -2197,15 +2201,15 @@ export default function (pi: ExtensionAPI) {
 			orchBatchState.pauseSignal.paused = true;
 			messages.push("  ✓ Pause signal set on in-memory batch state");
 		}
-		// TP-071: Forward pause to worker and terminate on hard abort
+		// TP-071: Forward pause to engine and kill on hard abort
 		if (activeWorker) {
-			activeWorker.postMessage({ type: "pause" });
+			activeWorker.send({ type: "pause" });
 			if (hard) {
-				activeWorker.terminate();
+				activeWorker.kill();
 				activeWorker = null;
-				messages.push("  ✓ Engine worker thread terminated (hard abort)");
+				messages.push("  ✓ Engine process killed (hard abort)");
 			} else {
-				messages.push("  ✓ Pause signal forwarded to engine worker thread");
+				messages.push("  ✓ Pause signal forwarded to engine process");
 			}
 		}
 
@@ -3283,13 +3287,13 @@ export default function (pi: ExtensionAPI) {
 	// Ensure supervisor lockfile/heartbeat are cleaned up on normal session exit.
 	// This avoids leaving a live-looking lock when the process exits cleanly.
 	pi.on("session_end", async () => {
-		// TP-071: Terminate engine worker thread on session exit
+		// TP-071: Kill engine process on session exit
 		if (activeWorker) {
 			try {
-				activeWorker.terminate();
+				activeWorker.kill();
 				activeWorker = null;
 			} catch {
-				// Best effort — worker may already be dead
+				// Best effort — process may already be dead
 			}
 		}
 		try {
