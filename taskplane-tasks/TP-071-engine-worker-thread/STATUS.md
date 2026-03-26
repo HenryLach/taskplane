@@ -20,9 +20,9 @@
 ---
 
 ### Step 1: Create Engine Worker Entry Point
-**Status:** 🟨 In Progress
-- [ ] Create engine-worker.ts: receive workerData, listen parentPort, call executeOrchBatch/resumeOrchBatch with postMessage callbacks
-- [ ] Add message types and serialization helpers for WorkspaceConfig (Map→Array) and OrchBatchRuntimeState (Set→Array)
+**Status:** ✅ Complete
+- [x] Create engine-worker.ts: receive workerData, listen parentPort, call executeOrchBatch/resumeOrchBatch with postMessage callbacks
+- [x] Add message types and serialization helpers for WorkspaceConfig (Map→Array) and OrchBatchRuntimeState (Set→Array)
 
 ---
 
