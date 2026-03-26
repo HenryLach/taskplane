@@ -15,8 +15,9 @@
  * Run: npx vitest run tests/supervisor.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { describe, it, beforeEach, afterEach, mock } from "node:test";
+import { expect } from "./expect.ts";
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
 import { fileURLToPath } from "url";
@@ -152,7 +153,6 @@ function writeEventLine(stateRoot: string, event: Record<string, unknown>): void
 	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 	const path = join(dir, "events.jsonl");
 	const line = JSON.stringify(event) + "\n";
-	const { appendFileSync } = require("fs");
 	appendFileSync(path, line, "utf-8");
 }
 
@@ -528,7 +528,7 @@ describe("3.x — Heartbeat: isLockStale detection", () => {
 	});
 
 	it("3.9: heartbeat updates lockfile timestamp on interval (behavioral)", async () => {
-		vi.useFakeTimers();
+		mock.timers.enable({ apis: ["setInterval", "setTimeout"] });
 		const dir = makeTmpDir();
 		try {
 			const state = freshSupervisorState();
@@ -544,14 +544,14 @@ describe("3.x — Heartbeat: isLockStale detection", () => {
 				heartbeat: "2026-01-01T00:00:00.000Z",
 			});
 
-			const pi = { sendMessage: vi.fn(), setModel: vi.fn().mockResolvedValue(true) } as any;
+			const pi = { sendMessage: mock.fn(), setModel: mock.fn(() => Promise.resolve(true)) } as any;
 			const timer = startHeartbeat(dir, state, pi);
 			const before = readLockfile(dir)?.heartbeat;
 			expect(before).toBe("2026-01-01T00:00:00.000Z");
 
-			await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 5);
+			mock.timers.tick(HEARTBEAT_INTERVAL_MS + 5);
 			// TP-070: heartbeat is now async — allow async I/O to settle
-			vi.useRealTimers();
+			mock.timers.reset();
 			await new Promise(r => setTimeout(r, 200));
 			const after = readLockfile(dir)?.heartbeat;
 			expect(after).toBeDefined();
@@ -560,7 +560,7 @@ describe("3.x — Heartbeat: isLockStale detection", () => {
 			state.active = false;
 			clearInterval(timer);
 		} finally {
-			vi.useRealTimers();
+			mock.timers.reset();
 			rmSync(dir, { recursive: true, force: true });
 		}
 	});

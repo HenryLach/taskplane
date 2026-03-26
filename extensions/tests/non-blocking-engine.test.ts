@@ -15,10 +15,11 @@
  *  10.x — Behavioral: engine event emission sequences (R008-2b)
  *  11.x — Behavioral: resumeOrchBatch early-return phase reset (R008-3)
  *
- * Run: npx vitest run tests/non-blocking-engine.test.ts
+ * Run: node --experimental-strip-types --no-warnings --import ./tests/loader.mjs --test tests/non-blocking-engine.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, beforeEach, afterEach, mock } from "node:test";
+import { expect } from "./expect.ts";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
@@ -688,11 +689,11 @@ describe("7.x — /orch-status disk fallback for idle in-memory state", () => {
 
 describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 	beforeEach(() => {
-		vi.useFakeTimers();
+		mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
 	});
 
 	afterEach(() => {
-		vi.useRealTimers();
+		mock.timers.reset();
 	});
 
 	it("8.1: startBatchAsync returns synchronously before engine work begins", async () => {
@@ -701,8 +702,8 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 		batchState.batchId = "test-batch";
-		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
-		const updateWidget = vi.fn();
+		const mockCtx = { ui: { notify: mock.fn(), setWidget: mock.fn() } } as any;
+		const updateWidget = mock.fn();
 
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
 
@@ -710,7 +711,7 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 		expect(engineStarted).toBe(false);
 
 		// Advance past the setTimeout(0) detach
-		await vi.advanceTimersByTimeAsync(0);
+		mock.timers.tick(0); await new Promise(r => setImmediate(r));
 
 		// Now engine should have run
 		expect(engineStarted).toBe(true);
@@ -721,8 +722,8 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 		const batchState = freshOrchBatchState();
 		batchState.phase = "executing";
 		batchState.batchId = "test-batch";
-		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
-		const updateWidget = vi.fn();
+		const mockCtx = { ui: { notify: mock.fn(), setWidget: mock.fn() } } as any;
+		const updateWidget = mock.fn();
 
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
 
@@ -730,7 +731,7 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 		expect(updateWidget).not.toHaveBeenCalled();
 
 		// Advance past setTimeout(0) and let microtask (.then) resolve
-		await vi.advanceTimersByTimeAsync(0);
+		mock.timers.tick(0); await new Promise(r => setImmediate(r));
 
 		// Widget should have been updated after successful completion
 		expect(updateWidget).toHaveBeenCalledTimes(1);
@@ -741,13 +742,13 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 		const batchState = freshOrchBatchState();
 		batchState.phase = "executing";
 		batchState.batchId = "crash-batch";
-		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
-		const updateWidget = vi.fn();
+		const mockCtx = { ui: { notify: mock.fn(), setWidget: mock.fn() } } as any;
+		const updateWidget = mock.fn();
 
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
 
 		// Advance timer and let rejection propagate
-		await vi.advanceTimersByTimeAsync(0);
+		mock.timers.tick(0); await new Promise(r => setImmediate(r));
 
 		// Error boundary should have set phase to "failed"
 		expect(batchState.phase).toBe("failed");
@@ -756,10 +757,11 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 		// Widget should still have been updated
 		expect(updateWidget).toHaveBeenCalledTimes(1);
 		// Operator should have been notified
-		expect(mockCtx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("engine explosion"),
-			"error",
+		const notifyCalls = (mockCtx.ui.notify as any).mock.calls;
+		const errorNotification = notifyCalls.find(
+			(c: any) => typeof c.arguments[0] === "string" && c.arguments[0].includes("engine explosion") && c.arguments[1] === "error",
 		);
+		expect(errorNotification).toBeDefined();
 	});
 
 	it("8.4: startBatchAsync error boundary does NOT overwrite already-completed phase", async () => {
@@ -769,12 +771,12 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 		batchState.phase = "completed";
 		batchState.batchId = "already-done";
 		batchState.endedAt = Date.now();
-		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
-		const updateWidget = vi.fn();
+		const mockCtx = { ui: { notify: mock.fn(), setWidget: mock.fn() } } as any;
+		const updateWidget = mock.fn();
 
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
 
-		await vi.advanceTimersByTimeAsync(0);
+		mock.timers.tick(0); await new Promise(r => setImmediate(r));
 
 		// Phase should remain "completed" — error boundary checks for terminal phases
 		expect(batchState.phase).toBe("completed");
@@ -789,12 +791,12 @@ describe("8.x — Behavioral: startBatchAsync non-blocking pattern", () => {
 		batchState.batchId = "already-failed";
 		batchState.endedAt = Date.now() - 1000;
 		const originalErrors = [...batchState.errors];
-		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
-		const updateWidget = vi.fn();
+		const mockCtx = { ui: { notify: mock.fn(), setWidget: mock.fn() } } as any;
+		const updateWidget = mock.fn();
 
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
 
-		await vi.advanceTimersByTimeAsync(0);
+		mock.timers.tick(0); await new Promise(r => setImmediate(r));
 
 		// Phase should remain "failed" — no double-set
 		expect(batchState.phase).toBe("failed");
@@ -1166,10 +1168,10 @@ describe("10.x — Behavioral: engine event emission sequences", () => {
 
 describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine work", () => {
 	beforeEach(() => {
-		vi.useFakeTimers();
+		mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
 	});
 	afterEach(() => {
-		vi.useRealTimers();
+		mock.timers.reset();
 	});
 
 	it("8.1: startBatchAsync returns synchronously (handler is not blocked)", () => {
@@ -1180,8 +1182,8 @@ describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine
 		});
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
-		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
-		const updateWidget = vi.fn();
+		const mockCtx = { ui: { notify: mock.fn(), setWidget: mock.fn() } } as any;
+		const updateWidget = mock.fn();
 
 		// Call startBatchAsync — must return synchronously
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
@@ -1198,15 +1200,15 @@ describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine
 		});
 		const batchState = freshOrchBatchState();
 		batchState.phase = "launching";
-		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
-		const updateWidget = vi.fn();
+		const mockCtx = { ui: { notify: mock.fn(), setWidget: mock.fn() } } as any;
+		const updateWidget = mock.fn();
 
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
 
 		// Fire the setTimeout
-		vi.advanceTimersByTime(0);
+		mock.timers.tick(0);
 		// Let microtasks (promise .then) settle
-		await vi.advanceTimersByTimeAsync(0);
+		mock.timers.tick(0); await new Promise(r => setImmediate(r));
 
 		expect(engineStarted).toBe(true);
 		// Widget should be updated after engine completes
@@ -1218,21 +1220,22 @@ describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine
 		const batchState = freshOrchBatchState();
 		batchState.phase = "executing";
 		batchState.batchId = "test-batch";
-		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
-		const updateWidget = vi.fn();
+		const mockCtx = { ui: { notify: mock.fn(), setWidget: mock.fn() } } as any;
+		const updateWidget = mock.fn();
 
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
 
 		// Fire setTimeout and let promise rejection settle
-		await vi.advanceTimersByTimeAsync(0);
+		mock.timers.tick(0); await new Promise(r => setImmediate(r));
 
 		expect(batchState.phase).toBe("failed");
 		expect(batchState.endedAt).not.toBeNull();
 		expect(batchState.errors).toContain("Unhandled engine error: engine exploded");
-		expect(mockCtx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("Engine crashed"),
-			"error",
+		const notifyCalls = (mockCtx.ui.notify as any).mock.calls;
+		const crashNotification = notifyCalls.find(
+			(c: any) => typeof c.arguments[0] === "string" && c.arguments[0].includes("Engine crashed") && c.arguments[1] === "error",
 		);
+		expect(crashNotification).toBeDefined();
 		expect(updateWidget).toHaveBeenCalled();
 	});
 
@@ -1241,11 +1244,11 @@ describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine
 		const batchState = freshOrchBatchState();
 		batchState.phase = "completed"; // Already completed before error
 		batchState.batchId = "test-batch";
-		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
-		const updateWidget = vi.fn();
+		const mockCtx = { ui: { notify: mock.fn(), setWidget: mock.fn() } } as any;
+		const updateWidget = mock.fn();
 
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
-		await vi.advanceTimersByTimeAsync(0);
+		mock.timers.tick(0); await new Promise(r => setImmediate(r));
 
 		// Should still be "completed", not overwritten to "failed"
 		expect(batchState.phase).toBe("completed");
@@ -1255,11 +1258,11 @@ describe("8.x — Behavioral: startBatchAsync returns immediately, defers engine
 		const engineFn = () => Promise.resolve();
 		const batchState = freshOrchBatchState();
 		batchState.phase = "executing";
-		const mockCtx = { ui: { notify: vi.fn(), setWidget: vi.fn() } } as any;
-		const updateWidget = vi.fn();
+		const mockCtx = { ui: { notify: mock.fn(), setWidget: mock.fn() } } as any;
+		const updateWidget = mock.fn();
 
 		startBatchAsync(engineFn, batchState, mockCtx, updateWidget);
-		await vi.advanceTimersByTimeAsync(0);
+		mock.timers.tick(0); await new Promise(r => setImmediate(r));
 
 		expect(updateWidget).toHaveBeenCalledTimes(1);
 	});
@@ -1445,7 +1448,7 @@ describe("11.x — Behavioral: resumeOrchBatch early-return resets phase to 'idl
 		// phase is already "idle" — should stay idle
 		expect(batchState.phase).toBe("idle");
 
-		const onNotify = vi.fn();
+		const onNotify = mock.fn();
 
 		await resumeOrchBatch(
 			DEFAULT_ORCHESTRATOR_CONFIG,

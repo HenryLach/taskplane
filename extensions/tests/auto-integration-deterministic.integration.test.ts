@@ -3,40 +3,41 @@
  *
  * Tests that require mocking of child_process.execFileSync to control
  * branch protection detection and git merge-base behavior. Separated
- * from auto-integration.test.ts because vi.mock is file-scoped.
+ * from auto-integration.test.ts because mock.module is file-scoped.
  *
  *   17.x — Deterministic buildIntegrationPlan: protected→PR, unprotected+linear→ff, unprotected+diverged→merge
  *   18.x — Auto-mode executor call order + no confirmation prompt
  *   19.x — Manual-mode guidance + branch-protection default-to-PR
  *
- * Run: npx vitest run tests/auto-integration-deterministic.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/auto-integration-deterministic.integration.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, beforeEach, afterEach, mock } from "node:test";
+import { expect } from "./expect.ts";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync } from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";
 import { fileURLToPath } from "url";
 
 // ── Mock child_process ───────────────────────────────────────────────
-// vi.mock is hoisted and applies to all imports in this file.
+// mock.module intercepts module resolution for all subsequent imports.
 // We mock execFileSync so we can control detectBranchProtection and
 // git merge-base results deterministically.
-// Use vi.hoisted so the mock fn is available at hoist time.
 
-const { mockExecFileSync } = vi.hoisted(() => ({
-	mockExecFileSync: vi.fn(),
-}));
+const mockExecFileSync = mock.fn();
 
-vi.mock("child_process", async (importOriginal) => {
-	const original = await importOriginal<typeof import("child_process")>();
-	return {
-		...original,
+mock.module("child_process", {
+	namedExports: {
 		execFileSync: mockExecFileSync,
-	};
+		execSync: (await import("child_process")).execSync,
+		spawnSync: (await import("child_process")).spawnSync,
+		execFile: (await import("child_process")).execFile,
+		spawn: (await import("child_process")).spawn,
+		fork: (await import("child_process")).fork,
+	},
 });
 
-import {
+const {
 	buildIntegrationPlan,
 	detectBranchProtection,
 	formatIntegrationPlan,
@@ -45,7 +46,7 @@ import {
 	freshSupervisorState,
 	presentBatchSummary,
 	deactivateSupervisor,
-} from "../taskplane/supervisor.ts";
+} = await import("../taskplane/supervisor.ts");
 
 import type {
 	IntegrationPlan,
@@ -54,7 +55,7 @@ import type {
 	SupervisorState,
 } from "../taskplane/supervisor.ts";
 
-import { freshOrchBatchState } from "../taskplane/types.ts";
+const { freshOrchBatchState } = await import("../taskplane/types.ts");
 import type { OrchBatchRuntimeState } from "../taskplane/types.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -120,7 +121,7 @@ function configureMockExecFileSync(
 	protection: "protected" | "unprotected" | "unknown",
 	isAncestor: boolean = true,
 ) {
-	mockExecFileSync.mockImplementation((cmd: string, args: string[], _opts: any) => {
+	mockExecFileSync.mock.mockImplementation((cmd: string, args: string[], _opts: any) => {
 		// gh repo view -- used by detectBranchProtection
 		if (cmd === "gh" && args[0] === "repo" && args[1] === "view") {
 			return "owner/repo";
@@ -166,7 +167,7 @@ function configureMockExecFileSync(
 
 describe("17.x — Deterministic buildIntegrationPlan: branch→mode mapping", () => {
 	afterEach(() => {
-		mockExecFileSync.mockReset();
+		mockExecFileSync.mock.resetCalls();
 	});
 
 	it("17.1: protected base branch → PR mode", () => {
@@ -244,7 +245,7 @@ describe("18.x — Auto mode: executor call order and message assertions", () =>
 	});
 
 	afterEach(() => {
-		mockExecFileSync.mockReset();
+		mockExecFileSync.mock.resetCalls();
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
@@ -472,7 +473,7 @@ describe("19.x — Manual-mode guidance and branch-protection-detected default-t
 	});
 
 	afterEach(() => {
-		mockExecFileSync.mockReset();
+		mockExecFileSync.mock.resetCalls();
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
@@ -625,7 +626,7 @@ describe("19.x — Manual-mode guidance and branch-protection-detected default-t
 
 describe("20.x — detectBranchProtection deterministic tests", () => {
 	afterEach(() => {
-		mockExecFileSync.mockReset();
+		mockExecFileSync.mock.resetCalls();
 	});
 
 	it("20.1: returns 'protected' when gh api returns 200", () => {
@@ -641,7 +642,7 @@ describe("20.x — detectBranchProtection deterministic tests", () => {
 	});
 
 	it("20.3: returns 'unknown' when gh is unavailable", () => {
-		mockExecFileSync.mockImplementation((cmd: string, args: string[], _opts: any) => {
+		mockExecFileSync.mock.mockImplementation((cmd: string, args: string[], _opts: any) => {
 			throw new Error("gh not found");
 		});
 		const result = detectBranchProtection("main", "/fake/cwd");
@@ -649,7 +650,7 @@ describe("20.x — detectBranchProtection deterministic tests", () => {
 	});
 
 	it("20.4: returns 'unknown' when repo info is empty", () => {
-		mockExecFileSync.mockImplementation((cmd: string, args: string[], _opts: any) => {
+		mockExecFileSync.mock.mockImplementation((cmd: string, args: string[], _opts: any) => {
 			if (cmd === "gh" && args[0] === "repo") {
 				return ""; // empty repo info
 			}
