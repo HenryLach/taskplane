@@ -9,6 +9,16 @@
 }
 
 :root {
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --radius: 8px;
+  --radius-sm: 4px;
+}
+
+/* ─── Dark Theme (default) ─────────────────────────────────────────────── */
+
+:root,
+[data-theme="dark"] {
   --bg: #0d1117;
   --bg-surface: #161b22;
   --bg-surface-hover: #1c2129;
@@ -28,10 +38,82 @@
   --yellow-dim: #9e6a03;
   --cyan: #39d2c0;
   --magenta: #bc8cff;
-  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace;
-  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  --radius: 8px;
-  --radius-sm: 4px;
+  --phase-on-color: #fff;
+  --phase-merging-bg: #1a3a5c;
+  --wave-seg-border: rgba(0,0,0,0.3);
+  --wave-label-color: rgba(255,255,255,0.85);
+  --wave-label-shadow: 0 1px 2px rgba(0,0,0,0.6);
+  --wave-future-bg: rgba(139,148,158,0.25);
+  --wave-future-label: rgba(255,255,255,0.55);
+  --badge-succeeded-bg: rgba(63,185,80,0.15);
+  --badge-running-bg: rgba(88,166,255,0.15);
+  --badge-failed-bg: rgba(248,81,73,0.15);
+  --badge-stalled-bg: rgba(210,153,34,0.15);
+  --badge-pending-bg: rgba(139,148,158,0.1);
+  --badge-skipped-bg: rgba(139,148,158,0.1);
+  --accent-tint-bg: rgba(88,166,255,0.08);
+  --accent-tint-hover: rgba(88,166,255,0.18);
+  --accent-tint-active: rgba(88,166,255,0.25);
+  --accent-tint-subtle: rgba(88,166,255,0.06);
+  --green-tint-bg: rgba(63,185,80,0.06);
+  --green-tint-active: rgba(63,185,80,0.12);
+  --yellow-tint-active: rgba(210,153,34,0.25);
+  --magenta-tint-bg: rgba(188,140,255,0.12);
+  --magenta-tint: rgba(188,140,255,0.15);
+  --border-table-subtle: rgba(48,54,61,0.3);
+  --scrollbar-thumb: var(--border);
+  --scrollbar-thumb-hover: var(--text-faint);
+  color-scheme: dark;
+}
+
+/* ─── Light Theme ──────────────────────────────────────────────────────── */
+
+[data-theme="light"] {
+  --bg: #ffffff;
+  --bg-surface: #f6f8fa;
+  --bg-surface-hover: #eaeef2;
+  --bg-inset: #f0f2f5;
+  --border: #d0d7de;
+  --border-subtle: #e1e4e8;
+  --text: #1f2328;
+  --text-muted: #656d76;
+  --text-faint: #8c959f;
+  --accent: #0969da;
+  --accent-dim: #0550ae;
+  --green: #1a7f37;
+  --green-dim: #116329;
+  --red: #cf222e;
+  --red-dim: #a40e26;
+  --yellow: #9a6700;
+  --yellow-dim: #7d4e00;
+  --cyan: #1b7c83;
+  --magenta: #8250df;
+  --phase-on-color: #fff;
+  --phase-merging-bg: #ddf4ff;
+  --wave-seg-border: rgba(0,0,0,0.08);
+  --wave-label-color: rgba(0,0,0,0.7);
+  --wave-label-shadow: none;
+  --wave-future-bg: rgba(139,148,158,0.15);
+  --wave-future-label: rgba(0,0,0,0.4);
+  --badge-succeeded-bg: rgba(26,127,55,0.1);
+  --badge-running-bg: rgba(9,105,218,0.1);
+  --badge-failed-bg: rgba(207,34,46,0.1);
+  --badge-stalled-bg: rgba(154,103,0,0.1);
+  --badge-pending-bg: rgba(140,149,159,0.08);
+  --badge-skipped-bg: rgba(140,149,159,0.08);
+  --accent-tint-bg: rgba(9,105,218,0.06);
+  --accent-tint-hover: rgba(9,105,218,0.12);
+  --accent-tint-active: rgba(9,105,218,0.18);
+  --accent-tint-subtle: rgba(9,105,218,0.04);
+  --green-tint-bg: rgba(26,127,55,0.06);
+  --green-tint-active: rgba(26,127,55,0.1);
+  --yellow-tint-active: rgba(154,103,0,0.15);
+  --magenta-tint-bg: rgba(130,80,223,0.08);
+  --magenta-tint: rgba(130,80,223,0.1);
+  --border-table-subtle: rgba(208,215,222,0.5);
+  --scrollbar-thumb: #c1c8cf;
+  --scrollbar-thumb-hover: #8c959f;
+  color-scheme: light;
 }
 
 html { font-size: 14px; }
@@ -42,6 +124,29 @@ body {
   color: var(--text);
   min-height: 100vh;
   overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Smooth theme transition for key elements */
+.panel,
+.summary-bar,
+.header-badge,
+.status-badge,
+.count-chip,
+.wave-chip,
+.tmux-view-btn,
+.tmux-cmd,
+.repo-filter-select,
+.history-select,
+.task-row,
+.lane-header,
+.conv-tool-call,
+.conv-tool-result,
+.copy-toast,
+.auto-scroll-label input[type="checkbox"],
+.terminal-close,
+.stat-card {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
 }
 
 /* ─── Layout Shell ─────────────────────────────────────────────────────── */
@@ -103,13 +208,13 @@ body {
   font-size: 0.7rem;
 }
 
-.phase-executing { background: var(--accent-dim); color: #fff; }
-.phase-merging   { background: #1a3a5c; color: var(--accent); }
-.phase-completed { background: var(--green-dim); color: #fff; }
-.phase-paused    { background: var(--yellow-dim); color: #fff; }
+.phase-executing { background: var(--accent-dim); color: var(--phase-on-color); }
+.phase-merging   { background: var(--phase-merging-bg); color: var(--accent); }
+.phase-completed { background: var(--green-dim); color: var(--phase-on-color); }
+.phase-paused    { background: var(--yellow-dim); color: var(--phase-on-color); }
 .phase-stopped,
-.phase-aborted   { background: var(--red-dim); color: #fff; }
-.phase-failed    { background: var(--red-dim); color: #fff; }
+.phase-aborted   { background: var(--red-dim); color: var(--phase-on-color); }
+.phase-failed    { background: var(--red-dim); color: var(--phase-on-color); }
 
 .header-meta {
   margin-left: auto;
@@ -129,6 +234,30 @@ body {
 
 .connection-dot.connected { background: var(--green); }
 .connection-dot.disconnected { background: var(--red); }
+
+/* ─── Theme Toggle ─────────────────────────────────────────────────────── */
+
+.theme-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  padding: 3px 8px;
+  font-size: 0.9rem;
+  line-height: 1;
+  color: var(--text-muted);
+  transition: background-color 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-surface-hover);
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+.theme-toggle-icon {
+  display: inline-block;
+}
 
 /* ─── Summary Bar ──────────────────────────────────────────────────────── */
 
@@ -165,7 +294,7 @@ body {
   position: relative;
   height: 100%;
   overflow: hidden;
-  border-right: 1px solid var(--bg-deeper, rgba(0,0,0,0.3));
+  border-right: 1px solid var(--wave-seg-border);
 }
 .wave-seg:last-child { border-right: none; }
 
@@ -189,9 +318,9 @@ body {
   font-size: 0.6rem;
   font-weight: 700;
   letter-spacing: 0.03em;
-  color: rgba(255,255,255,0.85);
+  color: var(--wave-label-color);
   pointer-events: none;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.6);
+  text-shadow: var(--wave-label-shadow);
 }
 
 /* Highlight the active wave segment */
@@ -199,10 +328,10 @@ body {
 
 /* Future waves: visible but subdued */
 .wave-seg-future {
-  background: rgba(139,148,158,0.25);
+  background: var(--wave-future-bg);
 }
 .wave-seg-future .wave-seg-label {
-  color: rgba(255,255,255,0.55);
+  color: var(--wave-future-label);
   text-shadow: none;
 }
 
@@ -244,11 +373,11 @@ body {
 .count-icon { font-size: 0.85em; opacity: 0.9; }
 .count-total { color: var(--text-faint); margin-left: 2px; }
 
-.count-succeeded { background: rgba(63,185,80,0.15); color: var(--green); }
-.count-running   { background: rgba(88,166,255,0.15); color: var(--accent); }
-.count-failed    { background: rgba(248,81,73,0.15); color: var(--red); }
-.count-stalled   { background: rgba(210,153,34,0.15); color: var(--yellow); }
-.count-pending   { background: rgba(139,148,158,0.1); color: var(--text-muted); }
+.count-succeeded { background: var(--badge-succeeded-bg); color: var(--green); }
+.count-running   { background: var(--badge-running-bg); color: var(--accent); }
+.count-failed    { background: var(--badge-failed-bg); color: var(--red); }
+.count-stalled   { background: var(--badge-stalled-bg); color: var(--yellow); }
+.count-pending   { background: var(--badge-pending-bg); color: var(--text-muted); }
 
 .summary-elapsed {
   color: var(--text-muted);
@@ -275,14 +404,14 @@ body {
 
 .wave-chip.current {
   border-color: var(--accent-dim);
-  background: rgba(88,166,255,0.12);
+  background: var(--badge-running-bg);
   color: var(--accent);
   font-weight: 700;
 }
 
 .wave-chip.done {
   border-color: var(--green-dim);
-  background: rgba(63,185,80,0.12);
+  background: var(--green-tint-active);
   color: var(--green);
 }
 
@@ -402,7 +531,7 @@ body {
   border-radius: var(--radius-sm);
   background: var(--accent-dim);
   border: 1px solid var(--accent-dim);
-  color: #fff;
+  color: var(--phase-on-color);
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.2s, border-color 0.2s;
@@ -500,12 +629,12 @@ body {
   border-radius: 10px;
 }
 
-.status-succeeded { background: rgba(63,185,80,0.15); color: var(--green); }
-.status-running   { background: rgba(88,166,255,0.15); color: var(--accent); }
-.status-failed    { background: rgba(248,81,73,0.15); color: var(--red); }
-.status-stalled   { background: rgba(210,153,34,0.15); color: var(--yellow); }
-.status-pending   { background: rgba(139,148,158,0.1); color: var(--text-muted); }
-.status-skipped   { background: rgba(139,148,158,0.1); color: var(--text-faint); }
+.status-succeeded { background: var(--badge-succeeded-bg); color: var(--green); }
+.status-running   { background: var(--badge-running-bg); color: var(--accent); }
+.status-failed    { background: var(--badge-failed-bg); color: var(--red); }
+.status-stalled   { background: var(--badge-stalled-bg); color: var(--yellow); }
+.status-pending   { background: var(--badge-pending-bg); color: var(--text-muted); }
+.status-skipped   { background: var(--badge-skipped-bg); color: var(--text-faint); }
 
 .status-dot {
   width: 6px;
@@ -642,7 +771,7 @@ body {
 
 .reviewer-sub-row {
   background: var(--bg-surface-hover);
-  border-left: 3px solid var(--yellow, #e5c07b);
+  border-left: 3px solid var(--yellow);
   padding-left: 11px; /* compensate for border */
   font-size: 0.85em;
 }
@@ -650,7 +779,7 @@ body {
 .reviewer-sub-row .reviewer-label {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: var(--yellow, #e5c07b);
+  color: var(--yellow);
   font-weight: 600;
 }
 
@@ -680,18 +809,18 @@ body {
 }
 
 .telem-retry {
-  background: rgba(210,153,34,0.15);
+  background: var(--badge-stalled-bg);
   color: var(--yellow);
 }
 
 .telem-retry-active {
-  background: rgba(210,153,34,0.25);
+  background: var(--yellow-tint-active);
   color: var(--yellow);
   animation: pulse 1.5s infinite;
 }
 
 .telem-compaction {
-  background: rgba(188,140,255,0.15);
+  background: var(--magenta-tint);
   color: var(--magenta);
 }
 
@@ -718,7 +847,7 @@ body {
 .conv-tool-call {
   margin: 8px 0 4px;
   padding: 6px 10px;
-  background: rgba(88,166,255,0.08);
+  background: var(--accent-tint-bg);
   border-left: 3px solid var(--accent-dim);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
@@ -787,13 +916,13 @@ body {
 
 .viewer-eye-btn:hover {
   opacity: 1;
-  background: rgba(88,166,255,0.18);
+  background: var(--accent-tint-hover);
   color: var(--accent);
 }
 
 .viewer-eye-btn.active {
   opacity: 1;
-  background: rgba(88,166,255,0.25);
+  background: var(--accent-tint-active);
   color: var(--accent);
   box-shadow: 0 0 0 1px var(--accent-dim);
 }
@@ -846,7 +975,7 @@ body {
   top: -1px;
   left: 2px;
   font-size: 11px;
-  color: #fff;
+  color: var(--phase-on-color);
 }
 
 /* ─── STATUS.md Rendered Content ───────────────────────────────────────── */
@@ -925,7 +1054,7 @@ body {
 /* Progress frontier highlight — only when tracking is active */
 .status-md-content.tracking .status-md-check.last-checked {
   border-left-color: var(--accent);
-  background: rgba(88, 166, 255, 0.06);
+  background: var(--accent-tint-subtle);
 }
 
 .status-md-li {
@@ -1039,7 +1168,7 @@ body {
   font-weight: 500;
   padding: 1px 7px;
   border-radius: 8px;
-  background: rgba(188,140,255,0.12);
+  background: var(--magenta-tint-bg);
   color: var(--magenta);
   white-space: nowrap;
   max-width: 140px;
@@ -1128,17 +1257,17 @@ body {
 }
 
 .supervisor-status-badge.supervisor-active {
-  background: rgba(63,185,80,0.15);
+  background: var(--badge-succeeded-bg);
   color: var(--green);
 }
 
 .supervisor-status-badge.supervisor-stale {
-  background: rgba(210,153,34,0.15);
+  background: var(--badge-stalled-bg);
   color: var(--yellow);
 }
 
 .supervisor-status-badge.supervisor-inactive {
-  background: rgba(139,148,158,0.1);
+  background: var(--badge-pending-bg);
   color: var(--text-muted);
 }
 
@@ -1183,7 +1312,7 @@ body {
   font-weight: 500;
   padding: 1px 7px;
   border-radius: 8px;
-  background: rgba(188,140,255,0.12);
+  background: var(--magenta-tint-bg);
   color: var(--magenta);
 }
 
@@ -1230,12 +1359,12 @@ body {
 }
 
 .supervisor-conv-entry.conv-role-operator {
-  background: rgba(88,166,255,0.06);
+  background: var(--accent-tint-subtle);
   border-left: 3px solid var(--accent-dim);
 }
 
 .supervisor-conv-entry.conv-role-supervisor {
-  background: rgba(63,185,80,0.06);
+  background: var(--green-tint-bg);
   border-left: 3px solid var(--green-dim);
 }
 
@@ -1332,7 +1461,7 @@ body {
   font-weight: 700;
   padding: 1px 5px;
   border-radius: 4px;
-  background: rgba(188,140,255,0.12);
+  background: var(--magenta-tint-bg);
   color: var(--magenta);
 }
 
@@ -1357,17 +1486,17 @@ body {
 }
 
 .supervisor-action-outcome.action-success {
-  background: rgba(63,185,80,0.15);
+  background: var(--badge-succeeded-bg);
   color: var(--green);
 }
 
 .supervisor-action-outcome.action-failed {
-  background: rgba(248,81,73,0.15);
+  background: var(--badge-failed-bg);
   color: var(--red);
 }
 
 .supervisor-action-outcome.action-pending {
-  background: rgba(210,153,34,0.15);
+  background: var(--badge-stalled-bg);
   color: var(--yellow);
 }
 
@@ -1394,8 +1523,8 @@ body {
 
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
 /* ─── Pulse animation ──────────────────────────────────────────────────── */
 
@@ -1413,7 +1542,7 @@ body {
   bottom: 20px;
   right: 20px;
   background: var(--green-dim);
-  color: #fff;
+  color: var(--phase-on-color);
   padding: 8px 16px;
   border-radius: var(--radius);
   font-size: 0.8rem;
@@ -1480,10 +1609,10 @@ body {
   font-weight: 600;
 }
 
-.history-header .batch-status.completed { background: rgba(63,185,80,0.15); color: var(--green); }
-.history-header .batch-status.partial   { background: rgba(210,153,34,0.15); color: var(--yellow); }
-.history-header .batch-status.failed    { background: rgba(248,81,73,0.15);  color: var(--red); }
-.history-header .batch-status.aborted   { background: rgba(139,148,158,0.15); color: var(--text-muted); }
+.history-header .batch-status.completed { background: var(--badge-succeeded-bg); color: var(--green); }
+.history-header .batch-status.partial   { background: var(--badge-stalled-bg); color: var(--yellow); }
+.history-header .batch-status.failed    { background: var(--badge-failed-bg);  color: var(--red); }
+.history-header .batch-status.aborted   { background: var(--badge-pending-bg); color: var(--text-muted); }
 
 .history-header .batch-time {
   color: var(--text-muted);
@@ -1544,7 +1673,7 @@ body {
 .history-waves-table td,
 .history-tasks-table td {
   padding: 6px 10px;
-  border-bottom: 1px solid rgba(48,54,61,0.3);
+  border-bottom: 1px solid var(--border-table-subtle);
   font-family: var(--font-mono);
   font-size: 0.85rem;
   color: var(--text-muted);

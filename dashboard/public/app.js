@@ -1675,6 +1675,47 @@ $historySelect.addEventListener("change", (e) => {
   }
 });
 
+// ─── Theme Toggle ───────────────────────────────────────────────────────────
+
+const DARK_LOGO = "taskplane-word-white.svg";
+const LIGHT_LOGO = "taskplane-word-color.svg";
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute("data-theme", theme);
+  const logo = document.getElementById("header-logo");
+  const icon = document.getElementById("theme-toggle-icon");
+  if (logo) logo.src = theme === "light" ? LIGHT_LOGO : DARK_LOGO;
+  if (icon) icon.textContent = theme === "dark" ? "☀️" : "🌙";
+}
+
+function loadThemePreference() {
+  fetch("/api/preferences")
+    .then(r => r.ok ? r.json() : { theme: "dark" })
+    .then(prefs => applyTheme(prefs.theme || "dark"))
+    .catch(() => applyTheme("dark"));
+}
+
+function saveThemePreference(theme) {
+  fetch("/api/preferences", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ theme }),
+  }).catch(() => {}); // best-effort
+}
+
+const $themeToggle = document.getElementById("theme-toggle");
+if ($themeToggle) {
+  $themeToggle.addEventListener("click", () => {
+    const current = document.documentElement.getAttribute("data-theme") || "dark";
+    const next = current === "dark" ? "light" : "dark";
+    applyTheme(next);
+    saveThemePreference(next);
+  });
+}
+
+// Load saved preference on startup
+loadThemePreference();
+
 // ─── Boot ───────────────────────────────────────────────────────────────────
 
 connect();
