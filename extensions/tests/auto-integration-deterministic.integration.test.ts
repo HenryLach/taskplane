@@ -12,31 +12,28 @@
  * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/auto-integration-deterministic.integration.test.ts
  */
 
-import { describe, it, beforeEach, afterEach, mock } from "node:test";
+import { describe, it, mock, beforeEach, afterEach } from "node:test";
 import { expect } from "./expect.ts";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, readFileSync } from "fs";
+import { readFileSync } from "fs";
 import { join, dirname } from "path";
-import { tmpdir } from "os";
-import { fileURLToPath } from "url";
 
 // ── Mock child_process ───────────────────────────────────────────────
-// mock.module intercepts module resolution for all subsequent imports.
-// We mock execFileSync so we can control detectBranchProtection and
-// git merge-base results deterministically.
+// mock.module replaces the module before any dependents load it.
+// We create the mock fn first, then set up the module mock.
 
 const mockExecFileSync = mock.fn();
 
+// Get original child_process for spread
+const origChildProcess = await import("node:child_process");
+
 mock.module("child_process", {
 	namedExports: {
+		...origChildProcess,
 		execFileSync: mockExecFileSync,
-		execSync: (await import("child_process")).execSync,
-		spawnSync: (await import("child_process")).spawnSync,
-		execFile: (await import("child_process")).execFile,
-		spawn: (await import("child_process")).spawn,
-		fork: (await import("child_process")).fork,
 	},
 });
 
+// Dynamic imports after mocking
 const {
 	buildIntegrationPlan,
 	detectBranchProtection,
@@ -48,15 +45,17 @@ const {
 	deactivateSupervisor,
 } = await import("../taskplane/supervisor.ts");
 
-import type {
-	IntegrationPlan,
-	IntegrationExecutor,
-	SummaryDeps,
-	SupervisorState,
-} from "../taskplane/supervisor.ts";
+type IntegrationPlan = import("../taskplane/supervisor.ts").IntegrationPlan;
+type IntegrationExecutor = import("../taskplane/supervisor.ts").IntegrationExecutor;
+type SummaryDeps = import("../taskplane/supervisor.ts").SummaryDeps;
+type SupervisorState = import("../taskplane/supervisor.ts").SupervisorState;
 
 const { freshOrchBatchState } = await import("../taskplane/types.ts");
-import type { OrchBatchRuntimeState } from "../taskplane/types.ts";
+type OrchBatchRuntimeState = import("../taskplane/types.ts").OrchBatchRuntimeState;
+
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -168,6 +167,7 @@ function configureMockExecFileSync(
 describe("17.x — Deterministic buildIntegrationPlan: branch→mode mapping", () => {
 	afterEach(() => {
 		mockExecFileSync.mock.resetCalls();
+		mockExecFileSync.mock.restore();
 	});
 
 	it("17.1: protected base branch → PR mode", () => {
@@ -246,6 +246,7 @@ describe("18.x — Auto mode: executor call order and message assertions", () =>
 
 	afterEach(() => {
 		mockExecFileSync.mock.resetCalls();
+		mockExecFileSync.mock.restore();
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
@@ -474,6 +475,7 @@ describe("19.x — Manual-mode guidance and branch-protection-detected default-t
 
 	afterEach(() => {
 		mockExecFileSync.mock.resetCalls();
+		mockExecFileSync.mock.restore();
 		rmSync(tmpDir, { recursive: true, force: true });
 	});
 
@@ -627,6 +629,7 @@ describe("19.x — Manual-mode guidance and branch-protection-detected default-t
 describe("20.x — detectBranchProtection deterministic tests", () => {
 	afterEach(() => {
 		mockExecFileSync.mock.resetCalls();
+		mockExecFileSync.mock.restore();
 	});
 
 	it("20.1: returns 'protected' when gh api returns 200", () => {

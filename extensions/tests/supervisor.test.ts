@@ -12,7 +12,7 @@
  *   7.x — Recovery classification: requiresConfirmation decision matrix
  *   8.x — Activation/deactivation: state lifecycle, freshSupervisorState
  *
- * Run: npx vitest run tests/supervisor.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/supervisor.test.ts
  */
 
 import { describe, it, beforeEach, afterEach, mock } from "node:test";

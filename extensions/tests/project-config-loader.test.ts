@@ -12,7 +12,7 @@
  *   4.x — Defaults, cloning, non-mutation, backward-compat wrappers
  *   5.x — Pointer-threaded config resolution (standard + flat layout)
  *
- * Run: npx vitest run tests/project-config-loader.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/project-config-loader.test.ts
  */
 
 import { describe, it, beforeEach, afterEach, mock } from "node:test";
