@@ -1,20 +1,25 @@
 # TP-070: Async I/O in Poll Loops + Dashboard Child Process — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-25
+**Current Step:** Step 1: Create Async Tmux Helper
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-03-26
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Identify all spawnSync("tmux") in polling paths
-- [ ] Identify all readFileSync/existsSync/statSync in polling paths
-- [ ] Determine dashboard server start mechanism
+**Status:** 🟩 Complete
+- [x] Identify all spawnSync("tmux") in polling paths
+- [x] Identify all readFileSync/existsSync/statSync in polling paths
+- [x] Determine dashboard server start mechanism
+
+**Preflight Findings:**
+- spawnSync("tmux") in polling: execution.ts (tmuxHasSession L225, tmuxKillSession L244, captureTmuxPaneTail L509, spawnLaneSession L748), merge.ts (spawnMergeSession L493, captureMergePaneOutput L2296)
+- Sync FS in polling: execution.ts pollUntilTaskComplete (existsSync for .DONE, readFileSync for STATUS.md, captureTmuxPaneTail), supervisor.ts readNewBytes (existsSync+statSync), readLockfile (existsSync+readFileSync), writeLockfile (writeFileSync+renameSync)
+- Dashboard: Already started as child_process.spawn from CLI (bin/taskplane.mjs cmdDashboard). NOT in-process in extension.ts. Step 5 is already done.
 
 ---
 
@@ -80,6 +85,10 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-25 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-26 00:35 | Task started | Extension-driven execution |
+| 2026-03-26 00:35 | Step 0 started | Preflight |
+| 2026-03-26 00:35 | Task started | Extension-driven execution |
+| 2026-03-26 00:35 | Step 0 started | Preflight |
 
 ---
 
