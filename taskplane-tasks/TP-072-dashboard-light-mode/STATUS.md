@@ -1,6 +1,6 @@
 # TP-072: Dashboard Light Mode with Theme Toggle — Status
 
-**Current Step:** Step 3: Persist Theme Preference at Project Level
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 1
@@ -36,10 +36,10 @@
 ---
 
 ### Step 3: Persist Theme Preference at Project Level
-**Status:** ⬜ Not Started
-- [ ] Add GET/POST /api/preferences endpoints to server.cjs
-- [ ] Load preference on dashboard start, save on toggle
-- [ ] Store in .pi/dashboard-preferences.json
+**Status:** ✅ Complete
+- [x] Add GET/POST /api/preferences endpoints to server.cjs
+- [x] Load preference on dashboard start, save on toggle
+- [x] Store in .pi/dashboard-preferences.json
 
 ---
 
