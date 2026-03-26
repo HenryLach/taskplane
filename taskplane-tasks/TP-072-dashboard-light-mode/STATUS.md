@@ -1,6 +1,6 @@
 # TP-072: Dashboard Light Mode with Theme Toggle — Status
 
-**Current Step:** Step 1: Refactor CSS for Theme Variables
+**Current Step:** Step 2: Add Theme Toggle to Header
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 1
@@ -20,10 +20,10 @@
 ---
 
 ### Step 1: Refactor CSS for Theme Variables
-**Status:** ⬜ Not Started
-- [ ] Create dark theme variable set (current colors)
-- [ ] Create light theme variable set
-- [ ] Convert any hardcoded colors to CSS variables
+**Status:** ✅ Complete
+- [x] Create dark theme variable set (current colors)
+- [x] Create light theme variable set
+- [x] Convert any hardcoded colors to CSS variables
 
 ---
 
@@ -73,6 +73,7 @@
 | 2026-03-26 13:20 | Step 0 started | Preflight |
 | 2026-03-26 13:20 | Task started | Extension-driven execution |
 | 2026-03-26 13:20 | Step 0 started | Preflight |
+| 2026-03-26 13:23 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
 
 ---
 
