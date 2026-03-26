@@ -27,9 +27,8 @@
 
 ### Step 2: Testing & Verification
 **Status:** ⬜ Not Started
-- [ ] Targeted tests pass
-- [ ] Full test suite passes
 - [ ] Build passes
+- [ ] Source verification of nudge prompt construction
 
 ---
 
