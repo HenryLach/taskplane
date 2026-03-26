@@ -1,18 +1,20 @@
 /**
- * Engine Worker Thread Entry Point (TP-071)
+ * Engine Child Process Entry Point (TP-071)
  *
  * This module serves two purposes:
  * 1. Exports types and helpers used by extension.ts (main thread)
- * 2. When executed as a worker_threads Worker, runs the engine in a separate V8 isolate
+ * 2. When forked as a child process, runs the engine in a separate Node.js process
+ *
+ * Uses child_process.fork() instead of worker_threads because Node v25's
+ * default --experimental-strip-types rejects .ts files inside node_modules.
+ * Fork creates a new process where --experimental-transform-types takes effect.
  *
  * Communication:
- * - Worker → Main: postMessage for notify, monitor-update, engine-event, state-sync, complete, error
- * - Main → Worker: postMessage for pause/resume/abort control
+ * - Child → Parent: process.send() for notify, monitor-update, engine-event, state-sync, complete, error
+ * - Parent → Child: child.send() for init, pause, resume, abort
  *
  * @module orch/engine-worker
  */
-import { parentPort, workerData, isMainThread } from "worker_threads";
-
 import type {
 	EngineEvent,
 	MonitorState,
@@ -186,104 +188,111 @@ export function applySerializedState(
 	batchState.errors = [...serialized.errors];
 }
 
-// ── Worker main (only runs when loaded as a worker thread) ───────────
+// ── Engine main (runs when launched as a forked child process) ───────
 
-// Guard: only run worker main when launched as an engine worker (not vitest threads).
-// In vitest --pool=threads, isMainThread=false and parentPort exists, but
-// workerData won't have the engine-specific shape.
-if (!isMainThread && parentPort && workerData?.engineWorker === true) {
-	// Dynamic imports — only loaded in worker context to avoid circular
-	// dependencies when this module is imported from extension.ts
-	const { executeOrchBatch } = await import("./engine.ts");
-	const { resumeOrchBatch } = await import("./resume.ts");
-	const { freshOrchBatchState } = await import("./types.ts");
+// Guard: only run engine main when launched via fork() with the sentinel env var.
+if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "function") {
+	const send = (msg: WorkerToMainMessage) => process.send!(msg);
 
-	const data = workerData as EngineWorkerData;
-	const port = parentPort;
+	// Wait for the init message carrying workerData, then start the engine.
+	process.once("message", async (initMsg: { type: string; data: EngineWorkerData }) => {
+		if (initMsg?.type !== "init") return;
 
-	// Create a fresh batch state for this worker
-	const batchState: OrchBatchRuntimeState = freshOrchBatchState();
-	batchState.phase = "launching";
-	batchState.startedAt = Date.now();
+		// Dynamic imports — only loaded in engine context to avoid circular
+		// dependencies when this module is imported from extension.ts
+		const { executeOrchBatch } = await import("./engine.ts");
+		const { resumeOrchBatch } = await import("./resume.ts");
+		const { freshOrchBatchState } = await import("./types.ts");
 
-	// Deserialize workspace config
-	const wsConfig = deserializeWorkspaceConfig(data.workspaceConfig);
+		const data = initMsg.data;
 
-	// ── Control signal listener ──────────────────────────────────
-	// Main thread sends pause/resume/abort signals via postMessage.
-	// We apply them to the in-worker batchState.pauseSignal.
-	port.on("message", (msg: WorkerInMessage) => {
-		switch (msg.type) {
-			case "pause":
-				batchState.pauseSignal.paused = true;
-				break;
-			case "resume":
-				batchState.pauseSignal.paused = false;
-				break;
-			case "abort":
-				batchState.pauseSignal.paused = true;
-				break;
-		}
-	});
+		// Create a fresh batch state for this process
+		const batchState: OrchBatchRuntimeState = freshOrchBatchState();
+		batchState.phase = "launching";
+		batchState.startedAt = Date.now();
 
-	// ── Callback factories (replace ctx-dependent callbacks) ─────
-	const onNotify = (message: string, level: "info" | "warning" | "error") => {
-		port.postMessage({ type: "notify", msg: message, level } satisfies WorkerToMainMessage);
-		// Sync batch state on every notify (lightweight — just the summary fields)
-		port.postMessage({ type: "state-sync", state: serializeBatchState(batchState) } satisfies WorkerToMainMessage);
-	};
+		// Deserialize workspace config
+		const wsConfig = deserializeWorkspaceConfig(data.workspaceConfig);
 
-	const onMonitorUpdate = (state: MonitorState) => {
-		port.postMessage({ type: "monitor-update", state } satisfies WorkerToMainMessage);
-	};
-
-	const onEngineEvent = (event: EngineEvent) => {
-		port.postMessage({ type: "engine-event", event } satisfies WorkerToMainMessage);
-	};
-
-	// ── Execute engine ───────────────────────────────────────────
-	const enginePromise = data.mode === "resume"
-		? resumeOrchBatch(
-			data.orchConfig,
-			data.runnerConfig,
-			data.cwd,
-			batchState,
-			onNotify,
-			onMonitorUpdate,
-			wsConfig,
-			data.workspaceRoot,
-			data.agentRoot,
-			data.force ?? false,
-		)
-		: executeOrchBatch(
-			data.args ?? "",
-			data.orchConfig,
-			data.runnerConfig,
-			data.cwd,
-			batchState,
-			onNotify,
-			onMonitorUpdate,
-			wsConfig,
-			data.workspaceRoot,
-			data.agentRoot,
-			onEngineEvent,
-		);
-
-	enginePromise
-		.then(() => {
-			// Final state sync + completion signal
-			const finalState = serializeBatchState(batchState);
-			port.postMessage({ type: "complete", state: finalState } satisfies WorkerToMainMessage);
-		})
-		.catch((err: unknown) => {
-			const errMsg = err instanceof Error ? err.message : String(err);
-			// Ensure batch state reflects the failure
-			if (batchState.phase !== "completed" && batchState.phase !== "failed") {
-				batchState.phase = "failed";
-				batchState.endedAt = Date.now();
-				batchState.errors.push(`Unhandled engine error: ${errMsg}`);
+		// ── Control signal listener ──────────────────────────────────
+		// Main process sends pause/resume/abort signals via IPC.
+		// We apply them to the in-process batchState.pauseSignal.
+		process.on("message", (msg: WorkerInMessage) => {
+			switch (msg.type) {
+				case "pause":
+					batchState.pauseSignal.paused = true;
+					break;
+				case "resume":
+					batchState.pauseSignal.paused = false;
+					break;
+				case "abort":
+					batchState.pauseSignal.paused = true;
+					break;
 			}
-			port.postMessage({ type: "state-sync", state: serializeBatchState(batchState) } satisfies WorkerToMainMessage);
-			port.postMessage({ type: "error", message: errMsg } satisfies WorkerToMainMessage);
 		});
+
+		// ── Callback factories (replace ctx-dependent callbacks) ─────
+		const onNotify = (message: string, level: "info" | "warning" | "error") => {
+			send({ type: "notify", msg: message, level });
+			// Sync batch state on every notify (lightweight — just the summary fields)
+			send({ type: "state-sync", state: serializeBatchState(batchState) });
+		};
+
+		const onMonitorUpdate = (state: MonitorState) => {
+			send({ type: "monitor-update", state });
+		};
+
+		const onEngineEvent = (event: EngineEvent) => {
+			send({ type: "engine-event", event });
+		};
+
+		// ── Execute engine ───────────────────────────────────────────
+		const enginePromise = data.mode === "resume"
+			? resumeOrchBatch(
+				data.orchConfig,
+				data.runnerConfig,
+				data.cwd,
+				batchState,
+				onNotify,
+				onMonitorUpdate,
+				wsConfig,
+				data.workspaceRoot,
+				data.agentRoot,
+				data.force ?? false,
+			)
+			: executeOrchBatch(
+				data.args ?? "",
+				data.orchConfig,
+				data.runnerConfig,
+				data.cwd,
+				batchState,
+				onNotify,
+				onMonitorUpdate,
+				wsConfig,
+				data.workspaceRoot,
+				data.agentRoot,
+				onEngineEvent,
+			);
+
+		enginePromise
+			.then(() => {
+				// Final state sync + completion signal
+				const finalState = serializeBatchState(batchState);
+				send({ type: "complete", state: finalState });
+				// Disconnect IPC so the child process can exit cleanly
+				process.disconnect?.();
+			})
+			.catch((err: unknown) => {
+				const errMsg = err instanceof Error ? err.message : String(err);
+				// Ensure batch state reflects the failure
+				if (batchState.phase !== "completed" && batchState.phase !== "failed") {
+					batchState.phase = "failed";
+					batchState.endedAt = Date.now();
+					batchState.errors.push(`Unhandled engine error: ${errMsg}`);
+				}
+				send({ type: "state-sync", state: serializeBatchState(batchState) });
+				send({ type: "error", message: errMsg });
+				process.disconnect?.();
+			});
+	});
 }
