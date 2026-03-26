@@ -1,20 +1,20 @@
 # TP-075: Migrate Mock Tests + Remove Vitest — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read 5 mock-heavy files and understand mock patterns
-- [ ] Verify mock.module() availability in Node.js
-- [ ] Identify any unmappable vi.mock patterns
+**Status:** ✅ Complete
+- [x] Read 5 mock-heavy files and understand mock patterns
+- [x] Verify mock.module() availability in Node.js
+- [x] Identify any unmappable vi.mock patterns — ALL patterns mappable with --experimental-test-module-mocks
 
 ---
 
@@ -69,6 +69,10 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-26 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-26 20:54 | Task started | Extension-driven execution |
+| 2026-03-26 20:54 | Step 0 started | Preflight |
+| 2026-03-26 20:54 | Task started | Extension-driven execution |
+| 2026-03-26 20:54 | Step 0 started | Preflight |
 
 ---
 
