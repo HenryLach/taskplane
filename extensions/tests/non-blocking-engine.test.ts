@@ -77,9 +77,9 @@ describe("1.x — startBatchAsync: non-blocking handler pattern", () => {
 		expect(fnBody).toContain("setTimeout(");
 	});
 
-	it("1.2: /orch handler uses startBatchAsync via doOrchStart (fire-and-forget, no await on engine)", () => {
+	it("1.2: /orch handler uses startBatchInWorker via doOrchStart (worker thread, no await on engine)", () => {
 		const extSource = readSource("extension.ts");
-		// The /orch handler must delegate to doOrchStart which calls startBatchAsync
+		// The /orch handler must delegate to doOrchStart which calls startBatchInWorker
 		const orchHandler = extSource.substring(
 			extSource.indexOf('registerCommand("orch"'),
 			extSource.indexOf('registerCommand("orch-plan"'),
@@ -87,22 +87,22 @@ describe("1.x — startBatchAsync: non-blocking handler pattern", () => {
 		expect(orchHandler).toContain("doOrchStart(");
 		// Must NOT await executeOrchBatch directly in the handler
 		expect(orchHandler).not.toContain("await executeOrchBatch(");
-		// doOrchStart must contain startBatchAsync
+		// doOrchStart must contain startBatchInWorker (TP-071: worker thread)
 		const doOrchStartBody = extSource.substring(
 			extSource.indexOf("function doOrchStart("),
 			extSource.indexOf("function doOrchStatus("),
 		);
-		expect(doOrchStartBody).toContain("startBatchAsync(");
+		expect(doOrchStartBody).toContain("startBatchInWorker(");
 	});
 
-	it("1.3: /orch-resume handler uses startBatchAsync (fire-and-forget)", () => {
+	it("1.3: /orch-resume handler uses startBatchInWorker (worker thread)", () => {
 		const extSource = readSource("extension.ts");
 		// Logic lives in doOrchResume helper (TP-053 refactor)
 		const resumeHelper = extSource.substring(
 			extSource.indexOf("function doOrchResume("),
 			extSource.indexOf("function doOrchAbort("),
 		);
-		expect(resumeHelper).toContain("startBatchAsync(");
+		expect(resumeHelper).toContain("startBatchInWorker(");
 		// Must NOT await resumeOrchBatch directly
 		expect(resumeHelper).not.toContain("await resumeOrchBatch(");
 	});
@@ -130,16 +130,16 @@ describe("1.x — startBatchAsync: non-blocking handler pattern", () => {
 		expect(widgetCalls!.length).toBeGreaterThanOrEqual(2);
 	});
 
-	it("1.6: doOrchStart sets phase to 'launching' synchronously before startBatchAsync", () => {
+	it("1.6: doOrchStart sets phase to 'launching' synchronously before startBatchInWorker", () => {
 		const extSource = readSource("extension.ts");
 		// The launching logic now lives in doOrchStart
 		const doOrchStartBody = extSource.substring(
 			extSource.indexOf("function doOrchStart("),
 			extSource.indexOf("function doOrchStatus("),
 		);
-		// Must set launching phase before calling startBatchAsync
+		// Must set launching phase before calling startBatchInWorker
 		const launchingIdx = doOrchStartBody.indexOf('orchBatchState.phase = "launching"');
-		const startAsyncIdx = doOrchStartBody.indexOf("startBatchAsync(");
+		const startAsyncIdx = doOrchStartBody.indexOf("startBatchInWorker(");
 		expect(launchingIdx).not.toBe(-1);
 		expect(startAsyncIdx).not.toBe(-1);
 		expect(launchingIdx).toBeLessThan(startAsyncIdx);
@@ -610,17 +610,17 @@ describe("6.x — /orch-resume early-return paths reset phase from 'launching' t
 		expect(r006Matches!.length).toBeGreaterThanOrEqual(4);
 	});
 
-	it("6.6: doOrchStart sets 'launching' phase and startedAt before calling startBatchAsync", () => {
+	it("6.6: doOrchStart sets 'launching' phase and startedAt before calling startBatchInWorker", () => {
 		const extSource = readSource("extension.ts");
 		// The launching logic now lives in doOrchStart
 		const doOrchStartBody = extSource.substring(
 			extSource.indexOf("function doOrchStart("),
 			extSource.indexOf("function doOrchStatus("),
 		);
-		// Both launching phase AND startedAt must be set before startBatchAsync
+		// Both launching phase AND startedAt must be set before startBatchInWorker
 		const launchPhaseIdx = doOrchStartBody.indexOf('orchBatchState.phase = "launching"');
 		const startedAtIdx = doOrchStartBody.indexOf("orchBatchState.startedAt = Date.now()");
-		const startAsyncIdx = doOrchStartBody.indexOf("startBatchAsync(");
+		const startAsyncIdx = doOrchStartBody.indexOf("startBatchInWorker(");
 		expect(launchPhaseIdx).not.toBe(-1);
 		expect(startedAtIdx).not.toBe(-1);
 		expect(startAsyncIdx).not.toBe(-1);
@@ -628,7 +628,7 @@ describe("6.x — /orch-resume early-return paths reset phase from 'launching' t
 		expect(startedAtIdx).toBeLessThan(startAsyncIdx);
 	});
 
-	it("6.7: /orch-resume handler sets 'launching' phase before calling startBatchAsync", () => {
+	it("6.7: /orch-resume handler sets 'launching' phase before calling startBatchInWorker", () => {
 		const extSource = readSource("extension.ts");
 		// Logic lives in doOrchResume helper (TP-053 refactor)
 		const resumeHelper = extSource.substring(
@@ -636,7 +636,7 @@ describe("6.x — /orch-resume early-return paths reset phase from 'launching' t
 			extSource.indexOf("function doOrchAbort("),
 		);
 		const launchPhaseIdx = resumeHelper.indexOf('orchBatchState.phase = "launching"');
-		const startAsyncIdx = resumeHelper.indexOf("startBatchAsync(");
+		const startAsyncIdx = resumeHelper.indexOf("startBatchInWorker(");
 		expect(launchPhaseIdx).not.toBe(-1);
 		expect(startAsyncIdx).not.toBe(-1);
 		expect(launchPhaseIdx).toBeLessThan(startAsyncIdx);

@@ -1,29 +1,34 @@
 /**
- * Engine Worker Thread Entry Point
+ * Engine Worker Thread Entry Point (TP-071)
  *
- * Runs the orchestrator engine (executeOrchBatch / resumeOrchBatch) in a
- * Node.js worker_thread so the main thread stays free for TUI interaction
- * and supervisor agent LLM calls.
+ * This module serves two purposes:
+ * 1. Exports types and helpers used by extension.ts (main thread)
+ * 2. When executed as a worker_threads Worker, runs the engine in a separate V8 isolate
  *
  * Communication:
- *   Worker → Main: postMessage({ type: "notify"|"monitor-update"|"engine-event"|"state-sync"|"complete"|"error", ... })
- *   Main → Worker: postMessage({ type: "pause"|"unpause" })
+ * - Worker → Main: postMessage for notify, monitor-update, engine-event, state-sync, complete, error
+ * - Main → Worker: postMessage for pause/resume/abort control
  *
  * @module orch/engine-worker
- * @since TP-071
  */
-import { parentPort, workerData } from "worker_threads";
+import { parentPort, workerData, isMainThread } from "worker_threads";
 
-import { executeOrchBatch } from "./engine.ts";
-import { resumeOrchBatch } from "./resume.ts";
-import type { EngineEvent, MonitorState, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, WorkspaceConfig, WorkspaceRepoConfig } from "./types.ts";
-import { freshOrchBatchState } from "./types.ts";
-import type { MonitorUpdateCallback } from "./execution.ts";
-import type { EngineEventCallback } from "./types.ts";
+import type {
+	EngineEvent,
+	MonitorState,
+	OrchBatchPhase,
+	OrchBatchRuntimeState,
+	OrchestratorConfig,
+	TaskRunnerConfig,
+	WorkspaceConfig,
+	WorkspaceRepoConfig,
+} from "./types.ts";
 
-// ── Message Types ────────────────────────────────────────────────────
+// ── Types for worker <-> main thread messages ────────────────────────
 
-/** Messages sent FROM the worker TO the main thread */
+/**
+ * Messages sent FROM the worker TO the main thread.
+ */
 export type WorkerToMainMessage =
 	| { type: "notify"; msg: string; level: "info" | "warning" | "error" }
 	| { type: "monitor-update"; state: MonitorState }
@@ -32,112 +37,80 @@ export type WorkerToMainMessage =
 	| { type: "complete"; state: SerializedBatchState }
 	| { type: "error"; message: string };
 
-/** Messages sent FROM the main thread TO the worker */
-export type MainToWorkerMessage =
+/**
+ * Messages sent FROM the main thread TO the worker.
+ */
+export type WorkerInMessage =
 	| { type: "pause" }
-	| { type: "unpause" };
-
-// ── Serialization ────────────────────────────────────────────────────
+	| { type: "resume" }
+	| { type: "abort" };
 
 /**
- * Serialized form of OrchBatchRuntimeState that survives structured clone.
- * Sets become arrays, Maps become arrays of entries.
+ * Serializable form of OrchBatchRuntimeState fields synced to main thread.
+ * Only includes fields the main thread needs for display/state tracking.
  */
 export interface SerializedBatchState {
-	phase: OrchBatchRuntimeState["phase"];
+	phase: OrchBatchPhase;
 	batchId: string;
 	baseBranch: string;
 	orchBranch: string;
-	mode: OrchBatchRuntimeState["mode"];
+	mode: string;
 	currentWaveIndex: number;
 	totalWaves: number;
-	startedAt: number;
-	endedAt: number | null;
 	totalTasks: number;
 	succeededTasks: number;
 	failedTasks: number;
 	skippedTasks: number;
 	blockedTasks: number;
+	startedAt: number;
+	endedAt: number | null;
 	errors: string[];
-	/** blockedTaskIds as array (Set in runtime) */
-	blockedTaskIds: string[];
-	/** Shallow-serialized wave results */
-	waveResults: OrchBatchRuntimeState["waveResults"];
-	/** Shallow-serialized current lanes */
-	currentLanes: OrchBatchRuntimeState["currentLanes"];
-	/** Shallow-serialized merge results */
-	mergeResults: OrchBatchRuntimeState["mergeResults"];
-	/** Resilience state */
-	resilience?: OrchBatchRuntimeState["resilience"];
-	/** Diagnostics state */
-	diagnostics?: OrchBatchRuntimeState["diagnostics"];
-}
-
-/** Serialize OrchBatchRuntimeState for postMessage transfer. */
-export function serializeBatchState(state: OrchBatchRuntimeState): SerializedBatchState {
-	return {
-		phase: state.phase,
-		batchId: state.batchId,
-		baseBranch: state.baseBranch,
-		orchBranch: state.orchBranch,
-		mode: state.mode,
-		currentWaveIndex: state.currentWaveIndex,
-		totalWaves: state.totalWaves,
-		startedAt: state.startedAt,
-		endedAt: state.endedAt,
-		totalTasks: state.totalTasks,
-		succeededTasks: state.succeededTasks,
-		failedTasks: state.failedTasks,
-		skippedTasks: state.skippedTasks,
-		blockedTasks: state.blockedTasks,
-		errors: [...state.errors],
-		blockedTaskIds: [...state.blockedTaskIds],
-		waveResults: state.waveResults,
-		currentLanes: state.currentLanes,
-		mergeResults: state.mergeResults,
-		resilience: state.resilience,
-		diagnostics: state.diagnostics,
-	};
-}
-
-/** Apply a serialized state snapshot onto a live OrchBatchRuntimeState. */
-export function applySerializedState(target: OrchBatchRuntimeState, src: SerializedBatchState): void {
-	target.phase = src.phase;
-	target.batchId = src.batchId;
-	target.baseBranch = src.baseBranch;
-	target.orchBranch = src.orchBranch;
-	target.mode = src.mode;
-	target.currentWaveIndex = src.currentWaveIndex;
-	target.totalWaves = src.totalWaves;
-	target.startedAt = src.startedAt;
-	target.endedAt = src.endedAt;
-	target.totalTasks = src.totalTasks;
-	target.succeededTasks = src.succeededTasks;
-	target.failedTasks = src.failedTasks;
-	target.skippedTasks = src.skippedTasks;
-	target.blockedTasks = src.blockedTasks;
-	target.errors = src.errors;
-	target.blockedTaskIds = new Set(src.blockedTaskIds);
-	target.waveResults = src.waveResults;
-	target.currentLanes = src.currentLanes;
-	target.mergeResults = src.mergeResults;
-	target.resilience = src.resilience;
-	target.diagnostics = src.diagnostics;
 }
 
 /**
- * Serialized WorkspaceConfig for workerData transfer.
- * Map<string, WorkspaceRepoConfig> → Array<[string, WorkspaceRepoConfig]>
+ * Serializable form of WorkspaceConfig (Map → array of entries).
  */
 export interface SerializedWorkspaceConfig {
-	mode: WorkspaceConfig["mode"];
+	mode: string;
 	repos: Array<[string, WorkspaceRepoConfig]>;
 	routing: WorkspaceConfig["routing"];
 	configPath: string;
 }
 
-/** Serialize WorkspaceConfig for structured clone. */
-export function serializeWorkspaceConfig(config: WorkspaceConfig): SerializedWorkspaceConfig {
+/**
+ * workerData shape passed from the main thread.
+ */
+export interface EngineWorkerData {
+	/** "execute" for new batch, "resume" for resume */
+	mode: "execute" | "resume";
+	/** User arguments (target string) — only for "execute" mode */
+	args?: string;
+	/** Orchestrator configuration */
+	orchConfig: OrchestratorConfig;
+	/** Task runner configuration */
+	runnerConfig: TaskRunnerConfig;
+	/** Repository root (cwd) */
+	cwd: string;
+	/** Workspace configuration (serialized) — null for repo mode */
+	workspaceConfig?: SerializedWorkspaceConfig | null;
+	/** Workspace root directory */
+	workspaceRoot?: string;
+	/** Agent root directory */
+	agentRoot?: string;
+	/** Force flag for resume */
+	force?: boolean;
+}
+
+// ── Serialization helpers (used by both main thread and worker) ──────
+
+/**
+ * Serialize WorkspaceConfig for cross-thread transfer.
+ * Converts the Map to an array of entries.
+ */
+export function serializeWorkspaceConfig(
+	config: WorkspaceConfig | null | undefined,
+): SerializedWorkspaceConfig | null {
+	if (!config) return null;
 	return {
 		mode: config.mode,
 		repos: [...config.repos.entries()],
@@ -146,119 +119,146 @@ export function serializeWorkspaceConfig(config: WorkspaceConfig): SerializedWor
 	};
 }
 
-/** Deserialize WorkspaceConfig from workerData. */
-export function deserializeWorkspaceConfig(data: SerializedWorkspaceConfig): WorkspaceConfig {
+/**
+ * Reconstruct WorkspaceConfig from serialized form.
+ */
+export function deserializeWorkspaceConfig(
+	serialized: SerializedWorkspaceConfig | null | undefined,
+): WorkspaceConfig | null {
+	if (!serialized) return null;
 	return {
-		mode: data.mode,
-		repos: new Map(data.repos),
-		routing: data.routing,
-		configPath: data.configPath,
+		mode: serialized.mode as WorkspaceConfig["mode"],
+		repos: new Map(serialized.repos),
+		routing: serialized.routing,
+		configPath: serialized.configPath,
 	};
 }
 
-// ── Worker Data Contract ─────────────────────────────────────────────
-
-/** Data passed to the worker via workerData. Must be structured-clone-safe. */
-export interface EngineWorkerData {
-	/** "execute" for /orch, "resume" for /orch-resume */
-	mode: "execute" | "resume";
-	/** User args (target) for executeOrchBatch */
-	args: string;
-	/** Orchestrator configuration */
-	orchConfig: OrchestratorConfig;
-	/** Task runner configuration */
-	runnerConfig: TaskRunnerConfig;
-	/** Current working directory (repo root) */
-	cwd: string;
-	/** Workspace config (null if repo mode) */
-	workspaceConfig: SerializedWorkspaceConfig | null;
-	/** Workspace root path */
-	workspaceRoot?: string;
-	/** Agent root path */
-	agentRoot?: string;
-	/** Force flag for resume */
-	force?: boolean;
+/**
+ * Extract serializable batch state for sync back to main thread.
+ */
+function serializeBatchState(state: OrchBatchRuntimeState): SerializedBatchState {
+	return {
+		phase: state.phase,
+		batchId: state.batchId,
+		baseBranch: state.baseBranch,
+		orchBranch: state.orchBranch,
+		mode: state.mode,
+		currentWaveIndex: state.currentWaveIndex,
+		totalWaves: state.totalWaves,
+		totalTasks: state.totalTasks,
+		succeededTasks: state.succeededTasks,
+		failedTasks: state.failedTasks,
+		skippedTasks: state.skippedTasks,
+		blockedTasks: state.blockedTasks,
+		startedAt: state.startedAt,
+		endedAt: state.endedAt,
+		errors: [...state.errors],
+	};
 }
 
-// ── Worker Entry Point ───────────────────────────────────────────────
+/**
+ * Apply serialized batch state from worker to main-thread batch state.
+ *
+ * Updates only the fields that the worker thread tracks — preserves
+ * main-thread-only fields like pauseSignal, dependencyGraph, etc.
+ */
+export function applySerializedState(
+	batchState: OrchBatchRuntimeState,
+	serialized: SerializedBatchState,
+): void {
+	batchState.phase = serialized.phase;
+	batchState.batchId = serialized.batchId;
+	batchState.baseBranch = serialized.baseBranch;
+	batchState.orchBranch = serialized.orchBranch;
+	batchState.mode = serialized.mode as OrchBatchRuntimeState["mode"];
+	batchState.currentWaveIndex = serialized.currentWaveIndex;
+	batchState.totalWaves = serialized.totalWaves;
+	batchState.totalTasks = serialized.totalTasks;
+	batchState.succeededTasks = serialized.succeededTasks;
+	batchState.failedTasks = serialized.failedTasks;
+	batchState.skippedTasks = serialized.skippedTasks;
+	batchState.blockedTasks = serialized.blockedTasks;
+	batchState.startedAt = serialized.startedAt;
+	batchState.endedAt = serialized.endedAt;
+	batchState.errors = [...serialized.errors];
+}
 
-if (parentPort) {
-	const port = parentPort;
+// ── Worker main (only runs when loaded as a worker thread) ───────────
+
+if (!isMainThread && parentPort) {
+	// Dynamic imports — only loaded in worker context to avoid circular
+	// dependencies when this module is imported from extension.ts
+	const { executeOrchBatch } = await import("./engine.ts");
+	const { resumeOrchBatch } = await import("./resume.ts");
+	const { freshOrchBatchState } = await import("./types.ts");
+
 	const data = workerData as EngineWorkerData;
+	const port = parentPort;
 
-	// Create a fresh batch state for the worker. The main thread keeps
-	// its own copy, updated via state-sync messages.
-	const batchState = freshOrchBatchState();
+	// Create a fresh batch state for this worker
+	const batchState: OrchBatchRuntimeState = freshOrchBatchState();
 	batchState.phase = "launching";
 	batchState.startedAt = Date.now();
 
-	// Listen for control messages from main thread
-	port.on("message", (msg: MainToWorkerMessage) => {
+	// Deserialize workspace config
+	const wsConfig = deserializeWorkspaceConfig(data.workspaceConfig);
+
+	// ── Control signal listener ──────────────────────────────────
+	// Main thread sends pause/resume/abort signals via postMessage.
+	// We apply them to the in-worker batchState.pauseSignal.
+	port.on("message", (msg: WorkerInMessage) => {
 		switch (msg.type) {
 			case "pause":
 				batchState.pauseSignal.paused = true;
 				break;
-			case "unpause":
+			case "resume":
 				batchState.pauseSignal.paused = false;
+				break;
+			case "abort":
+				batchState.pauseSignal.paused = true;
 				break;
 		}
 	});
 
-	// Build callbacks that post messages to main thread
+	// ── Callback factories (replace ctx-dependent callbacks) ─────
 	const onNotify = (message: string, level: "info" | "warning" | "error") => {
 		port.postMessage({ type: "notify", msg: message, level } satisfies WorkerToMainMessage);
+		// Sync batch state on every notify (lightweight — just the summary fields)
+		port.postMessage({ type: "state-sync", state: serializeBatchState(batchState) } satisfies WorkerToMainMessage);
 	};
 
-	const onMonitorUpdate: MonitorUpdateCallback = (state: MonitorState) => {
+	const onMonitorUpdate = (state: MonitorState) => {
 		port.postMessage({ type: "monitor-update", state } satisfies WorkerToMainMessage);
 	};
 
-	const onEngineEvent: EngineEventCallback = (event: EngineEvent) => {
+	const onEngineEvent = (event: EngineEvent) => {
 		port.postMessage({ type: "engine-event", event } satisfies WorkerToMainMessage);
 	};
 
-	// State sync: wrap the onNotify to also periodically sync state.
-	// We send state-sync after each notify (which happens at each significant
-	// engine transition) to keep the main thread's copy up to date.
-	const onNotifyWithSync = (message: string, level: "info" | "warning" | "error") => {
-		onNotify(message, level);
-		port.postMessage({ type: "state-sync", state: serializeBatchState(batchState) } satisfies WorkerToMainMessage);
-	};
-
-	const onMonitorUpdateWithSync: MonitorUpdateCallback = (state: MonitorState) => {
-		onMonitorUpdate(state);
-		// Also send state-sync since monitor updates can trigger state changes
-		port.postMessage({ type: "state-sync", state: serializeBatchState(batchState) } satisfies WorkerToMainMessage);
-	};
-
-	// Deserialize workspace config if present
-	const workspaceConfig = data.workspaceConfig
-		? deserializeWorkspaceConfig(data.workspaceConfig)
-		: undefined;
-
-	// Run the engine
+	// ── Execute engine ───────────────────────────────────────────
 	const enginePromise = data.mode === "resume"
 		? resumeOrchBatch(
 			data.orchConfig,
 			data.runnerConfig,
 			data.cwd,
 			batchState,
-			onNotifyWithSync,
-			onMonitorUpdateWithSync,
-			workspaceConfig,
+			onNotify,
+			onMonitorUpdate,
+			wsConfig,
 			data.workspaceRoot,
 			data.agentRoot,
 			data.force ?? false,
 		)
 		: executeOrchBatch(
-			data.args,
+			data.args ?? "",
 			data.orchConfig,
 			data.runnerConfig,
 			data.cwd,
 			batchState,
-			onNotifyWithSync,
-			onMonitorUpdateWithSync,
-			workspaceConfig,
+			onNotify,
+			onMonitorUpdate,
+			wsConfig,
 			data.workspaceRoot,
 			data.agentRoot,
 			onEngineEvent,
@@ -266,17 +266,19 @@ if (parentPort) {
 
 	enginePromise
 		.then(() => {
-			port.postMessage({ type: "complete", state: serializeBatchState(batchState) } satisfies WorkerToMainMessage);
+			// Final state sync + completion signal
+			const finalState = serializeBatchState(batchState);
+			port.postMessage({ type: "complete", state: finalState } satisfies WorkerToMainMessage);
 		})
 		.catch((err: unknown) => {
 			const errMsg = err instanceof Error ? err.message : String(err);
-			// Update state before sending
+			// Ensure batch state reflects the failure
 			if (batchState.phase !== "completed" && batchState.phase !== "failed") {
 				batchState.phase = "failed";
 				batchState.endedAt = Date.now();
 				batchState.errors.push(`Unhandled engine error: ${errMsg}`);
 			}
+			port.postMessage({ type: "state-sync", state: serializeBatchState(batchState) } satisfies WorkerToMainMessage);
 			port.postMessage({ type: "error", message: errMsg } satisfies WorkerToMainMessage);
-			port.postMessage({ type: "complete", state: serializeBatchState(batchState) } satisfies WorkerToMainMessage);
 		});
 }

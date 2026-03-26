@@ -491,7 +491,7 @@ describe("12.x — /orch with args: existing behavior preserved", () => {
 		expect(orchHandler).toContain("doOrchStart(");
 	});
 
-	it("12.2: /orch with args delegates to doOrchStart which calls startBatchAsync", () => {
+	it("12.2: /orch with args delegates to doOrchStart which calls startBatchInWorker", () => {
 		const extSource = readSource("extension.ts");
 		const orchHandler = extSource.substring(
 			extSource.indexOf('registerCommand("orch"'),
@@ -506,21 +506,21 @@ describe("12.x — /orch with args: existing behavior preserved", () => {
 		const doOrchStartIdx = orchHandler.indexOf("doOrchStart(", noArgsEnd);
 		expect(doOrchStartIdx).toBeGreaterThan(noArgsEnd);
 
-		// The doOrchStart helper itself calls startBatchAsync
+		// The doOrchStart helper itself calls startBatchInWorker (TP-071: worker thread)
 		const doOrchStartBody = extSource.substring(
 			extSource.indexOf("async function doOrchStart("),
 		);
-		expect(doOrchStartBody).toContain("startBatchAsync(");
+		expect(doOrchStartBody).toContain("startBatchInWorker(");
 	});
 
 	it("12.3: doOrchStart helper activates supervisor AFTER batch start (not routing)", () => {
 		const extSource = readSource("extension.ts");
 
-		// The doOrchStart helper should call startBatchAsync then activateSupervisor
+		// The doOrchStart helper should call startBatchInWorker then activateSupervisor (TP-071)
 		const doOrchStartBody = extSource.substring(
 			extSource.indexOf("async function doOrchStart("),
 		);
-		const startBatchIdx = doOrchStartBody.indexOf("startBatchAsync(");
+		const startBatchIdx = doOrchStartBody.indexOf("startBatchInWorker(");
 		const activateAfterBatch = doOrchStartBody.indexOf("activateSupervisor(", startBatchIdx);
 		expect(activateAfterBatch).toBeGreaterThan(startBatchIdx);
 	});

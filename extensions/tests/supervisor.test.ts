@@ -300,7 +300,7 @@ describe("1.x — Supervisor prompt injection in extension.ts", () => {
 		expect(extSource).toContain("registerSupervisorPromptHook");
 	});
 
-	it("1.13: doOrchStart calls activateSupervisor after startBatchAsync", () => {
+	it("1.13: doOrchStart calls activateSupervisor after startBatchInWorker", () => {
 		const extSource = readSource("extension.ts");
 		// The batch-start logic now lives in doOrchStart
 		const doOrchStartBody = extSource.substring(
@@ -308,8 +308,8 @@ describe("1.x — Supervisor prompt injection in extension.ts", () => {
 			extSource.indexOf("function doOrchStatus("),
 		);
 		expect(doOrchStartBody).toContain("activateSupervisor");
-		// Should be after startBatchAsync
-		const startAsyncIdx = doOrchStartBody.indexOf("startBatchAsync(");
+		// Should be after startBatchInWorker (TP-071: worker thread)
+		const startAsyncIdx = doOrchStartBody.indexOf("startBatchInWorker(");
 		expect(startAsyncIdx).not.toBe(-1);
 		const activateIdxAfterBatch = doOrchStartBody.indexOf("activateSupervisor(", startAsyncIdx);
 		expect(activateIdxAfterBatch).not.toBe(-1);
@@ -323,7 +323,7 @@ describe("1.x — Supervisor prompt injection in extension.ts", () => {
 
 	it("1.15: deactivateSupervisor called on all terminal paths (completed, failed, stopped, abort)", () => {
 		const extSource = readSource("extension.ts");
-		// Must appear in the terminal callback of startBatchAsync
+		// Must appear in the terminal callback of startBatchInWorker
 		const deactivateCount = (extSource.match(/deactivateSupervisor/g) || []).length;
 		// At minimum: import + definition + /orch terminal + /orch-resume terminal + /orch-abort
 		expect(deactivateCount).toBeGreaterThanOrEqual(4);
