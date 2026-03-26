@@ -1,19 +1,19 @@
 # TP-073: Worker Incomplete Exit Nudge — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Add Nudge Prompt for Subsequent Iterations
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 1
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read iteration loop and worker prompt construction in task-runner.ts
-- [ ] Understand how remaining steps are determined
+**Status:** ✅ Complete
+- [x] Read iteration loop and worker prompt construction in task-runner.ts
+- [x] Understand how remaining steps are determined
 
 ---
 
@@ -50,6 +50,10 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-26 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-26 19:38 | Task started | Extension-driven execution |
+| 2026-03-26 19:38 | Step 0 started | Preflight |
+| 2026-03-26 19:38 | Task started | Extension-driven execution |
+| 2026-03-26 19:38 | Step 0 started | Preflight |
 
 ---
 
