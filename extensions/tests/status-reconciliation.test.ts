@@ -412,9 +412,9 @@ describe("3.x: Reconciliation guard — gate enabled check", () => {
 	// (the else branch creates .DONE directly). We verify the config default
 	// and the guard conditions the task-runner checks.
 
-	it("3.1: quality gate disabled by default — reconciliation never reached", () => {
+	it("3.1: quality gate disabled by default — reconciliation never reached", async () => {
 		// Import the config loader to verify the default
-		const { loadProjectConfig, toTaskConfig } = require("../taskplane/config-loader.ts");
+		const { loadProjectConfig, toTaskConfig } = await import("../taskplane/config-loader.ts");
 		const dir = makeTestDir("guard-disabled");
 		const config = loadProjectConfig(dir);
 		const taskConfig = toTaskConfig(config);

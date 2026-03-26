@@ -1,6 +1,6 @@
 # TP-074: Migrate Tests to Node.js Native Test Runner (Bulk) — Status
 
-**Current Step:** Step 1: Create Expect Compatibility Wrapper
+**Current Step:** Step 4: Add npm Scripts and Test Runner Config
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 1
