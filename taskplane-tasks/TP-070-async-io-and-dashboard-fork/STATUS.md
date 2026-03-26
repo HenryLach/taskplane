@@ -1,85 +1,76 @@
 # TP-070: Async I/O in Poll Loops + Dashboard Child Process — Status
 
-**Current Step:** Complete
-**Status:** ✅ Done
-**Last Updated:** 2026-03-26
+**Current Step:** Not Started
+**Status:** 🔵 Ready for Execution
+**Last Updated:** 2026-03-25
 **Review Level:** 2
-**Review Counter:** 2
-**Iteration:** 2
+**Review Counter:** 0
+**Iteration:** 0
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** 🟩 Complete
-- [x] Identify all spawnSync("tmux") in polling paths
-- [x] Identify all readFileSync/existsSync/statSync in polling paths
-- [x] Determine dashboard server start mechanism
-
-**Preflight Findings:**
-- spawnSync("tmux") in polling: execution.ts (tmuxHasSession L225, tmuxKillSession L244, captureTmuxPaneTail L509, spawnLaneSession L748), merge.ts (spawnMergeSession L493, captureMergePaneOutput L2296)
-- Sync FS in polling: execution.ts pollUntilTaskComplete (existsSync for .DONE, readFileSync for STATUS.md, captureTmuxPaneTail), supervisor.ts readNewBytes (existsSync+statSync), readLockfile (existsSync+readFileSync), writeLockfile (writeFileSync+renameSync)
-- Dashboard: Already started as child_process.spawn from CLI (bin/taskplane.mjs cmdDashboard). NOT in-process in extension.ts. Step 5 is already done.
+**Status:** ⬜ Not Started
+- [ ] Identify all spawnSync("tmux") in polling paths
+- [ ] Identify all readFileSync/existsSync/statSync in polling paths
+- [ ] Determine dashboard server start mechanism
 
 ---
 
 ### Step 1: Create Async Tmux Helper
-**Status:** 🟩 Complete
-- [x] Add `spawn` import from child_process and `fs/promises` import
-- [x] Create tmuxAsync() that returns Promise<{status: number; stdout: string}>
-- [x] Create async versions: tmuxHasSessionAsync, tmuxKillSessionAsync, captureTmuxPaneTailAsync
-- [x] Create async version: readTaskStatusTailAsync
+**Status:** ⬜ Not Started
+- [ ] Create tmuxAsync() wrapper with spawn + promise
+- [ ] Support has-session, capture-pane, kill-session patterns
 
 ---
 
 ### Step 2: Convert Lane Polling to Async
-**Status:** 🟩 Complete
-- [x] Replace sync tmux calls with async in pollUntilTaskComplete (has-session, capture-pane, kill-session)
-- [x] Replace sync tmux calls with async in monitorLanes + resolveTaskMonitorState
+**Status:** ⬜ Not Started
+- [ ] spawnSync → tmuxAsync in pollUntilTaskComplete
+- [ ] readFileSync(STATUS.md) → fs.promises.readFile
 
 ---
 
 ### Step 3: Convert Merge Polling to Async
-**Status:** 🟩 Complete
-- [x] spawnSync → tmuxAsync in waitForMergeResult
-- [x] spawnSync → tmuxAsync in MergeHealthMonitor
+**Status:** ⬜ Not Started
+- [ ] spawnSync → tmuxAsync in waitForMergeResult
+- [ ] spawnSync → tmuxAsync in MergeHealthMonitor
 
 ---
 
 ### Step 4: Convert Supervisor Polling to Async
-**Status:** 🟩 Complete
-- [x] Event tailer: statSync/readFileSync → async
-- [x] Heartbeat: readFileSync/writeFileSync → async
-- [x] Add overlap guard for async setInterval callbacks
+**Status:** ⬜ Not Started
+- [ ] Event tailer: statSync/readFileSync → async
+- [ ] Heartbeat: readFileSync/writeFileSync → async
+- [ ] Add overlap guard for async setInterval callbacks
 
 ---
 
 ### Step 5: Fork Dashboard Server
-**Status:** 🟩 Complete (no-op — already a child process)
-- [x] Dashboard already runs as separate child process via CLI
+**Status:** ⬜ Not Started
+- [ ] Change dashboard from in-process to child_process.fork()
 
 ---
 
 ### Step 6: Testing & Verification
-**Status:** 🟩 Complete
-- [x] Async tmux helper tests (existing tests cover behavior via mocking; new async paths tested indirectly)
-- [x] Full test suite passing (2659/2659 pass; orch-direct-implementation times out in parallel but passes alone)
-- [x] Build passes
+**Status:** ⬜ Not Started
+- [ ] Async tmux helper tests
+- [ ] Full test suite passing
+- [ ] Build passes
 
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** 🟩 Complete
-- [x] Discoveries logged
-- [x] `.DONE` created
+**Status:** ⬜ Not Started
+- [ ] Discoveries logged
+- [ ] `.DONE` created
 
 ---
 
 ## Reviews
 
 | # | Type | Step | Verdict | File |
-| R001 | plan | Step 3 | REVISE | .reviews/R001-plan-step3.md |
-| R002 | code | Step 3 | UNKNOWN | .reviews/R002-code-step3.md |
 |---|------|------|---------|------|
 
 ---
@@ -89,25 +80,9 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-25 | Task staged | PROMPT.md and STATUS.md created |
-| 2026-03-26 00:35 | Task started | Extension-driven execution |
-| 2026-03-26 | Iteration 1 | Preflight done, Step 1 async helpers created |
-| 2026-03-26 | Iteration 2 | Resuming from Step 2 |
-| 2026-03-26 00:42 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
-| 2026-03-26 00:45 | Review R001 | plan Step 3: REVISE (fallback) |
-| 2026-03-26 00:51 | Reviewer R002 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
-| 2026-03-26 00:59 | Review R002 | code Step 3: UNKNOWN (fallback) |
 
 ---
 
 ## Blockers
 
 *None*
-
----
-
-## Discoveries
-
-| # | Discovery | Scope |
-|---|-----------|-------|
-| D1 | Dashboard is already a separate process (CLI `taskplane dashboard`) — Step 5 is no-op | In scope |
-| D2 | existsSync/statSync for local files are fast enough to keep sync in polling loops | In scope |
