@@ -1,10 +1,10 @@
 # TP-072: Dashboard Light Mode with Theme Toggle — Status
 
-**Current Step:** Step 2: Add Theme Toggle to Header
+**Current Step:** Step 3: Persist Theme Preference at Project Level
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
@@ -28,10 +28,10 @@
 ---
 
 ### Step 2: Add Theme Toggle to Header
-**Status:** ⬜ Not Started
-- [ ] Add sun/moon toggle button in header
-- [ ] Toggle sets data-theme attribute and swaps logo src
-- [ ] Smooth CSS transition on color properties
+**Status:** ✅ Complete
+- [x] Add sun/moon toggle button in header
+- [x] Toggle sets data-theme attribute and swaps logo src
+- [x] Smooth CSS transition on color properties
 
 ---
 
@@ -60,6 +60,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -74,6 +75,7 @@
 | 2026-03-26 13:20 | Task started | Extension-driven execution |
 | 2026-03-26 13:20 | Step 0 started | Preflight |
 | 2026-03-26 13:23 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
+| 2026-03-26 13:26 | Review R001 | plan Step 1: APPROVE (fallback) |
 
 ---
 
