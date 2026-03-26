@@ -1,0 +1,14 @@
+TP-070: Async I/O in Poll Loops + Dashboard Child Process — DONE
+Completed: 2026-03-26
+
+Summary:
+- Created async tmux helper functions (tmuxAsync, tmuxHasSessionAsync, tmuxKillSessionAsync, captureTmuxPaneTailAsync)
+- Created async file I/O helpers (readTaskStatusTailAsync, readNewBytesAsync, readLockfileAsync, writeLockfileAsync)
+- Converted pollUntilTaskComplete to use async tmux calls
+- Converted monitorLanes and resolveTaskMonitorState to use async tmux calls
+- Converted waitForMergeResult to use async tmux calls
+- Converted MergeHealthMonitor.poll() to async with overlap guard
+- Converted supervisor heartbeat to async with overlap guard
+- Converted event tailer poll to async with overlap guard
+- Dashboard server was already a separate child process (no change needed)
+- All 2659 tests passing

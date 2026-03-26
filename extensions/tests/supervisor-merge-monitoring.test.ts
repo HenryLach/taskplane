@@ -503,18 +503,18 @@ describe("MergeHealthMonitor.poll() behavior", () => {
 			"utf-8",
 		);
 		// Find the poll() method body
-		const pollIdx = mergeSource.indexOf("poll(): void {");
+		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		expect(pollIdx).toBeGreaterThan(-1);
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
-		// Verify poll checks session liveness
-		expect(pollBody).toContain("tmuxHasSession(sessionName)");
+		// Verify poll checks session liveness (async — TP-070)
+		expect(pollBody).toContain("tmuxHasSessionAsync(sessionName)");
 		// Verify poll checks result file
 		expect(pollBody).toContain("existsSync(resultPath)");
 		// Verify poll classifies health
 		expect(pollBody).toContain("classifyMergeHealth");
-		// Verify poll captures pane output
-		expect(pollBody).toContain("captureMergePaneOutput");
+		// Verify poll captures pane output (async — TP-070)
+		expect(pollBody).toContain("captureMergePaneOutputAsync");
 	});
 
 	it("8.2: poll() updates snapshot when output changes", () => {
@@ -522,7 +522,7 @@ describe("MergeHealthMonitor.poll() behavior", () => {
 			join(__dirname, "..", "taskplane", "merge.ts"),
 			"utf-8",
 		);
-		const pollIdx = mergeSource.indexOf("poll(): void {");
+		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
 		// Verify snapshot update logic
@@ -537,7 +537,7 @@ describe("MergeHealthMonitor.poll() behavior", () => {
 			join(__dirname, "..", "taskplane", "merge.ts"),
 			"utf-8",
 		);
-		const pollIdx = mergeSource.indexOf("poll(): void {");
+		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
 		expect(pollBody).toContain("_emitHealthEvents");
@@ -548,7 +548,7 @@ describe("MergeHealthMonitor.poll() behavior", () => {
 			join(__dirname, "..", "taskplane", "merge.ts"),
 			"utf-8",
 		);
-		const pollIdx = mergeSource.indexOf("poll(): void {");
+		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
 		// Dead session triggers callback
@@ -659,7 +659,7 @@ describe("dead-session early exit signaling", () => {
 			join(__dirname, "..", "taskplane", "merge.ts"),
 			"utf-8",
 		);
-		const pollIdx = mergeSource.indexOf("poll(): void {");
+		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
 		// Callback invocation passes session name and lane number
@@ -681,7 +681,7 @@ describe("dead-session early exit signaling", () => {
 			join(__dirname, "..", "taskplane", "merge.ts"),
 			"utf-8",
 		);
-		const pollIdx = mergeSource.indexOf("poll(): void {");
+		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
 		// Dead detection gated on deadEmitted flag
@@ -708,7 +708,7 @@ describe("dead-session early exit signaling", () => {
 			mergeSource.indexOf("async function waitForMergeResult"),
 			mergeSource.indexOf("async function waitForMergeResult") + 4000,
 		);
-		expect(waitFn).toContain("tmuxHasSession(sessionName)");
+		expect(waitFn).toContain("tmuxHasSessionAsync(sessionName)");
 		expect(waitFn).toContain("sessionDiedAt");
 		expect(waitFn).toContain("MERGE_SESSION_DIED");
 
