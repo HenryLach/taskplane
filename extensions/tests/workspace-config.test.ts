@@ -1519,26 +1519,40 @@ describe("orchestrator pointer threading", () => {
 		expect(mergeCallBlock).toContain("agentRoot");
 	});
 
-	it("7.9: extension.ts passes execCtx.pointer.agentRoot to executeOrchBatch", () => {
+	it("7.9: extension.ts passes execCtx.pointer.agentRoot through worker data to engine", () => {
 		const extensionSrc = readFileSync(
 			resolve(__dirname, "..", "taskplane", "extension.ts"),
 			"utf-8",
 		);
 
-		// The executeOrchBatch call should pass pointer?.agentRoot
-		const orchBatchCallIdx = extensionSrc.indexOf("executeOrchBatch(");
+		// TP-071: The engine now runs in a worker thread. doOrchStart builds
+		// EngineWorkerData with agentRoot extracted from execCtx.pointer?.agentRoot,
+		// then startBatchInWorker passes it to the worker (or fallback).
+		// Verify that doOrchStart extracts pointer.agentRoot into the worker data.
+		const doOrchStartBody = extensionSrc.substring(
+			extensionSrc.indexOf("function doOrchStart("),
+			extensionSrc.indexOf("function doOrchStatus("),
+		);
+		expect(doOrchStartBody).toContain("pointer");
+		expect(doOrchStartBody).toContain("agentRoot");
+
+		// Verify that the engine-worker entry point passes agentRoot to executeOrchBatch
+		const workerSrc = readFileSync(
+			resolve(__dirname, "..", "taskplane", "engine-worker.ts"),
+			"utf-8",
+		);
+		const orchBatchCallIdx = workerSrc.indexOf("executeOrchBatch(");
 		expect(orchBatchCallIdx).toBeGreaterThan(-1);
 		let depth = 0;
 		let endIdx = orchBatchCallIdx;
-		for (let i = orchBatchCallIdx; i < extensionSrc.length; i++) {
-			if (extensionSrc[i] === "(") depth++;
-			if (extensionSrc[i] === ")") {
+		for (let i = orchBatchCallIdx; i < workerSrc.length; i++) {
+			if (workerSrc[i] === "(") depth++;
+			if (workerSrc[i] === ")") {
 				depth--;
 				if (depth === 0) { endIdx = i; break; }
 			}
 		}
-		const orchBatchCall = extensionSrc.substring(orchBatchCallIdx, endIdx + 1);
-		expect(orchBatchCall).toContain("pointer");
+		const orchBatchCall = workerSrc.substring(orchBatchCallIdx, endIdx + 1);
 		expect(orchBatchCall).toContain("agentRoot");
 	});
 

@@ -41,7 +41,7 @@ describe("1.x — Result-exists-at-timeout: accept successful result", () => {
 			mergeSource.indexOf("merge timeout — killing session"),
 		);
 		expect(timeoutSection).toContain("existsSync(resultPath)");
-		expect(timeoutSection).toContain("parseMergeResult(resultPath)");
+		expect(timeoutSection).toContain("parseMergeResultAsync(resultPath)");
 		expect(timeoutSection).toContain("SUCCESSFUL_MERGE_STATUSES");
 	});
 
@@ -52,7 +52,7 @@ describe("1.x — Result-exists-at-timeout: accept successful result", () => {
 		expect(mergeSource).toContain("merge agent slow but succeeded — accepting result at timeout");
 		// The return lateResult statement exists in the function body after the acceptance log
 		const acceptIdx = mergeSource.indexOf("accepting result at timeout");
-		const afterAccept = mergeSource.substring(acceptIdx, acceptIdx + 300);
+		const afterAccept = mergeSource.substring(acceptIdx, acceptIdx + 500);
 		expect(afterAccept).toContain("return lateResult");
 	});
 
@@ -73,7 +73,7 @@ describe("1.x — Result-exists-at-timeout: accept successful result", () => {
 			mergeSource.indexOf("merge agent slow but succeeded"),
 			mergeSource.indexOf("return lateResult"),
 		);
-		expect(acceptSection).toContain("tmuxKillSession(sessionName)");
+		expect(acceptSection).toContain("tmuxKillSessionAsync(sessionName)");
 	});
 
 	it("1.5: non-success result at timeout falls through to kill and throw", () => {

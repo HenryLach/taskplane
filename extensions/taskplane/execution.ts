@@ -3,7 +3,8 @@
  * @module orch/execution
  */
 import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync } from "fs";
-import { spawnSync } from "child_process";
+import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "fs/promises";
+import { spawnSync, spawn } from "child_process";
 import { join, dirname, resolve, relative, delimiter as pathDelimiter } from "path";
 import { userInfo } from "os";
 
@@ -264,6 +265,135 @@ export function killLaneAndChildren(sessionName: string): void {
 	tmuxKillSession(sessionName);
 }
 
+// ── Async TMUX Helpers (TP-070) ──────────────────────────────────────
+
+/**
+ * Run a tmux command asynchronously, without blocking the event loop.
+ *
+ * Wraps `child_process.spawn` in a promise. The process is spawned and
+ * stdout is collected incrementally; the promise resolves when the process
+ * exits.
+ *
+ * @param args - Arguments to pass to the `tmux` command
+ * @param timeoutMs - Optional timeout in milliseconds (default: 5000)
+ * @returns Promise resolving to `{ status, stdout }` where status is the exit code (0 = success)
+ *
+ * @since TP-070
+ */
+export function tmuxAsync(args: string[], timeoutMs: number = 5_000): Promise<{ status: number; stdout: string }> {
+	return new Promise((resolve) => {
+		const proc = spawn("tmux", args, {
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: timeoutMs,
+		});
+
+		let stdout = "";
+
+		proc.stdout.on("data", (chunk: Buffer) => {
+			stdout += chunk.toString("utf-8");
+		});
+
+		proc.on("error", () => {
+			// Spawn failure — treat as non-zero exit
+			resolve({ status: 1, stdout: "" });
+		});
+
+		proc.on("close", (code) => {
+			resolve({ status: code ?? 1, stdout });
+		});
+	});
+}
+
+/**
+ * Async version of tmuxHasSession — checks if a TMUX session exists
+ * without blocking the event loop.
+ *
+ * @param sessionName - TMUX session name to check
+ * @returns Promise resolving to true if session exists
+ *
+ * @since TP-070
+ */
+export async function tmuxHasSessionAsync(sessionName: string): Promise<boolean> {
+	const result = await tmuxAsync(["has-session", "-t", sessionName]);
+	return result.status === 0;
+}
+
+/**
+ * Async version of tmuxKillSession — kills a TMUX session without
+ * blocking the event loop.
+ *
+ * Idempotent: resolves to true if session was killed or was already absent.
+ *
+ * @param sessionName - TMUX session name to kill
+ * @returns Promise resolving to true if session is now absent
+ *
+ * @since TP-070
+ */
+export async function tmuxKillSessionAsync(sessionName: string): Promise<boolean> {
+	const wasAlive = await tmuxHasSessionAsync(sessionName);
+	if (!wasAlive) return true;
+
+	await tmuxAsync(["kill-session", "-t", sessionName]);
+	return !(await tmuxHasSessionAsync(sessionName));
+}
+
+/**
+ * Async version of captureTmuxPaneTail — captures tail output from a live
+ * TMUX pane without blocking the event loop.
+ *
+ * @param sessionName - TMUX session name
+ * @param maxLines - Maximum number of lines to return
+ * @param maxChars - Maximum character count
+ * @returns Promise resolving to captured text (empty string on failure)
+ *
+ * @since TP-070
+ */
+export async function captureTmuxPaneTailAsync(
+	sessionName: string,
+	maxLines: number = 40,
+	maxChars: number = 1200,
+): Promise<string> {
+	const result = await tmuxAsync(["capture-pane", "-p", "-t", sessionName], 3000);
+	if (result.status !== 0) return "";
+	const raw = (result.stdout || "").replace(/\r\n/g, "\n").trim();
+	if (!raw) return "";
+	const tail = raw.split("\n").slice(-maxLines).join("\n").trim();
+	if (!tail) return "";
+	return tail.length > maxChars ? tail.slice(-maxChars) : tail;
+}
+
+/**
+ * Async version of readTaskStatusTail — reads STATUS.md tail without
+ * blocking the event loop.
+ *
+ * @param statusPath - Path to STATUS.md
+ * @param maxLines - Maximum number of lines to return
+ * @param maxChars - Maximum character count
+ * @returns Promise resolving to status tail text (empty string if missing/unreadable)
+ *
+ * @since TP-070
+ */
+export async function readTaskStatusTailAsync(
+	statusPath: string,
+	maxLines: number = 40,
+	maxChars: number = 1200,
+): Promise<string> {
+	try {
+		await fsAccess(statusPath);
+	} catch {
+		return "";
+	}
+	try {
+		const raw = (await fsReadFile(statusPath, "utf-8")).replace(/\r\n/g, "\n").trim();
+		if (!raw) return "";
+		const tail = raw.split("\n").slice(-maxLines).join("\n").trim();
+		if (!tail) return "";
+		return tail.length > maxChars ? tail.slice(-maxChars) : tail;
+	} catch {
+		return "";
+	}
+}
+
 /**
  * Build environment variables for a lane task execution.
  *
@@ -493,6 +623,50 @@ export function readLaneLogTail(
 		return tail.length > maxChars ? tail.slice(-maxChars) : tail;
 	} catch {
 		return "";
+	}
+}
+
+/**
+ * Async version of readLaneLogTail — reads lane log tail without
+ * blocking the event loop.
+ *
+ * @since TP-070
+ */
+export async function readLaneLogTailAsync(
+	logPath: string,
+	maxLines: number = 40,
+	maxChars: number = 1200,
+): Promise<string> {
+	try {
+		await fsAccess(logPath);
+	} catch {
+		return "";
+	}
+	try {
+		const raw = (await fsReadFile(logPath, "utf-8")).replace(/\r\n/g, "\n");
+		const tail = raw.split("\n").slice(-maxLines).join("\n").trim();
+		if (!tail) return "";
+		return tail.length > maxChars ? tail.slice(-maxChars) : tail;
+	} catch {
+		return "";
+	}
+}
+
+/**
+ * Async file existence check — non-blocking replacement for existsSync
+ * in polling paths.
+ *
+ * @param filePath - Path to check
+ * @returns Promise resolving to true if file exists
+ *
+ * @since TP-070
+ */
+export async function fileExistsAsync(filePath: string): Promise<boolean> {
+	try {
+		await fsAccess(filePath);
+		return true;
+	} catch {
+		return false;
 	}
 }
 
@@ -838,13 +1012,13 @@ export async function pollUntilTaskComplete(
 			};
 		}
 
-		// Check file-based abort signal
-		if (existsSync(abortSignalFile)) {
+		// Check file-based abort signal (TP-070: async)
+		if (await fileExistsAsync(abortSignalFile)) {
 			execLog(laneId, task.taskId, "abort signal file detected — killing session and aborting");
-			tmuxKillSession(sessionName);
+			await tmuxKillSessionAsync(sessionName);
 			// Also kill child sessions (worker, reviewer)
-			tmuxKillSession(`${sessionName}-worker`);
-			tmuxKillSession(`${sessionName}-reviewer`);
+			await tmuxKillSessionAsync(`${sessionName}-worker`);
+			await tmuxKillSessionAsync(`${sessionName}-reviewer`);
 			return {
 				status: "failed",
 				exitReason: "Aborted by signal file (.pi/orch-abort-signal)",
@@ -852,14 +1026,14 @@ export async function pollUntilTaskComplete(
 			};
 		}
 
-		// Capture live pane output for diagnostics (best effort).
-		const paneTail = captureTmuxPaneTail(sessionName);
+		// Capture live pane output for diagnostics (best effort) — async to avoid blocking.
+		const paneTail = await captureTmuxPaneTailAsync(sessionName);
 		if (paneTail) {
 			lastPaneTail = paneTail;
 		}
 
-		// Priority 1: Check for .DONE file
-		if (existsSync(donePath)) {
+		// Priority 1: Check for .DONE file (TP-070: async)
+		if (await fileExistsAsync(donePath)) {
 			execLog(laneId, task.taskId, ".DONE file found — task succeeded", {
 				session: sessionName,
 			});
@@ -870,8 +1044,8 @@ export async function pollUntilTaskComplete(
 			};
 		}
 
-		// Priority 2: Check if TMUX session is still alive
-		if (!tmuxHasSession(sessionName)) {
+		// Priority 2: Check if TMUX session is still alive — async to avoid blocking
+		if (!(await tmuxHasSessionAsync(sessionName))) {
 			// Session exited — start grace period for .DONE file
 			execLog(laneId, task.taskId, "TMUX session exited, entering grace period", {
 				session: sessionName,
@@ -883,7 +1057,7 @@ export async function pollUntilTaskComplete(
 			while (Date.now() - graceStart < DONE_GRACE_MS) {
 				await new Promise((r) => setTimeout(r, 500));
 
-				if (existsSync(donePath)) {
+				if (await fileExistsAsync(donePath)) {
 					execLog(laneId, task.taskId, ".DONE file found during grace period — task succeeded", {
 						session: sessionName,
 					});
@@ -895,8 +1069,8 @@ export async function pollUntilTaskComplete(
 				}
 			}
 
-			// Grace period expired without .DONE → task failed
-			const logTail = readLaneLogTail(laneLogPath);
+			// Grace period expired without .DONE → task failed (TP-070: async)
+			const logTail = await readLaneLogTailAsync(laneLogPath);
 			execLog(laneId, task.taskId, "grace period expired without .DONE — task failed", {
 				session: sessionName,
 				logPath: laneLogPath,
@@ -904,8 +1078,8 @@ export async function pollUntilTaskComplete(
 			if (logTail) {
 				execLog(laneId, task.taskId, `lane session output (tail):\n${logTail}`);
 			}
-			const statusTail = readTaskStatusTail(statusPath);
-			const hasLogFile = existsSync(laneLogPath);
+			const statusTail = await readTaskStatusTailAsync(statusPath);
+			const hasLogFile = await fileExistsAsync(laneLogPath);
 			const outputForHint = logTail || lastPaneTail || statusTail;
 			const logHint = outputForHint
 				? ` Last output: ${outputForHint.replace(/\s+/g, " ").slice(-300)}`
@@ -1284,6 +1458,105 @@ export function parseWorktreeStatusMd(
 	};
 }
 
+/**
+ * Async version of parseWorktreeStatusMd — reads and parses STATUS.md
+ * without blocking the event loop. Used in monitoring poll loops.
+ *
+ * @since TP-070
+ */
+export async function parseWorktreeStatusMdAsync(
+	taskFolder: string,
+	worktreePath: string,
+	repoRoot: string,
+	isWorkspaceMode?: boolean,
+): Promise<{ parsed: ParsedWorktreeStatus | null; error: string | null }> {
+	const resolved = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot, isWorkspaceMode);
+	const statusPath = resolved.statusPath;
+
+	if (!(await fileExistsAsync(statusPath))) {
+		return { parsed: null, error: `STATUS.md not found at ${statusPath}` };
+	}
+
+	let content: string;
+	let mtime: number;
+	try {
+		content = await fsReadFile(statusPath, "utf-8");
+		mtime = (await fsStat(statusPath)).mtimeMs;
+	} catch (err: unknown) {
+		return { parsed: null, error: `Cannot read STATUS.md: ${err instanceof Error ? err.message : String(err)}` };
+	}
+
+	// Parse logic is identical to the sync version
+	const text = content.replace(/\r\n/g, "\n");
+	const steps: ParsedWorktreeStatus["steps"] = [];
+	let currentStep: {
+		number: number;
+		name: string;
+		status: "not-started" | "in-progress" | "complete";
+		checkboxes: boolean[];
+	} | null = null;
+	let reviewCounter = 0;
+	let iteration = 0;
+
+	for (const line of text.split("\n")) {
+		const rcMatch = line.match(/\*\*Review Counter:\*\*\s*(\d+)/);
+		if (rcMatch) reviewCounter = parseInt(rcMatch[1]);
+		const itMatch = line.match(/\*\*Iteration:\*\*\s*(\d+)/);
+		if (itMatch) iteration = parseInt(itMatch[1]);
+
+		const stepMatch = line.match(/^###\s+Step\s+(\d+):\s*(.+)/);
+		if (stepMatch) {
+			if (currentStep) {
+				const totalChecked = currentStep.checkboxes.filter(c => c).length;
+				steps.push({
+					number: currentStep.number,
+					name: currentStep.name,
+					status: currentStep.status,
+					totalChecked,
+					totalItems: currentStep.checkboxes.length,
+				});
+			}
+			currentStep = {
+				number: parseInt(stepMatch[1]),
+				name: stepMatch[2].trim(),
+				status: "not-started",
+				checkboxes: [],
+			};
+			continue;
+		}
+		if (currentStep) {
+			const ss = line.match(/\*\*Status:\*\*\s*(.*)/);
+			if (ss) {
+				const s = ss[1];
+				if (s.includes("✅") || s.toLowerCase().includes("complete")) {
+					currentStep.status = "complete";
+				} else if (s.includes("🟨") || s.includes("🟡") || s.toLowerCase().includes("progress")) {
+					currentStep.status = "in-progress";
+				}
+			}
+			const cb = line.match(/^\s*-\s*\[([ xX])\]\s*(.*)/);
+			if (cb) {
+				currentStep.checkboxes.push(cb[1].toLowerCase() === "x");
+			}
+		}
+	}
+	if (currentStep) {
+		const totalChecked = currentStep.checkboxes.filter(c => c).length;
+		steps.push({
+			number: currentStep.number,
+			name: currentStep.name,
+			status: currentStep.status,
+			totalChecked,
+			totalItems: currentStep.checkboxes.length,
+		});
+	}
+
+	return {
+		parsed: { steps, reviewCounter, iteration, mtime },
+		error: null,
+	};
+}
+
 
 // ── State Resolution ─────────────────────────────────────────────────
 
@@ -1307,7 +1580,7 @@ export function parseWorktreeStatusMd(
  * @param stallTimeoutMs - Stall timeout in milliseconds
  * @param now            - Current timestamp (epoch ms) for deterministic testing
  */
-export function resolveTaskMonitorState(
+export async function resolveTaskMonitorState(
 	taskId: string,
 	donePath: string,
 	sessionName: string,
@@ -1315,9 +1588,9 @@ export function resolveTaskMonitorState(
 	tracker: MtimeTracker,
 	stallTimeoutMs: number,
 	now: number,
-): TaskMonitorSnapshot {
-	const sessionAlive = tmuxHasSession(sessionName);
-	const doneFileFound = existsSync(donePath);
+): Promise<TaskMonitorSnapshot> {
+	const sessionAlive = await tmuxHasSessionAsync(sessionName);
+	const doneFileFound = await fileExistsAsync(donePath);
 
 	// Build base snapshot from parsed status
 	let currentStepName: string | null = null;
@@ -1606,9 +1879,9 @@ export async function monitorLanes(
 
 					const tracker = getOrCreateTracker(task.taskId, now);
 					const donePath = resolveTaskDonePath(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
-					const statusResult = parseWorktreeStatusMd(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
+					const statusResult = await parseWorktreeStatusMdAsync(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
 
-					const snapshot = resolveTaskMonitorState(
+					const snapshot = await resolveTaskMonitorState(
 						task.taskId,
 						donePath,
 						lane.tmuxSessionName,
@@ -1654,7 +1927,7 @@ export async function monitorLanes(
 				allTerminal = false;
 			}
 
-			const sessionAlive = tmuxHasSession(lane.tmuxSessionName);
+			const sessionAlive = await tmuxHasSessionAsync(lane.tmuxSessionName);
 
 			laneSnapshots.push({
 				laneId: lane.laneId,
@@ -1718,7 +1991,7 @@ export async function monitorLanes(
 		laneId: lane.laneId,
 		laneNumber: lane.laneNumber,
 		sessionName: lane.tmuxSessionName,
-		sessionAlive: tmuxHasSession(lane.tmuxSessionName),
+		sessionAlive: false, // Best-effort during pause — don't block with tmux call
 		currentTaskId: null,
 		currentTaskSnapshot: null,
 		completedTasks: [],

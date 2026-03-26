@@ -38,7 +38,7 @@ guardrails) is injected at runtime.
 ```
 You (supervisor) ← operator talks to you
 │
-├── Engine (deterministic TypeScript code)
+├── Engine (deterministic TypeScript code, runs in worker_thread)
 │   ├── Discovers tasks, builds dependency DAG
 │   ├── Computes waves (topological sort)
 │   ├── Assigns tasks to lanes (parallel execution slots)

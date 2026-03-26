@@ -29,6 +29,7 @@
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync, statSync, openSync, readSync, closeSync, appendFileSync } from "fs";
+import { stat as fsStat, open as fsOpen, readFile as fsReadFile, writeFile as fsWriteFile, rename as fsRename } from "fs/promises";
 import { execFileSync } from "child_process";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
 import type { Model, Api } from "@mariozechner/pi-ai";
@@ -2587,7 +2588,7 @@ export interface SupervisorRoutingContext {
 /**
  * Activate the supervisor agent in the current pi session.
  *
- * This is called after `startBatchAsync()` in the `/orch` command handler,
+ * This is called after `startBatchInWorker()` in the `/orch` command handler,
  * or directly by the `/orch` no-args routing logic (TP-042).
  *
  * It:
@@ -3074,6 +3075,62 @@ export function writeLockfile(stateRoot: string, lock: SupervisorLockfile): void
 }
 
 /**
+ * Async version of readLockfile — reads lockfile without blocking the event loop.
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ * @returns Parsed lockfile or null
+ *
+ * @since TP-070
+ */
+export async function readLockfileAsync(stateRoot: string): Promise<SupervisorLockfile | null> {
+	const path = lockfilePath(stateRoot);
+
+	try {
+		const raw = await fsReadFile(path, "utf-8");
+		const parsed = JSON.parse(raw) as Record<string, unknown>;
+
+		if (
+			typeof parsed.pid !== "number" ||
+			typeof parsed.sessionId !== "string" ||
+			typeof parsed.batchId !== "string" ||
+			typeof parsed.startedAt !== "string" ||
+			typeof parsed.heartbeat !== "string"
+		) {
+			return null;
+		}
+
+		return parsed as unknown as SupervisorLockfile;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Async version of writeLockfile — writes lockfile without blocking the event loop.
+ *
+ * Creates the `.pi/supervisor/` directory if it doesn't exist.
+ * Uses temp+rename for atomicity.
+ *
+ * @param stateRoot - Root path for .pi/ state directory
+ * @param lock - Lockfile data to write
+ *
+ * @since TP-070
+ */
+export async function writeLockfileAsync(stateRoot: string, lock: SupervisorLockfile): Promise<void> {
+	const dir = join(stateRoot, ".pi", "supervisor");
+	if (!existsSync(dir)) {
+		mkdirSync(dir, { recursive: true });
+	}
+
+	const finalPath = lockfilePath(stateRoot);
+	const tmpPath = finalPath + ".tmp";
+	const json = JSON.stringify(lock, null, 2) + "\n";
+
+	await fsWriteFile(tmpPath, json, "utf-8");
+	await fsRename(tmpPath, finalPath);
+}
+
+/**
  * Remove the supervisor lockfile.
  *
  * Safe to call when the file doesn't exist (no-op).
@@ -3303,47 +3360,55 @@ export function startHeartbeat(
 	pi: ExtensionAPI,
 ): ReturnType<typeof setInterval> {
 	const sessionId = state.lockSessionId;
+	let heartbeatInProgress = false; // Overlap guard (TP-070)
 
-	const timer = setInterval(() => {
+	const timer = setInterval(async () => {
 		if (!state.active) {
 			clearInterval(timer);
 			return;
 		}
 
-		// Read current lockfile to detect force takeover
-		const currentLock = readLockfile(stateRoot);
-		if (currentLock && currentLock.sessionId !== sessionId) {
-			// Another session has taken over — yield gracefully
-			clearInterval(timer);
-			pi.sendMessage(
-				{
-					customType: "supervisor-yield",
-					content: [{
-						type: "text",
-						text: "⚡ Another session has taken over supervisor duties. Yielding.",
-					}],
-					display: "Supervisor yielded to another session",
-				},
-				{ triggerTurn: false },
-			);
-			deactivateSupervisor(pi, state);
-			return;
-		}
+		if (heartbeatInProgress) return; // Overlap guard (TP-070)
+		heartbeatInProgress = true;
 
-		// Update heartbeat (and refresh batchId if it was initially unknown)
 		try {
-			const lock = readLockfile(stateRoot);
-			if (lock && lock.sessionId === sessionId) {
-				lock.heartbeat = new Date().toISOString();
-				// TP-130: batchId may have been "(initializing)" at lock creation
-				// because the batch hadn't started yet. Refresh from live state ref.
-				if (state.batchStateRef?.batchId && lock.batchId !== state.batchStateRef.batchId) {
-					lock.batchId = state.batchStateRef.batchId;
-				}
-				writeLockfile(stateRoot, lock);
+			// Read current lockfile to detect force takeover — async (TP-070)
+			const currentLock = await readLockfileAsync(stateRoot);
+			if (currentLock && currentLock.sessionId !== sessionId) {
+				// Another session has taken over — yield gracefully
+				clearInterval(timer);
+				pi.sendMessage(
+					{
+						customType: "supervisor-yield",
+						content: [{
+							type: "text",
+							text: "⚡ Another session has taken over supervisor duties. Yielding.",
+						}],
+						display: "Supervisor yielded to another session",
+					},
+					{ triggerTurn: false },
+				);
+				deactivateSupervisor(pi, state);
+				return;
 			}
-		} catch {
-			// Best-effort heartbeat — don't crash the supervisor
+
+			// Update heartbeat (and refresh batchId if it was initially unknown)
+			try {
+				const lock = await readLockfileAsync(stateRoot);
+				if (lock && lock.sessionId === sessionId) {
+					lock.heartbeat = new Date().toISOString();
+					// TP-130: batchId may have been "(initializing)" at lock creation
+					// because the batch hadn't started yet. Refresh from live state ref.
+					if (state.batchStateRef?.batchId && lock.batchId !== state.batchStateRef.batchId) {
+						lock.batchId = state.batchStateRef.batchId;
+					}
+					await writeLockfileAsync(stateRoot, lock);
+				}
+			} catch {
+				// Best-effort heartbeat — don't crash the supervisor
+			}
+		} finally {
+			heartbeatInProgress = false;
 		}
 	}, HEARTBEAT_INTERVAL_MS);
 
@@ -3602,6 +3667,39 @@ export function readNewBytes(eventsPath: string, byteOffset: number): [string, n
 	}
 
 	return [buffer.toString("utf-8"), fileSize];
+}
+
+/**
+ * Async version of readNewBytes — reads new bytes without blocking the event loop.
+ *
+ * Uses `fs/promises` for non-blocking stat and read operations.
+ *
+ * @param eventsPath - Full path to events.jsonl
+ * @param byteOffset - Start reading from this byte offset
+ * @returns [newData, newByteOffset]
+ *
+ * @since TP-070
+ */
+export async function readNewBytesAsync(eventsPath: string, byteOffset: number): Promise<[string, number]> {
+	try {
+		const stats = await fsStat(eventsPath);
+		const fileSize = stats.size;
+		if (fileSize <= byteOffset) return ["", byteOffset];
+
+		const bytesToRead = fileSize - byteOffset;
+		const buffer = Buffer.alloc(bytesToRead);
+
+		const fh = await fsOpen(eventsPath, "r");
+		try {
+			await fh.read(buffer, 0, bytesToRead, byteOffset);
+		} finally {
+			await fh.close();
+		}
+
+		return [buffer.toString("utf-8"), fileSize];
+	} catch {
+		return ["", byteOffset];
+	}
 }
 
 /**
@@ -3991,27 +4089,35 @@ export function startEventTailer(
 	};
 
 	// ── TP-043: Integration is triggered by triggerSupervisorIntegration() ──
-	// called from the onTerminal callback in startBatchAsync (extension.ts),
+	// called from the onTerminal callback in startBatchInWorker (extension.ts),
 	// gated on phase === "completed" (R002-1). For auto mode, integration is
 	// executed programmatically via the executor callback (R002-2). The event
 	// tailer does NOT duplicate the integration trigger — batch_complete events
 	// are handled via the normal notification path (formatEventNotification).
 
-	// ── Poll timer ───────────────────────────────────────────────
-	tailer.pollTimer = setInterval(() => {
+	// ── Poll timer (async, TP-070) ───────────────────────────────
+	let tailerPollInProgress = false; // Overlap guard (TP-070)
+	tailer.pollTimer = setInterval(async () => {
 		if (!supervisorState.active || !tailer.running) {
 			stopEventTailer(tailer);
 			return;
 		}
 
-		const [newData, newOffset] = readNewBytes(eventsPath, tailer.byteOffset);
-		if (!newData) return; // No new data
+		if (tailerPollInProgress) return; // Overlap guard (TP-070)
+		tailerPollInProgress = true;
 
-		tailer.byteOffset = newOffset;
-		const [events, remaining] = parseJsonlLines(newData, tailer.partialLine);
-		tailer.partialLine = remaining;
+		try {
+			const [newData, newOffset] = await readNewBytesAsync(eventsPath, tailer.byteOffset);
+			if (!newData) return; // No new data
 
-		processEvents(events, tailer, autonomy, notify);
+			tailer.byteOffset = newOffset;
+			const [events, remaining] = parseJsonlLines(newData, tailer.partialLine);
+			tailer.partialLine = remaining;
+
+			processEvents(events, tailer, autonomy, notify);
+		} finally {
+			tailerPollInProgress = false;
+		}
 	}, EVENT_POLL_INTERVAL_MS);
 
 	// ── Digest flush timer ───────────────────────────────────────
