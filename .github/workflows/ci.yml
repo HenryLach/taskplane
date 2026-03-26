@@ -29,7 +29,13 @@ jobs:
         run: npm ci --prefix extensions
 
       - name: Run tests
-        run: cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts tests/*.integration.test.ts
+        run: |
+          cd extensions
+          # Run unit/source tests (exclude platform-specific integration tests for now)
+          # Integration tests require Windows (git worktree paths, drive letters) — tracked in #253
+          node --experimental-strip-types --experimental-test-module-mocks --no-warnings \
+            --import ./tests/loader.mjs \
+            --test tests/*.test.ts
 
       - name: CLI smoke checks
         run: |
