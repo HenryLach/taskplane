@@ -3,6 +3,11 @@
   "engines": {
     "node": ">=20.0.0"
   },
+  "scripts": {
+    "test": "node --experimental-strip-types --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts tests/*.integration.test.ts",
+    "test:fast": "node --experimental-strip-types --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts",
+    "test:vitest": "npx vitest run"
+  },
   "devDependencies": {
     "vitest": "^4.1.0"
   },

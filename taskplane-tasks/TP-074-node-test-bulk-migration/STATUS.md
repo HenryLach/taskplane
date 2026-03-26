@@ -42,9 +42,9 @@
 ---
 
 ### Step 4: Add npm Scripts and Test Runner Config
-**Status:** ⬜ Not Started
-- [ ] Add test/test:fast/test:vitest npm scripts
-- [ ] Update .pi/task-runner.yaml (project-level only)
+**Status:** ✅ Complete
+- [x] Add test/test:fast/test:vitest npm scripts to extensions/package.json
+- [x] Note: .pi/taskplane-config.json and .pi/task-runner.yaml are gitignored project config — cannot be updated in worktree commit
 
 ---
 
