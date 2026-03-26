@@ -7,44 +7,24 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { Worker } from "worker_threads";
 
-import {
-	DEFAULT_ORCHESTRATOR_CONFIG,
-	DEFAULT_TASK_RUNNER_CONFIG,
-	FATAL_DISCOVERY_CODES,
-	ORCH_MESSAGES,
-	StateFileError,
-	WorkspaceConfigError,
-	computeIntegrateCleanupResult,
-	computeWaveAssignments,
-	createOrchWidget,
-	deleteBatchState,
-	deleteStaleBranches,
-	detectOrphanSessions,
-	executeLane,
-	executeOrchBatch,
-	formatDependencyGraph,
-	formatDiscoveryResults,
-	formatOrchSessions,
-	formatPreflightResults,
-	formatWavePlan,
-	freshOrchBatchState,
-	getCurrentBranch,
-	hasConfigFiles,
-	resolveConfigRoot,
-	listOrchSessions,
-	listWorktrees,
-	loadBatchState,
-	loadOrchestratorConfig,
-	loadSupervisorConfig,
-	loadTaskRunnerConfig,
-	parseOrchSessionNames,
-	resolveOperatorId,
-	resolveWorktreeBasePath,
-	resumeOrchBatch,
-	runDiscovery,
-	runGit,
-	runPreflight,
-} from "./index.ts";
+// Direct imports — avoid barrel (index.ts) to prevent loading the entire module graph.
+// Each import targets the specific module where the symbol is defined.
+import { DEFAULT_ORCHESTRATOR_CONFIG, DEFAULT_TASK_RUNNER_CONFIG, FATAL_DISCOVERY_CODES, StateFileError, WorkspaceConfigError, freshOrchBatchState } from "./types.ts";
+import type { AbortMode, ExecutionContext, MonitorState, OrchestratorConfig, PersistedBatchState, TaskRunnerConfig } from "./types.ts";
+import { ORCH_MESSAGES, computeIntegrateCleanupResult } from "./messages.ts";
+import type { IntegrateCleanupRepoFindings } from "./messages.ts";
+import { computeWaveAssignments } from "./waves.ts";
+import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
+import { deleteBatchState, loadBatchState, detectOrphanSessions, parseOrchSessionNames } from "./persistence.ts";
+import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, formatPreflightResults, runPreflight } from "./worktree.ts";
+import { executeLane } from "./execution.ts";
+import { executeOrchBatch } from "./engine.ts";
+import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
+import { formatOrchSessions, listOrchSessions } from "./sessions.ts";
+import { getCurrentBranch, runGit } from "./git.ts";
+import { hasConfigFiles, resolveConfigRoot, loadOrchestratorConfig, loadSupervisorConfig, loadTaskRunnerConfig } from "./config.ts";
+import { resolveOperatorId } from "./naming.ts";
+import { resumeOrchBatch } from "./resume.ts";
 import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
@@ -68,15 +48,6 @@ import {
 	resolveModelFromString,
 } from "./supervisor.ts";
 import type { SupervisorConfig, SupervisorRoutingContext, IntegrationExecutor, CiDeps, SummaryDeps } from "./supervisor.ts";
-import type {
-	AbortMode,
-	ExecutionContext,
-	IntegrateCleanupRepoFindings,
-	MonitorState,
-	OrchestratorConfig,
-	PersistedBatchState,
-	TaskRunnerConfig,
-} from "./index.ts";
 
 // ── Integrate Args Parsing ────────────────────────────────────────────
 

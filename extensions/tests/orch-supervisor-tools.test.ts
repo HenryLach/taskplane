@@ -21,7 +21,7 @@ import {
 	DEFAULT_SUPERVISOR_CONFIG,
 } from "../taskplane/supervisor.ts";
 import type { OrchBatchRuntimeState } from "../taskplane/types.ts";
-import { DEFAULT_ORCHESTRATOR_CONFIG, freshOrchBatchState } from "../taskplane/index.ts";
+import { DEFAULT_ORCHESTRATOR_CONFIG, freshOrchBatchState } from "../taskplane/types.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
