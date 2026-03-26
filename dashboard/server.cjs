@@ -1117,6 +1117,59 @@ function serveStatusMd(req, res, taskId) {
   res.end(JSON.stringify({ error: "STATUS.md not found" }));
 }
 
+// ─── Dashboard Preferences ──────────────────────────────────────────────────
+
+function getPreferencesPath() {
+  return path.join(REPO_ROOT, ".pi", "dashboard-preferences.json");
+}
+
+function handleGetPreferences(req, res) {
+  const prefsPath = getPreferencesPath();
+  let prefs = { theme: "dark" };
+  try {
+    if (fs.existsSync(prefsPath)) {
+      prefs = JSON.parse(fs.readFileSync(prefsPath, "utf8"));
+    }
+  } catch { /* use defaults */ }
+  res.writeHead(200, {
+    "Content-Type": "application/json",
+    "Access-Control-Allow-Origin": "*",
+  });
+  res.end(JSON.stringify(prefs));
+}
+
+function handlePostPreferences(req, res) {
+  let body = "";
+  req.on("data", (chunk) => { body += chunk; });
+  req.on("end", () => {
+    try {
+      const incoming = JSON.parse(body);
+      const prefsPath = getPreferencesPath();
+      let existing = {};
+      try {
+        if (fs.existsSync(prefsPath)) {
+          existing = JSON.parse(fs.readFileSync(prefsPath, "utf8"));
+        }
+      } catch { /* start fresh */ }
+      const merged = { ...existing, ...incoming };
+      const dir = path.dirname(prefsPath);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(prefsPath, JSON.stringify(merged, null, 2) + "\n");
+      res.writeHead(200, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      });
+      res.end(JSON.stringify(merged));
+    } catch (err) {
+      res.writeHead(400, {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      });
+      res.end(JSON.stringify({ error: "Invalid JSON" }));
+    }
+  });
+}
+
 // ─── HTTP Server ────────────────────────────────────────────────────────────
 
 function createServer() {
@@ -1146,6 +1199,18 @@ function createServer() {
     } else if (pathname.startsWith("/api/status-md/") && req.method === "GET") {
       const taskId = decodeURIComponent(pathname.slice("/api/status-md/".length));
       serveStatusMd(req, res, taskId);
+    } else if (pathname === "/api/preferences" && req.method === "GET") {
+      handleGetPreferences(req, res);
+    } else if (pathname === "/api/preferences" && req.method === "POST") {
+      handlePostPreferences(req, res);
+    } else if (req.method === "OPTIONS") {
+      // CORS preflight for POST
+      res.writeHead(204, {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+      });
+      res.end();
     } else {
       serveStatic(req, res);
     }
