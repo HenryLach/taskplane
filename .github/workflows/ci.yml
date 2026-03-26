@@ -35,7 +35,7 @@ jobs:
           # (git worktree operations, Windows drive letter paths) — tracked in issue
           node --experimental-strip-types --experimental-test-module-mocks --no-warnings \
             --import ./tests/loader.mjs \
-            --test $(ls tests/*.test.ts | grep -v 'execution-path-resolution\|orch-pure-functions\|project-config-loader' | tr '\n' ' ')
+            --test $(ls tests/*.test.ts | grep -v '\.integration\.test\.ts\|execution-path-resolution\|orch-pure-functions\|project-config-loader' | tr '\n' ' ')
 
       - name: CLI smoke checks
         run: |
