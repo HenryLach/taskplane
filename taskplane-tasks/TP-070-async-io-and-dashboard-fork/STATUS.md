@@ -1,10 +1,10 @@
 # TP-070: Async I/O in Poll Loops + Dashboard Child Process — Status
 
-**Current Step:** Step 4: Convert Supervisor Polling to Async
+**Current Step:** Step 6: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
@@ -47,10 +47,10 @@
 ---
 
 ### Step 4: Convert Supervisor Polling to Async
-**Status:** ⬜ Not Started
-- [ ] Event tailer: statSync/readFileSync → async
-- [ ] Heartbeat: readFileSync/writeFileSync → async
-- [ ] Add overlap guard for async setInterval callbacks
+**Status:** 🟩 Complete
+- [x] Event tailer: statSync/readFileSync → async
+- [x] Heartbeat: readFileSync/writeFileSync → async
+- [x] Add overlap guard for async setInterval callbacks
 
 ---
 
@@ -78,6 +78,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 3 | REVISE | .reviews/R001-plan-step3.md |
 |---|------|------|---------|------|
 
 ---
@@ -91,6 +92,7 @@
 | 2026-03-26 | Iteration 1 | Preflight done, Step 1 async helpers created |
 | 2026-03-26 | Iteration 2 | Resuming from Step 2 |
 | 2026-03-26 00:42 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-26 00:45 | Review R001 | plan Step 3: REVISE (fallback) |
 
 ---
 
