@@ -9,7 +9,8 @@
  * Run: npx vitest run extensions/tests/orch-integrate.test.ts
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 import { parseIntegrateArgs, resolveIntegrationContext, executeIntegration, dropBatchAutostash, collectRepoCleanupFindings } from "../taskplane/extension.ts";
 import { computeIntegrateCleanupResult } from "../taskplane/messages.ts";
 import type {

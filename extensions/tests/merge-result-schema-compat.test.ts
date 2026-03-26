@@ -5,7 +5,8 @@
  * mergeCommit/merge_commit, etc.) causing false merge timeouts.
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";

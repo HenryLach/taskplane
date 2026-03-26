@@ -11,7 +11,8 @@
  * Run: npx vitest run tests/runtime-model-fallback.test.ts
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";

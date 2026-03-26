@@ -33,10 +33,11 @@
 ---
 
 ### Step 3: Migrate Non-Mock Test Files
-**Status:** ⬜ Not Started
-- [ ] Migrate ~52 unit/source test files (import changes only)
-- [ ] Migrate 9 integration test files
-- [ ] Skip 5 mock-heavy files
+**Status:** ✅ Complete
+- [x] Migrate 52 unit/source test files (import changes only)
+- [x] Migrate 9 integration test files (including dual-mode files)
+- [x] Skip 5 mock-heavy files (diagnostic-reports, non-blocking-engine, auto-integration-deterministic, project-config-loader, supervisor)
+- [x] Extended mock stubs (pi-coding-agent.ts, pi-tui.ts) with additional exports needed by source files
 
 ---
 

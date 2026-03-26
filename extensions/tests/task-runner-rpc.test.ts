@@ -11,11 +11,15 @@
  * Run: npx vitest run extensions/tests/task-runner-rpc.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { readFileSync, existsSync, mkdirSync, rmSync } from "fs";
-import { resolve, join } from "path";
+import { resolve, join, dirname } from "path";
+import { fileURLToPath } from "url";
 import { tmpdir } from "os";
 
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const TASK_RUNNER_PATH = resolve(__dirname, "../task-runner.ts");
 
 function readTaskRunnerSource(): string {

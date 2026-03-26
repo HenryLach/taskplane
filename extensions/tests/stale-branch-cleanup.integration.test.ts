@@ -8,7 +8,8 @@
  * Run: npx vitest run extensions/tests/stale-branch-cleanup.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { execSync } from "child_process";
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";

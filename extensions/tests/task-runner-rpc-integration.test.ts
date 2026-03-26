@@ -15,13 +15,17 @@
  * Run: npx vitest run extensions/tests/task-runner-rpc-integration.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from "fs";
-import { join, resolve } from "path";
+import { join, resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import { tmpdir } from "os";
 
 // ── 1. Workspace-mode sidecar path ──────────────────────────────────
 
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 describe("workspace-mode sidecar path", () => {
 	let origEnv: string | undefined;
 	let tmpDir: string;

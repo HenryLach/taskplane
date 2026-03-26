@@ -11,9 +11,11 @@
  * Run: npx vitest run tests/status-reconciliation.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync } from "fs";
-import { join, resolve, relative } from "path";
+import { join, resolve, relative, dirname } from "path";
+import { fileURLToPath } from "url";
 import { tmpdir } from "os";
 
 import {
@@ -24,6 +26,8 @@ import {
 
 // ── Fixture Helpers ──────────────────────────────────────────────────
 
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 let testRoot: string;
 let counter = 0;
 

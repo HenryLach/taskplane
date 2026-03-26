@@ -9,7 +9,8 @@
  * Run: npx vitest run tests/context-window-autodetect.test.ts
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import {
 	_resolveContextWindow as resolveContextWindow,
 	_FALLBACK_CONTEXT_WINDOW as FALLBACK_CONTEXT_WINDOW,
@@ -34,8 +35,6 @@ import { tmpdir } from "os";
 
 let testRoot: string;
 let counter = 0;
-
-import { beforeEach, afterEach } from "vitest";
 
 beforeEach(() => {
 	testRoot = join(tmpdir(), `tp-cw-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);

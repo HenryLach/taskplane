@@ -15,7 +15,7 @@ import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-const isVitest = typeof globalThis.vi !== "undefined" || !!process.env.VITEST;
+const isTestRunner = !!(process.env.NODE_TEST_CONTEXT || process.env.VITEST);
 
 // ── Test Helpers ──────────────────────────────────────────────────────
 
@@ -344,8 +344,8 @@ function runAllTests(): void {
 }
 
 // ── Dual-mode execution ──────────────────────────────────────────────
-if (isVitest) {
-	const { describe, it } = await import("vitest");
+if (isTestRunner) {
+	const { describe, it } = await import("node:test");
 	describe("Task Runner Orchestration", () => {
 		it("passes all assertions", () => {
 			runAllTests();

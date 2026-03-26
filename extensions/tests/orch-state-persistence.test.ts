@@ -21,7 +21,7 @@ import { tmpdir } from "os";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Detect vitest
-const isVitest = typeof globalThis.vi !== "undefined" || !!process.env.VITEST;
+const isTestRunner = !!(process.env.NODE_TEST_CONTEXT || process.env.VITEST);
 
 // ── Test Helpers ──────────────────────────────────────────────────────
 
@@ -5857,8 +5857,8 @@ if (failed > 0) throw new Error(`${failed} test(s) failed`);
 } // end runAllTests
 
 // ── Dual-mode execution ──────────────────────────────────────────────
-if (isVitest) {
-	const { describe, it } = await import("vitest");
+if (isTestRunner) {
+	const { describe, it } = await import("node:test");
 	describe("Orchestrator State Persistence", () => {
 		it("passes all assertions", () => {
 			runAllTests();

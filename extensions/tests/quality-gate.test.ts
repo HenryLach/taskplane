@@ -21,7 +21,8 @@
  * Run: npx vitest run tests/quality-gate.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { mkdirSync, writeFileSync, readFileSync, rmSync, existsSync, unlinkSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";

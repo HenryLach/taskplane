@@ -15,7 +15,8 @@
  * Run: npx vitest run tests/auto-integration.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, appendFileSync } from "fs";
 import { join, dirname } from "path";
 import { tmpdir } from "os";

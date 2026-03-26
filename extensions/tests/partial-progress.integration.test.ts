@@ -8,7 +8,8 @@
  * Run: npx vitest run extensions/tests/partial-progress.test.ts
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { execSync } from "child_process";
 import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import { join, resolve } from "path";

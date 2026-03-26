@@ -16,7 +16,8 @@
  * Run: npx vitest run extensions/tests/naming-collision.test.ts
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 import { resolve, basename } from "path";
 
 // Direct imports from production modules

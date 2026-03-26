@@ -12,12 +12,16 @@
  * Run: npx vitest run tests/task-runner-step-status.test.ts
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 import { readFileSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
 
 // ── Source Loading ────────────────────────────────────────────────────
 
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(
 	join(__dirname, "..", "task-runner.ts"),
 	"utf-8"

@@ -17,7 +17,8 @@
  * Run: npx vitest run tests/workspace-config.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import {
 	mkdirSync,
 	writeFileSync,
@@ -25,7 +26,8 @@ import {
 	existsSync,
 	readFileSync,
 } from "fs";
-import { join, resolve } from "path";
+import { join, resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 import { execFileSync } from "child_process";
 import { tmpdir } from "os";
 
@@ -51,6 +53,8 @@ import { saveBatchState, loadBatchState, deleteBatchState } from "../taskplane/p
 
 // ── Test Fixtures ────────────────────────────────────────────────────
 
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 let testRoot: string;
 let counter = 0;
 

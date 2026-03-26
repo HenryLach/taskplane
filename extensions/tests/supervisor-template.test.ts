@@ -13,7 +13,8 @@
  * Run: npx vitest run tests/supervisor-template.test.ts
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, beforeEach, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join, dirname, resolve } from "path";
 import { tmpdir } from "os";

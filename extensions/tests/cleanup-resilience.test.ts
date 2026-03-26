@@ -39,7 +39,7 @@ import {
 	runGit,
 } from "../task-orchestrator.ts";
 
-const isVitest = typeof globalThis.vi !== "undefined" || !!process.env.VITEST;
+const isTestRunner = !!(process.env.NODE_TEST_CONTEXT || process.env.VITEST);
 
 // ── Test Harness ─────────────────────────────────────────────────────
 
@@ -1078,20 +1078,21 @@ if (failed > 0) {
 		console.log(`  ❌ ${r.name}`);
 		console.log(`     ${r.error}`);
 	}
-	if (isVitest) {
+	if (isTestRunner) {
 		throw new Error(`${failed} test(s) failed`);
 	}
 	process.exit(1);
 } else {
 	console.log("\n✅ All tests passed!");
-	if (!isVitest) {
+	if (!isTestRunner) {
 		process.exit(0);
 	}
 }
 
-// Register a Vitest suite so this harness is recognized as a test file.
-if (isVitest) {
-	const { describe: vDescribe, it, expect } = await import("vitest");
+// Register a node:test suite so this harness is recognized as a test file.
+if (isTestRunner) {
+	const { describe: vDescribe, it } = await import("node:test");
+	const { expect } = await import("./expect.ts");
 	vDescribe("Cleanup Resilience Harness (TP-029)", () => {
 		it("reports zero failed assertions", () => {
 			expect(failed).toBe(0);

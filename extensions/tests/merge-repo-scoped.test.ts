@@ -31,7 +31,7 @@ import type {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-const isVitest = typeof globalThis.vi !== "undefined" || !!process.env.VITEST;
+const isTestRunner = !!(process.env.NODE_TEST_CONTEXT || process.env.VITEST);
 
 let passed = 0;
 let failed = 0;
@@ -1090,8 +1090,8 @@ function runAllTests(): void {
 }
 
 // ── Dual-mode execution ──────────────────────────────────────────────
-if (isVitest) {
-	const { describe, it } = await import("vitest");
+if (isTestRunner) {
+	const { describe, it } = await import("node:test");
 	describe("TP-005: Repo-Scoped Merge", () => {
 		it("passes all assertions", () => {
 			runAllTests();

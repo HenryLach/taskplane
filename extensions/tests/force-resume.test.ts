@@ -10,7 +10,8 @@
  * Run: npx vitest run extensions/tests/force-resume.test.ts
  */
 
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, afterEach } from "node:test";
+import { expect } from "./expect.ts";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -349,7 +350,7 @@ describe("force-resume runtime path in resumeOrchBatch — source verification",
  */
 describe("force-resume runtime path — diagnostics gate", () => {
 	afterEach(() => {
-		vi.restoreAllMocks();
+		// No vitest mocks to restore in node:test migration
 	});
 
 	it("diagnostics pass for well-formed state (state-coherence check always passes)", () => {

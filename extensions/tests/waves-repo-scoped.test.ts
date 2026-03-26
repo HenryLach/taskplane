@@ -14,9 +14,9 @@
  * Run: npx vitest run extensions/tests/waves-repo-scoped.test.ts
  */
 
-import { describe, it, expect, vi } from "vitest";
-
 // Import the functions under test directly from waves.ts
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 import {
 	resolveRepoRoot,
 	resolveBaseBranch,

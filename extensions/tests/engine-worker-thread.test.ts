@@ -8,11 +8,11 @@
  * - Worker lifecycle (pause, abort, crash detection, session exit cleanup)
  * - Source-based verification of worker thread wiring
  */
+import { describe, it } from "node:test";
+import { expect } from "./expect.ts";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { describe, it, expect } from "vitest";
-
 import {
 	serializeWorkspaceConfig,
 	deserializeWorkspaceConfig,

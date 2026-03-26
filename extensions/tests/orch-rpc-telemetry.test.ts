@@ -12,7 +12,8 @@
  * Run: npx vitest run extensions/tests/orch-rpc-telemetry.test.ts
  */
 
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, before, after } from "node:test";
+import { expect } from "./expect.ts";
 import { readFileSync, mkdtempSync, rmSync } from "fs";
 import { join, dirname, resolve } from "path";
 import { fileURLToPath } from "url";
@@ -266,13 +267,13 @@ describe("generateTelemetryPaths functional tests", () => {
 	// Use a temp dir for sidecar root
 	let tempDir: string;
 
-	beforeAll(async () => {
+	before(async () => {
 		const mod = await import("../taskplane/execution.ts");
 		generateTelemetryPaths = mod.generateTelemetryPaths;
 		tempDir = mkdtempSync(join(tmpdir(), "tp049-test-"));
 	});
 
-	afterAll(() => {
+	after(() => {
 		try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
 	});
 
