@@ -68,7 +68,7 @@ _No additional context needed._
 
 ### Step 3: Delivery
 
-- [ ] `.DONE` created in this folder
+
 
 ## Documentation Requirements
 
@@ -79,7 +79,6 @@ _No additional context needed._
 
 - [ ] `hello-taskplane.md` exists in the project root
 - [ ] `hello-taskplane.md` includes a title, task ID (`EXAMPLE-001`), and current date
-- [ ] `.DONE` exists in the task folder
 
 ## Git Commit Convention
 
