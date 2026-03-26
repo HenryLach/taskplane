@@ -78,12 +78,15 @@ Responsibilities:
 - persist/reconcile state for resume
 
 **Non-blocking execution model:** `/orch` and `/orch-resume` start the engine
-asynchronously and return control to the pi session immediately. The engine runs
-its wave loop in the background, communicating state transitions via structured
-events emitted to `.pi/supervisor/events.jsonl` and in-memory callbacks that
-drive the dashboard widget. This keeps the pi session free for the operator to
-run `/orch-status`, `/orch-pause`, or interact with the supervisor agent while
-the batch executes.
+in a dedicated `worker_thread` and return control to the pi session immediately.
+The engine runs its wave loop in a separate V8 isolate, communicating state
+transitions via `postMessage` to the main thread — which forwards them as
+structured events to `.pi/supervisor/events.jsonl` and drives the dashboard
+widget. Control signals (pause, resume, abort) are forwarded from the main
+thread to the worker via `postMessage`. If the worker thread fails to spawn,
+the engine falls back to main-thread execution via `setTimeout(0)`. This keeps
+the pi session free for the operator to run `/orch-status`, `/orch-pause`, or
+interact with the supervisor agent while the batch executes.
 
 ### 3) CLI (`bin/taskplane.mjs`)
 

@@ -60,8 +60,8 @@
 
 ### Step 6: Documentation & Delivery
 **Status:** ⬜ Not Started
-- [ ] Update architecture docs if needed
-- [ ] Discoveries logged
+- [x] Update architecture docs if needed
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
