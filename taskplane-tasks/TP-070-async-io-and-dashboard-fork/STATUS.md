@@ -70,7 +70,7 @@
 
 ### Step 7: Documentation & Delivery
 **Status:** ⬜ Not Started
-- [ ] Discoveries logged
+- [x] Discoveries logged
 - [ ] `.DONE` created
 
 ---
