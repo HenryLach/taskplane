@@ -1,6 +1,6 @@
 # TP-074: Migrate Tests to Node.js Native Test Runner (Bulk) — Status
 
-**Current Step:** Step 4: Add npm Scripts and Test Runner Config
+**Current Step:** Step 5: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 1
@@ -49,10 +49,10 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] Build passes
-- [ ] Spot-check a few migrated files with node --test
-- [ ] Expect wrapper loads without errors
+**Status:** ✅ Complete
+- [x] Build passes (node bin/taskplane.mjs help — OK)
+- [x] Spot-check a few migrated files with node --test (supervisor-template, context-pressure-cache, orch-pure-functions, quality-gate, gitignore-patterns, retry-matrix — all pass)
+- [x] Expect wrapper loads without errors
 
 ---
 
