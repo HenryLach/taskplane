@@ -940,7 +940,10 @@ export function startBatchInWorker(
 
 	let worker: Worker;
 	try {
-		worker = new Worker(workerPath, { workerData: wkData });
+		worker = new Worker(workerPath, {
+			workerData: wkData,
+			execArgv: ["--experimental-transform-types", "--no-warnings"],
+		});
 	} catch (spawnErr: unknown) {
 		const errMsg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
 		ctx.ui.notify(
