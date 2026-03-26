@@ -1,6 +1,6 @@
 # TP-070: Async I/O in Poll Loops + Dashboard Child Process — Status
 
-**Current Step:** Step 2: Convert Lane Polling to Async
+**Current Step:** Step 3: Convert Merge Polling to Async
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 2
@@ -33,9 +33,9 @@
 ---
 
 ### Step 2: Convert Lane Polling to Async
-**Status:** 🟨 In Progress
-- [ ] Replace sync tmux calls with async in pollUntilTaskComplete (has-session, capture-pane, kill-session)
-- [ ] Replace readFileSync/existsSync in pollUntilTaskComplete diagnostic helpers with async equivalents
+**Status:** 🟩 Complete
+- [x] Replace sync tmux calls with async in pollUntilTaskComplete (has-session, capture-pane, kill-session)
+- [x] Replace sync tmux calls with async in monitorLanes + resolveTaskMonitorState
 
 ---
 
@@ -55,8 +55,8 @@
 ---
 
 ### Step 5: Fork Dashboard Server
-**Status:** ⬜ Not Started
-- [ ] Change dashboard from in-process to child_process.fork()
+**Status:** 🟩 Complete (no-op — already a child process)
+- [x] Dashboard already runs as separate child process via CLI
 
 ---
 
@@ -88,12 +88,20 @@
 |-----------|--------|---------|
 | 2026-03-25 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-03-26 00:35 | Task started | Extension-driven execution |
-| 2026-03-26 00:35 | Step 0 started | Preflight |
-| 2026-03-26 00:35 | Task started | Extension-driven execution |
-| 2026-03-26 00:35 | Step 0 started | Preflight |
+| 2026-03-26 | Iteration 1 | Preflight done, Step 1 async helpers created |
+| 2026-03-26 | Iteration 2 | Resuming from Step 2 |
 
 ---
 
 ## Blockers
 
 *None*
+
+---
+
+## Discoveries
+
+| # | Discovery | Scope |
+|---|-----------|-------|
+| D1 | Dashboard is already a separate process (CLI `taskplane dashboard`) — Step 5 is no-op | In scope |
+| D2 | existsSync/statSync for local files are fast enough to keep sync in polling loops | In scope |
