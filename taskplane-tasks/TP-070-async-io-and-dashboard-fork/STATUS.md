@@ -24,9 +24,11 @@
 ---
 
 ### Step 1: Create Async Tmux Helper
-**Status:** ⬜ Not Started
-- [ ] Create tmuxAsync() wrapper with spawn + promise
-- [ ] Support has-session, capture-pane, kill-session patterns
+**Status:** 🟨 In Progress
+- [ ] Add `spawn` import from child_process and `fs/promises` import
+- [ ] Create tmuxAsync() that returns Promise<{status: number; stdout: string}>
+- [ ] Create async versions: tmuxHasSessionAsync, tmuxKillSessionAsync, captureTmuxPaneTailAsync
+- [ ] Create async version: readTaskStatusTailAsync
 
 ---
 
