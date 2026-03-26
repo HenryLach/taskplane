@@ -63,8 +63,8 @@
 ---
 
 ### Step 3: Update CI
-**Status:** ⬜ Not Started
-- [ ] Update ci.yml test command to node --test
+**Status:** ✅ Complete
+- [x] Update ci.yml test command to node --test
 
 ---
 
