@@ -19,9 +19,9 @@
 ---
 
 ### Step 1: Create Expect Compatibility Wrapper
-**Status:** ⬜ Not Started
-- [ ] Create expect.ts covering all assertion patterns
-- [ ] Self-test the wrapper
+**Status:** ✅ Complete
+- [x] Create expect.ts covering all assertion patterns
+- [x] Self-test the wrapper (32/32 pass)
 
 ---
 
