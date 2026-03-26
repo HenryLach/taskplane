@@ -1460,8 +1460,8 @@ async function cmdInit(args) {
 		console.log(`${c.bold}Quick start:${c.reset}`);
 		console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
 		if (preset !== "runner-only") {
-			console.log(`  ${c.cyan}/orch-plan all${c.reset}                                   # preview waves/lanes/dependencies`);
-			console.log(`  ${c.cyan}/orch all${c.reset}                                        # run via orchestrator`);
+			console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
+			console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
 		}
 		console.log();
 		return;
@@ -1625,13 +1625,8 @@ async function cmdInit(args) {
 	console.log(`${c.bold}Quick start:${c.reset}`);
 	console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
 	if (preset !== "runner-only") {
-		console.log(`  ${c.cyan}/orch-plan all${c.reset}                                   # preview waves/lanes/dependencies`);
-		console.log(`  ${c.cyan}/orch all${c.reset}                                        # run examples via orchestrator`);
-	}
-	if (!noExamples && exampleTemplateDirs.length > 0) {
-		const firstExample = exampleTemplateDirs[0];
-		console.log(`  ${c.dim}optional single-task mode:${c.reset}`);
-		console.log(`  ${c.cyan}/task ${vars.tasks_root}/${firstExample}/PROMPT.md${c.reset}`);
+		console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
+		console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
 	}
 	console.log();
 }
