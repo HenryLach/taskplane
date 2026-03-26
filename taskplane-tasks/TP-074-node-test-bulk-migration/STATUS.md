@@ -49,9 +49,9 @@
 
 ### Step 5: Testing & Verification
 **Status:** ⬜ Not Started
-- [ ] All migrated tests pass with node --test
-- [ ] Unmigrated 5 files pass with vitest
 - [ ] Build passes
+- [ ] Spot-check a few migrated files with node --test
+- [ ] Expect wrapper loads without errors
 
 ---
 

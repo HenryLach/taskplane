@@ -112,12 +112,13 @@ Ensure CI still reports pass/fail correctly (node --test exits with non-zero on 
 
 ### Step 4: Testing & Verification
 
-> ZERO test failures allowed.
+> **Run tests with node:test only** — vitest has been removed in Step 2.
+> This is the first full run with the new runner.
 
-- [ ] Run ALL tests with node --test (no vitest fallback): `cd extensions && node --experimental-strip-types --no-warnings --test tests/*.test.ts tests/*.integration.test.ts`
-- [ ] Verify vitest is gone: `npx vitest run` should fail with "command not found" or "not installed"
+- [ ] Run ALL tests with node --test: `cd extensions && node --experimental-strip-types --no-warnings --test tests/*.test.ts tests/*.integration.test.ts`
+- [ ] Verify vitest is gone: `npx vitest run` should fail with "not installed"
 - [ ] Build passes: `node bin/taskplane.mjs help`
-- [ ] Benchmark: record total test time and compare with vitest baseline
+- [ ] Benchmark: record total test time and compare with vitest baseline (~156s)
 
 ### Step 5: Documentation & Delivery
 
