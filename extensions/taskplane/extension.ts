@@ -912,25 +912,21 @@ export function startBatchAsync(
 // ── TP-071: Engine Worker Thread ─────────────────────────────────────
 
 /**
- * Resolve paths for Worker thread spawning.
+ * Resolve the absolute path to engine-worker.ts for Worker thread spawning.
  *
- * The bootstrap `.cjs` file sets up jiti for TypeScript loading in the worker.
- * The worker module path is passed via workerData so the bootstrap knows
- * which `.ts` file to import.
+ * Uses import.meta.url to locate the file relative to this extension module.
+ * Falls back to __dirname for environments where import.meta.url is unavailable.
  *
  * @since TP-071
  */
-function resolveEngineWorkerPaths(): { bootstrapPath: string; workerModulePath: string } {
+function resolveEngineWorkerPath(): string {
 	let thisDir: string;
 	try {
 		thisDir = dirname(fileURLToPath(import.meta.url));
 	} catch {
 		thisDir = __dirname;
 	}
-	return {
-		bootstrapPath: join(thisDir, "engine-worker-bootstrap.cjs"),
-		workerModulePath: join(thisDir, "engine-worker.ts"),
-	};
+	return join(thisDir, "engine-worker.ts");
 }
 
 /**
@@ -940,7 +936,7 @@ function resolveEngineWorkerPaths(): { bootstrapPath: string; workerModulePath: 
  * The engine runs in a separate V8 isolate, keeping the main thread free
  * for TUI interaction and supervisor agent LLM calls.
  *
- * If the worker fails to spawn (e.g., bootstrap not found, jiti unavailable),
+ * If the worker fails to spawn (e.g., TypeScript not supported in workers),
  * falls back to main-thread execution via `startBatchAsync()`.
  *
  * Communication:
@@ -957,7 +953,6 @@ function resolveEngineWorkerPaths(): { bootstrapPath: string; workerModulePath: 
  * @param updateWidget  Widget refresh callback
  * @param onMonitorUpdate  Optional callback for dashboard monitor updates
  * @param onTerminal    Callback when engine reaches terminal state
- * @param fallbackEngineFn  Engine closure for main-thread fallback (R001 §1)
  * @returns The Worker instance (for pause/abort control), or null if fallback was used
  *
  * @since TP-071
@@ -969,39 +964,48 @@ export function startBatchInWorker(
 	updateWidget: () => void,
 	onMonitorUpdate?: (state: import("./types.ts").MonitorState) => void,
 	onTerminal?: () => void,
-	fallbackEngineFn?: () => Promise<void>,
 ): Worker | null {
-	const { bootstrapPath, workerModulePath } = resolveEngineWorkerPaths();
-
-	// Verify bootstrap file exists before spawning
-	if (!existsSync(bootstrapPath)) {
-		ctx.ui.notify(
-			`⚠️ Worker bootstrap not found at ${bootstrapPath} — running engine on main thread.`,
-			"warning",
-		);
-		if (fallbackEngineFn) {
-			startBatchAsync(fallbackEngineFn, batchState, ctx, updateWidget, onTerminal);
-		}
-		return null;
-	}
+	const workerPath = resolveEngineWorkerPath();
 
 	let worker: Worker;
 	try {
-		worker = new Worker(bootstrapPath, {
-			workerData: {
-				...wkData,
-				__workerModulePath: workerModulePath,
-			},
-		});
+		worker = new Worker(workerPath, { workerData: wkData });
 	} catch (spawnErr: unknown) {
 		const errMsg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
 		ctx.ui.notify(
 			`⚠️ Worker thread spawn failed: ${errMsg}\n   Falling back to main-thread execution.`,
 			"warning",
 		);
-		if (fallbackEngineFn) {
-			startBatchAsync(fallbackEngineFn, batchState, ctx, updateWidget, onTerminal);
-		}
+		// Construct fallback engine function from workerData and run on main thread
+		const wsConfig = wkData.workspaceConfig
+			? deserializeWorkspaceConfig(wkData.workspaceConfig)
+			: undefined;
+		const fallbackFn = wkData.mode === "resume"
+			? () => resumeOrchBatch(
+				wkData.orchConfig,
+				wkData.runnerConfig,
+				wkData.cwd,
+				batchState,
+				(msg: string, lvl: "info" | "warning" | "error") => { ctx.ui.notify(msg, lvl); updateWidget(); },
+				(monState: import("./types.ts").MonitorState) => { onMonitorUpdate?.(monState); },
+				wsConfig,
+				wkData.workspaceRoot,
+				wkData.agentRoot,
+				wkData.force ?? false,
+			)
+			: () => executeOrchBatch(
+				wkData.args ?? "",
+				wkData.orchConfig,
+				wkData.runnerConfig,
+				wkData.cwd,
+				batchState,
+				(msg: string, lvl: "info" | "warning" | "error") => { ctx.ui.notify(msg, lvl); updateWidget(); },
+				(monState: import("./types.ts").MonitorState) => { onMonitorUpdate?.(monState); },
+				wsConfig,
+				wkData.workspaceRoot,
+				wkData.agentRoot,
+			);
+		startBatchAsync(fallbackFn, batchState, ctx, updateWidget, onTerminal);
 		return null;
 	}
 
