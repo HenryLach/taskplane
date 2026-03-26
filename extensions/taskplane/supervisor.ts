@@ -2588,7 +2588,7 @@ export interface SupervisorRoutingContext {
 /**
  * Activate the supervisor agent in the current pi session.
  *
- * This is called after `startBatchAsync()` in the `/orch` command handler,
+ * This is called after `startBatchInWorker()` in the `/orch` command handler,
  * or directly by the `/orch` no-args routing logic (TP-042).
  *
  * It:
@@ -4089,7 +4089,7 @@ export function startEventTailer(
 	};
 
 	// ── TP-043: Integration is triggered by triggerSupervisorIntegration() ──
-	// called from the onTerminal callback in startBatchAsync (extension.ts),
+	// called from the onTerminal callback in startBatchInWorker (extension.ts),
 	// gated on phase === "completed" (R002-1). For auto mode, integration is
 	// executed programmatically via the executor callback (R002-2). The event
 	// tailer does NOT duplicate the integration trigger — batch_complete events

@@ -3,7 +3,9 @@ import { Type } from "@mariozechner/pi-ai";
 
 import { execSync, execFileSync } from "child_process";
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
+import { fileURLToPath } from "url";
+import { Worker } from "worker_threads";
 
 import {
 	DEFAULT_ORCHESTRATOR_CONFIG,
@@ -47,6 +49,8 @@ import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
 import { runMigrations } from "./migrations.ts";
+import { serializeWorkspaceConfig, applySerializedState, deserializeWorkspaceConfig } from "./engine-worker.ts";
+import type { EngineWorkerData, WorkerToMainMessage } from "./engine-worker.ts";
 import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, formatPreflightSweep, rotateSupervisorLogs, formatLogRotation } from "./cleanup.ts";
 import {
 	activateSupervisor,
@@ -905,6 +909,196 @@ export function startBatchAsync(
 	}, 0);
 }
 
+// ── TP-071: Engine Worker Thread ─────────────────────────────────────
+
+/**
+ * Resolve the absolute path to engine-worker.ts for Worker thread spawning.
+ *
+ * Uses import.meta.url to locate the file relative to this extension module.
+ * Falls back to __dirname for environments where import.meta.url is unavailable.
+ *
+ * @since TP-071
+ */
+function resolveEngineWorkerPath(): string {
+	let thisDir: string;
+	try {
+		thisDir = dirname(fileURLToPath(import.meta.url));
+	} catch {
+		thisDir = __dirname;
+	}
+	return join(thisDir, "engine-worker.ts");
+}
+
+/**
+ * Launch the engine batch in a worker thread.
+ *
+ * Replaces `startBatchAsync()` for the worker-thread execution model (TP-071).
+ * The engine runs in a separate V8 isolate, keeping the main thread free
+ * for TUI interaction and supervisor agent LLM calls.
+ *
+ * If the worker fails to spawn (e.g., TypeScript not supported in workers),
+ * falls back to main-thread execution via `startBatchAsync()`.
+ *
+ * Communication:
+ * - Worker → Main: postMessage for notify, monitor-update, engine-event, state-sync, complete
+ * - Main → Worker: postMessage for pause/unpause control
+ *
+ * Terminal idempotency: a `settled` flag ensures that only the first terminal
+ * path (complete message, error event, or non-zero exit) triggers `onTerminal`.
+ * This prevents duplicate summary/integration/supervisor flows (R001 §3).
+ *
+ * @param wkData        Serialized engine configuration and parameters
+ * @param batchState    Main thread's batch state (updated via state-sync messages)
+ * @param ctx           Extension context for UI notifications
+ * @param updateWidget  Widget refresh callback
+ * @param onMonitorUpdate  Optional callback for dashboard monitor updates
+ * @param onTerminal    Callback when engine reaches terminal state
+ * @returns The Worker instance (for pause/abort control), or null if fallback was used
+ *
+ * @since TP-071
+ */
+export function startBatchInWorker(
+	wkData: EngineWorkerData,
+	batchState: import("./types.ts").OrchBatchRuntimeState,
+	ctx: ExtensionContext,
+	updateWidget: () => void,
+	onMonitorUpdate?: (state: import("./types.ts").MonitorState) => void,
+	onTerminal?: () => void,
+): Worker | null {
+	const workerPath = resolveEngineWorkerPath();
+
+	let worker: Worker;
+	try {
+		worker = new Worker(workerPath, { workerData: wkData });
+	} catch (spawnErr: unknown) {
+		const errMsg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
+		ctx.ui.notify(
+			`⚠️ Worker thread spawn failed: ${errMsg}\n   Falling back to main-thread execution.`,
+			"warning",
+		);
+		// Construct fallback engine function from workerData and run on main thread
+		const wsConfig = wkData.workspaceConfig
+			? deserializeWorkspaceConfig(wkData.workspaceConfig)
+			: undefined;
+		const fallbackFn = wkData.mode === "resume"
+			? () => resumeOrchBatch(
+				wkData.orchConfig,
+				wkData.runnerConfig,
+				wkData.cwd,
+				batchState,
+				(msg: string, lvl: "info" | "warning" | "error") => { ctx.ui.notify(msg, lvl); updateWidget(); },
+				(monState: import("./types.ts").MonitorState) => { onMonitorUpdate?.(monState); },
+				wsConfig,
+				wkData.workspaceRoot,
+				wkData.agentRoot,
+				wkData.force ?? false,
+			)
+			: () => executeOrchBatch(
+				wkData.args ?? "",
+				wkData.orchConfig,
+				wkData.runnerConfig,
+				wkData.cwd,
+				batchState,
+				(msg: string, lvl: "info" | "warning" | "error") => { ctx.ui.notify(msg, lvl); updateWidget(); },
+				(monState: import("./types.ts").MonitorState) => { onMonitorUpdate?.(monState); },
+				wsConfig,
+				wkData.workspaceRoot,
+				wkData.agentRoot,
+			);
+		startBatchAsync(fallbackFn, batchState, ctx, updateWidget, onTerminal);
+		return null;
+	}
+
+	// Terminal settlement guard (R001 §3): ensures onTerminal fires at most once.
+	// The worker can emit error + complete messages, followed by exit event.
+	// Without this guard, summary/integration/supervisor flows would fire multiple times.
+	let settled = false;
+	const settle = () => {
+		if (settled) return;
+		settled = true;
+		onTerminal?.();
+	};
+
+	worker.on("message", (msg: WorkerToMainMessage) => {
+		switch (msg.type) {
+			case "notify":
+				ctx.ui.notify(msg.msg, msg.level);
+				updateWidget();
+				break;
+
+			case "monitor-update":
+				onMonitorUpdate?.(msg.state);
+				break;
+
+			case "engine-event":
+				// Engine events are already persisted to events.jsonl by the worker.
+				// No additional handling needed on the main thread.
+				break;
+
+			case "state-sync":
+				applySerializedState(batchState, msg.state);
+				updateWidget();
+				break;
+
+			case "complete":
+				applySerializedState(batchState, msg.state);
+				updateWidget();
+				settle();
+				break;
+
+			case "error":
+				if (batchState.phase !== "completed" && batchState.phase !== "failed") {
+					batchState.phase = "failed";
+					batchState.endedAt = Date.now();
+					batchState.errors.push(`Unhandled engine error: ${msg.message}`);
+				}
+				ctx.ui.notify(
+					`❌ Engine crashed with unhandled error: ${msg.message}\n` +
+					`   Batch ${batchState.batchId} marked as failed.`,
+					"error",
+				);
+				updateWidget();
+				break;
+		}
+	});
+
+	worker.on("error", (err: Error) => {
+		// Worker threw an uncaught exception
+		if (batchState.phase !== "completed" && batchState.phase !== "failed") {
+			batchState.phase = "failed";
+			batchState.endedAt = Date.now();
+			batchState.errors.push(`Worker thread error: ${err.message}`);
+		}
+		ctx.ui.notify(
+			`❌ Engine worker thread error: ${err.message}\n` +
+			`   Batch ${batchState.batchId} marked as failed.`,
+			"error",
+		);
+		updateWidget();
+		settle();
+	});
+
+	worker.on("exit", (code: number) => {
+		if (code !== 0 && !settled) {
+			// Non-zero exit that wasn't handled by 'error' or 'complete'
+			if (batchState.phase !== "completed" && batchState.phase !== "failed") {
+				batchState.phase = "failed";
+				batchState.endedAt = Date.now();
+				batchState.errors.push(`Worker thread exited with code ${code}`);
+			}
+			ctx.ui.notify(
+				`❌ Engine worker thread exited unexpectedly (code ${code}).`,
+				"error",
+			);
+			updateWidget();
+		}
+		// Always settle on exit — ensures cleanup runs even on clean exit
+		settle();
+	});
+
+	return worker;
+}
+
 // ── TP-043 R002-2: Integration Executor Builder ─────────────────────
 
 /**
@@ -1218,6 +1412,10 @@ export default function (pi: ExtensionAPI) {
 	let runnerConfig: TaskRunnerConfig = { ...DEFAULT_TASK_RUNNER_CONFIG };
 	let orchWidgetCtx: ExtensionContext | undefined;
 	let latestMonitorState: MonitorState | null = null;
+
+	// ── TP-071: Active engine worker thread ──────────────────────────
+	// Tracked so pause/abort can post control messages to the worker.
+	let activeWorker: Worker | null = null;
 
 	// ── Supervisor State (TP-041) ────────────────────────────────────
 	let supervisorState = freshSupervisorState();
@@ -1620,37 +1818,35 @@ export default function (pi: ExtensionAPI) {
 		orchBatchState.startedAt = Date.now();
 		updateOrchWidget();
 
-		// Non-blocking engine launch
-		startBatchAsync(
-			() => executeOrchBatch(
-				trimmedTarget,
+		// Non-blocking engine launch in worker thread (TP-071)
+		activeWorker = startBatchInWorker(
+			{
+				mode: "execute",
+				args: trimmedTarget,
 				orchConfig,
 				runnerConfig,
-				repoRoot,
-				orchBatchState,
-				(message, level) => {
-					ctx.ui.notify(message, level);
-					updateOrchWidget();
-				},
-				(monState: MonitorState) => {
-					const changed = !latestMonitorState ||
-						latestMonitorState.totalDone !== monState.totalDone ||
-						latestMonitorState.totalFailed !== monState.totalFailed ||
-						latestMonitorState.lanes.some((l, i) =>
-							l.currentTaskId !== monState.lanes[i]?.currentTaskId ||
-							l.currentStep !== monState.lanes[i]?.currentStep ||
-							l.completedChecks !== monState.lanes[i]?.completedChecks,
-						);
-					latestMonitorState = monState;
-					if (changed) updateOrchWidget();
-				},
-				execCtx!.workspaceConfig,
-				execCtx!.workspaceRoot,
-				execCtx!.pointer?.agentRoot,
-			),
+				cwd: repoRoot,
+				workspaceConfig: execCtx!.workspaceConfig
+					? serializeWorkspaceConfig(execCtx!.workspaceConfig)
+					: null,
+				workspaceRoot: execCtx!.workspaceRoot,
+				agentRoot: execCtx!.pointer?.agentRoot,
+			},
 			orchBatchState,
 			ctx,
 			updateOrchWidget,
+			(monState: MonitorState) => {
+				const changed = !latestMonitorState ||
+					latestMonitorState.totalDone !== monState.totalDone ||
+					latestMonitorState.totalFailed !== monState.totalFailed ||
+					latestMonitorState.lanes.some((l, i) =>
+						l.currentTaskId !== monState.lanes[i]?.currentTaskId ||
+						l.currentStep !== monState.lanes[i]?.currentStep ||
+						l.completedChecks !== monState.lanes[i]?.completedChecks,
+					);
+				latestMonitorState = monState;
+				if (changed) updateOrchWidget();
+			},
 			() => {
 				const mode = orchConfig.orchestrator.integration;
 				const opId = resolveOperatorId(orchConfig);
@@ -1723,6 +1919,33 @@ export default function (pi: ExtensionAPI) {
 					};
 				transitionToRoutingMode(pi, supervisorState, postBatchContext);
 			},
+			// Fallback: run engine on main thread if worker spawn fails (R001 §1)
+			() => executeOrchBatch(
+				trimmedTarget,
+				orchConfig,
+				runnerConfig,
+				repoRoot,
+				orchBatchState,
+				(message, level) => {
+					ctx.ui.notify(message, level);
+					updateOrchWidget();
+				},
+				(monState: MonitorState) => {
+					const changed = !latestMonitorState ||
+						latestMonitorState.totalDone !== monState.totalDone ||
+						latestMonitorState.totalFailed !== monState.totalFailed ||
+						latestMonitorState.lanes.some((l, i) =>
+							l.currentTaskId !== monState.lanes[i]?.currentTaskId ||
+							l.currentStep !== monState.lanes[i]?.currentStep ||
+							l.completedChecks !== monState.lanes[i]?.completedChecks,
+						);
+					latestMonitorState = monState;
+					if (changed) updateOrchWidget();
+				},
+				execCtx!.workspaceConfig,
+				execCtx!.workspaceRoot,
+				execCtx!.pointer?.agentRoot,
+			),
 		);
 
 		// Activate supervisor agent
@@ -1808,13 +2031,15 @@ export default function (pi: ExtensionAPI) {
 			return ORCH_MESSAGES.pauseAlreadyPaused(orchBatchState.batchId);
 		}
 		orchBatchState.pauseSignal.paused = true;
+		// TP-071: Forward pause to worker thread (its pauseSignal is separate)
+		activeWorker?.postMessage({ type: "pause" });
 		updateOrchWidget();
 		return ORCH_MESSAGES.pauseActivated(orchBatchState.batchId);
 	}
 
 	/**
 	 * Core logic for orch-resume. Returns an immediate status message.
-	 * The actual batch resume runs asynchronously via startBatchAsync.
+	 * The actual batch resume runs asynchronously via startBatchInWorker (TP-071).
 	 * Returns null if execCtx is missing (caller must handle).
 	 */
 	function doOrchResume(force: boolean, ctx: ExtensionContext): { message: string; error?: boolean } {
@@ -1841,29 +2066,28 @@ export default function (pi: ExtensionAPI) {
 		orchBatchState.startedAt = Date.now();
 		updateOrchWidget();
 
-		// Fire-and-forget resume via startBatchAsync
-		startBatchAsync(
-			() => resumeOrchBatch(
+		// Fire-and-forget resume via worker thread (TP-071)
+		activeWorker = startBatchInWorker(
+			{
+				mode: "resume",
+				args: "",
 				orchConfig,
 				runnerConfig,
-				execCtx!.repoRoot,
-				orchBatchState,
-				(message, level) => {
-					ctx.ui.notify(message, level);
-					updateOrchWidget();
-				},
-				(monState: MonitorState) => {
-					latestMonitorState = monState;
-					updateOrchWidget();
-				},
-				execCtx!.workspaceConfig,
-				execCtx!.workspaceRoot,
-				execCtx!.pointer?.agentRoot,
+				cwd: execCtx!.repoRoot,
+				workspaceConfig: execCtx!.workspaceConfig
+					? serializeWorkspaceConfig(execCtx!.workspaceConfig)
+					: null,
+				workspaceRoot: execCtx!.workspaceRoot,
+				agentRoot: execCtx!.pointer?.agentRoot,
 				force,
-			),
+			},
 			orchBatchState,
 			ctx,
 			updateOrchWidget,
+			(monState: MonitorState) => {
+				latestMonitorState = monState;
+				updateOrchWidget();
+			},
 			() => {
 				const mode = orchConfig.orchestrator.integration;
 				const opId = resolveOperatorId(orchConfig);
@@ -1936,6 +2160,25 @@ export default function (pi: ExtensionAPI) {
 					};
 				transitionToRoutingMode(pi, supervisorState, postBatchContext);
 			},
+			// Fallback: run resume on main thread if worker spawn fails (R001 §1)
+			() => resumeOrchBatch(
+				orchConfig,
+				runnerConfig,
+				execCtx!.repoRoot,
+				orchBatchState,
+				(message, level) => {
+					ctx.ui.notify(message, level);
+					updateOrchWidget();
+				},
+				(monState: MonitorState) => {
+					latestMonitorState = monState;
+					updateOrchWidget();
+				},
+				execCtx!.workspaceConfig,
+				execCtx!.workspaceRoot,
+				execCtx!.pointer?.agentRoot,
+				force,
+			),
 		);
 
 		// Activate supervisor agent on resume
@@ -1973,10 +2216,21 @@ export default function (pi: ExtensionAPI) {
 			messages.push(`  ⚠ Failed to write abort signal file: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
-		// Step 2: Set pause signal
+		// Step 2: Set pause signal and forward to worker
 		if (orchBatchState.pauseSignal) {
 			orchBatchState.pauseSignal.paused = true;
 			messages.push("  ✓ Pause signal set on in-memory batch state");
+		}
+		// TP-071: Forward pause to worker and terminate on hard abort
+		if (activeWorker) {
+			activeWorker.postMessage({ type: "pause" });
+			if (hard) {
+				activeWorker.terminate();
+				activeWorker = null;
+				messages.push("  ✓ Engine worker thread terminated (hard abort)");
+			} else {
+				messages.push("  ✓ Pause signal forwarded to engine worker thread");
+			}
 		}
 
 		// Step 3: Check what we're aborting
@@ -3053,6 +3307,15 @@ export default function (pi: ExtensionAPI) {
 	// Ensure supervisor lockfile/heartbeat are cleaned up on normal session exit.
 	// This avoids leaving a live-looking lock when the process exits cleanly.
 	pi.on("session_end", async () => {
+		// TP-071: Terminate engine worker thread on session exit
+		if (activeWorker) {
+			try {
+				activeWorker.terminate();
+				activeWorker = null;
+			} catch {
+				// Best effort — worker may already be dead
+			}
+		}
 		try {
 			await deactivateSupervisor(pi, supervisorState);
 		} catch {
