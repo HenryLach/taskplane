@@ -1,7 +1,7 @@
 # TP-075: Migrate Mock Tests + Remove Vitest — Status
 
-**Current Step:** Step 3: Update CI
-**Status:** 🟡 In Progress
+**Current Step:** Complete
+**Status:** ✅ Done
 **Last Updated:** 2026-03-26
 **Review Level:** 2
 **Review Counter:** 0
@@ -79,9 +79,9 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Update maintainer docs
-- [ ] Discoveries logged
+**Status:** ✅ Complete
+- [x] Update maintainer docs — removed vitest references, added node:test mock patterns
+- [x] Discoveries logged
 
 ---
 
