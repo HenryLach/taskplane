@@ -72,6 +72,13 @@ body {
   white-space: nowrap;
 }
 
+.header-logo {
+  height: 1.6rem;
+  width: auto;
+  vertical-align: middle;
+  opacity: 0.95;
+}
+
 .header-badge {
   display: inline-flex;
   align-items: center;
