@@ -2156,6 +2156,25 @@ export default function (pi: ExtensionAPI) {
 					};
 				transitionToRoutingMode(pi, supervisorState, postBatchContext);
 			},
+			// Fallback: run resume on main thread if worker spawn fails (R001 §1)
+			() => resumeOrchBatch(
+				orchConfig,
+				runnerConfig,
+				execCtx!.repoRoot,
+				orchBatchState,
+				(message, level) => {
+					ctx.ui.notify(message, level);
+					updateOrchWidget();
+				},
+				(monState: MonitorState) => {
+					latestMonitorState = monState;
+					updateOrchWidget();
+				},
+				execCtx!.workspaceConfig,
+				execCtx!.workspaceRoot,
+				execCtx!.pointer?.agentRoot,
+				force,
+			),
 		);
 
 		// Activate supervisor agent on resume
