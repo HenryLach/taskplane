@@ -1,20 +1,20 @@
 # TP-071: Engine Worker Thread — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-25
+**Current Step:** Step 1: Create Engine Worker Entry Point
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-03-26
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** L
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read startBatchAsync() entry point and callback pattern
-- [ ] Read how orch tools interact with running engine
-- [ ] Verify worker_threads works in pi extension runtime
+**Status:** ✅ Complete
+- [x] Read startBatchAsync() entry point and callback pattern
+- [x] Read how orch tools interact with running engine
+- [x] Verify worker_threads works in pi extension runtime
 
 ---
 
@@ -78,6 +78,10 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-25 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-26 01:21 | Task started | Extension-driven execution |
+| 2026-03-26 01:21 | Step 0 started | Preflight |
+| 2026-03-26 01:21 | Task started | Extension-driven execution |
+| 2026-03-26 01:21 | Step 0 started | Preflight |
 
 ---
 
