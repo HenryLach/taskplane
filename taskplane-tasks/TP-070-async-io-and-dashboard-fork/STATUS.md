@@ -33,9 +33,9 @@
 ---
 
 ### Step 2: Convert Lane Polling to Async
-**Status:** ⬜ Not Started
-- [ ] spawnSync → tmuxAsync in pollUntilTaskComplete
-- [ ] readFileSync(STATUS.md) → fs.promises.readFile
+**Status:** 🟨 In Progress
+- [ ] Replace sync tmux calls with async in pollUntilTaskComplete (has-session, capture-pane, kill-session)
+- [ ] Replace readFileSync/existsSync in pollUntilTaskComplete diagnostic helpers with async equivalents
 
 ---
 
