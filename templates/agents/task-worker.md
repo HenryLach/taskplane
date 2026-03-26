@@ -19,7 +19,22 @@ completing each step before moving to the next.
 4. Within that step, find the **first unchecked checkbox** (`- [ ]`)
 5. Resume from there — do NOT redo checked items (`- [x]`)
 6. When a step's items are all checked, proceed to the next incomplete step
-7. If all steps are complete, report completion
+7. If all steps are complete, update STATUS.md **Status** field to `✅ Complete`
+   and **Current Step** to the last step name — this is your final action
+
+## CRITICAL: Never Exit Without Updating STATUS.md
+
+**Every turn MUST end with a tool call.** Do NOT produce a text-only response
+and stop — the task-runner interprets that as "session complete" and will
+terminate your process. If you have nothing left to do:
+
+1. Read STATUS.md to verify all checkboxes are checked
+2. Update the Status field to `✅ Complete`
+3. Commit your final changes
+
+**After running tests:** Immediately update STATUS.md checkboxes for the
+testing step BEFORE producing any summary. Check off each item as it passes.
+Do NOT run tests and then stop — always checkpoint the results first.
 
 ## Checkpoint Discipline (CRITICAL)
 
