@@ -21,6 +21,9 @@ const aliases = {
 	"@mariozechner/pi-tui": pathToFileURL(
 		resolvePath(__dirname, "mocks", "pi-tui.ts"),
 	).href,
+	"@mariozechner/pi-ai": pathToFileURL(
+		resolvePath(__dirname, "mocks", "pi-ai.ts"),
+	).href,
 };
 
 /**
