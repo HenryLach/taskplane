@@ -1,6 +1,6 @@
 # TP-075: Migrate Mock Tests + Remove Vitest — Status
 
-**Current Step:** Step 0
+**Current Step:** Step 1: Migrate Mock-Heavy Test Files
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 2
@@ -45,7 +45,7 @@
 ---
 
 ### Step 1: Migrate Mock-Heavy Test Files
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 - [x] Migrate diagnostic-reports.test.ts (22 mock calls)
 - [x] Migrate non-blocking-engine.test.ts (21 mock calls)
 - [x] Migrate auto-integration-deterministic.integration.test.ts (4 mock calls)
@@ -55,7 +55,7 @@
 ---
 
 ### Step 2: Remove Vitest
-**Status:** ⬜ Not Started
+**Status:** 🟡 In Progress
 - [ ] Delete vitest.config.ts
 - [ ] Remove vitest/vite from devDependencies
 - [ ] Clean npm lockfile
