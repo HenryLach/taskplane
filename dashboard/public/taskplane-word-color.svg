@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1187.09 168.3">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #244c7c;
+        font-family: Conthrax-SemiBold, Conthrax;
+        font-size: 150px;
+        font-weight: 600;
+      }
+
+      .cls-2 {
+        letter-spacing: -.13em;
+      }
+
+      .cls-3 {
+        letter-spacing: 0em;
+      }
+    </style>
+  </defs>
+  <text class="cls-1" transform="translate(0 127.5)"><tspan class="cls-2" x="0" y="0">T</tspan><tspan class="cls-3" x="111.45" y="0">ASKPLANE</tspan></text>
+</svg>
