@@ -3,7 +3,7 @@
  * @module orch/execution
  */
 import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync } from "fs";
-import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
+import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "fs/promises";
 import { spawnSync, spawn } from "child_process";
 import { join, dirname, resolve, relative, delimiter as pathDelimiter } from "path";
 import { userInfo } from "os";
@@ -1079,7 +1079,7 @@ export async function pollUntilTaskComplete(
 				execLog(laneId, task.taskId, `lane session output (tail):\n${logTail}`);
 			}
 			const statusTail = await readTaskStatusTailAsync(statusPath);
-			const hasLogFile = existsSync(laneLogPath);
+			const hasLogFile = await fileExistsAsync(laneLogPath);
 			const outputForHint = logTail || lastPaneTail || statusTail;
 			const logHint = outputForHint
 				? ` Last output: ${outputForHint.replace(/\s+/g, " ").slice(-300)}`
@@ -1458,6 +1458,105 @@ export function parseWorktreeStatusMd(
 	};
 }
 
+/**
+ * Async version of parseWorktreeStatusMd — reads and parses STATUS.md
+ * without blocking the event loop. Used in monitoring poll loops.
+ *
+ * @since TP-070
+ */
+export async function parseWorktreeStatusMdAsync(
+	taskFolder: string,
+	worktreePath: string,
+	repoRoot: string,
+	isWorkspaceMode?: boolean,
+): Promise<{ parsed: ParsedWorktreeStatus | null; error: string | null }> {
+	const resolved = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot, isWorkspaceMode);
+	const statusPath = resolved.statusPath;
+
+	if (!(await fileExistsAsync(statusPath))) {
+		return { parsed: null, error: `STATUS.md not found at ${statusPath}` };
+	}
+
+	let content: string;
+	let mtime: number;
+	try {
+		content = await fsReadFile(statusPath, "utf-8");
+		mtime = (await fsStat(statusPath)).mtimeMs;
+	} catch (err: unknown) {
+		return { parsed: null, error: `Cannot read STATUS.md: ${err instanceof Error ? err.message : String(err)}` };
+	}
+
+	// Parse logic is identical to the sync version
+	const text = content.replace(/\r\n/g, "\n");
+	const steps: ParsedWorktreeStatus["steps"] = [];
+	let currentStep: {
+		number: number;
+		name: string;
+		status: "not-started" | "in-progress" | "complete";
+		checkboxes: boolean[];
+	} | null = null;
+	let reviewCounter = 0;
+	let iteration = 0;
+
+	for (const line of text.split("\n")) {
+		const rcMatch = line.match(/\*\*Review Counter:\*\*\s*(\d+)/);
+		if (rcMatch) reviewCounter = parseInt(rcMatch[1]);
+		const itMatch = line.match(/\*\*Iteration:\*\*\s*(\d+)/);
+		if (itMatch) iteration = parseInt(itMatch[1]);
+
+		const stepMatch = line.match(/^###\s+Step\s+(\d+):\s*(.+)/);
+		if (stepMatch) {
+			if (currentStep) {
+				const totalChecked = currentStep.checkboxes.filter(c => c).length;
+				steps.push({
+					number: currentStep.number,
+					name: currentStep.name,
+					status: currentStep.status,
+					totalChecked,
+					totalItems: currentStep.checkboxes.length,
+				});
+			}
+			currentStep = {
+				number: parseInt(stepMatch[1]),
+				name: stepMatch[2].trim(),
+				status: "not-started",
+				checkboxes: [],
+			};
+			continue;
+		}
+		if (currentStep) {
+			const ss = line.match(/\*\*Status:\*\*\s*(.*)/);
+			if (ss) {
+				const s = ss[1];
+				if (s.includes("✅") || s.toLowerCase().includes("complete")) {
+					currentStep.status = "complete";
+				} else if (s.includes("🟨") || s.includes("🟡") || s.toLowerCase().includes("progress")) {
+					currentStep.status = "in-progress";
+				}
+			}
+			const cb = line.match(/^\s*-\s*\[([ xX])\]\s*(.*)/);
+			if (cb) {
+				currentStep.checkboxes.push(cb[1].toLowerCase() === "x");
+			}
+		}
+	}
+	if (currentStep) {
+		const totalChecked = currentStep.checkboxes.filter(c => c).length;
+		steps.push({
+			number: currentStep.number,
+			name: currentStep.name,
+			status: currentStep.status,
+			totalChecked,
+			totalItems: currentStep.checkboxes.length,
+		});
+	}
+
+	return {
+		parsed: { steps, reviewCounter, iteration, mtime },
+		error: null,
+	};
+}
+
 
 // ── State Resolution ─────────────────────────────────────────────────
 
@@ -1491,7 +1590,7 @@ export async function resolveTaskMonitorState(
 	now: number,
 ): Promise<TaskMonitorSnapshot> {
 	const sessionAlive = await tmuxHasSessionAsync(sessionName);
-	const doneFileFound = existsSync(donePath);
+	const doneFileFound = await fileExistsAsync(donePath);
 
 	// Build base snapshot from parsed status
 	let currentStepName: string | null = null;
@@ -1780,7 +1879,7 @@ export async function monitorLanes(
 
 					const tracker = getOrCreateTracker(task.taskId, now);
 					const donePath = resolveTaskDonePath(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
-					const statusResult = parseWorktreeStatusMd(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
+					const statusResult = await parseWorktreeStatusMdAsync(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
 
 					const snapshot = await resolveTaskMonitorState(
 						task.taskId,

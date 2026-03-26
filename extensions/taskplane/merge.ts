@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdi
 import { execSync, spawnSync } from "child_process";
 import { join, dirname, resolve, relative } from "path";
 
-import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, generateTelemetryPaths, resolveRpcWrapperPath, resolveTelemOpId, tmuxHasSession, tmuxKillSession, toTmuxPath } from "./execution.ts";
+import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, generateTelemetryPaths, resolveRpcWrapperPath, resolveTelemOpId, tmuxHasSession, tmuxHasSessionAsync, tmuxKillSession, tmuxKillSessionAsync, tmuxAsync, toTmuxPath } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MERGE_HEALTH_POLL_INTERVAL_MS, MERGE_HEALTH_WARNING_THRESHOLD_MS, MERGE_HEALTH_STUCK_THRESHOLD_MS, MERGE_HEALTH_CAPTURE_LINES, MergeError, VALID_MERGE_STATUSES, buildEngineEventBase } from "./types.ts";
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig, MergeHealthStatus, MergeHealthEventType, MergeSessionSnapshot, MergeSessionHealthState, EngineEvent, OrchBatchPhase } from "./types.ts";
@@ -588,8 +588,8 @@ export async function waitForMergeResult(
 							timeoutMs,
 						});
 						// Clean up session (agent may still be running post-write)
-						if (tmuxHasSession(sessionName)) {
-							tmuxKillSession(sessionName);
+						if (await tmuxHasSessionAsync(sessionName)) {
+							await tmuxKillSessionAsync(sessionName);
 						}
 						return lateResult;
 					}
@@ -608,7 +608,7 @@ export async function waitForMergeResult(
 				elapsed,
 				timeoutMs,
 			});
-			tmuxKillSession(sessionName);
+			await tmuxKillSessionAsync(sessionName);
 
 			throw new MergeError(
 				"MERGE_TIMEOUT",
@@ -627,8 +627,8 @@ export async function waitForMergeResult(
 					elapsed,
 				});
 				// Kill session if still alive (agent should exit, but ensure cleanup)
-				if (tmuxHasSession(sessionName)) {
-					tmuxKillSession(sessionName);
+				if (await tmuxHasSessionAsync(sessionName)) {
+					await tmuxKillSessionAsync(sessionName);
 				}
 				return result;
 			} catch (err: unknown) {
@@ -649,8 +649,8 @@ export async function waitForMergeResult(
 			}
 		}
 
-		// Check session liveness
-		const sessionAlive = tmuxHasSession(sessionName);
+		// Check session liveness — async to avoid blocking
+		const sessionAlive = await tmuxHasSessionAsync(sessionName);
 
 		if (!sessionAlive) {
 			if (sessionDiedAt === null) {
@@ -2311,6 +2311,38 @@ export function captureMergePaneOutput(
 }
 
 /**
+ * Async version of captureMergePaneOutput — captures pane output
+ * without blocking the event loop.
+ *
+ * @param sessionName - TMUX session name
+ * @param lines - Number of lines to capture from the bottom
+ * @returns Promise resolving to captured text, or null on failure
+ *
+ * @since TP-070
+ */
+export async function captureMergePaneOutputAsync(
+	sessionName: string,
+	lines: number = MERGE_HEALTH_CAPTURE_LINES,
+): Promise<string | null> {
+	try {
+		const result = await tmuxAsync([
+			"capture-pane",
+			"-t", sessionName,
+			"-p",
+			"-S", `-${lines}`,
+		], 5_000);
+
+		if (result.status !== 0) {
+			return null;
+		}
+
+		return result.stdout || null;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Classify the health of a merge session based on session liveness
  * and pane output activity.
  *
@@ -2458,6 +2490,9 @@ export class MergeHealthMonitor {
 		this._resultPaths.delete(sessionName);
 	}
 
+	/** Overlap guard for async poll (TP-070) */
+	private _polling = false;
+
 	/**
 	 * Start the health monitoring polling loop.
 	 */
@@ -2470,8 +2505,14 @@ export class MergeHealthMonitor {
 			pollIntervalMs: this.pollIntervalMs,
 		});
 
-		this.pollTimer = setInterval(() => {
-			this.poll();
+		this.pollTimer = setInterval(async () => {
+			if (this._polling) return; // Overlap guard (TP-070)
+			this._polling = true;
+			try {
+				await this.poll();
+			} finally {
+				this._polling = false;
+			}
 		}, this.pollIntervalMs);
 	}
 
@@ -2499,18 +2540,19 @@ export class MergeHealthMonitor {
 	 * Run a single poll cycle across all monitored sessions.
 	 *
 	 * Exposed as public for testing — normally called by the interval timer.
+	 * Async (TP-070) — uses non-blocking tmux calls to avoid event loop stalls.
 	 */
-	poll(): void {
+	async poll(): Promise<void> {
 		const now = Date.now();
 
 		for (const [sessionName, state] of this.sessions) {
-			const sessionAlive = tmuxHasSession(sessionName);
+			const sessionAlive = await tmuxHasSessionAsync(sessionName);
 			const resultPath = this._resultPaths.get(sessionName) ?? "";
 			const hasResultFile = resultPath ? existsSync(resultPath) : false;
 
-			// Capture pane output for activity detection
+			// Capture pane output for activity detection — async to avoid blocking
 			const currentOutput = sessionAlive
-				? captureMergePaneOutput(sessionName)
+				? await captureMergePaneOutputAsync(sessionName)
 				: null;
 
 			// Classify health

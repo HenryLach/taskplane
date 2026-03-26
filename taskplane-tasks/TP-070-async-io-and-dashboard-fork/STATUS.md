@@ -1,6 +1,6 @@
 # TP-070: Async I/O in Poll Loops + Dashboard Child Process — Status
 
-**Current Step:** Step 3: Convert Merge Polling to Async
+**Current Step:** Step 4: Convert Supervisor Polling to Async
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 2
@@ -40,9 +40,9 @@
 ---
 
 ### Step 3: Convert Merge Polling to Async
-**Status:** ⬜ Not Started
-- [ ] spawnSync → tmuxAsync in waitForMergeResult
-- [ ] spawnSync → tmuxAsync in MergeHealthMonitor
+**Status:** 🟩 Complete
+- [x] spawnSync → tmuxAsync in waitForMergeResult
+- [x] spawnSync → tmuxAsync in MergeHealthMonitor
 
 ---
 
@@ -90,6 +90,7 @@
 | 2026-03-26 00:35 | Task started | Extension-driven execution |
 | 2026-03-26 | Iteration 1 | Preflight done, Step 1 async helpers created |
 | 2026-03-26 | Iteration 2 | Resuming from Step 2 |
+| 2026-03-26 00:42 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
 
 ---
 
