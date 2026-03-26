@@ -1,20 +1,20 @@
 # TP-074: Migrate Tests to Node.js Native Test Runner (Bulk) — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Create Expect Compatibility Wrapper
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 1
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** L
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read migration spec
-- [ ] Verify node --test works
-- [ ] Identify 5 mock-heavy files to skip
+**Status:** ✅ Complete
+- [x] Read migration spec
+- [x] Verify node --test works (v25.8.0, node:test imports work)
+- [x] Identify 5 mock-heavy files to skip (diagnostic-reports, non-blocking-engine, auto-integration-deterministic, project-config-loader, supervisor)
 
 ---
 
@@ -74,6 +74,10 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-26 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-26 19:38 | Task started | Extension-driven execution |
+| 2026-03-26 19:38 | Step 0 started | Preflight |
+| 2026-03-26 19:38 | Task started | Extension-driven execution |
+| 2026-03-26 19:38 | Step 0 started | Preflight |
 
 ---
 
