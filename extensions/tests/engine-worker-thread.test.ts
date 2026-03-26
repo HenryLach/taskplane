@@ -325,12 +325,12 @@ describe("4.x — Extension worker thread integration", () => {
 		expect(fnBody).toContain(".catch(");
 	});
 
-	it("4.11: resolveEngineWorkerPath resolves engine-worker.ts path", () => {
+	it("4.11: resolveEngineWorkerPath resolves engine-worker-entry.mjs path", () => {
 		const src = readSource("extension.ts");
 		expect(src).toContain("function resolveEngineWorkerPath()");
 		const fnStart = src.indexOf("function resolveEngineWorkerPath()");
 		const fnBody = src.substring(fnStart, fnStart + 300);
-		expect(fnBody).toContain("engine-worker.ts");
+		expect(fnBody).toContain("engine-worker-entry.mjs");
 	});
 });
 

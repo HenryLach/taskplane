@@ -897,7 +897,7 @@ function resolveEngineWorkerPath(): string {
 	} catch {
 		thisDir = __dirname;
 	}
-	return join(thisDir, "engine-worker.ts");
+	return join(thisDir, "engine-worker-entry.mjs");
 }
 
 /**
