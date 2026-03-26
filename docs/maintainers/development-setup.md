@@ -105,10 +105,35 @@ Template changes affect `taskplane init` output and must be tested by running in
 
 ---
 
+## Running tests
+
+Tests use the Node.js native test runner (`node:test`). No vitest/vite transform overhead.
+
+```bash
+cd extensions
+
+# Full suite (unit + integration)
+npm test
+
+# Fast suite (unit only, skip integration)
+npm run test:fast
+
+# Single file
+node --experimental-strip-types --no-warnings --import ./tests/loader.mjs --test tests/some-file.test.ts
+
+# Legacy vitest (for the 5 unmigrated mock-heavy files)
+npm run test:vitest
+```
+
+The custom loader (`tests/loader.mjs`) redirects `@mariozechner/pi-coding-agent`
+and `@mariozechner/pi-tui` to local mock stubs so tests don't need the real packages.
+
+---
+
 ## Recommended local dev loop
 
 1. Edit extension/CLI/template code
-2. Run tests (`cd extensions && npx vitest run`)
+2. Run tests (`cd extensions && npm test`)
 3. Run pi with local extension flags
 4. Execute manual smoke flows:
    - `/orch-plan all`
