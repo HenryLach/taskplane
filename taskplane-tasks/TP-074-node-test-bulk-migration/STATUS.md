@@ -26,9 +26,9 @@
 ---
 
 ### Step 2: Create Module Alias Loader
-**Status:** ⬜ Not Started
-- [ ] Create loader.mjs for pi package aliases
-- [ ] Verify Windows path handling
+**Status:** ✅ Complete
+- [x] Create loader.mjs for pi package aliases (register + hooks pattern)
+- [x] Verify Windows path handling (tested with file:// URLs on Windows)
 
 ---
 
