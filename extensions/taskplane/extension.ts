@@ -1821,6 +1821,7 @@ export default function (pi: ExtensionAPI) {
 		// Non-blocking engine launch in worker thread (TP-071)
 		activeWorker = startBatchInWorker(
 			{
+				engineWorker: true,
 				mode: "execute",
 				args: trimmedTarget,
 				orchConfig,
@@ -2069,6 +2070,7 @@ export default function (pi: ExtensionAPI) {
 		// Fire-and-forget resume via worker thread (TP-071)
 		activeWorker = startBatchInWorker(
 			{
+				engineWorker: true,
 				mode: "resume",
 				args: "",
 				orchConfig,

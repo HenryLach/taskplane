@@ -81,6 +81,8 @@ export interface SerializedWorkspaceConfig {
  * workerData shape passed from the main thread.
  */
 export interface EngineWorkerData {
+	/** Sentinel flag — distinguishes engine worker from vitest threads */
+	engineWorker: true;
 	/** "execute" for new batch, "resume" for resume */
 	mode: "execute" | "resume";
 	/** User arguments (target string) — only for "execute" mode */
@@ -186,7 +188,10 @@ export function applySerializedState(
 
 // ── Worker main (only runs when loaded as a worker thread) ───────────
 
-if (!isMainThread && parentPort) {
+// Guard: only run worker main when launched as an engine worker (not vitest threads).
+// In vitest --pool=threads, isMainThread=false and parentPort exists, but
+// workerData won't have the engine-specific shape.
+if (!isMainThread && parentPort && workerData?.engineWorker === true) {
 	// Dynamic imports — only loaded in worker context to avoid circular
 	// dependencies when this module is imported from extension.ts
 	const { executeOrchBatch } = await import("./engine.ts");
