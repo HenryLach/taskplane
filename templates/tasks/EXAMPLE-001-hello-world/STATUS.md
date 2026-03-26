@@ -36,7 +36,7 @@
 ### Step 3: Delivery
 **Status:** ⬜ Not Started
 
-- [ ] `.DONE` created
+
 
 ---
 

@@ -100,7 +100,6 @@ Copy this template when creating a new task. Replace all `[bracketed]` fields.
 - [ ] "Must Update" docs modified
 - [ ] "Check If Affected" docs reviewed
 - [ ] Discoveries logged in STATUS.md
-- [ ] `.DONE` created in this folder
 
 ## Documentation Requirements
 
@@ -115,7 +114,6 @@ Copy this template when creating a new task. Replace all `[bracketed]` fields.
 - [ ] All steps complete
 - [ ] All tests passing
 - [ ] Documentation updated
-- [ ] `.DONE` created
 
 ## Git Commit Convention
 
@@ -208,7 +206,6 @@ this from PROMPT.md.
 - [ ] "Must Update" docs modified
 - [ ] "Check If Affected" docs reviewed
 - [ ] Discoveries logged
-- [ ] `.DONE` created
 
 ---
 
