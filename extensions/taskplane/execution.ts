@@ -3,7 +3,8 @@
  * @module orch/execution
  */
 import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync } from "fs";
-import { spawnSync } from "child_process";
+import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
+import { spawnSync, spawn } from "child_process";
 import { join, dirname, resolve, relative, delimiter as pathDelimiter } from "path";
 import { userInfo } from "os";
 
@@ -262,6 +263,135 @@ export function killLaneAndChildren(sessionName: string): void {
 	tmuxKillSession(`${sessionName}-reviewer`);
 	// Then kill the parent lane session
 	tmuxKillSession(sessionName);
+}
+
+// ── Async TMUX Helpers (TP-070) ──────────────────────────────────────
+
+/**
+ * Run a tmux command asynchronously, without blocking the event loop.
+ *
+ * Wraps `child_process.spawn` in a promise. The process is spawned and
+ * stdout is collected incrementally; the promise resolves when the process
+ * exits.
+ *
+ * @param args - Arguments to pass to the `tmux` command
+ * @param timeoutMs - Optional timeout in milliseconds (default: 5000)
+ * @returns Promise resolving to `{ status, stdout }` where status is the exit code (0 = success)
+ *
+ * @since TP-070
+ */
+export function tmuxAsync(args: string[], timeoutMs: number = 5_000): Promise<{ status: number; stdout: string }> {
+	return new Promise((resolve) => {
+		const proc = spawn("tmux", args, {
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: timeoutMs,
+		});
+
+		let stdout = "";
+
+		proc.stdout.on("data", (chunk: Buffer) => {
+			stdout += chunk.toString("utf-8");
+		});
+
+		proc.on("error", () => {
+			// Spawn failure — treat as non-zero exit
+			resolve({ status: 1, stdout: "" });
+		});
+
+		proc.on("close", (code) => {
+			resolve({ status: code ?? 1, stdout });
+		});
+	});
+}
+
+/**
+ * Async version of tmuxHasSession — checks if a TMUX session exists
+ * without blocking the event loop.
+ *
+ * @param sessionName - TMUX session name to check
+ * @returns Promise resolving to true if session exists
+ *
+ * @since TP-070
+ */
+export async function tmuxHasSessionAsync(sessionName: string): Promise<boolean> {
+	const result = await tmuxAsync(["has-session", "-t", sessionName]);
+	return result.status === 0;
+}
+
+/**
+ * Async version of tmuxKillSession — kills a TMUX session without
+ * blocking the event loop.
+ *
+ * Idempotent: resolves to true if session was killed or was already absent.
+ *
+ * @param sessionName - TMUX session name to kill
+ * @returns Promise resolving to true if session is now absent
+ *
+ * @since TP-070
+ */
+export async function tmuxKillSessionAsync(sessionName: string): Promise<boolean> {
+	const wasAlive = await tmuxHasSessionAsync(sessionName);
+	if (!wasAlive) return true;
+
+	await tmuxAsync(["kill-session", "-t", sessionName]);
+	return !(await tmuxHasSessionAsync(sessionName));
+}
+
+/**
+ * Async version of captureTmuxPaneTail — captures tail output from a live
+ * TMUX pane without blocking the event loop.
+ *
+ * @param sessionName - TMUX session name
+ * @param maxLines - Maximum number of lines to return
+ * @param maxChars - Maximum character count
+ * @returns Promise resolving to captured text (empty string on failure)
+ *
+ * @since TP-070
+ */
+export async function captureTmuxPaneTailAsync(
+	sessionName: string,
+	maxLines: number = 40,
+	maxChars: number = 1200,
+): Promise<string> {
+	const result = await tmuxAsync(["capture-pane", "-p", "-t", sessionName], 3000);
+	if (result.status !== 0) return "";
+	const raw = (result.stdout || "").replace(/\r\n/g, "\n").trim();
+	if (!raw) return "";
+	const tail = raw.split("\n").slice(-maxLines).join("\n").trim();
+	if (!tail) return "";
+	return tail.length > maxChars ? tail.slice(-maxChars) : tail;
+}
+
+/**
+ * Async version of readTaskStatusTail — reads STATUS.md tail without
+ * blocking the event loop.
+ *
+ * @param statusPath - Path to STATUS.md
+ * @param maxLines - Maximum number of lines to return
+ * @param maxChars - Maximum character count
+ * @returns Promise resolving to status tail text (empty string if missing/unreadable)
+ *
+ * @since TP-070
+ */
+export async function readTaskStatusTailAsync(
+	statusPath: string,
+	maxLines: number = 40,
+	maxChars: number = 1200,
+): Promise<string> {
+	try {
+		await fsAccess(statusPath);
+	} catch {
+		return "";
+	}
+	try {
+		const raw = (await fsReadFile(statusPath, "utf-8")).replace(/\r\n/g, "\n").trim();
+		if (!raw) return "";
+		const tail = raw.split("\n").slice(-maxLines).join("\n").trim();
+		if (!tail) return "";
+		return tail.length > maxChars ? tail.slice(-maxChars) : tail;
+	} catch {
+		return "";
+	}
 }
 
 /**

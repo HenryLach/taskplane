@@ -1,6 +1,6 @@
 # TP-070: Async I/O in Poll Loops + Dashboard Child Process — Status
 
-**Current Step:** Step 1: Create Async Tmux Helper
+**Current Step:** Step 2: Convert Lane Polling to Async
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 2
@@ -24,11 +24,11 @@
 ---
 
 ### Step 1: Create Async Tmux Helper
-**Status:** 🟨 In Progress
-- [ ] Add `spawn` import from child_process and `fs/promises` import
-- [ ] Create tmuxAsync() that returns Promise<{status: number; stdout: string}>
-- [ ] Create async versions: tmuxHasSessionAsync, tmuxKillSessionAsync, captureTmuxPaneTailAsync
-- [ ] Create async version: readTaskStatusTailAsync
+**Status:** 🟩 Complete
+- [x] Add `spawn` import from child_process and `fs/promises` import
+- [x] Create tmuxAsync() that returns Promise<{status: number; stdout: string}>
+- [x] Create async versions: tmuxHasSessionAsync, tmuxKillSessionAsync, captureTmuxPaneTailAsync
+- [x] Create async version: readTaskStatusTailAsync
 
 ---
 
