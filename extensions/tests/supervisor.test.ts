@@ -550,6 +550,9 @@ describe("3.x — Heartbeat: isLockStale detection", () => {
 			expect(before).toBe("2026-01-01T00:00:00.000Z");
 
 			await vi.advanceTimersByTimeAsync(HEARTBEAT_INTERVAL_MS + 5);
+			// TP-070: heartbeat is now async — allow async I/O to settle
+			vi.useRealTimers();
+			await new Promise(r => setTimeout(r, 200));
 			const after = readLockfile(dir)?.heartbeat;
 			expect(after).toBeDefined();
 			expect(after).not.toBe(before);

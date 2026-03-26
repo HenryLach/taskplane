@@ -3,6 +3,7 @@
  * @module orch/merge
  */
 import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdirSync, rmSync } from "fs";
+import { readFile as fsReadFile } from "fs/promises";
 import { execSync, spawnSync } from "child_process";
 import { join, dirname, resolve, relative } from "path";
 
@@ -238,6 +239,186 @@ export function parseMergeResult(resultPath: string): MergeResult {
 			lastParseError = err instanceof Error ? err.message : String(err);
 			if (attempt < MERGE_RESULT_READ_RETRIES) {
 				sleepSync(MERGE_RESULT_READ_RETRY_DELAY_MS);
+				continue;
+			}
+		}
+	}
+
+	throw new MergeError(
+		"MERGE_RESULT_INVALID",
+		`Failed to parse merge result JSON after ${MERGE_RESULT_READ_RETRIES} attempts. ` +
+		`Last error: ${lastParseError}. File: ${resultPath}`,
+	);
+}
+
+/**
+ * Async version of parseMergeResult — reads and validates a merge result
+ * JSON file without blocking the event loop.
+ *
+ * Uses `fs/promises.readFile` instead of `readFileSync` and `sleepAsync`
+ * instead of `sleepSync` for retry delays. Validation semantics and error
+ * codes are identical to the sync version.
+ *
+ * @param resultPath - Path to the merge result JSON file
+ * @returns Promise resolving to a validated MergeResult
+ * @throws MergeError on missing/invalid/unparseable result
+ *
+ * @since TP-070
+ */
+export async function parseMergeResultAsync(resultPath: string): Promise<MergeResult> {
+	if (!existsSync(resultPath)) {
+		throw new MergeError(
+			"MERGE_RESULT_INVALID",
+			`Merge result file not found: ${resultPath}`,
+		);
+	}
+
+	const pickString = (obj: Record<string, unknown>, ...keys: string[]): string | null => {
+		for (const key of keys) {
+			const value = obj[key];
+			if (typeof value === "string" && value.trim().length > 0) {
+				return value;
+			}
+		}
+		return null;
+	};
+
+	const hasFlatVerification = (obj: Record<string, unknown>): boolean =>
+		typeof obj.verification_passed === "boolean"
+		|| Array.isArray(obj.verification_commands)
+		|| typeof obj.verification_output === "string"
+		|| typeof obj.verification_exit_code === "number";
+
+	const normalizeVerification = (obj: Record<string, unknown>): MergeResult["verification"] | null => {
+		const nested = (obj.verification && typeof obj.verification === "object")
+			? obj.verification as Record<string, unknown>
+			: null;
+
+		if (!nested && !hasFlatVerification(obj)) {
+			return null;
+		}
+
+		const passedFromBool =
+			(nested && typeof nested.passed === "boolean" ? nested.passed : undefined)
+			?? (nested && typeof nested.all_passed === "boolean" ? nested.all_passed : undefined)
+			?? (typeof obj.verification_passed === "boolean" ? obj.verification_passed : undefined);
+
+		const exitCode =
+			(nested && typeof nested.exitCode === "number" ? nested.exitCode : undefined)
+			?? (nested && typeof nested.exit_code === "number" ? nested.exit_code : undefined)
+			?? (typeof obj.verification_exit_code === "number" ? obj.verification_exit_code : undefined);
+
+		const passed = typeof passedFromBool === "boolean"
+			? passedFromBool
+			: (typeof exitCode === "number" ? exitCode === 0 : false);
+
+		const ran = (nested && typeof nested.ran === "boolean")
+			? nested.ran
+			: (
+				typeof passedFromBool === "boolean"
+				|| typeof exitCode === "number"
+				|| (nested && typeof nested.command === "string")
+				|| (nested && typeof nested.summary === "string")
+				|| typeof obj.verification_output === "string"
+				|| Array.isArray(obj.verification_commands)
+			);
+
+		const output = (
+			(nested && typeof nested.output === "string" ? nested.output : undefined)
+			?? (nested && typeof nested.summary === "string" ? nested.summary : undefined)
+			?? (nested && typeof nested.notes === "string" ? nested.notes : undefined)
+			?? (typeof obj.verification_output === "string" ? obj.verification_output : "")
+		).slice(0, 2000);
+
+		return { ran, passed, output };
+	};
+
+	// Retry-read loop for partially-written files — async version
+	let lastParseError = "";
+	for (let attempt = 1; attempt <= MERGE_RESULT_READ_RETRIES; attempt++) {
+		try {
+			const raw = (await fsReadFile(resultPath, "utf-8")).trim();
+			if (!raw) {
+				lastParseError = "File is empty";
+				if (attempt < MERGE_RESULT_READ_RETRIES) {
+					await sleepAsync(MERGE_RESULT_READ_RETRY_DELAY_MS);
+					continue;
+				}
+				throw new MergeError(
+					"MERGE_RESULT_INVALID",
+					`Merge result file is empty after ${MERGE_RESULT_READ_RETRIES} attempts: ${resultPath}`,
+				);
+			}
+
+			const parsed = JSON.parse(raw) as Record<string, unknown>;
+
+			// Validate required fields
+			if (typeof parsed.status !== "string") {
+				throw new MergeError(
+					"MERGE_RESULT_MISSING_FIELDS",
+					`Merge result missing required field "status": ${resultPath}`,
+				);
+			}
+
+			const sourceBranch = pickString(parsed, "source_branch", "sourceBranch", "source");
+			if (!sourceBranch) {
+				throw new MergeError(
+					"MERGE_RESULT_MISSING_FIELDS",
+					`Merge result missing required field "source_branch" (accepted aliases: sourceBranch, source): ${resultPath}`,
+				);
+			}
+
+			const verification = normalizeVerification(parsed);
+			if (!verification) {
+				throw new MergeError(
+					"MERGE_RESULT_MISSING_FIELDS",
+					`Merge result missing required field "verification": ${resultPath}`,
+				);
+			}
+
+			// Normalize status to uppercase
+			parsed.status = String(parsed.status).toUpperCase();
+
+			if (!VALID_MERGE_STATUSES.has(parsed.status)) {
+				execLog("merge", "parse", `unknown merge status "${parsed.status}" — treating as BUILD_FAILURE`, {
+					resultPath,
+				});
+				parsed.status = "BUILD_FAILURE";
+			}
+
+			const targetBranch = pickString(parsed, "target_branch", "targetBranch", "target") ?? "";
+			const mergeCommit = pickString(parsed, "merge_commit", "mergeCommit") ?? "";
+			const conflicts = Array.isArray(parsed.conflicts)
+				? parsed.conflicts
+					.filter((c): c is { file: string; type: string; resolved: boolean; resolution?: string } => (
+						typeof c === "object"
+						&& c !== null
+						&& typeof (c as { file?: unknown }).file === "string"
+						&& typeof (c as { type?: unknown }).type === "string"
+						&& typeof (c as { resolved?: unknown }).resolved === "boolean"
+					))
+					.map(c => ({
+						file: c.file,
+						type: c.type,
+						resolved: c.resolved,
+						...(typeof c.resolution === "string" ? { resolution: c.resolution } : {}),
+					}))
+				: [];
+
+			return {
+				status: parsed.status as MergeResultStatus,
+				source_branch: sourceBranch,
+				target_branch: targetBranch,
+				merge_commit: mergeCommit,
+				conflicts,
+				verification,
+			};
+		} catch (err: unknown) {
+			if (err instanceof MergeError) throw err;
+
+			lastParseError = err instanceof Error ? err.message : String(err);
+			if (attempt < MERGE_RESULT_READ_RETRIES) {
+				await sleepAsync(MERGE_RESULT_READ_RETRY_DELAY_MS);
 				continue;
 			}
 		}
@@ -580,7 +761,7 @@ export async function waitForMergeResult(
 			// just pushed past the timeout. Accept successful results without killing.
 			if (existsSync(resultPath)) {
 				try {
-					const lateResult = parseMergeResult(resultPath);
+					const lateResult = await parseMergeResultAsync(resultPath);
 					if (SUCCESSFUL_MERGE_STATUSES.has(lateResult.status)) {
 						execLog("merge", sessionName, "merge agent slow but succeeded — accepting result at timeout", {
 							status: lateResult.status,
@@ -621,7 +802,7 @@ export async function waitForMergeResult(
 		// Check if result file exists
 		if (existsSync(resultPath)) {
 			try {
-				const result = parseMergeResult(resultPath);
+				const result = await parseMergeResultAsync(resultPath);
 				execLog("merge", sessionName, "merge result received", {
 					status: result.status,
 					elapsed,
@@ -633,13 +814,13 @@ export async function waitForMergeResult(
 				return result;
 			} catch (err: unknown) {
 				// File exists but invalid — might be partially written.
-				// parseMergeResult already retries, so if it throws, it's final.
+				// parseMergeResultAsync already retries, so if it throws, it's final.
 				if (err instanceof MergeError && err.code === "MERGE_RESULT_INVALID") {
 					// Wait a bit and try once more (file might still be in flight)
 					await sleepAsync(MERGE_RESULT_READ_RETRY_DELAY_MS);
 					if (existsSync(resultPath)) {
 						try {
-							return parseMergeResult(resultPath);
+							return await parseMergeResultAsync(resultPath);
 						} catch {
 							// Give up on this file
 						}
@@ -664,7 +845,7 @@ export async function waitForMergeResult(
 				// One final check
 				if (existsSync(resultPath)) {
 					try {
-						return parseMergeResult(resultPath);
+						return await parseMergeResultAsync(resultPath);
 					} catch {
 						// Fall through to session died error
 					}
