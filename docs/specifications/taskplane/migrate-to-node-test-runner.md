@@ -291,7 +291,52 @@ if the first one handles the bulk cleanly.
 
 ---
 
-## 8. Open Questions
+## 8. Post-Migration: New Test Conventions
+
+After migration, **all new tests** should use `node:test` and `node:assert`
+natively — NOT the `expect()` compatibility wrapper. The wrapper exists only
+to minimize the migration diff for existing tests.
+
+### New test file template
+
+```typescript
+import { describe, it, before, after, beforeEach, afterEach } from "node:test";
+import assert from "node:assert";
+
+describe("feature X", () => {
+    it("does Y", () => {
+        assert.strictEqual(actual, expected);
+        assert.ok(str.includes("needle"));
+        assert.deepStrictEqual(obj, { key: "value" });
+    });
+});
+```
+
+### Docs and agent files to update
+
+These files must be updated to reference `node:test` + `assert` instead of
+vitest/expect, so workers and reviewers don't regress to the old pattern:
+
+| File | What to change |
+|------|----------------|
+| `templates/agents/task-worker.md` | Test execution commands, test file conventions |
+| `templates/agents/task-reviewer.md` | Review criteria for test quality |
+| `skills/create-taskplane-task/SKILL.md` | Testing step conventions, test command references |
+| `skills/create-taskplane-task/references/prompt-template.md` | Testing step template (npx vitest → node --test) |
+| `templates/config/task-runner.yaml` | Default test commands |
+| `.pi/task-runner.yaml` (project-level) | Local test commands |
+| `docs/maintainers/development-setup.md` | How to run tests |
+
+### Convention rules for new tests
+
+1. **Import from `node:test`**, not vitest — `import { describe, it } from "node:test"`
+2. **Use `assert` directly**, not expect wrapper — `assert.strictEqual(x, y)`, not `expect(x).toBe(y)`
+3. **Lifecycle hooks:** `before`/`after` (not `beforeAll`/`afterAll`)
+4. **Mocks:** `import { mock } from "node:test"` — use `mock.fn()`, `mock.module()`
+5. **No vitest dependency** — do not import from "vitest" in new files
+6. **File naming:** `*.test.ts` for unit/source, `*.integration.test.ts` for git/fs-heavy
+
+## 9. Open Questions
 
 1. **Can `mock.module()` handle all our `vi.mock()` patterns?** The 22-call
    `diagnostic-reports.test.ts` may need refactoring if mock.module doesn't
