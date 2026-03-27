@@ -928,7 +928,40 @@ export function resolveTaskRouting(
 			}
 		}
 
-		// Precedence 3: workspace default repo
+		// Precedence 3: file scope inference — match file path prefixes against
+		// known workspace repo IDs. If file scope entries like "web-client/src/..."
+		// start with a repo name, route the task to that repo.
+		if (!resolvedId && task.fileScope && task.fileScope.length > 0) {
+			const repoIds = [...validRepoIds.keys()];
+			const repoCounts = new Map<string, number>();
+			for (const filePath of task.fileScope) {
+				const normalized = filePath.replace(/\\/g, "/");
+				for (const repoId of repoIds) {
+					if (normalized.startsWith(repoId + "/") || normalized === repoId) {
+						repoCounts.set(repoId, (repoCounts.get(repoId) || 0) + 1);
+						break; // first matching repo wins for this path
+					}
+				}
+			}
+			// Use the repo with the most file scope matches (majority vote)
+			if (repoCounts.size === 1) {
+				resolvedId = repoCounts.keys().next().value!;
+				source = "file-scope";
+			} else if (repoCounts.size > 1) {
+				// Multiple repos in file scope — pick the one with most entries.
+				// (Future: #51 will handle multi-repo tasks properly)
+				let maxCount = 0;
+				for (const [repoId, count] of repoCounts) {
+					if (count > maxCount) {
+						maxCount = count;
+						resolvedId = repoId;
+					}
+				}
+				source = "file-scope";
+			}
+		}
+
+		// Precedence 4: workspace default repo
 		if (!resolvedId) {
 			resolvedId = workspaceConfig.routing.defaultRepo;
 			source = "default";
@@ -940,7 +973,8 @@ export function resolveTaskRouting(
 				code: "TASK_REPO_UNRESOLVED",
 				message:
 					`Task ${task.taskId} has no resolved repo. ` +
-					`Add a Repo: field to the PROMPT, set repo_id on area "${task.areaName}", ` +
+					`Add file scope paths prefixed with the repo name (e.g., "web-client/src/..."), ` +
+					`set repo_id on area "${task.areaName}", ` +
 					`or set routing.default_repo in the workspace config.`,
 				taskId: task.taskId,
 				taskPath: task.promptPath,
