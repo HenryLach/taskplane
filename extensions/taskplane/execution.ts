@@ -1069,9 +1069,37 @@ export async function pollUntilTaskComplete(
 				}
 			}
 
-			// Grace period expired without .DONE → task failed (TP-070: async)
+			// Grace period expired — last resort: check the lane BRANCH for .DONE.
+			// The worker may have committed .DONE before the session exited, but
+			// the worktree filesystem doesn't reflect it (stale checkout, race).
+			// This handles the common case where the worker completes all work,
+			// commits .DONE, and then the session exits before the poll detects it.
+			{
+				const relDonePath = donePath.startsWith(lane.worktreePath)
+					? donePath.slice(lane.worktreePath.length).replace(/^[\\/]+/, "").replace(/\\/g, "/")
+					: null;
+				if (relDonePath) {
+					const gitResult = runGit(
+						["show", `${lane.branch}:${relDonePath}`],
+						lane.worktreePath,
+					);
+					if (gitResult.ok) {
+						execLog(laneId, task.taskId, ".DONE found on lane branch (not in worktree) — task succeeded", {
+							session: sessionName,
+							branch: lane.branch,
+						});
+						return {
+							status: "succeeded",
+							exitReason: ".DONE committed to lane branch (found via git show after grace period)",
+							doneFileFound: true,
+						};
+					}
+				}
+			}
+
+			// Truly failed — no .DONE on filesystem or branch
 			const logTail = await readLaneLogTailAsync(laneLogPath);
-			execLog(laneId, task.taskId, "grace period expired without .DONE — task failed", {
+			execLog(laneId, task.taskId, "grace period expired, no .DONE on filesystem or branch — task failed", {
 				session: sessionName,
 				logPath: laneLogPath,
 			});
