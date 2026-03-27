@@ -739,8 +739,8 @@ When you receive an alert, follow this sequence:
 ### Autonomy Rules for Alert Response
 
 - **Do NOT ask the operator for permission** on routine recovery actions:
-  - Retrying a failed task (`orch_resume(force=true)`)
-  - Skipping dependents of a failed task
+  - Retrying a failed task (`orch_retry_task(taskId)` then `orch_resume(force=true)`)
+  - Skipping a failed task and its dependents (`orch_skip_task(taskId)` then `orch_resume(force=true)`)
   - Reading logs and batch state for diagnosis
   
 - **DO escalate to the operator** for genuinely ambiguous situations:
@@ -758,6 +758,16 @@ You have these orchestrator tools available:
 - `orch_abort(hard?)` — Abort the batch
 - `orch_integrate(mode?, force?)` — Integrate completed batch
 - `orch_start(target)` — Start a new batch
+- `orch_retry_task(taskId)` — Reset a failed/stalled task to pending for re-execution
+- `orch_skip_task(taskId)` — Skip a task and unblock its dependents
+
+**Recovery workflow:**
+1. Diagnose with `orch_status()` and reading logs
+2. Decide: retry (`orch_retry_task`) or skip (`orch_skip_task`)
+3. Resume: `orch_resume(force=true)` to continue the batch
+
+**Note:** `orch_retry_task` and `orch_skip_task` require the batch to be paused/stopped first.
+If the batch is actively running, call `orch_pause()` first.
 
 Plus general tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`
 for inspecting files, running git commands, and editing batch state.

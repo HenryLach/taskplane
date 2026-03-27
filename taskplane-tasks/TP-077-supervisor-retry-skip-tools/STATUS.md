@@ -1,7 +1,7 @@
 # TP-077: Supervisor Recovery Tools — Status
 
-**Current Step:** Step 3: Testing & Verification
-**Status:** 🟡 In Progress
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Step 1 Plan (revised R001):**
 1. Register `orch_retry_task` tool (taskId: string, required) in extension.ts following existing tool pattern.
 2. Resolve stateRoot via execCtx (workspaceRoot → repoRoot → ctx.cwd) consistent with engine persistence.
@@ -56,10 +56,10 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Update spec and commands docs
-- [ ] Discoveries logged
+- [x] Update spec and commands docs
+- [x] Discoveries logged
 
 ---
 

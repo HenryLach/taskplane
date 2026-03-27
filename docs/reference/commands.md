@@ -547,8 +547,20 @@ The key orchestrator commands are also registered as **extension tools** that th
 | `orch_resume(force?)` | `/orch-resume [--force]` | `force`: boolean (optional) |
 | `orch_abort(hard?)` | `/orch-abort [--hard]` | `hard`: boolean (optional) |
 | `orch_integrate(mode?, force?, branch?)` | `/orch-integrate [opts]` | `mode`: "fast-forward"\|"merge"\|"pr", `force`: boolean, `branch`: string |
+| `orch_retry_task(taskId)` | — | `taskId`: string (required) — retry a specific failed/stalled task |
+| `orch_skip_task(taskId)` | — | `taskId`: string (required) — skip a task and unblock dependents |
 
 These tools share the same logic as the slash commands. They return text results and catch errors gracefully (never throw). The supervisor agent uses these to manage batches proactively during monitoring.
+
+### Recovery Tools (TP-077)
+
+The `orch_retry_task` and `orch_skip_task` tools enable surgical task-level recovery:
+
+- **`orch_retry_task(taskId)`** — Resets a failed or stalled task to `pending` status. Clears exit reason, timing, and diagnostic fields. Decrements failure counters. Transitions batch from `failed` → `stopped` if no failures remain. Use `orch_resume(force=true)` after retrying to re-execute.
+
+- **`orch_skip_task(taskId)`** — Marks a failed, stalled, or pending task as `skipped`. Updates counters and recomputes blocked dependents using the dependency graph. Unblocked tasks are reported in the response. Use `orch_resume(force=true)` after skipping to continue.
+
+Both tools reject operations while the engine is actively running (launching/executing/merging/planning) — pause the batch first. They modify the persisted `batch-state.json` directly and sync in-memory state for the dashboard widget.
 
 ---
 
