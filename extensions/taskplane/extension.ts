@@ -1074,7 +1074,7 @@ export function startBatchInWorker(
 		settle();
 	});
 
-	return worker;
+	return child;
 }
 
 // ── TP-043 R002-2: Integration Executor Builder ─────────────────────
