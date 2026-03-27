@@ -1,6 +1,6 @@
 # TP-077: Supervisor Recovery Tools — Status
 
-**Current Step:** Step 1: Implement orch_retry_task
+**Current Step:** Step 2: Implement orch_skip_task
 **Status:** 🟡 In Progress
 **Step 1 Plan:** Load persisted batch state from disk, validate task exists + is failed, reset task fields, adjust counters, save back, update main-thread state if accessible. No engine IPC needed — supervisor calls orch_resume after retry.
 **Last Updated:** 2026-03-27
@@ -29,11 +29,11 @@
 ---
 
 ### Step 2: Implement orch_skip_task
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Register tool with taskId parameter
-- [ ] Validate task exists and is failed/pending
-- [ ] Update state, unblock dependents, persist
+- [x] Register tool with taskId parameter
+- [x] Validate task exists and is failed/pending
+- [x] Update state, unblock dependents, persist
 
 ---
 
@@ -77,6 +77,7 @@
 | 2026-03-27 22:17 | Step 0 started | Preflight |
 | 2026-03-27 22:17 | Task started | Extension-driven execution |
 | 2026-03-27 22:17 | Step 0 started | Preflight |
+| 2026-03-27 22:23 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
 
 ---
 
