@@ -431,8 +431,16 @@ export function buildLaneEnvVars(
 
 	let relativePath: string;
 	if (workspaceRoot) {
-		// Workspace mode: always use absolute path for cross-repo safety
-		relativePath = resolve(promptPath);
+		// Workspace mode: use worktree-relative path when the task folder is
+		// inside the lane's repo. This ensures STATUS.md, .DONE, and git commits
+		// all operate in the worktree (not the original source directory).
+		// Falls back to absolute path for cross-repo tasks (task in repo A,
+		// worker in repo B — future: issue #51).
+		if (promptNorm.startsWith(repoRootNorm + "/")) {
+			relativePath = promptNorm.slice(repoRootNorm.length + 1);
+		} else {
+			relativePath = resolve(promptPath);
+		}
 	} else if (promptNorm.startsWith(repoRootNorm + "/")) {
 		// Repo mode: relative path from repo root (mirrors into worktree)
 		relativePath = promptNorm.slice(repoRootNorm.length + 1);
@@ -764,28 +772,16 @@ export function resolveCanonicalTaskPaths(
 	let resolvedFolder: string;
 
 	if (isWorkspaceMode) {
-		// Workspace mode: check both the original source path AND the
-		// worktree-relative path. The task-runner may write .DONE to either
-		// location depending on how TASK_AUTOSTART resolves in the worker's
-		// context. Check worktree first (most common), then fall back to original.
-		const candidatePaths: string[] = [];
-
-		// Candidate 1: worktree-relative (task folder mirrored in worktree)
+		// Workspace mode: use worktree-relative path when the task folder is
+		// inside the lane's repo (same logic as TASK_AUTOSTART resolution).
+		// The worker writes .DONE and STATUS.md in the worktree, so the engine
+		// must look there too.
 		if (folderNorm.startsWith(repoRootNorm + "/")) {
 			const relPath = folderNorm.slice(repoRootNorm.length + 1);
-			candidatePaths.push(join(worktreePath, relPath));
-		}
-
-		// Candidate 2: original absolute path
-		candidatePaths.push(resolve(taskFolder));
-
-		// Use whichever has .DONE or STATUS.md; default to first candidate
-		resolvedFolder = candidatePaths[0];
-		for (const candidate of candidatePaths) {
-			if (existsSync(join(candidate, ".DONE")) || existsSync(join(candidate, "STATUS.md"))) {
-				resolvedFolder = candidate;
-				break;
-			}
+			resolvedFolder = join(worktreePath, relPath);
+		} else {
+			// Cross-repo fallback: use absolute path (future: #51)
+			resolvedFolder = resolve(taskFolder);
 		}
 	} else if (folderNorm.startsWith(repoRootNorm + "/")) {
 		// Repo mode: task folder is inside the repo root.
