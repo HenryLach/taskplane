@@ -844,6 +844,131 @@ describe("11.x: Default repo fallback when prompt + area have no repo", () => {
 	});
 });
 
+// ── 11.5x: File scope inference ──────────────────────────────────────
+
+describe("11.5x: File scope inference routes task to matching repo", () => {
+	it("11.51: single file scope entry matching a repo routes correctly", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				"api-service": { path: "/repos/api-service" },
+				"web-client": { path: "/repos/web-client" },
+				"shared-libs": { path: "/repos/shared-libs" },
+			},
+			"shared-libs",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			general: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-003",
+			areaName: "general",
+			fileScope: ["web-client/src/components/StatusBadge.js"],
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("web-client");
+	});
+
+	it("11.52: multiple file scope entries all matching same repo", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				"api-service": { path: "/repos/api-service" },
+				"web-client": { path: "/repos/web-client" },
+			},
+			"api-service",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			general: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-005",
+			areaName: "general",
+			fileScope: ["api-service/src/middleware/logger.js", "api-service/src/utils/format.js"],
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api-service");
+	});
+
+	it("11.53: file scope with no matching repo falls through to default", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				"api-service": { path: "/repos/api-service" },
+				"web-client": { path: "/repos/web-client" },
+			},
+			"api-service",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			general: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-006",
+			areaName: "general",
+			fileScope: ["docs/README.md"], // no repo prefix match
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api-service"); // falls to default
+	});
+
+	it("11.54: prompt repo still wins over file scope", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				"api-service": { path: "/repos/api-service" },
+				"web-client": { path: "/repos/web-client" },
+			},
+			"api-service",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			general: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-007",
+			areaName: "general",
+			promptRepoId: "api-service",
+			fileScope: ["web-client/src/App.js"], // conflicts with prompt
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api-service"); // prompt wins
+	});
+
+	it("11.55: empty file scope falls through to default", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				"api-service": { path: "/repos/api-service" },
+			},
+			"api-service",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			general: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-008",
+			areaName: "general",
+			fileScope: [],
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api-service");
+	});
+});
+
 // ── 12.x: TASK_REPO_UNKNOWN ─────────────────────────────────────────
 
 describe("12.x: TASK_REPO_UNKNOWN when resolved ID not in workspace repos", () => {
@@ -1133,7 +1258,7 @@ describe("16.x: Routing errors appear as fatal errors in formatted output", () =
 		expect(output).toContain("❌ Errors:");
 		expect(output).toContain("TASK_REPO_UNRESOLVED");
 		// Error should include actionable guidance
-		expect(output).toContain("Repo:");
+		expect(output).toContain("file scope");
 		expect(output).toContain("repo_id");
 		expect(output).toContain("routing.default_repo");
 	});
@@ -1762,7 +1887,7 @@ describe("17.x: Actionable routing error guidance", () => {
 		expect(errors).toHaveLength(1);
 		expect(errors[0].code).toBe("TASK_REPO_UNRESOLVED");
 		// Verify the message contains actionable guidance
-		expect(errors[0].message).toContain("Add a Repo: field to the PROMPT");
+		expect(errors[0].message).toContain("file scope paths prefixed with the repo name");
 		expect(errors[0].message).toContain("set repo_id on area");
 		expect(errors[0].message).toContain("routing.default_repo");
 	});
