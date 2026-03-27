@@ -1,6 +1,6 @@
 # Autonomous Supervisor Specification
 
-**Status:** Draft — triggering mechanism confirmed, ready for implementation
+**Status:** Phase 1 implemented (TP-076), Phase 2-4 pending
 **Priority:** #1
 **Created:** 2026-03-27
 **Updated:** 2026-03-27
@@ -196,19 +196,23 @@ The supervisor should NOT ask the user for permission for routine recovery (retr
 
 ## Implementation Plan
 
-### Phase 1: Engine → Supervisor Alerts (Next)
+### Phase 1: Engine → Supervisor Alerts ✅ (TP-076)
 
 **Scope:** Engine sends alerts to supervisor via IPC → `sendUserMessage`.
+**Status:** Implemented in TP-076.
 
-1. Define alert message types in `engine-worker.ts` (new IPC message type: `supervisor-alert`)
-2. Add alert emission points in engine code:
+1. ✅ Defined `SupervisorAlert` interface in `types.ts` with `category`, `summary`, `context` fields
+2. ✅ Added `supervisor-alert` to `WorkerToMainMessage` union in `engine-worker.ts`
+3. ✅ Added alert emission points in `engine.ts` and `resume.ts`:
    - Task failure (after all deterministic recovery attempts exhausted)
-   - Merge failure
-   - Stall detection (no progress timeout)
-   - Batch completion
-3. Main thread handler in `extension.ts`: receive `supervisor-alert` IPC → call `ctx.sendUserMessage`
-4. Update supervisor primer/template to expect and handle alerts
-5. Test: force a task failure, verify supervisor receives alert and acts
+   - Merge failure (rollback safe-stop, retry exhausted, no-retry policy)
+   - Batch completion (clean + with failures)
+   - Note: Stall detection deferred (requires last-activity tracking not yet built)
+4. ✅ Main thread handler in `extension.ts`: receives `supervisor-alert` IPC → calls `ctx.sendUserMessage(alert.summary, { deliverAs: "followUp" })`
+5. ✅ Gate on supervisor activation: alerts are discarded when supervisor is inactive
+6. ✅ Engine process death sends critical alert to supervisor (error + unexpected exit)
+7. ✅ Updated supervisor primer with alert handling section (§13a)
+8. ✅ 30 tests in `supervisor-alerts.test.ts` covering types, formatting, IPC wiring
 
 ### Phase 2: Supervisor Recovery Actions
 
