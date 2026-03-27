@@ -1860,6 +1860,41 @@ export interface SupervisorAlert {
 }
 
 /**
+ * Callback type for supervisor alert emission.
+ *
+ * The engine (child process) calls this when it needs to alert the
+ * supervisor about a significant event. The main thread handler
+ * converts the alert into a `sendUserMessage` call to wake the
+ * supervisor LLM.
+ *
+ * @since TP-076
+ */
+export type SupervisorAlertCallback = (alert: SupervisorAlert) => void;
+
+/**
+ * Build a batch progress snapshot from runtime state.
+ *
+ * Pure function — extracts the current progress counters from
+ * OrchBatchRuntimeState into the IPC-serializable format used
+ * by SupervisorAlertContext.batchProgress.
+ *
+ * @since TP-076
+ */
+export function buildBatchProgressSnapshot(
+	batchState: OrchBatchRuntimeState,
+): NonNullable<SupervisorAlertContext["batchProgress"]> {
+	return {
+		succeededTasks: batchState.succeededTasks,
+		failedTasks: batchState.failedTasks,
+		skippedTasks: batchState.skippedTasks,
+		blockedTasks: batchState.blockedTasks,
+		totalTasks: batchState.totalTasks,
+		currentWave: batchState.currentWaveIndex + 1, // 1-based for display
+		totalWaves: batchState.totalWaves,
+	};
+}
+
+/**
  * Build the base fields for an engine event.
  *
  * Ensures consistent field population across all emit sites.

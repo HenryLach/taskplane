@@ -248,6 +248,11 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 			send({ type: "engine-event", event });
 		};
 
+		// TP-076: Supervisor alert callback — sends structured alerts to main thread
+		const onSupervisorAlert = (alert: import("./types.ts").SupervisorAlert) => {
+			send({ type: "supervisor-alert", alert });
+		};
+
 		// ── Execute engine ───────────────────────────────────────────
 		const enginePromise = data.mode === "resume"
 			? resumeOrchBatch(
@@ -261,6 +266,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 				data.workspaceRoot,
 				data.agentRoot,
 				data.force ?? false,
+				onSupervisorAlert,
 			)
 			: executeOrchBatch(
 				data.args ?? "",
@@ -274,6 +280,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 				data.workspaceRoot,
 				data.agentRoot,
 				onEngineEvent,
+				onSupervisorAlert,
 			);
 
 		enginePromise
