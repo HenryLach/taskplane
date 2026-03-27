@@ -1,6 +1,6 @@
 # TP-078: Force Merge and Supervisor Recovery Playbooks — Status
 
-**Current Step:** Step 2: Supervisor Recovery Playbooks
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-27
 **Review Level:** 2
@@ -28,12 +28,12 @@
 ---
 
 ### Step 2: Supervisor Recovery Playbooks
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Task failure playbook (race condition vs genuine, retry vs skip vs escalate)
-- [ ] Merge failure playbook (skip failed → force merge → escalate if conflicts)
-- [ ] Batch complete playbook (report, suggest integrate)
-- [ ] Decision trees for each
+- [x] Task failure playbook (race condition vs genuine, retry vs skip vs escalate)
+- [x] Merge failure playbook (skip failed → force merge → escalate if conflicts)
+- [x] Batch complete playbook (report, suggest integrate)
+- [x] Decision trees for each
 
 ---
 
@@ -77,6 +77,7 @@
 | 2026-03-27 22:57 | Step 0 started | Preflight |
 | 2026-03-27 22:57 | Task started | Extension-driven execution |
 | 2026-03-27 22:57 | Step 0 started | Preflight |
+| 2026-03-27 23:01 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
 
 ---
 
