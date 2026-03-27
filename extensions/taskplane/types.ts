@@ -1780,6 +1780,85 @@ export interface EngineEvent {
  */
 export type EngineEventCallback = (event: EngineEvent) => void;
 
+
+// ── Supervisor Alert Types (TP-076) ──────────────────────────────────
+
+/**
+ * Alert category for supervisor notifications.
+ *
+ * Matches the alert categories in the autonomous supervisor spec:
+ * - `task-failure`:   A task failed after deterministic recovery was exhausted
+ * - `merge-failure`:  Wave merge failed and batch paused
+ * - `batch-complete`: Batch finished (all waves done)
+ *
+ * Note: `stall` detection is deferred to a future phase (requires
+ * last-activity tracking not yet built).
+ *
+ * @since TP-076
+ */
+export type SupervisorAlertCategory = "task-failure" | "merge-failure" | "batch-complete";
+
+/**
+ * Structured context payload for supervisor alerts.
+ *
+ * All fields are IPC-serializable (no functions, no circular refs, no Maps/Sets).
+ * Each alert category populates the relevant subset of optional fields.
+ *
+ * @since TP-076
+ */
+export interface SupervisorAlertContext {
+	/** Task ID (for task-failure alerts) */
+	taskId?: string;
+	/** Lane ID, e.g., "lane-1" (for task-failure alerts) */
+	laneId?: string;
+	/** Lane number (for task-failure and merge-failure alerts) */
+	laneNumber?: number;
+	/** Wave index, 0-based (for merge-failure and batch-complete alerts) */
+	waveIndex?: number;
+	/** Exit reason string (for task-failure alerts) */
+	exitReason?: string;
+	/** Whether partial progress was preserved (for task-failure alerts) */
+	partialProgress?: boolean;
+	/** Batch progress summary */
+	batchProgress?: {
+		succeededTasks: number;
+		failedTasks: number;
+		skippedTasks: number;
+		blockedTasks: number;
+		totalTasks: number;
+		currentWave: number;
+		totalWaves: number;
+	};
+	/** Merge failure reason (for merge-failure alerts) */
+	mergeError?: string;
+	/** Batch duration in milliseconds (for batch-complete alerts) */
+	batchDurationMs?: number;
+}
+
+/**
+ * Structured supervisor alert message.
+ *
+ * Emitted by the engine (child process) via IPC when the supervisor
+ * needs to be notified of an event requiring attention or acknowledgement.
+ *
+ * Design:
+ * - All fields are plain JSON-serializable values (IPC-safe).
+ * - `category` determines the alert type and which `context` fields are populated.
+ * - `summary` is a pre-formatted, human-readable string suitable for direct
+ *   display to the supervisor LLM as a conversation message.
+ * - `context` provides structured data for programmatic consumption.
+ *
+ * @since TP-076
+ */
+export interface SupervisorAlert {
+	/** Alert category — determines handling behavior */
+	category: SupervisorAlertCategory;
+	/** Human-readable summary suitable for display as a chat message */
+	summary: string;
+	/** Structured context data (all fields IPC-serializable) */
+	context: SupervisorAlertContext;
+}
+
 /**
  * Build the base fields for an engine event.
  *
