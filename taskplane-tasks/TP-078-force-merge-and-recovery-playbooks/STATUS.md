@@ -1,10 +1,10 @@
 # TP-078: Force Merge and Supervisor Recovery Playbooks — Status
 
-**Current Step:** Step 3: Testing & Verification
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-27
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
@@ -38,11 +38,11 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Create supervisor-force-merge.test.ts
-- [ ] Test force merge, validation, playbook existence
-- [ ] FULL test suite passing
+- [x] Create supervisor-force-merge.test.ts
+- [x] Test force merge, validation, playbook existence
+- [x] FULL test suite passing (2813/2813 pass, 0 failures)
 
 ---
 
@@ -57,6 +57,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -78,6 +79,7 @@
 | 2026-03-27 22:57 | Task started | Extension-driven execution |
 | 2026-03-27 22:57 | Step 0 started | Preflight |
 | 2026-03-27 23:01 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-27 23:05 | Review R001 | plan Step 1: REVISE (fallback) |
 
 ---
 
