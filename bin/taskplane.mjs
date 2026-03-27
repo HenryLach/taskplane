@@ -1112,9 +1112,33 @@ async function cmdInit(args) {
 	if (effectiveAlreadyInitialized && resolvedMode === "workspace" && effectiveConfigPath) {
 		const configRepo = path.basename(path.dirname(effectiveConfigPath));
 		const configRepoRoot = path.join(projectRoot, configRepo);
+		// Read existing routing from config repo first, then fall back to
+		// the workspace root's .pi/taskplane-workspace.yaml (which --force may overwrite).
+		// This preserves user's tasks_root and default_repo on reinit.
 		const existingWorkspaceJson = readWorkspaceJson(configRepoRoot);
-		const workspaceTasksRoot = existingWorkspaceJson?.routing?.tasks_root || "taskplane-tasks";
-		const workspaceDefaultRepo = existingWorkspaceJson?.routing?.default_repo || configRepo;
+		const existingRootYaml = (() => {
+			try {
+				const yamlPath = path.join(projectRoot, ".pi", "taskplane-workspace.yaml");
+				if (fs.existsSync(yamlPath)) {
+					const raw = fs.readFileSync(yamlPath, "utf-8");
+					const tasksMatch = raw.match(/tasks_root:\s*"?([^"\n]+)"?/);
+					const defaultMatch = raw.match(/default_repo:\s*"?([^"\n]+)"?/);
+					return {
+						routing: {
+							tasks_root: tasksMatch?.[1]?.trim() || null,
+							default_repo: defaultMatch?.[1]?.trim() || null,
+						},
+					};
+				}
+			} catch {}
+			return null;
+		})();
+		const workspaceTasksRoot = existingWorkspaceJson?.routing?.tasks_root
+			|| existingRootYaml?.routing?.tasks_root
+			|| "taskplane-tasks";
+		const workspaceDefaultRepo = existingWorkspaceJson?.routing?.default_repo
+			|| existingRootYaml?.routing?.default_repo
+			|| configRepo;
 		const workspaceRepoNames = Array.from(
 			new Set([
 				...detection.subRepos,
