@@ -1946,7 +1946,7 @@ export default function (pi: ExtensionAPI) {
 			// ── TP-076: Supervisor alert handler — injects alerts as user messages ──
 			(alert) => {
 				if (!supervisorState.active) return; // Don't send orphaned messages
-				ctx.sendUserMessage(alert.summary, { deliverAs: "followUp" });
+				pi.sendUserMessage(alert.summary, { deliverAs: "followUp" });
 			},
 		);
 
@@ -2166,7 +2166,7 @@ export default function (pi: ExtensionAPI) {
 			// ── TP-076: Supervisor alert handler — injects alerts as user messages ──
 			(alert) => {
 				if (!supervisorState.active) return; // Don't send orphaned messages
-				ctx.sendUserMessage(alert.summary, { deliverAs: "followUp" });
+				pi.sendUserMessage(alert.summary, { deliverAs: "followUp" });
 			},
 		);
 
