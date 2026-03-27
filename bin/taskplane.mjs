@@ -1193,6 +1193,15 @@ async function cmdInit(args) {
 			{ skipIfExists: !force, label: ".pi/taskplane-workspace.yaml" },
 		);
 
+		// ── Gitignore enforcement in config repo (Scenario D) ───
+		// Ensure .gitignore exists even when reusing existing config
+		const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: false, prefix: ".taskplane/" });
+		if (gitignoreResult.created) {
+			console.log(`  ${c.green}create${c.reset} ${configRepo}/.gitignore`);
+		} else if (gitignoreResult.added.length > 0) {
+			console.log(`  ${c.green}update${c.reset} ${configRepo}/.gitignore (${gitignoreResult.added.length} entries added)`);
+		}
+
 		console.log(`\n${OK} ${c.bold}Workspace pointer created.${c.reset}\n`);
 		console.log(`  Config:  ${c.cyan}${configRepo}/.taskplane/${c.reset}`);
 		console.log(`  Pointer: ${c.cyan}.pi/taskplane-pointer.json${c.reset}`);
@@ -2510,18 +2519,20 @@ function cmdDoctor() {
 	console.log();
 	const hasUnifiedJson = fs.existsSync(path.join(configLocation.root, configLocation.prefix, "taskplane-config.json"));
 	const configFiles = [
-		{ path: "taskplane-config.json", required: false },
-		{ path: "task-runner.yaml", required: !hasUnifiedJson },
-		{ path: "task-orchestrator.yaml", required: !hasUnifiedJson },
-		{ path: "agents/task-worker.md", required: true },
-		{ path: "agents/task-reviewer.md", required: true },
-		{ path: "agents/task-merger.md", required: true },
-		{ path: "agents/supervisor.md", required: false },
-		{ path: "taskplane.json", required: false },
+		{ path: "taskplane-config.json", required: false, hide: false },
+		// YAML configs are legacy fallback — hide when taskplane-config.json exists
+		{ path: "task-runner.yaml", required: !hasUnifiedJson, hide: hasUnifiedJson },
+		{ path: "task-orchestrator.yaml", required: !hasUnifiedJson, hide: hasUnifiedJson },
+		{ path: "agents/task-worker.md", required: true, hide: false },
+		{ path: "agents/task-reviewer.md", required: true, hide: false },
+		{ path: "agents/task-merger.md", required: true, hide: false },
+		// supervisor.md is created by /orch; taskplane.json is created at runtime
+		{ path: "agents/supervisor.md", required: false, hide: true },
+		{ path: "taskplane.json", required: false, hide: true },
 	];
 
 	let missingRequiredConfigs = 0;
-	for (const { path: relPath, required } of configFiles) {
+	for (const { path: relPath, required, hide } of configFiles) {
 		const fullPath = path.join(configLocation.root, configLocation.prefix, relPath);
 		const displayPath = `${configLocation.label}/${relPath}`;
 		const exists = fs.existsSync(fullPath);
@@ -2531,7 +2542,8 @@ function cmdDoctor() {
 			console.log(`  ${FAIL} ${displayPath} missing`);
 			missingRequiredConfigs++;
 			issues++;
-		} else {
+		} else if (!hide) {
+			// Show optional files only when they're relevant (not superseded)
 			console.log(`  ${WARN} ${displayPath} missing ${c.dim}(optional)${c.reset}`);
 		}
 	}
