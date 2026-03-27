@@ -43,6 +43,7 @@
     "@sinclair/typebox": "*"
   },
   "dependencies": {
+    "jiti": "^2.6.1",
     "yaml": "^2.4.0"
   },
   "license": "MIT",
