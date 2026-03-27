@@ -208,9 +208,9 @@ export function parsePromptForOrchestrator(
 		}
 	}
 	if (execTargetSectionBody !== null) {
-		// Match "Repo: api" or "**Repo:** api" or "Repo: api" with whitespace
+		// Match "Repo: api" or "**Repo:** api" or "Workspace: api" with whitespace
 		const repoLineMatch = execTargetSectionBody.match(
-			/^\s*\*?\*?Repo:?\*?\*?\s+(\S+)/mi,
+			/^\s*\*?\*?(?:Repo|Workspace):?\*?\*?\s+(\S+)/mi,
 		);
 		if (repoLineMatch) {
 			const candidate = repoLineMatch[1].trim().toLowerCase();
@@ -220,10 +220,10 @@ export function parsePromptForOrchestrator(
 		}
 	}
 
-	// Priority 2 (fallback): Inline "**Repo:** <id>" anywhere in content
+	// Priority 2 (fallback): Inline "**Repo:** <id>" or "**Workspace:** <id>" anywhere in content
 	if (!promptRepoId) {
 		const inlineRepoMatch = content.match(
-			/^\*\*Repo:\*\*\s+(\S+)/m,
+			/^\*\*(?:Repo|Workspace):\*\*\s+(\S+)/m,
 		);
 		if (inlineRepoMatch) {
 			const candidate = inlineRepoMatch[1].trim().toLowerCase();
