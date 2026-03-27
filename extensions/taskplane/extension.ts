@@ -1675,7 +1675,7 @@ export default function (pi: ExtensionAPI) {
 		// TP-063: Run additive migrations before batch start (primary trigger).
 		// Non-fatal — failures warn but never block batch execution.
 		try {
-			const migrationResult = runMigrations(execCtx.repoRoot);
+			const migrationResult = runMigrations(execCtx.repoRoot, undefined, execCtx.pointer?.configRoot);
 			if (migrationResult.messages.length > 0) {
 				ctx.ui.notify(migrationResult.messages.join("\n"), "info");
 			}
@@ -3134,7 +3134,7 @@ export default function (pi: ExtensionAPI) {
 		// This ensures migrations run even if the user doesn't invoke /orch.
 		// Non-fatal — failures are silently swallowed so startup is never blocked.
 		try {
-			const migrationResult = runMigrations(execCtx.repoRoot);
+			const migrationResult = runMigrations(execCtx.repoRoot, undefined, execCtx.pointer?.configRoot);
 			if (migrationResult.messages.length > 0) {
 				ctx.ui.notify(migrationResult.messages.join("\n"), "info");
 			}

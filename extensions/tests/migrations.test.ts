@@ -182,6 +182,21 @@ describe("migrations", () => {
 
 			rmSync(fakePackageRoot, { recursive: true, force: true });
 		});
+
+		it("uses configRoot for supervisor.md in workspace mode", () => {
+			// Simulate workspace mode: configRoot is a different directory than .pi
+			const configRoot = join(tempDir, "shared-libs", ".taskplane");
+			mkdirSync(join(configRoot, "agents"), { recursive: true });
+			setupProjectDir(tempDir); // creates .pi/taskplane.json
+
+			const result = runMigrations(tempDir, packageRoot, configRoot);
+
+			expect(result.applied).toContain("add-supervisor-local-template-v1");
+
+			// File should be in configRoot, NOT in .pi
+			expect(existsSync(join(configRoot, "agents", "supervisor.md"))).toBe(true);
+			expect(existsSync(join(tempDir, ".pi", "agents", "supervisor.md"))).toBe(false);
+		});
 	});
 
 	describe("loadTaskplaneMeta", () => {
