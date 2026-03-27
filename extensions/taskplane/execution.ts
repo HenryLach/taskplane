@@ -1287,6 +1287,23 @@ export async function executeLane(
 			// The task-runner writes .DONE via writeFileSync but never commits it.
 			if (pollResult.status === "succeeded") {
 				commitTaskArtifacts(lane, task, laneId);
+
+				// Reset worktree to clean state for the next task on this lane.
+				// Without this, the next worker sees the previous task's modified
+				// files and can get confused about which task it's working on.
+				if (lane.tasks.indexOf(task) < lane.tasks.length - 1) {
+					execLog(laneId, task.taskId, "resetting worktree for next task");
+					const resetResult = runGit(["checkout", "--", "."], lane.worktreePath);
+					const cleanResult = runGit(["clean", "-fd"], lane.worktreePath);
+					if (!resetResult.ok || !cleanResult.ok) {
+						execLog(laneId, task.taskId, "worktree reset warning", {
+							resetOk: resetResult.ok,
+							cleanOk: cleanResult.ok,
+							resetErr: resetResult.stderr,
+							cleanErr: cleanResult.stderr,
+						});
+					}
+				}
 			}
 
 			// If task failed or was paused, skip remaining tasks
