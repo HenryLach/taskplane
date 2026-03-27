@@ -31,10 +31,11 @@ export interface Migration {
 	 *
 	 * @param projectRoot - Project root directory
 	 * @param packageRoot - Taskplane package root (for template resolution)
+	 * @param configRoot - Config root directory (e.g., ".pi" in repo mode, "shared-libs/.taskplane" in workspace mode)
 	 * @returns A short message describing what was created, or null if skipped (already exists)
 	 * @throws If the migration cannot complete (e.g., missing template source)
 	 */
-	run(projectRoot: string, packageRoot: string): string | null;
+	run(projectRoot: string, packageRoot: string, configRoot: string): string | null;
 }
 
 /**
@@ -165,9 +166,9 @@ export function resolvePackageRoot(importMetaUrl?: string): string {
 export const MIGRATION_REGISTRY: Migration[] = [
 	{
 		id: "add-supervisor-local-template-v1",
-		description: "Create .pi/agents/supervisor.md from template if missing",
-		run(projectRoot: string, packageRoot: string): string | null {
-			const targetPath = join(projectRoot, ".pi", "agents", "supervisor.md");
+		description: "Create agents/supervisor.md from template if missing",
+		run(projectRoot: string, packageRoot: string, configRoot: string): string | null {
+			const targetPath = join(configRoot, "agents", "supervisor.md");
 
 			// Skip if file already exists — never overwrite
 			if (existsSync(targetPath)) {
@@ -187,7 +188,7 @@ export const MIGRATION_REGISTRY: Migration[] = [
 			mkdirSync(dirname(targetPath), { recursive: true });
 			copyFileSync(templatePath, targetPath);
 
-			return "Created .pi/agents/supervisor.md from template";
+			return `Created ${targetPath} from template`;
 		},
 	},
 ];
@@ -213,8 +214,10 @@ export const MIGRATION_REGISTRY: Migration[] = [
 export function runMigrations(
 	projectRoot: string,
 	packageRoot?: string,
+	configRoot?: string,
 ): MigrationRunResult {
 	const pkgRoot = packageRoot ?? resolvePackageRoot();
+	const cfgRoot = configRoot ?? join(projectRoot, ".pi");
 	const result: MigrationRunResult = {
 		applied: [],
 		skipped: [],
@@ -236,7 +239,7 @@ export function runMigrations(
 		}
 
 		try {
-			const message = migration.run(projectRoot, pkgRoot);
+			const message = migration.run(projectRoot, pkgRoot, cfgRoot);
 
 			// Record as applied (whether it created something or skipped)
 			migrationState.applied[migration.id] = {
