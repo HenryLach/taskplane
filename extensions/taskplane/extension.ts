@@ -15,7 +15,7 @@ import { ORCH_MESSAGES, computeIntegrateCleanupResult } from "./messages.ts";
 import type { IntegrateCleanupRepoFindings } from "./messages.ts";
 import { computeWaveAssignments } from "./waves.ts";
 import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
-import { deleteBatchState, loadBatchState, detectOrphanSessions, parseOrchSessionNames } from "./persistence.ts";
+import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions, parseOrchSessionNames } from "./persistence.ts";
 import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, formatPreflightResults, runPreflight } from "./worktree.ts";
 import { executeLane } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
@@ -2330,6 +2330,392 @@ export default function (pi: ExtensionAPI) {
 		return messages.join("\n");
 	}
 
+	// ── TP-077: Supervisor Recovery Tools ────────────────────────────
+
+	/**
+	 * Core logic for orch_retry_task. Resets a failed task to pending for re-execution.
+	 *
+	 * Modifies persisted batch state on disk and updates in-memory state.
+	 * The engine picks up the state change on its next poll cycle.
+	 */
+	function doOrchRetryTask(taskId: string, ctx: ExtensionContext): string {
+		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+
+		// Load persisted state
+		let state: PersistedBatchState | null = null;
+		try {
+			state = loadBatchState(stateRoot);
+		} catch (err) {
+			return `❌ Failed to load batch state: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		if (!state) {
+			return "❌ No batch state found. There is no active or recent batch to modify.";
+		}
+
+		// Find the task
+		const taskRecord = state.tasks.find(t => t.taskId === taskId);
+		if (!taskRecord) {
+			const knownIds = state.tasks.map(t => t.taskId).join(", ");
+			return `❌ Task "${taskId}" not found in batch ${state.batchId}.\nKnown tasks: ${knownIds || "(none)"}`;
+		}
+
+		// Validate: only failed tasks can be retried
+		if (taskRecord.status !== "failed") {
+			return `❌ Cannot retry task "${taskId}" — current status is "${taskRecord.status}". Only failed tasks can be retried.`;
+		}
+
+		// Reset task to pending
+		taskRecord.status = "pending";
+		taskRecord.exitReason = "";
+		taskRecord.doneFileFound = false;
+		taskRecord.startedAt = null;
+		taskRecord.endedAt = null;
+		taskRecord.exitDiagnostic = undefined;
+		taskRecord.partialProgressCommits = undefined;
+		taskRecord.partialProgressBranch = undefined;
+
+		// Adjust counters
+		state.failedTasks = Math.max(0, state.failedTasks - 1);
+
+		// If batch was in a terminal-ish phase due to failures, move back to executing
+		if (state.phase === "failed" || state.phase === "stopped" || state.phase === "paused") {
+			state.phase = "paused"; // Keep paused so engine re-queues on next resume
+		}
+
+		// Update timestamp
+		state.updatedAt = Date.now();
+
+		// Persist
+		try {
+			saveBatchState(JSON.stringify(state, null, 2), stateRoot);
+		} catch (err) {
+			return `❌ Failed to persist state after retry: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		// Update in-memory state
+		orchBatchState.failedTasks = state.failedTasks;
+
+		// Remove from blocked set if present
+		orchBatchState.blockedTaskIds.delete(taskId);
+
+		updateOrchWidget();
+
+		return `✅ Task "${taskId}" reset to pending for re-execution.\n` +
+			`   Failed tasks: ${state.failedTasks}/${state.totalTasks}\n` +
+			`   Use orch_resume(force=true) to re-execute the batch if it's not already running.`;
+	}
+
+	/**
+	 * Core logic for orch_skip_task. Marks a task as skipped and unblocks dependents.
+	 *
+	 * Modifies persisted batch state on disk and updates in-memory state.
+	 * The engine picks up the state change on its next poll cycle.
+	 */
+	function doOrchSkipTask(taskId: string, ctx: ExtensionContext): string {
+		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+
+		// Load persisted state
+		let state: PersistedBatchState | null = null;
+		try {
+			state = loadBatchState(stateRoot);
+		} catch (err) {
+			return `❌ Failed to load batch state: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		if (!state) {
+			return "❌ No batch state found. There is no active or recent batch to modify.";
+		}
+
+		// Find the task
+		const taskRecord = state.tasks.find(t => t.taskId === taskId);
+		if (!taskRecord) {
+			const knownIds = state.tasks.map(t => t.taskId).join(", ");
+			return `❌ Task "${taskId}" not found in batch ${state.batchId}.\nKnown tasks: ${knownIds || "(none)"}`;
+		}
+
+		// Validate: only failed or pending tasks can be skipped
+		if (taskRecord.status !== "failed" && taskRecord.status !== "pending") {
+			return `❌ Cannot skip task "${taskId}" — current status is "${taskRecord.status}". Only failed or pending tasks can be skipped.`;
+		}
+
+		const wasFailed = taskRecord.status === "failed";
+
+		// Mark as skipped
+		taskRecord.status = "skipped";
+		taskRecord.exitReason = "Skipped by supervisor";
+		taskRecord.endedAt = Date.now();
+
+		// Adjust counters
+		state.skippedTasks = (state.skippedTasks ?? 0) + 1;
+		if (wasFailed) {
+			state.failedTasks = Math.max(0, state.failedTasks - 1);
+		}
+
+		// Unblock dependents: remove this task from blockedTaskIds
+		const unblockedTasks: string[] = [];
+		const blockedSet = new Set(state.blockedTaskIds ?? []);
+		if (blockedSet.has(taskId)) {
+			blockedSet.delete(taskId);
+		}
+
+		// Check wave plan for dependent tasks: find tasks that depended on the skipped task
+		// and check if they're now unblocked (all their blockers are resolved).
+		// The dependency info is embedded in the wave structure — tasks in later waves
+		// depend on earlier waves. We check blocked tasks to see if their only
+		// remaining blocker was this task.
+		// Since we don't have the full dependency graph in persisted state,
+		// we check if any blocked task can be found in the wave plan and remove
+		// it from blocked if the skipped task was its only blocker.
+		// For now, we remove the skipped task from the blocked list to allow
+		// the engine's skip-dependents logic to re-evaluate on resume.
+		state.blockedTaskIds = [...blockedSet];
+		state.blockedTasks = blockedSet.size;
+
+		// Update timestamp
+		state.updatedAt = Date.now();
+
+		// Persist
+		try {
+			saveBatchState(JSON.stringify(state, null, 2), stateRoot);
+		} catch (err) {
+			return `❌ Failed to persist state after skip: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		// Update in-memory state
+		orchBatchState.failedTasks = state.failedTasks;
+		orchBatchState.skippedTasks = state.skippedTasks;
+		orchBatchState.blockedTasks = state.blockedTasks;
+		orchBatchState.blockedTaskIds = new Set(state.blockedTaskIds);
+
+		updateOrchWidget();
+
+		const lines = [
+			`✅ Task "${taskId}" marked as skipped.`,
+			`   Previous status: ${wasFailed ? "failed" : "pending"}`,
+			`   Failed: ${state.failedTasks}, Skipped: ${state.skippedTasks}, Blocked: ${state.blockedTasks} / ${state.totalTasks} total`,
+		];
+
+		if (unblockedTasks.length > 0) {
+			lines.push(`   Unblocked tasks: ${unblockedTasks.join(", ")}`);
+		}
+
+		lines.push("   The engine will re-evaluate dependent tasks on next resume cycle.");
+
+		return lines.join("\n");
+	}
+
+	// ── TP-077: Supervisor recovery helpers (retry / skip) ──────────
+
+	/**
+	 * Core logic for orch_retry_task.
+	 * Loads persisted batch state, resets the failed task to pending, persists,
+	 * and updates in-memory counters.
+	 */
+	function doOrchRetryTask(taskId: string, cwd: string): string {
+		const stateRoot = execCtx?.repoRoot ?? cwd;
+
+		// Load persisted state
+		let persisted: PersistedBatchState | null;
+		try {
+			persisted = loadBatchState(stateRoot);
+		} catch (err) {
+			return `❌ Failed to load batch state: ${err instanceof Error ? err.message : String(err)}`;
+		}
+		if (!persisted) {
+			return "❌ No batch state found. There is no batch to retry tasks in.";
+		}
+
+		// Find the task record
+		const taskRecord = persisted.tasks.find(t => t.taskId === taskId);
+		if (!taskRecord) {
+			return `❌ Task "${taskId}" not found in batch ${persisted.batchId}. ` +
+				`Known tasks: ${persisted.tasks.map(t => t.taskId).join(", ")}`;
+		}
+
+		// Validate: only failed or stalled tasks can be retried
+		if (taskRecord.status !== "failed" && taskRecord.status !== "stalled") {
+			return `❌ Task "${taskId}" has status "${taskRecord.status}" — only failed or stalled tasks can be retried.`;
+		}
+
+		// Reset the task to pending
+		const previousStatus = taskRecord.status;
+		taskRecord.status = "pending";
+		taskRecord.exitReason = "";
+		taskRecord.doneFileFound = false;
+		taskRecord.startedAt = null;
+		taskRecord.endedAt = null;
+
+		// Adjust counters
+		persisted.failedTasks = Math.max(0, persisted.failedTasks - 1);
+
+		// Remove from blockedTaskIds if it was there
+		const blockedIdx = persisted.blockedTaskIds.indexOf(taskId);
+		if (blockedIdx !== -1) {
+			persisted.blockedTaskIds.splice(blockedIdx, 1);
+			persisted.blockedTasks = Math.max(0, persisted.blockedTasks - 1);
+		}
+
+		// If batch was in failed state and now has no failed tasks, move to stopped
+		// (so that orch_resume with force=true can pick it up)
+		if (persisted.phase === "failed" && persisted.failedTasks === 0) {
+			persisted.phase = "stopped";
+		}
+
+		// Update timestamp
+		persisted.updatedAt = Date.now();
+
+		// Persist
+		try {
+			const json = JSON.stringify(persisted, null, 2);
+			saveBatchState(json, stateRoot);
+		} catch (err) {
+			return `❌ Failed to persist batch state: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		// Update in-memory counters to keep widget in sync
+		if (orchBatchState.batchId === persisted.batchId) {
+			orchBatchState.failedTasks = persisted.failedTasks;
+			orchBatchState.blockedTasks = persisted.blockedTasks;
+			updateOrchWidget();
+		}
+
+		return `✅ Task "${taskId}" reset from ${previousStatus} → pending.\n` +
+			`   Batch ${persisted.batchId}: ${persisted.failedTasks} failed, ${persisted.succeededTasks} succeeded, ${persisted.totalTasks} total.\n` +
+			`   Use orch_resume(force=true) to re-execute this task.`;
+	}
+
+	/**
+	 * Core logic for orch_skip_task.
+	 * Marks a task as skipped, unblocks dependents, and persists the state.
+	 */
+	function doOrchSkipTask(taskId: string, cwd: string): string {
+		const stateRoot = execCtx?.repoRoot ?? cwd;
+
+		// Load persisted state
+		let persisted: PersistedBatchState | null;
+		try {
+			persisted = loadBatchState(stateRoot);
+		} catch (err) {
+			return `❌ Failed to load batch state: ${err instanceof Error ? err.message : String(err)}`;
+		}
+		if (!persisted) {
+			return "❌ No batch state found. There is no batch to skip tasks in.";
+		}
+
+		// Find the task record
+		const taskRecord = persisted.tasks.find(t => t.taskId === taskId);
+		if (!taskRecord) {
+			return `❌ Task "${taskId}" not found in batch ${persisted.batchId}. ` +
+				`Known tasks: ${persisted.tasks.map(t => t.taskId).join(", ")}`;
+		}
+
+		// Validate: only failed, stalled, or pending tasks can be skipped
+		if (taskRecord.status !== "failed" && taskRecord.status !== "stalled" && taskRecord.status !== "pending") {
+			return `❌ Task "${taskId}" has status "${taskRecord.status}" — only failed, stalled, or pending tasks can be skipped.`;
+		}
+
+		// Record previous status for counter adjustment
+		const previousStatus = taskRecord.status;
+
+		// Mark as skipped
+		taskRecord.status = "skipped";
+		taskRecord.exitReason = "Skipped by supervisor";
+		taskRecord.endedAt = Date.now();
+
+		// Adjust counters
+		if (previousStatus === "failed" || previousStatus === "stalled") {
+			persisted.failedTasks = Math.max(0, persisted.failedTasks - 1);
+		}
+		persisted.skippedTasks = (persisted.skippedTasks || 0) + 1;
+
+		// Unblock dependents: find tasks that depend on this skipped task
+		// and remove this task from their blocking set.
+		// We look at the persisted wave plan + blockedTaskIds to determine
+		// which tasks were blocked by this one.
+		const unblockedTasks: string[] = [];
+
+		// Remove the skipped task from blockedTaskIds if it was there
+		const blockedIdx = persisted.blockedTaskIds.indexOf(taskId);
+		if (blockedIdx !== -1) {
+			persisted.blockedTaskIds.splice(blockedIdx, 1);
+			persisted.blockedTasks = Math.max(0, persisted.blockedTasks - 1);
+		}
+
+		// Use the in-memory dependency graph (if available) to find and unblock dependents
+		if (orchBatchState.dependencyGraph) {
+			const dependents = orchBatchState.dependencyGraph.dependents.get(taskId) || [];
+			for (const depId of dependents) {
+				const depBlockedIdx = persisted.blockedTaskIds.indexOf(depId);
+				if (depBlockedIdx === -1) continue; // not blocked
+
+				// Check if all dependencies of this dependent are now resolved
+				// (succeeded, skipped, or no longer blocked)
+				const depDeps = orchBatchState.dependencyGraph.dependencies.get(depId) || [];
+				const allResolved = depDeps.every(predId => {
+					const predRecord = persisted!.tasks.find(t => t.taskId === predId);
+					if (!predRecord) return true; // not in batch
+					return predRecord.status === "succeeded" || predRecord.status === "skipped";
+				});
+
+				if (allResolved) {
+					persisted.blockedTaskIds.splice(depBlockedIdx, 1);
+					persisted.blockedTasks = Math.max(0, persisted.blockedTasks - 1);
+					unblockedTasks.push(depId);
+
+					// Also update the dependent task's status to pending if it was blocked
+					const depRecord = persisted.tasks.find(t => t.taskId === depId);
+					if (depRecord && (depRecord.status === "pending" || depRecord.status === "skipped")) {
+						depRecord.status = "pending";
+					}
+				}
+			}
+		}
+
+		// Also unblock from in-memory blockedTaskIds set
+		if (orchBatchState.dependencyGraph) {
+			orchBatchState.blockedTaskIds.delete(taskId);
+			for (const depId of unblockedTasks) {
+				orchBatchState.blockedTaskIds.delete(depId);
+			}
+		}
+
+		// If batch was in failed state and now has no failed tasks, move to stopped
+		if (persisted.phase === "failed" && persisted.failedTasks === 0) {
+			persisted.phase = "stopped";
+		}
+
+		// Update timestamp
+		persisted.updatedAt = Date.now();
+
+		// Persist
+		try {
+			const json = JSON.stringify(persisted, null, 2);
+			saveBatchState(json, stateRoot);
+		} catch (err) {
+			return `❌ Failed to persist batch state: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		// Update in-memory counters
+		if (orchBatchState.batchId === persisted.batchId) {
+			orchBatchState.failedTasks = persisted.failedTasks;
+			orchBatchState.skippedTasks = persisted.skippedTasks;
+			orchBatchState.blockedTasks = persisted.blockedTasks;
+			updateOrchWidget();
+		}
+
+		const lines = [
+			`✅ Task "${taskId}" marked as skipped (was ${previousStatus}).`,
+			`   Batch ${persisted.batchId}: ${persisted.failedTasks} failed, ${persisted.skippedTasks} skipped, ${persisted.succeededTasks} succeeded, ${persisted.totalTasks} total.`,
+		];
+		if (unblockedTasks.length > 0) {
+			lines.push(`   🔓 Unblocked dependents: ${unblockedTasks.join(", ")}`);
+		}
+		lines.push("   Use orch_resume(force=true) to continue the batch.");
+
+		return lines.join("\n");
+	}
+
 	/**
 	 * Core logic for orch-integrate. Returns a result message string.
 	 * On error, returns an object with error flag.
@@ -3074,6 +3460,137 @@ export default function (pi: ExtensionAPI) {
 			} catch (err) {
 				return {
 					content: [{ type: "text" as const, text: `Error starting batch: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	// ── TP-077: Supervisor recovery tools (retry / skip) ────────────
+
+	pi.registerTool({
+		name: "orch_retry_task",
+		label: "Retry Failed Task",
+		description:
+			"Retry a specific failed task. Resets the task to pending so it will be " +
+			"re-executed in the next resume cycle. Only works on tasks with status 'failed' or 'stalled'.",
+		promptSnippet: "orch_retry_task(taskId) — retry a specific failed task",
+		promptGuidelines: [
+			"Call orch_retry_task to re-queue a failed task for re-execution.",
+			"The task must be in 'failed' or 'stalled' status — running, succeeded, or pending tasks cannot be retried.",
+			"After retrying, use orch_resume() to continue the batch and execute the retried task.",
+			"The task's status is reset to 'pending', exit reason cleared, and failure counters adjusted.",
+		],
+		parameters: Type.Object({
+			taskId: Type.String({
+				description: "Task ID to retry (e.g., 'TP-003')",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doOrchRetryTask(params.taskId, ctx.cwd);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error retrying task: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "orch_skip_task",
+		label: "Skip Task",
+		description:
+			"Skip a failed or pending task and unblock its dependents. " +
+			"The task is marked as 'skipped' and any tasks that were blocked solely by this task become unblocked.",
+		promptSnippet: "orch_skip_task(taskId) — skip a task and unblock dependents",
+		promptGuidelines: [
+			"Call orch_skip_task to skip a task and unblock dependent tasks.",
+			"The task must be in 'failed', 'stalled', or 'pending' status — running or succeeded tasks cannot be skipped.",
+			"After skipping, dependents that were blocked solely by this task become unblocked.",
+			"Use this when a task cannot be fixed and you want the batch to continue past it.",
+			"After skipping, use orch_resume() to continue the batch.",
+		],
+		parameters: Type.Object({
+			taskId: Type.String({
+				description: "Task ID to skip (e.g., 'TP-003')",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doOrchSkipTask(params.taskId, ctx.cwd);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error skipping task: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	// ── TP-077: Supervisor Recovery Tools ────────────────────────────
+
+	pi.registerTool({
+		name: "orch_retry_task",
+		label: "Retry Failed Task",
+		description:
+			"Retry a specific failed task. Resets the task to pending status so it will " +
+			"be re-executed on the next resume cycle. Only works for tasks with 'failed' status.",
+		promptSnippet: "orch_retry_task(taskId) — retry a specific failed task",
+		promptGuidelines: [
+			"Call orch_retry_task to reset a failed task for re-execution.",
+			"The task must have 'failed' status — running, succeeded, or pending tasks cannot be retried.",
+			"After retrying, use orch_resume(force=true) to re-execute the batch if it's paused.",
+			"Use this when a task failed due to a transient issue (context pressure, API error) that may succeed on retry.",
+		],
+		parameters: Type.Object({
+			taskId: Type.String({
+				description: "Task ID to retry (e.g., 'TP-003')",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doOrchRetryTask(params.taskId, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error retrying task: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "orch_skip_task",
+		label: "Skip Task",
+		description:
+			"Skip a failed or pending task and unblock its dependents. " +
+			"The task is marked as 'skipped' and will not be executed. " +
+			"Dependent tasks are unblocked for execution.",
+		promptSnippet: "orch_skip_task(taskId) — skip a task and unblock dependents",
+		promptGuidelines: [
+			"Call orch_skip_task to skip a task and unblock any tasks that depend on it.",
+			"The task must have 'failed' or 'pending' status — running or succeeded tasks cannot be skipped.",
+			"Use this when a task cannot succeed and you want to continue the batch without it.",
+			"Skipping a task removes it from the blocker set, potentially unblocking downstream tasks.",
+			"The engine re-evaluates dependencies on the next resume cycle.",
+		],
+		parameters: Type.Object({
+			taskId: Type.String({
+				description: "Task ID to skip (e.g., 'TP-003')",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doOrchSkipTask(params.taskId, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error skipping task: ${err instanceof Error ? err.message : String(err)}` }],
 					details: undefined,
 				};
 			}

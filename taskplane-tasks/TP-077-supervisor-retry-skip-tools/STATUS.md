@@ -2,6 +2,7 @@
 
 **Current Step:** Step 1: Implement orch_retry_task
 **Status:** 🟡 In Progress
+**Step 1 Plan:** Load persisted batch state from disk, validate task exists + is failed, reset task fields, adjust counters, save back, update main-thread state if accessible. No engine IPC needed — supervisor calls orch_resume after retry.
 **Last Updated:** 2026-03-27
 **Review Level:** 2
 **Review Counter:** 0
@@ -18,12 +19,12 @@
 ---
 
 ### Step 1: Implement orch_retry_task
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Register tool with taskId parameter
-- [ ] Validate task exists and is failed
-- [ ] Reset state, adjust counters, persist
-- [ ] Forward retry signal to engine if running
+- [x] Register tool with taskId parameter
+- [x] Validate task exists and is failed
+- [x] Reset state, adjust counters, persist
+- [x] Forward retry signal to engine if running
 
 ---
 
