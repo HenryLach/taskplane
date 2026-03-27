@@ -27,6 +27,7 @@ export const TASKPLANE_GITIGNORE_ENTRIES = [
 	".pi/orch-abort-signal",
 	".pi/settings.json",
 	".worktrees/",
+	".taskplane-tasks/",
 ];
 
 export const TASKPLANE_GITIGNORE_NPM_ENTRIES = [

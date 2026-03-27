@@ -2,10 +2,10 @@
  * Lane execution, monitoring, wave execution loop
  * @module orch/execution
  */
-import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync } from "fs";
+import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync, copyFileSync } from "fs";
 import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "fs/promises";
 import { spawnSync, spawn } from "child_process";
-import { join, dirname, resolve, relative, delimiter as pathDelimiter } from "path";
+import { join, dirname, basename, resolve, relative, delimiter as pathDelimiter } from "path";
 import { userInfo } from "os";
 
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
@@ -434,12 +434,30 @@ export function buildLaneEnvVars(
 		// Workspace mode: use worktree-relative path when the task folder is
 		// inside the lane's repo. This ensures STATUS.md, .DONE, and git commits
 		// all operate in the worktree (not the original source directory).
-		// Falls back to absolute path for cross-repo tasks (task in repo A,
-		// worker in repo B — future: issue #51).
 		if (promptNorm.startsWith(repoRootNorm + "/")) {
 			relativePath = promptNorm.slice(repoRootNorm.length + 1);
 		} else {
-			relativePath = resolve(promptPath);
+			// Cross-repo: task files live in a different repo than the worker's
+			// worktree. Copy the task folder into the worktree so STATUS.md,
+			// .DONE, and git commits all happen locally.
+			const taskFolder = dirname(resolve(promptPath));
+			const taskDirName = basename(taskFolder);
+			const localTaskDir = join(lane.worktreePath, ".taskplane-tasks", taskDirName);
+			mkdirSync(localTaskDir, { recursive: true });
+			// Copy PROMPT.md and STATUS.md into the local task dir
+			for (const file of ["PROMPT.md", "STATUS.md"]) {
+				const src = join(taskFolder, file);
+				const dst = join(localTaskDir, file);
+				if (existsSync(src) && !existsSync(dst)) {
+					copyFileSync(src, dst);
+				}
+			}
+			// Create .reviews dir if it exists in source
+			const reviewsDir = join(taskFolder, ".reviews");
+			if (existsSync(reviewsDir)) {
+				mkdirSync(join(localTaskDir, ".reviews"), { recursive: true });
+			}
+			relativePath = join(".taskplane-tasks", taskDirName, "PROMPT.md");
 		}
 	} else if (promptNorm.startsWith(repoRootNorm + "/")) {
 		// Repo mode: relative path from repo root (mirrors into worktree)
@@ -780,8 +798,10 @@ export function resolveCanonicalTaskPaths(
 			const relPath = folderNorm.slice(repoRootNorm.length + 1);
 			resolvedFolder = join(worktreePath, relPath);
 		} else {
-			// Cross-repo fallback: use absolute path (future: #51)
-			resolvedFolder = resolve(taskFolder);
+			// Cross-repo: task files were copied into the worktree under
+			// .taskplane-tasks/<taskDirName>/ by buildLaneEnvVars
+			const taskDirName = basename(resolve(taskFolder));
+			resolvedFolder = join(worktreePath, ".taskplane-tasks", taskDirName);
 		}
 	} else if (folderNorm.startsWith(repoRootNorm + "/")) {
 		// Repo mode: task folder is inside the repo root.
