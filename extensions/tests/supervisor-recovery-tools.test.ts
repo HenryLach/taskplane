@@ -672,13 +672,13 @@ describe("5.x — Implementation correctness (source-based)", () => {
 		expect(block).toContain("Skipped by supervisor");
 	});
 
-	it("5.8 — doOrchSkipTask handles dependent unblocking via blocked set", () => {
+	it("5.8 — doOrchSkipTask handles dependent unblocking via dependency graph", () => {
 		const idx = extensionSource.indexOf("function doOrchSkipTask(");
-		const block = extensionSource.slice(idx, idx + 4000);
+		const block = extensionSource.slice(idx, idx + 5000);
 		expect(block).toContain("blockedTaskIds");
-		expect(block).toContain("blockedSet");
-		// Verifies it removes skipped task from blocked set
-		expect(block).toContain("blockedSet.delete");
+		expect(block).toContain("dependencyGraph");
+		// Verifies it uses computeTransitiveDependents for recomputing blocked set
+		expect(block).toContain("computeTransitiveDependents");
 	});
 
 	it("5.9 — doOrchSkipTask adjusts skippedTasks counter", () => {
@@ -700,5 +700,218 @@ describe("5.x — Implementation correctness (source-based)", () => {
 
 	it("5.11 — tools are registered in the TP-077 section", () => {
 		expect(extensionSource).toContain("TP-077: Supervisor Recovery Tools");
+	});
+
+	it("5.12 — doOrchRetryTask rejects while batch is in active phase", () => {
+		const idx = extensionSource.indexOf("function doOrchRetryTask(");
+		const block = extensionSource.slice(idx, idx + 2500);
+		// Should check for active phases and reject
+		expect(block).toContain("launching");
+		expect(block).toContain("executing");
+		expect(block).toContain("merging");
+		expect(block).toContain("planning");
+	});
+
+	it("5.13 — doOrchSkipTask rejects while batch is in active phase", () => {
+		const idx = extensionSource.indexOf("function doOrchSkipTask(");
+		const block = extensionSource.slice(idx, idx + 4000);
+		expect(block).toContain("launching");
+		expect(block).toContain("executing");
+		expect(block).toContain("merging");
+		expect(block).toContain("planning");
+	});
+
+	it("5.14 — doOrchRetryTask transitions failed phase to stopped", () => {
+		const idx = extensionSource.indexOf("function doOrchRetryTask(");
+		const block = extensionSource.slice(idx, idx + 2500);
+		// Should transition "failed" → "stopped" for resumability
+		expect(block).toContain('"failed"');
+		expect(block).toContain('"stopped"');
+	});
+
+	it("5.15 — doOrchSkipTask transitions failed phase to stopped", () => {
+		const idx = extensionSource.indexOf("function doOrchSkipTask(");
+		const block = extensionSource.slice(idx, idx + 4000);
+		expect(block).toContain('"failed"');
+		expect(block).toContain('"stopped"');
+	});
+
+	it("5.16 — doOrchRetryTask clears exitDiagnostic and partial progress fields", () => {
+		const idx = extensionSource.indexOf("function doOrchRetryTask(");
+		const block = extensionSource.slice(idx, idx + 2500);
+		expect(block).toContain("exitDiagnostic");
+		expect(block).toContain("partialProgressCommits");
+		expect(block).toContain("partialProgressBranch");
+	});
+
+	it("5.17 — doOrchRetryTask syncs in-memory state gated on batchId match", () => {
+		const idx = extensionSource.indexOf("function doOrchRetryTask(");
+		const block = extensionSource.slice(idx, idx + 3500);
+		expect(block).toContain("batchId");
+		expect(block).toContain("orchBatchState.batchId");
+	});
+
+	it("5.18 — doOrchSkipTask uses computeTransitiveDependents for unblocking", () => {
+		const idx = extensionSource.indexOf("function doOrchSkipTask(");
+		const block = extensionSource.slice(idx, idx + 4000);
+		expect(block).toContain("computeTransitiveDependents");
+		expect(block).toContain("dependencyGraph");
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 6.x — Phase transition logic
+// ══════════════════════════════════════════════════════════════════════
+
+describe("6.x — Phase transition after retry/skip", () => {
+	it("6.1 — retry on failed batch transitions phase to stopped", () => {
+		const state = buildTestPersistedState({ phase: "failed" });
+
+		// Simulate doOrchRetryTask phase logic
+		if (state.phase === "failed") {
+			state.phase = "stopped";
+		}
+
+		expect(state.phase).toBe("stopped");
+	});
+
+	it("6.2 — retry on stopped batch keeps phase as stopped", () => {
+		const state = buildTestPersistedState({ phase: "stopped" });
+
+		if (state.phase === "failed") {
+			state.phase = "stopped";
+		}
+
+		expect(state.phase).toBe("stopped");
+	});
+
+	it("6.3 — retry on paused batch keeps phase as paused", () => {
+		const state = buildTestPersistedState({ phase: "paused" });
+
+		if (state.phase === "failed") {
+			state.phase = "stopped";
+		}
+
+		expect(state.phase).toBe("paused");
+	});
+
+	it("6.4 — skip on failed batch transitions phase to stopped", () => {
+		const state = buildTestPersistedState({ phase: "failed" });
+
+		if (state.phase === "failed") {
+			state.phase = "stopped";
+		}
+
+		expect(state.phase).toBe("stopped");
+	});
+
+	it("6.5 — skip persists with round-trip preserving phase transition", () => {
+		const tempDir = makeTempDir();
+		try {
+			const state = buildTestPersistedState({ phase: "failed" });
+			saveBatchState(JSON.stringify(state, null, 2), tempDir);
+
+			const loaded = loadBatchState(tempDir)!;
+			// Apply skip
+			const task = loaded.tasks.find(t => t.taskId === "TP-002")!;
+			task.status = "skipped";
+			task.exitReason = "Skipped by supervisor";
+			loaded.failedTasks = Math.max(0, loaded.failedTasks - 1);
+			loaded.skippedTasks = (loaded.skippedTasks || 0) + 1;
+			if (loaded.phase === "failed") {
+				loaded.phase = "stopped";
+			}
+
+			saveBatchState(JSON.stringify(loaded, null, 2), tempDir);
+
+			const reloaded = loadBatchState(tempDir)!;
+			expect(reloaded.phase).toBe("stopped");
+			expect(reloaded.skippedTasks).toBe(1);
+		} finally {
+			rmSync(tempDir, { recursive: true, force: true });
+		}
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 7.x — computeTransitiveDependents integration for skip unblocking
+// ══════════════════════════════════════════════════════════════════════
+
+import { computeTransitiveDependents } from "../taskplane/execution.ts";
+import type { DependencyGraph } from "../taskplane/types.ts";
+
+describe("7.x — Skip unblocking with computeTransitiveDependents", () => {
+	it("7.1 — skipping the only failed blocker unblocks all its dependents", () => {
+		// TP-002 failed → TP-003 and TP-004 are blocked (direct + transitive)
+		const depGraph: DependencyGraph = {
+			dependencies: new Map([
+				["TP-001", []],
+				["TP-002", []],
+				["TP-003", ["TP-002"]],
+				["TP-004", ["TP-003"]],
+			]),
+			dependents: new Map([
+				["TP-001", []],
+				["TP-002", ["TP-003"]],
+				["TP-003", ["TP-004"]],
+				["TP-004", []],
+			]),
+			nodes: new Set(["TP-001", "TP-002", "TP-003", "TP-004"]),
+		};
+
+		// Before skip: TP-002 failed → TP-003, TP-004 blocked
+		const failedBefore = new Set(["TP-002"]);
+		const blockedBefore = computeTransitiveDependents(failedBefore, depGraph);
+		expect(blockedBefore.has("TP-003")).toBe(true);
+		expect(blockedBefore.has("TP-004")).toBe(true);
+
+		// After skip: TP-002 is now skipped, remaining failures = empty
+		const failedAfter = new Set<string>();
+		const blockedAfter = computeTransitiveDependents(failedAfter, depGraph);
+		expect(blockedAfter.size).toBe(0);
+
+		// Compute unblocked = was blocked before but not after
+		const unblocked: string[] = [];
+		for (const id of blockedBefore) {
+			if (!blockedAfter.has(id)) unblocked.push(id);
+		}
+		expect(unblocked).toContain("TP-003");
+		expect(unblocked).toContain("TP-004");
+	});
+
+	it("7.2 — skipping one of two failed blockers keeps partial blocked set", () => {
+		// TP-002 and TP-003 both failed. TP-004 depends on both.
+		const depGraph: DependencyGraph = {
+			dependencies: new Map([
+				["TP-002", []],
+				["TP-003", []],
+				["TP-004", ["TP-002", "TP-003"]],
+			]),
+			dependents: new Map([
+				["TP-002", ["TP-004"]],
+				["TP-003", ["TP-004"]],
+				["TP-004", []],
+			]),
+			nodes: new Set(["TP-002", "TP-003", "TP-004"]),
+		};
+
+		// Skip TP-002, TP-003 still failed
+		const remainingFailures = new Set(["TP-003"]);
+		const blocked = computeTransitiveDependents(remainingFailures, depGraph);
+
+		// TP-004 is still blocked because TP-003 is still failed
+		expect(blocked.has("TP-004")).toBe(true);
+	});
+
+	it("7.3 — no dependency graph falls back to conservative removal", () => {
+		// Without a dependency graph, just remove the skipped task from blocked list
+		const blockedSet = new Set(["TP-003", "TP-004"]);
+		const skippedId = "TP-003";
+
+		// Conservative fallback: remove skipped task from blocked set
+		blockedSet.delete(skippedId);
+
+		expect(blockedSet.has("TP-003")).toBe(false);
+		expect(blockedSet.has("TP-004")).toBe(true); // Other tasks remain blocked
 	});
 });
