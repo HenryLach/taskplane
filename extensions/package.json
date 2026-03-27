@@ -8,6 +8,6 @@
     "test:fast": "node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts"
   },
   "dependencies": {
-    "yaml": "^2.8.2"
+    "yaml": "^2.8.3"
   }
 }
