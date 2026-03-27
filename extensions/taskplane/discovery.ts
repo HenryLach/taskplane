@@ -243,8 +243,12 @@ export function parsePromptForOrchestrator(
 		const scopeBody = fileScopeMatch[1].trim();
 		const scopeLines = scopeBody.split("\n");
 		for (const line of scopeLines) {
-			// "- extensions/task-orchestrator.ts" or "- .pi/task-orchestrator.yaml"
-			const trimmed = line.replace(/^[\s-*]+/, "").trim();
+			// "- extensions/task-orchestrator.ts" or "- `api-service/src/health.js`"
+			let trimmed = line.replace(/^[\s-*]+/, "").trim();
+			// Strip inline backticks: `path/to/file` → path/to/file
+			if (trimmed.startsWith("`") && trimmed.endsWith("`")) {
+				trimmed = trimmed.slice(1, -1);
+			}
 			if (trimmed && !trimmed.startsWith("#") && !trimmed.startsWith("```")) {
 				fileScope.push(trimmed);
 			}
