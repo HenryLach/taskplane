@@ -89,6 +89,7 @@
 | 2026-03-27 22:17 | Step 0 started | Preflight |
 | 2026-03-27 22:23 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
 | 2026-03-27 22:27 | Review R001 | plan Step 1: REVISE (fallback) |
+| 2026-03-27 22:38 | Reviewer R002 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
 
 ---
 
