@@ -1,6 +1,6 @@
 # Autonomous Supervisor Specification
 
-**Status:** Phase 1 implemented (TP-076), Phase 2 partially implemented (TP-077: retry/skip), Phase 3-4 pending
+**Status:** Phase 1 implemented (TP-076), Phase 2 complete (TP-077: retry/skip, TP-078: force merge + playbooks), Phase 3-4 pending
 **Priority:** #1
 **Created:** 2026-03-27
 **Updated:** 2026-03-27
@@ -220,8 +220,8 @@ The supervisor should NOT ask the user for permission for routine recovery (retr
 
 1. ✅ Add `orch_retry_task` tool — retry a specific failed/stalled task (TP-077)
 2. ✅ Add `orch_skip_task` tool — skip a task and unblock dependents (TP-077)
-3. Add `orch_force_merge` tool — force merge a lane with mixed results (TP-078)
-4. Supervisor template updated with recovery playbooks per alert category
+3. ✅ Add `orch_force_merge` tool — force merge a lane with mixed results (TP-078)
+4. ✅ Supervisor primer updated with recovery playbooks per alert category (TP-078)
 5. Test: end-to-end unattended batch with injected failure → supervisor recovers
 
 ### Phase 3: Feedback Loop

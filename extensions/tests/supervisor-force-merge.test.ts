@@ -132,21 +132,21 @@ describe("1.x — orch_force_merge tool registration", () => {
 
 	it("1.2 — orch_force_merge has optional waveIndex number parameter", () => {
 		const idx = extensionSource.indexOf('name: "orch_force_merge"');
-		const block = extensionSource.slice(idx, idx + 1500);
+		const block = extensionSource.slice(idx, idx + 2000);
 		expect(block).toContain("waveIndex:");
 		expect(block).toContain("Type.Optional(Type.Number(");
 	});
 
 	it("1.3 — orch_force_merge has optional skipFailed boolean parameter", () => {
 		const idx = extensionSource.indexOf('name: "orch_force_merge"');
-		const block = extensionSource.slice(idx, idx + 1500);
+		const block = extensionSource.slice(idx, idx + 2000);
 		expect(block).toContain("skipFailed:");
 		expect(block).toContain("Type.Optional(Type.Boolean(");
 	});
 
 	it("1.4 — orch_force_merge has description, promptSnippet, and promptGuidelines", () => {
 		const idx = extensionSource.indexOf('name: "orch_force_merge"');
-		const block = extensionSource.slice(Math.max(0, idx - 200), idx + 1500);
+		const block = extensionSource.slice(Math.max(0, idx - 200), idx + 2000);
 		expect(block).toContain("description:");
 		expect(block).toContain("promptSnippet:");
 		expect(block).toContain("promptGuidelines:");
@@ -154,14 +154,14 @@ describe("1.x — orch_force_merge tool registration", () => {
 
 	it("1.5 — orch_force_merge execute handler catches errors", () => {
 		const idx = extensionSource.indexOf('name: "orch_force_merge"');
-		const block = extensionSource.slice(idx, idx + 1500);
+		const block = extensionSource.slice(idx, idx + 2000);
 		expect(block).toContain("} catch (err)");
 		expect(block).toContain('type: "text"');
 	});
 
 	it("1.6 — orch_force_merge delegates to doOrchForceMerge", () => {
 		const idx = extensionSource.indexOf('name: "orch_force_merge"');
-		const block = extensionSource.slice(idx, idx + 1500);
+		const block = extensionSource.slice(idx, idx + 2000);
 		expect(block).toContain("doOrchForceMerge(");
 	});
 

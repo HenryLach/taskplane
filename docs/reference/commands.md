@@ -549,18 +549,21 @@ The key orchestrator commands are also registered as **extension tools** that th
 | `orch_integrate(mode?, force?, branch?)` | `/orch-integrate [opts]` | `mode`: "fast-forward"\|"merge"\|"pr", `force`: boolean, `branch`: string |
 | `orch_retry_task(taskId)` | — | `taskId`: string (required) — retry a specific failed/stalled task |
 | `orch_skip_task(taskId)` | — | `taskId`: string (required) — skip a task and unblock dependents |
+| `orch_force_merge(waveIndex?, skipFailed?)` | — | `waveIndex`: number (optional, 0-based), `skipFailed`: boolean (optional) — force merge a wave with mixed results |
 
 These tools share the same logic as the slash commands. They return text results and catch errors gracefully (never throw). The supervisor agent uses these to manage batches proactively during monitoring.
 
-### Recovery Tools (TP-077)
+### Recovery Tools (TP-077, TP-078)
 
-The `orch_retry_task` and `orch_skip_task` tools enable surgical task-level recovery:
+The `orch_retry_task`, `orch_skip_task`, and `orch_force_merge` tools enable surgical task-level and wave-level recovery:
 
 - **`orch_retry_task(taskId)`** — Resets a failed or stalled task to `pending` status. Clears exit reason, timing, and diagnostic fields. Decrements failure counters. Transitions batch from `failed` → `stopped` if no failures remain. Use `orch_resume(force=true)` after retrying to re-execute.
 
 - **`orch_skip_task(taskId)`** — Marks a failed, stalled, or pending task as `skipped`. Updates counters and recomputes blocked dependents using the dependency graph. Unblocked tasks are reported in the response. Use `orch_resume(force=true)` after skipping to continue.
 
-Both tools reject operations while the engine is actively running (launching/executing/merging/planning) — pause the batch first. They modify the persisted `batch-state.json` directly and sync in-memory state for the dashboard widget.
+- **`orch_force_merge(waveIndex?, skipFailed?)`** — Forces a wave merge that was rejected due to mixed-outcome lanes (succeeded + failed tasks on the same lane). Updates the merge result from `partial` to `succeeded`. If `skipFailed=true`, automatically marks all failed/stalled tasks in the wave as `skipped` and adjusts counters. If `skipFailed=false` and failed tasks exist, rejects with guidance to skip them first. Defaults to the current wave if `waveIndex` is omitted. Use `orch_resume(force=true)` after force merging to continue.
+
+All three tools reject operations while the engine is actively running (launching/executing/merging/planning) — pause the batch first. They modify the persisted `batch-state.json` directly and sync in-memory state for the dashboard widget.
 
 ---
 
