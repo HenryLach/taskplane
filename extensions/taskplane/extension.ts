@@ -5,7 +5,8 @@ import { execSync, execFileSync } from "child_process";
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { fork, type ChildProcess } from "child_process";
+// child_process.fork() disabled — Node v25 blocks .ts in node_modules.
+// Re-enable when engine-worker ships as pre-compiled .js bundle.
 
 // Direct imports — avoid barrel (index.ts) to prevent loading the entire module graph.
 // Each import targets the specific module where the symbol is defined.
@@ -935,22 +936,14 @@ export function startBatchInWorker(
 	updateWidget: () => void,
 	onMonitorUpdate?: (state: import("./types.ts").MonitorState) => void,
 	onTerminal?: () => void,
-): ChildProcess | null {
-	const workerPath = resolveEngineWorkerPath();
-
-	let child: ChildProcess;
-	try {
-		child = fork(workerPath, [], {
-			execArgv: ["--experimental-transform-types", "--no-warnings"],
-			env: { ...process.env, TASKPLANE_ENGINE_FORK: "1" },
-			serialization: "advanced",
-		});
-	} catch (spawnErr: unknown) {
-		const errMsg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
-		ctx.ui.notify(
-			`⚠️ Engine process spawn failed: ${errMsg}\n   Falling back to main-thread execution.`,
-			"warning",
-		);
+): null {
+	// ── Main-thread execution (TP-071 fork disabled) ─────────────
+	// Node v25 blocks .ts files inside node_modules regardless of
+	// --experimental-strip-types or --experimental-transform-types.
+	// Until we ship a pre-compiled engine bundle, the engine runs on
+	// the main thread via startBatchAsync(). The supervisor stays
+	// responsive because engine work is async I/O (tmux, git, fs).
+	{
 		// Construct fallback engine function from workerData and run on main thread
 		const wsConfig = wkData.workspaceConfig
 			? deserializeWorkspaceConfig(wkData.workspaceConfig)
@@ -983,98 +976,6 @@ export function startBatchInWorker(
 		startBatchAsync(fallbackFn, batchState, ctx, updateWidget, onTerminal);
 		return null;
 	}
-
-	// Send workerData as first IPC message (fork doesn't have workerData)
-	child.send({ type: "init", data: wkData });
-
-	// Terminal settlement guard (R001 §3): ensures onTerminal fires at most once.
-	// The child can emit error + complete messages, followed by exit event.
-	// Without this guard, summary/integration/supervisor flows would fire multiple times.
-	let settled = false;
-	const settle = () => {
-		if (settled) return;
-		settled = true;
-		onTerminal?.();
-	};
-
-	child.on("message", (msg: WorkerToMainMessage) => {
-		switch (msg.type) {
-			case "notify":
-				ctx.ui.notify(msg.msg, msg.level);
-				updateWidget();
-				break;
-
-			case "monitor-update":
-				onMonitorUpdate?.(msg.state);
-				break;
-
-			case "engine-event":
-				// Engine events are already persisted to events.jsonl by the child.
-				// No additional handling needed on the main thread.
-				break;
-
-			case "state-sync":
-				applySerializedState(batchState, msg.state);
-				updateWidget();
-				break;
-
-			case "complete":
-				applySerializedState(batchState, msg.state);
-				updateWidget();
-				settle();
-				break;
-
-			case "error":
-				if (batchState.phase !== "completed" && batchState.phase !== "failed") {
-					batchState.phase = "failed";
-					batchState.endedAt = Date.now();
-					batchState.errors.push(`Unhandled engine error: ${msg.message}`);
-				}
-				ctx.ui.notify(
-					`❌ Engine crashed with unhandled error: ${msg.message}\n` +
-					`   Batch ${batchState.batchId} marked as failed.`,
-					"error",
-				);
-				updateWidget();
-				break;
-		}
-	});
-
-	child.on("error", (err: Error) => {
-		// Child process encountered an error
-		if (batchState.phase !== "completed" && batchState.phase !== "failed") {
-			batchState.phase = "failed";
-			batchState.endedAt = Date.now();
-			batchState.errors.push(`Engine process error: ${err.message}`);
-		}
-		ctx.ui.notify(
-			`❌ Engine process error: ${err.message}\n` +
-			`   Batch ${batchState.batchId} marked as failed.`,
-			"error",
-		);
-		updateWidget();
-		settle();
-	});
-
-	child.on("exit", (code: number | null) => {
-		if (code !== 0 && !settled) {
-			// Non-zero exit that wasn't handled by 'error' or 'complete'
-			if (batchState.phase !== "completed" && batchState.phase !== "failed") {
-				batchState.phase = "failed";
-				batchState.endedAt = Date.now();
-				batchState.errors.push(`Engine process exited with code ${code}`);
-			}
-			ctx.ui.notify(
-				`❌ Engine process exited unexpectedly (code ${code}).`,
-				"error",
-			);
-			updateWidget();
-		}
-		// Always settle on exit — ensures cleanup runs even on clean exit
-		settle();
-	});
-
-	return child;
 }
 
 // ── TP-043 R002-2: Integration Executor Builder ─────────────────────
@@ -1391,9 +1292,9 @@ export default function (pi: ExtensionAPI) {
 	let orchWidgetCtx: ExtensionContext | undefined;
 	let latestMonitorState: MonitorState | null = null;
 
-	// ── TP-071: Active engine child process ──────────────────────────
-	// Tracked so pause/abort can send control messages to the engine.
-	let activeWorker: ChildProcess | null = null;
+	// ── TP-071: Active engine handle (currently unused — fork disabled) ──
+	// Will be restored when engine-worker ships as pre-compiled .js bundle.
+	let activeWorker: null = null;
 
 	// ── Supervisor State (TP-041) ────────────────────────────────────
 	let supervisorState = freshSupervisorState();
@@ -2010,8 +1911,8 @@ export default function (pi: ExtensionAPI) {
 			return ORCH_MESSAGES.pauseAlreadyPaused(orchBatchState.batchId);
 		}
 		orchBatchState.pauseSignal.paused = true;
-		// TP-071: Forward pause to engine process (its pauseSignal is separate)
-		activeWorker?.send({ type: "pause" });
+		// TP-071: Forward pause to engine process (disabled — fork not active)
+		// activeWorker?.send({ type: "pause" });
 		updateOrchWidget();
 		return ORCH_MESSAGES.pauseActivated(orchBatchState.batchId);
 	}
@@ -2201,16 +2102,10 @@ export default function (pi: ExtensionAPI) {
 			orchBatchState.pauseSignal.paused = true;
 			messages.push("  ✓ Pause signal set on in-memory batch state");
 		}
-		// TP-071: Forward pause to engine and kill on hard abort
-		if (activeWorker) {
-			activeWorker.send({ type: "pause" });
-			if (hard) {
-				activeWorker.kill();
-				activeWorker = null;
-				messages.push("  ✓ Engine process killed (hard abort)");
-			} else {
-				messages.push("  ✓ Pause signal forwarded to engine process");
-			}
+		// TP-071: Forward pause to engine (disabled — fork not active)
+		if (false as boolean) {
+			// Will be restored when engine-worker ships as pre-compiled .js bundle
+			messages.push("  ✓ Pause signal forwarded to engine process");
 		}
 
 		// Step 3: Check what we're aborting
@@ -3287,15 +3182,8 @@ export default function (pi: ExtensionAPI) {
 	// Ensure supervisor lockfile/heartbeat are cleaned up on normal session exit.
 	// This avoids leaving a live-looking lock when the process exits cleanly.
 	pi.on("session_end", async () => {
-		// TP-071: Kill engine process on session exit
-		if (activeWorker) {
-			try {
-				activeWorker.kill();
-				activeWorker = null;
-			} catch {
-				// Best effort — process may already be dead
-			}
-		}
+		// TP-071: Kill engine process on session exit (disabled — fork not active)
+		// Will be restored when engine-worker ships as pre-compiled .js bundle
 		try {
 			await deactivateSupervisor(pi, supervisorState);
 		} catch {
