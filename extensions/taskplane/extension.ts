@@ -2554,6 +2554,188 @@ export default function (pi: ExtensionAPI) {
 		return lines.join("\n");
 	}
 
+	// ── TP-078: Force Merge Tool ─────────────────────────────────────
+
+	/**
+	 * Core logic for orch_force_merge. Unblocks a paused batch with mixed-outcome lanes
+	 * by skipping failed tasks and updating the merge result to "succeeded".
+	 *
+	 * This is the supervisor's escape hatch when a wave merge was rejected because
+	 * some lanes had both succeeded and failed tasks (mixed-outcome). The tool:
+	 * 1. Validates the batch is paused/stopped/failed with a "partial" merge result
+	 * 2. If skipFailed=true, marks all failed/stalled tasks in the wave as "skipped"
+	 * 3. Updates the merge result entry to "succeeded"
+	 * 4. Allows orch_resume to continue the batch from the next wave
+	 */
+	function doOrchForceMerge(waveIndex: number | undefined, skipFailed: boolean, ctx: ExtensionContext): string {
+		// Reject while engine is actively running
+		const activePhases = new Set(["launching", "executing", "merging", "planning"]);
+		if (activePhases.has(orchBatchState.phase)) {
+			return `❌ Cannot force merge while batch is ${orchBatchState.phase}. Pause or wait for the current operation to finish first.`;
+		}
+
+		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+
+		// Load persisted state
+		let state: PersistedBatchState | null = null;
+		try {
+			state = loadBatchState(stateRoot);
+		} catch (err) {
+			return `❌ Failed to load batch state: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		if (!state) {
+			return "❌ No batch state found. There is no active or recent batch to modify.";
+		}
+
+		// Determine target wave index (0-based). Default to currentWaveIndex.
+		const targetWave = waveIndex ?? state.currentWaveIndex;
+
+		// Validate wave index
+		if (targetWave < 0 || targetWave >= state.totalWaves) {
+			return `❌ Invalid wave index ${targetWave}. Batch has ${state.totalWaves} wave(s) (0-based: 0..${state.totalWaves - 1}).`;
+		}
+
+		// Find the merge result for the target wave
+		// Walk in reverse to find the latest entry for this wave
+		let mergeResultIdx = -1;
+		for (let i = state.mergeResults.length - 1; i >= 0; i--) {
+			if (state.mergeResults[i].waveIndex === targetWave) {
+				mergeResultIdx = i;
+				break;
+			}
+		}
+
+		// Validate: there must be a merge failure (partial or failed) for this wave
+		if (mergeResultIdx === -1) {
+			return `❌ No merge result found for wave ${targetWave}. Force merge is only needed when a merge failed or was rejected due to mixed-outcome lanes.`;
+		}
+
+		const mergeEntry = state.mergeResults[mergeResultIdx];
+		if (mergeEntry.status === "succeeded") {
+			return `✅ Wave ${targetWave} merge already succeeded. No force merge needed.`;
+		}
+
+		// Collect tasks in the target wave
+		const waveTasks = state.wavePlan[targetWave] ?? [];
+		const failedInWave: string[] = [];
+		const succeededInWave: string[] = [];
+
+		for (const taskId of waveTasks) {
+			const task = state.tasks.find(t => t.taskId === taskId);
+			if (!task) continue;
+			if (task.status === "failed" || task.status === "stalled") {
+				failedInWave.push(taskId);
+			} else if (task.status === "succeeded") {
+				succeededInWave.push(taskId);
+			}
+		}
+
+		if (succeededInWave.length === 0) {
+			return `❌ No succeeded tasks in wave ${targetWave}. Force merge requires at least one succeeded task whose commits can be merged.`;
+		}
+
+		// If skipFailed is true, mark failed/stalled tasks as skipped
+		const skippedTasks: string[] = [];
+		if (skipFailed && failedInWave.length > 0) {
+			for (const taskId of failedInWave) {
+				const task = state.tasks.find(t => t.taskId === taskId);
+				if (!task) continue;
+				const prevStatus = task.status;
+				task.status = "skipped";
+				task.exitReason = "Skipped by orch_force_merge";
+				task.endedAt = Date.now();
+				skippedTasks.push(taskId);
+
+				// Adjust counters
+				if (prevStatus === "failed" || prevStatus === "stalled") {
+					state.failedTasks = Math.max(0, state.failedTasks - 1);
+				}
+				state.skippedTasks = (state.skippedTasks ?? 0) + 1;
+			}
+
+			// Recompute blocked tasks if dependency graph is available
+			const remainingFailures = new Set<string>();
+			for (const t of state.tasks) {
+				if ((t.status === "failed" || t.status === "stalled")) {
+					remainingFailures.add(t.taskId);
+				}
+			}
+
+			if (orchBatchState.dependencyGraph && orchBatchState.batchId === state.batchId) {
+				const newBlocked = computeTransitiveDependents(remainingFailures, orchBatchState.dependencyGraph);
+				state.blockedTaskIds = [...newBlocked].sort();
+				state.blockedTasks = newBlocked.size;
+			} else if (remainingFailures.size === 0) {
+				// No remaining failures — clear all blocked state
+				state.blockedTaskIds = [];
+				state.blockedTasks = 0;
+			}
+		} else if (!skipFailed && failedInWave.length > 0) {
+			return `❌ Wave ${targetWave} has ${failedInWave.length} failed task(s): ${failedInWave.join(", ")}.\n` +
+				`Use skipFailed=true to skip them, or use orch_skip_task to skip them individually first.`;
+		}
+
+		// Update the merge result to "succeeded"
+		state.mergeResults[mergeResultIdx] = {
+			...mergeEntry,
+			status: "succeeded",
+			failedLane: null,
+			failureReason: null,
+		};
+
+		// Phase transition — terminal "failed" → "stopped" (resumable with force)
+		if (state.phase === "failed") {
+			state.phase = "stopped";
+		}
+
+		// Clear merge-related errors
+		state.errors = state.errors.filter(e => !e.includes("mixed") && !e.includes("merge") && !e.includes("Merge"));
+		state.lastError = null;
+
+		// Update timestamp
+		state.updatedAt = Date.now();
+
+		// Persist
+		try {
+			saveBatchState(JSON.stringify(state, null, 2), stateRoot);
+		} catch (err) {
+			return `❌ Failed to persist state after force merge: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		// Sync in-memory state if batch IDs match
+		if (orchBatchState.batchId === state.batchId) {
+			orchBatchState.failedTasks = state.failedTasks;
+			orchBatchState.skippedTasks = state.skippedTasks ?? 0;
+			orchBatchState.blockedTasks = state.blockedTasks;
+			orchBatchState.blockedTaskIds = new Set(state.blockedTaskIds);
+			if (state.phase === "stopped" && orchBatchState.phase === "failed") {
+				orchBatchState.phase = "stopped";
+			}
+		}
+
+		updateOrchWidget();
+
+		const lines = [
+			`✅ Force merge applied for wave ${targetWave}.`,
+			`   Merge result updated: partial → succeeded`,
+			`   Succeeded tasks: ${succeededInWave.join(", ")}`,
+		];
+
+		if (skippedTasks.length > 0) {
+			lines.push(`   Skipped tasks: ${skippedTasks.join(", ")}`);
+		}
+
+		lines.push(`   Batch phase: ${state.phase} | Failed: ${state.failedTasks}, Skipped: ${state.skippedTasks ?? 0} / ${state.totalTasks} total`);
+
+		const resumeHint = state.phase === "stopped"
+			? "Use orch_resume(force=true) to continue the batch."
+			: "Use orch_resume() to continue the batch.";
+		lines.push(`   ${resumeHint}`);
+
+		return lines.join("\n");
+	}
+
 	/**
 	 * Core logic for orch-integrate. Returns a result message string.
 	 * On error, returns an object with error flag.
@@ -3364,6 +3546,45 @@ export default function (pi: ExtensionAPI) {
 			} catch (err) {
 				return {
 					content: [{ type: "text" as const, text: `Error skipping task: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	// ── TP-078: Force Merge Tool ─────────────────────────────────────
+
+	pi.registerTool({
+		name: "orch_force_merge",
+		label: "Force Merge Wave",
+		description:
+			"Force merge a wave that was rejected due to mixed-outcome lanes (succeeded and failed tasks " +
+			"on the same lane). Updates the merge result to 'succeeded' so the batch can continue. " +
+			"Optionally skips failed tasks in the wave.",
+		promptSnippet: "orch_force_merge(waveIndex?, skipFailed?) — force merge a wave with mixed results",
+		promptGuidelines: [
+			"Call orch_force_merge when a wave merge was rejected because lanes had both succeeded and failed tasks.",
+			"The batch must be paused, stopped, or failed with a 'partial' merge result for the target wave.",
+			"Set skipFailed=true to automatically skip all failed tasks in the wave (recommended).",
+			"If skipFailed is false and failed tasks exist, you must skip them individually with orch_skip_task first.",
+			"After force merging, use orch_resume(force=true) to continue the batch.",
+			"waveIndex is 0-based. Omit it to target the current wave.",
+		],
+		parameters: Type.Object({
+			waveIndex: Type.Optional(Type.Number({
+				description: "0-based wave index to force merge. Defaults to the current wave.",
+			})),
+			skipFailed: Type.Optional(Type.Boolean({
+				description: "If true, automatically skip all failed tasks in the wave before merging. Defaults to false.",
+			})),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doOrchForceMerge(params.waveIndex, params.skipFailed ?? false, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error force merging: ${err instanceof Error ? err.message : String(err)}` }],
 					details: undefined,
 				};
 			}

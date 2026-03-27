@@ -1,6 +1,6 @@
 # TP-078: Force Merge and Supervisor Recovery Playbooks — Status
 
-**Current Step:** Step 1: Implement orch_force_merge
+**Current Step:** Step 2: Supervisor Recovery Playbooks
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-27
 **Review Level:** 2
@@ -18,12 +18,12 @@
 ---
 
 ### Step 1: Implement orch_force_merge
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Register tool with waveIndex and skipFailed parameters
-- [ ] Validate batch is paused due to merge failure
-- [ ] Bypass mixed-result check, merge succeeded commits
-- [ ] Persist result, return confirmation
+- [x] Register tool with waveIndex and skipFailed parameters
+- [x] Validate batch is paused due to merge failure
+- [x] Bypass mixed-result check, merge succeeded commits
+- [x] Persist result, return confirmation
 
 ---
 
