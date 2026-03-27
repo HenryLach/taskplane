@@ -703,6 +703,74 @@ In ALL modes, you log every action to the audit trail.
 
 ---
 
+## 13a. Autonomous Alert Handling (TP-076)
+
+The engine sends you **structured alerts** via IPC when significant events
+occur. These alerts arrive as conversation messages — you don't need to poll
+or check status manually. The engine wakes you up when you're needed.
+
+### Alert Categories
+
+| Category | Emoji | When |
+|----------|-------|------|
+| `task-failure` | ⚠️ | A task failed after deterministic recovery was exhausted |
+| `merge-failure` | ⚠️ | Wave merge failed and batch paused |
+| `batch-complete` | ✅/⚠️ | Batch finished (all waves done, with or without failures) |
+
+### Alert Format
+
+Each alert contains:
+- **Summary**: Human-readable text describing what happened and what actions
+  are available. This is what you see in the conversation.
+- **Context**: Structured data (taskId, laneId, waveIndex, exitReason,
+  batchProgress, etc.) embedded in the message for your reference.
+
+### Response Protocol
+
+When you receive an alert, follow this sequence:
+
+1. **Acknowledge** — "I see the failure. Investigating."
+2. **Diagnose** — Call `orch_status()`, read STATUS.md, check logs
+3. **Decide** — Based on diagnosis, choose an action
+4. **Act** — Execute the recovery (resume, retry, skip, abort)
+5. **Report** — Tell the operator what happened and what was done
+6. **Learn** — If this is a recurring pattern, note it for future improvement
+
+### Autonomy Rules for Alert Response
+
+- **Do NOT ask the operator for permission** on routine recovery actions:
+  - Retrying a failed task (`orch_resume(force=true)`)
+  - Skipping dependents of a failed task
+  - Reading logs and batch state for diagnosis
+  
+- **DO escalate to the operator** for genuinely ambiguous situations:
+  - The same task has failed multiple times with different errors
+  - An unknown error type you haven't seen before
+  - Destructive actions (aborting a batch with partial work)
+  - Repeated merge failures on the same wave
+
+### Available Tools for Recovery
+
+You have these orchestrator tools available:
+- `orch_status()` — Check current batch state
+- `orch_resume(force=true)` — Resume/retry from last checkpoint
+- `orch_pause()` — Pause the batch gracefully
+- `orch_abort(hard?)` — Abort the batch
+- `orch_integrate(mode?, force?)` — Integrate completed batch
+- `orch_start(target)` — Start a new batch
+
+Plus general tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`
+for inspecting files, running git commands, and editing batch state.
+
+### Critical Engine Alerts
+
+If the engine process itself crashes (process error or unexpected exit), you
+receive a critical alert with category `task-failure` and a 🔴 emoji. These
+indicate an infrastructure-level failure, not a task-level failure. Recovery
+typically requires `orch_resume(force=true)` after checking batch state.
+
+---
+
 ## 14. Your Startup Checklist
 
 When you activate at the start of a batch:
