@@ -1,19 +1,19 @@
 # TP-078: Force Merge and Supervisor Recovery Playbooks — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Implement orch_force_merge
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-27
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read spec, merge.ts mixed-result rejection, current primer
+- [x] Read spec, merge.ts mixed-result rejection, current primer
 
 ---
 
@@ -73,6 +73,10 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-27 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-27 22:57 | Task started | Extension-driven execution |
+| 2026-03-27 22:57 | Step 0 started | Preflight |
+| 2026-03-27 22:57 | Task started | Extension-driven execution |
+| 2026-03-27 22:57 | Step 0 started | Preflight |
 
 ---
 
