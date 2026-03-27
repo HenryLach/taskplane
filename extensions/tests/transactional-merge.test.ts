@@ -289,7 +289,9 @@ describe("3.x — Safe-stop: rollback failure handling", () => {
 
 		// After safe-stop, worktrees must be preserved for recovery
 		const safeStopIdx = engineSource.indexOf("SAFE-STOP: verification rollback failed");
-		const afterSafeStop = engineSource.substring(safeStopIdx, safeStopIdx + 1500);
+		// TP-076: Window increased from 1500 to 2500 to accommodate supervisor alert
+		// emission block inserted before preserveWorktreesForResume in safe-stop path.
+		const afterSafeStop = engineSource.substring(safeStopIdx, safeStopIdx + 2500);
 		expect(afterSafeStop).toContain("preserveWorktreesForResume = true");
 		expect(afterSafeStop).toContain("break");
 	});
@@ -308,7 +310,9 @@ describe("3.x — Safe-stop: rollback failure handling", () => {
 		const resumeSource = readSource("resume.ts");
 
 		const safeStopIdx = resumeSource.indexOf("SAFE-STOP: verification rollback failed");
-		const afterSafeStop = resumeSource.substring(safeStopIdx, safeStopIdx + 1500);
+		// TP-076: Window increased from 1500 to 2500 to accommodate supervisor alert
+		// emission block inserted before preserveWorktreesForResume in safe-stop path.
+		const afterSafeStop = resumeSource.substring(safeStopIdx, safeStopIdx + 2500);
 		expect(afterSafeStop).toContain("preserveWorktreesForResume = true");
 		expect(afterSafeStop).toContain("break");
 	});

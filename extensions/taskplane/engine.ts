@@ -18,8 +18,8 @@ import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-rep
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, loadBatchState, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { listOrchSessions } from "./sessions.ts";
-import { buildEngineEventBase, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, TaskRunnerConfig, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
+import { buildBatchProgressSnapshot, buildEngineEventBase, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, SupervisorAlert, SupervisorAlertCallback, TaskRunnerConfig, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaves, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 import { runPreflightCleanup, formatPreflightCleanup } from "./cleanup.ts";
@@ -744,6 +744,7 @@ async function attemptStaleWorktreeRecovery(
  * @param workspaceRoot - Workspace root for resolving task area paths (defaults to cwd)
  * @param agentRoot   - Agent root for config resolution
  * @param onEngineEvent - Optional callback for engine lifecycle events (TP-040)
+ * @param onSupervisorAlert - Optional callback for supervisor alerts (TP-076)
  */
 export async function executeOrchBatch(
 	args: string,
@@ -757,6 +758,7 @@ export async function executeOrchBatch(
 	workspaceRoot?: string,
 	agentRoot?: string,
 	onEngineEvent?: EngineEventCallback | null,
+	onSupervisorAlert?: SupervisorAlertCallback | null,
 ): Promise<void> {
 	const repoRoot = cwd;
 	// State files (.pi/batch-state.json, lane-state, etc.) belong in the workspace root,
@@ -767,6 +769,21 @@ export async function executeOrchBatch(
 	// Closure over stateRoot and onEngineEvent to keep emit calls terse.
 	// batchState.batchId is read at call time (it's set in Phase 1).
 	const emitEvent: typeof emitEngineEvent = (sr, event, cb) => emitEngineEvent(sr, event, cb);
+
+	// ── TP-076: Supervisor alert emission helper ─────────────────
+	// Wraps the optional callback with a null guard for terse call sites.
+	const emitAlert = (alert: SupervisorAlert): void => {
+		if (onSupervisorAlert) {
+			try {
+				onSupervisorAlert(alert);
+			} catch (err: unknown) {
+				const msg = err instanceof Error ? err.message : String(err);
+				execLog("batch", batchState.batchId, `supervisor alert callback failed: ${msg}`, {
+					alertCategory: alert.category,
+				});
+			}
+		}
+	};
 
 	// ── TP-040 R002: Terminal event emission helper ──────────────
 	// Routes all early-return and terminal paths through consistent event
@@ -1309,6 +1326,34 @@ export async function executeOrchBatch(
 				reason: outcome?.exitReason || "unknown",
 				partialProgress: (outcome?.partialProgressCommits ?? 0) > 0,
 			}, onEngineEvent);
+
+			// ── TP-076: Emit supervisor alert for task failure ──────
+			const laneForTask = latestAllocatedLanes.find(l => l.tasks.some(t => t.taskId === taskId));
+			const exitReason = outcome?.exitReason || "unknown";
+			const hasPartialProgress = (outcome?.partialProgressCommits ?? 0) > 0;
+			emitAlert({
+				category: "task-failure",
+				summary:
+					`⚠️ Task failure: ${taskId}\n` +
+					`  Exit reason: ${exitReason}\n` +
+					`  Lane: ${laneForTask?.laneId ?? "unknown"} (lane ${laneForTask?.laneNumber ?? "?"})\n` +
+					`  Partial progress preserved: ${hasPartialProgress ? "yes" : "no"}\n` +
+					`  Batch: wave ${waveIdx + 1}/${batchState.totalWaves}, ` +
+					`${batchState.succeededTasks} succeeded, ${batchState.failedTasks} failed\n\n` +
+					`Available actions:\n` +
+					`  - orch_status() to inspect current state\n` +
+					`  - orch_resume(force=true) to retry\n` +
+					`  - Read STATUS.md and lane logs for diagnosis`,
+				context: {
+					taskId,
+					laneId: laneForTask?.laneId,
+					laneNumber: laneForTask?.laneNumber,
+					waveIndex: waveIdx,
+					exitReason,
+					partialProgress: hasPartialProgress,
+					batchProgress: buildBatchProgressSnapshot(batchState),
+				},
+			});
 		}
 
 		// ── TS-009: Persist state after wave execution ──
@@ -1575,6 +1620,27 @@ export async function executeOrchBatch(
 				persistWarning,
 				"error",
 			);
+
+			// ── TP-076: Emit supervisor alert for rollback safe-stop ──
+			const rollbackError = `Safe-stop at wave ${waveIdx + 1}: verification rollback failed.${persistWarning}`;
+			emitAlert({
+				category: "merge-failure",
+				summary:
+					`⚠️ Merge failed for wave ${waveIdx + 1} — verification rollback failed\n` +
+					`  Batch force-paused for manual recovery.\n` +
+					`  ${persistWarning ? persistWarning.trim() : "Check .pi/verification/ for recovery commands."}\n\n` +
+					`Available actions:\n` +
+					`  - Check .pi/verification/ transaction records for recovery commands\n` +
+					`  - orch_status() to inspect current state\n` +
+					`  - orch_resume(force=true) after manual recovery`,
+				context: {
+					waveIndex: waveIdx,
+					laneNumber: mergeResult.failedLane ?? undefined,
+					mergeError: rollbackError,
+					batchProgress: buildBatchProgressSnapshot(batchState),
+				},
+			});
+
 			preserveWorktreesForResume = true;
 			break;
 		}
@@ -1660,6 +1726,26 @@ export async function executeOrchBatch(
 				persistRuntimeState("merge-rollback-safe-stop", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(retryOutcome.notifyMessage, "error");
 
+				// ── TP-076: Emit supervisor alert for merge safe-stop ──
+				emitAlert({
+					category: "merge-failure",
+					summary:
+						`⚠️ Merge failed for wave ${waveIdx + 1} — rollback failure, batch force-paused\n` +
+						`  Merge policy: safe-stop (rollback failed)\n` +
+						`  Failed lane: ${mergeResult.failedLane ?? "unknown"}\n` +
+						`  Error: ${retryOutcome.errorMessage}\n\n` +
+						`Available actions:\n` +
+						`  - Investigate failed merge, check .pi/verification/ for recovery commands\n` +
+						`  - orch_status() to inspect current state\n` +
+						`  - orch_resume(force=true) after manual recovery`,
+					context: {
+						waveIndex: waveIdx,
+						laneNumber: mergeResult.failedLane ?? undefined,
+						mergeError: retryOutcome.errorMessage,
+						batchProgress: buildBatchProgressSnapshot(batchState),
+					},
+				});
+
 				// Emit merge safe-stop event (treated as exhausted — no further automatic recovery possible)
 				const mergeSafeStopSuggestion = "Merge rollback failed — batch force-paused for manual recovery. Check .pi/verification/ for recovery commands.";
 				emitTier0Event(stateRoot, {
@@ -1714,6 +1800,28 @@ export async function executeOrchBatch(
 				batchState.errors.push(exhaustionMsg);
 				persistRuntimeState("merge-retry-exhausted", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(retryOutcome.notifyMessage, "error");
+
+				// ── TP-076: Emit supervisor alert for merge retry exhausted ──
+				emitAlert({
+					category: "merge-failure",
+					summary:
+						`⚠️ Merge failed for wave ${waveIdx + 1} — retry exhausted\n` +
+						`  Classification: ${retryOutcome.classification ?? "unknown"}\n` +
+						`  Attempts: ${retryOutcome.lastDecision.currentAttempt}/${retryOutcome.lastDecision.maxAttempts}\n` +
+						`  Failed lane: ${mergeResult.failedLane ?? "unknown"}\n` +
+						`  Error: ${exhaustionMsg}\n\n` +
+						`Available actions:\n` +
+						`  - Investigate merge failure and retry manually\n` +
+						`  - orch_status() to inspect current state\n` +
+						`  - orch_resume(force=true) after fixing the issue`,
+					context: {
+						waveIndex: waveIdx,
+						laneNumber: mergeResult.failedLane ?? undefined,
+						mergeError: exhaustionMsg,
+						batchProgress: buildBatchProgressSnapshot(batchState),
+					},
+				});
+
 				preserveWorktreesForResume = true;
 				break;
 			} else {
@@ -1730,6 +1838,27 @@ export async function executeOrchBatch(
 				batchState.errors.push(policyResult.errorMessage + classNote);
 				persistRuntimeState(policyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(policyResult.notifyMessage + classNote, policyResult.notifyLevel);
+
+				// ── TP-076: Emit supervisor alert for merge failure (no-retry policy) ──
+				emitAlert({
+					category: "merge-failure",
+					summary:
+						`⚠️ Merge failed for wave ${waveIdx + 1}\n` +
+						`  Policy: ${policyResult.policy}${classNote}\n` +
+						`  Failed lane: ${mergeResult.failedLane ?? "unknown"}\n` +
+						`  Error: ${mergeResult.failureReason || "unknown"}\n\n` +
+						`Available actions:\n` +
+						`  - Investigate failed merge\n` +
+						`  - orch_status() to inspect current state\n` +
+						`  - orch_resume(force=true) after fixing the issue`,
+					context: {
+						waveIndex: waveIdx,
+						laneNumber: mergeResult.failedLane ?? undefined,
+						mergeError: mergeResult.failureReason || "unknown",
+						batchProgress: buildBatchProgressSnapshot(batchState),
+					},
+				});
+
 				// DO NOT cleanup/reset worktrees — preserve state for debugging/resume
 				preserveWorktreesForResume = true;
 				break;
@@ -2389,6 +2518,46 @@ export async function executeOrchBatch(
 
 	// ── TS-009: Persist terminal state ──
 	persistRuntimeState("batch-terminal", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+
+	// ── TP-076: Emit supervisor alert for batch completion ──────
+	if (batchState.phase === "completed" || batchState.phase === "failed") {
+		const batchDurationMs = batchState.endedAt ? batchState.endedAt - batchState.startedAt : 0;
+		const durationStr = batchDurationMs > 0
+			? `${Math.floor(batchDurationMs / 60000)}m ${Math.round((batchDurationMs % 60000) / 1000)}s`
+			: "unknown";
+		if (batchState.phase === "completed" && batchState.failedTasks === 0) {
+			emitAlert({
+				category: "batch-complete",
+				summary:
+					`✅ Batch ${batchState.batchId} completed\n` +
+					`  ${batchState.succeededTasks}/${batchState.totalTasks} tasks succeeded\n` +
+					`  ${batchState.totalWaves} wave(s), duration: ${durationStr}\n` +
+					`  Merged to orch branch: ${batchState.orchBranch}\n\n` +
+					`Ready for integration. Run orch_integrate() or review first.`,
+				context: {
+					batchProgress: buildBatchProgressSnapshot(batchState),
+					batchDurationMs,
+				},
+			});
+		} else {
+			emitAlert({
+				category: "batch-complete",
+				summary:
+					`⚠️ Batch ${batchState.batchId} finished with failures\n` +
+					`  ${batchState.succeededTasks} succeeded, ${batchState.failedTasks} failed, ` +
+					`${batchState.skippedTasks} skipped, ${batchState.blockedTasks} blocked\n` +
+					`  Duration: ${durationStr}\n\n` +
+					`Available actions:\n` +
+					`  - orch_status() to review final state\n` +
+					`  - orch_integrate() if succeeded work should be kept\n` +
+					`  - orch_resume(force=true) to retry failed tasks`,
+				context: {
+					batchProgress: buildBatchProgressSnapshot(batchState),
+					batchDurationMs,
+				},
+			});
+		}
+	}
 
 	// ── TP-040: Emit batch terminal event (R002: unified via helper) ─
 	emitTerminalEvent();

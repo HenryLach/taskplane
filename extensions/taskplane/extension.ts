@@ -935,6 +935,7 @@ export function startBatchInWorker(
 	updateWidget: () => void,
 	onMonitorUpdate?: (state: import("./types.ts").MonitorState) => void,
 	onTerminal?: () => void,
+	onSupervisorAlert?: (alert: import("./types.ts").SupervisorAlert) => void,
 ): ChildProcess | null {
 	const workerPath = resolveEngineWorkerPath();
 
@@ -1011,6 +1012,11 @@ export function startBatchInWorker(
 			case "engine-event":
 				break;
 
+			// ── TP-076: Supervisor alert handling ────────────────
+			case "supervisor-alert":
+				onSupervisorAlert?.(msg.alert);
+				break;
+
 			case "state-sync":
 				applySerializedState(batchState, msg.state);
 				updateWidget();
@@ -1050,6 +1056,28 @@ export function startBatchInWorker(
 			"error",
 		);
 		updateWidget();
+		// ── TP-076: Alert supervisor about engine process error ──
+		onSupervisorAlert?.({
+			category: "task-failure",
+			summary:
+				`🔴 Engine process error — batch ${batchState.batchId} marked as failed\n` +
+				`  Error: ${err.message}\n\n` +
+				`This is a critical engine failure. The batch cannot continue.\n` +
+				`Available actions:\n` +
+				`  - orch_status() to inspect state\n` +
+				`  - orch_resume(force=true) to retry from last checkpoint`,
+			context: {
+				batchProgress: batchState.totalTasks > 0 ? {
+					succeededTasks: batchState.succeededTasks,
+					failedTasks: batchState.failedTasks,
+					skippedTasks: batchState.skippedTasks,
+					blockedTasks: batchState.blockedTasks,
+					totalTasks: batchState.totalTasks,
+					currentWave: batchState.currentWaveIndex + 1,
+					totalWaves: batchState.totalWaves,
+				} : undefined,
+			},
+		});
 		settle();
 	});
 
@@ -1065,6 +1093,28 @@ export function startBatchInWorker(
 				"error",
 			);
 			updateWidget();
+			// ── TP-076: Alert supervisor about unexpected engine exit ──
+			onSupervisorAlert?.({
+				category: "task-failure",
+				summary:
+					`🔴 Engine process died unexpectedly (exit code ${code})\n` +
+					`  Batch ${batchState.batchId} marked as failed.\n\n` +
+					`This is a critical engine failure. The batch cannot continue.\n` +
+					`Available actions:\n` +
+					`  - orch_status() to inspect state\n` +
+					`  - orch_resume(force=true) to retry from last checkpoint`,
+				context: {
+					batchProgress: batchState.totalTasks > 0 ? {
+						succeededTasks: batchState.succeededTasks,
+						failedTasks: batchState.failedTasks,
+						skippedTasks: batchState.skippedTasks,
+						blockedTasks: batchState.blockedTasks,
+						totalTasks: batchState.totalTasks,
+						currentWave: batchState.currentWaveIndex + 1,
+						totalWaves: batchState.totalWaves,
+					} : undefined,
+				},
+			});
 		}
 		settle();
 	});
@@ -1893,33 +1943,11 @@ export default function (pi: ExtensionAPI) {
 					};
 				transitionToRoutingMode(pi, supervisorState, postBatchContext);
 			},
-			// Fallback: run engine on main thread if worker spawn fails (R001 §1)
-			() => executeOrchBatch(
-				trimmedTarget,
-				orchConfig,
-				runnerConfig,
-				repoRoot,
-				orchBatchState,
-				(message, level) => {
-					ctx.ui.notify(message, level);
-					updateOrchWidget();
-				},
-				(monState: MonitorState) => {
-					const changed = !latestMonitorState ||
-						latestMonitorState.totalDone !== monState.totalDone ||
-						latestMonitorState.totalFailed !== monState.totalFailed ||
-						latestMonitorState.lanes.some((l, i) =>
-							l.currentTaskId !== monState.lanes[i]?.currentTaskId ||
-							l.currentStep !== monState.lanes[i]?.currentStep ||
-							l.completedChecks !== monState.lanes[i]?.completedChecks,
-						);
-					latestMonitorState = monState;
-					if (changed) updateOrchWidget();
-				},
-				execCtx!.workspaceConfig,
-				execCtx!.workspaceRoot,
-				execCtx!.pointer?.agentRoot,
-			),
+			// ── TP-076: Supervisor alert handler — injects alerts as user messages ──
+			(alert) => {
+				if (!supervisorState.active) return; // Don't send orphaned messages
+				ctx.sendUserMessage(alert.summary, { deliverAs: "followUp" });
+			},
 		);
 
 		// Activate supervisor agent
@@ -2135,25 +2163,11 @@ export default function (pi: ExtensionAPI) {
 					};
 				transitionToRoutingMode(pi, supervisorState, postBatchContext);
 			},
-			// Fallback: run resume on main thread if worker spawn fails (R001 §1)
-			() => resumeOrchBatch(
-				orchConfig,
-				runnerConfig,
-				execCtx!.repoRoot,
-				orchBatchState,
-				(message, level) => {
-					ctx.ui.notify(message, level);
-					updateOrchWidget();
-				},
-				(monState: MonitorState) => {
-					latestMonitorState = monState;
-					updateOrchWidget();
-				},
-				execCtx!.workspaceConfig,
-				execCtx!.workspaceRoot,
-				execCtx!.pointer?.agentRoot,
-				force,
-			),
+			// ── TP-076: Supervisor alert handler — injects alerts as user messages ──
+			(alert) => {
+				if (!supervisorState.active) return; // Don't send orphaned messages
+				ctx.sendUserMessage(alert.summary, { deliverAs: "followUp" });
+			},
 		);
 
 		// Activate supervisor agent on resume
