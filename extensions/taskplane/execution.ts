@@ -764,11 +764,29 @@ export function resolveCanonicalTaskPaths(
 	let resolvedFolder: string;
 
 	if (isWorkspaceMode) {
-		// Workspace mode: task folder may live in a different repo than
-		// the lane's worktree. Always use the absolute canonical path —
-		// .DONE and STATUS.md are written by workers to the original
-		// task folder (via absolute TASK_AUTOSTART path), not to the worktree.
-		resolvedFolder = resolve(taskFolder);
+		// Workspace mode: check both the original source path AND the
+		// worktree-relative path. The task-runner may write .DONE to either
+		// location depending on how TASK_AUTOSTART resolves in the worker's
+		// context. Check worktree first (most common), then fall back to original.
+		const candidatePaths: string[] = [];
+
+		// Candidate 1: worktree-relative (task folder mirrored in worktree)
+		if (folderNorm.startsWith(repoRootNorm + "/")) {
+			const relPath = folderNorm.slice(repoRootNorm.length + 1);
+			candidatePaths.push(join(worktreePath, relPath));
+		}
+
+		// Candidate 2: original absolute path
+		candidatePaths.push(resolve(taskFolder));
+
+		// Use whichever has .DONE or STATUS.md; default to first candidate
+		resolvedFolder = candidatePaths[0];
+		for (const candidate of candidatePaths) {
+			if (existsSync(join(candidate, ".DONE")) || existsSync(join(candidate, "STATUS.md"))) {
+				resolvedFolder = candidate;
+				break;
+			}
+		}
 	} else if (folderNorm.startsWith(repoRootNorm + "/")) {
 		// Repo mode: task folder is inside the repo root.
 		// Translate to equivalent path in the worktree.
