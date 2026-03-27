@@ -1268,8 +1268,11 @@ process.stdin.on('end', () => {
 		writeFileSync(mockPiScript, `
 import process from 'process';
 
+let responded = false;
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
+	if (responded) return; // Ignore get_session_stats and other follow-up commands
+	responded = true;
 	// Emit one event then crash
 	process.stdout.write(JSON.stringify({ type: "agent_start" }) + '\\n');
 	process.stdout.write(JSON.stringify({

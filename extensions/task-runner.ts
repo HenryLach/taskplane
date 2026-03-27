@@ -1367,6 +1367,8 @@ interface SidecarTelemetryDelta {
 	lastRetryError: string;
 	/** Whether any sidecar events were parsed in this tick (used for callback gating) */
 	hadEvents: boolean;
+	/** Authoritative context usage from pi get_session_stats (pi ≥ 0.63.0, null if unavailable) */
+	contextUsage: { percentUsed: number; totalTokens: number; maxTokens: number } | null;
 }
 
 /**
@@ -1385,7 +1387,7 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 		inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
 		cost: 0, latestTotalTokens: 0, toolCalls: 0, lastTool: "",
 		retryActive: tailState.retryActive, retriesStarted: 0, lastRetryError: "",
-		hadEvents: false,
+		hadEvents: false, contextUsage: null,
 	};
 
 	// Gracefully handle missing file (wrapper hasn't written yet)
@@ -1494,6 +1496,21 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 
 			case "auto_retry_end": {
 				tailState.retryActive = false;
+				break;
+			}
+
+			case "response": {
+				// get_session_stats response from pi ≥ 0.63.0 — authoritative context usage
+				if (event.success === true && event.data?.contextUsage) {
+					const cu = event.data.contextUsage;
+					if (typeof cu.percentUsed === "number") {
+						delta.contextUsage = {
+							percentUsed: cu.percentUsed,
+							totalTokens: cu.totalTokens || 0,
+							maxTokens: cu.maxTokens || 0,
+						};
+					}
+				}
 				break;
 			}
 		}
@@ -2405,8 +2422,10 @@ export default function (pi: ExtensionAPI) {
 								state.reviewerLastTool = delta.lastTool;
 							}
 
-							// Context %
-							if (delta.latestTotalTokens > 0 && contextWindow > 0) {
+							// Context % — prefer authoritative contextUsage (pi ≥ 0.63.0)
+							if (delta.contextUsage) {
+								state.reviewerContextPct = delta.contextUsage.percentUsed;
+							} else if (delta.latestTotalTokens > 0 && contextWindow > 0) {
 								state.reviewerContextPct = (delta.latestTotalTokens / contextWindow) * 100;
 							}
 
@@ -2566,7 +2585,10 @@ export default function (pi: ExtensionAPI) {
 								state.reviewerCostUsd += delta.cost;
 								state.reviewerToolCount += delta.toolCalls;
 								if (delta.lastTool) state.reviewerLastTool = delta.lastTool;
-								if (delta.latestTotalTokens > 0 && contextWindow > 0) {
+								// Context % — prefer authoritative contextUsage (pi ≥ 0.63.0)
+								if (delta.contextUsage) {
+									state.reviewerContextPct = delta.contextUsage.percentUsed;
+								} else if (delta.latestTotalTokens > 0 && contextWindow > 0) {
 									state.reviewerContextPct = (delta.latestTotalTokens / contextWindow) * 100;
 								}
 								writeLaneState(state);
@@ -3140,18 +3162,24 @@ export default function (pi: ExtensionAPI) {
 						state.workerLastRetryError = delta.lastRetryError;
 					}
 
-					// Context % (same as subprocess onContextPct)
-					// totalTokens is cumulative from the most recent message_end
-					if (delta.latestTotalTokens > 0 && contextWindow > 0) {
-						const pct = (delta.latestTotalTokens / contextWindow) * 100;
-						state.workerContextPct = pct;
-						if (pct >= warnPct) {
-							writeWrapUpSignal(`Wrap up (context ${Math.round(pct)}%)`);
-						}
-						if (pct >= killPct && state.workerStatus === "running") {
-							console.error(`[task-runner] tmux worker: context limit (${Math.round(pct)}%) — killing session '${sessionName}'`);
-							killReason = "context";
-							spawned.kill();
+					// Context % — prefer authoritative contextUsage from pi ≥ 0.63.0,
+					// fall back to manual calculation from totalTokens + cacheRead.
+					{
+						const pct = delta.contextUsage
+							? delta.contextUsage.percentUsed
+							: (delta.latestTotalTokens > 0 && contextWindow > 0)
+								? (delta.latestTotalTokens / contextWindow) * 100
+								: 0;
+						if (pct > 0) {
+							state.workerContextPct = pct;
+							if (pct >= warnPct) {
+								writeWrapUpSignal(`Wrap up (context ${Math.round(pct)}%)`);
+							}
+							if (pct >= killPct && state.workerStatus === "running") {
+								console.error(`[task-runner] tmux worker: context limit (${Math.round(pct)}%) — killing session '${sessionName}'`);
+								killReason = "context";
+								spawned.kill();
+							}
 						}
 					}
 

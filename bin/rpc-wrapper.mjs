@@ -331,6 +331,8 @@ function createSessionState() {
 		currentTool: null,
 		error: null,
 		agentEnded: false,
+		/** Authoritative context usage from pi get_session_stats (null if unavailable) */
+		contextUsage: null,
 	};
 }
 
@@ -414,6 +416,10 @@ function applyEvent(state, event) {
 			if (event.success === false && event.error) {
 				state.error = event.error;
 			}
+			// get_session_stats response — extract authoritative contextUsage
+			if (event.success === true && event.data?.contextUsage) {
+				state.contextUsage = event.data.contextUsage;
+			}
 			break;
 		}
 
@@ -455,6 +461,8 @@ function buildExitSummary(state, exitCode, exitSignal, errorOverride, startTime)
 		durationSec,
 		lastToolCall: state.lastToolCall,
 		error: finalError,
+		// Authoritative context usage from pi ≥ 0.63.0 (null if unavailable)
+		contextUsage: state.contextUsage || null,
 	};
 
 	return redactSummary(rawSummary);
@@ -614,6 +622,22 @@ function closeStdin() {
 	}
 }
 
+/**
+ * Query pi for authoritative session stats including contextUsage.
+ * Available in pi ≥ 0.63.0 (RPC get_session_stats exposes contextUsage).
+ * Safe to call on older versions — the command is ignored or returns
+ * without the field, and state.contextUsage stays null.
+ */
+function querySessionStats() {
+	try {
+		if (proc.stdin && !proc.stdin.destroyed) {
+			proc.stdin.write(JSON.stringify({ type: "get_session_stats" }) + "\n");
+		}
+	} catch {
+		// stdin may be closed — ignore
+	}
+}
+
 // ── Route RPC events ─────────────────────────────────────────────────
 
 function handleEvent(event) {
@@ -628,6 +652,13 @@ function handleEvent(event) {
 	// Side effects that depend on the event type (IO, stdin lifecycle, display)
 	switch (event.type) {
 		case "message_end":
+			displayProgress(state);
+			// Query pi for authoritative context usage (pi ≥ 0.63.0).
+			// Falls back gracefully: older pi versions ignore the command
+			// or return a response without contextUsage — state.contextUsage stays null.
+			querySessionStats();
+			break;
+
 		case "tool_execution_start":
 			displayProgress(state);
 			break;

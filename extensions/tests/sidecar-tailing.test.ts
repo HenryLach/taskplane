@@ -617,3 +617,52 @@ describe("tailSidecarJsonl — poll loop integration simulation", () => {
 		expect(retryCount).toBe(1);
 	});
 });
+
+describe("tailSidecarJsonl — contextUsage from get_session_stats (pi ≥ 0.63.0)", () => {
+	it("extracts contextUsage from response event", () => {
+		const state = createSidecarTailState();
+		writeEvents(
+			{ type: "response", success: true, data: {
+				contextUsage: { percentUsed: 42.5, totalTokens: 425000, maxTokens: 1000000 },
+			}},
+		);
+		const delta = tailSidecarJsonl(sidecarPath, state);
+		expect(delta.contextUsage).not.toBe(null);
+		expect(delta.contextUsage!.percentUsed).toBe(42.5);
+		expect(delta.contextUsage!.totalTokens).toBe(425000);
+		expect(delta.contextUsage!.maxTokens).toBe(1000000);
+	});
+
+	it("contextUsage is null when response has no contextUsage (older pi)", () => {
+		const state = createSidecarTailState();
+		writeEvents(
+			{ type: "response", success: true, data: {} },
+		);
+		const delta = tailSidecarJsonl(sidecarPath, state);
+		expect(delta.contextUsage).toBe(null);
+	});
+
+	it("contextUsage is null when response is an error", () => {
+		const state = createSidecarTailState();
+		writeEvents(
+			{ type: "response", success: false, error: "something broke" },
+		);
+		const delta = tailSidecarJsonl(sidecarPath, state);
+		expect(delta.contextUsage).toBe(null);
+	});
+
+	it("contextUsage takes precedence over manual calculation when present", () => {
+		const state = createSidecarTailState();
+		// message_end gives manual tokens AND response gives authoritative contextUsage
+		writeEvents(
+			{ type: "message_end", message: { usage: { input: 100, output: 50, totalTokens: 150 } } },
+			{ type: "response", success: true, data: {
+				contextUsage: { percentUsed: 87.3, totalTokens: 873000, maxTokens: 1000000 },
+			}},
+		);
+		const delta = tailSidecarJsonl(sidecarPath, state);
+		// Both should be present — consumer decides which to use
+		expect(delta.latestTotalTokens).toBe(150);
+		expect(delta.contextUsage!.percentUsed).toBe(87.3);
+	});
+});
