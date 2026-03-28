@@ -633,10 +633,11 @@ describe("6.x — doOrchForceMerge implementation verification", () => {
 		expect(fnBlock).toContain("Skipped by orch_force_merge");
 	});
 
-	it("6.6 — doOrchForceMerge updates merge result status to succeeded", () => {
+	it("6.6 — doOrchForceMerge clears merge result and sets phase to paused for re-merge", () => {
 		const fnStart = extensionSource.indexOf("function doOrchForceMerge(");
 		const fnBlock = extensionSource.slice(fnStart, fnStart + 7000);
-		expect(fnBlock).toContain('status: "succeeded"');
+		expect(fnBlock).toContain("mergeResults.splice(");
+		expect(fnBlock).toContain('"paused"');
 	});
 
 	it("6.7 — doOrchForceMerge persists state with saveBatchState", () => {
@@ -652,11 +653,17 @@ describe("6.x — doOrchForceMerge implementation verification", () => {
 		expect(fnBlock).toContain("orchBatchState.failedTasks");
 	});
 
-	it("6.9 — doOrchForceMerge handles phase transition from failed to stopped", () => {
+	it("6.9 — doOrchForceMerge sets phase to paused for re-merge", () => {
 		const fnStart = extensionSource.indexOf("function doOrchForceMerge(");
 		const fnBlock = extensionSource.slice(fnStart, fnStart + 7000);
-		expect(fnBlock).toContain('"failed"');
-		expect(fnBlock).toContain('"stopped"');
+		expect(fnBlock).toContain('"paused"');
+	});
+
+	it("6.11 — doOrchForceMerge only allows partial (mixed-outcome) merge failures", () => {
+		const fnStart = extensionSource.indexOf("function doOrchForceMerge(");
+		const fnBlock = extensionSource.slice(fnStart, fnStart + 7000);
+		expect(fnBlock).toContain('"partial"');
+		expect(fnBlock).toContain("only applies to mixed-outcome");
 	});
 
 	it("6.10 — doOrchForceMerge provides resume hint in output", () => {

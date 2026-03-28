@@ -1510,6 +1510,9 @@ export async function executeOrchBatch(
 						failedLane: mixedOutcomeLanes[0].laneNumber,
 						failureReason,
 					};
+					// Update the already-pushed references so persisted state reflects "partial"
+					allMergeResults[allMergeResults.length - 1] = mergeResult;
+					batchState.mergeResults[batchState.mergeResults.length - 1] = mergeResult;
 				}
 
 				// Emit overall merge result notification

@@ -971,6 +971,7 @@ export function startBatchInWorker(
 				wkData.workspaceRoot,
 				wkData.agentRoot,
 				wkData.force ?? false,
+				onSupervisorAlert ?? null,
 			)
 			: () => executeOrchBatch(
 				wkData.args ?? "",
@@ -983,6 +984,8 @@ export function startBatchInWorker(
 				wsConfig,
 				wkData.workspaceRoot,
 				wkData.agentRoot,
+				null, // onEngineEvent
+				onSupervisorAlert ?? null,
 			);
 		startBatchAsync(fallbackFn, batchState, ctx, updateWidget, onTerminal);
 		return null;
@@ -2389,6 +2392,23 @@ export default function (pi: ExtensionAPI) {
 			state.failedTasks = Math.max(0, state.failedTasks - 1);
 		}
 
+		// Recompute blocked dependents — the retried task is no longer a failure,
+		// so tasks that were blocked solely by it should be unblocked.
+		const remainingFailures = new Set<string>();
+		for (const t of state.tasks) {
+			if (t.status === "failed" || t.status === "stalled") {
+				remainingFailures.add(t.taskId);
+			}
+		}
+		if (orchBatchState.dependencyGraph && orchBatchState.batchId === state.batchId) {
+			const newBlocked = computeTransitiveDependents(remainingFailures, orchBatchState.dependencyGraph);
+			state.blockedTaskIds = [...newBlocked].sort();
+			state.blockedTasks = newBlocked.size;
+		} else if (remainingFailures.size === 0) {
+			state.blockedTaskIds = [];
+			state.blockedTasks = 0;
+		}
+
 		// TP-077 R001-3: Phase transition — terminal "failed" → "stopped" (resumable with force)
 		// "stopped" and "paused" are kept as-is (already resumable).
 		if (state.phase === "failed") {
@@ -2408,7 +2428,8 @@ export default function (pi: ExtensionAPI) {
 		// Sync in-memory state if batch IDs match
 		if (orchBatchState.batchId === state.batchId) {
 			orchBatchState.failedTasks = state.failedTasks;
-			orchBatchState.blockedTaskIds.delete(taskId);
+			orchBatchState.blockedTasks = state.blockedTasks;
+			orchBatchState.blockedTaskIds = new Set(state.blockedTaskIds);
 			if (state.phase === "stopped" && orchBatchState.phase === "failed") {
 				orchBatchState.phase = "stopped";
 			}
@@ -2617,6 +2638,13 @@ export default function (pi: ExtensionAPI) {
 			return `✅ Wave ${targetWave} merge already succeeded. No force merge needed.`;
 		}
 
+		// Only allow force merge for mixed-outcome failures (partial status).
+		// Other failures (conflicts, build failures) need different resolution.
+		if (mergeEntry.status !== "partial") {
+			return `❌ Wave ${targetWave} merge failed with status "${mergeEntry.status}": ${mergeEntry.failureReason || "unknown reason"}.\n` +
+				`Force merge only applies to mixed-outcome lanes (partial). This failure needs manual resolution.`;
+		}
+
 		// Collect tasks in the target wave
 		const waveTasks = state.wavePlan[targetWave] ?? [];
 		const failedInWave: string[] = [];
@@ -2677,18 +2705,13 @@ export default function (pi: ExtensionAPI) {
 				`Use skipFailed=true to skip them, or use orch_skip_task to skip them individually first.`;
 		}
 
-		// Update the merge result to "succeeded"
-		state.mergeResults[mergeResultIdx] = {
-			...mergeEntry,
-			status: "succeeded",
-			failedLane: null,
-			failureReason: null,
-		};
+		// Clear the failed merge result so resume will re-attempt the merge.
+		// With failed tasks now skipped, the merge should succeed (no mixed outcomes).
+		state.mergeResults.splice(mergeResultIdx, 1);
 
-		// Phase transition — terminal "failed" → "stopped" (resumable with force)
-		if (state.phase === "failed") {
-			state.phase = "stopped";
-		}
+		// Phase transition to "paused" so orch_resume will re-run the merge phase.
+		// "paused" is the standard resumable state (not "stopped" which needs force).
+		state.phase = "paused";
 
 		// Clear merge-related errors
 		state.errors = state.errors.filter(e => !e.includes("mixed") && !e.includes("merge") && !e.includes("Merge"));
@@ -2710,28 +2733,24 @@ export default function (pi: ExtensionAPI) {
 			orchBatchState.skippedTasks = state.skippedTasks ?? 0;
 			orchBatchState.blockedTasks = state.blockedTasks;
 			orchBatchState.blockedTaskIds = new Set(state.blockedTaskIds);
-			if (state.phase === "stopped" && orchBatchState.phase === "failed") {
-				orchBatchState.phase = "stopped";
-			}
+			orchBatchState.phase = "paused";
 		}
 
 		updateOrchWidget();
 
 		const lines = [
-			`✅ Force merge applied for wave ${targetWave}.`,
-			`   Merge result updated: partial → succeeded`,
+			`✅ Force merge prepared for wave ${targetWave}.`,
+			`   Failed merge result cleared — resume will re-attempt the merge.`,
 			`   Succeeded tasks: ${succeededInWave.join(", ")}`,
 		];
 
 		if (skippedTasks.length > 0) {
-			lines.push(`   Skipped tasks: ${skippedTasks.join(", ")}`);
+			lines.push(`   Skipped tasks (were failed): ${skippedTasks.join(", ")}`);
 		}
 
-		lines.push(`   Batch phase: ${state.phase} | Failed: ${state.failedTasks}, Skipped: ${state.skippedTasks ?? 0} / ${state.totalTasks} total`);
+		lines.push(`   Batch phase: paused | Failed: ${state.failedTasks}, Skipped: ${state.skippedTasks ?? 0} / ${state.totalTasks} total`);
 
-		const resumeHint = state.phase === "stopped"
-			? "Use orch_resume(force=true) to continue the batch."
-			: "Use orch_resume() to continue the batch.";
+		const resumeHint = "Use orch_resume() to re-run the merge with failed tasks skipped.";
 		lines.push(`   ${resumeHint}`);
 
 		return lines.join("\n");

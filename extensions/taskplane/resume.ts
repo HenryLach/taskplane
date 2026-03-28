@@ -1713,6 +1713,8 @@ export async function resumeOrchBatch(
 						`Lane(s) ${mixedIds} contain both succeeded and failed tasks. ` +
 						`Automatic partial-branch merge is disabled to avoid dropping succeeded commits.`;
 					mergeResult = { ...mergeResult, status: "partial", failedLane: mixedOutcomeLanes[0].laneNumber, failureReason };
+					// Update the already-pushed reference so persisted state reflects "partial"
+					batchState.mergeResults[batchState.mergeResults.length - 1] = mergeResult;
 				}
 
 				// TP-032 R006-3: Exclude verification_new_failure lanes from success count

@@ -634,7 +634,7 @@ describe("5.x — Implementation correctness (source-based)", () => {
 
 	it("5.2 — doOrchRetryTask saves modified state", () => {
 		const idx = extensionSource.indexOf("function doOrchRetryTask(");
-		const block = extensionSource.slice(idx, idx + 2500);
+		const block = extensionSource.slice(idx, idx + 5000);
 		expect(block).toContain("saveBatchState(");
 	});
 
@@ -690,7 +690,7 @@ describe("5.x — Implementation correctness (source-based)", () => {
 	it("5.10 — both tools update in-memory orchBatchState for widget sync", () => {
 		const retryIdx = extensionSource.indexOf("function doOrchRetryTask(");
 		// Search a larger block to ensure we capture updateOrchWidget call
-		const retryBlock = extensionSource.slice(retryIdx, retryIdx + 3500);
+		const retryBlock = extensionSource.slice(retryIdx, retryIdx + 5000);
 		expect(retryBlock).toContain("updateOrchWidget()");
 
 		const skipIdx = extensionSource.indexOf("function doOrchSkipTask(");
@@ -723,7 +723,7 @@ describe("5.x — Implementation correctness (source-based)", () => {
 
 	it("5.14 — doOrchRetryTask transitions failed phase to stopped", () => {
 		const idx = extensionSource.indexOf("function doOrchRetryTask(");
-		const block = extensionSource.slice(idx, idx + 2500);
+		const block = extensionSource.slice(idx, idx + 5000);
 		// Should transition "failed" → "stopped" for resumability
 		expect(block).toContain('"failed"');
 		expect(block).toContain('"stopped"');
@@ -736,9 +736,17 @@ describe("5.x — Implementation correctness (source-based)", () => {
 		expect(block).toContain('"stopped"');
 	});
 
-	it("5.16 — doOrchRetryTask clears exitDiagnostic and partial progress fields", () => {
+	it("5.16 — doOrchRetryTask recomputes blocked dependents", () => {
 		const idx = extensionSource.indexOf("function doOrchRetryTask(");
-		const block = extensionSource.slice(idx, idx + 2500);
+		const block = extensionSource.slice(idx, idx + 5000);
+		expect(block).toContain("computeTransitiveDependents");
+		expect(block).toContain("remainingFailures");
+		expect(block).toContain("blockedTaskIds");
+	});
+
+	it("5.17 — doOrchRetryTask clears exitDiagnostic and partial progress fields", () => {
+		const idx = extensionSource.indexOf("function doOrchRetryTask(");
+		const block = extensionSource.slice(idx, idx + 5000);
 		expect(block).toContain("exitDiagnostic");
 		expect(block).toContain("partialProgressCommits");
 		expect(block).toContain("partialProgressBranch");
