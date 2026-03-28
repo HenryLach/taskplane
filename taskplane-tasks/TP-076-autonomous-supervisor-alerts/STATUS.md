@@ -1,81 +1,77 @@
 # TP-076: Autonomous Supervisor Alerts (Phase 1) — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Complete
+**Status:** ✅ Done
 **Last Updated:** 2026-03-27
 **Review Level:** 2
-**Review Counter:** 0
-**Iteration:** 0
+**Review Counter:** 1
+**Iteration:** 1
 **Size:** M
-
-> **Hydration:** Checkboxes represent meaningful outcomes, not individual code
-> changes. Workers expand steps when runtime discoveries warrant it — aim for
-> 2-5 outcome-level items per step, not exhaustive implementation scripts.
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read autonomous supervisor spec (Phase 1, Alert Categories, Event Flow)
-- [ ] Read engine-worker.ts IPC message types
-- [ ] Read extension.ts IPC handler
-- [ ] Read engine.ts failure/completion emission points
+- [x] Read autonomous supervisor spec (Phase 1, Alert Categories, Event Flow)
+- [x] Read engine-worker.ts IPC message types
+- [x] Read extension.ts IPC handler
+- [x] Read engine.ts failure/completion emission points
 
 ---
 
 ### Step 1: Define Alert IPC Message Type
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Add `supervisor-alert` to `WorkerToMainMessage` union
-- [ ] Define `SupervisorAlert` interface (category, summary, context)
-- [ ] Ensure payload is IPC-serializable
+- [x] Add `supervisor-alert` to `WorkerToMainMessage` union
+- [x] Define `SupervisorAlert` interface (category, summary, context)
+- [x] Ensure payload is IPC-serializable
 
 ---
 
 ### Step 2: Emit Alerts from Engine
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Task failure alert emission (after deterministic recovery exhausted)
-- [ ] Merge failure alert emission (when batch pauses)
-- [ ] Batch complete notification emission
+- [x] Task failure alert emission (after deterministic recovery exhausted)
+- [x] Merge failure alert emission (when batch pauses)
+- [x] Batch complete notification emission
 
 ---
 
 ### Step 3: Handle Alerts on Main Thread
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Add `supervisor-alert` case to IPC message handler
-- [ ] Format alert as readable message, call `sendUserMessage`
-- [ ] Gate on supervisor activation (don't send orphaned messages)
-- [ ] Handle engine process death as critical alert
+- [x] Add `supervisor-alert` case to IPC message handler
+- [x] Format alert as readable message, call `sendUserMessage`
+- [x] Gate on supervisor activation (don't send orphaned messages)
+- [x] Handle engine process death as critical alert
 
 ---
 
 ### Step 4: Update Supervisor Primer
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Add "Autonomous Alert Handling" section to primer
-- [ ] Document alert format and response protocol
-- [ ] Instruct: don't ask permission for routine recovery, escalate only for ambiguity
+- [x] Add "Autonomous Alert Handling" section to primer
+- [x] Document alert format and response protocol
+- [x] Instruct: don't ask permission for routine recovery, escalate only for ambiguity
 
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Create supervisor-alerts.test.ts
-- [ ] Test alert types, formatting, and required fields
-- [ ] FULL test suite passing
-- [ ] All failures fixed
+- [x] Create supervisor-alerts.test.ts (30 tests)
+- [x] Test alert types, formatting, and required fields
+- [x] FULL test suite passing
+- [x] All failures fixed
 
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Update autonomous supervisor spec (mark Phase 1 complete)
-- [ ] Discoveries logged
+- [x] Update autonomous supervisor spec (mark Phase 1 complete)
+- [x] Discoveries logged
 
 ---
 
@@ -83,6 +79,7 @@
 
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
+| R001 | plan | Step 1 | APPROVE | .reviews/request-R001.md |
 
 ---
 
@@ -98,6 +95,7 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-27 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-27 | Batch executed | All steps complete, merged to orch branch (v0.22.0) |
 
 ---
 
