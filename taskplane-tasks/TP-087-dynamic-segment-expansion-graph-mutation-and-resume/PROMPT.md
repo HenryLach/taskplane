@@ -94,19 +94,20 @@ Implement deterministic application of approved dynamic segment expansion decisi
 
 ### Step 4: Testing & Verification
 
+- [ ] Create `extensions/tests/segment-expansion-graph.test.ts` with behavioral tests (not just source-pattern checks)
+
 > ZERO test failures allowed.
 
 - [ ] Add/adjust tests for approved expansion mutation behavior
 - [ ] Add/adjust tests for cycle rejection and frontier consistency
 - [ ] Add/adjust tests for expanded-graph resume reconstruction
-- [ ] Run full suite: `cd extensions && npx vitest run`
+- [ ] Run full suite: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
 - [ ] Fix all failures
 
 ### Step 5: Documentation & Delivery
 
 - [ ] Update spec/docs if revision schema details differ from planned wording
 - [ ] Log discoveries in STATUS.md
-- [ ] Create `.DONE`
 
 ## Documentation Requirements
 

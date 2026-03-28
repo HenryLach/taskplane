@@ -97,9 +97,11 @@ Complete the first implementation tranche for #51 by shipping segment-aware obse
 
 ### Step 4: Testing & Verification
 
+- [ ] Create `extensions/tests/segment-observability.test.ts` with behavioral tests (not just source-pattern checks)
+
 > ZERO test failures allowed.
 
-- [ ] Run full suite: `cd extensions && npx vitest run`
+- [ ] Run full suite: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
 - [ ] Run CLI smoke checks: `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor`
 - [ ] Fix all failures
 
@@ -107,7 +109,6 @@ Complete the first implementation tranche for #51 by shipping segment-aware obse
 
 - [ ] Log discoveries in STATUS.md
 - [ ] Record acceptance outcomes clearly (pass/fail + evidence)
-- [ ] Create `.DONE`
 
 ## Documentation Requirements
 

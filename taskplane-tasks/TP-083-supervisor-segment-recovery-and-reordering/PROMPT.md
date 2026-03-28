@@ -98,19 +98,20 @@ Integrate segment-aware autonomous recovery with supervisor-controlled reorderin
 
 ### Step 4: Testing & Verification
 
+- [ ] Create `extensions/tests/supervisor-segment-recovery.test.ts` with behavioral tests (not just source-pattern checks)
+
 > ZERO test failures allowed.
 
 - [ ] Add/adjust tests for segment-level alerts and context payloads
 - [ ] Add/adjust tests for allowed vs rejected reorder scenarios
 - [ ] Add/adjust tests proving reorder audit trail persistence
-- [ ] Run full suite: `cd extensions && npx vitest run`
+- [ ] Run full suite: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
 - [ ] Fix all failures
 
 ### Step 5: Documentation & Delivery
 
 - [ ] Update spec docs if implementation constraints were discovered
 - [ ] Log discoveries in STATUS.md
-- [ ] Create `.DONE`
 
 ## Documentation Requirements
 

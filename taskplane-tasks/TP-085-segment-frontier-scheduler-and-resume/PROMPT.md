@@ -84,18 +84,19 @@ Implement segment-level frontier scheduling and resume reconstruction using sche
 
 ### Step 3: Testing & Verification
 
+- [ ] Create `extensions/tests/segment-frontier.test.ts` with behavioral tests (not just source-pattern checks)
+
 > ZERO test failures allowed.
 
 - [ ] Add/adjust direct-implementation tests for segment frontier routing
 - [ ] Add/adjust polyrepo regressions for deterministic ordering and resume parity
-- [ ] Run full suite: `cd extensions && npx vitest run`
+- [ ] Run full suite: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
 - [ ] Fix all failures
 
 ### Step 4: Documentation & Delivery
 
 - [ ] Update docs if runtime behavior wording changed
 - [ ] Log discoveries in STATUS.md
-- [ ] Create `.DONE`
 
 ## Documentation Requirements
 

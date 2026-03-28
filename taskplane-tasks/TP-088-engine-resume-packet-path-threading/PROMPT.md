@@ -81,18 +81,19 @@ Thread packet-path contract through orchestrator runtime and resume flows so com
 
 ### Step 3: Testing & Verification
 
+- [ ] Create `extensions/tests/engine-packet-path.test.ts` with behavioral tests (not just source-pattern checks)
+
 > ZERO test failures allowed.
 
 - [ ] Add/adjust tests for engine/resume packet-path propagation
 - [ ] Add/adjust tests for cross-repo completion/reconciliation correctness
-- [ ] Run full suite: `cd extensions && npx vitest run`
+- [ ] Run full suite: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
 - [ ] Fix all failures
 
 ### Step 4: Documentation & Delivery
 
 - [ ] Update docs if orchestrator runtime behavior wording changed
 - [ ] Log discoveries in STATUS.md
-- [ ] Create `.DONE`
 
 ## Documentation Requirements
 

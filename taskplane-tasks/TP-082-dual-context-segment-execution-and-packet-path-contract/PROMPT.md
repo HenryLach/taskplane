@@ -80,18 +80,19 @@ Implement the packet-path environment contract used by segment execution and mak
 
 ### Step 3: Testing & Verification
 
+- [ ] Create `extensions/tests/packet-path-contract.test.ts` with behavioral tests (not just source-pattern checks)
+
 > ZERO test failures allowed.
 
 - [ ] Add/adjust tests for packet-path env precedence
 - [ ] Add/adjust tests for authoritative `.DONE` path behavior
-- [ ] Run full suite: `cd extensions && npx vitest run`
+- [ ] Run full suite: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
 - [ ] Fix all failures
 
 ### Step 4: Documentation & Delivery
 
 - [ ] Update docs for packet-path env contract if names/fallback changed
 - [ ] Log discoveries in STATUS.md
-- [ ] Create `.DONE`
 
 ## Documentation Requirements
 

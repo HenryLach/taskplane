@@ -92,18 +92,19 @@ Implement the runtime protocol for dynamic segment expansion requests and superv
 
 ### Step 4: Testing & Verification
 
+- [ ] Create `extensions/tests/segment-expansion-protocol.test.ts` with behavioral tests (not just source-pattern checks)
+
 > ZERO test failures allowed.
 
 - [ ] Add/adjust tests for request payload validation
 - [ ] Add/adjust tests for approve/modify/reject decision plumbing
-- [ ] Run full suite: `cd extensions && npx vitest run`
+- [ ] Run full suite: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
 - [ ] Fix all failures
 
 ### Step 5: Documentation & Delivery
 
 - [ ] Update spec wording if protocol details are finalized/renamed
 - [ ] Log discoveries in STATUS.md
-- [ ] Create `.DONE`
 
 ## Documentation Requirements
 

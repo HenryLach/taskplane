@@ -77,18 +77,19 @@ Implement **schema v4** persisted-state contracts for segment execution and migr
 
 ### Step 3: Testing & Verification
 
+- [ ] Create `extensions/tests/schema-v4-migration.test.ts` with behavioral tests (not just source-pattern checks)
+
 > ZERO test failures allowed.
 
 - [ ] Add/adjust migration fixtures and regression tests
 - [ ] Verify round-trip serialization for v4 fields
-- [ ] Run full suite: `cd extensions && npx vitest run`
+- [ ] Run full suite: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
 - [ ] Fix all failures
 
 ### Step 4: Documentation & Delivery
 
 - [ ] Update spec notes if implementation details differ from planned shape
 - [ ] Log discoveries in STATUS.md
-- [ ] Create `.DONE`
 
 ## Documentation Requirements
 

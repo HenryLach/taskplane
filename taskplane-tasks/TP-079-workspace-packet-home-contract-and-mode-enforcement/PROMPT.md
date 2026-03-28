@@ -22,6 +22,8 @@ taskplane-tasks/TP-079-workspace-packet-home-contract-and-mode-enforcement/
 
 Implement the foundational workspace routing contract for multi-repo task execution: add deterministic packet-home ownership (`taskPacketRepo`) and enforce startup mode selection without ambiguous fallback. This task establishes the non-negotiable config/runtime invariants required by #51 before segment scheduling work begins.
 
+> ⚠️ **Implementation required:** This task MUST create new source code. If you believe the requirements are already met by existing code, you must write tests that prove it and document what you verified. Checking off items without code changes is not acceptable.
+
 ## Dependencies
 
 - **None**
@@ -96,18 +98,19 @@ Implement the foundational workspace routing contract for multi-repo task execut
 
 ### Step 4: Testing & Verification
 
+- [ ] Create `extensions/tests/packet-home-contract.test.ts` with behavioral tests (not just source-pattern checks)
+
 > ZERO test failures allowed.
 
 - [ ] Add/adjust unit tests for `taskPacketRepo` validation and path invariants
 - [ ] Add/adjust tests for deterministic mode selection and hard-fail cases
-- [ ] Run full suite: `cd extensions && npx vitest run`
+- [ ] Run full suite: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
 - [ ] Fix all failures
 
 ### Step 5: Documentation & Delivery
 
 - [ ] Update spec/status notes if behavior or naming changed during implementation
 - [ ] Log discoveries in STATUS.md
-- [ ] Create `.DONE`
 
 ## Documentation Requirements
 
