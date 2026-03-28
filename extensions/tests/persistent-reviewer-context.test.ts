@@ -532,10 +532,11 @@ describe("10.x: Token accumulation — cumulative across persistent reviews", ()
 		expect(taskRunnerSource).toContain("state.reviewerOutputTokens += delta.outputTokens");
 	});
 
-	it("10.3: reviewer status is set to idle (not cleared) after persistent review", () => {
-		// After a persistent review completes, status goes to idle (not fully cleared)
-		const idleRegion = sourceRegion(taskRunnerSource, "Set reviewer to idle (NOT clear", 0, 200);
-		expect(idleRegion).toContain('state.reviewerStatus = "idle"');
+	it("10.3: reviewer status is set to idle after review and killed after code review", () => {
+		// After a review, status goes to idle. After code review, persistent reviewer is killed.
+		expect(taskRunnerSource).toContain('state.reviewerStatus = "idle"');
+		expect(taskRunnerSource).toContain('code review complete for step');
+		expect(taskRunnerSource).toContain('killing persistent reviewer');
 	});
 });
 
