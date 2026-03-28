@@ -8,13 +8,14 @@
  * - Force merge: rejects when no merge failure exists
  * - Force merge: rejects when batch is actively running
  * - Force merge: rejects invalid wave index
- * - Force merge: succeeds with partial merge result and skipFailed=true
+ * - Force merge: succeeds with mixed-outcome partial merge result and skipFailed=true
  * - Force merge: requires skipFailed when failed tasks exist
- * - Force merge: updates merge result from partial to succeeded
+ * - Force merge: clears failed merge result so resume re-attempts real merge
+ * - Force merge: sets phase to paused for resumable recovery
  * - Force merge: adjusts counters (failed → skipped)
  * - Force merge: handles case where merge already succeeded
  * - Force merge: handles case with no succeeded tasks
- * - Persisted state round-trip: load → force merge → save → reload
+ * - Persisted state round-trip: load → force merge prep → save → reload
  * - Recovery playbooks exist in supervisor-primer.md (source-based)
  */
 import { describe, it } from "node:test";
@@ -119,6 +120,8 @@ function buildTestPersistedState(overrides?: Partial<PersistedBatchState>): Pers
 }
 
 const extensionSource = readSource("extension.ts");
+const engineSource = readSource("engine.ts");
+const resumeSource = readSource("resume.ts");
 const primerSource = readSource("supervisor-primer.md");
 
 // ══════════════════════════════════════════════════════════════════════
@@ -243,7 +246,7 @@ describe("2.x — orch_force_merge validation logic (persisted state)", () => {
 // 3.x — Force merge execution logic
 // ══════════════════════════════════════════════════════════════════════
 
-describe("3.x — orch_force_merge execution logic (persisted state)", () => {
+describe("3.x — orch_force_merge recovery prep logic (persisted state)", () => {
 	it("3.1 — force merge with skipFailed marks failed tasks as skipped", () => {
 		const state = buildTestPersistedState();
 		const waveTasks = state.wavePlan[0];
@@ -269,44 +272,35 @@ describe("3.x — orch_force_merge execution logic (persisted state)", () => {
 		expect(state.skippedTasks).toBe(1);
 	});
 
-	it("3.2 — force merge updates merge result from partial to succeeded", () => {
+	it("3.2 — force merge clears partial merge result so resume re-attempts merge", () => {
 		const state = buildTestPersistedState();
 		const mergeEntry = state.mergeResults[0];
 		expect(mergeEntry.status).toBe("partial");
 
 		// Simulate doOrchForceMerge
-		state.mergeResults[0] = {
-			...mergeEntry,
-			status: "succeeded",
-			failedLane: null,
-			failureReason: null,
-		};
+		state.mergeResults.splice(0, 1);
 
-		expect(state.mergeResults[0].status).toBe("succeeded");
-		expect(state.mergeResults[0].failedLane).toBeNull();
-		expect(state.mergeResults[0].failureReason).toBeNull();
+		expect(state.mergeResults.length).toBe(0);
 	});
 
-	it("3.3 — force merge transitions phase from failed to stopped", () => {
+	it("3.3 — force merge transitions phase from failed to paused", () => {
 		const state = buildTestPersistedState({ phase: "failed" });
 		expect(state.phase).toBe("failed");
 
 		// Simulate doOrchForceMerge phase transition
-		if (state.phase === "failed") {
-			state.phase = "stopped";
-		}
+		state.phase = "paused";
 
-		expect(state.phase).toBe("stopped");
+		expect(state.phase).toBe("paused");
 	});
 
-	it("3.4 — force merge leaves stopped/paused phase as-is", () => {
+	it("3.4 — force merge normalizes stopped/failed to paused for resume", () => {
 		const stoppedState = buildTestPersistedState({ phase: "stopped" });
-		if (stoppedState.phase === "failed") stoppedState.phase = "stopped";
-		expect(stoppedState.phase).toBe("stopped");
+		stoppedState.phase = "paused";
+		expect(stoppedState.phase).toBe("paused");
 
-		const pausedState = buildTestPersistedState({ phase: "paused" });
-		if (pausedState.phase === "failed") pausedState.phase = "stopped";
-		expect(pausedState.phase).toBe("paused");
+		const failedState = buildTestPersistedState({ phase: "failed" });
+		failedState.phase = "paused";
+		expect(failedState.phase).toBe("paused");
 	});
 
 	it("3.5 — force merge adjusts counters correctly with multiple failed tasks", () => {
@@ -415,7 +409,7 @@ describe("3.x — orch_force_merge execution logic (persisted state)", () => {
 // ══════════════════════════════════════════════════════════════════════
 
 describe("4.x — orch_force_merge persisted state round-trip", () => {
-	it("4.1 — force merge persists state round-trip (save → load → modify → save → load)", () => {
+	it("4.1 — force merge prep persists state round-trip (save → load → modify → save → load)", () => {
 		const tempDir = makeTempDir();
 		try {
 			const state = buildTestPersistedState();
@@ -435,13 +429,9 @@ describe("4.x — orch_force_merge persisted state round-trip", () => {
 			loaded.failedTasks = Math.max(0, loaded.failedTasks - 1);
 			loaded.skippedTasks = (loaded.skippedTasks ?? 0) + 1;
 
-			// Update merge result
-			loaded.mergeResults[0] = {
-				...loaded.mergeResults[0],
-				status: "succeeded",
-				failedLane: null,
-				failureReason: null,
-			};
+			// Clear failed merge result and set paused so resume re-runs real merge
+			loaded.mergeResults.splice(0, 1);
+			loaded.phase = "paused";
 
 			loaded.updatedAt = Date.now();
 			saveBatchState(JSON.stringify(loaded, null, 2), tempDir);
@@ -453,9 +443,8 @@ describe("4.x — orch_force_merge persisted state round-trip", () => {
 			expect(skippedTask.exitReason).toBe("Skipped by orch_force_merge");
 			expect(reloaded.failedTasks).toBe(0);
 			expect(reloaded.skippedTasks).toBe(1);
-			expect(reloaded.mergeResults[0].status).toBe("succeeded");
-			expect(reloaded.mergeResults[0].failedLane).toBeNull();
-			expect(reloaded.mergeResults[0].failureReason).toBeNull();
+			expect(reloaded.phase).toBe("paused");
+			expect(reloaded.mergeResults.length).toBe(0);
 		} finally {
 			rmSync(tempDir, { recursive: true, force: true });
 		}
@@ -659,16 +648,59 @@ describe("6.x — doOrchForceMerge implementation verification", () => {
 		expect(fnBlock).toContain('"paused"');
 	});
 
-	it("6.11 — doOrchForceMerge only allows partial (mixed-outcome) merge failures", () => {
+	it("6.10 — doOrchForceMerge only allows partial (mixed-outcome) merge failures", () => {
 		const fnStart = extensionSource.indexOf("function doOrchForceMerge(");
 		const fnBlock = extensionSource.slice(fnStart, fnStart + 7000);
 		expect(fnBlock).toContain('"partial"');
 		expect(fnBlock).toContain("only applies to mixed-outcome");
 	});
 
-	it("6.10 — doOrchForceMerge provides resume hint in output", () => {
+	it("6.11 — doOrchForceMerge provides resume hint in output", () => {
 		const fnStart = extensionSource.indexOf("function doOrchForceMerge(");
 		const fnBlock = extensionSource.slice(fnStart, fnStart + 7000);
 		expect(fnBlock).toContain("orch_resume");
+	});
+
+	it("6.12 — doOrchForceMerge requires a resumable batch phase", () => {
+		const fnStart = extensionSource.indexOf("function doOrchForceMerge(");
+		const fnBlock = extensionSource.slice(fnStart, fnStart + 7000);
+		expect(fnBlock).toContain("resumablePhases");
+		expect(fnBlock).toContain("paused");
+		expect(fnBlock).toContain("stopped");
+		expect(fnBlock).toContain("failed");
+	});
+
+	it("6.13 — doOrchForceMerge validates partial reason matches mixed-outcome guard", () => {
+		const fnStart = extensionSource.indexOf("function doOrchForceMerge(");
+		const fnBlock = extensionSource.slice(fnStart, fnStart + 7000);
+		expect(fnBlock).toContain("both succeeded and failed tasks");
+		expect(fnBlock).toContain("automatic partial-branch merge is disabled");
+		expect(fnBlock).toContain("does not match mixed-outcome lanes");
+	});
+});
+
+// ══════════════════════════════════════════════════════════════════════
+// 7.x — Follow-up regression guards (engine/resume wiring)
+// ══════════════════════════════════════════════════════════════════════
+
+describe("7.x — Follow-up regression guards", () => {
+	it("7.1 — engine persists partial merge result for mixed-outcome/no-mergeable branch", () => {
+		expect(engineSource).toContain("Keep mergeResults in sync even when no mergeable lane exists");
+		expect(engineSource).toContain("allMergeResults.push(mergeResult)");
+		expect(engineSource).toContain("batchState.mergeResults.push(mergeResult)");
+	});
+
+	it("7.2 — resume persists partial merge result for mixed-outcome/no-mergeable branch", () => {
+		expect(resumeSource).toContain("Keep mergeResults in sync even when no mergeable lane exists");
+		expect(resumeSource).toContain("batchState.mergeResults.push(mergeResult)");
+	});
+
+	it("7.3 — resume excludes persisted skipped tasks from wave execution", () => {
+		expect(resumeSource).toContain("persistedStatusByTaskId.get(taskId) !== \"skipped\"");
+	});
+
+	it("7.4 — resume synthetic merge retry preserves skipped task status", () => {
+		expect(resumeSource).toContain("Task skipped (merge retry)");
+		expect(resumeSource).toContain("status === \"skipped\"");
 	});
 });

@@ -25,7 +25,6 @@ import { getCurrentBranch, runGit } from "./git.ts";
 import { hasConfigFiles, resolveConfigRoot, loadOrchestratorConfig, loadSupervisorConfig, loadTaskRunnerConfig } from "./config.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { reconstructAllocatedLanes, resumeOrchBatch } from "./resume.ts";
-import { mergeWaveByRepo } from "./merge.ts";
 import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
@@ -2579,15 +2578,17 @@ export default function (pi: ExtensionAPI) {
 	// ── TP-078: Force Merge Tool ─────────────────────────────────────
 
 	/**
-	 * Core logic for orch_force_merge. Unblocks a paused batch with mixed-outcome lanes
-	 * by skipping failed tasks and updating the merge result to "succeeded".
+	 * Core logic for orch_force_merge. Unblocks mixed-outcome merge failures by
+	 * skipping failed tasks, clearing the failed merge entry, and pausing so
+	 * resume re-attempts the real merge.
 	 *
 	 * This is the supervisor's escape hatch when a wave merge was rejected because
 	 * some lanes had both succeeded and failed tasks (mixed-outcome). The tool:
-	 * 1. Validates the batch is paused/stopped/failed with a "partial" merge result
-	 * 2. If skipFailed=true, marks all failed/stalled tasks in the wave as "skipped"
-	 * 3. Updates the merge result entry to "succeeded"
-	 * 4. Allows orch_resume to continue the batch from the next wave
+	 * 1. Validates the batch is paused/stopped/failed and the wave merge status is "partial"
+	 * 2. Verifies the partial failure is specifically the mixed-outcome rejection
+	 * 3. If skipFailed=true, marks failed/stalled tasks in the wave as "skipped"
+	 * 4. Clears the failed merge entry and sets phase to "paused"
+	 * 5. `orch_resume()` re-runs the merge using real git merge logic
 	 */
 	function doOrchForceMerge(waveIndex: number | undefined, skipFailed: boolean, ctx: ExtensionContext): string {
 		// Reject while engine is actively running
@@ -2608,6 +2609,13 @@ export default function (pi: ExtensionAPI) {
 
 		if (!state) {
 			return "❌ No batch state found. There is no active or recent batch to modify.";
+		}
+
+		// Force-merge is a recovery action for non-running failed/paused batches.
+		const resumablePhases = new Set(["paused", "stopped", "failed"]);
+		if (!resumablePhases.has(state.phase)) {
+			return `❌ Cannot force merge when batch phase is "${state.phase}". ` +
+				`Force merge is only valid for paused/stopped/failed batches.`;
 		}
 
 		// Determine target wave index (0-based). Default to currentWaveIndex.
@@ -2639,10 +2647,22 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		// Only allow force merge for mixed-outcome failures (partial status).
-		// Other failures (conflicts, build failures) need different resolution.
+		// Other failures (conflicts, build failures, repo divergence) need different resolution.
 		if (mergeEntry.status !== "partial") {
 			return `❌ Wave ${targetWave} merge failed with status "${mergeEntry.status}": ${mergeEntry.failureReason || "unknown reason"}.\n` +
 				`Force merge only applies to mixed-outcome lanes (partial). This failure needs manual resolution.`;
+		}
+
+		const failureReason = mergeEntry.failureReason || "";
+		const failureReasonLower = failureReason.toLowerCase();
+		const isMixedOutcomePartial =
+			failureReasonLower.includes("both succeeded and failed tasks") ||
+			failureReasonLower.includes("mixed-outcome") ||
+			failureReasonLower.includes("automatic partial-branch merge is disabled");
+		if (!isMixedOutcomePartial) {
+			return `❌ Wave ${targetWave} has partial merge status, but the failure reason does not match mixed-outcome lanes.\n` +
+				`Reason: ${failureReason || "unknown"}\n` +
+				`Force merge is only valid for the mixed-outcome lane guard. Resolve this merge failure manually.`;
 		}
 
 		// Collect tasks in the target wave
