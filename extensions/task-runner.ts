@@ -154,6 +154,8 @@ interface TaskState {
 	persistentReviewerKill: (() => void) | null;
 	/** TP-057: Signal counter for the persistent reviewer (monotonically increasing). */
 	persistentReviewerSignalNum: number;
+	/** Reviewer respawn counter — circuit breaker to prevent infinite respawn loops. */
+	reviewerRespawnCount: number;
 	totalIterations: number;
 	stepStatuses: Map<number, StepInfo>;
 }
@@ -172,7 +174,7 @@ function freshState(): TaskState {
 		reviewerInputTokens: 0, reviewerOutputTokens: 0, reviewerCacheReadTokens: 0, reviewerCacheWriteTokens: 0,
 		reviewerCostUsd: 0, reviewerContextPct: 0, reviewerProc: null, reviewerTimer: null,
 		reviewCounter: 0,
-		persistentReviewerSession: null, persistentReviewerKill: null, persistentReviewerSignalNum: 0,
+		persistentReviewerSession: null, persistentReviewerKill: null, persistentReviewerSignalNum: 0, reviewerRespawnCount: 0,
 		totalIterations: 0, stepStatuses: new Map(),
 	};
 }
@@ -2503,9 +2505,23 @@ export default function (pi: ExtensionAPI) {
 
 					if (needsSpawn && state.persistentReviewerSession) {
 						// Session was previously active but died — log fallback
-						console.error(`[task-runner] persistent reviewer session dead — respawning`);
+						state.reviewerRespawnCount++;
+						const MAX_REVIEWER_RESPAWNS = 3;
+						if (state.reviewerRespawnCount > MAX_REVIEWER_RESPAWNS) {
+							console.error(`[task-runner] reviewer respawn limit (${MAX_REVIEWER_RESPAWNS}) exceeded — skipping review`);
+							logExecution(statusPath, `Reviewer R${num}`,
+								`reviewer respawn limit exceeded (${state.reviewerRespawnCount}/${MAX_REVIEWER_RESPAWNS}) — skipping review`);
+							state.persistentReviewerSession = null;
+							state.persistentReviewerKill = null;
+							state.persistentReviewerSignalNum = 0;
+							return {
+								content: [{ type: "text" as const, text: `⚠️ Reviewer respawn limit exceeded (${MAX_REVIEWER_RESPAWNS}). Review skipped — proceeding without review.` }],
+								details: undefined,
+							};
+						}
+						console.error(`[task-runner] persistent reviewer session dead — respawning (${state.reviewerRespawnCount}/${MAX_REVIEWER_RESPAWNS})`);
 						logExecution(statusPath, `Reviewer R${num}`,
-							`persistent reviewer dead — respawning for ${reviewType} review`);
+							`persistent reviewer dead — respawning for ${reviewType} review (${state.reviewerRespawnCount}/${MAX_REVIEWER_RESPAWNS})`);
 						state.persistentReviewerSession = null;
 						state.persistentReviewerKill = null;
 						state.persistentReviewerSignalNum = 0;
@@ -2553,7 +2569,8 @@ export default function (pi: ExtensionAPI) {
 					};
 				} catch (err: any) {
 					// ── Fallback: kill persistent session, try fresh spawn ──
-					console.error(`[task-runner] persistent reviewer error: ${err?.message || err}`);
+					state.reviewerRespawnCount++;
+					console.error(`[task-runner] persistent reviewer error (${state.reviewerRespawnCount}/3): ${err?.message || err}`);
 					logExecution(statusPath, `Reviewer R${num}`,
 						`persistent reviewer failed — falling back to fresh spawn: ${err?.message || err}`);
 
@@ -2564,6 +2581,17 @@ export default function (pi: ExtensionAPI) {
 					state.persistentReviewerSession = null;
 					state.persistentReviewerKill = null;
 					state.persistentReviewerSignalNum = 0;
+
+					// Circuit breaker — skip review if we've exhausted respawns
+					if (state.reviewerRespawnCount > 3) {
+						console.error(`[task-runner] reviewer respawn limit exceeded — skipping review`);
+						logExecution(statusPath, `Reviewer R${num}`,
+							`reviewer respawn limit exceeded — review skipped`);
+						return {
+							content: [{ type: "text" as const, text: `⚠️ Reviewer respawn limit exceeded. Review skipped — proceeding without review.` }],
+							details: undefined,
+						};
+					}
 
 					// ── Fresh spawn fallback (original behavior) ────────
 					try {

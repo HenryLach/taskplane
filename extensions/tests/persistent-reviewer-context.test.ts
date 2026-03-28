@@ -508,7 +508,7 @@ describe("9.x: State management — persistent reviewer fields in TaskState", ()
 
 	it("9.6: signal counter resets to 0 on session death/respawn", () => {
 		// Multiple places reset the counter
-		const deadSessionRegion = sourceRegion(taskRunnerSource, "persistent reviewer session dead", 0, 300);
+		const deadSessionRegion = sourceRegion(taskRunnerSource, "persistent reviewer session dead", 0, 500);
 		expect(deadSessionRegion).toContain("state.persistentReviewerSignalNum = 0");
 	});
 });
