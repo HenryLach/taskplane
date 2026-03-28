@@ -205,7 +205,8 @@ value.
 - **APPROVE** → proceed to next step
 - **RETHINK** → reconsider your plan approach, adjust, then implement
 - **REVISE** → read the review file in `.reviews/` for detailed feedback,
-  address the issues, commit fixes, then proceed
+  address the issues, commit fixes, then **call `review_step` again** for re-review.
+  The same reviewer evaluates whether your fixes address its concerns.
 - **UNAVAILABLE** → reviewer failed, proceed with caution
 
 **Example flow for a Review Level 2 task, Step 3:**
@@ -215,8 +216,9 @@ value.
 4. Implement Step 3
 5. Commit changes
 6. Call `review_step(step=3, type="code", baseline="<saved SHA>")` → get code feedback
-7. If REVISE: fix issues, commit again
-8. Move to Step 4
+7. If REVISE: fix issues, commit, call `review_step(step=3, type="code")` again
+8. Repeat 7 until APPROVE (max 2 code review cycles per step)
+9. Move to Step 4
 
 If the `review_step` tool is not available (e.g., non-orchestrated mode), skip
 this protocol entirely — the task-runner handles reviews externally.

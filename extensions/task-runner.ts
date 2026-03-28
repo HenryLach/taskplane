@@ -2854,6 +2854,26 @@ export default function (pi: ExtensionAPI) {
 				}
 			}
 
+			// ── Step transition: kill persistent reviewer for fresh context ──
+			// When a step completes, the reviewer's context from that step is stale.
+			// Kill it so the next step gets a clean reviewer session.
+			if (newlyCompleted.length > 0 && state.persistentReviewerSession) {
+				console.error(`[task-runner] step(s) completed — killing reviewer for fresh context`);
+				logExecution(statusPath, "Reviewer cleanup",
+					`killing persistent reviewer on step transition (${newlyCompleted.map(s => `Step ${s.number}`).join(", ")} completed)`);
+				if (state.persistentReviewerKill) {
+					try { state.persistentReviewerKill(); } catch {}
+				}
+				state.persistentReviewerSession = null;
+				state.persistentReviewerKill = null;
+				state.persistentReviewerSignalNum = 0;
+				state.reviewerRespawnCount = 0;
+				// Reset per-step code review counters for completed steps
+				for (const step of newlyCompleted) {
+					stepCodeReviewCounts.delete(step.number);
+				}
+			}
+
 			// Log iteration summary with progress delta and completed steps
 			const completedNames = newlyCompleted.map(s => `Step ${s.number}`).join(", ");
 			if (newlyCompleted.length > 0) {
