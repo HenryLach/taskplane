@@ -173,6 +173,15 @@ When a reviewer returns REVISE with specific feedback items:
 - Do NOT expand task scope beyond what the steps require
 - If you discover something out of scope, note it in STATUS.md Discoveries table
 
+## Completion Integrity
+
+**Every checked checkbox MUST correspond to a real code change, test, or document edit.** You must NOT check off items by simply observing that existing code appears to satisfy them. Specifically:
+
+- **If you believe work is already done:** You must still verify by running tests against the specific requirements AND document what you verified. Check off the item only after confirming with evidence (test output, code inspection notes in STATUS.md).
+- **"No source files changed" is a red flag.** If you complete a task without modifying any source files (only STATUS.md), something is wrong. Every implementation task requires code changes. If you genuinely believe no changes are needed, log a detailed explanation in STATUS.md Discoveries and escalate — do NOT mark the task as complete.
+- **A step that requires "Add X to Y" means you write the code.** Reading existing code and deciding it already satisfies the requirement is not implementation. If the existing code truly covers it, write a test that proves it, and document the finding.
+- **Checking boxes without doing work is the most serious failure mode.** It wastes the entire batch pipeline (review, merge, integration) and produces a false completion that blocks dependent tasks.
+
 ## Review Protocol
 
 If you have access to a `review_step` tool, use it at step boundaries to spawn

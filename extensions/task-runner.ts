@@ -2973,8 +2973,35 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 		} else {
-			// ── Quality Gate Disabled (default) ──────────────────────
-			// Unchanged behavior — create .DONE immediately.
+			// ── Empty completion guard ────────────────────────────────
+			// Detect tasks where the worker checked off STATUS.md without
+			// modifying any source files. This catches "shortcut" completions
+			// where the worker concludes work is "already done" without
+			// implementing anything.
+			if (isOrchestratedMode()) {
+				try {
+					const diffResult = spawnSync("git", ["diff", "--name-only", "HEAD"], {
+						cwd: task.taskFolder, encoding: "utf-8", timeout: 10_000,
+					});
+					const changedFiles = (diffResult.stdout || "").split("\n").filter(Boolean);
+					const sourceChanges = changedFiles.filter(f =>
+						!f.endsWith("STATUS.md") && !f.endsWith(".DONE") &&
+						!f.includes(".reviews/") && !f.endsWith("dependencies.json")
+					);
+					if (sourceChanges.length === 0) {
+						logExecution(statusPath, "⚠️ Empty completion",
+							"Worker marked all steps complete but no source files were modified. " +
+							"Only STATUS.md changes detected. This may indicate the worker shortcut " +
+							"the task without implementing. .DONE will still be created, but this " +
+							"should be investigated.");
+						console.error(`[task-runner] WARNING: Task ${task.taskId} completed with zero source file changes`);
+					}
+				} catch {
+					// Best effort — don't block .DONE creation on git check failure
+				}
+			}
+
+			// Create .DONE
 			const donePath = join(task.taskFolder, ".DONE");
 			writeFileSync(donePath, `Completed: ${new Date().toISOString()}\nTask: ${task.taskId}\n`);
 			updateStatusField(statusPath, "Status", "✅ Complete");
