@@ -2555,7 +2555,22 @@ export default function (pi: ExtensionAPI) {
 						reviewContent, statusPath, num, reviewType, stepNum, state.reviewCounter,
 					);
 
-					// Set reviewer to idle (NOT clear — persistent session stays alive)
+					// After code review: kill the persistent reviewer to free context.
+					// The reviewer persists through a plan+code pair for one step,
+					// then gets a fresh session for the next step.
+					if (reviewType === "code") {
+						console.error(`[task-runner] code review complete for step ${stepNum} — killing reviewer for fresh context on next step`);
+						logExecution(statusPath, `Reviewer R${num}`,
+							`code review complete — killing persistent reviewer (step ${stepNum} cycle done)`);
+						if (state.persistentReviewerKill) {
+							try { state.persistentReviewerKill(); } catch {}
+						}
+						state.persistentReviewerSession = null;
+						state.persistentReviewerKill = null;
+						state.persistentReviewerSignalNum = 0;
+						state.reviewerRespawnCount = 0;
+					}
+
 					state.reviewerStatus = "idle";
 					state.reviewerType = "";
 					state.reviewerStep = 0;
@@ -2642,6 +2657,9 @@ export default function (pi: ExtensionAPI) {
 						const { resultText } = processReviewVerdict(
 							fallbackContent, statusPath, num, reviewType, stepNum, state.reviewCounter, "fallback",
 						);
+
+						// Reset respawn counter on successful fallback review
+						state.reviewerRespawnCount = 0;
 
 						clearReviewerState();
 						writeLaneState(state);
