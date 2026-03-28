@@ -354,6 +354,30 @@ files and make sure their file scopes reflect that.
 
 ---
 
+## Preventing Empty Completions
+
+Workers can shortcut tasks by observing that existing code "already satisfies"
+requirements and checking off items without implementing anything. This is the
+most dangerous failure mode — it produces false completions that waste the entire
+pipeline.
+
+**Defense: Make deliverables concrete and verifiable.**
+
+| ❌ Vague (shortcuttable) | ✅ Concrete (verifiable) |
+|--------------------------|------------------------|
+| "Add taskPacketRepo support" | "Add `taskPacketRepo` field to `WorkspaceRoutingConfig` in types.ts" |
+| "Enforce mode selection" | "Add `validateWorkspaceMode()` function in workspace.ts that throws on invalid state" |
+| "Update config loading" | "Modify `loadWorkspaceConfig()` to parse and validate `taskPacketRepo` from JSON config" |
+| "Add tests" | "Create `tests/packet-home-contract.test.ts` with tests for: valid config, missing field error, invariant violation" |
+
+**Rules for task creators:**
+- Every implementation step MUST name specific files to create or modify
+- "Add X" means "write new code that doesn't exist yet" — if it might already exist, say "verify X exists and add tests, or implement if missing"
+- Include at least one NEW test file per task — workers can't shortcut test creation
+- Each step's artifacts list must include at least one source file (not just STATUS.md)
+
+---
+
 ## Key Principles
 
 - **Documentation in every task.** Without "Must Update" and "Check If Affected"
