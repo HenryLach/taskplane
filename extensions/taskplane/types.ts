@@ -2832,10 +2832,11 @@ export const BATCH_HISTORY_MAX_ENTRIES = 100;
  *   coordinates multiple repos and a shared task root.
  *
  * Mode determination rules:
- * 1. No workspace config file → repo mode (non-fatal default, silent).
- * 2. Workspace config file present + invalid → fatal error with actionable
+ * 1. Workspace config file present + invalid → fatal error with actionable
  *    `WorkspaceConfigError` (never silently falls back to repo mode).
- * 3. Workspace config file present + valid → workspace mode.
+ * 2. Workspace config file present + valid → workspace mode.
+ * 3. No workspace config + cwd is a git repo → repo mode.
+ * 4. No workspace config + cwd is not a git repo → `WORKSPACE_SETUP_REQUIRED`.
  */
 export type WorkspaceMode = "repo" | "workspace";
 
@@ -2872,6 +2873,15 @@ export interface WorkspaceRoutingConfig {
 	 * Must reference a valid key in `WorkspaceConfig.repos`.
 	 */
 	defaultRepo: string;
+	/**
+	 * Repo ID that owns task packet files (PROMPT.md/STATUS.md/.DONE/.reviews).
+	 *
+	 * Required at runtime. Legacy workspace YAML without this field is
+	 * compatibility-mapped to `defaultRepo` during load with a warning.
+	 *
+	 * Invariant: `tasksRoot` must resolve inside `repos[taskPacketRepo].path`.
+	 */
+	taskPacketRepo: string;
 	/**
 	 * When true, every task MUST declare an explicit execution target
 	 * (via `## Execution Target` section or inline `**Repo:**` in PROMPT.md).
@@ -2964,6 +2974,10 @@ export interface ExecutionContext {
  * - WORKSPACE_TASKS_ROOT_NOT_FOUND: `routing.tasks_root` path does not exist on disk
  * - WORKSPACE_MISSING_DEFAULT_REPO: `routing.default_repo` is missing or empty
  * - WORKSPACE_DEFAULT_REPO_NOT_FOUND: `routing.default_repo` references a repo ID not in the repos map
+ * - WORKSPACE_TASK_PACKET_REPO_NOT_FOUND: `routing.task_packet_repo` references a repo ID not in the repos map
+ * - WORKSPACE_TASKS_ROOT_OUTSIDE_PACKET_REPO: `routing.tasks_root` resolves outside `repos[routing.task_packet_repo].path`
+ * - WORKSPACE_TASK_AREA_OUTSIDE_TASKS_ROOT: A configured task-area path resolves outside `routing.tasks_root`
+ * - WORKSPACE_SETUP_REQUIRED: No workspace config and cwd is not a git repository
  * - WORKSPACE_DUPLICATE_REPO_PATH: Two or more repos share the same filesystem path
  * - WORKSPACE_SCHEMA_INVALID: Config file has valid YAML but missing/invalid top-level structure
  */
@@ -2978,10 +2992,12 @@ export type WorkspaceConfigErrorCode =
 	| "WORKSPACE_TASKS_ROOT_NOT_FOUND"
 	| "WORKSPACE_MISSING_DEFAULT_REPO"
 	| "WORKSPACE_DEFAULT_REPO_NOT_FOUND"
+	| "WORKSPACE_TASK_PACKET_REPO_NOT_FOUND"
+	| "WORKSPACE_TASKS_ROOT_OUTSIDE_PACKET_REPO"
+	| "WORKSPACE_TASK_AREA_OUTSIDE_TASKS_ROOT"
+	| "WORKSPACE_SETUP_REQUIRED"
 	| "WORKSPACE_DUPLICATE_REPO_PATH"
-	| "WORKSPACE_SCHEMA_INVALID";
-
-/**
+	| "WORKSPACE_SCHEMA_INVALID";/**
  * Typed error class for workspace configuration failures.
  *
  * Thrown during workspace config loading/validation when the config file

@@ -43,6 +43,7 @@ import type {
 	TaskplaneConfig,
 	TaskRunnerSection,
 	OrchestratorSection,
+	WorkspaceSectionConfig,
 	UserPreferences,
 } from "./config-schema.ts";
 
@@ -270,6 +271,71 @@ function mapOrchestratorYaml(raw: any): Partial<OrchestratorSection> {
 	return result;
 }
 
+/**
+ * Normalize a workspace section loaded from JSON/YAML into camelCase shape.
+ *
+ * Compatibility: if `routing.taskPacketRepo` is missing, defaults to
+ * `routing.defaultRepo` and emits a warning message.
+ */
+function normalizeWorkspaceSection(
+	rawWorkspace: any,
+	sourcePath: string,
+): WorkspaceSectionConfig | undefined {
+	if (!rawWorkspace || typeof rawWorkspace !== "object" || Array.isArray(rawWorkspace)) {
+		return undefined;
+	}
+
+	const rawRepos = rawWorkspace.repos;
+	if (!rawRepos || typeof rawRepos !== "object" || Array.isArray(rawRepos)) {
+		return undefined;
+	}
+
+	const rawRouting = rawWorkspace.routing;
+	if (!rawRouting || typeof rawRouting !== "object" || Array.isArray(rawRouting)) {
+		return undefined;
+	}
+
+	const repos: WorkspaceSectionConfig["repos"] = {};
+	for (const [repoId, repoVal] of Object.entries(rawRepos as Record<string, any>)) {
+		if (!repoVal || typeof repoVal !== "object" || Array.isArray(repoVal)) continue;
+		const repoObj = repoVal as Record<string, any>;
+		if (typeof repoObj.path !== "string" || repoObj.path.trim() === "") continue;
+		repos[repoId] = {
+			path: repoObj.path,
+			...(typeof repoObj.defaultBranch === "string" && repoObj.defaultBranch.trim()
+				? { defaultBranch: repoObj.defaultBranch }
+				: {}),
+		};
+	}
+
+	const defaultRepo = typeof rawRouting.defaultRepo === "string" ? rawRouting.defaultRepo.trim() : "";
+	const tasksRoot = typeof rawRouting.tasksRoot === "string" ? rawRouting.tasksRoot.trim() : "";
+	let taskPacketRepo = typeof rawRouting.taskPacketRepo === "string" ? rawRouting.taskPacketRepo.trim() : "";
+
+	if (!taskPacketRepo && defaultRepo) {
+		taskPacketRepo = defaultRepo;
+		console.error(
+			`[taskplane] config compatibility: workspace.routing.taskPacketRepo is missing in ${sourcePath}; defaulting to workspace.routing.defaultRepo ('${defaultRepo}'). Add workspace.routing.taskPacketRepo explicitly.`,
+		);
+	}
+
+	if (!tasksRoot || !defaultRepo || !taskPacketRepo) {
+		return undefined;
+	}
+
+	const strict = rawRouting.strict === true;
+
+	return {
+		repos,
+		routing: {
+			tasksRoot,
+			defaultRepo,
+			taskPacketRepo,
+			...(strict ? { strict: true } : {}),
+		},
+	};
+}
+
 
 // ── Config File Path Resolution ──────────────────────────────────────
 
@@ -354,6 +420,12 @@ function loadJsonConfig(configRoot: string): TaskplaneConfig | null {
 	if (parsed.orchestrator) {
 		deepMerge(config.orchestrator, parsed.orchestrator);
 	}
+	if (parsed.workspace) {
+		const normalizedWorkspace = normalizeWorkspaceSection(parsed.workspace, jsonPath);
+		if (normalizedWorkspace) {
+			config.workspace = normalizedWorkspace;
+		}
+	}
 
 	return config;
 }
@@ -435,6 +507,29 @@ function loadOrchestratorYaml(configRoot: string): OrchestratorSection {
 		return section;
 	} catch {
 		return deepClone(DEFAULT_ORCHESTRATOR_SECTION);
+	}
+}
+
+/**
+ * Load optional workspace routing config from legacy `taskplane-workspace.yaml`.
+ *
+ * This file is fallback-only for workspace metadata when JSON `workspace`
+ * section is not present. Malformed files are ignored here — strict validation
+ * still happens in workspace runtime loading (`workspace.ts`).
+ */
+function loadWorkspaceYaml(configRoot: string): WorkspaceSectionConfig | undefined {
+	const yamlPath = resolveConfigFilePath(configRoot, "taskplane-workspace.yaml");
+	if (!existsSync(yamlPath)) return undefined;
+
+	try {
+		const raw = readFileSync(yamlPath, "utf-8");
+		const loaded = yamlParse(raw) as any;
+		if (!loaded || typeof loaded !== "object") return undefined;
+
+		const converted = convertStructuralKeys(loaded);
+		return normalizeWorkspaceSection(converted, yamlPath);
+	} catch {
+		return undefined;
 	}
 }
 
@@ -586,9 +681,17 @@ export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPrefere
  * in either location. This allows pointer-resolved roots (e.g.,
  * `<configRepo>/.taskplane/`) where files are scaffolded directly
  * without a `.pi/` subdirectory.
+ *
+ * Includes optional workspace YAML (`taskplane-workspace.yaml`) so
+ * workspace-only roots participate in config-root resolution.
  */
 export function hasConfigFiles(root: string): boolean {
-	const files = [PROJECT_CONFIG_FILENAME, "task-runner.yaml", "task-orchestrator.yaml"];
+	const files = [
+		PROJECT_CONFIG_FILENAME,
+		"task-runner.yaml",
+		"task-orchestrator.yaml",
+		"taskplane-workspace.yaml",
+	];
 	for (const f of files) {
 		if (existsSync(join(root, ".pi", f)) || existsSync(join(root, f))) return true;
 	}
@@ -637,6 +740,7 @@ export function resolveConfigRoot(cwd: string, pointerConfigRoot?: string): stri
  *   Layer 1 — Project config:
  *     1. `.pi/taskplane-config.json` — JSON-first (new format)
  *     2. `.pi/task-runner.yaml` + `.pi/task-orchestrator.yaml` — YAML fallback
+ *        (+ optional `.pi/taskplane-workspace.yaml` workspace section mapping)
  *     3. Defaults — if no config files exist
  *
  *   Layer 2 — User preferences (applied on top of Layer 1):
@@ -671,10 +775,12 @@ export function loadProjectConfig(cwd: string, pointerConfigRoot?: string): Task
 		// Fall back to YAML
 		const taskRunner = loadTaskRunnerYaml(configRoot);
 		const orchestrator = loadOrchestratorYaml(configRoot);
+		const workspace = loadWorkspaceYaml(configRoot);
 		config = {
 			configVersion: CONFIG_VERSION,
 			taskRunner,
 			orchestrator,
+			...(workspace ? { workspace } : {}),
 		};
 	}
 
@@ -710,10 +816,12 @@ export function loadLayer1Config(cwd: string, pointerConfigRoot?: string): Taskp
 	// Fall back to YAML
 	const taskRunner = loadTaskRunnerYaml(configRoot);
 	const orchestrator = loadOrchestratorYaml(configRoot);
+	const workspace = loadWorkspaceYaml(configRoot);
 	return {
 		configVersion: CONFIG_VERSION,
 		taskRunner,
 		orchestrator,
+		...(workspace ? { workspace } : {}),
 	};
 }
 

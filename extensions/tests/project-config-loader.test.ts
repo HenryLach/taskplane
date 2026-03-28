@@ -1468,8 +1468,8 @@ describe("pointer warning surfacing (TP-016)", () => {
 			return;
 		}
 
-		// Create tasks_root directory (routing validation requires it to exist)
-		const tasksRoot = join(wsRoot, "taskplane-tasks");
+		// Create tasks_root directory inside the packet-home repo
+		const tasksRoot = join(gitRepoPath, "taskplane-tasks");
 		mkdirSync(tasksRoot, { recursive: true });
 
 		mkdirSync(join(wsRoot, ".pi"), { recursive: true });
@@ -1481,7 +1481,7 @@ describe("pointer warning surfacing (TP-016)", () => {
 				`    path: ${gitRepoPath.replace(/\\/g, "/")}`,
 				"    default_branch: main",
 				"routing:",
-				"  tasks_root: taskplane-tasks",
+				`  tasks_root: ${tasksRoot.replace(/\\/g, "/")}`,
 				"  default_repo: main",
 			].join("\n"),
 			"utf-8",
@@ -1653,5 +1653,124 @@ describe("verification config defaults, mapping, and adapter (TP-032)", () => {
 			mode: "permissive",
 			flaky_reruns: 1,
 		});
+	});
+});
+
+// ── 8.x: Workspace section threading (TP-079) ──────────────────────
+
+describe("workspace section threading (TP-079)", () => {
+	it("8.1: JSON workspace section loads with explicit taskPacketRepo", () => {
+		const dir = makeTestDir("workspace-json-explicit");
+		writeJsonConfig(dir, {
+			configVersion: CONFIG_VERSION,
+			workspace: {
+				repos: {
+					api: { path: "../api-repo", defaultBranch: "main" },
+				},
+				routing: {
+					tasksRoot: "api-repo/taskplane-tasks",
+					defaultRepo: "api",
+					taskPacketRepo: "api",
+					strict: true,
+				},
+			},
+		});
+
+		const config = loadProjectConfig(dir);
+		expect(config.workspace).toBeDefined();
+		expect(config.workspace!.routing.taskPacketRepo).toBe("api");
+		expect(config.workspace!.routing.strict).toBe(true);
+	});
+
+	it("8.2: JSON workspace section missing taskPacketRepo falls back to defaultRepo", () => {
+		const dir = makeTestDir("workspace-json-fallback");
+		writeJsonConfig(dir, {
+			configVersion: CONFIG_VERSION,
+			workspace: {
+				repos: {
+					docs: { path: "../docs-repo" },
+				},
+				routing: {
+					tasksRoot: "docs-repo/taskplane-tasks",
+					defaultRepo: "docs",
+				},
+			},
+		});
+
+		const config = loadProjectConfig(dir);
+		expect(config.workspace).toBeDefined();
+		expect(config.workspace!.routing.taskPacketRepo).toBe("docs");
+	});
+
+	it("8.3: legacy taskplane-workspace.yaml maps snake_case fields to workspace section", () => {
+		const dir = makeTestDir("workspace-yaml-explicit");
+		writePiFile(dir, "taskplane-workspace.yaml", [
+			"repos:",
+			"  api:",
+			"    path: ../api-repo",
+			"    default_branch: develop",
+			"routing:",
+			"  tasks_root: api-repo/taskplane-tasks",
+			"  default_repo: api",
+			"  task_packet_repo: api",
+			"  strict: true",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		expect(config.workspace).toBeDefined();
+		expect(config.workspace!.repos.api.defaultBranch).toBe("develop");
+		expect(config.workspace!.routing.tasksRoot).toBe("api-repo/taskplane-tasks");
+		expect(config.workspace!.routing.defaultRepo).toBe("api");
+		expect(config.workspace!.routing.taskPacketRepo).toBe("api");
+		expect(config.workspace!.routing.strict).toBe(true);
+	});
+
+	it("8.4: legacy workspace YAML missing task_packet_repo falls back to default_repo", () => {
+		const dir = makeTestDir("workspace-yaml-fallback");
+		writePiFile(dir, "taskplane-workspace.yaml", [
+			"repos:",
+			"  infra:",
+			"    path: ../infra-repo",
+			"routing:",
+			"  tasks_root: infra-repo/taskplane-tasks",
+			"  default_repo: infra",
+		].join("\n"));
+
+		const config = loadProjectConfig(dir);
+		expect(config.workspace).toBeDefined();
+		expect(config.workspace!.routing.defaultRepo).toBe("infra");
+		expect(config.workspace!.routing.taskPacketRepo).toBe("infra");
+	});
+
+	it("8.5: JSON workspace section takes precedence over legacy workspace YAML", () => {
+		const dir = makeTestDir("workspace-json-precedence");
+		writePiFile(dir, "taskplane-workspace.yaml", [
+			"repos:",
+			"  yamlrepo:",
+			"    path: ../yaml-repo",
+			"routing:",
+			"  tasks_root: yaml-repo/taskplane-tasks",
+			"  default_repo: yamlrepo",
+			"  task_packet_repo: yamlrepo",
+		].join("\n"));
+		writeJsonConfig(dir, {
+			configVersion: CONFIG_VERSION,
+			workspace: {
+				repos: {
+					jsonrepo: { path: "../json-repo" },
+				},
+				routing: {
+					tasksRoot: "json-repo/taskplane-tasks",
+					defaultRepo: "jsonrepo",
+					taskPacketRepo: "jsonrepo",
+				},
+			},
+		});
+
+		const config = loadProjectConfig(dir);
+		expect(config.workspace).toBeDefined();
+		expect(config.workspace!.routing.defaultRepo).toBe("jsonrepo");
+		expect(config.workspace!.repos).toHaveProperty("jsonrepo");
+		expect(config.workspace!.repos).not.toHaveProperty("yamlrepo");
 	});
 });

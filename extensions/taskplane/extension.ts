@@ -1457,6 +1457,8 @@ export default function (pi: ExtensionAPI) {
 	 * and return early with a user-facing error when null.
 	 */
 	let execCtx: ExecutionContext | null = null;
+	/** Last startup error message to surface consistently through command guards. */
+	let execCtxInitError: string | null = null;
 
 	// ── Widget Rendering ─────────────────────────────────────────────
 
@@ -1477,17 +1479,18 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Command Guard ────────────────────────────────────────────────
 
+	function getExecCtxInitErrorMessage(): string {
+		return execCtxInitError ??
+			"❌ Orchestrator not initialized. Startup failed before execution context was created.\nRestart the session after fixing configuration/setup issues.";
+	}
+
 	/**
 	 * Guard: returns true if execution context is initialized, false otherwise.
 	 * Emits a user-facing error notification when the context is missing.
 	 */
 	function requireExecCtx(ctx: ExtensionContext): boolean {
 		if (execCtx) return true;
-		ctx.ui.notify(
-			"❌ Orchestrator not initialized. Workspace configuration failed at startup.\n" +
-			"Fix the workspace config or remove it to use repo mode, then restart.",
-			"error",
-		);
+		ctx.ui.notify(getExecCtxInitErrorMessage(), "error");
 		return false;
 	}
 
@@ -1720,7 +1723,7 @@ export default function (pi: ExtensionAPI) {
 
 		if (!execCtx) {
 			return {
-				message: "❌ Orchestrator not initialized. Workspace configuration failed at startup.\nFix the workspace config or remove it to use repo mode, then restart.",
+				message: getExecCtxInitErrorMessage(),
 				error: true,
 			};
 		}
@@ -2050,7 +2053,7 @@ export default function (pi: ExtensionAPI) {
 	function doOrchResume(force: boolean, ctx: ExtensionContext): { message: string; error?: boolean } {
 		if (!execCtx) {
 			return {
-				message: "❌ Orchestrator not initialized. Workspace configuration failed at startup.\nFix the workspace config or remove it to use repo mode, then restart.",
+				message: getExecCtxInitErrorMessage(),
 				error: true,
 			};
 		}
@@ -2786,7 +2789,7 @@ export default function (pi: ExtensionAPI) {
 	): Promise<{ message: string; error?: boolean; level?: "info" | "warning" | "error" }> {
 		if (!execCtx) {
 			return {
-				message: "❌ Orchestrator not initialized. Workspace configuration failed at startup.\nFix the workspace config or remove it to use repo mode, then restart.",
+				message: getExecCtxInitErrorMessage(),
 				error: true,
 			};
 		}
@@ -3653,24 +3656,35 @@ export default function (pi: ExtensionAPI) {
 		orchWidgetCtx = ctx;
 
 		// ── Build execution context (config + workspace mode detection) ──
-		// Reset execCtx before loading to prevent stale state on re-init
+		// Reset startup state before loading to prevent stale errors on re-init.
 		execCtx = null;
+		execCtxInitError = null;
 		try {
 			execCtx = buildExecutionContext(ctx.cwd, loadOrchestratorConfig, loadTaskRunnerConfig);
 		} catch (err: unknown) {
 			if (err instanceof WorkspaceConfigError) {
-				// Workspace config is present but invalid — fatal startup error.
-				// Leave execCtx null; command guard will block all commands except abort.
-				ctx.ui.notify(
-					`❌ Workspace configuration error [${err.code}]\n\n` +
-					`${err.message}\n\n` +
-					`Fix the workspace config at .pi/taskplane-workspace.yaml or remove it to use repo mode.\n` +
-					`Orchestrator commands are disabled until this is resolved.`,
-					"error",
-				);
+				// Startup is fatal when workspace config is invalid OR repo-mode setup
+				// requirements are not met (non-git cwd without workspace config).
+				const setupError = err.code === "WORKSPACE_SETUP_REQUIRED";
+				execCtxInitError = setupError
+					? (
+						`❌ Orchestrator startup blocked [${err.code}]\n\n` +
+						`${err.message}\n\n` +
+						`Orchestrator commands are disabled until this setup issue is resolved.`
+					)
+					: (
+						`❌ Workspace configuration error [${err.code}]\n\n` +
+						`${err.message}\n\n` +
+						`Fix the workspace config at .pi/taskplane-workspace.yaml (or taskplane-config.json workspace section), then restart.\n` +
+						`Orchestrator commands are disabled until this is resolved.`
+					);
+
+				ctx.ui.notify(execCtxInitError, "error");
 				ctx.ui.setStatus(
 					"task-orchestrator",
-					"🔀 Orchestrator · ❌ startup failed (workspace config error)",
+					setupError
+						? "🔀 Orchestrator · ❌ startup failed (setup required)"
+						: "🔀 Orchestrator · ❌ startup failed (workspace config error)",
 				);
 				return;
 			}

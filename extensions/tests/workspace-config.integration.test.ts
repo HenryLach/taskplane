@@ -250,7 +250,7 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("dup-paths");
 		const repoDir = join(dir, "shared-repo");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  api:\n    path: ${repoDir}\n  frontend:\n    path: ${repoDir}\n` +
@@ -300,7 +300,7 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("no-default-repo");
 		const repoDir = join(dir, "repo-a");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
@@ -319,7 +319,7 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("bad-default-repo");
 		const repoDir = join(dir, "repo-a");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
@@ -338,7 +338,7 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("valid");
 		const repoDir = join(dir, "repo-a");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  api:\n    path: ${repoDir}\n    default_branch: develop\n` +
@@ -388,7 +388,7 @@ describe("loadWorkspaceConfig", () => {
 		const repoB = join(dir, "repo-b");
 		initGitRepo(repoA);
 		initGitRepo(repoB);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoA, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  api:\n    path: ${repoA}\n  frontend:\n    path: ${repoB}\n` +
@@ -408,7 +408,7 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("strict-true");
 		const repoDir = join(dir, "repo");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
@@ -424,7 +424,7 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("strict-false");
 		const repoDir = join(dir, "repo");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
@@ -440,7 +440,7 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("strict-omitted");
 		const repoDir = join(dir, "repo");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
@@ -456,7 +456,7 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("strict-string");
 		const repoDir = join(dir, "repo");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
@@ -477,7 +477,7 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("strict-number");
 		const repoDir = join(dir, "repo");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
@@ -497,7 +497,7 @@ describe("loadWorkspaceConfig", () => {
 		const dir = makeTestDir("strict-null");
 		const repoDir = join(dir, "repo");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		// In YAML, bare `strict:` or `strict: null` produces null
 		writeWorkspaceConfig(dir,
@@ -522,6 +522,7 @@ describe("loadWorkspaceConfig", () => {
 describe("buildExecutionContext", () => {
 	it("2.1: repo mode — workspaceRoot === repoRoot === cwd, mode === 'repo'", () => {
 		const dir = makeTestDir("repo-mode");
+		initGitRepo(dir);
 		const ctx = buildExecutionContext(dir, mockLoadOrchConfig, mockLoadRunnerConfig);
 		expect(ctx.mode).toBe("repo");
 		expect(ctx.workspaceRoot).toBe(dir);
@@ -532,11 +533,23 @@ describe("buildExecutionContext", () => {
 		expect(ctx.pointer).toBeNull();
 	});
 
+	it("2.1b: non-git cwd + no workspace config throws WORKSPACE_SETUP_REQUIRED", () => {
+		const dir = makeTestDir("repo-mode-non-git");
+		expect(() => buildExecutionContext(dir, mockLoadOrchConfig, mockLoadRunnerConfig)).toThrow(WorkspaceConfigError);
+		try {
+			buildExecutionContext(dir, mockLoadOrchConfig, mockLoadRunnerConfig);
+		} catch (err) {
+			expect(err).toBeInstanceOf(WorkspaceConfigError);
+			expect((err as WorkspaceConfigError).code).toBe("WORKSPACE_SETUP_REQUIRED");
+			expect((err as WorkspaceConfigError).message).toContain("not a git repository");
+		}
+	});
+
 	it("2.2: workspace mode — workspaceRoot !== repoRoot, repoRoot === default repo", () => {
 		const dir = makeTestDir("ws-mode");
 		const repoDir = join(dir, "repo-a");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  api:\n    path: ${repoDir}\n` +
@@ -762,6 +775,11 @@ describe("root-consistency regression", () => {
 		const sessionsBlock = lines.slice(sessionsRegIdx, sessionsRegIdx + 10).join("\n");
 		expect(sessionsBlock).not.toContain("requireExecCtx");
 	});
+
+	it("5.13: extension.ts reuses startup error message helper across command guards", () => {
+		expect(extensionSrc).toContain("function getExecCtxInitErrorMessage()");
+		expect(extensionSrc).toContain("message: getExecCtxInitErrorMessage()");
+	});
 });
 
 // ── 6.x: resolvePointer (TP-016) ────────────────────────────────────
@@ -782,9 +800,11 @@ describe("resolvePointer", () => {
 				defaultBranch: "main",
 			});
 		}
+		const defaultRepo = Object.keys(repos)[0] ?? "default";
 		const routing: WorkspaceRoutingConfig = {
 			tasksRoot: "/fake/tasks",
-			defaultRepo: Object.keys(repos)[0] ?? "default",
+			defaultRepo,
+			taskPacketRepo: defaultRepo,
 		};
 		return {
 			mode: "workspace" as const,
@@ -1073,6 +1093,7 @@ describe("resolvePointer", () => {
 			routing: {
 				tasksRoot: join(repoPath, "tasks"),
 				defaultRepo: repoId,
+				taskPacketRepo: repoId,
 			},
 			configPath: join(repoPath, ".pi", "taskplane-workspace.yaml"),
 		};
@@ -1325,7 +1346,7 @@ describe("orchestrator pointer threading", () => {
 		const dir = makeTestDir("orch-ptr-pass");
 		const repoDir = join(dir, "my-repo");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  myrepo:\n    path: ${repoDir}\n` +
@@ -1361,6 +1382,7 @@ describe("orchestrator pointer threading", () => {
 
 	it("7.2: buildExecutionContext passes undefined pointer to config loaders in repo mode", () => {
 		const dir = makeTestDir("orch-ptr-repo");
+		initGitRepo(dir);
 
 		let orchPointerRoot: string | undefined = "sentinel";
 		let runnerPointerRoot: string | undefined = "sentinel";
@@ -1387,7 +1409,7 @@ describe("orchestrator pointer threading", () => {
 		const dir = makeTestDir("orch-ptr-missing");
 		const repoDir = join(dir, "my-repo");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  myrepo:\n    path: ${repoDir}\n` +
@@ -1564,7 +1586,7 @@ describe("orchestrator pointer threading", () => {
 		const dir = makeTestDir("orch-ptr-warn-log");
 		const repoDir = join(dir, "my-repo");
 		initGitRepo(repoDir);
-		const tasksDir = join(dir, "tasks");
+		const tasksDir = join(repoDir, "tasks");
 		mkdirSync(tasksDir, { recursive: true });
 		writeWorkspaceConfig(dir,
 			`repos:\n  myrepo:\n    path: ${repoDir}\n` +

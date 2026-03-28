@@ -2,8 +2,9 @@
  * Workspace configuration loading and validation.
  *
  * Detects workspace mode by checking for `.pi/taskplane-workspace.yaml`.
- * When the file is absent, the orchestrator runs in repo mode (default).
  * When the file is present, it must be valid — invalid files are fatal.
+ * When absent, `loadWorkspaceConfig()` returns null and `buildExecutionContext()`
+ * decides repo-mode eligibility (cwd must be a git repository).
  *
  * Validation order (deterministic, fail-fast):
  * 1. File existence check → absent = repo mode (return null)
@@ -20,6 +21,8 @@
  * 9. routing.tasks_root exists → WORKSPACE_TASKS_ROOT_NOT_FOUND
  * 10. routing.default_repo present → WORKSPACE_MISSING_DEFAULT_REPO
  * 11. routing.default_repo valid → WORKSPACE_DEFAULT_REPO_NOT_FOUND
+ * 12. routing.task_packet_repo valid (or compat fallback) → WORKSPACE_TASK_PACKET_REPO_NOT_FOUND
+ * 13. routing.tasks_root inside packet-home repo → WORKSPACE_TASKS_ROOT_OUTSIDE_PACKET_REPO
  *
  * Path normalization rules:
  * - Relative paths are resolved against workspaceRoot.
@@ -93,6 +96,16 @@ function resolveAbsolutePath(p: string, base: string): string {
 	} catch {
 		return resolved;
 	}
+}
+
+/**
+ * True when `childPath` is the same path as `parentPath` or contained within it.
+ * Uses canonicalized paths for cross-platform, case-insensitive comparison.
+ */
+function isPathWithinContainer(childPath: string, parentPath: string): boolean {
+	const child = canonicalizePath(childPath, "");
+	const parent = canonicalizePath(parentPath, "");
+	return child === parent || child.startsWith(`${parent}/`);
 }
 
 
@@ -498,7 +511,50 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		);
 	}
 
-	// ── 12. routing.strict (optional boolean, default false) ─────
+	// 12. routing.task_packet_repo (required by v1 contract)
+	// Compatibility policy: if omitted, default to routing.default_repo and
+	// emit a warning so legacy configs remain deterministic.
+	const hasTaskPacketRepo = Object.prototype.hasOwnProperty.call(rawRouting, "task_packet_repo");
+	const rawTaskPacketRepo = rawRouting.task_packet_repo;
+	let taskPacketRepoId = defaultRepoId;
+
+	if (hasTaskPacketRepo) {
+		if (typeof rawTaskPacketRepo !== "string" || rawTaskPacketRepo.trim() === "") {
+			throw new WorkspaceConfigError(
+				"WORKSPACE_SCHEMA_INVALID",
+				"Workspace config 'routing.task_packet_repo' must be a non-empty string when provided.",
+				undefined,
+				configFile,
+			);
+		}
+		taskPacketRepoId = rawTaskPacketRepo.trim();
+	} else {
+		console.error(
+			`[taskplane] workspace compatibility: 'routing.task_packet_repo' is missing in ${configFile}; defaulting to routing.default_repo ('${defaultRepoId}'). Add 'routing.task_packet_repo' explicitly.`,
+		);
+	}
+
+	if (!repos.has(taskPacketRepoId)) {
+		throw new WorkspaceConfigError(
+			"WORKSPACE_TASK_PACKET_REPO_NOT_FOUND",
+			`routing.task_packet_repo '${taskPacketRepoId}' does not match any repo ID. Available repos: ${Array.from(repos.keys()).join(", ")}`,
+			undefined,
+			configFile,
+		);
+	}
+
+	// 13. tasks_root must be inside repos[task_packet_repo].path
+	const packetRepoPath = repos.get(taskPacketRepoId)!.path;
+	if (!isPathWithinContainer(tasksRootAbsolute, packetRepoPath)) {
+		throw new WorkspaceConfigError(
+			"WORKSPACE_TASKS_ROOT_OUTSIDE_PACKET_REPO",
+			`routing.tasks_root '${tasksRootAbsolute}' must be inside packet-home repo '${taskPacketRepoId}' (${packetRepoPath}). Update routing.tasks_root or routing.task_packet_repo.`,
+			undefined,
+			tasksRootAbsolute,
+		);
+	}
+
+	// ── 14. routing.strict (optional boolean, default false) ─────
 	const rawStrict = rawRouting.strict;
 	if (rawStrict !== undefined) {
 		// null (from bare `strict:` or `strict: null` in YAML) is rejected
@@ -518,6 +574,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 	const routing: WorkspaceRoutingConfig = {
 		tasksRoot: tasksRootAbsolute,
 		defaultRepo: defaultRepoId,
+		taskPacketRepo: taskPacketRepoId,
 		...(strict ? { strict: true } : {}),
 	};
 
@@ -528,6 +585,39 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		routing,
 		configPath: configFile,
 	};
+}
+
+
+// ── Cross-Config Validation ─────────────────────────────────────────
+
+/**
+ * Enforce that every configured task area resolves inside workspace routing.tasksRoot.
+ *
+ * This is a cross-config invariant and therefore runs after both workspace and
+ * task-runner configs are loaded.
+ */
+export function validateTaskAreasWithinTasksRoot(
+	workspaceRoot: string,
+	workspaceConfig: WorkspaceConfig,
+	taskRunnerConfig: import("./types.ts").TaskRunnerConfig,
+): void {
+	const tasksRoot = workspaceConfig.routing.tasksRoot;
+	const areaEntries = Object.entries(taskRunnerConfig.task_areas ?? {}).sort((a, b) =>
+		a[0].localeCompare(b[0])
+	);
+
+	for (const [areaName, area] of areaEntries) {
+		const areaPathRaw = (area?.path ?? "").trim();
+		const areaAbsolute = resolveAbsolutePath(areaPathRaw, workspaceRoot);
+		if (!isPathWithinContainer(areaAbsolute, tasksRoot)) {
+			throw new WorkspaceConfigError(
+				"WORKSPACE_TASK_AREA_OUTSIDE_TASKS_ROOT",
+				`Task area '${areaName}' path '${areaAbsolute}' must be inside routing.tasks_root '${tasksRoot}'. Move the area under tasks_root or update task_areas.${areaName}.path.`,
+				undefined,
+				areaAbsolute,
+			);
+		}
+	}
 }
 
 
@@ -543,8 +633,14 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
  * @param loadOrchConfig - Orchestrator config loader (for testability)
  * @param loadTaskConfig - Task runner config loader (for testability)
  * @returns ExecutionContext ready for orchestrator consumption
- * @throws WorkspaceConfigError if workspace config is present but invalid
+ * @throws WorkspaceConfigError if workspace config is present but invalid,
+ *   or when no workspace config exists and `cwd` is not a git repository.
  */
+function isInsideGitRepo(cwd: string): boolean {
+	const probe = runGit(["rev-parse", "--is-inside-work-tree"], cwd);
+	return probe.ok && probe.stdout.trim() === "true";
+}
+
 export function buildExecutionContext(
 	cwd: string,
 	loadOrchConfig: (root: string, pointerConfigRoot?: string) => import("./types.ts").OrchestratorConfig,
@@ -553,6 +649,19 @@ export function buildExecutionContext(
 	const workspaceConfig = loadWorkspaceConfig(cwd);
 
 	if (workspaceConfig === null) {
+		// Deterministic mode guard: without workspace config, repo mode is only
+		// valid when cwd is a git repository.
+		if (!isInsideGitRepo(cwd)) {
+			const wsConfigFile = workspaceConfigPath(cwd);
+			throw new WorkspaceConfigError(
+				"WORKSPACE_SETUP_REQUIRED",
+				`No workspace config found at ${wsConfigFile}, and current directory is not a git repository: ${cwd}. ` +
+				`Run Taskplane from a git repository, or create ${wsConfigFile} (taskplane init) to use workspace mode.`,
+				undefined,
+				cwd,
+			);
+		}
+
 		// Repo mode: pointer is ignored entirely. Config loads from cwd.
 		const orchestratorConfig = loadOrchConfig(cwd);
 		const taskRunnerConfig = loadTaskConfig(cwd);
@@ -579,6 +688,9 @@ export function buildExecutionContext(
 	const pointerConfigRoot = pointer?.configRoot;
 	const orchestratorConfig = loadOrchConfig(cwd, pointerConfigRoot);
 	const taskRunnerConfig = loadTaskConfig(cwd, pointerConfigRoot);
+
+	// Cross-config invariant: every task-area path must live under routing.tasks_root.
+	validateTaskAreasWithinTasksRoot(cwd, workspaceConfig, taskRunnerConfig);
 
 	const defaultRepo = workspaceConfig.repos.get(workspaceConfig.routing.defaultRepo)!;
 	return {
