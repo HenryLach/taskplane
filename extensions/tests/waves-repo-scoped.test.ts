@@ -276,6 +276,30 @@ describe("segment planning", () => {
 		expect(plan.edges.every((e) => e.provenance === "inferred")).toBe(true);
 	});
 
+	it("uses workspace repo IDs to infer cross-repo file-scope touches for a single task", () => {
+		const pending = new Map<string, ParsedTask>([
+			[
+				"TP-905",
+				makeParsedTask("TP-905", {
+					resolvedRepoId: "api",
+					fileScope: ["api/src/a.ts", "web/src/b.ts", "src/noise.ts"],
+				}),
+			],
+		]);
+
+		const withoutWorkspaceHints = buildTaskSegmentPlans(pending).get("TP-905")!;
+		expect(withoutWorkspaceHints.segments.map((s) => s.repoId)).toEqual(["api"]);
+
+		const withWorkspaceHints = buildTaskSegmentPlans(pending, {
+			workspaceRepoIds: ["api", "web"],
+		}).get("TP-905")!;
+		expect(withWorkspaceHints.mode).toBe("inferred-sequential");
+		expect(withWorkspaceHints.segments.map((s) => s.repoId)).toEqual(["api", "web"]);
+		expect(withWorkspaceHints.edges.map((e) => `${e.fromSegmentId}->${e.toSegmentId}`)).toEqual([
+			"TP-905::api->TP-905::web",
+		]);
+	});
+
 	it("falls back to singleton repo segment when there are no multi-repo signals", () => {
 		const pending = new Map<string, ParsedTask>([
 			["TP-901", makeParsedTask("TP-901", { resolvedRepoId: "backend", fileScope: [], dependencies: [] })],

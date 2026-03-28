@@ -617,8 +617,24 @@ function normalizeRepoIdCandidate(raw: string): string | null {
 	return candidate;
 }
 
-function collectKnownRepoIds(pending: Map<string, ParsedTask>): Set<string> {
+interface SegmentPlanBuildOptions {
+	/** Optional workspace repo IDs used to validate file-scope repo prefixes. */
+	workspaceRepoIds?: Iterable<string>;
+}
+
+function collectKnownRepoIds(
+	pending: Map<string, ParsedTask>,
+	workspaceRepoIds?: Iterable<string>,
+): Set<string> {
 	const known = new Set<string>();
+
+	if (workspaceRepoIds) {
+		for (const repoIdRaw of workspaceRepoIds) {
+			const repoId = normalizeRepoIdCandidate(String(repoIdRaw));
+			if (repoId) known.add(repoId);
+		}
+	}
+
 	for (const task of pending.values()) {
 		if (task.resolvedRepoId) {
 			const repoId = normalizeRepoIdCandidate(task.resolvedRepoId);
@@ -784,8 +800,11 @@ export function buildSegmentPlanForTask(
 }
 
 /** Build a deterministic taskId→segmentPlan map for the whole pending set. */
-export function buildTaskSegmentPlans(pending: Map<string, ParsedTask>): TaskSegmentPlanMap {
-	const knownRepoIds = collectKnownRepoIds(pending);
+export function buildTaskSegmentPlans(
+	pending: Map<string, ParsedTask>,
+	options: SegmentPlanBuildOptions = {},
+): TaskSegmentPlanMap {
+	const knownRepoIds = collectKnownRepoIds(pending, options.workspaceRepoIds);
 	const plans: TaskSegmentPlanMap = new Map();
 	for (const taskId of [...pending.keys()].sort()) {
 		const task = pending.get(taskId);
@@ -1349,10 +1368,16 @@ export function allocateLanes(
  * Returns WaveAssignment[] with wave numbers and lane assignments,
  * plus any errors encountered.
  */
+export interface WaveComputationOptions {
+	/** Optional workspace repo IDs used by segment inference in workspace mode. */
+	workspaceRepoIds?: Iterable<string>;
+}
+
 export function computeWaveAssignments(
 	pending: Map<string, ParsedTask>,
 	completed: Set<string>,
 	config: OrchestratorConfig,
+	options: WaveComputationOptions = {},
 ): WaveComputationResult {
 	const errors: DiscoveryError[] = [];
 
@@ -1372,7 +1397,9 @@ export function computeWaveAssignments(
 	}
 
 	// Step 3.5: Build additive segment planning output (deterministic map)
-	const segmentPlans = buildTaskSegmentPlans(pending);
+	const segmentPlans = buildTaskSegmentPlans(pending, {
+		workspaceRepoIds: options.workspaceRepoIds,
+	});
 
 	// Step 4: Assign tasks to lanes within each wave
 	const waveAssignments: WaveAssignment[] = [];

@@ -1685,6 +1685,11 @@ export default function (pi: ExtensionAPI) {
 				discovery.pending,
 				discovery.completed,
 				orchConfig,
+				{
+					workspaceRepoIds: execCtx!.workspaceConfig
+						? execCtx!.workspaceConfig.repos.keys()
+						: undefined,
+				},
 			);
 
 			ctx.ui.notify(

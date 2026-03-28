@@ -100,6 +100,25 @@ describe("computeWaveAssignments segment plan wiring", () => {
 		expect(result.segmentPlans!.size).toBe(2);
 	});
 
+	it("accepts workspaceRepoIds to infer cross-repo file scope hints", () => {
+		const pending = new Map<string, ParsedTask>([
+			["TP-450", makeTask("TP-450", {
+				resolvedRepoId: "api",
+				fileScope: ["api/src/service.ts", "web/src/client.ts"],
+			})],
+		]);
+
+		const result = computeWaveAssignments(
+			pending,
+			new Set<string>(),
+			DEFAULT_ORCHESTRATOR_CONFIG,
+			{ workspaceRepoIds: ["api", "web"] },
+		);
+		expect(result.errors).toEqual([]);
+		expect(result.segmentPlans).toBeDefined();
+		expect(result.segmentPlans!.get("TP-450")!.segments.map((s) => s.repoId)).toEqual(["api", "web"]);
+	});
+
 	it("omits segmentPlans when graph validation fails", () => {
 		const pending = new Map<string, ParsedTask>([
 			["TP-500", makeTask("TP-500", { dependencies: ["TP-501"] })],

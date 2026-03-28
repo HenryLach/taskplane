@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.10] - 2026-03-28
+
+### Fixed
+- **TP-080 segment inference completeness** — segment planning now accepts workspace repo IDs during wave computation so single-task, cross-repo `File Scope` hints are inferred correctly (e.g., `api/...` + `web/...` now yields two inferred segments instead of collapsing to one when only one repo was present in pending task routing signals).
+- **Planning wiring** — `/orch-plan` now passes workspace repo IDs into `computeWaveAssignments(...)` for deterministic, workspace-aware segment inference.
+- **Regression coverage** — added tests for workspace-hinted cross-repo inference in `segment-model.test.ts` and `waves-repo-scoped.test.ts`.
+
 ## [0.20.0] - 2026-03-26
 
 ### New
