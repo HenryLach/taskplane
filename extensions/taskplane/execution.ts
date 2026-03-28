@@ -475,7 +475,7 @@ export function buildLaneEnvVars(
 
 	const vars: Record<string, string> = {
 		TASK_AUTOSTART: relativePath,
-		TASK_RUNNER_SPAWN_MODE: "subprocess",
+		TASK_RUNNER_SPAWN_MODE: "tmux",
 		TASK_RUNNER_TMUX_PREFIX: lane.tmuxSessionName,
 		ORCH_SIDECAR_DIR: join(workspaceRoot || repoRoot, ".pi"),
 		NODE_PATH: nodePath,
@@ -915,6 +915,10 @@ export function spawnLaneSession(
 
 	// Build env vars
 	const envVars = buildLaneEnvVars(lane, task.task.promptPath, repoRoot, workspaceRoot);
+	// Pass batch ID so task-runner can include it in lane state for dashboard filtering
+	if (config.orchestrator?.batchId) {
+		envVars.ORCH_BATCH_ID = config.orchestrator.batchId;
+	}
 	if (extraEnvVars) {
 		Object.assign(envVars, extraEnvVars);
 	}

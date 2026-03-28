@@ -792,7 +792,17 @@ function computeBatchTotalCost(laneStates, telemetry) {
 function buildDashboardState() {
   const state = loadBatchState();
   const tmuxSessions = getTmuxSessions();
-  const laneStates = loadLaneStates();
+  const rawLaneStates = loadLaneStates();
+  // Filter stale lane states from previous batches.
+  // Lane state files persist across batches (same filename), so without
+  // filtering the dashboard shows telemetry from old runs.
+  const currentBatchId = state?.batchId || null;
+  const laneStates = {};
+  for (const [key, ls] of Object.entries(rawLaneStates)) {
+    if (!currentBatchId || !ls.batchId || ls.batchId === currentBatchId) {
+      laneStates[key] = ls;
+    }
+  }
   const telemetry = loadTelemetryData(state);
   const batchTotalCost = computeBatchTotalCost(laneStates, telemetry);
   const supervisor = loadSupervisorData(state);

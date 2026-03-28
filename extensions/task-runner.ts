@@ -447,6 +447,7 @@ function writeLaneState(state: TaskState): void {
 			reviewerOutputTokens: state.reviewerOutputTokens || 0,
 			reviewerCacheReadTokens: state.reviewerCacheReadTokens || 0,
 			reviewerCacheWriteTokens: state.reviewerCacheWriteTokens || 0,
+			batchId: process.env.ORCH_BATCH_ID || null,
 			timestamp: Date.now(),
 		};
 		writeFileSync(filePath, JSON.stringify(data) + "\n");
