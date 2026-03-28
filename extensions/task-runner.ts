@@ -2148,6 +2148,9 @@ export default function (pi: ExtensionAPI) {
 
 	// ── review_step Tool (orchestrated mode only) ───────────────────
 
+	/** Per-step code review cycle counter. Reset when reviewer is killed after APPROVE. */
+	const stepCodeReviewCounts = new Map<number, number>();
+
 	/**
 	 * Reset reviewer telemetry fields on state to idle/zero.
 	 * Called after a review completes to clear dashboard metrics.
@@ -2290,6 +2293,30 @@ export default function (pi: ExtensionAPI) {
 				const statusPath = join(task.taskFolder, "STATUS.md");
 				const reviewsDir = join(task.taskFolder, ".reviews");
 				if (!existsSync(reviewsDir)) mkdirSync(reviewsDir, { recursive: true });
+
+				// Per-step code review cycle limit
+				if (reviewType === "code") {
+					const codeCount = (stepCodeReviewCounts.get(stepNum) || 0) + 1;
+					stepCodeReviewCounts.set(stepNum, codeCount);
+					const maxCycles = config.context.max_review_cycles || 2;
+					if (codeCount > maxCycles) {
+						logExecution(statusPath, `Skip code review`,
+							`Step ${stepNum} code review cycle limit reached (${codeCount}/${maxCycles}) — auto-approving`);
+						// Kill reviewer to free context for next step
+						if (state.persistentReviewerKill) {
+							try { state.persistentReviewerKill(); } catch {}
+						}
+						state.persistentReviewerSession = null;
+						state.persistentReviewerKill = null;
+						state.persistentReviewerSignalNum = 0;
+						state.reviewerRespawnCount = 0;
+						stepCodeReviewCounts.delete(stepNum);
+						return {
+							content: [{ type: "text" as const, text: `APPROVE — Code review cycle limit reached (${maxCycles}). Auto-approved to prevent context exhaustion.` }],
+							details: undefined,
+						};
+					}
+				}
 
 				// Low-risk step check (safety net — worker template also skips)
 				if (isLowRiskStep(stepNum, task.steps.length)) {
@@ -2551,17 +2578,19 @@ export default function (pi: ExtensionAPI) {
 					updateWidgets();
 
 					// Extract verdict and build result
-					const { resultText } = processReviewVerdict(
+					const { resultText, verdict } = processReviewVerdict(
 						reviewContent, statusPath, num, reviewType, stepNum, state.reviewCounter,
 					);
 
-					// After code review: kill the persistent reviewer to free context.
-					// The reviewer persists through a plan+code pair for one step,
-					// then gets a fresh session for the next step.
-					if (reviewType === "code") {
-						console.error(`[task-runner] code review complete for step ${stepNum} — killing reviewer for fresh context on next step`);
+					// After code review APPROVE: kill the persistent reviewer to free context.
+					// The reviewer persists through plan+code for one step, and through
+					// REVISE→fix→re-review cycles (it knows what it asked to be fixed).
+					// Only kill on APPROVE — a REVISE means the worker needs to fix and
+					// re-submit, and the same reviewer should evaluate the follow-up.
+					if (reviewType === "code" && (verdict === "APPROVE" || verdict === "UNAVAILABLE")) {
+						console.error(`[task-runner] code review ${verdict} for step ${stepNum} — killing reviewer for fresh context on next step`);
 						logExecution(statusPath, `Reviewer R${num}`,
-							`code review complete — killing persistent reviewer (step ${stepNum} cycle done)`);
+							`code review ${verdict} — killing persistent reviewer (step ${stepNum} cycle done)`);
 						if (state.persistentReviewerKill) {
 							try { state.persistentReviewerKill(); } catch {}
 						}
@@ -2569,6 +2598,7 @@ export default function (pi: ExtensionAPI) {
 						state.persistentReviewerKill = null;
 						state.persistentReviewerSignalNum = 0;
 						state.reviewerRespawnCount = 0;
+						stepCodeReviewCounts.delete(stepNum);
 					}
 
 					state.reviewerStatus = "idle";
