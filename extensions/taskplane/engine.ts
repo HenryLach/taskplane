@@ -1570,6 +1570,10 @@ export async function executeOrchBatch(
 						`Automatic partial-branch merge is disabled to avoid dropping succeeded commits.`,
 					totalDurationMs: 0,
 				};
+				// Keep mergeResults in sync even when no mergeable lane exists.
+				// Downstream retry/update paths assume the current wave has an entry.
+				allMergeResults.push(mergeResult);
+				batchState.mergeResults.push(mergeResult);
 				onNotify(
 					ORCH_MESSAGES.orchMergeFailed(waveIdx + 1, mergeResult.failedLane, mergeResult.failureReason || "unknown"),
 					"error",

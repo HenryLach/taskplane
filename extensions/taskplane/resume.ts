@@ -1377,6 +1377,9 @@ export async function resumeOrchBatch(
 	// For waves where some tasks are already done, we filter them out.
 
 	let preserveWorktreesForResume = false;
+	const persistedStatusByTaskId = new Map(
+		persistedState.tasks.map((task) => [task.taskId, task.status] as const),
+	);
 
 	for (let waveIdx = resumePoint.resumeWaveIndex; waveIdx < persistedState.wavePlan.length; waveIdx++) {
 		// Check pause signal
@@ -1390,10 +1393,12 @@ export async function resumeOrchBatch(
 		batchState.currentWaveIndex = waveIdx;
 		persistRuntimeState("wave-index-change", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot);
 
-		// Get wave tasks, filtering out completed/failed/blocked ones.
+		// Get wave tasks, filtering out completed/failed/skipped/blocked ones.
+		// Persisted "skipped" tasks are terminal and must never be re-executed.
 		let waveTasks = persistedState.wavePlan[waveIdx].filter(
 			taskId => !completedTaskSet.has(taskId) &&
 				!failedTaskSet.has(taskId) &&
+				persistedStatusByTaskId.get(taskId) !== "skipped" &&
 				!batchState.blockedTaskIds.has(taskId),
 		);
 
@@ -1425,26 +1430,71 @@ export async function resumeOrchBatch(
 				);
 				const mergeRetryLanes = reconstructAllocatedLanes(waveLaneRecords, persistedState.tasks);
 
-				// Build synthetic WaveExecutionResult with succeeded tasks
+				// Build synthetic WaveExecutionResult from persisted terminal task states.
+				// Crucial for orch_force_merge: tasks intentionally marked "skipped" must
+				// remain skipped here (not failed), otherwise mixed-outcome detection would
+				// trigger again and block the forced merge recovery path.
 				const succeededTaskIds = persistedState.wavePlan[waveIdx].filter(
 					taskId => completedTaskSet.has(taskId),
 				);
-				const syntheticLaneResults: LaneExecutionResult[] = mergeRetryLanes.map(lane => ({
-					laneNumber: lane.laneNumber,
-					laneId: lane.laneId,
-					tasks: lane.tasks.map(t => ({
-						taskId: t.taskId,
-						status: (completedTaskSet.has(t.taskId) ? "succeeded" : "failed") as LaneTaskStatus,
+				const skippedTaskIds = persistedState.wavePlan[waveIdx].filter(
+					taskId => persistedStatusByTaskId.get(taskId) === "skipped",
+				);
+				const failedTaskIds = persistedState.wavePlan[waveIdx].filter(
+					taskId => {
+						const status = persistedStatusByTaskId.get(taskId);
+						return status === "failed" || status === "stalled";
+					},
+				);
+
+				const syntheticLaneResults: LaneExecutionResult[] = mergeRetryLanes.map((lane) => {
+					const laneTasks = lane.tasks.map((t) => {
+						const persistedStatus = persistedStatusByTaskId.get(t.taskId);
+						let status: LaneTaskStatus;
+						if (completedTaskSet.has(t.taskId) || persistedStatus === "succeeded") {
+							status = "succeeded";
+						} else if (persistedStatus === "skipped") {
+							status = "skipped";
+						} else if (persistedStatus === "failed") {
+							status = "failed";
+						} else if (persistedStatus === "stalled") {
+							status = "stalled";
+						} else {
+							status = "failed";
+						}
+
+						return {
+							taskId: t.taskId,
+							status,
+							startTime: Date.now(),
+							endTime: Date.now(),
+							exitReason:
+								status === "succeeded" ? "Task completed (merge retry)"
+									: status === "skipped" ? "Task skipped (merge retry)"
+									: status === "stalled" ? "Task stalled (merge retry)"
+									: "Task failed (merge retry)",
+							sessionName: lane.tmuxSessionName,
+							doneFileFound: status === "succeeded",
+						};
+					});
+
+					const laneHasHardFailure = laneTasks.some(
+						(t) => t.status === "failed" || t.status === "stalled",
+					);
+					const laneHasSucceeded = laneTasks.some((t) => t.status === "succeeded");
+					const overallStatus = laneHasHardFailure
+						? (laneHasSucceeded ? "partial" : "failed")
+						: "succeeded";
+
+					return {
+						laneNumber: lane.laneNumber,
+						laneId: lane.laneId,
+						tasks: laneTasks,
+						overallStatus,
 						startTime: Date.now(),
 						endTime: Date.now(),
-						exitReason: completedTaskSet.has(t.taskId) ? "Task completed (merge retry)" : "Task failed (merge retry)",
-						sessionName: lane.tmuxSessionName,
-						doneFileFound: completedTaskSet.has(t.taskId),
-					})),
-					overallStatus: lane.tasks.every(t => completedTaskSet.has(t.taskId)) ? "succeeded" as const : "partial" as const,
-					startTime: Date.now(),
-					endTime: Date.now(),
-				}));
+					};
+				});
 
 				const syntheticWaveResult: WaveExecutionResult = {
 					waveIndex: waveIdx + 1,
@@ -1453,8 +1503,8 @@ export async function resumeOrchBatch(
 					laneResults: syntheticLaneResults,
 					policyApplied: orchConfig.failure.on_task_failure,
 					stoppedEarly: false,
-					failedTaskIds: [],
-					skippedTaskIds: [],
+					failedTaskIds,
+					skippedTaskIds,
 					succeededTaskIds,
 					blockedTaskIds: [],
 					laneCount: mergeRetryLanes.length,
@@ -1754,6 +1804,9 @@ export async function resumeOrchBatch(
 						`Automatic partial-branch merge is disabled to avoid dropping succeeded commits.`,
 					totalDurationMs: 0,
 				};
+				// Keep mergeResults in sync even when no mergeable lane exists.
+				// Downstream retry/update paths assume the current wave has an entry.
+				batchState.mergeResults.push(mergeResult);
 				onNotify(
 					ORCH_MESSAGES.orchMergeFailed(waveIdx + 1, mergeResult.failedLane, mergeResult.failureReason || "unknown"),
 					"error",
