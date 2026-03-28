@@ -70,12 +70,11 @@ Use the source branch and merge message from the merge request.
 
 ### Step 4: Verification
 
-Run each verification command from the merge request. Typical commands:
+Run each verification command from the merge request's `## Verification Commands`
+section **exactly as written**. Do NOT substitute your own test commands — the
+merge request contains the project's actual test command.
 
-```bash
-npm test                           # Unit/integration checks
-npm run build                      # Build/compile checks
-```
+If the verification section is empty, skip verification and proceed with the merge.
 
 **If verification passes:** Write result with `status: "SUCCESS"` (or
 `"CONFLICT_RESOLVED"` if conflicts were auto-resolved).
