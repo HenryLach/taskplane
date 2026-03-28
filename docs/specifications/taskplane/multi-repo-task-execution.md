@@ -3,7 +3,7 @@
 **Status:** Draft — requested for implementation planning
 **Priority:** P0 (polyrepo production blocker)
 **Created:** 2026-03-27
-**Updated:** 2026-03-27
+**Updated:** 2026-03-28
 **Related:** #51, `autonomous-supervisor.md`, `implemented/polyrepo-support-spec.md`
 
 ## Problem Statement
@@ -141,12 +141,12 @@ Scheduler moves from task-level nodes to segment-level nodes:
 
 ## Segment ordering and DAG
 
-### Recommendation
+### Recommendation (Decision)
 
-Use an explicit+inferred hybrid:
+Use an explicit+inferred hybrid, with explicit syntax available in v1:
 
-1. **Explicit segment edges** (if present in packet metadata) take precedence.
-2. **Deterministic inference** builds default edges when metadata is absent.
+1. **Optional explicit segment DAG metadata** in `PROMPT.md` is supported now.
+2. **Deterministic inference** builds default edges when explicit metadata is absent.
 3. **Stable fallback ordering** resolves ambiguity.
 
 ### Why not free-form guessing
@@ -169,8 +169,9 @@ This keeps behavior deterministic while we accumulate real-world data for richer
 ## Segment concurrency policy
 
 - **Within one task:** sequential segment execution (DAG-respecting)
-- **Across tasks:** unchanged parallel lane execution
-- **Across lanes:** unchanged (parallel)
+- **Within one lane:** tasks/segments execute **sequentially** (one active unit at a time)
+- **Across lanes (within the same wave):** execution remains **parallel**
+- **Across waves:** execution remains **serial**
 
 This matches your requirement: keep global throughput while avoiding intra-task race complexity.
 
@@ -205,6 +206,7 @@ If a worker determines that repo `B` must change while executing segment in repo
 - Existing completed segment outputs remain valid.
 - Newly added dependencies can block downstream segments deterministically.
 - Unrelated tasks/segments continue when policy allows.
+- Supervisor may reorder **dependency-ready, non-dependent** pending segments to improve recovery/progress, with full audit trail (who/when/why) persisted in batch state.
 
 ### Operator visibility
 
@@ -423,11 +425,11 @@ Dashboard should display:
 
 ---
 
-## Open Questions
+## Resolved Decisions (2026-03-28)
 
-1. Should explicit segment DAG syntax be added to `PROMPT.md` now or after v1 inference ships?
-2. Should supervisor be allowed to reorder non-dependent pending segments dynamically?
-3. Do we permit optional “segment bundles” (two repos in one execution window) after v1 stability?
+1. **Explicit segment DAG syntax in `PROMPT.md`:** support now (optional), with deterministic inference fallback when omitted.
+2. **Supervisor reordering of non-dependent pending segments:** allowed, but only for dependency-ready segments; all reorder actions must be persisted and observable.
+3. **Optional segment bundles (two repos in one execution window):** defer until after v1 stability; introduce as an experimental, feature-flagged capability after baseline reliability metrics are met.
 
 ---
 
