@@ -6,8 +6,8 @@ import { join } from "path";
 
 import { parseDependencyReference } from "./discovery.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { AllocationError, getTaskDurationMinutes } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, AllocateLanesResult, AllocationErrorCode, DependencyGraph, DiscoveryError, GraphValidationResult, LaneAssignment, OrchestratorConfig, ParsedTask, WaveAssignment, WaveComputationResult, WorkspaceConfig, WorktreeInfo } from "./types.ts";
+import { AllocationError, buildSegmentId, getTaskDurationMinutes } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, AllocateLanesResult, AllocationErrorCode, DependencyGraph, DiscoveryError, GraphValidationResult, LaneAssignment, OrchestratorConfig, ParsedTask, TaskSegmentPlan, TaskSegmentPlanMap, WaveAssignment, WaveComputationResult, WorkspaceConfig, WorktreeInfo } from "./types.ts";
 import { getCurrentBranch } from "./git.ts";
 import { ensureLaneWorktrees, removeAllWorktrees, removeWorktree } from "./worktree.ts";
 
@@ -606,6 +606,196 @@ export function resolveBaseBranch(
 }
 
 
+// ── Segment Planning (TP-080) ───────────────────────────────────────
+
+const SEGMENT_REPO_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+const INFERRED_LINEAR_REASON = "inferred:first-appearance-linear-chain";
+
+function normalizeRepoIdCandidate(raw: string): string | null {
+	const candidate = raw.trim().toLowerCase();
+	if (!SEGMENT_REPO_ID_PATTERN.test(candidate)) return null;
+	return candidate;
+}
+
+function collectKnownRepoIds(pending: Map<string, ParsedTask>): Set<string> {
+	const known = new Set<string>();
+	for (const task of pending.values()) {
+		if (task.resolvedRepoId) {
+			const repoId = normalizeRepoIdCandidate(task.resolvedRepoId);
+			if (repoId) known.add(repoId);
+		}
+		if (task.explicitSegmentDag) {
+			for (const repoIdRaw of task.explicitSegmentDag.repoIds) {
+				const repoId = normalizeRepoIdCandidate(repoIdRaw);
+				if (repoId) known.add(repoId);
+			}
+		}
+	}
+	return known;
+}
+
+function extractRepoPrefixFromFileScope(fileScopeEntry: string): string | null {
+	const normalized = fileScopeEntry.replace(/\\/g, "/").trim();
+	if (!normalized) return null;
+	const firstSegment = normalized.split("/")[0]?.trim();
+	if (!firstSegment) return null;
+	return normalizeRepoIdCandidate(firstSegment);
+}
+
+interface InferredRepoOrder {
+	repoIds: string[];
+	usedFallback: boolean;
+}
+
+/**
+ * Build deterministic repo ordering for inferred segment plans.
+ *
+ * Signal precedence:
+ * 1) file scope repo prefixes (first appearance)
+ * 2) dependency task repos (first appearance)
+ * 3) fallback to `resolvedRepoId`, then synthetic `default`
+ */
+export function inferTaskRepoOrder(
+	task: ParsedTask,
+	pending: Map<string, ParsedTask>,
+	knownRepoIds: Set<string>,
+): InferredRepoOrder {
+	const firstAppearance = new Map<string, number>();
+	let cursor = 0;
+
+	function record(repoIdRaw: string, requireKnown = false): string | null {
+		const repoId = normalizeRepoIdCandidate(repoIdRaw);
+		if (!repoId) return null;
+		if (requireKnown && knownRepoIds.size > 0 && !knownRepoIds.has(repoId)) return null;
+		if (!firstAppearance.has(repoId)) {
+			firstAppearance.set(repoId, cursor++);
+		}
+		return repoId;
+	}
+
+	let hasPrimarySignal = false;
+
+	for (const scopeEntry of task.fileScope) {
+		if (knownRepoIds.size === 0) {
+			// Repo-mode guard: without known workspace repo IDs, fileScope prefixes like
+			// "src/" or "lib/" are ambiguous and should not create synthetic segments.
+			continue;
+		}
+		const repoId = extractRepoPrefixFromFileScope(scopeEntry);
+		if (!repoId) continue;
+		if (record(repoId, true) !== null) {
+			hasPrimarySignal = true;
+		}
+	}
+
+	for (const depRaw of task.dependencies) {
+		const depId = parseDependencyReference(depRaw).taskId;
+		const depTask = pending.get(depId);
+		if (depTask?.resolvedRepoId && record(depTask.resolvedRepoId, true) !== null) {
+			hasPrimarySignal = true;
+		}
+	}
+
+	if (!hasPrimarySignal) {
+		const fallback = normalizeRepoIdCandidate(task.resolvedRepoId ?? "") || "default";
+		return {
+			repoIds: [fallback],
+			usedFallback: true,
+		};
+	}
+
+	if (task.resolvedRepoId) {
+		record(task.resolvedRepoId, true);
+	}
+
+	const repoIds = [...firstAppearance.entries()]
+		.sort((a, b) => {
+			if (a[1] !== b[1]) return a[1] - b[1];
+			return a[0].localeCompare(b[0]);
+		})
+		.map(([repoId]) => repoId);
+
+	return {
+		repoIds,
+		usedFallback: false,
+	};
+}
+
+function sortSegmentEdges<T extends { fromSegmentId: string; toSegmentId: string }>(
+	edges: T[],
+): T[] {
+	return [...edges].sort((a, b) => {
+		if (a.fromSegmentId !== b.fromSegmentId) return a.fromSegmentId.localeCompare(b.fromSegmentId);
+		return a.toSegmentId.localeCompare(b.toSegmentId);
+	});
+}
+
+function buildSegmentNodes(taskId: string, repoIds: string[]) {
+	const nodes = repoIds.map((repoId, order) => ({
+		segmentId: buildSegmentId(taskId, repoId),
+		taskId,
+		repoId,
+		order,
+	}));
+	return nodes.sort((a, b) => (a.order - b.order) || a.repoId.localeCompare(b.repoId));
+}
+
+export function buildSegmentPlanForTask(
+	task: ParsedTask,
+	pending: Map<string, ParsedTask>,
+	knownRepoIds: Set<string>,
+): TaskSegmentPlan {
+	if (task.explicitSegmentDag) {
+		const repoIds = [...task.explicitSegmentDag.repoIds];
+		const segments = buildSegmentNodes(task.taskId, repoIds);
+		const edges = sortSegmentEdges(
+			task.explicitSegmentDag.edges.map((edge) => ({
+				fromSegmentId: buildSegmentId(task.taskId, edge.fromRepoId),
+				toSegmentId: buildSegmentId(task.taskId, edge.toRepoId),
+				provenance: "explicit" as const,
+				reason: "prompt:segment-dag",
+			})),
+		);
+		return {
+			taskId: task.taskId,
+			segments,
+			edges,
+			mode: "explicit-dag",
+		};
+	}
+
+	const inferred = inferTaskRepoOrder(task, pending, knownRepoIds);
+	const segments = buildSegmentNodes(task.taskId, inferred.repoIds);
+	const edges = sortSegmentEdges(
+		segments.slice(0, -1).map((segment, idx) => ({
+			fromSegmentId: segment.segmentId,
+			toSegmentId: segments[idx + 1].segmentId,
+			provenance: "inferred" as const,
+			reason: INFERRED_LINEAR_REASON,
+		})),
+	);
+
+	return {
+		taskId: task.taskId,
+		segments,
+		edges,
+		mode: inferred.usedFallback ? "repo-singleton" : "inferred-sequential",
+	};
+}
+
+/** Build a deterministic taskId→segmentPlan map for the whole pending set. */
+export function buildTaskSegmentPlans(pending: Map<string, ParsedTask>): TaskSegmentPlanMap {
+	const knownRepoIds = collectKnownRepoIds(pending);
+	const plans: TaskSegmentPlanMap = new Map();
+	for (const taskId of [...pending.keys()].sort()) {
+		const task = pending.get(taskId);
+		if (!task) continue;
+		plans.set(taskId, buildSegmentPlanForTask(task, pending, knownRepoIds));
+	}
+	return plans;
+}
+
+
 // ── Lane Assignment ──────────────────────────────────────────────────
 
 /**
@@ -1181,6 +1371,9 @@ export function computeWaveAssignments(
 		return { waves: [], errors: waveErrors };
 	}
 
+	// Step 3.5: Build additive segment planning output (deterministic map)
+	const segmentPlans = buildTaskSegmentPlans(pending);
+
 	// Step 4: Assign tasks to lanes within each wave
 	const waveAssignments: WaveAssignment[] = [];
 	for (let i = 0; i < rawWaves.length; i++) {
@@ -1199,5 +1392,5 @@ export function computeWaveAssignments(
 		});
 	}
 
-	return { waves: waveAssignments, errors };
+	return { waves: waveAssignments, errors, segmentPlans };
 }

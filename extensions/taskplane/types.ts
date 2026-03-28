@@ -60,6 +60,26 @@ export interface OrchestratorConfig {
 	};
 }
 
+/** Stable segment identifier: `<taskId>::<repoId>` */
+export type SegmentId = `${string}::${string}`;
+
+/** How an intra-task segment edge was produced (for observability/debugging). */
+export type SegmentEdgeProvenance = "explicit" | "inferred";
+
+/** Repo-scoped edge parsed from optional `## Segment DAG` prompt metadata. */
+export interface PromptSegmentDagEdge {
+	fromRepoId: string;
+	toRepoId: string;
+}
+
+/** Optional explicit segment metadata parsed from PROMPT.md. */
+export interface PromptSegmentDagMetadata {
+	/** Repo IDs participating in this task's segment graph, first-seen order. */
+	repoIds: string[];
+	/** Directed repo-level edges, sorted by `fromRepoId` then `toRepoId`. */
+	edges: PromptSegmentDagEdge[];
+}
+
 /** A parsed task from PROMPT.md, enriched for orchestrator use */
 export interface ParsedTask {
 	taskId: string;
@@ -76,7 +96,60 @@ export interface ParsedTask {
 	promptRepoId?: string;
 	/** Resolved repo ID after routing precedence (workspace mode only). Undefined in repo mode. */
 	resolvedRepoId?: string;
+	/** Optional explicit segment DAG metadata from `## Segment DAG`. */
+	explicitSegmentDag?: PromptSegmentDagMetadata;
 }
+
+/** Build a stable segment ID from task + repo identity (`<taskId>::<repoId>`). */
+export function buildSegmentId(taskId: string, repoId: string): SegmentId {
+	return `${taskId}::${repoId}` as SegmentId;
+}
+
+/** One repo-scoped segment node for a task. */
+export interface TaskSegmentNode {
+	segmentId: SegmentId;
+	taskId: string;
+	repoId: string;
+	/**
+	 * Deterministic segment order within a task (0-indexed).
+	 * Stable tie-break: repoId lexical order.
+	 */
+	order: number;
+}
+
+/** Directed edge between two segment nodes in the same task. */
+export interface TaskSegmentEdge {
+	fromSegmentId: SegmentId;
+	toSegmentId: SegmentId;
+	provenance: SegmentEdgeProvenance;
+	/** Optional explanation of why this edge exists (debug/telemetry aid). */
+	reason?: string;
+}
+
+/**
+ * Deterministic segment plan for one task.
+ *
+ * Ordering contract:
+ * - `segments`: sorted by `order`, then `repoId`
+ * - `edges`: sorted by `fromSegmentId`, then `toSegmentId`
+ */
+export interface TaskSegmentPlan {
+	taskId: string;
+	segments: TaskSegmentNode[];
+	edges: TaskSegmentEdge[];
+	/**
+	 * explicit-dag: parsed from prompt metadata
+	 * inferred-sequential: deterministic fallback inference
+	 * repo-singleton: repo mode fallback (`resolvedRepoId ?? "default"`)
+	 */
+	mode: "explicit-dag" | "inferred-sequential" | "repo-singleton";
+}
+
+/**
+ * TaskId-keyed segment plans.
+ * Iteration order must be deterministic: sort task IDs lexicographically.
+ */
+export type TaskSegmentPlanMap = Map<string, TaskSegmentPlan>;
 
 /** A wave: a group of tasks whose dependencies are all satisfied */
 export interface WaveAssignment {
@@ -403,7 +476,9 @@ export interface DiscoveryError {
 		| "DEP_SOURCE_FALLBACK"
 		| "TASK_REPO_UNRESOLVED"
 		| "TASK_REPO_UNKNOWN"
-		| "TASK_ROUTING_STRICT";
+		| "TASK_ROUTING_STRICT"
+		| "SEGMENT_DAG_INVALID"
+		| "SEGMENT_REPO_UNKNOWN";
 	message: string;
 	taskPath?: string;
 	taskId?: string;
@@ -425,6 +500,8 @@ export const FATAL_DISCOVERY_CODES: ReadonlyArray<DiscoveryError["code"]> = [
 	"TASK_REPO_UNRESOLVED",
 	"TASK_REPO_UNKNOWN",
 	"TASK_ROUTING_STRICT",
+	"SEGMENT_DAG_INVALID",
+	"SEGMENT_REPO_UNKNOWN",
 ] as const;
 
 /** Result of the full discovery pipeline */
@@ -457,6 +534,8 @@ export interface GraphValidationResult {
 export interface WaveComputationResult {
 	waves: WaveAssignment[];
 	errors: DiscoveryError[];
+	/** Optional task→segment planning map (TP-080, additive contract). */
+	segmentPlans?: TaskSegmentPlanMap;
 }
 
 

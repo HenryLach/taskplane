@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from "
 import { join, dirname, basename, resolve } from "path";
 
 import { FATAL_DISCOVERY_CODES } from "./types.ts";
-import type { DiscoveryError, DiscoveryResult, ParsedTask, TaskArea, WorkspaceConfig } from "./types.ts";
+import type { DiscoveryError, DiscoveryResult, ParsedTask, PromptSegmentDagMetadata, TaskArea, WorkspaceConfig } from "./types.ts";
 
 // ── PROMPT.md Parsing ────────────────────────────────────────────────
 
@@ -54,6 +54,301 @@ export function parseDependencyReference(raw: string): DependencyRef {
 export function normalizeDependencyReference(raw: string): string {
 	const parsed = parseDependencyReference(raw);
 	return parsed.areaName ? `${parsed.areaName}/${parsed.taskId}` : parsed.taskId;
+}
+
+const SEGMENT_REPO_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
+function normalizeSegmentRepoToken(raw: string): string {
+	let token = raw.trim();
+	token = token.replace(/^`(.+)`$/, "$1").trim();
+	token = token.replace(/^\*\*(.+)\*\*$/, "$1").trim();
+	return token.toLowerCase();
+}
+
+interface ParsedSegmentDagBody {
+	metadata: PromptSegmentDagMetadata | null;
+	error: DiscoveryError | null;
+}
+
+/**
+ * Parse optional explicit segment DAG metadata from `## Segment DAG`.
+ *
+ * Supported v1 syntax:
+ *
+ * ## Segment DAG
+ * Repos:
+ * - api
+ * - web-client
+ * Edges:
+ * - api -> web-client
+ *
+ * Notes:
+ * - `Repos:` / `Edges:` keys accept markdown decoration (`**Repos:**`) and whitespace.
+ * - Repo IDs are normalized to lowercase and validated against routing repo ID rules.
+ * - Unknown edge endpoints (not present in explicit repo list) fail fast.
+ * - Self-edges and cycles fail fast with `SEGMENT_DAG_INVALID`.
+ */
+function parseSegmentDagMetadata(
+	content: string,
+	taskId: string,
+	promptPath: string,
+): ParsedSegmentDagBody {
+	const headerMatch = content.match(/^##\s+Segment DAG\s*$/im);
+	if (!headerMatch || headerMatch.index === undefined) {
+		return { metadata: null, error: null };
+	}
+
+	const headerIndex = headerMatch.index;
+	const afterHeaderIndex = content.indexOf("\n", headerIndex);
+	if (afterHeaderIndex === -1) {
+		return { metadata: null, error: null };
+	}
+
+	const rest = content.slice(afterHeaderIndex + 1);
+	const nextBoundary = rest.search(/^##\s|^---/m);
+	const body = nextBoundary !== -1 ? rest.slice(0, nextBoundary) : rest;
+
+	const repoIds: string[] = [];
+	const repoSet = new Set<string>();
+	const edgePairs = new Set<string>();
+	const edges: Array<{ fromRepoId: string; toRepoId: string }> = [];
+	const baseLine = content.slice(0, afterHeaderIndex + 1).split(/\r?\n/).length;
+
+	let mode: "repos" | "edges" | null = null;
+	const lines = body.split(/\r?\n/);
+
+	for (let i = 0; i < lines.length; i++) {
+		const rawLine = lines[i];
+		const trimmed = rawLine.trim();
+		if (!trimmed) continue;
+
+		if (/^\*?\*?Repos:?\*?\*?\s*$/i.test(trimmed)) {
+			mode = "repos";
+			continue;
+		}
+		if (/^\*?\*?Edges:?\*?\*?\s*$/i.test(trimmed)) {
+			mode = "edges";
+			continue;
+		}
+
+		if (!mode) {
+			return {
+				metadata: null,
+				error: {
+					code: "SEGMENT_DAG_INVALID",
+					message:
+						`Task ${taskId} has malformed ## Segment DAG metadata at line ${baseLine + i}: ` +
+						`expected a Repos: or Edges: subsection header before entries.`,
+					taskId,
+					taskPath: promptPath,
+				},
+			};
+		}
+
+		const bulletMatch = rawLine.match(/^\s*[-*]\s+(.+)$/);
+		if (!bulletMatch) {
+			return {
+				metadata: null,
+				error: {
+					code: "SEGMENT_DAG_INVALID",
+					message:
+						`Task ${taskId} has malformed ## Segment DAG metadata at line ${baseLine + i}: ` +
+						`expected a bullet entry ("- ...").`,
+					taskId,
+					taskPath: promptPath,
+				},
+			};
+		}
+
+		const entry = bulletMatch[1].trim();
+		if (!entry) continue;
+
+		if (mode === "repos") {
+			if (entry.includes("->")) {
+				return {
+					metadata: null,
+					error: {
+						code: "SEGMENT_DAG_INVALID",
+						message:
+							`Task ${taskId} has malformed ## Segment DAG metadata at line ${baseLine + i}: ` +
+							`repo list entries must be a single repo ID.`,
+						taskId,
+						taskPath: promptPath,
+					},
+				};
+			}
+			const repoId = normalizeSegmentRepoToken(entry);
+			if (!SEGMENT_REPO_ID_PATTERN.test(repoId)) {
+				return {
+					metadata: null,
+					error: {
+						code: "SEGMENT_DAG_INVALID",
+						message:
+							`Task ${taskId} has invalid repo ID "${entry}" in ## Segment DAG at line ${baseLine + i}. ` +
+							`Repo IDs must match /^[a-z0-9][a-z0-9-]*$/.`,
+						taskId,
+						taskPath: promptPath,
+					},
+				};
+			}
+			if (!repoSet.has(repoId)) {
+				repoSet.add(repoId);
+				repoIds.push(repoId);
+			}
+			continue;
+		}
+
+		const edgeMatch = entry.match(/^(.+?)\s*->\s*(.+)$/);
+		if (!edgeMatch) {
+			return {
+				metadata: null,
+				error: {
+					code: "SEGMENT_DAG_INVALID",
+					message:
+						`Task ${taskId} has malformed edge "${entry}" in ## Segment DAG at line ${baseLine + i}. ` +
+						`Expected format: <repo-a> -> <repo-b>.`,
+					taskId,
+					taskPath: promptPath,
+				},
+			};
+		}
+
+		const fromRepoId = normalizeSegmentRepoToken(edgeMatch[1]);
+		const toRepoId = normalizeSegmentRepoToken(edgeMatch[2]);
+		if (!SEGMENT_REPO_ID_PATTERN.test(fromRepoId) || !SEGMENT_REPO_ID_PATTERN.test(toRepoId)) {
+			return {
+				metadata: null,
+				error: {
+					code: "SEGMENT_DAG_INVALID",
+					message:
+						`Task ${taskId} has malformed edge "${entry}" in ## Segment DAG at line ${baseLine + i}. ` +
+						`Repo IDs must match /^[a-z0-9][a-z0-9-]*$/.`,
+					taskId,
+					taskPath: promptPath,
+				},
+			};
+		}
+		if (fromRepoId === toRepoId) {
+			return {
+				metadata: null,
+				error: {
+					code: "SEGMENT_DAG_INVALID",
+					message:
+						`Task ${taskId} has self-edge "${fromRepoId} -> ${toRepoId}" in ## Segment DAG at line ${baseLine + i}.`,
+					taskId,
+					taskPath: promptPath,
+				},
+			};
+		}
+
+		const edgeKey = `${fromRepoId}->${toRepoId}`;
+		if (!edgePairs.has(edgeKey)) {
+			edgePairs.add(edgeKey);
+			edges.push({ fromRepoId, toRepoId });
+		}
+	}
+
+	if (repoIds.length === 0 && edges.length === 0) {
+		return { metadata: null, error: null };
+	}
+
+	for (const edge of edges) {
+		if (!repoSet.has(edge.fromRepoId)) {
+			return {
+				metadata: null,
+				error: {
+					code: "SEGMENT_REPO_UNKNOWN",
+					message:
+						`Task ${taskId} has edge endpoint repo "${edge.fromRepoId}" in ## Segment DAG that is not declared in Repos:.`,
+					taskId,
+					taskPath: promptPath,
+				},
+			};
+		}
+		if (!repoSet.has(edge.toRepoId)) {
+			return {
+				metadata: null,
+				error: {
+					code: "SEGMENT_REPO_UNKNOWN",
+					message:
+						`Task ${taskId} has edge endpoint repo "${edge.toRepoId}" in ## Segment DAG that is not declared in Repos:.`,
+					taskId,
+					taskPath: promptPath,
+				},
+			};
+		}
+	}
+
+	const sortedEdges = [...edges].sort((a, b) => {
+		if (a.fromRepoId !== b.fromRepoId) return a.fromRepoId.localeCompare(b.fromRepoId);
+		return a.toRepoId.localeCompare(b.toRepoId);
+	});
+
+	const adjacency = new Map<string, string[]>();
+	for (const repoId of repoIds) {
+		adjacency.set(repoId, []);
+	}
+	for (const edge of sortedEdges) {
+		adjacency.get(edge.fromRepoId)!.push(edge.toRepoId);
+	}
+	for (const neighbors of adjacency.values()) {
+		neighbors.sort();
+	}
+
+	const visited = new Set<string>();
+	const stack = new Set<string>();
+	const path: string[] = [];
+	let cycle: string[] | null = null;
+
+	function dfs(repoId: string): void {
+		if (cycle) return;
+		visited.add(repoId);
+		stack.add(repoId);
+		path.push(repoId);
+
+		const neighbors = adjacency.get(repoId) || [];
+		for (const next of neighbors) {
+			if (cycle) return;
+			if (!visited.has(next)) {
+				dfs(next);
+				continue;
+			}
+			if (stack.has(next)) {
+				const start = path.indexOf(next);
+				cycle = [...path.slice(start), next];
+				return;
+			}
+		}
+
+		path.pop();
+		stack.delete(repoId);
+	}
+
+	for (const repoId of [...repoIds].sort()) {
+		if (!visited.has(repoId)) dfs(repoId);
+		if (cycle) break;
+	}
+
+	if (cycle) {
+		return {
+			metadata: null,
+			error: {
+				code: "SEGMENT_DAG_INVALID",
+				message:
+					`Task ${taskId} has cyclic ## Segment DAG metadata: ${cycle.join(" -> ")}.`,
+				taskId,
+				taskPath: promptPath,
+			},
+		};
+	}
+
+	return {
+		metadata: {
+			repoIds,
+			edges: sortedEdges,
+		},
+		error: null,
+	};
 }
 
 /**
@@ -255,6 +550,16 @@ export function parsePromptForOrchestrator(
 		}
 	}
 
+	// ── Extract optional explicit segment DAG metadata ──────────
+	const segmentDagResult = parseSegmentDagMetadata(content, taskId, resolve(promptPath));
+	if (segmentDagResult.error) {
+		return {
+			task: null,
+			error: segmentDagResult.error,
+		};
+	}
+	const explicitSegmentDag = segmentDagResult.metadata;
+
 	return {
 		task: {
 			taskId,
@@ -268,6 +573,7 @@ export function parsePromptForOrchestrator(
 			areaName,
 			status: "pending",
 			...(promptRepoId ? { promptRepoId } : {}),
+			...(explicitSegmentDag ? { explicitSegmentDag } : {}),
 		},
 		error: null,
 	};
@@ -893,6 +1199,22 @@ export function resolveTaskRouting(
 	const strictMode = workspaceConfig.routing.strict === true;
 
 	for (const task of discovery.pending.values()) {
+		// ── Explicit segment DAG repo validation (workspace IDs) ─
+		if (task.explicitSegmentDag) {
+			const unknownRepos = task.explicitSegmentDag.repoIds.filter((repoId) => !validRepoIds.has(repoId));
+			if (unknownRepos.length > 0) {
+				errors.push({
+					code: "SEGMENT_REPO_UNKNOWN",
+					message:
+						`Task ${task.taskId} declares unknown repo ID(s) in ## Segment DAG: ${unknownRepos.join(", ")}. ` +
+						`Known repos: ${[...validRepoIds.keys()].join(", ")}`,
+					taskId: task.taskId,
+					taskPath: task.promptPath,
+				});
+				continue;
+			}
+		}
+
 		// ── Strict mode enforcement ──────────────────────────────
 		// When strict routing is enabled, every task MUST declare an
 		// explicit execution target in PROMPT.md. Area-level and

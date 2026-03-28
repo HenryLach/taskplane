@@ -23,6 +23,8 @@ import {
 	groupTasksByRepo,
 	generateLaneId,
 	generateTmuxSessionName,
+	buildTaskSegmentPlans,
+	inferTaskRepoOrder,
 } from "../taskplane/waves.ts";
 
 import type {
@@ -49,19 +51,29 @@ function makeWorkspaceConfig(repos: Record<string, { path: string; defaultBranch
 	};
 }
 
-function makeParsedTask(taskId: string, opts?: { resolvedRepoId?: string; size?: string }): ParsedTask {
+function makeParsedTask(
+	taskId: string,
+	opts?: {
+		resolvedRepoId?: string;
+		size?: string;
+		dependencies?: string[];
+		fileScope?: string[];
+		explicitSegmentDag?: ParsedTask["explicitSegmentDag"];
+	},
+): ParsedTask {
 	return {
 		taskId,
 		taskName: `Task ${taskId}`,
 		reviewLevel: 1,
 		size: opts?.size || "M",
-		dependencies: [],
-		fileScope: [],
+		dependencies: opts?.dependencies || [],
+		fileScope: opts?.fileScope || [],
 		taskFolder: `/tasks/${taskId}`,
 		promptPath: `/tasks/${taskId}/PROMPT.md`,
 		areaName: "default",
 		status: "pending",
 		resolvedRepoId: opts?.resolvedRepoId,
+		explicitSegmentDag: opts?.explicitSegmentDag,
 	};
 }
 
@@ -226,5 +238,115 @@ describe("generateTmuxSessionName", () => {
 
 	it("uses custom prefix with opId", () => {
 		expect(generateTmuxSessionName("tp", 1, "op", "api")).toBe("tp-op-api-lane-1");
+	});
+});
+
+// ── 6. Segment planning (TP-080) ───────────────────────────────────
+
+describe("segment planning", () => {
+	it("infers deterministic multi-repo order from fileScope first appearance + dependency repos", () => {
+		const pending = new Map<string, ParsedTask>([
+			["DEP-001", makeParsedTask("DEP-001", { resolvedRepoId: "infra" })],
+			["HINT-001", makeParsedTask("HINT-001", { resolvedRepoId: "web" })],
+			["HINT-002", makeParsedTask("HINT-002", { resolvedRepoId: "docs" })],
+			[
+				"TP-900",
+				makeParsedTask("TP-900", {
+					resolvedRepoId: "api",
+					dependencies: ["DEP-001"],
+					fileScope: ["web/src/app.ts", "api/src/route.ts", "docs/readme.md"],
+				}),
+			],
+		]);
+
+		const knownRepoIds = new Set(["api", "web", "docs", "infra"]);
+		const inferred = inferTaskRepoOrder(pending.get("TP-900")!, pending, knownRepoIds);
+		expect(inferred.repoIds).toEqual(["web", "api", "docs", "infra"]);
+		expect(inferred.usedFallback).toBe(false);
+
+		const plans = buildTaskSegmentPlans(pending);
+		const plan = plans.get("TP-900")!;
+		expect(plan.mode).toBe("inferred-sequential");
+		expect(plan.segments.map((s) => s.repoId)).toEqual(["web", "api", "docs", "infra"]);
+		expect(plan.edges.map((e) => `${e.fromSegmentId}->${e.toSegmentId}`)).toEqual([
+			"TP-900::api->TP-900::docs",
+			"TP-900::docs->TP-900::infra",
+			"TP-900::web->TP-900::api",
+		]);
+		expect(plan.edges.every((e) => e.provenance === "inferred")).toBe(true);
+	});
+
+	it("falls back to singleton repo segment when there are no multi-repo signals", () => {
+		const pending = new Map<string, ParsedTask>([
+			["TP-901", makeParsedTask("TP-901", { resolvedRepoId: "backend", fileScope: [], dependencies: [] })],
+			["TP-902", makeParsedTask("TP-902", { fileScope: ["src/index.ts", "lib/util.ts"], dependencies: [] })],
+		]);
+
+		const plans = buildTaskSegmentPlans(pending);
+		const p901 = plans.get("TP-901")!;
+		expect(p901.mode).toBe("repo-singleton");
+		expect(p901.segments.map((s) => s.segmentId)).toEqual(["TP-901::backend"]);
+		expect(p901.edges).toEqual([]);
+
+		const p902 = plans.get("TP-902")!;
+		expect(p902.mode).toBe("repo-singleton");
+		expect(p902.segments.map((s) => s.segmentId)).toEqual(["TP-902::default"]);
+	});
+
+	it("preserves explicit DAG authority in mixed explicit + inferred tasks", () => {
+		const pending = new Map<string, ParsedTask>([
+			[
+				"TP-910",
+				makeParsedTask("TP-910", {
+					explicitSegmentDag: {
+						repoIds: ["api", "web"],
+						edges: [{ fromRepoId: "api", toRepoId: "web" }],
+					},
+				}),
+			],
+			[
+				"TP-911",
+				makeParsedTask("TP-911", {
+					fileScope: ["docs/README.md", "api/src/main.ts"],
+				}),
+			],
+		]);
+
+		const plans = buildTaskSegmentPlans(pending);
+		const explicitPlan = plans.get("TP-910")!;
+		expect(explicitPlan.mode).toBe("explicit-dag");
+		expect(explicitPlan.edges).toEqual([
+			{
+				fromSegmentId: "TP-910::api",
+				toSegmentId: "TP-910::web",
+				provenance: "explicit",
+				reason: "prompt:segment-dag",
+			},
+		]);
+
+		const inferredPlan = plans.get("TP-911")!;
+		expect(inferredPlan.mode).toBe("inferred-sequential");
+		expect(inferredPlan.edges.every((e) => e.provenance === "inferred")).toBe(true);
+	});
+
+	it("buildTaskSegmentPlans map ordering is deterministic regardless of input map insertion", () => {
+		const taskA = makeParsedTask("TP-001", { fileScope: ["api/src/a.ts"] });
+		const taskB = makeParsedTask("TP-002", { fileScope: ["web/src/b.ts"] });
+
+		const pendingAB = new Map<string, ParsedTask>([
+			["TP-001", taskA],
+			["TP-002", taskB],
+		]);
+		const pendingBA = new Map<string, ParsedTask>([
+			["TP-002", taskB],
+			["TP-001", taskA],
+		]);
+
+		const plansAB = buildTaskSegmentPlans(pendingAB);
+		const plansBA = buildTaskSegmentPlans(pendingBA);
+
+		expect([...plansAB.keys()]).toEqual(["TP-001", "TP-002"]);
+		expect([...plansBA.keys()]).toEqual(["TP-001", "TP-002"]);
+		expect(JSON.stringify([...plansAB.entries()])).toBe(JSON.stringify([...plansBA.entries()]));
 	});
 });

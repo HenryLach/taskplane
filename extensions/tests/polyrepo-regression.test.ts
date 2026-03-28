@@ -44,6 +44,7 @@ import {
 	resolveRepoRoot,
 	resolveBaseBranch,
 	assignTasksToLanes,
+	computeWaveAssignments,
 } from "../taskplane/waves.ts";
 import {
 	serializeBatchState,
@@ -325,6 +326,26 @@ describe("2.x: /orch-plan — wave computation and lane allocation", () => {
 			const repoRoot = fixture.repoPaths[repoId];
 			const branch = resolveBaseBranch(repoId, repoRoot, "main", fixture.workspaceConfig);
 			expect(branch).toBe("main"); // fixture repos init with --initial-branch=main
+		}
+	});
+
+	it("2.8: computeWaveAssignments adds segmentPlans without changing wave topology", () => {
+		const pending = buildFixtureParsedTasks(fixture);
+		const completed = new Set<string>();
+
+		const result = computeWaveAssignments(
+			pending,
+			completed,
+			DEFAULT_ORCHESTRATOR_CONFIG,
+		);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.waves).toHaveLength(3);
+		expect(result.waves[0].tasks.map((t) => t.taskId).sort()).toEqual(["AP-001", "SH-001", "UI-001"]);
+		expect(result.segmentPlans).toBeDefined();
+		expect(result.segmentPlans!.size).toBe(pending.size);
+		for (const taskId of FIXTURE_TASK_IDS) {
+			expect(result.segmentPlans!.has(taskId)).toBe(true);
 		}
 	});
 });

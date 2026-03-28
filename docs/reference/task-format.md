@@ -72,6 +72,7 @@ Canonical folder:
 - `## Dependencies`
 - `## Context to Read First`
 - `## File Scope`
+- `## Segment DAG` (optional, for explicit multi-repo segment ordering)
 - `## Completion Criteria`
 
 If omitted, parsers apply defaults in some paths (for example size/review defaults).
@@ -188,6 +189,30 @@ Example:
 ```
 
 Describe intended modification surface to improve planning/review quality.
+
+---
+
+## `Segment DAG` (optional explicit multi-repo ordering)
+
+Use when a task intentionally spans multiple repos and needs explicit intra-task ordering.
+
+```md
+## Segment DAG
+
+Repos:
+- api
+- web-client
+
+Edges:
+- api -> web-client
+```
+
+Notes:
+- Optional section — omission keeps legacy behavior.
+- `Repos:` and `Edges:` keys may be markdown-decorated (e.g. `**Repos:**`).
+- Repo IDs are normalized to lowercase.
+- Edge endpoints must appear in `Repos:`.
+- Self-edges and cycles are invalid and fail discovery.
 
 ---
 

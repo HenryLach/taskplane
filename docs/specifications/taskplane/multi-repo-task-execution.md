@@ -153,18 +153,42 @@ Use an explicit+inferred hybrid, with explicit syntax available in v1:
 
 Inferring causal code order from prose alone is non-deterministic and brittle.
 
+### Optional explicit syntax in `PROMPT.md` (v1)
+
+`## Segment DAG` metadata is optional. When present, it is authoritative for that task.
+
+```md
+## Segment DAG
+
+Repos:
+- api
+- web-client
+
+Edges:
+- api -> web-client
+```
+
+Notes:
+- `Repos:` and `Edges:` accept markdown decoration variants (for example `**Repos:**`).
+- Repo IDs are normalized to lowercase and must match `^[a-z0-9][a-z0-9-]*$`.
+- Edge endpoints must be declared in `Repos:`.
+- Self-edges and cycles fail fast.
+
 ### Deterministic inference inputs (v1)
 
-- Repo touch set from file scope path prefixes
-- First appearance order of repo-scoped items in checklist steps
-- Existing task dependencies (inter-task)
+When explicit metadata is absent, planning infers segments from:
 
-### Fallback (when no confident edge signal)
+1. Repo touches from `File Scope` path prefixes (workspace-known repo IDs only)
+2. Dependency task repo IDs (stable first appearance)
+3. Fallback to `resolvedRepoId`, then synthetic `default` in repo mode
 
-- Segments are considered independent from an ordering perspective,
-- but **v1 executes one active segment per task at a time** using stable sort by first appearance then repoId.
+### Fallback and one-active-segment representation
 
-This keeps behavior deterministic while we accumulate real-world data for richer DAG inference.
+- Inferred plans are serialized as a deterministic linear chain (`s0 -> s1 -> ...`) with edge provenance `inferred`.
+- Explicit plans preserve declared edges with provenance `explicit`.
+- If no multi-repo signal exists, planner emits `repo-singleton` mode with one segment.
+
+This keeps behavior deterministic while still exposing edge provenance for observability.
 
 ## Segment concurrency policy
 
