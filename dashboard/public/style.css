@@ -712,6 +712,24 @@ body {
 .merge-table tr:last-child td { border-bottom: none; }
 .merge-table tr:hover td { background: var(--bg-surface-hover); }
 
+.merge-wave-cell { font-family: var(--font-mono); }
+.merge-session-cell { font-family: var(--font-mono); font-size: 0.8rem; }
+.merge-detail-cell { font-size: 0.8rem; color: var(--text-muted); }
+.merge-no-data { color: var(--text-faint); }
+
+.merge-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  font-size: 0.75rem;
+}
+
+.merge-telemetry-cell {
+  font-size: 0.75rem;
+  min-width: 120px;
+}
+
 /* ─── Terminal Panel ────────────────────────────────────────────────────── */
 
 .terminal-panel .panel-header {
