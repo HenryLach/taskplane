@@ -98,6 +98,26 @@ export interface ParsedTask {
 	resolvedRepoId?: string;
 	/** Optional explicit segment DAG metadata from `## Segment DAG`. */
 	explicitSegmentDag?: PromptSegmentDagMetadata;
+	/**
+	 * Repo ID that owns task packet files (v4, TP-081).
+	 * Populated by execution engine in workspace mode. Undefined in repo mode.
+	 */
+	packetRepoId?: string;
+	/**
+	 * Absolute path to task folder in the packet repo worktree (v4, TP-081).
+	 * Populated by execution engine. Undefined if not yet resolved.
+	 */
+	packetTaskPath?: string;
+	/**
+	 * Segment IDs for this task (v4, TP-081).
+	 * Populated from TaskSegmentPlan during execution.
+	 */
+	segmentIds?: string[];
+	/**
+	 * Currently active segment ID (v4, TP-081).
+	 * Null when no segment is active.
+	 */
+	activeSegmentId?: string | null;
 }
 
 /** Build a stable segment ID from task + repo identity (`<taskId>::<repoId>`). */

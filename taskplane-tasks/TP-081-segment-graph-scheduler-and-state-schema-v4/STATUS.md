@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-28
 **Review Level:** 3
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 3
 **Size:** M
 
@@ -29,11 +29,11 @@
 ---
 
 ### Step 2: Implement persistence + migration
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Implement v4 serialize/load/validate paths
-- [ ] Add compatibility for prior versions (at least v2/v3 load paths)
-- [ ] Keep unsupported-version errors explicit and actionable
+- [x] Implement v4 serialize/load/validate paths
+- [x] Add compatibility for prior versions (at least v2/v3 load paths)
+- [x] Keep unsupported-version errors explicit and actionable
 
 ---
 
@@ -59,6 +59,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -95,6 +96,8 @@
 | 2026-03-28 23:58 | Task blocked | No progress after 3 iterations |
 | 2026-03-28 23:59 | Step 0 complete | Preflight analysis done |
 | 2026-03-28 23:59 | Step 1 started | Adding schema v4 contracts |
+| 2026-03-29 00:01 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 00:05 | Review R001 | plan Step 1: APPROVE (fallback) |
 
 ---
 
