@@ -2998,8 +2998,9 @@ export default function (pi: ExtensionAPI) {
 						try {
 							const entry = JSON.parse(line) as { ts: number; content: string; id: string };
 							const sanitized = sanitizeSteeringContent(entry.content);
+							// Use the delivered message timestamp, not current time
 							const ts = new Date(entry.ts).toISOString().slice(0, 16).replace("T", " ");
-							logExecution(statusPath, "\u26a0\ufe0f Steering", sanitized);
+							appendTableRow(statusPath, "Execution Log", `| ${ts} | \u26a0\ufe0f Steering | ${sanitized} |`);
 							console.error(`[task-runner] steering message annotated: ${entry.id}`);
 						} catch {
 							// Skip malformed JSONL lines
