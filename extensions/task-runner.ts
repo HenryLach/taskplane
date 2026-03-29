@@ -1372,6 +1372,8 @@ interface SidecarTelemetryDelta {
 	hadEvents: boolean;
 	/** Authoritative context usage from pi get_session_stats (pi ≥ 0.63.0, null if unavailable) */
 	contextUsage: { percent: number; totalTokens: number; maxTokens: number } | null;
+	/** True when a get_session_stats response was seen but lacked contextUsage (older pi) */
+	sawStatsResponseWithoutContextUsage: boolean;
 }
 
 /**
@@ -1390,7 +1392,7 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 		inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
 		cost: 0, latestTotalTokens: 0, toolCalls: 0, lastTool: "",
 		retryActive: tailState.retryActive, retriesStarted: 0, lastRetryError: "",
-		hadEvents: false, contextUsage: null,
+		hadEvents: false, contextUsage: null, sawStatsResponseWithoutContextUsage: false,
 	};
 
 	// Gracefully handle missing file (wrapper hasn't written yet)
@@ -1515,6 +1517,9 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 							maxTokens: cu.maxTokens || 0,
 						};
 					}
+				} else if (event.success === true && event.data && !event.data.contextUsage) {
+					// Successful get_session_stats response but no contextUsage — older pi
+					delta.sawStatsResponseWithoutContextUsage = true;
 				}
 				break;
 			}
@@ -3310,8 +3315,8 @@ export default function (pi: ExtensionAPI) {
 								spawned.kill();
 							}
 						}
-					} else if (delta.hadEvents && !warnedNoContextUsage) {
-						// One-shot warning: pi did not provide authoritative contextUsage
+					} else if (delta.sawStatsResponseWithoutContextUsage && !warnedNoContextUsage) {
+						// One-shot warning: pi responded to get_session_stats but omitted contextUsage (older pi)
 						warnedNoContextUsage = true;
 						console.error(`[task-runner] warning: pi did not provide contextUsage — context pressure thresholds disabled`);
 					}
