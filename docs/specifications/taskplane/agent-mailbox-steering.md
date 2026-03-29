@@ -120,7 +120,6 @@ File-based coordination is already the proven pattern in taskplane:
   "to": "orch-henrylach-lane-1",
   "timestamp": 1774744971303,
   "type": "steer",
-  "priority": "normal",
   "content": "The reviewer found a persistence durability gap in R002. When you implement Step 3, add a regression test that persists state twice where a task is not in current lanes on the second write, and asserts v4 fields survive.",
   "expectsReply": false,
   "replyTo": null
@@ -137,13 +136,6 @@ File-based coordination is already the proven pattern in taskplane:
 | `info` | supervisor → agent | FYI context. Agent reads but no action required. |
 | `reply` | agent → supervisor | Response to a `query` or acknowledgment of `steer`. |
 | `escalate` | agent → supervisor | Agent-initiated: blocked, confused, or needs guidance. |
-
-### Priority Levels
-
-| Priority | Behavior |
-|----------|----------|
-| `normal` | Processed at next check cycle |
-| `urgent` | Processed immediately; agent interrupts current work |
 
 ### Addressing
 
@@ -404,13 +396,13 @@ worker's context window. For a 1M-token context, this is 0.02–0.05%. Even
 The supervisor needs tools to send and receive messages:
 
 ```
-send_agent_message(to, content, type?, priority?)
+send_agent_message(to, content, type?)
   → Writes message to the target agent's inbox
 
 read_agent_replies(from?)
   → Reads all outbox messages from a specific agent (or all agents)
 
-broadcast_message(content, type?, priority?)
+broadcast_message(content, type?)
   → Writes message to _broadcast/inbox/
 ```
 
@@ -443,10 +435,9 @@ These are registered as supervisor extension tools (same pattern as
 - `read_agent_replies` supervisor tool
 - Tests: round-trip message exchange
 
-### Phase 4: Broadcast + urgent priority
+### Phase 4: Broadcast + rate limiting
 
 - `_broadcast` directory support
-- Urgent priority: interrupt current work
 - `broadcast_message` supervisor tool
 - Rate limiting: max 1 message per agent per 30 seconds
 
