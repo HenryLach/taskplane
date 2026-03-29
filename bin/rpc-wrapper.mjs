@@ -28,7 +28,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, renameSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, renameSync, unlinkSync } from "node:fs";
 import { dirname, resolve, join, basename } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
@@ -775,6 +775,29 @@ const proc = spawn("pi", piArgs, {
 	env: { ...process.env },
 	shell: true, // Required for Windows: resolves pi.cmd shim. Matches task-runner.ts pattern.
 });
+
+// ── TP-097: Write PID file for orphan cleanup ──────────────────
+// Write both the wrapper PID and the pi child PID alongside the sidecar file.
+// The task-runner reads this on session end to kill orphan processes.
+// Format: JSON with wrapperPid and childPid fields.
+const pidFilePath = args.sidecarPath + ".pid";
+try {
+	const pidData = {
+		wrapperPid: process.pid,
+		childPid: proc.pid ?? null,
+		startedAt: Date.now(),
+	};
+	writeFileSync(pidFilePath, JSON.stringify(pidData) + "\n", "utf-8");
+	process.stderr.write(`[rpc-wrapper] PID file written: ${pidFilePath} (wrapper=${process.pid}, child=${proc.pid})\n`);
+} catch (err) {
+	process.stderr.write(`[rpc-wrapper] WARNING: failed to write PID file: ${err.message}\n`);
+}
+
+// Clean up PID file on process exit (best-effort)
+function cleanupPidFile() {
+	try { unlinkSync(pidFilePath); } catch { /* ignore */ }
+}
+process.on("exit", cleanupPidFile);
 
 // ── Send prompt via JSONL stdin ──────────────────────────────────────
 

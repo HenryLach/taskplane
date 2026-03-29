@@ -1577,6 +1577,68 @@ export const _resolveContextWindow = resolveContextWindow;
 export const _FALLBACK_CONTEXT_WINDOW = FALLBACK_CONTEXT_WINDOW;
 export type { SidecarTailState, SidecarTelemetryDelta };
 
+// ── Stable Sidecar Path Generation (TP-097) ─────────────────────────
+
+/**
+ * Generate a deterministic telemetry basename for sidecar/exit-summary files.
+ *
+ * The basename is stable per session (not per spawn attempt). When called
+ * once before the iteration loop and reused, it ensures that:
+ * - Crash recovery writes to the same sidecar file (tailing resumes)
+ * - Exit summaries overwrite the same file (latest wins)
+ *
+ * Naming contract:
+ *   {opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}
+ *
+ * @param sessionName — TMUX session name (e.g., "orch-lane-1-worker")
+ * @param taskId — Optional task ID for enrichment (e.g., "TP-097")
+ * @returns Object with sidecarPath and exitSummaryPath
+ */
+function generateStableSidecarPaths(sessionName: string, taskId?: string): {
+	sidecarPath: string;
+	exitSummaryPath: string;
+} {
+	// Resolve opId: same priority chain as naming.ts resolveOperatorId()
+	let opId = "op";
+	const envOpId = process.env.TASKPLANE_OPERATOR_ID;
+	if (envOpId?.trim()) {
+		opId = envOpId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+	} else {
+		try {
+			const username = userInfo().username;
+			if (username?.trim()) {
+				opId = username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+			}
+		} catch { /* userInfo() can throw on some platforms */ }
+	}
+
+	// Use ORCH_BATCH_ID if available (orchestrated mode), otherwise fallback to timestamp
+	const batchId = process.env.ORCH_BATCH_ID || String(Date.now());
+	const repoId = process.env.TASKPLANE_REPO_ID || "default";
+
+	// Extract role (worker/reviewer) from sessionName, and optional lane component
+	const role = sessionName.endsWith("-reviewer") ? "reviewer" : "worker";
+	const laneMatch = sessionName.match(/lane-(\d+)/);
+	const laneSuffix = laneMatch ? `-lane-${laneMatch[1]}` : "";
+
+	// Include taskId when available — sanitize to filesystem-safe characters
+	const taskIdSegment = taskId
+		? `-${taskId.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30)}`
+		: "";
+
+	const telemetryBasename = `${opId}-${batchId}-${repoId}${taskIdSegment}${laneSuffix}-${role}`;
+	const telemetryDir = join(getSidecarDir(), "telemetry");
+	if (!existsSync(telemetryDir)) mkdirSync(telemetryDir, { recursive: true });
+
+	return {
+		sidecarPath: join(telemetryDir, `${telemetryBasename}.jsonl`),
+		exitSummaryPath: join(telemetryDir, `${telemetryBasename}-exit.json`),
+	};
+}
+
+/** Expose for testing. */
+export const _generateStableSidecarPaths = generateStableSidecarPaths;
+
 // ── Exit Summary & Diagnostic ────────────────────────────────────────
 
 /**
@@ -1788,6 +1850,16 @@ function spawnAgentTmux(opts: {
 	/** TP-090: Path to .steering-pending JSONL flag file for STATUS.md annotation.
 	 *  Only set for worker sessions (not reviewer/merger). */
 	steeringPendingPath?: string;
+	/** TP-097: Caller-provided sidecar path for stable identity across iterations.
+	 *  When provided, spawnAgentTmux() skips internal path generation and uses this path.
+	 *  The caller (runWorker) generates this ONCE before the iteration loop. */
+	sidecarPath?: string;
+	/** TP-097: Caller-provided exit summary path (paired with sidecarPath). */
+	exitSummaryPath?: string;
+	/** TP-097: Caller-provided tail state for resuming sidecar tailing across iterations.
+	 *  When provided, the poll loop reuses this state instead of creating a fresh one.
+	 *  This ensures tailing resumes from the last byte position after crash recovery. */
+	tailState?: SidecarTailState;
 }): {
 	promise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>;
 	kill: () => void;
@@ -1805,59 +1877,55 @@ function spawnAgentTmux(opts: {
 		);
 	}
 
-	// ── Generate telemetry file paths ───────────────────────────────
-	// Naming contract from resilience roadmap:
-	//   .pi/telemetry/{opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.{ext}
-	//
-	// In standalone /task mode (no orchestrator):
-	//   opId    → TASKPLANE_OPERATOR_ID env, or OS username, or "op"
-	//   batchId → timestamp (no batch concept in standalone mode)
-	//   repoId  → "default" (single-repo mode)
-	//   taskId  → from opts.taskId when provided (e.g., "tp-026"), omitted if absent
-	//   lane    → omitted (no lanes)
-	//   role    → derived from sessionName suffix (worker/reviewer)
-	//
-	// getSidecarDir() respects ORCH_SIDECAR_DIR for workspace mode.
-	const telemetryTs = Date.now();
-
-	// Resolve opId: same priority chain as naming.ts resolveOperatorId()
-	let opId = "op";
-	const envOpId = process.env.TASKPLANE_OPERATOR_ID;
-	if (envOpId?.trim()) {
-		opId = envOpId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+	// ── Resolve telemetry file paths ───────────────────────────────
+	// TP-097: When the caller provides sidecarPath + exitSummaryPath, reuse them
+	// for stable identity across crash recovery iterations. Otherwise, generate
+	// paths internally (backward compatible for reviewer/quality-gate/standalone).
+	let sidecarPath: string;
+	let exitSummaryPath: string;
+	if (opts.sidecarPath && opts.exitSummaryPath) {
+		// TP-097: Caller provided stable paths (worker iteration flow)
+		sidecarPath = opts.sidecarPath;
+		exitSummaryPath = opts.exitSummaryPath;
 	} else {
-		try {
-			const username = userInfo().username;
-			if (username?.trim()) {
-				opId = username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
-			}
-		} catch { /* userInfo() can throw on some platforms */ }
+		// Internal generation: use unique per-spawn paths (Date.now-based batchId)
+		// to prevent reviewer/QG sessions from replaying old telemetry on respawn.
+		// Only the worker iteration flow uses ORCH_BATCH_ID for stable identity.
+		const telemetryTs = Date.now();
+		let opId = "op";
+		const envOpId = process.env.TASKPLANE_OPERATOR_ID;
+		if (envOpId?.trim()) {
+			opId = envOpId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+		} else {
+			try {
+				const username = userInfo().username;
+				if (username?.trim()) {
+					opId = username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+				}
+			} catch { /* userInfo() can throw on some platforms */ }
+		}
+		const batchId = String(telemetryTs);
+		const repoId = "default";
+		const role = opts.sessionName.endsWith("-reviewer") ? "reviewer" : "worker";
+		const laneMatch = opts.sessionName.match(/lane-(\d+)/);
+		const laneSuffix = laneMatch ? `-lane-${laneMatch[1]}` : "";
+		const taskIdSegment = opts.taskId
+			? `-${opts.taskId.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30)}`
+			: "";
+		const telemetryBasename = `${opId}-${batchId}-${repoId}${taskIdSegment}${laneSuffix}-${role}`;
+		const internalTelemetryDir = join(getSidecarDir(), "telemetry");
+		if (!existsSync(internalTelemetryDir)) mkdirSync(internalTelemetryDir, { recursive: true });
+		sidecarPath = join(internalTelemetryDir, `${telemetryBasename}.jsonl`);
+		exitSummaryPath = join(internalTelemetryDir, `${telemetryBasename}-exit.json`);
 	}
-
-	const batchId = String(telemetryTs);
-	const repoId = "default";
-
-	// Extract role (worker/reviewer) from sessionName, and optional lane component
-	// sessionName patterns: "task-worker", "task-reviewer", "orch-lane-1-worker"
-	const role = opts.sessionName.endsWith("-reviewer") ? "reviewer" : "worker";
-	const laneMatch = opts.sessionName.match(/lane-(\d+)/);
-	const laneSuffix = laneMatch ? `-lane-${laneMatch[1]}` : "";
-
-	// Include taskId when available — sanitize to filesystem-safe characters.
-	// Pattern: {opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}
-	const taskIdSegment = opts.taskId
-		? `-${opts.taskId.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30)}`
-		: "";
-	const telemetryBasename = `${opId}-${batchId}-${repoId}${taskIdSegment}${laneSuffix}-${role}`;
-	const telemetryDir = join(getSidecarDir(), "telemetry");
+	// Ensure telemetry directory exists
+	const telemetryDir = dirname(sidecarPath);
 	if (!existsSync(telemetryDir)) mkdirSync(telemetryDir, { recursive: true });
-	const sidecarPath = join(telemetryDir, `${telemetryBasename}.jsonl`);
-	const exitSummaryPath = join(telemetryDir, `${telemetryBasename}-exit.json`);
 
 	// ── Write prompts to temp files ─────────────────────────────────
 	// Same pattern as spawnAgent() — avoids shell escaping issues with
 	// backticks, quotes, and special characters in markdown content.
-	const id = `${telemetryTs}-${Math.random().toString(36).slice(2, 8)}`;
+	const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 	const sysTmpFile = join(tmpdir(), `pi-task-sys-${id}.txt`);
 	const promptTmpFile = join(tmpdir(), `pi-task-prompt-${id}.txt`);
 	writeFileSync(sysTmpFile, opts.systemPrompt);
@@ -1965,10 +2033,11 @@ function spawnAgentTmux(opts: {
 	// On Windows/MSYS2, rapid sequential tmux session creation is unreliable.
 	// Pi process can exit with code 1 in 0 seconds on the first 3-5 attempts.
 	// Verify the session is alive after a brief delay, and retry if it died.
-	const SPAWN_VERIFY_DELAY_MS = 300;
+	// TP-097: Increased from 300→500ms and 2→5 retries for reliability (#335)
+	const SPAWN_VERIFY_DELAY_MS = 500;
 	const SPAWN_VERIFY_POLL_ATTEMPTS = 3;
 	const SPAWN_VERIFY_POLL_INTERVAL_MS = 200;
-	const SPAWN_MAX_RETRIES = 2;
+	const SPAWN_MAX_RETRIES = 5;
 
 	const verifySessionAlive = (): boolean => {
 		for (let poll = 0; poll < SPAWN_VERIFY_POLL_ATTEMPTS; poll++) {
@@ -1990,9 +2059,18 @@ function spawnAgentTmux(opts: {
 	let spawnRetries = 0;
 	while (!verifySessionAlive() && spawnRetries < SPAWN_MAX_RETRIES) {
 		spawnRetries++;
-		console.error(`[task-runner] tmux: session '${opts.sessionName}' died on startup — retrying (${spawnRetries}/${SPAWN_MAX_RETRIES}). Stderr log: ${stderrLogHint}`);
+		// TP-097: Log stderr from the failed session for diagnostics
+		let failedStderr = "";
+		try {
+			if (existsSync(stderrLogHint)) {
+				const raw = readFileSync(stderrLogHint, "utf-8");
+				// Take last 500 chars to capture the most recent error
+				failedStderr = raw.length > 500 ? "..." + raw.slice(-500) : raw;
+			}
+		} catch { /* best effort */ }
+		console.error(`[task-runner] tmux: session '${opts.sessionName}' died on startup — retrying (${spawnRetries}/${SPAWN_MAX_RETRIES}).${failedStderr ? ` Last stderr: ${failedStderr.trim().slice(0, 200)}` : ""} Stderr log: ${stderrLogHint}`);
 
-		// Brief delay before retry (increases with each attempt)
+		// Brief delay before retry (increases with each attempt: 500ms, 1000ms, 1500ms, ...)
 		const retryDelay = spawnRetries * 500;
 		sleepSyncMs(retryDelay);
 
@@ -2034,7 +2112,10 @@ function spawnAgentTmux(opts: {
 	// ── Poll until session ends ─────────────────────────────────────
 	let killed = false;
 	const startTime = Date.now();
-	const tailState = createSidecarTailState();
+	// TP-097: Reuse caller-provided tailState for cross-iteration tailing resume.
+	// When the caller (runWorker) passes tailState, byte offset is preserved
+	// across iterations so tailing resumes from the last position after crash recovery.
+	const tailState = opts.tailState ?? createSidecarTailState();
 
 	const promise = (async (): Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }> => {
 		try {
@@ -2076,10 +2157,12 @@ function spawnAgentTmux(opts: {
 			};
 		}
 
-		// Normal completion — clean up temp files
+		// Normal completion — clean up temp files and orphan processes
 		const elapsed = Date.now() - startTime;
 		console.error(`[task-runner] tmux: session '${opts.sessionName}' ended after ${Math.round(elapsed / 1000)}s${killed ? " (killed)" : ""}`);
 		cleanupTmp();
+		// TP-097: Clean up orphan rpc-wrapper/pi processes after session ends
+		cleanupOrphanProcesses(sidecarPath);
 		console.error(`[task-runner] tmux: cleanup done for '${opts.sessionName}'`);
 		return {
 			output: "",      // No captured output in TMUX mode
@@ -2098,12 +2181,76 @@ function spawnAgentTmux(opts: {
 			// Session may have already exited — not an error
 			console.error(`[task-runner] tmux: session '${opts.sessionName}' already exited (kill was no-op)`);
 		}
+		// TP-097: Clean up orphan rpc-wrapper/pi processes on explicit kill
+		cleanupOrphanProcesses(sidecarPath);
 		cleanupTmp();
 		console.error(`[task-runner] tmux: cleanup done for '${opts.sessionName}' (killed)`);
 	};
 
 	return { promise, kill, sidecarPath, exitSummaryPath };
 }
+
+// ── Orphan Process Cleanup (TP-097) ───────────────────────────────────
+
+/**
+ * Read the PID file written by rpc-wrapper.mjs and kill orphan processes.
+ *
+ * The PID file is at `{sidecarPath}.pid` and contains JSON with wrapperPid
+ * and childPid fields. After a tmux session ends, the rpc-wrapper child
+ * process may still be alive (e.g., if the tmux session was killed externally
+ * or the wrapper didn't get a clean shutdown signal).
+ *
+ * Best-effort: failures are logged but never throw.
+ *
+ * @param sidecarPath - Path to the sidecar JSONL file (PID file is at sidecarPath + ".pid")
+ */
+function cleanupOrphanProcesses(sidecarPath: string): void {
+	const pidFilePath = sidecarPath + ".pid";
+	try {
+		if (!existsSync(pidFilePath)) return;
+
+		const raw = readFileSync(pidFilePath, "utf-8").trim();
+		if (!raw) return;
+
+		const pidData = JSON.parse(raw);
+		const pidsToCheck = new Set<number>();
+		if (typeof pidData.childPid === "number" && pidData.childPid > 0) {
+			pidsToCheck.add(pidData.childPid);
+		}
+		if (typeof pidData.wrapperPid === "number" && pidData.wrapperPid > 0) {
+			pidsToCheck.add(pidData.wrapperPid);
+		}
+
+		// Safety: never kill ourselves or PID 1 (init)
+		const selfPid = process.pid;
+		pidsToCheck.delete(selfPid);
+		pidsToCheck.delete(1);
+
+		for (const pid of pidsToCheck) {
+			try {
+				// Check if process is still alive (signal 0 = no-op, just check existence)
+				process.kill(pid, 0);
+				// Process is alive — send SIGTERM
+				console.error(`[task-runner] TP-097: killing orphan process PID ${pid}`);
+				try {
+					process.kill(pid, "SIGTERM");
+				} catch (killErr: any) {
+					console.error(`[task-runner] TP-097: failed to kill PID ${pid}: ${killErr?.message}`);
+				}
+			} catch {
+				// Process already dead — expected path
+			}
+		}
+
+		// Clean up the PID file
+		try { unlinkSync(pidFilePath); } catch {}
+	} catch (err: any) {
+		console.error(`[task-runner] TP-097: orphan cleanup error: ${err?.message}`);
+	}
+}
+
+/** Expose for testing. */
+export const _cleanupOrphanProcesses = cleanupOrphanProcesses;
 
 // ── Display Helpers ──────────────────────────────────────────────────
 
@@ -2922,6 +3069,21 @@ export default function (pi: ExtensionAPI) {
 			return ss.totalChecked === ss.totalItems && ss.totalItems > 0;
 		}
 
+		// ── TP-097: Generate stable sidecar paths ONCE before the iteration loop ──
+		// These paths are reused across all worker iterations so that:
+		// 1. After crash recovery, the new worker writes to the SAME sidecar file
+		// 2. tailState preserves byte offset, so tailing resumes from last position
+		// 3. Exit summary overwrites the same file (latest iteration wins)
+		const spawnMode = getSpawnMode(config);
+		let workerStableSidecar: { sidecarPath: string; exitSummaryPath: string } | null = null;
+		let workerTailState: SidecarTailState | null = null;
+		if (spawnMode === "tmux") {
+			const sessionName = `${getTmuxPrefix()}-worker`;
+			workerStableSidecar = generateStableSidecarPaths(sessionName, task.taskId);
+			workerTailState = createSidecarTailState();
+			console.error(`[task-runner] TP-097: stable sidecar path: ${workerStableSidecar.sidecarPath}`);
+		}
+
 		let noProgressCount = 0;
 		for (let iter = 0; iter < config.context.max_worker_iterations; iter++) {
 			if (state.phase === "paused") {
@@ -2980,7 +3142,7 @@ export default function (pi: ExtensionAPI) {
 				writeLaneState(state);
 			}
 
-			await runWorker(remainingSteps, ctx);
+			await runWorker(remainingSteps, ctx, workerStableSidecar, workerTailState);
 
 			// Write context % snapshot at iteration boundary (TP-094)
 			const { contextWindow: snapshotContextWindow } = resolveContextWindow(config, ctx);
@@ -3301,7 +3463,12 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Worker ───────────────────────────────────────────────────────
 
-	async function runWorker(remainingSteps: StepInfo[], ctx: ExtensionContext): Promise<void> {
+	async function runWorker(
+		remainingSteps: StepInfo[],
+		ctx: ExtensionContext,
+		stableSidecar?: { sidecarPath: string; exitSummaryPath: string } | null,
+		sharedTailState?: SidecarTailState | null,
+	): Promise<void> {
 		if (!state.task || !state.config) return;
 
 		const task = state.task;
@@ -3474,6 +3641,10 @@ export default function (pi: ExtensionAPI) {
 				thinking: config.worker.thinking || "off",
 				taskId: task.taskId,
 				steeringPendingPath,
+				// TP-097: Pass stable sidecar paths and shared tailState for cross-iteration identity
+				sidecarPath: stableSidecar?.sidecarPath,
+				exitSummaryPath: stableSidecar?.exitSummaryPath,
+				tailState: sharedTailState ?? undefined,
 				onTelemetry: (delta) => {
 					// Accumulate tokens and cost (same as subprocess onTokenUpdate)
 					state.workerInputTokens += delta.inputTokens;
