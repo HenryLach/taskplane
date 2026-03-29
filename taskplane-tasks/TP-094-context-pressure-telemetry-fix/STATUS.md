@@ -1,10 +1,10 @@
 # TP-094: Context Pressure and Telemetry Accuracy Fix — Status
 
-**Current Step:** Step 1: Fix field name mismatch
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 2
+**Review Counter:** 4
 **Iteration:** 4
 **Size:** M
 
@@ -20,28 +20,23 @@
 ---
 
 ### Step 1: Fix field name mismatch in sidecar tailing
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-**Normalized contract:** `SidecarTelemetryDelta.contextUsage` keeps internal field name `percent` (matching pi's authoritative name). All consumers updated.
-
-**Substeps:**
-- [ ] 1a. Type definition: rename `percentUsed` → `percent` in `SidecarTelemetryDelta.contextUsage` type (`task-runner.ts:1374`)
-- [ ] 1b. Parser fix: in `tailSidecarJsonl()` response branch, read `cu.percent ?? cu.percentUsed` for backward compat (`task-runner.ts:1509-1512`)
-- [ ] 1c. Worker consumer: update `delta.contextUsage.percentUsed` → `delta.contextUsage.percent` in worker `onTelemetry` callback (`task-runner.ts:3302`)
-- [ ] 1d. Reviewer consumers: update `delta.contextUsage.percentUsed` → `delta.contextUsage.percent` in both reviewer telemetry paths (`task-runner.ts:2466`, `task-runner.ts:2673`)
-- [ ] 1e. Remove manual token fallback globally — worker path (`task-runner.ts:3303-3305`), reviewer path 1 (`task-runner.ts:2467-2469`), reviewer path 2 (`task-runner.ts:2674-2676`). When authoritative metric unavailable, leave context % at 0 (no false thresholds).
-- [ ] 1f. Add one-shot warning: log once per worker session when first telemetry cycle has no `contextUsage` (track via boolean flag `warnedNoContextUsage`). Log: `[task-runner] warning: pi did not provide contextUsage — context pressure thresholds disabled`
-- [ ] 1g. Verify rpc-wrapper passes through correctly (read-only — no changes needed)
-
-**Note:** Test fixtures still use `percentUsed` — will be updated in Step 3.
+- [x] 1a. Type: renamed `percentUsed` → `percent` in `SidecarTelemetryDelta.contextUsage`
+- [x] 1b. Parser: reads `cu.percent ?? cu.percentUsed` for backward compat
+- [x] 1c. Worker consumer: updated to `.percent`
+- [x] 1d. Reviewer consumers (both paths): updated to `.percent`
+- [x] 1e. Manual token fallback removed from worker + both reviewer paths
+- [x] 1f. One-shot warning: gated on `sawStatsResponseWithoutContextUsage` flag (not hadEvents)
+- [x] 1g. rpc-wrapper verified: passes through correctly, no changes needed
 
 ---
 
 ### Step 2: Context % snapshots at iteration boundaries
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Write JSONL snapshot at worker iteration end
-- [ ] Add to batch artifact cleanup
+- [x] Write JSONL snapshot at worker iteration end (`writeContextSnapshot()` after `runWorker()`)
+- [x] Add to batch artifact cleanup (post-integrate + preflight age sweep)
 
 ---
 
@@ -65,6 +60,8 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 | R002 | plan | Step 1 | APPROVE | .reviews/R002-plan-step1.md |
+| R003 | code | Step 1 | REVISE | .reviews/R003-code-step1.md |
+| R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -109,6 +106,10 @@
 | 2026-03-29 15:03 | Review R001 | plan Step 1: REVISE (fallback) |
 | 2026-03-29 15:05 | Reviewer R002 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
 | 2026-03-29 15:08 | Review R002 | plan Step 1: APPROVE (fallback) |
+| 2026-03-29 15:09 | Reviewer R003 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 15:12 | Review R003 | code Step 1: REVISE (fallback) |
+| 2026-03-29 15:13 | Reviewer R004 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 15:16 | Review R004 | code Step 1: APPROVE (fallback) |
 
 ---
 

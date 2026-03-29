@@ -457,6 +457,33 @@ function writeLaneState(state: TaskState): void {
 }
 
 /**
+ * Write a context % snapshot at worker iteration boundary (TP-094).
+ * Best-effort JSONL append to `.pi/context-snapshots/{batchId}/{sessionName}.jsonl`.
+ * Non-fatal on any failure — never blocks execution.
+ */
+function writeContextSnapshot(state: TaskState): void {
+	const batchId = process.env.ORCH_BATCH_ID || "standalone";
+	const sessionName = isOrchestratedMode() ? `${getTmuxPrefix()}-worker` : "task-worker";
+	try {
+		const dir = join(getSidecarDir(), "context-snapshots", batchId);
+		mkdirSync(dir, { recursive: true });
+		const filePath = join(dir, `${sessionName}.jsonl`);
+		const snapshot = {
+			iteration: state.totalIterations,
+			contextPct: state.workerContextPct,
+			tokens: state.workerInputTokens + state.workerOutputTokens + state.workerCacheReadTokens + state.workerCacheWriteTokens,
+			cost: state.workerCostUsd,
+			toolCalls: state.workerToolCount,
+			exitReason: state.workerExitDiagnostic?.classification || null,
+			timestamp: Date.now(),
+		};
+		appendFileSync(filePath, JSON.stringify(snapshot) + "\n");
+	} catch {
+		// Best effort — don't crash the runner
+	}
+}
+
+/**
  * Append a JSON event to the conversation JSONL log file.
  * Used in orchestrated mode to capture the full worker conversation for the web dashboard.
  */
@@ -2827,6 +2854,9 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			await runWorker(remainingSteps, ctx);
+
+			// Write context % snapshot at iteration boundary (TP-094)
+			writeContextSnapshot(state);
 
 			if (state.phase === "error") {
 				await shutdownPersistentReviewer("worker error");
