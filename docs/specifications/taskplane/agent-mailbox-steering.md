@@ -136,99 +136,90 @@ The supervisor resolves session names from batch state (lane allocations).
 
 ## Delivery Mechanism
 
-### Layer 1: rpc-wrapper (universal, reliable)
+### Pi RPC `steer` command (the foundation)
 
-The rpc-wrapper process wraps every agent session. It already processes RPC
-events between pi and the LLM, making it the ideal interception point.
+Pi's RPC protocol already provides exactly the right primitive:
 
-**On every `message_end` event** (which marks the end of an LLM turn):
+```json
+{"type": "steer", "message": "Stop — call review_step(type=plan) BEFORE implementing."}
+```
+
+**Behavior:** The message is queued while the agent is running and delivered
+**after the current tool call chain finishes, before the next LLM call.** The
+agent does not stop, block, or lose work. The steering message appears as a
+new user message in the conversation, and the LLM processes it on its next turn.
+
+This is the same mechanism that makes human steering work — when a user types
+while an agent is running, the message is queued and delivered at the next
+natural break point.
+
+**Steering modes** (configurable per session via `set_steering_mode`):
+- `"one-at-a-time"` (default): one steering message per completed turn
+- `"all"`: all queued steering messages delivered at once
+
+**Also available:**
+- `follow_up` — delivered only after the agent finishes all tool calls. Good
+  for "when you're done, also do X."
+
+### Layer 1: rpc-wrapper (universal, reliable, guaranteed delivery)
+
+The rpc-wrapper process wraps every agent session and owns `proc.stdin` to
+the pi process. It already sends RPC commands (`get_session_stats`). Delivering
+a steering message is one line:
+
+```javascript
+proc.stdin.write(JSON.stringify({ type: "steer", message: content }) + "\n");
+```
+
+**On every `message_end` event** (end of an LLM turn):
 
 1. `readdirSync(inboxPath)` — check for pending messages (~0.1ms)
 2. If empty, also check `_broadcast/inbox/` (~0.1ms)
 3. If messages found, sort by timestamp, read each one
 4. Validate: `batchId` matches, `to` matches own session name (or `_broadcast`)
-5. **Inject message content into stderr** as a visible `[STEERING]` notification
-6. Move processed messages from `inbox/` to `ack/`
+5. **Inject via `steer` RPC command** — guaranteed to enter the agent's context
+6. Log to stderr: `[STEERING] Delivered message {id} to {sessionName}`
+7. Move processed messages from `inbox/` to `ack/`
 
-The injected notification appears in the tmux pane but does NOT enter the LLM's
-context directly. For that, we need Layer 2.
+**Why this is safe (no blocking):**
+- Pi queues the `steer` message internally
+- The agent continues its current tool execution uninterrupted
+- The message is delivered between the current tool chain and the next LLM call
+- The agent sees it as a user message and incorporates it naturally
+- This is identical to how human steering works in interactive mode
 
-**On every `tool_execution_end` event:**
+**Why `message_end` is the right check point:**
+- It fires after each LLM turn (before the next tool call starts)
+- It's already where rpc-wrapper does post-turn work (display, stats query)
+- Checking an empty directory adds ~0.1ms — negligible vs the 2-30s LLM turn
 
-If there are pending urgent messages, rpc-wrapper can signal the task-runner
-extension by writing a flag file (`{taskFolder}/.steering-pending`). The
-extension picks this up in its polling loop.
+### Layer 2: STATUS.md annotation (worker audit trail)
 
-### Layer 2: task-runner extension (worker-specific, context-injected)
-
-The task-runner extension runs inside the worker's pi process and has access
-to the tool response pipeline.
+In addition to RPC injection, the task-runner extension annotates STATUS.md
+so steering messages are visible in the dashboard and preserved for review:
 
 **In the worker polling loop** (runs between every LLM iteration):
 
-1. Check `{taskFolder}/.steering-pending` flag (set by rpc-wrapper)
-2. If present, read the agent's `inbox/` directory
-3. Inject message content into STATUS.md execution log:
+1. Check `{taskFolder}/.steering-pending` flag (set by rpc-wrapper after delivery)
+2. If present, read the delivered message details
+3. Inject into STATUS.md execution log:
    ```
    | {timestamp} | ⚠️ Steering | {content} |
    ```
-4. The worker sees the steering message when it next reads STATUS.md
-5. Delete the `.steering-pending` flag
-6. Move processed messages to `ack/`
+4. Delete the `.steering-pending` flag
 
-**Additionally, add a `check_messages` tool:**
-
-```typescript
-tools.push({
-  name: "check_messages",
-  description: "Check for steering messages from the supervisor",
-  parameters: {},
-  handler: async () => {
-    const messages = readInbox(sessionName, batchId);
-    if (messages.length === 0) {
-      return { content: [{ type: "text", text: "No pending messages." }] };
-    }
-    // Move to ack, return content
-    for (const msg of messages) moveToAck(msg);
-    const formatted = messages.map(m =>
-      `[${m.type.toUpperCase()}] ${m.content}`
-    ).join("\n\n");
-    return { content: [{ type: "text", text: formatted }] };
-  },
-});
-```
-
-Worker template instructs: "Call `check_messages()` at the start of each step
-and after receiving any REVISE verdict."
-
-### Layer 3: Worker template (soft instruction)
-
-The worker template includes guidance:
-
-```markdown
-## Steering Messages
-
-The supervisor may send you steering messages during execution. These appear
-in the STATUS.md execution log as `⚠️ Steering` entries. When you see one:
-
-1. **Read the message carefully** — it contains corrections or context
-2. **Adjust your approach** based on the instruction
-3. **Acknowledge** by logging in STATUS.md: "Acknowledged steering: [summary]"
-
-You can also call `check_messages()` explicitly to check for pending messages.
-```
+This is supplementary — the RPC injection already delivered the message to the
+agent's context. The STATUS.md annotation provides visibility and audit trail.
 
 ### Delivery guarantee matrix
 
-| Mechanism | Worker | Reviewer | Merger | Latency |
-|-----------|--------|----------|--------|---------|
-| rpc-wrapper stderr | ✅ | ✅ | ✅ | Next turn end |
-| STATUS.md injection | ✅ | ❌ | ❌ | Next polling iteration |
-| `check_messages` tool | ✅ | ❌ | ❌ | On-demand |
-| Template instruction | ✅ | partial | partial | LLM-dependent |
+| Mechanism | Worker | Reviewer | Merger | Latency | Reliability |
+|-----------|--------|----------|--------|---------|-------------|
+| RPC `steer` via rpc-wrapper | ✅ | ✅ | ✅ | Next turn boundary | Guaranteed (pi protocol) |
+| STATUS.md annotation | ✅ | ❌ | ❌ | Next polling iteration | Supplementary |
 
-Workers get all four layers. Reviewers and mergers get the rpc-wrapper layer,
-which is sufficient for their shorter lifespans.
+All agent types get RPC injection — the most reliable mechanism. Workers
+additionally get STATUS.md annotation for visibility.
 
 ## Agent → Supervisor Communication
 
@@ -378,11 +369,12 @@ These are registered as supervisor extension tools (same pattern as
 
 ## Open Questions
 
-1. **Should rpc-wrapper inject messages into the LLM context directly?**
-   Pi's RPC protocol doesn't currently support injecting user messages from
-   external callers. If pi adds a `send_user_message` RPC command, rpc-wrapper
-   could inject steering messages directly into the conversation — the most
-   reliable delivery mechanism possible. Worth discussing with the pi team.
+1. ~~Should rpc-wrapper inject messages into the LLM context directly?~~
+   **Resolved:** Pi's RPC protocol already supports `steer` and
+   `prompt` with `streamingBehavior: "steer"`. Messages are queued during
+   agent execution and delivered at the next natural break point (after
+   current tool calls, before next LLM call). Non-blocking, guaranteed
+   delivery. This is now the primary delivery mechanism.
 
 2. **Should agents auto-acknowledge steering messages?**
    Option A: Agent must explicitly acknowledge (auditable but depends on LLM compliance).
