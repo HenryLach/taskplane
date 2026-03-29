@@ -2994,12 +2994,18 @@ export default function (pi: ExtensionAPI) {
 		if (batchId) {
 			try {
 				const artifactCleanup = cleanupPostIntegrate(repoRoot, batchId);
-				const totalCleaned = artifactCleanup.telemetryFilesDeleted + artifactCleanup.mergeFilesDeleted + artifactCleanup.promptFilesDeleted;
+				const totalCleaned = artifactCleanup.telemetryFilesDeleted + artifactCleanup.mergeFilesDeleted + artifactCleanup.promptFilesDeleted + artifactCleanup.mailboxDirsDeleted;
 				if (totalCleaned > 0) {
+					const cleanupParts = [
+						`${artifactCleanup.telemetryFilesDeleted} telemetry file(s)`,
+						`${artifactCleanup.mergeFilesDeleted} merge result(s)`,
+						`${artifactCleanup.promptFilesDeleted} prompt file(s)`,
+					];
+					if (artifactCleanup.mailboxDirsDeleted > 0) {
+						cleanupParts.push(`${artifactCleanup.mailboxDirsDeleted} mailbox dir(s)`);
+					}
 					outputLines.push(
-						`🧹 Cleaned up ${artifactCleanup.telemetryFilesDeleted} telemetry file(s), ` +
-						`${artifactCleanup.mergeFilesDeleted} merge result(s), ` +
-						`${artifactCleanup.promptFilesDeleted} prompt file(s) for batch ${batchId}`,
+						`🧹 Cleaned up ${cleanupParts.join(", ")} for batch ${batchId}`,
 					);
 				}
 				if (artifactCleanup.warnings.length > 0) {

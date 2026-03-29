@@ -19,8 +19,9 @@
  * @module orch/cleanup
  * @since TP-065
  */
-import { existsSync, readdirSync, statSync, unlinkSync, renameSync, mkdirSync } from "fs";
+import { existsSync, readdirSync, statSync, unlinkSync, renameSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
+import { MAILBOX_DIR_NAME } from "./types.ts";
 
 // ── Layer 1: Post-Integrate Cleanup ─────────────────────────────────
 
@@ -34,6 +35,8 @@ export interface PostIntegrateCleanupResult {
 	mergeFilesDeleted: number;
 	/** Number of lane prompt files deleted */
 	promptFilesDeleted: number;
+	/** Number of mailbox batch directories deleted (0 or 1) */
+	mailboxDirsDeleted: number;
 	/** Warnings from non-fatal cleanup failures */
 	warnings: string[];
 }
@@ -57,6 +60,7 @@ export function cleanupPostIntegrate(stateRoot: string, batchId: string): PostIn
 		telemetryFilesDeleted: 0,
 		mergeFilesDeleted: 0,
 		promptFilesDeleted: 0,
+		mailboxDirsDeleted: 0,
 		warnings: [],
 	};
 
@@ -119,6 +123,17 @@ export function cleanupPostIntegrate(stateRoot: string, batchId: string): PostIn
 		}
 	}
 
+	// ── Mailbox directory (.pi/mailbox/{batchId}/) ───────────
+	const mailboxBatchDir = join(stateRoot, ".pi", MAILBOX_DIR_NAME, batchId);
+	if (existsSync(mailboxBatchDir)) {
+		try {
+			rmSync(mailboxBatchDir, { recursive: true, force: true });
+			result.mailboxDirsDeleted = 1;
+		} catch (err: unknown) {
+			result.warnings.push(`Failed to delete mailbox directory ${mailboxBatchDir}: ${(err as Error).message}`);
+		}
+	}
+
 	return result;
 }
 
@@ -127,13 +142,14 @@ export function cleanupPostIntegrate(stateRoot: string, batchId: string): PostIn
  */
 export function formatPostIntegrateCleanup(result: PostIntegrateCleanupResult): string {
 	const parts: string[] = [];
-	const totalDeleted = result.telemetryFilesDeleted + result.mergeFilesDeleted + result.promptFilesDeleted;
+	const totalDeleted = result.telemetryFilesDeleted + result.mergeFilesDeleted + result.promptFilesDeleted + result.mailboxDirsDeleted;
 
 	if (totalDeleted > 0) {
 		const segments: string[] = [];
 		if (result.telemetryFilesDeleted > 0) segments.push(`${result.telemetryFilesDeleted} telemetry`);
 		if (result.mergeFilesDeleted > 0) segments.push(`${result.mergeFilesDeleted} merge`);
 		if (result.promptFilesDeleted > 0) segments.push(`${result.promptFilesDeleted} prompt`);
+		if (result.mailboxDirsDeleted > 0) segments.push(`${result.mailboxDirsDeleted} mailbox`);
 		parts.push(`🧹 Cleaned up ${totalDeleted} artifact file(s): ${segments.join(", ")}`);
 	}
 
@@ -155,6 +171,8 @@ export const STALE_ARTIFACT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 export interface PreflightSweepResult {
 	/** Number of stale files deleted */
 	staleFilesDeleted: number;
+	/** Number of stale mailbox batch directories deleted */
+	staleDirsDeleted: number;
 	/** Whether the sweep was skipped (e.g., active batch) */
 	skipped: boolean;
 	/** Reason for skipping (if skipped) */
@@ -198,6 +216,7 @@ export function sweepStaleArtifacts(
 ): PreflightSweepResult {
 	const result: PreflightSweepResult = {
 		staleFilesDeleted: 0,
+		staleDirsDeleted: 0,
 		skipped: false,
 		warnings: [],
 	};
@@ -255,6 +274,29 @@ export function sweepStaleArtifacts(
 		(name.startsWith("merge-request-") && name.endsWith(".txt")),
 	);
 
+	// Sweep stale mailbox batch directories (.pi/mailbox/{batchId}/)
+	const mailboxBase = join(stateRoot, ".pi", MAILBOX_DIR_NAME);
+	if (existsSync(mailboxBase)) {
+		try {
+			const entries = readdirSync(mailboxBase);
+			for (const entry of entries) {
+				const entryPath = join(mailboxBase, entry);
+				try {
+					const stat = statSync(entryPath);
+					if (!stat.isDirectory()) continue;
+					if (stat.mtimeMs < cutoff) {
+						rmSync(entryPath, { recursive: true, force: true });
+						result.staleDirsDeleted++;
+					}
+				} catch (err: unknown) {
+					result.warnings.push(`Failed to process mailbox dir ${entry}: ${(err as Error).message}`);
+				}
+			}
+		} catch (err: unknown) {
+			result.warnings.push(`Failed to read mailbox directory ${mailboxBase}: ${(err as Error).message}`);
+		}
+	}
+
 	return result;
 }
 
@@ -265,12 +307,15 @@ export function formatPreflightSweep(result: PreflightSweepResult): string {
 	if (result.skipped) {
 		return `ℹ️ Preflight sweep skipped: ${result.skipReason}`;
 	}
-	if (result.staleFilesDeleted === 0 && result.warnings.length === 0) {
+	if (result.staleFilesDeleted === 0 && result.staleDirsDeleted === 0 && result.warnings.length === 0) {
 		return ""; // Nothing to report
 	}
 	const parts: string[] = [];
-	if (result.staleFilesDeleted > 0) {
-		parts.push(`🧹 Preflight cleanup: removed ${result.staleFilesDeleted} stale artifact(s) (>7 days old)`);
+	if (result.staleFilesDeleted > 0 || result.staleDirsDeleted > 0) {
+		const segments: string[] = [];
+		if (result.staleFilesDeleted > 0) segments.push(`${result.staleFilesDeleted} stale artifact(s)`);
+		if (result.staleDirsDeleted > 0) segments.push(`${result.staleDirsDeleted} stale mailbox dir(s)`);
+		parts.push(`🧹 Preflight cleanup: removed ${segments.join(" and ")} (>7 days old)`);
 	}
 	for (const warning of result.warnings) {
 		parts.push(`  ⚠️ ${warning}`);
@@ -396,8 +441,11 @@ export function formatPreflightCleanup(result: PreflightCleanupResult): string {
 	const parts: string[] = [];
 
 	// Layer 2: age-based sweep
-	if (!result.sweep.skipped && result.sweep.staleFilesDeleted > 0) {
-		parts.push(`removed ${result.sweep.staleFilesDeleted} stale artifact(s) (>7 days old)`);
+	if (!result.sweep.skipped && (result.sweep.staleFilesDeleted > 0 || result.sweep.staleDirsDeleted > 0)) {
+		const segments: string[] = [];
+		if (result.sweep.staleFilesDeleted > 0) segments.push(`${result.sweep.staleFilesDeleted} stale artifact(s)`);
+		if (result.sweep.staleDirsDeleted > 0) segments.push(`${result.sweep.staleDirsDeleted} stale mailbox dir(s)`);
+		parts.push(`removed ${segments.join(" and ")} (>7 days old)`);
 	}
 
 	// Layer 3: log rotation
