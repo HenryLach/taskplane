@@ -1121,7 +1121,7 @@ function extractVerdict(reviewContent: string): string {
 	// TP-068: Tolerate non-standard verdict formats from models that don't
 	// follow the exact template (e.g., "Changes requested", "Needs revision").
 	const lower = reviewContent.toLowerCase();
-	if (/\b(changes?\s+requested|needs?\s+revision|please\s+revise|must\s+revise)\b/.test(lower)) {
+	if (/\b(request\s+changes?|changes?\s+requested|needs?\s+revision|please\s+revise|must\s+revise)\b/.test(lower)) {
 		return "REVISE";
 	}
 	if (/\b(looks?\s+good|no\s+issues?\s+found|approved?)\b/.test(lower)) {
