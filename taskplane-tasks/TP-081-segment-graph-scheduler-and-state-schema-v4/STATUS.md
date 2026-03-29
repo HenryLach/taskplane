@@ -1,30 +1,30 @@
 # TP-081: State Schema v4 for Segment Execution — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-28
 **Review Level:** 3
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 3
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read current persisted state schema/versioning and migration flow
-- [ ] Define explicit v3→v4 migration strategy (fields/defaults/guards)
-- [ ] Identify invariants required by resume and dashboard consumers
+- [x] Read current persisted state schema/versioning and migration flow
+- [x] Define explicit v3→v4 migration strategy (fields/defaults/guards)
+- [x] Identify invariants required by resume and dashboard consumers
 
 ---
 
 ### Step 1: Add schema v4 contracts
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Add v4 type contracts for task-level and segment-level persisted fields
-- [ ] Add/adjust runtime state contracts needed for v4 serialization
-- [ ] Document optional vs required fields for migration safety
+- [x] Add v4 type contracts for task-level and segment-level persisted fields
+- [x] Add/adjust runtime state contracts needed for v4 serialization
+- [x] Document optional vs required fields for migration safety
 
 ---
 
@@ -75,6 +75,26 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-28 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-28 23:57 | Task started | Extension-driven execution |
+| 2026-03-28 23:57 | Step 0 started | Preflight |
+| 2026-03-28 23:57 | Task started | Extension-driven execution |
+| 2026-03-28 23:57 | Step 0 started | Preflight |
+| 2026-03-28 23:57 | Worker iter 2 | done in 4s, ctx: 0%, tools: 0 |
+| 2026-03-28 23:57 | No progress | Iteration 1: 0 new checkboxes (1/3 stall limit) |
+| 2026-03-28 23:58 | Worker iter 3 | done in 3s, ctx: 0%, tools: 0 |
+| 2026-03-28 23:58 | No progress | Iteration 2: 0 new checkboxes (2/3 stall limit) |
+| 2026-03-28 23:58 | Worker iter 4 | done in 3s, ctx: 0%, tools: 0 |
+| 2026-03-28 23:58 | No progress | Iteration 3: 0 new checkboxes (3/3 stall limit) |
+| 2026-03-28 23:58 | Task blocked | No progress after 3 iterations |
+| 2026-03-28 23:58 | Worker iter 1 | done in 10s, ctx: 0%, tools: 0 |
+| 2026-03-28 23:58 | No progress | Iteration 1: 0 new checkboxes (1/3 stall limit) |
+| 2026-03-28 23:58 | Worker iter 2 | done in 3s, ctx: 0%, tools: 0 |
+| 2026-03-28 23:58 | No progress | Iteration 2: 0 new checkboxes (2/3 stall limit) |
+| 2026-03-28 23:58 | Worker iter 3 | done in 3s, ctx: 0%, tools: 0 |
+| 2026-03-28 23:58 | No progress | Iteration 3: 0 new checkboxes (3/3 stall limit) |
+| 2026-03-28 23:58 | Task blocked | No progress after 3 iterations |
+| 2026-03-28 23:59 | Step 0 complete | Preflight analysis done |
+| 2026-03-28 23:59 | Step 1 started | Adding schema v4 contracts |
 
 ---
 

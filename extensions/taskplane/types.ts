@@ -1016,6 +1016,12 @@ export interface OrchBatchRuntimeState {
 	 */
 	diagnostics?: BatchDiagnostics;
 	/**
+	 * v4 segment records carried forward across resume cycles (TP-081).
+	 * Populated from persisted state on resume; empty for new batches
+	 * and repo-mode batches.
+	 */
+	segments?: PersistedSegmentRecord[];
+	/**
 	 * Unknown top-level fields from loaded persisted state.
 	 * Carried forward so they survive serialization roundtrips.
 	 */
@@ -2304,15 +2310,22 @@ export function defaultBatchDiagnostics(): BatchDiagnostics {
  *         exit summaries, batch cost). Task records gain optional
  *         `exitDiagnostic` alongside legacy `exitReason`.
  *         Both new sections are optional for v1/v2 migration paths.
+ *   v4 — Segment execution (TP-081). Adds optional `segments` array
+ *         for persisting per-segment runtime state. Task records gain
+ *         optional `packetRepoId`, `packetTaskPath`, `segmentIds`, and
+ *         `activeSegmentId` fields. All v4-specific fields are optional
+ *         for backward compatibility with v1/v2/v3 migration paths.
+ *         When migrating from v3, `segments` defaults to `[]` and
+ *         task-level segment fields default to `undefined`.
  *
  * Compatibility policy:
- *   - loadBatchState() accepts v1, v2, and v3 files. v1 and v2 are
- *     auto-upconverted to v3 in memory (chained: v1→v2→v3).
+ *   - loadBatchState() accepts v1, v2, v3, and v4 files. v1→v2→v3→v4
+ *     auto-upconverted in memory (chained).
  *     The on-disk file is NOT rewritten during load.
- *   - saveBatchState() always writes v3.
- *   - Schema versions > 3 are rejected with STATE_SCHEMA_INVALID.
+ *   - saveBatchState() always writes v4.
+ *   - Schema versions > 4 are rejected with STATE_SCHEMA_INVALID.
  */
-export const BATCH_STATE_SCHEMA_VERSION = 3;
+export const BATCH_STATE_SCHEMA_VERSION = 4;
 
 /**
  * Canonical file path for persisted batch state.
@@ -2431,6 +2444,99 @@ export interface PersistedTaskRecord {
 	 * falling back to `exitReason` for display.
 	 */
 	exitDiagnostic?: TaskExitDiagnostic;
+	/**
+	 * Repo ID that owns task packet files (PROMPT.md/STATUS.md/.DONE) (v4, TP-081).
+	 *
+	 * In workspace mode, this is the `taskPacketRepo` from routing config.
+	 * Undefined in repo mode or for pre-v4 state files.
+	 */
+	packetRepoId?: string;
+	/**
+	 * Absolute path to the task folder in the packet repo worktree (v4, TP-081).
+	 *
+	 * Used by resume to locate packet files without re-running discovery.
+	 * Undefined in repo mode or for pre-v4 state files.
+	 */
+	packetTaskPath?: string;
+	/**
+	 * Segment IDs belonging to this task (v4, TP-081).
+	 *
+	 * Array of segment ID strings (`<taskId>::<repoId>`).
+	 * Empty array for repo-mode tasks or single-repo tasks.
+	 * Undefined for pre-v4 state files.
+	 */
+	segmentIds?: string[];
+	/**
+	 * Currently executing segment ID (v4, TP-081).
+	 *
+	 * Null when no segment is active (all completed or not started).
+	 * Undefined for pre-v4 state files.
+	 */
+	activeSegmentId?: string | null;
+}
+
+// ── Segment-Level Persisted State (v4, TP-081) ──────────────────────
+
+/**
+ * Segment execution status within a batch.
+ *
+ * State machine mirrors `LaneTaskStatus` but applies at segment granularity:
+ *   pending → running → succeeded
+ *                     → failed
+ *                     → stalled
+ *   pending → skipped  (prior segment failed, or task skipped)
+ *
+ * @since v4 (TP-081)
+ */
+export type PersistedSegmentStatus = "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped";
+
+/**
+ * Persisted record of a single segment's execution state.
+ *
+ * A segment is a repo-scoped execution unit within a task. Each task
+ * may have one or more segments (one per repo the task touches).
+ *
+ * Contains everything `/orch-resume` needs to reconstruct segment-level
+ * progress without re-running discovery.
+ *
+ * @since v4 (TP-081)
+ */
+export interface PersistedSegmentRecord {
+	/** Stable segment identifier (`<taskId>::<repoId>`, e.g., "TP-002::api") */
+	segmentId: string;
+	/** Parent task identifier */
+	taskId: string;
+	/** Repo ID this segment targets */
+	repoId: string;
+	/** Segment execution status */
+	status: PersistedSegmentStatus;
+	/** Lane ID the segment executed on (e.g., "lane-1"), empty if not yet assigned */
+	laneId: string;
+	/** TMUX session name used for this segment */
+	sessionName: string;
+	/** Absolute path to the worktree used for this segment */
+	worktreePath: string;
+	/** Git branch name checked out for this segment */
+	branch: string;
+	/** Epoch ms when segment execution started (null if not yet started) */
+	startedAt: number | null;
+	/** Epoch ms when segment execution ended (null if still pending/running) */
+	endedAt: number | null;
+	/** Number of retry attempts for this segment */
+	retries: number;
+	/**
+	 * Segment IDs this segment depends on (intra-task DAG edges).
+	 * Empty array for the first segment in a task or for tasks with no intra-task deps.
+	 */
+	dependsOnSegmentIds: string[];
+	/**
+	 * Structured exit diagnostic for this segment.
+	 * Optional: absent for segments that haven't exited yet.
+	 * Uses the same `TaskExitDiagnostic` shape from diagnostics.ts.
+	 */
+	exitDiagnostic?: TaskExitDiagnostic;
+	/** Human-readable exit reason (legacy compat, same as task-level) */
+	exitReason: string;
 }
 
 /**
@@ -2545,9 +2651,17 @@ export interface PersistedRepoMergeOutcome {
  *   data alongside legacy `exitReason` string).
  * - Both sections are required in v3. Migration from v1/v2 fills
  *   conservative defaults (see `defaultResilienceState()` / `defaultBatchDiagnostics()`).
+ *
+ * v4 additions (TP-081):
+ * - `segments` array (required): per-segment execution records for multi-repo
+ *   task execution. Empty array in repo mode or for pre-v4 migration.
+ * - Task records gain optional `packetRepoId`, `packetTaskPath`, `segmentIds`,
+ *   and `activeSegmentId` for segment-level tracking.
+ * - Migration from v3 fills `segments` as `[]` and leaves task-level segment
+ *   fields as `undefined`.
  */
 export interface PersistedBatchState {
-	/** Schema version — must equal BATCH_STATE_SCHEMA_VERSION (currently 3) */
+	/** Schema version — must equal BATCH_STATE_SCHEMA_VERSION (currently 4) */
 	schemaVersion: number;
 	/** Current batch execution phase */
 	phase: OrchBatchPhase;
@@ -2596,14 +2710,24 @@ export interface PersistedBatchState {
 	errors: string[];
 	/**
 	 * Resilience state for retry/recovery tracking (v3, TP-030).
-	 * Required in v3. Migration from v1/v2 fills conservative defaults.
+	 * Required in v3+. Migration from v1/v2 fills conservative defaults.
 	 */
 	resilience: ResilienceState;
 	/**
 	 * Batch-level diagnostics for cost tracking and exit summaries (v3, TP-030).
-	 * Required in v3. Migration from v1/v2 fills conservative defaults.
+	 * Required in v3+. Migration from v1/v2 fills conservative defaults.
 	 */
 	diagnostics: BatchDiagnostics;
+	/**
+	 * Per-segment execution records for multi-repo task execution (v4, TP-081).
+	 *
+	 * Each entry represents one repo-scoped segment of a task. In repo mode
+	 * or for single-repo tasks, this array is empty (segment tracking is
+	 * implicit via task records).
+	 *
+	 * Required in v4. Migration from v1/v2/v3 fills empty array.
+	 */
+	segments: PersistedSegmentRecord[];
 	/**
 	 * Unknown top-level fields captured during deserialization.
 	 * Preserved on roundtrip to avoid data loss from future schema extensions
