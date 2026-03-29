@@ -457,6 +457,33 @@ function writeLaneState(state: TaskState): void {
 }
 
 /**
+ * Write a context % snapshot at worker iteration boundary (TP-094).
+ * Best-effort JSONL append to `.pi/context-snapshots/{batchId}/{sessionName}.jsonl`.
+ * Non-fatal on any failure — never blocks execution.
+ */
+function writeContextSnapshot(state: TaskState): void {
+	const batchId = process.env.ORCH_BATCH_ID || "standalone";
+	const sessionName = isOrchestratedMode() ? `${getTmuxPrefix()}-worker` : "task-worker";
+	try {
+		const dir = join(getSidecarDir(), "context-snapshots", batchId);
+		mkdirSync(dir, { recursive: true });
+		const filePath = join(dir, `${sessionName}.jsonl`);
+		const snapshot = {
+			iteration: state.totalIterations,
+			contextPct: state.workerContextPct,
+			tokens: state.workerInputTokens + state.workerOutputTokens + state.workerCacheReadTokens + state.workerCacheWriteTokens,
+			cost: state.workerCostUsd,
+			toolCalls: state.workerToolCount,
+			exitReason: state.workerExitDiagnostic?.classification || null,
+			timestamp: Date.now(),
+		};
+		appendFileSync(filePath, JSON.stringify(snapshot) + "\n");
+	} catch {
+		// Best effort — don't crash the runner
+	}
+}
+
+/**
  * Append a JSON event to the conversation JSONL log file.
  * Used in orchestrated mode to capture the full worker conversation for the web dashboard.
  */
@@ -1371,7 +1398,9 @@ interface SidecarTelemetryDelta {
 	/** Whether any sidecar events were parsed in this tick (used for callback gating) */
 	hadEvents: boolean;
 	/** Authoritative context usage from pi get_session_stats (pi ≥ 0.63.0, null if unavailable) */
-	contextUsage: { percentUsed: number; totalTokens: number; maxTokens: number } | null;
+	contextUsage: { percent: number; totalTokens: number; maxTokens: number } | null;
+	/** True when a get_session_stats response was seen but lacked contextUsage (older pi) */
+	sawStatsResponseWithoutContextUsage: boolean;
 }
 
 /**
@@ -1390,7 +1419,7 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 		inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
 		cost: 0, latestTotalTokens: 0, toolCalls: 0, lastTool: "",
 		retryActive: tailState.retryActive, retriesStarted: 0, lastRetryError: "",
-		hadEvents: false, contextUsage: null,
+		hadEvents: false, contextUsage: null, sawStatsResponseWithoutContextUsage: false,
 	};
 
 	// Gracefully handle missing file (wrapper hasn't written yet)
@@ -1506,13 +1535,18 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 				// get_session_stats response from pi ≥ 0.63.0 — authoritative context usage
 				if (event.success === true && event.data?.contextUsage) {
 					const cu = event.data.contextUsage;
-					if (typeof cu.percentUsed === "number") {
+					// pi sends `percent` (pi ≥ 0.63.0); accept `percentUsed` as legacy fallback
+					const pctValue = cu.percent ?? cu.percentUsed;
+					if (typeof pctValue === "number") {
 						delta.contextUsage = {
-							percentUsed: cu.percentUsed,
+							percent: pctValue,
 							totalTokens: cu.totalTokens || 0,
 							maxTokens: cu.maxTokens || 0,
 						};
 					}
+				} else if (event.success === true && event.data && !event.data.contextUsage) {
+					// Successful get_session_stats response but no contextUsage — older pi
+					delta.sawStatsResponseWithoutContextUsage = true;
 				}
 				break;
 			}
@@ -1888,6 +1922,73 @@ function spawnAgentTmux(opts: {
 			`Failed to create TMUX session '${opts.sessionName}': ${stderr}. ` +
 			`Verify tmux is running and the session name is valid.`
 		);
+	}
+
+	// ── TP-095: Post-spawn verification with retry (#335) ──────────
+	// On Windows/MSYS2, rapid sequential tmux session creation is unreliable.
+	// Pi process can exit with code 1 in 0 seconds on the first 3-5 attempts.
+	// Verify the session is alive after a brief delay, and retry if it died.
+	const SPAWN_VERIFY_DELAY_MS = 300;
+	const SPAWN_VERIFY_POLL_ATTEMPTS = 3;
+	const SPAWN_VERIFY_POLL_INTERVAL_MS = 200;
+	const SPAWN_MAX_RETRIES = 2;
+
+	const verifySessionAlive = (): boolean => {
+		for (let poll = 0; poll < SPAWN_VERIFY_POLL_ATTEMPTS; poll++) {
+			const check = spawnSync("tmux", ["has-session", "-t", opts.sessionName]);
+			if (check.status === 0) return true;
+			if (poll < SPAWN_VERIFY_POLL_ATTEMPTS - 1) {
+				spawnSync("sleep", [`${SPAWN_VERIFY_POLL_INTERVAL_MS / 1000}`], { shell: true, timeout: SPAWN_VERIFY_POLL_INTERVAL_MS + 500 });
+			}
+		}
+		return false;
+	};
+
+	// Wait briefly for session to stabilize, then verify
+	spawnSync("sleep", [`${SPAWN_VERIFY_DELAY_MS / 1000}`], { shell: true, timeout: SPAWN_VERIFY_DELAY_MS + 500 });
+
+	// Derive the stderr log path for diagnostic messages (mirrors execution.ts convention)
+	const stderrLogHint = `${sidecarPath.replace(/\.jsonl$/, "-stderr.log")}`;
+
+	let spawnRetries = 0;
+	while (!verifySessionAlive() && spawnRetries < SPAWN_MAX_RETRIES) {
+		spawnRetries++;
+		console.error(`[task-runner] tmux: session '${opts.sessionName}' died on startup — retrying (${spawnRetries}/${SPAWN_MAX_RETRIES}). Stderr log: ${stderrLogHint}`);
+
+		// Brief delay before retry (increases with each attempt)
+		const retryDelay = spawnRetries * 500;
+		spawnSync("sleep", [`${retryDelay / 1000}`], { shell: true, timeout: retryDelay + 500 });
+
+		// Kill any remnant and re-create
+		spawnSync("tmux", ["kill-session", "-t", opts.sessionName]);
+
+		const retryResult = spawnSync("tmux", [
+			"new-session", "-d",
+			"-s", opts.sessionName,
+			wrappedCommand,
+		]);
+
+		if (retryResult.status !== 0) {
+			const retryStderr = retryResult.stderr?.toString().trim() || "unknown error";
+			console.error(`[task-runner] tmux: retry ${spawnRetries} session creation failed: ${retryStderr}`);
+			continue;
+		}
+
+		// Wait for the retried session to stabilize
+		spawnSync("sleep", [`${SPAWN_VERIFY_DELAY_MS / 1000}`], { shell: true, timeout: SPAWN_VERIFY_DELAY_MS + 500 });
+	}
+
+	if (spawnRetries > 0) {
+		const finalAlive = verifySessionAlive();
+		if (!finalAlive) {
+			cleanupTmp();
+			console.error(`[task-runner] tmux: session '${opts.sessionName}' failed after ${SPAWN_MAX_RETRIES} retries. Stderr log: ${stderrLogHint}`);
+			throw new Error(
+				`TMUX session '${opts.sessionName}' died on startup after ${SPAWN_MAX_RETRIES} retries. ` +
+				`Stderr log: ${stderrLogHint}`
+			);
+		}
+		console.error(`[task-runner] tmux: session '${opts.sessionName}' alive after ${spawnRetries} retry(ies)`);
 	}
 
 	console.error(`[task-runner] tmux: session '${opts.sessionName}' created (cwd: ${opts.cwd})`);
@@ -2461,11 +2562,9 @@ export default function (pi: ExtensionAPI) {
 								state.reviewerLastTool = delta.lastTool;
 							}
 
-							// Context % — prefer authoritative contextUsage (pi ≥ 0.63.0)
+							// Context % — authoritative contextUsage only (pi ≥ 0.63.0, TP-094)
 							if (delta.contextUsage) {
-								state.reviewerContextPct = delta.contextUsage.percentUsed;
-							} else if (delta.latestTotalTokens > 0 && contextWindow > 0) {
-								state.reviewerContextPct = (delta.latestTotalTokens / contextWindow) * 100;
+								state.reviewerContextPct = delta.contextUsage.percent;
 							}
 
 							writeLaneState(state);
@@ -2668,11 +2767,9 @@ export default function (pi: ExtensionAPI) {
 								state.reviewerCostUsd += delta.cost;
 								state.reviewerToolCount += delta.toolCalls;
 								if (delta.lastTool) state.reviewerLastTool = delta.lastTool;
-								// Context % — prefer authoritative contextUsage (pi ≥ 0.63.0)
+								// Context % — authoritative contextUsage only (pi ≥ 0.63.0, TP-094)
 								if (delta.contextUsage) {
-									state.reviewerContextPct = delta.contextUsage.percentUsed;
-								} else if (delta.latestTotalTokens > 0 && contextWindow > 0) {
-									state.reviewerContextPct = (delta.latestTotalTokens / contextWindow) * 100;
+									state.reviewerContextPct = delta.contextUsage.percent;
 								}
 								writeLaneState(state);
 								updateWidgets();
@@ -2823,7 +2920,33 @@ export default function (pi: ExtensionAPI) {
 				if (isStepComplete(ss)) completedBefore.add(ss.number);
 			}
 
+			// ── TP-095: Reset stale lane-state fields before new worker spawn (#333) ──
+			// When a worker crashes and restarts, the lane-state JSON retains stale
+			// values (workerStatus: "done", phase: "error", workerExitDiagnostic from
+			// the crash). Reset STATUS fields BEFORE the new worker spawns so the
+			// dashboard immediately reflects the new running state.
+			// IMPORTANT: Do NOT reset telemetry counters (tokens, cost) here — they
+			// accumulate across worker iterations via += in onTelemetry (#334).
+			if (state.totalIterations > 1) {
+				state.phase = "running";
+				state.workerStatus = "idle"; // Will be set to "running" by runWorker()
+				state.workerExitDiagnostic = null;
+				state.workerElapsed = 0;
+				state.workerContextPct = 0;
+				state.workerLastTool = "";
+				state.workerRetryActive = false;
+				state.workerRetryCount = 0;
+				state.workerLastRetryError = "";
+				// Note: workerToolCount, workerInputTokens, workerOutputTokens,
+				// workerCacheReadTokens, workerCacheWriteTokens, workerCostUsd
+				// are intentionally NOT reset — they persist across iterations.
+				writeLaneState(state);
+			}
+
 			await runWorker(remainingSteps, ctx);
+
+			// Write context % snapshot at iteration boundary (TP-094)
+			writeContextSnapshot(state);
 
 			if (state.phase === "error") {
 				await shutdownPersistentReviewer("worker error");
@@ -3229,7 +3352,10 @@ export default function (pi: ExtensionAPI) {
 		state.workerElapsed = 0;
 		state.workerContextPct = 0;
 		state.workerLastTool = "";
-		state.workerToolCount = 0;
+		// TP-095: Don't reset workerToolCount — accumulate across iterations (#334).
+		// Previous behavior zeroed the counter on each iteration, losing totals
+		// when a worker crashed and restarted. Token/cost counters already
+		// accumulate via += in onTelemetry and were never reset here.
 		state.workerRetryActive = false;
 		state.workerRetryCount = 0;
 		state.workerLastRetryError = "";
@@ -3257,6 +3383,8 @@ export default function (pi: ExtensionAPI) {
 		const warnPct = config.context.warn_percent;
 		const killPct = config.context.kill_percent;
 		console.error(`[task-runner] worker context window: ${contextWindow} (${contextWindowSource})`);
+		// One-shot warning when pi doesn't provide authoritative contextUsage (TP-094)
+		let warnedNoContextUsage = false;
 
 		if (spawnMode === "tmux") {
 			// ── TMUX mode ────────────────────────────────────────
@@ -3295,14 +3423,10 @@ export default function (pi: ExtensionAPI) {
 						state.workerLastRetryError = delta.lastRetryError;
 					}
 
-					// Context % — prefer authoritative contextUsage from pi ≥ 0.63.0,
-					// fall back to manual calculation from totalTokens + cacheRead.
-					{
-						const pct = delta.contextUsage
-							? delta.contextUsage.percentUsed
-							: (delta.latestTotalTokens > 0 && contextWindow > 0)
-								? (delta.latestTotalTokens / contextWindow) * 100
-								: 0;
+					// Context % — authoritative contextUsage only (pi ≥ 0.63.0, TP-094)
+					// Manual token-based fallback removed: avoids false thresholds on older pi.
+					if (delta.contextUsage) {
+						const pct = delta.contextUsage.percent;
 						if (pct > 0) {
 							state.workerContextPct = pct;
 							if (pct >= warnPct) {
@@ -3314,6 +3438,10 @@ export default function (pi: ExtensionAPI) {
 								spawned.kill();
 							}
 						}
+					} else if (delta.sawStatsResponseWithoutContextUsage && !warnedNoContextUsage) {
+						// One-shot warning: pi responded to get_session_stats but omitted contextUsage (older pi)
+						warnedNoContextUsage = true;
+						console.error(`[task-runner] warning: pi did not provide contextUsage — context pressure thresholds disabled`);
 					}
 
 					updateWidgets();

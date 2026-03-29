@@ -770,6 +770,12 @@ You have these orchestrator tools available:
 **Note:** `orch_retry_task`, `orch_skip_task`, and `orch_force_merge` require the batch to be paused/stopped first.
 If the batch is actively running, call `orch_pause()` first.
 
+**Diagnostic & Recovery Tools (TP-096):**
+- `read_agent_status(lane?)` — Read STATUS.md + telemetry for a lane (step, progress, context %, cost, elapsed). Omit lane for all lanes.
+- `trigger_wrap_up(lane)` — Write `.task-wrap-up` signal to gracefully stop a worker on a lane.
+- `read_lane_logs(lane)` — Read stderr/crash logs and exit diagnostics for a lane.
+- `list_active_agents()` — List all tmux sessions with role, lane, task, context %, elapsed, cost.
+
 Plus general tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`
 for inspecting files, running git commands, and editing batch state.
 
