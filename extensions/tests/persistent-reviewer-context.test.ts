@@ -17,7 +17,7 @@
  *  15.x — TP-068: Graceful skip on double failure
  *  16.x — TP-068: Template explicitly instructs registered tool usage
  *
- * Run: npx vitest run tests/persistent-reviewer-context.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/persistent-reviewer-context.test.ts
  */
 
 import { describe, it } from "node:test";
@@ -508,7 +508,7 @@ describe("9.x: State management — persistent reviewer fields in TaskState", ()
 
 	it("9.6: signal counter resets to 0 on session death/respawn", () => {
 		// Multiple places reset the counter
-		const deadSessionRegion = sourceRegion(taskRunnerSource, "persistent reviewer session dead", 0, 300);
+		const deadSessionRegion = sourceRegion(taskRunnerSource, "persistent reviewer session dead", 0, 500);
 		expect(deadSessionRegion).toContain("state.persistentReviewerSignalNum = 0");
 	});
 });
@@ -532,10 +532,13 @@ describe("10.x: Token accumulation — cumulative across persistent reviews", ()
 		expect(taskRunnerSource).toContain("state.reviewerOutputTokens += delta.outputTokens");
 	});
 
-	it("10.3: reviewer status is set to idle (not cleared) after persistent review", () => {
-		// After a persistent review completes, status goes to idle (not fully cleared)
-		const idleRegion = sourceRegion(taskRunnerSource, "Set reviewer to idle (NOT clear", 0, 200);
-		expect(idleRegion).toContain('state.reviewerStatus = "idle"');
+	it("10.3: reviewer status is set to idle after review and killed after code review APPROVE", () => {
+		// After a review, status goes to idle. After code review APPROVE, persistent reviewer is killed.
+		// After REVISE, reviewer stays alive for the follow-up re-review.
+		expect(taskRunnerSource).toContain('state.reviewerStatus = "idle"');
+		expect(taskRunnerSource).toContain('killing reviewer for fresh context');
+		expect(taskRunnerSource).toContain('killing persistent reviewer');
+		expect(taskRunnerSource).toContain('verdict === "APPROVE"');
 	});
 });
 
@@ -672,7 +675,7 @@ describe("14.x: TP-068 — extractVerdict tolerates non-standard verdict formats
 	});
 
 	it("14.6: extractVerdict returns UNKNOWN when nothing matches", () => {
-		const fn = sourceRegion(taskRunnerSource, "function extractVerdict", 0, 800);
+		const fn = sourceRegion(taskRunnerSource, "function extractVerdict", 0, 900);
 		expect(fn).toContain('return "UNKNOWN"');
 	});
 });

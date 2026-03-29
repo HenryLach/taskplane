@@ -180,12 +180,11 @@ describe("2.x — Batch state serialization (applySerializedState)", () => {
 // ══════════════════════════════════════════════════════════════════════
 
 describe("3.x — Engine worker entry point structure", () => {
-	it("3.1: engine-worker.ts imports worker_threads with isMainThread guard", () => {
+	it("3.1: engine-worker.ts uses fork mode with TASKPLANE_ENGINE_FORK guard", () => {
 		const src = readSource("engine-worker.ts");
-		expect(src).toContain("worker_threads");
-		expect(src).toContain("isMainThread");
-		expect(src).toContain("parentPort");
-		expect(src).toContain("workerData");
+		expect(src).toContain("TASKPLANE_ENGINE_FORK");
+		expect(src).toContain("process.send");
+		expect(src).toContain('process.once("message"');
 	});
 
 	it("3.2: engine-worker.ts dynamically imports engine and resume modules", () => {
@@ -197,23 +196,22 @@ describe("3.x — Engine worker entry point structure", () => {
 		expect(src).toContain("resumeOrchBatch");
 	});
 
-	it("3.3: engine-worker.ts listens for control messages from main thread", () => {
+	it("3.3: engine-worker.ts listens for control messages from parent process", () => {
 		const src = readSource("engine-worker.ts");
-		expect(src).toContain('port.on("message"');
+		expect(src).toContain('process.on("message"');
 		// Must handle pause and resume/abort
 		expect(src).toContain('"pause"');
 		expect(src).toContain("batchState.pauseSignal.paused = true");
 	});
 
-	it("3.4: engine-worker.ts posts state-sync messages back to main thread", () => {
+	it("3.4: engine-worker.ts sends state-sync messages back to parent", () => {
 		const src = readSource("engine-worker.ts");
 		expect(src).toContain('"state-sync"');
 		expect(src).toContain("serializeBatchState(batchState)");
 	});
 
-	it("3.5: engine-worker.ts posts complete message with final state", () => {
+	it("3.5: engine-worker.ts sends complete message with final state", () => {
 		const src = readSource("engine-worker.ts");
-		// Must post a complete message with serialized final state
 		expect(src).toContain('"complete"');
 		expect(src).toContain("serializeBatchState");
 	});
@@ -232,11 +230,10 @@ describe("3.x — Engine worker entry point structure", () => {
 		expect(src).toContain("resumeOrchBatch(");
 	});
 
-	it("3.8: engine-worker.ts guards execution with isMainThread check", () => {
+	it("3.8: engine-worker.ts guards execution with fork sentinel check", () => {
 		const src = readSource("engine-worker.ts");
-		// Worker entry point must only run in worker context
-		expect(src).toContain("!isMainThread");
-		expect(src).toContain("parentPort");
+		expect(src).toContain('TASKPLANE_ENGINE_FORK');
+		expect(src).toContain("process.send");
 	});
 });
 
@@ -245,9 +242,10 @@ describe("3.x — Engine worker entry point structure", () => {
 // ══════════════════════════════════════════════════════════════════════
 
 describe("4.x — Extension worker thread integration", () => {
-	it("4.1: extension.ts imports Worker from worker_threads", () => {
+	it("4.1: extension.ts imports fork from child_process", () => {
 		const src = readSource("extension.ts");
-		expect(src).toContain('import { Worker } from "worker_threads"');
+		expect(src).toContain('import { fork');
+		expect(src).toContain('"child_process"');
 	});
 
 	it("4.2: extension.ts imports worker types from engine-worker.ts", () => {
@@ -284,34 +282,33 @@ describe("4.x — Extension worker thread integration", () => {
 
 	it("4.6: activeWorker is tracked at extension scope", () => {
 		const src = readSource("extension.ts");
-		expect(src).toContain("let activeWorker: Worker | null = null");
+		expect(src).toContain("let activeWorker: ChildProcess | null = null");
 	});
 
-	it("4.7: doOrchPause forwards pause to worker thread", () => {
+	it("4.7: doOrchPause forwards pause to engine process", () => {
 		const src = readSource("extension.ts");
 		const pauseBody = src.substring(
 			src.indexOf("function doOrchPause()"),
 			src.indexOf("function doOrchResume("),
 		);
-		expect(pauseBody).toContain('activeWorker?.postMessage({ type: "pause" })');
+		expect(pauseBody).toContain('activeWorker?.send({ type: "pause" })');
 	});
 
-	it("4.8: doOrchAbort terminates worker on hard abort", () => {
+	it("4.8: doOrchAbort kills engine on hard abort", () => {
 		const src = readSource("extension.ts");
 		const abortStart = src.indexOf("function doOrchAbort(");
-		// Find the next top-level function after doOrchAbort
 		const nextFn = src.indexOf("\n\tfunction ", abortStart + 1);
 		const abortBody = src.substring(abortStart, nextFn > 0 ? nextFn : abortStart + 3000);
-		expect(abortBody).toContain("activeWorker.terminate()");
+		expect(abortBody).toContain("activeWorker.kill()");
 		expect(abortBody).toContain('{ type: "pause" }');
 	});
 
-	it("4.9: session_end terminates worker thread", () => {
+	it("4.9: session_end kills engine process", () => {
 		const src = readSource("extension.ts");
 		const sessionEndIdx = src.indexOf('"session_end"');
 		const sessionEndBlock = src.substring(sessionEndIdx, sessionEndIdx + 500);
 		expect(sessionEndBlock).toContain("activeWorker");
-		expect(sessionEndBlock).toContain("terminate()");
+		expect(sessionEndBlock).toContain(".kill()");
 	});
 
 	it("4.10: startBatchAsync is preserved as fallback (PROMPT requirement)", () => {
@@ -325,12 +322,12 @@ describe("4.x — Extension worker thread integration", () => {
 		expect(fnBody).toContain(".catch(");
 	});
 
-	it("4.11: resolveEngineWorkerPath resolves engine-worker.ts path", () => {
+	it("4.11: resolveEngineWorkerPath resolves engine-worker-entry.mjs path", () => {
 		const src = readSource("extension.ts");
 		expect(src).toContain("function resolveEngineWorkerPath()");
 		const fnStart = src.indexOf("function resolveEngineWorkerPath()");
 		const fnBody = src.substring(fnStart, fnStart + 300);
-		expect(fnBody).toContain("engine-worker.ts");
+		expect(fnBody).toContain("engine-worker-entry.mjs");
 	});
 });
 

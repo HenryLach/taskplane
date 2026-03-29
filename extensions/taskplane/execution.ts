@@ -2,10 +2,10 @@
  * Lane execution, monitoring, wave execution loop
  * @module orch/execution
  */
-import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync } from "fs";
+import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync, copyFileSync } from "fs";
 import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "fs/promises";
 import { spawnSync, spawn } from "child_process";
-import { join, dirname, resolve, relative, delimiter as pathDelimiter } from "path";
+import { join, dirname, basename, resolve, relative, delimiter as pathDelimiter } from "path";
 import { userInfo } from "os";
 
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
@@ -431,8 +431,34 @@ export function buildLaneEnvVars(
 
 	let relativePath: string;
 	if (workspaceRoot) {
-		// Workspace mode: always use absolute path for cross-repo safety
-		relativePath = resolve(promptPath);
+		// Workspace mode: use worktree-relative path when the task folder is
+		// inside the lane's repo. This ensures STATUS.md, .DONE, and git commits
+		// all operate in the worktree (not the original source directory).
+		if (promptNorm.startsWith(repoRootNorm + "/")) {
+			relativePath = promptNorm.slice(repoRootNorm.length + 1);
+		} else {
+			// Cross-repo: task files live in a different repo than the worker's
+			// worktree. Copy the task folder into the worktree so STATUS.md,
+			// .DONE, and git commits all happen locally.
+			const taskFolder = dirname(resolve(promptPath));
+			const taskDirName = basename(taskFolder);
+			const localTaskDir = join(lane.worktreePath, ".taskplane-tasks", taskDirName);
+			mkdirSync(localTaskDir, { recursive: true });
+			// Copy PROMPT.md and STATUS.md into the local task dir
+			for (const file of ["PROMPT.md", "STATUS.md"]) {
+				const src = join(taskFolder, file);
+				const dst = join(localTaskDir, file);
+				if (existsSync(src) && !existsSync(dst)) {
+					copyFileSync(src, dst);
+				}
+			}
+			// Create .reviews dir if it exists in source
+			const reviewsDir = join(taskFolder, ".reviews");
+			if (existsSync(reviewsDir)) {
+				mkdirSync(join(localTaskDir, ".reviews"), { recursive: true });
+			}
+			relativePath = join(".taskplane-tasks", taskDirName, "PROMPT.md");
+		}
 	} else if (promptNorm.startsWith(repoRootNorm + "/")) {
 		// Repo mode: relative path from repo root (mirrors into worktree)
 		relativePath = promptNorm.slice(repoRootNorm.length + 1);
@@ -449,7 +475,7 @@ export function buildLaneEnvVars(
 
 	const vars: Record<string, string> = {
 		TASK_AUTOSTART: relativePath,
-		TASK_RUNNER_SPAWN_MODE: "subprocess",
+		TASK_RUNNER_SPAWN_MODE: "tmux",
 		TASK_RUNNER_TMUX_PREFIX: lane.tmuxSessionName,
 		ORCH_SIDECAR_DIR: join(workspaceRoot || repoRoot, ".pi"),
 		NODE_PATH: nodePath,
@@ -568,9 +594,26 @@ export function buildTmuxSpawnArgs(
 		piCommand = `${envParts} pi --no-session -e ${shellQuote(taskRunnerExtPath)}`;
 	}
 
-	// NOTE: Do not redirect lane output here. Shell redirection has proven
-	// fragile across Windows + tmux environments and can prevent session spawn.
-	// Diagnostics use tmux pane capture + STATUS tail in pollUntilTaskComplete().
+	// TP-095: Capture lane session stderr to a log file (#339).
+	// When the lane session (rpc-wrapper → pi → task-runner) dies, stderr is
+	// lost to tmux scrollback. Redirect stderr to a persistent log file
+	// co-located with telemetry so the supervisor can diagnose lane deaths.
+	//
+	// We append stderr to a file using `2>>`. This captures all stderr output
+	// from rpc-wrapper (which includes pi stderr forwarding, progress display,
+	// and crash diagnostics). The tmux pane loses live stderr visibility, but
+	// the dashboard provides live monitoring and the file preserves everything
+	// for post-mortem analysis.
+	//
+	// Appended to piCommand (not the tmux shell wrapper) to target the
+	// node/rpc-wrapper process specifically. This avoids the fragile shell
+	// redirection issues that previously caused spawn failures on Windows.
+	if (sidecarPath) {
+		// Derive stderr log path from sidecar path:
+		// .pi/telemetry/{basename}.jsonl → .pi/telemetry/{basename}-stderr.log
+		const stderrLogPath = sidecarPath.replace(/\.jsonl$/, "-stderr.log");
+		piCommand = `${piCommand} 2>> ${shellQuote(stderrLogPath)}`;
+	}
 
 	const tmuxWorktreePath = toTmuxPath(worktreePath);
 	const wrappedCommand = `cd ${shellQuote(tmuxWorktreePath)} && ${piCommand}`;
@@ -764,11 +807,19 @@ export function resolveCanonicalTaskPaths(
 	let resolvedFolder: string;
 
 	if (isWorkspaceMode) {
-		// Workspace mode: task folder may live in a different repo than
-		// the lane's worktree. Always use the absolute canonical path —
-		// .DONE and STATUS.md are written by workers to the original
-		// task folder (via absolute TASK_AUTOSTART path), not to the worktree.
-		resolvedFolder = resolve(taskFolder);
+		// Workspace mode: use worktree-relative path when the task folder is
+		// inside the lane's repo (same logic as TASK_AUTOSTART resolution).
+		// The worker writes .DONE and STATUS.md in the worktree, so the engine
+		// must look there too.
+		if (folderNorm.startsWith(repoRootNorm + "/")) {
+			const relPath = folderNorm.slice(repoRootNorm.length + 1);
+			resolvedFolder = join(worktreePath, relPath);
+		} else {
+			// Cross-repo: task files were copied into the worktree under
+			// .taskplane-tasks/<taskDirName>/ by buildLaneEnvVars
+			const taskDirName = basename(resolve(taskFolder));
+			resolvedFolder = join(worktreePath, ".taskplane-tasks", taskDirName);
+		}
 	} else if (folderNorm.startsWith(repoRootNorm + "/")) {
 		// Repo mode: task folder is inside the repo root.
 		// Translate to equivalent path in the worktree.
@@ -881,6 +932,8 @@ export function spawnLaneSession(
 
 	// Build env vars
 	const envVars = buildLaneEnvVars(lane, task.task.promptPath, repoRoot, workspaceRoot);
+	// ORCH_BATCH_ID is passed via extraEnvVars from executeWave → executeLane → spawnLaneSession.
+	// The task-runner reads it to include batchId in lane-state JSON for dashboard filtering.
 	if (extraEnvVars) {
 		Object.assign(envVars, extraEnvVars);
 	}
@@ -1069,9 +1122,37 @@ export async function pollUntilTaskComplete(
 				}
 			}
 
-			// Grace period expired without .DONE → task failed (TP-070: async)
+			// Grace period expired — last resort: check the lane BRANCH for .DONE.
+			// The worker may have committed .DONE before the session exited, but
+			// the worktree filesystem doesn't reflect it (stale checkout, race).
+			// This handles the common case where the worker completes all work,
+			// commits .DONE, and then the session exits before the poll detects it.
+			{
+				const relDonePath = donePath.startsWith(lane.worktreePath)
+					? donePath.slice(lane.worktreePath.length).replace(/^[\\/]+/, "").replace(/\\/g, "/")
+					: null;
+				if (relDonePath) {
+					const gitResult = runGit(
+						["show", `${lane.branch}:${relDonePath}`],
+						lane.worktreePath,
+					);
+					if (gitResult.ok) {
+						execLog(laneId, task.taskId, ".DONE found on lane branch (not in worktree) — task succeeded", {
+							session: sessionName,
+							branch: lane.branch,
+						});
+						return {
+							status: "succeeded",
+							exitReason: ".DONE committed to lane branch (found via git show after grace period)",
+							doneFileFound: true,
+						};
+					}
+				}
+			}
+
+			// Truly failed — no .DONE on filesystem or branch
 			const logTail = await readLaneLogTailAsync(laneLogPath);
-			execLog(laneId, task.taskId, "grace period expired without .DONE — task failed", {
+			execLog(laneId, task.taskId, "grace period expired, no .DONE on filesystem or branch — task failed", {
 				session: sessionName,
 				logPath: laneLogPath,
 			});
@@ -1259,6 +1340,23 @@ export async function executeLane(
 			// The task-runner writes .DONE via writeFileSync but never commits it.
 			if (pollResult.status === "succeeded") {
 				commitTaskArtifacts(lane, task, laneId);
+
+				// Reset worktree to clean state for the next task on this lane.
+				// Without this, the next worker sees the previous task's modified
+				// files and can get confused about which task it's working on.
+				if (lane.tasks.indexOf(task) < lane.tasks.length - 1) {
+					execLog(laneId, task.taskId, "resetting worktree for next task");
+					const resetResult = runGit(["checkout", "--", "."], lane.worktreePath);
+					const cleanResult = runGit(["clean", "-fd"], lane.worktreePath);
+					if (!resetResult.ok || !cleanResult.ok) {
+						execLog(laneId, task.taskId, "worktree reset warning", {
+							resetOk: resetResult.ok,
+							cleanOk: cleanResult.ok,
+							resetErr: resetResult.stderr,
+							cleanErr: cleanResult.stderr,
+						});
+					}
+				}
 			}
 
 			// If task failed or was paused, skip remaining tasks
@@ -2288,7 +2386,9 @@ export async function executeWave(
 	const wsRoot = workspaceConfig ? dirname(dirname(workspaceConfig.configPath)) : undefined;
 	const isWsMode = !!workspaceConfig;
 	const lanePromises = lanes.map(lane =>
-		executeLane(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode),
+		executeLane(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode, {
+			ORCH_BATCH_ID: batchId,
+		}),
 	);
 
 	// Start monitoring as a sibling async loop

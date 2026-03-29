@@ -258,6 +258,7 @@ ${repoEntries}
 routing:
   tasks_root: "${fixture.tasksRoot.replace(/\\/g, "/")}"
   default_repo: docs
+  task_packet_repo: docs
 `;
 }
 
@@ -307,7 +308,8 @@ export function buildPolyrepoFixture(): PolyrepoFixture {
 	}
 
 	// -- Create shared tasks root and area directories -----------------
-	const tasksRoot = join(workspaceRoot, "tasks");
+	// Packet-home contract: tasksRoot must be inside the packet repo (docs).
+	const tasksRoot = join(repoPaths.docs, "tasks");
 	const areaPaths: Record<string, string> = {
 		"api-tasks": join(tasksRoot, "api-tasks"),
 		"ui-tasks": join(tasksRoot, "ui-tasks"),

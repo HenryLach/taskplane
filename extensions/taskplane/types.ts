@@ -60,6 +60,26 @@ export interface OrchestratorConfig {
 	};
 }
 
+/** Stable segment identifier: `<taskId>::<repoId>` */
+export type SegmentId = `${string}::${string}`;
+
+/** How an intra-task segment edge was produced (for observability/debugging). */
+export type SegmentEdgeProvenance = "explicit" | "inferred";
+
+/** Repo-scoped edge parsed from optional `## Segment DAG` prompt metadata. */
+export interface PromptSegmentDagEdge {
+	fromRepoId: string;
+	toRepoId: string;
+}
+
+/** Optional explicit segment metadata parsed from PROMPT.md. */
+export interface PromptSegmentDagMetadata {
+	/** Repo IDs participating in this task's segment graph, first-seen order. */
+	repoIds: string[];
+	/** Directed repo-level edges, sorted by `fromRepoId` then `toRepoId`. */
+	edges: PromptSegmentDagEdge[];
+}
+
 /** A parsed task from PROMPT.md, enriched for orchestrator use */
 export interface ParsedTask {
 	taskId: string;
@@ -76,7 +96,80 @@ export interface ParsedTask {
 	promptRepoId?: string;
 	/** Resolved repo ID after routing precedence (workspace mode only). Undefined in repo mode. */
 	resolvedRepoId?: string;
+	/** Optional explicit segment DAG metadata from `## Segment DAG`. */
+	explicitSegmentDag?: PromptSegmentDagMetadata;
+	/**
+	 * Repo ID that owns task packet files (v4, TP-081).
+	 * Populated by execution engine in workspace mode. Undefined in repo mode.
+	 */
+	packetRepoId?: string;
+	/**
+	 * Absolute path to task folder in the packet repo worktree (v4, TP-081).
+	 * Populated by execution engine. Undefined if not yet resolved.
+	 */
+	packetTaskPath?: string;
+	/**
+	 * Segment IDs for this task (v4, TP-081).
+	 * Populated from TaskSegmentPlan during execution.
+	 */
+	segmentIds?: string[];
+	/**
+	 * Currently active segment ID (v4, TP-081).
+	 * Null when no segment is active.
+	 */
+	activeSegmentId?: string | null;
 }
+
+/** Build a stable segment ID from task + repo identity (`<taskId>::<repoId>`). */
+export function buildSegmentId(taskId: string, repoId: string): SegmentId {
+	return `${taskId}::${repoId}` as SegmentId;
+}
+
+/** One repo-scoped segment node for a task. */
+export interface TaskSegmentNode {
+	segmentId: SegmentId;
+	taskId: string;
+	repoId: string;
+	/**
+	 * Deterministic segment order within a task (0-indexed).
+	 * Stable tie-break: repoId lexical order.
+	 */
+	order: number;
+}
+
+/** Directed edge between two segment nodes in the same task. */
+export interface TaskSegmentEdge {
+	fromSegmentId: SegmentId;
+	toSegmentId: SegmentId;
+	provenance: SegmentEdgeProvenance;
+	/** Optional explanation of why this edge exists (debug/telemetry aid). */
+	reason?: string;
+}
+
+/**
+ * Deterministic segment plan for one task.
+ *
+ * Ordering contract:
+ * - `segments`: sorted by `order`, then `repoId`
+ * - `edges`: sorted by `fromSegmentId`, then `toSegmentId`
+ */
+export interface TaskSegmentPlan {
+	taskId: string;
+	segments: TaskSegmentNode[];
+	edges: TaskSegmentEdge[];
+	/**
+	 * explicit-dag: parsed from prompt metadata
+	 * inferred-sequential: deterministic fallback inference
+	 * repo-singleton: repo mode fallback (`resolvedRepoId ?? "default"`)
+	 */
+	mode: "explicit-dag" | "inferred-sequential" | "repo-singleton";
+}
+
+/**
+ * TaskId-keyed segment plans.
+ * Iteration order must be deterministic: sort task IDs lexicographically.
+ */
+export type TaskSegmentPlanMap = Map<string, TaskSegmentPlan>;
 
 /** A wave: a group of tasks whose dependencies are all satisfied */
 export interface WaveAssignment {
@@ -132,7 +225,7 @@ export interface TaskArea {
 export interface TaskRunnerConfig {
 	task_areas: Record<string, TaskArea>;
 	reference_docs: Record<string, string>;
-	/** Named testing/verification commands (e.g., { test: "npx vitest run" }). Used for baseline fingerprinting (TP-032). */
+	/** Named testing/verification commands (e.g., { test: "node --test tests/*.test.ts" }). Used for baseline fingerprinting (TP-032). */
 	testing_commands?: Record<string, string>;
 	/**
 	 * Model fallback behavior when a configured model becomes unavailable mid-batch.
@@ -403,7 +496,9 @@ export interface DiscoveryError {
 		| "DEP_SOURCE_FALLBACK"
 		| "TASK_REPO_UNRESOLVED"
 		| "TASK_REPO_UNKNOWN"
-		| "TASK_ROUTING_STRICT";
+		| "TASK_ROUTING_STRICT"
+		| "SEGMENT_DAG_INVALID"
+		| "SEGMENT_REPO_UNKNOWN";
 	message: string;
 	taskPath?: string;
 	taskId?: string;
@@ -425,6 +520,8 @@ export const FATAL_DISCOVERY_CODES: ReadonlyArray<DiscoveryError["code"]> = [
 	"TASK_REPO_UNRESOLVED",
 	"TASK_REPO_UNKNOWN",
 	"TASK_ROUTING_STRICT",
+	"SEGMENT_DAG_INVALID",
+	"SEGMENT_REPO_UNKNOWN",
 ] as const;
 
 /** Result of the full discovery pipeline */
@@ -457,6 +554,8 @@ export interface GraphValidationResult {
 export interface WaveComputationResult {
 	waves: WaveAssignment[];
 	errors: DiscoveryError[];
+	/** Optional task→segment planning map (TP-080, additive contract). */
+	segmentPlans?: TaskSegmentPlanMap;
 }
 
 
@@ -936,6 +1035,12 @@ export interface OrchBatchRuntimeState {
 	 * Populated from persisted state on resume; defaults used for new batches.
 	 */
 	diagnostics?: BatchDiagnostics;
+	/**
+	 * v4 segment records carried forward across resume cycles (TP-081).
+	 * Populated from persisted state on resume; empty for new batches
+	 * and repo-mode batches.
+	 */
+	segments?: PersistedSegmentRecord[];
 	/**
 	 * Unknown top-level fields from loaded persisted state.
 	 * Carried forward so they survive serialization roundtrips.
@@ -1780,6 +1885,120 @@ export interface EngineEvent {
  */
 export type EngineEventCallback = (event: EngineEvent) => void;
 
+
+// ── Supervisor Alert Types (TP-076) ──────────────────────────────────
+
+/**
+ * Alert category for supervisor notifications.
+ *
+ * Matches the alert categories in the autonomous supervisor spec:
+ * - `task-failure`:   A task failed after deterministic recovery was exhausted
+ * - `merge-failure`:  Wave merge failed and batch paused
+ * - `batch-complete`: Batch finished (all waves done)
+ *
+ * Note: `stall` detection is deferred to a future phase (requires
+ * last-activity tracking not yet built).
+ *
+ * @since TP-076
+ */
+export type SupervisorAlertCategory = "task-failure" | "merge-failure" | "batch-complete";
+
+/**
+ * Structured context payload for supervisor alerts.
+ *
+ * All fields are IPC-serializable (no functions, no circular refs, no Maps/Sets).
+ * Each alert category populates the relevant subset of optional fields.
+ *
+ * @since TP-076
+ */
+export interface SupervisorAlertContext {
+	/** Task ID (for task-failure alerts) */
+	taskId?: string;
+	/** Lane ID, e.g., "lane-1" (for task-failure alerts) */
+	laneId?: string;
+	/** Lane number (for task-failure and merge-failure alerts) */
+	laneNumber?: number;
+	/** Wave index, 0-based (for merge-failure and batch-complete alerts) */
+	waveIndex?: number;
+	/** Exit reason string (for task-failure alerts) */
+	exitReason?: string;
+	/** Whether partial progress was preserved (for task-failure alerts) */
+	partialProgress?: boolean;
+	/** Batch progress summary */
+	batchProgress?: {
+		succeededTasks: number;
+		failedTasks: number;
+		skippedTasks: number;
+		blockedTasks: number;
+		totalTasks: number;
+		currentWave: number;
+		totalWaves: number;
+	};
+	/** Merge failure reason (for merge-failure alerts) */
+	mergeError?: string;
+	/** Batch duration in milliseconds (for batch-complete alerts) */
+	batchDurationMs?: number;
+}
+
+/**
+ * Structured supervisor alert message.
+ *
+ * Emitted by the engine (child process) via IPC when the supervisor
+ * needs to be notified of an event requiring attention or acknowledgement.
+ *
+ * Design:
+ * - All fields are plain JSON-serializable values (IPC-safe).
+ * - `category` determines the alert type and which `context` fields are populated.
+ * - `summary` is a pre-formatted, human-readable string suitable for direct
+ *   display to the supervisor LLM as a conversation message.
+ * - `context` provides structured data for programmatic consumption.
+ *
+ * @since TP-076
+ */
+export interface SupervisorAlert {
+	/** Alert category — determines handling behavior */
+	category: SupervisorAlertCategory;
+	/** Human-readable summary suitable for display as a chat message */
+	summary: string;
+	/** Structured context data (all fields IPC-serializable) */
+	context: SupervisorAlertContext;
+}
+
+/**
+ * Callback type for supervisor alert emission.
+ *
+ * The engine (child process) calls this when it needs to alert the
+ * supervisor about a significant event. The main thread handler
+ * converts the alert into a `sendUserMessage` call to wake the
+ * supervisor LLM.
+ *
+ * @since TP-076
+ */
+export type SupervisorAlertCallback = (alert: SupervisorAlert) => void;
+
+/**
+ * Build a batch progress snapshot from runtime state.
+ *
+ * Pure function — extracts the current progress counters from
+ * OrchBatchRuntimeState into the IPC-serializable format used
+ * by SupervisorAlertContext.batchProgress.
+ *
+ * @since TP-076
+ */
+export function buildBatchProgressSnapshot(
+	batchState: OrchBatchRuntimeState,
+): NonNullable<SupervisorAlertContext["batchProgress"]> {
+	return {
+		succeededTasks: batchState.succeededTasks,
+		failedTasks: batchState.failedTasks,
+		skippedTasks: batchState.skippedTasks,
+		blockedTasks: batchState.blockedTasks,
+		totalTasks: batchState.totalTasks,
+		currentWave: batchState.currentWaveIndex + 1, // 1-based for display
+		totalWaves: batchState.totalWaves,
+	};
+}
+
 /**
  * Build the base fields for an engine event.
  *
@@ -2111,15 +2330,22 @@ export function defaultBatchDiagnostics(): BatchDiagnostics {
  *         exit summaries, batch cost). Task records gain optional
  *         `exitDiagnostic` alongside legacy `exitReason`.
  *         Both new sections are optional for v1/v2 migration paths.
+ *   v4 — Segment execution (TP-081). Adds optional `segments` array
+ *         for persisting per-segment runtime state. Task records gain
+ *         optional `packetRepoId`, `packetTaskPath`, `segmentIds`, and
+ *         `activeSegmentId` fields. All v4-specific fields are optional
+ *         for backward compatibility with v1/v2/v3 migration paths.
+ *         When migrating from v3, `segments` defaults to `[]` and
+ *         task-level segment fields default to `undefined`.
  *
  * Compatibility policy:
- *   - loadBatchState() accepts v1, v2, and v3 files. v1 and v2 are
- *     auto-upconverted to v3 in memory (chained: v1→v2→v3).
+ *   - loadBatchState() accepts v1, v2, v3, and v4 files. v1→v2→v3→v4
+ *     auto-upconverted in memory (chained).
  *     The on-disk file is NOT rewritten during load.
- *   - saveBatchState() always writes v3.
- *   - Schema versions > 3 are rejected with STATE_SCHEMA_INVALID.
+ *   - saveBatchState() always writes v4.
+ *   - Schema versions > 4 are rejected with STATE_SCHEMA_INVALID.
  */
-export const BATCH_STATE_SCHEMA_VERSION = 3;
+export const BATCH_STATE_SCHEMA_VERSION = 4;
 
 /**
  * Canonical file path for persisted batch state.
@@ -2238,6 +2464,99 @@ export interface PersistedTaskRecord {
 	 * falling back to `exitReason` for display.
 	 */
 	exitDiagnostic?: TaskExitDiagnostic;
+	/**
+	 * Repo ID that owns task packet files (PROMPT.md/STATUS.md/.DONE) (v4, TP-081).
+	 *
+	 * In workspace mode, this is the `taskPacketRepo` from routing config.
+	 * Undefined in repo mode or for pre-v4 state files.
+	 */
+	packetRepoId?: string;
+	/**
+	 * Absolute path to the task folder in the packet repo worktree (v4, TP-081).
+	 *
+	 * Used by resume to locate packet files without re-running discovery.
+	 * Undefined in repo mode or for pre-v4 state files.
+	 */
+	packetTaskPath?: string;
+	/**
+	 * Segment IDs belonging to this task (v4, TP-081).
+	 *
+	 * Array of segment ID strings (`<taskId>::<repoId>`).
+	 * Empty array for repo-mode tasks or single-repo tasks.
+	 * Undefined for pre-v4 state files.
+	 */
+	segmentIds?: string[];
+	/**
+	 * Currently executing segment ID (v4, TP-081).
+	 *
+	 * Null when no segment is active (all completed or not started).
+	 * Undefined for pre-v4 state files.
+	 */
+	activeSegmentId?: string | null;
+}
+
+// ── Segment-Level Persisted State (v4, TP-081) ──────────────────────
+
+/**
+ * Segment execution status within a batch.
+ *
+ * State machine mirrors `LaneTaskStatus` but applies at segment granularity:
+ *   pending → running → succeeded
+ *                     → failed
+ *                     → stalled
+ *   pending → skipped  (prior segment failed, or task skipped)
+ *
+ * @since v4 (TP-081)
+ */
+export type PersistedSegmentStatus = "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped";
+
+/**
+ * Persisted record of a single segment's execution state.
+ *
+ * A segment is a repo-scoped execution unit within a task. Each task
+ * may have one or more segments (one per repo the task touches).
+ *
+ * Contains everything `/orch-resume` needs to reconstruct segment-level
+ * progress without re-running discovery.
+ *
+ * @since v4 (TP-081)
+ */
+export interface PersistedSegmentRecord {
+	/** Stable segment identifier (`<taskId>::<repoId>`, e.g., "TP-002::api") */
+	segmentId: string;
+	/** Parent task identifier */
+	taskId: string;
+	/** Repo ID this segment targets */
+	repoId: string;
+	/** Segment execution status */
+	status: PersistedSegmentStatus;
+	/** Lane ID the segment executed on (e.g., "lane-1"), empty if not yet assigned */
+	laneId: string;
+	/** TMUX session name used for this segment */
+	sessionName: string;
+	/** Absolute path to the worktree used for this segment */
+	worktreePath: string;
+	/** Git branch name checked out for this segment */
+	branch: string;
+	/** Epoch ms when segment execution started (null if not yet started) */
+	startedAt: number | null;
+	/** Epoch ms when segment execution ended (null if still pending/running) */
+	endedAt: number | null;
+	/** Number of retry attempts for this segment */
+	retries: number;
+	/**
+	 * Segment IDs this segment depends on (intra-task DAG edges).
+	 * Empty array for the first segment in a task or for tasks with no intra-task deps.
+	 */
+	dependsOnSegmentIds: string[];
+	/**
+	 * Structured exit diagnostic for this segment.
+	 * Optional: absent for segments that haven't exited yet.
+	 * Uses the same `TaskExitDiagnostic` shape from diagnostics.ts.
+	 */
+	exitDiagnostic?: TaskExitDiagnostic;
+	/** Human-readable exit reason (legacy compat, same as task-level) */
+	exitReason: string;
 }
 
 /**
@@ -2352,9 +2671,17 @@ export interface PersistedRepoMergeOutcome {
  *   data alongside legacy `exitReason` string).
  * - Both sections are required in v3. Migration from v1/v2 fills
  *   conservative defaults (see `defaultResilienceState()` / `defaultBatchDiagnostics()`).
+ *
+ * v4 additions (TP-081):
+ * - `segments` array (required): per-segment execution records for multi-repo
+ *   task execution. Empty array in repo mode or for pre-v4 migration.
+ * - Task records gain optional `packetRepoId`, `packetTaskPath`, `segmentIds`,
+ *   and `activeSegmentId` for segment-level tracking.
+ * - Migration from v3 fills `segments` as `[]` and leaves task-level segment
+ *   fields as `undefined`.
  */
 export interface PersistedBatchState {
-	/** Schema version — must equal BATCH_STATE_SCHEMA_VERSION (currently 3) */
+	/** Schema version — must equal BATCH_STATE_SCHEMA_VERSION (currently 4) */
 	schemaVersion: number;
 	/** Current batch execution phase */
 	phase: OrchBatchPhase;
@@ -2403,14 +2730,24 @@ export interface PersistedBatchState {
 	errors: string[];
 	/**
 	 * Resilience state for retry/recovery tracking (v3, TP-030).
-	 * Required in v3. Migration from v1/v2 fills conservative defaults.
+	 * Required in v3+. Migration from v1/v2 fills conservative defaults.
 	 */
 	resilience: ResilienceState;
 	/**
 	 * Batch-level diagnostics for cost tracking and exit summaries (v3, TP-030).
-	 * Required in v3. Migration from v1/v2 fills conservative defaults.
+	 * Required in v3+. Migration from v1/v2 fills conservative defaults.
 	 */
 	diagnostics: BatchDiagnostics;
+	/**
+	 * Per-segment execution records for multi-repo task execution (v4, TP-081).
+	 *
+	 * Each entry represents one repo-scoped segment of a task. In repo mode
+	 * or for single-repo tasks, this array is empty (segment tracking is
+	 * implicit via task records).
+	 *
+	 * Required in v4. Migration from v1/v2/v3 fills empty array.
+	 */
+	segments: PersistedSegmentRecord[];
 	/**
 	 * Unknown top-level fields captured during deserialization.
 	 * Preserved on roundtrip to avoid data loss from future schema extensions
@@ -2718,10 +3055,11 @@ export const BATCH_HISTORY_MAX_ENTRIES = 100;
  *   coordinates multiple repos and a shared task root.
  *
  * Mode determination rules:
- * 1. No workspace config file → repo mode (non-fatal default, silent).
- * 2. Workspace config file present + invalid → fatal error with actionable
+ * 1. Workspace config file present + invalid → fatal error with actionable
  *    `WorkspaceConfigError` (never silently falls back to repo mode).
- * 3. Workspace config file present + valid → workspace mode.
+ * 2. Workspace config file present + valid → workspace mode.
+ * 3. No workspace config + cwd is a git repo → repo mode.
+ * 4. No workspace config + cwd is not a git repo → `WORKSPACE_SETUP_REQUIRED`.
  */
 export type WorkspaceMode = "repo" | "workspace";
 
@@ -2758,6 +3096,15 @@ export interface WorkspaceRoutingConfig {
 	 * Must reference a valid key in `WorkspaceConfig.repos`.
 	 */
 	defaultRepo: string;
+	/**
+	 * Repo ID that owns task packet files (PROMPT.md/STATUS.md/.DONE/.reviews).
+	 *
+	 * Required at runtime. Legacy workspace YAML without this field is
+	 * compatibility-mapped to `defaultRepo` during load with a warning.
+	 *
+	 * Invariant: `tasksRoot` must resolve inside `repos[taskPacketRepo].path`.
+	 */
+	taskPacketRepo: string;
 	/**
 	 * When true, every task MUST declare an explicit execution target
 	 * (via `## Execution Target` section or inline `**Repo:**` in PROMPT.md).
@@ -2850,6 +3197,10 @@ export interface ExecutionContext {
  * - WORKSPACE_TASKS_ROOT_NOT_FOUND: `routing.tasks_root` path does not exist on disk
  * - WORKSPACE_MISSING_DEFAULT_REPO: `routing.default_repo` is missing or empty
  * - WORKSPACE_DEFAULT_REPO_NOT_FOUND: `routing.default_repo` references a repo ID not in the repos map
+ * - WORKSPACE_TASK_PACKET_REPO_NOT_FOUND: `routing.task_packet_repo` references a repo ID not in the repos map
+ * - WORKSPACE_TASKS_ROOT_OUTSIDE_PACKET_REPO: `routing.tasks_root` resolves outside `repos[routing.task_packet_repo].path`
+ * - WORKSPACE_TASK_AREA_OUTSIDE_TASKS_ROOT: A configured task-area path resolves outside `routing.tasks_root`
+ * - WORKSPACE_SETUP_REQUIRED: No workspace config and cwd is not a git repository
  * - WORKSPACE_DUPLICATE_REPO_PATH: Two or more repos share the same filesystem path
  * - WORKSPACE_SCHEMA_INVALID: Config file has valid YAML but missing/invalid top-level structure
  */
@@ -2864,10 +3215,12 @@ export type WorkspaceConfigErrorCode =
 	| "WORKSPACE_TASKS_ROOT_NOT_FOUND"
 	| "WORKSPACE_MISSING_DEFAULT_REPO"
 	| "WORKSPACE_DEFAULT_REPO_NOT_FOUND"
+	| "WORKSPACE_TASK_PACKET_REPO_NOT_FOUND"
+	| "WORKSPACE_TASKS_ROOT_OUTSIDE_PACKET_REPO"
+	| "WORKSPACE_TASK_AREA_OUTSIDE_TASKS_ROOT"
+	| "WORKSPACE_SETUP_REQUIRED"
 	| "WORKSPACE_DUPLICATE_REPO_PATH"
-	| "WORKSPACE_SCHEMA_INVALID";
-
-/**
+	| "WORKSPACE_SCHEMA_INVALID";/**
  * Typed error class for workspace configuration failures.
  *
  * Thrown during workspace config loading/validation when the config file
@@ -3002,5 +3355,99 @@ export function createRepoModeContext(
 		orchestratorConfig,
 		pointer: null,
 	};
+}
+
+
+// ── Agent Mailbox Types (TP-089) ─────────────────────────────────────
+
+/**
+ * Mailbox directory name under .pi/.
+ * @since TP-089
+ */
+export const MAILBOX_DIR_NAME = "mailbox";
+
+/**
+ * Maximum content size in UTF-8 bytes.
+ * Steering messages should be concise directives; larger context should be
+ * written to a separate file and referenced by path.
+ * @since TP-089
+ */
+export const MAILBOX_MAX_CONTENT_BYTES = 4096;
+
+/**
+ * Message types for the agent mailbox system.
+ *
+ * | Type       | Direction           | Purpose                                    |
+ * |------------|---------------------|--------------------------------------------|
+ * | `steer`    | supervisor → agent  | Course correction. Agent must follow.       |
+ * | `query`    | supervisor → agent  | Request for status/info. Agent replies.     |
+ * | `abort`    | supervisor → agent  | Graceful stop. Agent wraps up and exits.    |
+ * | `info`     | supervisor → agent  | FYI context. No action required.            |
+ * | `reply`    | agent → supervisor  | Response to query or steer acknowledgment.  |
+ * | `escalate` | agent → supervisor  | Agent-initiated: blocked or needs guidance. |
+ *
+ * @since TP-089
+ */
+export type MailboxMessageType = "steer" | "query" | "abort" | "info" | "reply" | "escalate";
+
+/**
+ * Set of valid mailbox message types for runtime validation.
+ * @since TP-089
+ */
+export const MAILBOX_MESSAGE_TYPES: ReadonlySet<string> = new Set<MailboxMessageType>([
+	"steer", "query", "abort", "info", "reply", "escalate",
+]);
+
+/**
+ * Message format for the file-based agent mailbox.
+ *
+ * Messages are written as JSON files in batch-scoped, session-scoped
+ * directories. The rpc-wrapper checks the inbox on every `message_end`
+ * event and injects pending messages into the agent's LLM context via
+ * pi's `steer` RPC command.
+ *
+ * @see docs/specifications/taskplane/agent-mailbox-steering.md
+ * @since TP-089
+ */
+export interface MailboxMessage {
+	/** Unique message ID: `{timestamp}-{5char-hex-nonce}` */
+	id: string;
+	/** Batch ID — must match current batch for validation */
+	batchId: string;
+	/** Sender identifier: `"supervisor"` or session name */
+	from: string;
+	/** Target session name or `"_broadcast"` */
+	to: string;
+	/** Epoch milliseconds (Date.now()) */
+	timestamp: number;
+	/** Message type */
+	type: MailboxMessageType;
+	/** Message body (max 4KB UTF-8 bytes) */
+	content: string;
+	/** Whether the sender expects a reply (default: false) */
+	expectsReply?: boolean;
+	/** Reference to a previous message ID for threading (default: null) */
+	replyTo?: string | null;
+}
+
+/**
+ * Input options for writeMailboxMessage.
+ *
+ * The caller provides these fields; the utility generates `id`, `batchId`,
+ * `to`, and `timestamp` from its own arguments.
+ *
+ * @since TP-089
+ */
+export interface WriteMailboxMessageOpts {
+	/** Sender identifier: `"supervisor"` or session name */
+	from: string;
+	/** Message type */
+	type: MailboxMessageType;
+	/** Message body (max 4KB UTF-8 bytes) */
+	content: string;
+	/** Whether the sender expects a reply (default: false) */
+	expectsReply?: boolean;
+	/** Reference to a previous message ID for threading (default: null) */
+	replyTo?: string | null;
 }
 

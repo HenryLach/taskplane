@@ -14,7 +14,7 @@
  *   5.x — Static batch-state fixture validation (polyrepo resume state)
  *   6.x — ParsedTask builder (fixture helper for downstream tests)
  *
- * Run: npx vitest run extensions/tests/polyrepo-fixture.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/polyrepo-fixture.test.ts
  */
 
 import { describe, it, before, after } from "node:test";

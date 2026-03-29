@@ -10,7 +10,7 @@
  *   5.x — Fallback: missing template → inline prompt still works
  *   6.x — Init integration: supervisor template in init file lists
  *
- * Run: npx vitest run tests/supervisor-template.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/supervisor-template.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

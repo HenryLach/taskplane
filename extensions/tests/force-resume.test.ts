@@ -7,7 +7,7 @@
  *   3. runPreResumeDiagnostics() — pre-resume health checks
  *   4. Force-resume runtime path — source verification of resumeOrchBatch force flow
  *
- * Run: npx vitest run extensions/tests/force-resume.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/force-resume.test.ts
  */
 
 import { describe, it, afterEach } from "node:test";
@@ -52,6 +52,7 @@ function makeState(phase: OrchBatchPhase, batchId: string = "test-batch-001"): P
 		errors: [],
 		resilience: defaultResilienceState(),
 		diagnostics: defaultBatchDiagnostics(),
+		segments: [],
 	};
 }
 
@@ -350,7 +351,7 @@ describe("force-resume runtime path in resumeOrchBatch — source verification",
  */
 describe("force-resume runtime path — diagnostics gate", () => {
 	afterEach(() => {
-		// No vitest mocks to restore in node:test migration
+		// No legacy Vitest mocks to restore; node:test handles this file directly.
 	});
 
 	it("diagnostics pass for well-formed state (state-coherence check always passes)", () => {

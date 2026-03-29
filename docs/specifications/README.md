@@ -23,6 +23,7 @@ new features.
 |----------|-------------|
 | [taskplane/watchdog-and-recovery-tiers.md](taskplane/watchdog-and-recovery-tiers.md) | Supervisor agent, Tier 0 watchdog, interactive onboarding, recovery playbook |
 | [taskplane/evaluation-system.md](taskplane/evaluation-system.md) | Cross-task validation and integrated system testing |
+| [taskplane/multi-repo-task-execution.md](taskplane/multi-repo-task-execution.md) | #51 foundation: task packet home repo, segment DAG, multi-repo task execution model |
 | [orch-managed-branch-spec.md](orch-managed-branch-spec.md) | Design for `orch/{opId}-{batchId}` branch model and `/orch-integrate` |
 | [settings-and-onboarding-spec.md](settings-and-onboarding-spec.md) | JSON config, pointer resolution, `/taskplane-settings` TUI, `init` v2 |
 

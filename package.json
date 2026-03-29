@@ -1,6 +1,6 @@
 {
   "name": "taskplane",
-  "version": "0.19.0",
+  "version": "0.22.12",
   "description": "AI agent orchestration for pi — parallel task execution with checkpoint discipline",
   "keywords": [
     "pi-package",
@@ -43,6 +43,7 @@
     "@sinclair/typebox": "*"
   },
   "dependencies": {
+    "jiti": "^2.6.1",
     "yaml": "^2.4.0"
   },
   "license": "MIT",

@@ -4,7 +4,7 @@
  * Table-driven tests for classifyExit() covering all 9 classification paths
  * plus precedence collision cases.
  *
- * Run: npx vitest run extensions/tests/exit-classification.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/exit-classification.test.ts
  */
 
 import { describe, it } from "node:test";

@@ -415,6 +415,37 @@ export interface OrchestratorSection {
 }
 
 
+// ── Workspace Section Interfaces ─────────────────────────────────────
+
+/** Workspace repo definition (JSON config shape). */
+export interface WorkspaceRepoSectionConfig {
+	/** Repo root path (relative to workspace root or absolute). */
+	path: string;
+	/** Optional default branch override. */
+	defaultBranch?: string;
+}
+
+/** Workspace routing definition (JSON config shape). */
+export interface WorkspaceRoutingSectionConfig {
+	/** Shared task packet root directory. */
+	tasksRoot: string;
+	/** Default repo for unqualified operations. */
+	defaultRepo: string;
+	/** Packet-home repo owning PROMPT/STATUS/.DONE. */
+	taskPacketRepo: string;
+	/** Strict repo routing mode. */
+	strict?: boolean;
+}
+
+/** Optional workspace section in taskplane-config.json. */
+export interface WorkspaceSectionConfig {
+	/** Repo map keyed by repo ID. */
+	repos: Record<string, WorkspaceRepoSectionConfig>;
+	/** Routing contract for workspace mode. */
+	routing: WorkspaceRoutingSectionConfig;
+}
+
+
 // ── Unified Config ───────────────────────────────────────────────────
 
 /**
@@ -442,6 +473,8 @@ export interface TaskplaneConfig {
 	taskRunner: TaskRunnerSection;
 	/** Orchestrator settings */
 	orchestrator: OrchestratorSection;
+	/** Optional workspace config (JSON-first; legacy YAML fallback supported). */
+	workspace?: WorkspaceSectionConfig;
 }
 
 

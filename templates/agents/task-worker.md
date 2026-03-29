@@ -173,6 +173,15 @@ When a reviewer returns REVISE with specific feedback items:
 - Do NOT expand task scope beyond what the steps require
 - If you discover something out of scope, note it in STATUS.md Discoveries table
 
+## Completion Integrity
+
+**Every checked checkbox MUST correspond to a real code change, test, or document edit.** You must NOT check off items by simply observing that existing code appears to satisfy them. Specifically:
+
+- **If you believe work is already done:** You must still verify by running tests against the specific requirements AND document what you verified. Check off the item only after confirming with evidence (test output, code inspection notes in STATUS.md).
+- **"No source files changed" is a red flag.** If you complete a task without modifying any source files (only STATUS.md), something is wrong. Every implementation task requires code changes. If you genuinely believe no changes are needed, log a detailed explanation in STATUS.md Discoveries and escalate — do NOT mark the task as complete.
+- **A step that requires "Add X to Y" means you write the code.** Reading existing code and deciding it already satisfies the requirement is not implementation. If the existing code truly covers it, write a test that proves it, and document the finding.
+- **Checking boxes without doing work is the most serious failure mode.** It wastes the entire batch pipeline (review, merge, integration) and produces a false completion that blocks dependent tasks.
+
 ## Review Protocol
 
 If you have access to a `review_step` tool, use it at step boundaries to spawn
@@ -192,22 +201,47 @@ a reviewer agent. The tool takes two parameters: `step` (number) and `type`
 documentation/delivery). These are low-risk steps where review overhead exceeds
 value.
 
+### ⚠️ CRITICAL: Plan review happens BEFORE implementation
+
+**The plan review MUST happen BEFORE you write any code for that step.**
+The entire purpose of plan review is to catch design issues, missing cases, and
+wrong approaches BEFORE you spend tokens implementing them. If you implement
+first and then request plan review, the reviewer's feedback is wasted — the
+code is already written.
+
+**Correct sequence:**
+1. Hydrate step checkboxes (expand the plan)
+2. Commit the hydrated STATUS.md
+3. **Call `review_step(step=N, type="plan")` — BEFORE writing any code**
+4. Handle verdict (APPROVE → implement; REVISE → fix plan, re-review)
+5. Implement the step (write code, check off items)
+6. Commit implementation
+7. Call `review_step(step=N, type="code")` — AFTER implementation
+
+**WRONG sequence (violates the protocol):**
+1. ~~Hydrate, implement, check off, commit, THEN call plan review~~ ❌
+   This makes plan review pointless — the work is already done.
+
 **Handling verdicts:**
-- **APPROVE** → proceed to next step
+- **APPROVE** → proceed (to implementation after plan review; to next step after code review)
 - **RETHINK** → reconsider your plan approach, adjust, then implement
 - **REVISE** → read the review file in `.reviews/` for detailed feedback,
-  address the issues, commit fixes, then proceed
+  address the issues, commit fixes, then **call `review_step` again** for re-review.
+  The same reviewer evaluates whether your fixes address its concerns.
 - **UNAVAILABLE** → reviewer failed, proceed with caution
 
 **Example flow for a Review Level 2 task, Step 3:**
 1. Read Step 3 requirements
-2. Call `review_step(step=3, type="plan")` → get plan feedback
-3. Capture baseline: run `git rev-parse HEAD` and save the SHA
-4. Implement Step 3
-5. Commit changes
-6. Call `review_step(step=3, type="code", baseline="<saved SHA>")` → get code feedback
-7. If REVISE: fix issues, commit again
-8. Move to Step 4
+2. Hydrate Step 3 checkboxes, commit STATUS.md
+3. Call `review_step(step=3, type="plan")` → get plan feedback (**NO CODE YET**)
+4. If REVISE: adjust plan, re-request plan review
+5. If APPROVE: capture baseline SHA (`git rev-parse HEAD`)
+6. Implement Step 3 (write code, check off items)
+7. Commit changes
+8. Call `review_step(step=3, type="code", baseline="<saved SHA>")` → get code feedback
+9. If REVISE: fix issues, commit, call `review_step(step=3, type="code")` again
+10. Repeat 9 until APPROVE (max 2 code review cycles per step)
+11. Move to Step 4
 
 If the `review_step` tool is not available (e.g., non-orchestrated mode), skip
 this protocol entirely — the task-runner handles reviews externally.
@@ -241,30 +275,24 @@ Run tests at two different scopes depending on where you are in the task:
 
 ### During implementation steps (targeted tests)
 
-After implementing each step, run **targeted tests** for fast feedback:
+After implementing each step, run **targeted tests** for fast feedback.
+Use file-targeted runs for the test files that cover your changes:
 
 ```bash
-cd extensions && npx vitest run --changed
+cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/some-specific.test.ts
 ```
 
-- Vitest's `--changed` flag uses git to find modified files since the last commit
-  and runs only tests related to those files.
-- Workers commit at step boundaries, so between commits the changed set is
-  exactly "what this step modified" — this naturally targets the right tests.
-- Alternatively, run specific test files that cover the code you modified:
-  `npx vitest run tests/some-specific.test.ts`
-- **If `--changed` returns no tests:** That's fine — it means your changes don't
-  have directly related test files. The full suite in the Testing step will catch
-  any indirect regressions.
-- **If targeted tests fail:** Fix the failure before proceeding. Don't accumulate
-  failures across steps.
+- Node's native runner does not provide a reliable project-level `--changed`
+  equivalent; select targeted files explicitly.
+- If multiple files are relevant, pass multiple `--test` paths.
+- **If targeted tests fail:** fix them before proceeding. Don't accumulate failures.
 
 ### During the Testing & Verification step (full suite)
 
 Run the **full test suite** as a quality gate:
 
 ```bash
-cd extensions && npx vitest run
+cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts
 ```
 
 - ALL tests must pass — zero failures allowed.
@@ -280,33 +308,35 @@ checkpoints protect against regressions even when intermediate steps use targete
 2. The merge agent (before merging to the orchestrator branch)
 3. CI (before merging to main)
 
-## File Reading Strategy (Context Budget)
+## File Reading Strategy (Context Budget) — CRITICAL
 
-Your context window is finite. Reading large files whole wastes budget and risks
-triggering the context-pressure safety net (85% → wrap-up, 95% → kill).
-Use targeted reads instead:
+Your context window is finite. **Reading large files without offset/limit is the
+#1 cause of context exhaustion** — one full read of a 3000-line file consumes
+~5% of a 1M context window. Three such reads = 15% gone before you've done
+anything.
+
+### HARD RULES
+
+1. **NEVER read a file > 500 lines without offset/limit.** Always grep first.
+2. **NEVER read the same file twice in full.** Re-read only the changed region.
+3. **ALWAYS check file size before reading:** `wc -l <file>` or `ls -la <file>`
 
 ### Pattern: grep-first, read-with-offset
 
-1. **Locate** the relevant section with `grep` or `find`:
-   ```
-   grep -n "function buildPrompt" extensions/task-runner.ts
-   ```
-2. **Read** just that region with `offset` and `limit`:
-   ```
-   read extensions/task-runner.ts (offset: 1773, limit: 50)
-   ```
-3. **Edit** surgically with exact `oldText → newText`
+1. **Check size:** `wc -l extensions/task-runner.ts` → 4100 lines (DO NOT read fully)
+2. **Locate** the relevant section: `grep -n "function buildPrompt" extensions/task-runner.ts`
+3. **Read** just that region: `read extensions/task-runner.ts (offset: 1773, limit: 50)`
+4. **Edit** surgically with exact `oldText → newText`
 
 ### When to read a full file
 
 - Files under ~500 lines — read the whole thing, it's fine
-- Config files, test files, templates — usually small enough to read fully
+- Config files, small test files, templates — usually small enough
 - New files you're creating — read after writing to verify
 
 ### When NOT to read a full file
 
-- Source files over ~1000 lines — grep first, read the relevant region
+- Source files over ~500 lines — grep first, read with offset/limit
 - Generated files, lock files, large data files — almost never need full reads
 - Files you've already read this session — re-read only the changed region
 

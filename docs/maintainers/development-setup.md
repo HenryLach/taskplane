@@ -133,7 +133,7 @@ and `@mariozechner/pi-tui` to local mock stubs so tests don't need the real pack
 ### Test authoring patterns
 
 - Use `import { describe, it, mock, beforeEach, afterEach } from "node:test"` for test structure
-- Use `import { expect } from "./expect.ts"` for vitest-compatible assertions (wraps `node:assert`)
+- Use `import { expect } from "./expect.ts"` for a familiar matcher API (legacy Vitest-style surface backed by `node:assert`)
 - Use `mock.fn()` for function mocks, `mock.method(obj, key)` for spies
 - Use `mock.module("mod", { namedExports: {...} })` for ESM module mocking (must be before `await import()` of consumer)
 - Use `mock.timers.enable()` / `mock.timers.tick(ms)` / `mock.timers.reset()` for fake timers

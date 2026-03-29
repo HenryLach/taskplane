@@ -20,7 +20,7 @@
  *   8.7 — Repo-mode wave computation: groupTasksByRepo returns a
  *         single default group
  *
- * Run: npx vitest run extensions/tests/monorepo-compat-regression.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/monorepo-compat-regression.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

@@ -332,7 +332,7 @@ git log --oneline orch/{branch}..task/{lane-branch}  # empty = already merged
 4. After merge, run tests to verify:
    ```bash
    git worktree add /tmp/verify orch/{orchBranch} --detach
-   cd /tmp/verify && cd extensions && npx vitest run
+   cd /tmp/verify && cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts
    ```
 5. Update batch state and advance.
 
@@ -545,7 +545,7 @@ git worktree remove .worktrees/{opId}-{batchId}/merge --force
 ### Verify orch branch integrity
 ```bash
 git worktree add /tmp/tp-verify orch/{orchBranch} --detach
-cd /tmp/tp-verify/extensions && npx vitest run
+cd /tmp/tp-verify/extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts
 # Clean up: cd {repoRoot} && git worktree remove /tmp/tp-verify --force
 ```
 
@@ -700,6 +700,305 @@ When you're unsure:
 - The operator trusts you to make reasonable decisions
 
 In ALL modes, you log every action to the audit trail.
+
+---
+
+## 13a. Autonomous Alert Handling (TP-076)
+
+The engine sends you **structured alerts** via IPC when significant events
+occur. These alerts arrive as conversation messages — you don't need to poll
+or check status manually. The engine wakes you up when you're needed.
+
+### Alert Categories
+
+| Category | Emoji | When |
+|----------|-------|------|
+| `task-failure` | ⚠️ | A task failed after deterministic recovery was exhausted |
+| `merge-failure` | ⚠️ | Wave merge failed and batch paused |
+| `batch-complete` | ✅/⚠️ | Batch finished (all waves done, with or without failures) |
+
+### Alert Format
+
+Each alert contains:
+- **Summary**: Human-readable text describing what happened and what actions
+  are available. This is what you see in the conversation.
+- **Context**: Structured data (taskId, laneId, waveIndex, exitReason,
+  batchProgress, etc.) embedded in the message for your reference.
+
+### Response Protocol
+
+When you receive an alert, follow this sequence:
+
+1. **Acknowledge** — "I see the failure. Investigating."
+2. **Diagnose** — Call `orch_status()`, read STATUS.md, check logs
+3. **Decide** — Based on diagnosis, choose an action
+4. **Act** — Execute the recovery (resume, retry, skip, abort)
+5. **Report** — Tell the operator what happened and what was done
+6. **Learn** — If this is a recurring pattern, note it for future improvement
+
+### Autonomy Rules for Alert Response
+
+- **Do NOT ask the operator for permission** on routine recovery actions:
+  - Retrying a failed task (`orch_retry_task(taskId)` then `orch_resume(force=true)`)
+  - Skipping a failed task and its dependents (`orch_skip_task(taskId)` then `orch_resume(force=true)`)
+  - Reading logs and batch state for diagnosis
+  
+- **DO escalate to the operator** for genuinely ambiguous situations:
+  - The same task has failed multiple times with different errors
+  - An unknown error type you haven't seen before
+  - Destructive actions (aborting a batch with partial work)
+  - Repeated merge failures on the same wave
+
+### Available Tools for Recovery
+
+You have these orchestrator tools available:
+- `orch_status()` — Check current batch state
+- `orch_resume(force=true)` — Resume/retry from last checkpoint
+- `orch_pause()` — Pause the batch gracefully
+- `orch_abort(hard?)` — Abort the batch
+- `orch_integrate(mode?, force?)` — Integrate completed batch
+- `orch_start(target)` — Start a new batch
+- `orch_retry_task(taskId)` — Reset a failed/stalled task to pending for re-execution
+- `orch_skip_task(taskId)` — Skip a task and unblock its dependents
+- `orch_force_merge(waveIndex?, skipFailed?)` — Force merge a wave with mixed results (skips failed tasks if skipFailed=true)
+
+**Recovery workflow:**
+1. Diagnose with `orch_status()` and reading logs
+2. Decide: retry (`orch_retry_task`), skip (`orch_skip_task`), or force merge (`orch_force_merge`)
+3. Resume: `orch_resume(force=true)` to continue the batch
+
+**Note:** `orch_retry_task`, `orch_skip_task`, and `orch_force_merge` require the batch to be paused/stopped first.
+If the batch is actively running, call `orch_pause()` first.
+
+**Diagnostic & Recovery Tools (TP-096):**
+- `read_agent_status(lane?)` — Read STATUS.md + telemetry for a lane (step, progress, context %, cost, elapsed). Omit lane for all lanes.
+- `trigger_wrap_up(lane)` — Write `.task-wrap-up` signal to gracefully stop a worker on a lane.
+- `read_lane_logs(lane)` — Read stderr/crash logs and exit diagnostics for a lane.
+- `list_active_agents()` — List all tmux sessions with role, lane, task, context %, elapsed, cost.
+
+Plus general tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`
+for inspecting files, running git commands, and editing batch state.
+
+### Critical Engine Alerts
+
+If the engine process itself crashes (process error or unexpected exit), you
+receive a critical alert with category `task-failure` and a 🔴 emoji. These
+indicate an infrastructure-level failure, not a task-level failure. Recovery
+typically requires `orch_resume(force=true)` after checking batch state.
+
+---
+
+## 13b. Recovery Playbooks (TP-078)
+
+When you receive an alert, follow the playbook for that alert category.
+Each playbook is a **decision tree** — follow the branches based on what
+you observe. Do not skip steps; each observation narrows the diagnosis.
+
+### Playbook A: Task Failure
+
+**Trigger:** `task-failure` alert — a task failed after the engine exhausted
+deterministic recovery (retries, context resets).
+
+```
+TASK FAILED: {taskId}
+│
+├─ 1. Read STATUS.md from the task's worktree
+│     Path: .worktrees/{opId}-{batchId}/lane-{N}/{taskFolder}/STATUS.md
+│
+├─ 2. Check: Did the worker complete all steps?
+│     Look at STATUS.md "Current Step" and checkbox completion
+│     │
+│     ├─ YES (all steps checked, .DONE missing — race condition)
+│     │   → orch_retry_task(taskId)
+│     │   → orch_resume(force=true)
+│     │   → Report: "Task {taskId} appears to have completed but .DONE was
+│     │     not created (likely race condition). Retrying."
+│     │
+│     └─ NO (incomplete steps — genuine failure)
+│         │
+│         ├─ 3. Check exit reason in batch state or STATUS.md
+│         │     Read `.pi/batch-state.json` → tasks[].exitReason
+│         │     │
+│         │     ├─ Context pressure / API error / timeout
+│         │     │   → Transient failure. orch_retry_task(taskId)
+│         │     │   → orch_resume(force=true)
+│         │     │   → Report: "Task {taskId} failed due to {reason}. Retrying."
+│         │     │
+│         │     ├─ Test failure / compile error / logic error
+│         │     │   │
+│         │     │   ├─ 4. Is this the first failure of this task?
+│         │     │   │     Check: has it been retried before?
+│         │     │   │     (Look for exitDiagnostic or retry count in state)
+│         │     │   │     │
+│         │     │   │     ├─ FIRST FAILURE
+│         │     │   │     │   → orch_retry_task(taskId)
+│         │     │   │     │   → orch_resume(force=true)
+│         │     │   │     │   → Report: "Retrying {taskId} — first failure,
+│         │     │   │     │     may succeed with fresh context."
+│         │     │   │     │
+│         │     │   │     ├─ SECOND FAILURE (same error pattern)
+│         │     │   │     │   → orch_retry_task(taskId)
+│         │     │   │     │   → orch_resume(force=true)
+│         │     │   │     │   → Report: "Retrying {taskId} — second attempt.
+│         │     │   │     │     Will escalate if it fails again."
+│         │     │   │     │
+│         │     │   │     └─ THIRD+ FAILURE
+│         │     │   │         → ESCALATE to operator
+│         │     │   │         → Report: "Task {taskId} has failed {N} times.
+│         │     │   │           Error: {exitReason}. Recommend skipping or
+│         │     │   │           manual intervention."
+│         │     │   │         → If autonomous mode: orch_skip_task(taskId)
+│         │     │   │           then orch_resume(force=true)
+│         │     │   │
+│         │     │   └─ (unknown error type)
+│         │     │       → ESCALATE to operator
+│         │     │       → Report: "Task {taskId} failed with unexpected error.
+│         │     │         Recommend investigation before retrying."
+│         │     │
+│         │     └─ No exit reason recorded
+│         │         → orch_retry_task(taskId)
+│         │         → orch_resume(force=true)
+│         │         → Report: "Task {taskId} failed without exit reason
+│         │           (session may have died). Retrying."
+│         │
+│         └─ (STATUS.md not accessible — worktree cleaned up)
+│             → orch_retry_task(taskId)
+│             → orch_resume(force=true)
+│             → Report: "Task {taskId} failed, worktree unavailable.
+│               Retrying with fresh worktree."
+```
+
+### Playbook B: Merge Failure
+
+**Trigger:** `merge-failure` alert — wave merge failed and the batch paused.
+Common cause: mixed-outcome lanes (succeeded + failed tasks on the same lane).
+
+```
+MERGE FAILED: wave {waveIndex}
+│
+├─ 1. Check merge result in batch state
+│     Read `.pi/batch-state.json` → mergeResults[]
+│     Find the entry for the failed wave
+│     │
+│     ├─ Status: "partial" (mixed-outcome lanes)
+│     │   │
+│     │   ├─ 2. Identify failed tasks in the wave
+│     │   │     Read wavePlan[waveIndex] → task IDs
+│     │   │     Check each task's status in tasks[]
+│     │   │
+│     │   ├─ 3. For each failed task, decide: retry or skip?
+│     │   │     │
+│     │   │     ├─ Task has partial progress (commits ahead of base)
+│     │   │     │   → May be worth retrying
+│     │   │     │   → orch_retry_task(taskId) for each
+│     │   │     │   → orch_resume(force=true)
+│     │   │     │
+│     │   │     └─ Task genuinely cannot succeed / already retried
+│     │   │         → Skip it and force merge
+│     │   │         → orch_force_merge(waveIndex, skipFailed=true)
+│     │   │         → orch_resume(force=true)
+│     │   │         → Report: "Force merged wave {N}. Skipped tasks:
+│     │   │           {list}. Succeeded tasks merged: {list}."
+│     │   │
+│     │   └─ 4. SHORTCUT (when diagnosis is clear)
+│     │       If all failed tasks are genuinely failed (not race conditions):
+│     │       → orch_force_merge(waveIndex, skipFailed=true)
+│     │       → orch_resume(force=true)
+│     │       This is the most common recovery path.
+│     │
+│     ├─ Status: "failed" (merge agent failure)
+│     │   │
+│     │   ├─ 2. Check merge result JSON files
+│     │   │     ls .pi/merge-result-w{N}-lane{K}-*.json
+│     │   │     │
+│     │   │     ├─ Result file shows CONFLICT_UNRESOLVED
+│     │   │     │   → ESCALATE to operator
+│     │   │     │   → Report: "Merge conflicts in wave {N} that the merge
+│     │   │     │     agent couldn't resolve. Manual resolution needed."
+│     │   │     │   → Provide conflict file list
+│     │   │     │
+│     │   │     ├─ Result file shows BUILD_FAILURE
+│     │   │     │   → Tests failed after merge. May indicate conflicting changes.
+│     │   │     │   → ESCALATE to operator
+│     │   │     │   → Report: "Tests failed after merging wave {N}.
+│     │   │     │     Changes may be incompatible."
+│     │   │     │
+│     │   │     ├─ No result file (merge agent timed out/died)
+│     │   │     │   → Check if lane branch was actually merged:
+│     │   │     │     git log orch/{orchBranch}..task/{laneBranch}
+│     │   │     │   → If empty (merged): update batch state manually
+│     │   │     │   → If not merged: orch_resume(force=true) to retry
+│     │   │     │
+│     │   │     └─ Result file shows SUCCESS
+│     │   │         → Merge succeeded but engine didn't pick it up
+│     │   │         → Update mergeResults in batch state to "succeeded"
+│     │   │         → orch_resume(force=true)
+│     │   │
+│     │   └─ 3. If all else fails
+│     │       → ESCALATE to operator with full diagnostic
+│     │
+│     └─ (No merge result entry)
+│         → Wave tasks completed but merge was never attempted
+│         → orch_resume(force=true) to trigger merge
+│         → Report: "Merge for wave {N} was not attempted. Resuming."
+```
+
+### Playbook C: Batch Complete
+
+**Trigger:** `batch-complete` alert — all waves finished (with or without failures).
+
+```
+BATCH COMPLETE: {batchId}
+│
+├─ 1. Read batch state summary
+│     Check: succeededTasks, failedTasks, skippedTasks, totalTasks
+│     │
+│     ├─ ALL SUCCEEDED (failedTasks=0, skippedTasks=0)
+│     │   → Report: "✅ Batch complete! All {N} tasks succeeded across
+│     │     {W} waves. Ready to integrate."
+│     │   → Suggest: orch_integrate() to bring changes to working branch
+│     │
+│     ├─ SOME FAILED (failedTasks > 0)
+│     │   │
+│     │   ├─ 2. List failed tasks with reasons
+│     │   │     For each failed task:
+│     │   │       - Task ID and title (from PROMPT.md header)
+│     │   │       - Exit reason (from batch state)
+│     │   │       - Wave and lane info
+│     │   │
+│     │   ├─ 3. Report with context
+│     │   │   → "⚠️ Batch complete with {F} failure(s) out of {N} tasks.
+│     │   │      Succeeded: {S}, Skipped: {K}, Failed: {F}
+│     │   │      Failed tasks: {list with reasons}
+│     │   │      The succeeded work is ready to integrate."
+│     │   │
+│     │   └─ 4. Suggest next steps
+│     │       → "You can integrate the succeeded work now with orch_integrate()
+│     │         and handle the failed tasks separately."
+│     │       → If tasks have partial progress: "Some failed tasks have
+│     │         partial commits that could be preserved."
+│     │
+│     └─ SOME SKIPPED (skippedTasks > 0, failedTasks = 0)
+│         → Report: "✅ Batch complete. {S} succeeded, {K} skipped.
+│           Skipped tasks: {list}. Ready to integrate."
+│         → Suggest: orch_integrate()
+```
+
+### Quick Reference: Recovery Action Matrix
+
+| Alert | Diagnosis | Action | Autonomy |
+|-------|-----------|--------|----------|
+| task-failure | Race condition (.DONE missing) | `orch_retry_task` → `orch_resume` | Automatic |
+| task-failure | Transient error (API, context) | `orch_retry_task` → `orch_resume` | Automatic |
+| task-failure | Genuine error, 1st-2nd attempt | `orch_retry_task` → `orch_resume` | Automatic |
+| task-failure | Genuine error, 3rd+ attempt | Escalate (or `orch_skip_task` in autonomous) | Supervised: escalate |
+| task-failure | Unknown error | Escalate | Always escalate |
+| merge-failure | Mixed-outcome lanes | `orch_force_merge(skipFailed=true)` → `orch_resume` | Automatic |
+| merge-failure | Unresolved conflicts | Escalate | Always escalate |
+| merge-failure | Build failure after merge | Escalate | Always escalate |
+| merge-failure | Agent timeout, no result | `orch_resume(force=true)` to retry | Automatic |
+| batch-complete | All succeeded | Report → suggest `orch_integrate` | Report only |
+| batch-complete | Some failed | Report with failure details | Report only |
 
 ---
 
@@ -1040,7 +1339,7 @@ before writing** — if files already exist (partial setup), read and merge.
 **Customization notes:**
 - `project.name`: Use the actual project name (from package.json, README, etc.)
 - `paths.tasks` and `taskAreas`: Match what was agreed in the task area discussion
-- `testing.commands`: Use the detected test command as a named object (e.g., `{"test": "cd extensions && npx vitest run"}`)
+- `testing.commands`: Use the detected test command as a named object (e.g., `{"test": "cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts"}`)
 - `orchestrator.spawnMode`: Use `"tmux"` if tmux is available, `"subprocess"` otherwise
 - `orchestrator.maxLanes`: Start with 2 for first-time users (safe default)
 - `merge.verify`: Add the project's test command for post-merge verification

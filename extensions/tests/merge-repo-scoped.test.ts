@@ -8,7 +8,7 @@
  *   4. mergeWaveByRepo — repo-mode passthrough
  *   5. formatRepoMergeSummary — repo-divergence partial summary (Step 1)
  *
- * Run: npx vitest run extensions/tests/merge-repo-scoped.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/merge-repo-scoped.test.ts
  */
 
 import {

@@ -9,7 +9,7 @@
  * - Single-write guard (createSingleWriteGuard: exactly-once semantics)
  * - Integration: spawn rpc-wrapper.mjs with mock pi script, verify sidecar + summary artifacts
  *
- * Run: npx vitest run extensions/tests/rpc-wrapper.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/rpc-wrapper.test.ts
  */
 
 import { describe, it, beforeEach } from "node:test";
@@ -1268,8 +1268,11 @@ process.stdin.on('end', () => {
 		writeFileSync(mockPiScript, `
 import process from 'process';
 
+let responded = false;
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', (chunk) => {
+	if (responded) return; // Ignore get_session_stats and other follow-up commands
+	responded = true;
 	// Emit one event then crash
 	process.stdout.write(JSON.stringify({ type: "agent_start" }) + '\\n');
 	process.stdout.write(JSON.stringify({
@@ -1358,5 +1361,165 @@ process.stdin.on('data', (chunk) => {
 		expect(summary.compactions).toBe(0);
 		expect(summary.lastToolCall).toBe(null);
 		expect(summary.durationSec).toBeGreaterThanOrEqual(0);
+	});
+});
+
+// ── 12. parseArgs — mailbox-dir ──────────────────────────────────────
+
+describe("parseArgs — mailbox-dir", () => {
+	it("parses --mailbox-dir correctly", () => {
+		const { parseArgs } = wrapperModule;
+		const result = parseArgs([
+			"node", "rpc-wrapper.mjs",
+			"--sidecar-path", "/tmp/sidecar.jsonl",
+			"--exit-summary-path", "/tmp/summary.json",
+			"--prompt-file", "/tmp/prompt.md",
+			"--mailbox-dir", "/tmp/.pi/mailbox/batch-1/session-1",
+		]);
+		expect(result.mailboxDir).toBe("/tmp/.pi/mailbox/batch-1/session-1");
+	});
+
+	it("mailboxDir defaults to null when not provided", () => {
+		const { parseArgs } = wrapperModule;
+		const result = parseArgs([
+			"node", "rpc-wrapper.mjs",
+			"--sidecar-path", "/tmp/sidecar.jsonl",
+			"--exit-summary-path", "/tmp/summary.json",
+			"--prompt-file", "/tmp/prompt.md",
+		]);
+		expect(result.mailboxDir).toBe(null);
+	});
+});
+
+// ── 13. isValidMailboxMessageShape ───────────────────────────────────
+
+describe("isValidMailboxMessageShape — rpc-wrapper validation", () => {
+	it("validates correct message shape", () => {
+		const { isValidMailboxMessageShape, MAILBOX_MESSAGE_TYPES } = wrapperModule;
+		const msg = {
+			id: "1000-aaa00",
+			batchId: "batch-1",
+			from: "supervisor",
+			to: "session-1",
+			timestamp: 1000,
+			type: "steer",
+			content: "test",
+		};
+		expect(isValidMailboxMessageShape(msg)).toBe(true);
+	});
+
+	it("rejects non-objects", () => {
+		const { isValidMailboxMessageShape } = wrapperModule;
+		expect(isValidMailboxMessageShape(null)).toBe(false);
+		expect(isValidMailboxMessageShape(undefined)).toBe(false);
+		expect(isValidMailboxMessageShape("string")).toBe(false);
+	});
+
+	it("rejects missing required fields", () => {
+		const { isValidMailboxMessageShape } = wrapperModule;
+		// Missing id
+		expect(isValidMailboxMessageShape({ batchId: "b", from: "f", to: "t", timestamp: 1, type: "steer", content: "c" })).toBe(false);
+		// Missing content
+		expect(isValidMailboxMessageShape({ id: "i", batchId: "b", from: "f", to: "t", timestamp: 1, type: "steer" })).toBe(false);
+	});
+
+	it("rejects invalid message type", () => {
+		const { isValidMailboxMessageShape } = wrapperModule;
+		expect(isValidMailboxMessageShape({
+			id: "1000-aaa00", batchId: "b", from: "f", to: "t", timestamp: 1, type: "bogus", content: "c",
+		})).toBe(false);
+	});
+
+	it("rejects non-finite timestamp", () => {
+		const { isValidMailboxMessageShape } = wrapperModule;
+		expect(isValidMailboxMessageShape({
+			id: "1000-aaa00", batchId: "b", from: "f", to: "t", timestamp: Infinity, type: "steer", content: "c",
+		})).toBe(false);
+	});
+});
+
+// ── 14. MAILBOX_MESSAGE_TYPES — rpc-wrapper ──────────────────────────
+
+describe("MAILBOX_MESSAGE_TYPES — rpc-wrapper", () => {
+	it("contains all expected types (mirrors types.ts)", () => {
+		const { MAILBOX_MESSAGE_TYPES } = wrapperModule;
+		const expectedTypes = ["steer", "query", "abort", "info", "reply", "escalate"];
+		for (const t of expectedTypes) {
+			expect(MAILBOX_MESSAGE_TYPES.has(t)).toBe(true);
+		}
+		expect(MAILBOX_MESSAGE_TYPES.size).toBe(expectedTypes.length);
+	});
+});
+
+// ── 15. checkMailboxAndSteer ─────────────────────────────────────────
+
+describe("checkMailboxAndSteer — mailbox delivery", () => {
+	it("delivers messages from inbox and moves to ack/", async () => {
+		const { checkMailboxAndSteer } = wrapperModule;
+		const fs = await import("fs");
+		const os = await import("os");
+
+		const tmpDir = join(os.tmpdir(), `rpc-mailbox-test-${Date.now()}`);
+		const sessionName = "test-session";
+		const batchId = "test-batch";
+		// Structure: {tmpDir}/{batchId}/{sessionName}/inbox/
+		const mailboxDir = join(tmpDir, batchId, sessionName);
+		const inboxDir = join(mailboxDir, "inbox");
+		fs.mkdirSync(inboxDir, { recursive: true });
+
+		// Write a valid message
+		const msg = {
+			id: "1000-aaa00",
+			batchId: batchId,
+			from: "supervisor",
+			to: sessionName,
+			timestamp: 1000,
+			type: "steer",
+			content: "Focus on tests.",
+		};
+		fs.writeFileSync(join(inboxDir, "1000-aaa00.msg.json"), JSON.stringify(msg));
+
+		// Mock proc.stdin.write
+		const written: string[] = [];
+		const mockProc = {
+			stdin: {
+				write: (data: string) => { written.push(data); },
+			},
+		};
+
+		checkMailboxAndSteer(mailboxDir, mockProc);
+
+		// Message should have been injected via steer
+		expect(written.length).toBeGreaterThanOrEqual(1);
+		const steerCmd = JSON.parse(written[0]);
+		expect(steerCmd.type).toBe("steer");
+		expect(steerCmd.message).toBe("Focus on tests.");
+
+		// Message should have been moved to ack/
+		const ackDir = join(mailboxDir, "ack");
+		expect(fs.existsSync(join(ackDir, "1000-aaa00.msg.json"))).toBe(true);
+		expect(fs.existsSync(join(inboxDir, "1000-aaa00.msg.json"))).toBe(false);
+
+		// Cleanup
+		try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+	});
+
+	it("silent no-op when mailboxDir inbox doesn't exist", async () => {
+		const { checkMailboxAndSteer } = wrapperModule;
+		const os = await import("os");
+
+		const tmpDir = join(os.tmpdir(), `rpc-mailbox-noop-${Date.now()}`);
+		// Don't create any directories
+
+		const written: string[] = [];
+		const mockProc = {
+			stdin: {
+				write: (data: string) => { written.push(data); },
+			},
+		};
+
+		// Should not throw
+		checkMailboxAndSteer(tmpDir, mockProc);
+		expect(written).toHaveLength(0);
 	});
 });

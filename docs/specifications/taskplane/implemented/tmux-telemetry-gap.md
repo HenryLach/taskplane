@@ -4,6 +4,9 @@
 > The RPC wrapper solution (Section 4.6 of this doc) is Phase 1 of the consolidated roadmap.  
 > This file is retained for historical reference.
 >
+> **Historical note (testing):** Vitest command references are legacy context.
+> Current Taskplane test execution uses Node.js native `node:test`.
+>
 > **Created:** 2026-03-18  
 > **Related:** [resilience-architecture.md](resilience-architecture.md) (Section 18)
 

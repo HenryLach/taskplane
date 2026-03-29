@@ -427,8 +427,9 @@ function loadTelemetryData(batchState) {
       const fresh = {
         inputTokens: 0, outputTokens: 0, cacheReadTokens: 0,
         cacheWriteTokens: 0, cost: 0, toolCalls: 0,
-        lastTool: "", retries: 0, retryActive: false,
+        lastTool: "", currentTool: "", retries: 0, retryActive: false,
         lastRetryError: "", compactions: 0, latestTotalTokens: 0,
+        contextPct: 0, startedAt: 0,
       };
       telemetryAccumulators.set(prefix, fresh);
       // Also reset tail states for ALL files of this prefix to re-read from beginning
@@ -450,8 +451,9 @@ function loadTelemetryData(batchState) {
     if (ts && ts.wasReset) {
       acc.inputTokens = 0; acc.outputTokens = 0; acc.cacheReadTokens = 0;
       acc.cacheWriteTokens = 0; acc.cost = 0; acc.toolCalls = 0;
-      acc.lastTool = ""; acc.retries = 0; acc.retryActive = false;
+      acc.lastTool = ""; acc.currentTool = ""; acc.retries = 0; acc.retryActive = false;
       acc.lastRetryError = ""; acc.compactions = 0; acc.latestTotalTokens = 0;
+      acc.contextPct = 0; acc.startedAt = 0;
       ts.wasReset = false;
     }
     for (const event of events) {
@@ -497,7 +499,31 @@ function loadTelemetryData(batchState) {
               }
             }
           }
-          acc.lastTool = argPreview ? `${toolDesc} ${argPreview}` : toolDesc;
+          const toolLabel = argPreview ? `${toolDesc} ${argPreview}` : toolDesc;
+          acc.lastTool = toolLabel;
+          acc.currentTool = toolLabel;
+          break;
+        }
+        case "tool_execution_end": {
+          acc.currentTool = "";
+          break;
+        }
+        case "agent_start": {
+          if (event.ts && !acc.startedAt) {
+            acc.startedAt = event.ts;
+          }
+          break;
+        }
+        case "response": {
+          // Extract context usage from get_session_stats responses
+          const ctxUsage = event.data?.contextUsage;
+          if (ctxUsage) {
+            // Support both percent (current) and percentUsed (legacy pi versions)
+            const pct = typeof ctxUsage.percent === "number" ? ctxUsage.percent
+              : typeof ctxUsage.percentUsed === "number" ? ctxUsage.percentUsed
+              : null;
+            if (pct !== null) acc.contextPct = pct;
+          }
           break;
         }
         case "auto_retry_start": {
@@ -792,7 +818,17 @@ function computeBatchTotalCost(laneStates, telemetry) {
 function buildDashboardState() {
   const state = loadBatchState();
   const tmuxSessions = getTmuxSessions();
-  const laneStates = loadLaneStates();
+  const rawLaneStates = loadLaneStates();
+  // Filter stale lane states from previous batches.
+  // Lane state files persist across batches (same filename), so without
+  // filtering the dashboard shows telemetry from old runs.
+  const currentBatchId = state?.batchId || null;
+  const laneStates = {};
+  for (const [key, ls] of Object.entries(rawLaneStates)) {
+    if (!currentBatchId || !ls.batchId || ls.batchId === currentBatchId) {
+      laneStates[key] = ls;
+    }
+  }
   const telemetry = loadTelemetryData(state);
   const batchTotalCost = computeBatchTotalCost(laneStates, telemetry);
   const supervisor = loadSupervisorData(state);

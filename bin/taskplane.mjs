@@ -1112,9 +1112,33 @@ async function cmdInit(args) {
 	if (effectiveAlreadyInitialized && resolvedMode === "workspace" && effectiveConfigPath) {
 		const configRepo = path.basename(path.dirname(effectiveConfigPath));
 		const configRepoRoot = path.join(projectRoot, configRepo);
+		// Read existing routing from config repo first, then fall back to
+		// the workspace root's .pi/taskplane-workspace.yaml (which --force may overwrite).
+		// This preserves user's tasks_root and default_repo on reinit.
 		const existingWorkspaceJson = readWorkspaceJson(configRepoRoot);
-		const workspaceTasksRoot = existingWorkspaceJson?.routing?.tasks_root || "taskplane-tasks";
-		const workspaceDefaultRepo = existingWorkspaceJson?.routing?.default_repo || configRepo;
+		const existingRootYaml = (() => {
+			try {
+				const yamlPath = path.join(projectRoot, ".pi", "taskplane-workspace.yaml");
+				if (fs.existsSync(yamlPath)) {
+					const raw = fs.readFileSync(yamlPath, "utf-8");
+					const tasksMatch = raw.match(/tasks_root:\s*"?([^"\n]+)"?/);
+					const defaultMatch = raw.match(/default_repo:\s*"?([^"\n]+)"?/);
+					return {
+						routing: {
+							tasks_root: tasksMatch?.[1]?.trim() || null,
+							default_repo: defaultMatch?.[1]?.trim() || null,
+						},
+					};
+				}
+			} catch {}
+			return null;
+		})();
+		const workspaceTasksRoot = existingWorkspaceJson?.routing?.tasks_root
+			|| existingRootYaml?.routing?.tasks_root
+			|| "taskplane-tasks";
+		const workspaceDefaultRepo = existingWorkspaceJson?.routing?.default_repo
+			|| existingRootYaml?.routing?.default_repo
+			|| configRepo;
 		const workspaceRepoNames = Array.from(
 			new Set([
 				...detection.subRepos,
@@ -1192,6 +1216,15 @@ async function cmdInit(args) {
 			generateWorkspaceYaml(workspaceRepoNames, workspaceDefaultRepo, workspaceTasksRoot),
 			{ skipIfExists: !force, label: ".pi/taskplane-workspace.yaml" },
 		);
+
+		// ── Gitignore enforcement in config repo (Scenario D) ───
+		// Ensure .gitignore exists even when reusing existing config
+		const gitignoreResult = ensureGitignoreEntries(configRepoRoot, { dryRun: false, prefix: ".taskplane/" });
+		if (gitignoreResult.created) {
+			console.log(`  ${c.green}create${c.reset} ${configRepo}/.gitignore`);
+		} else if (gitignoreResult.added.length > 0) {
+			console.log(`  ${c.green}update${c.reset} ${configRepo}/.gitignore (${gitignoreResult.added.length} entries added)`);
+		}
 
 		console.log(`\n${OK} ${c.bold}Workspace pointer created.${c.reset}\n`);
 		console.log(`  Config:  ${c.cyan}${configRepo}/.taskplane/${c.reset}`);
@@ -1460,8 +1493,8 @@ async function cmdInit(args) {
 		console.log(`${c.bold}Quick start:${c.reset}`);
 		console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
 		if (preset !== "runner-only") {
-			console.log(`  ${c.cyan}/orch-plan all${c.reset}                                   # preview waves/lanes/dependencies`);
-			console.log(`  ${c.cyan}/orch all${c.reset}                                        # run via orchestrator`);
+			console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
+			console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
 		}
 		console.log();
 		return;
@@ -1625,13 +1658,8 @@ async function cmdInit(args) {
 	console.log(`${c.bold}Quick start:${c.reset}`);
 	console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
 	if (preset !== "runner-only") {
-		console.log(`  ${c.cyan}/orch-plan all${c.reset}                                   # preview waves/lanes/dependencies`);
-		console.log(`  ${c.cyan}/orch all${c.reset}                                        # run examples via orchestrator`);
-	}
-	if (!noExamples && exampleTemplateDirs.length > 0) {
-		const firstExample = exampleTemplateDirs[0];
-		console.log(`  ${c.dim}optional single-task mode:${c.reset}`);
-		console.log(`  ${c.cyan}/task ${vars.tasks_root}/${firstExample}/PROMPT.md${c.reset}`);
+		console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
+		console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
 	}
 	console.log();
 }
@@ -2515,18 +2543,20 @@ function cmdDoctor() {
 	console.log();
 	const hasUnifiedJson = fs.existsSync(path.join(configLocation.root, configLocation.prefix, "taskplane-config.json"));
 	const configFiles = [
-		{ path: "taskplane-config.json", required: false },
-		{ path: "task-runner.yaml", required: !hasUnifiedJson },
-		{ path: "task-orchestrator.yaml", required: !hasUnifiedJson },
-		{ path: "agents/task-worker.md", required: true },
-		{ path: "agents/task-reviewer.md", required: true },
-		{ path: "agents/task-merger.md", required: true },
-		{ path: "agents/supervisor.md", required: false },
-		{ path: "taskplane.json", required: false },
+		{ path: "taskplane-config.json", required: false, hide: false },
+		// YAML configs are legacy fallback — hide when taskplane-config.json exists
+		{ path: "task-runner.yaml", required: !hasUnifiedJson, hide: hasUnifiedJson },
+		{ path: "task-orchestrator.yaml", required: !hasUnifiedJson, hide: hasUnifiedJson },
+		{ path: "agents/task-worker.md", required: true, hide: false },
+		{ path: "agents/task-reviewer.md", required: true, hide: false },
+		{ path: "agents/task-merger.md", required: true, hide: false },
+		// supervisor.md is created by /orch; taskplane.json is created at runtime
+		{ path: "agents/supervisor.md", required: false, hide: true },
+		{ path: "taskplane.json", required: false, hide: true },
 	];
 
 	let missingRequiredConfigs = 0;
-	for (const { path: relPath, required } of configFiles) {
+	for (const { path: relPath, required, hide } of configFiles) {
 		const fullPath = path.join(configLocation.root, configLocation.prefix, relPath);
 		const displayPath = `${configLocation.label}/${relPath}`;
 		const exists = fs.existsSync(fullPath);
@@ -2536,7 +2566,8 @@ function cmdDoctor() {
 			console.log(`  ${FAIL} ${displayPath} missing`);
 			missingRequiredConfigs++;
 			issues++;
-		} else {
+		} else if (!hide) {
+			// Show optional files only when they're relevant (not superseded)
 			console.log(`  ${WARN} ${displayPath} missing ${c.dim}(optional)${c.reset}`);
 		}
 	}

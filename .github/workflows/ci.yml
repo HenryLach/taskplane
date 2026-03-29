@@ -28,6 +28,10 @@ jobs:
       - name: Install extension dependencies
         run: npm ci --prefix extensions
 
+      - name: Lint (Biome)
+        continue-on-error: true
+        run: npx @biomejs/biome@2 lint --max-diagnostics=50 --reporter=github .
+
       - name: Run tests
         run: |
           cd extensions

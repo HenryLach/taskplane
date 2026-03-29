@@ -7,7 +7,7 @@
  * function source and test them in isolation.
  *
  * Run: npx tsx extensions/tests/orch-pure-functions.test.ts
- *   or: npx vitest run extensions/tests/orch-pure-functions.test.ts
+ *   or: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/orch-pure-functions.test.ts
  *
  * Test categories:
  *   7.1 — computeOrchSummaryCounts
@@ -31,7 +31,8 @@ import { fileURLToPath } from "url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Detect vitest: if present, wrap everything in a describe/it block
+// Legacy compatibility: older harnesses may set VITEST.
+// Treat either NODE_TEST_CONTEXT or VITEST as "running under a test runner".
 const isTestRunner = !!(process.env.NODE_TEST_CONTEXT || process.env.VITEST);
 
 // ── Test Helpers ──────────────────────────────────────────────────────

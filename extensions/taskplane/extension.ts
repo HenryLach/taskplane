@@ -2,10 +2,10 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { Type } from "@mariozechner/pi-ai";
 
 import { execSync, execFileSync } from "child_process";
-import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync } from "fs";
+import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { Worker } from "worker_threads";
+import { fork, type ChildProcess } from "child_process";
 
 // Direct imports — avoid barrel (index.ts) to prevent loading the entire module graph.
 // Each import targets the specific module where the symbol is defined.
@@ -15,16 +15,16 @@ import { ORCH_MESSAGES, computeIntegrateCleanupResult } from "./messages.ts";
 import type { IntegrateCleanupRepoFindings } from "./messages.ts";
 import { computeWaveAssignments } from "./waves.ts";
 import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
-import { deleteBatchState, loadBatchState, detectOrphanSessions, parseOrchSessionNames } from "./persistence.ts";
+import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions, parseOrchSessionNames } from "./persistence.ts";
 import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, formatPreflightResults, runPreflight } from "./worktree.ts";
-import { executeLane } from "./execution.ts";
+import { computeTransitiveDependents, executeLane, resolveCanonicalTaskPaths } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { formatOrchSessions, listOrchSessions } from "./sessions.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { hasConfigFiles, resolveConfigRoot, loadOrchestratorConfig, loadSupervisorConfig, loadTaskRunnerConfig } from "./config.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { resumeOrchBatch } from "./resume.ts";
+import { reconstructAllocatedLanes, resumeOrchBatch } from "./resume.ts";
 import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
@@ -32,6 +32,8 @@ import { runMigrations } from "./migrations.ts";
 import { serializeWorkspaceConfig, applySerializedState, deserializeWorkspaceConfig } from "./engine-worker.ts";
 import type { EngineWorkerData, WorkerToMainMessage } from "./engine-worker.ts";
 import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, formatPreflightSweep, rotateSupervisorLogs, formatLogRotation } from "./cleanup.ts";
+import { writeMailboxMessage } from "./mailbox.ts";
+import type { MailboxMessageType } from "./types.ts";
 import {
 	activateSupervisor,
 	deactivateSupervisor,
@@ -897,7 +899,7 @@ function resolveEngineWorkerPath(): string {
 	} catch {
 		thisDir = __dirname;
 	}
-	return join(thisDir, "engine-worker.ts");
+	return join(thisDir, "engine-worker-entry.mjs");
 }
 
 /**
@@ -935,16 +937,23 @@ export function startBatchInWorker(
 	updateWidget: () => void,
 	onMonitorUpdate?: (state: import("./types.ts").MonitorState) => void,
 	onTerminal?: () => void,
-): Worker | null {
+	onSupervisorAlert?: (alert: import("./types.ts").SupervisorAlert) => void,
+): ChildProcess | null {
 	const workerPath = resolveEngineWorkerPath();
 
-	let worker: Worker;
+	let child: ChildProcess;
 	try {
-		worker = new Worker(workerPath, { workerData: wkData });
+		// Fork a child process to run the engine in a separate isolate.
+		// The entry point is a .mjs file that uses jiti to load .ts files,
+		// bypassing Node v25's restriction on .ts in node_modules.
+		child = fork(workerPath, [], {
+			env: { ...process.env, TASKPLANE_ENGINE_FORK: "1" },
+			serialization: "advanced",
+		});
 	} catch (spawnErr: unknown) {
 		const errMsg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
 		ctx.ui.notify(
-			`⚠️ Worker thread spawn failed: ${errMsg}\n   Falling back to main-thread execution.`,
+			`⚠️ Engine process spawn failed: ${errMsg}\n   Falling back to main-thread execution.`,
 			"warning",
 		);
 		// Construct fallback engine function from workerData and run on main thread
@@ -963,6 +972,7 @@ export function startBatchInWorker(
 				wkData.workspaceRoot,
 				wkData.agentRoot,
 				wkData.force ?? false,
+				onSupervisorAlert ?? null,
 			)
 			: () => executeOrchBatch(
 				wkData.args ?? "",
@@ -975,14 +985,17 @@ export function startBatchInWorker(
 				wsConfig,
 				wkData.workspaceRoot,
 				wkData.agentRoot,
+				null, // onEngineEvent
+				onSupervisorAlert ?? null,
 			);
 		startBatchAsync(fallbackFn, batchState, ctx, updateWidget, onTerminal);
 		return null;
 	}
 
+	// Send workerData as first IPC message
+	child.send({ type: "init", data: wkData });
+
 	// Terminal settlement guard (R001 §3): ensures onTerminal fires at most once.
-	// The worker can emit error + complete messages, followed by exit event.
-	// Without this guard, summary/integration/supervisor flows would fire multiple times.
 	let settled = false;
 	const settle = () => {
 		if (settled) return;
@@ -990,7 +1003,7 @@ export function startBatchInWorker(
 		onTerminal?.();
 	};
 
-	worker.on("message", (msg: WorkerToMainMessage) => {
+	child.on("message", (msg: WorkerToMainMessage) => {
 		switch (msg.type) {
 			case "notify":
 				ctx.ui.notify(msg.msg, msg.level);
@@ -1002,8 +1015,11 @@ export function startBatchInWorker(
 				break;
 
 			case "engine-event":
-				// Engine events are already persisted to events.jsonl by the worker.
-				// No additional handling needed on the main thread.
+				break;
+
+			// ── TP-076: Supervisor alert handling ────────────────
+			case "supervisor-alert":
+				onSupervisorAlert?.(msg.alert);
 				break;
 
 			case "state-sync":
@@ -1033,41 +1049,82 @@ export function startBatchInWorker(
 		}
 	});
 
-	worker.on("error", (err: Error) => {
-		// Worker threw an uncaught exception
+	child.on("error", (err: Error) => {
 		if (batchState.phase !== "completed" && batchState.phase !== "failed") {
 			batchState.phase = "failed";
 			batchState.endedAt = Date.now();
-			batchState.errors.push(`Worker thread error: ${err.message}`);
+			batchState.errors.push(`Engine process error: ${err.message}`);
 		}
 		ctx.ui.notify(
-			`❌ Engine worker thread error: ${err.message}\n` +
+			`❌ Engine process error: ${err.message}\n` +
 			`   Batch ${batchState.batchId} marked as failed.`,
 			"error",
 		);
 		updateWidget();
+		// ── TP-076: Alert supervisor about engine process error ──
+		onSupervisorAlert?.({
+			category: "task-failure",
+			summary:
+				`🔴 Engine process error — batch ${batchState.batchId} marked as failed\n` +
+				`  Error: ${err.message}\n\n` +
+				`This is a critical engine failure. The batch cannot continue.\n` +
+				`Available actions:\n` +
+				`  - orch_status() to inspect state\n` +
+				`  - orch_resume(force=true) to retry from last checkpoint`,
+			context: {
+				batchProgress: batchState.totalTasks > 0 ? {
+					succeededTasks: batchState.succeededTasks,
+					failedTasks: batchState.failedTasks,
+					skippedTasks: batchState.skippedTasks,
+					blockedTasks: batchState.blockedTasks,
+					totalTasks: batchState.totalTasks,
+					currentWave: batchState.currentWaveIndex + 1,
+					totalWaves: batchState.totalWaves,
+				} : undefined,
+			},
+		});
 		settle();
 	});
 
-	worker.on("exit", (code: number) => {
+	child.on("exit", (code: number | null) => {
 		if (code !== 0 && !settled) {
-			// Non-zero exit that wasn't handled by 'error' or 'complete'
 			if (batchState.phase !== "completed" && batchState.phase !== "failed") {
 				batchState.phase = "failed";
 				batchState.endedAt = Date.now();
-				batchState.errors.push(`Worker thread exited with code ${code}`);
+				batchState.errors.push(`Engine process exited with code ${code}`);
 			}
 			ctx.ui.notify(
-				`❌ Engine worker thread exited unexpectedly (code ${code}).`,
+				`❌ Engine process exited unexpectedly (code ${code}).`,
 				"error",
 			);
 			updateWidget();
+			// ── TP-076: Alert supervisor about unexpected engine exit ──
+			onSupervisorAlert?.({
+				category: "task-failure",
+				summary:
+					`🔴 Engine process died unexpectedly (exit code ${code})\n` +
+					`  Batch ${batchState.batchId} marked as failed.\n\n` +
+					`This is a critical engine failure. The batch cannot continue.\n` +
+					`Available actions:\n` +
+					`  - orch_status() to inspect state\n` +
+					`  - orch_resume(force=true) to retry from last checkpoint`,
+				context: {
+					batchProgress: batchState.totalTasks > 0 ? {
+						succeededTasks: batchState.succeededTasks,
+						failedTasks: batchState.failedTasks,
+						skippedTasks: batchState.skippedTasks,
+						blockedTasks: batchState.blockedTasks,
+						totalTasks: batchState.totalTasks,
+						currentWave: batchState.currentWaveIndex + 1,
+						totalWaves: batchState.totalWaves,
+					} : undefined,
+				},
+			});
 		}
-		// Always settle on exit — ensures cleanup runs even on clean exit
 		settle();
 	});
 
-	return worker;
+	return child;
 }
 
 // ── TP-043 R002-2: Integration Executor Builder ─────────────────────
@@ -1384,9 +1441,9 @@ export default function (pi: ExtensionAPI) {
 	let orchWidgetCtx: ExtensionContext | undefined;
 	let latestMonitorState: MonitorState | null = null;
 
-	// ── TP-071: Active engine worker thread ──────────────────────────
-	// Tracked so pause/abort can post control messages to the worker.
-	let activeWorker: Worker | null = null;
+	// ── TP-071: Active engine child process ──────────────────────────
+	// Tracked so pause/abort can send control messages to the engine.
+	let activeWorker: ChildProcess | null = null;
 
 	// ── Supervisor State (TP-041) ────────────────────────────────────
 	let supervisorState = freshSupervisorState();
@@ -1402,6 +1459,8 @@ export default function (pi: ExtensionAPI) {
 	 * and return early with a user-facing error when null.
 	 */
 	let execCtx: ExecutionContext | null = null;
+	/** Last startup error message to surface consistently through command guards. */
+	let execCtxInitError: string | null = null;
 
 	// ── Widget Rendering ─────────────────────────────────────────────
 
@@ -1422,17 +1481,18 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Command Guard ────────────────────────────────────────────────
 
+	function getExecCtxInitErrorMessage(): string {
+		return execCtxInitError ??
+			"❌ Orchestrator not initialized. Startup failed before execution context was created.\nRestart the session after fixing configuration/setup issues.";
+	}
+
 	/**
 	 * Guard: returns true if execution context is initialized, false otherwise.
 	 * Emits a user-facing error notification when the context is missing.
 	 */
 	function requireExecCtx(ctx: ExtensionContext): boolean {
 		if (execCtx) return true;
-		ctx.ui.notify(
-			"❌ Orchestrator not initialized. Workspace configuration failed at startup.\n" +
-			"Fix the workspace config or remove it to use repo mode, then restart.",
-			"error",
-		);
+		ctx.ui.notify(getExecCtxInitErrorMessage(), "error");
 		return false;
 	}
 
@@ -1627,6 +1687,11 @@ export default function (pi: ExtensionAPI) {
 				discovery.pending,
 				discovery.completed,
 				orchConfig,
+				{
+					workspaceRepoIds: execCtx!.workspaceConfig
+						? execCtx!.workspaceConfig.repos.keys()
+						: undefined,
+				},
 			);
 
 			ctx.ui.notify(
@@ -1665,7 +1730,7 @@ export default function (pi: ExtensionAPI) {
 
 		if (!execCtx) {
 			return {
-				message: "❌ Orchestrator not initialized. Workspace configuration failed at startup.\nFix the workspace config or remove it to use repo mode, then restart.",
+				message: getExecCtxInitErrorMessage(),
 				error: true,
 			};
 		}
@@ -1673,7 +1738,7 @@ export default function (pi: ExtensionAPI) {
 		// TP-063: Run additive migrations before batch start (primary trigger).
 		// Non-fatal — failures warn but never block batch execution.
 		try {
-			const migrationResult = runMigrations(execCtx.repoRoot);
+			const migrationResult = runMigrations(execCtx.repoRoot, undefined, execCtx.pointer?.configRoot);
 			if (migrationResult.messages.length > 0) {
 				ctx.ui.notify(migrationResult.messages.join("\n"), "info");
 			}
@@ -1891,33 +1956,11 @@ export default function (pi: ExtensionAPI) {
 					};
 				transitionToRoutingMode(pi, supervisorState, postBatchContext);
 			},
-			// Fallback: run engine on main thread if worker spawn fails (R001 §1)
-			() => executeOrchBatch(
-				trimmedTarget,
-				orchConfig,
-				runnerConfig,
-				repoRoot,
-				orchBatchState,
-				(message, level) => {
-					ctx.ui.notify(message, level);
-					updateOrchWidget();
-				},
-				(monState: MonitorState) => {
-					const changed = !latestMonitorState ||
-						latestMonitorState.totalDone !== monState.totalDone ||
-						latestMonitorState.totalFailed !== monState.totalFailed ||
-						latestMonitorState.lanes.some((l, i) =>
-							l.currentTaskId !== monState.lanes[i]?.currentTaskId ||
-							l.currentStep !== monState.lanes[i]?.currentStep ||
-							l.completedChecks !== monState.lanes[i]?.completedChecks,
-						);
-					latestMonitorState = monState;
-					if (changed) updateOrchWidget();
-				},
-				execCtx!.workspaceConfig,
-				execCtx!.workspaceRoot,
-				execCtx!.pointer?.agentRoot,
-			),
+			// ── TP-076: Supervisor alert handler — injects alerts as user messages ──
+			(alert) => {
+				if (!supervisorState.active) return; // Don't send orphaned messages
+				pi.sendUserMessage(alert.summary, { deliverAs: "followUp" });
+			},
 		);
 
 		// Activate supervisor agent
@@ -2003,8 +2046,8 @@ export default function (pi: ExtensionAPI) {
 			return ORCH_MESSAGES.pauseAlreadyPaused(orchBatchState.batchId);
 		}
 		orchBatchState.pauseSignal.paused = true;
-		// TP-071: Forward pause to worker thread (its pauseSignal is separate)
-		activeWorker?.postMessage({ type: "pause" });
+		// TP-071: Forward pause to engine process (its pauseSignal is separate)
+		activeWorker?.send({ type: "pause" });
 		updateOrchWidget();
 		return ORCH_MESSAGES.pauseActivated(orchBatchState.batchId);
 	}
@@ -2017,7 +2060,7 @@ export default function (pi: ExtensionAPI) {
 	function doOrchResume(force: boolean, ctx: ExtensionContext): { message: string; error?: boolean } {
 		if (!execCtx) {
 			return {
-				message: "❌ Orchestrator not initialized. Workspace configuration failed at startup.\nFix the workspace config or remove it to use repo mode, then restart.",
+				message: getExecCtxInitErrorMessage(),
 				error: true,
 			};
 		}
@@ -2133,25 +2176,11 @@ export default function (pi: ExtensionAPI) {
 					};
 				transitionToRoutingMode(pi, supervisorState, postBatchContext);
 			},
-			// Fallback: run resume on main thread if worker spawn fails (R001 §1)
-			() => resumeOrchBatch(
-				orchConfig,
-				runnerConfig,
-				execCtx!.repoRoot,
-				orchBatchState,
-				(message, level) => {
-					ctx.ui.notify(message, level);
-					updateOrchWidget();
-				},
-				(monState: MonitorState) => {
-					latestMonitorState = monState;
-					updateOrchWidget();
-				},
-				execCtx!.workspaceConfig,
-				execCtx!.workspaceRoot,
-				execCtx!.pointer?.agentRoot,
-				force,
-			),
+			// ── TP-076: Supervisor alert handler — injects alerts as user messages ──
+			(alert) => {
+				if (!supervisorState.active) return; // Don't send orphaned messages
+				pi.sendUserMessage(alert.summary, { deliverAs: "followUp" });
+			},
 		);
 
 		// Activate supervisor agent on resume
@@ -2194,15 +2223,15 @@ export default function (pi: ExtensionAPI) {
 			orchBatchState.pauseSignal.paused = true;
 			messages.push("  ✓ Pause signal set on in-memory batch state");
 		}
-		// TP-071: Forward pause to worker and terminate on hard abort
+		// TP-071: Forward pause to engine and kill on hard abort
 		if (activeWorker) {
-			activeWorker.postMessage({ type: "pause" });
+			activeWorker.send({ type: "pause" });
 			if (hard) {
-				activeWorker.terminate();
+				activeWorker.kill();
 				activeWorker = null;
-				messages.push("  ✓ Engine worker thread terminated (hard abort)");
+				messages.push("  ✓ Engine process killed (hard abort)");
 			} else {
-				messages.push("  ✓ Pause signal forwarded to engine worker thread");
+				messages.push("  ✓ Pause signal forwarded to engine process");
 			}
 		}
 
@@ -2314,6 +2343,449 @@ export default function (pi: ExtensionAPI) {
 		return messages.join("\n");
 	}
 
+	// ── TP-077: Supervisor Recovery Tools ────────────────────────────
+
+	/**
+	 * Core logic for orch_retry_task. Resets a failed task to pending for re-execution.
+	 *
+	 * Modifies persisted batch state on disk and updates in-memory state.
+	 * The engine picks up the state change on its next poll cycle.
+	 */
+	function doOrchRetryTask(taskId: string, ctx: ExtensionContext): string {
+		// TP-077 R001-1: Reject while engine is actively running (no IPC retry path)
+		const activePhases = new Set(["launching", "executing", "merging", "planning"]);
+		if (activePhases.has(orchBatchState.phase)) {
+			return `❌ Cannot retry task while batch is ${orchBatchState.phase}. Pause or wait for the current operation to finish first.`;
+		}
+
+		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+
+		// Load persisted state
+		let state: PersistedBatchState | null = null;
+		try {
+			state = loadBatchState(stateRoot);
+		} catch (err) {
+			return `❌ Failed to load batch state: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		if (!state) {
+			return "❌ No batch state found. There is no active or recent batch to modify.";
+		}
+
+		// Find the task
+		const taskRecord = state.tasks.find(t => t.taskId === taskId);
+		if (!taskRecord) {
+			const knownIds = state.tasks.map(t => t.taskId).join(", ");
+			return `❌ Task "${taskId}" not found in batch ${state.batchId}.\nKnown tasks: ${knownIds || "(none)"}`;
+		}
+
+		// Validate: only failed or stalled tasks can be retried
+		if (taskRecord.status !== "failed" && taskRecord.status !== "stalled") {
+			return `❌ Cannot retry task "${taskId}" — current status is "${taskRecord.status}". Only failed or stalled tasks can be retried.`;
+		}
+
+		const prevStatus = taskRecord.status;
+
+		// Reset task to pending
+		taskRecord.status = "pending";
+		taskRecord.exitReason = "";
+		taskRecord.doneFileFound = false;
+		taskRecord.startedAt = null;
+		taskRecord.endedAt = null;
+		taskRecord.exitDiagnostic = undefined;
+		taskRecord.partialProgressCommits = undefined;
+		taskRecord.partialProgressBranch = undefined;
+
+		// Adjust counters: only decrement failedTasks if the task was in a failure state
+		if (prevStatus === "failed" || prevStatus === "stalled") {
+			state.failedTasks = Math.max(0, state.failedTasks - 1);
+		}
+
+		// Recompute blocked dependents — the retried task is no longer a failure,
+		// so tasks that were blocked solely by it should be unblocked.
+		const remainingFailures = new Set<string>();
+		for (const t of state.tasks) {
+			if (t.status === "failed" || t.status === "stalled") {
+				remainingFailures.add(t.taskId);
+			}
+		}
+		if (orchBatchState.dependencyGraph && orchBatchState.batchId === state.batchId) {
+			const newBlocked = computeTransitiveDependents(remainingFailures, orchBatchState.dependencyGraph);
+			state.blockedTaskIds = [...newBlocked].sort();
+			state.blockedTasks = newBlocked.size;
+		} else if (remainingFailures.size === 0) {
+			state.blockedTaskIds = [];
+			state.blockedTasks = 0;
+		}
+
+		// TP-077 R001-3: Phase transition — terminal "failed" → "stopped" (resumable with force)
+		// "stopped" and "paused" are kept as-is (already resumable).
+		if (state.phase === "failed") {
+			state.phase = "stopped";
+		}
+
+		// Update timestamp
+		state.updatedAt = Date.now();
+
+		// Persist
+		try {
+			saveBatchState(JSON.stringify(state, null, 2), stateRoot);
+		} catch (err) {
+			return `❌ Failed to persist state after retry: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		// Sync in-memory state if batch IDs match
+		if (orchBatchState.batchId === state.batchId) {
+			orchBatchState.failedTasks = state.failedTasks;
+			orchBatchState.blockedTasks = state.blockedTasks;
+			orchBatchState.blockedTaskIds = new Set(state.blockedTaskIds);
+			if (state.phase === "stopped" && orchBatchState.phase === "failed") {
+				orchBatchState.phase = "stopped";
+			}
+		}
+
+		updateOrchWidget();
+
+		const resumeHint = state.phase === "stopped"
+			? "Use orch_resume(force=true) to re-execute the batch."
+			: "Use orch_resume() to re-execute the batch.";
+		return `✅ Task "${taskId}" reset to pending for re-execution.\n` +
+			`   Previous status: ${prevStatus}\n` +
+			`   Batch phase: ${state.phase} | Failed: ${state.failedTasks}/${state.totalTasks}\n` +
+			`   ${resumeHint}`;
+	}
+
+	/**
+	 * Core logic for orch_skip_task. Marks a task as skipped and unblocks dependents.
+	 *
+	 * Modifies persisted batch state on disk and updates in-memory state.
+	 * The engine picks up the state change on its next poll cycle.
+	 */
+	function doOrchSkipTask(taskId: string, ctx: ExtensionContext): string {
+		// TP-077 R001-1: Reject while engine is actively running (no IPC skip path)
+		const activePhases = new Set(["launching", "executing", "merging", "planning"]);
+		if (activePhases.has(orchBatchState.phase)) {
+			return `❌ Cannot skip task while batch is ${orchBatchState.phase}. Pause or wait for the current operation to finish first.`;
+		}
+
+		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+
+		// Load persisted state
+		let state: PersistedBatchState | null = null;
+		try {
+			state = loadBatchState(stateRoot);
+		} catch (err) {
+			return `❌ Failed to load batch state: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		if (!state) {
+			return "❌ No batch state found. There is no active or recent batch to modify.";
+		}
+
+		// Find the task
+		const taskRecord = state.tasks.find(t => t.taskId === taskId);
+		if (!taskRecord) {
+			const knownIds = state.tasks.map(t => t.taskId).join(", ");
+			return `❌ Task "${taskId}" not found in batch ${state.batchId}.\nKnown tasks: ${knownIds || "(none)"}`;
+		}
+
+		// Validate: only failed, stalled, or pending tasks can be skipped
+		if (taskRecord.status !== "failed" && taskRecord.status !== "stalled" && taskRecord.status !== "pending") {
+			return `❌ Cannot skip task "${taskId}" — current status is "${taskRecord.status}". Only failed, stalled, or pending tasks can be skipped.`;
+		}
+
+		const prevStatus = taskRecord.status;
+		const wasFailed = prevStatus === "failed" || prevStatus === "stalled";
+
+		// Mark as skipped
+		taskRecord.status = "skipped";
+		taskRecord.exitReason = "Skipped by supervisor";
+		taskRecord.endedAt = Date.now();
+
+		// Adjust counters
+		state.skippedTasks = (state.skippedTasks ?? 0) + 1;
+		if (wasFailed) {
+			state.failedTasks = Math.max(0, state.failedTasks - 1);
+		}
+
+		// Unblock dependents: recompute which tasks should remain blocked.
+		// After skipping this task, collect the set of remaining failures to
+		// recompute transitive blocked set from the dependency graph.
+		const prevBlocked = new Set(state.blockedTaskIds ?? []);
+		const unblockedTasks: string[] = [];
+
+		const remainingFailures = new Set<string>();
+		for (const t of state.tasks) {
+			if ((t.status === "failed" || t.status === "stalled") && t.taskId !== taskId) {
+				remainingFailures.add(t.taskId);
+			}
+		}
+
+		// Use in-memory dependency graph if available (batch IDs must match)
+		if (orchBatchState.dependencyGraph && orchBatchState.batchId === state.batchId) {
+			const newBlocked = computeTransitiveDependents(remainingFailures, orchBatchState.dependencyGraph);
+
+			// Find tasks that were blocked but are now unblocked
+			for (const id of prevBlocked) {
+				if (!newBlocked.has(id)) {
+					unblockedTasks.push(id);
+				}
+			}
+
+			state.blockedTaskIds = [...newBlocked].sort();
+			state.blockedTasks = newBlocked.size;
+		} else {
+			// No dependency graph available — conservatively remove the skipped
+			// task from blocked list and let the engine re-evaluate on resume.
+			prevBlocked.delete(taskId);
+			state.blockedTaskIds = [...prevBlocked];
+			state.blockedTasks = prevBlocked.size;
+		}
+
+		// TP-077 R001-3: Phase transition — "failed" → "stopped" (resumable with force)
+		if (state.phase === "failed") {
+			state.phase = "stopped";
+		}
+
+		// Update timestamp
+		state.updatedAt = Date.now();
+
+		// Persist
+		try {
+			saveBatchState(JSON.stringify(state, null, 2), stateRoot);
+		} catch (err) {
+			return `❌ Failed to persist state after skip: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		// Sync in-memory state if batch IDs match
+		if (orchBatchState.batchId === state.batchId) {
+			orchBatchState.failedTasks = state.failedTasks;
+			orchBatchState.skippedTasks = state.skippedTasks;
+			orchBatchState.blockedTasks = state.blockedTasks;
+			orchBatchState.blockedTaskIds = new Set(state.blockedTaskIds);
+			if (state.phase === "stopped" && orchBatchState.phase === "failed") {
+				orchBatchState.phase = "stopped";
+			}
+		}
+
+		updateOrchWidget();
+
+		const lines = [
+			`✅ Task "${taskId}" marked as skipped.`,
+			`   Previous status: ${prevStatus}`,
+			`   Batch phase: ${state.phase} | Failed: ${state.failedTasks}, Skipped: ${state.skippedTasks}, Blocked: ${state.blockedTasks} / ${state.totalTasks} total`,
+		];
+
+		if (unblockedTasks.length > 0) {
+			lines.push(`   Unblocked tasks: ${unblockedTasks.join(", ")}`);
+		}
+
+		lines.push("   The engine will re-evaluate dependent tasks on next resume cycle.");
+
+		return lines.join("\n");
+	}
+
+	// ── TP-078: Force Merge Tool ─────────────────────────────────────
+
+	/**
+	 * Core logic for orch_force_merge. Unblocks mixed-outcome merge failures by
+	 * skipping failed tasks, clearing the failed merge entry, and pausing so
+	 * resume re-attempts the real merge.
+	 *
+	 * This is the supervisor's escape hatch when a wave merge was rejected because
+	 * some lanes had both succeeded and failed tasks (mixed-outcome). The tool:
+	 * 1. Validates the batch is paused/stopped/failed and the wave merge status is "partial"
+	 * 2. Verifies the partial failure is specifically the mixed-outcome rejection
+	 * 3. If skipFailed=true, marks failed/stalled tasks in the wave as "skipped"
+	 * 4. Clears the failed merge entry and sets phase to "paused"
+	 * 5. `orch_resume()` re-runs the merge using real git merge logic
+	 */
+	function doOrchForceMerge(waveIndex: number | undefined, skipFailed: boolean, ctx: ExtensionContext): string {
+		// Reject while engine is actively running
+		const activePhases = new Set(["launching", "executing", "merging", "planning"]);
+		if (activePhases.has(orchBatchState.phase)) {
+			return `❌ Cannot force merge while batch is ${orchBatchState.phase}. Pause or wait for the current operation to finish first.`;
+		}
+
+		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+
+		// Load persisted state
+		let state: PersistedBatchState | null = null;
+		try {
+			state = loadBatchState(stateRoot);
+		} catch (err) {
+			return `❌ Failed to load batch state: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		if (!state) {
+			return "❌ No batch state found. There is no active or recent batch to modify.";
+		}
+
+		// Force-merge is a recovery action for non-running failed/paused batches.
+		const resumablePhases = new Set(["paused", "stopped", "failed"]);
+		if (!resumablePhases.has(state.phase)) {
+			return `❌ Cannot force merge when batch phase is "${state.phase}". ` +
+				`Force merge is only valid for paused/stopped/failed batches.`;
+		}
+
+		// Determine target wave index (0-based). Default to currentWaveIndex.
+		const targetWave = waveIndex ?? state.currentWaveIndex;
+
+		// Validate wave index
+		if (targetWave < 0 || targetWave >= state.totalWaves) {
+			return `❌ Invalid wave index ${targetWave}. Batch has ${state.totalWaves} wave(s) (0-based: 0..${state.totalWaves - 1}).`;
+		}
+
+		// Find the merge result for the target wave
+		// Walk in reverse to find the latest entry for this wave
+		let mergeResultIdx = -1;
+		for (let i = state.mergeResults.length - 1; i >= 0; i--) {
+			if (state.mergeResults[i].waveIndex === targetWave) {
+				mergeResultIdx = i;
+				break;
+			}
+		}
+
+		// Validate: there must be a merge failure (partial or failed) for this wave
+		if (mergeResultIdx === -1) {
+			return `❌ No merge result found for wave ${targetWave}. Force merge is only needed when a merge failed or was rejected due to mixed-outcome lanes.`;
+		}
+
+		const mergeEntry = state.mergeResults[mergeResultIdx];
+		if (mergeEntry.status === "succeeded") {
+			return `✅ Wave ${targetWave} merge already succeeded. No force merge needed.`;
+		}
+
+		// Only allow force merge for mixed-outcome failures (partial status).
+		// Other failures (conflicts, build failures, repo divergence) need different resolution.
+		if (mergeEntry.status !== "partial") {
+			return `❌ Wave ${targetWave} merge failed with status "${mergeEntry.status}": ${mergeEntry.failureReason || "unknown reason"}.\n` +
+				`Force merge only applies to mixed-outcome lanes (partial). This failure needs manual resolution.`;
+		}
+
+		const failureReason = mergeEntry.failureReason || "";
+		const failureReasonLower = failureReason.toLowerCase();
+		const isMixedOutcomePartial =
+			failureReasonLower.includes("both succeeded and failed tasks") ||
+			failureReasonLower.includes("mixed-outcome") ||
+			failureReasonLower.includes("automatic partial-branch merge is disabled");
+		if (!isMixedOutcomePartial) {
+			return `❌ Wave ${targetWave} has partial merge status, but the failure reason does not match mixed-outcome lanes.\n` +
+				`Reason: ${failureReason || "unknown"}\n` +
+				`Force merge is only valid for the mixed-outcome lane guard. Resolve this merge failure manually.`;
+		}
+
+		// Collect tasks in the target wave
+		const waveTasks = state.wavePlan[targetWave] ?? [];
+		const failedInWave: string[] = [];
+		const succeededInWave: string[] = [];
+
+		for (const taskId of waveTasks) {
+			const task = state.tasks.find(t => t.taskId === taskId);
+			if (!task) continue;
+			if (task.status === "failed" || task.status === "stalled") {
+				failedInWave.push(taskId);
+			} else if (task.status === "succeeded") {
+				succeededInWave.push(taskId);
+			}
+		}
+
+		if (succeededInWave.length === 0) {
+			return `❌ No succeeded tasks in wave ${targetWave}. Force merge requires at least one succeeded task whose commits can be merged.`;
+		}
+
+		// If skipFailed is true, mark failed/stalled tasks as skipped
+		const skippedTasks: string[] = [];
+		if (skipFailed && failedInWave.length > 0) {
+			for (const taskId of failedInWave) {
+				const task = state.tasks.find(t => t.taskId === taskId);
+				if (!task) continue;
+				const prevStatus = task.status;
+				task.status = "skipped";
+				task.exitReason = "Skipped by orch_force_merge";
+				task.endedAt = Date.now();
+				skippedTasks.push(taskId);
+
+				// Adjust counters
+				if (prevStatus === "failed" || prevStatus === "stalled") {
+					state.failedTasks = Math.max(0, state.failedTasks - 1);
+				}
+				state.skippedTasks = (state.skippedTasks ?? 0) + 1;
+			}
+
+			// Recompute blocked tasks if dependency graph is available
+			const remainingFailures = new Set<string>();
+			for (const t of state.tasks) {
+				if ((t.status === "failed" || t.status === "stalled")) {
+					remainingFailures.add(t.taskId);
+				}
+			}
+
+			if (orchBatchState.dependencyGraph && orchBatchState.batchId === state.batchId) {
+				const newBlocked = computeTransitiveDependents(remainingFailures, orchBatchState.dependencyGraph);
+				state.blockedTaskIds = [...newBlocked].sort();
+				state.blockedTasks = newBlocked.size;
+			} else if (remainingFailures.size === 0) {
+				// No remaining failures — clear all blocked state
+				state.blockedTaskIds = [];
+				state.blockedTasks = 0;
+			}
+		} else if (!skipFailed && failedInWave.length > 0) {
+			return `❌ Wave ${targetWave} has ${failedInWave.length} failed task(s): ${failedInWave.join(", ")}.\n` +
+				`Use skipFailed=true to skip them, or use orch_skip_task to skip them individually first.`;
+		}
+
+		// Clear the failed merge result so resume will re-attempt the merge.
+		// With failed tasks now skipped, the merge should succeed (no mixed outcomes).
+		state.mergeResults.splice(mergeResultIdx, 1);
+
+		// Phase transition to "paused" so orch_resume will re-run the merge phase.
+		// "paused" is the standard resumable state (not "stopped" which needs force).
+		state.phase = "paused";
+
+		// Clear merge-related errors
+		state.errors = state.errors.filter(e => !e.includes("mixed") && !e.includes("merge") && !e.includes("Merge"));
+		state.lastError = null;
+
+		// Update timestamp
+		state.updatedAt = Date.now();
+
+		// Persist
+		try {
+			saveBatchState(JSON.stringify(state, null, 2), stateRoot);
+		} catch (err) {
+			return `❌ Failed to persist state after force merge: ${err instanceof Error ? err.message : String(err)}`;
+		}
+
+		// Sync in-memory state if batch IDs match
+		if (orchBatchState.batchId === state.batchId) {
+			orchBatchState.failedTasks = state.failedTasks;
+			orchBatchState.skippedTasks = state.skippedTasks ?? 0;
+			orchBatchState.blockedTasks = state.blockedTasks;
+			orchBatchState.blockedTaskIds = new Set(state.blockedTaskIds);
+			orchBatchState.phase = "paused";
+		}
+
+		updateOrchWidget();
+
+		const lines = [
+			`✅ Force merge prepared for wave ${targetWave}.`,
+			`   Failed merge result cleared — resume will re-attempt the merge.`,
+			`   Succeeded tasks: ${succeededInWave.join(", ")}`,
+		];
+
+		if (skippedTasks.length > 0) {
+			lines.push(`   Skipped tasks (were failed): ${skippedTasks.join(", ")}`);
+		}
+
+		lines.push(`   Batch phase: paused | Failed: ${state.failedTasks}, Skipped: ${state.skippedTasks ?? 0} / ${state.totalTasks} total`);
+
+		const resumeHint = "Use orch_resume() to re-run the merge with failed tasks skipped.";
+		lines.push(`   ${resumeHint}`);
+
+		return lines.join("\n");
+	}
+
 	/**
 	 * Core logic for orch-integrate. Returns a result message string.
 	 * On error, returns an object with error flag.
@@ -2324,7 +2796,7 @@ export default function (pi: ExtensionAPI) {
 	): Promise<{ message: string; error?: boolean; level?: "info" | "warning" | "error" }> {
 		if (!execCtx) {
 			return {
-				message: "❌ Orchestrator not initialized. Workspace configuration failed at startup.\nFix the workspace config or remove it to use repo mode, then restart.",
+				message: getExecCtxInitErrorMessage(),
 				error: true,
 			};
 		}
@@ -2522,12 +2994,18 @@ export default function (pi: ExtensionAPI) {
 		if (batchId) {
 			try {
 				const artifactCleanup = cleanupPostIntegrate(repoRoot, batchId);
-				const totalCleaned = artifactCleanup.telemetryFilesDeleted + artifactCleanup.mergeFilesDeleted + artifactCleanup.promptFilesDeleted;
+				const totalCleaned = artifactCleanup.telemetryFilesDeleted + artifactCleanup.mergeFilesDeleted + artifactCleanup.promptFilesDeleted + artifactCleanup.mailboxDirsDeleted;
 				if (totalCleaned > 0) {
+					const cleanupParts = [
+						`${artifactCleanup.telemetryFilesDeleted} telemetry file(s)`,
+						`${artifactCleanup.mergeFilesDeleted} merge result(s)`,
+						`${artifactCleanup.promptFilesDeleted} prompt file(s)`,
+					];
+					if (artifactCleanup.mailboxDirsDeleted > 0) {
+						cleanupParts.push(`${artifactCleanup.mailboxDirsDeleted} mailbox dir(s)`);
+					}
 					outputLines.push(
-						`🧹 Cleaned up ${artifactCleanup.telemetryFilesDeleted} telemetry file(s), ` +
-						`${artifactCleanup.mergeFilesDeleted} merge result(s), ` +
-						`${artifactCleanup.promptFilesDeleted} prompt file(s) for batch ${batchId}`,
+						`🧹 Cleaned up ${cleanupParts.join(", ")} for batch ${batchId}`,
 					);
 				}
 				if (artifactCleanup.warnings.length > 0) {
@@ -3064,6 +3542,695 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	// ── TP-077: Supervisor Recovery Tools ────────────────────────────
+
+	pi.registerTool({
+		name: "orch_retry_task",
+		label: "Retry Failed Task",
+		description:
+			"Retry a specific failed task. Resets the task to pending status so it will " +
+			"be re-executed on the next resume cycle. Only works for tasks with 'failed' status.",
+		promptSnippet: "orch_retry_task(taskId) — retry a specific failed task",
+		promptGuidelines: [
+			"Call orch_retry_task to reset a failed task for re-execution.",
+			"The task must have 'failed' status — running, succeeded, or pending tasks cannot be retried.",
+			"After retrying, use orch_resume(force=true) to re-execute the batch if it's paused.",
+			"Use this when a task failed due to a transient issue (context pressure, API error) that may succeed on retry.",
+		],
+		parameters: Type.Object({
+			taskId: Type.String({
+				description: "Task ID to retry (e.g., 'TP-003')",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doOrchRetryTask(params.taskId, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error retrying task: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	pi.registerTool({
+		name: "orch_skip_task",
+		label: "Skip Task",
+		description:
+			"Skip a failed or pending task and unblock its dependents. " +
+			"The task is marked as 'skipped' and will not be executed. " +
+			"Dependent tasks are unblocked for execution.",
+		promptSnippet: "orch_skip_task(taskId) — skip a task and unblock dependents",
+		promptGuidelines: [
+			"Call orch_skip_task to skip a task and unblock any tasks that depend on it.",
+			"The task must have 'failed' or 'pending' status — running or succeeded tasks cannot be skipped.",
+			"Use this when a task cannot succeed and you want to continue the batch without it.",
+			"Skipping a task removes it from the blocker set, potentially unblocking downstream tasks.",
+			"The engine re-evaluates dependencies on the next resume cycle.",
+		],
+		parameters: Type.Object({
+			taskId: Type.String({
+				description: "Task ID to skip (e.g., 'TP-003')",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doOrchSkipTask(params.taskId, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error skipping task: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	// ── TP-078: Force Merge Tool ─────────────────────────────────────
+
+	pi.registerTool({
+		name: "orch_force_merge",
+		label: "Force Merge Wave",
+		description:
+			"Force merge a wave that was rejected due to mixed-outcome lanes (succeeded and failed tasks " +
+			"on the same lane). Updates the merge result to 'succeeded' so the batch can continue. " +
+			"Optionally skips failed tasks in the wave.",
+		promptSnippet: "orch_force_merge(waveIndex?, skipFailed?) — force merge a wave with mixed results",
+		promptGuidelines: [
+			"Call orch_force_merge when a wave merge was rejected because lanes had both succeeded and failed tasks.",
+			"The batch must be paused, stopped, or failed with a 'partial' merge result for the target wave.",
+			"Set skipFailed=true to automatically skip all failed tasks in the wave (recommended).",
+			"If skipFailed is false and failed tasks exist, you must skip them individually with orch_skip_task first.",
+			"After force merging, use orch_resume(force=true) to continue the batch.",
+			"waveIndex is 0-based. Omit it to target the current wave.",
+		],
+		parameters: Type.Object({
+			waveIndex: Type.Optional(Type.Number({
+				description: "0-based wave index to force merge. Defaults to the current wave.",
+			})),
+			skipFailed: Type.Optional(Type.Boolean({
+				description: "If true, automatically skip all failed tasks in the wave before merging. Defaults to false.",
+			})),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doOrchForceMerge(params.waveIndex, params.skipFailed ?? false, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error force merging: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	// ── TP-089: Agent Mailbox Steering Tool ──────────────────────────
+
+	pi.registerTool({
+		name: "send_agent_message",
+		label: "Send Agent Message",
+		description:
+			"Send a steering message to a running agent (worker, reviewer, or merger). " +
+			"The message is delivered into the agent's LLM context at the next turn boundary.",
+		promptSnippet: "send_agent_message(to, content, type?) — send steering message to a running agent",
+		promptGuidelines: [
+			"Call send_agent_message to course-correct a running agent (worker, reviewer, or merger).",
+			"The 'to' parameter must be a valid agent session name from the current batch.",
+			"Use orch_status() to see active session names.",
+			"Default type is 'steer' (course correction). Other types: 'query', 'abort', 'info'.",
+			"Messages are limited to 4KB. For larger context, write to a file and reference by path.",
+		],
+		parameters: Type.Object({
+			to: Type.String({
+				description: "Target agent session name (e.g., 'orch-henrylach-lane-1-worker')",
+			}),
+			content: Type.String({
+				description: "Message content (max 4KB). Concise directive for the agent.",
+			}),
+			type: Type.Optional(Type.Union(
+				[Type.Literal("steer"), Type.Literal("query"), Type.Literal("abort"), Type.Literal("info")],
+				{ description: 'Message type (default: "steer")' },
+			)),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doSendAgentMessage(params.to, params.content, params.type ?? "steer", ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error sending message: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	/**
+	 * Send a steering message to a running agent via the mailbox system.
+	 *
+	 * Resolves the target session from batch state, validates it exists,
+	 * and writes the message to the agent's inbox.
+	 *
+	 * @since TP-089
+	 */
+	function doSendAgentMessage(to: string, content: string, messageType: string, ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
+
+		// Validate message type (outbound allowlist: steer, query, abort, info)
+		const validOutboundTypes = new Set(["steer", "query", "abort", "info"]);
+		if (!validOutboundTypes.has(messageType)) {
+			return `❌ Invalid message type "${messageType}". Valid types: steer, query, abort, info.`;
+		}
+
+		// Load batch state
+		let state: PersistedBatchState | null = null;
+		try {
+			state = loadBatchState(stateRoot);
+		} catch (err) {
+			return `❌ Failed to load batch state: ${err instanceof Error ? err.message : String(err)}`;
+		}
+		if (!state) {
+			return "❌ No batch state found. There is no active or recent batch.";
+		}
+
+		// Build the set of valid agent session names from batch state
+		const validSessions = new Set<string>();
+		const orchConfig = execCtx?.orchestratorConfig;
+		const tmuxPrefix = orchConfig?.orchestrator?.tmux_prefix ?? "orch";
+		const opId = orchConfig ? resolveOperatorId(orchConfig) : "op";
+
+		for (const lane of state.lanes) {
+			// Worker and reviewer are derived from lane session name
+			validSessions.add(`${lane.tmuxSessionName}-worker`);
+			validSessions.add(`${lane.tmuxSessionName}-reviewer`);
+			// Merger: {tmuxPrefix}-{opId}-merge-{laneNumber}
+			validSessions.add(`${tmuxPrefix}-${opId}-merge-${lane.laneNumber}`);
+		}
+
+		// Validate target session
+		if (!validSessions.has(to)) {
+			const examples = [...validSessions].slice(0, 5).join(", ");
+			return `❌ Unknown session "${to}" in batch ${state.batchId}.\nValid targets: ${examples}${validSessions.size > 5 ? ` (${validSessions.size} total)` : ""}`;
+		}
+
+		// Write message to inbox
+		try {
+			const msg = writeMailboxMessage(stateRoot, state.batchId, to, {
+				from: "supervisor",
+				type: messageType as MailboxMessageType,
+				content,
+			});
+			return `✅ Message sent to \`${to}\` (batch ${state.batchId})\n` +
+				`- **ID:** ${msg.id}\n` +
+				`- **Type:** ${messageType}\n` +
+				`- **Size:** ${Buffer.byteLength(content, "utf8")} bytes\n` +
+				`Message will be delivered at the agent's next turn boundary.`;
+		} catch (err) {
+			return `❌ Failed to write message: ${err instanceof Error ? err.message : String(err)}`;
+		}
+	}
+
+	function resolveToolStateRoot(context: ExtensionContext): string {
+		return execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? context.cwd;
+	}
+
+	function resolveLaneRepoRootForTools(laneRec: PersistedBatchState["lanes"][number], stateRoot: string): string {
+		if (execCtx?.workspaceConfig && laneRec.repoId) {
+			const repo = execCtx.workspaceConfig.repos[laneRec.repoId];
+			if (repo?.path) return repo.path;
+		}
+		return execCtx?.repoRoot ?? stateRoot;
+	}
+
+	// ── TP-096: Supervisor Recovery Tools ─────────────────────────────────
+
+	pi.registerTool({
+		name: "read_agent_status",
+		label: "Read Agent Status",
+		description:
+			"Read STATUS.md and telemetry for a running agent's lane. " +
+			"Returns current step, checkbox progress, context %, cost, tool count, and elapsed time. " +
+			"If lane is omitted, returns status for all active lanes.",
+		promptSnippet: "read_agent_status(lane?) — read STATUS.md + context % + cost from a running agent",
+		promptGuidelines: [
+			"Call read_agent_status to check on a specific lane's worker progress.",
+			"Omit lane to get a summary of all active lanes.",
+			"Returns: current step, checked/total items, context %, cost, elapsed.",
+		],
+		parameters: Type.Object({
+			lane: Type.Optional(Type.Number({
+				description: "Lane number to check (omit for all lanes)",
+			})),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doReadAgentStatus(params.lane, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error reading agent status: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	/**
+	 * Read agent status from STATUS.md and lane-state sidecar.
+	 * @since TP-096
+	 */
+	function doReadAgentStatus(lane: number | undefined, ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
+
+		// Load batch state
+		const state = loadBatchState(stateRoot);
+		if (!state) return "❌ No batch state found.";
+
+		const targetLanes = lane != null
+			? state.lanes.filter(l => l.laneNumber === lane)
+			: state.lanes;
+
+		if (targetLanes.length === 0) {
+			return lane != null
+				? `❌ Lane ${lane} not found in batch ${state.batchId}.`
+				: "❌ No lanes in current batch.";
+		}
+
+		const lines: string[] = [];
+		lines.push(`📊 **Agent Status** — batch ${state.batchId}\n`);
+
+		for (const laneRec of targetLanes) {
+			// Find current task for this lane
+			const laneTasks = state.tasks.filter(t => t.laneNumber === laneRec.laneNumber);
+			const runningTask = laneTasks.find(t => t.status === "running");
+			const currentTask = runningTask || laneTasks[laneTasks.length - 1];
+
+			lines.push(`### Lane ${laneRec.laneNumber} — ${laneRec.tmuxSessionName}`);
+			lines.push(`**Branch:** ${laneRec.branch}`);
+
+			if (currentTask) {
+				lines.push(`**Task:** ${currentTask.taskId} (${currentTask.status})`);
+
+				// Read STATUS.md from canonical task paths (workspace-safe, cross-repo-safe)
+				try {
+					const taskFolderAbs = currentTask.taskFolder;
+					const worktreePath = laneRec.worktreePath;
+					if (taskFolderAbs && worktreePath) {
+						const repoRootForLane = resolveLaneRepoRootForTools(laneRec, stateRoot);
+						const resolved = resolveCanonicalTaskPaths(
+							taskFolderAbs,
+							worktreePath,
+							repoRootForLane,
+							!!execCtx?.workspaceConfig,
+						);
+						if (existsSync(resolved.statusPath)) {
+							const content = readFileSync(resolved.statusPath, "utf-8");
+							const stepMatch = content.match(/\*\*Current Step:\*\*\s*(.+)/);
+							const statusMatch = content.match(/\*\*Status:\*\*\s*(.+)/);
+							const iterMatch = content.match(/\*\*Iteration:\*\*\s*(\d+)/);
+							const reviewMatch = content.match(/\*\*Review Counter:\*\*\s*(\d+)/);
+							const checked = (content.match(/- \[x\]/gi) || []).length;
+							const unchecked = (content.match(/- \[ \]/g) || []).length;
+							const total = checked + unchecked;
+
+							if (stepMatch) lines.push(`**Step:** ${stepMatch[1].trim()}`);
+							if (statusMatch) lines.push(`**Step Status:** ${statusMatch[1].trim()}`);
+							if (total > 0) lines.push(`**Progress:** ${checked}/${total} (${Math.round((checked / total) * 100)}%)`);
+							if (iterMatch) lines.push(`**Iteration:** ${iterMatch[1]}`);
+							if (reviewMatch && Number.parseInt(reviewMatch[1], 10) > 0) lines.push(`**Reviews:** ${reviewMatch[1]}`);
+						}
+					}
+				} catch {
+					// STATUS.md not available in worktree — degrade gracefully
+				}
+			} else {
+				lines.push("**Task:** none assigned");
+			}
+
+			// Read lane-state sidecar
+			try {
+				const lsPath = join(stateRoot, ".pi", `lane-state-${laneRec.tmuxSessionName}.json`);
+				if (existsSync(lsPath)) {
+					const ls = JSON.parse(readFileSync(lsPath, "utf-8"));
+					const parts: string[] = [];
+					if (ls.workerContextPct) parts.push(`context: ${Math.round(ls.workerContextPct)}%`);
+					if (ls.workerCostUsd) parts.push(`cost: $${ls.workerCostUsd.toFixed(3)}`);
+					if (ls.workerToolCount) parts.push(`tools: ${ls.workerToolCount}`);
+					if (ls.workerElapsed) parts.push(`elapsed: ${Math.round(ls.workerElapsed / 1000)}s`);
+					if (ls.workerStatus) parts.push(`worker: ${ls.workerStatus}`);
+					if (ls.reviewerStatus && ls.reviewerStatus !== "idle") parts.push(`reviewer: ${ls.reviewerStatus}`);
+					if (parts.length > 0) lines.push(`**Telemetry:** ${parts.join(" · ")}`);
+				}
+			} catch {
+				// Lane state not available — degrade gracefully
+			}
+
+			lines.push("");
+		}
+
+		return lines.join("\n");
+	}
+
+	pi.registerTool({
+		name: "trigger_wrap_up",
+		label: "Trigger Wrap Up",
+		description:
+			"Write the .task-wrap-up signal file for a specific lane, telling the worker to finish its current step and exit gracefully.",
+		promptSnippet: "trigger_wrap_up(lane) — write .task-wrap-up signal file for a lane",
+		promptGuidelines: [
+			"Call trigger_wrap_up to gracefully stop a worker on a specific lane.",
+			"The worker will finish its current step and exit.",
+			"Validates the lane exists and has a running worker.",
+		],
+		parameters: Type.Object({
+			lane: Type.Number({
+				description: "Lane number to send wrap-up signal to",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doTriggerWrapUp(params.lane, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error triggering wrap-up: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	/**
+	 * Write .task-wrap-up signal file for a lane's current task.
+	 * @since TP-096
+	 */
+	function doTriggerWrapUp(lane: number, ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
+
+		const state = loadBatchState(stateRoot);
+		if (!state) return "❌ No batch state found.";
+
+		const laneRec = state.lanes.find(l => l.laneNumber === lane);
+		if (!laneRec) return `❌ Lane ${lane} not found in batch ${state.batchId}.`;
+
+		// Find running task for this lane
+		const runningTask = state.tasks.find(t => t.laneNumber === lane && t.status === "running");
+		if (!runningTask) return `❌ No running task on lane ${lane}.`;
+
+		// Resolve task folder in the worktree using canonical path resolver
+		const taskFolderAbs = runningTask.taskFolder;
+		const worktreePath = laneRec.worktreePath;
+		if (!taskFolderAbs || !worktreePath) {
+			return `❌ Cannot resolve task folder for lane ${lane}.`;
+		}
+
+		const repoRootForLane = resolveLaneRepoRootForTools(laneRec, stateRoot);
+		const resolved = resolveCanonicalTaskPaths(
+			taskFolderAbs,
+			worktreePath,
+			repoRootForLane,
+			!!execCtx?.workspaceConfig,
+		);
+		const wrapUpPath = join(resolved.taskFolderResolved, ".task-wrap-up");
+
+		try {
+			const dir = dirname(wrapUpPath);
+			if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+			writeFileSync(wrapUpPath, `wrap-up signal for ${runningTask.taskId}\n`, "utf-8");
+			return `✅ Wrap-up signal written for **${runningTask.taskId}** on lane ${lane}.\n` +
+				`Path: \`${wrapUpPath}\`\n` +
+				`The worker will finish its current step and exit gracefully.`;
+		} catch (err) {
+			return `❌ Failed to write wrap-up file: ${err instanceof Error ? err.message : String(err)}`;
+		}
+	}
+
+	pi.registerTool({
+		name: "read_lane_logs",
+		label: "Read Lane Logs",
+		description:
+			"Read stderr/crash logs for a specific lane from .pi/telemetry/ directory.",
+		promptSnippet: "read_lane_logs(lane) — read stderr/crash logs for a lane",
+		promptGuidelines: [
+			"Call read_lane_logs to read crash/error logs from a lane's stderr capture.",
+			"Falls back gracefully when logs don't exist (older batches).",
+		],
+		parameters: Type.Object({
+			lane: Type.Number({
+				description: "Lane number to read logs for",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doReadLaneLogs(params.lane, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error reading lane logs: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	/**
+	 * Read stderr/crash logs for a lane.
+	 * @since TP-096
+	 */
+	function doReadLaneLogs(lane: number, ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
+
+		const state = loadBatchState(stateRoot);
+		if (!state) return "❌ No batch state found.";
+
+		const laneRec = state.lanes.find(l => l.laneNumber === lane);
+		if (!laneRec) return `❌ Lane ${lane} not found in batch ${state.batchId}.`;
+
+		const telemetryDir = join(stateRoot, ".pi", "telemetry");
+		let stderrFile: string | null = null;
+
+		// Discover stderr logs by actual telemetry naming:
+		// {opId}-{batchId}-{repoId}[-{taskId}]-lane-{N}-worker-stderr.log
+		try {
+			if (existsSync(telemetryDir)) {
+				const allStderr = readdirSync(telemetryDir)
+					.filter(f => f.endsWith("-stderr.log"))
+					.filter(f => f.includes(`-lane-${lane}-worker`));
+				const batchScoped = allStderr.filter(f => f.includes(`-${state.batchId}-`));
+				const candidates = (batchScoped.length > 0 ? batchScoped : allStderr)
+					.map(name => {
+						const absPath = join(telemetryDir, name);
+						let mtime = 0;
+						try { mtime = statSync(absPath).mtimeMs; } catch {}
+						return { name, mtime };
+					})
+					.sort((a, b) => b.mtime - a.mtime);
+				stderrFile = candidates[0]?.name ?? null;
+			}
+		} catch {
+			// Directory not readable — handled below
+		}
+
+		// Legacy fallback from older conventions
+		if (!stderrFile) {
+			const legacy = `${state.batchId}-lane-${lane}-stderr.log`;
+			if (existsSync(join(telemetryDir, legacy))) {
+				stderrFile = legacy;
+			}
+		}
+
+		const stderrPath = stderrFile ? join(telemetryDir, stderrFile) : null;
+
+		// Also try to find worker-exit JSON files for crash diagnostics
+		const exitFiles: string[] = [];
+		try {
+			if (existsSync(telemetryDir)) {
+				const files = readdirSync(telemetryDir)
+					.filter(f => f.endsWith("-worker-exit.json"))
+					.filter(f => f.includes(`-lane-${lane}-`));
+				const batchScoped = files.filter(f => f.includes(`-${state.batchId}-`));
+				exitFiles.push(...(batchScoped.length > 0 ? batchScoped : files));
+			}
+		} catch { /* directory not readable */ }
+
+		const lines: string[] = [];
+		lines.push(`📜 **Lane ${lane} Logs** — batch ${state.batchId}\n`);
+
+		// Read stderr log
+		if (stderrPath && existsSync(stderrPath)) {
+			try {
+				const content = readFileSync(stderrPath, "utf-8");
+				const truncated = content.length > 5000
+					? "...\n" + content.slice(-5000)
+					: content;
+				lines.push("### Stderr Log");
+				lines.push("```");
+				lines.push(truncated.trim());
+				lines.push("```");
+				lines.push("");
+			} catch {
+				lines.push("Stderr log found but unreadable.");
+			}
+		} else {
+			lines.push(`No stderr log found for lane ${lane} (pattern: \`*-lane-${lane}-worker-stderr.log\`).`);
+		}
+
+		// Read most recent exit diagnostic
+		if (exitFiles.length > 0) {
+			const latestExit = exitFiles
+				.map(name => {
+					const absPath = join(telemetryDir, name);
+					let mtime = 0;
+					try { mtime = statSync(absPath).mtimeMs; } catch {}
+					return { name, mtime };
+				})
+				.sort((a, b) => b.mtime - a.mtime)[0]?.name;
+			if (latestExit) {
+				try {
+					const exitData = JSON.parse(readFileSync(join(telemetryDir, latestExit), "utf-8"));
+					lines.push("### Latest Exit Diagnostic");
+					if (exitData.classification) lines.push(`**Classification:** ${exitData.classification}`);
+					if (exitData.exitCode != null) lines.push(`**Exit Code:** ${exitData.exitCode}`);
+					if (exitData.errorMessage) lines.push(`**Error:** ${exitData.errorMessage}`);
+					if (exitData.durationSec) lines.push(`**Duration:** ${exitData.durationSec}s`);
+					lines.push("");
+				} catch { /* skip malformed exit file */ }
+			}
+		}
+
+		return lines.join("\n");
+	}
+
+	pi.registerTool({
+		name: "list_active_agents",
+		label: "List Active Agents",
+		description:
+			"List all tmux sessions with their role, lane, task, context %, and elapsed time.",
+		promptSnippet: "list_active_agents() — show all tmux sessions with role, lane, task, context %, elapsed",
+		promptGuidelines: [
+			"Call list_active_agents to see all running agent sessions.",
+			"Shows: session name, role (worker/reviewer/merger/supervisor), lane, task, context %, elapsed.",
+		],
+		parameters: Type.Object({}),
+		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doListActiveAgents(ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error listing agents: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	/**
+	 * List all active tmux sessions with agent metadata.
+	 * @since TP-096
+	 */
+	function doListActiveAgents(ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
+
+		// Get tmux sessions
+		let sessions: string[] = [];
+		try {
+			const output = execSync('tmux list-sessions -F "#{session_name}"', {
+				encoding: "utf-8",
+				timeout: 5000,
+				stdio: ["ignore", "pipe", "ignore"],
+			}).trim();
+			sessions = output ? output.split("\n").map(s => s.trim()).filter(Boolean) : [];
+		} catch {
+			return "❌ tmux not available or no sessions running.";
+		}
+
+		if (sessions.length === 0) return "❌ No tmux sessions found.";
+
+		// Load batch state for task/lane mapping
+		const state = loadBatchState(stateRoot);
+
+		// Build a map of session name → lane-state data
+		const laneStates: Record<string, any> = {};
+		try {
+			const piDir = join(stateRoot, ".pi");
+			if (existsSync(piDir)) {
+				const files = readdirSync(piDir).filter(f => f.startsWith("lane-state-") && f.endsWith(".json"));
+				for (const file of files) {
+					try {
+						const data = JSON.parse(readFileSync(join(piDir, file), "utf-8"));
+						if (data.prefix) laneStates[data.prefix] = data;
+					} catch { continue; }
+				}
+			}
+		} catch { /* .pi dir missing */ }
+
+		const lines: string[] = [];
+		lines.push(`👥 **Active Agents** (${sessions.length} sessions)\n`);
+
+		// Parse each session name to extract role, lane, etc.
+		for (const sess of sessions) {
+			let role = "unknown";
+			let laneNum = "";
+			let taskId = "";
+			let contextPct = "";
+			let elapsed = "";
+			let costStr = "";
+
+			// Parse session name pattern:
+			// Workers/reviewers: orch-{opId}-lane-{N} (or -worker/-reviewer suffix)
+			// Mergers: orch-{opId}-merge-{N}
+			// Supervisor: pi-supervisor-{...}
+			const laneMatch = sess.match(/-lane-(\d+)/);
+			const mergeMatch = sess.match(/-merge-(\d+)/);
+
+			if (mergeMatch) {
+				role = "merger";
+				laneNum = mergeMatch[1];
+			} else if (laneMatch) {
+				if (sess.includes("-reviewer")) {
+					role = "reviewer";
+				} else {
+					role = "worker";
+				}
+				laneNum = laneMatch[1];
+			} else if (sess.includes("supervisor")) {
+				role = "supervisor";
+			}
+
+			// Find matching task and lane-state
+			if (state && laneNum) {
+				const ln = parseInt(laneNum);
+				const task = state.tasks.find(t => t.laneNumber === ln && t.status === "running");
+				if (task) taskId = task.taskId;
+
+				// Find lane-state prefix (may be the session name or a prefix of it)
+				const laneRec = state.lanes.find(l => l.laneNumber === ln);
+				const prefix = laneRec?.tmuxSessionName || sess;
+				const ls = laneStates[prefix];
+				if (ls) {
+					if (ls.workerContextPct) contextPct = `${Math.round(ls.workerContextPct)}%`;
+					if (ls.workerElapsed) elapsed = `${Math.round(ls.workerElapsed / 1000)}s`;
+					if (ls.workerCostUsd) costStr = `$${ls.workerCostUsd.toFixed(3)}`;
+				}
+			}
+
+			const parts: string[] = [`**${sess}**`];
+			parts.push(`role: ${role}`);
+			if (laneNum) parts.push(`lane: ${laneNum}`);
+			if (taskId) parts.push(`task: ${taskId}`);
+			if (contextPct) parts.push(`ctx: ${contextPct}`);
+			if (elapsed) parts.push(`elapsed: ${elapsed}`);
+			if (costStr) parts.push(`cost: ${costStr}`);
+			lines.push(`- ${parts.join(" · ")}`);
+		}
+
+		return lines.join("\n");
+	}
+
 	// ── Settings TUI ─────────────────────────────────────────────────
 
 	pi.registerCommand("taskplane-settings", {
@@ -3086,24 +4253,35 @@ export default function (pi: ExtensionAPI) {
 		orchWidgetCtx = ctx;
 
 		// ── Build execution context (config + workspace mode detection) ──
-		// Reset execCtx before loading to prevent stale state on re-init
+		// Reset startup state before loading to prevent stale errors on re-init.
 		execCtx = null;
+		execCtxInitError = null;
 		try {
 			execCtx = buildExecutionContext(ctx.cwd, loadOrchestratorConfig, loadTaskRunnerConfig);
 		} catch (err: unknown) {
 			if (err instanceof WorkspaceConfigError) {
-				// Workspace config is present but invalid — fatal startup error.
-				// Leave execCtx null; command guard will block all commands except abort.
-				ctx.ui.notify(
-					`❌ Workspace configuration error [${err.code}]\n\n` +
-					`${err.message}\n\n` +
-					`Fix the workspace config at .pi/taskplane-workspace.yaml or remove it to use repo mode.\n` +
-					`Orchestrator commands are disabled until this is resolved.`,
-					"error",
-				);
+				// Startup is fatal when workspace config is invalid OR repo-mode setup
+				// requirements are not met (non-git cwd without workspace config).
+				const setupError = err.code === "WORKSPACE_SETUP_REQUIRED";
+				execCtxInitError = setupError
+					? (
+						`❌ Orchestrator startup blocked [${err.code}]\n\n` +
+						`${err.message}\n\n` +
+						`Orchestrator commands are disabled until this setup issue is resolved.`
+					)
+					: (
+						`❌ Workspace configuration error [${err.code}]\n\n` +
+						`${err.message}\n\n` +
+						`Fix the workspace config at .pi/taskplane-workspace.yaml (or taskplane-config.json workspace section), then restart.\n` +
+						`Orchestrator commands are disabled until this is resolved.`
+					);
+
+				ctx.ui.notify(execCtxInitError, "error");
 				ctx.ui.setStatus(
 					"task-orchestrator",
-					"🔀 Orchestrator · ❌ startup failed (workspace config error)",
+					setupError
+						? "🔀 Orchestrator · ❌ startup failed (setup required)"
+						: "🔀 Orchestrator · ❌ startup failed (workspace config error)",
 				);
 				return;
 			}
@@ -3132,7 +4310,7 @@ export default function (pi: ExtensionAPI) {
 		// This ensures migrations run even if the user doesn't invoke /orch.
 		// Non-fatal — failures are silently swallowed so startup is never blocked.
 		try {
-			const migrationResult = runMigrations(execCtx.repoRoot);
+			const migrationResult = runMigrations(execCtx.repoRoot, undefined, execCtx.pointer?.configRoot);
 			if (migrationResult.messages.length > 0) {
 				ctx.ui.notify(migrationResult.messages.join("\n"), "info");
 			}
@@ -3280,13 +4458,13 @@ export default function (pi: ExtensionAPI) {
 	// Ensure supervisor lockfile/heartbeat are cleaned up on normal session exit.
 	// This avoids leaving a live-looking lock when the process exits cleanly.
 	pi.on("session_end", async () => {
-		// TP-071: Terminate engine worker thread on session exit
+		// TP-071: Kill engine process on session exit
 		if (activeWorker) {
 			try {
-				activeWorker.terminate();
+				activeWorker.kill();
 				activeWorker = null;
 			} catch {
-				// Best effort — worker may already be dead
+				// Best effort — process may already be dead
 			}
 		}
 		try {

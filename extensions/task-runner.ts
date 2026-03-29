@@ -154,6 +154,8 @@ interface TaskState {
 	persistentReviewerKill: (() => void) | null;
 	/** TP-057: Signal counter for the persistent reviewer (monotonically increasing). */
 	persistentReviewerSignalNum: number;
+	/** Reviewer respawn counter — circuit breaker to prevent infinite respawn loops. */
+	reviewerRespawnCount: number;
 	totalIterations: number;
 	stepStatuses: Map<number, StepInfo>;
 }
@@ -172,7 +174,7 @@ function freshState(): TaskState {
 		reviewerInputTokens: 0, reviewerOutputTokens: 0, reviewerCacheReadTokens: 0, reviewerCacheWriteTokens: 0,
 		reviewerCostUsd: 0, reviewerContextPct: 0, reviewerProc: null, reviewerTimer: null,
 		reviewCounter: 0,
-		persistentReviewerSession: null, persistentReviewerKill: null, persistentReviewerSignalNum: 0,
+		persistentReviewerSession: null, persistentReviewerKill: null, persistentReviewerSignalNum: 0, reviewerRespawnCount: 0,
 		totalIterations: 0, stepStatuses: new Map(),
 	};
 }
@@ -445,9 +447,38 @@ function writeLaneState(state: TaskState): void {
 			reviewerOutputTokens: state.reviewerOutputTokens || 0,
 			reviewerCacheReadTokens: state.reviewerCacheReadTokens || 0,
 			reviewerCacheWriteTokens: state.reviewerCacheWriteTokens || 0,
+			batchId: process.env.ORCH_BATCH_ID || null,
 			timestamp: Date.now(),
 		};
 		writeFileSync(filePath, JSON.stringify(data) + "\n");
+	} catch {
+		// Best effort — don't crash the runner
+	}
+}
+
+/**
+ * Write a context % snapshot at worker iteration boundary (TP-094).
+ * Best-effort JSONL append to `.pi/context-snapshots/{batchId}/{sessionName}.jsonl`.
+ * Non-fatal on any failure — never blocks execution.
+ */
+function writeContextSnapshot(state: TaskState, contextWindow: number): void {
+	const batchId = process.env.ORCH_BATCH_ID || "standalone";
+	const sessionName = isOrchestratedMode() ? `${getTmuxPrefix()}-worker` : "task-worker";
+	try {
+		const dir = join(getSidecarDir(), "context-snapshots", batchId);
+		mkdirSync(dir, { recursive: true });
+		const filePath = join(dir, `${sessionName}.jsonl`);
+		const snapshot = {
+			iteration: state.totalIterations,
+			contextPct: state.workerContextPct,
+			tokens: state.workerInputTokens + state.workerOutputTokens + state.workerCacheReadTokens + state.workerCacheWriteTokens,
+			contextWindow,
+			cost: state.workerCostUsd,
+			toolCalls: state.workerToolCount,
+			exitReason: state.workerExitDiagnostic?.classification || null,
+			timestamp: Date.now(),
+		};
+		appendFileSync(filePath, JSON.stringify(snapshot) + "\n");
 	} catch {
 		// Best effort — don't crash the runner
 	}
@@ -1118,7 +1149,7 @@ function extractVerdict(reviewContent: string): string {
 	// TP-068: Tolerate non-standard verdict formats from models that don't
 	// follow the exact template (e.g., "Changes requested", "Needs revision").
 	const lower = reviewContent.toLowerCase();
-	if (/\b(changes?\s+requested|needs?\s+revision|please\s+revise|must\s+revise)\b/.test(lower)) {
+	if (/\b(request\s+changes?|changes?\s+requested|needs?\s+revision|please\s+revise|must\s+revise)\b/.test(lower)) {
 		return "REVISE";
 	}
 	if (/\b(looks?\s+good|no\s+issues?\s+found|approved?)\b/.test(lower)) {
@@ -1367,6 +1398,10 @@ interface SidecarTelemetryDelta {
 	lastRetryError: string;
 	/** Whether any sidecar events were parsed in this tick (used for callback gating) */
 	hadEvents: boolean;
+	/** Authoritative context usage from pi get_session_stats (pi ≥ 0.63.0, null if unavailable) */
+	contextUsage: { percent: number; totalTokens: number; maxTokens: number } | null;
+	/** True when a get_session_stats response was seen but lacked contextUsage (older pi) */
+	sawStatsResponseWithoutContextUsage: boolean;
 }
 
 /**
@@ -1385,7 +1420,7 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 		inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
 		cost: 0, latestTotalTokens: 0, toolCalls: 0, lastTool: "",
 		retryActive: tailState.retryActive, retriesStarted: 0, lastRetryError: "",
-		hadEvents: false,
+		hadEvents: false, contextUsage: null, sawStatsResponseWithoutContextUsage: false,
 	};
 
 	// Gracefully handle missing file (wrapper hasn't written yet)
@@ -1494,6 +1529,26 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 
 			case "auto_retry_end": {
 				tailState.retryActive = false;
+				break;
+			}
+
+			case "response": {
+				// get_session_stats response from pi ≥ 0.63.0 — authoritative context usage
+				if (event.success === true && event.data?.contextUsage) {
+					const cu = event.data.contextUsage;
+					// pi sends `percent` (pi ≥ 0.63.0); accept `percentUsed` as legacy fallback
+					const pctValue = cu.percent ?? cu.percentUsed;
+					if (typeof pctValue === "number") {
+						delta.contextUsage = {
+							percent: pctValue,
+							totalTokens: cu.totalTokens || 0,
+							maxTokens: cu.maxTokens || 0,
+						};
+					}
+				} else if (event.success === true && event.data && !event.data.contextUsage) {
+					// Successful get_session_stats response but no contextUsage — older pi
+					delta.sawStatsResponseWithoutContextUsage = true;
+				}
 				break;
 			}
 		}
@@ -1635,6 +1690,25 @@ export function isLowRiskStep(stepNumber: number, totalSteps: number): boolean {
 }
 
 // ── TMUX Agent Spawner ───────────────────────────────────────────────
+
+/**
+ * Synchronous sleep helper for tmux spawn stabilization checks.
+ *
+ * Uses Atomics.wait for cross-platform blocking delays without relying on
+ * shell `sleep` availability (important on Windows environments).
+ */
+function sleepSyncMs(ms: number): void {
+	if (!Number.isFinite(ms) || ms <= 0) return;
+	try {
+		const arr = new Int32Array(new SharedArrayBuffer(4));
+		Atomics.wait(arr, 0, 0, Math.floor(ms));
+	} catch {
+		const start = Date.now();
+		while (Date.now() - start < ms) {
+			// Busy-wait fallback (rare path)
+		}
+	}
+}
 
 /**
  * Spawns a Pi agent in a named TMUX session instead of a headless subprocess.
@@ -1815,6 +1889,15 @@ function spawnAgentTmux(opts: {
 	if (opts.extensions && opts.extensions.length > 0) {
 		wrapperArgs.push("--extensions", quoteArg(opts.extensions.join(",")));
 	}
+	// TP-089: Agent mailbox steering — construct mailbox dir when in orchestrator mode.
+	// ORCH_BATCH_ID is set by execution.ts for all lane spawns (including retries).
+	// getSidecarDir() returns the .pi/ directory path (already includes .pi/).
+	const orchBatchId = process.env.ORCH_BATCH_ID;
+	if (orchBatchId) {
+		const mailboxDir = join(getSidecarDir(), "mailbox", orchBatchId, opts.sessionName);
+		mkdirSync(join(mailboxDir, "inbox"), { recursive: true });
+		wrapperArgs.push("--mailbox-dir", quoteArg(mailboxDir));
+	}
 	// Passthrough pi args: flags forwarded to the underlying pi --mode rpc process.
 	// Note: --no-session is NOT passed here — rpc-wrapper.mjs already injects it.
 	wrapperArgs.push("--");
@@ -1859,6 +1942,73 @@ function spawnAgentTmux(opts: {
 			`Failed to create TMUX session '${opts.sessionName}': ${stderr}. ` +
 			`Verify tmux is running and the session name is valid.`
 		);
+	}
+
+	// ── TP-095: Post-spawn verification with retry (#335) ──────────
+	// On Windows/MSYS2, rapid sequential tmux session creation is unreliable.
+	// Pi process can exit with code 1 in 0 seconds on the first 3-5 attempts.
+	// Verify the session is alive after a brief delay, and retry if it died.
+	const SPAWN_VERIFY_DELAY_MS = 300;
+	const SPAWN_VERIFY_POLL_ATTEMPTS = 3;
+	const SPAWN_VERIFY_POLL_INTERVAL_MS = 200;
+	const SPAWN_MAX_RETRIES = 2;
+
+	const verifySessionAlive = (): boolean => {
+		for (let poll = 0; poll < SPAWN_VERIFY_POLL_ATTEMPTS; poll++) {
+			const check = spawnSync("tmux", ["has-session", "-t", opts.sessionName]);
+			if (check.status === 0) return true;
+			if (poll < SPAWN_VERIFY_POLL_ATTEMPTS - 1) {
+				sleepSyncMs(SPAWN_VERIFY_POLL_INTERVAL_MS);
+			}
+		}
+		return false;
+	};
+
+	// Wait briefly for session to stabilize, then verify
+	sleepSyncMs(SPAWN_VERIFY_DELAY_MS);
+
+	// Derive the stderr log path for diagnostic messages (mirrors execution.ts convention)
+	const stderrLogHint = `${sidecarPath.replace(/\.jsonl$/, "-stderr.log")}`;
+
+	let spawnRetries = 0;
+	while (!verifySessionAlive() && spawnRetries < SPAWN_MAX_RETRIES) {
+		spawnRetries++;
+		console.error(`[task-runner] tmux: session '${opts.sessionName}' died on startup — retrying (${spawnRetries}/${SPAWN_MAX_RETRIES}). Stderr log: ${stderrLogHint}`);
+
+		// Brief delay before retry (increases with each attempt)
+		const retryDelay = spawnRetries * 500;
+		sleepSyncMs(retryDelay);
+
+		// Kill any remnant and re-create
+		spawnSync("tmux", ["kill-session", "-t", opts.sessionName]);
+
+		const retryResult = spawnSync("tmux", [
+			"new-session", "-d",
+			"-s", opts.sessionName,
+			wrappedCommand,
+		]);
+
+		if (retryResult.status !== 0) {
+			const retryStderr = retryResult.stderr?.toString().trim() || "unknown error";
+			console.error(`[task-runner] tmux: retry ${spawnRetries} session creation failed: ${retryStderr}`);
+			continue;
+		}
+
+		// Wait for the retried session to stabilize
+		sleepSyncMs(SPAWN_VERIFY_DELAY_MS);
+	}
+
+	if (spawnRetries > 0) {
+		const finalAlive = verifySessionAlive();
+		if (!finalAlive) {
+			cleanupTmp();
+			console.error(`[task-runner] tmux: session '${opts.sessionName}' failed after ${SPAWN_MAX_RETRIES} retries. Stderr log: ${stderrLogHint}`);
+			throw new Error(
+				`TMUX session '${opts.sessionName}' died on startup after ${SPAWN_MAX_RETRIES} retries. ` +
+				`Stderr log: ${stderrLogHint}`
+			);
+		}
+		console.error(`[task-runner] tmux: session '${opts.sessionName}' alive after ${spawnRetries} retry(ies)`);
 	}
 
 	console.error(`[task-runner] tmux: session '${opts.sessionName}' created (cwd: ${opts.cwd})`);
@@ -2128,6 +2278,9 @@ export default function (pi: ExtensionAPI) {
 
 	// ── review_step Tool (orchestrated mode only) ───────────────────
 
+	/** Per-step code review cycle counter. Reset when reviewer is killed after APPROVE. */
+	const stepCodeReviewCounts = new Map<number, number>();
+
 	/**
 	 * Reset reviewer telemetry fields on state to idle/zero.
 	 * Called after a review completes to clear dashboard metrics.
@@ -2271,6 +2424,30 @@ export default function (pi: ExtensionAPI) {
 				const reviewsDir = join(task.taskFolder, ".reviews");
 				if (!existsSync(reviewsDir)) mkdirSync(reviewsDir, { recursive: true });
 
+				// Per-step code review cycle limit
+				if (reviewType === "code") {
+					const codeCount = (stepCodeReviewCounts.get(stepNum) || 0) + 1;
+					stepCodeReviewCounts.set(stepNum, codeCount);
+					const maxCycles = config.context.max_review_cycles || 2;
+					if (codeCount > maxCycles) {
+						logExecution(statusPath, `Skip code review`,
+							`Step ${stepNum} code review cycle limit reached (${codeCount}/${maxCycles}) — auto-approving`);
+						// Kill reviewer to free context for next step
+						if (state.persistentReviewerKill) {
+							try { state.persistentReviewerKill(); } catch {}
+						}
+						state.persistentReviewerSession = null;
+						state.persistentReviewerKill = null;
+						state.persistentReviewerSignalNum = 0;
+						state.reviewerRespawnCount = 0;
+						stepCodeReviewCounts.delete(stepNum);
+						return {
+							content: [{ type: "text" as const, text: `APPROVE — Code review cycle limit reached (${maxCycles}). Auto-approved to prevent context exhaustion.` }],
+							details: undefined,
+						};
+					}
+				}
+
 				// Low-risk step check (safety net — worker template also skips)
 				if (isLowRiskStep(stepNum, task.steps.length)) {
 					const label = stepNum === 0 ? "Preflight" : "final step";
@@ -2405,9 +2582,9 @@ export default function (pi: ExtensionAPI) {
 								state.reviewerLastTool = delta.lastTool;
 							}
 
-							// Context %
-							if (delta.latestTotalTokens > 0 && contextWindow > 0) {
-								state.reviewerContextPct = (delta.latestTotalTokens / contextWindow) * 100;
+							// Context % — authoritative contextUsage only (pi ≥ 0.63.0, TP-094)
+							if (delta.contextUsage) {
+								state.reviewerContextPct = delta.contextUsage.percent;
 							}
 
 							writeLaneState(state);
@@ -2484,9 +2661,23 @@ export default function (pi: ExtensionAPI) {
 
 					if (needsSpawn && state.persistentReviewerSession) {
 						// Session was previously active but died — log fallback
-						console.error(`[task-runner] persistent reviewer session dead — respawning`);
+						state.reviewerRespawnCount++;
+						const MAX_REVIEWER_RESPAWNS = 3;
+						if (state.reviewerRespawnCount > MAX_REVIEWER_RESPAWNS) {
+							console.error(`[task-runner] reviewer respawn limit (${MAX_REVIEWER_RESPAWNS}) exceeded — skipping review`);
+							logExecution(statusPath, `Reviewer R${num}`,
+								`reviewer respawn limit exceeded (${state.reviewerRespawnCount}/${MAX_REVIEWER_RESPAWNS}) — skipping review`);
+							state.persistentReviewerSession = null;
+							state.persistentReviewerKill = null;
+							state.persistentReviewerSignalNum = 0;
+							return {
+								content: [{ type: "text" as const, text: `⚠️ Reviewer respawn limit exceeded (${MAX_REVIEWER_RESPAWNS}). Review skipped — proceeding without review.` }],
+								details: undefined,
+							};
+						}
+						console.error(`[task-runner] persistent reviewer session dead — respawning (${state.reviewerRespawnCount}/${MAX_REVIEWER_RESPAWNS})`);
 						logExecution(statusPath, `Reviewer R${num}`,
-							`persistent reviewer dead — respawning for ${reviewType} review`);
+							`persistent reviewer dead — respawning for ${reviewType} review (${state.reviewerRespawnCount}/${MAX_REVIEWER_RESPAWNS})`);
 						state.persistentReviewerSession = null;
 						state.persistentReviewerKill = null;
 						state.persistentReviewerSignalNum = 0;
@@ -2515,11 +2706,29 @@ export default function (pi: ExtensionAPI) {
 					updateWidgets();
 
 					// Extract verdict and build result
-					const { resultText } = processReviewVerdict(
+					const { resultText, verdict } = processReviewVerdict(
 						reviewContent, statusPath, num, reviewType, stepNum, state.reviewCounter,
 					);
 
-					// Set reviewer to idle (NOT clear — persistent session stays alive)
+					// After code review APPROVE: kill the persistent reviewer to free context.
+					// The reviewer persists through plan+code for one step, and through
+					// REVISE→fix→re-review cycles (it knows what it asked to be fixed).
+					// Only kill on APPROVE — a REVISE means the worker needs to fix and
+					// re-submit, and the same reviewer should evaluate the follow-up.
+					if (reviewType === "code" && (verdict === "APPROVE" || verdict === "UNAVAILABLE")) {
+						console.error(`[task-runner] code review ${verdict} for step ${stepNum} — killing reviewer for fresh context on next step`);
+						logExecution(statusPath, `Reviewer R${num}`,
+							`code review ${verdict} — killing persistent reviewer (step ${stepNum} cycle done)`);
+						if (state.persistentReviewerKill) {
+							try { state.persistentReviewerKill(); } catch {}
+						}
+						state.persistentReviewerSession = null;
+						state.persistentReviewerKill = null;
+						state.persistentReviewerSignalNum = 0;
+						state.reviewerRespawnCount = 0;
+						stepCodeReviewCounts.delete(stepNum);
+					}
+
 					state.reviewerStatus = "idle";
 					state.reviewerType = "";
 					state.reviewerStep = 0;
@@ -2534,7 +2743,8 @@ export default function (pi: ExtensionAPI) {
 					};
 				} catch (err: any) {
 					// ── Fallback: kill persistent session, try fresh spawn ──
-					console.error(`[task-runner] persistent reviewer error: ${err?.message || err}`);
+					state.reviewerRespawnCount++;
+					console.error(`[task-runner] persistent reviewer error (${state.reviewerRespawnCount}/3): ${err?.message || err}`);
 					logExecution(statusPath, `Reviewer R${num}`,
 						`persistent reviewer failed — falling back to fresh spawn: ${err?.message || err}`);
 
@@ -2545,6 +2755,17 @@ export default function (pi: ExtensionAPI) {
 					state.persistentReviewerSession = null;
 					state.persistentReviewerKill = null;
 					state.persistentReviewerSignalNum = 0;
+
+					// Circuit breaker — skip review if we've exhausted respawns
+					if (state.reviewerRespawnCount > 3) {
+						console.error(`[task-runner] reviewer respawn limit exceeded — skipping review`);
+						logExecution(statusPath, `Reviewer R${num}`,
+							`reviewer respawn limit exceeded — review skipped`);
+						return {
+							content: [{ type: "text" as const, text: `⚠️ Reviewer respawn limit exceeded. Review skipped — proceeding without review.` }],
+							details: undefined,
+						};
+					}
 
 					// ── Fresh spawn fallback (original behavior) ────────
 					try {
@@ -2566,8 +2787,9 @@ export default function (pi: ExtensionAPI) {
 								state.reviewerCostUsd += delta.cost;
 								state.reviewerToolCount += delta.toolCalls;
 								if (delta.lastTool) state.reviewerLastTool = delta.lastTool;
-								if (delta.latestTotalTokens > 0 && contextWindow > 0) {
-									state.reviewerContextPct = (delta.latestTotalTokens / contextWindow) * 100;
+								// Context % — authoritative contextUsage only (pi ≥ 0.63.0, TP-094)
+								if (delta.contextUsage) {
+									state.reviewerContextPct = delta.contextUsage.percent;
 								}
 								writeLaneState(state);
 								updateWidgets();
@@ -2591,6 +2813,9 @@ export default function (pi: ExtensionAPI) {
 						const { resultText } = processReviewVerdict(
 							fallbackContent, statusPath, num, reviewType, stepNum, state.reviewCounter, "fallback",
 						);
+
+						// Reset respawn counter on successful fallback review
+						state.reviewerRespawnCount = 0;
 
 						clearReviewerState();
 						writeLaneState(state);
@@ -2715,7 +2940,34 @@ export default function (pi: ExtensionAPI) {
 				if (isStepComplete(ss)) completedBefore.add(ss.number);
 			}
 
+			// ── TP-095: Reset stale lane-state fields before new worker spawn (#333) ──
+			// When a worker crashes and restarts, the lane-state JSON retains stale
+			// values (workerStatus: "done", phase: "error", workerExitDiagnostic from
+			// the crash). Reset STATUS fields BEFORE the new worker spawns so the
+			// dashboard immediately reflects the new running state.
+			// IMPORTANT: Do NOT reset telemetry counters (tokens, cost) here — they
+			// accumulate across worker iterations via += in onTelemetry (#334).
+			if (state.totalIterations > 1) {
+				state.phase = "running";
+				state.workerStatus = "idle"; // Will be set to "running" by runWorker()
+				state.workerExitDiagnostic = null;
+				state.workerElapsed = 0;
+				state.workerContextPct = 0;
+				state.workerLastTool = "";
+				state.workerRetryActive = false;
+				state.workerRetryCount = 0;
+				state.workerLastRetryError = "";
+				// Note: workerToolCount, workerInputTokens, workerOutputTokens,
+				// workerCacheReadTokens, workerCacheWriteTokens, workerCostUsd
+				// are intentionally NOT reset — they persist across iterations.
+				writeLaneState(state);
+			}
+
 			await runWorker(remainingSteps, ctx);
+
+			// Write context % snapshot at iteration boundary (TP-094)
+			const { contextWindow: snapshotContextWindow } = resolveContextWindow(config, ctx);
+			writeContextSnapshot(state, snapshotContextWindow);
 
 			if (state.phase === "error") {
 				await shutdownPersistentReviewer("worker error");
@@ -2752,6 +3004,26 @@ export default function (pi: ExtensionAPI) {
 					updateStepStatus(statusPath, step.number, "complete");
 					logExecution(statusPath, `Step ${step.number} complete`, step.name);
 					newlyCompleted.push(step);
+				}
+			}
+
+			// ── Step transition: kill persistent reviewer for fresh context ──
+			// When a step completes, the reviewer's context from that step is stale.
+			// Kill it so the next step gets a clean reviewer session.
+			if (newlyCompleted.length > 0 && state.persistentReviewerSession) {
+				console.error(`[task-runner] step(s) completed — killing reviewer for fresh context`);
+				logExecution(statusPath, "Reviewer cleanup",
+					`killing persistent reviewer on step transition (${newlyCompleted.map(s => `Step ${s.number}`).join(", ")} completed)`);
+				if (state.persistentReviewerKill) {
+					try { state.persistentReviewerKill(); } catch {}
+				}
+				state.persistentReviewerSession = null;
+				state.persistentReviewerKill = null;
+				state.persistentReviewerSignalNum = 0;
+				state.reviewerRespawnCount = 0;
+				// Reset per-step code review counters for completed steps
+				for (const step of newlyCompleted) {
+					stepCodeReviewCounts.delete(step.number);
 				}
 			}
 
@@ -2923,8 +3195,35 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 		} else {
-			// ── Quality Gate Disabled (default) ──────────────────────
-			// Unchanged behavior — create .DONE immediately.
+			// ── Empty completion guard ────────────────────────────────
+			// Detect tasks where the worker checked off STATUS.md without
+			// modifying any source files. This catches "shortcut" completions
+			// where the worker concludes work is "already done" without
+			// implementing anything.
+			if (isOrchestratedMode()) {
+				try {
+					const diffResult = spawnSync("git", ["diff", "--name-only", "HEAD"], {
+						cwd: task.taskFolder, encoding: "utf-8", timeout: 10_000,
+					});
+					const changedFiles = (diffResult.stdout || "").split("\n").filter(Boolean);
+					const sourceChanges = changedFiles.filter(f =>
+						!f.endsWith("STATUS.md") && !f.endsWith(".DONE") &&
+						!f.includes(".reviews/") && !f.endsWith("dependencies.json")
+					);
+					if (sourceChanges.length === 0) {
+						logExecution(statusPath, "⚠️ Empty completion",
+							"Worker marked all steps complete but no source files were modified. " +
+							"Only STATUS.md changes detected. This may indicate the worker shortcut " +
+							"the task without implementing. .DONE will still be created, but this " +
+							"should be investigated.");
+						console.error(`[task-runner] WARNING: Task ${task.taskId} completed with zero source file changes`);
+					}
+				} catch {
+					// Best effort — don't block .DONE creation on git check failure
+				}
+			}
+
+			// Create .DONE
 			const donePath = join(task.taskFolder, ".DONE");
 			writeFileSync(donePath, `Completed: ${new Date().toISOString()}\nTask: ${task.taskId}\n`);
 			updateStatusField(statusPath, "Status", "✅ Complete");
@@ -3074,7 +3373,10 @@ export default function (pi: ExtensionAPI) {
 		state.workerElapsed = 0;
 		state.workerContextPct = 0;
 		state.workerLastTool = "";
-		state.workerToolCount = 0;
+		// TP-095: Don't reset workerToolCount — accumulate across iterations (#334).
+		// Previous behavior zeroed the counter on each iteration, losing totals
+		// when a worker crashed and restarted. Token/cost counters already
+		// accumulate via += in onTelemetry and were never reset here.
 		state.workerRetryActive = false;
 		state.workerRetryCount = 0;
 		state.workerLastRetryError = "";
@@ -3102,6 +3404,8 @@ export default function (pi: ExtensionAPI) {
 		const warnPct = config.context.warn_percent;
 		const killPct = config.context.kill_percent;
 		console.error(`[task-runner] worker context window: ${contextWindow} (${contextWindowSource})`);
+		// One-shot warning when pi doesn't provide authoritative contextUsage (TP-094)
+		let warnedNoContextUsage = false;
 
 		if (spawnMode === "tmux") {
 			// ── TMUX mode ────────────────────────────────────────
@@ -3140,19 +3444,25 @@ export default function (pi: ExtensionAPI) {
 						state.workerLastRetryError = delta.lastRetryError;
 					}
 
-					// Context % (same as subprocess onContextPct)
-					// totalTokens is cumulative from the most recent message_end
-					if (delta.latestTotalTokens > 0 && contextWindow > 0) {
-						const pct = (delta.latestTotalTokens / contextWindow) * 100;
-						state.workerContextPct = pct;
-						if (pct >= warnPct) {
-							writeWrapUpSignal(`Wrap up (context ${Math.round(pct)}%)`);
+					// Context % — authoritative contextUsage only (pi ≥ 0.63.0, TP-094)
+					// Manual token-based fallback removed: avoids false thresholds on older pi.
+					if (delta.contextUsage) {
+						const pct = delta.contextUsage.percent;
+						if (pct > 0) {
+							state.workerContextPct = pct;
+							if (pct >= warnPct) {
+								writeWrapUpSignal(`Wrap up (context ${Math.round(pct)}%)`);
+							}
+							if (pct >= killPct && state.workerStatus === "running") {
+								console.error(`[task-runner] tmux worker: context limit (${Math.round(pct)}%) — killing session '${sessionName}'`);
+								killReason = "context";
+								spawned.kill();
+							}
 						}
-						if (pct >= killPct && state.workerStatus === "running") {
-							console.error(`[task-runner] tmux worker: context limit (${Math.round(pct)}%) — killing session '${sessionName}'`);
-							killReason = "context";
-							spawned.kill();
-						}
+					} else if (delta.sawStatsResponseWithoutContextUsage && !warnedNoContextUsage) {
+						// One-shot warning: pi responded to get_session_stats but omitted contextUsage (older pi)
+						warnedNoContextUsage = true;
+						console.error(`[task-runner] warning: pi did not provide contextUsage — context pressure thresholds disabled`);
 					}
 
 					updateWidgets();

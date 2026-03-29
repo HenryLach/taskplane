@@ -14,7 +14,7 @@
  *   9.x — Workspace-scoped counters: repoId in scope key
  *  10.x — applyMergeRetryLoop: shared loop semantics
  *
- * Run: npx vitest run tests/retry-matrix.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/retry-matrix.test.ts
  */
 
 import { describe, it } from "node:test";
@@ -615,7 +615,9 @@ describe("7.x — Exhaustion forces paused", () => {
 
 		// TP-039: Window increased from 1200 to 2400 to accommodate Tier 0 event
 		// emission block inserted before phase assignment in the exhausted branch.
-		const afterExhausted = engineSource.substring(exhaustedIdx, exhaustedIdx + 2400);
+		// TP-076: Window increased from 2400 to 3200 to accommodate supervisor alert
+		// emission block inserted after onNotify in the exhausted branch.
+		const afterExhausted = engineSource.substring(exhaustedIdx, exhaustedIdx + 3200);
 		expect(afterExhausted).toContain('batchState.phase = "paused"');
 		expect(afterExhausted).toContain("merge-retry-exhausted");
 		expect(afterExhausted).toContain("preserveWorktreesForResume = true");
@@ -628,7 +630,9 @@ describe("7.x — Exhaustion forces paused", () => {
 		const exhaustedIdx = resumeSource.indexOf('retryOutcome.kind === "exhausted"');
 		expect(exhaustedIdx).toBeGreaterThan(-1);
 
-		const afterExhausted = resumeSource.substring(exhaustedIdx, exhaustedIdx + 1200);
+		// TP-076: Window increased from 1200 to 2000 to accommodate supervisor alert
+		// emission block inserted after onNotify in the exhausted branch.
+		const afterExhausted = resumeSource.substring(exhaustedIdx, exhaustedIdx + 2000);
 		expect(afterExhausted).toContain('batchState.phase = "paused"');
 		expect(afterExhausted).toContain("merge-retry-exhausted");
 		expect(afterExhausted).toContain("preserveWorktreesForResume = true");

@@ -14,7 +14,7 @@
  *
  * Plus abort-flow regression coverage for `selectAbortTargetSessions`.
  *
- * Run: cd extensions && npx vitest run tests/external-task-path-resolution.test.ts
+ * Run: cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/external-task-path-resolution.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

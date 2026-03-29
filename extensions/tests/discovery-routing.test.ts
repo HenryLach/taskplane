@@ -23,7 +23,7 @@
  *  16.x — Output: formatDiscoveryResults repo annotation
  *  17.x — Actionable routing error guidance
  *
- * Run: npx vitest run tests/discovery-routing.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/discovery-routing.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";
@@ -844,6 +844,131 @@ describe("11.x: Default repo fallback when prompt + area have no repo", () => {
 	});
 });
 
+// ── 11.5x: File scope inference ──────────────────────────────────────
+
+describe("11.5x: File scope inference routes task to matching repo", () => {
+	it("11.51: single file scope entry matching a repo routes correctly", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				"api-service": { path: "/repos/api-service" },
+				"web-client": { path: "/repos/web-client" },
+				"shared-libs": { path: "/repos/shared-libs" },
+			},
+			"shared-libs",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			general: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-003",
+			areaName: "general",
+			fileScope: ["web-client/src/components/StatusBadge.js"],
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("web-client");
+	});
+
+	it("11.52: multiple file scope entries all matching same repo", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				"api-service": { path: "/repos/api-service" },
+				"web-client": { path: "/repos/web-client" },
+			},
+			"api-service",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			general: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-005",
+			areaName: "general",
+			fileScope: ["api-service/src/middleware/logger.js", "api-service/src/utils/format.js"],
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api-service");
+	});
+
+	it("11.53: file scope with no matching repo falls through to default", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				"api-service": { path: "/repos/api-service" },
+				"web-client": { path: "/repos/web-client" },
+			},
+			"api-service",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			general: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-006",
+			areaName: "general",
+			fileScope: ["docs/README.md"], // no repo prefix match
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api-service"); // falls to default
+	});
+
+	it("11.54: prompt repo still wins over file scope", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				"api-service": { path: "/repos/api-service" },
+				"web-client": { path: "/repos/web-client" },
+			},
+			"api-service",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			general: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-007",
+			areaName: "general",
+			promptRepoId: "api-service",
+			fileScope: ["web-client/src/App.js"], // conflicts with prompt
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api-service"); // prompt wins
+	});
+
+	it("11.55: empty file scope falls through to default", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				"api-service": { path: "/repos/api-service" },
+			},
+			"api-service",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			general: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-008",
+			areaName: "general",
+			fileScope: [],
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api-service");
+	});
+});
+
 // ── 12.x: TASK_REPO_UNKNOWN ─────────────────────────────────────────
 
 describe("12.x: TASK_REPO_UNKNOWN when resolved ID not in workspace repos", () => {
@@ -1133,7 +1258,7 @@ describe("16.x: Routing errors appear as fatal errors in formatted output", () =
 		expect(output).toContain("❌ Errors:");
 		expect(output).toContain("TASK_REPO_UNRESOLVED");
 		// Error should include actionable guidance
-		expect(output).toContain("Repo:");
+		expect(output).toContain("file scope");
 		expect(output).toContain("repo_id");
 		expect(output).toContain("routing.default_repo");
 	});
@@ -1762,7 +1887,7 @@ describe("17.x: Actionable routing error guidance", () => {
 		expect(errors).toHaveLength(1);
 		expect(errors[0].code).toBe("TASK_REPO_UNRESOLVED");
 		// Verify the message contains actionable guidance
-		expect(errors[0].message).toContain("Add a Repo: field to the PROMPT");
+		expect(errors[0].message).toContain("file scope paths prefixed with the repo name");
 		expect(errors[0].message).toContain("set repo_id on area");
 		expect(errors[0].message).toContain("routing.default_repo");
 	});
@@ -2702,5 +2827,177 @@ Repo: api
 
 		expect(errors).toHaveLength(0);
 		expect(task.resolvedRepoId).toBe("frontend"); // area fallback works
+	});
+});
+
+// ── 28.x: Optional explicit segment DAG metadata ───────────────────
+
+describe("28.x: explicit segment DAG metadata", () => {
+	it("28.1: parses valid ## Segment DAG repos + edges with normalization", () => {
+		const dir = makeTestDir("segment-dag-valid");
+		const promptPath = writePrompt(
+			dir,
+			minimalPrompt(`
+## Segment DAG
+
+**Repos:**
+- API
+- web-client
+- api
+
+**Edges:**
+- api -> web-client
+- api -> web-client
+`),
+		);
+
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+		expect(result.error).toBeNull();
+		expect(result.task).not.toBeNull();
+		expect(result.task!.explicitSegmentDag).toEqual({
+			repoIds: ["api", "web-client"],
+			edges: [
+				{ fromRepoId: "api", toRepoId: "web-client" },
+			],
+		});
+	});
+
+	it("28.2: missing ## Segment DAG remains backward-compatible", () => {
+		const dir = makeTestDir("segment-dag-absent");
+		const promptPath = writePrompt(dir, minimalPrompt());
+
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+		expect(result.error).toBeNull();
+		expect(result.task).not.toBeNull();
+		expect(result.task!.explicitSegmentDag).toBeUndefined();
+	});
+
+	it("28.3: unknown edge endpoint outside Repos list returns SEGMENT_REPO_UNKNOWN", () => {
+		const dir = makeTestDir("segment-dag-unknown-endpoint");
+		const promptPath = writePrompt(
+			dir,
+			minimalPrompt(`
+## Segment DAG
+
+Repos:
+- api
+
+Edges:
+- api -> web-client
+`),
+		);
+
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+		expect(result.task).toBeNull();
+		expect(result.error).not.toBeNull();
+		expect(result.error!.code).toBe("SEGMENT_REPO_UNKNOWN");
+	});
+
+	it("28.4: self-cycle edge returns SEGMENT_DAG_INVALID", () => {
+		const dir = makeTestDir("segment-dag-self-cycle");
+		const promptPath = writePrompt(
+			dir,
+			minimalPrompt(`
+## Segment DAG
+
+Repos:
+- api
+
+Edges:
+- api -> api
+`),
+		);
+
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+		expect(result.task).toBeNull();
+		expect(result.error).not.toBeNull();
+		expect(result.error!.code).toBe("SEGMENT_DAG_INVALID");
+	});
+
+	it("28.5: cycle in explicit DAG returns SEGMENT_DAG_INVALID", () => {
+		const dir = makeTestDir("segment-dag-cycle");
+		const promptPath = writePrompt(
+			dir,
+			minimalPrompt(`
+## Segment DAG
+
+Repos:
+- api
+- web-client
+
+Edges:
+- api -> web-client
+- web-client -> api
+`),
+		);
+
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+		expect(result.task).toBeNull();
+		expect(result.error).not.toBeNull();
+		expect(result.error!.code).toBe("SEGMENT_DAG_INVALID");
+	});
+
+	it("28.6: workspace routing validates explicit segment repos against known workspace repos", () => {
+		const areaDir = makeTestDir("segment-dag-workspace-unknown");
+		const taskDir = join(areaDir, "TP-530-segment-unknown");
+		mkdirSync(taskDir, { recursive: true });
+		writeFileSync(
+			join(taskDir, "PROMPT.md"),
+			`# Task: TP-530 - Segment Unknown
+
+**Size:** S
+
+## Dependencies
+
+**None**
+
+## Execution Target
+
+Repo: api
+
+## Segment DAG
+
+Repos:
+- api
+- ghost-repo
+
+Edges:
+- api -> ghost-repo
+
+## Steps
+
+### Step 0: Implement
+
+- [ ] Do it
+
+---
+`,
+			"utf-8",
+		);
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: areaDir, prefix: "TP", context: "" },
+		};
+		const workspaceConfig = makeWorkspaceConfig({ api: { path: "/repos/api" } }, "api");
+
+		const result = runDiscovery("all", taskAreas, areaDir, { workspaceConfig });
+		const segmentRepoErrors = result.errors.filter((e) => e.code === "SEGMENT_REPO_UNKNOWN");
+		expect(segmentRepoErrors).toHaveLength(1);
+		expect(segmentRepoErrors[0].taskId).toBe("TP-530");
+	});
+
+	it("28.7: SEGMENT_DAG_INVALID is treated as fatal in formatted discovery output", () => {
+		const discovery = makeDiscoveryResult([
+			makeTask({ taskId: "TP-540", areaName: "default" }),
+		]);
+		discovery.errors.push({
+			code: "SEGMENT_DAG_INVALID",
+			message: "Task TP-540 has cyclic ## Segment DAG metadata: api -> web -> api.",
+			taskId: "TP-540",
+		});
+
+		const output = formatDiscoveryResults(discovery);
+		expect(output).toContain("❌ Errors:");
+		expect(output).toContain("[SEGMENT_DAG_INVALID]");
 	});
 });

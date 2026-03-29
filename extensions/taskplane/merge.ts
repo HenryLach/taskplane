@@ -585,6 +585,7 @@ export async function spawnMergeAgent(
 	config: OrchestratorConfig,
 	stateRoot?: string,
 	agentRoot?: string,
+	batchId?: string,
 ): Promise<void> {
 	execLog("merge", sessionName, "preparing to spawn merge agent", {
 		mergeWorkDir,
@@ -656,6 +657,14 @@ export async function spawnMergeAgent(
 	// Add tools override if specified
 	if (config.merge.tools) {
 		wrapperParts.push("--tools", shellQuote(config.merge.tools));
+	}
+
+	// TP-089: Agent mailbox steering — pass --mailbox-dir when batchId is available.
+	if (batchId) {
+		const mailboxDir = join(sidecarRoot, "mailbox", batchId, sessionName);
+		mkdirSync(join(mailboxDir, "inbox"), { recursive: true });
+		wrapperParts.push("--mailbox-dir", shellQuote(mailboxDir));
+		execLog("merge", sessionName, "mailbox enabled", { mailboxDir });
 	}
 
 	const piCommand = wrapperParts.filter(Boolean).join(" ");
@@ -1202,6 +1211,7 @@ export async function mergeWave(
 	testingCommands?: Record<string, string>,
 	repoId?: string,
 	healthMonitor?: MergeHealthMonitor | null,
+	forceMixedOutcome?: boolean,
 ): Promise<MergeWaveResult> {
 	const startTime = Date.now();
 	const tmuxPrefix = config.orchestrator.tmux_prefix;
@@ -1221,6 +1231,10 @@ export async function mergeWave(
 	//
 	// This allows succeeded+skipped lanes (e.g., stop-wave skip of remaining tasks)
 	// to merge their committed work, while excluding mixed succeeded+failed lanes.
+	//
+	// TP-078: When forceMixedOutcome is true, lanes with both succeeded and
+	// failed/stalled tasks are also considered mergeable. This allows the
+	// orch_force_merge tool to merge succeeded commits from mixed-outcome lanes.
 	const mergeableLanes = completedLanes.filter(lane => {
 		const outcome = laneOutcomeByNumber.get(lane.laneNumber);
 		if (!outcome) return false;
@@ -1229,6 +1243,11 @@ export async function mergeWave(
 		const hasHardFailure = outcome.tasks.some(
 			t => t.status === "failed" || t.status === "stalled",
 		);
+
+		if (forceMixedOutcome) {
+			// In force mode, merge any lane with at least one succeeded task
+			return hasSucceeded;
+		}
 
 		return hasSucceeded && !hasHardFailure;
 	});
@@ -1501,12 +1520,12 @@ export async function mergeWave(
 						}
 
 						// Re-spawn merge agent for the retry
-						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
 						// TP-056: Re-register with health monitor after respawn
 						if (healthMonitor) healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
 					} else {
 						// First attempt: spawn merge agent
-						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
 						// TP-056: Register session with health monitor
 						if (healthMonitor) healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
 					}
@@ -2127,6 +2146,7 @@ export async function mergeWaveByRepo(
 	agentRoot?: string,
 	testingCommands?: Record<string, string>,
 	healthMonitor?: MergeHealthMonitor | null,
+	forceMixedOutcome?: boolean,
 ): Promise<MergeWaveResult> {
 	const startTime = Date.now();
 
@@ -2137,6 +2157,7 @@ export async function mergeWaveByRepo(
 	}
 
 	// Filter to mergeable lanes (same criteria as mergeWave).
+	// TP-078: When forceMixedOutcome is true, lanes with mixed outcomes are also included.
 	const mergeableLanes = completedLanes.filter(lane => {
 		const outcome = laneOutcomeByNumber.get(lane.laneNumber);
 		if (!outcome) return false;
@@ -2144,6 +2165,7 @@ export async function mergeWaveByRepo(
 		const hasHardFailure = outcome.tasks.some(
 			t => t.status === "failed" || t.status === "stalled",
 		);
+		if (forceMixedOutcome) return hasSucceeded;
 		return hasSucceeded && !hasHardFailure;
 	});
 
@@ -2184,6 +2206,7 @@ export async function mergeWaveByRepo(
 			testingCommands,
 			undefined, // repoId
 			healthMonitor,
+			forceMixedOutcome,
 		);
 		// Attach empty repoResults for consistent shape
 		return { ...result, repoResults: [] };
@@ -2241,6 +2264,7 @@ export async function mergeWaveByRepo(
 			testingCommands,
 			group.repoId,
 			healthMonitor,
+			forceMixedOutcome,
 		);
 
 		// Accumulate lane results

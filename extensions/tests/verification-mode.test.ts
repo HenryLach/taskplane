@@ -12,7 +12,7 @@
  * (not extractable pure functions), these tests verify the contract by
  * examining source patterns and testing exported pure functions.
  *
- * Run: npx vitest run extensions/tests/verification-mode.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/verification-mode.test.ts
  */
 
 import { describe, it } from "node:test";

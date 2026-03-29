@@ -10,7 +10,7 @@
  *   5.x — Persistence warning: failure surfaces in merge outcome
  *   6.x — Engine/resume parity for safe-stop handling
  *
- * Run: npx vitest run tests/transactional-merge.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/transactional-merge.test.ts
  */
 
 import { describe, it } from "node:test";
@@ -289,7 +289,9 @@ describe("3.x — Safe-stop: rollback failure handling", () => {
 
 		// After safe-stop, worktrees must be preserved for recovery
 		const safeStopIdx = engineSource.indexOf("SAFE-STOP: verification rollback failed");
-		const afterSafeStop = engineSource.substring(safeStopIdx, safeStopIdx + 1500);
+		// TP-076: Window increased from 1500 to 2500 to accommodate supervisor alert
+		// emission block inserted before preserveWorktreesForResume in safe-stop path.
+		const afterSafeStop = engineSource.substring(safeStopIdx, safeStopIdx + 2500);
 		expect(afterSafeStop).toContain("preserveWorktreesForResume = true");
 		expect(afterSafeStop).toContain("break");
 	});
@@ -308,7 +310,9 @@ describe("3.x — Safe-stop: rollback failure handling", () => {
 		const resumeSource = readSource("resume.ts");
 
 		const safeStopIdx = resumeSource.indexOf("SAFE-STOP: verification rollback failed");
-		const afterSafeStop = resumeSource.substring(safeStopIdx, safeStopIdx + 1500);
+		// TP-076: Window increased from 1500 to 2500 to accommodate supervisor alert
+		// emission block inserted before preserveWorktreesForResume in safe-stop path.
+		const afterSafeStop = resumeSource.substring(safeStopIdx, safeStopIdx + 2500);
 		expect(afterSafeStop).toContain("preserveWorktreesForResume = true");
 		expect(afterSafeStop).toContain("break");
 	});

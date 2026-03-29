@@ -6,7 +6,7 @@
  *   5.2 — Archive suppression prompt assembly
  *
  * Run: npx tsx extensions/tests/task-runner-orchestration.test.ts
- *   or: npx vitest run extensions/tests/task-runner-orchestration.test.ts
+ *   or: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/task-runner-orchestration.test.ts
  */
 
 import { readFileSync } from "fs";

@@ -5,7 +5,7 @@
  * strict v3 validation, unknown-field roundtrip preservation,
  * corrupt-state handling, and version-mismatch error guidance.
  *
- * Run: npx vitest run extensions/tests/state-migration.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/state-migration.test.ts
  */
 
 import { describe, it } from "node:test";
@@ -18,6 +18,7 @@ import {
 	validatePersistedState,
 	upconvertV1toV2,
 	upconvertV2toV3,
+	upconvertV3toV4,
 	analyzeOrchestratorStartupState,
 	serializeBatchState,
 } from "../taskplane/persistence.ts";
@@ -45,10 +46,10 @@ function loadFixtureJSON(name: string): unknown {
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
-/** Build a minimal valid v3 batch state object. */
-function makeValidV3(): Record<string, unknown> {
+/** Build a minimal valid v4 batch state object. */
+function makeValidV4(): Record<string, unknown> {
 	return {
-		schemaVersion: 3,
+		schemaVersion: 4,
 		phase: "executing",
 		batchId: "20260319T010000",
 		baseBranch: "main",
@@ -90,26 +91,40 @@ function makeValidV3(): Record<string, unknown> {
 		errors: [],
 		resilience: defaultResilienceState(),
 		diagnostics: defaultBatchDiagnostics(),
+		segments: [],
 	};
+}
+
+/** Alias for backward-compat in existing tests. */
+function makeValidV3(): Record<string, unknown> {
+	const v4 = makeValidV4();
+	v4.schemaVersion = 3;
+	delete v4.segments;
+	return v4;
 }
 
 /** Build a minimal valid v2 batch state object. */
 function makeValidV2(): Record<string, unknown> {
-	const v3 = makeValidV3();
-	v3.schemaVersion = 2;
-	delete v3.resilience;
-	delete v3.diagnostics;
-	delete v3.orchBranch;
-	return v3;
+	const v4 = makeValidV4();
+	v4.schemaVersion = 2;
+	delete v4.resilience;
+	delete v4.diagnostics;
+	delete v4.orchBranch;
+	delete v4.segments;
+	return v4;
 }
 
 /** Build a minimal valid v1 batch state object. */
 function makeValidV1(): Record<string, unknown> {
-	const v2 = makeValidV2();
-	v2.schemaVersion = 1;
-	delete v2.mode;
-	delete v2.baseBranch;
-	return v2;
+	const v4 = makeValidV4();
+	v4.schemaVersion = 1;
+	delete v4.mode;
+	delete v4.baseBranch;
+	delete v4.resilience;
+	delete v4.diagnostics;
+	delete v4.orchBranch;
+	delete v4.segments;
+	return v4;
 }
 
 // ═════════════════════════════════════════════════════════════════════
@@ -123,8 +138,8 @@ describe("State Schema v3 Migration", () => {
 			const v1Data = loadFixtureJSON("batch-state-v1-valid.json");
 			const result = validatePersistedState(v1Data);
 
-			// Schema version bumped to 3
-			expect(result.schemaVersion).toBe(3);
+			// Schema version bumped to 4 (v1→v2→v3→v4)
+			expect(result.schemaVersion).toBe(4);
 
 			// v1→v2 defaults applied
 			expect(result.mode).toBe("repo");
@@ -152,24 +167,25 @@ describe("State Schema v3 Migration", () => {
 			expect(result.tasks[0].status).toBe("succeeded");
 		});
 
-		it("migrates inline v1 object to v3", () => {
+		it("migrates inline v1 object to v4", () => {
 			const v1 = makeValidV1();
 			const result = validatePersistedState(v1);
 
-			expect(result.schemaVersion).toBe(3);
+			expect(result.schemaVersion).toBe(4);
 			expect(result.mode).toBe("repo");
 			expect(result.resilience).toEqual(defaultResilienceState());
 			expect(result.diagnostics).toEqual(defaultBatchDiagnostics());
+			expect(result.segments).toEqual([]);
 		});
 	});
 
 	describe("v2 → v3 migration", () => {
-		it("migrates v2 fixture to v3 preserving all existing fields", () => {
+		it("migrates v2 fixture to v4 preserving all existing fields", () => {
 			const v2Data = loadFixtureJSON("batch-state-valid.json");
 			const result = validatePersistedState(v2Data);
 
-			// Schema version bumped to 3
-			expect(result.schemaVersion).toBe(3);
+			// Schema version bumped to 4 (v2→v3→v4)
+			expect(result.schemaVersion).toBe(4);
 
 			// All v2 fields preserved
 			expect(result.phase).toBe("executing");
@@ -191,7 +207,7 @@ describe("State Schema v3 Migration", () => {
 			const v2ws = loadFixtureJSON("batch-state-v2-workspace.json");
 			const result = validatePersistedState(v2ws);
 
-			expect(result.schemaVersion).toBe(3);
+			expect(result.schemaVersion).toBe(4);
 			expect(result.mode).toBe("workspace");
 			expect(result.tasks[0].repoId).toBe("api");
 			expect(result.lanes[0].repoId).toBe("api");
@@ -199,24 +215,38 @@ describe("State Schema v3 Migration", () => {
 			expect(result.diagnostics).toEqual(defaultBatchDiagnostics());
 		});
 
-		it("migrates inline v2 object to v3", () => {
+		it("migrates inline v2 object to v4", () => {
 			const v2 = makeValidV2();
 			const result = validatePersistedState(v2);
 
-			expect(result.schemaVersion).toBe(3);
+			expect(result.schemaVersion).toBe(4);
 			expect(result.resilience).toEqual(defaultResilienceState());
 			expect(result.diagnostics).toEqual(defaultBatchDiagnostics());
+			expect(result.segments).toEqual([]);
 		});
 	});
 
 	describe("v3 clean read", () => {
-		it("reads a well-formed v3 state without modification", () => {
+		it("reads a well-formed v3 state with upconversion to v4", () => {
 			const v3 = makeValidV3();
 			const result = validatePersistedState(v3);
 
-			expect(result.schemaVersion).toBe(3);
+			expect(result.schemaVersion).toBe(4);
 			expect(result.resilience).toEqual(defaultResilienceState());
 			expect(result.diagnostics).toEqual(defaultBatchDiagnostics());
+			expect(result.segments).toEqual([]);
+			expect(result.phase).toBe("executing");
+			expect(result.tasks).toHaveLength(1);
+		});
+
+		it("reads a well-formed v4 state without modification", () => {
+			const v4 = makeValidV4();
+			const result = validatePersistedState(v4);
+
+			expect(result.schemaVersion).toBe(4);
+			expect(result.resilience).toEqual(defaultResilienceState());
+			expect(result.diagnostics).toEqual(defaultBatchDiagnostics());
+			expect(result.segments).toEqual([]);
 			expect(result.phase).toBe("executing");
 			expect(result.tasks).toHaveLength(1);
 		});
@@ -491,7 +521,7 @@ describe("State Schema v3 Migration", () => {
 
 			const result = validatePersistedState(v2);
 
-			expect(result.schemaVersion).toBe(3);
+			expect(result.schemaVersion).toBe(4);
 			expect(result._extraFields).toBeDefined();
 			expect(result._extraFields!.externalToolMetadata).toEqual({ version: "1.2.3" });
 		});
@@ -502,7 +532,7 @@ describe("State Schema v3 Migration", () => {
 
 			const result = validatePersistedState(v1);
 
-			expect(result.schemaVersion).toBe(3);
+			expect(result.schemaVersion).toBe(4);
 			expect(result._extraFields).toBeDefined();
 			expect(result._extraFields!.legacyField).toBe("preserved");
 		});
@@ -593,16 +623,16 @@ describe("State Schema v3 Migration", () => {
 			}
 		});
 
-		it("includes upgrade guidance for version 4 (hypothetical next)", () => {
-			const futureState = makeValidV3();
-			futureState.schemaVersion = 4;
+		it("includes upgrade guidance for version 5 (hypothetical next)", () => {
+			const futureState = makeValidV4();
+			futureState.schemaVersion = 5;
 
 			try {
 				validatePersistedState(futureState);
 				expect.fail("should have thrown");
 			} catch (err: any) {
 				expect(err.code).toBe("STATE_SCHEMA_INVALID");
-				expect(err.message).toContain("4");
+				expect(err.message).toContain("5");
 				expect(err.message).toMatch(/[Uu]pgrade/);
 			}
 		});
@@ -644,11 +674,13 @@ describe("State Schema v3 Migration", () => {
 			expect(obj.baseBranch).toBe("main");
 		});
 
-		it("is idempotent on v3 objects", () => {
-			const obj: Record<string, unknown> = { schemaVersion: 3, mode: "repo" };
-			upconvertV1toV2(obj);
+		it("is idempotent on v3+ objects", () => {
+			for (const version of [3, 4]) {
+				const obj: Record<string, unknown> = { schemaVersion: version, mode: "repo" };
+				upconvertV1toV2(obj);
 
-			expect(obj.schemaVersion).toBe(3);
+				expect(obj.schemaVersion).toBe(version);
+			}
 		});
 	});
 
@@ -662,43 +694,75 @@ describe("State Schema v3 Migration", () => {
 			expect(obj.diagnostics).toEqual(defaultBatchDiagnostics());
 		});
 
-		it("is idempotent on v3 objects", () => {
+		it("is idempotent on v3+ objects", () => {
 			const customResilience = {
 				resumeForced: true,
 				retryCountByScope: { "X:w0:l1": 3 },
 				lastFailureClass: "tool-error",
 				repairHistory: [],
 			};
-			const obj: Record<string, unknown> = { schemaVersion: 3, resilience: customResilience };
-			upconvertV2toV3(obj);
+			for (const version of [3, 4]) {
+				const obj: Record<string, unknown> = { schemaVersion: version, resilience: customResilience };
+				upconvertV2toV3(obj);
 
-			expect(obj.schemaVersion).toBe(3);
-			expect(obj.resilience).toBe(customResilience); // Same reference, not replaced
+				expect(obj.schemaVersion).toBe(version);
+				expect(obj.resilience).toBe(customResilience); // Same reference, not replaced
+			}
 		});
 
-		it("does NOT backfill resilience on v3 with missing resilience (that's validation's job)", () => {
+		it("does NOT backfill resilience on v3+ with missing resilience (that's validation's job)", () => {
 			// upconvertV2toV3 sees schemaVersion >= 3, so it no-ops.
 			// The missing resilience will be caught by validation, not silently patched.
-			const obj: Record<string, unknown> = { schemaVersion: 3 };
-			upconvertV2toV3(obj);
+			for (const version of [3, 4]) {
+				const obj: Record<string, unknown> = { schemaVersion: version };
+				upconvertV2toV3(obj);
 
-			expect(obj.schemaVersion).toBe(3);
-			// resilience was NOT added because schemaVersion is already 3
-			expect(obj.resilience).toBeUndefined();
+				expect(obj.schemaVersion).toBe(version);
+				expect(obj.resilience).toBeUndefined();
+			}
 		});
 	});
 
-	describe("upconvert chain v1→v2→v3", () => {
+	describe("upconvertV3toV4", () => {
+		it("converts v3 to v4 with empty segments array", () => {
+			const obj: Record<string, unknown> = { schemaVersion: 3 };
+			upconvertV3toV4(obj);
+
+			expect(obj.schemaVersion).toBe(4);
+			expect(obj.segments).toEqual([]);
+		});
+
+		it("is idempotent on v4 objects", () => {
+			const existingSegments = [{ segmentId: "TP-001::api" }];
+			const obj: Record<string, unknown> = { schemaVersion: 4, segments: existingSegments };
+			upconvertV3toV4(obj);
+
+			expect(obj.schemaVersion).toBe(4);
+			expect(obj.segments).toBe(existingSegments); // Same reference, not replaced
+		});
+
+		it("does NOT backfill segments on v4 with missing segments (that's validation's job)", () => {
+			const obj: Record<string, unknown> = { schemaVersion: 4 };
+			upconvertV3toV4(obj);
+
+			expect(obj.schemaVersion).toBe(4);
+			expect(obj.segments).toBeUndefined();
+		});
+	});
+
+	describe("upconvert chain v1→v2→v3→v4", () => {
 		it("chains correctly through all versions", () => {
 			const obj: Record<string, unknown> = { schemaVersion: 1 };
 			upconvertV1toV2(obj);
 			upconvertV2toV3(obj);
+			upconvertV3toV4(obj);
 
-			expect(obj.schemaVersion).toBe(3);
+			expect(obj.schemaVersion).toBe(4);
 			expect(obj.mode).toBe("repo");
 			expect(obj.baseBranch).toBe("");
 			expect(obj.resilience).toEqual(defaultResilienceState());
 			expect(obj.diagnostics).toEqual(defaultBatchDiagnostics());
+			expect(obj.segments).toEqual([]);
 		});
 	});
 
@@ -707,8 +771,8 @@ describe("State Schema v3 Migration", () => {
 	// ═════════════════════════════════════════════════════════════════
 
 	describe("schema version constant", () => {
-		it("BATCH_STATE_SCHEMA_VERSION is 3", () => {
-			expect(BATCH_STATE_SCHEMA_VERSION).toBe(3);
+		it("BATCH_STATE_SCHEMA_VERSION is 4", () => {
+			expect(BATCH_STATE_SCHEMA_VERSION).toBe(4);
 		});
 	});
 
@@ -800,7 +864,7 @@ describe("State Schema v3 Migration", () => {
 			};
 
 			const result = validatePersistedState(v2);
-			expect(result.schemaVersion).toBe(3);
+			expect(result.schemaVersion).toBe(4);
 			// The pre-existing values should be preserved (not overwritten with defaults)
 			expect(result.resilience.resumeForced).toBe(true);
 			expect(result.resilience.retryCountByScope["X:w0:l1"]).toBe(5);
@@ -915,7 +979,7 @@ describe("State Schema v3 Migration", () => {
 			// Step 4: Assert unknown fields survived serialization
 			expect(reParsed.customPlugin).toEqual({ foo: "bar", nested: { deep: true } });
 			expect(reParsed.futureField).toBe(42);
-			expect(reParsed.schemaVersion).toBe(3);
+			expect(reParsed.schemaVersion).toBe(4);
 
 			// Step 5: Re-validate the serialized output (full roundtrip)
 			const reValidated = validatePersistedState(reParsed);
