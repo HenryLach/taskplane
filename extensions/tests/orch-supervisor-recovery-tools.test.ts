@@ -85,10 +85,11 @@ describe("1.x: read_agent_status tool", () => {
 		expect(extensionSource).toContain("function doReadAgentStatus(");
 	});
 
-	it("1.6: reads STATUS.md from worktree", () => {
+	it("1.6: reads STATUS.md using canonical task path resolution", () => {
 		const idx = extensionSource.indexOf("function doReadAgentStatus(");
-		const block = extensionSource.slice(idx, idx + 2000);
-		expect(block).toContain("STATUS.md");
+		const block = extensionSource.slice(idx, idx + 3000);
+		expect(block).toContain("resolveCanonicalTaskPaths(");
+		expect(block).toContain("statusPath");
 		expect(block).toContain("Current Step:");
 	});
 
@@ -153,11 +154,12 @@ describe("2.x: trigger_wrap_up tool", () => {
 		expect(block).toContain("No running task on lane");
 	});
 
-	it("2.7: resolves path relative to worktree", () => {
+	it("2.7: resolves wrap-up path via canonical task paths (workspace-safe)", () => {
 		const idx = extensionSource.indexOf("function doTriggerWrapUp(");
-		const block = extensionSource.slice(idx, idx + 1500);
-		expect(block).toContain("worktreePath");
-		expect(block).toContain("relative(stateRoot");
+		const block = extensionSource.slice(idx, idx + 2200);
+		expect(block).toContain("resolveCanonicalTaskPaths(");
+		expect(block).toContain("taskFolderResolved");
+		expect(block).toContain(".task-wrap-up");
 	});
 });
 
@@ -180,16 +182,17 @@ describe("3.x: read_lane_logs tool", () => {
 		expect(extensionSource).toContain("function doReadLaneLogs(");
 	});
 
-	it("3.4: reads stderr log file", () => {
+	it("3.4: reads stderr logs from telemetry naming pattern", () => {
 		const idx = extensionSource.indexOf("function doReadLaneLogs(");
-		const block = extensionSource.slice(idx, idx + 1500);
-		expect(block).toContain("stderr.log");
+		const block = extensionSource.slice(idx, idx + 2500);
+		expect(block).toContain("-lane-${lane}-worker");
+		expect(block).toContain("-stderr.log");
 		expect(block).toContain("telemetry");
 	});
 
 	it("3.5: reads exit diagnostic files", () => {
 		const idx = extensionSource.indexOf("function doReadLaneLogs(");
-		const block = extensionSource.slice(idx, idx + 3000);
+		const block = extensionSource.slice(idx, idx + 6000);
 		expect(block).toContain("worker-exit");
 		expect(block).toContain("classification");
 		expect(block).toContain("exitCode");
@@ -197,13 +200,13 @@ describe("3.x: read_lane_logs tool", () => {
 
 	it("3.6: handles missing log gracefully", () => {
 		const idx = extensionSource.indexOf("function doReadLaneLogs(");
-		const block = extensionSource.slice(idx, idx + 2000);
-		expect(block).toContain("No stderr log found");
+		const block = extensionSource.slice(idx, idx + 3000);
+		expect(block).toContain("No stderr log found for lane");
 	});
 
 	it("3.7: truncates large logs", () => {
 		const idx = extensionSource.indexOf("function doReadLaneLogs(");
-		const block = extensionSource.slice(idx, idx + 2000);
+		const block = extensionSource.slice(idx, idx + 6000);
 		expect(block).toContain("5000");
 	});
 });

@@ -461,7 +461,7 @@ function writeLaneState(state: TaskState): void {
  * Best-effort JSONL append to `.pi/context-snapshots/{batchId}/{sessionName}.jsonl`.
  * Non-fatal on any failure — never blocks execution.
  */
-function writeContextSnapshot(state: TaskState): void {
+function writeContextSnapshot(state: TaskState, contextWindow: number): void {
 	const batchId = process.env.ORCH_BATCH_ID || "standalone";
 	const sessionName = isOrchestratedMode() ? `${getTmuxPrefix()}-worker` : "task-worker";
 	try {
@@ -472,6 +472,7 @@ function writeContextSnapshot(state: TaskState): void {
 			iteration: state.totalIterations,
 			contextPct: state.workerContextPct,
 			tokens: state.workerInputTokens + state.workerOutputTokens + state.workerCacheReadTokens + state.workerCacheWriteTokens,
+			contextWindow,
 			cost: state.workerCostUsd,
 			toolCalls: state.workerToolCount,
 			exitReason: state.workerExitDiagnostic?.classification || null,
@@ -1691,6 +1692,25 @@ export function isLowRiskStep(stepNumber: number, totalSteps: number): boolean {
 // ── TMUX Agent Spawner ───────────────────────────────────────────────
 
 /**
+ * Synchronous sleep helper for tmux spawn stabilization checks.
+ *
+ * Uses Atomics.wait for cross-platform blocking delays without relying on
+ * shell `sleep` availability (important on Windows environments).
+ */
+function sleepSyncMs(ms: number): void {
+	if (!Number.isFinite(ms) || ms <= 0) return;
+	try {
+		const arr = new Int32Array(new SharedArrayBuffer(4));
+		Atomics.wait(arr, 0, 0, Math.floor(ms));
+	} catch {
+		const start = Date.now();
+		while (Date.now() - start < ms) {
+			// Busy-wait fallback (rare path)
+		}
+	}
+}
+
+/**
  * Spawns a Pi agent in a named TMUX session instead of a headless subprocess.
  * Returns the same interface shape as `spawnAgent()` for drop-in compatibility.
  *
@@ -1938,14 +1958,14 @@ function spawnAgentTmux(opts: {
 			const check = spawnSync("tmux", ["has-session", "-t", opts.sessionName]);
 			if (check.status === 0) return true;
 			if (poll < SPAWN_VERIFY_POLL_ATTEMPTS - 1) {
-				spawnSync("sleep", [`${SPAWN_VERIFY_POLL_INTERVAL_MS / 1000}`], { shell: true, timeout: SPAWN_VERIFY_POLL_INTERVAL_MS + 500 });
+				sleepSyncMs(SPAWN_VERIFY_POLL_INTERVAL_MS);
 			}
 		}
 		return false;
 	};
 
 	// Wait briefly for session to stabilize, then verify
-	spawnSync("sleep", [`${SPAWN_VERIFY_DELAY_MS / 1000}`], { shell: true, timeout: SPAWN_VERIFY_DELAY_MS + 500 });
+	sleepSyncMs(SPAWN_VERIFY_DELAY_MS);
 
 	// Derive the stderr log path for diagnostic messages (mirrors execution.ts convention)
 	const stderrLogHint = `${sidecarPath.replace(/\.jsonl$/, "-stderr.log")}`;
@@ -1957,7 +1977,7 @@ function spawnAgentTmux(opts: {
 
 		// Brief delay before retry (increases with each attempt)
 		const retryDelay = spawnRetries * 500;
-		spawnSync("sleep", [`${retryDelay / 1000}`], { shell: true, timeout: retryDelay + 500 });
+		sleepSyncMs(retryDelay);
 
 		// Kill any remnant and re-create
 		spawnSync("tmux", ["kill-session", "-t", opts.sessionName]);
@@ -1975,7 +1995,7 @@ function spawnAgentTmux(opts: {
 		}
 
 		// Wait for the retried session to stabilize
-		spawnSync("sleep", [`${SPAWN_VERIFY_DELAY_MS / 1000}`], { shell: true, timeout: SPAWN_VERIFY_DELAY_MS + 500 });
+		sleepSyncMs(SPAWN_VERIFY_DELAY_MS);
 	}
 
 	if (spawnRetries > 0) {
@@ -2946,7 +2966,8 @@ export default function (pi: ExtensionAPI) {
 			await runWorker(remainingSteps, ctx);
 
 			// Write context % snapshot at iteration boundary (TP-094)
-			writeContextSnapshot(state);
+			const { contextWindow: snapshotContextWindow } = resolveContextWindow(config, ctx);
+			writeContextSnapshot(state, snapshotContextWindow);
 
 			if (state.phase === "error") {
 				await shutdownPersistentReviewer("worker error");
