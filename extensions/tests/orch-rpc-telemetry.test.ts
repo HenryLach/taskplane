@@ -9,7 +9,7 @@
  *
  * Uses source-extraction approach (matching the existing test patterns).
  *
- * Run: npx vitest run extensions/tests/orch-rpc-telemetry.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/orch-rpc-telemetry.test.ts
  */
 
 import { describe, it, before, after } from "node:test";

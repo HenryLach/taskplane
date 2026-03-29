@@ -12,7 +12,7 @@
  *   6.x — Collision-safe naming: session names, lane IDs, branches unique per-repo
  *   7.x — Repo-aware persisted state: validate/upconvert, v1→v2, field round-trip
  *
- * Run: npx vitest run extensions/tests/polyrepo-regression.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/polyrepo-regression.test.ts
  */
 
 import { describe, it, before, after } from "node:test";

@@ -8,7 +8,7 @@
  * These tests use source code extraction (reading task-runner.ts) to
  * validate structural contracts without requiring a running tmux session.
  *
- * Run: npx vitest run extensions/tests/task-runner-rpc.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/task-runner-rpc.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

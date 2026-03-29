@@ -11,7 +11,7 @@
  *   7.x — Layer 2 guardrails: allowlist enforcement, dashboardPort preferences-only
  *   8.x — applyUserPreferences merge integration + loadProjectConfig e2e with prefs
  *
- * Run: npx vitest run tests/user-preferences.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/user-preferences.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

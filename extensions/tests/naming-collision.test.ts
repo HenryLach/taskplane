@@ -13,7 +13,7 @@
  *   2b — Shared-environment interference (ownership-scoped discovery/cleanup)
  *   2c — Human-readability acceptance (length, token order, parseability)
  *
- * Run: npx vitest run extensions/tests/naming-collision.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/naming-collision.test.ts
  */
 
 import { describe, it } from "node:test";

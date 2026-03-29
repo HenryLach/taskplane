@@ -5,7 +5,7 @@
  * and file I/O operations (save/load/delete).
  *
  * Run: npx tsx extensions/tests/orch-state-persistence.test.ts
- *   or: npx vitest run extensions/tests/orch-state-persistence.test.ts
+ *   or: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/orch-state-persistence.test.ts
  *
  * Test categories:
  *   1.1 — validatePersistedState (happy path + error cases)
@@ -20,7 +20,7 @@ import { tmpdir } from "os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Detect vitest
+// Legacy compatibility: older harnesses may set VITEST.
 const isTestRunner = !!(process.env.NODE_TEST_CONTEXT || process.env.VITEST);
 
 // ── Test Helpers ──────────────────────────────────────────────────────

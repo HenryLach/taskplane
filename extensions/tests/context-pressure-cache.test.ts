@@ -8,7 +8,7 @@
  * neither of which includes cacheRead tokens. With prompt caching, a worker can have
  * 50K input + 20K output but 800K cacheRead — the safety net saw ~7% instead of ~87%.
  *
- * Run: npx vitest run tests/context-pressure-cache.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/context-pressure-cache.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

@@ -139,7 +139,7 @@ export interface ExitSummary {
 	compactions: number;
 	/** Wall-clock duration of the session in seconds (always written, even on crash) */
 	durationSec: number;
-	/** Last tool call description (e.g., "bash: npx vitest run"), null if no tools were called */
+	/** Last tool call description (e.g., "bash: node --test tests/*.test.ts"), null if no tools were called */
 	lastToolCall: string | null;
 	/** Error message if the session ended with an error, null on clean exit */
 	error: string | null;

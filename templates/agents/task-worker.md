@@ -275,30 +275,24 @@ Run tests at two different scopes depending on where you are in the task:
 
 ### During implementation steps (targeted tests)
 
-After implementing each step, run **targeted tests** for fast feedback:
+After implementing each step, run **targeted tests** for fast feedback.
+Use file-targeted runs for the test files that cover your changes:
 
 ```bash
-cd extensions && npx vitest run --changed
+cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/some-specific.test.ts
 ```
 
-- Vitest's `--changed` flag uses git to find modified files since the last commit
-  and runs only tests related to those files.
-- Workers commit at step boundaries, so between commits the changed set is
-  exactly "what this step modified" — this naturally targets the right tests.
-- Alternatively, run specific test files that cover the code you modified:
-  `npx vitest run tests/some-specific.test.ts`
-- **If `--changed` returns no tests:** That's fine — it means your changes don't
-  have directly related test files. The full suite in the Testing step will catch
-  any indirect regressions.
-- **If targeted tests fail:** Fix the failure before proceeding. Don't accumulate
-  failures across steps.
+- Node's native runner does not provide a reliable project-level `--changed`
+  equivalent; select targeted files explicitly.
+- If multiple files are relevant, pass multiple `--test` paths.
+- **If targeted tests fail:** fix them before proceeding. Don't accumulate failures.
 
 ### During the Testing & Verification step (full suite)
 
 Run the **full test suite** as a quality gate:
 
 ```bash
-cd extensions && npx vitest run
+cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts
 ```
 
 - ALL tests must pass — zero failures allowed.

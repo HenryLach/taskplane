@@ -103,7 +103,7 @@ export const ACTION_CLASSIFICATION_EXAMPLES: Readonly<Record<RecoveryActionClass
 	diagnostic: [
 		"Reading batch-state.json, STATUS.md, events.jsonl, merge results",
 		"Running git status, git log, git diff",
-		"Running test suites (npx vitest run, etc.)",
+		"Running test suites (node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test ..., etc.)",
 		"Listing tmux sessions (tmux list-sessions)",
 		"Checking worktree health (git worktree list)",
 		"Reading any file for diagnostics",
@@ -2051,7 +2051,7 @@ Every action you take falls into one of three categories:
 ### Diagnostic (always allowed — no confirmation needed)
 - Reading batch-state.json, STATUS.md, events.jsonl, merge results
 - Running \`git status\`, \`git log\`, \`git diff\`
-- Running test suites (\`npx vitest run\`, etc.)
+- Running test suites (\`node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test ...\`, etc.)
 - Listing tmux sessions (\`tmux list-sessions\`)
 - Checking worktree health (\`git worktree list\`)
 - Reading any file for diagnostics

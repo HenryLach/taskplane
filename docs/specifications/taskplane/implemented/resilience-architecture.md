@@ -3,6 +3,9 @@
 > **Status:** ⚠️ SUPERSEDED — consolidated into [resilience-and-diagnostics-roadmap.md](resilience-and-diagnostics-roadmap.md) on 2026-03-19.  
 > This file is retained for historical reference. All new work should reference the consolidated roadmap.
 >
+> **Historical note (testing):** Vitest references in this document are archival.
+> Current Taskplane test execution uses Node.js native `node:test`.
+>
 > **Created:** 2026-03-15  
 > **Last Updated:** 2026-03-15  
 > **Related:** [lane-agent-design.md](lane-agent-design.md), [architecture](../../../explanation/architecture.md)

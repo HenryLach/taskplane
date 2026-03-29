@@ -10,7 +10,7 @@
  *   4.x — Non-matching files are not falsely detected
  *   5.x — matchesAnyGitignorePattern covers all built-in patterns
  *
- * Run: npx vitest run tests/gitignore-patterns.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/gitignore-patterns.test.ts
  */
 
 import { describe, it } from "node:test";

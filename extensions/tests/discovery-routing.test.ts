@@ -23,7 +23,7 @@
  *  16.x — Output: formatDiscoveryResults repo annotation
  *  17.x — Actionable routing error guidance
  *
- * Run: npx vitest run tests/discovery-routing.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/discovery-routing.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";
