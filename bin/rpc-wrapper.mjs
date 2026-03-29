@@ -28,7 +28,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, renameSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, renameSync } from "node:fs";
 import { dirname, resolve, join, basename } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
@@ -592,12 +592,17 @@ function checkMailboxAndSteer(mailboxDir, proc) {
 	// Inject each message via steer RPC command and move to ack/
 	for (const { filename, message } of validMessages) {
 		try {
-			// Inject via steer RPC command
-			if (proc.stdin && !proc.stdin.destroyed) {
-				proc.stdin.write(JSON.stringify({ type: "steer", message: message.content }) + "\n");
+			// Precondition: stdin must be available for injection.
+			// If stdin is closed/destroyed, keep message in inbox (no false ack).
+			if (!proc.stdin || proc.stdin.destroyed) {
+				stats.skipped++;
+				continue;
 			}
 
-			// Move to ack/
+			// Inject via steer RPC command
+			proc.stdin.write(JSON.stringify({ type: "steer", message: message.content }) + "\n");
+
+			// Move to ack/ (delivery proof)
 			const ackDir = join(mailboxDir, "ack");
 			try { mkdirSync(ackDir, { recursive: true }); } catch { /* exists */ }
 			try {
