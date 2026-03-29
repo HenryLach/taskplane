@@ -201,8 +201,29 @@ a reviewer agent. The tool takes two parameters: `step` (number) and `type`
 documentation/delivery). These are low-risk steps where review overhead exceeds
 value.
 
+### ⚠️ CRITICAL: Plan review happens BEFORE implementation
+
+**The plan review MUST happen BEFORE you write any code for that step.**
+The entire purpose of plan review is to catch design issues, missing cases, and
+wrong approaches BEFORE you spend tokens implementing them. If you implement
+first and then request plan review, the reviewer's feedback is wasted — the
+code is already written.
+
+**Correct sequence:**
+1. Hydrate step checkboxes (expand the plan)
+2. Commit the hydrated STATUS.md
+3. **Call `review_step(step=N, type="plan")` — BEFORE writing any code**
+4. Handle verdict (APPROVE → implement; REVISE → fix plan, re-review)
+5. Implement the step (write code, check off items)
+6. Commit implementation
+7. Call `review_step(step=N, type="code")` — AFTER implementation
+
+**WRONG sequence (violates the protocol):**
+1. ~~Hydrate, implement, check off, commit, THEN call plan review~~ ❌
+   This makes plan review pointless — the work is already done.
+
 **Handling verdicts:**
-- **APPROVE** → proceed to next step
+- **APPROVE** → proceed (to implementation after plan review; to next step after code review)
 - **RETHINK** → reconsider your plan approach, adjust, then implement
 - **REVISE** → read the review file in `.reviews/` for detailed feedback,
   address the issues, commit fixes, then **call `review_step` again** for re-review.
@@ -211,14 +232,16 @@ value.
 
 **Example flow for a Review Level 2 task, Step 3:**
 1. Read Step 3 requirements
-2. Call `review_step(step=3, type="plan")` → get plan feedback
-3. Capture baseline: run `git rev-parse HEAD` and save the SHA
-4. Implement Step 3
-5. Commit changes
-6. Call `review_step(step=3, type="code", baseline="<saved SHA>")` → get code feedback
-7. If REVISE: fix issues, commit, call `review_step(step=3, type="code")` again
-8. Repeat 7 until APPROVE (max 2 code review cycles per step)
-9. Move to Step 4
+2. Hydrate Step 3 checkboxes, commit STATUS.md
+3. Call `review_step(step=3, type="plan")` → get plan feedback (**NO CODE YET**)
+4. If REVISE: adjust plan, re-request plan review
+5. If APPROVE: capture baseline SHA (`git rev-parse HEAD`)
+6. Implement Step 3 (write code, check off items)
+7. Commit changes
+8. Call `review_step(step=3, type="code", baseline="<saved SHA>")` → get code feedback
+9. If REVISE: fix issues, commit, call `review_step(step=3, type="code")` again
+10. Repeat 9 until APPROVE (max 2 code review cycles per step)
+11. Move to Step 4
 
 If the `review_step` tool is not available (e.g., non-orchestrated mode), skip
 this protocol entirely — the task-runner handles reviews externally.
