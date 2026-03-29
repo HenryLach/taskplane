@@ -476,22 +476,17 @@ These are registered as supervisor extension tools (same pattern as
 - `broadcast_message` supervisor tool
 - Rate limiting: max 1 message per agent per 30 seconds
 
+### Phase 5: Dashboard mailbox panel
+
+- "Messages" section in dashboard showing per-agent message activity
+- Columns: timestamp, direction (→agent / ←supervisor), type, content preview,
+  status (pending/delivered/replied)
+- Read from `mailbox/{batchId}/` directory (inbox, ack, outbox)
+- Real-time updates via dashboard polling (same cadence as lane state)
+
 ## Open Questions
 
-1. **Should agents auto-acknowledge steering messages?**
-   Option A: Agent must explicitly acknowledge (auditable but depends on LLM compliance).
-   Option B: Moving to `ack/` counts as acknowledgment (reliable but less visible).
-   Current design: Option B for delivery, Option A encouraged in template.
-
-2. **Message size limits?**
-   Proposed: 4KB max content. Steering messages should be concise directives,
-   not essays. Larger context should be written to a separate file and
-   referenced.
-
-3. **Should the dashboard show the mailbox?**
-   A "Messages" panel showing sent/pending/acked messages per agent would give
-   the operator visibility into steering activity. Low priority but valuable
-   for debugging.
+None currently.
 
 ## Resolved Questions
 
@@ -511,3 +506,21 @@ These are registered as supervisor extension tools (same pattern as
    JSON escaping issues on Windows, and provides no delivery confirmation.
    The file mailbox adds negligible latency (~0.1ms per check) and delivers
    at the same cadence (turn boundaries). Not worth the complexity.
+
+4. ~~Should agents auto-acknowledge steering messages?~~
+   **No explicit acknowledgment required.** Pi's `steer` command injects the
+   message as a user message in the conversation — the LLM will see it and
+   respond to it on its next turn (same as human steering). The agent can't
+   "ignore" it. The `ack/` directory proves delivery at the RPC level. Whether
+   the agent *followed* the instruction is visible from the work product
+   (commits, STATUS.md changes). Requiring an explicit "I acknowledge" template
+   instruction would burn tokens without adding signal.
+
+5. ~~Message size limits?~~
+   **4KB max content.** Steering messages should be concise directives. Larger
+   context should be written to a separate file and referenced by path in the
+   message. Enforced at write time in `send_agent_message`.
+
+6. ~~Should the dashboard show the mailbox?~~
+   **Yes.** A "Messages" section in the dashboard showing sent/pending/delivered
+   messages per agent. Implementation in Phase 5 (after core mailbox is stable).
