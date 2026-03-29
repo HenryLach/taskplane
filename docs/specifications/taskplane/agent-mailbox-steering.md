@@ -198,13 +198,19 @@ This is the same mechanism that makes human steering work — when a user types
 while an agent is running, the message is queued and delivered at the next
 natural break point.
 
-**Steering modes** (configurable per session via `set_steering_mode`):
-- `"one-at-a-time"` (default): one steering message per completed turn
-- `"all"`: all queued steering messages delivered at once
+**Steering mode:** rpc-wrapper sends `{"type": "set_steering_mode", "mode": "all"}`
+at session startup so all queued steering messages are delivered together at the
+next turn boundary. Pi defaults to `one-at-a-time`, but agents on long turns
+(many tool calls) may accumulate multiple messages — we want all of them
+delivered at the first opportunity, not drip-fed one per turn.
 
-**Also available:**
-- `follow_up` — delivered only after the agent finishes all tool calls. Good
-  for "when you're done, also do X."
+**`follow_up` (separate RPC command):** Delivered only after the agent finishes
+all tool calls and stops. The supervisor chooses `steer` vs `follow_up`
+per-message based on intent:
+- `steer` — "read this now and adjust your approach"
+- `follow_up` — "when you're done, also do X"
+
+This is an addressing decision per message, not a session-level configuration.
 
 ### rpc-wrapper: the injection gateway
 
