@@ -640,11 +640,31 @@ function querySessionStats() {
 
 // ── Route RPC events ─────────────────────────────────────────────────
 
+// Event types worth persisting to the sidecar JSONL.
+// Streaming deltas (content_block_delta, content_block_start/stop, message_start,
+// input_json_delta, etc.) are omitted — they're high-volume, large, and not used
+// by the dashboard or telemetry consumers. A single merge agent can produce 42MB+
+// of sidecar data from streaming deltas alone.
+const SIDECAR_EVENT_TYPES = new Set([
+	"agent_start",
+	"agent_end",
+	"message_end",
+	"tool_execution_start",
+	"tool_execution_end",
+	"tool_execution_update",
+	"auto_retry_start",
+	"auto_retry_end",
+	"auto_compaction_start",
+	"response",
+]);
+
 function handleEvent(event) {
 	if (!event || !event.type) return;
 
-	// Write ALL events to sidecar (redacted)
-	writeSidecarEvent(args.sidecarPath, event);
+	// Write only telemetry-relevant events to sidecar (redacted)
+	if (SIDECAR_EVENT_TYPES.has(event.type)) {
+		writeSidecarEvent(args.sidecarPath, event);
+	}
 
 	// Delegate state mutation to the extracted (testable) accumulator
 	applyEvent(state, event);
