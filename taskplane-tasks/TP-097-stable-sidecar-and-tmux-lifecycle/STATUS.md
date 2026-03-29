@@ -1,6 +1,6 @@
 # TP-097: Stable Sidecar Identity and TMUX Lifecycle — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Stable sidecar identity (#354)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
@@ -19,10 +19,10 @@
 ---
 
 ### Step 1: Stable sidecar identity (#354)
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Move sidecar path generation to caller
-- [ ] Preserve tailState across iterations
+- [x] Move sidecar path generation to caller
+- [x] Preserve tailState across iterations
 
 ---
 
