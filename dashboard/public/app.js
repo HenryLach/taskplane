@@ -621,6 +621,58 @@ function renderLanesTasks(batch, tmuxSessions) {
 
 // ─── Render: Merge Agents ───────────────────────────────────────────────────
 
+/** Build full telemetry HTML for a merge agent (parity with worker stats).
+ *  Shows: elapsed, tool count, context %, cost, current tool, retry/compaction badges.
+ *  Returns empty string if no meaningful telemetry exists.
+ */
+function mergeTelemetryHtml(tel, alive) {
+  if (!tel) return '<span class="merge-no-data">—</span>';
+  const hasData = (tel.inputTokens || 0) > 0 || (tel.outputTokens || 0) > 0 ||
+    (tel.toolCalls || 0) > 0 || (tel.cost || 0) > 0;
+  if (!hasData) return '<span class="merge-no-data">—</span>';
+
+  let html = '<div class="merge-stats">';
+
+  // Elapsed time
+  if (tel.startedAt) {
+    const elapsed = Date.now() - tel.startedAt;
+    html += `<span class="worker-stat" title="Merge elapsed">⏱ ${formatDuration(elapsed)}</span>`;
+  }
+
+  // Tool calls
+  if (tel.toolCalls > 0) {
+    html += `<span class="worker-stat" title="Tool calls">🔧 ${tel.toolCalls}</span>`;
+  }
+
+  // Context %
+  if (tel.contextPct > 0) {
+    html += `<span class="worker-stat" title="Context window used">📊 ${Math.round(tel.contextPct)}%</span>`;
+  }
+
+  // Tokens + cost
+  const inp = (tel.inputTokens || 0) + (tel.cacheReadTokens || 0);
+  const out = tel.outputTokens || 0;
+  const cost = tel.cost || 0;
+  if (inp > 0 || out > 0) {
+    let tokenStr = `↑${formatTokens(inp)} ↓${formatTokens(out)}`;
+    if (cost > 0) tokenStr += ` ${formatCost(cost)}`;
+    html += `<span class="worker-stat" title="Tokens">🪙 ${tokenStr}</span>`;
+  }
+
+  // Current tool (if alive/active) or last tool (completed merges)
+  if (alive && tel.currentTool) {
+    html += `<span class="worker-stat worker-last-tool" title="Current tool">${escapeHtml(tel.currentTool)}</span>`;
+  } else if (!alive && tel.lastTool) {
+    html += `<span class="worker-stat worker-last-tool" title="Last tool">${escapeHtml(tel.lastTool)}</span>`;
+  }
+
+  // Retry/compaction badges (reuse shared helper)
+  html += telemetryBadgesHtml(tel);
+
+  html += '</div>';
+  return html;
+}
+
 function renderMergeAgents(batch, tmuxSessions) {
   const mergeResults = batch?.mergeResults || [];
   const tmuxSet = new Set(tmuxSessions || []);
@@ -642,8 +694,8 @@ function renderMergeAgents(batch, tmuxSessions) {
       mergePrefix = laneMatch[1] + "-merge";
     }
   }
-  // Helper: get merge session name for a lane number
-  const getMergeSessionName = (laneNum) => `${mergePrefix}-${laneNum}`;
+  // Helper: get merge session name for a merge number
+  const getMergeSessionName = (mergeNum) => `${mergePrefix}-${mergeNum}`;
 
   if (mergeResults.length === 0 && mergeSessions.length === 0) {
     $mergeBody.innerHTML = '<div class="empty-state">No merge agents active</div>';
@@ -671,49 +723,64 @@ function renderMergeAgents(batch, tmuxSessions) {
       : mr.status === "partial" ? "status-stalled"
       : "status-failed";
 
-    // Look for matching tmux merge sessions for this wave result.
-    // Merge sessions follow the naming pattern: {prefix}-{opId}-merge-{laneNumber}
-    // (e.g., "orch-henrylach-merge-1"). Find any alive merge sessions.
-    const waveMergeSessions = mergeSessions.filter(s => tmuxSet.has(s));
-    const sessionName = waveMergeSessions.length > 0 ? waveMergeSessions[0] : null;
-    const alive = sessionName !== null;
-    if (alive) shownSessions.add(sessionName);
-
-    // Look for merge telemetry data — check all merge sessions
-    let mergeTel = null;
-    for (const ms of mergeSessions) {
-      if (telemetry[ms]) { mergeTel = telemetry[ms]; break; }
+    // Merge session mapping: derive from lane numbers involved in this wave.
+    // Merge sessions are named by lane number (e.g., ...-merge-1), not wave index.
+    // Extract lane numbers from repoResults or from batch tasks for this wave.
+    const waveLaneNums = new Set();
+    const repoResults2 = mr.repoResults || [];
+    for (const rr of repoResults2) {
+      for (const ln of (rr.laneNumbers || [])) waveLaneNums.add(ln);
     }
+    // Fallback: find lane numbers from tasks assigned to this wave
+    if (waveLaneNums.size === 0 && batch.wavePlan && batch.wavePlan[mr.waveIndex]) {
+      const waveTaskIds = new Set(batch.wavePlan[mr.waveIndex]);
+      for (const t of (batch.tasks || [])) {
+        if (waveTaskIds.has(t.taskId) && t.laneNumber != null) {
+          waveLaneNums.add(t.laneNumber);
+        }
+      }
+    }
+    // Find alive merge sessions matching the wave's lane numbers
+    let effectiveSession = null;
+    for (const ln of waveLaneNums) {
+      const candidate = getMergeSessionName(ln);
+      if (tmuxSet.has(candidate) && !shownSessions.has(candidate)) {
+        effectiveSession = candidate;
+        break;
+      }
+    }
+    // Fallback: any unshown alive merge session
+    if (!effectiveSession) {
+      effectiveSession = mergeSessions.find(s => tmuxSet.has(s) && !shownSessions.has(s)) || null;
+    }
+    const effectiveAlive = !!effectiveSession;
+    if (effectiveSession) shownSessions.add(effectiveSession);
+
+    // Find merge telemetry: try sessions by lane number first
+    let mergeTel = null;
+    for (const ln of waveLaneNums) {
+      const candidate = getMergeSessionName(ln);
+      if (telemetry[candidate]) { mergeTel = telemetry[candidate]; break; }
+    }
+    // Fallback: effective session telemetry or any merge session
+    if (!mergeTel && effectiveSession) mergeTel = telemetry[effectiveSession] || null;
+    if (!mergeTel) mergeTel = mergeSessions.reduce((found, ms) => found || telemetry[ms] || null, null);
 
     html += `<tr>`;
-    html += `<td style="font-family:var(--font-mono);">Wave ${mr.waveIndex + 1}</td>`;
+    html += `<td class="merge-wave-cell">Wave ${mr.waveIndex + 1}</td>`;
     html += `<td><span class="status-badge ${statusCls}">${mr.status}</span></td>`;
-    html += `<td style="font-family:var(--font-mono);font-size:0.8rem;">${alive ? escapeHtml(sessionName) : "—"}</td>`;
-    // Telemetry cell
-    html += `<td style="font-size:0.75rem;">`;
-    if (mergeTel) {
-      const totalTok = (mergeTel.inputTokens || 0) + (mergeTel.outputTokens || 0);
-      const cost = mergeTel.cost || 0;
-      if (totalTok > 0 || cost > 0) {
-        html += `<span style="color:var(--text-muted);">${totalTok > 0 ? totalTok.toLocaleString() + " tok" : ""}`;
-        if (cost > 0) html += ` · $${cost.toFixed(4)}`;
-        html += `</span>`;
-      } else {
-        html += '<span style="color:var(--text-faint);">—</span>';
-      }
-    } else {
-      html += '<span style="color:var(--text-faint);">—</span>';
-    }
-    html += `</td>`;
+    html += `<td class="merge-session-cell">${effectiveAlive ? escapeHtml(effectiveSession) : "—"}</td>`;
+    // Full telemetry cell
+    html += `<td class="merge-telemetry-cell">${mergeTelemetryHtml(mergeTel, effectiveAlive)}</td>`;
     html += `<td>`;
-    if (alive) {
-      const cmd = `tmux attach -t ${sessionName}`;
-      html += `<span class="tmux-cmd" data-tmux="${escapeHtml(sessionName)}" onclick="copyTmuxCmd('${escapeHtml(sessionName)}')" title="Click to copy">${escapeHtml(cmd)}</span>`;
+    if (effectiveAlive) {
+      const cmd = `tmux attach -t ${effectiveSession}`;
+      html += `<span class="tmux-cmd" data-tmux="${escapeHtml(effectiveSession)}" onclick="copyTmuxCmd('${escapeHtml(effectiveSession)}')" title="Click to copy">${escapeHtml(cmd)}</span>`;
     } else {
-      html += '<span style="color:var(--text-faint);">—</span>';
+      html += '<span class="merge-no-data">—</span>';
     }
     html += `</td>`;
-    html += `<td style="font-size:0.8rem;color:var(--text-muted);">${mr.failureReason ? escapeHtml(mr.failureReason) : "—"}</td>`;
+    html += `<td class="merge-detail-cell">${mr.failureReason ? escapeHtml(mr.failureReason) : "—"}</td>`;
     html += `</tr>`;
 
     // Per-repo sub-rows: show when workspace mode has repo results
@@ -732,10 +799,10 @@ function renderMergeAgents(batch, tmuxSessions) {
         html += `<tr class="merge-repo-row">`;
         html += `<td>${repoBadgeHtml(rr.repoId)}</td>`;
         html += `<td><span class="status-badge ${rrStatusCls}">${rr.status}</span></td>`;
-        html += `<td style="font-family:var(--font-mono);font-size:0.75rem;color:var(--text-faint);">${rrLanes}</td>`;
+        html += `<td class="merge-session-cell">${rrLanes}</td>`;
         html += `<td></td>`; /* telemetry placeholder */
         html += `<td></td>`; /* attach placeholder */
-        html += `<td style="font-size:0.75rem;color:var(--text-faint);">${rrDetail}</td>`;
+        html += `<td class="merge-detail-cell">${rrDetail}</td>`;
         html += `</tr>`;
       }
     }
@@ -748,25 +815,11 @@ function renderMergeAgents(batch, tmuxSessions) {
     const sessTel = telemetry[sess] || null;
     const cmd = `tmux attach -t ${sess}`;
     html += `<tr>`;
-    html += `<td style="font-family:var(--font-mono);">—</td>`;
+    html += `<td class="merge-wave-cell">—</td>`;
     html += `<td><span class="status-badge status-running"><span class="status-dot running"></span> merging</span></td>`;
-    html += `<td style="font-family:var(--font-mono);font-size:0.8rem;">${escapeHtml(sess)}</td>`;
-    // Telemetry cell for active merge session
-    html += `<td style="font-size:0.75rem;">`;
-    if (sessTel) {
-      const totalTok = (sessTel.inputTokens || 0) + (sessTel.outputTokens || 0);
-      const cost = sessTel.cost || 0;
-      if (totalTok > 0 || cost > 0) {
-        html += `<span style="color:var(--text-muted);">${totalTok > 0 ? totalTok.toLocaleString() + " tok" : ""}`;
-        if (cost > 0) html += ` · $${cost.toFixed(4)}`;
-        html += `</span>`;
-      } else {
-        html += '<span style="color:var(--text-faint);">—</span>';
-      }
-    } else {
-      html += '<span style="color:var(--text-faint);">—</span>';
-    }
-    html += `</td>`;
+    html += `<td class="merge-session-cell">${escapeHtml(sess)}</td>`;
+    // Full telemetry cell for active merge session
+    html += `<td class="merge-telemetry-cell">${mergeTelemetryHtml(sessTel, true)}</td>`;
     html += `<td><span class="tmux-cmd" data-tmux="${escapeHtml(sess)}" onclick="copyTmuxCmd('${escapeHtml(sess)}')" title="Click to copy">${escapeHtml(cmd)}</span></td>`;
     html += `<td>—</td>`;
     html += `</tr>`;

@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { Type } from "@mariozechner/pi-ai";
 
 import { execSync, execFileSync } from "child_process";
-import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync } from "fs";
+import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { fork, type ChildProcess } from "child_process";
@@ -17,7 +17,7 @@ import { computeWaveAssignments } from "./waves.ts";
 import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
 import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions, parseOrchSessionNames } from "./persistence.ts";
 import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, formatPreflightResults, runPreflight } from "./worktree.ts";
-import { computeTransitiveDependents, executeLane } from "./execution.ts";
+import { computeTransitiveDependents, executeLane, resolveCanonicalTaskPaths } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { formatOrchSessions, listOrchSessions } from "./sessions.ts";
@@ -3697,7 +3697,7 @@ export default function (pi: ExtensionAPI) {
 	 * @since TP-089
 	 */
 	function doSendAgentMessage(to: string, content: string, messageType: string, ctx: ExtensionContext): string {
-		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+		const stateRoot = resolveToolStateRoot(ctx);
 
 		// Validate message type (outbound allowlist: steer, query, abort, info)
 		const validOutboundTypes = new Set(["steer", "query", "abort", "info"]);
@@ -3751,6 +3751,484 @@ export default function (pi: ExtensionAPI) {
 		} catch (err) {
 			return `❌ Failed to write message: ${err instanceof Error ? err.message : String(err)}`;
 		}
+	}
+
+	function resolveToolStateRoot(context: ExtensionContext): string {
+		return execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? context.cwd;
+	}
+
+	function resolveLaneRepoRootForTools(laneRec: PersistedBatchState["lanes"][number], stateRoot: string): string {
+		if (execCtx?.workspaceConfig && laneRec.repoId) {
+			const repo = execCtx.workspaceConfig.repos[laneRec.repoId];
+			if (repo?.path) return repo.path;
+		}
+		return execCtx?.repoRoot ?? stateRoot;
+	}
+
+	// ── TP-096: Supervisor Recovery Tools ─────────────────────────────────
+
+	pi.registerTool({
+		name: "read_agent_status",
+		label: "Read Agent Status",
+		description:
+			"Read STATUS.md and telemetry for a running agent's lane. " +
+			"Returns current step, checkbox progress, context %, cost, tool count, and elapsed time. " +
+			"If lane is omitted, returns status for all active lanes.",
+		promptSnippet: "read_agent_status(lane?) — read STATUS.md + context % + cost from a running agent",
+		promptGuidelines: [
+			"Call read_agent_status to check on a specific lane's worker progress.",
+			"Omit lane to get a summary of all active lanes.",
+			"Returns: current step, checked/total items, context %, cost, elapsed.",
+		],
+		parameters: Type.Object({
+			lane: Type.Optional(Type.Number({
+				description: "Lane number to check (omit for all lanes)",
+			})),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doReadAgentStatus(params.lane, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error reading agent status: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	/**
+	 * Read agent status from STATUS.md and lane-state sidecar.
+	 * @since TP-096
+	 */
+	function doReadAgentStatus(lane: number | undefined, ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
+
+		// Load batch state
+		const state = loadBatchState(stateRoot);
+		if (!state) return "❌ No batch state found.";
+
+		const targetLanes = lane != null
+			? state.lanes.filter(l => l.laneNumber === lane)
+			: state.lanes;
+
+		if (targetLanes.length === 0) {
+			return lane != null
+				? `❌ Lane ${lane} not found in batch ${state.batchId}.`
+				: "❌ No lanes in current batch.";
+		}
+
+		const lines: string[] = [];
+		lines.push(`📊 **Agent Status** — batch ${state.batchId}\n`);
+
+		for (const laneRec of targetLanes) {
+			// Find current task for this lane
+			const laneTasks = state.tasks.filter(t => t.laneNumber === laneRec.laneNumber);
+			const runningTask = laneTasks.find(t => t.status === "running");
+			const currentTask = runningTask || laneTasks[laneTasks.length - 1];
+
+			lines.push(`### Lane ${laneRec.laneNumber} — ${laneRec.tmuxSessionName}`);
+			lines.push(`**Branch:** ${laneRec.branch}`);
+
+			if (currentTask) {
+				lines.push(`**Task:** ${currentTask.taskId} (${currentTask.status})`);
+
+				// Read STATUS.md from canonical task paths (workspace-safe, cross-repo-safe)
+				try {
+					const taskFolderAbs = currentTask.taskFolder;
+					const worktreePath = laneRec.worktreePath;
+					if (taskFolderAbs && worktreePath) {
+						const repoRootForLane = resolveLaneRepoRootForTools(laneRec, stateRoot);
+						const resolved = resolveCanonicalTaskPaths(
+							taskFolderAbs,
+							worktreePath,
+							repoRootForLane,
+							!!execCtx?.workspaceConfig,
+						);
+						if (existsSync(resolved.statusPath)) {
+							const content = readFileSync(resolved.statusPath, "utf-8");
+							const stepMatch = content.match(/\*\*Current Step:\*\*\s*(.+)/);
+							const statusMatch = content.match(/\*\*Status:\*\*\s*(.+)/);
+							const iterMatch = content.match(/\*\*Iteration:\*\*\s*(\d+)/);
+							const reviewMatch = content.match(/\*\*Review Counter:\*\*\s*(\d+)/);
+							const checked = (content.match(/- \[x\]/gi) || []).length;
+							const unchecked = (content.match(/- \[ \]/g) || []).length;
+							const total = checked + unchecked;
+
+							if (stepMatch) lines.push(`**Step:** ${stepMatch[1].trim()}`);
+							if (statusMatch) lines.push(`**Step Status:** ${statusMatch[1].trim()}`);
+							if (total > 0) lines.push(`**Progress:** ${checked}/${total} (${Math.round((checked / total) * 100)}%)`);
+							if (iterMatch) lines.push(`**Iteration:** ${iterMatch[1]}`);
+							if (reviewMatch && Number.parseInt(reviewMatch[1], 10) > 0) lines.push(`**Reviews:** ${reviewMatch[1]}`);
+						}
+					}
+				} catch {
+					// STATUS.md not available in worktree — degrade gracefully
+				}
+			} else {
+				lines.push("**Task:** none assigned");
+			}
+
+			// Read lane-state sidecar
+			try {
+				const lsPath = join(stateRoot, ".pi", `lane-state-${laneRec.tmuxSessionName}.json`);
+				if (existsSync(lsPath)) {
+					const ls = JSON.parse(readFileSync(lsPath, "utf-8"));
+					const parts: string[] = [];
+					if (ls.workerContextPct) parts.push(`context: ${Math.round(ls.workerContextPct)}%`);
+					if (ls.workerCostUsd) parts.push(`cost: $${ls.workerCostUsd.toFixed(3)}`);
+					if (ls.workerToolCount) parts.push(`tools: ${ls.workerToolCount}`);
+					if (ls.workerElapsed) parts.push(`elapsed: ${Math.round(ls.workerElapsed / 1000)}s`);
+					if (ls.workerStatus) parts.push(`worker: ${ls.workerStatus}`);
+					if (ls.reviewerStatus && ls.reviewerStatus !== "idle") parts.push(`reviewer: ${ls.reviewerStatus}`);
+					if (parts.length > 0) lines.push(`**Telemetry:** ${parts.join(" · ")}`);
+				}
+			} catch {
+				// Lane state not available — degrade gracefully
+			}
+
+			lines.push("");
+		}
+
+		return lines.join("\n");
+	}
+
+	pi.registerTool({
+		name: "trigger_wrap_up",
+		label: "Trigger Wrap Up",
+		description:
+			"Write the .task-wrap-up signal file for a specific lane, telling the worker to finish its current step and exit gracefully.",
+		promptSnippet: "trigger_wrap_up(lane) — write .task-wrap-up signal file for a lane",
+		promptGuidelines: [
+			"Call trigger_wrap_up to gracefully stop a worker on a specific lane.",
+			"The worker will finish its current step and exit.",
+			"Validates the lane exists and has a running worker.",
+		],
+		parameters: Type.Object({
+			lane: Type.Number({
+				description: "Lane number to send wrap-up signal to",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doTriggerWrapUp(params.lane, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error triggering wrap-up: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	/**
+	 * Write .task-wrap-up signal file for a lane's current task.
+	 * @since TP-096
+	 */
+	function doTriggerWrapUp(lane: number, ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
+
+		const state = loadBatchState(stateRoot);
+		if (!state) return "❌ No batch state found.";
+
+		const laneRec = state.lanes.find(l => l.laneNumber === lane);
+		if (!laneRec) return `❌ Lane ${lane} not found in batch ${state.batchId}.`;
+
+		// Find running task for this lane
+		const runningTask = state.tasks.find(t => t.laneNumber === lane && t.status === "running");
+		if (!runningTask) return `❌ No running task on lane ${lane}.`;
+
+		// Resolve task folder in the worktree using canonical path resolver
+		const taskFolderAbs = runningTask.taskFolder;
+		const worktreePath = laneRec.worktreePath;
+		if (!taskFolderAbs || !worktreePath) {
+			return `❌ Cannot resolve task folder for lane ${lane}.`;
+		}
+
+		const repoRootForLane = resolveLaneRepoRootForTools(laneRec, stateRoot);
+		const resolved = resolveCanonicalTaskPaths(
+			taskFolderAbs,
+			worktreePath,
+			repoRootForLane,
+			!!execCtx?.workspaceConfig,
+		);
+		const wrapUpPath = join(resolved.taskFolderResolved, ".task-wrap-up");
+
+		try {
+			const dir = dirname(wrapUpPath);
+			if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+			writeFileSync(wrapUpPath, `wrap-up signal for ${runningTask.taskId}\n`, "utf-8");
+			return `✅ Wrap-up signal written for **${runningTask.taskId}** on lane ${lane}.\n` +
+				`Path: \`${wrapUpPath}\`\n` +
+				`The worker will finish its current step and exit gracefully.`;
+		} catch (err) {
+			return `❌ Failed to write wrap-up file: ${err instanceof Error ? err.message : String(err)}`;
+		}
+	}
+
+	pi.registerTool({
+		name: "read_lane_logs",
+		label: "Read Lane Logs",
+		description:
+			"Read stderr/crash logs for a specific lane from .pi/telemetry/ directory.",
+		promptSnippet: "read_lane_logs(lane) — read stderr/crash logs for a lane",
+		promptGuidelines: [
+			"Call read_lane_logs to read crash/error logs from a lane's stderr capture.",
+			"Falls back gracefully when logs don't exist (older batches).",
+		],
+		parameters: Type.Object({
+			lane: Type.Number({
+				description: "Lane number to read logs for",
+			}),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doReadLaneLogs(params.lane, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error reading lane logs: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	/**
+	 * Read stderr/crash logs for a lane.
+	 * @since TP-096
+	 */
+	function doReadLaneLogs(lane: number, ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
+
+		const state = loadBatchState(stateRoot);
+		if (!state) return "❌ No batch state found.";
+
+		const laneRec = state.lanes.find(l => l.laneNumber === lane);
+		if (!laneRec) return `❌ Lane ${lane} not found in batch ${state.batchId}.`;
+
+		const telemetryDir = join(stateRoot, ".pi", "telemetry");
+		let stderrFile: string | null = null;
+
+		// Discover stderr logs by actual telemetry naming:
+		// {opId}-{batchId}-{repoId}[-{taskId}]-lane-{N}-worker-stderr.log
+		try {
+			if (existsSync(telemetryDir)) {
+				const allStderr = readdirSync(telemetryDir)
+					.filter(f => f.endsWith("-stderr.log"))
+					.filter(f => f.includes(`-lane-${lane}-worker`));
+				const batchScoped = allStderr.filter(f => f.includes(`-${state.batchId}-`));
+				const candidates = (batchScoped.length > 0 ? batchScoped : allStderr)
+					.map(name => {
+						const absPath = join(telemetryDir, name);
+						let mtime = 0;
+						try { mtime = statSync(absPath).mtimeMs; } catch {}
+						return { name, mtime };
+					})
+					.sort((a, b) => b.mtime - a.mtime);
+				stderrFile = candidates[0]?.name ?? null;
+			}
+		} catch {
+			// Directory not readable — handled below
+		}
+
+		// Legacy fallback from older conventions
+		if (!stderrFile) {
+			const legacy = `${state.batchId}-lane-${lane}-stderr.log`;
+			if (existsSync(join(telemetryDir, legacy))) {
+				stderrFile = legacy;
+			}
+		}
+
+		const stderrPath = stderrFile ? join(telemetryDir, stderrFile) : null;
+
+		// Also try to find worker-exit JSON files for crash diagnostics
+		const exitFiles: string[] = [];
+		try {
+			if (existsSync(telemetryDir)) {
+				const files = readdirSync(telemetryDir)
+					.filter(f => f.endsWith("-worker-exit.json"))
+					.filter(f => f.includes(`-lane-${lane}-`));
+				const batchScoped = files.filter(f => f.includes(`-${state.batchId}-`));
+				exitFiles.push(...(batchScoped.length > 0 ? batchScoped : files));
+			}
+		} catch { /* directory not readable */ }
+
+		const lines: string[] = [];
+		lines.push(`📜 **Lane ${lane} Logs** — batch ${state.batchId}\n`);
+
+		// Read stderr log
+		if (stderrPath && existsSync(stderrPath)) {
+			try {
+				const content = readFileSync(stderrPath, "utf-8");
+				const truncated = content.length > 5000
+					? "...\n" + content.slice(-5000)
+					: content;
+				lines.push("### Stderr Log");
+				lines.push("```");
+				lines.push(truncated.trim());
+				lines.push("```");
+				lines.push("");
+			} catch {
+				lines.push("Stderr log found but unreadable.");
+			}
+		} else {
+			lines.push(`No stderr log found for lane ${lane} (pattern: \`*-lane-${lane}-worker-stderr.log\`).`);
+		}
+
+		// Read most recent exit diagnostic
+		if (exitFiles.length > 0) {
+			const latestExit = exitFiles
+				.map(name => {
+					const absPath = join(telemetryDir, name);
+					let mtime = 0;
+					try { mtime = statSync(absPath).mtimeMs; } catch {}
+					return { name, mtime };
+				})
+				.sort((a, b) => b.mtime - a.mtime)[0]?.name;
+			if (latestExit) {
+				try {
+					const exitData = JSON.parse(readFileSync(join(telemetryDir, latestExit), "utf-8"));
+					lines.push("### Latest Exit Diagnostic");
+					if (exitData.classification) lines.push(`**Classification:** ${exitData.classification}`);
+					if (exitData.exitCode != null) lines.push(`**Exit Code:** ${exitData.exitCode}`);
+					if (exitData.errorMessage) lines.push(`**Error:** ${exitData.errorMessage}`);
+					if (exitData.durationSec) lines.push(`**Duration:** ${exitData.durationSec}s`);
+					lines.push("");
+				} catch { /* skip malformed exit file */ }
+			}
+		}
+
+		return lines.join("\n");
+	}
+
+	pi.registerTool({
+		name: "list_active_agents",
+		label: "List Active Agents",
+		description:
+			"List all tmux sessions with their role, lane, task, context %, and elapsed time.",
+		promptSnippet: "list_active_agents() — show all tmux sessions with role, lane, task, context %, elapsed",
+		promptGuidelines: [
+			"Call list_active_agents to see all running agent sessions.",
+			"Shows: session name, role (worker/reviewer/merger/supervisor), lane, task, context %, elapsed.",
+		],
+		parameters: Type.Object({}),
+		async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doListActiveAgents(ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error listing agents: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	/**
+	 * List all active tmux sessions with agent metadata.
+	 * @since TP-096
+	 */
+	function doListActiveAgents(ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
+
+		// Get tmux sessions
+		let sessions: string[] = [];
+		try {
+			const output = execSync('tmux list-sessions -F "#{session_name}"', {
+				encoding: "utf-8",
+				timeout: 5000,
+				stdio: ["ignore", "pipe", "ignore"],
+			}).trim();
+			sessions = output ? output.split("\n").map(s => s.trim()).filter(Boolean) : [];
+		} catch {
+			return "❌ tmux not available or no sessions running.";
+		}
+
+		if (sessions.length === 0) return "❌ No tmux sessions found.";
+
+		// Load batch state for task/lane mapping
+		const state = loadBatchState(stateRoot);
+
+		// Build a map of session name → lane-state data
+		const laneStates: Record<string, any> = {};
+		try {
+			const piDir = join(stateRoot, ".pi");
+			if (existsSync(piDir)) {
+				const files = readdirSync(piDir).filter(f => f.startsWith("lane-state-") && f.endsWith(".json"));
+				for (const file of files) {
+					try {
+						const data = JSON.parse(readFileSync(join(piDir, file), "utf-8"));
+						if (data.prefix) laneStates[data.prefix] = data;
+					} catch { continue; }
+				}
+			}
+		} catch { /* .pi dir missing */ }
+
+		const lines: string[] = [];
+		lines.push(`👥 **Active Agents** (${sessions.length} sessions)\n`);
+
+		// Parse each session name to extract role, lane, etc.
+		for (const sess of sessions) {
+			let role = "unknown";
+			let laneNum = "";
+			let taskId = "";
+			let contextPct = "";
+			let elapsed = "";
+			let costStr = "";
+
+			// Parse session name pattern:
+			// Workers/reviewers: orch-{opId}-lane-{N} (or -worker/-reviewer suffix)
+			// Mergers: orch-{opId}-merge-{N}
+			// Supervisor: pi-supervisor-{...}
+			const laneMatch = sess.match(/-lane-(\d+)/);
+			const mergeMatch = sess.match(/-merge-(\d+)/);
+
+			if (mergeMatch) {
+				role = "merger";
+				laneNum = mergeMatch[1];
+			} else if (laneMatch) {
+				if (sess.includes("-reviewer")) {
+					role = "reviewer";
+				} else {
+					role = "worker";
+				}
+				laneNum = laneMatch[1];
+			} else if (sess.includes("supervisor")) {
+				role = "supervisor";
+			}
+
+			// Find matching task and lane-state
+			if (state && laneNum) {
+				const ln = parseInt(laneNum);
+				const task = state.tasks.find(t => t.laneNumber === ln && t.status === "running");
+				if (task) taskId = task.taskId;
+
+				// Find lane-state prefix (may be the session name or a prefix of it)
+				const laneRec = state.lanes.find(l => l.laneNumber === ln);
+				const prefix = laneRec?.tmuxSessionName || sess;
+				const ls = laneStates[prefix];
+				if (ls) {
+					if (ls.workerContextPct) contextPct = `${Math.round(ls.workerContextPct)}%`;
+					if (ls.workerElapsed) elapsed = `${Math.round(ls.workerElapsed / 1000)}s`;
+					if (ls.workerCostUsd) costStr = `$${ls.workerCostUsd.toFixed(3)}`;
+				}
+			}
+
+			const parts: string[] = [`**${sess}**`];
+			parts.push(`role: ${role}`);
+			if (laneNum) parts.push(`lane: ${laneNum}`);
+			if (taskId) parts.push(`task: ${taskId}`);
+			if (contextPct) parts.push(`ctx: ${contextPct}`);
+			if (elapsed) parts.push(`elapsed: ${elapsed}`);
+			if (costStr) parts.push(`cost: ${costStr}`);
+			lines.push(`- ${parts.join(" · ")}`);
+		}
+
+		return lines.join("\n");
 	}
 
 	// ── Settings TUI ─────────────────────────────────────────────────

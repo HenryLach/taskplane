@@ -619,18 +619,45 @@ describe("tailSidecarJsonl — poll loop integration simulation", () => {
 });
 
 describe("tailSidecarJsonl — contextUsage from get_session_stats (pi ≥ 0.63.0)", () => {
-	it("extracts contextUsage from response event", () => {
+	it("extracts contextUsage.percent from response event (TP-094 fix)", () => {
 		const state = createSidecarTailState();
+		// Pi sends `percent` (not `percentUsed`) in contextUsage
 		writeEvents(
 			{ type: "response", success: true, data: {
-				contextUsage: { percentUsed: 42.5, totalTokens: 425000, maxTokens: 1000000 },
+				contextUsage: { percent: 42.5, tokens: 425000, contextWindow: 1000000 },
 			}},
 		);
 		const delta = tailSidecarJsonl(sidecarPath, state);
 		expect(delta.contextUsage).not.toBe(null);
-		expect(delta.contextUsage!.percentUsed).toBe(42.5);
-		expect(delta.contextUsage!.totalTokens).toBe(425000);
+		expect(delta.contextUsage!.percent).toBe(42.5);
+		expect(delta.contextUsage!.totalTokens).toBe(0); // pi sends `tokens`, not `totalTokens`
+		expect(delta.contextUsage!.maxTokens).toBe(0); // pi sends `contextWindow`, not `maxTokens`
+	});
+
+	it("accepts legacy percentUsed as backward-compatible fallback", () => {
+		const state = createSidecarTailState();
+		// Hypothetical older format with percentUsed
+		writeEvents(
+			{ type: "response", success: true, data: {
+				contextUsage: { percentUsed: 55.0, totalTokens: 550000, maxTokens: 1000000 },
+			}},
+		);
+		const delta = tailSidecarJsonl(sidecarPath, state);
+		expect(delta.contextUsage).not.toBe(null);
+		expect(delta.contextUsage!.percent).toBe(55.0);
+		expect(delta.contextUsage!.totalTokens).toBe(550000);
 		expect(delta.contextUsage!.maxTokens).toBe(1000000);
+	});
+
+	it("prefers percent over percentUsed when both present", () => {
+		const state = createSidecarTailState();
+		writeEvents(
+			{ type: "response", success: true, data: {
+				contextUsage: { percent: 60.0, percentUsed: 59.0, totalTokens: 600000, maxTokens: 1000000 },
+			}},
+		);
+		const delta = tailSidecarJsonl(sidecarPath, state);
+		expect(delta.contextUsage!.percent).toBe(60.0);
 	});
 
 	it("contextUsage is null when response has no contextUsage (older pi)", () => {
@@ -642,6 +669,26 @@ describe("tailSidecarJsonl — contextUsage from get_session_stats (pi ≥ 0.63.
 		expect(delta.contextUsage).toBe(null);
 	});
 
+	it("sets sawStatsResponseWithoutContextUsage when response lacks it", () => {
+		const state = createSidecarTailState();
+		writeEvents(
+			{ type: "response", success: true, data: { sessionId: "abc" } },
+		);
+		const delta = tailSidecarJsonl(sidecarPath, state);
+		expect(delta.contextUsage).toBe(null);
+		expect(delta.sawStatsResponseWithoutContextUsage).toBe(true);
+	});
+
+	it("does not set sawStatsResponseWithoutContextUsage on error response", () => {
+		const state = createSidecarTailState();
+		writeEvents(
+			{ type: "response", success: false, error: "something broke" },
+		);
+		const delta = tailSidecarJsonl(sidecarPath, state);
+		expect(delta.contextUsage).toBe(null);
+		expect(delta.sawStatsResponseWithoutContextUsage).toBe(false);
+	});
+
 	it("contextUsage is null when response is an error", () => {
 		const state = createSidecarTailState();
 		writeEvents(
@@ -651,18 +698,18 @@ describe("tailSidecarJsonl — contextUsage from get_session_stats (pi ≥ 0.63.
 		expect(delta.contextUsage).toBe(null);
 	});
 
-	it("contextUsage takes precedence over manual calculation when present", () => {
+	it("contextUsage takes precedence over manual tokens when present", () => {
 		const state = createSidecarTailState();
 		// message_end gives manual tokens AND response gives authoritative contextUsage
 		writeEvents(
 			{ type: "message_end", message: { usage: { input: 100, output: 50, totalTokens: 150 } } },
 			{ type: "response", success: true, data: {
-				contextUsage: { percentUsed: 87.3, totalTokens: 873000, maxTokens: 1000000 },
+				contextUsage: { percent: 87.3, tokens: 873000, contextWindow: 1000000 },
 			}},
 		);
 		const delta = tailSidecarJsonl(sidecarPath, state);
-		// Both should be present — consumer decides which to use
+		// Both should be present — consumer uses authoritative percent
 		expect(delta.latestTotalTokens).toBe(150);
-		expect(delta.contextUsage!.percentUsed).toBe(87.3);
+		expect(delta.contextUsage!.percent).toBe(87.3);
 	});
 });
