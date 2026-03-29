@@ -1523,3 +1523,200 @@ describe("checkMailboxAndSteer — mailbox delivery", () => {
 		expect(written).toHaveLength(0);
 	});
 });
+
+// ── 16. mailbox-dir runtime behavior (startup + no-mailbox) ─────────
+
+describe("mailbox-dir runtime behavior", () => {
+	it("sends set_steering_mode at startup and injects steer on message_end", async () => {
+		const { execFile } = await import("child_process");
+		const { promisify } = await import("util");
+		const { readFileSync, writeFileSync, mkdirSync, rmSync } = await import("fs");
+		const { tmpdir } = await import("os");
+		const execFileAsync = promisify(execFile);
+
+		const tmpDir = join(tmpdir(), `rpc-mailbox-runtime-${Date.now()}`);
+		mkdirSync(tmpDir, { recursive: true });
+
+		const promptFile = join(tmpDir, "prompt.md");
+		const sidecarPath = join(tmpDir, "sidecar.jsonl");
+		const summaryPath = join(tmpDir, "summary.json");
+		const cmdLogPath = join(tmpDir, "cmd-log.json");
+		writeFileSync(promptFile, "runtime mailbox test");
+
+		const batchId = "batch-1";
+		const sessionName = "session-1";
+		const mailboxDir = join(tmpDir, "mailbox", batchId, sessionName);
+		const inboxDir = join(mailboxDir, "inbox");
+		mkdirSync(inboxDir, { recursive: true });
+		writeFileSync(
+			join(inboxDir, "1000-aaa00.msg.json"),
+			JSON.stringify({
+				id: "1000-aaa00",
+				batchId,
+				from: "supervisor",
+				to: sessionName,
+				timestamp: 1000,
+				type: "steer",
+				content: "Mailbox delivery test",
+			}),
+		);
+
+		const mockPiScript = join(tmpDir, "mock-pi-mailbox.mjs");
+		writeFileSync(mockPiScript, `
+import process from 'process';
+import { writeFileSync } from 'fs';
+
+const cmdLogPath = process.env.CMD_LOG_PATH;
+const cmds = [];
+let started = false;
+
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => {
+	for (const line of chunk.split('\\n')) {
+		if (!line.trim()) continue;
+		try {
+			const cmd = JSON.parse(line);
+			cmds.push(cmd);
+			if (cmd.type === 'prompt' && !started) {
+				started = true;
+				process.stdout.write(JSON.stringify({ type: 'response', success: true }) + '\\n');
+				process.stdout.write(JSON.stringify({ type: 'agent_start' }) + '\\n');
+				process.stdout.write(JSON.stringify({ type: 'message_end', message: { usage: { input: 1, output: 1, cost: 0.001 } } }) + '\\n');
+				setTimeout(() => {
+					process.stdout.write(JSON.stringify({ type: 'agent_end' }) + '\\n');
+				}, 50);
+			}
+		} catch {}
+	}
+});
+
+process.stdin.on('end', () => {
+	if (cmdLogPath) {
+		writeFileSync(cmdLogPath, JSON.stringify(cmds, null, 2));
+	}
+	process.exit(0);
+});
+`);
+
+		const shimDir = join(tmpDir, "bin");
+		mkdirSync(shimDir, { recursive: true });
+		const isWindows = process.platform === "win32";
+		if (isWindows) {
+			writeFileSync(join(shimDir, "pi.cmd"), `@echo off\nnode "${mockPiScript.replace(/\\/g, "\\\\")}" %*\n`);
+		} else {
+			writeFileSync(join(shimDir, "pi"), `#!/bin/sh\nexec node "${mockPiScript}" "$@"\n`);
+			const { chmodSync } = await import("fs");
+			chmodSync(join(shimDir, "pi"), 0o755);
+		}
+
+		const pathSep = isWindows ? ";" : ":";
+		const env = {
+			...process.env,
+			CMD_LOG_PATH: cmdLogPath,
+			PATH: shimDir + pathSep + (process.env.PATH || ""),
+		};
+
+		try {
+			await execFileAsync("node", [
+				wrapperPath,
+				"--sidecar-path", sidecarPath,
+				"--exit-summary-path", summaryPath,
+				"--prompt-file", promptFile,
+				"--mailbox-dir", mailboxDir,
+			], { env, timeout: 30000 });
+
+			const cmds = JSON.parse(readFileSync(cmdLogPath, "utf-8"));
+			expect(cmds.some((c: any) => c.type === "set_steering_mode" && c.mode === "all")).toBe(true);
+			expect(cmds.some((c: any) => c.type === "steer" && c.message === "Mailbox delivery test")).toBe(true);
+		} finally {
+			try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+		}
+	}, 30000);
+
+	it("does not send steer or set_steering_mode when --mailbox-dir is absent", async () => {
+		const { execFile } = await import("child_process");
+		const { promisify } = await import("util");
+		const { readFileSync, writeFileSync, mkdirSync, rmSync } = await import("fs");
+		const { tmpdir } = await import("os");
+		const execFileAsync = promisify(execFile);
+
+		const tmpDir = join(tmpdir(), `rpc-mailbox-runtime-nodir-${Date.now()}`);
+		mkdirSync(tmpDir, { recursive: true });
+
+		const promptFile = join(tmpDir, "prompt.md");
+		const sidecarPath = join(tmpDir, "sidecar.jsonl");
+		const summaryPath = join(tmpDir, "summary.json");
+		const cmdLogPath = join(tmpDir, "cmd-log.json");
+		writeFileSync(promptFile, "runtime no mailbox test");
+
+		const mockPiScript = join(tmpDir, "mock-pi-no-mailbox.mjs");
+		writeFileSync(mockPiScript, `
+import process from 'process';
+import { writeFileSync } from 'fs';
+
+const cmdLogPath = process.env.CMD_LOG_PATH;
+const cmds = [];
+let started = false;
+
+process.stdin.setEncoding('utf8');
+process.stdin.on('data', (chunk) => {
+	for (const line of chunk.split('\\n')) {
+		if (!line.trim()) continue;
+		try {
+			const cmd = JSON.parse(line);
+			cmds.push(cmd);
+			if (cmd.type === 'prompt' && !started) {
+				started = true;
+				process.stdout.write(JSON.stringify({ type: 'response', success: true }) + '\\n');
+				process.stdout.write(JSON.stringify({ type: 'agent_start' }) + '\\n');
+				process.stdout.write(JSON.stringify({ type: 'message_end', message: { usage: { input: 1, output: 1, cost: 0.001 } } }) + '\\n');
+				setTimeout(() => {
+					process.stdout.write(JSON.stringify({ type: 'agent_end' }) + '\\n');
+				}, 50);
+			}
+		} catch {}
+	}
+});
+
+process.stdin.on('end', () => {
+	if (cmdLogPath) {
+		writeFileSync(cmdLogPath, JSON.stringify(cmds, null, 2));
+	}
+	process.exit(0);
+});
+`);
+
+		const shimDir = join(tmpDir, "bin");
+		mkdirSync(shimDir, { recursive: true });
+		const isWindows = process.platform === "win32";
+		if (isWindows) {
+			writeFileSync(join(shimDir, "pi.cmd"), `@echo off\nnode "${mockPiScript.replace(/\\/g, "\\\\")}" %*\n`);
+		} else {
+			writeFileSync(join(shimDir, "pi"), `#!/bin/sh\nexec node "${mockPiScript}" "$@"\n`);
+			const { chmodSync } = await import("fs");
+			chmodSync(join(shimDir, "pi"), 0o755);
+		}
+
+		const pathSep = isWindows ? ";" : ":";
+		const env = {
+			...process.env,
+			CMD_LOG_PATH: cmdLogPath,
+			PATH: shimDir + pathSep + (process.env.PATH || ""),
+		};
+
+		try {
+			await execFileAsync("node", [
+				wrapperPath,
+				"--sidecar-path", sidecarPath,
+				"--exit-summary-path", summaryPath,
+				"--prompt-file", promptFile,
+			], { env, timeout: 30000 });
+
+			const cmds = JSON.parse(readFileSync(cmdLogPath, "utf-8"));
+			expect(cmds.some((c: any) => c.type === "set_steering_mode")).toBe(false);
+			expect(cmds.some((c: any) => c.type === "steer")).toBe(false);
+		} finally {
+			try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+		}
+	}, 30000);
+});
