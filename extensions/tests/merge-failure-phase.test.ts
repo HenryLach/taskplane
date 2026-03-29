@@ -55,6 +55,7 @@ function makeState(phase: OrchBatchPhase): PersistedBatchState {
 		errors: [],
 		resilience: defaultResilienceState(),
 		diagnostics: defaultBatchDiagnostics(),
+		segments: [],
 	};
 }
 

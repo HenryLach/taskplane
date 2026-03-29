@@ -1620,7 +1620,7 @@ describe("orchestrator pointer threading", () => {
 		const repoRoot = makeTestDir("repo-state-root");
 		const configRepoRoot = makeTestDir("config-repo-state-root");
 
-		// Create a valid batch state JSON (matches PersistedBatchState schema v2)
+		// Create a valid batch state JSON (matches PersistedBatchState schema v4)
 		const now = Date.now();
 		const validState = JSON.stringify({
 			schemaVersion: BATCH_STATE_SCHEMA_VERSION,
@@ -1665,6 +1665,7 @@ describe("orchestrator pointer threading", () => {
 				taskExits: {},
 				batchCost: 0,
 			},
+			segments: [],
 		});
 
 		// Save batch state to workspaceRoot (simulating what orch does with stateRoot = workspaceRoot)
@@ -1777,6 +1778,7 @@ describe("orchestrator pointer threading", () => {
 				taskExits: {},
 				batchCost: 0,
 			},
+			segments: [],
 		});
 
 		// Orch saves state using stateRoot (= workspaceRoot)
