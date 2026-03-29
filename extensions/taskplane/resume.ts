@@ -1167,7 +1167,9 @@ export async function resumeOrchBatch(
 			});
 
 			try {
-				spawnLaneSession(lane, allocatedTask, orchConfig, reExecRepoRoot);
+				spawnLaneSession(lane, allocatedTask, orchConfig, reExecRepoRoot, undefined, {
+					ORCH_BATCH_ID: batchState.batchId,
+				});
 				const pollResult = await pollUntilTaskComplete(
 					lane,
 					allocatedTask,

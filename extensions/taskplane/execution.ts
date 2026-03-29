@@ -915,10 +915,8 @@ export function spawnLaneSession(
 
 	// Build env vars
 	const envVars = buildLaneEnvVars(lane, task.task.promptPath, repoRoot, workspaceRoot);
-	// Pass batch ID so task-runner can include it in lane state for dashboard filtering
-	if (config.orchestrator?.batchId) {
-		envVars.ORCH_BATCH_ID = config.orchestrator.batchId;
-	}
+	// ORCH_BATCH_ID is passed via extraEnvVars from executeWave → executeLane → spawnLaneSession.
+	// The task-runner reads it to include batchId in lane-state JSON for dashboard filtering.
 	if (extraEnvVars) {
 		Object.assign(envVars, extraEnvVars);
 	}
@@ -2371,7 +2369,9 @@ export async function executeWave(
 	const wsRoot = workspaceConfig ? dirname(dirname(workspaceConfig.configPath)) : undefined;
 	const isWsMode = !!workspaceConfig;
 	const lanePromises = lanes.map(lane =>
-		executeLane(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode),
+		executeLane(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode, {
+			ORCH_BATCH_ID: batchId,
+		}),
 	);
 
 	// Start monitoring as a sibling async loop
