@@ -1947,10 +1947,13 @@ function spawnAgentTmux(opts: {
 	// Wait briefly for session to stabilize, then verify
 	spawnSync("sleep", [`${SPAWN_VERIFY_DELAY_MS / 1000}`], { shell: true, timeout: SPAWN_VERIFY_DELAY_MS + 500 });
 
+	// Derive the stderr log path for diagnostic messages (mirrors execution.ts convention)
+	const stderrLogHint = `${sidecarPath.replace(/\.jsonl$/, "-stderr.log")}`;
+
 	let spawnRetries = 0;
 	while (!verifySessionAlive() && spawnRetries < SPAWN_MAX_RETRIES) {
 		spawnRetries++;
-		console.error(`[task-runner] tmux: session '${opts.sessionName}' died on startup — retrying (${spawnRetries}/${SPAWN_MAX_RETRIES})`);
+		console.error(`[task-runner] tmux: session '${opts.sessionName}' died on startup — retrying (${spawnRetries}/${SPAWN_MAX_RETRIES}). Stderr log: ${stderrLogHint}`);
 
 		// Brief delay before retry (increases with each attempt)
 		const retryDelay = spawnRetries * 500;
@@ -1979,10 +1982,10 @@ function spawnAgentTmux(opts: {
 		const finalAlive = verifySessionAlive();
 		if (!finalAlive) {
 			cleanupTmp();
-			console.error(`[task-runner] tmux: session '${opts.sessionName}' failed after ${SPAWN_MAX_RETRIES} retries`);
+			console.error(`[task-runner] tmux: session '${opts.sessionName}' failed after ${SPAWN_MAX_RETRIES} retries. Stderr log: ${stderrLogHint}`);
 			throw new Error(
 				`TMUX session '${opts.sessionName}' died on startup after ${SPAWN_MAX_RETRIES} retries. ` +
-				`Check stderr log at ${join(getSidecarDir(), "telemetry")} for diagnosis.`
+				`Stderr log: ${stderrLogHint}`
 			);
 		}
 		console.error(`[task-runner] tmux: session '${opts.sessionName}' alive after ${spawnRetries} retry(ies)`);
