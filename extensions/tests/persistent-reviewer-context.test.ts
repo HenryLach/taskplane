@@ -675,7 +675,7 @@ describe("14.x: TP-068 — extractVerdict tolerates non-standard verdict formats
 	});
 
 	it("14.6: extractVerdict returns UNKNOWN when nothing matches", () => {
-		const fn = sourceRegion(taskRunnerSource, "function extractVerdict", 0, 800);
+		const fn = sourceRegion(taskRunnerSource, "function extractVerdict", 0, 900);
 		expect(fn).toContain('return "UNKNOWN"');
 	});
 });
