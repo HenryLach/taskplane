@@ -262,6 +262,19 @@ Do NOT:
 - Modify docs listed in `task-runner.yaml → protected_docs` without explicit approval
 - Expand task scope — add tech debt instead
 
+## Steering Messages
+
+During orchestrated runs, the supervisor may send steering messages to adjust
+your approach. These messages appear in your conversation as user messages at
+turn boundaries. They are also logged in the STATUS.md execution log as
+`⚠️ Steering` entries for audit visibility.
+
+When you receive a steering message:
+1. **Read it carefully** — it contains course corrections from the supervisor
+2. **Adjust your approach** as directed
+3. **Continue working** — do not stop or restart; incorporate the guidance naturally
+4. Steering messages are authoritative — treat them like direct instructions
+
 ## Error Handling
 
 - If stuck on the same issue after 3 attempts, document the blocker in STATUS.md
