@@ -1,7 +1,7 @@
 # TP-094: Context Pressure and Telemetry Accuracy Fix — Status
 
-**Current Step:** Step 3: Testing & Verification
-**Status:** 🟡 In Progress
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-29
 **Review Level:** 2
 **Review Counter:** 5
@@ -41,17 +41,23 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Tests for correct field extraction
-- [ ] Full test suite passing
+- [x] Tests updated: `percent` field extracted correctly from real pi response format
+- [x] Tests added: backward-compatible `percentUsed` fallback works
+- [x] Tests added: `percent` takes precedence over `percentUsed`
+- [x] Tests added: `sawStatsResponseWithoutContextUsage` flag behavior
+- [x] 240 targeted tests pass (sidecar, rpc-wrapper, cleanup, reviewer context)
+- [x] 37 state persistence tests pass
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Log discoveries
+- [x] Log discoveries in STATUS.md
+- [x] Inline comments updated (TP-094 references in all changed locations)
+- [x] No external doc updates needed (resilience-architecture.md doesn't reference field names)
 
 ---
 
