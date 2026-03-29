@@ -1,10 +1,10 @@
 # TP-089: Agent Mailbox Core and RPC Steering Injection — Status
 
-**Current Step:** Step 3: Thread mailbox-dir through spawn paths
+**Current Step:** Step 4: Supervisor send_agent_message tool
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 13
+**Review Counter:** 16
 **Iteration:** 4
 **Size:** L
 
@@ -120,7 +120,7 @@
 ---
 
 ### Step 3: Thread mailbox-dir through spawn paths
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 #### 3a. task-runner spawnAgentTmux() — auto-derive mailbox dir inside
 - [x] Inside spawnAgentTmux(): read `ORCH_BATCH_ID` from `process.env` (set by execution.ts)
@@ -145,10 +145,26 @@
 ---
 
 ### Step 4: Supervisor send_agent_message tool
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Register tool with session name resolution from batch state
-- [ ] Write message to target inbox
+#### 4a. Tool registration in extension.ts
+- [x] Register `send_agent_message` tool with pi.registerTool() (same pattern as orch_retry_task)
+- [x] Parameters: `to` (string, required), `content` (string, required), `type` (string, optional, default 'steer')
+- [x] Description: send a steering message to a running agent
+
+#### 4b. Session resolution and validation
+- [x] Resolve stateRoot: `execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd` (same as doOrchRetryTask)
+- [x] Load batch state from `{stateRoot}/.pi/batch-state.json`
+- [x] Build valid session names with explicit derivation:
+  - Worker: `${lane.tmuxSessionName}-worker`
+  - Reviewer: `${lane.tmuxSessionName}-reviewer`
+  - Merger: `${tmuxPrefix}-${opId}-merge-${lane.laneNumber}` (NOT lane-level sessions)
+- [x] Validate `to` is in the known agent session set (error if not found)
+
+#### 4c. Write message
+- [x] Validate `type` against outbound allowlist: `steer | query | abort | info` (default: steer). Reject `reply`/`escalate`.
+- [x] Call `writeMailboxMessage(stateRoot, batchId, to, { from: 'supervisor', ... })` from mailbox.ts
+- [x] Return confirmation with message ID, target, type, and batchId
 
 ---
 
@@ -193,6 +209,9 @@
 | R011 | plan | Step 3 | REVISE | .reviews/R011-plan-step3.md |
 | R012 | plan | Step 3 | REVISE | .reviews/R012-plan-step3.md |
 | R013 | plan | Step 3 | APPROVE | .reviews/R013-plan-step3.md |
+| R014 | code | Step 3 | APPROVE | .reviews/R014-code-step3.md |
+| R015 | plan | Step 4 | REVISE | .reviews/R015-plan-step4.md |
+| R016 | plan | Step 4 | APPROVE | .reviews/R016-plan-step4.md |
 
 ---
 
@@ -252,6 +271,12 @@
 | 2026-03-29 03:55 | Review R012 | plan Step 3: REVISE (fallback) |
 | 2026-03-29 03:56 | Reviewer R013 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
 | 2026-03-29 03:59 | Review R013 | plan Step 3: APPROVE (fallback) |
+| 2026-03-29 04:01 | Reviewer R014 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 04:05 | Review R014 | code Step 3: APPROVE (fallback) |
+| 2026-03-29 04:07 | Reviewer R015 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
+| 2026-03-29 04:11 | Review R015 | plan Step 4: REVISE (fallback) |
+| 2026-03-29 04:12 | Reviewer R016 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 04:14 | Review R016 | plan Step 4: APPROVE (fallback) |
 
 ---
 
