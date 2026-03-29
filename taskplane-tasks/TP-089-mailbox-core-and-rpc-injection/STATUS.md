@@ -1,7 +1,7 @@
 # TP-089: Agent Mailbox Core and RPC Steering Injection — Status
 
-**Current Step:** Complete
-**Status:** ✅ Complete
+**Current Step:** Step 5: Batch cleanup for mailbox directory
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
 **Review Counter:** 17
@@ -169,80 +169,34 @@
 ---
 
 ### Step 5: Batch cleanup for mailbox directory
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 
 #### 5a. Post-integrate cleanup (Layer 1)
-- [x] In `cleanupPostIntegrate()`: delete `{stateRoot}/.pi/mailbox/{batchId}/` directory tree using `MAILBOX_DIR_NAME` constant
-- [x] Use `rmSync` with `recursive: true, force: true` (non-fatal, wrapped in try/catch)
-- [x] Add `mailboxDirsDeleted` counter to `PostIntegrateCleanupResult` interface
-- [x] Update `formatPostIntegrateCleanup()` — include mailbox in `totalDeleted` and segments
-- [x] Update `/orch-integrate` cleanup summary in `extension.ts` — include `mailboxDirsDeleted` in output
+- [ ] In `cleanupPostIntegrate()`: delete `{stateRoot}/.pi/mailbox/{batchId}/` directory tree
+- [ ] Use rmSync with recursive + force (non-fatal)
+- [ ] Add mailbox dir count to cleanup result
 
 #### 5b. Age-based preflight sweep (Layer 2)
-- [x] Add `staleDirsDeleted` counter to `PreflightSweepResult` interface
-- [x] In `sweepStaleArtifacts()`: sweep `{stateRoot}/.pi/mailbox/` immediate children (directories only)
-- [x] Skip entries that are not directories (`stat.isDirectory()` check)
-- [x] Delete batch subdirs older than 7 days (by directory mtime against cutoff)
-- [x] Use `rmSync(path, { recursive: true, force: true })` for stale batch mailbox dirs
-- [x] Per-entry try/catch with warning push (non-fatal, best-effort)
-- [x] Update `formatPreflightSweep()` — include `staleDirsDeleted` in message
-- [x] Update `formatPreflightCleanup()` — include `staleDirsDeleted` in combined summary
+- [ ] In `sweepStaleArtifacts()`: sweep `{stateRoot}/.pi/mailbox/` subdirectories
+- [ ] Delete batch subdirs older than 7 days (by mtime of directory)
+- [ ] Use rmSync recursive for stale batch mailbox dirs
 
 ---
 
 ### Step 6: Testing & Verification
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-#### 6a. Mailbox utilities (`extensions/tests/mailbox.test.ts`)
-- [x] writeMailboxMessage: creates correct file structure (inbox dir + .msg.json file)
-- [x] writeMailboxMessage: message file contains all required fields (id, batchId, from, to, timestamp, type, content, expectsReply, replyTo)
-- [x] writeMailboxMessage: generated id has format `{timestamp}-{5char-hex}`
-- [x] writeMailboxMessage: 4KB byte-limit rejection (ASCII content exceeding limit)
-- [x] writeMailboxMessage: 4KB byte-limit respects UTF-8 bytes (multibyte chars count correctly)
-- [x] writeMailboxMessage: 4KB content at exactly limit succeeds
-- [x] readInbox: returns sorted messages (timestamp ascending, filename tie-break)
-- [x] readInbox: skips non-.msg.json files (e.g., .tmp files, random files)
-- [x] readInbox: returns empty array when inbox dir doesn't exist (ENOENT)
-- [x] readInbox: batchId validation rejects mismatched messages (leaves in inbox, logs warning)
-- [x] readInbox: skips malformed JSON files (logs warning, doesn't throw)
-- [x] readInbox: skips invalid shape messages (missing required fields)
-- [x] ackMessage: moves file from inbox/ to ack/ directory
-- [x] ackMessage: creates ack/ dir if it doesn't exist
-- [x] ackMessage: returns false on ENOENT race (already acked)
-- [x] Path helpers: mailboxRoot, sessionInboxDir, sessionAckDir, broadcastInboxDir return correct paths
-
-#### 6b. rpc-wrapper mailbox integration (`extensions/tests/rpc-wrapper.test.ts`)
-- [x] parseArgs: `--mailbox-dir` parsed correctly into `args.mailboxDir`
-- [x] parseArgs: mailboxDir defaults to null when not provided
-- [x] checkMailboxAndSteer: delivers messages and moves to ack/ (integration via mock)
-- [x] checkMailboxAndSteer: silent no-op when mailboxDir is null
-- [x] isValidMailboxMessageShape: validates correct/incorrect shapes
-- [x] MAILBOX_MESSAGE_TYPES: contains all expected types
-
-#### 6c. send_agent_message supervisor tool (unit test approach)
-- [x] writeMailboxMessage writes to correct inbox path for target session
-- [x] writeMailboxMessage correctly sets from="supervisor" and requested type
-
-#### 6d. Cleanup behavior (`extensions/tests/mailbox.test.ts`)
-- [x] cleanupPostIntegrate: deletes `.pi/mailbox/{batchId}/` and reports mailboxDirsDeleted=1
-- [x] cleanupPostIntegrate: no-op when mailbox dir doesn't exist (mailboxDirsDeleted=0)
-- [x] sweepStaleArtifacts: deletes old mailbox batch dirs (>7 days by mtime)
-- [x] sweepStaleArtifacts: preserves recent mailbox batch dirs (<7 days)
-- [x] sweepStaleArtifacts: skips files under .pi/mailbox/ (only processes directories)
-
-#### 6e. Full suite run
-- [x] Run: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
-- [x] All tests pass — 2971 tests, 0 failures
-- [x] No failures to fix
+- [ ] Create mailbox.test.ts with behavioral tests
+- [ ] Full test suite passing
+- [ ] All failures fixed
 
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Update agent-mailbox-steering.md spec status from Draft to "Phase 1 Implemented (TP-089)"
-- [x] Mark Phase 1 items as ✅ in spec
-- [x] Log discoveries in STATUS.md
+- [ ] Update spec status
+- [ ] Log discoveries
 
 ---
 
@@ -335,12 +289,6 @@
 | 2026-03-29 04:19 | Review R017 | code Step 4: APPROVE |
 | 2026-03-29 04:19 | Reviewer R017 | code review APPROVE — killing persistent reviewer (step 4 cycle done) |
 | 2026-03-29 04:20 | Reviewer R018 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
-| 2026-03-29 09:10 | Step 5 started | Batch cleanup for mailbox directory |
-| 2026-03-29 09:10 | Step 5 completed | Post-integrate + stale sweep cleanup implemented |
-| 2026-03-29 09:10 | Step 6 started | Testing & Verification |
-| 2026-03-29 09:10 | Step 6 completed | 45 new tests (36 mailbox + 9 rpc-wrapper), full suite 2971/2971 pass |
-| 2026-03-29 09:10 | Step 7 started | Documentation & Delivery |
-| 2026-03-29 09:10 | Step 7 completed | Spec updated, STATUS.md finalized |
 
 ---
 
