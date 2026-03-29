@@ -7,7 +7,7 @@ You have full tool access — use `read` to examine files and `bash` to run comm
 
 - **Task PROMPT:** C:\dev\taskplane\.worktrees\henrylach-20260329T091021\lane-1\taskplane-tasks\TP-089-mailbox-core-and-rpc-injection\PROMPT.md
 - **Task STATUS:** C:\dev\taskplane\.worktrees\henrylach-20260329T091021\lane-1\taskplane-tasks\TP-089-mailbox-core-and-rpc-injection\STATUS.md
-- **Step being planned:** Step 5: Batch cleanup for mailbox directory
+- **Step being planned:** Step 6: Testing & Verification
 
 ## Instructions
 
@@ -22,4 +22,4 @@ You have full tool access — use `read` to examine files and `bash` to run comm
 
 ## Output
 
-Write your review to: `C:\dev\taskplane\.worktrees\henrylach-20260329T091021\lane-1\taskplane-tasks\TP-089-mailbox-core-and-rpc-injection\.reviews\R018-plan-step5.md`
+Write your review to: `C:\dev\taskplane\.worktrees\henrylach-20260329T091021\lane-1\taskplane-tasks\TP-089-mailbox-core-and-rpc-injection\.reviews\R022-plan-step6.md`
