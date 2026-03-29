@@ -28,8 +28,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, readdirSync, renameSync, existsSync } from "node:fs";
+import { dirname, resolve, join, basename } from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
 // ── CLI Argument Parsing ─────────────────────────────────────────────
@@ -45,6 +45,7 @@ function parseArgs(argv) {
 		extensions: [],
 		passthrough: [],
 		help: false,
+		mailboxDir: null,
 	};
 
 	let i = 2; // skip "node" and script path
@@ -73,6 +74,9 @@ function parseArgs(argv) {
 			i++;
 		} else if (arg === "--extensions" && i + 1 < argv.length) {
 			args.extensions = argv[++i].split(",").map((e) => e.trim()).filter(Boolean);
+			i++;
+		} else if (arg === "--mailbox-dir" && i + 1 < argv.length) {
+			args.mailboxDir = argv[++i];
 			i++;
 		} else if (arg === "--") {
 			args.passthrough = argv.slice(i + 1);
@@ -103,6 +107,7 @@ Optional:
   --system-prompt-file <path>  Path to system prompt file
   --tools <t1,t2,...>          Comma-separated tool names
   --extensions <e1,e2,...>     Comma-separated extension paths
+  --mailbox-dir <path>         Mailbox directory for agent steering (TP-089)
   -h, --help                   Show this help
 `
 	);
@@ -487,6 +492,155 @@ function createSingleWriteGuard(writer) {
 	};
 }
 
+// ── Agent Mailbox Check (TP-089) ─────────────────────────────────────
+
+/**
+ * Valid mailbox message types (must match MailboxMessageType in types.ts).
+ */
+const MAILBOX_MESSAGE_TYPES = new Set(["steer", "query", "abort", "info", "reply", "escalate"]);
+
+/**
+ * Check the agent's mailbox inbox for pending messages and inject them
+ * into the pi process via the `steer` RPC command.
+ *
+ * Called on every `message_end` event when `--mailbox-dir` is provided.
+ * Messages are validated (batchId, to, shape), sorted deterministically,
+ * injected via steer, and moved from inbox/ to ack/.
+ *
+ * @param {string} mailboxDir - Session mailbox directory (e.g., .pi/mailbox/{batchId}/{session})
+ * @param {object} proc - The spawned pi process (must have writable stdin)
+ * @returns {{ delivered: number, skipped: number }} Delivery stats
+ */
+function checkMailboxAndSteer(mailboxDir, proc) {
+	const stats = { delivered: 0, skipped: 0 };
+
+	// Derive expected values from path structure:
+	// mailboxDir = .pi/mailbox/{batchId}/{sessionName}
+	const expectedSessionName = basename(mailboxDir);
+	const expectedBatchId = basename(dirname(mailboxDir));
+
+	const inboxDir = join(mailboxDir, "inbox");
+
+	// Read inbox — ENOENT is quiet no-op (inbox may not exist yet)
+	let entries;
+	try {
+		entries = readdirSync(inboxDir);
+	} catch (err) {
+		if (err.code === "ENOENT") return stats;
+		process.stderr.write(`\n[STEERING] WARNING: failed to read inbox: ${err.message}\n`);
+		return stats;
+	}
+
+	// Filter: only *.msg.json files (excludes .msg.json.tmp temp files)
+	const msgFiles = entries.filter(f => f.endsWith(".msg.json") && !f.endsWith(".msg.json.tmp"));
+	if (msgFiles.length === 0) return stats;
+
+	// Read and validate all messages
+	const validMessages = [];
+
+	for (const filename of msgFiles) {
+		const filePath = join(inboxDir, filename);
+		let raw;
+		try {
+			raw = readFileSync(filePath, "utf-8");
+		} catch (err) {
+			process.stderr.write(`\n[STEERING] WARNING: failed to read ${filename}: ${err.message}\n`);
+			stats.skipped++;
+			continue;
+		}
+
+		let msg;
+		try {
+			msg = JSON.parse(raw);
+		} catch {
+			process.stderr.write(`\n[STEERING] WARNING: malformed JSON in ${filename}, skipping\n`);
+			stats.skipped++;
+			continue;
+		}
+
+		// Validate shape
+		if (!isValidMailboxMessageShape(msg)) {
+			process.stderr.write(`\n[STEERING] WARNING: invalid message shape in ${filename}, skipping\n`);
+			stats.skipped++;
+			continue;
+		}
+
+		// Validate batchId (derived from path, not message content)
+		if (msg.batchId !== expectedBatchId) {
+			process.stderr.write(`\n[STEERING] WARNING: batchId mismatch in ${filename} (expected ${expectedBatchId}, got ${msg.batchId}), skipping\n`);
+			stats.skipped++;
+			continue;
+		}
+
+		// Validate to (no misdelivery)
+		if (msg.to !== expectedSessionName) {
+			process.stderr.write(`\n[STEERING] WARNING: misdelivery in ${filename} (to=${msg.to}, expected ${expectedSessionName}), skipping\n`);
+			stats.skipped++;
+			continue;
+		}
+
+		validMessages.push({ filename, message: msg });
+	}
+
+	// Sort: primary by timestamp ascending, tie-break by filename lexical
+	validMessages.sort((a, b) => {
+		const tsDiff = a.message.timestamp - b.message.timestamp;
+		if (tsDiff !== 0) return tsDiff;
+		return a.filename.localeCompare(b.filename);
+	});
+
+	// Inject each message via steer RPC command and move to ack/
+	for (const { filename, message } of validMessages) {
+		try {
+			// Inject via steer RPC command
+			if (proc.stdin && !proc.stdin.destroyed) {
+				proc.stdin.write(JSON.stringify({ type: "steer", message: message.content }) + "\n");
+			}
+
+			// Move to ack/
+			const ackDir = join(mailboxDir, "ack");
+			try { mkdirSync(ackDir, { recursive: true }); } catch { /* exists */ }
+			try {
+				renameSync(join(inboxDir, filename), join(ackDir, filename));
+			} catch (err) {
+				// ENOENT race is harmless (another process acked it)
+				if (err.code !== "ENOENT") {
+					process.stderr.write(`\n[STEERING] WARNING: failed to ack ${filename}: ${err.message}\n`);
+				}
+			}
+
+			stats.delivered++;
+			process.stderr.write(`\n[STEERING] Delivered message ${message.id}\n`);
+		} catch (err) {
+			process.stderr.write(`\n[STEERING] WARNING: failed to deliver ${filename}: ${err.message}\n`);
+			stats.skipped++;
+		}
+	}
+
+	return stats;
+}
+
+/**
+ * Runtime validation for mailbox message shape in rpc-wrapper.
+ * Mirrors isValidMailboxMessage() from mailbox.ts but as a standalone
+ * function (rpc-wrapper.mjs is a plain .mjs module, not TypeScript).
+ *
+ * @param {any} obj - Parsed JSON value
+ * @returns {boolean} true if valid shape
+ */
+function isValidMailboxMessageShape(obj) {
+	if (!obj || typeof obj !== "object") return false;
+	return (
+		typeof obj.id === "string" &&
+		typeof obj.batchId === "string" &&
+		typeof obj.from === "string" &&
+		typeof obj.to === "string" &&
+		typeof obj.timestamp === "number" && Number.isFinite(obj.timestamp) &&
+		typeof obj.type === "string" && MAILBOX_MESSAGE_TYPES.has(obj.type) &&
+		typeof obj.content === "string"
+	);
+}
+
 // ── Exports for Testing ──────────────────────────────────────────────
 
 // Export pure functions so tests can import them without triggering side effects.
@@ -503,6 +657,9 @@ export {
 	applyEvent,
 	buildExitSummary,
 	createSingleWriteGuard,
+	checkMailboxAndSteer,
+	isValidMailboxMessageShape,
+	MAILBOX_MESSAGE_TYPES,
 };
 
 // ── Main ─────────────────────────────────────────────────────────────
@@ -602,6 +759,15 @@ const proc = spawn("pi", piArgs, {
 const promptCmd = { type: "prompt", message: promptContent };
 proc.stdin.write(JSON.stringify(promptCmd) + "\n");
 
+// ── Agent Mailbox Steering Setup (TP-089) ────────────────────────────
+// When mailbox-dir is provided, set steering mode to "all" so queued
+// steering messages are delivered together at the next turn boundary.
+// Must be sent after prompt but before any agent processing begins.
+if (args.mailboxDir) {
+	proc.stdin.write(JSON.stringify({ type: "set_steering_mode", mode: "all" }) + "\n");
+	process.stderr.write(`[rpc-wrapper] mailbox enabled: ${args.mailboxDir}\n`);
+}
+
 // ── Stdin Lifecycle ──────────────────────────────────────────────────
 
 /**
@@ -677,6 +843,16 @@ function handleEvent(event) {
 			// Falls back gracefully: older pi versions ignore the command
 			// or return a response without contextUsage — state.contextUsage stays null.
 			querySessionStats();
+			// Check mailbox for pending steering messages (TP-089).
+			// Only active when --mailbox-dir is provided (backward compatible).
+			if (args.mailboxDir) {
+				try {
+					checkMailboxAndSteer(args.mailboxDir, proc);
+				} catch (err) {
+					// Never crash on mailbox I/O errors
+					process.stderr.write(`\n[STEERING] ERROR: ${err.message}\n`);
+				}
+			}
 			break;
 
 		case "tool_execution_start":
