@@ -32,6 +32,8 @@ import { runMigrations } from "./migrations.ts";
 import { serializeWorkspaceConfig, applySerializedState, deserializeWorkspaceConfig } from "./engine-worker.ts";
 import type { EngineWorkerData, WorkerToMainMessage } from "./engine-worker.ts";
 import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, formatPreflightSweep, rotateSupervisorLogs, formatLogRotation } from "./cleanup.ts";
+import { writeMailboxMessage } from "./mailbox.ts";
+import type { MailboxMessageType } from "./types.ts";
 import {
 	activateSupervisor,
 	deactivateSupervisor,
@@ -3638,6 +3640,112 @@ export default function (pi: ExtensionAPI) {
 			}
 		},
 	});
+
+	// ── TP-089: Agent Mailbox Steering Tool ──────────────────────────
+
+	pi.registerTool({
+		name: "send_agent_message",
+		label: "Send Agent Message",
+		description:
+			"Send a steering message to a running agent (worker, reviewer, or merger). " +
+			"The message is delivered into the agent's LLM context at the next turn boundary.",
+		promptSnippet: "send_agent_message(to, content, type?) — send steering message to a running agent",
+		promptGuidelines: [
+			"Call send_agent_message to course-correct a running agent (worker, reviewer, or merger).",
+			"The 'to' parameter must be a valid agent session name from the current batch.",
+			"Use orch_status() to see active session names.",
+			"Default type is 'steer' (course correction). Other types: 'query', 'abort', 'info'.",
+			"Messages are limited to 4KB. For larger context, write to a file and reference by path.",
+		],
+		parameters: Type.Object({
+			to: Type.String({
+				description: "Target agent session name (e.g., 'orch-henrylach-lane-1-worker')",
+			}),
+			content: Type.String({
+				description: "Message content (max 4KB). Concise directive for the agent.",
+			}),
+			type: Type.Optional(Type.Union(
+				[Type.Literal("steer"), Type.Literal("query"), Type.Literal("abort"), Type.Literal("info")],
+				{ description: 'Message type (default: "steer")' },
+			)),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doSendAgentMessage(params.to, params.content, params.type ?? "steer", ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error sending message: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	/**
+	 * Send a steering message to a running agent via the mailbox system.
+	 *
+	 * Resolves the target session from batch state, validates it exists,
+	 * and writes the message to the agent's inbox.
+	 *
+	 * @since TP-089
+	 */
+	function doSendAgentMessage(to: string, content: string, messageType: string, ctx: ExtensionContext): string {
+		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+
+		// Validate message type (outbound allowlist: steer, query, abort, info)
+		const validOutboundTypes = new Set(["steer", "query", "abort", "info"]);
+		if (!validOutboundTypes.has(messageType)) {
+			return `❌ Invalid message type "${messageType}". Valid types: steer, query, abort, info.`;
+		}
+
+		// Load batch state
+		let state: PersistedBatchState | null = null;
+		try {
+			state = loadBatchState(stateRoot);
+		} catch (err) {
+			return `❌ Failed to load batch state: ${err instanceof Error ? err.message : String(err)}`;
+		}
+		if (!state) {
+			return "❌ No batch state found. There is no active or recent batch.";
+		}
+
+		// Build the set of valid agent session names from batch state
+		const validSessions = new Set<string>();
+		const orchConfig = execCtx?.orchestratorConfig;
+		const tmuxPrefix = orchConfig?.orchestrator?.tmux_prefix ?? "orch";
+		const opId = orchConfig ? resolveOperatorId(orchConfig) : "op";
+
+		for (const lane of state.lanes) {
+			// Worker and reviewer are derived from lane session name
+			validSessions.add(`${lane.tmuxSessionName}-worker`);
+			validSessions.add(`${lane.tmuxSessionName}-reviewer`);
+			// Merger: {tmuxPrefix}-{opId}-merge-{laneNumber}
+			validSessions.add(`${tmuxPrefix}-${opId}-merge-${lane.laneNumber}`);
+		}
+
+		// Validate target session
+		if (!validSessions.has(to)) {
+			const examples = [...validSessions].slice(0, 5).join(", ");
+			return `❌ Unknown session "${to}" in batch ${state.batchId}.\nValid targets: ${examples}${validSessions.size > 5 ? ` (${validSessions.size} total)` : ""}`;
+		}
+
+		// Write message to inbox
+		try {
+			const msg = writeMailboxMessage(stateRoot, state.batchId, to, {
+				from: "supervisor",
+				type: messageType as MailboxMessageType,
+				content,
+			});
+			return `✅ Message sent to \`${to}\` (batch ${state.batchId})\n` +
+				`- **ID:** ${msg.id}\n` +
+				`- **Type:** ${messageType}\n` +
+				`- **Size:** ${Buffer.byteLength(content, "utf8")} bytes\n` +
+				`Message will be delivered at the agent's next turn boundary.`;
+		} catch (err) {
+			return `❌ Failed to write message: ${err instanceof Error ? err.message : String(err)}`;
+		}
+	}
 
 	// ── Settings TUI ─────────────────────────────────────────────────
 

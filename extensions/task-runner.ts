@@ -1835,6 +1835,15 @@ function spawnAgentTmux(opts: {
 	if (opts.extensions && opts.extensions.length > 0) {
 		wrapperArgs.push("--extensions", quoteArg(opts.extensions.join(",")));
 	}
+	// TP-089: Agent mailbox steering — construct mailbox dir when in orchestrator mode.
+	// ORCH_BATCH_ID is set by execution.ts for all lane spawns (including retries).
+	// getSidecarDir() returns the .pi/ directory path (already includes .pi/).
+	const orchBatchId = process.env.ORCH_BATCH_ID;
+	if (orchBatchId) {
+		const mailboxDir = join(getSidecarDir(), "mailbox", orchBatchId, opts.sessionName);
+		mkdirSync(join(mailboxDir, "inbox"), { recursive: true });
+		wrapperArgs.push("--mailbox-dir", quoteArg(mailboxDir));
+	}
 	// Passthrough pi args: flags forwarded to the underlying pi --mode rpc process.
 	// Note: --no-session is NOT passed here — rpc-wrapper.mjs already injects it.
 	wrapperArgs.push("--");

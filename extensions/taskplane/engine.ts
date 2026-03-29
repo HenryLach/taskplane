@@ -228,6 +228,7 @@ async function attemptWorkerCrashRetry(
 				retryPauseSignal,
 				wsRoot,
 				isWsMode,
+				{ ORCH_BATCH_ID: batchState.batchId }, // TP-089: ensure mailbox works for retries
 			);
 
 			const retryOutcome = retryResult.tasks[0];
@@ -484,7 +485,8 @@ async function attemptModelFallbackRetry(
 			const retryPauseSignal = { paused: false };
 			// Pass TASKPLANE_MODEL_FALLBACK=1 as extra env var to signal
 			// the task-runner to use the session model instead of configured model.
-			const modelFallbackEnv = { TASKPLANE_MODEL_FALLBACK: "1" };
+			// TP-089: Also include ORCH_BATCH_ID so mailbox steering works for retries.
+			const modelFallbackEnv = { TASKPLANE_MODEL_FALLBACK: "1", ORCH_BATCH_ID: batchState.batchId };
 			const retryResult = await executeLane(
 				retryLane,
 				orchConfig,

@@ -585,6 +585,7 @@ export async function spawnMergeAgent(
 	config: OrchestratorConfig,
 	stateRoot?: string,
 	agentRoot?: string,
+	batchId?: string,
 ): Promise<void> {
 	execLog("merge", sessionName, "preparing to spawn merge agent", {
 		mergeWorkDir,
@@ -656,6 +657,14 @@ export async function spawnMergeAgent(
 	// Add tools override if specified
 	if (config.merge.tools) {
 		wrapperParts.push("--tools", shellQuote(config.merge.tools));
+	}
+
+	// TP-089: Agent mailbox steering — pass --mailbox-dir when batchId is available.
+	if (batchId) {
+		const mailboxDir = join(sidecarRoot, "mailbox", batchId, sessionName);
+		mkdirSync(join(mailboxDir, "inbox"), { recursive: true });
+		wrapperParts.push("--mailbox-dir", shellQuote(mailboxDir));
+		execLog("merge", sessionName, "mailbox enabled", { mailboxDir });
 	}
 
 	const piCommand = wrapperParts.filter(Boolean).join(" ");
@@ -1511,12 +1520,12 @@ export async function mergeWave(
 						}
 
 						// Re-spawn merge agent for the retry
-						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
 						// TP-056: Re-register with health monitor after respawn
 						if (healthMonitor) healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
 					} else {
 						// First attempt: spawn merge agent
-						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot);
+						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
 						// TP-056: Register session with health monitor
 						if (healthMonitor) healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
 					}
