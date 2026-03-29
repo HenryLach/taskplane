@@ -1924,6 +1924,70 @@ function spawnAgentTmux(opts: {
 		);
 	}
 
+	// ── TP-095: Post-spawn verification with retry (#335) ──────────
+	// On Windows/MSYS2, rapid sequential tmux session creation is unreliable.
+	// Pi process can exit with code 1 in 0 seconds on the first 3-5 attempts.
+	// Verify the session is alive after a brief delay, and retry if it died.
+	const SPAWN_VERIFY_DELAY_MS = 300;
+	const SPAWN_VERIFY_POLL_ATTEMPTS = 3;
+	const SPAWN_VERIFY_POLL_INTERVAL_MS = 200;
+	const SPAWN_MAX_RETRIES = 2;
+
+	const verifySessionAlive = (): boolean => {
+		for (let poll = 0; poll < SPAWN_VERIFY_POLL_ATTEMPTS; poll++) {
+			const check = spawnSync("tmux", ["has-session", "-t", opts.sessionName]);
+			if (check.status === 0) return true;
+			if (poll < SPAWN_VERIFY_POLL_ATTEMPTS - 1) {
+				spawnSync("sleep", [`${SPAWN_VERIFY_POLL_INTERVAL_MS / 1000}`], { shell: true, timeout: SPAWN_VERIFY_POLL_INTERVAL_MS + 500 });
+			}
+		}
+		return false;
+	};
+
+	// Wait briefly for session to stabilize, then verify
+	spawnSync("sleep", [`${SPAWN_VERIFY_DELAY_MS / 1000}`], { shell: true, timeout: SPAWN_VERIFY_DELAY_MS + 500 });
+
+	let spawnRetries = 0;
+	while (!verifySessionAlive() && spawnRetries < SPAWN_MAX_RETRIES) {
+		spawnRetries++;
+		console.error(`[task-runner] tmux: session '${opts.sessionName}' died on startup — retrying (${spawnRetries}/${SPAWN_MAX_RETRIES})`);
+
+		// Brief delay before retry (increases with each attempt)
+		const retryDelay = spawnRetries * 500;
+		spawnSync("sleep", [`${retryDelay / 1000}`], { shell: true, timeout: retryDelay + 500 });
+
+		// Kill any remnant and re-create
+		spawnSync("tmux", ["kill-session", "-t", opts.sessionName]);
+
+		const retryResult = spawnSync("tmux", [
+			"new-session", "-d",
+			"-s", opts.sessionName,
+			wrappedCommand,
+		]);
+
+		if (retryResult.status !== 0) {
+			const retryStderr = retryResult.stderr?.toString().trim() || "unknown error";
+			console.error(`[task-runner] tmux: retry ${spawnRetries} session creation failed: ${retryStderr}`);
+			continue;
+		}
+
+		// Wait for the retried session to stabilize
+		spawnSync("sleep", [`${SPAWN_VERIFY_DELAY_MS / 1000}`], { shell: true, timeout: SPAWN_VERIFY_DELAY_MS + 500 });
+	}
+
+	if (spawnRetries > 0) {
+		const finalAlive = verifySessionAlive();
+		if (!finalAlive) {
+			cleanupTmp();
+			console.error(`[task-runner] tmux: session '${opts.sessionName}' failed after ${SPAWN_MAX_RETRIES} retries`);
+			throw new Error(
+				`TMUX session '${opts.sessionName}' died on startup after ${SPAWN_MAX_RETRIES} retries. ` +
+				`Check stderr log at ${join(getSidecarDir(), "telemetry")} for diagnosis.`
+			);
+		}
+		console.error(`[task-runner] tmux: session '${opts.sessionName}' alive after ${spawnRetries} retry(ies)`);
+	}
+
 	console.error(`[task-runner] tmux: session '${opts.sessionName}' created (cwd: ${opts.cwd})`);
 
 
@@ -2853,6 +2917,29 @@ export default function (pi: ExtensionAPI) {
 				if (isStepComplete(ss)) completedBefore.add(ss.number);
 			}
 
+			// ── TP-095: Reset stale lane-state fields before new worker spawn (#333) ──
+			// When a worker crashes and restarts, the lane-state JSON retains stale
+			// values (workerStatus: "done", phase: "error", workerExitDiagnostic from
+			// the crash). Reset STATUS fields BEFORE the new worker spawns so the
+			// dashboard immediately reflects the new running state.
+			// IMPORTANT: Do NOT reset telemetry counters (tokens, cost) here — they
+			// accumulate across worker iterations via += in onTelemetry (#334).
+			if (state.totalIterations > 1) {
+				state.phase = "running";
+				state.workerStatus = "idle"; // Will be set to "running" by runWorker()
+				state.workerExitDiagnostic = null;
+				state.workerElapsed = 0;
+				state.workerContextPct = 0;
+				state.workerLastTool = "";
+				state.workerRetryActive = false;
+				state.workerRetryCount = 0;
+				state.workerLastRetryError = "";
+				// Note: workerToolCount, workerInputTokens, workerOutputTokens,
+				// workerCacheReadTokens, workerCacheWriteTokens, workerCostUsd
+				// are intentionally NOT reset — they persist across iterations.
+				writeLaneState(state);
+			}
+
 			await runWorker(remainingSteps, ctx);
 
 			// Write context % snapshot at iteration boundary (TP-094)
@@ -3262,7 +3349,10 @@ export default function (pi: ExtensionAPI) {
 		state.workerElapsed = 0;
 		state.workerContextPct = 0;
 		state.workerLastTool = "";
-		state.workerToolCount = 0;
+		// TP-095: Don't reset workerToolCount — accumulate across iterations (#334).
+		// Previous behavior zeroed the counter on each iteration, losing totals
+		// when a worker crashed and restarted. Token/cost counters already
+		// accumulate via += in onTelemetry and were never reset here.
 		state.workerRetryActive = false;
 		state.workerRetryCount = 0;
 		state.workerLastRetryError = "";

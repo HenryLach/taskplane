@@ -594,9 +594,26 @@ export function buildTmuxSpawnArgs(
 		piCommand = `${envParts} pi --no-session -e ${shellQuote(taskRunnerExtPath)}`;
 	}
 
-	// NOTE: Do not redirect lane output here. Shell redirection has proven
-	// fragile across Windows + tmux environments and can prevent session spawn.
-	// Diagnostics use tmux pane capture + STATUS tail in pollUntilTaskComplete().
+	// TP-095: Capture lane session stderr to a log file (#339).
+	// When the lane session (rpc-wrapper → pi → task-runner) dies, stderr is
+	// lost to tmux scrollback. Redirect stderr to a persistent log file
+	// co-located with telemetry so the supervisor can diagnose lane deaths.
+	//
+	// We append stderr to a file using `2>>`. This captures all stderr output
+	// from rpc-wrapper (which includes pi stderr forwarding, progress display,
+	// and crash diagnostics). The tmux pane loses live stderr visibility, but
+	// the dashboard provides live monitoring and the file preserves everything
+	// for post-mortem analysis.
+	//
+	// Appended to piCommand (not the tmux shell wrapper) to target the
+	// node/rpc-wrapper process specifically. This avoids the fragile shell
+	// redirection issues that previously caused spawn failures on Windows.
+	if (sidecarPath) {
+		// Derive stderr log path from sidecar path:
+		// .pi/telemetry/{basename}.jsonl → .pi/telemetry/{basename}-stderr.log
+		const stderrLogPath = sidecarPath.replace(/\.jsonl$/, "-stderr.log");
+		piCommand = `${piCommand} 2>> ${shellQuote(stderrLogPath)}`;
+	}
 
 	const tmuxWorktreePath = toTmuxPath(worktreePath);
 	const wrappedCommand = `cd ${shellQuote(tmuxWorktreePath)} && ${piCommand}`;
