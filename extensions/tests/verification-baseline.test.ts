@@ -13,7 +13,7 @@
  * (consistent with TP-031 merge-failure-phase testing approach) to ensure
  * the gating logic is structurally correct.
  *
- * Run: npx vitest run tests/verification-baseline.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/verification-baseline.test.ts
  */
 
 import { describe, it } from "node:test";

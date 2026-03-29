@@ -225,7 +225,7 @@ export interface TaskArea {
 export interface TaskRunnerConfig {
 	task_areas: Record<string, TaskArea>;
 	reference_docs: Record<string, string>;
-	/** Named testing/verification commands (e.g., { test: "npx vitest run" }). Used for baseline fingerprinting (TP-032). */
+	/** Named testing/verification commands (e.g., { test: "node --test tests/*.test.ts" }). Used for baseline fingerprinting (TP-032). */
 	testing_commands?: Record<string, string>;
 	/**
 	 * Model fallback behavior when a configured model becomes unavailable mid-batch.

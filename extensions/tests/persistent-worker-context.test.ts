@@ -11,7 +11,7 @@
  *   7.x — parseStatusMd correctness for the new model
  *   8.x — Worker prompt construction: multi-step format
  *
- * Run: npx vitest run tests/persistent-worker-context.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/persistent-worker-context.test.ts
  */
 
 import { describe, it } from "node:test";

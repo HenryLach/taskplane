@@ -8,7 +8,7 @@
  *   4.x  — Artifact staging allowlist: accepts task-owned files only
  *   5.x  — Artifact staging rejection: outside-task paths, repo-escape, no-op on zero candidates
  *
- * Run: npx vitest run tests/status-reconciliation.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/status-reconciliation.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

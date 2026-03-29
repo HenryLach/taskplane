@@ -1,8 +1,11 @@
 # Migrate from Vitest to Node.js Native Test Runner — Specification
 
-**Status:** Draft v1  
+**Status:** Implemented (historical migration record)  
 **Created:** 2026-03-26  
 **Author:** Supervisor session
+
+> **Historical note:** This document describes the completed migration away from
+> Vitest. Taskplane now uses Node.js native `node:test` for active test runs.
 
 ---
 

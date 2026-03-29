@@ -5,7 +5,7 @@
  *   1. Branch preservation behavior (pure functions + mocked git)
  *   2. State contract (serialization, validation, round-trip)
  *
- * Run: npx vitest run extensions/tests/partial-progress.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/partial-progress.test.ts
  */
 
 import { describe, it, afterEach } from "node:test";

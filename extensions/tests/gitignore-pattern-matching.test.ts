@@ -11,7 +11,7 @@
  *   3.x — Exact file patterns
  *   4.x — Full pattern set against realistic tracked files
  *
- * Run: npx vitest run tests/gitignore-pattern-matching.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/gitignore-pattern-matching.test.ts
  */
 
 // ─── Mirror of patternToRegex from bin/taskplane.mjs ──────────────────────

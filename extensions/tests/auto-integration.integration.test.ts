@@ -12,7 +12,7 @@
  *   16.x — Batch summary generation: collectBatchSummaryData, formatBatchSummary,
  *           generateBatchSummary, presentBatchSummary, readTier0EventsForBatch
  *
- * Run: npx vitest run tests/auto-integration.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/auto-integration.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

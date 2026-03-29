@@ -27,9 +27,14 @@
  *   6. Truncate to 512 chars (bound fingerprint size)
  *
  * **Fallback for non-JSON output:**
- *   If vitest JSON parsing fails (truncated, missing, non-JSON), produce a
- *   single fingerprint with kind: "command_error" and the first 512 chars
+ *   If legacy Vitest JSON parsing fails (truncated, missing, non-JSON), produce
+ *   a single fingerprint with kind: "command_error" and the first 512 chars
  *   of stderr (or stdout) as messageNorm.
+ *
+ * **Compatibility note:**
+ *   Taskplane's default tests use Node.js native `node:test`. The Vitest parser
+ *   in this module is retained only for backward compatibility when projects
+ *   provide custom `testing.commands` that still emit Vitest JSON.
  *
  * @module orch/verification
  */
@@ -300,20 +305,20 @@ function classifyFailureKind(message: string): TestFingerprint["kind"] {
 }
 
 /**
- * Parse vitest JSON reporter output into test fingerprints.
+ * Parse legacy Vitest JSON reporter output into test fingerprints.
  *
- * Expects the stdout to contain a JSON object matching vitest's JSON reporter format.
+ * Expects stdout to contain a JSON object matching Vitest's JSON reporter format.
  * Only failed tests produce fingerprints (passed tests are irrelevant for baseline diffing).
  *
  * If JSON parsing fails or the structure is unexpected, returns null to signal
  * that the caller should use fallback fingerprinting.
  *
  * @param commandId - The command that produced this output
- * @param stdout    - Raw stdout from the vitest command
+ * @param stdout    - Raw stdout from the Vitest command (legacy compatibility path)
  * @returns Array of fingerprints for failed tests, or null if parsing fails
  */
 export function parseVitestOutput(commandId: string, stdout: string): TestFingerprint[] | null {
-	// Try to extract JSON from stdout (vitest may prepend/append non-JSON lines)
+	// Try to extract JSON from stdout (Vitest may prepend/append non-JSON lines)
 	let json: VitestJsonResult;
 	try {
 		// First attempt: parse the whole stdout as JSON
@@ -363,7 +368,7 @@ export function parseVitestOutput(commandId: string, stdout: string): TestFinger
 		}
 
 		// Suite-level failures: testResults[].status === "failed" with no assertion-level details.
-		// This covers setup/import/runtime-at-file-load errors where vitest marks the file as
+		// This covers setup/import/runtime-at-file-load errors where Vitest marks the file as
 		// failed but produces no assertionResults (or only non-failed ones).
 		if (testFile.status === "failed") {
 			const hasFailedAssertions = hasAssertions && assertions!.some(a => a.status === "failed");
@@ -388,7 +393,7 @@ export function parseVitestOutput(commandId: string, stdout: string): TestFinger
  * Parse test output into normalized fingerprints.
  *
  * Strategy:
- * 1. Try vitest JSON adapter
+ * 1. Try legacy Vitest JSON adapter
  * 2. If parsing fails: produce a fallback command_error fingerprint
  *
  * The adapter pattern is extensible — future parsers for jest, pytest, etc.
@@ -416,7 +421,7 @@ export function parseTestOutput(commandResult: CommandResult): TestFingerprint[]
 		return [];
 	}
 
-	// Try vitest JSON adapter
+	// Try legacy Vitest JSON adapter
 	const vitestFingerprints = parseVitestOutput(commandId, stdout);
 	if (vitestFingerprints !== null && vitestFingerprints.length > 0) {
 		return vitestFingerprints;

@@ -37,6 +37,8 @@ export interface PostIntegrateCleanupResult {
 	promptFilesDeleted: number;
 	/** Number of mailbox batch directories deleted (0 or 1) */
 	mailboxDirsDeleted: number;
+	/** Number of context-snapshot batch directories deleted (0 or 1) */
+	snapshotDirsDeleted: number;
 	/** Warnings from non-fatal cleanup failures */
 	warnings: string[];
 }
@@ -61,6 +63,7 @@ export function cleanupPostIntegrate(stateRoot: string, batchId: string): PostIn
 		mergeFilesDeleted: 0,
 		promptFilesDeleted: 0,
 		mailboxDirsDeleted: 0,
+		snapshotDirsDeleted: 0,
 		warnings: [],
 	};
 
@@ -134,6 +137,17 @@ export function cleanupPostIntegrate(stateRoot: string, batchId: string): PostIn
 		}
 	}
 
+	// ── Context snapshots directory (.pi/context-snapshots/{batchId}/) ──────
+	const snapshotBatchDir = join(stateRoot, ".pi", "context-snapshots", batchId);
+	if (existsSync(snapshotBatchDir)) {
+		try {
+			rmSync(snapshotBatchDir, { recursive: true, force: true });
+			result.snapshotDirsDeleted = 1;
+		} catch (err: unknown) {
+			result.warnings.push(`Failed to delete context-snapshots directory ${snapshotBatchDir}: ${(err as Error).message}`);
+		}
+	}
+
 	return result;
 }
 
@@ -142,7 +156,7 @@ export function cleanupPostIntegrate(stateRoot: string, batchId: string): PostIn
  */
 export function formatPostIntegrateCleanup(result: PostIntegrateCleanupResult): string {
 	const parts: string[] = [];
-	const totalDeleted = result.telemetryFilesDeleted + result.mergeFilesDeleted + result.promptFilesDeleted + result.mailboxDirsDeleted;
+	const totalDeleted = result.telemetryFilesDeleted + result.mergeFilesDeleted + result.promptFilesDeleted + result.mailboxDirsDeleted + result.snapshotDirsDeleted;
 
 	if (totalDeleted > 0) {
 		const segments: string[] = [];
@@ -150,6 +164,7 @@ export function formatPostIntegrateCleanup(result: PostIntegrateCleanupResult): 
 		if (result.mergeFilesDeleted > 0) segments.push(`${result.mergeFilesDeleted} merge`);
 		if (result.promptFilesDeleted > 0) segments.push(`${result.promptFilesDeleted} prompt`);
 		if (result.mailboxDirsDeleted > 0) segments.push(`${result.mailboxDirsDeleted} mailbox`);
+		if (result.snapshotDirsDeleted > 0) segments.push(`${result.snapshotDirsDeleted} snapshots`);
 		parts.push(`🧹 Cleaned up ${totalDeleted} artifact file(s): ${segments.join(", ")}`);
 	}
 
@@ -274,13 +289,13 @@ export function sweepStaleArtifacts(
 		(name.startsWith("merge-request-") && name.endsWith(".txt")),
 	);
 
-	// Sweep stale mailbox batch directories (.pi/mailbox/{batchId}/)
-	const mailboxBase = join(stateRoot, ".pi", MAILBOX_DIR_NAME);
-	if (existsSync(mailboxBase)) {
+	// Sweep stale batch directories under a parent (mailbox, context-snapshots)
+	const sweepBatchDirs = (parentDir: string, label: string): void => {
+		if (!existsSync(parentDir)) return;
 		try {
-			const entries = readdirSync(mailboxBase);
+			const entries = readdirSync(parentDir);
 			for (const entry of entries) {
-				const entryPath = join(mailboxBase, entry);
+				const entryPath = join(parentDir, entry);
 				try {
 					const stat = statSync(entryPath);
 					if (!stat.isDirectory()) continue;
@@ -289,13 +304,19 @@ export function sweepStaleArtifacts(
 						result.staleDirsDeleted++;
 					}
 				} catch (err: unknown) {
-					result.warnings.push(`Failed to process mailbox dir ${entry}: ${(err as Error).message}`);
+					result.warnings.push(`Failed to process ${label} dir ${entry}: ${(err as Error).message}`);
 				}
 			}
 		} catch (err: unknown) {
-			result.warnings.push(`Failed to read mailbox directory ${mailboxBase}: ${(err as Error).message}`);
+			result.warnings.push(`Failed to read ${label} directory ${parentDir}: ${(err as Error).message}`);
 		}
-	}
+	};
+
+	// Sweep stale mailbox batch directories (.pi/mailbox/{batchId}/)
+	sweepBatchDirs(join(stateRoot, ".pi", MAILBOX_DIR_NAME), "mailbox");
+
+	// Sweep stale context-snapshot batch directories (.pi/context-snapshots/{batchId}/)
+	sweepBatchDirs(join(stateRoot, ".pi", "context-snapshots"), "context-snapshots");
 
 	return result;
 }

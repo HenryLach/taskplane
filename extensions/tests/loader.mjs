@@ -2,7 +2,7 @@
  * Custom Node.js module-resolution hook that redirects the two pi-package
  * aliases to their local mock implementations.
  *
- * Replaces the `resolve.alias` entries in vitest.config.ts.
+ * Replaces the former `resolve.alias` entries from the retired Vitest config.
  *
  * Usage (register style, Node.js ≥ v20.6):
  *   node --experimental-strip-types --no-warnings \

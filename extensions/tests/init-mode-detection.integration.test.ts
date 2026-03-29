@@ -13,7 +13,7 @@
  *   4.x — detectSpawnMode() shape contract
  *   5.x — CLI dry-run integration (preset-driven scenario verification)
  *
- * Run: npx vitest run tests/init-mode-detection.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/init-mode-detection.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

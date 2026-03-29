@@ -12,7 +12,7 @@
  *   CR.5 — Engine-level multi-repo terminal cleanup (behavioral verification)
  *   CR.7 — R006 regression: cleanup gate fires only on true stale state, not reusable worktrees
  *
- * Run: npx vitest run extensions/tests/cleanup-resilience.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/cleanup-resilience.test.ts
  */
 
 import { execSync, spawnSync } from "child_process";

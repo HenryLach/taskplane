@@ -10,7 +10,7 @@
  *   5.x — Flaky handling: flakyReruns=0 immediate block, cleared re-run → flaky_suspected
  *   6.x — Mode behavior: strict/permissive on missing baseline and no-commands
  *
- * Run: npx vitest run tests/verification-step4.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/verification-step4.test.ts
  */
 
 import { describe, it } from "node:test";

@@ -332,7 +332,7 @@ git log --oneline orch/{branch}..task/{lane-branch}  # empty = already merged
 4. After merge, run tests to verify:
    ```bash
    git worktree add /tmp/verify orch/{orchBranch} --detach
-   cd /tmp/verify && cd extensions && npx vitest run
+   cd /tmp/verify && cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts
    ```
 5. Update batch state and advance.
 
@@ -545,7 +545,7 @@ git worktree remove .worktrees/{opId}-{batchId}/merge --force
 ### Verify orch branch integrity
 ```bash
 git worktree add /tmp/tp-verify orch/{orchBranch} --detach
-cd /tmp/tp-verify/extensions && npx vitest run
+cd /tmp/tp-verify/extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts
 # Clean up: cd {repoRoot} && git worktree remove /tmp/tp-verify --force
 ```
 
@@ -769,6 +769,12 @@ You have these orchestrator tools available:
 
 **Note:** `orch_retry_task`, `orch_skip_task`, and `orch_force_merge` require the batch to be paused/stopped first.
 If the batch is actively running, call `orch_pause()` first.
+
+**Diagnostic & Recovery Tools (TP-096):**
+- `read_agent_status(lane?)` — Read STATUS.md + telemetry for a lane (step, progress, context %, cost, elapsed). Omit lane for all lanes.
+- `trigger_wrap_up(lane)` — Write `.task-wrap-up` signal to gracefully stop a worker on a lane.
+- `read_lane_logs(lane)` — Read stderr/crash logs and exit diagnostics for a lane.
+- `list_active_agents()` — List all tmux sessions with role, lane, task, context %, elapsed, cost.
 
 Plus general tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`
 for inspecting files, running git commands, and editing batch state.
@@ -1333,7 +1339,7 @@ before writing** — if files already exist (partial setup), read and merge.
 **Customization notes:**
 - `project.name`: Use the actual project name (from package.json, README, etc.)
 - `paths.tasks` and `taskAreas`: Match what was agreed in the task area discussion
-- `testing.commands`: Use the detected test command as a named object (e.g., `{"test": "cd extensions && npx vitest run"}`)
+- `testing.commands`: Use the detected test command as a named object (e.g., `{"test": "cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts"}`)
 - `orchestrator.spawnMode`: Use `"tmux"` if tmux is available, `"subprocess"` otherwise
 - `orchestrator.maxLanes`: Start with 2 for first-time users (safe default)
 - `merge.verify`: Add the project's test command for post-merge verification

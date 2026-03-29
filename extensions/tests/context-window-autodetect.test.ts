@@ -6,7 +6,7 @@
  *   2.x — New warn_percent and kill_percent defaults (85/95)
  *   3.x — Config defaults for workerContextWindow (0 = auto-detect)
  *
- * Run: npx vitest run tests/context-window-autodetect.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/context-window-autodetect.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

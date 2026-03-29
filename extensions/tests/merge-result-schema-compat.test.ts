@@ -79,7 +79,11 @@ describe("merge result parser compatibility", () => {
 				source: "task/lane-3",
 				target: "orch/op",
 				mergeCommit: "ghi789",
-				verification: { exitCode: 0, command: "npx vitest run", summary: "all passing" },
+				verification: {
+					exitCode: 0,
+					command: "node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts",
+					summary: "all passing",
+				},
 			});
 
 			const parsed = parseMergeResult(path);
@@ -99,7 +103,7 @@ describe("merge result parser compatibility", () => {
 				status: "SUCCESS",
 				source_branch: "task/lane-4",
 				verification_passed: true,
-				verification_commands: ["cd extensions && npx vitest run"],
+				verification_commands: ["cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts"],
 				verification_output: "ok",
 			});
 
@@ -139,7 +143,7 @@ describe("merge request schema guidance", () => {
 			} as any,
 			"orch/op",
 			1,
-			["cd extensions && npx vitest run"],
+			["cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts"],
 			"/tmp/result.json",
 		);
 

@@ -4,6 +4,9 @@
 > **Created:** 2026-03-19  
 > **Supersedes:** `resilience-architecture.md`, `lane-agent-design.md`, `tmux-telemetry-gap.md`  
 > **Related:** [polyrepo-workspace-implementation.md](polyrepo-workspace-implementation.md), [architecture](../../../explanation/architecture.md)
+>
+> **Historical note (testing):** Any Vitest command examples in this archived spec
+> are legacy context only. Taskplane uses Node.js native `node:test` for current test execution.
 
 ---
 

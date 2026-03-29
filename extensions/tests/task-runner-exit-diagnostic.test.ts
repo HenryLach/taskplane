@@ -9,7 +9,7 @@
  *   2 — _buildExitDiagnostic (kill-reason mapping, missing summary)
  *   3 — Persistence validation (exitDiagnostic: present, absent, invalid shapes)
  *
- * Run: npx vitest run extensions/tests/task-runner-exit-diagnostic.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/task-runner-exit-diagnostic.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

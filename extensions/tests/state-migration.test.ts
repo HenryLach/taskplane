@@ -5,7 +5,7 @@
  * strict v3 validation, unknown-field roundtrip preservation,
  * corrupt-state handling, and version-mismatch error guidance.
  *
- * Run: npx vitest run extensions/tests/state-migration.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/state-migration.test.ts
  */
 
 import { describe, it } from "node:test";

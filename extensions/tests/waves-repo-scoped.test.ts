@@ -11,7 +11,7 @@
  *   4. allocateLanes() repo mode regression — unchanged behavior
  *   5. generateLaneId() / generateTmuxSessionName() — repo-aware naming
  *
- * Run: npx vitest run extensions/tests/waves-repo-scoped.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/waves-repo-scoped.test.ts
  */
 
 // Import the functions under test directly from waves.ts

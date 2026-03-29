@@ -77,14 +77,17 @@ Both should print usage information.
 
 ## Running Tests
 
-Tests use [Vitest](https://vitest.dev/) and live in `extensions/tests/`.
+Tests use Node.js native test runner (`node:test`) and live in `extensions/tests/`.
 
 ```bash
 cd extensions
-npx vitest run          # Run all tests once
-npx vitest              # Run in watch mode
-npx vitest run <name>   # Run a specific test file
+node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts
+# Run a specific test file:
+node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/<name>.test.ts
 ```
+
+> Historical documents and old task artifacts may still mention Vitest commands.
+> Those references are archival only; do not use them for current development.
 
 Test files:
 
@@ -152,7 +155,7 @@ taskplane/
 ### Development Workflow
 
 1. Make your changes
-2. Run the tests: `cd extensions && npx vitest run`
+2. Run the tests: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
 3. Test manually by loading the extensions in pi: `just orch`
 4. Commit with clear messages (see conventions below)
 
