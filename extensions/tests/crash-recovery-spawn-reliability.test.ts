@@ -377,7 +377,38 @@ describe("lane session stderr capture (#339, source extraction)", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════════
-// 5. Quality gate fix agent does NOT accumulate tools (#334 regression)
+// 5. Context snapshot schema + portable spawn delay
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("context snapshots + portable spawn delay", () => {
+	const src = readTaskRunnerSource();
+
+	it("includes contextWindow in writeContextSnapshot payload", () => {
+		const snapshotRegion = extractFunctionRegion(src, "writeContextSnapshot");
+		expect(snapshotRegion).toContain("contextWindow");
+	});
+
+	it("passes resolved contextWindow at snapshot call site", () => {
+		const executeTaskRegion = (() => {
+			const startMarker = "async function executeTask(";
+			const idx = src.indexOf(startMarker);
+			if (idx < 0) throw new Error("executeTask not found");
+			return src.slice(idx, idx + 9000);
+		})();
+		expect(executeTaskRegion).toContain("snapshotContextWindow");
+		expect(executeTaskRegion).toContain("writeContextSnapshot(state, snapshotContextWindow)");
+	});
+
+	it("uses sleepSyncMs helper instead of shelling out to sleep", () => {
+		const tmuxBody = extractFunctionRegion(src, "spawnAgentTmux");
+		expect(src).toContain("function sleepSyncMs(");
+		expect(tmuxBody).toContain("sleepSyncMs(");
+		expect(tmuxBody).not.toContain("spawnSync(\"sleep\"");
+	});
+});
+
+// ═══════════════════════════════════════════════════════════════════════
+// 6. Quality gate fix agent does NOT accumulate tools (#334 regression)
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("quality gate fix agent tool count isolation", () => {

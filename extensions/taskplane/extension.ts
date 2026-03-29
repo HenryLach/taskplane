@@ -2,8 +2,8 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { Type } from "@mariozechner/pi-ai";
 
 import { execSync, execFileSync } from "child_process";
-import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync, readFileSync } from "fs";
-import { join, dirname, relative } from "path";
+import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { fork, type ChildProcess } from "child_process";
 
@@ -17,7 +17,7 @@ import { computeWaveAssignments } from "./waves.ts";
 import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
 import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions, parseOrchSessionNames } from "./persistence.ts";
 import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, formatPreflightResults, runPreflight } from "./worktree.ts";
-import { computeTransitiveDependents, executeLane } from "./execution.ts";
+import { computeTransitiveDependents, executeLane, resolveCanonicalTaskPaths } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { formatOrchSessions, listOrchSessions } from "./sessions.ts";
@@ -3697,7 +3697,7 @@ export default function (pi: ExtensionAPI) {
 	 * @since TP-089
 	 */
 	function doSendAgentMessage(to: string, content: string, messageType: string, ctx: ExtensionContext): string {
-		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd;
+		const stateRoot = resolveToolStateRoot(ctx);
 
 		// Validate message type (outbound allowlist: steer, query, abort, info)
 		const validOutboundTypes = new Set(["steer", "query", "abort", "info"]);
@@ -3753,6 +3753,18 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	function resolveToolStateRoot(context: ExtensionContext): string {
+		return execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? context.cwd;
+	}
+
+	function resolveLaneRepoRootForTools(laneRec: PersistedBatchState["lanes"][number], stateRoot: string): string {
+		if (execCtx?.workspaceConfig && laneRec.repoId) {
+			const repo = execCtx.workspaceConfig.repos[laneRec.repoId];
+			if (repo?.path) return repo.path;
+		}
+		return execCtx?.repoRoot ?? stateRoot;
+	}
+
 	// ── TP-096: Supervisor Recovery Tools ─────────────────────────────────
 
 	pi.registerTool({
@@ -3790,8 +3802,8 @@ export default function (pi: ExtensionAPI) {
 	 * Read agent status from STATUS.md and lane-state sidecar.
 	 * @since TP-096
 	 */
-	function doReadAgentStatus(lane: number | undefined, _ctx: ExtensionContext): string {
-		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? _ctx.cwd;
+	function doReadAgentStatus(lane: number | undefined, ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
 
 		// Load batch state
 		const state = loadBatchState(stateRoot);
@@ -3822,16 +3834,20 @@ export default function (pi: ExtensionAPI) {
 			if (currentTask) {
 				lines.push(`**Task:** ${currentTask.taskId} (${currentTask.status})`);
 
-				// Try to read STATUS.md from worktree
+				// Read STATUS.md from canonical task paths (workspace-safe, cross-repo-safe)
 				try {
 					const taskFolderAbs = currentTask.taskFolder;
 					const worktreePath = laneRec.worktreePath;
 					if (taskFolderAbs && worktreePath) {
-						// Make task folder relative to repo root, then join with worktree
-						const rel = relative(stateRoot, taskFolderAbs);
-						const wtStatusPath = join(worktreePath, rel, "STATUS.md");
-						if (existsSync(wtStatusPath)) {
-							const content = readFileSync(wtStatusPath, "utf-8");
+						const repoRootForLane = resolveLaneRepoRootForTools(laneRec, stateRoot);
+						const resolved = resolveCanonicalTaskPaths(
+							taskFolderAbs,
+							worktreePath,
+							repoRootForLane,
+							!!execCtx?.workspaceConfig,
+						);
+						if (existsSync(resolved.statusPath)) {
+							const content = readFileSync(resolved.statusPath, "utf-8");
 							const stepMatch = content.match(/\*\*Current Step:\*\*\s*(.+)/);
 							const statusMatch = content.match(/\*\*Status:\*\*\s*(.+)/);
 							const iterMatch = content.match(/\*\*Iteration:\*\*\s*(\d+)/);
@@ -3842,16 +3858,16 @@ export default function (pi: ExtensionAPI) {
 
 							if (stepMatch) lines.push(`**Step:** ${stepMatch[1].trim()}`);
 							if (statusMatch) lines.push(`**Step Status:** ${statusMatch[1].trim()}`);
-							if (total > 0) lines.push(`**Progress:** ${checked}/${total} (${Math.round(checked / total * 100)}%)`);
+							if (total > 0) lines.push(`**Progress:** ${checked}/${total} (${Math.round((checked / total) * 100)}%)`);
 							if (iterMatch) lines.push(`**Iteration:** ${iterMatch[1]}`);
-							if (reviewMatch && parseInt(reviewMatch[1]) > 0) lines.push(`**Reviews:** ${reviewMatch[1]}`);
+							if (reviewMatch && Number.parseInt(reviewMatch[1], 10) > 0) lines.push(`**Reviews:** ${reviewMatch[1]}`);
 						}
 					}
 				} catch {
 					// STATUS.md not available in worktree — degrade gracefully
 				}
 			} else {
-				lines.push(`**Task:** none assigned`);
+				lines.push("**Task:** none assigned");
 			}
 
 			// Read lane-state sidecar
@@ -3911,8 +3927,8 @@ export default function (pi: ExtensionAPI) {
 	 * Write .task-wrap-up signal file for a lane's current task.
 	 * @since TP-096
 	 */
-	function doTriggerWrapUp(lane: number, _ctx: ExtensionContext): string {
-		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? _ctx.cwd;
+	function doTriggerWrapUp(lane: number, ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
 
 		const state = loadBatchState(stateRoot);
 		if (!state) return "❌ No batch state found.";
@@ -3924,16 +3940,21 @@ export default function (pi: ExtensionAPI) {
 		const runningTask = state.tasks.find(t => t.laneNumber === lane && t.status === "running");
 		if (!runningTask) return `❌ No running task on lane ${lane}.`;
 
-		// Resolve task folder in the worktree
+		// Resolve task folder in the worktree using canonical path resolver
 		const taskFolderAbs = runningTask.taskFolder;
 		const worktreePath = laneRec.worktreePath;
 		if (!taskFolderAbs || !worktreePath) {
 			return `❌ Cannot resolve task folder for lane ${lane}.`;
 		}
 
-		// Make task folder relative to repo root, then join with worktree
-		const rel = relative(stateRoot, taskFolderAbs);
-		const wrapUpPath = join(worktreePath, rel, ".task-wrap-up");
+		const repoRootForLane = resolveLaneRepoRootForTools(laneRec, stateRoot);
+		const resolved = resolveCanonicalTaskPaths(
+			taskFolderAbs,
+			worktreePath,
+			repoRootForLane,
+			!!execCtx?.workspaceConfig,
+		);
+		const wrapUpPath = join(resolved.taskFolderResolved, ".task-wrap-up");
 
 		try {
 			const dir = dirname(wrapUpPath);
@@ -3979,8 +4000,8 @@ export default function (pi: ExtensionAPI) {
 	 * Read stderr/crash logs for a lane.
 	 * @since TP-096
 	 */
-	function doReadLaneLogs(lane: number, _ctx: ExtensionContext): string {
-		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? _ctx.cwd;
+	function doReadLaneLogs(lane: number, ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
 
 		const state = loadBatchState(stateRoot);
 		if (!state) return "❌ No batch state found.";
@@ -3988,18 +4009,50 @@ export default function (pi: ExtensionAPI) {
 		const laneRec = state.lanes.find(l => l.laneNumber === lane);
 		if (!laneRec) return `❌ Lane ${lane} not found in batch ${state.batchId}.`;
 
-		// Look for stderr log: .pi/telemetry/{batchId}-lane-{N}-stderr.log
 		const telemetryDir = join(stateRoot, ".pi", "telemetry");
-		const stderrFile = `${state.batchId}-lane-${lane}-stderr.log`;
-		const stderrPath = join(telemetryDir, stderrFile);
+		let stderrFile: string | null = null;
+
+		// Discover stderr logs by actual telemetry naming:
+		// {opId}-{batchId}-{repoId}[-{taskId}]-lane-{N}-worker-stderr.log
+		try {
+			if (existsSync(telemetryDir)) {
+				const allStderr = readdirSync(telemetryDir)
+					.filter(f => f.endsWith("-stderr.log"))
+					.filter(f => f.includes(`-lane-${lane}-worker`));
+				const batchScoped = allStderr.filter(f => f.includes(`-${state.batchId}-`));
+				const candidates = (batchScoped.length > 0 ? batchScoped : allStderr)
+					.map(name => {
+						const absPath = join(telemetryDir, name);
+						let mtime = 0;
+						try { mtime = statSync(absPath).mtimeMs; } catch {}
+						return { name, mtime };
+					})
+					.sort((a, b) => b.mtime - a.mtime);
+				stderrFile = candidates[0]?.name ?? null;
+			}
+		} catch {
+			// Directory not readable — handled below
+		}
+
+		// Legacy fallback from older conventions
+		if (!stderrFile) {
+			const legacy = `${state.batchId}-lane-${lane}-stderr.log`;
+			if (existsSync(join(telemetryDir, legacy))) {
+				stderrFile = legacy;
+			}
+		}
+
+		const stderrPath = stderrFile ? join(telemetryDir, stderrFile) : null;
 
 		// Also try to find worker-exit JSON files for crash diagnostics
 		const exitFiles: string[] = [];
 		try {
 			if (existsSync(telemetryDir)) {
 				const files = readdirSync(telemetryDir)
-					.filter(f => f.includes(`lane-${lane}-worker-exit`) && f.endsWith(".json"));
-				exitFiles.push(...files);
+					.filter(f => f.endsWith("-worker-exit.json"))
+					.filter(f => f.includes(`-lane-${lane}-`));
+				const batchScoped = files.filter(f => f.includes(`-${state.batchId}-`));
+				exitFiles.push(...(batchScoped.length > 0 ? batchScoped : files));
 			}
 		} catch { /* directory not readable */ }
 
@@ -4007,38 +4060,45 @@ export default function (pi: ExtensionAPI) {
 		lines.push(`📜 **Lane ${lane} Logs** — batch ${state.batchId}\n`);
 
 		// Read stderr log
-		if (existsSync(stderrPath)) {
+		if (stderrPath && existsSync(stderrPath)) {
 			try {
 				const content = readFileSync(stderrPath, "utf-8");
 				const truncated = content.length > 5000
 					? "...\n" + content.slice(-5000)
 					: content;
-				lines.push(`### Stderr Log`);
+				lines.push("### Stderr Log");
 				lines.push("```");
 				lines.push(truncated.trim());
 				lines.push("```");
 				lines.push("");
 			} catch {
-				lines.push(`Stderr log found but unreadable.`);
+				lines.push("Stderr log found but unreadable.");
 			}
 		} else {
-			lines.push(`No stderr log found at \`${stderrFile}\`.`);
+			lines.push(`No stderr log found for lane ${lane} (pattern: \`*-lane-${lane}-worker-stderr.log\`).`);
 		}
 
 		// Read most recent exit diagnostic
 		if (exitFiles.length > 0) {
-			// Sort to get most recent
-			exitFiles.sort();
-			const latestExit = exitFiles[exitFiles.length - 1];
-			try {
-				const exitData = JSON.parse(readFileSync(join(telemetryDir, latestExit), "utf-8"));
-				lines.push(`### Latest Exit Diagnostic`);
-				if (exitData.classification) lines.push(`**Classification:** ${exitData.classification}`);
-				if (exitData.exitCode != null) lines.push(`**Exit Code:** ${exitData.exitCode}`);
-				if (exitData.errorMessage) lines.push(`**Error:** ${exitData.errorMessage}`);
-				if (exitData.durationSec) lines.push(`**Duration:** ${exitData.durationSec}s`);
-				lines.push("");
-			} catch { /* skip malformed exit file */ }
+			const latestExit = exitFiles
+				.map(name => {
+					const absPath = join(telemetryDir, name);
+					let mtime = 0;
+					try { mtime = statSync(absPath).mtimeMs; } catch {}
+					return { name, mtime };
+				})
+				.sort((a, b) => b.mtime - a.mtime)[0]?.name;
+			if (latestExit) {
+				try {
+					const exitData = JSON.parse(readFileSync(join(telemetryDir, latestExit), "utf-8"));
+					lines.push("### Latest Exit Diagnostic");
+					if (exitData.classification) lines.push(`**Classification:** ${exitData.classification}`);
+					if (exitData.exitCode != null) lines.push(`**Exit Code:** ${exitData.exitCode}`);
+					if (exitData.errorMessage) lines.push(`**Error:** ${exitData.errorMessage}`);
+					if (exitData.durationSec) lines.push(`**Duration:** ${exitData.durationSec}s`);
+					lines.push("");
+				} catch { /* skip malformed exit file */ }
+			}
 		}
 
 		return lines.join("\n");
@@ -4072,8 +4132,8 @@ export default function (pi: ExtensionAPI) {
 	 * List all active tmux sessions with agent metadata.
 	 * @since TP-096
 	 */
-	function doListActiveAgents(_ctx: ExtensionContext): string {
-		const stateRoot = execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? _ctx.cwd;
+	function doListActiveAgents(ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
 
 		// Get tmux sessions
 		let sessions: string[] = [];
