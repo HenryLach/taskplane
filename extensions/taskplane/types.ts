@@ -3357,3 +3357,97 @@ export function createRepoModeContext(
 	};
 }
 
+
+// ── Agent Mailbox Types (TP-089) ─────────────────────────────────────
+
+/**
+ * Mailbox directory name under .pi/.
+ * @since TP-089
+ */
+export const MAILBOX_DIR_NAME = "mailbox";
+
+/**
+ * Maximum content size in UTF-8 bytes.
+ * Steering messages should be concise directives; larger context should be
+ * written to a separate file and referenced by path.
+ * @since TP-089
+ */
+export const MAILBOX_MAX_CONTENT_BYTES = 4096;
+
+/**
+ * Message types for the agent mailbox system.
+ *
+ * | Type       | Direction           | Purpose                                    |
+ * |------------|---------------------|--------------------------------------------|
+ * | `steer`    | supervisor → agent  | Course correction. Agent must follow.       |
+ * | `query`    | supervisor → agent  | Request for status/info. Agent replies.     |
+ * | `abort`    | supervisor → agent  | Graceful stop. Agent wraps up and exits.    |
+ * | `info`     | supervisor → agent  | FYI context. No action required.            |
+ * | `reply`    | agent → supervisor  | Response to query or steer acknowledgment.  |
+ * | `escalate` | agent → supervisor  | Agent-initiated: blocked or needs guidance. |
+ *
+ * @since TP-089
+ */
+export type MailboxMessageType = "steer" | "query" | "abort" | "info" | "reply" | "escalate";
+
+/**
+ * Set of valid mailbox message types for runtime validation.
+ * @since TP-089
+ */
+export const MAILBOX_MESSAGE_TYPES: ReadonlySet<string> = new Set<MailboxMessageType>([
+	"steer", "query", "abort", "info", "reply", "escalate",
+]);
+
+/**
+ * Message format for the file-based agent mailbox.
+ *
+ * Messages are written as JSON files in batch-scoped, session-scoped
+ * directories. The rpc-wrapper checks the inbox on every `message_end`
+ * event and injects pending messages into the agent's LLM context via
+ * pi's `steer` RPC command.
+ *
+ * @see docs/specifications/taskplane/agent-mailbox-steering.md
+ * @since TP-089
+ */
+export interface MailboxMessage {
+	/** Unique message ID: `{timestamp}-{5char-hex-nonce}` */
+	id: string;
+	/** Batch ID — must match current batch for validation */
+	batchId: string;
+	/** Sender identifier: `"supervisor"` or session name */
+	from: string;
+	/** Target session name or `"_broadcast"` */
+	to: string;
+	/** Epoch milliseconds (Date.now()) */
+	timestamp: number;
+	/** Message type */
+	type: MailboxMessageType;
+	/** Message body (max 4KB UTF-8 bytes) */
+	content: string;
+	/** Whether the sender expects a reply (default: false) */
+	expectsReply?: boolean;
+	/** Reference to a previous message ID for threading (default: null) */
+	replyTo?: string | null;
+}
+
+/**
+ * Input options for writeMailboxMessage.
+ *
+ * The caller provides these fields; the utility generates `id`, `batchId`,
+ * `to`, and `timestamp` from its own arguments.
+ *
+ * @since TP-089
+ */
+export interface WriteMailboxMessageOpts {
+	/** Sender identifier: `"supervisor"` or session name */
+	from: string;
+	/** Message type */
+	type: MailboxMessageType;
+	/** Message body (max 4KB UTF-8 bytes) */
+	content: string;
+	/** Whether the sender expects a reply (default: false) */
+	expectsReply?: boolean;
+	/** Reference to a previous message ID for threading (default: null) */
+	replyTo?: string | null;
+}
+
