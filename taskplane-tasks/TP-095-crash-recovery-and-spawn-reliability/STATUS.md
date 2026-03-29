@@ -1,10 +1,10 @@
 # TP-095: Crash Recovery and Spawn Reliability — Status
 
-**Current Step:** Step 6: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 4
 **Size:** L
 
@@ -57,9 +57,9 @@
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Log discoveries
+- [x] Log discoveries
 
 ---
 
@@ -67,6 +67,7 @@
 
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
+| R002 | code | Step 1 | UNKNOWN | .reviews/R002-code-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -75,6 +76,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Quality gate fix agent has its own workerToolCount=0 reset (separate lifecycle) | Preserved — fix agents are not worker iterations | extensions/task-runner.ts:3963 |
+| Subprocess mode already accumulates tokens via += (no fix needed) | Confirmed by source extraction test | extensions/task-runner.ts:3505+ |
+| extractFunctionRegion captures too much when functions aren't separated by section markers | Test used narrower region extraction | extensions/tests/crash-recovery-spawn-reliability.test.ts |
 
 ---
 
@@ -103,6 +107,12 @@
 | 2026-03-29 15:30 | Task blocked | No progress after 3 iterations |
 | 2026-03-29 15:36 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
 | 2026-03-29 15:39 | Review R001 | plan Step 1: REVISE (fallback) |
+| 2026-03-29 15:44 | Reviewer R002 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 15:47 | Review R002 | code Step 1: UNKNOWN (fallback) |
+| 2026-03-29 15:48 | Step 0 completed | Preflight — read all source files and GitHub issues |
+| 2026-03-29 15:52 | Steps 1-4 completed | Implemented spawn verification, lane-state reset, telemetry accumulation, stderr capture |
+| 2026-03-29 15:55 | Step 5 completed | 34 new tests, 3009 total pass |
+| 2026-03-29 15:58 | Step 6 completed | Documentation and delivery |
 
 ---
 
