@@ -77,7 +77,7 @@ describe("1.x: Single spawn per task — worker handles all remaining steps", ()
 		const executeTaskBody = extractFunction(source, "executeTask");
 
 		// Should call runWorker with remainingSteps (array), not a single step
-		expect(executeTaskBody).toContain("await runWorker(remainingSteps, ctx)");
+		expect(executeTaskBody).toMatch(/await runWorker\(remainingSteps, ctx/);
 
 		// Should NOT contain "runWorker(step," — the old per-step pattern
 		expect(executeTaskBody).not.toMatch(/runWorker\(\s*step\s*,/);

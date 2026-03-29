@@ -3463,10 +3463,13 @@ export default function (pi: ExtensionAPI) {
 
 	// ── Worker ───────────────────────────────────────────────────────
 
+	/** Pre-generated sidecar paths for stable identity across iterations (TP-097). */
+	type StableSidecarPaths = { sidecarPath: string; exitSummaryPath: string };
+
 	async function runWorker(
 		remainingSteps: StepInfo[],
 		ctx: ExtensionContext,
-		stableSidecar?: { sidecarPath: string; exitSummaryPath: string } | null,
+		stableSidecar?: StableSidecarPaths | null,
 		sharedTailState?: SidecarTailState | null,
 	): Promise<void> {
 		if (!state.task || !state.config) return;
