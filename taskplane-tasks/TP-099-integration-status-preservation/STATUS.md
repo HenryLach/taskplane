@@ -1,7 +1,7 @@
 # TP-099: Integration STATUS.md Preservation ��� Status
 
-**Current Step:** Step 1 (Diagnose rebase/merge conflict)
-**Status:** 🟡 In Progress
+**Current Step:** Complete
+**Status:** ✅ Done
 **Last Updated:** 2026-03-29
 **Review Level:** 2
 **Review Counter:** 5
@@ -70,9 +70,9 @@ Diagnosis results:
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Log discoveries
+- [x] Log discoveries
 
 ---
 
@@ -92,8 +92,9 @@ Diagnosis results:
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
-| No `git rebase` in code — issue #356 root cause may be H2 not H1 | Validate in Step 1 | extensions/taskplane/extension.ts, merge.ts |
-| merge.ts artifact staging copies from `repoRoot` not worktree | Key suspect for H2 | extensions/taskplane/merge.ts:1841 |
+| No `git rebase` in code — root cause is H2 (artifact staging overwrite) not H1 | Fixed | extensions/taskplane/merge.ts:1841 |
+| merge.ts artifact staging copies from `repoRoot` (main working dir) which has OLD STATUS.md | Fixed — skip existing files, backfill from lane worktree | extensions/taskplane/merge.ts |
+| `.reviews/` directory is NOT in TP-035 allowlist — only .DONE, STATUS.md, REVIEW_VERDICT.json | Noted — no change to allowlist scope | extensions/taskplane/merge.ts |
 
 ---
 
