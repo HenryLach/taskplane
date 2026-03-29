@@ -46,6 +46,7 @@ function parseArgs(argv) {
 		passthrough: [],
 		help: false,
 		mailboxDir: null,
+		steeringPendingPath: null,
 	};
 
 	let i = 2; // skip "node" and script path
@@ -78,6 +79,9 @@ function parseArgs(argv) {
 		} else if (arg === "--mailbox-dir" && i + 1 < argv.length) {
 			args.mailboxDir = argv[++i];
 			i++;
+		} else if (arg === "--steering-pending-path" && i + 1 < argv.length) {
+			args.steeringPendingPath = argv[++i];
+			i++;
 		} else if (arg === "--") {
 			args.passthrough = argv.slice(i + 1);
 			break;
@@ -108,6 +112,7 @@ Optional:
   --tools <t1,t2,...>          Comma-separated tool names
   --extensions <e1,e2,...>     Comma-separated extension paths
   --mailbox-dir <path>         Mailbox directory for agent steering (TP-089)
+  --steering-pending-path <p>  Path to .steering-pending JSONL flag file (TP-090)
   -h, --help                   Show this help
 `
 	);
@@ -509,9 +514,10 @@ const MAILBOX_MESSAGE_TYPES = new Set(["steer", "query", "abort", "info", "reply
  *
  * @param {string} mailboxDir - Session mailbox directory (e.g., .pi/mailbox/{batchId}/{session})
  * @param {object} proc - The spawned pi process (must have writable stdin)
+ * @param {string|null} steeringPendingPath - Path to .steering-pending JSONL flag file (TP-090, worker-only)
  * @returns {{ delivered: number, skipped: number }} Delivery stats
  */
-function checkMailboxAndSteer(mailboxDir, proc) {
+function checkMailboxAndSteer(mailboxDir, proc, steeringPendingPath) {
 	const stats = { delivered: 0, skipped: 0 };
 
 	// Derive expected values from path structure:
@@ -616,6 +622,17 @@ function checkMailboxAndSteer(mailboxDir, proc) {
 
 			stats.delivered++;
 			process.stderr.write(`\n[STEERING] Delivered message ${message.id}\n`);
+
+			// TP-090: Append to .steering-pending JSONL flag for task-runner STATUS.md annotation.
+			// Worker-only: steeringPendingPath is only set for worker sessions.
+			if (steeringPendingPath) {
+				try {
+					const entry = JSON.stringify({ ts: message.timestamp, content: message.content, id: message.id }) + "\n";
+					appendFileSync(steeringPendingPath, entry, "utf-8");
+				} catch (err) {
+					process.stderr.write(`\n[STEERING] WARNING: failed to write .steering-pending: ${err.message}\n`);
+				}
+			}
 		} catch (err) {
 			process.stderr.write(`\n[STEERING] WARNING: failed to deliver ${filename}: ${err.message}\n`);
 			stats.skipped++;
@@ -852,7 +869,7 @@ function handleEvent(event) {
 			// Only active when --mailbox-dir is provided (backward compatible).
 			if (args.mailboxDir) {
 				try {
-					checkMailboxAndSteer(args.mailboxDir, proc);
+					checkMailboxAndSteer(args.mailboxDir, proc, args.steeringPendingPath || null);
 				} catch (err) {
 					// Never crash on mailbox I/O errors
 					process.stderr.write(`\n[STEERING] ERROR: ${err.message}\n`);

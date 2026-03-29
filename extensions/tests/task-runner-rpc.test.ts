@@ -347,11 +347,8 @@ describe("spawnAgentTmux return shape contract", () => {
 	const src = readTaskRunnerSource();
 
 	it("returns { promise, kill, sidecarPath, exitSummaryPath }", () => {
-		// Check the return type annotation
-		const tmuxRegion = src.slice(
-			src.indexOf("function spawnAgentTmux("),
-			src.indexOf("function spawnAgentTmux(") + 1200,
-		);
+		// Check the return type annotation — use extractFunctionRegion for robustness
+		const tmuxRegion = extractFunctionRegion(src, "spawnAgentTmux");
 		expect(tmuxRegion).toContain("promise:");
 		expect(tmuxRegion).toContain("kill:");
 		expect(tmuxRegion).toContain("sidecarPath:");
@@ -359,19 +356,13 @@ describe("spawnAgentTmux return shape contract", () => {
 	});
 
 	it("spawnAgentTmux accepts onTelemetry callback", () => {
-		const tmuxRegion = src.slice(
-			src.indexOf("function spawnAgentTmux("),
-			src.indexOf("function spawnAgentTmux(") + 1200,
-		);
+		const tmuxRegion = extractFunctionRegion(src, "spawnAgentTmux");
 		expect(tmuxRegion).toContain("onTelemetry?:");
 		expect(tmuxRegion).toContain("SidecarTelemetryDelta");
 	});
 
 	it("spawnAgentTmux accepts optional taskId for telemetry enrichment", () => {
-		const tmuxRegion = src.slice(
-			src.indexOf("function spawnAgentTmux("),
-			src.indexOf("function spawnAgentTmux(") + 800,
-		);
+		const tmuxRegion = extractFunctionRegion(src, "spawnAgentTmux");
 		expect(tmuxRegion).toContain("taskId?:");
 	});
 });

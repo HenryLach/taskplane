@@ -972,6 +972,16 @@ function logExecution(statusPath: string, action: string, outcome: string): void
 	appendTableRow(statusPath, "Execution Log", `| ${ts} | ${action} | ${outcome} |`);
 }
 
+/**
+ * TP-090: Sanitize steering message content for safe injection into a markdown table row.
+ * Collapses newlines to " / ", escapes pipe characters, and truncates to 200 chars.
+ */
+function sanitizeSteeringContent(content: string): string {
+	let s = content.replace(/\r?\n/g, " / ").replace(/\|/g, "\\|");
+	if (s.length > 200) s = s.slice(0, 197) + "...";
+	return s;
+}
+
 function logReview(statusPath: string, num: string, type: string, stepNum: number, verdict: string, file: string): void {
 	appendTableRow(statusPath, "Reviews", `| ${num} | ${type} | Step ${stepNum} | ${verdict} | ${file} |`);
 }
@@ -1775,6 +1785,9 @@ function spawnAgentTmux(opts: {
 	 *  Enables the tmux poll loop to update TaskState (tokens, cost, context%, tools, retries)
 	 *  with the same signals that subprocess mode gets from onTokenUpdate/onContextPct/onToolCall. */
 	onTelemetry?: (delta: SidecarTelemetryDelta) => void;
+	/** TP-090: Path to .steering-pending JSONL flag file for STATUS.md annotation.
+	 *  Only set for worker sessions (not reviewer/merger). */
+	steeringPendingPath?: string;
 }): {
 	promise: Promise<{ output: string; exitCode: number; elapsed: number; killed: boolean }>;
 	kill: () => void;
@@ -1897,6 +1910,10 @@ function spawnAgentTmux(opts: {
 		const mailboxDir = join(getSidecarDir(), "mailbox", orchBatchId, opts.sessionName);
 		mkdirSync(join(mailboxDir, "inbox"), { recursive: true });
 		wrapperArgs.push("--mailbox-dir", quoteArg(mailboxDir));
+	}
+	// TP-090: Pass steering-pending path to rpc-wrapper (worker-only).
+	if (opts.steeringPendingPath) {
+		wrapperArgs.push("--steering-pending-path", quoteArg(opts.steeringPendingPath));
 	}
 	// Passthrough pi args: flags forwarded to the underlying pi --mode rpc process.
 	// Note: --no-session is NOT passed here — rpc-wrapper.mjs already injects it.
@@ -2969,6 +2986,33 @@ export default function (pi: ExtensionAPI) {
 			const { contextWindow: snapshotContextWindow } = resolveContextWindow(config, ctx);
 			writeContextSnapshot(state, snapshotContextWindow);
 
+			// ── TP-090: Annotate STATUS.md with delivered steering messages ──
+			// Check for .steering-pending JSONL flag written by rpc-wrapper.
+			// Must happen BEFORE the error-return so messages are not dropped.
+			const steeringFlagPath = join(task.taskFolder, ".steering-pending");
+			try {
+				if (existsSync(steeringFlagPath)) {
+					const raw = readFileSync(steeringFlagPath, "utf-8");
+					const lines = raw.split("\n").filter(l => l.trim());
+					for (const line of lines) {
+						try {
+							const entry = JSON.parse(line) as { ts: number; content: string; id: string };
+							const sanitized = sanitizeSteeringContent(entry.content);
+							// Use the delivered message timestamp, not current time
+							const ts = new Date(entry.ts).toISOString().slice(0, 16).replace("T", " ");
+							appendTableRow(statusPath, "Execution Log", `| ${ts} | \u26a0\ufe0f Steering | ${sanitized} |`);
+							console.error(`[task-runner] steering message annotated: ${entry.id}`);
+						} catch {
+							// Skip malformed JSONL lines
+						}
+					}
+					unlinkSync(steeringFlagPath);
+				}
+			} catch (err: any) {
+				// Non-fatal: steering annotation is supplementary
+				console.error(`[task-runner] steering-pending annotation error: ${err?.message || err}`);
+			}
+
 			if (state.phase === "error") {
 				await shutdownPersistentReviewer("worker error");
 				return;
@@ -3414,6 +3458,12 @@ export default function (pi: ExtensionAPI) {
 			// Kill via wall-clock timeout (context-% wrap-up also available via sidecar).
 			const sessionName = `${getTmuxPrefix()}-worker`;
 
+			// TP-090: Construct .steering-pending path for worker-only STATUS.md annotation.
+			// Only set when running under orchestrator (mailbox is orch-only).
+			const steeringPendingPath = isOrchestratedMode()
+				? join(task.taskFolder, ".steering-pending")
+				: undefined;
+
 			const spawned = spawnAgentTmux({
 				sessionName,
 				cwd: ctx.cwd,
@@ -3423,6 +3473,7 @@ export default function (pi: ExtensionAPI) {
 				tools: config.worker.tools || workerDef?.tools || "read,write,edit,bash,grep,find,ls",
 				thinking: config.worker.thinking || "off",
 				taskId: task.taskId,
+				steeringPendingPath,
 				onTelemetry: (delta) => {
 					// Accumulate tokens and cost (same as subprocess onTokenUpdate)
 					state.workerInputTokens += delta.inputTokens;

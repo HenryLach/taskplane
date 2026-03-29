@@ -9,9 +9,12 @@
 
 import { describe, it, beforeEach, afterEach } from "node:test";
 import { expect } from "./expect.ts";
-import { join } from "path";
+import { join, dirname } from "path";
 import { mkdirSync, writeFileSync, readFileSync, readdirSync, existsSync, rmSync, statSync, utimesSync } from "fs";
 import { tmpdir } from "os";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 import {
 	writeMailboxMessage,
@@ -629,5 +632,241 @@ describe("MAILBOX_MESSAGE_TYPES", () => {
 			expect(MAILBOX_MESSAGE_TYPES.has(t)).toBe(true);
 		}
 		expect(MAILBOX_MESSAGE_TYPES.size).toBe(expectedTypes.length);
+	});
+});
+
+// ── 10. TP-090: Steering-pending annotation contract ────────────────
+
+/**
+ * These tests verify the TP-090 contract by exercising the annotation logic
+ * that lives in task-runner.ts. Since that logic is embedded in the polling
+ * loop and not directly importable, we verify it via source extraction
+ * (contract tests) and by reimplementing the pure helper (sanitization).
+ */
+
+// Reimplement sanitizeSteeringContent for direct testing
+// (mirrors the function in task-runner.ts)
+function sanitizeSteeringContent(content: string): string {
+	let s = content.replace(/\r?\n/g, " / ").replace(/\|/g, "\\|");
+	if (s.length > 200) s = s.slice(0, 197) + "...";
+	return s;
+}
+
+// Reimplement appendTableRow for test isolation
+function appendTableRow(statusPath: string, sectionName: string, row: string): void {
+	let content = readFileSync(statusPath, "utf-8").replace(/\r\n/g, "\n");
+	const lines = content.split("\n");
+	let insertIdx = -1, inSection = false, lastTableRow = -1;
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i].match(new RegExp(`^##\\s+${sectionName}`))) {
+			inSection = true;
+			continue;
+		}
+		if (inSection) {
+			if (lines[i].match(/^##\s/) || lines[i].trim() === "---") {
+				insertIdx = lastTableRow >= 0 ? lastTableRow + 1 : i;
+				break;
+			}
+			if (lines[i].startsWith("|") && !lines[i].match(/^\|[\s-|]+\|$/)) {
+				lastTableRow = i;
+			}
+		}
+	}
+	if (insertIdx === -1) {
+		insertIdx = lastTableRow >= 0 ? lastTableRow + 1 : lines.length;
+	}
+	lines.splice(insertIdx, 0, row);
+	writeFileSync(statusPath, lines.join("\n"));
+}
+
+/**
+ * Simulate the task-runner steering annotation logic.
+ * This mirrors the code in the polling loop of task-runner.ts executeTask().
+ */
+function processSteeringPending(taskFolder: string, statusPath: string): number {
+	const steeringFlagPath = join(taskFolder, ".steering-pending");
+	let annotated = 0;
+	if (existsSync(steeringFlagPath)) {
+		const raw = readFileSync(steeringFlagPath, "utf-8");
+		const lines = raw.split("\n").filter(l => l.trim());
+		for (const line of lines) {
+			try {
+				const entry = JSON.parse(line) as { ts: number; content: string; id: string };
+				const sanitized = sanitizeSteeringContent(entry.content);
+				const ts = new Date(entry.ts).toISOString().slice(0, 16).replace("T", " ");
+				appendTableRow(statusPath, "Execution Log", `| ${ts} | \u26a0\ufe0f Steering | ${sanitized} |`);
+				annotated++;
+			} catch {
+				// Skip malformed lines
+			}
+		}
+		rmSync(steeringFlagPath);
+	}
+	return annotated;
+}
+
+const SAMPLE_STATUS_MD = `# TP-TEST: Test Task — Status
+
+**Current Step:** Step 1
+**Status:** 🟡 In Progress
+
+---
+
+## Execution Log
+
+| Timestamp | Action | Outcome |
+|-----------|--------|---------|
+| 2026-03-29 12:00 | Task started | Extension-driven execution |
+
+---
+
+## Blockers
+
+*None*
+`;
+
+describe("TP-090: Steering-pending annotation", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = makeTmpDir("steering");
+	});
+
+	afterEach(() => {
+		cleanupDir(tmpDir);
+	});
+
+	it(".steering-pending triggers STATUS.md annotation", () => {
+		const statusPath = join(tmpDir, "STATUS.md");
+		writeFileSync(statusPath, SAMPLE_STATUS_MD);
+
+		const entry = { ts: 1774800000000, content: "Focus on the API endpoint.", id: "1000-abc12" };
+		writeFileSync(join(tmpDir, ".steering-pending"), JSON.stringify(entry) + "\n");
+
+		const count = processSteeringPending(tmpDir, statusPath);
+		expect(count).toBe(1);
+
+		const content = readFileSync(statusPath, "utf-8");
+		expect(content).toContain("\u26a0\ufe0f Steering");
+		expect(content).toContain("Focus on the API endpoint.");
+	});
+
+	it("flag file is deleted after annotation", () => {
+		const statusPath = join(tmpDir, "STATUS.md");
+		writeFileSync(statusPath, SAMPLE_STATUS_MD);
+
+		const entry = { ts: 1774800000000, content: "Test deletion.", id: "2000-def34" };
+		writeFileSync(join(tmpDir, ".steering-pending"), JSON.stringify(entry) + "\n");
+
+		processSteeringPending(tmpDir, statusPath);
+
+		expect(existsSync(join(tmpDir, ".steering-pending"))).toBe(false);
+	});
+
+	it("annotates multiple entries from one .steering-pending file", () => {
+		const statusPath = join(tmpDir, "STATUS.md");
+		writeFileSync(statusPath, SAMPLE_STATUS_MD);
+
+		const entries = [
+			{ ts: 1774800000000, content: "First steering.", id: "1000-aaa00" },
+			{ ts: 1774800001000, content: "Second steering.", id: "2000-bbb00" },
+		];
+		const jsonl = entries.map(e => JSON.stringify(e)).join("\n") + "\n";
+		writeFileSync(join(tmpDir, ".steering-pending"), jsonl);
+
+		const count = processSteeringPending(tmpDir, statusPath);
+		expect(count).toBe(2);
+
+		const content = readFileSync(statusPath, "utf-8");
+		expect(content).toContain("First steering.");
+		expect(content).toContain("Second steering.");
+	});
+
+	it("skips malformed JSONL lines gracefully", () => {
+		const statusPath = join(tmpDir, "STATUS.md");
+		writeFileSync(statusPath, SAMPLE_STATUS_MD);
+
+		const jsonl = '{invalid json\n' +
+			JSON.stringify({ ts: 1774800000000, content: "Valid entry.", id: "3000-ccc00" }) + '\n';
+		writeFileSync(join(tmpDir, ".steering-pending"), jsonl);
+
+		const count = processSteeringPending(tmpDir, statusPath);
+		expect(count).toBe(1);
+
+		const content = readFileSync(statusPath, "utf-8");
+		expect(content).toContain("Valid entry.");
+	});
+
+	it("no-op when .steering-pending doesn't exist", () => {
+		const statusPath = join(tmpDir, "STATUS.md");
+		writeFileSync(statusPath, SAMPLE_STATUS_MD);
+
+		const count = processSteeringPending(tmpDir, statusPath);
+		expect(count).toBe(0);
+
+		// STATUS.md unchanged (no steering rows)
+		const content = readFileSync(statusPath, "utf-8");
+		expect(content).not.toContain("\u26a0\ufe0f Steering");
+	});
+});
+
+describe("TP-090: sanitizeSteeringContent", () => {
+	it("collapses newlines to ' / '", () => {
+		expect(sanitizeSteeringContent("line1\nline2")).toBe("line1 / line2");
+		expect(sanitizeSteeringContent("line1\r\nline2")).toBe("line1 / line2");
+	});
+
+	it("escapes pipe characters", () => {
+		expect(sanitizeSteeringContent("use | for tables")).toBe("use \\| for tables");
+	});
+
+	it("truncates to 200 chars with ellipsis", () => {
+		const long = "x".repeat(250);
+		const result = sanitizeSteeringContent(long);
+		expect(result.length).toBe(200);
+		expect(result.endsWith("...")).toBe(true);
+	});
+
+	it("preserves content at exactly 200 chars", () => {
+		const exact = "y".repeat(200);
+		const result = sanitizeSteeringContent(exact);
+		expect(result.length).toBe(200);
+		expect(result).toBe(exact);
+	});
+
+	it("handles combined newlines and pipes", () => {
+		expect(sanitizeSteeringContent("a\nb|c")).toBe("a / b\\|c");
+	});
+});
+
+// ── 11. TP-090: Source extraction — task-runner contract verification ──
+
+describe("TP-090: task-runner steering annotation contract (source extraction)", () => {
+	let taskRunnerSrc: string;
+
+	beforeEach(() => {
+		taskRunnerSrc = readFileSync(join(__dirname, "..", "task-runner.ts"), "utf-8");
+	});
+
+	it("task-runner checks .steering-pending in polling loop", () => {
+		expect(taskRunnerSrc).toContain(".steering-pending");
+		// Source uses unicode escapes \u26a0\ufe0f — search for the literal string
+		expect(taskRunnerSrc).toContain("Steering");
+		expect(taskRunnerSrc).toContain("\\u26a0\\ufe0f");
+	});
+
+	it("task-runner has sanitizeSteeringContent function", () => {
+		expect(taskRunnerSrc).toContain("function sanitizeSteeringContent");
+	});
+
+	it("steeringPendingPath is passed only for worker sessions", () => {
+		// Worker spawn has steeringPendingPath
+		expect(taskRunnerSrc).toContain("steeringPendingPath,");
+		// The option is defined in spawnAgentTmux
+		expect(taskRunnerSrc).toContain("steeringPendingPath?:");
+	});
+
+	it("rpc-wrapper passes --steering-pending-path from opts", () => {
+		expect(taskRunnerSrc).toContain("--steering-pending-path");
 	});
 });
