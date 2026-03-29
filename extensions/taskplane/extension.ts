@@ -4080,17 +4080,25 @@ export default function (pi: ExtensionAPI) {
 
 		// Read most recent exit diagnostic
 		if (exitFiles.length > 0) {
-			exitFiles.sort();
-			const latestExit = exitFiles[exitFiles.length - 1];
-			try {
-				const exitData = JSON.parse(readFileSync(join(telemetryDir, latestExit), "utf-8"));
-				lines.push("### Latest Exit Diagnostic");
-				if (exitData.classification) lines.push(`**Classification:** ${exitData.classification}`);
-				if (exitData.exitCode != null) lines.push(`**Exit Code:** ${exitData.exitCode}`);
-				if (exitData.errorMessage) lines.push(`**Error:** ${exitData.errorMessage}`);
-				if (exitData.durationSec) lines.push(`**Duration:** ${exitData.durationSec}s`);
-				lines.push("");
-			} catch { /* skip malformed exit file */ }
+			const latestExit = exitFiles
+				.map(name => {
+					const absPath = join(telemetryDir, name);
+					let mtime = 0;
+					try { mtime = statSync(absPath).mtimeMs; } catch {}
+					return { name, mtime };
+				})
+				.sort((a, b) => b.mtime - a.mtime)[0]?.name;
+			if (latestExit) {
+				try {
+					const exitData = JSON.parse(readFileSync(join(telemetryDir, latestExit), "utf-8"));
+					lines.push("### Latest Exit Diagnostic");
+					if (exitData.classification) lines.push(`**Classification:** ${exitData.classification}`);
+					if (exitData.exitCode != null) lines.push(`**Exit Code:** ${exitData.exitCode}`);
+					if (exitData.errorMessage) lines.push(`**Error:** ${exitData.errorMessage}`);
+					if (exitData.durationSec) lines.push(`**Duration:** ${exitData.durationSec}s`);
+					lines.push("");
+				} catch { /* skip malformed exit file */ }
+			}
 		}
 
 		return lines.join("\n");
