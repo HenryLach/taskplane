@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.13] - 2026-03-29
+
+### New
+- **TP-094: Context pressure fix** — pi sends `contextUsage.percent` but code checked `percentUsed` (always undefined). Context pressure thresholds (85% wrap-up, 95% kill) now work correctly. Manual token-based fallback removed. Context % snapshots written at worker iteration boundaries for post-batch analysis.
+- **TP-095: Crash recovery and spawn reliability** — Worker spawn verification with retry after tmux session creation (#335). Lane-state reset on worker restart so dashboard reflects correct state (#333). Telemetry accumulation across worker restarts (#334). Lane session stderr captured to log file for crash diagnosis (#339).
+- **TP-096: Dashboard merge telemetry and supervisor tools** — Merge agent telemetry in dashboard with full parity (#328). Four new supervisor recovery tools: `read_agent_status`, `trigger_wrap_up`, `read_lane_logs`, `list_active_agents`.
+
+### Fixed
+- **Wave start message reports post-affinity lane count** — previously showed `min(tasks, maxLanes)` ignoring file-scope grouping (#346).
+
 ## [0.22.12] - 2026-03-29
 
 ### New
