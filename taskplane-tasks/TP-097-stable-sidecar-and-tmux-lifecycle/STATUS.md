@@ -1,6 +1,6 @@
 # TP-097: Stable Sidecar Identity and TMUX Lifecycle — Status
 
-**Current Step:** Step 2: Orphan process cleanup (#242)
+**Current Step:** Step 3: Spawn retry improvements (#335)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
@@ -35,9 +35,9 @@
 ---
 
 ### Step 3: Spawn retry improvements (#335)
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Increase retry budget and delays
+- [x] Increase retry budget and delays
 
 ---
 

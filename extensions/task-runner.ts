@@ -2006,10 +2006,11 @@ function spawnAgentTmux(opts: {
 	// On Windows/MSYS2, rapid sequential tmux session creation is unreliable.
 	// Pi process can exit with code 1 in 0 seconds on the first 3-5 attempts.
 	// Verify the session is alive after a brief delay, and retry if it died.
-	const SPAWN_VERIFY_DELAY_MS = 300;
+	// TP-097: Increased from 300→500ms and 2→5 retries for reliability (#335)
+	const SPAWN_VERIFY_DELAY_MS = 500;
 	const SPAWN_VERIFY_POLL_ATTEMPTS = 3;
 	const SPAWN_VERIFY_POLL_INTERVAL_MS = 200;
-	const SPAWN_MAX_RETRIES = 2;
+	const SPAWN_MAX_RETRIES = 5;
 
 	const verifySessionAlive = (): boolean => {
 		for (let poll = 0; poll < SPAWN_VERIFY_POLL_ATTEMPTS; poll++) {
@@ -2031,9 +2032,18 @@ function spawnAgentTmux(opts: {
 	let spawnRetries = 0;
 	while (!verifySessionAlive() && spawnRetries < SPAWN_MAX_RETRIES) {
 		spawnRetries++;
-		console.error(`[task-runner] tmux: session '${opts.sessionName}' died on startup — retrying (${spawnRetries}/${SPAWN_MAX_RETRIES}). Stderr log: ${stderrLogHint}`);
+		// TP-097: Log stderr from the failed session for diagnostics
+		let failedStderr = "";
+		try {
+			if (existsSync(stderrLogHint)) {
+				const raw = readFileSync(stderrLogHint, "utf-8");
+				// Take last 500 chars to capture the most recent error
+				failedStderr = raw.length > 500 ? "..." + raw.slice(-500) : raw;
+			}
+		} catch { /* best effort */ }
+		console.error(`[task-runner] tmux: session '${opts.sessionName}' died on startup — retrying (${spawnRetries}/${SPAWN_MAX_RETRIES}).${failedStderr ? ` Last stderr: ${failedStderr.trim().slice(0, 200)}` : ""} Stderr log: ${stderrLogHint}`);
 
-		// Brief delay before retry (increases with each attempt)
+		// Brief delay before retry (increases with each attempt: 500ms, 1000ms, 1500ms, ...)
 		const retryDelay = spawnRetries * 500;
 		sleepSyncMs(retryDelay);
 
