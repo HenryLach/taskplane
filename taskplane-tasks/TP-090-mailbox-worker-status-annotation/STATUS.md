@@ -1,7 +1,7 @@
 # TP-090: Mailbox Worker STATUS.md Annotation — Status
 
 **Current Step:** Step 3: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-29
 **Review Level:** 2
 **Review Counter:** 4
@@ -44,10 +44,10 @@
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Update spec status
-- [ ] Log discoveries
+- [x] Update spec status for Phase 2
+- [x] Log discoveries in STATUS.md
 
 ---
 
@@ -66,6 +66,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| spawnAgentTmux test used brittle 1200-char slice; replaced with extractFunctionRegion | Fixed in-scope | extensions/tests/task-runner-rpc.test.ts |
+| Unicode escapes in source (\u26a0) don't match emoji chars when reading file as text | Fixed in test | extensions/tests/mailbox.test.ts |
 
 ---
 

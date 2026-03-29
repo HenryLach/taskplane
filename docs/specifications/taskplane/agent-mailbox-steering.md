@@ -1,6 +1,6 @@
 # Agent Mailbox: Cross-Agent Steering Protocol
 
-**Status:** Phase 1 Implemented (TP-089)  
+**Status:** Phase 2 Implemented (TP-089, TP-090)  
 **Author:** Supervisor (Claude)  
 **Created:** 2026-03-28  
 **Issue:** TBD
@@ -456,12 +456,15 @@ These are registered as supervisor extension tools (same pattern as
 - ✅ Tests: message write/read/ack lifecycle, stale batch rejection, misdelivery prevention,
   rpc-wrapper integration, cleanup verification (45 new tests across 2 test files)
 
-### Phase 2: Worker audit trail + STATUS.md visibility
+### Phase 2: Worker audit trail + STATUS.md visibility ✅ Implemented (TP-090)
 
-- task-runner `.steering-pending` flag detection in polling loop
-- STATUS.md execution log injection for delivered messages
-- Worker template steering message guidance
-- Tests: end-to-end steering message delivery and STATUS.md annotation
+- ✅ rpc-wrapper: `--steering-pending-path` arg, JSONL append after each delivered message
+- ✅ task-runner `spawnAgentTmux()`: pass `--steering-pending-path` for worker sessions only
+- ✅ task-runner polling loop: `.steering-pending` JSONL detection, STATUS.md execution log injection with message timestamp
+- ✅ Content sanitization: newline collapse, pipe escape, 200-char truncation for markdown table safety
+- ✅ Worker template: steering message guidance section
+- ✅ Tests: rpc-wrapper JSONL write (3 tests), annotation behavior (5 tests), sanitization (5 tests),
+  source contract (4 tests), plus full suite regression (3086 tests pass)
 
 ### Phase 3: Agent → supervisor replies
 
