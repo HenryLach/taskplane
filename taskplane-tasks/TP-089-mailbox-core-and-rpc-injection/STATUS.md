@@ -1,10 +1,10 @@
 # TP-089: Agent Mailbox Core and RPC Steering Injection — Status
 
-**Current Step:** Step 4: Supervisor send_agent_message tool
+**Current Step:** Step 5: Batch cleanup for mailbox directory
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 16
+**Review Counter:** 17
 **Iteration:** 4
 **Size:** L
 
@@ -145,7 +145,7 @@
 ---
 
 ### Step 4: Supervisor send_agent_message tool
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 #### 4a. Tool registration in extension.ts
 - [x] Register `send_agent_message` tool with pi.registerTool() (same pattern as orch_retry_task)
@@ -169,9 +169,17 @@
 ---
 
 ### Step 5: Batch cleanup for mailbox directory
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Add mailbox/ to post-batch and age-based cleanup
+#### 5a. Post-integrate cleanup (Layer 1)
+- [ ] In `cleanupPostIntegrate()`: delete `{stateRoot}/.pi/mailbox/{batchId}/` directory tree
+- [ ] Use rmSync with recursive + force (non-fatal)
+- [ ] Add mailbox dir count to cleanup result
+
+#### 5b. Age-based preflight sweep (Layer 2)
+- [ ] In `sweepStaleArtifacts()`: sweep `{stateRoot}/.pi/mailbox/` subdirectories
+- [ ] Delete batch subdirs older than 7 days (by mtime of directory)
+- [ ] Use rmSync recursive for stale batch mailbox dirs
 
 ---
 
@@ -212,6 +220,7 @@
 | R014 | code | Step 3 | APPROVE | .reviews/R014-code-step3.md |
 | R015 | plan | Step 4 | REVISE | .reviews/R015-plan-step4.md |
 | R016 | plan | Step 4 | APPROVE | .reviews/R016-plan-step4.md |
+| R017 | code | Step 4 | APPROVE | .reviews/R017-code-step4.md |
 
 ---
 
@@ -277,6 +286,9 @@
 | 2026-03-29 04:11 | Review R015 | plan Step 4: REVISE (fallback) |
 | 2026-03-29 04:12 | Reviewer R016 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
 | 2026-03-29 04:14 | Review R016 | plan Step 4: APPROVE (fallback) |
+| 2026-03-29 04:19 | Review R017 | code Step 4: APPROVE |
+| 2026-03-29 04:19 | Reviewer R017 | code review APPROVE — killing persistent reviewer (step 4 cycle done) |
+| 2026-03-29 04:20 | Reviewer R018 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
 
 ---
 
