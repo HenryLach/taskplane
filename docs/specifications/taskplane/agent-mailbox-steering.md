@@ -36,21 +36,45 @@ blockers back to the supervisor without terminating.
 7. **Cross-platform** — Windows, macOS, Linux
 8. **Bidirectional** — Agents can reply to the supervisor
 
-## Why File-Based
+## Architecture: File Mailbox + RPC Injection
 
-Evaluated alternatives:
+The system has two layers with distinct responsibilities:
+
+1. **File-based mailbox** — coordination, addressing, lifecycle, audit trail.
+   The supervisor writes message files; rpc-wrapper reads them; processed
+   messages are preserved for debugging. Bidirectional: agents write replies
+   to their outbox, the engine picks them up and alerts the supervisor.
+
+2. **Pi RPC `steer` command** — actual delivery into the agent's LLM context.
+   rpc-wrapper reads a message file from the inbox and injects it via the
+   `steer` RPC command on the stdin pipe it owns to the pi process. The agent
+   sees it as a user message on its next turn. Non-blocking, guaranteed.
+
+**Why two layers?** rpc-wrapper is the only process that can inject into an
+agent's context (it owns the stdin pipe). But the supervisor runs in a separate
+process with no access to that pipe. The file mailbox bridges the gap. It also
+provides bidirectional communication — agents can write replies to their outbox,
+which the engine polls and surfaces to the supervisor via alerts.
+
+Alternatives like `tmux send-keys` (typing JSON into the rpc-wrapper's terminal
+stdin) were considered for direct injection but rejected: one-way only (no reply
+channel), JSON escaping nightmares on Windows, and no delivery confirmation.
+The file mailbox adds ~0.1ms of latency per turn check, which is negligible
+against 2-30s LLM turns and delivers at the same cadence anyway (turn boundaries).
+
+### Why file-based for the coordination layer
 
 | Approach | Verdict | Reason |
 |----------|---------|--------|
-| **Files** | ✅ Selected | Zero deps, cross-platform, survives crashes, human-debuggable, already the coordination pattern (lane-state, .DONE, review-signal) |
-| Named pipes | ❌ | Platform-specific (Windows vs Unix), don't survive process restarts |
+| **Files** | ✅ Selected | Zero deps, cross-platform, survives crashes, human-debuggable, bidirectional, already the coordination pattern |
+| Named pipes | ❌ | Platform-specific (Windows vs Unix), don't survive process restarts, one-way |
 | Unix domain sockets | ❌ | Not available on Windows |
 | SQLite | ❌ | Adds a dependency, overkill for low-volume messaging |
-| IPC (stdin/stdout) | ❌ | rpc-wrapper owns the pipe; can't inject mid-conversation without pi RPC protocol support |
+| tmux send-keys | ❌ | One-way (no reply channel), JSON escaping issues on Windows, no delivery confirmation |
 | Shared memory | ❌ | Platform-specific, complex, no persistence |
 | Environment variables | ❌ | Immutable after process start |
 
-File-based messaging is already the proven pattern in taskplane:
+File-based coordination is already the proven pattern in taskplane:
 - `.DONE` files signal task completion
 - `.review-signal-{NNN}` files coordinate reviewer handoff
 - `lane-state-*.json` files share telemetry with the dashboard
@@ -134,11 +158,40 @@ Agents are addressed by their tmux session name, which is unique per batch:
 
 The supervisor resolves session names from batch state (lane allocations).
 
-## Delivery Mechanism
+## Delivery: Supervisor → Agent
 
-### Pi RPC `steer` command (the foundation)
+### End-to-end data flow
 
-Pi's RPC protocol already provides exactly the right primitive:
+```
+Supervisor                    File System                    rpc-wrapper              pi (agent)
+    │                              │                              │                       │
+    │  send_agent_message(to,msg)  │                              │                       │
+    │─────────────────────────────→│                              │                       │
+    │  write inbox/{ts}-{nonce}.json                              │                       │
+    │                              │                              │                       │
+    │                              │   (on next message_end)      │                       │
+    │                              │   readdirSync(inbox/)        │                       │
+    │                              │◀─────────────────────────────│                       │
+    │                              │   readFileSync(msg.json)     │                       │
+    │                              │◀─────────────────────────────│                       │
+    │                              │   validate batchId + to      │                       │
+    │                              │                              │                       │
+    │                              │                              │  steer RPC command    │
+    │                              │                              │──────────────────────→│
+    │                              │                              │  (queued, non-blocking)│
+    │                              │                              │                       │
+    │                              │   rename(inbox→ack)          │                       │
+    │                              │◀─────────────────────────────│                       │
+    │                              │                              │                       │
+    │                              │                              │  (next turn boundary) │
+    │                              │                              │                       │
+    │                              │                              │  agent sees message   │
+    │                              │                              │  as user input        │
+```
+
+### Pi RPC `steer` command (the injection primitive)
+
+Pi's RPC protocol provides exactly the right primitive:
 
 ```json
 {"type": "steer", "message": "Stop — call review_step(type=plan) BEFORE implementing."}
@@ -161,17 +214,26 @@ natural break point.
 - `follow_up` — delivered only after the agent finishes all tool calls. Good
   for "when you're done, also do X."
 
-### Layer 1: rpc-wrapper (universal, reliable, guaranteed delivery)
+### rpc-wrapper: the injection gateway
 
-The rpc-wrapper process wraps every agent session and owns `proc.stdin` to
-the pi process. It already sends RPC commands (`get_session_stats`). Delivering
-a steering message is one line:
+The rpc-wrapper process is the **only** process that can inject into an agent's
+LLM context, because it is the only process that holds the `proc.stdin` pipe to
+the pi child process:
+
+```
+┌─────────────┐    stdin pipe    ┌──────────┐
+│ rpc-wrapper  │ ──────────────→ │  pi (RPC) │  ← agent lives here
+│ (owns pipe)  │ ←────────────── │           │
+└─────────────┘    stdout pipe   └──────────┘
+```
+
+Injecting a steering message is one line:
 
 ```javascript
 proc.stdin.write(JSON.stringify({ type: "steer", message: content }) + "\n");
 ```
 
-**On every `message_end` event** (end of an LLM turn):
+**Mailbox check — on every `message_end` event** (end of an LLM turn):
 
 1. `readdirSync(inboxPath)` — check for pending messages (~0.1ms)
 2. If empty, also check `_broadcast/inbox/` (~0.1ms)
@@ -180,6 +242,7 @@ proc.stdin.write(JSON.stringify({ type: "steer", message: content }) + "\n");
 5. **Inject via `steer` RPC command** — guaranteed to enter the agent's context
 6. Log to stderr: `[STEERING] Delivered message {id} to {sessionName}`
 7. Move processed messages from `inbox/` to `ack/`
+8. Write `.steering-pending` flag for task-runner STATUS.md annotation
 
 **Why this is safe (no blocking):**
 - Pi queues the `steer` message internally
@@ -193,7 +256,7 @@ proc.stdin.write(JSON.stringify({ type: "steer", message: content }) + "\n");
 - It's already where rpc-wrapper does post-turn work (display, stats query)
 - Checking an empty directory adds ~0.1ms — negligible vs the 2-30s LLM turn
 
-### Layer 2: STATUS.md annotation (worker audit trail)
+### STATUS.md annotation (worker audit trail)
 
 In addition to RPC injection, the task-runner extension annotates STATUS.md
 so steering messages are visible in the dashboard and preserved for review:
@@ -209,7 +272,8 @@ so steering messages are visible in the dashboard and preserved for review:
 4. Delete the `.steering-pending` flag
 
 This is supplementary — the RPC injection already delivered the message to the
-agent's context. The STATUS.md annotation provides visibility and audit trail.
+agent's context. The STATUS.md annotation provides dashboard visibility and
+audit trail.
 
 ### Delivery guarantee matrix
 
@@ -219,13 +283,36 @@ agent's context. The STATUS.md annotation provides visibility and audit trail.
 | STATUS.md annotation | ✅ | ❌ | ❌ | Next polling iteration | Supplementary |
 
 All agent types get RPC injection — the most reliable mechanism. Workers
-additionally get STATUS.md annotation for visibility.
+additionally get STATUS.md annotation for dashboard visibility.
 
-## Agent → Supervisor Communication
+## Delivery: Agent → Supervisor
 
-### Outbox writes
+Communication is bidirectional. Agents write replies and escalations to their
+outbox; the engine picks them up and alerts the supervisor.
 
-Agents write to their outbox when they need to escalate:
+### End-to-end data flow
+
+```
+pi (agent)                  File System                    Engine                  Supervisor
+    │                            │                            │                        │
+    │  write outbox/{msg}.json   │                            │                        │
+    │───────────────────────────→│                            │                        │
+    │  (via bash/write tool)     │                            │                        │
+    │                            │                            │                        │
+    │                            │  (engine monitoring loop)  │                        │
+    │                            │  scan outbox/ directories  │                        │
+    │                            │◀───────────────────────────│                        │
+    │                            │                            │                        │
+    │                            │                            │  supervisor-alert IPC  │
+    │                            │                            │───────────────────────→│
+    │                            │                            │  (sendUserMessage)     │
+    │                            │                            │                        │
+    │                            │                            │  supervisor reads msg  │
+    │                            │                            │  and can respond via   │
+    │                            │                            │  send_agent_message()  │
+```
+
+### Outbox message format
 
 ```json
 {
@@ -241,15 +328,11 @@ Agents write to their outbox when they need to escalate:
 }
 ```
 
-### Supervisor pickup
-
 The engine's monitoring loop already polls lane state every 2 seconds. Add an
-outbox check to the same loop:
-
-1. Scan `outbox/` directories for all active sessions
-2. If messages found, emit a `supervisor-alert` IPC message (same mechanism
-   as TP-076 autonomous alerts)
-3. The supervisor receives the alert via `sendUserMessage` and can respond
+outbox scan to the same loop. When messages are found, emit a `supervisor-alert`
+IPC message (same mechanism as TP-076 autonomous alerts). The supervisor
+receives the alert via `sendUserMessage` and can respond with
+`send_agent_message()`.
 
 ## Safety Invariants
 
@@ -369,24 +452,36 @@ These are registered as supervisor extension tools (same pattern as
 
 ## Open Questions
 
-1. ~~Should rpc-wrapper inject messages into the LLM context directly?~~
-   **Resolved:** Pi's RPC protocol already supports `steer` and
-   `prompt` with `streamingBehavior: "steer"`. Messages are queued during
-   agent execution and delivered at the next natural break point (after
-   current tool calls, before next LLM call). Non-blocking, guaranteed
-   delivery. This is now the primary delivery mechanism.
-
-2. **Should agents auto-acknowledge steering messages?**
+1. **Should agents auto-acknowledge steering messages?**
    Option A: Agent must explicitly acknowledge (auditable but depends on LLM compliance).
    Option B: Moving to `ack/` counts as acknowledgment (reliable but less visible).
    Current design: Option B for delivery, Option A encouraged in template.
 
-3. **Message size limits?**
+2. **Message size limits?**
    Proposed: 4KB max content. Steering messages should be concise directives,
    not essays. Larger context should be written to a separate file and
    referenced.
 
-4. **Should the dashboard show the mailbox?**
+3. **Should the dashboard show the mailbox?**
    A "Messages" panel showing sent/pending/acked messages per agent would give
    the operator visibility into steering activity. Low priority but valuable
    for debugging.
+
+## Resolved Questions
+
+1. ~~Should rpc-wrapper inject messages into the LLM context directly?~~
+   **Yes.** Pi's RPC protocol supports `steer` (queued, non-blocking, delivered
+   at turn boundaries). rpc-wrapper is the only process with access to the
+   agent's stdin pipe, making it the natural injection gateway.
+
+2. ~~File-based vs alternative transport?~~
+   **File-based for coordination, RPC for injection.** Files handle addressing,
+   lifecycle, audit trail, and bidirectional communication. The `steer` RPC
+   command handles the actual delivery into the agent's context. This gives us
+   the reliability of files with the guaranteed delivery of RPC.
+
+3. ~~Direct injection (tmux send-keys) vs file mailbox?~~
+   **File mailbox only.** tmux send-keys is one-way (no reply channel), has
+   JSON escaping issues on Windows, and provides no delivery confirmation.
+   The file mailbox adds negligible latency (~0.1ms per check) and delivers
+   at the same cadence (turn boundaries). Not worth the complexity.
