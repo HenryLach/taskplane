@@ -1,10 +1,10 @@
 # TP-089: Agent Mailbox Core and RPC Steering Injection — Status
 
-**Current Step:** Step 2: rpc-wrapper mailbox check and steer injection
+**Current Step:** Step 3: Thread mailbox-dir through spawn paths
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 8
+**Review Counter:** 13
 **Iteration:** 4
 **Size:** L
 
@@ -84,7 +84,7 @@
 ---
 
 ### Step 2: rpc-wrapper mailbox check and steer injection
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 #### 2a. CLI argument parsing
 - [x] Add `--mailbox-dir <path>` to `parseArgs()` in rpc-wrapper.mjs
@@ -120,11 +120,27 @@
 ---
 
 ### Step 3: Thread mailbox-dir through spawn paths
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] spawnAgentTmux() passes --mailbox-dir for worker + reviewer
-- [ ] spawnMergeAgent() passes --mailbox-dir for merger
-- [ ] Fix ORCH_BATCH_ID env var gap
+#### 3a. task-runner spawnAgentTmux() — auto-derive mailbox dir inside
+- [x] Inside spawnAgentTmux(): read `ORCH_BATCH_ID` from `process.env` (set by execution.ts)
+- [x] If present, derive mailbox dir: `join(getSidecarDir(), 'mailbox', batchId, sessionName)` — using sidecar dir (already `.pi/`), NOT stateRoot, to avoid `.pi/.pi/` double nesting
+- [x] Add `--mailbox-dir {quoteArg(mailboxDir)}` to wrapperArgs before `--`
+- [x] `mkdirSync(join(mailboxDir, 'inbox'), { recursive: true })` before spawn
+- [x] When `ORCH_BATCH_ID` is absent (standalone `/task` mode), skip mailbox entirely
+
+#### 3b. merge.ts spawnMergeAgent() — accept batchId as explicit parameter
+- [x] Add `batchId` as explicit parameter (thread from existing caller context in mergeWaveByRepo)
+- [x] Construct mailbox dir: `join(sidecarRoot, 'mailbox', batchId, sessionName)`
+- [x] Pass `--mailbox-dir {shellQuote(mailboxDir)}` in wrapperParts
+- [x] `mkdirSync(join(mailboxDir, 'inbox'), { recursive: true })` before spawn
+
+#### 3c. Update merge callers to pass batchId
+- [x] In merge.ts `mergeWave()`, pass batchId through to both spawnMergeAgent callsites
+
+#### 3d. Fix ORCH_BATCH_ID propagation for retry/re-exec spawns
+- [x] In engine.ts Tier 0 retry callsite: add `ORCH_BATCH_ID: batchState.batchId` to executeLane extraEnvVars
+- [x] In engine.ts model-fallback retry callsite: merge `ORCH_BATCH_ID: batchState.batchId` with existing `TASKPLANE_MODEL_FALLBACK` env var
 
 ---
 
@@ -172,6 +188,11 @@
 | R006 | plan | Step 2 | REVISE | .reviews/R006-plan-step2.md |
 | R007 | plan | Step 2 | REVISE | .reviews/R007-plan-step2.md |
 | R008 | plan | Step 2 | APPROVE | .reviews/R008-plan-step2.md |
+| R009 | code | Step 2 | REVISE | .reviews/R009-code-step2.md |
+| R010 | code | Step 2 | APPROVE | .reviews/R010-code-step2.md |
+| R011 | plan | Step 3 | REVISE | .reviews/R011-plan-step3.md |
+| R012 | plan | Step 3 | REVISE | .reviews/R012-plan-step3.md |
+| R013 | plan | Step 3 | APPROVE | .reviews/R013-plan-step3.md |
 
 ---
 
@@ -221,6 +242,16 @@
 | 2026-03-29 03:38 | Review R007 | plan Step 2: REVISE (fallback) |
 | 2026-03-29 03:39 | Reviewer R008 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
 | 2026-03-29 03:40 | Review R008 | plan Step 2: APPROVE (fallback) |
+| 2026-03-29 03:42 | Reviewer R009 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 03:45 | Review R009 | code Step 2: REVISE (fallback) |
+| 2026-03-29 03:46 | Reviewer R010 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
+| 2026-03-29 03:48 | Review R010 | code Step 2: APPROVE (fallback) |
+| 2026-03-29 03:48 | Reviewer R011 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 03:51 | Review R011 | plan Step 3: REVISE (fallback) |
+| 2026-03-29 03:53 | Reviewer R012 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
+| 2026-03-29 03:55 | Review R012 | plan Step 3: REVISE (fallback) |
+| 2026-03-29 03:56 | Reviewer R013 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 03:59 | Review R013 | plan Step 3: APPROVE (fallback) |
 
 ---
 
