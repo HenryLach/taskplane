@@ -17,7 +17,7 @@ import { computeWaveAssignments } from "./waves.ts";
 import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
 import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions, parseOrchSessionNames } from "./persistence.ts";
 import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, formatPreflightResults, runPreflight } from "./worktree.ts";
-import { computeTransitiveDependents, executeLane, resolveCanonicalTaskPaths } from "./execution.ts";
+import { computeTransitiveDependents, executeLane, resolveCanonicalTaskPaths, tmuxHasSession } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { formatOrchSessions, listOrchSessions } from "./sessions.ts";
@@ -1144,7 +1144,7 @@ export function startBatchInWorker(
  *
  * @since TP-043 R002
  */
-export function buildIntegrationExecutor(repoRoot: string, opId?: string): IntegrationExecutor {
+export function buildIntegrationExecutor(repoRoot: string, opId?: string, stateRoot?: string): IntegrationExecutor {
 	return (mode, context) => {
 		// Ensure we're on the base branch before integrating
 		const currentBranch = getCurrentBranch(repoRoot);
@@ -1204,7 +1204,7 @@ export function buildIntegrationExecutor(repoRoot: string, opId?: string): Integ
 			// TP-065: Post-integrate artifact cleanup (Layer 1).
 			// Also runs on the supervisor auto-integration path.
 			try {
-				cleanupPostIntegrate(repoRoot, context.batchId);
+				cleanupPostIntegrate(stateRoot ?? repoRoot, context.batchId);
 			} catch { /* best effort — don't fail integration for cleanup errors */ }
 		}
 
@@ -1907,7 +1907,7 @@ export default function (pi: ExtensionAPI) {
 						orchBatchState,
 						mode,
 						repoRoot,
-						buildIntegrationExecutor(repoRoot, opId),
+						buildIntegrationExecutor(repoRoot, opId, execCtx!.workspaceRoot),
 						buildCiDeps(repoRoot),
 						sDeps,
 					);
@@ -2127,7 +2127,7 @@ export default function (pi: ExtensionAPI) {
 						orchBatchState,
 						mode,
 						execCtx!.repoRoot,
-						buildIntegrationExecutor(execCtx!.repoRoot, opId),
+						buildIntegrationExecutor(execCtx!.repoRoot, opId, execCtx!.workspaceRoot),
 						buildCiDeps(execCtx!.repoRoot),
 						sDeps,
 					);
@@ -2809,6 +2809,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Resolve integration context
 		const { repoRoot } = execCtx!;
+		const stateRoot = execCtx!.workspaceRoot;
 		const resolution = resolveIntegrationContext(parsed, {
 			loadBatchState: () => loadBatchState(repoRoot),
 			getCurrentBranch: () => getCurrentBranch(repoRoot),
@@ -2993,7 +2994,7 @@ export default function (pi: ExtensionAPI) {
 		// Non-fatal — failures warn but don't block integration.
 		if (batchId) {
 			try {
-				const artifactCleanup = cleanupPostIntegrate(repoRoot, batchId);
+				const artifactCleanup = cleanupPostIntegrate(stateRoot, batchId);
 				const totalCleaned = artifactCleanup.telemetryFilesDeleted + artifactCleanup.mergeFilesDeleted + artifactCleanup.promptFilesDeleted + artifactCleanup.mailboxDirsDeleted;
 				if (totalCleaned > 0) {
 					const cleanupParts = [
@@ -3716,6 +3717,11 @@ export default function (pi: ExtensionAPI) {
 			return "❌ No batch state found. There is no active or recent batch.";
 		}
 
+		// Guard: terminal batches have no running agent sessions to receive messages.
+		if (isBatchTerminal(state.phase)) {
+			return `❌ Batch ${state.batchId} is in terminal phase (${state.phase}). Start or resume a batch before sending messages.`;
+		}
+
 		// Build the set of valid agent session names from batch state
 		const validSessions = new Set<string>();
 		const orchConfig = execCtx?.orchestratorConfig;
@@ -3734,6 +3740,13 @@ export default function (pi: ExtensionAPI) {
 		if (!validSessions.has(to)) {
 			const examples = [...validSessions].slice(0, 5).join(", ");
 			return `❌ Unknown session "${to}" in batch ${state.batchId}.\nValid targets: ${examples}${validSessions.size > 5 ? ` (${validSessions.size} total)` : ""}`;
+		}
+
+		// Guard: ensure the target tmux session is currently alive.
+		// Prevents false-positive "message sent" confirmations when the
+		// batch is paused/stopped or the agent session has already exited.
+		if (!tmuxHasSession(to)) {
+			return `❌ Session "${to}" is not currently running. Use orch_status() or orch_resume() before sending messages.`;
 		}
 
 		// Write message to inbox
