@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 2
+**Review Counter:** 4
 **Iteration:** 0
 **Size:** M
 
@@ -36,10 +36,26 @@ Diagnosis results:
 ---
 
 ### Step 2: Implement STATUS.md preservation
-**Status:** ⬜ Not Started
+**Status:** 🟡 In Progress
 
-- [ ] Implement chosen approach based on Step 1 diagnosis
-- [ ] Verify .DONE and .reviews/ also survive
+**Fix:** Modify artifact staging in `merge.ts` to never overwrite files already in `mergeWorkDir` from lane merge.
+
+**TP-035 allowlist unchanged:** `.DONE`, `STATUS.md`, `REVIEW_VERDICT.json` (no expansion).
+
+**Algorithm:**
+1. Build allowlisted paths from lane task folders (same as today).
+2. For each `relPath`:
+   - `destPath = join(mergeWorkDir, relPath)`
+   - **If `destPath` exists** → **skip** (lane merge already brought correct version).
+   - **If `destPath` missing** → backfill: primary source = `join(lane.worktreePath, relPath)`, fallback = `join(repoRoot, relPath)`. Apply resolve/relative containment check on source.
+   - `git add` only changed/new files.
+3. Commit if staged (same checkpoint commit as today).
+
+**Path safety:** All sources use `resolve()` + `relative()` containment (TP-035 hardening preserved).
+
+- [x] Fix merge.ts artifact staging to skip files already present from lane merge
+- [x] Add lane worktree backfill for missing artifacts (.DONE, REVIEW_VERDICT.json)
+- [x] Maintain path containment checks for all source paths
 
 ---
 
@@ -66,6 +82,8 @@ Diagnosis results:
 |---|------|------|---------|------|
 | R001 | Plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 | R002 | plan | Step 1 | APPROVE | .reviews/R002-plan-step1.md |
+| R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
+| R004 | plan | Step 2 | UNKNOWN | .reviews/R004-plan-step2.md |
 
 ---
 
@@ -86,6 +104,11 @@ Diagnosis results:
 | 2026-03-29 | Step 0 complete | Traced integration flow, read issue #356 |
 | 2026-03-29 | Step 1 plan revised | R001 feedback: expanded diagnosis matrix |
 | 2026-03-29 21:44 | Review R002 | plan Step 1: APPROVE |
+| 2026-03-29 21:52 | Reviewer R003 | persistent reviewer dead — respawning for plan review (1/3) |
+| 2026-03-29 21:54 | Review R003 | plan Step 2: REVISE |
+| 2026-03-29 21:55 | Reviewer R004 | persistent reviewer dead — respawning for plan review (2/3) |
+| 2026-03-29 21:55 | Reviewer R004 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 21:56 | Review R004 | plan Step 2: UNKNOWN (fallback) |
 
 ---
 

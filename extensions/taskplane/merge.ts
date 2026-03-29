@@ -1872,15 +1872,66 @@ export async function mergeWave(
 			}
 		}
 
+		// TP-099: Build a map from relPath → lane worktree path for backfill.
+		// When a file is missing from mergeWorkDir (not brought by lane merge),
+		// we try the lane worktree first (has worker-generated .DONE etc.),
+		// then fall back to repoRoot.
+		const relPathToWorktree = new Map<string, string>();
+		for (const lane of orderedLanes) {
+			for (const allocTask of lane.tasks) {
+				const absFolder = resolve(allocTask.task.taskFolder);
+				const relFolder = relative(resolvedRepoRoot, absFolder).replace(/\\/g, "/");
+				if (relFolder.startsWith("..") || relFolder.startsWith("/")) continue;
+				for (const name of ALLOWED_ARTIFACT_NAMES) {
+					const rp = `${relFolder}/${name}`;
+					if (allowedRelPaths.has(rp)) {
+						relPathToWorktree.set(rp, join(lane.worktreePath, rp));
+					}
+				}
+			}
+		}
+
 		if (allowedRelPaths.size > 0) {
 			let staged = 0;
 			let skipped = 0;
+			let preserved = 0;
 
 			for (const relPath of allowedRelPaths) {
-				const srcPath = join(repoRoot, relPath);
-				if (!existsSync(srcPath)) continue; // File not present (e.g., no REVIEW_VERDICT.json) — skip silently
-
 				const destPath = join(mergeWorkDir, relPath);
+
+				// TP-099: If the file already exists in mergeWorkDir (from lane merge),
+				// do NOT overwrite it — the lane merge brought the correct worker-updated
+				// version (e.g., STATUS.md with checked items, execution log, discoveries).
+				// Overwriting from repoRoot would revert to the pre-execution template.
+				if (existsSync(destPath)) {
+					preserved++;
+					continue;
+				}
+
+				// File missing from mergeWorkDir — backfill from best available source.
+				// Primary: lane worktree (has worker-generated .DONE, REVIEW_VERDICT.json).
+				// Fallback: repoRoot (original task folder, with path containment check).
+				const worktreeSrc = relPathToWorktree.get(relPath);
+				let srcPath: string | null = null;
+
+				// Try lane worktree first (trusted engine-allocated path)
+				if (worktreeSrc && existsSync(worktreeSrc)) {
+					srcPath = worktreeSrc;
+				} else {
+					// Fallback to repoRoot with path containment check (TP-035 hardening)
+					const repoRootSrc = join(repoRoot, relPath);
+					if (existsSync(repoRootSrc)) {
+						const resolvedSrc = resolve(repoRootSrc);
+						const srcRelToRepo = relative(resolvedRepoRoot, resolvedSrc).replace(/\\/g, "/");
+						if (srcRelToRepo.startsWith("..") || srcRelToRepo.startsWith("/")) {
+							execLog("merge", `W${waveIndex}`, `skipping artifact source outside repo root`, { path: relPath, src: repoRootSrc });
+							continue;
+						}
+						srcPath = repoRootSrc;
+					}
+				}
+				if (!srcPath) continue; // File not present anywhere — skip silently
+
 				try {
 					mkdirSync(dirname(destPath), { recursive: true });
 					copyFileSync(srcPath, destPath);
@@ -1897,10 +1948,11 @@ export async function mergeWave(
 				spawnSync("git", ["commit", "-m", `checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md, REVIEW_VERDICT.json)`], { cwd: mergeWorkDir });
 				execLog("merge", `W${waveIndex}`, `committed ${staged} task artifact(s) to merge worktree`, {
 					skipped,
+					preserved,
 					allowedCandidates: allowedRelPaths.size,
 				});
 			} else {
-				execLog("merge", `W${waveIndex}`, `no task artifacts to stage (0 of ${allowedRelPaths.size} candidates present/changed)`);
+				execLog("merge", `W${waveIndex}`, `no task artifacts to stage (0 of ${allowedRelPaths.size} candidates present/changed, ${preserved} preserved from lane merge)`);
 			}
 
 			// Keep both .DONE and STATUS.md in develop's working tree:
