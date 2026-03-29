@@ -1088,18 +1088,6 @@ export async function executeOrchBatch(
 			continue;
 		}
 
-		onNotify(
-			ORCH_MESSAGES.orchWaveStart(waveIdx + 1, rawWaves.length, waveTasks.length, Math.min(waveTasks.length, orchConfig.orchestrator.max_lanes)),
-			"info",
-		);
-
-		// TP-040: Emit wave_start event
-		emitEvent(stateRoot, {
-			...buildEngineEventBase("wave_start", batchState.batchId, waveIdx, batchState.phase),
-			taskIds: waveTasks,
-			laneCount: Math.min(waveTasks.length, orchConfig.orchestrator.max_lanes),
-		}, onEngineEvent);
-
 		const handleWaveMonitorUpdate: MonitorUpdateCallback = (monitorState) => {
 			const changed = syncTaskOutcomesFromMonitor(monitorState, allTaskOutcomes);
 			if (changed) {
@@ -1112,6 +1100,17 @@ export async function executeOrchBatch(
 		const onLanesAllocatedCb = (lanes: AllocatedLane[]) => {
 			latestAllocatedLanes = lanes;
 			batchState.currentLanes = lanes;
+
+			// Emit wave_start with actual lane count (post-affinity grouping)
+			onNotify(
+				ORCH_MESSAGES.orchWaveStart(waveIdx + 1, rawWaves.length, waveTasks.length, lanes.length),
+				"info",
+			);
+			emitEvent(stateRoot, {
+				...buildEngineEventBase("wave_start", batchState.batchId, waveIdx, batchState.phase),
+				taskIds: waveTasks,
+				laneCount: lanes.length,
+			}, onEngineEvent);
 			// TP-029: Track repos from newly allocated lanes for cleanup coverage
 			for (const lane of lanes) {
 				const laneRepoRoot = resolveRepoRoot(lane.repoId, repoRoot, workspaceConfig);
