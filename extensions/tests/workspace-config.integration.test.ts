@@ -14,7 +14,7 @@
  *   6.x — resolvePointer() resolution chain (TP-016)
  *   7.x — Orchestrator pointer threading (TP-016 Step 3)
  *
- * Run: npx vitest run tests/workspace-config.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/workspace-config.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

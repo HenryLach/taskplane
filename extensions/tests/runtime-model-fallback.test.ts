@@ -8,7 +8,7 @@
  *   3.x — Fallback logic: source-based verification of retry-without-model pattern
  *   4.x — Edge cases: fallback disabled, non-model errors don't trigger, budget limits
  *
- * Run: npx vitest run tests/runtime-model-fallback.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/runtime-model-fallback.test.ts
  */
 
 import { describe, it } from "node:test";

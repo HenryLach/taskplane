@@ -93,7 +93,7 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
    - Especially for discovery, waves, persistence/resume, and command parsing.
 
 4. **Run validations locally (minimum)**
-   - `cd extensions && npx vitest run`
+   - `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
    - If CLI changed: `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor`
 
 5. **Preserve compatibility intentionally**
@@ -228,7 +228,7 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
 
 **Pre-release checklist (verify before step 3):**
 - [ ] `CHANGELOG.md` updated with all changes since last release
-- [ ] Tests pass: `cd extensions && npx vitest run`
+- [ ] Tests pass: `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
 - [ ] CLI smoke: `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor`
 - [ ] No uncommitted changes on the release branch
 
@@ -247,7 +247,10 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
   - or `pi -e extensions/task-runner.ts`
 
 - Run tests:
-  - `cd extensions && npx vitest run`
+  - `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
+
+> Note: Historical task artifacts/spec snapshots may still mention Vitest commands.
+> Those references are archival only — the active test runner is Node's native `node:test`.
 
 ---
 

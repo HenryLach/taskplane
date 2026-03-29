@@ -21,7 +21,7 @@
  *   17.x — Write-back zero-mutation paths: cancel/decline confirmation
  *   18.x — Advanced section discoverability: uncovered fields surfaced
  *
- * Run: npx vitest run tests/settings-tui.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/settings-tui.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

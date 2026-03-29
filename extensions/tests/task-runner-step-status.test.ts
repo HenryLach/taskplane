@@ -9,7 +9,7 @@
  *   1.x — Source pattern verification: initialization loop structure
  *   2.x — Functional logic: simulated step status assignment
  *
- * Run: npx vitest run tests/task-runner-step-status.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/task-runner-step-status.test.ts
  */
 
 import { describe, it } from "node:test";

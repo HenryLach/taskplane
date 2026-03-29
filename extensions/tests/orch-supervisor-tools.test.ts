@@ -8,7 +8,7 @@
  *   3.x — Shared helpers: command handlers delegate to shared functions
  *   4.x — Supervisor prompt: tool awareness in system prompts
  *
- * Run: npx vitest run tests/orch-supervisor-tools.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/orch-supervisor-tools.test.ts
  */
 
 import { describe, it } from "node:test";

@@ -6,7 +6,7 @@
  * - resolveIntegrationContext() — pure context resolution with dependency injection
  * - executeIntegration() — mode execution with DI for git/gh ops
  *
- * Run: npx vitest run extensions/tests/orch-integrate.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/orch-integrate.test.ts
  */
 
 import { describe, it } from "node:test";

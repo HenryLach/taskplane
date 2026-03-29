@@ -17,7 +17,7 @@
  *  15.x — TP-068: Graceful skip on double failure
  *  16.x — TP-068: Template explicitly instructs registered tool usage
  *
- * Run: npx vitest run tests/persistent-reviewer-context.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/persistent-reviewer-context.test.ts
  */
 
 import { describe, it } from "node:test";

@@ -8,7 +8,7 @@
  * Uses real temp directory fixtures (no mocking of existsSync).
  *
  * Run: npx tsx extensions/tests/execution-path-resolution.test.ts
- *   or: npx vitest run extensions/tests/execution-path-resolution.test.ts
+ *   or: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/execution-path-resolution.test.ts
  *
  * Test categories:
  *   1 — resolveCanonicalTaskPaths: monorepo (task folder inside repo root)

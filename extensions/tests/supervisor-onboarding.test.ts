@@ -7,7 +7,7 @@
  *   11.x — buildRoutingSystemPrompt: script guidance per state
  *   12.x — /orch with args: existing behavior preserved
  *
- * Run: npx vitest run tests/supervisor-onboarding.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/supervisor-onboarding.test.ts
  */
 
 import { describe, it } from "node:test";

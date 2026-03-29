@@ -12,7 +12,7 @@
  *   7.x — Happy path: no failures → no events, no retries
  *   8.x — Per-pattern exhaustion: table-driven coverage of all patterns
  *
- * Run: npx vitest run tests/tier0-watchdog.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/tier0-watchdog.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

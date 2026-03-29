@@ -9,7 +9,7 @@
  *   4.x — All retries exhausted: final timeout propagates as failure
  *   5.x — Config re-read: reloadMergeTimeoutMs picks up fresh config on retry
  *
- * Run: npx vitest run tests/merge-timeout-resilience.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/merge-timeout-resilience.test.ts
  */
 
 import { describe, it } from "node:test";

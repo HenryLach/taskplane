@@ -20,7 +20,8 @@ import {
 	ORCH_MESSAGES,
 } from "../task-orchestrator.ts";
 
-// Detect vitest: if present, wrap everything in a describe/it block
+// Legacy compatibility: older harnesses may set VITEST.
+// Treat either NODE_TEST_CONTEXT or VITEST as "running under a test runner".
 const isTestRunner = !!(process.env.NODE_TEST_CONTEXT || process.env.VITEST);
 
 let passed = 0;

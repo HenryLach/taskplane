@@ -10,7 +10,7 @@
  *   5.x — Persistence warning: failure surfaces in merge outcome
  *   6.x — Engine/resume parity for safe-stop handling
  *
- * Run: npx vitest run tests/transactional-merge.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/transactional-merge.test.ts
  */
 
 import { describe, it } from "node:test";

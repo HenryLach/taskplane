@@ -6,7 +6,7 @@
  * 2. Branch protection pre-check in /orch-integrate
  * 3. Protection-related merge failure messages include --pr hint
  *
- * Run: npx vitest run extensions/tests/ux-integrate-visibility.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/ux-integrate-visibility.test.ts
  */
 
 import { describe, it } from "node:test";
