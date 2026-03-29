@@ -517,8 +517,12 @@ function loadTelemetryData(batchState) {
         case "response": {
           // Extract context usage from get_session_stats responses
           const ctxUsage = event.data?.contextUsage;
-          if (ctxUsage && typeof ctxUsage.percent === "number") {
-            acc.contextPct = ctxUsage.percent;
+          if (ctxUsage) {
+            // Support both percent (current) and percentUsed (legacy pi versions)
+            const pct = typeof ctxUsage.percent === "number" ? ctxUsage.percent
+              : typeof ctxUsage.percentUsed === "number" ? ctxUsage.percentUsed
+              : null;
+            if (pct !== null) acc.contextPct = pct;
           }
           break;
         }
