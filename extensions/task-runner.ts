@@ -2120,10 +2120,12 @@ function spawnAgentTmux(opts: {
 			};
 		}
 
-		// Normal completion — clean up temp files
+		// Normal completion — clean up temp files and orphan processes
 		const elapsed = Date.now() - startTime;
 		console.error(`[task-runner] tmux: session '${opts.sessionName}' ended after ${Math.round(elapsed / 1000)}s${killed ? " (killed)" : ""}`);
 		cleanupTmp();
+		// TP-097: Clean up orphan rpc-wrapper/pi processes after session ends
+		cleanupOrphanProcesses(sidecarPath);
 		console.error(`[task-runner] tmux: cleanup done for '${opts.sessionName}'`);
 		return {
 			output: "",      // No captured output in TMUX mode
@@ -2142,12 +2144,71 @@ function spawnAgentTmux(opts: {
 			// Session may have already exited — not an error
 			console.error(`[task-runner] tmux: session '${opts.sessionName}' already exited (kill was no-op)`);
 		}
+		// TP-097: Clean up orphan rpc-wrapper/pi processes on explicit kill
+		cleanupOrphanProcesses(sidecarPath);
 		cleanupTmp();
 		console.error(`[task-runner] tmux: cleanup done for '${opts.sessionName}' (killed)`);
 	};
 
 	return { promise, kill, sidecarPath, exitSummaryPath };
 }
+
+// ── Orphan Process Cleanup (TP-097) ───────────────────────────────────
+
+/**
+ * Read the PID file written by rpc-wrapper.mjs and kill orphan processes.
+ *
+ * The PID file is at `{sidecarPath}.pid` and contains JSON with wrapperPid
+ * and childPid fields. After a tmux session ends, the rpc-wrapper child
+ * process may still be alive (e.g., if the tmux session was killed externally
+ * or the wrapper didn't get a clean shutdown signal).
+ *
+ * Best-effort: failures are logged but never throw.
+ *
+ * @param sidecarPath - Path to the sidecar JSONL file (PID file is at sidecarPath + ".pid")
+ */
+function cleanupOrphanProcesses(sidecarPath: string): void {
+	const pidFilePath = sidecarPath + ".pid";
+	try {
+		if (!existsSync(pidFilePath)) return;
+
+		const raw = readFileSync(pidFilePath, "utf-8").trim();
+		if (!raw) return;
+
+		const pidData = JSON.parse(raw);
+		const pidsToCheck: number[] = [];
+		if (typeof pidData.childPid === "number" && pidData.childPid > 0) {
+			pidsToCheck.push(pidData.childPid);
+		}
+		if (typeof pidData.wrapperPid === "number" && pidData.wrapperPid > 0) {
+			pidsToCheck.push(pidData.wrapperPid);
+		}
+
+		for (const pid of pidsToCheck) {
+			try {
+				// Check if process is still alive (signal 0 = no-op, just check existence)
+				process.kill(pid, 0);
+				// Process is alive — send SIGTERM
+				console.error(`[task-runner] TP-097: killing orphan process PID ${pid}`);
+				try {
+					process.kill(pid, "SIGTERM");
+				} catch (killErr: any) {
+					console.error(`[task-runner] TP-097: failed to kill PID ${pid}: ${killErr?.message}`);
+				}
+			} catch {
+				// Process already dead — expected path
+			}
+		}
+
+		// Clean up the PID file
+		try { unlinkSync(pidFilePath); } catch {}
+	} catch (err: any) {
+		console.error(`[task-runner] TP-097: orphan cleanup error: ${err?.message}`);
+	}
+}
+
+/** Expose for testing. */
+export const _cleanupOrphanProcesses = cleanupOrphanProcesses;
 
 // ── Display Helpers ──────────────────────────────────────────────────
 

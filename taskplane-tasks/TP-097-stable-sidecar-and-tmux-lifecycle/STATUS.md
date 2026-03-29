@@ -1,10 +1,10 @@
 # TP-097: Stable Sidecar Identity and TMUX Lifecycle — Status
 
-**Current Step:** Step 1: Stable sidecar identity (#354)
+**Current Step:** Step 2: Orphan process cleanup (#242)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 4
 **Size:** L
 
@@ -27,10 +27,10 @@
 ---
 
 ### Step 2: Orphan process cleanup (#242)
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] PID file write in rpc-wrapper
-- [ ] Orphan detection and cleanup on task end
+- [x] PID file write in rpc-wrapper
+- [x] Orphan detection and cleanup on task end
 
 ---
 
@@ -59,6 +59,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -67,6 +68,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| sidecarPath/exitSummaryPath kept optional (not required) for backward compat | Design decision — reviewer/QG sessions auto-generate; only worker iterations need stable identity | `spawnAgentTmux()` signature |
+| Stable key uses ORCH_BATCH_ID (not Date.now()) for orchestrated mode | Ensures same path across crash recovery within batch | `generateStableSidecarPaths()` |
 
 ---
 
@@ -90,6 +93,7 @@
 | 2026-03-29 21:33 | Worker iter 4 | done in 3s, ctx: 0%, tools: 0 |
 | 2026-03-29 21:33 | No progress | Iteration 3: 0 new checkboxes (3/3 stall limit) |
 | 2026-03-29 21:33 | Task blocked | No progress after 3 iterations |
+| 2026-03-29 21:39 | Review R001 | plan Step 1: REVISE |
 
 ---
 
