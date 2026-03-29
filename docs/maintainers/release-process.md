@@ -47,7 +47,7 @@ tar -tzf taskplane-<version>.tgz
 
 ```bash
 cd extensions
-npx vitest run
+node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts
 cd ..
 ```
 

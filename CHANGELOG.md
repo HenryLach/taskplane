@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.12] - 2026-03-29
+
+### New
+- **TP-081: State Schema v4** — persisted-state contracts for segment execution. v1→v2→v3→v4 migration chain, 806 lines of new tests.
+- **TP-089: Agent Mailbox** — cross-agent steering protocol. Supervisor can send messages to any running agent (worker, reviewer, merger) via `send_agent_message` tool. rpc-wrapper checks inbox on every turn and injects via pi's `steer` RPC command. Non-blocking, guaranteed delivery. 633 lines of tests.
+- **Agent mailbox steering spec** — full protocol design at `docs/specifications/taskplane/agent-mailbox-steering.md`.
+
+### Fixed
+- **ORCH_BATCH_ID now reaches lane sessions** — was never populated, causing dashboard batch filtering to fail and stale telemetry to display.
+- **Sidecar JSONL ~99% size reduction** — rpc-wrapper now only writes telemetry-relevant events. Merge agents previously produced 42MB+ sidecar files from streaming deltas.
+- **REQUEST CHANGES → REVISE verdict mapping** — reviewers using GitHub PR terminology now correctly trigger the REVISE flow.
+- **Worker template: plan review before implementation** — explicit CRITICAL section prohibiting implement-then-plan-review sequence.
+- **Merger template: use verification commands from merge request** — no longer suggests `npm test` as fallback.
+
 ## [0.22.10] - 2026-03-28
 
 ### Fixed

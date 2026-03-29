@@ -5,7 +5,7 @@
  * reading, retry state persistence across ticks, partial-line buffering,
  * missing-file early polls, and final-tail-on-session-end.
  *
- * Run: npx vitest run extensions/tests/sidecar-tailing.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/sidecar-tailing.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

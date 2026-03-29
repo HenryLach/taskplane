@@ -9,7 +9,7 @@
  * - Single-write guard (createSingleWriteGuard: exactly-once semantics)
  * - Integration: spawn rpc-wrapper.mjs with mock pi script, verify sidecar + summary artifacts
  *
- * Run: npx vitest run extensions/tests/rpc-wrapper.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/rpc-wrapper.test.ts
  */
 
 import { describe, it, beforeEach } from "node:test";

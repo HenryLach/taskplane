@@ -14,7 +14,7 @@
  *   9.x — Workspace-scoped counters: repoId in scope key
  *  10.x — applyMergeRetryLoop: shared loop semantics
  *
- * Run: npx vitest run tests/retry-matrix.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/retry-matrix.test.ts
  */
 
 import { describe, it } from "node:test";

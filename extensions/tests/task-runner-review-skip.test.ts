@@ -9,7 +9,7 @@
  *   2.x — Review level interactions (level 0, 1, 2 with low-risk steps)
  *   3.x — Edge cases (single-step task, two-step task, large step counts)
  *
- * Run: npx vitest run tests/task-runner-review-skip.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/task-runner-review-skip.test.ts
  */
 
 import { describe, it } from "node:test";

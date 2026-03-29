@@ -11,7 +11,7 @@
  * verify the contract by examining the source code patterns directly
  * and testing the eligibility implications.
  *
- * Run: npx vitest run extensions/tests/merge-failure-phase.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/merge-failure-phase.test.ts
  */
 
 import { describe, it } from "node:test";

@@ -18,7 +18,7 @@
  *   10.x — generateQualityGatePrompt evidence packaging
  *   11.x — Composed gate decision flow (integration: file I/O, multi-cycle, .DONE assertions)
  *
- * Run: npx vitest run tests/quality-gate.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/quality-gate.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

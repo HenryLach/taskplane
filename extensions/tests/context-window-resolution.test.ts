@@ -6,7 +6,7 @@
  *   2. New default values for warn_percent (85) and kill_percent (95)
  *   3. Default worker_context_window = 0 (signals auto-detect)
  *
- * Run: npx vitest run tests/context-window-resolution.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/context-window-resolution.test.ts
  */
 
 import { describe, it } from "node:test";

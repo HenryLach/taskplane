@@ -6,7 +6,7 @@
  *   2.x  — Stale session names (Bug #102b): reconcileTaskStates() Precedence 5
  *   3.x  — State coherence: mergeResults alignment with waveIndex
  *
- * Run: npx vitest run tests/resume-bug-fixes.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/resume-bug-fixes.test.ts
  */
 
 import { describe, it } from "node:test";

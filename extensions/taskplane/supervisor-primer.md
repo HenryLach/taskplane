@@ -332,7 +332,7 @@ git log --oneline orch/{branch}..task/{lane-branch}  # empty = already merged
 4. After merge, run tests to verify:
    ```bash
    git worktree add /tmp/verify orch/{orchBranch} --detach
-   cd /tmp/verify && cd extensions && npx vitest run
+   cd /tmp/verify && cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts
    ```
 5. Update batch state and advance.
 
@@ -545,7 +545,7 @@ git worktree remove .worktrees/{opId}-{batchId}/merge --force
 ### Verify orch branch integrity
 ```bash
 git worktree add /tmp/tp-verify orch/{orchBranch} --detach
-cd /tmp/tp-verify/extensions && npx vitest run
+cd /tmp/tp-verify/extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts
 # Clean up: cd {repoRoot} && git worktree remove /tmp/tp-verify --force
 ```
 
@@ -1333,7 +1333,7 @@ before writing** — if files already exist (partial setup), read and merge.
 **Customization notes:**
 - `project.name`: Use the actual project name (from package.json, README, etc.)
 - `paths.tasks` and `taskAreas`: Match what was agreed in the task area discussion
-- `testing.commands`: Use the detected test command as a named object (e.g., `{"test": "cd extensions && npx vitest run"}`)
+- `testing.commands`: Use the detected test command as a named object (e.g., `{"test": "cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts"}`)
 - `orchestrator.spawnMode`: Use `"tmux"` if tmux is available, `"subprocess"` otherwise
 - `orchestrator.maxLanes`: Start with 2 for first-time users (safe default)
 - `merge.verify`: Add the project's test command for post-merge verification

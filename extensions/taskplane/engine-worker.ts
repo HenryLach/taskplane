@@ -85,7 +85,7 @@ export interface SerializedWorkspaceConfig {
  * workerData shape passed from the main thread.
  */
 export interface EngineWorkerData {
-	/** Sentinel flag — distinguishes engine worker from vitest threads */
+	/** Sentinel flag — distinguishes engine worker from test-runner worker threads */
 	engineWorker: true;
 	/** "execute" for new batch, "resume" for resume */
 	mode: "execute" | "resume";

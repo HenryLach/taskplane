@@ -16,6 +16,10 @@ Taskplane is an AI agent orchestration system built as a pi package. It provides
 - Dependency-aware parallel orchestration (`/orch*`)
 - File-backed state, resumability, and observability
 
+> **Historical note (testing):** Older task packets in this folder may reference
+> Vitest commands. Those references are archival snapshots. Use Node.js native
+> test runner commands for current work.
+
 ---
 
 ## Key Files

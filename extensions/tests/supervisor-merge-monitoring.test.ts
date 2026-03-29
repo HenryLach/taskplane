@@ -9,7 +9,7 @@
  * - Dead-session callback / early-exit signaling
  * - Event de-duplication (each tier emitted at most once)
  *
- * Run: npx vitest run tests/supervisor-merge-monitoring.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/supervisor-merge-monitoring.test.ts
  */
 import { describe, it } from "node:test";
 import { expect } from "./expect.ts";

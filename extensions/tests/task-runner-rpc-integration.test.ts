@@ -12,7 +12,7 @@
  *   task-runner-exit-diagnostic.ts → readExitSummary, buildExitDiagnostic, persistence validation
  *   THIS FILE                     → workspace path, /orch guardrail, resume propagation
  *
- * Run: npx vitest run extensions/tests/task-runner-rpc-integration.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/task-runner-rpc-integration.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

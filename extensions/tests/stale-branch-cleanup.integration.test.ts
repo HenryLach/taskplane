@@ -5,7 +5,7 @@
  * - deleteStaleBranches() — deletes task/* and saved/* branches after integrate
  * - syncTaskOutcomesFromMonitor() — task startedAt uses observedAt, not mtime
  *
- * Run: npx vitest run extensions/tests/stale-branch-cleanup.test.ts
+ * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/stale-branch-cleanup.test.ts
  */
 
 import { describe, it, beforeEach, afterEach } from "node:test";

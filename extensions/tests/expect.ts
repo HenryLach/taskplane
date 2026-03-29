@@ -1,8 +1,9 @@
 /**
- * expect() compatibility wrapper — maps vitest's expect API to node:assert.
+ * expect() compatibility wrapper — maps the legacy Vitest-style expect API
+ * to node:assert.
  *
- * This exists solely to minimize the migration diff when moving from vitest
- * to node:test.  New tests should use node:assert directly.
+ * Vitest is no longer the project test runner. This helper remains to keep
+ * existing test code concise while running on Node's native `node:test`.
  */
 import assert from "node:assert";
 
