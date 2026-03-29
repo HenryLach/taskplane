@@ -9,7 +9,7 @@ import { join, dirname, basename } from "path";
 import { execLog } from "./execution.ts";
 import { BATCH_STATE_SCHEMA_VERSION, StateFileError, batchStatePath, BATCH_HISTORY_MAX_ENTRIES, defaultResilienceState, defaultBatchDiagnostics } from "./types.ts";
 import type { BatchHistorySummary } from "./types.ts";
-import type { AllocatedLane, DiscoveryResult, EngineEvent, EscalationContext, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedTaskRecord, TaskMonitorSnapshot, Tier0RecoveryPattern, WorkspaceMode } from "./types.ts";
+import type { AllocatedLane, DiscoveryResult, EngineEvent, EscalationContext, LaneTaskOutcome, LaneTaskStatus, MonitorState, OrchBatchPhase, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord, PersistedMergeResult, PersistedSegmentRecord, PersistedTaskRecord, TaskMonitorSnapshot, Tier0RecoveryPattern, WorkspaceMode } from "./types.ts";
 import { sleepSync } from "./worktree.ts";
 import type { PreserveFailedLaneProgressResult } from "./worktree.ts";
 
@@ -380,6 +380,29 @@ export function upconvertV2toV3(obj: Record<string, unknown>): void {
 }
 
 /**
+ * Upconvert a v3 state object to v4 by adding the `segments` array.
+ *
+ * Added fields:
+ * - `segments`: empty array (no segment records exist in pre-v4 state)
+ *
+ * Task-level segment fields (`packetRepoId`, `packetTaskPath`,
+ * `segmentIds`, `activeSegmentId`) are optional and default to
+ * `undefined` (omitted from JSON). They are NOT backfilled here
+ * because their values depend on runtime discovery, not on
+ * migration defaults.
+ *
+ * This function is idempotent: calling it on an already-v4 object is a no-op.
+ *
+ * @param obj - Parsed state object (mutated in-place)
+ */
+export function upconvertV3toV4(obj: Record<string, unknown>): void {
+	if ((obj.schemaVersion as number) >= 4) return;
+	obj.schemaVersion = 4;
+	// Backfill v4 segments with empty array only during genuine v3→v4 migration.
+	if (!obj.segments) obj.segments = [];
+}
+
+/**
  * Validate a parsed JSON object as a PersistedBatchState.
  *
  * Checks:
@@ -410,9 +433,9 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 			`Missing or invalid "schemaVersion" field (expected number, got ${typeof obj.schemaVersion})`,
 		);
 	}
-	// Accept v1 (auto-upconvert to v2→v3), v2 (upconvert to v3), and v3 (current).
+	// Accept v1 (auto-upconvert to v2→v3→v4), v2 (upconvert to v3→v4), v3 (upconvert to v4), and v4 (current).
 	// Reject anything else — including future versions from newer runtimes.
-	const ACCEPTED_VERSIONS = [1, 2, BATCH_STATE_SCHEMA_VERSION];
+	const ACCEPTED_VERSIONS = [1, 2, 3, BATCH_STATE_SCHEMA_VERSION];
 	if (!ACCEPTED_VERSIONS.includes(obj.schemaVersion as number)) {
 		throw new StateFileError(
 			"STATE_SCHEMA_INVALID",
@@ -754,12 +777,13 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		}
 	}
 
-	// ── v1→v2→v3 upconversion ────────────────────────────────────
+	// ── v1→v2→v3→v4 upconversion ─────────────────────────────────
 	// Apply defaults for fields that may be absent in older state files.
 	// The on-disk file is NOT rewritten; upconversion is in-memory only.
-	// Chain: v1→v2 then v2→v3 (each is idempotent / no-op if already at target).
+	// Chain: v1→v2 then v2→v3 then v3→v4 (each is idempotent / no-op if already at target).
 	upconvertV1toV2(obj);
 	upconvertV2toV3(obj);
+	upconvertV3toV4(obj);
 
 	// ── Validate v3 resilience section ───────────────────────────
 	// After upconversion, resilience must be a valid object with correct types.
@@ -928,6 +952,127 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 				);
 			}
 		}
+		// v4 optional fields: packetRepoId, packetTaskPath (string | undefined)
+		if (t.packetRepoId !== undefined && typeof t.packetRepoId !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`tasks[${i}].packetRepoId is not a string (got ${typeof t.packetRepoId})`,
+			);
+		}
+		if (t.packetTaskPath !== undefined && typeof t.packetTaskPath !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`tasks[${i}].packetTaskPath is not a string (got ${typeof t.packetTaskPath})`,
+			);
+		}
+		// v4 optional field: segmentIds (string[] | undefined)
+		if (t.segmentIds !== undefined) {
+			if (!Array.isArray(t.segmentIds)) {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`tasks[${i}].segmentIds is not an array (got ${typeof t.segmentIds})`,
+				);
+			}
+			for (let j = 0; j < (t.segmentIds as unknown[]).length; j++) {
+				if (typeof (t.segmentIds as unknown[])[j] !== "string") {
+					throw new StateFileError(
+						"STATE_SCHEMA_INVALID",
+						`tasks[${i}].segmentIds[${j}] is not a string`,
+					);
+				}
+			}
+		}
+		// v4 optional field: activeSegmentId (string | null | undefined)
+		if (t.activeSegmentId !== undefined && t.activeSegmentId !== null && typeof t.activeSegmentId !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`tasks[${i}].activeSegmentId is not a string or null (got ${typeof t.activeSegmentId})`,
+			);
+		}
+	}
+
+	// ── Validate v4 segments array ───────────────────────────────
+	if (!Array.isArray(obj.segments)) {
+		throw new StateFileError(
+			"STATE_SCHEMA_INVALID",
+			`Missing or invalid "segments" field (expected array, got ${typeof obj.segments})`,
+		);
+	}
+	const segments = obj.segments as unknown[];
+	for (let i = 0; i < segments.length; i++) {
+		const s = segments[i] as Record<string, unknown>;
+		if (!s || typeof s !== "object") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`segments[${i}] is not an object`,
+			);
+		}
+		// Required string fields
+		for (const field of ["segmentId", "taskId", "repoId", "laneId", "sessionName", "worktreePath", "branch", "exitReason"] as const) {
+			if (typeof s[field] !== "string") {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`segments[${i}].${field} is missing or not a string (got ${typeof s[field]})`,
+				);
+			}
+		}
+		// Required status field (same valid values as task status)
+		if (typeof s.status !== "string" || !VALID_TASK_STATUSES.has(s.status)) {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`segments[${i}].status is invalid: "${s.status}" (expected one of: ${[...VALID_TASK_STATUSES].join(", ")})`,
+			);
+		}
+		// Nullable number fields: startedAt, endedAt
+		if (s.startedAt !== null && typeof s.startedAt !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`segments[${i}].startedAt is not a number or null (got ${typeof s.startedAt})`,
+			);
+		}
+		if (s.endedAt !== null && typeof s.endedAt !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`segments[${i}].endedAt is not a number or null (got ${typeof s.endedAt})`,
+			);
+		}
+		// Required number: retries
+		if (typeof s.retries !== "number") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`segments[${i}].retries is not a number (got ${typeof s.retries})`,
+			);
+		}
+		// Required array: dependsOnSegmentIds
+		if (!Array.isArray(s.dependsOnSegmentIds)) {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`segments[${i}].dependsOnSegmentIds is not an array (got ${typeof s.dependsOnSegmentIds})`,
+			);
+		}
+		for (let j = 0; j < (s.dependsOnSegmentIds as unknown[]).length; j++) {
+			if (typeof (s.dependsOnSegmentIds as unknown[])[j] !== "string") {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`segments[${i}].dependsOnSegmentIds[${j}] is not a string`,
+				);
+			}
+		}
+		// Optional exitDiagnostic
+		if (s.exitDiagnostic !== undefined) {
+			if (!s.exitDiagnostic || typeof s.exitDiagnostic !== "object" || Array.isArray(s.exitDiagnostic)) {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`segments[${i}].exitDiagnostic is not a plain object (got ${Array.isArray(s.exitDiagnostic) ? "array" : typeof s.exitDiagnostic})`,
+				);
+			}
+			if (typeof (s.exitDiagnostic as Record<string, unknown>).classification !== "string") {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`segments[${i}].exitDiagnostic.classification is not a string`,
+				);
+			}
+		}
 	}
 
 	// ── Capture unknown top-level fields for roundtrip preservation ──
@@ -941,6 +1086,7 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		"totalTasks", "succeededTasks", "failedTasks", "skippedTasks", "blockedTasks",
 		"blockedTaskIds", "lastError", "errors",
 		"resilience", "diagnostics",
+		"segments",
 		"_extraFields",
 	]);
 	const extraFields: Record<string, unknown> = {};
@@ -1049,6 +1195,20 @@ export function serializeBatchState(
 				record.exitDiagnostic = outcome.exitDiagnostic;
 			}
 
+			// TP-081 v4: Serialize segment-level fields from ParsedTask or existing state
+			if (allocated?.allocatedTask.task?.packetRepoId !== undefined) {
+				(record as any).packetRepoId = allocated.allocatedTask.task.packetRepoId;
+			}
+			if (allocated?.allocatedTask.task?.packetTaskPath !== undefined) {
+				(record as any).packetTaskPath = allocated.allocatedTask.task.packetTaskPath;
+			}
+			if (allocated?.allocatedTask.task?.segmentIds !== undefined) {
+				(record as any).segmentIds = allocated.allocatedTask.task.segmentIds;
+			}
+			if (allocated?.allocatedTask.task?.activeSegmentId !== undefined) {
+				(record as any).activeSegmentId = allocated.allocatedTask.task.activeSegmentId;
+			}
+
 			return record;
 		});
 
@@ -1122,6 +1282,7 @@ export function serializeBatchState(
 		errors: [...state.errors],
 		resilience: state.resilience ?? defaultResilienceState(),
 		diagnostics: state.diagnostics ?? defaultBatchDiagnostics(),
+		segments: state.segments ?? [],
 	};
 
 	// Merge unknown fields from loaded state to preserve roundtrip fidelity.

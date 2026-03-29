@@ -52,6 +52,7 @@ function makeState(phase: OrchBatchPhase, batchId: string = "test-batch-001"): P
 		errors: [],
 		resilience: defaultResilienceState(),
 		diagnostics: defaultBatchDiagnostics(),
+		segments: [],
 	};
 }
 

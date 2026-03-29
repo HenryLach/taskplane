@@ -191,6 +191,7 @@ function makePersistedState(taskOverrides?: Array<Record<string, unknown>>): Rec
 		errors: [],
 		resilience: { resumeForced: false, retryCountByScope: {}, lastFailureClass: null, repairHistory: [] },
 		diagnostics: { taskExits: {}, batchCost: 0 },
+		segments: [],
 	};
 }
 
