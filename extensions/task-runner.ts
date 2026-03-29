@@ -1371,7 +1371,7 @@ interface SidecarTelemetryDelta {
 	/** Whether any sidecar events were parsed in this tick (used for callback gating) */
 	hadEvents: boolean;
 	/** Authoritative context usage from pi get_session_stats (pi ≥ 0.63.0, null if unavailable) */
-	contextUsage: { percentUsed: number; totalTokens: number; maxTokens: number } | null;
+	contextUsage: { percent: number; totalTokens: number; maxTokens: number } | null;
 }
 
 /**
@@ -1506,9 +1506,11 @@ function tailSidecarJsonl(filePath: string, tailState: SidecarTailState): Sideca
 				// get_session_stats response from pi ≥ 0.63.0 — authoritative context usage
 				if (event.success === true && event.data?.contextUsage) {
 					const cu = event.data.contextUsage;
-					if (typeof cu.percentUsed === "number") {
+					// pi sends `percent` (pi ≥ 0.63.0); accept `percentUsed` as legacy fallback
+					const pctValue = cu.percent ?? cu.percentUsed;
+					if (typeof pctValue === "number") {
 						delta.contextUsage = {
-							percentUsed: cu.percentUsed,
+							percent: pctValue,
 							totalTokens: cu.totalTokens || 0,
 							maxTokens: cu.maxTokens || 0,
 						};
@@ -2461,11 +2463,9 @@ export default function (pi: ExtensionAPI) {
 								state.reviewerLastTool = delta.lastTool;
 							}
 
-							// Context % — prefer authoritative contextUsage (pi ≥ 0.63.0)
+							// Context % — authoritative contextUsage only (pi ≥ 0.63.0, TP-094)
 							if (delta.contextUsage) {
-								state.reviewerContextPct = delta.contextUsage.percentUsed;
-							} else if (delta.latestTotalTokens > 0 && contextWindow > 0) {
-								state.reviewerContextPct = (delta.latestTotalTokens / contextWindow) * 100;
+								state.reviewerContextPct = delta.contextUsage.percent;
 							}
 
 							writeLaneState(state);
@@ -2668,11 +2668,9 @@ export default function (pi: ExtensionAPI) {
 								state.reviewerCostUsd += delta.cost;
 								state.reviewerToolCount += delta.toolCalls;
 								if (delta.lastTool) state.reviewerLastTool = delta.lastTool;
-								// Context % — prefer authoritative contextUsage (pi ≥ 0.63.0)
+								// Context % — authoritative contextUsage only (pi ≥ 0.63.0, TP-094)
 								if (delta.contextUsage) {
-									state.reviewerContextPct = delta.contextUsage.percentUsed;
-								} else if (delta.latestTotalTokens > 0 && contextWindow > 0) {
-									state.reviewerContextPct = (delta.latestTotalTokens / contextWindow) * 100;
+									state.reviewerContextPct = delta.contextUsage.percent;
 								}
 								writeLaneState(state);
 								updateWidgets();
@@ -3257,6 +3255,8 @@ export default function (pi: ExtensionAPI) {
 		const warnPct = config.context.warn_percent;
 		const killPct = config.context.kill_percent;
 		console.error(`[task-runner] worker context window: ${contextWindow} (${contextWindowSource})`);
+		// One-shot warning when pi doesn't provide authoritative contextUsage (TP-094)
+		let warnedNoContextUsage = false;
 
 		if (spawnMode === "tmux") {
 			// ── TMUX mode ────────────────────────────────────────
@@ -3295,14 +3295,10 @@ export default function (pi: ExtensionAPI) {
 						state.workerLastRetryError = delta.lastRetryError;
 					}
 
-					// Context % — prefer authoritative contextUsage from pi ≥ 0.63.0,
-					// fall back to manual calculation from totalTokens + cacheRead.
-					{
-						const pct = delta.contextUsage
-							? delta.contextUsage.percentUsed
-							: (delta.latestTotalTokens > 0 && contextWindow > 0)
-								? (delta.latestTotalTokens / contextWindow) * 100
-								: 0;
+					// Context % — authoritative contextUsage only (pi ≥ 0.63.0, TP-094)
+					// Manual token-based fallback removed: avoids false thresholds on older pi.
+					if (delta.contextUsage) {
+						const pct = delta.contextUsage.percent;
 						if (pct > 0) {
 							state.workerContextPct = pct;
 							if (pct >= warnPct) {
@@ -3314,6 +3310,10 @@ export default function (pi: ExtensionAPI) {
 								spawned.kill();
 							}
 						}
+					} else if (delta.hadEvents && !warnedNoContextUsage) {
+						// One-shot warning: pi did not provide authoritative contextUsage
+						warnedNoContextUsage = true;
+						console.error(`[task-runner] warning: pi did not provide contextUsage — context pressure thresholds disabled`);
 					}
 
 					updateWidgets();
