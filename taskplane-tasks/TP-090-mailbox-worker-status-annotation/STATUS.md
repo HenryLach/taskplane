@@ -1,10 +1,10 @@
 # TP-090: Mailbox Worker STATUS.md Annotation — Status
 
-**Current Step:** Step 1: Steering-pending flag and STATUS.md injection
+**Current Step:** Step 2: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 2
 **Size:** S
 
@@ -31,9 +31,14 @@
 ---
 
 ### Step 2: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Behavioral tests for steering annotation
+- [ ] Test: rpc-wrapper writes .steering-pending JSONL after delivery when steeringPendingPath is set
+- [ ] Test: rpc-wrapper does NOT write .steering-pending when steeringPendingPath is null
+- [ ] Test: task-runner annotates STATUS.md with steering entries from .steering-pending
+- [ ] Test: flag file is deleted after annotation
+- [ ] Test: malformed JSONL lines are skipped gracefully
+- [ ] Test: content sanitization (newline collapse, pipe escape, truncation)
 - [ ] Full test suite passing
 
 ---
@@ -52,6 +57,7 @@
 | R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 | R002 | plan | Step 1 | APPROVE | .reviews/R002-plan-step1.md |
 | R003 | code | Step 1 | REVISE | .reviews/R003-code-step1.md |
+| R004 | code | Step 1 | APPROVE | .reviews/R004-code-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -80,6 +86,8 @@
 | 2026-03-29 20:35 | Reviewer R003 | persistent reviewer dead — respawning for code review (1/3) |
 | 2026-03-29 20:37 | Reviewer R003 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer session died while waiting for verdict |
 | 2026-03-29 20:39 | Review R003 | code Step 1: REVISE (fallback) |
+| 2026-03-29 20:42 | Review R004 | code Step 1: APPROVE |
+| 2026-03-29 20:42 | Reviewer R004 | code review APPROVE — killing persistent reviewer (step 1 cycle done) |
 
 ---
 
