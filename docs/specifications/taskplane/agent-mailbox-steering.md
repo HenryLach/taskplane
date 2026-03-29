@@ -1,6 +1,6 @@
 # Agent Mailbox: Cross-Agent Steering Protocol
 
-**Status:** Draft  
+**Status:** Phase 1 Implemented (TP-089)  
 **Author:** Supervisor (Claude)  
 **Created:** 2026-03-28  
 **Issue:** TBD
@@ -444,17 +444,17 @@ These are registered as supervisor extension tools (same pattern as
 
 ## Implementation Phases
 
-### Phase 1: Core mailbox + supervisor send (MVP)
+### Phase 1: Core mailbox + supervisor send (MVP) ✅ Implemented (TP-089)
 
-- Mailbox directory structure and message format
-- rpc-wrapper: `--mailbox-dir` arg, inbox check on `message_end`, `steer` RPC injection
-- rpc-wrapper: `set_steering_mode "all"` at session startup
-- task-runner `spawnAgentTmux()`: pass `--mailbox-dir` for worker + reviewer sessions
-- merge.ts `spawnMergeAgent()`: pass `--mailbox-dir` for merger sessions
-- `send_agent_message` supervisor tool (writes to inbox)
-- Batch cleanup includes `mailbox/{batchId}/` directory
-- Tests: message write/read/ack lifecycle, stale batch rejection, misdelivery prevention,
-  all three agent types receive messages
+- ✅ Mailbox directory structure and message format (`extensions/taskplane/mailbox.ts`, `types.ts`)
+- ✅ rpc-wrapper: `--mailbox-dir` arg, inbox check on `message_end`, `steer` RPC injection
+- ✅ rpc-wrapper: `set_steering_mode "all"` at session startup
+- ✅ task-runner `spawnAgentTmux()`: pass `--mailbox-dir` for worker + reviewer sessions
+- ✅ merge.ts `spawnMergeAgent()`: pass `--mailbox-dir` for merger sessions
+- ✅ `send_agent_message` supervisor tool (writes to inbox, `extension.ts`)
+- ✅ Batch cleanup includes `mailbox/{batchId}/` directory (post-integrate + 7-day stale sweep)
+- ✅ Tests: message write/read/ack lifecycle, stale batch rejection, misdelivery prevention,
+  rpc-wrapper integration, cleanup verification (45 new tests across 2 test files)
 
 ### Phase 2: Worker audit trail + STATUS.md visibility
 
