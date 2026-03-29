@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 0
 **Size:** M
 
@@ -60,12 +60,12 @@ Diagnosis results:
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Integration tests for STATUS.md preservation
-- [ ] Integration tests for .DONE preservation
-- [ ] Integration tests for .reviews/ preservation
-- [ ] Full test suite passing
+- [x] Integration tests for STATUS.md preservation
+- [x] Integration tests for .DONE preservation
+- [x] Integration tests for .reviews/ preservation (.reviews/ not in TP-035 allowlist, not applicable)
+- [x] Full test suite passing (3090/3090 pass)
 
 ---
 
@@ -84,6 +84,7 @@ Diagnosis results:
 | R002 | plan | Step 1 | APPROVE | .reviews/R002-plan-step1.md |
 | R003 | plan | Step 2 | REVISE | .reviews/R003-plan-step2.md |
 | R004 | plan | Step 2 | UNKNOWN | .reviews/R004-plan-step2.md |
+| R005 | code | Step 2 | APPROVE | .reviews/R005-code-step2.md |
 
 ---
 
@@ -109,6 +110,8 @@ Diagnosis results:
 | 2026-03-29 21:55 | Reviewer R004 | persistent reviewer dead — respawning for plan review (2/3) |
 | 2026-03-29 21:55 | Reviewer R004 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
 | 2026-03-29 21:56 | Review R004 | plan Step 2: UNKNOWN (fallback) |
+| 2026-03-29 21:58 | Reviewer R005 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 22:01 | Review R005 | code Step 2: APPROVE (fallback) |
 
 ---
 
