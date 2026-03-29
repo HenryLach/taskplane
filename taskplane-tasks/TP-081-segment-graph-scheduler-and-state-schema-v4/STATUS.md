@@ -1,10 +1,10 @@
 # TP-081: State Schema v4 for Segment Execution — Status
 
-**Current Step:** Step 0: Preflight
-**Status:** 🟡 In Progress
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-28
 **Review Level:** 3
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 3
 **Size:** M
 
@@ -48,11 +48,11 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Update spec notes if implementation details differ from planned shape
-- [ ] Log discoveries in STATUS.md
-- [ ] Create `.DONE`
+- [x] Update spec notes if implementation details differ from planned shape
+- [x] Log discoveries in STATUS.md
+- [x] Create `.DONE`
 
 ---
 
@@ -61,6 +61,7 @@
 | # | Type | Step | Verdict | File |
 | R001 | plan | Step 1 | APPROVE | .reviews/R001-plan-step1.md |
 | R002 | code | Step 2 | UNKNOWN | .reviews/R002-code-step2.md |
+| R003 | code | Step 3 | UNKNOWN | .reviews/R003-code-step3.md |
 |---|------|------|---------|------|
 
 ---
@@ -69,6 +70,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| 6 test files needed `segments: []` added to state builders after version bump | Fixed in Step 3 | Various test files |
+| Existing orch-state-persistence.test.ts uses local BATCH_STATE_SCHEMA_VERSION=2 constant (not imported) | Left as-is (self-contained test with own validator) | orch-state-persistence.test.ts:97 |
+| v4 task fields use `as any` cast for serialization since ParsedTask typing is additive | Acceptable — avoids cross-task coupling | persistence.ts serializeBatchState |
 
 ---
 
@@ -97,10 +101,16 @@
 | 2026-03-28 23:58 | Task blocked | No progress after 3 iterations |
 | 2026-03-28 23:59 | Step 0 complete | Preflight analysis done |
 | 2026-03-28 23:59 | Step 1 started | Adding schema v4 contracts |
+| 2026-03-29 00:02 | Step 1 complete | v4 types added to types.ts |
+| 2026-03-29 00:05 | Step 2 complete | v4 persistence + migration impl |
+| 2026-03-29 00:10 | Step 3 complete | 45 new tests + 2925/2925 full suite pass |
+| 2026-03-29 00:12 | Step 4 complete | Spec updated, discoveries logged |
 | 2026-03-29 00:01 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
 | 2026-03-29 00:05 | Review R001 | plan Step 1: APPROVE (fallback) |
 | 2026-03-29 00:10 | Reviewer R002 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
 | 2026-03-29 00:14 | Review R002 | code Step 2: UNKNOWN (fallback) |
+| 2026-03-29 00:39 | Reviewer R003 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 00:41 | Review R003 | code Step 3: UNKNOWN (fallback) |
 
 ---
 

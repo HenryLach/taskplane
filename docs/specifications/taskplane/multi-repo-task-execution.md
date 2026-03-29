@@ -353,16 +353,26 @@ Legacy `.pi/taskplane-workspace.yaml` remains fallback-only and maps into the sa
 
 Persist segment-level runtime state in `.pi/batch-state.json`:
 
-- task-level:
-  - `packetRepoId`
-  - `packetTaskPath`
-  - `segmentIds[]`
-  - `activeSegmentId`
-- segment-level:
-  - `segmentId`, `repoId`, `status`
-  - `laneId`, `sessionName`, `worktreePath`, `branch`
-  - timestamps, retries, exit diagnostics
-  - dependency edges (`dependsOnSegmentIds[]`)
+- task-level (optional fields on `PersistedTaskRecord`):
+  - `packetRepoId` — repo owning packet files (string, optional)
+  - `packetTaskPath` — absolute path to task folder in packet repo worktree (string, optional)
+  - `segmentIds[]` — segment IDs belonging to this task (string[], optional)
+  - `activeSegmentId` — currently executing segment (string | null, optional)
+- segment-level (new `segments` array of `PersistedSegmentRecord`):
+  - `segmentId` (string, required) — stable `<taskId>::<repoId>` format
+  - `taskId`, `repoId` (string, required)
+  - `status` — same enum as task status: pending/running/succeeded/failed/stalled/skipped
+  - `laneId`, `sessionName`, `worktreePath`, `branch` (string, required, empty if not yet assigned)
+  - `startedAt`, `endedAt` (number | null)
+  - `retries` (number, required, defaults to 0)
+  - `exitDiagnostic` (optional, same shape as task-level `TaskExitDiagnostic`)
+  - `exitReason` (string, required)
+  - `dependsOnSegmentIds[]` (string[], required, empty for first/only segments)
+
+Migration path: v1→v2→v3→v4 chained upconversion, each step idempotent.
+v3→v4 adds `segments: []`; task-level v4 fields default to `undefined`.
+
+**Implemented:** TP-081 (types.ts + persistence.ts + schema-v4-migration.test.ts)
 
 Resume must reconstruct execution from this state without rediscovery ambiguity.
 
