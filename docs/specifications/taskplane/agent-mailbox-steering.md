@@ -139,16 +139,43 @@ File-based coordination is already the proven pattern in taskplane:
 
 ### Addressing
 
-Agents are addressed by their tmux session name, which is unique per batch:
+Agents are addressed by their tmux session name, which is unique per batch.
 
-| Agent | Session Name Pattern | Example |
-|-------|---------------------|---------|
-| Worker | `orch-{opId}-lane-{N}` | `orch-henrylach-lane-1` |
-| Reviewer | `orch-{opId}-lane-{N}-reviewer` | `orch-henrylach-lane-1-reviewer` |
-| Merger | `orch-{opId}-merge-{N}` | `orch-henrylach-merge-1` |
-| Broadcast | `_broadcast` | `_broadcast` |
+Each lane has a **lane-level** rpc-wrapper session that hosts task-runner (the
+extension loop). Task-runner then spawns child rpc-wrapper sessions for the
+worker and reviewer. The merger is spawned directly by the engine. Only the
+child agent sessions (worker, reviewer, merger) are meaningful steering targets:
+
+| Agent | Session Name Pattern | Example | Spawned by |
+|-------|---------------------|---------|------------|
+| Lane (task-runner) | `orch-{opId}-lane-{N}` | `orch-henrylach-lane-1` | engine (execution.ts) |
+| **Worker** | `orch-{opId}-lane-{N}-worker` | `orch-henrylach-lane-1-worker` | task-runner |
+| **Reviewer** | `orch-{opId}-lane-{N}-reviewer` | `orch-henrylach-lane-1-reviewer` | task-runner |
+| **Merger** | `orch-{opId}-merge-{N}` | `orch-henrylach-merge-1` | engine (merge.ts) |
+| Broadcast | `_broadcast` | `_broadcast` | — |
+
+The lane-level session is NOT a steering target — it runs the task-runner
+extension loop, not an LLM agent. The supervisor steers the `-worker`,
+`-reviewer`, and `merge-` sessions.
 
 The supervisor resolves session names from batch state (lane allocations).
+
+### rpc-wrapper: new required args
+
+rpc-wrapper currently has no knowledge of its own session identity or batch.
+Two new CLI args are required:
+
+```
+--mailbox-dir <path>     # e.g., "/project/.pi/mailbox/20260328T195730/orch-henrylach-lane-1-worker"
+```
+
+The caller (task-runner or merge.ts) constructs the full path from batch ID,
+session name, and state root — rpc-wrapper just checks `{mailboxDir}/inbox/`
+on each turn. This follows the same pattern as `--sidecar-path` and
+`--exit-summary-path` (caller constructs, rpc-wrapper uses).
+
+Without this arg, mailbox checking is silently skipped (backward compatible
+with non-orchestrated `/task` mode and older taskplane versions).
 
 ## Delivery: Supervisor → Agent
 
@@ -420,19 +447,21 @@ These are registered as supervisor extension tools (same pattern as
 ### Phase 1: Core mailbox + supervisor send (MVP)
 
 - Mailbox directory structure and message format
-- `send_agent_message` supervisor tool
-- rpc-wrapper inbox check on `message_end`
-- rpc-wrapper stderr notification for delivered messages
-- Batch cleanup includes mailbox directory
-- Tests: message write/read/ack lifecycle, stale batch rejection, misdelivery prevention
+- rpc-wrapper: `--mailbox-dir` arg, inbox check on `message_end`, `steer` RPC injection
+- rpc-wrapper: `set_steering_mode "all"` at session startup
+- task-runner `spawnAgentTmux()`: pass `--mailbox-dir` for worker + reviewer sessions
+- merge.ts `spawnMergeAgent()`: pass `--mailbox-dir` for merger sessions
+- `send_agent_message` supervisor tool (writes to inbox)
+- Batch cleanup includes `mailbox/{batchId}/` directory
+- Tests: message write/read/ack lifecycle, stale batch rejection, misdelivery prevention,
+  all three agent types receive messages
 
-### Phase 2: Worker context injection
+### Phase 2: Worker audit trail + STATUS.md visibility
 
-- task-runner `.steering-pending` flag detection
-- STATUS.md execution log injection
-- `check_messages` tool in task-runner
-- Worker template steering message instructions
-- Tests: end-to-end steering message delivery to worker context
+- task-runner `.steering-pending` flag detection in polling loop
+- STATUS.md execution log injection for delivered messages
+- Worker template steering message guidance
+- Tests: end-to-end steering message delivery and STATUS.md annotation
 
 ### Phase 3: Agent → supervisor replies
 
