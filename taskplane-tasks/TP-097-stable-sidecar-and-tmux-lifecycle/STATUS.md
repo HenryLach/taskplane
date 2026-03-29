@@ -1,6 +1,6 @@
 # TP-097: Stable Sidecar Identity and TMUX Lifecycle — Status
 
-**Current Step:** Step 3: Spawn retry improvements (#335)
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
@@ -42,10 +42,10 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Behavioral tests for all fixes
-- [ ] Full test suite passing
+- [x] Behavioral tests for all fixes
+- [x] Full test suite passing
 
 ---
 

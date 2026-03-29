@@ -83,9 +83,9 @@ describe("worker spawn verification and retry (#335, source extraction)", () => 
 	const src = readTaskRunnerSource();
 	const tmuxBody = extractFunctionRegion(src, "spawnAgentTmux");
 
-	it("adds post-spawn verification delay before checking session", () => {
+	it("adds post-spawn verification delay before checking session (500ms, TP-097)", () => {
 		expect(tmuxBody).toContain("SPAWN_VERIFY_DELAY_MS");
-		expect(tmuxBody).toContain("300");
+		expect(tmuxBody).toContain("= 500");
 	});
 
 	it("defines verification polling (3 attempts, 200ms interval)", () => {
@@ -95,9 +95,9 @@ describe("worker spawn verification and retry (#335, source extraction)", () => 
 		expect(tmuxBody).toContain("200");
 	});
 
-	it("defines max retry count (2 retries)", () => {
+	it("defines max retry count (5 retries, TP-097)", () => {
 		expect(tmuxBody).toContain("SPAWN_MAX_RETRIES");
-		expect(tmuxBody).toContain("= 2");
+		expect(tmuxBody).toContain("= 5");
 	});
 
 	it("verification uses tmux has-session to check liveness", () => {
@@ -420,5 +420,324 @@ describe("quality gate fix agent tool count isolation", () => {
 		// their own lifecycle (not worker iterations).
 		const fixAgentRegion = extractFunctionRegion(src, "doQualityGateFixAgent");
 		expect(fixAgentRegion).toContain("state.workerToolCount = 0");
+	});
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// 7. TP-097: Stable sidecar identity (#354)
+// ═════════════════════════════════════════════════════════════════════
+
+describe("TP-097: stable sidecar identity (source extraction)", () => {
+	const src = readTaskRunnerSource();
+
+	it("generateStableSidecarPaths uses ORCH_BATCH_ID for stable identity", () => {
+		const funcBody = extractFunctionRegion(src, "generateStableSidecarPaths");
+		expect(funcBody).toContain("ORCH_BATCH_ID");
+		expect(funcBody).toContain("sidecarPath");
+		expect(funcBody).toContain("exitSummaryPath");
+	});
+
+	it("executeTask generates stable sidecar paths ONCE before the iteration loop", () => {
+		const executeTaskRegion = (() => {
+			const startMarker = "async function executeTask(";
+			const idx = src.indexOf(startMarker);
+			if (idx < 0) throw new Error("executeTask not found");
+			return src.slice(idx, idx + 10000);
+		})();
+		// Stable paths generated before the iteration loop
+		expect(executeTaskRegion).toContain("workerStableSidecar");
+		expect(executeTaskRegion).toContain("generateStableSidecarPaths");
+		expect(executeTaskRegion).toContain("workerTailState");
+		expect(executeTaskRegion).toContain("createSidecarTailState");
+		// Passed to runWorker
+		expect(executeTaskRegion).toContain("runWorker(remainingSteps, ctx, workerStableSidecar, workerTailState)");
+	});
+
+	it("spawnAgentTmux accepts optional sidecarPath, exitSummaryPath, tailState", () => {
+		const tmuxBody = extractFunctionRegion(src, "spawnAgentTmux");
+		expect(tmuxBody).toContain("opts.sidecarPath");
+		expect(tmuxBody).toContain("opts.exitSummaryPath");
+		expect(tmuxBody).toContain("opts.tailState");
+	});
+
+	it("spawnAgentTmux uses caller-provided tailState when available", () => {
+		const tmuxBody = extractFunctionRegion(src, "spawnAgentTmux");
+		expect(tmuxBody).toContain("opts.tailState ?? createSidecarTailState()");
+	});
+
+	it("runWorker passes stable sidecar paths and shared tailState to spawnAgentTmux", () => {
+		const runWorkerRegion = extractFunctionRegion(src, "runWorker");
+		expect(runWorkerRegion).toContain("sidecarPath: stableSidecar?.sidecarPath");
+		expect(runWorkerRegion).toContain("exitSummaryPath: stableSidecar?.exitSummaryPath");
+		expect(runWorkerRegion).toContain("tailState: sharedTailState");
+	});
+
+	it("non-worker sessions use per-spawn unique paths (Date.now batchId)", () => {
+		const tmuxBody = extractFunctionRegion(src, "spawnAgentTmux");
+		// Internal fallback path uses Date.now() for batchId (not ORCH_BATCH_ID)
+		expect(tmuxBody).toContain("const telemetryTs = Date.now()");
+		expect(tmuxBody).toContain("const batchId = String(telemetryTs)");
+	});
+});
+
+describe("TP-097: stable sidecar path functional test", () => {
+	it("generateStableSidecarPaths produces deterministic paths", async () => {
+		const { _generateStableSidecarPaths } = await import("../task-runner.ts");
+
+		// Set env vars for deterministic test
+		const origBatchId = process.env.ORCH_BATCH_ID;
+		const origOpId = process.env.TASKPLANE_OPERATOR_ID;
+		process.env.ORCH_BATCH_ID = "test-batch-123";
+		process.env.TASKPLANE_OPERATOR_ID = "test-op";
+
+		try {
+			const paths1 = _generateStableSidecarPaths("orch-lane-1-worker", "TP-097");
+			const paths2 = _generateStableSidecarPaths("orch-lane-1-worker", "TP-097");
+
+			// Same inputs + same env → same paths
+			expect(paths1.sidecarPath).toBe(paths2.sidecarPath);
+			expect(paths1.exitSummaryPath).toBe(paths2.exitSummaryPath);
+
+			// Path includes expected components
+			expect(paths1.sidecarPath).toContain("test-op");
+			expect(paths1.sidecarPath).toContain("test-batch-123");
+			expect(paths1.sidecarPath).toContain("tp-097");
+			expect(paths1.sidecarPath).toContain("lane-1");
+			expect(paths1.sidecarPath).toContain("worker");
+			expect(paths1.sidecarPath).toContain(".jsonl");
+			expect(paths1.exitSummaryPath).toContain("-exit.json");
+		} finally {
+			if (origBatchId !== undefined) process.env.ORCH_BATCH_ID = origBatchId;
+			else delete process.env.ORCH_BATCH_ID;
+			if (origOpId !== undefined) process.env.TASKPLANE_OPERATOR_ID = origOpId;
+			else delete process.env.TASKPLANE_OPERATOR_ID;
+		}
+	});
+
+	it("generateStableSidecarPaths differentiates worker vs reviewer roles", async () => {
+		const { _generateStableSidecarPaths } = await import("../task-runner.ts");
+
+		const origBatchId = process.env.ORCH_BATCH_ID;
+		process.env.ORCH_BATCH_ID = "batch-456";
+
+		try {
+			const workerPaths = _generateStableSidecarPaths("orch-lane-1-worker", "TP-097");
+			const reviewerPaths = _generateStableSidecarPaths("orch-lane-1-reviewer", "TP-097");
+
+			// Different roles → different paths
+			expect(workerPaths.sidecarPath).not.toBe(reviewerPaths.sidecarPath);
+			expect(workerPaths.sidecarPath).toContain("worker");
+			expect(reviewerPaths.sidecarPath).toContain("reviewer");
+		} finally {
+			if (origBatchId !== undefined) process.env.ORCH_BATCH_ID = origBatchId;
+			else delete process.env.ORCH_BATCH_ID;
+		}
+	});
+});
+
+describe("TP-097: tailState preserved across iterations (functional)", () => {
+	let tmpDir: string;
+	let sidecarPath: string;
+
+	beforeEach(() => {
+		tmpDir = join(tmpdir(), `tp097-tail-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+		mkdirSync(tmpDir, { recursive: true });
+		sidecarPath = join(tmpDir, "telemetry.jsonl");
+	});
+
+	afterEach(() => {
+		try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+	});
+
+	it("shared tailState resumes from last byte offset across iterations", async () => {
+		const { _tailSidecarJsonl, _createSidecarTailState } = await import("../task-runner.ts");
+
+		// Shared tailState (created once, reused across iterations)
+		const sharedTailState = _createSidecarTailState();
+
+		// Iteration 1: worker writes events
+		writeFileSync(sidecarPath, [
+			JSON.stringify({ type: "message_end", message: { usage: { input: 100, output: 50, cost: 0.01 } } }),
+			JSON.stringify({ type: "tool_execution_start", toolName: "bash", args: { command: "echo hello" } }),
+		].join("\n") + "\n");
+
+		const d1 = _tailSidecarJsonl(sidecarPath, sharedTailState);
+		expect(d1.inputTokens).toBe(100);
+		expect(d1.toolCalls).toBe(1);
+
+		// Capture offset after iteration 1
+		const offsetAfterIter1 = sharedTailState.offset;
+		expect(offsetAfterIter1).toBeGreaterThan(0);
+
+		// Iteration 2: new worker appends to SAME file (stable sidecar path)
+		appendFileSync(sidecarPath, [
+			JSON.stringify({ type: "message_end", message: { usage: { input: 200, output: 100, cost: 0.02 } } }),
+		].join("\n") + "\n");
+
+		// Tail with SAME shared tailState → only sees new events
+		const d2 = _tailSidecarJsonl(sidecarPath, sharedTailState);
+		expect(d2.inputTokens).toBe(200); // Only new events, not re-reading iter 1
+		expect(d2.toolCalls).toBe(0); // No new tool calls in iter 2
+		expect(sharedTailState.offset).toBeGreaterThan(offsetAfterIter1);
+	});
+
+	it("fresh tailState re-reads entire file (old behavior for reviewers)", async () => {
+		const { _tailSidecarJsonl, _createSidecarTailState } = await import("../task-runner.ts");
+
+		// Write some events
+		writeFileSync(sidecarPath, [
+			JSON.stringify({ type: "message_end", message: { usage: { input: 100, output: 50, cost: 0.01 } } }),
+			JSON.stringify({ type: "message_end", message: { usage: { input: 200, output: 100, cost: 0.02 } } }),
+		].join("\n") + "\n");
+
+		// Fresh tailState starts from offset 0 → reads everything
+		const freshState = _createSidecarTailState();
+		const delta = _tailSidecarJsonl(sidecarPath, freshState);
+		expect(delta.inputTokens).toBe(300); // Sum of both events
+	});
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// 8. TP-097: Orphan process cleanup (#242)
+// ═════════════════════════════════════════════════════════════════════
+
+describe("TP-097: orphan process cleanup (source extraction)", () => {
+	const src = readTaskRunnerSource();
+
+	it("cleanupOrphanProcesses exists and reads PID file", () => {
+		const funcBody = extractFunctionRegion(src, "cleanupOrphanProcesses");
+		expect(funcBody).toContain(".pid");
+		expect(funcBody).toContain("readFileSync");
+		expect(funcBody).toContain("JSON.parse");
+	});
+
+	it("orphan cleanup skips self PID and PID 1", () => {
+		const funcBody = extractFunctionRegion(src, "cleanupOrphanProcesses");
+		expect(funcBody).toContain("process.pid");
+		expect(funcBody).toContain("delete(selfPid)");
+		expect(funcBody).toContain("delete(1)");
+	});
+
+	it("orphan cleanup uses Set for PID deduplication", () => {
+		const funcBody = extractFunctionRegion(src, "cleanupOrphanProcesses");
+		expect(funcBody).toContain("new Set<number>()");
+	});
+
+	it("orphan cleanup sends SIGTERM to alive processes", () => {
+		const funcBody = extractFunctionRegion(src, "cleanupOrphanProcesses");
+		expect(funcBody).toContain('"SIGTERM"');
+	});
+
+	it("orphan cleanup is called after spawnAgentTmux poll loop", () => {
+		const tmuxBody = extractFunctionRegion(src, "spawnAgentTmux");
+		expect(tmuxBody).toContain("cleanupOrphanProcesses(sidecarPath)");
+	});
+
+	it("orphan cleanup is called in kill function", () => {
+		const tmuxBody = extractFunctionRegion(src, "spawnAgentTmux");
+		// The kill function should also call orphan cleanup
+		const killSection = tmuxBody.slice(tmuxBody.indexOf("Kill function"));
+		expect(killSection).toContain("cleanupOrphanProcesses");
+	});
+});
+
+describe("TP-097: PID file in rpc-wrapper (source extraction)", () => {
+	const rpcSrc = readFileSync(resolve(__dirname, "../../bin/rpc-wrapper.mjs"), "utf-8").replace(/\r\n/g, "\n");
+
+	it("writes PID file with wrapper and child PIDs", () => {
+		expect(rpcSrc).toContain("pidFilePath");
+		expect(rpcSrc).toContain("wrapperPid: process.pid");
+		expect(rpcSrc).toContain("childPid: proc.pid");
+	});
+
+	it("PID file path is sidecarPath + .pid", () => {
+		expect(rpcSrc).toContain('args.sidecarPath + ".pid"');
+	});
+
+	it("cleans up PID file on process exit", () => {
+		expect(rpcSrc).toContain("cleanupPidFile");
+		expect(rpcSrc).toContain('process.on("exit", cleanupPidFile)');
+	});
+});
+
+describe("TP-097: orphan cleanup functional test", () => {
+	let tmpDir: string;
+
+	beforeEach(() => {
+		tmpDir = join(tmpdir(), `tp097-orphan-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+		mkdirSync(tmpDir, { recursive: true });
+	});
+
+	afterEach(() => {
+		try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+	});
+
+	it("cleanupOrphanProcesses handles missing PID file gracefully", async () => {
+		const { _cleanupOrphanProcesses } = await import("../task-runner.ts");
+		const sidecarPath = join(tmpDir, "nonexistent.jsonl");
+		// Should not throw
+		_cleanupOrphanProcesses(sidecarPath);
+	});
+
+	it("cleanupOrphanProcesses handles malformed PID file", async () => {
+		const { _cleanupOrphanProcesses } = await import("../task-runner.ts");
+		const sidecarPath = join(tmpDir, "test.jsonl");
+		writeFileSync(sidecarPath + ".pid", "not json\n");
+		// Should not throw
+		_cleanupOrphanProcesses(sidecarPath);
+	});
+
+	it("cleanupOrphanProcesses handles dead PIDs gracefully", async () => {
+		const { _cleanupOrphanProcesses } = await import("../task-runner.ts");
+		const sidecarPath = join(tmpDir, "test.jsonl");
+		// Write PID file with a PID that's almost certainly dead
+		writeFileSync(sidecarPath + ".pid", JSON.stringify({
+			wrapperPid: 999999999,
+			childPid: 999999998,
+			startedAt: Date.now(),
+		}) + "\n");
+		// Should not throw — dead PIDs are expected
+		_cleanupOrphanProcesses(sidecarPath);
+	});
+
+	it("cleanupOrphanProcesses removes PID file after cleanup", async () => {
+		const { _cleanupOrphanProcesses } = await import("../task-runner.ts");
+		const { existsSync: exists } = await import("fs");
+		const sidecarPath = join(tmpDir, "test.jsonl");
+		const pidFile = sidecarPath + ".pid";
+		writeFileSync(pidFile, JSON.stringify({
+			wrapperPid: 999999999,
+			childPid: 999999998,
+			startedAt: Date.now(),
+		}) + "\n");
+		expect(exists(pidFile)).toBe(true);
+		_cleanupOrphanProcesses(sidecarPath);
+		expect(exists(pidFile)).toBe(false);
+	});
+});
+
+// ═════════════════════════════════════════════════════════════════════
+// 9. TP-097: Spawn retry budget (#335)
+// ═════════════════════════════════════════════════════════════════════
+
+describe("TP-097: spawn retry budget increase (#335, source extraction)", () => {
+	const src = readTaskRunnerSource();
+	const tmuxBody = extractFunctionRegion(src, "spawnAgentTmux");
+
+	it("SPAWN_MAX_RETRIES is 5 (was 2 before TP-097)", () => {
+		expect(tmuxBody).toContain("SPAWN_MAX_RETRIES = 5");
+	});
+
+	it("SPAWN_VERIFY_DELAY_MS is 500 (was 300 before TP-097)", () => {
+		expect(tmuxBody).toContain("SPAWN_VERIFY_DELAY_MS = 500");
+	});
+
+	it("progressive delay uses N * 500ms", () => {
+		expect(tmuxBody).toContain("spawnRetries * 500");
+	});
+
+	it("logs stderr from failed session on each retry", () => {
+		expect(tmuxBody).toContain("failedStderr");
+		expect(tmuxBody).toContain("stderrLogHint");
 	});
 });
