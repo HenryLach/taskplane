@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** S
 
@@ -21,10 +21,11 @@
 ### Step 1: Steering-pending flag and STATUS.md injection
 **Status:** 🟨 In Progress
 
-- [ ] rpc-wrapper: after each delivered message, append to `.steering-pending` file in task folder with timestamp + content
-- [ ] task-runner: after `runWorker()` returns, check for `.steering-pending` in task folder
-- [ ] task-runner: if found, parse entries and inject each as `| {ts} | ⚠️ Steering | {content} |` into STATUS.md execution log
-- [ ] task-runner: delete `.steering-pending` after annotation
+- [ ] rpc-wrapper: add `--steering-pending-path` CLI arg; after each delivered message, append JSONL entry `{"ts":<epoch>,"content":<string>,"id":<string>}` to that path
+- [ ] task-runner spawnAgentTmux: pass `--steering-pending-path` only for worker sessions (not reviewer/merger)
+- [ ] task-runner polling loop: after `runWorker()` but BEFORE `state.phase === "error"` early-return, check for `.steering-pending`
+- [ ] task-runner: parse JSONL entries, sanitize content (collapse newlines, escape `|`), inject as `| {ts} | ⚠️ Steering | {sanitized} |`
+- [ ] task-runner: delete `.steering-pending` after successful annotation
 - [ ] Worker template: add guidance about steering messages appearing in execution log
 
 ---
@@ -48,6 +49,7 @@
 ## Reviews
 
 | # | Type | Step | Verdict | File |
+| R001 | plan | Step 1 | REVISE | .reviews/R001-plan-step1.md |
 |---|------|------|---------|------|
 
 ---
@@ -70,6 +72,8 @@
 | 2026-03-29 20:24 | Step 0 started | Preflight |
 | 2026-03-29 20:24 | Worker iter 1 | done in 9s, ctx: 0%, tools: 0 |
 | 2026-03-29 20:24 | No progress | Iteration 1: 0 new checkboxes (1/3 stall limit) |
+| 2026-03-29 20:27 | Reviewer R001 | persistent reviewer failed — falling back to fresh spawn: Persistent reviewer exited within 30s of spawn without producing a verdict — wait_for_review tool may not be supported by this model (e.g., called via bash instead of as a registered tool) |
+| 2026-03-29 20:30 | Review R001 | plan Step 1: REVISE (fallback) |
 
 ---
 
