@@ -1,7 +1,7 @@
 # TP-096: Dashboard Telemetry Completeness and Supervisor Recovery Tools — Status
 
-**Current Step:** Step 0: Preflight
-**Status:** 🟡 In Progress
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-29
 **Review Level:** 2
 **Review Counter:** 3
@@ -11,54 +11,54 @@
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Read dashboard merge telemetry and supervisor tool patterns
+- [x] Read dashboard merge telemetry and supervisor tool patterns
 
 ---
 
 ### Step 1: Merge agent telemetry in dashboard (#328)
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Server-side sidecar reading for merge agents
-- [ ] Client-side telemetry rendering
+- [x] Server-side sidecar reading for merge agents
+- [x] Client-side telemetry rendering
 
 ---
 
 ### Step 2: read_agent_status supervisor tool
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read STATUS.md + lane-state for agent status
+- [x] Read STATUS.md + lane-state for agent status
 
 ---
 
 ### Step 3: trigger_wrap_up supervisor tool
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Write .task-wrap-up file for target lane
+- [x] Write .task-wrap-up file for target lane
 
 ---
 
 ### Step 4: read_lane_logs and list_active_agents tools
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read stderr logs, list tmux sessions with metadata
+- [x] Read stderr logs, list tmux sessions with metadata
 
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Behavioral tests for all tools
-- [ ] Full test suite passing
+- [x] Behavioral tests for all tools
+- [x] Full test suite passing
 
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Update supervisor-primer.md
-- [ ] Log discoveries
+- [x] Update supervisor-primer.md
+- [x] Log discoveries
 
 ---
 
@@ -119,4 +119,4 @@
 
 ## Notes
 
-*Reserved for execution notes*
+Checkmarks on this STATUS.md are perfunctory — the worker completed all code (6 step-boundary commits confirmed in git history) but the lane session died from context exhaustion before committing an updated STATUS.md. The original STATUS.md was not recoverable from checkpoint commits. All deliverables are present in the codebase and verified by CI.
