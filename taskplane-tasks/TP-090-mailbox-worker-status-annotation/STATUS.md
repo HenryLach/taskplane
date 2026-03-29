@@ -1,6 +1,6 @@
 # TP-090: Mailbox Worker STATUS.md Annotation — Status
 
-**Current Step:** Step 2: Testing & Verification
+**Current Step:** Step 3: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
@@ -31,15 +31,15 @@
 ---
 
 ### Step 2: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Test: rpc-wrapper writes .steering-pending JSONL after delivery when steeringPendingPath is set
-- [ ] Test: rpc-wrapper does NOT write .steering-pending when steeringPendingPath is null
-- [ ] Test: task-runner annotates STATUS.md with steering entries from .steering-pending
-- [ ] Test: flag file is deleted after annotation
-- [ ] Test: malformed JSONL lines are skipped gracefully
-- [ ] Test: content sanitization (newline collapse, pipe escape, truncation)
-- [ ] Full test suite passing
+- [x] Test: rpc-wrapper writes .steering-pending JSONL after delivery when steeringPendingPath is set
+- [x] Test: rpc-wrapper does NOT write .steering-pending when steeringPendingPath is null
+- [x] Test: task-runner annotates STATUS.md with steering entries from .steering-pending
+- [x] Test: flag file is deleted after annotation
+- [x] Test: malformed JSONL lines are skipped gracefully
+- [x] Test: content sanitization (newline collapse, pipe escape, truncation)
+- [x] Full test suite passing
 
 ---
 

@@ -1720,3 +1720,183 @@ process.stdin.on('end', () => {
 		}
 	}, 30000);
 });
+
+// ── 17. parseArgs — steering-pending-path (TP-090) ──────────────────────
+
+describe("parseArgs — steering-pending-path (TP-090)", () => {
+	it("parses --steering-pending-path correctly", () => {
+		const { parseArgs } = wrapperModule;
+		const result = parseArgs([
+			"node", "rpc-wrapper.mjs",
+			"--sidecar-path", "/tmp/sidecar.jsonl",
+			"--exit-summary-path", "/tmp/summary.json",
+			"--prompt-file", "/tmp/prompt.md",
+			"--steering-pending-path", "/tmp/task/.steering-pending",
+		]);
+		expect(result.steeringPendingPath).toBe("/tmp/task/.steering-pending");
+	});
+
+	it("steeringPendingPath defaults to null when not provided", () => {
+		const { parseArgs } = wrapperModule;
+		const result = parseArgs([
+			"node", "rpc-wrapper.mjs",
+			"--sidecar-path", "/tmp/sidecar.jsonl",
+			"--exit-summary-path", "/tmp/summary.json",
+			"--prompt-file", "/tmp/prompt.md",
+		]);
+		expect(result.steeringPendingPath).toBe(null);
+	});
+});
+
+// ── 18. checkMailboxAndSteer — .steering-pending JSONL (TP-090) ──────
+
+describe("checkMailboxAndSteer — .steering-pending JSONL (TP-090)", () => {
+	it("appends JSONL entry to steeringPendingPath after delivery", async () => {
+		const { checkMailboxAndSteer } = wrapperModule;
+		const fs = await import("fs");
+		const os = await import("os");
+
+		const tmpDir = join(os.tmpdir(), `rpc-steering-pending-${Date.now()}`);
+		const sessionName = "test-session";
+		const batchId = "test-batch";
+		const mailboxDir = join(tmpDir, batchId, sessionName);
+		const inboxDir = join(mailboxDir, "inbox");
+		fs.mkdirSync(inboxDir, { recursive: true });
+
+		const steeringPendingPath = join(tmpDir, ".steering-pending");
+
+		const msg = {
+			id: "1000-aaa00",
+			batchId,
+			from: "supervisor",
+			to: sessionName,
+			timestamp: 1000,
+			type: "steer",
+			content: "Focus on the API.",
+		};
+		fs.writeFileSync(join(inboxDir, "1000-aaa00.msg.json"), JSON.stringify(msg));
+
+		const written: string[] = [];
+		const mockProc = {
+			stdin: {
+				write: (data: string) => { written.push(data); },
+				destroyed: false,
+			},
+		};
+
+		checkMailboxAndSteer(mailboxDir, mockProc, steeringPendingPath);
+
+		// .steering-pending file should exist with JSONL content
+		expect(fs.existsSync(steeringPendingPath)).toBe(true);
+		const raw = fs.readFileSync(steeringPendingPath, "utf-8");
+		const lines = raw.split("\n").filter((l: string) => l.trim());
+		expect(lines).toHaveLength(1);
+		const entry = JSON.parse(lines[0]);
+		expect(entry.ts).toBe(1000);
+		expect(entry.content).toBe("Focus on the API.");
+		expect(entry.id).toBe("1000-aaa00");
+
+		try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+	});
+
+	it("does NOT write .steering-pending when steeringPendingPath is null", async () => {
+		const { checkMailboxAndSteer } = wrapperModule;
+		const fs = await import("fs");
+		const os = await import("os");
+
+		const tmpDir = join(os.tmpdir(), `rpc-steering-null-${Date.now()}`);
+		const sessionName = "test-session";
+		const batchId = "test-batch";
+		const mailboxDir = join(tmpDir, batchId, sessionName);
+		const inboxDir = join(mailboxDir, "inbox");
+		fs.mkdirSync(inboxDir, { recursive: true });
+
+		const msg = {
+			id: "2000-bbb00",
+			batchId,
+			from: "supervisor",
+			to: sessionName,
+			timestamp: 2000,
+			type: "steer",
+			content: "No flag file.",
+		};
+		fs.writeFileSync(join(inboxDir, "2000-bbb00.msg.json"), JSON.stringify(msg));
+
+		const written: string[] = [];
+		const mockProc = {
+			stdin: {
+				write: (data: string) => { written.push(data); },
+				destroyed: false,
+			},
+		};
+
+		checkMailboxAndSteer(mailboxDir, mockProc, null);
+
+		// Message should still be delivered
+		expect(written.length).toBeGreaterThanOrEqual(1);
+
+		// But no .steering-pending file should exist in tmpDir
+		const files = fs.readdirSync(tmpDir, { recursive: true }) as string[];
+		const hasPending = files.some((f: string) => f.includes(".steering-pending"));
+		expect(hasPending).toBe(false);
+
+		try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+	});
+
+	it("appends multiple JSONL entries for multiple messages", async () => {
+		const { checkMailboxAndSteer } = wrapperModule;
+		const fs = await import("fs");
+		const os = await import("os");
+
+		const tmpDir = join(os.tmpdir(), `rpc-steering-multi-${Date.now()}`);
+		const sessionName = "test-session";
+		const batchId = "test-batch";
+		const mailboxDir = join(tmpDir, batchId, sessionName);
+		const inboxDir = join(mailboxDir, "inbox");
+		fs.mkdirSync(inboxDir, { recursive: true });
+
+		const steeringPendingPath = join(tmpDir, ".steering-pending");
+
+		const msg1 = {
+			id: "1000-aaa00",
+			batchId,
+			from: "supervisor",
+			to: sessionName,
+			timestamp: 1000,
+			type: "steer",
+			content: "First message.",
+		};
+		const msg2 = {
+			id: "2000-bbb00",
+			batchId,
+			from: "supervisor",
+			to: sessionName,
+			timestamp: 2000,
+			type: "steer",
+			content: "Second message.",
+		};
+		fs.writeFileSync(join(inboxDir, "1000-aaa00.msg.json"), JSON.stringify(msg1));
+		fs.writeFileSync(join(inboxDir, "2000-bbb00.msg.json"), JSON.stringify(msg2));
+
+		const written: string[] = [];
+		const mockProc = {
+			stdin: {
+				write: (data: string) => { written.push(data); },
+				destroyed: false,
+			},
+		};
+
+		checkMailboxAndSteer(mailboxDir, mockProc, steeringPendingPath);
+
+		const raw = fs.readFileSync(steeringPendingPath, "utf-8");
+		const lines = raw.split("\n").filter((l: string) => l.trim());
+		expect(lines).toHaveLength(2);
+
+		const e1 = JSON.parse(lines[0]);
+		const e2 = JSON.parse(lines[1]);
+		expect(e1.content).toBe("First message.");
+		expect(e2.content).toBe("Second message.");
+
+		try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+	});
+});
