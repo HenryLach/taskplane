@@ -1884,12 +1884,39 @@ function spawnAgentTmux(opts: {
 	let sidecarPath: string;
 	let exitSummaryPath: string;
 	if (opts.sidecarPath && opts.exitSummaryPath) {
+		// TP-097: Caller provided stable paths (worker iteration flow)
 		sidecarPath = opts.sidecarPath;
 		exitSummaryPath = opts.exitSummaryPath;
 	} else {
-		const generated = generateStableSidecarPaths(opts.sessionName, opts.taskId);
-		sidecarPath = generated.sidecarPath;
-		exitSummaryPath = generated.exitSummaryPath;
+		// Internal generation: use unique per-spawn paths (Date.now-based batchId)
+		// to prevent reviewer/QG sessions from replaying old telemetry on respawn.
+		// Only the worker iteration flow uses ORCH_BATCH_ID for stable identity.
+		const telemetryTs = Date.now();
+		let opId = "op";
+		const envOpId = process.env.TASKPLANE_OPERATOR_ID;
+		if (envOpId?.trim()) {
+			opId = envOpId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+		} else {
+			try {
+				const username = userInfo().username;
+				if (username?.trim()) {
+					opId = username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
+				}
+			} catch { /* userInfo() can throw on some platforms */ }
+		}
+		const batchId = String(telemetryTs);
+		const repoId = "default";
+		const role = opts.sessionName.endsWith("-reviewer") ? "reviewer" : "worker";
+		const laneMatch = opts.sessionName.match(/lane-(\d+)/);
+		const laneSuffix = laneMatch ? `-lane-${laneMatch[1]}` : "";
+		const taskIdSegment = opts.taskId
+			? `-${opts.taskId.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 30)}`
+			: "";
+		const telemetryBasename = `${opId}-${batchId}-${repoId}${taskIdSegment}${laneSuffix}-${role}`;
+		const internalTelemetryDir = join(getSidecarDir(), "telemetry");
+		if (!existsSync(internalTelemetryDir)) mkdirSync(internalTelemetryDir, { recursive: true });
+		sidecarPath = join(internalTelemetryDir, `${telemetryBasename}.jsonl`);
+		exitSummaryPath = join(internalTelemetryDir, `${telemetryBasename}-exit.json`);
 	}
 	// Ensure telemetry directory exists
 	const telemetryDir = dirname(sidecarPath);
@@ -2186,13 +2213,18 @@ function cleanupOrphanProcesses(sidecarPath: string): void {
 		if (!raw) return;
 
 		const pidData = JSON.parse(raw);
-		const pidsToCheck: number[] = [];
+		const pidsToCheck = new Set<number>();
 		if (typeof pidData.childPid === "number" && pidData.childPid > 0) {
-			pidsToCheck.push(pidData.childPid);
+			pidsToCheck.add(pidData.childPid);
 		}
 		if (typeof pidData.wrapperPid === "number" && pidData.wrapperPid > 0) {
-			pidsToCheck.push(pidData.wrapperPid);
+			pidsToCheck.add(pidData.wrapperPid);
 		}
+
+		// Safety: never kill ourselves or PID 1 (init)
+		const selfPid = process.pid;
+		pidsToCheck.delete(selfPid);
+		pidsToCheck.delete(1);
 
 		for (const pid of pidsToCheck) {
 			try {
