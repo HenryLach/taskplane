@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.15] - 2026-03-30
+
+### Fixed
+- **Lane sessions pass `--no-extensions` to pi** — Root cause of telemetry freeze. Pi auto-discovered `task-runner.ts` from the worktree CWD AND loaded it via explicit `-e` flag, resulting in two competing extension copies. The second copy generated timestamp-based sidecar paths, overriding TP-097's stable paths. Also explains worker startup crashes — two copies competing to spawn tmux sessions.
+
 ## [0.22.14] - 2026-03-29
 
 ### New
