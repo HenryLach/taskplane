@@ -148,9 +148,8 @@ export function planAbortActions(
 /**
  * Write wrap-up signal files to each lane's task folder.
  *
- * Writes both `.task-wrap-up` (primary) and `.wiggum-wrap-up` (legacy)
- * for backward compatibility. Continues on partial failure — aggregates
- * errors per lane.
+ * Writes `.task-wrap-up` signal file to each lane's task folder.
+ * Continues on partial failure — aggregates errors per lane.
  *
  * @param targets   - Target sessions with resolved task folders
  * @returns Updated target results with wrapUpWritten/wrapUpError
@@ -176,7 +175,6 @@ export function writeWrapUpFiles(
 
 		try {
 			const primaryPath = join(target.taskFolderInWorktree, ".task-wrap-up");
-			const legacyPath = join(target.taskFolderInWorktree, ".wiggum-wrap-up");
 
 			// Ensure directory exists
 			if (!existsSync(target.taskFolderInWorktree)) {
@@ -185,7 +183,6 @@ export function writeWrapUpFiles(
 			}
 
 			writeFileSync(primaryPath, content, "utf-8");
-			writeFileSync(legacyPath, content, "utf-8");
 			results.push({ sessionName: target.sessionName, written: true, error: null });
 		} catch (err) {
 			results.push({

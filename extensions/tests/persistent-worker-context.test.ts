@@ -234,9 +234,10 @@ describe("3.x: Stall detection — no progress across full iterations", () => {
 	it("3.4: stall detection logs iteration number and progress info", () => {
 		const executeTaskBody = extractFunction(source, "executeTask");
 
-		// Stall warning includes iteration number and stall count
+		// TP-098: Changed from iter+1 (loop-local) to state.totalIterations (global)
+		// to prevent label collision across restarts.
 		expect(executeTaskBody).toContain(
-			"`Iteration ${iter + 1}: 0 new checkboxes (${noProgressCount}/${config.context.no_progress_limit} stall limit)`"
+			"`Iteration ${state.totalIterations}: 0 new checkboxes (${noProgressCount}/${config.context.no_progress_limit} stall limit)`"
 		);
 	});
 
@@ -369,9 +370,10 @@ describe("6.x: Context limit mid-task → next iteration picks up from incomplet
 		const executeTaskBody = extractFunction(source, "executeTask");
 
 		// At the start of each iteration, STATUS.md is re-parsed
-		// to determine which steps are still incomplete
+		// to determine which steps are still incomplete.
+		// Use a generous slice window to accommodate comments/guards added by TP-098.
 		const iterLoop = executeTaskBody.indexOf("for (let iter = 0");
-		const afterIterStart = executeTaskBody.slice(iterLoop, iterLoop + 500);
+		const afterIterStart = executeTaskBody.slice(iterLoop, iterLoop + 800);
 		expect(afterIterStart).toContain("const currentStatus = parseStatusMd(readFileSync(statusPath");
 		expect(afterIterStart).toContain("const remainingSteps: StepInfo[] = []");
 	});
