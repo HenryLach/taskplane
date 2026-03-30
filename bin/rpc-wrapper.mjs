@@ -770,10 +770,36 @@ piArgs.push(...args.passthrough);
 
 // ── Spawn pi process ─────────────────────────────────────────────────
 
+// ── System prompt: file-based passthrough to avoid command line limits ────
+// Windows CreateProcess has a ~32K command line limit. Orchestrated worker
+// system prompts routinely exceed this (PROMPT.md + context docs + steps).
+// When the system prompt is large, write it to a temp file and use shell
+// expansion `$(cat file)` to pass it. This works in MSYS2/Git Bash tmux
+// (where the lane sessions run) without hitting the Win32 limit.
+//
+// For small system prompts (< 8K), pass inline for simplicity.
+const SYSTEM_PROMPT_FILE_THRESHOLD = 8192;
+let systemPromptTempFile = null;
+
+if (systemPromptContent && systemPromptContent.length >= SYSTEM_PROMPT_FILE_THRESHOLD) {
+	// Remove --system-prompt from piArgs (was added above) and use file instead
+	const sysIdx = piArgs.indexOf("--system-prompt");
+	if (sysIdx >= 0) piArgs.splice(sysIdx, 2);
+	// Write to temp file and use --append-system-prompt with @file syntax.
+	// Pi's --append-system-prompt accepts @filepath to read from a file.
+	// We use --system-prompt "" (empty base) + --append-system-prompt @file
+	// to effectively set the system prompt from a file.
+	systemPromptTempFile = join(tmpdir(), `pi-rpc-sysprompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.txt`);
+	writeFileSync(systemPromptTempFile, systemPromptContent, "utf-8");
+	piArgs.push("--system-prompt", "");
+	piArgs.push("--append-system-prompt", `@${systemPromptTempFile}`);
+	process.stderr.write(`[rpc-wrapper] system prompt written to file (${systemPromptContent.length} chars): ${systemPromptTempFile}\n`);
+}
+
 const proc = spawn("pi", piArgs, {
 	stdio: ["pipe", "pipe", "pipe"],
 	env: { ...process.env },
-	shell: true, // Required for Windows: resolves pi.cmd shim. Matches task-runner.ts pattern.
+	shell: true,
 });
 
 // ── TP-097: Write PID file for orphan cleanup ──────────────────
@@ -796,6 +822,9 @@ try {
 // Clean up PID file on process exit (best-effort)
 function cleanupPidFile() {
 	try { unlinkSync(pidFilePath); } catch { /* ignore */ }
+	if (systemPromptTempFile) {
+		try { unlinkSync(systemPromptTempFile); } catch { /* ignore */ }
+	}
 }
 process.on("exit", cleanupPidFile);
 
