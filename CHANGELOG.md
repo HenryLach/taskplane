@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.22.14] - 2026-03-29
+
+### New
+- **TP-097: Stable sidecar identity and TMUX lifecycle** — Sidecar path is now deterministic per session (not per spawn attempt), fixing telemetry freeze after crash recovery (#354, root cause of #333/#334). Orphan rpc-wrapper processes cleaned up via PID file on task end (#242). Spawn retry budget increased 2→5 with progressive delay (#335).
+- **TP-098: Dashboard duplicate log fix** — Execution log entries no longer render twice (#348). All `.wiggum-wrap-up` legacy references removed (#251).
+- **TP-099: Integration STATUS.md preservation** — STATUS.md, .DONE, and .reviews/ files now survive through squash merge integration (#356). Root cause was artifact staging overwriting lane-merged content.
+
+### Fixed
+- Artifact staging allowlist expanded to include `.reviews/**` directory tree — review outputs now preserved through merge.
+- Worker prompt cleaned of legacy dual wrap-up signal references.
+- Wave start message reports post-affinity lane count (#346).
+
 ## [0.22.13] - 2026-03-29
 
 ### New

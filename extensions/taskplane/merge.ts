@@ -2,7 +2,7 @@
  * Merge orchestration, merge agents, merge worktree
  * @module orch/merge
  */
-import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdirSync, rmSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdirSync, rmSync, readdirSync } from "fs";
 import { readFile as fsReadFile } from "fs/promises";
 import { execSync, spawnSync } from "child_process";
 import { join, dirname, resolve, relative } from "path";
@@ -1841,16 +1841,48 @@ export async function mergeWave(
 	// ── Stage workspace task artifacts into merge worktree ──────────
 	// TP-035: Tightened artifact staging — only allowlisted task-owned files
 	// are staged. The allowlist is derived per-task-folder from completed lanes:
-	// exactly `.DONE`, `STATUS.md`, and `REVIEW_VERDICT.json` (when present).
+	// `.DONE`, `STATUS.md`, `REVIEW_VERDICT.json`, and `.reviews/**` files.
 	// Files outside known task folders, worktree internals, and repo-escape
 	// paths are rejected. Uses resolve+relative path containment consistent
 	// with ensureTaskFilesCommitted() in execution.ts.
 	if (mergeWorkDir) {
 		// Build the set of allowed artifact paths (repo-root-relative) from
 		// the completed lanes' task folders.
+		//
+		// Allowlist policy:
+		// - task marker files: .DONE, STATUS.md, REVIEW_VERDICT.json
+		// - review outputs under task-local .reviews/**
 		const ALLOWED_ARTIFACT_NAMES = [".DONE", "STATUS.md", "REVIEW_VERDICT.json"];
+		const ALLOWED_ARTIFACT_DIRS = [".reviews"];
 		const resolvedRepoRoot = resolve(repoRoot);
 		const allowedRelPaths = new Set<string>();
+		const relPathToWorktree = new Map<string, string>();
+
+		const listFilesRecursively = (rootDir: string): string[] => {
+			if (!existsSync(rootDir)) return [];
+			const files: string[] = [];
+			const walk = (dir: string): void => {
+				let entries;
+				try {
+					entries = readdirSync(dir, { withFileTypes: true });
+				} catch {
+					return;
+				}
+				for (const entry of entries) {
+					const absPath = join(dir, entry.name);
+					if (entry.isDirectory()) {
+						walk(absPath);
+						continue;
+					}
+					if (!entry.isFile()) continue;
+					const relPath = relative(rootDir, absPath).replace(/\\/g, "/");
+					if (!relPath || relPath.startsWith("..") || relPath.startsWith("/")) continue;
+					files.push(relPath);
+				}
+			};
+			walk(rootDir);
+			return files;
+		};
 
 		for (const lane of orderedLanes) {
 			for (const allocTask of lane.tasks) {
@@ -1867,25 +1899,23 @@ export async function mergeWave(
 				}
 
 				for (const name of ALLOWED_ARTIFACT_NAMES) {
-					allowedRelPaths.add(`${relFolder}/${name}`);
-				}
-			}
-		}
-
-		// TP-099: Build a map from relPath → lane worktree path for backfill.
-		// When a file is missing from mergeWorkDir (not brought by lane merge),
-		// we try the lane worktree first (has worker-generated .DONE etc.),
-		// then fall back to repoRoot.
-		const relPathToWorktree = new Map<string, string>();
-		for (const lane of orderedLanes) {
-			for (const allocTask of lane.tasks) {
-				const absFolder = resolve(allocTask.task.taskFolder);
-				const relFolder = relative(resolvedRepoRoot, absFolder).replace(/\\/g, "/");
-				if (relFolder.startsWith("..") || relFolder.startsWith("/")) continue;
-				for (const name of ALLOWED_ARTIFACT_NAMES) {
 					const rp = `${relFolder}/${name}`;
-					if (allowedRelPaths.has(rp)) {
+					allowedRelPaths.add(rp);
+					relPathToWorktree.set(rp, join(lane.worktreePath, rp));
+				}
+
+				for (const dirName of ALLOWED_ARTIFACT_DIRS) {
+					const laneDir = join(lane.worktreePath, relFolder, dirName);
+					for (const relFile of listFilesRecursively(laneDir)) {
+						const rp = `${relFolder}/${dirName}/${relFile}`;
+						allowedRelPaths.add(rp);
 						relPathToWorktree.set(rp, join(lane.worktreePath, rp));
+					}
+
+					const repoDir = join(repoRoot, relFolder, dirName);
+					for (const relFile of listFilesRecursively(repoDir)) {
+						const rp = `${relFolder}/${dirName}/${relFile}`;
+						allowedRelPaths.add(rp);
 					}
 				}
 			}
@@ -1909,7 +1939,7 @@ export async function mergeWave(
 				}
 
 				// File missing from mergeWorkDir — backfill from best available source.
-				// Primary: lane worktree (has worker-generated .DONE, REVIEW_VERDICT.json).
+				// Primary: lane worktree (has worker-generated .DONE/STATUS/.reviews content).
 				// Fallback: repoRoot (original task folder, with path containment check).
 				const worktreeSrc = relPathToWorktree.get(relPath);
 				let srcPath: string | null = null;
@@ -1945,7 +1975,7 @@ export async function mergeWave(
 			}
 
 			if (staged > 0) {
-				spawnSync("git", ["commit", "-m", `checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md, REVIEW_VERDICT.json)`], { cwd: mergeWorkDir });
+				spawnSync("git", ["commit", "-m", `checkpoint: wave ${waveIndex} task artifacts (.DONE, STATUS.md, REVIEW_VERDICT.json, .reviews/*)`], { cwd: mergeWorkDir });
 				execLog("merge", `W${waveIndex}`, `committed ${staged} task artifact(s) to merge worktree`, {
 					skipped,
 					preserved,

@@ -630,9 +630,9 @@ describe("8.x: Worker prompt construction — multi-step format", () => {
 		expect(runWorkerBody).toContain("Task folder: ${task.taskFolder}");
 	});
 
-	it("8.4: prompt includes both wrap-up signal file paths", () => {
+	it("8.4: prompt includes wrap-up signal file path", () => {
 		const runWorkerBody = extractFunction(source, "runWorker");
-		expect(runWorkerBody).toContain("Wrap-up signal files: ${wrapUpFile} (primary), ${legacyWrapUpFile} (legacy)");
+		expect(runWorkerBody).toContain("Wrap-up signal file: ${wrapUpFile}");
 	});
 
 	it("8.5: archive suppression text is included for orchestrated mode", () => {

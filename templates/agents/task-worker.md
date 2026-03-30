@@ -57,7 +57,7 @@ if test -f "<TASK_FOLDER>/.task-wrap-up"; then
   echo "WRAP_UP_SIGNAL"
 fi
 ```
-If either signal exists, STOP immediately after this checkpoint.
+If the signal exists, STOP immediately after this checkpoint.
 
 If you do work but don't edit STATUS.md, that work is INVISIBLE to the
 orchestrator and you will be re-spawned to do it again.

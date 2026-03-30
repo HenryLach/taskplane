@@ -3588,8 +3588,8 @@ export default function (pi: ExtensionAPI) {
 			`5. Check for wrap-up signal files before starting the next step`,
 			`6. Proceed to the next incomplete step`,
 			``,
-			`Wrap-up signal files: ${wrapUpFile} (primary), ${legacyWrapUpFile} (legacy)`,
-			`Check for either file after each checkpoint. If one exists, stop.`,
+			`Wrap-up signal file: ${wrapUpFile}`,
+			`Check for this file after each checkpoint. If it exists, stop.`,
 			archiveSuppression,
 			contextDocsList,
 		].join("\n");

@@ -1568,6 +1568,36 @@ describe("TP-099: artifact staging preserves lane-merged STATUS.md", () => {
 		}
 	});
 
+	it("squash merge preserves .reviews files when orch tip has them", () => {
+		const dir = initRepoWithTask();
+		try {
+			execSync("git checkout -b orch/test", { cwd: dir, stdio: "pipe" });
+			mkdirSync(join(dir, "taskplane-tasks", "TP-001-test", ".reviews"), { recursive: true });
+			writeFileSync(
+				join(dir, "taskplane-tasks", "TP-001-test", ".reviews", "R001-code-step1.md"),
+				"# Review\n\nAPPROVE\n",
+			);
+			execSync('git add -A && git commit -m "lane merge: add review artifacts"', { cwd: dir, stdio: "pipe" });
+
+			// Advance main
+			execSync("git checkout main", { cwd: dir, stdio: "pipe" });
+			writeFileSync(join(dir, "unrelated.txt"), "other change\n");
+			execSync('git add -A && git commit -m "main: unrelated"', { cwd: dir, stdio: "pipe" });
+
+			// Squash merge (simulates GitHub's squash-and-merge)
+			execSync("git merge --squash orch/test", { cwd: dir, stdio: "pipe" });
+			execSync('git commit -m "Integrate orch batch (squash)"', { cwd: dir, stdio: "pipe" });
+
+			const reviewFile = execSync(
+				"git show HEAD:taskplane-tasks/TP-001-test/.reviews/R001-code-step1.md",
+				{ cwd: dir, encoding: "utf-8" },
+			);
+			expect(reviewFile).toContain("APPROVE");
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
 	it("squash merge preserves STATUS.md when orch tip has correct content", () => {
 		const dir = initRepoWithTask();
 		try {

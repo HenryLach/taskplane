@@ -483,28 +483,30 @@ describe("4.x: Artifact staging allowlist", () => {
 	// used by the staging code. Since the merge function requires full git
 	// worktree infrastructure, we test the policy decisions that drive staging.
 
-	it("4.1: allowlisted artifact names are exactly .DONE, STATUS.md, REVIEW_VERDICT.json", () => {
-		// This test documents the allowlist contract from TP-035.
-		// If the allowlist changes, this test must be updated intentionally.
-		const EXPECTED_ARTIFACTS = [".DONE", "STATUS.md", "REVIEW_VERDICT.json"];
+	it("4.1: allowlist constants include task markers + .reviews subtree", () => {
+		// This test documents the allowlist contract from TP-035/TP-099.
+		// If these constants change, update intentionally.
+		const EXPECTED_FILE_ARTIFACTS = [".DONE", "STATUS.md", "REVIEW_VERDICT.json"];
 
-		// Verify by reading the merge.ts source to confirm the constant
+		// Verify by reading the merge.ts source to confirm constants
 		const mergeSource = readFileSync(
 			join(__dirname, "..", "taskplane", "merge.ts"), "utf-8",
 		);
 
 		// Extract the ALLOWED_ARTIFACT_NAMES array from source
-		const match = mergeSource.match(/ALLOWED_ARTIFACT_NAMES\s*=\s*\[([^\]]+)\]/);
-		expect(match).not.toBeNull();
-
-		const arrayContent = match![1];
-		for (const name of EXPECTED_ARTIFACTS) {
-			expect(arrayContent).toContain(`"${name}"`);
+		const filesMatch = mergeSource.match(/ALLOWED_ARTIFACT_NAMES\s*=\s*\[([^\]]+)\]/);
+		expect(filesMatch).not.toBeNull();
+		const fileArrayContent = filesMatch![1];
+		for (const name of EXPECTED_FILE_ARTIFACTS) {
+			expect(fileArrayContent).toContain(`"${name}"`);
 		}
+		const quotedFiles = fileArrayContent.match(/"[^"]+"/g) || [];
+		expect(quotedFiles).toHaveLength(EXPECTED_FILE_ARTIFACTS.length);
 
-		// Ensure no additional entries beyond the expected three
-		const quoted = arrayContent.match(/"[^"]+"/g) || [];
-		expect(quoted).toHaveLength(EXPECTED_ARTIFACTS.length);
+		// Extract the ALLOWED_ARTIFACT_DIRS array and confirm .reviews is included
+		const dirsMatch = mergeSource.match(/ALLOWED_ARTIFACT_DIRS\s*=\s*\[([^\]]+)\]/);
+		expect(dirsMatch).not.toBeNull();
+		expect(dirsMatch![1]).toContain('".reviews"');
 	});
 
 	it("4.2: task folder relative paths are computed correctly for allowlist", () => {
@@ -607,8 +609,7 @@ describe("5.x: Artifact staging rejection", () => {
 		// In the merge code, staged === 0 → log "no task artifacts to stage" and skip git commit
 	});
 
-	it("5.4: non-allowlisted files in task folder are not staged", () => {
-		// Files like PROMPT.md, .reviews/, random outputs should NOT be staged
+	it("5.4: non-allowlisted files are excluded while .reviews files are included", () => {
 		const repoRoot = makeTestDir("non-allowed");
 		const taskFolder = join(repoRoot, "tasks", "TP-FILTER");
 		mkdirSync(taskFolder, { recursive: true });
@@ -631,13 +632,18 @@ describe("5.x: Artifact staging rejection", () => {
 				stagedPaths.push(`${relFolder}/${name}`);
 			}
 		}
+		const reviewPath = join(repoRoot, relFolder, ".reviews", "R001.md");
+		if (existsSync(reviewPath)) {
+			stagedPaths.push(`${relFolder}/.reviews/R001.md`);
+		}
 
-		// Only .DONE and STATUS.md should be staged (REVIEW_VERDICT.json doesn't exist)
-		expect(stagedPaths).toHaveLength(2);
+		// .DONE, STATUS.md, and .reviews/R001.md should be included
+		expect(stagedPaths).toHaveLength(3);
 		expect(stagedPaths).toContain("tasks/TP-FILTER/.DONE");
 		expect(stagedPaths).toContain("tasks/TP-FILTER/STATUS.md");
+		expect(stagedPaths).toContain("tasks/TP-FILTER/.reviews/R001.md");
 
-		// PROMPT.md, random.log, .reviews/ should NOT appear
+		// Non-allowlisted task files are excluded
 		expect(stagedPaths).not.toContain("tasks/TP-FILTER/PROMPT.md");
 		expect(stagedPaths).not.toContain("tasks/TP-FILTER/random.log");
 	});
