@@ -3519,80 +3519,41 @@ export default function (pi: ExtensionAPI) {
 				|| workerDef?.model
 				|| (ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : "anthropic/claude-sonnet-4-20250514"));
 
-		const contextDocsList = task.contextDocs.length > 0
-			? "\n\nContext docs to read if needed:\n" + task.contextDocs.map(d => `- ${d}`).join("\n")
-			: "";
+		// ── Lean worker prompt: pass file paths, not content ──────────
+		// The worker reads PROMPT.md and STATUS.md itself using the read tool.
+		// This keeps the initial prompt small (~500 chars) instead of embedding
+		// 50K+ of compiled content that exceeds Windows command line limits
+		// and wastes initial context window capacity.
+		const promptLines = [
+			`Read your task instructions at: ${task.promptPath}`,
+			`Read your execution state at: ${statusPath}`,
+			``,
+			`Task: ${task.taskId}`,
+			`Task folder: ${task.taskFolder}/`,
+			`Iteration: ${state.totalIterations}`,
+			`Wrap-up signal file: ${wrapUpFile}`,
+		];
 
-		// When running under the parallel orchestrator, workers must NOT
-		// archive or move the task folder — the orchestrator polls for .DONE
-		// at the original path and handles post-merge archival itself.
-		const archiveSuppression = isOrchestratedMode()
-			? "\n\n⚠️ ORCHESTRATED RUN: Do NOT archive or move the task folder. " +
-			  "Do NOT rename, relocate, or reorganize the task folder path. " +
-			  "The orchestrator handles post-merge archival. " +
-			  "Just create the .DONE file in the task folder when complete."
-			: "";
+		if (isOrchestratedMode()) {
+			promptLines.push(``, `⚠️ ORCHESTRATED RUN: Do NOT archive or move the task folder. The orchestrator handles post-merge archival.`);
+		}
 
-		// Build step listing for the worker prompt — show ALL steps with status
-		const remainingSet = new Set(remainingSteps.map(s => s.number));
-		const stepListing = task.steps.map(s =>
-			remainingSet.has(s.number)
-				? `  - Step ${s.number}: ${s.name}`
-				: `  - Step ${s.number}: ${s.name}  [already complete — skip]`
-		).join("\n");
-
-		// TP-073: Build nudge for subsequent iterations (iter > 0)
-		// When the worker exited without completing all steps, the next iteration
-		// gets an explicit nudge listing completed/remaining steps and a warning
-		// not to exit prematurely again.
-		let iterationNudge = "";
 		if (state.totalIterations > 1 && remainingSteps.length > 0) {
+			const remainingSet = new Set(remainingSteps.map(s => s.number));
 			const completedSteps = task.steps.filter(s => !remainingSet.has(s.number));
 			const completedList = completedSteps.length > 0
 				? completedSteps.map(s => `Step ${s.number}: ${s.name}`).join(", ")
 				: "(none)";
 			const remainingList = remainingSteps.map(s => `Step ${s.number}: ${s.name}`).join(", ");
-			iterationNudge = [
+			promptLines.push(
 				``,
-				`IMPORTANT: You exited on your previous iteration without completing all steps.`,
-				`Do NOT repeat this — you must complete all remaining steps before stopping.`,
-				``,
-				`Completed steps (do not redo): ${completedList}`,
-				`Remaining steps (focus here): ${remainingList}`,
-				``,
-				`Your final action MUST be a tool call (update STATUS.md). Do NOT produce a`,
-				`text-only response — that will terminate your session prematurely.`,
-				``,
-			].join("\n");
+				`IMPORTANT: You exited previously without completing all steps.`,
+				`Completed (do not redo): ${completedList}`,
+				`Remaining (focus here): ${remainingList}`,
+			);
 		}
 
-		const prompt = [
-			`Execute all remaining steps for task ${task.taskId}.`,
-			``,
-			`Task: ${task.taskId} — ${task.taskName}`,
-			`Task folder: ${task.taskFolder}/`,
-			`PROMPT: ${task.promptPath}`,
-			`STATUS: ${statusPath}`,
-			``,
-			`This is iteration ${state.totalIterations}.`,
-			`Read STATUS.md FIRST to find where you left off.`,
-			iterationNudge,
-			`Steps:`,
-			stepListing,
-			``,
-			`Work through these steps in order. For each step:`,
-			`1. Read STATUS.md to find unchecked items for that step`,
-			`2. Complete all items for the step`,
-			`3. Update STATUS.md step status to "complete"`,
-			`4. Commit your changes: feat(${task.taskId}): complete Step N — description`,
-			`5. Check for wrap-up signal files before starting the next step`,
-			`6. Proceed to the next incomplete step`,
-			``,
-			`Wrap-up signal file: ${wrapUpFile}`,
-			`Check for this file after each checkpoint. If it exists, stop.`,
-			archiveSuppression,
-			contextDocsList,
-		].join("\n");
+		const prompt = promptLines.join("\n");
 
 		state.workerStatus = "running";
 		state.workerElapsed = 0;

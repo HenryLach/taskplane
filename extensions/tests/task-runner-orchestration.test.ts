@@ -214,63 +214,25 @@ function runAllTests(): void {
 	// ───────────────────────────────────────────────────────────────
 	// 5.2: Archive suppression prompt assembly
 	// ───────────────────────────────────────────────────────────────
-	console.log("── 5.2: archiveSuppression prompt assembly ──");
+	console.log("── 5.2: archive suppression in lean prompt ──");
 
-	// Verify the archive suppression text exists in source and is gated
-	// by isOrchestratedMode(). We extract the relevant code block.
-
-	// Check that archiveSuppression variable exists and is conditional
-	const archiveSuppressionPattern = /const\s+archiveSuppression\s*=\s*isOrchestratedMode\(\)/;
+	// Verify archive suppression is gated by isOrchestratedMode() in runWorker
+	const runWorkerBody = extractFunction(source, "runWorker");
 	assert(
-		archiveSuppressionPattern.test(source),
-		"archiveSuppression is gated by isOrchestratedMode()",
-	);
-
-	// Check the suppression message contains critical keywords
-	const suppressionTextMatch = source.match(
-		/archiveSuppression\s*=\s*isOrchestratedMode\(\)\s*\n\s*\?\s*"([^"]*(?:"[^"]*)*)/s,
+		runWorkerBody.includes("isOrchestratedMode()"),
+		"archive suppression is gated by isOrchestratedMode()",
 	);
 	assert(
-		suppressionTextMatch !== null,
-		"archiveSuppression has truthy branch (orchestrated mode text)",
-	);
-
-	// Verify the message includes key directives
-	const archiveBlock = source.slice(
-		source.indexOf("const archiveSuppression"),
-		source.indexOf("const archiveSuppression") + 500,
+		runWorkerBody.includes("ORCHESTRATED RUN"),
+		"suppression text includes ORCHESTRATED RUN directive",
 	);
 	assert(
-		archiveBlock.includes("Do NOT archive"),
+		runWorkerBody.includes("Do NOT archive"),
 		"suppression text includes 'Do NOT archive'",
 	);
 	assert(
-		archiveBlock.includes("Do NOT rename"),
-		"suppression text includes 'Do NOT rename'",
-	);
-	assert(
-		archiveBlock.includes(".DONE"),
-		"suppression text references .DONE file",
-	);
-	assert(
-		archiveBlock.includes("orchestrator handles"),
+		runWorkerBody.includes("orchestrator handles"),
 		"suppression text mentions orchestrator handles archival",
-	);
-
-	// Verify the falsy branch is empty string (no suppression for non-orchestrated)
-	assert(
-		archiveBlock.includes(': ""'),
-		"non-orchestrated mode produces empty string",
-	);
-
-	// Verify archiveSuppression is used in prompt assembly
-	const promptAssemblyBlock = source.slice(
-		source.indexOf("const prompt = ["),
-		source.indexOf("const prompt = [") + 1500,
-	);
-	assert(
-		promptAssemblyBlock.includes("archiveSuppression"),
-		"archiveSuppression is included in prompt array",
 	);
 
 	// Verify executeTask archival is gated in orchestrated mode

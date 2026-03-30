@@ -91,20 +91,16 @@ describe("1.x: Single spawn per task — worker handles all remaining steps", ()
 		expect(runWorkerSig![1]).toContain("StepInfo[]");
 	});
 
-	it("1.3: worker prompt includes all remaining steps, not just one", () => {
+	it("1.3: worker prompt passes file paths, not inline content", () => {
 		const runWorkerBody = extractFunction(source, "runWorker");
 
-		// Should build a step listing showing all steps with their status
-		expect(runWorkerBody).toContain("stepListing");
-		expect(runWorkerBody).toContain("already complete — skip");
+		// Lean prompt: worker reads PROMPT.md and STATUS.md via file paths
+		expect(runWorkerBody).toContain("task.promptPath");
+		expect(runWorkerBody).toContain("statusPath");
 
-		// Should instruct worker to work through steps in order
-		expect(runWorkerBody).toContain("Execute all remaining steps");
-		expect(runWorkerBody).toContain("Work through these steps in order");
-
-		// Should NOT contain "Execute Step ${step.number}" (old single-step pattern)
+		// Should NOT embed step listings inline (worker reads STATUS.md instead)
+		expect(runWorkerBody).not.toContain("Work through these steps in order");
 		expect(runWorkerBody).not.toContain("Execute Step ${step.number}");
-		// Should NOT contain "Work ONLY on Step" (old constraint)
 		expect(runWorkerBody).not.toContain("Work ONLY on Step");
 	});
 
@@ -127,15 +123,15 @@ describe("1.x: Single spawn per task — worker handles all remaining steps", ()
 		expect(source).not.toMatch(/function executeStep\s*\(/);
 	});
 
-	it("1.7: worker prompt includes per-step commit instructions", () => {
+	it("1.7: worker prompt includes wrap-up signal file path", () => {
 		const runWorkerBody = extractFunction(source, "runWorker");
-		// Worker should be told to commit at each step boundary
-		expect(runWorkerBody).toContain("feat(${task.taskId}): complete Step N");
+		expect(runWorkerBody).toContain("Wrap-up signal file");
+		expect(runWorkerBody).toContain("wrapUpFile");
 	});
 
-	it("1.8: worker prompt includes wrap-up signal check between steps", () => {
+	it("1.8: worker prompt includes iteration number", () => {
 		const runWorkerBody = extractFunction(source, "runWorker");
-		expect(runWorkerBody).toContain("Check for wrap-up signal files before starting the next step");
+		expect(runWorkerBody).toContain("state.totalIterations");
 	});
 });
 
@@ -400,8 +396,9 @@ describe("6.x: Context limit mid-task → next iteration picks up from incomplet
 
 	it("6.7: worker prompt includes iteration number for context on recovery", () => {
 		const runWorkerBody = extractFunction(source, "runWorker");
-		expect(runWorkerBody).toContain("This is iteration ${state.totalIterations}");
-		expect(runWorkerBody).toContain("Read STATUS.md FIRST to find where you left off");
+		expect(runWorkerBody).toContain("state.totalIterations");
+		// Iteration nudge for subsequent iterations
+		expect(runWorkerBody).toContain("exited previously without completing");
 	});
 
 	it("6.8: paused state is checked at start of each iteration", () => {
@@ -602,56 +599,38 @@ describe("7.x: parseStatusMd correctness — supports new execution model", () =
 // 8.x — Worker prompt construction: multi-step format
 // ══════════════════════════════════════════════════════════════════════
 
-describe("8.x: Worker prompt construction — multi-step format", () => {
-	it("8.1: step listing shows completed steps as [already complete — skip]", () => {
+describe("8.x: Worker prompt construction — lean filepath-based format", () => {
+	it("8.1: prompt passes PROMPT.md and STATUS.md file paths (not content)", () => {
 		const runWorkerBody = extractFunction(source, "runWorker");
-
-		// The step listing distinguishes remaining vs completed
-		expect(runWorkerBody).toContain("remainingSet.has(s.number)");
-		expect(runWorkerBody).toContain("`  - Step ${s.number}: ${s.name}`");
-		expect(runWorkerBody).toContain("`  - Step ${s.number}: ${s.name}  [already complete — skip]`");
+		// Worker reads task files itself via the read tool
+		expect(runWorkerBody).toContain("task.promptPath");
+		expect(runWorkerBody).toContain("statusPath");
+		// Should NOT embed inline step listings or numbered instructions
+		expect(runWorkerBody).not.toContain("1. Read STATUS.md to find unchecked items");
 	});
 
-	it("8.2: prompt includes all six worker instructions", () => {
+	it("8.2: prompt includes task ID and task folder", () => {
 		const runWorkerBody = extractFunction(source, "runWorker");
-
-		// The 6 numbered instructions for the worker
-		expect(runWorkerBody).toContain("1. Read STATUS.md to find unchecked items");
-		expect(runWorkerBody).toContain("2. Complete all items for the step");
-		expect(runWorkerBody).toContain("3. Update STATUS.md step status");
-		expect(runWorkerBody).toContain("4. Commit your changes");
-		expect(runWorkerBody).toContain("5. Check for wrap-up signal files");
-		expect(runWorkerBody).toContain("6. Proceed to the next incomplete step");
+		expect(runWorkerBody).toContain("task.taskId");
+		expect(runWorkerBody).toContain("task.taskFolder");
 	});
 
-	it("8.3: prompt includes task ID and task folder", () => {
+	it("8.3: prompt includes wrap-up signal file path", () => {
 		const runWorkerBody = extractFunction(source, "runWorker");
-		expect(runWorkerBody).toContain("Task: ${task.taskId}");
-		expect(runWorkerBody).toContain("Task folder: ${task.taskFolder}");
+		expect(runWorkerBody).toContain("Wrap-up signal file");
+		expect(runWorkerBody).toContain("wrapUpFile");
 	});
 
-	it("8.4: prompt includes wrap-up signal file path", () => {
-		const runWorkerBody = extractFunction(source, "runWorker");
-		expect(runWorkerBody).toContain("Wrap-up signal file: ${wrapUpFile}");
-	});
-
-	it("8.5: archive suppression text is included for orchestrated mode", () => {
+	it("8.4: archive suppression included for orchestrated mode", () => {
 		const runWorkerBody = extractFunction(source, "runWorker");
 		expect(runWorkerBody).toContain("isOrchestratedMode()");
-		expect(runWorkerBody).toContain("ORCHESTRATED RUN: Do NOT archive");
-		expect(runWorkerBody).toContain("archiveSuppression");
+		expect(runWorkerBody).toContain("ORCHESTRATED RUN");
 	});
 
-	it("8.6: context docs are appended to prompt when present", () => {
+	it("8.5: iteration nudge included for subsequent iterations", () => {
 		const runWorkerBody = extractFunction(source, "runWorker");
-		expect(runWorkerBody).toContain("contextDocsList");
-		expect(runWorkerBody).toContain("task.contextDocs");
-	});
-
-	it("8.7: prompt references PROMPT and STATUS paths", () => {
-		const runWorkerBody = extractFunction(source, "runWorker");
-		expect(runWorkerBody).toContain("PROMPT: ${task.promptPath}");
-		expect(runWorkerBody).toContain("STATUS: ${statusPath}");
+		expect(runWorkerBody).toContain("state.totalIterations > 1");
+		expect(runWorkerBody).toContain("exited previously without completing");
 	});
 });
 
