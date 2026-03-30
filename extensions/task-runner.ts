@@ -3030,7 +3030,14 @@ export default function (pi: ExtensionAPI) {
 
 		updateStatusField(statusPath, "Status", "🟡 In Progress");
 		updateStatusField(statusPath, "Last Updated", new Date().toISOString().slice(0, 10));
-		logExecution(statusPath, "Task started", "Extension-driven execution");
+
+		// TP-098: Distinguish first start from restart/resume to prevent
+		// duplicate "Task started" entries in the execution log (#348).
+		if (state.totalIterations === 0) {
+			logExecution(statusPath, "Task started", "Extension-driven execution");
+		} else {
+			logExecution(statusPath, "Task resumed", `Resuming from iteration ${state.totalIterations}`);
+		}
 
 		// ── Per-task worker loop ─────────────────────────────────────
 		// Spawn one worker per iteration; each worker handles ALL remaining
@@ -3047,10 +3054,14 @@ export default function (pi: ExtensionAPI) {
 				const ss = currentStatus.steps.find(s => s.number === step.number);
 				if (ss?.status === "complete") continue;
 
-				if (!foundFirstIncomplete) {
+					if (!foundFirstIncomplete) {
 					// Mark the first incomplete step as in-progress
-					updateStepStatus(statusPath, step.number, "in-progress");
-					logExecution(statusPath, `Step ${step.number} started`, step.name);
+					// TP-098: Only log "Step N started" if the step was not already
+					// in-progress, preventing duplicate entries on restart (#348).
+					if (ss?.status !== "in-progress") {
+						updateStepStatus(statusPath, step.number, "in-progress");
+						logExecution(statusPath, `Step ${step.number} started`, step.name);
+					}
 					foundFirstIncomplete = true;
 				} else {
 					// Ensure future steps show as not-started, not in-progress
@@ -3087,8 +3098,8 @@ export default function (pi: ExtensionAPI) {
 		let noProgressCount = 0;
 		for (let iter = 0; iter < config.context.max_worker_iterations; iter++) {
 			if (state.phase === "paused") {
-				logExecution(statusPath, "Paused", `User paused at iteration ${iter + 1}`);
-				ctx.ui.notify(`Task paused at iteration ${iter + 1}`, "info");
+				logExecution(statusPath, "Paused", `User paused at iteration ${state.totalIterations}`);
+				ctx.ui.notify(`Task paused at iteration ${state.totalIterations}`, "info");
 				await shutdownPersistentReviewer("task paused");
 				return;
 			}
@@ -3188,8 +3199,10 @@ export default function (pi: ExtensionAPI) {
 			const progressDelta = afterTotalChecked - prevTotalChecked;
 			if (progressDelta <= 0) {
 				noProgressCount++;
-				logExecution(statusPath, "No progress", `Iteration ${iter + 1}: 0 new checkboxes (${noProgressCount}/${config.context.no_progress_limit} stall limit)`);
-				ctx.ui.notify(`⚠️ No progress in iteration ${iter + 1} (${noProgressCount}/${config.context.no_progress_limit})`, "warning");
+				// TP-098: Use state.totalIterations (global) instead of iter+1
+				// (loop-local) to avoid label collision across restarts (#348).
+				logExecution(statusPath, "No progress", `Iteration ${state.totalIterations}: 0 new checkboxes (${noProgressCount}/${config.context.no_progress_limit} stall limit)`);
+				ctx.ui.notify(`⚠️ No progress in iteration ${state.totalIterations} (${noProgressCount}/${config.context.no_progress_limit})`, "warning");
 				if (noProgressCount >= config.context.no_progress_limit) {
 					logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
 					ctx.ui.notify(`⚠️ Task blocked — no progress after ${noProgressCount} iterations`, "error");
@@ -3236,11 +3249,13 @@ export default function (pi: ExtensionAPI) {
 			// Log iteration summary with progress delta and completed steps
 			const completedNames = newlyCompleted.map(s => `Step ${s.number}`).join(", ");
 			if (newlyCompleted.length > 0) {
-				logExecution(statusPath, `Iteration ${iter + 1} summary`, `+${progressDelta} checkboxes, completed: ${completedNames}`);
-				ctx.ui.notify(`Iteration ${iter + 1}: completed ${completedNames} (+${progressDelta} checkboxes)`, "info");
+				// TP-098: Use state.totalIterations (global) instead of iter+1
+				// (loop-local) to avoid label collision across restarts (#348).
+				logExecution(statusPath, `Iteration ${state.totalIterations} summary`, `+${progressDelta} checkboxes, completed: ${completedNames}`);
+				ctx.ui.notify(`Iteration ${state.totalIterations}: completed ${completedNames} (+${progressDelta} checkboxes)`, "info");
 			} else if (progressDelta > 0) {
-				logExecution(statusPath, `Iteration ${iter + 1} summary`, `+${progressDelta} checkboxes, no steps fully completed`);
-				ctx.ui.notify(`Iteration ${iter + 1}: +${progressDelta} checkboxes (no steps fully completed)`, "info");
+				logExecution(statusPath, `Iteration ${state.totalIterations} summary`, `+${progressDelta} checkboxes, no steps fully completed`);
+				ctx.ui.notify(`Iteration ${state.totalIterations}: +${progressDelta} checkboxes (no steps fully completed)`, "info");
 			}
 
 			// Reviews are now driven inline by the worker via the review_step
@@ -3478,18 +3493,14 @@ export default function (pi: ExtensionAPI) {
 		const config = state.config;
 		const statusPath = join(task.taskFolder, "STATUS.md");
 		const wrapUpFile = join(task.taskFolder, ".task-wrap-up");
-		const legacyWrapUpFile = join(task.taskFolder, ".wiggum-wrap-up");
 
 		const clearWrapUpSignals = () => {
 			if (existsSync(wrapUpFile)) try { unlinkSync(wrapUpFile); } catch {}
-			if (existsSync(legacyWrapUpFile)) try { unlinkSync(legacyWrapUpFile); } catch {}
 		};
 
 		const writeWrapUpSignal = (reason: string) => {
 			const msg = `${reason} at ${new Date().toISOString()}`;
 			if (!existsSync(wrapUpFile)) writeFileSync(wrapUpFile, msg);
-			// Backward compatibility: write legacy signal too until all workers migrate.
-			if (!existsSync(legacyWrapUpFile)) writeFileSync(legacyWrapUpFile, msg);
 		};
 
 		clearWrapUpSignals();
