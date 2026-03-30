@@ -173,8 +173,9 @@ export function generateTelemetryPaths(
 	const effectiveBatchId = batchId || String(Date.now());
 	const effectiveRepoId = repoId || "default";
 
-	// Extract role from sessionName — lane sessions are "worker" role
-	const role = "worker";
+	// Lane sessions are the task-runner orchestration layer, NOT the worker agent.
+	// Use "lane" role to avoid filename collisions with worker sidecar files.
+	const role = "lane";
 	const laneMatch = sessionName.match(/lane-(\d+)/);
 	const laneSuffix = laneMatch ? `-lane-${laneMatch[1]}` : "";
 

@@ -297,9 +297,9 @@ describe("generateTelemetryPaths functional tests", () => {
 		expect(result.sidecarPath).toContain("-tp-049-");
 	});
 
-	it("uses 'worker' role for lane sessions", () => {
+	it("uses 'lane' role for lane sessions (avoids collision with worker sidecar)", () => {
 		const result = generateTelemetryPaths("orch-lane-1", tempDir);
-		expect(result.sidecarPath).toMatch(/-worker\.jsonl$/);
+		expect(result.sidecarPath).toMatch(/-lane\.jsonl$/);
 	});
 
 	it("creates telemetry dir under sidecar root", () => {

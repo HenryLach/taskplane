@@ -935,9 +935,17 @@ attachJsonlReader(proc.stdout, (line) => {
 });
 
 // Forward stderr from pi to our stderr
+// Capture pi stderr for diagnostics — last 2KB preserved in exit summary.
+// This is critical for diagnosing startup crashes (pi exits code 1 with 0 tokens).
+let piStderrBuffer = "";
+const PI_STDERR_MAX = 2048;
 proc.stderr?.setEncoding("utf-8");
 proc.stderr?.on("data", (chunk) => {
 	process.stderr.write(chunk);
+	piStderrBuffer += chunk;
+	if (piStderrBuffer.length > PI_STDERR_MAX * 2) {
+		piStderrBuffer = piStderrBuffer.slice(-PI_STDERR_MAX);
+	}
 });
 
 // ── Single-Write Exit Summary Finalization ───────────────────────────
@@ -967,7 +975,8 @@ proc.on("close", (code, signal) => {
 
 	if (!state.agentEnded && code !== 0) {
 		// Process crashed without agent_end — capture what we have
-		const crashError = state.error || `pi process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}`;
+		const stderrTail = piStderrBuffer.trim().slice(-PI_STDERR_MAX);
+		const crashError = state.error || `pi process exited with code ${code}${signal ? ` (signal: ${signal})` : ""}${stderrTail ? `\npi stderr: ${stderrTail}` : ""}`;
 		writeExitSummary(state, code, signal, crashError, startTime);
 	} else {
 		writeExitSummary(state, code, signal, null, startTime);
