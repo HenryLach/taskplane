@@ -588,6 +588,11 @@ export function buildTmuxSpawnArgs(
 			"--exit-summary-path", shellQuote(exitSummaryPath),
 			"--prompt-file", shellQuote(promptTmpFile),
 			"--extensions", shellQuote(taskRunnerExtPath),
+			// Prevent pi from auto-discovering extensions from the worktree CWD.
+			// Without this, pi loads BOTH the explicit -e extension AND any
+			// extensions/ in the worktree, causing duplicate tool registration
+			// and unpredictable behavior (two copies of task-runner compete).
+			"--", "--no-extensions",
 		].filter(Boolean).join(" ");
 	} else {
 		// ── Legacy mode: direct pi spawn (no telemetry) ─────────
