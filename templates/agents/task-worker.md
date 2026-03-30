@@ -53,11 +53,10 @@ edit STATUS.md
 
 Then **check for wrap-up signal:**
 ```bash
-if test -f "<TASK_FOLDER>/.task-wrap-up" || test -f "<TASK_FOLDER>/.wiggum-wrap-up"; then
+if test -f "<TASK_FOLDER>/.task-wrap-up"; then
   echo "WRAP_UP_SIGNAL"
 fi
 ```
-Primary signal file is `.task-wrap-up`; `.wiggum-wrap-up` is legacy and still supported.
 If either signal exists, STOP immediately after this checkpoint.
 
 If you do work but don't edit STATUS.md, that work is INVISIBLE to the

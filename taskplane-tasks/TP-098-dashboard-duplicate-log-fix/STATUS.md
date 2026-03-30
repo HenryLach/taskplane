@@ -1,6 +1,6 @@
 # TP-098: Dashboard Duplicate Execution Log Fix — Status
 
-**Current Step:** Step 1: Fix duplicate execution log (#348)
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
@@ -30,9 +30,11 @@
 ---
 
 ### Step 2: Wiggum legacy cleanup (#251)
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Remove all .wiggum-wrap-up references
+- [x] Remove .wiggum-wrap-up references from task-runner.ts
+- [x] Remove .wiggum-wrap-up references from abort.ts
+- [x] Search for any other legacy references and remove from templates/agents/task-worker.md
 
 ---
 

@@ -3493,18 +3493,14 @@ export default function (pi: ExtensionAPI) {
 		const config = state.config;
 		const statusPath = join(task.taskFolder, "STATUS.md");
 		const wrapUpFile = join(task.taskFolder, ".task-wrap-up");
-		const legacyWrapUpFile = join(task.taskFolder, ".wiggum-wrap-up");
 
 		const clearWrapUpSignals = () => {
 			if (existsSync(wrapUpFile)) try { unlinkSync(wrapUpFile); } catch {}
-			if (existsSync(legacyWrapUpFile)) try { unlinkSync(legacyWrapUpFile); } catch {}
 		};
 
 		const writeWrapUpSignal = (reason: string) => {
 			const msg = `${reason} at ${new Date().toISOString()}`;
 			if (!existsSync(wrapUpFile)) writeFileSync(wrapUpFile, msg);
-			// Backward compatibility: write legacy signal too until all workers migrate.
-			if (!existsSync(legacyWrapUpFile)) writeFileSync(legacyWrapUpFile, msg);
 		};
 
 		clearWrapUpSignals();
