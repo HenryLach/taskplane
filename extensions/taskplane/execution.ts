@@ -11,6 +11,7 @@ import { userInfo } from "os";
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig, ExecutionUnit, PacketPaths, RuntimeAgentId, RuntimeAgentRole, SupervisorAlertCallback } from "./types.ts";
 import { resolvePacketPaths, buildRuntimeAgentId } from "./types.ts";
+import { readRegistrySnapshot, isTerminalStatus, isProcessAlive } from "./process-registry.ts";
 import { allocateLanes } from "./waves.ts";
 import { runGit } from "./git.ts";
 
@@ -265,6 +266,63 @@ export function killLaneAndChildren(sessionName: string): void {
 	tmuxKillSession(`${sessionName}-reviewer`);
 	// Then kill the parent lane session
 	tmuxKillSession(sessionName);
+}
+
+/**
+ * TP-112: Check if a V2 agent is alive via process registry.
+ * Returns true if the agent's PID is running and status is non-terminal.
+ * Returns false if no registry, no entry, terminal status, or dead PID.
+ *
+ * @param agentIdOrSessionName - Agent ID or session name to look up
+ * @param runtimeBackend - Must be "v2" (caller should guard)
+ * @returns true if agent is alive
+ * @since TP-112
+ */
+export function isV2AgentAlive(agentIdOrSessionName: string, _runtimeBackend?: RuntimeBackend): boolean {
+	// Read the registry from the global state root.
+	// Since this is a pure liveness check, we scan for matching agentId
+	// patterns: direct match, or lane-session + "-worker" suffix.
+	if (!_v2LivenessRegistryCache) return false;
+	const agents = _v2LivenessRegistryCache.agents;
+	// Direct match
+	const manifest = agents[agentIdOrSessionName];
+	if (manifest && !isTerminalStatus(manifest.status) && isProcessAlive(manifest.pid)) return true;
+	// Try worker suffix (monitor uses lane session name, registry uses agentId)
+	const workerManifest = agents[`${agentIdOrSessionName}-worker`];
+	if (workerManifest && !isTerminalStatus(workerManifest.status) && isProcessAlive(workerManifest.pid)) return true;
+	return false;
+}
+
+/** Cached registry for V2 liveness checks within a monitor cycle. @since TP-112 */
+let _v2LivenessRegistryCache: import("./process-registry.ts").RuntimeRegistry | null = null;
+
+/**
+ * Set the V2 liveness registry cache for the current monitor cycle.
+ * Called at the start of each monitor poll to avoid re-reading the file per-task.
+ * @since TP-112
+ */
+export function setV2LivenessRegistryCache(registry: import("./process-registry.ts").RuntimeRegistry | null): void {
+	_v2LivenessRegistryCache = registry;
+}
+
+/**
+ * TP-112: Kill V2 lane agents (worker + reviewer) by PID from the registry.
+ * Used for stall termination on the V2 path.
+ * @since TP-112
+ */
+export function killV2LaneAgents(sessionName: string): void {
+	if (!_v2LivenessRegistryCache) return;
+	const agents = _v2LivenessRegistryCache.agents;
+	for (const suffix of ["-worker", "-reviewer", ""]) {
+		const key = `${sessionName}${suffix}`;
+		const manifest = agents[key];
+		if (manifest && !isTerminalStatus(manifest.status) && isProcessAlive(manifest.pid)) {
+			try {
+				process.kill(manifest.pid, "SIGTERM");
+				execLog("monitor", key, `killed V2 agent (PID ${manifest.pid}) on stall`);
+			} catch { /* already dead */ }
+		}
+	}
 }
 
 // ── Async TMUX Helpers (TP-070) ──────────────────────────────────────
@@ -1696,15 +1754,10 @@ export async function resolveTaskMonitorState(
 	runtimeBackend?: RuntimeBackend,
 ): Promise<TaskMonitorSnapshot> {
 	// TP-112: Backend-aware liveness check.
-	// V2: check process registry. Legacy: check TMUX session.
+	// V2: check process registry (PID liveness). Legacy: check TMUX session.
 	let sessionAlive: boolean;
 	if (runtimeBackend === "v2") {
-		// V2 lanes are module calls that run as direct children.
-		// For monitoring, we consider V2 lanes always "alive" while executing
-		// (the lane-runner controls its own lifecycle; monitoring is observational).
-		// If the lane has completed, the executor will have already returned
-		// and won't call the monitor anymore.
-		sessionAlive = true;
+		sessionAlive = isV2AgentAlive(sessionName, runtimeBackend);
 	} else {
 		sessionAlive = await tmuxHasSessionAsync(sessionName);
 	}
@@ -1798,12 +1851,17 @@ export async function resolveTaskMonitorState(
 		const stallMinutes = Math.round((now - tracker.stallTimerStart) / 60_000);
 		const stallReason = `STATUS.md unchanged for ${stallMinutes} minutes (threshold: ${Math.round(stallTimeoutMs / 60_000)} min)`;
 
-		// Kill the session and children
-		execLog("monitor", taskId, `stall detected — killing session`, {
+		// Kill the agent (backend-aware)
+		execLog("monitor", taskId, `stall detected — killing agent`, {
 			session: sessionName,
 			stallMinutes,
+			backend: runtimeBackend ?? "legacy",
 		});
-		killLaneAndChildren(sessionName);
+		if (runtimeBackend === "v2") {
+			killV2LaneAgents(sessionName);
+		} else {
+			killLaneAndChildren(sessionName);
+		}
 
 		return {
 			taskId,
@@ -1908,6 +1966,7 @@ export async function monitorLanes(
 	onUpdate?: MonitorUpdateCallback,
 	isWorkspaceMode?: boolean,
 	runtimeBackend?: RuntimeBackend,
+	batchId?: string,
 ): Promise<MonitorState> {
 	const pollIntervalMs = (config.monitoring.poll_interval || 5) * 1000;
 	const stallTimeoutMs = (config.failure.stall_timeout || 30) * 60_000;
@@ -1955,6 +2014,13 @@ export async function monitorLanes(
 	while (true) {
 		const now = Date.now();
 		pollCount++;
+
+		// TP-112: Refresh V2 liveness registry cache once per poll cycle
+		if (runtimeBackend === "v2" && batchId) {
+			try {
+				setV2LivenessRegistryCache(readRegistrySnapshot(repoRoot, batchId));
+			} catch { setV2LivenessRegistryCache(null); }
+		}
 
 		// Check pause signal
 		if (pauseSignal.paused) {
@@ -2047,7 +2113,10 @@ export async function monitorLanes(
 				allTerminal = false;
 			}
 
-			const sessionAlive = await tmuxHasSessionAsync(lane.tmuxSessionName);
+			// TP-112: Backend-aware lane liveness for snapshot
+			const sessionAlive = runtimeBackend === "v2"
+				? isV2AgentAlive(lane.tmuxSessionName, runtimeBackend)
+				: await tmuxHasSessionAsync(lane.tmuxSessionName);
 
 			laneSnapshots.push({
 				laneId: lane.laneId,
@@ -2441,6 +2510,7 @@ export async function executeWave(
 		onMonitorUpdate,
 		isWsMode,
 		backend,
+		batchId,
 	);
 
 	// ── Stage 4: Wait for all lanes + apply policy ───────────────

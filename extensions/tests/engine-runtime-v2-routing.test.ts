@@ -397,8 +397,18 @@ describe("12.x: Resume TDZ safety", () => {
 	it("12.1: resumeBackend is declared before first use", () => {
 		const declIdx = resumeSrc.indexOf("const resumeBackend: RuntimeBackend");
 		expect(declIdx).toBeGreaterThan(-1);
-		const firstUse = resumeSrc.indexOf("resumeBackend,");
-		expect(declIdx).toBeLessThan(firstUse);
+		// Check ALL uses — not just mergeWaveByRepo but also section 3 liveness
+		const allUses = [...resumeSrc.matchAll(/resumeBackend/g)].map(m => m.index!);
+		for (const useIdx of allUses) {
+			if (useIdx === declIdx) continue; // skip the declaration itself
+			expect(declIdx).toBeLessThan(useIdx);
+		}
+	});
+
+	it("12.2: only one declaration of resumeBackend exists", () => {
+		const decls = resumeSrc.match(/const resumeBackend/g);
+		expect(decls).not.toBe(null);
+		expect(decls!.length).toBe(1);
 	});
 });
 
@@ -408,37 +418,55 @@ describe("13.x: Resume de-TMUX for V2 (TP-112)", () => {
 	const resumeSrc = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
 
 	it("13.1: resume uses process registry for V2 liveness (not tmuxHasSession)", () => {
-		// Section 3 liveness check must branch on resumeBackend
 		const section3Idx = resumeSrc.indexOf("Discover live signals");
-		const block = resumeSrc.slice(section3Idx, section3Idx + 1000);
+		const block = resumeSrc.slice(section3Idx, section3Idx + 1200);
 		expect(block).toContain('resumeBackend === "v2"');
 		expect(block).toContain("readRegistrySnapshot");
 		expect(block).toContain("isProcessAlive");
 	});
 
-	it("13.2: V2 reconnect uses executeLaneV2 (not pollUntilTaskComplete)", () => {
-		// Section 8 reconnect must have V2 path with executeLaneV2
-		const reconnIdx = resumeSrc.indexOf("V2 reconnect: re-executing via lane-runner");
+	it("13.2: V2 reconnect terminates then re-executes (detect+terminate+rehydrate)", () => {
+		const reconnIdx = resumeSrc.indexOf("V2 reconnect: terminate + rehydrate");
 		expect(reconnIdx).toBeGreaterThan(-1);
 		const block = resumeSrc.slice(reconnIdx, reconnIdx + 1000);
-		expect(block).toContain("executeLaneV2");
+		// Must terminate before execute
+		const termIdx = block.indexOf("terminateAliveV2Agents");
+		const execIdx = block.indexOf("executeLaneV2");
+		expect(termIdx).toBeGreaterThan(-1);
+		expect(execIdx).toBeGreaterThan(-1);
+		expect(termIdx).toBeLessThan(execIdx);
 	});
 
-	it("13.3: V2 re-execute uses executeLaneV2 (not spawnLaneSession)", () => {
-		// Section 8b re-execute must have V2 path
+	it("13.3: V2 re-execute terminates then uses executeLaneV2", () => {
 		const reexecIdx = resumeSrc.indexOf("Backend-aware re-execution");
 		expect(reexecIdx).toBeGreaterThan(-1);
 		const block = resumeSrc.slice(reexecIdx, reexecIdx + 1000);
-		expect(block).toContain("executeLaneV2");
-		expect(block).toContain('resumeBackend === "v2"');
+		// Must terminate before re-execute
+		const termIdx = block.indexOf("terminateAliveV2Agents");
+		const execIdx = block.indexOf("executeLaneV2");
+		expect(termIdx).toBeGreaterThan(-1);
+		expect(execIdx).toBeGreaterThan(-1);
+		expect(termIdx).toBeLessThan(execIdx);
 	});
 
-	it("13.4: legacy reconnect still uses pollUntilTaskComplete", () => {
-		// The else branch must retain legacy behavior
+	it("13.4: V2 liveness identity maps lane session names for reconcile matching", () => {
+		const section3Idx = resumeSrc.indexOf("Discover live signals");
+		const block = resumeSrc.slice(section3Idx, section3Idx + 1500);
+		// Must strip role suffix to match persisted sessionName
+		expect(block).toContain("replace(/-(worker|reviewer)$/");
+	});
+
+	it("13.5: terminateAliveV2Agents function exists and uses SIGTERM", () => {
+		expect(resumeSrc).toContain("function terminateAliveV2Agents");
+		const fnIdx = resumeSrc.indexOf("function terminateAliveV2Agents");
+		const block = resumeSrc.slice(fnIdx, fnIdx + 800);
+		expect(block).toContain("SIGTERM");
+		expect(block).toContain("readRegistrySnapshot");
+		expect(block).toContain("isProcessAlive");
+	});
+
+	it("13.6: legacy paths preserved (pollUntilTaskComplete + spawnLaneSession)", () => {
 		expect(resumeSrc).toContain("pollUntilTaskComplete");
-	});
-
-	it("13.5: legacy re-execute still uses spawnLaneSession", () => {
 		expect(resumeSrc).toContain("spawnLaneSession");
 	});
 });
@@ -446,40 +474,63 @@ describe("13.x: Resume de-TMUX for V2 (TP-112)", () => {
 describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 	const execSrc = readFileSync(join(__dirname, "..", "taskplane", "execution.ts"), "utf-8");
 
-	it("14.1: resolveTaskMonitorState accepts runtimeBackend param", () => {
-		const fnIdx = execSrc.indexOf("function resolveTaskMonitorState");
-		const block = execSrc.slice(fnIdx, fnIdx + 500);
-		expect(block).toContain("runtimeBackend");
-	});
-
-	it("14.2: V2 monitor does not use tmuxHasSessionAsync for liveness", () => {
+	it("14.1: resolveTaskMonitorState uses registry-based V2 liveness (not hardcoded true)", () => {
 		const fnIdx = execSrc.indexOf("function resolveTaskMonitorState");
 		const block = execSrc.slice(fnIdx, fnIdx + 1200);
-		// V2 path sets sessionAlive = true (module call, not TMUX)
-		expect(block).toContain('runtimeBackend === "v2"');
-		expect(block).toContain("sessionAlive = true");
+		// V2 uses isV2AgentAlive (registry + PID), not constant true
+		expect(block).toContain("isV2AgentAlive");
+		expect(block).not.toContain("sessionAlive = true");
 	});
 
-	it("14.3: monitorLanes accepts runtimeBackend param", () => {
+	it("14.2: isV2AgentAlive checks registry + PID (not TMUX)", () => {
+		const fnIdx = execSrc.indexOf("function isV2AgentAlive");
+		expect(fnIdx).toBeGreaterThan(-1);
+		const block = execSrc.slice(fnIdx, fnIdx + 800);
+		expect(block).toContain("isTerminalStatus");
+		expect(block).toContain("isProcessAlive");
+		// Must NOT contain tmux
+		expect(block).not.toContain("tmux");
+	});
+
+	it("14.3: monitorLanes refreshes V2 registry cache each poll cycle", () => {
 		const fnIdx = execSrc.indexOf("function monitorLanes");
-		const block = execSrc.slice(fnIdx, fnIdx + 500);
-		expect(block).toContain("runtimeBackend");
+		const block = execSrc.slice(fnIdx, fnIdx + 5000);
+		expect(block).toContain("setV2LivenessRegistryCache");
+		expect(block).toContain("readRegistrySnapshot");
 	});
 
-	it("14.4: monitorLanes passes backend to resolveTaskMonitorState", () => {
-		const callIdx = execSrc.indexOf("resolveTaskMonitorState(");
-		// Skip the function definition itself
-		const callIdx2 = execSrc.indexOf("resolveTaskMonitorState(", callIdx + 100);
-		const block = execSrc.slice(callIdx2, callIdx2 + 400);
-		expect(block).toContain("runtimeBackend");
+	it("14.4: monitorLanes lane snapshot uses backend-aware liveness", () => {
+		const fnIdx = execSrc.indexOf("function monitorLanes");
+		const block = execSrc.slice(fnIdx, fnIdx + 20000);
+		// Lane snapshot sessionAlive must branch on V2
+		expect(block).toContain("isV2AgentAlive(lane.tmuxSessionName");
 	});
 
-	it("14.5: executeWave passes backend to monitorLanes", () => {
-		// Find the call inside executeWave (not the definition or comment)
+	it("14.5: stall kill is backend-aware (V2 kills by PID, not TMUX)", () => {
+		const fnIdx = execSrc.indexOf("function resolveTaskMonitorState");
+		const block = execSrc.slice(fnIdx, fnIdx + 5000);
+		// Stall path must check backend
+		const stallIdx = block.indexOf("stall detected");
+		expect(stallIdx).toBeGreaterThan(-1);
+		const stallBlock = block.slice(stallIdx, stallIdx + 500);
+		expect(stallBlock).toContain('runtimeBackend === "v2"');
+		expect(stallBlock).toContain("killV2LaneAgents");
+	});
+
+	it("14.6: killV2LaneAgents terminates by PID from registry", () => {
+		const fnIdx = execSrc.indexOf("function killV2LaneAgents");
+		expect(fnIdx).toBeGreaterThan(-1);
+		const block = execSrc.slice(fnIdx, fnIdx + 600);
+		expect(block).toContain("process.kill");
+		expect(block).toContain("SIGTERM");
+		expect(block).not.toContain("tmux");
+	});
+
+	it("14.7: executeWave passes batchId to monitorLanes", () => {
 		const waveIdx = execSrc.indexOf("function executeWave(");
 		const waveBlock = execSrc.slice(waveIdx, waveIdx + 20000);
 		const callIdx = waveBlock.indexOf("monitorLanes(");
 		const block = waveBlock.slice(callIdx, callIdx + 300);
-		expect(block).toContain("backend");
+		expect(block).toContain("batchId");
 	});
 });
