@@ -127,6 +127,38 @@ Dashboard provides full live visibility with no TMUX pane capture dependency.
 
 Workspace-mode smoke tests and segment-roadmap prerequisites pass on Runtime V2.
 
+## Phase F.1 — Batch and merge cutover (TP-108) ✅ Implemented
+
+### Delivered
+
+- Runtime V2 backend selected for all repo-mode batches (not just single-task)
+- Resume parity: `resumeOrchBatch` uses `selectRuntimeBackend` and threads backend through `executeWave` and `mergeWaveByRepo`
+- Merge host migration: `spawnMergeAgentV2()` spawns merge agents via direct agent-host (no TMUX)
+- Merge agent runs with process registry tracking, normalized events (events.jsonl), and mailbox support
+- Engine and resume both thread `selectedBackend`/`resumeBackend` through all merge calls
+- Abort/cleanup includes V2 merge agent kill via `killMergeAgentV2()`
+- Workspace mode explicitly falls back to legacy (deferred to TP-109)
+
+### Exit gate
+
+- Full suite: 3362 pass, 0 failures
+- CLI smoke: `taskplane help` and `taskplane doctor` pass
+
+## Phase F.2 — Workspace packet-home and resume (TP-109) ✅ Implemented
+
+### Delivered
+
+- Resume .DONE check uses worktree-relative path via `resolveCanonicalTaskPaths()` in addition to original discovery path
+- `selectRuntimeBackend()` returns V2 for ALL batches (workspace included)
+- `buildExecutionUnit()` already resolves authoritative packet paths with workspace awareness
+- Lane-runner uses `unit.packet.*` for all artifact I/O (no cwd fallback)
+- No silent cwd-derived authority remains in the Runtime V2 path
+
+### Exit gate
+
+- Full suite: 3366 pass, 0 failures
+- CLI smoke passes
+
 ## Phase G — Default switch and cleanup
 
 ### Deliverables

@@ -36,10 +36,10 @@ describe("1.x — Result-exists-at-timeout: accept successful result", () => {
 
 		// The TP-038 pattern: check result before kill
 		expect(mergeSource).toContain("TP-038: Check result file BEFORE killing the session");
-		// existsSync check comes before tmuxKillSession in the timeout path
+		// existsSync check comes before kill in the timeout path
 		const timeoutSection = mergeSource.substring(
 			mergeSource.indexOf("// Check timeout"),
-			mergeSource.indexOf("merge timeout — killing session"),
+			mergeSource.indexOf("merge timeout — killing agent"),
 		);
 		expect(timeoutSection).toContain("existsSync(resultPath)");
 		expect(timeoutSection).toContain("parseMergeResultAsync(resultPath)");
@@ -66,14 +66,16 @@ describe("1.x — Result-exists-at-timeout: accept successful result", () => {
 		expect(mergeSource).toContain('"CONFLICT_RESOLVED"');
 	});
 
-	it("1.4: session is still killed after accepting a late successful result", () => {
+	it("1.4: agent is still killed after accepting a late successful result", () => {
 		const mergeSource = readSource("merge.ts");
 
-		// Even when accepting a late result, clean up the session
+		// Even when accepting a late result, clean up the agent (backend-aware)
 		const acceptSection = mergeSource.substring(
 			mergeSource.indexOf("merge agent slow but succeeded"),
 			mergeSource.indexOf("return lateResult"),
 		);
+		// V2 path uses killMergeAgentV2, legacy uses tmuxKillSessionAsync
+		expect(acceptSection).toContain("killMergeAgentV2(sessionName)");
 		expect(acceptSection).toContain("tmuxKillSessionAsync(sessionName)");
 	});
 
@@ -81,7 +83,7 @@ describe("1.x — Result-exists-at-timeout: accept successful result", () => {
 		const mergeSource = readSource("merge.ts");
 
 		// Non-success result: log and fall through to kill
-		expect(mergeSource).toContain("merge result exists at timeout but non-success — killing session");
+		expect(mergeSource).toContain("merge result exists at timeout but non-success");
 	});
 
 	it("1.6: unreadable result file at timeout falls through to kill and throw", () => {
@@ -224,8 +226,8 @@ describe("3.x — Second retry uses 4x timeout (backoff verification)", () => {
 	it("3.4: each retry attempt passes currentTimeoutMs to waitForMergeResult", () => {
 		const mergeSource = readSource("merge.ts");
 
-		// The retry loop calls waitForMergeResult with the computed timeout
-		expect(mergeSource).toContain("waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs)");
+		// The retry loop calls waitForMergeResult with the computed timeout + backend
+		expect(mergeSource).toContain("waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs, runtimeBackend)");
 	});
 
 	it("3.5: with custom config timeout of 15 min, retries use 30 min and 60 min", () => {

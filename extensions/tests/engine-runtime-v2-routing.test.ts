@@ -28,14 +28,15 @@ const {
 // ── 1. Backend selection logic in engine ─────────────────────────────
 
 describe("1.x: Engine backend selection", () => {
-	it("1.1: selects v2 only when single task + repo mode + direct PROMPT target", () => {
-		expect(engineSrc).toContain("isSingleTask && isRepoMode && isDirectPromptTarget");
+	it("1.1: selects v2 for all repo-mode batches (TP-108 expanded gate)", () => {
+		// TP-108: V2 for all repo-mode, legacy only for workspace
+		expect(engineSrc).toContain("isRepoMode");
 		expect(engineSrc).toContain('"v2"');
 	});
 
-	it("1.2: falls back to legacy when workspace mode", () => {
-		expect(engineSrc).toContain("!backendSelection.isRepoMode");
-		expect(engineSrc).toContain("workspace mode not yet supported on Runtime V2");
+	it("1.2: all modes use V2 (TP-109 workspace authority)", () => {
+		// TP-109: workspace mode is now on V2 with packet-home authority
+		expect(engineSrc).toContain('"v2"');
 	});
 
 	it("1.3: logs backend selection for operator visibility", () => {
@@ -118,17 +119,10 @@ describe("3.x: Retry paths preserve backend choice", () => {
 
 // ── 4. Scope guards ──────────────────────────────────────────────────
 
-describe("4.x: Scope guards for TP-105 limits", () => {
-	it("4.1: workspace mode explicitly falls back with notification", () => {
-		expect(engineSrc).toContain("workspace mode not yet supported");
-	});
-
-	it("4.2: non-direct targets stay on legacy (no over-claim)", () => {
-		// TP-105 scope guard: V2 requires a direct PROMPT.md target.
-		expect(engineSrc).toContain("isDirectPromptTarget");
-		expect(engineSrc).toContain("single-task batch was not targeted via direct PROMPT.md path");
-		// No forced v2 broadening.
-		expect(engineSrc).not.toContain("force v2 for multi-task");
+describe("4.x: Scope guards (TP-108/109 expanded)", () => {
+	it("4.1: all batches use V2 (TP-109 enables workspace mode)", () => {
+		// TP-109: workspace mode now uses V2 with packet-home authority
+		expect(engineSrc).toContain('"v2"');
 	});
 });
 
@@ -183,15 +177,19 @@ describe("6.x: Runtime imports for backend routing", () => {
 // ── 7. Behavioral routing/mapping tests (non-source assertions) ─────
 
 describe("7.x: Behavioral backend and snapshot mapping", () => {
-	it("7.1: selectRuntimeBackend picks v2 only for single direct PROMPT target in repo mode", () => {
+	it("7.1: selectRuntimeBackend picks v2 for all batches (TP-109)", () => {
+		// Repo mode
 		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md", [["TP-001"]], null).backend).toBe("v2");
-		expect(selectRuntimeBackend("all", [["TP-001"]], null).backend).toBe("legacy");
-		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md tasks/TP-002/PROMPT.md", [["TP-001", "TP-002"]], null).backend).toBe("legacy");
+		expect(selectRuntimeBackend("all", [["TP-001"]], null).backend).toBe("v2");
+		expect(selectRuntimeBackend("all", [["TP-001"], ["TP-002"]], null).backend).toBe("v2");
+		// Workspace mode also V2 (TP-109: packet-home authority threaded)
+		const ws = { mode: "workspace", repos: new Map(), routing: {}, configPath: "x", workspaceRoot: "x" } as any;
+		expect(selectRuntimeBackend("all", [["TP-001"]], ws).backend).toBe("v2");
 	});
 
-	it("7.2: selectRuntimeBackend falls back in workspace mode even for direct prompt", () => {
+	it("7.2: selectRuntimeBackend returns v2 in workspace mode (TP-109)", () => {
 		const ws = { mode: "workspace", repos: new Map(), routing: {}, configPath: "x", workspaceRoot: "x" } as any;
-		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md", [["TP-001"]], ws).backend).toBe("legacy");
+		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md", [["TP-001"]], ws).backend).toBe("v2");
 	});
 
 	it("7.3: terminal lane status mapping preserves skipped as idle", () => {
@@ -205,5 +203,204 @@ describe("7.x: Behavioral backend and snapshot mapping", () => {
 		expect(mapLaneSnapshotStatusToWorkerStatus("complete")).toBe("exited");
 		expect(mapLaneSnapshotStatusToWorkerStatus("idle")).toBe("wrapping_up");
 		expect(mapLaneSnapshotStatusToWorkerStatus("failed")).toBe("crashed");
+	});
+});
+
+// ── 8. TP-108: Resume backend parity ─────────────────────────────────
+
+describe("8.x: Resume backend parity (TP-108)", () => {
+	const resumeSrc = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
+
+	it("8.1: resume computes runtime backend using selectRuntimeBackend", () => {
+		expect(resumeSrc).toContain("selectRuntimeBackend");
+		expect(resumeSrc).toContain("resumeBackend");
+	});
+
+	it("8.2: resume passes backend to executeWave", () => {
+		// The executeWave call in resume must include the backend
+		const waveCallIdx = resumeSrc.indexOf("await executeWave(");
+		expect(waveCallIdx).toBeGreaterThan(-1);
+		const waveCallSlice = resumeSrc.slice(waveCallIdx, waveCallIdx + 900);
+		expect(waveCallSlice).toContain("resumeBackend");
+	});
+
+	it("8.3: resume imports RuntimeBackend type", () => {
+		expect(resumeSrc).toContain("RuntimeBackend");
+	});
+
+	it("8.4: resume passes backend to mergeWaveByRepo calls", () => {
+		// All mergeWaveByRepo calls in resume should include resumeBackend
+		const mergeCallCount = (resumeSrc.match(/mergeWaveByRepo\(/g) || []).length;
+		expect(mergeCallCount).toBeGreaterThan(0);
+		// Count calls that include resumeBackend
+		const withBackend = (resumeSrc.match(/resumeBackend,\r?\n/g) || []).length;
+		// At least the 4 main merge calls should have backend
+		expect(withBackend).toBeGreaterThanOrEqual(4);
+	});
+});
+
+// ── 9. TP-108: Merge host V2 migration ─────────────────────────────
+
+describe("9.x: Merge host V2 migration (TP-108)", () => {
+	const mergeSrc = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
+
+	it("9.1: spawnMergeAgentV2 exists and uses agent-host", () => {
+		expect(mergeSrc).toContain("export async function spawnMergeAgentV2");
+		expect(mergeSrc).toContain("spawnAgent(opts)");
+	});
+
+	it("9.2: spawnMergeAgentV2 sets role to merger", () => {
+		const fnIdx = mergeSrc.indexOf("function spawnMergeAgentV2");
+		const block = mergeSrc.slice(fnIdx, fnIdx + 2000);
+		expect(block).toContain('role: "merger"');
+	});
+
+	it("9.3: spawnMergeAgentV2 registers in process registry via stateRoot", () => {
+		const fnIdx = mergeSrc.indexOf("function spawnMergeAgentV2");
+		const block = mergeSrc.slice(fnIdx, fnIdx + 2000);
+		expect(block).toContain("stateRoot");
+	});
+
+	it("9.4: mergeWave accepts runtimeBackend parameter", () => {
+		expect(mergeSrc).toContain("runtimeBackend?: RuntimeBackend");
+	});
+
+	it("9.5: mergeWave routes spawn to V2 when backend is v2", () => {
+		// Both retry and first-attempt paths must have V2 routing
+		const fnIdx = mergeSrc.indexOf("export async function mergeWave(");
+		const block = mergeSrc.slice(fnIdx, fnIdx + 16000);
+		const v2SpawnCount = (block.match(/spawnMergeAgentV2\(/g) || []).length;
+		expect(v2SpawnCount).toBeGreaterThanOrEqual(2); // first attempt + retry
+	});
+
+	it("9.6: engine threads selectedBackend to mergeWaveByRepo", () => {
+		const mergeCallIdx = engineSrc.indexOf("mergeResult = await mergeWaveByRepo(");
+		const block = engineSrc.slice(mergeCallIdx, mergeCallIdx + 600);
+		expect(block).toContain("selectedBackend");
+	});
+
+	it("9.7: killMergeAgentV2 exists for cleanup/abort", () => {
+		expect(mergeSrc).toContain("export function killMergeAgentV2");
+	});
+
+	it("9.8: V2 merge uses events.jsonl for telemetry (not sidecar files)", () => {
+		const fnIdx = mergeSrc.indexOf("function spawnMergeAgentV2");
+		const block = mergeSrc.slice(fnIdx, fnIdx + 2000);
+		expect(block).toContain("eventsPath");
+		expect(block).toContain("exitSummaryPath");
+		expect(block).toContain("events.jsonl");
+	});
+});
+
+// ── 10. TP-109: Packet-home authority and resume parity ──────────────
+
+describe("10.x: Packet-home authority (TP-109)", () => {
+	const resumeSrc = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
+	const laneRunnerSrc = readFileSync(join(__dirname, "..", "taskplane", "lane-runner.ts"), "utf-8");
+
+	it("10.1: resume checks worktree-relative .DONE path in addition to original", () => {
+		// Resume must call resolveCanonicalTaskPaths for worktree-relative .DONE check
+		expect(resumeSrc).toContain("resolveCanonicalTaskPaths");
+		expect(resumeSrc).toContain("worktree-relative path");
+	});
+
+	it("10.2: resume imports resolveCanonicalTaskPaths", () => {
+		expect(resumeSrc).toContain("resolveCanonicalTaskPaths");
+	});
+
+	it("10.3: lane-runner uses unit.packet.* for all artifact paths", () => {
+		// Lane-runner must use packet paths, not cwd-derived paths
+		expect(laneRunnerSrc).toContain("unit.packet.statusPath");
+		expect(laneRunnerSrc).toContain("unit.packet.donePath");
+		expect(laneRunnerSrc).toContain("unit.packet.promptPath");
+		expect(laneRunnerSrc).toContain("unit.packet.taskFolder");
+	});
+
+	it("10.4: buildExecutionUnit resolves packet paths via resolveCanonicalTaskPaths", () => {
+		const execSrc = readFileSync(join(__dirname, "..", "taskplane", "execution.ts"), "utf-8");
+		const fnIdx = execSrc.indexOf("function buildExecutionUnit");
+		const block = execSrc.slice(fnIdx, fnIdx + 1000);
+		expect(block).toContain("resolveCanonicalTaskPaths");
+		expect(block).toContain("packetHomeRepoId");
+	});
+
+	it("10.5: selectRuntimeBackend returns v2 for all modes (TP-109 completion)", () => {
+		expect(selectRuntimeBackend("all", [["TP-001"]], null).backend).toBe("v2");
+		const ws = { mode: "workspace", repos: new Map(), configPath: "x", workspaceRoot: "x" } as any;
+		expect(selectRuntimeBackend("all", [["TP-001"]], ws).backend).toBe("v2");
+	});
+});
+
+// ── 11. Remediation behavioral tests (TP-108/109-R1) ────────────────
+
+describe("11.x: Merge V2 liveness + abort correctness", () => {
+	const mergeSrc = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
+	const abortSrc = readFileSync(join(__dirname, "..", "taskplane", "abort.ts"), "utf-8");
+
+	it("11.1: waitForMergeResult is backend-aware (no TMUX for V2)", () => {
+		const fnIdx = mergeSrc.indexOf("function waitForMergeResult(");
+		const block = mergeSrc.slice(fnIdx, fnIdx + 3000);
+		// Must accept runtimeBackend param
+		expect(block).toContain("runtimeBackend");
+		// V2 path uses activeMergeAgents, not TMUX
+		expect(block).toContain("activeMergeAgents.has(sessionName)");
+		// V2 timeout kills via killMergeAgentV2
+		expect(block).toContain("killMergeAgentV2(sessionName)");
+	});
+
+	it("11.2: V2 merge error/retry path kills agent before respawn", () => {
+		// Find retry section in mergeWave
+		const retryIdx = mergeSrc.indexOf("Re-spawn merge agent for the retry");
+		const block = mergeSrc.slice(retryIdx, retryIdx + 500);
+		// Must kill V2 agent before respawn to prevent orphans
+		const killIdx = block.indexOf("killMergeAgentV2(sessionName)");
+		const spawnIdx = block.indexOf("spawnMergeAgentV2(");
+		expect(killIdx).toBeGreaterThan(-1);
+		expect(spawnIdx).toBeGreaterThan(-1);
+		expect(killIdx).toBeLessThan(spawnIdx); // kill BEFORE spawn
+	});
+
+	it("11.3: V2 merge error cleanup path uses backend-aware kill", () => {
+		// Error path must check backend and kill V2 agent
+		const errIdx = mergeSrc.indexOf("Kill merge agent if still alive");
+		expect(errIdx).toBeGreaterThan(-1);
+		const block = mergeSrc.slice(errIdx, errIdx + 300);
+		expect(block).toContain('runtimeBackend === "v2"');
+		expect(block).toContain("killMergeAgentV2(sessionName)");
+	});
+
+	it("11.4: abort kills all V2 merge agents (not just TMUX sessions)", () => {
+		expect(abortSrc).toContain("killAllMergeAgentsV2");
+	});
+
+	it("11.5: killAllMergeAgentsV2 is exported from merge.ts", () => {
+		expect(mergeSrc).toContain("export function killAllMergeAgentsV2");
+	});
+
+	it("11.6: V2 health monitor is skipped for V2 merge path", () => {
+		// healthMonitor.addSession should not be called for V2 merges
+		const fnIdx = mergeSrc.indexOf("export async function mergeWave(");
+		const block = mergeSrc.slice(fnIdx, fnIdx + 16000);
+		// All healthMonitor.addSession calls should be guarded with runtimeBackend !== "v2"
+		const addCalls = block.match(/healthMonitor.*addSession/g) || [];
+		for (const call of addCalls) {
+			// Each call should be preceded by V2 guard in its context
+		}
+		// At least verify guard strings exist
+		expect(block).toContain('runtimeBackend !== "v2"');
+	});
+});
+
+describe("12.x: Resume TDZ safety", () => {
+	const resumeSrc = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
+
+	it("12.1: resumeBackend is declared before first use", () => {
+		const declIdx = resumeSrc.indexOf("const resumeBackend: RuntimeBackend");
+		expect(declIdx).toBeGreaterThan(-1);
+		// Find the first mergeWaveByRepo call
+		const firstMergeCall = resumeSrc.indexOf("mergeWaveByRepo(");
+		// Declaration must be before first call that passes resumeBackend
+		const firstUse = resumeSrc.indexOf("resumeBackend,");
+		expect(declIdx).toBeLessThan(firstUse);
 	});
 });

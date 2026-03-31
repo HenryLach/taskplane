@@ -761,8 +761,13 @@ export function selectRuntimeBackend(
 	const isDirectPromptTarget =
 		argTokens.length === 1 && /PROMPT\.md$/i.test(argTokens[0]);
 
+	// TP-108: Runtime V2 for all repo-mode batches.
+	// TP-109: Workspace mode also uses V2 now that packet-home paths are
+	// threaded through execution and resume (worktree-relative .DONE check).
+	const backend: RuntimeBackend = "v2";
+
 	return {
-		backend: (isSingleTask && isRepoMode && isDirectPromptTarget) ? "v2" : "legacy",
+		backend,
 		isSingleTask,
 		isRepoMode,
 		isDirectPromptTarget,
@@ -1100,14 +1105,8 @@ export async function executeOrchBatch(
 	const selectedBackend = backendSelection.backend;
 
 	if (selectedBackend === "v2") {
-		execLog("batch", batchState.batchId, "Runtime V2 backend selected (single direct PROMPT.md target, repo mode)");
+		execLog("batch", batchState.batchId, "Runtime V2 backend selected");
 		onNotify("🚀 Using Runtime V2 backend (no-TMUX direct execution)", "info");
-	} else if (backendSelection.isSingleTask && backendSelection.isRepoMode && !backendSelection.isDirectPromptTarget) {
-		execLog("batch", batchState.batchId, "Runtime V2 not used: single-task batch was not targeted via direct PROMPT.md path");
-		onNotify("ℹ️ Using legacy execution backend (Runtime V2 TP-105 scope is single direct PROMPT.md targets)", "info");
-	} else if (backendSelection.isSingleTask && !backendSelection.isRepoMode) {
-		execLog("batch", batchState.batchId, "Runtime V2 not used: workspace mode (deferred to TP-109), falling back to legacy");
-		onNotify("ℹ️ Using legacy execution backend (workspace mode not yet supported on Runtime V2)", "info");
 	}
 
 	for (let waveIdx = 0; waveIdx < rawWaves.length; waveIdx++) {
@@ -1536,6 +1535,8 @@ export async function executeOrchBatch(
 						agentRoot,
 						runnerConfig.testing_commands,
 						mergeHealthMonitor,
+						undefined, // forceMixedOutcome
+						selectedBackend,
 					);
 				} finally {
 					// TP-056: Always stop the health monitor when merge phase ends
@@ -1754,6 +1755,9 @@ export async function executeOrchBatch(
 							stateRoot,
 							agentRoot,
 							runnerConfig.testing_commands,
+							undefined, // healthMonitor
+							undefined, // forceMixedOutcome
+							selectedBackend,
 						);
 					},
 					persist: (trigger) => persistRuntimeState(trigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot),

@@ -8,8 +8,9 @@ import { join } from "path";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { runDiscovery } from "./discovery.ts";
 import { executeOrchBatch } from "./engine.ts";
-import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasSession } from "./execution.ts";
-import type { MonitorUpdateCallback } from "./execution.ts";
+import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplete, resolveCanonicalTaskPaths, spawnLaneSession, tmuxHasSession } from "./execution.ts";
+import type { MonitorUpdateCallback, RuntimeBackend } from "./execution.ts";
+import { selectRuntimeBackend } from "./engine.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
 import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
@@ -860,11 +861,29 @@ export async function resumeOrchBatch(
 		}
 	}
 
-	// Check .DONE files
+	// Check .DONE files — check both original path and worktree-relative path.
+	// TP-109: In workspace mode or V2 execution, .DONE is written in the worktree
+	// at the resolved packet path, not the original discovery path. Resume must
+	// check both locations for authoritative completion detection.
 	const doneTaskIds = new Set<string>();
 	for (const task of persistedState.tasks) {
+		// Check original task folder path
 		if (task.taskFolder && hasTaskDoneMarker(task.taskFolder)) {
 			doneTaskIds.add(task.taskId);
+			continue;
+		}
+		// Check worktree-relative path (packet-home authority)
+		const laneRec = persistedState.lanes.find(l => l.taskIds.includes(task.taskId));
+		if (laneRec?.worktreePath && task.taskFolder) {
+			const resolved = resolveCanonicalTaskPaths(
+				task.taskFolder,
+				laneRec.worktreePath,
+				repoRoot,
+				!!workspaceConfig,
+			);
+			if (existsSync(resolved.donePath)) {
+				doneTaskIds.add(task.taskId);
+			}
 		}
 	}
 
@@ -1034,6 +1053,15 @@ export async function resumeOrchBatch(
 	// Build dependency graph for skip-dependents policy
 	const depGraph = buildDependencyGraph(discovery.pending, discovery.completed);
 	batchState.dependencyGraph = depGraph;
+
+	// TP-108: Runtime V2 backend selection for resumed batches.
+	// Placed before first use (section 8c merge) for TDZ safety.
+	const resumeBackend: RuntimeBackend = selectRuntimeBackend(
+		"all",
+		persistedState.wavePlan,
+		workspaceConfig,
+	).backend;
+	execLog("resume", batchState.batchId, `runtime backend for resumed execution: ${resumeBackend}`);
 
 	// ── 8. Handle alive sessions (reconnect) ─────────────────────
 	// For tasks with alive sessions, we need to wait for them to complete.
@@ -1275,6 +1303,9 @@ export async function resumeOrchBatch(
 				stateRoot,
 				agentRoot,
 				runnerConfig.testing_commands,
+				undefined, // healthMonitor
+				undefined, // forceMixedOutcome
+				resumeBackend,
 			);
 
 			if (reExecMergeResult.status === "succeeded") {
@@ -1530,6 +1561,9 @@ export async function resumeOrchBatch(
 					stateRoot,
 					agentRoot,
 					runnerConfig.testing_commands,
+					undefined, // healthMonitor
+					undefined, // forceMixedOutcome
+					resumeBackend,
 				);
 				batchState.mergeResults.push(mergeRetryResult);
 
@@ -1603,7 +1637,7 @@ export async function resumeOrchBatch(
 				}
 			},
 			workspaceConfig,
-			undefined,
+			resumeBackend,
 			emitAlert,
 		);
 
@@ -1742,6 +1776,9 @@ export async function resumeOrchBatch(
 					stateRoot,
 					agentRoot,
 					runnerConfig.testing_commands,
+					undefined, // healthMonitor
+					undefined, // forceMixedOutcome
+					resumeBackend,
 				);
 				batchState.mergeResults.push(mergeResult);
 
@@ -1906,6 +1943,9 @@ export async function resumeOrchBatch(
 							stateRoot,
 							agentRoot,
 							runnerConfig.testing_commands,
+							undefined, // healthMonitor
+							undefined, // forceMixedOutcome
+							resumeBackend,
 						);
 					},
 					persist: (trigger) => persistRuntimeState(trigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot),
