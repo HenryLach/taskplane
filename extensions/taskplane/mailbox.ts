@@ -339,3 +339,202 @@ export function isValidMailboxMessage(obj: unknown): obj is MailboxMessage {
 		typeof m.content === "string"
 	);
 }
+
+
+// ── Outbox (Agent → Supervisor, TP-106) ─────────────────────────
+
+/**
+ * Outbox directory for a specific agent session.
+ *
+ * @param stateRoot - Root directory containing .pi/
+ * @param batchId - Batch ID
+ * @param sessionName - Agent ID / session name
+ * @returns Absolute path: `{stateRoot}/.pi/mailbox/{batchId}/{sessionName}/outbox/`
+ *
+ * @since TP-106
+ */
+export function sessionOutboxDir(stateRoot: string, batchId: string, sessionName: string): string {
+	return join(stateRoot, ".pi", MAILBOX_DIR_NAME, batchId, sessionName, "outbox");
+}
+
+/**
+ * Write a reply or escalation message to an agent's outbox.
+ *
+ * Used by agents (via bridge tools or direct write) to communicate
+ * back to the supervisor. The engine or lane-runner polls outbox
+ * directories and surfaces messages as supervisor alerts.
+ *
+ * @param stateRoot - Root directory containing .pi/
+ * @param batchId - Current batch ID
+ * @param from - Agent ID writing the message
+ * @param opts - Message content and metadata
+ * @returns The written MailboxMessage
+ *
+ * @since TP-106
+ */
+export function writeOutboxMessage(
+	stateRoot: string,
+	batchId: string,
+	from: string,
+	opts: WriteMailboxMessageOpts,
+): MailboxMessage {
+	const outboxDir = sessionOutboxDir(stateRoot, batchId, from);
+	mkdirSync(outboxDir, { recursive: true });
+
+	const contentBytes = Buffer.byteLength(opts.content, "utf8");
+	if (contentBytes > MAILBOX_MAX_CONTENT_BYTES) {
+		throw new Error(
+			`Outbox message content exceeds ${MAILBOX_MAX_CONTENT_BYTES} byte limit (${contentBytes} bytes).`,
+		);
+	}
+
+	const timestamp = Date.now();
+	const nonce = randomBytes(3).toString("hex").slice(0, 5);
+	const id = `${timestamp}-${nonce}`;
+
+	const message: MailboxMessage = {
+		id,
+		batchId,
+		from,
+		to: "supervisor",
+		timestamp,
+		type: opts.type,
+		content: opts.content,
+		expectsReply: opts.expectsReply ?? false,
+		replyTo: opts.replyTo ?? null,
+	};
+
+	const finalFilename = `${id}.msg.json`;
+	const tempFilename = `${id}.msg.json.tmp`;
+	const tempPath = join(outboxDir, tempFilename);
+	const finalPath = join(outboxDir, finalFilename);
+
+	try {
+		writeFileSync(tempPath, JSON.stringify(message, null, 2) + "\n", "utf-8");
+		renameSync(tempPath, finalPath);
+	} catch (err) {
+		try { if (existsSync(tempPath)) unlinkSync(tempPath); } catch { /* cleanup */ }
+		throw new Error(`Failed to write outbox message: ${err instanceof Error ? err.message : String(err)}`);
+	}
+
+	return message;
+}
+
+/**
+ * Read pending outbox messages from an agent's outbox directory.
+ *
+ * @param stateRoot - Root directory containing .pi/
+ * @param batchId - Batch ID
+ * @param agentId - Agent ID whose outbox to read
+ * @returns Array of outbox messages sorted by timestamp
+ *
+ * @since TP-106
+ */
+export function readOutbox(
+	stateRoot: string,
+	batchId: string,
+	agentId: string,
+): MailboxMessage[] {
+	const outboxDir = sessionOutboxDir(stateRoot, batchId, agentId);
+	if (!existsSync(outboxDir)) return [];
+
+	let entries: string[];
+	try {
+		entries = readdirSync(outboxDir);
+	} catch {
+		return [];
+	}
+
+	const msgFiles = entries.filter(f => f.endsWith(".msg.json") && !f.endsWith(".msg.json.tmp"));
+	const messages: MailboxMessage[] = [];
+
+	for (const filename of msgFiles) {
+		try {
+			const raw = readFileSync(join(outboxDir, filename), "utf-8");
+			const parsed = JSON.parse(raw);
+			if (isValidMailboxMessage(parsed)) {
+				messages.push(parsed);
+			}
+		} catch { /* skip malformed */ }
+	}
+
+	messages.sort((a, b) => a.timestamp - b.timestamp);
+	return messages;
+}
+
+
+// ── Broadcast (TP-106) ────────────────────────────────────────
+
+/**
+ * Write a broadcast message to all agents.
+ *
+ * The message is written to `_broadcast/inbox/`. Agent hosts check
+ * this directory alongside their own inbox on each `message_end`.
+ *
+ * @param stateRoot - Root directory containing .pi/
+ * @param batchId - Current batch ID
+ * @param opts - Message content and metadata
+ * @returns The written MailboxMessage
+ *
+ * @since TP-106
+ */
+export function writeBroadcastMessage(
+	stateRoot: string,
+	batchId: string,
+	opts: WriteMailboxMessageOpts,
+): MailboxMessage {
+	return writeMailboxMessage(stateRoot, batchId, "_broadcast", {
+		...opts,
+		from: opts.from || "supervisor",
+	});
+}
+
+
+// ── Rate Limiting (TP-106) ─────────────────────────────────────
+
+/** Default rate limit: max 1 message per agent per 30 seconds. */
+export const RATE_LIMIT_WINDOW_MS = 30_000;
+
+/** In-memory rate limit tracker. Keyed by target agent ID. */
+const rateLimitTracker = new Map<string, number>();
+
+/**
+ * Check whether sending a message to a target is rate-limited.
+ *
+ * @param targetAgentId - Agent ID being sent to
+ * @param windowMs - Rate limit window in ms (default: 30_000)
+ * @returns Object with `allowed` and optional `retryAfterMs`
+ *
+ * @since TP-106
+ */
+export function checkRateLimit(
+	targetAgentId: string,
+	windowMs: number = RATE_LIMIT_WINDOW_MS,
+): { allowed: boolean; retryAfterMs?: number } {
+	const lastSent = rateLimitTracker.get(targetAgentId);
+	if (!lastSent) return { allowed: true };
+
+	const elapsed = Date.now() - lastSent;
+	if (elapsed >= windowMs) return { allowed: true };
+
+	return { allowed: false, retryAfterMs: windowMs - elapsed };
+}
+
+/**
+ * Record a send timestamp for rate limiting.
+ *
+ * @param targetAgentId - Agent ID that was sent to
+ *
+ * @since TP-106
+ */
+export function recordSend(targetAgentId: string): void {
+	rateLimitTracker.set(targetAgentId, Date.now());
+}
+
+/**
+ * Reset rate limit state (for testing).
+ * @since TP-106
+ */
+export function _resetRateLimits(): void {
+	rateLimitTracker.clear();
+}

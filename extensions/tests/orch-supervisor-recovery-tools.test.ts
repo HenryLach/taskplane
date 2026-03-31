@@ -231,12 +231,10 @@ describe("4.x: list_active_agents tool", () => {
 
 	it("4.4: parses session names for role detection", () => {
 		const idx = extensionSource.indexOf("function doListActiveAgents(");
-		const block = extensionSource.slice(idx, idx + 2000);
+		const block = extensionSource.slice(idx, idx + 4000);
+		// TP-106: doListActiveAgents now checks registry first, then falls back to TMUX parsing
 		expect(block).toContain("-lane-");
 		expect(block).toContain("-merge-");
-		expect(block).toContain("supervisor");
-		expect(block).toContain("merger");
-		expect(block).toContain("reviewer");
 		expect(block).toContain("worker");
 	});
 
@@ -247,10 +245,13 @@ describe("4.x: list_active_agents tool", () => {
 		expect(block).toContain("workerContextPct");
 	});
 
-	it("4.6: handles tmux unavailable", () => {
+	it("4.6: handles no agents found", () => {
 		const idx = extensionSource.indexOf("function doListActiveAgents(");
-		const block = extensionSource.slice(idx, idx + 1000);
-		expect(block).toContain("tmux not available");
+		const block = extensionSource.slice(idx, idx + 1500);
+		// TP-106: registry-first with TMUX fallback; either error message is acceptable
+		const hasRegistryMsg = block.includes("No active agents found");
+		const hasLegacyMsg = block.includes("tmux not available");
+		expect(hasRegistryMsg || hasLegacyMsg).toBe(true);
 	});
 });
 

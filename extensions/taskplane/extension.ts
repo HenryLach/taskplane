@@ -32,7 +32,24 @@ import { runMigrations } from "./migrations.ts";
 import { serializeWorkspaceConfig, applySerializedState, deserializeWorkspaceConfig } from "./engine-worker.ts";
 import type { EngineWorkerData, WorkerToMainMessage } from "./engine-worker.ts";
 import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, formatPreflightSweep, rotateSupervisorLogs, formatLogRotation } from "./cleanup.ts";
-import { writeMailboxMessage } from "./mailbox.ts";
+import {
+	writeMailboxMessage,
+	readInbox,
+	readOutbox,
+	writeBroadcastMessage,
+	checkRateLimit,
+	recordSend,
+	sessionOutboxDir,
+} from "./mailbox.ts";
+import {
+	buildRegistrySnapshot,
+	readRegistrySnapshot,
+	getLiveAgents,
+	getAgentsByRole,
+	isProcessAlive as registryIsProcessAlive,
+	isTerminalStatus,
+} from "./process-registry.ts";
+import { runtimeRegistryPath } from "./types.ts";
 import type { MailboxMessageType } from "./types.ts";
 import {
 	activateSupervisor,
@@ -3742,11 +3759,31 @@ export default function (pi: ExtensionAPI) {
 			return `❌ Unknown session "${to}" in batch ${state.batchId}.\nValid targets: ${examples}${validSessions.size > 5 ? ` (${validSessions.size} total)` : ""}`;
 		}
 
-		// Guard: ensure the target tmux session is currently alive.
-		// Prevents false-positive "message sent" confirmations when the
-		// batch is paused/stopped or the agent session has already exited.
-		if (!tmuxHasSession(to)) {
-			return `❌ Session "${to}" is not currently running. Use orch_status() or orch_resume() before sending messages.`;
+		// Guard: ensure the target agent is currently alive.
+		// Check process registry first (Runtime V2), fall back to TMUX (legacy).
+		let agentAlive = false;
+		try {
+			const registry = readRegistrySnapshot(stateRoot, state.batchId);
+			if (registry && registry.agents[to]) {
+				const manifest = registry.agents[to];
+				agentAlive = !isTerminalStatus(manifest.status) && registryIsProcessAlive(manifest.pid);
+			} else {
+				// No registry entry — fall back to TMUX for legacy batches
+				agentAlive = tmuxHasSession(to);
+			}
+		} catch {
+			// Registry read failed — fall back to TMUX
+			agentAlive = tmuxHasSession(to);
+		}
+		if (!agentAlive) {
+			return `❌ Agent "${to}" is not currently running. Use orch_status() or orch_resume() before sending messages.`;
+		}
+
+		// Rate limiting (TP-106)
+		const rateCheck = checkRateLimit(to);
+		if (!rateCheck.allowed) {
+			const waitSec = Math.ceil((rateCheck.retryAfterMs ?? 0) / 1000);
+			return `⏳ Rate limited: wait ${waitSec}s before sending another message to \`${to}\`.`;
 		}
 
 		// Write message to inbox
@@ -3756,6 +3793,7 @@ export default function (pi: ExtensionAPI) {
 				type: messageType as MailboxMessageType,
 				content,
 			});
+			recordSend(to);
 			return `✅ Message sent to \`${to}\` (batch ${state.batchId})\n` +
 				`- **ID:** ${msg.id}\n` +
 				`- **Type:** ${messageType}\n` +
@@ -3763,6 +3801,143 @@ export default function (pi: ExtensionAPI) {
 				`Message will be delivered at the agent's next turn boundary.`;
 		} catch (err) {
 			return `❌ Failed to write message: ${err instanceof Error ? err.message : String(err)}`;
+		}
+	}
+
+	// ── TP-106: read_agent_replies tool ───────────────────────
+
+	pi.registerTool({
+		name: "read_agent_replies",
+		label: "Read Agent Replies",
+		description:
+			"Read reply and escalation messages from agents. " +
+			"Returns outbox messages from a specific agent or all agents.",
+		promptSnippet: "read_agent_replies(from?) \u2014 read replies/escalations from agents",
+		promptGuidelines: [
+			"Call read_agent_replies to check if any agent has sent a reply or escalation.",
+			"Omit 'from' to read replies from all agents.",
+			"Provide 'from' with an agent ID to read replies from a specific agent.",
+		],
+		parameters: Type.Object({
+			from: Type.Optional(Type.String({
+				description: "Agent ID to read replies from (omit for all agents)",
+			})),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doReadAgentReplies(params.from, ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error reading replies: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	function doReadAgentReplies(from: string | undefined, ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
+		const state = loadBatchState(stateRoot);
+		if (!state) return "❌ No batch state found.";
+
+		const agentIds: string[] = [];
+		if (from) {
+			agentIds.push(from);
+		} else {
+			// Collect all known agent IDs from batch lanes
+			for (const lane of state.lanes) {
+				agentIds.push(`${lane.tmuxSessionName}-worker`);
+				agentIds.push(`${lane.tmuxSessionName}-reviewer`);
+			}
+		}
+
+		const allMessages: Array<{ agentId: string; message: import("./types.ts").MailboxMessage }> = [];
+		for (const agentId of agentIds) {
+			const messages = readOutbox(stateRoot, state.batchId, agentId);
+			for (const msg of messages) {
+				allMessages.push({ agentId, message: msg });
+			}
+		}
+
+		if (allMessages.length === 0) {
+			return from
+				? `No replies from \`${from}\` in batch ${state.batchId}.`
+				: `No agent replies in batch ${state.batchId}.`;
+		}
+
+		const lines: string[] = [`📨 **Agent Replies** (${allMessages.length} message(s))\n`];
+		for (const { agentId, message } of allMessages) {
+			const ts = new Date(message.timestamp).toISOString().slice(0, 16).replace("T", " ");
+			lines.push(`### ${message.type.toUpperCase()} from \`${agentId}\``);
+			lines.push(`- **Time:** ${ts}`);
+			lines.push(`- **ID:** ${message.id}`);
+			if (message.replyTo) lines.push(`- **Reply to:** ${message.replyTo}`);
+			lines.push(`- **Content:** ${message.content.slice(0, 500)}`);
+			lines.push("");
+		}
+
+		return lines.join("\n");
+	}
+
+	// ── TP-106: broadcast_message tool ────────────────────────
+
+	pi.registerTool({
+		name: "broadcast_message",
+		label: "Broadcast Message",
+		description:
+			"Send a message to all active agents. " +
+			"The message is written to the broadcast directory and delivered to all agents at their next turn boundary.",
+		promptSnippet: "broadcast_message(content, type?) \u2014 send message to all agents",
+		promptGuidelines: [
+			"Call broadcast_message to send a message to all active agents at once.",
+			"Default type is 'info'. Other types: 'steer', 'abort'.",
+			"Messages are limited to 4KB.",
+			"Rate limiting applies per-agent.",
+		],
+		parameters: Type.Object({
+			content: Type.String({
+				description: "Message content (max 4KB)",
+			}),
+			type: Type.Optional(Type.Union(
+				[Type.Literal("steer"), Type.Literal("info"), Type.Literal("abort")],
+				{ description: 'Message type (default: "info")' },
+			)),
+		}),
+		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+			try {
+				const result = doBroadcastMessage(params.content, params.type ?? "info", ctx);
+				return { content: [{ type: "text" as const, text: result }], details: undefined };
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `Error broadcasting: ${err instanceof Error ? err.message : String(err)}` }],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	function doBroadcastMessage(content: string, messageType: string, ctx: ExtensionContext): string {
+		const stateRoot = resolveToolStateRoot(ctx);
+		const state = loadBatchState(stateRoot);
+		if (!state) return "❌ No batch state found.";
+		if (isBatchTerminal(state.phase)) {
+			return `❌ Batch ${state.batchId} is in terminal phase (${state.phase}).`;
+		}
+
+		try {
+			const msg = writeBroadcastMessage(stateRoot, state.batchId, {
+				from: "supervisor",
+				type: messageType as MailboxMessageType,
+				content,
+			});
+			return `✅ Broadcast sent (batch ${state.batchId})\n` +
+				`- **ID:** ${msg.id}\n` +
+				`- **Type:** ${messageType}\n` +
+				`- **Size:** ${Buffer.byteLength(content, "utf8")} bytes\n` +
+				`Message will be delivered to all agents at their next turn boundary.`;
+		} catch (err) {
+			return `❌ Failed to broadcast: ${err instanceof Error ? err.message : String(err)}`;
 		}
 	}
 
@@ -4148,7 +4323,16 @@ export default function (pi: ExtensionAPI) {
 	function doListActiveAgents(ctx: ExtensionContext): string {
 		const stateRoot = resolveToolStateRoot(ctx);
 
-		// Get tmux sessions
+		// Try Runtime V2 registry first
+		const state = loadBatchState(stateRoot);
+		if (state) {
+			const registry = readRegistrySnapshot(stateRoot, state.batchId);
+			if (registry && Object.keys(registry.agents).length > 0) {
+				return formatRegistryAgents(registry, state);
+			}
+		}
+
+		// Fall back to TMUX-based discovery for legacy batches
 		let sessions: string[] = [];
 		try {
 			const output = execSync('tmux list-sessions -F "#{session_name}"', {
@@ -4158,13 +4342,12 @@ export default function (pi: ExtensionAPI) {
 			}).trim();
 			sessions = output ? output.split("\n").map(s => s.trim()).filter(Boolean) : [];
 		} catch {
-			return "❌ tmux not available or no sessions running.";
+			return "❌ No active agents found (no registry and no tmux sessions).";
 		}
 
-		if (sessions.length === 0) return "❌ No tmux sessions found.";
+		if (sessions.length === 0) return "❌ No active agents found.";
 
-		// Load batch state for task/lane mapping
-		const state = loadBatchState(stateRoot);
+		// state already loaded above for registry check (may be null)
 
 		// Build a map of session name → lane-state data
 		const laneStates: Record<string, any> = {};
@@ -4239,6 +4422,35 @@ export default function (pi: ExtensionAPI) {
 			if (elapsed) parts.push(`elapsed: ${elapsed}`);
 			if (costStr) parts.push(`cost: ${costStr}`);
 			lines.push(`- ${parts.join(" · ")}`);
+		}
+
+		return lines.join("\n");
+	}
+
+
+	// ── TP-106: Registry-based agent list formatter ────────────────
+
+	function formatRegistryAgents(registry: import("./types.ts").RuntimeRegistry, _batchState: PersistedBatchState | null): string {
+		const agents = Object.values(registry.agents);
+		if (agents.length === 0) return "❌ No agents in registry.";
+
+		const lines: string[] = [];
+		lines.push(`👥 **Active Agents** (${agents.length} registered)
+`);
+
+		for (const m of agents) {
+			const alive = !isTerminalStatus(m.status) && registryIsProcessAlive(m.pid);
+			const icon = alive ? "🟢" : "🔴";
+			const parts: string[] = [`**${m.agentId}**`];
+			parts.push(`role: ${m.role}`);
+			if (m.laneNumber != null) parts.push(`lane: ${m.laneNumber}`);
+			if (m.taskId) parts.push(`task: ${m.taskId}`);
+			parts.push(`status: ${m.status}`);
+			if (alive) {
+				const elapsed = Math.round((Date.now() - m.startedAt) / 1000);
+				parts.push(`elapsed: ${elapsed}s`);
+			}
+			lines.push(`- ${icon} ${parts.join(" · ")}`);
 		}
 
 		return lines.join("\n");
