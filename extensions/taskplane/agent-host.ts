@@ -99,6 +99,36 @@ export function resolvePiCliPath(): string {
 	);
 }
 
+// ── Conversation Payload Helpers (TP-111) ───────────────────────────────
+
+/** Maximum characters for conversation event text payloads. */
+const MAX_CONV_PAYLOAD_CHARS = 2000;
+
+/** Truncate a string to maxLen chars, appending ellipsis if truncated. */
+function truncatePayload(text: string, maxLen: number): string {
+	if (text.length <= maxLen) return text;
+	return text.slice(0, maxLen) + "…";
+}
+
+/**
+ * Extract text content from a Pi RPC message_end event's message object.
+ * Pi may return content as a string or as an array of content blocks.
+ */
+function extractAssistantText(message: Record<string, unknown>): string {
+	// Direct string content
+	if (typeof message.content === "string") return message.content;
+	// Array of content blocks (Anthropic format)
+	if (Array.isArray(message.content)) {
+		const textBlocks = message.content
+			.filter((b) => b.type === "text" && typeof b.text === "string")
+			.map((b) => b.text);
+		if (textBlocks.length > 0) return textBlocks.join("\n");
+	}
+	// Fallback: try text field
+	if (typeof message.text === "string") return message.text;
+	return "";
+}
+
 // ── Types ────────────────────────────────────────────────────────────
 
 /**
@@ -547,6 +577,13 @@ export function spawnAgent(
 								costUsd += typeof usage.cost === "object" ? (usage.cost.total || 0) : (typeof usage.cost === "number" ? usage.cost : 0);
 							}
 						}
+						// TP-111: Emit assistant_message with bounded content
+						if (event.message?.role === "assistant") {
+							const content = extractAssistantText(event.message);
+							if (content) {
+								emitEvent("assistant_message", { text: truncatePayload(content, MAX_CONV_PAYLOAD_CHARS) });
+							}
+						}
 						// Request session stats after first assistant message
 						if (!statsRequested && event.message?.role === "assistant") {
 							statsRequested = true;
@@ -568,11 +605,16 @@ export function spawnAgent(
 						const argPreview = typeof event.args === "string" ? event.args.slice(0, 80) :
 							(event.args && typeof Object.values(event.args)[0] === "string" ? String(Object.values(event.args)[0]).slice(0, 80) : "");
 						lastTool = argPreview ? `${toolName}: ${argPreview}` : toolName;
-						emitEvent("tool_call", { tool: toolName, args: event.args });
+						// TP-111: Extract path for dashboard display (read, write, edit tools)
+						const toolPath = event.args?.path ? String(event.args.path).slice(0, 200) : "";
+						emitEvent("tool_call", { tool: toolName, path: toolPath, args: event.args });
 						break;
 					}
 					case "tool_execution_end": {
-						emitEvent("tool_result", { tool: event.toolName });
+						// TP-111: Include bounded result summary for dashboard display
+						const toolResultSummary = typeof event.result === "string" ? event.result.slice(0, 200)
+							: event.output ? String(event.output).slice(0, 200) : "";
+						emitEvent("tool_result", { tool: event.toolName, summary: toolResultSummary });
 						break;
 					}
 					case "auto_retry_start": {
@@ -628,6 +670,8 @@ export function spawnAgent(
 		proc.stdin.write(JSON.stringify({ type: "prompt", message: opts.prompt }) + "\n");
 
 		emitEvent("agent_started", { model: opts.model, cwd: opts.cwd });
+		// TP-111: Emit prompt_sent with bounded preview
+		emitEvent("prompt_sent", { text: truncatePayload(opts.prompt, MAX_CONV_PAYLOAD_CHARS) });
 	});
 
 	const kill = () => {
