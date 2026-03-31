@@ -1,7 +1,7 @@
 # TP-102: Runtime V2 ExecutionUnit and Packet-Path Contracts — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Define Runtime V2 Contracts
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-03-30
 **Review Level:** 2
 **Review Counter:** 0
@@ -11,10 +11,10 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Trace the current task/lane runtime contracts through engine, execution, and resume
-- [ ] Identify where packet paths, runtime identity, and live artifacts are currently implicit or TMUX-derived
+- [x] Trace the current task/lane runtime contracts through engine, execution, and resume
+- [x] Identify where packet paths, runtime identity, and live artifacts are currently implicit or TMUX-derived
 
 ---
 
@@ -72,6 +72,7 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-03-30 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-30 | Preflight complete | Traced ParsedTask, AllocatedLane, PersistedTaskRecord, LaneTaskOutcome, resolveCanonicalTaskPaths. TMUX naming in AllocatedLane.tmuxSessionName, PersistedLaneRecord.tmuxSessionName, LaneStatus.tmuxSession. Packet paths partially lifted in v4/TP-081 fields but not yet authoritative. |
 
 ---
 

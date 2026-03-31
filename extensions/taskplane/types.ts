@@ -3451,3 +3451,514 @@ export interface WriteMailboxMessageOpts {
 	replyTo?: string | null;
 }
 
+// ── Runtime V2 Contracts (TP-102) ────────────────────────────────────
+//
+// These types define the foundational contracts for the no-TMUX Runtime V2
+// architecture. They are additive — existing runtime paths continue to work
+// while Runtime V2 is incrementally adopted.
+//
+// Design principles:
+//   1. Agent identity is a stable runtime ID, not a TMUX session name.
+//   2. Packet-path authority is explicit, never inferred from cwd.
+//   3. Process ownership uses a registry, not terminal session discovery.
+//   4. Normalized events flow directly from child to parent.
+//
+// See: docs/specifications/framework/taskplane-runtime-v2/
+// ─────────────────────────────────────────────────────────────────────
+
+/**
+ * Canonical agent roles in the Runtime V2 process model.
+ *
+ * Every spawned agent process has exactly one role. The role determines
+ * the process's responsibilities, tools, and lifecycle semantics.
+ *
+ * @since TP-102
+ */
+export type RuntimeAgentRole = "worker" | "reviewer" | "merger" | "lane-runner";
+
+/**
+ * Agent lifecycle states in the process registry.
+ *
+ * State machine:
+ *   spawning → running → wrapping_up → exited
+ *                      → crashed
+ *                      → timed_out
+ *                      → killed
+ *
+ * @since TP-102
+ */
+export type RuntimeAgentStatus =
+	| "spawning"
+	| "running"
+	| "wrapping_up"
+	| "exited"
+	| "crashed"
+	| "timed_out"
+	| "killed";
+
+/** Set of terminal agent statuses (process is no longer alive). @since TP-102 */
+export const TERMINAL_AGENT_STATUSES: ReadonlySet<RuntimeAgentStatus> = new Set([
+	"exited", "crashed", "timed_out", "killed",
+]);
+
+/**
+ * Stable agent identity for Runtime V2.
+ *
+ * This replaces TMUX session names as the canonical identifier for a
+ * spawned agent process. The string format is deliberately compatible
+ * with existing naming conventions (e.g., "orch-henrylach-lane-1-worker")
+ * to minimize churn in supervisor tools, dashboard, and mailbox addressing.
+ *
+ * The key semantic change: this is a **runtime process ID**, not a terminal
+ * session name. Code must not assume `tmuxHasSession(agentId)` is valid.
+ *
+ * @since TP-102
+ */
+export type RuntimeAgentId = string;
+
+/**
+ * Explicit packet-path authority for a task execution.
+ *
+ * In workspace mode, the packet home (where PROMPT.md / STATUS.md / .DONE
+ * live) may differ from the execution cwd (the active segment repo worktree).
+ * Runtime V2 requires these paths to be resolved explicitly and passed
+ * through the execution chain — never inferred from cwd.
+ *
+ * In repo mode (single repo), all paths point into the same filesystem tree.
+ * The contract is the same; the values just happen to be co-located.
+ *
+ * @since TP-102
+ */
+export interface PacketPaths {
+	/** Absolute path to the task's PROMPT.md */
+	promptPath: string;
+	/** Absolute path to the task's STATUS.md */
+	statusPath: string;
+	/** Absolute path to the task's .DONE marker */
+	donePath: string;
+	/** Absolute path to the task's .reviews/ directory */
+	reviewsDir: string;
+	/** Absolute path to the task folder containing packet files */
+	taskFolder: string;
+}
+
+/**
+ * Resolve a PacketPaths object from a task folder path.
+ *
+ * This is a pure helper — it does not check whether the files exist.
+ * Consumers should use this to build authoritative paths from an
+ * already-resolved task folder location.
+ *
+ * @param taskFolder - Absolute path to the task folder
+ * @returns Complete PacketPaths with all derived paths
+ *
+ * @since TP-102
+ */
+export function resolvePacketPaths(taskFolder: string): PacketPaths {
+	return {
+		promptPath: `${taskFolder}/PROMPT.md`,
+		statusPath: `${taskFolder}/STATUS.md`,
+		donePath: `${taskFolder}/.DONE`,
+		reviewsDir: `${taskFolder}/.reviews`,
+		taskFolder,
+	};
+}
+
+/**
+ * A single execution unit in Runtime V2.
+ *
+ * Represents one unit of work to be executed in one lane: either a whole
+ * task (repo mode / single-segment workspace mode) or one segment of a
+ * multi-repo task.
+ *
+ * This is the contract between the engine (which decides what to run) and
+ * the lane-runner (which runs it). It carries everything the lane-runner
+ * needs without requiring it to re-derive paths from cwd or session state.
+ *
+ * @since TP-102
+ */
+export interface ExecutionUnit {
+	/** Unique identifier: taskId for whole-task units, `taskId::repoId` for segments */
+	id: string;
+	/** Parent task identifier */
+	taskId: string;
+	/** Segment identifier (null for whole-task execution) */
+	segmentId: string | null;
+	/** Repo ID where execution happens (cwd of the worker) */
+	executionRepoId: string;
+	/** Repo ID that owns the packet files (may differ in workspace mode) */
+	packetHomeRepoId: string;
+	/** Absolute path to the execution worktree */
+	worktreePath: string;
+	/** Authoritative packet file paths */
+	packet: PacketPaths;
+	/** Full parsed task metadata */
+	task: ParsedTask;
+}
+
+/**
+ * Per-agent process manifest for the runtime registry.
+ *
+ * Written by the agent's parent process (lane-runner or engine) before
+ * the agent is considered visible. Updated on status transitions and
+ * cleaned up on batch completion.
+ *
+ * Replaces TMUX session discovery as the source of truth for agent
+ * liveness, identity, and attribution.
+ *
+ * File location: `.pi/runtime/{batchId}/agents/{agentId}/manifest.json`
+ *
+ * @since TP-102
+ */
+export interface RuntimeAgentManifest {
+	/** Batch this agent belongs to */
+	batchId: string;
+	/** Stable agent identity (e.g., "orch-henrylach-lane-1-worker") */
+	agentId: RuntimeAgentId;
+	/** Agent role */
+	role: RuntimeAgentRole;
+	/** Lane number (null for merge agents) */
+	laneNumber: number | null;
+	/** Current task ID being executed (null before first assignment) */
+	taskId: string | null;
+	/** Repo ID the agent is operating in */
+	repoId: string;
+	/** OS process ID of the agent host process */
+	pid: number;
+	/** OS process ID of the parent (lane-runner or engine) */
+	parentPid: number;
+	/** Epoch ms when the agent was spawned */
+	startedAt: number;
+	/** Current lifecycle status */
+	status: RuntimeAgentStatus;
+	/** Absolute path to the agent's working directory */
+	cwd: string;
+	/** Authoritative packet paths (null for merge agents or pre-assignment) */
+	packet: PacketPaths | null;
+}
+
+/**
+ * Batch-level runtime registry snapshot.
+ *
+ * Contains all active and recently-exited agents for one batch.
+ * The authoritative source of truth for which agents exist, replacing
+ * TMUX session discovery.
+ *
+ * File location: `.pi/runtime/{batchId}/registry.json`
+ *
+ * @since TP-102
+ */
+export interface RuntimeRegistry {
+	/** Batch ID this registry belongs to */
+	batchId: string;
+	/** Epoch ms when the registry was last updated */
+	updatedAt: number;
+	/** All known agents (keyed by agentId for fast lookup in JSON form) */
+	agents: Record<RuntimeAgentId, RuntimeAgentManifest>;
+}
+
+/**
+ * Lane execution snapshot emitted by the lane-runner.
+ *
+ * Replaces the current `lane-state-*.json` sidecar with a first-class
+ * contract. Written by the lane-runner directly (not by tailing sidecar
+ * files from a sibling process).
+ *
+ * File location: `.pi/runtime/{batchId}/lanes/lane-{N}.json`
+ *
+ * @since TP-102
+ */
+export interface RuntimeLaneSnapshot {
+	/** Batch this lane belongs to */
+	batchId: string;
+	/** Lane number (1-indexed) */
+	laneNumber: number;
+	/** Lane identifier (e.g., "lane-1") */
+	laneId: string;
+	/** Repo ID this lane targets */
+	repoId: string;
+	/** Current task ID being executed */
+	taskId: string | null;
+	/** Current segment ID (null for whole-task execution) */
+	segmentId: string | null;
+	/** Lane execution status */
+	status: "idle" | "running" | "complete" | "failed";
+	/** Worker agent snapshot (null when no worker is active) */
+	worker: RuntimeAgentTelemetrySnapshot | null;
+	/** Reviewer agent snapshot (null when no reviewer is active) */
+	reviewer: RuntimeAgentTelemetrySnapshot | null;
+	/** Task progress derived from STATUS.md */
+	progress: RuntimeTaskProgress | null;
+	/** Epoch ms when this snapshot was last updated */
+	updatedAt: number;
+}
+
+/**
+ * Telemetry snapshot for a single agent within a lane.
+ *
+ * @since TP-102
+ */
+export interface RuntimeAgentTelemetrySnapshot {
+	/** Agent ID */
+	agentId: RuntimeAgentId;
+	/** Agent lifecycle status */
+	status: RuntimeAgentStatus;
+	/** Elapsed time in milliseconds */
+	elapsedMs: number;
+	/** Number of tool calls made */
+	toolCalls: number;
+	/** Context window utilization percentage (0-100) */
+	contextPct: number;
+	/** Cumulative cost in USD */
+	costUsd: number;
+	/** Last tool call description */
+	lastTool: string;
+	/** Input tokens consumed */
+	inputTokens: number;
+	/** Output tokens generated */
+	outputTokens: number;
+	/** Cache read tokens */
+	cacheReadTokens: number;
+	/** Cache write tokens */
+	cacheWriteTokens: number;
+}
+
+/**
+ * Task progress derived from STATUS.md parsing.
+ *
+ * @since TP-102
+ */
+export interface RuntimeTaskProgress {
+	/** Human-readable current step label */
+	currentStep: string;
+	/** Number of checked checkboxes across all steps */
+	checked: number;
+	/** Total number of checkboxes across all steps */
+	total: number;
+	/** Current worker iteration number */
+	iteration: number;
+	/** Number of reviews performed */
+	reviews: number;
+}
+
+/**
+ * Normalized event emitted by an agent host.
+ *
+ * The canonical telemetry/conversation event shape for Runtime V2.
+ * Agent hosts write these to per-agent event logs and stream them
+ * to their parent process via IPC.
+ *
+ * File location: `.pi/runtime/{batchId}/agents/{agentId}/events.jsonl`
+ *
+ * @since TP-102
+ */
+export interface RuntimeAgentEvent {
+	/** Batch ID */
+	batchId: string;
+	/** Agent that produced this event */
+	agentId: RuntimeAgentId;
+	/** Agent role */
+	role: RuntimeAgentRole;
+	/** Lane number (null for merge agents) */
+	laneNumber: number | null;
+	/** Task ID being executed when the event was produced */
+	taskId: string | null;
+	/** Repo ID */
+	repoId: string;
+	/** Epoch ms timestamp */
+	ts: number;
+	/** Event type */
+	type: RuntimeAgentEventType;
+	/** Event-specific payload */
+	payload: Record<string, unknown>;
+}
+
+/**
+ * Normalized event types for the Runtime V2 agent event stream.
+ *
+ * @since TP-102
+ */
+export type RuntimeAgentEventType =
+	// Lifecycle
+	| "agent_started"
+	| "agent_exited"
+	| "agent_killed"
+	| "agent_crashed"
+	| "agent_timeout"
+	// Conversation
+	| "prompt_sent"
+	| "assistant_message"
+	| "tool_call"
+	| "tool_result"
+	// Telemetry
+	| "usage_delta"
+	| "context_usage"
+	| "retry_started"
+	| "retry_finished"
+	| "compaction_started"
+	| "compaction_finished"
+	// Steering
+	| "message_delivered"
+	| "reply_sent"
+	| "escalation_sent"
+	// Review / bridge
+	| "review_requested"
+	| "review_completed"
+	| "review_failed";
+
+// ── Runtime V2 Path Helpers (TP-102) ─────────────────────────────────
+
+/**
+ * Resolve the root directory for Runtime V2 artifacts for a given batch.
+ *
+ * @param stateRoot - Root directory containing .pi/ (workspace root or repo root)
+ * @param batchId - Batch identifier
+ * @returns Absolute path: `{stateRoot}/.pi/runtime/{batchId}/`
+ *
+ * @since TP-102
+ */
+export function runtimeRoot(stateRoot: string, batchId: string): string {
+	return `${stateRoot}/.pi/runtime/${batchId}`;
+}
+
+/**
+ * Resolve the path for a specific agent's runtime directory.
+ *
+ * @param stateRoot - Root directory containing .pi/
+ * @param batchId - Batch identifier
+ * @param agentId - Runtime agent identifier
+ * @returns Absolute path: `{stateRoot}/.pi/runtime/{batchId}/agents/{agentId}/`
+ *
+ * @since TP-102
+ */
+export function runtimeAgentDir(stateRoot: string, batchId: string, agentId: RuntimeAgentId): string {
+	return `${stateRoot}/.pi/runtime/${batchId}/agents/${agentId}`;
+}
+
+/**
+ * Resolve the path for a specific agent's manifest file.
+ *
+ * @since TP-102
+ */
+export function runtimeManifestPath(stateRoot: string, batchId: string, agentId: RuntimeAgentId): string {
+	return `${runtimeAgentDir(stateRoot, batchId, agentId)}/manifest.json`;
+}
+
+/**
+ * Resolve the path for a specific agent's event log.
+ *
+ * @since TP-102
+ */
+export function runtimeAgentEventsPath(stateRoot: string, batchId: string, agentId: RuntimeAgentId): string {
+	return `${runtimeAgentDir(stateRoot, batchId, agentId)}/events.jsonl`;
+}
+
+/**
+ * Resolve the path for a lane snapshot file.
+ *
+ * @since TP-102
+ */
+export function runtimeLaneSnapshotPath(stateRoot: string, batchId: string, laneNumber: number): string {
+	return `${stateRoot}/.pi/runtime/${batchId}/lanes/lane-${laneNumber}.json`;
+}
+
+/**
+ * Resolve the path for the batch runtime registry.
+ *
+ * @since TP-102
+ */
+export function runtimeRegistryPath(stateRoot: string, batchId: string): string {
+	return `${stateRoot}/.pi/runtime/${batchId}/registry.json`;
+}
+
+/**
+ * Build a canonical RuntimeAgentId from components.
+ *
+ * Produces IDs compatible with the existing naming convention
+ * (e.g., "orch-henrylach-lane-1-worker") while semantically
+ * decoupling them from TMUX session names.
+ *
+ * @param prefix - Operator/batch prefix (e.g., "orch-henrylach")
+ * @param laneNumber - Lane number (null for merge agents)
+ * @param role - Agent role
+ * @param mergeIndex - Merge wave index (only for merge agents)
+ * @returns Canonical agent ID string
+ *
+ * @since TP-102
+ */
+export function buildRuntimeAgentId(
+	prefix: string,
+	laneNumber: number | null,
+	role: RuntimeAgentRole,
+	mergeIndex?: number,
+): RuntimeAgentId {
+	if (role === "merger" && mergeIndex != null) {
+		return `${prefix}-merge-${mergeIndex}`;
+	}
+	if (role === "lane-runner" && laneNumber != null) {
+		return `${prefix}-lane-${laneNumber}`;
+	}
+	if (laneNumber != null) {
+		return `${prefix}-lane-${laneNumber}-${role}`;
+	}
+	return `${prefix}-${role}`;
+}
+
+/**
+ * Validate that a RuntimeAgentManifest has required fields and sane values.
+ *
+ * Returns an array of validation error strings (empty = valid).
+ *
+ * @since TP-102
+ */
+export function validateAgentManifest(manifest: unknown): string[] {
+	const errors: string[] = [];
+	if (!manifest || typeof manifest !== "object") {
+		return ["manifest must be a non-null object"];
+	}
+	const m = manifest as Record<string, unknown>;
+
+	if (typeof m.batchId !== "string" || !m.batchId) errors.push("batchId must be a non-empty string");
+	if (typeof m.agentId !== "string" || !m.agentId) errors.push("agentId must be a non-empty string");
+	if (typeof m.role !== "string") errors.push("role must be a string");
+	else {
+		const validRoles: ReadonlySet<string> = new Set(["worker", "reviewer", "merger", "lane-runner"]);
+		if (!validRoles.has(m.role as string)) errors.push(`role must be one of: ${[...validRoles].join(", ")}`);
+	}
+	if (typeof m.pid !== "number" || !Number.isFinite(m.pid) || m.pid <= 0) errors.push("pid must be a positive finite number");
+	if (typeof m.parentPid !== "number" || !Number.isFinite(m.parentPid) || m.parentPid <= 0) errors.push("parentPid must be a positive finite number");
+	if (typeof m.startedAt !== "number" || !Number.isFinite(m.startedAt)) errors.push("startedAt must be a finite number");
+	if (typeof m.status !== "string") errors.push("status must be a string");
+	else {
+		const validStatuses: ReadonlySet<string> = new Set(["spawning", "running", "wrapping_up", "exited", "crashed", "timed_out", "killed"]);
+		if (!validStatuses.has(m.status as string)) errors.push(`status must be one of: ${[...validStatuses].join(", ")}`);
+	}
+	if (typeof m.cwd !== "string" || !m.cwd) errors.push("cwd must be a non-empty string");
+	if (typeof m.repoId !== "string") errors.push("repoId must be a string");
+
+	return errors;
+}
+
+/**
+ * Validate that a PacketPaths object has all required fields.
+ *
+ * Returns an array of validation error strings (empty = valid).
+ *
+ * @since TP-102
+ */
+export function validatePacketPaths(packet: unknown): string[] {
+	const errors: string[] = [];
+	if (!packet || typeof packet !== "object") {
+		return ["packet must be a non-null object"];
+	}
+	const p = packet as Record<string, unknown>;
+
+	for (const field of ["promptPath", "statusPath", "donePath", "reviewsDir", "taskFolder"] as const) {
+		if (typeof p[field] !== "string" || !(p[field] as string)) {
+			errors.push(`${field} must be a non-empty string`);
+		}
+	}
+
+	return errors;
+}
+
