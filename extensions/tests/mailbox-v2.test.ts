@@ -17,6 +17,7 @@ import { fileURLToPath } from "url";
 import {
 	writeOutboxMessage,
 	readOutbox,
+	readOutboxHistory,
 	writeBroadcastMessage,
 	sessionOutboxDir,
 	ackOutboxMessage,
@@ -223,8 +224,8 @@ describe("4.x: Registry-backed supervisor tool contracts", () => {
 		expect(extensionSrc).toContain("doBroadcastMessage");
 	});
 
-	it("4.6: read_agent_replies reads outbox", () => {
-		expect(extensionSrc).toContain("readOutbox(stateRoot");
+	it("4.6: read_agent_replies reads outbox history (pending + processed)", () => {
+		expect(extensionSrc).toContain("readOutboxHistory(stateRoot");
 	});
 
 	it("4.7: broadcast_message calls writeBroadcastMessage", () => {
@@ -361,5 +362,45 @@ describe("8.x: Mailbox V2 exports", () => {
 
 	it("8.8: appendMailboxAuditEvent is a function", () => {
 		expect(typeof appendMailboxAuditEvent).toBe("function");
+	});
+});
+
+// ── 9.x: readOutboxHistory (TP-091) ─────────────────────────
+
+describe("9.x: Outbox history (pending + processed)", () => {
+	const bid = "20260330T091000";
+	const aid = "orch-test-lane-1-worker";
+
+	it("9.1: readOutboxHistory returns pending messages", () => {
+		writeOutboxMessage(tmpDir, bid, aid, { from: aid, type: "reply", content: "pending reply" });
+		const history = readOutboxHistory(tmpDir, bid, aid);
+		expect(history.length).toBe(1);
+		expect(history[0].acked).toBe(false);
+		expect(history[0].message.content).toBe("pending reply");
+	});
+
+	it("9.2: readOutboxHistory includes processed (acked) messages", () => {
+		const msg = writeOutboxMessage(tmpDir, bid, aid, { from: aid, type: "reply", content: "will ack" });
+		ackOutboxMessage(tmpDir, bid, aid, msg.id);
+		const history = readOutboxHistory(tmpDir, bid, aid);
+		expect(history.length).toBe(1);
+		expect(history[0].acked).toBe(true);
+		expect(history[0].message.content).toBe("will ack");
+	});
+
+	it("9.3: readOutboxHistory returns both pending and processed sorted by timestamp", () => {
+		writeOutboxMessage(tmpDir, bid, aid, { from: aid, type: "reply", content: "first" });
+		const msg2 = writeOutboxMessage(tmpDir, bid, aid, { from: aid, type: "escalate", content: "second" });
+		ackOutboxMessage(tmpDir, bid, aid, msg2.id);
+		const history = readOutboxHistory(tmpDir, bid, aid);
+		expect(history.length).toBe(2);
+		const acked = history.filter(h => h.acked);
+		const pending = history.filter(h => !h.acked);
+		expect(acked.length).toBe(1);
+		expect(pending.length).toBe(1);
+	});
+
+	it("9.4: readOutboxHistory returns empty for non-existent agent", () => {
+		expect(readOutboxHistory(tmpDir, bid, "nonexistent")).toEqual([]);
 	});
 });

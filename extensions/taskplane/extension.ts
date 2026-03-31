@@ -35,6 +35,7 @@ import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, 
 import {
 	writeMailboxMessage,
 	readOutbox,
+	readOutboxHistory,
 	writeBroadcastMessage,
 	checkRateLimit,
 	recordSend,
@@ -3838,13 +3839,15 @@ export default function (pi: ExtensionAPI) {
 		name: "read_agent_replies",
 		label: "Read Agent Replies",
 		description:
-			"Read reply and escalation messages from agents. " +
-			"Returns outbox messages from a specific agent or all agents.",
-		promptSnippet: "read_agent_replies(from?) \u2014 read replies/escalations from agents",
+			"Read reply and escalation messages from agents (non-consuming). " +
+			"Returns pending and already-acked outbox messages from a specific agent or all agents. " +
+			"Messages are never removed by reading — this is a durable history view.",
+		promptSnippet: "read_agent_replies(from?) \u2014 read replies/escalations from agents (read-only, non-consuming)",
 		promptGuidelines: [
 			"Call read_agent_replies to check if any agent has sent a reply or escalation.",
 			"Omit 'from' to read replies from all agents.",
 			"Provide 'from' with an agent ID to read replies from a specific agent.",
+			"This is non-consuming: replies remain visible after reading (pending + acked history).",
 		],
 		parameters: Type.Object({
 			from: Type.Optional(Type.String({
@@ -3864,6 +3867,13 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	/**
+	 * Read agent replies/escalations. Non-consuming (read-only):
+	 * reads both pending outbox and processed (acked) messages so
+	 * replies are never lost from the supervisor's view.
+	 *
+	 * @since TP-091 (lifecycle semantics hardened)
+	 */
 	function doReadAgentReplies(from: string | undefined, ctx: ExtensionContext): string {
 		const stateRoot = resolveToolStateRoot(ctx);
 		const state = loadBatchState(stateRoot);
@@ -3873,24 +3883,26 @@ export default function (pi: ExtensionAPI) {
 			? [from]
 			: collectKnownAgentIds(stateRoot, state);
 
-		const allMessages: Array<{ agentId: string; message: import("./types.ts").MailboxMessage }> = [];
+		// TP-091: read full outbox history (pending + processed) for durable visibility
+		const allEntries: Array<{ agentId: string; message: import("./types.ts").MailboxMessage; acked: boolean }> = [];
 		for (const agentId of agentIds) {
-			const messages = readOutbox(stateRoot, state.batchId, agentId);
-			for (const msg of messages) {
-				allMessages.push({ agentId, message: msg });
+			const history = readOutboxHistory(stateRoot, state.batchId, agentId);
+			for (const entry of history) {
+				allEntries.push({ agentId, ...entry });
 			}
 		}
 
-		if (allMessages.length === 0) {
+		if (allEntries.length === 0) {
 			return from
 				? `No replies from \`${from}\` in batch ${state.batchId}.`
 				: `No agent replies in batch ${state.batchId}.`;
 		}
 
-		const lines: string[] = [`📨 **Agent Replies** (${allMessages.length} message(s))\n`];
-		for (const { agentId, message } of allMessages) {
+		const lines: string[] = [`📨 **Agent Replies** (${allEntries.length} message(s))\n`];
+		for (const { agentId, message, acked } of allEntries) {
 			const ts = new Date(message.timestamp).toISOString().slice(0, 16).replace("T", " ");
-			lines.push(`### ${message.type.toUpperCase()} from \`${agentId}\``);
+			const statusTag = acked ? " *(acked)*" : " *(pending)*";
+			lines.push(`### ${message.type.toUpperCase()} from \`${agentId}\`${statusTag}`);
 			lines.push(`- **Time:** ${ts}`);
 			lines.push(`- **ID:** ${message.id}`);
 			if (message.replyTo) lines.push(`- **Reply to:** ${message.replyTo}`);

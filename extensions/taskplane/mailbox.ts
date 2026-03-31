@@ -463,6 +463,49 @@ export function readOutbox(
 }
 
 /**
+ * Read all outbox messages (pending + processed) for durable history.
+ *
+ * Unlike readOutbox() which only reads pending messages, this function
+ * also reads outbox/processed/ so consumed replies remain visible to
+ * the supervisor via read_agent_replies.
+ *
+ * @param stateRoot - Root directory containing .pi/
+ * @param batchId - Batch ID
+ * @param agentId - Agent ID whose outbox history to read
+ * @returns Array of { message, acked } sorted by timestamp
+ *
+ * @since TP-091
+ */
+export function readOutboxHistory(
+	stateRoot: string,
+	batchId: string,
+	agentId: string,
+): Array<{ message: MailboxMessage; acked: boolean }> {
+	const outboxDir = sessionOutboxDir(stateRoot, batchId, agentId);
+	const results: Array<{ message: MailboxMessage; acked: boolean }> = [];
+
+	for (const [dir, acked] of [[outboxDir, false], [join(outboxDir, "processed"), true]] as const) {
+		if (!existsSync(dir)) continue;
+		let entries: string[];
+		try { entries = readdirSync(dir); } catch { continue; }
+
+		const msgFiles = entries.filter(f => f.endsWith(".msg.json") && !f.endsWith(".msg.json.tmp"));
+		for (const filename of msgFiles) {
+			try {
+				const raw = readFileSync(join(dir, filename), "utf-8");
+				const parsed = JSON.parse(raw);
+				if (isValidMailboxMessage(parsed)) {
+					results.push({ message: parsed, acked });
+				}
+			} catch { /* skip malformed */ }
+		}
+	}
+
+	results.sort((a, b) => a.message.timestamp - b.message.timestamp);
+	return results;
+}
+
+/**
  * Ack (consume) a specific outbox message by moving it to processed/.
  *
  * Returns false if the message is already gone (race-safe/idempotent).
