@@ -129,4 +129,45 @@ for this task MUST include the task ID for traceability:
 
 ## Amendments (Added During Execution)
 
-<!-- Workers add amendments here if issues discovered during execution. -->
+### 2026-03-31 — Pre-implementation alignment update (Runtime V2 continuity)
+
+Context update since task creation:
+
+- TP-106 mailbox + registry-backed supervisor controls are now in place.
+- TP-107/TP-093 dashboard migration is functionally in place (with follow-up TP-111 for conversation event fidelity).
+- TP-105 currently gates Runtime V2 to a **narrow scope** (single direct PROMPT target in repo mode).
+
+TP-108 should therefore be treated as the **batch/merge cutover task** that removes that narrow gate for orchestrated wave execution and merge hosting.
+
+#### Required clarifications for TP-108 delivery
+
+1. **Backend-selection cutover:** expand runtime backend selection from TP-105 narrow mode so `/orch all` / batch waves can run on Runtime V2.
+2. **Engine/resume parity:** execution and resume paths must choose and preserve the same backend behavior (including retry/recovery paths).
+3. **Merge-host migration is mandatory:** do not leave merge execution on TMUX while lane execution is moved.
+4. **Tier-0 + alert parity:** preserve current retry/escalation semantics and supervisor alert propagation on the Runtime V2 path.
+5. **Registry-owned liveness:** active-session discovery/cleanup should be process-registry-first; TMUX checks become legacy fallback only.
+6. **Scope boundary with TP-109:** do not claim packet-home/resume authority is solved here; only avoid regressions until TP-109 lands.
+
+#### Revised context to read first (in addition to original)
+
+- `extensions/taskplane/engine.ts` (runtime backend selection + wave loop)
+- `extensions/taskplane/execution.ts` (executeWave/executeLaneV2 routing)
+- `extensions/taskplane/resume.ts` (resume parity)
+- `extensions/taskplane/merge.ts` (merge host path)
+- `extensions/taskplane/agent-host.ts` + `extensions/taskplane/process-registry.ts` (process ownership/liveness)
+- `docs/specifications/framework/taskplane-runtime-v2/08-implementation-workpackages.md`
+
+#### Test emphasis addendum
+
+At minimum, run and extend:
+
+- `extensions/tests/engine-runtime-v2-routing.test.ts`
+- `extensions/tests/lane-runner-v2.test.ts`
+- `extensions/tests/*merge*.test.ts`
+- `extensions/tests/*resume*.test.ts`
+- `extensions/tests/process-registry.test.ts`
+- full suite
+
+#### Non-goal reminder
+
+- TP-111 (conversation event fidelity) is a separate observability follow-up; TP-108 should not block on it.
