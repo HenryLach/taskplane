@@ -39,6 +39,28 @@ import {
 import { classifyExit } from "./taskplane/diagnostics.ts";
 import type { TaskExitDiagnostic, ExitSummary } from "./taskplane/diagnostics.ts";
 import {
+	parsePromptMd as coreParsePromptMd,
+	parseStatusMd as coreParseStatusMd,
+	generateStatusMd as coreGenerateStatusMd,
+	updateStatusField as coreUpdateStatusField,
+	updateStepStatus as coreUpdateStepStatus,
+	appendTableRow as coreAppendTableRow,
+	logExecution as coreLogExecution,
+	logReview as coreLogReview,
+	sanitizeSteeringContent as coreSanitizeSteeringContent,
+	isStepComplete as coreIsStepComplete,
+	isLowRiskStep as coreIsLowRiskStep,
+	extractVerdict as coreExtractVerdict,
+	getHeadCommitSha as coreGetHeadCommitSha,
+	findStepBoundaryCommit as coreFindStepBoundaryCommit,
+	resolveStandards as coreResolveStandards,
+	generateReviewRequest as coreGenerateReviewRequest,
+	displayName as coreDisplayName,
+	type StepInfo,
+	type CoreParsedTask,
+	type ParsedStatus,
+} from "./taskplane/task-executor-core.ts";
+import {
 	generateQualityGatePrompt,
 	generateFeedbackMd,
 	buildFixAgentPrompt,
@@ -782,194 +804,38 @@ function loadAgentDef(cwd: string, name: string): { systemPrompt: string; tools:
 // ── PROMPT.md Parser ─────────────────────────────────────────────────
 
 function parsePromptMd(content: string, promptPath: string): ParsedTask {
-	const text = content.replace(/\r\n/g, "\n");
-	const taskFolder = dirname(resolve(promptPath));
-
-	// Task ID and name
-	let taskId = "", taskName = "";
-	const titleMatch = text.match(/^#\s+(?:Task:\s*)?(\S+-\d+)\s*[-–:]\s*(.+)/m);
-	if (titleMatch) { taskId = titleMatch[1]; taskName = titleMatch[2].trim(); }
-	else { taskId = basename(taskFolder); taskName = taskId; }
-
-	// Review level
-	let reviewLevel = 0;
-	const rlMatch = text.match(/##\s+Review Level[:\s]*(\d)/);
-	if (rlMatch) reviewLevel = parseInt(rlMatch[1]);
-
-	// Size
-	let size = "M";
-	const sizeMatch = text.match(/\*\*Size:\*\*\s*(\w+)/);
-	if (sizeMatch) size = sizeMatch[1];
-
-	// Steps
-	const steps: StepInfo[] = [];
-	const stepRegex = /###\s+Step\s+(\d+):\s*(.+)/g;
-	const positions: { number: number; name: string; start: number }[] = [];
-	let m;
-	while ((m = stepRegex.exec(text)) !== null) {
-		positions.push({ number: parseInt(m[1]), name: m[2].trim(), start: m.index });
-	}
-	for (let i = 0; i < positions.length; i++) {
-		const section = text.slice(positions[i].start, i + 1 < positions.length ? positions[i + 1].start : text.length);
-		const checkboxes: { text: string; checked: boolean }[] = [];
-		const cbRegex = /^\s*-\s*\[([ xX])\]\s*(.*)/gm;
-		let cb;
-		while ((cb = cbRegex.exec(section)) !== null) {
-			checkboxes.push({ text: cb[2].trim(), checked: cb[1].toLowerCase() === "x" });
-		}
-		steps.push({
-			number: positions[i].number, name: positions[i].name,
-			status: "not-started", checkboxes,
-			totalChecked: checkboxes.filter(c => c.checked).length,
-			totalItems: checkboxes.length,
-		});
-	}
-
-	// Context docs
-	const contextDocs: string[] = [];
-	const ctxMatch = text.match(/##\s+Context to Read First\s*\n+([\s\S]*?)(?=\n##\s|$)/);
-	if (ctxMatch) {
-		const pathRegex = /`([^\s`]+\.(?:md|yaml|json|go|ts|js))`/g;
-		let pm;
-		while ((pm = pathRegex.exec(ctxMatch[1])) !== null) contextDocs.push(pm[1]);
-	}
-
-	return { taskId, taskName, reviewLevel, size, steps, contextDocs, taskFolder, promptPath };
+	const core = coreParsePromptMd(content, promptPath);
+	return { ...core };
 }
 
 // ── STATUS.md Parser ─────────────────────────────────────────────────
 
 function parseStatusMd(content: string): { steps: StepInfo[]; reviewCounter: number; iteration: number } {
-	const text = content.replace(/\r\n/g, "\n");
-	const steps: StepInfo[] = [];
-	let currentStep: StepInfo | null = null;
-	let reviewCounter = 0, iteration = 0;
-
-	for (const line of text.split("\n")) {
-		const rcMatch = line.match(/\*\*Review Counter:\*\*\s*(\d+)/);
-		if (rcMatch) reviewCounter = parseInt(rcMatch[1]);
-		const itMatch = line.match(/\*\*Iteration:\*\*\s*(\d+)/);
-		if (itMatch) iteration = parseInt(itMatch[1]);
-
-		const stepMatch = line.match(/^###\s+Step\s+(\d+):\s*(.+)/);
-		if (stepMatch) {
-			if (currentStep) {
-				currentStep.totalChecked = currentStep.checkboxes.filter(c => c.checked).length;
-				currentStep.totalItems = currentStep.checkboxes.length;
-				steps.push(currentStep);
-			}
-			currentStep = { number: parseInt(stepMatch[1]), name: stepMatch[2].trim(), status: "not-started", checkboxes: [], totalChecked: 0, totalItems: 0 };
-			continue;
-		}
-		if (currentStep) {
-			const ss = line.match(/\*\*Status:\*\*\s*(.*)/);
-			if (ss) {
-				const s = ss[1];
-				if (s.includes("✅") || s.toLowerCase().includes("complete")) currentStep.status = "complete";
-				else if (s.includes("🟨") || s.toLowerCase().includes("progress")) currentStep.status = "in-progress";
-			}
-			const cb = line.match(/^\s*-\s*\[([ xX])\]\s*(.*)/);
-			if (cb) currentStep.checkboxes.push({ text: cb[2].trim(), checked: cb[1].toLowerCase() === "x" });
-		}
-	}
-	if (currentStep) {
-		currentStep.totalChecked = currentStep.checkboxes.filter(c => c.checked).length;
-		currentStep.totalItems = currentStep.checkboxes.length;
-		steps.push(currentStep);
-	}
-	return { steps, reviewCounter, iteration };
+	return coreParseStatusMd(content);
 }
 
 // ── STATUS.md Generator ──────────────────────────────────────────────
 
 function generateStatusMd(task: ParsedTask): string {
-	const now = new Date().toISOString().slice(0, 10);
-	const lines: string[] = [
-		`# ${task.taskId}: ${task.taskName} — Status`, "",
-		`**Current Step:** Not Started`,
-		`**Status:** 🔵 Ready for Execution`,
-		`**Last Updated:** ${now}`,
-		`**Review Level:** ${task.reviewLevel}`,
-		`**Review Counter:** 0`,
-		`**Iteration:** 0`,
-		`**Size:** ${task.size}`, "", "---", "",
-	];
-	for (const step of task.steps) {
-		lines.push(`### Step ${step.number}: ${step.name}`, `**Status:** ⬜ Not Started`, "");
-		for (const cb of step.checkboxes) lines.push(`- [ ] ${cb.text}`);
-		lines.push("", "---", "");
-	}
-	lines.push(
-		"## Reviews", "", "| # | Type | Step | Verdict | File |", "|---|------|------|---------|------|", "", "---", "",
-		"## Discoveries", "", "| Discovery | Disposition | Location |", "|-----------|-------------|----------|", "", "---", "",
-		"## Execution Log", "", "| Timestamp | Action | Outcome |", "|-----------|--------|---------|",
-		`| ${now} | Task staged | STATUS.md auto-generated by task-runner |`, "", "---", "",
-		"## Blockers", "", "*None*", "", "---", "", "## Notes", "", "*Reserved for execution notes*",
-	);
-	return lines.join("\n");
+	return coreGenerateStatusMd(task);
 }
 
 // ── STATUS.md Updaters ───────────────────────────────────────────────
 
 function updateStatusField(statusPath: string, field: string, value: string): void {
-	let content = readFileSync(statusPath, "utf-8").replace(/\r\n/g, "\n");
-	const pattern = new RegExp(`(\\*\\*${field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:\\*\\*\\s*)(.+)`);
-	if (pattern.test(content)) {
-		content = content.replace(pattern, `$1${value}`);
-	} else {
-		// Append after last ** field
-		content = content.replace(/(\*\*[^*]+:\*\*\s*.+\n)/, `$1**${field}:** ${value}\n`);
-	}
-	writeFileSync(statusPath, content);
+	coreUpdateStatusField(statusPath, field, value);
 }
 
 function updateStepStatus(statusPath: string, stepNum: number, status: "not-started" | "in-progress" | "complete"): void {
-	let content = readFileSync(statusPath, "utf-8").replace(/\r\n/g, "\n");
-	const emoji = status === "complete" ? "✅ Complete" : status === "in-progress" ? "🟨 In Progress" : "⬜ Not Started";
-	const lines = content.split("\n");
-	let inTarget = false;
-	for (let i = 0; i < lines.length; i++) {
-		const sm = lines[i].match(/^###\s+Step\s+(\d+):/);
-		if (sm) inTarget = parseInt(sm[1]) === stepNum;
-		if (inTarget && lines[i].match(/^\*\*Status:\*\*/)) {
-			lines[i] = `**Status:** ${emoji}`;
-			break;
-		}
-	}
-	writeFileSync(statusPath, lines.join("\n"));
+	coreUpdateStepStatus(statusPath, stepNum, status);
 }
 
 function appendTableRow(statusPath: string, sectionName: string, row: string): void {
-	let content = readFileSync(statusPath, "utf-8").replace(/\r\n/g, "\n");
-	const lines = content.split("\n");
-	let insertIdx = -1, inSection = false, lastTableRow = -1;
-	for (let i = 0; i < lines.length; i++) {
-		if (lines[i].match(new RegExp(`^##\\s+${sectionName}`))) {
-			inSection = true;
-			continue;
-		}
-		if (inSection) {
-			// End of section — hit another ## heading or ---
-			if (lines[i].match(/^##\s/) || lines[i].trim() === "---") {
-				insertIdx = lastTableRow >= 0 ? lastTableRow + 1 : i;
-				break;
-			}
-			// Track last table data row (skip header separator |---|)
-			if (lines[i].startsWith("|") && !lines[i].match(/^\|[\s-|]+\|$/)) {
-				lastTableRow = i;
-			}
-		}
-	}
-	if (insertIdx === -1) {
-		insertIdx = lastTableRow >= 0 ? lastTableRow + 1 : lines.length;
-	}
-	lines.splice(insertIdx, 0, row);
-	writeFileSync(statusPath, lines.join("\n"));
+	coreAppendTableRow(statusPath, sectionName, row);
 }
 
 function logExecution(statusPath: string, action: string, outcome: string): void {
-	const ts = new Date().toISOString().slice(0, 16).replace("T", " ");
-	appendTableRow(statusPath, "Execution Log", `| ${ts} | ${action} | ${outcome} |`);
+	coreLogExecution(statusPath, action, outcome);
 }
 
 /**
@@ -977,13 +843,11 @@ function logExecution(statusPath: string, action: string, outcome: string): void
  * Collapses newlines to " / ", escapes pipe characters, and truncates to 200 chars.
  */
 function sanitizeSteeringContent(content: string): string {
-	let s = content.replace(/\r?\n/g, " / ").replace(/\|/g, "\\|");
-	if (s.length > 200) s = s.slice(0, 197) + "...";
-	return s;
+	return coreSanitizeSteeringContent(content);
 }
 
 function logReview(statusPath: string, num: string, type: string, stepNum: number, verdict: string, file: string): void {
-	appendTableRow(statusPath, "Reviews", `| ${num} | ${type} | Step ${stepNum} | ${verdict} | ${file} |`);
+	coreLogReview(statusPath, num, type, stepNum, verdict, file);
 }
 
 // ── Project Context Builder ──────────────────────────────────────────
@@ -1020,15 +884,7 @@ function buildProjectContext(config: TaskConfig, taskFolder: string): string {
  * can diff against the correct range instead of just uncommitted changes.
  */
 function getHeadCommitSha(): string {
-	try {
-		const result = spawnSync("git", ["rev-parse", "--short", "HEAD"], {
-			encoding: "utf-8",
-			timeout: 5000,
-		});
-		return result.status === 0 ? (result.stdout || "").trim() : "";
-	} catch {
-		return "";
-	}
+	return coreGetHeadCommitSha();
 }
 
 /**
@@ -1038,18 +894,7 @@ function getHeadCommitSha(): string {
  * Returns the commit SHA if found, or empty string.
  */
 function findStepBoundaryCommit(stepNumber: number, taskId: string, since?: string): string {
-	try {
-		// Search git log for the step completion commit
-		const args = ["log", "--oneline", "--grep", `complete Step ${stepNumber}`, "--grep", taskId, "--all-match", "-1", "--format=%H"];
-		if (since) args.push(`${since}..HEAD`);
-		const result = spawnSync("git", args, {
-			encoding: "utf-8",
-			timeout: 5000,
-		});
-		return result.status === 0 ? (result.stdout || "").trim() : "";
-	} catch {
-		return "";
-	}
+	return coreFindStepBoundaryCommit(stepNumber, taskId, since);
 }
 
 // ── Standards Resolution ─────────────────────────────────────────────
@@ -1065,24 +910,7 @@ function findStepBoundaryCommit(stepNumber: number, taskId: string, since?: stri
  * different review standards than Go backend service tasks.
  */
 function resolveStandards(config: TaskConfig, taskFolder: string): { docs: string[]; rules: string[] } {
-	const normalizedFolder = taskFolder.replace(/\\/g, "/");
-
-	// Find which area this task belongs to
-	for (const [areaName, areaCfg] of Object.entries(config.task_areas)) {
-		const areaPath = areaCfg.path.replace(/\\/g, "/");
-		if (normalizedFolder.includes(areaPath)) {
-			const override = config.standards_overrides[areaName];
-			if (override) {
-				return {
-					docs: override.docs ?? config.standards.docs,
-					rules: override.rules ?? config.standards.rules,
-				};
-			}
-			break; // Area found but no override — use global
-		}
-	}
-
-	return { docs: config.standards.docs, rules: config.standards.rules };
+	return coreResolveStandards(config.standards, config.standards_overrides, config.task_areas, taskFolder);
 }
 
 // ── Review Request Generator ─────────────────────────────────────────
@@ -1092,84 +920,12 @@ function generateReviewRequest(
 	task: ParsedTask, config: TaskConfig, outputPath: string,
 	stepBaselineCommit?: string,
 ): string {
-	const resolved = resolveStandards(config, task.taskFolder);
-	const standardsDocs = resolved.docs.map(d => `   - ${d}`).join("\n");
-	const standardsRules = resolved.rules.map(r => `- ${r}`).join("\n");
-
-	if (type === "plan") {
-		return [
-			`# Review Request: Plan Review`, "",
-			`You are reviewing an implementation plan for a ${config.project.name} task.`,
-			`You have full tool access — use \`read\` to examine files and \`bash\` to run commands.`, "",
-			`## Task Context`, "",
-			`- **Task PROMPT:** ${task.promptPath}`,
-			`- **Task STATUS:** ${join(task.taskFolder, "STATUS.md")}`,
-			`- **Step being planned:** Step ${stepNum}: ${stepName}`, "",
-			`## Instructions`, "",
-			`1. Read the PROMPT.md for full requirements`,
-			`2. Read STATUS.md for progress so far`,
-			`3. Check relevant source files for existing patterns:`,
-			standardsDocs, "",
-			`## Project Standards`, "", standardsRules, "",
-			`## Output`, "",
-			`Write your review to: \`${outputPath}\``,
-		].join("\n");
-	} else {
-		// For code reviews, provide the baseline commit so the reviewer can
-		// diff the full step's changes — not just uncommitted changes.
-		// Workers commit via checkpoints, so `git diff` alone sees nothing.
-		const diffCmd = stepBaselineCommit
-			? `git diff ${stepBaselineCommit}..HEAD --name-only`
-			: `git diff --name-only`;
-		const diffFullCmd = stepBaselineCommit
-			? `git diff ${stepBaselineCommit}..HEAD`
-			: `git diff`;
-
-		return [
-			`# Review Request: Code Review`, "",
-			`You are reviewing code changes for a ${config.project.name} task.`,
-			`You have full tool access — use \`read\` to examine files and \`bash\` to run commands.`, "",
-			`## Task Context`, "",
-			`- **Task PROMPT:** ${task.promptPath}`,
-			`- **Task STATUS:** ${join(task.taskFolder, "STATUS.md")}`,
-			`- **Step reviewed:** Step ${stepNum}: ${stepName}`,
-			...(stepBaselineCommit ? [`- **Step baseline commit:** ${stepBaselineCommit}`] : []),
-			"",
-			`## Instructions`, "",
-			`1. Run \`${diffCmd}\` to see files changed in this step`,
-			`   Then \`${diffFullCmd}\` for the full diff`,
-			`   **Important:** The worker commits code via checkpoints, so plain \`git diff\` may show nothing.`,
-			`   Always use the baseline commit range above to see all step changes.`,
-			`2. Read changed files in full for context`,
-			`3. Check neighboring files for pattern consistency`,
-			`4. Check standards:`,
-			standardsDocs, "",
-			`## Project Standards`, "", standardsRules, "",
-			`## Output`, "",
-			`Write your review to: \`${outputPath}\``,
-		].join("\n");
-	}
+	const standards = resolveStandards(config, task.taskFolder);
+	return coreGenerateReviewRequest(type, stepNum, stepName, task.promptPath, task.taskFolder, config.project.name, standards, outputPath, stepBaselineCommit);
 }
 
 function extractVerdict(reviewContent: string): string {
-	// Primary: standard format "### Verdict: APPROVE|REVISE|RETHINK"
-	const match = reviewContent.match(/###?\s*Verdict[:\s]*(APPROVE|REVISE|RETHINK)/i);
-	if (match) return match[1].toUpperCase();
-
-	// TP-068: Tolerate non-standard verdict formats from models that don't
-	// follow the exact template (e.g., "Changes requested", "Needs revision").
-	const lower = reviewContent.toLowerCase();
-	if (/\b(request\s+changes?|changes?\s+requested|needs?\s+revision|please\s+revise|must\s+revise)\b/.test(lower)) {
-		return "REVISE";
-	}
-	if (/\b(looks?\s+good|no\s+issues?\s+found|approved?)\b/.test(lower)) {
-		return "APPROVE";
-	}
-	if (/\b(fundamentally\s+wrong|rethink|reconsider\s+the\s+approach)\b/.test(lower)) {
-		return "RETHINK";
-	}
-
-	return "UNKNOWN";
+	return coreExtractVerdict(reviewContent);
 }
 
 /**
@@ -1756,9 +1512,7 @@ export type { BuildExitDiagnosticInput };
  * @returns true if the step should skip plan and code reviews
  */
 export function isLowRiskStep(stepNumber: number, totalSteps: number): boolean {
-	if (totalSteps <= 0) return false;
-	const lastStepIndex = totalSteps - 1;
-	return stepNumber === 0 || stepNumber === lastStepIndex;
+	return coreIsLowRiskStep(stepNumber, totalSteps);
 }
 
 // ── TMUX Agent Spawner ───────────────────────────────────────────────
@@ -2255,7 +2009,7 @@ export const _cleanupOrphanProcesses = cleanupOrphanProcesses;
 // ── Display Helpers ──────────────────────────────────────────────────
 
 function displayName(name: string): string {
-	return name.split("-").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+	return coreDisplayName(name);
 }
 
 // ── Extension ────────────────────────────────────────────────────────

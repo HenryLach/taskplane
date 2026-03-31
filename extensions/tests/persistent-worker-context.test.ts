@@ -469,14 +469,13 @@ describe("7.x: parseStatusMd correctness — supports new execution model", () =
 	}
 
 	// First verify the source has the expected parseStatusMd function
-	it("7.0: parseStatusMd source matches expected patterns", () => {
-		// Verify key patterns in the full source (not extracted, since the function
-		// has a complex return type annotation that confuses brace-based extraction)
+	it("7.0: parseStatusMd source delegates to core or contains expected patterns", () => {
+		// TP-103: parseStatusMd may now delegate to task-executor-core.
+		// Accept either the delegation pattern or the original inline implementation.
 		expect(source).toContain("function parseStatusMd(content: string)");
-		expect(source).toContain("Step\\s+(\\d+):");
-		expect(source).toContain("Status:\\*\\*");
-		expect(source).toContain("\\[([ xX])\\]");
-		expect(source).toContain("currentStep.checkboxes.filter(c => c.checked).length");
+		const hasDelegation = source.includes("coreParseStatusMd");
+		const hasInlineImpl = source.includes("currentStep.checkboxes.filter(c => c.checked).length");
+		expect(hasDelegation || hasInlineImpl).toBe(true);
 	});
 
 	it("7.1: parses multiple steps with mixed completion states", () => {
