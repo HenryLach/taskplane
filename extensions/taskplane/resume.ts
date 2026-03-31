@@ -8,7 +8,7 @@ import { join } from "path";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { runDiscovery } from "./discovery.ts";
 import { executeOrchBatch } from "./engine.ts";
-import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasSession } from "./execution.ts";
+import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplete, resolveCanonicalTaskPaths, spawnLaneSession, tmuxHasSession } from "./execution.ts";
 import type { MonitorUpdateCallback, RuntimeBackend } from "./execution.ts";
 import { selectRuntimeBackend } from "./engine.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
@@ -861,11 +861,29 @@ export async function resumeOrchBatch(
 		}
 	}
 
-	// Check .DONE files
+	// Check .DONE files — check both original path and worktree-relative path.
+	// TP-109: In workspace mode or V2 execution, .DONE is written in the worktree
+	// at the resolved packet path, not the original discovery path. Resume must
+	// check both locations for authoritative completion detection.
 	const doneTaskIds = new Set<string>();
 	for (const task of persistedState.tasks) {
+		// Check original task folder path
 		if (task.taskFolder && hasTaskDoneMarker(task.taskFolder)) {
 			doneTaskIds.add(task.taskId);
+			continue;
+		}
+		// Check worktree-relative path (packet-home authority)
+		const laneRec = persistedState.lanes.find(l => l.taskIds.includes(task.taskId));
+		if (laneRec?.worktreePath && task.taskFolder) {
+			const resolved = resolveCanonicalTaskPaths(
+				task.taskFolder,
+				laneRec.worktreePath,
+				repoRoot,
+				!!workspaceConfig,
+			);
+			if (existsSync(resolved.donePath)) {
+				doneTaskIds.add(task.taskId);
+			}
 		}
 	}
 

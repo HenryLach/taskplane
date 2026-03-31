@@ -34,9 +34,9 @@ describe("1.x: Engine backend selection", () => {
 		expect(engineSrc).toContain('"v2"');
 	});
 
-	it("1.2: falls back to legacy when workspace mode", () => {
-		expect(engineSrc).toContain("!backendSelection.isRepoMode");
-		expect(engineSrc).toContain("workspace mode not yet supported on Runtime V2");
+	it("1.2: all modes use V2 (TP-109 workspace authority)", () => {
+		// TP-109: workspace mode is now on V2 with packet-home authority
+		expect(engineSrc).toContain('"v2"');
 	});
 
 	it("1.3: logs backend selection for operator visibility", () => {
@@ -119,14 +119,9 @@ describe("3.x: Retry paths preserve backend choice", () => {
 
 // ── 4. Scope guards ──────────────────────────────────────────────────
 
-describe("4.x: Scope guards (TP-108 expanded)", () => {
-	it("4.1: workspace mode explicitly falls back with notification", () => {
-		expect(engineSrc).toContain("workspace mode not yet supported");
-	});
-
-	it("4.2: repo mode selects v2 regardless of task count (TP-108 expansion)", () => {
-		// TP-108: all repo-mode batches use V2 — no single-task restriction
-		expect(engineSrc).toContain("isRepoMode");
+describe("4.x: Scope guards (TP-108/109 expanded)", () => {
+	it("4.1: all batches use V2 (TP-109 enables workspace mode)", () => {
+		// TP-109: workspace mode now uses V2 with packet-home authority
 		expect(engineSrc).toContain('"v2"');
 	});
 });
@@ -182,18 +177,19 @@ describe("6.x: Runtime imports for backend routing", () => {
 // ── 7. Behavioral routing/mapping tests (non-source assertions) ─────
 
 describe("7.x: Behavioral backend and snapshot mapping", () => {
-	it("7.1: selectRuntimeBackend picks v2 for all repo-mode batches (TP-108)", () => {
-		// Single task, direct PROMPT
+	it("7.1: selectRuntimeBackend picks v2 for all batches (TP-109)", () => {
+		// Repo mode
 		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md", [["TP-001"]], null).backend).toBe("v2");
-		// Multi-task, "all" target — still V2 in repo mode
 		expect(selectRuntimeBackend("all", [["TP-001"]], null).backend).toBe("v2");
-		// Multi-task, multiple waves — still V2 in repo mode
 		expect(selectRuntimeBackend("all", [["TP-001"], ["TP-002"]], null).backend).toBe("v2");
+		// Workspace mode also V2 (TP-109: packet-home authority threaded)
+		const ws = { mode: "workspace", repos: new Map(), routing: {}, configPath: "x", workspaceRoot: "x" } as any;
+		expect(selectRuntimeBackend("all", [["TP-001"]], ws).backend).toBe("v2");
 	});
 
-	it("7.2: selectRuntimeBackend falls back in workspace mode even for direct prompt", () => {
+	it("7.2: selectRuntimeBackend returns v2 in workspace mode (TP-109)", () => {
 		const ws = { mode: "workspace", repos: new Map(), routing: {}, configPath: "x", workspaceRoot: "x" } as any;
-		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md", [["TP-001"]], ws).backend).toBe("legacy");
+		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md", [["TP-001"]], ws).backend).toBe("v2");
 	});
 
 	it("7.3: terminal lane status mapping preserves skipped as idle", () => {
@@ -293,5 +289,45 @@ describe("9.x: Merge host V2 migration (TP-108)", () => {
 		expect(block).toContain("eventsPath");
 		expect(block).toContain("exitSummaryPath");
 		expect(block).toContain("events.jsonl");
+	});
+});
+
+// ── 10. TP-109: Packet-home authority and resume parity ──────────────
+
+describe("10.x: Packet-home authority (TP-109)", () => {
+	const resumeSrc = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
+	const laneRunnerSrc = readFileSync(join(__dirname, "..", "taskplane", "lane-runner.ts"), "utf-8");
+
+	it("10.1: resume checks worktree-relative .DONE path in addition to original", () => {
+		// Resume must call resolveCanonicalTaskPaths for worktree-relative .DONE check
+		expect(resumeSrc).toContain("resolveCanonicalTaskPaths");
+		expect(resumeSrc).toContain("worktree-relative path");
+	});
+
+	it("10.2: resume imports resolveCanonicalTaskPaths", () => {
+		expect(resumeSrc).toContain("resolveCanonicalTaskPaths");
+	});
+
+	it("10.3: lane-runner uses unit.packet.* for all artifact paths", () => {
+		// Lane-runner must use packet paths, not cwd-derived paths
+		expect(laneRunnerSrc).toContain("unit.packet.statusPath");
+		expect(laneRunnerSrc).toContain("unit.packet.donePath");
+		expect(laneRunnerSrc).toContain("unit.packet.promptPath");
+		expect(laneRunnerSrc).toContain("unit.packet.taskFolder");
+	});
+
+	it("10.4: buildExecutionUnit resolves packet paths via resolveCanonicalTaskPaths", () => {
+		const execSrc = readFileSync(join(__dirname, "..", "taskplane", "execution.ts"), "utf-8");
+		const fnIdx = execSrc.indexOf("function buildExecutionUnit");
+		const block = execSrc.slice(fnIdx, fnIdx + 1000);
+		expect(block).toContain("resolveCanonicalTaskPaths");
+		expect(block).toContain("packetHomeRepoId");
+	});
+
+	it("10.5: selectRuntimeBackend returns v2 for all modes (TP-109 completion)", () => {
+		// After TP-109, there's no legacy-only mode — all batches use V2
+		expect(selectRuntimeBackend("all", [["TP-001"]], null).backend).toBe("v2");
+		const ws = { mode: "workspace", repos: new Map(), configPath: "x", workspaceRoot: "x" } as any;
+		expect(selectRuntimeBackend("all", [["TP-001"]], ws).backend).toBe("v2");
 	});
 });

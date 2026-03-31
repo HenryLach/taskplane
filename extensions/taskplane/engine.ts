@@ -761,9 +761,10 @@ export function selectRuntimeBackend(
 	const isDirectPromptTarget =
 		argTokens.length === 1 && /PROMPT\.md$/i.test(argTokens[0]);
 
-	// TP-108: Expand Runtime V2 to all repo-mode batches (single or multi-task).
-	// Workspace mode deferred to TP-109 (packet-home authority needed).
-	const backend: RuntimeBackend = isRepoMode ? "v2" : "legacy";
+	// TP-108: Runtime V2 for all repo-mode batches.
+	// TP-109: Workspace mode also uses V2 now that packet-home paths are
+	// threaded through execution and resume (worktree-relative .DONE check).
+	const backend: RuntimeBackend = "v2";
 
 	return {
 		backend,
@@ -1104,11 +1105,8 @@ export async function executeOrchBatch(
 	const selectedBackend = backendSelection.backend;
 
 	if (selectedBackend === "v2") {
-		execLog("batch", batchState.batchId, "Runtime V2 backend selected (repo mode)");
+		execLog("batch", batchState.batchId, "Runtime V2 backend selected");
 		onNotify("🚀 Using Runtime V2 backend (no-TMUX direct execution)", "info");
-	} else if (!backendSelection.isRepoMode) {
-		execLog("batch", batchState.batchId, "Runtime V2 not used: workspace mode (deferred to TP-109), falling back to legacy");
-		onNotify("ℹ️ Using legacy execution backend (workspace mode not yet supported on Runtime V2)", "info");
 	}
 
 	for (let waveIdx = 0; waveIdx < rawWaves.length; waveIdx++) {
