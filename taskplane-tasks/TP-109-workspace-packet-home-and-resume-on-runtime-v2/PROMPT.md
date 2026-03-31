@@ -121,4 +121,42 @@ for this task MUST include the task ID for traceability:
 
 ## Amendments (Added During Execution)
 
-<!-- Workers add amendments here if issues discovered during execution. -->
+### 2026-03-31 — Pre-implementation alignment update (post-TP-108 handoff)
+
+Context update since task creation:
+
+- TP-108 is the intended batch/merge Runtime V2 cutover task.
+- TP-109 remains the authority task for **workspace packet-home correctness + resume reconciliation**.
+- TP-107/TP-093 observability work is in place; TP-111 tracks conversation-event fidelity and is not a blocker for packet-home authority.
+
+#### Required clarifications for TP-109 delivery
+
+1. **Authoritative path contract:** when explicit packet paths exist, all Runtime V2 flows must use them for `PROMPT.md`, `STATUS.md`, `.DONE`, and `.reviews/` (no silent `cwd` fallback).
+2. **Execution vs packet-home separation:** preserve execution worktree location while reading/writing packet artifacts at authoritative packet-home paths.
+3. **Resume correctness is mandatory:** resume/reconciliation must reconstruct task completion/progress from authoritative packet paths across repos.
+4. **Archive/cleanup correctness:** packet-home-aware archive and completion checks must remain deterministic after interruption.
+5. **No scope bleed into TP-108/segment expansion:** do not re-open batch-runtime ownership or dynamic segment mutation scope here.
+
+#### Revised context to read first (in addition to original)
+
+- `extensions/taskplane/types.ts` (`ExecutionUnit`, packet path helpers)
+- `extensions/taskplane/engine.ts`, `execution.ts`, `resume.ts`, `lane-runner.ts`, `merge.ts`
+- `extensions/tests/packet-home-contract.test.ts`
+- `extensions/tests/polyrepo-regression.test.ts`
+- `extensions/tests/workspace-config.integration.test.ts`
+- `docs/specifications/framework/taskplane-runtime-v2/05-polyrepo-and-segment-compatibility.md`
+
+#### Test emphasis addendum
+
+At minimum, run and extend:
+
+- `extensions/tests/packet-home-contract.test.ts`
+- `extensions/tests/polyrepo-regression.test.ts`
+- `extensions/tests/workspace-config.integration.test.ts`
+- `extensions/tests/orch-state-persistence.test.ts`
+- relevant resume tests (`extensions/tests/*resume*.test.ts`)
+- full suite
+
+#### Non-goal reminder
+
+- Do not treat dashboard/event-fidelity gaps (TP-111) as part of packet-home authority closure.

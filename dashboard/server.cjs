@@ -462,7 +462,8 @@ function loadMailboxData(batchId) {
               else if (subdir === "ack") status = "delivered";
               else if (subdir === "outbox") status = "reply";
               else status = "reply-acked"; // outbox/processed
-              messages.push({ ...msg, _status: status, _agentDir: agentDir });
+              const isBroadcast = msg.to === "_broadcast";
+              messages.push({ ...msg, _status: status, _agentDir: agentDir, _isBroadcast: isBroadcast });
             } catch { continue; }
           }
         } catch { continue; }
