@@ -3926,7 +3926,7 @@ export default function (pi: ExtensionAPI) {
 			"Call broadcast_message to send a message to all active agents at once.",
 			"Default type is 'info'. Other types: 'steer', 'abort'.",
 			"Messages are limited to 4KB.",
-			"Rate limiting applies per-agent.",
+			"Rate limiting is all-or-none: if ANY recipient is rate-limited, the entire broadcast is rejected.",
 		],
 		parameters: Type.Object({
 			content: Type.String({

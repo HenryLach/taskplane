@@ -466,21 +466,26 @@ These are registered as supervisor extension tools (same pattern as
 - ✅ Tests: rpc-wrapper JSONL write (3 tests), annotation behavior (5 tests), sanitization (5 tests),
   source contract (4 tests), plus full suite regression (3086 tests pass)
 
-### Phase 3: Agent → supervisor replies ✅ Implemented (TP-106)
+### Phase 3: Agent → supervisor replies ✅ Implemented (TP-106, TP-091)
 
 - ✅ Agent outbox writes via `writeOutboxMessage()` in `mailbox.ts`
 - ✅ Bridge extension tools: `notify_supervisor`, `escalate_to_supervisor` in `agent-bridge-extension.ts`
-- ✅ `read_agent_replies` supervisor tool reads outbox from specific or all agents
+- ✅ `read_agent_replies` supervisor tool: **non-consuming** — reads pending + acked outbox history
+- ✅ `readOutboxHistory()` provides durable reply visibility (outbox/ + outbox/processed/)
 - ✅ Lane-runner polls outbox after worker exit and logs to STATUS.md
+- ✅ Registry-first agent identity for all targeting and discovery
 - ✅ Registry snapshot updated after each worker iteration
 
-### Phase 4: Broadcast + rate limiting ✅ Implemented (TP-106)
+### Phase 4: Broadcast + rate limiting ✅ Implemented (TP-106, TP-092)
 
 - ✅ `_broadcast` directory support via `writeBroadcastMessage()`
 - ✅ `broadcast_message` supervisor tool
 - ✅ Agent-host checks both own inbox AND `_broadcast/inbox/` on each `message_end`
 - ✅ Rate limiting: max 1 message per agent per 30 seconds (in-memory tracker)
 - ✅ `send_agent_message` enforces rate limit with retry-after countdown
+- ✅ **Broadcast policy: all-or-none** — if any recipient is rate-limited, entire broadcast is rejected
+- ✅ **Audit completeness:** all send/blocked/rate-limited decisions emit mailbox audit events
+- ✅ Per-recipient rate-limit audit events include agent ID, reason, and retry-after
 
 ### Phase 5: Dashboard mailbox panel ✅ Implemented (TP-107, TP-093)
 

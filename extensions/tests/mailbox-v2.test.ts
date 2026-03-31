@@ -184,6 +184,36 @@ describe("3.x: Rate limiting", () => {
 	it("3.5: RATE_LIMIT_WINDOW_MS is 30 seconds", () => {
 		expect(RATE_LIMIT_WINDOW_MS).toBe(30_000);
 	});
+
+	it("3.6: broadcast uses all-or-none rate-limit policy (TP-092)", () => {
+		// The doBroadcastMessage function checks ALL recipients before sending.
+		// If ANY recipient is rate-limited, the entire broadcast is rejected.
+		const fnIdx = extensionSrc.indexOf("function doBroadcastMessage(");
+		const block = extensionSrc.slice(fnIdx, fnIdx + 2000);
+		// Verify: blocked recipients computed BEFORE write
+		const blockedIdx = block.indexOf("const blocked = recipients");
+		const writeIdx = block.indexOf("writeBroadcastMessage");
+		expect(blockedIdx).toBeGreaterThan(-1);
+		expect(writeIdx).toBeGreaterThan(-1);
+		expect(blockedIdx).toBeLessThan(writeIdx);
+		// Verify: blocked.length > 0 rejects the entire broadcast
+		expect(block).toContain("blocked.length > 0");
+	});
+
+	it("3.7: broadcast rate-limit emits per-agent audit events (TP-092)", () => {
+		const fnIdx = extensionSrc.indexOf("function doBroadcastMessage(");
+		const block = extensionSrc.slice(fnIdx, fnIdx + 2000);
+		// Each blocked recipient gets an audit event
+		expect(block).toContain("message_rate_limited");
+		expect(block).toContain("appendMailboxAuditEvent");
+	});
+
+	it("3.8: direct send emits rate-limit audit event (TP-092)", () => {
+		const fnIdx = extensionSrc.indexOf("function doSendAgentMessage(");
+		const block = extensionSrc.slice(fnIdx, fnIdx + 3000);
+		expect(block).toContain("message_rate_limited");
+		expect(block).toContain("appendMailboxAuditEvent");
+	});
 });
 
 // ── 4. Registry-backed supervisor tools (source contract) ────────────
