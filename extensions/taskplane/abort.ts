@@ -7,7 +7,7 @@ import { execSync } from "child_process";
 import { join } from "path";
 
 import { execLog, resolveCanonicalTaskPaths, tmuxHasSession, tmuxKillSession } from "./execution.ts";
-import { killMergeAgentV2 } from "./merge.ts";
+import { killMergeAgentV2, killAllMergeAgentsV2 } from "./merge.ts";
 import { deleteBatchState, parseOrchSessionNames, persistRuntimeState } from "./persistence.ts";
 import type { AbortActionStep, AbortErrorCode, AbortLaneResult, AbortMode, AbortResult, AbortTargetSession, AllocatedLane, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord } from "./types.ts";
 
@@ -335,7 +335,14 @@ export async function executeAbort(
 		execLog("abort", batchState.batchId, `Failed to persist state during abort: ${err instanceof Error ? err.message : String(err)}`);
 	}
 
-	// Step 3: List all orch sessions
+	// TP-108: Kill all V2 merge agents (process-owned, not TMUX)
+	// This catches V2 merge agents that have no TMUX session.
+	const v2MergeKilled = killAllMergeAgentsV2();
+	if (v2MergeKilled > 0) {
+		execLog("abort", batchState.batchId, `killed ${v2MergeKilled} V2 merge agent(s)`);
+	}
+
+	// Step 3: List all orch sessions (TMUX — legacy + fallback)
 	let allSessionNames: string[];
 	try {
 		allSessionNames = parseOrchSessionNames(

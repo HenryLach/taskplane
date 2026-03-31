@@ -834,6 +834,23 @@ export function killMergeAgentV2(sessionName: string): boolean {
 }
 
 /**
+ * Kill ALL active V2 merge agents. Used by abort flow to ensure
+ * no merge agents survive even when TMUX session list is empty.
+ * @returns Number of agents killed
+ * @since TP-108
+ */
+export function killAllMergeAgentsV2(): number {
+	let killed = 0;
+	for (const [name, handle] of activeMergeAgents) {
+		handle.kill();
+		execLog("merge", name, "V2 merge agent killed by bulk abort");
+		killed++;
+	}
+	activeMergeAgents.clear();
+	return killed;
+}
+
+/**
  * Re-read merge timeout from config on disk.
  *
  * TP-038: Allows the operator to increase `merge.timeoutMinutes` without
@@ -882,13 +899,16 @@ export async function waitForMergeResult(
 	resultPath: string,
 	sessionName: string,
 	timeoutMs: number = MERGE_TIMEOUT_MS,
+	runtimeBackend?: RuntimeBackend,
 ): Promise<MergeResult> {
 	const startTime = Date.now();
 	let sessionDiedAt: number | null = null;
+	const isV2 = runtimeBackend === "v2";
 
 	execLog("merge", sessionName, "waiting for merge result", {
 		resultPath,
 		timeoutMs,
+		backend: isV2 ? "v2" : "legacy",
 	});
 
 	while (true) {
@@ -897,8 +917,6 @@ export async function waitForMergeResult(
 		// Check timeout
 		if (elapsed >= timeoutMs) {
 			// TP-038: Check result file BEFORE killing the session.
-			// The merge may have actually succeeded — the verification tests
-			// just pushed past the timeout. Accept successful results without killing.
 			if (existsSync(resultPath)) {
 				try {
 					const lateResult = await parseMergeResultAsync(resultPath);
@@ -908,33 +926,33 @@ export async function waitForMergeResult(
 							elapsed,
 							timeoutMs,
 						});
-						// Clean up session (agent may still be running post-write)
-						if (await tmuxHasSessionAsync(sessionName)) {
+						// Clean up agent (may still be running post-write)
+						if (isV2) {
+							killMergeAgentV2(sessionName);
+						} else if (await tmuxHasSessionAsync(sessionName)) {
 							await tmuxKillSessionAsync(sessionName);
 						}
 						return lateResult;
 					}
-					// Non-success result at timeout — fall through to kill
-					execLog("merge", sessionName, "merge result exists at timeout but non-success — killing session", {
+					execLog("merge", sessionName, "merge result exists at timeout but non-success — killing", {
 						status: lateResult.status,
-						elapsed,
-						timeoutMs,
 					});
 				} catch {
 					// Result file unreadable — fall through to kill
 				}
 			}
 
-			execLog("merge", sessionName, "merge timeout — killing session", {
-				elapsed,
-				timeoutMs,
-			});
-			await tmuxKillSessionAsync(sessionName);
+			execLog("merge", sessionName, "merge timeout — killing agent", { elapsed, timeoutMs });
+			if (isV2) {
+				killMergeAgentV2(sessionName);
+			} else {
+				await tmuxKillSessionAsync(sessionName);
+			}
 
 			throw new MergeError(
 				"MERGE_TIMEOUT",
 				`Merge agent '${sessionName}' did not produce a result within ` +
-				`${Math.round(timeoutMs / 1000)}s. The session has been killed. ` +
+				`${Math.round(timeoutMs / 1000)}s. The agent has been killed. ` +
 				`Check the merge request and agent logs.`,
 			);
 		}
@@ -947,62 +965,54 @@ export async function waitForMergeResult(
 					status: result.status,
 					elapsed,
 				});
-				// Kill session if still alive (agent should exit, but ensure cleanup)
-				if (await tmuxHasSessionAsync(sessionName)) {
+				// Clean up agent if still alive
+				if (isV2) {
+					killMergeAgentV2(sessionName);
+				} else if (await tmuxHasSessionAsync(sessionName)) {
 					await tmuxKillSessionAsync(sessionName);
 				}
 				return result;
 			} catch (err: unknown) {
-				// File exists but invalid — might be partially written.
-				// parseMergeResultAsync already retries, so if it throws, it's final.
 				if (err instanceof MergeError && err.code === "MERGE_RESULT_INVALID") {
-					// Wait a bit and try once more (file might still be in flight)
 					await sleepAsync(MERGE_RESULT_READ_RETRY_DELAY_MS);
 					if (existsSync(resultPath)) {
-						try {
-							return await parseMergeResultAsync(resultPath);
-						} catch {
-							// Give up on this file
-						}
+						try { return await parseMergeResultAsync(resultPath); } catch { /* give up */ }
 					}
 				}
-				// If still failing, continue polling (agent might rewrite)
 			}
 		}
 
-		// Check session liveness — async to avoid blocking
-		const sessionAlive = await tmuxHasSessionAsync(sessionName);
+		// Check agent liveness — backend-aware
+		let agentAlive: boolean;
+		if (isV2) {
+			// V2: check activeMergeAgents map (process handle)
+			agentAlive = activeMergeAgents.has(sessionName);
+		} else {
+			// Legacy: check TMUX session
+			agentAlive = await tmuxHasSessionAsync(sessionName);
+		}
 
-		if (!sessionAlive) {
+		if (!agentAlive) {
 			if (sessionDiedAt === null) {
-				// First detection of session death — start grace period
 				sessionDiedAt = Date.now();
-				execLog("merge", sessionName, "session exited — starting grace period", {
+				execLog("merge", sessionName, "agent exited — starting grace period", {
 					graceMs: MERGE_RESULT_GRACE_MS,
 				});
 			} else if (Date.now() - sessionDiedAt >= MERGE_RESULT_GRACE_MS) {
-				// Grace period expired — no result file
-				// One final check
+				// Grace period expired — one final check
 				if (existsSync(resultPath)) {
-					try {
-						return await parseMergeResultAsync(resultPath);
-					} catch {
-						// Fall through to session died error
-					}
+					try { return await parseMergeResultAsync(resultPath); } catch { /* fall through */ }
 				}
 
 				throw new MergeError(
 					"MERGE_SESSION_DIED",
-					`Merge agent session '${sessionName}' exited without writing ` +
+					`Merge agent '${sessionName}' exited without writing ` +
 					`a result file to '${resultPath}'. The merge may have crashed. ` +
-					`Check the session output: tmux capture-pane is unavailable ` +
-					`after session exit.`,
+					`Check agent logs for diagnostics.`,
 				);
 			}
-			// Within grace period — continue polling
 		}
 
-		// Poll interval
 		await sleepAsync(MERGE_POLL_INTERVAL_MS);
 	}
 }
@@ -1652,13 +1662,15 @@ export async function mergeWave(
 						}
 
 						// Re-spawn merge agent for the retry
+						// TP-108: Kill previous V2 agent to prevent orphan/duplicate
 						if (runtimeBackend === "v2") {
+							killMergeAgentV2(sessionName);
 							await spawnMergeAgentV2(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
 						} else {
 							await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
 						}
-						// TP-056: Re-register with health monitor after respawn
-						if (healthMonitor) healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
+						// TP-056: Re-register with health monitor after respawn (legacy only)
+						if (healthMonitor && runtimeBackend !== "v2") healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
 					} else {
 						// First attempt: spawn merge agent
 						if (runtimeBackend === "v2") {
@@ -1666,12 +1678,12 @@ export async function mergeWave(
 						} else {
 							await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
 						}
-						// TP-056: Register session with health monitor
-						if (healthMonitor) healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
+						// TP-056: Register session with health monitor (legacy only — V2 uses process handle)
+						if (healthMonitor && runtimeBackend !== "v2") healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
 					}
 
 					try {
-						mergeResult = await waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs);
+						mergeResult = await waitForMergeResult(resultFilePath, sessionName, currentTimeoutMs, runtimeBackend);
 						// TP-056: Deregister session from health monitor on completion
 						if (healthMonitor) healthMonitor.removeSession(sessionName);
 						lastTimeoutError = null;
@@ -1930,8 +1942,10 @@ export async function mergeWave(
 				// Best effort
 			}
 
-			// Kill merge session if still alive
-			if (tmuxHasSession(sessionName)) {
+			// Kill merge agent if still alive (backend-aware)
+			if (runtimeBackend === "v2") {
+				killMergeAgentV2(sessionName);
+			} else if (tmuxHasSession(sessionName)) {
 				tmuxKillSession(sessionName);
 			}
 

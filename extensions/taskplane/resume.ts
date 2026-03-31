@@ -1054,6 +1054,15 @@ export async function resumeOrchBatch(
 	const depGraph = buildDependencyGraph(discovery.pending, discovery.completed);
 	batchState.dependencyGraph = depGraph;
 
+	// TP-108: Runtime V2 backend selection for resumed batches.
+	// Placed before first use (section 8c merge) for TDZ safety.
+	const resumeBackend: RuntimeBackend = selectRuntimeBackend(
+		"all",
+		persistedState.wavePlan,
+		workspaceConfig,
+	).backend;
+	execLog("resume", batchState.batchId, `runtime backend for resumed execution: ${resumeBackend}`);
+
 	// ── 8. Handle alive sessions (reconnect) ─────────────────────
 	// For tasks with alive sessions, we need to wait for them to complete.
 	// We poll each alive session's .DONE file.
@@ -1328,16 +1337,6 @@ export async function resumeOrchBatch(
 	// Track state for persistence
 	const wavePlan = persistedState.wavePlan;
 	const allTaskOutcomes: LaneTaskOutcome[] = [];
-
-	// TP-108: Runtime V2 backend selection for resumed batches.
-	// Use the same selection logic as the engine so resume produces
-	// identical backend behavior.
-	const resumeBackend: RuntimeBackend = selectRuntimeBackend(
-		"all", // resume always runs remaining waves
-		wavePlan,
-		workspaceConfig,
-	).backend;
-	execLog("resume", batchState.batchId, `runtime backend for resumed execution: ${resumeBackend}`);
 
 	// Initialize latestAllocatedLanes from persisted lane records so that
 	// early persistence calls (before the first resumed wave) retain lane
