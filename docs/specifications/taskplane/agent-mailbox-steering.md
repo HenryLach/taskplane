@@ -466,18 +466,21 @@ These are registered as supervisor extension tools (same pattern as
 - ✅ Tests: rpc-wrapper JSONL write (3 tests), annotation behavior (5 tests), sanitization (5 tests),
   source contract (4 tests), plus full suite regression (3086 tests pass)
 
-### Phase 3: Agent → supervisor replies
+### Phase 3: Agent → supervisor replies ✅ Implemented (TP-106)
 
-- Agent outbox writes (via bash/write tools or `send_reply` tool)
-- Engine outbox polling + supervisor alert emission
-- `read_agent_replies` supervisor tool
-- Tests: round-trip message exchange
+- ✅ Agent outbox writes via `writeOutboxMessage()` in `mailbox.ts`
+- ✅ Bridge extension tools: `notify_supervisor`, `escalate_to_supervisor` in `agent-bridge-extension.ts`
+- ✅ `read_agent_replies` supervisor tool reads outbox from specific or all agents
+- ✅ Lane-runner polls outbox after worker exit and logs to STATUS.md
+- ✅ Registry snapshot updated after each worker iteration
 
-### Phase 4: Broadcast + rate limiting
+### Phase 4: Broadcast + rate limiting ✅ Implemented (TP-106)
 
-- `_broadcast` directory support
-- `broadcast_message` supervisor tool
-- Rate limiting: max 1 message per agent per 30 seconds
+- ✅ `_broadcast` directory support via `writeBroadcastMessage()`
+- ✅ `broadcast_message` supervisor tool
+- ✅ Agent-host checks both own inbox AND `_broadcast/inbox/` on each `message_end`
+- ✅ Rate limiting: max 1 message per agent per 30 seconds (in-memory tracker)
+- ✅ `send_agent_message` enforces rate limit with retry-after countdown
 
 ### Phase 5: Dashboard mailbox panel
 

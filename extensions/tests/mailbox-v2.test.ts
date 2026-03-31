@@ -201,30 +201,91 @@ describe("4.x: Registry-backed supervisor tool contracts", () => {
 	});
 });
 
-// ── 5. Export validation ─────────────────────────────────────────────
+// ── 5. Broadcast delivery in agent-host (TP-106 remediation) ──────
 
-describe("5.x: Mailbox V2 exports", () => {
-	it("5.1: writeOutboxMessage is a function", () => {
+describe("5.x: Agent-host broadcast delivery", () => {
+	const agentHostSrc = readFileSync(join(__dirname, "..", "taskplane", "agent-host.ts"), "utf-8");
+
+	it("8.1: checkMailbox reads _broadcast/inbox in addition to own inbox", () => {
+		expect(agentHostSrc).toContain("_broadcast");
+		expect(agentHostSrc).toContain("broadcastInbox");
+		expect(agentHostSrc).toContain("isBroadcast");
+	});
+
+	it("8.2: broadcast messages are validated with to === _broadcast", () => {
+		expect(agentHostSrc).toContain('msg.to !== "_broadcast"');
+	});
+});
+
+// ── 6. Registry wiring in lane-runner (TP-106 remediation) ────────
+
+describe("6.x: Lane-runner registry and outbox wiring", () => {
+	const laneRunnerSrc = readFileSync(join(__dirname, "..", "taskplane", "lane-runner.ts"), "utf-8");
+
+	it("6.1: lane-runner writes registry snapshot", () => {
+		expect(laneRunnerSrc).toContain("writeRegistrySnapshot");
+		expect(laneRunnerSrc).toContain("buildRegistrySnapshot");
+	});
+
+	it("6.2: lane-runner polls outbox after worker exit", () => {
+		expect(laneRunnerSrc).toContain("readOutbox");
+	});
+});
+
+// ── 7. Agent bridge extension exists (TP-106 remediation) ────────
+
+describe("7.x: Agent bridge extension", () => {
+	it("7.1: agent-bridge-extension.ts exists and exports default", async () => {
+		const mod = await import("../taskplane/agent-bridge-extension.ts");
+		expect(typeof mod.default).toBe("function");
+	});
+
+	it("7.2: provides notify_supervisor tool", () => {
+		const src = readFileSync(join(__dirname, "..", "taskplane", "agent-bridge-extension.ts"), "utf-8");
+		expect(src).toContain('"notify_supervisor"');
+	});
+
+	it("7.3: provides escalate_to_supervisor tool", () => {
+		const src = readFileSync(join(__dirname, "..", "taskplane", "agent-bridge-extension.ts"), "utf-8");
+		expect(src).toContain('"escalate_to_supervisor"');
+	});
+
+	it("7.4: writes to outbox directory via TASKPLANE_OUTBOX_DIR", () => {
+		const src = readFileSync(join(__dirname, "..", "taskplane", "agent-bridge-extension.ts"), "utf-8");
+		expect(src).toContain("TASKPLANE_OUTBOX_DIR");
+	});
+
+	it("7.5: uses atomic write (tmp + rename)", () => {
+		const src = readFileSync(join(__dirname, "..", "taskplane", "agent-bridge-extension.ts"), "utf-8");
+		expect(src).toContain(".msg.json.tmp");
+		expect(src).toContain("renameSync");
+	});
+});
+
+// ── 8. Export validation ─────────────────────────────────────────────
+
+describe("8.x: Mailbox V2 exports", () => {
+	it("8.1: writeOutboxMessage is a function", () => {
 		expect(typeof writeOutboxMessage).toBe("function");
 	});
 
-	it("5.2: readOutbox is a function", () => {
+	it("8.2: readOutbox is a function", () => {
 		expect(typeof readOutbox).toBe("function");
 	});
 
-	it("5.3: writeBroadcastMessage is a function", () => {
+	it("8.3: writeBroadcastMessage is a function", () => {
 		expect(typeof writeBroadcastMessage).toBe("function");
 	});
 
-	it("5.4: checkRateLimit is a function", () => {
+	it("8.4: checkRateLimit is a function", () => {
 		expect(typeof checkRateLimit).toBe("function");
 	});
 
-	it("5.5: recordSend is a function", () => {
+	it("8.5: recordSend is a function", () => {
 		expect(typeof recordSend).toBe("function");
 	});
 
-	it("5.6: sessionOutboxDir is a function", () => {
+	it("8.6: sessionOutboxDir is a function", () => {
 		expect(typeof sessionOutboxDir).toBe("function");
 	});
 });

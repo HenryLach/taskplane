@@ -349,45 +349,62 @@ export function spawnAgent(
 		}
 	}
 
-	// Helper: check mailbox and inject
+	// Helper: check mailbox and inject (own inbox + _broadcast)
 	function checkMailbox() {
 		if (!opts.mailboxDir || !proc.stdin || proc.stdin.destroyed) return;
-		const inboxDir = join(opts.mailboxDir, "inbox");
-		if (!existsSync(inboxDir)) return;
-
-		let entries: string[];
-		try { entries = readdirSync(inboxDir); } catch { return; }
-
-		const msgFiles = entries.filter(f => f.endsWith(".msg.json") && !f.endsWith(".msg.json.tmp")).sort();
-		if (msgFiles.length === 0) return;
 
 		const expectedSessionName = basename(opts.mailboxDir);
 		const expectedBatchId = basename(dirname(opts.mailboxDir));
-		const ackDir = join(opts.mailboxDir, "ack");
 
-		for (const filename of msgFiles) {
-			try {
-				const raw = readFileSync(join(inboxDir, filename), "utf-8");
-				const msg = JSON.parse(raw);
-				if (!isValidMailboxMessage(msg)) continue;
-				if (msg.batchId !== expectedBatchId) continue;
-				if (msg.to !== expectedSessionName) continue;
+		// Collect messages from own inbox AND broadcast inbox
+		const inboxDirs: Array<{ dir: string; isBroadcast: boolean }> = [
+			{ dir: join(opts.mailboxDir, "inbox"), isBroadcast: false },
+		];
+		// TP-106: Also check _broadcast/inbox for broadcast messages
+		const broadcastInbox = join(dirname(opts.mailboxDir), "_broadcast", "inbox");
+		if (existsSync(broadcastInbox)) {
+			inboxDirs.push({ dir: broadcastInbox, isBroadcast: true });
+		}
 
-				proc.stdin.write(JSON.stringify({ type: "steer", message: msg.content }) + "\n");
+		for (const { dir: inboxDir, isBroadcast } of inboxDirs) {
+			if (!existsSync(inboxDir)) continue;
 
-				mkdirSync(ackDir, { recursive: true });
-				try { renameSync(join(inboxDir, filename), join(ackDir, filename)); } catch { /* race ok */ }
+			let entries: string[];
+			try { entries = readdirSync(inboxDir); } catch { continue; }
 
-				emitEvent("message_delivered", { messageId: msg.id, content: msg.content });
+			const msgFiles = entries.filter(f => f.endsWith(".msg.json") && !f.endsWith(".msg.json.tmp")).sort();
+			if (msgFiles.length === 0) continue;
 
-				// TP-090: steering-pending flag
-				if (opts.steeringPendingPath) {
-					try {
-						appendFileSync(opts.steeringPendingPath,
-							JSON.stringify({ ts: msg.timestamp, content: msg.content, id: msg.id }) + "\n", "utf-8");
-					} catch { /* best effort */ }
-				}
-			} catch { /* skip malformed */ }
+			const ackDir = isBroadcast
+				? join(dirname(inboxDir), "ack")
+				: join(opts.mailboxDir, "ack");
+
+			for (const filename of msgFiles) {
+				try {
+					const raw = readFileSync(join(inboxDir, filename), "utf-8");
+					const msg = JSON.parse(raw);
+					if (!isValidMailboxMessage(msg)) continue;
+					if (msg.batchId !== expectedBatchId) continue;
+					// Validate 'to' field: own inbox requires exact match, broadcast accepts "_broadcast"
+					if (!isBroadcast && msg.to !== expectedSessionName) continue;
+					if (isBroadcast && msg.to !== "_broadcast") continue;
+
+					proc.stdin.write(JSON.stringify({ type: "steer", message: msg.content }) + "\n");
+
+					mkdirSync(ackDir, { recursive: true });
+					try { renameSync(join(inboxDir, filename), join(ackDir, filename)); } catch { /* race ok */ }
+
+					emitEvent("message_delivered", { messageId: msg.id, content: msg.content, broadcast: isBroadcast });
+
+					// TP-090: steering-pending flag
+					if (opts.steeringPendingPath) {
+						try {
+							appendFileSync(opts.steeringPendingPath,
+								JSON.stringify({ ts: msg.timestamp, content: msg.content, id: msg.id }) + "\n", "utf-8");
+						} catch { /* best effort */ }
+					}
+				} catch { /* skip malformed */ }
+			}
 		}
 	}
 

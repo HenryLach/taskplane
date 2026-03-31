@@ -42,14 +42,10 @@ import {
 	sessionOutboxDir,
 } from "./mailbox.ts";
 import {
-	buildRegistrySnapshot,
 	readRegistrySnapshot,
-	getLiveAgents,
-	getAgentsByRole,
 	isProcessAlive as registryIsProcessAlive,
 	isTerminalStatus,
 } from "./process-registry.ts";
-import { runtimeRegistryPath } from "./types.ts";
 import type { MailboxMessageType } from "./types.ts";
 import {
 	activateSupervisor,
@@ -3783,6 +3779,8 @@ export default function (pi: ExtensionAPI) {
 		const rateCheck = checkRateLimit(to);
 		if (!rateCheck.allowed) {
 			const waitSec = Math.ceil((rateCheck.retryAfterMs ?? 0) / 1000);
+			// TP-106: Emit rate_limited event for auditability
+			console.error(`[mailbox] rate-limited: ${to} (retry after ${waitSec}s)`);
 			return `⏳ Rate limited: wait ${waitSec}s before sending another message to \`${to}\`.`;
 		}
 

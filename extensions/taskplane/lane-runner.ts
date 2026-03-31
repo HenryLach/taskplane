@@ -38,7 +38,11 @@ import {
 	updateManifestStatus,
 	appendAgentEvent,
 	writeLaneSnapshot,
+	buildRegistrySnapshot,
+	writeRegistrySnapshot,
 } from "./process-registry.ts";
+
+import { readOutbox } from "./mailbox.ts";
 
 import {
 	resolvePacketPaths,
@@ -161,6 +165,12 @@ export async function executeTaskV2(
 	updateStatusField(statusPath, "Last Updated", new Date().toISOString().slice(0, 10));
 	logExecution(statusPath, "Task started", "Runtime V2 lane-runner execution");
 
+	// ── TP-106: Write initial registry snapshot ──────────────────
+	try {
+		const initRegistry = buildRegistrySnapshot(config.stateRoot, config.batchId);
+		writeRegistrySnapshot(config.stateRoot, initRegistry);
+	} catch { /* best effort */ }
+
 	// ── 2. Iteration loop ───────────────────────────────────────────
 	let noProgressCount = 0;
 	let totalIterations = 0;
@@ -234,6 +244,10 @@ export async function executeTaskV2(
 
 		const steeringPendingPath = join(taskFolder, ".steering-pending");
 
+		// TP-106: Resolve bridge extension for agent-side reply/escalate tools
+		// The outbox dir is set via the mailbox sessionOutboxDir convention
+		const outboxDir = join(config.stateRoot, ".pi", "mailbox", config.batchId, workerAgentId, "outbox");
+
 		const hostOpts: AgentHostOptions = {
 			agentId: workerAgentId,
 			role: "worker",
@@ -286,6 +300,21 @@ export async function executeTaskV2(
 		cumulativeCostUsd += workerResult.costUsd;
 		cumulativeTokens += workerResult.inputTokens + workerResult.outputTokens +
 			workerResult.cacheReadTokens + workerResult.cacheWriteTokens;
+
+		// ── TP-106: Update registry snapshot after worker exit ──────
+		try {
+			const registrySnap = buildRegistrySnapshot(config.stateRoot, config.batchId);
+			writeRegistrySnapshot(config.stateRoot, registrySnap);
+		} catch { /* best effort */ }
+
+		// ── TP-106: Poll worker outbox for replies/escalations ─────
+		try {
+			const outboxMessages = readOutbox(config.stateRoot, config.batchId, workerAgentId);
+			for (const msg of outboxMessages) {
+				logExecution(statusPath, `Agent ${msg.type}`,
+					msg.content.replace(/\r?\n/g, " / ").slice(0, 200));
+			}
+		} catch { /* best effort */ }
 
 		// ── Steering annotation ─────────────────────────────────────
 		try {

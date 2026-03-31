@@ -558,6 +558,11 @@ The key orchestrator commands are also registered as **extension tools** that th
 | `orch_retry_task(taskId)` | — | `taskId`: string (required) — retry a specific failed/stalled task |
 | `orch_skip_task(taskId)` | — | `taskId`: string (required) — skip a task and unblock dependents |
 | `orch_force_merge(waveIndex?, skipFailed?)` | — | `waveIndex`: number (optional, 0-based), `skipFailed`: boolean (optional) — force merge a wave with mixed results |
+| `send_agent_message(to, content, type?)` | — | `to`: agent ID (required), `content`: string (max 4KB), `type`: "steer"\|"query"\|"abort"\|"info" (default: "steer") |
+| `read_agent_replies(from?)` | — | `from`: agent ID (optional — omit for all agents) — read outbox replies/escalations |
+| `broadcast_message(content, type?)` | — | `content`: string (max 4KB), `type`: "steer"\|"info"\|"abort" (default: "info") — send to all agents |
+| `read_agent_status(lane?)` | — | `lane`: number (optional) — read STATUS.md progress + telemetry for a lane |
+| `list_active_agents()` | `/orch-sessions` | — — list all active agent sessions with role, task, status |
 
 These tools share the same logic as the slash commands. They return text results and catch errors gracefully (never throw). The supervisor agent uses these to manage batches proactively during monitoring.
 
