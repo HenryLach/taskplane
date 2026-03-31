@@ -38,6 +38,12 @@ import type {
 	PacketPaths,
 } from "./types.ts";
 
+import {
+	createManifest,
+	writeManifest,
+	updateManifestStatus,
+} from "./process-registry.ts";
+
 // ── Pi CLI Resolution ────────────────────────────────────────────────
 
 /**
@@ -102,6 +108,14 @@ export interface AgentHostOptions {
 	agentId: RuntimeAgentId;
 	/** Agent role */
 	role: RuntimeAgentRole;
+	/** Batch ID this agent belongs to */
+	batchId: string;
+	/** Lane number (null for merge agents) */
+	laneNumber: number | null;
+	/** Task ID being executed (null before first assignment) */
+	taskId: string | null;
+	/** Repo ID the agent is operating in */
+	repoId: string;
 	/** Working directory for the Pi process */
 	cwd: string;
 	/** User prompt content */
@@ -128,6 +142,10 @@ export interface AgentHostOptions {
 	timeoutMs?: number;
 	/** Delay in ms before closing stdin after agent_end (default: 100) */
 	closeDelayMs?: number;
+	/** State root for process registry (null = no registry integration) */
+	stateRoot?: string | null;
+	/** Packet paths for registry manifest (null for merge agents) */
+	packet?: PacketPaths | null;
 }
 
 /**
@@ -233,12 +251,14 @@ export function spawnAgent(
 	if (opts.model) piArgs.push("--model", opts.model);
 	if (opts.tools) piArgs.push("--tools", opts.tools);
 	if (opts.systemPrompt) piArgs.push("--system-prompt", opts.systemPrompt);
+	// Always pass --no-extensions to prevent auto-discovery from cwd.
+	// Explicit -e entries are still honored by pi even with --no-extensions.
+	// This matches the fix from TP-095 that eliminated duplicate extension loading.
+	piArgs.push("--no-extensions");
 	if (opts.extensions && opts.extensions.length > 0) {
 		for (const ext of opts.extensions) {
 			piArgs.push("-e", ext);
 		}
-	} else {
-		piArgs.push("--no-extensions");
 	}
 	piArgs.push("--no-skills");
 	if (opts.thinking) piArgs.push("--thinking", opts.thinking);
@@ -254,6 +274,7 @@ export function spawnAgent(
 	// State accumulator
 	const startedAt = Date.now();
 	let killed = false;
+	let timedOut = false;
 	let agentEnded = false;
 	let stdinClosed = false;
 	let statsRequested = false;
@@ -268,9 +289,28 @@ export function spawnAgent(
 	let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 	if (timeoutMs > 0) {
 		timeoutHandle = setTimeout(() => {
+			timedOut = true;
 			killed = true;
 			try { proc.kill("SIGTERM"); } catch { /* ignore */ }
 		}, timeoutMs);
+	}
+
+	// Registry integration: write manifest before process is considered visible
+	if (opts.stateRoot) {
+		const manifest = createManifest({
+			batchId: opts.batchId,
+			agentId: opts.agentId,
+			role: opts.role,
+			laneNumber: opts.laneNumber,
+			taskId: opts.taskId,
+			repoId: opts.repoId,
+			pid: proc.pid ?? 0,
+			parentPid: process.pid,
+			cwd: opts.cwd,
+			packet: opts.packet ?? null,
+		});
+		manifest.status = "running";
+		writeManifest(opts.stateRoot, manifest);
 	}
 
 	// Helper: close stdin safely with delay
@@ -289,12 +329,12 @@ export function spawnAgent(
 	// Helper: emit normalized event
 	function emitEvent(type: RuntimeAgentEventType, payload: Record<string, unknown> = {}) {
 		const event: RuntimeAgentEvent = {
-			batchId: "",  // caller enriches via onEvent
+			batchId: opts.batchId,
 			agentId: opts.agentId,
 			role: opts.role,
-			laneNumber: null,
-			taskId: null,
-			repoId: "",
+			laneNumber: opts.laneNumber,
+			taskId: opts.taskId,
+			repoId: opts.repoId,
 			ts: Date.now(),
 			type,
 			payload,
@@ -404,9 +444,22 @@ export function spawnAgent(
 				} catch { /* best effort */ }
 			}
 
-			emitEvent(killed ? "agent_killed" : (exitCode === 0 && agentEnded ? "agent_exited" : "agent_crashed"), {
-				exitCode, signal, durationMs: result.durationMs,
-			});
+			const exitEventType: RuntimeAgentEventType =
+				timedOut ? "agent_timeout" :
+				killed ? "agent_killed" :
+				(exitCode === 0 && agentEnded) ? "agent_exited" :
+				"agent_crashed";
+			emitEvent(exitEventType, { exitCode, signal, durationMs: result.durationMs, timedOut });
+
+			// Registry integration: update manifest to terminal status
+			if (opts.stateRoot) {
+				const terminalStatus =
+					timedOut ? "timed_out" as const :
+					killed ? "killed" as const :
+					(exitCode === 0 && agentEnded) ? "exited" as const :
+					"crashed" as const;
+				updateManifestStatus(opts.stateRoot, opts.batchId, opts.agentId, terminalStatus);
+			}
 
 			resolvePromise(result);
 		}

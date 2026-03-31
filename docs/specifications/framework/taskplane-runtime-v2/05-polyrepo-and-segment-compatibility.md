@@ -1,6 +1,6 @@
 # Polyrepo and Segment Compatibility
 
-**Status:** Proposed  
+**Status:** Proposed (updated 2026-03-30 with implementation findings from TP-102)  
 **Related:** [01-architecture.md](01-architecture.md), `docs/specifications/taskplane/multi-repo-task-execution.md`
 
 ## 1. Purpose
@@ -222,7 +222,21 @@ acceptance conditions:
 | TP-087 | should persist graph revisions alongside runtime execution-unit state |
 | TP-088 | becomes mandatory for all engine/resume paths in Runtime V2 |
 
-## 14. Recommendation
+## 14. Implementation notes (from TP-102)
+
+### Cross-repo packet path status
+
+In workspace mode when the task packet home repo differs from the execution repo,
+the legacy path copies packet files into the worktree under `.taskplane-tasks/`.
+`buildExecutionUnit()` wraps this faithfully — the `packet` paths point to the
+execution-local copy, while `packetHomeRepoId` reflects the true home repo.
+
+This means `packetHomeRepoId` may not match the filesystem root of
+`packet.taskFolder` in cross-repo scenarios. TP-109 will tighten this so
+authoritative packet-home paths are always available separately from any
+execution-local copies.
+
+## 15. Recommendation
 
 Do **not** postpone packet-path authority until after the no-TMUX runtime lands.
 

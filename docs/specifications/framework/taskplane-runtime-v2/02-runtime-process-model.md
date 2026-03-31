@@ -1,6 +1,6 @@
 # Runtime Process Model
 
-**Status:** Proposed  
+**Status:** Proposed (updated 2026-03-30 with implementation findings from TP-102/103/104)  
 **Related:** [01-architecture.md](01-architecture.md)
 
 ## 1. Purpose
@@ -349,7 +349,39 @@ Required rules:
 4. avoid shell quoting as a primary correctness mechanism
 5. use process-registry-based cleanup instead of server/session cleanup
 
-## 13. Acceptance criteria
+## 13. Implementation notes (from TP-102/103/104)
+
+### Executor-core extraction scope
+
+TP-103 extracted 15 pure helper functions (parsing, status mutation, review
+request generation, verdict extraction, git helpers) into
+`extensions/taskplane/task-executor-core.ts`. The execution state machine
+functions (`executeTask`, `runWorker`, `doReview`) remain in `task-runner.ts`
+because they depend on Pi's `ExtensionContext` for spawn modes and UI callbacks.
+TP-105 (lane-runner) will consume the core module directly and provide its own
+execution state machine without the extension host coupling.
+
+### Registry lifecycle wiring
+
+The process registry (`extensions/taskplane/process-registry.ts`) is wired into
+`agent-host.ts` `spawnAgent()`: manifests are written before the agent is
+considered visible, and updated to terminal status on exit/crash/timeout/kill.
+Callers opt in to registry integration by providing `stateRoot` in
+`AgentHostOptions`.
+
+### Timeout vs killed distinction
+
+`agent-host.ts` tracks a separate `timedOut` flag. The exit event type is
+`agent_timeout` for timeouts and `agent_killed` for explicit kills. The registry
+manifest status maps to `timed_out` vs `killed` accordingly.
+
+### Extension loading safety
+
+`agent-host.ts` always passes `--no-extensions` to prevent auto-discovery from
+cwd, even when explicit `-e` entries are provided. This matches the fix from
+TP-095 that eliminated duplicate extension loading in the legacy TMUX path.
+
+## 14. Acceptance criteria
 
 This process model is accepted when:
 

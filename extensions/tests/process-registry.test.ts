@@ -15,8 +15,11 @@
 import { describe, it, beforeEach, afterEach } from "node:test";
 import { expect } from "./expect.ts";
 import { mkdtempSync, existsSync, readFileSync, mkdirSync, writeFileSync, rmSync } from "fs";
-import { join } from "path";
+import { join, dirname } from "path";
 import { tmpdir } from "os";
+import { fileURLToPath } from "url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 import {
 	writeManifest,
@@ -359,5 +362,55 @@ describe("8.x: Agent-host export contract", () => {
 				throw err;
 			}
 		}
+	});
+});
+
+// ── 9. Agent-host option and event attribution contract (remediation) ─
+
+describe("9.x: Agent-host option and event attribution contract", () => {
+	const hostSrc = readFileSync(join(__dirname, "..", "taskplane", "agent-host.ts"), "utf-8");
+
+	it("9.1: AgentHostOptions requires batch/lane/task/repo fields", () => {
+		expect(hostSrc).toContain("batchId: string");
+		expect(hostSrc).toContain("laneNumber: number | null");
+		expect(hostSrc).toContain("taskId: string | null");
+		expect(hostSrc).toContain("repoId: string");
+	});
+
+	it("9.2: emitEvent uses opts fields, not empty placeholders", () => {
+		expect(hostSrc).toContain("batchId: opts.batchId");
+		expect(hostSrc).toContain("laneNumber: opts.laneNumber");
+		expect(hostSrc).toContain("taskId: opts.taskId");
+		expect(hostSrc).toContain("repoId: opts.repoId");
+	});
+
+	it("9.3: timeout produces agent_timeout not agent_killed", () => {
+		expect(hostSrc).toContain("agent_timeout");
+		expect(hostSrc).toContain("timedOut");
+		expect(hostSrc).toContain("timed_out");
+	});
+
+	it("9.4: --no-extensions is always passed (even with explicit -e)", () => {
+		const noExtIdx = hostSrc.indexOf('piArgs.push("--no-extensions")');
+		const eIdx = hostSrc.indexOf('piArgs.push("-e"');
+		expect(noExtIdx).toBeGreaterThan(-1);
+		expect(eIdx).toBeGreaterThan(noExtIdx);
+	});
+
+	it("9.5: registry integration writes manifest on spawn", () => {
+		expect(hostSrc).toContain("writeManifest(opts.stateRoot");
+		expect(hostSrc).toContain("updateManifestStatus(opts.stateRoot");
+	});
+
+	it("9.6: registry manifest transitions to terminal status on exit", () => {
+		expect(hostSrc).toContain('"timed_out"');
+		expect(hostSrc).toContain('"killed"');
+		expect(hostSrc).toContain('"exited"');
+		expect(hostSrc).toContain('"crashed"');
+	});
+
+	it("9.7: stateRoot and packet are optional (for callers without registry)", () => {
+		expect(hostSrc).toContain("stateRoot?: string | null");
+		expect(hostSrc).toContain("packet?: PacketPaths | null");
 	});
 });
