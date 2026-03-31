@@ -381,6 +381,19 @@ manifest status maps to `timed_out` vs `killed` accordingly.
 cwd, even when explicit `-e` entries are provided. This matches the fix from
 TP-095 that eliminated duplicate extension loading in the legacy TMUX path.
 
+### Lane-runner implementation approach (TP-105)
+
+The lane-runner (`extensions/taskplane/lane-runner.ts`) is implemented as a
+headless module, not a separate child process. This is intentional for the first
+Runtime V2 slice — it minimizes integration complexity while delivering the same
+ownership semantics. A process boundary can be introduced later if isolation
+between the engine and lane execution becomes necessary.
+
+The integration point is `executeLaneV2()` in `execution.ts`, which has the same
+return type (`LaneExecutionResult`) as the legacy `executeLane()`. This allows
+the engine to switch between backends based on a runtime config flag during
+the migration period (TP-108).
+
 ## 14. Acceptance criteria
 
 This process model is accepted when:
