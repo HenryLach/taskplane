@@ -1,6 +1,6 @@
 # Observability and Dashboard Model
 
-**Status:** Proposed  
+**Status:** Proposed (updated 2026-03-30 with implementation findings from TP-104)  
 **Related:** [01-architecture.md](01-architecture.md), [03-bridge-and-mailbox.md](03-bridge-and-mailbox.md)
 
 ## 1. Goal
@@ -317,7 +317,22 @@ Required controls:
 - per-panel truncation and pagination where needed
 - log rotation/archival policies for runtime event files
 
-## 13. Success criteria
+## 13. Implementation notes (from TP-104)
+
+### Event envelope attribution
+
+`AgentHostOptions` carries `batchId`, `laneNumber`, `taskId`, and `repoId`.
+All normalized `RuntimeAgentEvent` instances emitted by the agent-host include
+these attribution fields from the caller-provided options — no empty-string
+placeholders.
+
+### Timeout event type
+
+Timeout exits emit `agent_timeout` (not `agent_killed`). The distinction
+is preserved in both the event stream and the registry manifest status
+(`timed_out` vs `killed`).
+
+## 14. Success criteria
 
 This observability model is accepted when:
 

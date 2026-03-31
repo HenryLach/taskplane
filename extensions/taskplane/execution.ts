@@ -2694,6 +2694,15 @@ export async function executeWithStopAll(
  * archive fallback). This preserves current behavior while surfacing
  * it through the Runtime V2 contract.
  *
+ * **Cross-repo note (TP-109 follow-up):** In workspace mode, when the
+ * task packet home repo differs from the execution repo, the legacy path
+ * copies packet files into the worktree under `.taskplane-tasks/`. The
+ * resolved `packet` paths here point to that execution-local copy, not
+ * the original packet-home location. This is intentional for current
+ * compatibility but means `packetHomeRepoId` may not match the filesystem
+ * root of `packet.taskFolder`. TP-109 will tighten this so that
+ * authoritative packet-home paths are always available separately.
+ *
  * @param lane - Allocated lane containing worktree and identity info
  * @param task - Allocated task to build an execution unit for
  * @param repoRoot - Main repository root
