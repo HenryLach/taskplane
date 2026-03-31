@@ -144,6 +144,21 @@ Workspace-mode smoke tests and segment-roadmap prerequisites pass on Runtime V2.
 - Full suite: 3362 pass, 0 failures
 - CLI smoke: `taskplane help` and `taskplane doctor` pass
 
+## Phase F.2 — Workspace packet-home and resume (TP-109) ✅ Implemented
+
+### Delivered
+
+- Resume .DONE check uses worktree-relative path via `resolveCanonicalTaskPaths()` in addition to original discovery path
+- `selectRuntimeBackend()` returns V2 for ALL batches (workspace included)
+- `buildExecutionUnit()` already resolves authoritative packet paths with workspace awareness
+- Lane-runner uses `unit.packet.*` for all artifact I/O (no cwd fallback)
+- No silent cwd-derived authority remains in the Runtime V2 path
+
+### Exit gate
+
+- Full suite: 3366 pass, 0 failures
+- CLI smoke passes
+
 ## Phase G — Default switch and cleanup
 
 ### Deliverables
