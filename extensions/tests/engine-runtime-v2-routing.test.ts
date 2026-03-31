@@ -28,8 +28,9 @@ const {
 // ── 1. Backend selection logic in engine ─────────────────────────────
 
 describe("1.x: Engine backend selection", () => {
-	it("1.1: selects v2 only when single task + repo mode + direct PROMPT target", () => {
-		expect(engineSrc).toContain("isSingleTask && isRepoMode && isDirectPromptTarget");
+	it("1.1: selects v2 for all repo-mode batches (TP-108 expanded gate)", () => {
+		// TP-108: V2 for all repo-mode, legacy only for workspace
+		expect(engineSrc).toContain("isRepoMode");
 		expect(engineSrc).toContain('"v2"');
 	});
 
@@ -118,17 +119,15 @@ describe("3.x: Retry paths preserve backend choice", () => {
 
 // ── 4. Scope guards ──────────────────────────────────────────────────
 
-describe("4.x: Scope guards for TP-105 limits", () => {
+describe("4.x: Scope guards (TP-108 expanded)", () => {
 	it("4.1: workspace mode explicitly falls back with notification", () => {
 		expect(engineSrc).toContain("workspace mode not yet supported");
 	});
 
-	it("4.2: non-direct targets stay on legacy (no over-claim)", () => {
-		// TP-105 scope guard: V2 requires a direct PROMPT.md target.
-		expect(engineSrc).toContain("isDirectPromptTarget");
-		expect(engineSrc).toContain("single-task batch was not targeted via direct PROMPT.md path");
-		// No forced v2 broadening.
-		expect(engineSrc).not.toContain("force v2 for multi-task");
+	it("4.2: repo mode selects v2 regardless of task count (TP-108 expansion)", () => {
+		// TP-108: all repo-mode batches use V2 — no single-task restriction
+		expect(engineSrc).toContain("isRepoMode");
+		expect(engineSrc).toContain('"v2"');
 	});
 });
 
@@ -183,10 +182,13 @@ describe("6.x: Runtime imports for backend routing", () => {
 // ── 7. Behavioral routing/mapping tests (non-source assertions) ─────
 
 describe("7.x: Behavioral backend and snapshot mapping", () => {
-	it("7.1: selectRuntimeBackend picks v2 only for single direct PROMPT target in repo mode", () => {
+	it("7.1: selectRuntimeBackend picks v2 for all repo-mode batches (TP-108)", () => {
+		// Single task, direct PROMPT
 		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md", [["TP-001"]], null).backend).toBe("v2");
-		expect(selectRuntimeBackend("all", [["TP-001"]], null).backend).toBe("legacy");
-		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md tasks/TP-002/PROMPT.md", [["TP-001", "TP-002"]], null).backend).toBe("legacy");
+		// Multi-task, "all" target — still V2 in repo mode
+		expect(selectRuntimeBackend("all", [["TP-001"]], null).backend).toBe("v2");
+		// Multi-task, multiple waves — still V2 in repo mode
+		expect(selectRuntimeBackend("all", [["TP-001"], ["TP-002"]], null).backend).toBe("v2");
 	});
 
 	it("7.2: selectRuntimeBackend falls back in workspace mode even for direct prompt", () => {
@@ -205,5 +207,28 @@ describe("7.x: Behavioral backend and snapshot mapping", () => {
 		expect(mapLaneSnapshotStatusToWorkerStatus("complete")).toBe("exited");
 		expect(mapLaneSnapshotStatusToWorkerStatus("idle")).toBe("wrapping_up");
 		expect(mapLaneSnapshotStatusToWorkerStatus("failed")).toBe("crashed");
+	});
+});
+
+// ── 8. TP-108: Resume backend parity ─────────────────────────────────
+
+describe("8.x: Resume backend parity (TP-108)", () => {
+	const resumeSrc = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
+
+	it("8.1: resume computes runtime backend using selectRuntimeBackend", () => {
+		expect(resumeSrc).toContain("selectRuntimeBackend");
+		expect(resumeSrc).toContain("resumeBackend");
+	});
+
+	it("8.2: resume passes backend to executeWave", () => {
+		// The executeWave call in resume must include the backend
+		const waveCallIdx = resumeSrc.indexOf("await executeWave(");
+		expect(waveCallIdx).toBeGreaterThan(-1);
+		const waveCallSlice = resumeSrc.slice(waveCallIdx, waveCallIdx + 900);
+		expect(waveCallSlice).toContain("resumeBackend");
+	});
+
+	it("8.3: resume imports RuntimeBackend type", () => {
+		expect(resumeSrc).toContain("RuntimeBackend");
 	});
 });

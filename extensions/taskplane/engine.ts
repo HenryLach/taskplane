@@ -761,8 +761,12 @@ export function selectRuntimeBackend(
 	const isDirectPromptTarget =
 		argTokens.length === 1 && /PROMPT\.md$/i.test(argTokens[0]);
 
+	// TP-108: Expand Runtime V2 to all repo-mode batches (single or multi-task).
+	// Workspace mode deferred to TP-109 (packet-home authority needed).
+	const backend: RuntimeBackend = isRepoMode ? "v2" : "legacy";
+
 	return {
-		backend: (isSingleTask && isRepoMode && isDirectPromptTarget) ? "v2" : "legacy",
+		backend,
 		isSingleTask,
 		isRepoMode,
 		isDirectPromptTarget,
@@ -1100,12 +1104,9 @@ export async function executeOrchBatch(
 	const selectedBackend = backendSelection.backend;
 
 	if (selectedBackend === "v2") {
-		execLog("batch", batchState.batchId, "Runtime V2 backend selected (single direct PROMPT.md target, repo mode)");
+		execLog("batch", batchState.batchId, "Runtime V2 backend selected (repo mode)");
 		onNotify("🚀 Using Runtime V2 backend (no-TMUX direct execution)", "info");
-	} else if (backendSelection.isSingleTask && backendSelection.isRepoMode && !backendSelection.isDirectPromptTarget) {
-		execLog("batch", batchState.batchId, "Runtime V2 not used: single-task batch was not targeted via direct PROMPT.md path");
-		onNotify("ℹ️ Using legacy execution backend (Runtime V2 TP-105 scope is single direct PROMPT.md targets)", "info");
-	} else if (backendSelection.isSingleTask && !backendSelection.isRepoMode) {
+	} else if (!backendSelection.isRepoMode) {
 		execLog("batch", batchState.batchId, "Runtime V2 not used: workspace mode (deferred to TP-109), falling back to legacy");
 		onNotify("ℹ️ Using legacy execution backend (workspace mode not yet supported on Runtime V2)", "info");
 	}

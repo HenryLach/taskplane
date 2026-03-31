@@ -9,7 +9,8 @@ import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-rep
 import { runDiscovery } from "./discovery.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { computeTransitiveDependents, execLog, executeWave, pollUntilTaskComplete, spawnLaneSession, tmuxHasSession } from "./execution.ts";
-import type { MonitorUpdateCallback } from "./execution.ts";
+import type { MonitorUpdateCallback, RuntimeBackend } from "./execution.ts";
+import { selectRuntimeBackend } from "./engine.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
 import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
@@ -1307,6 +1308,16 @@ export async function resumeOrchBatch(
 	const wavePlan = persistedState.wavePlan;
 	const allTaskOutcomes: LaneTaskOutcome[] = [];
 
+	// TP-108: Runtime V2 backend selection for resumed batches.
+	// Use the same selection logic as the engine so resume produces
+	// identical backend behavior.
+	const resumeBackend: RuntimeBackend = selectRuntimeBackend(
+		"all", // resume always runs remaining waves
+		wavePlan,
+		workspaceConfig,
+	).backend;
+	execLog("resume", batchState.batchId, `runtime backend for resumed execution: ${resumeBackend}`);
+
 	// Initialize latestAllocatedLanes from persisted lane records so that
 	// early persistence calls (before the first resumed wave) retain lane
 	// records with repo attribution (laneNumber, laneId, branch, repoId).
@@ -1603,7 +1614,7 @@ export async function resumeOrchBatch(
 				}
 			},
 			workspaceConfig,
-			undefined,
+			resumeBackend,
 			emitAlert,
 		);
 
