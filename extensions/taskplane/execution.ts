@@ -2805,5 +2805,147 @@ export function resolveRuntimeStateRoot(
 	return workspaceRoot ?? repoRoot;
 }
 
+// ── Runtime V2 Lane Execution (TP-105) ────────────────────────────
+
+import { executeTaskV2, type LaneRunnerConfig, type LaneRunnerTaskResult } from "./lane-runner.ts";
+
+/**
+ * Execute a lane using the Runtime V2 headless backend.
+ *
+ * This replaces the legacy TMUX-backed `executeLane()` for lanes that
+ * should run on the new direct-child architecture. It uses the
+ * lane-runner module which spawns workers via agent-host.ts instead
+ * of TMUX sessions.
+ *
+ * The function signature is deliberately close to the legacy
+ * `executeLane()` to minimize integration churn in the engine.
+ * The key difference: no TMUX sessions are created.
+ *
+ * @since TP-105
+ */
+export async function executeLaneV2(
+	lane: AllocatedLane,
+	config: OrchestratorConfig,
+	repoRoot: string,
+	pauseSignal: { paused: boolean },
+	workspaceRoot?: string,
+	isWorkspaceMode?: boolean,
+	extraEnvVars?: Record<string, string>,
+): Promise<LaneExecutionResult> {
+	const laneId = lane.laneId;
+	const laneStartTime = Date.now();
+	const outcomes: LaneTaskOutcome[] = [];
+	let shouldSkipRemaining = false;
+
+	const stateRoot = resolveRuntimeStateRoot(repoRoot, workspaceRoot);
+	const batchId = config.orchestrator?.batchId || extraEnvVars?.ORCH_BATCH_ID || String(Date.now());
+
+	// Build agent ID prefix from orchestrator config
+	const tmuxPrefix = config.orchestrator?.tmux_prefix ?? "orch";
+	const opId = config.orchestrator?.operatorId || "op";
+	const agentIdPrefix = `${tmuxPrefix}-${opId}`;
+
+	// Load worker agent definition for system prompt
+	let workerSystemPrompt = "You are a task execution agent. Read STATUS.md first, find unchecked items, work on them, checkpoint after each.";
+	try {
+		const agentPath = join(stateRoot, ".pi", "agents", "task-worker.md");
+		if (existsSync(agentPath)) {
+			const raw = readFileSync(agentPath, "utf-8");
+			const fmEnd = raw.indexOf("---", 4);
+			if (fmEnd > 0) {
+				workerSystemPrompt = raw.slice(fmEnd + 3).trim();
+			}
+		}
+	} catch { /* use default */ }
+
+	execLog(laneId, "LANE", `starting Runtime V2 execution of ${lane.tasks.length} task(s)`, {
+		worktree: lane.worktreePath,
+		agentPrefix: agentIdPrefix,
+	});
+
+	for (const task of lane.tasks) {
+		if (shouldSkipRemaining || pauseSignal.paused) {
+			const reason = pauseSignal.paused ? "Skipped due to pause signal" : "Skipped due to prior task failure in lane";
+			outcomes.push({
+				taskId: task.taskId,
+				status: "skipped",
+				startTime: null,
+				endTime: null,
+				exitReason: reason,
+				sessionName: buildRuntimeAgentId(agentIdPrefix, lane.laneNumber, "worker"),
+				doneFileFound: false,
+			});
+			continue;
+		}
+
+		// Build execution unit
+		const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode);
+
+		const laneRunnerConfig: LaneRunnerConfig = {
+			batchId,
+			agentIdPrefix,
+			laneNumber: lane.laneNumber,
+			worktreePath: lane.worktreePath,
+			branch: lane.branch,
+			repoId: lane.repoId ?? "default",
+			stateRoot,
+			workerModel: "",
+			workerTools: "read,write,edit,bash,grep,find,ls",
+			workerThinking: "",
+			workerSystemPrompt,
+			maxIterations: 20,
+			noProgressLimit: 3,
+			maxWorkerMinutes: config.failure?.maxWorkerMinutes || 30,
+			warnPercent: 85,
+			killPercent: 95,
+		};
+
+		try {
+			const result = await executeTaskV2(unit, laneRunnerConfig, pauseSignal);
+			outcomes.push(result.outcome);
+
+			// Commit artifacts after success (same as legacy path)
+			if (result.outcome.status === "succeeded") {
+				commitTaskArtifacts(lane, task, laneId);
+				// Reset worktree for next task
+				if (lane.tasks.indexOf(task) < lane.tasks.length - 1) {
+					runGit(["checkout", "--", "."], lane.worktreePath);
+					runGit(["clean", "-fd"], lane.worktreePath);
+				}
+			}
+
+			if (result.outcome.status === "failed" || result.outcome.status === "stalled") {
+				shouldSkipRemaining = true;
+			}
+		} catch (err: unknown) {
+			const errMsg = err instanceof Error ? err.message : String(err);
+			execLog(laneId, task.taskId, `Runtime V2 execution error: ${errMsg}`);
+			outcomes.push({
+				taskId: task.taskId,
+				status: "failed",
+				startTime: Date.now(),
+				endTime: Date.now(),
+				exitReason: `Runtime V2 execution error: ${errMsg}`,
+				sessionName: buildRuntimeAgentId(agentIdPrefix, lane.laneNumber, "worker"),
+				doneFileFound: false,
+			});
+			shouldSkipRemaining = true;
+		}
+	}
+
+	const endTime = Date.now();
+	const succeeded = outcomes.every(o => o.status === "succeeded");
+	const failed = outcomes.some(o => o.status === "failed" || o.status === "stalled");
+
+	return {
+		laneNumber: lane.laneNumber,
+		laneId,
+		tasks: outcomes,
+		overallStatus: succeeded ? "succeeded" : failed ? "failed" : "partial",
+		startTime: laneStartTime,
+		endTime,
+	};
+}
+
 // ── /orch Command — Full Execution (Step 5) ─────────────────────────
 
