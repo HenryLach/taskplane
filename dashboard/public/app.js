@@ -915,36 +915,107 @@ function renderMessagesPanel(mailbox) {
   const $body = document.getElementById('messages-body');
   if (!$panel || !$body) return;
 
-  if (!mailbox || !mailbox.messages || mailbox.messages.length === 0) {
+  // TP-093: event-authoritative model — prefer audit events, fallback to directory scan
+  const auditEvents = mailbox?.auditEvents || [];
+  const dirMessages = mailbox?.messages || [];
+  const hasData = auditEvents.length > 0 || dirMessages.length > 0;
+
+  if (!mailbox || !hasData) {
     $panel.style.display = 'none';
     return;
   }
 
   $panel.style.display = '';
-  const messages = mailbox.messages;
   let html = '<div class="messages-list">';
 
-  for (const msg of messages) {
-    const ts = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
-    const direction = msg.to === 'supervisor' ? '\u2190 supervisor' : `\u2192 ${escapeHtml(msg.to || msg._agentDir || '')}`;
-    const statusBadge = msg._status === 'pending' ? '<span class="msg-badge msg-pending">pending</span>'
-      : msg._status === 'delivered' ? '<span class="msg-badge msg-delivered">delivered</span>'
-      : msg._status === 'reply' ? '<span class="msg-badge msg-reply">reply</span>'
-      : '';
-    const typeBadge = `<span class="msg-badge msg-type">${escapeHtml(msg.type || '')}</span>`;
-    const preview = (msg.content || '').slice(0, 120);
-
-    html += `<div class="message-row">`;
-    html += `<span class="msg-time">${escapeHtml(ts)}</span>`;
-    html += `<span class="msg-direction">${direction}</span>`;
-    html += typeBadge;
-    html += statusBadge;
-    html += `<span class="msg-preview">${escapeHtml(preview)}</span>`;
-    html += `</div>`;
+  if (auditEvents.length > 0) {
+    // Primary: render from audit event stream (authoritative, durable)
+    for (const evt of auditEvents) {
+      html += renderMailboxAuditEvent(evt);
+    }
+  } else {
+    // Fallback: render from directory scan (legacy compatibility)
+    for (const msg of dirMessages) {
+      html += renderMailboxDirMessage(msg);
+    }
   }
 
   html += '</div>';
   $body.innerHTML = html;
+}
+
+/** Render a single mailbox audit event (events.jsonl row). */
+function renderMailboxAuditEvent(evt) {
+  const ts = evt.ts ? new Date(evt.ts).toLocaleTimeString() : '';
+  const type = evt.type || '';
+
+  let direction = '';
+  let statusBadge = '';
+  let typeBadge = '';
+  let preview = '';
+
+  if (type === 'message_sent') {
+    const isBroadcast = evt.broadcast;
+    direction = isBroadcast ? '\u2192 all (broadcast)' : `\u2192 ${escapeHtml(evt.to || '')}`;
+    statusBadge = '<span class="msg-badge msg-delivered">sent</span>';
+    typeBadge = `<span class="msg-badge msg-type">${escapeHtml(evt.messageType || '')}</span>`;
+    preview = evt.contentPreview || '';
+  } else if (type === 'message_delivered') {
+    direction = `\u2192 ${escapeHtml(evt.to || '')}`;
+    statusBadge = evt.broadcast
+      ? '<span class="msg-badge msg-delivered">broadcast delivered</span>'
+      : '<span class="msg-badge msg-delivered">delivered</span>';
+    typeBadge = evt.messageType ? `<span class="msg-badge msg-type">${escapeHtml(evt.messageType)}</span>` : '';
+    preview = evt.contentPreview || '';
+  } else if (type === 'message_replied' || type === 'message_escalated') {
+    direction = `\u2190 ${escapeHtml(evt.from || '')}`;
+    statusBadge = type === 'message_escalated'
+      ? '<span class="msg-badge msg-reply">escalation</span>'
+      : '<span class="msg-badge msg-reply">reply</span>';
+    typeBadge = evt.messageType ? `<span class="msg-badge msg-type">${escapeHtml(evt.messageType)}</span>` : '';
+    preview = evt.contentPreview || '';
+  } else if (type === 'message_rate_limited') {
+    direction = `\u2192 ${escapeHtml(evt.to || '')}`;
+    statusBadge = '<span class="msg-badge msg-rate-limited">rate limited</span>';
+    const waitSec = evt.retryAfterMs ? Math.ceil(evt.retryAfterMs / 1000) : '?';
+    preview = `${evt.reason || 'Rate limited'} (retry in ${waitSec}s)`;
+  } else {
+    // Unknown event type — render generically
+    direction = evt.from ? `${escapeHtml(evt.from)}` : '';
+    preview = JSON.stringify(evt).slice(0, 120);
+  }
+
+  return `<div class="message-row">`
+    + `<span class="msg-time">${escapeHtml(ts)}</span>`
+    + `<span class="msg-direction">${direction}</span>`
+    + typeBadge
+    + statusBadge
+    + `<span class="msg-preview">${escapeHtml(preview)}</span>`
+    + `</div>`;
+}
+
+/** Render a single directory-scanned message (legacy fallback). */
+function renderMailboxDirMessage(msg) {
+  const ts = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
+  const direction = msg.to === 'supervisor' ? '\u2190 supervisor' : `\u2192 ${escapeHtml(msg.to || msg._agentDir || '')}`;
+  let statusBadge;
+  if (msg._status === 'pending') statusBadge = '<span class="msg-badge msg-pending">pending</span>';
+  else if (msg._status === 'delivered') statusBadge = '<span class="msg-badge msg-delivered">delivered</span>';
+  else if (msg._status === 'reply') statusBadge = '<span class="msg-badge msg-reply">reply</span>';
+  else if (msg._status === 'reply-acked') statusBadge = '<span class="msg-badge msg-delivered">reply (acked)</span>';
+  else statusBadge = '';
+  const typeBadge = `<span class="msg-badge msg-type">${escapeHtml(msg.type || '')}</span>`;
+  const preview = (msg.content || '').slice(0, 120);
+  const broadcastTag = msg._isBroadcast ? ' <span class="msg-badge msg-type">broadcast</span>' : '';
+
+  return `<div class="message-row">`
+    + `<span class="msg-time">${escapeHtml(ts)}</span>`
+    + `<span class="msg-direction">${direction}</span>`
+    + typeBadge
+    + statusBadge
+    + broadcastTag
+    + `<span class="msg-preview">${escapeHtml(preview)}</span>`
+    + `</div>`;
 }
 
 

@@ -482,13 +482,16 @@ These are registered as supervisor extension tools (same pattern as
 - ✅ Rate limiting: max 1 message per agent per 30 seconds (in-memory tracker)
 - ✅ `send_agent_message` enforces rate limit with retry-after countdown
 
-### Phase 5: Dashboard mailbox panel
+### Phase 5: Dashboard mailbox panel ✅ Implemented (TP-107, TP-093)
 
-- "Messages" section in dashboard showing per-agent message activity
-- Columns: timestamp, direction (→agent / ←supervisor), type, content preview,
-  status (pending/delivered/replied)
-- Read from `mailbox/{batchId}/` directory (inbox, ack, outbox)
-- Real-time updates via dashboard polling (same cadence as lane state)
+- ✅ "Messages" section in dashboard showing per-agent message activity
+- ✅ Columns: timestamp, direction (→agent / ←supervisor), type, content preview, status
+- ✅ Event-authoritative model: primary source is `.pi/mailbox/{batchId}/events.jsonl`
+- ✅ Fallback: directory scans (inbox/ack/outbox/outbox/processed) for legacy compatibility
+- ✅ Consumed replies included (outbox/processed/) — replies don't disappear after ack
+- ✅ Broadcast delivery shown per-recipient with `_isBroadcast` flag
+- ✅ Rate-limited events surfaced in panel timeline
+- ✅ Real-time updates via dashboard SSE polling (same cadence as lane state)
 
 ## Open Questions
 
