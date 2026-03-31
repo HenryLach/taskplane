@@ -170,7 +170,7 @@ export async function executeTaskV2(
 		if (pauseSignal.paused) {
 			logExecution(statusPath, "Paused", `User paused at iteration ${totalIterations}`);
 			return makeResult(taskId, workerAgentId, "skipped", startTime,
-				"Paused by user", false, totalIterations, cumulativeCostUsd, cumulativeTokens);
+				"Paused by user", false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath);
 		}
 
 		// Determine remaining steps
@@ -321,7 +321,7 @@ export async function executeTaskV2(
 			if (noProgressCount >= config.noProgressLimit) {
 				logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
 				return makeResult(taskId, workerAgentId, "failed", startTime,
-					`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens);
+					`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath);
 			}
 		} else {
 			noProgressCount = 0;
@@ -362,7 +362,7 @@ export async function executeTaskV2(
 		logExecution(statusPath, "Task incomplete", `Max iterations reached. Incomplete: ${incomplete}`);
 		return makeResult(taskId, workerAgentId, "failed", startTime,
 			`Max iterations (${config.maxIterations}) reached with incomplete steps: ${incomplete}`,
-			false, totalIterations, cumulativeCostUsd, cumulativeTokens);
+			false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath);
 	}
 
 	// Create .DONE if not already present
@@ -373,7 +373,7 @@ export async function executeTaskV2(
 	logExecution(statusPath, "Task complete", ".DONE created");
 
 	return makeResult(taskId, workerAgentId, "succeeded", startTime,
-		".DONE file created by lane-runner", true, totalIterations, cumulativeCostUsd, cumulativeTokens);
+		".DONE file created by lane-runner", true, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -388,8 +388,10 @@ function makeResult(
 	iterations: number,
 	costUsd: number,
 	totalTokens: number,
+	config?: LaneRunnerConfig,
+	statusPath?: string,
 ): LaneRunnerTaskResult {
-	return {
+	const result: LaneRunnerTaskResult = {
 		outcome: {
 			taskId,
 			status,
@@ -403,6 +405,14 @@ function makeResult(
 		costUsd,
 		totalTokens,
 	};
+
+	// Emit terminal snapshot so dashboard/registry reflect final state
+	if (config && statusPath) {
+		const terminalStatus = status === "succeeded" ? "complete" as const : "failed" as const;
+		emitSnapshot(config, taskId, terminalStatus, {}, statusPath);
+	}
+
+	return result;
 }
 
 function emitSnapshot(

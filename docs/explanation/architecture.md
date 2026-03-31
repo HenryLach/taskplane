@@ -167,6 +167,24 @@ File-based state is intentional: recoverability and inspectability are first-cla
 
 ---
 
+## Runtime V2 (in progress)
+
+Taskplane is migrating to a **no-TMUX direct-child execution backend** called
+Runtime V2. The migration is incremental:
+
+- **Single-task `/orch <PROMPT.md>` in repo mode** currently routes through the
+  new Runtime V2 lane-runner (`executeLaneV2`), which spawns workers via
+  `agent-host.ts` as direct child processes — no TMUX sessions.
+- **Multi-task batches** and **workspace mode** continue to use the legacy
+  TMUX-backed path until TP-108 and TP-109 complete the migration.
+- The engine selects the backend automatically based on batch characteristics.
+  Workspace mode always falls back to legacy with an operator notification.
+
+See `docs/specifications/framework/taskplane-runtime-v2/` for the full
+architecture plan.
+
+---
+
 ## Related
 
 - [Execution Model](execution-model.md)

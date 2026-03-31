@@ -2297,6 +2297,16 @@ export function ensureTaskFilesCommitted(
  * @param workspaceConfig   - Workspace configuration for repo routing (null/undefined = repo mode)
  * @returns WaveExecutionResult with outcomes and blocked task IDs
  */
+/**
+ * Runtime backend selector for lane execution.
+ *
+ * - `"legacy"`: TMUX-backed path (spawnLaneSession → task-runner TASK_AUTOSTART)
+ * - `"v2"`: Direct-child path (lane-runner → agent-host → pi --mode rpc)
+ *
+ * @since TP-105
+ */
+export type RuntimeBackend = "legacy" | "v2";
+
 export async function executeWave(
 	waveTasks: string[],
 	waveIndex: number,
@@ -2310,6 +2320,7 @@ export async function executeWave(
 	onMonitorUpdate?: MonitorUpdateCallback,
 	onLanesAllocated?: (lanes: AllocatedLane[]) => void,
 	workspaceConfig?: WorkspaceConfig | null,
+	runtimeBackend?: RuntimeBackend,
 ): Promise<WaveExecutionResult> {
 	const startedAt = Date.now();
 	const policy = config.failure.on_task_failure;
@@ -2392,10 +2403,15 @@ export async function executeWave(
 	// configPath is .pi/taskplane-workspace.yaml → parent of parent is workspace root.
 	const wsRoot = workspaceConfig ? dirname(dirname(workspaceConfig.configPath)) : undefined;
 	const isWsMode = !!workspaceConfig;
+	const backend = runtimeBackend ?? "legacy";
+	if (backend === "v2") {
+		execLog("wave", `W${waveIndex}`, "using Runtime V2 backend (executeLaneV2)");
+	}
+
 	const lanePromises = lanes.map(lane =>
-		executeLane(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode, {
-			ORCH_BATCH_ID: batchId,
-		}),
+		backend === "v2"
+			? executeLaneV2(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode, { ORCH_BATCH_ID: batchId })
+			: executeLane(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode, { ORCH_BATCH_ID: batchId }),
 	);
 
 	// Start monitoring as a sibling async loop

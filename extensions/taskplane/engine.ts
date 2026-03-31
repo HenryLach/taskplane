@@ -6,7 +6,8 @@ import { existsSync, readdirSync, readFileSync, unlinkSync } from "fs";
 import { join, resolve } from "path";
 
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
-import { computeTransitiveDependents, execLog, executeLane, executeWave, tmuxKillSession } from "./execution.ts";
+import { computeTransitiveDependents, execLog, executeLane, executeLaneV2, executeWave, tmuxKillSession } from "./execution.ts";
+import type { RuntimeBackend } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 // classifyExit no longer called directly — Tier 0 uses exitDiagnostic.classification
 // from the diagnostic-reports pipeline (populated by assembleDiagnosticInput).
@@ -87,6 +88,7 @@ async function attemptWorkerCrashRetry(
 	onNotify: (message: string, level: "info" | "warning" | "error") => void,
 	stateRoot: string,
 	runnerConfig?: TaskRunnerConfig,
+	runtimeBackend?: RuntimeBackend,
 ): Promise<{ retriedCount: number; succeededRetries: string[]; failedRetries: string[] }> {
 	if (!batchState.resilience) {
 		batchState.resilience = defaultResilienceState();
@@ -221,7 +223,8 @@ async function attemptWorkerCrashRetry(
 			// may be paused due to stop-wave policy, but Tier 0 retry should
 			// attempt recovery before the stop decision takes effect (R002-4).
 			const retryPauseSignal = { paused: false };
-			const retryResult = await executeLane(
+			const retryExecutor = (runtimeBackend === "v2") ? executeLaneV2 : executeLane;
+			const retryResult = await retryExecutor(
 				retryLane,
 				orchConfig,
 				repoRoot,
@@ -374,6 +377,7 @@ async function attemptModelFallbackRetry(
 	onNotify: (message: string, level: "info" | "warning" | "error") => void,
 	stateRoot: string,
 	runnerConfig?: TaskRunnerConfig,
+	runtimeBackend?: RuntimeBackend,
 ): Promise<{ retriedCount: number; succeededRetries: string[]; failedRetries: string[] }> {
 	// Short-circuit: if model fallback is disabled, skip entirely
 	const modelFallbackMode = runnerConfig?.model_fallback ?? "inherit";
@@ -487,7 +491,8 @@ async function attemptModelFallbackRetry(
 			// the task-runner to use the session model instead of configured model.
 			// TP-089: Also include ORCH_BATCH_ID so mailbox steering works for retries.
 			const modelFallbackEnv = { TASKPLANE_MODEL_FALLBACK: "1", ORCH_BATCH_ID: batchState.batchId };
-			const retryResult = await executeLane(
+			const retryExecutor = (runtimeBackend === "v2") ? executeLaneV2 : executeLane;
+			const retryResult = await retryExecutor(
 				retryLane,
 				orchConfig,
 				repoRoot,
@@ -623,6 +628,7 @@ async function attemptStaleWorktreeRecovery(
 	onMonitorUpdate: MonitorUpdateCallback | undefined,
 	onLanesAllocated: (lanes: AllocatedLane[]) => void,
 	stateRoot: string,
+	runtimeBackend?: RuntimeBackend,
 ): Promise<WaveExecutionResult | null> {
 	// Only attempt recovery for ALLOC_WORKTREE_FAILED
 	if (!waveResult.allocationError || waveResult.allocationError.code !== "ALLOC_WORKTREE_FAILED") {
@@ -722,6 +728,7 @@ async function attemptStaleWorktreeRecovery(
 		onMonitorUpdate,
 		onLanesAllocated,
 		workspaceConfig,
+		runtimeBackend,
 	);
 
 	return retryResult;
@@ -1049,6 +1056,23 @@ export async function executeOrchBatch(
 	// ── TS-009: Persist state on batch start (after wave computation) ──
 	persistRuntimeState("batch-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 
+	// ── TP-105: Runtime V2 backend selection ────────────────────
+	// Use Runtime V2 (no-TMUX lane-runner) when ALL conditions are met:
+	//   1. Exactly one task in the batch (single-task /orch <PROMPT.md>)
+	//   2. Repo mode (not workspace mode — workspace deferred to TP-109)
+	// Otherwise, fall back to the legacy TMUX-backed path.
+	const isSingleTask = rawWaves.length === 1 && rawWaves[0].length === 1;
+	const isRepoMode = !workspaceConfig;
+	const selectedBackend: RuntimeBackend = (isSingleTask && isRepoMode) ? "v2" : "legacy";
+
+	if (selectedBackend === "v2") {
+		execLog("batch", batchState.batchId, "Runtime V2 backend selected (single-task repo mode)");
+		onNotify("🚀 Using Runtime V2 backend (no-TMUX direct execution)", "info");
+	} else if (isSingleTask && !isRepoMode) {
+		execLog("batch", batchState.batchId, "Runtime V2 not used: workspace mode (deferred to TP-109), falling back to legacy");
+		onNotify("ℹ️ Using legacy execution backend (workspace mode not yet supported on Runtime V2)", "info");
+	}
+
 	for (let waveIdx = 0; waveIdx < rawWaves.length; waveIdx++) {
 		// Check pause signal before starting each wave
 		if (batchState.pauseSignal.paused) {
@@ -1134,6 +1158,7 @@ export async function executeOrchBatch(
 			handleWaveMonitorUpdate,
 			onLanesAllocatedCb,
 			workspaceConfig,
+			selectedBackend,
 		);
 
 		// ── TP-039: Tier 0 — Stale worktree recovery ────────────
@@ -1153,6 +1178,7 @@ export async function executeOrchBatch(
 				handleWaveMonitorUpdate,
 				onLanesAllocatedCb,
 				stateRoot,
+				selectedBackend,
 			);
 			if (retryResult) {
 				const staleRecovered = !retryResult.allocationError;
@@ -1219,6 +1245,7 @@ export async function executeOrchBatch(
 				onNotify,
 				stateRoot,
 				runnerConfig,
+				selectedBackend,
 			);
 			if (modelFallbackOutcome.succeededRetries.length > 0) {
 				// Recompute blocked tasks after model fallback successes
@@ -1252,6 +1279,8 @@ export async function executeOrchBatch(
 				allTaskOutcomes,
 				onNotify,
 				stateRoot,
+				undefined,
+				selectedBackend,
 			);
 			if (retryOutcome.succeededRetries.length > 0) {
 				// Recompute blockedTaskIds from remaining failures (R002-2).

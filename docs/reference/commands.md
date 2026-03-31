@@ -174,6 +174,14 @@ States are evaluated in the order shown above (active batch and completed batch 
 - On completion, shows integration guidance (or auto-integrates if `integration` is set to `auto`)
 - Can be used with a single task path when you want `/task` semantics with worktree isolation
 
+**Runtime V2 backend (migration in progress)**
+
+When `/orch` is invoked with a single direct PROMPT.md path in repo mode
+(not workspace mode), the engine uses the **Runtime V2 backend** which
+spawns workers as direct child processes without TMUX. Multi-task batches
+and workspace mode continue to use the legacy TMUX-backed backend.
+The selection is automatic and logged for operator visibility.
+
 **Onboarding flow (no config)**
 
 When `/orch` detects no Taskplane configuration, the supervisor walks the operator through first-time setup:
