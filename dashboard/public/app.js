@@ -55,6 +55,39 @@ function formatCost(usd) {
   return `$${usd.toFixed(2)}`;
 }
 
+/**
+ * TP-107: Check if a lane has a live agent via the Runtime V2 registry.
+ * Returns true/false if registry data is available, null if no V2 data.
+ */
+function isLaneAliveV2(laneNumber) {
+  if (!currentData || !currentData.runtimeRegistry || !currentData.runtimeRegistry.agents) return null;
+  const agents = Object.values(currentData.runtimeRegistry.agents);
+  const laneAgents = agents.filter(a => a.laneNumber === laneNumber);
+  if (laneAgents.length === 0) return null;
+  return laneAgents.some(a => a.status === 'running' || a.status === 'spawning');
+}
+
+/**
+ * TP-107: Merge Runtime V2 lane snapshot data onto legacy lane state.
+ * V2 fields take precedence when present; legacy fields are preserved as fallback.
+ */
+function mergeV2LaneSnapshot(legacyLs, v2snap) {
+  const base = legacyLs ? { ...legacyLs } : {};
+  // Overlay V2 fields onto legacy shape
+  if (v2snap.workerStatus) base.workerStatus = v2snap.workerStatus;
+  if (v2snap.workerElapsed != null) base.workerElapsed = v2snap.workerElapsed;
+  if (v2snap.workerContextPct != null) base.workerContextPct = v2snap.workerContextPct;
+  if (v2snap.workerToolCount != null) base.workerToolCount = v2snap.workerToolCount;
+  if (v2snap.workerLastTool) base.workerLastTool = v2snap.workerLastTool;
+  if (v2snap.workerCostUsd != null) base.workerCostUsd = v2snap.workerCostUsd;
+  if (v2snap.workerInputTokens != null) base.workerInputTokens = v2snap.workerInputTokens;
+  if (v2snap.workerOutputTokens != null) base.workerOutputTokens = v2snap.workerOutputTokens;
+  if (v2snap.workerCacheReadTokens != null) base.workerCacheReadTokens = v2snap.workerCacheReadTokens;
+  if (v2snap.workerCacheWriteTokens != null) base.workerCacheWriteTokens = v2snap.workerCacheWriteTokens;
+  if (v2snap.taskId) base.taskId = v2snap.taskId;
+  return base;
+}
+
 /** Build a compact token summary string from lane state sidecar data.
  *  Display: ↑total_input ↓output (cost)
  *  Anthropic splits input into: uncached `input` + `cacheRead`.
@@ -428,6 +461,8 @@ function renderLanesTasks(batch, tmuxSessions) {
   const tmuxSet = new Set(tmuxSessions || []);
   const laneStates = currentData?.laneStates || {};
   const telemetry = currentData?.telemetry || {};
+  // TP-107: V2 lane snapshots take precedence over legacy lane states when present
+  const v2Snapshots = currentData?.runtimeLaneSnapshots || {};
   const showRepos = knownRepos.length >= 2;
   let html = "";
 
@@ -440,7 +475,9 @@ function renderLanesTasks(batch, tmuxSessions) {
       if (!laneMatchesRepo) continue;
     }
 
-    const alive = tmuxSet.has(lane.tmuxSessionName);
+    // TP-107: check V2 registry for liveness first, fall back to tmux
+    const v2Alive = isLaneAliveV2(lane.laneNumber);
+    const alive = v2Alive !== null ? v2Alive : tmuxSet.has(lane.tmuxSessionName);
     const tmuxCmd = `tmux attach -t ${lane.tmuxSessionName}`;
 
     // Lane header
@@ -475,7 +512,10 @@ function renderLanesTasks(batch, tmuxSessions) {
     }
 
     // Get lane state and telemetry for worker stats
-    const ls = laneStates[lane.tmuxSessionName] || null;
+    // TP-107: V2 lane snapshots take precedence when present
+    const v2snap = v2Snapshots[lane.laneNumber] || null;
+    const legacyLs = laneStates[lane.tmuxSessionName] || null;
+    const ls = v2snap ? mergeV2LaneSnapshot(legacyLs, v2snap) : legacyLs;
     const tel = telemetry[lane.tmuxSessionName] || null;
 
     for (const task of laneTasks) {
@@ -1299,7 +1339,31 @@ let convRenderedLines = 0;
 // STATUS.md diff-and-skip state
 let lastStatusMdText = "";
 
-// ── Open conversation viewer ────────────────────────────────────────────────
+// ── Open conversation viewer (TP-107: V2 events preferred, legacy fallback) ──
+
+/**
+ * Resolve a lane's tmux session name to a Runtime V2 agent ID via the registry.
+ * Returns null if no V2 registry data is available.
+ */
+function resolveV2AgentId(sessionName) {
+  if (!currentData || !currentData.runtimeRegistry || !currentData.runtimeRegistry.agents) return null;
+  const agents = currentData.runtimeRegistry.agents;
+  // Direct match on agentId
+  if (agents[sessionName]) return sessionName;
+  // Match by tmux session prefix + "-worker" suffix (common V2 naming)
+  const workerKey = sessionName + '-worker';
+  if (agents[workerKey]) return workerKey;
+  // Search by laneNumber match from lane snapshots
+  for (const [id, agent] of Object.entries(agents)) {
+    if (agent.role === 'worker' && agent.laneNumber != null) {
+      const m = sessionName.match(/lane-(d+)/);
+      if (m && parseInt(m[1]) === agent.laneNumber) return id;
+    }
+  }
+  return null;
+}
+
+let viewerV2AgentId = null; // Runtime V2 agent ID for current conversation view
 
 function viewConversation(sessionName) {
   // Toggle off if already viewing this session
@@ -1315,7 +1379,12 @@ function viewConversation(sessionName) {
   autoScrollOn = true;
   convRenderedLines = 0;
 
-  $terminalTitle.textContent = `Worker Conversation — ${sessionName}`;
+  // TP-107: Resolve V2 agent ID for events endpoint
+  const v2AgentId = resolveV2AgentId(sessionName);
+  viewerV2AgentId = v2AgentId;
+
+  const label = v2AgentId || sessionName;
+  $terminalTitle.textContent = `Worker Conversation — ${label}`;
   $autoScrollText.textContent = 'Follow feed';
   $autoScrollCheckbox.checked = true;
   $terminalPanel.style.display = '';
@@ -1328,9 +1397,21 @@ function viewConversation(sessionName) {
 }
 
 function pollConversation() {
-  fetch(`/api/conversation/${encodeURIComponent(viewerTarget)}`)
-    .then(r => r.text())
-    .then(text => {
+  // TP-107: prefer V2 agent events when available, fallback to legacy conversation
+  const endpoint = viewerV2AgentId
+    ? `/api/agent-events/${encodeURIComponent(viewerV2AgentId)}`
+    : `/api/conversation/${encodeURIComponent(viewerTarget)}`;
+  const isV2 = !!viewerV2AgentId;
+
+  fetch(endpoint)
+    .then(r => isV2 ? r.json() : r.text())
+    .then(data => {
+      if (isV2) {
+        renderV2AgentEvents(data);
+        return;
+      }
+      // Legacy: data is JSONL text
+      const text = data;
       if (!text.trim()) {
         if (convRenderedLines === 0) {
           $terminalBody.innerHTML = '<div class="conv-empty">No conversation events yet…</div>';
@@ -1379,6 +1460,80 @@ function pollConversation() {
       }
     })
     .catch(() => {});
+}
+
+// ── Runtime V2 agent event renderer (TP-107) ──────────────────────────────
+
+let v2EventsRendered = 0;
+
+function renderV2AgentEvents(events) {
+  if (!Array.isArray(events) || events.length === 0) {
+    if (v2EventsRendered === 0) {
+      $terminalBody.innerHTML = '<div class="conv-empty">No agent events yet…</div>';
+    }
+    return;
+  }
+
+  // Reset check
+  if (events.length < v2EventsRendered) {
+    v2EventsRendered = 0;
+    const container = $terminalBody.querySelector('.conv-stream');
+    if (container) container.innerHTML = '';
+  }
+
+  if (events.length === v2EventsRendered) return;
+
+  let container = $terminalBody.querySelector('.conv-stream');
+  if (!container) {
+    $terminalBody.innerHTML = '';
+    container = document.createElement('div');
+    container.className = 'conv-stream';
+    $terminalBody.appendChild(container);
+  }
+
+  const newEvents = events.slice(v2EventsRendered);
+  for (const evt of newEvents) {
+    const html = renderV2Event(evt);
+    if (html) container.insertAdjacentHTML('beforeend', html);
+  }
+
+  v2EventsRendered = events.length;
+
+  if (autoScrollOn) {
+    isProgrammaticScroll = true;
+    $terminalBody.scrollTop = $terminalBody.scrollHeight;
+    requestAnimationFrame(() => { isProgrammaticScroll = false; });
+  }
+}
+
+function renderV2Event(evt) {
+  const ts = evt.ts ? new Date(evt.ts).toLocaleTimeString() : '';
+  const type = evt.type || 'unknown';
+
+  switch (type) {
+    case 'assistant_message':
+      return `<div class="conv-event conv-assistant"><span class="conv-ts">${escapeHtml(ts)}</span><span class="conv-role">assistant</span><span class="conv-text">${escapeHtml((evt.payload?.text || '').slice(0, 2000))}</span></div>`;
+    case 'prompt_sent':
+      return `<div class="conv-event conv-user"><span class="conv-ts">${escapeHtml(ts)}</span><span class="conv-role">user</span><span class="conv-text">${escapeHtml((evt.payload?.text || '').slice(0, 2000))}</span></div>`;
+    case 'tool_call':
+      return `<div class="conv-event conv-tool"><span class="conv-ts">${escapeHtml(ts)}</span><span class="conv-role">tool</span><span class="conv-text">${escapeHtml(evt.payload?.tool || type)} ${escapeHtml((evt.payload?.path || '').slice(0, 200))}</span></div>`;
+    case 'tool_result':
+      return `<div class="conv-event conv-tool-result"><span class="conv-ts">${escapeHtml(ts)}</span><span class="conv-role">result</span><span class="conv-text">${escapeHtml((evt.payload?.summary || '').slice(0, 500))}</span></div>`;
+    case 'agent_started':
+      return `<div class="conv-event conv-lifecycle"><span class="conv-ts">${escapeHtml(ts)}</span><span class="conv-role">▶</span><span class="conv-text">Agent started (${escapeHtml(evt.role || '')} lane ${evt.laneNumber ?? '?'})</span></div>`;
+    case 'agent_exited':
+      return `<div class="conv-event conv-lifecycle"><span class="conv-ts">${escapeHtml(ts)}</span><span class="conv-role">■</span><span class="conv-text">Agent exited (code ${evt.payload?.exitCode ?? '?'})</span></div>`;
+    case 'agent_crashed':
+    case 'agent_killed':
+    case 'agent_timeout':
+      return `<div class="conv-event conv-lifecycle conv-error"><span class="conv-ts">${escapeHtml(ts)}</span><span class="conv-role">⚠</span><span class="conv-text">${escapeHtml(type)} ${escapeHtml(evt.payload?.reason || '')}</span></div>`;
+    case 'message_delivered':
+      return `<div class="conv-event conv-steer"><span class="conv-ts">${escapeHtml(ts)}</span><span class="conv-role">✉</span><span class="conv-text">Steering: ${escapeHtml((evt.payload?.content || '').slice(0, 500))}</span></div>`;
+    case 'context_pressure':
+      return `<div class="conv-event conv-lifecycle"><span class="conv-ts">${escapeHtml(ts)}</span><span class="conv-role">⚠</span><span class="conv-text">Context pressure: ${evt.payload?.pct ?? '?'}%</span></div>`;
+    default:
+      return `<div class="conv-event conv-lifecycle"><span class="conv-ts">${escapeHtml(ts)}</span><span class="conv-role">•</span><span class="conv-text">${escapeHtml(type)}</span></div>`;
+  }
 }
 
 // ── Open STATUS.md viewer ───────────────────────────────────────────────────
@@ -1617,8 +1772,10 @@ function closeViewer() {
   }
   viewerMode = null;
   viewerTarget = null;
+  viewerV2AgentId = null;
   autoScrollOn = false;
   convRenderedLines = 0;
+  v2EventsRendered = 0;
   lastStatusMdText = '';
   $terminalPanel.style.display = 'none';
   $terminalBody.innerHTML = '';

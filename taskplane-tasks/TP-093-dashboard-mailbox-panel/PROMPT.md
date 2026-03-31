@@ -134,4 +134,42 @@ for this task MUST include the task ID for traceability:
 
 ## Amendments (Added During Execution)
 
-<!-- Workers add amendments here if issues discovered during execution. -->
+### 2026-03-31 — Runtime V2 re-scope amendment (supersedes legacy assumptions where conflicting)
+
+Context update: TP-107 introduced an initial Runtime V2 Messages panel and mailbox loader, but mailbox observability is not yet fully authoritative. TP-093 should now be treated as **mailbox panel correctness/completeness hardening**.
+
+#### What TP-107 already delivered
+
+- `loadMailboxData(batchId)` on dashboard server
+- Messages panel in dashboard UI
+- Basic pending/delivered/reply badges and rendering
+
+#### Remaining TP-093 mission (Runtime V2 delta)
+
+1. **Event-authoritative model:** derive message history primarily from mailbox audit/events (`.pi/mailbox/{batchId}/events.jsonl`) with directory scans as compatibility/fallback.
+2. **Reply durability:** include consumed replies (`outbox/processed`) so replies do not disappear after lane-runner ack.
+3. **Broadcast correctness:** model broadcast delivery per recipient (not just `_broadcast` source file state) to avoid ambiguous status.
+4. **Rate-limit visibility:** surface `message_rate_limited` events in panel timeline.
+5. **Migration precedence:** document and enforce precedence when Runtime V2 and legacy mailbox artifacts co-exist.
+
+#### Revised context to read first (in addition to original)
+
+- `docs/specifications/framework/taskplane-runtime-v2/04-observability-and-dashboard.md`
+- `extensions/taskplane/mailbox.ts` (audit event schema)
+- `extensions/taskplane/agent-host.ts` (broadcast ack-marker semantics)
+- `dashboard/server.cjs` + `dashboard/public/app.js` current TP-107 implementation
+
+#### Revised file scope priority
+
+- `dashboard/server.cjs`
+- `dashboard/public/app.js`
+- `dashboard/public/style.css`
+- `dashboard/public/index.html`
+- `docs/specifications/taskplane/agent-mailbox-steering.md`
+- `docs/specifications/framework/taskplane-runtime-v2/04-observability-and-dashboard.md`
+
+#### Acceptance addendum
+
+- Dashboard Messages panel reflects durable mailbox history (sent/delivered/replied/escalated/rate-limited) under normal Runtime V2 ack flow.
+- Broadcast rows are recipient-aware and do not show contradictory pending/delivered states.
+- Legacy compatibility remains, but Runtime V2 artifacts are authoritative when present.

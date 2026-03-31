@@ -126,4 +126,41 @@ for this task MUST include the task ID for traceability:
 
 ## Amendments (Added During Execution)
 
-<!-- Workers add amendments here if issues discovered during execution. -->
+### 2026-03-31 — Runtime V2 re-scope amendment (supersedes legacy assumptions where conflicting)
+
+Context update: substantial TP-091 scope was implemented under TP-106 (Runtime V2 mailbox rollout), but TP-091/092/093 status tracking remained not-started. Treat this task as a **delta-closure and traceability task**, not greenfield implementation.
+
+#### Already delivered (do not re-implement)
+
+- Outbox write/read/ack plumbing (`writeOutboxMessage`, `readOutbox`, `ackOutboxMessage`)
+- Supervisor tool registration for `read_agent_replies`
+- Runtime V2 lane-runner outbox polling + alert emission path
+- Bridge tools for agent→supervisor messages
+
+#### Remaining TP-091 mission (Runtime V2 delta)
+
+1. **Reply lifecycle truth model:** `read_agent_replies` must support durable visibility over consumed replies (outbox + processed + mailbox audit/event stream) so messages do not disappear immediately after ack.
+2. **Registry-first identity contract:** all targeting/discovery must use Runtime V2 registry-backed `agentId` identity; TMUX/session assumptions are legacy fallback only.
+3. **Supervisor alert parity:** verify reply/escalation fanout is surfaced consistently to supervisor UX and dashboard inputs on Runtime V2 path.
+4. **Tool semantics/docs parity:** ensure `read_agent_replies` behavior (read-only vs consume) is explicit and matches implementation.
+
+#### Revised context to read first (in addition to original)
+
+- `extensions/taskplane/extension.ts` (tool wiring and registry-backed discovery)
+- `extensions/taskplane/lane-runner.ts` (outbox polling + alert fanout)
+- `extensions/taskplane/mailbox.ts` (outbox/processed/audit semantics)
+- `docs/specifications/framework/taskplane-runtime-v2/03-bridge-and-mailbox.md`
+
+#### Revised file scope priority
+
+- `extensions/taskplane/extension.ts`
+- `extensions/taskplane/lane-runner.ts`
+- `extensions/taskplane/mailbox.ts`
+- `extensions/tests/mailbox-v2.test.ts`
+- `extensions/tests/supervisor-alerts.test.ts`
+
+#### Acceptance addendum
+
+- `read_agent_replies` returns stable, non-lossy operator-visible history across normal ack flow.
+- Reply/escalation alerts are visible in Runtime V2 supervisor surfaces without TMUX dependence.
+- No regressions to TP-106 behavior/tests.

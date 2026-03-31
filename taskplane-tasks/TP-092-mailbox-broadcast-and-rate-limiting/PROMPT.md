@@ -111,4 +111,41 @@ for this task MUST include the task ID for traceability:
 
 ## Amendments (Added During Execution)
 
-<!-- Workers add amendments here if issues discovered during execution. -->
+### 2026-03-31 — Runtime V2 re-scope amendment (supersedes legacy assumptions where conflicting)
+
+Context update: core TP-092 capabilities were implemented during TP-106 Runtime V2 mailbox work. Treat TP-092 as a **policy/semantics hardening delta** and traceability closure.
+
+#### Already delivered (do not re-implement)
+
+- `broadcast_message(content, type?)` tool
+- `_broadcast` mailbox writes and agent-host delivery checks
+- Per-agent 30s rate limiting for direct and broadcast sends
+- Registry-backed known-agent discovery
+
+#### Remaining TP-092 mission (Runtime V2 delta)
+
+1. **Broadcast delivery semantics:** represent delivery status per recipient deterministically (broadcast source + per-agent ack markers) to avoid ambiguous pending/delivered states.
+2. **Rate-limit policy clarity:** codify and test all-or-none behavior for broadcasts when any recipient is rate-limited.
+3. **Audit completeness:** ensure broadcast send + per-agent limit rejections are consistently written to mailbox audit events for dashboard/supervisor consumption.
+4. **Docs parity:** align command docs/spec language to current runtime semantics (agent IDs, registry-first validation, legacy fallback behavior).
+
+#### Revised context to read first (in addition to original)
+
+- `extensions/taskplane/extension.ts` (`doBroadcastMessage`, `doSendAgentMessage`)
+- `extensions/taskplane/agent-host.ts` (broadcast fan-out + per-agent ack marker behavior)
+- `extensions/taskplane/mailbox.ts` (audit events)
+- `docs/specifications/framework/taskplane-runtime-v2/03-bridge-and-mailbox.md`
+
+#### Revised file scope priority
+
+- `extensions/taskplane/extension.ts`
+- `extensions/taskplane/agent-host.ts`
+- `extensions/taskplane/mailbox.ts`
+- `extensions/tests/mailbox-v2.test.ts`
+- `docs/reference/commands.md`
+
+#### Acceptance addendum
+
+- Broadcast rate-limit and delivery semantics are deterministic and operator-understandable.
+- Audit trail is sufficient for downstream dashboard message-state derivation.
+- No regressions to TP-106 mailbox/rate-limit behavior.

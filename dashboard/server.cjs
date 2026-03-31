@@ -1352,9 +1352,25 @@ function createServer() {
       const prefix = pathname.slice("/api/conversation/".length);
       serveConversation(req, res, prefix);
     } else if (pathname.startsWith("/api/agent-events/") && req.method === "GET") {
-      // TP-107: Serve Runtime V2 agent events
+      // TP-107: Serve Runtime V2 agent events (hardened)
       const agentId = decodeURIComponent(pathname.slice("/api/agent-events/".length));
+      // Strict validation: same pattern as /api/conversation/:prefix
+      if (!/^[\w-]+$/.test(agentId)) {
+        res.writeHead(400, { "Content-Type": "text/plain" });
+        res.end("Invalid agent ID");
+        return;
+      }
       const batchState = loadBatchState();
+      // Path containment: verify resolved path stays inside runtime dir
+      if (batchState?.batchId) {
+        const runtimeBase = path.join(REPO_ROOT, ".pi", "runtime", batchState.batchId, "agents");
+        const resolvedAgent = path.resolve(runtimeBase, agentId);
+        if (!resolvedAgent.startsWith(path.resolve(runtimeBase))) {
+          res.writeHead(403, { "Content-Type": "text/plain" });
+          res.end("Forbidden");
+          return;
+        }
+      }
       const events = loadRuntimeAgentEvents(batchState?.batchId, agentId, 300);
       res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
       res.end(JSON.stringify(events));

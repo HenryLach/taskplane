@@ -1795,3 +1795,16 @@ body {
   white-space: nowrap;
   flex: 1;
 }
+.msg-rate-limited {
+  background: var(--red);
+  color: var(--bg-primary);
+}
+
+/* TP-107: V2 conversation event styles */
+.conv-steer {
+  border-left: 3px solid var(--blue);
+  padding-left: 8px;
+}
+.conv-error {
+  color: var(--red);
+}
