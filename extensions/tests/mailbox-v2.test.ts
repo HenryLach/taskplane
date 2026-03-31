@@ -544,4 +544,10 @@ describe("12.x: Dashboard V2 source contracts", () => {
 		expect(block).toContain("_agentDir !== '_broadcast'");
 		expect(block).toContain("(broadcast)");
 	});
+
+	it("12.7: server fallback marks agent-dir broadcast rows with _isBroadcast", () => {
+		const serverSrc = readFileSync(join(__dirname, "..", "..", "dashboard", "server.cjs"), "utf-8");
+		expect(serverSrc).toContain('const isBroadcast = msg.to === "_broadcast"');
+		expect(serverSrc).toContain("_isBroadcast: isBroadcast");
+	});
 });
