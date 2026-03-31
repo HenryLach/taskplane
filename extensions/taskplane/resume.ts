@@ -1276,6 +1276,9 @@ export async function resumeOrchBatch(
 				stateRoot,
 				agentRoot,
 				runnerConfig.testing_commands,
+				undefined, // healthMonitor
+				undefined, // forceMixedOutcome
+				resumeBackend,
 			);
 
 			if (reExecMergeResult.status === "succeeded") {
@@ -1541,6 +1544,9 @@ export async function resumeOrchBatch(
 					stateRoot,
 					agentRoot,
 					runnerConfig.testing_commands,
+					undefined, // healthMonitor
+					undefined, // forceMixedOutcome
+					resumeBackend,
 				);
 				batchState.mergeResults.push(mergeRetryResult);
 
@@ -1753,6 +1759,9 @@ export async function resumeOrchBatch(
 					stateRoot,
 					agentRoot,
 					runnerConfig.testing_commands,
+					undefined, // healthMonitor
+					undefined, // forceMixedOutcome
+					resumeBackend,
 				);
 				batchState.mergeResults.push(mergeResult);
 
@@ -1917,6 +1926,9 @@ export async function resumeOrchBatch(
 							stateRoot,
 							agentRoot,
 							runnerConfig.testing_commands,
+							undefined, // healthMonitor
+							undefined, // forceMixedOutcome
+							resumeBackend,
 						);
 					},
 					persist: (trigger) => persistRuntimeState(trigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discovery, stateRoot),

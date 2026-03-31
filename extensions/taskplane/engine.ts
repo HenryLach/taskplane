@@ -1537,6 +1537,8 @@ export async function executeOrchBatch(
 						agentRoot,
 						runnerConfig.testing_commands,
 						mergeHealthMonitor,
+						undefined, // forceMixedOutcome
+						selectedBackend,
 					);
 				} finally {
 					// TP-056: Always stop the health monitor when merge phase ends
@@ -1755,6 +1757,9 @@ export async function executeOrchBatch(
 							stateRoot,
 							agentRoot,
 							runnerConfig.testing_commands,
+							undefined, // healthMonitor
+							undefined, // forceMixedOutcome
+							selectedBackend,
 						);
 					},
 					persist: (trigger) => persistRuntimeState(trigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot),

@@ -18,6 +18,9 @@ import { ORCH_MESSAGES } from "./messages.ts";
 import { emitEngineEvent } from "./persistence.ts";
 import { loadOrchestratorConfig } from "./config.ts";
 import { captureBaseline, diffFingerprints, runVerificationCommands, parseTestOutput, deduplicateFingerprints } from "./verification.ts";
+import { spawnAgent } from "./agent-host.ts";
+import type { AgentHostOptions, AgentHostResult } from "./agent-host.ts";
+import type { RuntimeBackend } from "./execution.ts";
 import type { VerificationBaseline, FingerprintDiff, TestFingerprint } from "./verification.ts";
 
 // ── Merge Telemetry Helpers ───────────────────────────────────────────
@@ -702,6 +705,134 @@ export async function spawnMergeAgent(
 	);
 }
 
+
+/**
+ * Spawn a merge agent via Runtime V2 direct agent-host (no TMUX).
+ *
+ * Per Runtime V2 spec (02-runtime-process-model.md §8.3):
+ * "engine spawns merge host directly" — the merge agent runs as a direct
+ * child process via agent-host, with process registry tracking, normalized
+ * events, and deterministic exit classification.
+ *
+ * The merge agent receives the merge request as its prompt and writes
+ * a result JSON file. The caller polls for that result file (same contract
+ * as the legacy TMUX path via waitForMergeResult).
+ *
+ * @param sessionName     - Stable agent ID (e.g., "orch-merge-1")
+ * @param repoRoot        - Main repository root (merge happens here)
+ * @param mergeWorkDir    - Working directory for the merge
+ * @param mergeRequestPath - Path to the merge request file
+ * @param config          - Orchestrator config
+ * @param stateRoot       - Root for state files / registry
+ * @param agentRoot       - Root for agent prompts
+ * @param batchId         - Current batch ID
+ * @returns Promise that resolves when the agent exits
+ *
+ * @since TP-108
+ */
+export async function spawnMergeAgentV2(
+	sessionName: string,
+	repoRoot: string,
+	mergeWorkDir: string,
+	mergeRequestPath: string,
+	config: OrchestratorConfig,
+	stateRoot?: string,
+	agentRoot?: string,
+	batchId?: string,
+): Promise<AgentHostResult> {
+	execLog("merge", sessionName, "spawning merge agent via Runtime V2 (direct agent-host)", {
+		mergeWorkDir,
+		mergeRequestPath,
+	});
+
+	// Read the merge request as the agent prompt
+	const prompt = readFileSync(mergeRequestPath, "utf-8");
+
+	// Resolve merger system prompt
+	const systemPromptCandidates = [
+		agentRoot ? join(agentRoot, "task-merger.md") : "",
+		join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md"),
+	].filter(Boolean);
+	const systemPromptPath = systemPromptCandidates.find(p => existsSync(p)) || "";
+	let systemPrompt: string | undefined;
+	if (systemPromptPath) {
+		try { systemPrompt = readFileSync(systemPromptPath, "utf-8"); } catch { /* use default */ }
+	}
+
+	// Resolve event/exit paths
+	const sidecarRoot = join(stateRoot ?? repoRoot, ".pi");
+	const bid = batchId || "unknown";
+	const eventsPath = join(sidecarRoot, "runtime", bid, "agents", sessionName, "events.jsonl");
+	const exitSummaryPath = join(sidecarRoot, "runtime", bid, "agents", sessionName, "exit-summary.json");
+
+	// Mailbox directory
+	let mailboxDir: string | null = null;
+	if (batchId) {
+		mailboxDir = join(sidecarRoot, "mailbox", batchId, sessionName);
+		mkdirSync(join(mailboxDir, "inbox"), { recursive: true });
+	}
+
+	const opts: AgentHostOptions = {
+		agentId: sessionName,
+		role: "merger",
+		batchId: bid,
+		laneNumber: null,
+		taskId: null,
+		repoId: "default",
+		cwd: mergeWorkDir,
+		prompt,
+		systemPrompt,
+		model: config.merge.model || undefined,
+		tools: config.merge.tools || undefined,
+		mailboxDir,
+		eventsPath,
+		exitSummaryPath,
+		timeoutMs: (config.merge.timeout_minutes ?? 10) * 60 * 1000,
+		stateRoot: stateRoot ?? repoRoot,
+		packet: null,
+		env: { ORCH_BATCH_ID: bid },
+	};
+
+	const { promise, kill } = spawnAgent(opts);
+
+	// Store the kill handle for external cleanup (pause/abort).
+	// The promise runs in background — caller uses waitForMergeResult()
+	// to poll for the result file, same contract as the TMUX path.
+	activeMergeAgents.set(sessionName, { promise, kill });
+
+	// Fire-and-forget: the background promise handles exit logging
+	promise.then(result => {
+		activeMergeAgents.delete(sessionName);
+		execLog("merge", sessionName, "merge agent exited (V2)", {
+			exitCode: result.exitCode,
+			durationMs: result.durationMs,
+			costUsd: result.costUsd,
+			killed: result.killed,
+		});
+	}).catch(err => {
+		activeMergeAgents.delete(sessionName);
+		execLog("merge", sessionName, `merge agent error (V2): ${err instanceof Error ? err.message : String(err)}`);
+	});
+}
+
+/** Active V2 merge agent handles for cleanup/abort. @since TP-108 */
+const activeMergeAgents = new Map<string, { promise: Promise<AgentHostResult>; kill: () => void }>();
+
+/**
+ * Kill a V2 merge agent if it's still running.
+ * Used by pause/abort/cleanup flows.
+ * @since TP-108
+ */
+export function killMergeAgentV2(sessionName: string): boolean {
+	const handle = activeMergeAgents.get(sessionName);
+	if (handle) {
+		handle.kill();
+		activeMergeAgents.delete(sessionName);
+		return true;
+	}
+	return false;
+}
+
 /**
  * Re-read merge timeout from config on disk.
  *
@@ -1212,6 +1343,7 @@ export async function mergeWave(
 	repoId?: string,
 	healthMonitor?: MergeHealthMonitor | null,
 	forceMixedOutcome?: boolean,
+	runtimeBackend?: RuntimeBackend,
 ): Promise<MergeWaveResult> {
 	const startTime = Date.now();
 	const tmuxPrefix = config.orchestrator.tmux_prefix;
@@ -1520,12 +1652,20 @@ export async function mergeWave(
 						}
 
 						// Re-spawn merge agent for the retry
-						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
+						if (runtimeBackend === "v2") {
+							await spawnMergeAgentV2(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
+						} else {
+							await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
+						}
 						// TP-056: Re-register with health monitor after respawn
 						if (healthMonitor) healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
 					} else {
 						// First attempt: spawn merge agent
-						await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
+						if (runtimeBackend === "v2") {
+							await spawnMergeAgentV2(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
+						} else {
+							await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
+						}
 						// TP-056: Register session with health monitor
 						if (healthMonitor) healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
 					}
@@ -2229,6 +2369,7 @@ export async function mergeWaveByRepo(
 	testingCommands?: Record<string, string>,
 	healthMonitor?: MergeHealthMonitor | null,
 	forceMixedOutcome?: boolean,
+	runtimeBackend?: RuntimeBackend,
 ): Promise<MergeWaveResult> {
 	const startTime = Date.now();
 
@@ -2289,6 +2430,7 @@ export async function mergeWaveByRepo(
 			undefined, // repoId
 			healthMonitor,
 			forceMixedOutcome,
+			runtimeBackend,
 		);
 		// Attach empty repoResults for consistent shape
 		return { ...result, repoResults: [] };
@@ -2347,6 +2489,7 @@ export async function mergeWaveByRepo(
 			group.repoId,
 			healthMonitor,
 			forceMixedOutcome,
+			runtimeBackend,
 		);
 
 		// Accumulate lane results

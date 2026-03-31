@@ -231,4 +231,67 @@ describe("8.x: Resume backend parity (TP-108)", () => {
 	it("8.3: resume imports RuntimeBackend type", () => {
 		expect(resumeSrc).toContain("RuntimeBackend");
 	});
+
+	it("8.4: resume passes backend to mergeWaveByRepo calls", () => {
+		// All mergeWaveByRepo calls in resume should include resumeBackend
+		const mergeCallCount = (resumeSrc.match(/mergeWaveByRepo\(/g) || []).length;
+		expect(mergeCallCount).toBeGreaterThan(0);
+		// Count calls that include resumeBackend
+		const withBackend = (resumeSrc.match(/resumeBackend,\r?\n/g) || []).length;
+		// At least the 4 main merge calls should have backend
+		expect(withBackend).toBeGreaterThanOrEqual(4);
+	});
+});
+
+// ── 9. TP-108: Merge host V2 migration ─────────────────────────────
+
+describe("9.x: Merge host V2 migration (TP-108)", () => {
+	const mergeSrc = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
+
+	it("9.1: spawnMergeAgentV2 exists and uses agent-host", () => {
+		expect(mergeSrc).toContain("export async function spawnMergeAgentV2");
+		expect(mergeSrc).toContain("spawnAgent(opts)");
+	});
+
+	it("9.2: spawnMergeAgentV2 sets role to merger", () => {
+		const fnIdx = mergeSrc.indexOf("function spawnMergeAgentV2");
+		const block = mergeSrc.slice(fnIdx, fnIdx + 2000);
+		expect(block).toContain('role: "merger"');
+	});
+
+	it("9.3: spawnMergeAgentV2 registers in process registry via stateRoot", () => {
+		const fnIdx = mergeSrc.indexOf("function spawnMergeAgentV2");
+		const block = mergeSrc.slice(fnIdx, fnIdx + 2000);
+		expect(block).toContain("stateRoot");
+	});
+
+	it("9.4: mergeWave accepts runtimeBackend parameter", () => {
+		expect(mergeSrc).toContain("runtimeBackend?: RuntimeBackend");
+	});
+
+	it("9.5: mergeWave routes spawn to V2 when backend is v2", () => {
+		// Both retry and first-attempt paths must have V2 routing
+		const fnIdx = mergeSrc.indexOf("export async function mergeWave(");
+		const block = mergeSrc.slice(fnIdx, fnIdx + 16000);
+		const v2SpawnCount = (block.match(/spawnMergeAgentV2\(/g) || []).length;
+		expect(v2SpawnCount).toBeGreaterThanOrEqual(2); // first attempt + retry
+	});
+
+	it("9.6: engine threads selectedBackend to mergeWaveByRepo", () => {
+		const mergeCallIdx = engineSrc.indexOf("mergeResult = await mergeWaveByRepo(");
+		const block = engineSrc.slice(mergeCallIdx, mergeCallIdx + 600);
+		expect(block).toContain("selectedBackend");
+	});
+
+	it("9.7: killMergeAgentV2 exists for cleanup/abort", () => {
+		expect(mergeSrc).toContain("export function killMergeAgentV2");
+	});
+
+	it("9.8: V2 merge uses events.jsonl for telemetry (not sidecar files)", () => {
+		const fnIdx = mergeSrc.indexOf("function spawnMergeAgentV2");
+		const block = mergeSrc.slice(fnIdx, fnIdx + 2000);
+		expect(block).toContain("eventsPath");
+		expect(block).toContain("exitSummaryPath");
+		expect(block).toContain("events.jsonl");
+	});
 });
