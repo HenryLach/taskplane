@@ -1703,3 +1703,95 @@ body {
   color: var(--text-primary);
   margin: 16px 0 8px;
 }
+
+/* TP-107: Agents Panel */
+.agents-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-card {
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  border-left: 3px solid var(--green);
+}
+.agent-card.agent-terminal {
+  border-left-color: var(--text-faint);
+  opacity: 0.7;
+}
+.agent-header {
+  font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+.agent-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.agent-badge {
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+.agent-status-running { color: var(--green); }
+.agent-status-spawning { color: var(--yellow); }
+.agent-status-exited { color: var(--text-faint); }
+.agent-status-crashed { color: var(--red); }
+.agent-status-killed { color: var(--red); }
+.agent-status-timed_out { color: var(--yellow); }
+
+/* TP-107: Messages Panel */
+.messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.message-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+}
+.msg-time {
+  color: var(--text-faint);
+  min-width: 60px;
+}
+.msg-direction {
+  color: var(--text-secondary);
+  min-width: 100px;
+}
+.msg-badge {
+  font-size: 0.65rem;
+  padding: 1px 5px;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+.msg-type {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+.msg-pending {
+  background: var(--yellow);
+  color: var(--bg-primary);
+}
+.msg-delivered {
+  background: var(--green);
+  color: var(--bg-primary);
+}
+.msg-reply {
+  background: var(--blue);
+  color: var(--bg-primary);
+}
+.msg-preview {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}

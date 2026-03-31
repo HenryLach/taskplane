@@ -829,6 +829,85 @@ function renderMergeAgents(batch, tmuxSessions) {
   $mergeBody.innerHTML = html;
 }
 
+// ─── Render: Runtime V2 Agents (TP-107) ─────────────────────────────────────
+
+function renderAgentsPanel(registry) {
+  const $panel = document.getElementById('agents-panel');
+  const $body = document.getElementById('agents-body');
+  if (!$panel || !$body) return;
+
+  if (!registry || !registry.agents || Object.keys(registry.agents).length === 0) {
+    $panel.style.display = 'none';
+    return;
+  }
+
+  $panel.style.display = '';
+  const agents = Object.values(registry.agents);
+  let html = '<div class="agents-grid">';
+
+  for (const agent of agents) {
+    const isTerminal = ['exited', 'crashed', 'timed_out', 'killed'].includes(agent.status);
+    const statusClass = isTerminal ? 'agent-terminal' : 'agent-live';
+    const icon = isTerminal ? '\u{1F534}' : '\u{1F7E2}';
+    const elapsed = agent.startedAt ? Math.round((Date.now() - agent.startedAt) / 1000) : 0;
+    const elapsedStr = elapsed > 0 ? formatDuration(elapsed * 1000) : '';
+
+    html += `<div class="agent-card ${statusClass}">`;
+    html += `<div class="agent-header">${icon} <strong>${escapeHtml(agent.agentId)}</strong></div>`;
+    html += `<div class="agent-meta">`;
+    html += `<span class="agent-badge">${escapeHtml(agent.role)}</span>`;
+    if (agent.laneNumber != null) html += `<span class="agent-badge">lane ${agent.laneNumber}</span>`;
+    if (agent.taskId) html += `<span class="agent-badge">${escapeHtml(agent.taskId)}</span>`;
+    html += `<span class="agent-badge agent-status-${agent.status}">${escapeHtml(agent.status)}</span>`;
+    if (elapsedStr && !isTerminal) html += `<span class="agent-badge">${elapsedStr}</span>`;
+    html += `</div>`;
+    html += `</div>`;
+  }
+
+  html += '</div>';
+  $body.innerHTML = html;
+}
+
+// ─── Render: Mailbox Messages (TP-107) ──────────────────────────────────────
+
+function renderMessagesPanel(mailbox) {
+  const $panel = document.getElementById('messages-panel');
+  const $body = document.getElementById('messages-body');
+  if (!$panel || !$body) return;
+
+  if (!mailbox || !mailbox.messages || mailbox.messages.length === 0) {
+    $panel.style.display = 'none';
+    return;
+  }
+
+  $panel.style.display = '';
+  const messages = mailbox.messages;
+  let html = '<div class="messages-list">';
+
+  for (const msg of messages) {
+    const ts = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
+    const direction = msg.to === 'supervisor' ? '\u2190 supervisor' : `\u2192 ${escapeHtml(msg.to || msg._agentDir || '')}`;
+    const statusBadge = msg._status === 'pending' ? '<span class="msg-badge msg-pending">pending</span>'
+      : msg._status === 'delivered' ? '<span class="msg-badge msg-delivered">delivered</span>'
+      : msg._status === 'reply' ? '<span class="msg-badge msg-reply">reply</span>'
+      : '';
+    const typeBadge = `<span class="msg-badge msg-type">${escapeHtml(msg.type || '')}</span>`;
+    const preview = (msg.content || '').slice(0, 120);
+
+    html += `<div class="message-row">`;
+    html += `<span class="msg-time">${escapeHtml(ts)}</span>`;
+    html += `<span class="msg-direction">${direction}</span>`;
+    html += typeBadge;
+    html += statusBadge;
+    html += `<span class="msg-preview">${escapeHtml(preview)}</span>`;
+    html += `</div>`;
+  }
+
+  html += '</div>';
+  $body.innerHTML = html;
+}
+
+
 // ─── Render: Errors ─────────────────────────────────────────────────────────
 
 function renderErrors(batch) {
@@ -1156,6 +1235,9 @@ function render(data) {
   renderSupervisor(data);
   renderLanesTasks(batch, tmux);
   renderMergeAgents(batch, tmux);
+  // TP-107: Runtime V2 panels
+  renderAgentsPanel(data.runtimeRegistry);
+  renderMessagesPanel(data.mailbox);
   renderErrors(batch);
 
   const taskCount = (batch.tasks || []).length;

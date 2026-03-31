@@ -317,7 +317,27 @@ Required controls:
 - per-panel truncation and pagination where needed
 - log rotation/archival policies for runtime event files
 
-## 13. Implementation notes (from TP-104)
+## 13. Implementation notes (from TP-104, TP-107)
+
+### Dashboard Runtime V2 integration (TP-107)
+
+The dashboard server (`dashboard/server.cjs`) now loads Runtime V2 artifacts
+alongside legacy data:
+
+- `loadRuntimeRegistry(batchId)` — reads `.pi/runtime/{batchId}/registry.json`
+- `loadRuntimeLaneSnapshots(batchId)` — reads `.pi/runtime/{batchId}/lanes/*.json`
+- `loadRuntimeAgentEvents(batchId, agentId)` — reads per-agent `events.jsonl`
+- `loadMailboxData(batchId)` — scans inbox/ack/outbox for all agents
+
+The dashboard state includes `runtimeRegistry`, `runtimeLaneSnapshots`, and
+`mailbox` fields. The frontend renders:
+
+- **Agents panel** from the registry (role, status, lane, task, elapsed)
+- **Messages panel** from mailbox data (direction, type, status, content preview)
+- Both panels are hidden for legacy batches (no registry/mailbox data)
+
+Legacy `laneStates`, `telemetry`, and `tmuxSessions` are still loaded for
+backward compatibility. The dashboard shows whichever data is available.
 
 ### Event envelope attribution
 

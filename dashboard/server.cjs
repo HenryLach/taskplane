@@ -352,6 +352,128 @@ function tailJsonlFile(filePath) {
  * @param {object|null} batchState - The batch state from batch-state.json
  * @returns {object} Map of tmuxPrefix → accumulated telemetry
  */
+
+// ── Runtime V2 Data Loaders (TP-107) ─────────────────────────────
+
+/**
+ * Load the Runtime V2 process registry for the current batch.
+ * Returns null if no registry exists (legacy batch).
+ */
+function loadRuntimeRegistry(batchId) {
+  if (!batchId) return null;
+  const registryPath = path.join(REPO_ROOT, ".pi", "runtime", batchId, "registry.json");
+  try {
+    if (!fs.existsSync(registryPath)) return null;
+    return JSON.parse(fs.readFileSync(registryPath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Load Runtime V2 lane snapshots for the current batch.
+ * Returns a map of laneNumber → snapshot data.
+ */
+function loadRuntimeLaneSnapshots(batchId) {
+  if (!batchId) return {};
+  const lanesDir = path.join(REPO_ROOT, ".pi", "runtime", batchId, "lanes");
+  const snapshots = {};
+  try {
+    if (!fs.existsSync(lanesDir)) return snapshots;
+    const files = fs.readdirSync(lanesDir).filter(f => f.startsWith("lane-") && f.endsWith(".json"));
+    for (const file of files) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(lanesDir, file), "utf-8"));
+        if (data.laneNumber != null) snapshots[data.laneNumber] = data;
+      } catch { continue; }
+    }
+  } catch { /* dir missing */ }
+  return snapshots;
+}
+
+/**
+ * Load Runtime V2 agent events for a specific agent.
+ * Returns the last N events from the agent's events.jsonl.
+ */
+function loadRuntimeAgentEvents(batchId, agentId, maxEvents) {
+  if (!batchId || !agentId) return [];
+  maxEvents = maxEvents || 200;
+  const eventsPath = path.join(REPO_ROOT, ".pi", "runtime", batchId, "agents", agentId, "events.jsonl");
+  try {
+    if (!fs.existsSync(eventsPath)) return [];
+    const raw = fs.readFileSync(eventsPath, "utf-8");
+    const lines = raw.split("\n").filter(l => l.trim());
+    const events = [];
+    const start = Math.max(0, lines.length - maxEvents);
+    for (let i = start; i < lines.length; i++) {
+      try { events.push(JSON.parse(lines[i])); } catch { continue; }
+    }
+    return events;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Load mailbox message activity for the current batch.
+ * Scans inbox/ack/outbox directories for all agents.
+ */
+function loadMailboxData(batchId) {
+  if (!batchId) return { messages: [], agentIds: [] };
+  const mailboxRoot = path.join(REPO_ROOT, ".pi", "mailbox", batchId);
+  if (!fs.existsSync(mailboxRoot)) return { messages: [], agentIds: [] };
+
+  const messages = [];
+  const agentIds = [];
+
+  try {
+    const dirs = fs.readdirSync(mailboxRoot, { withFileTypes: true })
+      .filter(d => d.isDirectory())
+      .map(d => d.name);
+
+    for (const agentDir of dirs) {
+      if (agentDir === "_broadcast") continue;
+      agentIds.push(agentDir);
+
+      // Read inbox (pending)
+      for (const subdir of ["inbox", "ack", "outbox"]) {
+        const dir = path.join(mailboxRoot, agentDir, subdir);
+        if (!fs.existsSync(dir)) continue;
+        try {
+          const files = fs.readdirSync(dir).filter(f => f.endsWith(".msg.json"));
+          for (const file of files) {
+            try {
+              const msg = JSON.parse(fs.readFileSync(path.join(dir, file), "utf-8"));
+              const status = subdir === "inbox" ? "pending" : subdir === "ack" ? "delivered" : "reply";
+              messages.push({ ...msg, _status: status, _agentDir: agentDir });
+            } catch { continue; }
+          }
+        } catch { continue; }
+      }
+    }
+
+    // Also check _broadcast
+    const broadcastInbox = path.join(mailboxRoot, "_broadcast", "inbox");
+    const broadcastAck = path.join(mailboxRoot, "_broadcast", "ack");
+    for (const [dir, status] of [[broadcastInbox, "pending"], [broadcastAck, "delivered"]]) {
+      if (!fs.existsSync(dir)) continue;
+      try {
+        const files = fs.readdirSync(dir).filter(f => f.endsWith(".msg.json"));
+        for (const file of files) {
+          try {
+            const msg = JSON.parse(fs.readFileSync(path.join(dir, file), "utf-8"));
+            messages.push({ ...msg, _status: status, _agentDir: "_broadcast" });
+          } catch { continue; }
+        }
+      } catch { continue; }
+    }
+  } catch { /* mailbox dir issues */ }
+
+  messages.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+  return { messages, agentIds };
+}
+
+// ─────────────────────────────────────────────────────────────────────
 function loadTelemetryData(batchState) {
   const telemetryDir = path.join(REPO_ROOT, ".pi", "telemetry");
   const result = {};
@@ -849,11 +971,20 @@ function buildDashboardState() {
     return { ...task, statusData };
   });
 
+  // TP-107: Load Runtime V2 data when available
+  const runtimeRegistry = loadRuntimeRegistry(state.batchId);
+  const runtimeLaneSnapshots = loadRuntimeLaneSnapshots(state.batchId);
+  const mailboxData = loadMailboxData(state.batchId);
+
   return {
     laneStates,
     telemetry,
     batchTotalCost,
     supervisor,
+    // Runtime V2 data (null/empty for legacy batches)
+    runtimeRegistry,
+    runtimeLaneSnapshots,
+    mailbox: mailboxData,
     batch: {
       batchId: state.batchId,
       phase: state.phase,
@@ -1220,6 +1351,13 @@ function createServer() {
     } else if (pathname.startsWith("/api/conversation/") && req.method === "GET") {
       const prefix = pathname.slice("/api/conversation/".length);
       serveConversation(req, res, prefix);
+    } else if (pathname.startsWith("/api/agent-events/") && req.method === "GET") {
+      // TP-107: Serve Runtime V2 agent events
+      const agentId = decodeURIComponent(pathname.slice("/api/agent-events/".length));
+      const batchState = loadBatchState();
+      const events = loadRuntimeAgentEvents(batchState?.batchId, agentId, 300);
+      res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
+      res.end(JSON.stringify(events));
     } else if (pathname === "/api/state" && req.method === "GET") {
       const state = buildDashboardState();
       res.writeHead(200, {
