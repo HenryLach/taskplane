@@ -17,17 +17,24 @@ import { fileURLToPath } from "url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const engineSrc = readFileSync(join(__dirname, "..", "taskplane", "engine.ts"), "utf-8");
 const executionSrc = readFileSync(join(__dirname, "..", "taskplane", "execution.ts"), "utf-8");
+const {
+	selectRuntimeBackend,
+} = await import("../taskplane/engine.ts");
+const {
+	mapLaneTaskStatusToTerminalSnapshotStatus,
+	mapLaneSnapshotStatusToWorkerStatus,
+} = await import("../taskplane/lane-runner.ts");
 
 // ── 1. Backend selection logic in engine ─────────────────────────────
 
 describe("1.x: Engine backend selection", () => {
-	it("1.1: selects v2 when single task and repo mode", () => {
-		expect(engineSrc).toContain("isSingleTask && isRepoMode");
+	it("1.1: selects v2 only when single task + repo mode + direct PROMPT target", () => {
+		expect(engineSrc).toContain("isSingleTask && isRepoMode && isDirectPromptTarget");
 		expect(engineSrc).toContain('"v2"');
 	});
 
 	it("1.2: falls back to legacy when workspace mode", () => {
-		expect(engineSrc).toContain("!isRepoMode");
+		expect(engineSrc).toContain("!backendSelection.isRepoMode");
 		expect(engineSrc).toContain("workspace mode not yet supported on Runtime V2");
 	});
 
@@ -45,7 +52,7 @@ describe("1.x: Engine backend selection", () => {
 	});
 
 	it("1.5: isSingleTask checks exactly one wave with one task", () => {
-		expect(engineSrc).toContain("rawWaves.length === 1 && rawWaves[0].length === 1");
+		expect(engineSrc).toContain("rawWaves.length === 1 && rawWaves[0]?.length === 1");
 	});
 });
 
@@ -116,10 +123,11 @@ describe("4.x: Scope guards for TP-105 limits", () => {
 		expect(engineSrc).toContain("workspace mode not yet supported");
 	});
 
-	it("4.2: multi-task batches stay on legacy (no over-claim)", () => {
-		// isSingleTask must be false for multi-task → selectedBackend stays legacy
-		expect(engineSrc).toContain("isSingleTask && isRepoMode");
-		// No forced v2 for multi-task
+	it("4.2: non-direct targets stay on legacy (no over-claim)", () => {
+		// TP-105 scope guard: V2 requires a direct PROMPT.md target.
+		expect(engineSrc).toContain("isDirectPromptTarget");
+		expect(engineSrc).toContain("single-task batch was not targeted via direct PROMPT.md path");
+		// No forced v2 broadening.
 		expect(engineSrc).not.toContain("force v2 for multi-task");
 	});
 });
@@ -135,8 +143,9 @@ describe("5.x: Lane-runner terminal snapshot emission", () => {
 		expect(laneRunnerSrc).toContain("statusPath?: string");
 	});
 
-	it("5.2: terminal snapshot maps status correctly", () => {
+	it("5.2: terminal snapshot maps succeeded/skipped/failed correctly", () => {
 		expect(laneRunnerSrc).toContain('"complete"');
+		expect(laneRunnerSrc).toContain('"idle"');
 		expect(laneRunnerSrc).toContain('"failed"');
 		expect(laneRunnerSrc).toContain("terminalStatus");
 	});
@@ -168,5 +177,33 @@ describe("6.x: Runtime imports for backend routing", () => {
 
 	it("6.4: RuntimeBackend is exported from execution.ts", () => {
 		expect(executionSrc).toContain("export type RuntimeBackend");
+	});
+});
+
+// ── 7. Behavioral routing/mapping tests (non-source assertions) ─────
+
+describe("7.x: Behavioral backend and snapshot mapping", () => {
+	it("7.1: selectRuntimeBackend picks v2 only for single direct PROMPT target in repo mode", () => {
+		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md", [["TP-001"]], null).backend).toBe("v2");
+		expect(selectRuntimeBackend("all", [["TP-001"]], null).backend).toBe("legacy");
+		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md tasks/TP-002/PROMPT.md", [["TP-001", "TP-002"]], null).backend).toBe("legacy");
+	});
+
+	it("7.2: selectRuntimeBackend falls back in workspace mode even for direct prompt", () => {
+		const ws = { mode: "workspace", repos: new Map(), routing: {}, configPath: "x", workspaceRoot: "x" } as any;
+		expect(selectRuntimeBackend("tasks/TP-001/PROMPT.md", [["TP-001"]], ws).backend).toBe("legacy");
+	});
+
+	it("7.3: terminal lane status mapping preserves skipped as idle", () => {
+		expect(mapLaneTaskStatusToTerminalSnapshotStatus("succeeded")).toBe("complete");
+		expect(mapLaneTaskStatusToTerminalSnapshotStatus("skipped")).toBe("idle");
+		expect(mapLaneTaskStatusToTerminalSnapshotStatus("failed")).toBe("failed");
+	});
+
+	it("7.4: worker status mapping emits terminal lifecycle states", () => {
+		expect(mapLaneSnapshotStatusToWorkerStatus("running")).toBe("running");
+		expect(mapLaneSnapshotStatusToWorkerStatus("complete")).toBe("exited");
+		expect(mapLaneSnapshotStatusToWorkerStatus("idle")).toBe("wrapping_up");
+		expect(mapLaneSnapshotStatusToWorkerStatus("failed")).toBe("crashed");
 	});
 });

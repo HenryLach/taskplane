@@ -735,6 +735,38 @@ async function attemptStaleWorktreeRecovery(
 }
 
 
+export interface RuntimeBackendSelection {
+	backend: RuntimeBackend;
+	isSingleTask: boolean;
+	isRepoMode: boolean;
+	isDirectPromptTarget: boolean;
+}
+
+/**
+ * Select execution backend for a batch under the TP-105 scope guard.
+ *
+ * Runtime V2 is enabled only for a single-task batch in repo mode when
+ * the original target is exactly one direct PROMPT.md path.
+ */
+export function selectRuntimeBackend(
+	args: string,
+	rawWaves: string[][],
+	workspaceConfig?: WorkspaceConfig | null,
+): RuntimeBackendSelection {
+	const isSingleTask = rawWaves.length === 1 && rawWaves[0]?.length === 1;
+	const isRepoMode = !workspaceConfig;
+	const argTokens = args.trim().split(/\s+/).filter(Boolean);
+	const isDirectPromptTarget =
+		argTokens.length === 1 && /PROMPT\.md$/i.test(argTokens[0]);
+
+	return {
+		backend: (isSingleTask && isRepoMode && isDirectPromptTarget) ? "v2" : "legacy",
+		isSingleTask,
+		isRepoMode,
+		isDirectPromptTarget,
+	};
+}
+
 // ── /orch Execution Engine ───────────────────────────────────────────
 
 /**
@@ -1058,17 +1090,20 @@ export async function executeOrchBatch(
 
 	// ── TP-105: Runtime V2 backend selection ────────────────────
 	// Use Runtime V2 (no-TMUX lane-runner) when ALL conditions are met:
-	//   1. Exactly one task in the batch (single-task /orch <PROMPT.md>)
+	//   1. Exactly one task in the batch
 	//   2. Repo mode (not workspace mode — workspace deferred to TP-109)
+	//   3. The user target is a single direct PROMPT.md path
 	// Otherwise, fall back to the legacy TMUX-backed path.
-	const isSingleTask = rawWaves.length === 1 && rawWaves[0].length === 1;
-	const isRepoMode = !workspaceConfig;
-	const selectedBackend: RuntimeBackend = (isSingleTask && isRepoMode) ? "v2" : "legacy";
+	const backendSelection = selectRuntimeBackend(args, rawWaves, workspaceConfig);
+	const selectedBackend = backendSelection.backend;
 
 	if (selectedBackend === "v2") {
-		execLog("batch", batchState.batchId, "Runtime V2 backend selected (single-task repo mode)");
+		execLog("batch", batchState.batchId, "Runtime V2 backend selected (single direct PROMPT.md target, repo mode)");
 		onNotify("🚀 Using Runtime V2 backend (no-TMUX direct execution)", "info");
-	} else if (isSingleTask && !isRepoMode) {
+	} else if (backendSelection.isSingleTask && backendSelection.isRepoMode && !backendSelection.isDirectPromptTarget) {
+		execLog("batch", batchState.batchId, "Runtime V2 not used: single-task batch was not targeted via direct PROMPT.md path");
+		onNotify("ℹ️ Using legacy execution backend (Runtime V2 TP-105 scope is single direct PROMPT.md targets)", "info");
+	} else if (backendSelection.isSingleTask && !backendSelection.isRepoMode) {
 		execLog("batch", batchState.batchId, "Runtime V2 not used: workspace mode (deferred to TP-109), falling back to legacy");
 		onNotify("ℹ️ Using legacy execution backend (workspace mode not yet supported on Runtime V2)", "info");
 	}

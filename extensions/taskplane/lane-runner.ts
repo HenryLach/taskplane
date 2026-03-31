@@ -49,6 +49,7 @@ import {
 	type RuntimeLaneSnapshot,
 	type RuntimeAgentTelemetrySnapshot,
 	type RuntimeTaskProgress,
+	type RuntimeAgentStatus,
 	type PacketPaths,
 	type LaneTaskOutcome,
 	type LaneTaskStatus,
@@ -378,6 +379,23 @@ export async function executeTaskV2(
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
+export function mapLaneTaskStatusToTerminalSnapshotStatus(
+	status: LaneTaskStatus,
+): "idle" | "complete" | "failed" {
+	if (status === "succeeded") return "complete";
+	if (status === "skipped") return "idle";
+	return "failed";
+}
+
+export function mapLaneSnapshotStatusToWorkerStatus(
+	status: "running" | "idle" | "complete" | "failed",
+): RuntimeAgentStatus {
+	if (status === "running") return "running";
+	if (status === "complete") return "exited";
+	if (status === "idle") return "wrapping_up";
+	return "crashed";
+}
+
 function makeResult(
 	taskId: string,
 	sessionName: string,
@@ -408,7 +426,7 @@ function makeResult(
 
 	// Emit terminal snapshot so dashboard/registry reflect final state
 	if (config && statusPath) {
-		const terminalStatus = status === "succeeded" ? "complete" as const : "failed" as const;
+		const terminalStatus = mapLaneTaskStatusToTerminalSnapshotStatus(status);
 		emitSnapshot(config, taskId, terminalStatus, {}, statusPath);
 	}
 
@@ -449,7 +467,7 @@ function emitSnapshot(
 		status,
 		worker: {
 			agentId: buildRuntimeAgentId(config.agentIdPrefix, config.laneNumber, "worker"),
-			status: "running",
+			status: mapLaneSnapshotStatusToWorkerStatus(status),
 			elapsedMs: telemetry.durationMs ?? 0,
 			toolCalls: telemetry.toolCalls ?? 0,
 			contextPct: telemetry.contextUsage?.percent ?? 0,
