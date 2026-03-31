@@ -6,6 +6,9 @@
 >
 > **Status:** Active investigation — last updated 2026-03-30
 > **Versions covered:** v0.22.11 through v0.22.18
+>
+> **Follow-on architecture suite:** See `docs/specifications/framework/taskplane-runtime-v2/`
+> for the long-term no-TMUX runtime redesign created from this investigation.
 
 ---
 

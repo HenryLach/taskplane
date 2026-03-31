@@ -51,4 +51,5 @@ Specs that have been fully or substantially implemented. Moved to
 | [cli/commands-cheat-sheet.md](cli/commands-cheat-sheet.md) | Quick reference for CLI commands |
 | [cli/NPM-PUBLISHING.md](cli/NPM-PUBLISHING.md) | npm publish workflow |
 | [framework/33-parallel-task-orchestrator.md](framework/33-parallel-task-orchestrator.md) | Original orchestrator design (early framework era) |
+| [framework/taskplane-runtime-v2/README.md](framework/taskplane-runtime-v2/README.md) | Foundational no-TMUX runtime redesign: mailbox-first control plane, headless lane runners, dashboard-first visibility |
 | [open-source-documentation-plan.md](open-source-documentation-plan.md) | Documentation structure plan |

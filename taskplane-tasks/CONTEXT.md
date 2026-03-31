@@ -1,8 +1,8 @@
 # General — Context
 
-**Last Updated:** 2026-03-15
+**Last Updated:** 2026-03-30
 **Status:** Active
-**Next Task ID:** TP-089
+**Next Task ID:** TP-111
 
 ---
 
@@ -45,3 +45,4 @@ _Items discovered during task execution are logged here by agents._
 
 - [ ] **Update worktree naming in taskplane-settings.md** — `docs/reference/configuration/taskplane-settings.md` still describes old `{prefix}-{opId}-{N}` naming. TP-021 changed to batch-scoped `{opId}-{batchId}/lane-{N}`. Deferred to TP-024. (discovered during TP-021)
 - [ ] **Intermittent orch-state-persistence test failure** — `orch-state-persistence.test.ts` occasionally fails when run in full suite (WS-010 task record not found) but passes in isolation. Likely temp directory collision between parallel tests. (discovered during TP-022)
+- [ ] **Runtime V2 implementation program** — Use `docs/specifications/framework/taskplane-runtime-v2/` plus task packets `TP-100` through `TP-109` as the authoritative staging area for the no-TMUX / no-`/task` redesign. Re-scope legacy open tasks `TP-082` through `TP-093` against Runtime V2 before implementing them. (staged 2026-03-30)
