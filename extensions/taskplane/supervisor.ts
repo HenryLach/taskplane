@@ -665,8 +665,12 @@ export async function pollPrCiStatus(
 /**
  * Merge a PR via gh CLI after CI passes.
  *
- * Tries squash merge first (cleanest for integration PRs), then falls
- * back to regular merge if squash is not allowed by repo rules.
+ * Uses regular merge (preserves per-commit history from orch branches).
+ * Falls back to squash if regular merge is not allowed by repo rules.
+ *
+ * Regular merge is preferred because squash collapses all branch commits
+ * into one, which loses per-task attribution and can silently drop
+ * commits made by other agents between push and merge.
  *
  * @param orchBranch - The branch the PR was created from
  * @param deps - CI deps (runCommand for gh CLI)
@@ -678,15 +682,7 @@ export function mergePr(
 	orchBranch: string,
 	deps: CiDeps,
 ): { success: boolean; detail: string } {
-	// Try squash merge first
-	const squashResult = deps.runCommand("gh", [
-		"pr", "merge", orchBranch, "--squash", "--delete-branch",
-	]);
-	if (squashResult.ok) {
-		return { success: true, detail: "PR merged (squash) and remote branch deleted." };
-	}
-
-	// Squash not allowed — try regular merge
+	// Try regular merge first (preserves per-commit history)
 	const mergeResult = deps.runCommand("gh", [
 		"pr", "merge", orchBranch, "--merge", "--delete-branch",
 	]);
@@ -694,9 +690,17 @@ export function mergePr(
 		return { success: true, detail: "PR merged and remote branch deleted." };
 	}
 
+	// Regular merge not allowed — try squash as fallback
+	const squashResult = deps.runCommand("gh", [
+		"pr", "merge", orchBranch, "--squash", "--delete-branch",
+	]);
+	if (squashResult.ok) {
+		return { success: true, detail: "PR merged (squash) and remote branch deleted." };
+	}
+
 	return {
 		success: false,
-		detail: `PR merge failed: ${mergeResult.stderr || squashResult.stderr}`,
+		detail: `PR merge failed: ${squashResult.stderr || mergeResult.stderr}`,
 	};
 }
 

@@ -538,10 +538,10 @@ describe("11.x — pollPrCiStatus", () => {
 });
 
 describe("11.x — mergePr", () => {
-	it("11.7: tries squash merge first", () => {
+	it("11.7: tries regular merge first (preserves per-commit history)", () => {
 		const deps = makeMockCiDeps({
 			runCommand: (cmd, args) => {
-				if (args.includes("--squash")) {
+				if (args.includes("--merge")) {
 					return { ok: true, stdout: "Merged", stderr: "" };
 				}
 				return { ok: false, stdout: "", stderr: "not called" };
@@ -549,16 +549,16 @@ describe("11.x — mergePr", () => {
 		});
 		const result = mergePr("orch/test", deps);
 		expect(result.success).toBe(true);
-		expect(result.detail).toContain("squash");
+		expect(result.detail).toContain("PR merged");
 	});
 
-	it("11.8: falls back to regular merge if squash fails", () => {
+	it("11.8: falls back to squash if regular merge fails", () => {
 		const deps = makeMockCiDeps({
 			runCommand: (cmd, args) => {
-				if (args.includes("--squash")) {
-					return { ok: false, stdout: "", stderr: "squash not allowed" };
-				}
 				if (args.includes("--merge")) {
+					return { ok: false, stdout: "", stderr: "merge not allowed" };
+				}
+				if (args.includes("--squash")) {
 					return { ok: true, stdout: "Merged", stderr: "" };
 				}
 				return { ok: false, stdout: "", stderr: "unknown" };
@@ -566,7 +566,7 @@ describe("11.x — mergePr", () => {
 		});
 		const result = mergePr("orch/test", deps);
 		expect(result.success).toBe(true);
-		expect(result.detail).toContain("PR merged");
+		expect(result.detail).toContain("squash");
 	});
 
 	it("11.9: reports failure when both merge methods fail", () => {

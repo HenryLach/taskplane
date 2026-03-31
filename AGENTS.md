@@ -180,8 +180,8 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
    - `git push -u origin <branch>`
    - `gh pr create --fill`
 5. Ensure required checks pass (`ci`) and conversations are resolved.
-6. Merge via squash and delete branch:
-   - `gh pr merge --squash --delete-branch`
+6. Merge and delete branch:
+   - `gh pr merge --merge --delete-branch`
 7. Sync local after merge:
    - `git switch main && git pull --ff-only`
 
