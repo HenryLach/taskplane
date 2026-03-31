@@ -7,6 +7,7 @@ import { execSync } from "child_process";
 import { join } from "path";
 
 import { execLog, resolveCanonicalTaskPaths, tmuxHasSession, tmuxKillSession } from "./execution.ts";
+import { killMergeAgentV2 } from "./merge.ts";
 import { deleteBatchState, parseOrchSessionNames, persistRuntimeState } from "./persistence.ts";
 import type { AbortActionStep, AbortErrorCode, AbortLaneResult, AbortMode, AbortResult, AbortTargetSession, AllocatedLane, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord } from "./types.ts";
 
@@ -267,6 +268,8 @@ export function killOrchSessions(
 		// Best-effort child cleanup even if not explicitly targeted.
 		tmuxKillSession(`${name}-worker`);
 		tmuxKillSession(`${name}-reviewer`);
+		// TP-108: Also kill V2 merge agents (no-op if not V2)
+		killMergeAgentV2(name);
 
 		const killed = tmuxKillSession(name);
 		results.push({
