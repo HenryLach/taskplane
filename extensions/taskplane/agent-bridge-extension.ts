@@ -24,8 +24,8 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@mariozechner/pi-ai";
-import { writeFileSync, mkdirSync, existsSync, renameSync } from "fs";
-import { join, dirname } from "path";
+import { writeFileSync, mkdirSync, renameSync } from "fs";
+import { join } from "path";
 import { randomBytes } from "crypto";
 
 /**
@@ -44,6 +44,11 @@ function resolveOutboxDir(): string {
 function writeOutbox(type: "reply" | "escalate", content: string, replyTo?: string): { id: string } {
 	const outboxDir = resolveOutboxDir();
 	mkdirSync(outboxDir, { recursive: true });
+
+	const contentBytes = Buffer.byteLength(content, "utf8");
+	if (contentBytes > 4096) {
+		throw new Error(`Outbox message exceeds 4096 bytes (${contentBytes})`);
+	}
 
 	const timestamp = Date.now();
 	const nonce = randomBytes(3).toString("hex").slice(0, 5);

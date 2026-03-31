@@ -17,6 +17,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
 import { join, dirname, resolve } from "path";
+import { fileURLToPath } from "url";
 
 import {
 	parsePromptMd,
@@ -30,19 +31,18 @@ import {
 	type CoreParsedTask,
 } from "./task-executor-core.ts";
 
-import { spawnAgent, resolvePiCliPath, type AgentHostOptions, type AgentHostResult } from "./agent-host.ts";
+import { spawnAgent, type AgentHostOptions, type AgentHostResult } from "./agent-host.ts";
 
 import {
-	createManifest,
-	writeManifest,
-	updateManifestStatus,
 	appendAgentEvent,
 	writeLaneSnapshot,
-	buildRegistrySnapshot,
-	writeRegistrySnapshot,
 } from "./process-registry.ts";
 
-import { readOutbox } from "./mailbox.ts";
+import {
+	readOutbox,
+	ackOutboxMessage,
+	appendMailboxAuditEvent,
+} from "./mailbox.ts";
 
 import {
 	resolvePacketPaths,
@@ -57,7 +57,10 @@ import {
 	type PacketPaths,
 	type LaneTaskOutcome,
 	type LaneTaskStatus,
+	type SupervisorAlertCallback,
 } from "./types.ts";
+
+const LANE_RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -99,6 +102,8 @@ export interface LaneRunnerConfig {
 	warnPercent: number;
 	/** Context pressure kill threshold (0-100) */
 	killPercent: number;
+	/** Optional callback for surfacing runtime mailbox replies/escalations to supervisor */
+	onSupervisorAlert?: SupervisorAlertCallback;
 }
 
 /**
@@ -164,12 +169,6 @@ export async function executeTaskV2(
 	updateStatusField(statusPath, "Status", "🟡 In Progress");
 	updateStatusField(statusPath, "Last Updated", new Date().toISOString().slice(0, 10));
 	logExecution(statusPath, "Task started", "Runtime V2 lane-runner execution");
-
-	// ── TP-106: Write initial registry snapshot ──────────────────
-	try {
-		const initRegistry = buildRegistrySnapshot(config.stateRoot, config.batchId);
-		writeRegistrySnapshot(config.stateRoot, initRegistry);
-	} catch { /* best effort */ }
 
 	// ── 2. Iteration loop ───────────────────────────────────────────
 	let noProgressCount = 0;
@@ -244,9 +243,9 @@ export async function executeTaskV2(
 
 		const steeringPendingPath = join(taskFolder, ".steering-pending");
 
-		// TP-106: Resolve bridge extension for agent-side reply/escalate tools
-		// The outbox dir is set via the mailbox sessionOutboxDir convention
+		// TP-106: Bridge extension wiring for agent-side reply/escalate tools
 		const outboxDir = join(config.stateRoot, ".pi", "mailbox", config.batchId, workerAgentId, "outbox");
+		const bridgeExtensionPath = join(LANE_RUNNER_DIR, "agent-bridge-extension.ts");
 
 		const hostOpts: AgentHostOptions = {
 			agentId: workerAgentId,
@@ -268,6 +267,12 @@ export async function executeTaskV2(
 			timeoutMs: config.maxWorkerMinutes * 60_000,
 			stateRoot: config.stateRoot,
 			packet: unit.packet,
+			extensions: [bridgeExtensionPath],
+			env: {
+				TASKPLANE_OUTBOX_DIR: outboxDir,
+				TASKPLANE_AGENT_ID: workerAgentId,
+				ORCH_BATCH_ID: config.batchId,
+			},
 		};
 
 		// Context pressure: write wrap-up signal before kill
@@ -301,18 +306,64 @@ export async function executeTaskV2(
 		cumulativeTokens += workerResult.inputTokens + workerResult.outputTokens +
 			workerResult.cacheReadTokens + workerResult.cacheWriteTokens;
 
-		// ── TP-106: Update registry snapshot after worker exit ──────
-		try {
-			const registrySnap = buildRegistrySnapshot(config.stateRoot, config.batchId);
-			writeRegistrySnapshot(config.stateRoot, registrySnap);
-		} catch { /* best effort */ }
-
 		// ── TP-106: Poll worker outbox for replies/escalations ─────
 		try {
 			const outboxMessages = readOutbox(config.stateRoot, config.batchId, workerAgentId);
 			for (const msg of outboxMessages) {
-				logExecution(statusPath, `Agent ${msg.type}`,
-					msg.content.replace(/\r?\n/g, " / ").slice(0, 200));
+				const sanitized = msg.content.replace(/\r?\n/g, " / ").slice(0, 200);
+				logExecution(statusPath, `Agent ${msg.type}`, sanitized);
+
+				if (msg.type === "reply" || msg.type === "escalate") {
+					appendAgentEvent(config.stateRoot, config.batchId, workerAgentId, {
+						batchId: config.batchId,
+						agentId: workerAgentId,
+						role: "worker",
+						laneNumber: config.laneNumber,
+						taskId,
+						repoId: config.repoId,
+						ts: Date.now(),
+						type: msg.type === "reply" ? "reply_sent" : "escalation_sent",
+						payload: {
+							messageId: msg.id,
+							replyTo: msg.replyTo ?? null,
+							content: sanitized,
+						},
+					});
+
+					appendMailboxAuditEvent(config.stateRoot, config.batchId, {
+						type: msg.type === "reply" ? "message_replied" : "message_escalated",
+						from: workerAgentId,
+						to: "supervisor",
+						messageId: msg.id,
+						messageType: msg.type,
+						contentPreview: sanitized,
+					});
+
+					if (config.onSupervisorAlert) {
+						const isEscalation = msg.type === "escalate";
+						try {
+							config.onSupervisorAlert({
+								category: "agent-message",
+								summary:
+									`${isEscalation ? "🚨" : "📨"} Agent ${isEscalation ? "escalation" : "reply"} from ${workerAgentId}\n` +
+									`  Task: ${taskId}\n` +
+									`  Lane: lane-${config.laneNumber}\n` +
+									`  Message: ${sanitized}`,
+								context: {
+									taskId,
+									laneId: `lane-${config.laneNumber}`,
+									laneNumber: config.laneNumber,
+									agentId: workerAgentId,
+									messageId: msg.id,
+									exitReason: `${isEscalation ? "agent_escalation" : "agent_reply"}: ${sanitized}`,
+								},
+							});
+						} catch { /* best effort */ }
+					}
+				}
+
+				// Consume outbox message to prevent duplicate processing in later iterations.
+				ackOutboxMessage(config.stateRoot, config.batchId, workerAgentId, msg.id);
 			}
 		} catch { /* best effort */ }
 

@@ -9,7 +9,7 @@ import { join, dirname, basename, resolve, relative, delimiter as pathDelimiter 
 import { userInfo } from "os";
 
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig, ExecutionUnit, PacketPaths, RuntimeAgentId, RuntimeAgentRole } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig, ExecutionUnit, PacketPaths, RuntimeAgentId, RuntimeAgentRole, SupervisorAlertCallback } from "./types.ts";
 import { resolvePacketPaths, buildRuntimeAgentId } from "./types.ts";
 import { allocateLanes } from "./waves.ts";
 import { runGit } from "./git.ts";
@@ -2321,6 +2321,7 @@ export async function executeWave(
 	onLanesAllocated?: (lanes: AllocatedLane[]) => void,
 	workspaceConfig?: WorkspaceConfig | null,
 	runtimeBackend?: RuntimeBackend,
+	onSupervisorAlert?: SupervisorAlertCallback,
 ): Promise<WaveExecutionResult> {
 	const startedAt = Date.now();
 	const policy = config.failure.on_task_failure;
@@ -2410,7 +2411,7 @@ export async function executeWave(
 
 	const lanePromises = lanes.map(lane =>
 		backend === "v2"
-			? executeLaneV2(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode, { ORCH_BATCH_ID: batchId })
+			? executeLaneV2(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode, { ORCH_BATCH_ID: batchId }, onSupervisorAlert)
 			: executeLane(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode, { ORCH_BATCH_ID: batchId }),
 	);
 
@@ -2847,6 +2848,7 @@ export async function executeLaneV2(
 	workspaceRoot?: string,
 	isWorkspaceMode?: boolean,
 	extraEnvVars?: Record<string, string>,
+	onSupervisorAlert?: SupervisorAlertCallback,
 ): Promise<LaneExecutionResult> {
 	const laneId = lane.laneId;
 	const laneStartTime = Date.now();
@@ -2914,6 +2916,7 @@ export async function executeLaneV2(
 			maxWorkerMinutes: config.failure?.maxWorkerMinutes || 30,
 			warnPercent: 85,
 			killPercent: 95,
+			onSupervisorAlert,
 		};
 
 		try {
