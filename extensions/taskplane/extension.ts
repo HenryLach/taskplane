@@ -36,6 +36,7 @@ import {
 	writeMailboxMessage,
 	readOutbox,
 	readOutboxHistory,
+	discoverMailboxAgentIds,
 	writeBroadcastMessage,
 	checkRateLimit,
 	recordSend,
@@ -3879,9 +3880,14 @@ export default function (pi: ExtensionAPI) {
 		const state = loadBatchState(stateRoot);
 		if (!state) return "❌ No batch state found.";
 
+		// TP-091: when from is omitted, union live agents + mailbox history roots
+		// so replies from agents no longer active are still visible.
 		const agentIds = from
 			? [from]
-			: collectKnownAgentIds(stateRoot, state);
+			: [...new Set([
+				...collectKnownAgentIds(stateRoot, state),
+				...discoverMailboxAgentIds(stateRoot, state.batchId),
+			])];
 
 		// TP-091: read full outbox history (pending + processed) for durable visibility
 		const allEntries: Array<{ agentId: string; message: import("./types.ts").MailboxMessage; acked: boolean }> = [];

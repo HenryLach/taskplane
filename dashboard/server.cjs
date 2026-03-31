@@ -1409,7 +1409,13 @@ function createServer() {
           return;
         }
       }
-      const events = loadRuntimeAgentEvents(batchState?.batchId, agentId, 300);
+      // Optional: ?sinceTs= to return only events after a timestamp
+      const reqUrl = new URL(req.url, "http://localhost");
+      const sinceTs = parseInt(reqUrl.searchParams.get("sinceTs") || "0", 10);
+      let events = loadRuntimeAgentEvents(batchState?.batchId, agentId, 300);
+      if (sinceTs > 0) {
+        events = events.filter(e => (e.ts || 0) > sinceTs);
+      }
       res.writeHead(200, { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" });
       res.end(JSON.stringify(events));
     } else if (pathname === "/api/state" && req.method === "GET") {

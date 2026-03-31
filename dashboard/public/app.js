@@ -73,18 +73,26 @@ function isLaneAliveV2(laneNumber) {
  */
 function mergeV2LaneSnapshot(legacyLs, v2snap) {
   const base = legacyLs ? { ...legacyLs } : {};
-  // Overlay V2 fields onto legacy shape
-  if (v2snap.workerStatus) base.workerStatus = v2snap.workerStatus;
-  if (v2snap.workerElapsed != null) base.workerElapsed = v2snap.workerElapsed;
-  if (v2snap.workerContextPct != null) base.workerContextPct = v2snap.workerContextPct;
-  if (v2snap.workerToolCount != null) base.workerToolCount = v2snap.workerToolCount;
-  if (v2snap.workerLastTool) base.workerLastTool = v2snap.workerLastTool;
-  if (v2snap.workerCostUsd != null) base.workerCostUsd = v2snap.workerCostUsd;
-  if (v2snap.workerInputTokens != null) base.workerInputTokens = v2snap.workerInputTokens;
-  if (v2snap.workerOutputTokens != null) base.workerOutputTokens = v2snap.workerOutputTokens;
-  if (v2snap.workerCacheReadTokens != null) base.workerCacheReadTokens = v2snap.workerCacheReadTokens;
-  if (v2snap.workerCacheWriteTokens != null) base.workerCacheWriteTokens = v2snap.workerCacheWriteTokens;
+  // Overlay V2 fields from nested worker snapshot onto flat legacy shape.
+  // RuntimeLaneSnapshot has worker: { status, elapsedMs, toolCalls, contextPct, ... }
+  const w = v2snap.worker;
+  if (w) {
+    if (w.status) base.workerStatus = w.status;
+    if (w.elapsedMs != null) base.workerElapsed = w.elapsedMs;
+    if (w.contextPct != null) base.workerContextPct = w.contextPct;
+    if (w.toolCalls != null) base.workerToolCount = w.toolCalls;
+    if (w.lastTool) base.workerLastTool = w.lastTool;
+    if (w.costUsd != null) base.workerCostUsd = w.costUsd;
+    if (w.inputTokens != null) base.workerInputTokens = w.inputTokens;
+    if (w.outputTokens != null) base.workerOutputTokens = w.outputTokens;
+    if (w.cacheReadTokens != null) base.workerCacheReadTokens = w.cacheReadTokens;
+    if (w.cacheWriteTokens != null) base.workerCacheWriteTokens = w.cacheWriteTokens;
+  }
   if (v2snap.taskId) base.taskId = v2snap.taskId;
+  // Enrich progress display from V2 snapshot
+  if (v2snap.progress) {
+    base._v2Progress = v2snap.progress;
+  }
   return base;
 }
 
@@ -997,7 +1005,15 @@ function renderMailboxAuditEvent(evt) {
 /** Render a single directory-scanned message (legacy fallback). */
 function renderMailboxDirMessage(msg) {
   const ts = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : '';
-  const direction = msg.to === 'supervisor' ? '\u2190 supervisor' : `\u2192 ${escapeHtml(msg.to || msg._agentDir || '')}`;
+  // TP-093: for broadcast per-agent ack markers, show recipient identity instead of "_broadcast"
+  let direction;
+  if (msg.to === 'supervisor') {
+    direction = '\u2190 supervisor';
+  } else if (msg._isBroadcast && msg._agentDir && msg._agentDir !== '_broadcast') {
+    direction = `\u2192 ${escapeHtml(msg._agentDir)} (broadcast)`;
+  } else {
+    direction = `\u2192 ${escapeHtml(msg.to || msg._agentDir || '')}`;
+  }
   let statusBadge;
   if (msg._status === 'pending') statusBadge = '<span class="msg-badge msg-pending">pending</span>';
   else if (msg._status === 'delivered') statusBadge = '<span class="msg-badge msg-delivered">delivered</span>';
@@ -1427,7 +1443,7 @@ function resolveV2AgentId(sessionName) {
   // Search by laneNumber match from lane snapshots
   for (const [id, agent] of Object.entries(agents)) {
     if (agent.role === 'worker' && agent.laneNumber != null) {
-      const m = sessionName.match(/lane-(d+)/);
+      const m = sessionName.match(/lane-(\d+)/);
       if (m && parseInt(m[1]) === agent.laneNumber) return id;
     }
   }
@@ -1535,40 +1551,71 @@ function pollConversation() {
 
 // ── Runtime V2 agent event renderer (TP-107) ──────────────────────────────
 
-let v2EventsRendered = 0;
+// Stable cursor for V2 event rendering.
+// Uses a signature string from the last rendered event so the sliding window
+// (server caps at 300) doesn't stall when new tail events push older ones out.
+let v2LastCursor = null; // signature of last rendered event
+let v2FirstRender = true;
+
+function v2EventSignature(evt) {
+  return `${evt.ts || 0}:${evt.type || ''}:${JSON.stringify(evt.payload || {}).slice(0, 80)}`;
+}
 
 function renderV2AgentEvents(events) {
   if (!Array.isArray(events) || events.length === 0) {
-    if (v2EventsRendered === 0) {
+    if (v2FirstRender) {
       $terminalBody.innerHTML = '<div class="conv-empty">No agent events yet…</div>';
     }
     return;
   }
 
-  // Reset check
-  if (events.length < v2EventsRendered) {
-    v2EventsRendered = 0;
-    const container = $terminalBody.querySelector('.conv-stream');
-    if (container) container.innerHTML = '';
-  }
-
-  if (events.length === v2EventsRendered) return;
-
   let container = $terminalBody.querySelector('.conv-stream');
-  if (!container) {
+
+  if (v2FirstRender || !container) {
+    // First load or container missing: full render
     $terminalBody.innerHTML = '';
     container = document.createElement('div');
     container.className = 'conv-stream';
     $terminalBody.appendChild(container);
-  }
+    for (const evt of events) {
+      const html = renderV2Event(evt);
+      if (html) container.insertAdjacentHTML('beforeend', html);
+    }
+    v2LastCursor = v2EventSignature(events[events.length - 1]);
+    v2FirstRender = false;
+  } else {
+    // Incremental: find first unseen event after cursor
+    let cursorIdx = -1;
+    if (v2LastCursor) {
+      for (let i = events.length - 1; i >= 0; i--) {
+        if (v2EventSignature(events[i]) === v2LastCursor) {
+          cursorIdx = i;
+          break;
+        }
+      }
+    }
 
-  const newEvents = events.slice(v2EventsRendered);
-  for (const evt of newEvents) {
-    const html = renderV2Event(evt);
-    if (html) container.insertAdjacentHTML('beforeend', html);
-  }
+    if (cursorIdx === -1) {
+      // Cursor not found (rotation/restart): full re-render
+      container.innerHTML = '';
+      for (const evt of events) {
+        const html = renderV2Event(evt);
+        if (html) container.insertAdjacentHTML('beforeend', html);
+      }
+    } else if (cursorIdx < events.length - 1) {
+      // Append only new events after cursor
+      const newEvents = events.slice(cursorIdx + 1);
+      for (const evt of newEvents) {
+        const html = renderV2Event(evt);
+        if (html) container.insertAdjacentHTML('beforeend', html);
+      }
+    } else {
+      // No new events
+      return;
+    }
 
-  v2EventsRendered = events.length;
+    v2LastCursor = v2EventSignature(events[events.length - 1]);
+  }
 
   if (autoScrollOn) {
     isProgrammaticScroll = true;
@@ -1846,7 +1893,8 @@ function closeViewer() {
   viewerV2AgentId = null;
   autoScrollOn = false;
   convRenderedLines = 0;
-  v2EventsRendered = 0;
+  v2LastCursor = null;
+  v2FirstRender = true;
   lastStatusMdText = '';
   $terminalPanel.style.display = 'none';
   $terminalBody.innerHTML = '';

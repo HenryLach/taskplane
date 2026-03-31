@@ -18,6 +18,7 @@ import {
 	writeOutboxMessage,
 	readOutbox,
 	readOutboxHistory,
+	discoverMailboxAgentIds,
 	writeBroadcastMessage,
 	sessionOutboxDir,
 	ackOutboxMessage,
@@ -432,5 +433,115 @@ describe("9.x: Outbox history (pending + processed)", () => {
 
 	it("9.4: readOutboxHistory returns empty for non-existent agent", () => {
 		expect(readOutboxHistory(tmpDir, bid, "nonexistent")).toEqual([]);
+	});
+});
+
+// ── 10.x: discoverMailboxAgentIds (TP-091 durable discovery) ───────
+
+describe("10.x: discoverMailboxAgentIds", () => {
+	const bid = "20260330T091500";
+
+	it("10.1: discovers agent dirs in mailbox root", () => {
+		// Create outbox for two agents
+		writeOutboxMessage(tmpDir, bid, "agent-a", { from: "agent-a", type: "reply", content: "a" });
+		writeOutboxMessage(tmpDir, bid, "agent-b", { from: "agent-b", type: "escalate", content: "b" });
+		const ids = discoverMailboxAgentIds(tmpDir, bid);
+		expect(ids).toContain("agent-a");
+		expect(ids).toContain("agent-b");
+	});
+
+	it("10.2: excludes _broadcast directory", () => {
+		writeBroadcastMessage(tmpDir, bid, { from: "supervisor", type: "info", content: "hi" });
+		const ids = discoverMailboxAgentIds(tmpDir, bid);
+		expect(ids).not.toContain("_broadcast");
+	});
+
+	it("10.3: returns empty for non-existent batch", () => {
+		expect(discoverMailboxAgentIds(tmpDir, "nonexistent")).toEqual([]);
+	});
+
+	it("10.4: includes agent with only processed outbox (no longer active)", () => {
+		const msg = writeOutboxMessage(tmpDir, bid, "dead-agent", { from: "dead-agent", type: "reply", content: "old" });
+		ackOutboxMessage(tmpDir, bid, "dead-agent", msg.id);
+		const ids = discoverMailboxAgentIds(tmpDir, bid);
+		expect(ids).toContain("dead-agent");
+	});
+});
+
+// ── 11.x: doReadAgentReplies durable discovery (source contract, TP-091) ──
+
+describe("11.x: read_agent_replies includes inactive agent history", () => {
+	it("11.1: doReadAgentReplies unions live + mailbox history IDs", () => {
+		const fnIdx = extensionSrc.indexOf("function doReadAgentReplies(");
+		const block = extensionSrc.slice(fnIdx, fnIdx + 2000);
+		// Must call discoverMailboxAgentIds in the omitted-from path
+		expect(block).toContain("discoverMailboxAgentIds");
+		// Must union/dedupe with collectKnownAgentIds
+		expect(block).toContain("collectKnownAgentIds");
+		expect(block).toContain("new Set");
+	});
+});
+
+// ── 12.x: Dashboard source contract tests (TP-107 remediation) ───────
+
+describe("12.x: Dashboard V2 source contracts", () => {
+	const appSrc = readFileSync(join(__dirname, "..", "..", "dashboard", "public", "app.js"), "utf-8");
+
+	it("12.1: resolveV2AgentId regex uses \\d+ not d+", () => {
+		const fnIdx = appSrc.indexOf("function resolveV2AgentId");
+		const block = appSrc.slice(fnIdx, fnIdx + 1000);
+		// Must contain the correct regex /lane-(\d+)/
+		// In source: the literal chars are backslash-d, which in a JS string is "\d"
+		expect(block).toContain("/lane-(\\d+)/");
+	});
+
+	it("12.2: resolveV2AgentId regex matches lane-12", () => {
+		// Validate the regex itself
+		const m = "orch-foo-lane-12".match(/lane-(\d+)/);
+		expect(m).not.toBe(null);
+		expect(m![1]).toBe("12");
+	});
+
+	it("12.3: mergeV2LaneSnapshot reads nested worker.* fields", () => {
+		const fnIdx = appSrc.indexOf("function mergeV2LaneSnapshot");
+		const block = appSrc.slice(fnIdx, fnIdx + 800);
+		// Must read from nested v2snap.worker (not flat v2snap.workerStatus)
+		expect(block).toContain("v2snap.worker");
+		expect(block).toContain("w.status");
+		expect(block).toContain("w.elapsedMs");
+		expect(block).toContain("w.contextPct");
+		expect(block).toContain("w.toolCalls");
+		expect(block).toContain("w.costUsd");
+		// Must NOT read nonexistent flat keys
+		expect(block).not.toContain("v2snap.workerStatus");
+		expect(block).not.toContain("v2snap.workerElapsed");
+	});
+
+	it("12.4: V2 event renderer uses stable cursor, not index count", () => {
+		const fnIdx = appSrc.indexOf("function renderV2AgentEvents");
+		const block = appSrc.slice(fnIdx, fnIdx + 2000);
+		// Must use cursor-based approach, not v2EventsRendered count
+		expect(block).toContain("v2LastCursor");
+		expect(block).toContain("v2EventSignature");
+		// Must NOT use old index-based approach
+		expect(block).not.toContain("v2EventsRendered");
+	});
+
+	it("12.5: V2 cursor handles sliding window — new tail events appended", () => {
+		const fnIdx = appSrc.indexOf("function renderV2AgentEvents");
+		const block = appSrc.slice(fnIdx, fnIdx + 2000);
+		// Must have: cursor not found -> full re-render logic
+		expect(block).toContain("cursorIdx === -1");
+		// Must have: append only new events after cursor
+		expect(block).toContain("events.slice(cursorIdx + 1)");
+	});
+
+	it("12.6: broadcast fallback direction shows recipient, not _broadcast", () => {
+		const fnIdx = appSrc.indexOf("function renderMailboxDirMessage");
+		const block = appSrc.slice(fnIdx, fnIdx + 800);
+		// Must check _isBroadcast + _agentDir to show recipient identity
+		expect(block).toContain("_isBroadcast");
+		expect(block).toContain("_agentDir !== '_broadcast'");
+		expect(block).toContain("(broadcast)");
 	});
 });

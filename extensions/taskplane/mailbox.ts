@@ -538,6 +538,34 @@ export function ackOutboxMessage(
 	}
 }
 
+/**
+ * Discover all agent IDs that have mailbox directories for a batch.
+ * Returns directory names under .pi/mailbox/{batchId}/ excluding _broadcast.
+ * Used to find agents with historical messages even if no longer in the registry.
+ *
+ * @param stateRoot - Root directory containing .pi/
+ * @param batchId - Batch ID
+ * @returns Array of agent IDs found in mailbox directories
+ *
+ * @since TP-091
+ */
+export function discoverMailboxAgentIds(
+	stateRoot: string,
+	batchId: string,
+): string[] {
+	const mbRoot = join(stateRoot, ".pi", MAILBOX_DIR_NAME, batchId);
+	if (!existsSync(mbRoot)) return [];
+	try {
+		const entries = readdirSync(mbRoot, { withFileTypes: true });
+		return entries
+			.filter(e => e.isDirectory() && e.name !== "_broadcast")
+			.map(e => e.name);
+	} catch {
+		return [];
+	}
+}
+
+
 export type MailboxAuditEventType =
 	| "message_sent"
 	| "message_delivered"

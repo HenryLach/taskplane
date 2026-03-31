@@ -76,6 +76,7 @@
 | 2026-03-30 | Agents + Messages panels added | index.html: 2 new panels, app.js: renderAgentsPanel + renderMessagesPanel, style.css: agent/message styles |
 | 2026-03-30 | Agent events API added | /api/agent-events/{agentId} endpoint for V2 event logs |
 | 2026-03-30 | Task complete | .DONE created |
+| 2026-03-31 | Remediation round 2 | Fix regex bug, nested schema mapping, sliding-window cursor, durable discovery, broadcast direction |
 
 ---
 
