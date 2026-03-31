@@ -1,6 +1,6 @@
 # TP-102: Runtime V2 ExecutionUnit and Packet-Path Contracts — Status
 
-**Current Step:** Step 1: Define Runtime V2 Contracts
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-30
 **Review Level:** 2
@@ -19,29 +19,29 @@
 ---
 
 ### Step 1: Define Runtime V2 Contracts
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Add ExecutionUnit, packet-path, registry manifest, and normalized event type contracts to `types.ts`
-- [ ] Add validation helpers and naming rules that preserve repo/workspace correctness
-- [ ] Document compatibility shims where legacy task/lane records still need to coexist during migration
+- [x] Add ExecutionUnit, packet-path, registry manifest, and normalized event type contracts to `types.ts`
+- [x] Add validation helpers and naming rules that preserve repo/workspace correctness
+- [x] Document compatibility shims where legacy task/lane records still need to coexist during migration
 
 ---
 
 ### Step 2: Thread Contracts into Orchestrator Interfaces
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Update engine/execution/resume signatures to accept explicit packet-path and runtime identity data where needed
-- [ ] Add helper functions for resolving runtime artifact roots without TMUX/session assumptions
-- [ ] Ensure new contracts are additive and do not yet force the full backend cutover
+- [x] Update engine/execution/resume signatures to accept explicit packet-path and runtime identity data where needed
+- [x] Add helper functions for resolving runtime artifact roots without TMUX/session assumptions
+- [x] Ensure new contracts are additive and do not yet force the full backend cutover
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Add or update behavioral tests covering ExecutionUnit shape, packet-path authority precedence, and runtime artifact naming
-- [ ] Run the full suite
-- [ ] Fix all failures
+- [x] Add or update behavioral tests covering ExecutionUnit shape, packet-path authority precedence, and runtime artifact naming
+- [x] Run the full suite (3185 pass, 0 fail)
+- [x] Fix all failures
 
 ---
 

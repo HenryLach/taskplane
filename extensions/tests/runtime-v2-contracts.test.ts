@@ -34,7 +34,16 @@ import {
 	type RuntimeAgentRole,
 	type RuntimeAgentStatus,
 	type PacketPaths,
+	type AllocatedLane,
+	type AllocatedTask,
+	type ParsedTask,
 } from "../taskplane/types.ts";
+
+import {
+	buildExecutionUnit,
+	buildAgentIdFromLane,
+	resolveRuntimeStateRoot,
+} from "../taskplane/execution.ts";
 
 // ── 1. PacketPaths ──────────────────────────────────────────────────
 
@@ -339,26 +348,146 @@ describe("6.x: ExecutionUnit shape", () => {
 	});
 });
 
-// ── 7. Type exports existence checks ────────────────────────────────
+// ── 7. Bridge helpers (TP-102 Step 2) ───────────────────────────────
 
-describe("7.x: Type and utility export presence", () => {
-	it("7.1: resolvePacketPaths is a function", () => {
+function makeParsedTask(overrides?: Partial<ParsedTask>): ParsedTask {
+	return {
+		taskId: "TP-102",
+		taskName: "Test task",
+		reviewLevel: 2,
+		size: "M",
+		dependencies: [],
+		fileScope: [],
+		taskFolder: "/project/taskplane-tasks/TP-102-test",
+		promptPath: "/project/taskplane-tasks/TP-102-test/PROMPT.md",
+		areaName: "general",
+		status: "pending" as const,
+		...overrides,
+	};
+}
+
+function makeAllocatedTask(overrides?: Partial<ParsedTask>): AllocatedTask {
+	return {
+		taskId: "TP-102",
+		order: 0,
+		task: makeParsedTask(overrides),
+		estimatedMinutes: 30,
+	};
+}
+
+function makeAllocatedLane(overrides?: Partial<AllocatedLane>): AllocatedLane {
+	return {
+		laneNumber: 1,
+		laneId: "lane-1",
+		tmuxSessionName: "orch-henrylach-lane-1",
+		worktreePath: "/project/.worktrees/op-batch/lane-1",
+		branch: "task/henrylach-lane-1-batch",
+		tasks: [makeAllocatedTask()],
+		strategy: "affinity-first" as const,
+		estimatedLoad: 2,
+		estimatedMinutes: 30,
+		...overrides,
+	};
+}
+
+describe("7.x: buildExecutionUnit bridge", () => {
+	it("7.1: produces an ExecutionUnit with correct packet paths for repo mode", () => {
+		const lane = makeAllocatedLane();
+		const task = makeAllocatedTask();
+		const unit = buildExecutionUnit(lane, task, "/project");
+
+		expect(unit.id).toBe("TP-102");
+		expect(unit.taskId).toBe("TP-102");
+		expect(unit.segmentId).toBe(null);
+		expect(unit.executionRepoId).toBe("default");
+		expect(unit.packetHomeRepoId).toBe("default");
+		expect(unit.worktreePath).toBe(lane.worktreePath);
+		expect(unit.packet.statusPath).toContain("STATUS.md");
+		expect(unit.packet.donePath).toContain(".DONE");
+		expect(unit.packet.reviewsDir).toContain(".reviews");
+		expect(unit.task).toBe(task.task);
+	});
+
+	it("7.2: uses packetRepoId from ParsedTask when available", () => {
+		const lane = makeAllocatedLane({ repoId: "api" });
+		const task = makeAllocatedTask({ packetRepoId: "shared-libs" });
+		const unit = buildExecutionUnit(lane, task, "/project", true);
+
+		expect(unit.executionRepoId).toBe("api");
+		expect(unit.packetHomeRepoId).toBe("shared-libs");
+	});
+
+	it("7.3: uses segment ID when activeSegmentId is set", () => {
+		const task = makeAllocatedTask({ activeSegmentId: "TP-102::api" });
+		const lane = makeAllocatedLane();
+		const unit = buildExecutionUnit(lane, task, "/project");
+
+		expect(unit.segmentId).toBe("TP-102::api");
+		expect(unit.id).toBe("TP-102::api");
+	});
+
+	it("7.4: packet paths are valid PacketPaths", () => {
+		const unit = buildExecutionUnit(makeAllocatedLane(), makeAllocatedTask(), "/project");
+		expect(validatePacketPaths(unit.packet)).toEqual([]);
+	});
+});
+
+describe("7.x: buildAgentIdFromLane bridge", () => {
+	it("7.5: worker ID appends -worker to tmuxSessionName", () => {
+		const lane = makeAllocatedLane();
+		expect(buildAgentIdFromLane(lane, "worker")).toBe("orch-henrylach-lane-1-worker");
+	});
+
+	it("7.6: reviewer ID appends -reviewer", () => {
+		const lane = makeAllocatedLane();
+		expect(buildAgentIdFromLane(lane, "reviewer")).toBe("orch-henrylach-lane-1-reviewer");
+	});
+
+	it("7.7: lane-runner ID equals tmuxSessionName", () => {
+		const lane = makeAllocatedLane();
+		expect(buildAgentIdFromLane(lane, "lane-runner")).toBe("orch-henrylach-lane-1");
+	});
+
+	it("7.8: merger ID uses prefix-merge-N pattern", () => {
+		const lane = makeAllocatedLane();
+		expect(buildAgentIdFromLane(lane, "merger", 2)).toBe("orch-henrylach-merge-2");
+	});
+});
+
+describe("7.x: resolveRuntimeStateRoot", () => {
+	it("7.9: returns workspaceRoot when provided", () => {
+		expect(resolveRuntimeStateRoot("/repo", "/workspace")).toBe("/workspace");
+	});
+
+	it("7.10: returns repoRoot when no workspaceRoot", () => {
+		expect(resolveRuntimeStateRoot("/repo")).toBe("/repo");
+	});
+
+	it("7.11: returns repoRoot when workspaceRoot is undefined", () => {
+		expect(resolveRuntimeStateRoot("/repo", undefined)).toBe("/repo");
+	});
+});
+
+// ── 8. Type exports existence checks ────────────────────────────────
+
+describe("8.x: Type and utility export presence", () => {
+	it("8.1: resolvePacketPaths is a function", () => {
 		expect(typeof resolvePacketPaths).toBe("function");
 	});
 
-	it("7.2: validatePacketPaths is a function", () => {
+	it("8.2: validatePacketPaths is a function", () => {
 		expect(typeof validatePacketPaths).toBe("function");
 	});
 
-	it("7.3: validateAgentManifest is a function", () => {
+	it("8.3: validateAgentManifest is a function", () => {
 		expect(typeof validateAgentManifest).toBe("function");
 	});
 
-	it("7.4: buildRuntimeAgentId is a function", () => {
+	it("8.4: buildRuntimeAgentId is a function", () => {
 		expect(typeof buildRuntimeAgentId).toBe("function");
 	});
 
-	it("7.5: runtime path helpers are functions", () => {
+	it("8.5: runtime path helpers are functions", () => {
 		expect(typeof runtimeRoot).toBe("function");
 		expect(typeof runtimeAgentDir).toBe("function");
 		expect(typeof runtimeManifestPath).toBe("function");
@@ -367,7 +496,13 @@ describe("7.x: Type and utility export presence", () => {
 		expect(typeof runtimeRegistryPath).toBe("function");
 	});
 
-	it("7.6: TERMINAL_AGENT_STATUSES is a Set", () => {
+	it("8.6: TERMINAL_AGENT_STATUSES is a Set", () => {
 		expect(TERMINAL_AGENT_STATUSES instanceof Set).toBe(true);
+	});
+
+	it("8.7: bridge helpers are functions", () => {
+		expect(typeof buildExecutionUnit).toBe("function");
+		expect(typeof buildAgentIdFromLane).toBe("function");
+		expect(typeof resolveRuntimeStateRoot).toBe("function");
 	});
 });

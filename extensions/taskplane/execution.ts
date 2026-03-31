@@ -9,7 +9,8 @@ import { join, dirname, basename, resolve, relative, delimiter as pathDelimiter 
 import { userInfo } from "os";
 
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig, ExecutionUnit, PacketPaths, RuntimeAgentId, RuntimeAgentRole } from "./types.ts";
+import { resolvePacketPaths, buildRuntimeAgentId } from "./types.ts";
 import { allocateLanes } from "./waves.ts";
 import { runGit } from "./git.ts";
 
@@ -2669,6 +2670,130 @@ export async function executeWithStopAll(
 		startTime: Date.now(),
 		endTime: Date.now(),
 	});
+}
+
+// ── Runtime V2 Bridge Helpers (TP-102) ─────────────────────────────────────
+//
+// These helpers bridge between existing legacy data structures
+// (AllocatedLane, AllocatedTask, resolveCanonicalTaskPaths) and
+// Runtime V2 contracts (ExecutionUnit, PacketPaths, RuntimeAgentId).
+//
+// They are additive — existing code paths continue to work.
+// Runtime V2 consumers can start using these to avoid coupling to
+// TMUX naming, cwd-derived paths, or extension lifecycle assumptions.
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build a Runtime V2 ExecutionUnit from existing legacy structures.
+ *
+ * Translates the current AllocatedLane + AllocatedTask into the new
+ * ExecutionUnit contract with explicit packet-path authority.
+ *
+ * Uses `resolveCanonicalTaskPaths` to derive packet paths through
+ * the existing resolution logic (worktree-relative, cross-repo copy,
+ * archive fallback). This preserves current behavior while surfacing
+ * it through the Runtime V2 contract.
+ *
+ * @param lane - Allocated lane containing worktree and identity info
+ * @param task - Allocated task to build an execution unit for
+ * @param repoRoot - Main repository root
+ * @param isWorkspaceMode - Whether workspace mode is active
+ * @returns A fully-resolved ExecutionUnit
+ *
+ * @since TP-102
+ */
+export function buildExecutionUnit(
+	lane: AllocatedLane,
+	task: AllocatedTask,
+	repoRoot: string,
+	isWorkspaceMode?: boolean,
+): ExecutionUnit {
+	const resolved = resolveCanonicalTaskPaths(
+		task.task.taskFolder,
+		lane.worktreePath,
+		repoRoot,
+		isWorkspaceMode,
+	);
+
+	const executionRepoId = lane.repoId ?? "default";
+	const packetHomeRepoId = task.task.packetRepoId ?? executionRepoId;
+
+	// Build a segment-style ID if this is a segment execution,
+	// otherwise use the plain task ID.
+	const segmentId = task.task.activeSegmentId ?? null;
+	const id = segmentId ?? task.taskId;
+
+	return {
+		id,
+		taskId: task.taskId,
+		segmentId,
+		executionRepoId,
+		packetHomeRepoId,
+		worktreePath: lane.worktreePath,
+		packet: {
+			promptPath: resolved.taskFolderResolved + "/PROMPT.md",
+			statusPath: resolved.statusPath,
+			donePath: resolved.donePath,
+			reviewsDir: resolved.taskFolderResolved + "/.reviews",
+			taskFolder: resolved.taskFolderResolved,
+		},
+		task: task.task,
+	};
+}
+
+/**
+ * Build a RuntimeAgentId for a lane's agent from existing naming.
+ *
+ * Bridges the current TMUX session naming convention into a
+ * Runtime V2 stable agent ID. The output is compatible with
+ * existing supervisor tools and mailbox addressing.
+ *
+ * @param lane - Allocated lane with TMUX session name
+ * @param role - Agent role
+ * @param mergeIndex - Merge wave index (only for merge agents)
+ * @returns Canonical agent ID
+ *
+ * @since TP-102
+ */
+export function buildAgentIdFromLane(
+	lane: AllocatedLane,
+	role: RuntimeAgentRole,
+	mergeIndex?: number,
+): RuntimeAgentId {
+	// The current tmuxSessionName is already in the right format
+	// (e.g., "orch-henrylach-lane-1"). We derive agent IDs from it
+	// by appending the role suffix, matching the existing convention.
+	if (role === "merger" && mergeIndex != null) {
+		// Merge agents use a different naming pattern
+		const prefix = lane.tmuxSessionName.replace(/-lane-\d+$/, "");
+		return `${prefix}-merge-${mergeIndex}`;
+	}
+	if (role === "lane-runner") {
+		return lane.tmuxSessionName;
+	}
+	return `${lane.tmuxSessionName}-${role}`;
+}
+
+/**
+ * Resolve the Runtime V2 state root from available context.
+ *
+ * The state root is where `.pi/runtime/` artifacts live. In workspace
+ * mode this is the workspace root; in repo mode it's the repo root.
+ *
+ * This centralizes the resolution so Runtime V2 code doesn't need
+ * to repeat the workspace-vs-repo logic.
+ *
+ * @param repoRoot - Main repository root
+ * @param workspaceRoot - Workspace root (undefined in repo mode)
+ * @returns Absolute path to use as the state root for .pi/ artifacts
+ *
+ * @since TP-102
+ */
+export function resolveRuntimeStateRoot(
+	repoRoot: string,
+	workspaceRoot?: string,
+): string {
+	return workspaceRoot ?? repoRoot;
 }
 
 // ── /orch Command — Full Execution (Step 5) ─────────────────────────
