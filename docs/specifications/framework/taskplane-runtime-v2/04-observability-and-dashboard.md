@@ -329,12 +329,15 @@ conversation events for the dashboard conversation viewer:
 - `assistant_message` — emitted on each `message_end` RPC event when
   `message.role === "assistant"`, with content extracted from string or
   Anthropic content-block array format, bounded to 2000 chars
-- `tool_call` — enriched with `path` field for file-operating tools
-  (read, write, edit)
+- `tool_call` — emits bounded `{ tool, path, argsPreview }` only (no raw
+  args object persisted — prevents large write/edit content from bloating logs)
 - `tool_result` — enriched with `summary` field from tool output (max 200 chars)
 
-Payload bounding prevents unbounded event-log growth during long-running batches.
-`MAX_CONV_PAYLOAD_CHARS = 2000` for conversation text, 200 for tool paths/summaries.
+Payload bounding prevents unbounded event-log growth during long-running batches:
+- `MAX_CONV_PAYLOAD_CHARS = 2000` for conversation text (prompt_sent, assistant_message)
+- 200 chars for tool paths, arg previews, and result summaries
+- `extractAssistantText()` safely handles string content, Anthropic content-block
+  arrays, null/malformed entries, and message.text fallback without throwing
 
 ### Dashboard Runtime V2 integration (TP-107)
 

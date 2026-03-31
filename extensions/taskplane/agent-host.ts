@@ -118,9 +118,12 @@ function extractAssistantText(message: Record<string, unknown>): string {
 	// Direct string content
 	if (typeof message.content === "string") return message.content;
 	// Array of content blocks (Anthropic format)
+	// Guard: skip null/non-object entries to prevent TypeError on malformed streams
 	if (Array.isArray(message.content)) {
 		const textBlocks = message.content
-			.filter((b) => b.type === "text" && typeof b.text === "string")
+			.filter((b: unknown): b is { type: string; text: string } =>
+				typeof b === "object" && b !== null &&
+				(b as any).type === "text" && typeof (b as any).text === "string")
 			.map((b) => b.text);
 		if (textBlocks.length > 0) return textBlocks.join("\n");
 	}
@@ -605,9 +608,9 @@ export function spawnAgent(
 						const argPreview = typeof event.args === "string" ? event.args.slice(0, 80) :
 							(event.args && typeof Object.values(event.args)[0] === "string" ? String(Object.values(event.args)[0]).slice(0, 80) : "");
 						lastTool = argPreview ? `${toolName}: ${argPreview}` : toolName;
-						// TP-111: Extract path for dashboard display (read, write, edit tools)
+						// TP-111: Bounded payload only — no raw args in durable event log
 						const toolPath = event.args?.path ? String(event.args.path).slice(0, 200) : "";
-						emitEvent("tool_call", { tool: toolName, path: toolPath, args: event.args });
+						emitEvent("tool_call", { tool: toolName, path: toolPath, argsPreview: argPreview });
 						break;
 					}
 					case "tool_execution_end": {
