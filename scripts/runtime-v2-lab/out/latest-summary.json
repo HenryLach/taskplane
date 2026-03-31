@@ -1,0 +1,129 @@
+{
+  "runAt": "2026-03-30T21:57:12.765Z",
+  "environment": {
+    "node": "v25.8.0",
+    "piVersion": null,
+    "sessionModeBaseline": "session-attached but resumable"
+  },
+  "experiments": [
+    {
+      "name": "close-strategy",
+      "immediate": {
+        "exitCode": 0,
+        "stderrTail": "",
+        "hasAssertion": false
+      },
+      "delayed": {
+        "exitCode": 0,
+        "contextUsagePresent": true,
+        "assistantTexts": [
+          "OK"
+        ]
+      }
+    },
+    {
+      "name": "reliability",
+      "sequential": {
+        "runs": 5,
+        "successes": 5,
+        "results": [
+          {
+            "exitCode": 0,
+            "contextUsagePresent": true,
+            "stderrTail": ""
+          },
+          {
+            "exitCode": 0,
+            "contextUsagePresent": true,
+            "stderrTail": ""
+          },
+          {
+            "exitCode": 0,
+            "contextUsagePresent": true,
+            "stderrTail": ""
+          },
+          {
+            "exitCode": 0,
+            "contextUsagePresent": true,
+            "stderrTail": ""
+          },
+          {
+            "exitCode": 0,
+            "contextUsagePresent": true,
+            "stderrTail": ""
+          }
+        ]
+      },
+      "parallel": {
+        "runs": 3,
+        "successes": 3,
+        "results": [
+          {
+            "exitCode": 0,
+            "contextUsagePresent": true,
+            "stderrTail": ""
+          },
+          {
+            "exitCode": 0,
+            "contextUsagePresent": true,
+            "stderrTail": ""
+          },
+          {
+            "exitCode": 0,
+            "contextUsagePresent": true,
+            "stderrTail": ""
+          }
+        ]
+      }
+    },
+    {
+      "name": "mailbox-steering",
+      "exitCode": 0,
+      "deliveredMessages": [
+        "1774907917019-ffe03"
+      ],
+      "ackFiles": [
+        "1774907917019-ffe03.msg.json"
+      ],
+      "assistantTexts": [
+        "READY",
+        "STEER-ACK"
+      ],
+      "prewrittenMessageId": "1774907917019-ffe03"
+    },
+    {
+      "name": "packet-paths",
+      "attempts": [
+        {
+          "exitCode": null,
+          "signal": "SIGTERM",
+          "doneExists": false,
+          "doneContent": null,
+          "toolCalls": [],
+          "assistantTexts": [],
+          "stderrTail": ""
+        },
+        {
+          "exitCode": null,
+          "signal": "SIGTERM",
+          "doneExists": false,
+          "doneContent": null,
+          "toolCalls": [],
+          "assistantTexts": [],
+          "stderrTail": ""
+        }
+      ],
+      "successes": 0,
+      "note": "A passing attempt demonstrates explicit packet paths are viable outside cwd assumptions; a failing/hanging attempt indicates tool-heavy multi-step prompts still need robust retry/timeout handling in Runtime V2."
+    },
+    {
+      "name": "bridge-feasibility",
+      "status": "open",
+      "note": "A true synchronous file-bridge callback was not validated in this first lab run. The mailbox and packet-path experiments reduce risk, but bridge semantics still need a dedicated proof task during TP-106/TP-105 work.",
+      "smokeExitCode": 0,
+      "smokeAssistantTexts": [
+        "BRIDGE-DEFERRED"
+      ]
+    }
+  ]
+}
