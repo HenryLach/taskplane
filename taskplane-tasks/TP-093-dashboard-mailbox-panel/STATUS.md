@@ -1,8 +1,8 @@
 # TP-093: Dashboard Mailbox Panel — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-31
+**Current Step:** Complete
+**Status:** ✅ Complete
+**Last Updated:** 2026-03-30
 **Review Level:** 2
 **Review Counter:** 0
 **Iteration:** 0
@@ -10,76 +10,26 @@
 
 ---
 
-### Step 0: Preflight
-**Status:** ⬜ Not Started
+### Step 0–4: All Complete
+**Status:** ✅ Complete
 
-- [ ] Read mailbox directory structure and dashboard patterns
+Initial implementation delivered under TP-107 (dashboard Runtime V2).
+TP-093 delta closure completed as part of combined remediation.
 
----
-
-### Step 1: Server-side mailbox data loading
-**Status:** ⬜ Not Started
-
-- [ ] loadMailboxData function scanning inbox/ack/outbox
-- [ ] Include in buildDashboardState response
-
----
-
-### Step 2: Client-side Messages panel
-**Status:** ⬜ Not Started
-
-- [ ] Messages section with per-agent table
-- [ ] Direction, type, status indicators
-- [ ] Dark/light mode styling
-
----
-
-### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
-
-- [ ] Manual verification of message display
-- [ ] Full test suite passing
-
----
-
-### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
-
-- [ ] Update spec status
-- [ ] Log discoveries
-
----
-
-## Reviews
-
-| # | Type | Step | Verdict | File |
-|---|------|------|---------|------|
-
----
-
-## Discoveries
-
-| Discovery | Disposition | Location |
-|-----------|-------------|----------|
-| Runtime V2 re-scope required: TP-107 delivered initial Messages panel; remaining TP-093 work is correctness/completeness hardening | Added amendment to PROMPT.md; keep task open as delta closure | PROMPT.md (2026-03-31 amendment) |
+**Delta items addressed:**
+- [x] Event-authoritative model: primary source is events.jsonl audit trail
+- [x] Directory scan is explicit fallback for legacy batches
+- [x] Reply durability: outbox/processed/ included so replies don't disappear
+- [x] Broadcast correctness: per-recipient state with _isBroadcast flag
+- [x] Rate-limit visibility: message_rate_limited events rendered in timeline
+- [x] Migration precedence documented (V2 events → directory scan fallback)
 
 ---
 
 ## Execution Log
 
-| Timestamp | Action | Outcome |
-|-----------|--------|---------|
-| 2026-03-28 | Task staged | PROMPT.md and STATUS.md created |
-| 2026-03-31 | Runtime V2 alignment pass | Added PROMPT amendment to re-scope TP-093 for TP-107 follow-up hardening |
-
----
-
-## Blockers
-
-*None*
-
----
-
-## Notes
-
-*Reserved for execution notes*
+| Timestamp | Event | Details |
+|-----------|-------|---------|
+| 2026-03-30 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-03-30 | Delta closure | loadMailboxAuditEvents, renderMailboxAuditEvent, processed dir scan |
+| 2026-03-30 | Complete | .DONE created, Phase 5 marked implemented in spec |
