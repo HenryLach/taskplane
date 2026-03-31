@@ -19,6 +19,8 @@ import {
 	readOutbox,
 	writeBroadcastMessage,
 	sessionOutboxDir,
+	ackOutboxMessage,
+	appendMailboxAuditEvent,
 	checkRateLimit,
 	recordSend,
 	_resetRateLimits,
@@ -99,6 +101,19 @@ describe("1.x: Agent outbox", () => {
 		}
 		expect(threw).toBe(true);
 	});
+
+	it("1.6: ackOutboxMessage moves message to processed and prevents reread", () => {
+		const msg = writeOutboxMessage(tmpDir, batchId, agentId, {
+			from: agentId,
+			type: "reply",
+			content: "processed once",
+		});
+		expect(readOutbox(tmpDir, batchId, agentId).length).toBe(1);
+		expect(ackOutboxMessage(tmpDir, batchId, agentId, msg.id)).toBe(true);
+		expect(readOutbox(tmpDir, batchId, agentId).length).toBe(0);
+		const processedPath = join(tmpDir, ".pi", "mailbox", batchId, agentId, "outbox", "processed", `${msg.id}.msg.json`);
+		expect(existsSync(processedPath)).toBe(true);
+	});
 });
 
 // ── 2. Broadcast ─────────────────────────────────────────────────────
@@ -117,6 +132,21 @@ describe("2.x: Broadcast messages", () => {
 		const files = readdirSync(broadcastInbox).filter(f => f.endsWith(".msg.json"));
 		expect(files.length).toBe(1);
 		expect(msg.to).toBe("_broadcast");
+	});
+
+	it("2.2: appendMailboxAuditEvent writes JSONL event", () => {
+		appendMailboxAuditEvent(tmpDir, batchId, {
+			type: "message_sent",
+			from: "supervisor",
+			to: "agent-1",
+			messageType: "info",
+			contentPreview: "hello",
+		});
+		const eventsPath = join(tmpDir, ".pi", "mailbox", batchId, "events.jsonl");
+		expect(existsSync(eventsPath)).toBe(true);
+		const lines = readFileSync(eventsPath, "utf-8").trim().split("\n");
+		expect(lines.length).toBe(1);
+		expect(lines[0]).toContain('"type":"message_sent"');
 	});
 });
 
@@ -199,6 +229,18 @@ describe("4.x: Registry-backed supervisor tool contracts", () => {
 	it("4.7: broadcast_message calls writeBroadcastMessage", () => {
 		expect(extensionSrc).toContain("writeBroadcastMessage(stateRoot");
 	});
+
+	it("4.8: read_agent_replies uses registry-backed agent discovery helper", () => {
+		expect(extensionSrc).toContain("collectKnownAgentIds(stateRoot, state)");
+	});
+
+	it("4.9: broadcast_message applies per-agent rate limiting", () => {
+		const fnIdx = extensionSrc.indexOf("function doBroadcastMessage(");
+		const block = extensionSrc.slice(fnIdx, fnIdx + 3500);
+		expect(block).toContain("collectKnownAgentIds");
+		expect(block).toContain("checkRateLimit(agentId)");
+		expect(block).toContain("recordSend(agentId)");
+	});
 });
 
 // ── 5. Broadcast delivery in agent-host (TP-106 remediation) ──────
@@ -206,29 +248,52 @@ describe("4.x: Registry-backed supervisor tool contracts", () => {
 describe("5.x: Agent-host broadcast delivery", () => {
 	const agentHostSrc = readFileSync(join(__dirname, "..", "taskplane", "agent-host.ts"), "utf-8");
 
-	it("8.1: checkMailbox reads _broadcast/inbox in addition to own inbox", () => {
+	it("5.1: checkMailbox reads _broadcast/inbox in addition to own inbox", () => {
 		expect(agentHostSrc).toContain("_broadcast");
 		expect(agentHostSrc).toContain("broadcastInbox");
 		expect(agentHostSrc).toContain("isBroadcast");
 	});
 
-	it("8.2: broadcast messages are validated with to === _broadcast", () => {
+	it("5.2: broadcast messages are validated with to === _broadcast", () => {
 		expect(agentHostSrc).toContain('msg.to !== "_broadcast"');
+	});
+
+	it("5.3: broadcast delivery uses per-agent ack markers (fan-out safe)", () => {
+		expect(agentHostSrc).toContain("if (isBroadcast && existsSync(ackPath)) continue");
+		expect(agentHostSrc).toContain("writeFileSync(ackPath, raw");
+	});
+
+	it("5.4: registry snapshot freshness is maintained while agent is running", () => {
+		expect(agentHostSrc).toContain("REGISTRY_REFRESH_INTERVAL_MS");
+		expect(agentHostSrc).toContain("refreshRegistrySnapshot(false)");
 	});
 });
 
-// ── 6. Registry wiring in lane-runner (TP-106 remediation) ────────
+// ── 6. Lane-runner outbox + bridge wiring (TP-106 remediation) ─────
 
-describe("6.x: Lane-runner registry and outbox wiring", () => {
+describe("6.x: Lane-runner outbox and bridge wiring", () => {
 	const laneRunnerSrc = readFileSync(join(__dirname, "..", "taskplane", "lane-runner.ts"), "utf-8");
 
-	it("6.1: lane-runner writes registry snapshot", () => {
-		expect(laneRunnerSrc).toContain("writeRegistrySnapshot");
-		expect(laneRunnerSrc).toContain("buildRegistrySnapshot");
+	it("6.1: lane-runner polls and acks outbox messages", () => {
+		expect(laneRunnerSrc).toContain("readOutbox");
+		expect(laneRunnerSrc).toContain("ackOutboxMessage");
 	});
 
-	it("6.2: lane-runner polls outbox after worker exit", () => {
-		expect(laneRunnerSrc).toContain("readOutbox");
+	it("6.2: lane-runner emits reply/escalation audit events", () => {
+		expect(laneRunnerSrc).toContain("reply_sent");
+		expect(laneRunnerSrc).toContain("escalation_sent");
+		expect(laneRunnerSrc).toContain("appendMailboxAuditEvent");
+	});
+
+	it("6.3: lane-runner wires agent bridge extension and env", () => {
+		expect(laneRunnerSrc).toContain("agent-bridge-extension.ts");
+		expect(laneRunnerSrc).toContain("TASKPLANE_OUTBOX_DIR");
+		expect(laneRunnerSrc).toContain("TASKPLANE_AGENT_ID");
+	});
+
+	it("6.4: lane-runner can fan out outbox messages to supervisor alerts", () => {
+		expect(laneRunnerSrc).toContain("onSupervisorAlert");
+		expect(laneRunnerSrc).toContain('category: "agent-message"');
 	});
 });
 
@@ -287,5 +352,13 @@ describe("8.x: Mailbox V2 exports", () => {
 
 	it("8.6: sessionOutboxDir is a function", () => {
 		expect(typeof sessionOutboxDir).toBe("function");
+	});
+
+	it("8.7: ackOutboxMessage is a function", () => {
+		expect(typeof ackOutboxMessage).toBe("function");
+	});
+
+	it("8.8: appendMailboxAuditEvent is a function", () => {
+		expect(typeof appendMailboxAuditEvent).toBe("function");
 	});
 });

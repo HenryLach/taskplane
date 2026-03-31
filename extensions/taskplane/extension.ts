@@ -34,12 +34,11 @@ import type { EngineWorkerData, WorkerToMainMessage } from "./engine-worker.ts";
 import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, formatPreflightSweep, rotateSupervisorLogs, formatLogRotation } from "./cleanup.ts";
 import {
 	writeMailboxMessage,
-	readInbox,
 	readOutbox,
 	writeBroadcastMessage,
 	checkRateLimit,
 	recordSend,
-	sessionOutboxDir,
+	appendMailboxAuditEvent,
 } from "./mailbox.ts";
 import {
 	readRegistrySnapshot,
@@ -3702,6 +3701,34 @@ export default function (pi: ExtensionAPI) {
 		},
 	});
 
+	function collectKnownAgentIds(stateRoot: string, state: PersistedBatchState): string[] {
+		const ids = new Set<string>();
+
+		// Runtime V2 source of truth first.
+		const registry = readRegistrySnapshot(stateRoot, state.batchId);
+		if (registry) {
+			for (const manifest of Object.values(registry.agents)) {
+				if (manifest.role !== "worker" && manifest.role !== "reviewer" && manifest.role !== "merger") continue;
+				if (isTerminalStatus(manifest.status) || !registryIsProcessAlive(manifest.pid)) continue;
+				ids.add(manifest.agentId);
+			}
+		}
+
+		// Legacy fallback from lane naming when registry is absent/empty.
+		if (ids.size === 0) {
+			const orchConfig = execCtx?.orchestratorConfig;
+			const tmuxPrefix = orchConfig?.orchestrator?.tmux_prefix ?? "orch";
+			const opId = orchConfig ? resolveOperatorId(orchConfig) : "op";
+			for (const lane of state.lanes) {
+				ids.add(`${lane.tmuxSessionName}-worker`);
+				ids.add(`${lane.tmuxSessionName}-reviewer`);
+				ids.add(`${tmuxPrefix}-${opId}-merge-${lane.laneNumber}`);
+			}
+		}
+
+		return [...ids];
+	}
+
 	/**
 	 * Send a steering message to a running agent via the mailbox system.
 	 *
@@ -3735,19 +3762,8 @@ export default function (pi: ExtensionAPI) {
 			return `❌ Batch ${state.batchId} is in terminal phase (${state.phase}). Start or resume a batch before sending messages.`;
 		}
 
-		// Build the set of valid agent session names from batch state
-		const validSessions = new Set<string>();
-		const orchConfig = execCtx?.orchestratorConfig;
-		const tmuxPrefix = orchConfig?.orchestrator?.tmux_prefix ?? "orch";
-		const opId = orchConfig ? resolveOperatorId(orchConfig) : "op";
-
-		for (const lane of state.lanes) {
-			// Worker and reviewer are derived from lane session name
-			validSessions.add(`${lane.tmuxSessionName}-worker`);
-			validSessions.add(`${lane.tmuxSessionName}-reviewer`);
-			// Merger: {tmuxPrefix}-{opId}-merge-{laneNumber}
-			validSessions.add(`${tmuxPrefix}-${opId}-merge-${lane.laneNumber}`);
-		}
+		// Build valid runtime agent IDs (registry-first, legacy fallback).
+		const validSessions = new Set<string>(collectKnownAgentIds(stateRoot, state));
 
 		// Validate target session
 		if (!validSessions.has(to)) {
@@ -3779,8 +3795,13 @@ export default function (pi: ExtensionAPI) {
 		const rateCheck = checkRateLimit(to);
 		if (!rateCheck.allowed) {
 			const waitSec = Math.ceil((rateCheck.retryAfterMs ?? 0) / 1000);
-			// TP-106: Emit rate_limited event for auditability
-			console.error(`[mailbox] rate-limited: ${to} (retry after ${waitSec}s)`);
+			appendMailboxAuditEvent(stateRoot, state.batchId, {
+				type: "message_rate_limited",
+				from: "supervisor",
+				to,
+				reason: "per-agent rate limit",
+				retryAfterMs: rateCheck.retryAfterMs,
+			});
 			return `⏳ Rate limited: wait ${waitSec}s before sending another message to \`${to}\`.`;
 		}
 
@@ -3792,6 +3813,15 @@ export default function (pi: ExtensionAPI) {
 				content,
 			});
 			recordSend(to);
+			appendMailboxAuditEvent(stateRoot, state.batchId, {
+				type: "message_sent",
+				from: "supervisor",
+				to,
+				messageId: msg.id,
+				messageType,
+				contentPreview: content.slice(0, 200),
+				broadcast: false,
+			});
 			return `✅ Message sent to \`${to}\` (batch ${state.batchId})\n` +
 				`- **ID:** ${msg.id}\n` +
 				`- **Type:** ${messageType}\n` +
@@ -3839,16 +3869,9 @@ export default function (pi: ExtensionAPI) {
 		const state = loadBatchState(stateRoot);
 		if (!state) return "❌ No batch state found.";
 
-		const agentIds: string[] = [];
-		if (from) {
-			agentIds.push(from);
-		} else {
-			// Collect all known agent IDs from batch lanes
-			for (const lane of state.lanes) {
-				agentIds.push(`${lane.tmuxSessionName}-worker`);
-				agentIds.push(`${lane.tmuxSessionName}-reviewer`);
-			}
-		}
+		const agentIds = from
+			? [from]
+			: collectKnownAgentIds(stateRoot, state);
 
 		const allMessages: Array<{ agentId: string; message: import("./types.ts").MailboxMessage }> = [];
 		for (const agentId of agentIds) {
@@ -3923,15 +3946,55 @@ export default function (pi: ExtensionAPI) {
 			return `❌ Batch ${state.batchId} is in terminal phase (${state.phase}).`;
 		}
 
+		const validTypes = new Set(["steer", "info", "abort"]);
+		if (!validTypes.has(messageType)) {
+			return `❌ Invalid broadcast type "${messageType}". Valid types: steer, info, abort.`;
+		}
+
+		const recipients = collectKnownAgentIds(stateRoot, state);
+		if (recipients.length === 0) {
+			return `❌ No known agents found in batch ${state.batchId} for broadcast delivery.`;
+		}
+
+		const blocked = recipients
+			.map((agentId) => ({ agentId, check: checkRateLimit(agentId) }))
+			.filter(({ check }) => !check.allowed);
+		if (blocked.length > 0) {
+			for (const b of blocked) {
+				appendMailboxAuditEvent(stateRoot, state.batchId, {
+					type: "message_rate_limited",
+					from: "supervisor",
+					to: b.agentId,
+					reason: "broadcast blocked by per-agent rate limit",
+					retryAfterMs: b.check.retryAfterMs,
+				});
+			}
+			const preview = blocked.slice(0, 5).map(b => `${b.agentId} (${Math.ceil((b.check.retryAfterMs ?? 0) / 1000)}s)`).join(", ");
+			return `⏳ Broadcast rate limited for ${blocked.length}/${recipients.length} agent(s): ${preview}${blocked.length > 5 ? " ..." : ""}`;
+		}
+
 		try {
 			const msg = writeBroadcastMessage(stateRoot, state.batchId, {
 				from: "supervisor",
 				type: messageType as MailboxMessageType,
 				content,
 			});
+			for (const agentId of recipients) {
+				recordSend(agentId);
+			}
+			appendMailboxAuditEvent(stateRoot, state.batchId, {
+				type: "message_sent",
+				from: "supervisor",
+				to: "_broadcast",
+				messageId: msg.id,
+				messageType,
+				contentPreview: content.slice(0, 200),
+				broadcast: true,
+			});
 			return `✅ Broadcast sent (batch ${state.batchId})\n` +
 				`- **ID:** ${msg.id}\n` +
 				`- **Type:** ${messageType}\n` +
+				`- **Recipients:** ${recipients.length}\n` +
 				`- **Size:** ${Buffer.byteLength(content, "utf8")} bytes\n` +
 				`Message will be delivered to all agents at their next turn boundary.`;
 		} catch (err) {

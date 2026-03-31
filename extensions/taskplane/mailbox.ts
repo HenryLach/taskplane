@@ -24,7 +24,7 @@
  */
 
 import { join, dirname } from "path";
-import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, unlinkSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync, renameSync, unlinkSync, appendFileSync } from "fs";
 import { randomBytes } from "crypto";
 import type { MailboxMessage, MailboxMessageType, WriteMailboxMessageOpts } from "./types.ts";
 import { MAILBOX_DIR_NAME, MAILBOX_MAX_CONTENT_BYTES, MAILBOX_MESSAGE_TYPES } from "./types.ts";
@@ -460,6 +460,84 @@ export function readOutbox(
 
 	messages.sort((a, b) => a.timestamp - b.timestamp);
 	return messages;
+}
+
+/**
+ * Ack (consume) a specific outbox message by moving it to processed/.
+ *
+ * Returns false if the message is already gone (race-safe/idempotent).
+ *
+ * @since TP-106
+ */
+export function ackOutboxMessage(
+	stateRoot: string,
+	batchId: string,
+	agentId: string,
+	messageId: string,
+): boolean {
+	const outboxDir = sessionOutboxDir(stateRoot, batchId, agentId);
+	const processedDir = join(outboxDir, "processed");
+	const file = `${messageId}.msg.json`;
+	const srcPath = join(outboxDir, file);
+	const dstPath = join(processedDir, file);
+
+	try {
+		mkdirSync(processedDir, { recursive: true });
+		renameSync(srcPath, dstPath);
+		return true;
+	} catch (err: unknown) {
+		const code = (err as NodeJS.ErrnoException).code;
+		if (code === "ENOENT") return false;
+		process.stderr.write(
+			`[mailbox] WARNING: failed to ack outbox ${file}: ${err instanceof Error ? err.message : String(err)}\n`,
+		);
+		return false;
+	}
+}
+
+export type MailboxAuditEventType =
+	| "message_sent"
+	| "message_delivered"
+	| "message_replied"
+	| "message_escalated"
+	| "message_rate_limited";
+
+/**
+ * Append a mailbox audit event to .pi/mailbox/{batchId}/events.jsonl.
+ *
+ * Best-effort: logs warning but never throws.
+ *
+ * @since TP-106
+ */
+export function appendMailboxAuditEvent(
+	stateRoot: string,
+	batchId: string,
+	event: {
+		type: MailboxAuditEventType;
+		ts?: number;
+		from?: string;
+		to?: string;
+		messageId?: string;
+		messageType?: string;
+		contentPreview?: string;
+		broadcast?: boolean;
+		reason?: string;
+		retryAfterMs?: number;
+	},
+): void {
+	const eventsPath = join(mailboxRoot(stateRoot, batchId), "events.jsonl");
+	try {
+		mkdirSync(dirname(eventsPath), { recursive: true });
+		appendFileSync(
+			eventsPath,
+			JSON.stringify({ batchId, ts: event.ts ?? Date.now(), ...event }) + "\n",
+			"utf-8",
+		);
+	} catch (err) {
+		process.stderr.write(
+			`[mailbox] WARNING: failed to append mailbox event: ${err instanceof Error ? err.message : String(err)}\n`,
+		);
+	}
 }
 
 

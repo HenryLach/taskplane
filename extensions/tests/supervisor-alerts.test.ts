@@ -120,8 +120,8 @@ describe("1.x — SupervisorAlert type structure", () => {
 		expect(alert.context.batchDurationMs).toBe(120000);
 	});
 
-	it("1.4 — all three alert categories are valid", () => {
-		const categories: SupervisorAlertCategory[] = ["task-failure", "merge-failure", "batch-complete"];
+	it("1.4 — all alert categories are valid", () => {
+		const categories: SupervisorAlertCategory[] = ["task-failure", "merge-failure", "batch-complete", "agent-message"];
 		for (const cat of categories) {
 			const alert: SupervisorAlert = {
 				category: cat,

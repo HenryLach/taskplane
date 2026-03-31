@@ -1603,6 +1603,8 @@ export async function resumeOrchBatch(
 				}
 			},
 			workspaceConfig,
+			undefined,
+			emitAlert,
 		);
 
 		batchState.waveResults.push(waveResult);

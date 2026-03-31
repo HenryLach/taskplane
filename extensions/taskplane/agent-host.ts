@@ -42,7 +42,10 @@ import {
 	createManifest,
 	writeManifest,
 	updateManifestStatus,
+	buildRegistrySnapshot,
+	writeRegistrySnapshot,
 } from "./process-registry.ts";
+import { appendMailboxAuditEvent } from "./mailbox.ts";
 
 // ── Pi CLI Resolution ────────────────────────────────────────────────
 
@@ -146,6 +149,8 @@ export interface AgentHostOptions {
 	stateRoot?: string | null;
 	/** Packet paths for registry manifest (null for merge agents) */
 	packet?: PacketPaths | null;
+	/** Extra environment variables for the child process */
+	env?: Record<string, string>;
 }
 
 /**
@@ -268,7 +273,7 @@ export function spawnAgent(
 		shell: false,
 		cwd: opts.cwd,
 		stdio: ["pipe", "pipe", "pipe"],
-		env: { ...process.env },
+		env: { ...process.env, ...(opts.env ?? {}) },
 	});
 
 	// State accumulator
@@ -295,6 +300,19 @@ export function spawnAgent(
 		}, timeoutMs);
 	}
 
+	const REGISTRY_REFRESH_INTERVAL_MS = 1_000;
+	let lastRegistryRefreshAt = 0;
+	const refreshRegistrySnapshot = (force: boolean = false) => {
+		if (!opts.stateRoot) return;
+		const now = Date.now();
+		if (!force && (now - lastRegistryRefreshAt) < REGISTRY_REFRESH_INTERVAL_MS) return;
+		try {
+			const snapshot = buildRegistrySnapshot(opts.stateRoot, opts.batchId);
+			writeRegistrySnapshot(opts.stateRoot, snapshot);
+			lastRegistryRefreshAt = now;
+		} catch { /* best effort */ }
+	};
+
 	// Registry integration: write manifest before process is considered visible
 	if (opts.stateRoot) {
 		const manifest = createManifest({
@@ -311,6 +329,7 @@ export function spawnAgent(
 		});
 		manifest.status = "running";
 		writeManifest(opts.stateRoot, manifest);
+		refreshRegistrySnapshot(true);
 	}
 
 	// Helper: close stdin safely with delay
@@ -375,9 +394,7 @@ export function spawnAgent(
 			const msgFiles = entries.filter(f => f.endsWith(".msg.json") && !f.endsWith(".msg.json.tmp")).sort();
 			if (msgFiles.length === 0) continue;
 
-			const ackDir = isBroadcast
-				? join(dirname(inboxDir), "ack")
-				: join(opts.mailboxDir, "ack");
+			const ackDir = join(opts.mailboxDir, "ack");
 
 			for (const filename of msgFiles) {
 				try {
@@ -389,12 +406,34 @@ export function spawnAgent(
 					if (!isBroadcast && msg.to !== expectedSessionName) continue;
 					if (isBroadcast && msg.to !== "_broadcast") continue;
 
+					mkdirSync(ackDir, { recursive: true });
+					const ackPath = join(ackDir, filename);
+					// Broadcast fan-out: if this agent already acked this broadcast message,
+					// skip to avoid duplicate delivery while preserving message for peers.
+					if (isBroadcast && existsSync(ackPath)) continue;
+
 					proc.stdin.write(JSON.stringify({ type: "steer", message: msg.content }) + "\n");
 
-					mkdirSync(ackDir, { recursive: true });
-					try { renameSync(join(inboxDir, filename), join(ackDir, filename)); } catch { /* race ok */ }
+					if (isBroadcast) {
+						// Do NOT remove the shared broadcast inbox file. Persist a per-agent
+						// ack marker so all agents can consume the same broadcast exactly once.
+						try { writeFileSync(ackPath, raw, "utf-8"); } catch { /* best effort */ }
+					} else {
+						try { renameSync(join(inboxDir, filename), ackPath); } catch { /* race ok */ }
+					}
 
 					emitEvent("message_delivered", { messageId: msg.id, content: msg.content, broadcast: isBroadcast });
+					if (opts.stateRoot) {
+						appendMailboxAuditEvent(opts.stateRoot, expectedBatchId, {
+							type: "message_delivered",
+							from: msg.from,
+							to: isBroadcast ? expectedSessionName : msg.to,
+							messageId: msg.id,
+							messageType: msg.type,
+							contentPreview: msg.content.slice(0, 200),
+							broadcast: isBroadcast,
+						});
+					}
 
 					// TP-090: steering-pending flag
 					if (opts.steeringPendingPath) {
@@ -476,6 +515,7 @@ export function spawnAgent(
 					(exitCode === 0 && agentEnded) ? "exited" as const :
 					"crashed" as const;
 				updateManifestStatus(opts.stateRoot, opts.batchId, opts.agentId, terminalStatus);
+				refreshRegistrySnapshot(true);
 			}
 
 			resolvePromise(result);
@@ -514,6 +554,8 @@ export function spawnAgent(
 						}
 						// Check mailbox
 						checkMailbox();
+						// Keep registry snapshot freshness while agent is active.
+						refreshRegistrySnapshot(false);
 						// Emit telemetry update
 						if (onTelemetry) {
 							onTelemetry({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd, toolCalls, lastTool, contextUsage });

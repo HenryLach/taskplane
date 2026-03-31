@@ -1895,13 +1895,14 @@ export type EngineEventCallback = (event: EngineEvent) => void;
  * - `task-failure`:   A task failed after deterministic recovery was exhausted
  * - `merge-failure`:  Wave merge failed and batch paused
  * - `batch-complete`: Batch finished (all waves done)
+ * - `agent-message`:  Runtime mailbox reply/escalation from a running agent
  *
  * Note: `stall` detection is deferred to a future phase (requires
  * last-activity tracking not yet built).
  *
  * @since TP-076
  */
-export type SupervisorAlertCategory = "task-failure" | "merge-failure" | "batch-complete";
+export type SupervisorAlertCategory = "task-failure" | "merge-failure" | "batch-complete" | "agent-message";
 
 /**
  * Structured context payload for supervisor alerts.
@@ -1922,6 +1923,10 @@ export interface SupervisorAlertContext {
 	waveIndex?: number;
 	/** Exit reason string (for task-failure alerts) */
 	exitReason?: string;
+	/** Agent ID (for agent-message alerts) */
+	agentId?: string;
+	/** Mailbox message ID (for agent-message alerts) */
+	messageId?: string;
 	/** Whether partial progress was preserved (for task-failure alerts) */
 	partialProgress?: boolean;
 	/** Batch progress summary */

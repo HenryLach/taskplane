@@ -629,6 +629,7 @@ async function attemptStaleWorktreeRecovery(
 	onLanesAllocated: (lanes: AllocatedLane[]) => void,
 	stateRoot: string,
 	runtimeBackend?: RuntimeBackend,
+	onSupervisorAlert?: SupervisorAlertCallback,
 ): Promise<WaveExecutionResult | null> {
 	// Only attempt recovery for ALLOC_WORKTREE_FAILED
 	if (!waveResult.allocationError || waveResult.allocationError.code !== "ALLOC_WORKTREE_FAILED") {
@@ -729,6 +730,7 @@ async function attemptStaleWorktreeRecovery(
 		onLanesAllocated,
 		workspaceConfig,
 		runtimeBackend,
+		onSupervisorAlert,
 	);
 
 	return retryResult;
@@ -1194,6 +1196,7 @@ export async function executeOrchBatch(
 			onLanesAllocatedCb,
 			workspaceConfig,
 			selectedBackend,
+			emitAlert,
 		);
 
 		// ── TP-039: Tier 0 — Stale worktree recovery ────────────
@@ -1214,6 +1217,7 @@ export async function executeOrchBatch(
 				onLanesAllocatedCb,
 				stateRoot,
 				selectedBackend,
+				emitAlert,
 			);
 			if (retryResult) {
 				const staleRecovered = !retryResult.allocationError;
