@@ -551,4 +551,14 @@ describe("12.x: Dashboard V2 source contracts", () => {
 		expect(serverSrc).toContain('const isBroadcast = msg.to === "_broadcast"');
 		expect(serverSrc).toContain("_isBroadcast: isBroadcast");
 	});
+
+	it("12.8: renderSummary uses Runtime V2 lane snapshots for token/cost aggregation", () => {
+		const fnIdx = appSrc.indexOf("function renderSummary");
+		const block = appSrc.slice(fnIdx, fnIdx + 8000);
+		expect(block).toContain("runtimeLaneSnapshots");
+		expect(block).toContain("const v2Snaps = Object.values(runtimeLaneSnapshots)");
+		expect(block).toContain("snap?.worker");
+		expect(block).toContain("w.inputTokens");
+		expect(block).toContain("w.costUsd");
+	});
 });

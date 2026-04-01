@@ -175,6 +175,8 @@ export async function executeTaskV2(
 	let totalIterations = 0;
 	let cumulativeCostUsd = 0;
 	let cumulativeTokens = 0;
+	// TP-115: carry latest worker telemetry across iterations and into post-loop terminal snapshots
+	let lastTelemetry: Partial<AgentHostResult> = {};
 
 	for (let iter = 0; iter < config.maxIterations; iter++) {
 		if (pauseSignal.paused) {
@@ -277,9 +279,6 @@ export async function executeTaskV2(
 
 		// Context pressure: write wrap-up signal before kill
 		let workerKillReason: "context" | "timer" | null = null;
-
-		// TP-115: Capture latest telemetry for terminal snapshot
-		let lastTelemetry: Partial<AgentHostResult> = {};
 
 		const spawned = spawnAgent(hostOpts, undefined, (telemetry) => {
 			// Context pressure check

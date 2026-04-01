@@ -422,21 +422,49 @@ function renderSummary(batch) {
   let elapsedStr = `elapsed: ${formatDuration(elapsed)}`;
   if (batch.updatedAt) elapsedStr += `  ·  updated: ${relativeTime(batch.updatedAt)}`;
 
-  // Aggregate tokens across all active lane states
+  // Aggregate tokens/cost for summary.
+  // Runtime V2 snapshots are authoritative when present; legacy lane-state sidecars are fallback.
   const laneStates = currentData?.laneStates || {};
-  let batchInput = 0, batchOutput = 0, batchCacheRead = 0, batchCacheWrite = 0, batchCostFromLanes = 0;
-  for (const ls of Object.values(laneStates)) {
-    batchInput += ls.workerInputTokens || 0;
-    batchOutput += ls.workerOutputTokens || 0;
-    batchCacheRead += ls.workerCacheReadTokens || 0;
-    batchCacheWrite += ls.workerCacheWriteTokens || 0;
-    batchCostFromLanes += ls.workerCostUsd || 0;
+  const runtimeLaneSnapshots = currentData?.runtimeLaneSnapshots || {};
+  const v2Snaps = Object.values(runtimeLaneSnapshots);
+
+  let batchInput = 0, batchOutput = 0, batchCacheRead = 0, batchCacheWrite = 0, batchCostFromSnapshots = 0;
+
+  if (v2Snaps.length > 0) {
+    for (const snap of v2Snaps) {
+      const w = snap?.worker || {};
+      batchInput += w.inputTokens || 0;
+      batchOutput += w.outputTokens || 0;
+      batchCacheRead += w.cacheReadTokens || 0;
+      batchCacheWrite += w.cacheWriteTokens || 0;
+      batchCostFromSnapshots += w.costUsd || 0;
+
+      const r = snap?.reviewer || null;
+      if (r) {
+        batchInput += r.inputTokens || 0;
+        batchOutput += r.outputTokens || 0;
+        batchCacheRead += r.cacheReadTokens || 0;
+        batchCacheWrite += r.cacheWriteTokens || 0;
+        batchCostFromSnapshots += r.costUsd || 0;
+      }
+    }
+  } else {
+    // Legacy fallback
+    for (const ls of Object.values(laneStates)) {
+      batchInput += ls.workerInputTokens || 0;
+      batchOutput += ls.workerOutputTokens || 0;
+      batchCacheRead += ls.workerCacheReadTokens || 0;
+      batchCacheWrite += ls.workerCacheWriteTokens || 0;
+      batchCostFromSnapshots += ls.workerCostUsd || 0;
+    }
   }
-  // Use server-computed batchTotalCost (includes telemetry for uncovered lanes);
-  // fallback to lane-state-only sum for backward compatibility (pre-telemetry server)
-  const batchCost = (currentData?.batchTotalCost != null && currentData.batchTotalCost > 0)
-    ? currentData.batchTotalCost
-    : batchCostFromLanes;
+
+  // Keep server-computed cost as fallback for uncovered early-start lanes.
+  const batchCost = batchCostFromSnapshots > 0
+    ? batchCostFromSnapshots
+    : ((currentData?.batchTotalCost != null && currentData.batchTotalCost > 0)
+      ? currentData.batchTotalCost
+      : 0);
   const batchTotalIn = batchInput + batchCacheRead;
   if (batchTotalIn > 0 || batchOutput > 0) {
     let tokenStr = `  ·  tokens: ↑${formatTokens(batchTotalIn)} ↓${formatTokens(batchOutput)}`;
