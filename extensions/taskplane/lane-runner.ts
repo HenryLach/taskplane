@@ -1,3 +1,5 @@
+// DEBUG: module load marker
+try { require('fs').writeFileSync('/c/dev/taskplane/.pi/tp-lane-runner-loaded.txt', 'loaded at ' + new Date().toISOString() + ' from ' + __filename); } catch(e) { try { require('fs').writeFileSync('/c/dev/taskplane/.pi/tp-lane-runner-loaded.txt', 'loaded at ' + new Date().toISOString() + ' err: ' + e); } catch {} }
 /**
  * Lane Runner — Headless per-lane execution for Runtime V2
  *
