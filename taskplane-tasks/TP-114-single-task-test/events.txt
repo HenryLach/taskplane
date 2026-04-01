@@ -1,0 +1,16 @@
+File analyzed: extensions/taskplane/agent-host.ts
+
+Event types emitted via emitEvent():
+1. message_delivered
+2. agent_timeout
+3. agent_killed
+4. agent_exited
+5. agent_crashed
+6. assistant_message
+7. tool_call
+8. tool_result
+9. retry_started
+10. compaction_started
+11. context_usage
+12. agent_started
+13. prompt_sent
