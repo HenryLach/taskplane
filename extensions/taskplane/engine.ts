@@ -2253,28 +2253,57 @@ export async function executeOrchBatch(
 
 	// ── Save batch history (before cleanup deletes sidecar files) ────
 	try {
-		// Read token data from sidecar files while they still exist
+		// Read token data from sidecar files or V2 lane snapshots
 		const piDir = join(stateRoot, ".pi");
 		const laneTokens = new Map<string, TokenCounts>();
+
+		// TP-115: Try V2 lane snapshots first (authoritative for Runtime V2)
 		try {
-			const files = readdirSync(piDir).filter(f => f.startsWith("lane-state-") && f.endsWith(".json"));
-			for (const f of files) {
-				try {
-					const raw = readFileSync(join(piDir, f), "utf-8").trim();
-					if (!raw) continue;
-					const data = JSON.parse(raw);
-					if (data.prefix) {
-						laneTokens.set(data.prefix, {
-							input: data.workerInputTokens || 0,
-							output: data.workerOutputTokens || 0,
-							cacheRead: data.workerCacheReadTokens || 0,
-							cacheWrite: data.workerCacheWriteTokens || 0,
-							costUsd: data.workerCostUsd || 0,
+			const lanesDir = join(piDir, "runtime", batchState.batchId, "lanes");
+			if (existsSync(lanesDir)) {
+				const files = readdirSync(lanesDir).filter(f => f.startsWith("lane-") && f.endsWith(".json"));
+				for (const f of files) {
+					try {
+						const snap = JSON.parse(readFileSync(join(lanesDir, f), "utf-8"));
+						const w = snap.worker || {};
+						const r = snap.reviewer || {};
+						// Key by session name (match lane record) for per-task lookup
+						const laneRec = batchState.lanes.find((l: { laneNumber: number }) => l.laneNumber === snap.laneNumber);
+						const key = laneRec?.tmuxSessionName || `lane-${snap.laneNumber}`;
+						laneTokens.set(key, {
+							input: (w.inputTokens || 0) + (r.inputTokens || 0),
+							output: (w.outputTokens || 0) + (r.outputTokens || 0),
+							cacheRead: (w.cacheReadTokens || 0) + (r.cacheReadTokens || 0),
+							cacheWrite: (w.cacheWriteTokens || 0) + (r.cacheWriteTokens || 0),
+							costUsd: (w.costUsd || 0) + (r.costUsd || 0),
 						});
-					}
-				} catch { /* skip invalid files */ }
+					} catch { /* skip invalid files */ }
+				}
 			}
-		} catch { /* .pi dir may not exist */ }
+		} catch { /* runtime dir may not exist */ }
+
+		// Legacy fallback: lane-state-*.json sidecars (only if V2 found nothing)
+		if (laneTokens.size === 0) {
+			try {
+				const files = readdirSync(piDir).filter(f => f.startsWith("lane-state-") && f.endsWith(".json"));
+				for (const f of files) {
+					try {
+						const raw = readFileSync(join(piDir, f), "utf-8").trim();
+						if (!raw) continue;
+						const data = JSON.parse(raw);
+						if (data.prefix) {
+							laneTokens.set(data.prefix, {
+								input: data.workerInputTokens || 0,
+								output: data.workerOutputTokens || 0,
+								cacheRead: data.workerCacheReadTokens || 0,
+								cacheWrite: data.workerCacheWriteTokens || 0,
+								costUsd: data.workerCostUsd || 0,
+							});
+						}
+					} catch { /* skip invalid files */ }
+				}
+			} catch { /* .pi dir may not exist */ }
+		}
 
 		// Build per-task summaries from allTaskOutcomes + wave plan
 		const taskSummaries: BatchTaskSummary[] = allTaskOutcomes.map((to) => {
