@@ -1,0 +1,5 @@
+Exported functions in extensions/taskplane/lane-runner.ts: 3
+
+1. executeTaskV2
+2. mapLaneTaskStatusToTerminalSnapshotStatus
+3. mapLaneSnapshotStatusToWorkerStatus
