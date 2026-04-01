@@ -1,0 +1,15 @@
+Event types emitted via `emitEvent()` in `extensions/taskplane/agent-host.ts`:
+
+- agent_started
+- prompt_sent
+- message_delivered
+- assistant_message
+- tool_call
+- tool_result
+- retry_started
+- compaction_started
+- context_usage
+- agent_timeout
+- agent_killed
+- agent_exited
+- agent_crashed
