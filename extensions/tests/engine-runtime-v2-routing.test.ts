@@ -149,11 +149,21 @@ describe("5.x: Lane-runner terminal snapshot emission", () => {
 		const calls = laneRunnerSrc.match(/return makeResult\(/g);
 		// Worker-result calls pass lastTelemetry; skipped calls don't (no agent ran)
 		const callsWithTelemetry = laneRunnerSrc.match(/config, statusPath, lastTelemetry\)/g);
-		const callsWithoutTelemetry = laneRunnerSrc.match(/config, statusPath\)/g);
 		expect(calls).not.toBe(null);
 		// At least 3 calls pass telemetry (failed, max-iter-failed, succeeded)
 		expect(callsWithTelemetry).not.toBe(null);
 		expect(callsWithTelemetry!.length).toBeGreaterThanOrEqual(3);
+	});
+
+	it("5.4: lastTelemetry is scoped across loop and post-loop completion checks", () => {
+		const declIdx = laneRunnerSrc.indexOf("let lastTelemetry: Partial<AgentHostResult> = {};");
+		const loopIdx = laneRunnerSrc.indexOf("for (let iter = 0; iter < config.maxIterations; iter++)");
+		const postLoopUseIdx = laneRunnerSrc.lastIndexOf("config, statusPath, lastTelemetry");
+		expect(declIdx).toBeGreaterThan(-1);
+		expect(loopIdx).toBeGreaterThan(-1);
+		expect(postLoopUseIdx).toBeGreaterThan(-1);
+		expect(declIdx).toBeLessThan(loopIdx);
+		expect(loopIdx).toBeLessThan(postLoopUseIdx);
 	});
 });
 
