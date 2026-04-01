@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.6] - 2026-04-01
+
+### Fixed
+- **Supervisor summary cost** — The concise batch summary message now reads V2 lane snapshot cost (was bypassing the `collectBatchSummaryData` fix and always showing "not tracked").
+
 ## [0.23.5] - 2026-04-01
 
 ### Fixed
