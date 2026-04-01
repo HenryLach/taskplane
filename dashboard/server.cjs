@@ -1015,6 +1015,39 @@ function buildDashboardState() {
   const runtimeLaneSnapshots = loadRuntimeLaneSnapshots(state.batchId);
   const mailboxData = loadMailboxData(state.batchId);
 
+  // TP-115: Synthesize laneStates from V2 snapshots so the dashboard
+  // pipeline works without legacy lane-state-*.json sidecar files.
+  // V2 snapshots are authoritative when present.
+  if (Object.keys(runtimeLaneSnapshots).length > 0) {
+    for (const [laneNum, snap] of Object.entries(runtimeLaneSnapshots)) {
+      // Find the matching lane record to get the session name key
+      const laneRec = (state.lanes || []).find(l => l.laneNumber === Number(laneNum));
+      const key = laneRec ? laneRec.tmuxSessionName : `lane-${laneNum}`;
+      if (!laneStates[key] || (snap.updatedAt && snap.updatedAt > (laneStates[key].timestamp || 0))) {
+        const w = snap.worker || {};
+        const statusMap = { running: "running", spawning: "running", exited: "done", crashed: "error", killed: "error", timed_out: "error", wrapping_up: "running" };
+        laneStates[key] = {
+          prefix: key,
+          taskId: snap.taskId || null,
+          phase: snap.status === "running" ? "worker-active" : snap.status === "complete" ? "complete" : "idle",
+          workerStatus: statusMap[w.status] || w.status || "idle",
+          workerElapsed: w.elapsedMs || 0,
+          workerContextPct: w.contextPct || 0,
+          workerLastTool: w.lastTool || "",
+          workerToolCount: w.toolCalls || 0,
+          workerInputTokens: w.inputTokens || 0,
+          workerOutputTokens: w.outputTokens || 0,
+          workerCacheReadTokens: w.cacheReadTokens || 0,
+          workerCacheWriteTokens: w.cacheWriteTokens || 0,
+          workerCostUsd: w.costUsd || 0,
+          reviewerStatus: "idle",
+          batchId: snap.batchId || state.batchId,
+          timestamp: snap.updatedAt || Date.now(),
+        };
+      }
+    }
+  }
+
   return {
     laneStates,
     telemetry,

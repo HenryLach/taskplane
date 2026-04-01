@@ -31,35 +31,10 @@
 
 ---
 
-## Reviews
-
-| # | Type | Step | Verdict | File |
-|---|------|------|---------|------|
-
----
-
-## Discoveries
-
-| Discovery | Disposition | Location |
-|-----------|-------------|----------|
-
----
-
 ## Execution Log
 
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
-| 2026-04-01 | Task staged | PROMPT.md and STATUS.md created |
-| 2026-04-01 | Run 1 complete | Runtime V2 works — verifying telemetry fixes |
-
----
-
-## Blockers
-
-*None*
-
----
-
-## Notes
-
-*Smoke test for Runtime V2 single-task execution.*
+| 2026-04-01 | Run 1 | V2 execution OK, telemetry zeros (pre-fix) |
+| 2026-04-01 | Run 2 | V2 execution OK, telemetry populated, dashboard empty (pre-fix) |
+| 2026-04-01 | Run 3 | Testing dashboard V2 native data flow |

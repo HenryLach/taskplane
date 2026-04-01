@@ -572,3 +572,4 @@ function emitSnapshot(
 
 	writeLaneSnapshot(config.stateRoot, config.batchId, config.laneNumber, snapshot as any);
 }
+
