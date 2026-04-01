@@ -2282,9 +2282,12 @@ export async function executeOrchBatch(
 			}
 		} catch { /* runtime dir may not exist */ }
 
-		// DEBUG: log laneTokens state
+		// DEBUG: log laneTokens state + directory check
 		try {
-			const _dbg = { size: laneTokens.size, keys: [...laneTokens.keys()], batchId: batchState.batchId, stateRoot, piDir };
+			const _lanesDir = join(piDir, 'runtime', batchState.batchId, 'lanes');
+			const _dirExists = existsSync(_lanesDir);
+			const _files = _dirExists ? readdirSync(_lanesDir) : [];
+			const _dbg = { size: laneTokens.size, keys: [...laneTokens.keys()], batchId: batchState.batchId, stateRoot, piDir, lanesDir: _lanesDir, dirExists: _dirExists, files: _files };
 			writeFileSync(join(stateRoot, '.pi', 'tp-debug-laneTokens.json'), JSON.stringify(_dbg, null, 2));
 		} catch (e: any) {
 			try { writeFileSync(join(stateRoot, '.pi', 'tp-debug-error.txt'), String(e?.stack || e)); } catch {}
