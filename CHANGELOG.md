@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-03-31
+
+### Breaking
+- **Runtime V2 is now the default backend** — All batches (repo mode and workspace mode) use direct process hosting instead of TMUX. TMUX is no longer required for execution correctness. Legacy TMUX paths are retained as fallback only.
+- **`/task` fully deprecated** — `/orch` is the single execution path for both single-task and batch execution.
+- **Merge strategy changed from squash-first to merge-first** — `mergePr()` in `/orch-integrate --pr` now tries regular merge first (preserves per-commit history), squash as fallback. GitHub repo setting `required_linear_history` must be disabled for merge commits.
+
+### New
+- **Runtime V2 architecture** (TP-100–TP-112) — Complete replacement of the TMUX-based control plane:
+  - **Direct agent hosting** (TP-104) — `agent-host.ts` spawns `pi --mode rpc` as direct child processes with `shell: false`. Process registry tracks all agents.
+  - **Task executor core** (TP-103) — 15 pure functions extracted from `task-runner.ts` into `task-executor-core.ts` for headless execution.
+  - **Headless lane-runner** (TP-105) — `lane-runner.ts` manages worker iteration loops, context pressure, stall detection, and `.DONE` creation without TMUX.
+  - **Batch execution cutover** (TP-108) — All repo-mode batches use `executeLaneV2`. Merge agents spawn via `spawnMergeAgentV2` (direct agent-host, not TMUX).
+  - **Workspace packet-home authority** (TP-109) — Resume checks worktree-relative `.DONE` paths. Workspace mode enabled on V2.
+  - **Resume/monitor de-TMUX** (TP-112) — Resume uses process registry for liveness. Monitor uses registry-based agent liveness. Stall kill uses PID SIGTERM. Reconnect follows detect+terminate+rehydrate.
+- **Mailbox steering system** (TP-089–TP-092) — File-based cross-agent messaging:
+  - `send_agent_message` — Steer running agents via mailbox
+  - `read_agent_replies` — Non-consuming, durable outbox history (pending + acked)
+  - `broadcast_message` — Send to all agents (all-or-none rate limiting)
+  - `notify_supervisor` / `escalate_to_supervisor` — Agent bridge tools
+  - Rate limiting: 30s per-agent window with audit events
+- **Dashboard Runtime V2** (TP-107, TP-093) — New panels and data sources:
+  - **Agents panel** — Registry-backed agent grid with role, status, lane, elapsed
+  - **Messages panel** — Event-authoritative mailbox timeline (sent/delivered/replied/rate-limited)
+  - **V2 conversation viewer** — Reads normalized agent events instead of TMUX pane capture
+  - V2 lane snapshot precedence over legacy lane states
+- **Conversation event fidelity** (TP-111) — Agent-host emits `prompt_sent`, `assistant_message`, enriched `tool_call` (with path), and `tool_result` (with summary). All payloads bounded to prevent log growth.
+- **Supervisor tools reference** — AGENTS.md now documents all 16 supervisor tools with usage examples.
+- **`orch_start` accepts PROMPT.md paths** — `target` parameter now documented to accept single or multiple PROMPT.md paths for targeted execution.
+
+### Fixed
+- **Merge V2 liveness** — `waitForMergeResult` is backend-aware: V2 uses process handle liveness, not TMUX session checks.
+- **Merge error/retry cleanup** — V2 merge agents killed before respawn to prevent orphans.
+- **Abort kills V2 agents** — `killAllMergeAgentsV2()` called alongside TMUX session cleanup.
+- **Resume TDZ bug** — `resumeBackend` declaration moved before all uses.
+- **Session identity mapping** — V2 `aliveSessions` strips role suffix for reconciliation matching.
+- **Dashboard outbox read test** — Made deterministic for same-millisecond writes.
+- **`extractAssistantText` null safety** — Handles null/malformed content block arrays without throwing.
+- **Tool event payload bounding** — `tool_call` emits bounded `argsPreview` instead of raw args.
+
+### Docs
+- **Skill refresh** (TP-101) — `create-taskplane-task` skill updated for `/orch` execution, JSON config precedence, no TMUX, no `PROGRESS.md` requirement.
+- **Runtime V2 specs** — 9 architecture documents under `docs/specifications/framework/taskplane-runtime-v2/`.
+- **Rollout docs** — Phases F.1–F.3 marked implemented in migration plan.
+
+### Internal
+- **Process registry** (TP-104) — `process-registry.ts` with manifest CRUD, registry snapshots, orphan detection.
+- **ExecutionUnit + PacketPaths contracts** (TP-102) — Type-safe launch contracts for Runtime V2.
+- **Agent bridge extension** — `agent-bridge-extension.ts` for worker→supervisor communication.
+- **Test suite growth** — 3406 tests (up from ~3100 at v0.22.18).
+
 ## [0.22.15] - 2026-03-30
 
 ### Fixed
