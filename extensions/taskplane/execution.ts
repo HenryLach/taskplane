@@ -1758,13 +1758,19 @@ export async function resolveTaskMonitorState(
 	// TP-115: Backend-aware liveness check.
 	// V2: read the lane snapshot file written by lane-runner every second.
 	// Snapshot status is authoritative — no PID probing needed.
+	// If snapshot doesn't exist yet, assume alive (lane-runner startup race).
 	// Legacy: check TMUX session.
 	let sessionAlive: boolean;
 	if (runtimeBackend === "v2" && v2Context) {
 		const snap = readLaneSnapshot(v2Context.stateRoot, v2Context.batchId, v2Context.laneNumber);
-		sessionAlive = snap != null && snap.status === "running";
+		if (snap == null) {
+			// Snapshot not written yet — lane-runner is still starting up.
+			// Assume alive to avoid false "failed" from monitor racing lane startup.
+			sessionAlive = true;
+		} else {
+			sessionAlive = snap.status === "running";
+		}
 	} else if (runtimeBackend === "v2") {
-		// Fallback to registry-based check if no v2Context
 		sessionAlive = isV2AgentAlive(sessionName, runtimeBackend);
 	} else {
 		sessionAlive = await tmuxHasSessionAsync(sessionName);

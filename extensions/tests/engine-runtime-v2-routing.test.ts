@@ -487,14 +487,15 @@ describe("13.x: Resume de-TMUX for V2 (TP-112)", () => {
 describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 	const execSrc = readFileSync(join(__dirname, "..", "taskplane", "execution.ts"), "utf-8");
 
-	it("14.1: resolveTaskMonitorState uses lane-snapshot-based V2 liveness (not hardcoded true)", () => {
+	it("14.1: resolveTaskMonitorState uses lane-snapshot-based V2 liveness with startup grace", () => {
 		const fnIdx = execSrc.indexOf("function resolveTaskMonitorState");
 		const block = execSrc.slice(fnIdx, fnIdx + 1500);
 		// V2 primary: reads lane snapshot file (TP-115 resilience)
 		expect(block).toContain("readLaneSnapshot");
+		// Startup grace: assume alive when snapshot not yet written
+		expect(block).toContain("snap == null");
 		// V2 fallback: registry-based check
 		expect(block).toContain("isV2AgentAlive");
-		expect(block).not.toContain("sessionAlive = true");
 	});
 
 	it("14.2: isV2AgentAlive checks registry + PID (not TMUX)", () => {
