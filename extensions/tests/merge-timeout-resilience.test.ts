@@ -74,8 +74,8 @@ describe("1.x — Result-exists-at-timeout: accept successful result", () => {
 			mergeSource.indexOf("merge agent slow but succeeded"),
 			mergeSource.indexOf("return lateResult"),
 		);
-		// V2 path uses killMergeAgentV2, legacy uses tmuxKillSessionAsync
-		expect(acceptSection).toContain("killMergeAgentV2(sessionName)");
+		// V2 path uses killMergeAgentV2 with cleanExit, legacy uses tmuxKillSessionAsync
+		expect(acceptSection).toContain("killMergeAgentV2(sessionName, true)");
 		expect(acceptSection).toContain("tmuxKillSessionAsync(sessionName)");
 	});
 

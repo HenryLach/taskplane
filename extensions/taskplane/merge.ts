@@ -12,6 +12,7 @@ import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MERGE_HEALTH_POLL_INTERVAL_MS, MERGE_HEALTH_WARNING_THRESHOLD_MS, MERGE_HEALTH_STUCK_THRESHOLD_MS, MERGE_HEALTH_CAPTURE_LINES, MergeError, VALID_MERGE_STATUSES, buildEngineEventBase } from "./types.ts";
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig, MergeHealthStatus, MergeHealthEventType, MergeSessionSnapshot, MergeSessionHealthState, EngineEvent, OrchBatchPhase } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
+import { readManifest, writeManifest, buildRegistrySnapshot, writeRegistrySnapshot } from "./process-registry.ts";
 import { generateMergeWorktreePath, sleepAsync, sleepSync } from "./worktree.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
@@ -798,7 +799,7 @@ export async function spawnMergeAgentV2(
 	// Store the kill handle for external cleanup (pause/abort).
 	// The promise runs in background — caller uses waitForMergeResult()
 	// to poll for the result file, same contract as the TMUX path.
-	activeMergeAgents.set(sessionName, { promise, kill });
+	activeMergeAgents.set(sessionName, { promise, kill, stateRoot: stateRoot ?? repoRoot, batchId: bid });
 
 	// Fire-and-forget: the background promise handles exit logging
 	promise.then(result => {
@@ -816,17 +817,30 @@ export async function spawnMergeAgentV2(
 }
 
 /** Active V2 merge agent handles for cleanup/abort. @since TP-108 */
-const activeMergeAgents = new Map<string, { promise: Promise<AgentHostResult>; kill: () => void }>();
+const activeMergeAgents = new Map<string, { promise: Promise<AgentHostResult>; kill: () => void; stateRoot?: string; batchId?: string }>();
 
 /**
  * Kill a V2 merge agent if it's still running.
  * Used by pause/abort/cleanup flows.
  * @since TP-108
  */
-export function killMergeAgentV2(sessionName: string): boolean {
+export function killMergeAgentV2(sessionName: string, cleanExit?: boolean): boolean {
 	const handle = activeMergeAgents.get(sessionName);
 	if (handle) {
 		handle.kill();
+		// TP-115: On clean post-result cleanup, update manifest to "exited"
+		// so dashboard shows correct status instead of "killed".
+		if (cleanExit && handle.stateRoot && handle.batchId) {
+			try {
+				const manifest = readManifest(handle.stateRoot, handle.batchId, sessionName as any);
+				if (manifest) {
+					manifest.status = "exited";
+					writeManifest(handle.stateRoot, manifest);
+					const snapshot = buildRegistrySnapshot(handle.stateRoot, handle.batchId);
+					writeRegistrySnapshot(handle.stateRoot, snapshot);
+				}
+			} catch { /* best effort */ }
+		}
 		activeMergeAgents.delete(sessionName);
 		return true;
 	}
@@ -928,7 +942,7 @@ export async function waitForMergeResult(
 						});
 						// Clean up agent (may still be running post-write)
 						if (isV2) {
-							killMergeAgentV2(sessionName);
+							killMergeAgentV2(sessionName, true);
 						} else if (await tmuxHasSessionAsync(sessionName)) {
 							await tmuxKillSessionAsync(sessionName);
 						}
@@ -967,7 +981,7 @@ export async function waitForMergeResult(
 				});
 				// Clean up agent if still alive
 				if (isV2) {
-					killMergeAgentV2(sessionName);
+					killMergeAgentV2(sessionName, true);
 				} else if (await tmuxHasSessionAsync(sessionName)) {
 					await tmuxKillSessionAsync(sessionName);
 				}

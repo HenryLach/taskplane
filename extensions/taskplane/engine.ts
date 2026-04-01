@@ -2320,7 +2320,11 @@ export async function executeOrchBatch(
 			const durationMs = (to.startTime && to.endTime) ? (to.endTime - to.startTime) : 0;
 
 			// Get tokens for this lane (cumulative — shared across tasks in same lane)
-			const tokens = laneTokens.get(to.sessionName) || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 };
+			// TP-115: V2 sessionName includes role suffix (-worker/-reviewer) but
+			// laneTokens is keyed by tmuxSessionName (no suffix). Try both.
+			const tokens = laneTokens.get(to.sessionName)
+				|| laneTokens.get(to.sessionName?.replace(/-(?:worker|reviewer)$/, ""))
+				|| { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 };
 
 			return {
 				taskId: to.taskId,
