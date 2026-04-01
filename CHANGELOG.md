@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.3] - 2026-04-01
+
+### Fixed
+- **Agent ID naming alignment** — `executeLaneV2()` now uses `resolveOperatorId()` (same as wave planner) instead of hardcoded `"op"` fallback. Fixes monitor always reporting V2 tasks as "failed" due to registry key mismatch.
+- **Snapshot-based V2 liveness** — Monitor reads lane snapshot file (`status: "running"`) instead of PID probing for V2 liveness. More resilient, aligns with spec §5.
+- **Flaky exitDiagnostic test** — Fixed `Date.now()` drift causing intermittent CI failures.
+
 ## [0.23.2] - 2026-04-01
 
 ### Fixed
