@@ -1706,9 +1706,11 @@ export function presentBatchSummary(
 	const duration = batchState.endedAt && batchState.startedAt
 		? formatDurationMs(batchState.endedAt - batchState.startedAt)
 		: "in progress";
-	const cost = (diagnostics?.batchCost ?? 0) > 0
-		? `$${(diagnostics?.batchCost ?? 0).toFixed(2)}`
-		: "not tracked";
+	// TP-115: Use V2 lane snapshot cost when diagnostics.batchCost is zero
+	const rawCost = (diagnostics?.batchCost ?? 0) > 0
+		? diagnostics!.batchCost
+		: computeV2BatchCost(stateRoot, batchState.batchId);
+	const cost = rawCost > 0 ? `$${rawCost.toFixed(2)}` : "not tracked";
 	const filename = `${opId}-${batchState.batchId}-summary.md`;
 
 	const conciseText =
