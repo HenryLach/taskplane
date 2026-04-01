@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.1] - 2026-04-01
+
+### Fixed
+- **Lane snapshot telemetry zeros** — Terminal snapshots now populated from `AgentHostResult` with real tokens, cost, tool count, and elapsed time.
+- **Dashboard V2 status mapping** — V2 agent status (`exited`/`crashed`/`killed`) mapped to legacy dashboard strings (`done`/`error`) so worker stats render.
+- **Batch ID propagation** — V2 lane snapshots include `batchId` so dashboard batch-filtering doesn't drop them.
+- **Telemetry snapshot scope** — Reviewer fix for snapshot aggregation correctness.
+
 ## [0.23.0] - 2026-03-31
 
 ### Breaking
