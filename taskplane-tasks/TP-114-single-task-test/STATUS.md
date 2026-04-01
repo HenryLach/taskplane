@@ -1,33 +1,43 @@
 # TP-114: Single Task Test — Status
 
-**Current Step:** Complete
-**Status:** ✅ Complete
+**Current Step:** Not Started
+**Status:** 🔵 Ready for Execution
 **Last Updated:** 2026-04-01
 **Review Level:** 0
 **Review Counter:** 0
-**Iteration:** 1
+**Iteration:** 0
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ✅ Complete
+**Status:** ⬜ Not Started
 
-- [x] Confirm this PROMPT.md and STATUS.md exist
-
----
-
-### Step 1: Write Test File
-**Status:** ✅ Complete
-
-- [x] Create `hello.txt` in this task folder with content "Runtime V2 works!"
+- [ ] Confirm this PROMPT.md and STATUS.md exist
 
 ---
 
-### Step 2: Documentation & Delivery
-**Status:** ✅ Complete
+### Step 1: Create Test Files
+**Status:** ⬜ Not Started
 
-- [x] Log completion in STATUS.md
+- [ ] Create `hello.txt` in this task folder with content "Runtime V2 works!"
+- [ ] Create `fibonacci.txt` with the first 20 Fibonacci numbers, one per line
+- [ ] Create `summary.txt` with a 3-paragraph summary of what Runtime V2 is
+
+---
+
+### Step 2: Code Analysis
+**Status:** ⬜ Not Started
+
+- [ ] Read `extensions/taskplane/lane-runner.ts` and count exported functions → `analysis.txt`
+- [ ] Read `extensions/taskplane/agent-host.ts` and list emitEvent types → `events.txt`
+
+---
+
+### Step 3: Documentation & Delivery
+**Status:** ⬜ Not Started
+
+- [ ] Log completion in STATUS.md with a summary of all files created
 
 ---
 
@@ -35,42 +45,3 @@
 
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
-| 2026-04-01 12:58 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 12:58 | Step 0 started | Preflight |
-| 2026-04-01 12:59 | Step 0 completed | PROMPT.md and STATUS.md confirmed present |
-| 2026-04-01 12:59 | Step 1 completed | `hello.txt` created with expected content |
-| 2026-04-01 12:59 | Step 2 completed | STATUS.md updated to reflect completion |
-| 2026-04-01 12:59 | Worker iter 1 | done in 47s, tools: 15 |
-| 2026-04-01 12:59 | Task complete | .DONE created |
-| 2026-04-01 13:07 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 13:07 | Task complete | .DONE created |
-| 2026-04-01 13:20 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 13:20 | Task complete | .DONE created |
-| 2026-04-01 13:22 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 13:22 | Task complete | .DONE created |
-| 2026-04-01 13:25 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 13:25 | Task complete | .DONE created |
-| 2026-04-01 13:28 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 13:28 | Task complete | .DONE created |
-| 2026-04-01 13:32 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 13:32 | Task complete | .DONE created |
-| 2026-04-01 13:37 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 13:37 | Task complete | .DONE created |
-| 2026-04-01 13:40 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 13:40 | Task complete | .DONE created |
-| 2026-04-01 13:44 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 13:44 | Task complete | .DONE created |
-| 2026-04-01 14:34 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 14:34 | Task complete | .DONE created |
-| 2026-04-01 14:44 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 14:44 | Task complete | .DONE created |
-| 2026-04-01 14:47 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 14:47 | Task complete | .DONE created |
-| 2026-04-01 14:54 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 14:54 | Task complete | .DONE created |
-| 2026-04-01 14:59 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 14:59 | Task complete | .DONE created |
-| 2026-04-01 15:06 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 15:06 | Task complete | .DONE created |
-| 2026-04-01 15:15 | Task started | Runtime V2 lane-runner execution |
-| 2026-04-01 15:15 | Task complete | .DONE created |

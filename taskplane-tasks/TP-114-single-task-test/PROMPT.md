@@ -1,82 +1,29 @@
-# Task: TP-114 - Single Task Test
+---
+id: TP-114
+name: Single Task Test
+type: feature
+size: S
+priority: P1
+---
 
-**Created:** 2026-04-01
-**Size:** S
+# TP-114: Single Task Test
 
-## Review Level: 0 (None)
-
-**Assessment:** Trivial smoke test — write one file and complete.
-**Score:** 0/8 — Blast radius: 0, Pattern novelty: 0, Security: 0, Reversibility: 0
-
-## Canonical Task Folder
-
-```
-taskplane-tasks/TP-114-single-task-test/
-├── PROMPT.md   ← This file
-├── STATUS.md   ← Execution state
-└── .DONE       ← Created when complete
-```
-
-## Mission
-
-Write a simple test file to this task folder to verify Runtime V2 single-task execution works end-to-end.
-
-## Dependencies
-
-- **None**
-
-## Context to Read First
-
-**Tier 2 (area context):**
-- None needed
-
-## Environment
-
-- **Workspace:** `taskplane-tasks/TP-114-single-task-test/`
-- **Services required:** None
-
-## File Scope
-
-- `taskplane-tasks/TP-114-single-task-test/hello.txt`
+## Objective
+Verify Runtime V2 single-task execution, telemetry capture, and dashboard observability.
 
 ## Steps
 
 ### Step 0: Preflight
-
 - [ ] Confirm this PROMPT.md and STATUS.md exist
 
-### Step 1: Write Test File
-
+### Step 1: Create Test Files
 - [ ] Create `hello.txt` in this task folder with content "Runtime V2 works!"
+- [ ] Create `fibonacci.txt` with the first 20 Fibonacci numbers, one per line
+- [ ] Create `summary.txt` with a 3-paragraph summary of what Runtime V2 is (based on reading docs/specifications/framework/taskplane-runtime-v2/01-architecture.md)
 
-### Step 2: Documentation & Delivery
+### Step 2: Code Analysis
+- [ ] Read `extensions/taskplane/lane-runner.ts` and count the number of exported functions. Write the count and function names to `analysis.txt` in this task folder
+- [ ] Read `extensions/taskplane/agent-host.ts` and list all event types emitted by `emitEvent()`. Write them to `events.txt` in this task folder
 
-- [ ] Log completion in STATUS.md
-
-## Documentation Requirements
-
-**Must Update:**
-- None
-
-**Check If Affected:**
-- None
-
-## Completion Criteria
-
-- [ ] `hello.txt` exists in the task folder with expected content
-- [ ] STATUS.md reflects completion
-
-## Git Commit Convention
-
-- **Step completion:** `test(TP-114): complete Step N — description`
-
-## Do NOT
-
-- Touch any files outside this task folder
-- Run any tests (this IS the test)
-
----
-
-## Amendments (Added During Execution)
-
-<!-- Workers add amendments here if issues discovered during execution. -->
+### Step 3: Documentation & Delivery
+- [ ] Log completion in STATUS.md with a summary of all files created
