@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.5] - 2026-04-01
+
+### Fixed
+- **Batch history token counts** — History writer now reads V2 lane snapshots (`.pi/runtime/{batchId}/lanes/*.json`) instead of legacy sidecar files. Token counts and cost are no longer all-zero for V2 batches.
+- **Supervisor summary cost** — `collectBatchSummaryData` computes cost from V2 lane snapshots when `diagnostics.batchCost` is zero. Summary now shows real cost instead of "not tracked".
+
 ## [0.23.4] - 2026-04-01
 
 ### Fixed
