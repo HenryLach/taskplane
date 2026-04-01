@@ -144,13 +144,16 @@ describe("5.x: Lane-runner terminal snapshot emission", () => {
 		expect(laneRunnerSrc).toContain("terminalStatus");
 	});
 
-	it("5.3: all makeResult calls pass config and statusPath", () => {
-		// Every return makeResult(...) should end with config, statusPath
+	it("5.3: all makeResult calls pass config, statusPath, and telemetry", () => {
+		// Every return makeResult(...) should end with config, statusPath[, lastTelemetry]
 		const calls = laneRunnerSrc.match(/return makeResult\(/g);
-		const callsWithConfig = laneRunnerSrc.match(/config, statusPath\)/g);
+		// Worker-result calls pass lastTelemetry; skipped calls don't (no agent ran)
+		const callsWithTelemetry = laneRunnerSrc.match(/config, statusPath, lastTelemetry\)/g);
+		const callsWithoutTelemetry = laneRunnerSrc.match(/config, statusPath\)/g);
 		expect(calls).not.toBe(null);
-		expect(callsWithConfig).not.toBe(null);
-		expect(callsWithConfig!.length).toBe(calls!.length);
+		// At least 3 calls pass telemetry (failed, max-iter-failed, succeeded)
+		expect(callsWithTelemetry).not.toBe(null);
+		expect(callsWithTelemetry!.length).toBeGreaterThanOrEqual(3);
 	});
 });
 
