@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.7] - 2026-04-01
+
+### Fixed
+- **jiti cache causing stale engine code** — Disabled filesystem caching in `engine-worker-entry.mjs`. After `npm update`, jiti was serving old compiled code from its cache, causing telemetry zeros and other regressions. Engine-worker now compiles fresh each batch.
+
 ## [0.23.6] - 2026-04-01
 
 ### Fixed

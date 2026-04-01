@@ -1,3 +1,5 @@
+// DEBUG: module load marker
+try { require('fs').writeFileSync('/c/dev/taskplane/.pi/tp-lane-runner-loaded.txt', 'loaded at ' + new Date().toISOString() + ' from ' + __filename); } catch(e) { try { require('fs').writeFileSync('/c/dev/taskplane/.pi/tp-lane-runner-loaded.txt', 'loaded at ' + new Date().toISOString() + ' err: ' + e); } catch {} }
 /**
  * Lane Runner — Headless per-lane execution for Runtime V2
  *
@@ -280,6 +282,8 @@ export async function executeTaskV2(
 		// Context pressure: write wrap-up signal before kill
 		let workerKillReason: "context" | "timer" | null = null;
 
+		// DEBUG: verify this code path executes
+		try { writeFileSync(config.stateRoot + '/.pi/tp-debug-pre-spawn.json', JSON.stringify({ ts: Date.now(), iter: totalIterations, taskId })); } catch { /* */ }
 		const spawned = spawnAgent(hostOpts, undefined, (telemetry) => {
 			// Context pressure check
 			if (telemetry.contextUsage) {
@@ -303,6 +307,8 @@ export async function executeTaskV2(
 
 		// TP-115: Update lastTelemetry with definitive final values from AgentHostResult
 		lastTelemetry = workerResult;
+		// DEBUG
+		try { writeFileSync(config.stateRoot + '/.pi/tp-debug-workerResult.json', JSON.stringify({ iter: totalIterations, cost: workerResult.costUsd, tools: workerResult.toolCalls, input: workerResult.inputTokens, keys: Object.keys(workerResult) }, null, 2)); } catch { /* */ }
 
 		// Clean up wrap-up signal
 		if (existsSync(wrapUpFile)) try { unlinkSync(wrapUpFile); } catch { /* ignore */ }
