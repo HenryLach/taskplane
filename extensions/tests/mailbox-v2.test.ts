@@ -506,15 +506,16 @@ describe("12.x: Dashboard V2 source contracts", () => {
 		const fnIdx = appSrc.indexOf("function mergeV2LaneSnapshot");
 		const block = appSrc.slice(fnIdx, fnIdx + 800);
 		// Must read from nested v2snap.worker (not flat v2snap.workerStatus)
-		expect(block).toContain("v2snap.worker");
-		expect(block).toContain("w.status");
-		expect(block).toContain("w.elapsedMs");
-		expect(block).toContain("w.contextPct");
-		expect(block).toContain("w.toolCalls");
-		expect(block).toContain("w.costUsd");
+		const bigBlock = appSrc.slice(fnIdx, fnIdx + 1200);
+		expect(bigBlock).toContain("v2snap.worker");
+		expect(bigBlock).toContain("w.status");
+		expect(bigBlock).toContain("w.elapsedMs");
+		expect(bigBlock).toContain("w.contextPct");
+		expect(bigBlock).toContain("w.toolCalls");
+		expect(bigBlock).toContain("w.costUsd");
 		// Must NOT read nonexistent flat keys
-		expect(block).not.toContain("v2snap.workerStatus");
-		expect(block).not.toContain("v2snap.workerElapsed");
+		expect(bigBlock).not.toContain("v2snap.workerStatus");
+		expect(bigBlock).not.toContain("v2snap.workerElapsed");
 	});
 
 	it("12.4: V2 event renderer uses stable cursor, not index count", () => {

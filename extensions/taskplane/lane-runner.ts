@@ -278,6 +278,9 @@ export async function executeTaskV2(
 		// Context pressure: write wrap-up signal before kill
 		let workerKillReason: "context" | "timer" | null = null;
 
+		// TP-115: Capture latest telemetry for terminal snapshot
+		let lastTelemetry: Partial<AgentHostResult> = {};
+
 		const spawned = spawnAgent(hostOpts, undefined, (telemetry) => {
 			// Context pressure check
 			if (telemetry.contextUsage) {
@@ -292,11 +295,15 @@ export async function executeTaskV2(
 				}
 			}
 
+			lastTelemetry = telemetry;
 			// Emit lane snapshot
 			emitSnapshot(config, taskId, "running", telemetry, statusPath);
 		});
 
 		const workerResult = await spawned.promise;
+
+		// TP-115: Update lastTelemetry with definitive final values from AgentHostResult
+		lastTelemetry = workerResult;
 
 		// Clean up wrap-up signal
 		if (existsSync(wrapUpFile)) try { unlinkSync(wrapUpFile); } catch { /* ignore */ }
@@ -402,7 +409,7 @@ export async function executeTaskV2(
 			if (noProgressCount >= config.noProgressLimit) {
 				logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
 				return makeResult(taskId, workerAgentId, "failed", startTime,
-					`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath);
+					`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, lastTelemetry);
 			}
 		} else {
 			noProgressCount = 0;
@@ -443,7 +450,7 @@ export async function executeTaskV2(
 		logExecution(statusPath, "Task incomplete", `Max iterations reached. Incomplete: ${incomplete}`);
 		return makeResult(taskId, workerAgentId, "failed", startTime,
 			`Max iterations (${config.maxIterations}) reached with incomplete steps: ${incomplete}`,
-			false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath);
+			false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, lastTelemetry);
 	}
 
 	// Create .DONE if not already present
@@ -454,7 +461,7 @@ export async function executeTaskV2(
 	logExecution(statusPath, "Task complete", ".DONE created");
 
 	return makeResult(taskId, workerAgentId, "succeeded", startTime,
-		".DONE file created by lane-runner", true, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath);
+		".DONE file created by lane-runner", true, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, lastTelemetry);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -488,6 +495,7 @@ function makeResult(
 	totalTokens: number,
 	config?: LaneRunnerConfig,
 	statusPath?: string,
+	finalTelemetry?: Partial<AgentHostResult>,
 ): LaneRunnerTaskResult {
 	const result: LaneRunnerTaskResult = {
 		outcome: {
@@ -504,10 +512,10 @@ function makeResult(
 		totalTokens,
 	};
 
-	// Emit terminal snapshot so dashboard/registry reflect final state
+	// TP-115: Emit terminal snapshot with real telemetry from agent-host result
 	if (config && statusPath) {
 		const terminalStatus = mapLaneTaskStatusToTerminalSnapshotStatus(status);
-		emitSnapshot(config, taskId, terminalStatus, {}, statusPath);
+		emitSnapshot(config, taskId, terminalStatus, finalTelemetry ?? {}, statusPath);
 	}
 
 	return result;

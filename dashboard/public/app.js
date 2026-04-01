@@ -77,7 +77,11 @@ function mergeV2LaneSnapshot(legacyLs, v2snap) {
   // RuntimeLaneSnapshot has worker: { status, elapsedMs, toolCalls, contextPct, ... }
   const w = v2snap.worker;
   if (w) {
-    if (w.status) base.workerStatus = w.status;
+    // Map V2 agent status to legacy dashboard status strings
+    if (w.status) {
+      const statusMap = { running: 'running', spawning: 'running', exited: 'done', crashed: 'error', killed: 'error', timed_out: 'error', wrapping_up: 'running' };
+      base.workerStatus = statusMap[w.status] || w.status;
+    }
     if (w.elapsedMs != null) base.workerElapsed = w.elapsedMs;
     if (w.contextPct != null) base.workerContextPct = w.contextPct;
     if (w.toolCalls != null) base.workerToolCount = w.toolCalls;
@@ -89,6 +93,7 @@ function mergeV2LaneSnapshot(legacyLs, v2snap) {
     if (w.cacheWriteTokens != null) base.workerCacheWriteTokens = w.cacheWriteTokens;
   }
   if (v2snap.taskId) base.taskId = v2snap.taskId;
+  if (v2snap.batchId) base.batchId = v2snap.batchId;
   // Enrich progress display from V2 snapshot
   if (v2snap.progress) {
     base._v2Progress = v2snap.progress;
