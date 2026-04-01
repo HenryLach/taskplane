@@ -28,7 +28,7 @@
 
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, renameSync, statSync, openSync, readSync, closeSync, appendFileSync } from "fs";
+import { existsSync, readFileSync, readdirSync, writeFileSync, unlinkSync, mkdirSync, renameSync, statSync, openSync, readSync, closeSync, appendFileSync } from "fs";
 import { stat as fsStat, open as fsOpen, readFile as fsReadFile, writeFile as fsWriteFile, rename as fsRename } from "fs/promises";
 import { execFileSync } from "child_process";
 import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
@@ -1264,6 +1264,30 @@ function formatDurationMs(ms: number): string {
  *
  * @since TP-043
  */
+
+/**
+ * TP-115: Compute batch cost from V2 lane snapshots.
+ * Reads .pi/runtime/{batchId}/lanes/*.json and sums worker + reviewer costUsd.
+ * Returns 0 if no V2 data exists.
+ * @since TP-115
+ */
+function computeV2BatchCost(stateRoot: string, batchId: string): number {
+	try {
+		const lanesDir = join(stateRoot, ".pi", "runtime", batchId, "lanes");
+		if (!existsSync(lanesDir)) return 0;
+		const files = readdirSync(lanesDir).filter(f => f.startsWith("lane-") && f.endsWith(".json"));
+		let total = 0;
+		for (const f of files) {
+			try {
+				const snap = JSON.parse(readFileSync(join(lanesDir, f), "utf-8"));
+				total += snap.worker?.costUsd || 0;
+				total += snap.reviewer?.costUsd || 0;
+			} catch { /* skip */ }
+		}
+		return total;
+	} catch { return 0; }
+}
+
 export function collectBatchSummaryData(
 	batchState: OrchBatchRuntimeState,
 	stateRoot: string,
@@ -1297,7 +1321,9 @@ export function collectBatchSummaryData(
 		failedTasks: batchState.failedTasks,
 		skippedTasks: batchState.skippedTasks,
 		blockedTasks: batchState.blockedTasks,
-		batchCost: diagnostics?.batchCost ?? 0,
+		batchCost: (diagnostics?.batchCost ?? 0) > 0
+			? diagnostics!.batchCost
+			: computeV2BatchCost(stateRoot, batchState.batchId),
 		wavePlan: [], // Not directly available on runtime state — use waveResults
 		waveResults,
 		taskExits: diagnostics?.taskExits ?? {},
