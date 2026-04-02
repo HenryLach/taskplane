@@ -1,10 +1,10 @@
 # TP-124: Comment and Type Doc De-TMUX Sweep — Status
 
-**Current Step:** Step 3: Validation
+**Current Step:** Step 4: Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 1
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -29,13 +29,13 @@
 - [x] Ensure comments match current behavior
 
 ### Step 3: Validation
-**Status:** 🟨 In Progress
-- [ ] Run lint/typecheck-equivalent checks used in project workflow
-- [ ] Run targeted tests for impacted source-structure assertions
-- [ ] Fix regressions
+**Status:** ✅ Complete
+- [x] Run lint/typecheck-equivalent checks used in project workflow
+- [x] Run targeted tests for impacted source-structure assertions
+- [x] Fix regressions
 
 ### Step 4: Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Record before/after count for comment/doc references
 - [ ] Note which compatibility literals remain and why
 
@@ -53,6 +53,10 @@
 | 2026-04-02 21:22 | Step 2 started | Update type descriptions (non-breaking) |
 | 2026-04-02 21:38 | Step 2 completed | Type/interface docs updated with backend-neutral wording |
 | 2026-04-02 21:38 | Step 3 started | Validation |
+| 2026-04-02 21:41 | Step 3 tests | Full suite pass (3390/3390) |
+| 2026-04-02 21:42 | Step 3 tests | Targeted guard pass (2/2) |
+| 2026-04-02 21:42 | Step 3 completed | No regressions detected |
+| 2026-04-02 21:42 | Step 4 started | Delivery |
 |-----------|--------|---------|
 
 ## Step 0 Inventory Snapshot
@@ -75,3 +79,4 @@
 - Existing type/property names that include `tmux` (for example `LaneStatus.tmuxSession`) are treated as compatibility contracts in this task; only doc wording will be updated.
 | 2026-04-02 21:01 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-02 21:04 | Review R002 | plan Step 2: APPROVE |
+| 2026-04-02 21:07 | Review R003 | plan Step 3: APPROVE |
