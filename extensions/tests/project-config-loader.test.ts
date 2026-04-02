@@ -597,7 +597,7 @@ describe("key preservation and adapter regression", () => {
 		expect((taskConfig.task_areas.main as any).repo_id).toBe("main-repo");
 	});
 
-	it("3.12: toOrchestratorConfig adapter produces correct full snake_case shape", () => {
+	it("3.12: toOrchestratorConfig adapter produces correct full runtime shape", () => {
 		const dir = makeTestDir("orch-adapter-full");
 		writeOrchestratorYaml(dir, [
 			"orchestrator:",
@@ -642,7 +642,7 @@ describe("key preservation and adapter regression", () => {
 		expect(legacy.orchestrator.worktree_prefix).toBe("my-wt");
 		expect(legacy.orchestrator.batch_id_format).toBe("sequential");
 		expect(legacy.orchestrator.spawn_mode).toBe("tmux");
-		expect(legacy.orchestrator.tmux_prefix).toBe("myorch");
+		expect(legacy.orchestrator.sessionPrefix).toBe("myorch");
 		expect(legacy.orchestrator.operator_id).toBe("testuser");
 		expect(legacy.orchestrator.integration).toBe("auto");
 		expect(legacy.dependencies.source).toBe("agent");

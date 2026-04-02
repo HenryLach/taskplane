@@ -1,10 +1,10 @@
 # TP-120: TMUX Removal Remediation — Status
 
-**Current Step:** Step 3: Remove abort.ts TMUX code
+**Current Step:** Step 4: Config rename — tmux_prefix → sessionPrefix
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 8
+**Review Counter:** 10
 **Iteration:** 2
 **Size:** M
 
@@ -52,14 +52,14 @@
 - [x] Add/adjust abort tests for graceful/hard V2 targeting and no-batch/no-session handling without TMUX
 
 ### Step 4: Config rename — tmux_prefix → sessionPrefix
-**Status:** ⬜ Not Started
-- [ ] Rename in config-schema.ts
-- [ ] Update config-loader.ts (keep backward-compat alias)
-- [ ] Rename generateLaneSessionId parameter
-- [ ] Update all call sites
-- [ ] Update settings-tui.ts
-- [ ] Update template YAML
-- [ ] Update dashboard
+**Status:** ✅ Complete
+- [x] Rename in config-schema.ts
+- [x] Update config-loader.ts (keep backward-compat alias)
+- [x] Rename generateLaneSessionId parameter
+- [x] Update all call sites
+- [x] Update settings-tui.ts
+- [x] Update template YAML
+- [x] Update dashboard
 
 ### Step 5: Tests
 **Status:** ⬜ Not Started
@@ -118,3 +118,5 @@
 | 2026-04-02 14:18 | Step 3 started | Remove abort.ts TMUX code |
 | 2026-04-02 14:21 | Review R007 | plan Step 3: REVISE |
 | 2026-04-02 14:22 | Review R008 | plan Step 3: APPROVE |
+| 2026-04-02 14:30 | Review R009 | code Step 3: APPROVE |
+| 2026-04-02 14:32 | Review R010 | plan Step 4: APPROVE |

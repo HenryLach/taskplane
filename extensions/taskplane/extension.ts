@@ -1482,7 +1482,7 @@ export default function (pi: ExtensionAPI) {
 	function updateOrchWidget() {
 		if (!orchWidgetCtx) return;
 		const ctx = orchWidgetCtx;
-		const prefix = orchConfig.orchestrator.tmux_prefix;
+		const prefix = orchConfig.orchestrator.sessionPrefix;
 
 		ctx.ui.setWidget(
 			"task-orchestrator",
@@ -1792,7 +1792,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Orphan detection
 		const orphanResult = detectOrphanSessions(
-			orchConfig.orchestrator.tmux_prefix,
+			orchConfig.orchestrator.sessionPrefix,
 			repoRoot,
 		);
 
@@ -2226,7 +2226,7 @@ export default function (pi: ExtensionAPI) {
 	 */
 	async function doOrchAbort(hard: boolean, ctx: ExtensionContext): Promise<string> {
 		const mode: AbortMode = hard ? "hard" : "graceful";
-		const prefix = orchConfig.orchestrator.tmux_prefix;
+		const prefix = orchConfig.orchestrator.sessionPrefix;
 
 		const stateRoot = execCtx?.repoRoot ?? ctx.cwd;
 		const messages: string[] = [`🛑 Abort requested (${mode} mode, prefix: ${prefix})...`];
@@ -3160,9 +3160,9 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("orch-sessions", {
-		description: "List active orchestrator TMUX sessions",
+		description: "List active orchestrator sessions",
 		handler: async (_args, ctx) => {
-			const sessions = listOrchSessions(orchConfig.orchestrator.tmux_prefix, orchBatchState);
+			const sessions = listOrchSessions(orchConfig.orchestrator.sessionPrefix, orchBatchState);
 			ctx.ui.notify(formatOrchSessions(sessions), "info");
 		},
 	});
@@ -3697,12 +3697,12 @@ export default function (pi: ExtensionAPI) {
 		// Legacy fallback from lane naming when registry is absent/empty.
 		if (ids.size === 0) {
 			const orchConfig = execCtx?.orchestratorConfig;
-			const tmuxPrefix = orchConfig?.orchestrator?.tmux_prefix ?? "orch";
+			const sessionPrefix = orchConfig?.orchestrator?.sessionPrefix ?? "orch";
 			const opId = orchConfig ? resolveOperatorId(orchConfig) : "op";
 			for (const lane of state.lanes) {
 				ids.add(`${lane.laneSessionId}-worker`);
 				ids.add(`${lane.laneSessionId}-reviewer`);
-				ids.add(`${tmuxPrefix}-${opId}-merge-${lane.laneNumber}`);
+				ids.add(`${sessionPrefix}-${opId}-merge-${lane.laneNumber}`);
 			}
 		}
 
@@ -4721,7 +4721,7 @@ export default function (pi: ExtensionAPI) {
 			"/orch <areas|all>        Start batch execution\n" +
 			"/orch-plan <areas|all>   Preview execution plan\n" +
 			"/orch-deps <areas|all>   Show dependency graph\n" +
-			"/orch-sessions           List TMUX sessions\n" +
+			"/orch-sessions           List orchestrator sessions\n" +
 			"/orch-takeover           Force supervisor takeover\n" +
 			"/orch-integrate          Integrate orch branch into working branch",
 			"info",

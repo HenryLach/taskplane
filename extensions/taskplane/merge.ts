@@ -1169,7 +1169,7 @@ export async function mergeWave(
 	runtimeBackend?: RuntimeBackend,
 ): Promise<MergeWaveResult> {
 	const startTime = Date.now();
-	const tmuxPrefix = config.orchestrator.tmux_prefix;
+	const sessionPrefix = config.orchestrator.sessionPrefix;
 	const opId = resolveOperatorId(config);
 	const targetBranch = baseBranch;
 	const laneResults: MergeLaneResult[] = [];
@@ -1380,7 +1380,7 @@ export async function mergeWave(
 	for (const lane of orderedLanes) {
 		const laneStart = Date.now();
 		const txnStartedAt = new Date().toISOString();
-		const sessionName = `${tmuxPrefix}-${opId}-merge-${lane.laneNumber}`;
+		const sessionName = `${sessionPrefix}-${opId}-merge-${lane.laneNumber}`;
 		const resultFileName = `merge-result-w${waveIndex}-lane${lane.laneNumber}-${opId}-${batchId}.json`;
 		const piDir = stateRoot ?? repoRoot;
 		const resultFilePath = join(piDir, ".pi", resultFileName);

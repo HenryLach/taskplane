@@ -31,8 +31,8 @@ orchestrator:
   # "subprocess" = headless execution without tmux dependency
   spawn_mode: "subprocess"
 
-  # Prefix for TMUX session names when tmux mode is enabled.
-  tmux_prefix: "orch"
+  # Prefix for orchestrator session names.
+  session_prefix: "orch"
 
   # Optional operator identifier for team-scale collision resistance.
   # Auto-detected from OS username if empty. Set explicitly in CI or

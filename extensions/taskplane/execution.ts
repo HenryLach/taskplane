@@ -2478,9 +2478,9 @@ export async function executeLaneV2(
 
 	// Build agent ID prefix — must match the wave planner's naming (TP-115).
 	// Uses resolveOperatorId() so agent registry keys align with lane session IDs.
-	const tmuxPrefix = config.orchestrator?.tmux_prefix ?? "orch";
+	const sessionPrefix = config.orchestrator?.sessionPrefix ?? "orch";
 	const opId = resolveOperatorId(config);
-	const agentIdPrefix = `${tmuxPrefix}-${opId}`;
+	const agentIdPrefix = `${sessionPrefix}-${opId}`;
 
 	// Load worker agent definition: compose base template + local project guidance.
 	// The base template (templates/agents/task-worker.md) contains critical behavioral
