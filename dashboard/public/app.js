@@ -1120,8 +1120,18 @@ function renderNoBatch() {
 
 function ensureContentPanels() {
   if (noBatchRendered) {
-    // A live batch started — restore panels and reload
-    location.reload();
+    // A live batch started — restore panels without full page reload.
+    // Reset the no-batch state and re-show content panels.
+    noBatchRendered = false;
+    const $lanesPanel = document.getElementById("lanes-tasks-panel");
+    const $mergePanel = document.getElementById("merge-panel");
+    if ($lanesPanel) $lanesPanel.style.display = "";
+    if ($mergePanel) $mergePanel.style.display = "";
+    if ($errorsPanel) $errorsPanel.style.display = "";
+    $historyPanel.style.display = "none";
+    viewingHistoryId = null;
+    // Re-render with current data
+    if (currentData) render(currentData);
   }
 }
 
