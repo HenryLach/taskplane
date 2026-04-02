@@ -1,10 +1,10 @@
 # TP-122: TMUX Reference Baseline and Guardrails — Status
 
-**Current Step:** Step 3: Tests and validation
+**Current Step:** Step 4: Documentation & delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** S
 
@@ -32,13 +32,13 @@
 - [x] Assert audit script output stays parseable and deterministic
 
 ### Step 3: Tests and validation
-**Status:** 🟨 In Progress
-- [ ] Run targeted tests including new guard test
-- [ ] Run full extension suite
-- [ ] Fix failures
+**Status:** ✅ Complete
+- [x] Run targeted tests including new guard test
+- [x] Run full extension suite
+- [x] Fix failures
 
 ### Step 4: Documentation & delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update migration doc with guardrail usage
 - [ ] Update STATUS.md summary with baseline numbers and commands
 
@@ -61,7 +61,13 @@
 | 2026-04-02 20:41 | Review R005 (plan, step 2) | APPROVE |
 | 2026-04-02 20:40 | Step 2 started | Add regression guard test |
 | 2026-04-02 20:45 | Step 2 completed | Added guard test for strict/no-functional-TMUX + deterministic JSON |
+| 2026-04-02 20:46 | Review R006 (code, step 2) | APPROVE |
+| 2026-04-02 20:46 | Review R007 (plan, step 3) | APPROVE |
 | 2026-04-02 20:45 | Step 3 started | Tests and validation |
+| 2026-04-02 20:48 | Step 3 tests | Targeted guard test: pass (2/2) |
+| 2026-04-02 20:50 | Step 3 tests | Full suite: pass (3390/3390) |
+| 2026-04-02 20:50 | Step 3 completed | No failures required fixes |
+| 2026-04-02 20:50 | Step 4 started | Documentation & delivery |
 |-----------|--------|---------|
 
 ## Baseline Snapshot (2026-04-02)
@@ -144,3 +150,5 @@ Initial hotspot files by total refs: `types.ts` (44), `execution.ts` (26), `pers
 | 2026-04-02 20:27 | Review R003 | code Step 1: REVISE |
 | 2026-04-02 20:29 | Review R004 | code Step 1: APPROVE |
 | 2026-04-02 20:30 | Review R005 | plan Step 2: APPROVE |
+| 2026-04-02 20:32 | Review R006 | code Step 2: APPROVE |
+| 2026-04-02 20:33 | Review R007 | plan Step 3: APPROVE |
