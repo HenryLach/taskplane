@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.15] - 2026-04-02
+
+### New
+- **V2 `review_step` tool** — Workers can now spawn reviewer agents at step boundaries via the bridge extension. Generates review requests, spawns a reviewer Pi subprocess, waits for completion, and returns APPROVE/REVISE/RETHINK verdict. Works with the Review Level instructions in the base worker template.
+
 ## [0.23.14] - 2026-04-02
 
 ### Fixed
