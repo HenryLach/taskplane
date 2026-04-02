@@ -51,6 +51,21 @@ export function hasTaskDoneMarker(taskFolder: string): boolean {
 }
 
 /**
+ * Compare optional embedded outcome telemetry.
+ */
+function sameOutcomeTelemetry(a: LaneTaskOutcome["telemetry"], b: LaneTaskOutcome["telemetry"]): boolean {
+	if (!a && !b) return true;
+	if (!a || !b) return false;
+	return a.inputTokens === b.inputTokens
+		&& a.outputTokens === b.outputTokens
+		&& a.cacheReadTokens === b.cacheReadTokens
+		&& a.cacheWriteTokens === b.cacheWriteTokens
+		&& a.costUsd === b.costUsd
+		&& a.toolCalls === b.toolCalls
+		&& a.durationMs === b.durationMs;
+}
+
+/**
  * Upsert a task outcome in-place. Returns true if changed.
  */
 export function upsertTaskOutcome(outcomes: LaneTaskOutcome[], next: LaneTaskOutcome): boolean {
@@ -61,19 +76,27 @@ export function upsertTaskOutcome(outcomes: LaneTaskOutcome[], next: LaneTaskOut
 	}
 
 	const prev = outcomes[idx];
+	const mergedNext: LaneTaskOutcome = {
+		...next,
+		laneNumber: next.laneNumber ?? prev.laneNumber,
+		telemetry: next.telemetry ?? prev.telemetry,
+	};
+
 	const changed =
-		prev.status !== next.status ||
-		prev.startTime !== next.startTime ||
-		prev.endTime !== next.endTime ||
-		prev.exitReason !== next.exitReason ||
-		prev.sessionName !== next.sessionName ||
-		prev.doneFileFound !== next.doneFileFound ||
-		prev.partialProgressCommits !== next.partialProgressCommits ||
-		prev.partialProgressBranch !== next.partialProgressBranch ||
-		prev.exitDiagnostic !== next.exitDiagnostic;
+		prev.status !== mergedNext.status ||
+		prev.startTime !== mergedNext.startTime ||
+		prev.endTime !== mergedNext.endTime ||
+		prev.exitReason !== mergedNext.exitReason ||
+		prev.sessionName !== mergedNext.sessionName ||
+		prev.doneFileFound !== mergedNext.doneFileFound ||
+		prev.laneNumber !== mergedNext.laneNumber ||
+		!sameOutcomeTelemetry(prev.telemetry, mergedNext.telemetry) ||
+		prev.partialProgressCommits !== mergedNext.partialProgressCommits ||
+		prev.partialProgressBranch !== mergedNext.partialProgressBranch ||
+		prev.exitDiagnostic !== mergedNext.exitDiagnostic;
 
 	if (changed) {
-		outcomes[idx] = next;
+		outcomes[idx] = mergedNext;
 	}
 	return changed;
 }
@@ -130,6 +153,7 @@ export function seedPendingOutcomesForAllocatedLanes(
 				exitReason: "Pending execution",
 				sessionName: lane.tmuxSessionName,
 				doneFileFound: false,
+				laneNumber: lane.laneNumber,
 			}) || changed;
 		}
 	}
@@ -163,6 +187,8 @@ export function syncTaskOutcomesFromMonitor(
 				exitReason: existing?.exitReason || "Pending execution",
 				sessionName: existing?.sessionName || lane.sessionName,
 				doneFileFound: false,
+				laneNumber: existing?.laneNumber ?? lane.laneNumber,
+				telemetry: existing?.telemetry,
 				partialProgressCommits: existing?.partialProgressCommits,
 				partialProgressBranch: existing?.partialProgressBranch,
 				exitDiagnostic: existing?.exitDiagnostic,
@@ -182,6 +208,8 @@ export function syncTaskOutcomesFromMonitor(
 				exitReason: existing?.exitReason || ".DONE file created by task-runner",
 				sessionName: existing?.sessionName || lane.sessionName,
 				doneFileFound: true,
+				laneNumber: existing?.laneNumber ?? lane.laneNumber,
+				telemetry: existing?.telemetry,
 				partialProgressCommits: existing?.partialProgressCommits,
 				partialProgressBranch: existing?.partialProgressBranch,
 				exitDiagnostic: existing?.exitDiagnostic,
@@ -199,6 +227,8 @@ export function syncTaskOutcomesFromMonitor(
 				exitReason: existing?.exitReason || "Task failed or stalled",
 				sessionName: existing?.sessionName || lane.sessionName,
 				doneFileFound: false,
+				laneNumber: existing?.laneNumber ?? lane.laneNumber,
+				telemetry: existing?.telemetry,
 				partialProgressCommits: existing?.partialProgressCommits,
 				partialProgressBranch: existing?.partialProgressBranch,
 				exitDiagnostic: existing?.exitDiagnostic,
@@ -233,6 +263,8 @@ export function syncTaskOutcomesFromMonitor(
 				exitReason: existing?.exitReason || (mappedStatus === "running" ? "Task in progress" : (snap.stallReason || "Task reached terminal state")),
 				sessionName: existing?.sessionName || lane.sessionName,
 				doneFileFound: snap.doneFileFound,
+				laneNumber: existing?.laneNumber ?? lane.laneNumber,
+				telemetry: existing?.telemetry,
 				partialProgressCommits: existing?.partialProgressCommits,
 				partialProgressBranch: existing?.partialProgressBranch,
 				exitDiagnostic: existing?.exitDiagnostic,
@@ -1164,7 +1196,7 @@ export function serializeBatchState(
 
 			const record: PersistedTaskRecord = {
 				taskId,
-				laneNumber: lane?.laneNumber ?? 0,
+				laneNumber: lane?.laneNumber ?? outcome?.laneNumber ?? 0,
 				sessionName: outcome?.sessionName || lane?.tmuxSessionName || "",
 				status: outcome?.status ?? "pending",
 				taskFolder: "", // Enriched by caller from discovery
