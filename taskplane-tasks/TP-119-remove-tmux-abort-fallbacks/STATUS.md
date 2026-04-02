@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** S
 
@@ -19,6 +19,7 @@
 
 ### Step 1: Remove abort TMUX fallbacks
 **Status:** 🟨 In Progress
+- [ ] abort.ts TMUX liveness polling in waitForSessionExit
 - [ ] abort.ts TMUX kill paths
 - [ ] execution.ts TMUX fallbacks in stop-all and stall kill
 - [ ] merge.ts dual kill paths
@@ -63,9 +64,15 @@
 | `tmuxAsync` | `extensions/taskplane/execution.ts:378,397,417` | other | Async TMUX helper consumers (`has/kill/capture` wrappers). |
 | `tmuxAsync` | `extensions/taskplane/merge.ts:2591` | other | Async merge pane capture helper for health monitoring. |
 
+## Notes
+
+- R001 suggestion: after Step 1 edits, run a grep sweep on `abort.ts|execution.ts|merge.ts` for `tmuxHasSession|tmuxKillSession` to verify fallback branches are removed.
+- R001 suggestion: run targeted abort/cleanup tests before Step 3 helper deletion.
+
 ## Execution Log
 
 | Timestamp | Action | Outcome |
 | 2026-04-02 06:05 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-02 06:05 | Step 0 started | Preflight |
 |-----------|--------|---------|
+| 2026-04-02 06:08 | Review R001 | plan Step 1: REVISE |
