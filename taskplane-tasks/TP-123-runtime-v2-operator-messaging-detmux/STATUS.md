@@ -1,10 +1,10 @@
 # TP-123: Runtime V2 Operator Messaging De-TMUX — Status
 
-**Current Step:** Step 1: Replace operator guidance strings
+**Current Step:** Step 2: Dashboard label cleanup
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -17,13 +17,13 @@
 - [x] Log inventory in STATUS.md
 
 ### Step 1: Replace operator guidance strings
-**Status:** 🟨 In Progress
-- [ ] Replace `tmux attach ...` hints with Runtime V2 guidance
-- [ ] Update "TMUX sessions" wording to backend-neutral terminology
-- [ ] Keep historical migration context only where needed
+**Status:** ✅ Complete
+- [x] Replace `tmux attach ...` hints with Runtime V2 guidance
+- [x] Update "TMUX sessions" wording to backend-neutral terminology
+- [x] Keep historical migration context only where needed
 
 ### Step 2: Dashboard label cleanup
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update dashboard labels/tooltips that imply tmux is active
 - [ ] Preserve compatibility behavior for data shape fields
 - [ ] Ensure merge/lane liveness indicators still render correctly
@@ -64,3 +64,4 @@
 | 2026-04-02 20:38 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-02 20:38 | Step 0 started | Preflight copy inventory |
 |-----------|--------|---------|
+| 2026-04-02 20:41 | Review R001 | plan Step 1: APPROVE |

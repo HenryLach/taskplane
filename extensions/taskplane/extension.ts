@@ -1648,7 +1648,7 @@ export default function (pi: ExtensionAPI) {
 					"warning",
 				);
 			} else {
-				ctx.ui.notify("ℹ️ Runtime V2 is the default backend (TMUX is legacy-only).", "info");
+				ctx.ui.notify("ℹ️ Runtime V2 is the default backend.", "info");
 			}
 			const preflight = runPreflight(orchConfig, execCtx!.repoRoot);
 			ctx.ui.notify(formatPreflightResults(preflight), preflight.passed ? "info" : "error");
@@ -4622,7 +4622,7 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify(
 			"Task Orchestrator ready\n\n" +
 			`Mode: ${modeLabel}\n` +
-			`Runtime: V2 default (configured spawn_mode: ${orchConfig.orchestrator.spawn_mode}; tmux is legacy-only)\n` +
+			`Runtime: V2 default (configured spawn_mode: ${orchConfig.orchestrator.spawn_mode}${orchConfig.orchestrator.spawn_mode === "tmux" ? "; legacy compatibility mode" : ""})\n` +
 			`Config: ${orchConfig.orchestrator.max_lanes} lanes, ` +
 			`${orchConfig.dependencies.source} deps\n` +
 			`Areas: ${areaCount} registered\n\n` +

@@ -1711,7 +1711,7 @@ export function runPreflight(config: OrchestratorConfig, repoRoot?: string): Pre
 		status: tmuxRequired ? "warn" : "pass",
 		message: tmuxRequired
 			? "spawn_mode: tmux is legacy-only under Runtime V2; subprocess backend will be used"
-			: "Runtime V2 subprocess backend active (TMUX not required)",
+			: "Runtime V2 subprocess backend active",
 		hint: tmuxRequired ? "Update orchestrator.spawn_mode to subprocess." : undefined,
 	});
 
