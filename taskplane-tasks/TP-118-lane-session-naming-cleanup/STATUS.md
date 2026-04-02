@@ -1,10 +1,10 @@
 # TP-118: Lane Session Naming Cleanup — Status
 
-**Current Step:** Step 1: Type alias introduction
+**Current Step:** Step 2: Rename in production code
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -18,17 +18,19 @@
 - [x] Plan alias-first approach
 
 ### Step 1: Type alias introduction
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Add laneSessionId alias to types
 - [x] Rename generateTmuxSessionName → generateLaneSessionId (keep alias)
 - [x] Backward-compat state reading
 
 ### Step 2: Rename in production code
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] execution.ts
 - [ ] engine.ts, merge.ts, extension.ts, persistence.ts, resume.ts
 - [ ] Dashboard server.cjs and app.js
 - [ ] naming.ts
+- [ ] Sweep remaining production modules (`abort.ts`, `formatting.ts`, `diagnostic-reports.ts`, `sessions.ts`, and any additional non-test references)
+- [ ] Verify non-test `tmuxSessionName` references are removed or explicitly compatibility-scoped
 
 ### Step 3: Rename in tests
 **Status:** ⬜ Not Started
@@ -63,3 +65,9 @@
 | 2026-04-02 05:20 | Added compat state reads | Persisted lane validation now accepts either field and normalizes both `laneSessionId` and `tmuxSessionName` |
 | 2026-04-02 05:22 | Targeted tests | `naming-collision`, `monorepo-compat-regression`, `orch-state-persistence` passed |
 |-----------|--------|---------|
+| 2026-04-02 05:18 | Review R002 | code Step 1: APPROVE |
+| 2026-04-02 05:19 | Review R003 | plan Step 2: REVISE |
+
+## Notes
+- Reviewer suggestion: define allowed leftovers in Step 2 (compat normalization only) to avoid over/under-renaming.
+- Reviewer suggestion: log post-step grep counts split by production/tests/docs for measurable progress.
