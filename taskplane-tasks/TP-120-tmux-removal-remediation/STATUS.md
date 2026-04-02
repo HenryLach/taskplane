@@ -1,11 +1,11 @@
 # TP-120: TMUX Removal Remediation — Status
 
-**Current Step:** Step 5: Tests
-**Status:** 🟡 In Progress
+**Current Step:** Step 6: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-02
 **Review Level:** 2
 **Review Counter:** 11
-**Iteration:** 3
+**Iteration:** 4
 **Size:** M
 
 ---
@@ -62,17 +62,17 @@
 - [x] Update dashboard
 
 ### Step 5: Tests
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Update test references
 - [x] Run full suite
 - [x] Fix all failures
 - [x] Verify zero functional TMUX code
 
 ### Step 6: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Update STATUS.md
-- [ ] Final TMUX reference count
-- [ ] Log before/after count
+**Status:** ✅ Complete
+- [x] Update STATUS.md
+- [x] Final TMUX reference count
+- [x] Log before/after count
 
 ---
 
@@ -93,6 +93,12 @@
   - Session naming still references `config.orchestrator.tmux_prefix`
 - `extensions/taskplane/abort.ts` TMUX usage identified:
   - `execSync('tmux list-sessions -F "#{session_name}"')` in abort flow Step 3 for session discovery
+
+## Step 6 Completion Summary (2026-04-02)
+
+- Final TMUX reference count command rerun: `grep -rn "tmux" extensions/taskplane/*.ts | grep -v "test\|//" | wc -l` → **73** (down from **160** at Step 0).
+- Functional TMUX execution scan (`spawn("tmux")`, `spawnSync("tmux")`, `execSync(...tmux...)`, `tmux has-session`, `tmux kill-session`, `capture-pane`) returned comment/help text only; no active runtime TMUX command execution remains in task scope.
+- Delivery summary: Step 1–5 removed TMUX session polling/capture/kill helpers, replaced merge/abort behavior with V2-safe paths, and renamed `tmuxPrefix` to `sessionPrefix` with backward-compatible config alias loading.
 
 ## Notes
 
@@ -123,3 +129,7 @@
 | 2026-04-02 14:48 | Worker iter 2 | killed (wall-clock timeout) in 1800s, tools: 179 |
 | 2026-04-02 14:48 | Step 5 started | Tests |
 | 2026-04-02 14:50 | Review R011 | plan Step 5: APPROVE |
+| 2026-04-02 15:18 | Worker iter 3 | killed (wall-clock timeout) in 1800s, tools: 105 |
+| 2026-04-02 15:18 | Step 6 started | Documentation & Delivery |
+| 2026-04-02 11:20 | Step 6 completed | Logged TMUX count delta (160 → 73) and delivery summary |
+| 2026-04-02 11:20 | Task completed | All checklist steps marked complete |
