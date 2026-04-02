@@ -174,6 +174,20 @@ Workspace-mode smoke tests and segment-roadmap prerequisites pass on Runtime V2.
 
 - Full suite: 3383 pass, 0 failures
 
+## Phase F.4 — Abort/resume fallback cleanup (TP-119) ✅ Implemented
+
+### Delivered
+
+- Removed Runtime V2 abort-path TMUX fallbacks in `abort.ts`, `execution.ts`, and merge cleanup paths.
+- Removed Runtime V2 resume-path TMUX reconnect/liveness fallbacks; reconnect now rehydrates via `executeLaneV2` only.
+- Removed dead synchronous TMUX helper usage from runtime control paths (`tmuxHasSession`, `tmuxKillSession`, `tmuxAsync`) and migrated lingering cleanup to process-registry-backed V2 handles.
+- Added regression coverage for final cleanup behavior to ensure lingering lane/merge agents are terminated via Runtime V2 process handles (no TMUX fallback branch).
+
+### Exit gate
+
+- Full suite: 3403 pass, 0 failures
+- Runtime V2 abort/resume/cleanup control paths no longer depend on TMUX fallback branches
+
 ## Phase G — Default switch and cleanup
 
 ### Deliverables

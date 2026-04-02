@@ -1,10 +1,10 @@
 # TP-119: Remove TMUX Abort Fallbacks — Status
 
-**Current Step:** Step 4: Tests
-**Status:** 🟡 In Progress
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 9
+**Review Counter:** 10
 **Iteration:** 2
 **Size:** S
 
@@ -41,15 +41,15 @@
 - [x] Ensure final cleanup kills actual merge agents (use merge IDs or kill-all)
 
 ### Step 4: Tests
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Update tests
 - [x] Run full suite
 - [x] Fix all failures
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Update STATUS.md
-- [ ] Update migration docs
+**Status:** ✅ Complete
+- [x] Update STATUS.md
+- [x] Update migration docs
 
 ---
 
@@ -76,6 +76,8 @@
 - R006 suggestion: run post-edit grep for `tmuxHasSession|tmuxKillSession|tmuxAsync` usage/imports to verify only intended TMUX paths remain.
 - R006 suggestion: remove unused `prefix` in `resume.ts` while touching TMUX cleanup scope.
 - R008 suggestion: add focused regression coverage for final cleanup lingering-process behavior after removing TMUX fallbacks.
+- Step 4 verification: added `14.8` coverage in `engine-runtime-v2-routing.test.ts` for registry-driven lingering-agent cleanup; full suite passed (3403 pass, 0 fail).
+- Step 5 docs: updated `docs/specifications/framework/taskplane-runtime-v2/06-migration-and-rollout.md` with TP-119 (`Phase F.4`) to record TMUX fallback removal in Runtime V2 abort/resume/cleanup paths.
 
 ## Execution Log
 
@@ -93,3 +95,4 @@
 | 2026-04-02 06:31 | Review R008 | code Step 3: REVISE |
 | 2026-04-02 06:35 | Worker iter 1 | killed (wall-clock timeout) in 1800s, tools: 179 |
 | 2026-04-02 06:36 | Review R009 | plan Step 4: APPROVE |
+| 2026-04-02 06:44 | Review R010 | code Step 4: APPROVE |
