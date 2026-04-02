@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** M
 
@@ -24,13 +24,13 @@
 - [x] Backward-compat state reading
 
 ### Step 2: Rename in production code
-**Status:** 🟨 In Progress
-- [ ] execution.ts
-- [ ] engine.ts, merge.ts, extension.ts, persistence.ts, resume.ts
-- [ ] Dashboard server.cjs and app.js
-- [ ] naming.ts
-- [ ] Sweep remaining production modules (`abort.ts`, `formatting.ts`, `diagnostic-reports.ts`, `sessions.ts`, and any additional non-test references)
-- [ ] Verify non-test `tmuxSessionName` references are removed or explicitly compatibility-scoped
+**Status:** ✅ Complete
+- [x] execution.ts
+- [x] engine.ts, merge.ts, extension.ts, persistence.ts, resume.ts
+- [x] Dashboard server.cjs and app.js
+- [x] naming.ts
+- [x] Sweep remaining production modules (`abort.ts`, `formatting.ts`, `diagnostic-reports.ts`, `sessions.ts`, and any additional non-test references)
+- [x] Verify non-test `tmuxSessionName` references are removed or explicitly compatibility-scoped
 
 ### Step 3: Rename in tests
 **Status:** ⬜ Not Started
@@ -67,7 +67,17 @@
 |-----------|--------|---------|
 | 2026-04-02 05:18 | Review R002 | code Step 1: APPROVE |
 | 2026-04-02 05:19 | Review R003 | plan Step 2: REVISE |
+| 2026-04-02 05:26 | Review R004 | plan Step 2: APPROVE |
+| 2026-04-02 05:30 | Renamed execution lane references | `execution.ts` now resolves lane session identity via `laneSessionId`-first helper |
+| 2026-04-02 05:33 | Updated orchestrator runtime modules | `extension.ts`, `persistence.ts`, and `resume.ts` now use `laneSessionId` first; verified no `tmuxSessionName` references in `engine.ts`/`merge.ts` |
+| 2026-04-02 05:35 | Updated dashboard lane keys | Dashboard backend/frontend now key lane telemetry and display using `laneSessionId` with fallback |
+| 2026-04-02 05:36 | Updated naming docs | `naming.ts` comments now refer to lane session IDs instead of TMUX-era terminology |
+| 2026-04-02 05:38 | Swept additional runtime modules | Updated `abort.ts`, `diagnostic-reports.ts`, `formatting.ts`, `sessions.ts`, and `waves.ts` for laneSessionId-first usage |
+| 2026-04-02 05:39 | Verified compatibility-scoped leftovers | grep counts — production: 42, tests: 101, task docs: 19; non-`laneSessionId` production refs limited to type alias + persistence/resume compat handling |
+| 2026-04-02 05:45 | Targeted tests | `orch-state-persistence`, `monorepo-compat-regression`, `naming-collision`, `orch-pure-functions`, `engine-runtime-v2-routing` passed |
 
 ## Notes
+- Allowed Step 2 leftovers: compatibility alias fields in `types.ts` plus normalization/dual-write handling in `persistence.ts` and resume comment context.
 - Reviewer suggestion: define allowed leftovers in Step 2 (compat normalization only) to avoid over/under-renaming.
 - Reviewer suggestion: log post-step grep counts split by production/tests/docs for measurable progress.
+| 2026-04-02 05:20 | Review R004 | plan Step 2: APPROVE |

@@ -1072,8 +1072,9 @@ export function validateAllocationInputs(
  *    newly-created lanes in this call are rolled back.
  *
  * 4. **Build AllocatedLane[]** — each lane gets repo-aware `laneId` and
- *    `tmuxSessionName`. In workspace mode: `"api/lane-1"`, `"orch-api-lane-1"`.
- *    In repo mode: `"lane-1"`, `"orch-lane-1"` (unchanged).
+ *    `laneSessionId` (with temporary `tmuxSessionName` alias). In workspace mode:
+ *    `"api/lane-1"`, `"orch-api-lane-1"`. In repo mode: `"lane-1"`,
+ *    `"orch-lane-1"` (unchanged).
  *
  * **Determinism guarantee:** Given the same `waveTasks`, `pending`, and `config`,
  * this function always produces the same lane assignments and task ordering.
@@ -1331,10 +1332,12 @@ export function allocateLanes(
 			0,
 		);
 
+		const laneSessionId = generateLaneSessionId(tmuxPrefix, entry.localLane, opId, entry.repoId);
 		allocatedLanes.push({
 			laneNumber: entry.globalLane,
 			laneId: generateLaneId(entry.localLane, entry.repoId),
-			tmuxSessionName: generateLaneSessionId(tmuxPrefix, entry.localLane, opId, entry.repoId),
+			laneSessionId,
+			tmuxSessionName: laneSessionId,
 			worktreePath: wt.path,
 			branch: wt.branch,
 			tasks: allocatedTasks,

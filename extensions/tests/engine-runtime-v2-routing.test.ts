@@ -514,7 +514,7 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 		const fnIdx = execSrc.indexOf("function monitorLanes");
 		const block = execSrc.slice(fnIdx, fnIdx + 20000);
 		// Lane snapshot sessionAlive must branch on V2
-		expect(block).toContain("isV2AgentAlive(lane.tmuxSessionName");
+		expect(block).toContain("isV2AgentAlive(laneSessionIdOf(lane)");
 	});
 
 	it("14.5: stall kill is backend-aware (V2 kills by PID, not TMUX)", () => {

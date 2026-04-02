@@ -1,10 +1,10 @@
 /**
  * Naming contract helpers for team-scale collision resistance.
  *
- * Provides deterministic, human-readable identifiers for TMUX sessions,
+ * Provides deterministic, human-readable identifiers for lane session IDs,
  * worktree directories, git branches, and merge artifacts. All naming
  * components are sanitized for safe use in filesystem paths, git refs,
- * and TMUX session names.
+ * and tmux-compatible session IDs.
  *
  * @module orch/naming
  */
@@ -25,7 +25,7 @@ import type { OrchestratorConfig } from "./types.ts";
  * - Trim leading/trailing hyphens
  * - Truncate to `maxLen` characters
  *
- * Safe for use in: TMUX session names, git branch refs, filesystem paths.
+ * Safe for use in: lane session IDs, git branch refs, filesystem paths.
  *
  * @param raw    - Raw input string
  * @param maxLen - Maximum length (default: 16)
@@ -99,7 +99,7 @@ export function resolveOperatorId(
  * Derive a repo slug from the repository root directory name.
  *
  * Provides cross-repo disambiguation when multiple repos share the
- * same machine. Used in TMUX session names and worktree paths where
+ * same machine. Used in lane session IDs and worktree paths where
  * names must be globally unique on the machine.
  *
  * @param repoRoot - Absolute path to the repository root

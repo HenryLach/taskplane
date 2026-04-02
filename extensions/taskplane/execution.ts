@@ -537,7 +537,7 @@ export function buildLaneEnvVars(
 	const vars: Record<string, string> = {
 		TASK_AUTOSTART: relativePath,
 		TASK_RUNNER_SPAWN_MODE: "tmux",
-		TASK_RUNNER_TMUX_PREFIX: lane.tmuxSessionName,
+		TASK_RUNNER_TMUX_PREFIX: laneSessionIdOf(lane),
 		ORCH_SIDECAR_DIR: join(workspaceRoot || repoRoot, ".pi"),
 		NODE_PATH: nodePath,
 		// Pi's TUI (ink/react) hangs silently with TERM=tmux-256color (tmux default).
@@ -573,6 +573,9 @@ export function toTmuxPath(pathValue: string): string {
 	return normalized;
 }
 
+function laneSessionIdOf(lane: Pick<AllocatedLane, "laneSessionId" | "tmuxSessionName">): string {
+	return lane.laneSessionId || laneSessionIdOf(lane);
+}
 
 /**
  * Resolve the lane session log path for a task execution.
@@ -584,7 +587,7 @@ export function resolveLaneLogPath(
 	lane: AllocatedLane,
 	task: AllocatedTask,
 ): string {
-	return join(lane.worktreePath, ".pi", "orch-logs", `${lane.tmuxSessionName}-${task.taskId}.log`);
+	return join(lane.worktreePath, ".pi", "orch-logs", `${laneSessionIdOf(lane)}-${task.taskId}.log`);
 }
 
 /**
@@ -596,7 +599,7 @@ export function resolveLaneLogRelativePath(
 	lane: AllocatedLane,
 	task: AllocatedTask,
 ): string {
-	return join(".pi", "orch-logs", `${lane.tmuxSessionName}-${task.taskId}.log`).replace(/\\/g, "/");
+	return join(".pi", "orch-logs", `${laneSessionIdOf(lane)}-${task.taskId}.log`).replace(/\\/g, "/");
 }
 
 /**
@@ -865,7 +868,7 @@ export async function pollUntilTaskComplete(
 	pauseSignal: { paused: boolean },
 	isWorkspaceMode?: boolean,
 ): Promise<{ status: LaneTaskStatus; exitReason: string; doneFileFound: boolean }> {
-	const sessionName = lane.tmuxSessionName;
+	const sessionName = laneSessionIdOf(lane);
 	const laneId = lane.laneId;
 	const resolved = resolveCanonicalTaskPaths(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
 	const donePath = resolved.donePath;
@@ -1678,7 +1681,7 @@ export async function monitorLanes(
 					const snapshot = await resolveTaskMonitorState(
 						task.taskId,
 						donePath,
-						lane.tmuxSessionName,
+						laneSessionIdOf(lane),
 						statusResult,
 						tracker,
 						stallTimeoutMs,
@@ -1729,13 +1732,13 @@ export async function monitorLanes(
 
 			// TP-112: Backend-aware lane liveness for snapshot
 			const sessionAlive = runtimeBackend === "v2"
-				? isV2AgentAlive(lane.tmuxSessionName, runtimeBackend)
-				: await tmuxHasSessionAsync(lane.tmuxSessionName);
+				? isV2AgentAlive(laneSessionIdOf(lane), runtimeBackend)
+				: await tmuxHasSessionAsync(laneSessionIdOf(lane));
 
 			laneSnapshots.push({
 				laneId: lane.laneId,
 				laneNumber: lane.laneNumber,
-				sessionName: lane.tmuxSessionName,
+				sessionName: laneSessionIdOf(lane),
 				sessionAlive,
 				currentTaskId,
 				currentTaskSnapshot,
@@ -1794,7 +1797,7 @@ export async function monitorLanes(
 	const laneSnapshots: LaneMonitorSnapshot[] = lanes.map(lane => ({
 		laneId: lane.laneId,
 		laneNumber: lane.laneNumber,
-		sessionName: lane.tmuxSessionName,
+		sessionName: laneSessionIdOf(lane),
 		sessionAlive: false, // Best-effort during pause — don't block with tmux call
 		currentTaskId: null,
 		currentTaskSnapshot: null,
@@ -2164,7 +2167,7 @@ export async function executeWave(
 					startTime: null,
 					endTime: null,
 					exitReason: `Lane promise rejected: ${errMsg}`,
-					sessionName: lanes[idx].tmuxSessionName,
+					sessionName: laneSessionIdOf(lanes[idx]),
 					doneFileFound: false,
 					laneNumber: lanes[idx].laneNumber,
 				})),
@@ -2334,12 +2337,12 @@ export async function executeWithStopAll(
 						})[0];
 
 					execLog("wave", `W${waveIndex}`, `stop-all triggered by ${firstFailed?.taskId || "unknown"} in ${lanes[idx].laneId}`, {
-						session: lanes[idx].tmuxSessionName,
+						session: laneSessionIdOf(lanes[idx]),
 					});
 
 					// Kill ALL lane sessions immediately
 					for (const lane of lanes) {
-						killLaneAndChildren(lane.tmuxSessionName);
+						killLaneAndChildren(laneSessionIdOf(lane));
 					}
 				}
 			}
@@ -2353,7 +2356,7 @@ export async function executeWithStopAll(
 				pauseSignal.paused = true;
 				execLog("wave", `W${waveIndex}`, `stop-all triggered by lane error in ${lanes[idx].laneId}: ${errMsg}`);
 				for (const lane of lanes) {
-					killLaneAndChildren(lane.tmuxSessionName);
+					killLaneAndChildren(laneSessionIdOf(lane));
 				}
 			}
 
@@ -2367,7 +2370,7 @@ export async function executeWithStopAll(
 					startTime: null,
 					endTime: null,
 					exitReason: `Lane aborted: ${errMsg}`,
-					sessionName: lanes[idx].tmuxSessionName,
+					sessionName: laneSessionIdOf(lanes[idx]),
 					doneFileFound: false,
 					laneNumber: lanes[idx].laneNumber,
 				})),
@@ -2495,18 +2498,18 @@ export function buildAgentIdFromLane(
 	role: RuntimeAgentRole,
 	mergeIndex?: number,
 ): RuntimeAgentId {
-	// The current tmuxSessionName is already in the right format
+	// The current laneSessionId is already in the right format
 	// (e.g., "orch-henrylach-lane-1"). We derive agent IDs from it
 	// by appending the role suffix, matching the existing convention.
 	if (role === "merger" && mergeIndex != null) {
 		// Merge agents use a different naming pattern
-		const prefix = lane.tmuxSessionName.replace(/-lane-\d+$/, "");
+		const prefix = laneSessionIdOf(lane).replace(/-lane-\d+$/, "");
 		return `${prefix}-merge-${mergeIndex}`;
 	}
 	if (role === "lane-runner") {
-		return lane.tmuxSessionName;
+		return laneSessionIdOf(lane);
 	}
-	return `${lane.tmuxSessionName}-${role}`;
+	return `${laneSessionIdOf(lane)}-${role}`;
 }
 
 /**
@@ -2645,7 +2648,7 @@ export async function executeLaneV2(
 	const batchId = config.orchestrator?.batchId || extraEnvVars?.ORCH_BATCH_ID || String(Date.now());
 
 	// Build agent ID prefix — must match the wave planner's naming (TP-115).
-	// Uses resolveOperatorId() so agent registry keys align with tmuxSessionName.
+	// Uses resolveOperatorId() so agent registry keys align with lane session IDs.
 	const tmuxPrefix = config.orchestrator?.tmux_prefix ?? "orch";
 	const opId = resolveOperatorId(config);
 	const agentIdPrefix = `${tmuxPrefix}-${opId}`;

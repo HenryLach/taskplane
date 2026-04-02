@@ -48,7 +48,7 @@ export function listOrchSessions(
 	const laneLookup = new Map<string, { laneId: string; taskId: string | null; worktreePath: string }>();
 	if (batchState && batchState.currentLanes.length > 0) {
 		for (const lane of batchState.currentLanes) {
-			laneLookup.set(lane.tmuxSessionName, {
+			laneLookup.set(lane.laneSessionId || lane.tmuxSessionName, {
 				laneId: lane.laneId,
 				taskId: lane.tasks.length > 0 ? lane.tasks[0].taskId : null,
 				worktreePath: lane.worktreePath,

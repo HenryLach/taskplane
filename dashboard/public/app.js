@@ -517,16 +517,17 @@ function renderLanesTasks(batch, tmuxSessions) {
     }
 
     // TP-107: check V2 registry for liveness first, fall back to tmux
+    const laneSessionId = lane.laneSessionId || lane.tmuxSessionName;
     const v2Alive = isLaneAliveV2(lane.laneNumber);
-    const alive = v2Alive !== null ? v2Alive : tmuxSet.has(lane.tmuxSessionName);
-    const tmuxCmd = `tmux attach -t ${lane.tmuxSessionName}`;
+    const alive = v2Alive !== null ? v2Alive : tmuxSet.has(laneSessionId);
+    const tmuxCmd = `tmux attach -t ${laneSessionId}`;
 
     // Lane header
     html += `<div class="lane-group">`;
     html += `<div class="lane-header">`;
     html += `  <span class="lane-num">${lane.laneNumber}</span>`;
     html += `  <div class="lane-meta">`;
-    html += `    <span class="lane-session">${escapeHtml(lane.tmuxSessionName || "—")}</span>`;
+    html += `    <span class="lane-session">${escapeHtml(laneSessionId || "—")}</span>`;
     html += `    <span class="lane-branch">${escapeHtml(lane.branch || "—")}</span>`;
     if (showRepos && lane.repoId) {
       html += `    ${repoBadgeHtml(lane.repoId, "repo-badge-lane")}`;
@@ -535,10 +536,10 @@ function renderLanesTasks(batch, tmuxSessions) {
     html += `  <div class="lane-right">`;
     html += `    <span class="tmux-dot ${alive ? "alive" : "dead"}" title="${alive ? "tmux alive" : "tmux dead"}"></span>`;
     // View button: shows conversation stream if available, else tmux pane
-    const isViewingConv = viewerMode === 'conversation' && viewerTarget === lane.tmuxSessionName;
-    html += `    <button class="tmux-view-btn${isViewingConv ? ' active' : ''}" onclick="viewConversation('${escapeHtml(lane.tmuxSessionName)}')" title="View worker conversation">👁 View</button>`;
+    const isViewingConv = viewerMode === 'conversation' && viewerTarget === laneSessionId;
+    html += `    <button class="tmux-view-btn${isViewingConv ? ' active' : ''}" onclick="viewConversation('${escapeHtml(laneSessionId)}')" title="View worker conversation">👁 View</button>`;
     if (alive) {
-      html += `    <span class="tmux-cmd" data-tmux="${escapeHtml(lane.tmuxSessionName)}" onclick="copyTmuxCmd('${escapeHtml(lane.tmuxSessionName)}')" title="Click to copy">${escapeHtml(tmuxCmd)}</span>`;
+      html += `    <span class="tmux-cmd" data-tmux="${escapeHtml(laneSessionId)}" onclick="copyTmuxCmd('${escapeHtml(laneSessionId)}')" title="Click to copy">${escapeHtml(tmuxCmd)}</span>`;
     } else {
       html += `    <span class="tmux-cmd dead-session">${escapeHtml(tmuxCmd)}</span>`;
     }
@@ -555,9 +556,9 @@ function renderLanesTasks(batch, tmuxSessions) {
     // Get lane state and telemetry for worker stats
     // TP-107: V2 lane snapshots take precedence when present
     const v2snap = v2Snapshots[lane.laneNumber] || null;
-    const legacyLs = laneStates[lane.tmuxSessionName] || null;
+    const legacyLs = laneStates[laneSessionId] || null;
     const ls = v2snap ? mergeV2LaneSnapshot(legacyLs, v2snap) : legacyLs;
-    const tel = telemetry[lane.tmuxSessionName] || null;
+    const tel = telemetry[laneSessionId] || null;
 
     for (const task of laneTasks) {
       // Repo filtering at task level
@@ -768,8 +769,8 @@ function renderMergeAgents(batch, tmuxSessions) {
   // Extract the prefix-opId part from the first lane and use it to construct merge names.
   const lanes = batch?.lanes || [];
   let mergePrefix = "orch-merge"; // fallback for legacy/unknown patterns
-  if (lanes.length > 0 && lanes[0].tmuxSessionName) {
-    const laneName = lanes[0].tmuxSessionName;
+  if (lanes.length > 0 && (lanes[0].laneSessionId || lanes[0].tmuxSessionName)) {
+    const laneName = lanes[0].laneSessionId || lanes[0].tmuxSessionName;
     const laneMatch = laneName.match(/^(.+)-lane-\d+$/);
     if (laneMatch) {
       mergePrefix = laneMatch[1] + "-merge";

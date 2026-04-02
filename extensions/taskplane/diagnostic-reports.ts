@@ -411,7 +411,7 @@ export function assembleDiagnosticInput(
 			const record: PersistedTaskRecord = {
 				taskId,
 				laneNumber: lane?.laneNumber ?? 0,
-				sessionName: outcome?.sessionName || lane?.tmuxSessionName || "",
+				sessionName: outcome?.sessionName || lane?.laneSessionId || lane?.tmuxSessionName || "",
 				status: outcome?.status ?? "pending",
 				taskFolder: "",
 				startedAt: outcome?.startTime ?? null,

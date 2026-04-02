@@ -401,7 +401,7 @@ export function buildDashboardViewModel(
 			laneCards.push({
 				laneNumber: lane.laneNumber,
 				laneId: lane.laneId,
-				sessionName: lane.tmuxSessionName,
+				sessionName: lane.laneSessionId || lane.tmuxSessionName,
 				sessionAlive: true, // assumed alive during allocation
 				currentTaskId: lane.tasks.length > 0 ? lane.tasks[0].taskId : null,
 				currentStepName: null,

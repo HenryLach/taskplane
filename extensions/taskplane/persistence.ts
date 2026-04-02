@@ -151,7 +151,7 @@ export function seedPendingOutcomesForAllocatedLanes(
 				startTime: null,
 				endTime: null,
 				exitReason: "Pending execution",
-				sessionName: lane.tmuxSessionName,
+				sessionName: lane.laneSessionId || lane.tmuxSessionName,
 				doneFileFound: false,
 				laneNumber: lane.laneNumber,
 			}) || changed;
@@ -1228,7 +1228,7 @@ export function serializeBatchState(
 			const record: PersistedTaskRecord = {
 				taskId,
 				laneNumber: lane?.laneNumber ?? outcome?.laneNumber ?? 0,
-				sessionName: outcome?.sessionName || lane?.tmuxSessionName || "",
+				sessionName: outcome?.sessionName || lane?.laneSessionId || lane?.tmuxSessionName || "",
 				status: outcome?.status ?? "pending",
 				taskFolder: "", // Enriched by caller from discovery
 				startedAt: outcome?.startTime ?? null,

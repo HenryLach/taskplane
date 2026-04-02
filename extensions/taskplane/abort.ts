@@ -51,11 +51,11 @@ export function selectAbortTargetSessions(
 	});
 
 	// Build lookup from persisted lane records for workspace-aware laneId resolution.
-	// Keyed by tmuxSessionName for direct session-to-lane mapping.
+	// Keyed by lane session ID for direct session-to-lane mapping.
 	const persistedLaneLookup = new Map<string, PersistedLaneRecord>();
 	if (persistedState?.lanes) {
 		for (const lane of persistedState.lanes) {
-			persistedLaneLookup.set(lane.tmuxSessionName, lane);
+			persistedLaneLookup.set(lane.laneSessionId || lane.tmuxSessionName, lane);
 		}
 	}
 
@@ -82,7 +82,7 @@ export function selectAbortTargetSessions(
 	const runtimeLookup = new Map<string, { laneId: string; taskId: string | null; worktreePath: string; taskFolder: string | null }>();
 	for (const lane of runtimeLanes) {
 		const currentTask = lane.tasks.length > 0 ? lane.tasks[0] : null;
-		runtimeLookup.set(lane.tmuxSessionName, {
+		runtimeLookup.set(lane.laneSessionId || lane.tmuxSessionName, {
 			laneId: lane.laneId,
 			taskId: currentTask?.taskId || null,
 			worktreePath: lane.worktreePath,

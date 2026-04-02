@@ -3733,8 +3733,8 @@ export default function (pi: ExtensionAPI) {
 			const tmuxPrefix = orchConfig?.orchestrator?.tmux_prefix ?? "orch";
 			const opId = orchConfig ? resolveOperatorId(orchConfig) : "op";
 			for (const lane of state.lanes) {
-				ids.add(`${lane.tmuxSessionName}-worker`);
-				ids.add(`${lane.tmuxSessionName}-reviewer`);
+				ids.add(`${lane.laneSessionId || lane.tmuxSessionName}-worker`);
+				ids.add(`${lane.laneSessionId || lane.tmuxSessionName}-reviewer`);
 				ids.add(`${tmuxPrefix}-${opId}-merge-${lane.laneNumber}`);
 			}
 		}
@@ -4106,7 +4106,7 @@ export default function (pi: ExtensionAPI) {
 			const runningTask = laneTasks.find(t => t.status === "running");
 			const currentTask = runningTask || laneTasks[laneTasks.length - 1];
 
-			lines.push(`### Lane ${laneRec.laneNumber} — ${laneRec.tmuxSessionName}`);
+			lines.push(`### Lane ${laneRec.laneNumber} — ${laneRec.laneSessionId || laneRec.tmuxSessionName}`);
 			lines.push(`**Branch:** ${laneRec.branch}`);
 
 			if (currentTask) {
@@ -4150,7 +4150,7 @@ export default function (pi: ExtensionAPI) {
 
 			// Read lane-state sidecar
 			try {
-				const lsPath = join(stateRoot, ".pi", `lane-state-${laneRec.tmuxSessionName}.json`);
+				const lsPath = join(stateRoot, ".pi", `lane-state-${laneRec.laneSessionId || laneRec.tmuxSessionName}.json`);
 				if (existsSync(lsPath)) {
 					const ls = JSON.parse(readFileSync(lsPath, "utf-8"));
 					const parts: string[] = [];
@@ -4495,7 +4495,7 @@ export default function (pi: ExtensionAPI) {
 
 				// Find lane-state prefix (may be the session name or a prefix of it)
 				const laneRec = state.lanes.find(l => l.laneNumber === ln);
-				const prefix = laneRec?.tmuxSessionName || sess;
+				const prefix = laneRec?.laneSessionId || laneRec?.tmuxSessionName || sess;
 				const ls = laneStates[prefix];
 				if (ls) {
 					if (ls.workerContextPct) contextPct = `${Math.round(ls.workerContextPct)}%`;
