@@ -1,14 +1,14 @@
 /**
  * Process Registry — Runtime V2 agent lifecycle management
  *
- * File-backed registry that replaces TMUX session discovery as the
+ * File-backed registry that replaces legacy session discovery as the
  * authoritative source of truth for agent liveness, identity, and
  * attribution.
  *
  * Key design rules:
  *   1. Parent writes manifest BEFORE child is considered visible.
  *   2. Parent updates manifest on every status transition.
- *   3. Operator tools read the registry, not TMUX.
+ *   3. Operator tools read the registry, not terminal-session probes.
  *   4. Resume/cleanup validates pid + startedAt for orphan detection.
  *
  * File locations:

@@ -1,10 +1,10 @@
 # TP-124: Comment and Type Doc De-TMUX Sweep — Status
 
-**Current Step:** Step 1: Update comments and JSDoc
+**Current Step:** Step 2: Update type descriptions (non-breaking)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -17,13 +17,13 @@
 - [x] Log inventory split in STATUS.md
 
 ### Step 1: Update comments and JSDoc
-**Status:** 🟨 In Progress
-- [ ] Replace TMUX-era wording with Runtime V2/session terminology
-- [ ] Keep migration-history comments concise and accurate
-- [ ] Remove stale references to deleted TMUX flows
+**Status:** ✅ Complete
+- [x] Replace TMUX-era wording with Runtime V2/session terminology
+- [x] Keep migration-history comments concise and accurate
+- [x] Remove stale references to deleted TMUX flows
 
 ### Step 2: Update type descriptions (non-breaking)
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update descriptive comments on interfaces/type fields
 - [ ] Keep literal enum/error-code values unchanged unless backward-compatible
 - [ ] Ensure comments match current behavior
@@ -49,6 +49,8 @@
 | 2026-04-02 21:07 | Step 0 inventory | Audit scope refs: 92 total, 47 comments/docs + 44 types/contracts (1 compat-code) |
 | 2026-04-02 21:10 | Step 0 completed | Inventory split + compatibility literals captured |
 | 2026-04-02 21:10 | Step 1 started | Update comments and JSDoc |
+| 2026-04-02 21:22 | Step 1 completed | Comment/JSDoc wording de-TMUXed in non-type files |
+| 2026-04-02 21:22 | Step 2 started | Update type descriptions (non-breaking) |
 |-----------|--------|---------|
 
 ## Step 0 Inventory Snapshot
@@ -69,3 +71,4 @@
 - `ResumeErrorCode`: `"RESUME_TMUX_UNAVAILABLE"` (`types.ts`) — stable resume error-code contract.
 - `AbortErrorCode`: `"ABORT_TMUX_LIST_FAILED"` (`types.ts`) — stable abort error-code contract.
 - Existing type/property names that include `tmux` (for example `LaneStatus.tmuxSession`) are treated as compatibility contracts in this task; only doc wording will be updated.
+| 2026-04-02 21:01 | Review R001 | plan Step 1: APPROVE |
