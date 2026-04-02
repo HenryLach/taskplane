@@ -109,7 +109,10 @@ export interface WorkerConfig {
 	tools: string;
 	/** Thinking mode setting passed to worker agent */
 	thinking: string;
-	/** Optional spawn mode override for task-runner */
+	/**
+	 * Optional spawn mode override for task-runner.
+	 * @deprecated `"tmux"` is legacy-only; Runtime V2 execution is direct-child.
+	 */
 	spawnMode?: "subprocess" | "tmux";
 }
 
@@ -260,7 +263,10 @@ export interface OrchestratorCoreConfig {
 	worktreePrefix: string;
 	/** Batch ID format used in logs/branch naming */
 	batchIdFormat: "timestamp" | "sequential";
-	/** How lane sessions are spawned */
+	/**
+	 * How lane sessions are spawned.
+	 * @deprecated `"tmux"` is legacy-only; Runtime V2 is the active backend.
+	 */
 	spawnMode: "tmux" | "subprocess";
 	/** Prefix for orchestrator tmux sessions (tmux mode) */
 	tmuxPrefix: string;
@@ -511,7 +517,10 @@ export interface UserPreferences {
 	operatorId?: string;
 	/** TMUX session prefix (overrides orchestrator.orchestrator.tmuxPrefix) */
 	tmuxPrefix?: string;
-	/** Spawn mode override (overrides orchestrator.orchestrator.spawnMode) */
+	/**
+	 * Spawn mode override (overrides orchestrator.orchestrator.spawnMode).
+	 * @deprecated `"tmux"` is legacy-only; prefer `"subprocess"`.
+	 */
 	spawnMode?: "tmux" | "subprocess";
 	/** Worker model override (overrides taskRunner.worker.model) */
 	workerModel?: string;
