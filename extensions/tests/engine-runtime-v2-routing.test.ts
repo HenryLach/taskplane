@@ -517,6 +517,13 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 		expect(block).toContain("isV2AgentAlive(laneSessionIdOf(lane)");
 	});
 
+	it("14.4b: laneSessionIdOf keeps tmux compatibility fallback non-recursive", () => {
+		const fnIdx = execSrc.indexOf("function laneSessionIdOf");
+		expect(fnIdx).toBeGreaterThan(-1);
+		const block = execSrc.slice(fnIdx, fnIdx + 160);
+		expect(block).toContain("return lane.laneSessionId || lane.tmuxSessionName;");
+	});
+
 	it("14.5: stall kill is backend-aware (V2 kills by PID, not TMUX)", () => {
 		const fnIdx = execSrc.indexOf("function resolveTaskMonitorState");
 		const block = execSrc.slice(fnIdx, fnIdx + 5000);

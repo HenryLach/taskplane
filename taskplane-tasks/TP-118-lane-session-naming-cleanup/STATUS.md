@@ -31,8 +31,8 @@
 - [x] naming.ts
 - [x] Sweep remaining production modules (`abort.ts`, `formatting.ts`, `diagnostic-reports.ts`, `sessions.ts`, and any additional non-test references)
 - [x] Verify non-test `tmuxSessionName` references are removed or explicitly compatibility-scoped
-- [ ] Fix `laneSessionIdOf()` recursion bug in `execution.ts` fallback path
-- [ ] Add regression coverage for compatibility-shaped lanes (tmux-only field) in runtime execution tests
+- [x] Fix `laneSessionIdOf()` recursion bug in `execution.ts` fallback path
+- [x] Add regression coverage for compatibility-shaped lanes (tmux-only field) in runtime execution tests
 
 ### Step 3: Rename in tests
 **Status:** ⬜ Not Started
@@ -78,6 +78,9 @@
 | 2026-04-02 05:39 | Verified compatibility-scoped leftovers | grep counts — production: 42, tests: 101, task docs: 19; non-`laneSessionId` production refs limited to type alias + persistence/resume compat handling |
 | 2026-04-02 05:45 | Targeted tests | `orch-state-persistence`, `monorepo-compat-regression`, `naming-collision`, `orch-pure-functions`, `engine-runtime-v2-routing` passed |
 | 2026-04-02 05:46 | Review R005 | code Step 2: REVISE (recursion fallback bug) |
+| 2026-04-02 05:47 | Fixed review blocker | `laneSessionIdOf()` now correctly falls back to `lane.tmuxSessionName` without recursion |
+| 2026-04-02 05:48 | Added regression test | `engine-runtime-v2-routing.test.ts` now asserts tmux-only compatibility fallback is non-recursive |
+| 2026-04-02 05:48 | Targeted tests | `engine-runtime-v2-routing` passed after R005 fixes |
 
 ## Notes
 - Allowed Step 2 leftovers: compatibility alias fields in `types.ts` plus normalization/dual-write handling in `persistence.ts` and resume comment context.

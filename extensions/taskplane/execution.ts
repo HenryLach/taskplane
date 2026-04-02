@@ -574,7 +574,7 @@ export function toTmuxPath(pathValue: string): string {
 }
 
 function laneSessionIdOf(lane: Pick<AllocatedLane, "laneSessionId" | "tmuxSessionName">): string {
-	return lane.laneSessionId || laneSessionIdOf(lane);
+	return lane.laneSessionId || lane.tmuxSessionName;
 }
 
 /**
