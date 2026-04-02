@@ -1,10 +1,10 @@
 # TP-119: Remove TMUX Abort Fallbacks — Status
 
-**Current Step:** Step 3: Remove dead TMUX helpers
+**Current Step:** Step 4: Tests
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 6
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** S
 
@@ -30,15 +30,15 @@
 - [x] Ensure V2 reconnect is only path
 
 ### Step 3: Remove dead TMUX helpers
-**Status:** 🟨 In Progress
-- [ ] Migrate engine.ts and extension.ts off tmuxHasSession/tmuxKillSession imports
-- [ ] Re-home tmuxAsync consumers (execution async wrappers + merge capture helper)
-- [ ] Remove tmuxHasSession, tmuxKillSession, tmuxAsync
-- [ ] Remove sessions.ts helpers
-- [ ] Remove TMUX imports
+**Status:** ✅ Complete
+- [x] Migrate engine.ts and extension.ts off tmuxHasSession/tmuxKillSession imports
+- [x] Re-home tmuxAsync consumers (execution async wrappers + merge capture helper)
+- [x] Remove tmuxHasSession, tmuxKillSession, tmuxAsync
+- [x] Remove sessions.ts helpers
+- [x] Remove TMUX imports
 
 ### Step 4: Tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update tests
 - [ ] Run full suite
 - [ ] Fix all failures
@@ -85,3 +85,4 @@
 | 2026-04-02 06:16 | Review R004 | plan Step 2: APPROVE |
 | 2026-04-02 06:19 | Review R005 | code Step 2: APPROVE |
 | 2026-04-02 06:20 | Review R006 | plan Step 3: REVISE |
+| 2026-04-02 06:22 | Review R007 | plan Step 3: APPROVE |

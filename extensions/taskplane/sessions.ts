@@ -1,72 +1,39 @@
 /**
- * TMUX session discovery and formatting
+ * Runtime V2 session discovery and formatting
  * @module orch/sessions
  */
-import { execSync } from "child_process";
 
-import { tmuxHasSession } from "./execution.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
 import type { OrchBatchRuntimeState, OrchestratorSessionEntry } from "./types.ts";
 
 // ── Session Discovery ────────────────────────────────────────────────
 
 /**
- * List all TMUX sessions matching the orchestrator prefix.
+ * List active orchestrator sessions from in-memory batch state.
  *
- * Parses `tmux list-sessions` output and filters by prefix.
- * Returns entries sorted alphabetically by session name.
+ * Runtime V2 no longer uses TMUX as the execution owner. Session rows are
+ * derived from canonical lane session IDs in runtime state.
  *
- * @param tmuxPrefix  - Prefix to match (e.g., "orch")
- * @param batchState  - Current batch state for enrichment (optional)
+ * @param _tmuxPrefix - Legacy parameter kept for API compatibility
+ * @param batchState  - Current batch state for lane/task enrichment
  * @returns Array of session entries
  */
 export function listOrchSessions(
-	tmuxPrefix: string,
+	_tmuxPrefix: string,
 	batchState?: OrchBatchRuntimeState,
 ): OrchestratorSessionEntry[] {
-	let stdout = "";
-	try {
-		stdout = execSync('tmux list-sessions -F "#{session_name}"', {
-			encoding: "utf-8",
-			timeout: 5000,
-		});
-	} catch {
-		// No tmux server running or no sessions
-		return [];
-	}
+	if (!batchState || batchState.currentLanes.length === 0) return [];
 
-	const sessionNames = stdout
-		.trim()
-		.split("\n")
-		.filter(Boolean)
-		.filter(name => name.startsWith(`${tmuxPrefix}-`))
-		.sort();
-
-	if (sessionNames.length === 0) return [];
-
-	// Build a lookup from current batch state for enrichment
-	const laneLookup = new Map<string, { laneId: string; taskId: string | null; worktreePath: string }>();
-	if (batchState && batchState.currentLanes.length > 0) {
-		for (const lane of batchState.currentLanes) {
-			laneLookup.set(lane.laneSessionId, {
-				laneId: lane.laneId,
-				taskId: lane.tasks.length > 0 ? lane.tasks[0].taskId : null,
-				worktreePath: lane.worktreePath,
-			});
-		}
-	}
-
-	return sessionNames.map(name => {
-		const laneInfo = laneLookup.get(name);
-		return {
-			sessionName: name,
-			laneId: laneInfo?.laneId || "unknown",
-			taskId: laneInfo?.taskId || null,
-			status: tmuxHasSession(name) ? "alive" as const : "dead" as const,
-			worktreePath: laneInfo?.worktreePath || "",
-			attachCmd: `tmux attach -t ${name}`,
-		};
-	});
+	return batchState.currentLanes
+		.map(lane => ({
+			sessionName: lane.laneSessionId,
+			laneId: lane.laneId,
+			taskId: lane.tasks.length > 0 ? lane.tasks[0].taskId : null,
+			status: "alive" as const,
+			worktreePath: lane.worktreePath,
+			attachCmd: "Runtime V2 (no tmux attach)",
+		}))
+		.sort((a, b) => a.sessionName.localeCompare(b.sessionName));
 }
 
 /**
@@ -88,4 +55,3 @@ export function formatOrchSessions(sessions: OrchestratorSessionEntry[]): string
 
 	return lines.join("\n");
 }
-

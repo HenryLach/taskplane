@@ -220,14 +220,13 @@ describe("3.x: Rate limiting", () => {
 // ── 4. Registry-backed supervisor tools (source contract) ────────────
 
 describe("4.x: Registry-backed supervisor tool contracts", () => {
-	it("4.1: send_agent_message checks registry before TMUX", () => {
+	it("4.1: send_agent_message checks registry-backed liveness", () => {
 		const fnIdx = extensionSrc.indexOf("function doSendAgentMessage(");
 		const block = extensionSrc.slice(fnIdx, fnIdx + 3000);
 		expect(block).toContain("readRegistrySnapshot");
 		expect(block).toContain("isTerminalStatus");
 		expect(block).toContain("registryIsProcessAlive");
-		// TMUX is only a fallback
-		expect(block).toContain("tmuxHasSession(to)");
+		expect(block).not.toContain("tmuxHasSession(to)");
 	});
 
 	it("4.2: send_agent_message applies rate limiting", () => {

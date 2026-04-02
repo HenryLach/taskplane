@@ -6,13 +6,13 @@ import { existsSync, readdirSync, readFileSync, unlinkSync } from "fs";
 import { join, resolve } from "path";
 
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
-import { computeTransitiveDependents, execLog, executeLaneV2, executeWave, tmuxKillSession } from "./execution.ts";
+import { computeTransitiveDependents, execLog, executeLaneV2, executeWave, killV2LaneAgents } from "./execution.ts";
 import type { RuntimeBackend } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 // classifyExit no longer called directly — Tier 0 uses exitDiagnostic.classification
 // from the diagnostic-reports pipeline (populated by assembleDiagnosticInput).
 import { getCurrentBranch, runGit } from "./git.ts";
-import { mergeWaveByRepo, MergeHealthMonitor } from "./merge.ts";
+import { killMergeAgentV2, mergeWaveByRepo, MergeHealthMonitor } from "./merge.ts";
 import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
@@ -2473,15 +2473,17 @@ export async function executeOrchBatch(
 	if (preserveWorktreesForResume) {
 		execLog("batch", batchState.batchId, "skipping final cleanup to preserve worktrees/branches for resume");
 	} else {
-		// Kill any lingering lane tmux sessions BEFORE removing worktrees.
-		// On Windows, tmux sessions with cwd inside the worktree lock the
-		// directory, causing git worktree remove to fail.
+		// Kill any lingering orchestrator agents BEFORE removing worktrees.
+		// On Windows, lingering processes with cwd inside the worktree can lock
+		// the directory and cause `git worktree remove` to fail.
 		const orchPrefix = orchConfig.orchestrator.tmux_prefix;
 		const lingering = listOrchSessions(orchPrefix, batchState);
 		if (lingering.length > 0) {
-			execLog("batch", batchState.batchId, `killing ${lingering.length} lingering tmux session(s) before cleanup`);
+			execLog("batch", batchState.batchId, `killing ${lingering.length} lingering orchestrator session(s) before cleanup`);
 			for (const sess of lingering) {
-				tmuxKillSession(sess.sessionName);
+				const baseSessionName = sess.sessionName.replace(/-(worker|reviewer)$/, "");
+				killV2LaneAgents(baseSessionName);
+				killMergeAgentV2(baseSessionName);
 			}
 			sleepSync(1000); // Give OS time to release file locks
 		}

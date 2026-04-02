@@ -777,7 +777,6 @@ export async function resumeOrchBatch(
 	// State files (.pi/batch-state.json, lane-state, etc.) belong in the workspace root,
 	// which is where .pi/ config lives. In repo mode, stateRoot === repoRoot.
 	const stateRoot = workspaceRoot ?? cwd;
-	const prefix = orchConfig.orchestrator.tmux_prefix;
 
 	// ── TP-076: Supervisor alert emission helper ─────────────────
 	const emitAlert = (alert: import("./types.ts").SupervisorAlert): void => {

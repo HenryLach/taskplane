@@ -17,7 +17,7 @@ import { computeWaveAssignments } from "./waves.ts";
 import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
 import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions, parseOrchSessionNames } from "./persistence.ts";
 import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, formatPreflightResults, runPreflight } from "./worktree.ts";
-import { computeTransitiveDependents, resolveCanonicalTaskPaths, tmuxHasSession } from "./execution.ts";
+import { computeTransitiveDependents, resolveCanonicalTaskPaths } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { formatOrchSessions, listOrchSessions } from "./sessions.ts";
@@ -3784,21 +3784,16 @@ export default function (pi: ExtensionAPI) {
 			return `❌ Unknown session "${to}" in batch ${state.batchId}.\nValid targets: ${examples}${validSessions.size > 5 ? ` (${validSessions.size} total)` : ""}`;
 		}
 
-		// Guard: ensure the target agent is currently alive.
-		// Check process registry first (Runtime V2), fall back to TMUX (legacy).
+		// Guard: ensure the target agent is currently alive via Runtime V2 registry.
 		let agentAlive = false;
 		try {
 			const registry = readRegistrySnapshot(stateRoot, state.batchId);
 			if (registry && registry.agents[to]) {
 				const manifest = registry.agents[to];
 				agentAlive = !isTerminalStatus(manifest.status) && registryIsProcessAlive(manifest.pid);
-			} else {
-				// No registry entry — fall back to TMUX for legacy batches
-				agentAlive = tmuxHasSession(to);
 			}
 		} catch {
-			// Registry read failed — fall back to TMUX
-			agentAlive = tmuxHasSession(to);
+			// Registry read failure — treat as not alive.
 		}
 		if (!agentAlive) {
 			return `❌ Agent "${to}" is not currently running. Use orch_status() or orch_resume() before sending messages.`;

@@ -2,7 +2,7 @@
  * TP-089 mailbox follow-up guards
  *
  * Source-based regression tests for:
- * - send_agent_message runtime guards (terminal phase + live tmux session)
+ * - send_agent_message runtime guards (terminal phase + live registry-backed agent)
  * - workspace-root artifact cleanup wiring in orch-integrate paths
  */
 
@@ -21,8 +21,9 @@ describe("send_agent_message guards", () => {
 		expect(extensionSource).toContain("terminal phase");
 	});
 
-	it("checks target tmux session liveness before confirming send", () => {
-		expect(extensionSource).toContain("tmuxHasSession(to)");
+	it("checks target registry agent liveness before confirming send", () => {
+		expect(extensionSource).toContain("readRegistrySnapshot(stateRoot, state.batchId)");
+		expect(extensionSource).toContain("registryIsProcessAlive");
 		expect(extensionSource).toContain("is not currently running");
 	});
 });
