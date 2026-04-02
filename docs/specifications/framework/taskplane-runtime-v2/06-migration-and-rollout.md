@@ -233,6 +233,24 @@ Required new coverage areas:
 - packet-path authority in lane-runner and resume
 - dashboard reading normalized runtime artifacts
 
+### TMUX reference guardrail (TP-122)
+
+Runtime V2 migration now includes a deterministic static TMUX reference audit and
+strict regression guard:
+
+```bash
+node scripts/tmux-reference-audit.mjs --json
+node scripts/tmux-reference-audit.mjs --json --strict
+```
+
+- `--json` emits machine-readable totals (`total`, `by-file`, `by-category`) with
+  stable ordering and normalized POSIX-style paths.
+- `--strict` exits non-zero if functional TMUX command execution patterns are
+  detected (`spawn*`/`exec*`/`execFile*`/`execa*` usage with `tmux` command payloads).
+- Guard coverage is enforced in `extensions/tests/tmux-reference-guard.test.ts` to
+  ensure output remains parseable/deterministic and functional TMUX execution is
+  not reintroduced into `extensions/taskplane/*.ts`. 
+
 ## 5.2 End-to-end batch tests
 
 Required scenarios:

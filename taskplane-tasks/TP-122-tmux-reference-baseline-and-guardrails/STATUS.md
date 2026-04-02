@@ -1,7 +1,7 @@
 # TP-122: TMUX Reference Baseline and Guardrails — Status
 
 **Current Step:** Step 4: Documentation & delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-02
 **Review Level:** 2
 **Review Counter:** 7
@@ -38,9 +38,9 @@
 - [x] Fix failures
 
 ### Step 4: Documentation & delivery
-**Status:** 🟨 In Progress
-- [ ] Update migration doc with guardrail usage
-- [ ] Update STATUS.md summary with baseline numbers and commands
+**Status:** ✅ Complete
+- [x] Update migration doc with guardrail usage
+- [x] Update STATUS.md summary with baseline numbers and commands
 
 ---
 
@@ -68,6 +68,7 @@
 | 2026-04-02 20:50 | Step 3 tests | Full suite: pass (3390/3390) |
 | 2026-04-02 20:50 | Step 3 completed | No failures required fixes |
 | 2026-04-02 20:50 | Step 4 started | Documentation & delivery |
+| 2026-04-02 20:53 | Step 4 completed | Migration doc + STATUS delivery summary updated |
 |-----------|--------|---------|
 
 ## Baseline Snapshot (2026-04-02)
@@ -145,6 +146,29 @@ Initial hotspot files by total refs: `types.ts` (44), `execution.ts` (26), `pers
 - Reviewer suggestion (R001): keep explicit CLI flags (`--strict`, `--json`) so Step 2 tests can target a stable interface.
 - Reviewer suggestion (R001): add a known-good audit JSON example in STATUS.md once Step 1 implementation is complete.
 - Reviewer suggestion (R003): remove the unused `basename` import from `tmux-reference-audit.mjs` while touching the file.
+
+## Delivery Summary (TP-122)
+
+### Guardrail commands
+
+```bash
+# Baseline / report
+node scripts/tmux-reference-audit.mjs --json
+
+# Enforcement (fails with exit code 2 on functional TMUX command usage)
+node scripts/tmux-reference-audit.mjs --json --strict
+
+# Regression test
+cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/tmux-reference-guard.test.ts
+```
+
+### Known-good baseline snapshot (from `--json`)
+
+- `totals.references`: **186**
+- `totals.filesScanned`: **36**
+- `totals.filesWithReferences`: **23**
+- `functionalUsage.count`: **0**
+- `byCategory`: `{"compat-code": 28, "user-facing strings": 25, "comments/docs": 82, "types/contracts": 51}`
 | 2026-04-02 20:22 | Review R001 | plan Step 1: REVISE |
 | 2026-04-02 20:23 | Review R002 | plan Step 1: APPROVE |
 | 2026-04-02 20:27 | Review R003 | code Step 1: REVISE |
