@@ -29,6 +29,7 @@ import {
 } from "../taskplane/execution.ts";
 
 import {
+	discoverAbortSessionNames,
 	selectAbortTargetSessions,
 } from "../taskplane/abort.ts";
 
@@ -606,7 +607,71 @@ describe("monorepo completion detection regression", () => {
 
 
 // ═══════════════════════════════════════════════════════════════════════
-// 6. selectAbortTargetSessions — workspace-mode session matching (TP-004)
+// 6. discoverAbortSessionNames — Runtime V2 abort discovery
+// ═══════════════════════════════════════════════════════════════════════
+
+describe("discoverAbortSessionNames", () => {
+	it("collects unique session names from runtime and persisted state", () => {
+		const runtimeLanes = [
+			{ laneSessionId: "orch-lane-1" },
+			{ laneSessionId: "orch-lane-2" },
+		] as any;
+
+		const persistedState = {
+			lanes: [
+				{ laneSessionId: "orch-lane-2" }, // duplicate via runtime
+				{ laneSessionId: "orch-lane-3" },
+			],
+			tasks: [
+				{ sessionName: "orch-lane-3" }, // duplicate via persisted lane
+				{ sessionName: "orch-merge-1" },
+			],
+		} as any;
+
+		const names = discoverAbortSessionNames("orch", persistedState, runtimeLanes).sort();
+		expect(names).toEqual([
+			"orch-lane-1",
+			"orch-lane-2",
+			"orch-lane-3",
+			"orch-merge-1",
+		]);
+	});
+
+	it("supports persisted-only abort discovery when runtime lanes are empty", () => {
+		const persistedState = {
+			lanes: [
+				{ laneSessionId: "orch-api-lane-1" },
+			],
+			tasks: [
+				{ sessionName: "orch-api-merge-1" },
+			],
+		} as any;
+
+		const names = discoverAbortSessionNames("orch", persistedState, []).sort();
+		expect(names).toEqual([
+			"orch-api-lane-1",
+			"orch-api-merge-1",
+		]);
+	});
+
+	it("filters out sessions that do not match the configured prefix", () => {
+		const runtimeLanes = [
+			{ laneSessionId: "other-lane-1" },
+			{ laneSessionId: "orch-lane-1" },
+		] as any;
+		const persistedState = {
+			lanes: [{ laneSessionId: "other-lane-2" }],
+			tasks: [{ sessionName: "orch-merge-1" }],
+		} as any;
+
+		const names = discoverAbortSessionNames("orch", persistedState, runtimeLanes).sort();
+		expect(names).toEqual(["orch-lane-1", "orch-merge-1"]);
+	});
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// 7. selectAbortTargetSessions — workspace-mode session matching (TP-004)
 // ═══════════════════════════════════════════════════════════════════════
 
 describe("selectAbortTargetSessions workspace-mode", () => {

@@ -15,7 +15,7 @@ import { ORCH_MESSAGES, computeIntegrateCleanupResult } from "./messages.ts";
 import type { IntegrateCleanupRepoFindings } from "./messages.ts";
 import { computeWaveAssignments } from "./waves.ts";
 import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
-import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions, parseOrchSessionNames } from "./persistence.ts";
+import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions } from "./persistence.ts";
 import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, formatPreflightResults, runPreflight } from "./worktree.ts";
 import { computeTransitiveDependents, resolveCanonicalTaskPaths } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
@@ -29,6 +29,7 @@ import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
 import { runMigrations } from "./migrations.ts";
+import { executeAbort } from "./abort.ts";
 import { serializeWorkspaceConfig, applySerializedState, deserializeWorkspaceConfig } from "./engine-worker.ts";
 import type { EngineWorkerData, WorkerToMainMessage } from "./engine-worker.ts";
 import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, formatPreflightSweep, rotateSupervisorLogs, formatLogRotation } from "./cleanup.ts";
@@ -2223,7 +2224,7 @@ export default function (pi: ExtensionAPI) {
 	 * Core logic for orch-abort. Returns accumulated status messages.
 	 * Works even without execCtx (safety-critical).
 	 */
-	function doOrchAbort(hard: boolean, ctx: ExtensionContext): string {
+	async function doOrchAbort(hard: boolean, ctx: ExtensionContext): Promise<string> {
 		const mode: AbortMode = hard ? "hard" : "graceful";
 		const prefix = orchConfig.orchestrator.tmux_prefix;
 
@@ -2257,7 +2258,6 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Step 3: Check what we're aborting
 		const hasActiveBatch = orchBatchState.phase !== "idle" &&
 			orchBatchState.phase !== "completed" &&
 			orchBatchState.phase !== "failed" &&
@@ -2275,67 +2275,25 @@ export default function (pi: ExtensionAPI) {
 			`persisted=${persistedState ? persistedState.batchId : "none"}`,
 		);
 
-		// If no batch AND no sessions, nothing to abort
 		if (!hasActiveBatch && !persistedState) {
-			// Still check for sessions below, but short-circuit if none
-			let allSessionNames: string[] = [];
-			try {
-				const tmuxOutput = execSync('tmux list-sessions -F "#{session_name}"', {
-					encoding: "utf-8",
-					timeout: 5000,
-				}).trim();
-				const all = tmuxOutput ? tmuxOutput.split("\n").map(s => s.trim()).filter(Boolean) : [];
-				allSessionNames = all.filter(name => name.startsWith(`${prefix}-`));
-			} catch {
-				// tmux not available
-			}
-			if (allSessionNames.length === 0) {
-				try { unlinkSync(abortSignalFile); } catch {}
-				return ORCH_MESSAGES.abortNoBatch();
-			}
+			try { unlinkSync(abortSignalFile); } catch {}
+			return ORCH_MESSAGES.abortNoBatch();
 		}
 
 		const batchId = orchBatchState.batchId || persistedState?.batchId || "unknown";
+		const gracePeriodMs = Math.max(0, orchConfig.failure.abort_grace_period * 1000);
+		const pollIntervalMs = Math.max(250, orchConfig.monitoring.poll_interval * 1000);
 
-		// Step 5: Kill sessions
-		let allSessionNames: string[] = [];
-		try {
-			const tmuxOutput = execSync('tmux list-sessions -F "#{session_name}"', {
-				encoding: "utf-8",
-				timeout: 5000,
-			}).trim();
-			const all = tmuxOutput ? tmuxOutput.split("\n").map(s => s.trim()).filter(Boolean) : [];
-			allSessionNames = all.filter(name => name.startsWith(`${prefix}-`));
-			messages.push(`  Found ${allSessionNames.length} session(s) matching prefix "${prefix}-"`);
-		} catch {
-			messages.push("  ⚠ Could not list tmux sessions (tmux not available?)");
-		}
+		const abortResult = await executeAbort(
+			mode,
+			prefix,
+			stateRoot,
+			orchBatchState,
+			persistedState,
+			gracePeriodMs,
+			pollIntervalMs,
+		);
 
-		if (allSessionNames.length > 0) {
-			messages.push(`  Killing ${allSessionNames.length} tmux session(s)...`);
-			let killed = 0;
-			for (const name of allSessionNames) {
-				try {
-					execSync(`tmux kill-session -t "${name}-worker" 2>/dev/null`, { timeout: 3000 }).toString();
-				} catch {}
-				try {
-					execSync(`tmux kill-session -t "${name}-reviewer" 2>/dev/null`, { timeout: 3000 }).toString();
-				} catch {}
-				try {
-					execSync(`tmux kill-session -t "${name}" 2>/dev/null`, { timeout: 3000 }).toString();
-					killed++;
-					messages.push(`    ✓ Killed: ${name}`);
-				} catch {
-					messages.push(`    · ${name} (already exited)`);
-					killed++;
-				}
-			}
-			messages.push(`  ✓ ${killed}/${allSessionNames.length} session(s) terminated`);
-		} else {
-			messages.push("  No tmux sessions to kill");
-		}
-
-		// Step 6: Clean up batch state
 		deactivateSupervisor(pi, supervisorState);
 
 		try {
@@ -2347,19 +2305,30 @@ export default function (pi: ExtensionAPI) {
 			messages.push(`  ⚠ Failed to update in-memory state: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
-		try {
-			deleteBatchState(stateRoot);
-			messages.push("  ✓ Batch state file deleted (.pi/batch-state.json)");
-		} catch (err) {
-			messages.push(`  ⚠ Failed to delete batch state file: ${err instanceof Error ? err.message : String(err)}`);
+		messages.push(`  Found ${abortResult.sessionsFound} session target(s) matching prefix "${prefix}-"`);
+		if (mode === "graceful") {
+			const forceKilled = Math.max(0, abortResult.sessionsKilled - abortResult.gracefulExits);
+			messages.push(ORCH_MESSAGES.abortGracefulComplete(batchId, abortResult.gracefulExits, forceKilled, Math.round(abortResult.durationMs / 1000)));
+		} else {
+			messages.push(ORCH_MESSAGES.abortHardComplete(batchId, abortResult.sessionsKilled, Math.round(abortResult.durationMs / 1000)));
+		}
+
+		if (!abortResult.stateDeleted) {
+			messages.push("  ⚠ Batch state file was not deleted cleanly");
+		}
+		if (abortResult.errors.length > 0) {
+			messages.push(ORCH_MESSAGES.abortPartialFailure(abortResult.errors.length));
+			for (const err of abortResult.errors) {
+				messages.push(`    - ${err.code}: ${err.message}`);
+			}
 		}
 
 		// Step 7: Clean up abort signal file
 		try { unlinkSync(abortSignalFile); } catch {}
 
 		messages.push(
-			`✅ Abort complete for batch ${batchId}. Sessions killed, state cleaned up.\n` +
-			`   Worktrees and branches are preserved for inspection.`,
+			`🏁 Abort (${mode}) complete for batch ${batchId}. ` +
+			`Worktrees and branches are preserved for inspection.`,
 		);
 
 		return messages.join("\n");
@@ -3099,15 +3068,13 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			try {
 				const hard = args?.trim() === "--hard";
-				const result = doOrchAbort(hard, ctx);
+				const result = await doOrchAbort(hard, ctx);
 				ctx.ui.notify(result, "info");
 			} catch (err) {
 				// Top-level catch: ensure the user ALWAYS sees something
 				ctx.ui.notify(
 					`❌ Abort failed with error: ${err instanceof Error ? err.message : String(err)}\n` +
-					`   Stack: ${err instanceof Error ? err.stack : "N/A"}\n\n` +
-					`   Manual cleanup: tmux kill-server (kills ALL tmux sessions)\n` +
-					`   Or: tmux kill-session -t <session-name> for each session`,
+					`   Stack: ${err instanceof Error ? err.stack : "N/A"}`,
 					"error",
 				);
 			}
@@ -3453,13 +3420,13 @@ export default function (pi: ExtensionAPI) {
 		name: "orch_abort",
 		label: "Abort Batch",
 		description:
-			"Abort the running batch. Kills tmux sessions, cleans up state. " +
+			"Abort the running batch. Stops Runtime V2 lane + merge agents and cleans up state. " +
 			"Use hard=true for immediate kill (no grace period). " +
 			"Works even without execution context (safety-critical).",
 		promptSnippet: "orch_abort(hard?) — abort the running batch",
 		promptGuidelines: [
 			"Call orch_abort to stop a running batch.",
-			"Default (hard=false) is graceful abort — writes signal file and kills sessions.",
+			"Default (hard=false) is graceful abort — writes signal file and waits for checkpoint exit before forced cleanup.",
 			"Set hard=true for immediate termination without grace period.",
 			"Use this when a batch is stuck, failing repeatedly, or the operator requests it.",
 			"Worktrees and branches are preserved for inspection after abort.",
@@ -3471,7 +3438,7 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
-				const result = doOrchAbort(params.hard ?? false, ctx);
+				const result = await doOrchAbort(params.hard ?? false, ctx);
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {

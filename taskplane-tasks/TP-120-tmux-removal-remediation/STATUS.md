@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 2
 **Size:** M
 
@@ -43,13 +43,13 @@
 - [x] R004: Update merge-monitor tests for V2 liveness + no TMUX capture behavior
 
 ### Step 3: Remove abort.ts TMUX code
-**Status:** 🟨 In Progress
-- [ ] Remove execSync('tmux list-sessions') from abort.ts
-- [ ] Replace with V2 registry or remove
-- [ ] Ensure V2 abort is only path
-- [ ] Remove `/orch-abort` TMUX list/kill path from extension.ts by routing to V2-only abort behavior
-- [ ] Implement concrete non-TMUX session discovery that still aborts correctly when only persisted state exists
-- [ ] Add/adjust abort tests for graceful/hard V2 targeting and no-batch/no-session handling without TMUX
+**Status:** ✅ Complete
+- [x] Remove execSync('tmux list-sessions') from abort.ts
+- [x] Replace with V2 registry or remove
+- [x] Ensure V2 abort is only path
+- [x] Remove `/orch-abort` TMUX list/kill path from extension.ts by routing to V2-only abort behavior
+- [x] Implement concrete non-TMUX session discovery that still aborts correctly when only persisted state exists
+- [x] Add/adjust abort tests for graceful/hard V2 targeting and no-batch/no-session handling without TMUX
 
 ### Step 4: Config rename — tmux_prefix → sessionPrefix
 **Status:** ⬜ Not Started
@@ -117,3 +117,4 @@
 | 2026-04-02 14:18 | Worker iter 1 | killed (wall-clock timeout) in 1800s, tools: 157 |
 | 2026-04-02 14:18 | Step 3 started | Remove abort.ts TMUX code |
 | 2026-04-02 14:21 | Review R007 | plan Step 3: REVISE |
+| 2026-04-02 14:22 | Review R008 | plan Step 3: APPROVE |
