@@ -3,7 +3,6 @@
  * @module orch/sessions
  */
 import { execSync } from "child_process";
-import { join } from "path";
 
 import { tmuxHasSession } from "./execution.ts";
 import { ORCH_MESSAGES } from "./messages.ts";

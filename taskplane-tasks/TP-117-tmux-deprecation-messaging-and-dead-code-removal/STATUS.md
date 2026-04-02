@@ -1,10 +1,10 @@
 # TP-117: TMUX Deprecation Messaging and Dead Code Removal — Status
 
-**Current Step:** Step 3: Remove dead session helpers
+**Current Step:** Step 4: Tests
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** M
 
@@ -34,12 +34,12 @@
 - [x] Update other import sites
 
 ### Step 3: Remove dead session helpers
-**Status:** 🟨 In Progress
-- [ ] Review sessions.ts for dead functions
-- [ ] Remove dead, keep abort-related
+**Status:** 🟩 Complete
+- [x] Review sessions.ts for dead functions
+- [x] Remove dead, keep abort-related
 
 ### Step 4: Tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update tests for removed functions
 - [ ] Run full suite
 - [ ] Fix all failures
@@ -81,7 +81,12 @@
 | 2026-04-02 05:15 | Step 2 validation | Targeted tests pass: engine-runtime-v2-routing, merge-timeout-resilience, lane-runner-v2 |
 | 2026-04-02 05:15 | Step 2 completed | Removed legacy lane/merge TMUX spawners and updated runtime callsites |
 | 2026-04-02 05:15 | Step 3 started | Remove dead session helpers |
+| 2026-04-02 05:20 | Step 3 validation | Targeted test pass: tests/engine-runtime-v2-routing.test.ts |
+| 2026-04-02 05:20 | Step 3 completed | sessions.ts dead import cleanup applied |
+| 2026-04-02 05:20 | Step 4 started | Tests |
 |-----------|--------|---------|
 | 2026-04-02 04:28 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-02 04:33 | Review R002 | code Step 1: APPROVE |
 | 2026-04-02 04:35 | Review R003 | plan Step 2: APPROVE |
+| 2026-04-02 04:45 | Review R004 | code Step 2: APPROVE |
+| 2026-04-02 04:46 | Review R005 | plan Step 3: APPROVE |
