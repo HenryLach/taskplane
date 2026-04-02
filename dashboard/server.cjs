@@ -68,10 +68,31 @@ Options:
 
 // ─── Data Loading (ported from orch-dashboard.cjs) ──────────────────────────
 
+function normalizeBatchStateIngress(state) {
+  if (!state || typeof state !== "object" || !Array.isArray(state.lanes)) {
+    return state;
+  }
+
+  for (const lane of state.lanes) {
+    if (!lane || typeof lane !== "object") continue;
+    const laneSessionId = typeof lane.laneSessionId === "string"
+      ? lane.laneSessionId
+      : (typeof lane.tmuxSessionName === "string" ? lane.tmuxSessionName : undefined);
+    if (laneSessionId) {
+      lane.laneSessionId = laneSessionId;
+    }
+    if ("tmuxSessionName" in lane) {
+      delete lane.tmuxSessionName;
+    }
+  }
+
+  return state;
+}
+
 function loadBatchState() {
   try {
     const raw = fs.readFileSync(BATCH_STATE_PATH, "utf-8");
-    return JSON.parse(raw);
+    return normalizeBatchStateIngress(JSON.parse(raw));
   } catch {
     return null;
   }

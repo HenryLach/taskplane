@@ -202,6 +202,18 @@ describe("dashboard parseTelemetryFilename (source extraction)", () => {
 		expect(funcBody).toContain("orch-merge");
 		expect(funcBody).toContain('role === "merger"');
 	});
+
+	it("loadBatchState normalizes legacy tmuxSessionName lane records at ingress", () => {
+		const normalizeBody = extractFunctionRegion(dashSrc, "function normalizeBatchStateIngress(");
+		expect(normalizeBody).toContain("lane.tmuxSessionName");
+		expect(normalizeBody).toContain("lane.laneSessionId = laneSessionId");
+		expect(normalizeBody).toContain("delete lane.tmuxSessionName");
+	});
+
+	it("loadBatchState applies ingress normalization before returning state", () => {
+		const funcBody = extractFunctionRegion(dashSrc, "function loadBatchState(");
+		expect(funcBody).toContain("normalizeBatchStateIngress(JSON.parse(raw))");
+	});
 });
 
 // ── 5. Functional tests — generateTelemetryPaths ────────────────────

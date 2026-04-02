@@ -50,7 +50,7 @@
 - [x] Verify non-test production `tmuxSessionName` leftovers are eliminated or explicitly compatibility-ingress scoped
 - [x] Validate legacy state files with tmux-only lane records still load into laneSessionId canonical runtime shape
 - [x] Verify full suite
-- [ ] Restore dashboard ingress compatibility for tmux-only persisted lane records and add regression coverage
+- [x] Restore dashboard ingress compatibility for tmux-only persisted lane records and add regression coverage
 
 ### Step 5: Documentation & Delivery
 **Status:** ⬜ Not Started
