@@ -3117,6 +3117,7 @@ export async function executeLaneV2(
 			workerTools: "read,write,edit,bash,grep,find,ls",
 			workerThinking: "",
 			workerSystemPrompt,
+			projectName: config.project?.name || "project",
 			maxIterations: 20,
 			noProgressLimit: 3,
 			maxWorkerMinutes: config.failure?.maxWorkerMinutes || 30,

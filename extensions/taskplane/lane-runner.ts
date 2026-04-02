@@ -92,6 +92,8 @@ export interface LaneRunnerConfig {
 	workerThinking: string;
 	/** Worker system prompt */
 	workerSystemPrompt: string;
+	/** Project name (for review request context) */
+	projectName?: string;
 	/** Max worker iterations before giving up */
 	maxIterations: number;
 	/** No-progress stall limit */
@@ -273,6 +275,8 @@ export async function executeTaskV2(
 			env: {
 				TASKPLANE_OUTBOX_DIR: outboxDir,
 				TASKPLANE_AGENT_ID: workerAgentId,
+				TASKPLANE_TASK_FOLDER: taskFolder,
+				TASKPLANE_PROJECT_NAME: config.projectName || "project",
 				ORCH_BATCH_ID: config.batchId,
 			},
 		};

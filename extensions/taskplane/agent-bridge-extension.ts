@@ -24,8 +24,9 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@mariozechner/pi-ai";
-import { writeFileSync, mkdirSync, renameSync } from "fs";
-import { join } from "path";
+import { writeFileSync, readFileSync, existsSync, mkdirSync, renameSync } from "fs";
+import { join, dirname } from "path";
+import { spawn as nodeSpawn } from "child_process";
 import { randomBytes } from "crypto";
 
 /**
@@ -151,6 +152,267 @@ export default function (pi: ExtensionAPI) {
 						type: "text" as const,
 						text: `❌ Failed to escalate: ${err instanceof Error ? err.message : String(err)}`,
 					}],
+					details: undefined,
+				};
+			}
+		},
+	});
+
+	// ── review_step Tool (TP-117) ─────────────────────────────────────
+	// Spawns a reviewer subprocess to evaluate work at step boundaries.
+	// The reviewer runs as a separate Pi process, writes feedback to
+	// .reviews/, and this tool returns the verdict to the worker.
+
+	/**
+	 * Resolve the Pi CLI entrypoint path (same logic as agent-host.ts).
+	 */
+	function resolvePiCli(): string {
+		const relPath = join("node_modules", "@mariozechner", "pi-coding-agent", "dist", "cli.js");
+		const candidates: string[] = [];
+		if (process.env.APPDATA) candidates.push(join(process.env.APPDATA, "npm", relPath));
+		const home = process.env.HOME || process.env.USERPROFILE || "";
+		if (home) {
+			candidates.push(join(home, "AppData", "Roaming", "npm", relPath));
+			candidates.push(join(home, ".npm-global", "lib", relPath));
+		}
+		candidates.push(join("/usr", "local", "lib", relPath));
+		for (const c of candidates) {
+			if (existsSync(c)) return c;
+		}
+		throw new Error("Cannot find Pi CLI entrypoint");
+	}
+
+	/**
+	 * Load the reviewer system prompt from base template + local override.
+	 */
+	function loadReviewerPrompt(): string {
+		const basePaths = [
+			process.env.APPDATA ? join(process.env.APPDATA, "npm", "node_modules", "taskplane", "templates", "agents", "task-reviewer.md") : "",
+			(process.env.HOME || process.env.USERPROFILE || "") ? join(process.env.HOME || process.env.USERPROFILE || "", "AppData", "Roaming", "npm", "node_modules", "taskplane", "templates", "agents", "task-reviewer.md") : "",
+		].filter(Boolean);
+		let basePrompt = "You are a code reviewer. Read the request and write your review to the specified output file.";
+		for (const p of basePaths) {
+			try {
+				if (!existsSync(p)) continue;
+				const raw = readFileSync(p, "utf-8");
+				const fmEnd = raw.indexOf("---", 4);
+				if (fmEnd > 0) { basePrompt = raw.slice(fmEnd + 3).trim(); break; }
+			} catch { continue; }
+		}
+		// Local override
+		const localPaths = [join(process.cwd(), ".pi", "agents", "task-reviewer.md"), join(process.cwd(), "agents", "task-reviewer.md")];
+		for (const p of localPaths) {
+			try {
+				if (!existsSync(p)) continue;
+				const raw = readFileSync(p, "utf-8");
+				const fmEnd = raw.indexOf("---", 4);
+				if (fmEnd > 0) {
+					const localBody = raw.slice(fmEnd + 3).trim();
+					if (localBody) basePrompt += "\n\n---\n\n## Project-Specific Guidance\n\n" + localBody;
+				}
+				break;
+			} catch { continue; }
+		}
+		return basePrompt;
+	}
+
+	/**
+	 * Spawn a reviewer Pi subprocess and wait for it to complete.
+	 * Returns the process exit code.
+	 */
+	function spawnReviewer(prompt: string, systemPrompt: string, cwd: string): Promise<number> {
+		return new Promise((resolve) => {
+			const cliPath = resolvePiCli();
+			const args = [
+				cliPath, "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills",
+				"--tools", "read,write,edit,bash,grep,find,ls",
+				"--system-prompt", systemPrompt,
+			];
+			const proc = nodeSpawn(process.execPath, args, {
+				shell: false,
+				cwd,
+				stdio: ["pipe", "pipe", "pipe"],
+				env: { ...process.env },
+			});
+
+			// Send prompt and close stdin after delay
+			proc.stdin?.write(JSON.stringify({ type: "prompt", message: prompt }) + "\n");
+
+			// Watch for agent_end event to close stdin
+			let buf = "";
+			proc.stdout?.on("data", (chunk: Buffer) => {
+				buf += chunk.toString();
+				if (buf.includes('"agent_end"')) {
+					setTimeout(() => { try { proc.stdin?.end(); } catch {} }, 100);
+				}
+			});
+
+			proc.on("close", (code) => resolve(code ?? 1));
+			proc.on("error", () => resolve(1));
+
+			// Timeout: 10 minutes
+			setTimeout(() => { try { proc.kill("SIGTERM"); } catch {} }, 10 * 60 * 1000);
+		});
+	}
+
+	pi.registerTool({
+		name: "review_step",
+		label: "Review Step",
+		description:
+			"Spawn a reviewer agent to evaluate your work on a step. " +
+			"Returns APPROVE, REVISE, RETHINK, or UNAVAILABLE. " +
+			"Use at step boundaries based on the task's review level.",
+		promptSnippet: "review_step(step, type, baseline?) — spawn reviewer for a step",
+		promptGuidelines: [
+			"Call review_step at step boundaries based on the task's Review Level (from STATUS.md header).",
+			"Review Level 0: skip all reviews. Level 1: plan review. Level 2: plan + code review. Level 3: plan + code + test.",
+			"Skip reviews for Step 0 (Preflight) and the final documentation step.",
+			"For code reviews: capture HEAD commit before starting a step with `git rev-parse HEAD` and pass as baseline.",
+			"On REVISE: read the review file in .reviews/ for feedback, fix issues, then proceed.",
+			"On RETHINK: reconsider your approach.",
+		],
+		parameters: Type.Object({
+			step: Type.Number({ description: "Step number to review" }),
+			type: Type.Union(
+				[Type.Literal("plan"), Type.Literal("code")],
+				{ description: 'Review type: "plan" or "code"' },
+			),
+			baseline: Type.Optional(Type.String({
+				description: "Git commit SHA for code review diff baseline",
+			})),
+		}),
+		async execute(_toolCallId, params) {
+			const { step: stepNum, type: reviewType, baseline } = params;
+			const cwd = process.cwd();
+
+			// Find task folder and paths
+			const taskFolder = process.env.TASKPLANE_TASK_FOLDER || cwd;
+			const statusPath = join(taskFolder, "STATUS.md");
+			const reviewsDir = join(taskFolder, ".reviews");
+			if (!existsSync(reviewsDir)) mkdirSync(reviewsDir, { recursive: true });
+
+			// Read review counter from STATUS.md
+			let reviewCounter = 0;
+			try {
+				const statusContent = readFileSync(statusPath, "utf-8");
+				const rcMatch = statusContent.match(/\*\*Review Counter:\*\*\s*(\d+)/);
+				if (rcMatch) reviewCounter = parseInt(rcMatch[1]);
+			} catch { /* default 0 */ }
+
+			reviewCounter++;
+			const num = String(reviewCounter).padStart(3, "0");
+			const outputPath = join(reviewsDir, `R${num}-${reviewType}-step${stepNum}.md`);
+
+			// Find step name from PROMPT.md
+			let stepName = `Step ${stepNum}`;
+			try {
+				const promptFiles = [join(taskFolder, "PROMPT.md")];
+				for (const pf of promptFiles) {
+					if (!existsSync(pf)) continue;
+					const content = readFileSync(pf, "utf-8");
+					const stepMatch = content.match(new RegExp(`###\\s+Step\\s+${stepNum}[:\\s]+(.+)`));
+					if (stepMatch) { stepName = stepMatch[1].trim(); break; }
+				}
+			} catch { /* use default */ }
+
+			// Generate review request prompt
+			const promptPath = join(taskFolder, "PROMPT.md");
+			const projectName = process.env.TASKPLANE_PROJECT_NAME || "project";
+			const diffCmd = baseline ? `git diff ${baseline}..HEAD` : `git diff`;
+			const diffNamesCmd = baseline ? `git diff ${baseline}..HEAD --name-only` : `git diff --name-only`;
+
+			let reviewPrompt: string;
+			if (reviewType === "plan") {
+				reviewPrompt = [
+					`# Review Request: Plan Review`,
+					``,
+					`You are reviewing an implementation plan for a ${projectName} task.`,
+					`You have full tool access — use \`read\` to examine files and \`bash\` to run commands.`,
+					``,
+					`## Task Context`,
+					`- **Task PROMPT:** ${promptPath}`,
+					`- **Task STATUS:** ${statusPath}`,
+					`- **Step being planned:** Step ${stepNum}: ${stepName}`,
+					``,
+					`## Instructions`,
+					`1. Read the PROMPT.md for full requirements`,
+					`2. Read STATUS.md for progress so far`,
+					`3. Evaluate the plan for this step`,
+					``,
+					`## Output`,
+					`Write your review to: \`${outputPath}\``,
+				].join("\n");
+			} else {
+				reviewPrompt = [
+					`# Review Request: Code Review`,
+					``,
+					`You are reviewing code changes for a ${projectName} task.`,
+					`You have full tool access — use \`read\` to examine files and \`bash\` to run commands.`,
+					``,
+					`## Task Context`,
+					`- **Task PROMPT:** ${promptPath}`,
+					`- **Task STATUS:** ${statusPath}`,
+					`- **Step reviewed:** Step ${stepNum}: ${stepName}`,
+					...(baseline ? [`- **Baseline commit:** ${baseline}`] : []),
+					``,
+					`## Instructions`,
+					`1. Run \`${diffNamesCmd}\` to see changed files`,
+					`2. Run \`${diffCmd}\` for the full diff`,
+					`3. Read changed files for context`,
+					``,
+					`## Output`,
+					`Write your review to: \`${outputPath}\``,
+				].join("\n");
+			}
+
+			try {
+				const systemPrompt = loadReviewerPrompt();
+				const exitCode = await spawnReviewer(reviewPrompt, systemPrompt, cwd);
+
+				// Update review counter in STATUS.md
+				try {
+					const status = readFileSync(statusPath, "utf-8");
+					const updated = status.replace(/\*\*Review Counter:\*\*\s*\d+/, `**Review Counter:** ${reviewCounter}`);
+					writeFileSync(statusPath, updated);
+				} catch { /* best effort */ }
+
+				// Read review output and extract verdict
+				if (existsSync(outputPath)) {
+					const reviewContent = readFileSync(outputPath, "utf-8");
+					const verdictMatch = reviewContent.match(/###?\s*Verdict[:\s]*(APPROVE|REVISE|RETHINK)/i);
+					let verdict = verdictMatch ? verdictMatch[1].toUpperCase() : "UNKNOWN";
+					if (verdict === "UNKNOWN") {
+						const lower = reviewContent.toLowerCase();
+						if (lower.includes("approve") && !lower.includes("do not approve")) verdict = "APPROVE";
+						else if (lower.includes("revise") || lower.includes("changes requested")) verdict = "REVISE";
+						else if (lower.includes("rethink")) verdict = "RETHINK";
+					}
+
+					// Log review in STATUS.md execution log
+					try {
+						const status = readFileSync(statusPath, "utf-8");
+						const logEntry = `| ${new Date().toISOString().slice(0, 16).replace("T", " ")} | Review R${num} | ${reviewType} Step ${stepNum}: ${verdict} |\n`;
+						writeFileSync(statusPath, status.trimEnd() + "\n" + logEntry);
+					} catch { /* best effort */ }
+
+					const reviewFile = `.reviews/R${num}-${reviewType}-step${stepNum}.md`;
+					if (verdict === "APPROVE") {
+						return { content: [{ type: "text" as const, text: `APPROVE` }], details: undefined };
+					} else if (verdict === "REVISE") {
+						const summaryMatch = reviewContent.match(/###?\s*Summary[:\s]*([\s\S]*?)(?=###|$)/i);
+						const details = summaryMatch ? summaryMatch[1].trim().slice(0, 500) : "See review file.";
+						return { content: [{ type: "text" as const, text: `REVISE: ${details}\n\nFull review: ${reviewFile}` }], details: undefined };
+					} else if (verdict === "RETHINK") {
+						return { content: [{ type: "text" as const, text: `RETHINK — reconsider approach. See ${reviewFile}` }], details: undefined };
+					} else {
+						return { content: [{ type: "text" as const, text: `Review complete (verdict unclear). See ${reviewFile}` }], details: undefined };
+					}
+				} else {
+					return { content: [{ type: "text" as const, text: `UNAVAILABLE — reviewer exited (code ${exitCode}) but produced no output.` }], details: undefined };
+				}
+			} catch (err) {
+				return {
+					content: [{ type: "text" as const, text: `UNAVAILABLE — reviewer failed: ${err instanceof Error ? err.message : String(err)}` }],
 					details: undefined,
 				};
 			}
