@@ -650,6 +650,30 @@ export interface AllocatedLane {
 export type LaneTaskStatus = "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped";
 
 /**
+ * Embedded telemetry attached to a lane task outcome.
+ *
+ * Populated by Runtime V2 lane-runner at emission time so downstream
+ * consumers (batch history, diagnostics) can read authoritative usage
+ * without reconstructing task↔lane joins from snapshot keys.
+ */
+export interface LaneTaskOutcomeTelemetry {
+	/** Total input tokens for this task outcome. */
+	inputTokens: number;
+	/** Total output tokens for this task outcome. */
+	outputTokens: number;
+	/** Total cache-read tokens for this task outcome. */
+	cacheReadTokens: number;
+	/** Total cache-write tokens for this task outcome. */
+	cacheWriteTokens: number;
+	/** Cumulative cost in USD for this task outcome. */
+	costUsd: number;
+	/** Number of tool calls made while producing this outcome. */
+	toolCalls: number;
+	/** End-to-end duration in milliseconds for this outcome. */
+	durationMs: number;
+}
+
+/**
  * Outcome of a single task execution within a lane.
  *
  * Produced by `executeLane()` for each task in the lane's task list.
@@ -670,6 +694,19 @@ export interface LaneTaskOutcome {
 	sessionName: string;
 	/** Whether .DONE file was found */
 	doneFileFound: boolean;
+	/**
+	 * Lane number that produced this task outcome (1-indexed).
+	 *
+	 * Optional for backward compatibility with pre-TP-116 persisted state.
+	 */
+	laneNumber?: number;
+	/**
+	 * Embedded task-level telemetry (authoritative for Runtime V2).
+	 *
+	 * Optional for backward compatibility and non-agent outcomes
+	 * (for example skipped tasks).
+	 */
+	telemetry?: LaneTaskOutcomeTelemetry;
 	/**
 	 * Number of commits preserved as partial progress for a failed task.
 	 * 0 when no partial progress was saved (succeeded tasks, no commits, etc.).

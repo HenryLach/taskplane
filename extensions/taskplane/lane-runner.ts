@@ -496,6 +496,18 @@ function makeResult(
 	statusPath?: string,
 	finalTelemetry?: Partial<AgentHostResult>,
 ): LaneRunnerTaskResult {
+	const telemetry = status === "skipped"
+		? undefined
+		: {
+			inputTokens: finalTelemetry?.inputTokens ?? 0,
+			outputTokens: finalTelemetry?.outputTokens ?? 0,
+			cacheReadTokens: finalTelemetry?.cacheReadTokens ?? 0,
+			cacheWriteTokens: finalTelemetry?.cacheWriteTokens ?? 0,
+			costUsd: finalTelemetry?.costUsd ?? 0,
+			toolCalls: finalTelemetry?.toolCalls ?? 0,
+			durationMs: finalTelemetry?.durationMs ?? 0,
+		};
+
 	const result: LaneRunnerTaskResult = {
 		outcome: {
 			taskId,
@@ -505,6 +517,8 @@ function makeResult(
 			exitReason,
 			sessionName,
 			doneFileFound,
+			laneNumber: config?.laneNumber,
+			telemetry,
 		},
 		iterations,
 		costUsd,
