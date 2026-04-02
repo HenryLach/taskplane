@@ -205,16 +205,27 @@ describe("8.1: Repo-mode state — mode=repo, no repo fields", () => {
 		}
 	});
 
-	it("8.1.4: legacy tmux-only lane records are normalized to laneSessionId", () => {
+	it("8.1.4: legacy tmux-only lane records are normalized to laneSessionId with migration warning", () => {
 		const data = JSON.parse(
 			readFileSync(join(__dirname, "fixtures", "batch-state-valid.json"), "utf-8"),
 		);
 		(data.lanes[0] as Record<string, unknown>).tmuxSessionName = "orch-legacy-lane-1";
 		delete data.lanes[0].laneSessionId;
 
-		const validated = validatePersistedState(data);
-		expect(validated.lanes[0].laneSessionId).toBe("orch-legacy-lane-1");
-		expect((validated.lanes[0] as Record<string, unknown>).tmuxSessionName).toBeUndefined();
+		const originalConsoleError = console.error;
+		const errors: string[] = [];
+		console.error = (...args: unknown[]) => {
+			errors.push(String(args[0] ?? ""));
+		};
+
+		try {
+			const validated = validatePersistedState(data);
+			expect(validated.lanes[0].laneSessionId).toBe("orch-legacy-lane-1");
+			expect((validated.lanes[0] as Record<string, unknown>).tmuxSessionName).toBeUndefined();
+			expect(errors.some(line => line.includes("lanes[].tmuxSessionName"))).toBe(true);
+		} finally {
+			console.error = originalConsoleError;
+		}
 	});
 });
 

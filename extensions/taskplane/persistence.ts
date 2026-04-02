@@ -681,6 +681,7 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 
 	// ── Validate lane records ────────────────────────────────────
 	const lanes = obj.lanes as unknown[];
+	const legacyTmuxSessionLaneIndexes: number[] = [];
 	for (let i = 0; i < lanes.length; i++) {
 		const l = lanes[i] as Record<string, unknown>;
 		if (!l || typeof l !== "object") {
@@ -720,6 +721,10 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 			);
 		}
 
+		if (typeof tmuxSessionName === "string") {
+			legacyTmuxSessionLaneIndexes.push(i);
+		}
+
 		normalizeLaneSessionAlias(l);
 
 		if (typeof l.laneNumber !== "number") {
@@ -741,6 +746,13 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 				`lanes[${i}].repoId is not a string (got ${typeof l.repoId})`,
 			);
 		}
+	}
+
+	if (legacyTmuxSessionLaneIndexes.length > 0) {
+		console.error(
+			"[taskplane] migration: detected legacy lanes[].tmuxSessionName in .pi/batch-state.json; " +
+			"normalized to lanes[].laneSessionId for this release. Re-save state (or re-run /orch-resume) to persist canonical fields.",
+		);
 	}
 
 	// ── Validate merge results ───────────────────────────────────

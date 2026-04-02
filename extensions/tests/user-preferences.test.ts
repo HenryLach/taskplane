@@ -31,6 +31,7 @@ import {
 	loadUserPreferences,
 	applyUserPreferences,
 	loadProjectConfig,
+	ConfigLoadError,
 } from "../taskplane/config-loader.ts";
 import {
 	DEFAULT_USER_PREFERENCES,
@@ -212,7 +213,7 @@ describe("loadUserPreferences", () => {
 		writePrefsFile(agentDir, JSON.stringify({
 			operatorId: "bob",
 			sessionPrefix: "myprefix",
-			spawnMode: "tmux",
+			spawnMode: "subprocess",
 			workerModel: "openai/gpt-4",
 			reviewerModel: "anthropic/claude-3",
 			mergeModel: "openai/gpt-4",
@@ -223,14 +224,14 @@ describe("loadUserPreferences", () => {
 
 		expect(prefs.operatorId).toBe("bob");
 		expect(prefs.sessionPrefix).toBe("myprefix");
-		expect(prefs.spawnMode).toBe("tmux");
+		expect(prefs.spawnMode).toBe("subprocess");
 		expect(prefs.workerModel).toBe("openai/gpt-4");
 		expect(prefs.reviewerModel).toBe("anthropic/claude-3");
 		expect(prefs.mergeModel).toBe("openai/gpt-4");
 		expect(prefs.dashboardPort).toBe(9090);
 	});
 
-	it("6.4b: legacy tmuxPrefix key is accepted as sessionPrefix alias", () => {
+	it("6.4b: legacy tmuxPrefix key throws migration error", () => {
 		const agentDir = makeTestDir("legacy-prefix-alias");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
@@ -238,21 +239,36 @@ describe("loadUserPreferences", () => {
 			tmuxPrefix: "legacy-prefix",
 		}));
 
-		const prefs = loadUserPreferences();
-		expect(prefs.sessionPrefix).toBe("legacy-prefix");
+		let caught: unknown;
+		try {
+			loadUserPreferences();
+		} catch (err) {
+			caught = err;
+		}
+		expect(caught).toBeInstanceOf(ConfigLoadError);
+		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+		expect((caught as ConfigLoadError).message).toContain("tmuxPrefix");
+		expect((caught as ConfigLoadError).message).toContain("sessionPrefix");
 	});
 
-	it("6.4c: sessionPrefix takes precedence when both keys are present", () => {
-		const agentDir = makeTestDir("prefix-precedence");
+	it("6.4c: spawnMode tmux throws migration error", () => {
+		const agentDir = makeTestDir("prefs-spawn-tmux-error");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
 		writePrefsFile(agentDir, JSON.stringify({
-			sessionPrefix: "new-prefix",
-			tmuxPrefix: "old-prefix",
+			spawnMode: "tmux",
 		}));
 
-		const prefs = loadUserPreferences();
-		expect(prefs.sessionPrefix).toBe("new-prefix");
+		let caught: unknown;
+		try {
+			loadUserPreferences();
+		} catch (err) {
+			caught = err;
+		}
+		expect(caught).toBeInstanceOf(ConfigLoadError);
+		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+		expect((caught as ConfigLoadError).message).toContain("spawnMode");
+		expect((caught as ConfigLoadError).message).toContain("subprocess");
 	});
 
 	it("6.5: empty JSON object returns defaults (all fields undefined)", () => {
@@ -369,7 +385,7 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 		const prefs: UserPreferences = {
 			operatorId: "bob",
 			sessionPrefix: "myprefix",
-			spawnMode: "tmux",
+			spawnMode: "subprocess",
 			workerModel: "openai/gpt-4",
 			reviewerModel: "anthropic/claude-3",
 			mergeModel: "openai/gpt-5",
@@ -379,7 +395,7 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 
 		expect(config.orchestrator.orchestrator.operatorId).toBe("bob");
 		expect(config.orchestrator.orchestrator.sessionPrefix).toBe("myprefix");
-		expect(config.orchestrator.orchestrator.spawnMode).toBe("tmux");
+		expect(config.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 		expect(config.taskRunner.worker.model).toBe("openai/gpt-4");
 		expect(config.taskRunner.reviewer.model).toBe("anthropic/claude-3");
 		expect(config.orchestrator.merge.model).toBe("openai/gpt-5");
@@ -444,17 +460,33 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 		expect(result.orchestrator.orchestrator.operatorId).toBe("test");
 	});
 
-	it("7.7: spawnMode is applied even if not a string-empty check (enum field)", () => {
+	it("7.7: spawnMode subprocess is applied when provided", () => {
 		const config = deepClone(DEFAULT_PROJECT_CONFIG);
 		expect(config.orchestrator.orchestrator.spawnMode).toBe("subprocess"); // default
 
 		const prefs: UserPreferences = {
-			spawnMode: "tmux",
+			spawnMode: "subprocess",
 		};
 
 		applyUserPreferences(config, prefs);
 
-		expect(config.orchestrator.orchestrator.spawnMode).toBe("tmux");
+		expect(config.orchestrator.orchestrator.spawnMode).toBe("subprocess");
+	});
+
+	it("7.8: spawnMode tmux is rejected with migration guidance", () => {
+		const config = deepClone(DEFAULT_PROJECT_CONFIG);
+		const prefs = { spawnMode: "tmux" } as unknown as UserPreferences;
+
+		let caught: unknown;
+		try {
+			applyUserPreferences(config, prefs);
+		} catch (err) {
+			caught = err;
+		}
+		expect(caught).toBeInstanceOf(ConfigLoadError);
+		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+		expect((caught as ConfigLoadError).message).toContain("spawnMode");
+		expect((caught as ConfigLoadError).message).toContain("subprocess");
 	});
 });
 
@@ -557,7 +589,7 @@ describe("Layer 2 merge integration", () => {
 		writePrefsFile(agentDir, JSON.stringify({
 			reviewerModel: "e2e-reviewer",
 			sessionPrefix: "e2e-prefix",
-			spawnMode: "tmux",
+			spawnMode: "subprocess",
 		}));
 
 		// Write YAML project config
@@ -582,7 +614,7 @@ describe("Layer 2 merge integration", () => {
 		// User prefs should win for allowlisted fields
 		expect(config.taskRunner.reviewer.model).toBe("e2e-reviewer");
 		expect(config.orchestrator.orchestrator.sessionPrefix).toBe("e2e-prefix");
-		expect(config.orchestrator.orchestrator.spawnMode).toBe("tmux");
+		expect(config.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 
 		// Non-allowlisted Layer 1 fields preserved
 		expect(config.taskRunner.project.name).toBe("YamlE2EProject");
