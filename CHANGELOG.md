@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.14] - 2026-04-02
+
+### Fixed
+- **V2 worker system prompt** — Workers now receive the full 362-line base template (`templates/agents/task-worker.md`) composed with project-specific guidance, matching legacy task-runner behavior. Previously V2 workers got a 1-sentence default, causing them to skip checkpoint discipline (no incremental STATUS.md checkbox updates) and ignore review level instructions. Root cause of zero progress visibility during execution.
+
 ## [0.23.13] - 2026-04-02
 
 ### New
