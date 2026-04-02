@@ -1369,6 +1369,7 @@ export async function executeLane(
 				exitReason: reason,
 				sessionName: lane.tmuxSessionName,
 				doneFileFound: false,
+				laneNumber: lane.laneNumber,
 			});
 			continue;
 		}
@@ -1399,6 +1400,7 @@ export async function executeLane(
 				exitReason: pollResult.exitReason,
 				sessionName: lane.tmuxSessionName,
 				doneFileFound: pollResult.doneFileFound,
+				laneNumber: lane.laneNumber,
 			};
 
 			// After task succeeds, commit any uncommitted artifacts (.DONE, final
@@ -1446,6 +1448,7 @@ export async function executeLane(
 				exitReason: errMsg,
 				sessionName: lane.tmuxSessionName,
 				doneFileFound: false,
+				laneNumber: lane.laneNumber,
 			};
 
 			shouldSkipRemaining = true;
@@ -2577,6 +2580,7 @@ export async function executeWave(
 					exitReason: `Lane promise rejected: ${errMsg}`,
 					sessionName: lanes[idx].tmuxSessionName,
 					doneFileFound: false,
+					laneNumber: lanes[idx].laneNumber,
 				})),
 				overallStatus: "failed" as const,
 				startTime: startedAt,
@@ -2779,6 +2783,7 @@ export async function executeWithStopAll(
 					exitReason: `Lane aborted: ${errMsg}`,
 					sessionName: lanes[idx].tmuxSessionName,
 					doneFileFound: false,
+					laneNumber: lanes[idx].laneNumber,
 				})),
 				overallStatus: "failed",
 				startTime: Date.now(),
@@ -3011,6 +3016,7 @@ export async function executeLaneV2(
 				exitReason: reason,
 				sessionName: buildRuntimeAgentId(agentIdPrefix, lane.laneNumber, "worker"),
 				doneFileFound: false,
+				laneNumber: lane.laneNumber,
 			});
 			continue;
 		}
@@ -3040,7 +3046,10 @@ export async function executeLaneV2(
 
 		try {
 			const result = await executeTaskV2(unit, laneRunnerConfig, pauseSignal);
-			outcomes.push(result.outcome);
+			outcomes.push({
+				...result.outcome,
+				laneNumber: result.outcome.laneNumber ?? lane.laneNumber,
+			});
 
 			// Commit artifacts after success (same as legacy path)
 			if (result.outcome.status === "succeeded") {
@@ -3066,6 +3075,7 @@ export async function executeLaneV2(
 				exitReason: `Runtime V2 execution error: ${errMsg}`,
 				sessionName: buildRuntimeAgentId(agentIdPrefix, lane.laneNumber, "worker"),
 				doneFileFound: false,
+				laneNumber: lane.laneNumber,
 			});
 			shouldSkipRemaining = true;
 		}

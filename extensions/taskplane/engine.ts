@@ -64,6 +64,61 @@ function emitTier0Escalation(
 	});
 }
 
+/** Zero-token sentinel used for task/wave/batch aggregation. */
+const ZERO_TOKENS: TokenCounts = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 };
+
+/** Map embedded outcome telemetry to the batch-history TokenCounts shape. */
+export function taskTokensFromOutcomeTelemetry(outcome: LaneTaskOutcome): TokenCounts {
+	const telemetry = outcome.telemetry;
+	if (!telemetry) return { ...ZERO_TOKENS };
+	return {
+		input: telemetry.inputTokens,
+		output: telemetry.outputTokens,
+		cacheRead: telemetry.cacheReadTokens,
+		cacheWrite: telemetry.cacheWriteTokens,
+		costUsd: telemetry.costUsd,
+	};
+}
+
+/**
+ * Resolve per-task token counts for batch history.
+ *
+ * Priority:
+ * 1) Embedded `LaneTaskOutcome.telemetry` (authoritative Runtime V2 path)
+ * 2) V2 lane snapshot fallback by numeric laneNumber (legacy outcomes)
+ * 3) Legacy lane-state sidecar keys by sessionName prefix
+ * 4) Zero tokens
+ */
+export function resolveBatchHistoryTaskTokens(
+	outcome: LaneTaskOutcome,
+	laneNumber: number,
+	v2LaneTokensByNumber: Map<number, TokenCounts>,
+	legacyLaneTokensByKey: Map<string, TokenCounts>,
+): TokenCounts {
+	// Skipped tasks did not run an agent process.
+	if (outcome.status === "skipped") return { ...ZERO_TOKENS };
+
+	if (outcome.telemetry) {
+		return taskTokensFromOutcomeTelemetry(outcome);
+	}
+
+	if (laneNumber > 0) {
+		const v2 = v2LaneTokensByNumber.get(laneNumber);
+		if (v2) return v2;
+	}
+
+	const bySession = legacyLaneTokensByKey.get(outcome.sessionName)
+		|| legacyLaneTokensByKey.get(outcome.sessionName?.replace(/-(?:worker|reviewer)$/, ""));
+	if (bySession) return bySession;
+
+	if (laneNumber > 0) {
+		const byLaneKey = legacyLaneTokensByKey.get(`lane-${laneNumber}`);
+		if (byLaneKey) return byLaneKey;
+	}
+
+	return { ...ZERO_TOKENS };
+}
+
 /**
  * Attempt automatic retry for failed tasks with retryable exit classifications.
  *
@@ -2253,11 +2308,13 @@ export async function executeOrchBatch(
 
 	// ── Save batch history (before cleanup deletes sidecar files) ────
 	try {
-		// Read token data from sidecar files or V2 lane snapshots
+		// Read fallback token data from V2 lane snapshots and legacy sidecars.
+		// Primary source for Runtime V2 is now `LaneTaskOutcome.telemetry`.
 		const piDir = join(stateRoot, ".pi");
-		const laneTokens = new Map<string, TokenCounts>();
+		const v2LaneTokensByNumber = new Map<number, TokenCounts>();
+		const legacyLaneTokensByKey = new Map<string, TokenCounts>();
 
-		// TP-115: Try V2 lane snapshots first (authoritative for Runtime V2)
+		// V2 snapshot fallback (used only when outcome.telemetry is absent).
 		try {
 			const lanesDir = join(piDir, "runtime", batchState.batchId, "lanes");
 			if (existsSync(lanesDir)) {
@@ -2265,11 +2322,11 @@ export async function executeOrchBatch(
 				for (const f of files) {
 					try {
 						const snap = JSON.parse(readFileSync(join(lanesDir, f), "utf-8"));
+						const laneNumber = typeof snap.laneNumber === "number" ? snap.laneNumber : 0;
+						if (laneNumber <= 0) continue;
 						const w = snap.worker || {};
 						const r = snap.reviewer || {};
-						// Key by lane number for reliable per-task lookup (TP-115)
-						const key = `lane-${snap.laneNumber}`;
-						laneTokens.set(key, {
+						v2LaneTokensByNumber.set(laneNumber, {
 							input: (w.inputTokens || 0) + (r.inputTokens || 0),
 							output: (w.outputTokens || 0) + (r.outputTokens || 0),
 							cacheRead: (w.cacheReadTokens || 0) + (r.cacheReadTokens || 0),
@@ -2281,50 +2338,50 @@ export async function executeOrchBatch(
 			}
 		} catch { /* runtime dir may not exist */ }
 
-
-		// Legacy fallback: lane-state-*.json sidecars (only if V2 found nothing)
-		if (laneTokens.size === 0) {
-			try {
-				const files = readdirSync(piDir).filter(f => f.startsWith("lane-state-") && f.endsWith(".json"));
-				for (const f of files) {
-					try {
-						const raw = readFileSync(join(piDir, f), "utf-8").trim();
-						if (!raw) continue;
-						const data = JSON.parse(raw);
-						if (data.prefix) {
-							laneTokens.set(data.prefix, {
-								input: data.workerInputTokens || 0,
-								output: data.workerOutputTokens || 0,
-								cacheRead: data.workerCacheReadTokens || 0,
-								cacheWrite: data.workerCacheWriteTokens || 0,
-								costUsd: data.workerCostUsd || 0,
-							});
-						}
-					} catch { /* skip invalid files */ }
-				}
-			} catch { /* .pi dir may not exist */ }
-		}
+		// Legacy fallback: lane-state-*.json sidecars (pre-V2).
+		try {
+			const files = readdirSync(piDir).filter(f => f.startsWith("lane-state-") && f.endsWith(".json"));
+			for (const f of files) {
+				try {
+					const raw = readFileSync(join(piDir, f), "utf-8").trim();
+					if (!raw) continue;
+					const data = JSON.parse(raw);
+					if (data.prefix) {
+						legacyLaneTokensByKey.set(data.prefix, {
+							input: data.workerInputTokens || 0,
+							output: data.workerOutputTokens || 0,
+							cacheRead: data.workerCacheReadTokens || 0,
+							cacheWrite: data.workerCacheWriteTokens || 0,
+							costUsd: data.workerCostUsd || 0,
+						});
+					}
+				} catch { /* skip invalid files */ }
+			}
+		} catch { /* .pi dir may not exist */ }
 
 		// Build per-task summaries from allTaskOutcomes + wave plan
 		const taskSummaries: BatchTaskSummary[] = allTaskOutcomes.map((to) => {
 			// Find which wave and lane this task ran in
-			let wave = 0, lane = 0;
+			let wave = 0;
 			for (let wi = 0; wi < wavePlan.length; wi++) {
 				if (wavePlan[wi].includes(to.taskId)) { wave = wi + 1; break; }
 			}
-			// Match lane via tmux session name
-			const laneMatch = to.sessionName?.match(/lane-(\d+)/);
-			if (laneMatch) lane = parseInt(laneMatch[1]);
+			const lane = to.laneNumber
+				?? (() => {
+					const laneMatch = to.sessionName?.match(/lane-(\d+)/);
+					return laneMatch ? parseInt(laneMatch[1], 10) : 0;
+				})();
 
 			// Compute duration from start/end times
 			const durationMs = (to.startTime && to.endTime) ? (to.endTime - to.startTime) : 0;
 
-			// Get tokens for this lane (cumulative — shared across tasks in same lane)
-			// TP-115: Try lane number key first (V2), then sessionName variants (legacy).
-			const tokens = laneTokens.get(`lane-${lane}`)
-				|| laneTokens.get(to.sessionName)
-				|| laneTokens.get(to.sessionName?.replace(/-(?:worker|reviewer)$/, ""))
-				|| { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 };
+			// TP-116: Resolve tokens from outcome telemetry first; only fallback for legacy outcomes.
+			const tokens = resolveBatchHistoryTaskTokens(
+				to,
+				lane,
+				v2LaneTokensByNumber,
+				legacyLaneTokensByKey,
+			);
 
 			return {
 				taskId: to.taskId,

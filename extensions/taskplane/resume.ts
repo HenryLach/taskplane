@@ -1356,6 +1356,7 @@ export async function resumeOrchBatch(
 					exitReason: "Re-executed task completed successfully",
 					sessionName: lane.tmuxSessionName,
 					doneFileFound: true,
+					laneNumber: lane.laneNumber,
 				})),
 				overallStatus: "succeeded" as const,
 				startTime: Date.now(),
@@ -1474,6 +1475,7 @@ export async function resumeOrchBatch(
 				: persistedTask?.exitReason ?? "",
 			sessionName: persistedTask?.sessionName ?? "",
 			doneFileFound: status === "succeeded" ? true : task.doneFileFound,
+			laneNumber: persistedTask?.laneNumber,
 			// Carry forward partial progress from persisted state (TP-028)
 			partialProgressCommits: persistedTask?.partialProgressCommits,
 			partialProgressBranch: persistedTask?.partialProgressBranch,
@@ -1604,6 +1606,7 @@ export async function resumeOrchBatch(
 									: "Task failed (merge retry)",
 							sessionName: lane.tmuxSessionName,
 							doneFileFound: status === "succeeded",
+							laneNumber: lane.laneNumber,
 						};
 					});
 
