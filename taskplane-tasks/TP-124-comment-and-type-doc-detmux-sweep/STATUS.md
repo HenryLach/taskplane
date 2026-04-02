@@ -1,10 +1,10 @@
 # TP-124: Comment and Type Doc De-TMUX Sweep — Status
 
-**Current Step:** Step 2: Update type descriptions (non-breaking)
+**Current Step:** Step 3: Validation
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 1
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -23,13 +23,13 @@
 - [x] Remove stale references to deleted TMUX flows
 
 ### Step 2: Update type descriptions (non-breaking)
-**Status:** 🟨 In Progress
-- [ ] Update descriptive comments on interfaces/type fields
-- [ ] Keep literal enum/error-code values unchanged unless backward-compatible
-- [ ] Ensure comments match current behavior
+**Status:** ✅ Complete
+- [x] Update descriptive comments on interfaces/type fields
+- [x] Keep literal enum/error-code values unchanged unless backward-compatible
+- [x] Ensure comments match current behavior
 
 ### Step 3: Validation
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Run lint/typecheck-equivalent checks used in project workflow
 - [ ] Run targeted tests for impacted source-structure assertions
 - [ ] Fix regressions
@@ -51,6 +51,8 @@
 | 2026-04-02 21:10 | Step 1 started | Update comments and JSDoc |
 | 2026-04-02 21:22 | Step 1 completed | Comment/JSDoc wording de-TMUXed in non-type files |
 | 2026-04-02 21:22 | Step 2 started | Update type descriptions (non-breaking) |
+| 2026-04-02 21:38 | Step 2 completed | Type/interface docs updated with backend-neutral wording |
+| 2026-04-02 21:38 | Step 3 started | Validation |
 |-----------|--------|---------|
 
 ## Step 0 Inventory Snapshot
@@ -72,3 +74,4 @@
 - `AbortErrorCode`: `"ABORT_TMUX_LIST_FAILED"` (`types.ts`) — stable abort error-code contract.
 - Existing type/property names that include `tmux` (for example `LaneStatus.tmuxSession`) are treated as compatibility contracts in this task; only doc wording will be updated.
 | 2026-04-02 21:01 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-02 21:04 | Review R002 | plan Step 2: APPROVE |

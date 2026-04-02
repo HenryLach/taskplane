@@ -608,7 +608,7 @@ export interface AllocatedTask {
 /**
  * A fully-allocated lane ready for execution.
  *
- * Contains everything Steps 2-3 need to spawn TMUX sessions,
+ * Contains everything Steps 2-3 need to run lane sessions,
  * monitor progress, and identify the lane. This is the contract
  * between Step 1 (allocation) and Step 2 (execution).
  */
@@ -690,7 +690,7 @@ export interface LaneTaskOutcome {
 	endTime: number | null;
 	/** Human-readable reason for the outcome */
 	exitReason: string;
-	/** TMUX session name used for this task (e.g., "orch-lane-1") */
+	/** Lane session name used for this task (e.g., "orch-lane-1") */
 	sessionName: string;
 	/** Whether .DONE file was found */
 	doneFileFound: boolean;
@@ -758,7 +758,7 @@ export interface LaneExecutionResult {
 // ── Execution Constants ──────────────────────────────────────────────
 
 /**
- * Grace period (ms) after TMUX session exits before declaring failure.
+ * Grace period (ms) after a lane session exits before declaring failure.
  * Allows time for .DONE file to be flushed to disk on slow filesystems.
  */
 export const DONE_GRACE_MS = 5_000;
@@ -769,7 +769,7 @@ export const DONE_GRACE_MS = 5_000;
 export const EXECUTION_POLL_INTERVAL_MS = 2_000;
 
 /**
- * Maximum retries for TMUX session spawn failures.
+ * Maximum retries for legacy lane-session spawn failures.
  * Only transient failures (session name collision) are retried.
  */
 export const SESSION_SPAWN_RETRY_MAX = 2;
@@ -779,12 +779,12 @@ export const SESSION_SPAWN_RETRY_MAX = 2;
 /**
  * Error codes for lane execution failures.
  *
- * - EXEC_SPAWN_FAILED: TMUX session could not be created after retries
+ * - EXEC_SPAWN_FAILED: Lane session could not be created after retries
  * - EXEC_TASK_FAILED: task completed without .DONE (non-zero exit)
  * - EXEC_TASK_STALLED: STATUS.md unchanged for stall_timeout (handled by Step 3)
  * - EXEC_TASK_STAGE_FAILED: git add failed for task files
  * - EXEC_TASK_COMMIT_FAILED: git commit failed for staged task files
- * - EXEC_TMUX_NOT_AVAILABLE: tmux binary not found
+ * - EXEC_TMUX_NOT_AVAILABLE: Legacy `tmux` binary not found (compat path)
  * - EXEC_WORKTREE_MISSING: lane worktree path doesn't exist
  */
 export type ExecutionErrorCode =
@@ -819,7 +819,7 @@ export class ExecutionError extends Error {
  *
  * Produced by `resolveTaskMonitorState()` from combining:
  * - .DONE file presence
- * - TMUX session liveness
+ * - Lane-session liveness
  * - STATUS.md parse results
  * - STATUS.md mtime for stall detection
  */
@@ -838,7 +838,7 @@ export interface TaskMonitorSnapshot {
 	totalChecked: number;
 	/** Total checkbox count across all steps */
 	totalItems: number;
-	/** Whether the TMUX session is alive */
+	/** Whether the lane session is alive */
 	sessionAlive: boolean;
 	/** Whether the .DONE file was found */
 	doneFileFound: boolean;
@@ -864,9 +864,9 @@ export interface LaneMonitorSnapshot {
 	laneId: string;
 	/** Lane number (1-indexed) */
 	laneNumber: number;
-	/** TMUX session name (e.g., "orch-lane-1") */
+	/** Lane session name (e.g., "orch-lane-1") */
 	sessionName: string;
-	/** Whether the TMUX session is alive right now */
+	/** Whether the lane session is alive right now */
 	sessionAlive: boolean;
 	/** Current task being executed (null if lane is idle/complete) */
 	currentTaskId: string | null;
@@ -943,7 +943,7 @@ export interface MtimeTracker {
  * - monitorLanes() runs as sibling async loop, can kill stalled sessions
  * - executeWave() coordinates both and applies policy
  * - Monitor's stall-kill does NOT conflict with executeLane() because
- *   executeLane() polls tmux session status and will see the killed session
+ *   executeLane() polls session liveness and will see the killed session
  */
 
 /**
@@ -1089,7 +1089,7 @@ export interface OrchBatchRuntimeState {
  * Session registry entry for /orch-sessions command.
  */
 export interface OrchestratorSessionEntry {
-	/** TMUX session name (e.g., "orch-lane-1") */
+	/** Lane session name (e.g., "orch-lane-1") */
 	sessionName: string;
 	/** Lane ID (e.g., "lane-1") */
 	laneId: string;
@@ -1339,9 +1339,9 @@ export interface TransactionRecord {
 /**
  * Error codes for merge operations.
  *
- * - MERGE_SPAWN_FAILED: Could not create TMUX session for merge agent
+ * - MERGE_SPAWN_FAILED: Could not create merge-agent session
  * - MERGE_TIMEOUT: Merge agent did not produce result within timeout
- * - MERGE_SESSION_DIED: TMUX session exited without writing result
+ * - MERGE_SESSION_DIED: Merge-agent session exited without writing result
  * - MERGE_RESULT_INVALID: Result file exists but contains invalid JSON
  * - MERGE_RESULT_MISSING_FIELDS: Result JSON missing required fields
  * - MERGE_UNKNOWN_STATUS: Result has an unrecognized status value
@@ -1384,7 +1384,7 @@ export const MERGE_TIMEOUT_MS = 90 * 60 * 1000;
 export const MERGE_POLL_INTERVAL_MS = 2_000;
 
 /**
- * Grace period after TMUX session exits before declaring failure (ms).
+ * Grace period after a merge-agent session exits before declaring failure (ms).
  * Allows for slow disk flush of the result file.
  */
 export const MERGE_RESULT_GRACE_MS = 3_000;
@@ -1401,7 +1401,7 @@ export const MERGE_RESULT_READ_RETRIES = 3;
 export const MERGE_RESULT_READ_RETRY_DELAY_MS = 1_000;
 
 /**
- * Maximum retries for TMUX session spawn during merge.
+ * Maximum retries for merge-agent session spawn.
  */
 export const MERGE_SPAWN_RETRY_MAX = 2;
 
@@ -1442,7 +1442,7 @@ export const MERGE_HEALTH_WARNING_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
 export const MERGE_HEALTH_STUCK_THRESHOLD_MS = 20 * 60 * 1000; // 20 minutes
 
 /**
- * Number of lines to capture from the bottom of a tmux pane
+ * Number of lines to capture from recent merge output snapshots
  * for activity detection via snapshot comparison.
  * @since TP-056
  */
@@ -1529,7 +1529,7 @@ export interface MergeSessionSnapshot {
  * @since TP-056
  */
 export interface MergeSessionHealthState {
-	/** TMUX session name */
+	/** Merge session name */
 	sessionName: string;
 	/** Lane number this session belongs to */
 	laneNumber: number;
@@ -1899,7 +1899,7 @@ export interface EngineEvent {
 
 	// ── Merge health monitoring fields (TP-056) ──────────────────
 
-	/** TMUX session name (for merge_health_* events) */
+	/** Merge session name (for merge_health_* events) */
 	sessionName?: string;
 	/** Merge health status classification (for merge_health_* events) */
 	healthStatus?: MergeHealthStatus;
@@ -2223,7 +2223,7 @@ export interface OrchDashboardViewModel {
 	elapsed: string; // e.g., "2m 14s"
 	summary: OrchSummaryCounts;
 	laneCards: OrchLaneCardData[];
-	attachHint: string; // e.g., "tmux attach -t orch-lane-1"
+	attachHint: string; // e.g., "Attach via the current runtime session tool"
 	errors: string[];
 	failurePolicy: string | null; // e.g., "stop-wave" if stopped by policy
 }
@@ -2457,7 +2457,7 @@ export interface PersistedTaskRecord {
 	taskId: string;
 	/** Lane number the task was assigned to (1-indexed) */
 	laneNumber: number;
-	/** TMUX session name used (e.g., "orch-lane-1") */
+	/** Lane session name used (e.g., "orch-lane-1") */
 	sessionName: string;
 	/** Current task status */
 	status: LaneTaskStatus;
@@ -2574,7 +2574,7 @@ export interface PersistedSegmentRecord {
 	status: PersistedSegmentStatus;
 	/** Lane ID the segment executed on (e.g., "lane-1"), empty if not yet assigned */
 	laneId: string;
-	/** TMUX session name used for this segment */
+	/** Lane session name used for this segment */
 	sessionName: string;
 	/** Absolute path to the worktree used for this segment */
 	worktreePath: string;
@@ -2809,7 +2809,7 @@ export interface PersistedBatchState {
  * - RESUME_INVALID_STATE: State file exists but cannot be parsed/validated
  * - RESUME_SCHEMA_MISMATCH: State file has incompatible schema version
  * - RESUME_PHASE_NOT_RESUMABLE: Persisted phase does not allow resume
- * - RESUME_TMUX_UNAVAILABLE: TMUX is not available for session reconnection
+ * - RESUME_TMUX_UNAVAILABLE: Legacy session backend is unavailable for reconnection
  * - RESUME_EXECUTION_FAILED: Resume reconciliation succeeded but execution failed
  */
 export type ResumeErrorCode =
@@ -2834,7 +2834,7 @@ export class ResumeError extends Error {
 /**
  * Result of reconciling a single task's persisted state against live signals.
  *
- * Combines persisted status, tmux session liveness, and .DONE file presence
+ * Combines persisted status, lane-session liveness, and .DONE file presence
  * into a deterministic action for the resume engine.
  *
  * Reconciliation precedence (highest → lowest):
@@ -2850,7 +2850,7 @@ export interface ReconciledTaskState {
 	persistedStatus: LaneTaskStatus;
 	/** Reconciled live status after checking signals */
 	liveStatus: LaneTaskStatus;
-	/** Whether the TMUX session is alive right now */
+	/** Whether the lane session is alive right now */
 	sessionAlive: boolean;
 	/** Whether the .DONE file was found */
 	doneFileFound: boolean;
@@ -2913,9 +2913,9 @@ export type AbortMode = "graceful" | "hard";
 /**
  * Error codes for abort operations.
  *
- * - ABORT_TMUX_LIST_FAILED: Could not list TMUX sessions
+ * - ABORT_TMUX_LIST_FAILED: Could not list legacy session records
  * - ABORT_WRAPUP_WRITE_FAILED: Failed to write wrap-up signal file(s)
- * - ABORT_KILL_FAILED: Failed to kill one or more TMUX sessions
+ * - ABORT_KILL_FAILED: Failed to kill one or more lane sessions
  * - ABORT_STATE_DELETE_FAILED: Failed to delete batch-state.json
  */
 export type AbortErrorCode =
@@ -2928,7 +2928,7 @@ export type AbortErrorCode =
  * Per-lane result from an abort operation.
  */
 export interface AbortLaneResult {
-	/** TMUX session name */
+	/** Lane session name */
 	sessionName: string;
 	/** Lane ID (e.g., "lane-1") or "unknown" */
 	laneId: string;
@@ -2983,7 +2983,7 @@ export type AbortActionStep =
  * Target session with enrichment from persisted state.
  */
 export interface AbortTargetSession {
-	/** TMUX session name */
+	/** Lane session name */
 	sessionName: string;
 	/** Lane ID from persisted state or "unknown" */
 	laneId: string;
@@ -3495,12 +3495,12 @@ export interface WriteMailboxMessageOpts {
 
 // ── Runtime V2 Contracts (TP-102) ────────────────────────────────────
 //
-// These types define the foundational contracts for the no-TMUX Runtime V2
+// These types define the foundational contracts for backend-neutral Runtime V2
 // architecture. They are additive — existing runtime paths continue to work
 // while Runtime V2 is incrementally adopted.
 //
 // Design principles:
-//   1. Agent identity is a stable runtime ID, not a TMUX session name.
+//   1. Agent identity is a stable runtime ID, not a legacy session name.
 //   2. Packet-path authority is explicit, never inferred from cwd.
 //   3. Process ownership uses a registry, not terminal session discovery.
 //   4. Normalized events flow directly from child to parent.
@@ -3546,13 +3546,13 @@ export const TERMINAL_AGENT_STATUSES: ReadonlySet<RuntimeAgentStatus> = new Set(
 /**
  * Stable agent identity for Runtime V2.
  *
- * This replaces TMUX session names as the canonical identifier for a
+ * This replaces legacy session names as the canonical identifier for a
  * spawned agent process. The string format is deliberately compatible
  * with existing naming conventions (e.g., "orch-henrylach-lane-1-worker")
  * to minimize churn in supervisor tools, dashboard, and mailbox addressing.
  *
  * The key semantic change: this is a **runtime process ID**, not a terminal
- * session name. Code must not assume `tmuxHasSession(agentId)` is valid.
+ * session label. Code must not assume terminal-session probes apply to RuntimeAgentId.
  *
  * @since TP-102
  */
@@ -3645,7 +3645,7 @@ export interface ExecutionUnit {
  * the agent is considered visible. Updated on status transitions and
  * cleaned up on batch completion.
  *
- * Replaces TMUX session discovery as the source of truth for agent
+ * Replaces legacy session discovery as the source of truth for agent
  * liveness, identity, and attribution.
  *
  * File location: `.pi/runtime/{batchId}/agents/{agentId}/manifest.json`
@@ -3684,7 +3684,7 @@ export interface RuntimeAgentManifest {
  *
  * Contains all active and recently-exited agents for one batch.
  * The authoritative source of truth for which agents exist, replacing
- * TMUX session discovery.
+ * legacy session discovery.
  *
  * File location: `.pi/runtime/{batchId}/registry.json`
  *
@@ -3918,7 +3918,7 @@ export function runtimeRegistryPath(stateRoot: string, batchId: string): string 
  *
  * Produces IDs compatible with the existing naming convention
  * (e.g., "orch-henrylach-lane-1-worker") while semantically
- * decoupling them from TMUX session names.
+ * decoupling them from legacy session names.
  *
  * @param prefix - Operator/batch prefix (e.g., "orch-henrylach")
  * @param laneNumber - Lane number (null for merge agents)
