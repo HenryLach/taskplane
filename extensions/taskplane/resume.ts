@@ -8,7 +8,7 @@ import { join } from "path";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { runDiscovery } from "./discovery.ts";
 import { executeOrchBatch } from "./engine.ts";
-import { computeTransitiveDependents, execLog, executeLaneV2, executeWave, resolveCanonicalTaskPaths, tmuxHasSession } from "./execution.ts";
+import { computeTransitiveDependents, execLog, executeLaneV2, executeWave, resolveCanonicalTaskPaths } from "./execution.ts";
 import type { MonitorUpdateCallback, RuntimeBackend } from "./execution.ts";
 import { selectRuntimeBackend } from "./engine.ts";
 import { readRegistrySnapshot, isTerminalStatus, isProcessAlive } from "./process-registry.ts";
@@ -883,27 +883,19 @@ export async function resumeOrchBatch(
 	execLog("resume", batchState.batchId, `runtime backend for resumed execution: ${resumeBackend}`);
 
 	// ── 3. Discover live signals ─────────────────────────────────
-	// TP-112: Backend-aware session liveness check.
-	// V2: check process registry (pid + status). Legacy: check TMUX.
+	// TP-112/119: Runtime V2 session liveness check only.
+	// Alive sessions are discovered from the process registry.
 	const aliveSessions = new Set<string>();
-	if (resumeBackend === "v2") {
-		const registry = readRegistrySnapshot(stateRoot, persistedState.batchId);
-		if (registry) {
-			for (const manifest of Object.values(registry.agents)) {
-				if (!isTerminalStatus(manifest.status) && isProcessAlive(manifest.pid)) {
-					aliveSessions.add(manifest.agentId);
-					// TP-112: Also add the lane session name (without role suffix)
-					// so reconciliation matches persisted task.sessionName.
-					// e.g., "orch-op-lane-1-worker" -> also add "orch-op-lane-1"
-					const laneSession = manifest.agentId.replace(/-(worker|reviewer)$/, "");
-					if (laneSession !== manifest.agentId) aliveSessions.add(laneSession);
-				}
-			}
-		}
-	} else {
-		for (const task of persistedState.tasks) {
-			if (task.sessionName && tmuxHasSession(task.sessionName)) {
-				aliveSessions.add(task.sessionName);
+	const registry = readRegistrySnapshot(stateRoot, persistedState.batchId);
+	if (registry) {
+		for (const manifest of Object.values(registry.agents)) {
+			if (!isTerminalStatus(manifest.status) && isProcessAlive(manifest.pid)) {
+				aliveSessions.add(manifest.agentId);
+				// Also add lane session name (without role suffix) so reconciliation
+				// matches persisted task.sessionName.
+				// e.g., "orch-op-lane-1-worker" -> also add "orch-op-lane-1"
+				const laneSession = manifest.agentId.replace(/-(worker|reviewer)$/, "");
+				if (laneSession !== manifest.agentId) aliveSessions.add(laneSession);
 			}
 		}
 	}

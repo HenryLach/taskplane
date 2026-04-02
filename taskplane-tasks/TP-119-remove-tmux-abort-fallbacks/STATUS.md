@@ -1,10 +1,10 @@
 # TP-119: Remove TMUX Abort Fallbacks — Status
 
-**Current Step:** Step 2: Remove resume TMUX fallbacks
+**Current Step:** Step 3: Remove dead TMUX helpers
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 2
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** S
 
@@ -25,12 +25,12 @@
 - [x] merge.ts dual kill paths
 
 ### Step 2: Remove resume TMUX fallbacks
-**Status:** 🟨 In Progress
-- [ ] resume.ts TMUX reconnect paths
-- [ ] Ensure V2 reconnect is only path
+**Status:** ✅ Complete
+- [x] resume.ts TMUX reconnect paths
+- [x] Ensure V2 reconnect is only path
 
 ### Step 3: Remove dead TMUX helpers
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Remove tmuxHasSession, tmuxKillSession, tmuxAsync
 - [ ] Remove sessions.ts helpers
 - [ ] Remove TMUX imports
@@ -77,3 +77,5 @@
 |-----------|--------|---------|
 | 2026-04-02 06:08 | Review R001 | plan Step 1: REVISE |
 | 2026-04-02 06:09 | Review R002 | plan Step 1: APPROVE |
+| 2026-04-02 06:15 | Review R003 | code Step 1: APPROVE |
+| 2026-04-02 06:16 | Review R004 | plan Step 2: APPROVE |

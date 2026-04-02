@@ -424,12 +424,12 @@ describe("12.x: Resume TDZ safety", () => {
 describe("13.x: Resume de-TMUX for V2 (TP-112)", () => {
 	const resumeSrc = readFileSync(join(__dirname, "..", "taskplane", "resume.ts"), "utf-8");
 
-	it("13.1: resume uses process registry for V2 liveness (not tmuxHasSession)", () => {
+	it("13.1: resume uses process registry for liveness (not tmuxHasSession)", () => {
 		const section3Idx = resumeSrc.indexOf("Discover live signals");
 		const block = resumeSrc.slice(section3Idx, section3Idx + 1200);
-		expect(block).toContain('resumeBackend === "v2"');
 		expect(block).toContain("readRegistrySnapshot");
 		expect(block).toContain("isProcessAlive");
+		expect(block).not.toContain("tmuxHasSession");
 	});
 
 	it("13.2: V2 reconnect terminates then re-executes (detect+terminate+rehydrate)", () => {
