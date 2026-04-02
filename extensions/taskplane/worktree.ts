@@ -10,6 +10,7 @@ import { execLog } from "./execution.ts";
 import { runGit } from "./git.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { DEFAULT_ORCHESTRATOR_CONFIG, WorktreeError } from "./types.ts";
+import { isLegacyTmuxSpawnMode } from "./tmux-compat.ts";
 import type { AllocatedLane, BulkWorktreeError, CreateLaneWorktreesResult, CreateWorktreeOptions, LaneTaskOutcome, OrchestratorConfig, PreflightCheck, PreflightResult, RemoveAllWorktreesResult, RemoveWorktreeOutcome, RemoveWorktreeResult, WorktreeInfo } from "./types.ts";
 
 // ── Worktree Helpers ─────────────────────────────────────────────────
@@ -1659,7 +1660,7 @@ export function meetsMinVersion(actual: [number, number], minimum: [number, numb
  */
 export function runPreflight(config: OrchestratorConfig, repoRoot?: string): PreflightResult {
 	const checks: PreflightCheck[] = [];
-	const tmuxRequired = config.orchestrator.spawn_mode === "tmux";
+	const tmuxRequired = isLegacyTmuxSpawnMode(config.orchestrator.spawn_mode);
 
 	// ── Git version ──────────────────────────────────────────────
 	const gitResult = execCheck("git --version");

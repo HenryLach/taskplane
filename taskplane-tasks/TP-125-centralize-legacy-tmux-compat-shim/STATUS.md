@@ -1,10 +1,10 @@
 # TP-125: Centralize Legacy TMUX Compatibility Shim — Status
 
-**Current Step:** Step 2: Replace scattered compatibility logic
+**Current Step:** Step 3: Tests
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -24,14 +24,14 @@
 - [x] Add spawnMode legacy classification/deprecation helper
 
 ### Step 2: Replace scattered compatibility logic
-**Status:** 🟨 In Progress
-- [ ] Update `config-loader.ts` to use shim helpers
-- [ ] Update `persistence.ts` normalization to use shim helpers
-- [ ] Update other ingress paths to use shim helpers
-- [ ] Keep behavior identical
+**Status:** ✅ Complete
+- [x] Update `config-loader.ts` to use shim helpers
+- [x] Update `persistence.ts` normalization to use shim helpers
+- [x] Update other ingress paths to use shim helpers
+- [x] Keep behavior identical
 
 ### Step 3: Tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Add/adjust compatibility tests via shim
 - [ ] Run full extension suite
 - [ ] Fix failures
@@ -69,3 +69,4 @@ Ingress-only confirmation: all identified sites are config/state compatibility n
 | 2026-04-02 21:13 | Step 0 started | Inventory compatibility call sites |
 |-----------|--------|---------|
 | 2026-04-02 21:15 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-02 21:18 | Review R002 | plan Step 2: APPROVE |
