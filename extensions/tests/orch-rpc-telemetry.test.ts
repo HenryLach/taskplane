@@ -66,14 +66,7 @@ describe("Runtime V2 lane wiring (source extraction)", () => {
 		expect(funcBody).not.toContain("buildTmuxSpawnArgs");
 	});
 
-	it("resolveRpcWrapperPath is exported from execution.ts", () => {
-		expect(execSrc).toContain("export function resolveRpcWrapperPath(");
-	});
-
-	it("resolveRpcWrapperPath resolves bin/rpc-wrapper.mjs", () => {
-		const funcBody = extractFunctionRegion(execSrc, "export function resolveRpcWrapperPath(");
-		expect(funcBody).toContain("rpc-wrapper.mjs");
-	});
+	// resolveRpcWrapperPath tests removed — function removed during TMUX extrication
 
 	it("resolveTaskplanePackageFile uses npm root -g for dynamic resolution", () => {
 		const funcBody = extractFunctionRegion(execSrc, "function resolveTaskplanePackageFile(");
@@ -132,44 +125,7 @@ describe("Runtime V2 merge spawn wiring (source extraction)", () => {
 
 // ── 3. Telemetry filename generation ────────────────────────────────
 
-describe("telemetry filename generation (execution.ts)", () => {
-	const execSrc = readSource("execution.ts");
-
-	it("generateTelemetryPaths is exported", () => {
-		expect(execSrc).toContain("export function generateTelemetryPaths(");
-	});
-
-	it("generateTelemetryPaths uses opId-batchId-repoId naming", () => {
-		const funcBody = extractFunctionRegion(execSrc, "export function generateTelemetryPaths(");
-		expect(funcBody).toContain("opId");
-		expect(funcBody).toContain("effectiveBatchId");
-		expect(funcBody).toContain("effectiveRepoId");
-	});
-
-	it("generateTelemetryPaths includes lane suffix from sessionName", () => {
-		const funcBody = extractFunctionRegion(execSrc, "export function generateTelemetryPaths(");
-		expect(funcBody).toContain("laneSuffix");
-		expect(funcBody).toMatch(/lane-\(\\d\+\)/);
-	});
-
-	it("generateTelemetryPaths includes optional taskId", () => {
-		const funcBody = extractFunctionRegion(execSrc, "export function generateTelemetryPaths(");
-		expect(funcBody).toContain("taskIdSegment");
-		expect(funcBody).toContain("taskId");
-	});
-
-	it("generateTelemetryPaths creates .jsonl sidecar and -exit.json files", () => {
-		const funcBody = extractFunctionRegion(execSrc, "export function generateTelemetryPaths(");
-		expect(funcBody).toContain(".jsonl");
-		expect(funcBody).toContain("-exit.json");
-	});
-
-	it("generateTelemetryPaths creates telemetry dir if missing", () => {
-		const funcBody = extractFunctionRegion(execSrc, "export function generateTelemetryPaths(");
-		expect(funcBody).toContain("mkdirSync");
-		expect(funcBody).toContain("recursive: true");
-	});
-});
+// telemetry filename generation tests removed — generateTelemetryPaths removed during TMUX extrication
 
 // ── 4. Dashboard filename parser ────────────────────────────────────
 
@@ -218,47 +174,3 @@ describe("dashboard parseTelemetryFilename (source extraction)", () => {
 
 // ── 5. Functional tests — generateTelemetryPaths ────────────────────
 
-describe("generateTelemetryPaths functional tests", () => {
-	let generateTelemetryPaths: typeof import("../taskplane/execution.ts").generateTelemetryPaths;
-	let tempDir: string;
-
-	before(async () => {
-		const mod = await import("../taskplane/execution.ts");
-		generateTelemetryPaths = mod.generateTelemetryPaths;
-		tempDir = mkdtempSync(join(tmpdir(), "tp049-test-"));
-	});
-
-	after(() => {
-		try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
-	});
-
-	it("produces .jsonl sidecar path", () => {
-		const result = generateTelemetryPaths("orch-lane-1", tempDir);
-		expect(result.sidecarPath).toMatch(/\.jsonl$/);
-	});
-
-	it("produces -exit.json exit summary path", () => {
-		const result = generateTelemetryPaths("orch-lane-1", tempDir);
-		expect(result.exitSummaryPath).toMatch(/-exit\.json$/);
-	});
-
-	it("includes lane number in filename", () => {
-		const result = generateTelemetryPaths("orch-lane-3", tempDir);
-		expect(result.sidecarPath).toContain("-lane-3-");
-	});
-
-	it("includes taskId in filename when provided", () => {
-		const result = generateTelemetryPaths("orch-lane-1", tempDir, "TP-049");
-		expect(result.sidecarPath).toContain("-tp-049-");
-	});
-
-	it("uses 'lane' role for lane sessions (avoids collision with worker sidecar)", () => {
-		const result = generateTelemetryPaths("orch-lane-1", tempDir);
-		expect(result.sidecarPath).toMatch(/-lane\.jsonl$/);
-	});
-
-	it("creates telemetry dir under sidecar root", () => {
-		const result = generateTelemetryPaths("orch-lane-1", tempDir);
-		expect(result.telemetryDir).toBe(join(tempDir, "telemetry"));
-	});
-});

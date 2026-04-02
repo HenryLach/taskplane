@@ -117,81 +117,15 @@ function resolveTaskRunnerExtensionPath(repoRoot: string): string {
  * Find the rpc-wrapper.mjs path for lane sessions.
  * @see resolveTaskplanePackageFile for resolution order
  */
-export function resolveRpcWrapperPath(repoRoot: string): string {
-	return resolveTaskplanePackageFile(repoRoot, join("bin", "rpc-wrapper.mjs"));
-}
+// resolveRpcWrapperPath removed (TP-120 remediation: legacy TMUX dead code)
 
 // ── Telemetry Helpers ────────────────────────────────────────────────
 
-/**
- * Resolve the operator ID for telemetry filenames.
- *
- * Priority: TASKPLANE_OPERATOR_ID env → OS username → "op" fallback.
- * Shared by lane and merge telemetry path generators to avoid divergence.
- */
-export function resolveTelemOpId(): string {
-	const envOpId = process.env.TASKPLANE_OPERATOR_ID;
-	if (envOpId?.trim()) {
-		return envOpId.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
-	}
-	try {
-		const username = userInfo().username;
-		if (username?.trim()) {
-			return username.trim().toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, 12) || "op";
-		}
-	} catch { /* userInfo() can throw on some platforms */ }
-	return "op";
-}
+// resolveTelemOpId removed (TP-120 remediation: only consumer was generateTelemetryPaths)
 
-/**
- * Sanitize a string for use in telemetry filenames.
- */
-function sanitizeForFilename(s: string, maxLen: number = 30): string {
-	return s.toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "").slice(0, maxLen);
-}
+// sanitizeForFilename + generateTelemetryPaths removed (TP-120 remediation: legacy telemetry dead code)
 
-// ── Telemetry Path Generation ────────────────────────────────────────
-
-/**
- * Generate telemetry file paths for a lane session.
- *
- * Naming contract from resilience roadmap:
- *   .pi/telemetry/{opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.{ext}
- *
- * @param sessionName  - TMUX session name (e.g., "orch-lane-1")
- * @param sidecarRoot  - Root dir for sidecar files (e.g., <workspace>/.pi or <repo>/.pi)
- * @param taskId       - Task identifier (e.g., "TP-049")
- * @param batchId      - Actual batch ID from batch state (falls back to timestamp)
- * @param repoId       - Repo ID for workspace mode (falls back to "default")
- * @returns { sidecarPath, exitSummaryPath, telemetryDir }
- */
-export function generateTelemetryPaths(
-	sessionName: string,
-	sidecarRoot: string,
-	taskId?: string,
-	batchId?: string,
-	repoId?: string,
-): { sidecarPath: string; exitSummaryPath: string; telemetryDir: string } {
-	const opId = resolveTelemOpId();
-	const effectiveBatchId = batchId || String(Date.now());
-	const effectiveRepoId = repoId || "default";
-
-	// Lane sessions are the task-runner orchestration layer, NOT the worker agent.
-	// Use "lane" role to avoid filename collisions with worker sidecar files.
-	const role = "lane";
-	const laneMatch = sessionName.match(/lane-(\d+)/);
-	const laneSuffix = laneMatch ? `-lane-${laneMatch[1]}` : "";
-
-	// Include taskId when available
-	const taskIdSegment = taskId ? `-${sanitizeForFilename(taskId)}` : "";
-	const telemetryBasename = `${opId}-${effectiveBatchId}-${effectiveRepoId}${taskIdSegment}${laneSuffix}-${role}`;
-	const telemetryDir = join(sidecarRoot, "telemetry");
-	if (!existsSync(telemetryDir)) mkdirSync(telemetryDir, { recursive: true });
-	const sidecarPath = join(telemetryDir, `${telemetryBasename}.jsonl`);
-	const exitSummaryPath = join(telemetryDir, `${telemetryBasename}-exit.json`);
-
-	return { sidecarPath, exitSummaryPath, telemetryDir };
-}
+// generateTelemetryPaths removed (TP-120 remediation: legacy telemetry sidecar dead code)
 
 // ── Execution Helpers ────────────────────────────────────────────────
 
@@ -340,92 +274,7 @@ export async function readTaskStatusTailAsync(
  * @param repoRoot  - Absolute path to the main repository root
  * @returns Map of env var name → value
  */
-export function buildLaneEnvVars(
-	lane: AllocatedLane,
-	promptPath: string,
-	repoRoot: string,
-	workspaceRoot?: string,
-): Record<string, string> {
-	// TASK_AUTOSTART: resolve the prompt path for the lane session.
-	//
-	// In workspace mode, tasks may live in a different repo than the lane's
-	// worktree (e.g., task PROMPT.md in shared-libs, worker runs in api-service).
-	// Always use the absolute path — task-runner's resolve(cwd, autoPath) handles
-	// absolute paths correctly, and this avoids broken relative paths when the
-	// task folder is outside the lane's repo.
-	//
-	// In repo mode (no workspace), we still use relative paths from repoRoot
-	// because the worktree mirrors the repo structure and the task folder is
-	// inside the repo.
-	const repoRootNorm = resolve(repoRoot).replace(/\\/g, "/");
-	const promptNorm = resolve(promptPath).replace(/\\/g, "/");
-
-	let relativePath: string;
-	if (workspaceRoot) {
-		// Workspace mode: use worktree-relative path when the task folder is
-		// inside the lane's repo. This ensures STATUS.md, .DONE, and git commits
-		// all operate in the worktree (not the original source directory).
-		if (promptNorm.startsWith(repoRootNorm + "/")) {
-			relativePath = promptNorm.slice(repoRootNorm.length + 1);
-		} else {
-			// Cross-repo: task files live in a different repo than the worker's
-			// worktree. Copy the task folder into the worktree so STATUS.md,
-			// .DONE, and git commits all happen locally.
-			const taskFolder = dirname(resolve(promptPath));
-			const taskDirName = basename(taskFolder);
-			const localTaskDir = join(lane.worktreePath, ".taskplane-tasks", taskDirName);
-			mkdirSync(localTaskDir, { recursive: true });
-			// Copy PROMPT.md and STATUS.md into the local task dir
-			for (const file of ["PROMPT.md", "STATUS.md"]) {
-				const src = join(taskFolder, file);
-				const dst = join(localTaskDir, file);
-				if (existsSync(src) && !existsSync(dst)) {
-					copyFileSync(src, dst);
-				}
-			}
-			// Create .reviews dir if it exists in source
-			const reviewsDir = join(taskFolder, ".reviews");
-			if (existsSync(reviewsDir)) {
-				mkdirSync(join(localTaskDir, ".reviews"), { recursive: true });
-			}
-			relativePath = join(".taskplane-tasks", taskDirName, "PROMPT.md");
-		}
-	} else if (promptNorm.startsWith(repoRootNorm + "/")) {
-		// Repo mode: relative path from repo root (mirrors into worktree)
-		relativePath = promptNorm.slice(repoRootNorm.length + 1);
-	} else {
-		// Fallback: absolute path
-		relativePath = resolve(promptPath);
-	}
-
-	const nodePathEntries: string[] = [join(repoRoot, "node_modules")];
-	if (process.env.NODE_PATH) {
-		nodePathEntries.push(...process.env.NODE_PATH.split(pathDelimiter).filter(Boolean));
-	}
-	const nodePath = [...new Set(nodePathEntries)].join(pathDelimiter);
-
-	const vars: Record<string, string> = {
-		TASK_AUTOSTART: relativePath,
-		TASK_RUNNER_SPAWN_MODE: "tmux",
-		TASK_RUNNER_TMUX_PREFIX: laneSessionIdOf(lane),
-		ORCH_SIDECAR_DIR: join(workspaceRoot || repoRoot, ".pi"),
-		NODE_PATH: nodePath,
-		// Pi's TUI (ink/react) hangs silently with TERM=tmux-256color (tmux default).
-		// Force xterm-256color so pi can render and start execution.
-		TERM: "xterm-256color",
-	};
-
-	// In workspace mode, the worktree cwd is inside a repo — not the workspace root.
-	// The task-runner needs TASKPLANE_WORKSPACE_ROOT to find .pi/ config
-	// and resolve task area paths from the correct base directory.
-	// Always set when workspaceRoot is provided (workspace mode), regardless of
-	// whether it equals repoRoot (it often does — cwd is the workspace root).
-	if (workspaceRoot) {
-		vars.TASKPLANE_WORKSPACE_ROOT = workspaceRoot;
-	}
-
-	return vars;
-}
+// buildLaneEnvVars removed (TP-120 remediation: legacy TMUX lane-session env vars, dead code)
 
 function laneSessionIdOf(lane: Pick<AllocatedLane, "laneSessionId">): string {
 	return lane.laneSessionId;
@@ -673,8 +522,11 @@ export function resolveTaskDonePath(
 }
 
 
-/**
- * Poll until a task completes (or fails).
+/*
+ * REMOVED during TMUX extrication (TP-120 remediation):
+ * - resolveRpcWrapperPath, sanitizeForFilename, generateTelemetryPaths
+ * - buildLaneEnvVars, pollUntilTaskComplete
+ * V2 equivalents: lane-runner.ts (executeTaskV2) and agent-host.ts (spawnAgent).
  *
  * Completion detection logic:
  * 1. Check for .DONE file → task succeeded (highest priority)
@@ -692,177 +544,18 @@ export function resolveTaskDonePath(
  * @param pauseSignal - Checked each poll cycle; if true, returns early with "skipped"
  * @returns LaneTaskStatus indicating the final state
  */
+// pollUntilTaskComplete function body removed — was ~170 lines of legacy .DONE polling.
+// @ts-ignore — export kept as stub for test compatibility
 export async function pollUntilTaskComplete(
-	lane: AllocatedLane,
-	task: AllocatedTask,
-	config: OrchestratorConfig,
-	repoRoot: string,
-	pauseSignal: { paused: boolean },
-	isWorkspaceMode?: boolean,
+	_lane: AllocatedLane,
+	_task: AllocatedTask,
+	_config: OrchestratorConfig,
+	_repoRoot: string,
+	_pauseSignal: { paused: boolean },
+	_isWorkspaceMode?: boolean,
 ): Promise<{ status: LaneTaskStatus; exitReason: string; doneFileFound: boolean }> {
-	const sessionName = laneSessionIdOf(lane);
-	const laneId = lane.laneId;
-	const resolved = resolveCanonicalTaskPaths(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
-	const donePath = resolved.donePath;
-	const statusPath = resolved.statusPath;
-	const laneLogPath = resolveLaneLogPath(lane, task);
-
-	execLog(laneId, task.taskId, "polling for completion", {
-		session: sessionName,
-		donePath,
-		statusPath,
-		logPath: laneLogPath,
-	});
-
-	let lastOutputTail = "";
-	const batchId = config.orchestrator?.batchId;
-
-	// Abort signal file path — checked each poll cycle.
-	// Any process can create this file to trigger abort (belt-and-suspenders
-	// alongside the in-memory pauseSignal, since /orch-abort may not be able
-	// to run concurrently with the /orch command handler).
-	const abortSignalFile = join(repoRoot, ".pi", "orch-abort-signal");
-
-	// Main polling loop
-	while (true) {
-		// Check pause signal
-		if (pauseSignal.paused) {
-			execLog(laneId, task.taskId, "pause signal detected during poll");
-			// Don't kill the session — let the current task-runner checkpoint
-			// The calling code will handle marking as skipped
-			return {
-				status: "skipped",
-				exitReason: "Paused by user (/orch-pause)",
-				doneFileFound: false,
-			};
-		}
-
-		// Check file-based abort signal (TP-070: async)
-		if (await fileExistsAsync(abortSignalFile)) {
-			execLog(laneId, task.taskId, "abort signal file detected — killing Runtime V2 agents and aborting");
-			killV2LaneAgents(sessionName, {
-				stateRoot: repoRoot,
-				batchId,
-				logContext: laneId,
-			});
-			return {
-				status: "failed",
-				exitReason: "Aborted by signal file (.pi/orch-abort-signal)",
-				doneFileFound: false,
-			};
-		}
-
-		// Capture recent lane log output for diagnostics (best effort).
-		const outputTail = await readLaneLogTailAsync(laneLogPath);
-		if (outputTail) {
-			lastOutputTail = outputTail;
-		}
-
-		// Priority 1: Check for .DONE file (TP-070: async)
-		if (await fileExistsAsync(donePath)) {
-			execLog(laneId, task.taskId, ".DONE file found — task succeeded", {
-				session: sessionName,
-			});
-			return {
-				status: "succeeded",
-				exitReason: ".DONE file created by task-runner",
-				doneFileFound: true,
-			};
-		}
-
-		// Priority 2: Check if the Runtime V2 lane agent is still alive.
-		if (batchId) {
-			setV2LivenessRegistryCache(readRegistrySnapshot(repoRoot, batchId));
-		}
-		if (batchId && !isV2AgentAlive(sessionName, "v2")) {
-			// Lane agent exited — start grace period for .DONE file
-			execLog(laneId, task.taskId, "lane agent exited, entering grace period", {
-				session: sessionName,
-				graceMs: DONE_GRACE_MS,
-			});
-
-			// Grace period: poll .DONE file at short intervals
-			const graceStart = Date.now();
-			while (Date.now() - graceStart < DONE_GRACE_MS) {
-				await new Promise((r) => setTimeout(r, 500));
-
-				if (await fileExistsAsync(donePath)) {
-					execLog(laneId, task.taskId, ".DONE file found during grace period — task succeeded", {
-						session: sessionName,
-					});
-					return {
-						status: "succeeded",
-						exitReason: ".DONE file created (found during grace period)",
-						doneFileFound: true,
-					};
-				}
-			}
-
-			// Grace period expired — last resort: check the lane BRANCH for .DONE.
-			// The worker may have committed .DONE before the session exited, but
-			// the worktree filesystem doesn't reflect it (stale checkout, race).
-			// This handles the common case where the worker completes all work,
-			// commits .DONE, and then the session exits before the poll detects it.
-			{
-				const relDonePath = donePath.startsWith(lane.worktreePath)
-					? donePath.slice(lane.worktreePath.length).replace(/^[\\/]+/, "").replace(/\\/g, "/")
-					: null;
-				if (relDonePath) {
-					const gitResult = runGit(
-						["show", `${lane.branch}:${relDonePath}`],
-						lane.worktreePath,
-					);
-					if (gitResult.ok) {
-						execLog(laneId, task.taskId, ".DONE found on lane branch (not in worktree) — task succeeded", {
-							session: sessionName,
-							branch: lane.branch,
-						});
-						return {
-							status: "succeeded",
-							exitReason: ".DONE committed to lane branch (found via git show after grace period)",
-							doneFileFound: true,
-						};
-					}
-				}
-			}
-
-			// Truly failed — no .DONE on filesystem or branch
-			const logTail = await readLaneLogTailAsync(laneLogPath);
-			execLog(laneId, task.taskId, "grace period expired, no .DONE on filesystem or branch — task failed", {
-				session: sessionName,
-				logPath: laneLogPath,
-			});
-			if (logTail) {
-				execLog(laneId, task.taskId, `lane session output (tail):\n${logTail}`);
-			}
-			const statusTail = await readTaskStatusTailAsync(statusPath);
-			const hasLogFile = await fileExistsAsync(laneLogPath);
-			const outputForHint = logTail || lastOutputTail || statusTail;
-			const logHint = outputForHint
-				? ` Last output: ${outputForHint.replace(/\s+/g, " ").slice(-300)}`
-				: "";
-			const logLocation = hasLogFile ? ` Lane log: ${laneLogPath}.` : "";
-			if (!logTail && lastOutputTail) {
-				execLog(laneId, task.taskId, `lane session output (tail):\n${lastOutputTail}`);
-			}
-			if (statusTail) {
-				execLog(laneId, task.taskId, `task STATUS tail:\n${statusTail}`);
-			}
-			return {
-				status: "failed",
-				exitReason:
-					`Lane agent '${sessionName}' exited without creating .DONE file ` +
-					`(grace period ${DONE_GRACE_MS}ms expired).` +
-					`${logLocation}${logHint}`,
-				doneFileFound: false,
-			};
-		}
-
-		// Session alive, no .DONE yet — keep polling
-		await new Promise((r) => setTimeout(r, EXECUTION_POLL_INTERVAL_MS));
-	}
+	return { status: "failed", exitReason: "Legacy pollUntilTaskComplete removed — use V2 lane-runner", doneFileFound: false };
 }
-
 
 // ── Post-Task Commit ─────────────────────────────────────────────────
 

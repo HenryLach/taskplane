@@ -48,7 +48,7 @@ import {
 	canonicalizePath,
 	resolvePointer,
 } from "../taskplane/workspace.ts";
-import { buildLaneEnvVars } from "../taskplane/execution.ts";
+// buildLaneEnvVars import removed — function removed during TMUX extrication
 import { saveBatchState, loadBatchState, deleteBatchState } from "../taskplane/persistence.ts";
 
 // ── Test Fixtures ────────────────────────────────────────────────────
@@ -1432,46 +1432,8 @@ describe("orchestrator pointer threading", () => {
 		expect(ctx.pointer!.warning).toBeDefined();
 	});
 
-	it("7.4: ORCH_SIDECAR_DIR uses workspaceRoot, not pointer configRoot", () => {
-		// Verify buildLaneEnvVars sets ORCH_SIDECAR_DIR to workspaceRoot/.pi
-		const lane = {
-			laneNumber: 1,
-			laneId: "lane-1",
-			branch: "orch-lane-1",
-			tasks: [] as Array<{ task: { taskId: string; promptPath: string; size: string }; position: number }>,
-			laneSessionId: "orch-lane-1",
-			worktreePath: resolve("C:/fake/worktree"),
-		};
-
-		const repoRoot = resolve("C:/workspace/repos/api");
-		const workspaceRoot = resolve("C:/workspace");
-
-		const vars = buildLaneEnvVars(lane, resolve("C:/workspace/repos/api/tasks/T-001/PROMPT.md"), repoRoot, workspaceRoot);
-
-		// ORCH_SIDECAR_DIR should be workspaceRoot/.pi, NOT pointer config root
-		expect(vars.ORCH_SIDECAR_DIR).toBe(join(workspaceRoot, ".pi"));
-		// TASKPLANE_WORKSPACE_ROOT should be set in workspace mode
-		expect(vars.TASKPLANE_WORKSPACE_ROOT).toBe(workspaceRoot);
-	});
-
-	it("7.5: ORCH_SIDECAR_DIR uses repoRoot in repo mode (no workspaceRoot)", () => {
-		const lane = {
-			laneNumber: 1,
-			laneId: "lane-1",
-			branch: "orch-lane-1",
-			tasks: [] as Array<{ task: { taskId: string; promptPath: string; size: string }; position: number }>,
-			laneSessionId: "orch-lane-1",
-			worktreePath: resolve("C:/fake/worktree"),
-		};
-
-		const repoRoot = resolve("C:/my-project");
-
-		// Repo mode: no workspaceRoot
-		const vars = buildLaneEnvVars(lane, resolve("C:/my-project/tasks/T-001/PROMPT.md"), repoRoot);
-
-		expect(vars.ORCH_SIDECAR_DIR).toBe(join(repoRoot, ".pi"));
-		expect(vars.TASKPLANE_WORKSPACE_ROOT).toBeUndefined();
-	});
+	// Tests 7.4 and 7.5 removed — buildLaneEnvVars removed during TMUX extrication.
+	// V2 lane-runner builds env vars directly in executeTaskV2.
 
 	it("7.6: spawnMergeAgentV2 signature accepts agentRoot, separate from stateRoot", () => {
 		// Verify the Runtime V2 merge spawner includes both agentRoot and stateRoot
