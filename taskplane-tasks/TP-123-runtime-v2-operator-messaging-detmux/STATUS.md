@@ -1,10 +1,10 @@
 # TP-123: Runtime V2 Operator Messaging De-TMUX — Status
 
-**Current Step:** Step 2: Dashboard label cleanup
+**Current Step:** Step 3: Tests
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -23,13 +23,13 @@
 - [x] Keep historical migration context only where needed
 
 ### Step 2: Dashboard label cleanup
-**Status:** 🟨 In Progress
-- [ ] Update dashboard labels/tooltips that imply tmux is active
-- [ ] Preserve compatibility behavior for data shape fields
-- [ ] Ensure merge/lane liveness indicators still render correctly
+**Status:** ✅ Complete
+- [x] Update dashboard labels/tooltips that imply tmux is active
+- [x] Preserve compatibility behavior for data shape fields
+- [x] Ensure merge/lane liveness indicators still render correctly
 
 ### Step 3: Tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update/extend tests asserting old TMUX wording
 - [ ] Run full extension suite
 - [ ] Fix failures
@@ -65,3 +65,5 @@
 | 2026-04-02 20:38 | Step 0 started | Preflight copy inventory |
 |-----------|--------|---------|
 | 2026-04-02 20:41 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-02 20:44 | Review R002 | code Step 1: APPROVE |
+| 2026-04-02 20:45 | Review R003 | plan Step 2: APPROVE |

@@ -160,19 +160,18 @@ function showCopyToast(text) {
   toastTimer = setTimeout(() => toastEl.classList.remove("visible"), 2000);
 }
 
-function copyTmuxCmd(sessionName) {
-  const cmd = `tmux attach -t ${sessionName}`;
-  navigator.clipboard.writeText(cmd).then(() => {
-    showCopyToast(cmd);
+function copySessionId(sessionName) {
+  navigator.clipboard.writeText(sessionName).then(() => {
+    showCopyToast(`session ${sessionName}`);
     // Flash the button
-    const btn = document.querySelector(`[data-tmux="${sessionName}"]`);
+    const btn = document.querySelector(`[data-session="${sessionName}"]`);
     if (btn) {
       btn.classList.add("copied");
       setTimeout(() => btn.classList.remove("copied"), 1500);
     }
   }).catch(() => {
     // Fallback: select the text
-    const btn = document.querySelector(`[data-tmux="${sessionName}"]`);
+    const btn = document.querySelector(`[data-session="${sessionName}"]`);
     if (btn) {
       const range = document.createRange();
       range.selectNodeContents(btn);
@@ -520,7 +519,7 @@ function renderLanesTasks(batch, tmuxSessions) {
     const laneSessionId = lane.laneSessionId;
     const v2Alive = isLaneAliveV2(lane.laneNumber);
     const alive = v2Alive !== null ? v2Alive : tmuxSet.has(laneSessionId);
-    const tmuxCmd = `tmux attach -t ${laneSessionId}`;
+    const sessionChip = `session: ${laneSessionId}`;
 
     // Lane header
     html += `<div class="lane-group">`;
@@ -534,14 +533,14 @@ function renderLanesTasks(batch, tmuxSessions) {
     }
     html += `  </div>`;
     html += `  <div class="lane-right">`;
-    html += `    <span class="tmux-dot ${alive ? "alive" : "dead"}" title="${alive ? "tmux alive" : "tmux dead"}"></span>`;
-    // View button: shows conversation stream if available, else tmux pane
+    html += `    <span class="tmux-dot ${alive ? "alive" : "dead"}" title="${alive ? "session alive" : "session not active"}"></span>`;
+    // View button: shows conversation stream when available
     const isViewingConv = viewerMode === 'conversation' && viewerTarget === laneSessionId;
     html += `    <button class="tmux-view-btn${isViewingConv ? ' active' : ''}" onclick="viewConversation('${escapeHtml(laneSessionId)}')" title="View worker conversation">👁 View</button>`;
     if (alive) {
-      html += `    <span class="tmux-cmd" data-tmux="${escapeHtml(laneSessionId)}" onclick="copyTmuxCmd('${escapeHtml(laneSessionId)}')" title="Click to copy">${escapeHtml(tmuxCmd)}</span>`;
+      html += `    <span class="tmux-cmd" data-session="${escapeHtml(laneSessionId)}" onclick="copySessionId('${escapeHtml(laneSessionId)}')" title="Copy session ID">${escapeHtml(sessionChip)}</span>`;
     } else {
-      html += `    <span class="tmux-cmd dead-session">${escapeHtml(tmuxCmd)}</span>`;
+      html += `    <span class="tmux-cmd dead-session">${escapeHtml(sessionChip)}</span>`;
     }
     html += `  </div>`;
     html += `</div>`;
@@ -785,7 +784,7 @@ function renderMergeAgents(batch, tmuxSessions) {
   }
 
   let html = '<table class="merge-table"><thead><tr>';
-  html += '<th>Wave</th><th>Status</th><th>Session</th><th>Telemetry</th><th>Attach</th><th>Details</th>';
+  html += '<th>Wave</th><th>Status</th><th>Session</th><th>Telemetry</th><th>Session ID</th><th>Details</th>';
   html += '</tr></thead><tbody>';
 
   // Track sessions shown in wave result rows so we don't duplicate them below
@@ -856,8 +855,8 @@ function renderMergeAgents(batch, tmuxSessions) {
     html += `<td class="merge-telemetry-cell">${mergeTelemetryHtml(mergeTel, effectiveAlive)}</td>`;
     html += `<td>`;
     if (effectiveAlive) {
-      const cmd = `tmux attach -t ${effectiveSession}`;
-      html += `<span class="tmux-cmd" data-tmux="${escapeHtml(effectiveSession)}" onclick="copyTmuxCmd('${escapeHtml(effectiveSession)}')" title="Click to copy">${escapeHtml(cmd)}</span>`;
+      const sessionChip = `session: ${effectiveSession}`;
+      html += `<span class="tmux-cmd" data-session="${escapeHtml(effectiveSession)}" onclick="copySessionId('${escapeHtml(effectiveSession)}')" title="Copy session ID">${escapeHtml(sessionChip)}</span>`;
     } else {
       html += '<span class="merge-no-data">—</span>';
     }
@@ -895,14 +894,14 @@ function renderMergeAgents(batch, tmuxSessions) {
     if (shownSessions.has(sess)) continue;
 
     const sessTel = telemetry[sess] || null;
-    const cmd = `tmux attach -t ${sess}`;
+    const sessionChip = `session: ${sess}`;
     html += `<tr>`;
     html += `<td class="merge-wave-cell">—</td>`;
     html += `<td><span class="status-badge status-running"><span class="status-dot running"></span> merging</span></td>`;
     html += `<td class="merge-session-cell">${escapeHtml(sess)}</td>`;
     // Full telemetry cell for active merge session
     html += `<td class="merge-telemetry-cell">${mergeTelemetryHtml(sessTel, true)}</td>`;
-    html += `<td><span class="tmux-cmd" data-tmux="${escapeHtml(sess)}" onclick="copyTmuxCmd('${escapeHtml(sess)}')" title="Click to copy">${escapeHtml(cmd)}</span></td>`;
+    html += `<td><span class="tmux-cmd" data-session="${escapeHtml(sess)}" onclick="copySessionId('${escapeHtml(sess)}')" title="Copy session ID">${escapeHtml(sessionChip)}</span></td>`;
     html += `<td>—</td>`;
     html += `</tr>`;
   }
