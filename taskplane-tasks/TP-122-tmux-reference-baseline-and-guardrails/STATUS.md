@@ -1,6 +1,6 @@
 # TP-122: TMUX Reference Baseline and Guardrails — Status
 
-**Current Step:** Step 1: Add audit script
+**Current Step:** Step 2: Add regression guard test
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
@@ -17,16 +17,16 @@
 - [x] Capture baseline in STATUS.md for future tasks
 
 ### Step 1: Add audit script
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Define strict-mode functional TMUX detection scope and explicit exclusions
 - [x] Define deterministic JSON output contract (schema + stable ordering + normalized paths)
 - [x] Create `scripts/tmux-reference-audit.mjs`
 - [x] Emit machine-readable summary (total + by-file + by-category)
 - [x] Support strict mode failure on functional TMUX usage with explicit exit-code + diagnostics contract
-- [ ] Fix Windows path normalization so output paths are always POSIX-style
+- [x] Fix Windows path normalization so output paths are always POSIX-style
 
 ### Step 2: Add regression guard test
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Add `extensions/tests/tmux-reference-guard.test.ts`
 - [ ] Assert no functional TMUX command execution remains in `extensions/taskplane/*.ts`
 - [ ] Assert audit script output stays parseable and deterministic
@@ -55,6 +55,9 @@
 | 2026-04-02 20:29 | Review R002 (plan, step 1) | APPROVE |
 | 2026-04-02 20:37 | Step 1 completed | Added deterministic audit script with `--json` and `--strict` |
 | 2026-04-02 20:38 | Review R003 (code, step 1) | REVISE — normalize output paths to POSIX separators on Windows |
+| 2026-04-02 20:40 | Step 1 revision applied | POSIX path normalization fixed in audit output |
+| 2026-04-02 20:40 | Step 1 completed (post-review) | Ready for re-review |
+| 2026-04-02 20:40 | Step 2 started | Add regression guard test |
 |-----------|--------|---------|
 
 ## Baseline Snapshot (2026-04-02)

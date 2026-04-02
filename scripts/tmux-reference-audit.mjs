@@ -14,7 +14,7 @@
  */
 
 import { readFileSync, readdirSync } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CATEGORY_ORDER = [
@@ -121,6 +121,10 @@ function classifyLine(fileName, line, commentLine) {
 	return "compat-code";
 }
 
+function normalizeRepoPath(pathValue) {
+	return pathValue.split("\\").join("/");
+}
+
 function buildAudit() {
 	const scriptDir = dirname(fileURLToPath(import.meta.url));
 	const repoRoot = resolve(scriptDir, "..");
@@ -138,7 +142,7 @@ function buildAudit() {
 
 	for (const fileName of entries) {
 		const absPath = join(scanDir, fileName);
-		const relPath = relative(repoRoot, absPath).split("\\\\").join("/");
+		const relPath = normalizeRepoPath(relative(repoRoot, absPath));
 		const source = readFileSync(absPath, "utf-8");
 		const lines = source.split(/\r?\n/);
 		const fileByCategory = createCategoryCounter();
