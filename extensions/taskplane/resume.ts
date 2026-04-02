@@ -143,7 +143,8 @@ export function reconstructAllocatedLanes(
 	return persistedLanes.map((lr) => ({
 		laneNumber: lr.laneNumber,
 		laneId: lr.laneId,
-		tmuxSessionName: lr.tmuxSessionName,
+		laneSessionId: lr.laneSessionId || lr.tmuxSessionName,
+		tmuxSessionName: lr.laneSessionId || lr.tmuxSessionName,
 		worktreePath: lr.worktreePath,
 		branch: lr.branch,
 		tasks: lr.taskIds.map((taskId) => {

@@ -617,7 +617,9 @@ export interface AllocatedLane {
 	laneNumber: number;
 	/** Lane identifier for display and logging (e.g., "lane-1") */
 	laneId: string;
-	/** TMUX session naming seed (e.g., "orch-lane-1") — used by Step 2 */
+	/** Lane session identifier (e.g., "orch-lane-1") — used by Step 2 */
+	laneSessionId?: string;
+	/** @deprecated Use `laneSessionId`; kept temporarily for migration compatibility. */
 	tmuxSessionName: string;
 	/** Absolute path to the lane's worktree directory */
 	worktreePath: string;
@@ -2627,7 +2629,9 @@ export interface PersistedLaneRecord {
 	laneNumber: number;
 	/** Lane identifier (e.g., "lane-1") */
 	laneId: string;
-	/** TMUX session name (e.g., "orch-lane-1") */
+	/** Lane session identifier (e.g., "orch-lane-1") */
+	laneSessionId?: string;
+	/** @deprecated Use `laneSessionId`; kept temporarily for migration compatibility. */
 	tmuxSessionName: string;
 	/** Absolute path to the lane's worktree directory */
 	worktreePath: string;

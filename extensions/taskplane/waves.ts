@@ -488,7 +488,7 @@ export function generateLaneId(laneLocalNumber: number, repoId?: string): string
 }
 
 /**
- * Generate a TMUX session name for a lane.
+ * Generate a lane session identifier for a lane.
  *
  * Includes the operator identifier (`opId`) for collision resistance
  * across concurrent operators on the same machine.
@@ -496,21 +496,24 @@ export function generateLaneId(laneLocalNumber: number, repoId?: string): string
  * - Repo mode: `"{prefix}-{opId}-lane-{N}"` — operator-scoped
  * - Workspace mode: `"{prefix}-{opId}-{repoId}-lane-{N}"` — operator + repo scoped
  *
- * TMUX session names must not contain periods or colons. Both `opId`
+ * Session identifiers must not contain periods or colons. Both `opId`
  * and `repoId` are assumed to be sanitized identifiers (alphanumeric
  * + hyphens only).
  *
- * @param tmuxPrefix      - TMUX prefix from config (e.g., "orch")
+ * @param tmuxPrefix      - Session prefix from config (e.g., "orch")
  * @param laneLocalNumber - Lane number within the repo group (1-indexed)
  * @param opId            - Operator identifier (sanitized, e.g., "henrylach")
  * @param repoId          - Repo identifier (undefined in repo mode)
  */
-export function generateTmuxSessionName(tmuxPrefix: string, laneLocalNumber: number, opId: string, repoId?: string): string {
+export function generateLaneSessionId(tmuxPrefix: string, laneLocalNumber: number, opId: string, repoId?: string): string {
 	if (repoId) {
 		return `${tmuxPrefix}-${opId}-${repoId}-lane-${laneLocalNumber}`;
 	}
 	return `${tmuxPrefix}-${opId}-lane-${laneLocalNumber}`;
 }
+
+/** @deprecated Use `generateLaneSessionId()` instead. */
+export const generateTmuxSessionName = generateLaneSessionId;
 
 
 // ── Repo-Scoped Worktree Resolution ─────────────────────────────────
@@ -1331,7 +1334,7 @@ export function allocateLanes(
 		allocatedLanes.push({
 			laneNumber: entry.globalLane,
 			laneId: generateLaneId(entry.localLane, entry.repoId),
-			tmuxSessionName: generateTmuxSessionName(tmuxPrefix, entry.localLane, opId, entry.repoId),
+			tmuxSessionName: generateLaneSessionId(tmuxPrefix, entry.localLane, opId, entry.repoId),
 			worktreePath: wt.path,
 			branch: wt.branch,
 			tasks: allocatedTasks,

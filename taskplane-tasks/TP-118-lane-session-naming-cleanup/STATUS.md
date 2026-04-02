@@ -1,27 +1,27 @@
 # TP-118: Lane Session Naming Cleanup — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Type alias introduction
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Read PROMPT.md and STATUS.md
 - [x] Count tmuxSessionName references
 - [x] Identify type definitions to update
 - [x] Plan alias-first approach
 
 ### Step 1: Type alias introduction
-**Status:** ⬜ Not Started
-- [ ] Add laneSessionId alias to types
-- [ ] Rename generateTmuxSessionName → generateLaneSessionId (keep alias)
-- [ ] Backward-compat state reading
+**Status:** 🟨 In Progress
+- [x] Add laneSessionId alias to types
+- [x] Rename generateTmuxSessionName → generateLaneSessionId (keep alias)
+- [x] Backward-compat state reading
 
 ### Step 2: Rename in production code
 **Status:** ⬜ Not Started
@@ -57,4 +57,9 @@
 | 2026-04-02 05:14 | Counted references | 193 total `tmuxSessionName` matches across worktree |
 | 2026-04-02 05:15 | Identified types | `AllocatedLane` and `PersistedLaneRecord` in `extensions/taskplane/types.ts` |
 | 2026-04-02 05:16 | Planned migration | Step 1 will add alias fields + function alias, plus persistence/resume dual-read for `tmuxSessionName` and `laneSessionId` |
+| 2026-04-02 05:15 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-02 05:17 | Added type alias fields | `laneSessionId` added (alias phase) to `AllocatedLane` and `PersistedLaneRecord` |
+| 2026-04-02 05:18 | Renamed generator | `generateLaneSessionId()` added and `generateTmuxSessionName` kept as deprecated alias |
+| 2026-04-02 05:20 | Added compat state reads | Persisted lane validation now accepts either field and normalizes both `laneSessionId` and `tmuxSessionName` |
+| 2026-04-02 05:22 | Targeted tests | `naming-collision`, `monorepo-compat-regression`, `orch-state-persistence` passed |
 |-----------|--------|---------|

@@ -689,7 +689,7 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 				`lanes[${i}] is not an object`,
 			);
 		}
-		for (const field of ["laneId", "tmuxSessionName", "worktreePath", "branch"] as const) {
+		for (const field of ["laneId", "worktreePath", "branch"] as const) {
 			if (typeof l[field] !== "string") {
 				throw new StateFileError(
 					"STATE_SCHEMA_INVALID",
@@ -697,6 +697,37 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 				);
 			}
 		}
+
+		const laneSessionId = l.laneSessionId;
+		if (laneSessionId !== undefined && typeof laneSessionId !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`lanes[${i}].laneSessionId is not a string (got ${typeof laneSessionId})`,
+			);
+		}
+
+		const tmuxSessionName = l.tmuxSessionName;
+		if (tmuxSessionName !== undefined && typeof tmuxSessionName !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`lanes[${i}].tmuxSessionName is not a string (got ${typeof tmuxSessionName})`,
+			);
+		}
+
+		if (typeof laneSessionId !== "string" && typeof tmuxSessionName !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`lanes[${i}] must include either laneSessionId or tmuxSessionName as a string`,
+			);
+		}
+
+		if (typeof laneSessionId !== "string") {
+			l.laneSessionId = tmuxSessionName;
+		}
+		if (typeof tmuxSessionName !== "string") {
+			l.tmuxSessionName = laneSessionId;
+		}
+
 		if (typeof l.laneNumber !== "number") {
 			throw new StateFileError(
 				"STATE_SCHEMA_INVALID",
@@ -1246,10 +1277,12 @@ export function serializeBatchState(
 
 	// Build lane records
 	const laneRecords: PersistedLaneRecord[] = lanes.map((lane) => {
+		const sessionId = lane.laneSessionId || lane.tmuxSessionName;
 		const record: PersistedLaneRecord = {
 			laneNumber: lane.laneNumber,
 			laneId: lane.laneId,
-			tmuxSessionName: lane.tmuxSessionName,
+			laneSessionId: sessionId,
+			tmuxSessionName: sessionId,
 			worktreePath: lane.worktreePath,
 			branch: lane.branch,
 			taskIds: lane.tasks.map((t) => t.taskId),
