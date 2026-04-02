@@ -17,7 +17,7 @@ import { computeWaveAssignments } from "./waves.ts";
 import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
 import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions, parseOrchSessionNames } from "./persistence.ts";
 import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, formatPreflightResults, runPreflight } from "./worktree.ts";
-import { computeTransitiveDependents, executeLane, resolveCanonicalTaskPaths, tmuxHasSession } from "./execution.ts";
+import { computeTransitiveDependents, resolveCanonicalTaskPaths, tmuxHasSession } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { formatOrchSessions, listOrchSessions } from "./sessions.ts";
@@ -1641,6 +1641,14 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// ── Section 1: Preflight ─────────────────────────────────
+			if (orchConfig.orchestrator.spawn_mode === "tmux") {
+				ctx.ui.notify(
+					"⚠️ Runtime V2 is now the default backend. `spawn_mode: tmux` is deprecated and kept only for legacy compatibility.",
+					"warning",
+				);
+			} else {
+				ctx.ui.notify("ℹ️ Runtime V2 is the default backend (TMUX is legacy-only).", "info");
+			}
 			const preflight = runPreflight(orchConfig, execCtx!.repoRoot);
 			ctx.ui.notify(formatPreflightResults(preflight), preflight.passed ? "info" : "error");
 			if (!preflight.passed) return;
@@ -4744,8 +4752,8 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify(
 			"Task Orchestrator ready\n\n" +
 			`Mode: ${modeLabel}\n` +
+			`Runtime: V2 default (configured spawn_mode: ${orchConfig.orchestrator.spawn_mode}; tmux is legacy-only)\n` +
 			`Config: ${orchConfig.orchestrator.max_lanes} lanes, ` +
-			`${orchConfig.orchestrator.spawn_mode} mode, ` +
 			`${orchConfig.dependencies.source} deps\n` +
 			`Areas: ${areaCount} registered\n\n` +
 			"/orch <areas|all>        Start batch execution\n" +

@@ -6,7 +6,7 @@ import { existsSync, readdirSync, readFileSync, unlinkSync } from "fs";
 import { join, resolve } from "path";
 
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
-import { computeTransitiveDependents, execLog, executeLane, executeLaneV2, executeWave, tmuxKillSession } from "./execution.ts";
+import { computeTransitiveDependents, execLog, executeLaneV2, executeWave, tmuxKillSession } from "./execution.ts";
 import type { RuntimeBackend } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 // classifyExit no longer called directly — Tier 0 uses exitDiagnostic.classification
@@ -278,8 +278,7 @@ async function attemptWorkerCrashRetry(
 			// may be paused due to stop-wave policy, but Tier 0 retry should
 			// attempt recovery before the stop decision takes effect (R002-4).
 			const retryPauseSignal = { paused: false };
-			const retryExecutor = (runtimeBackend === "v2") ? executeLaneV2 : executeLane;
-			const retryResult = await retryExecutor(
+			const retryResult = await executeLaneV2(
 				retryLane,
 				orchConfig,
 				repoRoot,
@@ -546,8 +545,7 @@ async function attemptModelFallbackRetry(
 			// the task-runner to use the session model instead of configured model.
 			// TP-089: Also include ORCH_BATCH_ID so mailbox steering works for retries.
 			const modelFallbackEnv = { TASKPLANE_MODEL_FALLBACK: "1", ORCH_BATCH_ID: batchState.batchId };
-			const retryExecutor = (runtimeBackend === "v2") ? executeLaneV2 : executeLane;
-			const retryResult = await retryExecutor(
+			const retryResult = await executeLaneV2(
 				retryLane,
 				orchConfig,
 				repoRoot,

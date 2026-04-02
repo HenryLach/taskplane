@@ -675,6 +675,56 @@ describe("key preservation and adapter regression", () => {
 		const legacy = toOrchestratorConfig(config);
 		expect(legacy.orchestrator.integration).toBe("manual");
 	});
+
+	it("3.14: logs deprecation warning when orchestrator spawn_mode is tmux", () => {
+		const dir = makeTestDir("spawn-mode-tmux-orch-warning");
+		const agentDir = makeTestDir("spawn-mode-tmux-orch-agent-dir");
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		const consoleErrorSpy = mock.method(console, "error", () => {});
+		try {
+			writeOrchestratorYaml(dir, "orchestrator:\n  spawn_mode: tmux\n");
+			loadProjectConfig(dir);
+
+			const deprecations = consoleErrorSpy.mock.calls
+				.map((call: any) => String(call.arguments[0] ?? ""))
+				.filter((line: string) => line.includes("[taskplane] deprecation: spawn_mode \"tmux\""));
+			expect(deprecations.length).toBeGreaterThan(0);
+			expect(deprecations[0]).toContain("orchestrator.orchestrator.spawnMode");
+		} finally {
+			consoleErrorSpy.mock.restore();
+			if (previousAgentDir === undefined) {
+				delete process.env.PI_CODING_AGENT_DIR;
+			} else {
+				process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			}
+		}
+	});
+
+	it("3.15: logs deprecation warning when worker spawn_mode is tmux", () => {
+		const dir = makeTestDir("spawn-mode-tmux-worker-warning");
+		const agentDir = makeTestDir("spawn-mode-tmux-worker-agent-dir");
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		const consoleErrorSpy = mock.method(console, "error", () => {});
+		try {
+			writeTaskRunnerYaml(dir, "worker:\n  spawn_mode: tmux\n");
+			loadProjectConfig(dir);
+
+			const deprecations = consoleErrorSpy.mock.calls
+				.map((call: any) => String(call.arguments[0] ?? ""))
+				.filter((line: string) => line.includes("[taskplane] deprecation: spawn_mode \"tmux\""));
+			expect(deprecations.length).toBeGreaterThan(0);
+			expect(deprecations[0]).toContain("taskRunner.worker.spawnMode");
+		} finally {
+			consoleErrorSpy.mock.restore();
+			if (previousAgentDir === undefined) {
+				delete process.env.PI_CODING_AGENT_DIR;
+			} else {
+				process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+			}
+		}
+	});
 });
 
 // ── 4.x: Defaults, cloning, non-mutation, backward-compat wrappers ──

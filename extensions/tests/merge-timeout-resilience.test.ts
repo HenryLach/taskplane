@@ -145,14 +145,15 @@ describe("2.x — Kill-and-retry: timeout triggers retry with 2x timeout", () =>
 		expect(retrySection).toContain("unlinkSync(resultFilePath)");
 	});
 
-	it("2.6: retry re-spawns merge agent", () => {
+	it("2.6: retry re-spawns merge agent via Runtime V2", () => {
 		const mergeSource = readSource("merge.ts");
 
 		const retrySection = mergeSource.substring(
 			mergeSource.indexOf("if (attempt > 0)"),
 			mergeSource.indexOf("// First attempt: spawn merge agent"),
 		);
-		expect(retrySection).toContain("spawnMergeAgent(sessionName");
+		expect(retrySection).toContain("killMergeAgentV2(sessionName)");
+		expect(retrySection).toContain("spawnMergeAgentV2(sessionName");
 	});
 
 	it("2.7: retry logs attempt number and new timeout values", () => {

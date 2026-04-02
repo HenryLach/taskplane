@@ -7,7 +7,7 @@ import { readFile as fsReadFile } from "fs/promises";
 import { execSync, spawnSync } from "child_process";
 import { join, dirname, resolve, relative } from "path";
 
-import { buildLaneEnvVars, buildTmuxSpawnArgs, execLog, generateTelemetryPaths, resolveRpcWrapperPath, resolveTelemOpId, tmuxHasSession, tmuxHasSessionAsync, tmuxKillSession, tmuxKillSessionAsync, tmuxAsync, toTmuxPath } from "./execution.ts";
+import { execLog, tmuxHasSession, tmuxHasSessionAsync, tmuxKillSession, tmuxKillSessionAsync, tmuxAsync } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MERGE_HEALTH_POLL_INTERVAL_MS, MERGE_HEALTH_WARNING_THRESHOLD_MS, MERGE_HEALTH_STUCK_THRESHOLD_MS, MERGE_HEALTH_CAPTURE_LINES, MergeError, VALID_MERGE_STATUSES, buildEngineEventBase } from "./types.ts";
 import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig, MergeHealthStatus, MergeHealthEventType, MergeSessionSnapshot, MergeSessionHealthState, EngineEvent, OrchBatchPhase } from "./types.ts";
@@ -24,47 +24,7 @@ import type { AgentHostOptions, AgentHostResult } from "./agent-host.ts";
 import type { RuntimeBackend } from "./execution.ts";
 import type { VerificationBaseline, FingerprintDiff, TestFingerprint } from "./verification.ts";
 
-// ── Merge Telemetry Helpers ───────────────────────────────────────────
 
-/**
- * Generate telemetry file paths for a merge agent session.
- *
- * Uses the shared resolveTelemOpId() from execution.ts to avoid
- * opId resolution divergence.
- *
- * Naming: {opId}-{batchId}-{repoId}[-merge-{N}]-merger.{ext}
- * Role is always "merger" to distinguish from worker/reviewer in the dashboard.
- *
- * @param sessionName  - TMUX session name (e.g., "orch-merge-1")
- * @param sidecarRoot  - Root dir for sidecar files (e.g., <workspace>/.pi)
- * @param batchId      - Actual batch ID from batch state (falls back to timestamp)
- * @param repoId       - Repo ID for workspace mode (falls back to "default")
- * @returns { sidecarPath, exitSummaryPath }
- */
-function generateMergeTelemetryPaths(
-	sessionName: string,
-	sidecarRoot: string,
-	batchId?: string,
-	repoId?: string,
-): { sidecarPath: string; exitSummaryPath: string } {
-	const opId = resolveTelemOpId();
-	const effectiveBatchId = batchId || String(Date.now());
-	const effectiveRepoId = repoId || "default";
-
-	// Extract merge-specific info from sessionName (e.g., "orch-merge-1")
-	const mergeMatch = sessionName.match(/merge-(\d+)/);
-	const mergeSuffix = mergeMatch ? `-merge-${mergeMatch[1]}` : "";
-
-	const role = "merger";
-	const telemetryBasename = `${opId}-${effectiveBatchId}-${effectiveRepoId}${mergeSuffix}-${role}`;
-	const telemetryDir = join(sidecarRoot, "telemetry");
-	if (!existsSync(telemetryDir)) mkdirSync(telemetryDir, { recursive: true });
-
-	return {
-		sidecarPath: join(telemetryDir, `${telemetryBasename}.jsonl`),
-		exitSummaryPath: join(telemetryDir, `${telemetryBasename}-exit.json`),
-	};
-}
 
 // ── Merge Implementation ─────────────────────────────────────────────
 
@@ -562,149 +522,6 @@ export function buildMergeRequest(
 	return lines.join("\n");
 }
 
-/**
- * Spawn a TMUX session for the merge agent.
- *
- * Creates a TMUX session in the main repo directory (not a worktree)
- * that runs pi with the task-merger agent definition and the merge request.
- *
- * Handles:
- * - Stale session cleanup
- * - Retry on transient spawn failures
- * - Structured logging
- *
- * @param sessionName     - TMUX session name (e.g., "orch-merge-1")
- * @param repoRoot        - Main repository root (merge happens here)
- * @param mergeRequestPath - Path to the merge request temp file
- * @param config          - Orchestrator config (for model, tools)
- * @param stateRoot       - Root for state files (batch state, merge results). Stays at workspace root.
- * @param agentRoot       - Root for agent prompts. When pointer is resolved, this is the config repo's agent dir. Falls back to `<stateRoot>/.pi/agents/` or `<repoRoot>/.pi/agents/`.
- * @throws MergeError if spawn fails after retries
- */
-export async function spawnMergeAgent(
-	sessionName: string,
-	repoRoot: string,
-	mergeWorkDir: string,
-	mergeRequestPath: string,
-	config: OrchestratorConfig,
-	stateRoot?: string,
-	agentRoot?: string,
-	batchId?: string,
-): Promise<void> {
-	execLog("merge", sessionName, "preparing to spawn merge agent", {
-		mergeWorkDir,
-		mergeRequestPath,
-	});
-
-	// Clean up stale session if exists
-	if (tmuxHasSession(sessionName)) {
-		execLog("merge", sessionName, "killing stale merge session");
-		tmuxKillSession(sessionName);
-		await sleepAsync(500);
-	}
-
-	// Build the merge agent command.
-	// Uses rpc-wrapper.mjs to produce structured telemetry (sidecar JSONL + exit summary).
-	// The merger agent definition is loaded via --system-prompt-file.
-	// The merge request is passed as the --prompt-file.
-	const shellQuote = (s: string): string => {
-		if (/[\s"'`$\\!&|;()<>{}#*?~]/.test(s)) {
-			return `'${s.replace(/'/g, "'\\''")}'`;
-		}
-		return s;
-	};
-
-	// Generate telemetry paths for this merge session
-	const sidecarRoot = join(stateRoot ?? repoRoot, ".pi");
-	const telemetry = generateMergeTelemetryPaths(sessionName, sidecarRoot);
-	execLog("merge", sessionName, "telemetry paths generated", {
-		sidecar: telemetry.sidecarPath,
-		exitSummary: telemetry.exitSummaryPath,
-	});
-
-	// Resolve paths
-	const rpcWrapperPath = resolveRpcWrapperPath(repoRoot);
-
-	// Resolve merger agent definition — check existence and fall back gracefully.
-	// Fresh projects that haven't run `taskplane init` may not have .pi/agents/task-merger.md.
-	const systemPromptCandidates = [
-		agentRoot ? join(agentRoot, "task-merger.md") : "",
-		join(stateRoot ?? repoRoot, ".pi", "agents", "task-merger.md"),
-	].filter(Boolean);
-	let systemPromptPath = systemPromptCandidates.find(p => existsSync(p)) || "";
-	if (!systemPromptPath) {
-		execLog("merge", sessionName, "WARNING: merger agent definition not found — merge agent will use default system prompt", {
-			candidates: systemPromptCandidates,
-		});
-	}
-
-	// Build RPC wrapper command
-	const wrapperParts = [
-		"TERM=xterm-256color",
-		"node", shellQuote(rpcWrapperPath),
-		"--sidecar-path", shellQuote(telemetry.sidecarPath),
-		"--exit-summary-path", shellQuote(telemetry.exitSummaryPath),
-		"--prompt-file", shellQuote(mergeRequestPath),
-	];
-
-	// Only pass --system-prompt-file when the file exists (fresh projects
-	// may not have .pi/agents/task-merger.md — rpc-wrapper would crash).
-	if (systemPromptPath) {
-		wrapperParts.push("--system-prompt-file", shellQuote(systemPromptPath));
-	}
-
-	// Add model args if specified
-	if (config.merge.model) {
-		wrapperParts.push("--model", shellQuote(config.merge.model));
-	}
-
-	// Add tools override if specified
-	if (config.merge.tools) {
-		wrapperParts.push("--tools", shellQuote(config.merge.tools));
-	}
-
-	// TP-089: Agent mailbox steering — pass --mailbox-dir when batchId is available.
-	if (batchId) {
-		const mailboxDir = join(sidecarRoot, "mailbox", batchId, sessionName);
-		mkdirSync(join(mailboxDir, "inbox"), { recursive: true });
-		wrapperParts.push("--mailbox-dir", shellQuote(mailboxDir));
-		execLog("merge", sessionName, "mailbox enabled", { mailboxDir });
-	}
-
-	const piCommand = wrapperParts.filter(Boolean).join(" ");
-
-	const tmuxMergeDir = toTmuxPath(mergeWorkDir);
-	const wrappedCommand = `cd ${shellQuote(tmuxMergeDir)} && ${piCommand}`;
-	const tmuxArgs = [
-		"new-session", "-d",
-		"-s", sessionName,
-		wrappedCommand,
-	];
-
-	// Attempt to spawn with retry
-	let lastError = "";
-	for (let attempt = 1; attempt <= MERGE_SPAWN_RETRY_MAX + 1; attempt++) {
-		const result = spawnSync("tmux", tmuxArgs);
-
-		if (result.status === 0) {
-			execLog("merge", sessionName, "merge agent session spawned", { attempt });
-			return;
-		}
-
-		lastError = result.stderr?.toString().trim() || "unknown spawn error";
-		execLog("merge", sessionName, `merge spawn attempt ${attempt} failed: ${lastError}`);
-
-		if (attempt <= MERGE_SPAWN_RETRY_MAX) {
-			await sleepAsync(attempt * 1000);
-		}
-	}
-
-	throw new MergeError(
-		"MERGE_SPAWN_FAILED",
-		`Failed to create merge TMUX session '${sessionName}' after ` +
-		`${MERGE_SPAWN_RETRY_MAX + 1} attempts. Last error: ${lastError}`,
-	);
-}
 
 
 /**
@@ -1675,25 +1492,13 @@ export async function mergeWave(
 							try { unlinkSync(resultFilePath); } catch { /* best effort */ }
 						}
 
-						// Re-spawn merge agent for the retry
-						// TP-108: Kill previous V2 agent to prevent orphan/duplicate
-						if (runtimeBackend === "v2") {
-							killMergeAgentV2(sessionName);
-							await spawnMergeAgentV2(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
-						} else {
-							await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
-						}
-						// TP-056: Re-register with health monitor after respawn (legacy only)
-						if (healthMonitor && runtimeBackend !== "v2") healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
+						// Re-spawn merge agent for the retry.
+						// Kill previous V2 agent handle to prevent orphan/duplicate.
+						killMergeAgentV2(sessionName);
+						await spawnMergeAgentV2(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
 					} else {
-						// First attempt: spawn merge agent
-						if (runtimeBackend === "v2") {
-							await spawnMergeAgentV2(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
-						} else {
-							await spawnMergeAgent(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
-						}
-						// TP-056: Register session with health monitor (legacy only — V2 uses process handle)
-						if (healthMonitor && runtimeBackend !== "v2") healthMonitor.addSession(sessionName, lane.laneNumber, resultFilePath);
+						// First attempt: spawn merge agent (Runtime V2)
+						await spawnMergeAgentV2(sessionName, repoRoot, mergeWorkDir, requestFilePath, config, stateRoot, agentRoot, batchId);
 					}
 
 					try {

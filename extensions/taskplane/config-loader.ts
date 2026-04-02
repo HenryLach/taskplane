@@ -670,6 +670,30 @@ export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPrefere
 	return config;
 }
 
+/**
+ * Emit deprecation warnings for legacy TMUX spawn mode settings.
+ *
+ * Runtime V2 is the active execution backend; `spawn_mode: "tmux"`
+ * remains accepted for compatibility but is deprecated.
+ */
+function emitSpawnModeDeprecationWarnings(config: TaskplaneConfig): void {
+	const deprecatedFields: string[] = [];
+
+	if (config.orchestrator.orchestrator.spawnMode === "tmux") {
+		deprecatedFields.push("orchestrator.orchestrator.spawnMode");
+	}
+	if (config.taskRunner.worker.spawnMode === "tmux") {
+		deprecatedFields.push("taskRunner.worker.spawnMode");
+	}
+
+	if (deprecatedFields.length === 0) return;
+
+	console.error(
+		`[taskplane] deprecation: spawn_mode \"tmux\" is legacy-only under Runtime V2 and will be removed in a future release. ` +
+		`Use \"subprocess\" instead. Configured field(s): ${deprecatedFields.join(", ")}.`,
+	);
+}
+
 
 // ── Unified Loader ───────────────────────────────────────────────────
 
@@ -787,6 +811,8 @@ export function loadProjectConfig(cwd: string, pointerConfigRoot?: string): Task
 	// Layer 2: User preferences (allowlisted fields only)
 	const prefs = loadUserPreferences();
 	applyUserPreferences(config, prefs);
+
+	emitSpawnModeDeprecationWarnings(config);
 
 	return config;
 }

@@ -1473,24 +1473,21 @@ describe("orchestrator pointer threading", () => {
 		expect(vars.TASKPLANE_WORKSPACE_ROOT).toBeUndefined();
 	});
 
-	it("7.6: spawnMergeAgent signature accepts agentRoot, separate from stateRoot", () => {
-		// Verify the spawnMergeAgent function signature includes both agentRoot and stateRoot
+	it("7.6: spawnMergeAgentV2 signature accepts agentRoot, separate from stateRoot", () => {
+		// Verify the Runtime V2 merge spawner includes both agentRoot and stateRoot
 		const mergeSrc = readFileSync(
 			resolve(__dirname, "..", "taskplane", "merge.ts"),
 			"utf-8",
 		);
 
-		// spawnMergeAgent should accept agentRoot parameter
-		const funcStart = mergeSrc.indexOf("function spawnMergeAgent");
+		const funcStart = mergeSrc.indexOf("export async function spawnMergeAgentV2");
 		expect(funcStart).toBeGreaterThan(-1);
-		// Find the closing paren of the parameter list
 		const funcParamEnd = mergeSrc.indexOf(")", funcStart);
 		const funcSignature = mergeSrc.substring(funcStart, funcParamEnd + 1);
 		expect(funcSignature).toContain("agentRoot");
 		expect(funcSignature).toContain("stateRoot");
 
 		// The system prompt resolution should use agentRoot for task-merger.md when available.
-		// The code uses a candidates array where agentRoot is the preferred source.
 		const mergerRefLines = mergeSrc
 			.split("\n")
 			.filter(l => l.includes("task-merger.md") && l.includes("agentRoot"));

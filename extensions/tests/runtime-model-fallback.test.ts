@@ -390,21 +390,20 @@ describe("model fallback retry logic", () => {
 		});
 	});
 
-	describe("execution.ts — extraEnvVars threading", () => {
+	describe("execution.ts — executeLaneV2 extraEnvVars threading", () => {
 		const executionSource = readSource("execution.ts");
 
-		it("spawnLaneSession accepts extraEnvVars parameter", () => {
-			expect(executionSource).toContain("extraEnvVars?: Record<string, string>");
-		});
-
-		it("executeLane accepts extraEnvVars parameter", () => {
-			// Should appear in function signature
-			const match = executionSource.match(/async function executeLane\([^)]*extraEnvVars/s);
+		it("executeLaneV2 accepts extraEnvVars parameter", () => {
+			const match = executionSource.match(/export async function executeLaneV2\([^)]*extraEnvVars/s);
 			expect(match).not.toBeNull();
 		});
 
-		it("extraEnvVars are merged into env vars", () => {
-			expect(executionSource).toContain("Object.assign(envVars, extraEnvVars)");
+		it("executeLaneV2 reads ORCH_BATCH_ID from extraEnvVars", () => {
+			expect(executionSource).toContain("extraEnvVars?.ORCH_BATCH_ID");
+		});
+
+		it("executeLaneV2 batchId resolution preserves config-first fallback chain", () => {
+			expect(executionSource).toContain("config.orchestrator?.batchId || extraEnvVars?.ORCH_BATCH_ID || String(Date.now())");
 		});
 	});
 

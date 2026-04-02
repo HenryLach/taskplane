@@ -357,9 +357,8 @@ describe("source-level integration verification", () => {
 		);
 		// mergeWave signature includes healthMonitor
 		expect(mergeSource).toContain("healthMonitor?: MergeHealthMonitor");
-		// Sessions are registered/deregistered
-		expect(mergeSource).toContain("healthMonitor.addSession");
-		expect(mergeSource).toContain("healthMonitor.removeSession");
+		// Runtime V2 merge flow still performs deregistration on completion/error.
+		expect(mergeSource).toContain("if (healthMonitor) healthMonitor.removeSession(sessionName)");
 	});
 
 	it("6.3: supervisor.ts handles merge_health_* event types", () => {

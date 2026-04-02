@@ -23,14 +23,9 @@ import { tmpdir } from "os";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TASK_RUNNER_PATH = resolve(__dirname, "../task-runner.ts");
-const EXECUTION_PATH = resolve(__dirname, "../taskplane/execution.ts");
 
 function readTaskRunnerSource(): string {
 	return readFileSync(TASK_RUNNER_PATH, "utf-8").replace(/\r\n/g, "\n");
-}
-
-function readExecutionSource(): string {
-	return readFileSync(EXECUTION_PATH, "utf-8").replace(/\r\n/g, "\n");
 }
 
 /**
@@ -59,20 +54,6 @@ function extractFunctionRegion(src: string, funcName: string): string {
 	}
 
 	return src.slice(startIdx, startIdx + 1 + endOffset);
-}
-
-/**
- * Extract a region of source starting at an exported function.
- */
-function extractExportedFunctionRegion(src: string, funcSignature: string): string {
-	const idx = src.indexOf(funcSignature);
-	if (idx < 0) throw new Error(`Function signature not found: ${funcSignature}`);
-
-	const rest = src.slice(idx + 1);
-	const nextFunc = rest.search(/\nexport (async )?function /);
-	const endOffset = nextFunc === -1 ? rest.length : nextFunc;
-
-	return src.slice(idx, idx + 1 + endOffset);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -333,46 +314,6 @@ describe("telemetry accumulation functional test (#334)", () => {
 		expect(d2.toolCalls).toBe(1);
 
 		// Total across ticks: 3 tool calls (caller uses +=)
-	});
-});
-
-// ═══════════════════════════════════════════════════════════════════════
-// 4. Lane session stderr capture (#339)
-// ═══════════════════════════════════════════════════════════════════════
-
-describe("lane session stderr capture (#339, source extraction)", () => {
-	const execSrc = readExecutionSource();
-	const funcBody = extractExportedFunctionRegion(execSrc, "export function buildTmuxSpawnArgs(");
-
-	it("adds stderr redirect to piCommand when sidecar path is provided", () => {
-		expect(funcBody).toContain("2>>");
-	});
-
-	it("derives stderr log path from sidecar path with -stderr.log suffix", () => {
-		expect(funcBody).toContain("-stderr.log");
-		expect(funcBody).toContain('.replace(/\\.jsonl$/, "-stderr.log")');
-	});
-
-	it("only adds stderr redirect when sidecarPath is provided", () => {
-		expect(funcBody).toContain("if (sidecarPath)");
-	});
-
-	it("uses shell-quote for the stderr log path", () => {
-		expect(funcBody).toContain("shellQuote(stderrLogPath)");
-	});
-
-	it("stderr redirect targets piCommand (not the tmux wrapper)", () => {
-		// The redirect is appended to piCommand, not wrappedCommand
-		const stderrSection = funcBody.slice(
-			funcBody.indexOf("TP-095"),
-			funcBody.indexOf("const tmuxWorktreePath"),
-		);
-		expect(stderrSection).toContain("piCommand =");
-		expect(stderrSection).toContain("2>>");
-	});
-
-	it("includes TP-095 reference in the stderr capture code", () => {
-		expect(funcBody).toContain("TP-095");
 	});
 });
 
