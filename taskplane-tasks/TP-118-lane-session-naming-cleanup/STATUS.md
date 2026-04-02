@@ -1,21 +1,21 @@
 # TP-118: Lane Session Naming Cleanup — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Count tmuxSessionName references
-- [ ] Identify type definitions to update
-- [ ] Plan alias-first approach
+**Status:** 🟨 In Progress
+- [x] Read PROMPT.md and STATUS.md
+- [x] Count tmuxSessionName references
+- [x] Identify type definitions to update
+- [x] Plan alias-first approach
 
 ### Step 1: Type alias introduction
 **Status:** ⬜ Not Started
@@ -52,4 +52,9 @@
 ## Execution Log
 
 | Timestamp | Action | Outcome |
+| 2026-04-02 05:12 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-02 05:12 | Step 0 started | Preflight |
+| 2026-04-02 05:14 | Counted references | 193 total `tmuxSessionName` matches across worktree |
+| 2026-04-02 05:15 | Identified types | `AllocatedLane` and `PersistedLaneRecord` in `extensions/taskplane/types.ts` |
+| 2026-04-02 05:16 | Planned migration | Step 1 will add alias fields + function alias, plus persistence/resume dual-read for `tmuxSessionName` and `laneSessionId` |
 |-----------|--------|---------|
