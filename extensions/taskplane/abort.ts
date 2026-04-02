@@ -239,6 +239,7 @@ export async function waitForSessionExit(
  */
 export function killOrchSessions(
 	sessionNames: string[],
+	options?: { stateRoot?: string; batchId?: string },
 ): Array<{ sessionName: string; killed: boolean; error: string | null }> {
 	const results: Array<{ sessionName: string; killed: boolean; error: string | null }> = [];
 	const killedBaseSessions = new Set<string>();
@@ -246,7 +247,11 @@ export function killOrchSessions(
 	for (const name of sessionNames) {
 		const baseSessionName = name.replace(/-(worker|reviewer)$/, "");
 		if (!killedBaseSessions.has(baseSessionName)) {
-			killV2LaneAgents(baseSessionName);
+			killV2LaneAgents(baseSessionName, {
+				stateRoot: options?.stateRoot,
+				batchId: options?.batchId,
+				logContext: "abort",
+			});
 			killMergeAgentV2(baseSessionName);
 			killedBaseSessions.add(baseSessionName);
 		}
@@ -379,7 +384,10 @@ export async function executeAbort(
 		// Step 5c: Force-kill remaining sessions
 		const killResultBySession = new Map<string, { killed: boolean; error: string | null }>();
 		if (waitResult.remaining.length > 0) {
-			const killResults = killOrchSessions(waitResult.remaining);
+			const killResults = killOrchSessions(waitResult.remaining, {
+				stateRoot: repoRoot,
+				batchId: batchState.batchId,
+			});
 			for (const kr of killResults) {
 				killResultBySession.set(kr.sessionName, { killed: kr.killed, error: kr.error });
 			}
@@ -413,7 +421,10 @@ export async function executeAbort(
 	} else {
 		// Hard mode: kill all immediately
 		const allTargetNames = targets.map(t => t.sessionName);
-		const killResults = killOrchSessions(allTargetNames);
+		const killResults = killOrchSessions(allTargetNames, {
+			stateRoot: repoRoot,
+			batchId: batchState.batchId,
+		});
 		const killResultBySession = new Map<string, { killed: boolean; error: string | null }>();
 		for (const kr of killResults) {
 			killResultBySession.set(kr.sessionName, { killed: kr.killed, error: kr.error });

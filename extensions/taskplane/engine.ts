@@ -12,13 +12,13 @@ import type { MonitorUpdateCallback } from "./execution.ts";
 // classifyExit no longer called directly — Tier 0 uses exitDiagnostic.classification
 // from the diagnostic-reports pipeline (populated by assembleDiagnosticInput).
 import { getCurrentBranch, runGit } from "./git.ts";
-import { killMergeAgentV2, mergeWaveByRepo, MergeHealthMonitor } from "./merge.ts";
+import { killAllMergeAgentsV2, mergeWaveByRepo, MergeHealthMonitor } from "./merge.ts";
 import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, loadBatchState, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
-import { listOrchSessions } from "./sessions.ts";
+import { readRegistrySnapshot, isTerminalStatus, isProcessAlive as registryIsProcessAlive } from "./process-registry.ts";
 import { buildBatchProgressSnapshot, buildEngineEventBase, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, SupervisorAlert, SupervisorAlertCallback, TaskRunnerConfig, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaves, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
@@ -2473,18 +2473,39 @@ export async function executeOrchBatch(
 	if (preserveWorktreesForResume) {
 		execLog("batch", batchState.batchId, "skipping final cleanup to preserve worktrees/branches for resume");
 	} else {
-		// Kill any lingering orchestrator agents BEFORE removing worktrees.
+		// Kill lingering Runtime V2 agents BEFORE removing worktrees.
 		// On Windows, lingering processes with cwd inside the worktree can lock
 		// the directory and cause `git worktree remove` to fail.
-		const orchPrefix = orchConfig.orchestrator.tmux_prefix;
-		const lingering = listOrchSessions(orchPrefix, batchState);
-		if (lingering.length > 0) {
-			execLog("batch", batchState.batchId, `killing ${lingering.length} lingering orchestrator session(s) before cleanup`);
-			for (const sess of lingering) {
-				const baseSessionName = sess.sessionName.replace(/-(worker|reviewer)$/, "");
-				killV2LaneAgents(baseSessionName);
-				killMergeAgentV2(baseSessionName);
+		const lingeringLaneSessions = new Set<string>();
+		const registry = readRegistrySnapshot(stateRoot, batchState.batchId);
+		if (registry) {
+			for (const manifest of Object.values(registry.agents)) {
+				if (manifest.role !== "worker" && manifest.role !== "reviewer") continue;
+				if (isTerminalStatus(manifest.status) || !registryIsProcessAlive(manifest.pid)) continue;
+				lingeringLaneSessions.add(manifest.agentId.replace(/-(worker|reviewer)$/, ""));
 			}
+		}
+
+		let performedAgentCleanup = false;
+		if (lingeringLaneSessions.size > 0) {
+			execLog("batch", batchState.batchId, `killing ${lingeringLaneSessions.size} lingering lane agent session(s) before cleanup`);
+			for (const sessionName of lingeringLaneSessions) {
+				killV2LaneAgents(sessionName, {
+					stateRoot,
+					batchId: batchState.batchId,
+					logContext: "batch",
+				});
+			}
+			performedAgentCleanup = true;
+		}
+
+		const killedMergeAgents = killAllMergeAgentsV2();
+		if (killedMergeAgents > 0) {
+			execLog("batch", batchState.batchId, `killed ${killedMergeAgents} lingering merge agent(s) before cleanup`);
+			performedAgentCleanup = true;
+		}
+
+		if (performedAgentCleanup) {
 			sleepSync(1000); // Give OS time to release file locks
 		}
 

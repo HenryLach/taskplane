@@ -259,19 +259,32 @@ export function setV2LivenessRegistryCache(registry: import("./process-registry.
 
 /**
  * TP-112: Kill V2 lane agents (worker + reviewer) by PID from the registry.
- * Used for stall termination on the V2 path.
+ *
+ * Uses the monitor cache when available for hot-path polling, and can
+ * optionally read a fresh registry snapshot for cleanup flows outside monitor.
+ *
  * @since TP-112
  */
-export function killV2LaneAgents(sessionName: string): void {
-	if (!_v2LivenessRegistryCache) return;
-	const agents = _v2LivenessRegistryCache.agents;
+export function killV2LaneAgents(
+	sessionName: string,
+	options?: { stateRoot?: string; batchId?: string; logContext?: string },
+): void {
+	const registry = _v2LivenessRegistryCache ?? (
+		options?.stateRoot && options?.batchId
+			? readRegistrySnapshot(options.stateRoot, options.batchId)
+			: null
+	);
+	if (!registry) return;
+
+	const agents = registry.agents;
+	const logContext = options?.logContext ?? "monitor";
 	for (const suffix of ["-worker", "-reviewer", ""]) {
 		const key = `${sessionName}${suffix}`;
 		const manifest = agents[key];
 		if (manifest && !isTerminalStatus(manifest.status) && isProcessAlive(manifest.pid)) {
 			try {
 				process.kill(manifest.pid, "SIGTERM");
-				execLog("monitor", key, `killed V2 agent (PID ${manifest.pid}) on stall`);
+				execLog(logContext, key, `killed V2 agent (PID ${manifest.pid})`);
 			} catch { /* already dead */ }
 		}
 	}

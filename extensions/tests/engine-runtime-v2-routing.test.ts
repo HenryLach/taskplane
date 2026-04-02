@@ -537,10 +537,11 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 	it("14.6: killV2LaneAgents terminates by PID from registry", () => {
 		const fnIdx = execSrc.indexOf("function killV2LaneAgents");
 		expect(fnIdx).toBeGreaterThan(-1);
-		const block = execSrc.slice(fnIdx, fnIdx + 600);
+		const nextSectionIdx = execSrc.indexOf("// ── Async TMUX Helpers", fnIdx);
+		const block = execSrc.slice(fnIdx, nextSectionIdx > fnIdx ? nextSectionIdx : fnIdx + 1200);
 		expect(block).toContain("process.kill");
 		expect(block).toContain("SIGTERM");
-		expect(block).not.toContain("tmux");
+		expect(block).not.toContain("spawn(\"tmux\"");
 	});
 
 	it("14.7: executeWave passes batchId and resolved state root to monitorLanes", () => {

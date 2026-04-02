@@ -1,6 +1,6 @@
 # TP-119: Remove TMUX Abort Fallbacks — Status
 
-**Current Step:** Step 3: Remove dead TMUX helpers
+**Current Step:** Step 4: Tests
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
@@ -30,18 +30,18 @@
 - [x] Ensure V2 reconnect is only path
 
 ### Step 3: Remove dead TMUX helpers
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Migrate engine.ts and extension.ts off tmuxHasSession/tmuxKillSession imports
 - [x] Re-home tmuxAsync consumers (execution async wrappers + merge capture helper)
 - [x] Remove tmuxHasSession, tmuxKillSession, tmuxAsync
 - [x] Remove sessions.ts helpers
 - [x] Remove TMUX imports
-- [ ] Derive lingering cleanup targets from Runtime V2 registry/handles (not currentLanes only)
-- [ ] Add cleanup-safe V2 lane kill path that does not depend on monitor cache
-- [ ] Ensure final cleanup kills actual merge agents (use merge IDs or kill-all)
+- [x] Derive lingering cleanup targets from Runtime V2 registry/handles (not currentLanes only)
+- [x] Add cleanup-safe V2 lane kill path that does not depend on monitor cache
+- [x] Ensure final cleanup kills actual merge agents (use merge IDs or kill-all)
 
 ### Step 4: Tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update tests
 - [ ] Run full suite
 - [ ] Fix all failures
