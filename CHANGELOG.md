@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.16] - 2026-04-02
+
+### Docs
+- **Task creation skill: review level reinforcement** — Step 2 now includes inline scoring rubric and explicit warning against defaulting to Level 0. Prompt template adds pre-creation validation reminder.
+
 ## [0.23.15] - 2026-04-02
 
 ### New
