@@ -1,23 +1,23 @@
 # TP-120: TMUX Removal Remediation — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight — Inventory remaining TMUX code
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight — Inventory remaining TMUX code
-**Status:** ⬜ Not Started
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Count remaining TMUX refs
-- [ ] Identify TMUX functions in execution.ts
-- [ ] Identify TMUX usage in merge.ts
-- [ ] Identify TMUX usage in abort.ts
-- [ ] Log inventory
+**Status:** 🟨 In Progress
+- [x] Read PROMPT.md and STATUS.md
+- [x] Count remaining TMUX refs
+- [x] Identify TMUX functions in execution.ts
+- [x] Identify TMUX usage in merge.ts
+- [x] Identify TMUX usage in abort.ts
+- [x] Log inventory
 
 ### Step 1: Remove TMUX helper functions from execution.ts
 **Status:** ⬜ Not Started
@@ -68,7 +68,27 @@
 
 ---
 
+## Step 0 Inventory (2026-04-02)
+
+- TMUX reference count (`grep -rn "tmux" extensions/taskplane/*.ts | grep -v "test\|//" | wc -l`): **160**
+- `extensions/taskplane/execution.ts` TMUX functions identified:
+  - `runTmuxCommandAsync()` (private helper)
+  - `tmuxHasSessionAsync()`
+  - `tmuxKillSessionAsync()`
+  - `captureTmuxPaneTailAsync()`
+  - `toTmuxPath()`
+  - `captureTmuxPaneTail()`
+- `extensions/taskplane/merge.ts` TMUX usage identified:
+  - Import of `tmuxHasSessionAsync` from `execution.ts`
+  - `MergeHealthMonitor.poll()` liveness check uses `tmuxHasSessionAsync(sessionName)`
+  - Merge pane capture helpers (`captureMergePaneOutput`, `captureMergePaneOutputAsync`, `runMergeTmuxCommandAsync`) invoke `tmux capture-pane`
+  - Session naming still references `config.orchestrator.tmux_prefix`
+- `extensions/taskplane/abort.ts` TMUX usage identified:
+  - `execSync('tmux list-sessions -F "#{session_name}"')` in abort flow Step 3 for session discovery
+
 ## Execution Log
 
 | Timestamp | Action | Outcome |
+| 2026-04-02 13:48 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-02 13:48 | Step 0 started | Preflight — Inventory remaining TMUX code |
 |-----------|--------|---------|
