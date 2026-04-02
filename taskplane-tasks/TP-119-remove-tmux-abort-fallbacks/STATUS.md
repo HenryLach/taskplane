@@ -1,10 +1,10 @@
 # TP-119: Remove TMUX Abort Fallbacks — Status
 
-**Current Step:** Step 4: Tests
+**Current Step:** Step 3: Remove dead TMUX helpers
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 1
 **Size:** S
 
@@ -30,15 +30,18 @@
 - [x] Ensure V2 reconnect is only path
 
 ### Step 3: Remove dead TMUX helpers
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 - [x] Migrate engine.ts and extension.ts off tmuxHasSession/tmuxKillSession imports
 - [x] Re-home tmuxAsync consumers (execution async wrappers + merge capture helper)
 - [x] Remove tmuxHasSession, tmuxKillSession, tmuxAsync
 - [x] Remove sessions.ts helpers
 - [x] Remove TMUX imports
+- [ ] Derive lingering cleanup targets from Runtime V2 registry/handles (not currentLanes only)
+- [ ] Add cleanup-safe V2 lane kill path that does not depend on monitor cache
+- [ ] Ensure final cleanup kills actual merge agents (use merge IDs or kill-all)
 
 ### Step 4: Tests
-**Status:** 🟨 In Progress
+**Status:** ⬜ Not Started
 - [ ] Update tests
 - [ ] Run full suite
 - [ ] Fix all failures
@@ -72,6 +75,7 @@
 - R001 suggestion: run targeted abort/cleanup tests before Step 3 helper deletion.
 - R006 suggestion: run post-edit grep for `tmuxHasSession|tmuxKillSession|tmuxAsync` usage/imports to verify only intended TMUX paths remain.
 - R006 suggestion: remove unused `prefix` in `resume.ts` while touching TMUX cleanup scope.
+- R008 suggestion: add focused regression coverage for final cleanup lingering-process behavior after removing TMUX fallbacks.
 
 ## Execution Log
 
@@ -86,3 +90,4 @@
 | 2026-04-02 06:19 | Review R005 | code Step 2: APPROVE |
 | 2026-04-02 06:20 | Review R006 | plan Step 3: REVISE |
 | 2026-04-02 06:22 | Review R007 | plan Step 3: APPROVE |
+| 2026-04-02 06:31 | Review R008 | code Step 3: REVISE |
