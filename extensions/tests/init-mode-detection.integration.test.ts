@@ -10,8 +10,8 @@
  *   1.x — isGitRepoRoot() / findSubdirectoryGitRepos() low-level detection
  *   2.x — detectInitMode() mode classification matrix (A/B/C/D/ambiguous/error)
  *   3.x — ensureGitignoreEntries() idempotency, prefix, and dry-run
- *   4.x — detectSpawnMode() shape contract
- *   5.x — CLI dry-run integration (preset-driven scenario verification)
+ *   4.x — init spawn-mode default contract
+ *   5.x — CLI init integration (dry-run + generated scaffold verification)
  *
  * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/init-mode-detection.test.ts
  */
@@ -35,6 +35,7 @@ import { tmpdir } from "os";
 // Import gitignore constants from the shared module
 import { resolve as resolvePath, dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
+import { loadProjectConfig, ConfigLoadError } from "../taskplane/config-loader.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const patternsPath = resolvePath(__dirname, "../../bin/gitignore-patterns.mjs");
@@ -283,15 +284,23 @@ function initGitRepo(dir: string): void {
  * Run `taskplane init` via CLI as a subprocess.
  * Returns { stdout, stderr, exitCode }.
  */
-function runInit(cwd: string, extraArgs: string[] = []): { stdout: string; stderr: string; exitCode: number } {
+function runInit(
+	cwd: string,
+	extraArgs: string[] = [],
+	options: { dryRun?: boolean; preset?: "minimal" | "full" | "runner-only" } = {},
+): { stdout: string; stderr: string; exitCode: number } {
+	const { dryRun = true, preset = "minimal" } = options;
 	const taskplaneMjs = resolvePath(__dirname, "../../bin/taskplane.mjs");
-	const args = ["init", "--dry-run", "--force", "--preset", "minimal", ...extraArgs];
+	const args = ["init", "--force", "--preset", preset, ...extraArgs];
+	if (dryRun) {
+		args.splice(1, 0, "--dry-run");
+	}
 	try {
 		const stdout = execFileSync("node", [taskplaneMjs, ...args], {
 			cwd,
 			encoding: "utf-8",
 			stdio: ["pipe", "pipe", "pipe"],
-			timeout: 15000,
+			timeout: 25000,
 		});
 		return { stdout, stderr: "", exitCode: 0 };
 	} catch (e: any) {
@@ -617,38 +626,16 @@ describe("ensureGitignoreEntries", () => {
 	});
 });
 
-// ── 4.x: detectSpawnMode ───────────────────────────────────────────────────
+// ── 4.x: init spawn-mode default ────────────────────────────────────────────
 
-describe("detectSpawnMode", () => {
-	function detectSpawnMode(): { spawnMode: string; hasTmux: boolean } {
-		let hasTmux = false;
-		try {
-			execSync("tmux -V", { stdio: ["pipe", "pipe", "pipe"], timeout: 5000 });
-			hasTmux = true;
-		} catch {
-			hasTmux = false;
-		}
-		return {
-			spawnMode: hasTmux ? "tmux" : "subprocess",
-			hasTmux,
-		};
+describe("init spawn-mode default", () => {
+	function detectSpawnMode(): { spawnMode: "subprocess" } {
+		return { spawnMode: "subprocess" };
 	}
 
-	it("4.1 — returns an object with spawnMode and hasTmux", () => {
+	it("4.1 — default spawnMode is subprocess", () => {
 		const result = detectSpawnMode();
-		expect(result).toHaveProperty("spawnMode");
-		expect(result).toHaveProperty("hasTmux");
-		expect(typeof result.spawnMode).toBe("string");
-		expect(typeof result.hasTmux).toBe("boolean");
-	});
-
-	it("4.2 — spawnMode is consistent with hasTmux", () => {
-		const result = detectSpawnMode();
-		if (result.hasTmux) {
-			expect(result.spawnMode).toBe("tmux");
-		} else {
-			expect(result.spawnMode).toBe("subprocess");
-		}
+		expect(result.spawnMode).toBe("subprocess");
 	});
 });
 
@@ -767,5 +754,92 @@ describe("CLI dry-run integration", () => {
 		expect(result.exitCode).toBe(0);
 		expect(result.stdout).toContain("Found existing Taskplane config");
 		expect(result.stdout).toContain("taskplane-pointer.json");
+	});
+
+	it("5.9 — repo init scaffolds canonical subprocess/session-prefix fields only", () => {
+		const repo = makeTestDir("cli-scaffold-repo");
+		initGitRepo(repo);
+
+		const result = runInit(repo, ["--no-examples"], { dryRun: false, preset: "minimal" });
+		expect(result.exitCode).toBe(0);
+
+		const orchestratorYaml = readFileSync(join(repo, ".pi", "task-orchestrator.yaml"), "utf-8");
+		expect(orchestratorYaml).toContain('spawn_mode: "subprocess"');
+		expect(orchestratorYaml).toContain("session_prefix:");
+		expect(orchestratorYaml).not.toContain("tmux_prefix");
+		expect(orchestratorYaml).not.toMatch(/spawn_mode:\s*"tmux"/);
+
+		const projectConfig = JSON.parse(readFileSync(join(repo, ".pi", "taskplane-config.json"), "utf-8"));
+		expect(projectConfig.orchestrator.orchestrator.spawnMode).toBe("subprocess");
+		expect(typeof projectConfig.orchestrator.orchestrator.sessionPrefix).toBe("string");
+		expect("tmuxPrefix" in projectConfig.orchestrator.orchestrator).toBe(false);
+	});
+
+	it("5.10 — workspace init scaffolds canonical subprocess/session-prefix fields only", () => {
+		const workspace = makeTestDir("cli-scaffold-workspace");
+		initGitRepo(join(workspace, "repo-a"));
+		initGitRepo(join(workspace, "repo-b"));
+
+		const result = runInit(workspace, ["--no-examples"], { dryRun: false, preset: "minimal" });
+		expect(result.exitCode).toBe(0);
+
+		const configRoot = join(workspace, "repo-a", ".taskplane");
+		const orchestratorYaml = readFileSync(join(configRoot, "task-orchestrator.yaml"), "utf-8");
+		expect(orchestratorYaml).toContain('spawn_mode: "subprocess"');
+		expect(orchestratorYaml).toContain("session_prefix:");
+		expect(orchestratorYaml).not.toContain("tmux_prefix");
+
+		const projectConfig = JSON.parse(readFileSync(join(configRoot, "taskplane-config.json"), "utf-8"));
+		expect(projectConfig.orchestrator.orchestrator.spawnMode).toBe("subprocess");
+		expect(typeof projectConfig.orchestrator.orchestrator.sessionPrefix).toBe("string");
+		expect("tmuxPrefix" in projectConfig.orchestrator.orchestrator).toBe(false);
+	});
+
+	it("5.11 — injected legacy tmuxPrefix in generated JSON fails with migration guidance", () => {
+		const repo = makeTestDir("cli-legacy-tmux-prefix");
+		initGitRepo(repo);
+		const initResult = runInit(repo, ["--no-examples"], { dryRun: false, preset: "minimal" });
+		expect(initResult.exitCode).toBe(0);
+
+		const configPath = join(repo, ".pi", "taskplane-config.json");
+		const config = JSON.parse(readFileSync(configPath, "utf-8"));
+		config.orchestrator.orchestrator.tmuxPrefix = "legacy-orch";
+		writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+
+		let caught: unknown = null;
+		try {
+			loadProjectConfig(repo);
+		} catch (err) {
+			caught = err;
+		}
+
+		expect(caught).toBeInstanceOf(ConfigLoadError);
+		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+		expect((caught as ConfigLoadError).message).toContain("tmuxPrefix");
+		expect((caught as ConfigLoadError).message).toContain("sessionPrefix");
+	});
+
+	it("5.12 — injected legacy spawnMode tmux in generated JSON fails with subprocess hint", () => {
+		const repo = makeTestDir("cli-legacy-spawn-mode");
+		initGitRepo(repo);
+		const initResult = runInit(repo, ["--no-examples"], { dryRun: false, preset: "minimal" });
+		expect(initResult.exitCode).toBe(0);
+
+		const configPath = join(repo, ".pi", "taskplane-config.json");
+		const config = JSON.parse(readFileSync(configPath, "utf-8"));
+		config.orchestrator.orchestrator.spawnMode = "tmux";
+		writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+
+		let caught: unknown = null;
+		try {
+			loadProjectConfig(repo);
+		} catch (err) {
+			caught = err;
+		}
+
+		expect(caught).toBeInstanceOf(ConfigLoadError);
+		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+		expect((caught as ConfigLoadError).message).toContain("spawnMode");
+		expect((caught as ConfigLoadError).message).toContain("subprocess");
 	});
 });

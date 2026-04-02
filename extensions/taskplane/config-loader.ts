@@ -56,11 +56,13 @@ import type {
  * - CONFIG_JSON_MALFORMED: File exists but is not valid JSON
  * - CONFIG_VERSION_UNSUPPORTED: configVersion is not supported by this version
  * - CONFIG_VERSION_MISSING: configVersion field is missing from JSON
+ * - CONFIG_LEGACY_FIELD: removed TMUX-era field/value detected; migration required
  */
 export type ConfigLoadErrorCode =
 	| "CONFIG_JSON_MALFORMED"
 	| "CONFIG_VERSION_UNSUPPORTED"
-	| "CONFIG_VERSION_MISSING";
+	| "CONFIG_VERSION_MISSING"
+	| "CONFIG_LEGACY_FIELD";
 
 export class ConfigLoadError extends Error {
 	code: ConfigLoadErrorCode;
@@ -108,6 +110,61 @@ function deepMerge<T extends Record<string, any>>(target: T, source: Record<stri
 		}
 	}
 	return target;
+}
+
+function hasOwn(obj: unknown, key: string): boolean {
+	return !!obj && typeof obj === "object" && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function throwLegacyFieldError(fieldPath: string, source: string, fixHint: string): never {
+	throw new ConfigLoadError(
+		"CONFIG_LEGACY_FIELD",
+		`[taskplane] ${source}: "${fieldPath}" is no longer supported under Runtime V2. ${fixHint}`,
+	);
+}
+
+function assertNoLegacyTmuxProjectConfig(config: TaskplaneConfig, source: string): void {
+	const orchestratorCore = config.orchestrator?.orchestrator as Record<string, unknown> | undefined;
+	if (hasOwn(orchestratorCore, "tmuxPrefix")) {
+		throwLegacyFieldError(
+			"orchestrator.orchestrator.tmuxPrefix",
+			source,
+			"Use \"orchestrator.orchestrator.sessionPrefix\" instead.",
+		);
+	}
+	if (orchestratorCore?.spawnMode === "tmux") {
+		throwLegacyFieldError(
+			"orchestrator.orchestrator.spawnMode",
+			source,
+			"Use \"subprocess\" instead.",
+		);
+	}
+
+	const workerConfig = config.taskRunner?.worker as Record<string, unknown> | undefined;
+	if (workerConfig?.spawnMode === "tmux") {
+		throwLegacyFieldError(
+			"taskRunner.worker.spawnMode",
+			source,
+			"Use \"subprocess\" or remove the field to inherit defaults.",
+		);
+	}
+}
+
+function assertNoLegacyTmuxUserPreferences(raw: Record<string, any>, prefsPath: string): void {
+	if (hasOwn(raw, "tmuxPrefix")) {
+		throwLegacyFieldError(
+			"tmuxPrefix",
+			`user preferences (${prefsPath})`,
+			"Rename it to \"sessionPrefix\".",
+		);
+	}
+	if (raw.spawnMode === "tmux") {
+		throwLegacyFieldError(
+			"spawnMode",
+			`user preferences (${prefsPath})`,
+			"Set it to \"subprocess\".",
+		);
+	}
 }
 
 
@@ -242,16 +299,6 @@ function mapOrchestratorYaml(raw: any): Partial<OrchestratorSection> {
 
 	// Structural sections
 	if (raw.orchestrator) result.orchestrator = convertStructuralKeys(raw.orchestrator);
-	if (result.orchestrator && typeof result.orchestrator === "object") {
-		// Backward-compatible alias: tmuxPrefix -> sessionPrefix
-		if (
-			typeof result.orchestrator.sessionPrefix !== "string" &&
-			typeof result.orchestrator.tmuxPrefix === "string"
-		) {
-			result.orchestrator.sessionPrefix = result.orchestrator.tmuxPrefix;
-		}
-		delete result.orchestrator.tmuxPrefix;
-	}
 	if (raw.dependencies) result.dependencies = convertStructuralKeys(raw.dependencies);
 	if (raw.merge) result.merge = convertStructuralKeys(raw.merge);
 	if (raw.failure) result.failure = convertStructuralKeys(raw.failure);
@@ -420,17 +467,6 @@ function loadJsonConfig(configRoot: string): TaskplaneConfig | null {
 			`${jsonPath} has configVersion ${parsed.configVersion}, but this version of Taskplane ` +
 			`only supports configVersion ${CONFIG_VERSION}. Please upgrade Taskplane.`,
 		);
-	}
-
-	// Backward-compatible alias: orchestrator.orchestrator.tmuxPrefix -> sessionPrefix
-	if (parsed?.orchestrator?.orchestrator && typeof parsed.orchestrator.orchestrator === "object") {
-		if (
-			typeof parsed.orchestrator.orchestrator.sessionPrefix !== "string" &&
-			typeof parsed.orchestrator.orchestrator.tmuxPrefix === "string"
-		) {
-			parsed.orchestrator.orchestrator.sessionPrefix = parsed.orchestrator.orchestrator.tmuxPrefix;
-		}
-		delete parsed.orchestrator.orchestrator.tmuxPrefix;
 	}
 
 	// Deep merge with cloned defaults
@@ -621,24 +657,25 @@ export function loadUserPreferences(): UserPreferences {
 	}
 
 	// Extract only allowlisted fields — unknown keys are ignored
-	return extractAllowlistedPreferences(parsed);
+	return extractAllowlistedPreferences(parsed, prefsPath);
 }
 
 /**
  * Extract only recognized/allowlisted fields from a raw parsed object.
  * Unknown keys are silently dropped — this is the Layer 2 boundary guardrail.
  */
-function extractAllowlistedPreferences(raw: Record<string, any>): UserPreferences {
+function extractAllowlistedPreferences(raw: Record<string, any>, prefsPath: string): UserPreferences {
+	assertNoLegacyTmuxUserPreferences(raw, prefsPath);
+
 	const prefs: UserPreferences = {};
 
 	if (typeof raw.operatorId === "string") prefs.operatorId = raw.operatorId;
 	if (typeof raw.sessionPrefix === "string") {
 		prefs.sessionPrefix = raw.sessionPrefix;
-	} else if (typeof raw.tmuxPrefix === "string") {
-		// Backward-compatible alias
-		prefs.sessionPrefix = raw.tmuxPrefix;
 	}
-	if (raw.spawnMode === "tmux" || raw.spawnMode === "subprocess") prefs.spawnMode = raw.spawnMode;
+	if (raw.spawnMode === "subprocess") {
+		prefs.spawnMode = "subprocess";
+	}
 	if (typeof raw.workerModel === "string") prefs.workerModel = raw.workerModel;
 	if (typeof raw.reviewerModel === "string") prefs.reviewerModel = raw.reviewerModel;
 	if (typeof raw.mergeModel === "string") prefs.mergeModel = raw.mergeModel;
@@ -687,6 +724,13 @@ export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPrefere
 
 	// spawnMode: enum — apply if defined (not a string-empty check)
 	if (prefs.spawnMode !== undefined) {
+		if (prefs.spawnMode === "tmux") {
+			throwLegacyFieldError(
+				"spawnMode",
+				"user preferences (runtime)",
+				"Set it to \"subprocess\".",
+			);
+		}
 		config.orchestrator.orchestrator.spawnMode = prefs.spawnMode;
 	}
 
@@ -695,31 +739,6 @@ export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPrefere
 
 	return config;
 }
-
-/**
- * Emit deprecation warnings for legacy TMUX spawn mode settings.
- *
- * Runtime V2 is the active execution backend; `spawn_mode: "tmux"`
- * remains accepted for compatibility but is deprecated.
- */
-function emitSpawnModeDeprecationWarnings(config: TaskplaneConfig): void {
-	const deprecatedFields: string[] = [];
-
-	if (config.orchestrator.orchestrator.spawnMode === "tmux") {
-		deprecatedFields.push("orchestrator.orchestrator.spawnMode");
-	}
-	if (config.taskRunner.worker.spawnMode === "tmux") {
-		deprecatedFields.push("taskRunner.worker.spawnMode");
-	}
-
-	if (deprecatedFields.length === 0) return;
-
-	console.error(
-		`[taskplane] deprecation: spawn_mode \"tmux\" is legacy-only under Runtime V2 and will be removed in a future release. ` +
-		`Use \"subprocess\" instead. Configured field(s): ${deprecatedFields.join(", ")}.`,
-	);
-}
-
 
 // ── Unified Loader ───────────────────────────────────────────────────
 
@@ -834,11 +853,12 @@ export function loadProjectConfig(cwd: string, pointerConfigRoot?: string): Task
 		};
 	}
 
+	assertNoLegacyTmuxProjectConfig(config, `project config (${configRoot})`);
+
 	// Layer 2: User preferences (allowlisted fields only)
 	const prefs = loadUserPreferences();
 	applyUserPreferences(config, prefs);
-
-	emitSpawnModeDeprecationWarnings(config);
+	assertNoLegacyTmuxProjectConfig(config, `project config (${configRoot}) after preferences merge`);
 
 	return config;
 }
@@ -862,6 +882,7 @@ export function loadLayer1Config(cwd: string, pointerConfigRoot?: string): Taskp
 	// Try JSON first
 	const jsonConfig = loadJsonConfig(configRoot);
 	if (jsonConfig !== null) {
+		assertNoLegacyTmuxProjectConfig(jsonConfig, `project config (${configRoot})`);
 		return jsonConfig;
 	}
 
@@ -869,12 +890,14 @@ export function loadLayer1Config(cwd: string, pointerConfigRoot?: string): Taskp
 	const taskRunner = loadTaskRunnerYaml(configRoot);
 	const orchestrator = loadOrchestratorYaml(configRoot);
 	const workspace = loadWorkspaceYaml(configRoot);
-	return {
+	const config: TaskplaneConfig = {
 		configVersion: CONFIG_VERSION,
 		taskRunner,
 		orchestrator,
 		...(workspace ? { workspace } : {}),
 	};
+	assertNoLegacyTmuxProjectConfig(config, `project config (${configRoot})`);
+	return config;
 }
 
 
@@ -994,7 +1017,7 @@ export function toTaskConfig(config: TaskplaneConfig): {
 	standards: { docs: string[]; rules: string[] };
 	standards_overrides: Record<string, { docs?: string[]; rules?: string[] }>;
 	task_areas: Record<string, { path: string; [key: string]: any }>;
-	worker: { model: string; tools: string; thinking: string; spawn_mode?: "subprocess" | "tmux" };
+	worker: { model: string; tools: string; thinking: string; spawn_mode?: "subprocess" };
 	reviewer: { model: string; tools: string; thinking: string };
 	context: {
 		worker_context_window: number;

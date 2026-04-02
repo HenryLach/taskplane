@@ -109,11 +109,8 @@ export interface WorkerConfig {
 	tools: string;
 	/** Thinking mode setting passed to worker agent */
 	thinking: string;
-	/**
-	 * Optional spawn mode override for task-runner.
-	 * @deprecated `"tmux"` is legacy-only; Runtime V2 execution is direct-child.
-	 */
-	spawnMode?: "subprocess" | "tmux";
+	/** Optional spawn mode override for task-runner (Runtime V2 subprocess-only). */
+	spawnMode?: "subprocess";
 }
 
 /** Reviewer agent configuration */
@@ -142,7 +139,7 @@ export interface ContextConfig {
 	maxReviewCycles: number;
 	/** Max no-progress iterations before marking failure */
 	noProgressLimit: number;
-	/** Optional per-worker wall-clock cap (minutes, used in tmux/orchestrated flows) */
+	/** Optional per-worker wall-clock cap (minutes, used in orchestrated flows) */
 	maxWorkerMinutes?: number;
 }
 
@@ -263,11 +260,8 @@ export interface OrchestratorCoreConfig {
 	worktreePrefix: string;
 	/** Batch ID format used in logs/branch naming */
 	batchIdFormat: "timestamp" | "sequential";
-	/**
-	 * How lane sessions are spawned.
-	 * @deprecated `"tmux"` is legacy-only; Runtime V2 is the active backend.
-	 */
-	spawnMode: "tmux" | "subprocess";
+	/** How lane sessions are spawned (Runtime V2 subprocess-only). */
+	spawnMode: "subprocess";
 	/** Prefix for orchestrator session naming */
 	sessionPrefix: string;
 	/** Operator identifier. Auto-detected from OS username if empty */
@@ -517,11 +511,8 @@ export interface UserPreferences {
 	operatorId?: string;
 	/** Orchestrator session prefix (overrides orchestrator.orchestrator.sessionPrefix) */
 	sessionPrefix?: string;
-	/**
-	 * Spawn mode override (overrides orchestrator.orchestrator.spawnMode).
-	 * @deprecated `"tmux"` is legacy-only; prefer `"subprocess"`.
-	 */
-	spawnMode?: "tmux" | "subprocess";
+	/** Spawn mode override (overrides orchestrator.orchestrator.spawnMode). */
+	spawnMode?: "subprocess";
 	/** Worker model override (overrides taskRunner.worker.model) */
 	workerModel?: string;
 	/** Reviewer model override (overrides taskRunner.reviewer.model) */

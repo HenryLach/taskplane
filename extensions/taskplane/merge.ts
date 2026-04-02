@@ -525,7 +525,7 @@ export function buildMergeRequest(
 
 
 /**
- * Spawn a merge agent via Runtime V2 direct agent-host (no TMUX).
+ * Spawn a merge agent via Runtime V2 direct agent-host (no terminal multiplexer).
  *
  * Per Runtime V2 spec (02-runtime-process-model.md §8.3):
  * "engine spawns merge host directly" — the merge agent runs as a direct
@@ -534,7 +534,7 @@ export function buildMergeRequest(
  *
  * The merge agent receives the merge request as its prompt and writes
  * a result JSON file. The caller polls for that result file (same contract
- * as the legacy TMUX path via waitForMergeResult).
+ * as the legacy session-backed path via waitForMergeResult).
  *
  * @param sessionName     - Stable agent ID (e.g., "orch-merge-1")
  * @param repoRoot        - Main repository root (merge happens here)
@@ -615,7 +615,7 @@ export async function spawnMergeAgentV2(
 
 	// Store the kill handle for external cleanup (pause/abort).
 	// The promise runs in background — caller uses waitForMergeResult()
-	// to poll for the result file, same contract as the TMUX path.
+	// to poll for the result file, same contract as the legacy session path.
 	activeMergeAgents.set(sessionName, { promise, kill, stateRoot: stateRoot ?? repoRoot, batchId: bid });
 
 	// Fire-and-forget: the background promise handles exit logging
@@ -666,7 +666,7 @@ export function killMergeAgentV2(sessionName: string, cleanExit?: boolean): bool
 
 /**
  * Kill ALL active V2 merge agents. Used by abort flow to ensure
- * no merge agents survive even when TMUX session list is empty.
+ * no merge agents survive even when the legacy session list is empty.
  * @returns Number of agents killed
  * @since TP-108
  */
@@ -713,7 +713,7 @@ const SUCCESSFUL_MERGE_STATUSES = new Set<string>(["SUCCESS", "CONFLICT_RESOLVED
  *
  * Polling loop with timeout and session liveness detection:
  * 1. Check if result file exists → parse and return
- * 2. Check if TMUX session is still alive
+ * 2. Check if the merge agent session is still alive
  * 3. If session died without result → grace period → check again → fail
  * 4. If timeout exceeded → check result before killing:
  *    a. If result exists with SUCCESS/CONFLICT_RESOLVED: accept it
@@ -721,7 +721,7 @@ const SUCCESSFUL_MERGE_STATUSES = new Set<string>(["SUCCESS", "CONFLICT_RESOLVED
  *    b. If result missing or non-success: kill session → fail
  *
  * @param resultPath   - Path to the expected result JSON file
- * @param sessionName  - TMUX session name for liveness checking
+ * @param sessionName  - Merge session name for liveness checking
  * @param timeoutMs    - Maximum wait time (default: MERGE_TIMEOUT_MS)
  * @returns Validated MergeResult
  * @throws MergeError on timeout, session death, or invalid result
@@ -1129,7 +1129,7 @@ function runPostMergeVerification(
  * 3. For each lane, sequentially:
  *    a. Build merge request content
  *    b. Write merge request to temp file
- *    c. Spawn merge agent in TMUX session (in main repo)
+ *    c. Spawn merge agent session (in main repo)
  *    d. Wait for merge result
  *    e. Handle result (continue, log, or pause)
  * 4. Return MergeWaveResult
@@ -2520,7 +2520,7 @@ export function attemptAutoIntegration(
 /**
  * Classify merge-session health from Runtime V2 liveness and result-file state.
  *
- * Without TMUX pane capture, warning/stuck are time-based heuristics from
+ * Without legacy pane capture, warning/stuck are time-based heuristics from
  * the session registration timestamp (`lastActivityAt`).
  *
  * @param sessionAlive   - Whether the Runtime V2 merge agent is alive
@@ -2616,7 +2616,7 @@ export class MergeHealthMonitor {
 	/**
 	 * Register a merge session for monitoring.
 	 *
-	 * @param sessionName - TMUX session name
+	 * @param sessionName - Merge session name
 	 * @param laneNumber  - Lane number the session belongs to
 	 * @param resultPath  - Path to the expected merge result file
 	 */

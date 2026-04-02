@@ -1,0 +1,11 @@
+TP-123 complete (2026-04-02)
+
+Delivered:
+- Operator-facing extension messaging updated to Runtime V2 session terminology (removed `tmux attach` hints and TMUX-session wording from active guidance paths)
+- Dashboard lane/merge UI copy updated from tmux attach commands to session-ID copy chips and session-based liveness tooltips
+- Migration documentation updated in docs/specifications/framework/taskplane-runtime-v2/06-migration-and-rollout.md (new Phase F.5 summary)
+- STATUS.md includes before/after tmux-string inventory with retained compatibility notes
+
+Validation:
+- Targeted: extensions/tests/orch-pure-functions.test.ts (pass)
+- Full suite: extensions tests/*.test.ts (3390 pass, 0 fail)

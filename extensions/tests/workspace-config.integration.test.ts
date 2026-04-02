@@ -101,7 +101,7 @@ function writeWorkspaceConfig(workspaceRoot: string, content: string): void {
 const mockOrchConfig = {
 	orchestrator: {
 		max_lanes: 2,
-		spawn_mode: "tmux" as const,
+		spawn_mode: "subprocess" as const,
 		session_prefix: "orch",
 		monitor_interval: 5,
 		abort_grace_period: 30,

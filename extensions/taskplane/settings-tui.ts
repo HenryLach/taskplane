@@ -98,7 +98,7 @@ export const SECTIONS: SectionDef[] = [
 			{ configPath: "orchestrator.orchestrator.worktreeLocation", label: "Worktree Location", control: "toggle", layer: "L1", fieldType: "enum", values: ["sibling", "subdirectory"], description: "Where lane worktree directories are created" },
 			{ configPath: "orchestrator.orchestrator.worktreePrefix", label: "Worktree Prefix", control: "input", layer: "L1", fieldType: "string", description: "Prefix for worktree directory names" },
 			{ configPath: "orchestrator.orchestrator.batchIdFormat", label: "Batch ID Format", control: "toggle", layer: "L1", fieldType: "enum", values: ["timestamp", "sequential"], description: "Batch ID format for logs/branch naming" },
-			// spawn_mode removed from Orchestrator section — /orch always requires tmux.
+			// spawn_mode removed from Orchestrator section — Runtime V2 is subprocess-only.
 			// The user-facing spawn mode setting is under Worker (controls /task behavior).
 			{ configPath: "orchestrator.orchestrator.sessionPrefix", label: "Session Prefix", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "sessionPrefix", description: "Prefix for orchestrator session names" },
 			{ configPath: "orchestrator.orchestrator.operatorId", label: "Operator ID", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "operatorId", description: "Operator identifier (empty = auto-detect)" },
@@ -162,7 +162,7 @@ export const SECTIONS: SectionDef[] = [
 			{ configPath: "taskRunner.worker.model", label: "Worker Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "workerModel", description: "Worker model (empty = inherit session)" },
 			{ configPath: "taskRunner.worker.tools", label: "Worker Tools", control: "input", layer: "L1", fieldType: "string", description: "Worker tool allowlist" },
 			{ configPath: "taskRunner.worker.thinking", label: "Worker Thinking", control: "input", layer: "L1", fieldType: "string", description: "Worker thinking mode" },
-			{ configPath: "taskRunner.worker.spawnMode", label: "Spawn Mode", control: "toggle", layer: "L1", fieldType: "enum", values: ["subprocess", "tmux"], description: "How /task spawns workers and reviewers. subprocess = child process (simpler), tmux = named sessions (attachable for debugging)" },
+			{ configPath: "taskRunner.worker.spawnMode", label: "Spawn Mode", control: "toggle", layer: "L1", fieldType: "enum", values: ["subprocess"], optional: true, description: "How /task spawns workers and reviewers. Runtime V2 supports subprocess only." },
 		],
 	},
 	{
@@ -625,7 +625,7 @@ export function detectFieldSource(
 		} else if (field.fieldType === "enum") {
 			// Enum rule: must be a valid enum value from the field's values array.
 			// Matches extractAllowlistedPreferences which checks exact enum membership
-			// (e.g., raw.spawnMode === "tmux" || raw.spawnMode === "subprocess").
+			// (e.g., raw.spawnMode === "subprocess").
 			if (prefVal !== undefined && field.values && field.values.includes(String(prefVal))) return "user";
 		} else if (field.fieldType === "number") {
 			// Number rule: must be typeof number and finite → (user)

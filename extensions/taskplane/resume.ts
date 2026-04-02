@@ -337,7 +337,7 @@ export function checkResumeEligibility(state: PersistedBatchState, force: boolea
  * Reconcile persisted task states against live signals.
  *
  * For each task in the persisted state, determines the correct action
- * based on the current state of TMUX sessions and .DONE files.
+ * based on the current state of lane-session liveness and .DONE files.
  *
  * Precedence rules (applied per-task):
  * 1. .DONE file found → "mark-complete" (even if session is alive — task is done)
@@ -350,7 +350,7 @@ export function checkResumeEligibility(state: PersistedBatchState, force: boolea
  * Pure function — no process or filesystem access.
  *
  * @param persistedState  - Loaded and validated batch state
- * @param aliveSessions   - Set of TMUX session names currently alive
+ * @param aliveSessions   - Set of lane session names currently alive
  * @param doneTaskIds     - Set of task IDs whose .DONE files exist
  * @returns Array of reconciled task states in persisted order
  */

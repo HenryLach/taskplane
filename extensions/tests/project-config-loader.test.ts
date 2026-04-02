@@ -550,7 +550,7 @@ describe("key preservation and adapter regression", () => {
 			"  model: openai/gpt-4",
 			"  tools: read,write",
 			"  thinking: on",
-			"  spawn_mode: tmux",
+			"  spawn_mode: subprocess",
 			"reviewer:",
 			"  model: openai/gpt-4",
 			"  tools: read",
@@ -581,7 +581,7 @@ describe("key preservation and adapter regression", () => {
 		expect(taskConfig.worker.model).toBe("openai/gpt-4");
 		expect(taskConfig.worker.tools).toBe("read,write");
 		expect(taskConfig.worker.thinking).toBe("on");
-		expect(taskConfig.worker.spawn_mode).toBe("tmux");
+		expect(taskConfig.worker.spawn_mode).toBe("subprocess");
 		// Note: reviewer.model may be overridden by user preferences (~/.pi/agent/taskplane/preferences.json)
 		// so we check tools and thinking explicitly rather than toEqual on the full object.
 		expect(taskConfig.reviewer.tools).toBe("read");
@@ -605,7 +605,7 @@ describe("key preservation and adapter regression", () => {
 			"  worktree_location: sibling",
 			"  worktree_prefix: my-wt",
 			"  batch_id_format: sequential",
-			"  spawn_mode: tmux",
+			"  spawn_mode: subprocess",
 			"  session_prefix: myorch",
 			"  operator_id: testuser",
 			"  integration: auto",
@@ -641,7 +641,7 @@ describe("key preservation and adapter regression", () => {
 		expect(legacy.orchestrator.worktree_location).toBe("sibling");
 		expect(legacy.orchestrator.worktree_prefix).toBe("my-wt");
 		expect(legacy.orchestrator.batch_id_format).toBe("sequential");
-		expect(legacy.orchestrator.spawn_mode).toBe("tmux");
+		expect(legacy.orchestrator.spawn_mode).toBe("subprocess");
 		expect(legacy.orchestrator.sessionPrefix).toBe("myorch");
 		expect(legacy.orchestrator.operator_id).toBe("testuser");
 		expect(legacy.orchestrator.integration).toBe("auto");
@@ -676,53 +676,48 @@ describe("key preservation and adapter regression", () => {
 		expect(legacy.orchestrator.integration).toBe("manual");
 	});
 
-	it("3.14: logs deprecation warning when orchestrator spawn_mode is tmux", () => {
-		const dir = makeTestDir("spawn-mode-tmux-orch-warning");
-		const agentDir = makeTestDir("spawn-mode-tmux-orch-agent-dir");
-		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-		process.env.PI_CODING_AGENT_DIR = agentDir;
-		const consoleErrorSpy = mock.method(console, "error", () => {});
-		try {
-			writeOrchestratorYaml(dir, "orchestrator:\n  spawn_mode: tmux\n");
-			loadProjectConfig(dir);
+	it("3.14: throws CONFIG_LEGACY_FIELD when orchestrator spawn_mode is tmux", () => {
+		const dir = makeTestDir("spawn-mode-tmux-orch-error");
+		writeOrchestratorYaml(dir, "orchestrator:\n  spawn_mode: tmux\n");
 
-			const deprecations = consoleErrorSpy.mock.calls
-				.map((call: any) => String(call.arguments[0] ?? ""))
-				.filter((line: string) => line.includes("[taskplane] deprecation: spawn_mode \"tmux\""));
-			expect(deprecations.length).toBeGreaterThan(0);
-			expect(deprecations[0]).toContain("orchestrator.orchestrator.spawnMode");
-		} finally {
-			consoleErrorSpy.mock.restore();
-			if (previousAgentDir === undefined) {
-				delete process.env.PI_CODING_AGENT_DIR;
-			} else {
-				process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-			}
+		try {
+			loadProjectConfig(dir);
+			assert.fail("should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ConfigLoadError);
+			expect((err as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+			expect((err as ConfigLoadError).message).toContain("orchestrator.orchestrator.spawnMode");
+			expect((err as ConfigLoadError).message).toContain("subprocess");
 		}
 	});
 
-	it("3.15: logs deprecation warning when worker spawn_mode is tmux", () => {
-		const dir = makeTestDir("spawn-mode-tmux-worker-warning");
-		const agentDir = makeTestDir("spawn-mode-tmux-worker-agent-dir");
-		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
-		process.env.PI_CODING_AGENT_DIR = agentDir;
-		const consoleErrorSpy = mock.method(console, "error", () => {});
-		try {
-			writeTaskRunnerYaml(dir, "worker:\n  spawn_mode: tmux\n");
-			loadProjectConfig(dir);
+	it("3.15: throws CONFIG_LEGACY_FIELD when worker spawn_mode is tmux", () => {
+		const dir = makeTestDir("spawn-mode-tmux-worker-error");
+		writeTaskRunnerYaml(dir, "worker:\n  spawn_mode: tmux\n");
 
-			const deprecations = consoleErrorSpy.mock.calls
-				.map((call: any) => String(call.arguments[0] ?? ""))
-				.filter((line: string) => line.includes("[taskplane] deprecation: spawn_mode \"tmux\""));
-			expect(deprecations.length).toBeGreaterThan(0);
-			expect(deprecations[0]).toContain("taskRunner.worker.spawnMode");
-		} finally {
-			consoleErrorSpy.mock.restore();
-			if (previousAgentDir === undefined) {
-				delete process.env.PI_CODING_AGENT_DIR;
-			} else {
-				process.env.PI_CODING_AGENT_DIR = previousAgentDir;
-			}
+		try {
+			loadProjectConfig(dir);
+			assert.fail("should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ConfigLoadError);
+			expect((err as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+			expect((err as ConfigLoadError).message).toContain("taskRunner.worker.spawnMode");
+			expect((err as ConfigLoadError).message).toContain("subprocess");
+		}
+	});
+
+	it("3.16: throws CONFIG_LEGACY_FIELD when tmux_prefix alias is present", () => {
+		const dir = makeTestDir("tmux-prefix-alias-error");
+		writeOrchestratorYaml(dir, "orchestrator:\n  tmux_prefix: orch-legacy\n");
+
+		try {
+			loadProjectConfig(dir);
+			assert.fail("should have thrown");
+		} catch (err) {
+			expect(err).toBeInstanceOf(ConfigLoadError);
+			expect((err as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+			expect((err as ConfigLoadError).message).toContain("orchestrator.orchestrator.tmuxPrefix");
+			expect((err as ConfigLoadError).message).toContain("sessionPrefix");
 		}
 	});
 });
@@ -831,6 +826,48 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 		expect(result.testing.commands).toEqual({});
 		expect(result.standards).toEqual({ docs: [], rules: [] });
 		expect(result.task_areas).toEqual({});
+	});
+
+	it("4.5b: task-runner loadConfig rethrows CONFIG_LEGACY_FIELD for worker spawn_mode tmux", () => {
+		const dir = makeTestDir("loadconfig-legacy-worker-spawn");
+		writeTaskRunnerYaml(dir, "worker:\n  spawn_mode: tmux\n");
+
+		let caught: unknown;
+		try {
+			taskRunnerLoadConfig(dir);
+		} catch (err) {
+			caught = err;
+		}
+
+		expect(caught).toBeInstanceOf(ConfigLoadError);
+		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+		expect((caught as ConfigLoadError).message).toContain("taskRunner.worker.spawnMode");
+	});
+
+	it("4.5c: task-runner loadConfig rethrows CONFIG_LEGACY_FIELD for legacy user prefs", () => {
+		const dir = makeTestDir("loadconfig-legacy-prefs");
+		const agentDir = makeTestDir("loadconfig-legacy-prefs-agent");
+		const prevAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		mkdirSync(join(agentDir, "taskplane"), { recursive: true });
+		writeFileSync(join(agentDir, "taskplane", "preferences.json"), JSON.stringify({ tmuxPrefix: "legacy-pref" }), "utf-8");
+
+		let caught: unknown;
+		try {
+			taskRunnerLoadConfig(dir);
+		} catch (err) {
+			caught = err;
+		} finally {
+			if (prevAgentDir === undefined) {
+				delete process.env.PI_CODING_AGENT_DIR;
+			} else {
+				process.env.PI_CODING_AGENT_DIR = prevAgentDir;
+			}
+		}
+
+		expect(caught).toBeInstanceOf(ConfigLoadError);
+		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+		expect((caught as ConfigLoadError).message).toContain("tmuxPrefix");
 	});
 
 	it("4.6: JSON config deep merges nested fields (partial section override)", () => {

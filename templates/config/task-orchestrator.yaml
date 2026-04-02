@@ -27,8 +27,7 @@ orchestrator:
   # Batch ID format used in branch names and logs.
   batch_id_format: "timestamp"
 
-  # "tmux" = named sessions you can attach to
-  # "subprocess" = headless execution without tmux dependency
+  # Runtime V2 execution backend (subprocess-only)
   spawn_mode: "subprocess"
 
   # Prefix for orchestrator session names.

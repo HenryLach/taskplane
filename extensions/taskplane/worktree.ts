@@ -1655,11 +1655,10 @@ export function meetsMinVersion(actual: [number, number], minimum: [number, numb
  *   - pi availability
  *
  * Compatibility checks:
- *   - spawn_mode: tmux warning (Runtime V2 is subprocess-only)
+ *   - Runtime backend mode visibility (subprocess-only)
  */
 export function runPreflight(config: OrchestratorConfig, repoRoot?: string): PreflightResult {
 	const checks: PreflightCheck[] = [];
-	const tmuxRequired = config.orchestrator.spawn_mode === "tmux";
 
 	// ── Git version ──────────────────────────────────────────────
 	const gitResult = execCheck("git --version");
@@ -1705,14 +1704,11 @@ export function runPreflight(config: OrchestratorConfig, repoRoot?: string): Pre
 				: "Workspace root is not a git repo. Check workspace config repo paths.",
 	});
 
-	// ── Legacy spawn_mode compatibility (Runtime V2) ─────────────
+	// ── Runtime backend contract (Runtime V2) ─────────────────────
 	checks.push({
-		name: "tmux",
-		status: tmuxRequired ? "warn" : "pass",
-		message: tmuxRequired
-			? "spawn_mode: tmux is legacy-only under Runtime V2; subprocess backend will be used"
-			: "Runtime V2 subprocess backend active (TMUX not required)",
-		hint: tmuxRequired ? "Update orchestrator.spawn_mode to subprocess." : undefined,
+		name: "runtime-backend",
+		status: "pass",
+		message: `Runtime V2 subprocess backend active (configured spawn_mode: ${config.orchestrator.spawn_mode})`,
 	});
 
 	// ── Pi availability ──────────────────────────────────────────

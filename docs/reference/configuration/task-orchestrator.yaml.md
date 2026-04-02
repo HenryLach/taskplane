@@ -35,8 +35,8 @@ verification:
 | `orchestrator.worktree_location` | `"sibling"` \| `"subdirectory"` | `"subdirectory"` | Where lane worktree directories are created. |
 | `orchestrator.worktree_prefix` | string | `"taskplane-wt"` | Prefix used for worktree directory names and lane branch naming. |
 | `orchestrator.batch_id_format` | `"timestamp"` \| `"sequential"` | `"timestamp"` | Batch ID format used in logs/branch naming. |
-| `orchestrator.spawn_mode` | `"tmux"` \| `"subprocess"` | `"subprocess"` | How lane sessions are spawned. |
-| `orchestrator.tmux_prefix` | string | `"orch"` | Prefix for orchestrator tmux sessions (tmux mode). |
+| `orchestrator.spawn_mode` | `"subprocess"` | `"subprocess"` | How lane sessions are spawned (Runtime V2 subprocess-only). |
+| `orchestrator.session_prefix` | string | `"orch"` | Prefix for orchestrator session IDs. |
 | `orchestrator.operator_id` | string | `""` (auto-detected) | Operator identifier for team-scale collision resistance. See [naming](#operator-identity-and-naming). |
 
 `worktree_location` values:
@@ -188,9 +188,9 @@ The resolved value is sanitized (lowercase, alphanumeric + hyphens only) and tru
 
 | Artifact | Pattern | Example |
 |---|---|---|
-| TMUX session (single-repo mode) | `{tmux_prefix}-{opId}-lane-{N}` | `orch-alice-lane-1` |
-| TMUX session (workspace) | `{tmux_prefix}-{opId}-{repoId}-lane-{N}` | `orch-alice-api-lane-1` |
-| Merge session | `{tmux_prefix}-{opId}-merge-{N}` | `orch-alice-merge-1` |
+| Lane session ID (single-repo mode) | `{session_prefix}-{opId}-lane-{N}` | `orch-alice-lane-1` |
+| Lane session ID (workspace) | `{session_prefix}-{opId}-{repoId}-lane-{N}` | `orch-alice-api-lane-1` |
+| Merge session ID | `{session_prefix}-{opId}-merge-{N}` | `orch-alice-merge-1` |
 | Worktree directory | `{worktree_prefix}-{opId}-{N}` | `taskplane-wt-alice-1` |
 | Git branch | `task/{opId}-lane-{N}-{batchId}` | `task/alice-lane-1-20260315T190000` |
 | Merge temp branch | `_merge-temp-{opId}-{batchId}` | `_merge-temp-alice-20260315T190000` |
@@ -245,7 +245,7 @@ The JSON format uses **camelCase** keys. YAML snake_case keys are mapped automat
 | `worktree_prefix` | `worktreePrefix` |
 | `batch_id_format` | `batchIdFormat` |
 | `spawn_mode` | `spawnMode` |
-| `tmux_prefix` | `tmuxPrefix` |
+| `session_prefix` | `sessionPrefix` |
 | `operator_id` | `operatorId` |
 | `size_weights` | `sizeWeights` |
 | `auto_detect` | `autoDetect` |
@@ -287,7 +287,7 @@ In the JSON file, orchestrator settings live under the `orchestrator` key:
       "worktreePrefix": "taskplane-wt",
       "batchIdFormat": "timestamp",
       "spawnMode": "subprocess",
-      "tmuxPrefix": "orch",
+      "sessionPrefix": "orch",
       "operatorId": ""
     },
     "dependencies": {

@@ -1,17 +1,16 @@
 /**
  * Agent Host — Direct-child Pi agent hosting for Runtime V2
  *
- * Spawns `pi --mode rpc` as a direct child process (no TMUX, no shell),
+ * Spawns `pi --mode rpc` as a direct child process (no terminal multiplexer, no shell),
  * parses RPC JSONL events, normalizes them into RuntimeAgentEvents,
  * manages mailbox delivery, and produces exit summaries.
  *
- * This replaces the TMUX-backed hosting path (spawnAgentTmux in
- * task-runner.ts + rpc-wrapper.mjs as a TMUX session command) with
+ * This replaces the legacy terminal-session hosting path with
  * a programmatic parent-child model where the caller has full process
  * ownership.
  *
  * Key differences from the legacy path:
- *   1. No TMUX — `spawn()` with `shell: false`
+ *   1. No terminal-session backend — `spawn()` with `shell: false`
  *   2. No sidecar tailing — events flow directly to the caller via callbacks
  *   3. No PID-file orphan guessing — caller owns the process handle
  *   4. Registry integration — manifests updated on status transitions
@@ -301,7 +300,7 @@ export function spawnAgent(
 	piArgs.push("--no-skills");
 	if (opts.thinking) piArgs.push("--thinking", opts.thinking);
 
-	// Spawn directly — no shell, no TMUX
+	// Spawn directly — no shell, no terminal multiplexer
 	const proc = spawn(process.execPath, piArgs, {
 		shell: false,
 		cwd: opts.cwd,
