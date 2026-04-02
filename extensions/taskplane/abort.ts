@@ -55,7 +55,7 @@ export function selectAbortTargetSessions(
 	const persistedLaneLookup = new Map<string, PersistedLaneRecord>();
 	if (persistedState?.lanes) {
 		for (const lane of persistedState.lanes) {
-			persistedLaneLookup.set(lane.laneSessionId || lane.tmuxSessionName, lane);
+			persistedLaneLookup.set(lane.laneSessionId, lane);
 		}
 	}
 
@@ -82,7 +82,7 @@ export function selectAbortTargetSessions(
 	const runtimeLookup = new Map<string, { laneId: string; taskId: string | null; worktreePath: string; taskFolder: string | null }>();
 	for (const lane of runtimeLanes) {
 		const currentTask = lane.tasks.length > 0 ? lane.tasks[0] : null;
-		runtimeLookup.set(lane.laneSessionId || lane.tmuxSessionName, {
+		runtimeLookup.set(lane.laneSessionId, {
 			laneId: lane.laneId,
 			taskId: currentTask?.taskId || null,
 			worktreePath: lane.worktreePath,

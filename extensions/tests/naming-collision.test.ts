@@ -22,7 +22,7 @@ import { resolve, basename } from "path";
 
 // Direct imports from production modules
 import { sanitizeNameComponent, resolveOperatorId, resolveRepoSlug } from "../taskplane/naming.ts";
-import { generateTmuxSessionName, generateLaneId } from "../taskplane/waves.ts";
+import { generateLaneSessionId, generateLaneId } from "../taskplane/waves.ts";
 import { generateBranchName, generateWorktreePath, generateMergeWorktreePath, generateBatchContainerPath } from "../taskplane/worktree.ts";
 import { parseOrchSessionNames } from "../taskplane/persistence.ts";
 import type { OrchestratorConfig } from "../taskplane/types.ts";
@@ -74,16 +74,16 @@ describe("2a — Collision Matrix", () => {
 
 	describe("TMUX session names are unique across operators", () => {
 		it("repo mode: different opId produces different session names", () => {
-			const sessionA = generateTmuxSessionName(prefix, lane, "alice");
-			const sessionB = generateTmuxSessionName(prefix, lane, "bob");
+			const sessionA = generateLaneSessionId(prefix, lane, "alice");
+			const sessionB = generateLaneSessionId(prefix, lane, "bob");
 			expect(sessionA).not.toBe(sessionB);
 			expect(sessionA).toBe("orch-alice-lane-1");
 			expect(sessionB).toBe("orch-bob-lane-1");
 		});
 
 		it("workspace mode: different opId produces different session names", () => {
-			const sessionA = generateTmuxSessionName(prefix, lane, "alice", "api");
-			const sessionB = generateTmuxSessionName(prefix, lane, "bob", "api");
+			const sessionA = generateLaneSessionId(prefix, lane, "alice", "api");
+			const sessionB = generateLaneSessionId(prefix, lane, "bob", "api");
 			expect(sessionA).not.toBe(sessionB);
 			expect(sessionA).toBe("orch-alice-api-lane-1");
 			expect(sessionB).toBe("orch-bob-api-lane-1");
@@ -92,16 +92,16 @@ describe("2a — Collision Matrix", () => {
 
 	describe("TMUX session names are unique across repos (workspace mode)", () => {
 		it("same operator, same lane, different repoId", () => {
-			const sessionApi = generateTmuxSessionName(prefix, lane, "alice", "api");
-			const sessionWeb = generateTmuxSessionName(prefix, lane, "alice", "web");
+			const sessionApi = generateLaneSessionId(prefix, lane, "alice", "api");
+			const sessionWeb = generateLaneSessionId(prefix, lane, "alice", "web");
 			expect(sessionApi).not.toBe(sessionWeb);
 			expect(sessionApi).toBe("orch-alice-api-lane-1");
 			expect(sessionWeb).toBe("orch-alice-web-lane-1");
 		});
 
 		it("repo mode vs workspace mode names do not collide", () => {
-			const repoMode = generateTmuxSessionName(prefix, lane, "alice");
-			const wsMode = generateTmuxSessionName(prefix, lane, "alice", "api");
+			const repoMode = generateLaneSessionId(prefix, lane, "alice");
+			const wsMode = generateLaneSessionId(prefix, lane, "alice", "api");
 			expect(repoMode).not.toBe(wsMode);
 		});
 	});
@@ -290,7 +290,7 @@ describe("2a — Collision Matrix", () => {
 					for (const batch of batches) {
 						for (const lane of lanes) {
 							// TMUX session (per: op × repo × lane)
-							const session = generateTmuxSessionName(prefix, lane, op, repo);
+							const session = generateLaneSessionId(prefix, lane, op, repo);
 							tmuxSessions.add(session);
 							expectedTmux++;
 
@@ -404,7 +404,7 @@ describe("2a — Collision Matrix", () => {
 		});
 
 		it("fallback opId 'op' produces valid session names", () => {
-			const session = generateTmuxSessionName(prefix, 1, "op");
+			const session = generateLaneSessionId(prefix, 1, "op");
 			expect(session).toBe("orch-op-lane-1");
 		});
 	});
@@ -645,19 +645,19 @@ describe("2c — Human-Readability Acceptance", () => {
 
 	describe("TMUX session names stay under 64 characters", () => {
 		it("worst-case repo mode: long prefix + long opId", () => {
-			const session = generateTmuxSessionName("taskplane-orch", 99, "ci-runner-01xx");
+			const session = generateLaneSessionId("taskplane-orch", 99, "ci-runner-01xx");
 			expect(session.length).toBeLessThanOrEqual(64);
 		});
 
 		it("worst-case workspace mode: long prefix + long opId + long repoId", () => {
-			const session = generateTmuxSessionName("taskplane-orch", 99, "ci-runner-01xx", "my-frontend-app");
+			const session = generateLaneSessionId("taskplane-orch", 99, "ci-runner-01xx", "my-frontend-app");
 			expect(session.length).toBeLessThanOrEqual(64);
 		});
 
 		it("maximum opId length (12 chars) produces manageable session names", () => {
 			// resolveOperatorId truncates to 12 chars
 			const maxOpId = "abcdefghijkl"; // 12 chars
-			const session = generateTmuxSessionName("orch", 99, maxOpId, "my-long-repo");
+			const session = generateLaneSessionId("orch", 99, maxOpId, "my-long-repo");
 			expect(session.length).toBeLessThanOrEqual(64);
 			expect(session).toBe("orch-abcdefghijkl-my-long-repo-lane-99");
 		});
@@ -677,7 +677,7 @@ describe("2c — Human-Readability Acceptance", () => {
 		const wtPrefix = "taskplane-wt";
 
 		it("TMUX lane sessions: prefix → opId → lane-N", () => {
-			const session = generateTmuxSessionName(prefix, 1, opId);
+			const session = generateLaneSessionId(prefix, 1, opId);
 			expect(session).toBe("orch-henrylach-lane-1");
 			const tokens = session.split("-");
 			expect(tokens[0]).toBe("orch");     // prefix
@@ -687,7 +687,7 @@ describe("2c — Human-Readability Acceptance", () => {
 		});
 
 		it("TMUX workspace sessions: prefix → opId → repoId → lane-N", () => {
-			const session = generateTmuxSessionName(prefix, 2, opId, "api");
+			const session = generateLaneSessionId(prefix, 2, opId, "api");
 			expect(session).toBe("orch-henrylach-api-lane-2");
 			const tokens = session.split("-");
 			expect(tokens[0]).toBe("orch");      // prefix
@@ -758,7 +758,7 @@ describe("2c — Human-Readability Acceptance", () => {
 
 		for (const { opId, prefix, lane } of safeInputs) {
 			it(`session name safe chars: opId=${opId}, prefix=${prefix}`, () => {
-				const session = generateTmuxSessionName(prefix, lane, opId);
+				const session = generateLaneSessionId(prefix, lane, opId);
 				// TMUX: no periods, colons. Alphanumeric + hyphens only.
 				expect(session).toMatch(/^[a-zA-Z0-9-]+$/);
 			});
@@ -783,7 +783,7 @@ describe("2c — Human-Readability Acceptance", () => {
 
 	describe("Provenance parseability from generated names", () => {
 		it("can extract opId from TMUX session name (repo mode)", () => {
-			const session = generateTmuxSessionName("orch", 3, "henrylach");
+			const session = generateLaneSessionId("orch", 3, "henrylach");
 			// Pattern: {prefix}-{opId}-lane-{N}
 			const match = session.match(/^orch-(.+)-lane-(\d+)$/);
 			expect(match).not.toBeNull();
@@ -792,7 +792,7 @@ describe("2c — Human-Readability Acceptance", () => {
 		});
 
 		it("can extract opId and repoId from TMUX session name (workspace mode)", () => {
-			const session = generateTmuxSessionName("orch", 2, "alice", "api");
+			const session = generateLaneSessionId("orch", 2, "alice", "api");
 			// Pattern: {prefix}-{opId}-{repoId}-lane-{N}
 			const match = session.match(/^orch-(.+)-(.+)-lane-(\d+)$/);
 			expect(match).not.toBeNull();
@@ -833,11 +833,11 @@ describe("2c — Human-Readability Acceptance", () => {
 		// Verify the examples from naming-contract.md §4 match actual function output
 
 		it("TMUX session — repo mode example", () => {
-			expect(generateTmuxSessionName("orch", 1, "henrylach")).toBe("orch-henrylach-lane-1");
+			expect(generateLaneSessionId("orch", 1, "henrylach")).toBe("orch-henrylach-lane-1");
 		});
 
 		it("TMUX session — workspace mode example", () => {
-			expect(generateTmuxSessionName("orch", 1, "henrylach", "api")).toBe("orch-henrylach-api-lane-1");
+			expect(generateLaneSessionId("orch", 1, "henrylach", "api")).toBe("orch-henrylach-api-lane-1");
 		});
 
 		it("Merge session example", () => {

@@ -18,7 +18,7 @@
     {
       "laneNumber": 1,
       "laneId": "docs/lane-1",
-      "tmuxSessionName": "orch-op-docs-lane-1",
+      "laneSessionId": "orch-op-docs-lane-1",
       "worktreePath": "/tmp/taskplane-wt-1",
       "branch": "task/op-docs-lane-1-20260316T120000",
       "taskIds": ["SH-001", "SH-002"],
@@ -27,7 +27,7 @@
     {
       "laneNumber": 2,
       "laneId": "api/lane-2",
-      "tmuxSessionName": "orch-op-api-lane-2",
+      "laneSessionId": "orch-op-api-lane-2",
       "worktreePath": "/tmp/taskplane-wt-2",
       "branch": "task/op-api-lane-2-20260316T120000",
       "taskIds": ["AP-001", "AP-002"],
@@ -36,7 +36,7 @@
     {
       "laneNumber": 3,
       "laneId": "frontend/lane-3",
-      "tmuxSessionName": "orch-op-frontend-lane-3",
+      "laneSessionId": "orch-op-frontend-lane-3",
       "worktreePath": "/tmp/taskplane-wt-3",
       "branch": "task/op-frontend-lane-3-20260316T120000",
       "taskIds": ["UI-001", "UI-002"],

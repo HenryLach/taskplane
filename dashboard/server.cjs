@@ -521,7 +521,7 @@ function loadTelemetryData(batchState) {
   const laneToPrefix = {};
   if (batchState && batchState.lanes) {
     for (const lane of batchState.lanes) {
-      const laneSessionId = lane.laneSessionId || lane.tmuxSessionName;
+      const laneSessionId = lane.laneSessionId;
       if (lane.laneNumber != null && laneSessionId) {
         laneToPrefix[lane.laneNumber] = laneSessionId;
       }
@@ -1023,7 +1023,7 @@ function buildDashboardState() {
     for (const [laneNum, snap] of Object.entries(runtimeLaneSnapshots)) {
       // Find the matching lane record to get the session name key
       const laneRec = (state.lanes || []).find(l => l.laneNumber === Number(laneNum));
-      const key = laneRec ? (laneRec.laneSessionId || laneRec.tmuxSessionName) : `lane-${laneNum}`;
+      const key = laneRec ? (laneRec.laneSessionId) : `lane-${laneNum}`;
       if (!laneStates[key] || (snap.updatedAt && snap.updatedAt > (laneStates[key].timestamp || 0))) {
         const w = snap.worker || {};
         const statusMap = { running: "running", spawning: "running", exited: "done", crashed: "error", killed: "error", timed_out: "error", wrapping_up: "running" };

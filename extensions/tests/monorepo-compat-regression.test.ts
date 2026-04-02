@@ -38,7 +38,7 @@ import {
 	computeWaves,
 	groupTasksByRepo,
 	generateLaneId,
-	generateTmuxSessionName,
+	generateLaneSessionId,
 	assignTasksToLanes,
 } from "../taskplane/waves.ts";
 import {
@@ -117,7 +117,7 @@ function monoLane(
 	return {
 		laneNumber: laneNum,
 		laneId: `lane-${laneNum}`,
-		tmuxSessionName: `orch-op-lane-${laneNum}`,
+		laneSessionId: `orch-op-lane-${laneNum}`,
 		worktreePath: `/worktrees/wt-${laneNum}`,
 		branch: `task/op-lane-${laneNum}-20260316T120000`,
 		tasks,
@@ -209,12 +209,12 @@ describe("8.1: Repo-mode state — mode=repo, no repo fields", () => {
 		const data = JSON.parse(
 			readFileSync(join(__dirname, "fixtures", "batch-state-valid.json"), "utf-8"),
 		);
-		data.lanes[0].tmuxSessionName = "orch-legacy-lane-1";
+		(data.lanes[0] as Record<string, unknown>).tmuxSessionName = "orch-legacy-lane-1";
 		delete data.lanes[0].laneSessionId;
 
 		const validated = validatePersistedState(data);
-		expect(validated.lanes[0].tmuxSessionName).toBe("orch-legacy-lane-1");
 		expect(validated.lanes[0].laneSessionId).toBe("orch-legacy-lane-1");
+		expect((validated.lanes[0] as Record<string, unknown>).tmuxSessionName).toBeUndefined();
 	});
 });
 
@@ -375,14 +375,14 @@ describe("8.3: Repo-mode naming — no repoId segments", () => {
 		expect(id).not.toContain("/");
 	});
 
-	it("8.3.3: generateTmuxSessionName without repoId has no repoId segment", () => {
-		const name = generateTmuxSessionName("orch", 1, "alice");
+	it("8.3.3: generateLaneSessionId without repoId has no repoId segment", () => {
+		const name = generateLaneSessionId("orch", 1, "alice");
 		expect(name).toBe("orch-alice-lane-1");
 		expect(name).not.toContain("undefined");
 	});
 
-	it("8.3.4: generateTmuxSessionName with undefined repoId has no repoId segment", () => {
-		const name = generateTmuxSessionName("orch", 2, "bob", undefined);
+	it("8.3.4: generateLaneSessionId with undefined repoId has no repoId segment", () => {
+		const name = generateLaneSessionId("orch", 2, "bob", undefined);
 		expect(name).toBe("orch-bob-lane-2");
 		expect(name).not.toContain("undefined");
 	});
@@ -394,7 +394,7 @@ describe("8.3: Repo-mode naming — no repoId segments", () => {
 	});
 
 	it("8.3.6: multiple repo-mode session names are unique", () => {
-		const names = [1, 2, 3].map(n => generateTmuxSessionName("orch", n, "alice"));
+		const names = [1, 2, 3].map(n => generateLaneSessionId("orch", n, "alice"));
 		expect(new Set(names).size).toBe(3);
 		for (const name of names) {
 			expect(name).toMatch(/^orch-alice-lane-\d+$/);
@@ -577,7 +577,7 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 			lanes: [{
 				laneNumber: 1,
 				laneId: "lane-1",
-				tmuxSessionName: "orch-op-lane-1",
+				laneSessionId: "orch-op-lane-1",
 				worktreePath: "/wt-1",
 				branch: "task/op-lane-1-20260316T120000",
 				taskIds: ["TP-100"],
@@ -626,7 +626,7 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 			lanes: [{
 				laneNumber: 1,
 				laneId: "lane-1",
-				tmuxSessionName: "orch-op-lane-1",
+				laneSessionId: "orch-op-lane-1",
 				worktreePath: "/wt-1",
 				branch: "task/op-lane-1-20260316T120000",
 				taskIds: ["TP-100"],
@@ -682,7 +682,7 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 			lanes: [{
 				laneNumber: 1,
 				laneId: "lane-1",
-				tmuxSessionName: "orch-op-lane-1",
+				laneSessionId: "orch-op-lane-1",
 				worktreePath: "/wt-1",
 				branch: "task/op-lane-1-20260316T120000",
 				taskIds: ["TP-100"],
@@ -726,7 +726,7 @@ describe("8.5: Repo-mode resume — v1→v2 upconvert and mode-agnostic eligibil
 		const persistedLanes = [{
 			laneNumber: 1,
 			laneId: "lane-1",
-			tmuxSessionName: "orch-op-lane-1",
+			laneSessionId: "orch-op-lane-1",
 			worktreePath: "/wt-1",
 			branch: "task/op-lane-1-20260316T120000",
 			taskIds: ["TP-100"],

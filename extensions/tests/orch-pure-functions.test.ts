@@ -226,7 +226,7 @@ function buildDashboardViewModel(
 			laneCards.push({
 				laneNumber: lane.laneNumber,
 				laneId: lane.laneId,
-				sessionName: lane.laneSessionId || lane.tmuxSessionName,
+				sessionName: lane.laneSessionId,
 				sessionAlive: true,
 				currentTaskId: lane.tasks.length > 0 ? lane.tasks[0].taskId : null,
 				currentStepName: null,
@@ -305,7 +305,7 @@ console.log("\n─── Source Verification ───");
 {
 	const fnSrc = extractFunction(source, "buildDashboardViewModel");
 	assert(fnSrc.includes("laneNumber - b.laneNumber"), "buildDashboardViewModel: sorts by laneNumber");
-	assert(fnSrc.includes("lane.laneSessionId || lane.tmuxSessionName"), "buildDashboardViewModel: uses laneSessionId-first session name from allocation");
+	assert(fnSrc.includes("lane.laneSessionId"), "buildDashboardViewModel: uses laneSessionId from allocation");
 	assert(fnSrc.includes("failurePolicy"), "buildDashboardViewModel: includes failurePolicy");
 }
 

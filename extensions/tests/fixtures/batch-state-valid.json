@@ -17,7 +17,7 @@
     {
       "laneNumber": 1,
       "laneId": "lane-1",
-      "tmuxSessionName": "orch-lane-1",
+      "laneSessionId": "orch-lane-1",
       "worktreePath": "/tmp/taskplane-wt-1",
       "branch": "task/lane-1-20260309T010000",
       "taskIds": ["TS-001"]
@@ -25,7 +25,7 @@
     {
       "laneNumber": 2,
       "laneId": "lane-2",
-      "tmuxSessionName": "orch-lane-2",
+      "laneSessionId": "orch-lane-2",
       "worktreePath": "/tmp/taskplane-wt-2",
       "branch": "task/lane-2-20260309T010000",
       "taskIds": ["TS-002"]

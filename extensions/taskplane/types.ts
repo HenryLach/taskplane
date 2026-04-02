@@ -618,9 +618,7 @@ export interface AllocatedLane {
 	/** Lane identifier for display and logging (e.g., "lane-1") */
 	laneId: string;
 	/** Lane session identifier (e.g., "orch-lane-1") — used by Step 2 */
-	laneSessionId?: string;
-	/** @deprecated Use `laneSessionId`; kept temporarily for migration compatibility. */
-	tmuxSessionName: string;
+	laneSessionId: string;
 	/** Absolute path to the lane's worktree directory */
 	worktreePath: string;
 	/** Git branch name checked out in the worktree */
@@ -2630,9 +2628,7 @@ export interface PersistedLaneRecord {
 	/** Lane identifier (e.g., "lane-1") */
 	laneId: string;
 	/** Lane session identifier (e.g., "orch-lane-1") */
-	laneSessionId?: string;
-	/** @deprecated Use `laneSessionId`; kept temporarily for migration compatibility. */
-	tmuxSessionName: string;
+	laneSessionId: string;
 	/** Absolute path to the lane's worktree directory */
 	worktreePath: string;
 	/** Git branch name checked out in the worktree */

@@ -512,9 +512,6 @@ export function generateLaneSessionId(tmuxPrefix: string, laneLocalNumber: numbe
 	return `${tmuxPrefix}-${opId}-lane-${laneLocalNumber}`;
 }
 
-/** @deprecated Use `generateLaneSessionId()` instead. */
-export const generateTmuxSessionName = generateLaneSessionId;
-
 
 // ── Repo-Scoped Worktree Resolution ─────────────────────────────────
 
@@ -1072,8 +1069,8 @@ export function validateAllocationInputs(
  *    newly-created lanes in this call are rolled back.
  *
  * 4. **Build AllocatedLane[]** — each lane gets repo-aware `laneId` and
- *    `laneSessionId` (with temporary `tmuxSessionName` alias). In workspace mode:
- *    `"api/lane-1"`, `"orch-api-lane-1"`. In repo mode: `"lane-1"`,
+ *    `laneSessionId`. In workspace mode: `"api/lane-1"`, `"orch-api-lane-1"`.
+ *    In repo mode: `"lane-1"`,
  *    `"orch-lane-1"` (unchanged).
  *
  * **Determinism guarantee:** Given the same `waveTasks`, `pending`, and `config`,
@@ -1337,7 +1334,6 @@ export function allocateLanes(
 			laneNumber: entry.globalLane,
 			laneId: generateLaneId(entry.localLane, entry.repoId),
 			laneSessionId,
-			tmuxSessionName: laneSessionId,
 			worktreePath: wt.path,
 			branch: wt.branch,
 			tasks: allocatedTasks,

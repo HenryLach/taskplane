@@ -40,7 +40,7 @@ import {
 	computeWaves,
 	groupTasksByRepo,
 	generateLaneId,
-	generateTmuxSessionName,
+	generateLaneSessionId,
 	resolveRepoRoot,
 	resolveBaseBranch,
 	assignTasksToLanes,
@@ -878,7 +878,7 @@ describe("6.x: Collision-safe naming — polyrepo artifacts", () => {
 	it("6.1: TMUX session names are unique across repos for same operator+lane", () => {
 		const opId = "testop";
 		const sessions = FIXTURE_REPO_IDS.map(repoId =>
-			generateTmuxSessionName("orch", 1, opId, repoId),
+			generateLaneSessionId("orch", 1, opId, repoId),
 		);
 
 		// All 3 sessions should be distinct
@@ -913,7 +913,7 @@ describe("6.x: Collision-safe naming — polyrepo artifacts", () => {
 	});
 
 	it("6.4: workspace-mode session name contains repoId segment", () => {
-		const session = generateTmuxSessionName("orch", 2, "alice", "api");
+		const session = generateLaneSessionId("orch", 2, "alice", "api");
 		expect(session).toBe("orch-alice-api-lane-2");
 
 		// Verify all segments are parseable
@@ -924,7 +924,7 @@ describe("6.x: Collision-safe naming — polyrepo artifacts", () => {
 	});
 
 	it("6.5: repo-mode session name does NOT contain repoId (backward compat)", () => {
-		const session = generateTmuxSessionName("orch", 1, "alice");
+		const session = generateLaneSessionId("orch", 1, "alice");
 		expect(session).toBe("orch-alice-lane-1");
 		expect(session).not.toContain("undefined");
 	});
@@ -947,7 +947,7 @@ describe("6.x: Collision-safe naming — polyrepo artifacts", () => {
 
 	it("6.8: static fixture session names follow workspace-mode convention", () => {
 		for (const lane of fixtureState.lanes) {
-			const laneSessionId = lane.laneSessionId || lane.tmuxSessionName;
+			const laneSessionId = lane.laneSessionId;
 			expect(laneSessionId).toMatch(/^orch-\w+-\w+-lane-\d+$/);
 			expect(laneSessionId).toContain(lane.repoId!);
 		}

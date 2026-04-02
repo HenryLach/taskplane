@@ -143,8 +143,7 @@ export function reconstructAllocatedLanes(
 	return persistedLanes.map((lr) => ({
 		laneNumber: lr.laneNumber,
 		laneId: lr.laneId,
-		laneSessionId: lr.laneSessionId || lr.tmuxSessionName,
-		tmuxSessionName: lr.laneSessionId || lr.tmuxSessionName,
+		laneSessionId: lr.laneSessionId,
 		worktreePath: lr.worktreePath,
 		branch: lr.branch,
 		tasks: lr.taskIds.map((taskId) => {
@@ -952,8 +951,8 @@ export async function resumeOrchBatch(
 	// failed resume but were never actually started need their allocation
 	// metadata cleared so they can be freshly assigned to new lanes.
 	// We also prune these tasks from persisted lane records so that
-	// serializeBatchState() doesn't reintroduce stale sessionName via the
-	// `outcome?.sessionName || lane?.tmuxSessionName` fallback path.
+	// serializeBatchState() doesn't reintroduce stale sessionName via lane
+	// fallback paths when outcome.sessionName is absent.
 	const stalePendingTaskIds = new Set<string>();
 	for (const reconciled of reconciledTasks) {
 		if (reconciled.action === "pending") {
@@ -1131,7 +1130,7 @@ export async function resumeOrchBatch(
 			const lane: AllocatedLane = {
 				laneNumber: laneRecord.laneNumber,
 				laneId: laneRecord.laneId,
-				tmuxSessionName: laneRecord.laneSessionId || laneRecord.tmuxSessionName,
+				laneSessionId: laneRecord.laneSessionId,
 				worktreePath: laneRecord.worktreePath,
 				branch: laneRecord.branch,
 				tasks: [allocatedTask],
@@ -1150,7 +1149,7 @@ export async function resumeOrchBatch(
 			execLog("resume", task.taskId, "V2 reconnect: terminate + rehydrate via lane-runner", {
 				repoId: laneRecord.repoId ?? "(default)",
 			});
-			terminateAliveV2Agents(stateRoot, persistedState.batchId, laneRecord.laneSessionId || laneRecord.tmuxSessionName);
+			terminateAliveV2Agents(stateRoot, persistedState.batchId, laneRecord.laneSessionId);
 			try {
 				const laneResult = await executeLaneV2(
 					lane, orchConfig, laneRepoRoot, batchState.pauseSignal,
@@ -1212,7 +1211,7 @@ export async function resumeOrchBatch(
 			const lane: AllocatedLane = {
 				laneNumber: laneRecord.laneNumber,
 				laneId: laneRecord.laneId,
-				tmuxSessionName: laneRecord.laneSessionId || laneRecord.tmuxSessionName,
+				laneSessionId: laneRecord.laneSessionId,
 				worktreePath: laneRecord.worktreePath,
 				branch: laneRecord.branch,
 				tasks: [allocatedTask],
@@ -1226,14 +1225,14 @@ export async function resumeOrchBatch(
 			const reExecRepoRoot = resolveRepoRoot(laneRecord.repoId, repoRoot, workspaceConfig);
 
 			execLog("resume", task.taskId, "re-executing interrupted task in existing worktree", {
-				session: laneRecord.laneSessionId || laneRecord.tmuxSessionName,
+				session: laneRecord.laneSessionId,
 				worktree: laneRecord.worktreePath,
 				repoId: laneRecord.repoId ?? "(default)",
 			});
 
 			try {
 				// TP-112: Runtime V2 re-execution.
-				terminateAliveV2Agents(stateRoot, batchState.batchId, laneRecord.laneSessionId || laneRecord.tmuxSessionName);
+				terminateAliveV2Agents(stateRoot, batchState.batchId, laneRecord.laneSessionId);
 				const laneResult = await executeLaneV2(
 					lane, orchConfig, reExecRepoRoot, batchState.pauseSignal,
 					workspaceRoot, !!workspaceConfig,
@@ -1299,7 +1298,7 @@ export async function resumeOrchBatch(
 					startTime: Date.now(),
 					endTime: Date.now(),
 					exitReason: "Re-executed task completed successfully",
-					sessionName: lane.laneSessionId || lane.tmuxSessionName,
+					sessionName: lane.laneSessionId,
 					doneFileFound: true,
 					laneNumber: lane.laneNumber,
 				})),
@@ -1549,7 +1548,7 @@ export async function resumeOrchBatch(
 									: status === "skipped" ? "Task skipped (merge retry)"
 									: status === "stalled" ? "Task stalled (merge retry)"
 									: "Task failed (merge retry)",
-							sessionName: lane.laneSessionId || lane.tmuxSessionName,
+							sessionName: lane.laneSessionId,
 							doneFileFound: status === "succeeded",
 							laneNumber: lane.laneNumber,
 						};

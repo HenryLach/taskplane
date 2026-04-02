@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 10
-**Iteration:** 1
+**Review Counter:** 11
+**Iteration:** 2
 **Size:** M
 
 ---
@@ -44,12 +44,12 @@
 
 ### Step 4: Remove aliases
 **Status:** 🟨 In Progress
-- [ ] Remove tmuxSessionName from types
-- [ ] Remove generateTmuxSessionName alias
-- [ ] Restrict legacy `tmuxSessionName` compatibility to ingress-only parsing/normalization paths
-- [ ] Verify non-test production `tmuxSessionName` leftovers are eliminated or explicitly compatibility-ingress scoped
-- [ ] Validate legacy state files with tmux-only lane records still load into laneSessionId canonical runtime shape
-- [ ] Verify full suite
+- [x] Remove tmuxSessionName from types
+- [x] Remove generateTmuxSessionName alias
+- [x] Restrict legacy `tmuxSessionName` compatibility to ingress-only parsing/normalization paths
+- [x] Verify non-test production `tmuxSessionName` leftovers are eliminated or explicitly compatibility-ingress scoped
+- [x] Validate legacy state files with tmux-only lane records still load into laneSessionId canonical runtime shape
+- [x] Verify full suite
 
 ### Step 5: Documentation & Delivery
 **Status:** ⬜ Not Started
@@ -95,6 +95,7 @@
 | 2026-04-02 06:00 | Full suite rerun | `node --test tests/*.test.ts` passed (3400 tests, 0 failures) after compatibility fallback assertion fixes |
 | 2026-04-02 06:01 | Review R009 | code Step 3: APPROVE |
 | 2026-04-02 06:02 | Review R010 | plan Step 4: REVISE |
+| 2026-04-02 05:42 | Worker iter 1 | killed (wall-clock timeout) in 1800s, tools: 211 |
 
 ## Notes
 - Allowed Step 2 leftovers: compatibility alias fields in `types.ts` plus normalization/dual-write handling in `persistence.ts` and resume comment context.
@@ -106,3 +107,4 @@
 | 2026-04-02 05:31 | Review R008 | plan Step 3: APPROVE |
 | 2026-04-02 05:40 | Review R009 | code Step 3: APPROVE |
 | 2026-04-02 05:41 | Review R010 | plan Step 4: REVISE |
+| 2026-04-02 05:44 | Review R011 | plan Step 4: APPROVE |

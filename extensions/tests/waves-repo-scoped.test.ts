@@ -9,7 +9,7 @@
  *   2. resolveBaseBranch() — fallback chain: per-repo → detected → batch
  *   3. groupTasksByRepo() — repo mode grouping, workspace mode grouping
  *   4. allocateLanes() repo mode regression — unchanged behavior
- *   5. generateLaneId() / generateTmuxSessionName() — repo-aware naming
+ *   5. generateLaneId() / generateLaneSessionId() — repo-aware naming
  *
  * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test extensions/tests/waves-repo-scoped.test.ts
  */
@@ -22,7 +22,7 @@ import {
 	resolveBaseBranch,
 	groupTasksByRepo,
 	generateLaneId,
-	generateTmuxSessionName,
+	generateLaneSessionId,
 	buildTaskSegmentPlans,
 	inferTaskRepoOrder,
 } from "../taskplane/waves.ts";
@@ -223,21 +223,21 @@ describe("generateLaneId", () => {
 	});
 });
 
-// ── 5. generateTmuxSessionName() ─────────────────────────────────────
+// ── 5. generateLaneSessionId() ─────────────────────────────────────
 
-describe("generateTmuxSessionName", () => {
+describe("generateLaneSessionId", () => {
 	it("generates repo-mode format with opId when repoId is undefined", () => {
-		expect(generateTmuxSessionName("orch", 1, "henrylach")).toBe("orch-henrylach-lane-1");
-		expect(generateTmuxSessionName("orch", 3, "op")).toBe("orch-op-lane-3");
+		expect(generateLaneSessionId("orch", 1, "henrylach")).toBe("orch-henrylach-lane-1");
+		expect(generateLaneSessionId("orch", 3, "op")).toBe("orch-op-lane-3");
 	});
 
 	it("generates workspace-mode format with opId when repoId is set", () => {
-		expect(generateTmuxSessionName("orch", 1, "henrylach", "api")).toBe("orch-henrylach-api-lane-1");
-		expect(generateTmuxSessionName("orch", 2, "ci-runner", "frontend")).toBe("orch-ci-runner-frontend-lane-2");
+		expect(generateLaneSessionId("orch", 1, "henrylach", "api")).toBe("orch-henrylach-api-lane-1");
+		expect(generateLaneSessionId("orch", 2, "ci-runner", "frontend")).toBe("orch-ci-runner-frontend-lane-2");
 	});
 
 	it("uses custom prefix with opId", () => {
-		expect(generateTmuxSessionName("tp", 1, "op", "api")).toBe("tp-op-api-lane-1");
+		expect(generateLaneSessionId("tp", 1, "op", "api")).toBe("tp-op-api-lane-1");
 	});
 });
 

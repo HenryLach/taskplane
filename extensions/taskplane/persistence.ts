@@ -151,7 +151,7 @@ export function seedPendingOutcomesForAllocatedLanes(
 				startTime: null,
 				endTime: null,
 				exitReason: "Pending execution",
-				sessionName: lane.laneSessionId || lane.tmuxSessionName,
+				sessionName: lane.laneSessionId,
 				doneFileFound: false,
 				laneNumber: lane.laneNumber,
 			}) || changed;
@@ -724,8 +724,8 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 		if (typeof laneSessionId !== "string") {
 			l.laneSessionId = tmuxSessionName;
 		}
-		if (typeof tmuxSessionName !== "string") {
-			l.tmuxSessionName = laneSessionId;
+		if ("tmuxSessionName" in l) {
+			delete (l as { tmuxSessionName?: unknown }).tmuxSessionName;
 		}
 
 		if (typeof l.laneNumber !== "number") {
@@ -1228,7 +1228,7 @@ export function serializeBatchState(
 			const record: PersistedTaskRecord = {
 				taskId,
 				laneNumber: lane?.laneNumber ?? outcome?.laneNumber ?? 0,
-				sessionName: outcome?.sessionName || lane?.laneSessionId || lane?.tmuxSessionName || "",
+				sessionName: outcome?.sessionName || lane?.laneSessionId || "",
 				status: outcome?.status ?? "pending",
 				taskFolder: "", // Enriched by caller from discovery
 				startedAt: outcome?.startTime ?? null,
@@ -1277,12 +1277,10 @@ export function serializeBatchState(
 
 	// Build lane records
 	const laneRecords: PersistedLaneRecord[] = lanes.map((lane) => {
-		const sessionId = lane.laneSessionId || lane.tmuxSessionName;
 		const record: PersistedLaneRecord = {
 			laneNumber: lane.laneNumber,
 			laneId: lane.laneId,
-			laneSessionId: sessionId,
-			tmuxSessionName: sessionId,
+			laneSessionId: lane.laneSessionId,
 			worktreePath: lane.worktreePath,
 			branch: lane.branch,
 			taskIds: lane.tasks.map((t) => t.taskId),

@@ -55,7 +55,7 @@ function makeValidV4(): Record<string, unknown> {
 		lanes: [{
 			laneNumber: 1,
 			laneId: "lane-1",
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			worktreePath: "/tmp/wt-1",
 			branch: "task/lane-1-20260328T010000",
 			taskIds: ["TP-001"],
@@ -565,7 +565,7 @@ describe("Schema v4 Migration (TP-081)", () => {
 				lanes: [{
 					laneNumber: 1,
 					laneId: "lane-1",
-					tmuxSessionName: "orch-lane-1",
+					laneSessionId: "orch-lane-1",
 					worktreePath: "/tmp/wt-1",
 					branch: "task/lane-1",
 					taskIds: ["TP-001"],
@@ -637,7 +637,7 @@ describe("Schema v4 Migration (TP-081)", () => {
 			const lanes: AllocatedLane[] = persisted.lanes.map((lr) => ({
 				laneNumber: lr.laneNumber,
 				laneId: lr.laneId,
-				tmuxSessionName: lr.tmuxSessionName,
+				laneSessionId: lr.laneSessionId,
 				worktreePath: lr.worktreePath,
 				branch: lr.branch,
 				tasks: lr.taskIds.map((taskId, i) => ({

@@ -517,7 +517,7 @@ function renderLanesTasks(batch, tmuxSessions) {
     }
 
     // TP-107: check V2 registry for liveness first, fall back to tmux
-    const laneSessionId = lane.laneSessionId || lane.tmuxSessionName;
+    const laneSessionId = lane.laneSessionId;
     const v2Alive = isLaneAliveV2(lane.laneNumber);
     const alive = v2Alive !== null ? v2Alive : tmuxSet.has(laneSessionId);
     const tmuxCmd = `tmux attach -t ${laneSessionId}`;
@@ -769,8 +769,8 @@ function renderMergeAgents(batch, tmuxSessions) {
   // Extract the prefix-opId part from the first lane and use it to construct merge names.
   const lanes = batch?.lanes || [];
   let mergePrefix = "orch-merge"; // fallback for legacy/unknown patterns
-  if (lanes.length > 0 && (lanes[0].laneSessionId || lanes[0].tmuxSessionName)) {
-    const laneName = lanes[0].laneSessionId || lanes[0].tmuxSessionName;
+  if (lanes.length > 0 && lanes[0].laneSessionId) {
+    const laneName = lanes[0].laneSessionId;
     const laneMatch = laneName.match(/^(.+)-lane-\d+$/);
     if (laneMatch) {
       mergePrefix = laneMatch[1] + "-merge";

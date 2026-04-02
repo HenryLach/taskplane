@@ -257,11 +257,31 @@ function validatePersistedState(data: unknown): any {
 		if (!l || typeof l !== "object") {
 			throw new StateFileError("STATE_SCHEMA_INVALID", `lanes[${i}] is not an object`);
 		}
-		for (const field of ["laneId", "tmuxSessionName", "worktreePath", "branch"] as const) {
+		for (const field of ["laneId", "worktreePath", "branch"] as const) {
 			if (typeof l[field] !== "string") {
 				throw new StateFileError("STATE_SCHEMA_INVALID",
 					`lanes[${i}].${field} is missing or not a string`);
 			}
+		}
+		const laneSessionId = l.laneSessionId;
+		const legacySession = l.tmuxSessionName;
+		if (laneSessionId !== undefined && typeof laneSessionId !== "string") {
+			throw new StateFileError("STATE_SCHEMA_INVALID",
+				`lanes[${i}].laneSessionId is not a string (got ${typeof laneSessionId})`);
+		}
+		if (legacySession !== undefined && typeof legacySession !== "string") {
+			throw new StateFileError("STATE_SCHEMA_INVALID",
+				`lanes[${i}].tmuxSessionName is not a string (got ${typeof legacySession})`);
+		}
+		if (typeof laneSessionId !== "string" && typeof legacySession !== "string") {
+			throw new StateFileError("STATE_SCHEMA_INVALID",
+				`lanes[${i}] must include either laneSessionId or tmuxSessionName as a string`);
+		}
+		if (typeof laneSessionId !== "string") {
+			l.laneSessionId = legacySession;
+		}
+		if ("tmuxSessionName" in l) {
+			delete (l as { tmuxSessionName?: unknown }).tmuxSessionName;
 		}
 		if (typeof l.laneNumber !== "number") {
 			throw new StateFileError("STATE_SCHEMA_INVALID",
@@ -871,7 +891,7 @@ console.log("\n── 1.2: serializeBatchState round-trip ──");
 		{
 			laneNumber: 1,
 			laneId: "lane-1",
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			worktreePath: "/tmp/wt-1",
 			branch: "task/lane-1-20260309T020000",
 			tasks: [{ taskId: "X-001", parsedTask: null, weight: 2, estimatedMinutes: 10 }],
@@ -908,7 +928,7 @@ console.log("\n── 1.2: serializeBatchState round-trip ──");
 		lanes: [{
 			laneNumber: 1,
 			laneId: "lane-1",
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			worktreePath: "/tmp/wt-1",
 			branch: "task/lane-1-20260309T020000",
 			taskIds: ["X-001"],
@@ -1076,7 +1096,7 @@ try {
 		assertEqual(loaded!.lanes[0].repoId, undefined, "v1 upconverted: lane repoId is undefined");
 		// Verify lane details
 		assertEqual(loaded!.lanes[0].laneId, "lane-1", "v1 upconverted: lane-1 laneId preserved");
-		assertEqual(loaded!.lanes[0].tmuxSessionName, "orch-lane-1", "v1 upconverted: lane-1 sessionName preserved");
+		assertEqual(loaded!.lanes[0].laneSessionId, "orch-lane-1", "v1 upconverted: lane-1 sessionName preserved");
 		assertEqual(loaded!.lanes[0].taskIds.length, 1, "v1 upconverted: lane-1 taskIds preserved");
 		// Verify top-level fields
 		assertEqual(loaded!.phase, "executing", "v1 upconverted: phase preserved");
@@ -1288,7 +1308,7 @@ function minimalLane(laneNum: number, taskIds: string[], repoId?: string): any {
 	return {
 		laneNumber: laneNum,
 		laneId: `lane-${laneNum}`,
-		tmuxSessionName: `orch-lane-${laneNum}`,
+		laneSessionId: `orch-lane-${laneNum}`,
 		worktreePath: `/tmp/wt-${laneNum}`,
 		branch: `task/lane-${laneNum}-20260309T030000`,
 		tasks: taskIds.map(id => ({ taskId: id, task: null, order: 0, estimatedMinutes: 10 })),
@@ -1304,7 +1324,7 @@ function minimalLaneWithRepoTasks(laneNum: number, tasks: Array<{ taskId: string
 	return {
 		laneNumber: laneNum,
 		laneId: `lane-${laneNum}`,
-		tmuxSessionName: `orch-lane-${laneNum}`,
+		laneSessionId: `orch-lane-${laneNum}`,
 		worktreePath: `/tmp/wt-${laneNum}`,
 		branch: `task/lane-${laneNum}-20260309T030000`,
 		tasks: tasks.map((t, i) => ({
@@ -1386,7 +1406,7 @@ function serializeBatchState(
 		const record: any = {
 			taskId,
 			laneNumber: lane?.laneNumber ?? 0,
-			sessionName: outcome?.sessionName || lane?.tmuxSessionName || "",
+			sessionName: outcome?.sessionName || lane?.laneSessionId || "",
 			status: outcome?.status ?? "pending",
 			taskFolder: "",
 			startedAt: outcome?.startTime ?? null,
@@ -1408,7 +1428,7 @@ function serializeBatchState(
 		const record: any = {
 			laneNumber: lane.laneNumber,
 			laneId: lane.laneId,
-			tmuxSessionName: lane.tmuxSessionName,
+			laneSessionId: lane.laneSessionId,
 			worktreePath: lane.worktreePath,
 			branch: lane.branch,
 			taskIds: lane.tasks.map((t: any) => t.taskId),
@@ -2818,7 +2838,7 @@ function selectAbortTargetSessions(
 	const runtimeLookup = new Map<string, { laneId: string; taskId: string | null; worktreePath: string; taskFolder: string | null }>();
 	for (const lane of runtimeLanes) {
 		const currentTask = lane.tasks && lane.tasks.length > 0 ? lane.tasks[0] : null;
-		runtimeLookup.set(lane.tmuxSessionName, {
+		runtimeLookup.set(lane.laneSessionId, {
 			laneId: lane.laneId,
 			taskId: currentTask?.taskId || null,
 			worktreePath: lane.worktreePath,
@@ -2890,7 +2910,7 @@ function selectAbortTargetSessions(
 	});
 	const runtimeLanes = [
 		{
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			laneId: "lane-1",
 			worktreePath: "/worktrees/lane-1",
 			tasks: [{ taskId: "TO-001", task: { taskFolder: "/repo/docs/tasks/TO-001" } }],
@@ -4145,7 +4165,7 @@ function workspacePersistedState(overrides?: Partial<PersistedBatchStateForTest>
 			{
 				laneNumber: 1,
 				laneId: "api/lane-1",
-				tmuxSessionName: "orch-api-lane-1",
+				laneSessionId: "orch-api-lane-1",
 				worktreePath: "/tmp/ws-wt-1",
 				branch: "task/api-lane-1-20260315T120000",
 				taskIds: ["WS-001"],
@@ -4154,7 +4174,7 @@ function workspacePersistedState(overrides?: Partial<PersistedBatchStateForTest>
 			{
 				laneNumber: 2,
 				laneId: "frontend/lane-2",
-				tmuxSessionName: "orch-frontend-lane-2",
+				laneSessionId: "orch-frontend-lane-2",
 				worktreePath: "/tmp/ws-wt-2",
 				branch: "task/frontend-lane-2-20260315T120000",
 				taskIds: ["WS-002"],
@@ -4287,8 +4307,8 @@ function collectRepoRoots(
 		],
 		wavePlan: [["T1", "T2"]],
 		lanes: [
-			{ laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1", worktreePath: "/tmp/wt-1", branch: "b1", taskIds: ["T1"] },
-			{ laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2", worktreePath: "/tmp/wt-2", branch: "b2", taskIds: ["T2"] },
+			{ laneNumber: 1, laneId: "lane-1", laneSessionId: "orch-lane-1", worktreePath: "/tmp/wt-1", branch: "b1", taskIds: ["T1"] },
+			{ laneNumber: 2, laneId: "lane-2", laneSessionId: "orch-lane-2", worktreePath: "/tmp/wt-2", branch: "b2", taskIds: ["T2"] },
 		],
 	});
 	// Verify no repo fields on tasks or lanes
@@ -4391,8 +4411,8 @@ function collectRepoRoots(
 	console.log("  ▸ collectRepoRoots: repo mode (v1) returns only default root");
 	const state = minimalPersistedState({
 		lanes: [
-			{ laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1", worktreePath: "/tmp/wt-1", branch: "b1", taskIds: ["T1"] },
-			{ laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2", worktreePath: "/tmp/wt-2", branch: "b2", taskIds: ["T2"] },
+			{ laneNumber: 1, laneId: "lane-1", laneSessionId: "orch-lane-1", worktreePath: "/tmp/wt-1", branch: "b1", taskIds: ["T1"] },
+			{ laneNumber: 2, laneId: "lane-2", laneSessionId: "orch-lane-2", worktreePath: "/tmp/wt-2", branch: "b2", taskIds: ["T2"] },
 		],
 	});
 	const defaultRoot = "/repos/main";
@@ -4519,12 +4539,12 @@ function makeWorkspaceState(overrides: Partial<any> = {}): any {
 		wavePlan: [["WS-001", "WS-002"]],
 		lanes: [
 			{
-				laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+				laneNumber: 1, laneId: "lane-1", laneSessionId: "orch-lane-1",
 				worktreePath: "/tmp/wt-1", branch: "task/lane-1-batch",
 				taskIds: ["WS-001"], repoId: "api",
 			},
 			{
-				laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2",
+				laneNumber: 2, laneId: "lane-2", laneSessionId: "orch-lane-2",
 				worktreePath: "/tmp/wt-2", branch: "task/lane-2-batch",
 				taskIds: ["WS-002"], repoId: "frontend",
 			},
@@ -4607,7 +4627,7 @@ const testWorkspaceConfig = {
 		wavePlan: [["T1", "T2"]],
 		lanes: [
 			{
-				laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+				laneNumber: 1, laneId: "lane-1", laneSessionId: "orch-lane-1",
 				worktreePath: "/tmp/wt-1", branch: "task/lane-1-batch",
 				taskIds: ["T1", "T2"],
 				// No repoId — v1 behavior
@@ -4703,12 +4723,12 @@ const testWorkspaceConfig = {
 		wavePlan: [["WS-001", "WS-002"], ["WS-003", "WS-004"]],
 		lanes: [
 			{
-				laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+				laneNumber: 1, laneId: "lane-1", laneSessionId: "orch-lane-1",
 				worktreePath: "/tmp/wt-1", branch: "task/lane-1-batch",
 				taskIds: ["WS-001", "WS-003"], repoId: "api",
 			},
 			{
-				laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2",
+				laneNumber: 2, laneId: "lane-2", laneSessionId: "orch-lane-2",
 				worktreePath: "/tmp/wt-2", branch: "task/lane-2-batch",
 				taskIds: ["WS-002", "WS-004"], repoId: "frontend",
 			},
@@ -4757,12 +4777,12 @@ const testWorkspaceConfig = {
 		wavePlan: [["WS-001", "WS-002"]],
 		lanes: [
 			{
-				laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+				laneNumber: 1, laneId: "lane-1", laneSessionId: "orch-lane-1",
 				worktreePath: "/tmp/wt-1", branch: "task/lane-1-batch",
 				taskIds: ["WS-001"], repoId: "api",
 			},
 			{
-				laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2",
+				laneNumber: 2, laneId: "lane-2", laneSessionId: "orch-lane-2",
 				worktreePath: "/tmp/wt-2", branch: "task/lane-2-batch",
 				taskIds: ["WS-002"], repoId: "frontend",
 			},
@@ -4899,12 +4919,12 @@ function computeTransitiveDependents(
 		blockedTaskIds: [],
 		lanes: [
 			{
-				laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+				laneNumber: 1, laneId: "lane-1", laneSessionId: "orch-lane-1",
 				worktreePath: "/tmp/wt-1", branch: "task/lane-1-batch",
 				taskIds: ["WS-001", "WS-003"], repoId: "api",
 			},
 			{
-				laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2",
+				laneNumber: 2, laneId: "lane-2", laneSessionId: "orch-lane-2",
 				worktreePath: "/tmp/wt-2", branch: "task/lane-2-batch",
 				taskIds: ["WS-002", "WS-004"], repoId: "frontend",
 			},
@@ -5098,13 +5118,13 @@ function computeTransitiveDependents(
 		blockedTaskIds: [],
 		lanes: [
 			{
-				laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+				laneNumber: 1, laneId: "lane-1", laneSessionId: "orch-lane-1",
 				worktreePath: "/tmp/wt-1", branch: "task/lane-1-batch",
 				taskIds: ["T1", "T2"],
 				// No repoId — v1
 			},
 			{
-				laneNumber: 2, laneId: "lane-2", tmuxSessionName: "orch-lane-2",
+				laneNumber: 2, laneId: "lane-2", laneSessionId: "orch-lane-2",
 				worktreePath: "/tmp/wt-2", branch: "task/lane-2-batch",
 				taskIds: ["T3"],
 				// No repoId — v1
@@ -5194,7 +5214,7 @@ console.log("\n── TP-007 Step 2: reconstructAllocatedLanes & collectAllRepoR
 // ── Reimplement Step 2 helpers for test self-containment ─────────────
 
 function reconstructAllocatedLanes(
-	persistedLanes: Array<{ laneNumber: number; laneId: string; tmuxSessionName: string; worktreePath: string; branch: string; taskIds: string[]; repoId?: string }>,
+	persistedLanes: Array<{ laneNumber: number; laneId: string; laneSessionId: string; worktreePath: string; branch: string; taskIds: string[]; repoId?: string }>,
 	persistedTasks?: Array<{ taskId: string; repoId?: string; resolvedRepoId?: string; taskFolder?: string }>,
 ): any[] {
 	const taskLookup = new Map<string, any>();
@@ -5207,7 +5227,7 @@ function reconstructAllocatedLanes(
 	return persistedLanes.map((lr) => ({
 		laneNumber: lr.laneNumber,
 		laneId: lr.laneId,
-		tmuxSessionName: lr.tmuxSessionName,
+		laneSessionId: lr.laneSessionId,
 		worktreePath: lr.worktreePath,
 		branch: lr.branch,
 		tasks: lr.taskIds.map((taskId: string) => {
@@ -5259,7 +5279,7 @@ function collectAllRepoRoots(
 		{
 			laneNumber: 1,
 			laneId: "lane-1",
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			worktreePath: "/work/wt-1",
 			branch: "orch/batch-1-lane-1",
 			taskIds: ["T1", "T2"],
@@ -5268,7 +5288,7 @@ function collectAllRepoRoots(
 		{
 			laneNumber: 2,
 			laneId: "lane-2",
-			tmuxSessionName: "orch-lane-2",
+			laneSessionId: "orch-lane-2",
 			worktreePath: "/work/wt-2",
 			branch: "orch/batch-1-lane-2",
 			taskIds: ["T3"],
@@ -5280,7 +5300,7 @@ function collectAllRepoRoots(
 	assertEqual(allocated.length, 2, "reconstructed 2 lanes");
 	assertEqual(allocated[0].laneNumber, 1, "lane 1 number preserved");
 	assertEqual(allocated[0].laneId, "lane-1", "lane 1 id preserved");
-	assertEqual(allocated[0].tmuxSessionName, "orch-lane-1", "lane 1 session preserved");
+	assertEqual(allocated[0].laneSessionId, "orch-lane-1", "lane 1 session preserved");
 	assertEqual(allocated[0].worktreePath, "/work/wt-1", "lane 1 worktree preserved");
 	assertEqual(allocated[0].branch, "orch/batch-1-lane-1", "lane 1 branch preserved");
 	assertEqual(allocated[0].repoId, "api", "lane 1 repoId preserved");
@@ -5300,7 +5320,7 @@ function collectAllRepoRoots(
 		{
 			laneNumber: 1,
 			laneId: "lane-1",
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			worktreePath: "/work/wt-1",
 			branch: "orch/batch-1-lane-1",
 			taskIds: ["T1"],
@@ -5359,7 +5379,7 @@ function collectAllRepoRoots(
 		{
 			laneNumber: 1,
 			laneId: "lane-1",
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			worktreePath: "/work/wt-1",
 			branch: "orch/batch-1-lane-1",
 			taskIds: ["T1"],
@@ -5368,7 +5388,7 @@ function collectAllRepoRoots(
 		{
 			laneNumber: 2,
 			laneId: "lane-2",
-			tmuxSessionName: "orch-lane-2",
+			laneSessionId: "orch-lane-2",
 			worktreePath: "/work/wt-2",
 			branch: "orch/batch-1-lane-2",
 			taskIds: ["T2"],
@@ -5410,7 +5430,7 @@ function collectAllRepoRoots(
 	assertEqual(parsed.lanes.length, 2, "serialized 2 lane records");
 	assertEqual(parsed.lanes[0].laneNumber, 1, "lane 1 number in output");
 	assertEqual(parsed.lanes[0].repoId, "api", "lane 1 repoId in output");
-	assertEqual(parsed.lanes[0].tmuxSessionName, "orch-lane-1", "lane 1 session in output");
+	assertEqual(parsed.lanes[0].laneSessionId, "orch-lane-1", "lane 1 session in output");
 	assertEqual(parsed.lanes[1].laneNumber, 2, "lane 2 number in output");
 	assertEqual(parsed.lanes[1].repoId, "frontend", "lane 2 repoId in output");
 
@@ -5437,7 +5457,7 @@ function collectAllRepoRoots(
 		{
 			laneNumber: 1,
 			laneId: "lane-1",
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			worktreePath: "/work/wt-1",
 			branch: "orch/batch-1-lane-1",
 			taskIds: ["T1"],
@@ -5482,7 +5502,7 @@ function collectAllRepoRoots(
 	const newWaveLanes: any[] = [{
 		laneNumber: 3,
 		laneId: "lane-3",
-		tmuxSessionName: "orch-lane-3",
+		laneSessionId: "orch-lane-3",
 		worktreePath: "/work/wt-3",
 		branch: "orch/batch-1-lane-3",
 		tasks: [{ taskId: "T2", order: 0, task: { promptRepoId: "frontend", resolvedRepoId: "frontend" }, estimatedMinutes: 5 }],
@@ -5537,7 +5557,7 @@ function collectAllRepoRoots(
 		{
 			laneNumber: 1,
 			laneId: "lane-1",
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			worktreePath: "/work/wt-1",
 			branch: "orch/batch-1-lane-1",
 			taskIds: ["T1"],
@@ -5563,7 +5583,7 @@ function collectAllRepoRoots(
 		{
 			laneNumber: 1,
 			laneId: "lane-1",
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			worktreePath: "/work/wt-1",
 			branch: "orch/batch-1-lane-1",
 			taskIds: ["T1"],
@@ -5609,7 +5629,7 @@ function collectAllRepoRoots(
 	assertEqual(validated.lanes.length, 1, "round-trip: 1 lane");
 	assertEqual(validated.lanes[0].repoId, "api", "round-trip: lane repoId preserved");
 	assertEqual(validated.lanes[0].laneNumber, 1, "round-trip: lane number preserved");
-	assertEqual(validated.lanes[0].tmuxSessionName, "orch-lane-1", "round-trip: session preserved");
+	assertEqual(validated.lanes[0].laneSessionId, "orch-lane-1", "round-trip: session preserved");
 
 	assertEqual(validated.tasks.length, 1, "round-trip: 1 task");
 	assertEqual(validated.tasks[0].taskId, "T1", "round-trip: task ID preserved");
@@ -5628,7 +5648,7 @@ function collectAllRepoRoots(
 	console.log("  ▸ reconstructAllocatedLanes: persistedTasks carries repo fields for archived tasks");
 	const persistedLanes = [
 		{
-			laneNumber: 1, laneId: "lane-1", tmuxSessionName: "orch-lane-1",
+			laneNumber: 1, laneId: "lane-1", laneSessionId: "orch-lane-1",
 			worktreePath: "/wt/1", branch: "b-1", taskIds: ["T1", "T2"], repoId: "api",
 		},
 	];
@@ -5668,7 +5688,7 @@ function collectAllRepoRoots(
 	console.log("  ▸ reconstructAllocatedLanes: without persistedTasks, task stubs are null (backward compat)");
 	const persistedLanes = [
 		{
-			laneNumber: 1, laneId: "lane-1", tmuxSessionName: "s1",
+			laneNumber: 1, laneId: "lane-1", laneSessionId: "s1",
 			worktreePath: "/wt/1", branch: "b-1", taskIds: ["T1"],
 		},
 	];
@@ -5796,11 +5816,11 @@ function collectAllRepoRoots(
 	console.log("  ▸ mixed-repo checkpoint: tasks from 2 repos preserve attribution through serialize");
 	const persistedLanes = [
 		{
-			laneNumber: 1, laneId: "l-1", tmuxSessionName: "s-1",
+			laneNumber: 1, laneId: "l-1", laneSessionId: "s-1",
 			worktreePath: "/wt/api-1", branch: "b-1", taskIds: ["TA"], repoId: "api",
 		},
 		{
-			laneNumber: 2, laneId: "l-2", tmuxSessionName: "s-2",
+			laneNumber: 2, laneId: "l-2", laneSessionId: "s-2",
 			worktreePath: "/wt/fe-1", branch: "b-2", taskIds: ["TF"], repoId: "frontend",
 		},
 	];
