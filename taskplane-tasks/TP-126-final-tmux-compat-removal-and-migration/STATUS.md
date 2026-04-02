@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 3
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** L
 
@@ -39,6 +39,7 @@
 ### Step 2: Update schema/types/docs/templates
 **Status:** 🟨 In Progress
 - [ ] Update schema/types to canonical non-TMUX contract
+- [ ] Align settings/UI metadata with no-TMUX schema values
 - [ ] Update templates/config docs to canonical keys
 - [ ] Update command/doctor docs to final no-TMUX contract
 
@@ -80,3 +81,4 @@
 | 2026-04-02 21:35 | Review R001 | plan Step 1: REVISE |
 | 2026-04-02 21:35 | Review R002 | plan Step 1: APPROVE |
 | 2026-04-02 21:46 | Review R003 | code Step 1: REVISE |
+| 2026-04-02 21:49 | Review R004 | code Step 1: APPROVE |
