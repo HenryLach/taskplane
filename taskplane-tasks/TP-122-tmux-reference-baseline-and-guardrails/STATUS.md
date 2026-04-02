@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** S
 
@@ -18,9 +18,11 @@
 
 ### Step 1: Add audit script
 **Status:** 🟨 In Progress
+- [ ] Define strict-mode functional TMUX detection scope and explicit exclusions
+- [ ] Define deterministic JSON output contract (schema + stable ordering + normalized paths)
 - [ ] Create `scripts/tmux-reference-audit.mjs`
 - [ ] Emit machine-readable summary (total + by-file + by-category)
-- [ ] Support strict mode failure on functional TMUX usage
+- [ ] Support strict mode failure on functional TMUX usage with explicit exit-code + diagnostics contract
 
 ### Step 2: Add regression guard test
 **Status:** ⬜ Not Started
@@ -48,6 +50,7 @@
 | 2026-04-02 20:19 | Step 0 started | Baseline inventory |
 | 2026-04-02 20:27 | Step 0 completed | Baseline captured with per-file and per-bucket counts |
 | 2026-04-02 20:27 | Step 1 started | Add audit script |
+| 2026-04-02 20:28 | Review R001 (plan, step 1) | REVISE — add strict-mode boundary + deterministic output contract items |
 |-----------|--------|---------|
 
 ## Baseline Snapshot (2026-04-02)
@@ -107,3 +110,9 @@ Bucket classification (occurrence-level, same baseline scan):
 | **Total** | **186** | Matches baseline total |
 
 Initial hotspot files by total refs: `types.ts` (44), `execution.ts` (26), `persistence.ts` (18), `config-loader.ts` (17), `supervisor.ts` (11).
+
+## Notes
+
+- Reviewer suggestion (R001): keep explicit CLI flags (`--strict`, `--json`) so Step 2 tests can target a stable interface.
+- Reviewer suggestion (R001): add a known-good audit JSON example in STATUS.md once Step 1 implementation is complete.
+| 2026-04-02 20:22 | Review R001 | plan Step 1: REVISE |
