@@ -1,10 +1,10 @@
 # TP-126: Final TMUX Compatibility Removal and Migration — Status
 
-**Current Step:** Step 2: Update schema/types/docs/templates
+**Current Step:** Step 4: Final verification & delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 3
-**Review Counter:** 6
+**Review Counter:** 8
 **Iteration:** 2
 **Size:** L
 
@@ -45,14 +45,14 @@
 - [x] [R006] Update `taskplane init` scaffolding to emit canonical subprocess/session-prefix fields only and add CLI regression coverage
 
 ### Step 3: Tests and migration coverage
-**Status:** ⬜ Not Started
-- [ ] Update fixtures using TMUX-era fields
-- [ ] Add migration/failure tests for legacy input detection and guidance
-- [ ] Run full extension suite
-- [ ] Run CLI smoke tests (`help`, `doctor`)
+**Status:** ✅ Complete
+- [x] Update fixtures using TMUX-era fields
+- [x] Add migration/failure tests for legacy input detection and guidance
+- [x] Run full extension suite
+- [x] Run CLI smoke tests (`help`, `doctor`)
 
 ### Step 4: Final verification & delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Re-run TMUX reference audit and record final counts
 - [ ] Confirm no functional TMUX runtime logic remains
 - [ ] Publish migration notes in docs and STATUS.md
@@ -84,6 +84,11 @@
 | 2026-04-02 22:50 | Step 3 started | Tests and migration coverage |
 | 2026-04-02 22:52 | ⚠️ Review R006 (code, Step 2) | REVISE: init scaffolding still emits TMUX-era keys/values inconsistent with no-TMUX contract |
 | 2026-04-02 23:26 | R006 fix + tests | Updated `taskplane init` scaffolding to canonical `session_prefix`/`sessionPrefix` + subprocess-only defaults; targeted `init-mode-detection.integration` suite passed |
+| 2026-04-02 23:41 | Step 3 fixture/test updates | Updated TMUX-era fixtures to subprocess defaults and added init scaffolding migration-failure regression coverage |
+| 2026-04-02 23:44 | Step 3 targeted tests | Passed targeted suites (`init-mode-detection.integration`, `merge-repo-scoped`, `workspace-config.integration`, `worktree-lifecycle.integration`) |
+| 2026-04-02 23:59 | Step 3 full suite | Full `extensions/tests/*.test.ts` suite passed (3400 pass / 0 fail) |
+| 2026-04-03 00:00 | Step 3 CLI smoke | Ran `node bin/taskplane.mjs help` and `doctor`; doctor reported expected missing local `.pi` files in lane root |
+| 2026-04-03 00:00 | Step 3 completed | Migration coverage complete; proceeding to final verification/delivery |
 |-----------|--------|---------|
 | 2026-04-02 21:35 | Review R001 | plan Step 1: REVISE |
 | 2026-04-02 21:35 | Review R002 | plan Step 1: APPROVE |
@@ -92,3 +97,5 @@
 | 2026-04-02 21:50 | Review R005 | plan Step 2: APPROVE |
 | 2026-04-02 22:01 | Review R006 | code Step 2: REVISE |
 | 2026-04-02 22:02 | Worker iter 1 | killed (wall-clock timeout) in 1800s, tools: 224 |
+| 2026-04-02 22:08 | Review R007 | code Step 2: APPROVE |
+| 2026-04-02 22:08 | Review R008 | plan Step 3: APPROVE |

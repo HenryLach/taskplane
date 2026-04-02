@@ -35,6 +35,7 @@ import { tmpdir } from "os";
 // Import gitignore constants from the shared module
 import { resolve as resolvePath, dirname } from "path";
 import { fileURLToPath, pathToFileURL } from "url";
+import { loadProjectConfig, ConfigLoadError } from "../taskplane/config-loader.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const patternsPath = resolvePath(__dirname, "../../bin/gitignore-patterns.mjs");
@@ -792,5 +793,53 @@ describe("CLI dry-run integration", () => {
 		expect(projectConfig.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 		expect(typeof projectConfig.orchestrator.orchestrator.sessionPrefix).toBe("string");
 		expect("tmuxPrefix" in projectConfig.orchestrator.orchestrator).toBe(false);
+	});
+
+	it("5.11 — injected legacy tmuxPrefix in generated JSON fails with migration guidance", () => {
+		const repo = makeTestDir("cli-legacy-tmux-prefix");
+		initGitRepo(repo);
+		const initResult = runInit(repo, ["--no-examples"], { dryRun: false, preset: "minimal" });
+		expect(initResult.exitCode).toBe(0);
+
+		const configPath = join(repo, ".pi", "taskplane-config.json");
+		const config = JSON.parse(readFileSync(configPath, "utf-8"));
+		config.orchestrator.orchestrator.tmuxPrefix = "legacy-orch";
+		writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+
+		let caught: unknown = null;
+		try {
+			loadProjectConfig(repo);
+		} catch (err) {
+			caught = err;
+		}
+
+		expect(caught).toBeInstanceOf(ConfigLoadError);
+		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+		expect((caught as ConfigLoadError).message).toContain("tmuxPrefix");
+		expect((caught as ConfigLoadError).message).toContain("sessionPrefix");
+	});
+
+	it("5.12 — injected legacy spawnMode tmux in generated JSON fails with subprocess hint", () => {
+		const repo = makeTestDir("cli-legacy-spawn-mode");
+		initGitRepo(repo);
+		const initResult = runInit(repo, ["--no-examples"], { dryRun: false, preset: "minimal" });
+		expect(initResult.exitCode).toBe(0);
+
+		const configPath = join(repo, ".pi", "taskplane-config.json");
+		const config = JSON.parse(readFileSync(configPath, "utf-8"));
+		config.orchestrator.orchestrator.spawnMode = "tmux";
+		writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+
+		let caught: unknown = null;
+		try {
+			loadProjectConfig(repo);
+		} catch (err) {
+			caught = err;
+		}
+
+		expect(caught).toBeInstanceOf(ConfigLoadError);
+		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+		expect((caught as ConfigLoadError).message).toContain("spawnMode");
+		expect((caught as ConfigLoadError).message).toContain("subprocess");
 	});
 });
