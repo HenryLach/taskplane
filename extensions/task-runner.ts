@@ -28,7 +28,7 @@ import {
 } from "fs";
 import { tmpdir, userInfo } from "os";
 import { join, dirname, basename, resolve } from "path";
-import { loadProjectConfig, toTaskConfig } from "./taskplane/config-loader.ts";
+import { ConfigLoadError, loadProjectConfig, toTaskConfig } from "./taskplane/config-loader.ts";
 import { loadWorkspaceConfig, resolvePointer } from "./taskplane/workspace.ts";
 import type { PointerResolution } from "./taskplane/types.ts";
 import {
@@ -292,8 +292,12 @@ export function loadConfig(cwd: string): TaskConfig {
 		const pointer = resolveTaskRunnerPointer();
 		const unified = loadProjectConfig(cwd, pointer?.configRoot);
 		return toTaskConfig(unified);
-	} catch {
-		// If config loading fails (e.g., malformed JSON), fall back to defaults
+	} catch (err: unknown) {
+		if (err instanceof ConfigLoadError && err.code === "CONFIG_LEGACY_FIELD") {
+			// Hard-fail deprecated TMUX-era config/prefs with migration guidance.
+			throw err;
+		}
+		// For malformed/unreadable config, preserve historical fallback behavior.
 		return { ...DEFAULT_CONFIG };
 	}
 }

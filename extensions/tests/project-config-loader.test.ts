@@ -828,6 +828,48 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 		expect(result.task_areas).toEqual({});
 	});
 
+	it("4.5b: task-runner loadConfig rethrows CONFIG_LEGACY_FIELD for worker spawn_mode tmux", () => {
+		const dir = makeTestDir("loadconfig-legacy-worker-spawn");
+		writeTaskRunnerYaml(dir, "worker:\n  spawn_mode: tmux\n");
+
+		let caught: unknown;
+		try {
+			taskRunnerLoadConfig(dir);
+		} catch (err) {
+			caught = err;
+		}
+
+		expect(caught).toBeInstanceOf(ConfigLoadError);
+		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+		expect((caught as ConfigLoadError).message).toContain("taskRunner.worker.spawnMode");
+	});
+
+	it("4.5c: task-runner loadConfig rethrows CONFIG_LEGACY_FIELD for legacy user prefs", () => {
+		const dir = makeTestDir("loadconfig-legacy-prefs");
+		const agentDir = makeTestDir("loadconfig-legacy-prefs-agent");
+		const prevAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		mkdirSync(join(agentDir, "taskplane"), { recursive: true });
+		writeFileSync(join(agentDir, "taskplane", "preferences.json"), JSON.stringify({ tmuxPrefix: "legacy-pref" }), "utf-8");
+
+		let caught: unknown;
+		try {
+			taskRunnerLoadConfig(dir);
+		} catch (err) {
+			caught = err;
+		} finally {
+			if (prevAgentDir === undefined) {
+				delete process.env.PI_CODING_AGENT_DIR;
+			} else {
+				process.env.PI_CODING_AGENT_DIR = prevAgentDir;
+			}
+		}
+
+		expect(caught).toBeInstanceOf(ConfigLoadError);
+		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
+		expect((caught as ConfigLoadError).message).toContain("tmuxPrefix");
+	});
+
 	it("4.6: JSON config deep merges nested fields (partial section override)", () => {
 		const dir = makeTestDir("deep-merge");
 		writeJsonConfig(dir, {
