@@ -1,10 +1,10 @@
 # TP-126: Final TMUX Compatibility Removal and Migration — Status
 
-**Current Step:** Step 2: Update schema/types/docs/templates
+**Current Step:** Step 3: Tests and migration coverage
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 3
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** L
 
@@ -37,14 +37,14 @@
 - [x] [R003] Enforce hard failure in `/task` config loading for `CONFIG_LEGACY_FIELD` (no silent fallback to defaults) and add regression tests
 
 ### Step 2: Update schema/types/docs/templates
-**Status:** 🟨 In Progress
-- [ ] Update schema/types to canonical non-TMUX contract
-- [ ] Align settings/UI metadata with no-TMUX schema values
-- [ ] Update templates/config docs to canonical keys
-- [ ] Update command/doctor docs to final no-TMUX contract
+**Status:** ✅ Complete
+- [x] Update schema/types to canonical non-TMUX contract
+- [x] Align settings/UI metadata with no-TMUX schema values
+- [x] Update templates/config docs to canonical keys
+- [x] Update command/doctor docs to final no-TMUX contract
 
 ### Step 3: Tests and migration coverage
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update fixtures using TMUX-era fields
 - [ ] Add migration/failure tests for legacy input detection and guidance
 - [ ] Run full extension suite
@@ -77,8 +77,12 @@
 | 2026-04-02 22:38 | R003 fix + tests | Updated `/task` loadConfig to rethrow CONFIG_LEGACY_FIELD; targeted tests re-run and passing |
 | 2026-04-02 22:38 | Step 1 re-completed | Code-review revision items resolved |
 | 2026-04-02 22:38 | Step 2 started | Update schema/types/docs/templates |
+| 2026-04-02 22:50 | Step 2 tests | Targeted suites passed (`settings-tui`, `project-config-loader`, `user-preferences`, `tmux-compat`, `monorepo-compat-regression`) |
+| 2026-04-02 22:50 | Step 2 completed | Schema/types/settings metadata and config/command docs updated to subprocess-only contract |
+| 2026-04-02 22:50 | Step 3 started | Tests and migration coverage |
 |-----------|--------|---------|
 | 2026-04-02 21:35 | Review R001 | plan Step 1: REVISE |
 | 2026-04-02 21:35 | Review R002 | plan Step 1: APPROVE |
 | 2026-04-02 21:46 | Review R003 | code Step 1: REVISE |
 | 2026-04-02 21:49 | Review R004 | code Step 1: APPROVE |
+| 2026-04-02 21:50 | Review R005 | plan Step 2: APPROVE |

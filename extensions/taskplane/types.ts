@@ -14,7 +14,7 @@ export interface OrchestratorConfig {
 		worktree_location: "sibling" | "subdirectory";
 		worktree_prefix: string;
 		batch_id_format: "timestamp" | "sequential";
-		spawn_mode: "tmux" | "subprocess";
+		spawn_mode: "subprocess";
 		sessionPrefix: string;
 		/** Optional operator identifier. Auto-detected from OS username if empty. */
 		operator_id: string;

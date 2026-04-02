@@ -1017,7 +1017,7 @@ export function toTaskConfig(config: TaskplaneConfig): {
 	standards: { docs: string[]; rules: string[] };
 	standards_overrides: Record<string, { docs?: string[]; rules?: string[] }>;
 	task_areas: Record<string, { path: string; [key: string]: any }>;
-	worker: { model: string; tools: string; thinking: string; spawn_mode?: "subprocess" | "tmux" };
+	worker: { model: string; tools: string; thinking: string; spawn_mode?: "subprocess" };
 	reviewer: { model: string; tools: string; thinking: string };
 	context: {
 		worker_context_window: number;
