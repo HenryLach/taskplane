@@ -1,10 +1,10 @@
 # TP-123: Runtime V2 Operator Messaging De-TMUX — Status
 
-**Current Step:** Step 3: Tests
+**Current Step:** Step 4: Documentation & delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** M
 
@@ -29,13 +29,13 @@
 - [x] Ensure merge/lane liveness indicators still render correctly
 
 ### Step 3: Tests
-**Status:** 🟨 In Progress
-- [ ] Update/extend tests asserting old TMUX wording
-- [ ] Run full extension suite
-- [ ] Fix failures
+**Status:** ✅ Complete
+- [x] Update/extend tests asserting old TMUX wording
+- [x] Run full extension suite
+- [x] Fix failures
 
 ### Step 4: Documentation & delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update migration docs with messaging changes
 - [ ] Record before/after inventory in STATUS.md
 
@@ -67,3 +67,5 @@
 | 2026-04-02 20:41 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-02 20:44 | Review R002 | code Step 1: APPROVE |
 | 2026-04-02 20:45 | Review R003 | plan Step 2: APPROVE |
+| 2026-04-02 20:47 | Review R004 | code Step 2: APPROVE |
+| 2026-04-02 20:48 | Review R005 | plan Step 3: APPROVE |
