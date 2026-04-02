@@ -14,15 +14,14 @@
  *   7.2 — formatElapsedTime
  *   7.3 — buildDashboardViewModel
  *   7.4 — computeTransitiveDependents
- *   7.5 — toTmuxPath (extracted from source)
- *   7.6 — resolveWorktreeBasePath (extracted from source)
- *   7.7 — generateWorktreePath (table-driven, extracted from source)
- *   7.8 — listWorktrees regex pattern (naming invariant: {prefix}-{N})
- *   7.9 — computeSavedBranchName (branch → saved/ prefix)
- *   7.10 — resolveSavedBranchCollision (decision table: absent/same/diff SHA)
- *   7.11 — hasUnmergedCommits (source verification: error codes, git usage)
- *   7.12 — preserveBranch (source verification: graceful error handling)
- *   7.13 — ensureBranchDeleted (source verification: rename semantics)
+ *   7.5 — resolveWorktreeBasePath (extracted from source)
+ *   7.6 — generateWorktreePath (table-driven, extracted from source)
+ *   7.7 — listWorktrees regex pattern (naming invariant: {prefix}-{N})
+ *   7.8 — computeSavedBranchName (branch → saved/ prefix)
+ *   7.9 — resolveSavedBranchCollision (decision table: absent/same/diff SHA)
+ *   7.10 — hasUnmergedCommits (source verification: error codes, git usage)
+ *   7.11 — preserveBranch (source verification: graceful error handling)
+ *   7.12 — ensureBranchDeleted (source verification: rename semantics)
  */
 
 import { readFileSync } from "fs";
@@ -639,12 +638,8 @@ console.log("\n─── 7.4: computeTransitiveDependents ───");
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// 7.5: toTmuxPath — extracted from production source, not reimplemented
+// Shared helper: strip TS annotations for extracted source evaluation
 // ═══════════════════════════════════════════════════════════════════════
-
-// Build a callable from the real source code of toTmuxPath.
-// This avoids reimplementation drift: if the production function changes,
-// these tests automatically pick up the new logic.
 
 /**
  * Strip TypeScript type annotations from a function body so it can be
@@ -666,45 +661,8 @@ function stripTypeAnnotations(src: string): string {
 		.replace(/const\s+(\w+)\s*:\s*[^=]+=\s*/g, "const $1 = ");
 }
 
-const toTmuxPathSource = extractFunction(source, "toTmuxPath");
-
-// The production function uses `resolve` from path module (imported at
-// module scope in task-orchestrator.ts). We inject it via closure.
-const toTmuxPathFn = new Function(
-	"resolve",
-	`return (${stripTypeAnnotations(toTmuxPathSource).replace(/^function toTmuxPath/, "function")})`,
-)(resolve) as (pathValue: string) => string;
-
-console.log("\n7.5 — toTmuxPath (extracted from source)");
-
-{
-	console.log("  ▸ converts nested .worktrees path on Windows-style input");
-	const input = "C:\\dev\\taskplane\\.worktrees\\wt-1";
-	const result = toTmuxPathFn(input);
-	// On Windows: resolve → C:\dev\..., replace \→/ → C:/dev/..., drive → /c/dev/...
-	assert(result.includes(".worktrees"), `should preserve .worktrees segment, got: ${result}`);
-	assert(result.includes("wt-1"), `should preserve wt-1 segment, got: ${result}`);
-	assert(!result.includes("\\"), `should not contain backslashes, got: ${result}`);
-	// Exact expected output on Windows
-	assertEqual(result, "/c/dev/taskplane/.worktrees/wt-1", "exact Windows→tmux conversion for nested path");
-}
-
-{
-	console.log("  ▸ converts simple sibling path");
-	const input = "C:\\dev\\taskplane-wt-1";
-	const result = toTmuxPathFn(input);
-	assertEqual(result, "/c/dev/taskplane-wt-1", "exact Windows→tmux conversion for sibling path");
-}
-
-{
-	console.log("  ▸ unix path passes through unchanged");
-	const input = "/home/user/project/.worktrees/wt-1";
-	const result = toTmuxPathFn(input);
-	assert(result.includes(".worktrees/wt-1"), `should preserve path segments, got: ${result}`);
-}
-
 // ═══════════════════════════════════════════════════════════════════════
-// 7.6: resolveWorktreeBasePath — extracted from production source
+// 7.5: resolveWorktreeBasePath — extracted from production source
 // ═══════════════════════════════════════════════════════════════════════
 
 // Extract the real function from source and create a callable.
@@ -1122,7 +1080,7 @@ if (failed > 0) throw new Error(`${failed} test(s) failed`);
 if (isTestRunner) {
 	const { describe, it } = await import("node:test");
 	describe("Orchestrator Pure Functions", () => {
-		it("passes all 159 assertions", () => {
+		it("passes all assertions", () => {
 			runAllTests();
 		});
 	});

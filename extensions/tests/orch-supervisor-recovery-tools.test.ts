@@ -229,29 +229,25 @@ describe("4.x: list_active_agents tool", () => {
 		expect(extensionSource).toContain("function doListActiveAgents(");
 	});
 
-	it("4.4: parses session names for role detection", () => {
+	it("4.4: reads Runtime V2 registry and delegates formatting", () => {
 		const idx = extensionSource.indexOf("function doListActiveAgents(");
-		const block = extensionSource.slice(idx, idx + 4000);
-		// TP-106: doListActiveAgents now checks registry first, then falls back to TMUX parsing
-		expect(block).toContain("-lane-");
-		expect(block).toContain("-merge-");
-		expect(block).toContain("worker");
+		const block = extensionSource.slice(idx, idx + 1200);
+		expect(block).toContain("readRegistrySnapshot");
+		expect(block).toContain("formatRegistryAgents");
 	});
 
-	it("4.5: reads lane-state sidecar for context %", () => {
+	it("4.5: no longer uses TMUX fallback session parsing", () => {
 		const idx = extensionSource.indexOf("function doListActiveAgents(");
-		const block = extensionSource.slice(idx, idx + 4000);
-		expect(block).toContain("lane-state-");
-		expect(block).toContain("workerContextPct");
+		const block = extensionSource.slice(idx, idx + 1200);
+		expect(block).not.toContain("tmux list-sessions");
+		expect(block).not.toContain("-lane-");
+		expect(block).not.toContain("workerContextPct");
 	});
 
 	it("4.6: handles no agents found", () => {
 		const idx = extensionSource.indexOf("function doListActiveAgents(");
-		const block = extensionSource.slice(idx, idx + 1500);
-		// TP-106: registry-first with TMUX fallback; either error message is acceptable
-		const hasRegistryMsg = block.includes("No active agents found");
-		const hasLegacyMsg = block.includes("tmux not available");
-		expect(hasRegistryMsg || hasLegacyMsg).toBe(true);
+		const block = extensionSource.slice(idx, idx + 1200);
+		expect(block).toContain("No active agents found (Runtime V2 registry is empty)");
 	});
 });
 

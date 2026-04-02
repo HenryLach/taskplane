@@ -71,7 +71,7 @@ function makeInput(overrides: Partial<DiagnosticReportInput> = {}): DiagnosticRe
 		orchConfig: {
 			orchestrator: {
 				lanes: 2,
-				tmux_prefix: "orch",
+				session_prefix: "orch",
 				worktree_prefix: "orch",
 				integration: "manual",
 			},

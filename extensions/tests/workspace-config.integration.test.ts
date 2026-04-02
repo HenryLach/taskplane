@@ -102,7 +102,7 @@ const mockOrchConfig = {
 	orchestrator: {
 		max_lanes: 2,
 		spawn_mode: "tmux" as const,
-		tmux_prefix: "orch",
+		session_prefix: "orch",
 		monitor_interval: 5,
 		abort_grace_period: 30,
 		merge_mode: "sequential" as const,

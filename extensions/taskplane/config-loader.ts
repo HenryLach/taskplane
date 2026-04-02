@@ -242,6 +242,16 @@ function mapOrchestratorYaml(raw: any): Partial<OrchestratorSection> {
 
 	// Structural sections
 	if (raw.orchestrator) result.orchestrator = convertStructuralKeys(raw.orchestrator);
+	if (result.orchestrator && typeof result.orchestrator === "object") {
+		// Backward-compatible alias: tmuxPrefix -> sessionPrefix
+		if (
+			typeof result.orchestrator.sessionPrefix !== "string" &&
+			typeof result.orchestrator.tmuxPrefix === "string"
+		) {
+			result.orchestrator.sessionPrefix = result.orchestrator.tmuxPrefix;
+		}
+		delete result.orchestrator.tmuxPrefix;
+	}
 	if (raw.dependencies) result.dependencies = convertStructuralKeys(raw.dependencies);
 	if (raw.merge) result.merge = convertStructuralKeys(raw.merge);
 	if (raw.failure) result.failure = convertStructuralKeys(raw.failure);
@@ -410,6 +420,17 @@ function loadJsonConfig(configRoot: string): TaskplaneConfig | null {
 			`${jsonPath} has configVersion ${parsed.configVersion}, but this version of Taskplane ` +
 			`only supports configVersion ${CONFIG_VERSION}. Please upgrade Taskplane.`,
 		);
+	}
+
+	// Backward-compatible alias: orchestrator.orchestrator.tmuxPrefix -> sessionPrefix
+	if (parsed?.orchestrator?.orchestrator && typeof parsed.orchestrator.orchestrator === "object") {
+		if (
+			typeof parsed.orchestrator.orchestrator.sessionPrefix !== "string" &&
+			typeof parsed.orchestrator.orchestrator.tmuxPrefix === "string"
+		) {
+			parsed.orchestrator.orchestrator.sessionPrefix = parsed.orchestrator.orchestrator.tmuxPrefix;
+		}
+		delete parsed.orchestrator.orchestrator.tmuxPrefix;
 	}
 
 	// Deep merge with cloned defaults
@@ -611,7 +632,12 @@ function extractAllowlistedPreferences(raw: Record<string, any>): UserPreference
 	const prefs: UserPreferences = {};
 
 	if (typeof raw.operatorId === "string") prefs.operatorId = raw.operatorId;
-	if (typeof raw.tmuxPrefix === "string") prefs.tmuxPrefix = raw.tmuxPrefix;
+	if (typeof raw.sessionPrefix === "string") {
+		prefs.sessionPrefix = raw.sessionPrefix;
+	} else if (typeof raw.tmuxPrefix === "string") {
+		// Backward-compatible alias
+		prefs.sessionPrefix = raw.tmuxPrefix;
+	}
 	if (raw.spawnMode === "tmux" || raw.spawnMode === "subprocess") prefs.spawnMode = raw.spawnMode;
 	if (typeof raw.workerModel === "string") prefs.workerModel = raw.workerModel;
 	if (typeof raw.reviewerModel === "string") prefs.reviewerModel = raw.reviewerModel;
@@ -638,7 +664,7 @@ function extractAllowlistedPreferences(raw: Record<string, any>): UserPreference
  *
  * Mapping table:
  *   prefs.operatorId    → config.orchestrator.orchestrator.operatorId
- *   prefs.tmuxPrefix    → config.orchestrator.orchestrator.tmuxPrefix
+ *   prefs.sessionPrefix → config.orchestrator.orchestrator.sessionPrefix
  *   prefs.spawnMode     → config.orchestrator.orchestrator.spawnMode
  *   prefs.workerModel   → config.taskRunner.worker.model
  *   prefs.reviewerModel → config.taskRunner.reviewer.model
@@ -653,7 +679,7 @@ export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPrefere
 	};
 
 	applyStr(prefs.operatorId, (v) => { config.orchestrator.orchestrator.operatorId = v; });
-	applyStr(prefs.tmuxPrefix, (v) => { config.orchestrator.orchestrator.tmuxPrefix = v; });
+	applyStr(prefs.sessionPrefix, (v) => { config.orchestrator.orchestrator.sessionPrefix = v; });
 	applyStr(prefs.workerModel, (v) => { config.taskRunner.worker.model = v; });
 	applyStr(prefs.reviewerModel, (v) => { config.taskRunner.reviewer.model = v; });
 	applyStr(prefs.mergeModel, (v) => { config.orchestrator.merge.model = v; });
@@ -873,7 +899,7 @@ export function toOrchestratorConfig(config: TaskplaneConfig): import("./types.t
 			worktree_prefix: o.orchestrator.worktreePrefix,
 			batch_id_format: o.orchestrator.batchIdFormat,
 			spawn_mode: o.orchestrator.spawnMode,
-			tmux_prefix: o.orchestrator.tmuxPrefix,
+			sessionPrefix: o.orchestrator.sessionPrefix,
 			operator_id: o.orchestrator.operatorId,
 			integration: o.orchestrator.integration,
 		},

@@ -98,7 +98,7 @@ function makeConfig(mergeFailurePolicy: "pause" | "abort" = "pause"): Orchestrat
 			worktree_prefix: "orch",
 			batch_id_format: "timestamp",
 			spawn_mode: "tmux",
-			tmux_prefix: "orch",
+			session_prefix: "orch",
 		},
 		dependencies: { source: "prompt", cache: true },
 		assignment: { strategy: "round-robin", size_weights: {} },

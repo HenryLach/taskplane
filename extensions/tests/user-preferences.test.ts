@@ -211,7 +211,7 @@ describe("loadUserPreferences", () => {
 
 		writePrefsFile(agentDir, JSON.stringify({
 			operatorId: "bob",
-			tmuxPrefix: "myprefix",
+			sessionPrefix: "myprefix",
 			spawnMode: "tmux",
 			workerModel: "openai/gpt-4",
 			reviewerModel: "anthropic/claude-3",
@@ -222,12 +222,37 @@ describe("loadUserPreferences", () => {
 		const prefs = loadUserPreferences();
 
 		expect(prefs.operatorId).toBe("bob");
-		expect(prefs.tmuxPrefix).toBe("myprefix");
+		expect(prefs.sessionPrefix).toBe("myprefix");
 		expect(prefs.spawnMode).toBe("tmux");
 		expect(prefs.workerModel).toBe("openai/gpt-4");
 		expect(prefs.reviewerModel).toBe("anthropic/claude-3");
 		expect(prefs.mergeModel).toBe("openai/gpt-4");
 		expect(prefs.dashboardPort).toBe(9090);
+	});
+
+	it("6.4b: legacy tmuxPrefix key is accepted as sessionPrefix alias", () => {
+		const agentDir = makeTestDir("legacy-prefix-alias");
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		writePrefsFile(agentDir, JSON.stringify({
+			tmuxPrefix: "legacy-prefix",
+		}));
+
+		const prefs = loadUserPreferences();
+		expect(prefs.sessionPrefix).toBe("legacy-prefix");
+	});
+
+	it("6.4c: sessionPrefix takes precedence when both keys are present", () => {
+		const agentDir = makeTestDir("prefix-precedence");
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		writePrefsFile(agentDir, JSON.stringify({
+			sessionPrefix: "new-prefix",
+			tmuxPrefix: "old-prefix",
+		}));
+
+		const prefs = loadUserPreferences();
+		expect(prefs.sessionPrefix).toBe("new-prefix");
 	});
 
 	it("6.5: empty JSON object returns defaults (all fields undefined)", () => {
@@ -296,7 +321,7 @@ describe("loadUserPreferences", () => {
 
 		writePrefsFile(agentDir, JSON.stringify({
 			operatorId: 123,
-			tmuxPrefix: true,
+			sessionPrefix: true,
 			workerModel: { nested: "obj" },
 			reviewerModel: ["array"],
 			mergeModel: null,
@@ -304,7 +329,7 @@ describe("loadUserPreferences", () => {
 
 		const prefs = loadUserPreferences();
 		expect(prefs.operatorId).toBeUndefined();
-		expect(prefs.tmuxPrefix).toBeUndefined();
+		expect(prefs.sessionPrefix).toBeUndefined();
 		expect(prefs.workerModel).toBeUndefined();
 		expect(prefs.reviewerModel).toBeUndefined();
 		expect(prefs.mergeModel).toBeUndefined();
@@ -343,7 +368,7 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 
 		const prefs: UserPreferences = {
 			operatorId: "bob",
-			tmuxPrefix: "myprefix",
+			sessionPrefix: "myprefix",
 			spawnMode: "tmux",
 			workerModel: "openai/gpt-4",
 			reviewerModel: "anthropic/claude-3",
@@ -353,7 +378,7 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 		applyUserPreferences(config, prefs);
 
 		expect(config.orchestrator.orchestrator.operatorId).toBe("bob");
-		expect(config.orchestrator.orchestrator.tmuxPrefix).toBe("myprefix");
+		expect(config.orchestrator.orchestrator.sessionPrefix).toBe("myprefix");
 		expect(config.orchestrator.orchestrator.spawnMode).toBe("tmux");
 		expect(config.taskRunner.worker.model).toBe("openai/gpt-4");
 		expect(config.taskRunner.reviewer.model).toBe("anthropic/claude-3");
@@ -465,12 +490,12 @@ describe("Layer 2 merge integration", () => {
 		config.taskRunner.project.name = "YamlProject";
 		config.taskRunner.reviewer.model = "yaml-reviewer";
 		config.orchestrator.merge.model = "yaml-merge-model";
-		config.orchestrator.orchestrator.tmuxPrefix = "yaml-prefix";
+		config.orchestrator.orchestrator.sessionPrefix = "yaml-prefix";
 
 		const prefs: UserPreferences = {
 			reviewerModel: "user-reviewer",
 			mergeModel: "user-merge-model",
-			tmuxPrefix: "user-prefix",
+			sessionPrefix: "user-prefix",
 		};
 
 		applyUserPreferences(config, prefs);
@@ -478,7 +503,7 @@ describe("Layer 2 merge integration", () => {
 		// Allowlisted overrides
 		expect(config.taskRunner.reviewer.model).toBe("user-reviewer");
 		expect(config.orchestrator.merge.model).toBe("user-merge-model");
-		expect(config.orchestrator.orchestrator.tmuxPrefix).toBe("user-prefix");
+		expect(config.orchestrator.orchestrator.sessionPrefix).toBe("user-prefix");
 
 		// Non-allowlisted untouched
 		expect(config.taskRunner.project.name).toBe("YamlProject");
@@ -531,7 +556,7 @@ describe("Layer 2 merge integration", () => {
 		// Write user preferences
 		writePrefsFile(agentDir, JSON.stringify({
 			reviewerModel: "e2e-reviewer",
-			tmuxPrefix: "e2e-tmux",
+			sessionPrefix: "e2e-prefix",
 			spawnMode: "tmux",
 		}));
 
@@ -548,7 +573,7 @@ describe("Layer 2 merge integration", () => {
 		writeOrchestratorYaml(projectDir, [
 			"orchestrator:",
 			"  max_lanes: 4",
-			"  tmux_prefix: yaml-tmux",
+			"  session_prefix: yaml-prefix",
 			"  spawn_mode: subprocess",
 		].join("\n"));
 
@@ -556,7 +581,7 @@ describe("Layer 2 merge integration", () => {
 
 		// User prefs should win for allowlisted fields
 		expect(config.taskRunner.reviewer.model).toBe("e2e-reviewer");
-		expect(config.orchestrator.orchestrator.tmuxPrefix).toBe("e2e-tmux");
+		expect(config.orchestrator.orchestrator.sessionPrefix).toBe("e2e-prefix");
 		expect(config.orchestrator.orchestrator.spawnMode).toBe("tmux");
 
 		// Non-allowlisted Layer 1 fields preserved

@@ -15,7 +15,7 @@ export interface OrchestratorConfig {
 		worktree_prefix: string;
 		batch_id_format: "timestamp" | "sequential";
 		spawn_mode: "tmux" | "subprocess";
-		tmux_prefix: string;
+		sessionPrefix: string;
 		/** Optional operator identifier. Auto-detected from OS username if empty. */
 		operator_id: string;
 		/** How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking. */
@@ -260,7 +260,7 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 		worktree_prefix: "taskplane-wt",
 		batch_id_format: "timestamp",
 		spawn_mode: "subprocess",
-		tmux_prefix: "orch",
+		sessionPrefix: "orch",
 		operator_id: "",
 		integration: "manual",
 	},

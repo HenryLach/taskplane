@@ -4,7 +4,7 @@
  */
 import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync, copyFileSync } from "fs";
 import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "fs/promises";
-import { spawnSync, spawn } from "child_process";
+import { spawnSync } from "child_process";
 import { join, dirname, basename, resolve, relative, delimiter as pathDelimiter } from "path";
 import { userInfo } from "os";
 
@@ -290,102 +290,8 @@ export function killV2LaneAgents(
 	}
 }
 
-// ── Async TMUX Helpers (TP-070) ──────────────────────────────────────
+// ── Async File/Status Helpers (TP-070) ───────────────────────────────
 
-/**
- * Run a tmux command asynchronously, without blocking the event loop.
- *
- * Wraps `child_process.spawn` in a promise. The process is spawned and
- * stdout is collected incrementally; the promise resolves when the process
- * exits.
- *
- * @param args - Arguments to pass to the `tmux` command
- * @param timeoutMs - Optional timeout in milliseconds (default: 5000)
- * @returns Promise resolving to `{ status, stdout }` where status is the exit code (0 = success)
- *
- * @since TP-070
- */
-function runTmuxCommandAsync(args: string[], timeoutMs: number = 5_000): Promise<{ status: number; stdout: string }> {
-	return new Promise((resolve) => {
-		const proc = spawn("tmux", args, {
-			stdio: ["ignore", "pipe", "pipe"],
-			timeout: timeoutMs,
-		});
-
-		let stdout = "";
-
-		proc.stdout.on("data", (chunk: Buffer) => {
-			stdout += chunk.toString("utf-8");
-		});
-
-		proc.on("error", () => {
-			// Spawn failure — treat as non-zero exit
-			resolve({ status: 1, stdout: "" });
-		});
-
-		proc.on("close", (code) => {
-			resolve({ status: code ?? 1, stdout });
-		});
-	});
-}
-
-/**
- * Async version of tmuxHasSession — checks if a TMUX session exists
- * without blocking the event loop.
- *
- * @param sessionName - TMUX session name to check
- * @returns Promise resolving to true if session exists
- *
- * @since TP-070
- */
-export async function tmuxHasSessionAsync(sessionName: string): Promise<boolean> {
-	const result = await runTmuxCommandAsync(["has-session", "-t", sessionName]);
-	return result.status === 0;
-}
-
-/**
- * Async version of tmuxKillSession — kills a TMUX session without
- * blocking the event loop.
- *
- * Idempotent: resolves to true if session was killed or was already absent.
- *
- * @param sessionName - TMUX session name to kill
- * @returns Promise resolving to true if session is now absent
- *
- * @since TP-070
- */
-export async function tmuxKillSessionAsync(sessionName: string): Promise<boolean> {
-	const wasAlive = await tmuxHasSessionAsync(sessionName);
-	if (!wasAlive) return true;
-
-	await runTmuxCommandAsync(["kill-session", "-t", sessionName]);
-	return !(await tmuxHasSessionAsync(sessionName));
-}
-
-/**
- * Async version of captureTmuxPaneTail — captures tail output from a live
- * TMUX pane without blocking the event loop.
- *
- * @param sessionName - TMUX session name
- * @param maxLines - Maximum number of lines to return
- * @param maxChars - Maximum character count
- * @returns Promise resolving to captured text (empty string on failure)
- *
- * @since TP-070
- */
-export async function captureTmuxPaneTailAsync(
-	sessionName: string,
-	maxLines: number = 40,
-	maxChars: number = 1200,
-): Promise<string> {
-	const result = await runTmuxCommandAsync(["capture-pane", "-p", "-t", sessionName], 3000);
-	if (result.status !== 0) return "";
-	const raw = (result.stdout || "").replace(/\r\n/g, "\n").trim();
-	if (!raw) return "";
-	const tail = raw.split("\n").slice(-maxLines).join("\n").trim();
-	if (!tail) return "";
-	return tail.length > maxChars ? tail.slice(-maxChars) : tail;
-}
 
 /**
  * Async version of readTaskStatusTail — reads STATUS.md tail without
@@ -521,22 +427,6 @@ export function buildLaneEnvVars(
 	return vars;
 }
 
-/**
- * Convert a Windows absolute path to a tmux-friendly POSIX-style path.
- *
- * tmux `-c` expects POSIX paths when running under Git Bash/MSYS.
- * Passing `C:\...` can silently fall back to HOME, causing TASK_AUTOSTART
- * path resolution failures.
- */
-export function toTmuxPath(pathValue: string): string {
-	const normalized = resolve(pathValue).replace(/\\/g, "/");
-	const driveMatch = normalized.match(/^([A-Za-z]):\/(.*)$/);
-	if (driveMatch) {
-		return `/${driveMatch[1].toLowerCase()}/${driveMatch[2]}`;
-	}
-	return normalized;
-}
-
 function laneSessionIdOf(lane: Pick<AllocatedLane, "laneSessionId">): string {
 	return lane.laneSessionId;
 }
@@ -627,28 +517,6 @@ export async function fileExistsAsync(filePath: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
-}
-
-/**
- * Capture tail output from a live TMUX pane for diagnostics.
- *
- * Works even when lane log redirection is disabled (Windows-safe fallback).
- */
-export function captureTmuxPaneTail(
-	sessionName: string,
-	maxLines: number = 40,
-	maxChars: number = 1200,
-): string {
-	const result = spawnSync("tmux", ["capture-pane", "-p", "-t", sessionName], {
-		encoding: "utf-8",
-		timeout: 3000,
-	});
-	if (result.status !== 0) return "";
-	const raw = (result.stdout || "").replace(/\r\n/g, "\n").trim();
-	if (!raw) return "";
-	const tail = raw.split("\n").slice(-maxLines).join("\n").trim();
-	if (!tail) return "";
-	return tail.length > maxChars ? tail.slice(-maxChars) : tail;
 }
 
 /**
@@ -846,7 +714,8 @@ export async function pollUntilTaskComplete(
 		logPath: laneLogPath,
 	});
 
-	let lastPaneTail = "";
+	let lastOutputTail = "";
+	const batchId = config.orchestrator?.batchId;
 
 	// Abort signal file path — checked each poll cycle.
 	// Any process can create this file to trigger abort (belt-and-suspenders
@@ -870,11 +739,12 @@ export async function pollUntilTaskComplete(
 
 		// Check file-based abort signal (TP-070: async)
 		if (await fileExistsAsync(abortSignalFile)) {
-			execLog(laneId, task.taskId, "abort signal file detected — killing session and aborting");
-			await tmuxKillSessionAsync(sessionName);
-			// Also kill child sessions (worker, reviewer)
-			await tmuxKillSessionAsync(`${sessionName}-worker`);
-			await tmuxKillSessionAsync(`${sessionName}-reviewer`);
+			execLog(laneId, task.taskId, "abort signal file detected — killing Runtime V2 agents and aborting");
+			killV2LaneAgents(sessionName, {
+				stateRoot: repoRoot,
+				batchId,
+				logContext: laneId,
+			});
 			return {
 				status: "failed",
 				exitReason: "Aborted by signal file (.pi/orch-abort-signal)",
@@ -882,10 +752,10 @@ export async function pollUntilTaskComplete(
 			};
 		}
 
-		// Capture live pane output for diagnostics (best effort) — async to avoid blocking.
-		const paneTail = await captureTmuxPaneTailAsync(sessionName);
-		if (paneTail) {
-			lastPaneTail = paneTail;
+		// Capture recent lane log output for diagnostics (best effort).
+		const outputTail = await readLaneLogTailAsync(laneLogPath);
+		if (outputTail) {
+			lastOutputTail = outputTail;
 		}
 
 		// Priority 1: Check for .DONE file (TP-070: async)
@@ -900,10 +770,13 @@ export async function pollUntilTaskComplete(
 			};
 		}
 
-		// Priority 2: Check if TMUX session is still alive — async to avoid blocking
-		if (!(await tmuxHasSessionAsync(sessionName))) {
-			// Session exited — start grace period for .DONE file
-			execLog(laneId, task.taskId, "TMUX session exited, entering grace period", {
+		// Priority 2: Check if the Runtime V2 lane agent is still alive.
+		if (batchId) {
+			setV2LivenessRegistryCache(readRegistrySnapshot(repoRoot, batchId));
+		}
+		if (batchId && !isV2AgentAlive(sessionName, "v2")) {
+			// Lane agent exited — start grace period for .DONE file
+			execLog(laneId, task.taskId, "lane agent exited, entering grace period", {
 				session: sessionName,
 				graceMs: DONE_GRACE_MS,
 			});
@@ -964,13 +837,13 @@ export async function pollUntilTaskComplete(
 			}
 			const statusTail = await readTaskStatusTailAsync(statusPath);
 			const hasLogFile = await fileExistsAsync(laneLogPath);
-			const outputForHint = logTail || lastPaneTail || statusTail;
+			const outputForHint = logTail || lastOutputTail || statusTail;
 			const logHint = outputForHint
 				? ` Last output: ${outputForHint.replace(/\s+/g, " ").slice(-300)}`
 				: "";
 			const logLocation = hasLogFile ? ` Lane log: ${laneLogPath}.` : "";
-			if (!logTail && lastPaneTail) {
-				execLog(laneId, task.taskId, `lane session output from TMUX pane (tail):\n${lastPaneTail}`);
+			if (!logTail && lastOutputTail) {
+				execLog(laneId, task.taskId, `lane session output (tail):\n${lastOutputTail}`);
 			}
 			if (statusTail) {
 				execLog(laneId, task.taskId, `task STATUS tail:\n${statusTail}`);
@@ -978,7 +851,7 @@ export async function pollUntilTaskComplete(
 			return {
 				status: "failed",
 				exitReason:
-					`TMUX session '${sessionName}' exited without creating .DONE file ` +
+					`Lane agent '${sessionName}' exited without creating .DONE file ` +
 					`(grace period ${DONE_GRACE_MS}ms expired).` +
 					`${logLocation}${logHint}`,
 				doneFileFound: false,
@@ -1327,10 +1200,8 @@ export async function resolveTaskMonitorState(
 		} else {
 			sessionAlive = snap.status === "running";
 		}
-	} else if (runtimeBackend === "v2") {
-		sessionAlive = isV2AgentAlive(sessionName, runtimeBackend);
 	} else {
-		sessionAlive = await tmuxHasSessionAsync(sessionName);
+		sessionAlive = isV2AgentAlive(sessionName, "v2");
 	}
 	const doneFileFound = await fileExistsAsync(donePath);
 
@@ -1691,9 +1562,7 @@ export async function monitorLanes(
 			}
 
 			// TP-112: Backend-aware lane liveness for snapshot
-			const sessionAlive = runtimeBackend === "v2"
-				? isV2AgentAlive(laneSessionIdOf(lane), runtimeBackend)
-				: await tmuxHasSessionAsync(laneSessionIdOf(lane));
+			const sessionAlive = isV2AgentAlive(laneSessionIdOf(lane), "v2");
 
 			laneSnapshots.push({
 				laneId: lane.laneId,
@@ -2609,9 +2478,9 @@ export async function executeLaneV2(
 
 	// Build agent ID prefix — must match the wave planner's naming (TP-115).
 	// Uses resolveOperatorId() so agent registry keys align with lane session IDs.
-	const tmuxPrefix = config.orchestrator?.tmux_prefix ?? "orch";
+	const sessionPrefix = config.orchestrator?.sessionPrefix ?? "orch";
 	const opId = resolveOperatorId(config);
-	const agentIdPrefix = `${tmuxPrefix}-${opId}`;
+	const agentIdPrefix = `${sessionPrefix}-${opId}`;
 
 	// Load worker agent definition: compose base template + local project guidance.
 	// The base template (templates/agents/task-worker.md) contains critical behavioral

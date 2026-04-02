@@ -15,7 +15,7 @@ import { ORCH_MESSAGES, computeIntegrateCleanupResult } from "./messages.ts";
 import type { IntegrateCleanupRepoFindings } from "./messages.ts";
 import { computeWaveAssignments } from "./waves.ts";
 import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
-import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions, parseOrchSessionNames } from "./persistence.ts";
+import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions } from "./persistence.ts";
 import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, formatPreflightResults, runPreflight } from "./worktree.ts";
 import { computeTransitiveDependents, resolveCanonicalTaskPaths } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
@@ -29,6 +29,7 @@ import { buildExecutionContext } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
 import { runMigrations } from "./migrations.ts";
+import { executeAbort } from "./abort.ts";
 import { serializeWorkspaceConfig, applySerializedState, deserializeWorkspaceConfig } from "./engine-worker.ts";
 import type { EngineWorkerData, WorkerToMainMessage } from "./engine-worker.ts";
 import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, formatPreflightSweep, rotateSupervisorLogs, formatLogRotation } from "./cleanup.ts";
@@ -1481,7 +1482,7 @@ export default function (pi: ExtensionAPI) {
 	function updateOrchWidget() {
 		if (!orchWidgetCtx) return;
 		const ctx = orchWidgetCtx;
-		const prefix = orchConfig.orchestrator.tmux_prefix;
+		const prefix = orchConfig.orchestrator.sessionPrefix;
 
 		ctx.ui.setWidget(
 			"task-orchestrator",
@@ -1791,7 +1792,7 @@ export default function (pi: ExtensionAPI) {
 
 		// Orphan detection
 		const orphanResult = detectOrphanSessions(
-			orchConfig.orchestrator.tmux_prefix,
+			orchConfig.orchestrator.sessionPrefix,
 			repoRoot,
 		);
 
@@ -2223,9 +2224,9 @@ export default function (pi: ExtensionAPI) {
 	 * Core logic for orch-abort. Returns accumulated status messages.
 	 * Works even without execCtx (safety-critical).
 	 */
-	function doOrchAbort(hard: boolean, ctx: ExtensionContext): string {
+	async function doOrchAbort(hard: boolean, ctx: ExtensionContext): Promise<string> {
 		const mode: AbortMode = hard ? "hard" : "graceful";
-		const prefix = orchConfig.orchestrator.tmux_prefix;
+		const prefix = orchConfig.orchestrator.sessionPrefix;
 
 		const stateRoot = execCtx?.repoRoot ?? ctx.cwd;
 		const messages: string[] = [`🛑 Abort requested (${mode} mode, prefix: ${prefix})...`];
@@ -2257,7 +2258,6 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Step 3: Check what we're aborting
 		const hasActiveBatch = orchBatchState.phase !== "idle" &&
 			orchBatchState.phase !== "completed" &&
 			orchBatchState.phase !== "failed" &&
@@ -2275,67 +2275,25 @@ export default function (pi: ExtensionAPI) {
 			`persisted=${persistedState ? persistedState.batchId : "none"}`,
 		);
 
-		// If no batch AND no sessions, nothing to abort
 		if (!hasActiveBatch && !persistedState) {
-			// Still check for sessions below, but short-circuit if none
-			let allSessionNames: string[] = [];
-			try {
-				const tmuxOutput = execSync('tmux list-sessions -F "#{session_name}"', {
-					encoding: "utf-8",
-					timeout: 5000,
-				}).trim();
-				const all = tmuxOutput ? tmuxOutput.split("\n").map(s => s.trim()).filter(Boolean) : [];
-				allSessionNames = all.filter(name => name.startsWith(`${prefix}-`));
-			} catch {
-				// tmux not available
-			}
-			if (allSessionNames.length === 0) {
-				try { unlinkSync(abortSignalFile); } catch {}
-				return ORCH_MESSAGES.abortNoBatch();
-			}
+			try { unlinkSync(abortSignalFile); } catch {}
+			return ORCH_MESSAGES.abortNoBatch();
 		}
 
 		const batchId = orchBatchState.batchId || persistedState?.batchId || "unknown";
+		const gracePeriodMs = Math.max(0, orchConfig.failure.abort_grace_period * 1000);
+		const pollIntervalMs = Math.max(250, orchConfig.monitoring.poll_interval * 1000);
 
-		// Step 5: Kill sessions
-		let allSessionNames: string[] = [];
-		try {
-			const tmuxOutput = execSync('tmux list-sessions -F "#{session_name}"', {
-				encoding: "utf-8",
-				timeout: 5000,
-			}).trim();
-			const all = tmuxOutput ? tmuxOutput.split("\n").map(s => s.trim()).filter(Boolean) : [];
-			allSessionNames = all.filter(name => name.startsWith(`${prefix}-`));
-			messages.push(`  Found ${allSessionNames.length} session(s) matching prefix "${prefix}-"`);
-		} catch {
-			messages.push("  ⚠ Could not list tmux sessions (tmux not available?)");
-		}
+		const abortResult = await executeAbort(
+			mode,
+			prefix,
+			stateRoot,
+			orchBatchState,
+			persistedState,
+			gracePeriodMs,
+			pollIntervalMs,
+		);
 
-		if (allSessionNames.length > 0) {
-			messages.push(`  Killing ${allSessionNames.length} tmux session(s)...`);
-			let killed = 0;
-			for (const name of allSessionNames) {
-				try {
-					execSync(`tmux kill-session -t "${name}-worker" 2>/dev/null`, { timeout: 3000 }).toString();
-				} catch {}
-				try {
-					execSync(`tmux kill-session -t "${name}-reviewer" 2>/dev/null`, { timeout: 3000 }).toString();
-				} catch {}
-				try {
-					execSync(`tmux kill-session -t "${name}" 2>/dev/null`, { timeout: 3000 }).toString();
-					killed++;
-					messages.push(`    ✓ Killed: ${name}`);
-				} catch {
-					messages.push(`    · ${name} (already exited)`);
-					killed++;
-				}
-			}
-			messages.push(`  ✓ ${killed}/${allSessionNames.length} session(s) terminated`);
-		} else {
-			messages.push("  No tmux sessions to kill");
-		}
-
-		// Step 6: Clean up batch state
 		deactivateSupervisor(pi, supervisorState);
 
 		try {
@@ -2347,19 +2305,30 @@ export default function (pi: ExtensionAPI) {
 			messages.push(`  ⚠ Failed to update in-memory state: ${err instanceof Error ? err.message : String(err)}`);
 		}
 
-		try {
-			deleteBatchState(stateRoot);
-			messages.push("  ✓ Batch state file deleted (.pi/batch-state.json)");
-		} catch (err) {
-			messages.push(`  ⚠ Failed to delete batch state file: ${err instanceof Error ? err.message : String(err)}`);
+		messages.push(`  Found ${abortResult.sessionsFound} session target(s) matching prefix "${prefix}-"`);
+		if (mode === "graceful") {
+			const forceKilled = Math.max(0, abortResult.sessionsKilled - abortResult.gracefulExits);
+			messages.push(ORCH_MESSAGES.abortGracefulComplete(batchId, abortResult.gracefulExits, forceKilled, Math.round(abortResult.durationMs / 1000)));
+		} else {
+			messages.push(ORCH_MESSAGES.abortHardComplete(batchId, abortResult.sessionsKilled, Math.round(abortResult.durationMs / 1000)));
+		}
+
+		if (!abortResult.stateDeleted) {
+			messages.push("  ⚠ Batch state file was not deleted cleanly");
+		}
+		if (abortResult.errors.length > 0) {
+			messages.push(ORCH_MESSAGES.abortPartialFailure(abortResult.errors.length));
+			for (const err of abortResult.errors) {
+				messages.push(`    - ${err.code}: ${err.message}`);
+			}
 		}
 
 		// Step 7: Clean up abort signal file
 		try { unlinkSync(abortSignalFile); } catch {}
 
 		messages.push(
-			`✅ Abort complete for batch ${batchId}. Sessions killed, state cleaned up.\n` +
-			`   Worktrees and branches are preserved for inspection.`,
+			`🏁 Abort (${mode}) complete for batch ${batchId}. ` +
+			`Worktrees and branches are preserved for inspection.`,
 		);
 
 		return messages.join("\n");
@@ -3099,15 +3068,13 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			try {
 				const hard = args?.trim() === "--hard";
-				const result = doOrchAbort(hard, ctx);
+				const result = await doOrchAbort(hard, ctx);
 				ctx.ui.notify(result, "info");
 			} catch (err) {
 				// Top-level catch: ensure the user ALWAYS sees something
 				ctx.ui.notify(
 					`❌ Abort failed with error: ${err instanceof Error ? err.message : String(err)}\n` +
-					`   Stack: ${err instanceof Error ? err.stack : "N/A"}\n\n` +
-					`   Manual cleanup: tmux kill-server (kills ALL tmux sessions)\n` +
-					`   Or: tmux kill-session -t <session-name> for each session`,
+					`   Stack: ${err instanceof Error ? err.stack : "N/A"}`,
 					"error",
 				);
 			}
@@ -3193,9 +3160,9 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("orch-sessions", {
-		description: "List active orchestrator TMUX sessions",
+		description: "List active orchestrator sessions",
 		handler: async (_args, ctx) => {
-			const sessions = listOrchSessions(orchConfig.orchestrator.tmux_prefix, orchBatchState);
+			const sessions = listOrchSessions(orchConfig.orchestrator.sessionPrefix, orchBatchState);
 			ctx.ui.notify(formatOrchSessions(sessions), "info");
 		},
 	});
@@ -3453,13 +3420,13 @@ export default function (pi: ExtensionAPI) {
 		name: "orch_abort",
 		label: "Abort Batch",
 		description:
-			"Abort the running batch. Kills tmux sessions, cleans up state. " +
+			"Abort the running batch. Stops Runtime V2 lane + merge agents and cleans up state. " +
 			"Use hard=true for immediate kill (no grace period). " +
 			"Works even without execution context (safety-critical).",
 		promptSnippet: "orch_abort(hard?) — abort the running batch",
 		promptGuidelines: [
 			"Call orch_abort to stop a running batch.",
-			"Default (hard=false) is graceful abort — writes signal file and kills sessions.",
+			"Default (hard=false) is graceful abort — writes signal file and waits for checkpoint exit before forced cleanup.",
 			"Set hard=true for immediate termination without grace period.",
 			"Use this when a batch is stuck, failing repeatedly, or the operator requests it.",
 			"Worktrees and branches are preserved for inspection after abort.",
@@ -3471,7 +3438,7 @@ export default function (pi: ExtensionAPI) {
 		}),
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			try {
-				const result = doOrchAbort(params.hard ?? false, ctx);
+				const result = await doOrchAbort(params.hard ?? false, ctx);
 				return { content: [{ type: "text" as const, text: result }], details: undefined };
 			} catch (err) {
 				return {
@@ -3730,12 +3697,12 @@ export default function (pi: ExtensionAPI) {
 		// Legacy fallback from lane naming when registry is absent/empty.
 		if (ids.size === 0) {
 			const orchConfig = execCtx?.orchestratorConfig;
-			const tmuxPrefix = orchConfig?.orchestrator?.tmux_prefix ?? "orch";
+			const sessionPrefix = orchConfig?.orchestrator?.sessionPrefix ?? "orch";
 			const opId = orchConfig ? resolveOperatorId(orchConfig) : "op";
 			for (const lane of state.lanes) {
 				ids.add(`${lane.laneSessionId}-worker`);
 				ids.add(`${lane.laneSessionId}-reviewer`);
-				ids.add(`${tmuxPrefix}-${opId}-merge-${lane.laneNumber}`);
+				ids.add(`${sessionPrefix}-${opId}-merge-${lane.laneNumber}`);
 			}
 		}
 
@@ -4381,8 +4348,8 @@ export default function (pi: ExtensionAPI) {
 		name: "list_active_agents",
 		label: "List Active Agents",
 		description:
-			"List all tmux sessions with their role, lane, task, context %, and elapsed time.",
-		promptSnippet: "list_active_agents() — show all tmux sessions with role, lane, task, context %, elapsed",
+			"List all active Runtime V2 agents with their role, lane, task, status, and elapsed time.",
+		promptSnippet: "list_active_agents() — show active Runtime V2 agents with role, lane, task, status, elapsed",
 		promptGuidelines: [
 			"Call list_active_agents to see all running agent sessions.",
 			"Shows: session name, role (worker/reviewer/merger/supervisor), lane, task, context %, elapsed.",
@@ -4402,7 +4369,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	/**
-	 * List all active tmux sessions with agent metadata.
+	 * List all active Runtime V2 agents using the persisted registry.
 	 * @since TP-096
 	 */
 	function doListActiveAgents(ctx: ExtensionContext): string {
@@ -4417,99 +4384,7 @@ export default function (pi: ExtensionAPI) {
 			}
 		}
 
-		// Fall back to TMUX-based discovery for legacy batches
-		let sessions: string[] = [];
-		try {
-			const output = execSync('tmux list-sessions -F "#{session_name}"', {
-				encoding: "utf-8",
-				timeout: 5000,
-				stdio: ["ignore", "pipe", "ignore"],
-			}).trim();
-			sessions = output ? output.split("\n").map(s => s.trim()).filter(Boolean) : [];
-		} catch {
-			return "❌ No active agents found (no registry and no tmux sessions).";
-		}
-
-		if (sessions.length === 0) return "❌ No active agents found.";
-
-		// state already loaded above for registry check (may be null)
-
-		// Build a map of session name → lane-state data
-		const laneStates: Record<string, any> = {};
-		try {
-			const piDir = join(stateRoot, ".pi");
-			if (existsSync(piDir)) {
-				const files = readdirSync(piDir).filter(f => f.startsWith("lane-state-") && f.endsWith(".json"));
-				for (const file of files) {
-					try {
-						const data = JSON.parse(readFileSync(join(piDir, file), "utf-8"));
-						if (data.prefix) laneStates[data.prefix] = data;
-					} catch { continue; }
-				}
-			}
-		} catch { /* .pi dir missing */ }
-
-		const lines: string[] = [];
-		lines.push(`👥 **Active Agents** (${sessions.length} sessions)\n`);
-
-		// Parse each session name to extract role, lane, etc.
-		for (const sess of sessions) {
-			let role = "unknown";
-			let laneNum = "";
-			let taskId = "";
-			let contextPct = "";
-			let elapsed = "";
-			let costStr = "";
-
-			// Parse session name pattern:
-			// Workers/reviewers: orch-{opId}-lane-{N} (or -worker/-reviewer suffix)
-			// Mergers: orch-{opId}-merge-{N}
-			// Supervisor: pi-supervisor-{...}
-			const laneMatch = sess.match(/-lane-(\d+)/);
-			const mergeMatch = sess.match(/-merge-(\d+)/);
-
-			if (mergeMatch) {
-				role = "merger";
-				laneNum = mergeMatch[1];
-			} else if (laneMatch) {
-				if (sess.includes("-reviewer")) {
-					role = "reviewer";
-				} else {
-					role = "worker";
-				}
-				laneNum = laneMatch[1];
-			} else if (sess.includes("supervisor")) {
-				role = "supervisor";
-			}
-
-			// Find matching task and lane-state
-			if (state && laneNum) {
-				const ln = parseInt(laneNum);
-				const task = state.tasks.find(t => t.laneNumber === ln && t.status === "running");
-				if (task) taskId = task.taskId;
-
-				// Find lane-state prefix (may be the session name or a prefix of it)
-				const laneRec = state.lanes.find(l => l.laneNumber === ln);
-				const prefix = laneRec?.laneSessionId || sess;
-				const ls = laneStates[prefix];
-				if (ls) {
-					if (ls.workerContextPct) contextPct = `${Math.round(ls.workerContextPct)}%`;
-					if (ls.workerElapsed) elapsed = `${Math.round(ls.workerElapsed / 1000)}s`;
-					if (ls.workerCostUsd) costStr = `$${ls.workerCostUsd.toFixed(3)}`;
-				}
-			}
-
-			const parts: string[] = [`**${sess}**`];
-			parts.push(`role: ${role}`);
-			if (laneNum) parts.push(`lane: ${laneNum}`);
-			if (taskId) parts.push(`task: ${taskId}`);
-			if (contextPct) parts.push(`ctx: ${contextPct}`);
-			if (elapsed) parts.push(`elapsed: ${elapsed}`);
-			if (costStr) parts.push(`cost: ${costStr}`);
-			lines.push(`- ${parts.join(" · ")}`);
-		}
-
-		return lines.join("\n");
+		return "❌ No active agents found (Runtime V2 registry is empty).";
 	}
 
 
@@ -4754,7 +4629,7 @@ export default function (pi: ExtensionAPI) {
 			"/orch <areas|all>        Start batch execution\n" +
 			"/orch-plan <areas|all>   Preview execution plan\n" +
 			"/orch-deps <areas|all>   Show dependency graph\n" +
-			"/orch-sessions           List TMUX sessions\n" +
+			"/orch-sessions           List orchestrator sessions\n" +
 			"/orch-takeover           Force supervisor takeover\n" +
 			"/orch-integrate          Integrate orch branch into working branch",
 			"info",

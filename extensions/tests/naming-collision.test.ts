@@ -49,8 +49,8 @@ function configWithOpId(operatorId: string): OrchestratorConfig {
 function mergeTempBranch(opId: string, batchId: string): string {
 	return `_merge-temp-${opId}-${batchId}`;
 }
-function mergeSessionName(tmuxPrefix: string, opId: string, laneNumber: number): string {
-	return `${tmuxPrefix}-${opId}-merge-${laneNumber}`;
+function mergeSessionName(sessionPrefix: string, opId: string, laneNumber: number): string {
+	return `${sessionPrefix}-${opId}-merge-${laneNumber}`;
 }
 function mergeResultFileName(waveIndex: number, laneNumber: number, opId: string, batchId: string): string {
 	return `merge-result-w${waveIndex}-lane${laneNumber}-${opId}-${batchId}.json`;

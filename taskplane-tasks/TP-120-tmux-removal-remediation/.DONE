@@ -1,0 +1,3 @@
+completed: 2026-04-02
+task: TP-120
+summary: Removed remaining functional TMUX code from execution/merge/abort flows, renamed orchestrator tmuxPrefix to sessionPrefix with backward-compatible alias reads, updated tests, and verified TMUX reference count dropped from 160 to 73 with functional command invocations removed.

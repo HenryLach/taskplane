@@ -365,13 +365,13 @@ function tailJsonlFile(filePath) {
 
 /**
  * Load and accumulate telemetry from .pi/telemetry/*.jsonl files.
- * Returns telemetry keyed by tmux session prefix (e.g., "orch-lane-1").
+ * Returns telemetry keyed by session prefix (e.g., "orch-lane-1").
  *
- * Uses batch-state lanes to map lane numbers → tmux prefixes.
+ * Uses batch-state lanes to map lane numbers → session prefixes.
  * For standalone /task mode (no lane number in filename), data is keyed as "standalone".
  *
  * @param {object|null} batchState - The batch state from batch-state.json
- * @returns {object} Map of tmuxPrefix → accumulated telemetry
+ * @returns {object} Map of sessionPrefix → accumulated telemetry
  */
 
 // ── Runtime V2 Data Loaders (TP-107) ─────────────────────────────

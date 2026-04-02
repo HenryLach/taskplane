@@ -351,6 +351,7 @@ describe("10.x: Packet-home authority (TP-109)", () => {
 describe("11.x: Merge V2 liveness + abort correctness", () => {
 	const mergeSrc = readFileSync(join(__dirname, "..", "taskplane", "merge.ts"), "utf-8");
 	const abortSrc = readFileSync(join(__dirname, "..", "taskplane", "abort.ts"), "utf-8");
+	const extensionSrc = readFileSync(join(__dirname, "..", "taskplane", "extension.ts"), "utf-8");
 
 	it("11.1: waitForMergeResult is backend-aware (no TMUX for V2)", () => {
 		const fnIdx = mergeSrc.indexOf("function waitForMergeResult(");
@@ -395,6 +396,21 @@ describe("11.x: Merge V2 liveness + abort correctness", () => {
 		const fnIdx = mergeSrc.indexOf("export async function mergeWave(");
 		const block = mergeSrc.slice(fnIdx, fnIdx + 16000);
 		expect(block).not.toContain("addSession");
+	});
+
+	it("11.7: abort discovery uses Runtime V2 state sources (no tmux list-sessions)", () => {
+		expect(abortSrc).toContain("discoverAbortSessionNames(");
+		expect(abortSrc).not.toContain('execSync(\'tmux list-sessions');
+	});
+
+	it("11.8: /orch-abort helper delegates to executeAbort without tmux kill-session", () => {
+		const fnIdx = extensionSrc.indexOf("function doOrchAbort(");
+		expect(fnIdx).toBeGreaterThan(-1);
+		const block = extensionSrc.slice(fnIdx, fnIdx + 2600);
+		expect(block).toContain("await executeAbort(");
+		expect(block).toContain("ORCH_MESSAGES.abortNoBatch()");
+		expect(block).not.toContain("tmux list-sessions");
+		expect(block).not.toContain("tmux kill-session");
 	});
 });
 

@@ -17,7 +17,7 @@ import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
-import { classifyMergeHealth, captureMergePaneOutput, MergeHealthMonitor } from "../taskplane/merge.ts";
+import { classifyMergeHealth, MergeHealthMonitor } from "../taskplane/merge.ts";
 import { formatEventNotification, shouldNotify } from "../taskplane/supervisor.ts";
 import {
 	MERGE_HEALTH_WARNING_THRESHOLD_MS,
@@ -56,163 +56,71 @@ function makeHealthState(overrides?: Partial<MergeSessionHealthState>): MergeSes
 describe("classifyMergeHealth", () => {
 	it("1.1: returns 'dead' when session is gone and no result file", () => {
 		const state = makeHealthState();
-		const result = classifyMergeHealth(
-			false,   // sessionAlive
-			false,   // hasResultFile
-			null,    // currentOutput
-			state,
-			Date.now(),
-		);
+		const result = classifyMergeHealth(false, false, state, Date.now());
 		expect(result).toBe("dead");
 	});
 
 	it("1.2: returns 'healthy' when session is dead but result file exists", () => {
 		const state = makeHealthState();
-		const result = classifyMergeHealth(
-			false,   // sessionAlive
-			true,    // hasResultFile
-			null,    // currentOutput
-			state,
-			Date.now(),
-		);
+		const result = classifyMergeHealth(false, true, state, Date.now());
 		expect(result).toBe("healthy");
 	});
 
-	it("1.3: returns 'healthy' when session alive and output changed (new output)", () => {
-		const now = Date.now();
-		const state = makeHealthState({
-			lastSnapshot: { content: "old output", capturedAt: now - 60_000 },
-			lastActivityAt: now - 60_000,
-		});
-		const result = classifyMergeHealth(
-			true,            // sessionAlive
-			false,           // hasResultFile
-			"new output",    // currentOutput (different from lastSnapshot)
-			state,
-			now,
-		);
-		expect(result).toBe("healthy");
-	});
-
-	it("1.4: returns 'healthy' when session alive and first capture (no previous snapshot)", () => {
-		const now = Date.now();
-		const state = makeHealthState({ lastSnapshot: null, lastActivityAt: now });
-		const result = classifyMergeHealth(
-			true,
-			false,
-			"some output",
-			state,
-			now,
-		);
-		expect(result).toBe("healthy");
-	});
-
-	it("1.5: returns 'warning' when session alive and output unchanged for warning threshold", () => {
+	it("1.3: returns 'warning' when live session exceeds warning threshold", () => {
 		const now = Date.now();
 		const staleTime = now - MERGE_HEALTH_WARNING_THRESHOLD_MS - 1;
 		const state = makeHealthState({
-			lastSnapshot: { content: "same output", capturedAt: staleTime },
+			lastSnapshot: { content: "legacy snapshot", capturedAt: staleTime },
 			lastActivityAt: staleTime,
 		});
-		const result = classifyMergeHealth(
-			true,
-			false,
-			"same output",  // same as lastSnapshot
-			state,
-			now,
-		);
+		const result = classifyMergeHealth(true, false, state, now);
 		expect(result).toBe("warning");
 	});
 
-	it("1.6: returns 'stuck' when session alive and output unchanged for stuck threshold", () => {
+	it("1.4: returns 'stuck' when live session exceeds stuck threshold", () => {
 		const now = Date.now();
-		const veryStaleTime = now - MERGE_HEALTH_STUCK_THRESHOLD_MS - 1;
+		const staleTime = now - MERGE_HEALTH_STUCK_THRESHOLD_MS - 1;
 		const state = makeHealthState({
-			lastSnapshot: { content: "stale output", capturedAt: veryStaleTime },
-			lastActivityAt: veryStaleTime,
+			lastSnapshot: { content: "legacy snapshot", capturedAt: staleTime },
+			lastActivityAt: staleTime,
 		});
-		const result = classifyMergeHealth(
-			true,
-			false,
-			"stale output",  // same as lastSnapshot
-			state,
-			now,
-		);
+		const result = classifyMergeHealth(true, false, state, now);
 		expect(result).toBe("stuck");
 	});
 
-	it("1.7: returns 'healthy' when session alive but stale duration below warning threshold", () => {
+	it("1.5: returns 'healthy' when live session is below warning threshold", () => {
 		const now = Date.now();
-		// 5 minutes of stale — below 10-minute warning threshold
-		const recentStale = now - 5 * 60 * 1000;
+		const recent = now - 5 * 60 * 1000;
 		const state = makeHealthState({
-			lastSnapshot: { content: "output", capturedAt: recentStale },
-			lastActivityAt: recentStale,
+			lastSnapshot: { content: "legacy snapshot", capturedAt: recent },
+			lastActivityAt: recent,
 		});
-		const result = classifyMergeHealth(
-			true,
-			false,
-			"output",  // same as lastSnapshot
-			state,
-			now,
-		);
+		const result = classifyMergeHealth(true, false, state, now);
 		expect(result).toBe("healthy");
-	});
-
-	it("1.8: stuck takes priority over warning when both thresholds exceeded", () => {
-		const now = Date.now();
-		const veryStaleTime = now - MERGE_HEALTH_STUCK_THRESHOLD_MS - 1;
-		const state = makeHealthState({
-			lastSnapshot: { content: "output", capturedAt: veryStaleTime },
-			lastActivityAt: veryStaleTime,
-		});
-		const result = classifyMergeHealth(true, false, "output", state, now);
-		expect(result).toBe("stuck");
-	});
-
-	it("1.9: null currentOutput with alive session still checks stale duration", () => {
-		const now = Date.now();
-		const staleTime = now - MERGE_HEALTH_WARNING_THRESHOLD_MS - 1;
-		const state = makeHealthState({
-			lastSnapshot: { content: "output", capturedAt: staleTime },
-			lastActivityAt: staleTime,
-		});
-		// null output means capture failed — not a new output change
-		const result = classifyMergeHealth(true, false, null, state, now);
-		expect(result).toBe("warning");
 	});
 });
 
 
-// ── 2. Snapshot Comparison Logic Tests ───────────────────────────────
+// ── 2. Elapsed-Time Classification Tests ─────────────────────────────
 
-describe("snapshot comparison logic", () => {
-	it("2.1: output change detected when content differs from last snapshot", () => {
+describe("elapsed-time classification", () => {
+	it("2.1: stuck takes priority over warning when both thresholds are exceeded", () => {
 		const now = Date.now();
-		const state = makeHealthState({
-			lastSnapshot: { content: "line 1\nline 2", capturedAt: now - 60_000 },
-			lastActivityAt: now - 60_000,
-		});
-		// Different content should classify as healthy
-		const result = classifyMergeHealth(true, false, "line 1\nline 2\nline 3", state, now);
-		expect(result).toBe("healthy");
+		const staleTime = now - MERGE_HEALTH_STUCK_THRESHOLD_MS - 1;
+		const state = makeHealthState({ lastActivityAt: staleTime });
+		const result = classifyMergeHealth(true, false, state, now);
+		expect(result).toBe("stuck");
 	});
 
-	it("2.2: no change detected when content matches last snapshot exactly", () => {
+	it("2.2: classification is independent of snapshot content", () => {
 		const now = Date.now();
 		const staleTime = now - MERGE_HEALTH_WARNING_THRESHOLD_MS - 1;
 		const state = makeHealthState({
-			lastSnapshot: { content: "exact same", capturedAt: staleTime },
+			lastSnapshot: { content: "snapshot content", capturedAt: staleTime },
 			lastActivityAt: staleTime,
 		});
-		const result = classifyMergeHealth(true, false, "exact same", state, now);
+		const result = classifyMergeHealth(true, false, state, now);
 		expect(result).toBe("warning");
-	});
-
-	it("2.3: first capture (null lastSnapshot) always counts as new activity", () => {
-		const state = makeHealthState({ lastSnapshot: null });
-		const result = classifyMergeHealth(true, false, "first output", state, Date.now());
-		expect(result).toBe("healthy");
 	});
 });
 
@@ -500,7 +408,7 @@ describe("MergeHealthMonitor", () => {
 // ── 8. MergeHealthMonitor.poll() Behavior Tests ──────────────────────
 
 describe("MergeHealthMonitor.poll() behavior", () => {
-	it("8.1: poll() source verifies it calls tmuxHasSession + existsSync + classifyMergeHealth", () => {
+	it("8.1: poll() source verifies V2 liveness cache wiring + classifyMergeHealth", () => {
 		const mergeSource = readFileSync(
 			join(__dirname, "..", "taskplane", "merge.ts"),
 			"utf-8",
@@ -510,17 +418,19 @@ describe("MergeHealthMonitor.poll() behavior", () => {
 		expect(pollIdx).toBeGreaterThan(-1);
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
-		// Verify poll checks session liveness (async — TP-070)
-		expect(pollBody).toContain("tmuxHasSessionAsync(sessionName)");
+		// Verify poll seeds/clears V2 liveness cache and checks V2 liveness
+		expect(pollBody).toContain("setV2LivenessRegistryCache(readRegistrySnapshot(this.stateRoot, this.batchId))");
+		expect(pollBody).toContain("isV2AgentAlive(sessionName, \"v2\")");
+		expect(pollBody).toContain("setV2LivenessRegistryCache(null)");
 		// Verify poll checks result file
 		expect(pollBody).toContain("existsSync(resultPath)");
 		// Verify poll classifies health
 		expect(pollBody).toContain("classifyMergeHealth");
-		// Verify poll captures pane output (async — TP-070)
-		expect(pollBody).toContain("captureMergePaneOutputAsync");
+		// Verify poll no longer captures TMUX pane output
+		expect(pollBody).not.toContain("captureMergePaneOutputAsync");
 	});
 
-	it("8.2: poll() updates snapshot when output changes", () => {
+	it("8.2: poll() no longer updates snapshots from pane output", () => {
 		const mergeSource = readFileSync(
 			join(__dirname, "..", "taskplane", "merge.ts"),
 			"utf-8",
@@ -528,11 +438,8 @@ describe("MergeHealthMonitor.poll() behavior", () => {
 		const pollIdx = mergeSource.indexOf("poll(): Promise<void> {");
 		const pollBody = mergeSource.substring(pollIdx, pollIdx + 1500);
 
-		// Verify snapshot update logic
-		expect(pollBody).toContain("lastSnapshot");
-		expect(pollBody).toContain("lastActivityAt");
-		// Must check for content difference before updating
-		expect(pollBody).toContain("currentOutput !== state.lastSnapshot.content");
+		expect(pollBody).not.toContain("currentOutput");
+		expect(pollBody).not.toContain("state.lastSnapshot =");
 	});
 
 	it("8.3: poll() calls _emitHealthEvents for each session", () => {
@@ -723,44 +630,25 @@ describe("dead-session early exit signaling", () => {
 });
 
 
-// ── 11. captureMergePaneOutput Tests ─────────────────────────────────
+// ── 11. Merge TMUX capture removal tests ─────────────────────────────
 
-describe("captureMergePaneOutput source verification", () => {
-	it("11.1: uses tmux capture-pane with correct arguments", () => {
+describe("merge TMUX capture removal", () => {
+	it("11.1: merge source no longer includes TMUX capture helper functions", () => {
 		const mergeSource = readFileSync(
 			join(__dirname, "..", "taskplane", "merge.ts"),
 			"utf-8",
 		);
-		const fnIdx = mergeSource.indexOf("function captureMergePaneOutput");
-		expect(fnIdx).toBeGreaterThan(-1);
-		const fnBody = mergeSource.substring(fnIdx, fnIdx + 600);
-
-		expect(fnBody).toContain("capture-pane");
-		expect(fnBody).toContain("-t");
-		expect(fnBody).toContain("-p");      // print to stdout
-		expect(fnBody).toContain("-S");      // start from N lines back
+		expect(mergeSource).not.toContain("captureMergePaneOutput");
+		expect(mergeSource).not.toContain("runMergeTmuxCommandAsync");
 	});
 
-	it("11.2: returns null on failure (not empty string)", () => {
+	it("11.2: merge source no longer invokes tmux capture-pane commands", () => {
 		const mergeSource = readFileSync(
 			join(__dirname, "..", "taskplane", "merge.ts"),
 			"utf-8",
 		);
-		const fnIdx = mergeSource.indexOf("function captureMergePaneOutput");
-		const fnBody = mergeSource.substring(fnIdx, fnIdx + 600);
-
-		// Returns null on non-zero status or error
-		expect(fnBody).toContain("return null");
-	});
-
-	it("11.3: has a timeout guard to prevent hanging", () => {
-		const mergeSource = readFileSync(
-			join(__dirname, "..", "taskplane", "merge.ts"),
-			"utf-8",
-		);
-		const fnIdx = mergeSource.indexOf("function captureMergePaneOutput");
-		const fnBody = mergeSource.substring(fnIdx, fnIdx + 600);
-
-		expect(fnBody).toContain("timeout:");
+		expect(mergeSource).not.toContain("spawnSync(\"tmux\"");
+		expect(mergeSource).not.toContain("spawn(\"tmux\"");
+		expect(mergeSource).not.toContain("capture-pane");
 	});
 });

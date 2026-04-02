@@ -500,16 +500,16 @@ export function generateLaneId(laneLocalNumber: number, repoId?: string): string
  * and `repoId` are assumed to be sanitized identifiers (alphanumeric
  * + hyphens only).
  *
- * @param tmuxPrefix      - Session prefix from config (e.g., "orch")
+ * @param sessionPrefix   - Session prefix from config (e.g., "orch")
  * @param laneLocalNumber - Lane number within the repo group (1-indexed)
  * @param opId            - Operator identifier (sanitized, e.g., "henrylach")
  * @param repoId          - Repo identifier (undefined in repo mode)
  */
-export function generateLaneSessionId(tmuxPrefix: string, laneLocalNumber: number, opId: string, repoId?: string): string {
+export function generateLaneSessionId(sessionPrefix: string, laneLocalNumber: number, opId: string, repoId?: string): string {
 	if (repoId) {
-		return `${tmuxPrefix}-${opId}-${repoId}-lane-${laneLocalNumber}`;
+		return `${sessionPrefix}-${opId}-${repoId}-lane-${laneLocalNumber}`;
 	}
-	return `${tmuxPrefix}-${opId}-lane-${laneLocalNumber}`;
+	return `${sessionPrefix}-${opId}-lane-${laneLocalNumber}`;
 }
 
 
@@ -1280,7 +1280,7 @@ export function allocateLanes(
 	}
 
 	// ── Stage 4: Build AllocatedLane[] from assignments + worktrees ─
-	const tmuxPrefix = config.orchestrator.tmux_prefix || "orch";
+	const sessionPrefix = config.orchestrator.sessionPrefix || "orch";
 	const opId = resolveOperatorId(config);
 	const strategy = config.assignment.strategy as AllocatedLane["strategy"];
 	const sizeWeights = config.assignment.size_weights;
@@ -1329,7 +1329,7 @@ export function allocateLanes(
 			0,
 		);
 
-		const laneSessionId = generateLaneSessionId(tmuxPrefix, entry.localLane, opId, entry.repoId);
+		const laneSessionId = generateLaneSessionId(sessionPrefix, entry.localLane, opId, entry.repoId);
 		allocatedLanes.push({
 			laneNumber: entry.globalLane,
 			laneId: generateLaneId(entry.localLane, entry.repoId),

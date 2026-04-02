@@ -1654,9 +1654,8 @@ export function meetsMinVersion(actual: [number, number], minimum: [number, numb
  *   - git worktree support
  *   - pi availability
  *
- * Conditional checks (warn if spawn_mode is "subprocess", fail if "tmux"):
- *   - tmux version >= 2.6
- *   - tmux functional (can create/destroy sessions)
+ * Compatibility checks:
+ *   - spawn_mode: tmux warning (Runtime V2 is subprocess-only)
  */
 export function runPreflight(config: OrchestratorConfig, repoRoot?: string): PreflightResult {
 	const checks: PreflightCheck[] = [];
@@ -1706,68 +1705,15 @@ export function runPreflight(config: OrchestratorConfig, repoRoot?: string): Pre
 				: "Workspace root is not a git repo. Check workspace config repo paths.",
 	});
 
-	// ── TMUX availability and version ────────────────────────────
-	const tmuxResult = execCheck("tmux -V");
-	if (tmuxResult.ok) {
-		const version = parseVersion(tmuxResult.stdout);
-		const versionStr = `${version[0]}.${version[1]}`;
-		if (meetsMinVersion(version, [2, 6])) {
-			checks.push({
-				name: "tmux",
-				status: "pass",
-				message: `TMUX ${versionStr} available`,
-			});
-		} else {
-			checks.push({
-				name: "tmux",
-				status: tmuxRequired ? "fail" : "warn",
-				message: `TMUX ${versionStr} found, but 2.6+ required`,
-				hint: "Upgrade TMUX: https://github.com/tmux/tmux/wiki/Installing",
-			});
-		}
-	} else {
-		checks.push({
-			name: "tmux",
-			status: tmuxRequired ? "fail" : "warn",
-			message: "TMUX not found",
-			hint: tmuxRequired
-				? "Install TMUX (required for tmux spawn_mode):\n" +
-				  "  Linux: sudo apt install tmux\n" +
-				  "  macOS: brew install tmux\n" +
-				  "  Windows (MSYS2): pacman -S tmux\n" +
-				  "  Or set spawn_mode: subprocess in .pi/task-orchestrator.yaml"
-				: "TMUX not required for subprocess spawn_mode. Install for drill-down observability:\n" +
-				  "  Linux: sudo apt install tmux | macOS: brew install tmux",
-		});
-	}
-
-	// ── TMUX functional (only if tmux was found) ─────────────────
-	if (tmuxResult.ok) {
-		const testSession = "orch-preflight-test";
-		const tmuxFunctional = execCheck(`tmux new-session -d -s ${testSession} "exit 0"`);
-		if (tmuxFunctional.ok) {
-			// Clean up test session
-			execCheck(`tmux kill-session -t ${testSession}`);
-			checks.push({
-				name: "tmux-functional",
-				status: "pass",
-				message: "TMUX can create sessions",
-			});
-		} else {
-			checks.push({
-				name: "tmux-functional",
-				status: tmuxRequired ? "fail" : "warn",
-				message: "TMUX installed but cannot create sessions",
-				hint: "Check TMUX server status. Try: tmux new-session -d -s test 'echo ok'",
-			});
-		}
-	} else {
-		checks.push({
-			name: "tmux-functional",
-			status: tmuxRequired ? "fail" : "warn",
-			message: "Skipped — TMUX not installed",
-		});
-	}
+	// ── Legacy spawn_mode compatibility (Runtime V2) ─────────────
+	checks.push({
+		name: "tmux",
+		status: tmuxRequired ? "warn" : "pass",
+		message: tmuxRequired
+			? "spawn_mode: tmux is legacy-only under Runtime V2; subprocess backend will be used"
+			: "Runtime V2 subprocess backend active (TMUX not required)",
+		hint: tmuxRequired ? "Update orchestrator.spawn_mode to subprocess." : undefined,
+	});
 
 	// ── Pi availability ──────────────────────────────────────────
 	const piResult = execCheck("pi --version");

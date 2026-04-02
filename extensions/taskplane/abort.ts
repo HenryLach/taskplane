@@ -3,12 +3,11 @@
  * @module orch/abort
  */
 import { writeFileSync, existsSync } from "fs";
-import { execSync } from "child_process";
 import { join } from "path";
 
 import { execLog, killV2LaneAgents, resolveCanonicalTaskPaths } from "./execution.ts";
 import { killMergeAgentV2, killAllMergeAgentsV2 } from "./merge.ts";
-import { deleteBatchState, parseOrchSessionNames, persistRuntimeState } from "./persistence.ts";
+import { deleteBatchState, persistRuntimeState } from "./persistence.ts";
 import type { AbortActionStep, AbortErrorCode, AbortLaneResult, AbortMode, AbortResult, AbortTargetSession, AllocatedLane, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord } from "./types.ts";
 
 // ── Abort Pure Functions ─────────────────────────────────────────────
@@ -141,6 +140,47 @@ export function planAbortActions(
 		{ type: "poll-wait", gracePeriodMs, pollIntervalMs },
 		{ type: "kill-remaining" },
 	];
+}
+
+/**
+ * Discover abort target session names from Runtime V2 state sources.
+ *
+ * Sources (deduped):
+ * - in-memory runtime lanes (`batchState.currentLanes`)
+ * - persisted lane records (`persistedState.lanes`)
+ * - persisted task records (`persistedState.tasks[].sessionName`)
+ */
+export function discoverAbortSessionNames(
+	prefix: string,
+	persistedState: PersistedBatchState | null,
+	runtimeLanes: AllocatedLane[],
+): string[] {
+	const names = new Set<string>();
+	const prefixWithDash = `${prefix}-`;
+	const add = (name: string | null | undefined) => {
+		if (!name) return;
+		const trimmed = name.trim();
+		if (!trimmed || !trimmed.startsWith(prefixWithDash)) return;
+		names.add(trimmed);
+	};
+
+	for (const lane of runtimeLanes) {
+		add(lane.laneSessionId);
+	}
+
+	if (persistedState?.lanes) {
+		for (const lane of persistedState.lanes) {
+			add(lane.laneSessionId);
+		}
+	}
+
+	if (persistedState?.tasks) {
+		for (const task of persistedState.tasks) {
+			add(task.sessionName);
+		}
+	}
+
+	return [...names];
 }
 
 
@@ -280,7 +320,7 @@ export function killOrchSessions(
  * Non-goal: does NOT delete worktrees/branches (preserved for inspection).
  *
  * @param mode           - Abort mode (graceful or hard)
- * @param prefix         - TMUX session prefix (e.g., "orch")
+ * @param prefix         - orchestrator session prefix (e.g., "orch")
  * @param repoRoot       - Repository root path
  * @param batchState     - Current batch runtime state (mutated: phase set to stopped)
  * @param persistedState - Loaded persisted state (for session enrichment)
@@ -326,28 +366,10 @@ export async function executeAbort(
 		execLog("abort", batchState.batchId, `killed ${v2MergeKilled} V2 merge agent(s)`);
 	}
 
-	// Step 3: List all orch sessions (TMUX — legacy + fallback)
-	let allSessionNames: string[];
-	try {
-		allSessionNames = parseOrchSessionNames(
-			(() => {
-				try {
-					return execSync('tmux list-sessions -F "#{session_name}"', {
-						encoding: "utf-8",
-						timeout: 5000,
-					});
-				} catch {
-					return "";
-				}
-			})(),
-			prefix,
-		);
-	} catch (err) {
-		errors.push({
-			code: "ABORT_TMUX_LIST_FAILED",
-			message: err instanceof Error ? err.message : String(err),
-		});
-		allSessionNames = [];
+	// Step 3: Discover target sessions from Runtime V2 state sources.
+	const allSessionNames = discoverAbortSessionNames(prefix, persistedState, batchState.currentLanes);
+	if (allSessionNames.length === 0) {
+		execLog("abort", batchState.batchId, `No abort targets discovered for prefix "${prefix}" from runtime/persisted state.`);
 	}
 
 	// Step 4: Select and enrich target sessions
