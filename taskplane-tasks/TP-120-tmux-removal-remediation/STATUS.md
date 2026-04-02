@@ -1,17 +1,17 @@
 # TP-120: TMUX Removal Remediation — Status
 
-**Current Step:** Step 0: Preflight — Inventory remaining TMUX code
+**Current Step:** Step 3: Remove abort.ts TMUX code
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 5
-**Iteration:** 1
+**Review Counter:** 7
+**Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight — Inventory remaining TMUX code
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Read PROMPT.md and STATUS.md
 - [x] Count remaining TMUX refs
 - [x] Identify TMUX functions in execution.ts
@@ -20,7 +20,7 @@
 - [x] Log inventory
 
 ### Step 1: Remove TMUX helper functions from execution.ts
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 - [x] Remove tmuxHasSessionAsync()
 - [x] Remove tmuxKillSessionAsync()
 - [x] Remove captureTmuxPaneTailAsync()
@@ -33,7 +33,7 @@
 - [x] R002: Update supervisor-merge-monitoring test expectations for V2 liveness path
 
 ### Step 2: Remove merge health monitor TMUX polling
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 - [x] Replace or remove tmuxHasSessionAsync in MergeHealthMonitor.poll()
 - [x] Remove captureTmuxPaneTail* calls
 - [x] Remove tmuxHasSessionAsync import from merge.ts
@@ -43,10 +43,13 @@
 - [x] R004: Update merge-monitor tests for V2 liveness + no TMUX capture behavior
 
 ### Step 3: Remove abort.ts TMUX code
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Remove execSync('tmux list-sessions') from abort.ts
 - [ ] Replace with V2 registry or remove
 - [ ] Ensure V2 abort is only path
+- [ ] Remove `/orch-abort` TMUX list/kill path from extension.ts by routing to V2-only abort behavior
+- [ ] Implement concrete non-TMUX session discovery that still aborts correctly when only persisted state exists
+- [ ] Add/adjust abort tests for graceful/hard V2 targeting and no-batch/no-session handling without TMUX
 
 ### Step 4: Config rename — tmux_prefix → sessionPrefix
 **Status:** ⬜ Not Started
@@ -97,6 +100,7 @@
 - Reviewer suggestion (R002): clean up residual TMUX wording in execution comments in a follow-up.
 - Reviewer suggestion (R004): if monitor remains, keep the V2 liveness cache seed/clear pattern inside poll cycles.
 - Step 2 evaluation: `MergeHealthMonitor` is still active runtime code (constructed in `engine.ts` merge flow), so it was retained and de-TMUXed rather than removed.
+- Reviewer suggestion (R007): after TMUX removal in abort flow, consider renaming TMUX-specific abort error identifiers/messages to backend-neutral names in follow-up.
 
 ## Execution Log
 
@@ -109,3 +113,7 @@
 | 2026-04-02 14:04 | Review R003 | code Step 1: APPROVE |
 | 2026-04-02 14:06 | Review R004 | plan Step 2: REVISE |
 | 2026-04-02 14:07 | Review R005 | plan Step 2: APPROVE |
+| 2026-04-02 14:16 | Review R006 | code Step 2: APPROVE |
+| 2026-04-02 14:18 | Worker iter 1 | killed (wall-clock timeout) in 1800s, tools: 157 |
+| 2026-04-02 14:18 | Step 3 started | Remove abort.ts TMUX code |
+| 2026-04-02 14:21 | Review R007 | plan Step 3: REVISE |
