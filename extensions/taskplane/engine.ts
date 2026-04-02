@@ -2267,9 +2267,8 @@ export async function executeOrchBatch(
 						const snap = JSON.parse(readFileSync(join(lanesDir, f), "utf-8"));
 						const w = snap.worker || {};
 						const r = snap.reviewer || {};
-						// Key by session name (match lane record) for per-task lookup
-						const laneRec = (batchState.lanes || []).find((l: { laneNumber: number }) => l.laneNumber === snap.laneNumber);
-						const key = laneRec?.tmuxSessionName || `lane-${snap.laneNumber}`;
+						// Key by lane number for reliable per-task lookup (TP-115)
+						const key = `lane-${snap.laneNumber}`;
 						laneTokens.set(key, {
 							input: (w.inputTokens || 0) + (r.inputTokens || 0),
 							output: (w.outputTokens || 0) + (r.outputTokens || 0),
@@ -2321,9 +2320,9 @@ export async function executeOrchBatch(
 			const durationMs = (to.startTime && to.endTime) ? (to.endTime - to.startTime) : 0;
 
 			// Get tokens for this lane (cumulative — shared across tasks in same lane)
-			// TP-115: V2 sessionName includes role suffix (-worker/-reviewer) but
-			// laneTokens is keyed by tmuxSessionName (no suffix). Try both.
-			const tokens = laneTokens.get(to.sessionName)
+			// TP-115: Try lane number key first (V2), then sessionName variants (legacy).
+			const tokens = laneTokens.get(`lane-${lane}`)
+				|| laneTokens.get(to.sessionName)
 				|| laneTokens.get(to.sessionName?.replace(/-(?:worker|reviewer)$/, ""))
 				|| { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 };
 
