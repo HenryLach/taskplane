@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 11
+**Review Counter:** 12
 **Iteration:** 2
 **Size:** M
 
@@ -50,6 +50,7 @@
 - [x] Verify non-test production `tmuxSessionName` leftovers are eliminated or explicitly compatibility-ingress scoped
 - [x] Validate legacy state files with tmux-only lane records still load into laneSessionId canonical runtime shape
 - [x] Verify full suite
+- [ ] Restore dashboard ingress compatibility for tmux-only persisted lane records and add regression coverage
 
 ### Step 5: Documentation & Delivery
 **Status:** ⬜ Not Started
@@ -104,7 +105,9 @@
 - Reviewer suggestion: run resume-path/runtime test coverage for tmux-only compatibility lane objects after fixing helper recursion.
 - Reviewer suggestion: where tests are not compatibility-focused, rename assertion text/test names to `laneSessionId` for long-term clarity.
 - Reviewer suggestion: for Step 4, log allowed production leftovers and post-step grep counts to prove alias removal completeness.
+- Reviewer suggestion (R012): log dashboard legacy-ingress coverage and post-fix grep counts when Step 4 code review is approved.
 | 2026-04-02 05:31 | Review R008 | plan Step 3: APPROVE |
 | 2026-04-02 05:40 | Review R009 | code Step 3: APPROVE |
 | 2026-04-02 05:41 | Review R010 | plan Step 4: REVISE |
 | 2026-04-02 05:44 | Review R011 | plan Step 4: APPROVE |
+| 2026-04-02 05:57 | Review R012 | code Step 4: REVISE |
