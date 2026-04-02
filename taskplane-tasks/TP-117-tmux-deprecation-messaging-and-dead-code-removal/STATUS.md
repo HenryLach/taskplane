@@ -1,10 +1,10 @@
 # TP-117: TMUX Deprecation Messaging and Dead Code Removal — Status
 
 **Current Step:** Step 5: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 2
 **Size:** M
 
@@ -45,9 +45,9 @@
 - [x] Fix all failures
 
 ### Step 5: Documentation & Delivery
-**Status:** 🟨 In Progress
-- [ ] Update STATUS.md with summary
-- [ ] Log discoveries
+**Status:** ✅ Complete
+- [x] Update STATUS.md with summary
+- [x] Log discoveries
 
 ---
 
@@ -88,6 +88,7 @@
 | 2026-04-02 06:00 | Step 4 validation | Full suite pass: 3398 tests, 0 failures |
 | 2026-04-02 06:00 | Step 4 completed | Updated/deleted stale legacy TMUX structural tests for Runtime V2-only codepaths |
 | 2026-04-02 06:00 | Step 5 started | Documentation & Delivery |
+| 2026-04-02 06:05 | Step 5 completed | Summary + discoveries recorded; task ready for delivery |
 |-----------|--------|---------|
 | 2026-04-02 04:28 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-02 04:33 | Review R002 | code Step 1: APPROVE |
@@ -97,3 +98,17 @@
 | 2026-04-02 04:48 | Review R006 | code Step 3: APPROVE |
 | 2026-04-02 04:51 | Review R007 | plan Step 4: APPROVE |
 | 2026-04-02 04:52 | Worker iter 1 | killed (wall-clock timeout) in 1800s, tools: 178 |
+| 2026-04-02 05:04 | Review R008 | code Step 4: APPROVE |
+
+## Completion Summary
+
+- Updated stale legacy-TMUX test assertions across five files to align with Runtime V2 entry points (`executeLaneV2`, `spawnMergeAgentV2`) and removed assertions for deleted helpers.
+- Removed obsolete structural checks in `crash-recovery-spawn-reliability.test.ts` that referenced `buildTmuxSpawnArgs`.
+- Validation coverage:
+  - Targeted tests: `orch-rpc-telemetry`, `runtime-model-fallback`, `supervisor-merge-monitoring`, `workspace-config.integration`, `crash-recovery-spawn-reliability`
+  - Full suite: **3398 passed, 0 failed**
+
+## Discoveries
+
+- Unexpected residual references to removed TMUX functions were limited to structural tests; no production code import sites remained after Steps 2–3.
+- `merge.ts` health-monitor flow still deregisters sessions via `healthMonitor.removeSession(...)`, but no longer registers with `healthMonitor.addSession(...)` in the Runtime V2 merge path.
