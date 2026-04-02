@@ -80,7 +80,7 @@ function makeLane(
 	return {
 		laneNumber,
 		laneId: `lane-${laneNumber}`,
-		tmuxSessionName: `orch-lane-${laneNumber}`,
+		laneSessionId: `orch-lane-${laneNumber}`,
 		worktreePath: `/worktrees/lane-${laneNumber}`,
 		branch,
 		tasks: taskIds.map((id, i) => ({
@@ -174,7 +174,7 @@ function makePersistedState(taskOverrides?: Array<Record<string, unknown>>): Rec
 		lanes: [{
 			laneNumber: 1,
 			laneId: "lane-1",
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			worktreePath: "/worktrees/lane-1",
 			branch: "task/test-lane-1-20260319T140000",
 			taskIds: ["TP-001"],

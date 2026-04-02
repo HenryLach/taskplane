@@ -380,7 +380,7 @@ describe("selectAbortTargetSessions", () => {
 				laneId: "lane-1",
 				laneNumber: 1,
 				worktreePath,
-				tmuxSessionName: "orch-lane-1",
+				laneSessionId: "orch-lane-1",
 				tasks: [{
 					taskId: "TP-060",
 					task: { taskFolder } as any,
@@ -412,7 +412,7 @@ describe("selectAbortTargetSessions", () => {
 				laneId: "lane-1",
 				laneNumber: 1,
 				worktreePath,
-				tmuxSessionName: "orch-lane-1",
+				laneSessionId: "orch-lane-1",
 				tasks: [{
 					taskId: "TP-061-ext",
 					task: { taskFolder } as any,
@@ -445,7 +445,7 @@ describe("selectAbortTargetSessions", () => {
 				laneId: "lane-1",
 				laneNumber: 1,
 				worktreePath,
-				tmuxSessionName: "orch-lane-1",
+				laneSessionId: "orch-lane-1",
 				tasks: [{
 					taskId: "TP-062-ext-archived",
 					task: { taskFolder } as any,
@@ -476,7 +476,7 @@ describe("selectAbortTargetSessions", () => {
 				laneId: "lane-1",
 				laneNumber: 1,
 				worktreePath,
-				tmuxSessionName: "orch-lane-1",
+				laneSessionId: "orch-lane-1",
 				tasks: [{
 					taskId: "TP-063-archived",
 					task: { taskFolder } as any,
@@ -499,7 +499,7 @@ describe("selectAbortTargetSessions", () => {
 				laneId: "lane-1",
 				laneNumber: 1,
 				worktreePath,
-				tmuxSessionName: "orch-lane-1",
+				laneSessionId: "orch-lane-1",
 				tasks: [] as any[],
 			} as any],
 			repoRoot,
@@ -674,7 +674,7 @@ describe("selectAbortTargetSessions workspace-mode", () => {
 			lanes: [{
 				laneNumber: 1,
 				laneId: "api/lane-1",
-				tmuxSessionName: "orch-api-lane-1",
+				laneSessionId: "orch-api-lane-1",
 				worktreePath: "/tmp/wt/lane-1",
 				branch: "orch-lane-1",
 				taskIds: ["TP-080"],
@@ -751,7 +751,7 @@ describe("selectAbortTargetSessions workspace-mode", () => {
 				{
 					laneNumber: 1,
 					laneId: "lane-1",
-					tmuxSessionName: "orch-lane-1",
+					laneSessionId: "orch-lane-1",
 					worktreePath: "/tmp/wt/lane-1",
 					branch: "orch-lane-1",
 					taskIds: ["TP-082"],
@@ -759,7 +759,7 @@ describe("selectAbortTargetSessions workspace-mode", () => {
 				{
 					laneNumber: 2,
 					laneId: "lane-2",
-					tmuxSessionName: "orch-lane-2",
+					laneSessionId: "orch-lane-2",
 					worktreePath: "/tmp/wt/lane-2",
 					branch: "orch-lane-2",
 					taskIds: ["TP-083"],

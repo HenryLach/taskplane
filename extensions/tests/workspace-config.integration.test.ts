@@ -1439,7 +1439,7 @@ describe("orchestrator pointer threading", () => {
 			laneId: "lane-1",
 			branch: "orch-lane-1",
 			tasks: [] as Array<{ task: { taskId: string; promptPath: string; size: string }; position: number }>,
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			worktreePath: resolve("C:/fake/worktree"),
 		};
 
@@ -1460,7 +1460,7 @@ describe("orchestrator pointer threading", () => {
 			laneId: "lane-1",
 			branch: "orch-lane-1",
 			tasks: [] as Array<{ task: { taskId: string; promptPath: string; size: string }; position: number }>,
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			worktreePath: resolve("C:/fake/worktree"),
 		};
 

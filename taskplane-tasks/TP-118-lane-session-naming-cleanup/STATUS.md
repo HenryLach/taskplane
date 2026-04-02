@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 8
 **Iteration:** 1
 **Size:** M
 
@@ -35,12 +35,12 @@
 - [x] Add regression coverage for compatibility-shaped lanes (tmux-only field) in runtime execution tests
 
 ### Step 3: Rename in tests
-**Status:** 🟨 In Progress
-- [ ] Update non-compat test references to `laneSessionId` naming
-- [ ] Preserve/add explicit compatibility tests for tmux-only persisted lane inputs
-- [ ] Verify remaining test `tmuxSessionName` references are compatibility-scoped
-- [ ] Run full suite
-- [ ] Fix all failures
+**Status:** ✅ Complete
+- [x] Update non-compat test references to `laneSessionId` naming
+- [x] Preserve/add explicit compatibility tests for tmux-only persisted lane inputs
+- [x] Verify remaining test `tmuxSessionName` references are compatibility-scoped
+- [x] Run full suite
+- [x] Fix all failures
 
 ### Step 4: Remove aliases
 **Status:** ⬜ Not Started
@@ -85,6 +85,11 @@
 | 2026-04-02 05:48 | Targeted tests | `engine-runtime-v2-routing` passed after R005 fixes |
 | 2026-04-02 05:49 | Review R006 | code Step 2: APPROVE |
 | 2026-04-02 05:49 | Review R007 | plan Step 3: REVISE |
+| 2026-04-02 05:52 | Renamed non-compat tests | Updated fixture fields/assertions across runtime, dashboard, supervisor, workspace, and polyrepo test suites to laneSessionId naming |
+| 2026-04-02 05:54 | Added compatibility regression | `monorepo-compat-regression` now checks tmux-only persisted lanes normalize to `laneSessionId` |
+| 2026-04-02 05:55 | Compatibility scope verified | test grep counts — total `tmuxSessionName`: 60; non-compat test files: 0 |
+| 2026-04-02 05:57 | Full suite run | `node --test tests/*.test.ts` failed (2 tests): `polyrepo-fixture` and `polyrepo-regression` expecting laneSessionId-only fixtures |
+| 2026-04-02 06:00 | Full suite rerun | `node --test tests/*.test.ts` passed (3400 tests, 0 failures) after compatibility fallback assertion fixes |
 
 ## Notes
 - Allowed Step 2 leftovers: compatibility alias fields in `types.ts` plus normalization/dual-write handling in `persistence.ts` and resume comment context.
@@ -92,3 +97,4 @@
 - Reviewer suggestion: log post-step grep counts split by production/tests/docs for measurable progress.
 - Reviewer suggestion: run resume-path/runtime test coverage for tmux-only compatibility lane objects after fixing helper recursion.
 - Reviewer suggestion: where tests are not compatibility-focused, rename assertion text/test names to `laneSessionId` for long-term clarity.
+| 2026-04-02 05:31 | Review R008 | plan Step 3: APPROVE |

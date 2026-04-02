@@ -361,7 +361,7 @@ describe("5.x: Static batch-state fixture (v2-polyrepo)", () => {
 		for (const lane of fixtureData.lanes) {
 			expect(typeof lane.laneNumber).toBe("number");
 			expect(typeof lane.laneId).toBe("string");
-			expect(typeof lane.tmuxSessionName).toBe("string");
+			expect(typeof (lane.laneSessionId || lane.tmuxSessionName)).toBe("string");
 			expect(typeof lane.worktreePath).toBe("string");
 			expect(typeof lane.branch).toBe("string");
 			expect(Array.isArray(lane.taskIds)).toBe(true);

@@ -298,7 +298,7 @@ describe("exitDiagnostic persistence/resume full round-trip", () => {
 			lanes: [{
 				laneId: "lane-1",
 				laneNumber: 1,
-				tmuxSessionName: "orch-lane-1-worker",
+				laneSessionId: "orch-lane-1-worker",
 				worktreePath: "/tmp/worktrees/lane-1",
 				branch: "task/TP-026",
 				taskIds: ["TP-026"],
@@ -403,7 +403,7 @@ describe("exitDiagnostic persistence/resume full round-trip", () => {
 			lanes: [{
 				laneId: "lane-1",
 				laneNumber: 1,
-				tmuxSessionName: "orch-lane-1-worker",
+				laneSessionId: "orch-lane-1-worker",
 				worktreePath: "/tmp/worktrees/lane-1",
 				branch: "task/task-ok",
 				taskIds: ["task-ok"],
@@ -460,7 +460,7 @@ describe("exitDiagnostic persistence/resume full round-trip", () => {
 			lanes: [{
 				laneId: "lane-1",
 				laneNumber: 1,
-				tmuxSessionName: "orch-lane-1-worker",
+				laneSessionId: "orch-lane-1-worker",
 				worktreePath: "/tmp/worktrees/lane-1",
 				branch: "task/old-task",
 				taskIds: ["old-task"],

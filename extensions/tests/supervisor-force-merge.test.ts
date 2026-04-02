@@ -83,7 +83,7 @@ function buildTestPersistedState(overrides?: Partial<PersistedBatchState>): Pers
 			laneId: "lane-1",
 			worktreePath: "/tmp/wt-1",
 			branch: "task/lane-1",
-			tmuxSessionName: "orch-lane-1",
+			laneSessionId: "orch-lane-1",
 			taskIds: ["TP-001", "TP-002", "TP-003"],
 		}],
 		tasks: [

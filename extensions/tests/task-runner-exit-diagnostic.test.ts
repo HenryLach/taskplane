@@ -110,7 +110,7 @@ function makeMinimalBatchState(taskOverrides: Record<string, unknown> = {}) {
 		lanes: [{
 			laneId: "lane-1",
 			laneNumber: 1,
-			tmuxSessionName: "orch-lane-1-worker",
+			laneSessionId: "orch-lane-1-worker",
 			worktreePath: "/tmp/worktrees/lane-1",
 			branch: "task/task-1",
 			taskIds: ["task-1"],

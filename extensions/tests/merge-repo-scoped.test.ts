@@ -79,7 +79,7 @@ function makeLane(
 	return {
 		laneNumber,
 		laneId: opts?.repoId ? `${opts.repoId}/lane-${laneNumber}` : `lane-${laneNumber}`,
-		tmuxSessionName: opts?.repoId ? `orch-${opts.repoId}-lane-${laneNumber}` : `orch-lane-${laneNumber}`,
+		laneSessionId: opts?.repoId ? `orch-${opts.repoId}-lane-${laneNumber}` : `orch-lane-${laneNumber}`,
 		worktreePath: `/worktrees/wt-${laneNumber}`,
 		branch: opts?.branch ?? `task/lane-${laneNumber}-20260315T100000`,
 		tasks: taskIds.map((id, i) => makeAllocatedTask(id, i, opts?.fileScope)),

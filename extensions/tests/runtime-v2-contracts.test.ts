@@ -379,7 +379,7 @@ function makeAllocatedLane(overrides?: Partial<AllocatedLane>): AllocatedLane {
 	return {
 		laneNumber: 1,
 		laneId: "lane-1",
-		tmuxSessionName: "orch-henrylach-lane-1",
+		laneSessionId: "orch-henrylach-lane-1",
 		worktreePath: "/project/.worktrees/op-batch/lane-1",
 		branch: "task/henrylach-lane-1-batch",
 		tasks: [makeAllocatedTask()],
@@ -433,7 +433,7 @@ describe("7.x: buildExecutionUnit bridge", () => {
 });
 
 describe("7.x: buildAgentIdFromLane bridge", () => {
-	it("7.5: worker ID appends -worker to tmuxSessionName", () => {
+	it("7.5: worker ID appends -worker to laneSessionId", () => {
 		const lane = makeAllocatedLane();
 		expect(buildAgentIdFromLane(lane, "worker")).toBe("orch-henrylach-lane-1-worker");
 	});
@@ -443,7 +443,7 @@ describe("7.x: buildAgentIdFromLane bridge", () => {
 		expect(buildAgentIdFromLane(lane, "reviewer")).toBe("orch-henrylach-lane-1-reviewer");
 	});
 
-	it("7.7: lane-runner ID equals tmuxSessionName", () => {
+	it("7.7: lane-runner ID equals laneSessionId", () => {
 		const lane = makeAllocatedLane();
 		expect(buildAgentIdFromLane(lane, "lane-runner")).toBe("orch-henrylach-lane-1");
 	});
