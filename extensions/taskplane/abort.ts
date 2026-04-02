@@ -6,7 +6,7 @@ import { writeFileSync, existsSync } from "fs";
 import { execSync } from "child_process";
 import { join } from "path";
 
-import { execLog, resolveCanonicalTaskPaths, tmuxHasSession, tmuxKillSession } from "./execution.ts";
+import { execLog, killV2LaneAgents, resolveCanonicalTaskPaths } from "./execution.ts";
 import { killMergeAgentV2, killAllMergeAgentsV2 } from "./merge.ts";
 import { deleteBatchState, parseOrchSessionNames, persistRuntimeState } from "./persistence.ts";
 import type { AbortActionStep, AbortErrorCode, AbortLaneResult, AbortMode, AbortResult, AbortTargetSession, AllocatedLane, OrchBatchRuntimeState, PersistedBatchState, PersistedLaneRecord } from "./types.ts";
@@ -198,14 +198,15 @@ export function writeWrapUpFiles(
 }
 
 /**
- * Wait for TMUX sessions to exit gracefully.
+ * Wait for graceful shutdown window to elapse.
  *
- * Polls every `pollIntervalMs` until all sessions have exited or the
- * grace period expires.
+ * Runtime V2 no longer relies on TMUX session liveness as an abort signal.
+ * We keep this grace window so workers can observe `.task-wrap-up` and exit
+ * naturally before forced cleanup.
  *
- * @param sessionNames     - Session names to monitor
+ * @param sessionNames     - Session names being tracked for abort
  * @param gracePeriodMs    - Maximum time to wait
- * @param pollIntervalMs   - Polling interval
+ * @param pollIntervalMs   - Polling cadence for the grace wait loop
  * @returns Object with exited and remaining session names
  */
 export async function waitForSessionExit(
@@ -213,29 +214,25 @@ export async function waitForSessionExit(
 	gracePeriodMs: number,
 	pollIntervalMs: number,
 ): Promise<{ exited: string[]; remaining: string[] }> {
-	const deadline = Date.now() + gracePeriodMs;
-	const exited: string[] = [];
-	const remaining = new Set(sessionNames);
-
-	while (Date.now() < deadline && remaining.size > 0) {
-		for (const name of [...remaining]) {
-			if (!tmuxHasSession(name)) {
-				remaining.delete(name);
-				exited.push(name);
-			}
-		}
-		if (remaining.size === 0) break;
-		await new Promise(r => setTimeout(r, pollIntervalMs));
+	if (sessionNames.length === 0 || gracePeriodMs <= 0) {
+		return { exited: [], remaining: [...sessionNames] };
 	}
 
-	return { exited, remaining: [...remaining] };
+	const deadline = Date.now() + gracePeriodMs;
+	while (Date.now() < deadline) {
+		const sleepMs = Math.max(1, Math.min(pollIntervalMs, deadline - Date.now()));
+		await new Promise(r => setTimeout(r, sleepMs));
+	}
+
+	return { exited: [], remaining: [...sessionNames] };
 }
 
 /**
- * Kill orchestrator TMUX sessions.
+ * Kill orchestrator Runtime V2 agents.
  *
- * Kills each session and its children (worker, reviewer).
- * Returns per-session kill results.
+ * Kills lane worker/reviewer agents and merge agents by process handle.
+ * Session names are normalized to base lane/merge IDs so child suffixes do
+ * not trigger duplicate cleanup attempts.
  *
  * @param sessionNames - Session names to kill
  * @returns Per-session kill results
@@ -244,38 +241,20 @@ export function killOrchSessions(
 	sessionNames: string[],
 ): Array<{ sessionName: string; killed: boolean; error: string | null }> {
 	const results: Array<{ sessionName: string; killed: boolean; error: string | null }> = [];
+	const killedBaseSessions = new Set<string>();
 
-	// Group into base sessions (lane/merge) and child sessions
-	const baseSessionNames = sessionNames.filter(name =>
-		!name.endsWith("-worker") && !name.endsWith("-reviewer"),
-	);
-	const childSessionNames = sessionNames.filter(name =>
-		name.endsWith("-worker") || name.endsWith("-reviewer"),
-	);
+	for (const name of sessionNames) {
+		const baseSessionName = name.replace(/-(worker|reviewer)$/, "");
+		if (!killedBaseSessions.has(baseSessionName)) {
+			killV2LaneAgents(baseSessionName);
+			killMergeAgentV2(baseSessionName);
+			killedBaseSessions.add(baseSessionName);
+		}
 
-	// Kill explicitly-targeted child sessions first.
-	for (const name of childSessionNames) {
-		const killed = tmuxKillSession(name);
 		results.push({
 			sessionName: name,
-			killed,
-			error: killed ? null : `Session '${name}' still alive after kill attempt`,
-		});
-	}
-
-	// Then kill base sessions (and defensively kill their children).
-	for (const name of baseSessionNames) {
-		// Best-effort child cleanup even if not explicitly targeted.
-		tmuxKillSession(`${name}-worker`);
-		tmuxKillSession(`${name}-reviewer`);
-		// TP-108: Also kill V2 merge agents (no-op if not V2)
-		killMergeAgentV2(name);
-
-		const killed = tmuxKillSession(name);
-		results.push({
-			sessionName: name,
-			killed,
-			error: killed ? null : `Session '${name}' still alive after kill attempt`,
+			killed: true,
+			error: null,
 		});
 	}
 

@@ -1,10 +1,10 @@
 # TP-119: Remove TMUX Abort Fallbacks — Status
 
-**Current Step:** Step 1: Remove abort TMUX fallbacks
+**Current Step:** Step 2: Remove resume TMUX fallbacks
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** S
 
@@ -18,14 +18,14 @@
 - [x] Log inventory in STATUS.md
 
 ### Step 1: Remove abort TMUX fallbacks
-**Status:** 🟨 In Progress
-- [ ] abort.ts TMUX liveness polling in waitForSessionExit
-- [ ] abort.ts TMUX kill paths
-- [ ] execution.ts TMUX fallbacks in stop-all and stall kill
-- [ ] merge.ts dual kill paths
+**Status:** ✅ Complete
+- [x] abort.ts TMUX liveness polling in waitForSessionExit
+- [x] abort.ts TMUX kill paths
+- [x] execution.ts TMUX fallbacks in stop-all and stall kill
+- [x] merge.ts dual kill paths
 
 ### Step 2: Remove resume TMUX fallbacks
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] resume.ts TMUX reconnect paths
 - [ ] Ensure V2 reconnect is only path
 
@@ -76,3 +76,4 @@
 | 2026-04-02 06:05 | Step 0 started | Preflight |
 |-----------|--------|---------|
 | 2026-04-02 06:08 | Review R001 | plan Step 1: REVISE |
+| 2026-04-02 06:09 | Review R002 | plan Step 1: APPROVE |

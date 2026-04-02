@@ -1464,11 +1464,7 @@ export async function resolveTaskMonitorState(
 			stallMinutes,
 			backend: runtimeBackend ?? "legacy",
 		});
-		if (runtimeBackend === "v2") {
-			killV2LaneAgents(sessionName);
-		} else {
-			killLaneAndChildren(sessionName);
-		}
+		killV2LaneAgents(sessionName);
 
 		return {
 			taskId,
@@ -2342,7 +2338,7 @@ export async function executeWithStopAll(
 
 					// Kill ALL lane sessions immediately
 					for (const lane of lanes) {
-						killLaneAndChildren(laneSessionIdOf(lane));
+						killV2LaneAgents(laneSessionIdOf(lane));
 					}
 				}
 			}
@@ -2356,7 +2352,7 @@ export async function executeWithStopAll(
 				pauseSignal.paused = true;
 				execLog("wave", `W${waveIndex}`, `stop-all triggered by lane error in ${lanes[idx].laneId}: ${errMsg}`);
 				for (const lane of lanes) {
-					killLaneAndChildren(laneSessionIdOf(lane));
+					killV2LaneAgents(laneSessionIdOf(lane));
 				}
 			}
 

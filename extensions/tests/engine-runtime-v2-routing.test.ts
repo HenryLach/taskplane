@@ -375,13 +375,12 @@ describe("11.x: Merge V2 liveness + abort correctness", () => {
 		expect(killIdx).toBeLessThan(spawnIdx); // kill BEFORE spawn
 	});
 
-	it("11.3: V2 merge error cleanup path uses backend-aware kill", () => {
-		// Error path must check backend and kill V2 agent
+	it("11.3: V2 merge error cleanup path kills via Runtime V2 handle", () => {
 		const errIdx = mergeSrc.indexOf("Kill merge agent if still alive");
 		expect(errIdx).toBeGreaterThan(-1);
 		const block = mergeSrc.slice(errIdx, errIdx + 300);
-		expect(block).toContain('runtimeBackend === "v2"');
 		expect(block).toContain("killMergeAgentV2(sessionName)");
+		expect(block).not.toContain("tmux");
 	});
 
 	it("11.4: abort kills all V2 merge agents (not just TMUX sessions)", () => {
@@ -524,15 +523,15 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 		expect(block).toContain("return lane.laneSessionId;");
 	});
 
-	it("14.5: stall kill is backend-aware (V2 kills by PID, not TMUX)", () => {
+	it("14.5: stall kill uses Runtime V2 PID termination (no TMUX fallback)", () => {
 		const fnIdx = execSrc.indexOf("function resolveTaskMonitorState");
 		const block = execSrc.slice(fnIdx, fnIdx + 5000);
-		// Stall path must check backend
 		const stallIdx = block.indexOf("stall detected");
 		expect(stallIdx).toBeGreaterThan(-1);
 		const stallBlock = block.slice(stallIdx, stallIdx + 500);
-		expect(stallBlock).toContain('runtimeBackend === "v2"');
 		expect(stallBlock).toContain("killV2LaneAgents");
+		expect(stallBlock).not.toContain("killLaneAndChildren");
+		expect(stallBlock).not.toContain("tmux");
 	});
 
 	it("14.6: killV2LaneAgents terminates by PID from registry", () => {

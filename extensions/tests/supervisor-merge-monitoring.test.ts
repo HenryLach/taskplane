@@ -696,7 +696,7 @@ describe("dead-session early exit signaling", () => {
 		// The merge.ts mergeWave() wires session registration/deregistration around
 		// spawnMergeAgent + waitForMergeResult. When the monitor detects a dead session,
 		// the normal waitForMergeResult polling loop catches it within MERGE_POLL_INTERVAL_MS
-		// (2 seconds) because waitForMergeResult already checks tmuxHasSession on each poll.
+		// (2 seconds) because waitForMergeResult checks active merge-agent handles each poll.
 		// The health monitor's value is the early _event emission_ (for operator visibility)
 		// and the _dead session callback_ (for engine-level awareness), not a parallel
 		// abort signal — the existing session-liveness check in waitForMergeResult handles
@@ -711,7 +711,7 @@ describe("dead-session early exit signaling", () => {
 			mergeSource.indexOf("async function waitForMergeResult"),
 			mergeSource.indexOf("async function waitForMergeResult") + 4000,
 		);
-		expect(waitFn).toContain("tmuxHasSessionAsync(sessionName)");
+		expect(waitFn).toContain("activeMergeAgents.has(sessionName)");
 		expect(waitFn).toContain("sessionDiedAt");
 		expect(waitFn).toContain("MERGE_SESSION_DIED");
 

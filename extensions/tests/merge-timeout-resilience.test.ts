@@ -74,9 +74,9 @@ describe("1.x — Result-exists-at-timeout: accept successful result", () => {
 			mergeSource.indexOf("merge agent slow but succeeded"),
 			mergeSource.indexOf("return lateResult"),
 		);
-		// V2 path uses killMergeAgentV2 with cleanExit, legacy uses tmuxKillSessionAsync
+		// Runtime V2 path cleans up using merge-agent process handles only.
 		expect(acceptSection).toContain("killMergeAgentV2(sessionName, true)");
-		expect(acceptSection).toContain("tmuxKillSessionAsync(sessionName)");
+		expect(acceptSection).not.toContain("tmuxKillSessionAsync(sessionName)");
 	});
 
 	it("1.5: non-success result at timeout falls through to kill and throw", () => {
@@ -92,7 +92,7 @@ describe("1.x — Result-exists-at-timeout: accept successful result", () => {
 		// If parseMergeResult throws, catch it and fall through
 		const timeoutBlock = mergeSource.substring(
 			mergeSource.indexOf("TP-038: Check result file BEFORE killing"),
-			mergeSource.indexOf("merge timeout — killing session"),
+			mergeSource.indexOf("merge timeout — killing agent"),
 		);
 		expect(timeoutBlock).toContain("catch");
 		// The catch is empty — falls through to the kill+throw below
