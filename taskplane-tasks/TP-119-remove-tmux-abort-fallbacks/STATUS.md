@@ -96,3 +96,6 @@
 | 2026-04-02 06:35 | Worker iter 1 | killed (wall-clock timeout) in 1800s, tools: 179 |
 | 2026-04-02 06:36 | Review R009 | plan Step 4: APPROVE |
 | 2026-04-02 06:44 | Review R010 | code Step 4: APPROVE |
+| 2026-04-02 06:46 | Agent reply | TP-119 complete in lane-1. /  / Completed remaining steps: / - Step 4 (Tests): added regression coverage (`engine-runtime-v2-routing.test.ts` test 14.8) for Runtime V2 lingering cleanup without TMUX f |
+| 2026-04-02 06:46 | Worker iter 2 | done in 670s, tools: 53 |
+| 2026-04-02 06:46 | Task complete | .DONE created |
