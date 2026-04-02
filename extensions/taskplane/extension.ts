@@ -30,6 +30,7 @@ import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
 import { runMigrations } from "./migrations.ts";
 import { executeAbort } from "./abort.ts";
+import { isLegacyTmuxSpawnMode } from "./tmux-compat.ts";
 import { serializeWorkspaceConfig, applySerializedState, deserializeWorkspaceConfig } from "./engine-worker.ts";
 import type { EngineWorkerData, WorkerToMainMessage } from "./engine-worker.ts";
 import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, formatPreflightSweep, rotateSupervisorLogs, formatLogRotation } from "./cleanup.ts";
@@ -1642,7 +1643,7 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			// ── Section 1: Preflight ─────────────────────────────────
-			if (orchConfig.orchestrator.spawn_mode === "tmux") {
+			if (isLegacyTmuxSpawnMode(orchConfig.orchestrator.spawn_mode)) {
 				ctx.ui.notify(
 					"⚠️ Runtime V2 is now the default backend. `spawn_mode: tmux` is deprecated and kept only for legacy compatibility.",
 					"warning",
@@ -4622,7 +4623,7 @@ export default function (pi: ExtensionAPI) {
 		ctx.ui.notify(
 			"Task Orchestrator ready\n\n" +
 			`Mode: ${modeLabel}\n` +
-			`Runtime: V2 default (configured spawn_mode: ${orchConfig.orchestrator.spawn_mode}${orchConfig.orchestrator.spawn_mode === "tmux" ? "; legacy compatibility mode" : ""})\n` +
+			`Runtime: V2 default (configured spawn_mode: ${orchConfig.orchestrator.spawn_mode}${isLegacyTmuxSpawnMode(orchConfig.orchestrator.spawn_mode) ? "; legacy compatibility mode" : ""})\n` +
 			`Config: ${orchConfig.orchestrator.max_lanes} lanes, ` +
 			`${orchConfig.dependencies.source} deps\n` +
 			`Areas: ${areaCount} registered\n\n` +
