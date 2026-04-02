@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.23.12] - 2026-04-01
+
+### Fixed
+- **Dashboard batch transition** — When a new batch starts while viewing history, the dashboard now transitions inline instead of calling `location.reload()`. Eliminates the hanging loading indicator in the browser tab.
+
 ## [0.23.11] - 2026-04-01
 
 ### Fixed
