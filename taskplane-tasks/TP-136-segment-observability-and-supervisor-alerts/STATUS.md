@@ -1,10 +1,10 @@
 # TP-136: Segment Observability and Supervisor Alerts — Status
 
-**Current Step:** Step 3: Status and summary
+**Current Step:** Step 4: Tests and verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** S
 
@@ -30,13 +30,13 @@
 - [x] Update supervisor primer
 
 ### Step 3: Status and summary
-**Status:** 🟨 In Progress
-- [ ] orch-status shows active segment
-- [ ] Batch summary with segment outcomes
-- [ ] read_agent_status segment info
+**Status:** ✅ Complete
+- [x] orch-status shows active segment
+- [x] Batch summary with segment outcomes
+- [x] read_agent_status segment info
 
 ### Step 4: Tests and verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Test dashboard segment rendering
 - [ ] Test supervisor alert context
 - [ ] Test repo-singleton clean display
@@ -56,3 +56,4 @@
 |-----------|--------|---------|
 | 2026-04-03 19:59 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-03 20:03 | Review R002 | plan Step 2: APPROVE |
+| 2026-04-03 20:09 | Review R003 | plan Step 3: APPROVE |
