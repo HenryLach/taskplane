@@ -16,7 +16,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
-import { join, dirname, resolve } from "path";
+import { join, dirname, resolve, basename } from "path";
 import { fileURLToPath } from "url";
 
 import {
@@ -613,9 +613,11 @@ const REVIEWER_STATE_STALE_MS = 120_000;
 
 export function readReviewerTelemetrySnapshot(
 	config: LaneRunnerConfig,
-	reviewerStatePath: string,
+	reviewerStatePathOrStatusPath: string,
 ): (RuntimeAgentTelemetrySnapshot & { reviewType?: string; reviewStep?: number }) | null {
-	const reviewerPath = reviewerStatePath;
+	const reviewerPath = basename(reviewerStatePathOrStatusPath).toLowerCase() === "status.md"
+		? join(dirname(reviewerStatePathOrStatusPath), ".reviewer-state.json")
+		: reviewerStatePathOrStatusPath;
 	if (!existsSync(reviewerPath)) return null;
 
 	try {

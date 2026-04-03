@@ -21,6 +21,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const laneRunnerSrc = readFileSync(join(__dirname, "..", "taskplane", "lane-runner.ts"), "utf-8");
 const executionSrc = readFileSync(join(__dirname, "..", "taskplane", "execution.ts"), "utf-8");
+const agentBridgeSrc = readFileSync(join(__dirname, "..", "taskplane", "agent-bridge-extension.ts"), "utf-8");
 
 // ── 1. Lane-runner module structure ─────────────────────────────────
 
@@ -244,15 +245,47 @@ describe("5.x: LaneRunnerConfig fields", () => {
 	});
 });
 
-// ── 6. Functional import validation ─────────────────────────────────
+// ── 6. Segment-aware execution contracts (TP-134) ───────────────────
 
-describe("6.x: Functional exports exist at runtime", () => {
-	it("6.1: executeTaskV2 is importable", async () => {
+describe("6.x: Segment-aware lane execution contracts", () => {
+	it("6.1: repo-singleton packet flow remains unchanged", () => {
+		expect(laneRunnerSrc).toContain("const statusPath = unit.packet.statusPath;");
+		expect(laneRunnerSrc).toContain("const promptPath = unit.packet.promptPath;");
+		expect(laneRunnerSrc).toContain("const donePath = unit.packet.donePath;");
+		expect(laneRunnerSrc).toContain("(none / whole-task execution)");
+	});
+
+	it("6.2: worker cwd is execution-unit worktree", () => {
+		expect(laneRunnerSrc).toContain("cwd: unit.worktreePath");
+	});
+
+	it("6.3: packet path env wiring uses packet-home paths", () => {
+		expect(laneRunnerSrc).toContain("TASKPLANE_STATUS_PATH: statusPath");
+		expect(laneRunnerSrc).toContain("TASKPLANE_PROMPT_PATH: promptPath");
+		expect(laneRunnerSrc).toContain("TASKPLANE_REVIEWS_DIR: unit.packet.reviewsDir");
+		expect(laneRunnerSrc).toContain("TASKPLANE_REVIEWER_STATE_PATH: reviewerStatePath");
+		expect(agentBridgeSrc).toContain("process.env.TASKPLANE_STATUS_PATH");
+		expect(agentBridgeSrc).toContain("process.env.TASKPLANE_PROMPT_PATH");
+		expect(agentBridgeSrc).toContain("process.env.TASKPLANE_REVIEWS_DIR");
+		expect(agentBridgeSrc).toContain("process.env.TASKPLANE_REVIEWER_STATE_PATH");
+	});
+
+	it("6.4: lane snapshots include segmentId", () => {
+		expect(laneRunnerSrc).toContain("segmentId: string | null");
+		expect(laneRunnerSrc).toContain("segmentId,");
+		expect(laneRunnerSrc).toContain("emitSnapshot(config, taskId, segmentId");
+	});
+});
+
+// ── 7. Functional import validation ─────────────────────────────────
+
+describe("7.x: Functional exports exist at runtime", () => {
+	it("7.1: executeTaskV2 is importable", async () => {
 		const mod = await import("../taskplane/lane-runner.ts");
 		expect(typeof mod.executeTaskV2).toBe("function");
 	});
 
-	it("6.2: executeLaneV2 is importable from execution.ts", async () => {
+	it("7.2: executeLaneV2 is importable from execution.ts", async () => {
 		const mod = await import("../taskplane/execution.ts");
 		expect(typeof mod.executeLaneV2).toBe("function");
 	});

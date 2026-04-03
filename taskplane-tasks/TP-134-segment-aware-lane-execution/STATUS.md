@@ -1,10 +1,10 @@
 # TP-134: Segment-Aware Lane Execution — Status
 
-**Current Step:** Step 4: Tests
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** M
 
@@ -37,15 +37,15 @@
 - [x] Include segment DAG info if available
 
 ### Step 4: Tests
-**Status:** 🟨 In Progress
-- [ ] Test repo-singleton unchanged
-- [ ] Test segment cwd correct
-- [ ] Test packet paths in packet home
-- [ ] Test snapshots include segmentId
-- [ ] Run full suite, fix failures
+**Status:** ✅ Complete
+- [x] Test repo-singleton unchanged
+- [x] Test segment cwd correct
+- [x] Test packet paths in packet home
+- [x] Test snapshots include segmentId
+- [x] Run full suite, fix failures
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update STATUS.md
 
 ---
@@ -63,9 +63,13 @@
 | 2026-04-03 19:28 | Step 3 started | Worker prompt context |
 | 2026-04-03 19:33 | Step 3 completed | Worker prompt enriched with execution/packet/segment DAG context |
 | 2026-04-03 19:33 | Step 4 started | Tests |
+| 2026-04-03 20:03 | Step 4 completed | Segment-aware coverage added and full suite passed |
+| 2026-04-03 20:03 | Step 5 started | Documentation & Delivery |
 |-----------|--------|---------|
 | 2026-04-03 18:48 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-03 18:52 | Review R002 | code Step 1: APPROVE |
 | 2026-04-03 18:54 | Review R003 | plan Step 2: APPROVE |
 | 2026-04-03 18:59 | Review R004 | code Step 2: APPROVE |
 | 2026-04-03 19:00 | Review R005 | plan Step 3: APPROVE |
+| 2026-04-03 19:01 | Review R006 | code Step 3: APPROVE |
+| 2026-04-03 19:02 | Review R007 | plan Step 4: APPROVE |
