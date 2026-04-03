@@ -1,10 +1,10 @@
 # TP-130: Engine Worker Diagnostics and Resilience — Status
 
-**Current Step:** Step 1: Process-level error handlers
+**Current Step:** Step 2: Stderr capture
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** S
 
@@ -18,13 +18,13 @@
 - [x] Read lane-runner.ts reviewerRefresh
 
 ### Step 1: Process-level error handlers
-**Status:** 🟨 In Progress
-- [ ] Add uncaughtException handler with IPC error + stack
-- [ ] Add unhandledRejection handler
-- [ ] Ensure IPC reaches parent before exit
+**Status:** ✅ Complete
+- [x] Add uncaughtException handler with IPC error + stack
+- [x] Add unhandledRejection handler
+- [x] Ensure IPC reaches parent before exit
 
 ### Step 2: Stderr capture
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Pipe child stderr to batch-scoped file
 - [ ] Tee to parent stderr for terminal display
 - [ ] Include stderr tail in failure alert
@@ -56,3 +56,6 @@
 | 2026-04-03 15:21 | Step 0 started | Preflight |
 | 2026-04-03 15:28 | Step 0 completed | Preflight checks finished |
 | 2026-04-03 15:28 | Step 1 started | Process-level error handlers |
+| 2026-04-03 15:38 | Step 1 completed | Added worker fatal handlers + IPC flush |
+| 2026-04-03 15:38 | Step 2 started | Stderr capture |
+| 2026-04-03 15:23 | Review R001 | plan Step 1: APPROVE |

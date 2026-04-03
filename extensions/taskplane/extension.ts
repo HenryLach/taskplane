@@ -1048,19 +1048,24 @@ export function startBatchInWorker(
 				settle();
 				break;
 
-			case "error":
+			case "error": {
+				const sourceLabel = msg.source ? ` (${msg.source})` : "";
+				const stackLine = msg.stack?.split("\n")[0]?.trim();
 				if (batchState.phase !== "completed" && batchState.phase !== "failed") {
 					batchState.phase = "failed";
 					batchState.endedAt = Date.now();
-					batchState.errors.push(`Unhandled engine error: ${msg.message}`);
+					batchState.errors.push(`Unhandled engine error${sourceLabel}: ${msg.message}`);
+					if (stackLine) batchState.errors.push(`Engine stack: ${stackLine}`);
 				}
 				ctx.ui.notify(
-					`❌ Engine crashed with unhandled error: ${msg.message}\n` +
+					`❌ Engine crashed with unhandled error${sourceLabel}: ${msg.message}\n` +
+					(stackLine ? `   ${stackLine}\n` : "") +
 					`   Batch ${batchState.batchId} marked as failed.`,
 					"error",
 				);
 				updateWidget();
 				break;
+			}
 		}
 	});
 
