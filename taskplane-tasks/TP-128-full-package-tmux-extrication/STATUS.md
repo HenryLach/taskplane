@@ -1,11 +1,11 @@
 # TP-128: Full Package TMUX Extrication — Status
 
-**Current Step:** Step 2: Remove TMUX from CLI
+**Current Step:** Step 3: De-TMUX supervisor templates and primer
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 5
-**Iteration:** 2
+**Review Counter:** 6
+**Iteration:** 1
 **Size:** M
 
 ---
@@ -28,15 +28,15 @@
 - [x] R003: Remove accidental `.tmp-fulltest.log` artifact and prevent re-commit
 
 ### Step 2: Remove TMUX from CLI
-**Status:** 🟨 In Progress
-- [ ] Remove doctor TMUX checks
-- [ ] Remove install-tmux guidance
-- [ ] Remove install-tmux command implementation and dispatch path
-- [ ] Update help text
-- [ ] Validate CLI surface for removed install-tmux command
+**Status:** ✅ Complete
+- [x] Remove doctor TMUX checks
+- [x] Remove install-tmux guidance
+- [x] Remove install-tmux command implementation and dispatch path
+- [x] Update help text
+- [x] Validate CLI surface for removed install-tmux command
 
 ### Step 3: De-TMUX supervisor templates and primer
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Clean templates/agents/supervisor.md
 - [ ] Clean supervisor-primer.md
 - [ ] Check supervisor.ts
@@ -90,3 +90,5 @@
 | 2026-04-03 04:31 | Review R004 | code Step 1: APPROVE |
 | 2026-04-03 04:32 | Worker iter 1 | killed (wall-clock timeout) in 1800s, tools: 127 |
 | 2026-04-03 04:33 | Review R005 | plan Step 2: REVISE |
+| 2026-04-03 04:34 | Review R006 | plan Step 2: APPROVE |
+| 2026-04-03 04:37 | Task started | Runtime V2 lane-runner execution |
