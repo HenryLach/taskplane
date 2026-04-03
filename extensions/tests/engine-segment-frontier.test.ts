@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import { expect } from "./expect.ts";
@@ -33,6 +34,21 @@ describe("TP-133 segment frontier helpers", () => {
 		const task = pending.get("TP-001")!;
 		expect(task.segmentIds).toEqual(["TP-001::api"]);
 		expect(task.activeSegmentId).toBeNull();
+	});
+
+	it("repo mode does not synthesize resolvedRepoId during frontier expansion", () => {
+		const pending = new Map<string, ParsedTask>([
+			["TP-002", makeTask("TP-002")],
+		]);
+
+		buildSegmentFrontierWaves([["TP-002"]], pending);
+		expect(pending.get("TP-002")!.resolvedRepoId).toBeUndefined();
+		expect(pending.get("TP-002")!.segmentIds).toEqual(["TP-002::default"]);
+	});
+
+	it("engine dispatch only writes resolvedRepoId in workspace mode", () => {
+		const src = readFileSync(new URL("../taskplane/engine.ts", import.meta.url), "utf-8");
+		expect(src).toMatch(/if \(workspaceConfig\) \{\s*task\.resolvedRepoId = activeSegment\.repoId;/);
 	});
 
 	it("multi-segment task is decomposed into sequential rounds", () => {

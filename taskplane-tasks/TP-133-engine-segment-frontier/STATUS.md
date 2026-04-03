@@ -24,7 +24,7 @@
 - [x] Sequential per-task segment execution
 - [x] Track activeSegmentId
 - [x] Update segmentIds
-- [ ] R002: Preserve repo-mode `resolvedRepoId` semantics and add regression test coverage
+- [x] R002: Preserve repo-mode `resolvedRepoId` semantics and add regression test coverage
 
 ### Step 2: Packet-home completion authority
 **Status:** ✅ Complete

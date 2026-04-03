@@ -1388,7 +1388,9 @@ export async function executeOrchBatch(
 			}
 
 			task.activeSegmentId = activeSegment.segmentId;
-			task.resolvedRepoId = activeSegment.repoId;
+			if (workspaceConfig) {
+				task.resolvedRepoId = activeSegment.repoId;
+			}
 			if (segmentState.statusBySegmentId.get(activeSegment.segmentId) === "pending") {
 				segmentState.statusBySegmentId.set(activeSegment.segmentId, "running");
 			}
