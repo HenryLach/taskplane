@@ -1,10 +1,10 @@
 # TP-132: Multi-Repo Spec V2 Alignment — Status
 
-**Current Step:** Step 2: Add MVP scope section
+**Current Step:** Step 3: Update implementation plan
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** S
 
@@ -26,14 +26,14 @@
 - [x] Update supervisor integration references
 
 ### Step 2: Add MVP scope section
-**Status:** 🟨 In Progress
-- [ ] Define MVP scope
-- [ ] Defer dynamic expansion
-- [ ] Add acceptance matrix
-- [ ] Document implemented vs needed
+**Status:** ✅ Complete
+- [x] Define MVP scope
+- [x] Defer dynamic expansion
+- [x] Add acceptance matrix
+- [x] Document implemented vs needed
 
 ### Step 3: Update implementation plan
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Replace phases with V2 task references
 - [ ] Mark completed phases
 - [ ] Update spec status
@@ -51,3 +51,4 @@
 | 2026-04-03 17:44 | Step 0 started | Preflight |
 |-----------|--------|---------|
 | 2026-04-03 17:45 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-03 17:48 | Review R002 | plan Step 2: APPROVE |

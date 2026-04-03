@@ -60,6 +60,24 @@ This is not a small bug. It is a **model gap**.
 3. Fully autonomous semantic dependency inference from arbitrary prose
 4. Parallel execution of multiple segments of the same task (deferred)
 
+## MVP Scope (Runtime V2 tranche)
+
+MVP for #51 is intentionally narrow and deterministic:
+
+1. Segment planning produces a deterministic per-task DAG/chain.
+2. Execution runs **one segment at a time per task** on Runtime V2 lane-runner subprocess infrastructure.
+3. Packet authority is enforced through `ExecutionUnit.packet`/`PacketPaths`.
+4. Existing wave-level parallelism across lanes remains unchanged.
+
+### MVP acceptance matrix
+
+| Scenario | Planning expectation | MVP execution expectation |
+|---|---|---|
+| Linear DAG (`A -> B -> C`) | `explicit-dag` or deterministic inferred chain | Segments execute sequentially in dependency order |
+| Fan-out (`A -> {B, C}`) | Edges preserved; both children dependency-ready after `A` | Still one active segment per task; ready children run in stable deterministic order |
+| No DAG metadata in `PROMPT.md` | Planner falls back to deterministic inference from file scope/dependencies | Engine executes inferred chain without manual DAG authoring |
+| Single-repo fallback | `repo-singleton` plan with one segment | Behavior matches existing single-repo task execution semantics |
+
 ---
 
 ## Core Concepts
@@ -210,7 +228,10 @@ This keeps behavior deterministic while still exposing edge provenance for obser
 
 This matches your requirement: keep global throughput while avoiding intra-task race complexity.
 
-## Dynamic Segment Expansion (runtime)
+## Dynamic Segment Expansion (post-MVP, deferred)
+
+Dynamic segment expansion is explicitly out of MVP scope for this tranche.
+The flow below is retained as the post-MVP design target once baseline sequential segment execution is stable.
 
 Workers may discover new cross-repo requirements while executing a segment.
 
@@ -403,6 +424,20 @@ Dashboard should display:
 5. Supervisor interventions and decisions
 
 ---
+
+## Implementation Coverage Snapshot (V2 alignment)
+
+### Already implemented
+
+- **Types/contracts:** `ExecutionUnit`, `PacketPaths`, `TaskSegmentPlan`, `SegmentId` in `extensions/taskplane/types.ts`.
+- **Planning/discovery path:** segment DAG parsing + deterministic inference and wave assignment wiring in `extensions/taskplane/waves.ts`.
+- **Persistence baseline:** schema v4 segment state fields and migrations (TP-081).
+
+### Still needed for full #51 completion
+
+- **Execution engine completion:** full segment-aware runtime flow in `execution.ts` across all policy paths.
+- **Lane-runner integration hardening:** consistent per-segment unit execution and packet-path authority through lane-runner boundaries.
+- **Resume parity:** deterministic segment-frontier reconstruction and continuation across interruptions/restarts.
 
 ## Implementation Plan
 
