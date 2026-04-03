@@ -17,7 +17,7 @@ import { expect } from "./expect.ts";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { buildBatchProgressSnapshot, freshOrchBatchState } from "../taskplane/types.ts";
+import { buildBatchProgressSnapshot, buildSupervisorSegmentFrontierSnapshot, freshOrchBatchState } from "../taskplane/types.ts";
 import type {
 	SupervisorAlert,
 	SupervisorAlertCategory,
@@ -44,10 +44,23 @@ describe("1.x — SupervisorAlert type structure", () => {
 			summary: "⚠️ Task failure: TP-001",
 			context: {
 				taskId: "TP-001",
+				segmentId: "TP-001::api",
+				repoId: "api",
 				laneId: "lane-1",
 				laneNumber: 1,
 				waveIndex: 0,
 				exitReason: "Session died without .DONE",
+				segmentFrontier: {
+					taskId: "TP-001",
+					totalSegments: 3,
+					terminalSegments: 1,
+					activeSegmentId: "TP-001::api",
+					segments: [
+						{ segmentId: "TP-001::api", repoId: "api", status: "running", dependsOnSegmentIds: [] },
+						{ segmentId: "TP-001::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-001::api"] },
+						{ segmentId: "TP-001::docs", repoId: "docs", status: "pending", dependsOnSegmentIds: ["TP-001::web"] },
+					],
+				},
 				partialProgress: false,
 				batchProgress: {
 					succeededTasks: 2,
@@ -63,9 +76,13 @@ describe("1.x — SupervisorAlert type structure", () => {
 		expect(alert.category).toBe("task-failure");
 		expect(alert.summary).toContain("TP-001");
 		expect(alert.context.taskId).toBe("TP-001");
+		expect(alert.context.segmentId).toBe("TP-001::api");
+		expect(alert.context.repoId).toBe("api");
 		expect(alert.context.laneId).toBe("lane-1");
 		expect(alert.context.laneNumber).toBe(1);
 		expect(alert.context.exitReason).toBe("Session died without .DONE");
+		expect(alert.context.segmentFrontier).toBeDefined();
+		expect(alert.context.segmentFrontier!.totalSegments).toBe(3);
 		expect(alert.context.partialProgress).toBe(false);
 		expect(alert.context.batchProgress).toBeDefined();
 		expect(alert.context.batchProgress!.totalTasks).toBe(3);
@@ -221,6 +238,52 @@ describe("2.x — buildBatchProgressSnapshot", () => {
 		expect(deserialized.totalTasks).toBe(10);
 		expect(deserialized.currentWave).toBe(3);
 	});
+
+	it("2.5 — segment frontier snapshot captures active segment + status mix", () => {
+		const snapshot = buildSupervisorSegmentFrontierSnapshot(
+			"TP-010",
+			["TP-010::api", "TP-010::web", "TP-010::docs"],
+			null,
+			[
+				{
+					segmentId: "TP-010::api",
+					taskId: "TP-010",
+					repoId: "api",
+					status: "succeeded",
+					laneId: "lane-1",
+					sessionName: "orch-lane-1",
+					worktreePath: "/tmp/lane-1",
+					branch: "task/branch-1",
+					startedAt: 1,
+					endedAt: 2,
+					retries: 0,
+					dependsOnSegmentIds: [],
+					exitReason: "ok",
+				},
+				{
+					segmentId: "TP-010::web",
+					taskId: "TP-010",
+					repoId: "web",
+					status: "failed",
+					laneId: "lane-1",
+					sessionName: "orch-lane-1",
+					worktreePath: "/tmp/lane-1",
+					branch: "task/branch-1",
+					startedAt: 3,
+					endedAt: 4,
+					retries: 0,
+					dependsOnSegmentIds: ["TP-010::api"],
+					exitReason: "boom",
+				},
+			],
+			"TP-010::web",
+		);
+
+		expect(snapshot).toBeDefined();
+		expect(snapshot!.activeSegmentId).toBe("TP-010::web");
+		expect(snapshot!.terminalSegments).toBe(2);
+		expect(snapshot!.segments[2].status).toBe("pending");
+	});
 });
 
 // ══════════════════════════════════════════════════════════════════════
@@ -228,10 +291,12 @@ describe("2.x — buildBatchProgressSnapshot", () => {
 // ══════════════════════════════════════════════════════════════════════
 
 describe("3.x — Alert message formatting", () => {
-	it("3.1 — task-failure summary includes taskId, exitReason, and actions", () => {
+	it("3.1 — task-failure summary includes taskId, segment context, and actions", () => {
 		const summary =
 			`⚠️ Task failure: TP-005\n` +
 			`  Exit reason: TMUX session exited without .DONE\n` +
+			`  Segment: TP-005::api (repo: api)\n` +
+			`  Segment frontier: 1/3 terminal\n` +
 			`  Lane: lane-2 (lane 2)\n` +
 			`  Partial progress preserved: yes\n` +
 			`  Batch: wave 1/3, 2 succeeded, 1 failed\n\n` +
@@ -242,6 +307,8 @@ describe("3.x — Alert message formatting", () => {
 
 		expect(summary).toContain("TP-005");
 		expect(summary).toContain("TMUX session exited without .DONE");
+		expect(summary).toContain("Segment: TP-005::api");
+		expect(summary).toContain("Segment frontier: 1/3 terminal");
 		expect(summary).toContain("lane-2");
 		expect(summary).toContain("orch_status()");
 		expect(summary).toContain("orch_resume");
@@ -350,27 +417,38 @@ describe("4.x — Source-based verification of IPC wiring", () => {
 		expect(src).toContain("emitAlert(");
 	});
 
-	it("4.11 — resume.ts emits merge-failure alerts", () => {
+	it("4.11 — task-failure alerts include segment fields + frontier snapshot", () => {
+		const engineSrc = readSource("engine.ts");
+		const resumeSrc = readSource("resume.ts");
+		expect(engineSrc).toContain("segmentFrontier");
+		expect(engineSrc).toContain("segmentId");
+		expect(engineSrc).toContain("repoId");
+		expect(resumeSrc).toContain("segmentFrontier");
+		expect(resumeSrc).toContain("segmentId");
+		expect(resumeSrc).toContain("repoId");
+	});
+
+	it("4.12 — resume.ts emits merge-failure alerts", () => {
 		const src = readSource("resume.ts");
 		expect(src).toContain('category: "merge-failure"');
 	});
 
-	it("4.12 — resume.ts emits batch-complete alerts", () => {
+	it("4.13 — resume.ts emits batch-complete alerts", () => {
 		const src = readSource("resume.ts");
 		expect(src).toContain('category: "batch-complete"');
 	});
 
-	it("4.13 — engine.ts accepts onSupervisorAlert parameter", () => {
+	it("4.14 — engine.ts accepts onSupervisorAlert parameter", () => {
 		const src = readSource("engine.ts");
 		expect(src).toContain("onSupervisorAlert?: SupervisorAlertCallback");
 	});
 
-	it("4.14 — resume.ts accepts onSupervisorAlert parameter", () => {
+	it("4.15 — resume.ts accepts onSupervisorAlert parameter", () => {
 		const src = readSource("resume.ts");
 		expect(src).toContain("onSupervisorAlert?:");
 	});
 
-	it("4.15 — supervisor-primer.md has alert handling section", () => {
+	it("4.16 — supervisor-primer.md has alert handling section", () => {
 		const src = readFileSync(join(__dirname, "..", "taskplane", "supervisor-primer.md"), "utf-8");
 		expect(src).toContain("Autonomous Alert Handling");
 		expect(src).toContain("task-failure");
@@ -379,7 +457,7 @@ describe("4.x — Source-based verification of IPC wiring", () => {
 		expect(src).toContain("Response Protocol");
 	});
 
-	it("4.16 — extension.ts sends critical alert on engine process death", () => {
+	it("4.17 — extension.ts sends critical alert on engine process death", () => {
 		const src = readSource("extension.ts");
 		// Engine process error path
 		expect(src).toContain("Engine process error");

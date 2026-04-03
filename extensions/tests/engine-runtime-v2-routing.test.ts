@@ -153,11 +153,11 @@ describe("5.x: Lane-runner terminal snapshot emission", () => {
 		expect(laneRunnerSrc).toContain("terminalStatus");
 	});
 
-	it("5.3: all makeResult calls pass config, statusPath, and telemetry", () => {
-		// Every return makeResult(...) should end with config, statusPath[, lastTelemetry]
+	it("5.3: all makeResult calls pass config, statusPath, reviewerStatePath, and telemetry", () => {
+		// Every return makeResult(...) should end with config, statusPath, reviewerStatePath[, lastTelemetry]
 		const calls = laneRunnerSrc.match(/return makeResult\(/g);
 		// Worker-result calls pass lastTelemetry; skipped calls don't (no agent ran)
-		const callsWithTelemetry = laneRunnerSrc.match(/config, statusPath, lastTelemetry\)/g);
+		const callsWithTelemetry = laneRunnerSrc.match(/config, statusPath, reviewerStatePath, lastTelemetry\)/g);
 		expect(calls).not.toBe(null);
 		// At least 3 calls pass telemetry (failed, max-iter-failed, succeeded)
 		expect(callsWithTelemetry).not.toBe(null);
@@ -167,7 +167,7 @@ describe("5.x: Lane-runner terminal snapshot emission", () => {
 	it("5.4: lastTelemetry is scoped across loop and post-loop completion checks", () => {
 		const declIdx = laneRunnerSrc.indexOf("let lastTelemetry: Partial<AgentHostResult> = {};");
 		const loopIdx = laneRunnerSrc.indexOf("for (let iter = 0; iter < config.maxIterations; iter++)");
-		const postLoopUseIdx = laneRunnerSrc.lastIndexOf("config, statusPath, lastTelemetry");
+		const postLoopUseIdx = laneRunnerSrc.lastIndexOf("config, statusPath, reviewerStatePath, lastTelemetry");
 		expect(declIdx).toBeGreaterThan(-1);
 		expect(loopIdx).toBeGreaterThan(-1);
 		expect(postLoopUseIdx).toBeGreaterThan(-1);

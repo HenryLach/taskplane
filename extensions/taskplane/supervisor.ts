@@ -1121,6 +1121,27 @@ export interface BatchSummaryData {
 		failedLane: number | null;
 		failureReason: string | null;
 	}>;
+	/** Segment-level outcomes (when segment tracking is available). */
+	segmentOutcomes: {
+		totalSegments: number;
+		succeeded: number;
+		failed: number;
+		stalled: number;
+		skipped: number;
+		running: number;
+		pending: number;
+		multiSegmentTasks: Array<{
+			taskId: string;
+			totalSegments: number;
+			terminalSegments: number;
+			succeeded: number;
+			failed: number;
+			stalled: number;
+			skipped: number;
+			running: number;
+			pending: number;
+		}>;
+	} | null;
 	/** Audit trail entries for the batch */
 	auditEntries: AuditTrailEntry[];
 	/** Tier 0 events from events.jsonl (recovery attempts, successes, exhausted, escalations) */
@@ -1311,6 +1332,51 @@ export function collectBatchSummaryData(
 		overallStatus: wr.overallStatus || "unknown",
 	}));
 
+	const segmentRecords = batchState.segments || [];
+	let segmentOutcomes: BatchSummaryData["segmentOutcomes"] = null;
+	if (segmentRecords.length > 0) {
+		const byTaskId = new Map<string, typeof segmentRecords>();
+		for (const segment of segmentRecords) {
+			const existing = byTaskId.get(segment.taskId) || [];
+			existing.push(segment);
+			byTaskId.set(segment.taskId, existing);
+		}
+
+		const multiSegmentTasks: NonNullable<BatchSummaryData["segmentOutcomes"]>["multiSegmentTasks"] = [];
+		for (const [taskId, taskSegments] of [...byTaskId.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+			if (taskSegments.length <= 1) continue;
+			const succeeded = taskSegments.filter((segment) => segment.status === "succeeded").length;
+			const failed = taskSegments.filter((segment) => segment.status === "failed").length;
+			const stalled = taskSegments.filter((segment) => segment.status === "stalled").length;
+			const skipped = taskSegments.filter((segment) => segment.status === "skipped").length;
+			const running = taskSegments.filter((segment) => segment.status === "running").length;
+			const pending = taskSegments.filter((segment) => segment.status === "pending").length;
+			const terminalSegments = succeeded + failed + stalled + skipped;
+			multiSegmentTasks.push({
+				taskId,
+				totalSegments: taskSegments.length,
+				terminalSegments,
+				succeeded,
+				failed,
+				stalled,
+				skipped,
+				running,
+				pending,
+			});
+		}
+
+		segmentOutcomes = {
+			totalSegments: segmentRecords.length,
+			succeeded: segmentRecords.filter((segment) => segment.status === "succeeded").length,
+			failed: segmentRecords.filter((segment) => segment.status === "failed").length,
+			stalled: segmentRecords.filter((segment) => segment.status === "stalled").length,
+			skipped: segmentRecords.filter((segment) => segment.status === "skipped").length,
+			running: segmentRecords.filter((segment) => segment.status === "running").length,
+			pending: segmentRecords.filter((segment) => segment.status === "pending").length,
+			multiSegmentTasks,
+		};
+	}
+
 	return {
 		batchId: batchState.batchId,
 		phase: batchState.phase,
@@ -1328,6 +1394,7 @@ export function collectBatchSummaryData(
 		waveResults,
 		taskExits: diagnostics?.taskExits ?? {},
 		mergeResults: mergeResults ?? [],
+		segmentOutcomes,
 		auditEntries,
 		tier0Events,
 		errors: batchState.errors || [],
@@ -1417,6 +1484,36 @@ export function formatBatchSummary(data: BatchSummaryData): string {
 			if (wave.failedTaskIds.length > 0) {
 				lines.push(`  - Failed: ${wave.failedTaskIds.join(", ")}`);
 			}
+		}
+	}
+	lines.push("");
+
+	// ── Segment Outcomes ─────────────────────────────────────────
+	lines.push("## Segment Outcomes");
+	lines.push("");
+	if (!data.segmentOutcomes) {
+		lines.push("Segment data not available.");
+	} else if (data.segmentOutcomes.multiSegmentTasks.length === 0) {
+		lines.push(`No multi-segment task outcomes recorded (${data.segmentOutcomes.totalSegments} segment record(s) total).`);
+	} else {
+		const statusParts = [
+			`${data.segmentOutcomes.succeeded} succeeded`,
+			`${data.segmentOutcomes.failed} failed`,
+		];
+		if (data.segmentOutcomes.running > 0) statusParts.push(`${data.segmentOutcomes.running} running`);
+		if (data.segmentOutcomes.pending > 0) statusParts.push(`${data.segmentOutcomes.pending} pending`);
+		if (data.segmentOutcomes.skipped > 0) statusParts.push(`${data.segmentOutcomes.skipped} skipped`);
+		if (data.segmentOutcomes.stalled > 0) statusParts.push(`${data.segmentOutcomes.stalled} stalled`);
+		lines.push(`- **Tracked segments:** ${data.segmentOutcomes.totalSegments}`);
+		lines.push(`- **Status mix:** ${statusParts.join(", ")}`);
+		lines.push(`- **Multi-segment tasks:** ${data.segmentOutcomes.multiSegmentTasks.length}`);
+		for (const task of data.segmentOutcomes.multiSegmentTasks) {
+			const taskParts = [`${task.succeeded}✓`, `${task.failed}✗`];
+			if (task.running > 0) taskParts.push(`${task.running} running`);
+			if (task.pending > 0) taskParts.push(`${task.pending} pending`);
+			if (task.skipped > 0) taskParts.push(`${task.skipped} skipped`);
+			if (task.stalled > 0) taskParts.push(`${task.stalled} stalled`);
+			lines.push(`  - ${task.taskId}: ${task.terminalSegments}/${task.totalSegments} terminal (${taskParts.join(", ")})`);
 		}
 	}
 	lines.push("");

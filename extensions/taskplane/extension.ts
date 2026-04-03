@@ -1120,6 +1120,8 @@ export function startBatchInWorker(
 
 			case "error": {
 				errorReceivedViaIpc = true;
+				rotateStderrLogToBatch(batchState.batchId || undefined);
+				const stderrTail = readStderrTail();
 				const sourceLabel = msg.source ? ` (${msg.source})` : "";
 				const stackLine = msg.stack?.split("\n")[0]?.trim();
 				if (batchState.phase !== "completed" && batchState.phase !== "failed") {
@@ -1134,6 +1136,36 @@ export function startBatchInWorker(
 					`   Batch ${batchState.batchId} marked as failed.`,
 					"error",
 				);
+				// Alert supervisor — this is the PRIMARY notification path for engine
+				// crashes caught by uncaughtException/unhandledRejection handlers.
+				// The child.on("exit") handler is suppressed when errorReceivedViaIpc
+				// is true, so this is the only path that reaches the supervisor.
+				onSupervisorAlert?.({
+					category: "task-failure",
+					summary:
+						`🔴 Engine crashed with unhandled error${sourceLabel}: ${msg.message}\n` +
+						(stackLine ? `  Stack: ${stackLine}\n` : "") +
+						`  Batch ${batchState.batchId} marked as failed.\n\n` +
+						`Engine stderr tail (${stderrLogPath}):\n${stderrTail}\n\n` +
+						`This is a critical engine failure. The batch cannot continue.\n` +
+						`Available actions:\n` +
+						`  - orch_status() to inspect state\n` +
+						`  - orch_resume(force=true) to retry from last checkpoint`,
+					context: {
+						batchProgress: batchState.totalTasks > 0 ? {
+							succeededTasks: batchState.succeededTasks,
+							failedTasks: batchState.failedTasks,
+							skippedTasks: batchState.skippedTasks,
+							blockedTasks: batchState.blockedTasks,
+							totalTasks: batchState.totalTasks,
+							currentWave: batchState.currentWaveIndex + 1,
+							totalWaves: batchState.totalWaves,
+						} : undefined,
+					},
+				});
+				// Persist failed state to disk so dashboard/resume see it.
+				// The engine-worker is dead and can't persist — we must do it here.
+				try { saveBatchState(JSON.stringify(batchState, null, 2), wkData.cwd); } catch { /* best effort */ }
 				updateWidget();
 				break;
 			}
@@ -1223,6 +1255,8 @@ export function startBatchInWorker(
 					} : undefined,
 				},
 			});
+			// Persist failed state to disk (engine is dead, can't persist itself)
+			try { saveBatchState(JSON.stringify(batchState, null, 2), wkData.cwd); } catch { /* best effort */ }
 		}
 		settle();
 	});
@@ -2085,6 +2119,42 @@ export default function (pi: ExtensionAPI) {
 		};
 	}
 
+	function repoIdFromSegmentId(segmentId: string): string {
+		const idx = segmentId.indexOf("::");
+		if (idx <= 0 || idx >= segmentId.length - 2) return "unknown";
+		return segmentId.slice(idx + 2);
+	}
+
+	function buildTaskSegmentProgressLabel(
+		task: { taskId: string; segmentIds?: string[]; activeSegmentId?: string | null; status?: string } | undefined,
+		segments: Array<{ taskId: string; segmentId: string; status: string; repoId: string }> | undefined,
+		preferredSegmentId?: string | null,
+	): string | null {
+		if (!task || !Array.isArray(task.segmentIds) || task.segmentIds.length <= 1) return null;
+
+		const segmentIds = task.segmentIds.filter(segmentId => typeof segmentId === "string" && segmentId.trim().length > 0);
+		if (segmentIds.length <= 1) return null;
+
+		const bySegmentId = new Map<string, { status: string; repoId: string }>();
+		for (const segment of segments ?? []) {
+			if (segment.taskId === task.taskId) {
+				bySegmentId.set(segment.segmentId, { status: segment.status, repoId: segment.repoId });
+			}
+		}
+
+		let activeSegmentId = task.activeSegmentId ?? preferredSegmentId ?? null;
+		if (!activeSegmentId || !segmentIds.includes(activeSegmentId)) {
+			activeSegmentId = segmentIds.find((segmentId) => {
+				const status = bySegmentId.get(segmentId)?.status;
+				return !["succeeded", "failed", "stalled", "skipped"].includes(status || "pending");
+			}) || segmentIds[segmentIds.length - 1];
+		}
+
+		const index = Math.max(0, segmentIds.indexOf(activeSegmentId));
+		const repoId = bySegmentId.get(activeSegmentId)?.repoId ?? repoIdFromSegmentId(activeSegmentId);
+		return `Segment ${index + 1}/${segmentIds.length}: ${repoId}`;
+	}
+
 	/**
 	 * Core logic for orch-status. Returns a formatted status string.
 	 * Reads in-memory state first, falls back to disk if idle.
@@ -2114,6 +2184,41 @@ export default function (pi: ExtensionAPI) {
 				`   Elapsed: ${elapsedSec}s`,
 			];
 
+			const segmentRecords = diskState.segments || [];
+			const multiSegmentTasks = (diskState.tasks || []).filter((task) => Array.isArray(task.segmentIds) && task.segmentIds.length > 1);
+			if (multiSegmentTasks.length > 0) {
+				const byStatus = {
+					succeeded: segmentRecords.filter((segment) => segment.status === "succeeded").length,
+					failed: segmentRecords.filter((segment) => segment.status === "failed").length,
+					running: segmentRecords.filter((segment) => segment.status === "running").length,
+					pending: segmentRecords.filter((segment) => segment.status === "pending").length,
+					skipped: segmentRecords.filter((segment) => segment.status === "skipped").length,
+					stalled: segmentRecords.filter((segment) => segment.status === "stalled").length,
+				};
+				const segParts = [`${byStatus.succeeded} succeeded`];
+				if (byStatus.failed > 0) segParts.push(`${byStatus.failed} failed`);
+				if (byStatus.running > 0) segParts.push(`${byStatus.running} running`);
+				if (byStatus.pending > 0) segParts.push(`${byStatus.pending} pending`);
+				if (byStatus.skipped > 0) segParts.push(`${byStatus.skipped} skipped`);
+				if (byStatus.stalled > 0) segParts.push(`${byStatus.stalled} stalled`);
+				lines.push(`   Segments: ${segParts.join(", ")} (${multiSegmentTasks.length} multi-segment task(s))`);
+			}
+
+			const sortedDiskLanes = [...(diskState.lanes || [])].sort((a, b) => a.laneNumber - b.laneNumber);
+			if (sortedDiskLanes.length > 0) {
+				lines.push("   Lanes:");
+				for (const laneRec of sortedDiskLanes) {
+					const laneTasks = (diskState.tasks || []).filter((task) => task.laneNumber === laneRec.laneNumber);
+					const runningTask = laneTasks.find((task) => task.status === "running");
+					const activeTask = runningTask || laneTasks[laneTasks.length - 1];
+					const taskLabel = activeTask ? `${activeTask.taskId} (${activeTask.status})` : "idle";
+					const segmentLabel = buildTaskSegmentProgressLabel(activeTask, segmentRecords, activeTask?.activeSegmentId ?? null);
+					const segmentPart = segmentLabel ? ` · ${segmentLabel}` : "";
+					const repoPart = laneRec.repoId ? ` · repo: ${laneRec.repoId}` : "";
+					lines.push(`   - Lane ${laneRec.laneNumber}: ${taskLabel}${segmentPart}${repoPart}`);
+				}
+			}
+
 			if (diskState.errors.length > 0) {
 				lines.push(`   Errors: ${diskState.errors.length}`);
 			}
@@ -2131,6 +2236,51 @@ export default function (pi: ExtensionAPI) {
 			`   Tasks: ${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ${orchBatchState.skippedTasks} skipped, ${orchBatchState.blockedTasks} blocked / ${orchBatchState.totalTasks} total`,
 			`   Elapsed: ${elapsedSec}s`,
 		];
+
+		const segmentRecords = orchBatchState.segments || [];
+		const multiSegmentTaskCount = orchBatchState.currentLanes.reduce((count, laneRec) => {
+			return count + laneRec.tasks.filter((task) => Array.isArray(task.task.segmentIds) && task.task.segmentIds.length > 1).length;
+		}, 0);
+		if (multiSegmentTaskCount > 0) {
+			const byStatus = {
+				succeeded: segmentRecords.filter((segment) => segment.status === "succeeded").length,
+				failed: segmentRecords.filter((segment) => segment.status === "failed").length,
+				running: segmentRecords.filter((segment) => segment.status === "running").length,
+				pending: segmentRecords.filter((segment) => segment.status === "pending").length,
+				skipped: segmentRecords.filter((segment) => segment.status === "skipped").length,
+				stalled: segmentRecords.filter((segment) => segment.status === "stalled").length,
+			};
+			const segParts = [`${byStatus.succeeded} succeeded`];
+			if (byStatus.failed > 0) segParts.push(`${byStatus.failed} failed`);
+			if (byStatus.running > 0) segParts.push(`${byStatus.running} running`);
+			if (byStatus.pending > 0) segParts.push(`${byStatus.pending} pending`);
+			if (byStatus.skipped > 0) segParts.push(`${byStatus.skipped} skipped`);
+			if (byStatus.stalled > 0) segParts.push(`${byStatus.stalled} stalled`);
+			lines.push(`   Segments: ${segParts.join(", ")} (${multiSegmentTaskCount} multi-segment task(s))`);
+		}
+
+		if (orchBatchState.currentLanes.length > 0) {
+			lines.push("   Lanes:");
+			const sortedLanes = [...orchBatchState.currentLanes].sort((a, b) => a.laneNumber - b.laneNumber);
+			for (const laneRec of sortedLanes) {
+				const monLane = latestMonitorState?.lanes.find((laneState) => laneState.laneNumber === laneRec.laneNumber);
+				const currentTaskId = monLane?.currentTaskId || laneRec.tasks[0]?.taskId;
+				const allocatedTask = currentTaskId
+					? laneRec.tasks.find((task) => task.taskId === currentTaskId)
+					: laneRec.tasks[0];
+				const taskLabel = allocatedTask
+					? `${allocatedTask.taskId} (${monLane?.currentTaskSnapshot?.status || "running"})`
+					: "idle";
+				const segmentLabel = buildTaskSegmentProgressLabel(
+					allocatedTask?.task,
+					segmentRecords,
+					allocatedTask?.task.activeSegmentId ?? null,
+				);
+				const segmentPart = segmentLabel ? ` · ${segmentLabel}` : "";
+				const repoPart = laneRec.repoId ? ` · repo: ${laneRec.repoId}` : "";
+				lines.push(`   - Lane ${laneRec.laneNumber}: ${taskLabel}${segmentPart}${repoPart}`);
+			}
+		}
 
 		if (orchBatchState.errors.length > 0) {
 			lines.push(`   Errors: ${orchBatchState.errors.length}`);
@@ -4154,6 +4304,14 @@ export default function (pi: ExtensionAPI) {
 
 			if (currentTask) {
 				lines.push(`**Task:** ${currentTask.taskId} (${currentTask.status})`);
+				const segmentLabel = buildTaskSegmentProgressLabel(currentTask, state.segments || [], currentTask.activeSegmentId ?? null);
+				if (segmentLabel) lines.push(`**Segment:** ${segmentLabel}`);
+				if (currentTask.activeSegmentId) lines.push(`**Segment ID:** ${currentTask.activeSegmentId}`);
+				const packetHomeRepo = typeof currentTask.packetRepoId === "string" ? currentTask.packetRepoId : "";
+				const effectiveTaskRepo = currentTask.resolvedRepoId || currentTask.repoId || laneRec.repoId || "";
+				if (packetHomeRepo && packetHomeRepo !== effectiveTaskRepo) {
+					lines.push(`**Packet Home Repo:** ${packetHomeRepo}`);
+				}
 
 				// Read STATUS.md from canonical task paths (workspace-safe, cross-repo-safe)
 				try {

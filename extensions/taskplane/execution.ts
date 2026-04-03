@@ -1182,8 +1182,10 @@ export async function monitorLanes(
 					currentTaskId = task.taskId;
 
 					const tracker = getOrCreateTracker(task.taskId, now);
-					const donePath = resolveTaskDonePath(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
-					const statusResult = await parseWorktreeStatusMdAsync(task.task.taskFolder, lane.worktreePath, repoRoot, isWorkspaceMode);
+					const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode);
+					const donePath = unit.packet.donePath;
+					const statusPath = unit.packet.statusPath;
+					const statusResult = await parseWorktreeStatusMdAsync(dirname(statusPath), lane.worktreePath, repoRoot, false);
 
 					const snapshot = await resolveTaskMonitorState(
 						task.taskId,
@@ -1966,6 +1968,16 @@ export function buildExecutionUnit(
 	const segmentId = task.task.activeSegmentId ?? null;
 	const id = segmentId ?? task.taskId;
 
+	const packet = task.task.packetTaskPath
+		? resolvePacketPaths(task.task.packetTaskPath)
+		: {
+			promptPath: resolved.taskFolderResolved + "/PROMPT.md",
+			statusPath: resolved.statusPath,
+			donePath: resolved.donePath,
+			reviewsDir: resolved.taskFolderResolved + "/.reviews",
+			taskFolder: resolved.taskFolderResolved,
+		};
+
 	return {
 		id,
 		taskId: task.taskId,
@@ -1973,13 +1985,7 @@ export function buildExecutionUnit(
 		executionRepoId,
 		packetHomeRepoId,
 		worktreePath: lane.worktreePath,
-		packet: {
-			promptPath: resolved.taskFolderResolved + "/PROMPT.md",
-			statusPath: resolved.statusPath,
-			donePath: resolved.donePath,
-			reviewsDir: resolved.taskFolderResolved + "/.reviews",
-			taskFolder: resolved.taskFolderResolved,
-		},
+		packet,
 		task: task.task,
 	};
 }
@@ -2181,11 +2187,13 @@ export async function executeLaneV2(
 	});
 
 	for (const task of lane.tasks) {
+		const taskSegmentId = task.task.activeSegmentId ?? null;
 		if (shouldSkipRemaining || pauseSignal.paused) {
 			const reason = pauseSignal.paused ? "Skipped due to pause signal" : "Skipped due to prior task failure in lane";
 			outcomes.push({
 				taskId: task.taskId,
 				status: "skipped",
+				segmentId: taskSegmentId,
 				startTime: null,
 				endTime: null,
 				exitReason: reason,
@@ -2246,6 +2254,7 @@ export async function executeLaneV2(
 			outcomes.push({
 				taskId: task.taskId,
 				status: "failed",
+				segmentId: taskSegmentId,
 				startTime: Date.now(),
 				endTime: Date.now(),
 				exitReason: `Runtime V2 execution error: ${errMsg}`,

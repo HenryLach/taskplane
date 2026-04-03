@@ -319,6 +319,18 @@ export function persistRuntimeState(
 					if (taskRecord.resolvedRepoId === undefined && parsedTask.resolvedRepoId !== undefined) {
 						taskRecord.resolvedRepoId = parsedTask.resolvedRepoId;
 					}
+					if ((taskRecord as any).packetRepoId === undefined && parsedTask.packetRepoId !== undefined) {
+						(taskRecord as any).packetRepoId = parsedTask.packetRepoId;
+					}
+					if ((taskRecord as any).packetTaskPath === undefined && parsedTask.packetTaskPath !== undefined) {
+						(taskRecord as any).packetTaskPath = parsedTask.packetTaskPath;
+					}
+					if ((taskRecord as any).segmentIds === undefined && parsedTask.segmentIds !== undefined) {
+						(taskRecord as any).segmentIds = parsedTask.segmentIds;
+					}
+					if ((taskRecord as any).activeSegmentId === undefined && parsedTask.activeSegmentId !== undefined) {
+						(taskRecord as any).activeSegmentId = parsedTask.activeSegmentId;
+					}
 				}
 			}
 			const enrichedJson = JSON.stringify(parsed, null, 2);

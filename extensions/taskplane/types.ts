@@ -684,6 +684,8 @@ export interface LaneTaskOutcome {
 	taskId: string;
 	/** Final task status */
 	status: LaneTaskStatus;
+	/** Segment identifier for segment-aware execution (null for whole-task units). */
+	segmentId?: string | null;
 	/** When execution started (epoch ms), null if never started (skipped) */
 	startTime: number | null;
 	/** When execution ended (epoch ms), null if still pending */
@@ -1949,9 +1951,31 @@ export type SupervisorAlertCategory = "task-failure" | "merge-failure" | "batch-
  *
  * @since TP-076
  */
+export interface SupervisorSegmentFrontierSnapshot {
+	/** Parent task identifier */
+	taskId: string;
+	/** Total number of ordered segments for the task */
+	totalSegments: number;
+	/** Number of segments that reached a terminal status */
+	terminalSegments: number;
+	/** Active (or most recently active) segment ID */
+	activeSegmentId: string | null;
+	/** Segment-level execution snapshot in deterministic order */
+	segments: Array<{
+		segmentId: string;
+		repoId: string;
+		status: PersistedSegmentStatus;
+		dependsOnSegmentIds: string[];
+	}>;
+}
+
 export interface SupervisorAlertContext {
 	/** Task ID (for task-failure alerts) */
 	taskId?: string;
+	/** Segment ID (for segment-aware task-failure alerts) */
+	segmentId?: string;
+	/** Repo ID associated with the failure (task segment or merge target) */
+	repoId?: string;
 	/** Lane ID, e.g., "lane-1" (for task-failure alerts) */
 	laneId?: string;
 	/** Lane number (for task-failure and merge-failure alerts) */
@@ -1960,6 +1984,8 @@ export interface SupervisorAlertContext {
 	waveIndex?: number;
 	/** Exit reason string (for task-failure alerts) */
 	exitReason?: string;
+	/** Segment frontier snapshot for task-failure diagnosis */
+	segmentFrontier?: SupervisorSegmentFrontierSnapshot;
 	/** Agent ID (for agent-message alerts) */
 	agentId?: string;
 	/** Mailbox message ID (for agent-message alerts) */
@@ -2038,6 +2064,70 @@ export function buildBatchProgressSnapshot(
 		totalTasks: batchState.totalTasks,
 		currentWave: batchState.currentWaveIndex + 1, // 1-based for display
 		totalWaves: batchState.totalWaves,
+	};
+}
+
+function repoIdFromSegmentId(segmentId: string): string {
+	const idx = segmentId.indexOf("::");
+	if (idx <= 0 || idx >= segmentId.length - 2) return "unknown";
+	return segmentId.slice(idx + 2);
+}
+
+/**
+ * Build a task-level segment frontier snapshot for supervisor failure alerts.
+ *
+ * Returns `undefined` when the task has no segment metadata.
+ */
+export function buildSupervisorSegmentFrontierSnapshot(
+	taskId: string,
+	segmentIds: string[] | undefined,
+	activeSegmentId: string | null | undefined,
+	persistedSegments: PersistedSegmentRecord[] | undefined,
+	preferredSegmentId?: string | null,
+): SupervisorSegmentFrontierSnapshot | undefined {
+	const orderedSegmentIds = Array.isArray(segmentIds)
+		? segmentIds.filter((segmentId): segmentId is string => typeof segmentId === "string" && segmentId.trim().length > 0)
+		: [];
+	if (orderedSegmentIds.length === 0) return undefined;
+
+	const bySegmentId = new Map<string, PersistedSegmentRecord>();
+	for (const segment of persistedSegments ?? []) {
+		if (segment && segment.taskId === taskId) {
+			bySegmentId.set(segment.segmentId, segment);
+		}
+	}
+
+	const resolvedActiveSegmentId = (activeSegmentId && orderedSegmentIds.includes(activeSegmentId))
+		? activeSegmentId
+		: (preferredSegmentId && orderedSegmentIds.includes(preferredSegmentId)
+			? preferredSegmentId
+			: null);
+
+	const segments = orderedSegmentIds.map((segmentId) => {
+		const persisted = bySegmentId.get(segmentId);
+		const status: PersistedSegmentStatus = persisted?.status
+			?? (resolvedActiveSegmentId === segmentId ? "running" : "pending");
+		return {
+			segmentId,
+			repoId: persisted?.repoId ?? repoIdFromSegmentId(segmentId),
+			status,
+			dependsOnSegmentIds: persisted?.dependsOnSegmentIds ?? [],
+		};
+	});
+
+	const terminalSegments = segments.filter((segment) =>
+		segment.status === "succeeded"
+		|| segment.status === "failed"
+		|| segment.status === "stalled"
+		|| segment.status === "skipped",
+	).length;
+
+	return {
+		taskId,
+		totalSegments: segments.length,
+		terminalSegments,
+		activeSegmentId: resolvedActiveSegmentId,
+		segments,
 	};
 }
 

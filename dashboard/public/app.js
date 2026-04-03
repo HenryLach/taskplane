@@ -319,6 +319,89 @@ function repoBadgeHtml(repoId, extraClass) {
   return `<span class="repo-badge ${extraClass || ""}" title="Repo: ${escapeHtml(repoId)}">${escapeHtml(repoId)}</span>`;
 }
 
+function parseSegmentId(segmentId) {
+  if (!segmentId || typeof segmentId !== "string") return null;
+  const sep = segmentId.indexOf("::");
+  if (sep <= 0 || sep >= segmentId.length - 2) return null;
+  return {
+    taskId: segmentId.slice(0, sep),
+    repoId: segmentId.slice(sep + 2),
+  };
+}
+
+function segmentProgressText(segmentInfo) {
+  if (!segmentInfo) return "";
+  const repo = segmentInfo.repoId || "unknown";
+  if (segmentInfo.index && segmentInfo.total) {
+    return `Segment ${segmentInfo.index}/${segmentInfo.total}: ${repo}`;
+  }
+  return `Segment: ${repo}`;
+}
+
+function buildSegmentStatusMap(batch) {
+  const map = new Map();
+  for (const seg of (batch?.segments || [])) {
+    if (seg && typeof seg.segmentId === "string") {
+      map.set(seg.segmentId, seg.status || "pending");
+    }
+  }
+  return map;
+}
+
+function taskSegmentProgress(task, segmentStatusMap, forcedActiveSegmentId) {
+  const segmentIds = Array.isArray(task?.segmentIds)
+    ? task.segmentIds.filter(id => typeof id === "string")
+    : [];
+  // Repo-singleton (or repo-mode) tasks should stay visually clean.
+  if (segmentIds.length <= 1) return null;
+
+  const activeSegmentId = forcedActiveSegmentId || task.activeSegmentId;
+  let currentSegmentId = activeSegmentId && segmentIds.includes(activeSegmentId)
+    ? activeSegmentId
+    : null;
+
+  if (!currentSegmentId) {
+    if (task.status === "pending" || task.status === "running") {
+      currentSegmentId = segmentIds.find((id) => {
+        const status = segmentStatusMap.get(id);
+        return !["succeeded", "failed", "stalled", "skipped"].includes(status);
+      }) || segmentIds[segmentIds.length - 1];
+    } else {
+      currentSegmentId = segmentIds[segmentIds.length - 1];
+    }
+  }
+
+  const idx = Math.max(0, segmentIds.indexOf(currentSegmentId));
+  const parsed = parseSegmentId(currentSegmentId);
+  return {
+    index: idx + 1,
+    total: segmentIds.length,
+    repoId: parsed?.repoId || taskRepoId(task) || undefined,
+    segmentId: currentSegmentId,
+  };
+}
+
+function laneActiveSegmentInfo(v2snap, laneTasks, segmentStatusMap) {
+  if (!v2snap || !v2snap.segmentId) return null;
+  const parsed = parseSegmentId(v2snap.segmentId);
+  if (!parsed) return null;
+
+  const ownerTaskId = v2snap.taskId || parsed.taskId;
+  const ownerTask = (laneTasks || []).find(t => t.taskId === ownerTaskId) || null;
+  if (ownerTask) {
+    const byTask = taskSegmentProgress(ownerTask, segmentStatusMap, v2snap.segmentId);
+    if (byTask) return byTask;
+    return null;
+  }
+
+  return {
+    index: null,
+    total: null,
+    repoId: parsed.repoId,
+    segmentId: v2snap.segmentId,
+  };
+}
+
 // Repo filter change handler
 $repoFilter.addEventListener("change", (e) => {
   selectedRepo = e.target.value;
@@ -523,12 +606,16 @@ function renderLanesTasks(batch, sessions) {
   // TP-107: V2 lane snapshots take precedence over legacy lane states when present
   const v2Snapshots = currentData?.runtimeLaneSnapshots || {};
   const showRepos = knownRepos.length >= 2;
+  const segmentStatusMap = buildSegmentStatusMap(batch);
   let html = "";
 
   for (const lane of batch.lanes) {
+    const laneTasks = (lane.taskIds || []).map(tid => tasks.find(t => t.taskId === tid)).filter(Boolean);
+    const v2snap = v2Snapshots[lane.laneNumber] || null;
+    const laneActiveSegment = laneActiveSegmentInfo(v2snap, laneTasks, segmentStatusMap);
+
     // Repo filtering: if a repo is selected, skip lanes that don't match
     if (selectedRepo && showRepos) {
-      const laneTasks = (lane.taskIds || []).map(tid => tasks.find(t => t.taskId === tid)).filter(Boolean);
       const laneMatchesRepo = (lane.repoId === selectedRepo) ||
         laneTasks.some(t => (taskRepoId(t) || lane.repoId) === selectedRepo);
       if (!laneMatchesRepo) continue;
@@ -550,6 +637,9 @@ function renderLanesTasks(batch, sessions) {
     if (showRepos && lane.repoId) {
       html += `    ${repoBadgeHtml(lane.repoId, "repo-badge-lane")}`;
     }
+    if (laneActiveSegment) {
+      html += `    <span class="lane-segment" title="${escapeHtml(laneActiveSegment.segmentId || segmentProgressText(laneActiveSegment))}">${escapeHtml(segmentProgressText(laneActiveSegment))}</span>`;
+    }
     html += `  </div>`;
     html += `  <div class="lane-right">`;
     html += `    <span class="session-dot ${alive ? "alive" : "dead"}" title="${alive ? "session alive" : "session not active"}"></span>`;
@@ -565,15 +655,12 @@ function renderLanesTasks(batch, sessions) {
     html += `</div>`;
 
     // Task rows for this lane
-    const laneTasks = (lane.taskIds || []).map(tid => tasks.find(t => t.taskId === tid)).filter(Boolean);
-
     if (laneTasks.length === 0) {
       html += `<div class="task-row"><span class="task-icon"></span><span style="color:var(--text-faint);grid-column:2/-1;">No tasks assigned</span></div>`;
     }
 
     // Get lane state and telemetry for worker stats
     // TP-107: V2 lane snapshots take precedence when present
-    const v2snap = v2Snapshots[lane.laneNumber] || null;
     const legacyLs = laneStates[laneSessionId] || null;
     const ls = v2snap ? mergeV2LaneSnapshot(legacyLs, v2snap) : legacyLs;
     const tel = telemetry[laneSessionId] || null;
@@ -587,6 +674,9 @@ function renderLanesTasks(batch, sessions) {
       const dur = task.startedAt
         ? formatDuration((task.endedAt || Date.now()) - task.startedAt)
         : "—";
+      const segmentInfo = taskSegmentProgress(task, segmentStatusMap, null);
+      const packetHomeRepo = typeof task.packetRepoId === "string" ? task.packetRepoId : "";
+      const showPacketHome = !!packetHomeRepo && packetHomeRepo !== (tRepo || lane.repoId || "");
 
       // Progress cell
       let progressHtml = "";
@@ -627,6 +717,17 @@ function renderLanesTasks(batch, sessions) {
         stepHtml = '<span style="color:var(--text-faint)">Waiting</span>';
       } else {
         stepHtml = `<span style="color:var(--text-faint)">${escapeHtml(task.exitReason || "—")}</span>`;
+      }
+
+      const detailBits = [];
+      if (segmentInfo) {
+        detailBits.push(`<span class="task-segment-progress" title="${escapeHtml(segmentInfo.segmentId || segmentProgressText(segmentInfo))}">${escapeHtml(segmentProgressText(segmentInfo))}</span>`);
+      }
+      if (showPacketHome) {
+        detailBits.push(`<span class="task-packet-home" title="Task packet home repo">packet: ${escapeHtml(packetHomeRepo)}</span>`);
+      }
+      if (detailBits.length > 0) {
+        stepHtml = `${detailBits.join('<span class="task-detail-sep"> · </span>')}<span class="task-detail-sep"> · </span><span class="task-step-main">${stepHtml}</span>`;
       }
 
       // Worker stats from lane state sidecar + telemetry badges

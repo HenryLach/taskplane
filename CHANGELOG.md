@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.8] - 2026-04-03
+
+### New
+- **Multi-repo segment execution MVP (TP-132–136)** — Full segment-based execution for workspace/polyrepo mode:
+  - **TP-132:** Spec aligned to Runtime V2 contracts
+  - **TP-133:** Engine segment frontier — consumes segment plans, executes segments sequentially per-task, packet-home `.DONE` authority
+  - **TP-134:** Segment-aware lane execution — segmentId in snapshots/outcomes, separate execution cwd from packet paths, segment context in worker prompts
+  - **TP-135:** Segment persistence + resume — `segments[]` populated in batch state, resume reconstructs segment frontier from persisted state
+  - **TP-136:** Segment observability — dashboard shows active segment per lane, supervisor alerts include segment context
+
+### Fixed
+- **Supervisor alert on engine crash** — Error IPC handler now emits `onSupervisorAlert` (was only calling `ctx.ui.notify`). The supervisor is now notified of engine crashes.
+- **Disk persistence on engine crash** — Parent process persists `batch-state.json` with `phase: "failed"` when engine crashes. Fixes #421.
+
 ## [0.24.7] - 2026-04-03
 
 ### Fixed

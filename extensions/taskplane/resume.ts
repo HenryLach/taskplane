@@ -34,12 +34,12 @@ function terminateAliveV2Agents(stateRoot: string, batchId: string, sessionName:
 }
 import { getCurrentBranch, runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
-import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
-import { buildBatchProgressSnapshot, defaultResilienceState, StateFileError } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, PersistedLaneRecord, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
+import { buildBatchProgressSnapshot, buildSupervisorSegmentFrontierSnapshot, defaultResilienceState, StateFileError } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, PersistedLaneRecord, PersistedSegmentRecord, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, safeResetWorktree, sleepSync } from "./worktree.ts";
 
@@ -161,6 +161,18 @@ export function reconstructAllocatedLanes(
 			if (persistedTask?.taskFolder) {
 				taskStub.taskFolder = persistedTask.taskFolder;
 			}
+			if ((persistedTask as any)?.packetRepoId !== undefined) {
+				(taskStub as any).packetRepoId = (persistedTask as any).packetRepoId;
+			}
+			if ((persistedTask as any)?.packetTaskPath !== undefined) {
+				(taskStub as any).packetTaskPath = (persistedTask as any).packetTaskPath;
+			}
+			if ((persistedTask as any)?.segmentIds !== undefined) {
+				(taskStub as any).segmentIds = (persistedTask as any).segmentIds;
+			}
+			if ((persistedTask as any)?.activeSegmentId !== undefined) {
+				(taskStub as any).activeSegmentId = (persistedTask as any).activeSegmentId;
+			}
 			return {
 				taskId,
 				order: 0,
@@ -210,6 +222,39 @@ export function collectAllRepoRoots(
 }
 
 // ── Resume Pure Functions ────────────────────────────────────────────
+
+/**
+ * Collect task IDs with authoritative .DONE markers.
+ *
+ * Segment frontier state does not suppress .DONE authority. If a marker exists,
+ * resume reconciliation will mark the task complete regardless of segment state.
+ */
+export function collectDoneTaskIdsForResume(
+	persistedState: PersistedBatchState,
+	repoRoot: string,
+	workspaceConfig?: WorkspaceConfig | null,
+): Set<string> {
+	const doneTaskIds = new Set<string>();
+	for (const task of persistedState.tasks) {
+		if (task.taskFolder && hasTaskDoneMarker(task.taskFolder)) {
+			doneTaskIds.add(task.taskId);
+			continue;
+		}
+		const laneRec = persistedState.lanes.find(l => l.taskIds.includes(task.taskId));
+		if (laneRec?.worktreePath && task.taskFolder) {
+			const resolved = resolveCanonicalTaskPaths(
+				task.taskFolder,
+				laneRec.worktreePath,
+				repoRoot,
+				!!workspaceConfig,
+			);
+			if (existsSync(resolved.donePath)) {
+				doneTaskIds.add(task.taskId);
+			}
+		}
+	}
+	return doneTaskIds;
+}
 
 /**
  * Check whether a persisted batch state is eligible for resume.
@@ -331,6 +376,126 @@ export function checkResumeEligibility(state: PersistedBatchState, force: boolea
 				batchId,
 			};
 	}
+}
+
+interface SegmentFrontierResumeTaskState {
+	taskId: string;
+	completedSegmentIds: string[];
+	inFlightSegmentIds: string[];
+	pendingSegmentIds: string[];
+	failedSegmentIds: string[];
+	nextSegmentId: string | null;
+	allSucceeded: boolean;
+	dependencyBySegmentId: Map<string, string[]>;
+}
+
+function classifySegmentStatus(status: PersistedSegmentRecord["status"] | undefined): "completed" | "failed" | "in-flight" | "pending" {
+	if (status === "succeeded" || status === "skipped") return "completed";
+	if (status === "failed" || status === "stalled") return "failed";
+	if (status === "running") return "in-flight";
+	return "pending";
+}
+
+/**
+ * Reconstruct per-task segment frontier from persisted segment records.
+ *
+ * Mutates persisted task records in-place to reflect the segment frontier:
+ * - sets `activeSegmentId` to running or next pending segment
+ * - normalizes task `status` to pending/running/terminal based on segments
+ */
+export function reconstructSegmentFrontier(
+	persistedState: PersistedBatchState,
+): Map<string, SegmentFrontierResumeTaskState> {
+	const byTask = new Map<string, SegmentFrontierResumeTaskState>();
+	const segmentRecordById = new Map<string, PersistedSegmentRecord>();
+	for (const segment of persistedState.segments ?? []) {
+		segmentRecordById.set(segment.segmentId, segment);
+	}
+
+	for (const task of persistedState.tasks) {
+		const segmentIds = task.segmentIds ?? [];
+		if (segmentIds.length === 0) continue;
+
+		const dependencyBySegmentId = new Map<string, string[]>();
+		const completedSegmentIds: string[] = [];
+		const inFlightSegmentIds: string[] = [];
+		const pendingSegmentIds: string[] = [];
+		const failedSegmentIds: string[] = [];
+		let hasConcreteSegmentRecord = false;
+
+		for (let idx = 0; idx < segmentIds.length; idx++) {
+			const segmentId = segmentIds[idx];
+			const record = segmentRecordById.get(segmentId);
+			if (record) hasConcreteSegmentRecord = true;
+			const recordDeps = record?.dependsOnSegmentIds ?? [];
+			const fallbackDeps = idx > 0 ? [segmentIds[idx - 1]] : [];
+			const deps = (recordDeps.length > 0 ? recordDeps : fallbackDeps)
+				.filter(dep => segmentIds.includes(dep));
+			dependencyBySegmentId.set(segmentId, [...new Set(deps)].sort((a, b) => a.localeCompare(b)));
+
+			switch (classifySegmentStatus(record?.status)) {
+				case "completed":
+					completedSegmentIds.push(segmentId);
+					break;
+				case "in-flight":
+					inFlightSegmentIds.push(segmentId);
+					break;
+				case "failed":
+					failedSegmentIds.push(segmentId);
+					break;
+				default:
+					pendingSegmentIds.push(segmentId);
+					break;
+			}
+		}
+
+		const completedSet = new Set(completedSegmentIds);
+		const readyPending = pendingSegmentIds.filter((segmentId) => {
+			const deps = dependencyBySegmentId.get(segmentId) ?? [];
+			return deps.every(dep => completedSet.has(dep));
+		});
+
+		const nextSegmentId = inFlightSegmentIds[0]
+			?? readyPending[0]
+			?? pendingSegmentIds[0]
+			?? null;
+		const allSucceeded = segmentIds.every((segmentId) => {
+			const status = segmentRecordById.get(segmentId)?.status;
+			return status === "succeeded";
+		});
+
+		if (hasConcreteSegmentRecord) {
+			if (failedSegmentIds.length > 0) {
+				task.status = task.status === "skipped" ? "skipped" : "failed";
+				task.activeSegmentId = null;
+			} else if (inFlightSegmentIds.length > 0) {
+				task.status = "running";
+				task.activeSegmentId = inFlightSegmentIds[0];
+			} else if (pendingSegmentIds.length > 0) {
+				task.status = "pending";
+				task.activeSegmentId = nextSegmentId;
+			} else if (allSucceeded) {
+				task.status = "succeeded";
+				task.activeSegmentId = null;
+			} else {
+				task.status = task.status === "skipped" ? "skipped" : "failed";
+				task.activeSegmentId = null;
+			}
+		}
+
+		byTask.set(task.taskId, {
+			taskId: task.taskId,
+			completedSegmentIds,
+			inFlightSegmentIds,
+			pendingSegmentIds,
+			failedSegmentIds,
+			nextSegmentId,
+			allSucceeded,
+			dependencyBySegmentId,
+		});
+	}
+
+	return byTask;
 }
 
 /**
@@ -504,6 +669,33 @@ export function computeResumePoint(
 		reconciledMap.set(task.taskId, task);
 	}
 
+	const segmentStatusBySegmentId = new Map<string, PersistedSegmentRecord["status"]>();
+	for (const segment of persistedState.segments ?? []) {
+		segmentStatusBySegmentId.set(segment.segmentId, segment.status);
+	}
+	const persistedTasks = Array.isArray((persistedState as { tasks?: unknown }).tasks)
+		? persistedState.tasks
+		: [];
+	const segmentIdsByTaskId = new Map<string, string[]>();
+	for (const task of persistedTasks) {
+		if (task.segmentIds && task.segmentIds.length > 0) {
+			segmentIdsByTaskId.set(task.taskId, task.segmentIds);
+		}
+	}
+	const waveSegmentIdByTaskOccurrence = new Map<string, string>();
+	const occurrenceByTaskId = new Map<string, number>();
+	for (let waveIdx = 0; waveIdx < persistedState.wavePlan.length; waveIdx++) {
+		for (const taskId of persistedState.wavePlan[waveIdx]) {
+			const segmentIds = segmentIdsByTaskId.get(taskId);
+			if (!segmentIds || segmentIds.length === 0) continue;
+			const occurrence = occurrenceByTaskId.get(taskId) ?? 0;
+			if (occurrence < segmentIds.length) {
+				waveSegmentIdByTaskOccurrence.set(`${waveIdx}:${taskId}`, segmentIds[occurrence]);
+			}
+			occurrenceByTaskId.set(taskId, occurrence + 1);
+		}
+	}
+
 	// Categorize tasks
 	const completedTaskIds: string[] = [];
 	const pendingTaskIds: string[] = [];
@@ -551,6 +743,14 @@ export function computeResumePoint(
 	for (let i = 0; i < persistedState.wavePlan.length; i++) {
 		const waveTasks = persistedState.wavePlan[i];
 		const allDone = waveTasks.every((taskId) => {
+			const waveSegmentId = waveSegmentIdByTaskOccurrence.get(`${i}:${taskId}`);
+			if (waveSegmentId && segmentStatusBySegmentId.has(waveSegmentId)) {
+				const segmentStatus = segmentStatusBySegmentId.get(waveSegmentId)!;
+				return segmentStatus === "succeeded"
+					|| segmentStatus === "failed"
+					|| segmentStatus === "stalled"
+					|| segmentStatus === "skipped";
+			}
 			const reconciled = reconciledMap.get(taskId);
 			if (!reconciled) return false;
 			// A task is "done" for wave-skip purposes if it's terminal:
@@ -579,6 +779,10 @@ export function computeResumePoint(
 		// Only check merge status if the wave had any succeeded tasks (waves with
 		// only failures/skips don't produce merges and can be safely skipped).
 		const hasSucceededTasks = waveTasks.some((taskId) => {
+			const waveSegmentId = waveSegmentIdByTaskOccurrence.get(`${i}:${taskId}`);
+			if (waveSegmentId && segmentStatusBySegmentId.has(waveSegmentId)) {
+				return segmentStatusBySegmentId.get(waveSegmentId) === "succeeded";
+			}
 			const reconciled = reconciledMap.get(taskId);
 			if (!reconciled) return false;
 			if (reconciled.action === "mark-complete") return true;
@@ -603,6 +807,15 @@ export function computeResumePoint(
 	const actualPendingTaskIds: string[] = [];
 	for (let i = resumeWaveIndex; i < persistedState.wavePlan.length; i++) {
 		for (const taskId of persistedState.wavePlan[i]) {
+			const waveSegmentId = waveSegmentIdByTaskOccurrence.get(`${i}:${taskId}`);
+			if (waveSegmentId && segmentStatusBySegmentId.has(waveSegmentId)) {
+				const segmentStatus = segmentStatusBySegmentId.get(waveSegmentId)!;
+				if (segmentStatus === "running" || segmentStatus === "pending") {
+					actualPendingTaskIds.push(taskId);
+				}
+				continue;
+			}
+
 			const reconciled = reconciledMap.get(taskId);
 			if (!reconciled) {
 				actualPendingTaskIds.push(taskId); // Unknown task — treat as pending
@@ -872,6 +1085,24 @@ export async function resumeOrchBatch(
 		"info",
 	);
 
+	const segmentFrontierByTask = reconstructSegmentFrontier(persistedState);
+	if (segmentFrontierByTask.size > 0) {
+		let completedSegments = 0;
+		let inFlightSegments = 0;
+		let pendingSegments = 0;
+		for (const frontier of segmentFrontierByTask.values()) {
+			completedSegments += frontier.completedSegmentIds.length;
+			inFlightSegments += frontier.inFlightSegmentIds.length;
+			pendingSegments += frontier.pendingSegmentIds.length;
+		}
+		execLog("resume", persistedState.batchId, `segment frontier reconstructed`, {
+			tasks: segmentFrontierByTask.size,
+			completedSegments,
+			inFlightSegments,
+			pendingSegments,
+		});
+	}
+
 	// TP-108/112: Runtime V2 backend selection for resumed batches.
 	// MUST be computed before any backend-aware branch (section 3+).
 	const resumeBackend: RuntimeBackend = selectRuntimeBackend(
@@ -903,27 +1134,7 @@ export async function resumeOrchBatch(
 	// TP-109: In workspace mode or V2 execution, .DONE is written in the worktree
 	// at the resolved packet path, not the original discovery path. Resume must
 	// check both locations for authoritative completion detection.
-	const doneTaskIds = new Set<string>();
-	for (const task of persistedState.tasks) {
-		// Check original task folder path
-		if (task.taskFolder && hasTaskDoneMarker(task.taskFolder)) {
-			doneTaskIds.add(task.taskId);
-			continue;
-		}
-		// Check worktree-relative path (packet-home authority)
-		const laneRec = persistedState.lanes.find(l => l.taskIds.includes(task.taskId));
-		if (laneRec?.worktreePath && task.taskFolder) {
-			const resolved = resolveCanonicalTaskPaths(
-				task.taskFolder,
-				laneRec.worktreePath,
-				repoRoot,
-				!!workspaceConfig,
-			);
-			if (existsSync(resolved.donePath)) {
-				doneTaskIds.add(task.taskId);
-			}
-		}
-	}
+	const doneTaskIds = collectDoneTaskIdsForResume(persistedState, repoRoot, workspaceConfig);
 
 	// ── 3b. Detect existing worktrees ────────────────────────────
 	const existingWorktreeTaskIds = new Set<string>();
@@ -1710,13 +1921,36 @@ export async function resumeOrchBatch(
 		for (const taskId of waveResult.failedTaskIds) {
 			const outcome = allTaskOutcomes.find(o => o.taskId === taskId);
 			const laneForTask = latestAllocatedLanes.find(l => l.tasks.some(t => t.taskId === taskId));
+			const taskRecord = batchState.tasks.find((task) => task.taskId === taskId);
 			const exitReason = outcome?.exitReason || "unknown";
 			const hasPartialProgress = (outcome?.partialProgressCommits ?? 0) > 0;
+			const segmentFrontier = buildSupervisorSegmentFrontierSnapshot(
+				taskId,
+				taskRecord?.segmentIds,
+				taskRecord?.activeSegmentId,
+				batchState.segments,
+				outcome?.segmentId,
+			);
+			const segmentId = outcome?.segmentId
+				?? taskRecord?.activeSegmentId
+				?? segmentFrontier?.activeSegmentId
+				?? undefined;
+			const repoId = segmentId
+				? (segmentFrontier?.segments.find((segment) => segment.segmentId === segmentId)?.repoId ?? laneForTask?.repoId)
+				: laneForTask?.repoId;
+			const segmentSummary = segmentId
+				? `  Segment: ${segmentId}${repoId ? ` (repo: ${repoId})` : ""}\n`
+				: "";
+			const frontierSummary = segmentFrontier
+				? `  Segment frontier: ${segmentFrontier.terminalSegments}/${segmentFrontier.totalSegments} terminal\n`
+				: "";
 			emitAlert({
 				category: "task-failure",
 				summary:
 					`⚠️ Task failure: ${taskId}\n` +
 					`  Exit reason: ${exitReason}\n` +
+					segmentSummary +
+					frontierSummary +
 					`  Lane: ${laneForTask?.laneId ?? "unknown"} (lane ${laneForTask?.laneNumber ?? "?"})\n` +
 					`  Partial progress preserved: ${hasPartialProgress ? "yes" : "no"}\n` +
 					`  Batch: wave ${waveIdx + 1}/${batchState.totalWaves}, ` +
@@ -1727,6 +1961,9 @@ export async function resumeOrchBatch(
 					`  - Read STATUS.md and lane logs for diagnosis`,
 				context: {
 					taskId,
+					segmentId,
+					repoId,
+					segmentFrontier,
 					laneId: laneForTask?.laneId,
 					laneNumber: laneForTask?.laneNumber,
 					waveIndex: waveIdx,
@@ -1928,6 +2165,7 @@ export async function resumeOrchBatch(
 			);
 
 			// ── TP-076: Emit supervisor alert for rollback safe-stop ──
+			const rollbackRepoId = extractFailedRepoId(mergeResult) ?? undefined;
 			emitAlert({
 				category: "merge-failure",
 				summary:
@@ -1941,6 +2179,7 @@ export async function resumeOrchBatch(
 				context: {
 					waveIndex: waveIdx,
 					laneNumber: mergeResult.failedLane ?? undefined,
+					repoId: rollbackRepoId,
 					mergeError: `Safe-stop: verification rollback failed at wave ${waveIdx + 1}`,
 					batchProgress: buildBatchProgressSnapshot(batchState),
 				},
@@ -1958,6 +2197,7 @@ export async function resumeOrchBatch(
 				batchState.resilience = defaultResilienceState();
 			}
 
+			const mergeRepoId = extractFailedRepoId(mergeResult) ?? undefined;
 			const retryOutcome = await applyMergeRetryLoop(
 				mergeResult,
 				waveIdx,
@@ -2017,6 +2257,7 @@ export async function resumeOrchBatch(
 					context: {
 						waveIndex: waveIdx,
 						laneNumber: mergeResult.failedLane ?? undefined,
+						repoId: mergeRepoId,
 						mergeError: retryOutcome.errorMessage,
 						batchProgress: buildBatchProgressSnapshot(batchState),
 					},
@@ -2056,6 +2297,7 @@ export async function resumeOrchBatch(
 					context: {
 						waveIndex: waveIdx,
 						laneNumber: mergeResult.failedLane ?? undefined,
+						repoId: mergeRepoId,
 						mergeError: exhaustionMsg,
 						batchProgress: buildBatchProgressSnapshot(batchState),
 					},
@@ -2092,6 +2334,7 @@ export async function resumeOrchBatch(
 					context: {
 						waveIndex: waveIdx,
 						laneNumber: mergeResult.failedLane ?? undefined,
+						repoId: mergeRepoId,
 						mergeError: mergeResult.failureReason || "unknown",
 						batchProgress: buildBatchProgressSnapshot(batchState),
 					},

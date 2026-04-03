@@ -1,9 +1,9 @@
 # Multi-Repo Task Execution Specification (#51)
 
-**Status:** Draft — requested for implementation planning
+**Status:** V2 Aligned — implementation planning baseline updated
 **Priority:** P0 (polyrepo production blocker)
 **Created:** 2026-03-27
-**Updated:** 2026-03-28
+**Updated:** 2026-04-03
 **Related:** #51, `autonomous-supervisor.md`, `implemented/polyrepo-support-spec.md`
 
 ## Problem Statement
@@ -16,7 +16,7 @@ Taskplane workspace mode currently assumes a practical execution model of **one 
 
 Observed failures (polyrepo smoke tests) are consistent with this mismatch:
 - workers complete useful code changes
-- sessions exit successfully
+- lane-runner subprocesses exit successfully
 - `.DONE`/`STATUS.md` are written in a different location than orchestrator expects
 - orchestrator marks tasks failed after apparent completion
 
@@ -59,6 +59,24 @@ This is not a small bug. It is a **model gap**.
 2. Human-perfect checklist discipline
 3. Fully autonomous semantic dependency inference from arbitrary prose
 4. Parallel execution of multiple segments of the same task (deferred)
+
+## MVP Scope (Runtime V2 tranche)
+
+MVP for #51 is intentionally narrow and deterministic:
+
+1. Segment planning produces a deterministic per-task DAG/chain.
+2. Execution runs **one segment at a time per task** on Runtime V2 lane-runner subprocess infrastructure.
+3. Packet authority is enforced through `ExecutionUnit.packet`/`PacketPaths`.
+4. Existing wave-level parallelism across lanes remains unchanged.
+
+### MVP acceptance matrix
+
+| Scenario | Planning expectation | MVP execution expectation |
+|---|---|---|
+| Linear DAG (`A -> B -> C`) | `explicit-dag` or deterministic inferred chain | Segments execute sequentially in dependency order |
+| Fan-out (`A -> {B, C}`) | Edges preserved; both children dependency-ready after `A` | Still one active segment per task; ready children run in stable deterministic order |
+| No DAG metadata in `PROMPT.md` | Planner falls back to deterministic inference from file scope/dependencies | Engine executes inferred chain without manual DAG authoring |
+| Single-repo fallback | `repo-singleton` plan with one segment | Behavior matches existing single-repo task execution semantics |
 
 ---
 
@@ -116,7 +134,7 @@ This prevents split ownership and removes ambiguity during execution/resume.
 
 A task is decomposed into **segments**:
 
-- Segment = execution unit for one repo (repo-scoped worktree/session/commit stream)
+- Segment = execution unit for one repo (repo-scoped worktree/subprocess/commit stream)
 - One task can have N segments (N >= 1)
 - Segments form an intra-task DAG
 
@@ -138,6 +156,17 @@ Scheduler moves from task-level nodes to segment-level nodes:
 ---
 
 ## Execution Model
+
+### Runtime V2 execution path
+
+Execution flows through the orchestrator runtime, not `task-runner.ts`:
+
+1. `extensions/taskplane/execution.ts` builds per-lane work assignments.
+2. `buildExecutionUnit()` materializes authoritative `ExecutionUnit` payloads.
+3. `extensions/taskplane/lane-runner.ts` executes each unit in the lane process.
+4. Worker agents run as subprocesses managed by lane-runner/engine runtime services.
+
+Engine lifecycle runs in the orchestrator worker thread (`engine-worker.ts`), while the extension main thread handles command dispatch, UI state sync, and supervisor tool routing.
 
 ## Segment ordering and DAG
 
@@ -199,7 +228,10 @@ This keeps behavior deterministic while still exposing edge provenance for obser
 
 This matches your requirement: keep global throughput while avoiding intra-task race complexity.
 
-## Dynamic Segment Expansion (runtime)
+## Dynamic Segment Expansion (post-MVP, deferred)
+
+Dynamic segment expansion is explicitly out of MVP scope for this tranche.
+The flow below is retained as the post-MVP design target once baseline sequential segment execution is stable.
 
 Workers may discover new cross-repo requirements while executing a segment.
 
@@ -269,18 +301,15 @@ No other location may be considered authoritative for completion.
 
 ## Engine/runner path contract (new)
 
-Introduce explicit packet-path environment contract for task-runner:
+Runtime V2 uses `ExecutionUnit.packet` as the packet-path authority:
 
-- `TASK_PACKET_PROMPT_PATH`
-- `TASK_PACKET_STATUS_PATH`
-- `TASK_PACKET_DONE_PATH`
-- `TASK_PACKET_REVIEWS_DIR`
+- engine builds an `ExecutionUnit` via `buildExecutionUnit()`
+- `ExecutionUnit.packet` carries `PacketPaths` (`promptPath`, `statusPath`, `donePath`, `reviewsDir`, `taskFolder`)
+- lane execution consumes those paths directly instead of deriving packet files from `cwd`
 
 Execution `cwd` remains the active segment repo worktree.
 
-Task-runner reads/writes packet files via packet-path vars, not by deriving from `cwd`.
-
-This removes split-brain behavior between source/worktree/cross-repo paths.
+This removes split-brain behavior between source/worktree/cross-repo paths without relying on `TASK_PACKET_*` env vars.
 
 ---
 
@@ -299,6 +328,12 @@ Candidate supervisor actions:
 - continue unrelated segments/tasks
 - pause batch only when required
 - escalate to operator only for truly blocked states
+
+Runtime V2 supervisor integration is mailbox/tool driven (not terminal I/O polling). Primary controls are:
+- `orch_status()` for batch/wave/segment progress
+- `send_agent_message(...)` and `broadcast_message(...)` for steering
+- `read_agent_status(...)` / `read_agent_replies(...)` for observability
+- `orch_retry_task(...)`, `orch_skip_task(...)`, and `orch_force_merge(...)` for recovery operations
 
 This aligns with `autonomous-supervisor.md` and unattended operation goals.
 
@@ -390,45 +425,58 @@ Dashboard should display:
 
 ---
 
+## Implementation Coverage Snapshot (V2 alignment)
+
+### Already implemented
+
+- **Types/contracts:** `ExecutionUnit`, `PacketPaths`, `TaskSegmentPlan`, `SegmentId` in `extensions/taskplane/types.ts`.
+- **Planning/discovery path:** segment DAG parsing + deterministic inference and wave assignment wiring in `extensions/taskplane/waves.ts`.
+- **Persistence baseline:** schema v4 segment state fields and migrations (TP-081).
+
+### Still needed for full #51 completion
+
+- **Execution engine completion:** full segment-aware runtime flow in `execution.ts` across all policy paths.
+- **Lane-runner integration hardening:** consistent per-segment unit execution and packet-path authority through lane-runner boundaries.
+- **Resume parity:** deterministic segment-frontier reconstruction and continuation across interruptions/restarts.
+
 ## Implementation Plan
 
-## Phase A — Spec + contracts (this doc)
+## Phase A — Spec + contracts (this doc) ✅ Complete
 
 - finalize data model
 - finalize env/path contract
 - finalize failure/supervisor protocol
 
-## Phase B — Planning + schema
+## Phase B — TP-081: Planning + schema baseline ✅ Complete
 
 - segment graph builder
 - batch-state v4 migration
 - deterministic segment scheduling rules
 
-## Phase C — Execution engine
+## Phase C — TP-133: Execution engine completion
 
 - dual-context execution (segment repo + packet repo)
-- packet-path env vars
+- `ExecutionUnit.packet`/`PacketPaths` authority through execution flow
 - segment-level outcome handling
 
-## Phase D — Supervisor policy integration
+## Phase D — TP-134: Lane-runner integration
 
-- segment-failure alert payloads
-- supervisor decision hooks
-- continue-unaffected behavior
+- per-segment execution in `lane-runner.ts`
+- subprocess agent-host lifecycle parity across lanes
+- packet-home write guarantees during lane execution
 
-## Phase E — Dashboard + docs + templates
+## Phase E — TP-135: Supervisor integration + observability
 
-- segment visualization
-- packet-home status visibility
-- prompt template updates for optional explicit segment hints
+- segment-failure alert payloads and decision hooks
+- mailbox/tool-driven supervisor control path
+- continue-unaffected behavior + intervention auditability
 
-## Phase F — acceptance validation
+## Phase F — TP-136: Resume + acceptance validation
 
-- polyrepo 6-task smoke passes twice consecutively
-- forced interruption + resume passes
-- dynamic segment-expansion scenario passes (worker requests new repo segment mid-task)
-- no false `.DONE` failures
-- no `TASK_AUTOSTART file not found` for valid packet paths
+- forced interruption + resume passes with deterministic segment frontier
+- polyrepo smoke pass coverage for linear and fan-out topologies
+- no false `.DONE` failures for valid packet paths
+- dynamic segment-expansion scenarios validated in post-MVP tranche
 
 ---
 

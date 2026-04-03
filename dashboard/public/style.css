@@ -507,6 +507,23 @@ body {
   text-overflow: ellipsis;
 }
 
+.lane-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 8px;
+  background: var(--badge-running-bg);
+  color: var(--accent);
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .lane-right {
   display: flex;
   align-items: center;
@@ -608,6 +625,25 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.task-segment-progress {
+  font-family: var(--font-mono);
+  color: var(--accent);
+}
+
+.task-packet-home {
+  font-family: var(--font-mono);
+  color: var(--magenta);
+}
+
+.task-detail-sep {
+  color: var(--text-faint);
+  margin: 0 2px;
+}
+
+.task-step-main {
+  color: var(--text-muted);
 }
 
 .task-iter {
