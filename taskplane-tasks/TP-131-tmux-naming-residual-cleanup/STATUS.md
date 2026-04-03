@@ -1,23 +1,23 @@
 # TP-131: TMUX Naming Residual Cleanup — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Dashboard frontend cleanup
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Run audit script and log baseline
-- [ ] Grep inventory across scope files
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Run audit script and log baseline
+- [x] Grep inventory across scope files
 
 ### Step 1: Dashboard frontend cleanup
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Rename tmuxSessions → sessions in app.js
 - [ ] Rename tmuxSet → sessionSet or remove
 - [ ] Update liveness logic comments
@@ -55,4 +55,8 @@
 ## Execution Log
 
 | Timestamp | Action | Outcome |
+| 2026-04-03 15:39 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-03 15:39 | Step 0 started | Preflight |
+| 2026-04-03 15:42 | Baseline tmux audit | 358 references total; 0 functional usage; roots: extensions/bin/templates/dashboard |
+| 2026-04-03 15:43 | Scope grep inventory | app.js 27, style.css 12, server.cjs 21, template 4, rpc-wrapper 3, task-orchestrator 1, audit script 19, guard test 3 |
 |-----------|--------|---------|
