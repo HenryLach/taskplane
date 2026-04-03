@@ -1,0 +1,8 @@
+TP-130 complete on 2026-04-03.
+
+Summary:
+- Added engine-worker uncaughtException/unhandledRejection IPC diagnostics with stack/source and send-ack exit sequencing.
+- Added engine-worker stderr capture in extension.ts with tee-to-parent, persisted telemetry log, and stderr tail in supervisor failure alerts.
+- Added reviewer snapshot refresh consecutive-failure resilience in lane-runner.ts with threshold disable + success reset.
+- Added/updated source-contract tests for error handlers, stderr wiring, and snapshot threshold behavior.
+- Full extension test suite passed.
