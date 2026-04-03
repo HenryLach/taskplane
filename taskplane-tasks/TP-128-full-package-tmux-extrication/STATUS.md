@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 9
+**Review Counter:** 11
 **Iteration:** 1
 **Size:** M
 
@@ -44,7 +44,8 @@
 ### Step 4: Expand audit script scope
 **Status:** 🟨 In Progress
 - [ ] Update audit to scan full package
-- [ ] Update guard test if needed
+- [ ] Expand strict functional detection for JS/CJS/MJS exec+shell tmux patterns
+- [ ] Update guard test for expanded scope and deterministic ordering
 
 ### Step 5: Tests and verification
 **Status:** ⬜ Not Started
@@ -77,6 +78,8 @@
 - R005 Suggestion: Run targeted grep/audit on `bin/taskplane.mjs` after command removal to confirm no functional TMUX command paths remain.
 - R005 Suggestion: Add a brief migration note in final delivery notes for removed `install-tmux` CLI command.
 - R008 Suggestion: After Step 3 edits, run focused grep on supervisor template/primer/source files and log any residual TMUX references.
+- R011 Suggestion: In guard tests, assert expanded multi-root scope and deterministic ordering across platforms.
+- R011 Suggestion: Log post-change TMUX residual counts by directory (extensions/bin/templates/dashboard) in STATUS for traceability.
 
 ## Execution Log
 
@@ -96,3 +99,5 @@
 | 2026-04-03 04:41 | Review R007 | code Step 2: APPROVE |
 | 2026-04-03 04:42 | Review R008 | plan Step 3: REVISE |
 | 2026-04-03 04:42 | Review R009 | plan Step 3: APPROVE |
+| 2026-04-03 04:45 | Review R010 | code Step 3: APPROVE |
+| 2026-04-03 04:47 | Review R011 | plan Step 4: REVISE |
