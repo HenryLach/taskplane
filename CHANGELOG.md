@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.7] - 2026-04-03
+
+### Fixed
+- **Crash fix: onTelemetry guard** — The `onTelemetry` call added in v0.24.6 for immediate context % refresh was missing the optional callback guard. Crashed the engine when `spawnAgent` was called without `onTelemetry` (merge agent, reviewer). First real-world validation of TP-130’s `uncaughtException` diagnostic pipeline.
+
 ## [0.24.6] - 2026-04-03
 
 ### New

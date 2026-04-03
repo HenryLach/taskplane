@@ -641,7 +641,9 @@ export function spawnAgent(
 							contextUsage = event.data.contextUsage;
 							emitEvent("context_usage", { ...event.data.contextUsage });
 							// Emit telemetry immediately so context % is live in dashboard
-							onTelemetry({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd, toolCalls, lastTool, contextUsage });
+							if (onTelemetry) {
+								onTelemetry({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd, toolCalls, lastTool, contextUsage });
+							}
 						}
 						break;
 					}

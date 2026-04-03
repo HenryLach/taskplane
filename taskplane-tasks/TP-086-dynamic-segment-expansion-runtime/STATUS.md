@@ -1,80 +1,31 @@
 # TP-086: Dynamic Segment Expansion Protocol and Supervisor Decisions — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-28
-**Review Level:** 3
-**Review Counter:** 0
-**Iteration:** 0
-**Size:** M
+**Current Step:** N/A
+**Status:** ⏸️ Superseded
+**Last Updated:** 2026-04-03
+**Superseded Reason:** Runtime V2 architectural changes (TP-100–TP-131) invalidated the implementation approach. Goals remain valid but tasks must be restaged with V2-native file scopes, dependency chains, and implementation patterns.
 
----
+## What Changed
 
-### Step 0: Preflight
-**Status:** ⬜ Not Started
+These tasks were created 2026-03-28 targeting TMUX-era architecture:
+- task-runner.ts as primary execution path → now lane-runner.ts + agent-host.ts
+- TASK_PACKET_* env vars → ExecutionUnit.packet + LaneRunnerConfig
+- TMUX session management → process registry + mailbox
+- Engine on main thread → engine-worker.ts worker thread
 
-- [ ] Read current worker→engine IPC contracts and supervisor alert flow
-- [ ] Define structured request/decision payload schemas before implementation
-- [ ] Identify minimal validation needed before supervisor sees a request
+## What's Still Valid
 
----
+The underlying goals (multi-repo segment execution, packet-path authority,
+segment frontier scheduling, dynamic expansion, supervisor recovery) remain
+needed. The spec (docs/specifications/taskplane/multi-repo-task-execution.md)
+needs V2 alignment before restaging.
 
-### Step 1: Expansion request protocol
-**Status:** ⬜ Not Started
+## Restage Plan
 
-- [ ] Add `segment-expansion-request` contract (taskId, fromRepo, requestedRepoIds, rationale, optional suggested edges)
-- [ ] Wire request emission path from worker/runtime context
-- [ ] Add deterministic payload validation (shape + known repo IDs when available)
-
----
-
-### Step 2: Supervisor decision plumbing
-**Status:** ⬜ Not Started
-
-- [ ] Surface requests to supervisor as structured actionable alerts/messages
-- [ ] Add decision response contract: `approve | modify | reject`
-- [ ] Persist/emit decision metadata sufficient for TP-087 graph mutation stage
-
----
-
-### Step 3: Playbook and observability hooks
-**Status:** ⬜ Not Started
-
-- [ ] Update supervisor primer for expansion request handling
-- [ ] Ensure user-visible reporting includes request summary + decision outcome
-
----
-
-### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
-
-- [ ] Add/adjust tests for request payload validation
-- [ ] Add/adjust tests for approve/modify/reject decision plumbing
-- [ ] Run full suite: `cd extensions && npx vitest run`
-- [ ] Fix all failures
-
----
-
-### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
-
-- [ ] Update spec wording if protocol details are finalized/renamed
-- [ ] Log discoveries in STATUS.md
-- [ ] Create `.DONE`
-
----
-
-## Reviews
-
-| # | Type | Step | Verdict | File |
-|---|------|------|---------|------|
-
----
-
-## Discoveries
-
-| Discovery | Disposition | Location |
-|-----------|-------------|----------|
+When ready to implement multi-repo segments:
+1. Update spec for Runtime V2 contracts
+2. Create new tasks with V2-native scopes and dependencies
+3. Archive these tasks
 
 ---
 
@@ -82,16 +33,5 @@
 
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
-| 2026-03-28 | Task staged | PROMPT.md and STATUS.md created |
-
----
-
-## Blockers
-
-*None*
-
----
-
-## Notes
-
-*Reserved for execution notes*
+| 2026-03-28 | Created | Original task staged |
+| 2026-04-03 | Superseded | Runtime V2 changes invalidated implementation approach |

@@ -1,74 +1,31 @@
 # TP-082: Packet-Path Env Contract and Task-Runner Authority — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-28
-**Review Level:** 3
-**Review Counter:** 0
-**Iteration:** 0
-**Size:** M
+**Current Step:** N/A
+**Status:** ⏸️ Superseded
+**Last Updated:** 2026-04-03
+**Superseded Reason:** Runtime V2 architectural changes (TP-100–TP-131) invalidated the implementation approach. Goals remain valid but tasks must be restaged with V2-native file scopes, dependency chains, and implementation patterns.
 
----
+## What Changed
 
-### Step 0: Preflight
-**Status:** ⬜ Not Started
+These tasks were created 2026-03-28 targeting TMUX-era architecture:
+- task-runner.ts as primary execution path → now lane-runner.ts + agent-host.ts
+- TASK_PACKET_* env vars → ExecutionUnit.packet + LaneRunnerConfig
+- TMUX session management → process registry + mailbox
+- Engine on main thread → engine-worker.ts worker thread
 
-- [ ] Trace current worker launch env and task-runner path resolution flow
-- [ ] Identify all places in task-runner that derive packet paths from `cwd`
-- [ ] Define explicit env var contract and fallback policy before implementation
+## What's Still Valid
 
----
+The underlying goals (multi-repo segment execution, packet-path authority,
+segment frontier scheduling, dynamic expansion, supervisor recovery) remain
+needed. The spec (docs/specifications/taskplane/multi-repo-task-execution.md)
+needs V2 alignment before restaging.
 
-### Step 1: Add packet-path environment contract
-**Status:** ⬜ Not Started
+## Restage Plan
 
-- [ ] Add support for `TASK_PACKET_PROMPT_PATH`
-- [ ] Add support for `TASK_PACKET_STATUS_PATH`
-- [ ] Add support for `TASK_PACKET_DONE_PATH`
-- [ ] Add support for `TASK_PACKET_REVIEWS_DIR`
-- [ ] Thread vars into task-runner invocation environment (where execution layer already has packet path info)
-
----
-
-### Step 2: Enforce authoritative packet file resolution in task-runner
-**Status:** ⬜ Not Started
-
-- [ ] Update task-runner to prefer packet env paths over cwd-derived paths
-- [ ] Ensure `.DONE` checks/write/read use packet-path authority when provided
-- [ ] Preserve backward compatibility when env vars are absent (mono-repo / legacy)
-
----
-
-### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
-
-- [ ] Add/adjust tests for packet-path env precedence
-- [ ] Add/adjust tests for authoritative `.DONE` path behavior
-- [ ] Run full suite: `cd extensions && npx vitest run`
-- [ ] Fix all failures
-
----
-
-### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
-
-- [ ] Update docs for packet-path env contract if names/fallback changed
-- [ ] Log discoveries in STATUS.md
-- [ ] Create `.DONE`
-
----
-
-## Reviews
-
-| # | Type | Step | Verdict | File |
-|---|------|------|---------|------|
-
----
-
-## Discoveries
-
-| Discovery | Disposition | Location |
-|-----------|-------------|----------|
+When ready to implement multi-repo segments:
+1. Update spec for Runtime V2 contracts
+2. Create new tasks with V2-native scopes and dependencies
+3. Archive these tasks
 
 ---
 
@@ -76,16 +33,5 @@
 
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
-| 2026-03-28 | Task staged | PROMPT.md and STATUS.md created |
-
----
-
-## Blockers
-
-*None*
-
----
-
-## Notes
-
-*Reserved for execution notes*
+| 2026-03-28 | Created | Original task staged |
+| 2026-04-03 | Superseded | Runtime V2 changes invalidated implementation approach |

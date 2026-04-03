@@ -1,81 +1,31 @@
 # TP-084: Segment Observability, Docs, and Polyrepo Acceptance — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-03-28
-**Review Level:** 1
-**Review Counter:** 0
-**Iteration:** 0
-**Size:** M
+**Current Step:** N/A
+**Status:** ⏸️ Superseded
+**Last Updated:** 2026-04-03
+**Superseded Reason:** Runtime V2 architectural changes (TP-100–TP-131) invalidated the implementation approach. Goals remain valid but tasks must be restaged with V2-native file scopes, dependency chains, and implementation patterns.
 
----
+## What Changed
 
-### Step 0: Preflight
-**Status:** ⬜ Not Started
+These tasks were created 2026-03-28 targeting TMUX-era architecture:
+- task-runner.ts as primary execution path → now lane-runner.ts + agent-host.ts
+- TASK_PACKET_* env vars → ExecutionUnit.packet + LaneRunnerConfig
+- TMUX session management → process registry + mailbox
+- Engine on main thread → engine-worker.ts worker thread
 
-- [ ] Review current dashboard model and identify missing segment-level visibility
-- [ ] Map acceptance criteria from spec to concrete test scenarios
-- [ ] Confirm prior tasks exposed all required runtime fields
+## What's Still Valid
 
----
+The underlying goals (multi-repo segment execution, packet-path authority,
+segment frontier scheduling, dynamic expansion, supervisor recovery) remain
+needed. The spec (docs/specifications/taskplane/multi-repo-task-execution.md)
+needs V2 alignment before restaging.
 
-### Step 1: Segment observability in dashboard/status surfaces
-**Status:** ⬜ Not Started
+## Restage Plan
 
-- [ ] Add packet-home repo visibility for each task/segment
-- [ ] Add active segment per lane and segment status transitions
-- [ ] Add supervisor intervention/reorder visibility where available
-
----
-
-### Step 2: Documentation alignment
-**Status:** ⬜ Not Started
-
-- [ ] Update command/architecture docs to explain segment-based execution model
-- [ ] Update spec implementation status + any finalized syntax/behavior notes
-- [ ] Ensure docs clearly state segment bundles are deferred post-v1
-
----
-
-### Step 3: Polyrepo acceptance validation
-**Status:** ⬜ Not Started
-
-- [ ] Execute polyrepo smoke/acceptance scenarios for segment model
-- [ ] Verify no false `.DONE` failures and no packet-path resolution regressions
-- [ ] Validate forced interruption + resume at segment level
-- [ ] Validate dynamic segment expansion scenario; if behavior is incomplete, document exact gap and stage follow-up task(s) without silent pass
-
----
-
-### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
-
-- [ ] Run full suite: `cd extensions && npx vitest run`
-- [ ] Run CLI smoke checks: `node bin/taskplane.mjs help` and `node bin/taskplane.mjs doctor`
-- [ ] Fix all failures
-
----
-
-### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
-
-- [ ] Log discoveries in STATUS.md
-- [ ] Record acceptance outcomes clearly (pass/fail + evidence)
-- [ ] Create `.DONE`
-
----
-
-## Reviews
-
-| # | Type | Step | Verdict | File |
-|---|------|------|---------|------|
-
----
-
-## Discoveries
-
-| Discovery | Disposition | Location |
-|-----------|-------------|----------|
+When ready to implement multi-repo segments:
+1. Update spec for Runtime V2 contracts
+2. Create new tasks with V2-native scopes and dependencies
+3. Archive these tasks
 
 ---
 
@@ -83,16 +33,5 @@
 
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
-| 2026-03-28 | Task staged | PROMPT.md and STATUS.md created |
-
----
-
-## Blockers
-
-*None*
-
----
-
-## Notes
-
-*Reserved for execution notes*
+| 2026-03-28 | Created | Original task staged |
+| 2026-04-03 | Superseded | Runtime V2 changes invalidated implementation approach |
