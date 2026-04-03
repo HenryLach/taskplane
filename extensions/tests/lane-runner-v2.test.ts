@@ -118,6 +118,14 @@ describe("2.x: Lane-runner execution contract", () => {
 		expect(laneRunnerSrc).toContain("mailboxDir");
 		expect(laneRunnerSrc).toContain("config.batchId, workerAgentId");
 	});
+
+	it("2.12: reviewer snapshot refresh has failure threshold and success reset", () => {
+		expect(laneRunnerSrc).toContain("reviewerSnapshotFailures = 0");
+		expect(laneRunnerSrc).toContain("reviewerRefreshFailureThreshold = 5");
+		expect(laneRunnerSrc).toContain("if (ok)");
+		expect(laneRunnerSrc).toContain("clearInterval(reviewerRefresh)");
+		expect(laneRunnerSrc).toContain("Snapshot refresh disabled");
+	});
 });
 
 // ── 3. executeLaneV2 integration ────────────────────────────────────

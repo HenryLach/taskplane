@@ -25,7 +25,7 @@ const CATEGORY_ORDER = [
 ];
 
 const STRICT_FAILURE_EXIT_CODE = 2;
-const SCAN_ROOTS = ["extensions", "bin", "templates", "dashboard"];
+const SCAN_ROOTS = ["extensions", "bin", "templates", "dashboard", "skills"];
 const SCAN_EXTENSIONS = new Set([
 	".ts",
 	".tsx",

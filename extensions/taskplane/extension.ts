@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-age
 import { Type } from "@mariozechner/pi-ai";
 
 import { execSync, execFileSync } from "child_process";
-import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync, readFileSync, statSync, createWriteStream } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { fork, type ChildProcess } from "child_process";
@@ -964,6 +964,7 @@ export function startBatchInWorker(
 		child = fork(workerPath, [], {
 			env: { ...process.env, TASKPLANE_ENGINE_FORK: "1" },
 			serialization: "advanced",
+			stdio: ["inherit", "inherit", "pipe", "ipc"],
 		});
 	} catch (spawnErr: unknown) {
 		const errMsg = spawnErr instanceof Error ? spawnErr.message : String(spawnErr);
@@ -1007,6 +1008,64 @@ export function startBatchInWorker(
 		return null;
 	}
 
+	const telemetryDir = join(wkData.cwd, ".pi", "telemetry");
+	if (!existsSync(telemetryDir)) mkdirSync(telemetryDir, { recursive: true });
+	const pendingBatchId = `pending-${Date.now()}`;
+	const toSafeBatchId = (batchId: string) => batchId.replace(/[^a-zA-Z0-9._-]/g, "_");
+	let stderrBatchId = toSafeBatchId(batchState.batchId || pendingBatchId);
+	let stderrLogPath = join(telemetryDir, `${stderrBatchId}-engine-worker-stderr.log`);
+	let stderrLogStream = createWriteStream(stderrLogPath, { flags: "a" });
+	let stderrTailBuffer = "";
+
+	const appendStderr = (chunk: Buffer | string) => {
+		const text = Buffer.isBuffer(chunk) ? chunk.toString("utf-8") : chunk;
+		if (!text) return;
+		process.stderr.write(text);
+		stderrLogStream.write(text);
+		stderrTailBuffer = (stderrTailBuffer + text).slice(-24_000);
+	};
+
+	const rotateStderrLogToBatch = (batchId: string | undefined) => {
+		if (!batchId) return;
+		const resolvedBatchId = toSafeBatchId(batchId.trim());
+		if (!resolvedBatchId || resolvedBatchId === stderrBatchId) return;
+
+		const nextPath = join(telemetryDir, `${resolvedBatchId}-engine-worker-stderr.log`);
+		try {
+			stderrLogStream.end();
+			const pendingContent = existsSync(stderrLogPath) ? readFileSync(stderrLogPath, "utf-8") : "";
+			if (pendingContent) writeFileSync(nextPath, pendingContent, { flag: "a" });
+			if (existsSync(stderrLogPath)) unlinkSync(stderrLogPath);
+		} catch {
+			// best effort rename/copy
+		}
+
+		stderrBatchId = resolvedBatchId;
+		stderrLogPath = nextPath;
+		stderrLogStream = createWriteStream(stderrLogPath, { flags: "a" });
+	};
+
+	const readStderrTail = (lineCount = 25): string => {
+		let content = stderrTailBuffer;
+		try {
+			if (existsSync(stderrLogPath)) content = readFileSync(stderrLogPath, "utf-8");
+		} catch {
+			// fallback to in-memory tail
+		}
+		const lines = content.split(/\r?\n/).filter(Boolean);
+		if (lines.length === 0) return "(no stderr output captured)";
+		return lines.slice(-lineCount).join("\n");
+	};
+
+	child.stderr?.on("data", appendStderr);
+	child.on("close", () => {
+		try {
+			stderrLogStream.end();
+		} catch {
+			// ignore
+		}
+	});
+
 	// Send workerData as first IPC message
 	child.send({ type: "init", data: wkData });
 
@@ -1039,32 +1098,41 @@ export function startBatchInWorker(
 
 			case "state-sync":
 				applySerializedState(batchState, msg.state);
+				rotateStderrLogToBatch(msg.state.batchId);
 				updateWidget();
 				break;
 
 			case "complete":
 				applySerializedState(batchState, msg.state);
+				rotateStderrLogToBatch(msg.state.batchId);
 				updateWidget();
 				settle();
 				break;
 
-			case "error":
+			case "error": {
+				const sourceLabel = msg.source ? ` (${msg.source})` : "";
+				const stackLine = msg.stack?.split("\n")[0]?.trim();
 				if (batchState.phase !== "completed" && batchState.phase !== "failed") {
 					batchState.phase = "failed";
 					batchState.endedAt = Date.now();
-					batchState.errors.push(`Unhandled engine error: ${msg.message}`);
+					batchState.errors.push(`Unhandled engine error${sourceLabel}: ${msg.message}`);
+					if (stackLine) batchState.errors.push(`Engine stack: ${stackLine}`);
 				}
 				ctx.ui.notify(
-					`❌ Engine crashed with unhandled error: ${msg.message}\n` +
+					`❌ Engine crashed with unhandled error${sourceLabel}: ${msg.message}\n` +
+					(stackLine ? `   ${stackLine}\n` : "") +
 					`   Batch ${batchState.batchId} marked as failed.`,
 					"error",
 				);
 				updateWidget();
 				break;
+			}
 		}
 	});
 
 	child.on("error", (err: Error) => {
+		rotateStderrLogToBatch(batchState.batchId || undefined);
+		const stderrTail = readStderrTail();
 		if (batchState.phase !== "completed" && batchState.phase !== "failed") {
 			batchState.phase = "failed";
 			batchState.endedAt = Date.now();
@@ -1082,6 +1150,7 @@ export function startBatchInWorker(
 			summary:
 				`🔴 Engine process error — batch ${batchState.batchId} marked as failed\n` +
 				`  Error: ${err.message}\n\n` +
+				`Engine stderr tail (${stderrLogPath}):\n${stderrTail}\n\n` +
 				`This is a critical engine failure. The batch cannot continue.\n` +
 				`Available actions:\n` +
 				`  - orch_status() to inspect state\n` +
@@ -1103,6 +1172,8 @@ export function startBatchInWorker(
 
 	child.on("exit", (code: number | null) => {
 		if (code !== 0 && !settled) {
+			rotateStderrLogToBatch(batchState.batchId || undefined);
+			const stderrTail = readStderrTail();
 			if (batchState.phase !== "completed" && batchState.phase !== "failed") {
 				batchState.phase = "failed";
 				batchState.endedAt = Date.now();
@@ -1119,6 +1190,7 @@ export function startBatchInWorker(
 				summary:
 					`🔴 Engine process died unexpectedly (exit code ${code})\n` +
 					`  Batch ${batchState.batchId} marked as failed.\n\n` +
+					`Engine stderr tail (${stderrLogPath}):\n${stderrTail}\n\n` +
 					`This is a critical engine failure. The batch cannot continue.\n` +
 					`Available actions:\n` +
 					`  - orch_status() to inspect state\n` +

@@ -32,6 +32,8 @@ import type {
 /**
  * Messages sent FROM the worker TO the main thread.
  */
+export type WorkerErrorSource = "enginePromise" | "uncaughtException" | "unhandledRejection";
+
 export type WorkerToMainMessage =
 	| { type: "notify"; msg: string; level: "info" | "warning" | "error" }
 	| { type: "monitor-update"; state: MonitorState }
@@ -39,7 +41,7 @@ export type WorkerToMainMessage =
 	| { type: "supervisor-alert"; alert: SupervisorAlert }
 	| { type: "state-sync"; state: SerializedBatchState }
 	| { type: "complete"; state: SerializedBatchState }
-	| { type: "error"; message: string };
+	| { type: "error"; message: string; stack?: string; source?: WorkerErrorSource };
 
 /**
  * Messages sent FROM the main thread TO the worker.
@@ -194,11 +196,72 @@ export function applySerializedState(
 
 // Guard: only run engine main when launched via fork() with the sentinel env var.
 if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "function") {
-	const send = (msg: WorkerToMainMessage) => process.send!(msg);
+	const send = (msg: WorkerToMainMessage) => {
+		try {
+			process.send?.(msg);
+		} catch {
+			// best effort only
+		}
+	};
+
+	const sendWithAck = (msg: WorkerToMainMessage, onFlushed: () => void) => {
+		if (typeof process.send !== "function" || !process.connected) {
+			onFlushed();
+			return;
+		}
+
+		let flushed = false;
+		const done = () => {
+			if (flushed) return;
+			flushed = true;
+			onFlushed();
+		};
+
+		try {
+			(process.send as (
+				message: WorkerToMainMessage,
+				sendHandle?: unknown,
+				options?: unknown,
+				callback?: (error: Error | null) => void,
+			) => boolean)(msg, undefined, undefined, () => done());
+			setTimeout(done, 75).unref();
+		} catch {
+			done();
+		}
+	};
+
+	const normalizeError = (err: unknown): { message: string; stack?: string } => {
+		if (err instanceof Error) return { message: err.message, stack: err.stack };
+		return { message: String(err) };
+	};
 
 	// Wait for the init message carrying workerData, then start the engine.
 	process.once("message", async (initMsg: { type: string; data: EngineWorkerData }) => {
 		if (initMsg?.type !== "init") return;
+
+		let batchState: OrchBatchRuntimeState | null = null;
+		let fatalHandled = false;
+		const reportFatalAndExit = (source: WorkerErrorSource, err: unknown) => {
+			if (fatalHandled) return;
+			fatalHandled = true;
+
+			const normalized = normalizeError(err);
+			if (batchState && batchState.phase !== "completed" && batchState.phase !== "failed") {
+				batchState.phase = "failed";
+				batchState.endedAt = Date.now();
+				batchState.errors.push(`[${source}] ${normalized.message}`);
+			}
+
+			if (batchState) send({ type: "state-sync", state: serializeBatchState(batchState) });
+			sendWithAck(
+				{ type: "error", source, message: normalized.message, stack: normalized.stack },
+				() => process.exit(1),
+			);
+			setTimeout(() => process.exit(1), 200).unref();
+		};
+
+		process.once("uncaughtException", (err: unknown) => reportFatalAndExit("uncaughtException", err));
+		process.once("unhandledRejection", (reason: unknown) => reportFatalAndExit("unhandledRejection", reason));
 
 		// Dynamic imports — only loaded in engine context to avoid circular
 		// dependencies when this module is imported from extension.ts
@@ -209,7 +272,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 		const data = initMsg.data;
 
 		// Create a fresh batch state for this process
-		const batchState: OrchBatchRuntimeState = freshOrchBatchState();
+		batchState = freshOrchBatchState();
 		batchState.phase = "launching";
 		batchState.startedAt = Date.now();
 
@@ -220,6 +283,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 		// Main process sends pause/resume/abort signals via IPC.
 		// We apply them to the in-process batchState.pauseSignal.
 		process.on("message", (msg: WorkerInMessage) => {
+			if (!batchState) return;
 			switch (msg.type) {
 				case "pause":
 					batchState.pauseSignal.paused = true;
@@ -236,6 +300,7 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 		// ── Callback factories (replace ctx-dependent callbacks) ─────
 		const onNotify = (message: string, level: "info" | "warning" | "error") => {
 			send({ type: "notify", msg: message, level });
+			if (!batchState) return;
 			// Sync batch state on every notify (lightweight — just the summary fields)
 			send({ type: "state-sync", state: serializeBatchState(batchState) });
 		};
@@ -292,15 +357,15 @@ if (process.env.TASKPLANE_ENGINE_FORK === "1" && typeof process.send === "functi
 				process.disconnect?.();
 			})
 			.catch((err: unknown) => {
-				const errMsg = err instanceof Error ? err.message : String(err);
+				const normalized = normalizeError(err);
 				// Ensure batch state reflects the failure
 				if (batchState.phase !== "completed" && batchState.phase !== "failed") {
 					batchState.phase = "failed";
 					batchState.endedAt = Date.now();
-					batchState.errors.push(`Unhandled engine error: ${errMsg}`);
+					batchState.errors.push(`Unhandled engine error: ${normalized.message}`);
 				}
 				send({ type: "state-sync", state: serializeBatchState(batchState) });
-				send({ type: "error", message: errMsg });
+				send({ type: "error", source: "enginePromise", message: normalized.message, stack: normalized.stack });
 				process.disconnect?.();
 			});
 	});

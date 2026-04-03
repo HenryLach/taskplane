@@ -75,6 +75,8 @@ function normalizeBatchStateIngress(state) {
 
   for (const lane of state.lanes) {
     if (!lane || typeof lane !== "object") continue;
+    // Legacy compatibility: older persisted states stored lane session IDs under
+    // `tmuxSessionName`. Normalize to `laneSessionId` at ingress and drop legacy key.
     const laneSessionId = typeof lane.laneSessionId === "string"
       ? lane.laneSessionId
       : (typeof lane.tmuxSessionName === "string" ? lane.tmuxSessionName : undefined);
@@ -191,9 +193,9 @@ function parseStatusMd(taskFolder) {
   return null;
 }
 
-function getTmuxSessions() {
-  // Runtime V2 no longer relies on TMUX sessions.
-  // Keep field shape stable for dashboard clients that still read `tmuxSessions`.
+function getActiveSessions() {
+  // Runtime V2 no longer relies on external terminal multiplexers for liveness.
+  // Dashboard session data is driven by runtime registry + persisted state.
   return [];
 }
 
@@ -236,15 +238,15 @@ function loadLaneStates() {
 const telemetryTailStates = new Map();
 
 /**
- * Module-level accumulated telemetry per tmux prefix.
+ * Module-level accumulated telemetry per session prefix.
  * Persists across poll ticks so incremental tail reads accumulate correctly.
- * Key: tmux prefix → { inputTokens, outputTokens, ... }
+ * Key: session prefix → { inputTokens, outputTokens, ... }
  */
 const telemetryAccumulators = new Map();
 
 /**
  * Tracks which files are currently contributing to each prefix.
- * Key: tmux prefix → Set of absolute file paths
+ * Key: session prefix → Set of absolute file paths
  * Used to detect file rotation: when files change, accumulator is reset.
  */
 const telemetryPrefixFiles = new Map();
@@ -530,7 +532,7 @@ function loadTelemetryData(batchState) {
   const telemetryDir = path.join(REPO_ROOT, ".pi", "telemetry");
   const result = {};
 
-  // Build lane number → tmux prefix mapping from batch state
+  // Build lane number → session prefix mapping from batch state
   const laneToPrefix = {};
   if (batchState && batchState.lanes) {
     for (const lane of batchState.lanes) {
@@ -563,11 +565,11 @@ function loadTelemetryData(batchState) {
     const parsed = parseTelemetryFilename(file);
     if (!parsed) continue;
 
-    // Determine the key (tmux prefix)
+    // Determine the key (session prefix)
     let prefix;
     if (parsed.role === "merger") {
-      // Merge agent — derive prefix from lane naming so it matches the tmux
-      // session name used by the client (e.g. "orch-henrylach-merge-1").
+      // Merge agent — derive prefix from lane naming so it matches the
+      // session ID used by the client (e.g. "orch-henrylach-merge-1").
       // Lane sessions: "orch-{opId}-lane-{N}" → merge sessions: "orch-{opId}-merge-{N}".
       const firstLanePrefix = Object.values(laneToPrefix)[0]; // e.g. "orch-henrylach-lane-1"
       const opPrefix = firstLanePrefix?.replace(/-lane-\d+$/, ""); // "orch-henrylach"
@@ -1029,7 +1031,7 @@ function synthesizeLaneStateFromSnapshot(key, snap, fallbackBatchId) {
 /** Build full dashboard state object for the frontend. */
 function buildDashboardState() {
   const state = loadBatchState();
-  const tmuxSessions = getTmuxSessions();
+  const sessions = getActiveSessions();
   const rawLaneStates = loadLaneStates();
   // Filter stale lane states from previous batches.
   // Lane state files persist across batches (same filename), so without
@@ -1046,7 +1048,16 @@ function buildDashboardState() {
   const supervisor = loadSupervisorData(state);
 
   if (!state) {
-    return { batch: null, tmuxSessions, laneStates: {}, telemetry: {}, batchTotalCost: 0, supervisor: null, timestamp: Date.now() };
+    return {
+      batch: null,
+      sessions,
+      tmuxSessions: sessions, // Legacy compatibility field for older dashboard clients
+      laneStates: {},
+      telemetry: {},
+      batchTotalCost: 0,
+      supervisor: null,
+      timestamp: Date.now(),
+    };
   }
 
   const tasks = (state.tasks || []).map((task) => {
@@ -1108,7 +1119,8 @@ function buildDashboardState() {
       // Additive field — absent in v1 state files, frontend must default to "repo".
       mode: state.mode || "repo",
     },
-    tmuxSessions,
+    sessions,
+    tmuxSessions: sessions, // Legacy compatibility field for older dashboard clients
     timestamp: Date.now(),
   };
 }
@@ -1156,68 +1168,6 @@ function serveStatic(req, res) {
 // ─── SSE Stream ─────────────────────────────────────────────────────────────
 
 const sseClients = new Set();
-
-// ─── Pane Capture SSE ───────────────────────────────────────────────────
-
-const paneClients = new Map(); // sessionName → Set<res>
-
-function handlePaneSSE(req, res, sessionName) {
-  // Validate session name (alphanumeric, dashes, underscores only)
-  if (!/^[\w-]+$/.test(sessionName)) {
-    res.writeHead(400, { "Content-Type": "text/plain" });
-    res.end("Invalid session name");
-    return;
-  }
-
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
-    "Access-Control-Allow-Origin": "*",
-  });
-
-  if (!paneClients.has(sessionName)) {
-    paneClients.set(sessionName, new Set());
-  }
-  paneClients.get(sessionName).add(res);
-
-  // Send initial capture immediately
-  const initial = captureTmuxPane(sessionName);
-  if (initial !== null) {
-    res.write(`data: ${JSON.stringify({ output: initial, session: sessionName })}\n\n`);
-  } else {
-    res.write(`data: ${JSON.stringify({ error: "Session not found or not accessible", session: sessionName })}\n\n`);
-  }
-
-  req.on("close", () => {
-    const clients = paneClients.get(sessionName);
-    if (clients) {
-      clients.delete(res);
-      if (clients.size === 0) paneClients.delete(sessionName);
-    }
-  });
-}
-
-function captureTmuxPane(_sessionName) {
-  // Runtime V2 no longer captures TMUX panes.
-  return null;
-}
-
-function broadcastPaneCaptures() {
-  for (const [sessionName, clients] of paneClients) {
-    if (clients.size === 0) continue;
-    const output = captureTmuxPane(sessionName);
-    if (output === null) continue;
-    const payload = `data: ${JSON.stringify({ output, session: sessionName })}\n\n`;
-    for (const client of clients) {
-      try {
-        client.write(payload);
-      } catch {
-        clients.delete(client);
-      }
-    }
-  }
-}
 
 // ─── Conversation JSONL ─────────────────────────────────────────────────
 
@@ -1441,9 +1391,6 @@ function createServer() {
 
     if (pathname === "/api/stream" && req.method === "GET") {
       handleSSE(req, res);
-    } else if (pathname.startsWith("/api/pane/") && req.method === "GET") {
-      const sessionName = pathname.slice("/api/pane/".length);
-      handlePaneSSE(req, res, sessionName);
     } else if (pathname.startsWith("/api/conversation/") && req.method === "GET") {
       const prefix = pathname.slice("/api/conversation/".length);
       serveConversation(req, res, prefix);
@@ -1594,9 +1541,6 @@ async function main() {
   // Broadcast state to all SSE clients on interval
   const pollTimer = setInterval(broadcastState, POLL_INTERVAL);
 
-  // Broadcast pane captures more frequently (1s) for smooth terminal viewing
-  const paneTimer = setInterval(broadcastPaneCaptures, 1000);
-
   // Also watch batch-state.json for immediate push on change
   try {
     const batchDir = path.dirname(BATCH_STATE_PATH);
@@ -1621,12 +1565,6 @@ async function main() {
   // Graceful shutdown
   function cleanup() {
     clearInterval(pollTimer);
-    clearInterval(paneTimer);
-    for (const [, clients] of paneClients) {
-      for (const client of clients) {
-        try { client.end(); } catch {}
-      }
-    }
     for (const client of sseClients) {
       try { client.end(); } catch {}
     }

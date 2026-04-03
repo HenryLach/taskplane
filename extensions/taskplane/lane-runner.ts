@@ -312,8 +312,24 @@ export async function executeTaskV2(
 		// Reviewer telemetry is written by the worker bridge during review_step.
 		// Poll snapshot refresh independently from worker message_end cadence so
 		// the dashboard sees reviewer activity while tool calls are in-flight.
+		let reviewerSnapshotFailures = 0;
+		const reviewerRefreshFailureThreshold = 5;
 		const reviewerRefresh = setInterval(() => {
-			try { emitSnapshot(config, taskId, "running", iterationTelemetry, statusPath); } catch { /* non-fatal */ }
+			const ok = emitSnapshot(config, taskId, "running", iterationTelemetry, statusPath);
+			if (ok) {
+				reviewerSnapshotFailures = 0;
+				return;
+			}
+
+			reviewerSnapshotFailures += 1;
+			if (reviewerSnapshotFailures >= reviewerRefreshFailureThreshold) {
+				clearInterval(reviewerRefresh);
+				logExecution(
+					statusPath,
+					"Snapshot refresh disabled",
+					`Lane ${config.laneNumber}, task ${taskId}: ${reviewerSnapshotFailures} consecutive emitSnapshot failures`,
+				);
+			}
 		}, 1000);
 
 		let workerResult: AgentHostResult;
@@ -614,6 +630,8 @@ export function readReviewerTelemetrySnapshot(
  * caught and logged. This function is called from setInterval callbacks
  * and onTelemetry callbacks where an unhandled throw would trigger
  * uncaughtException and crash the engine-worker process.
+ *
+ * @returns true when snapshot write succeeds, false when it fails.
  */
 function emitSnapshot(
 	config: LaneRunnerConfig,
@@ -621,7 +639,7 @@ function emitSnapshot(
 	status: "running" | "idle" | "complete" | "failed",
 	telemetry: Partial<AgentHostResult>,
 	statusPath: string,
-): void {
+): boolean {
 	try {
 		// Parse progress from STATUS.md
 		let progress: RuntimeTaskProgress | null = null;
@@ -669,9 +687,11 @@ function emitSnapshot(
 		};
 
 		writeLaneSnapshot(config.stateRoot, config.batchId, config.laneNumber, snapshot as any);
+		return true;
 	} catch {
 		// Non-fatal: snapshot is telemetry, not execution-critical.
 		// Swallow to prevent uncaughtException crash in setInterval/callback contexts.
+		return false;
 	}
 }
 

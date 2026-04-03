@@ -12,7 +12,7 @@
  *   /orch-resume                   — Resume a paused batch
  *   /orch-abort [--hard]           — Abort batch (graceful or immediate)
  *   /orch-deps <areas|paths|all>   — Show dependency graph
- *   /orch-sessions                 — List active TMUX sessions
+ *   /orch-sessions                 — List active lane sessions
  *
  * Configuration:
  *   .pi/task-orchestrator.yaml  — orchestrator-specific settings
