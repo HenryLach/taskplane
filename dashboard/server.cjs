@@ -1047,7 +1047,9 @@ function buildDashboardState() {
       const key = laneRec ? (laneRec.laneSessionId) : `lane-${laneNum}`;
       if (!laneStates[key] || (snap.updatedAt && snap.updatedAt > (laneStates[key].timestamp || 0))) {
         const w = snap.worker || {};
+        const r = snap.reviewer || null;
         const statusMap = { running: "running", spawning: "running", exited: "done", crashed: "error", killed: "error", timed_out: "error", wrapping_up: "running" };
+        const reviewerStatusMap = { running: "running", spawning: "running", wrapping_up: "running", exited: "done", crashed: "done", killed: "done", timed_out: "done" };
         laneStates[key] = {
           prefix: key,
           taskId: snap.taskId || null,
@@ -1062,7 +1064,16 @@ function buildDashboardState() {
           workerCacheReadTokens: w.cacheReadTokens || 0,
           workerCacheWriteTokens: w.cacheWriteTokens || 0,
           workerCostUsd: w.costUsd || 0,
-          reviewerStatus: "idle",
+          reviewerStatus: r ? (reviewerStatusMap[r.status] || r.status || "running") : "idle",
+          reviewerElapsed: r?.elapsedMs || 0,
+          reviewerContextPct: r?.contextPct || 0,
+          reviewerLastTool: r?.lastTool || "",
+          reviewerToolCount: r?.toolCalls || 0,
+          reviewerCostUsd: r?.costUsd || 0,
+          reviewerInputTokens: r?.inputTokens || 0,
+          reviewerOutputTokens: r?.outputTokens || 0,
+          reviewerCacheReadTokens: r?.cacheReadTokens || 0,
+          reviewerCacheWriteTokens: r?.cacheWriteTokens || 0,
           batchId: snap.batchId || state.batchId,
           timestamp: snap.updatedAt || Date.now(),
         };

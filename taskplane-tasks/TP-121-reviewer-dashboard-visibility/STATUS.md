@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 6
 **Iteration:** 1
 **Size:** M
 
@@ -35,8 +35,8 @@
 
 ### Step 3: Dashboard server — reviewer in laneStates synthesis
 **Status:** ⬜ Not Started
-- [ ] Map snap.reviewer to legacy reviewer format
-- [ ] Ensure frontend rendering activates
+- [x] Map snap.reviewer to legacy reviewer format
+- [x] Ensure frontend rendering activates
 
 ### Step 4: Dashboard frontend — verify reviewer sub-row
 **Status:** ⬜ Not Started
@@ -72,3 +72,5 @@
 
 - Reviewer suggestion (R003): treat reviewer-state read/parse errors as best-effort and keep reviewer agentId generation on `buildRuntimeAgentId(..., "reviewer")`.
 | 2026-04-03 03:15 | Review R004 | plan Step 2: APPROVE |
+| 2026-04-03 03:18 | Review R005 | code Step 2: APPROVE |
+| 2026-04-03 03:19 | Review R006 | plan Step 3: APPROVE |
