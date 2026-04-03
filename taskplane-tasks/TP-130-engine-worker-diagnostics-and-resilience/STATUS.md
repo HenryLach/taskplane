@@ -1,10 +1,10 @@
 # TP-130: Engine Worker Diagnostics and Resilience — Status
 
-**Current Step:** Step 2: Stderr capture
+**Current Step:** Step 3: Snapshot failure counter
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** S
 
@@ -24,13 +24,13 @@
 - [x] Ensure IPC reaches parent before exit
 
 ### Step 2: Stderr capture
-**Status:** 🟨 In Progress
-- [ ] Pipe child stderr to batch-scoped file
-- [ ] Tee to parent stderr for terminal display
-- [ ] Include stderr tail in failure alert
+**Status:** ✅ Complete
+- [x] Pipe child stderr to batch-scoped file
+- [x] Tee to parent stderr for terminal display
+- [x] Include stderr tail in failure alert
 
 ### Step 3: Snapshot failure counter
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Add consecutive failure counter
 - [ ] Disable interval after 5 failures
 - [ ] Reset on success
@@ -58,4 +58,7 @@
 | 2026-04-03 15:28 | Step 1 started | Process-level error handlers |
 | 2026-04-03 15:38 | Step 1 completed | Added worker fatal handlers + IPC flush |
 | 2026-04-03 15:38 | Step 2 started | Stderr capture |
+| 2026-04-03 15:48 | Step 2 completed | Added engine stderr tee + persisted log tail |
+| 2026-04-03 15:48 | Step 3 started | Snapshot failure counter |
 | 2026-04-03 15:23 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-03 15:26 | Review R002 | plan Step 2: APPROVE |
