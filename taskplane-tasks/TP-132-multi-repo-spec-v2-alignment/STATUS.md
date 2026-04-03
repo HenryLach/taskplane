@@ -1,24 +1,24 @@
 # TP-132: Multi-Repo Spec V2 Alignment — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Update execution model references
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read current spec completely
-- [ ] Read types.ts for V2 contracts
-- [ ] Read execution.ts buildExecutionUnit()
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read current spec completely
+- [x] Read types.ts for V2 contracts
+- [x] Read execution.ts buildExecutionUnit()
 
 ### Step 1: Update execution model references
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Replace TMUX references with subprocess model
 - [ ] Replace TASK_PACKET_* env vars with ExecutionUnit.packet
 - [ ] Replace task-runner.ts with lane-runner.ts
@@ -47,4 +47,6 @@
 ## Execution Log
 
 | Timestamp | Action | Outcome |
+| 2026-04-03 17:44 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-03 17:44 | Step 0 started | Preflight |
 |-----------|--------|---------|
