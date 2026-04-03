@@ -230,10 +230,10 @@ For each wave:
 
 ```
 1. Provision  ─  Create lane worktrees and branches for this wave's tasks
-2. Execute    ─  Launch tmux sessions with task-runner instances per lane
-3. Monitor    ─  Poll STATUS.md and .DONE; update dashboard
+2. Execute    ─  Spawn worker agents (subprocess) per lane
+3. Monitor    ─  Poll STATUS.md, .DONE, and lane snapshots; update dashboard
 4. Collect    ─  Gather per-task outcomes (succeeded, failed, blocked)
-5. Merge      ─  Merge successful lane branches into orch branch (per-repo)
+5. Merge      ─  LLM merge agent merges lane branches into orch branch
 6. Artifact   ─  Stage .DONE and STATUS.md into merge worktree, commit to orch branch
 7. Cleanup    ─  Remove lane worktrees and branches
 8. Advance    ─  Mark wave complete, proceed to next wave
@@ -250,7 +250,97 @@ separate worktrees.
 ## 7) Merge stage
 
 After all lanes in a wave complete, the orchestrator merges their work into the
-orch branch.
+orch branch. This is where Taskplane's approach fundamentally differs from
+traditional CI merge strategies.
+
+### LLM-powered merge agent
+
+Taskplane doesn't use `git merge` blindly. Instead, it spawns an **LLM merge
+agent** — a full AI agent with read, write, edit, and bash access — that
+performs the merge intelligently:
+
+1. The engine generates a **merge request file** containing:
+   - The orch branch (target) and lane branch (source)
+   - The list of tasks completed on that lane
+   - Instructions for conflict resolution
+
+2. The merge agent runs in a temporary **merge worktree**:
+   ```
+   .worktrees/{batchId}/merge/
+   ```
+
+3. For each lane branch, the agent:
+   - Runs `git merge --no-ff task/{lane-branch}`
+   - If the merge is clean → commits and moves on
+   - If there are conflicts → **reads the conflict markers**, understands
+     both sides' intent (it can read PROMPT.md and the full diff), and
+     **edits the files to resolve conflicts semantically**
+   - Runs `git add` and `git commit` to complete the merge
+
+4. After all lanes are merged, the agent writes a **result JSON** file that
+   the engine polls for.
+
+### Why LLM merge matters
+
+Traditional merge tools (3-way merge, `git rerere`) handle textual conflicts
+but can't understand **intent**. When two workers both modify the same function
+— one adding error handling, the other adding a parameter — a text-based merge
+produces conflict markers. The LLM merge agent reads both changes, understands
+they're complementary, and produces a correct resolution that includes both.
+
+This is critical for parallel task execution. Without intelligent merge, you'd
+need to either:
+- Serialize all tasks (slow)
+- Manually resolve every conflict (defeats automation)
+- Hope file scopes don't overlap (fragile)
+
+### Merge health monitor
+
+During the merge phase, a **merge health monitor** actively polls the merge
+agent every 2 minutes:
+
+- **Process liveness** — checks the process registry and PID to confirm the
+  agent is still running
+- **Activity detection** — compares recent output with previous snapshots to
+  detect stalls
+
+Escalation thresholds:
+- **Stale** (10 min no output): emits `merge_health_stale` event
+- **Stuck** (20 min no output): emits `merge_health_stuck` event with a
+  recommendation to kill and retry
+
+The monitor emits events but does **not** kill agents autonomously — the
+supervisor decides on intervention.
+
+### Merge verification
+
+After merging, the agent optionally runs **verification commands**
+(`merge.verify` in config) — typically the project's test suite:
+
+```json
+{
+  "merge": {
+    "verify": "cd extensions && node --test tests/*.test.ts"
+  }
+}
+```
+
+If verification fails, the merge agent can attempt to fix the issue (test
+failures from merge resolution errors) before reporting failure.
+
+### Failure handling
+
+When a merge fails (timeout, unresolvable conflict, verification failure):
+
+| Policy | Behavior |
+|--------|----------|
+| `on_merge_failure: pause` (default) | Batch pauses, preserving all state for supervisor intervention |
+| `on_merge_failure: abort` | Batch stops entirely |
+
+The supervisor can then:
+1. Inspect merge diagnostics (`read_lane_logs`, event log)
+2. Manually resolve in the merge worktree if needed
+3. Resume the batch with `orch_resume()`
 
 ### Per-repo merge (workspace mode)
 
@@ -258,15 +348,11 @@ In workspace mode, merges happen independently per repository:
 
 1. For each repo that had lanes in this wave:
    - Create a temporary merge worktree on the orch branch
-   - Merge each lane branch sequentially (configurable order: `fewest-files-first`, etc.)
-   - Run optional verification commands (`merge.verify`)
-   - Stage task artifacts (`.DONE`, `STATUS.md`) into the merge worktree
-   - Update the orch branch ref via `update-ref`
-   - Clean up the merge worktree
-
-2. If merge fails:
-   - `on_merge_failure: pause` → batch enters `paused` phase, preserves state for resume
-   - `on_merge_failure: abort` → batch stops
+   - Merge each lane branch sequentially
+   - Run verification commands per repo
+   - Stage task artifacts
+   - Update the orch branch ref
+   - Clean up
 
 ### Artifact staging
 
@@ -274,10 +360,8 @@ Workers write `.DONE` and update `STATUS.md` in the canonical task folder (which
 lives in the config repo in workspace mode). These files are copied into the
 merge worktree and committed to the orch branch alongside the code changes.
 
-### Merge verification
-
-If `merge.verify` commands are configured, they run after merge in the merge
-worktree. Failures follow the `on_merge_failure` policy.
+For the full merge lifecycle and conflict resolution details, see
+[Merge and Conflict Resolution](merge-and-conflict-resolution.md).
 
 ---
 
@@ -324,9 +408,10 @@ Compared to running many agents in one working directory:
 | Concern | Taskplane | Shared directory |
 |---------|-----------|-----------------|
 | **File conflicts** | Impossible — worktree isolation | Frequent — agents overwrite each other |
-| **Merge safety** | Explicit lane → orch branch merge with verification | No merge step — conflicts accumulate |
+| **Merge safety** | LLM merge agent resolves conflicts semantically, with test verification | No merge step — conflicts accumulate silently |
+| **Conflict resolution** | AI understands both sides' intent, produces correct combined code | Manual resolution or corrupted output |
 | **User branch safety** | Untouched until `/orch-integrate` | Modified directly, no rollback |
-| **Debugging** | Each lane has its own branch, worktree, and session | One tangled history |
+| **Debugging** | Each lane has its own branch, worktree, and commit history | One tangled history |
 | **Resumability** | File-backed state survives any crash | Lost on restart |
 | **Parallelism** | Bounded by lanes, safe by design | Unbounded and unsafe |
 
@@ -336,6 +421,7 @@ Compared to running many agents in one working directory:
 
 - [Architecture](architecture.md)
 - [Execution Model](execution-model.md)
+- [Merge and Conflict Resolution](merge-and-conflict-resolution.md) — deep dive on LLM-powered merge
 - [Persistence and Resume](persistence-and-resume.md)
 - [Commands Reference](../reference/commands.md) — `/orch`, `/orch-integrate` details
 - [Resilience & Diagnostics Roadmap](../specifications/taskplane/implemented/resilience-and-diagnostics-roadmap.md) — planned improvements

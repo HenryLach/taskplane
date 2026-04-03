@@ -195,7 +195,11 @@ When disabled (default), `.DONE` is created immediately after all steps complete
 
 See [task-runner.yaml Reference](../reference/configuration/task-runner.yaml.md#quality_gate) for configuration details.
 
-In orchestrated mode, the runner creates `.DONE` and lets the orchestrator handle post-merge lifecycle.
+In orchestrated mode, the runner creates `.DONE` and lets the orchestrator
+handle the merge lifecycle. When all tasks in a wave complete, an LLM-powered
+merge agent combines the lane branches into the orch branch — resolving any
+conflicts semantically and running verification tests. See
+[Merge and Conflict Resolution](merge-and-conflict-resolution.md) for details.
 
 ---
 
@@ -230,6 +234,8 @@ Tradeoff:
 
 ## Related
 
+- [Waves, Lanes, and Worktrees](waves-lanes-and-worktrees.md) — parallel execution and worktree isolation
+- [Merge and Conflict Resolution](merge-and-conflict-resolution.md) — how parallel task output is combined
 - [Review Loop](review-loop.md)
 - [Task Format Reference](../reference/task-format.md)
 - [Commands Reference](../reference/commands.md)

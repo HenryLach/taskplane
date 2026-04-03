@@ -28,7 +28,7 @@ This design keeps shipped code upgradeable while keeping project behavior custom
 │                     │ spawns workers/reviewers/mergers          │
 │                     ▼                                           │
 │       orch branch (orch/{opId}-{batchId})                      │
-│       ├── lane worktrees + tmux sessions                       │
+│       ├── lane worktrees + subprocess agents                       │
 │       ├── merge worktrees (per wave)                           │
 │       └── /orch-integrate → user's working branch              │
 │                                                                 │
@@ -167,21 +167,25 @@ File-based state is intentional: recoverability and inspectability are first-cla
 
 ---
 
-## Runtime V2 (in progress)
+## Runtime V2
 
-Taskplane is migrating to a **no-TMUX direct-child execution backend** called
-Runtime V2. The migration is incremental:
+Taskplane uses **Runtime V2**, a direct-child execution backend with no external
+process manager dependencies. All worker, reviewer, and merge agents run as
+direct child processes managed by the `agent-host.ts` + `process-registry.ts`
+modules.
 
-- **Single-task `/orch <PROMPT.md>` in repo mode** currently routes through the
-  new Runtime V2 lane-runner (`executeLaneV2`), which spawns workers via
-  `agent-host.ts` as direct child processes — no TMUX sessions.
-- **Multi-task batches** and **workspace mode** continue to use the legacy
-  TMUX-backed path until TP-108 and TP-109 complete the migration.
-- The engine selects the backend automatically based on batch characteristics.
-  Workspace mode always falls back to legacy with an operator notification.
+Key properties:
+
+- **No TMUX dependency** — agents spawn as subprocess children, not terminal sessions
+- **Mailbox-first communication** — the supervisor steers agents via file-based mailbox,
+  not terminal I/O
+- **Registry-backed liveness** — `process-registry.ts` tracks all spawned processes
+  with PID-based health checks
+- **Lane snapshot telemetry** — `.pi/runtime/{batchId}/lanes/lane-N.json` provides
+  real-time progress, token counts, and cost for the dashboard
 
 See `docs/specifications/framework/taskplane-runtime-v2/` for the full
-architecture plan.
+architecture specification.
 
 ---
 
