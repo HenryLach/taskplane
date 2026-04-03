@@ -1,6 +1,6 @@
 # TP-128: Full Package TMUX Extrication — Status
 
-**Current Step:** Step 1: Remove TMUX from task-runner.ts
+**Current Step:** Step 2: Remove TMUX from CLI
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
@@ -17,7 +17,7 @@
 - [x] Log inventory
 
 ### Step 1: Remove TMUX from task-runner.ts
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Remove spawnAgentTmux
 - [x] Remove spawn_mode: "tmux" branch
 - [x] Remove TMUX session helpers
@@ -25,10 +25,10 @@
 - [x] Update tests
 - [x] R002: Migrate persistent-worker-context test expectations to subprocess-only behavior
 - [x] R002: Reconcile mailbox steering tests with subprocess task-runner behavior
-- [ ] R003: Remove accidental `.tmp-fulltest.log` artifact and prevent re-commit
+- [x] R003: Remove accidental `.tmp-fulltest.log` artifact and prevent re-commit
 
 ### Step 2: Remove TMUX from CLI
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Remove doctor TMUX checks
 - [ ] Remove install-tmux guidance
 - [ ] Update help text

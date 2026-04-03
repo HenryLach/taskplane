@@ -11,6 +11,7 @@ dist/
 # ── Local working directories ─────────────────────────────────────────
 .agents/
 .worktrees/
+.tmp-*.log
 
 # ── OS / Editor ──────────────────────────────────────────────────────
 .DS_Store
