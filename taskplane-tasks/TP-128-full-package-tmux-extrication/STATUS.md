@@ -1,10 +1,10 @@
 # TP-128: Full Package TMUX Extrication — Status
 
-**Current Step:** Step 1: Remove TMUX from task-runner.ts
+**Current Step:** Step 2: Remove TMUX from CLI
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -17,15 +17,15 @@
 - [x] Log inventory
 
 ### Step 1: Remove TMUX from task-runner.ts
-**Status:** 🟨 In Progress
-- [ ] Remove spawnAgentTmux
-- [ ] Remove spawn_mode: "tmux" branch
-- [ ] Remove TMUX session helpers
-- [ ] Keep subprocess path working
-- [ ] Update tests
+**Status:** ✅ Complete
+- [x] Remove spawnAgentTmux
+- [x] Remove spawn_mode: "tmux" branch
+- [x] Remove TMUX session helpers
+- [x] Keep subprocess path working
+- [x] Update tests
 
 ### Step 2: Remove TMUX from CLI
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Remove doctor TMUX checks
 - [ ] Remove install-tmux guidance
 - [ ] Update help text
@@ -70,3 +70,4 @@
 | 2026-04-03 04:02 | Step 0 started | Preflight |
 | 2026-04-03 04:10 | TMUX inventory captured | Counted refs in task-runner, CLI, templates, and supervisor files |
 |-----------|--------|---------|
+| 2026-04-03 04:03 | Review R001 | plan Step 1: APPROVE |
