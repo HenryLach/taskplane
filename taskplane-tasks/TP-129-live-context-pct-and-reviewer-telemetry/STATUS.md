@@ -1,10 +1,10 @@
 # TP-129: Live Context % and Full Reviewer Telemetry — Status
 
-**Current Step:** Step 1: Periodic context % refresh
+**Current Step:** Step 2: Full reviewer telemetry in dashboard
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -18,15 +18,15 @@
 - [x] Document worker row telemetry fields
 
 ### Step 1: Periodic context % refresh
-**Status:** 🟨 In Progress
-- [ ] Replace single statsRequested with periodic requests
-- [ ] Keep immediate first get_session_stats request on first assistant message_end
-- [ ] Send follow-up get_session_stats on a bounded cadence (every 5 assistant message_end events)
-- [ ] Verify response handler updates contextUsage
-- [ ] Benefits both worker and reviewer
+**Status:** ✅ Complete
+- [x] Replace single statsRequested with periodic requests
+- [x] Keep immediate first get_session_stats request on first assistant message_end
+- [x] Send follow-up get_session_stats on a bounded cadence (every 5 assistant message_end events)
+- [x] Verify response handler updates contextUsage
+- [x] Benefits both worker and reviewer
 
 ### Step 2: Full reviewer telemetry in dashboard
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Add elapsed time to reviewer sub-row
 - [ ] Add token summary to reviewer sub-row
 - [ ] Add context % to reviewer sub-row
@@ -52,6 +52,8 @@
 | 2026-04-03 15:14 | Worker telemetry documented | Worker row renders ⏱ elapsed, 🔧 tool count, 📊 context %, 🪙 token summary (input+cacheRead, output, optional cost), last tool label, and retry/compaction badges |
 | 2026-04-03 15:14 | Step 0 completed | Advancing to Step 1 |
 | 2026-04-03 15:15 | Review R001 | plan Step 1: REVISE; hydrate Step 1/Step 3 checklist with initial-request + bounded-cadence requirements |
+| 2026-04-03 15:18 | Step 1 implemented | agent-host now requests get_session_stats on assistant message #1 and every 5 assistant message_end events |
+| 2026-04-03 15:18 | Step 1 completed | Advancing to Step 2 |
 
 ## Notes
 
@@ -63,3 +65,4 @@
   - Last tool text from `workerLastTool` (or `[awaiting review]` when reviewer active)
   - Retry/compaction badges from telemetry sidecar (`retryActive`/`retries`, `compactions`)
 - Plan review suggestion noted: prefer deterministic turn-based cadence over timers for easier testability and lower edge-case risk.
+| 2026-04-03 15:11 | Review R002 | plan Step 1: APPROVE |
