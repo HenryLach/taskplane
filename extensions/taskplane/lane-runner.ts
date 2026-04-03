@@ -283,6 +283,7 @@ export async function executeTaskV2(
 
 		// Context pressure: write wrap-up signal before kill
 		let workerKillReason: "context" | "timer" | null = null;
+		let iterationTelemetry: Partial<AgentHostResult> = {};
 
 		const spawned = spawnAgent(hostOpts, undefined, (telemetry) => {
 			// Context pressure check
@@ -298,12 +299,25 @@ export async function executeTaskV2(
 				}
 			}
 
+			iterationTelemetry = telemetry;
 			lastTelemetry = telemetry;
 			// Emit lane snapshot
 			emitSnapshot(config, taskId, "running", telemetry, statusPath);
 		});
 
-		const workerResult = await spawned.promise;
+		// Reviewer telemetry is written by the worker bridge during review_step.
+		// Poll snapshot refresh independently from worker message_end cadence so
+		// the dashboard sees reviewer activity while tool calls are in-flight.
+		const reviewerRefresh = setInterval(() => {
+			emitSnapshot(config, taskId, "running", iterationTelemetry, statusPath);
+		}, 1000);
+
+		let workerResult: AgentHostResult;
+		try {
+			workerResult = await spawned.promise;
+		} finally {
+			clearInterval(reviewerRefresh);
+		}
 
 		// TP-115: Update lastTelemetry with definitive final values from AgentHostResult
 		lastTelemetry = workerResult;
@@ -538,6 +552,48 @@ function makeResult(
 	return result;
 }
 
+export function readReviewerTelemetrySnapshot(
+	config: LaneRunnerConfig,
+	statusPath: string,
+): RuntimeAgentTelemetrySnapshot | null {
+	const reviewerPath = join(dirname(statusPath), ".reviewer-state.json");
+	if (!existsSync(reviewerPath)) return null;
+
+	try {
+		const raw = readFileSync(reviewerPath, "utf-8");
+		const parsed = JSON.parse(raw) as Partial<{
+			status: string;
+			elapsedMs: number;
+			toolCalls: number;
+			contextPct: number;
+			costUsd: number;
+			lastTool: string;
+			inputTokens: number;
+			outputTokens: number;
+			cacheReadTokens: number;
+			cacheWriteTokens: number;
+		}>;
+
+		if (parsed.status !== "running") return null;
+
+		return {
+			agentId: buildRuntimeAgentId(config.agentIdPrefix, config.laneNumber, "reviewer"),
+			status: "running",
+			elapsedMs: Number.isFinite(parsed.elapsedMs) ? Number(parsed.elapsedMs) : 0,
+			toolCalls: Number.isFinite(parsed.toolCalls) ? Number(parsed.toolCalls) : 0,
+			contextPct: Number.isFinite(parsed.contextPct) ? Number(parsed.contextPct) : 0,
+			costUsd: Number.isFinite(parsed.costUsd) ? Number(parsed.costUsd) : 0,
+			lastTool: typeof parsed.lastTool === "string" ? parsed.lastTool : "",
+			inputTokens: Number.isFinite(parsed.inputTokens) ? Number(parsed.inputTokens) : 0,
+			outputTokens: Number.isFinite(parsed.outputTokens) ? Number(parsed.outputTokens) : 0,
+			cacheReadTokens: Number.isFinite(parsed.cacheReadTokens) ? Number(parsed.cacheReadTokens) : 0,
+			cacheWriteTokens: Number.isFinite(parsed.cacheWriteTokens) ? Number(parsed.cacheWriteTokens) : 0,
+		};
+	} catch {
+		return null;
+	}
+}
+
 function emitSnapshot(
 	config: LaneRunnerConfig,
 	taskId: string,
@@ -562,6 +618,8 @@ function emitSnapshot(
 		};
 	} catch { /* best effort */ }
 
+	const reviewerSnapshot = readReviewerTelemetrySnapshot(config, statusPath);
+
 	const snapshot: RuntimeLaneSnapshot = {
 		batchId: config.batchId,
 		laneNumber: config.laneNumber,
@@ -583,7 +641,7 @@ function emitSnapshot(
 			cacheReadTokens: telemetry.cacheReadTokens ?? 0,
 			cacheWriteTokens: telemetry.cacheWriteTokens ?? 0,
 		},
-		reviewer: null,
+		reviewer: reviewerSnapshot,
 		progress,
 		updatedAt: Date.now(),
 	};

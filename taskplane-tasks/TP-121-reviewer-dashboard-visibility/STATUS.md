@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** M
 
@@ -28,10 +28,10 @@
 
 ### Step 2: Lane-runner — read reviewer state into snapshot
 **Status:** ⬜ Not Started
-- [ ] Add snapshot refresh path independent of worker message_end cadence
-- [ ] Check for .reviewer-state.json in onTelemetry callback
-- [ ] Populate snapshot.reviewer when running
-- [ ] Set null when absent or done
+- [x] Add snapshot refresh path independent of worker message_end cadence
+- [x] Check for .reviewer-state.json in onTelemetry callback
+- [x] Populate snapshot.reviewer when running
+- [x] Set null when absent or done
 
 ### Step 3: Dashboard server — reviewer in laneStates synthesis
 **Status:** ⬜ Not Started
@@ -71,3 +71,4 @@
 ## Notes
 
 - Reviewer suggestion (R003): treat reviewer-state read/parse errors as best-effort and keep reviewer agentId generation on `buildRuntimeAgentId(..., "reviewer")`.
+| 2026-04-03 03:15 | Review R004 | plan Step 2: APPROVE |
