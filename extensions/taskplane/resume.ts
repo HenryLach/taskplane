@@ -421,10 +421,12 @@ export function reconstructSegmentFrontier(
 		const inFlightSegmentIds: string[] = [];
 		const pendingSegmentIds: string[] = [];
 		const failedSegmentIds: string[] = [];
+		let hasConcreteSegmentRecord = false;
 
 		for (let idx = 0; idx < segmentIds.length; idx++) {
 			const segmentId = segmentIds[idx];
 			const record = segmentRecordById.get(segmentId);
+			if (record) hasConcreteSegmentRecord = true;
 			const recordDeps = record?.dependsOnSegmentIds ?? [];
 			const fallbackDeps = idx > 0 ? [segmentIds[idx - 1]] : [];
 			const deps = (recordDeps.length > 0 ? recordDeps : fallbackDeps)
@@ -462,21 +464,23 @@ export function reconstructSegmentFrontier(
 			return status === "succeeded";
 		});
 
-		if (failedSegmentIds.length > 0) {
-			task.status = task.status === "skipped" ? "skipped" : "failed";
-			task.activeSegmentId = null;
-		} else if (inFlightSegmentIds.length > 0) {
-			task.status = "running";
-			task.activeSegmentId = inFlightSegmentIds[0];
-		} else if (pendingSegmentIds.length > 0) {
-			task.status = "pending";
-			task.activeSegmentId = nextSegmentId;
-		} else if (allSucceeded) {
-			task.status = "succeeded";
-			task.activeSegmentId = null;
-		} else {
-			task.status = task.status === "skipped" ? "skipped" : "failed";
-			task.activeSegmentId = null;
+		if (hasConcreteSegmentRecord) {
+			if (failedSegmentIds.length > 0) {
+				task.status = task.status === "skipped" ? "skipped" : "failed";
+				task.activeSegmentId = null;
+			} else if (inFlightSegmentIds.length > 0) {
+				task.status = "running";
+				task.activeSegmentId = inFlightSegmentIds[0];
+			} else if (pendingSegmentIds.length > 0) {
+				task.status = "pending";
+				task.activeSegmentId = nextSegmentId;
+			} else if (allSucceeded) {
+				task.status = "succeeded";
+				task.activeSegmentId = null;
+			} else {
+				task.status = task.status === "skipped" ? "skipped" : "failed";
+				task.activeSegmentId = null;
+			}
 		}
 
 		byTask.set(task.taskId, {

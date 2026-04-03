@@ -146,6 +146,9 @@ describe("TP-135 resume segment fallback behavior", () => {
 			segments: [],
 		});
 
+		reconstructSegmentFrontier(state);
+		expect(state.tasks[0].status).toBe("succeeded");
+
 		const reconciled = reconcileTaskStates(state, new Set(), new Set(), new Set());
 		expect(reconciled[0].action).toBe("skip");
 
