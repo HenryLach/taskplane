@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.2] - 2026-04-03
+
+### New
+- **Reviewer dashboard visibility (TP-121)** — Reviewer sub-row appears in the dashboard during reviews, showing live telemetry (elapsed, tools, context%, cost, last tool). Bridge extension writes `.reviewer-state.json`, lane-runner reads it into lane snapshot. Includes review type and step number labels.
+- **TMUX extrication tasks (TP-122–126)** — Reference baseline/guardrails, operator messaging de-TMUX, comment/type doc sweep, centralized legacy compat shim, final compat removal.
+- **TP-127: Wave transition fix** — Monitor no longer reports tasks as "failed" during multi-wave batch transitions (stale snapshot detection + 30s registry fallback).
+
 ## [0.24.1] - 2026-04-02
 
 ### Fixed
