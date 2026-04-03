@@ -1,10 +1,10 @@
 # TP-130: Engine Worker Diagnostics and Resilience — Status
 
-**Current Step:** Step 3: Snapshot failure counter
+**Current Step:** Step 4: Tests
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** S
 
@@ -30,14 +30,14 @@
 - [x] Include stderr tail in failure alert
 
 ### Step 3: Snapshot failure counter
-**Status:** 🟨 In Progress
-- [ ] Add non-throwing emitSnapshot success/failure signal
-- [ ] Add consecutive failure counter
-- [ ] Disable interval after 5 failures
-- [ ] Reset on success
+**Status:** ✅ Complete
+- [x] Add non-throwing emitSnapshot success/failure signal
+- [x] Add consecutive failure counter
+- [x] Disable interval after 5 failures
+- [x] Reset on success
 
 ### Step 4: Tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Test: uncaughtException handler exists
 - [ ] Test: unhandledRejection handler exists
 - [ ] Run full suite
@@ -66,6 +66,9 @@
 | 2026-04-03 15:38 | Step 2 started | Stderr capture |
 | 2026-04-03 15:48 | Step 2 completed | Added engine stderr tee + persisted log tail |
 | 2026-04-03 15:48 | Step 3 started | Snapshot failure counter |
+| 2026-04-03 15:56 | Step 3 completed | Added snapshot failure threshold + disable warning |
+| 2026-04-03 15:56 | Step 4 started | Tests |
 | 2026-04-03 15:23 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-03 15:26 | Review R002 | plan Step 2: APPROVE |
 | 2026-04-03 15:30 | Review R003 | plan Step 3: REVISE |
+| 2026-04-03 15:30 | Review R004 | plan Step 3: APPROVE |
