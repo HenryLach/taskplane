@@ -691,4 +691,68 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 			rmSync(root, { recursive: true, force: true });
 		}
 	});
+
+	it("14.12: null taskId in snapshot triggers stale grace (alive)", async () => {
+		const root = mkdtempSync(join(tmpdir(), "tp-127-"));
+		const now = Date.now();
+		const batchId = "b-null-taskid";
+		try {
+			writeLaneSnapshot(root, batchId, 1, {
+				taskId: null,
+				status: "complete",
+				updatedAt: now,
+			});
+
+			const snapshot = await resolveTaskMonitorState(
+				"TP-NEW",
+				join(root, ".DONE"),
+				"lane-1",
+				{ parsed: null, error: null },
+				freshTracker("TP-NEW", now),
+				30 * 60_000,
+				now,
+				"v2",
+				{ stateRoot: root, batchId, laneNumber: 1 },
+			);
+
+			// null taskId !== "TP-NEW" → stale grace → alive
+			expect(snapshot.sessionAlive).toBe(true);
+			expect(snapshot.status).toBe("running");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("14.13: stale snapshot with old updatedAt falls back to registry check", async () => {
+		const root = mkdtempSync(join(tmpdir(), "tp-127-"));
+		const now = Date.now();
+		const batchId = "b-stale-timeout";
+		try {
+			// Snapshot from a different task, updatedAt 60s ago (>30s threshold)
+			writeLaneSnapshot(root, batchId, 1, {
+				taskId: "TP-OLD",
+				status: "complete",
+				updatedAt: now - 60_000,
+			});
+
+			const snapshot = await resolveTaskMonitorState(
+				"TP-NEW",
+				join(root, ".DONE"),
+				"lane-1",
+				{ parsed: null, error: null },
+				freshTracker("TP-NEW", now),
+				30 * 60_000,
+				now,
+				"v2",
+				{ stateRoot: root, batchId, laneNumber: 1 },
+			);
+
+			// Stale >30s → falls back to isV2AgentAlive → returns false (no registry)
+			// → sessionAlive = false → task reported as failed
+			expect(snapshot.sessionAlive).toBe(false);
+			expect(snapshot.status).toBe("failed");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });

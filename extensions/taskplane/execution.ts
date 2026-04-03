@@ -864,8 +864,15 @@ export async function resolveTaskMonitorState(
 		const snap = readLaneSnapshot(v2Context.stateRoot, v2Context.batchId, v2Context.laneNumber);
 		if (snap == null || snap.taskId !== taskId) {
 			// Snapshot not written yet OR snapshot still points to a prior task.
-			// Assume alive to avoid false "failed" during lane handoff races.
-			sessionAlive = true;
+			// Assume alive initially, but if stale for >30s consult the registry
+			// to avoid indefinite false "running" if the lane-runner died.
+			const staleMs = snap?.updatedAt ? (now - snap.updatedAt) : 0;
+			if (staleMs > 30_000) {
+				// Snapshot hasn't been updated for 30s+ — check registry as fallback
+				sessionAlive = isV2AgentAlive(sessionName, runtimeBackend);
+			} else {
+				sessionAlive = true;
+			}
 		} else {
 			sessionAlive = snap.status === "running";
 		}
