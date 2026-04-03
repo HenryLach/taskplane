@@ -12,7 +12,7 @@
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
-const { execFileSync, exec } = require("child_process");
+const { exec } = require("child_process");
 // url module not needed — we parse with new URL() below
 
 // ─── Configuration ──────────────────────────────────────────────────────────
@@ -192,17 +192,9 @@ function parseStatusMd(taskFolder) {
 }
 
 function getTmuxSessions() {
-  try {
-    const output = execFileSync('tmux list-sessions -F "#{session_name}"', {
-      encoding: "utf-8",
-      timeout: 5000,
-      shell: true,
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return output ? output.split("\n").map((s) => s.trim()).filter(Boolean) : [];
-  } catch {
-    return [];
-  }
+  // Runtime V2 no longer relies on TMUX sessions.
+  // Keep field shape stable for dashboard clients that still read `tmuxSessions`.
+  return [];
 }
 
 function checkDoneFile(taskFolder) {
@@ -1206,17 +1198,9 @@ function handlePaneSSE(req, res, sessionName) {
   });
 }
 
-function captureTmuxPane(sessionName) {
-  try {
-    // Capture with ANSI escape sequences (-e), full scrollback visible area (-p)
-    const output = execFileSync(
-      `tmux capture-pane -t "${sessionName}" -p -e`,
-      { encoding: "utf-8", timeout: 3000, shell: true, stdio: ["ignore", "pipe", "ignore"] }
-    );
-    return output;
-  } catch {
-    return null;
-  }
+function captureTmuxPane(_sessionName) {
+  // Runtime V2 no longer captures TMUX panes.
+  return null;
 }
 
 function broadcastPaneCaptures() {

@@ -3,7 +3,7 @@
 /**
  * tmux-reference-audit.mjs
  *
- * Deterministic static audit for TMUX references in `extensions/taskplane/*.ts`.
+ * Deterministic static audit for TMUX references across shipped package roots.
  *
  * Contract:
  * - Emits stable JSON schema with totals + by-file + by-category counts.
@@ -13,8 +13,8 @@
  *   strict failures.
  */
 
-import { readFileSync, readdirSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CATEGORY_ORDER = [
@@ -25,8 +25,21 @@ const CATEGORY_ORDER = [
 ];
 
 const STRICT_FAILURE_EXIT_CODE = 2;
-const SCAN_ROOT = "extensions/taskplane";
-const FILE_GLOB = "*.ts";
+const SCAN_ROOTS = ["extensions", "bin", "templates", "dashboard"];
+const SCAN_EXTENSIONS = new Set([
+	".ts",
+	".tsx",
+	".js",
+	".mjs",
+	".cjs",
+	".md",
+	".json",
+	".yaml",
+	".yml",
+	".html",
+	".css",
+]);
+const EXECUTABLE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".mjs", ".cjs"]);
 
 const USER_FACING_FILES = new Set([
 	"messages.ts",
@@ -51,7 +64,11 @@ const FUNCTIONAL_PATTERNS = [
 	},
 	{
 		id: "spawn-shell-payload",
-		regex: /\b(?:spawn|spawnSync)\s*\([^\n]*["'`][^"'`]*\btmux\b[^"'`]*["'`]/i,
+		regex: /\b(?:spawn|spawnSync)\s*\(\s*["'`][^"'`]*\btmux\b\s+[^"'`]*["'`]/i,
+	},
+	{
+		id: "execfile-shell-payload",
+		regex: /\b(?:execFile|execFileSync)\s*\(\s*["'`][^"'`]*\btmux\b\s+[^"'`]*["'`]/i,
 	},
 ];
 
@@ -114,7 +131,8 @@ function isUserFacingLine(fileName, line) {
 	return /\b(?:notify|message|hint|attachCmd|sessionsNone|description|label)\b/.test(line);
 }
 
-function classifyLine(fileName, line, commentLine) {
+function classifyLine(fileName, fileExt, line, commentLine) {
+	if (!EXECUTABLE_EXTENSIONS.has(fileExt)) return "comments/docs";
 	if (TYPES_CONTRACT_FILES.has(fileName)) return "types/contracts";
 	if (commentLine) return "comments/docs";
 	if (isUserFacingLine(fileName, line)) return "user-facing strings";
@@ -125,29 +143,57 @@ function normalizeRepoPath(pathValue) {
 	return pathValue.split("\\").join("/");
 }
 
+function collectFilesRecursive(repoRoot, rootRel, out) {
+	const absRoot = join(repoRoot, rootRel);
+	if (!existsSync(absRoot)) return;
+
+	const stack = [absRoot];
+	while (stack.length > 0) {
+		const current = stack.pop();
+		const entries = readdirSync(current, { withFileTypes: true })
+			.sort((a, b) => a.name.localeCompare(b.name));
+
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const entry = entries[i];
+			const absPath = join(current, entry.name);
+			if (entry.isDirectory()) {
+				stack.push(absPath);
+				continue;
+			}
+			if (!entry.isFile()) continue;
+			const extension = extname(entry.name).toLowerCase();
+			if (!SCAN_EXTENSIONS.has(extension)) continue;
+			out.push(absPath);
+		}
+	}
+}
+
 function buildAudit() {
 	const scriptDir = dirname(fileURLToPath(import.meta.url));
 	const repoRoot = resolve(scriptDir, "..");
-	const scanDir = join(repoRoot, SCAN_ROOT);
+	const entriesAbs = [];
 
-	const entries = readdirSync(scanDir, { withFileTypes: true })
-		.filter(entry => entry.isFile() && entry.name.endsWith(".ts"))
-		.map(entry => entry.name)
-		.sort((a, b) => a.localeCompare(b));
+	for (const scanRoot of SCAN_ROOTS) {
+		collectFilesRecursive(repoRoot, scanRoot, entriesAbs);
+	}
+
+	entriesAbs.sort((a, b) => normalizeRepoPath(relative(repoRoot, a)).localeCompare(normalizeRepoPath(relative(repoRoot, b))));
 
 	const totalsByCategory = createCategoryCounter();
 	const byFile = [];
 	const functionalMatches = [];
 	let totalReferences = 0;
 
-	for (const fileName of entries) {
-		const absPath = join(scanDir, fileName);
+	for (const absPath of entriesAbs) {
 		const relPath = normalizeRepoPath(relative(repoRoot, absPath));
+		const fileName = relPath.split("/").at(-1) || relPath;
+		const fileExt = extname(fileName).toLowerCase();
 		const source = readFileSync(absPath, "utf-8");
 		const lines = source.split(/\r?\n/);
 		const fileByCategory = createCategoryCounter();
 		let fileRefs = 0;
 		let inBlockComment = false;
+		const executableFile = EXECUTABLE_EXTENSIONS.has(fileExt);
 
 		for (let index = 0; index < lines.length; index++) {
 			const line = lines[index];
@@ -155,8 +201,8 @@ function buildAudit() {
 			const matches = line.match(/tmux/gi);
 			const matchCount = matches ? matches.length : 0;
 
-			const commentLine = isCommentLine(trimmed, inBlockComment);
-			const category = matchCount > 0 ? classifyLine(fileName, line, commentLine) : null;
+			const commentLine = executableFile ? isCommentLine(trimmed, inBlockComment) : true;
+			const category = matchCount > 0 ? classifyLine(fileName, fileExt, line, commentLine) : null;
 
 			if (matchCount > 0) {
 				fileRefs += matchCount;
@@ -164,7 +210,7 @@ function buildAudit() {
 				fileByCategory[category] += matchCount;
 				totalsByCategory[category] += matchCount;
 
-				if (!commentLine) {
+				if (executableFile && !commentLine) {
 					const patternId = detectFunctionalUsage(line);
 					if (patternId) {
 						const firstIndex = line.toLowerCase().indexOf("tmux");
@@ -179,10 +225,10 @@ function buildAudit() {
 				}
 			}
 
-			if (trimmed.includes("/*") && !trimmed.includes("*/")) {
+			if (executableFile && trimmed.includes("/*") && !trimmed.includes("*/")) {
 				inBlockComment = true;
 			}
-			if (inBlockComment && trimmed.includes("*/")) {
+			if (executableFile && inBlockComment && trimmed.includes("*/")) {
 				inBlockComment = false;
 			}
 		}
@@ -204,10 +250,10 @@ function buildAudit() {
 	const filesWithReferences = byFile.filter(entry => entry.references > 0).length;
 
 	return {
-		schemaVersion: 1,
+		schemaVersion: 2,
 		scope: {
-			root: SCAN_ROOT,
-			glob: FILE_GLOB,
+			roots: [...SCAN_ROOTS],
+			extensions: [...SCAN_EXTENSIONS].sort((a, b) => a.localeCompare(b)),
 		},
 		contracts: {
 			categoryOrder: CATEGORY_ORDER,

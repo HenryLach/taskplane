@@ -1,10 +1,10 @@
 # TP-128: Full Package TMUX Extrication — Status
 
-**Current Step:** Step 4: Expand audit script scope
+**Current Step:** Step 5: Tests and verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 11
+**Review Counter:** 12
 **Iteration:** 1
 **Size:** M
 
@@ -42,13 +42,13 @@
 - [x] Remove TMUX references from supervisor.ts runtime prompt text
 
 ### Step 4: Expand audit script scope
-**Status:** 🟨 In Progress
-- [ ] Update audit to scan full package
-- [ ] Expand strict functional detection for JS/CJS/MJS exec+shell tmux patterns
-- [ ] Update guard test for expanded scope and deterministic ordering
+**Status:** ✅ Complete
+- [x] Update audit to scan full package
+- [x] Expand strict functional detection for JS/CJS/MJS exec+shell tmux patterns
+- [x] Update guard test for expanded scope and deterministic ordering
 
 ### Step 5: Tests and verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Run full suite
 - [ ] Fix failures
 - [ ] Run expanded audit
@@ -101,3 +101,4 @@
 | 2026-04-03 04:42 | Review R009 | plan Step 3: APPROVE |
 | 2026-04-03 04:45 | Review R010 | code Step 3: APPROVE |
 | 2026-04-03 04:47 | Review R011 | plan Step 4: REVISE |
+| 2026-04-03 04:48 | Review R012 | plan Step 4: APPROVE |

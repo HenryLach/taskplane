@@ -10,7 +10,7 @@ const AUDIT_SCRIPT_PATH = join(__dirname, "..", "..", "scripts", "tmux-reference
 
 interface AuditOutput {
 	schemaVersion: number;
-	scope: { root: string; glob: string };
+	scope: { roots: string[]; extensions: string[] };
 	contracts: {
 		categoryOrder: string[];
 		strictMode: {
@@ -58,9 +58,11 @@ describe("TMUX reference guard", () => {
 		expect(second).toBe(first);
 
 		const parsed = JSON.parse(first) as AuditOutput;
-		expect(parsed.schemaVersion).toBe(1);
-		expect(parsed.scope.root).toBe("extensions/taskplane");
-		expect(parsed.scope.glob).toBe("*.ts");
+		expect(parsed.schemaVersion).toBe(2);
+		expect(parsed.scope.roots).toEqual(["extensions", "bin", "templates", "dashboard"]);
+		expect(parsed.scope.extensions).toContain(".cjs");
+		expect(parsed.scope.extensions).toContain(".mjs");
+		expect(parsed.scope.extensions).toContain(".ts");
 		expect(parsed.totals.filesScanned).toBeGreaterThan(0);
 		expect(parsed.totals.references).toBeGreaterThan(0);
 		expect(parsed.totals.filesWithReferences).toBeGreaterThan(0);
@@ -86,7 +88,7 @@ describe("TMUX reference guard", () => {
 		expect(byFileTotal).toBe(parsed.totals.references);
 	});
 
-	it("finds no functional TMUX command execution in extensions/taskplane", () => {
+	it("finds no functional TMUX command execution in scanned package roots", () => {
 		const parsed = runAudit(["--strict"]);
 		expect(parsed.functionalUsage.count).toBe(0);
 		expect(parsed.functionalUsage.matches).toHaveLength(0);
