@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 8
+**Review Counter:** 10
 **Iteration:** 1
 **Size:** M
 
@@ -46,10 +46,10 @@
 
 ### Step 5: Tests
 **Status:** ⬜ Not Started
-- [ ] Test: reviewer data in snapshot → correct dashboard state
-- [ ] Test: no reviewer-state → null
-- [ ] Run full suite
-- [ ] Fix failures
+- [x] Test: reviewer data in snapshot → correct dashboard state
+- [x] Test: no reviewer-state → null
+- [x] Run full suite
+- [x] Fix failures
 
 ### Step 6: Documentation & Delivery
 **Status:** ⬜ Not Started
@@ -76,3 +76,5 @@
 | 2026-04-03 03:19 | Review R006 | plan Step 3: APPROVE |
 | 2026-04-03 03:23 | Review R007 | code Step 3: APPROVE |
 | 2026-04-03 03:24 | Review R008 | plan Step 4: APPROVE |
+| 2026-04-03 03:26 | Review R009 | code Step 4: APPROVE |
+| 2026-04-03 03:27 | Review R010 | plan Step 5: APPROVE |

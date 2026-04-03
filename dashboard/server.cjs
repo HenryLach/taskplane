@@ -997,6 +997,41 @@ function computeBatchTotalCost(laneStates, telemetry) {
   return totalCost;
 }
 
+function synthesizeLaneStateFromSnapshot(key, snap, fallbackBatchId) {
+  const w = snap.worker || {};
+  const r = snap.reviewer || null;
+  const statusMap = { running: "running", spawning: "running", exited: "done", crashed: "error", killed: "error", timed_out: "error", wrapping_up: "running" };
+  const reviewerStatusMap = { running: "running", spawning: "running", wrapping_up: "running", exited: "done", crashed: "done", killed: "done", timed_out: "done" };
+
+  return {
+    prefix: key,
+    taskId: snap.taskId || null,
+    phase: snap.status === "running" ? "worker-active" : snap.status === "complete" ? "complete" : "idle",
+    workerStatus: statusMap[w.status] || w.status || "idle",
+    workerElapsed: w.elapsedMs || 0,
+    workerContextPct: w.contextPct || 0,
+    workerLastTool: w.lastTool || "",
+    workerToolCount: w.toolCalls || 0,
+    workerInputTokens: w.inputTokens || 0,
+    workerOutputTokens: w.outputTokens || 0,
+    workerCacheReadTokens: w.cacheReadTokens || 0,
+    workerCacheWriteTokens: w.cacheWriteTokens || 0,
+    workerCostUsd: w.costUsd || 0,
+    reviewerStatus: r ? (reviewerStatusMap[r.status] || r.status || "running") : "idle",
+    reviewerElapsed: r?.elapsedMs || 0,
+    reviewerContextPct: r?.contextPct || 0,
+    reviewerLastTool: r?.lastTool || "",
+    reviewerToolCount: r?.toolCalls || 0,
+    reviewerCostUsd: r?.costUsd || 0,
+    reviewerInputTokens: r?.inputTokens || 0,
+    reviewerOutputTokens: r?.outputTokens || 0,
+    reviewerCacheReadTokens: r?.cacheReadTokens || 0,
+    reviewerCacheWriteTokens: r?.cacheWriteTokens || 0,
+    batchId: snap.batchId || fallbackBatchId,
+    timestamp: snap.updatedAt || Date.now(),
+  };
+}
+
 /** Build full dashboard state object for the frontend. */
 function buildDashboardState() {
   const state = loadBatchState();
@@ -1046,37 +1081,7 @@ function buildDashboardState() {
       const laneRec = (state.lanes || []).find(l => l.laneNumber === Number(laneNum));
       const key = laneRec ? (laneRec.laneSessionId) : `lane-${laneNum}`;
       if (!laneStates[key] || (snap.updatedAt && snap.updatedAt > (laneStates[key].timestamp || 0))) {
-        const w = snap.worker || {};
-        const r = snap.reviewer || null;
-        const statusMap = { running: "running", spawning: "running", exited: "done", crashed: "error", killed: "error", timed_out: "error", wrapping_up: "running" };
-        const reviewerStatusMap = { running: "running", spawning: "running", wrapping_up: "running", exited: "done", crashed: "done", killed: "done", timed_out: "done" };
-        laneStates[key] = {
-          prefix: key,
-          taskId: snap.taskId || null,
-          phase: snap.status === "running" ? "worker-active" : snap.status === "complete" ? "complete" : "idle",
-          workerStatus: statusMap[w.status] || w.status || "idle",
-          workerElapsed: w.elapsedMs || 0,
-          workerContextPct: w.contextPct || 0,
-          workerLastTool: w.lastTool || "",
-          workerToolCount: w.toolCalls || 0,
-          workerInputTokens: w.inputTokens || 0,
-          workerOutputTokens: w.outputTokens || 0,
-          workerCacheReadTokens: w.cacheReadTokens || 0,
-          workerCacheWriteTokens: w.cacheWriteTokens || 0,
-          workerCostUsd: w.costUsd || 0,
-          reviewerStatus: r ? (reviewerStatusMap[r.status] || r.status || "running") : "idle",
-          reviewerElapsed: r?.elapsedMs || 0,
-          reviewerContextPct: r?.contextPct || 0,
-          reviewerLastTool: r?.lastTool || "",
-          reviewerToolCount: r?.toolCalls || 0,
-          reviewerCostUsd: r?.costUsd || 0,
-          reviewerInputTokens: r?.inputTokens || 0,
-          reviewerOutputTokens: r?.outputTokens || 0,
-          reviewerCacheReadTokens: r?.cacheReadTokens || 0,
-          reviewerCacheWriteTokens: r?.cacheWriteTokens || 0,
-          batchId: snap.batchId || state.batchId,
-          timestamp: snap.updatedAt || Date.now(),
-        };
+        laneStates[key] = synthesizeLaneStateFromSnapshot(key, snap, state.batchId);
       }
     }
   }
