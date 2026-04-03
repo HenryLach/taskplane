@@ -1,10 +1,10 @@
 # TP-133: Engine Segment Frontier MVP — Status
 
-**Current Step:** Step 4: Tests
+**Current Step:** Step 1: Segment frontier in engine (R002 revisions)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -18,12 +18,13 @@
 - [x] Identify segment dispatch point
 
 ### Step 1: Segment frontier in engine
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 - [x] Decompose multi-segment tasks into segment execution units
 - [x] Repo-singleton unchanged
 - [x] Sequential per-task segment execution
 - [x] Track activeSegmentId
 - [x] Update segmentIds
+- [ ] R002: Preserve repo-mode `resolvedRepoId` semantics and add regression test coverage
 
 ### Step 2: Packet-home completion authority
 **Status:** ✅ Complete
@@ -39,7 +40,7 @@
 - [x] Apply failure policy on segment failure
 
 ### Step 4: Tests
-**Status:** 🟨 In Progress
+**Status:** ⬜ Not Started
 - [ ] Test repo-singleton unchanged
 - [ ] Test multi-segment sequential execution
 - [ ] Test segment DAG edges
@@ -63,5 +64,11 @@
 | 2026-04-03 19:05 | Step 2 completed | Packet-home paths wired through execution units |
 | 2026-04-03 19:05 | Step 3 completed | Segment lifecycle transitions tracked in engine |
 | 2026-04-03 19:05 | Step 4 started | Running targeted and full tests |
+| 2026-04-03 19:10 | ⚠️ Review R002 (Step 1 code) | REVISE — repo-mode resolvedRepoId regression |
 |-----------|--------|---------|
+
+## Notes
+
+- Reviewer suggestion (R002): deduplicate blocked-task counting across expanded segment rounds to avoid over-counting blocked parents.
 | 2026-04-03 18:13 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-03 18:32 | Review R002 | code Step 1: REVISE |
