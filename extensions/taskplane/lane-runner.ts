@@ -286,30 +286,32 @@ export async function executeTaskV2(
 		let iterationTelemetry: Partial<AgentHostResult> = {};
 
 		const spawned = spawnAgent(hostOpts, undefined, (telemetry) => {
-			// Context pressure check
-			if (telemetry.contextUsage) {
-				const pct = telemetry.contextUsage.percent;
-				if (pct >= config.warnPercent) {
-					const msg = `Wrap up (context ${Math.round(pct)}%)`;
-					if (!existsSync(wrapUpFile)) writeFileSync(wrapUpFile, msg);
+			try {
+				// Context pressure check
+				if (telemetry.contextUsage) {
+					const pct = telemetry.contextUsage.percent;
+					if (pct >= config.warnPercent) {
+						const msg = `Wrap up (context ${Math.round(pct)}%)`;
+						if (!existsSync(wrapUpFile)) writeFileSync(wrapUpFile, msg);
+					}
+					if (pct >= config.killPercent) {
+						workerKillReason = "context";
+						spawned.kill();
+					}
 				}
-				if (pct >= config.killPercent) {
-					workerKillReason = "context";
-					spawned.kill();
-				}
-			}
 
-			iterationTelemetry = telemetry;
-			lastTelemetry = telemetry;
-			// Emit lane snapshot
-			emitSnapshot(config, taskId, "running", telemetry, statusPath);
+				iterationTelemetry = telemetry;
+				lastTelemetry = telemetry;
+				// Emit lane snapshot
+				emitSnapshot(config, taskId, "running", telemetry, statusPath);
+			} catch { /* non-fatal: telemetry callback must never crash the engine */ }
 		});
 
 		// Reviewer telemetry is written by the worker bridge during review_step.
 		// Poll snapshot refresh independently from worker message_end cadence so
 		// the dashboard sees reviewer activity while tool calls are in-flight.
 		const reviewerRefresh = setInterval(() => {
-			emitSnapshot(config, taskId, "running", iterationTelemetry, statusPath);
+			try { emitSnapshot(config, taskId, "running", iterationTelemetry, statusPath); } catch { /* non-fatal */ }
 		}, 1000);
 
 		let workerResult: AgentHostResult;
@@ -605,6 +607,12 @@ export function readReviewerTelemetrySnapshot(
 	}
 }
 
+/**
+ * Emit a lane snapshot to disk. NON-THROWING by contract — all errors are
+ * caught and logged. This function is called from setInterval callbacks
+ * and onTelemetry callbacks where an unhandled throw would trigger
+ * uncaughtException and crash the engine-worker process.
+ */
 function emitSnapshot(
 	config: LaneRunnerConfig,
 	taskId: string,
@@ -612,51 +620,56 @@ function emitSnapshot(
 	telemetry: Partial<AgentHostResult>,
 	statusPath: string,
 ): void {
-	// Parse progress from STATUS.md
-	let progress: RuntimeTaskProgress | null = null;
 	try {
-		const content = readFileSync(statusPath, "utf-8");
-		const parsed = parseStatusMd(content);
-		const currentStepMatch = content.match(/\*\*Current Step:\*\*\s*(.+)/);
-		const checked = parsed.steps.reduce((sum, s) => sum + s.totalChecked, 0);
-		const total = parsed.steps.reduce((sum, s) => sum + s.totalItems, 0);
-		progress = {
-			currentStep: currentStepMatch?.[1]?.trim() || "Unknown",
-			checked,
-			total,
-			iteration: parsed.iteration,
-			reviews: parsed.reviewCounter,
+		// Parse progress from STATUS.md
+		let progress: RuntimeTaskProgress | null = null;
+		try {
+			const content = readFileSync(statusPath, "utf-8");
+			const parsed = parseStatusMd(content);
+			const currentStepMatch = content.match(/\*\*Current Step:\*\*\s*(.+)/);
+			const checked = parsed.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+			const total = parsed.steps.reduce((sum, s) => sum + s.totalItems, 0);
+			progress = {
+				currentStep: currentStepMatch?.[1]?.trim() || "Unknown",
+				checked,
+				total,
+				iteration: parsed.iteration,
+				reviews: parsed.reviewCounter,
+			};
+		} catch { /* best effort */ }
+
+		const reviewerSnapshot = readReviewerTelemetrySnapshot(config, statusPath);
+
+		const snapshot: RuntimeLaneSnapshot = {
+			batchId: config.batchId,
+			laneNumber: config.laneNumber,
+			laneId: `lane-${config.laneNumber}`,
+			repoId: config.repoId,
+			taskId,
+			segmentId: null,
+			status,
+			worker: {
+				agentId: buildRuntimeAgentId(config.agentIdPrefix, config.laneNumber, "worker"),
+				status: mapLaneSnapshotStatusToWorkerStatus(status),
+				elapsedMs: telemetry.durationMs ?? 0,
+				toolCalls: telemetry.toolCalls ?? 0,
+				contextPct: telemetry.contextUsage?.percent ?? 0,
+				costUsd: telemetry.costUsd ?? 0,
+				lastTool: telemetry.lastTool ?? "",
+				inputTokens: telemetry.inputTokens ?? 0,
+				outputTokens: telemetry.outputTokens ?? 0,
+				cacheReadTokens: telemetry.cacheReadTokens ?? 0,
+				cacheWriteTokens: telemetry.cacheWriteTokens ?? 0,
+			},
+			reviewer: reviewerSnapshot,
+			progress,
+			updatedAt: Date.now(),
 		};
-	} catch { /* best effort */ }
 
-	const reviewerSnapshot = readReviewerTelemetrySnapshot(config, statusPath);
-
-	const snapshot: RuntimeLaneSnapshot = {
-		batchId: config.batchId,
-		laneNumber: config.laneNumber,
-		laneId: `lane-${config.laneNumber}`,
-		repoId: config.repoId,
-		taskId,
-		segmentId: null,
-		status,
-		worker: {
-			agentId: buildRuntimeAgentId(config.agentIdPrefix, config.laneNumber, "worker"),
-			status: mapLaneSnapshotStatusToWorkerStatus(status),
-			elapsedMs: telemetry.durationMs ?? 0,
-			toolCalls: telemetry.toolCalls ?? 0,
-			contextPct: telemetry.contextUsage?.percent ?? 0,
-			costUsd: telemetry.costUsd ?? 0,
-			lastTool: telemetry.lastTool ?? "",
-			inputTokens: telemetry.inputTokens ?? 0,
-			outputTokens: telemetry.outputTokens ?? 0,
-			cacheReadTokens: telemetry.cacheReadTokens ?? 0,
-			cacheWriteTokens: telemetry.cacheWriteTokens ?? 0,
-		},
-		reviewer: reviewerSnapshot,
-		progress,
-		updatedAt: Date.now(),
-	};
-
-	writeLaneSnapshot(config.stateRoot, config.batchId, config.laneNumber, snapshot as any);
+		writeLaneSnapshot(config.stateRoot, config.batchId, config.laneNumber, snapshot as any);
+	} catch {
+		// Non-fatal: snapshot is telemetry, not execution-critical.
+		// Swallow to prevent uncaughtException crash in setInterval/callback contexts.
+	}
 }
 

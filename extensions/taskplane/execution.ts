@@ -2214,7 +2214,7 @@ export async function executeLaneV2(
 			projectName: config.project?.name || "project",
 			maxIterations: 20,
 			noProgressLimit: 3,
-			maxWorkerMinutes: config.failure?.maxWorkerMinutes || 30,
+			maxWorkerMinutes: config.failure?.maxWorkerMinutes || 120,
 			warnPercent: 85,
 			killPercent: 95,
 			onSupervisorAlert,

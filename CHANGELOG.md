@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.3] - 2026-04-03
+
+### Fixed
+- **Engine crash prevention** — `emitSnapshot()` is now non-throwing by contract. The `reviewerRefresh` interval and `onTelemetry` callbacks are wrapped in try/catch. Prevents `uncaughtException` → `process.exit(1)` from file I/O errors in telemetry paths. Root cause of engine-worker crashes during long-running batches.
+
+### Changed
+- **Worker timeout default: 30 → 120 minutes** — Persistent worker sessions handle multiple steps; 30 min was from the legacy single-step TMUX era.
+- **Context window: auto-detect from model** — Default `workerContextWindow: 0` means inherit from the model's context window size. The previous hardcoded 200K was a poor fit for models with 1M+ context.
+
 ## [0.24.2] - 2026-04-03
 
 ### New

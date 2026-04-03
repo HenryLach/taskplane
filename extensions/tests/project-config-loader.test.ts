@@ -873,7 +873,7 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 		const config = loadProjectConfig(dir);
 		expect(config.orchestrator.failure.stallTimeout).toBe(99);
 		expect(config.orchestrator.failure.onTaskFailure).toBe("skip-dependents"); // default
-		expect(config.orchestrator.failure.maxWorkerMinutes).toBe(30); // default
+		expect(config.orchestrator.failure.maxWorkerMinutes).toBe(120); // default (increased from 30 for persistent worker sessions)
 	});
 
 	it("4.7: YAML array sections are preserved verbatim (neverLoad, protectedDocs)", () => {

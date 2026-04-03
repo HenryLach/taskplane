@@ -610,7 +610,7 @@ export const DEFAULT_ORCHESTRATOR_SECTION: OrchestratorSection = {
 		onTaskFailure: "skip-dependents",
 		onMergeFailure: "pause",
 		stallTimeout: 30,
-		maxWorkerMinutes: 30,
+		maxWorkerMinutes: 120,
 		abortGracePeriod: 60,
 	},
 	monitoring: {
