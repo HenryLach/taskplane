@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -20,7 +20,8 @@
 ### Step 1: Periodic context % refresh
 **Status:** 🟨 In Progress
 - [ ] Replace single statsRequested with periodic requests
-- [ ] Send get_session_stats every N turns or on timer
+- [ ] Keep immediate first get_session_stats request on first assistant message_end
+- [ ] Send follow-up get_session_stats on a bounded cadence (every 5 assistant message_end events)
 - [ ] Verify response handler updates contextUsage
 - [ ] Benefits both worker and reviewer
 
@@ -33,7 +34,7 @@
 
 ### Step 3: Tests
 **Status:** ⬜ Not Started
-- [ ] Test: stats requested more than once
+- [ ] Test: initial immediate stats request is preserved and periodic follow-ups occur at bounded cadence
 - [ ] Run full suite
 - [ ] Fix failures
 
@@ -50,6 +51,7 @@
 | 2026-04-03 15:08 | Step 0 started | Preflight |
 | 2026-04-03 15:14 | Worker telemetry documented | Worker row renders ⏱ elapsed, 🔧 tool count, 📊 context %, 🪙 token summary (input+cacheRead, output, optional cost), last tool label, and retry/compaction badges |
 | 2026-04-03 15:14 | Step 0 completed | Advancing to Step 1 |
+| 2026-04-03 15:15 | Review R001 | plan Step 1: REVISE; hydrate Step 1/Step 3 checklist with initial-request + bounded-cadence requirements |
 
 ## Notes
 
@@ -60,3 +62,4 @@
   - `🪙` token summary from `workerInputTokens + workerCacheReadTokens` (input), `workerOutputTokens` (output), and optional `workerCostUsd`
   - Last tool text from `workerLastTool` (or `[awaiting review]` when reviewer active)
   - Retry/compaction badges from telemetry sidecar (`retryActive`/`retries`, `compactions`)
+- Plan review suggestion noted: prefer deterministic turn-based cadence over timers for easier testability and lower edge-case risk.
