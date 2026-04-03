@@ -10,7 +10,8 @@
 
 import { describe, it } from "node:test";
 import { expect } from "./expect.ts";
-import { readFileSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -24,6 +25,12 @@ const {
 	mapLaneTaskStatusToTerminalSnapshotStatus,
 	mapLaneSnapshotStatusToWorkerStatus,
 } = await import("../taskplane/lane-runner.ts");
+const {
+	resolveTaskMonitorState,
+} = await import("../taskplane/execution.ts");
+const {
+	writeLaneSnapshot,
+} = await import("../taskplane/process-registry.ts");
 
 // ── 1. Backend selection logic in engine ─────────────────────────────
 
@@ -497,6 +504,16 @@ describe("13.x: Resume de-TMUX for V2 (TP-112)", () => {
 describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 	const execSrc = readFileSync(join(__dirname, "..", "taskplane", "execution.ts"), "utf-8");
 
+	function freshTracker(taskId: string, now: number) {
+		return {
+			taskId,
+			firstObservedAt: now,
+			statusFileSeenOnce: false,
+			lastMtime: null,
+			stallTimerStart: null,
+		};
+	}
+
 	it("14.1: resolveTaskMonitorState uses lane-snapshot-based V2 liveness with startup grace", () => {
 		const fnIdx = execSrc.indexOf("function resolveTaskMonitorState");
 		const block = execSrc.slice(fnIdx, fnIdx + 1500);
@@ -580,5 +597,98 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 		expect(cleanupBlock).toContain("killAllMergeAgentsV2()");
 		expect(cleanupBlock).not.toContain("tmuxHasSession");
 		expect(cleanupBlock).not.toContain("tmuxKillSession");
+	});
+
+	it("14.9: stale snapshot from a different task is treated as alive", async () => {
+		const root = mkdtempSync(join(tmpdir(), "tp-127-"));
+		const now = Date.now();
+		const batchId = "b-stale";
+		const taskId = "TP-127";
+		try {
+			writeLaneSnapshot(root, batchId, 1, {
+				taskId: "TP-122",
+				status: "complete",
+				updatedAt: now,
+			});
+
+			const snapshot = await resolveTaskMonitorState(
+				taskId,
+				join(root, ".DONE"),
+				"lane-1",
+				{ parsed: null, error: null },
+				freshTracker(taskId, now),
+				30 * 60_000,
+				now,
+				"v2",
+				{ stateRoot: root, batchId, laneNumber: 1 },
+			);
+
+			expect(snapshot.sessionAlive).toBe(true);
+			expect(snapshot.status).toBe("running");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("14.10: current running snapshot keeps session alive", async () => {
+		const root = mkdtempSync(join(tmpdir(), "tp-127-"));
+		const now = Date.now();
+		const batchId = "b-running";
+		const taskId = "TP-127";
+		try {
+			writeLaneSnapshot(root, batchId, 1, {
+				taskId,
+				status: "running",
+				updatedAt: now,
+			});
+
+			const snapshot = await resolveTaskMonitorState(
+				taskId,
+				join(root, ".DONE"),
+				"lane-1",
+				{ parsed: null, error: null },
+				freshTracker(taskId, now),
+				30 * 60_000,
+				now,
+				"v2",
+				{ stateRoot: root, batchId, laneNumber: 1 },
+			);
+
+			expect(snapshot.sessionAlive).toBe(true);
+			expect(snapshot.status).toBe("running");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("14.11: current complete snapshot marks session as dead", async () => {
+		const root = mkdtempSync(join(tmpdir(), "tp-127-"));
+		const now = Date.now();
+		const batchId = "b-complete";
+		const taskId = "TP-127";
+		try {
+			writeLaneSnapshot(root, batchId, 1, {
+				taskId,
+				status: "complete",
+				updatedAt: now,
+			});
+
+			const snapshot = await resolveTaskMonitorState(
+				taskId,
+				join(root, ".DONE"),
+				"lane-1",
+				{ parsed: null, error: null },
+				freshTracker(taskId, now),
+				30 * 60_000,
+				now,
+				"v2",
+				{ stateRoot: root, batchId, laneNumber: 1 },
+			);
+
+			expect(snapshot.sessionAlive).toBe(false);
+			expect(snapshot.status).toBe("failed");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });
