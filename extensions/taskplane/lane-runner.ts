@@ -226,6 +226,8 @@ export async function executeTaskV2(
 			`Wrap-up signal file: ${wrapUpFile}`,
 			``,
 			`⚠️ ORCHESTRATED RUN: Do NOT archive or move the task folder. The orchestrator handles post-merge archival.`,
+			``,
+			`⚠️ CHECKPOINT RULE: After completing EACH checkbox item, immediately edit STATUS.md to check it off (- [ ] → - [x]) BEFORE starting the next item. Do NOT batch checkbox updates at the end of a step.`,
 		];
 
 		if (totalIterations > 1 && remainingSteps.length > 0) {
