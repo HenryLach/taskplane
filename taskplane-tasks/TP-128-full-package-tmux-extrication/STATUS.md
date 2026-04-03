@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 6
+**Review Counter:** 8
 **Iteration:** 1
 **Size:** M
 
@@ -39,7 +39,7 @@
 **Status:** 🟨 In Progress
 - [ ] Clean templates/agents/supervisor.md
 - [ ] Clean supervisor-primer.md
-- [ ] Check supervisor.ts
+- [ ] Remove TMUX references from supervisor.ts runtime prompt text
 
 ### Step 4: Expand audit script scope
 **Status:** ⬜ Not Started
@@ -76,6 +76,7 @@
 - R003 Suggestion: Add at least one behavioral subprocess test to complement source-string checks.
 - R005 Suggestion: Run targeted grep/audit on `bin/taskplane.mjs` after command removal to confirm no functional TMUX command paths remain.
 - R005 Suggestion: Add a brief migration note in final delivery notes for removed `install-tmux` CLI command.
+- R008 Suggestion: After Step 3 edits, run focused grep on supervisor template/primer/source files and log any residual TMUX references.
 
 ## Execution Log
 
@@ -92,3 +93,5 @@
 | 2026-04-03 04:33 | Review R005 | plan Step 2: REVISE |
 | 2026-04-03 04:34 | Review R006 | plan Step 2: APPROVE |
 | 2026-04-03 04:37 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-03 04:41 | Review R007 | code Step 2: APPROVE |
+| 2026-04-03 04:42 | Review R008 | plan Step 3: REVISE |
