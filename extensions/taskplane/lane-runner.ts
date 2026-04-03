@@ -552,10 +552,13 @@ function makeResult(
 	return result;
 }
 
+/** Max age for reviewer state file before it's considered stale (2 minutes). */
+const REVIEWER_STATE_STALE_MS = 120_000;
+
 export function readReviewerTelemetrySnapshot(
 	config: LaneRunnerConfig,
 	statusPath: string,
-): RuntimeAgentTelemetrySnapshot | null {
+): (RuntimeAgentTelemetrySnapshot & { reviewType?: string; reviewStep?: number }) | null {
 	const reviewerPath = join(dirname(statusPath), ".reviewer-state.json");
 	if (!existsSync(reviewerPath)) return null;
 
@@ -572,9 +575,15 @@ export function readReviewerTelemetrySnapshot(
 			outputTokens: number;
 			cacheReadTokens: number;
 			cacheWriteTokens: number;
+			updatedAt: number;
+			reviewType: string;
+			reviewStep: number;
 		}>;
 
 		if (parsed.status !== "running") return null;
+
+		// Stale guard: if updatedAt is present and older than threshold, ignore
+		if (parsed.updatedAt && (Date.now() - parsed.updatedAt) > REVIEWER_STATE_STALE_MS) return null;
 
 		return {
 			agentId: buildRuntimeAgentId(config.agentIdPrefix, config.laneNumber, "reviewer"),
@@ -588,6 +597,8 @@ export function readReviewerTelemetrySnapshot(
 			outputTokens: Number.isFinite(parsed.outputTokens) ? Number(parsed.outputTokens) : 0,
 			cacheReadTokens: Number.isFinite(parsed.cacheReadTokens) ? Number(parsed.cacheReadTokens) : 0,
 			cacheWriteTokens: Number.isFinite(parsed.cacheWriteTokens) ? Number(parsed.cacheWriteTokens) : 0,
+			reviewType: typeof parsed.reviewType === "string" ? parsed.reviewType : undefined,
+			reviewStep: Number.isFinite(parsed.reviewStep) ? Number(parsed.reviewStep) : undefined,
 		};
 	} catch {
 		return null;

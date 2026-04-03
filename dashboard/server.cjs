@@ -1027,6 +1027,8 @@ function synthesizeLaneStateFromSnapshot(key, snap, fallbackBatchId) {
     reviewerOutputTokens: r?.outputTokens || 0,
     reviewerCacheReadTokens: r?.cacheReadTokens || 0,
     reviewerCacheWriteTokens: r?.cacheWriteTokens || 0,
+    reviewerType: r?.reviewType || "",
+    reviewerStep: r?.reviewStep || 0,
     batchId: snap.batchId || fallbackBatchId,
     timestamp: snap.updatedAt || Date.now(),
   };

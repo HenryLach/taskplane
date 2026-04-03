@@ -231,6 +231,9 @@ export default function (pi: ExtensionAPI) {
 		outputTokens: number;
 		cacheReadTokens: number;
 		cacheWriteTokens: number;
+		updatedAt: number;
+		reviewType?: string;
+		reviewStep?: number;
 	}): void {
 		const filePath = reviewerStatePath(taskFolder);
 		const tmpPath = filePath + ".tmp";
@@ -248,7 +251,9 @@ export default function (pi: ExtensionAPI) {
 	 * Spawn a reviewer Pi subprocess and wait for it to complete.
 	 * Returns the process exit code.
 	 */
-	function spawnReviewer(prompt: string, systemPrompt: string, cwd: string, taskFolder: string): Promise<number> {
+	function spawnReviewer(prompt: string, systemPrompt: string, cwd: string, taskFolder: string, reviewType?: string, reviewStep?: number): Promise<number> {
+		// Pre-clean stale reviewer state from prior interrupted review
+		removeReviewerState(taskFolder);
 		return new Promise((resolve) => {
 			const cliPath = resolvePiCli();
 			const args = [
@@ -288,9 +293,16 @@ export default function (pi: ExtensionAPI) {
 						outputTokens,
 						cacheReadTokens,
 						cacheWriteTokens,
+						updatedAt: Date.now(),
+						reviewType,
+						reviewStep,
 					});
 				} catch { /* best effort */ }
 			};
+
+			// Write initial "running" state immediately so dashboard shows
+			// the reviewer sub-row before the first message_end arrives.
+			emitState("running");
 
 			const closeStdin = () => {
 				setTimeout(() => {
@@ -333,6 +345,7 @@ export default function (pi: ExtensionAPI) {
 								? String(Object.values(event.args)[0]).slice(0, 80)
 								: "");
 						lastTool = argPreview ? `${toolName}: ${argPreview}` : toolName;
+						emitState("running");
 						break;
 					}
 					case "response": {
@@ -488,7 +501,7 @@ export default function (pi: ExtensionAPI) {
 
 			try {
 				const systemPrompt = loadReviewerPrompt();
-				const exitCode = await spawnReviewer(reviewPrompt, systemPrompt, cwd, taskFolder);
+				const exitCode = await spawnReviewer(reviewPrompt, systemPrompt, cwd, taskFolder, reviewType, stepNum);
 
 				// Update review counter in STATUS.md
 				try {
