@@ -1,24 +1,24 @@
 # TP-130: Engine Worker Diagnostics and Resilience — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Process-level error handlers
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read engine-worker.ts error handling
-- [ ] Read extension.ts fork + exit handler
-- [ ] Read lane-runner.ts reviewerRefresh
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read engine-worker.ts error handling
+- [x] Read extension.ts fork + exit handler
+- [x] Read lane-runner.ts reviewerRefresh
 
 ### Step 1: Process-level error handlers
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Add uncaughtException handler with IPC error + stack
 - [ ] Add unhandledRejection handler
 - [ ] Ensure IPC reaches parent before exit
@@ -52,3 +52,7 @@
 
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
+| 2026-04-03 15:21 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-03 15:21 | Step 0 started | Preflight |
+| 2026-04-03 15:28 | Step 0 completed | Preflight checks finished |
+| 2026-04-03 15:28 | Step 1 started | Process-level error handlers |
