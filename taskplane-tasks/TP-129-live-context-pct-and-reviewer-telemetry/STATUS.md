@@ -1,10 +1,10 @@
 # TP-129: Live Context % and Full Reviewer Telemetry — Status
 
-**Current Step:** Step 2: Full reviewer telemetry in dashboard
+**Current Step:** Step 3: Tests
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -26,14 +26,14 @@
 - [x] Benefits both worker and reviewer
 
 ### Step 2: Full reviewer telemetry in dashboard
-**Status:** 🟨 In Progress
-- [ ] Add elapsed time to reviewer sub-row
-- [ ] Add token summary to reviewer sub-row
-- [ ] Add context % to reviewer sub-row
-- [ ] Verify badge layout matches worker row
+**Status:** ✅ Complete
+- [x] Add elapsed time to reviewer sub-row
+- [x] Add token summary to reviewer sub-row
+- [x] Add context % to reviewer sub-row
+- [x] Verify badge layout matches worker row
 
 ### Step 3: Tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Test: initial immediate stats request is preserved and periodic follow-ups occur at bounded cadence
 - [ ] Run full suite
 - [ ] Fix failures
@@ -54,6 +54,9 @@
 | 2026-04-03 15:15 | Review R001 | plan Step 1: REVISE; hydrate Step 1/Step 3 checklist with initial-request + bounded-cadence requirements |
 | 2026-04-03 15:18 | Step 1 implemented | agent-host now requests get_session_stats on assistant message #1 and every 5 assistant message_end events |
 | 2026-04-03 15:18 | Step 1 completed | Advancing to Step 2 |
+| 2026-04-03 15:24 | Step 2 implementation | Reviewer sub-row now shows worker-style badges: ⏱ elapsed, 🔧 tools, 📊 context, 🪙 token summary, last tool |
+| 2026-04-03 15:24 | Server field check | `dashboard/server.cjs` already synthesizes reviewer elapsed/context/tokens/cost fields; no server patch required |
+| 2026-04-03 15:24 | Step 2 completed | Advancing to Step 3 |
 
 ## Notes
 
@@ -65,4 +68,6 @@
   - Last tool text from `workerLastTool` (or `[awaiting review]` when reviewer active)
   - Retry/compaction badges from telemetry sidecar (`retryActive`/`retries`, `compactions`)
 - Plan review suggestion noted: prefer deterministic turn-based cadence over timers for easier testability and lower edge-case risk.
+- Reviewer `📊` context badge already existed; parity update retained it in the same `worker-stat` badge layout while adding missing elapsed/token badges.
 | 2026-04-03 15:11 | Review R002 | plan Step 1: APPROVE |
+| 2026-04-03 15:14 | Review R003 | plan Step 2: APPROVE |

@@ -126,6 +126,20 @@ function tokenSummaryFromLaneState(ls) {
   return s;
 }
 
+function tokenSummaryFromReviewerLaneState(ls) {
+  if (!ls) return "";
+  const inp = ls.reviewerInputTokens || 0;
+  const out = ls.reviewerOutputTokens || 0;
+  const cr = ls.reviewerCacheReadTokens || 0;
+  const cw = ls.reviewerCacheWriteTokens || 0;
+  const cost = ls.reviewerCostUsd || 0;
+  const totalIn = inp + cr; // uncached + cached = total input processed
+  if (totalIn === 0 && out === 0) return "";
+  let s = `↑${formatTokens(totalIn)} ↓${formatTokens(out)}`;
+  if (cost > 0) s += ` ${formatCost(cost)}`;
+  return s;
+}
+
 /** Build compact telemetry badge HTML for retry/compaction indicators.
  *  Only shows badges when telemetry data has meaningful values.
  *  @param {object|null} tel - Telemetry data for a lane (from currentData.telemetry[prefix])
@@ -659,7 +673,7 @@ function renderLanesTasks(batch, tmuxSessions) {
         const rTools = ls.reviewerToolCount || 0;
         const rCtx = ls.reviewerContextPct ? `${Math.round(ls.reviewerContextPct)}%` : "";
         const rLastTool = ls.reviewerLastTool || "";
-        const rCost = ls.reviewerCostUsd ? `$${ls.reviewerCostUsd.toFixed(2)}` : "";
+        const rTokenStr = tokenSummaryFromReviewerLaneState(ls);
         const rType = ls.reviewerType || "review";
         const rStep = ls.reviewerStep || "?";
         reviewerRowHtml = `
@@ -668,13 +682,14 @@ function renderLanesTasks(batch, tmuxSessions) {
             <span class="task-actions"></span>
             <span class="reviewer-label">📋 Reviewer</span>
             <span class="reviewer-type">${escapeHtml(rType)} · Step ${rStep}</span>
-            <span class="task-duration">${rElapsed}</span>
+            <span class="task-duration"></span>
             <span></span>
             <span class="task-step">
               <div class="worker-stats reviewer-stats">
+                <span class="worker-stat" title="Reviewer elapsed">⏱ ${rElapsed}</span>
                 <span class="worker-stat" title="Reviewer tool calls">🔧 ${rTools}</span>
                 ${rCtx ? `<span class="worker-stat" title="Reviewer context used">📊 ${rCtx}</span>` : ""}
-                ${rCost ? `<span class="worker-stat" title="Reviewer cost">${rCost}</span>` : ""}
+                ${rTokenStr ? `<span class="worker-stat" title="Reviewer tokens: input↑ output↓ cacheRead(R) cacheWrite(W)">🪙 ${rTokenStr}</span>` : ""}
                 ${rLastTool ? `<span class="worker-stat worker-last-tool" title="Reviewer last tool">${escapeHtml(rLastTool)}</span>` : ""}
               </div>
             </span>
