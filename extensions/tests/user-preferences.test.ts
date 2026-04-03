@@ -231,7 +231,7 @@ describe("loadUserPreferences", () => {
 		expect(prefs.dashboardPort).toBe(9090);
 	});
 
-	it("6.4b: legacy tmuxPrefix key throws migration error", () => {
+	it("6.4b: legacy tmuxPrefix key is auto-migrated to sessionPrefix", () => {
 		const agentDir = makeTestDir("legacy-prefix-alias");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
@@ -239,36 +239,20 @@ describe("loadUserPreferences", () => {
 			tmuxPrefix: "legacy-prefix",
 		}));
 
-		let caught: unknown;
-		try {
-			loadUserPreferences();
-		} catch (err) {
-			caught = err;
-		}
-		expect(caught).toBeInstanceOf(ConfigLoadError);
-		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
-		expect((caught as ConfigLoadError).message).toContain("tmuxPrefix");
-		expect((caught as ConfigLoadError).message).toContain("sessionPrefix");
+		const prefs = loadUserPreferences();
+		expect(prefs.sessionPrefix).toBe("legacy-prefix");
 	});
 
-	it("6.4c: spawnMode tmux throws migration error", () => {
-		const agentDir = makeTestDir("prefs-spawn-tmux-error");
+	it("6.4c: spawnMode tmux is auto-migrated to subprocess", () => {
+		const agentDir = makeTestDir("prefs-spawn-tmux-migrate");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
 		writePrefsFile(agentDir, JSON.stringify({
 			spawnMode: "tmux",
 		}));
 
-		let caught: unknown;
-		try {
-			loadUserPreferences();
-		} catch (err) {
-			caught = err;
-		}
-		expect(caught).toBeInstanceOf(ConfigLoadError);
-		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
-		expect((caught as ConfigLoadError).message).toContain("spawnMode");
-		expect((caught as ConfigLoadError).message).toContain("subprocess");
+		const prefs = loadUserPreferences();
+		expect(prefs.spawnMode).toBe("subprocess");
 	});
 
 	it("6.5: empty JSON object returns defaults (all fields undefined)", () => {
@@ -473,20 +457,12 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 		expect(config.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 	});
 
-	it("7.8: spawnMode tmux is rejected with migration guidance", () => {
+	it("7.8: spawnMode tmux is auto-migrated to subprocess", () => {
 		const config = deepClone(DEFAULT_PROJECT_CONFIG);
 		const prefs = { spawnMode: "tmux" } as unknown as UserPreferences;
-
-		let caught: unknown;
-		try {
-			applyUserPreferences(config, prefs);
-		} catch (err) {
-			caught = err;
-		}
-		expect(caught).toBeInstanceOf(ConfigLoadError);
-		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
-		expect((caught as ConfigLoadError).message).toContain("spawnMode");
-		expect((caught as ConfigLoadError).message).toContain("subprocess");
+		// Should not throw — auto-migration handles legacy value
+		applyUserPreferences(config, prefs);
+		expect(config.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 	});
 });
 

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.1] - 2026-04-02
+
+### Fixed
+- **Config auto-migration** — Legacy `tmuxPrefix` and `spawnMode: "tmux"` fields are now silently migrated to `sessionPrefix` / `"subprocess"` instead of crashing. Config files updated on disk atomically (tmp+rename). Users updating from pre-v0.24.0 no longer hit a startup crash.
+- **Wave transition stale snapshot** (TP-127) — Monitor no longer reports tasks as "failed" during multi-wave batch transitions. Stale snapshot from previous task detected via taskId mismatch, with 30s timeout fallback to registry check.
+- **Dead TMUX functions removed** — `buildLaneEnvVars`, `pollUntilTaskComplete`, `resolveRpcWrapperPath`, `generateTelemetryPaths` removed from execution.ts (-459 lines).
+
 ## [0.24.0] - 2026-04-02
 
 ### New

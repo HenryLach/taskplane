@@ -795,7 +795,7 @@ describe("CLI dry-run integration", () => {
 		expect("tmuxPrefix" in projectConfig.orchestrator.orchestrator).toBe(false);
 	});
 
-	it("5.11 — injected legacy tmuxPrefix in generated JSON fails with migration guidance", () => {
+	it("5.11 — injected legacy tmuxPrefix is auto-migrated without crash", () => {
 		const repo = makeTestDir("cli-legacy-tmux-prefix");
 		initGitRepo(repo);
 		const initResult = runInit(repo, ["--no-examples"], { dryRun: false, preset: "minimal" });
@@ -804,22 +804,18 @@ describe("CLI dry-run integration", () => {
 		const configPath = join(repo, ".pi", "taskplane-config.json");
 		const config = JSON.parse(readFileSync(configPath, "utf-8"));
 		config.orchestrator.orchestrator.tmuxPrefix = "legacy-orch";
+		delete config.orchestrator.orchestrator.sessionPrefix;
 		writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
 
-		let caught: unknown = null;
-		try {
-			loadProjectConfig(repo);
-		} catch (err) {
-			caught = err;
-		}
-
-		expect(caught).toBeInstanceOf(ConfigLoadError);
-		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
-		expect((caught as ConfigLoadError).message).toContain("tmuxPrefix");
-		expect((caught as ConfigLoadError).message).toContain("sessionPrefix");
+		// Should not crash — auto-migration handles legacy field
+		const loaded = loadProjectConfig(repo);
+		expect(loaded.orchestrator.orchestrator.sessionPrefix).toBeDefined();
+		// Verify tmuxPrefix was removed from disk
+		const updated = JSON.parse(readFileSync(configPath, "utf-8"));
+		expect(updated.orchestrator.orchestrator.tmuxPrefix).toBeUndefined();
 	});
 
-	it("5.12 — injected legacy spawnMode tmux in generated JSON fails with subprocess hint", () => {
+	it("5.12 — injected legacy spawnMode tmux is auto-migrated to subprocess", () => {
 		const repo = makeTestDir("cli-legacy-spawn-mode");
 		initGitRepo(repo);
 		const initResult = runInit(repo, ["--no-examples"], { dryRun: false, preset: "minimal" });
@@ -830,16 +826,7 @@ describe("CLI dry-run integration", () => {
 		config.orchestrator.orchestrator.spawnMode = "tmux";
 		writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
 
-		let caught: unknown = null;
-		try {
-			loadProjectConfig(repo);
-		} catch (err) {
-			caught = err;
-		}
-
-		expect(caught).toBeInstanceOf(ConfigLoadError);
-		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
-		expect((caught as ConfigLoadError).message).toContain("spawnMode");
-		expect((caught as ConfigLoadError).message).toContain("subprocess");
+		const loaded = loadProjectConfig(repo);
+		expect(loaded.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 	});
 });

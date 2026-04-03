@@ -21,6 +21,7 @@ import assert from "node:assert";
 import {
 	mkdirSync,
 	writeFileSync,
+	readFileSync,
 	rmSync,
 } from "fs";
 import { execSync } from "child_process";
@@ -676,49 +677,49 @@ describe("key preservation and adapter regression", () => {
 		expect(legacy.orchestrator.integration).toBe("manual");
 	});
 
-	it("3.14: throws CONFIG_LEGACY_FIELD when orchestrator spawn_mode is tmux", () => {
-		const dir = makeTestDir("spawn-mode-tmux-orch-error");
+	it("3.14: auto-migrates orchestrator spawn_mode tmux → subprocess", () => {
+		const dir = makeTestDir("spawn-mode-tmux-orch-migrate");
 		writeOrchestratorYaml(dir, "orchestrator:\n  spawn_mode: tmux\n");
-
-		try {
-			loadProjectConfig(dir);
-			assert.fail("should have thrown");
-		} catch (err) {
-			expect(err).toBeInstanceOf(ConfigLoadError);
-			expect((err as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
-			expect((err as ConfigLoadError).message).toContain("orchestrator.orchestrator.spawnMode");
-			expect((err as ConfigLoadError).message).toContain("subprocess");
-		}
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 	});
 
-	it("3.15: throws CONFIG_LEGACY_FIELD when worker spawn_mode is tmux", () => {
-		const dir = makeTestDir("spawn-mode-tmux-worker-error");
+	it("3.15: auto-migrates worker spawn_mode tmux → subprocess", () => {
+		const dir = makeTestDir("spawn-mode-tmux-worker-migrate");
 		writeTaskRunnerYaml(dir, "worker:\n  spawn_mode: tmux\n");
-
-		try {
-			loadProjectConfig(dir);
-			assert.fail("should have thrown");
-		} catch (err) {
-			expect(err).toBeInstanceOf(ConfigLoadError);
-			expect((err as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
-			expect((err as ConfigLoadError).message).toContain("taskRunner.worker.spawnMode");
-			expect((err as ConfigLoadError).message).toContain("subprocess");
-		}
+		const config = loadProjectConfig(dir);
+		expect(config.taskRunner.worker.spawnMode).toBe("subprocess");
 	});
 
-	it("3.16: throws CONFIG_LEGACY_FIELD when tmux_prefix alias is present", () => {
-		const dir = makeTestDir("tmux-prefix-alias-error");
+	it("3.16: auto-migrates tmux_prefix → sessionPrefix", () => {
+		const dir = makeTestDir("tmux-prefix-alias-migrate");
 		writeOrchestratorYaml(dir, "orchestrator:\n  tmux_prefix: orch-legacy\n");
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.orchestrator.sessionPrefix).toBe("orch-legacy");
+	});
 
-		try {
-			loadProjectConfig(dir);
-			assert.fail("should have thrown");
-		} catch (err) {
-			expect(err).toBeInstanceOf(ConfigLoadError);
-			expect((err as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
-			expect((err as ConfigLoadError).message).toContain("orchestrator.orchestrator.tmuxPrefix");
-			expect((err as ConfigLoadError).message).toContain("sessionPrefix");
-		}
+	it("3.17: when both sessionPrefix and tmuxPrefix exist, sessionPrefix wins", () => {
+		const dir = makeTestDir("both-prefix-keys");
+		// JSON config with both keys — sessionPrefix should take priority
+		mkdirSync(join(dir, ".pi"), { recursive: true });
+		writeFileSync(join(dir, ".pi", "taskplane-config.json"), JSON.stringify({
+			configVersion: 1,
+			orchestrator: { orchestrator: { sessionPrefix: "new-prefix", tmuxPrefix: "old-prefix" } },
+		}, null, 2));
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.orchestrator.sessionPrefix).toBe("new-prefix");
+		// tmuxPrefix should be removed from disk
+		const updated = JSON.parse(readFileSync(join(dir, ".pi", "taskplane-config.json"), "utf-8"));
+		expect(updated.orchestrator.orchestrator.tmuxPrefix).toBeUndefined();
+		expect(updated.orchestrator.orchestrator.sessionPrefix).toBe("new-prefix");
+	});
+
+	it("3.18: migration write failure logs warning but does not crash", () => {
+		const dir = makeTestDir("migration-write-fail");
+		writeOrchestratorYaml(dir, "orchestrator:\n  tmux_prefix: test-prefix\n");
+		// YAML-only project — no JSON file to write back to, but should not crash
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.orchestrator.sessionPrefix).toBe("test-prefix");
 	});
 });
 
@@ -828,23 +829,15 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 		expect(result.task_areas).toEqual({});
 	});
 
-	it("4.5b: task-runner loadConfig rethrows CONFIG_LEGACY_FIELD for worker spawn_mode tmux", () => {
+	it("4.5b: task-runner loadConfig does not crash on worker spawn_mode tmux", () => {
 		const dir = makeTestDir("loadconfig-legacy-worker-spawn");
 		writeTaskRunnerYaml(dir, "worker:\n  spawn_mode: tmux\n");
-
-		let caught: unknown;
-		try {
-			taskRunnerLoadConfig(dir);
-		} catch (err) {
-			caught = err;
-		}
-
-		expect(caught).toBeInstanceOf(ConfigLoadError);
-		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
-		expect((caught as ConfigLoadError).message).toContain("taskRunner.worker.spawnMode");
+		// Should not throw — auto-migration handles legacy field
+		const config = taskRunnerLoadConfig(dir);
+		expect(config).toBeDefined();
 	});
 
-	it("4.5c: task-runner loadConfig rethrows CONFIG_LEGACY_FIELD for legacy user prefs", () => {
+	it("4.5c: task-runner loadConfig does not crash on legacy user prefs", () => {
 		const dir = makeTestDir("loadconfig-legacy-prefs");
 		const agentDir = makeTestDir("loadconfig-legacy-prefs-agent");
 		const prevAgentDir = process.env.PI_CODING_AGENT_DIR;
@@ -852,11 +845,10 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 		mkdirSync(join(agentDir, "taskplane"), { recursive: true });
 		writeFileSync(join(agentDir, "taskplane", "preferences.json"), JSON.stringify({ tmuxPrefix: "legacy-pref" }), "utf-8");
 
-		let caught: unknown;
 		try {
-			taskRunnerLoadConfig(dir);
-		} catch (err) {
-			caught = err;
+			// Should not throw — auto-migration handles legacy field
+			const config = taskRunnerLoadConfig(dir);
+			expect(config).toBeDefined();
 		} finally {
 			if (prevAgentDir === undefined) {
 				delete process.env.PI_CODING_AGENT_DIR;
@@ -864,10 +856,6 @@ describe("defaults, cloning, non-mutation, and backward-compat wrappers", () => 
 				process.env.PI_CODING_AGENT_DIR = prevAgentDir;
 			}
 		}
-
-		expect(caught).toBeInstanceOf(ConfigLoadError);
-		expect((caught as ConfigLoadError).code).toBe("CONFIG_LEGACY_FIELD");
-		expect((caught as ConfigLoadError).message).toContain("tmuxPrefix");
 	});
 
 	it("4.6: JSON config deep merges nested fields (partial section override)", () => {

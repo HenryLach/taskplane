@@ -24,7 +24,7 @@
  * @module config/loader
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { parse as yamlParse } from "yaml";
@@ -116,56 +116,130 @@ function hasOwn(obj: unknown, key: string): boolean {
 	return !!obj && typeof obj === "object" && Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-function throwLegacyFieldError(fieldPath: string, source: string, fixHint: string): never {
-	throw new ConfigLoadError(
-		"CONFIG_LEGACY_FIELD",
-		`[taskplane] ${source}: "${fieldPath}" is no longer supported under Runtime V2. ${fixHint}`,
-	);
-}
+// throwLegacyFieldError removed — replaced by auto-migration functions that fix config in-place
 
-function assertNoLegacyTmuxProjectConfig(config: TaskplaneConfig, source: string): void {
+/**
+ * Auto-migrate legacy TMUX fields in project config.
+ * Renames fields in-place and writes back to disk instead of crashing.
+ * @returns true if any migrations were applied
+ */
+/** Track whether project config migration has already run for this load cycle. */
+let _projectMigrationDone = false;
+
+/**
+ * Auto-migrate legacy TMUX fields in project config.
+ *
+ * Precedence: if both `sessionPrefix` and `tmuxPrefix` exist, the new
+ * key (`sessionPrefix`) wins. `tmuxPrefix` is only used when `sessionPrefix`
+ * is absent. This matches the principle that explicit new-format config
+ * takes priority over legacy fields.
+ *
+ * Writes back to disk atomically (tmp + rename) on first migration.
+ * Idempotent — safe to call multiple times per load cycle (skips after first).
+ *
+ * @returns true if any migrations were applied
+ */
+function migrateProjectConfig(config: TaskplaneConfig, configRoot: string): boolean {
+	if (_projectMigrationDone) return false;
+
+	let migrated = false;
 	const orchestratorCore = config.orchestrator?.orchestrator as Record<string, unknown> | undefined;
-	if (hasOwn(orchestratorCore, "tmuxPrefix")) {
-		throwLegacyFieldError(
-			"orchestrator.orchestrator.tmuxPrefix",
-			source,
-			"Use \"orchestrator.orchestrator.sessionPrefix\" instead.",
-		);
+	if (orchestratorCore && hasOwn(orchestratorCore, "tmuxPrefix")) {
+		// Use tmuxPrefix if sessionPrefix is absent, undefined, or still the default.
+		// An explicit non-default sessionPrefix takes priority over legacy tmuxPrefix.
+		const currentPrefix = orchestratorCore.sessionPrefix;
+		const isDefault = currentPrefix === undefined || currentPrefix === "orch";
+		if (isDefault) {
+			(orchestratorCore as any).sessionPrefix = orchestratorCore.tmuxPrefix;
+		}
+		delete orchestratorCore.tmuxPrefix;
+		console.error(`[taskplane] Auto-migrated: orchestrator.orchestrator.tmuxPrefix → sessionPrefix`);
+		migrated = true;
 	}
 	if (orchestratorCore?.spawnMode === "tmux") {
-		throwLegacyFieldError(
-			"orchestrator.orchestrator.spawnMode",
-			source,
-			"Use \"subprocess\" instead.",
-		);
+		(orchestratorCore as any).spawnMode = "subprocess";
+		console.error(`[taskplane] Auto-migrated: orchestrator.orchestrator.spawnMode "tmux" → "subprocess"`);
+		migrated = true;
 	}
-
 	const workerConfig = config.taskRunner?.worker as Record<string, unknown> | undefined;
 	if (workerConfig?.spawnMode === "tmux") {
-		throwLegacyFieldError(
-			"taskRunner.worker.spawnMode",
-			source,
-			"Use \"subprocess\" or remove the field to inherit defaults.",
-		);
+		(workerConfig as any).spawnMode = "subprocess";
+		console.error(`[taskplane] Auto-migrated: taskRunner.worker.spawnMode "tmux" → "subprocess"`);
+		migrated = true;
 	}
+
+	if (migrated) {
+		// Write back atomically (tmp + rename) to prevent corruption
+		try {
+			const jsonPath = join(configRoot, ".pi", "taskplane-config.json");
+			if (existsSync(jsonPath)) {
+				const raw = JSON.parse(readFileSync(jsonPath, "utf-8"));
+				// Apply same renames to the raw JSON (consistent precedence)
+				if (raw.orchestrator?.orchestrator?.tmuxPrefix !== undefined) {
+					const rawPrefix = raw.orchestrator.orchestrator.sessionPrefix;
+					if (rawPrefix === undefined || rawPrefix === "orch") {
+						raw.orchestrator.orchestrator.sessionPrefix = raw.orchestrator.orchestrator.tmuxPrefix;
+					}
+					delete raw.orchestrator.orchestrator.tmuxPrefix;
+				}
+				if (raw.orchestrator?.orchestrator?.spawnMode === "tmux") {
+					raw.orchestrator.orchestrator.spawnMode = "subprocess";
+				}
+				if (raw.taskRunner?.worker?.spawnMode === "tmux") {
+					raw.taskRunner.worker.spawnMode = "subprocess";
+				}
+				const tmpPath = jsonPath + ".migration-tmp";
+				writeFileSync(tmpPath, JSON.stringify(raw, null, 2) + "\n");
+				renameSync(tmpPath, jsonPath);
+				console.error(`[taskplane] Config file updated: ${jsonPath}`);
+			}
+		} catch (err) {
+			console.error(`[taskplane] Warning: could not persist config migration to disk: ${err instanceof Error ? err.message : err}`);
+		}
+	}
+
+	_projectMigrationDone = true;
+	return migrated;
 }
 
-function assertNoLegacyTmuxUserPreferences(raw: Record<string, any>, prefsPath: string): void {
+/**
+ * Auto-migrate legacy TMUX fields in user preferences.
+ *
+ * Same precedence: new key wins if both exist.
+ * Writes back atomically (tmp + rename).
+ *
+ * @returns true if any migrations were applied
+ */
+function migrateUserPreferences(raw: Record<string, any>, prefsPath: string): boolean {
+	let migrated = false;
 	if (hasOwn(raw, "tmuxPrefix")) {
-		throwLegacyFieldError(
-			"tmuxPrefix",
-			`user preferences (${prefsPath})`,
-			"Rename it to \"sessionPrefix\".",
-		);
+		if (!hasOwn(raw, "sessionPrefix") || raw.sessionPrefix === undefined) {
+			raw.sessionPrefix = raw.tmuxPrefix;
+		}
+		delete raw.tmuxPrefix;
+		console.error(`[taskplane] Auto-migrated user preference: tmuxPrefix → sessionPrefix`);
+		migrated = true;
 	}
 	if (raw.spawnMode === "tmux") {
-		throwLegacyFieldError(
-			"spawnMode",
-			`user preferences (${prefsPath})`,
-			"Set it to \"subprocess\".",
-		);
+		raw.spawnMode = "subprocess";
+		console.error(`[taskplane] Auto-migrated user preference: spawnMode "tmux" → "subprocess"`);
+		migrated = true;
 	}
+	if (migrated) {
+		try {
+			const tmpPath = prefsPath + ".migration-tmp";
+			writeFileSync(tmpPath, JSON.stringify(raw, null, 2) + "\n");
+			renameSync(tmpPath, prefsPath);
+			console.error(`[taskplane] Preferences file updated: ${prefsPath}`);
+		} catch (err) {
+			console.error(`[taskplane] Warning: could not persist preferences migration to disk: ${err instanceof Error ? err.message : err}`);
+		}
+	}
+	return migrated;
 }
+
+/** Reset migration guard (for testing). @internal */
+export function _resetMigrationGuard(): void { _projectMigrationDone = false; }
 
 
 // ── YAML snake_case → camelCase Mapping ──────────────────────────────
@@ -665,7 +739,7 @@ export function loadUserPreferences(): UserPreferences {
  * Unknown keys are silently dropped — this is the Layer 2 boundary guardrail.
  */
 function extractAllowlistedPreferences(raw: Record<string, any>, prefsPath: string): UserPreferences {
-	assertNoLegacyTmuxUserPreferences(raw, prefsPath);
+	migrateUserPreferences(raw, prefsPath);
 
 	const prefs: UserPreferences = {};
 
@@ -725,11 +799,8 @@ export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPrefere
 	// spawnMode: enum — apply if defined (not a string-empty check)
 	if (prefs.spawnMode !== undefined) {
 		if (prefs.spawnMode === "tmux") {
-			throwLegacyFieldError(
-				"spawnMode",
-				"user preferences (runtime)",
-				"Set it to \"subprocess\".",
-			);
+			prefs.spawnMode = "subprocess";
+			console.error(`[taskplane] Auto-migrated runtime preference: spawnMode "tmux" → "subprocess"`);
 		}
 		config.orchestrator.orchestrator.spawnMode = prefs.spawnMode;
 	}
@@ -853,12 +924,14 @@ export function loadProjectConfig(cwd: string, pointerConfigRoot?: string): Task
 		};
 	}
 
-	assertNoLegacyTmuxProjectConfig(config, `project config (${configRoot})`);
+	_projectMigrationDone = false; // Reset guard for each top-level load
+	migrateProjectConfig(config, configRoot);
 
 	// Layer 2: User preferences (allowlisted fields only)
 	const prefs = loadUserPreferences();
 	applyUserPreferences(config, prefs);
-	assertNoLegacyTmuxProjectConfig(config, `project config (${configRoot}) after preferences merge`);
+	// No second migrateProjectConfig call needed — idempotency guard + prefs
+	// can’t re-introduce tmux fields (migrateUserPreferences already ran).
 
 	return config;
 }
@@ -882,7 +955,7 @@ export function loadLayer1Config(cwd: string, pointerConfigRoot?: string): Taskp
 	// Try JSON first
 	const jsonConfig = loadJsonConfig(configRoot);
 	if (jsonConfig !== null) {
-		assertNoLegacyTmuxProjectConfig(jsonConfig, `project config (${configRoot})`);
+		migrateProjectConfig(jsonConfig, configRoot);
 		return jsonConfig;
 	}
 
@@ -896,7 +969,7 @@ export function loadLayer1Config(cwd: string, pointerConfigRoot?: string): Taskp
 		orchestrator,
 		...(workspace ? { workspace } : {}),
 	};
-	assertNoLegacyTmuxProjectConfig(config, `project config (${configRoot})`);
+	migrateProjectConfig(config, configRoot);
 	return config;
 }
 

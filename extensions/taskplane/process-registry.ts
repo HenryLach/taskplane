@@ -353,7 +353,7 @@ export function readLaneSnapshot(
 	stateRoot: string,
 	batchId: string,
 	laneNumber: number,
-): { status: string; updatedAt?: number } | null {
+): { taskId?: string | null; status: string; updatedAt?: number } | null {
 	try {
 		const p = runtimeLaneSnapshotPath(stateRoot, batchId, laneNumber);
 		if (!existsSync(p)) return null;

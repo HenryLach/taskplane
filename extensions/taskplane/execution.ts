@@ -853,18 +853,26 @@ export async function resolveTaskMonitorState(
 	runtimeBackend?: RuntimeBackend,
 	v2Context?: { stateRoot: string; batchId: string; laneNumber: number },
 ): Promise<TaskMonitorSnapshot> {
-	// TP-115: Backend-aware liveness check.
+	// TP-115/TP-127: Backend-aware liveness check.
 	// V2: read the lane snapshot file written by lane-runner every second.
-	// Snapshot status is authoritative — no PID probing needed.
 	// If snapshot doesn't exist yet, assume alive (lane-runner startup race).
+	// If snapshot belongs to a different task, it's stale transition data from
+	// the previous wave/task and should be treated like startup grace (alive).
 	// Legacy: check lane-session liveness.
 	let sessionAlive: boolean;
 	if (runtimeBackend === "v2" && v2Context) {
 		const snap = readLaneSnapshot(v2Context.stateRoot, v2Context.batchId, v2Context.laneNumber);
-		if (snap == null) {
-			// Snapshot not written yet — lane-runner is still starting up.
-			// Assume alive to avoid false "failed" from monitor racing lane startup.
-			sessionAlive = true;
+		if (snap == null || snap.taskId !== taskId) {
+			// Snapshot not written yet OR snapshot still points to a prior task.
+			// Assume alive initially, but if stale for >30s consult the registry
+			// to avoid indefinite false "running" if the lane-runner died.
+			const staleMs = snap?.updatedAt ? (now - snap.updatedAt) : 0;
+			if (staleMs > 30_000) {
+				// Snapshot hasn't been updated for 30s+ — check registry as fallback
+				sessionAlive = isV2AgentAlive(sessionName, runtimeBackend);
+			} else {
+				sessionAlive = true;
+			}
 		} else {
 			sessionAlive = snap.status === "running";
 		}
