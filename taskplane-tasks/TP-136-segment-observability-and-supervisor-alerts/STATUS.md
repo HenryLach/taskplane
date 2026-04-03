@@ -1,10 +1,10 @@
 # TP-136: Segment Observability and Supervisor Alerts — Status
 
-**Current Step:** Step 1: Dashboard segment visibility
+**Current Step:** Step 2: Supervisor segment alerts
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** S
 
@@ -17,14 +17,14 @@
 - [x] Check segment data in batch state
 
 ### Step 1: Dashboard segment visibility
-**Status:** 🟨 In Progress
-- [ ] Show active segment per lane
-- [ ] Show segment progress per task
-- [ ] Show packet home repo
-- [ ] Handle repo-singleton gracefully
+**Status:** ✅ Complete
+- [x] Show active segment per lane
+- [x] Show segment progress per task
+- [x] Show packet home repo
+- [x] Handle repo-singleton gracefully
 
 ### Step 2: Supervisor segment alerts
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Add segmentId/repoId to alert payloads
 - [ ] Add frontier snapshot to context
 - [ ] Update supervisor primer
@@ -54,3 +54,4 @@
 | 2026-04-03 19:57 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-03 19:57 | Step 0 started | Preflight |
 |-----------|--------|---------|
+| 2026-04-03 19:59 | Review R001 | plan Step 1: APPROVE |
