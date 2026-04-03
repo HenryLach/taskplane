@@ -1,10 +1,10 @@
 # TP-128: Full Package TMUX Extrication — Status
 
-**Current Step:** Step 2: Remove TMUX from CLI
+**Current Step:** Step 1: Remove TMUX from task-runner.ts
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -17,7 +17,7 @@
 - [x] Log inventory
 
 ### Step 1: Remove TMUX from task-runner.ts
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 - [x] Remove spawnAgentTmux
 - [x] Remove spawn_mode: "tmux" branch
 - [x] Remove TMUX session helpers
@@ -25,9 +25,10 @@
 - [x] Update tests
 - [x] R002: Migrate persistent-worker-context test expectations to subprocess-only behavior
 - [x] R002: Reconcile mailbox steering tests with subprocess task-runner behavior
+- [ ] R003: Remove accidental `.tmp-fulltest.log` artifact and prevent re-commit
 
 ### Step 2: Remove TMUX from CLI
-**Status:** 🟨 In Progress
+**Status:** ⬜ Not Started
 - [ ] Remove doctor TMUX checks
 - [ ] Remove install-tmux guidance
 - [ ] Update help text
@@ -69,6 +70,8 @@
 
 - R002 Suggestion: Prefer behavioral subprocess tests over source-string checks when replacing removed TMUX assertions.
 - R002 Suggestion: Document steering contract shifts in mailbox/task-runner test comments where behavior changed.
+- R003 Suggestion: Clean up remaining unused TMUX-era imports/helpers in task-runner.ts as follow-up hardening.
+- R003 Suggestion: Add at least one behavioral subprocess test to complement source-string checks.
 
 ## Execution Log
 
@@ -79,3 +82,4 @@
 |-----------|--------|---------|
 | 2026-04-03 04:03 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-03 04:19 | Review R002 | code Step 1: REVISE |
+| 2026-04-03 04:26 | Review R003 | code Step 1: REVISE |
