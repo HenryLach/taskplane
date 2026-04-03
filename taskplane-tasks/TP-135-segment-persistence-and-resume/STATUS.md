@@ -1,10 +1,10 @@
 # TP-135: Segment Persistence and Resume — Status
 
-**Current Step:** Step 3: Reconciliation edge cases
+**Current Step:** Step 2: Resume reconstruction (R005 revisions)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** M
 
@@ -26,7 +26,7 @@
 - [x] Maintain activeSegmentId
 
 ### Step 2: Resume reconstruction
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress (R005 revisions)
 - [x] Read persisted segments for frontier
 - [x] Identify completed segments
 - [x] Identify in-flight segments
@@ -36,9 +36,11 @@
 - [x] R004: Preserve .DONE authority even when segment frontier is incomplete
 - [x] R004: Fall back to task-level reconciliation when wave segment record is missing
 - [x] R004: Add regression tests for .DONE authority + missing-segment fallback
+- [ ] R005: Preserve terminal task status when segmentIds exist but segments[] records are missing
+- [ ] R005: Add integration-order regression test (reconstructSegmentFrontier → reconcileTaskStates)
 
 ### Step 3: Reconciliation edge cases
-**Status:** 🟨 In Progress
+**Status:** ⬜ Not Started
 - [ ] Mid-segment crash
 - [ ] Between-segment crash
 - [ ] All segments complete
@@ -62,6 +64,7 @@
 ## Notes
 - R004 suggestion: keep fallback hardening in place before Step 3 edge-case implementation.
 - R004 suggestion: add targeted unit coverage around `reconstructSegmentFrontier()` and `computeResumePoint()` fallback behavior.
+- R005 suggestion: test `reconstructSegmentFrontier()` + `reconcileTaskStates()` in sequence for partial segment persistence.
 
 ## Execution Log
 
@@ -73,3 +76,4 @@
 | 2026-04-03 19:22 | Review R002 | code Step 1: APPROVE |
 | 2026-04-03 19:23 | Review R003 | plan Step 2: APPROVE |
 | 2026-04-03 19:31 | Review R004 | code Step 2: REVISE |
+| 2026-04-03 19:36 | Review R005 | code Step 2: REVISE |
