@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.4] - 2026-04-03
+
+### New
+- **Full-package TMUX extrication (TP-128)** — Removed TMUX from task-runner.ts (-1755 lines), CLI doctor/install checks (-295 lines), supervisor templates, and expanded audit script scope. 15 reviews. Net -5876 lines across 35 files.
+
 ## [0.24.3] - 2026-04-03
 
 ### Fixed
