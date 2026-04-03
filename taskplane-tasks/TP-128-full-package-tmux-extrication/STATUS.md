@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 3
-**Iteration:** 1
+**Review Counter:** 5
+**Iteration:** 2
 **Size:** M
 
 ---
@@ -31,7 +31,9 @@
 **Status:** 🟨 In Progress
 - [ ] Remove doctor TMUX checks
 - [ ] Remove install-tmux guidance
+- [ ] Remove install-tmux command implementation and dispatch path
 - [ ] Update help text
+- [ ] Validate CLI surface for removed install-tmux command
 
 ### Step 3: De-TMUX supervisor templates and primer
 **Status:** ⬜ Not Started
@@ -72,6 +74,8 @@
 - R002 Suggestion: Document steering contract shifts in mailbox/task-runner test comments where behavior changed.
 - R003 Suggestion: Clean up remaining unused TMUX-era imports/helpers in task-runner.ts as follow-up hardening.
 - R003 Suggestion: Add at least one behavioral subprocess test to complement source-string checks.
+- R005 Suggestion: Run targeted grep/audit on `bin/taskplane.mjs` after command removal to confirm no functional TMUX command paths remain.
+- R005 Suggestion: Add a brief migration note in final delivery notes for removed `install-tmux` CLI command.
 
 ## Execution Log
 
@@ -83,3 +87,6 @@
 | 2026-04-03 04:03 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-03 04:19 | Review R002 | code Step 1: REVISE |
 | 2026-04-03 04:26 | Review R003 | code Step 1: REVISE |
+| 2026-04-03 04:31 | Review R004 | code Step 1: APPROVE |
+| 2026-04-03 04:32 | Worker iter 1 | killed (wall-clock timeout) in 1800s, tools: 127 |
+| 2026-04-03 04:33 | Review R005 | plan Step 2: REVISE |
