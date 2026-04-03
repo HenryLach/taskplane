@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -20,11 +20,11 @@
 
 ### Step 1: Bridge extension — write reviewer telemetry to file
 **Status:** ⬜ Not Started
-- [ ] Parse reviewer stdout for RPC events
-- [ ] Accumulate telemetry (tokens, cost, tools, elapsed)
-- [ ] Write to .reviewer-state.json on each message_end
-- [ ] Write final state on exit
-- [ ] Cleanup after reading output
+- [x] Parse reviewer stdout for RPC events
+- [x] Accumulate telemetry (tokens, cost, tools, elapsed)
+- [x] Write to .reviewer-state.json on each message_end
+- [x] Write final state on exit
+- [x] Cleanup after reading output
 
 ### Step 2: Lane-runner — read reviewer state into snapshot
 **Status:** ⬜ Not Started
@@ -63,3 +63,4 @@
 | 2026-04-03 03:04 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-03 03:04 | Step 0 started | Preflight |
 |-----------|--------|---------|
+| 2026-04-03 03:07 | Review R001 | plan Step 1: APPROVE |
