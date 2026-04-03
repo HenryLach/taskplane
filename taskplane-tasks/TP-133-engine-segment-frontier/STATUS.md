@@ -1,10 +1,10 @@
 # TP-133: Engine Segment Frontier MVP — Status
 
-**Current Step:** Step 1: Segment frontier in engine
+**Current Step:** Step 4: Tests
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -18,28 +18,28 @@
 - [x] Identify segment dispatch point
 
 ### Step 1: Segment frontier in engine
-**Status:** 🟨 In Progress
-- [ ] Decompose multi-segment tasks into segment execution units
-- [ ] Repo-singleton unchanged
-- [ ] Sequential per-task segment execution
-- [ ] Track activeSegmentId
-- [ ] Update segmentIds
+**Status:** ✅ Complete
+- [x] Decompose multi-segment tasks into segment execution units
+- [x] Repo-singleton unchanged
+- [x] Sequential per-task segment execution
+- [x] Track activeSegmentId
+- [x] Update segmentIds
 
 ### Step 2: Packet-home completion authority
-**Status:** ⬜ Not Started
-- [ ] .DONE check uses packet.donePath
-- [ ] STATUS.md reads use packet.statusPath
-- [ ] Backward compat for repo-mode
+**Status:** ✅ Complete
+- [x] .DONE check uses packet.donePath
+- [x] STATUS.md reads use packet.statusPath
+- [x] Backward compat for repo-mode
 
 ### Step 3: Segment lifecycle transitions
-**Status:** ⬜ Not Started
-- [ ] Track segment status transitions
-- [ ] Advance to next segment on completion
-- [ ] Mark task complete when all segments done
-- [ ] Apply failure policy on segment failure
+**Status:** ✅ Complete
+- [x] Track segment status transitions
+- [x] Advance to next segment on completion
+- [x] Mark task complete when all segments done
+- [x] Apply failure policy on segment failure
 
 ### Step 4: Tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Test repo-singleton unchanged
 - [ ] Test multi-segment sequential execution
 - [ ] Test segment DAG edges
@@ -59,4 +59,9 @@
 | 2026-04-03 18:10 | Step 0 started | Preflight |
 | 2026-04-03 18:20 | Step 0 completed | Preflight checklist complete |
 | 2026-04-03 18:20 | Step 1 started | Segment frontier implementation |
+| 2026-04-03 19:05 | Step 1 completed | Segment frontier integrated into engine wave planning |
+| 2026-04-03 19:05 | Step 2 completed | Packet-home paths wired through execution units |
+| 2026-04-03 19:05 | Step 3 completed | Segment lifecycle transitions tracked in engine |
+| 2026-04-03 19:05 | Step 4 started | Running targeted and full tests |
 |-----------|--------|---------|
+| 2026-04-03 18:13 | Review R001 | plan Step 1: APPROVE |
