@@ -76,4 +76,4 @@
 ## Notes
 
 - Reviewer suggestion (R002): deduplicate blocked-task counting across expanded segment rounds to avoid over-counting blocked parents.
-| 2026-04-03 18:43 | Review R005 | code Step 4: APPROVE |
+- Review R005 (Step 4 code): APPROVE.
