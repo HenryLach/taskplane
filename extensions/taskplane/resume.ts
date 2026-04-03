@@ -34,11 +34,11 @@ function terminateAliveV2Agents(stateRoot: string, batchId: string, sessionName:
 }
 import { getCurrentBranch, runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
-import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
-import { buildBatchProgressSnapshot, defaultResilienceState, StateFileError } from "./types.ts";
+import { buildBatchProgressSnapshot, buildSupervisorSegmentFrontierSnapshot, defaultResilienceState, StateFileError } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, LaneExecutionResult, LaneTaskOutcome, LaneTaskStatus, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedBatchState, PersistedLaneRecord, PersistedSegmentRecord, ReconciledTaskState, ResumeEligibility, ResumePoint, TaskRunnerConfig, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, safeResetWorktree, sleepSync } from "./worktree.ts";
@@ -1921,13 +1921,36 @@ export async function resumeOrchBatch(
 		for (const taskId of waveResult.failedTaskIds) {
 			const outcome = allTaskOutcomes.find(o => o.taskId === taskId);
 			const laneForTask = latestAllocatedLanes.find(l => l.tasks.some(t => t.taskId === taskId));
+			const taskRecord = batchState.tasks.find((task) => task.taskId === taskId);
 			const exitReason = outcome?.exitReason || "unknown";
 			const hasPartialProgress = (outcome?.partialProgressCommits ?? 0) > 0;
+			const segmentFrontier = buildSupervisorSegmentFrontierSnapshot(
+				taskId,
+				taskRecord?.segmentIds,
+				taskRecord?.activeSegmentId,
+				batchState.segments,
+				outcome?.segmentId,
+			);
+			const segmentId = outcome?.segmentId
+				?? taskRecord?.activeSegmentId
+				?? segmentFrontier?.activeSegmentId
+				?? undefined;
+			const repoId = segmentId
+				? (segmentFrontier?.segments.find((segment) => segment.segmentId === segmentId)?.repoId ?? laneForTask?.repoId)
+				: laneForTask?.repoId;
+			const segmentSummary = segmentId
+				? `  Segment: ${segmentId}${repoId ? ` (repo: ${repoId})` : ""}\n`
+				: "";
+			const frontierSummary = segmentFrontier
+				? `  Segment frontier: ${segmentFrontier.terminalSegments}/${segmentFrontier.totalSegments} terminal\n`
+				: "";
 			emitAlert({
 				category: "task-failure",
 				summary:
 					`⚠️ Task failure: ${taskId}\n` +
 					`  Exit reason: ${exitReason}\n` +
+					segmentSummary +
+					frontierSummary +
 					`  Lane: ${laneForTask?.laneId ?? "unknown"} (lane ${laneForTask?.laneNumber ?? "?"})\n` +
 					`  Partial progress preserved: ${hasPartialProgress ? "yes" : "no"}\n` +
 					`  Batch: wave ${waveIdx + 1}/${batchState.totalWaves}, ` +
@@ -1938,6 +1961,9 @@ export async function resumeOrchBatch(
 					`  - Read STATUS.md and lane logs for diagnosis`,
 				context: {
 					taskId,
+					segmentId,
+					repoId,
+					segmentFrontier,
 					laneId: laneForTask?.laneId,
 					laneNumber: laneForTask?.laneNumber,
 					waveIndex: waveIdx,
@@ -2139,6 +2165,7 @@ export async function resumeOrchBatch(
 			);
 
 			// ── TP-076: Emit supervisor alert for rollback safe-stop ──
+			const rollbackRepoId = extractFailedRepoId(mergeResult) ?? undefined;
 			emitAlert({
 				category: "merge-failure",
 				summary:
@@ -2152,6 +2179,7 @@ export async function resumeOrchBatch(
 				context: {
 					waveIndex: waveIdx,
 					laneNumber: mergeResult.failedLane ?? undefined,
+					repoId: rollbackRepoId,
 					mergeError: `Safe-stop: verification rollback failed at wave ${waveIdx + 1}`,
 					batchProgress: buildBatchProgressSnapshot(batchState),
 				},
@@ -2169,6 +2197,7 @@ export async function resumeOrchBatch(
 				batchState.resilience = defaultResilienceState();
 			}
 
+			const mergeRepoId = extractFailedRepoId(mergeResult) ?? undefined;
 			const retryOutcome = await applyMergeRetryLoop(
 				mergeResult,
 				waveIdx,
@@ -2228,6 +2257,7 @@ export async function resumeOrchBatch(
 					context: {
 						waveIndex: waveIdx,
 						laneNumber: mergeResult.failedLane ?? undefined,
+						repoId: mergeRepoId,
 						mergeError: retryOutcome.errorMessage,
 						batchProgress: buildBatchProgressSnapshot(batchState),
 					},
@@ -2267,6 +2297,7 @@ export async function resumeOrchBatch(
 					context: {
 						waveIndex: waveIdx,
 						laneNumber: mergeResult.failedLane ?? undefined,
+						repoId: mergeRepoId,
 						mergeError: exhaustionMsg,
 						batchProgress: buildBatchProgressSnapshot(batchState),
 					},
@@ -2303,6 +2334,7 @@ export async function resumeOrchBatch(
 					context: {
 						waveIndex: waveIdx,
 						laneNumber: mergeResult.failedLane ?? undefined,
+						repoId: mergeRepoId,
 						mergeError: mergeResult.failureReason || "unknown",
 						batchProgress: buildBatchProgressSnapshot(batchState),
 					},

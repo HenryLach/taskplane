@@ -1,10 +1,10 @@
 # TP-136: Segment Observability and Supervisor Alerts — Status
 
-**Current Step:** Step 2: Supervisor segment alerts
+**Current Step:** Step 3: Status and summary
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** S
 
@@ -24,13 +24,13 @@
 - [x] Handle repo-singleton gracefully
 
 ### Step 2: Supervisor segment alerts
-**Status:** 🟨 In Progress
-- [ ] Add segmentId/repoId to alert payloads
-- [ ] Add frontier snapshot to context
-- [ ] Update supervisor primer
+**Status:** ✅ Complete
+- [x] Add segmentId/repoId to alert payloads
+- [x] Add frontier snapshot to context
+- [x] Update supervisor primer
 
 ### Step 3: Status and summary
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] orch-status shows active segment
 - [ ] Batch summary with segment outcomes
 - [ ] read_agent_status segment info
@@ -55,3 +55,4 @@
 | 2026-04-03 19:57 | Step 0 started | Preflight |
 |-----------|--------|---------|
 | 2026-04-03 19:59 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-03 20:03 | Review R002 | plan Step 2: APPROVE |

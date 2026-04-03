@@ -724,6 +724,11 @@ Each alert contains:
   are available. This is what you see in the conversation.
 - **Context**: Structured data (taskId, laneId, waveIndex, exitReason,
   batchProgress, etc.) embedded in the message for your reference.
+  - `task-failure` alerts include segment-aware fields when available:
+    `segmentId`, `repoId`, and `segmentFrontier`.
+  - `segmentFrontier` shows ordered segment status for that task
+    (`pending/running/succeeded/failed/skipped/stalled`) so you can quickly
+    tell whether the failure happened early or near completion.
 
 ### Response Protocol
 
@@ -798,6 +803,11 @@ you observe. Do not skip steps; each observation narrows the diagnosis.
 
 **Trigger:** `task-failure` alert — a task failed after the engine exhausted
 deterministic recovery (retries, context resets).
+
+**Segment-aware triage:** If alert context includes `segmentId`/`repoId`, treat
+that as the failing execution unit. Use `segmentFrontier` to decide whether to
+retry immediately (early segment failure) or inspect downstream impact first
+(late-segment failure after prior segments succeeded).
 
 ```
 TASK FAILED: {taskId}
