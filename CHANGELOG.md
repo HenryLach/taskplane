@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.5] - 2026-04-03
+
+### Fixed
+- **Checkbox discipline reinforcement** — RULE #1 added to top of worker template: check off each checkbox immediately after completing it, not at step end. Also added explicit reminder in the lane-runner worker prompt.
+- **Stall timeout: 30 → 60 minutes** — Prevents false stall kills during long steps where STATUS.md isn't updated until step completion.
+
 ## [0.24.4] - 2026-04-03
 
 ### New
