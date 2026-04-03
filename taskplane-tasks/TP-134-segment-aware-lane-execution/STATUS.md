@@ -1,10 +1,10 @@
 # TP-134: Segment-Aware Lane Execution — Status
 
-**Current Step:** Step 2: Separate execution cwd from packet paths
+**Current Step:** Step 3: Worker prompt context
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -23,15 +23,15 @@
 - [x] Include in telemetry/outcomes
 
 ### Step 2: Separate execution cwd from packet paths
-**Status:** 🟨 In Progress
-- [ ] Worker cwd from segment repo worktree
-- [ ] STATUS/PROMPT from packet paths
-- [ ] .DONE from packet.donePath
-- [ ] .reviews from packet.reviewsDir
-- [ ] Reviewer state in packet task folder
+**Status:** ✅ Complete
+- [x] Worker cwd from segment repo worktree
+- [x] STATUS/PROMPT from packet paths
+- [x] .DONE from packet.donePath
+- [x] .reviews from packet.reviewsDir
+- [x] Reviewer state in packet task folder
 
 ### Step 3: Worker prompt context
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Include execution repo + packet home context
 - [ ] Worker knows repo and packet locations
 - [ ] Include segment DAG info if available
@@ -59,5 +59,9 @@
 | 2026-04-03 19:05 | Step 1 started | Propagate segmentId |
 | 2026-04-03 19:14 | Step 1 completed | segmentId propagated to snapshots and outcomes |
 | 2026-04-03 19:14 | Step 2 started | Separate execution cwd from packet paths |
+| 2026-04-03 19:28 | Step 2 completed | CWD/packet paths split and reviewer artifacts packet-scoped |
+| 2026-04-03 19:28 | Step 3 started | Worker prompt context |
 |-----------|--------|---------|
 | 2026-04-03 18:48 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-03 18:52 | Review R002 | code Step 1: APPROVE |
+| 2026-04-03 18:54 | Review R003 | plan Step 2: APPROVE |

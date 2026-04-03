@@ -217,7 +217,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	function reviewerStatePath(taskFolder: string): string {
-		return join(taskFolder, ".reviewer-state.json");
+		return process.env.TASKPLANE_REVIEWER_STATE_PATH || join(taskFolder, ".reviewer-state.json");
 	}
 
 	function writeReviewerState(taskFolder: string, state: {
@@ -421,8 +421,9 @@ export default function (pi: ExtensionAPI) {
 
 			// Find task folder and paths
 			const taskFolder = process.env.TASKPLANE_TASK_FOLDER || cwd;
-			const statusPath = join(taskFolder, "STATUS.md");
-			const reviewsDir = join(taskFolder, ".reviews");
+			const statusPath = process.env.TASKPLANE_STATUS_PATH || join(taskFolder, "STATUS.md");
+			const promptPath = process.env.TASKPLANE_PROMPT_PATH || join(taskFolder, "PROMPT.md");
+			const reviewsDir = process.env.TASKPLANE_REVIEWS_DIR || join(taskFolder, ".reviews");
 			if (!existsSync(reviewsDir)) mkdirSync(reviewsDir, { recursive: true });
 
 			// Read review counter from STATUS.md
@@ -450,7 +451,6 @@ export default function (pi: ExtensionAPI) {
 			} catch { /* use default */ }
 
 			// Generate review request prompt
-			const promptPath = join(taskFolder, "PROMPT.md");
 			const projectName = process.env.TASKPLANE_PROJECT_NAME || "project";
 			const diffCmd = baseline ? `git diff ${baseline}..HEAD` : `git diff`;
 			const diffNamesCmd = baseline ? `git diff ${baseline}..HEAD --name-only` : `git diff --name-only`;

@@ -158,6 +158,7 @@ export async function executeTaskV2(
 	const donePath = unit.packet.donePath;
 	const promptPath = unit.packet.promptPath;
 	const taskFolder = unit.packet.taskFolder;
+	const reviewerStatePath = join(taskFolder, ".reviewer-state.json");
 	const taskId = unit.taskId;
 	const segmentId = unit.segmentId;
 	const workerAgentId = buildRuntimeAgentId(config.agentIdPrefix, config.laneNumber, "worker");
@@ -185,7 +186,7 @@ export async function executeTaskV2(
 		if (pauseSignal.paused) {
 			logExecution(statusPath, "Paused", `User paused at iteration ${totalIterations}`);
 			return makeResult(taskId, segmentId, workerAgentId, "skipped", startTime,
-				"Paused by user", false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath);
+				"Paused by user", false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath);
 		}
 
 		// Determine remaining steps
@@ -261,7 +262,7 @@ export async function executeTaskV2(
 			laneNumber: config.laneNumber,
 			taskId,
 			repoId: config.repoId,
-			cwd: config.worktreePath,
+			cwd: unit.worktreePath,
 			prompt: promptLines.join("\n"),
 			systemPrompt: config.workerSystemPrompt || undefined,
 			model: config.workerModel || undefined,
@@ -279,6 +280,10 @@ export async function executeTaskV2(
 				TASKPLANE_OUTBOX_DIR: outboxDir,
 				TASKPLANE_AGENT_ID: workerAgentId,
 				TASKPLANE_TASK_FOLDER: taskFolder,
+				TASKPLANE_STATUS_PATH: statusPath,
+				TASKPLANE_PROMPT_PATH: promptPath,
+				TASKPLANE_REVIEWS_DIR: unit.packet.reviewsDir,
+				TASKPLANE_REVIEWER_STATE_PATH: reviewerStatePath,
 				TASKPLANE_PROJECT_NAME: config.projectName || "project",
 				ORCH_BATCH_ID: config.batchId,
 			},
@@ -306,7 +311,7 @@ export async function executeTaskV2(
 				iterationTelemetry = telemetry;
 				lastTelemetry = telemetry;
 				// Emit lane snapshot
-				emitSnapshot(config, taskId, segmentId, "running", telemetry, statusPath);
+				emitSnapshot(config, taskId, segmentId, "running", telemetry, statusPath, reviewerStatePath);
 			} catch { /* non-fatal: telemetry callback must never crash the engine */ }
 		});
 
@@ -316,7 +321,7 @@ export async function executeTaskV2(
 		let reviewerSnapshotFailures = 0;
 		const reviewerRefreshFailureThreshold = 5;
 		const reviewerRefresh = setInterval(() => {
-			const ok = emitSnapshot(config, taskId, segmentId, "running", iterationTelemetry, statusPath);
+			const ok = emitSnapshot(config, taskId, segmentId, "running", iterationTelemetry, statusPath, reviewerStatePath);
 			if (ok) {
 				reviewerSnapshotFailures = 0;
 				return;
@@ -447,7 +452,7 @@ export async function executeTaskV2(
 			if (noProgressCount >= config.noProgressLimit) {
 				logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
 				return makeResult(taskId, segmentId, workerAgentId, "failed", startTime,
-					`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, lastTelemetry);
+					`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry);
 			}
 		} else {
 			noProgressCount = 0;
@@ -488,7 +493,7 @@ export async function executeTaskV2(
 		logExecution(statusPath, "Task incomplete", `Max iterations reached. Incomplete: ${incomplete}`);
 		return makeResult(taskId, segmentId, workerAgentId, "failed", startTime,
 			`Max iterations (${config.maxIterations}) reached with incomplete steps: ${incomplete}`,
-			false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, lastTelemetry);
+			false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry);
 	}
 
 	// Create .DONE if not already present
@@ -499,7 +504,7 @@ export async function executeTaskV2(
 	logExecution(statusPath, "Task complete", ".DONE created");
 
 	return makeResult(taskId, segmentId, workerAgentId, "succeeded", startTime,
-		".DONE file created by lane-runner", true, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, lastTelemetry);
+		".DONE file created by lane-runner", true, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -534,6 +539,7 @@ function makeResult(
 	totalTokens: number,
 	config?: LaneRunnerConfig,
 	statusPath?: string,
+	reviewerStatePath?: string,
 	finalTelemetry?: Partial<AgentHostResult>,
 ): LaneRunnerTaskResult {
 	const telemetry = status === "skipped"
@@ -567,9 +573,9 @@ function makeResult(
 	};
 
 	// TP-115: Emit terminal snapshot with real telemetry from agent-host result
-	if (config && statusPath) {
+	if (config && statusPath && reviewerStatePath) {
 		const terminalStatus = mapLaneTaskStatusToTerminalSnapshotStatus(status);
-		emitSnapshot(config, taskId, segmentId, terminalStatus, finalTelemetry ?? {}, statusPath);
+		emitSnapshot(config, taskId, segmentId, terminalStatus, finalTelemetry ?? {}, statusPath, reviewerStatePath);
 	}
 
 	return result;
@@ -580,9 +586,9 @@ const REVIEWER_STATE_STALE_MS = 120_000;
 
 export function readReviewerTelemetrySnapshot(
 	config: LaneRunnerConfig,
-	statusPath: string,
+	reviewerStatePath: string,
 ): (RuntimeAgentTelemetrySnapshot & { reviewType?: string; reviewStep?: number }) | null {
-	const reviewerPath = join(dirname(statusPath), ".reviewer-state.json");
+	const reviewerPath = reviewerStatePath;
 	if (!existsSync(reviewerPath)) return null;
 
 	try {
@@ -643,6 +649,7 @@ function emitSnapshot(
 	status: "running" | "idle" | "complete" | "failed",
 	telemetry: Partial<AgentHostResult>,
 	statusPath: string,
+	reviewerStatePath: string,
 ): boolean {
 	try {
 		// Parse progress from STATUS.md
@@ -662,7 +669,7 @@ function emitSnapshot(
 			};
 		} catch { /* best effort */ }
 
-		const reviewerSnapshot = readReviewerTelemetrySnapshot(config, statusPath);
+		const reviewerSnapshot = readReviewerTelemetrySnapshot(config, reviewerStatePath);
 
 		const snapshot: RuntimeLaneSnapshot = {
 			batchId: config.batchId,
