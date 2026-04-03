@@ -1,10 +1,10 @@
 # TP-134: Segment-Aware Lane Execution — Status
 
-**Current Step:** Step 3: Worker prompt context
+**Current Step:** Step 4: Tests
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** M
 
@@ -31,13 +31,13 @@
 - [x] Reviewer state in packet task folder
 
 ### Step 3: Worker prompt context
-**Status:** 🟨 In Progress
-- [ ] Include execution repo + packet home context
-- [ ] Worker knows repo and packet locations
-- [ ] Include segment DAG info if available
+**Status:** ✅ Complete
+- [x] Include execution repo + packet home context
+- [x] Worker knows repo and packet locations
+- [x] Include segment DAG info if available
 
 ### Step 4: Tests
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Test repo-singleton unchanged
 - [ ] Test segment cwd correct
 - [ ] Test packet paths in packet home
@@ -61,7 +61,11 @@
 | 2026-04-03 19:14 | Step 2 started | Separate execution cwd from packet paths |
 | 2026-04-03 19:28 | Step 2 completed | CWD/packet paths split and reviewer artifacts packet-scoped |
 | 2026-04-03 19:28 | Step 3 started | Worker prompt context |
+| 2026-04-03 19:33 | Step 3 completed | Worker prompt enriched with execution/packet/segment DAG context |
+| 2026-04-03 19:33 | Step 4 started | Tests |
 |-----------|--------|---------|
 | 2026-04-03 18:48 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-03 18:52 | Review R002 | code Step 1: APPROVE |
 | 2026-04-03 18:54 | Review R003 | plan Step 2: APPROVE |
+| 2026-04-03 18:59 | Review R004 | code Step 2: APPROVE |
+| 2026-04-03 19:00 | Review R005 | plan Step 3: APPROVE |

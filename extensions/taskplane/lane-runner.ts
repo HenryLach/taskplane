@@ -227,10 +227,37 @@ export async function executeTaskV2(
 			`Iteration: ${totalIterations}`,
 			`Wrap-up signal file: ${wrapUpFile}`,
 			``,
+			`Execution repo context:`,
+			`- Execution repo ID: ${unit.executionRepoId}`,
+			`- Execution worktree (worker cwd): ${unit.worktreePath}`,
+			`- Lane repo ID: ${config.repoId}`,
+			`- Active segment ID: ${segmentId ?? "(none / whole-task execution)"}`,
+			``,
+			`Packet home context:`,
+			`- Packet home repo ID: ${unit.packetHomeRepoId}`,
+			`- Packet task folder: ${taskFolder}`,
+			`- Packet PROMPT path: ${promptPath}`,
+			`- Packet STATUS path: ${statusPath}`,
+			`- Packet .DONE path: ${donePath}`,
+			`- Packet .reviews path: ${unit.packet.reviewsDir}`,
+			``,
 			`⚠️ ORCHESTRATED RUN: Do NOT archive or move the task folder. The orchestrator handles post-merge archival.`,
 			``,
 			`⚠️ CHECKPOINT RULE: After completing EACH checkbox item, immediately edit STATUS.md to check it off (- [ ] → - [x]) BEFORE starting the next item. Do NOT batch checkbox updates at the end of a step.`,
 		];
+
+		const segmentDag = unit.task.explicitSegmentDag;
+		if (segmentDag && segmentDag.repoIds.length > 0) {
+			const edgeSummary = segmentDag.edges.length > 0
+				? segmentDag.edges.map(edge => `${edge.fromRepoId}->${edge.toRepoId}`).join(", ")
+				: "(no explicit edges)";
+			promptLines.push(
+				``,
+				`Segment DAG context (from PROMPT metadata):`,
+				`- Repos: ${segmentDag.repoIds.join(", ")}`,
+				`- Edges: ${edgeSummary}`,
+			);
+		}
 
 		if (totalIterations > 1 && remainingSteps.length > 0) {
 			const remainingSet = new Set(remainingSteps.map(s => s.number));
