@@ -1,10 +1,10 @@
 # TP-135: Segment Persistence and Resume — Status
 
-**Current Step:** Step 4: Tests
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 9
 **Iteration:** 1
 **Size:** M
 
@@ -47,16 +47,16 @@
 - [x] Segment failure + dependents
 
 ### Step 4: Tests
-**Status:** 🟨 In Progress
-- [ ] Test segments in batch-state
-- [ ] Test resume frontier reconstruction
-- [ ] Test mid-segment crash resume
-- [ ] Test between-segment crash resume
-- [ ] Test repo-singleton unchanged
-- [ ] Run full suite, fix failures
+**Status:** ✅ Complete
+- [x] Test segments in batch-state
+- [x] Test resume frontier reconstruction
+- [x] Test mid-segment crash resume
+- [x] Test between-segment crash resume
+- [x] Test repo-singleton unchanged
+- [x] Run full suite, fix failures
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update STATUS.md
 
 ---
@@ -79,3 +79,5 @@
 | 2026-04-03 19:36 | Review R005 | code Step 2: REVISE |
 | 2026-04-03 19:39 | Review R006 | code Step 2: APPROVE |
 | 2026-04-03 19:39 | Review R007 | plan Step 3: APPROVE |
+| 2026-04-03 19:42 | Review R008 | code Step 3: APPROVE |
+| 2026-04-03 19:43 | Review R009 | plan Step 4: APPROVE |

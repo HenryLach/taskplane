@@ -673,8 +673,11 @@ export function computeResumePoint(
 	for (const segment of persistedState.segments ?? []) {
 		segmentStatusBySegmentId.set(segment.segmentId, segment.status);
 	}
+	const persistedTasks = Array.isArray((persistedState as { tasks?: unknown }).tasks)
+		? persistedState.tasks
+		: [];
 	const segmentIdsByTaskId = new Map<string, string[]>();
-	for (const task of persistedState.tasks) {
+	for (const task of persistedTasks) {
 		if (task.segmentIds && task.segmentIds.length > 0) {
 			segmentIdsByTaskId.set(task.taskId, task.segmentIds);
 		}

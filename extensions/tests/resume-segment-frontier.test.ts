@@ -291,4 +291,29 @@ describe("TP-135 resume segment fallback behavior", () => {
 		expect(point.failedTaskIds).toContain("TP-030");
 		expect(point.pendingTaskIds).toContain("TP-031");
 	});
+
+	it("repo-singleton tasks without segment IDs keep legacy resume behavior", () => {
+		const state = makeState({
+			wavePlan: [["TP-040"]],
+			tasks: [{
+				taskId: "TP-040",
+				laneNumber: 1,
+				sessionName: "orch-lane-1",
+				status: "running",
+				taskFolder: "/tmp/tasks/TP-040",
+				startedAt: Date.now() - 1000,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+			}],
+			segments: [],
+		});
+
+		const frontier = reconstructSegmentFrontier(state);
+		expect(frontier.size).toBe(0);
+		expect(state.tasks[0].status).toBe("running");
+
+		const reconciled = reconcileTaskStates(state, new Set(), new Set(), new Set(["TP-040"]));
+		expect(reconciled[0].action).toBe("re-execute");
+	});
 });
