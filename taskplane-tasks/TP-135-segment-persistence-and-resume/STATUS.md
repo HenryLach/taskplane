@@ -1,24 +1,24 @@
 # TP-135: Segment Persistence and Resume — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Populate segments during execution
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Trace persistence task outcome flow
-- [ ] Trace resume reconciliation algorithm
-- [ ] Read PersistedSegmentRecord
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Trace persistence task outcome flow
+- [x] Trace resume reconciliation algorithm
+- [x] Read PersistedSegmentRecord
 
 ### Step 1: Populate segments during execution
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Segment start → running
 - [ ] Segment complete → succeeded
 - [ ] Segment failure → failed + diagnostic
@@ -59,4 +59,6 @@
 ## Execution Log
 
 | Timestamp | Action | Outcome |
+| 2026-04-03 19:12 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-03 19:12 | Step 0 started | Preflight |
 |-----------|--------|---------|
