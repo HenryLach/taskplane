@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** S
 
@@ -18,9 +18,9 @@
 
 ### Step 1: Fix the stale snapshot check
 **Status:** ⬜ Not Started
-- [ ] Check snap.taskId matches monitored taskId
-- [ ] Stale snapshot → assume alive
-- [ ] Ensure readLaneSnapshot returns taskId
+- [x] Check snap.taskId matches monitored taskId
+- [x] Stale snapshot → assume alive
+- [x] Ensure readLaneSnapshot returns taskId
 
 ### Step 2: Tests
 **Status:** ⬜ Not Started
@@ -42,3 +42,4 @@
 | 2026-04-03 01:29 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-03 01:29 | Step 0 started | Preflight |
 |-----------|--------|---------|
+| 2026-04-03 01:31 | Review R001 | plan Step 1: APPROVE |
