@@ -235,6 +235,20 @@ describe("3.x — Engine worker entry point structure", () => {
 		expect(src).toContain('TASKPLANE_ENGINE_FORK');
 		expect(src).toContain("process.send");
 	});
+
+	it("3.9: engine-worker.ts registers uncaughtException process-level handler", () => {
+		const src = readSource("engine-worker.ts");
+		expect(src).toContain('process.once("uncaughtException"');
+		expect(src).toContain('reportFatalAndExit("uncaughtException"');
+		expect(src).toContain('WorkerErrorSource = "enginePromise" | "uncaughtException" | "unhandledRejection"');
+	});
+
+	it("3.10: engine-worker.ts registers unhandledRejection process-level handler", () => {
+		const src = readSource("engine-worker.ts");
+		expect(src).toContain('process.once("unhandledRejection"');
+		expect(src).toContain('reportFatalAndExit("unhandledRejection"');
+		expect(src).toContain('WorkerErrorSource = "enginePromise" | "uncaughtException" | "unhandledRejection"');
+	});
 });
 
 // ══════════════════════════════════════════════════════════════════════
@@ -328,6 +342,17 @@ describe("4.x — Extension worker thread integration", () => {
 		const fnStart = src.indexOf("function resolveEngineWorkerPath()");
 		const fnBody = src.substring(fnStart, fnStart + 300);
 		expect(fnBody).toContain("engine-worker-entry.mjs");
+	});
+
+	it("4.12: extension.ts captures engine stderr and includes stderr tail in alerts", () => {
+		const src = readSource("extension.ts");
+		const fnStart = src.indexOf("function startBatchInWorker(");
+		const fnEnd = src.indexOf("\n// ── TP-043", fnStart);
+		const fnBody = src.substring(fnStart, fnEnd);
+		expect(fnBody).toContain('stdio: ["inherit", "inherit", "pipe", "ipc"]');
+		expect(fnBody).toContain("createWriteStream(stderrLogPath");
+		expect(fnBody).toContain('child.stderr?.on("data", appendStderr)');
+		expect(fnBody).toContain("Engine stderr tail (");
 	});
 });
 

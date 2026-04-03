@@ -134,8 +134,8 @@ body {
 .status-badge,
 .count-chip,
 .wave-chip,
-.tmux-view-btn,
-.tmux-cmd,
+.session-view-btn,
+.session-cmd,
 .repo-filter-select,
 .history-select,
 .task-row,
@@ -513,17 +513,17 @@ body {
   gap: 10px;
 }
 
-.tmux-dot {
+.session-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
-.tmux-dot.alive { background: var(--green); }
-.tmux-dot.dead  { background: var(--red); opacity: 0.6; }
+.session-dot.alive { background: var(--green); }
+.session-dot.dead  { background: var(--red); opacity: 0.6; }
 
-.tmux-view-btn {
+.session-view-btn {
   font-family: var(--font-sans);
   font-size: 0.72rem;
   font-weight: 600;
@@ -537,12 +537,12 @@ body {
   transition: background 0.2s, border-color 0.2s;
 }
 
-.tmux-view-btn:hover {
+.session-view-btn:hover {
   background: var(--accent);
   border-color: var(--accent);
 }
 
-.tmux-cmd {
+.session-cmd {
   font-family: var(--font-mono);
   font-size: 0.7rem;
   padding: 3px 8px;
@@ -556,17 +556,17 @@ body {
   transition: border-color 0.2s, color 0.2s;
 }
 
-.tmux-cmd:hover {
+.session-cmd:hover {
   border-color: var(--accent-dim);
   color: var(--accent);
 }
 
-.tmux-cmd.copied {
+.session-cmd.copied {
   border-color: var(--green-dim);
   color: var(--green);
 }
 
-.tmux-cmd.dead-session {
+.session-cmd.dead-session {
   color: var(--text-muted);
   cursor: default;
 }
@@ -945,7 +945,7 @@ body {
   box-shadow: 0 0 0 1px var(--accent-dim);
 }
 
-.tmux-view-btn.active {
+.session-view-btn.active {
   background: var(--accent);
   border-color: var(--accent);
 }

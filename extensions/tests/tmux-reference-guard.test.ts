@@ -59,7 +59,7 @@ describe("TMUX reference guard", () => {
 
 		const parsed = JSON.parse(first) as AuditOutput;
 		expect(parsed.schemaVersion).toBe(2);
-		expect(parsed.scope.roots).toEqual(["extensions", "bin", "templates", "dashboard"]);
+		expect(parsed.scope.roots).toEqual(["extensions", "bin", "templates", "dashboard", "skills"]);
 		expect(parsed.scope.extensions).toContain(".cjs");
 		expect(parsed.scope.extensions).toContain(".mjs");
 		expect(parsed.scope.extensions).toContain(".ts");

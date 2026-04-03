@@ -63,6 +63,7 @@ Use these to understand the design and tradeoffs.
 - [Execution Model](explanation/execution-model.md)
 - [Review Loop](explanation/review-loop.md)
 - [Waves, Lanes, and Worktrees](explanation/waves-lanes-and-worktrees.md)
+- [Merge and Conflict Resolution](explanation/merge-and-conflict-resolution.md)
 - [Persistence and Resume](explanation/persistence-and-resume.md)
 - [Package and Template Model](explanation/package-and-template-model.md)
 

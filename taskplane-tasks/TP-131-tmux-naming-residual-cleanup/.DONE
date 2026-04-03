@@ -1,0 +1,10 @@
+# TP-131 Complete
+
+Completed on 2026-04-03.
+
+## Summary
+- Cleaned residual TMUX naming in dashboard frontend/server, templates, and shipped comments.
+- Added `sessions` API field with legacy `tmuxSessions` compatibility alias.
+- Removed unused `/api/pane/*` no-op endpoint and pane polling code.
+- Expanded tmux audit scan roots to include `skills/` and updated guard tests.
+- Verification passed: full extensions test suite (3124/3124), final tmux audit reports `functionalUsage.count = 0`.

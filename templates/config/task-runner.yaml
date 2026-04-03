@@ -48,8 +48,7 @@ worker:
   model: ""                    # empty = inherit from parent pi session
   tools: "read,write,edit,bash,grep,find,ls"
   thinking: "off"
-  # spawn_mode: "subprocess"   # "subprocess" (default) or "tmux"
-  # tmux_prefix: "task"        # used only in tmux mode
+  # spawn_mode: "subprocess"   # currently supported runtime mode
 
 reviewer:
   model: ""
@@ -63,7 +62,7 @@ context:
   max_worker_iterations: 20
   max_review_cycles: 2
   no_progress_limit: 3
-  # max_worker_minutes: 30      # used only in tmux mode
+  # max_worker_minutes: 30      # optional wall-clock guard for long worker runs
 
 # ── Task Creation / Discovery ─────────────────────────────────────────
 

@@ -5,7 +5,7 @@
  *
  * Spawns pi in RPC mode, sends a prompt, captures RPC events to a sidecar JSONL
  * file, and writes a final exit summary JSON on process exit. Displays minimal
- * live progress on stderr for tmux pane visibility.
+ * live progress on stderr for dashboard/session visibility.
  *
  * Usage:
  *   node bin/rpc-wrapper.mjs \
@@ -271,7 +271,7 @@ function writeSidecarEvent(sidecarPath, event) {
 // ── Progress Display ─────────────────────────────────────────────────
 
 /**
- * Display minimal progress on stderr for tmux pane visibility.
+ * Display minimal progress on stderr for dashboard/session visibility.
  */
 function displayProgress(state) {
 	const parts = [];
@@ -774,8 +774,8 @@ piArgs.push(...args.passthrough);
 // Windows CreateProcess has a ~32K command line limit. Orchestrated worker
 // system prompts routinely exceed this (PROMPT.md + context docs + steps).
 // When the system prompt is large, write it to a temp file and use shell
-// expansion `$(cat file)` to pass it. This works in MSYS2/Git Bash tmux
-// (where the lane sessions run) without hitting the Win32 limit.
+// expansion `$(cat file)` to pass it. This works in MSYS2/Git Bash shells
+// used by lane sessions without hitting the Win32 limit.
 //
 // For small system prompts (< 8K), pass inline for simplicity.
 const SYSTEM_PROMPT_FILE_THRESHOLD = 8192;

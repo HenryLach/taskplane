@@ -314,7 +314,8 @@ export function spawnAgent(
 	let timedOut = false;
 	let agentEnded = false;
 	let stdinClosed = false;
-	let statsRequested = false;
+	let assistantMessageEnds = 0;
+	const STATS_REFRESH_EVERY_ASSISTANT_MESSAGES = 5;
 	let inputTokens = 0, outputTokens = 0, cacheReadTokens = 0, cacheWriteTokens = 0;
 	let costUsd = 0, toolCalls = 0, retries = 0, compactions = 0;
 	let lastTool = "", error: string | null = null;
@@ -586,10 +587,13 @@ export function spawnAgent(
 								emitEvent("assistant_message", { text: truncatePayload(content, MAX_CONV_PAYLOAD_CHARS) });
 							}
 						}
-						// Request session stats after first assistant message
-						if (!statsRequested && event.message?.role === "assistant") {
-							statsRequested = true;
-							try { proc.stdin?.write(JSON.stringify({ type: "get_session_stats" }) + "\n"); } catch { /* ignore */ }
+						// Request session stats immediately on first assistant message,
+						// then periodically at a bounded cadence to refresh context usage.
+						if (event.message?.role === "assistant") {
+							assistantMessageEnds += 1;
+							if (assistantMessageEnds === 1 || assistantMessageEnds % STATS_REFRESH_EVERY_ASSISTANT_MESSAGES === 0) {
+								try { proc.stdin?.write(JSON.stringify({ type: "get_session_stats" }) + "\n"); } catch { /* ignore */ }
+							}
 						}
 						// Check mailbox
 						checkMailbox();
@@ -636,6 +640,8 @@ export function spawnAgent(
 						if (event.success === true && event.data?.contextUsage) {
 							contextUsage = event.data.contextUsage;
 							emitEvent("context_usage", { ...event.data.contextUsage });
+							// Emit telemetry immediately so context % is live in dashboard
+							onTelemetry({ inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, costUsd, toolCalls, lastTool, contextUsage });
 						}
 						break;
 					}

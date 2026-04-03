@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.6] - 2026-04-03
+
+### New
+- **Live context % refresh (TP-129)** — `get_session_stats` requested periodically (every 5 assistant messages) instead of one-shot. Context % emitted immediately on `response` event for true live dashboard updates.
+- **Engine worker diagnostics (TP-130)** — `uncaughtException`/`unhandledRejection` handlers send stack trace via IPC before exit. Stderr captured to `.pi/telemetry/{batchId}-engine-worker-stderr.log` with tail included in supervisor alerts. Snapshot failure counter auto-disables reviewer refresh after 5 consecutive failures.
+- **TMUX naming cleanup (TP-131)** — Dashboard `tmuxSessions` → `sessions`, `.tmux-*` CSS → `.session-*`, server stubs cleaned, `/api/pane/*` removed, audit expanded to `skills/`.
+- **Reviewer telemetry parity** — Dashboard reviewer sub-row shows elapsed, tools, context %, token summary, and last tool (matching worker badges).
+
+### Fixed
+- **Duplicate crash alerts suppressed** — When engine-worker sends error via IPC before exiting, the parent no longer fires a second alert on the exit event.
+- **Stderr capture flush safety** — Stream flushed before log rotation, error handler added, in-memory tail preferred over disk file for freshest data.
+- **Dashboard version skew** — Frontend reads `sessions ?? tmuxSessions` for backward compat.
+
 ## [0.24.5] - 2026-04-03
 
 ### Fixed
