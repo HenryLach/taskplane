@@ -101,6 +101,11 @@ function mergeV2LaneSnapshot(legacyLs, v2snap) {
   return base;
 }
 
+function isReviewerActiveForTask(ls, task) {
+  if (!ls || !task) return false;
+  return !!(ls.reviewerStatus === "running" && task.status === "running" && (!ls.taskId || ls.taskId === task.taskId));
+}
+
 /** Build a compact token summary string from lane state sidecar data.
  *  Display: ↑total_input ↓output (cost)
  *  Anthropic splits input into: uncached `input` + `cacheRead`.
@@ -612,10 +617,10 @@ function renderLanesTasks(batch, tmuxSessions) {
 
       // Worker stats from lane state sidecar + telemetry badges
       let workerHtml = "";
-      // Reviewer sub-row should only appear under the task currently being reviewed,
-      // not all tasks in the lane. The lane-state sidecar is per-lane (shared by all
-      // tasks in the lane), so check that the sidecar's current taskId matches this task.
-      const reviewerActive = ls && ls.reviewerStatus === "running" && ls.taskId === task.taskId;
+      // Reviewer sub-row should only appear under the active running task in this lane.
+      // Runtime V2 snapshots provide taskId; during early startup it can be briefly unset,
+      // so allow a task-status fallback while still avoiding duplicate rows.
+      const reviewerActive = isReviewerActiveForTask(ls, task);
       const telemBadges = task.status !== "pending" ? telemetryBadgesHtml(tel, reviewerActive) : "";
       if (ls && ls.workerStatus === "running" && task.status === "running") {
         const elapsed = ls.workerElapsed ? `${Math.round(ls.workerElapsed / 1000)}s` : "";

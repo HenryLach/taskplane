@@ -24,7 +24,7 @@
 
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@mariozechner/pi-ai";
-import { writeFileSync, readFileSync, existsSync, mkdirSync, renameSync } from "fs";
+import { writeFileSync, readFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
 import { spawn as nodeSpawn } from "child_process";
 import { randomBytes } from "crypto";
@@ -216,11 +216,44 @@ export default function (pi: ExtensionAPI) {
 		return basePrompt;
 	}
 
+	function reviewerStatePath(taskFolder: string): string {
+		return join(taskFolder, ".reviewer-state.json");
+	}
+
+	function writeReviewerState(taskFolder: string, state: {
+		status: "running" | "done" | "error";
+		elapsedMs: number;
+		toolCalls: number;
+		contextPct: number;
+		costUsd: number;
+		lastTool: string;
+		inputTokens: number;
+		outputTokens: number;
+		cacheReadTokens: number;
+		cacheWriteTokens: number;
+		updatedAt: number;
+		reviewType?: string;
+		reviewStep?: number;
+	}): void {
+		const filePath = reviewerStatePath(taskFolder);
+		const tmpPath = filePath + ".tmp";
+		writeFileSync(tmpPath, JSON.stringify(state, null, 2) + "\n", "utf-8");
+		renameSync(tmpPath, filePath);
+	}
+
+	function removeReviewerState(taskFolder: string): void {
+		const filePath = reviewerStatePath(taskFolder);
+		if (!existsSync(filePath)) return;
+		try { unlinkSync(filePath); } catch { /* best effort */ }
+	}
+
 	/**
 	 * Spawn a reviewer Pi subprocess and wait for it to complete.
 	 * Returns the process exit code.
 	 */
-	function spawnReviewer(prompt: string, systemPrompt: string, cwd: string): Promise<number> {
+	function spawnReviewer(prompt: string, systemPrompt: string, cwd: string, taskFolder: string, reviewType?: string, reviewStep?: number): Promise<number> {
+		// Pre-clean stale reviewer state from prior interrupted review
+		removeReviewerState(taskFolder);
 		return new Promise((resolve) => {
 			const cliPath = resolvePiCli();
 			const args = [
@@ -235,23 +268,124 @@ export default function (pi: ExtensionAPI) {
 				env: { ...process.env },
 			});
 
-			// Send prompt and close stdin after delay
+			const startedAt = Date.now();
+			let inputTokens = 0;
+			let outputTokens = 0;
+			let cacheReadTokens = 0;
+			let cacheWriteTokens = 0;
+			let costUsd = 0;
+			let toolCalls = 0;
+			let lastTool = "";
+			let contextPct = 0;
+			let stdoutBuf = "";
+			let finalized = false;
+
+			const emitState = (status: "running" | "done" | "error") => {
+				try {
+					writeReviewerState(taskFolder, {
+						status,
+						elapsedMs: Date.now() - startedAt,
+						toolCalls,
+						contextPct,
+						costUsd,
+						lastTool,
+						inputTokens,
+						outputTokens,
+						cacheReadTokens,
+						cacheWriteTokens,
+						updatedAt: Date.now(),
+						reviewType,
+						reviewStep,
+					});
+				} catch { /* best effort */ }
+			};
+
+			// Write initial "running" state immediately so dashboard shows
+			// the reviewer sub-row before the first message_end arrives.
+			emitState("running");
+
+			const closeStdin = () => {
+				setTimeout(() => {
+					try { proc.stdin?.end(); } catch { /* ignore */ }
+				}, 100);
+			};
+
+			const finalize = (code: number) => {
+				if (finalized) return;
+				finalized = true;
+				emitState(code === 0 ? "done" : "error");
+				resolve(code);
+			};
+
+			const handleEvent = (event: any) => {
+				if (!event || typeof event.type !== "string") return;
+				switch (event.type) {
+					case "message_end": {
+						const usage = event.message?.usage;
+						if (usage) {
+							inputTokens += usage.input || 0;
+							outputTokens += usage.output || 0;
+							cacheReadTokens += usage.cacheRead || 0;
+							cacheWriteTokens += usage.cacheWrite || 0;
+							if (usage.cost) {
+								costUsd += typeof usage.cost === "object"
+									? (usage.cost.total || 0)
+									: (typeof usage.cost === "number" ? usage.cost : 0);
+							}
+						}
+						emitState("running");
+						break;
+					}
+					case "tool_execution_start": {
+						toolCalls++;
+						const toolName = event.toolName || "tool";
+						const argPreview = typeof event.args === "string"
+							? event.args.slice(0, 80)
+							: (event.args && typeof Object.values(event.args)[0] === "string"
+								? String(Object.values(event.args)[0]).slice(0, 80)
+								: "");
+						lastTool = argPreview ? `${toolName}: ${argPreview}` : toolName;
+						emitState("running");
+						break;
+					}
+					case "response": {
+						const pct = event.success === true ? event.data?.contextUsage?.percent : undefined;
+						if (typeof pct === "number" && Number.isFinite(pct)) {
+							contextPct = pct;
+						}
+						break;
+					}
+					case "agent_end": {
+						closeStdin();
+						break;
+					}
+				}
+			};
+
+			// Send prompt immediately
 			proc.stdin?.write(JSON.stringify({ type: "prompt", message: prompt }) + "\n");
 
-			// Watch for agent_end event to close stdin
-			let buf = "";
-			proc.stdout?.on("data", (chunk: Buffer) => {
-				buf += chunk.toString();
-				if (buf.includes('"agent_end"')) {
-					setTimeout(() => { try { proc.stdin?.end(); } catch {} }, 100);
+			proc.stdout?.on("data", (chunk: Buffer | string) => {
+				stdoutBuf += typeof chunk === "string" ? chunk : chunk.toString("utf-8");
+				let idx = -1;
+				while ((idx = stdoutBuf.indexOf("\n")) >= 0) {
+					let line = stdoutBuf.slice(0, idx);
+					stdoutBuf = stdoutBuf.slice(idx + 1);
+					if (line.endsWith("\r")) line = line.slice(0, -1);
+					if (!line.trim()) continue;
+					let event: any;
+					try { event = JSON.parse(line); } catch { continue; }
+					handleEvent(event);
 				}
 			});
 
-			proc.on("close", (code) => resolve(code ?? 1));
-			proc.on("error", () => resolve(1));
+			proc.on("close", (code) => finalize(code ?? 1));
+			proc.on("error", () => finalize(1));
 
 			// Timeout: 10 minutes
-			setTimeout(() => { try { proc.kill("SIGTERM"); } catch {} }, 10 * 60 * 1000);
+			setTimeout(() => {
+				try { proc.kill("SIGTERM"); } catch { /* ignore */ }
+			}, 10 * 60 * 1000);
 		});
 	}
 
@@ -367,7 +501,7 @@ export default function (pi: ExtensionAPI) {
 
 			try {
 				const systemPrompt = loadReviewerPrompt();
-				const exitCode = await spawnReviewer(reviewPrompt, systemPrompt, cwd);
+				const exitCode = await spawnReviewer(reviewPrompt, systemPrompt, cwd, taskFolder, reviewType, stepNum);
 
 				// Update review counter in STATUS.md
 				try {
@@ -395,6 +529,8 @@ export default function (pi: ExtensionAPI) {
 						writeFileSync(statusPath, status.trimEnd() + "\n" + logEntry);
 					} catch { /* best effort */ }
 
+					removeReviewerState(taskFolder);
+
 					const reviewFile = `.reviews/R${num}-${reviewType}-step${stepNum}.md`;
 					if (verdict === "APPROVE") {
 						return { content: [{ type: "text" as const, text: `APPROVE` }], details: undefined };
@@ -408,9 +544,11 @@ export default function (pi: ExtensionAPI) {
 						return { content: [{ type: "text" as const, text: `Review complete (verdict unclear). See ${reviewFile}` }], details: undefined };
 					}
 				} else {
+					removeReviewerState(taskFolder);
 					return { content: [{ type: "text" as const, text: `UNAVAILABLE — reviewer exited (code ${exitCode}) but produced no output.` }], details: undefined };
 				}
 			} catch (err) {
+				removeReviewerState(taskFolder);
 				return {
 					content: [{ type: "text" as const, text: `UNAVAILABLE — reviewer failed: ${err instanceof Error ? err.message : String(err)}` }],
 					details: undefined,
