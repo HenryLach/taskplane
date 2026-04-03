@@ -104,7 +104,7 @@ function makeL1L2EnumField(overrides: Partial<FieldDef> = {}): FieldDef {
 		control: "toggle",
 		layer: "L1+L2",
 		fieldType: "enum",
-		values: ["tmux", "subprocess"],
+		values: ["subprocess"],
 		prefsKey: "spawnMode",
 		...overrides,
 	};
@@ -203,19 +203,19 @@ describe("9. detectFieldSource", () => {
 	describe("9.3 L1+L2 enum fields", () => {
 		it("9.3.1 returns 'user' when enum pref is valid value", () => {
 			const field = makeL1L2EnumField();
-			const rawPrefs = { spawnMode: "tmux" };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("user");
-		});
-
-		it("9.3.2 returns 'user' for other valid enum value", () => {
-			const field = makeL1L2EnumField();
 			const rawPrefs = { spawnMode: "subprocess" };
 			expect(detectFieldSource(field, null, rawPrefs)).toBe("user");
 		});
 
+		it("9.3.2 rejects legacy tmux enum value", () => {
+			const field = makeL1L2EnumField();
+			const rawPrefs = { spawnMode: "tmux" };
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+		});
+
 		it("9.3.3 rejects invalid enum value — falls to default", () => {
 			const field = makeL1L2EnumField();
-			// "invalid" is not in values ["tmux", "subprocess"]
+			// "invalid" is not in values ["subprocess"]
 			const rawPrefs = { spawnMode: "invalid" };
 			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
 		});
@@ -234,7 +234,7 @@ describe("9. detectFieldSource", () => {
 
 		it("9.3.6 returns 'project' when enum pref is invalid but project has value", () => {
 			const field = makeL1L2EnumField();
-			const rawProject = { orchestrator: { orchestrator: { spawnMode: "tmux" } } };
+			const rawProject = { orchestrator: { orchestrator: { spawnMode: "subprocess" } } };
 			const rawPrefs = { spawnMode: "bogus" };
 			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("project");
 		});
@@ -323,9 +323,9 @@ describe("10. getFieldDisplayValue", () => {
 
 	it("10.3 displays enum from merged config", () => {
 		const config = cloneConfig();
-		config.orchestrator.orchestrator.spawnMode = "tmux";
+		config.orchestrator.orchestrator.spawnMode = "subprocess";
 		const field = makeL1L2EnumField();
-		expect(getFieldDisplayValue(field, config, emptyPrefs)).toBe("tmux");
+		expect(getFieldDisplayValue(field, config, emptyPrefs)).toBe("subprocess");
 	});
 
 	it("10.4 displays dashboardPort from preferences (L2-only)", () => {
@@ -351,7 +351,7 @@ describe("10. getFieldDisplayValue", () => {
 			control: "toggle",
 			layer: "L1",
 			fieldType: "enum",
-			values: ["(inherit)", "subprocess", "tmux"],
+			values: ["(inherit)", "subprocess"],
 			optional: true,
 		};
 		expect(getFieldDisplayValue(field, config, emptyPrefs)).toBe("(inherit)");
@@ -445,11 +445,11 @@ describe("11. validateFieldInput", () => {
 		const enumField = makeL1L2EnumField();
 
 		it("11.2.1 accepts valid enum value", () => {
-			expect(validateFieldInput(enumField, "tmux").valid).toBe(true);
+			expect(validateFieldInput(enumField, "subprocess").valid).toBe(true);
 		});
 
-		it("11.2.2 accepts other valid enum value", () => {
-			expect(validateFieldInput(enumField, "subprocess").valid).toBe(true);
+		it("11.2.2 rejects legacy tmux enum value", () => {
+			expect(validateFieldInput(enumField, "tmux").valid).toBe(false);
 		});
 
 		it("11.2.3 rejects invalid enum value", () => {
@@ -636,7 +636,7 @@ describe("13. coerceValueForWrite", () => {
 
 	it("13.5 returns string as-is for enum fields", () => {
 		const field = makeL1L2EnumField();
-		expect(coerceValueForWrite(field, "tmux")).toBe("tmux");
+		expect(coerceValueForWrite(field, "subprocess")).toBe("subprocess");
 	});
 
 	it("13.6 returns undefined for '(not set)' marker", () => {
@@ -651,7 +651,7 @@ describe("13. coerceValueForWrite", () => {
 			control: "toggle",
 			layer: "L1",
 			fieldType: "enum",
-			values: ["(inherit)", "subprocess", "tmux"],
+			values: ["(inherit)", "subprocess"],
 			optional: true,
 		};
 		expect(coerceValueForWrite(field, "(inherit)")).toBeUndefined();
@@ -669,7 +669,7 @@ describe("13. coerceValueForWrite", () => {
 
 	it("13.10 strips '(user)' source badge", () => {
 		const field = makeL1L2EnumField();
-		expect(coerceValueForWrite(field, "tmux  (user)")).toBe("tmux");
+		expect(coerceValueForWrite(field, "subprocess  (user)")).toBe("subprocess");
 	});
 
 	it("13.11 returns undefined for non-parseable number", () => {
@@ -767,7 +767,7 @@ describe("14. writeProjectConfigField", () => {
 		writePiFile(dir, "task-orchestrator.yaml", `
 orchestrator:
   max_lanes: 7
-  spawn_mode: tmux
+  spawn_mode: subprocess
 `);
 
 		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", "test-wt");
@@ -779,7 +779,7 @@ orchestrator:
 		expect(result.orchestrator.orchestrator.worktreePrefix).toBe("test-wt");
 		// YAML-sourced values are preserved in the bootstrapped JSON
 		expect(result.orchestrator.orchestrator.maxLanes).toBe(7);
-		expect(result.orchestrator.orchestrator.spawnMode).toBe("tmux");
+		expect(result.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 		// YAML file is still there
 		expect(existsSync(join(dir, ".pi", "task-orchestrator.yaml"))).toBe(true);
 	});

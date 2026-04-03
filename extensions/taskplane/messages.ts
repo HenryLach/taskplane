@@ -78,7 +78,7 @@ export const ORCH_MESSAGES = {
 		`⏸️  Pausing batch ${batchId}... lanes will stop after their current tasks complete.`,
 
 	// /orch-sessions
-	sessionsNone: () => "No orchestrator TMUX sessions found.",
+	sessionsNone: () => "No active orchestrator sessions found.",
 	sessionsHeader: (count: number) => `🖥️  ${count} orchestrator session(s):`,
 
 	// /orch orphan detection

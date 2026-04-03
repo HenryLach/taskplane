@@ -188,6 +188,20 @@ Workspace-mode smoke tests and segment-roadmap prerequisites pass on Runtime V2.
 - Full suite: 3403 pass, 0 failures
 - Runtime V2 abort/resume/cleanup control paths no longer depend on TMUX fallback branches
 
+## Phase F.5 — Operator messaging de-TMUX (TP-123) ✅ Implemented
+
+### Delivered
+
+- Replaced `/orch-status` attach hints that printed `tmux attach -t ...` with Runtime V2 guidance (`/orch-sessions` + lane session IDs).
+- Updated `/orch-sessions` empty-state copy from "orchestrator TMUX sessions" to backend-neutral "active orchestrator sessions" wording.
+- Updated dashboard lane/merge copy chips to expose/copy session IDs (instead of `tmux attach` commands) and relabeled liveness tooltips to session-based wording.
+- Kept legacy messaging only where compatibility context is required (e.g., explicit `spawn_mode: tmux` deprecation warning).
+
+### Exit gate
+
+- Full extension suite: 3390 pass, 0 failures
+- Dashboard lane/merge liveness indicators unchanged functionally (V2 registry first, tmuxSessions compatibility fallback)
+
 ## Phase G — Default switch and cleanup
 
 ### Deliverables
@@ -200,6 +214,20 @@ Workspace-mode smoke tests and segment-roadmap prerequisites pass on Runtime V2.
 ### Exit gate
 
 No production path requires TMUX. Legacy code is no longer authoritative.
+
+## Phase G.1 — Final TMUX compatibility removal (TP-126) ✅ Implemented
+
+### Delivered
+
+- Removed remaining `taskplane init` TMUX-era scaffolding output (`tmux_prefix` / `tmuxPrefix`, `spawn_mode: "tmux"`) in favor of canonical Runtime V2 fields (`session_prefix` / `sessionPrefix`, `spawn_mode: "subprocess"`).
+- Added CLI integration regressions that verify repo/workspace scaffolds emit canonical subprocess/session-prefix fields only.
+- Added migration failure regressions proving injected legacy config (`tmuxPrefix`, `spawnMode: "tmux"`) now fails with explicit fix guidance.
+- Updated test fixtures that still used TMUX-era spawn-mode defaults where they were no longer testing compatibility behavior.
+
+### Exit gate
+
+- `taskplane init` scaffolds are aligned with the no-TMUX config contract.
+- Legacy config ingress remains migration-only with explicit errors/warnings.
 
 ## 4. Feature flag strategy
 
@@ -232,6 +260,24 @@ Required new coverage areas:
 - bridge request/response contracts
 - packet-path authority in lane-runner and resume
 - dashboard reading normalized runtime artifacts
+
+### TMUX reference guardrail (TP-122)
+
+Runtime V2 migration now includes a deterministic static TMUX reference audit and
+strict regression guard:
+
+```bash
+node scripts/tmux-reference-audit.mjs --json
+node scripts/tmux-reference-audit.mjs --json --strict
+```
+
+- `--json` emits machine-readable totals (`total`, `by-file`, `by-category`) with
+  stable ordering and normalized POSIX-style paths.
+- `--strict` exits non-zero if functional TMUX command execution patterns are
+  detected (`spawn*`/`exec*`/`execFile*`/`execa*` usage with `tmux` command payloads).
+- Guard coverage is enforced in `extensions/tests/tmux-reference-guard.test.ts` to
+  ensure output remains parseable/deterministic and functional TMUX execution is
+  not reintroduced into `extensions/taskplane/*.ts`. 
 
 ## 5.2 End-to-end batch tests
 

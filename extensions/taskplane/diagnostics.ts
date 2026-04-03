@@ -49,9 +49,9 @@ export interface SessionTokenCounts {
  * | `context_overflow`   | Hit context window limit (compactions + high ctx %)  |
  * | `wall_clock_timeout` | Killed by task-runner's max_worker_minutes timer     |
  * | `process_crash`      | Non-zero exit code with no API error indicators      |
- * | `session_vanished`   | Tmux session disappeared without exit summary        |
+ * | `session_vanished`   | Session disappeared without exit summary             |
  * | `stall_timeout`      | No STATUS.md progress for stall_timeout minutes      |
- * | `user_killed`        | User manually killed the session (e.g., tmux kill)   |
+ * | `user_killed`        | User manually killed the session (e.g., forced process kill) |
  * | `unknown`            | Could not determine cause                            |
  */
 export type ExitClassification =
@@ -157,7 +157,7 @@ export interface ExitSummary {
  * - `timerKilled`: true if task-runner's max_worker_minutes timer killed the session
  * - `contextKilled`: true if the task-runner explicitly killed the session due to context limit
  * - `stallDetected`: true if monitoring detected no STATUS.md progress
- * - `userKilled`: true if user manually killed the session (e.g., /orch-abort, tmux kill)
+ * - `userKilled`: true if user manually killed the session (e.g., /orch-abort, forced process kill)
  * - `contextPct`: estimated context utilization % (0-100), null if unknown
  *
  * Design: single structured input object (not positional args) for

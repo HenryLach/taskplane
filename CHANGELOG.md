@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-04-02
+
+### New
+- **TMUX extrication complete (orch runtime)** — 9 tasks (TP-117–126) removed all functional TMUX code from the orchestrator runtime. 427 → 80 references (81% reduction). Remaining refs are migration compat, error guards, and comments.
+- **`review_step` tool for V2 workers** (v0.23.15) — Workers spawn reviewer agents at step boundaries via bridge extension.
+- **Worker system prompt fix** (v0.23.14) — Workers receive full 362-line base template with checkpoint discipline.
+- **Outcome-embedded telemetry** (TP-116) — Telemetry in LaneTaskOutcome, no fragile key matching.
+- **Dashboard batch transition** (v0.23.12) — No page reload when new batch starts.
+- **Review level scoring reinforcement** (v0.23.16) — Task creation skill warns against defaulting to Level 0.
+
+### Fixed
+- **Batch history token zeros** — Multiple fixes for V2 telemetry pipeline (v0.23.1–0.23.11).
+- **Monitor startup race** (v0.23.4) — Assume alive before first snapshot.
+- **Agent ID naming** (v0.23.3) — Registry keys aligned with monitor lookups.
+- **Dashboard V2 native** (v0.23.2) — Server reads V2 snapshots without legacy shim.
+- **jiti cache** (v0.23.8) — Engine-worker purges stale jiti cache on fork.
+
+### Breaking
+- **Config rename:** `tmux_prefix` → `sessionPrefix`, `spawn_mode: "tmux"` → throws error. Old field names in project config cause hard failures with migration guidance.
+- **`tmuxSessionName`** → `laneSessionId` in persisted state. Old field read via backward-compat shim (`tmux-compat.ts`).
+
 ## [0.23.16] - 2026-04-02
 
 ### Docs

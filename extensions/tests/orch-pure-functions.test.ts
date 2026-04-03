@@ -242,9 +242,9 @@ function buildDashboardViewModel(
 	let attachHint = "";
 	const aliveLane = laneCards.find((l: any) => l.sessionAlive && l.status === "running");
 	if (aliveLane) {
-		attachHint = `tmux attach -t ${aliveLane.sessionName}`;
+		attachHint = `Use /orch-sessions to inspect active lane sessions (${aliveLane.sessionName})`;
 	} else if (laneCards.length > 0) {
-		attachHint = "/orch-sessions for session list";
+		attachHint = "Use /orch-sessions for active lane session list";
 	}
 
 	let failurePolicy: string | null = null;

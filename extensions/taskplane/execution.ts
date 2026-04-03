@@ -117,7 +117,7 @@ function resolveTaskRunnerExtensionPath(repoRoot: string): string {
  * Find the rpc-wrapper.mjs path for lane sessions.
  * @see resolveTaskplanePackageFile for resolution order
  */
-// resolveRpcWrapperPath removed (TP-120 remediation: legacy TMUX dead code)
+// resolveRpcWrapperPath removed (TP-120 remediation: legacy session-backend dead code)
 
 // ── Telemetry Helpers ────────────────────────────────────────────────
 
@@ -260,21 +260,12 @@ export async function readTaskStatusTailAsync(
 }
 
 /**
- * Build environment variables for a lane task execution.
+ * Legacy lane environment-variable helper removed in TP-120.
  *
- * These env vars tell the task-runner extension inside the TMUX session
- * how to behave:
- * - TASK_AUTOSTART: relative path to PROMPT.md from worktree root
- * - TASK_RUNNER_SPAWN_MODE: "tmux" for TMUX-based worker/reviewer spawning
- * - TASK_RUNNER_TMUX_PREFIX: prefix for worker/reviewer session names
- *
- * @param lane      - The allocated lane (provides session name and worktree path)
- * @param taskId    - Task ID for logging
- * @param promptPath - Absolute path to the task's PROMPT.md in the main repo
- * @param repoRoot  - Absolute path to the main repository root
- * @returns Map of env var name → value
+ * Runtime V2 lane execution now runs through lane-runner/agent-host and no
+ * longer injects task-runner autostart/session env vars from this module.
  */
-// buildLaneEnvVars removed (TP-120 remediation: legacy TMUX lane-session env vars, dead code)
+// buildLaneEnvVars removed (TP-120 remediation: legacy lane-session env var path, dead code)
 
 function laneSessionIdOf(lane: Pick<AllocatedLane, "laneSessionId">): string {
 	return lane.laneSessionId;
@@ -294,7 +285,7 @@ export function resolveLaneLogPath(
 }
 
 /**
- * Relative lane log path used inside the tmux shell command.
+ * Relative lane log path used by the legacy shell-spawn path.
  *
  * Relative paths avoid Windows drive-letter parsing issues in shell redirection.
  */
@@ -523,26 +514,10 @@ export function resolveTaskDonePath(
 
 
 /*
- * REMOVED during TMUX extrication (TP-120 remediation):
- * - resolveRpcWrapperPath, sanitizeForFilename, generateTelemetryPaths
- * - buildLaneEnvVars, pollUntilTaskComplete
- * V2 equivalents: lane-runner.ts (executeTaskV2) and agent-host.ts (spawnAgent).
+ * Removed in TP-120 while decommissioning the legacy session backend.
  *
- * Completion detection logic:
- * 1. Check for .DONE file → task succeeded (highest priority)
- * 2. Check TMUX session liveness via `tmux has-session`
- * 3. If session exits without .DONE → wait DONE_GRACE_MS (slow disk flush)
- * 4. After grace period, if still no .DONE → task failed
- *
- * Terminal-state precedence: .DONE found at any point = success,
- * regardless of session state.
- *
- * @param lane        - Allocated lane
- * @param task        - Task being executed
- * @param config      - Orchestrator configuration
- * @param repoRoot    - Main repository root
- * @param pauseSignal - Checked each poll cycle; if true, returns early with "skipped"
- * @returns LaneTaskStatus indicating the final state
+ * `pollUntilTaskComplete` remains as a test-compatibility stub only.
+ * Runtime V2 completion detection now lives in lane-runner + agent-host.
  */
 // pollUntilTaskComplete function body removed — was ~170 lines of legacy .DONE polling.
 // @ts-ignore — export kept as stub for test compatibility
@@ -853,7 +828,7 @@ export async function parseWorktreeStatusMdAsync(
  * State-resolution precedence (deterministic):
  * 1. `.DONE` file found → "succeeded" (highest priority, always wins)
  * 2. Stall timeout reached (mtime unchanged for stall_timeout AND session alive) → "stalled"
- * 3. TMUX session exited without .DONE → "failed"
+ * 3. Lane session ended without .DONE → "failed"
  * 4. Session alive + recent mtime (within stall_timeout) → "running"
  * 5. Session alive + stale mtime but within startup grace → "running" (with no stall timer yet)
  * 6. Session alive + no STATUS.md yet but within startup grace → "running"
@@ -861,7 +836,7 @@ export async function parseWorktreeStatusMdAsync(
  *
  * @param taskId         - Task identifier
  * @param donePath       - Absolute path to the .DONE file in the worktree
- * @param sessionName    - TMUX session name for this lane
+ * @param sessionName    - Lane session name for this lane
  * @param statusResult   - Parsed STATUS.md result (may be null)
  * @param tracker        - Mtime tracker for stall detection
  * @param stallTimeoutMs - Stall timeout in milliseconds
@@ -882,7 +857,7 @@ export async function resolveTaskMonitorState(
 	// V2: read the lane snapshot file written by lane-runner every second.
 	// Snapshot status is authoritative — no PID probing needed.
 	// If snapshot doesn't exist yet, assume alive (lane-runner startup race).
-	// Legacy: check TMUX session.
+	// Legacy: check lane-session liveness.
 	let sessionAlive: boolean;
 	if (runtimeBackend === "v2" && v2Context) {
 		const snap = readLaneSnapshot(v2Context.stateRoot, v2Context.batchId, v2Context.laneNumber);
@@ -1066,10 +1041,10 @@ export type MonitorUpdateCallback = (state: MonitorState) => void;
  * Monitor all lanes in a wave, polling for progress, completion, and stalls.
  *
  * This is the orchestrator's "air traffic control" — it does NOT attach
- * to TMUX sessions. It monitors via filesystem polling:
+ * to lane sessions directly. It monitors via filesystem polling:
  * - STATUS.md in each worktree for step/checkbox progress
  * - .DONE files for task completion
- * - `tmux has-session` for session liveness
+ * - backend liveness probes for session state
  * - STATUS.md mtime for stall detection
  *
  * The monitoring loop runs until all lanes reach terminal states
@@ -1320,7 +1295,7 @@ export async function monitorLanes(
 		laneId: lane.laneId,
 		laneNumber: lane.laneNumber,
 		sessionName: laneSessionIdOf(lane),
-		sessionAlive: false, // Best-effort during pause — don't block with tmux call
+		sessionAlive: false, // Best-effort during pause — don't block on extra liveness probes
 		currentTaskId: null,
 		currentTaskSnapshot: null,
 		completedTasks: [],
@@ -1500,11 +1475,11 @@ export function ensureTaskFilesCommitted(
  * - **stop-wave**: On first failure, pauseSignal is set. In-flight tasks
  *   finish their current work, remaining tasks in lanes are skipped.
  *   No next wave is started (stoppedEarly=true).
- * - **stop-all**: On first failure, all TMUX sessions are killed immediately.
+ * - **stop-all**: On first failure, all active lane sessions are killed immediately.
  *   Returns with aborted status.
  *
  * Concurrency model:
- * - Lane execution promises are NOT cancellable (tmux sessions run externally)
+ * - Lane execution promises are NOT cancellable (lane sessions run externally)
  * - stop-all kills sessions directly; executeLane() detects session death on next poll
  * - Monitoring stops when all lanes reach terminal state or pauseSignal is set
  *
@@ -1525,7 +1500,7 @@ export function ensureTaskFilesCommitted(
 /**
  * Runtime backend selector for lane execution.
  *
- * - `"legacy"`: TMUX-backed path (spawnLaneSession → task-runner TASK_AUTOSTART)
+ * - `"legacy"`: Session-backed path (spawnLaneSession → task-runner TASK_AUTOSTART)
  * - `"v2"`: Direct-child path (lane-runner → agent-host → pi --mode rpc)
  *
  * @since TP-105
@@ -1806,7 +1781,7 @@ export async function executeWave(
  * Execute lanes with stop-all failure policy.
  *
  * Starts all lanes, then monitors for the first failure.
- * On first failure: kills all TMUX sessions immediately and returns.
+ * On first failure: kills all active lane sessions immediately and returns.
  *
  * Uses a race pattern: wraps each lane promise to signal on failure,
  * then kills all sessions when first failure is detected.
@@ -1927,7 +1902,7 @@ export async function executeWithStopAll(
 //
 // They are additive — existing code paths continue to work.
 // Runtime V2 consumers can start using these to avoid coupling to
-// TMUX naming, cwd-derived paths, or extension lifecycle assumptions.
+// legacy lane-session naming, cwd-derived paths, or extension lifecycle assumptions.
 // ────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -2004,11 +1979,11 @@ export function buildExecutionUnit(
 /**
  * Build a RuntimeAgentId for a lane's agent from existing naming.
  *
- * Bridges the current TMUX session naming convention into a
+ * Bridges the current lane-session naming convention into a
  * Runtime V2 stable agent ID. The output is compatible with
  * existing supervisor tools and mailbox addressing.
  *
- * @param lane - Allocated lane with TMUX session name
+ * @param lane - Allocated lane with a lane session name
  * @param role - Agent role
  * @param mergeIndex - Merge wave index (only for merge agents)
  * @returns Canonical agent ID
@@ -2140,14 +2115,14 @@ import { executeTaskV2, type LaneRunnerConfig, type LaneRunnerTaskResult } from 
 /**
  * Execute a lane using the Runtime V2 headless backend.
  *
- * This replaces the legacy TMUX-backed `executeLane()` for lanes that
+ * This replaces the legacy session-backed `executeLane()` for lanes that
  * should run on the new direct-child architecture. It uses the
  * lane-runner module which spawns workers via agent-host.ts instead
- * of TMUX sessions.
+ * of terminal-session-backed workers.
  *
  * The function signature is deliberately close to the legacy
  * `executeLane()` to minimize integration churn in the engine.
- * The key difference: no TMUX sessions are created.
+ * The key difference: no legacy lane sessions are created.
  *
  * @since TP-105
  */

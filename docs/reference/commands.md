@@ -174,13 +174,11 @@ States are evaluated in the order shown above (active batch and completed batch 
 - On completion, shows integration guidance (or auto-integrates if `integration` is set to `auto`)
 - Can be used with a single task path when you want `/task` semantics with worktree isolation
 
-**Runtime V2 backend (migration in progress)**
+**Runtime backend**
 
-When `/orch` is invoked with a single direct PROMPT.md path in repo mode
-(not workspace mode), the engine uses the **Runtime V2 backend** which
-spawns workers as direct child processes without TMUX. Multi-task batches
-and workspace mode continue to use the legacy TMUX-backed backend.
-The selection is automatic and logged for operator visibility.
+`/orch` uses the **Runtime V2 backend** for orchestration. Workers are spawned
+as direct child processes (subprocess backend); TMUX is not part of the active
+runtime contract.
 
 **Onboarding flow (no config)**
 
@@ -380,7 +378,7 @@ Abort current batch.
 **Behavior**
 
 - Writes abort signal file: `.pi/orch-abort-signal`
-- Attempts to terminate matching tmux sessions
+- Attempts to terminate active lane/merge agent processes for the batch
 - Cleans in-memory/persisted batch state
 - Preserves worktrees/branches for inspection
 
@@ -413,7 +411,7 @@ Show dependency graph.
 
 ### `/orch-sessions`
 
-List active orchestrator tmux sessions.
+List active orchestrator sessions.
 
 **Syntax**
 
@@ -423,8 +421,8 @@ List active orchestrator tmux sessions.
 
 **Behavior**
 
-- Lists sessions matching configured orchestrator tmux prefix
-- Useful for debugging/resume/cleanup in tmux mode
+- Lists sessions matching configured orchestrator `session_prefix`
+- Useful for debugging/resume/cleanup in Runtime V2 subprocess mode
 
 ---
 
@@ -609,7 +607,7 @@ Open the interactive settings TUI for viewing and editing taskplane configuratio
 
 | Section | Description |
 |---------|-------------|
-| Orchestrator | Lanes, worktree layout, spawn mode, operator ID |
+| Orchestrator | Lanes, worktree layout, session prefix, operator ID |
 | Dependencies | Dependency source and caching |
 | Assignment | Task assignment strategy |
 | Pre-Warm | Auto-detection settings |
@@ -666,18 +664,18 @@ Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs
 - `--tasks-root` must be relative to project root.
 - When `--tasks-root` is passed, Taskplane skips sample tasks by default to avoid polluting an existing task area.
 - Init adds required `.gitignore` entries for runtime artifacts (batch state, orchestrator logs, worktrees, etc.) and offers to untrack any that are already committed.
-- tmux availability is detected at init time. When tmux is found, `spawn_mode` defaults to `"tmux"` in the orchestrator config; otherwise it defaults to `"subprocess"`.
+- `spawn_mode` now uses the Runtime V2 subprocess backend (`"subprocess"`) as the only supported value.
 - Init generates `taskplane-config.json` (JSON) alongside YAML configs. JSON takes precedence when present; YAML is retained during the transition period.
 
 ### `taskplane doctor`
 
 Validate installation and project configuration.
 
-On Windows, if tmux is not found, doctor suggests running `taskplane install-tmux`.
+Doctor no longer treats TMUX as a required dependency for `/orch` or `/task` Runtime V2 execution.
 
-### `taskplane install-tmux [options]`
+### `taskplane install-tmux [options]` (legacy utility)
 
-Install or upgrade tmux for Git Bash on Windows. Downloads tmux and libevent packages from the official MSYS2 package repository and places binaries in `~/bin/`.
+Install or upgrade tmux for Git Bash on Windows. This is optional legacy tooling and is not required for Runtime V2 orchestration.
 
 **Options**
 
