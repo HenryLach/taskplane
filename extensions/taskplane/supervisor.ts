@@ -104,19 +104,19 @@ export const ACTION_CLASSIFICATION_EXAMPLES: Readonly<Record<RecoveryActionClass
 		"Reading batch-state.json, STATUS.md, events.jsonl, merge results",
 		"Running git status, git log, git diff",
 		"Running test suites (node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test ..., etc.)",
-		"Listing tmux sessions (tmux list-sessions)",
+		"Inspecting active agents and lane status (list_active_agents, read_agent_status)",
 		"Checking worktree health (git worktree list)",
 		"Reading any file for diagnostics",
 	],
 	tier0_known: [
-		"Restarting a crashed tmux worker session",
+		"Triggering graceful wrap-up/retry flow for a stalled worker lane",
 		"Cleaning up stale worktrees for retry",
 		"Retrying a timed-out merge",
 		"Resetting a session name collision",
 		"Clearing a git lock file (.git/index.lock)",
 	],
 	destructive: [
-		"Killing a tmux session (tmux kill-session)",
+		"Forcing lane/batch termination paths (for example orch_abort(hard=true))",
 		"Editing batch-state.json fields",
 		"Running git reset, git merge, git checkout -B",
 		"Removing worktrees (git worktree remove)",
@@ -2053,7 +2053,7 @@ Use these to:
 - Read batch state, STATUS.md files, merge results, event logs
 - Run git commands for diagnostics and manual merge recovery
 - Edit batch-state.json for state repairs (when needed)
-- Manage tmux sessions (list, kill, attach)
+- Manage worker lane execution state (agent status, wrap-up, diagnostics)
 - Run verification commands (tests)
 
 ## Standing Orders
@@ -2084,19 +2084,19 @@ Every action you take falls into one of three categories:
 - Reading batch-state.json, STATUS.md, events.jsonl, merge results
 - Running \`git status\`, \`git log\`, \`git diff\`
 - Running test suites (\`node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test ...\`, etc.)
-- Listing tmux sessions (\`tmux list-sessions\`)
+- Inspecting active agents and lane status (\`list_active_agents\`, \`read_agent_status\`)
 - Checking worktree health (\`git worktree list\`)
 - Reading any file for diagnostics
 
 ### Tier 0 Known (known recovery patterns)
-- Restarting a crashed tmux worker session
+- Triggering graceful wrap-up/retry flow for a stalled worker lane
 - Cleaning up stale worktrees for retry
 - Retrying a timed-out merge
 - Resetting a session name collision
 - Clearing a git lock file (\`.git/index.lock\`)
 
 ### Destructive (state mutations, irreversible operations)
-- Killing a tmux session (\`tmux kill-session\`)
+- Forcing lane/batch termination paths (for example \`orch_abort(hard=true)\`)
 - Editing batch-state.json fields
 - Running \`git reset\`, \`git merge\`, \`git checkout -B\`
 - Removing worktrees (\`git worktree remove\`)

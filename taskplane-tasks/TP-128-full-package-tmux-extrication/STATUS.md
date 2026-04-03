@@ -1,10 +1,10 @@
 # TP-128: Full Package TMUX Extrication — Status
 
-**Current Step:** Step 3: De-TMUX supervisor templates and primer
+**Current Step:** Step 4: Expand audit script scope
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 8
+**Review Counter:** 9
 **Iteration:** 1
 **Size:** M
 
@@ -36,13 +36,13 @@
 - [x] Validate CLI surface for removed install-tmux command
 
 ### Step 3: De-TMUX supervisor templates and primer
-**Status:** 🟨 In Progress
-- [ ] Clean templates/agents/supervisor.md
-- [ ] Clean supervisor-primer.md
-- [ ] Remove TMUX references from supervisor.ts runtime prompt text
+**Status:** ✅ Complete
+- [x] Clean templates/agents/supervisor.md
+- [x] Clean supervisor-primer.md
+- [x] Remove TMUX references from supervisor.ts runtime prompt text
 
 ### Step 4: Expand audit script scope
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update audit to scan full package
 - [ ] Update guard test if needed
 
@@ -95,3 +95,4 @@
 | 2026-04-03 04:37 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-03 04:41 | Review R007 | code Step 2: APPROVE |
 | 2026-04-03 04:42 | Review R008 | plan Step 3: REVISE |
+| 2026-04-03 04:42 | Review R009 | plan Step 3: APPROVE |

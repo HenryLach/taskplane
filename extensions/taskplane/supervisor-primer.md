@@ -23,7 +23,7 @@ reviewers), or merge branches (that's merge agents). You supervise all of them.
 
 **Your tools:** `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`. You have
 full filesystem and command-line access. Use it to read state files, run git
-commands, edit batch state, manage tmux sessions, and run verification.
+commands, edit batch state, inspect worker/merge agent execution, and run verification.
 
 **Your system prompt** is built from `templates/agents/supervisor.md` (base
 template, ships with the package) composed with `.pi/agents/supervisor.md`
@@ -43,13 +43,13 @@ You (supervisor) ← operator talks to you
 │   ├── Computes waves (topological sort)
 │   ├── Assigns tasks to lanes (parallel execution slots)
 │   ├── Provisions git worktrees per lane
-│   ├── Spawns worker sessions in tmux
+│   ├── Spawns worker processes/sessions per lane
 │   ├── Polls for .DONE files and STATUS.md progress
 │   ├── Merges lane branches into orch branch after each wave
 │   └── Advances to next wave after successful merge
 │
 ├── Worker Agents (LLM, one per task)
-│   ├── Run in tmux sessions inside git worktrees
+│   ├── Run as subprocess agents inside git worktrees
 │   ├── Read PROMPT.md for requirements, STATUS.md for state
 │   ├── Write code, run tests, check STATUS.md boxes
 │   ├── Commit at step boundaries
@@ -216,7 +216,7 @@ Wave N starts
 ├── 1. Provision: Create lane worktrees from orch branch
 │   └── git worktree add .worktrees/{opId}-{batchId}/lane-{N} -b task/{opId}-lane-{N}-{batchId} orch/{opId}-{batchId}
 │
-├── 2. Execute: Spawn tmux sessions for each lane
+├── 2. Execute: Spawn worker sessions for each lane
 │   ├── Each session runs the task-runner extension
 │   ├── Task-runner iterates through task steps
 │   ├── Workers write code, check STATUS.md boxes, commit
@@ -225,7 +225,7 @@ Wave N starts
 │
 ├── 3. Monitor: Poll loop checks every 5 seconds
 │   ├── Check .DONE file existence → task succeeded
-│   ├── Check tmux session alive → still running
+│   ├── Check lane process/session alive → still running
 │   ├── Check STATUS.md → track progress for dashboard
 │   └── Check stall timeout → no STATUS.md change for too long
 │
@@ -250,7 +250,7 @@ Wave N starts
 | Stage | Failure | Symptom |
 |-------|---------|---------|
 | Provision | Stale worktree from previous run | `git worktree add` fails |
-| Execute | Worker session crashes | tmux session disappears without .DONE |
+| Execute | Worker session crashes | lane process exits without .DONE |
 | Execute | Worker makes no progress | STATUS.md unchanged for `stallTimeout` minutes |
 | Execute | API error (rate limit, overload) | Session exits, pi handles retry internally |
 | Merge | Merge agent times out | No result JSON within `merge.timeoutMinutes` |
@@ -342,8 +342,8 @@ git log --oneline orch/{branch}..task/{lane-branch}  # empty = already merged
 or "🔒 Merge agent on lane N appears stuck (no output for 20 min)."
 
 **How it works:** The merge health monitor (TP-056) actively polls merge agent
-tmux sessions every 2 minutes during the merge phase. It checks:
-- **Session liveness:** `tmux has-session` — is the session alive?
+processes every 2 minutes during the merge phase. It checks:
+- **Process liveness:** process registry + PID checks — is the agent still alive?
 - **Activity detection:** Captures the last 10 lines of pane output and compares
   with the previous snapshot. If output hasn't changed, the session may be stalled.
 
@@ -354,9 +354,9 @@ tmux sessions every 2 minutes during the merge phase. It checks:
 - **Stuck** (20 min no output): `merge_health_stuck` event → recommendation to kill
 
 **Recovery:**
-1. Attach to the session to inspect: `tmux attach -t {sessionName}`
-2. If truly stuck, kill the session: `tmux kill-session -t {sessionName}`
-3. The engine detects the dead session and applies the `on_merge_failure` policy
+1. Inspect lane/merge diagnostics: `read_lane_logs(lane)` and recent merge alerts
+2. If truly stuck, stop the batch/merge path via orchestrator tools (`orch_abort(hard=true)` when required)
+3. The engine detects the dead agent and applies the `on_merge_failure` policy
 4. Resume with `/orch-resume` if needed
 
 **Note:** The monitor does NOT kill sessions autonomously — it emits events for
@@ -427,7 +427,7 @@ batch terminal.
 
 ### Pattern 5: Worker Session Crash
 
-**Symptom:** Task shows failed, tmux session is gone, no `.DONE`.
+**Symptom:** Task shows failed, worker process is gone, no `.DONE`.
 
 **Diagnosis:**
 ```bash
@@ -567,12 +567,12 @@ rm -rf .worktrees/{path}
 git worktree prune
 ```
 
-### Check tmux sessions
-```bash
-tmux ls                           # list all sessions
-tmux has-session -t {name} 2>&1   # check specific session
-tmux kill-session -t {name}       # kill specific session
-tmux capture-pane -t {name} -p    # see what's on screen
+### Check active agents
+```text
+list_active_agents()      # list running worker/reviewer/merge agents
+read_agent_status()       # summarize STATUS.md + telemetry for all lanes
+read_lane_logs(<lane>)    # inspect stderr/crash diagnostics for a lane
+trigger_wrap_up(<lane>)   # graceful stop signal for a worker lane
 ```
 
 ---
@@ -774,7 +774,7 @@ If the batch is actively running, call `orch_pause()` first.
 - `read_agent_status(lane?)` — Read STATUS.md + telemetry for a lane (step, progress, context %, cost, elapsed). Omit lane for all lanes.
 - `trigger_wrap_up(lane)` — Write `.task-wrap-up` signal to gracefully stop a worker on a lane.
 - `read_lane_logs(lane)` — Read stderr/crash logs and exit diagnostics for a lane.
-- `list_active_agents()` — List all tmux sessions with role, lane, task, context %, elapsed, cost.
+- `list_active_agents()` — List active worker/reviewer/merge agents with role, lane, task, context %, elapsed, cost.
 
 Plus general tools: `read`, `write`, `edit`, `bash`, `grep`, `find`, `ls`
 for inspecting files, running git commands, and editing batch state.
@@ -1010,7 +1010,7 @@ When you activate at the start of a batch:
 2. Note the `orchBranch`, `baseBranch`, `wavePlan`, `totalWaves`
 3. Check that the orch branch exists: `git branch | grep orch/`
 4. Verify worktrees are provisioned for the current wave
-5. Confirm tmux sessions are alive for active lanes
+5. Confirm active worker lanes are alive (agent status + lane logs)
 6. Read configuration for key values: `merge.timeoutMinutes`, `maxLanes`,
    review levels, verification commands
 7. Report to operator: "Batch {batchId} active. {N} waves, {M} tasks.
@@ -1317,8 +1317,7 @@ before writing** — if files already exist (partial setup), read and merge.
       "worktreeLocation": "subdirectory",
       "worktreePrefix": ".worktrees",
       "batchIdFormat": "timestamp",
-      "spawnMode": "tmux",
-      "tmuxPrefix": "tp",
+      "spawnMode": "subprocess",
       "operatorId": ""
     },
     "dependencies": { "source": "prompt", "cache": true },
@@ -1340,7 +1339,7 @@ before writing** — if files already exist (partial setup), read and merge.
 - `project.name`: Use the actual project name (from package.json, README, etc.)
 - `paths.tasks` and `taskAreas`: Match what was agreed in the task area discussion
 - `testing.commands`: Use the detected test command as a named object (e.g., `{"test": "cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts"}`)
-- `orchestrator.spawnMode`: Use `"tmux"` if tmux is available, `"subprocess"` otherwise
+- `orchestrator.spawnMode`: Use `"subprocess"` (default, recommended runtime mode)
 - `orchestrator.maxLanes`: Start with 2 for first-time users (safe default)
 - `merge.verify`: Add the project's test command for post-merge verification
 
@@ -1495,8 +1494,8 @@ when the supervisor suggests it.
 5. **Orphaned batch state**: Read `.pi/batch-state.json` — if it exists and
    phase is terminal (`completed`, `failed`, `stopped`), check if it's old
    (> 7 days since `endedAt`) and suggest cleanup
-6. **tmux availability**: Run `which tmux` — if unavailable, warn that
-   orchestrator will use subprocess mode (less observable)
+6. **Agent observability tools**: Confirm supervisor tool connectivity by checking
+   `orch_status()` and `list_active_agents()` respond without errors
 7. **Disk space**: Run `df -h .` (Unix) or `wmic logicaldisk get size,freespace`
    (Windows) — warn if less than 5GB free (worktrees use space)
 8. **Supervisor lockfile**: Check `.pi/supervisor/lock.json` — if it exists
@@ -1517,7 +1516,7 @@ Infrastructure:
   ✅ Config valid (3 task areas configured)
   ✅ Git clean, on 'develop'
   ⚠️ 2 stale worktree directories from batch 20260315T093012
-  ✅ tmux available
+  ✅ agent observability tools available
   ✅ No orphaned batch state
   ❌ Stale supervisor lockfile found (no active batch)
 
