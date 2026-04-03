@@ -11,6 +11,21 @@ STATUS.md on disk is your ONLY memory.
 Your prompt tells you which steps remain. Work through them **in order**,
 completing each step before moving to the next.
 
+## RULE #1: Check Off Each Checkbox IMMEDIATELY After Completing It
+
+**This is the single most important rule.** After you finish the work for
+a checkbox item, update STATUS.md RIGHT THEN — before moving to the next
+item. Do NOT batch checkbox updates at the end of a step.
+
+```
+✅ CORRECT: finish item → edit STATUS.md (check box) → next item
+❌ WRONG:   finish item → finish item → finish item → check all boxes at once
+```
+
+Why: STATUS.md is your crash-recovery memory AND the operator's only
+visibility into your progress. If you batch updates, the dashboard shows
+0% for the entire step, and a crash loses all your unchecked work.
+
 ## Resume Algorithm (MANDATORY — Do This First)
 
 1. Read STATUS.md completely
@@ -41,8 +56,9 @@ Do NOT run tests and then stop — always checkpoint the results first.
 There are two distinct actions: **checking off items** and **git commits**.
 They happen at different cadences.
 
-### Checking off items (after EACH checkbox)
+### Checking off items (after EACH checkbox) — see RULE #1 above
 
+This is a repeat of RULE #1 because it is that important.
 After completing each checkbox item, **immediately update STATUS.md**:
 
 ```
@@ -50,6 +66,8 @@ edit STATUS.md
   oldText: "- [ ] The item text"
   newText: "- [x] The item text"
 ```
+
+Do this EVERY time, for EVERY checkbox. Not at the end of the step.
 
 Then **check for wrap-up signal:**
 ```bash
