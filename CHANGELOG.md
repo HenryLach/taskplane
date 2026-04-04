@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.9] - 2026-04-03
+
+### Fixed
+- **Cross-repo segment execution: packet path resolution** — `packetTaskPath` is now resolved to an absolute path using the workspace root. Previously stored as a relative path, which broke when a segment executed in a different repo's worktree (lane-runner couldn't find PROMPT.md/STATUS.md/.DONE to create completion markers). First polyrepo segment test surfaced this.
+
 ## [0.24.8] - 2026-04-03
 
 ### New
