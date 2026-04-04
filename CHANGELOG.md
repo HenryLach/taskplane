@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.13] - 2026-04-04
+
+### Fixed
+- **Missing `runGit` import in waves.ts** — `resolveBaseBranch` called `runGit()` but `waves.ts` only imported `getCurrentBranch` from `git.ts`. In the jiti-compiled engine-worker context, this threw `ReferenceError: runGit is not defined`, silently falling back to the repo HEAD branch. Root cause of persistent wave 2 worktree base branch failures.
+
 ## [0.24.12] - 2026-04-04
 
 ### Fixed
