@@ -575,7 +575,7 @@ export function resolveBaseBranch(
 	if (batchBaseBranch.startsWith("orch/") && repoId) {
 		try {
 			const check = runGit(["rev-parse", "--verify", `refs/heads/${batchBaseBranch}`], repoRoot);
-			if (check.status === 0) {
+			if (check.ok) {
 				return batchBaseBranch;
 			}
 		} catch { /* orch branch doesn't exist in this repo — fall through */ }
