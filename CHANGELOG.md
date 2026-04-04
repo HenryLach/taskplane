@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.12] - 2026-04-04
+
+### Fixed
+- **Wave 2+ worktree base branch (v0.24.10 regression)** — The orch branch existence check used `check.status` instead of `check.ok` (`runGit` returns `{ ok }` not `{ status }`). The check always failed, so worktrees were still branched from develop instead of the orch branch.
+
 ## [0.24.11] - 2026-04-04
 
 ### Fixed
