@@ -384,6 +384,7 @@ export function buildSegmentFrontierWaves(
 	pending: Map<string, ParsedTask>,
 	segmentPlans?: TaskSegmentPlanMap,
 	packetRepoId?: string,
+	workspaceRoot?: string,
 ): { waves: string[][]; taskStateById: Map<string, SegmentFrontierTaskState> } {
 	const taskStateById = new Map<string, SegmentFrontierTaskState>();
 
@@ -395,7 +396,12 @@ export function buildSegmentFrontierWaves(
 		task.activeSegmentId = null;
 		if (packetRepoId) {
 			task.packetRepoId = packetRepoId;
-			task.packetTaskPath = task.taskFolder;
+			// Resolve packetTaskPath to absolute so it works from any repo's worktree.
+			// task.taskFolder is relative to workspace root (e.g., "shared-libs/task-management/.../TP-004").
+			// When a segment executes in a different repo, the lane worktree won't contain this path.
+			task.packetTaskPath = workspaceRoot
+				? resolve(workspaceRoot, task.taskFolder)
+				: task.taskFolder;
 		}
 
 		taskStateById.set(taskId, {
@@ -1421,6 +1427,7 @@ export async function executeOrchBatch(
 		discovery.pending,
 		waveComputation.segmentPlans,
 		packetRepoId,
+		stateRoot,
 	);
 	const rawWaves = frontier.waves;
 	segmentStateByTask = frontier.taskStateById;
