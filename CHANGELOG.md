@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.15] - 2026-04-04
+
+### Fixed
+- **Wave transition false-failure from stale lane snapshots** — Stale lane snapshot files from prior waves are now cleared before launching new wave workers. Added 60-second tracker-age grace period so newly-started tasks aren't marked failed during worker startup. Fixes TP-005 being falsely marked failed at wave 2 start in workspace mode.
+
 ## [0.24.14] - 2026-04-04
 
 ### Fixed
