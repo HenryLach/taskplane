@@ -1,6 +1,6 @@
 {
   "name": "taskplane",
-  "version": "0.24.12",
+  "version": "0.24.13",
   "description": "AI agent orchestration for pi — parallel task execution with checkpoint discipline",
   "keywords": [
     "pi-package",

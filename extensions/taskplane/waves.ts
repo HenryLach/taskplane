@@ -8,7 +8,7 @@ import { parseDependencyReference } from "./discovery.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { AllocationError, buildSegmentId, getTaskDurationMinutes } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, AllocateLanesResult, AllocationErrorCode, DependencyGraph, DiscoveryError, GraphValidationResult, LaneAssignment, OrchestratorConfig, ParsedTask, TaskSegmentPlan, TaskSegmentPlanMap, WaveAssignment, WaveComputationResult, WorkspaceConfig, WorktreeInfo } from "./types.ts";
-import { getCurrentBranch } from "./git.ts";
+import { getCurrentBranch, runGit } from "./git.ts";
 import { ensureLaneWorktrees, removeAllWorktrees, removeWorktree } from "./worktree.ts";
 
 // ── Dependency Graph Construction ────────────────────────────────────
@@ -575,10 +575,13 @@ export function resolveBaseBranch(
 	if (batchBaseBranch.startsWith("orch/") && repoId) {
 		try {
 			const check = runGit(["rev-parse", "--verify", `refs/heads/${batchBaseBranch}`], repoRoot);
+			console.error(`[resolveBaseBranch] repoId=${repoId} batchBaseBranch=${batchBaseBranch} repoRoot=${repoRoot} check.ok=${check.ok}`);
 			if (check.ok) {
 				return batchBaseBranch;
 			}
-		} catch { /* orch branch doesn't exist in this repo — fall through */ }
+		} catch (err) {
+			console.error(`[resolveBaseBranch] repoId=${repoId} batchBaseBranch=${batchBaseBranch} THREW: ${err}`);
+		}
 	}
 
 	// Step 1: Detect current branch of this specific repo.
