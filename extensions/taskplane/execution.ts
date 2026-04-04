@@ -868,8 +868,17 @@ export async function resolveTaskMonitorState(
 			// to avoid indefinite false "running" if the lane-runner died.
 			const staleMs = snap?.updatedAt ? (now - snap.updatedAt) : 0;
 			if (staleMs > 30_000) {
-				// Snapshot hasn't been updated for 30s+ — check registry as fallback
-				sessionAlive = isV2AgentAlive(sessionName, runtimeBackend);
+				// Snapshot hasn't been updated for 30s+ — check registry as fallback.
+				// But also check if the tracker just started (firstObservedAt within
+				// last 60s) — wave transitions can leave stale snapshots from the
+				// prior wave/task while the new worker is still spawning.
+				const trackerAgeMs = now - tracker.firstObservedAt;
+				if (trackerAgeMs < 60_000) {
+					// New task, stale snapshot — give the worker startup grace period
+					sessionAlive = true;
+				} else {
+					sessionAlive = isV2AgentAlive(sessionName, runtimeBackend);
+				}
 			} else {
 				sessionAlive = true;
 			}
@@ -1619,6 +1628,18 @@ export async function executeWave(
 		execLog("wave", `W${waveIndex}`, `legacy runtime backend '${runtimeBackend}' requested but ignored; using Runtime V2`);
 	}
 	execLog("wave", `W${waveIndex}`, "using Runtime V2 backend (executeLaneV2)");
+
+	// Clear stale lane snapshots from prior waves before launching new workers.
+	// Without this, the monitor reads a snapshot from wave N-1 (different taskId,
+	// staleMs > 30s) and may falsely mark the new task as failed before the
+	// worker has time to write its first snapshot.
+	const snapshotStateRoot = resolveRuntimeStateRoot(repoRoot, wsRoot);
+	for (const lane of lanes) {
+		try {
+			const snapPath = join(snapshotStateRoot, ".pi", "runtime", batchId, "lanes", `lane-${lane.laneNumber}.json`);
+			if (existsSync(snapPath)) unlinkSync(snapPath);
+		} catch { /* best effort */ }
+	}
 
 	const lanePromises = lanes.map(lane =>
 		executeLaneV2(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode, { ORCH_BATCH_ID: batchId }, onSupervisorAlert),

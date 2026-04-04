@@ -516,13 +516,15 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 
 	it("14.1: resolveTaskMonitorState uses lane-snapshot-based V2 liveness with startup grace", () => {
 		const fnIdx = execSrc.indexOf("function resolveTaskMonitorState");
-		const block = execSrc.slice(fnIdx, fnIdx + 1500);
+		const block = execSrc.slice(fnIdx, fnIdx + 2500);
 		// V2 primary: reads lane snapshot file (TP-115 resilience)
 		expect(block).toContain("readLaneSnapshot");
 		// Startup grace: assume alive when snapshot not yet written
 		expect(block).toContain("snap == null");
 		// V2 fallback: registry-based check
 		expect(block).toContain("isV2AgentAlive");
+		// Wave transition grace: new task with stale snapshot gets startup grace
+		expect(block).toContain("trackerAgeMs");
 	});
 
 	it("14.2: isV2AgentAlive checks registry + PID (not TMUX)", () => {
@@ -558,7 +560,7 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 
 	it("14.5: stall kill uses Runtime V2 PID termination (no TMUX fallback)", () => {
 		const fnIdx = execSrc.indexOf("function resolveTaskMonitorState");
-		const block = execSrc.slice(fnIdx, fnIdx + 5000);
+		const block = execSrc.slice(fnIdx, fnIdx + 6000);
 		const stallIdx = block.indexOf("stall detected");
 		expect(stallIdx).toBeGreaterThan(-1);
 		const stallBlock = block.slice(stallIdx, stallIdx + 500);
@@ -723,7 +725,7 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 		}
 	});
 
-	it("14.13: stale snapshot with old updatedAt falls back to registry check", async () => {
+	it("14.13: stale snapshot with old updatedAt — new tracker gets grace, old tracker falls back to registry", async () => {
 		const root = mkdtempSync(join(tmpdir(), "tp-127-"));
 		const now = Date.now();
 		const batchId = "b-stale-timeout";
@@ -735,7 +737,8 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 				updatedAt: now - 60_000,
 			});
 
-			const snapshot = await resolveTaskMonitorState(
+			// New tracker (just created) gets wave-transition grace → alive
+			const newTrackerSnapshot = await resolveTaskMonitorState(
 				"TP-NEW",
 				join(root, ".DONE"),
 				"lane-1",
@@ -746,11 +749,25 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 				"v2",
 				{ stateRoot: root, batchId, laneNumber: 1 },
 			);
+			// New tracker within 60s grace → assume alive during wave transition
+			expect(newTrackerSnapshot.sessionAlive).toBe(true);
+			expect(newTrackerSnapshot.status).toBe("running");
 
-			// Stale >30s → falls back to isV2AgentAlive → returns false (no registry)
-			// → sessionAlive = false → task reported as failed
-			expect(snapshot.sessionAlive).toBe(false);
-			expect(snapshot.status).toBe("failed");
+			// Old tracker (>60s) falls back to registry → no registry → failed
+			const oldTracker = freshTracker("TP-NEW", now - 90_000);
+			const oldTrackerSnapshot = await resolveTaskMonitorState(
+				"TP-NEW",
+				join(root, ".DONE"),
+				"lane-1",
+				{ parsed: null, error: null },
+				oldTracker,
+				30 * 60_000,
+				now,
+				"v2",
+				{ stateRoot: root, batchId, laneNumber: 1 },
+			);
+			expect(oldTrackerSnapshot.sessionAlive).toBe(false);
+			expect(oldTrackerSnapshot.status).toBe("failed");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
