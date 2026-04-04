@@ -1968,8 +1968,15 @@ export function buildExecutionUnit(
 	const segmentId = task.task.activeSegmentId ?? null;
 	const id = segmentId ?? task.taskId;
 
-	const packet = task.task.packetTaskPath
-		? resolvePacketPaths(task.task.packetTaskPath)
+	// Use absolute packetTaskPath ONLY when the packet home repo differs from
+	// the execution repo (cross-repo segment). When they're the same repo,
+	// resolve packet paths inside the worktree so .DONE, STATUS.md etc. are
+	// written to the worktree (not the original repo outside the worktree).
+	const useAbsolutePacketPath = task.task.packetTaskPath
+		&& packetHomeRepoId !== executionRepoId;
+
+	const packet = useAbsolutePacketPath
+		? resolvePacketPaths(task.task.packetTaskPath!)
 		: {
 			promptPath: resolved.taskFolderResolved + "/PROMPT.md",
 			statusPath: resolved.statusPath,
