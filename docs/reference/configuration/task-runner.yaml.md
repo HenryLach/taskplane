@@ -84,12 +84,13 @@ If a task path matches a configured task area, that area's override applies.
 |---|---|---|---|
 | `worker.model` | string | `""` | Worker model. Empty string = inherit from active pi session model. |
 | `worker.tools` | string | `"read,write,edit,bash,grep,find,ls"` | Tool allowlist passed to worker agent invocations. |
-| `worker.thinking` | string | `"off"` | Thinking mode setting passed to worker agent. |
+| `worker.thinking` | string | `""` | Thinking mode for worker agent. Empty string (or explicit `"inherit"`) = inherit active session thinking. |
 | `worker.spawn_mode` | `"subprocess"` \| `"tmux"` | commented in template | Optional spawn mode override for task-runner. |
 
 Notes:
 - `spawn_mode` defaults to `subprocess` when not set.
 - In orchestrated runs, environment variables set by orchestrator may override runner spawn behavior.
+- For model/thinking override fields, literal `"inherit"` is accepted and normalized to empty-string inheritance semantics during config load.
 
 ### `reviewer`
 
@@ -97,7 +98,7 @@ Notes:
 |---|---|---|---|
 | `reviewer.model` | string | `""` | Reviewer model (empty = inherit session model). |
 | `reviewer.tools` | string | `"read,write,bash,grep,find,ls"` | Tool allowlist for reviewer agent. |
-| `reviewer.thinking` | string | `"off"` | Thinking mode for reviewer. |
+| `reviewer.thinking` | string | `"off"` | Thinking mode for reviewer. Empty string (or explicit `"inherit"`) = inherit active session thinking. |
 
 ### `context`
 

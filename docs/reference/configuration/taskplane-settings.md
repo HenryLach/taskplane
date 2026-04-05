@@ -92,6 +92,7 @@ Settings that control how completed lanes are merged back into the base branch.
 |---------|------|---------|---------|-------------|
 | **Merge Model** | string | *(inherit)* | Any model ID | Model for the merge agent. Empty = inherits the active session's model. Set explicitly if you want a specific model for merges (e.g., a faster model for simple merges). *(L1+L2)* |
 | **Merge Tools** | string | `read,write,edit,bash,grep,find,ls` | Comma-separated tool names | Tools available to the merge agent. Restrict if you want to limit what the merge agent can do. |
+| **Merge Thinking** | picker | *(inherit)* | `inherit (use session thinking)`, `on`, `off` | Thinking mode for merge agent. `inherit` uses active session default; `on`/`off` force an explicit mode. *(L1+L2)* |
 | **Merge Order** | enum | `fewest-files-first` | `fewest-files-first`, `sequential` | Order in which completed lanes are merged. `fewest-files-first` = lanes with fewer changed files merge first (reduces conflict complexity). `sequential` = merge in lane number order. |
 | **Merge Timeout (minutes)** | number | `10` | Any positive number | Maximum time for the merge agent to complete. If exceeded, the merge session is killed and the batch pauses. Increase for large batches with many files (e.g., 15-20 min for 50+ file diffs). |
 
@@ -155,8 +156,10 @@ Settings that control how `/task` spawns and manages worker agents.
 |---------|------|---------|---------|-------------|
 | **Worker Model** | string | *(inherit)* | Any model ID | Model for worker agents. Empty = inherits the active session's model. Format: `provider/model-id` (e.g., `anthropic/claude-sonnet-4-20250514`). *(L1+L2)* |
 | **Worker Tools** | string | `read,write,edit,bash,grep,find,ls` | Comma-separated tool names | Tools available to worker agents. The default set covers all standard operations. |
-| **Worker Thinking** | string | `off` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | Thinking/reasoning level for workers. Higher levels use more tokens but may produce better results for complex tasks. |
-| **Spawn Mode** | enum | `subprocess` | `subprocess`, `tmux` | How `/task` spawns workers and reviewers. `subprocess` = child processes (simpler, output captured programmatically). `tmux` = named tmux sessions (attachable for live debugging with `tmux attach -t task-worker`). **Note:** `/orch` always uses tmux regardless of this setting. |
+| **Worker Thinking** | picker | *(inherit)* | `inherit (use session thinking)`, `on`, `off` | Thinking mode for workers. `inherit` uses active session default; `on`/`off` force an explicit mode. |
+| **Spawn Mode** | enum | `subprocess` | `subprocess` | Runtime mode for `/task` worker/reviewer subprocesses. Runtime V2 supports subprocess only. |
+
+> **Tip:** When you change Worker/Reviewer/Merge model to one that advertises thinking capability, the TUI suggests setting the corresponding Thinking picker to `on`.
 
 ---
 
@@ -168,7 +171,7 @@ Settings that control reviewer agents (cross-model review).
 |---------|------|---------|---------|-------------|
 | **Reviewer Model** | string | *(inherit)* | Any model ID | Model for reviewer agents. Empty = inherits session model. Best practice: use a different model than the worker for independent review (e.g., worker on Claude, reviewer on GPT). *(L1+L2)* |
 | **Reviewer Tools** | string | `read,write,bash,grep,find,ls` | Comma-separated tool names | Tools available to reviewer agents. Note: reviewers don't get `edit` by default — they review but don't modify code. |
-| **Reviewer Thinking** | string | `off` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | Thinking/reasoning level for reviewers. |
+| **Reviewer Thinking** | picker | `on` | `inherit (use session thinking)`, `on`, `off` | Thinking mode for reviewers. `inherit` uses active session default; `on`/`off` force an explicit mode. |
 
 ---
 

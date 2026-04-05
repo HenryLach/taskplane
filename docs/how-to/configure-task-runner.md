@@ -104,23 +104,24 @@ Area-specific standards override global standards when task folder path matches 
 worker:
   model: ""
   tools: "read,write,edit,bash,grep,find,ls"
-  thinking: "off"
+  thinking: ""
   spawn_mode: "subprocess"
 ```
 
 - `model: ""` means inherit current pi session model.
-- `spawn_mode`: `subprocess` (default) or `tmux`.
+- `thinking: ""` means inherit current pi session thinking mode (`"inherit"` alias is also accepted).
+- `spawn_mode`: `subprocess` (default).
 
 ### `reviewer`
 
 ```yaml
 reviewer:
-  model: "openai/gpt-5.3-codex"
+  model: ""
   tools: "read,write,bash,grep,find,ls"
   thinking: "off"
 ```
 
-Set to a different model than worker for stronger cross-model review.
+Set `reviewer.model` explicitly (optional) to use a different model than worker for stronger cross-model review.
 
 ### `context`
 
@@ -193,7 +194,7 @@ Paths requiring explicit approval before edits.
 ## Recommended baseline for most projects
 
 - Keep `worker.model` empty (inherit from session)
-- Use a fixed `reviewer.model`
+- Optionally set a fixed `reviewer.model` for cross-model review
 - Keep `max_worker_iterations` modest (10–20)
 - Keep `task_areas` small at first, then split by domain
 - Add only test/build commands that are deterministic
