@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 12
+**Review Counter:** 14
 **Iteration:** 1
 **Size:** L
 
@@ -62,6 +62,7 @@
 **Status:** 🟨 In Progress
 - [ ] generateProjectConfig writes only project-specific fields
 - [ ] Agent settings NOT included
+- [ ] Persist only explicit init-time orchestrator overrides (non-default/user-chosen values)
 - [ ] Existing full configs continue working
 
 ### Step 6: Testing & Verification
@@ -120,6 +121,7 @@
 - Suggestion (R010): clean up stale test names that still mention legacy terms (default/user/project config wording).
 - Suggestion (R011): consider broader test-name cleanup for legacy wording in settings-tui tests.
 - Suggestion (R012): consider removing stale legacy wording in test names/comments during follow-up cleanup.
+- Suggestion (R014): if init still asks for agent model/thinking values, message clearly that they are global-only and not project-persisted.
 | 2026-04-05 22:07 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-05 22:11 | Review R002 | code Step 1: APPROVE |
 | 2026-04-05 22:13 | Review R003 | plan Step 2: REVISE |
@@ -132,3 +134,5 @@
 | 2026-04-05 22:40 | Review R010 | code Step 4: REVISE |
 | 2026-04-05 22:44 | Review R011 | code Step 4: REVISE |
 | 2026-04-05 22:48 | Review R012 | code Step 4: REVISE |
+| 2026-04-05 22:51 | Review R013 | code Step 4: APPROVE |
+| 2026-04-05 22:53 | Review R014 | plan Step 5: REVISE |
