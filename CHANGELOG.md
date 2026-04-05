@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.20] - 2026-04-05
+
+### New
+- **TP-138: Inherit defaults + thinking picker** — Worker thinking and reviewer model now default to inherit (empty string). "inherit" string alias normalized to empty. Thinking picker (inherit/on/off) in `/taskplane-settings` with model-change suggestion. Runtime fallbacks audited — no `--thinking`/`--model` flag passed when empty.
+- **TP-139: Init model picker + global defaults** — Interactive provider → model → thinking selection during `taskplane init`. `taskplane config --save-as-defaults` saves agent settings to user preferences for future inits. Model registry queried via `pi --list-models`.
+
+### Fixed
+- `generateProjectConfig()` in CLI now uses inherit defaults (was hardcoding `worker.thinking: "off"` and `reviewer.model: "openai/gpt-5.3-codex"`).
+- `qualityGate.reviewModel` now normalized — `"inherit"` no longer passed as literal `--model inherit`.
+- `sanitizeInitAgentConfig` normalizes `"inherit"` in model fields from saved preferences.
+
 ## [0.24.19] - 2026-04-05
 
 ### Fixed
