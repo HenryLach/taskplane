@@ -613,20 +613,6 @@ async function promptThinkingForRole(roleLabel, {
 	});
 }
 
-function applyInitAgentConfig(projectConfig, initAgentConfig) {
-	if (!initAgentConfig) return projectConfig;
-
-	projectConfig.taskRunner.worker.model = initAgentConfig.workerModel ?? "";
-	projectConfig.taskRunner.reviewer.model = initAgentConfig.reviewerModel ?? "";
-	projectConfig.orchestrator.merge.model = initAgentConfig.mergeModel ?? "";
-
-	projectConfig.taskRunner.worker.thinking = normalizeThinkingMode(initAgentConfig.workerThinking);
-	projectConfig.taskRunner.reviewer.thinking = normalizeThinkingMode(initAgentConfig.reviewerThinking);
-	projectConfig.orchestrator.merge.thinking = normalizeThinkingMode(initAgentConfig.mergeThinking);
-
-	return projectConfig;
-}
-
 export async function collectInitAgentConfig({
 	interactive = true,
 	askImpl = ask,
@@ -712,25 +698,13 @@ export async function collectInitAgentConfig({
 	return initAgentConfig;
 }
 
-export function generateProjectConfig(vars, initAgentConfig = null) {
+export function generateProjectConfig(vars, _initAgentConfig = null) {
 	const projectConfig = {
 		configVersion: 1,
 		taskRunner: {
 			project: { name: vars.project_name, description: "" },
 			paths: { tasks: vars.tasks_root },
 			testing: { commands: buildTestingCommands(vars) },
-			standards: { docs: [], rules: [] },
-			standardsOverrides: {},
-			worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "" },
-			reviewer: { model: "", tools: "read,bash,grep,find,ls", thinking: "on" },
-			context: {
-				workerContextWindow: 200000,
-				warnPercent: 70,
-				killPercent: 85,
-				maxWorkerIterations: 20,
-				maxReviewCycles: 2,
-				noProgressLimit: 3,
-			},
 			taskAreas: {
 				[vars.default_area]: {
 					path: vars.tasks_root,
@@ -738,44 +712,22 @@ export function generateProjectConfig(vars, initAgentConfig = null) {
 					context: `${vars.tasks_root}/CONTEXT.md`,
 				},
 			},
-			referenceDocs: {},
-			neverLoad: [],
-			selfDocTargets: {},
-			protectedDocs: [],
-		},
-		orchestrator: {
-			orchestrator: {
-				maxLanes: vars.max_lanes,
-				worktreeLocation: "subdirectory",
-				worktreePrefix: vars.worktree_prefix,
-				batchIdFormat: "timestamp",
-				spawnMode: vars.spawn_mode,
-				sessionPrefix: vars.session_prefix,
-				operatorId: "",
-			},
-			dependencies: { source: "prompt", cache: true },
-			assignment: { strategy: "affinity-first", sizeWeights: { S: 1, M: 2, L: 4 } },
-			preWarm: { autoDetect: false, commands: {}, always: [] },
-			merge: {
-				model: "",
-				thinking: "",
-				tools: "read,write,edit,bash,grep,find,ls",
-				verify: [],
-				order: "fewest-files-first",
-				timeoutMinutes: 10,
-			},
-			failure: {
-				onTaskFailure: "skip-dependents",
-				onMergeFailure: "pause",
-				stallTimeout: 30,
-				maxWorkerMinutes: 30,
-				abortGracePeriod: 60,
-			},
-			monitoring: { pollInterval: 5 },
 		},
 	};
 
-	return applyInitAgentConfig(projectConfig, initAgentConfig);
+	const explicit = vars.explicit_orchestrator_overrides || {};
+	const orchestratorCore = {};
+
+	if (explicit.maxLanes) orchestratorCore.maxLanes = vars.max_lanes;
+	if (explicit.worktreePrefix) orchestratorCore.worktreePrefix = vars.worktree_prefix;
+	if (explicit.sessionPrefix) orchestratorCore.sessionPrefix = vars.session_prefix;
+	if (explicit.spawnMode) orchestratorCore.spawnMode = vars.spawn_mode;
+
+	if (Object.keys(orchestratorCore).length > 0) {
+		projectConfig.orchestrator = { orchestrator: orchestratorCore };
+	}
+
+	return projectConfig;
 }
 
 function generateWorkspaceYaml(repoNames, defaultRepo, tasksRoot) {
@@ -2162,6 +2114,7 @@ function getPresetVars(preset, projectRoot, tasksRootOverride = null) {
 		default_prefix: "TP",
 		test_cmd,
 		build_cmd,
+		explicit_orchestrator_overrides: {},
 		date: today(),
 	};
 }
@@ -2171,7 +2124,8 @@ async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 	const detected = detectStack(projectRoot);
 
 	const project_name = await ask("Project name", dirName);
-	const max_lanes = parseInt(await ask("Max parallel lanes", "3")) || 3;
+	const maxLanesInput = await ask("Max parallel lanes", "3");
+	const max_lanes = parseInt(maxLanesInput, 10) || 3;
 	const tasks_root = tasksRootOverride || await ask("Tasks directory", "taskplane-tasks");
 	const default_area = await ask("Default area name", "general");
 	const default_prefix = await ask("Task ID prefix", "TP");
@@ -2179,6 +2133,11 @@ async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 	const build_cmd = await ask("Build command (agents run this after tests — blank to skip)", detected.build || "");
 
 	const slug = slugify(project_name);
+	const explicit_orchestrator_overrides = {};
+	if (max_lanes !== 3) {
+		explicit_orchestrator_overrides.maxLanes = true;
+	}
+
 	return {
 		project_name,
 		max_lanes,
@@ -2189,6 +2148,7 @@ async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 		default_prefix,
 		test_cmd,
 		build_cmd,
+		explicit_orchestrator_overrides,
 		date: today(),
 	};
 }

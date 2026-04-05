@@ -1,10 +1,10 @@
 # TP-140: Global Preferences Architecture — Status
 
-**Current Step:** Step 5: Sparse project config in taskplane init
+**Current Step:** Step 6: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 14
+**Review Counter:** 15
 **Iteration:** 1
 **Size:** L
 
@@ -59,14 +59,14 @@
 - [x] Add regression tests for preserving non-source-detection YAML keys and workspace YAML on first write
 
 ### Step 5: Sparse project config in taskplane init
-**Status:** 🟨 In Progress
-- [ ] generateProjectConfig writes only project-specific fields
-- [ ] Agent settings NOT included
-- [ ] Persist only explicit init-time orchestrator overrides (non-default/user-chosen values)
-- [ ] Existing full configs continue working
+**Status:** ✅ Complete
+- [x] generateProjectConfig writes only project-specific fields
+- [x] Agent settings NOT included
+- [x] Persist only explicit init-time orchestrator overrides (non-default/user-chosen values)
+- [x] Existing full configs continue working
 
 ### Step 6: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Full test suite passing
 - [ ] Sparse config merge tests
 - [ ] Precedence tests
@@ -136,3 +136,4 @@
 | 2026-04-05 22:48 | Review R012 | code Step 4: REVISE |
 | 2026-04-05 22:51 | Review R013 | code Step 4: APPROVE |
 | 2026-04-05 22:53 | Review R014 | plan Step 5: REVISE |
+| 2026-04-05 22:54 | Review R015 | plan Step 5: APPROVE |

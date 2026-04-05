@@ -132,7 +132,7 @@ describe("init model picker flow", () => {
 		expect(config).toEqual(savedDefaults.defaults);
 	});
 
-	it("writes model + thinking selections into generated project config", () => {
+	it("does not persist model + thinking selections into project config (global-only)", () => {
 		const vars = {
 			project_name: "demo",
 			max_lanes: 3,
@@ -155,11 +155,49 @@ describe("init model picker flow", () => {
 			mergeThinking: "on",
 		});
 
-		expect(projectConfig.taskRunner.worker.model).toBe("openai/gpt-5.3-codex");
-		expect(projectConfig.taskRunner.reviewer.model).toBe("anthropic/claude-sonnet-4-6");
-		expect(projectConfig.orchestrator.merge.model).toBe("openai/gpt-5.3-codex");
-		expect(projectConfig.taskRunner.worker.thinking).toBe("on");
-		expect(projectConfig.taskRunner.reviewer.thinking).toBe("off");
-		expect(projectConfig.orchestrator.merge.thinking).toBe("on");
+		expect(projectConfig.taskRunner.worker).toBeUndefined();
+		expect(projectConfig.taskRunner.reviewer).toBeUndefined();
+		expect(projectConfig.orchestrator).toBeUndefined();
+	});
+
+	it("writes no orchestrator block when init uses default orchestrator values", () => {
+		const vars = {
+			project_name: "demo",
+			max_lanes: 3,
+			worktree_prefix: "demo-wt",
+			session_prefix: "demo-orch",
+			tasks_root: "taskplane-tasks",
+			default_area: "general",
+			default_prefix: "TP",
+			test_cmd: "",
+			build_cmd: "",
+			spawn_mode: "subprocess",
+			explicit_orchestrator_overrides: {},
+		};
+
+		const projectConfig = generateProjectConfig(vars, null);
+		expect(projectConfig.orchestrator).toBeUndefined();
+	});
+
+	it("writes only explicitly chosen orchestrator overrides", () => {
+		const vars = {
+			project_name: "demo",
+			max_lanes: 6,
+			worktree_prefix: "demo-wt",
+			session_prefix: "demo-orch",
+			tasks_root: "taskplane-tasks",
+			default_area: "general",
+			default_prefix: "TP",
+			test_cmd: "",
+			build_cmd: "",
+			spawn_mode: "subprocess",
+			explicit_orchestrator_overrides: { maxLanes: true },
+		};
+
+		const projectConfig = generateProjectConfig(vars, null);
+		expect(projectConfig.orchestrator.orchestrator.maxLanes).toBe(6);
+		expect(projectConfig.orchestrator.orchestrator.worktreePrefix).toBeUndefined();
+		expect(projectConfig.orchestrator.orchestrator.sessionPrefix).toBeUndefined();
+		expect(projectConfig.orchestrator.orchestrator.spawnMode).toBeUndefined();
 	});
 });
