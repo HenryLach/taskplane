@@ -140,6 +140,7 @@ function normalizeInheritanceAliases(config: TaskplaneConfig): void {
 	normalizeField(config.orchestrator.merge as Record<string, any>, "model");
 	normalizeField(config.orchestrator.merge as Record<string, any>, "thinking");
 	normalizeField(config.orchestrator.supervisor as Record<string, any>, "model");
+	normalizeField(config.taskRunner.qualityGate as Record<string, any>, "reviewModel");
 }
 
 // throwLegacyFieldError removed — replaced by auto-migration functions that fix config in-place

@@ -403,13 +403,18 @@ function normalizeThinkingMode(value) {
 	return "";
 }
 
+function normalizeModelValue(value) {
+	const trimmed = String(value ?? "").trim();
+	return trimmed.toLowerCase() === "inherit" ? "" : trimmed;
+}
+
 function sanitizeInitAgentConfig(raw) {
 	const defaults = createInheritInitAgentConfig();
 	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return defaults;
 
-	if (typeof raw.workerModel === "string") defaults.workerModel = raw.workerModel;
-	if (typeof raw.reviewerModel === "string") defaults.reviewerModel = raw.reviewerModel;
-	if (typeof raw.mergeModel === "string") defaults.mergeModel = raw.mergeModel;
+	if (typeof raw.workerModel === "string") defaults.workerModel = normalizeModelValue(raw.workerModel);
+	if (typeof raw.reviewerModel === "string") defaults.reviewerModel = normalizeModelValue(raw.reviewerModel);
+	if (typeof raw.mergeModel === "string") defaults.mergeModel = normalizeModelValue(raw.mergeModel);
 	if (raw.workerThinking !== undefined) defaults.workerThinking = normalizeThinkingMode(raw.workerThinking);
 	if (raw.reviewerThinking !== undefined) defaults.reviewerThinking = normalizeThinkingMode(raw.reviewerThinking);
 	if (raw.mergeThinking !== undefined) defaults.mergeThinking = normalizeThinkingMode(raw.mergeThinking);
@@ -716,8 +721,8 @@ export function generateProjectConfig(vars, initAgentConfig = null) {
 			testing: { commands: buildTestingCommands(vars) },
 			standards: { docs: [], rules: [] },
 			standardsOverrides: {},
-			worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "off" },
-			reviewer: { model: "openai/gpt-5.3-codex", tools: "read,bash,grep,find,ls", thinking: "on" },
+			worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "" },
+			reviewer: { model: "", tools: "read,bash,grep,find,ls", thinking: "on" },
 			context: {
 				workerContextWindow: 200000,
 				warnPercent: 70,
