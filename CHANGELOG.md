@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.21] - 2026-04-05
+
+### Fixed
+- **Test and merge agent isolation from user preferences** — `project-config-loader.test.ts` isolates `PI_CODING_AGENT_DIR` per test. Merge agent spawns with isolated agent dir. Prevents stale user prefs from contaminating verification tests.
+- **Enum settings use picker instead of toggle** — Integration and Autonomy Level now open a scrollable picker on Enter (was unintuitive ←/→ cycling).
+
 ## [0.24.20] - 2026-04-05
 
 ### New
