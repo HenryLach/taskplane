@@ -4,8 +4,8 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 16
-**Iteration:** 1
+**Review Counter:** 18
+**Iteration:** 2
 **Size:** L
 
 ---
@@ -67,13 +67,13 @@
 - [x] Update init integration tests to sparse orchestrator contract and preserve legacy migration coverage
 
 ### Step 6: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] Full test suite passing
-- [ ] Sparse config merge tests
-- [ ] Precedence tests
-- [ ] Settings TUI tests
-- [ ] CLI smoke tests
-- [ ] All failures fixed
+**Status:** ✅ Complete
+- [x] Full test suite passing
+- [x] Sparse config merge tests
+- [x] Precedence tests
+- [x] Settings TUI tests
+- [x] CLI smoke tests
+- [x] All failures fixed
 
 ### Step 7: Documentation & Delivery
 **Status:** ⬜ Not Started
@@ -105,6 +105,7 @@
 | 2026-04-05 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-04-05 22:05 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-05 22:05 | Step 0 started | Preflight |
+| 2026-04-05 23:08 | Worker iter 1 | done in 3736s, tools: 329 |
 
 ---
 
@@ -140,3 +141,5 @@
 | 2026-04-05 22:53 | Review R014 | plan Step 5: REVISE |
 | 2026-04-05 22:54 | Review R015 | plan Step 5: APPROVE |
 | 2026-04-05 23:00 | Review R016 | code Step 5: REVISE |
+| 2026-04-05 23:04 | Review R017 | code Step 5: APPROVE |
+| 2026-04-05 23:05 | Review R018 | plan Step 6: APPROVE |
