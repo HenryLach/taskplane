@@ -825,6 +825,52 @@ orchestrator:
 		expect(result.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 	});
 
+	it("14.5c first write preserves YAML keys outside source-detection mapper", () => {
+		const dir = makeWriteTestDir("yaml-preserve-extra-keys");
+		writePiFile(dir, "task-runner.yaml", `
+quality_gate:
+  enabled: true
+model_fallback: fail
+`);
+		writePiFile(dir, "task-orchestrator.yaml", `
+supervisor:
+  model: custom-super
+verification:
+  enabled: true
+  mode: strict
+`);
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", "seeded-prefix");
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.orchestrator.supervisor.model).toBe("custom-super");
+		expect(result.orchestrator.verification.enabled).toBe(true);
+		expect(result.orchestrator.verification.mode).toBe("strict");
+		expect(result.taskRunner.qualityGate.enabled).toBe(true);
+		expect(result.taskRunner.modelFallback).toBe("fail");
+	});
+
+	it("14.5d first write preserves taskplane-workspace.yaml overrides", () => {
+		const dir = makeWriteTestDir("yaml-preserve-workspace");
+		writePiFile(dir, "taskplane-workspace.yaml", `
+repos:
+  docs:
+    path: ../docs
+routing:
+  tasks_root: taskplane-tasks
+  default_repo: docs
+  task_packet_repo: docs
+`);
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", "with-workspace");
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.workspace.repos.docs.path).toBe("../docs");
+		expect(result.workspace.routing.tasksRoot).toBe("taskplane-tasks");
+		expect(result.workspace.routing.defaultRepo).toBe("docs");
+		expect(result.workspace.routing.taskPacketRepo).toBe("docs");
+	});
+
 	it("14.6 creates .pi directory when it doesn't exist", () => {
 		const dir = makeWriteTestDir("no-pi-dir");
 		// No .pi dir at all — writeProjectConfigField should create it

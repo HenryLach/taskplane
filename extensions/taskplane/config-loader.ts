@@ -961,7 +961,7 @@ function migrateProjectOverrides(overrides: Partial<TaskplaneConfig>, configRoot
 	return migrated;
 }
 
-function loadProjectOverrides(configRoot: string): Partial<TaskplaneConfig> {
+export function loadProjectOverrides(configRoot: string): Partial<TaskplaneConfig> {
 	const jsonOverrides = loadJsonConfig(configRoot);
 	if (jsonOverrides !== null) {
 		return jsonOverrides;

@@ -34,6 +34,7 @@ import {
 import {
 	loadGlobalPreferences,
 	loadProjectConfig,
+	loadProjectOverrides,
 	resolveConfigRoot,
 	resolveGlobalPreferencesPath,
 } from "./config-loader.ts";
@@ -426,7 +427,7 @@ export function writeProjectConfigField(
 			);
 		}
 	} else {
-		const yamlSeed = readRawYamlConfigs(resolvedRoot) ?? {};
+		const yamlSeed = loadProjectOverrides(resolvedRoot);
 		configObj = {
 			configVersion: CONFIG_VERSION,
 			...JSON.parse(JSON.stringify(yamlSeed)),

@@ -1,6 +1,6 @@
 # TP-140: Global Preferences Architecture — Status
 
-**Current Step:** Step 4: Settings TUI — source badges and save behavior
+**Current Step:** Step 5: Sparse project config in taskplane init
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
@@ -45,7 +45,7 @@
 - [x] Update tests for new precedence
 
 ### Step 4: Settings TUI — source badges and save behavior
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Source badges: (global) and (project) only
 - [x] Default save: global preferences
 - [x] Sparse write for project overrides
@@ -55,11 +55,11 @@
 - [x] Add tests for cancel semantics and resolveWriteAction remove-project route
 - [x] Preserve existing YAML project overrides when first project JSON override is written
 - [x] Add regression tests for YAML-only write/remove-project compatibility
-- [ ] Seed first project JSON write from canonical loader YAML overrides (including supervisor/verification/qualityGate/modelFallback/workspace)
-- [ ] Add regression tests for preserving non-source-detection YAML keys and workspace YAML on first write
+- [x] Seed first project JSON write from canonical loader YAML overrides (including supervisor/verification/qualityGate/modelFallback/workspace)
+- [x] Add regression tests for preserving non-source-detection YAML keys and workspace YAML on first write
 
 ### Step 5: Sparse project config in taskplane init
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] generateProjectConfig writes only project-specific fields
 - [ ] Agent settings NOT included
 - [ ] Existing full configs continue working
