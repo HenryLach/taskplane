@@ -1,10 +1,10 @@
 # TP-138: Agent Inherit Defaults and Thinking Picker — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 6
+**Review Counter:** 8
 **Iteration:** 1
 **Size:** M
 
@@ -45,15 +45,15 @@
 - [x] Suggest enabling thinking when model changes to a thinking-capable model
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] Test empty thinking = no flag
-- [ ] Test "inherit" normalization
-- [ ] Test thinking picker save/load
-- [ ] Test reviewer model inheritance
-- [ ] Run full test suite
+**Status:** ✅ Complete
+- [x] Test empty thinking = no flag
+- [x] Test "inherit" normalization
+- [x] Test thinking picker save/load
+- [x] Test reviewer model inheritance
+- [x] Run full test suite
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update config docs
 - [ ] Update STATUS.md
 
@@ -77,3 +77,5 @@
 | 2026-04-05 17:51 | Review R004 | code Step 2: APPROVE |
 | 2026-04-05 17:53 | Review R005 | plan Step 3: REVISE |
 | 2026-04-05 17:54 | Review R006 | plan Step 3: APPROVE |
+| 2026-04-05 18:00 | Review R007 | code Step 3: APPROVE |
+| 2026-04-05 18:01 | Review R008 | plan Step 4: APPROVE |
