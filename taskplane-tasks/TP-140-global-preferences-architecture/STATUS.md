@@ -1,10 +1,10 @@
 # TP-140: Global Preferences Architecture — Status
 
-**Current Step:** Step 6: Testing & Verification
+**Current Step:** Step 5: Sparse project config in taskplane init
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 15
+**Review Counter:** 16
 **Iteration:** 1
 **Size:** L
 
@@ -59,14 +59,15 @@
 - [x] Add regression tests for preserving non-source-detection YAML keys and workspace YAML on first write
 
 ### Step 5: Sparse project config in taskplane init
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 - [x] generateProjectConfig writes only project-specific fields
 - [x] Agent settings NOT included
 - [x] Persist only explicit init-time orchestrator overrides (non-default/user-chosen values)
 - [x] Existing full configs continue working
+- [ ] Update init integration tests to sparse orchestrator contract and preserve legacy migration coverage
 
 ### Step 6: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ⬜ Not Started
 - [ ] Full test suite passing
 - [ ] Sparse config merge tests
 - [ ] Precedence tests
@@ -122,6 +123,7 @@
 - Suggestion (R011): consider broader test-name cleanup for legacy wording in settings-tui tests.
 - Suggestion (R012): consider removing stale legacy wording in test names/comments during follow-up cleanup.
 - Suggestion (R014): if init still asks for agent model/thinking values, message clearly that they are global-only and not project-persisted.
+- Suggestion (R016): optional UX note in init flow clarifying that model/thinking selections are global preference defaults, not project JSON fields.
 | 2026-04-05 22:07 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-05 22:11 | Review R002 | code Step 1: APPROVE |
 | 2026-04-05 22:13 | Review R003 | plan Step 2: REVISE |
@@ -137,3 +139,4 @@
 | 2026-04-05 22:51 | Review R013 | code Step 4: APPROVE |
 | 2026-04-05 22:53 | Review R014 | plan Step 5: REVISE |
 | 2026-04-05 22:54 | Review R015 | plan Step 5: APPROVE |
+| 2026-04-05 23:00 | Review R016 | code Step 5: REVISE |
