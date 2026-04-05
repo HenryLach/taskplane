@@ -1,25 +1,25 @@
 # TP-140: Global Preferences Architecture — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Rename user preferences → global preferences
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** L
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read config-loader.ts merge chain
-- [ ] Read config-schema.ts UserPreferences and defaults
-- [ ] Read settings-tui.ts source detection and save logic
-- [ ] Map all UserPreferences references across codebase
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read config-loader.ts merge chain
+- [x] Read config-schema.ts UserPreferences and defaults
+- [x] Read settings-tui.ts source detection and save logic
+- [x] Map all UserPreferences references across codebase
 
 ### Step 1: Rename user preferences → global preferences
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Rename UserPreferences → GlobalPreferences
 - [ ] Rename load/resolve/apply functions
 - [ ] Update all imports and references
@@ -90,6 +90,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-05 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-04-05 22:05 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-05 22:05 | Step 0 started | Preflight |
 
 ---
 
