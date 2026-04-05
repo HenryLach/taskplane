@@ -25,7 +25,7 @@ if (nodeMajor < MIN_NODE_MAJOR) {
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execSync, execFileSync, spawn } from "node:child_process";
 import {
 	TASKPLANE_GITIGNORE_HEADER,
@@ -132,6 +132,110 @@ function getVersion(cmd, flag = "--version") {
 		return execSync(`${cmd} ${flag}`, { stdio: "pipe" }).toString().trim();
 	} catch {
 		return null;
+	}
+}
+
+/**
+ * Parse the tabular output from `pi --list-models` into structured model rows.
+ *
+ * Expected format:
+ *   provider   model   context ...
+ *   anthropic  claude-sonnet-4-6 ...
+ */
+export function parsePiListModelsOutput(rawOutput) {
+	if (typeof rawOutput !== "string" || rawOutput.trim() === "") return [];
+
+	const rows = rawOutput.split(/\r?\n/);
+	const parsed = new Map();
+
+	for (const row of rows) {
+		const trimmed = row.trim();
+		if (!trimmed) continue;
+		if (/^provider\s+model\b/i.test(trimmed)) continue;
+
+		const parts = trimmed.split(/\s+/);
+		if (parts.length < 2) continue;
+
+		const provider = parts[0].trim();
+		const id = parts[1].trim();
+		if (!provider || !id) continue;
+		if (!/^[a-z0-9][a-z0-9._-]*$/i.test(provider)) continue;
+		if (!/^[^\s]+$/.test(id)) continue;
+
+		const key = `${provider.toLowerCase()}/${id.toLowerCase()}`;
+		if (parsed.has(key)) continue;
+
+		parsed.set(key, {
+			provider,
+			id,
+			displayName: `${provider}/${id}`,
+		});
+	}
+
+	return [...parsed.values()].sort((a, b) =>
+		a.provider.localeCompare(b.provider) || a.id.localeCompare(b.id)
+	);
+}
+
+function extractExecFailure(error) {
+	if (!error || typeof error !== "object") return "Unknown error";
+	const err = error;
+	if (typeof err.stderr === "string" && err.stderr.trim()) return err.stderr.trim();
+	if (Buffer.isBuffer(err.stderr)) {
+		const msg = err.stderr.toString("utf-8").trim();
+		if (msg) return msg;
+	}
+	if (typeof err.message === "string" && err.message.trim()) return err.message.trim();
+	return "Unknown error";
+}
+
+/**
+ * Query available models from pi in standalone CLI context.
+ *
+ * Returns a structured model list and diagnostics; never throws.
+ */
+export function queryAvailableModelsFromPi({
+	execFileSyncImpl = execFileSync,
+	commandExistsImpl = commandExists,
+	timeoutMs = 10000,
+} = {}) {
+	if (!commandExistsImpl("pi")) {
+		return {
+			models: [],
+			source: "pi --list-models",
+			available: false,
+			error: "pi is not available on PATH",
+		};
+	}
+
+	try {
+		const output = execFileSyncImpl("pi", ["--list-models"], {
+			encoding: "utf-8",
+			stdio: ["ignore", "pipe", "pipe"],
+			timeout: timeoutMs,
+		});
+		const models = parsePiListModelsOutput(output);
+		if (models.length === 0) {
+			return {
+				models: [],
+				source: "pi --list-models",
+				available: false,
+				error: "pi returned no parseable model rows",
+			};
+		}
+		return {
+			models,
+			source: "pi --list-models",
+			available: true,
+			error: null,
+		};
+	} catch (error) {
+		return {
+			models: [],
+			source: "pi --list-models",
+			available: false,
+			error: extractExecFailure(error),
+		};
 	}
 }
 
@@ -2623,34 +2727,46 @@ ${c.bold}Getting started:${c.reset}
 // MAIN
 // ═════════════════════════════════════════════════════════════════════════════
 
-const [command, ...args] = process.argv.slice(2);
+export async function main(argv = process.argv.slice(2)) {
+	const [command, ...args] = argv;
 
-switch (command) {
-	case "init":
-		await cmdInit(args);
-		break;
-	case "doctor":
-		cmdDoctor();
-		break;
-	case "version":
-	case "--version":
-	case "-v":
-		cmdVersion();
-		break;
-	case "dashboard":
-		cmdDashboard(args);
-		break;
-	case "uninstall":
-		await cmdUninstall(args);
-		break;
-	case "help":
-	case "--help":
-	case "-h":
-	case undefined:
-		showHelp();
-		break;
-	default:
-		console.error(`${FAIL} Unknown command: ${command}`);
-		showHelp();
-		process.exit(1);
+	switch (command) {
+		case "init":
+			await cmdInit(args);
+			break;
+		case "doctor":
+			cmdDoctor();
+			break;
+		case "version":
+		case "--version":
+		case "-v":
+			cmdVersion();
+			break;
+		case "dashboard":
+			cmdDashboard(args);
+			break;
+		case "uninstall":
+			await cmdUninstall(args);
+			break;
+		case "help":
+		case "--help":
+		case "-h":
+		case undefined:
+			showHelp();
+			break;
+		default:
+			console.error(`${FAIL} Unknown command: ${command}`);
+			showHelp();
+			process.exit(1);
+	}
+}
+
+const isDirectExecution = (() => {
+	const argv1 = process.argv[1];
+	if (!argv1) return false;
+	return pathToFileURL(path.resolve(argv1)).href === import.meta.url;
+})();
+
+if (isDirectExecution) {
+	await main();
 }
