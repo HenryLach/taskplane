@@ -1849,3 +1849,83 @@ describe("workspace section threading (TP-079)", () => {
 		expect(config.workspace!.repos).not.toHaveProperty("yamlrepo");
 	});
 });
+
+// ── 9.x: Inherit alias normalization (TP-138) ──────────────────────
+
+describe("inherit alias normalization (TP-138)", () => {
+	it("9.1: explicit 'inherit' aliases normalize to empty-string inheritance", () => {
+		const dir = makeTestDir("inherit-alias-json");
+		const agentDir = makeTestDir("inherit-alias-agent");
+		const prevAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		mkdirSync(join(agentDir, "taskplane"), { recursive: true });
+		writeFileSync(join(agentDir, "taskplane", "preferences.json"), "{}\n", "utf-8");
+
+		writeJsonConfig(dir, {
+			configVersion: CONFIG_VERSION,
+			taskRunner: {
+				worker: { model: "inherit", thinking: "inherit" },
+				reviewer: { model: "inherit", thinking: "inherit" },
+			},
+			orchestrator: {
+				merge: { model: "inherit", thinking: "inherit" },
+				supervisor: { model: "inherit" },
+			},
+		});
+
+		try {
+			const config = loadProjectConfig(dir);
+			expect(config.taskRunner.worker.model).toBe("");
+			expect(config.taskRunner.worker.thinking).toBe("");
+			expect(config.taskRunner.reviewer.model).toBe("");
+			expect(config.taskRunner.reviewer.thinking).toBe("");
+			expect(config.orchestrator.merge.model).toBe("");
+			expect(config.orchestrator.merge.thinking).toBe("");
+			expect(config.orchestrator.supervisor.model).toBe("");
+		} finally {
+			if (prevAgentDir === undefined) {
+				delete process.env.PI_CODING_AGENT_DIR;
+			} else {
+				process.env.PI_CODING_AGENT_DIR = prevAgentDir;
+			}
+		}
+	});
+
+	it("9.2: explicit model/thinking values remain unchanged", () => {
+		const dir = makeTestDir("inherit-explicit-values");
+		const agentDir = makeTestDir("inherit-explicit-agent");
+		const prevAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		mkdirSync(join(agentDir, "taskplane"), { recursive: true });
+		writeFileSync(join(agentDir, "taskplane", "preferences.json"), "{}\n", "utf-8");
+
+		writeJsonConfig(dir, {
+			configVersion: CONFIG_VERSION,
+			taskRunner: {
+				worker: { model: "openai/gpt-4.1", thinking: "off" },
+				reviewer: { model: "anthropic/claude-3-5-sonnet", thinking: "on" },
+			},
+			orchestrator: {
+				merge: { model: "openai/gpt-5", thinking: "off" },
+				supervisor: { model: "openai/gpt-4o" },
+			},
+		});
+
+		try {
+			const config = loadProjectConfig(dir);
+			expect(config.taskRunner.worker.model).toBe("openai/gpt-4.1");
+			expect(config.taskRunner.worker.thinking).toBe("off");
+			expect(config.taskRunner.reviewer.model).toBe("anthropic/claude-3-5-sonnet");
+			expect(config.taskRunner.reviewer.thinking).toBe("on");
+			expect(config.orchestrator.merge.model).toBe("openai/gpt-5");
+			expect(config.orchestrator.merge.thinking).toBe("off");
+			expect(config.orchestrator.supervisor.model).toBe("openai/gpt-4o");
+		} finally {
+			if (prevAgentDir === undefined) {
+				delete process.env.PI_CODING_AGENT_DIR;
+			} else {
+				process.env.PI_CODING_AGENT_DIR = prevAgentDir;
+			}
+		}
+	});
+});

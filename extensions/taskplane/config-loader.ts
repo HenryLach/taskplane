@@ -116,6 +116,32 @@ function hasOwn(obj: unknown, key: string): boolean {
 	return !!obj && typeof obj === "object" && Object.prototype.hasOwnProperty.call(obj, key);
 }
 
+function normalizeInheritAlias(value: string): string {
+	return value.trim().toLowerCase() === "inherit" ? "" : value;
+}
+
+/**
+ * Normalize explicit "inherit" aliases to empty-string inheritance semantics.
+ *
+ * Empty string is the canonical value meaning "inherit from active session"
+ * for per-agent model/thinking overrides.
+ */
+function normalizeInheritanceAliases(config: TaskplaneConfig): void {
+	const normalizeField = (obj: Record<string, any>, key: string) => {
+		if (typeof obj[key] === "string") {
+			obj[key] = normalizeInheritAlias(obj[key]);
+		}
+	};
+
+	normalizeField(config.taskRunner.worker as Record<string, any>, "model");
+	normalizeField(config.taskRunner.worker as Record<string, any>, "thinking");
+	normalizeField(config.taskRunner.reviewer as Record<string, any>, "model");
+	normalizeField(config.taskRunner.reviewer as Record<string, any>, "thinking");
+	normalizeField(config.orchestrator.merge as Record<string, any>, "model");
+	normalizeField(config.orchestrator.merge as Record<string, any>, "thinking");
+	normalizeField(config.orchestrator.supervisor as Record<string, any>, "model");
+}
+
 // throwLegacyFieldError removed — replaced by auto-migration functions that fix config in-place
 
 /**
@@ -935,6 +961,7 @@ export function loadProjectConfig(cwd: string, pointerConfigRoot?: string): Task
 	// No second migrateProjectConfig call needed — idempotency guard + prefs
 	// can’t re-introduce tmux fields (migrateUserPreferences already ran).
 
+	normalizeInheritanceAliases(config);
 	return config;
 }
 
@@ -958,6 +985,7 @@ export function loadLayer1Config(cwd: string, pointerConfigRoot?: string): Taskp
 	const jsonConfig = loadJsonConfig(configRoot);
 	if (jsonConfig !== null) {
 		migrateProjectConfig(jsonConfig, configRoot);
+		normalizeInheritanceAliases(jsonConfig);
 		return jsonConfig;
 	}
 
@@ -972,6 +1000,7 @@ export function loadLayer1Config(cwd: string, pointerConfigRoot?: string): Taskp
 		...(workspace ? { workspace } : {}),
 	};
 	migrateProjectConfig(config, configRoot);
+	normalizeInheritanceAliases(config);
 	return config;
 }
 

@@ -47,7 +47,7 @@ standards_overrides: {}
 worker:
   model: ""                    # empty = inherit from parent pi session
   tools: "read,write,edit,bash,grep,find,ls"
-  thinking: "off"
+  thinking: ""                 # empty = inherit from parent pi session
   # spawn_mode: "subprocess"   # currently supported runtime mode
 
 reviewer:

@@ -1,10 +1,10 @@
 # TP-138: Agent Inherit Defaults and Thinking Picker — Status
 
-**Current Step:** Step 1: Fix defaults to inherit
+**Current Step:** Step 2: Audit and fix runtime fallbacks
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -20,15 +20,15 @@
 - [x] Grep for thinking fallbacks across codebase
 
 ### Step 1: Fix defaults to inherit
-**Status:** 🟨 In Progress
-- [ ] Worker thinking "off" → "" (inherit)
-- [ ] Reviewer model hardcode → "" (inherit)
-- [ ] Normalize "inherit" to "" in config-loader
-- [ ] Update templates
-- [ ] Verify existing configs unaffected
+**Status:** ✅ Complete
+- [x] Worker thinking "off" → "" (inherit)
+- [x] Reviewer model hardcode → "" (inherit)
+- [x] Normalize "inherit" to "" in config-loader
+- [x] Update templates
+- [x] Verify existing configs unaffected
 
 ### Step 2: Audit and fix runtime fallbacks
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Check lane-runner.ts thinking fallback
 - [ ] Check agent-host.ts flag passing
 - [ ] Check task-runner.ts /task path
@@ -64,3 +64,4 @@
 | 2026-04-05 17:34 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-05 17:34 | Step 0 started | Preflight |
 |-----------|--------|---------|
+| 2026-04-05 17:37 | Review R001 | plan Step 1: APPROVE |

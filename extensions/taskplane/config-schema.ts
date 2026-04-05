@@ -553,8 +553,8 @@ export const DEFAULT_TASK_RUNNER_SECTION: TaskRunnerSection = {
 	testing: { commands: {} },
 	standards: { docs: [], rules: [] },
 	standardsOverrides: {},
-	worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "off" },
-	reviewer: { model: "openai/gpt-5.3-codex", tools: "read,bash,grep,find,ls", thinking: "on" },
+	worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "" },
+	reviewer: { model: "", tools: "read,bash,grep,find,ls", thinking: "on" },
 	context: {
 		workerContextWindow: 0,
 		warnPercent: 85,
