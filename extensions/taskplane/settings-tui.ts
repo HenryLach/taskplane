@@ -102,7 +102,7 @@ export const SECTIONS: SectionDef[] = [
 			// The user-facing spawn mode setting is under Worker (controls /task behavior).
 			{ configPath: "orchestrator.orchestrator.sessionPrefix", label: "Session Prefix", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "sessionPrefix", description: "Prefix for orchestrator session names" },
 			{ configPath: "orchestrator.orchestrator.operatorId", label: "Operator ID", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "operatorId", description: "Operator identifier (empty = auto-detect)" },
-			{ configPath: "orchestrator.orchestrator.integration", label: "Integration", control: "toggle", layer: "L1", fieldType: "enum", values: ["manual", "supervised", "auto"], description: "How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking." },
+			{ configPath: "orchestrator.orchestrator.integration", label: "Integration", control: "picker", layer: "L1", fieldType: "enum", values: ["manual", "supervised", "auto"], description: "How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking." },
 		],
 	},
 	{
@@ -154,7 +154,7 @@ export const SECTIONS: SectionDef[] = [
 		name: "Supervisor",
 		fields: [
 			{ configPath: "orchestrator.supervisor.model", label: "Supervisor Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "supervisorModel", description: "Supervisor model (inherit = use session model)" },
-			{ configPath: "orchestrator.supervisor.autonomy", label: "Autonomy Level", control: "toggle", layer: "L1", fieldType: "enum", values: ["interactive", "supervised", "autonomous"], description: "Recovery action confirmation behavior" },
+			{ configPath: "orchestrator.supervisor.autonomy", label: "Autonomy Level", control: "picker", layer: "L1", fieldType: "enum", values: ["interactive", "supervised", "autonomous"], description: "Recovery action confirmation behavior" },
 		],
 	},
 	{
@@ -1391,6 +1391,14 @@ async function showSectionSettingsLoop(
 				const selected = await pickThinkingMode(ctx, normalizedCurrent);
 				if (selected === undefined) continue;  // Cancelled
 				result.rawValue = selected;
+			} else if (field.control === "picker" && field.values && field.values.length > 0) {
+				// Enum picker: show scrollable list of allowed values
+				const options = field.values.map((v) =>
+					`${v}${v === normalizedCurrent ? "  ✓ current" : ""}`
+				);
+				const selected = await selectScrollable(ctx, field.label, options);
+				if (!selected) continue;  // Cancelled
+				result.rawValue = selected.replace(/\s+✓ current$/, "");
 			} else {
 				const placeholder = currentClean === "(not set)" || currentClean === "(inherit)" ? "" : currentClean;
 
