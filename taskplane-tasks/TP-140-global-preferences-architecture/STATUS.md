@@ -1,10 +1,10 @@
 # TP-140: Global Preferences Architecture — Status
 
-**Current Step:** Step 5: Sparse project config in taskplane init
+**Current Step:** Step 4: Settings TUI — source badges and save behavior
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 11
+**Review Counter:** 12
 **Iteration:** 1
 **Size:** L
 
@@ -45,7 +45,7 @@
 - [x] Update tests for new precedence
 
 ### Step 4: Settings TUI — source badges and save behavior
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 - [x] Source badges: (global) and (project) only
 - [x] Default save: global preferences
 - [x] Sparse write for project overrides
@@ -55,9 +55,11 @@
 - [x] Add tests for cancel semantics and resolveWriteAction remove-project route
 - [x] Preserve existing YAML project overrides when first project JSON override is written
 - [x] Add regression tests for YAML-only write/remove-project compatibility
+- [ ] Seed first project JSON write from canonical loader YAML overrides (including supervisor/verification/qualityGate/modelFallback/workspace)
+- [ ] Add regression tests for preserving non-source-detection YAML keys and workspace YAML on first write
 
 ### Step 5: Sparse project config in taskplane init
-**Status:** 🟨 In Progress
+**Status:** ⬜ Not Started
 - [ ] generateProjectConfig writes only project-specific fields
 - [ ] Agent settings NOT included
 - [ ] Existing full configs continue working
@@ -117,6 +119,7 @@
 - Suggestion (R005): optionally harden nested override validation against schema/allowlist to prevent unsupported nested keys.
 - Suggestion (R010): clean up stale test names that still mention legacy terms (default/user/project config wording).
 - Suggestion (R011): consider broader test-name cleanup for legacy wording in settings-tui tests.
+- Suggestion (R012): consider removing stale legacy wording in test names/comments during follow-up cleanup.
 | 2026-04-05 22:07 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-05 22:11 | Review R002 | code Step 1: APPROVE |
 | 2026-04-05 22:13 | Review R003 | plan Step 2: REVISE |
@@ -128,3 +131,4 @@
 | 2026-04-05 22:31 | Review R009 | plan Step 4: APPROVE |
 | 2026-04-05 22:40 | Review R010 | code Step 4: REVISE |
 | 2026-04-05 22:44 | Review R011 | code Step 4: REVISE |
+| 2026-04-05 22:48 | Review R012 | code Step 4: REVISE |
