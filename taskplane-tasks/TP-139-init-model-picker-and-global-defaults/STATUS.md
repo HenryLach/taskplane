@@ -1,10 +1,10 @@
 # TP-139: Init Model Picker and Global Defaults — Status
 
 **Current Step:** Step 5: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 8
+**Review Counter:** 9
 **Iteration:** 1
 **Size:** M
 
@@ -57,11 +57,11 @@
 - [x] All failures fixed
 
 ### Step 5: Documentation & Delivery
-**Status:** 🟨 In Progress
-- [ ] Update commands.md
-- [ ] Update README if needed
-- [ ] Update STATUS.md
-- [ ] Discoveries logged
+**Status:** ✅ Complete
+- [x] Update commands.md
+- [x] Update README if needed
+- [x] Update STATUS.md
+- [x] Discoveries logged
 
 ---
 
@@ -76,6 +76,8 @@
 | 5 | Code | 2 | APPROVE | - |
 | 6 | Plan | 3 | APPROVE | - |
 | 7 | Code | 3 | APPROVE | - |
+| 8 | Plan | 4 | APPROVE | - |
+| 9 | Code | 4 | APPROVE | - |
 
 ---
 
@@ -83,6 +85,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| `pi --list-models` provides a stable tabular provider/model list in standalone CLI context. | Implemented parser + fallback path for init picker | `bin/taskplane.mjs` |
+| Global init defaults are stored in `preferences.json` under `initAgentDefaults` and reused during interactive init. | Implemented save/read pipeline + schema allowlist | `bin/taskplane.mjs`, `extensions/taskplane/config-schema.ts`, `extensions/taskplane/config-loader.ts` |
 
 ---
 
@@ -104,8 +108,11 @@
 | 2026-04-05 19:25 | Review R006 | plan Step 3: APPROVE |
 | 2026-04-05 19:30 | Step 3 tests | config/defaults targeted tests passed (16/16) |
 | 2026-04-05 19:31 | Review R007 | code Step 3: APPROVE |
+| 2026-04-05 19:32 | Review R008 | plan Step 4: APPROVE |
 | 2026-04-05 19:36 | Step 4 full suite | `node --test tests/*.test.ts` passed (3177/3177) |
 | 2026-04-05 19:37 | Step 4 smoke | `taskplane help` + `taskplane doctor` smoke checks passed in temp repo |
+| 2026-04-05 19:38 | Review R009 | code Step 4: APPROVE |
+| 2026-04-05 19:43 | Step 5 docs | Updated CLI command docs + README command table/init notes |
 
 ---
 
@@ -118,4 +125,3 @@
 ## Notes
 
 - Suggestion from R002 (advisory): tighten parser filtering for non-table lines if `pi --list-models` format changes.
-| 2026-04-05 19:30 | Review R008 | plan Step 4: APPROVE |

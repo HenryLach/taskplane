@@ -666,6 +666,8 @@ Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs
 - Init adds required `.gitignore` entries for runtime artifacts (batch state, orchestrator logs, worktrees, etc.) and offers to untrack any that are already committed.
 - `spawn_mode` now uses the Runtime V2 subprocess backend (`"subprocess"`) as the only supported value.
 - Init generates `taskplane-config.json` (JSON) alongside YAML configs. JSON takes precedence when present; YAML is retained during the transition period.
+- Interactive init includes provider → model → thinking selection for worker/reviewer/merger. `inherit` is option #1.
+- If model discovery is unavailable, init skips the picker and uses saved defaults (if configured) or inherit values.
 
 ### `taskplane doctor`
 
@@ -673,22 +675,18 @@ Validate installation and project configuration.
 
 Doctor no longer treats TMUX as a required dependency for `/orch` or `/task` Runtime V2 execution.
 
-### `taskplane install-tmux [options]` (legacy utility)
+### `taskplane config [options]`
 
-Install or upgrade tmux for Git Bash on Windows. This is optional legacy tooling and is not required for Runtime V2 orchestration.
+CLI utilities for configuration workflows.
 
 **Options**
 
-- `--check` — show current tmux status without installing
-- `--force` — reinstall even if already up to date
+- `--save-as-defaults` — read worker/reviewer/merger model + thinking settings from the current project's `taskplane-config.json` and save them to user preferences (`~/.pi/agent/taskplane/preferences.json`, or `$PI_CODING_AGENT_DIR/taskplane/preferences.json`)
 
 **Notes**
 
-- Windows only. On macOS/Linux, prints a redirect to `brew install tmux` or `apt install tmux`.
-- Requires Node.js ≥ 21.7 (for native zstd decompression).
-- Requires Git Bash (provides `tar` and the MSYS2 runtime).
-- Installs to `~/bin/` which is on PATH in Git Bash by default. No admin rights needed.
-- Safe to re-run for upgrades.
+- In workspace mode, this command follows `.pi/taskplane-pointer.json` and reads from the config repo's `.taskplane/taskplane-config.json`.
+- Saved defaults are used to pre-populate interactive model/thinking picks in future `taskplane init` runs.
 
 ### `taskplane version`
 

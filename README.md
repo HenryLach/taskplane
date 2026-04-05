@@ -82,7 +82,9 @@ cd my-project
 taskplane init --preset full
 ```
 
-This creates config files in `.pi/`, agent prompts, two example tasks, and adds `.gitignore` entries for runtime artifacts. Init auto-detects whether you're in a single repo or a multi-repo workspace. See the [install tutorial](docs/tutorials/install.md) for workspace mode and other scenarios.
+This creates config files in `.pi/`, agent prompts, two example tasks, and adds `.gitignore` entries for runtime artifacts. Interactive init now also prompts for worker/reviewer/merger model + thinking defaults (with `inherit` as the first option). Init auto-detects whether you're in a single repo or a multi-repo workspace. See the [install tutorial](docs/tutorials/install.md) for workspace mode and other scenarios.
+
+Want to reuse model/thinking picks across projects? Run `taskplane config --save-as-defaults` in an initialized project.
 
 Already have a task folder (for example `docs/task-management`)? Use:
 
@@ -158,7 +160,7 @@ This uses the same orchestrator infrastructure as a full batch — isolated work
 |---------|-------------|
 | `taskplane init` | Scaffold project config (interactive or `--preset`) |
 | `taskplane doctor` | Validate installation and config |
-| `taskplane install-tmux` | Install or upgrade tmux for Git Bash (Windows) |
+| `taskplane config --save-as-defaults` | Save current worker/reviewer/merger model + thinking settings as defaults for future `taskplane init` runs |
 | `taskplane version` | Show version info |
 | `taskplane dashboard` | Launch the web dashboard |
 | `taskplane uninstall` | Remove Taskplane project files and optionally uninstall package (`--package`) |
