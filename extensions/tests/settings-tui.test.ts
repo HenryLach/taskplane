@@ -142,19 +142,19 @@ describe("9. detectFieldSource", () => {
 		it("9.1.2 returns 'default' when field is absent from raw project config", () => {
 			const field = makeL1Field();
 			const rawProject = { orchestrator: { orchestrator: {} } };
-			expect(detectFieldSource(field, rawProject, null)).toBe("default");
+			expect(detectFieldSource(field, rawProject, null)).toBe("global");
 		});
 
 		it("9.1.3 returns 'default' when raw project config is null", () => {
 			const field = makeL1Field();
-			expect(detectFieldSource(field, null, null)).toBe("default");
+			expect(detectFieldSource(field, null, null)).toBe("global");
 		});
 
 		it("9.1.4 ignores user prefs for L1-only fields", () => {
 			const field = makeL1Field();
 			const rawProject = {};
 			const rawPrefs = { maxLanes: 10 };
-			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("global");
 		});
 	});
 
@@ -170,7 +170,7 @@ describe("9. detectFieldSource", () => {
 		it("9.2.2 returns 'default' when string pref is empty string (cleared)", () => {
 			const field = makeL1L2StringField();
 			const rawPrefs = { workerModel: "" };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.2.3 returns 'project' when string pref is empty but project has value", () => {
@@ -183,20 +183,20 @@ describe("9. detectFieldSource", () => {
 		it("9.2.4 returns 'default' when string pref is undefined", () => {
 			const field = makeL1L2StringField();
 			const rawPrefs = {};
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.2.5 rejects non-string pref values (type guard)", () => {
 			const field = makeL1L2StringField();
 			// If prefs has a number where a string is expected, reject it
 			const rawPrefs = { workerModel: 42 };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.2.6 rejects boolean pref values for string fields (type guard)", () => {
 			const field = makeL1L2StringField();
 			const rawPrefs = { workerModel: true };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 	});
 
@@ -212,26 +212,26 @@ describe("9. detectFieldSource", () => {
 		it("9.3.2 rejects legacy tmux enum value", () => {
 			const field = makeL1L2EnumField();
 			const rawPrefs = { spawnMode: "tmux" };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.3.3 rejects invalid enum value — falls to default", () => {
 			const field = makeL1L2EnumField();
 			// "invalid" is not in values ["subprocess"]
 			const rawPrefs = { spawnMode: "invalid" };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.3.4 rejects non-string enum value (type guard)", () => {
 			const field = makeL1L2EnumField();
 			const rawPrefs = { spawnMode: 123 };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.3.5 returns 'default' when enum pref is undefined", () => {
 			const field = makeL1L2EnumField();
 			const rawPrefs = {};
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.3.6 returns 'project' when enum pref is invalid but project has value", () => {
@@ -254,36 +254,36 @@ describe("9. detectFieldSource", () => {
 		it("9.4.2 returns 'default' when number pref is undefined", () => {
 			const field = makeL2NumberField();
 			const rawPrefs = {};
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.4.3 rejects string value for number field (type guard)", () => {
 			const field = makeL2NumberField();
 			const rawPrefs = { dashboardPort: "8080" };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.4.4 rejects NaN for number field (type guard)", () => {
 			const field = makeL2NumberField();
 			const rawPrefs = { dashboardPort: NaN };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.4.5 rejects Infinity for number field (type guard)", () => {
 			const field = makeL2NumberField();
 			const rawPrefs = { dashboardPort: Infinity };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 	});
 
 	// 9.5 — Precedence cascading
 
 	describe("9.5 Precedence cascading", () => {
-		it("9.5.1 user prefs win over project config for L1+L2 string fields", () => {
+		it("9.5.1 project override wins over global for L1+L2 string fields", () => {
 			const field = makeL1L2StringField();
 			const rawProject = { taskRunner: { worker: { model: "gpt-4" } } };
 			const rawPrefs = { workerModel: "claude-4-opus" };
-			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("global");
+			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("project");
 		});
 
 		it("9.5.2 project wins when prefs not set for L1+L2 fields", () => {
@@ -298,7 +298,7 @@ describe("9. detectFieldSource", () => {
 			// Even if raw project has something (it shouldn't for L2-only), still "default"
 			const rawProject = { preferences: { dashboardPort: 9999 } };
 			const rawPrefs = {};
-			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("global");
 		});
 	});
 });
@@ -589,7 +589,7 @@ describe("12. SECTIONS schema coverage", () => {
 		expect(mergeThinking).toBeDefined();
 		expect(mergeThinking!.layer).toBe("L1+L2");
 		expect(mergeThinking!.prefsKey).toBe("mergeThinking");
-		expect(getDefaultWriteDestination(mergeThinking!)).toBe(null);
+		expect(getDefaultWriteDestination(mergeThinking!)).toBe("prefs");
 	});
 });
 
@@ -773,8 +773,7 @@ describe("14. writeProjectConfigField", () => {
 		writeProjectConfigField(dir, "taskRunner.worker.spawnMode", undefined);
 
 		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
-		expect(result.taskRunner.worker.spawnMode).toBeUndefined();
-		expect("spawnMode" in result.taskRunner.worker).toBe(false);
+		expect(result.taskRunner).toBeUndefined();
 	});
 
 	it("14.4 throws on malformed JSON with descriptive error", () => {
@@ -786,7 +785,7 @@ describe("14. writeProjectConfigField", () => {
 		).toThrow(/malformed JSON/i);
 	});
 
-	it("14.5 bootstraps JSON from YAML-only project (preserves YAML values)", () => {
+	it("14.5 creates sparse JSON from YAML-only project (does not copy YAML values)", () => {
 		const dir = makeWriteTestDir("yaml-only");
 		// Write a YAML config with a custom value
 		writePiFile(dir, "task-orchestrator.yaml", `
@@ -800,11 +799,10 @@ orchestrator:
 		const jsonPath = join(dir, ".pi", PROJECT_CONFIG_FILENAME);
 		expect(existsSync(jsonPath)).toBe(true);
 		const result = readJsonFile(jsonPath);
-		// The edited field
+		// The edited field is written as a sparse project override
 		expect(result.orchestrator.orchestrator.worktreePrefix).toBe("test-wt");
-		// YAML-sourced values are preserved in the bootstrapped JSON
-		expect(result.orchestrator.orchestrator.maxLanes).toBe(7);
-		expect(result.orchestrator.orchestrator.spawnMode).toBe("subprocess");
+		expect(result.orchestrator.orchestrator.maxLanes).toBeUndefined();
+		expect(result.orchestrator.orchestrator.spawnMode).toBeUndefined();
 		// YAML file is still there
 		expect(existsSync(join(dir, ".pi", "task-orchestrator.yaml"))).toBe(true);
 	});
@@ -896,7 +894,7 @@ orchestrator:
 		expect(existsSync(join(workspaceRoot, ".pi", PROJECT_CONFIG_FILENAME))).toBe(false);
 
 		const result = readJsonFile(join(pointerRoot, PROJECT_CONFIG_FILENAME));
-		expect(result.orchestrator.orchestrator.maxLanes).toBe(6);
+		expect(result.orchestrator.orchestrator.maxLanes).toBeUndefined();
 		expect(result.orchestrator.orchestrator.worktreePrefix).toBe("tp-wt");
 	});
 });
@@ -1223,16 +1221,16 @@ describe("16. YAML source detection", () => {
 			// spawnMode is NOT in JSON (only in YAML) — but since JSON exists,
 			// YAML is not consulted at all — so spawnMode falls to (default)
 			const spawnField = makeL1L2EnumField(); // spawnMode
-			expect(detectFieldSource(spawnField, rawProject, null)).toBe("default");
+			expect(detectFieldSource(spawnField, rawProject, null)).toBe("global");
 		});
 	});
 
 	describe("16.4 YAML source-badge with preferences (empty-string clear)", () => {
-		it("16.4.1 YAML-sourced field + valid pref → (global) badge", () => {
+		it("16.4.1 YAML-sourced field + valid global pref still shows (project)", () => {
 			const field = makeL1L2StringField(); // workerModel
 			const rawYaml = { taskRunner: { worker: { model: "gpt-4" } } };
 			const rawPrefs = { workerModel: "claude-4-opus" };
-			expect(detectFieldSource(field, rawYaml, rawPrefs)).toBe("global");
+			expect(detectFieldSource(field, rawYaml, rawPrefs)).toBe("project");
 		});
 
 		it("16.4.2 YAML-sourced field + empty-string pref → falls to (project)", () => {
@@ -1262,9 +1260,9 @@ describe("17. Write-decision logic (resolveWriteAction)", () => {
 	// 17.1 — getDefaultWriteDestination routing
 
 	describe("17.1 getDefaultWriteDestination", () => {
-		it("17.1.1 L1-only field → 'project'", () => {
+		it("17.1.1 L1-only field → 'prefs' (global default)", () => {
 			const field = makeL1Field();
-			expect(getDefaultWriteDestination(field)).toBe("project");
+			expect(getDefaultWriteDestination(field)).toBe("prefs");
 		});
 
 		it("17.1.2 L2-only field → 'prefs'", () => {
@@ -1272,28 +1270,28 @@ describe("17. Write-decision logic (resolveWriteAction)", () => {
 			expect(getDefaultWriteDestination(field)).toBe("prefs");
 		});
 
-		it("17.1.3 L1+L2 string field → null (user must choose)", () => {
+		it("17.1.3 L1+L2 string field → 'prefs' (global default)", () => {
 			const field = makeL1L2StringField();
-			expect(getDefaultWriteDestination(field)).toBeNull();
+			expect(getDefaultWriteDestination(field)).toBe("prefs");
 		});
 
-		it("17.1.4 L1+L2 enum field → null (user must choose)", () => {
+		it("17.1.4 L1+L2 enum field → 'prefs' (global default)", () => {
 			const field = makeL1L2EnumField();
-			expect(getDefaultWriteDestination(field)).toBeNull();
+			expect(getDefaultWriteDestination(field)).toBe("prefs");
 		});
 	});
 
 	// 17.2 — L1-only resolveWriteAction
 
 	describe("17.2 L1-only fields", () => {
-		it("17.2.1 L1 field + project confirmed → 'project'", () => {
+		it("17.2.1 L1 field + no destination choice → 'prefs'", () => {
 			const field = makeL1Field();
-			expect(resolveWriteAction(field, null, true)).toBe("project");
+			expect(resolveWriteAction(field, null, true)).toBe("prefs");
 		});
 
-		it("17.2.2 L1 field + project confirmation declined → 'skip'", () => {
+		it("17.2.2 L1 field + no destination choice ignores confirmation flag", () => {
 			const field = makeL1Field();
-			expect(resolveWriteAction(field, null, false)).toBe("skip");
+			expect(resolveWriteAction(field, null, false)).toBe("prefs");
 		});
 	});
 
@@ -1319,9 +1317,9 @@ describe("17. Write-decision logic (resolveWriteAction)", () => {
 			expect(resolveWriteAction(field, "Cancel", true)).toBe("skip");
 		});
 
-		it("17.4.2 L1+L2 field + null choice (escaped) → 'skip'", () => {
+		it("17.4.2 L1+L2 field + null choice (escaped) → defaults to 'prefs'", () => {
 			const field = makeL1L2StringField();
-			expect(resolveWriteAction(field, null, true)).toBe("skip");
+			expect(resolveWriteAction(field, null, true)).toBe("prefs");
 		});
 
 		it("17.4.3 L1+L2 enum field + Cancel choice → 'skip'", () => {
