@@ -127,7 +127,7 @@ export const SECTIONS: SectionDef[] = [
 	{
 		name: "Merge",
 		fields: [
-			{ configPath: "orchestrator.merge.model", label: "Merge Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "mergeModel", description: "Merge-agent model (empty = inherit session)" },
+			{ configPath: "orchestrator.merge.model", label: "Merge Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "mergeModel", description: "Merge-agent model (inherit = use session model)" },
 			{ configPath: "orchestrator.merge.tools", label: "Merge Tools", control: "input", layer: "L1", fieldType: "string", description: "Merge-agent tool allowlist" },
 			{ configPath: "orchestrator.merge.order", label: "Merge Order", control: "toggle", layer: "L1", fieldType: "enum", values: ["fewest-files-first", "sequential"], description: "Lane merge ordering policy" },
 			{ configPath: "orchestrator.merge.timeoutMinutes", label: "Merge Timeout (minutes)", control: "input", layer: "L1", fieldType: "number", description: "Max time for merge agent to complete. Increase for large batches (default: 10)" },
@@ -152,14 +152,14 @@ export const SECTIONS: SectionDef[] = [
 	{
 		name: "Supervisor",
 		fields: [
-			{ configPath: "orchestrator.supervisor.model", label: "Supervisor Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "supervisorModel", description: "Supervisor model (empty = inherit session)" },
+			{ configPath: "orchestrator.supervisor.model", label: "Supervisor Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "supervisorModel", description: "Supervisor model (inherit = use session model)" },
 			{ configPath: "orchestrator.supervisor.autonomy", label: "Autonomy Level", control: "toggle", layer: "L1", fieldType: "enum", values: ["interactive", "supervised", "autonomous"], description: "Recovery action confirmation behavior" },
 		],
 	},
 	{
 		name: "Worker",
 		fields: [
-			{ configPath: "taskRunner.worker.model", label: "Worker Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "workerModel", description: "Worker model (empty = inherit session)" },
+			{ configPath: "taskRunner.worker.model", label: "Worker Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "workerModel", description: "Worker model (inherit = use session model)" },
 			{ configPath: "taskRunner.worker.tools", label: "Worker Tools", control: "input", layer: "L1", fieldType: "string", description: "Worker tool allowlist" },
 			{ configPath: "taskRunner.worker.thinking", label: "Worker Thinking", control: "input", layer: "L1", fieldType: "string", description: "Worker thinking mode" },
 			{ configPath: "taskRunner.worker.spawnMode", label: "Spawn Mode", control: "toggle", layer: "L1", fieldType: "enum", values: ["subprocess"], optional: true, description: "How /task spawns workers and reviewers. Runtime V2 supports subprocess only." },
@@ -168,7 +168,7 @@ export const SECTIONS: SectionDef[] = [
 	{
 		name: "Reviewer",
 		fields: [
-			{ configPath: "taskRunner.reviewer.model", label: "Reviewer Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "reviewerModel", description: "Reviewer model (empty = inherit session)" },
+			{ configPath: "taskRunner.reviewer.model", label: "Reviewer Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "reviewerModel", description: "Reviewer model (inherit = use session model)" },
 			{ configPath: "taskRunner.reviewer.tools", label: "Reviewer Tools", control: "input", layer: "L1", fieldType: "string", description: "Reviewer tool allowlist" },
 			{ configPath: "taskRunner.reviewer.thinking", label: "Reviewer Thinking", control: "input", layer: "L1", fieldType: "string", description: "Reviewer thinking mode" },
 		],
@@ -929,6 +929,134 @@ function summarizeArray(arr: any[]): string {
  * @param configRoot - Workspace/repo root (from execCtx.workspaceRoot)
  * @param pointerConfigRoot - Optional pointer-resolved config root (workspace mode)
  */
+// ── Model Picker (Sage-style provider → model selection) ────────────
+
+/**
+ * Interactive two-level model picker: provider first, then model within provider.
+ * Returns the selected model string (e.g., "anthropic/claude-sonnet-4-20250514")
+ * or "" for inherit, or undefined if cancelled.
+ *
+ * Adapted from Sage's pickModel implementation.
+ */
+async function pickModel(ctx: ExtensionContext, currentModel: string): Promise<string | undefined> {
+	const available = ctx.modelRegistry.getAvailable();
+	if (available.length === 0) {
+		ctx.ui.notify("No available models found in pi model registry", "warning");
+		// Fall back to manual input
+		const manual = await ctx.ui.input("Model (provider/model-id, or empty for inherit)", currentModel || "");
+		if (manual === null || manual === undefined) return undefined;
+		return manual;
+	}
+
+	const currentLower = (currentModel || "").trim().toLowerCase();
+	const providers = [...new Set(available.map((m: any) => m.provider))].sort();
+
+	while (true) {
+		// Level 1: Provider selection (with "inherit" as first option)
+		const providerOptions: string[] = [
+			"inherit (use current session model)",
+			...providers.map((p: string) => {
+				const count = available.filter((m: any) => m.provider === p).length;
+				return `${p} (${count} models)`;
+			}),
+		];
+
+		const providerChoice = await selectScrollable(ctx, "Choose model provider", providerOptions);
+		if (!providerChoice) return undefined;  // Cancelled
+
+		if (providerChoice.startsWith("inherit")) {
+			return "";  // Empty string = inherit
+		}
+
+		// Extract provider name (strip " (N models)" suffix)
+		const provider = providerChoice.replace(/\s*\(\d+ models?\)$/, "");
+		const providerModels = available
+			.filter((m: any) => m.provider === provider)
+			.sort((a: any, b: any) => {
+				// Current model first, then alphabetical
+				const aComposite = `${a.provider}/${a.id}`.toLowerCase();
+				const bComposite = `${b.provider}/${b.id}`.toLowerCase();
+				if (aComposite === currentLower) return -1;
+				if (bComposite === currentLower) return 1;
+				return a.id.localeCompare(b.id);
+			});
+
+		// Level 2: Model selection within provider
+		const modelOptionMap = new Map<string, string>();
+		const modelOptions = ["← Back to providers"];
+
+		for (const model of providerModels) {
+			const composite = `${model.provider}/${model.id}`;
+			const isCurrent = composite.toLowerCase() === currentLower;
+			const label = `${model.id}${isCurrent ? "  ✓ current" : ""}`;
+			modelOptions.push(label);
+			modelOptionMap.set(label, composite);
+		}
+
+		const modelChoice = await selectScrollable(ctx, `Choose model (${provider})`, modelOptions);
+		if (!modelChoice) continue;  // Cancelled → back to providers
+		if (modelChoice === "← Back to providers") continue;
+
+		const resolved = modelOptionMap.get(modelChoice);
+		if (resolved) return resolved;
+	}
+}
+
+/**
+ * Scrollable select list for model/provider picking.
+ * Uses pi's TUI custom widget API.
+ */
+async function selectScrollable(
+	ctx: ExtensionContext,
+	title: string,
+	options: string[],
+	maxVisible = 12,
+): Promise<string | undefined> {
+	if (options.length === 0) return undefined;
+
+	const items: SelectItem[] = options.map((option, index) => ({
+		value: String(index),
+		label: option,
+	}));
+
+	const selectedValue = await ctx.ui.custom<string | undefined>((tui, theme, _keybindings, done) => {
+		const container = new Container();
+		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+		container.addChild(new Text(theme.fg("accent", title), 1, 0));
+		container.addChild(new Text("", 0, 0));
+
+		const selectList = new SelectList(items, Math.max(3, Math.min(maxVisible, items.length)), {
+			selectedPrefix: (text: string) => theme.fg("accent", text),
+			selectedText: (text: string) => theme.fg("accent", text),
+			description: (text: string) => theme.fg("muted", text),
+			scrollInfo: (text: string) => theme.fg("dim", text),
+			noMatch: (text: string) => theme.fg("warning", text),
+		});
+
+		selectList.onSelect = (item) => done(item.value);
+		selectList.onCancel = () => done(undefined);
+		container.addChild(selectList);
+
+		container.addChild(new Text("", 0, 0));
+		container.addChild(new Text(theme.fg("dim", "↑↓ navigate • type to filter • enter select • esc back"), 1, 0));
+		container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+
+		return {
+			render: (width: number) => container.render(width),
+			invalidate: () => container.invalidate(),
+			handleInput: (data: string) => {
+				selectList.handleInput(data);
+				tui.requestRender();
+			},
+		};
+	});
+
+	if (selectedValue === undefined) return undefined;
+	const selectedIndex = Number(selectedValue);
+	if (!Number.isInteger(selectedIndex) || selectedIndex < 0 || selectedIndex >= options.length) return undefined;
+	return options[selectedIndex];
+}
+
 export async function openSettingsTui(
 	ctx: ExtensionContext,
 	configRoot: string,
@@ -1120,26 +1248,36 @@ async function showSectionSettingsLoop(
 
 		// Input fields: the submenu returned a sentinel — use ctx.ui.input() for actual editing
 		if (result.rawValue === "__EDIT_REQUESTED__" && field.control === "input") {
-			const state = loadConfigState(configRoot, pointerConfigRoot);
-			const currentDisplay = getFieldDisplayValue(field, state.mergedConfig, state.prefs);
-			const currentClean = String(currentDisplay).replace(/\s+\((?:default|project|user)\)$/, "");
-			const placeholder = currentClean === "(not set)" || currentClean === "(inherit)" ? "" : currentClean;
+			// Model fields: use interactive provider → model picker instead of free-text
+			if (field.configPath.endsWith(".model")) {
+				const state = loadConfigState(configRoot, pointerConfigRoot);
+				const currentDisplay = getFieldDisplayValue(field, state.mergedConfig, state.prefs);
+				const currentClean = String(currentDisplay).replace(/\s+\((?:default|project|user)\)$/, "");
+				const selected = await pickModel(ctx, currentClean === "(inherit)" ? "" : currentClean);
+				if (selected === undefined) continue;  // Cancelled
+				result.rawValue = selected;
+			} else {
+				const state = loadConfigState(configRoot, pointerConfigRoot);
+				const currentDisplay = getFieldDisplayValue(field, state.mergedConfig, state.prefs);
+				const currentClean = String(currentDisplay).replace(/\s+\((?:default|project|user)\)$/, "");
+				const placeholder = currentClean === "(not set)" || currentClean === "(inherit)" ? "" : currentClean;
 
-			const newValue = await ctx.ui.input(
-				`${field.label}${field.description ? ` — ${field.description}` : ""}`,
-				placeholder,
-			);
+				const newValue = await ctx.ui.input(
+					`${field.label}${field.description ? ` — ${field.description}` : ""}`,
+					placeholder,
+				);
 
-			if (newValue === null || newValue === undefined) continue;  // Cancelled
+				if (newValue === null || newValue === undefined) continue;  // Cancelled
 
-			// Validate
-			const validation = validateFieldInput(field, newValue);
-			if (!validation.valid) {
-				ctx.ui.notify(`❌ Invalid value: ${validation.error}`, "error");
-				continue;
+				// Validate
+				const validation = validateFieldInput(field, newValue);
+				if (!validation.valid) {
+					ctx.ui.notify(`❌ Invalid value: ${validation.error}`, "error");
+					continue;
+				}
+
+				result.rawValue = newValue;
 			}
-
-			result.rawValue = newValue;
 		}
 
 		const typedValue = coerceValueForWrite(field, result.rawValue);
