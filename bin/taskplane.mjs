@@ -382,8 +382,8 @@ function buildTestingCommands(vars) {
 	return commands;
 }
 
-const USER_PREFERENCES_SUBDIR = "taskplane";
-const USER_PREFERENCES_FILENAME = "preferences.json";
+const GLOBAL_PREFERENCES_SUBDIR = "taskplane";
+const GLOBAL_PREFERENCES_FILENAME = "preferences.json";
 
 function createInheritInitAgentConfig() {
 	return {
@@ -422,16 +422,16 @@ function sanitizeInitAgentConfig(raw) {
 	return defaults;
 }
 
-function resolveUserPreferencesPathForCli() {
+function resolveGlobalPreferencesPathForCli() {
 	const agentDir = process.env.PI_CODING_AGENT_DIR;
 	if (agentDir) {
-		return path.join(agentDir, USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+		return path.join(agentDir, GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 	}
-	return path.join(homedir(), ".pi", "agent", USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+	return path.join(homedir(), ".pi", "agent", GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 }
 
-function readUserPreferencesForCli() {
-	const prefsPath = resolveUserPreferencesPathForCli();
+function readGlobalPreferencesForCli() {
+	const prefsPath = resolveGlobalPreferencesPathForCli();
 	if (!fs.existsSync(prefsPath)) {
 		return {
 			prefsPath,
@@ -450,24 +450,24 @@ function readUserPreferencesForCli() {
 	}
 }
 
-function writeUserPreferencesForCli(rawPrefs) {
-	const prefsPath = resolveUserPreferencesPathForCli();
+function writeGlobalPreferencesForCli(rawPrefs) {
+	const prefsPath = resolveGlobalPreferencesPathForCli();
 	fs.mkdirSync(path.dirname(prefsPath), { recursive: true });
 	fs.writeFileSync(prefsPath, JSON.stringify(rawPrefs, null, 2) + "\n", "utf-8");
 	return prefsPath;
 }
 
 function loadInitAgentDefaultsFromPreferences() {
-	const { prefsPath, raw } = readUserPreferencesForCli();
+	const { prefsPath, raw } = readGlobalPreferencesForCli();
 	const defaults = sanitizeInitAgentConfig(raw.initAgentDefaults);
 	const hasDefaults = !!(raw.initAgentDefaults && typeof raw.initAgentDefaults === "object" && !Array.isArray(raw.initAgentDefaults));
 	return { defaults, hasDefaults, prefsPath };
 }
 
 function saveInitAgentDefaultsToPreferences(initAgentConfig) {
-	const { raw } = readUserPreferencesForCli();
+	const { raw } = readGlobalPreferencesForCli();
 	raw.initAgentDefaults = sanitizeInitAgentConfig(initAgentConfig);
-	const prefsPath = writeUserPreferencesForCli(raw);
+	const prefsPath = writeGlobalPreferencesForCli(raw);
 	return { prefsPath, saved: raw.initAgentDefaults };
 }
 
@@ -958,7 +958,7 @@ function cmdConfig(args) {
 		console.log(`\n${c.bold}Taskplane Config${c.reset}\n`);
 		console.log(`  ${c.cyan}taskplane config --save-as-defaults${c.reset}`);
 		console.log(`     Save worker/reviewer/merger model + thinking settings from this project`);
-		console.log(`     to ${c.cyan}${resolveUserPreferencesPathForCli()}${c.reset} for future ${c.cyan}taskplane init${c.reset} runs.\n`);
+		console.log(`     to ${c.cyan}${resolveGlobalPreferencesPathForCli()}${c.reset} for future ${c.cyan}taskplane init${c.reset} runs.\n`);
 		return;
 	}
 
@@ -3110,7 +3110,7 @@ ${c.bold}Dashboard options:${c.reset}
 
 ${c.bold}Config options:${c.reset}
   --save-as-defaults  Save current project's worker/reviewer/merger model + thinking
-                      settings to user preferences for future taskplane init runs
+                      settings to global preferences for future taskplane init runs
 
 ${c.bold}Uninstall options:${c.reset}
   --dry-run         Show what would be removed

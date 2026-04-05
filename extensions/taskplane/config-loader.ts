@@ -1,6 +1,6 @@
 /**
  * Unified config loader for taskplane-config.json with YAML fallback
- * and user preferences (Layer 2) merge.
+ * and global preferences (Layer 2) merge.
  *
  * Layer 1 — Project config precedence:
  *   1. `.pi/taskplane-config.json` exists and is valid → use it
@@ -9,7 +9,7 @@
  *   4. JSON absent + one/both YAML files present → read YAML, map to unified shape
  *   5. None present → return cloned defaults
  *
- * Layer 2 — User preferences:
+ * Layer 2 — Global preferences:
  *   After loading Layer 1, reads `~/.pi/agent/taskplane/preferences.json`
  *   (or `$PI_CODING_AGENT_DIR/taskplane/preferences.json`) and applies
  *   allowlisted user-scoped fields on top. Unknown keys are ignored.
@@ -35,16 +35,16 @@ import {
 	DEFAULT_PROJECT_CONFIG,
 	DEFAULT_TASK_RUNNER_SECTION,
 	DEFAULT_ORCHESTRATOR_SECTION,
-	DEFAULT_USER_PREFERENCES,
-	USER_PREFERENCES_FILENAME,
-	USER_PREFERENCES_SUBDIR,
+	DEFAULT_GLOBAL_PREFERENCES,
+	GLOBAL_PREFERENCES_FILENAME,
+	GLOBAL_PREFERENCES_SUBDIR,
 } from "./config-schema.ts";
 import type {
 	TaskplaneConfig,
 	TaskRunnerSection,
 	OrchestratorSection,
 	WorkspaceSectionConfig,
-	UserPreferences,
+	GlobalPreferences,
 } from "./config-schema.ts";
 
 
@@ -230,26 +230,26 @@ function migrateProjectConfig(config: TaskplaneConfig, configRoot: string): bool
 }
 
 /**
- * Auto-migrate legacy TMUX fields in user preferences.
+ * Auto-migrate legacy TMUX fields in global preferences.
  *
  * Same precedence: new key wins if both exist.
  * Writes back atomically (tmp + rename).
  *
  * @returns true if any migrations were applied
  */
-function migrateUserPreferences(raw: Record<string, any>, prefsPath: string): boolean {
+function migrateGlobalPreferences(raw: Record<string, any>, prefsPath: string): boolean {
 	let migrated = false;
 	if (hasOwn(raw, "tmuxPrefix")) {
 		if (!hasOwn(raw, "sessionPrefix") || raw.sessionPrefix === undefined) {
 			raw.sessionPrefix = raw.tmuxPrefix;
 		}
 		delete raw.tmuxPrefix;
-		console.error(`[taskplane] Auto-migrated user preference: tmuxPrefix → sessionPrefix`);
+		console.error(`[taskplane] Auto-migrated global preference: tmuxPrefix → sessionPrefix`);
 		migrated = true;
 	}
 	if (raw.spawnMode === "tmux") {
 		raw.spawnMode = "subprocess";
-		console.error(`[taskplane] Auto-migrated user preference: spawnMode "tmux" → "subprocess"`);
+		console.error(`[taskplane] Auto-migrated global preference: spawnMode "tmux" → "subprocess"`);
 		migrated = true;
 	}
 	if (migrated) {
@@ -692,10 +692,10 @@ function loadWorkspaceYaml(configRoot: string): WorkspaceSectionConfig | undefin
 }
 
 
-// ── User Preferences (Layer 2) ───────────────────────────────────────
+// ── Global Preferences (Layer 2) ─────────────────────────────────────
 
 /**
- * Resolve the absolute path to the user preferences file.
+ * Resolve the absolute path to the global preferences file.
  *
  * Resolution order:
  *   1. `PI_CODING_AGENT_DIR` env → `<value>/taskplane/preferences.json`
@@ -704,45 +704,45 @@ function loadWorkspaceYaml(configRoot: string): WorkspaceSectionConfig | undefin
  * Uses `os.homedir()` for cross-platform home resolution
  * (USERPROFILE on Windows, HOME on Unix) and `path.join()` for separators.
  */
-export function resolveUserPreferencesPath(): string {
+export function resolveGlobalPreferencesPath(): string {
 	const agentDir = process.env.PI_CODING_AGENT_DIR;
 	if (agentDir) {
-		return join(agentDir, USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+		return join(agentDir, GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 	}
-	return join(homedir(), ".pi", "agent", USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+	return join(homedir(), ".pi", "agent", GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 }
 
 /**
- * Load user preferences from `~/.pi/agent/taskplane/preferences.json`.
+ * Load global preferences from `~/.pi/agent/taskplane/preferences.json`.
  *
  * Behavior:
  * - If file doesn't exist: auto-create with empty defaults `{}`, return defaults
  * - If file is malformed JSON: log warning, return defaults (non-destructive)
  * - Unknown keys are silently ignored (only allowlisted fields extracted)
- * - Returns a fresh UserPreferences object on each call
+ * - Returns a fresh GlobalPreferences object on each call
  *
- * @returns Parsed UserPreferences (only recognized fields)
+ * @returns Parsed GlobalPreferences (only recognized fields)
  */
-export function loadUserPreferences(): UserPreferences {
-	const prefsPath = resolveUserPreferencesPath();
+export function loadGlobalPreferences(): GlobalPreferences {
+	const prefsPath = resolveGlobalPreferencesPath();
 
 	if (!existsSync(prefsPath)) {
 		// Auto-create with empty defaults on first access
 		try {
 			const dir = join(prefsPath, "..");
 			mkdirSync(dir, { recursive: true });
-			writeFileSync(prefsPath, JSON.stringify(DEFAULT_USER_PREFERENCES, null, 2) + "\n", "utf-8");
+			writeFileSync(prefsPath, JSON.stringify(DEFAULT_GLOBAL_PREFERENCES, null, 2) + "\n", "utf-8");
 		} catch {
 			// Best-effort; if we can't create, just return defaults
 		}
-		return { ...DEFAULT_USER_PREFERENCES };
+		return { ...DEFAULT_GLOBAL_PREFERENCES };
 	}
 
 	let raw: string;
 	try {
 		raw = readFileSync(prefsPath, "utf-8");
 	} catch {
-		return { ...DEFAULT_USER_PREFERENCES };
+		return { ...DEFAULT_GLOBAL_PREFERENCES };
 	}
 
 	let parsed: any;
@@ -750,11 +750,11 @@ export function loadUserPreferences(): UserPreferences {
 		parsed = JSON.parse(raw);
 	} catch {
 		// Malformed JSON — return defaults without overwriting (non-destructive)
-		return { ...DEFAULT_USER_PREFERENCES };
+		return { ...DEFAULT_GLOBAL_PREFERENCES };
 	}
 
 	if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-		return { ...DEFAULT_USER_PREFERENCES };
+		return { ...DEFAULT_GLOBAL_PREFERENCES };
 	}
 
 	// Extract only allowlisted fields — unknown keys are ignored
@@ -772,13 +772,13 @@ function normalizePreferenceThinkingMode(value: unknown): string {
 	return "";
 }
 
-function extractInitAgentDefaults(rawInitDefaults: unknown): UserPreferences["initAgentDefaults"] | undefined {
+function extractInitAgentDefaults(rawInitDefaults: unknown): GlobalPreferences["initAgentDefaults"] | undefined {
 	if (!rawInitDefaults || typeof rawInitDefaults !== "object" || Array.isArray(rawInitDefaults)) {
 		return undefined;
 	}
 
 	const raw = rawInitDefaults as Record<string, unknown>;
-	const extracted: NonNullable<UserPreferences["initAgentDefaults"]> = {};
+	const extracted: NonNullable<GlobalPreferences["initAgentDefaults"]> = {};
 
 	if (typeof raw.workerModel === "string") extracted.workerModel = raw.workerModel;
 	if (typeof raw.reviewerModel === "string") extracted.reviewerModel = raw.reviewerModel;
@@ -790,10 +790,10 @@ function extractInitAgentDefaults(rawInitDefaults: unknown): UserPreferences["in
 	return Object.keys(extracted).length > 0 ? extracted : undefined;
 }
 
-function extractAllowlistedPreferences(raw: Record<string, any>, prefsPath: string): UserPreferences {
-	migrateUserPreferences(raw, prefsPath);
+function extractAllowlistedPreferences(raw: Record<string, any>, prefsPath: string): GlobalPreferences {
+	migrateGlobalPreferences(raw, prefsPath);
 
-	const prefs: UserPreferences = {};
+	const prefs: GlobalPreferences = {};
 
 	if (typeof raw.operatorId === "string") prefs.operatorId = raw.operatorId;
 	if (typeof raw.sessionPrefix === "string") {
@@ -819,9 +819,9 @@ function extractAllowlistedPreferences(raw: Record<string, any>, prefsPath: stri
 }
 
 /**
- * Apply user preferences (Layer 2) onto a project config (Layer 1).
+ * Apply global preferences (Layer 2) onto a project config (Layer 1).
  *
- * Only allowlisted fields are applied. User preferences win for Layer 2
+ * Only allowlisted fields are applied. Global preferences win for Layer 2
  * fields; all other config fields (Layer 1) are left untouched.
  *
  * Mutates `config` in place and returns it for chaining.
@@ -841,7 +841,7 @@ function extractAllowlistedPreferences(raw: Record<string, any>, prefsPath: stri
  *   prefs.dashboardPort → (no config target yet — stored only)
  *   prefs.initAgentDefaults → (preferences-only; consumed by CLI init flow)
  */
-export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPreferences): TaskplaneConfig {
+export function applyGlobalPreferences(config: TaskplaneConfig, prefs: GlobalPreferences): TaskplaneConfig {
 	// Helper: only apply non-empty string values
 	const applyStr = (val: string | undefined, setter: (v: string) => void) => {
 		if (val !== undefined && val !== "") setter(val);
@@ -865,7 +865,7 @@ export function applyUserPreferences(config: TaskplaneConfig, prefs: UserPrefere
 	}
 
 	// dashboardPort: no config schema target yet — intentionally not applied
-	// It can be read directly from loadUserPreferences() by consumers that need it.
+	// It can be read directly from loadGlobalPreferences() by consumers that need it.
 
 	return config;
 }
@@ -942,9 +942,9 @@ export function resolveConfigRoot(cwd: string, pointerConfigRoot?: string): stri
  *        (+ optional `.pi/taskplane-workspace.yaml` workspace section mapping)
  *     3. Defaults — if no config files exist
  *
- *   Layer 2 — User preferences (applied on top of Layer 1):
+ *   Layer 2 — Global preferences (applied on top of Layer 1):
  *     Reads `~/.pi/agent/taskplane/preferences.json` and overrides only
- *     allowlisted user-scoped fields. See `applyUserPreferences()` for
+ *     allowlisted user-scoped fields. See `applyGlobalPreferences()` for
  *     the field mapping.
  *
  * Config root resolution order:
@@ -986,23 +986,23 @@ export function loadProjectConfig(cwd: string, pointerConfigRoot?: string): Task
 	_projectMigrationDone = false; // Reset guard for each top-level load
 	migrateProjectConfig(config, configRoot);
 
-	// Layer 2: User preferences (allowlisted fields only)
-	const prefs = loadUserPreferences();
-	applyUserPreferences(config, prefs);
+	// Layer 2: Global preferences (allowlisted fields only)
+	const prefs = loadGlobalPreferences();
+	applyGlobalPreferences(config, prefs);
 	// No second migrateProjectConfig call needed — idempotency guard + prefs
-	// can’t re-introduce tmux fields (migrateUserPreferences already ran).
+	// can’t re-introduce tmux fields (migrateGlobalPreferences already ran).
 
 	normalizeInheritanceAliases(config);
 	return config;
 }
 
 /**
- * Load Layer 1 config only (project config without user preferences).
+ * Load Layer 1 config only (project config without global preferences).
  *
  * Returns the project config merged with defaults, but WITHOUT applying
- * Layer 2 user preferences. Used by the settings TUI write-back to
+ * Layer 2 global preferences. Used by the settings TUI write-back to
  * bootstrap a JSON config file from YAML-only projects without
- * accidentally embedding user preferences into the project config.
+ * accidentally embedding global preferences into the project config.
  *
  * @param cwd - Current working directory (project root or worktree)
  * @param pointerConfigRoot - Optional pointer-resolved config root (workspace mode)

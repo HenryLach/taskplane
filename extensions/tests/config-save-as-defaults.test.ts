@@ -25,7 +25,7 @@ function buildProjectConfig(overrides: Record<string, any> = {}) {
 }
 
 describe("taskplane config --save-as-defaults", () => {
-	it("writes current project model/thinking settings to user preferences", () => {
+	it("writes current project model/thinking settings to global preferences", () => {
 		const tempProject = mkdtempSync(join(tmpdir(), "taskplane-save-defaults-project-"));
 		const tempAgentDir = mkdtempSync(join(tmpdir(), "taskplane-save-defaults-agent-"));
 

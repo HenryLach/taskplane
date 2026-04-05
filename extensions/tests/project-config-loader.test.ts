@@ -86,7 +86,7 @@ beforeEach(() => {
 	counter = 0;
 	// Clear workspace root env var to avoid cross-test contamination
 	delete process.env.TASKPLANE_WORKSPACE_ROOT;
-	// Isolate from real user preferences — point to empty temp dir
+	// Isolate from real global preferences — point to empty temp dir
 	savedAgentDir = process.env.PI_CODING_AGENT_DIR;
 	const isolatedAgentDir = join(testRoot, "agent-isolation");
 	mkdirSync(join(isolatedAgentDir, "taskplane"), { recursive: true });
@@ -596,7 +596,7 @@ describe("key preservation and adapter regression", () => {
 		expect(taskConfig.worker.tools).toBe("read,write");
 		expect(taskConfig.worker.thinking).toBe("on");
 		expect(taskConfig.worker.spawn_mode).toBe("subprocess");
-		// Note: reviewer.model may be overridden by user preferences (~/.pi/agent/taskplane/preferences.json)
+		// Note: reviewer.model may be overridden by global preferences (~/.pi/agent/taskplane/preferences.json)
 		// so we check tools and thinking explicitly rather than toEqual on the full object.
 		expect(taskConfig.reviewer.tools).toBe("read");
 		expect(taskConfig.reviewer.thinking).toBe("on");

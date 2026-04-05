@@ -1,15 +1,15 @@
 /**
  * User Preferences (Layer 2) Tests — TP-017 Step 2
  *
- * Tests for the user preferences layer: path resolution, auto-creation,
+ * Tests for the global preferences layer: path resolution, auto-creation,
  * malformed JSON fallback, unknown-key dropping, empty-string "not set"
  * semantics, allowlist guardrails, and merge integration with Layer 1.
  *
  * Test categories:
  *   5.x — Path resolution (default + PI_CODING_AGENT_DIR override)
- *   6.x — loadUserPreferences: auto-creation, malformed fallback, unknown keys, empty-string
+ *   6.x — loadGlobalPreferences: auto-creation, malformed fallback, unknown keys, empty-string
  *   7.x — Layer 2 guardrails: allowlist enforcement, dashboardPort preferences-only
- *   8.x — applyUserPreferences merge integration + loadProjectConfig e2e with prefs
+ *   8.x — applyGlobalPreferences merge integration + loadProjectConfig e2e with prefs
  *
  * Run: node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/user-preferences.test.ts
  */
@@ -27,23 +27,23 @@ import { join } from "path";
 import { tmpdir, homedir } from "os";
 
 import {
-	resolveUserPreferencesPath,
-	loadUserPreferences,
-	applyUserPreferences,
+	resolveGlobalPreferencesPath,
+	loadGlobalPreferences,
+	applyGlobalPreferences,
 	loadProjectConfig,
 	ConfigLoadError,
 } from "../taskplane/config-loader.ts";
 import {
-	DEFAULT_USER_PREFERENCES,
+	DEFAULT_GLOBAL_PREFERENCES,
 	DEFAULT_PROJECT_CONFIG,
 	DEFAULT_TASK_RUNNER_SECTION,
 	DEFAULT_ORCHESTRATOR_SECTION,
-	USER_PREFERENCES_FILENAME,
-	USER_PREFERENCES_SUBDIR,
+	GLOBAL_PREFERENCES_FILENAME,
+	GLOBAL_PREFERENCES_SUBDIR,
 } from "../taskplane/config-schema.ts";
 import type {
 	TaskplaneConfig,
-	UserPreferences,
+	GlobalPreferences,
 } from "../taskplane/config-schema.ts";
 
 // ── Fixture Helpers ──────────────────────────────────────────────────
@@ -60,9 +60,9 @@ function makeTestDir(suffix?: string): string {
 }
 
 function writePrefsFile(agentDir: string, content: string): void {
-	const prefsDir = join(agentDir, USER_PREFERENCES_SUBDIR);
+	const prefsDir = join(agentDir, GLOBAL_PREFERENCES_SUBDIR);
 	mkdirSync(prefsDir, { recursive: true });
-	writeFileSync(join(prefsDir, USER_PREFERENCES_FILENAME), content, "utf-8");
+	writeFileSync(join(prefsDir, GLOBAL_PREFERENCES_FILENAME), content, "utf-8");
 }
 
 function writePiFile(root: string, filename: string, content: string): void {
@@ -116,12 +116,12 @@ afterEach(() => {
 
 // ── 5.x: Path resolution ────────────────────────────────────────────
 
-describe("resolveUserPreferencesPath", () => {
+describe("resolveGlobalPreferencesPath", () => {
 	it("5.1: default path uses homedir/.pi/agent/taskplane/preferences.json", () => {
 		delete process.env.PI_CODING_AGENT_DIR;
 
-		const result = resolveUserPreferencesPath();
-		const expected = join(homedir(), ".pi", "agent", USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+		const result = resolveGlobalPreferencesPath();
+		const expected = join(homedir(), ".pi", "agent", GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 		expect(result).toBe(expected);
 	});
 
@@ -129,8 +129,8 @@ describe("resolveUserPreferencesPath", () => {
 		const customDir = join(testRoot, "custom-agent-dir");
 		process.env.PI_CODING_AGENT_DIR = customDir;
 
-		const result = resolveUserPreferencesPath();
-		const expected = join(customDir, USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+		const result = resolveGlobalPreferencesPath();
+		const expected = join(customDir, GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 		expect(result).toBe(expected);
 	});
 
@@ -139,34 +139,34 @@ describe("resolveUserPreferencesPath", () => {
 		const customDir = join(testRoot, "agent-dir-trailing") + "/";
 		process.env.PI_CODING_AGENT_DIR = customDir;
 
-		const result = resolveUserPreferencesPath();
+		const result = resolveGlobalPreferencesPath();
 		// path.join normalizes the double separator
-		expect(result).toContain(USER_PREFERENCES_SUBDIR);
-		expect(result).toContain(USER_PREFERENCES_FILENAME);
+		expect(result).toContain(GLOBAL_PREFERENCES_SUBDIR);
+		expect(result).toContain(GLOBAL_PREFERENCES_FILENAME);
 	});
 });
 
-// ── 6.x: loadUserPreferences ─────────────────────────────────────────
+// ── 6.x: loadGlobalPreferences ─────────────────────────────────────────
 
-describe("loadUserPreferences", () => {
+describe("loadGlobalPreferences", () => {
 	it("6.1: auto-creates preferences file when it doesn't exist", () => {
 		const agentDir = makeTestDir("auto-create");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		const prefsPath = join(agentDir, USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+		const prefsPath = join(agentDir, GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 		expect(existsSync(prefsPath)).toBe(false);
 
-		const prefs = loadUserPreferences();
+		const prefs = loadGlobalPreferences();
 
 		// File should now exist
 		expect(existsSync(prefsPath)).toBe(true);
 
 		// Contents should be the default empty preferences
 		const contents = JSON.parse(readFileSync(prefsPath, "utf-8"));
-		expect(contents).toEqual(DEFAULT_USER_PREFERENCES);
+		expect(contents).toEqual(DEFAULT_GLOBAL_PREFERENCES);
 
 		// Returned prefs should be defaults (empty object)
-		expect(prefs).toEqual(DEFAULT_USER_PREFERENCES);
+		expect(prefs).toEqual(DEFAULT_GLOBAL_PREFERENCES);
 	});
 
 	it("6.2: malformed JSON returns defaults without overwriting the file", () => {
@@ -176,13 +176,13 @@ describe("loadUserPreferences", () => {
 		const malformedContent = "{ this is not valid JSON !!!";
 		writePrefsFile(agentDir, malformedContent);
 
-		const prefs = loadUserPreferences();
+		const prefs = loadGlobalPreferences();
 
 		// Should return defaults
-		expect(prefs).toEqual(DEFAULT_USER_PREFERENCES);
+		expect(prefs).toEqual(DEFAULT_GLOBAL_PREFERENCES);
 
 		// File should NOT be overwritten (non-destructive)
-		const prefsPath = join(agentDir, USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+		const prefsPath = join(agentDir, GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 		const contents = readFileSync(prefsPath, "utf-8");
 		expect(contents).toBe(malformedContent);
 	});
@@ -198,7 +198,7 @@ describe("loadUserPreferences", () => {
 			nested: { deep: true },
 		}));
 
-		const prefs = loadUserPreferences();
+		const prefs = loadGlobalPreferences();
 
 		expect(prefs.operatorId).toBe("alice");
 		expect((prefs as any).unknownField).toBeUndefined();
@@ -220,7 +220,7 @@ describe("loadUserPreferences", () => {
 			dashboardPort: 9090,
 		}));
 
-		const prefs = loadUserPreferences();
+		const prefs = loadGlobalPreferences();
 
 		expect(prefs.operatorId).toBe("bob");
 		expect(prefs.sessionPrefix).toBe("myprefix");
@@ -239,7 +239,7 @@ describe("loadUserPreferences", () => {
 			tmuxPrefix: "legacy-prefix",
 		}));
 
-		const prefs = loadUserPreferences();
+		const prefs = loadGlobalPreferences();
 		expect(prefs.sessionPrefix).toBe("legacy-prefix");
 	});
 
@@ -251,7 +251,7 @@ describe("loadUserPreferences", () => {
 			spawnMode: "tmux",
 		}));
 
-		const prefs = loadUserPreferences();
+		const prefs = loadGlobalPreferences();
 		expect(prefs.spawnMode).toBe("subprocess");
 	});
 
@@ -261,7 +261,7 @@ describe("loadUserPreferences", () => {
 
 		writePrefsFile(agentDir, "{}");
 
-		const prefs = loadUserPreferences();
+		const prefs = loadGlobalPreferences();
 		expect(prefs).toEqual({});
 	});
 
@@ -271,8 +271,8 @@ describe("loadUserPreferences", () => {
 
 		writePrefsFile(agentDir, "[]");
 
-		const prefs = loadUserPreferences();
-		expect(prefs).toEqual(DEFAULT_USER_PREFERENCES);
+		const prefs = loadGlobalPreferences();
+		expect(prefs).toEqual(DEFAULT_GLOBAL_PREFERENCES);
 	});
 
 	it("6.7: spawnMode with invalid enum value is dropped", () => {
@@ -284,7 +284,7 @@ describe("loadUserPreferences", () => {
 			spawnMode: "invalid-mode",
 		}));
 
-		const prefs = loadUserPreferences();
+		const prefs = loadGlobalPreferences();
 		expect(prefs.operatorId).toBe("valid");
 		expect(prefs.spawnMode).toBeUndefined();
 	});
@@ -297,7 +297,7 @@ describe("loadUserPreferences", () => {
 			dashboardPort: "not-a-number",
 		}));
 
-		const prefs = loadUserPreferences();
+		const prefs = loadGlobalPreferences();
 		expect(prefs.dashboardPort).toBeUndefined();
 	});
 
@@ -311,7 +311,7 @@ describe("loadUserPreferences", () => {
 			dashboardPort: null,
 		}));
 
-		const prefs = loadUserPreferences();
+		const prefs = loadGlobalPreferences();
 		expect(prefs.dashboardPort).toBeUndefined();
 	});
 
@@ -327,7 +327,7 @@ describe("loadUserPreferences", () => {
 			mergeModel: null,
 		}));
 
-		const prefs = loadUserPreferences();
+		const prefs = loadGlobalPreferences();
 		expect(prefs.operatorId).toBeUndefined();
 		expect(prefs.sessionPrefix).toBeUndefined();
 		expect(prefs.workerModel).toBeUndefined();
@@ -338,14 +338,14 @@ describe("loadUserPreferences", () => {
 
 // ── 7.x: Layer 2 guardrails ─────────────────────────────────────────
 
-describe("Layer 2 guardrails — applyUserPreferences", () => {
+describe("Layer 2 guardrails — applyGlobalPreferences", () => {
 	it("7.1: non-allowlisted keys in preferences are ignored during merge", () => {
 		const config = deepClone(DEFAULT_PROJECT_CONFIG);
 		const originalMaxLanes = config.orchestrator.orchestrator.maxLanes;
 		const originalStallTimeout = config.orchestrator.failure.stallTimeout;
 
-		// Simulate prefs with extra keys that shouldn't be in UserPreferences
-		const prefs: UserPreferences = {
+		// Simulate prefs with extra keys that shouldn't be in GlobalPreferences
+		const prefs: GlobalPreferences = {
 			operatorId: "alice",
 		};
 		// Force-add non-allowlisted properties (simulating what would happen if
@@ -353,7 +353,7 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 		(prefs as any).maxLanes = 99;
 		(prefs as any).stallTimeout = 999;
 
-		applyUserPreferences(config, prefs);
+		applyGlobalPreferences(config, prefs);
 
 		// Allowlisted field should be applied
 		expect(config.orchestrator.orchestrator.operatorId).toBe("alice");
@@ -366,7 +366,7 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 	it("7.2: allowlisted fields are applied correctly", () => {
 		const config = deepClone(DEFAULT_PROJECT_CONFIG);
 
-		const prefs: UserPreferences = {
+		const prefs: GlobalPreferences = {
 			operatorId: "bob",
 			sessionPrefix: "myprefix",
 			spawnMode: "subprocess",
@@ -375,7 +375,7 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 			mergeModel: "openai/gpt-5",
 		};
 
-		applyUserPreferences(config, prefs);
+		applyGlobalPreferences(config, prefs);
 
 		expect(config.orchestrator.orchestrator.operatorId).toBe("bob");
 		expect(config.orchestrator.orchestrator.sessionPrefix).toBe("myprefix");
@@ -388,11 +388,11 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 	it("7.3: dashboardPort is stored in preferences but NOT applied to config", () => {
 		const config = deepClone(DEFAULT_PROJECT_CONFIG);
 
-		const prefs: UserPreferences = {
+		const prefs: GlobalPreferences = {
 			dashboardPort: 9090,
 		};
 
-		applyUserPreferences(config, prefs);
+		applyGlobalPreferences(config, prefs);
 
 		// dashboardPort should not exist anywhere in the config
 		expect((config as any).dashboardPort).toBeUndefined();
@@ -409,13 +409,13 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 		config.taskRunner.worker.model = "project-model";
 		config.orchestrator.merge.model = "project-merge-model";
 
-		const prefs: UserPreferences = {
+		const prefs: GlobalPreferences = {
 			operatorId: "",
 			workerModel: "",
 			mergeModel: "",
 		};
 
-		applyUserPreferences(config, prefs);
+		applyGlobalPreferences(config, prefs);
 
 		// Empty strings should NOT override — original values preserved
 		expect(config.orchestrator.orchestrator.operatorId).toBe("project-default");
@@ -427,18 +427,18 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 		const config = deepClone(DEFAULT_PROJECT_CONFIG);
 		const originalConfig = deepClone(config);
 
-		const prefs: UserPreferences = {};
+		const prefs: GlobalPreferences = {};
 
-		applyUserPreferences(config, prefs);
+		applyGlobalPreferences(config, prefs);
 
 		expect(config).toEqual(originalConfig);
 	});
 
-	it("7.6: applyUserPreferences mutates and returns the same object", () => {
+	it("7.6: applyGlobalPreferences mutates and returns the same object", () => {
 		const config = deepClone(DEFAULT_PROJECT_CONFIG);
-		const prefs: UserPreferences = { operatorId: "test" };
+		const prefs: GlobalPreferences = { operatorId: "test" };
 
-		const result = applyUserPreferences(config, prefs);
+		const result = applyGlobalPreferences(config, prefs);
 
 		expect(result).toBe(config); // Same reference
 		expect(result.orchestrator.orchestrator.operatorId).toBe("test");
@@ -448,25 +448,25 @@ describe("Layer 2 guardrails — applyUserPreferences", () => {
 		const config = deepClone(DEFAULT_PROJECT_CONFIG);
 		expect(config.orchestrator.orchestrator.spawnMode).toBe("subprocess"); // default
 
-		const prefs: UserPreferences = {
+		const prefs: GlobalPreferences = {
 			spawnMode: "subprocess",
 		};
 
-		applyUserPreferences(config, prefs);
+		applyGlobalPreferences(config, prefs);
 
 		expect(config.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 	});
 
 	it("7.8: spawnMode tmux is auto-migrated to subprocess", () => {
 		const config = deepClone(DEFAULT_PROJECT_CONFIG);
-		const prefs = { spawnMode: "tmux" } as unknown as UserPreferences;
+		const prefs = { spawnMode: "tmux" } as unknown as GlobalPreferences;
 		// Should not throw — auto-migration handles legacy value
-		applyUserPreferences(config, prefs);
+		applyGlobalPreferences(config, prefs);
 		expect(config.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 	});
 });
 
-// ── 8.x: Integration — applyUserPreferences with Layer 1 inputs ─────
+// ── 8.x: Integration — applyGlobalPreferences with Layer 1 inputs ─────
 
 describe("Layer 2 merge integration", () => {
 	it("8.1: merge on JSON-backed Layer 1 input — preferences override allowlisted fields", () => {
@@ -476,12 +476,12 @@ describe("Layer 2 merge integration", () => {
 		config.orchestrator.orchestrator.operatorId = "json-operator";
 		config.orchestrator.orchestrator.maxLanes = 5;
 
-		const prefs: UserPreferences = {
+		const prefs: GlobalPreferences = {
 			workerModel: "user-worker-model",
 			operatorId: "user-operator",
 		};
 
-		applyUserPreferences(config, prefs);
+		applyGlobalPreferences(config, prefs);
 
 		// Allowlisted fields overridden by preferences
 		expect(config.taskRunner.worker.model).toBe("user-worker-model");
@@ -500,13 +500,13 @@ describe("Layer 2 merge integration", () => {
 		config.orchestrator.merge.model = "yaml-merge-model";
 		config.orchestrator.orchestrator.sessionPrefix = "yaml-prefix";
 
-		const prefs: UserPreferences = {
+		const prefs: GlobalPreferences = {
 			reviewerModel: "user-reviewer",
 			mergeModel: "user-merge-model",
 			sessionPrefix: "user-prefix",
 		};
 
-		applyUserPreferences(config, prefs);
+		applyGlobalPreferences(config, prefs);
 
 		// Allowlisted overrides
 		expect(config.taskRunner.reviewer.model).toBe("user-reviewer");
@@ -517,12 +517,12 @@ describe("Layer 2 merge integration", () => {
 		expect(config.taskRunner.project.name).toBe("YamlProject");
 	});
 
-	it("8.3: loadProjectConfig e2e — integrates user preferences with JSON config", () => {
+	it("8.3: loadProjectConfig e2e — integrates global preferences with JSON config", () => {
 		// Set up temp agent dir for preferences isolation
 		const agentDir = makeTestDir("e2e-json-agent");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		// Write user preferences
+		// Write global preferences
 		writePrefsFile(agentDir, JSON.stringify({
 			operatorId: "e2e-user",
 			workerModel: "e2e-worker-model",
@@ -556,12 +556,12 @@ describe("Layer 2 merge integration", () => {
 		expect((config as any).dashboardPort).toBeUndefined();
 	});
 
-	it("8.4: loadProjectConfig e2e — integrates user preferences with YAML config", () => {
+	it("8.4: loadProjectConfig e2e — integrates global preferences with YAML config", () => {
 		// Set up temp agent dir for preferences isolation
 		const agentDir = makeTestDir("e2e-yaml-agent");
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
-		// Write user preferences
+		// Write global preferences
 		writePrefsFile(agentDir, JSON.stringify({
 			reviewerModel: "e2e-reviewer",
 			sessionPrefix: "e2e-prefix",
@@ -627,7 +627,7 @@ describe("Layer 2 merge integration", () => {
 		process.env.PI_CODING_AGENT_DIR = agentDir;
 
 		// No preferences file — should auto-create
-		const prefsPath = join(agentDir, USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+		const prefsPath = join(agentDir, GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 		expect(existsSync(prefsPath)).toBe(false);
 
 		const projectDir = makeTestDir("e2e-no-prefs-project");

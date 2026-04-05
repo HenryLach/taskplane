@@ -1845,7 +1845,7 @@ export function presentBatchSummary(
 export type SupervisorAutonomyLevel = "interactive" | "supervised" | "autonomous";
 
 /**
- * Supervisor configuration resolved from project config + user preferences.
+ * Supervisor configuration resolved from project config + global preferences.
  *
  * @since TP-041
  */
@@ -3070,7 +3070,7 @@ export function registerSupervisorPromptHook(
  * Resolve supervisor configuration from available sources.
  *
  * Resolution order (highest precedence first):
- * 1. User preferences (supervisorModel → orchestrator.supervisor.model)
+ * 1. Global preferences (supervisorModel → orchestrator.supervisor.model)
  * 2. Project config (orchestrator.supervisor section in taskplane-config.json)
  * 3. Defaults (model="" = inherit session model, autonomy="supervised")
  *

@@ -480,17 +480,17 @@ export interface TaskplaneConfig {
 }
 
 
-// ── User Preferences (Layer 2) ───────────────────────────────────────
+// ── Global Preferences (Layer 2) ─────────────────────────────────────
 
 /**
- * User preferences — personal settings stored per-user.
+ * Global preferences — personal settings stored per-user.
  *
  * File: `~/.pi/agent/taskplane/preferences.json`
  * (or `$PI_CODING_AGENT_DIR/taskplane/preferences.json` if set)
  *
  * These are "Layer 2" fields — they override project config (Layer 1)
  * for user-scoped settings only. The merge is allowlist-based: only
- * the fields defined here can be overridden by user preferences.
+ * the fields defined here can be overridden by global preferences.
  * Unknown keys in the preferences file are silently ignored.
  *
  * Preferences JSON uses camelCase keys matching the runtime config shape.
@@ -524,7 +524,7 @@ export interface InitAgentDefaultsPreferences {
 	mergeThinking?: string;
 }
 
-export interface UserPreferences {
+export interface GlobalPreferences {
 	/** Operator identifier (overrides orchestrator.orchestrator.operatorId) */
 	operatorId?: string;
 	/** Orchestrator session prefix (overrides orchestrator.orchestrator.sessionPrefix) */
@@ -547,19 +547,19 @@ export interface UserPreferences {
 	initAgentDefaults?: InitAgentDefaultsPreferences;
 }
 
-/** Default (empty) user preferences — all fields undefined means "no override". */
-export const DEFAULT_USER_PREFERENCES: UserPreferences = {};
+/** Default (empty) global preferences — all fields undefined means "no override". */
+export const DEFAULT_GLOBAL_PREFERENCES: GlobalPreferences = {};
 
 /**
- * Canonical filename for user preferences.
+ * Canonical filename for global preferences.
  * Resolved relative to agent directory: `<agentDir>/taskplane/preferences.json`
  */
-export const USER_PREFERENCES_FILENAME = "preferences.json";
+export const GLOBAL_PREFERENCES_FILENAME = "preferences.json";
 
 /**
  * Subdirectory under the agent dir for taskplane preferences.
  */
-export const USER_PREFERENCES_SUBDIR = "taskplane";
+export const GLOBAL_PREFERENCES_SUBDIR = "taskplane";
 
 
 // ── Defaults ─────────────────────────────────────────────────────────

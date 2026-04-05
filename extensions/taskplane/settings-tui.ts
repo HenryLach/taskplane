@@ -29,21 +29,21 @@ import {
 	DEFAULT_PROJECT_CONFIG,
 	PROJECT_CONFIG_FILENAME,
 	type TaskplaneConfig,
-	type UserPreferences,
+	type GlobalPreferences,
 } from "./config-schema.ts";
 import {
-	loadUserPreferences,
+	loadGlobalPreferences,
 	loadProjectConfig,
 	loadLayer1Config,
 	resolveConfigRoot,
-	resolveUserPreferencesPath,
+	resolveGlobalPreferencesPath,
 } from "./config-loader.ts";
 
 
 // ── Types ────────────────────────────────────────────────────────────
 
 /** Source of a field's current value */
-export type FieldSource = "default" | "project" | "user";
+export type FieldSource = "default" | "project" | "global";
 
 /** Layer assignment for a field */
 export type FieldLayer = "L1" | "L2" | "L1+L2";
@@ -67,8 +67,8 @@ export interface FieldDef {
 	fieldType: "string" | "number" | "boolean" | "enum";
 	/** Whether the field is optional (can be unset) */
 	optional?: boolean;
-	/** For L1+L2 fields: the user preferences key */
-	prefsKey?: keyof UserPreferences;
+	/** For L1+L2 fields: the global preferences key */
+	prefsKey?: keyof GlobalPreferences;
 	/** Description shown when selected */
 	description?: string;
 }
@@ -187,7 +187,7 @@ export const SECTIONS: SectionDef[] = [
 		],
 	},
 	{
-		name: "User Preferences",
+		name: "Global Preferences",
 		fields: [
 			{ configPath: "preferences.dashboardPort", label: "Dashboard Port", control: "input", layer: "L2", fieldType: "number", prefsKey: "dashboardPort", optional: true, description: "Dashboard server port" },
 		],
@@ -321,10 +321,10 @@ function snakeKeysToCamel(obj: Record<string, any>): Record<string, any> {
 }
 
 /**
- * Read the raw user preferences JSON.
+ * Read the raw global preferences JSON.
  */
 function readRawPreferences(): Record<string, any> | null {
-	const prefsPath = resolveUserPreferencesPath();
+	const prefsPath = resolveGlobalPreferencesPath();
 	if (!existsSync(prefsPath)) return null;
 	try {
 		const raw = readFileSync(prefsPath, "utf-8");
@@ -446,19 +446,19 @@ export function writeProjectConfigField(
 }
 
 /**
- * Write a value to the user preferences JSON (Layer 2).
+ * Write a value to the global preferences JSON (Layer 2).
  *
- * Writes to `resolveUserPreferencesPath()`.
+ * Writes to `resolveGlobalPreferencesPath()`.
  * If `value` is undefined, deletes the key from the preferences file
  * (for clearing preferences).
  *
  * Uses atomic tmp+rename write pattern to prevent partial writes.
  */
-export function writeUserPreference(
-	prefsKey: keyof import("./config-schema.ts").UserPreferences,
+export function writeGlobalPreference(
+	prefsKey: keyof import("./config-schema.ts").GlobalPreferences,
 	value: any,
 ): void {
-	const prefsPath = resolveUserPreferencesPath();
+	const prefsPath = resolveGlobalPreferencesPath();
 	const tmpPath = prefsPath + ".tmp";
 
 	// Ensure directory exists
@@ -512,7 +512,7 @@ export function writeUserPreference(
  */
 export function coerceValueForWrite(field: FieldDef, rawValue: string): any {
 	// Strip source badge if present
-	const cleaned = rawValue.replace(/\s+\((?:default|project|user)\)$/, "").trim();
+	const cleaned = rawValue.replace(/\s+\((?:default|project|global)\)$/, "").trim();
 
 	// Unset / inherit → undefined (delete key)
 	if (cleaned === "(not set)" || cleaned === "(inherit)") {
@@ -557,7 +557,7 @@ export function getDefaultWriteDestination(field: FieldDef): WriteDestination | 
  *
  * @param field - The field being edited
  * @param destinationChoice - For L1+L2 fields: the user's choice from the
- *   destination select ("User preferences (personal)", "Project config (shared)",
+ *   destination select ("Global preferences (personal)", "Project config (shared)",
  *   "Cancel", or null). Ignored for L1-only and L2-only fields.
  * @param projectConfirmed - For project-destination writes: whether the user
  *   confirmed the project config change. Ignored for prefs-destination writes.
@@ -575,7 +575,7 @@ export function resolveWriteAction(
 	// L1+L2 fields: resolve from user's destination choice
 	if (dest === null) {
 		if (!destinationChoice || destinationChoice === "Cancel") return "skip";
-		dest = destinationChoice.startsWith("User") ? "prefs" : "project";
+		dest = destinationChoice.startsWith("Global") ? "prefs" : "project";
 	}
 
 	// Confirmation gate for project config writes
@@ -616,22 +616,22 @@ export function detectFieldSource(
 ): FieldSource {
 	// L2 check for dual-layer and L2-only fields.
 	// Type guards MUST match extractAllowlistedPreferences() in config-loader.ts
-	// to avoid showing "(user)" for values that the merge layer would reject.
+	// to avoid showing "(global)" for values that the merge layer would reject.
 	if ((field.layer === "L1+L2" || field.layer === "L2") && field.prefsKey && rawPrefs) {
 		const prefVal = rawPrefs[field.prefsKey];
 		if (field.fieldType === "string") {
-			// String rule: must be typeof string, non-empty → (user)
-			// Matches: `typeof raw.X === "string"` AND applyUserPreferences `val !== "" `
-			if (typeof prefVal === "string" && prefVal !== "") return "user";
+			// String rule: must be typeof string, non-empty → (global)
+			// Matches: `typeof raw.X === "string"` AND applyGlobalPreferences `val !== "" `
+			if (typeof prefVal === "string" && prefVal !== "") return "global";
 		} else if (field.fieldType === "enum") {
 			// Enum rule: must be a valid enum value from the field's values array.
 			// Matches extractAllowlistedPreferences which checks exact enum membership
 			// (e.g., raw.spawnMode === "subprocess").
-			if (prefVal !== undefined && field.values && field.values.includes(String(prefVal))) return "user";
+			if (prefVal !== undefined && field.values && field.values.includes(String(prefVal))) return "global";
 		} else if (field.fieldType === "number") {
-			// Number rule: must be typeof number and finite → (user)
+			// Number rule: must be typeof number and finite → (global)
 			// Matches: `typeof raw.X === "number" && Number.isFinite(raw.X)`
-			if (typeof prefVal === "number" && Number.isFinite(prefVal)) return "user";
+			if (typeof prefVal === "number" && Number.isFinite(prefVal)) return "global";
 		}
 	}
 
@@ -656,7 +656,7 @@ export function detectFieldSource(
 export function getFieldDisplayValue(
 	field: FieldDef,
 	mergedConfig: TaskplaneConfig,
-	prefs: UserPreferences,
+	prefs: GlobalPreferences,
 ): string {
 	// Special case: dashboardPort (L2-only, not in merged config)
 	if (field.configPath === "preferences.dashboardPort") {
@@ -1198,14 +1198,14 @@ export async function openSettingsTui(
  */
 function loadConfigState(configRoot: string, pointerConfigRoot?: string): {
 	mergedConfig: TaskplaneConfig;
-	prefs: UserPreferences;
+	prefs: GlobalPreferences;
 	rawProject: Record<string, any> | null;
 	rawPrefs: Record<string, any> | null;
 } {
 	const resolvedRoot = resolveConfigRoot(configRoot, pointerConfigRoot);
 	return {
 		mergedConfig: loadProjectConfig(configRoot, pointerConfigRoot),
-		prefs: loadUserPreferences(),
+		prefs: loadGlobalPreferences(),
 		rawProject: readRawProjectJson(resolvedRoot) || readRawYamlConfigs(resolvedRoot),
 		rawPrefs: readRawPreferences(),
 	};
@@ -1342,7 +1342,7 @@ function formatSourceBadge(source: FieldSource): string {
 	switch (source) {
 		case "default": return "(default)";
 		case "project": return "(project)";
-		case "user":    return "(user)";
+		case "global":  return "(global)";
 	}
 }
 
@@ -1378,7 +1378,7 @@ async function showSectionSettingsLoop(
 		if (result.rawValue === "__EDIT_REQUESTED__" && (field.control === "input" || field.control === "picker")) {
 			const state = loadConfigState(configRoot, pointerConfigRoot);
 			const currentDisplay = getFieldDisplayValue(field, state.mergedConfig, state.prefs);
-			const currentClean = String(currentDisplay).replace(/\s+\((?:default|project|user)\)$/, "");
+			const currentClean = String(currentDisplay).replace(/\s+\((?:default|project|global)\)$/, "");
 			const normalizedCurrent = currentClean === "(inherit)" ? "" : currentClean;
 
 			// Model fields: use interactive provider → model picker instead of free-text
@@ -1429,7 +1429,7 @@ async function showSectionSettingsLoop(
 			destinationChoice = await ctx.ui.select(
 				"Save this change to:",
 				[
-					"User preferences (personal)",
+					"Global preferences (personal)",
 					"Project config (shared)",
 					"Cancel",
 				],
@@ -1458,7 +1458,7 @@ async function showSectionSettingsLoop(
 			} else {
 				// L2 write — use prefsKey
 				if (field.prefsKey) {
-					writeUserPreference(field.prefsKey, typedValue);
+					writeGlobalPreference(field.prefsKey, typedValue);
 				}
 			}
 			ctx.ui.notify(
@@ -1500,7 +1500,7 @@ async function showSectionSettingsOnce(
 	ctx: ExtensionContext,
 	section: SectionDef,
 	mergedConfig: TaskplaneConfig,
-	prefs: UserPreferences,
+	prefs: GlobalPreferences,
 	rawProject: Record<string, any> | null,
 	rawPrefs: Record<string, any> | null,
 ): Promise<PendingChange | null> {
@@ -1597,7 +1597,7 @@ function createInputSubmenu(
 	done: (selectedValue?: string) => void,
 ): any {
 	// Strip source badge from current value for editing
-	const cleanValue = currentValue.replace(/\s+\((?:default|project|user)\)$/, "");
+	const cleanValue = currentValue.replace(/\s+\((?:default|project|global)\)$/, "");
 	let inputBuffer = cleanValue === "(not set)" || cleanValue === "(inherit)" ? "" : cleanValue;
 	let errorMsg = "";
 	let cursorPos = inputBuffer.length;

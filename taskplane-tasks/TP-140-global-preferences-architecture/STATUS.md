@@ -1,10 +1,10 @@
 # TP-140: Global Preferences Architecture — Status
 
-**Current Step:** Step 1: Rename user preferences → global preferences
+**Current Step:** Step 2: Expand global preferences schema
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** L
 
@@ -19,15 +19,15 @@
 - [x] Map all UserPreferences references across codebase
 
 ### Step 1: Rename user preferences → global preferences
-**Status:** 🟨 In Progress
-- [ ] Rename UserPreferences → GlobalPreferences
-- [ ] Rename load/resolve/apply functions
-- [ ] Update all imports and references
-- [ ] Update variable names, comments, JSDoc
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Rename UserPreferences → GlobalPreferences
+- [x] Rename load/resolve/apply functions
+- [x] Update all imports and references
+- [x] Update variable names, comments, JSDoc
+- [x] Run targeted tests
 
 ### Step 2: Expand global preferences schema
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Expand GlobalPreferences to cover all configurable fields
 - [ ] Update extractAllowlistedPreferences for expanded fields
 - [ ] Update applyGlobalPreferences for all new fields
@@ -104,3 +104,4 @@
 ## Notes
 
 *Reserved for execution notes*
+| 2026-04-05 22:07 | Review R001 | plan Step 1: APPROVE |
