@@ -1,10 +1,10 @@
 # TP-139: Init Model Picker and Global Defaults — Status
 
-**Current Step:** Step 3: Global defaults infrastructure
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 6
+**Review Counter:** 8
 **Iteration:** 1
 **Size:** M
 
@@ -47,17 +47,17 @@
 - [x] Show save confirmation
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] Full test suite passing
-- [ ] Init with no defaults → inherit
-- [ ] Init with defaults → pre-populated
-- [ ] save-as-defaults writes correctly
-- [ ] Graceful degradation without model list
-- [ ] CLI smoke tests
-- [ ] All failures fixed
+**Status:** ✅ Complete
+- [x] Full test suite passing
+- [x] Init with no defaults → inherit
+- [x] Init with defaults → pre-populated
+- [x] save-as-defaults writes correctly
+- [x] Graceful degradation without model list
+- [x] CLI smoke tests
+- [x] All failures fixed
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update commands.md
 - [ ] Update README if needed
 - [ ] Update STATUS.md
@@ -75,6 +75,7 @@
 | 4 | Plan | 2 | APPROVE | - |
 | 5 | Code | 2 | APPROVE | - |
 | 6 | Plan | 3 | APPROVE | - |
+| 7 | Code | 3 | APPROVE | - |
 
 ---
 
@@ -102,6 +103,9 @@
 | 2026-04-05 19:24 | Review R005 | code Step 2: APPROVE |
 | 2026-04-05 19:25 | Review R006 | plan Step 3: APPROVE |
 | 2026-04-05 19:30 | Step 3 tests | config/defaults targeted tests passed (16/16) |
+| 2026-04-05 19:31 | Review R007 | code Step 3: APPROVE |
+| 2026-04-05 19:36 | Step 4 full suite | `node --test tests/*.test.ts` passed (3177/3177) |
+| 2026-04-05 19:37 | Step 4 smoke | `taskplane help` + `taskplane doctor` smoke checks passed in temp repo |
 
 ---
 
@@ -114,3 +118,4 @@
 ## Notes
 
 - Suggestion from R002 (advisory): tighten parser filtering for non-table lines if `pi --list-models` format changes.
+| 2026-04-05 19:30 | Review R008 | plan Step 4: APPROVE |
