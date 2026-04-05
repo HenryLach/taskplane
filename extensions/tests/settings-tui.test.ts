@@ -785,7 +785,7 @@ describe("14. writeProjectConfigField", () => {
 		).toThrow(/malformed JSON/i);
 	});
 
-	it("14.5 creates sparse JSON from YAML-only project (does not copy YAML values)", () => {
+	it("14.5 seeds first JSON override from YAML-only project (preserves YAML overrides)", () => {
 		const dir = makeWriteTestDir("yaml-only");
 		// Write a YAML config with a custom value
 		writePiFile(dir, "task-orchestrator.yaml", `
@@ -799,12 +799,30 @@ orchestrator:
 		const jsonPath = join(dir, ".pi", PROJECT_CONFIG_FILENAME);
 		expect(existsSync(jsonPath)).toBe(true);
 		const result = readJsonFile(jsonPath);
-		// The edited field is written as a sparse project override
+		// The edited field
 		expect(result.orchestrator.orchestrator.worktreePrefix).toBe("test-wt");
-		expect(result.orchestrator.orchestrator.maxLanes).toBeUndefined();
-		expect(result.orchestrator.orchestrator.spawnMode).toBeUndefined();
+		// Existing YAML project overrides are preserved in seeded JSON
+		expect(result.orchestrator.orchestrator.maxLanes).toBe(7);
+		expect(result.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 		// YAML file is still there
 		expect(existsSync(join(dir, ".pi", "task-orchestrator.yaml"))).toBe(true);
+	});
+
+	it("14.5b removing a seeded project override keeps unrelated YAML overrides", () => {
+		const dir = makeWriteTestDir("yaml-remove-override");
+		writePiFile(dir, "task-orchestrator.yaml", `
+orchestrator:
+  max_lanes: 7
+  spawn_mode: subprocess
+`);
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", "temp-prefix");
+		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", undefined);
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.orchestrator.orchestrator.worktreePrefix).toBeUndefined();
+		expect(result.orchestrator.orchestrator.maxLanes).toBe(7);
+		expect(result.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 	});
 
 	it("14.6 creates .pi directory when it doesn't exist", () => {
@@ -894,7 +912,7 @@ orchestrator:
 		expect(existsSync(join(workspaceRoot, ".pi", PROJECT_CONFIG_FILENAME))).toBe(false);
 
 		const result = readJsonFile(join(pointerRoot, PROJECT_CONFIG_FILENAME));
-		expect(result.orchestrator.orchestrator.maxLanes).toBeUndefined();
+		expect(result.orchestrator.orchestrator.maxLanes).toBe(6);
 		expect(result.orchestrator.orchestrator.worktreePrefix).toBe("tp-wt");
 	});
 });

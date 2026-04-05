@@ -426,7 +426,11 @@ export function writeProjectConfigField(
 			);
 		}
 	} else {
-		configObj = { configVersion: CONFIG_VERSION };
+		const yamlSeed = readRawYamlConfigs(resolvedRoot) ?? {};
+		configObj = {
+			configVersion: CONFIG_VERSION,
+			...JSON.parse(JSON.stringify(yamlSeed)),
+		};
 	}
 
 	setNestedValue(configObj, configPath, value);
