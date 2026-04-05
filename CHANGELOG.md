@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.18] - 2026-04-04
+
+### New
+- **Merge agent thinking config** — `MergeConfig` now has a `thinking` field (empty = inherit session). Available in `/taskplane-settings` under Merge section.
+
 ## [0.24.17] - 2026-04-04
 
 ### New
