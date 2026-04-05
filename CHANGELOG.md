@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.16] - 2026-04-04
+
+### Fixed
+- **Batch history persistence (TP-137)** — Batch history now survives `orch_integrate`. The parent process writes history after engine completion, and integration preserves `.pi/batch-history.json` across merges. Fixes #423.
+
 ## [0.24.15] - 2026-04-04
 
 ### Fixed
