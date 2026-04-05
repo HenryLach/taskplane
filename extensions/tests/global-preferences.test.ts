@@ -375,6 +375,24 @@ describe("loadGlobalPreferences", () => {
 		expect(prefs.initAgentDefaults?.workerModel).toBe("seed-worker");
 		expect(prefs.initAgentDefaults?.workerThinking).toBe("on");
 	});
+
+	it("6.12: nested legacy spawnMode tmux values are auto-migrated to subprocess", () => {
+		const agentDir = makeTestDir("nested-tmux");
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		writePrefsFile(agentDir, JSON.stringify({
+			taskRunner: {
+				worker: { spawnMode: "tmux" },
+			},
+			orchestrator: {
+				orchestrator: { spawnMode: "tmux" },
+			},
+		}));
+
+		const prefs = loadGlobalPreferences();
+		expect(prefs.taskRunner?.worker?.spawnMode).toBe("subprocess");
+		expect(prefs.orchestrator?.orchestrator?.spawnMode).toBe("subprocess");
+	});
 });
 
 // ── 7.x: Layer 2 guardrails ─────────────────────────────────────────
@@ -777,5 +795,34 @@ describe("Layer 2 merge integration", () => {
 		// Preferences-only keys are intentionally not merged into runtime config
 		expect((config as any).dashboardPort).toBeUndefined();
 		expect((config as any).initAgentDefaults).toBeUndefined();
+	});
+
+	it("8.9: loadProjectConfig e2e — nested tmux spawn modes are normalized to subprocess", () => {
+		const agentDir = makeTestDir("e2e-nested-tmux-agent");
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+
+		writePrefsFile(agentDir, JSON.stringify({
+			taskRunner: {
+				worker: { spawnMode: "tmux" },
+			},
+			orchestrator: {
+				orchestrator: { spawnMode: "tmux" },
+			},
+		}));
+
+		const projectDir = makeTestDir("e2e-nested-tmux-project");
+		writePiFile(projectDir, "taskplane-config.json", JSON.stringify({
+			configVersion: 1,
+			taskRunner: {
+				worker: { spawnMode: "subprocess" },
+			},
+			orchestrator: {
+				orchestrator: { spawnMode: "subprocess" },
+			},
+		}));
+
+		const config = loadProjectConfig(projectDir);
+		expect(config.taskRunner.worker.spawnMode).toBe("subprocess");
+		expect(config.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 	});
 });

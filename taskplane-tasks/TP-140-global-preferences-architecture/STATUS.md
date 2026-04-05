@@ -1,6 +1,6 @@
 # TP-140: Global Preferences Architecture — Status
 
-**Current Step:** Step 2: Expand global preferences schema
+**Current Step:** Step 3: Flip config loading precedence
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
@@ -27,18 +27,18 @@
 - [x] Run targeted tests
 
 ### Step 2: Expand global preferences schema
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Expand GlobalPreferences to cover all configurable fields
 - [x] Add backward-compatible support for legacy flat-key global preferences files
 - [x] Preserve preferences-only fields (dashboardPort, initAgentDefaults) during schema expansion
 - [x] Update extractAllowlistedPreferences for expanded fields
 - [x] Update applyGlobalPreferences for all new fields
 - [x] Add targeted tests for legacy flat keys + expanded nested preference parsing
-- [ ] Normalize nested legacy spawnMode values (tmux → subprocess) during global preference application
-- [ ] Add regression tests for nested orchestrator/worker spawnMode migration and update stale migration comment
+- [x] Normalize nested legacy spawnMode values (tmux → subprocess) during global preference application
+- [x] Add regression tests for nested orchestrator/worker spawnMode migration and update stale migration comment
 
 ### Step 3: Flip config loading precedence
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Rewrite loadProjectConfig: schema → global → project
 - [ ] Implement deep merge for sparse project config
 - [ ] Update loadLayer1Config similarly

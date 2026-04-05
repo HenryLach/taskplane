@@ -252,6 +252,16 @@ function migrateGlobalPreferences(raw: Record<string, any>, prefsPath: string): 
 		console.error(`[taskplane] Auto-migrated global preference: spawnMode "tmux" → "subprocess"`);
 		migrated = true;
 	}
+	if (raw.orchestrator?.orchestrator?.spawnMode === "tmux") {
+		raw.orchestrator.orchestrator.spawnMode = "subprocess";
+		console.error(`[taskplane] Auto-migrated global preference: orchestrator.orchestrator.spawnMode "tmux" → "subprocess"`);
+		migrated = true;
+	}
+	if (raw.taskRunner?.worker?.spawnMode === "tmux") {
+		raw.taskRunner.worker.spawnMode = "subprocess";
+		console.error(`[taskplane] Auto-migrated global preference: taskRunner.worker.spawnMode "tmux" → "subprocess"`);
+		migrated = true;
+	}
 	if (migrated) {
 		try {
 			const tmpPath = prefsPath + ".migration-tmp";
@@ -892,6 +902,16 @@ export function applyGlobalPreferences(config: TaskplaneConfig, prefs: GlobalPre
 		deepMerge(config.workspace as Record<string, any>, prefs.workspace as Record<string, any>);
 	}
 
+	// Runtime safety: nested legacy values may arrive through config-shaped overrides.
+	if ((config.orchestrator.orchestrator as Record<string, any>).spawnMode === "tmux") {
+		config.orchestrator.orchestrator.spawnMode = "subprocess";
+		console.error(`[taskplane] Auto-migrated runtime global preference: orchestrator.orchestrator.spawnMode "tmux" → "subprocess"`);
+	}
+	if ((config.taskRunner.worker as Record<string, any>).spawnMode === "tmux") {
+		config.taskRunner.worker.spawnMode = "subprocess";
+		console.error(`[taskplane] Auto-migrated runtime global preference: taskRunner.worker.spawnMode "tmux" → "subprocess"`);
+	}
+
 	return config;
 }
 
@@ -1014,8 +1034,8 @@ export function loadProjectConfig(cwd: string, pointerConfigRoot?: string): Task
 	// Layer 2: Global preferences (allowlisted fields + legacy aliases)
 	const prefs = loadGlobalPreferences();
 	applyGlobalPreferences(config, prefs);
-	// No second migrateProjectConfig call needed — idempotency guard + prefs
-	// can’t re-introduce tmux fields (migrateGlobalPreferences already ran).
+	// No second migrateProjectConfig call needed — project migration already ran.
+	// Layer 2 applies its own tmux normalization for both flat and nested prefs.
 
 	normalizeInheritanceAliases(config);
 	return config;
