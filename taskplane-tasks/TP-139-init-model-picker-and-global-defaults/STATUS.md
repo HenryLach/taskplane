@@ -113,6 +113,8 @@
 | 2026-04-05 19:37 | Step 4 smoke | `taskplane help` + `taskplane doctor` smoke checks passed in temp repo |
 | 2026-04-05 19:38 | Review R009 | code Step 4: APPROVE |
 | 2026-04-05 19:43 | Step 5 docs | Updated CLI command docs + README command table/init notes |
+| 2026-04-05 19:38 | Worker iter 1 | done in 2588s, tools: 239 |
+| 2026-04-05 19:38 | Task complete | .DONE created |
 
 ---
 
