@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.19] - 2026-04-05
+
+### Fixed
+- **Merge thinking user prefs silently dropped** — `mergeThinking` was referenced in settings TUI but not wired through `UserPreferences` interface, extraction, or application. Saving merge thinking to user prefs was a no-op.
+
 ## [0.24.18] - 2026-04-04
 
 ### New
