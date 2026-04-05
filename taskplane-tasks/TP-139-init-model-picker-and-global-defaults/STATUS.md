@@ -1,10 +1,10 @@
 # TP-139: Init Model Picker and Global Defaults — Status
 
-**Current Step:** Step 1: Model registry access from CLI (revision R002)
+**Current Step:** Step 2: Interactive model selection in init
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 2
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** M
 
@@ -20,7 +20,7 @@
 - [x] Determine model registry CLI access approach
 
 ### Step 1: Model registry access from CLI
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 > ⚠️ Hydrate: Approach depends on Step 0 investigation of pi's model registry API
 
 - [x] Implement CLI model discovery helper using `pi --list-models`
@@ -30,13 +30,13 @@
 - [x] R002 fix: make CLI direct-execution guard symlink-safe and add regression test
 
 ### Step 2: Interactive model selection in init
-**Status:** ⬜ Not Started
-- [ ] Add provider → model picker to init flow
-- [ ] "Inherit" as default first option
-- [ ] Per-agent or "same for all" selection
-- [ ] Thinking mode prompt after model
-- [ ] Write to generated config
-- [ ] Graceful fallback if unavailable
+**Status:** ✅ Complete
+- [x] Add provider → model picker to init flow
+- [x] "Inherit" as default first option
+- [x] Per-agent or "same for all" selection
+- [x] Thinking mode prompt after model
+- [x] Write to generated config
+- [x] Graceful fallback if unavailable
 
 ### Step 3: Global defaults infrastructure
 **Status:** ⬜ Not Started
@@ -71,6 +71,8 @@
 |---|------|------|---------|------|
 | 1 | Plan | 1 | APPROVE | - |
 | 2 | Code | 1 | REVISE | .reviews/R002-code-step1.md |
+| 3 | Code | 1 | APPROVE | - |
+| 4 | Plan | 2 | APPROVE | - |
 
 ---
 
@@ -92,6 +94,9 @@
 | 2026-04-05 19:06 | Review R002 | code Step 1: REVISE |
 | 2026-04-05 19:07 | Step 1 tests | `tests/init-model-discovery.test.ts` passed (4/4) |
 | 2026-04-05 19:14 | R002 regression tests | `tests/cli-command-surface.test.ts` + `tests/init-model-discovery.test.ts` passed (7/7) |
+| 2026-04-05 19:15 | Review R003 | code Step 1: APPROVE |
+| 2026-04-05 19:16 | Review R004 | plan Step 2: APPROVE |
+| 2026-04-05 19:23 | Step 2 tests | `tests/init-model-picker.test.ts` + related CLI tests passed (11/11) |
 
 ---
 

@@ -381,8 +381,185 @@ function buildTestingCommands(vars) {
 	return commands;
 }
 
-function generateProjectConfig(vars) {
+function createInheritInitAgentConfig() {
 	return {
+		workerModel: "",
+		reviewerModel: "",
+		mergeModel: "",
+		workerThinking: "",
+		reviewerThinking: "",
+		mergeThinking: "",
+	};
+}
+
+const INIT_AGENT_ROLES = [
+	{ key: "worker", label: "Worker", modelKey: "workerModel", thinkingKey: "workerThinking" },
+	{ key: "reviewer", label: "Reviewer", modelKey: "reviewerModel", thinkingKey: "reviewerThinking" },
+	{ key: "merge", label: "Merger", modelKey: "mergeModel", thinkingKey: "mergeThinking" },
+];
+
+async function promptMenuChoice({ title, question, options, defaultIndex = 0, askImpl = ask, logImpl = console.log }) {
+	while (true) {
+		if (title) logImpl(`\n  ${title}`);
+		for (let i = 0; i < options.length; i++) {
+			logImpl(`    ${i + 1}. ${options[i].label}`);
+		}
+
+		const answer = String(await askImpl(question, String(defaultIndex + 1))).trim();
+		const asNum = Number.parseInt(answer, 10);
+		if (!Number.isNaN(asNum) && asNum >= 1 && asNum <= options.length) {
+			return options[asNum - 1].value;
+		}
+
+		const lower = answer.toLowerCase();
+		const byAlias = options.find((option) => {
+			const aliases = [option.value, ...(option.aliases || [])]
+				.filter(Boolean)
+				.map((entry) => String(entry).toLowerCase());
+			return aliases.includes(lower);
+		});
+		if (byAlias) return byAlias.value;
+
+		logImpl(`  ${WARN} Invalid selection. Enter a menu number.`);
+	}
+}
+
+async function promptModelForRole(roleLabel, models, { askImpl = ask, logImpl = console.log } = {}) {
+	const providers = [...new Set(models.map((model) => model.provider))].sort((a, b) => a.localeCompare(b));
+
+	while (true) {
+		const providerOptions = [
+			{ value: "inherit", label: "inherit (use current session model)", aliases: ["inherit"] },
+			...providers.map((provider) => {
+				const count = models.filter((model) => model.provider === provider).length;
+				return {
+					value: provider,
+					label: `${provider} (${count} models)`,
+					aliases: [provider],
+				};
+			}),
+		];
+
+		const providerChoice = await promptMenuChoice({
+			title: `${roleLabel}: choose model provider`,
+			question: `${roleLabel} provider (number or provider name)`,
+			options: providerOptions,
+			defaultIndex: 0,
+			askImpl,
+			logImpl,
+		});
+
+		if (providerChoice === "inherit") return "";
+
+		const providerModels = models
+			.filter((model) => model.provider === providerChoice)
+			.sort((a, b) => a.id.localeCompare(b.id));
+
+		const modelOptions = [
+			{ value: "back", label: "← back to providers", aliases: ["back"] },
+			...providerModels.map((model) => ({
+				value: model.id,
+				label: model.id,
+				aliases: [model.id, `${model.provider}/${model.id}`],
+			})),
+		];
+
+		const modelChoice = await promptMenuChoice({
+			title: `${roleLabel}: choose model (${providerChoice})`,
+			question: `${roleLabel} model (number or model id)`,
+			options: modelOptions,
+			defaultIndex: 0,
+			askImpl,
+			logImpl,
+		});
+
+		if (modelChoice === "back") continue;
+		return `${providerChoice}/${modelChoice}`;
+	}
+}
+
+async function promptThinkingForRole(roleLabel, { askImpl = ask, logImpl = console.log } = {}) {
+	const thinkingOptions = [
+		{ value: "", label: "inherit (use current session thinking)", aliases: ["inherit"] },
+		{ value: "on", label: "on" },
+		{ value: "off", label: "off" },
+	];
+
+	return promptMenuChoice({
+		title: `${roleLabel}: choose thinking mode`,
+		question: `${roleLabel} thinking (number or value)`,
+		options: thinkingOptions,
+		defaultIndex: 0,
+		askImpl,
+		logImpl,
+	});
+}
+
+function applyInitAgentConfig(projectConfig, initAgentConfig) {
+	if (!initAgentConfig) return projectConfig;
+
+	projectConfig.taskRunner.worker.model = initAgentConfig.workerModel ?? "";
+	projectConfig.taskRunner.reviewer.model = initAgentConfig.reviewerModel ?? "";
+	projectConfig.orchestrator.merge.model = initAgentConfig.mergeModel ?? "";
+
+	projectConfig.taskRunner.worker.thinking = initAgentConfig.workerThinking ?? "";
+	projectConfig.taskRunner.reviewer.thinking = initAgentConfig.reviewerThinking ?? "";
+	projectConfig.orchestrator.merge.thinking = initAgentConfig.mergeThinking ?? "";
+
+	return projectConfig;
+}
+
+export async function collectInitAgentConfig({
+	interactive = true,
+	askImpl = ask,
+	confirmImpl = confirm,
+	queryModelsImpl = queryAvailableModelsFromPi,
+	logImpl = console.log,
+} = {}) {
+	if (!interactive) return null;
+
+	const initAgentConfig = createInheritInitAgentConfig();
+	let discovery;
+	try {
+		discovery = await queryModelsImpl();
+	} catch (error) {
+		discovery = {
+			models: [],
+			available: false,
+			error: error?.message || "unknown error",
+		};
+	}
+
+	if (!discovery?.available || !Array.isArray(discovery.models) || discovery.models.length === 0) {
+		logImpl(`\n  ${WARN} Model list unavailable (${discovery?.error || "unknown"}).`);
+		logImpl("     Skipping model picker and using inherit defaults for worker/reviewer/merger.\n");
+		return initAgentConfig;
+	}
+
+	logImpl(`\n${c.bold}Agent model setup${c.reset}`);
+	logImpl(`  ${c.dim}Choose models for worker/reviewer/merger (inherit is always option #1).${c.reset}`);
+
+	const useSameModel = await confirmImpl("Use the same model for worker, reviewer, and merger?", true);
+	if (useSameModel) {
+		const selectedModel = await promptModelForRole("All agents", discovery.models, { askImpl: askImpl, logImpl });
+		const selectedThinking = await promptThinkingForRole("All agents", { askImpl: askImpl, logImpl });
+		for (const role of INIT_AGENT_ROLES) {
+			initAgentConfig[role.modelKey] = selectedModel;
+			initAgentConfig[role.thinkingKey] = selectedThinking;
+		}
+		return initAgentConfig;
+	}
+
+	for (const role of INIT_AGENT_ROLES) {
+		initAgentConfig[role.modelKey] = await promptModelForRole(role.label, discovery.models, { askImpl: askImpl, logImpl });
+		initAgentConfig[role.thinkingKey] = await promptThinkingForRole(role.label, { askImpl: askImpl, logImpl });
+	}
+
+	return initAgentConfig;
+}
+
+export function generateProjectConfig(vars, initAgentConfig = null) {
+	const projectConfig = {
 		configVersion: 1,
 		taskRunner: {
 			project: { name: vars.project_name, description: "" },
@@ -427,6 +604,7 @@ function generateProjectConfig(vars) {
 			preWarm: { autoDetect: false, commands: {}, always: [] },
 			merge: {
 				model: "",
+				thinking: "",
 				tools: "read,write,edit,bash,grep,find,ls",
 				verify: [],
 				order: "fewest-files-first",
@@ -442,6 +620,8 @@ function generateProjectConfig(vars) {
 			monitoring: { pollInterval: 5 },
 		},
 	};
+
+	return applyInitAgentConfig(projectConfig, initAgentConfig);
 }
 
 function generateWorkspaceYaml(repoNames, defaultRepo, tasksRoot) {
@@ -1410,6 +1590,10 @@ async function cmdInit(args) {
 			return;
 		}
 
+		const initAgentConfig = await collectInitAgentConfig({
+			interactive: !isPreset,
+		});
+
 		// ── Scaffold .taskplane/ in config repo ─────────────────────
 		console.log(`\n${c.bold}Creating files in ${configRepoName}/.taskplane/...${c.reset}\n`);
 		// Skip existing files only when --force was NOT used AND the user did NOT confirm overwrite
@@ -1441,7 +1625,7 @@ async function cmdInit(args) {
 		}
 
 		// Project config JSON (taskplane-config.json)
-		const projectConfig = generateProjectConfig(vars);
+		const projectConfig = generateProjectConfig(vars, initAgentConfig);
 		writeFile(
 			path.join(taskplaneDir, "taskplane-config.json"),
 			JSON.stringify(projectConfig, null, 2) + "\n",
@@ -1622,6 +1806,10 @@ async function cmdInit(args) {
 		return;
 	}
 
+	const initAgentConfig = await collectInitAgentConfig({
+		interactive: !isPreset,
+	});
+
 	// Scaffold files
 	console.log(`\n${c.bold}Creating files...${c.reset}\n`);
 	// Skip existing files only when --force was NOT used AND the user did NOT confirm overwrite
@@ -1656,7 +1844,7 @@ async function cmdInit(args) {
 	// Unified project config JSON
 	writeFile(
 		path.join(projectRoot, ".pi", "taskplane-config.json"),
-		JSON.stringify(generateProjectConfig(vars), null, 2) + "\n",
+		JSON.stringify(generateProjectConfig(vars, initAgentConfig), null, 2) + "\n",
 		{ skipIfExists, label: ".pi/taskplane-config.json" },
 	);
 
