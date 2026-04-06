@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** M
 
@@ -43,6 +43,8 @@
 - [ ] CLI init: same levels
 - [ ] Default selection: high
 - [ ] Thinking column from pi --list-models
+- [ ] Unsupported-thinking models: show info note only (do not block selection)
+- [ ] Add targeted test for unsupported-thinking permissive behavior
 - [ ] Run targeted tests
 
 ### Step 4: Testing & Verification
@@ -98,6 +100,10 @@
 ## Notes
 
 *Reserved for execution notes*
+- Review R005 suggestion (advisory): add compatibility coverage for legacy `on`/`off` values mapping to level-based thinking defaults.
+- Review R005 suggestion (advisory): add parser-hardening coverage for `pi --list-models` thinking column spacing/order variance.
 | 2026-04-06 00:42 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-06 00:47 | Review R002 | code Step 1: APPROVE |
 | 2026-04-06 00:49 | Review R003 | plan Step 2: APPROVE |
+| 2026-04-06 00:56 | Review R004 | code Step 2: APPROVE |
+| 2026-04-06 00:57 | Review R005 | plan Step 3: REVISE |
