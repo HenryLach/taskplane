@@ -27,7 +27,8 @@ Implement first-install detection, global preferences bootstrapping, and intelli
 1. **First-install detection and global prefs bootstrap:**
    - When `~/.pi/agent/taskplane/preferences.json` doesn't exist, detect this as first install
    - Create the file seeded from schema defaults
-   - Set thinking to `"high"` by default for worker, reviewer, and merger (not just `"on"`)
+   - Set thinking to `"high"` by default for worker and reviewer
+   - Set thinking to `"off"` for merger (see #439 — thinking causes merge agent timeout on large diffs) (not just `"on"`)
    - Pi supports thinking levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`
    - For models that don't support thinking, thinking is ignored at runtime — safe to default to `"high"`
 
