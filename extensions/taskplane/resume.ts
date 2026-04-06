@@ -641,6 +641,12 @@ export function getMergeStatusForWave(
 	return null;
 }
 
+/**
+ * Expand persisted wave plan with continuation rounds required by segment counts.
+ *
+ * Groups missing rounds by the original last-occurrence wave so resumed execution
+ * preserves multi-task round concurrency semantics (`[A,B]`, then `[A]`, etc.).
+ */
 export function buildResumeRuntimeWavePlan(persistedState: PersistedBatchState): string[][] {
 	const baseWavePlan = persistedState.wavePlan.map((wave) => [...wave]);
 	const runtimeWavePlan = [...baseWavePlan];

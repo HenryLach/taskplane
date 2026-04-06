@@ -442,6 +442,10 @@ function hasTaskInFutureSegmentRounds(segmentRounds: string[][], fromIndex: numb
 	return false;
 }
 
+/**
+ * Insert one deterministic continuation segment round immediately after the
+ * current wave when expansion creates executable pending work beyond planned rounds.
+ */
 export function scheduleContinuationSegmentRound(
 	segmentRounds: string[][],
 	currentWaveIndex: number,
@@ -477,6 +481,12 @@ function buildRepoMaxSequenceByRepo(
 	return maxSequenceByRepo;
 }
 
+/**
+ * Apply one approved segment-expansion request to a task frontier DAG.
+ *
+ * Implements after-current/end rewiring, repeat-repo segment ID disambiguation,
+ * deterministic topological reordering, and pending-state insertion.
+ */
 export function applySegmentExpansionMutation(
 	segmentState: SegmentFrontierTaskState,
 	request: SegmentExpansionRequest,
@@ -670,6 +680,10 @@ function ensureSegmentRecords(batchState: OrchBatchRuntimeState): PersistedSegme
 	return batchState.segments;
 }
 
+/**
+ * Persist pending segment records for an approved expansion and resync dependency
+ * metadata for existing pending records touched by subsequent rewires.
+ */
 export function upsertPendingExpandedSegmentRecords(
 	batchState: OrchBatchRuntimeState,
 	task: ParsedTask,
@@ -753,6 +767,10 @@ export function upsertPendingExpandedSegmentRecords(
 	return changed;
 }
 
+/**
+ * Rebuild the in-memory idempotency set from persisted resilience repair history.
+ * Used on start/resume to prevent replay of already-processed expansion requests.
+ */
 export function collectProcessedSegmentExpansionRequestIds(
 	batchState: Pick<OrchBatchRuntimeState, "resilience">,
 ): Set<string> {
