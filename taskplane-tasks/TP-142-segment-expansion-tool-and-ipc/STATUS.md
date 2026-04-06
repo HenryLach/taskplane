@@ -1,6 +1,6 @@
 # TP-142: Segment Expansion Tool and File IPC — Status
 
-**Current Step:** Step 2: Implement tool
+**Current Step:** Step 3: Request file writing
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-06
 **Review Level:** 2
@@ -27,18 +27,18 @@
 - [x] Run targeted tests
 
 ### Step 2: Implement tool
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Register request_segment_expansion
 - [x] Workspace mode + autonomous guard
 - [x] Input validation
 - [x] Write request file on success
 - [x] Return rejection on failure
 - [x] Run targeted tests
-- [ ] R004: Wire lane-runner env for segment context + supervisor autonomy
-- [ ] R004: Add regression tests for segment-context registration and non-autonomous rejection
+- [x] R004: Wire lane-runner env for segment context + supervisor autonomy
+- [x] R004: Add regression tests for segment-context registration and non-autonomous rejection
 
 ### Step 3: Request file writing
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Correct mailbox path
 - [ ] Schema matches SegmentExpansionRequest
 - [ ] Atomic write (temp + rename)
@@ -79,6 +79,8 @@
 | 2026-04-06 02:50 | Step 2 reopened | Address R004 review issues |
 | 2026-04-06 02:25 | Review R003 | plan Step 2: APPROVE |
 | 2026-04-06 02:36 | Review R004 | code Step 2: REVISE |
+| 2026-04-06 03:02 | Step 2 revision completed | R004 runtime env + regression coverage added |
+| 2026-04-06 03:02 | Step 3 resumed | Request file writing |
 
 ## Notes
 - Suggestion from R004: pass `TASKPLANE_TASK_ID` via lane-runner env to avoid folder-name fallback in request payload construction.

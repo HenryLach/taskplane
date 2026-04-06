@@ -2235,6 +2235,12 @@ export async function executeLaneV2(
 		// Build execution unit
 		const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode);
 
+		const rawAutonomy = String((config as any)?.orchestrator?.supervisor?.autonomy ?? "autonomous").toLowerCase();
+		const supervisorAutonomy: LaneRunnerConfig["supervisorAutonomy"] =
+			(rawAutonomy === "interactive" || rawAutonomy === "supervised" || rawAutonomy === "autonomous")
+				? rawAutonomy as LaneRunnerConfig["supervisorAutonomy"]
+				: "autonomous";
+
 		const laneRunnerConfig: LaneRunnerConfig = {
 			batchId,
 			agentIdPrefix,
@@ -2247,6 +2253,7 @@ export async function executeLaneV2(
 			workerTools: "read,write,edit,bash,grep,find,ls",
 			workerThinking: "",
 			workerSystemPrompt,
+			supervisorAutonomy,
 			projectName: config.project?.name || "project",
 			maxIterations: 20,
 			noProgressLimit: 3,

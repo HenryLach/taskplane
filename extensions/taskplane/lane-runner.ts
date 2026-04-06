@@ -92,6 +92,8 @@ export interface LaneRunnerConfig {
 	workerThinking: string;
 	/** Worker system prompt */
 	workerSystemPrompt: string;
+	/** Supervisor autonomy level for bridge-tool guards. */
+	supervisorAutonomy?: "interactive" | "supervised" | "autonomous";
 	/** Project name (for review request context) */
 	projectName?: string;
 	/** Max worker iterations before giving up */
@@ -312,6 +314,9 @@ export async function executeTaskV2(
 				TASKPLANE_REVIEWS_DIR: unit.packet.reviewsDir,
 				TASKPLANE_REVIEWER_STATE_PATH: reviewerStatePath,
 				TASKPLANE_PROJECT_NAME: config.projectName || "project",
+				TASKPLANE_TASK_ID: taskId,
+				TASKPLANE_ACTIVE_SEGMENT_ID: segmentId ?? "",
+				TASKPLANE_SUPERVISOR_AUTONOMY: config.supervisorAutonomy || "autonomous",
 				ORCH_BATCH_ID: config.batchId,
 			},
 		};
