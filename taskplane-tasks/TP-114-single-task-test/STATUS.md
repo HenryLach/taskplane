@@ -35,6 +35,10 @@ Files created in this task folder:
 - `analysis.txt` — exported function count and names from `extensions/taskplane/lane-runner.ts`
 - `events.txt` — event types emitted by `emitEvent()` in `extensions/taskplane/agent-host.ts`
 
+## Discoveries
+
+- Task TP-114 scope is runtime execution validation via task-folder artifacts and code analysis outputs; no product source-file edits were requested.
+
 ## Execution Log
 
 | Timestamp | Action | Outcome |
