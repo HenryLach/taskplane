@@ -1,10 +1,10 @@
 # TP-144: Segment Expansion Acceptance Tests — Status
 
-**Current Step:** Step 5: Testing & Verification
+**Current Step:** Step 6: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-06
 **Review Level:** 1
-**Review Counter:** 8
+**Review Counter:** 9
 **Iteration:** 3
 **Size:** S
 
@@ -52,14 +52,14 @@
 - [x] Run targeted resume + expansion unit tests and capture passing evidence
 
 ### Step 5: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] Expansion-focused unit tests pass (tool + engine + frontier coverage)
-- [ ] Regression validation captured via unit test pass/fail status (live `/orch` TP-001..TP-006 deferred for issue #439)
-- [ ] Resume-after-expansion unit coverage passes
-- [ ] Full unit suite passing
+**Status:** ✅ Complete
+- [x] Expansion-focused unit tests pass (tool + engine + frontier coverage)
+- [x] Regression validation captured via unit test pass/fail status (live `/orch` TP-001..TP-006 deferred for issue #439)
+- [x] Resume-after-expansion unit coverage passes
+- [x] Full unit suite passing
 
 ### Step 6: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Document results
 - [ ] Update spec if needed
 - [ ] Update STATUS.md
@@ -89,11 +89,14 @@
 | 2026-04-06 09:14 | Prompt amendment | Added formal scope deferral for live polyrepo e2e (issue #439) and unit-based substitution criteria |
 | 2026-04-06 09:18 | Step 3 targeted tests | `tests/engine-segment-frontier.test.ts` passed (21/21) |
 | 2026-04-06 09:19 | Review R007 | plan Step 3: APPROVE |
+| 2026-04-06 09:20 | Review R008 | plan Step 4: APPROVE |
+| 2026-04-06 09:24 | Step 4 targeted tests | `tests/segment-expansion-engine.test.ts` + `tests/engine-segment-frontier.test.ts` passed (28/28) |
+| 2026-04-06 09:25 | Review R009 | plan Step 5: APPROVE |
+| 2026-04-06 09:26 | Step 5 expansion tests | `segment-expansion-tool/engine/frontier` targeted run passed (39/39) |
+| 2026-04-06 09:27 | Step 5 regression tests | `tests/polyrepo-regression.test.ts` passed (48/48) |
+| 2026-04-06 09:30 | Step 5 full suite | `tests/*.test.ts` passed (3231/3231) |
 
 ## Notes
 
 - R002 suggestion retained for traceability; Step 2 evidence is captured via targeted expansion unit test run output.
 - Live polyrepo execution for TP-144 was deferred in this session due known merge-agent thinking hang issue (#439), per supervisor steering.
-| 2026-04-06 09:03 | Review R006 | plan Step 3: REVISE |
-| 2026-04-06 09:06 | Review R007 | plan Step 3: APPROVE |
-| 2026-04-06 09:08 | Review R008 | plan Step 4: APPROVE |
