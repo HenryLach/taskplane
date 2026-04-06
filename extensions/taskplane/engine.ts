@@ -2908,6 +2908,45 @@ export async function executeOrchBatch(
 			return hasSucceeded && hasHardFailure;
 		});
 
+		// ── Safety net: auto-commit uncommitted artifacts before merge ──
+		// Workers should commit at step boundaries, but may leave uncommitted
+		// files (especially for level-0 / fast tasks). Check each merge-candidate
+		// lane worktree and auto-commit any remaining changes so they're included
+		// in the merge. Skips lanes with only failed/stalled tasks (no merge).
+		for (const lane of waveResult.allocatedLanes) {
+			if (!lane.worktreePath || !existsSync(lane.worktreePath)) continue;
+			// Only check lanes that have at least one succeeded task (merge candidates)
+			const laneOutcome = laneOutcomeByNumber.get(lane.laneNumber);
+			if (!laneOutcome) continue;
+			const hasSucceeded = laneOutcome.tasks.some(t => t.status === "succeeded");
+			if (!hasSucceeded) continue;
+			try {
+				const addResult = runGit(["add", "-A"], lane.worktreePath);
+				if (!addResult.ok) {
+					execLog("merge", batchState.batchId, `safety-net: git add failed in ${lane.laneId}`, { stderr: addResult.stderr });
+					continue;
+				}
+				const statusResult = runGit(["status", "--porcelain"], lane.worktreePath);
+				if (!statusResult.ok || !statusResult.stdout?.trim()) continue;
+				const taskIds = lane.tasks.map(t => t.taskId).join(", ");
+				const commitResult = runGit(
+					["commit", "-m", `safety-net: uncommitted artifacts for ${taskIds}`],
+					lane.worktreePath,
+				);
+				if (commitResult.ok) {
+					execLog("merge", batchState.batchId, `safety-net: auto-committed uncommitted files in ${lane.laneId}`, {
+						worktree: lane.worktreePath,
+						taskIds,
+						files: statusResult.stdout.trim(),
+					});
+				} else {
+					execLog("merge", batchState.batchId, `safety-net: commit failed in ${lane.laneId}`, { stderr: commitResult.stderr });
+				}
+			} catch (err: any) {
+				execLog("merge", batchState.batchId, `safety-net: unexpected error in ${lane.laneId}`, { error: err?.message });
+			}
+		}
+
 		if (succeededSegmentTaskIdsForMerge.length > 0) {
 			const mergeableLaneCount = waveResult.allocatedLanes.filter(lane => {
 				const outcome = laneOutcomeByNumber.get(lane.laneNumber);
