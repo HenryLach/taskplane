@@ -45,11 +45,11 @@
 - [x] Run targeted repeat-repo expansion unit tests and capture passing evidence
 
 ### Step 4: Resume after expansion
-**Status:** ⬜ Not Started
-- [ ] Interrupt after expansion approved
-- [ ] Resume
-- [ ] Expanded segment executes
-- [ ] No duplicate processing
+**Status:** 🟨 In Progress
+- [ ] Add unit coverage for persisted state where expansion is approved before expanded segment execution
+- [ ] Add unit coverage that resume reconstruction reactivates expanded segment execution frontier
+- [ ] Add unit coverage that processed expansion request IDs prevent duplicate processing on resume
+- [ ] Run targeted resume + expansion unit tests and capture passing evidence
 
 ### Step 5: Testing & Verification
 **Status:** ⬜ Not Started
