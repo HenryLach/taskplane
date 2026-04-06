@@ -1,10 +1,10 @@
 # TP-143: Engine Segment Graph Mutation — Status
 
-**Current Step:** Step 4: Persistence and supervisor alerts
+**Current Step:** Step 5: Resume compatibility
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 12
+**Review Counter:** 14
 **Iteration:** 2
 **Size:** M
 
@@ -52,7 +52,7 @@
 - [x] Step 3 scheduling continuity test intent (targeted coverage)
 
 ### Step 4: Persistence and alerts
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 - [x] Persist new segments to batch state
 - [x] Persist expansion provenance (`expandedFrom`, `expansionRequestId`) on new segment records
 - [x] Update segmentIds[]
@@ -65,10 +65,12 @@
 - [x] R012: resync persisted segment dependency records after each approved mutation (multi-request same boundary) and cover with runtime test
 
 ### Step 5: Resume compatibility
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Resume reconstructs expanded segments
+- [ ] Expanded segments are behaviorally indistinguishable from original segments after resume (deps/lifecycle/metadata parity)
 - [ ] Approved-but-unexecuted expansion resumes
-- [ ] Idempotency on resume
+- [ ] Idempotency on resume (processed request files/request IDs do not replay)
+- [ ] Step 5 resume-specific targeted test intent (approved-but-unexecuted + processed-file replay)
 
 ### Step 6: Testing & Verification
 **Status:** ⬜ Not Started
@@ -95,6 +97,8 @@
 - Reviewer suggestion (R007): keep re-topology tie-breaks deterministic (existing order + segmentId).
 - Reviewer suggestion (R010): keep approval processing in the same boundary-processing path for deterministic ordering and file lifecycle handling.
 - Reviewer suggestion (R012): preserve current crash-safe ordering (persist + idempotency audit before `.processed` rename) while fixing multi-request persistence correctness.
+- Reviewer suggestion (R014): validate resume idempotency from persisted request-audit records (not mailbox filename state alone).
+- Reviewer suggestion (R014): consider a multi-request same-boundary resume scenario so Step 4 R012 dependency resync remains correct after reconstruction.
 
 ## Execution Log
 
@@ -127,3 +131,7 @@
 | 2026-04-06 03:57 | Review R010 | plan Step 4: REVISE |
 | 2026-04-06 03:58 | Review R011 | plan Step 4: APPROVE |
 | 2026-04-06 04:08 | Review R012 | code Step 4: REVISE |
+| 2026-04-06 04:11 | Review R013 | code Step 4: APPROVE |
+| 2026-04-06 04:12 | Step 4 completed | Persistence and alerts |
+| 2026-04-06 04:12 | Step 5 started | Resume compatibility |
+| 2026-04-06 04:12 | Review R014 | plan Step 5: REVISE |
