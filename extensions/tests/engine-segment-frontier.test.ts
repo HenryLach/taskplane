@@ -8,6 +8,7 @@ import {
 	linearizeTaskSegmentPlan,
 	processSegmentExpansionRequestAtBoundary,
 	scheduleContinuationSegmentRound,
+	upsertPendingExpandedSegmentRecords,
 } from "../taskplane/engine.ts";
 import { buildExecutionUnit } from "../taskplane/execution.ts";
 import type { AllocatedLane, AllocatedTask, ParsedTask, SegmentExpansionRequest, TaskSegmentPlan } from "../taskplane/types.ts";
@@ -339,6 +340,69 @@ describe("segment expansion graph mutation", () => {
 			["TP-400"],
 			["TP-500"],
 		]);
+	});
+
+	it("resyncs persisted pending dependencies across sequential approved requests on one boundary", () => {
+		const segmentState: any = {
+			taskId: "TP-401",
+			orderedSegments: [
+				{ segmentId: "TP-401::api", taskId: "TP-401", repoId: "api", order: 0 },
+				{ segmentId: "TP-401::web", taskId: "TP-401", repoId: "web", order: 1 },
+			],
+			nextSegmentIndex: 1,
+			statusBySegmentId: new Map([
+				["TP-401::api", "succeeded"],
+				["TP-401::web", "pending"],
+			]),
+			dependsOnBySegmentId: new Map([
+				["TP-401::api", []],
+				["TP-401::web", ["TP-401::api"]],
+			]),
+			terminalStatus: "pending",
+		};
+		const task = makeTask("TP-401", "api");
+		const batchState: any = { orchBranch: "orch/test-batch", segments: [] };
+
+		const firstRequest = makeExpansionRequest({
+			requestId: "exp-401-1",
+			taskId: "TP-401",
+			fromSegmentId: "TP-401::api",
+			requestedRepoIds: ["ops"],
+			placement: "after-current",
+			edges: [],
+		});
+		const firstMutation = applySegmentExpansionMutation(segmentState, firstRequest, "TP-401::api");
+		upsertPendingExpandedSegmentRecords(
+			batchState,
+			task,
+			segmentState,
+			firstMutation.insertedSegmentIds,
+			"TP-401::api",
+			firstRequest.requestId,
+			batchState.orchBranch,
+		);
+
+		const secondRequest = makeExpansionRequest({
+			requestId: "exp-401-2",
+			taskId: "TP-401",
+			fromSegmentId: "TP-401::api",
+			requestedRepoIds: ["infra"],
+			placement: "after-current",
+			edges: [],
+		});
+		const secondMutation = applySegmentExpansionMutation(segmentState, secondRequest, "TP-401::api");
+		upsertPendingExpandedSegmentRecords(
+			batchState,
+			task,
+			segmentState,
+			secondMutation.insertedSegmentIds,
+			"TP-401::api",
+			secondRequest.requestId,
+			batchState.orchBranch,
+		);
+
+		const opsRecord = batchState.segments.find((record: any) => record.segmentId === "TP-401::ops");
+		expect(opsRecord.dependsOnSegmentIds).toEqual(["TP-401::infra"]);
 	});
 
 	it("approval path persists mutation state before renaming request file to .processed", () => {

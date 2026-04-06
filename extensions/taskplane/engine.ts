@@ -670,7 +670,7 @@ function ensureSegmentRecords(batchState: OrchBatchRuntimeState): PersistedSegme
 	return batchState.segments;
 }
 
-function upsertPendingExpandedSegmentRecords(
+export function upsertPendingExpandedSegmentRecords(
 	batchState: OrchBatchRuntimeState,
 	task: ParsedTask,
 	segmentState: SegmentFrontierTaskState,
@@ -679,15 +679,30 @@ function upsertPendingExpandedSegmentRecords(
 	expansionRequestId: string,
 	fallbackBranch: string,
 ): boolean {
-	if (insertedSegmentIds.length === 0) return false;
+	const insertedSegmentIdSet = new Set(insertedSegmentIds);
+	const pendingSegmentIds = segmentState.orderedSegments
+		.filter((segment) => segmentState.statusBySegmentId.get(segment.segmentId) === "pending")
+		.map((segment) => segment.segmentId);
+	if (pendingSegmentIds.length === 0) return false;
+
 	const segmentRecords = ensureSegmentRecords(batchState);
 	let changed = false;
 
-	for (const segmentId of insertedSegmentIds) {
+	for (const segmentId of pendingSegmentIds) {
 		const segment = segmentState.orderedSegments.find((candidate) => candidate.segmentId === segmentId);
 		if (!segment) continue;
-		const dependsOnSegmentIds = segmentState.dependsOnBySegmentId.get(segmentId) ?? [];
 		const existing = segmentRecords.find((record) => record.segmentId === segmentId);
+		if (!existing && !insertedSegmentIdSet.has(segmentId)) {
+			continue;
+		}
+
+		const dependsOnSegmentIds = segmentState.dependsOnBySegmentId.get(segmentId) ?? [];
+		const nextExpandedFrom = insertedSegmentIdSet.has(segmentId)
+			? expandedFrom
+			: existing?.expandedFrom;
+		const nextExpansionRequestId = insertedSegmentIdSet.has(segmentId)
+			? expansionRequestId
+			: existing?.expansionRequestId;
 		const next: PersistedSegmentRecord = {
 			segmentId,
 			taskId: task.taskId,
@@ -702,8 +717,8 @@ function upsertPendingExpandedSegmentRecords(
 			retries: existing?.retries ?? 0,
 			exitReason: existing?.exitReason ?? "Segment pending",
 			dependsOnSegmentIds,
-			expandedFrom,
-			expansionRequestId,
+			expandedFrom: nextExpandedFrom,
+			expansionRequestId: nextExpansionRequestId,
 		};
 
 		if (!existing) {

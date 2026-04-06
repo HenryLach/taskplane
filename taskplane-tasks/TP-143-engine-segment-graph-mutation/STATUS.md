@@ -62,7 +62,7 @@
 - [x] Rename request file
 - [x] Worktree provisioning
 - [x] Step 4 approval-path persistence/lifecycle targeted test intent
-- [ ] R012: resync persisted segment dependency records after each approved mutation (multi-request same boundary) and cover with runtime test
+- [x] R012: resync persisted segment dependency records after each approved mutation (multi-request same boundary) and cover with runtime test
 
 ### Step 5: Resume compatibility
 **Status:** ⬜ Not Started
