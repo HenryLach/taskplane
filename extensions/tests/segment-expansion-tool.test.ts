@@ -103,6 +103,44 @@ describe("request_segment_expansion registration + autonomy guard", () => {
 			expect(readdirSync(outboxDir)).toEqual([]);
 		});
 	});
+
+	it("writes segment expansion request file with schema payload on valid input", async () => {
+		const outboxDir = mkdtempSync(join(tmpdir(), "tp-seg-expansion-"));
+		tempDirs.push(outboxDir);
+
+		await withEnv({
+			TASKPLANE_OUTBOX_DIR: outboxDir,
+			TASKPLANE_ACTIVE_SEGMENT_ID: "TP-888::api",
+			TASKPLANE_TASK_ID: "TP-888",
+			TASKPLANE_SUPERVISOR_AUTONOMY: "autonomous",
+		}, async () => {
+			const tools = registerTools();
+			const tool = tools.get("request_segment_expansion")!;
+			const result = await tool.execute("call-2", {
+				requestedRepoIds: ["web", "docs"],
+				rationale: "Need docs + UI updates",
+				placement: "end",
+				edges: [{ from: "web", to: "docs" }],
+			});
+			const payload = parsePayload(result);
+			expect(payload.accepted).toBe(true);
+			expect(payload.requestId).toMatch(/^exp-\d{13}-[a-z0-9]{5}$/);
+
+			const requestFile = join(outboxDir, `segment-expansion-${payload.requestId}.json`);
+			const raw = readFileSync(requestFile, "utf-8");
+			const parsed = JSON.parse(raw);
+			expect(parsed.requestId).toBe(payload.requestId);
+			expect(parsed.taskId).toBe("TP-888");
+			expect(parsed.fromSegmentId).toBe("TP-888::api");
+			expect(parsed.requestedRepoIds).toEqual(["web", "docs"]);
+			expect(parsed.rationale).toBe("Need docs + UI updates");
+			expect(parsed.placement).toBe("end");
+			expect(parsed.edges).toEqual([{ from: "web", to: "docs" }]);
+			expect(typeof parsed.timestamp).toBe("number");
+			const files = readdirSync(outboxDir);
+			expect(files.some((f) => f.endsWith(".tmp"))).toBe(false);
+		});
+	});
 });
 
 describe("autonomy wiring contracts", () => {

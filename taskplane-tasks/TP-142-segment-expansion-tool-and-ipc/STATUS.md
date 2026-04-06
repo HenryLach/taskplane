@@ -1,10 +1,10 @@
 # TP-142: Segment Expansion Tool and File IPC — Status
 
-**Current Step:** Step 3: Request file writing
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** M
 
@@ -40,14 +40,14 @@
 - [x] R005: Add autonomy propagation regression coverage
 
 ### Step 3: Request file writing
-**Status:** 🟨 In Progress
-- [ ] Correct mailbox path
-- [ ] Schema matches SegmentExpansionRequest
-- [ ] Atomic write (temp + rename)
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Correct mailbox path
+- [x] Schema matches SegmentExpansionRequest
+- [x] Atomic write (temp + rename)
+- [x] Run targeted tests
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Create segment-expansion-tool.test.ts
 - [ ] All tool validation tests
 - [ ] SegmentId grammar tests
@@ -87,8 +87,12 @@
 | 2026-04-06 03:06 | Step 2 reopened | Address R005 autonomy plumbing |
 | 2026-04-06 03:14 | Step 2 revision completed | R005 supervisor autonomy propagation wired |
 | 2026-04-06 03:14 | Step 3 resumed | Request file writing |
+| 2026-04-06 02:40 | Review R005 | code Step 2: REVISE |
+| 2026-04-06 02:46 | Review R006 | code Step 2: APPROVE |
+| 2026-04-06 02:47 | Review R007 | plan Step 3: APPROVE |
+| 2026-04-06 03:20 | Step 3 completed | Request file writing |
+| 2026-04-06 03:20 | Step 4 started | Testing & Verification |
 
 ## Notes
 - Suggestion from R004: pass `TASKPLANE_TASK_ID` via lane-runner env to avoid folder-name fallback in request payload construction.
 - Suggestion from R005: keep direct tool-unit tests and add a wiring-level regression around autonomy propagation.
-| 2026-04-06 02:40 | Review R005 | code Step 2: REVISE |

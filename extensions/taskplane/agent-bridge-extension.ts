@@ -36,7 +36,15 @@ import { buildExpansionRequestId, type SegmentExpansionRequest } from "./types.t
  * with the bridge extension. Falls back to .pi/bridge-outbox/ in cwd.
  */
 function resolveOutboxDir(): string {
-	return process.env.TASKPLANE_OUTBOX_DIR || join(process.cwd(), ".pi", "bridge-outbox");
+	if (process.env.TASKPLANE_OUTBOX_DIR) return process.env.TASKPLANE_OUTBOX_DIR;
+
+	const batchId = process.env.ORCH_BATCH_ID;
+	const agentId = process.env.TASKPLANE_AGENT_ID;
+	if (batchId && agentId) {
+		return join(process.cwd(), ".pi", "mailbox", batchId, agentId, "outbox");
+	}
+
+	return join(process.cwd(), ".pi", "bridge-outbox");
 }
 
 /**
