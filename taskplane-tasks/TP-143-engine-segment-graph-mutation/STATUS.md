@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 11
+**Review Counter:** 12
 **Iteration:** 2
 **Size:** M
 
@@ -62,6 +62,7 @@
 - [x] Rename request file
 - [x] Worktree provisioning
 - [x] Step 4 approval-path persistence/lifecycle targeted test intent
+- [ ] R012: resync persisted segment dependency records after each approved mutation (multi-request same boundary) and cover with runtime test
 
 ### Step 5: Resume compatibility
 **Status:** ⬜ Not Started
@@ -93,6 +94,7 @@
 - Reviewer suggestion (R007): clarify `end` placement for multi-root inserts (terminals connect to all roots(N)).
 - Reviewer suggestion (R007): keep re-topology tie-breaks deterministic (existing order + segmentId).
 - Reviewer suggestion (R010): keep approval processing in the same boundary-processing path for deterministic ordering and file lifecycle handling.
+- Reviewer suggestion (R012): preserve current crash-safe ordering (persist + idempotency audit before `.processed` rename) while fixing multi-request persistence correctness.
 
 ## Execution Log
 
@@ -124,3 +126,4 @@
 | 2026-04-06 03:56 | Step 4 started | Persistence and alerts |
 | 2026-04-06 03:57 | Review R010 | plan Step 4: REVISE |
 | 2026-04-06 03:58 | Review R011 | plan Step 4: APPROVE |
+| 2026-04-06 04:08 | Review R012 | code Step 4: REVISE |
