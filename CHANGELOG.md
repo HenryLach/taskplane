@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.27] - 2026-04-06
+
+### Fixed
+- **`taskplane init` writes `task_packet_repo` in workspace YAML** — Eliminates compatibility warnings on workspace startup.
+
 ## [0.24.26] - 2026-04-06
 
 ### Fixed

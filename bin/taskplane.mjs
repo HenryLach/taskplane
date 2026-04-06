@@ -910,7 +910,7 @@ function generateWorkspaceYaml(repoNames, defaultRepo, tasksRoot) {
 	const reposBlock = repoNames
 		.map((name) => `  ${name}:\n    path: "${name}"`)
 		.join("\n");
-	return `repos:\n${reposBlock}\nrouting:\n  tasks_root: "${tasksRoot}"\n  default_repo: "${defaultRepo}"\n`;
+	return `repos:\n${reposBlock}\nrouting:\n  tasks_root: "${tasksRoot}"\n  default_repo: "${defaultRepo}"\n  task_packet_repo: "${defaultRepo}"\n`;
 }
 
 function readWorkspaceJson(configRepoRoot) {
