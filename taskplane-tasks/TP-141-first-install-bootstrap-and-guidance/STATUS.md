@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -29,13 +29,13 @@
 
 ### Step 2: Cross-provider model guidance in first init
 **Status:** ⬜ Not Started
-- [ ] Detect first-init condition
-- [ ] Query models, count providers
-- [ ] 2+ providers: show guidance + cross-provider picker
-- [ ] 1 provider: skip with info message
-- [ ] Save to global prefs
-- [ ] Skip on subsequent inits
-- [ ] Run targeted tests
+- [x] Detect first-init condition
+- [x] Query models, count providers
+- [x] 2+ providers: show guidance + cross-provider picker
+- [x] 1 provider: skip with info message
+- [x] Save to global prefs
+- [x] Skip on subsequent inits
+- [x] Run targeted tests
 
 ### Step 3: Thinking level picker enhancement
 **Status:** ⬜ Not Started
@@ -99,3 +99,5 @@
 
 *Reserved for execution notes*
 | 2026-04-06 00:42 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-06 00:47 | Review R002 | code Step 1: APPROVE |
+| 2026-04-06 00:49 | Review R003 | plan Step 2: APPROVE |

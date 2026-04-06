@@ -21,19 +21,38 @@ const EMPTY_SAVED_DEFAULTS = {
 	},
 	hasDefaults: false,
 	prefsPath: "/tmp/preferences.json",
+	wasBootstrapped: true,
+};
+
+const CONFIGURED_SAVED_DEFAULTS = {
+	defaults: {
+		workerModel: "openai/gpt-5.3-codex",
+		reviewerModel: "anthropic/claude-sonnet-4-6",
+		mergeModel: "anthropic/claude-sonnet-4-6",
+		workerThinking: "on",
+		reviewerThinking: "off",
+		mergeThinking: "off",
+	},
+	hasDefaults: true,
+	prefsPath: "/tmp/preferences.json",
+	wasBootstrapped: false,
 };
 
 describe("init model picker flow", () => {
 	it("supports 'same model for all' selection with thinking prompt", async () => {
 		const askAnswers = ["3", "2", "2"]; // provider=openai, model=gpt-5.3-codex, thinking=on
 		let askIdx = 0;
+		let confirmCalls = 0;
 		const logs: string[] = [];
 
 		const config = await collectInitAgentConfig({
 			interactive: true,
 			queryModelsImpl: () => ({ available: true, models: AVAILABLE_MODELS, error: null }),
-			loadInitDefaultsImpl: async () => EMPTY_SAVED_DEFAULTS,
-			confirmImpl: async () => true,
+			loadInitDefaultsImpl: async () => CONFIGURED_SAVED_DEFAULTS,
+			confirmImpl: async () => {
+				confirmCalls++;
+				return true;
+			},
 			askImpl: async (_question: string, defaultValue: string) => askAnswers[askIdx++] ?? defaultValue,
 			logImpl: (msg: string) => logs.push(msg),
 		});
@@ -48,6 +67,95 @@ describe("init model picker flow", () => {
 		});
 
 		expect(logs.some((line) => line.includes("1. inherit (use current session model)"))).toBe(true);
+		expect(confirmCalls).toBe(1);
+	});
+
+	it("first init with multiple providers guides cross-provider reviewer/merger and persists defaults", async () => {
+		const askAnswers = ["3", "2", "2"]; // worker=openai/gpt-5.3-codex, worker thinking=on, then defaults
+		let askIdx = 0;
+		const prompts: Array<{ question: string; defaultValue: string }> = [];
+		const logs: string[] = [];
+		let savedConfig: any = null;
+
+		const config = await collectInitAgentConfig({
+			interactive: true,
+			queryModelsImpl: () => ({ available: true, models: AVAILABLE_MODELS, error: null }),
+			loadInitDefaultsImpl: async () => EMPTY_SAVED_DEFAULTS,
+			confirmImpl: async () => {
+				throw new Error("confirm should be skipped during cross-provider first-init guidance");
+			},
+			askImpl: async (question: string, defaultValue: string) => {
+				prompts.push({ question, defaultValue });
+				return askAnswers[askIdx++] ?? defaultValue;
+			},
+			saveInitDefaultsImpl: (nextConfig: any) => {
+				savedConfig = nextConfig;
+				return { prefsPath: "/tmp/preferences.json", saved: nextConfig };
+			},
+			logImpl: (msg: string) => logs.push(msg),
+		});
+
+		expect(config.workerModel).toBe("openai/gpt-5.3-codex");
+		expect(config.reviewerModel).toBe("anthropic/claude-sonnet-4-6");
+		expect(config.mergeModel).toBe("anthropic/claude-sonnet-4-6");
+		expect(savedConfig).toEqual(config);
+		expect(logs.some((line) => line.includes("First-run recommendation"))).toBe(true);
+
+		const reviewerProviderPrompt = prompts.find((entry) => entry.question.includes("Reviewer provider"));
+		const mergerProviderPrompt = prompts.find((entry) => entry.question.includes("Merger provider"));
+		expect(reviewerProviderPrompt?.defaultValue).toBe("2");
+		expect(mergerProviderPrompt?.defaultValue).toBe("2");
+	});
+
+	it("single-provider first init skips cross-provider guidance with an info message", async () => {
+		const singleProviderModels = [
+			{ provider: "openai", id: "gpt-5.3-codex", displayName: "openai/gpt-5.3-codex" },
+		];
+		const logs: string[] = [];
+		let saveCalls = 0;
+
+		await collectInitAgentConfig({
+			interactive: true,
+			queryModelsImpl: () => ({ available: true, models: singleProviderModels, error: null }),
+			loadInitDefaultsImpl: async () => EMPTY_SAVED_DEFAULTS,
+			confirmImpl: async () => true,
+			askImpl: async (_question: string, defaultValue: string) => defaultValue,
+			saveInitDefaultsImpl: () => {
+				saveCalls++;
+				return { prefsPath: "/tmp/preferences.json", saved: {} };
+			},
+			logImpl: (msg: string) => logs.push(msg),
+		});
+
+		expect(logs.some((line) => line.includes("Cross-provider guidance skipped"))).toBe(true);
+		expect(saveCalls).toBe(1);
+	});
+
+	it("subsequent init skips first-run guidance and does not re-save defaults", async () => {
+		let confirmCalls = 0;
+		let saveCalls = 0;
+		const logs: string[] = [];
+
+		await collectInitAgentConfig({
+			interactive: true,
+			queryModelsImpl: () => ({ available: true, models: AVAILABLE_MODELS, error: null }),
+			loadInitDefaultsImpl: async () => CONFIGURED_SAVED_DEFAULTS,
+			confirmImpl: async () => {
+				confirmCalls++;
+				return true;
+			},
+			askImpl: async (_question: string, defaultValue: string) => defaultValue,
+			saveInitDefaultsImpl: () => {
+				saveCalls++;
+				return { prefsPath: "/tmp/preferences.json", saved: {} };
+			},
+			logImpl: (msg: string) => logs.push(msg),
+		});
+
+		expect(confirmCalls).toBe(1);
+		expect(saveCalls).toBe(0);
+		expect(logs.some((line) => line.includes("First-run recommendation"))).toBe(false);
+		expect(logs.some((line) => line.includes("Cross-provider guidance skipped"))).toBe(false);
 	});
 
 	it("supports per-agent model + thinking selections", async () => {
