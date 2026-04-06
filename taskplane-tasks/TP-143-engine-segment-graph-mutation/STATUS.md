@@ -1,10 +1,10 @@
 # TP-143: Engine Segment Graph Mutation — Status
 
-**Current Step:** Step 2: Engine validation
+**Current Step:** Step 1: Outbox consumption (R002 revisions)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -19,15 +19,18 @@
 - [x] Understand segment lifecycle
 
 ### Step 1: Outbox consumption
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress
 - [x] Check for request files after segment completes
 - [x] Parse SegmentExpansionRequest
 - [x] Handle malformed files (.invalid)
 - [x] Discard on failed segment (.discarded)
 - [x] Process in requestId order
+- [ ] R002: consume sorted valid requests through a concrete boundary-processing path
+- [ ] R002: scope failed-segment discard to matching taskId/fromSegmentId only
+- [ ] R002: reject empty requestedRepoIds as malformed (.invalid)
 
 ### Step 2: Engine validation
-**Status:** 🟨 In Progress
+**Status:** ⬜ Not Started
 - [ ] Repo existence check
 - [ ] Cycle detection
 - [ ] Task not terminal
@@ -74,6 +77,10 @@
 
 ---
 
+## Notes
+
+- Reviewer suggestion (R002): consider extracting boundary outbox consumption into a dedicated helper for readability/testability.
+
 ## Execution Log
 
 | Timestamp | Action | Outcome |
@@ -86,3 +93,4 @@
 | 2026-04-06 03:41 | Step 1 completed | Outbox consumption |
 | 2026-04-06 03:41 | Step 2 started | Engine validation |
 | 2026-04-06 03:14 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-06 03:22 | Review R002 | code Step 1: REVISE |
