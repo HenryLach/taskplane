@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.25] - 2026-04-06
+
+### New
+- **Safety-net auto-commit for uncommitted worker artifacts** — Before the merge phase, each merge-candidate lane worktree is checked for uncommitted changes. If found, auto-committed with a safety-net message. Prevents permanent loss of worker-created files when workers forget to commit.
+
+### Fixed
+- **Sage review remediations for segment expansion** — merge.ts taskFolder guard (#441), resume segments carry-forward, segment metadata rehydration, topo-sort failure rollback, requestedRepoIds uniqueness validation.
+
 ## [0.24.24] - 2026-04-06
 
 ### Fixed
