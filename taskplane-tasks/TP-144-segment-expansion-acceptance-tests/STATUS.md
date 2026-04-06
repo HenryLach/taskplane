@@ -1,25 +1,25 @@
 # TP-144: Segment Expansion Acceptance Tests — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-04-05
+**Current Step:** Step 1: Regression verification
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-04-06
 **Review Level:** 1
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read spec section 8
-- [ ] Verify workspace clean state
-- [ ] Verify TP-142 and TP-143 complete
-- [ ] Establish regression baseline
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read spec section 8
+- [x] Verify workspace clean state
+- [x] Verify TP-142 and TP-143 complete
+- [x] Establish regression baseline
 
 ### Step 1: Regression verification
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Reset workspace
 - [ ] Run 6 existing tasks
 - [ ] All pass unchanged
@@ -66,3 +66,5 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-05 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-04-06 04:56 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-06 04:56 | Step 0 started | Preflight |
