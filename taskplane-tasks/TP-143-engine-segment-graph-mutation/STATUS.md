@@ -1,11 +1,11 @@
 # TP-143: Engine Segment Graph Mutation — Status
 
-**Current Step:** Step 3: DAG mutation with rewiring
+**Current Step:** Step 3: DAG mutation with successor rewiring
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 7
-**Iteration:** 1
+**Review Counter:** 8
+**Iteration:** 2
 **Size:** M
 
 ---
@@ -42,14 +42,14 @@
 
 ### Step 3: DAG mutation with rewiring
 **Status:** 🟨 In Progress
-- [ ] Formal rewiring algorithm (roots/sinks/S_old)
-- [ ] after-current rewiring
-- [ ] end placement
-- [ ] Repeat-repo disambiguated IDs
-- [ ] Re-topologize orderedSegments
-- [ ] Update SegmentFrontierTaskState
-- [ ] Post-mutation scheduling continuity (expanded pending segments remain executable)
-- [ ] Step 3 scheduling continuity test intent (targeted coverage)
+- [x] Formal rewiring algorithm (roots/sinks/S_old)
+- [x] after-current rewiring
+- [x] end placement
+- [x] Repeat-repo disambiguated IDs
+- [x] Re-topologize orderedSegments
+- [x] Update SegmentFrontierTaskState
+- [x] Post-mutation scheduling continuity (expanded pending segments remain executable)
+- [x] Step 3 scheduling continuity test intent (targeted coverage)
 
 ### Step 4: Persistence and alerts
 **Status:** ⬜ Not Started
@@ -113,3 +113,5 @@
 | 2026-04-06 03:31 | Review R005 | plan Step 2: APPROVE |
 | 2026-04-06 03:37 | Review R006 | code Step 2: APPROVE |
 | 2026-04-06 03:40 | Review R007 | plan Step 3: REVISE |
+| 2026-04-06 03:41 | Review R008 | plan Step 3: APPROVE |
+| 2026-04-06 03:45 | Worker iter 1 | done in 1961s, tools: 148 |

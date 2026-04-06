@@ -19,7 +19,7 @@ import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-rep
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, loadBatchState, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { readRegistrySnapshot, isTerminalStatus, isProcessAlive as registryIsProcessAlive } from "./process-registry.ts";
-import { buildBatchProgressSnapshot, buildEngineEventBase, buildSupervisorSegmentFrontierSnapshot, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
+import { buildBatchProgressSnapshot, buildEngineEventBase, buildSegmentId, buildSupervisorSegmentFrontierSnapshot, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedSegmentRecord, SegmentExpansionRequest, SupervisorAlert, SupervisorAlertCallback, TaskRunnerConfig, TaskSegmentPlan, TaskSegmentPlanMap, TaskSegmentNode, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaveAssignments, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
@@ -391,13 +391,266 @@ export function processSegmentExpansionRequestAtBoundary(
 	return { ok: true };
 }
 
+function buildOutgoingBySegmentId(dependsOnBySegmentId: Map<string, string[]>): Map<string, string[]> {
+	const outgoingBySegmentId = new Map<string, string[]>();
+	for (const segmentId of dependsOnBySegmentId.keys()) {
+		outgoingBySegmentId.set(segmentId, []);
+	}
+	for (const [segmentId, deps] of dependsOnBySegmentId.entries()) {
+		for (const dep of deps) {
+			const outgoing = outgoingBySegmentId.get(dep) ?? [];
+			outgoing.push(segmentId);
+			outgoingBySegmentId.set(dep, outgoing);
+		}
+	}
+	for (const [segmentId, outgoing] of outgoingBySegmentId.entries()) {
+		outgoingBySegmentId.set(segmentId, [...new Set(outgoing)].sort((a, b) => a.localeCompare(b)));
+	}
+	return outgoingBySegmentId;
+}
+
+function addDependency(dependencyMap: Map<string, string[]>, segmentId: string, depSegmentId: string): void {
+	const deps = dependencyMap.get(segmentId) ?? [];
+	if (!deps.includes(depSegmentId)) {
+		deps.push(depSegmentId);
+		deps.sort((a, b) => a.localeCompare(b));
+		dependencyMap.set(segmentId, deps);
+	}
+}
+
+function removeDependency(dependencyMap: Map<string, string[]>, segmentId: string, depSegmentId: string): void {
+	const deps = dependencyMap.get(segmentId) ?? [];
+	const filtered = deps.filter((dep) => dep !== depSegmentId);
+	dependencyMap.set(segmentId, filtered);
+}
+
+function recomputeNextPendingSegmentIndex(segmentState: SegmentFrontierTaskState): void {
+	const nextPendingIndex = segmentState.orderedSegments.findIndex((segment) => {
+		return segmentState.statusBySegmentId.get(segment.segmentId) === "pending";
+	});
+	segmentState.nextSegmentIndex = nextPendingIndex >= 0
+		? nextPendingIndex
+		: segmentState.orderedSegments.length;
+}
+
+function hasTaskInFutureSegmentRounds(segmentRounds: string[][], fromIndex: number, taskId: string): boolean {
+	for (let idx = fromIndex; idx < segmentRounds.length; idx++) {
+		if (segmentRounds[idx]?.includes(taskId)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+export function scheduleContinuationSegmentRound(
+	segmentRounds: string[][],
+	currentWaveIndex: number,
+	taskIds: Iterable<string>,
+): string[] {
+	const continuationWave = [...new Set(taskIds)].sort((a, b) => a.localeCompare(b));
+	if (continuationWave.length === 0) {
+		return [];
+	}
+	segmentRounds.splice(currentWaveIndex + 1, 0, continuationWave);
+	return continuationWave;
+}
+
+function buildRepoMaxSequenceByRepo(
+	orderedSegments: TaskSegmentNode[],
+	taskId: string,
+): Map<string, number> {
+	const maxSequenceByRepo = new Map<string, number>();
+	for (const segment of orderedSegments) {
+		const repoId = segment.repoId;
+		const basePrefix = `${taskId}::${repoId}`;
+		let sequence = 1;
+		if (segment.segmentId.startsWith(`${basePrefix}::`)) {
+			const suffix = segment.segmentId.slice(`${basePrefix}::`.length);
+			const parsed = Number.parseInt(suffix, 10);
+			if (Number.isFinite(parsed) && parsed >= 2) {
+				sequence = parsed;
+			}
+		}
+		const currentMax = maxSequenceByRepo.get(repoId) ?? 0;
+		maxSequenceByRepo.set(repoId, Math.max(currentMax, sequence));
+	}
+	return maxSequenceByRepo;
+}
+
+export function applySegmentExpansionMutation(
+	segmentState: SegmentFrontierTaskState,
+	request: SegmentExpansionRequest,
+	anchorSegmentId: string,
+): { insertedSegmentIds: string[] } {
+	const existingNodeById = new Map<string, TaskSegmentNode>();
+	for (const segment of segmentState.orderedSegments) {
+		existingNodeById.set(segment.segmentId, segment);
+	}
+
+	const dependencyMap = new Map<string, string[]>();
+	for (const [segmentId, deps] of segmentState.dependsOnBySegmentId.entries()) {
+		dependencyMap.set(segmentId, [...new Set(deps)].sort((a, b) => a.localeCompare(b)));
+	}
+	for (const segmentId of existingNodeById.keys()) {
+		if (!dependencyMap.has(segmentId)) {
+			dependencyMap.set(segmentId, []);
+		}
+	}
+
+	const outgoingBeforeMutation = buildOutgoingBySegmentId(dependencyMap);
+	const anchorSuccessors = outgoingBeforeMutation.get(anchorSegmentId) ?? [];
+	const maxOrder = segmentState.orderedSegments.reduce((max, segment) => Math.max(max, segment.order), -1);
+	const repoMaxSequenceByRepo = buildRepoMaxSequenceByRepo(segmentState.orderedSegments, request.taskId);
+
+	const newNodes: TaskSegmentNode[] = [];
+	const segmentIdByRequestedRepoId = new Map<string, string>();
+	for (const [idx, repoId] of request.requestedRepoIds.entries()) {
+		const nextSequence = (repoMaxSequenceByRepo.get(repoId) ?? 0) + 1;
+		repoMaxSequenceByRepo.set(repoId, nextSequence);
+		const segmentId = buildSegmentId(request.taskId, repoId, nextSequence);
+		segmentIdByRequestedRepoId.set(repoId, segmentId);
+		const node: TaskSegmentNode = {
+			segmentId,
+			taskId: request.taskId,
+			repoId,
+			order: maxOrder + idx + 1,
+		};
+		newNodes.push(node);
+		existingNodeById.set(node.segmentId, node);
+		dependencyMap.set(node.segmentId, []);
+	}
+
+	for (const edge of request.edges) {
+		const fromSegmentId = segmentIdByRequestedRepoId.get(edge.from);
+		const toSegmentId = segmentIdByRequestedRepoId.get(edge.to);
+		if (!fromSegmentId || !toSegmentId) continue;
+		addDependency(dependencyMap, toSegmentId, fromSegmentId);
+	}
+
+	const internalIncomingCounts = new Map<string, number>();
+	const internalOutgoingCounts = new Map<string, number>();
+	for (const node of newNodes) {
+		internalIncomingCounts.set(node.segmentId, 0);
+		internalOutgoingCounts.set(node.segmentId, 0);
+	}
+	for (const edge of request.edges) {
+		const fromSegmentId = segmentIdByRequestedRepoId.get(edge.from);
+		const toSegmentId = segmentIdByRequestedRepoId.get(edge.to);
+		if (!fromSegmentId || !toSegmentId) continue;
+		internalOutgoingCounts.set(fromSegmentId, (internalOutgoingCounts.get(fromSegmentId) ?? 0) + 1);
+		internalIncomingCounts.set(toSegmentId, (internalIncomingCounts.get(toSegmentId) ?? 0) + 1);
+	}
+
+	const roots = newNodes
+		.filter((node) => (internalIncomingCounts.get(node.segmentId) ?? 0) === 0)
+		.map((node) => node.segmentId)
+		.sort((a, b) => a.localeCompare(b));
+	const sinks = newNodes
+		.filter((node) => (internalOutgoingCounts.get(node.segmentId) ?? 0) === 0)
+		.map((node) => node.segmentId)
+		.sort((a, b) => a.localeCompare(b));
+
+	if (request.placement === "after-current") {
+		for (const root of roots) {
+			addDependency(dependencyMap, root, anchorSegmentId);
+		}
+		for (const successor of anchorSuccessors) {
+			removeDependency(dependencyMap, successor, anchorSegmentId);
+			for (const sink of sinks) {
+				addDependency(dependencyMap, successor, sink);
+			}
+		}
+	} else {
+		const terminals = segmentState.orderedSegments
+			.map((segment) => segment.segmentId)
+			.filter((segmentId) => (outgoingBeforeMutation.get(segmentId) ?? []).length === 0)
+			.sort((a, b) => a.localeCompare(b));
+		for (const root of roots) {
+			for (const terminal of terminals) {
+				if (terminal === root) continue;
+				addDependency(dependencyMap, root, terminal);
+			}
+		}
+	}
+
+	const priorityBySegmentId = new Map<string, number>();
+	for (const [idx, segment] of segmentState.orderedSegments.entries()) {
+		priorityBySegmentId.set(segment.segmentId, idx);
+	}
+	for (const [idx, node] of newNodes.entries()) {
+		priorityBySegmentId.set(node.segmentId, segmentState.orderedSegments.length + idx);
+	}
+
+	const outgoing = buildOutgoingBySegmentId(dependencyMap);
+	const indegree = new Map<string, number>();
+	for (const [segmentId, deps] of dependencyMap.entries()) {
+		indegree.set(segmentId, deps.length);
+	}
+	const ready = [...dependencyMap.keys()]
+		.filter((segmentId) => (indegree.get(segmentId) ?? 0) === 0)
+		.sort((a, b) => {
+			const aPriority = priorityBySegmentId.get(a) ?? Number.MAX_SAFE_INTEGER;
+			const bPriority = priorityBySegmentId.get(b) ?? Number.MAX_SAFE_INTEGER;
+			if (aPriority !== bPriority) return aPriority - bPriority;
+			return a.localeCompare(b);
+		});
+
+	const nextOrderedSegmentIds: string[] = [];
+	while (ready.length > 0) {
+		const nextSegmentId = ready.shift()!;
+		nextOrderedSegmentIds.push(nextSegmentId);
+		for (const depSegmentId of outgoing.get(nextSegmentId) ?? []) {
+			const count = (indegree.get(depSegmentId) ?? 0) - 1;
+			indegree.set(depSegmentId, count);
+			if (count === 0) {
+				ready.push(depSegmentId);
+				ready.sort((a, b) => {
+					const aPriority = priorityBySegmentId.get(a) ?? Number.MAX_SAFE_INTEGER;
+					const bPriority = priorityBySegmentId.get(b) ?? Number.MAX_SAFE_INTEGER;
+					if (aPriority !== bPriority) return aPriority - bPriority;
+					return a.localeCompare(b);
+				});
+			}
+		}
+	}
+
+	const fallbackOrderedSegmentIds = [...segmentState.orderedSegments.map((segment) => segment.segmentId), ...newNodes.map((node) => node.segmentId)];
+	const finalOrderedSegmentIds = nextOrderedSegmentIds.length === dependencyMap.size
+		? nextOrderedSegmentIds
+		: fallbackOrderedSegmentIds;
+
+	const nextOrderedSegments = finalOrderedSegmentIds
+		.map((segmentId, idx) => {
+			const segment = existingNodeById.get(segmentId);
+			if (!segment) return null;
+			return {
+				...segment,
+				order: idx,
+			};
+		})
+		.filter((segment): segment is TaskSegmentNode => segment !== null);
+
+	segmentState.orderedSegments = nextOrderedSegments;
+	segmentState.dependsOnBySegmentId = dependencyMap;
+	for (const node of newNodes) {
+		segmentState.statusBySegmentId.set(node.segmentId, "pending");
+	}
+	recomputeNextPendingSegmentIndex(segmentState);
+
+	return {
+		insertedSegmentIds: newNodes.map((node) => node.segmentId),
+	};
+}
+
 function handoffSegmentExpansionToMutation(
 	batchId: string,
 	taskId: string,
 	segmentId: string,
 	agentId: string,
 	requestFile: PendingSegmentExpansionRequest,
-): void {
+	segmentState: SegmentFrontierTaskState,
+): { insertedSegmentIds: string[] } {
+	const mutation = applySegmentExpansionMutation(segmentState, requestFile.request, segmentId);
 	execLog("batch", batchId, "segment expansion request accepted for mutation path", {
 		taskId,
 		segmentId,
@@ -405,7 +658,9 @@ function handoffSegmentExpansionToMutation(
 		requestId: requestFile.request.requestId,
 		placement: requestFile.request.placement,
 		requestedRepoIds: requestFile.request.requestedRepoIds.join(","),
+		insertedSegments: mutation.insertedSegmentIds.join(","),
 	});
+	return mutation;
 }
 
 function ensureSegmentRecords(batchState: OrchBatchRuntimeState): PersistedSegmentRecord[] {
@@ -1770,13 +2025,14 @@ export async function executeOrchBatch(
 	// Otherwise, fall back to the legacy TMUX-backed path.
 	const backendSelection = selectRuntimeBackend(args, rawWaves, workspaceConfig);
 	const selectedBackend = backendSelection.backend;
+	const runtimeSegmentRounds = rawWaves.map((waveTasks) => [...waveTasks]);
 
 	if (selectedBackend === "v2") {
 		execLog("batch", batchState.batchId, "Runtime V2 backend selected");
 		onNotify("🚀 Using Runtime V2 backend (no-TMUX direct execution)", "info");
 	}
 
-	for (let waveIdx = 0; waveIdx < rawWaves.length; waveIdx++) {
+	for (let waveIdx = 0; waveIdx < runtimeSegmentRounds.length; waveIdx++) {
 		// Check pause signal before starting each wave
 		if (batchState.pauseSignal.paused) {
 			batchState.phase = "paused";
@@ -1796,7 +2052,7 @@ export async function executeOrchBatch(
 
 		// Filter wave tasks against blocked + terminal task sets, then bind the
 		// next active segment for each surviving task.
-		const scheduledWaveTasks = rawWaves[waveIdx];
+		const scheduledWaveTasks = runtimeSegmentRounds[waveIdx];
 		const blockedInWave: string[] = [];
 		const terminalInWave: string[] = [];
 		let waveTasks: string[] = [];
@@ -1868,7 +2124,7 @@ export async function executeOrchBatch(
 
 			// Emit wave_start with actual lane count (post-affinity grouping)
 			onNotify(
-				ORCH_MESSAGES.orchWaveStart(waveIdx + 1, rawWaves.length, waveTasks.length, lanes.length),
+				ORCH_MESSAGES.orchWaveStart(waveIdx + 1, runtimeSegmentRounds.length, waveTasks.length, lanes.length),
 				"info",
 			);
 			emitEvent(stateRoot, {
@@ -2090,6 +2346,7 @@ export async function executeOrchBatch(
 		const completedTaskIdsThisWave: string[] = [];
 		const failedTaskIdsThisWave: string[] = [];
 		const skippedTaskIdsThisWave: string[] = [];
+		const continuationTaskIds = new Set<string>();
 		const laneByTaskId = new Map<string, AllocatedLane>();
 		for (const lane of latestAllocatedLanes) {
 			for (const laneTask of lane.tasks) {
@@ -2171,6 +2428,7 @@ export async function executeOrchBatch(
 								activeSegmentId,
 								workerAgentId,
 								pendingRequest,
+								segmentState,
 							);
 						}
 						execLog("batch", batchState.batchId, `segment ${activeSegmentId} completed with ${pendingExpansionFiles.length} pending expansion request(s)`, {
@@ -2187,14 +2445,24 @@ export async function executeOrchBatch(
 					}
 				}
 			}
-			segmentState.nextSegmentIndex += 1;
+			recomputeNextPendingSegmentIndex(segmentState);
 			task.activeSegmentId = null;
 
 			if (segmentState.nextSegmentIndex >= segmentState.orderedSegments.length) {
 				segmentState.terminalStatus = "succeeded";
 				terminalSegmentTasks.add(taskId);
 				completedTaskIdsThisWave.push(taskId);
+			} else if (!hasTaskInFutureSegmentRounds(runtimeSegmentRounds, waveIdx + 1, taskId)) {
+				continuationTaskIds.add(taskId);
 			}
+		}
+		if (continuationTaskIds.size > 0) {
+			const continuationWave = scheduleContinuationSegmentRound(runtimeSegmentRounds, waveIdx, continuationTaskIds);
+			execLog("batch", batchState.batchId, "scheduled continuation segment round for expanded task frontier", {
+				waveIndex: waveIdx,
+				taskIds: continuationWave.join(","),
+				runtimeSegmentRoundCount: runtimeSegmentRounds.length,
+			});
 		}
 
 		for (const taskId of waveResult.failedTaskIds) {
@@ -2549,7 +2817,7 @@ export async function executeOrchBatch(
 						...buildEngineEventBase("merge_success", batchState.batchId, waveIdx, batchState.phase),
 						laneCount: mergedCount,
 						durationMs: mergeResult.totalDurationMs,
-						totalWaves: rawWaves.length,
+						totalWaves: runtimeSegmentRounds.length,
 					}, onEngineEvent);
 				} else {
 					onNotify(
@@ -2909,7 +3177,7 @@ export async function executeOrchBatch(
 		// Hoisted outside the if-block so unsafeBranches is accessible to the
 		// reset loop below — both blocks share the same guard condition.
 		let ppUnsafeBranches = new Set<string>();
-		if (waveIdx < rawWaves.length - 1 && !batchState.pauseSignal.paused) {
+		if (waveIdx < runtimeSegmentRounds.length - 1 && !batchState.pauseSignal.paused) {
 			const ppOpId = resolveOperatorId(orchConfig);
 			const ppResult = preserveFailedLaneProgress(
 				latestAllocatedLanes,
@@ -2955,7 +3223,7 @@ export async function executeOrchBatch(
 		// TP-029: Iterate ALL encountered repo roots (not just primary repoRoot)
 		// so that repos active in wave N but not in the final wave still get reset.
 		// Follows the resume.ts encounteredRepoRoots pattern for parity.
-		if (waveIdx < rawWaves.length - 1 && !batchState.pauseSignal.paused) {
+		if (waveIdx < runtimeSegmentRounds.length - 1 && !batchState.pauseSignal.paused) {
 			const resetPrefix = orchConfig.orchestrator.worktree_prefix;
 			const resetOpId = resolveOperatorId(orchConfig);
 			let totalResetWorktrees = 0;

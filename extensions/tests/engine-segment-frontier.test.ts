@@ -2,7 +2,13 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 
 import { expect } from "./expect.ts";
-import { buildSegmentFrontierWaves, linearizeTaskSegmentPlan, processSegmentExpansionRequestAtBoundary } from "../taskplane/engine.ts";
+import {
+	applySegmentExpansionMutation,
+	buildSegmentFrontierWaves,
+	linearizeTaskSegmentPlan,
+	processSegmentExpansionRequestAtBoundary,
+	scheduleContinuationSegmentRound,
+} from "../taskplane/engine.ts";
 import { buildExecutionUnit } from "../taskplane/execution.ts";
 import type { AllocatedLane, AllocatedTask, ParsedTask, SegmentExpansionRequest, TaskSegmentPlan } from "../taskplane/types.ts";
 
@@ -202,5 +208,136 @@ describe("segment expansion boundary validation smoke", () => {
 		if (!duplicate.ok) {
 			expect(duplicate.reason).toMatch(/already processed/);
 		}
+	});
+});
+
+describe("segment expansion graph mutation", () => {
+	it("rewires after-current by routing anchor successors through inserted sinks", () => {
+		const segmentState: any = {
+			taskId: "TP-300",
+			orderedSegments: [
+				{ segmentId: "TP-300::api", taskId: "TP-300", repoId: "api", order: 0 },
+				{ segmentId: "TP-300::web", taskId: "TP-300", repoId: "web", order: 1 },
+				{ segmentId: "TP-300::docs", taskId: "TP-300", repoId: "docs", order: 2 },
+			],
+			nextSegmentIndex: 2,
+			statusBySegmentId: new Map([
+				["TP-300::api", "succeeded"],
+				["TP-300::web", "succeeded"],
+				["TP-300::docs", "pending"],
+			]),
+			dependsOnBySegmentId: new Map([
+				["TP-300::api", []],
+				["TP-300::web", ["TP-300::api"]],
+				["TP-300::docs", ["TP-300::web"]],
+			]),
+			terminalStatus: "pending",
+		};
+		const request = makeExpansionRequest({
+			requestId: "exp-after-current",
+			taskId: "TP-300",
+			fromSegmentId: "TP-300::web",
+			requestedRepoIds: ["ops"],
+			placement: "after-current",
+			edges: [],
+		});
+
+		const result = applySegmentExpansionMutation(segmentState, request, "TP-300::web");
+		expect(result.insertedSegmentIds).toEqual(["TP-300::ops"]);
+		expect(segmentState.dependsOnBySegmentId.get("TP-300::ops")).toEqual(["TP-300::web"]);
+		expect(segmentState.dependsOnBySegmentId.get("TP-300::docs")).toEqual(["TP-300::ops"]);
+		expect(segmentState.orderedSegments.map((segment: any) => segment.segmentId)).toEqual([
+			"TP-300::api",
+			"TP-300::web",
+			"TP-300::ops",
+			"TP-300::docs",
+		]);
+		expect(segmentState.nextSegmentIndex).toBe(2);
+		expect(segmentState.statusBySegmentId.get("TP-300::ops")).toBe("pending");
+	});
+
+	it("end placement connects all current terminals to roots of inserted DAG", () => {
+		const segmentState: any = {
+			taskId: "TP-301",
+			orderedSegments: [
+				{ segmentId: "TP-301::api", taskId: "TP-301", repoId: "api", order: 0 },
+				{ segmentId: "TP-301::web", taskId: "TP-301", repoId: "web", order: 1 },
+				{ segmentId: "TP-301::docs", taskId: "TP-301", repoId: "docs", order: 2 },
+			],
+			nextSegmentIndex: 2,
+			statusBySegmentId: new Map([
+				["TP-301::api", "succeeded"],
+				["TP-301::web", "pending"],
+				["TP-301::docs", "pending"],
+			]),
+			dependsOnBySegmentId: new Map([
+				["TP-301::api", []],
+				["TP-301::web", ["TP-301::api"]],
+				["TP-301::docs", ["TP-301::api"]],
+			]),
+			terminalStatus: "pending",
+		};
+		const request = makeExpansionRequest({
+			requestId: "exp-end",
+			taskId: "TP-301",
+			fromSegmentId: "TP-301::docs",
+			requestedRepoIds: ["ops", "infra"],
+			placement: "end",
+			edges: [{ from: "ops", to: "infra" }],
+		});
+
+		const result = applySegmentExpansionMutation(segmentState, request, "TP-301::docs");
+		expect(result.insertedSegmentIds).toEqual(["TP-301::ops", "TP-301::infra"]);
+		expect(segmentState.dependsOnBySegmentId.get("TP-301::ops")?.sort()).toEqual(["TP-301::docs", "TP-301::web"]);
+		expect(segmentState.dependsOnBySegmentId.get("TP-301::infra")).toEqual(["TP-301::ops"]);
+		expect(segmentState.orderedSegments.map((segment: any) => segment.segmentId).slice(-2)).toEqual([
+			"TP-301::ops",
+			"TP-301::infra",
+		]);
+	});
+
+	it("repeat repo IDs use max-existing suffix + 1", () => {
+		const segmentState: any = {
+			taskId: "TP-302",
+			orderedSegments: [
+				{ segmentId: "TP-302::api", taskId: "TP-302", repoId: "api", order: 0 },
+				{ segmentId: "TP-302::api::3", taskId: "TP-302", repoId: "api", order: 1 },
+			],
+			nextSegmentIndex: 1,
+			statusBySegmentId: new Map([
+				["TP-302::api", "succeeded"],
+				["TP-302::api::3", "pending"],
+			]),
+			dependsOnBySegmentId: new Map([
+				["TP-302::api", []],
+				["TP-302::api::3", ["TP-302::api"]],
+			]),
+			terminalStatus: "pending",
+		};
+		const request = makeExpansionRequest({
+			requestId: "exp-repeat-repo",
+			taskId: "TP-302",
+			fromSegmentId: "TP-302::api::3",
+			requestedRepoIds: ["api"],
+			placement: "end",
+			edges: [],
+		});
+
+		const result = applySegmentExpansionMutation(segmentState, request, "TP-302::api::3");
+		expect(result.insertedSegmentIds).toEqual(["TP-302::api::4"]);
+	});
+
+	it("continuation round insertion keeps expanded tasks executable before the next planned task wave", () => {
+		const runtimeRounds = [
+			["TP-400"],
+			["TP-500"],
+		];
+		const inserted = scheduleContinuationSegmentRound(runtimeRounds, 0, ["TP-400"]);
+		expect(inserted).toEqual(["TP-400"]);
+		expect(runtimeRounds).toEqual([
+			["TP-400"],
+			["TP-400"],
+			["TP-500"],
+		]);
 	});
 });
