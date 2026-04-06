@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.29] - 2026-04-06
+
+### Fixed
+- **Workspace config resolution short-circuit** (#424) — `hasConfigFiles()` counted `taskplane-workspace.yaml` as a project config, causing the pointer-resolved config root to be skipped. Task areas were empty, discovery found no tasks. Fix: workspace YAML excluded from config file detection.
+
 ## [0.24.28] - 2026-04-06
 
 ### Fixed
