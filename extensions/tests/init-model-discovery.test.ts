@@ -20,11 +20,13 @@ describe("init model discovery helpers", () => {
 				provider: "anthropic",
 				id: "claude-sonnet-4-6",
 				displayName: "anthropic/claude-sonnet-4-6",
+				supportsThinking: true,
 			},
 			{
 				provider: "openai",
 				id: "gpt-5.3-codex",
 				displayName: "openai/gpt-5.3-codex",
+				supportsThinking: true,
 			},
 		]);
 	});
@@ -70,6 +72,23 @@ describe("init model discovery helpers", () => {
 				provider: "openai",
 				id: "gpt-5.3-codex",
 				displayName: "openai/gpt-5.3-codex",
+			},
+		]);
+	});
+
+	it("parses supportsThinking=false when thinking column says no", () => {
+		const raw = [
+			"provider model thinking context",
+			"openai gpt-5.3-codex no 400K",
+		].join("\n");
+
+		const parsed = parsePiListModelsOutput(raw);
+		expect(parsed).toEqual([
+			{
+				provider: "openai",
+				id: "gpt-5.3-codex",
+				displayName: "openai/gpt-5.3-codex",
+				supportsThinking: false,
 			},
 		]);
 	});

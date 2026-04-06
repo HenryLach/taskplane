@@ -12,22 +12,27 @@ all Taskplane configuration. This page documents every available setting.
 ## How settings work
 
 Settings are organized into **sections** that match the TUI navigation.
-Each setting has a **layer** that determines where it's stored:
+Taskplane resolves effective values using layered precedence:
 
-| Layer | Stored in | Shared? | Examples |
-|-------|-----------|:-------:|---------|
-| **L1** (Project) | `.pi/taskplane-config.json` | ✅ Team-wide | Max lanes, failure policy, merge order |
-| **L2** (User) | `~/.pi/agent/taskplane/preferences.json` | ❌ Personal | Dashboard port |
-| **L1+L2** (Dual) | Either — you choose when saving | Depends | Models, operator ID, tmux prefix |
+1. **Schema defaults** (internal)
+2. **Global preferences** (`~/.pi/agent/taskplane/preferences.json`)
+3. **Project overrides** (`.pi/taskplane-config.json`)
 
-For **L1+L2** settings, the TUI asks where to save:
-- **User preferences** — only affects you (e.g., your preferred model)
-- **Project config** — affects all team members (e.g., the project's default model)
+The settings TUI writes to two user-visible layers:
+
+| Layer | Stored in | Shared? | Typical use |
+|-------|-----------|:-------:|-------------|
+| **Global preferences** | `~/.pi/agent/taskplane/preferences.json` | ❌ Personal | Your baseline defaults across all projects |
+| **Project overrides** | `.pi/taskplane-config.json` | ✅ Team-wide | Project-specific exceptions to your global baseline |
+
+When editing a setting:
+- The default save target is **Global preferences**.
+- You can explicitly choose **Save to project override** when needed.
+- If a project override already exists, you can choose **Remove project override** to fall back to global preferences.
 
 Source indicators in the TUI show where each value comes from:
 - `(project)` — set in project config
-- `(user)` — set in your personal preferences
-- `(default)` — using the built-in default
+- `(global)` — inherited from your global preferences (or internal defaults if no explicit global value exists)
 
 ---
 
@@ -92,7 +97,7 @@ Settings that control how completed lanes are merged back into the base branch.
 |---------|------|---------|---------|-------------|
 | **Merge Model** | string | *(inherit)* | Any model ID | Model for the merge agent. Empty = inherits the active session's model. Set explicitly if you want a specific model for merges (e.g., a faster model for simple merges). *(L1+L2)* |
 | **Merge Tools** | string | `read,write,edit,bash,grep,find,ls` | Comma-separated tool names | Tools available to the merge agent. Restrict if you want to limit what the merge agent can do. |
-| **Merge Thinking** | picker | *(inherit)* | `inherit (use session thinking)`, `on`, `off` | Thinking mode for merge agent. `inherit` uses active session default; `on`/`off` force an explicit mode. *(L1+L2)* |
+| **Merge Thinking** | picker | *(inherit)* | `inherit (use session thinking)`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | Thinking mode for merge agent. `inherit` uses active session default; level values force an explicit mode. Legacy `on` is normalized to `high`. *(L1+L2)* |
 | **Merge Order** | enum | `fewest-files-first` | `fewest-files-first`, `sequential` | Order in which completed lanes are merged. `fewest-files-first` = lanes with fewer changed files merge first (reduces conflict complexity). `sequential` = merge in lane number order. |
 | **Merge Timeout (minutes)** | number | `10` | Any positive number | Maximum time for the merge agent to complete. If exceeded, the merge session is killed and the batch pauses. Increase for large batches with many files (e.g., 15-20 min for 50+ file diffs). |
 
@@ -156,10 +161,12 @@ Settings that control how `/task` spawns and manages worker agents.
 |---------|------|---------|---------|-------------|
 | **Worker Model** | string | *(inherit)* | Any model ID | Model for worker agents. Empty = inherits the active session's model. Format: `provider/model-id` (e.g., `anthropic/claude-sonnet-4-20250514`). *(L1+L2)* |
 | **Worker Tools** | string | `read,write,edit,bash,grep,find,ls` | Comma-separated tool names | Tools available to worker agents. The default set covers all standard operations. |
-| **Worker Thinking** | picker | *(inherit)* | `inherit (use session thinking)`, `on`, `off` | Thinking mode for workers. `inherit` uses active session default; `on`/`off` force an explicit mode. |
+| **Worker Thinking** | picker | *(inherit)* | `inherit (use session thinking)`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | Thinking mode for workers. `inherit` uses active session default; level values force an explicit mode. Legacy `on` is normalized to `high`. |
 | **Spawn Mode** | enum | `subprocess` | `subprocess` | Runtime mode for `/task` worker/reviewer subprocesses. Runtime V2 supports subprocess only. |
 
-> **Tip:** When you change Worker/Reviewer/Merge model to one that advertises thinking capability, the TUI suggests setting the corresponding Thinking picker to `on`.
+> **Tip:** When you change Worker/Reviewer/Merge model to one that advertises thinking capability, the TUI suggests setting the corresponding Thinking picker to `high`.
+>
+> If a model reports `thinking=no`, Taskplane still lets you set any thinking level and shows an informational note. Unsupported models ignore the setting at runtime.
 
 ---
 
@@ -171,7 +178,7 @@ Settings that control reviewer agents (cross-model review).
 |---------|------|---------|---------|-------------|
 | **Reviewer Model** | string | *(inherit)* | Any model ID | Model for reviewer agents. Empty = inherits session model. Best practice: use a different model than the worker for independent review (e.g., worker on Claude, reviewer on GPT). *(L1+L2)* |
 | **Reviewer Tools** | string | `read,write,bash,grep,find,ls` | Comma-separated tool names | Tools available to reviewer agents. Note: reviewers don't get `edit` by default — they review but don't modify code. |
-| **Reviewer Thinking** | picker | `on` | `inherit (use session thinking)`, `on`, `off` | Thinking mode for reviewers. `inherit` uses active session default; `on`/`off` force an explicit mode. |
+| **Reviewer Thinking** | picker | `high` | `inherit (use session thinking)`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh` | Thinking mode for reviewers. `inherit` uses active session default; level values force an explicit mode. Legacy `on` is normalized to `high`. |
 
 ---
 
@@ -191,9 +198,19 @@ Settings that control worker iteration limits and context window management.
 
 ---
 
-## User Preferences
+## Global Preferences
 
-Personal settings that only affect your local environment.
+Personal baseline settings that affect your local environment across projects.
+
+### First-install bootstrap behavior
+
+On first use, `taskplane init` bootstraps `~/.pi/agent/taskplane/preferences.json` if it is missing/empty/corrupt. The bootstrap seeds:
+
+- `initAgentDefaults.workerThinking = "high"`
+- `initAgentDefaults.reviewerThinking = "high"`
+- `initAgentDefaults.mergeThinking = "high"`
+
+During first interactive init, Taskplane also saves your chosen worker/reviewer/merger model+thinking defaults globally. If `pi --list-models` reports 2+ providers, init recommends selecting reviewer/merger from a different provider than worker (cross-provider review guidance).
 
 | Setting | Type | Default | Options | Description |
 |---------|------|---------|---------|-------------|

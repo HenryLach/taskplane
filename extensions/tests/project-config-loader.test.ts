@@ -86,7 +86,7 @@ beforeEach(() => {
 	counter = 0;
 	// Clear workspace root env var to avoid cross-test contamination
 	delete process.env.TASKPLANE_WORKSPACE_ROOT;
-	// Isolate from real user preferences — point to empty temp dir
+	// Isolate from real global preferences — point to empty temp dir
 	savedAgentDir = process.env.PI_CODING_AGENT_DIR;
 	const isolatedAgentDir = join(testRoot, "agent-isolation");
 	mkdirSync(join(isolatedAgentDir, "taskplane"), { recursive: true });
@@ -272,6 +272,65 @@ describe("loadProjectConfig precedence/error matrix", () => {
 		expect(config.orchestrator.orchestrator.maxLanes).toBe(6);
 		// Task runner should be defaults
 		expect(config.taskRunner).toEqual(DEFAULT_TASK_RUNNER_SECTION);
+	});
+
+	it("1.12: sparse project config falls through to global preferences, then defaults", () => {
+		const dir = makeTestDir("sparse-fallthrough");
+		const agentDir = process.env.PI_CODING_AGENT_DIR!;
+		writeFileSync(join(agentDir, "taskplane", "preferences.json"), JSON.stringify({
+			taskRunner: {
+				worker: { model: "global-worker" },
+				reviewer: { tools: "read,bash" },
+			},
+			orchestrator: {
+				orchestrator: { maxLanes: 9 },
+			},
+		}, null, 2), "utf-8");
+
+		writeJsonConfig(dir, {
+			configVersion: 1,
+			taskRunner: {
+				project: { name: "SparseProject" },
+			},
+		});
+
+		const config = loadProjectConfig(dir);
+		expect(config.taskRunner.project.name).toBe("SparseProject");
+		expect(config.taskRunner.worker.model).toBe("global-worker");
+		expect(config.taskRunner.reviewer.tools).toBe("read,bash");
+		expect(config.orchestrator.orchestrator.maxLanes).toBe(9);
+	});
+
+	it("1.13: project overrides win over global preferences with deep merge semantics", () => {
+		const dir = makeTestDir("project-wins-over-global");
+		const agentDir = process.env.PI_CODING_AGENT_DIR!;
+		writeFileSync(join(agentDir, "taskplane", "preferences.json"), JSON.stringify({
+			taskRunner: {
+				worker: { model: "global-worker", tools: "read,bash" },
+				reviewer: { thinking: "off", tools: "read,bash" },
+			},
+			orchestrator: {
+				orchestrator: { maxLanes: 9 },
+			},
+		}, null, 2), "utf-8");
+
+		writeJsonConfig(dir, {
+			configVersion: 1,
+			taskRunner: {
+				worker: { model: "project-worker" },
+				reviewer: { thinking: "on" },
+			},
+			orchestrator: {
+				orchestrator: { maxLanes: 4 },
+			},
+		});
+
+		const config = loadProjectConfig(dir);
+		expect(config.taskRunner.worker.model).toBe("project-worker");
+		expect(config.taskRunner.worker.tools).toBe("read,bash");
+		expect(config.taskRunner.reviewer.thinking).toBe("on");
+		expect(config.taskRunner.reviewer.tools).toBe("read,bash");
+		expect(config.orchestrator.orchestrator.maxLanes).toBe(4);
 	});
 });
 
@@ -596,7 +655,7 @@ describe("key preservation and adapter regression", () => {
 		expect(taskConfig.worker.tools).toBe("read,write");
 		expect(taskConfig.worker.thinking).toBe("on");
 		expect(taskConfig.worker.spawn_mode).toBe("subprocess");
-		// Note: reviewer.model may be overridden by user preferences (~/.pi/agent/taskplane/preferences.json)
+		// Note: reviewer.model may be overridden by global preferences (~/.pi/agent/taskplane/preferences.json)
 		// so we check tools and thinking explicitly rather than toEqual on the full object.
 		expect(taskConfig.reviewer.tools).toBe("read");
 		expect(taskConfig.reviewer.thinking).toBe("on");

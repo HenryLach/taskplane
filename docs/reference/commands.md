@@ -593,12 +593,12 @@ Open the interactive settings TUI for viewing and editing taskplane configuratio
 **Behavior**
 
 - Shows a two-level navigation: section selector → field list
-- Displays 13 sections covering orchestrator, supervisor, task-runner, user preferences, and advanced (JSON-only) fields
-- Each field shows its current value and source indicator: `(project)`, `(user)`, or `(default)`
+- Displays 13 sections covering orchestrator, supervisor, task-runner, global preferences, and advanced (JSON-only) fields
+- Each field shows its current value and source indicator: `(project)` or `(global)`
 - Enum and boolean fields use toggleable controls; strings and numbers use text input
-- Layer 1 (project) changes write to `.pi/taskplane-config.json`
-- Layer 2 (user preference) changes write to `~/.pi/agent/taskplane/preferences.json`
-- Dual-layer (L1+L2) fields prompt for save destination
+- Global-preference changes write to `~/.pi/agent/taskplane/preferences.json`
+- Project overrides write to `.pi/taskplane-config.json` (sparse: only explicit project overrides are stored)
+- Save destination defaults to global preferences, with explicit options for project override and remove-project-override when applicable
 - Project config changes require confirmation before writing
 - New config parameters added in future schema updates appear automatically
 - Changes take effect on next session restart
@@ -618,7 +618,7 @@ Open the interactive settings TUI for viewing and editing taskplane configuratio
 | Worker | Worker model, tools, thinking, spawn mode |
 | Reviewer | Reviewer model, tools, thinking |
 | Context Limits | Context window, iteration limits, progress limits |
-| User Preferences | Dashboard port and other per-user settings |
+| Global Preferences | Dashboard port and other per-user settings |
 | Advanced (JSON Only) | Read-only listing of uncovered/non-editable fields (collections, records, arrays, and other fields not directly editable in the TUI) |
 
 **Example**
@@ -681,7 +681,7 @@ CLI utilities for configuration workflows.
 
 **Options**
 
-- `--save-as-defaults` — read worker/reviewer/merger model + thinking settings from the current project's `taskplane-config.json` and save them to user preferences (`~/.pi/agent/taskplane/preferences.json`, or `$PI_CODING_AGENT_DIR/taskplane/preferences.json`)
+- `--save-as-defaults` — read worker/reviewer/merger model + thinking settings from the current project's `taskplane-config.json` and save them to global preferences (`~/.pi/agent/taskplane/preferences.json`, or `$PI_CODING_AGENT_DIR/taskplane/preferences.json`)
 
 **Notes**
 
