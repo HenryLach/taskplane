@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { expect } from "./expect.ts";
 import bridgeExtension from "../taskplane/agent-bridge-extension.ts";
+import { buildSegmentId } from "../taskplane/types.ts";
 
 interface RegisteredTool {
 	name: string;
@@ -104,6 +105,73 @@ describe("request_segment_expansion registration + autonomy guard", () => {
 		});
 	});
 
+	it("rejects invalid repo IDs and writes no request file", async () => {
+		const outboxDir = mkdtempSync(join(tmpdir(), "tp-seg-expansion-"));
+		tempDirs.push(outboxDir);
+
+		await withEnv({
+			TASKPLANE_OUTBOX_DIR: outboxDir,
+			TASKPLANE_ACTIVE_SEGMENT_ID: "TP-780::api",
+			TASKPLANE_TASK_ID: "TP-780",
+			TASKPLANE_SUPERVISOR_AUTONOMY: "autonomous",
+		}, async () => {
+			const tool = registerTools().get("request_segment_expansion")!;
+			const result = await tool.execute("call-invalid", {
+				requestedRepoIds: ["Bad Repo"],
+				rationale: "bad",
+			});
+			const payload = parsePayload(result);
+			expect(payload.accepted).toBe(false);
+			expect(payload.requestId).toBe(null);
+			expect(payload.rejections[0].reason).toBe("invalid repo ID format");
+			expect(readdirSync(outboxDir)).toEqual([]);
+		});
+	});
+
+	it("rejects duplicate repo IDs within a single request", async () => {
+		const outboxDir = mkdtempSync(join(tmpdir(), "tp-seg-expansion-"));
+		tempDirs.push(outboxDir);
+
+		await withEnv({
+			TASKPLANE_OUTBOX_DIR: outboxDir,
+			TASKPLANE_ACTIVE_SEGMENT_ID: "TP-781::api",
+			TASKPLANE_TASK_ID: "TP-781",
+			TASKPLANE_SUPERVISOR_AUTONOMY: "autonomous",
+		}, async () => {
+			const tool = registerTools().get("request_segment_expansion")!;
+			const result = await tool.execute("call-dup", {
+				requestedRepoIds: ["web", "web"],
+				rationale: "dup",
+			});
+			const payload = parsePayload(result);
+			expect(payload.accepted).toBe(false);
+			expect(payload.rejections[0].reason).toBe("duplicate repo ID in request");
+			expect(readdirSync(outboxDir)).toEqual([]);
+		});
+	});
+
+	it("rejects empty requestedRepoIds", async () => {
+		const outboxDir = mkdtempSync(join(tmpdir(), "tp-seg-expansion-"));
+		tempDirs.push(outboxDir);
+
+		await withEnv({
+			TASKPLANE_OUTBOX_DIR: outboxDir,
+			TASKPLANE_ACTIVE_SEGMENT_ID: "TP-782::api",
+			TASKPLANE_TASK_ID: "TP-782",
+			TASKPLANE_SUPERVISOR_AUTONOMY: "autonomous",
+		}, async () => {
+			const tool = registerTools().get("request_segment_expansion")!;
+			const result = await tool.execute("call-empty", {
+				requestedRepoIds: [],
+				rationale: "empty",
+			});
+			const payload = parsePayload(result);
+			expect(payload.accepted).toBe(false);
+			expect(payload.rejections[0].reason).toBe("requestedRepoIds must be a non-empty array");
+			expect(readdirSync(outboxDir)).toEqual([]);
+		});
+	});
+
 	it("writes segment expansion request file with schema payload on valid input", async () => {
 		const outboxDir = mkdtempSync(join(tmpdir(), "tp-seg-expansion-"));
 		tempDirs.push(outboxDir);
@@ -140,6 +208,17 @@ describe("request_segment_expansion registration + autonomy guard", () => {
 			const files = readdirSync(outboxDir);
 			expect(files.some((f) => f.endsWith(".tmp"))).toBe(false);
 		});
+	});
+});
+
+
+describe("segment ID helpers", () => {
+	it("buildSegmentId appends sequence suffix when sequence >= 2", () => {
+		expect(buildSegmentId("TP-900", "api", 2)).toBe("TP-900::api::2");
+	});
+
+	it("buildSegmentId preserves backward-compatible format without sequence", () => {
+		expect(buildSegmentId("TP-901", "api")).toBe("TP-901::api");
 	});
 });
 

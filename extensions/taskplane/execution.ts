@@ -1643,19 +1643,10 @@ export async function executeWave(
 	}
 
 	const lanePromises = lanes.map(lane =>
-		executeLaneV2(
-			lane,
-			config,
-			repoRoot,
-			wavePauseSignal,
-			wsRoot,
-			isWsMode,
-			{
-				ORCH_BATCH_ID: batchId,
-				TASKPLANE_SUPERVISOR_AUTONOMY: supervisorAutonomy,
-			},
-			onSupervisorAlert,
-		),
+		executeLaneV2(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode, {
+			ORCH_BATCH_ID: batchId,
+			TASKPLANE_SUPERVISOR_AUTONOMY: supervisorAutonomy,
+		}, onSupervisorAlert),
 	);
 
 	// Start monitoring as a sibling async loop

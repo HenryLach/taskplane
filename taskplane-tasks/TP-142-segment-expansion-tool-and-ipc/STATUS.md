@@ -1,10 +1,10 @@
 # TP-142: Segment Expansion Tool and File IPC — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 7
+**Review Counter:** 9
 **Iteration:** 1
 **Size:** M
 
@@ -47,15 +47,15 @@
 - [x] Run targeted tests
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
-- [ ] Create segment-expansion-tool.test.ts
-- [ ] All tool validation tests
-- [ ] SegmentId grammar tests
-- [ ] Non-autonomous guard test
-- [ ] Full test suite passing
+**Status:** ✅ Complete
+- [x] Create segment-expansion-tool.test.ts
+- [x] All tool validation tests
+- [x] SegmentId grammar tests
+- [x] Non-autonomous guard test
+- [x] Full test suite passing
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] JSDoc on new types/tool
 - [ ] Update STATUS.md
 
@@ -92,7 +92,11 @@
 | 2026-04-06 02:47 | Review R007 | plan Step 3: APPROVE |
 | 2026-04-06 03:20 | Step 3 completed | Request file writing |
 | 2026-04-06 03:20 | Step 4 started | Testing & Verification |
+| 2026-04-06 03:45 | Step 4 completed | Testing & Verification |
+| 2026-04-06 03:45 | Step 5 started | Documentation & Delivery |
 
 ## Notes
 - Suggestion from R004: pass `TASKPLANE_TASK_ID` via lane-runner env to avoid folder-name fallback in request payload construction.
 - Suggestion from R005: keep direct tool-unit tests and add a wiring-level regression around autonomy propagation.
+| 2026-04-06 02:49 | Review R008 | code Step 3: APPROVE |
+| 2026-04-06 02:51 | Review R009 | plan Step 4: APPROVE |
