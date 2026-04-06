@@ -143,4 +143,18 @@ Validate dynamic segment expansion end-to-end in the polyrepo test workspace (`C
 
 ## Amendments (Added During Execution)
 
-<!-- Workers add amendments here if issues discovered during execution. -->
+### 2026-04-06 — Steering override for merge-agent thinking hang (#439)
+
+Supervisor-directed execution change for this session:
+
+- Live polyrepo `/orch` acceptance runs for Steps 2-4 are deferred because merge-agent
+  `thinking` is stuck in this cached session configuration.
+- Validation for Step 2-4 is performed via unit tests that directly cover:
+  - expansion request file emission (`request_segment_expansion` outbox payload),
+  - expansion DAG mutation + continuation frontier insertion,
+  - repeat-repo expansion suffixing/dependency wiring (`::2` behavior),
+  - persistence/resume reconstruction for expanded segments.
+- Step completion and completion criteria in this run are satisfied by the above unit
+  evidence plus full unit-suite verification (instead of live polyrepo merge evidence).
+
+Follow-up: restore live polyrepo e2e acceptance execution once issue #439 is resolved.

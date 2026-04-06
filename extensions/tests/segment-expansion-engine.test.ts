@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import { expect } from "./expect.ts";
 import {
 	applySegmentExpansionMutation,
+	collectProcessedSegmentExpansionRequestIds,
 	processSegmentExpansionRequestAtBoundary,
 } from "../taskplane/engine.ts";
 import {
@@ -260,6 +261,136 @@ describe("TP-143 segment expansion engine coverage", () => {
 		reconstructSegmentFrontier(state);
 		expect(state.tasks[0].activeSegmentId).toBe("TP-906::web");
 		expect(buildResumeRuntimeWavePlan(state)).toEqual([["TP-906"], ["TP-906"]]);
+	});
+
+	it("resume reconstructs approved-but-unexecuted expanded segment records from persisted state", () => {
+		const state = makeState({
+			wavePlan: [["TP-920"]],
+			totalWaves: 1,
+			tasks: [{
+				taskId: "TP-920",
+				laneNumber: 1,
+				sessionName: "",
+				status: "pending",
+				taskFolder: "/tmp/tasks/TP-920",
+				startedAt: Date.now() - 400,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+				segmentIds: ["TP-920::api-service", "TP-920::web-client"],
+				activeSegmentId: null,
+			}],
+			segments: [
+				makeSegment({
+					taskId: "TP-920",
+					segmentId: "TP-920::api-service",
+					repoId: "api-service",
+					status: "succeeded",
+					endedAt: Date.now() - 200,
+				}),
+				makeSegment({
+					taskId: "TP-920",
+					segmentId: "TP-920::web-client",
+					repoId: "web-client",
+					status: "pending",
+					dependsOnSegmentIds: ["TP-920::api-service"],
+					expandedFrom: "TP-920::api-service",
+					expansionRequestId: "exp-tp920",
+					branch: "orch/tp-920",
+				}),
+			],
+		});
+
+		reconstructSegmentFrontier(state);
+		expect(state.tasks[0].activeSegmentId).toBe("TP-920::web-client");
+		expect(buildResumeRuntimeWavePlan(state)).toEqual([["TP-920"], ["TP-920"]]);
+		const persistedExpanded = state.segments.find((segment) => segment.segmentId === "TP-920::web-client");
+		expect(persistedExpanded?.expandedFrom).toBe("TP-920::api-service");
+		expect(persistedExpanded?.expansionRequestId).toBe("exp-tp920");
+	});
+
+	it("resume reconstruction activates repeat-repo expanded frontier (shared-libs::2)", () => {
+		const state = makeState({
+			wavePlan: [["TP-921"]],
+			totalWaves: 1,
+			tasks: [{
+				taskId: "TP-921",
+				laneNumber: 1,
+				sessionName: "",
+				status: "pending",
+				taskFolder: "/tmp/tasks/TP-921",
+				startedAt: Date.now() - 500,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+				segmentIds: ["TP-921::shared-libs", "TP-921::api-service", "TP-921::shared-libs::2"],
+				activeSegmentId: null,
+			}],
+			segments: [
+				makeSegment({
+					taskId: "TP-921",
+					segmentId: "TP-921::shared-libs",
+					repoId: "shared-libs",
+					status: "succeeded",
+					endedAt: Date.now() - 400,
+				}),
+				makeSegment({
+					taskId: "TP-921",
+					segmentId: "TP-921::api-service",
+					repoId: "api-service",
+					status: "succeeded",
+					dependsOnSegmentIds: ["TP-921::shared-libs"],
+					endedAt: Date.now() - 200,
+				}),
+				makeSegment({
+					taskId: "TP-921",
+					segmentId: "TP-921::shared-libs::2",
+					repoId: "shared-libs",
+					status: "pending",
+					dependsOnSegmentIds: ["TP-921::api-service"],
+					expandedFrom: "TP-921::api-service",
+					expansionRequestId: "exp-repeat",
+				}),
+			],
+		});
+
+		reconstructSegmentFrontier(state);
+		expect(state.tasks[0].activeSegmentId).toBe("TP-921::shared-libs::2");
+		expect(buildResumeRuntimeWavePlan(state)).toEqual([["TP-921"], ["TP-921"], ["TP-921"]]);
+	});
+
+	it("resume-seeded processed request IDs block duplicate expansion processing", () => {
+		const knownRequestIds = collectProcessedSegmentExpansionRequestIds({
+			resilience: {
+				repairHistory: [
+					{ id: "exp-resume-dup", strategy: "segment-expansion-request" },
+				] as any,
+			},
+		} as any);
+		expect([...knownRequestIds]).toEqual(["exp-resume-dup"]);
+
+		const duplicate = processSegmentExpansionRequestAtBoundary(
+			"batch-1",
+			"TP-930",
+			"TP-930::api",
+			"agent-1",
+			{
+				filePath: "/tmp/segment-expansion-exp-resume-dup.json",
+				request: makeExpansionRequest({
+					requestId: "exp-resume-dup",
+					taskId: "TP-930",
+					fromSegmentId: "TP-930::api",
+					requestedRepoIds: ["api"],
+				}),
+			},
+			{ terminalStatus: "pending" } as any,
+			{ repos: new Map([["api", {}]]) } as any,
+			knownRequestIds,
+		);
+		expect(duplicate.ok).toBe(false);
+		if (!duplicate.ok) {
+			expect(duplicate.reason).toMatch(/already processed/);
+		}
 	});
 
 	it("boundary handling keeps deterministic request ordering and failed-origin/malformed file lifecycle guards", () => {
