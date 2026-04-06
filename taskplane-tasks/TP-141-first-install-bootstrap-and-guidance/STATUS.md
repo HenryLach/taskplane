@@ -1,22 +1,22 @@
 # TP-141: First-Install Bootstrap and Cross-Provider Guidance — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-04-05
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-04-06
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Verify TP-140 complete
-- [ ] Read init flow and model discovery
-- [ ] Read thinking picker
-- [ ] Check pi --list-models format
+**Status:** 🟨 In Progress
+- [x] Read PROMPT.md and STATUS.md
+- [x] Verify TP-140 complete
+- [x] Read init flow and model discovery
+- [x] Read thinking picker
+- [x] Check pi --list-models format
 
 ### Step 1: First-install detection and global prefs bootstrap
 **Status:** ⬜ Not Started
@@ -84,6 +84,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-05 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-04-06 00:39 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-06 00:39 | Step 0 started | Preflight |
 
 ---
 
