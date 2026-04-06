@@ -1747,9 +1747,9 @@ async function cmdInit(args) {
 			} catch {}
 			return null;
 		})();
-		const workspaceTasksRoot = existingWorkspaceJson?.routing?.tasks_root
+		const workspaceTasksRoot = (existingWorkspaceJson?.routing?.tasks_root
 			|| existingRootYaml?.routing?.tasks_root
-			|| "taskplane-tasks";
+			|| "taskplane-tasks").replace(/\\/g, "/");
 		const workspaceDefaultRepo = existingWorkspaceJson?.routing?.default_repo
 			|| existingRootYaml?.routing?.default_repo
 			|| configRepo;
@@ -2285,7 +2285,7 @@ function getPresetVars(preset, projectRoot, tasksRootOverride = null) {
 		max_lanes: 3,
 		worktree_prefix: `${slug}-wt`,
 		session_prefix: `${slug}-orch`,
-		tasks_root: tasksRootOverride || "taskplane-tasks",
+		tasks_root: (tasksRootOverride || "taskplane-tasks").replace(/\\/g, "/"),
 		default_area: "general",
 		default_prefix: "TP",
 		test_cmd,
@@ -2302,7 +2302,8 @@ async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 	const project_name = await ask("Project name", dirName);
 	const maxLanesInput = await ask("Max parallel lanes", "3");
 	const max_lanes = parseInt(maxLanesInput, 10) || 3;
-	const tasks_root = tasksRootOverride || await ask("Tasks directory", "taskplane-tasks");
+	const tasks_root_raw = tasksRootOverride || await ask("Tasks directory", "taskplane-tasks");
+	const tasks_root = tasks_root_raw.trim().replace(/\\/g, "/").replace(/^\.\//g, "").replace(/\/+$/g, "");
 	const default_area = await ask("Default area name", "general");
 	const default_prefix = await ask("Task ID prefix", "TP");
 	const test_cmd = await ask("Test command (agents run this to verify work — blank to skip)", detected.test || "");

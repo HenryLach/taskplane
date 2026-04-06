@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.26] - 2026-04-06
+
+### Fixed
+- **Windows backslashes in `taskplane init` paths** (#446) — All path inputs normalized to forward slashes before writing to YAML/JSON config. Fixes YAML parse error on Windows.
+
 ## [0.24.25] - 2026-04-06
 
 ### New

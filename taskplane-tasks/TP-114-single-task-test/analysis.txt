@@ -1,0 +1,7 @@
+Exported function count in extensions/taskplane/lane-runner.ts: 4
+
+Functions:
+1. executeTaskV2
+2. mapLaneTaskStatusToTerminalSnapshotStatus
+3. mapLaneSnapshotStatusToWorkerStatus
+4. readReviewerTelemetrySnapshot
