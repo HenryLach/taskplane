@@ -2,7 +2,7 @@
  * Main batch execution engine
  * @module orch/engine
  */
-import { existsSync, readdirSync, readFileSync, unlinkSync } from "fs";
+import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync } from "fs";
 import { join, resolve } from "path";
 
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
@@ -19,8 +19,8 @@ import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-rep
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, buildTier0EventBase, deleteBatchState, emitEngineEvent, emitTier0Event, loadBatchHistory, loadBatchState, persistRuntimeState, saveBatchHistory, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
 import { readRegistrySnapshot, isTerminalStatus, isProcessAlive as registryIsProcessAlive } from "./process-registry.ts";
-import { buildBatchProgressSnapshot, buildEngineEventBase, buildSupervisorSegmentFrontierSnapshot, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedSegmentRecord, SupervisorAlert, SupervisorAlertCallback, TaskRunnerConfig, TaskSegmentPlan, TaskSegmentPlanMap, TaskSegmentNode, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
+import { buildBatchProgressSnapshot, buildEngineEventBase, buildSegmentId, buildSupervisorSegmentFrontierSnapshot, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedSegmentRecord, SegmentExpansionRequest, SupervisorAlert, SupervisorAlertCallback, TaskRunnerConfig, TaskSegmentPlan, TaskSegmentPlanMap, TaskSegmentNode, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaveAssignments, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 import { runPreflightCleanup, formatPreflightCleanup } from "./cleanup.ts";
@@ -147,11 +147,661 @@ function buildSegmentDependencyMap(plan: TaskSegmentPlan): Map<string, string[]>
 	return depsBySegmentId;
 }
 
+function resolveTaskWorkerAgentId(
+	taskId: string,
+	allTaskOutcomes: LaneTaskOutcome[],
+	laneByTaskId: Map<string, AllocatedLane>,
+): string | null {
+	const outcome = allTaskOutcomes.find((candidate) => candidate.taskId === taskId);
+	if (outcome?.sessionName) {
+		return outcome.sessionName;
+	}
+	const lane = laneByTaskId.get(taskId);
+	return lane?.laneSessionId ?? null;
+}
+
+function listPendingSegmentExpansionRequestFiles(stateRoot: string, batchId: string, agentId: string): string[] {
+	const outboxDir = join(stateRoot, ".pi", "mailbox", batchId, agentId, "outbox");
+	if (!existsSync(outboxDir)) return [];
+	let entries: string[] = [];
+	try {
+		entries = readdirSync(outboxDir);
+	} catch {
+		return [];
+	}
+	return entries
+		.filter((entry) => /^segment-expansion-.+\.json$/.test(entry))
+		.sort((a, b) => a.localeCompare(b))
+		.map((entry) => join(outboxDir, entry));
+}
+
+interface PendingSegmentExpansionRequest {
+	filePath: string;
+	request: SegmentExpansionRequest;
+}
+
+interface SegmentExpansionParseFailure {
+	filePath: string;
+	reason: string;
+}
+
+function parseSegmentExpansionRequestPayload(payload: unknown): SegmentExpansionRequest | null {
+	if (!payload || typeof payload !== "object") return null;
+	const candidate = payload as Record<string, unknown>;
+	if (typeof candidate.requestId !== "string" || !candidate.requestId.trim()) return null;
+	if (typeof candidate.taskId !== "string" || !candidate.taskId.trim()) return null;
+	if (typeof candidate.fromSegmentId !== "string" || !candidate.fromSegmentId.trim()) return null;
+	if (!Array.isArray(candidate.requestedRepoIds) || candidate.requestedRepoIds.length === 0 || candidate.requestedRepoIds.some((repoId) => typeof repoId !== "string" || !repoId.trim())) return null;
+	if (typeof candidate.rationale !== "string") return null;
+	if (candidate.placement !== "after-current" && candidate.placement !== "end") return null;
+	if (!Array.isArray(candidate.edges)) return null;
+	for (const edge of candidate.edges) {
+		if (!edge || typeof edge !== "object") return null;
+		const typedEdge = edge as Record<string, unknown>;
+		if (typeof typedEdge.from !== "string" || !typedEdge.from.trim()) return null;
+		if (typeof typedEdge.to !== "string" || !typedEdge.to.trim()) return null;
+	}
+	if (typeof candidate.timestamp !== "number" || !Number.isFinite(candidate.timestamp)) return null;
+	return {
+		requestId: candidate.requestId,
+		taskId: candidate.taskId,
+		fromSegmentId: candidate.fromSegmentId as SegmentExpansionRequest["fromSegmentId"],
+		requestedRepoIds: candidate.requestedRepoIds as string[],
+		rationale: candidate.rationale,
+		placement: candidate.placement,
+		edges: candidate.edges as SegmentExpansionRequest["edges"],
+		timestamp: candidate.timestamp,
+	};
+}
+
+function parseSegmentExpansionRequests(filePaths: string[]): {
+	valid: PendingSegmentExpansionRequest[];
+	malformed: SegmentExpansionParseFailure[];
+} {
+	const valid: PendingSegmentExpansionRequest[] = [];
+	const malformed: SegmentExpansionParseFailure[] = [];
+
+	for (const filePath of filePaths) {
+		let raw = "";
+		try {
+			raw = readFileSync(filePath, "utf-8");
+		} catch (err) {
+			malformed.push({
+				filePath,
+				reason: `read failed: ${err instanceof Error ? err.message : String(err)}`,
+			});
+			continue;
+		}
+
+		let payload: unknown;
+		try {
+			payload = JSON.parse(raw);
+		} catch (err) {
+			malformed.push({
+				filePath,
+				reason: `JSON parse failed: ${err instanceof Error ? err.message : String(err)}`,
+			});
+			continue;
+		}
+
+		const parsed = parseSegmentExpansionRequestPayload(payload);
+		if (!parsed) {
+			malformed.push({
+				filePath,
+				reason: "schema validation failed",
+			});
+			continue;
+		}
+
+		valid.push({
+			filePath,
+			request: parsed,
+		});
+	}
+
+	return { valid, malformed };
+}
+
+function markSegmentExpansionRequestFile(filePath: string, stateSuffix: "invalid" | "discarded" | "rejected" | "processed"): boolean {
+	try {
+		renameSync(filePath, `${filePath}.${stateSuffix}`);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export function expansionRequestHasCycle(request: SegmentExpansionRequest): boolean {
+	const requestedRepoIds = [...new Set(request.requestedRepoIds)];
+	const indegree = new Map<string, number>();
+	const outgoing = new Map<string, string[]>();
+	for (const repoId of requestedRepoIds) {
+		indegree.set(repoId, 0);
+		outgoing.set(repoId, []);
+	}
+	for (const edge of request.edges) {
+		if (!indegree.has(edge.from) || !indegree.has(edge.to)) continue;
+		outgoing.get(edge.from)!.push(edge.to);
+		indegree.set(edge.to, (indegree.get(edge.to) ?? 0) + 1);
+	}
+
+	const ready = [...requestedRepoIds]
+		.filter((repoId) => (indegree.get(repoId) ?? 0) === 0)
+		.sort((a, b) => a.localeCompare(b));
+	let visited = 0;
+	while (ready.length > 0) {
+		const next = ready.shift()!;
+		visited += 1;
+		for (const dep of outgoing.get(next) ?? []) {
+			const count = (indegree.get(dep) ?? 0) - 1;
+			indegree.set(dep, count);
+			if (count === 0) {
+				ready.push(dep);
+				ready.sort((a, b) => a.localeCompare(b));
+			}
+		}
+	}
+
+	return visited !== requestedRepoIds.length;
+}
+
+export function validateSegmentExpansionRequestAtBoundary(
+	requestFile: PendingSegmentExpansionRequest,
+	taskId: string,
+	segmentId: string,
+	segmentState: SegmentFrontierTaskState,
+	workspaceConfig: WorkspaceConfig | null | undefined,
+	knownRequestIds: ReadonlySet<string>,
+): string | null {
+	const request = requestFile.request;
+	if (request.taskId !== taskId || request.fromSegmentId !== segmentId) {
+		return "request does not match the active segment boundary";
+	}
+	if (segmentState.terminalStatus !== "pending") {
+		return "task is already in terminal state";
+	}
+	if (request.placement !== "after-current" && request.placement !== "end") {
+		return `unsupported placement \"${request.placement}\"`;
+	}
+
+	if (knownRequestIds.has(request.requestId)) {
+		return `requestId \"${request.requestId}\" already processed`;
+	}
+
+	if (workspaceConfig) {
+		for (const repoId of request.requestedRepoIds) {
+			if (!workspaceConfig.repos.has(repoId)) {
+				return `unknown repoId \"${repoId}\"`;
+			}
+		}
+	} else {
+		for (const repoId of request.requestedRepoIds) {
+			if (repoId !== "default") {
+				return `repo expansion requires workspace mode (unknown repoId \"${repoId}\")`;
+			}
+		}
+	}
+
+	const requestedRepoSet = new Set(request.requestedRepoIds);
+	for (const edge of request.edges) {
+		if (!requestedRepoSet.has(edge.from) || !requestedRepoSet.has(edge.to)) {
+			return "edge references a repo outside requestedRepoIds";
+		}
+	}
+
+	if (expansionRequestHasCycle(request)) {
+		return "expansion request introduces a cycle in requested edges";
+	}
+
+	return null;
+}
+
+export function processSegmentExpansionRequestAtBoundary(
+	batchId: string,
+	taskId: string,
+	segmentId: string,
+	agentId: string,
+	requestFile: PendingSegmentExpansionRequest,
+	segmentState: SegmentFrontierTaskState,
+	workspaceConfig: WorkspaceConfig | null | undefined,
+	knownRequestIds: Set<string>,
+): { ok: true } | { ok: false; reason: string } {
+	const validationFailure = validateSegmentExpansionRequestAtBoundary(
+		requestFile,
+		taskId,
+		segmentId,
+		segmentState,
+		workspaceConfig,
+		knownRequestIds,
+	);
+	if (validationFailure) {
+		return { ok: false, reason: validationFailure };
+	}
+
+	knownRequestIds.add(requestFile.request.requestId);
+	execLog("batch", batchId, "segment expansion request handed off for graph mutation", {
+		taskId,
+		segmentId,
+		agentId,
+		requestId: requestFile.request.requestId,
+		placement: requestFile.request.placement,
+		requestedRepoIds: requestFile.request.requestedRepoIds.join(","),
+		requestFile: requestFile.filePath,
+	});
+	return { ok: true };
+}
+
+function buildOutgoingBySegmentId(dependsOnBySegmentId: Map<string, string[]>): Map<string, string[]> {
+	const outgoingBySegmentId = new Map<string, string[]>();
+	for (const segmentId of dependsOnBySegmentId.keys()) {
+		outgoingBySegmentId.set(segmentId, []);
+	}
+	for (const [segmentId, deps] of dependsOnBySegmentId.entries()) {
+		for (const dep of deps) {
+			const outgoing = outgoingBySegmentId.get(dep) ?? [];
+			outgoing.push(segmentId);
+			outgoingBySegmentId.set(dep, outgoing);
+		}
+	}
+	for (const [segmentId, outgoing] of outgoingBySegmentId.entries()) {
+		outgoingBySegmentId.set(segmentId, [...new Set(outgoing)].sort((a, b) => a.localeCompare(b)));
+	}
+	return outgoingBySegmentId;
+}
+
+function addDependency(dependencyMap: Map<string, string[]>, segmentId: string, depSegmentId: string): void {
+	const deps = dependencyMap.get(segmentId) ?? [];
+	if (!deps.includes(depSegmentId)) {
+		deps.push(depSegmentId);
+		deps.sort((a, b) => a.localeCompare(b));
+		dependencyMap.set(segmentId, deps);
+	}
+}
+
+function removeDependency(dependencyMap: Map<string, string[]>, segmentId: string, depSegmentId: string): void {
+	const deps = dependencyMap.get(segmentId) ?? [];
+	const filtered = deps.filter((dep) => dep !== depSegmentId);
+	dependencyMap.set(segmentId, filtered);
+}
+
+function recomputeNextPendingSegmentIndex(segmentState: SegmentFrontierTaskState): void {
+	const nextPendingIndex = segmentState.orderedSegments.findIndex((segment) => {
+		return segmentState.statusBySegmentId.get(segment.segmentId) === "pending";
+	});
+	segmentState.nextSegmentIndex = nextPendingIndex >= 0
+		? nextPendingIndex
+		: segmentState.orderedSegments.length;
+}
+
+function hasTaskInFutureSegmentRounds(segmentRounds: string[][], fromIndex: number, taskId: string): boolean {
+	for (let idx = fromIndex; idx < segmentRounds.length; idx++) {
+		if (segmentRounds[idx]?.includes(taskId)) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Insert one deterministic continuation segment round immediately after the
+ * current wave when expansion creates executable pending work beyond planned rounds.
+ */
+export function scheduleContinuationSegmentRound(
+	segmentRounds: string[][],
+	currentWaveIndex: number,
+	taskIds: Iterable<string>,
+): string[] {
+	const continuationWave = [...new Set(taskIds)].sort((a, b) => a.localeCompare(b));
+	if (continuationWave.length === 0) {
+		return [];
+	}
+	segmentRounds.splice(currentWaveIndex + 1, 0, continuationWave);
+	return continuationWave;
+}
+
+function buildRepoMaxSequenceByRepo(
+	orderedSegments: TaskSegmentNode[],
+	taskId: string,
+): Map<string, number> {
+	const maxSequenceByRepo = new Map<string, number>();
+	for (const segment of orderedSegments) {
+		const repoId = segment.repoId;
+		const basePrefix = `${taskId}::${repoId}`;
+		let sequence = 1;
+		if (segment.segmentId.startsWith(`${basePrefix}::`)) {
+			const suffix = segment.segmentId.slice(`${basePrefix}::`.length);
+			const parsed = Number.parseInt(suffix, 10);
+			if (Number.isFinite(parsed) && parsed >= 2) {
+				sequence = parsed;
+			}
+		}
+		const currentMax = maxSequenceByRepo.get(repoId) ?? 0;
+		maxSequenceByRepo.set(repoId, Math.max(currentMax, sequence));
+	}
+	return maxSequenceByRepo;
+}
+
+/**
+ * Apply one approved segment-expansion request to a task frontier DAG.
+ *
+ * Implements after-current/end rewiring, repeat-repo segment ID disambiguation,
+ * deterministic topological reordering, and pending-state insertion.
+ */
+export function applySegmentExpansionMutation(
+	segmentState: SegmentFrontierTaskState,
+	request: SegmentExpansionRequest,
+	anchorSegmentId: string,
+): { insertedSegmentIds: string[] } {
+	const existingNodeById = new Map<string, TaskSegmentNode>();
+	for (const segment of segmentState.orderedSegments) {
+		existingNodeById.set(segment.segmentId, segment);
+	}
+
+	const dependencyMap = new Map<string, string[]>();
+	for (const [segmentId, deps] of segmentState.dependsOnBySegmentId.entries()) {
+		dependencyMap.set(segmentId, [...new Set(deps)].sort((a, b) => a.localeCompare(b)));
+	}
+	for (const segmentId of existingNodeById.keys()) {
+		if (!dependencyMap.has(segmentId)) {
+			dependencyMap.set(segmentId, []);
+		}
+	}
+
+	const outgoingBeforeMutation = buildOutgoingBySegmentId(dependencyMap);
+	const anchorSuccessors = outgoingBeforeMutation.get(anchorSegmentId) ?? [];
+	const maxOrder = segmentState.orderedSegments.reduce((max, segment) => Math.max(max, segment.order), -1);
+	const repoMaxSequenceByRepo = buildRepoMaxSequenceByRepo(segmentState.orderedSegments, request.taskId);
+
+	const newNodes: TaskSegmentNode[] = [];
+	const segmentIdByRequestedRepoId = new Map<string, string>();
+	for (const [idx, repoId] of request.requestedRepoIds.entries()) {
+		const nextSequence = (repoMaxSequenceByRepo.get(repoId) ?? 0) + 1;
+		repoMaxSequenceByRepo.set(repoId, nextSequence);
+		const segmentId = buildSegmentId(request.taskId, repoId, nextSequence);
+		segmentIdByRequestedRepoId.set(repoId, segmentId);
+		const node: TaskSegmentNode = {
+			segmentId,
+			taskId: request.taskId,
+			repoId,
+			order: maxOrder + idx + 1,
+		};
+		newNodes.push(node);
+		existingNodeById.set(node.segmentId, node);
+		dependencyMap.set(node.segmentId, []);
+	}
+
+	for (const edge of request.edges) {
+		const fromSegmentId = segmentIdByRequestedRepoId.get(edge.from);
+		const toSegmentId = segmentIdByRequestedRepoId.get(edge.to);
+		if (!fromSegmentId || !toSegmentId) continue;
+		addDependency(dependencyMap, toSegmentId, fromSegmentId);
+	}
+
+	const internalIncomingCounts = new Map<string, number>();
+	const internalOutgoingCounts = new Map<string, number>();
+	for (const node of newNodes) {
+		internalIncomingCounts.set(node.segmentId, 0);
+		internalOutgoingCounts.set(node.segmentId, 0);
+	}
+	for (const edge of request.edges) {
+		const fromSegmentId = segmentIdByRequestedRepoId.get(edge.from);
+		const toSegmentId = segmentIdByRequestedRepoId.get(edge.to);
+		if (!fromSegmentId || !toSegmentId) continue;
+		internalOutgoingCounts.set(fromSegmentId, (internalOutgoingCounts.get(fromSegmentId) ?? 0) + 1);
+		internalIncomingCounts.set(toSegmentId, (internalIncomingCounts.get(toSegmentId) ?? 0) + 1);
+	}
+
+	const roots = newNodes
+		.filter((node) => (internalIncomingCounts.get(node.segmentId) ?? 0) === 0)
+		.map((node) => node.segmentId)
+		.sort((a, b) => a.localeCompare(b));
+	const sinks = newNodes
+		.filter((node) => (internalOutgoingCounts.get(node.segmentId) ?? 0) === 0)
+		.map((node) => node.segmentId)
+		.sort((a, b) => a.localeCompare(b));
+
+	if (request.placement === "after-current") {
+		for (const root of roots) {
+			addDependency(dependencyMap, root, anchorSegmentId);
+		}
+		for (const successor of anchorSuccessors) {
+			removeDependency(dependencyMap, successor, anchorSegmentId);
+			for (const sink of sinks) {
+				addDependency(dependencyMap, successor, sink);
+			}
+		}
+	} else {
+		const terminals = segmentState.orderedSegments
+			.map((segment) => segment.segmentId)
+			.filter((segmentId) => (outgoingBeforeMutation.get(segmentId) ?? []).length === 0)
+			.sort((a, b) => a.localeCompare(b));
+		for (const root of roots) {
+			for (const terminal of terminals) {
+				if (terminal === root) continue;
+				addDependency(dependencyMap, root, terminal);
+			}
+		}
+	}
+
+	const priorityBySegmentId = new Map<string, number>();
+	for (const [idx, segment] of segmentState.orderedSegments.entries()) {
+		priorityBySegmentId.set(segment.segmentId, idx);
+	}
+	for (const [idx, node] of newNodes.entries()) {
+		priorityBySegmentId.set(node.segmentId, segmentState.orderedSegments.length + idx);
+	}
+
+	const outgoing = buildOutgoingBySegmentId(dependencyMap);
+	const indegree = new Map<string, number>();
+	for (const [segmentId, deps] of dependencyMap.entries()) {
+		indegree.set(segmentId, deps.length);
+	}
+	const ready = [...dependencyMap.keys()]
+		.filter((segmentId) => (indegree.get(segmentId) ?? 0) === 0)
+		.sort((a, b) => {
+			const aPriority = priorityBySegmentId.get(a) ?? Number.MAX_SAFE_INTEGER;
+			const bPriority = priorityBySegmentId.get(b) ?? Number.MAX_SAFE_INTEGER;
+			if (aPriority !== bPriority) return aPriority - bPriority;
+			return a.localeCompare(b);
+		});
+
+	const nextOrderedSegmentIds: string[] = [];
+	while (ready.length > 0) {
+		const nextSegmentId = ready.shift()!;
+		nextOrderedSegmentIds.push(nextSegmentId);
+		for (const depSegmentId of outgoing.get(nextSegmentId) ?? []) {
+			const count = (indegree.get(depSegmentId) ?? 0) - 1;
+			indegree.set(depSegmentId, count);
+			if (count === 0) {
+				ready.push(depSegmentId);
+				ready.sort((a, b) => {
+					const aPriority = priorityBySegmentId.get(a) ?? Number.MAX_SAFE_INTEGER;
+					const bPriority = priorityBySegmentId.get(b) ?? Number.MAX_SAFE_INTEGER;
+					if (aPriority !== bPriority) return aPriority - bPriority;
+					return a.localeCompare(b);
+				});
+			}
+		}
+	}
+
+	const fallbackOrderedSegmentIds = [...segmentState.orderedSegments.map((segment) => segment.segmentId), ...newNodes.map((node) => node.segmentId)];
+	const finalOrderedSegmentIds = nextOrderedSegmentIds.length === dependencyMap.size
+		? nextOrderedSegmentIds
+		: fallbackOrderedSegmentIds;
+
+	const nextOrderedSegments = finalOrderedSegmentIds
+		.map((segmentId, idx) => {
+			const segment = existingNodeById.get(segmentId);
+			if (!segment) return null;
+			return {
+				...segment,
+				order: idx,
+			};
+		})
+		.filter((segment): segment is TaskSegmentNode => segment !== null);
+
+	segmentState.orderedSegments = nextOrderedSegments;
+	segmentState.dependsOnBySegmentId = dependencyMap;
+	for (const node of newNodes) {
+		segmentState.statusBySegmentId.set(node.segmentId, "pending");
+	}
+	recomputeNextPendingSegmentIndex(segmentState);
+
+	return {
+		insertedSegmentIds: newNodes.map((node) => node.segmentId),
+	};
+}
+
+function handoffSegmentExpansionToMutation(
+	batchId: string,
+	taskId: string,
+	segmentId: string,
+	agentId: string,
+	requestFile: PendingSegmentExpansionRequest,
+	segmentState: SegmentFrontierTaskState,
+): { insertedSegmentIds: string[] } {
+	const mutation = applySegmentExpansionMutation(segmentState, requestFile.request, segmentId);
+	execLog("batch", batchId, "segment expansion request accepted for mutation path", {
+		taskId,
+		segmentId,
+		agentId,
+		requestId: requestFile.request.requestId,
+		placement: requestFile.request.placement,
+		requestedRepoIds: requestFile.request.requestedRepoIds.join(","),
+		insertedSegments: mutation.insertedSegmentIds.join(","),
+	});
+	return mutation;
+}
+
 function ensureSegmentRecords(batchState: OrchBatchRuntimeState): PersistedSegmentRecord[] {
 	if (!batchState.segments) {
 		batchState.segments = [];
 	}
 	return batchState.segments;
+}
+
+/**
+ * Persist pending segment records for an approved expansion and resync dependency
+ * metadata for existing pending records touched by subsequent rewires.
+ */
+export function upsertPendingExpandedSegmentRecords(
+	batchState: OrchBatchRuntimeState,
+	task: ParsedTask,
+	segmentState: SegmentFrontierTaskState,
+	insertedSegmentIds: string[],
+	expandedFrom: string,
+	expansionRequestId: string,
+	fallbackBranch: string,
+): boolean {
+	const insertedSegmentIdSet = new Set(insertedSegmentIds);
+	const pendingSegmentIds = segmentState.orderedSegments
+		.filter((segment) => segmentState.statusBySegmentId.get(segment.segmentId) === "pending")
+		.map((segment) => segment.segmentId);
+	if (pendingSegmentIds.length === 0) return false;
+
+	const segmentRecords = ensureSegmentRecords(batchState);
+	let changed = false;
+
+	for (const segmentId of pendingSegmentIds) {
+		const segment = segmentState.orderedSegments.find((candidate) => candidate.segmentId === segmentId);
+		if (!segment) continue;
+		const existing = segmentRecords.find((record) => record.segmentId === segmentId);
+		if (!existing && !insertedSegmentIdSet.has(segmentId)) {
+			continue;
+		}
+
+		const dependsOnSegmentIds = segmentState.dependsOnBySegmentId.get(segmentId) ?? [];
+		const nextExpandedFrom = insertedSegmentIdSet.has(segmentId)
+			? expandedFrom
+			: existing?.expandedFrom;
+		const nextExpansionRequestId = insertedSegmentIdSet.has(segmentId)
+			? expansionRequestId
+			: existing?.expansionRequestId;
+		const next: PersistedSegmentRecord = {
+			segmentId,
+			taskId: task.taskId,
+			repoId: segment.repoId,
+			status: "pending",
+			laneId: existing?.laneId ?? "",
+			sessionName: existing?.sessionName ?? "",
+			worktreePath: existing?.worktreePath ?? "",
+			branch: existing?.branch ?? fallbackBranch,
+			startedAt: null,
+			endedAt: null,
+			retries: existing?.retries ?? 0,
+			exitReason: existing?.exitReason ?? "Segment pending",
+			dependsOnSegmentIds,
+			expandedFrom: nextExpandedFrom,
+			expansionRequestId: nextExpansionRequestId,
+		};
+
+		if (!existing) {
+			segmentRecords.push(next);
+			changed = true;
+			continue;
+		}
+
+		const recordChanged =
+			existing.taskId !== next.taskId
+			|| existing.repoId !== next.repoId
+			|| existing.status !== next.status
+			|| existing.laneId !== next.laneId
+			|| existing.sessionName !== next.sessionName
+			|| existing.worktreePath !== next.worktreePath
+			|| existing.branch !== next.branch
+			|| existing.startedAt !== next.startedAt
+			|| existing.endedAt !== next.endedAt
+			|| existing.retries !== next.retries
+			|| existing.exitReason !== next.exitReason
+			|| existing.dependsOnSegmentIds.length !== next.dependsOnSegmentIds.length
+			|| existing.dependsOnSegmentIds.some((depSegmentId, idx) => depSegmentId !== next.dependsOnSegmentIds[idx])
+			|| existing.expandedFrom !== next.expandedFrom
+			|| existing.expansionRequestId !== next.expansionRequestId;
+
+		if (recordChanged) {
+			Object.assign(existing, next);
+			changed = true;
+		}
+	}
+
+	return changed;
+}
+
+/**
+ * Rebuild the in-memory idempotency set from persisted resilience repair history.
+ * Used on start/resume to prevent replay of already-processed expansion requests.
+ */
+export function collectProcessedSegmentExpansionRequestIds(
+	batchState: Pick<OrchBatchRuntimeState, "resilience">,
+): Set<string> {
+	return new Set<string>(
+		(batchState.resilience?.repairHistory ?? [])
+			.filter((entry) => entry.strategy === "segment-expansion-request")
+			.map((entry) => entry.id),
+	);
+}
+
+function recordProcessedSegmentExpansionRequestId(
+	batchState: OrchBatchRuntimeState,
+	requestId: string,
+	status: "succeeded" | "failed" | "skipped",
+): boolean {
+	if (!batchState.resilience) {
+		batchState.resilience = defaultResilienceState();
+	}
+	const history = batchState.resilience.repairHistory;
+	if (history.some((entry) => entry.strategy === "segment-expansion-request" && entry.id === requestId)) {
+		return false;
+	}
+	const now = Date.now();
+	history.push({
+		id: requestId,
+		strategy: "segment-expansion-request",
+		status,
+		startedAt: now,
+		endedAt: now,
+	});
+	return true;
 }
 
 function upsertRunningSegmentRecord(
@@ -198,6 +848,8 @@ function upsertRunningSegmentRecord(
 		exitDiagnostic: existing?.status === "running"
 			? existing.exitDiagnostic
 			: undefined,
+		expandedFrom: existing?.expandedFrom,
+		expansionRequestId: existing?.expansionRequestId,
 	};
 
 	if (!existing) {
@@ -219,7 +871,9 @@ function upsertRunningSegmentRecord(
 		|| existing.exitReason !== next.exitReason
 		|| existing.dependsOnSegmentIds.length !== next.dependsOnSegmentIds.length
 		|| existing.dependsOnSegmentIds.some((segmentId, idx) => segmentId !== next.dependsOnSegmentIds[idx])
-		|| existing.exitDiagnostic !== next.exitDiagnostic;
+		|| existing.exitDiagnostic !== next.exitDiagnostic
+		|| existing.expandedFrom !== next.expandedFrom
+		|| existing.expansionRequestId !== next.expansionRequestId;
 
 	if (changed) {
 		Object.assign(existing, next);
@@ -266,6 +920,8 @@ function upsertTerminalSegmentRecord(
 			: "Segment skipped"),
 		dependsOnSegmentIds,
 		exitDiagnostic: nextExitDiagnostic,
+		expandedFrom: existing?.expandedFrom,
+		expansionRequestId: existing?.expansionRequestId,
 	};
 
 	if (!existing) {
@@ -287,7 +943,9 @@ function upsertTerminalSegmentRecord(
 		|| existing.exitReason !== next.exitReason
 		|| existing.dependsOnSegmentIds.length !== next.dependsOnSegmentIds.length
 		|| existing.dependsOnSegmentIds.some((depSegmentId, idx) => depSegmentId !== next.dependsOnSegmentIds[idx])
-		|| existing.exitDiagnostic !== next.exitDiagnostic;
+		|| existing.exitDiagnostic !== next.exitDiagnostic
+		|| existing.expandedFrom !== next.expandedFrom
+		|| existing.expansionRequestId !== next.expansionRequestId;
 
 	if (changed) {
 		Object.assign(existing, next);
@@ -1280,6 +1938,8 @@ export async function executeOrchBatch(
 	let wavePlan: string[][] = [];
 	// Segment frontier runtime state keyed by parent task ID.
 	let segmentStateByTask = new Map<string, SegmentFrontierTaskState>();
+	// Processed segment-expansion request IDs (idempotency guard).
+	const processedSegmentExpansionRequestIds = collectProcessedSegmentExpansionRequestIds(batchState);
 	// Tasks that have reached terminal status at segment frontier level.
 	const terminalSegmentTasks = new Set<string>();
 	// Reference to discovery result for enriching taskFolder paths.
@@ -1507,13 +2167,14 @@ export async function executeOrchBatch(
 	// Otherwise, fall back to the legacy TMUX-backed path.
 	const backendSelection = selectRuntimeBackend(args, rawWaves, workspaceConfig);
 	const selectedBackend = backendSelection.backend;
+	const runtimeSegmentRounds = rawWaves.map((waveTasks) => [...waveTasks]);
 
 	if (selectedBackend === "v2") {
 		execLog("batch", batchState.batchId, "Runtime V2 backend selected");
 		onNotify("🚀 Using Runtime V2 backend (no-TMUX direct execution)", "info");
 	}
 
-	for (let waveIdx = 0; waveIdx < rawWaves.length; waveIdx++) {
+	for (let waveIdx = 0; waveIdx < runtimeSegmentRounds.length; waveIdx++) {
 		// Check pause signal before starting each wave
 		if (batchState.pauseSignal.paused) {
 			batchState.phase = "paused";
@@ -1533,7 +2194,7 @@ export async function executeOrchBatch(
 
 		// Filter wave tasks against blocked + terminal task sets, then bind the
 		// next active segment for each surviving task.
-		const scheduledWaveTasks = rawWaves[waveIdx];
+		const scheduledWaveTasks = runtimeSegmentRounds[waveIdx];
 		const blockedInWave: string[] = [];
 		const terminalInWave: string[] = [];
 		let waveTasks: string[] = [];
@@ -1605,7 +2266,7 @@ export async function executeOrchBatch(
 
 			// Emit wave_start with actual lane count (post-affinity grouping)
 			onNotify(
-				ORCH_MESSAGES.orchWaveStart(waveIdx + 1, rawWaves.length, waveTasks.length, lanes.length),
+				ORCH_MESSAGES.orchWaveStart(waveIdx + 1, runtimeSegmentRounds.length, waveTasks.length, lanes.length),
 				"info",
 			);
 			emitEvent(stateRoot, {
@@ -1827,6 +2488,7 @@ export async function executeOrchBatch(
 		const completedTaskIdsThisWave: string[] = [];
 		const failedTaskIdsThisWave: string[] = [];
 		const skippedTaskIdsThisWave: string[] = [];
+		const continuationTaskIds = new Set<string>();
 		const laneByTaskId = new Map<string, AllocatedLane>();
 		for (const lane of latestAllocatedLanes) {
 			for (const laneTask of lane.tasks) {
@@ -1844,15 +2506,146 @@ export async function executeOrchBatch(
 				segmentState.statusBySegmentId.set(activeSegmentId, "succeeded");
 				const outcome = allTaskOutcomes.find((candidate) => candidate.taskId === taskId);
 				upsertTerminalSegmentRecord(batchState, task, segmentState, activeSegmentId, "succeeded", outcome, laneByTaskId.get(taskId));
+
+				const workerAgentId = resolveTaskWorkerAgentId(taskId, allTaskOutcomes, laneByTaskId);
+				if (workerAgentId) {
+					const pendingExpansionFiles = listPendingSegmentExpansionRequestFiles(stateRoot, batchState.batchId, workerAgentId);
+					if (pendingExpansionFiles.length > 0) {
+						const parsedRequests = parseSegmentExpansionRequests(pendingExpansionFiles);
+						for (const malformed of parsedRequests.malformed) {
+							const renamed = markSegmentExpansionRequestFile(malformed.filePath, "invalid");
+							execLog("batch", batchState.batchId, `segment expansion request malformed (${renamed ? "renamed to .invalid" : "rename failed"})`, {
+								taskId,
+								agentId: workerAgentId,
+								segmentId: activeSegmentId,
+								filePath: malformed.filePath,
+								reason: malformed.reason,
+							});
+						}
+						const orderedRequests = [...parsedRequests.valid].sort((a, b) => a.request.requestId.localeCompare(b.request.requestId));
+						const scopedRequests = orderedRequests.filter((pendingRequest) => (
+							pendingRequest.request.taskId === taskId
+							&& pendingRequest.request.fromSegmentId === activeSegmentId
+						));
+						let rejectedCount = 0;
+						let acceptedCount = 0;
+						for (const pendingRequest of scopedRequests) {
+							const requestId = pendingRequest.request.requestId;
+							const processingResult = processSegmentExpansionRequestAtBoundary(
+								batchState.batchId,
+								taskId,
+								activeSegmentId,
+								workerAgentId,
+								pendingRequest,
+								segmentState,
+								workspaceConfig,
+								processedSegmentExpansionRequestIds,
+							);
+							if (!processingResult.ok) {
+								rejectedCount += 1;
+								processedSegmentExpansionRequestIds.add(requestId);
+								const recordedRequestId = recordProcessedSegmentExpansionRequestId(batchState, requestId, "failed");
+								if (recordedRequestId) {
+									persistRuntimeState("segment-expansion-rejected", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+								}
+								const renamedRejected = markSegmentExpansionRequestFile(pendingRequest.filePath, "rejected");
+								emitAlert({
+									category: "segment-expansion-rejected",
+									summary:
+										`❌ Segment expansion rejected\n` +
+										`  Task: ${taskId}\n` +
+										`  Segment: ${activeSegmentId}\n` +
+										`  Request: ${requestId}\n` +
+										`  Reason: ${processingResult.reason}\n` +
+										`  File state: ${renamedRejected ? ".rejected" : "rename failed"}`,
+									context: {
+										taskId,
+										segmentId: activeSegmentId,
+										agentId: workerAgentId,
+										expansionRequestId: requestId,
+										exitReason: processingResult.reason,
+									},
+								});
+								continue;
+							}
+
+							const beforeSegmentIds = segmentState.orderedSegments.map((segment) => segment.segmentId);
+							const mutation = handoffSegmentExpansionToMutation(
+								batchState.batchId,
+								taskId,
+								activeSegmentId,
+								workerAgentId,
+								pendingRequest,
+								segmentState,
+							);
+							task.segmentIds = segmentState.orderedSegments.map((segment) => segment.segmentId);
+							const afterSegmentIds = [...task.segmentIds];
+							const persistedInsertedSegments = upsertPendingExpandedSegmentRecords(
+								batchState,
+								task,
+								segmentState,
+								mutation.insertedSegmentIds,
+								activeSegmentId,
+								requestId,
+								batchState.orchBranch,
+							);
+							const recordedRequestId = recordProcessedSegmentExpansionRequestId(batchState, requestId, "succeeded");
+							if (persistedInsertedSegments || recordedRequestId || mutation.insertedSegmentIds.length > 0) {
+								persistRuntimeState("segment-expansion-approved", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+							}
+							const renamedProcessed = markSegmentExpansionRequestFile(pendingRequest.filePath, "processed");
+							emitAlert({
+								category: "segment-expansion-approved",
+								summary:
+									`✅ Segment expansion approved\n` +
+									`  Task: ${taskId}\n` +
+									`  Segment: ${activeSegmentId}\n` +
+									`  Request: ${requestId}\n` +
+									`  Before: ${beforeSegmentIds.join(", ")}\n` +
+									`  After: ${afterSegmentIds.join(", ")}\n` +
+									`  Inserted: ${mutation.insertedSegmentIds.join(", ")}\n` +
+									`  File state: ${renamedProcessed ? ".processed" : "rename failed"}`,
+								context: {
+									taskId,
+									segmentId: activeSegmentId,
+									agentId: workerAgentId,
+									expansionRequestId: requestId,
+								},
+							});
+							acceptedCount += 1;
+						}
+						execLog("batch", batchState.batchId, `segment ${activeSegmentId} completed with ${pendingExpansionFiles.length} pending expansion request(s)`, {
+							taskId,
+							agentId: workerAgentId,
+							segmentId: activeSegmentId,
+							acceptedCount,
+							rejectedCount,
+							validRequests: parsedRequests.valid.length,
+							scopedRequests: scopedRequests.length,
+							ignoredRequests: orderedRequests.length - scopedRequests.length,
+							malformedRequests: parsedRequests.malformed.length,
+						});
+					}
+				}
 			}
-			segmentState.nextSegmentIndex += 1;
+			recomputeNextPendingSegmentIndex(segmentState);
 			task.activeSegmentId = null;
 
 			if (segmentState.nextSegmentIndex >= segmentState.orderedSegments.length) {
 				segmentState.terminalStatus = "succeeded";
 				terminalSegmentTasks.add(taskId);
 				completedTaskIdsThisWave.push(taskId);
+			} else if (!hasTaskInFutureSegmentRounds(runtimeSegmentRounds, waveIdx + 1, taskId)) {
+				continuationTaskIds.add(taskId);
 			}
+		}
+		if (continuationTaskIds.size > 0) {
+			const continuationWave = scheduleContinuationSegmentRound(runtimeSegmentRounds, waveIdx, continuationTaskIds);
+			execLog("batch", batchState.batchId, "scheduled continuation segment round for expanded task frontier", {
+				waveIndex: waveIdx,
+				taskIds: continuationWave.join(","),
+				runtimeSegmentRoundCount: runtimeSegmentRounds.length,
+			});
 		}
 
 		for (const taskId of waveResult.failedTaskIds) {
@@ -1864,6 +2657,60 @@ export async function executeOrchBatch(
 				segmentState.statusBySegmentId.set(activeSegmentId, "failed");
 				const outcome = allTaskOutcomes.find((candidate) => candidate.taskId === taskId);
 				upsertTerminalSegmentRecord(batchState, task, segmentState, activeSegmentId, "failed", outcome, laneByTaskId.get(taskId));
+
+				const workerAgentId = resolveTaskWorkerAgentId(taskId, allTaskOutcomes, laneByTaskId);
+				if (workerAgentId) {
+					const pendingExpansionFiles = listPendingSegmentExpansionRequestFiles(stateRoot, batchState.batchId, workerAgentId);
+					if (pendingExpansionFiles.length > 0) {
+						const parsedRequests = parseSegmentExpansionRequests(pendingExpansionFiles);
+						for (const malformed of parsedRequests.malformed) {
+							markSegmentExpansionRequestFile(malformed.filePath, "invalid");
+						}
+
+						let discardedCount = 0;
+						let ignoredCount = 0;
+						for (const requestFile of parsedRequests.valid) {
+							if (requestFile.request.taskId === taskId && requestFile.request.fromSegmentId === activeSegmentId) {
+								const requestId = requestFile.request.requestId;
+								processedSegmentExpansionRequestIds.add(requestId);
+								const recordedRequestId = recordProcessedSegmentExpansionRequestId(batchState, requestId, "skipped");
+								if (recordedRequestId) {
+									persistRuntimeState("segment-expansion-discarded", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+								}
+								if (markSegmentExpansionRequestFile(requestFile.filePath, "discarded")) {
+									discardedCount += 1;
+								}
+								continue;
+							}
+							ignoredCount += 1;
+						}
+						execLog("batch", batchState.batchId, `segment ${activeSegmentId} failed with ${pendingExpansionFiles.length} pending expansion request(s)`, {
+							taskId,
+							agentId: workerAgentId,
+							segmentId: activeSegmentId,
+							discardedCount,
+							ignoredCount,
+							malformedCount: parsedRequests.malformed.length,
+						});
+						if (discardedCount > 0) {
+							emitAlert({
+								category: "segment-expansion-rejected",
+								summary:
+									`🗑️ Segment expansion requests discarded\n` +
+									`  Task: ${taskId}\n` +
+									`  Segment: ${activeSegmentId}\n` +
+									`  Agent: ${workerAgentId}\n` +
+									`  Discarded: ${discardedCount}`,
+								context: {
+									taskId,
+									segmentId: activeSegmentId,
+									agentId: workerAgentId,
+									exitReason: "segment-expansion-discarded-originating-segment-failed",
+								},
+							});
+						}
+					}
+				}
 			}
 			task.activeSegmentId = null;
 			segmentState.terminalStatus = "failed";
@@ -2158,7 +3005,7 @@ export async function executeOrchBatch(
 						...buildEngineEventBase("merge_success", batchState.batchId, waveIdx, batchState.phase),
 						laneCount: mergedCount,
 						durationMs: mergeResult.totalDurationMs,
-						totalWaves: rawWaves.length,
+						totalWaves: runtimeSegmentRounds.length,
 					}, onEngineEvent);
 				} else {
 					onNotify(
@@ -2518,7 +3365,7 @@ export async function executeOrchBatch(
 		// Hoisted outside the if-block so unsafeBranches is accessible to the
 		// reset loop below — both blocks share the same guard condition.
 		let ppUnsafeBranches = new Set<string>();
-		if (waveIdx < rawWaves.length - 1 && !batchState.pauseSignal.paused) {
+		if (waveIdx < runtimeSegmentRounds.length - 1 && !batchState.pauseSignal.paused) {
 			const ppOpId = resolveOperatorId(orchConfig);
 			const ppResult = preserveFailedLaneProgress(
 				latestAllocatedLanes,
@@ -2564,7 +3411,7 @@ export async function executeOrchBatch(
 		// TP-029: Iterate ALL encountered repo roots (not just primary repoRoot)
 		// so that repos active in wave N but not in the final wave still get reset.
 		// Follows the resume.ts encounteredRepoRoots pattern for parity.
-		if (waveIdx < rawWaves.length - 1 && !batchState.pauseSignal.paused) {
+		if (waveIdx < runtimeSegmentRounds.length - 1 && !batchState.pauseSignal.paused) {
 			const resetPrefix = orchConfig.orchestrator.worktree_prefix;
 			const resetOpId = resolveOperatorId(orchConfig);
 			let totalResetWorktrees = 0;

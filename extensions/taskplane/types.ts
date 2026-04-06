@@ -1989,17 +1989,27 @@ export type EngineEventCallback = (event: EngineEvent) => void;
  * Alert category for supervisor notifications.
  *
  * Matches the alert categories in the autonomous supervisor spec:
- * - `task-failure`:   A task failed after deterministic recovery was exhausted
- * - `merge-failure`:  Wave merge failed and batch paused
- * - `batch-complete`: Batch finished (all waves done)
- * - `agent-message`:  Runtime mailbox reply/escalation from a running agent
+ * - `task-failure`:                A task failed after deterministic recovery was exhausted
+ * - `merge-failure`:               Wave merge failed and batch paused
+ * - `batch-complete`:              Batch finished (all waves done)
+ * - `agent-message`:               Runtime mailbox reply/escalation from a running agent
+ * - `segment-expansion-requested`: Worker requested dynamic segment expansion
+ * - `segment-expansion-approved`:  Engine approved an expansion request
+ * - `segment-expansion-rejected`:  Engine rejected/discarded an expansion request
  *
  * Note: `stall` detection is deferred to a future phase (requires
  * last-activity tracking not yet built).
  *
  * @since TP-076
  */
-export type SupervisorAlertCategory = "task-failure" | "merge-failure" | "batch-complete" | "agent-message";
+export type SupervisorAlertCategory =
+	| "task-failure"
+	| "merge-failure"
+	| "batch-complete"
+	| "agent-message"
+	| "segment-expansion-requested"
+	| "segment-expansion-approved"
+	| "segment-expansion-rejected";
 
 /**
  * Structured context payload for supervisor alerts.
@@ -2048,6 +2058,8 @@ export interface SupervisorAlertContext {
 	agentId?: string;
 	/** Mailbox message ID (for agent-message alerts) */
 	messageId?: string;
+	/** Segment expansion request ID (for segment-expansion alerts) */
+	expansionRequestId?: string;
 	/** Whether partial progress was preserved (for task-failure alerts) */
 	partialProgress?: boolean;
 	/** Batch progress summary */
@@ -2741,6 +2753,10 @@ export interface PersistedSegmentRecord {
 	exitDiagnostic?: TaskExitDiagnostic;
 	/** Human-readable exit reason (legacy compat, same as task-level) */
 	exitReason: string;
+	/** Anchor segment ID this segment was dynamically expanded from (if any). */
+	expandedFrom?: string;
+	/** Segment expansion request ID that created this segment (if any). */
+	expansionRequestId?: string;
 }
 
 /**

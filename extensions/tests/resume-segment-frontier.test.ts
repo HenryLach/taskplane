@@ -5,6 +5,7 @@ import { describe, it } from "node:test";
 
 import { expect } from "./expect.ts";
 import {
+	buildResumeRuntimeWavePlan,
 	collectDoneTaskIdsForResume,
 	computeResumePoint,
 	reconcileTaskStates,
@@ -290,6 +291,126 @@ describe("TP-135 resume segment fallback behavior", () => {
 		const point = computeResumePoint(state, reconciled);
 		expect(point.failedTaskIds).toContain("TP-030");
 		expect(point.pendingTaskIds).toContain("TP-031");
+	});
+
+	it("expanded segments preserve dependency/lifecycle parity after resume reconstruction", () => {
+		const state = makeState({
+			wavePlan: [["TP-041"], ["TP-041"], ["TP-041"]],
+			totalWaves: 3,
+			tasks: [{
+				taskId: "TP-041",
+				laneNumber: 1,
+				sessionName: "orch-lane-1",
+				status: "running",
+				taskFolder: "/tmp/tasks/TP-041",
+				startedAt: Date.now() - 1000,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+				segmentIds: ["TP-041::api", "TP-041::ops", "TP-041::web"],
+				activeSegmentId: null,
+			}],
+			segments: [
+				makeSegment({ taskId: "TP-041", segmentId: "TP-041::api", status: "succeeded", endedAt: Date.now() - 500 }),
+				makeSegment({ taskId: "TP-041", segmentId: "TP-041::ops", repoId: "ops", status: "pending", dependsOnSegmentIds: ["TP-041::api"], expandedFrom: "TP-041::api", expansionRequestId: "exp-041" } as any),
+				makeSegment({ taskId: "TP-041", segmentId: "TP-041::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-041::ops"] }),
+			],
+		});
+
+		const frontier = reconstructSegmentFrontier(state);
+		expect(state.tasks[0].activeSegmentId).toBe("TP-041::ops");
+		expect(state.tasks[0].status).toBe("pending");
+		expect(frontier.get("TP-041")!.dependencyBySegmentId.get("TP-041::web")).toEqual(["TP-041::ops"]);
+		expect(frontier.get("TP-041")!.pendingSegmentIds).toEqual(["TP-041::ops", "TP-041::web"]);
+	});
+
+	it("resume wave-plan expansion keeps approved-but-unexecuted segments schedulable", () => {
+		const state = makeState({
+			wavePlan: [["TP-050"]],
+			totalWaves: 1,
+			mergeResults: [{ waveIndex: 0, status: "succeeded" }] as any,
+			tasks: [{
+				taskId: "TP-050",
+				laneNumber: 1,
+				sessionName: "",
+				status: "pending",
+				taskFolder: "/tmp/tasks/TP-050",
+				startedAt: Date.now() - 1000,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+				segmentIds: ["TP-050::api", "TP-050::web"],
+				activeSegmentId: null,
+			}],
+			segments: [
+				makeSegment({ taskId: "TP-050", segmentId: "TP-050::api", status: "succeeded", endedAt: Date.now() - 100 }),
+				makeSegment({ taskId: "TP-050", segmentId: "TP-050::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-050::api"] }),
+			],
+		});
+
+		reconstructSegmentFrontier(state);
+		const runtimeWavePlan = buildResumeRuntimeWavePlan(state);
+		expect(runtimeWavePlan).toEqual([["TP-050"], ["TP-050"]]);
+		const reconciled = reconcileTaskStates(state, new Set(), new Set(), new Set(["TP-050"]));
+		const point = computeResumePoint(state, reconciled, runtimeWavePlan);
+		expect(point.resumeWaveIndex).toBe(1);
+		expect(point.pendingTaskIds).toContain("TP-050");
+	});
+
+	it("resume wave-plan expansion groups continuation rounds for multi-task wave parity", () => {
+		const state = makeState({
+			wavePlan: [["TP-060", "TP-061"], ["TP-062"]],
+			totalWaves: 2,
+			tasks: [
+				{
+					taskId: "TP-060",
+					laneNumber: 1,
+					sessionName: "",
+					status: "pending",
+					taskFolder: "/tmp/tasks/TP-060",
+					startedAt: null,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					segmentIds: ["TP-060::api", "TP-060::web"],
+					activeSegmentId: null,
+				},
+				{
+					taskId: "TP-061",
+					laneNumber: 2,
+					sessionName: "",
+					status: "pending",
+					taskFolder: "/tmp/tasks/TP-061",
+					startedAt: null,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					segmentIds: ["TP-061::api", "TP-061::web"],
+					activeSegmentId: null,
+				},
+				{
+					taskId: "TP-062",
+					laneNumber: 3,
+					sessionName: "",
+					status: "pending",
+					taskFolder: "/tmp/tasks/TP-062",
+					startedAt: null,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+					segmentIds: ["TP-062::api"],
+					activeSegmentId: null,
+				},
+			],
+			segments: [],
+		});
+
+		const runtimeWavePlan = buildResumeRuntimeWavePlan(state);
+		expect(runtimeWavePlan).toEqual([
+			["TP-060", "TP-061"],
+			["TP-060", "TP-061"],
+			["TP-062"],
+		]);
 	});
 
 	it("repo-singleton tasks without segment IDs keep legacy resume behavior", () => {

@@ -1139,6 +1139,18 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 				);
 			}
 		}
+		if (s.expandedFrom !== undefined && typeof s.expandedFrom !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`segments[${i}].expandedFrom is not a string when present (got ${typeof s.expandedFrom})`,
+			);
+		}
+		if (s.expansionRequestId !== undefined && typeof s.expansionRequestId !== "string") {
+			throw new StateFileError(
+				"STATE_SCHEMA_INVALID",
+				`segments[${i}].expansionRequestId is not a string when present (got ${typeof s.expansionRequestId})`,
+			);
+		}
 		// Optional exitDiagnostic
 		if (s.exitDiagnostic !== undefined) {
 			if (!s.exitDiagnostic || typeof s.exitDiagnostic !== "object" || Array.isArray(s.exitDiagnostic)) {
