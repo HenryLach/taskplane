@@ -1,25 +1,25 @@
 # TP-143: Engine Segment Graph Mutation — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-04-05
+**Current Step:** Step 1: Outbox consumption
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-04-06
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read spec sections 3, 3a, 4, 5, 6, 7
-- [ ] Read engine.ts segment frontier logic
-- [ ] Read resume.ts reconstruction
-- [ ] Understand segment lifecycle
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read spec sections 3, 3a, 4, 5, 6, 7
+- [x] Read engine.ts segment frontier logic
+- [x] Read resume.ts reconstruction
+- [x] Understand segment lifecycle
 
 ### Step 1: Outbox consumption
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Check for request files after segment completes
 - [ ] Parse SegmentExpansionRequest
 - [ ] Handle malformed files (.invalid)
@@ -79,3 +79,7 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-05 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-04-06 03:12 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-06 03:12 | Step 0 started | Preflight |
+| 2026-04-06 03:26 | Step 0 completed | Preflight |
+| 2026-04-06 03:26 | Step 1 started | Outbox consumption |
