@@ -163,7 +163,8 @@ export const SECTIONS: SectionDef[] = [
 			{ configPath: "taskRunner.worker.model", label: "Worker Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "workerModel", description: "Worker model (inherit = use session model)" },
 			{ configPath: "taskRunner.worker.tools", label: "Worker Tools", control: "input", layer: "L1", fieldType: "string", description: "Worker tool allowlist" },
 			{ configPath: "taskRunner.worker.thinking", label: "Worker Thinking", control: "picker", layer: "L1", fieldType: "string", description: "Worker thinking mode" },
-			{ configPath: "taskRunner.worker.spawnMode", label: "Spawn Mode", control: "toggle", layer: "L1", fieldType: "enum", values: ["subprocess"], optional: true, description: "How /task spawns workers and reviewers. Runtime V2 supports subprocess only." },
+			// spawnMode removed — /task is deprecated, Runtime V2 is subprocess-only.
+			// { configPath: "taskRunner.worker.spawnMode" ... } was here.
 		],
 	},
 	{
@@ -614,9 +615,6 @@ export function getFieldDisplayValue(
 
 	// Optional fields may be undefined
 	if (val === undefined) {
-		if (field.optional && field.configPath === "taskRunner.worker.spawnMode") {
-			return "(inherit)";
-		}
 		return "(not set)";
 	}
 

@@ -344,21 +344,7 @@ describe("10. getFieldDisplayValue", () => {
 		expect(getFieldDisplayValue(field, config, emptyPrefs)).toBe("(not set)");
 	});
 
-	it("10.6 displays '(inherit)' for optional worker spawnMode when undefined", () => {
-		const config = cloneConfig();
-		// worker.spawnMode is optional — when undefined, show "(inherit)"
-		delete (config.taskRunner.worker as any).spawnMode;
-		const field: FieldDef = {
-			configPath: "taskRunner.worker.spawnMode",
-			label: "Worker Spawn Mode",
-			control: "toggle",
-			layer: "L1",
-			fieldType: "enum",
-			values: ["(inherit)", "subprocess"],
-			optional: true,
-		};
-		expect(getFieldDisplayValue(field, config, emptyPrefs)).toBe("(inherit)");
-	});
+	// 10.6 removed — spawnMode setting removed (/task deprecated, Runtime V2 subprocess-only)
 
 	it("10.7 displays boolean as 'true'/'false' string", () => {
 		const config = cloneConfig();
