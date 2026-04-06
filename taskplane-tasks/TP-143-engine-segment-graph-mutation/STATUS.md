@@ -25,9 +25,9 @@
 - [x] Handle malformed files (.invalid)
 - [x] Discard on failed segment (.discarded)
 - [x] Process in requestId order
-- [ ] R002: consume sorted valid requests through a concrete boundary-processing path
-- [ ] R002: scope failed-segment discard to matching taskId/fromSegmentId only
-- [ ] R002: reject empty requestedRepoIds as malformed (.invalid)
+- [x] R002: consume sorted valid requests through a concrete boundary-processing path
+- [x] R002: scope failed-segment discard to matching taskId/fromSegmentId only
+- [x] R002: reject empty requestedRepoIds as malformed (.invalid)
 
 ### Step 2: Engine validation
 **Status:** ⬜ Not Started

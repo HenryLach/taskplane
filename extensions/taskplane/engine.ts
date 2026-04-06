@@ -191,7 +191,7 @@ function parseSegmentExpansionRequestPayload(payload: unknown): SegmentExpansion
 	if (typeof candidate.requestId !== "string" || !candidate.requestId.trim()) return null;
 	if (typeof candidate.taskId !== "string" || !candidate.taskId.trim()) return null;
 	if (typeof candidate.fromSegmentId !== "string" || !candidate.fromSegmentId.trim()) return null;
-	if (!Array.isArray(candidate.requestedRepoIds) || candidate.requestedRepoIds.some((repoId) => typeof repoId !== "string" || !repoId.trim())) return null;
+	if (!Array.isArray(candidate.requestedRepoIds) || candidate.requestedRepoIds.length === 0 || candidate.requestedRepoIds.some((repoId) => typeof repoId !== "string" || !repoId.trim())) return null;
 	if (typeof candidate.rationale !== "string") return null;
 	if (candidate.placement !== "after-current" && candidate.placement !== "end") return null;
 	if (!Array.isArray(candidate.edges)) return null;
@@ -269,6 +269,24 @@ function markSegmentExpansionRequestFile(filePath: string, stateSuffix: "invalid
 	} catch {
 		return false;
 	}
+}
+
+function processSegmentExpansionRequestAtBoundary(
+	batchId: string,
+	taskId: string,
+	segmentId: string,
+	agentId: string,
+	requestFile: PendingSegmentExpansionRequest,
+): void {
+	execLog("batch", batchId, "segment expansion request handed off for boundary processing", {
+		taskId,
+		segmentId,
+		agentId,
+		requestId: requestFile.request.requestId,
+		placement: requestFile.request.placement,
+		requestedRepoIds: requestFile.request.requestedRepoIds.join(","),
+		requestFile: requestFile.filePath,
+	});
 }
 
 function ensureSegmentRecords(batchState: OrchBatchRuntimeState): PersistedSegmentRecord[] {
@@ -1985,21 +2003,20 @@ export async function executeOrchBatch(
 							});
 						}
 						const orderedRequests = [...parsedRequests.valid].sort((a, b) => a.request.requestId.localeCompare(b.request.requestId));
-						for (const pendingRequest of orderedRequests) {
-							execLog("batch", batchState.batchId, `segment expansion request queued for processing`, {
-								taskId,
-								agentId: workerAgentId,
-								segmentId: activeSegmentId,
-								requestId: pendingRequest.request.requestId,
-								placement: pendingRequest.request.placement,
-								requestedRepoIds: pendingRequest.request.requestedRepoIds.join(","),
-							});
+						const scopedRequests = orderedRequests.filter((pendingRequest) => (
+							pendingRequest.request.taskId === taskId
+							&& pendingRequest.request.fromSegmentId === activeSegmentId
+						));
+						for (const pendingRequest of scopedRequests) {
+							processSegmentExpansionRequestAtBoundary(batchState.batchId, taskId, activeSegmentId, workerAgentId, pendingRequest);
 						}
 						execLog("batch", batchState.batchId, `segment ${activeSegmentId} completed with ${pendingExpansionFiles.length} pending expansion request(s)`, {
 							taskId,
 							agentId: workerAgentId,
 							segmentId: activeSegmentId,
 							validRequests: parsedRequests.valid.length,
+							scopedRequests: scopedRequests.length,
+							ignoredRequests: orderedRequests.length - scopedRequests.length,
 							malformedRequests: parsedRequests.malformed.length,
 						});
 					}
@@ -2029,33 +2046,47 @@ export async function executeOrchBatch(
 				if (workerAgentId) {
 					const pendingExpansionFiles = listPendingSegmentExpansionRequestFiles(stateRoot, batchState.batchId, workerAgentId);
 					if (pendingExpansionFiles.length > 0) {
+						const parsedRequests = parseSegmentExpansionRequests(pendingExpansionFiles);
+						for (const malformed of parsedRequests.malformed) {
+							markSegmentExpansionRequestFile(malformed.filePath, "invalid");
+						}
+
 						let discardedCount = 0;
-						for (const requestFile of pendingExpansionFiles) {
-							if (markSegmentExpansionRequestFile(requestFile, "discarded")) {
-								discardedCount += 1;
+						let ignoredCount = 0;
+						for (const requestFile of parsedRequests.valid) {
+							if (requestFile.request.taskId === taskId && requestFile.request.fromSegmentId === activeSegmentId) {
+								if (markSegmentExpansionRequestFile(requestFile.filePath, "discarded")) {
+									discardedCount += 1;
+								}
+								continue;
 							}
+							ignoredCount += 1;
 						}
 						execLog("batch", batchState.batchId, `segment ${activeSegmentId} failed with ${pendingExpansionFiles.length} pending expansion request(s)`, {
 							taskId,
 							agentId: workerAgentId,
 							segmentId: activeSegmentId,
 							discardedCount,
+							ignoredCount,
+							malformedCount: parsedRequests.malformed.length,
 						});
-						emitAlert({
-							category: "agent-message",
-							summary:
-								`🗑️ Segment expansion requests discarded\n` +
-								`  Task: ${taskId}\n` +
-								`  Segment: ${activeSegmentId}\n` +
-								`  Agent: ${workerAgentId}\n` +
-								`  Discarded: ${discardedCount}/${pendingExpansionFiles.length}`,
-							context: {
-								taskId,
-								segmentId: activeSegmentId,
-								agentId: workerAgentId,
-								exitReason: "segment-expansion-discarded-originating-segment-failed",
-							},
-						});
+						if (discardedCount > 0) {
+							emitAlert({
+								category: "agent-message",
+								summary:
+									`🗑️ Segment expansion requests discarded\n` +
+									`  Task: ${taskId}\n` +
+									`  Segment: ${activeSegmentId}\n` +
+									`  Agent: ${workerAgentId}\n` +
+									`  Discarded: ${discardedCount}`,
+								context: {
+									taskId,
+									segmentId: activeSegmentId,
+									agentId: workerAgentId,
+									exitReason: "segment-expansion-discarded-originating-segment-failed",
+								},
+							});
+						}
 					}
 				}
 			}
