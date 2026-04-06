@@ -641,6 +641,41 @@ export function getMergeStatusForWave(
 	return null;
 }
 
+export function buildResumeRuntimeWavePlan(persistedState: PersistedBatchState): string[][] {
+	const runtimeWavePlan = persistedState.wavePlan.map((wave) => [...wave]);
+	const segmentCountByTaskId = new Map<string, number>();
+	for (const task of persistedState.tasks) {
+		if (Array.isArray(task.segmentIds) && task.segmentIds.length > 0) {
+			segmentCountByTaskId.set(task.taskId, task.segmentIds.length);
+		}
+	}
+	const scheduledCountByTaskId = new Map<string, number>();
+	for (const wave of runtimeWavePlan) {
+		for (const taskId of wave) {
+			scheduledCountByTaskId.set(taskId, (scheduledCountByTaskId.get(taskId) ?? 0) + 1);
+		}
+	}
+	for (const [taskId, segmentCount] of segmentCountByTaskId.entries()) {
+		const scheduledCount = scheduledCountByTaskId.get(taskId) ?? 0;
+		if (segmentCount <= scheduledCount) continue;
+		for (let missing = segmentCount - scheduledCount; missing > 0; missing--) {
+			let lastOccurrence = -1;
+			for (let idx = runtimeWavePlan.length - 1; idx >= 0; idx--) {
+				if (runtimeWavePlan[idx]?.includes(taskId)) {
+					lastOccurrence = idx;
+					break;
+				}
+			}
+			if (lastOccurrence < 0) {
+				runtimeWavePlan.push([taskId]);
+			} else {
+				runtimeWavePlan.splice(lastOccurrence + 1, 0, [taskId]);
+			}
+		}
+	}
+	return runtimeWavePlan;
+}
+
 /**
  * Compute the resume point from reconciled task states and wave plan.
  *
@@ -662,6 +697,7 @@ export function getMergeStatusForWave(
 export function computeResumePoint(
 	persistedState: PersistedBatchState,
 	reconciledTasks: ReconciledTaskState[],
+	wavePlan: string[][] = persistedState.wavePlan,
 ): ResumePoint {
 	// Build lookup: taskId → reconciled state
 	const reconciledMap = new Map<string, ReconciledTaskState>();
@@ -684,8 +720,8 @@ export function computeResumePoint(
 	}
 	const waveSegmentIdByTaskOccurrence = new Map<string, string>();
 	const occurrenceByTaskId = new Map<string, number>();
-	for (let waveIdx = 0; waveIdx < persistedState.wavePlan.length; waveIdx++) {
-		for (const taskId of persistedState.wavePlan[waveIdx]) {
+	for (let waveIdx = 0; waveIdx < wavePlan.length; waveIdx++) {
+		for (const taskId of wavePlan[waveIdx]) {
 			const segmentIds = segmentIdsByTaskId.get(taskId);
 			if (!segmentIds || segmentIds.length === 0) continue;
 			const occurrence = occurrenceByTaskId.get(taskId) ?? 0;
@@ -737,11 +773,11 @@ export function computeResumePoint(
 	// Find resume wave: first wave with any non-completed tasks OR missing/failed merge.
 	// TP-037 (Bug #102): A wave where all tasks are terminal but the merge
 	// hasn't succeeded is flagged for merge retry, not skipped.
-	let resumeWaveIndex = persistedState.wavePlan.length; // default: past end = all done
+	let resumeWaveIndex = wavePlan.length; // default: past end = all done
 	const mergeRetryWaveIndexes: number[] = [];
 
-	for (let i = 0; i < persistedState.wavePlan.length; i++) {
-		const waveTasks = persistedState.wavePlan[i];
+	for (let i = 0; i < wavePlan.length; i++) {
+		const waveTasks = wavePlan[i];
 		const allDone = waveTasks.every((taskId) => {
 			const waveSegmentId = waveSegmentIdByTaskOccurrence.get(`${i}:${taskId}`);
 			if (waveSegmentId && segmentStatusBySegmentId.has(waveSegmentId)) {
@@ -769,7 +805,7 @@ export function computeResumePoint(
 		if (!allDone) {
 			// Only set resumeWaveIndex if not already set by a merge retry
 			// (merge retry at an earlier wave takes precedence)
-			if (resumeWaveIndex === persistedState.wavePlan.length) {
+			if (resumeWaveIndex === wavePlan.length) {
 				resumeWaveIndex = i;
 			}
 			break;
@@ -795,7 +831,7 @@ export function computeResumePoint(
 			if (mergeStatus !== "succeeded") {
 				// Merge missing or failed — flag for retry, don't skip past this wave
 				mergeRetryWaveIndexes.push(i);
-				if (resumeWaveIndex === persistedState.wavePlan.length) {
+				if (resumeWaveIndex === wavePlan.length) {
 					// This is the first wave needing attention — set resume point here
 					resumeWaveIndex = i;
 				}
@@ -805,8 +841,8 @@ export function computeResumePoint(
 
 	// Determine pending tasks: tasks in resume wave and later that need execution
 	const actualPendingTaskIds: string[] = [];
-	for (let i = resumeWaveIndex; i < persistedState.wavePlan.length; i++) {
-		for (const taskId of persistedState.wavePlan[i]) {
+	for (let i = resumeWaveIndex; i < wavePlan.length; i++) {
+		for (const taskId of wavePlan[i]) {
 			const waveSegmentId = waveSegmentIdByTaskOccurrence.get(`${i}:${taskId}`);
 			if (waveSegmentId && segmentStatusBySegmentId.has(waveSegmentId)) {
 				const segmentStatus = segmentStatusBySegmentId.get(waveSegmentId)!;
@@ -1104,11 +1140,12 @@ export async function resumeOrchBatch(
 		});
 	}
 
+	const runtimeWavePlan = buildResumeRuntimeWavePlan(persistedState);
 	// TP-108/112: Runtime V2 backend selection for resumed batches.
 	// MUST be computed before any backend-aware branch (section 3+).
 	const resumeBackend: RuntimeBackend = selectRuntimeBackend(
 		"all",
-		persistedState.wavePlan,
+		runtimeWavePlan,
 		workspaceConfig,
 	).backend;
 	execLog("resume", batchState.batchId, `runtime backend for resumed execution: ${resumeBackend}`);
@@ -1177,7 +1214,7 @@ export async function resumeOrchBatch(
 	}
 
 	// ── 5. Compute resume point ──────────────────────────────────
-	const resumePoint = computeResumePoint(persistedState, reconciledTasks);
+	const resumePoint = computeResumePoint(persistedState, reconciledTasks, runtimeWavePlan);
 	const completedTaskSet = new Set(resumePoint.completedTaskIds);
 	const failedTaskSet = new Set(resumePoint.failedTaskIds);
 	const reconnectTaskSet = new Set(resumePoint.reconnectTaskIds);
@@ -1264,8 +1301,8 @@ export async function resumeOrchBatch(
 	// entered, so they were never counted in blockedTasks.
 	if (persistedBlockedTaskIds.size > 0) {
 		let uncountedBlocked = 0;
-		for (let wi = resumePoint.resumeWaveIndex; wi < persistedState.wavePlan.length; wi++) {
-			for (const taskId of persistedState.wavePlan[wi]) {
+		for (let wi = resumePoint.resumeWaveIndex; wi < runtimeWavePlan.length; wi++) {
+			for (const taskId of runtimeWavePlan[wi]) {
 				if (persistedBlockedTaskIds.has(taskId)) {
 					uncountedBlocked++;
 				}
@@ -1579,7 +1616,10 @@ export async function resumeOrchBatch(
 
 	// ── 9. Persist state after reconciliation ────────────────────
 	// Track state for persistence
-	const wavePlan = persistedState.wavePlan;
+	const wavePlan = runtimeWavePlan;
+	if (batchState.totalWaves < wavePlan.length) {
+		batchState.totalWaves = wavePlan.length;
+	}
 	const allTaskOutcomes: LaneTaskOutcome[] = [];
 
 	// Initialize latestAllocatedLanes from persisted lane records so that
@@ -1659,7 +1699,7 @@ export async function resumeOrchBatch(
 		persistedState.tasks.map((task) => [task.taskId, task.status] as const),
 	);
 
-	for (let waveIdx = resumePoint.resumeWaveIndex; waveIdx < persistedState.wavePlan.length; waveIdx++) {
+	for (let waveIdx = resumePoint.resumeWaveIndex; waveIdx < wavePlan.length; waveIdx++) {
 		// Check pause signal
 		if (batchState.pauseSignal.paused) {
 			batchState.phase = "paused";
@@ -1673,7 +1713,7 @@ export async function resumeOrchBatch(
 
 		// Get wave tasks, filtering out completed/failed/skipped/blocked ones.
 		// Persisted "skipped" tasks are terminal and must never be re-executed.
-		let waveTasks = persistedState.wavePlan[waveIdx].filter(
+		let waveTasks = wavePlan[waveIdx].filter(
 			taskId => !completedTaskSet.has(taskId) &&
 				!failedTaskSet.has(taskId) &&
 				persistedStatusByTaskId.get(taskId) !== "skipped" &&
@@ -1686,7 +1726,7 @@ export async function resumeOrchBatch(
 		// Count only newly blocked tasks (not already persisted) to avoid double-counting.
 		// persistedState.blockedTaskIds were already counted in persistedState.blockedTasks
 		// which initialized batchState.blockedTasks.
-		const blockedInWave = persistedState.wavePlan[waveIdx].filter(
+		const blockedInWave = wavePlan[waveIdx].filter(
 			taskId => batchState.blockedTaskIds.has(taskId) &&
 				!persistedBlockedTaskIds.has(taskId),
 		);
@@ -1702,7 +1742,7 @@ export async function resumeOrchBatch(
 				onNotify(`🔀 Wave ${waveIdx + 1}: retrying merge (tasks already complete, merge was missing/failed)`, "info");
 
 				// Reconstruct lanes for this wave from persisted state
-				const waveTaskIds = new Set(persistedState.wavePlan[waveIdx]);
+				const waveTaskIds = new Set(wavePlan[waveIdx]);
 				const waveLaneRecords = persistedState.lanes.filter(
 					lane => lane.taskIds.some(tid => waveTaskIds.has(tid)),
 				);
@@ -1712,13 +1752,13 @@ export async function resumeOrchBatch(
 				// Crucial for orch_force_merge: tasks intentionally marked "skipped" must
 				// remain skipped here (not failed), otherwise mixed-outcome detection would
 				// trigger again and block the forced merge recovery path.
-				const succeededTaskIds = persistedState.wavePlan[waveIdx].filter(
+				const succeededTaskIds = wavePlan[waveIdx].filter(
 					taskId => completedTaskSet.has(taskId),
 				);
-				const skippedTaskIds = persistedState.wavePlan[waveIdx].filter(
+				const skippedTaskIds = wavePlan[waveIdx].filter(
 					taskId => persistedStatusByTaskId.get(taskId) === "skipped",
 				);
-				const failedTaskIds = persistedState.wavePlan[waveIdx].filter(
+				const failedTaskIds = wavePlan[waveIdx].filter(
 					taskId => {
 						const status = persistedStatusByTaskId.get(taskId);
 						return status === "failed" || status === "stalled";
@@ -1847,7 +1887,7 @@ export async function resumeOrchBatch(
 		}
 
 		onNotify(
-			ORCH_MESSAGES.orchWaveStart(waveIdx + 1, persistedState.wavePlan.length, waveTasks.length, Math.min(waveTasks.length, orchConfig.orchestrator.max_lanes)),
+			ORCH_MESSAGES.orchWaveStart(waveIdx + 1, wavePlan.length, waveTasks.length, Math.min(waveTasks.length, orchConfig.orchestrator.max_lanes)),
 			"info",
 		);
 
@@ -2365,7 +2405,7 @@ export async function resumeOrchBatch(
 		// Hoisted outside the if-block so unsafeBranches is accessible to the
 		// reset loop below — both blocks share the same guard condition.
 		let ppUnsafeBranches = new Set<string>();
-		if (waveIdx < persistedState.wavePlan.length - 1 && !batchState.pauseSignal.paused) {
+		if (waveIdx < wavePlan.length - 1 && !batchState.pauseSignal.paused) {
 			const ppOpId = resolveOperatorId(orchConfig);
 			const ppResult = preserveFailedLaneProgress(
 				latestAllocatedLanes,
@@ -2406,7 +2446,7 @@ export async function resumeOrchBatch(
 			applyPartialProgressToOutcomes(ppResult, allTaskOutcomes);
 		}
 
-		if (waveIdx < persistedState.wavePlan.length - 1 && !batchState.pauseSignal.paused) {
+		if (waveIdx < wavePlan.length - 1 && !batchState.pauseSignal.paused) {
 			const wtPrefix = orchConfig.orchestrator.worktree_prefix;
 			const resetOpId = resolveOperatorId(orchConfig);
 			// TP-029 R006: Track worktrees that failed reset AND removal

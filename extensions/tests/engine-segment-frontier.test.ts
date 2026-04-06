@@ -5,6 +5,7 @@ import { expect } from "./expect.ts";
 import {
 	applySegmentExpansionMutation,
 	buildSegmentFrontierWaves,
+	collectProcessedSegmentExpansionRequestIds,
 	linearizeTaskSegmentPlan,
 	processSegmentExpansionRequestAtBoundary,
 	scheduleContinuationSegmentRound,
@@ -415,5 +416,17 @@ describe("segment expansion graph mutation", () => {
 		expect(src).toContain("expandedFrom");
 		expect(src).toContain("expansionRequestId");
 		expect(src).toContain("batchState.orchBranch");
+	});
+
+	it("idempotency seed includes previously processed request IDs from persisted resilience history", () => {
+		const processed = collectProcessedSegmentExpansionRequestIds({
+			resilience: {
+				repairHistory: [
+					{ id: "exp-keep", strategy: "segment-expansion-request" },
+					{ id: "other", strategy: "stale-worktree-cleanup" },
+				] as any,
+			},
+		} as any);
+		expect([...processed].sort()).toEqual(["exp-keep"]);
 	});
 });

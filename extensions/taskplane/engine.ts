@@ -753,6 +753,16 @@ export function upsertPendingExpandedSegmentRecords(
 	return changed;
 }
 
+export function collectProcessedSegmentExpansionRequestIds(
+	batchState: Pick<OrchBatchRuntimeState, "resilience">,
+): Set<string> {
+	return new Set<string>(
+		(batchState.resilience?.repairHistory ?? [])
+			.filter((entry) => entry.strategy === "segment-expansion-request")
+			.map((entry) => entry.id),
+	);
+}
+
 function recordProcessedSegmentExpansionRequestId(
 	batchState: OrchBatchRuntimeState,
 	requestId: string,
@@ -1911,11 +1921,7 @@ export async function executeOrchBatch(
 	// Segment frontier runtime state keyed by parent task ID.
 	let segmentStateByTask = new Map<string, SegmentFrontierTaskState>();
 	// Processed segment-expansion request IDs (idempotency guard).
-	const processedSegmentExpansionRequestIds = new Set<string>(
-		(batchState.resilience?.repairHistory ?? [])
-			.filter((entry) => entry.strategy === "segment-expansion-request")
-			.map((entry) => entry.id),
-	);
+	const processedSegmentExpansionRequestIds = collectProcessedSegmentExpansionRequestIds(batchState);
 	// Tasks that have reached terminal status at segment frontier level.
 	const terminalSegmentTasks = new Set<string>();
 	// Reference to discovery result for enriching taskFolder paths.

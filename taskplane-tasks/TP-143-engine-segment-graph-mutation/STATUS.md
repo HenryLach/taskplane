@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 14
+**Review Counter:** 15
 **Iteration:** 2
 **Size:** M
 
@@ -66,11 +66,11 @@
 
 ### Step 5: Resume compatibility
 **Status:** 🟨 In Progress
-- [ ] Resume reconstructs expanded segments
-- [ ] Expanded segments are behaviorally indistinguishable from original segments after resume (deps/lifecycle/metadata parity)
-- [ ] Approved-but-unexecuted expansion resumes
-- [ ] Idempotency on resume (processed request files/request IDs do not replay)
-- [ ] Step 5 resume-specific targeted test intent (approved-but-unexecuted + processed-file replay)
+- [x] Resume reconstructs expanded segments
+- [x] Expanded segments are behaviorally indistinguishable from original segments after resume (deps/lifecycle/metadata parity)
+- [x] Approved-but-unexecuted expansion resumes
+- [x] Idempotency on resume (processed request files/request IDs do not replay)
+- [x] Step 5 resume-specific targeted test intent (approved-but-unexecuted + processed-file replay)
 
 ### Step 6: Testing & Verification
 **Status:** ⬜ Not Started
@@ -135,3 +135,4 @@
 | 2026-04-06 04:12 | Step 4 completed | Persistence and alerts |
 | 2026-04-06 04:12 | Step 5 started | Resume compatibility |
 | 2026-04-06 04:12 | Review R014 | plan Step 5: REVISE |
+| 2026-04-06 04:12 | Review R015 | plan Step 5: APPROVE |
