@@ -7,7 +7,7 @@
  *   - validateFieldInput: input validation per field type
  *   - coerceValueForWrite: raw TUI value → typed config value
  *   - writeProjectConfigField: Layer 1 write-back (JSON-only, YAML bootstrap, malformed)
- *   - writeUserPreference: Layer 2 write-back (prefs JSON)
+ *   - writeGlobalPreference: Layer 2 write-back (prefs JSON)
  *
  * Test categories:
  *   9.x  — detectFieldSource: source badge precedence and type guards
@@ -16,7 +16,7 @@
  *   12.x — SECTIONS schema coverage
  *   13.x — coerceValueForWrite: value coercion for write-back
  *   14.x — writeProjectConfigField: Layer 1 project config writes
- *   15.x — writeUserPreference: Layer 2 preferences writes
+ *   15.x — writeGlobalPreference: Layer 2 preferences writes
  *   16.x — YAML source detection: JSON-only, YAML-only, JSON+YAML precedence
  *   17.x — Write-back zero-mutation paths: cancel/decline confirmation
  *   18.x — Advanced section discoverability: uncovered fields surfaced
@@ -42,7 +42,7 @@ import {
 	validateFieldInput,
 	coerceValueForWrite,
 	writeProjectConfigField,
-	writeUserPreference,
+	writeGlobalPreference,
 	readRawProjectJson,
 	readRawYamlConfigs,
 	getAdvancedItems,
@@ -57,12 +57,12 @@ import {
 	DEFAULT_PROJECT_CONFIG,
 	CONFIG_VERSION,
 	PROJECT_CONFIG_FILENAME,
-	USER_PREFERENCES_FILENAME,
-	USER_PREFERENCES_SUBDIR,
+	GLOBAL_PREFERENCES_FILENAME,
+	GLOBAL_PREFERENCES_SUBDIR,
 } from "../taskplane/config-schema.ts";
 import type {
 	TaskplaneConfig,
-	UserPreferences,
+	GlobalPreferences,
 } from "../taskplane/config-schema.ts";
 
 
@@ -142,19 +142,19 @@ describe("9. detectFieldSource", () => {
 		it("9.1.2 returns 'default' when field is absent from raw project config", () => {
 			const field = makeL1Field();
 			const rawProject = { orchestrator: { orchestrator: {} } };
-			expect(detectFieldSource(field, rawProject, null)).toBe("default");
+			expect(detectFieldSource(field, rawProject, null)).toBe("global");
 		});
 
 		it("9.1.3 returns 'default' when raw project config is null", () => {
 			const field = makeL1Field();
-			expect(detectFieldSource(field, null, null)).toBe("default");
+			expect(detectFieldSource(field, null, null)).toBe("global");
 		});
 
 		it("9.1.4 ignores user prefs for L1-only fields", () => {
 			const field = makeL1Field();
 			const rawProject = {};
 			const rawPrefs = { maxLanes: 10 };
-			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("global");
 		});
 	});
 
@@ -164,13 +164,13 @@ describe("9. detectFieldSource", () => {
 		it("9.2.1 returns 'user' when string pref is non-empty", () => {
 			const field = makeL1L2StringField();
 			const rawPrefs = { workerModel: "claude-4-opus" };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("user");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.2.2 returns 'default' when string pref is empty string (cleared)", () => {
 			const field = makeL1L2StringField();
 			const rawPrefs = { workerModel: "" };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.2.3 returns 'project' when string pref is empty but project has value", () => {
@@ -183,20 +183,20 @@ describe("9. detectFieldSource", () => {
 		it("9.2.4 returns 'default' when string pref is undefined", () => {
 			const field = makeL1L2StringField();
 			const rawPrefs = {};
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.2.5 rejects non-string pref values (type guard)", () => {
 			const field = makeL1L2StringField();
 			// If prefs has a number where a string is expected, reject it
 			const rawPrefs = { workerModel: 42 };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.2.6 rejects boolean pref values for string fields (type guard)", () => {
 			const field = makeL1L2StringField();
 			const rawPrefs = { workerModel: true };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 	});
 
@@ -206,32 +206,32 @@ describe("9. detectFieldSource", () => {
 		it("9.3.1 returns 'user' when enum pref is valid value", () => {
 			const field = makeL1L2EnumField();
 			const rawPrefs = { spawnMode: "subprocess" };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("user");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.3.2 rejects legacy tmux enum value", () => {
 			const field = makeL1L2EnumField();
 			const rawPrefs = { spawnMode: "tmux" };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.3.3 rejects invalid enum value — falls to default", () => {
 			const field = makeL1L2EnumField();
 			// "invalid" is not in values ["subprocess"]
 			const rawPrefs = { spawnMode: "invalid" };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.3.4 rejects non-string enum value (type guard)", () => {
 			const field = makeL1L2EnumField();
 			const rawPrefs = { spawnMode: 123 };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.3.5 returns 'default' when enum pref is undefined", () => {
 			const field = makeL1L2EnumField();
 			const rawPrefs = {};
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.3.6 returns 'project' when enum pref is invalid but project has value", () => {
@@ -248,42 +248,42 @@ describe("9. detectFieldSource", () => {
 		it("9.4.1 returns 'user' when number pref is valid finite number", () => {
 			const field = makeL2NumberField();
 			const rawPrefs = { dashboardPort: 8080 };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("user");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.4.2 returns 'default' when number pref is undefined", () => {
 			const field = makeL2NumberField();
 			const rawPrefs = {};
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.4.3 rejects string value for number field (type guard)", () => {
 			const field = makeL2NumberField();
 			const rawPrefs = { dashboardPort: "8080" };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.4.4 rejects NaN for number field (type guard)", () => {
 			const field = makeL2NumberField();
 			const rawPrefs = { dashboardPort: NaN };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 
 		it("9.4.5 rejects Infinity for number field (type guard)", () => {
 			const field = makeL2NumberField();
 			const rawPrefs = { dashboardPort: Infinity };
-			expect(detectFieldSource(field, null, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, null, rawPrefs)).toBe("global");
 		});
 	});
 
 	// 9.5 — Precedence cascading
 
 	describe("9.5 Precedence cascading", () => {
-		it("9.5.1 user prefs win over project config for L1+L2 string fields", () => {
+		it("9.5.1 project override wins over global for L1+L2 string fields", () => {
 			const field = makeL1L2StringField();
 			const rawProject = { taskRunner: { worker: { model: "gpt-4" } } };
 			const rawPrefs = { workerModel: "claude-4-opus" };
-			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("user");
+			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("project");
 		});
 
 		it("9.5.2 project wins when prefs not set for L1+L2 fields", () => {
@@ -298,7 +298,7 @@ describe("9. detectFieldSource", () => {
 			// Even if raw project has something (it shouldn't for L2-only), still "default"
 			const rawProject = { preferences: { dashboardPort: 9999 } };
 			const rawPrefs = {};
-			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("default");
+			expect(detectFieldSource(field, rawProject, rawPrefs)).toBe("global");
 		});
 	});
 });
@@ -307,7 +307,7 @@ describe("9. detectFieldSource", () => {
 // ── 10.x getFieldDisplayValue ────────────────────────────────────────
 
 describe("10. getFieldDisplayValue", () => {
-	const emptyPrefs: UserPreferences = {};
+	const emptyPrefs: GlobalPreferences = {};
 
 	it("10.1 displays number from merged config", () => {
 		const config = cloneConfig();
@@ -332,7 +332,7 @@ describe("10. getFieldDisplayValue", () => {
 
 	it("10.4 displays dashboardPort from preferences (L2-only)", () => {
 		const config = cloneConfig();
-		const prefs: UserPreferences = { dashboardPort: 9090 };
+		const prefs: GlobalPreferences = { dashboardPort: 9090 };
 		const field = makeL2NumberField();
 		expect(getFieldDisplayValue(field, config, prefs)).toBe("9090");
 	});
@@ -589,7 +589,7 @@ describe("12. SECTIONS schema coverage", () => {
 		expect(mergeThinking).toBeDefined();
 		expect(mergeThinking!.layer).toBe("L1+L2");
 		expect(mergeThinking!.prefsKey).toBe("mergeThinking");
-		expect(getDefaultWriteDestination(mergeThinking!)).toBe(null);
+		expect(getDefaultWriteDestination(mergeThinking!)).toBe("prefs");
 	});
 });
 
@@ -692,9 +692,9 @@ describe("13. coerceValueForWrite", () => {
 		expect(coerceValueForWrite(field, "gpt-4  (default)")).toBe("gpt-4");
 	});
 
-	it("13.10 strips '(user)' source badge", () => {
+	it("13.10 strips '(global)' source badge", () => {
 		const field = makeL1L2EnumField();
-		expect(coerceValueForWrite(field, "subprocess  (user)")).toBe("subprocess");
+		expect(coerceValueForWrite(field, "subprocess  (global)")).toBe("subprocess");
 	});
 
 	it("13.11 returns undefined for non-parseable number", () => {
@@ -773,8 +773,7 @@ describe("14. writeProjectConfigField", () => {
 		writeProjectConfigField(dir, "taskRunner.worker.spawnMode", undefined);
 
 		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
-		expect(result.taskRunner.worker.spawnMode).toBeUndefined();
-		expect("spawnMode" in result.taskRunner.worker).toBe(false);
+		expect(result.taskRunner).toBeUndefined();
 	});
 
 	it("14.4 throws on malformed JSON with descriptive error", () => {
@@ -786,7 +785,7 @@ describe("14. writeProjectConfigField", () => {
 		).toThrow(/malformed JSON/i);
 	});
 
-	it("14.5 bootstraps JSON from YAML-only project (preserves YAML values)", () => {
+	it("14.5 seeds first JSON override from YAML-only project (preserves YAML overrides)", () => {
 		const dir = makeWriteTestDir("yaml-only");
 		// Write a YAML config with a custom value
 		writePiFile(dir, "task-orchestrator.yaml", `
@@ -802,11 +801,74 @@ orchestrator:
 		const result = readJsonFile(jsonPath);
 		// The edited field
 		expect(result.orchestrator.orchestrator.worktreePrefix).toBe("test-wt");
-		// YAML-sourced values are preserved in the bootstrapped JSON
+		// Existing YAML project overrides are preserved in seeded JSON
 		expect(result.orchestrator.orchestrator.maxLanes).toBe(7);
 		expect(result.orchestrator.orchestrator.spawnMode).toBe("subprocess");
 		// YAML file is still there
 		expect(existsSync(join(dir, ".pi", "task-orchestrator.yaml"))).toBe(true);
+	});
+
+	it("14.5b removing a seeded project override keeps unrelated YAML overrides", () => {
+		const dir = makeWriteTestDir("yaml-remove-override");
+		writePiFile(dir, "task-orchestrator.yaml", `
+orchestrator:
+  max_lanes: 7
+  spawn_mode: subprocess
+`);
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", "temp-prefix");
+		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", undefined);
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.orchestrator.orchestrator.worktreePrefix).toBeUndefined();
+		expect(result.orchestrator.orchestrator.maxLanes).toBe(7);
+		expect(result.orchestrator.orchestrator.spawnMode).toBe("subprocess");
+	});
+
+	it("14.5c first write preserves YAML keys outside source-detection mapper", () => {
+		const dir = makeWriteTestDir("yaml-preserve-extra-keys");
+		writePiFile(dir, "task-runner.yaml", `
+quality_gate:
+  enabled: true
+model_fallback: fail
+`);
+		writePiFile(dir, "task-orchestrator.yaml", `
+supervisor:
+  model: custom-super
+verification:
+  enabled: true
+  mode: strict
+`);
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", "seeded-prefix");
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.orchestrator.supervisor.model).toBe("custom-super");
+		expect(result.orchestrator.verification.enabled).toBe(true);
+		expect(result.orchestrator.verification.mode).toBe("strict");
+		expect(result.taskRunner.qualityGate.enabled).toBe(true);
+		expect(result.taskRunner.modelFallback).toBe("fail");
+	});
+
+	it("14.5d first write preserves taskplane-workspace.yaml overrides", () => {
+		const dir = makeWriteTestDir("yaml-preserve-workspace");
+		writePiFile(dir, "taskplane-workspace.yaml", `
+repos:
+  docs:
+    path: ../docs
+routing:
+  tasks_root: taskplane-tasks
+  default_repo: docs
+  task_packet_repo: docs
+`);
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.worktreePrefix", "with-workspace");
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.workspace.repos.docs.path).toBe("../docs");
+		expect(result.workspace.routing.tasksRoot).toBe("taskplane-tasks");
+		expect(result.workspace.routing.defaultRepo).toBe("docs");
+		expect(result.workspace.routing.taskPacketRepo).toBe("docs");
 	});
 
 	it("14.6 creates .pi directory when it doesn't exist", () => {
@@ -902,9 +964,9 @@ orchestrator:
 });
 
 
-// ── 15.x writeUserPreference ─────────────────────────────────────────
+// ── 15.x writeGlobalPreference ─────────────────────────────────────────
 
-describe("15. writeUserPreference", () => {
+describe("15. writeGlobalPreference", () => {
 	beforeEach(() => {
 		writeTestRoot = join(tmpdir(), `tp-prefs-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(writeTestRoot, { recursive: true });
@@ -926,11 +988,11 @@ describe("15. writeUserPreference", () => {
 	});
 
 	function getPrefsPath(): string {
-		return join(writeTestRoot, USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+		return join(writeTestRoot, GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 	}
 
 	function writePrefs(obj: any): void {
-		const prefsDir = join(writeTestRoot, USER_PREFERENCES_SUBDIR);
+		const prefsDir = join(writeTestRoot, GLOBAL_PREFERENCES_SUBDIR);
 		mkdirSync(prefsDir, { recursive: true });
 		writeFileSync(getPrefsPath(), JSON.stringify(obj, null, 2), "utf-8");
 	}
@@ -938,7 +1000,7 @@ describe("15. writeUserPreference", () => {
 	it("15.1 writes a new preference value", () => {
 		writePrefs({});
 
-		writeUserPreference("dashboardPort", 9090);
+		writeGlobalPreference("dashboardPort", 9090);
 
 		const result = readJsonFile(getPrefsPath());
 		expect(result.dashboardPort).toBe(9090);
@@ -947,7 +1009,7 @@ describe("15. writeUserPreference", () => {
 	it("15.2 updates an existing preference value", () => {
 		writePrefs({ dashboardPort: 8080, workerModel: "gpt-4" });
 
-		writeUserPreference("dashboardPort", 9090);
+		writeGlobalPreference("dashboardPort", 9090);
 
 		const result = readJsonFile(getPrefsPath());
 		expect(result.dashboardPort).toBe(9090);
@@ -957,7 +1019,7 @@ describe("15. writeUserPreference", () => {
 	it("15.3 deletes preference when value is undefined", () => {
 		writePrefs({ dashboardPort: 8080, workerModel: "gpt-4" });
 
-		writeUserPreference("dashboardPort", undefined);
+		writeGlobalPreference("dashboardPort", undefined);
 
 		const result = readJsonFile(getPrefsPath());
 		expect("dashboardPort" in result).toBe(false);
@@ -968,7 +1030,7 @@ describe("15. writeUserPreference", () => {
 		const prefsPath = getPrefsPath();
 		expect(existsSync(prefsPath)).toBe(false);
 
-		writeUserPreference("workerModel", "claude-4-opus");
+		writeGlobalPreference("workerModel", "claude-4-opus");
 
 		expect(existsSync(prefsPath)).toBe(true);
 		const result = readJsonFile(prefsPath);
@@ -976,11 +1038,11 @@ describe("15. writeUserPreference", () => {
 	});
 
 	it("15.5 recovers from malformed prefs file (starts fresh)", () => {
-		const prefsDir = join(writeTestRoot, USER_PREFERENCES_SUBDIR);
+		const prefsDir = join(writeTestRoot, GLOBAL_PREFERENCES_SUBDIR);
 		mkdirSync(prefsDir, { recursive: true });
 		writeFileSync(getPrefsPath(), "NOT VALID JSON!!", "utf-8");
 
-		writeUserPreference("spawnMode", "tmux");
+		writeGlobalPreference("spawnMode", "tmux");
 
 		const result = readJsonFile(getPrefsPath());
 		expect(result.spawnMode).toBe("tmux");
@@ -989,7 +1051,7 @@ describe("15. writeUserPreference", () => {
 	it("15.6 writes string preference correctly", () => {
 		writePrefs({});
 
-		writeUserPreference("operatorId", "alice");
+		writeGlobalPreference("operatorId", "alice");
 
 		const result = readJsonFile(getPrefsPath());
 		expect(result.operatorId).toBe("alice");
@@ -998,7 +1060,7 @@ describe("15. writeUserPreference", () => {
 	it("15.7 sets string to empty (clear semantics)", () => {
 		writePrefs({ workerModel: "gpt-4" });
 
-		writeUserPreference("workerModel", "");
+		writeGlobalPreference("workerModel", "");
 
 		const result = readJsonFile(getPrefsPath());
 		expect(result.workerModel).toBe("");
@@ -1007,7 +1069,7 @@ describe("15. writeUserPreference", () => {
 	it("15.8 no .tmp file left after successful write", () => {
 		writePrefs({});
 
-		writeUserPreference("dashboardPort", 3000);
+		writeGlobalPreference("dashboardPort", 3000);
 
 		const tmpPath = getPrefsPath() + ".tmp";
 		expect(existsSync(tmpPath)).toBe(false);
@@ -1223,16 +1285,16 @@ describe("16. YAML source detection", () => {
 			// spawnMode is NOT in JSON (only in YAML) — but since JSON exists,
 			// YAML is not consulted at all — so spawnMode falls to (default)
 			const spawnField = makeL1L2EnumField(); // spawnMode
-			expect(detectFieldSource(spawnField, rawProject, null)).toBe("default");
+			expect(detectFieldSource(spawnField, rawProject, null)).toBe("global");
 		});
 	});
 
 	describe("16.4 YAML source-badge with preferences (empty-string clear)", () => {
-		it("16.4.1 YAML-sourced field + valid pref → (user) badge", () => {
+		it("16.4.1 YAML-sourced field + valid global pref still shows (project)", () => {
 			const field = makeL1L2StringField(); // workerModel
 			const rawYaml = { taskRunner: { worker: { model: "gpt-4" } } };
 			const rawPrefs = { workerModel: "claude-4-opus" };
-			expect(detectFieldSource(field, rawYaml, rawPrefs)).toBe("user");
+			expect(detectFieldSource(field, rawYaml, rawPrefs)).toBe("project");
 		});
 
 		it("16.4.2 YAML-sourced field + empty-string pref → falls to (project)", () => {
@@ -1262,9 +1324,9 @@ describe("17. Write-decision logic (resolveWriteAction)", () => {
 	// 17.1 — getDefaultWriteDestination routing
 
 	describe("17.1 getDefaultWriteDestination", () => {
-		it("17.1.1 L1-only field → 'project'", () => {
+		it("17.1.1 L1-only field → 'prefs' (global default)", () => {
 			const field = makeL1Field();
-			expect(getDefaultWriteDestination(field)).toBe("project");
+			expect(getDefaultWriteDestination(field)).toBe("prefs");
 		});
 
 		it("17.1.2 L2-only field → 'prefs'", () => {
@@ -1272,28 +1334,28 @@ describe("17. Write-decision logic (resolveWriteAction)", () => {
 			expect(getDefaultWriteDestination(field)).toBe("prefs");
 		});
 
-		it("17.1.3 L1+L2 string field → null (user must choose)", () => {
+		it("17.1.3 L1+L2 string field → 'prefs' (global default)", () => {
 			const field = makeL1L2StringField();
-			expect(getDefaultWriteDestination(field)).toBeNull();
+			expect(getDefaultWriteDestination(field)).toBe("prefs");
 		});
 
-		it("17.1.4 L1+L2 enum field → null (user must choose)", () => {
+		it("17.1.4 L1+L2 enum field → 'prefs' (global default)", () => {
 			const field = makeL1L2EnumField();
-			expect(getDefaultWriteDestination(field)).toBeNull();
+			expect(getDefaultWriteDestination(field)).toBe("prefs");
 		});
 	});
 
 	// 17.2 — L1-only resolveWriteAction
 
 	describe("17.2 L1-only fields", () => {
-		it("17.2.1 L1 field + project confirmed → 'project'", () => {
+		it("17.2.1 L1 field + null destination choice (escape) → 'skip'", () => {
 			const field = makeL1Field();
-			expect(resolveWriteAction(field, null, true)).toBe("project");
+			expect(resolveWriteAction(field, null, true)).toBe("skip");
 		});
 
-		it("17.2.2 L1 field + project confirmation declined → 'skip'", () => {
+		it("17.2.2 L1 field + explicit global destination → 'prefs'", () => {
 			const field = makeL1Field();
-			expect(resolveWriteAction(field, null, false)).toBe("skip");
+			expect(resolveWriteAction(field, "Global preferences (default)", false)).toBe("prefs");
 		});
 	});
 
@@ -1332,15 +1394,15 @@ describe("17. Write-decision logic (resolveWriteAction)", () => {
 
 	// 17.5 — L1+L2 user prefs destination
 
-	describe("17.5 L1+L2 user preferences destination", () => {
-		it("17.5.1 L1+L2 + 'User preferences (personal)' → 'prefs'", () => {
+	describe("17.5 L1+L2 global preferences destination", () => {
+		it("17.5.1 L1+L2 + 'Global preferences (personal)' → 'prefs'", () => {
 			const field = makeL1L2StringField();
-			expect(resolveWriteAction(field, "User preferences (personal)", false)).toBe("prefs");
+			expect(resolveWriteAction(field, "Global preferences (personal)", false)).toBe("prefs");
 		});
 
 		it("17.5.2 L1+L2 + user prefs choice — confirmation flag irrelevant", () => {
 			const field = makeL1L2StringField();
-			expect(resolveWriteAction(field, "User preferences (personal)", true)).toBe("prefs");
+			expect(resolveWriteAction(field, "Global preferences (personal)", true)).toBe("prefs");
 		});
 	});
 
@@ -1360,6 +1422,11 @@ describe("17. Write-decision logic (resolveWriteAction)", () => {
 		it("17.6.3 L1+L2 enum + 'Project config (shared)' + declined → 'skip'", () => {
 			const field = makeL1L2EnumField();
 			expect(resolveWriteAction(field, "Project config (shared)", false)).toBe("skip");
+		});
+
+		it("17.6.4 remove-project destination returns remove-project route", () => {
+			const field = makeL1L2StringField();
+			expect(resolveWriteAction(field, "Remove project override (revert to global)", true)).toBe("remove-project");
 		});
 	});
 
@@ -1420,7 +1487,7 @@ describe("17. Write-decision logic (resolveWriteAction)", () => {
 			const prefsPath = join(prefsDir, "preferences.json");
 			writeFileSync(prefsPath, JSON.stringify({ dashboardPort: 8080 }, null, 2), "utf-8");
 
-			writeUserPreference("dashboardPort", 9090);
+			writeGlobalPreference("dashboardPort", 9090);
 
 			const result = JSON.parse(readFileSync(prefsPath, "utf-8"));
 			expect(result.dashboardPort).toBe(9090);

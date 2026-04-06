@@ -224,6 +224,9 @@ task_areas:
 - If `.pi/task-runner.yaml` is missing or malformed, task-runner falls back to internal defaults.
 - Task-runner directly consumes the core execution sections (`project`, `paths`, `testing`, `standards`, `standards_overrides`, `task_areas`, `worker`, `reviewer`, `context`, `quality_gate`).
 - Additional sections (`reference_docs`, `never_load`, `self_doc_targets`, `protected_docs`) are primarily used by Taskplane skill/workflow conventions and broader ecosystem tooling.
+- Effective runtime values are resolved with layered precedence: **schema defaults → global preferences (`~/.pi/agent/taskplane/preferences.json`) → project config** (`.pi/taskplane-config.json` or YAML fallback).
+- Project config is sparse by design: fields omitted from project JSON/YAML inherit from global preferences, then schema defaults.
+- `taskplane init` now writes a sparse project config by default (project metadata + explicit project overrides), while personal defaults such as model/thinking are kept in global preferences.
 
 ---
 
@@ -233,14 +236,16 @@ Task-runner settings can be provided via the unified `.pi/taskplane-config.json`
 
 ### Precedence
 
-The config loader uses the following precedence:
+The project-config loader uses the following file precedence:
 
 1. **`.pi/taskplane-config.json` exists and is valid** → use it (YAML files are ignored)
 2. **`.pi/taskplane-config.json` exists but is malformed** → error (hard failure, not a silent fallback)
 3. **`.pi/taskplane-config.json` absent** → fall back to `.pi/task-runner.yaml` + `.pi/task-orchestrator.yaml`
 4. **No config files present** → internal defaults
 
-> **Important:** When `taskplane-config.json` is present, YAML files are completely ignored — they are not merged together. This is an either/or precedence, not a layered merge.
+> **Important:** When `taskplane-config.json` is present, YAML files are completely ignored — they are not merged together. This is an either/or precedence at the **project file** layer.
+>
+> After project file loading, Taskplane applies global preferences and schema defaults beneath project overrides: **schema defaults → global preferences → project overrides**.
 
 ### Path resolution
 

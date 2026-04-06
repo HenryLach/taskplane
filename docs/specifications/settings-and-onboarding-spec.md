@@ -16,11 +16,11 @@ who joins).
 ### Core principles
 
 1. **Project config is shared** — committed to git, reviewed via PRs, identical for all team members.
-2. **User config is personal** — model preferences, operator ID, spawn mode. Not committed.
+2. **Global preferences are personal** — model preferences, operator ID, spawn mode. Not committed.
 3. **Runtime artifacts are gitignored** — batch state, lane state, logs, merge results. These are machine-specific and ephemeral. Committing them causes correctness problems for other team members.
 4. **The TUI is the primary config interface** — files are an implementation detail, not a user-facing editing surface.
 5. **Polyrepo projects need a config home** — one of the repos serves as the canonical source for shared config.
-6. **Init enforces gitignore rules** — selective gitignore entries are a correctness requirement, not a user preference.
+6. **Init enforces gitignore rules** — selective gitignore entries are a correctness requirement, not a global preference.
 
 ---
 

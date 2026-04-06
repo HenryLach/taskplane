@@ -770,9 +770,8 @@ describe("CLI dry-run integration", () => {
 		expect(orchestratorYaml).not.toMatch(/spawn_mode:\s*"tmux"/);
 
 		const projectConfig = JSON.parse(readFileSync(join(repo, ".pi", "taskplane-config.json"), "utf-8"));
-		expect(projectConfig.orchestrator.orchestrator.spawnMode).toBe("subprocess");
-		expect(typeof projectConfig.orchestrator.orchestrator.sessionPrefix).toBe("string");
-		expect("tmuxPrefix" in projectConfig.orchestrator.orchestrator).toBe(false);
+		// Sparse init config: no orchestrator block unless explicitly chosen during init
+		expect(projectConfig.orchestrator).toBeUndefined();
 	});
 
 	it("5.10 — workspace init scaffolds canonical subprocess/session-prefix fields only", () => {
@@ -790,9 +789,8 @@ describe("CLI dry-run integration", () => {
 		expect(orchestratorYaml).not.toContain("tmux_prefix");
 
 		const projectConfig = JSON.parse(readFileSync(join(configRoot, "taskplane-config.json"), "utf-8"));
-		expect(projectConfig.orchestrator.orchestrator.spawnMode).toBe("subprocess");
-		expect(typeof projectConfig.orchestrator.orchestrator.sessionPrefix).toBe("string");
-		expect("tmuxPrefix" in projectConfig.orchestrator.orchestrator).toBe(false);
+		// Sparse init config: no orchestrator block unless explicitly chosen during init
+		expect(projectConfig.orchestrator).toBeUndefined();
 	});
 
 	it("5.11 — injected legacy tmuxPrefix is auto-migrated without crash", () => {
@@ -803,6 +801,8 @@ describe("CLI dry-run integration", () => {
 
 		const configPath = join(repo, ".pi", "taskplane-config.json");
 		const config = JSON.parse(readFileSync(configPath, "utf-8"));
+		config.orchestrator = config.orchestrator || {};
+		config.orchestrator.orchestrator = config.orchestrator.orchestrator || {};
 		config.orchestrator.orchestrator.tmuxPrefix = "legacy-orch";
 		delete config.orchestrator.orchestrator.sessionPrefix;
 		writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
@@ -823,6 +823,8 @@ describe("CLI dry-run integration", () => {
 
 		const configPath = join(repo, ".pi", "taskplane-config.json");
 		const config = JSON.parse(readFileSync(configPath, "utf-8"));
+		config.orchestrator = config.orchestrator || {};
+		config.orchestrator.orchestrator = config.orchestrator.orchestrator || {};
 		config.orchestrator.orchestrator.spawnMode = "tmux";
 		writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
 

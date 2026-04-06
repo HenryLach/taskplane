@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect } from "./expect.ts";
-import { loadUserPreferences } from "../taskplane/config-loader.ts";
+import { loadGlobalPreferences } from "../taskplane/config-loader.ts";
 
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 
@@ -15,7 +15,7 @@ afterEach(() => {
 	}
 });
 
-describe("user preferences initAgentDefaults allowlist", () => {
+describe("global preferences initAgentDefaults allowlist", () => {
 	it("loads and sanitizes initAgentDefaults from preferences.json", () => {
 		const agentDir = mkdtempSync(join(tmpdir(), "taskplane-prefs-init-defaults-"));
 		process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -39,7 +39,7 @@ describe("user preferences initAgentDefaults allowlist", () => {
 				"utf-8",
 			);
 
-			const prefs = loadUserPreferences();
+			const prefs = loadGlobalPreferences();
 			expect(prefs.initAgentDefaults).toEqual({
 				workerModel: "openai/gpt-5.3-codex",
 				reviewerModel: "anthropic/claude-sonnet-4-6",

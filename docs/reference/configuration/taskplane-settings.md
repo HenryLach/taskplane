@@ -12,22 +12,27 @@ all Taskplane configuration. This page documents every available setting.
 ## How settings work
 
 Settings are organized into **sections** that match the TUI navigation.
-Each setting has a **layer** that determines where it's stored:
+Taskplane resolves effective values using layered precedence:
 
-| Layer | Stored in | Shared? | Examples |
-|-------|-----------|:-------:|---------|
-| **L1** (Project) | `.pi/taskplane-config.json` | ✅ Team-wide | Max lanes, failure policy, merge order |
-| **L2** (User) | `~/.pi/agent/taskplane/preferences.json` | ❌ Personal | Dashboard port |
-| **L1+L2** (Dual) | Either — you choose when saving | Depends | Models, operator ID, tmux prefix |
+1. **Schema defaults** (internal)
+2. **Global preferences** (`~/.pi/agent/taskplane/preferences.json`)
+3. **Project overrides** (`.pi/taskplane-config.json`)
 
-For **L1+L2** settings, the TUI asks where to save:
-- **User preferences** — only affects you (e.g., your preferred model)
-- **Project config** — affects all team members (e.g., the project's default model)
+The settings TUI writes to two user-visible layers:
+
+| Layer | Stored in | Shared? | Typical use |
+|-------|-----------|:-------:|-------------|
+| **Global preferences** | `~/.pi/agent/taskplane/preferences.json` | ❌ Personal | Your baseline defaults across all projects |
+| **Project overrides** | `.pi/taskplane-config.json` | ✅ Team-wide | Project-specific exceptions to your global baseline |
+
+When editing a setting:
+- The default save target is **Global preferences**.
+- You can explicitly choose **Save to project override** when needed.
+- If a project override already exists, you can choose **Remove project override** to fall back to global preferences.
 
 Source indicators in the TUI show where each value comes from:
 - `(project)` — set in project config
-- `(user)` — set in your personal preferences
-- `(default)` — using the built-in default
+- `(global)` — inherited from your global preferences (or internal defaults if no explicit global value exists)
 
 ---
 
@@ -191,9 +196,9 @@ Settings that control worker iteration limits and context window management.
 
 ---
 
-## User Preferences
+## Global Preferences
 
-Personal settings that only affect your local environment.
+Personal baseline settings that affect your local environment across projects.
 
 | Setting | Type | Default | Options | Description |
 |---------|------|---------|---------|-------------|

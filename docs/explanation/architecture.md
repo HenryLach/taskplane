@@ -134,7 +134,7 @@ Created by `taskplane init`:
 Legacy `.pi/task-runner.yaml` and `.pi/task-orchestrator.yaml` are still supported
 as fallback but `taskplane-config.json` takes precedence when present.
 
-User preferences in `~/.pi/agent/taskplane/preferences.json` override project config.
+Global preferences in `~/.pi/agent/taskplane/preferences.json` provide the baseline for all projects, and project config applies sparse overrides on top (schema defaults → global preferences → project overrides).
 
 Customized per repository.
 
