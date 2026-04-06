@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.22] - 2026-04-05
+
+### New
+- **TP-140: Global preferences architecture** — Config precedence flipped: schema → global prefs → project overrides. "User preferences" renamed to "global preferences" throughout. Project config is sparse (only overrides). Settings TUI defaults to saving to global. Source badges: `(global)` and `(project)`.
+- **TP-141: First-install bootstrap + cross-provider guidance** — Global prefs bootstrapped from schema defaults on first install. Thinking defaults to `high` for worker/reviewer. First `taskplane init` guides cross-provider reviewer/merger model selection. Thinking picker shows all pi levels (off through xhigh).
+
+### Fixed
+- **Merge agent thinking defaults to `off`** (#439) — Thinking caused merge agent to spend 70 min reasoning without calling any tools. Merge is mechanical; thinking is counterproductive.
+- **Deprecated `/task` commands removed** — `/task`, `/task-status`, `/task-pause`, `/task-resume` no longer registered. `/orch` is the only execution path. Spawn Mode setting removed from TUI.
+
 ## [0.24.21] - 2026-04-05
 
 ### Fixed

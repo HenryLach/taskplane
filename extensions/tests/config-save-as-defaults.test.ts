@@ -25,7 +25,7 @@ function buildProjectConfig(overrides: Record<string, any> = {}) {
 }
 
 describe("taskplane config --save-as-defaults", () => {
-	it("writes current project model/thinking settings to user preferences", () => {
+	it("writes current project model/thinking settings to global preferences", () => {
 		const tempProject = mkdtempSync(join(tmpdir(), "taskplane-save-defaults-project-"));
 		const tempAgentDir = mkdtempSync(join(tmpdir(), "taskplane-save-defaults-agent-"));
 
@@ -54,9 +54,9 @@ describe("taskplane config --save-as-defaults", () => {
 				workerModel: "openai/gpt-5.3-codex",
 				reviewerModel: "anthropic/claude-sonnet-4-6",
 				mergeModel: "openai/gpt-5.3-codex",
-				workerThinking: "on",
+				workerThinking: "high",
 				reviewerThinking: "off",
-				mergeThinking: "on",
+				mergeThinking: "high",
 			});
 		} finally {
 			rmSync(tempProject, { recursive: true, force: true });

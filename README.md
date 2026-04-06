@@ -82,7 +82,7 @@ cd my-project
 taskplane init --preset full
 ```
 
-This creates config files in `.pi/`, agent prompts, two example tasks, and adds `.gitignore` entries for runtime artifacts. Interactive init now also prompts for worker/reviewer/merger model + thinking defaults (with `inherit` as the first option). Init auto-detects whether you're in a single repo or a multi-repo workspace. See the [install tutorial](docs/tutorials/install.md) for workspace mode and other scenarios.
+This creates config files in `.pi/`, agent prompts, two example tasks, and adds `.gitignore` entries for runtime artifacts. On first install, init bootstraps global preferences at `~/.pi/agent/taskplane/preferences.json` with thinking defaults set to `high` for worker/reviewer/merger. Interactive init then prompts for worker/reviewer/merger model + thinking defaults (`inherit`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`). If 2+ providers are available from `pi --list-models`, init recommends cross-provider reviewer/merger selections. Init auto-detects whether you're in a single repo or a multi-repo workspace. See the [install tutorial](docs/tutorials/install.md) for workspace mode and other scenarios.
 
 Want to reuse model/thinking picks across projects? Run `taskplane config --save-as-defaults` in an initialized project.
 

@@ -307,7 +307,7 @@ function resolveTaskRunnerExtensionPath(repoRoot: string): string {
 | v0.5.11 | Batch completion message unclear | Three options confused users | Simplified to two: "Apply now" and "Open PR" |
 | v0.5.12 | `.DONE` files missing after `/orch-integrate` | `unlinkSync` deleted .DONE from working tree during artifact staging; after ff they weren't reliably restored | Stop deleting .DONE files — stash in `/orch-integrate` handles them |
 | v0.5.12 | `.worktrees/` committed to orch branch | Artifact staging filter didn't exclude worktree paths | Added `.worktrees/` exclusion to artifact file filter |
-| v0.5.12 | Test failures from user preferences leaking | `loadProjectConfig` in tests merged `~/.pi/agent/taskplane/preferences.json` | Fixed test to check individual fields, not `toEqual` on full object |
+| v0.5.12 | Test failures from global preferences leaking | `loadProjectConfig` in tests merged `~/.pi/agent/taskplane/preferences.json` | Fixed test to check individual fields, not `toEqual` on full object |
 
 ### Pattern: every bug was a "workspace root ≠ repo root" assumption
 
@@ -354,4 +354,4 @@ smoke test skill (`.pi/skills/polyrepo-smoke-test/SKILL.md`):
 | `taskplane init` `tasks_root` default | UX | — | Defaults to `"taskplane-tasks"` instead of detecting where task areas actually live. Requires manual fix. |
 | `taskplane init` `default_branch` | UX | — | Not set per repo. Repos using `develop` (not `main`) need manual config. |
 | Pi input prompt not visible after batch | UX | [#88](https://github.com/HenryLach/taskplane/issues/88) | After batch completion, pi's text input editor isn't visible. User must click terminal and type blind. |
-| Test isolation for user preferences | Testing | — | `loadProjectConfig` in tests reads `~/.pi/agent/taskplane/preferences.json`, causing test results to vary by machine. Should mock HOME or isolate prefs. |
+| Test isolation for global preferences | Testing | — | `loadProjectConfig` in tests reads `~/.pi/agent/taskplane/preferences.json`, causing test results to vary by machine. Should mock HOME or isolate prefs. |

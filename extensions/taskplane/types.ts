@@ -282,7 +282,7 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 	merge: {
 		model: "",
 		tools: "read,write,edit,bash,grep,find,ls",
-		thinking: "",
+		thinking: "off",
 		verify: [],
 		order: "fewest-files-first",
 		timeout_minutes: 90,

@@ -230,6 +230,8 @@ This matches your requirement: keep global throughput while avoiding intra-task 
 
 ## Dynamic Segment Expansion (post-MVP, deferred)
 
+> **Implementation spec:** [`dynamic-segment-expansion.md`](./dynamic-segment-expansion.md) — detailed tool contract, engine graph mutation, file IPC, scheduling policy, persistence/resume, and test plan.
+
 Dynamic segment expansion is explicitly out of MVP scope for this tranche.
 The flow below is retained as the post-MVP design target once baseline sequential segment execution is stable.
 

@@ -148,28 +148,56 @@ export function parsePiListModelsOutput(rawOutput) {
 
 	const rows = rawOutput.split(/\r?\n/);
 	const parsed = new Map();
+	let providerCol = 0;
+	let modelCol = 1;
+	let thinkingCol = -1;
 
 	for (const row of rows) {
 		const trimmed = row.trim();
 		if (!trimmed) continue;
-		if (/^provider\s+model\b/i.test(trimmed)) continue;
 
 		const parts = trimmed.split(/\s+/);
 		if (parts.length < 2) continue;
 
-		const provider = parts[0].trim();
-		const id = parts[1].trim();
+		if (/^provider\b/i.test(trimmed)) {
+			const lowerHeader = parts.map((part) => part.trim().toLowerCase());
+			const providerIdx = lowerHeader.indexOf("provider");
+			const modelIdx = lowerHeader.indexOf("model");
+			const thinkingIdx = lowerHeader.indexOf("thinking");
+			if (providerIdx >= 0) providerCol = providerIdx;
+			if (modelIdx >= 0) modelCol = modelIdx;
+			thinkingCol = thinkingIdx;
+			continue;
+		}
+
+		const provider = String(parts[providerCol] ?? parts[0] ?? "").trim();
+		const id = String(parts[modelCol] ?? parts[1] ?? "").trim();
 		if (!provider || !id) continue;
 		if (!/^[a-z0-9][a-z0-9._-]*$/i.test(provider)) continue;
 		if (!/^[^\s]+$/.test(id)) continue;
 
+		const thinkingToken = thinkingCol >= 0 ? String(parts[thinkingCol] ?? "").trim().toLowerCase() : "";
+		const supportsThinking = (() => {
+			if (!thinkingToken) return undefined;
+			if (["yes", "true", "on", "supported"].includes(thinkingToken)) return true;
+			if (["no", "false", "off", "unsupported"].includes(thinkingToken)) return false;
+			return undefined;
+		})();
+
 		const key = `${provider.toLowerCase()}/${id.toLowerCase()}`;
-		if (parsed.has(key)) continue;
+		const existing = parsed.get(key);
+		if (existing) {
+			if (existing.supportsThinking === undefined && supportsThinking !== undefined) {
+				existing.supportsThinking = supportsThinking;
+			}
+			continue;
+		}
 
 		parsed.set(key, {
 			provider,
 			id,
 			displayName: `${provider}/${id}`,
+			...(supportsThinking !== undefined ? { supportsThinking } : {}),
 		});
 	}
 
@@ -382,8 +410,9 @@ function buildTestingCommands(vars) {
 	return commands;
 }
 
-const USER_PREFERENCES_SUBDIR = "taskplane";
-const USER_PREFERENCES_FILENAME = "preferences.json";
+const GLOBAL_PREFERENCES_SUBDIR = "taskplane";
+const GLOBAL_PREFERENCES_FILENAME = "preferences.json";
+const PI_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
 
 function createInheritInitAgentConfig() {
 	return {
@@ -396,10 +425,24 @@ function createInheritInitAgentConfig() {
 	};
 }
 
+function createBootstrapGlobalPreferencesForCli() {
+	return {
+		initAgentDefaults: {
+			workerModel: "",
+			reviewerModel: "",
+			mergeModel: "",
+			workerThinking: "high",
+			reviewerThinking: "high",
+			mergeThinking: "high",
+		},
+	};
+}
+
 function normalizeThinkingMode(value) {
 	const cleaned = String(value ?? "").trim().toLowerCase();
-	if (cleaned === "on") return "on";
-	if (cleaned === "off") return "off";
+	if (!cleaned || cleaned === "inherit") return "";
+	if (cleaned === "on") return "high";
+	if (PI_THINKING_LEVELS.includes(cleaned)) return cleaned;
 	return "";
 }
 
@@ -422,52 +465,91 @@ function sanitizeInitAgentConfig(raw) {
 	return defaults;
 }
 
-function resolveUserPreferencesPathForCli() {
+function resolveGlobalPreferencesPathForCli() {
 	const agentDir = process.env.PI_CODING_AGENT_DIR;
 	if (agentDir) {
-		return path.join(agentDir, USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+		return path.join(agentDir, GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 	}
-	return path.join(homedir(), ".pi", "agent", USER_PREFERENCES_SUBDIR, USER_PREFERENCES_FILENAME);
+	return path.join(homedir(), ".pi", "agent", GLOBAL_PREFERENCES_SUBDIR, GLOBAL_PREFERENCES_FILENAME);
 }
 
-function readUserPreferencesForCli() {
-	const prefsPath = resolveUserPreferencesPathForCli();
+function writeGlobalPreferencesForCli(rawPrefs, prefsPath = resolveGlobalPreferencesPathForCli()) {
+	fs.mkdirSync(path.dirname(prefsPath), { recursive: true });
+	const tmpPath = `${prefsPath}.tmp-${process.pid}-${Date.now()}`;
+	fs.writeFileSync(tmpPath, JSON.stringify(rawPrefs, null, 2) + "\n", "utf-8");
+	fs.renameSync(tmpPath, prefsPath);
+	return prefsPath;
+}
+
+function bootstrapGlobalPreferencesForCli(prefsPath) {
+	const raw = createBootstrapGlobalPreferencesForCli();
+	try {
+		writeGlobalPreferencesForCli(raw, prefsPath);
+	} catch {
+		// Best-effort disk write; continue with in-memory bootstrap values.
+	}
+	return raw;
+}
+
+function readGlobalPreferencesForCli() {
+	const prefsPath = resolveGlobalPreferencesPathForCli();
 	if (!fs.existsSync(prefsPath)) {
 		return {
 			prefsPath,
+			raw: bootstrapGlobalPreferencesForCli(prefsPath),
+			wasBootstrapped: true,
+		};
+	}
+
+	let rawText = "";
+	try {
+		rawText = fs.readFileSync(prefsPath, "utf-8");
+	} catch {
+		return {
+			prefsPath,
 			raw: {},
+			wasBootstrapped: false,
+		};
+	}
+
+	if (!rawText.trim()) {
+		return {
+			prefsPath,
+			raw: bootstrapGlobalPreferencesForCli(prefsPath),
+			wasBootstrapped: true,
 		};
 	}
 
 	try {
-		const raw = JSON.parse(fs.readFileSync(prefsPath, "utf-8"));
-		if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-			return { prefsPath, raw: {} };
+		const raw = JSON.parse(rawText);
+		if (!raw || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).length === 0) {
+			return {
+				prefsPath,
+				raw: bootstrapGlobalPreferencesForCli(prefsPath),
+				wasBootstrapped: true,
+			};
 		}
-		return { prefsPath, raw };
+		return { prefsPath, raw, wasBootstrapped: false };
 	} catch {
-		return { prefsPath, raw: {} };
+		return {
+			prefsPath,
+			raw: bootstrapGlobalPreferencesForCli(prefsPath),
+			wasBootstrapped: true,
+		};
 	}
 }
 
-function writeUserPreferencesForCli(rawPrefs) {
-	const prefsPath = resolveUserPreferencesPathForCli();
-	fs.mkdirSync(path.dirname(prefsPath), { recursive: true });
-	fs.writeFileSync(prefsPath, JSON.stringify(rawPrefs, null, 2) + "\n", "utf-8");
-	return prefsPath;
-}
-
 function loadInitAgentDefaultsFromPreferences() {
-	const { prefsPath, raw } = readUserPreferencesForCli();
+	const { prefsPath, raw, wasBootstrapped } = readGlobalPreferencesForCli();
 	const defaults = sanitizeInitAgentConfig(raw.initAgentDefaults);
 	const hasDefaults = !!(raw.initAgentDefaults && typeof raw.initAgentDefaults === "object" && !Array.isArray(raw.initAgentDefaults));
-	return { defaults, hasDefaults, prefsPath };
+	return { defaults, hasDefaults, prefsPath, wasBootstrapped };
 }
 
 function saveInitAgentDefaultsToPreferences(initAgentConfig) {
-	const { raw } = readUserPreferencesForCli();
+	const { raw, prefsPath } = readGlobalPreferencesForCli();
 	raw.initAgentDefaults = sanitizeInitAgentConfig(initAgentConfig);
-	const prefsPath = writeUserPreferencesForCli(raw);
+	writeGlobalPreferencesForCli(raw, prefsPath);
 	return { prefsPath, saved: raw.initAgentDefaults };
 }
 
@@ -480,10 +562,33 @@ function splitModelReference(modelRef) {
 	return { provider, id };
 }
 
+function findModelInDiscovery(models, modelRef) {
+	if (!Array.isArray(models) || !modelRef) return null;
+	const ref = splitModelReference(modelRef);
+	if (!ref) return null;
+	const provider = ref.provider.toLowerCase();
+	const id = ref.id.toLowerCase();
+	return models.find((model) =>
+		String(model?.provider ?? "").toLowerCase() === provider
+		&& String(model?.id ?? "").toLowerCase() === id,
+	) || null;
+}
+
 function allValuesEqual(values) {
 	if (!Array.isArray(values) || values.length === 0) return true;
 	const first = values[0];
 	return values.every((value) => value === first);
+}
+
+function countDistinctProviders(models) {
+	if (!Array.isArray(models)) return 0;
+	return new Set(models.map((model) => model?.provider).filter(Boolean)).size;
+}
+
+function needsCrossProviderInitGuidance(initAgentConfig, savedDefaults) {
+	const reviewerSet = !!String(initAgentConfig?.reviewerModel ?? "").trim();
+	const mergerSet = !!String(initAgentConfig?.mergeModel ?? "").trim();
+	return Boolean(savedDefaults?.wasBootstrapped) || !reviewerSet || !mergerSet;
 }
 
 const INIT_AGENT_ROLES = [
@@ -525,6 +630,7 @@ async function promptModelForRole(roleLabel, models, {
 	askImpl = ask,
 	logImpl = console.log,
 	currentModel = "",
+	preferDifferentProviderFrom = "",
 } = {}) {
 	const providers = [...new Set(models.map((model) => model.provider))].sort((a, b) => a.localeCompare(b));
 	const currentRef = splitModelReference(currentModel);
@@ -541,9 +647,20 @@ async function promptModelForRole(roleLabel, models, {
 				};
 			}),
 		];
-		const providerDefaultIndex = currentRef
-			? Math.max(0, providerOptions.findIndex((option) => option.value === currentRef.provider))
-			: 0;
+		const providerDefaultIndex = (() => {
+			if (currentRef) {
+				return Math.max(0, providerOptions.findIndex((option) => option.value === currentRef.provider));
+			}
+			if (preferDifferentProviderFrom) {
+				const preferred = providerOptions.findIndex((option) =>
+					typeof option.value === "string"
+					&& option.value !== "inherit"
+					&& option.value !== preferDifferentProviderFrom
+				);
+				if (preferred >= 0) return preferred;
+			}
+			return 0;
+		})();
 
 		const providerChoice = await promptMenuChoice({
 			title: `${roleLabel}: choose model provider`,
@@ -594,14 +711,28 @@ async function promptThinkingForRole(roleLabel, {
 	askImpl = ask,
 	logImpl = console.log,
 	currentThinking = "",
+	currentModel = "",
+	availableModels = [],
 } = {}) {
 	const thinkingOptions = [
 		{ value: "", label: "inherit (use current session thinking)", aliases: ["inherit"] },
-		{ value: "on", label: "on" },
 		{ value: "off", label: "off" },
+		{ value: "minimal", label: "minimal" },
+		{ value: "low", label: "low" },
+		{ value: "medium", label: "medium" },
+		{ value: "high", label: "high" },
+		{ value: "xhigh", label: "xhigh" },
 	];
+
+	const selectedModel = findModelInDiscovery(availableModels, currentModel);
+	if (selectedModel?.supportsThinking === false) {
+		logImpl(`  ${INFO} ${roleLabel} model does not advertise thinking support (pi says thinking=no).`);
+		logImpl(`     ${c.dim}You can still set a thinking level; unsupported models ignore it at runtime.${c.reset}`);
+	}
+
 	const normalized = normalizeThinkingMode(currentThinking);
-	const defaultIndex = Math.max(0, thinkingOptions.findIndex((option) => option.value === normalized));
+	const preferredDefault = normalized || "high";
+	const defaultIndex = Math.max(0, thinkingOptions.findIndex((option) => option.value === preferredDefault));
 
 	return promptMenuChoice({
 		title: `${roleLabel}: choose thinking mode`,
@@ -613,26 +744,13 @@ async function promptThinkingForRole(roleLabel, {
 	});
 }
 
-function applyInitAgentConfig(projectConfig, initAgentConfig) {
-	if (!initAgentConfig) return projectConfig;
-
-	projectConfig.taskRunner.worker.model = initAgentConfig.workerModel ?? "";
-	projectConfig.taskRunner.reviewer.model = initAgentConfig.reviewerModel ?? "";
-	projectConfig.orchestrator.merge.model = initAgentConfig.mergeModel ?? "";
-
-	projectConfig.taskRunner.worker.thinking = normalizeThinkingMode(initAgentConfig.workerThinking);
-	projectConfig.taskRunner.reviewer.thinking = normalizeThinkingMode(initAgentConfig.reviewerThinking);
-	projectConfig.orchestrator.merge.thinking = normalizeThinkingMode(initAgentConfig.mergeThinking);
-
-	return projectConfig;
-}
-
 export async function collectInitAgentConfig({
 	interactive = true,
 	askImpl = ask,
 	confirmImpl = confirm,
 	queryModelsImpl = queryAvailableModelsFromPi,
 	loadInitDefaultsImpl = loadInitAgentDefaultsFromPreferences,
+	saveInitDefaultsImpl = saveInitAgentDefaultsToPreferences,
 	logImpl = console.log,
 } = {}) {
 	if (!interactive) return null;
@@ -666,17 +784,34 @@ export async function collectInitAgentConfig({
 		return initAgentConfig;
 	}
 
+	const providerCount = countDistinctProviders(discovery.models);
+	const shouldGuideCrossProvider = needsCrossProviderInitGuidance(initAgentConfig, savedDefaults);
+	const canGuideCrossProvider = shouldGuideCrossProvider && providerCount >= 2;
+	const shouldPersistFromInit = shouldGuideCrossProvider;
+
 	logImpl(`\n${c.bold}Agent model setup${c.reset}`);
 	logImpl(`  ${c.dim}Choose models for worker/reviewer/merger (inherit is always option #1).${c.reset}`);
+
+	if (canGuideCrossProvider) {
+		logImpl(`  ${INFO} ${c.bold}First-run recommendation:${c.reset} choose reviewer/merger on a different provider than worker/session.`);
+		logImpl(`     ${c.dim}Cross-provider review catches blind spots that same-model review can miss.${c.reset}`);
+	} else if (shouldGuideCrossProvider) {
+		logImpl(`  ${INFO} Cross-provider guidance skipped: only one provider is currently available.`);
+		logImpl(`     ${c.dim}Add another provider later to enable cross-provider reviewer/merger defaults.${c.reset}`);
+	}
 
 	const modelDefaults = INIT_AGENT_ROLES.map((role) => initAgentConfig[role.modelKey] || "");
 	const thinkingDefaults = INIT_AGENT_ROLES.map((role) => normalizeThinkingMode(initAgentConfig[role.thinkingKey]));
 	const sameModelDefaults = allValuesEqual(modelDefaults);
 	const sameThinkingDefaults = allValuesEqual(thinkingDefaults);
-	const useSameModel = await confirmImpl(
-		"Use the same model for worker, reviewer, and merger?",
-		sameModelDefaults && sameThinkingDefaults,
-	);
+	let useSameModel = false;
+
+	if (!canGuideCrossProvider) {
+		useSameModel = await confirmImpl(
+			"Use the same model for worker, reviewer, and merger?",
+			sameModelDefaults && sameThinkingDefaults,
+		);
+	}
 
 	if (useSameModel) {
 		const selectedModel = await promptModelForRole("All agents", discovery.models, {
@@ -688,49 +823,64 @@ export async function collectInitAgentConfig({
 			askImpl,
 			logImpl,
 			currentThinking: sameThinkingDefaults ? thinkingDefaults[0] : "",
+			currentModel: selectedModel,
+			availableModels: discovery.models,
 		});
 		for (const role of INIT_AGENT_ROLES) {
 			initAgentConfig[role.modelKey] = selectedModel;
 			initAgentConfig[role.thinkingKey] = selectedThinking;
 		}
+		if (shouldPersistFromInit) {
+			try {
+				saveInitDefaultsImpl(initAgentConfig);
+			} catch (error) {
+				logImpl(`  ${WARN} Could not save first-run defaults: ${error?.message || error}`);
+			}
+		}
 		return initAgentConfig;
 	}
 
+	let workerProviderHint = splitModelReference(initAgentConfig.workerModel)?.provider || "";
 	for (const role of INIT_AGENT_ROLES) {
+		const preferDifferentProviderFrom = canGuideCrossProvider && role.key !== "worker"
+			? workerProviderHint
+			: "";
 		initAgentConfig[role.modelKey] = await promptModelForRole(role.label, discovery.models, {
 			askImpl,
 			logImpl,
 			currentModel: initAgentConfig[role.modelKey],
+			preferDifferentProviderFrom,
 		});
+		if (role.key === "worker") {
+			workerProviderHint = splitModelReference(initAgentConfig[role.modelKey])?.provider || workerProviderHint;
+		}
 		initAgentConfig[role.thinkingKey] = await promptThinkingForRole(role.label, {
 			askImpl,
 			logImpl,
 			currentThinking: initAgentConfig[role.thinkingKey],
+			currentModel: initAgentConfig[role.modelKey],
+			availableModels: discovery.models,
 		});
+	}
+
+	if (shouldPersistFromInit) {
+		try {
+			saveInitDefaultsImpl(initAgentConfig);
+		} catch (error) {
+			logImpl(`  ${WARN} Could not save first-run defaults: ${error?.message || error}`);
+		}
 	}
 
 	return initAgentConfig;
 }
 
-export function generateProjectConfig(vars, initAgentConfig = null) {
+export function generateProjectConfig(vars, _initAgentConfig = null) {
 	const projectConfig = {
 		configVersion: 1,
 		taskRunner: {
 			project: { name: vars.project_name, description: "" },
 			paths: { tasks: vars.tasks_root },
 			testing: { commands: buildTestingCommands(vars) },
-			standards: { docs: [], rules: [] },
-			standardsOverrides: {},
-			worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "" },
-			reviewer: { model: "", tools: "read,bash,grep,find,ls", thinking: "on" },
-			context: {
-				workerContextWindow: 200000,
-				warnPercent: 70,
-				killPercent: 85,
-				maxWorkerIterations: 20,
-				maxReviewCycles: 2,
-				noProgressLimit: 3,
-			},
 			taskAreas: {
 				[vars.default_area]: {
 					path: vars.tasks_root,
@@ -738,44 +888,22 @@ export function generateProjectConfig(vars, initAgentConfig = null) {
 					context: `${vars.tasks_root}/CONTEXT.md`,
 				},
 			},
-			referenceDocs: {},
-			neverLoad: [],
-			selfDocTargets: {},
-			protectedDocs: [],
-		},
-		orchestrator: {
-			orchestrator: {
-				maxLanes: vars.max_lanes,
-				worktreeLocation: "subdirectory",
-				worktreePrefix: vars.worktree_prefix,
-				batchIdFormat: "timestamp",
-				spawnMode: vars.spawn_mode,
-				sessionPrefix: vars.session_prefix,
-				operatorId: "",
-			},
-			dependencies: { source: "prompt", cache: true },
-			assignment: { strategy: "affinity-first", sizeWeights: { S: 1, M: 2, L: 4 } },
-			preWarm: { autoDetect: false, commands: {}, always: [] },
-			merge: {
-				model: "",
-				thinking: "",
-				tools: "read,write,edit,bash,grep,find,ls",
-				verify: [],
-				order: "fewest-files-first",
-				timeoutMinutes: 10,
-			},
-			failure: {
-				onTaskFailure: "skip-dependents",
-				onMergeFailure: "pause",
-				stallTimeout: 30,
-				maxWorkerMinutes: 30,
-				abortGracePeriod: 60,
-			},
-			monitoring: { pollInterval: 5 },
 		},
 	};
 
-	return applyInitAgentConfig(projectConfig, initAgentConfig);
+	const explicit = vars.explicit_orchestrator_overrides || {};
+	const orchestratorCore = {};
+
+	if (explicit.maxLanes) orchestratorCore.maxLanes = vars.max_lanes;
+	if (explicit.worktreePrefix) orchestratorCore.worktreePrefix = vars.worktree_prefix;
+	if (explicit.sessionPrefix) orchestratorCore.sessionPrefix = vars.session_prefix;
+	if (explicit.spawnMode) orchestratorCore.spawnMode = vars.spawn_mode;
+
+	if (Object.keys(orchestratorCore).length > 0) {
+		projectConfig.orchestrator = { orchestrator: orchestratorCore };
+	}
+
+	return projectConfig;
 }
 
 function generateWorkspaceYaml(repoNames, defaultRepo, tasksRoot) {
@@ -958,7 +1086,7 @@ function cmdConfig(args) {
 		console.log(`\n${c.bold}Taskplane Config${c.reset}\n`);
 		console.log(`  ${c.cyan}taskplane config --save-as-defaults${c.reset}`);
 		console.log(`     Save worker/reviewer/merger model + thinking settings from this project`);
-		console.log(`     to ${c.cyan}${resolveUserPreferencesPathForCli()}${c.reset} for future ${c.cyan}taskplane init${c.reset} runs.\n`);
+		console.log(`     to ${c.cyan}${resolveGlobalPreferencesPathForCli()}${c.reset} for future ${c.cyan}taskplane init${c.reset} runs.\n`);
 		return;
 	}
 
@@ -2162,6 +2290,7 @@ function getPresetVars(preset, projectRoot, tasksRootOverride = null) {
 		default_prefix: "TP",
 		test_cmd,
 		build_cmd,
+		explicit_orchestrator_overrides: {},
 		date: today(),
 	};
 }
@@ -2171,7 +2300,8 @@ async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 	const detected = detectStack(projectRoot);
 
 	const project_name = await ask("Project name", dirName);
-	const max_lanes = parseInt(await ask("Max parallel lanes", "3")) || 3;
+	const maxLanesInput = await ask("Max parallel lanes", "3");
+	const max_lanes = parseInt(maxLanesInput, 10) || 3;
 	const tasks_root = tasksRootOverride || await ask("Tasks directory", "taskplane-tasks");
 	const default_area = await ask("Default area name", "general");
 	const default_prefix = await ask("Task ID prefix", "TP");
@@ -2179,6 +2309,11 @@ async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 	const build_cmd = await ask("Build command (agents run this after tests — blank to skip)", detected.build || "");
 
 	const slug = slugify(project_name);
+	const explicit_orchestrator_overrides = {};
+	if (max_lanes !== 3) {
+		explicit_orchestrator_overrides.maxLanes = true;
+	}
+
 	return {
 		project_name,
 		max_lanes,
@@ -2189,6 +2324,7 @@ async function getInteractiveVars(projectRoot, tasksRootOverride = null) {
 		default_prefix,
 		test_cmd,
 		build_cmd,
+		explicit_orchestrator_overrides,
 		date: today(),
 	};
 }
@@ -3110,7 +3246,7 @@ ${c.bold}Dashboard options:${c.reset}
 
 ${c.bold}Config options:${c.reset}
   --save-as-defaults  Save current project's worker/reviewer/merger model + thinking
-                      settings to user preferences for future taskplane init runs
+                      settings to global preferences for future taskplane init runs
 
 ${c.bold}Uninstall options:${c.reset}
   --dry-run         Show what would be removed

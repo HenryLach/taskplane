@@ -6,13 +6,13 @@
  *   2. Per-section SettingsList with field display, source badges,
  *      and inline editing for enum/boolean/string/number fields
  *
- * Source detection reads raw config files (before defaults merge) to
- * determine whether each field value comes from project config, user
- * preferences, or schema defaults.
+ * Source detection reads raw project config to determine whether each
+ * field is explicitly overridden in project config (`(project)`) or
+ * inherited from global baseline (`(global)`).
  *
- * Write-back targets the correct destination per field layer:
- *   - L1-only → project JSON, L2-only → preferences JSON,
- *   - L1+L2 → user chooses destination via ctx.ui.select()
+ * Write-back defaults to global preferences for all editable fields.
+ * "Save to project override" and "Remove project override" are
+ * explicit actions in the destination picker.
  *
  * @module settings/tui
  */
@@ -29,21 +29,21 @@ import {
 	DEFAULT_PROJECT_CONFIG,
 	PROJECT_CONFIG_FILENAME,
 	type TaskplaneConfig,
-	type UserPreferences,
+	type GlobalPreferences,
 } from "./config-schema.ts";
 import {
-	loadUserPreferences,
+	loadGlobalPreferences,
 	loadProjectConfig,
-	loadLayer1Config,
+	loadProjectOverrides,
 	resolveConfigRoot,
-	resolveUserPreferencesPath,
+	resolveGlobalPreferencesPath,
 } from "./config-loader.ts";
 
 
 // ── Types ────────────────────────────────────────────────────────────
 
 /** Source of a field's current value */
-export type FieldSource = "default" | "project" | "user";
+export type FieldSource = "project" | "global";
 
 /** Layer assignment for a field */
 export type FieldLayer = "L1" | "L2" | "L1+L2";
@@ -67,8 +67,8 @@ export interface FieldDef {
 	fieldType: "string" | "number" | "boolean" | "enum";
 	/** Whether the field is optional (can be unset) */
 	optional?: boolean;
-	/** For L1+L2 fields: the user preferences key */
-	prefsKey?: keyof UserPreferences;
+	/** For L1+L2 fields: the global preferences key */
+	prefsKey?: keyof GlobalPreferences;
 	/** Description shown when selected */
 	description?: string;
 }
@@ -163,7 +163,8 @@ export const SECTIONS: SectionDef[] = [
 			{ configPath: "taskRunner.worker.model", label: "Worker Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "workerModel", description: "Worker model (inherit = use session model)" },
 			{ configPath: "taskRunner.worker.tools", label: "Worker Tools", control: "input", layer: "L1", fieldType: "string", description: "Worker tool allowlist" },
 			{ configPath: "taskRunner.worker.thinking", label: "Worker Thinking", control: "picker", layer: "L1", fieldType: "string", description: "Worker thinking mode" },
-			{ configPath: "taskRunner.worker.spawnMode", label: "Spawn Mode", control: "toggle", layer: "L1", fieldType: "enum", values: ["subprocess"], optional: true, description: "How /task spawns workers and reviewers. Runtime V2 supports subprocess only." },
+			// spawnMode removed — /task is deprecated, Runtime V2 is subprocess-only.
+			// { configPath: "taskRunner.worker.spawnMode" ... } was here.
 		],
 	},
 	{
@@ -187,7 +188,7 @@ export const SECTIONS: SectionDef[] = [
 		],
 	},
 	{
-		name: "User Preferences",
+		name: "Global Preferences",
 		fields: [
 			{ configPath: "preferences.dashboardPort", label: "Dashboard Port", control: "input", layer: "L2", fieldType: "number", prefsKey: "dashboardPort", optional: true, description: "Dashboard server port" },
 		],
@@ -321,10 +322,10 @@ function snakeKeysToCamel(obj: Record<string, any>): Record<string, any> {
 }
 
 /**
- * Read the raw user preferences JSON.
+ * Read the raw global preferences JSON.
  */
 function readRawPreferences(): Record<string, any> | null {
-	const prefsPath = resolveUserPreferencesPath();
+	const prefsPath = resolveGlobalPreferencesPath();
 	if (!existsSync(prefsPath)) return null;
 	try {
 		const raw = readFileSync(prefsPath, "utf-8");
@@ -361,23 +362,33 @@ function setNestedValue(obj: Record<string, any>, path: string, value: any): voi
 	}
 }
 
+function pruneEmptyObjects(node: unknown): boolean {
+	if (!node || typeof node !== "object" || Array.isArray(node)) return false;
+	const obj = node as Record<string, any>;
+	for (const key of Object.keys(obj)) {
+		const child = obj[key];
+		if (child && typeof child === "object" && !Array.isArray(child)) {
+			if (pruneEmptyObjects(child)) {
+				delete obj[key];
+			}
+		}
+	}
+	return Object.keys(obj).length === 0;
+}
+
+function toGlobalPreferencePath(field: FieldDef): string {
+	if (field.configPath.startsWith("preferences.")) {
+		return field.configPath.slice("preferences.".length);
+	}
+	return field.configPath;
+}
+
 /**
- * Write a value to the project config JSON (Layer 1).
+ * Write a single project override field to `taskplane-config.json`.
  *
- * Writes to the resolved config root using the active layout:
- * - standard: `<configRoot>/.pi/taskplane-config.json`
- * - flat: `<configRoot>/taskplane-config.json` (pointer `.taskplane/` roots)
- *
- * When no JSON config exists (YAML-only scenario), bootstraps the new
- * JSON file from the full current Layer 1 config (YAML values + defaults).
- * This preserves ALL existing YAML-set values — because JSON takes
- * precedence on next load, a partial skeleton would silently reset
- * non-edited fields to defaults.
- *
- * YAML files are preserved alongside the new JSON; the loader's
- * JSON-first precedence means the JSON file is authoritative going forward.
- *
- * Uses atomic tmp+rename write pattern to prevent partial writes.
+ * This performs sparse writes only: when no JSON file exists yet, a new
+ * file is created with `{ configVersion }` plus the specific override path.
+ * It does NOT bootstrap full config values from YAML/global/default layers.
  */
 export function writeProjectConfigField(
 	configRoot: string,
@@ -402,22 +413,14 @@ export function writeProjectConfigField(
 		: join(resolvedRoot, ".pi", PROJECT_CONFIG_FILENAME);
 	const tmpPath = jsonPath + ".tmp";
 
-	// Ensure parent directory exists
 	mkdirSync(dirname(jsonPath), { recursive: true });
 
-	// Load existing JSON config, or bootstrap from full L1 config.
-	// When YAML-only, we seed from loadLayer1Config to preserve all
-	// YAML-sourced values (since JSON takes precedence on next load
-	// and YAML values would otherwise be lost).
 	let configObj: Record<string, any>;
 	if (existsSync(jsonPath)) {
 		try {
 			const raw = readFileSync(jsonPath, "utf-8");
 			configObj = JSON.parse(raw);
 		} catch (e: any) {
-			// Malformed JSON — cannot safely bootstrap because loadLayer1Config
-			// would also fail on the same corrupt file. Surface the error so the
-			// user can fix/delete the malformed JSON file first.
 			throw new Error(
 				`Cannot write settings: ${jsonPath} contains malformed JSON. ` +
 				`Please fix or delete the file and try again. ` +
@@ -425,49 +428,42 @@ export function writeProjectConfigField(
 			);
 		}
 	} else {
-		// No JSON exists (possibly YAML-only) — bootstrap from full L1 config.
-		// Deep-clone via JSON roundtrip since we mutate the object below.
-		configObj = JSON.parse(JSON.stringify(loadLayer1Config(configRoot, pointerConfigRoot)));
+		const yamlSeed = loadProjectOverrides(resolvedRoot);
+		configObj = {
+			configVersion: CONFIG_VERSION,
+			...JSON.parse(JSON.stringify(yamlSeed)),
+		};
 	}
 
-	// Set the value at the config path
 	setNestedValue(configObj, configPath, value);
+	pruneEmptyObjects(configObj);
+	if (configObj.configVersion === undefined) {
+		configObj.configVersion = CONFIG_VERSION;
+	}
 
-	// Atomic write: tmp + rename
 	const json = JSON.stringify(configObj, null, 2) + "\n";
 	writeFileSync(tmpPath, json, "utf-8");
 	try {
 		renameSync(tmpPath, jsonPath);
 	} catch {
-		// Windows fallback: direct write if rename fails
 		writeFileSync(jsonPath, json, "utf-8");
 		try { if (existsSync(tmpPath)) unlinkSync(tmpPath); } catch { /* cleanup best-effort */ }
 	}
 }
 
 /**
- * Write a value to the user preferences JSON (Layer 2).
- *
- * Writes to `resolveUserPreferencesPath()`.
- * If `value` is undefined, deletes the key from the preferences file
- * (for clearing preferences).
- *
- * Uses atomic tmp+rename write pattern to prevent partial writes.
+ * Write a global preference at a dot-path (e.g. `taskRunner.worker.model`).
+ * Uses sparse JSON updates and prunes empty objects on delete.
  */
-export function writeUserPreference(
-	prefsKey: keyof import("./config-schema.ts").UserPreferences,
-	value: any,
-): void {
-	const prefsPath = resolveUserPreferencesPath();
+export function writeGlobalPreference(path: string, value: any): void {
+	const prefsPath = resolveGlobalPreferencesPath();
 	const tmpPath = prefsPath + ".tmp";
 
-	// Ensure directory exists
 	const prefsDir = dirname(prefsPath);
 	if (!existsSync(prefsDir)) {
 		mkdirSync(prefsDir, { recursive: true });
 	}
 
-	// Load existing prefs or create empty object
 	let prefsObj: Record<string, any> = {};
 	if (existsSync(prefsPath)) {
 		try {
@@ -477,25 +473,18 @@ export function writeUserPreference(
 				prefsObj = parsed;
 			}
 		} catch {
-			// Malformed — start fresh (preserve what we can't parse)
 			prefsObj = {};
 		}
 	}
 
-	// Set or delete the value
-	if (value === undefined) {
-		delete prefsObj[prefsKey];
-	} else {
-		prefsObj[prefsKey] = value;
-	}
+	setNestedValue(prefsObj, path, value);
+	pruneEmptyObjects(prefsObj);
 
-	// Atomic write: tmp + rename
 	const json = JSON.stringify(prefsObj, null, 2) + "\n";
 	writeFileSync(tmpPath, json, "utf-8");
 	try {
 		renameSync(tmpPath, prefsPath);
 	} catch {
-		// Windows fallback: direct write if rename fails
 		writeFileSync(prefsPath, json, "utf-8");
 		try { if (existsSync(tmpPath)) unlinkSync(tmpPath); } catch { /* cleanup best-effort */ }
 	}
@@ -512,7 +501,7 @@ export function writeUserPreference(
  */
 export function coerceValueForWrite(field: FieldDef, rawValue: string): any {
 	// Strip source badge if present
-	const cleaned = rawValue.replace(/\s+\((?:default|project|user)\)$/, "").trim();
+	const cleaned = rawValue.replace(/\s+\((?:default|project|global)\)$/, "").trim();
 
 	// Unset / inherit → undefined (delete key)
 	if (cleaned === "(not set)" || cleaned === "(inherit)") {
@@ -534,35 +523,20 @@ export function coerceValueForWrite(field: FieldDef, rawValue: string): any {
 }
 
 /**
- * Determine the write destination for a field change.
+ * Write destinations for settings edits.
  *
- * - L1-only → "project"
- * - L2-only → "prefs"
- * - L1+L2 → must be chosen by the user (returns null to signal "ask user")
+ * - `prefs`: write to global preferences (default)
+ * - `project`: write a project-specific override
+ * - `remove-project`: delete an existing project override (revert to global)
  */
-export type WriteDestination = "project" | "prefs";
+export type WriteDestination = "project" | "prefs" | "remove-project";
 
-export function getDefaultWriteDestination(field: FieldDef): WriteDestination | null {
-	if (field.layer === "L1") return "project";
-	if (field.layer === "L2") return "prefs";
-	// L1+L2 → user must choose
-	return null;
+export function getDefaultWriteDestination(_field: FieldDef): WriteDestination {
+	return "prefs";
 }
 
 /**
  * Resolve the write action for a field change.
- *
- * Encapsulates the destination + confirmation decision tree from
- * showSectionSettingsLoop as a pure function for testability.
- *
- * @param field - The field being edited
- * @param destinationChoice - For L1+L2 fields: the user's choice from the
- *   destination select ("User preferences (personal)", "Project config (shared)",
- *   "Cancel", or null). Ignored for L1-only and L2-only fields.
- * @param projectConfirmed - For project-destination writes: whether the user
- *   confirmed the project config change. Ignored for prefs-destination writes.
- * @returns The resolved destination ("project" | "prefs") or "skip" if the
- *   user cancelled or declined confirmation.
  */
 export function resolveWriteAction(
 	field: FieldDef,
@@ -570,18 +544,17 @@ export function resolveWriteAction(
 	projectConfirmed: boolean,
 ): WriteDestination | "skip" {
 	const defaultDest = getDefaultWriteDestination(field);
-	let dest: WriteDestination | null = defaultDest;
 
-	// L1+L2 fields: resolve from user's destination choice
-	if (dest === null) {
-		if (!destinationChoice || destinationChoice === "Cancel") return "skip";
-		dest = destinationChoice.startsWith("User") ? "prefs" : "project";
-	}
+	// L2-only fields have no project layer
+	if (field.layer === "L2") return "prefs";
 
-	// Confirmation gate for project config writes
-	if (dest === "project" && !projectConfirmed) return "skip";
+	if (!destinationChoice || destinationChoice === "Cancel") return "skip";
+	if (destinationChoice.startsWith("Global") || destinationChoice.startsWith("User")) return "prefs";
+	if (destinationChoice.startsWith("Remove project override")) return "remove-project";
+	if (destinationChoice.startsWith("Project") && !projectConfirmed) return "skip";
+	if (destinationChoice.startsWith("Project")) return "project";
 
-	return dest;
+	return defaultDest;
 }
 
 
@@ -604,47 +577,21 @@ function getNestedValue(obj: any, path: string): any {
 /**
  * Determine the source of a field's current value.
  *
- * Implements the source-badge rules from Step 1:
- * - For L1+L2 fields: check user prefs first (type-specific "is set" rules)
- * - Then check raw project config
- * - Fallback to default
+ * Source badge policy:
+ * - `(project)` when the field is explicitly present in project config JSON/YAML
+ * - `(global)` otherwise (global preferences baseline + schema defaults)
  */
 export function detectFieldSource(
 	field: FieldDef,
 	rawProjectConfig: Record<string, any> | null,
-	rawPrefs: Record<string, any> | null,
+	_rawPrefs: Record<string, any> | null,
 ): FieldSource {
-	// L2 check for dual-layer and L2-only fields.
-	// Type guards MUST match extractAllowlistedPreferences() in config-loader.ts
-	// to avoid showing "(user)" for values that the merge layer would reject.
-	if ((field.layer === "L1+L2" || field.layer === "L2") && field.prefsKey && rawPrefs) {
-		const prefVal = rawPrefs[field.prefsKey];
-		if (field.fieldType === "string") {
-			// String rule: must be typeof string, non-empty → (user)
-			// Matches: `typeof raw.X === "string"` AND applyUserPreferences `val !== "" `
-			if (typeof prefVal === "string" && prefVal !== "") return "user";
-		} else if (field.fieldType === "enum") {
-			// Enum rule: must be a valid enum value from the field's values array.
-			// Matches extractAllowlistedPreferences which checks exact enum membership
-			// (e.g., raw.spawnMode === "subprocess").
-			if (prefVal !== undefined && field.values && field.values.includes(String(prefVal))) return "user";
-		} else if (field.fieldType === "number") {
-			// Number rule: must be typeof number and finite → (user)
-			// Matches: `typeof raw.X === "number" && Number.isFinite(raw.X)`
-			if (typeof prefVal === "number" && Number.isFinite(prefVal)) return "user";
-		}
-	}
-
-	// L2-only fields have no project layer
-	if (field.layer === "L2") return "default";
-
-	// L1 check: look in raw project config
-	if (rawProjectConfig) {
+	if (field.layer !== "L2" && rawProjectConfig) {
 		const val = getNestedValue(rawProjectConfig, field.configPath);
 		if (val !== undefined) return "project";
 	}
 
-	return "default";
+	return "global";
 }
 
 
@@ -656,7 +603,7 @@ export function detectFieldSource(
 export function getFieldDisplayValue(
 	field: FieldDef,
 	mergedConfig: TaskplaneConfig,
-	prefs: UserPreferences,
+	prefs: GlobalPreferences,
 ): string {
 	// Special case: dashboardPort (L2-only, not in merged config)
 	if (field.configPath === "preferences.dashboardPort") {
@@ -668,9 +615,6 @@ export function getFieldDisplayValue(
 
 	// Optional fields may be undefined
 	if (val === undefined) {
-		if (field.optional && field.configPath === "taskRunner.worker.spawnMode") {
-			return "(inherit)";
-		}
 		return "(not set)";
 	}
 
@@ -1003,18 +947,25 @@ async function pickModel(ctx: ExtensionContext, currentModel: string): Promise<s
 	}
 }
 
-type ThinkingModeValue = "" | "on" | "off";
+type ThinkingModeValue = "" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 
 const THINKING_MODE_OPTIONS: Array<{ value: ThinkingModeValue; label: string }> = [
 	{ value: "", label: "inherit (use session thinking)" },
-	{ value: "on", label: "on" },
 	{ value: "off", label: "off" },
+	{ value: "minimal", label: "minimal" },
+	{ value: "low", label: "low" },
+	{ value: "medium", label: "medium" },
+	{ value: "high", label: "high" },
+	{ value: "xhigh", label: "xhigh" },
 ];
 
 function normalizeThinkingMode(value: unknown): ThinkingModeValue {
 	const cleaned = String(value ?? "").trim().toLowerCase();
-	if (cleaned === "on") return "on";
-	if (cleaned === "off") return "off";
+	if (!cleaned || cleaned === "inherit") return "";
+	if (cleaned === "on") return "high";
+	if (["off", "minimal", "low", "medium", "high", "xhigh"].includes(cleaned)) {
+		return cleaned as ThinkingModeValue;
+	}
 	return "";
 }
 
@@ -1023,11 +974,12 @@ async function pickThinkingMode(
 	currentThinking: string,
 ): Promise<ThinkingModeValue | undefined> {
 	const current = normalizeThinkingMode(currentThinking);
+	const resolvedCurrent: ThinkingModeValue = current || "high";
 	const optionToValue = new Map<string, ThinkingModeValue>();
 	const optionLabels: string[] = [];
 
 	for (const option of THINKING_MODE_OPTIONS) {
-		const label = `${option.label}${option.value === current ? "  ✓ current" : ""}`;
+		const label = `${option.label}${option.value === resolvedCurrent ? "  ✓ current" : ""}`;
 		optionLabels.push(label);
 		optionToValue.set(label, option.value);
 	}
@@ -1041,6 +993,12 @@ const MODEL_THINKING_PATH_MAP: Record<string, { thinkingPath: string; label: str
 	"taskRunner.worker.model": { thinkingPath: "taskRunner.worker.thinking", label: "Worker" },
 	"taskRunner.reviewer.model": { thinkingPath: "taskRunner.reviewer.thinking", label: "Reviewer" },
 	"orchestrator.merge.model": { thinkingPath: "orchestrator.merge.thinking", label: "Merge" },
+};
+
+const THINKING_MODEL_PATH_MAP: Record<string, { modelPath: string; label: string }> = {
+	"taskRunner.worker.thinking": { modelPath: "taskRunner.worker.model", label: "Worker" },
+	"taskRunner.reviewer.thinking": { modelPath: "taskRunner.reviewer.model", label: "Reviewer" },
+	"orchestrator.merge.thinking": { modelPath: "orchestrator.merge.model", label: "Merge" },
 };
 
 function resolveModelRecord(ctx: ExtensionContext, modelRef: string): any | undefined {
@@ -1096,6 +1054,10 @@ export function modelSupportsThinking(model: any): boolean {
 	for (const candidate of candidateObjects) {
 		for (const key of boolFlags) {
 			if (typeof candidate[key] === "boolean" && candidate[key]) return true;
+			if (typeof candidate[key] === "string") {
+				const normalized = candidate[key].trim().toLowerCase();
+				if (["yes", "true", "on", "supported"].includes(normalized)) return true;
+			}
 		}
 		for (const key of capabilityKeys) {
 			if (candidate[key] !== undefined && candidate[key] !== null) return true;
@@ -1123,9 +1085,26 @@ export function buildThinkingSuggestionForModelChange(
 	if (!modelRecord || !modelSupportsThinking(modelRecord)) return null;
 
 	const currentThinking = normalizeThinkingMode(getNestedValue(mergedConfig, mapping.thinkingPath));
-	if (currentThinking === "on") return null;
+	if (currentThinking === "high") return null;
 
-	return `${mapping.label} model supports thinking. Consider setting ${mapping.label} Thinking to \"on\".`;
+	return `${mapping.label} model supports thinking. Consider setting ${mapping.label} Thinking to \"high\".`;
+}
+
+export function buildThinkingUnsupportedNoteForThinkingField(
+	ctx: ExtensionContext,
+	field: FieldDef,
+	mergedConfig: TaskplaneConfig,
+): string | null {
+	const mapping = THINKING_MODEL_PATH_MAP[field.configPath];
+	if (!mapping) return null;
+
+	const modelRef = String(getNestedValue(mergedConfig, mapping.modelPath) ?? "").trim();
+	if (!modelRef) return null;
+
+	const modelRecord = resolveModelRecord(ctx, modelRef);
+	if (!modelRecord || modelSupportsThinking(modelRecord)) return null;
+
+	return `${mapping.label} model does not advertise thinking support. You can still set thinking; unsupported models ignore it at runtime.`;
 }
 
 /**
@@ -1198,14 +1177,14 @@ export async function openSettingsTui(
  */
 function loadConfigState(configRoot: string, pointerConfigRoot?: string): {
 	mergedConfig: TaskplaneConfig;
-	prefs: UserPreferences;
+	prefs: GlobalPreferences;
 	rawProject: Record<string, any> | null;
 	rawPrefs: Record<string, any> | null;
 } {
 	const resolvedRoot = resolveConfigRoot(configRoot, pointerConfigRoot);
 	return {
 		mergedConfig: loadProjectConfig(configRoot, pointerConfigRoot),
-		prefs: loadUserPreferences(),
+		prefs: loadGlobalPreferences(),
 		rawProject: readRawProjectJson(resolvedRoot) || readRawYamlConfigs(resolvedRoot),
 		rawPrefs: readRawPreferences(),
 	};
@@ -1340,9 +1319,8 @@ async function showAdvancedSection(
  */
 function formatSourceBadge(source: FieldSource): string {
 	switch (source) {
-		case "default": return "(default)";
 		case "project": return "(project)";
-		case "user":    return "(user)";
+		case "global":  return "(global)";
 	}
 }
 
@@ -1378,7 +1356,7 @@ async function showSectionSettingsLoop(
 		if (result.rawValue === "__EDIT_REQUESTED__" && (field.control === "input" || field.control === "picker")) {
 			const state = loadConfigState(configRoot, pointerConfigRoot);
 			const currentDisplay = getFieldDisplayValue(field, state.mergedConfig, state.prefs);
-			const currentClean = String(currentDisplay).replace(/\s+\((?:default|project|user)\)$/, "");
+			const currentClean = String(currentDisplay).replace(/\s+\((?:default|project|global)\)$/, "");
 			const normalizedCurrent = currentClean === "(inherit)" ? "" : currentClean;
 
 			// Model fields: use interactive provider → model picker instead of free-text
@@ -1388,6 +1366,8 @@ async function showSectionSettingsLoop(
 				if (selected === undefined) continue;  // Cancelled
 				result.rawValue = selected;
 			} else if (field.control === "picker" && field.configPath.endsWith(".thinking")) {
+				const note = buildThinkingUnsupportedNoteForThinkingField(ctx, field, state.mergedConfig);
+				if (note) ctx.ui.notify(note, "info");
 				const selected = await pickThinkingMode(ctx, normalizedCurrent);
 				if (selected === undefined) continue;  // Cancelled
 				result.rawValue = selected;
@@ -1421,30 +1401,28 @@ async function showSectionSettingsLoop(
 		}
 
 		const typedValue = coerceValueForWrite(field, result.rawValue);
+		const hasProjectOverride =
+			field.layer !== "L2" &&
+			!!state.rawProject &&
+			getNestedValue(state.rawProject, field.configPath) !== undefined;
 
 		// Collect UI answers for the write-decision contract
 		let destinationChoice: string | null = null;
-		if (getDefaultWriteDestination(field) === null) {
-			// L1+L2 fields: ask user where to save
-			destinationChoice = await ctx.ui.select(
-				"Save this change to:",
-				[
-					"User preferences (personal)",
-					"Project config (shared)",
-					"Cancel",
-				],
-			);
+		if (field.layer !== "L2") {
+			const options = [
+				"Global preferences (default)",
+				"Project override (this project only)",
+				...(hasProjectOverride ? ["Remove project override (revert to global)"] : []),
+				"Cancel",
+			];
+			destinationChoice = await ctx.ui.select("Save this change to:", options);
 		}
 
 		let projectConfirmed = true;
-		// Only ask for confirmation if the resolved dest will be "project"
-		const needsProjectConfirm =
-			(field.layer === "L1") ||
-			(field.layer === "L1+L2" && destinationChoice?.startsWith("Project"));
-		if (needsProjectConfirm) {
+		if (destinationChoice?.startsWith("Project override")) {
 			projectConfirmed = await ctx.ui.confirm(
-				"Confirm project config change",
-				"This writes to .pi/taskplane-config.json (shared project config). Continue?",
+				"Confirm project override",
+				"This writes to .pi/taskplane-config.json as a project override. Continue?",
 			);
 		}
 
@@ -1455,11 +1433,10 @@ async function showSectionSettingsLoop(
 		try {
 			if (dest === "project") {
 				writeProjectConfigField(configRoot, field.configPath, typedValue, pointerConfigRoot);
+			} else if (dest === "remove-project") {
+				writeProjectConfigField(configRoot, field.configPath, undefined, pointerConfigRoot);
 			} else {
-				// L2 write — use prefsKey
-				if (field.prefsKey) {
-					writeUserPreference(field.prefsKey, typedValue);
-				}
+				writeGlobalPreference(toGlobalPreferencePath(field), typedValue);
 			}
 			ctx.ui.notify(
 				`✅ ${field.label} updated.\n` +
@@ -1500,7 +1477,7 @@ async function showSectionSettingsOnce(
 	ctx: ExtensionContext,
 	section: SectionDef,
 	mergedConfig: TaskplaneConfig,
-	prefs: UserPreferences,
+	prefs: GlobalPreferences,
 	rawProject: Record<string, any> | null,
 	rawPrefs: Record<string, any> | null,
 ): Promise<PendingChange | null> {
@@ -1597,7 +1574,7 @@ function createInputSubmenu(
 	done: (selectedValue?: string) => void,
 ): any {
 	// Strip source badge from current value for editing
-	const cleanValue = currentValue.replace(/\s+\((?:default|project|user)\)$/, "");
+	const cleanValue = currentValue.replace(/\s+\((?:default|project|global)\)$/, "");
 	let inputBuffer = cleanValue === "(not set)" || cleanValue === "(inherit)" ? "" : cleanValue;
 	let errorMsg = "";
 	let cursorPos = inputBuffer.length;

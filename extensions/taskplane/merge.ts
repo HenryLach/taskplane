@@ -611,7 +611,7 @@ export async function spawnMergeAgentV2(
 		packet: null,
 		env: {
 			ORCH_BATCH_ID: bid,
-			// Isolate merge agent from operator's user preferences to prevent
+			// Isolate merge agent from operator's global preferences to prevent
 			// verification test contamination (e.g., stale reviewerModel pref
 			// overriding schema defaults in deep-equal assertions).
 			PI_CODING_AGENT_DIR: join(sidecarRoot, "runtime", bid, "merge-agent-env"),
