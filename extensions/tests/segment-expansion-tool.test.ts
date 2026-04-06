@@ -209,6 +209,38 @@ describe("request_segment_expansion registration + autonomy guard", () => {
 			expect(files.some((f) => f.endsWith(".tmp"))).toBe(false);
 		});
 	});
+
+	it("writes TP-007-style api-service → web-client after-current request payload", async () => {
+		const outboxDir = mkdtempSync(join(tmpdir(), "tp-seg-expansion-"));
+		tempDirs.push(outboxDir);
+
+		await withEnv({
+			TASKPLANE_OUTBOX_DIR: outboxDir,
+			TASKPLANE_ACTIVE_SEGMENT_ID: "TP-007::api-service",
+			TASKPLANE_TASK_ID: "TP-007",
+			TASKPLANE_SUPERVISOR_AUTONOMY: "autonomous",
+		}, async () => {
+			const tool = registerTools().get("request_segment_expansion")!;
+			const result = await tool.execute("call-tp-007", {
+				requestedRepoIds: ["web-client"],
+				rationale: "api-service health payload now includes statusLevel",
+				placement: "after-current",
+				edges: [],
+			});
+			const payload = parsePayload(result);
+			expect(payload.accepted).toBe(true);
+			expect(payload.requestId).toMatch(/^exp-\d{13}-[a-z0-9]{5}$/);
+
+			const requestFile = join(outboxDir, `segment-expansion-${payload.requestId}.json`);
+			const parsed = JSON.parse(readFileSync(requestFile, "utf-8"));
+			expect(parsed.taskId).toBe("TP-007");
+			expect(parsed.fromSegmentId).toBe("TP-007::api-service");
+			expect(parsed.requestedRepoIds).toEqual(["web-client"]);
+			expect(parsed.placement).toBe("after-current");
+			expect(parsed.edges).toEqual([]);
+			expect(parsed.rationale).toContain("statusLevel");
+		});
+	});
 });
 
 
