@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** M
 
@@ -48,6 +48,8 @@
 - [ ] Repeat-repo disambiguated IDs
 - [ ] Re-topologize orderedSegments
 - [ ] Update SegmentFrontierTaskState
+- [ ] Post-mutation scheduling continuity (expanded pending segments remain executable)
+- [ ] Step 3 scheduling continuity test intent (targeted coverage)
 
 ### Step 4: Persistence and alerts
 **Status:** ⬜ Not Started
@@ -85,6 +87,8 @@
 - Reviewer suggestion (R002): consider extracting boundary outbox consumption into a dedicated helper for readability/testability.
 - Reviewer suggestion (R004): keep Step 2 validation in `processSegmentExpansionRequestAtBoundary(...)` for ordering/scoping continuity.
 - Reviewer suggestion (R004): consider validating request edges against requested repos before cycle checks for clearer rejection reasons.
+- Reviewer suggestion (R007): clarify `end` placement for multi-root inserts (terminals connect to all roots(N)).
+- Reviewer suggestion (R007): keep re-topology tie-breaks deterministic (existing order + segmentId).
 
 ## Execution Log
 
@@ -107,3 +111,5 @@
 | 2026-04-06 03:28 | Review R003 | code Step 1: APPROVE |
 | 2026-04-06 03:30 | Review R004 | plan Step 2: REVISE |
 | 2026-04-06 03:31 | Review R005 | plan Step 2: APPROVE |
+| 2026-04-06 03:37 | Review R006 | code Step 2: APPROVE |
+| 2026-04-06 03:40 | Review R007 | plan Step 3: REVISE |
