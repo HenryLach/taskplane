@@ -885,11 +885,14 @@ export function applyGlobalPreferences(config: TaskplaneConfig, prefs: GlobalPre
  * workspace-only roots participate in config-root resolution.
  */
 export function hasConfigFiles(root: string): boolean {
+	// Check for actual project config files (not workspace YAML — that's a
+	// coordination file, not a project config). Without this distinction,
+	// workspace root's .pi/taskplane-workspace.yaml causes resolveConfigRoot
+	// to short-circuit before checking the pointer-resolved config root (#424).
 	const files = [
 		PROJECT_CONFIG_FILENAME,
 		"task-runner.yaml",
 		"task-orchestrator.yaml",
-		"taskplane-workspace.yaml",
 	];
 	for (const f of files) {
 		if (existsSync(join(root, ".pi", f)) || existsSync(join(root, f))) return true;
