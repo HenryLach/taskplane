@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.30] - 2026-04-06
+
+### Fixed
+- **Segment expansion requests not consumed by engine** (#452) — Post-wave processing used stale `task.activeSegmentId` (already null for completed single-segment tasks). Now uses `outcome.segmentId` from task outcome. Same fix applied to failed task path.
+- **Workspace config resolution short-circuit** (#424) — `hasConfigFiles()` no longer counts `taskplane-workspace.yaml` as a project config file.
+- **Workspace init doubled config repo name** — Tasks directory path no longer doubled when config repo prefix matches.
+- **`taskplane init` writes `task_packet_repo`** — Eliminates compatibility warnings on workspace startup.
+- **Windows backslashes in init paths** (#446) — All path inputs normalized to forward slashes.
+
 ## [0.24.29] - 2026-04-06
 
 ### Fixed
