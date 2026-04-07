@@ -2521,10 +2521,12 @@ export async function executeOrchBatch(
 			const segmentState = segmentStateByTask.get(taskId);
 			if (!task || !segmentState) continue;
 
-			const activeSegmentId = task.activeSegmentId;
+			// Use the completing segment ID from the task outcome, not task.activeSegmentId
+			// which may already be null (advanced by pre-wave loop for next wave).
+			const outcome = allTaskOutcomes.find((candidate) => candidate.taskId === taskId);
+			const activeSegmentId = outcome?.segmentId || task.activeSegmentId;
 			if (activeSegmentId) {
 				segmentState.statusBySegmentId.set(activeSegmentId, "succeeded");
-				const outcome = allTaskOutcomes.find((candidate) => candidate.taskId === taskId);
 				upsertTerminalSegmentRecord(batchState, task, segmentState, activeSegmentId, "succeeded", outcome, laneByTaskId.get(taskId));
 
 				const workerAgentId = resolveTaskWorkerAgentId(taskId, allTaskOutcomes, laneByTaskId);
