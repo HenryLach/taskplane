@@ -20,7 +20,7 @@ The taskplane dashboard runs on a local port on your system and gives you elegan
 
 - **Task Orchestrator** — Parallel multi-task execution using git worktrees for full filesystem isolation. Dependency-aware wave scheduling. Automated merges into a dedicated orch branch — your working branch stays stable until you choose to integrate.
 - **Persistent Worker Context** — Workers handle all steps in a single context, auto-detecting the model's context window (1M for Claude 4.6 Opus, 200K for Bedrock). Only iterates on context overflow. Dramatic reduction in spawn count and token cost.
-- **Worker-Driven Inline Reviews** — Workers invoke a `review_step` tool at step boundaries. Reviewer agents spawn in tmux sessions with full telemetry. REVISE feedback is addressed inline without losing context.
+- **Worker-Driven Inline Reviews** — Workers invoke a `review_step` tool at step boundaries. Reviewer agents spawn with full telemetry. REVISE feedback is addressed inline without losing context.
 - **Supervisor Agent** — Conversational supervisor monitors batch progress, handles failures, and can invoke orchestrator commands autonomously (resume, integrate, pause, abort).
 - **Web Dashboard** — Live browser-based monitoring via `taskplane dashboard`. SSE streaming, lane/task progress, reviewer activity, merge telemetry, batch history.
 - **Structured Tasks** — PROMPT.md defines the mission, steps, and constraints. STATUS.md tracks progress. Agents follow the plan, not vibes.
@@ -38,15 +38,6 @@ Taskplane is a [pi package](https://github.com/badlogic/pi-mono). You need [Node
 | [Node.js](https://nodejs.org/) ≥ 22 | Yes | Runtime |
 | [pi](https://github.com/badlogic/pi-mono) | Yes | Agent framework |
 | [Git](https://git-scm.com/) | Yes | Version control, worktrees |
-| **tmux** | **Strongly recommended** | Required for `/orch` parallel execution |
-
-**tmux** is needed for the orchestrator to spawn parallel worker sessions. Without it, `/orch` will not work. On Windows, Taskplane can install it for you:
-
-```bash
-taskplane install-tmux
-```
-
-On macOS: `brew install tmux` · On Linux: `sudo apt install tmux` (or your distro's package manager)
 
 ### Option A: Global Install (all projects)
 
@@ -131,18 +122,12 @@ For a single task with full worktree isolation, dashboard, and reviews:
 
 This uses the same orchestrator infrastructure as a full batch — isolated worktree, orch branch, supervisor, dashboard, inline reviews — but for just one task.
 
-> **Deprecated:** The `/task` command is deprecated and will be removed in a future major version. It does not provide worktree isolation, dashboard, or inline reviews. Use `/orch` for all workflows — including single-task execution.
-
 ## Commands
 
 ### Pi Session Commands
 
 | Command | Description |
 |---------|-------------|
-| `/task <path/to/PROMPT.md>` | ⚠️ **Deprecated.** Execute one task in the current branch/worktree. Use `/orch` instead. |
-| `/task-status` | ⚠️ **Deprecated.** Show current task progress. Use `/orch-status` or dashboard. |
-| `/task-pause` | ⚠️ **Deprecated.** Pause after current worker iteration finishes. Use `/orch-pause`. |
-| `/task-resume` | ⚠️ **Deprecated.** Resume a paused task. Use `/orch-resume`. |
 | `/orch [<areas\|paths\|all>]` | No args: detect state & guide (onboarding, batch planning, etc.); with args: execute tasks via isolated worktrees |
 | `/orch-plan <areas\|paths\|all>` | Preview execution plan without running |
 | `/orch-status` | Show batch progress |
@@ -176,8 +161,7 @@ This uses the same orchestrator infrastructure as a full batch — isolated work
        │          │          │
   ┌────▼────┐ ┌──▼─────┐ ┌──▼─────┐
   │ Lane 1  │ │ Lane 2 │ │ Lane 3 │    ← Git worktrees
-  │ /task   │ │ /task  │ │ /task  │       (isolated)
-  │ Worker  │ │ Worker │ │ Worker │
+  │ Worker  │ │ Worker │ │ Worker │       (isolated)
   │ Review  │ │ Review │ │ Review │
   └────┬────┘ └──┬─────┘ └──┬─────┘
        │         │          │

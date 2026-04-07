@@ -1,6 +1,6 @@
 # TP-156: Update root README.md to remove /task and tmux references — Status
 
-**Current Step:** Step 1: Update README.md
+**Current Step:** Step 2: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-07
 **Review Level:** 0
@@ -18,20 +18,20 @@
 ---
 
 ### Step 1: Update README.md
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Remove tmux from prerequisites table and install instructions
-- [ ] Verify quickstart "Run your first orchestration" has no `/task` refs
-- [ ] Remove `/task` deprecated blockquote from single-task section
-- [ ] Remove all `/task*` rows from commands table
-- [ ] Update "How It Works" ASCII diagram — remove `/task` from lane boxes
-- [ ] Update "How it works" paragraph if needed
-- [ ] Scan for any remaining `/task` or tmux mentions
+- [x] Remove tmux from prerequisites table and install instructions
+- [x] Verify quickstart "Run your first orchestration" has no `/task` refs
+- [x] Remove `/task` deprecated blockquote from single-task section
+- [x] Remove all `/task*` rows from commands table
+- [x] Update "How It Works" ASCII diagram — remove `/task` from lane boxes
+- [x] Update "How it works" paragraph if needed
+- [x] Scan for any remaining `/task` or tmux mentions
 
 ---
 
 ### Step 2: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Re-read full README for clean reading
 - [ ] Discoveries logged
