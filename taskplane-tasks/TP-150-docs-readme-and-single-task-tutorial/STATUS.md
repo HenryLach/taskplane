@@ -1,6 +1,6 @@
 # TP-150: Update docs README and rewrite single-task tutorial — Status
 
-**Current Step:** Step 2: Rewrite docs/tutorials/run-your-first-task.md
+**Current Step:** Step 3: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-07
 **Review Level:** 0
@@ -30,15 +30,15 @@
 ---
 
 ### Step 2: Rewrite docs/tutorials/run-your-first-task.md
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Rewrite tutorial for `/orch`-based single task execution
-- [ ] Show running `/orch <path/to/PROMPT.md>` workflow
-- [ ] Explain PROMPT.md and STATUS.md
-- [ ] Show monitoring via `/orch-status` and dashboard
-- [ ] Show pause/resume via `/orch-pause` and `/orch-resume`
-- [ ] Show completion verification
-- [ ] Update troubleshooting and "Next Step" links
+- [x] Rewrite tutorial for `/orch`-based single task execution
+- [x] Show running `/orch <path/to/PROMPT.md>` workflow
+- [x] Explain PROMPT.md and STATUS.md
+- [x] Show monitoring via `/orch-status` and dashboard
+- [x] Show pause/resume via `/orch-pause` and `/orch-resume`
+- [x] Show completion verification
+- [x] Update troubleshooting and "Next Step" links
 
 ---
 
