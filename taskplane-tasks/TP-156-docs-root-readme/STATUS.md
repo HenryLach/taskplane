@@ -1,24 +1,24 @@
 # TP-156: Update root README.md to remove /task and tmux references — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 1: Update README.md
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-07
 **Review Level:** 0
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read `README.md` and catalog all `/task` and tmux references
+- [x] Read `README.md` and catalog all `/task` and tmux references
 
 ---
 
 ### Step 1: Update README.md
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Remove tmux from prerequisites table and install instructions
 - [ ] Verify quickstart "Run your first orchestration" has no `/task` refs
@@ -57,6 +57,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-07 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-04-07 19:01 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-07 19:01 | Step 0 started | Preflight |
 
 ---
 
