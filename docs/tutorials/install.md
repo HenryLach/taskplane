@@ -80,10 +80,8 @@ taskplane init --preset full
 
 This scaffolds:
 
-- `.pi/taskplane-config.json` — canonical JSON config (task runner + orchestrator settings)
+- `.pi/taskplane-config.json` — project configuration (task runner + orchestrator settings)
 - `.pi/taskplane.json` — version tracker
-- `.pi/task-runner.yaml` — legacy task runner config (fallback; ignored when JSON config is present)
-- `.pi/task-orchestrator.yaml` — legacy orchestrator config (fallback; ignored when JSON config is present)
 - `.pi/agents/task-worker.md`, `task-reviewer.md`, `task-merger.md` — agent prompts
 - `taskplane-tasks/CONTEXT.md` — task area context
 - `taskplane-tasks/EXAMPLE-001-hello-world/{PROMPT.md,STATUS.md}` — example tasks
@@ -112,8 +110,6 @@ Files created in the config repo (e.g., `repo-a`):
 
 - `repo-a/.taskplane/taskplane-config.json`
 - `repo-a/.taskplane/taskplane.json`
-- `repo-a/.taskplane/task-runner.yaml` (legacy fallback)
-- `repo-a/.taskplane/task-orchestrator.yaml` (legacy fallback)
 - `repo-a/.taskplane/workspace.json` — lists all discovered repos
 - `repo-a/.taskplane/agents/task-worker.md`, `task-reviewer.md`, `task-merger.md`
 - `repo-a/taskplane-tasks/CONTEXT.md`

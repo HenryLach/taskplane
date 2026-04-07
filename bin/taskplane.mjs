@@ -964,6 +964,24 @@ async function autoCommitTaskFiles(projectRoot, tasksRoot) {
 }
 
 function discoverTaskAreaMetadata(projectRoot, configRoot = projectRoot, configPrefix = ".pi") {
+	// Prefer taskplane-config.json; fall back to task-runner.yaml for legacy projects
+	const jsonPath = path.join(configRoot, configPrefix, "taskplane-config.json");
+	if (fs.existsSync(jsonPath)) {
+		try {
+			const config = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+			const areas = config?.taskRunner?.taskAreas || {};
+			const paths = new Set();
+			const contexts = new Set();
+			const areaRepoIds = {};
+			for (const [areaName, area] of Object.entries(areas)) {
+				if (area.path) paths.add(area.path);
+				if (area.context) contexts.add(area.context);
+				if (area.repoId) areaRepoIds[areaName] = area.repoId;
+			}
+			return { paths: [...paths], contexts: [...contexts], areaRepoIds };
+		} catch { /* fall through to YAML */ }
+	}
+
 	const runnerPath = path.join(configRoot, configPrefix, "task-runner.yaml");
 	if (!fs.existsSync(runnerPath)) return { paths: [], contexts: [], areaRepoIds: {} };
 
@@ -1132,9 +1150,10 @@ async function cmdUninstall(args) {
 	console.log(`\n${c.bold}Taskplane Uninstall${c.reset}\n`);
 
 	const managedFiles = [
+		".pi/taskplane-config.json",
+		".pi/taskplane.json",
 		".pi/task-runner.yaml",
 		".pi/task-orchestrator.yaml",
-		".pi/taskplane.json",
 		".pi/agents/task-worker.md",
 		".pi/agents/task-reviewer.md",
 		".pi/agents/task-merger.md",
@@ -1194,7 +1213,7 @@ async function cmdUninstall(args) {
 		for (const f of sidecarsToDelete) console.log(`  - remove ${f.rel}`);
 		for (const d of taskDirsToDelete) console.log(`  - remove dir ${d.rel}`);
 		if (removeTasks && taskDirsToDelete.length === 0) {
-			console.log(`  ${c.dim}No task area directories found from .pi/task-runner.yaml.${c.reset}`);
+			console.log(`  ${c.dim}No task area directories found in config.${c.reset}`);
 		}
 		if (!removeTasks) {
 			console.log(`  ${c.dim}Task directories are preserved by default (use --remove-tasks to delete them).${c.reset}`);
@@ -1955,22 +1974,6 @@ async function cmdInit(args) {
 			);
 		}
 
-		// Task runner config
-		writeFile(
-			path.join(taskplaneDir, "task-runner.yaml"),
-			generateTaskRunnerYaml(vars),
-			{ skipIfExists, label: `${configRepoName}/.taskplane/task-runner.yaml` }
-		);
-
-		// Orchestrator config (skip for runner-only preset)
-		if (preset !== "runner-only") {
-			writeFile(
-				path.join(taskplaneDir, "task-orchestrator.yaml"),
-				generateOrchestratorYaml(vars),
-				{ skipIfExists, label: `${configRepoName}/.taskplane/task-orchestrator.yaml` }
-			);
-		}
-
 		// Project config JSON (taskplane-config.json)
 		const projectConfig = generateProjectConfig(vars, initAgentConfig);
 		writeFile(
@@ -2180,23 +2183,7 @@ async function cmdInit(args) {
 		);
 	}
 
-	// Task runner config
-	writeFile(
-		path.join(projectRoot, ".pi", "task-runner.yaml"),
-		generateTaskRunnerYaml(vars),
-		{ skipIfExists, label: ".pi/task-runner.yaml" }
-	);
-
-	// Orchestrator config (skip for runner-only preset)
-	if (preset !== "runner-only") {
-		writeFile(
-			path.join(projectRoot, ".pi", "task-orchestrator.yaml"),
-			generateOrchestratorYaml(vars),
-			{ skipIfExists, label: ".pi/task-orchestrator.yaml" }
-		);
-	}
-
-	// Unified project config JSON
+	// Project config JSON
 	writeFile(
 		path.join(projectRoot, ".pi", "taskplane-config.json"),
 		JSON.stringify(generateProjectConfig(vars, initAgentConfig), null, 2) + "\n",
@@ -2341,10 +2328,8 @@ function printFileList(vars, noExamples, preset, exampleTemplateDirs = [], proje
 		".pi/agents/task-reviewer.md",
 		".pi/agents/task-merger.md",
 		".pi/agents/supervisor.md",
-		".pi/task-runner.yaml",
+		".pi/taskplane-config.json",
 	];
-	if (preset !== "runner-only") files.push(".pi/task-orchestrator.yaml");
-	files.push(".pi/taskplane-config.json");
 	files.push(".pi/taskplane.json");
 	files.push(`${vars.tasks_root}/CONTEXT.md`);
 	if (!noExamples) {
@@ -2380,10 +2365,8 @@ function printWorkspaceFileList(vars, noExamples, preset, exampleTemplateDirs, c
 		`${prefix}/agents/task-reviewer.md`,
 		`${prefix}/agents/task-merger.md`,
 		`${prefix}/agents/supervisor.md`,
-		`${prefix}/task-runner.yaml`,
+		`${prefix}/taskplane-config.json`,
 	];
-	if (preset !== "runner-only") files.push(`${prefix}/task-orchestrator.yaml`);
-	files.push(`${prefix}/taskplane-config.json`);
 	files.push(`${prefix}/taskplane.json`);
 	files.push(`${prefix}/workspace.json`);
 	files.push(`${configRepoName}/${vars.tasks_root}/CONTEXT.md`);
@@ -2884,10 +2867,10 @@ function cmdDoctor() {
 	console.log();
 	const hasUnifiedJson = fs.existsSync(path.join(configLocation.root, configLocation.prefix, "taskplane-config.json"));
 	const configFiles = [
-		{ path: "taskplane-config.json", required: false, hide: false },
-		// YAML configs are legacy fallback — hide when taskplane-config.json exists
-		{ path: "task-runner.yaml", required: !hasUnifiedJson, hide: hasUnifiedJson },
-		{ path: "task-orchestrator.yaml", required: !hasUnifiedJson, hide: hasUnifiedJson },
+		{ path: "taskplane-config.json", required: true, hide: false },
+		// YAML configs are legacy fallback — only shown when JSON config is missing
+		{ path: "task-runner.yaml", required: false, hide: hasUnifiedJson },
+		{ path: "task-orchestrator.yaml", required: false, hide: hasUnifiedJson },
 		{ path: "agents/task-worker.md", required: true, hide: false },
 		{ path: "agents/task-reviewer.md", required: true, hide: false },
 		{ path: "agents/task-merger.md", required: true, hide: false },
@@ -2979,7 +2962,7 @@ function cmdDoctor() {
 				console.log(`  ${OK} area '${areaName}' repo_id: ${repoId}`);
 			} else {
 				console.log(`  ${FAIL} area '${areaName}' repo_id '${repoId}' does not match any workspace repo [AREA_REPO_ID_UNKNOWN]`);
-				console.log(`     ${c.dim}→ Available repos: ${knownRepoIds.join(", ")}. Fix repo_id in ${configLocation.label}/task-runner.yaml${c.reset}`);
+				console.log(`     ${c.dim}→ Available repos: ${knownRepoIds.join(", ")}. Fix repoId in ${configLocation.label}/taskplane-config.json${c.reset}`);
 				issues++;
 			}
 		}
@@ -3261,7 +3244,7 @@ ${c.bold}Uninstall options:${c.reset}
   --package-only    Only remove installed package (skip project cleanup)
   --local           Force package uninstall from project-local scope
   --global          Force package uninstall from global scope
-  --remove-tasks    Also remove task area directories from task-runner.yaml
+  --remove-tasks    Also remove task area directories
   --all             Equivalent to --package + --remove-tasks
 
 ${c.bold}Examples:${c.reset}

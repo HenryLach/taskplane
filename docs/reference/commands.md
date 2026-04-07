@@ -545,8 +545,7 @@ Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs
 - `--tasks-root` must be relative to project root.
 - When `--tasks-root` is passed, Taskplane skips sample tasks by default to avoid polluting an existing task area.
 - Init adds required `.gitignore` entries for runtime artifacts (batch state, orchestrator logs, worktrees, etc.) and offers to untrack any that are already committed.
-- `spawnMode` uses the Runtime V2 subprocess backend (`"subprocess"`) as the only supported value.
-- Init generates `taskplane-config.json` (JSON) alongside YAML configs. JSON takes precedence when present; YAML is retained during the transition period.
+- Init generates `taskplane-config.json` as the project configuration file.
 - Interactive init includes provider → model → thinking selection for worker/reviewer/merger. `inherit` is option #1.
 - If model discovery is unavailable, init skips the picker and uses saved defaults (if configured) or inherit values.
 
