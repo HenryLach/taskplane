@@ -10,8 +10,7 @@ Complete this first:
 
 You should already have:
 
-- `.pi/task-runner.yaml`
-- `.pi/task-orchestrator.yaml`
+- `.pi/taskplane-config.json`
 - default example tasks:
   - `taskplane-tasks/EXAMPLE-001-hello-world/`
   - `taskplane-tasks/EXAMPLE-002-parallel-smoke/`
@@ -22,14 +21,20 @@ You should already have:
 
 ## Step 1: Understand Task Areas
 
-The orchestrator discovers tasks from **task areas** defined in `.pi/task-runner.yaml`:
+The orchestrator discovers tasks from **task areas** defined in `.pi/taskplane-config.json`:
 
-```yaml
-task_areas:
-  general:
-    path: "taskplane-tasks"
-    prefix: "TP"
-    context: "taskplane-tasks/CONTEXT.md"
+```json
+{
+  "taskRunner": {
+    "taskAreas": {
+      "general": {
+        "path": "taskplane-tasks",
+        "prefix": "TP",
+        "context": "taskplane-tasks/CONTEXT.md"
+      }
+    }
+  }
+}
 ```
 
 Each area points to a directory containing task folders (for example `TP-001-...`).
@@ -111,7 +116,7 @@ What happens:
 2. Wave computation (topological ordering)
 3. Lane allocation up to `orchestrator.max_lanes`
 4. Per-lane execution in isolated git worktrees
-5. Each lane runs task-runner (`/task`) semantics for its assigned task
+5. Each lane executes its assigned task in an isolated worktree with the worker/reviewer pipeline
 6. Merge of successful lane branches into integration branch
 
 ---

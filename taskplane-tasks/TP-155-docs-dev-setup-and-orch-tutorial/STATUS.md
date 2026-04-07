@@ -1,6 +1,6 @@
 # TP-155: Update dev setup and orchestration tutorial — Status
 
-**Current Step:** Step 1: Update docs/maintainers/development-setup.md
+**Current Step:** Step 2: Update docs/tutorials/run-your-first-orchestration.md
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-07
 **Review Level:** 0
@@ -28,12 +28,12 @@
 ---
 
 ### Step 2: Update docs/tutorials/run-your-first-orchestration.md
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Update "Before You Start" — config refs to `taskplane-config.json`
-- [ ] Update "Step 1" — convert YAML task_areas to JSON taskAreas
-- [ ] Update "Step 4" — remove `/task` semantics reference
-- [ ] Check "Related guides" links
+- [x] Update "Before You Start" — config refs to `taskplane-config.json`
+- [x] Update "Step 1" — convert YAML task_areas to JSON taskAreas
+- [x] Update "Step 4" — remove `/task` semantics reference
+- [x] Check "Related guides" links — both resolve correctly, no stale names
 
 ---
 
