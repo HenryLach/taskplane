@@ -1118,6 +1118,9 @@ function buildDashboardState() {
       // Workspace mode: "repo" (default/v1) or "workspace" (v2 multi-repo).
       // Additive field — absent in v1 state files, frontend must default to "repo".
       mode: state.mode || "repo",
+      // TP-148: Segment records for wave display context (v4+).
+      // Each record has taskId, segmentId, repoId, status.
+      segments: state.segments || [],
     },
     sessions,
     tmuxSessions: sessions, // Legacy compatibility field for older dashboard clients

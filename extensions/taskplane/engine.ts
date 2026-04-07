@@ -2308,10 +2308,29 @@ export async function executeOrchBatch(
 				ORCH_MESSAGES.orchWaveStart(waveIdx + 1, runtimeSegmentRounds.length, waveTasks.length, lanes.length),
 				"info",
 			);
+			// TP-148: Build per-task segment context for the wave_start event
+			const waveSegmentContext: Array<{ taskId: string; segmentIndex: number; totalSegments: number; repoId: string; segmentId: string }> = [];
+			for (const taskId of waveTasks) {
+				const segState = segmentStateByTask.get(taskId);
+				if (segState && segState.orderedSegments.length > 1) {
+					const idx = segState.nextSegmentIndex;
+					const seg = segState.orderedSegments[idx];
+					if (seg) {
+						waveSegmentContext.push({
+							taskId,
+							segmentIndex: idx + 1,
+							totalSegments: segState.orderedSegments.length,
+							repoId: seg.repoId,
+							segmentId: seg.segmentId,
+						});
+					}
+				}
+			}
 			emitEvent(stateRoot, {
 				...buildEngineEventBase("wave_start", batchState.batchId, waveIdx, batchState.phase),
 				taskIds: waveTasks,
 				laneCount: lanes.length,
+				...(waveSegmentContext.length > 0 ? { segmentContext: waveSegmentContext } : {}),
 			}, onEngineEvent);
 			// TP-029: Track repos from newly allocated lanes for cleanup coverage
 			for (const lane of lanes) {

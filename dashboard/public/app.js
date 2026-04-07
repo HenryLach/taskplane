@@ -455,6 +455,27 @@ function renderSummary(batch) {
   const wavePlan = batch.wavePlan || [tasks.map(t => t.taskId)]; // fallback: single wave
   const currentWaveIdx = batch.currentWaveIndex || 0;
 
+  // TP-148: Build wave segment context — for each task appearing in multiple waves,
+  // determine which segment corresponds to each wave appearance.
+  const taskWaveAppearance = new Map(); // taskId → count of appearances so far
+  const waveSegmentLabels = wavePlan.map((taskIds) => {
+    const labels = new Map(); // taskId → label string
+    for (const tid of taskIds) {
+      const task = taskMap.get(tid);
+      const segmentIds = task?.segmentIds;
+      if (!segmentIds || segmentIds.length <= 1) continue;
+      const count = (taskWaveAppearance.get(tid) || 0);
+      taskWaveAppearance.set(tid, count + 1);
+      const segId = segmentIds[count];
+      if (segId) {
+        const parsed = parseSegmentId(segId);
+        const repo = parsed ? parsed.repoId : "";
+        labels.set(tid, `${tid} (segment ${count + 1}/${segmentIds.length}: ${repo})`);
+      }
+    }
+    return labels;
+  });
+
   // Compute per-wave and overall checkbox totals
   let batchChecked = 0, batchTotal = 0;
   const waveStats = wavePlan.map((taskIds, waveIdx) => {
@@ -503,7 +524,10 @@ function renderSummary(batch) {
     const fillWidth = isDone ? 100 : fillPct;
     const segClass = isCurrent ? "wave-seg-current" : isFuture ? "wave-seg-future" : "";
 
-    barHtml += `<div class="wave-seg ${segClass}" style="width:${segWidthPct.toFixed(1)}%" title="W${ws.waveIdx + 1}: ${ws.checked}/${ws.total} checkboxes (${ws.taskIds.join(', ')})">`;
+    // TP-148: Use segment-aware labels in tooltip when available
+    const segLabels = waveSegmentLabels[ws.waveIdx] || new Map();
+    const tooltipTasks = ws.taskIds.map(tid => segLabels.get(tid) || tid).join(', ');
+    barHtml += `<div class="wave-seg ${segClass}" style="width:${segWidthPct.toFixed(1)}%" title="W${ws.waveIdx + 1}: ${ws.checked}/${ws.total} checkboxes (${tooltipTasks})">`;
     barHtml += `  <div class="wave-seg-fill ${fillClass}" style="width:${fillWidth.toFixed(1)}%"></div>`;
     barHtml += `  <span class="wave-seg-label">W${ws.waveIdx + 1}</span>`;
     barHtml += `</div>`;
