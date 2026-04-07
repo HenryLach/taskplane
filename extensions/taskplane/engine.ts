@@ -2650,6 +2650,24 @@ export async function executeOrchBatch(
 								batchState.orchBranch,
 							);
 							const recordedRequestId = recordProcessedSegmentExpansionRequestId(batchState, requestId, "succeeded");
+
+							// TP-145 hardening: if .DONE was prematurely created by the
+							// completing segment (because it was the last segment at that
+							// time), remove it now. The task is no longer complete — new
+							// segments have been added and must execute first.
+							const doneDir = task.packetTaskPath || task.taskFolder;
+							if (doneDir) {
+								const donePath = join(doneDir, ".DONE");
+								if (existsSync(donePath)) {
+									try {
+										unlinkSync(donePath);
+										execLog("batch", batchState.batchId, "removed premature .DONE after segment expansion", {
+											taskId, donePath, requestId,
+										});
+									} catch { /* non-fatal */ }
+								}
+							}
+
 							if (persistedInsertedSegments || recordedRequestId || mutation.insertedSegmentIds.length > 0) {
 								persistRuntimeState("segment-expansion-approved", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 							}
