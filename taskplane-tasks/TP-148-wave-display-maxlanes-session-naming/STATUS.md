@@ -1,10 +1,10 @@
 # TP-148: Wave Display, MaxLanes, Session Naming — Status
 
-**Current Step:** Step 3: Fix session naming
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-07
 **Review Level:** 2
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -33,11 +33,11 @@
 - [x] Run targeted tests (29 pass, 0 fail)
 
 ### Step 3: Fix session naming
-**Status:** 🟨 In Progress
-- [ ] Fix isV2AgentAlive to handle workspace-mode lane session IDs (laneSessionId includes repoId but agentId uses global lane number)
-- [ ] Add agentId field to AllocatedLane so the widget can look up by the correct V2 registry key
-- [ ] Update formatting.ts widget and dashboard to use agentId when available for liveness checks
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Fix isV2AgentAlive to handle workspace-mode lane session IDs (laneSessionId includes repoId but agentId uses global lane number)
+- [x] Also fix killV2LaneAgents with laneNumber fallback for workspace mode (same root cause)
+- [x] Verify formatting.ts widget already uses sessionAlive from monitor (fixed upstream) and dashboard isLaneAliveV2 already uses laneNumber
+- [x] Run targeted tests (125 pass, 0 fail)
 
 ### Step 4: Testing & Verification
 **Status:** ⬜ Not Started
@@ -61,3 +61,4 @@
 | 2026-04-07 03:12 | Step 0 started | Preflight |
 | 2026-04-07 03:18 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-07 03:24 | Review R002 | plan Step 2: APPROVE |
+| 2026-04-07 03:30 | Review R003 | plan Step 3: APPROVE |

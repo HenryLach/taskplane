@@ -164,7 +164,7 @@ export function execLog(
  * @returns true if agent is alive
  * @since TP-112
  */
-export function isV2AgentAlive(agentIdOrSessionName: string, _runtimeBackend?: RuntimeBackend): boolean {
+export function isV2AgentAlive(agentIdOrSessionName: string, _runtimeBackend?: RuntimeBackend, laneNumber?: number): boolean {
 	// Read the registry from the global state root.
 	// Since this is a pure liveness check, we scan for matching agentId
 	// patterns: direct match, or lane-session + "-worker" suffix.
@@ -176,6 +176,18 @@ export function isV2AgentAlive(agentIdOrSessionName: string, _runtimeBackend?: R
 	// Try worker suffix (monitor uses lane session name, registry uses agentId)
 	const workerManifest = agents[`${agentIdOrSessionName}-worker`];
 	if (workerManifest && !isTerminalStatus(workerManifest.status) && isProcessAlive(workerManifest.pid)) return true;
+	// TP-148: In workspace mode, laneSessionId includes repoId and uses a local
+	// lane number (e.g., "orch-henry-api-lane-1") while the V2 registry uses
+	// global lane numbers without repoId (e.g., "orch-henry-lane-3-worker").
+	// Fall back to scanning the registry by global lane number when provided.
+	if (laneNumber != null) {
+		for (const agent of Object.values(agents)) {
+			if (agent.laneNumber === laneNumber && agent.role === "worker" &&
+				!isTerminalStatus(agent.status) && isProcessAlive(agent.pid)) {
+				return true;
+			}
+		}
+	}
 	return false;
 }
 
@@ -201,7 +213,7 @@ export function setV2LivenessRegistryCache(registry: import("./process-registry.
  */
 export function killV2LaneAgents(
 	sessionName: string,
-	options?: { stateRoot?: string; batchId?: string; logContext?: string },
+	options?: { stateRoot?: string; batchId?: string; logContext?: string; laneNumber?: number },
 ): void {
 	const registry = _v2LivenessRegistryCache ?? (
 		options?.stateRoot && options?.batchId
@@ -212,14 +224,30 @@ export function killV2LaneAgents(
 
 	const agents = registry.agents;
 	const logContext = options?.logContext ?? "monitor";
+	const killedPids = new Set<number>();
 	for (const suffix of ["-worker", "-reviewer", ""]) {
 		const key = `${sessionName}${suffix}`;
 		const manifest = agents[key];
-		if (manifest && !isTerminalStatus(manifest.status) && isProcessAlive(manifest.pid)) {
+		if (manifest && !isTerminalStatus(manifest.status) && isProcessAlive(manifest.pid) && !killedPids.has(manifest.pid)) {
 			try {
 				process.kill(manifest.pid, "SIGTERM");
+				killedPids.add(manifest.pid);
 				execLog(logContext, key, `killed V2 agent (PID ${manifest.pid})`);
 			} catch { /* already dead */ }
+		}
+	}
+	// TP-148: Workspace-mode fallback — match by global lane number when
+	// session name lookup misses (repoId/local-vs-global lane mismatch).
+	if (options?.laneNumber != null) {
+		for (const agent of Object.values(agents)) {
+			if (agent.laneNumber === options.laneNumber &&
+				!isTerminalStatus(agent.status) && isProcessAlive(agent.pid) && !killedPids.has(agent.pid)) {
+				try {
+					process.kill(agent.pid, "SIGTERM");
+					killedPids.add(agent.pid);
+					execLog(logContext, agent.agentId, `killed V2 agent by lane number (PID ${agent.pid})`);
+				} catch { /* already dead */ }
+			}
 		}
 	}
 }
@@ -877,7 +905,7 @@ export async function resolveTaskMonitorState(
 					// New task, stale snapshot — give the worker startup grace period
 					sessionAlive = true;
 				} else {
-					sessionAlive = isV2AgentAlive(sessionName, runtimeBackend);
+					sessionAlive = isV2AgentAlive(sessionName, runtimeBackend, v2Context?.laneNumber);
 				}
 			} else {
 				sessionAlive = true;
@@ -886,7 +914,7 @@ export async function resolveTaskMonitorState(
 			sessionAlive = snap.status === "running";
 		}
 	} else {
-		sessionAlive = isV2AgentAlive(sessionName, "v2");
+		sessionAlive = isV2AgentAlive(sessionName, "v2", v2Context?.laneNumber);
 	}
 	const doneFileFound = await fileExistsAsync(donePath);
 
@@ -984,7 +1012,7 @@ export async function resolveTaskMonitorState(
 			stallMinutes,
 			backend: runtimeBackend ?? "legacy",
 		});
-		killV2LaneAgents(sessionName);
+		killV2LaneAgents(sessionName, { laneNumber: v2Context?.laneNumber });
 
 		return {
 			taskId,
@@ -1249,7 +1277,8 @@ export async function monitorLanes(
 			}
 
 			// TP-112: Backend-aware lane liveness for snapshot
-			const sessionAlive = isV2AgentAlive(laneSessionIdOf(lane), "v2");
+			// TP-148: Pass global laneNumber for workspace-mode fallback lookup
+			const sessionAlive = isV2AgentAlive(laneSessionIdOf(lane), "v2", lane.laneNumber);
 
 			laneSnapshots.push({
 				laneId: lane.laneId,
@@ -1874,7 +1903,7 @@ export async function executeWithStopAll(
 
 					// Kill ALL lane sessions immediately
 					for (const lane of lanes) {
-						killV2LaneAgents(laneSessionIdOf(lane));
+						killV2LaneAgents(laneSessionIdOf(lane), { laneNumber: lane.laneNumber });
 					}
 				}
 			}
@@ -1888,7 +1917,7 @@ export async function executeWithStopAll(
 				pauseSignal.paused = true;
 				execLog("wave", `W${waveIndex}`, `stop-all triggered by lane error in ${lanes[idx].laneId}: ${errMsg}`);
 				for (const lane of lanes) {
-					killV2LaneAgents(laneSessionIdOf(lane));
+					killV2LaneAgents(laneSessionIdOf(lane), { laneNumber: lane.laneNumber });
 				}
 			}
 
