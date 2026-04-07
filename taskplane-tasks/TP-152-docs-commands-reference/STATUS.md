@@ -1,7 +1,7 @@
 # TP-152: Remove /task commands from commands reference — Status
 
-**Current Step:** Step 1: Update docs/reference/commands.md
-**Status:** 🟡 In Progress
+**Current Step:** Step 2: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 0
 **Review Counter:** 0
@@ -30,10 +30,10 @@
 ---
 
 ### Step 2: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Verify all internal doc links resolve correctly
-- [ ] Discoveries logged
+- [x] Verify all internal doc links resolve correctly
+- [x] Discoveries logged
 
 ---
 
@@ -48,6 +48,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| README.md still has /task commands marked deprecated in command table | Out of scope — separate task needed | README.md |
+| `taskplane doctor` section had `/task` reference that was cleaned | Fixed in Step 1 | docs/reference/commands.md:558 |
+| `--remove-tasks` flag references `.pi/task-runner.yaml` — this describes actual CLI behavior, not /task command | No change needed | docs/reference/commands.md:592 |
 
 ---
 
