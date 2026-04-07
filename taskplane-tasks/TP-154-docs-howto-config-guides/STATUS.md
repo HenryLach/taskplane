@@ -1,7 +1,7 @@
 # TP-154: Update how-to config guides for current architecture — Status
 
-**Current Step:** Step 2: Update docs/how-to/configure-task-orchestrator.md
-**Status:** 🟡 In Progress
+**Current Step:** Step 3: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 0
 **Review Counter:** 0
@@ -43,10 +43,10 @@
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Verify all internal doc links resolve correctly
-- [ ] Discoveries logged
+- [x] Verify all internal doc links resolve correctly
+- [x] Discoveries logged (no discoveries — straightforward rewrite)
 
 ---
 
