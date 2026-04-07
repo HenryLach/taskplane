@@ -21,8 +21,8 @@ This design keeps shipped code upgradeable while keeping project behavior custom
 │         ┌───────────────────────┐                               │
 │         │      pi session       │                               │
 │         │                       │                               │
-│         │  /task  /task-status  │  (task-runner extension)      │
 │         │  /orch* commands      │  (task-orchestrator extension)│
+│         │                       │                               │
 │         └───────────┬───────────┘                               │
 │                     │                                           │
 │                     │ spawns workers/reviewers/mergers          │
@@ -42,14 +42,12 @@ This design keeps shipped code upgradeable while keeping project behavior custom
 
 ## Major modules
 
-### 1) Task Runner extension (`extensions/task-runner.ts`)
+### 1) Task Runner module (`extensions/task-runner.ts`)
 
-Owns single-task execution:
-
-- `/task`
-- `/task-status`
-- `/task-pause`
-- `/task-resume`
+Internal module used by the orchestrator for lane execution. It is **not** a
+user-facing command surface — users interact exclusively through `/orch*`
+commands. The orchestrator spawns task-runner logic within each lane to handle
+single-task execution.
 
 Responsibilities:
 
@@ -57,11 +55,12 @@ Responsibilities:
 - generate/read `STATUS.md`
 - run worker/reviewer loops
 - enforce checkpoint discipline and iteration limits
-- emit lane sidecar data for dashboard when orchestrated
+- emit lane sidecar data for dashboard
 
 ### 2) Task Orchestrator extension (`extensions/task-orchestrator.ts` + `extensions/taskplane/*`)
 
-Owns parallel batch execution:
+The sole user-facing command surface. Owns all task execution — from single
+tasks to parallel batch execution:
 
 - `/orch`, `/orch-plan`, `/orch-status`
 - `/orch-pause`, `/orch-resume`, `/orch-abort`
@@ -142,9 +141,9 @@ Customized per repository.
 
 ## Data and control flow
 
-1. User invokes command in pi (`/task` or `/orch*`)
+1. User invokes command in pi (`/orch*`)
 2. Extension loads config from `.pi/taskplane-config.json` (or YAML fallback)
-3. Runner/orchestrator performs execution
+3. Orchestrator performs execution
    - `/orch` and `/orch-resume` launch the engine asynchronously — the command handler returns immediately, and the engine runs its wave loop in the background
    - Engine state transitions emit structured events (`wave_start`, `task_complete`, `task_failed`, `merge_start`, `merge_success`, `merge_failed`, `batch_complete`, `batch_paused`) to `.pi/supervisor/events.jsonl`
    - In-memory callbacks update the dashboard widget in real time

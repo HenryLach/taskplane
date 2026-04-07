@@ -1,6 +1,6 @@
 # TP-153: Update architecture and explanation docs — Status
 
-**Current Step:** Step 1: Update docs/explanation/architecture.md
+**Current Step:** Step 2: Scan and fix other explanation docs
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-07
 **Review Level:** 0
@@ -19,18 +19,18 @@
 ---
 
 ### Step 1: Update docs/explanation/architecture.md
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Update ASCII diagram to remove `/task /task-status`
-- [ ] Rewrite "Task Runner extension" module description as internal orchestrator module
-- [ ] Update "Task Orchestrator extension" as sole user-facing surface
-- [ ] Update "Data and control flow" section
-- [ ] Remove any remaining `/task` or tmux references
+- [x] Update ASCII diagram to remove `/task /task-status`
+- [x] Rewrite "Task Runner extension" module description as internal orchestrator module
+- [x] Update "Task Orchestrator extension" as sole user-facing surface
+- [x] Update "Data and control flow" section
+- [x] Remove any remaining `/task` or tmux references
 
 ---
 
 ### Step 2: Scan and fix other explanation docs
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] `execution-model.md` — scan and fix `/task` references
 - [ ] `review-loop.md` — scan and fix `/task` references
