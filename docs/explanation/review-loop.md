@@ -98,11 +98,11 @@ During a review, the dashboard shows a **reviewer sub-row** below the active
 task with live metrics: elapsed time, tool count, last tool, cost, and context%.
 The worker row shows `[awaiting review]` until the reviewer finishes.
 
-### Orchestrated vs standalone mode
+### Review availability
 
-The `review_step` tool is only registered in orchestrated mode (`/orch`).
-In standalone `/task` mode, reviews are not available (the `/task` command
-is deprecated in favor of `/orch` for all workflows).
+The `review_step` tool is registered during orchestrated execution (`/orch`).
+Reviews are an integral part of the orchestrator’s worker/reviewer loop and
+are configured via the project’s `taskplane-config.json`.
 
 ---
 

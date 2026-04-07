@@ -1,6 +1,6 @@
 # TP-153: Update architecture and explanation docs — Status
 
-**Current Step:** Step 2: Scan and fix other explanation docs
+**Current Step:** Step 3: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-07
 **Review Level:** 0
@@ -30,18 +30,18 @@
 ---
 
 ### Step 2: Scan and fix other explanation docs
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] `execution-model.md` — scan and fix `/task` references
-- [ ] `review-loop.md` — scan and fix `/task` references
-- [ ] `waves-lanes-and-worktrees.md` — scan and fix `/task` references
-- [ ] `persistence-and-resume.md` — scan and fix `/task` references
-- [ ] `package-and-template-model.md` — scan and fix `/task` references
+- [x] `execution-model.md` — scan and fix `/task` references (none found, clean)
+- [x] `review-loop.md` — scan and fix `/task` references (fixed standalone /task mention)
+- [x] `waves-lanes-and-worktrees.md` — scan and fix `/task` references (none found, clean)
+- [x] `persistence-and-resume.md` — scan and fix `/task` references (none found, clean)
+- [x] `package-and-template-model.md` — scan and fix `/task` references (none found, only file path references)
 
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Verify all internal doc links resolve correctly
 - [ ] Discoveries logged
