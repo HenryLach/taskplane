@@ -1,7 +1,7 @@
 # TP-156: Update root README.md to remove /task and tmux references — Status
 
 **Current Step:** Step 2: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 0
 **Review Counter:** 0
@@ -31,10 +31,10 @@
 ---
 
 ### Step 2: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Re-read full README for clean reading
-- [ ] Discoveries logged
+- [x] Re-read full README for clean reading
+- [x] Discoveries logged
 
 ---
 
@@ -49,6 +49,7 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Key Features bullet referenced "tmux sessions" (not in PROMPT catalog) | Fixed — removed "in tmux sessions" from line 23 | README.md line 23 |
 
 ---
 
