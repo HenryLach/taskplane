@@ -575,12 +575,20 @@ export function resolveBaseBranch(
 	if (batchBaseBranch.startsWith("orch/") && repoId) {
 		try {
 			const check = runGit(["rev-parse", "--verify", `refs/heads/${batchBaseBranch}`], repoRoot);
-			console.error(`[resolveBaseBranch] repoId=${repoId} batchBaseBranch=${batchBaseBranch} repoRoot=${repoRoot} check.ok=${check.ok}`);
 			if (check.ok) {
 				return batchBaseBranch;
 			}
+			// TP-146: Orch branch exists as batch base but not in this repo.
+			// This means worktrees will branch from the repo's current HEAD
+			// instead of the orch branch, bypassing batch isolation.
+			console.error(
+				`[resolveBaseBranch] WARNING: orch branch "${batchBaseBranch}" not found in repo "${repoId}" at ${repoRoot} — falling back to repo HEAD. ` +
+				`This bypasses orch branch isolation. Ensure the orch branch was created in all workspace repos.`,
+			);
 		} catch (err) {
-			console.error(`[resolveBaseBranch] repoId=${repoId} batchBaseBranch=${batchBaseBranch} THREW: ${err}`);
+			console.error(
+				`[resolveBaseBranch] WARNING: orch branch check failed for repo "${repoId}" at ${repoRoot}: ${err}`,
+			);
 		}
 	}
 

@@ -101,4 +101,14 @@ The orch branch model requires ALL repos to have isolated orch branches during b
 
 ## Amendments (Added During Execution)
 
-<!-- Workers add amendments here if issues discovered during execution. -->
+### Root Cause Analysis
+
+**Primary cause:** `resolveBaseBranch` (waves.ts:564) silently falls back to the repo's current branch (e.g., `develop`) when the orch branch is not found in a secondary repo. The original fix (6294209f) had two bugs (`check.status` instead of `check.ok` + missing `runGit` import) that were corrected in follow-up commits.
+
+**Contributing factors:**
+1. `buildIntegrationExecutor` (extension.ts:1329) only integrates the primary repo — supervisor auto-integration misses secondary workspace repos
+2. `doOrchIntegrate` (extension.ts:3170) processes repos non-atomically — partial success leaves inconsistent state
+
+**Fix applied:** Added structured WARNING log in `resolveBaseBranch` when orch branch fallback occurs (was previously silent or had debug-only console.error).
+
+**Recommended follow-up tasks:** See CONTEXT.md tech debt entries for `buildIntegrationExecutor` workspace gap and `/orch-integrate` atomicity.

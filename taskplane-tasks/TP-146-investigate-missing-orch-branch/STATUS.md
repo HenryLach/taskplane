@@ -32,14 +32,26 @@
 - [x] Confirmed buildIntegrationExecutor (extension.ts:1329) scoped to single repoRoot — supervisor auto-integration misses secondary workspace repos
 
 ### Step 3: Document findings
-**Status:** ⬜ Not Started
-- [ ] Root cause in Discoveries table
-- [ ] Recommended fix
-- [ ] Implement or recommend follow-up
+**Status:** ✅ Complete
+- [x] Write root cause analysis in STATUS.md Discoveries table (D1-D5)
+- [x] Add resolveBaseBranch warning log for silent fallback (code fix) — replaced debug console.error with structured WARNING in waves.ts:582-590
+- [x] Document recommended follow-up tasks — added 2 tech debt items to CONTEXT.md + amendments in PROMPT.md
 
 ### Step 4: Testing & Verification
 **Status:** ⬜ Not Started
 - [ ] Full test suite passing
+
+---
+
+## Discoveries
+
+| ID | Category | Finding | Action |
+|----|----------|---------|--------|
+| D1 | Root Cause | `resolveBaseBranch` (waves.ts:564) has a SILENT fallback: when the orch branch doesn't exist in a secondary repo, it returns `getCurrentBranch(repoRoot)` (e.g., `develop`) without any warning. Workers then operate on develop-based lane branches, bypassing orch isolation. The original fix (6294209f) had two bugs: used `check.status` instead of `check.ok` and forgot `runGit` import — both fixed in later commits (31842846, 55ba4dcb) and included in v0.24.30. | **Fix in this task:** Add execLog warning when fallback occurs |
+| D2 | Gap | `buildIntegrationExecutor` (extension.ts:1329) is scoped to primary repo only. Supervisor auto-integration never integrates secondary workspace repos. | **Follow-up task** recommended |
+| D3 | Gap | `doOrchIntegrate` (extension.ts:3170-3208) processes repos sequentially with no rollback. Partial success deletes orch branch in early repos while leaving later repos untouched. | **Follow-up task** recommended |
+| D4 | Observation | `ensureTaskFilesCommitted` (execution.ts:1404) commits to primary repo's checked-out branch (`develop`), not the orch branch. If task files are untracked at batch start, the orch branch doesn't have them. Worktrees from orch branch would miss task files. This affects ALL repos equally and is mitigated by absolute paths for cross-repo segments. | Log as tech debt in CONTEXT.md |
+| D5 | History | Original fix attempt (6294209f, April 3) added Step 0 to `resolveBaseBranch` but shipped with `check.status === 0` (wrong property — `runGit` returns `{ ok }` not `{ status }`) AND missing `runGit` import. Both bugs made the check always fail silently, effectively disabling the fix. Corrected in 31842846 (check.ok) and 55ba4dcb (import). | Documented |
 
 ---
 
