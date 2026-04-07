@@ -1572,6 +1572,10 @@ async function cmdInit(args) {
 	const tasksRootIdx = args.indexOf("--tasks-root");
 	const tasksRootRaw = tasksRootIdx !== -1 ? args[tasksRootIdx + 1] : null;
 
+	if (preset && preset !== "minimal" && preset !== "full") {
+		die(`Unknown preset: "${preset}". Valid presets are: minimal, full`);
+	}
+
 	if (noExamplesFlag && includeExamples) {
 		die("Choose either --no-examples or --include-examples, not both.");
 	}
@@ -1605,7 +1609,7 @@ async function cmdInit(args) {
 
 	// ── Mode auto-detection ──────────────────────────────────────
 	const detection = detectInitMode(projectRoot);
-	const isPreset = preset === "minimal" || preset === "full" || preset === "runner-only";
+	const isPreset = preset === "minimal" || preset === "full";
 
 	// Error path: not a git repo and no git repos found
 	if (detection.mode === "error") {
@@ -1846,7 +1850,7 @@ async function cmdInit(args) {
 
 		// ── Gather config values (workspace mode) ───────────────────
 		let vars;
-		if (preset === "minimal" || preset === "full" || preset === "runner-only") {
+		if (preset === "minimal" || preset === "full") {
 			vars = getPresetVars(preset, projectRoot, tasksRootOverride);
 			console.log(`  Using preset: ${c.cyan}${preset}${c.reset}`);
 			if (tasksRootOverride) {
@@ -2028,10 +2032,8 @@ async function cmdInit(args) {
 		console.log(`     git push && ${c.dim}[create PR / merge to default branch]${c.reset}\n`);
 		console.log(`${c.bold}Quick start:${c.reset}`);
 		console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
-		if (preset !== "runner-only") {
-			console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
-			console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
-		}
+		console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
+		console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
 		if (inferTaskplaneInstallScope() === "global") {
 			console.log(`  ${c.cyan}taskplane config --save-as-defaults${c.reset}             # save these agent defaults for future inits`);
 		}
@@ -2058,7 +2060,7 @@ async function cmdInit(args) {
 
 	// Gather config values
 	let vars;
-	if (preset === "minimal" || preset === "full" || preset === "runner-only") {
+	if (preset === "minimal" || preset === "full") {
 		vars = getPresetVars(preset, projectRoot, tasksRootOverride);
 		console.log(`  Using preset: ${c.cyan}${preset}${c.reset}`);
 		if (tasksRootOverride) {
@@ -2174,10 +2176,8 @@ async function cmdInit(args) {
 	console.log(`\n${OK} ${c.bold}Taskplane initialized!${c.reset}\n`);
 	console.log(`${c.bold}Quick start:${c.reset}`);
 	console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
-	if (preset !== "runner-only") {
-		console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
-		console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
-	}
+	console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
+	console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
 	if (inferTaskplaneInstallScope() === "global") {
 		console.log(`  ${c.cyan}taskplane config --save-as-defaults${c.reset}             # save these agent defaults for future inits`);
 	}
@@ -3143,7 +3143,7 @@ ${c.bold}Commands:${c.reset}
   ${c.cyan}help${c.reset}           Show this help message
 
 ${c.bold}Init options:${c.reset}
-  --preset <name>       Use a preset: minimal, full, runner-only
+  --preset <name>       Use a preset: minimal, full
   --tasks-root <path>   Relative tasks directory to use (e.g. docs/task-management)
   --no-examples         Skip example tasks scaffolding
   --include-examples    With --tasks-root, include example tasks (default is skip)

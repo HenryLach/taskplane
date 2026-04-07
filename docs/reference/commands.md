@@ -533,7 +533,7 @@ Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs
 
 **Common options**
 
-- `--preset <name>` — use `minimal`, `full`, or `runner-only`
+- `--preset <name>` — use `minimal` or `full`
 - `--tasks-root <relative-path>` — use an existing task directory (for example `docs/task-management`)
 - `--no-examples` — skip example task scaffolding
 - `--include-examples` — when `--tasks-root` is used, include examples in that directory (default is skip)

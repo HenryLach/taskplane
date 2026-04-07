@@ -287,7 +287,7 @@ function initGitRepo(dir: string): void {
 function runInit(
 	cwd: string,
 	extraArgs: string[] = [],
-	options: { dryRun?: boolean; preset?: "minimal" | "full" | "runner-only" } = {},
+	options: { dryRun?: boolean; preset?: "minimal" | "full" } = {},
 ): { stdout: string; stderr: string; exitCode: number } {
 	const { dryRun = true, preset = "minimal" } = options;
 	const taskplaneMjs = resolvePath(__dirname, "../../bin/taskplane.mjs");
@@ -663,22 +663,28 @@ describe("CLI dry-run integration", () => {
 		expect(output).toContain(".gitignore");
 	});
 
-	it("5.2 — runner-only preset still generates taskplane-config.json", () => {
+	it("5.2 — runner-only preset is rejected with helpful error", () => {
 		const projectRoot = resolve(__dirname, "../..");
-		const output = execFileSync(
-			"node",
-			["bin/taskplane.mjs", "init", "--dry-run", "--force", "--preset", "runner-only"],
-			{
-				cwd: projectRoot,
-				encoding: "utf-8",
-				stdio: ["pipe", "pipe", "pipe"],
-				timeout: 15000,
-			}
-		);
+		let exitCode = 0;
+		let output = "";
+		try {
+			execFileSync(
+				"node",
+				["bin/taskplane.mjs", "init", "--dry-run", "--force", "--preset", "runner-only"],
+				{
+					cwd: projectRoot,
+					encoding: "utf-8",
+					stdio: ["pipe", "pipe", "pipe"],
+					timeout: 15000,
+				}
+			);
+		} catch (e: any) {
+			exitCode = e.status;
+			output = (e.stdout || "") + (e.stderr || "");
+		}
 
-		expect(output).toContain(".pi/taskplane-config.json");
-		expect(output).not.toContain("task-orchestrator.yaml");
-		expect(output).not.toContain("task-runner.yaml");
+		expect(exitCode).not.toBe(0);
+		expect(output).toContain("Unknown preset");
 	});
 
 	it("5.3 — full preset generates JSON config only (no YAML)", () => {

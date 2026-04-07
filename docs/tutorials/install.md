@@ -130,9 +130,8 @@ All presets work in both repo and workspace modes:
 
 | Preset | What it includes |
 |--------|------------------|
-| `--preset full` | Task runner + orchestrator + examples |
-| `--preset minimal` | Task runner + orchestrator, no examples |
-| `--preset runner-only` | Task runner only (no orchestrator config) |
+| `--preset full` | Full config + example tasks |
+| `--preset minimal` | Full config, no example tasks |
 
 ### Gitignore Enforcement
 
