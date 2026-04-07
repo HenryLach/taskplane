@@ -1,7 +1,7 @@
 # TP-153: Update architecture and explanation docs — Status
 
-**Current Step:** Step 3: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Current Step:** Step 3: Documentation & Delivery (final)
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 0
 **Review Counter:** 0
@@ -41,10 +41,10 @@
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Verify all internal doc links resolve correctly
-- [ ] Discoveries logged
+- [x] Verify all internal doc links resolve correctly
+- [x] Discoveries logged
 
 ---
 
@@ -59,6 +59,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| `package-and-template-model.md` still lists `.pi/task-runner.yaml` and `.pi/task-orchestrator.yaml` as scaffolded files; canonical config is now `taskplane-config.json` | Tech debt — separate task to update scaffolding docs | `docs/explanation/package-and-template-model.md` lines 44-45 |
+| `README.md` "How It Works" diagram shows `/task` labels inside lane boxes | Out of scope — separate task | `README.md` line 179 |
 
 ---
 
