@@ -963,6 +963,87 @@ export function assignTasksToLanes(
 }
 
 
+// ── Global Lane Cap (TP-148) ─────────────────────────────────────────
+
+/**
+ * Enforce a global lane cap across all repo groups.
+ *
+ * In workspace mode, each repo independently allocates up to `maxLanes`.
+ * This function reduces the total across all repos to fit within the
+ * global `maxLanes` budget by consolidating lanes in repos with the
+ * most headroom (most lanes relative to their minimum of 1).
+ *
+ * Algorithm:
+ *   1. If total lanes ≤ maxLanes, no-op.
+ *   2. Group lanes by repo, sort repos by lane count descending.
+ *   3. Iteratively remove the last lane from the repo with the most
+ *      lanes, redistributing its tasks to the lightest remaining lane
+ *      in that repo.
+ *   4. Stop when total ≤ maxLanes or all repos are at 1 lane.
+ *   5. Renumber global lanes sequentially.
+ *
+ * Mutates `entries` in place: removes excess entries and renumbers.
+ *
+ * @param entries  - Global lane entries from per-repo allocation
+ * @param maxLanes - Global maximum lane count
+ */
+export function enforceGlobalLaneCap(
+	entries: Array<{
+		globalLane: number;
+		localLane: number;
+		repoId: string | undefined;
+		assignments: LaneAssignment[];
+	}>,
+	maxLanes: number,
+): void {
+	if (entries.length <= maxLanes) return;
+
+	// Group entries by repoId
+	const byRepo = new Map<string, typeof entries>();
+	for (const entry of entries) {
+		const key = entry.repoId ?? "";
+		const group = byRepo.get(key) || [];
+		group.push(entry);
+		byRepo.set(key, group);
+	}
+
+	let excess = entries.length - maxLanes;
+
+	while (excess > 0) {
+		// Find the repo with the most lanes (ties broken by key for determinism)
+		let bestKey = "";
+		let bestCount = 0;
+		for (const [key, group] of byRepo) {
+			if (group.length > bestCount || (group.length === bestCount && key < bestKey)) {
+				bestKey = key;
+				bestCount = group.length;
+			}
+		}
+
+		// All repos at 1 lane — can't reduce further
+		if (bestCount <= 1) break;
+
+		// Remove the last lane from this repo and redistribute its tasks
+		const group = byRepo.get(bestKey)!;
+		const removed = group.pop()!;
+		// Merge into the first lane of the same repo (deterministic target)
+		group[0].assignments.push(...removed.assignments);
+		excess--;
+	}
+
+	// Rebuild entries array with sequential global lane numbers
+	entries.length = 0;
+	let globalLane = 1;
+	for (const key of [...byRepo.keys()].sort()) {
+		const group = byRepo.get(key)!;
+		for (const entry of group) {
+			entry.globalLane = globalLane++;
+			entries.push(entry);
+		}
+	}
+}
+
+
 /**
  * Result of `allocateLanes()`.
  *
@@ -1187,6 +1268,13 @@ export function allocateLanes(
 
 		globalLaneOffset += sortedLocalLanes.length;
 	}
+
+	// ── Stage 2b: Enforce global lane cap (TP-148) ─────────────────
+	// In workspace mode, each repo group independently allocates up to
+	// maxLanes. If total lanes across all repos exceeds the global
+	// maxLanes limit, reduce lanes in repos with the most headroom.
+	// Preserves at least 1 lane per repo with tasks.
+	enforceGlobalLaneCap(globalLaneEntries, config.orchestrator.max_lanes);
 
 	const laneCount = globalLaneEntries.length;
 

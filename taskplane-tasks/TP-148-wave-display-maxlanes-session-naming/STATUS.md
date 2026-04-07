@@ -1,10 +1,10 @@
 # TP-148: Wave Display, MaxLanes, Session Naming — Status
 
-**Current Step:** Step 2: Global maxLanes cap
+**Current Step:** Step 3: Fix session naming
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-07
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -26,11 +26,11 @@
 - [x] Run targeted tests (49 pass, 0 fail)
 
 ### Step 2: Global maxLanes cap
-**Status:** 🟨 In Progress
-- [ ] Add enforceGlobalLaneCap function in waves.ts that reduces lanes across repos when total exceeds maxLanes
-- [ ] Integrate global cap into allocateLanes after per-repo assignment
-- [ ] Add test: maxLanes=4 with 3 repos produces at most 4 total lanes
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Add enforceGlobalLaneCap function in waves.ts that reduces lanes across repos when total exceeds maxLanes
+- [x] Integrate global cap into allocateLanes after per-repo assignment
+- [x] Add test: maxLanes=4 with 3 repos produces at most 4 total lanes
+- [x] Run targeted tests (29 pass, 0 fail)
 
 ### Step 3: Fix session naming
 **Status:** ⬜ Not Started
@@ -60,3 +60,4 @@
 | 2026-04-07 03:12 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-07 03:12 | Step 0 started | Preflight |
 | 2026-04-07 03:18 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-07 03:24 | Review R002 | plan Step 2: APPROVE |
