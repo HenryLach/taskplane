@@ -2266,6 +2266,120 @@ export function preserveFailedLaneProgress(
 }
 
 
+/**
+ * TP-147: Preserve partial progress for all skipped tasks before cleanup/reset.
+ *
+ * Skipped tasks may have worker commits (STATUS.md updates, partial code)
+ * that would be lost when the worktree is cleaned up. This function saves
+ * their lane branches as task-ID-named saved branches, similar to how
+ * preserveFailedLaneProgress works for failed tasks.
+ *
+ * Unlike failed tasks, skipped-task branches are NOT merged (partial work
+ * could break verification). Instead they are preserved for manual recovery.
+ *
+ * @param allocatedLanes - Lanes from the current/last wave
+ * @param taskOutcomes   - All task outcomes accumulated so far
+ * @param opId           - Operator identifier
+ * @param batchId        - Batch ID
+ * @param resolveRepo    - Callback to resolve repo root and target branch per repoId
+ * @returns PreserveFailedLaneProgressResult with per-task results and preserved branch set
+ */
+export function preserveSkippedLaneProgress(
+	allocatedLanes: AllocatedLane[],
+	taskOutcomes: LaneTaskOutcome[],
+	opId: string,
+	batchId: string,
+	resolveRepo: ResolveRepoContext,
+): PreserveFailedLaneProgressResult {
+	const results: SavePartialProgressResult[] = [];
+	const preservedBranches = new Set<string>();
+	const unsafeBranches = new Set<string>();
+
+	// Build a map: taskId → { laneBranch, repoId } from allocated lanes
+	const taskToLane = new Map<string, { branch: string; repoId?: string }>();
+	for (const lane of allocatedLanes) {
+		for (const allocatedTask of lane.tasks) {
+			taskToLane.set(allocatedTask.taskId, {
+				branch: lane.branch,
+				repoId: lane.repoId,
+			});
+		}
+	}
+
+	// Find skipped tasks
+	const skippedTasks = taskOutcomes.filter(
+		(to) => to.status === "skipped",
+	);
+
+	// Track which lane branches we've already processed (a lane may have
+	// multiple tasks; only save once per branch since all commits are shared)
+	const processedBranches = new Set<string>();
+
+	for (const skippedTask of skippedTasks) {
+		const laneInfo = taskToLane.get(skippedTask.taskId);
+		if (!laneInfo) {
+			results.push({
+				saved: false,
+				commitCount: 0,
+				taskId: skippedTask.taskId,
+				error: "Task not found in allocated lanes",
+			});
+			continue;
+		}
+
+		// Skip if we've already processed this branch
+		if (processedBranches.has(laneInfo.branch)) {
+			continue;
+		}
+		processedBranches.add(laneInfo.branch);
+
+		// Resolve repo-specific target branch and repo root
+		const { repoRoot: perRepoRoot, targetBranch } = resolveRepo(laneInfo.repoId);
+
+		const result = savePartialProgress(
+			laneInfo.branch,
+			targetBranch,
+			opId,
+			skippedTask.taskId,
+			batchId,
+			perRepoRoot,
+			laneInfo.repoId,
+		);
+
+		results.push(result);
+
+		if (result.saved) {
+			preservedBranches.add(result.savedBranch!);
+
+			execLog("partial-progress", skippedTask.taskId,
+				`Task ${skippedTask.taskId} was skipped but has ${result.commitCount} commit(s) of partial progress preserved on branch ${result.savedBranch}`,
+				{
+					laneBranch: laneInfo.branch,
+					savedBranch: result.savedBranch,
+					commitCount: result.commitCount,
+					repoId: laneInfo.repoId ?? "(default)",
+				},
+			);
+		} else if (result.commitCount > 0 || result.error) {
+			unsafeBranches.add(laneInfo.branch);
+
+			execLog("partial-progress", skippedTask.taskId,
+				`WARNING: Failed to preserve partial progress for skipped task ${skippedTask.taskId} ` +
+				`(${result.commitCount} commit(s) at risk on branch "${laneInfo.branch}")`,
+				{
+					laneBranch: laneInfo.branch,
+					commitCount: result.commitCount,
+					error: result.error ?? "unknown",
+					repoId: laneInfo.repoId ?? "(default)",
+				},
+			);
+		}
+	}
+
+	return { results, preservedBranches, unsafeBranches };
+}
+
+
 // ── Stale Branch Cleanup (TP-051) ────────────────────────────────────
 
 /**

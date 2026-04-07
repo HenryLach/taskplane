@@ -5,7 +5,7 @@
  * branch protection detection and git merge-base behavior. Separated
  * from auto-integration.test.ts because mock.module is file-scoped.
  *
- *   17.x — Deterministic buildIntegrationPlan: protected→PR, unprotected+linear→ff, unprotected+diverged→merge
+ *   17.x — Deterministic buildIntegrationPlan: protected+remotes→PR, unprotected+linear→ff, unprotected+diverged→merge, unknown→ff/merge
  *   18.x — Auto-mode executor call order + no confirmation prompt
  *   19.x — Manual-mode guidance + branch-protection default-to-PR
  *
@@ -115,12 +115,19 @@ function makeMockExecutor(
  *
  * @param protection - "protected" | "unprotected" | "unknown"
  * @param isAncestor - true if baseBranch is ancestor of orchBranch (ff possible)
+ * @param hasRemotes - whether git remote returns configured remotes (TP-149)
  */
 function configureMockExecFileSync(
 	protection: "protected" | "unprotected" | "unknown",
 	isAncestor: boolean = true,
+	hasRemotes: boolean = true,
 ) {
 	mockExecFileSync.mock.mockImplementation((cmd: string, args: string[], _opts: any) => {
+		// git remote -- used by hasGitRemotes (TP-149)
+		if (cmd === "git" && args[0] === "remote" && args.length === 1) {
+			return hasRemotes ? "origin\n" : "";
+		}
+
 		// gh repo view -- used by detectBranchProtection
 		if (cmd === "gh" && args[0] === "repo" && args[1] === "view") {
 			return "owner/repo";
@@ -170,28 +177,51 @@ describe("17.x — Deterministic buildIntegrationPlan: branch→mode mapping", (
 		mockExecFileSync.mock.restore();
 	});
 
-	it("17.1: protected base branch → PR mode", () => {
-		configureMockExecFileSync("protected");
+	it("17.1: protected base branch + linear history → FF mode (TP-149: try FF before PR)", () => {
+		configureMockExecFileSync("protected", true /* isAncestor */);
 		const batchState = makeIntegrationBatchState();
 
 		const plan = buildIntegrationPlan(batchState, "/fake/cwd");
 
 		expect(plan).not.toBeNull();
-		expect(plan!.mode).toBe("pr");
+		expect(plan!.mode).toBe("ff");
 		expect(plan!.branchProtection).toBe("protected");
-		expect(plan!.rationale).toContain("protected");
 	});
 
-	it("17.2: unknown protection → PR mode (safety fallback)", () => {
-		configureMockExecFileSync("unknown");
+	it("17.2: unknown protection with remotes → ff mode (TP-149: no longer defaults to PR)", () => {
+		configureMockExecFileSync("unknown", true /* isAncestor */, true /* hasRemotes */);
 		const batchState = makeIntegrationBatchState();
 
 		const plan = buildIntegrationPlan(batchState, "/fake/cwd");
 
 		expect(plan).not.toBeNull();
-		expect(plan!.mode).toBe("pr");
+		expect(plan!.mode).toBe("ff");
 		expect(plan!.branchProtection).toBe("unknown");
-		expect(plan!.rationale).toContain("safety");
+		expect(plan!.rationale).toContain("linear");
+	});
+
+	it("17.2b: no remotes → skips protection check, uses ff (TP-149)", () => {
+		configureMockExecFileSync("unknown", true, false /* no remotes */);
+		const batchState = makeIntegrationBatchState();
+
+		const plan = buildIntegrationPlan(batchState, "/fake/cwd");
+
+		expect(plan).not.toBeNull();
+		expect(plan!.mode).toBe("ff");
+		expect(plan!.branchProtection).toBe("unprotected");
+		expect(plan!.rationale).toContain("linear");
+	});
+
+	it("17.2c: no remotes + diverged → merge mode (TP-149)", () => {
+		configureMockExecFileSync("unknown", false /* diverged */, false /* no remotes */);
+		const batchState = makeIntegrationBatchState();
+
+		const plan = buildIntegrationPlan(batchState, "/fake/cwd");
+
+		expect(plan).not.toBeNull();
+		expect(plan!.mode).toBe("merge");
+		expect(plan!.branchProtection).toBe("unprotected");
+		expect(plan!.rationale).toContain("diverged");
 	});
 
 	it("17.3: unprotected + linear history → ff mode", () => {
@@ -395,8 +425,8 @@ describe("18.x — Auto mode: executor call order and message assertions", () =>
 		expect(state.active).toBe(false);
 	});
 
-	it("18.5: PR mode — executor called with pr mode, CI lifecycle message emitted", () => {
-		configureMockExecFileSync("protected");
+	it("18.5: PR mode (protected + diverged) — executor called with pr mode", () => {
+		configureMockExecFileSync("protected", false);
 		const pi = makeMockPi();
 		const state = freshSupervisorState();
 		state.active = true;
@@ -545,8 +575,8 @@ describe("19.x — Manual-mode guidance and branch-protection-detected default-t
 		expect(integrationMsgs).toHaveLength(0);
 	});
 
-	it("19.4: branch protection detected → defaults to PR mode in buildIntegrationPlan", () => {
-		configureMockExecFileSync("protected");
+	it("19.4: branch protection detected + diverged → PR mode in buildIntegrationPlan", () => {
+		configureMockExecFileSync("protected", false /* diverged */);
 		const batchState = makeIntegrationBatchState();
 
 		const plan = buildIntegrationPlan(batchState, "/fake/cwd");
@@ -554,14 +584,12 @@ describe("19.x — Manual-mode guidance and branch-protection-detected default-t
 		expect(plan).not.toBeNull();
 		expect(plan!.mode).toBe("pr");
 		expect(plan!.branchProtection).toBe("protected");
-		// formatIntegrationPlan shows protection info
 		const text = formatIntegrationPlan(plan!);
 		expect(text).toContain("pull request");
-		expect(text).toContain("protection detected");
 	});
 
-	it("19.5: branch protection detected → supervised mode presents PR plan for confirmation", () => {
-		configureMockExecFileSync("protected");
+	it("19.5: branch protection detected + diverged → supervised mode presents PR plan", () => {
+		configureMockExecFileSync("protected", false);
 		const pi = makeMockPi();
 		const state = freshSupervisorState();
 		state.active = true;
@@ -593,8 +621,8 @@ describe("19.x — Manual-mode guidance and branch-protection-detected default-t
 		expect(state.active).toBe(true);
 	});
 
-	it("19.6: branch protection detected → auto mode executes PR without confirmation", () => {
-		configureMockExecFileSync("protected");
+	it("19.6: branch protection detected + diverged → auto mode executes PR without confirmation", () => {
+		configureMockExecFileSync("protected", false);
 		const pi = makeMockPi();
 		const state = freshSupervisorState();
 		state.active = true;

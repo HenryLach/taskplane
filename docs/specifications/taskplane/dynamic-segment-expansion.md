@@ -106,7 +106,11 @@ agents. Only available when the task has a segment plan (workspace mode).
    *  "end": appended after all existing segments (no successor rewiring). */
   placement?: "after-current" | "end";
 
-  /** Optional edges between newly requested repos (if ordering matters) */
+  /** Optional edges between requested repos or from the anchor/completed segment repos.
+   *  Edge endpoints may reference requestedRepoIds, the current segment's repo,
+   *  or any already-completed segment's repo. Edges from the anchor repo to new
+   *  repos are accepted but redundant for after-current placement (the dependency
+   *  is implied by placement). */
   edges?: Array<{ from: string; to: string }>;
 }
 ```
@@ -219,10 +223,15 @@ When the engine finds expansion request files after a segment completes:
 1. **Repo existence:** Each requested repo ID must exist in `workspace.repos`.
 2. **No cycles:** Adding the new segments with the requested edges must not
    create a cycle in the segment DAG.
-3. **Task not terminal:** The task must still be in an active (non-terminal)
+3. **Edge repo validity:** Edge endpoints may reference repos from
+   `requestedRepoIds`, the anchor segment's repo, or any already-completed
+   segment's repo. Edges referencing repos outside this set are rejected.
+   Edges from the anchor repo are silently absorbed during mutation
+   (the dependency is already implied by placement). *(TP-145)*
+4. **Task not terminal:** The task must still be in an active (non-terminal)
    state.
-4. **Placement valid:** Must be `"after-current"` or `"end"`.
-5. **Request idempotency:** If a request with the same `requestId` was already
+5. **Placement valid:** Must be `"after-current"` or `"end"`.
+6. **Request idempotency:** If a request with the same `requestId` was already
    processed, skip it (replay-safe on resume).
 
 Repeat-repo requests (repo already in plan) are valid — the engine creates a

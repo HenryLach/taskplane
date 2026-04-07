@@ -1,0 +1,25 @@
+TP-147 completed.
+
+## Changes Summary
+
+### Issue 1: Skipped tasks lose worker progress (#453)
+- Extended safety-net auto-commit in engine.ts to also cover skipped-task lanes (not just succeeded)
+- Created `preserveSkippedLaneProgress()` in worktree.ts to save skipped-task branches as `saved/{opId}-{taskId}-{batchId}`
+- Called preservation at both inter-wave cleanup and terminal cleanup paths
+- Skipped lanes are NOT merged (preserves existing merge.ts filter behavior)
+- Preserved branches are logged for operator visibility
+
+### Issue 2: Tasks missing from batch history (#455)
+- Added gap-filling logic in engine.ts batch history builder that scans wavePlan for missing tasks
+- Tasks not in allTaskOutcomes are added with status "blocked" (if in blockedTaskIds) or "pending"
+- Added "pending" to BatchTaskSummary status union type in types.ts
+- totalTasks now uses taskSummaries.length (authoritative count) with mismatch warning
+
+### Files Modified
+- extensions/taskplane/engine.ts — safety-net extension, preservation calls, history gap-filling
+- extensions/taskplane/worktree.ts — new preserveSkippedLaneProgress function
+- extensions/taskplane/types.ts — "pending" added to BatchTaskSummary.status
+- extensions/tests/partial-progress.integration.test.ts — 6 new tests
+
+### Test Results
+- Full suite: 3245 passed, 0 failed

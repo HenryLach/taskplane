@@ -1787,9 +1787,9 @@ body {
 }
 .message-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
-  padding: 4px 8px;
+  padding: 6px 8px;
   font-size: 0.8rem;
   border-radius: 4px;
   background: var(--bg-secondary);
@@ -1826,9 +1826,8 @@ body {
 }
 .msg-preview {
   color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  word-break: break-word;
   flex: 1;
 }
 .msg-rate-limited {

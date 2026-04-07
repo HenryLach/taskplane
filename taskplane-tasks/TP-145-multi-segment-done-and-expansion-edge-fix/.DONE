@@ -1,0 +1,29 @@
+Completed: 2026-04-07
+Task: TP-145
+
+## Summary
+Fixed two critical bugs in multi-segment task execution:
+
+### Bug 1: .DONE timing (#457)
+- In lane-runner.ts, gated .DONE creation for non-final segments
+- Non-final segments return "succeeded" with doneFileFound=false
+- Final segments and single-segment tasks create .DONE normally
+- Prevents premature task termination when engine provisions subsequent segments
+
+### Bug 2: Expansion edge validation (#452)
+- In engine.ts validateSegmentExpansionRequestAtBoundary, expanded the set of
+  valid edge endpoint repo IDs to include the anchor segment's repo and all
+  completed segments' repos (not just requestedRepoIds)
+- Edges from anchor repo are silently absorbed during mutation (redundant for
+  after-current placement)
+- Unknown repos in edges are still rejected
+
+### Files Changed
+- extensions/taskplane/lane-runner.ts (segment-aware .DONE gating)
+- extensions/taskplane/engine.ts (edge validation relaxation)
+- extensions/tests/lane-runner-v2.test.ts (8.x test section)
+- extensions/tests/segment-expansion-engine.test.ts (TP-145 test section)
+- docs/specifications/taskplane/dynamic-segment-expansion.md (spec update)
+
+### Test Results
+- Full suite: 3239/3239 passing, 0 failures

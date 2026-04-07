@@ -1,7 +1,14 @@
-Exported function count in extensions/taskplane/lane-runner.ts: 4
+Exported items from extensions/taskplane/lane-runner.ts
+======================================================
 
-Functions:
-1. executeTaskV2
-2. mapLaneTaskStatusToTerminalSnapshotStatus
-3. mapLaneSnapshotStatusToWorkerStatus
-4. readReviewerTelemetrySnapshot
+Total exported items: 6 (2 interfaces, 4 functions)
+
+Exported interfaces:
+1. LaneRunnerConfig (line 72)
+2. LaneRunnerTaskResult (line 118)
+
+Exported functions:
+1. executeTaskV2 (line 153) — async function, main task execution entry point
+2. mapLaneTaskStatusToTerminalSnapshotStatus (line 562) — maps lane task status to terminal snapshot status
+3. mapLaneSnapshotStatusToWorkerStatus (line 570) — maps lane snapshot status to worker status
+4. readReviewerTelemetrySnapshot (line 637) — reads reviewer telemetry snapshot data

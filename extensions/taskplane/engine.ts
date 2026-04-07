@@ -22,7 +22,7 @@ import { readRegistrySnapshot, isTerminalStatus, isProcessAlive as registryIsPro
 import { buildBatchProgressSnapshot, buildEngineEventBase, buildSegmentId, buildSupervisorSegmentFrontierSnapshot, defaultResilienceState, FATAL_DISCOVERY_CODES, generateBatchId, TIER0_RETRYABLE_CLASSIFICATIONS, TIER0_RETRY_BUDGETS, tier0ScopeKey, tier0WaveScopeKey } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedSegmentRecord, SegmentExpansionRequest, SupervisorAlert, SupervisorAlertCallback, TaskRunnerConfig, TaskSegmentPlan, TaskSegmentPlanMap, TaskSegmentNode, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaveAssignments, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
-import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
+import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, preserveSkippedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 import { runPreflightCleanup, formatPreflightCleanup } from "./cleanup.ts";
 
 // ── Tier 0: Automatic Recovery Helpers (TP-039) ─────────────────────
@@ -346,9 +346,28 @@ export function validateSegmentExpansionRequestAtBoundary(
 	if (requestedRepoSet.size !== request.requestedRepoIds.length) {
 		return "duplicate repoIds in requestedRepoIds";
 	}
+
+	// TP-145: Build a set of known repo IDs that edge endpoints may reference.
+	// This includes all requestedRepoIds plus the anchor segment's repo and
+	// any already-completed segments' repos. Workers commonly reference the
+	// anchor repo in edges (e.g., { from: "shared-libs", to: "web-client" })
+	// which is valid — the dependency is implicit for after-current placement.
+	const knownEdgeRepoIds = new Set(requestedRepoSet);
+	const orderedSegments = segmentState.orderedSegments ?? [];
+	const anchorSegment = orderedSegments.find((seg) => seg.segmentId === segmentId);
+	if (anchorSegment) {
+		knownEdgeRepoIds.add(anchorSegment.repoId);
+	}
+	for (const seg of orderedSegments) {
+		const status = segmentState.statusBySegmentId?.get(seg.segmentId);
+		if (status === "succeeded" || status === "failed" || status === "skipped") {
+			knownEdgeRepoIds.add(seg.repoId);
+		}
+	}
+
 	for (const edge of request.edges) {
-		if (!requestedRepoSet.has(edge.from) || !requestedRepoSet.has(edge.to)) {
-			return "edge references a repo outside requestedRepoIds";
+		if (!knownEdgeRepoIds.has(edge.from) || !knownEdgeRepoIds.has(edge.to)) {
+			return "edge references a repo outside requestedRepoIds and known segments";
 		}
 	}
 
@@ -2289,10 +2308,29 @@ export async function executeOrchBatch(
 				ORCH_MESSAGES.orchWaveStart(waveIdx + 1, runtimeSegmentRounds.length, waveTasks.length, lanes.length),
 				"info",
 			);
+			// TP-148: Build per-task segment context for the wave_start event
+			const waveSegmentContext: Array<{ taskId: string; segmentIndex: number; totalSegments: number; repoId: string; segmentId: string }> = [];
+			for (const taskId of waveTasks) {
+				const segState = segmentStateByTask.get(taskId);
+				if (segState && segState.orderedSegments.length > 1) {
+					const idx = segState.nextSegmentIndex;
+					const seg = segState.orderedSegments[idx];
+					if (seg) {
+						waveSegmentContext.push({
+							taskId,
+							segmentIndex: idx + 1,
+							totalSegments: segState.orderedSegments.length,
+							repoId: seg.repoId,
+							segmentId: seg.segmentId,
+						});
+					}
+				}
+			}
 			emitEvent(stateRoot, {
 				...buildEngineEventBase("wave_start", batchState.batchId, waveIdx, batchState.phase),
 				taskIds: waveTasks,
 				laneCount: lanes.length,
+				...(waveSegmentContext.length > 0 ? { segmentContext: waveSegmentContext } : {}),
 			}, onEngineEvent);
 			// TP-029: Track repos from newly allocated lanes for cleanup coverage
 			for (const lane of lanes) {
@@ -2612,6 +2650,26 @@ export async function executeOrchBatch(
 								batchState.orchBranch,
 							);
 							const recordedRequestId = recordProcessedSegmentExpansionRequestId(batchState, requestId, "succeeded");
+
+							// TP-145 hardening: if .DONE was prematurely created by the
+							// completing segment (because it was the last segment at that
+							// time), remove it now. The task is no longer complete — new
+							// segments have been added and must execute first.
+							// Only delete if segments were actually inserted (avoid
+							// reopening a completed task on no-op mutations).
+							const doneDir = task.packetTaskPath || task.taskFolder;
+							if (doneDir && mutation.insertedSegmentIds.length > 0) {
+								const donePath = join(doneDir, ".DONE");
+								if (existsSync(donePath)) {
+									try {
+										unlinkSync(donePath);
+										execLog("batch", batchState.batchId, "removed premature .DONE after segment expansion", {
+											taskId, donePath, requestId,
+										});
+									} catch { /* non-fatal */ }
+								}
+							}
+
 							if (persistedInsertedSegments || recordedRequestId || mutation.insertedSegmentIds.length > 0) {
 								persistRuntimeState("segment-expansion-approved", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 							}
@@ -2915,13 +2973,16 @@ export async function executeOrchBatch(
 		// files (especially for level-0 / fast tasks). Check each merge-candidate
 		// lane worktree and auto-commit any remaining changes so they're included
 		// in the merge. Skips lanes with only failed/stalled tasks (no merge).
+		// TP-147: Also auto-commit skipped-task lanes so partial progress
+		// (STATUS.md updates, partial code) is preserved on their branch.
 		for (const lane of waveResult.allocatedLanes) {
 			if (!lane.worktreePath || !existsSync(lane.worktreePath)) continue;
-			// Only check lanes that have at least one succeeded task (merge candidates)
 			const laneOutcome = laneOutcomeByNumber.get(lane.laneNumber);
 			if (!laneOutcome) continue;
 			const hasSucceeded = laneOutcome.tasks.some(t => t.status === "succeeded");
-			if (!hasSucceeded) continue;
+			const hasSkipped = laneOutcome.tasks.some(t => t.status === "skipped");
+			// Auto-commit merge candidates (succeeded) and skipped-task lanes
+			if (!hasSucceeded && !hasSkipped) continue;
 			try {
 				const addResult = runGit(["add", "-A"], lane.worktreePath);
 				if (!addResult.ok) {
@@ -3465,6 +3526,34 @@ export async function executeOrchBatch(
 			}
 			// TP-028: Stamp task outcomes with partial progress data for persistence
 			applyPartialProgressToOutcomes(ppResult, allTaskOutcomes);
+
+			// TP-147: Also preserve skipped task branches before inter-wave reset
+			const skippedPpResult = preserveSkippedLaneProgress(
+				latestAllocatedLanes,
+				allTaskOutcomes,
+				ppOpId,
+				batchState.batchId,
+				(repoId) => {
+					const perRepoRoot = resolveRepoRoot(repoId, repoRoot, workspaceConfig);
+					let targetBranch = batchState.orchBranch;
+					if (repoId && perRepoRoot !== repoRoot) {
+						try {
+							targetBranch = resolveBaseBranch(repoId, perRepoRoot, batchState.orchBranch, workspaceConfig);
+						} catch { /* fall back to orchBranch */ }
+					}
+					return { repoRoot: perRepoRoot, targetBranch };
+				},
+			);
+			// Merge unsafe branches from skipped tasks into the main set
+			for (const branch of skippedPpResult.unsafeBranches) {
+				ppUnsafeBranches.add(branch);
+			}
+			if (skippedPpResult.results.some(r => r.saved)) {
+				execLog("batch", batchState.batchId,
+					`preserved partial progress for ${skippedPpResult.results.filter(r => r.saved).length} skipped task(s) before inter-wave reset`);
+			}
+			// Stamp skipped task outcomes with partial progress data
+			applyPartialProgressToOutcomes(skippedPpResult, allTaskOutcomes);
 		}
 
 		// ── Post-merge: Reset worktrees for next wave ────────────
@@ -3811,6 +3900,30 @@ export async function executeOrchBatch(
 			};
 		});
 
+		// TP-147: Ensure ALL tasks from the wave plan are represented in history.
+		// Tasks that never got allocated (blocked by upstream failures, never started)
+		// won't have entries in allTaskOutcomes. Add them with appropriate status.
+		const coveredTaskIds = new Set(taskSummaries.map(t => t.taskId));
+		for (let wi = 0; wi < wavePlan.length; wi++) {
+			for (const taskId of wavePlan[wi]) {
+				if (coveredTaskIds.has(taskId)) continue;
+				// Determine the appropriate status for uncovered tasks
+				const isBlocked = batchState.blockedTaskIds.has(taskId);
+				const status: BatchTaskSummary["status"] = isBlocked ? "blocked" : "pending";
+				taskSummaries.push({
+					taskId,
+					taskName: taskId,
+					status,
+					wave: wi + 1,
+					lane: 0,
+					durationMs: 0,
+					tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 },
+					exitReason: isBlocked ? "Blocked by upstream failure" : null,
+				});
+				coveredTaskIds.add(taskId);
+			}
+		}
+
 		// Build per-wave summaries
 		const waveSummaries: BatchWaveSummary[] = wavePlan.map((taskIds, wi) => {
 			const waveTasks = taskSummaries.filter(t => t.wave === wi + 1);
@@ -3852,6 +3965,16 @@ export async function executeOrchBatch(
 					? "completed"
 					: "aborted";
 
+		// TP-147: Ensure totalTasks matches actual task array length.
+		// Use taskSummaries.length as authoritative (includes gap-filled tasks)
+		// and log a warning if it diverges from batchState.totalTasks.
+		const actualTotalTasks = taskSummaries.length;
+		if (actualTotalTasks !== batchState.totalTasks) {
+			execLog("batch", batchState.batchId,
+				`WARNING: totalTasks mismatch — batchState.totalTasks=${batchState.totalTasks}, ` +
+				`taskSummaries.length=${actualTotalTasks}. Using taskSummaries.length for history.`);
+		}
+
 		const summary: BatchHistorySummary = {
 			batchId: batchState.batchId,
 			status: historyStatus,
@@ -3859,7 +3982,7 @@ export async function executeOrchBatch(
 			endedAt: Date.now(),
 			durationMs: Date.now() - batchState.startedAt,
 			totalWaves: wavePlan.length,
-			totalTasks: batchState.totalTasks,
+			totalTasks: actualTotalTasks,
 			succeededTasks: batchState.succeededTasks,
 			failedTasks: batchState.failedTasks,
 			skippedTasks: batchState.skippedTasks,
@@ -3983,6 +4106,37 @@ export async function executeOrchBatch(
 			}
 			// TP-028: Stamp task outcomes with partial progress data for persistence
 			applyPartialProgressToOutcomes(ppResult, allTaskOutcomes);
+
+			// TP-147: Also preserve skipped task branches before terminal cleanup
+			const skippedPpResult = preserveSkippedLaneProgress(
+				latestAllocatedLanes,
+				allTaskOutcomes,
+				ppOpId,
+				batchState.batchId,
+				(repoId) => {
+					const perRepoRoot = resolveRepoRoot(repoId, repoRoot, workspaceConfig);
+					let targetBranch = batchState.orchBranch;
+					if (repoId && perRepoRoot !== repoRoot) {
+						try {
+							targetBranch = resolveBaseBranch(repoId, perRepoRoot, batchState.orchBranch, workspaceConfig);
+						} catch { /* fall back to orchBranch */ }
+					}
+					return { repoRoot: perRepoRoot, targetBranch };
+				},
+			);
+			if (skippedPpResult.results.some(r => r.saved)) {
+				execLog("batch", batchState.batchId,
+					`preserved partial progress for ${skippedPpResult.results.filter(r => r.saved).length} skipped task(s) before terminal cleanup`);
+			}
+			for (const r of skippedPpResult.results) {
+				if (!r.saved && (r.commitCount > 0 || r.error)) {
+					execLog("batch", batchState.batchId,
+						`WARNING: Failed to preserve partial progress for skipped task ${r.taskId} ` +
+						`(${r.commitCount} commit(s) may become unreachable after cleanup)`,
+						{ taskId: r.taskId, commitCount: r.commitCount, error: r.error ?? "unknown" });
+				}
+			}
+			applyPartialProgressToOutcomes(skippedPpResult, allTaskOutcomes);
 		}
 
 		// TP-029: Clean up worktrees across ALL encountered repos (not just primary).

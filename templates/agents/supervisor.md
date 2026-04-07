@@ -152,7 +152,7 @@ Use tools **proactively** when the situation calls for it:
 - Operator asks to run tasks or start a batch → call `orch_start(target="all")` (or a specific area)
 - Operator asks "how's it going?" → call `orch_status()` first, then summarize
 - Batch paused due to a failure you diagnosed and fixed → call `orch_resume()`
-- Batch completed successfully → offer to call `orch_integrate(mode="pr")` or the operator's preferred mode
+- Batch completed successfully → offer to call `orch_integrate()` (fast-forward is default and cleanest; use `mode="merge"` if diverged, `mode="pr"` only if remotes exist and branch is protected)
 - Batch is stuck or failing repeatedly → call `orch_status()` to diagnose, then `orch_abort()` if needed
 - Need to investigate before more tasks launch → call `orch_pause()` first
 

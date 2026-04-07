@@ -124,7 +124,7 @@ describe("2.x — branch protection detection", () => {
 		expect(plan!.rationale).toContain("protected");
 	});
 
-	it("2.3: buildIntegrationPlan defaults to PR mode when protection is unknown", () => {
+	it("2.3: buildIntegrationPlan with unknown protection prefers FF/merge over PR (TP-149)", () => {
 		const batchState: Partial<OrchBatchRuntimeState> = {
 			orchBranch: "orch/test-batch",
 			baseBranch: "main",
@@ -138,7 +138,8 @@ describe("2.x — branch protection detection", () => {
 			"unknown",
 		);
 		expect(plan).not.toBeNull();
-		expect(plan!.mode).toBe("pr");
+		// TP-149: unknown protection now falls through to FF/merge instead of defaulting to PR
+		expect(["ff", "merge"]).toContain(plan!.mode);
 		expect(plan!.branchProtection).toBe("unknown");
 	});
 });

@@ -25,6 +25,7 @@ import {
 	generateLaneSessionId,
 	buildTaskSegmentPlans,
 	inferTaskRepoOrder,
+	enforceGlobalLaneCap,
 } from "../taskplane/waves.ts";
 
 import type {
@@ -372,5 +373,94 @@ describe("segment planning", () => {
 		expect([...plansAB.keys()]).toEqual(["TP-001", "TP-002"]);
 		expect([...plansBA.keys()]).toEqual(["TP-001", "TP-002"]);
 		expect(JSON.stringify([...plansAB.entries()])).toBe(JSON.stringify([...plansBA.entries()]));
+	});
+});
+
+// ── TP-148: enforceGlobalLaneCap() ────────────────────────────────
+
+describe("enforceGlobalLaneCap", () => {
+	function makeEntry(
+		globalLane: number,
+		localLane: number,
+		repoId: string | undefined,
+		taskIds: string[],
+	) {
+		return {
+			globalLane,
+			localLane,
+			repoId,
+			assignments: taskIds.map((taskId) => ({
+				taskId,
+				lane: localLane,
+				task: makeParsedTask(taskId, { resolvedRepoId: repoId }),
+			})),
+		};
+	}
+
+	it("no-ops when total lanes <= maxLanes", () => {
+		const entries = [
+			makeEntry(1, 1, "api", ["TP-001"]),
+			makeEntry(2, 2, "api", ["TP-002"]),
+			makeEntry(3, 1, "web", ["TP-003"]),
+		];
+		enforceGlobalLaneCap(entries, 4);
+		expect(entries.length).toBe(3);
+	});
+
+	it("reduces total lanes to maxLanes with 3 repos", () => {
+		// 3 repos, each with 2 lanes = 6 total. maxLanes=4 → must reduce to 4.
+		const entries = [
+			makeEntry(1, 1, "api", ["TP-001"]),
+			makeEntry(2, 2, "api", ["TP-002"]),
+			makeEntry(3, 1, "frontend", ["TP-003"]),
+			makeEntry(4, 2, "frontend", ["TP-004"]),
+			makeEntry(5, 1, "shared", ["TP-005"]),
+			makeEntry(6, 2, "shared", ["TP-006"]),
+		];
+		enforceGlobalLaneCap(entries, 4);
+		expect(entries.length).toBe(4);
+		// All task IDs should still be present across lanes
+		const allTaskIds = entries.flatMap((e) => e.assignments.map((a) => a.taskId)).sort();
+		expect(allTaskIds).toEqual(["TP-001", "TP-002", "TP-003", "TP-004", "TP-005", "TP-006"]);
+	});
+
+	it("preserves at least 1 lane per repo", () => {
+		// 3 repos with 1 lane each = 3 total. maxLanes=2 → can't go below 3 (1 per repo).
+		const entries = [
+			makeEntry(1, 1, "api", ["TP-001"]),
+			makeEntry(2, 1, "frontend", ["TP-002"]),
+			makeEntry(3, 1, "shared", ["TP-003"]),
+		];
+		enforceGlobalLaneCap(entries, 2);
+		expect(entries.length).toBe(3); // can't reduce below 1 per repo
+	});
+
+	it("renumbers global lanes sequentially after reduction", () => {
+		const entries = [
+			makeEntry(1, 1, "api", ["TP-001"]),
+			makeEntry(2, 2, "api", ["TP-002"]),
+			makeEntry(3, 1, "web", ["TP-003"]),
+			makeEntry(4, 2, "web", ["TP-004"]),
+		];
+		enforceGlobalLaneCap(entries, 2);
+		expect(entries.length).toBe(2);
+		expect(entries.map((e) => e.globalLane)).toEqual([1, 2]);
+	});
+
+	it("reduces from the repo with the most lanes first", () => {
+		// api has 3 lanes, web has 1 lane = 4 total. maxLanes=3 → reduce api.
+		const entries = [
+			makeEntry(1, 1, "api", ["TP-001"]),
+			makeEntry(2, 2, "api", ["TP-002"]),
+			makeEntry(3, 3, "api", ["TP-003"]),
+			makeEntry(4, 1, "web", ["TP-004"]),
+		];
+		enforceGlobalLaneCap(entries, 3);
+		expect(entries.length).toBe(3);
+		// api should now have 2 lanes, web still has 1
+		const apiEntries = entries.filter((e) => e.repoId === "api");
+		const webEntries = entries.filter((e) => e.repoId === "web");
+		expect(apiEntries.length).toBe(2);
+		expect(webEntries.length).toBe(1);
 	});
 });

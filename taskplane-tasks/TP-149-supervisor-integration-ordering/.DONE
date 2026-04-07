@@ -1,0 +1,22 @@
+TP-149 complete.
+
+## Summary
+Fixed supervisor integration mode ordering to prefer FF → merge → PR (only if remotes exist).
+
+## Changes
+- `extensions/taskplane/supervisor.ts`:
+  - Added `hasGitRemotes()` helper to check for configured git remotes
+  - Rewrote `buildIntegrationPlan()` mode selection logic:
+    - Check remotes first (no remotes → skip protection check and PR mode)
+    - Only select PR when protection is CONFIRMED "protected" (not "unknown")
+    - "unknown" protection now falls through to FF → merge instead of defaulting to PR
+    - FF is always tried first (cleanest), then merge (diverged), then PR (protected)
+- `templates/agents/supervisor.md`:
+  - Updated integration guidance to recommend FF as default over PR
+
+## Tests Updated
+- `auto-integration-deterministic.integration.test.ts`: Updated mock to handle `git remote`, added TP-149 test cases (17.2b, 17.2c), updated 17.2 expectations
+- `auto-integration.integration.test.ts`: Updated tests 10.5, 12.2, 12.3, 18.3, 18.4 for new behavior
+- `ux-integrate-visibility.test.ts`: Updated test 2.3 for new unknown→FF/merge behavior
+
+Full test suite: 3233/3233 pass, 0 failures.

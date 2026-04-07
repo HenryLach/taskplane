@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.24.31] - 2026-04-07
+
+### New
+- **TP-145: Multi-segment .DONE timing + expansion edge validation** — Four-layer defense against premature .DONE: pre-segment deletion, worker prompt rule, post-segment deletion, expansion deletion. Edge validation accepts anchor-repo references.
+- **TP-146: Missing orch branch investigation** — Root cause identified (`resolveBaseBranch` fallback), diagnostic logging added.
+- **TP-147: Skipped task branch preservation + batch history completeness** — Partial work saved as `saved/*` refs. All wave plan tasks recorded in history.
+- **TP-148: Wave display, global maxLanes cap, session naming** — Dashboard shows segment context in waves. Global lane cap across repos. Lane-number fallback for widget liveness.
+- **TP-149: Supervisor integration ordering** — Tries FF first, merge second, PR only when protected + diverged + remotes exist.
+- **Local build script** — `node scripts/local-build.mjs` copies dev files to global install for testing without npm publish.
+
+### Fixed
+- **Dashboard messages no longer truncated** — Removed 120-char JS truncation, CSS wrapping enabled.
+- **Premature .DONE deletion gated on actual insertion** — No-op expansion mutations no longer reopen completed tasks.
+- **Batch history deduplication** — Gap-fill loop updates covered set after each push.
+- **Integration plan tries FF before PR for protected branches** — Tests updated.
+- **maxLanes warning when repos exceed global cap.**
+- **resolveBaseBranch log prefix consistency.**
+
 ## [0.24.30] - 2026-04-06
 
 ### Fixed

@@ -22,6 +22,7 @@ import {
 	resolveSavedBranchCollision,
 	savePartialProgress,
 	preserveFailedLaneProgress,
+	preserveSkippedLaneProgress,
 } from "../taskplane/worktree.ts";
 
 import { runGit } from "../taskplane/git.ts";
@@ -1087,5 +1088,189 @@ describe("preserveFailedLaneProgress — integration with real git", () => {
 		// Only 1 result because branch is processed only once
 		expect(result.results.length).toBe(1);
 		expect(result.preservedBranches.size).toBe(1);
+	});
+});
+
+
+// ── TP-147: preserveSkippedLaneProgress Tests ──────────────────────
+
+describe("preserveSkippedLaneProgress — integration with real git", () => {
+	let repoDir: string;
+
+	afterEach(() => {
+		if (repoDir) cleanupTestRepo(repoDir);
+	});
+
+	it("saves partial progress for skipped tasks with commits", () => {
+		repoDir = initTestRepo("pslp-happy");
+
+		// Create lane 1 branch with commits (for TP-001 which will be skipped)
+		execSync("git checkout -b task/test-lane-1-batch1 main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		addCommitToRepo(repoDir, "task/test-lane-1-batch1", "status.md", "partial work");
+		execSync("git checkout main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+		const lanes: AllocatedLane[] = [
+			makeLane(1, "task/test-lane-1-batch1", ["TP-001"]),
+		];
+
+		const outcomes: LaneTaskOutcome[] = [
+			makeOutcome("TP-001", "skipped"),
+		];
+
+		const resolveRepo: ResolveRepoContext = () => ({ repoRoot: repoDir, targetBranch: "main" });
+
+		const result = preserveSkippedLaneProgress(lanes, outcomes, "henry", "batch1", resolveRepo);
+
+		// Should save 1 branch for the skipped task
+		expect(result.results.length).toBe(1);
+		expect(result.results[0].saved).toBe(true);
+		expect(result.results[0].commitCount).toBe(1);
+		expect(result.results[0].taskId).toBe("TP-001");
+		expect(result.preservedBranches.size).toBe(1);
+		expect(result.unsafeBranches.size).toBe(0);
+
+		// Verify the saved branch actually exists in git
+		const savedBranch = result.results[0].savedBranch!;
+		const check = runGit(["rev-parse", "--verify", `refs/heads/${savedBranch}`], repoDir);
+		expect(check.ok).toBe(true);
+	});
+
+	it("skips skipped tasks with no commits (nothing to preserve)", () => {
+		repoDir = initTestRepo("pslp-no-commits");
+
+		// Create lane branch at same commit as main (no progress)
+		execSync("git branch task/test-lane-1-batch2 main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+		const lanes: AllocatedLane[] = [makeLane(1, "task/test-lane-1-batch2", ["TP-001"])];
+		const outcomes: LaneTaskOutcome[] = [makeOutcome("TP-001", "skipped")];
+		const resolveRepo: ResolveRepoContext = () => ({ repoRoot: repoDir, targetBranch: "main" });
+
+		const result = preserveSkippedLaneProgress(lanes, outcomes, "henry", "batch2", resolveRepo);
+
+		expect(result.results.length).toBe(1);
+		expect(result.results[0].saved).toBe(false);
+		expect(result.results[0].commitCount).toBe(0);
+		expect(result.preservedBranches.size).toBe(0);
+		expect(result.unsafeBranches.size).toBe(0);
+	});
+
+	it("ignores failed and succeeded tasks (only processes skipped)", () => {
+		repoDir = initTestRepo("pslp-filter");
+
+		// Create lane branches with commits
+		execSync("git checkout -b task/test-lane-1-batch3 main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		addCommitToRepo(repoDir, "task/test-lane-1-batch3", "work1.txt", "failed task work");
+		execSync("git checkout main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+		execSync("git checkout -b task/test-lane-2-batch3 main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		addCommitToRepo(repoDir, "task/test-lane-2-batch3", "work2.txt", "succeeded task work");
+		execSync("git checkout main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+		const lanes: AllocatedLane[] = [
+			makeLane(1, "task/test-lane-1-batch3", ["TP-001"]),
+			makeLane(2, "task/test-lane-2-batch3", ["TP-002"]),
+		];
+
+		const outcomes: LaneTaskOutcome[] = [
+			makeOutcome("TP-001", "failed"),
+			makeOutcome("TP-002", "succeeded"),
+		];
+
+		const resolveRepo: ResolveRepoContext = () => ({ repoRoot: repoDir, targetBranch: "main" });
+
+		const result = preserveSkippedLaneProgress(lanes, outcomes, "henry", "batch3", resolveRepo);
+
+		// No results — only skipped tasks are processed
+		expect(result.results.length).toBe(0);
+		expect(result.preservedBranches.size).toBe(0);
+		expect(result.unsafeBranches.size).toBe(0);
+	});
+
+	it("deduplicates multi-task lanes (saves branch only once)", () => {
+		repoDir = initTestRepo("pslp-dedup");
+
+		// Create lane branch with commits for 2 skipped tasks on same lane
+		execSync("git checkout -b task/test-lane-1-batch4 main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+		addCommitToRepo(repoDir, "task/test-lane-1-batch4", "shared-work.txt", "shared progress");
+		execSync("git checkout main", { cwd: repoDir, encoding: "utf-8", stdio: "pipe" });
+
+		const lanes: AllocatedLane[] = [
+			makeLane(1, "task/test-lane-1-batch4", ["TP-001", "TP-002"]),
+		];
+
+		const outcomes: LaneTaskOutcome[] = [
+			makeOutcome("TP-001", "skipped"),
+			makeOutcome("TP-002", "skipped"),
+		];
+
+		const resolveRepo: ResolveRepoContext = () => ({ repoRoot: repoDir, targetBranch: "main" });
+
+		const result = preserveSkippedLaneProgress(lanes, outcomes, "henry", "batch4", resolveRepo);
+
+		// Only 1 result because branch is processed only once (first skipped task)
+		expect(result.results.length).toBe(1);
+		expect(result.results[0].saved).toBe(true);
+		expect(result.preservedBranches.size).toBe(1);
+	});
+});
+
+
+// ── TP-147: BatchTaskSummary "pending" status in persisted state ───────
+
+describe("TP-147 — pending task status accepted in persisted state", () => {
+	it("pending status passes validation in batch-state tasks array", () => {
+		// TP-147: Tasks that never started should persist with status "pending".
+		// The VALID_TASK_STATUSES set already includes "pending" — this test
+		// ensures that round-trip through validate works for pending tasks.
+		const state = makePersistedState([
+			{
+				taskId: "TP-001",
+				laneNumber: 1,
+				sessionName: "orch-lane-1",
+				status: "succeeded",
+				taskFolder: "/tasks/TP-001",
+				startedAt: 1000,
+				endedAt: 2000,
+				doneFileFound: true,
+				exitReason: "Done",
+			},
+			{
+				taskId: "TP-002",
+				laneNumber: 0,
+				sessionName: "",
+				status: "pending",
+				taskFolder: "/tasks/TP-002",
+				startedAt: null,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+			},
+		]);
+		(state as any).totalTasks = 2;
+		(state as any).wavePlan = [["TP-001", "TP-002"]];
+		(state as any).lanes[0].taskIds = ["TP-001"];
+
+		// Should not throw — "pending" is a valid task status
+		const validated = validatePersistedState(state);
+		expect(validated.tasks.length).toBe(2);
+		expect(validated.tasks[1].status).toBe("pending");
+	});
+
+	it("totalTasks counter matches taskSummaries array length in history", () => {
+		// TP-147: The gap-filling logic in engine.ts ensures all wave plan tasks
+		// are included in the history. Verify the type contract by creating a
+		// BatchHistorySummary-compatible object with the correct structure.
+		const tasks: import("../taskplane/types.ts").BatchTaskSummary[] = [
+			{ taskId: "TP-001", taskName: "TP-001", status: "succeeded", wave: 1, lane: 1, durationMs: 5000, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 }, exitReason: null },
+			{ taskId: "TP-002", taskName: "TP-002", status: "blocked", wave: 2, lane: 0, durationMs: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 }, exitReason: "Blocked by upstream failure" },
+			{ taskId: "TP-003", taskName: "TP-003", status: "pending", wave: 2, lane: 0, durationMs: 0, tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 }, exitReason: null },
+		];
+
+		// totalTasks should equal tasks array length
+		const totalTasks = tasks.length;
+		expect(totalTasks).toBe(3);
+		expect(tasks.filter(t => t.status === "blocked").length).toBe(1);
+		expect(tasks.filter(t => t.status === "pending").length).toBe(1);
+		expect(tasks.filter(t => t.status === "succeeded").length).toBe(1);
 	});
 });

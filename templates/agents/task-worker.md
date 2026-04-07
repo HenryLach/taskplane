@@ -37,6 +37,13 @@ visibility into your progress. If you batch updates, the dashboard shows
 7. If all steps are complete, update STATUS.md **Status** field to `✅ Complete`
    and **Current Step** to the last step name — this is your final action
 
+## CRITICAL: Do NOT Create .DONE Files
+
+**The `.DONE` file is managed by the runtime, not by you.** Never create,
+write, or touch a `.DONE` file. The lane-runner creates it automatically
+when all segments of your task are complete. If you create `.DONE` early,
+it will cause downstream segments to be skipped and deliverables to be lost.
+
 ## CRITICAL: Never Exit Without Updating STATUS.md
 
 **Every turn MUST end with a tool call.** Do NOT produce a text-only response

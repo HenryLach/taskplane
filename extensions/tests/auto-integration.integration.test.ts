@@ -231,7 +231,7 @@ describe("10.x — Integration plan: buildIntegrationPlan", () => {
 		expect(plan).toBeNull();
 	});
 
-	it("10.4: protected branch → PR mode", () => {
+	it("10.4: protected + linear → FF mode (TP-149: try FF before PR)", () => {
 		const repo = createLinearGitRepo();
 		try {
 			const state = makeIntegrationBatchState({
@@ -240,15 +240,14 @@ describe("10.x — Integration plan: buildIntegrationPlan", () => {
 			});
 			const plan = buildIntegrationPlan(state, repo.dir, "protected");
 			expect(plan).not.toBeNull();
-			expect(plan!.mode).toBe("pr");
+			expect(plan!.mode).toBe("ff");
 			expect(plan!.branchProtection).toBe("protected");
-			expect(plan!.rationale).toContain("protected");
 		} finally {
 			rmSync(repo.dir, { recursive: true, force: true });
 		}
 	});
 
-	it("10.5: unknown protection → PR mode (safety fallback)", () => {
+	it("10.5: unknown protection → ff mode (TP-149: prefers FF over PR for unknown)", () => {
 		const repo = createLinearGitRepo();
 		try {
 			const state = makeIntegrationBatchState({
@@ -257,9 +256,9 @@ describe("10.x — Integration plan: buildIntegrationPlan", () => {
 			});
 			const plan = buildIntegrationPlan(state, repo.dir, "unknown");
 			expect(plan).not.toBeNull();
-			expect(plan!.mode).toBe("pr");
+			expect(plan!.mode).toBe("ff");
 			expect(plan!.branchProtection).toBe("unknown");
-			expect(plan!.rationale).toContain("defaulting to PR");
+			expect(plan!.rationale).toContain("linear");
 		} finally {
 			rmSync(repo.dir, { recursive: true, force: true });
 		}
@@ -627,9 +626,9 @@ describe("12.x — Auto mode: triggerSupervisorIntegration", () => {
 			baseBranch: gitRepo.baseBranch,
 		});
 
-		// No executor → should fall back to manual instruction
-		// Note: buildIntegrationPlan will return "unknown" protection (no gh in test)
-		// which yields a PR plan. With executor=undefined, it should send fallback message.
+		// No executor → should fall back to manual instruction.
+		// TP-149: test repo has no remotes → protection skipped → FF plan.
+		// With executor=undefined, it should send fallback message.
 		triggerSupervisorIntegration(pi as any, state, batchState, "auto", gitRepo.dir, undefined);
 
 		expect(pi.messages.length).toBeGreaterThanOrEqual(1);
@@ -656,15 +655,13 @@ describe("12.x — Auto mode: triggerSupervisorIntegration", () => {
 			return { success: true, integratedLocally: true, commitCount: "2", message: "Fast-forwarded 2 commits" };
 		};
 
-		// With protectionOverride not available on triggerSupervisorIntegration,
-		// buildIntegrationPlan will detect "unknown" → PR mode in test env.
-		// However, executor still gets called. Let's verify the executor behavior.
+		// TP-149: test repo has no remotes → protection skipped → FF plan.
 		triggerSupervisorIntegration(pi as any, state, batchState, "auto", gitRepo.dir, executor);
 
 		// Executor must have been called (plan was non-null since orchBranch/baseBranch exist)
 		expect(executorCalls.length).toBeGreaterThanOrEqual(1);
-		// The first call gets the plan mode (pr in test env due to unknown protection)
-		expect(executorCalls[0].mode).toBeDefined();
+		// TP-149: no remotes → FF mode (no longer PR)
+		expect(executorCalls[0].mode).toBe("ff");
 		expect(executorCalls[0].context.orchBranch).toBe(gitRepo.orchBranch);
 		expect(executorCalls[0].context.baseBranch).toBe(gitRepo.baseBranch);
 
@@ -1682,7 +1679,7 @@ describe("18.x — Branch protection detected → defaults to PR mode (R006)", (
 		}
 	});
 
-	it("18.2: buildIntegrationPlan with protected override → PR mode with protection rationale", () => {
+	it("18.2: buildIntegrationPlan with protected + linear → FF mode (TP-149: try FF first)", () => {
 		const repo = createLinearGitRepo();
 		try {
 			const state = makeIntegrationBatchState({
@@ -1691,16 +1688,14 @@ describe("18.x — Branch protection detected → defaults to PR mode (R006)", (
 			});
 			const plan = buildIntegrationPlan(state, repo.dir, "protected");
 			expect(plan).not.toBeNull();
-			expect(plan!.mode).toBe("pr");
+			expect(plan!.mode).toBe("ff");
 			expect(plan!.branchProtection).toBe("protected");
-			expect(plan!.rationale).toContain("protected");
-			expect(plan!.rationale).toContain("pull request");
 		} finally {
 			rmSync(repo.dir, { recursive: true, force: true });
 		}
 	});
 
-	it("18.3: buildIntegrationPlan with unknown override → PR mode with safety fallback rationale", () => {
+	it("18.3: buildIntegrationPlan with unknown override → ff mode (TP-149: prefers FF over PR)", () => {
 		const repo = createLinearGitRepo();
 		try {
 			const state = makeIntegrationBatchState({
@@ -1709,16 +1704,15 @@ describe("18.x — Branch protection detected → defaults to PR mode (R006)", (
 			});
 			const plan = buildIntegrationPlan(state, repo.dir, "unknown");
 			expect(plan).not.toBeNull();
-			expect(plan!.mode).toBe("pr");
+			expect(plan!.mode).toBe("ff");
 			expect(plan!.branchProtection).toBe("unknown");
-			expect(plan!.rationale).toContain("defaulting to PR");
-			expect(plan!.rationale).toContain("safety");
+			expect(plan!.rationale).toContain("linear");
 		} finally {
 			rmSync(repo.dir, { recursive: true, force: true });
 		}
 	});
 
-	it("18.4: auto mode with protected branch → executor called with 'pr' mode", () => {
+	it("18.4: auto mode with no remotes → executor called with 'ff' mode (TP-149: skips PR)", () => {
 		const repo = createLinearGitRepo();
 		try {
 			const pi = makeMockPi();
@@ -1733,19 +1727,19 @@ describe("18.x — Branch protection detected → defaults to PR mode (R006)", (
 			const executorCalls: Array<{ mode: string }> = [];
 			const executor: IntegrationExecutor = (mode, context) => {
 				executorCalls.push({ mode });
-				return { success: true, integratedLocally: false, commitCount: "0", message: "PR #42 created" };
+				return { success: true, integratedLocally: true, commitCount: "2", message: "Fast-forwarded" };
 			};
 
-			// In test env, detectBranchProtection returns "unknown" → PR mode
+			// TP-149: test repo has no remotes → skips protection check → FF mode
 			triggerSupervisorIntegration(pi as any, state, batchState, "auto", repo.dir, executor);
 
-			// Executor should have been called with 'pr' mode
+			// Executor should have been called with 'ff' mode (not PR)
 			expect(executorCalls.length).toBeGreaterThanOrEqual(1);
-			expect(executorCalls[0].mode).toBe("pr");
+			expect(executorCalls[0].mode).toBe("ff");
 
-			// Messages should mention PR
+			// Messages should mention integration success
 			const allText = pi.messages.map(m => m.opts.content[0].text).join("\n");
-			expect(allText).toContain("PR");
+			expect(allText).toContain("Integration complete");
 		} finally {
 			rmSync(repo.dir, { recursive: true, force: true });
 		}

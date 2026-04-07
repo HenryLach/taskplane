@@ -3202,7 +3202,7 @@ export interface TokenCounts {
 export interface BatchTaskSummary {
 	taskId: string;
 	taskName: string;
-	status: "succeeded" | "failed" | "skipped" | "blocked" | "stalled";
+	status: "succeeded" | "failed" | "skipped" | "blocked" | "stalled" | "pending";
 	wave: number;      // 1-based
 	lane: number;      // 1-based
 	durationMs: number;

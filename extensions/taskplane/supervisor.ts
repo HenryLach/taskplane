@@ -398,18 +398,51 @@ export interface IntegrationPlan {
 }
 
 /**
+ * Check whether the git repository has any remotes configured.
+ *
+ * Used by integration planning to determine if PR mode is possible.
+ * A repo without remotes cannot create pull requests.
+ *
+ * @param cwd - Working directory with the git repo
+ * @returns true if at least one remote is configured
+ *
+ * @since TP-149
+ */
+export function hasGitRemotes(cwd: string): boolean {
+	try {
+		const result = execFileSync("git", ["remote"], {
+			encoding: "utf-8",
+			timeout: 5_000,
+			cwd,
+			stdio: ["pipe", "pipe", "pipe"],
+		});
+		return result.trim().length > 0;
+	} catch {
+		return false;
+	}
+}
+
+/**
  * Build an integration plan based on the batch state and branch status.
  *
- * Mode selection logic:
- * 1. If base branch is protected → PR mode (can't push directly)
- * 2. If branches have diverged → merge mode (ff not possible)
- * 3. Otherwise → ff mode (cleanest)
+ * Mode selection logic (TP-149):
+ * 1. Check if remotes exist (determines if PR mode is possible)
+ * 2. If base branch is confirmed protected AND remotes exist → PR mode
+ * 3. Try fast-forward first (cleanest, most common)
+ * 4. If FF not possible (diverged) → merge mode
+ *
+ * PR mode is only selected when protection is **confirmed** (not "unknown").
+ * When protection status is indeterminate (gh unavailable, auth issues),
+ * the plan prefers FF → merge over PR, since PR may also fail in that state.
+ * Repos without remotes skip protection checks and PR mode entirely.
  *
  * @param batchState - Runtime batch state (orchBranch, baseBranch, counts)
  * @param cwd - Working directory with the git repo
+ * @param protectionOverride - Injectable protection status for testing
  * @returns Integration plan, or null if integration is not possible
  *
  * @since TP-043
+ * @modified TP-149 — Reordered to FF → merge → PR; check remotes first
  */
 export function buildIntegrationPlan(
 	batchState: OrchBatchRuntimeState,
@@ -428,39 +461,21 @@ export function buildIntegrationPlan(
 	const baseBranch = batchState.baseBranch;
 	const batchId = batchState.batchId;
 
-	// Step 1: Check branch protection (injectable for testing)
-	const protection = protectionOverride ?? detectBranchProtection(baseBranch, cwd);
+	// Step 1: Check for remotes — determines if PR mode is even possible (TP-149)
+	const remotes = hasGitRemotes(cwd);
 
-	if (protection === "protected") {
-		return {
-			mode: "pr",
-			orchBranch,
-			baseBranch,
-			batchId,
-			branchProtection: protection,
-			rationale: `Base branch \`${baseBranch}\` is protected — creating a pull request for review.`,
-			succeededTasks: batchState.succeededTasks,
-			failedTasks: batchState.failedTasks,
-		};
-	}
+	// Step 2: Determine protection status
+	// - Override: use as-is (test injection path)
+	// - Remotes exist: detect via gh API
+	// - No remotes: treat as unprotected (can't create PRs anyway)
+	const protection = protectionOverride
+		?? (remotes ? detectBranchProtection(baseBranch, cwd) : "unprotected");
 
-	if (protection === "unknown") {
-		// Safe fallback: when protection status can't be determined
-		// (gh CLI unavailable, no remote, etc.), default to PR mode
-		// to avoid accidentally pushing to a protected branch.
-		return {
-			mode: "pr",
-			orchBranch,
-			baseBranch,
-			batchId,
-			branchProtection: protection,
-			rationale: `Could not detect branch protection for \`${baseBranch}\` — defaulting to PR mode for safety.`,
-			succeededTasks: batchState.succeededTasks,
-			failedTasks: batchState.failedTasks,
-		};
-	}
+	// Step 3: Always try FF first, then merge, then PR (TP-149).
+	// Protected branches may still allow FF/merge via API tokens.
+	// PR is the last resort when direct merge is blocked.
 
-	// Step 2: Check ff-ability (is baseBranch ancestor of orchBranch?)
+	// Step 3a: Try fast-forward first (cleanest, most common)
 	try {
 		execFileSync("git", ["merge-base", "--is-ancestor", baseBranch, orchBranch], {
 			encoding: "utf-8",
@@ -480,7 +495,20 @@ export function buildIntegrationPlan(
 			failedTasks: batchState.failedTasks,
 		};
 	} catch {
-		// Branches have diverged — need merge commit
+		// Branches have diverged — need merge commit or PR
+		// Step 3c: If protected AND remotes exist, prefer PR (merge may be blocked by push protection)
+		if (protection === "protected" && remotes) {
+			return {
+				mode: "pr",
+				orchBranch,
+				baseBranch,
+				batchId,
+				branchProtection: protection,
+				rationale: `Branches diverged and \`${baseBranch}\` is protected — creating a pull request.`,
+				succeededTasks: batchState.succeededTasks,
+				failedTasks: batchState.failedTasks,
+			};
+		}
 		return {
 			mode: "merge",
 			orchBranch,
