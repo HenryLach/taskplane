@@ -346,9 +346,28 @@ export function validateSegmentExpansionRequestAtBoundary(
 	if (requestedRepoSet.size !== request.requestedRepoIds.length) {
 		return "duplicate repoIds in requestedRepoIds";
 	}
+
+	// TP-145: Build a set of known repo IDs that edge endpoints may reference.
+	// This includes all requestedRepoIds plus the anchor segment's repo and
+	// any already-completed segments' repos. Workers commonly reference the
+	// anchor repo in edges (e.g., { from: "shared-libs", to: "web-client" })
+	// which is valid — the dependency is implicit for after-current placement.
+	const knownEdgeRepoIds = new Set(requestedRepoSet);
+	const orderedSegments = segmentState.orderedSegments ?? [];
+	const anchorSegment = orderedSegments.find((seg) => seg.segmentId === segmentId);
+	if (anchorSegment) {
+		knownEdgeRepoIds.add(anchorSegment.repoId);
+	}
+	for (const seg of orderedSegments) {
+		const status = segmentState.statusBySegmentId?.get(seg.segmentId);
+		if (status === "succeeded" || status === "failed" || status === "skipped") {
+			knownEdgeRepoIds.add(seg.repoId);
+		}
+	}
+
 	for (const edge of request.edges) {
-		if (!requestedRepoSet.has(edge.from) || !requestedRepoSet.has(edge.to)) {
-			return "edge references a repo outside requestedRepoIds";
+		if (!knownEdgeRepoIds.has(edge.from) || !knownEdgeRepoIds.has(edge.to)) {
+			return "edge references a repo outside requestedRepoIds and known segments";
 		}
 	}
 
