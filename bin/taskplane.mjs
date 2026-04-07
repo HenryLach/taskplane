@@ -316,93 +316,6 @@ function detectStack(projectRoot) {
 
 // ─── YAML Generation ────────────────────────────────────────────────────────
 
-function generateTaskRunnerYaml(vars) {
-	return `# ═══════════════════════════════════════════════════════════════════════
-# Task Runner Configuration — ${vars.project_name}
-# ═══════════════════════════════════════════════════════════════════════
-#
-# This file configures the /task command (task-runner extension).
-# Edit freely — this file is owned by you, not the package.
-
-# ── Task Areas ────────────────────────────────────────────────────────
-# Define where tasks live. Each area has a folder path, ID prefix, and
-# a CONTEXT.md file that provides domain context to agents.
-
-task_areas:
-  ${vars.default_area}:
-    path: "${vars.tasks_root}"
-    prefix: "${vars.default_prefix}"
-    context: "${vars.tasks_root}/CONTEXT.md"
-
-# ── Reference Docs ────────────────────────────────────────────────────
-# Docs that tasks can reference in their "Context to Read First" section.
-# Add your project's architecture docs, API specs, etc.
-
-reference_docs: {}
-
-# ── Standards ─────────────────────────────────────────────────────────
-# Coding standards and rules. Agents follow these during implementation.
-
-standards: {}
-
-# ── Testing ───────────────────────────────────────────────────────────
-# Commands that agents run to verify their work.
-
-testing:
-  commands:${vars.test_cmd ? `\n    unit: "${vars.test_cmd}"` : ""}${vars.build_cmd ? `\n    build: "${vars.build_cmd}"` : ""}
-`;
-}
-
-function generateOrchestratorYaml(vars) {
-	return `# ═══════════════════════════════════════════════════════════════════════
-# Parallel Task Orchestrator Configuration — ${vars.project_name}
-# ═══════════════════════════════════════════════════════════════════════
-#
-# This file configures the /orch commands (task-orchestrator extension).
-# Edit freely — this file is owned by you, not the package.
-
-orchestrator:
-  max_lanes: ${vars.max_lanes}
-  worktree_location: "subdirectory"
-  worktree_prefix: "${vars.worktree_prefix}"
-  batch_id_format: "timestamp"
-  spawn_mode: "${vars.spawn_mode}"
-  session_prefix: "${vars.session_prefix}"
-
-dependencies:
-  source: "prompt"
-  cache: true
-
-assignment:
-  strategy: "affinity-first"
-  size_weights:
-    S: 1
-    M: 2
-    L: 4
-
-pre_warm:
-  auto_detect: false
-  commands: {}
-  always: []
-
-merge:
-  model: ""
-  tools: "read,write,edit,bash,grep,find,ls"
-  verify: []
-  order: "fewest-files-first"
-
-failure:
-  on_task_failure: "skip-dependents"
-  on_merge_failure: "pause"
-  stall_timeout: 30
-  max_worker_minutes: 30
-  abort_grace_period: 60
-
-monitoring:
-  poll_interval: 5
-`;
-}
-
 function buildTestingCommands(vars) {
 	const commands = {};
 	if (vars.test_cmd) commands.unit = vars.test_cmd;
@@ -969,16 +882,19 @@ function discoverTaskAreaMetadata(projectRoot, configRoot = projectRoot, configP
 	if (fs.existsSync(jsonPath)) {
 		try {
 			const config = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
-			const areas = config?.taskRunner?.taskAreas || {};
-			const paths = new Set();
-			const contexts = new Set();
-			const areaRepoIds = {};
-			for (const [areaName, area] of Object.entries(areas)) {
-				if (area.path) paths.add(area.path);
-				if (area.context) contexts.add(area.context);
-				if (area.repoId) areaRepoIds[areaName] = area.repoId;
+			const areas = config?.taskRunner?.taskAreas;
+			if (areas && typeof areas === "object" && !Array.isArray(areas)) {
+				const paths = new Set();
+				const contexts = new Set();
+				const areaRepoIds = {};
+				for (const [areaName, area] of Object.entries(areas)) {
+					if (!area || typeof area !== "object") continue;
+					if (typeof area.path === "string" && area.path) paths.add(area.path);
+					if (typeof area.context === "string" && area.context) contexts.add(area.context);
+					if (typeof area.repoId === "string" && area.repoId) areaRepoIds[areaName] = area.repoId;
+				}
+				return { paths: [...paths], contexts: [...contexts], areaRepoIds };
 			}
-			return { paths: [...paths], contexts: [...contexts], areaRepoIds };
 		} catch { /* fall through to YAML */ }
 	}
 
@@ -2866,8 +2782,13 @@ function cmdDoctor() {
 	// Check project config (common — both modes)
 	console.log();
 	const hasUnifiedJson = fs.existsSync(path.join(configLocation.root, configLocation.prefix, "taskplane-config.json"));
+	const hasYamlFallback = !hasUnifiedJson && (
+		fs.existsSync(path.join(configLocation.root, configLocation.prefix, "task-runner.yaml")) ||
+		fs.existsSync(path.join(configLocation.root, configLocation.prefix, "task-orchestrator.yaml"))
+	);
 	const configFiles = [
-		{ path: "taskplane-config.json", required: true, hide: false },
+		// JSON is required unless legacy YAML exists as fallback
+		{ path: "taskplane-config.json", required: !hasYamlFallback, hide: false },
 		// YAML configs are legacy fallback — only shown when JSON config is missing
 		{ path: "task-runner.yaml", required: false, hide: hasUnifiedJson },
 		{ path: "task-orchestrator.yaml", required: false, hide: hasUnifiedJson },
