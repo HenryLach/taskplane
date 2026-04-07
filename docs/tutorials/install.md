@@ -111,7 +111,7 @@ Files created in the config repo (e.g., `repo-a`):
 - `repo-a/.taskplane/taskplane-config.json`
 - `repo-a/.taskplane/taskplane.json`
 - `repo-a/.taskplane/workspace.json` — lists all discovered repos
-- `repo-a/.taskplane/agents/task-worker.md`, `task-reviewer.md`, `task-merger.md`
+- `repo-a/.taskplane/agents/task-worker.md`, `task-reviewer.md`, `task-merger.md`, `supervisor.md`
 - `repo-a/taskplane-tasks/CONTEXT.md`
 
 Files created in the workspace root:
