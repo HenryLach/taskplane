@@ -58,9 +58,8 @@ States are evaluated in the order shown above (active batch and completed batch 
 
 **Runtime backend**
 
-`/orch` uses the **Runtime V2 backend** for orchestration. Workers are spawned
-as direct child processes (subprocess backend); TMUX is not part of the active
-runtime contract.
+`/orch` uses the **Runtime V2 backend** for orchestration. Workers, reviewers,
+and merge agents are spawned as direct child processes (subprocess backend).
 
 **Onboarding flow (no config)**
 
@@ -86,7 +85,7 @@ After starting the engine, `/orch` activates the **supervisor agent** in the sam
 
 The supervisor persists until the batch completes, fails, is stopped, or is aborted. A lockfile at `.pi/supervisor/lock.json` prevents duplicate supervisors across sessions.
 
-See also: [`/orch-takeover`](#orch-takeover) for session takeover, [Supervisor config](#supervisor-settings) for model and autonomy settings.
+See also: [`/orch-takeover`](#orch-takeover) for session takeover, [Supervisor settings](configuration/taskplane-settings.md#supervisor) for model and autonomy settings.
 
 **Orch branch model**
 
@@ -303,7 +302,7 @@ List active orchestrator sessions.
 
 **Behavior**
 
-- Lists sessions matching configured orchestrator `session_prefix`
+- Lists sessions matching configured orchestrator session prefix (`sessionPrefix`)
 - Useful for debugging/resume/cleanup in Runtime V2 subprocess mode
 
 ---
@@ -546,7 +545,7 @@ Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs
 - `--tasks-root` must be relative to project root.
 - When `--tasks-root` is passed, Taskplane skips sample tasks by default to avoid polluting an existing task area.
 - Init adds required `.gitignore` entries for runtime artifacts (batch state, orchestrator logs, worktrees, etc.) and offers to untrack any that are already committed.
-- `spawn_mode` now uses the Runtime V2 subprocess backend (`"subprocess"`) as the only supported value.
+- `spawnMode` uses the Runtime V2 subprocess backend (`"subprocess"`) as the only supported value.
 - Init generates `taskplane-config.json` (JSON) alongside YAML configs. JSON takes precedence when present; YAML is retained during the transition period.
 - Interactive init includes provider → model → thinking selection for worker/reviewer/merger. `inherit` is option #1.
 - If model discovery is unavailable, init skips the picker and uses saved defaults (if configured) or inherit values.
@@ -555,7 +554,7 @@ Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs
 
 Validate installation and project configuration.
 
-Doctor no longer treats TMUX as a required dependency for `/orch` Runtime V2 execution.
+Doctor validates that prerequisites (Node.js, Git, pi) and project configuration are correct.
 
 ### `taskplane config [options]`
 
@@ -589,7 +588,7 @@ Common options:
 - `--package` — also run `pi remove` for this scope
 - `--package-only` — remove package only, skip project cleanup
 - `--local` / `--global` — force package uninstall scope
-- `--remove-tasks` — also remove task area directories from `.pi/task-runner.yaml`
+- `--remove-tasks` — also remove task area directories (as configured in `taskRunner.taskAreas`)
 - `--all` — equivalent to `--package --remove-tasks`
 
 Notes:
@@ -601,5 +600,6 @@ Notes:
 
 ## Related
 
-- [Task Orchestrator Config Reference](configuration/task-orchestrator.yaml.md)
+- [Settings Reference (`/taskplane-settings`)](configuration/taskplane-settings.md)
 - [Task Format Reference](task-format.md)
+- [Task Orchestrator Config Reference](configuration/task-orchestrator.yaml.md) *(legacy YAML fallback)*

@@ -114,7 +114,7 @@ What happens:
 
 1. Task discovery and dependency analysis
 2. Wave computation (topological ordering)
-3. Lane allocation up to `orchestrator.max_lanes`
+3. Lane allocation up to `maxLanes`
 4. Per-lane execution in isolated git worktrees
 5. Each lane executes its assigned task in an isolated worktree with the worker/reviewer pipeline
 6. Merge of successful lane branches into integration branch
@@ -204,7 +204,7 @@ If only one pending task exists, you’ll see one wave/lane. That’s normal.
 
 ### Merge pause on conflict
 
-If merge policy is `on_merge_failure: pause`, fix conflicts, then run:
+If the merge failure policy is set to `"pause"` (the default), fix conflicts, then run:
 
 ```
 /orch-resume
@@ -216,5 +216,5 @@ If merge policy is `on_merge_failure: pause`, fix conflicts, then run:
 
 Continue with:
 
-- [Configure Task Runner](../how-to/configure-task-runner.md)
-- [Configure Task Orchestrator](../how-to/configure-task-orchestrator.md)
+- [Configure Task Execution Settings](../how-to/configure-task-runner.md)
+- [Configure Orchestrator Settings](../how-to/configure-task-orchestrator.md)

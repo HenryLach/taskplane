@@ -34,7 +34,6 @@ Use these for concrete operational tasks.
 - [Define Task Areas](how-to/define-task-areas.md)
 - [Pause, Resume, or Abort a Batch](how-to/pause-resume-abort-a-batch.md)
 - [Recover After Interruption](how-to/recover-after-interruption.md)
-- [Use TMUX for Visibility](how-to/use-tmux-for-visibility.md)
 - [Troubleshoot Common Issues](how-to/troubleshoot-common-issues.md)
 
 ---

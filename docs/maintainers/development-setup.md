@@ -42,7 +42,7 @@ Or with just:
 just orch
 ```
 
-The orchestrator loads `task-runner.ts` internally — there is no separate user-facing `/task` command.
+The orchestrator loads `task-runner.ts` internally for lane execution.
 
 ---
 
