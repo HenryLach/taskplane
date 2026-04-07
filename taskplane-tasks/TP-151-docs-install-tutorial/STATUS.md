@@ -1,7 +1,7 @@
 # TP-151: Update install tutorial for current architecture — Status
 
-**Current Step:** Step 1: Update docs/tutorials/install.md
-**Status:** 🟡 In Progress
+**Current Step:** Step 2: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 0
 **Review Counter:** 0
@@ -34,10 +34,10 @@
 ---
 
 ### Step 2: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Verify all internal doc links resolve correctly
-- [ ] Discoveries logged
+- [x] Verify all internal doc links resolve correctly
+- [x] Discoveries logged
 
 ---
 
@@ -52,6 +52,7 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| README.md still references tmux as "strongly recommended" and lists `/task` as deprecated | Out of scope — separate task needed for README cleanup | `README.md` Prerequisites table |
 
 ---
 
