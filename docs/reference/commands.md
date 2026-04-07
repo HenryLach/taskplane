@@ -2,128 +2,10 @@
 
 This page documents Taskplane command surfaces:
 
-1. pi session slash commands (`/task`, `/orch*`, `/taskplane-settings`)
+1. pi session slash commands (`/orch*`, `/taskplane-settings`)
 2. CLI shell commands (`taskplane ...`)
 
 > Slash commands are registered by Taskplane extensions when loaded in pi.
-
----
-
-## Task Runner Commands
-
-> ⚠️ **Deprecated in v0.10.x.** The `/task*` commands below are deprecated and will be removed in a future major version. Use `/orch` for all workflows — it provides worktree isolation, dashboard, inline reviews, and supervisor monitoring.
-
-### `/task <path/to/PROMPT.md>`
-
-> **Deprecated.** Use `/orch <path/to/PROMPT.md>` instead.
-
-Start autonomous execution of a single task.
-
-**Syntax**
-
-```text
-/task <path/to/PROMPT.md>
-```
-
-**Behavior**
-
-- Resolves path from current working directory
-- Runs in the current branch/worktree (no orchestrator worktree isolation)
-- Parses `PROMPT.md`
-- Loads existing `STATUS.md` (or generates one if missing)
-- Creates `.reviews/` if needed
-- Starts worker/reviewer loop
-
-**Examples**
-
-```text
-/task taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
-/task taskplane-tasks/auth/AUTH-014-rbac/PROMPT.md
-```
-
-**Isolation note**
-
-- `/task` commits in your current working tree.
-- Avoid editing unrelated files while it runs.
-- Prefer `/orch <path/to/PROMPT.md>` when you want worktree isolation for a single task.
-
-**Common responses**
-
-- `Usage: /task <path/to/PROMPT.md>` if missing arg
-- `File not found: ...` if path is invalid
-- Warning if another task is already running
-
----
-
-### `/task-status`
-
-> **Deprecated.** Use the dashboard (`taskplane dashboard`) or `/orch-status` instead.
-
-Show current in-memory + STATUS.md task progress.
-
-**Syntax**
-
-```text
-/task-status
-```
-
-**Behavior**
-
-- Prints task ID/name, phase, iteration count, review count
-- Prints per-step checkbox totals
-- Re-reads `STATUS.md` and refreshes runner widget state
-
-**Common responses**
-
-- `No task loaded. Use /task <path/to/PROMPT.md>`
-- `STATUS.md not found`
-
----
-
-### `/task-pause`
-
-> **Deprecated.** Use `/orch-pause` instead.
-
-Pause task execution after current worker iteration completes.
-
-**Syntax**
-
-```text
-/task-pause
-```
-
-**Behavior**
-
-- Sets runner phase to paused
-- Does not force-kill worker mid-iteration
-
-**Common responses**
-
-- `No task is running`
-
----
-
-### `/task-resume`
-
-> **Deprecated.** Use `/orch-resume` instead.
-
-Resume a paused task.
-
-**Syntax**
-
-```text
-/task-resume
-```
-
-**Behavior**
-
-- Requires a paused task to be loaded in memory
-- Restarts execution loop from current STATUS state
-
-**Common responses**
-
-- `Task is not paused`
-- `No task loaded`
 
 ---
 
@@ -172,7 +54,7 @@ States are evaluated in the order shown above (active batch and completed batch 
 - Merges successful lane branches into the orch branch
 - Engine emits structured lifecycle events to `.pi/supervisor/events.jsonl` for observability
 - On completion, shows integration guidance (or auto-integrates if `integration` is set to `auto`)
-- Can be used with a single task path when you want `/task` semantics with worktree isolation
+- Can be used with a single task path when you want full orchestrator isolation for a single task
 
 **Runtime backend**
 
@@ -673,7 +555,7 @@ Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs
 
 Validate installation and project configuration.
 
-Doctor no longer treats TMUX as a required dependency for `/orch` or `/task` Runtime V2 execution.
+Doctor no longer treats TMUX as a required dependency for `/orch` Runtime V2 execution.
 
 ### `taskplane config [options]`
 
@@ -719,6 +601,5 @@ Notes:
 
 ## Related
 
-- [Task Runner Config Reference](configuration/task-runner.yaml.md)
 - [Task Orchestrator Config Reference](configuration/task-orchestrator.yaml.md)
 - [Task Format Reference](task-format.md)
