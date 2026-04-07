@@ -1,10 +1,10 @@
 # TP-148: Wave Display, MaxLanes, Session Naming — Status
 
-**Current Step:** Step 4: Testing & Verification
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-07
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** M
 
@@ -40,11 +40,11 @@
 - [x] Run targeted tests (125 pass, 0 fail)
 
 ### Step 4: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] Wave display tests
-- [ ] maxLanes cap test
-- [ ] Session naming test
-- [ ] Full suite passing
+**Status:** ✅ Complete
+- [x] Wave display segment context verified (server passes segments, dashboard builds waveSegmentLabels, tooltip shows segment info)
+- [x] maxLanes=4 with 3 repos produces at most 4 total lanes verified (enforceGlobalLaneCap test passes)
+- [x] Session naming fix verified (isV2AgentAlive and killV2LaneAgents use laneNumber fallback)
+- [x] Full test suite passing (3250 pass, 0 fail)
 
 ### Step 5: Documentation & Delivery
 **Status:** ⬜ Not Started
@@ -62,3 +62,4 @@
 | 2026-04-07 03:18 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-07 03:24 | Review R002 | plan Step 2: APPROVE |
 | 2026-04-07 03:30 | Review R003 | plan Step 3: APPROVE |
+| 2026-04-07 03:37 | Review R004 | code Step 3: APPROVE |
