@@ -3861,6 +3861,29 @@ export async function executeOrchBatch(
 			};
 		});
 
+		// TP-147: Ensure ALL tasks from the wave plan are represented in history.
+		// Tasks that never got allocated (blocked by upstream failures, never started)
+		// won't have entries in allTaskOutcomes. Add them with appropriate status.
+		const coveredTaskIds = new Set(taskSummaries.map(t => t.taskId));
+		for (let wi = 0; wi < wavePlan.length; wi++) {
+			for (const taskId of wavePlan[wi]) {
+				if (coveredTaskIds.has(taskId)) continue;
+				// Determine the appropriate status for uncovered tasks
+				const isBlocked = batchState.blockedTaskIds.has(taskId);
+				const status: BatchTaskSummary["status"] = isBlocked ? "blocked" : "pending";
+				taskSummaries.push({
+					taskId,
+					taskName: taskId,
+					status,
+					wave: wi + 1,
+					lane: 0,
+					durationMs: 0,
+					tokens: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, costUsd: 0 },
+					exitReason: isBlocked ? "Blocked by upstream failure" : null,
+				});
+			}
+		}
+
 		// Build per-wave summaries
 		const waveSummaries: BatchWaveSummary[] = wavePlan.map((taskIds, wi) => {
 			const waveTasks = taskSummaries.filter(t => t.wave === wi + 1);
@@ -3902,6 +3925,16 @@ export async function executeOrchBatch(
 					? "completed"
 					: "aborted";
 
+		// TP-147: Ensure totalTasks matches actual task array length.
+		// Use taskSummaries.length as authoritative (includes gap-filled tasks)
+		// and log a warning if it diverges from batchState.totalTasks.
+		const actualTotalTasks = taskSummaries.length;
+		if (actualTotalTasks !== batchState.totalTasks) {
+			execLog("batch", batchState.batchId,
+				`WARNING: totalTasks mismatch — batchState.totalTasks=${batchState.totalTasks}, ` +
+				`taskSummaries.length=${actualTotalTasks}. Using taskSummaries.length for history.`);
+		}
+
 		const summary: BatchHistorySummary = {
 			batchId: batchState.batchId,
 			status: historyStatus,
@@ -3909,7 +3942,7 @@ export async function executeOrchBatch(
 			endedAt: Date.now(),
 			durationMs: Date.now() - batchState.startedAt,
 			totalWaves: wavePlan.length,
-			totalTasks: batchState.totalTasks,
+			totalTasks: actualTotalTasks,
 			succeededTasks: batchState.succeededTasks,
 			failedTasks: batchState.failedTasks,
 			skippedTasks: batchState.skippedTasks,

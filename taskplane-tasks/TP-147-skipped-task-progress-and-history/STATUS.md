@@ -1,10 +1,10 @@
 # TP-147: Skipped Task Progress and Batch History — Status
 
-**Current Step:** Step 1: Preserve skipped task branches
+**Current Step:** Step 2: Fix batch history completeness
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-07
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -26,11 +26,11 @@
 - [x] Run targeted tests (742 pass, 0 fail)
 
 ### Step 2: Fix batch history completeness
-**Status:** ⬜ Not Started
-- [ ] Include all wave plan tasks in history
-- [ ] Pending/blocked tasks recorded
-- [ ] totalTasks matches array length
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Include all wave plan tasks in history
+- [x] Pending/blocked tasks recorded
+- [x] totalTasks matches array length
+- [x] Run targeted tests (742 pass, 0 fail)
 
 ### Step 3: Testing & Verification
 **Status:** ⬜ Not Started
@@ -52,3 +52,4 @@
 | 2026-04-07 02:36 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-07 02:36 | Step 0 started | Preflight |
 | 2026-04-07 02:41 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-07 02:56 | Review R003 | plan Step 2: APPROVE |
