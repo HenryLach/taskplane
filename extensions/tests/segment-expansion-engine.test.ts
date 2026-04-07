@@ -400,3 +400,150 @@ describe("TP-143 segment expansion engine coverage", () => {
 		expect(src).toContain("segment expansion request malformed");
 	});
 });
+
+// ── TP-145: Expansion edge validation anchor-repo fix ───────────────
+
+describe("TP-145 expansion edge validation anchor-repo fix", () => {
+	it("accepts edge from anchor repo to new repo", () => {
+		// Simulates: worker in shared-libs files expansion requesting web-client
+		// with edge { from: "shared-libs", to: "web-client" }
+		const segmentState: any = {
+			terminalStatus: "pending",
+			orderedSegments: [
+				{ segmentId: "TP-950::shared-libs", taskId: "TP-950", repoId: "shared-libs", order: 0 },
+				{ segmentId: "TP-950::api-service", taskId: "TP-950", repoId: "api-service", order: 1 },
+			],
+			statusBySegmentId: new Map([
+				["TP-950::shared-libs", "running"],
+				["TP-950::api-service", "pending"],
+			]),
+			dependsOnBySegmentId: new Map([
+				["TP-950::shared-libs", []],
+				["TP-950::api-service", ["TP-950::shared-libs"]],
+			]),
+		};
+		const result = processSegmentExpansionRequestAtBoundary(
+			"batch-1",
+			"TP-950",
+			"TP-950::shared-libs",
+			"agent-1",
+			{
+				filePath: "/tmp/segment-expansion-anchor.json",
+				request: makeExpansionRequest({
+					requestId: "exp-anchor-1",
+					taskId: "TP-950",
+					fromSegmentId: "TP-950::shared-libs",
+					requestedRepoIds: ["web-client"],
+					edges: [{ from: "shared-libs", to: "web-client" }],
+				}),
+			},
+			segmentState,
+			{ repos: new Map([["shared-libs", {}], ["api-service", {}], ["web-client", {}]]) } as any,
+			new Set<string>(),
+		);
+		expect(result.ok).toBe(true);
+	});
+
+	it("accepts edge between two new repos (existing behavior preserved)", () => {
+		const segmentState: any = {
+			terminalStatus: "pending",
+			orderedSegments: [
+				{ segmentId: "TP-951::api", taskId: "TP-951", repoId: "api", order: 0 },
+			],
+			statusBySegmentId: new Map([["TP-951::api", "running"]]),
+			dependsOnBySegmentId: new Map([["TP-951::api", []]]),
+		};
+		const result = processSegmentExpansionRequestAtBoundary(
+			"batch-1",
+			"TP-951",
+			"TP-951::api",
+			"agent-1",
+			{
+				filePath: "/tmp/segment-expansion-two-new.json",
+				request: makeExpansionRequest({
+					requestId: "exp-two-new",
+					taskId: "TP-951",
+					fromSegmentId: "TP-951::api",
+					requestedRepoIds: ["web", "mobile"],
+					edges: [{ from: "web", to: "mobile" }],
+				}),
+			},
+			segmentState,
+			{ repos: new Map([["api", {}], ["web", {}], ["mobile", {}]]) } as any,
+			new Set<string>(),
+		);
+		expect(result.ok).toBe(true);
+	});
+
+	it("still rejects edge to truly unknown repo", () => {
+		const segmentState: any = {
+			terminalStatus: "pending",
+			orderedSegments: [
+				{ segmentId: "TP-952::api", taskId: "TP-952", repoId: "api", order: 0 },
+			],
+			statusBySegmentId: new Map([["TP-952::api", "running"]]),
+			dependsOnBySegmentId: new Map([["TP-952::api", []]]),
+		};
+		const result = processSegmentExpansionRequestAtBoundary(
+			"batch-1",
+			"TP-952",
+			"TP-952::api",
+			"agent-1",
+			{
+				filePath: "/tmp/segment-expansion-unknown-edge.json",
+				request: makeExpansionRequest({
+					requestId: "exp-unknown-edge",
+					taskId: "TP-952",
+					fromSegmentId: "TP-952::api",
+					requestedRepoIds: ["web"],
+					edges: [{ from: "nonexistent-repo", to: "web" }],
+				}),
+			},
+			segmentState,
+			{ repos: new Map([["api", {}], ["web", {}]]) } as any,
+			new Set<string>(),
+		);
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toMatch(/edge references a repo outside/);
+		}
+	});
+
+	it("accepts edge from completed segment repo", () => {
+		const segmentState: any = {
+			terminalStatus: "pending",
+			orderedSegments: [
+				{ segmentId: "TP-953::shared-libs", taskId: "TP-953", repoId: "shared-libs", order: 0 },
+				{ segmentId: "TP-953::api-service", taskId: "TP-953", repoId: "api-service", order: 1 },
+			],
+			statusBySegmentId: new Map([
+				["TP-953::shared-libs", "succeeded"],
+				["TP-953::api-service", "running"],
+			]),
+			dependsOnBySegmentId: new Map([
+				["TP-953::shared-libs", []],
+				["TP-953::api-service", ["TP-953::shared-libs"]],
+			]),
+		};
+		const result = processSegmentExpansionRequestAtBoundary(
+			"batch-1",
+			"TP-953",
+			"TP-953::api-service",
+			"agent-1",
+			{
+				filePath: "/tmp/segment-expansion-completed.json",
+				request: makeExpansionRequest({
+					requestId: "exp-completed-1",
+					taskId: "TP-953",
+					fromSegmentId: "TP-953::api-service",
+					requestedRepoIds: ["web-client"],
+					edges: [{ from: "shared-libs", to: "web-client" }],
+				}),
+			},
+			segmentState,
+			{ repos: new Map([["shared-libs", {}], ["api-service", {}], ["web-client", {}]]) } as any,
+			new Set<string>(),
+		);
+		expect(result.ok).toBe(true);
+	});
+});

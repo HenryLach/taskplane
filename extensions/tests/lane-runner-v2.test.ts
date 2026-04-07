@@ -294,3 +294,46 @@ describe("7.x: Functional exports exist at runtime", () => {
 		expect(typeof mod.executeLaneV2).toBe("function");
 	});
 });
+
+// ── 8. Multi-segment .DONE suppression (TP-145) ────────────────────
+
+describe("8.x: Multi-segment .DONE timing (TP-145)", () => {
+	it("8.1: lane-runner suppresses .DONE for non-final segments", () => {
+		// The isNonFinalSegment check must exist
+		expect(laneRunnerSrc).toContain("isNonFinalSegment");
+		// It checks segmentId is non-null, segmentIds has multiple entries, and current is not last
+		expect(laneRunnerSrc).toContain("segmentId != null");
+		expect(laneRunnerSrc).toContain("unit.task.segmentIds.length > 1");
+		expect(laneRunnerSrc).toContain('unit.task.segmentIds[unit.task.segmentIds.length - 1] !== segmentId');
+	});
+
+	it("8.2: non-final segment returns succeeded without creating .DONE", () => {
+		expect(laneRunnerSrc).toContain(".DONE suppressed");
+		expect(laneRunnerSrc).toContain('"succeeded"');
+		// The return for non-final segment passes doneFileFound=false
+		const nonFinalBlock = laneRunnerSrc.slice(
+			laneRunnerSrc.indexOf("isNonFinalSegment"),
+			laneRunnerSrc.indexOf("// Create .DONE if not already present")
+		);
+		expect(nonFinalBlock).toContain('"succeeded"');
+		expect(nonFinalBlock).toContain("false");
+	});
+
+	it("8.3: final segment and single-segment tasks still create .DONE", () => {
+		// The .DONE creation code is preserved after the non-final guard
+		const afterGuard = laneRunnerSrc.slice(
+			laneRunnerSrc.indexOf("// Create .DONE if not already present")
+		);
+		expect(afterGuard).toContain("writeFileSync(donePath");
+		expect(afterGuard).toContain('"✅ Complete"');
+		expect(afterGuard).toContain('.DONE created');
+	});
+
+	it("8.4: single-segment task (segmentId null) is unaffected", () => {
+		// When segmentId is null, isNonFinalSegment is false
+		// This means the .DONE creation block runs normally
+		expect(laneRunnerSrc).toContain("segmentId != null");
+		// The logical expression evaluates to false when segmentId is null
+		expect(laneRunnerSrc).toContain("const isNonFinalSegment = segmentId != null");
+	});
+});
