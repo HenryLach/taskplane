@@ -1,6 +1,6 @@
 # TP-154: Update how-to config guides for current architecture — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Update docs/how-to/configure-task-runner.md
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-07
 **Review Level:** 0
@@ -20,14 +20,14 @@
 ---
 
 ### Step 1: Update docs/how-to/configure-task-runner.md
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Update title to reflect JSON config
-- [ ] Update "Where this file lives" section for `taskplane-config.json`
-- [ ] Convert all config examples from YAML to JSON with camelCase keys
-- [ ] Remove all `/task` references
-- [ ] Remove `spawn_mode` from worker section if present
-- [ ] Update "Related guides" links
+- [x] Update title to reflect JSON config
+- [x] Update "Where this file lives" section for `taskplane-config.json`
+- [x] Convert all config examples from YAML to JSON with camelCase keys
+- [x] Remove all `/task` references
+- [x] Remove `spawn_mode` from worker section if present
+- [x] Update "Related guides" links
 
 ---
 
