@@ -2524,7 +2524,7 @@ export async function executeOrchBatch(
 			// Use the completing segment ID from the task outcome, not task.activeSegmentId
 			// which may already be null (advanced by pre-wave loop for next wave).
 			const outcome = allTaskOutcomes.find((candidate) => candidate.taskId === taskId);
-			const activeSegmentId = outcome?.segmentId || task.activeSegmentId;
+			const activeSegmentId = outcome?.segmentId ?? task.activeSegmentId;
 			if (activeSegmentId) {
 				segmentState.statusBySegmentId.set(activeSegmentId, "succeeded");
 				upsertTerminalSegmentRecord(batchState, task, segmentState, activeSegmentId, "succeeded", outcome, laneByTaskId.get(taskId));
@@ -2674,11 +2674,11 @@ export async function executeOrchBatch(
 			const task = discovery.pending.get(taskId);
 			const segmentState = segmentStateByTask.get(taskId);
 			if (!task || !segmentState) continue;
-			const activeSegmentId = task.activeSegmentId;
+			const failOutcome = allTaskOutcomes.find((candidate) => candidate.taskId === taskId);
+			const activeSegmentId = failOutcome?.segmentId ?? task.activeSegmentId;
 			if (activeSegmentId) {
 				segmentState.statusBySegmentId.set(activeSegmentId, "failed");
-				const outcome = allTaskOutcomes.find((candidate) => candidate.taskId === taskId);
-				upsertTerminalSegmentRecord(batchState, task, segmentState, activeSegmentId, "failed", outcome, laneByTaskId.get(taskId));
+				upsertTerminalSegmentRecord(batchState, task, segmentState, activeSegmentId, "failed", failOutcome, laneByTaskId.get(taskId));
 
 				const workerAgentId = resolveTaskWorkerAgentId(taskId, allTaskOutcomes, laneByTaskId);
 				if (workerAgentId) {
