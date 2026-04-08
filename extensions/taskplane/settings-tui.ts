@@ -1509,11 +1509,12 @@ async function showSectionSettingsOnce(
 				// 3+ values: use a submenu so the user can pick any option,
 				// not just cycle to the next one and immediately commit.
 				item.submenu = (_currentValue: string, done: (selected?: string) => void) => {
-					const container = new Container();
 					const selectItems: SelectItem[] = field.values!.map((v) => ({
 						value: `${v}  ${sourceBadge}`,
 						label: v,
 					}));
+					// Return SelectList directly — Container doesn't forward
+					// handleInput to children, which would freeze the TUI.
 					const list = new SelectList(
 						selectItems,
 						Math.min(selectItems.length + 1, 10),
@@ -1525,13 +1526,11 @@ async function showSectionSettingsOnce(
 							noMatch: (t: string) => `\x1b[33m${t}\x1b[0m`,
 						},
 					);
-					// Pre-select current value
 					const currentIdx = field.values!.indexOf(displayValue);
 					if (currentIdx >= 0) list.setSelectedIndex(currentIdx);
 					list.onSelect = (selected) => done(selected.value);
 					list.onCancel = () => done();
-					container.addChild(list);
-					return container;
+					return list;
 				};
 			}
 		}
