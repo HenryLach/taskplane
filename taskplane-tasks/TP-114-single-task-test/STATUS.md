@@ -1,15 +1,15 @@
 # TP-114 Status
-**Current Step:** Not Started
+**Current Step:** Step 0: Preflight
 **Last Updated:** 2026-04-08
-**Status:** 🔵 Ready for Execution
+**Status:** 🟡 In Progress
 **Review Level:** 0
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Confirm this PROMPT.md and STATUS.md exist
+**Status:** ✅ Complete
+- [x] Confirm this PROMPT.md and STATUS.md exist
 
 ### Step 1: Create Test Files
 **Status:** ⬜ Not Started
@@ -31,3 +31,5 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-08 | Task reset | STATUS.md reset for regression test |
+| 2026-04-08 01:30 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-08 01:30 | Step 0 started | Preflight |
