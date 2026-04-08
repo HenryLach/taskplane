@@ -16,6 +16,7 @@
  * @module orch/engine-worker
  */
 import type {
+	AllocatedLane,
 	EngineEvent,
 	MonitorState,
 	OrchBatchPhase,
@@ -71,6 +72,8 @@ export interface SerializedBatchState {
 	startedAt: number;
 	endedAt: number | null;
 	errors: string[];
+	/** Active lanes for the current wave (synced so /orch-sessions works). */
+	currentLanes: AllocatedLane[];
 }
 
 /**
@@ -164,6 +167,7 @@ function serializeBatchState(state: OrchBatchRuntimeState): SerializedBatchState
 		startedAt: state.startedAt,
 		endedAt: state.endedAt,
 		errors: [...state.errors],
+		currentLanes: state.currentLanes,
 	};
 }
 
@@ -192,6 +196,7 @@ export function applySerializedState(
 	batchState.startedAt = serialized.startedAt;
 	batchState.endedAt = serialized.endedAt;
 	batchState.errors = [...serialized.errors];
+	batchState.currentLanes = serialized.currentLanes ?? [];
 }
 
 // ── Engine main (runs when launched as a forked child process) ───────
