@@ -488,19 +488,19 @@ Open the interactive settings TUI for viewing and editing taskplane configuratio
 
 | Section | Description |
 |---------|-------------|
-| Orchestrator | Lanes, worktree layout, session prefix, operator ID |
+| Orchestrator | Lanes, worktree layout, session prefix, operator ID, integration mode |
+| Agent: Supervisor | Supervisor model and autonomy level |
+| Agent: Worker | Worker model, tools, thinking |
+| Agent: Reviewer | Reviewer model, tools, thinking |
+| Agent: Merge | Merge model, tools, thinking, ordering, timeout |
+| Context Limits | Context window, iteration limits, progress limits |
+| Failure Policy | Task/merge failure handling, timeouts |
 | Dependencies | Dependency source and caching |
 | Assignment | Task assignment strategy |
 | Pre-Warm | Auto-detection settings |
-| Merge | Merge model, tools, and ordering |
-| Failure Policy | Task/merge failure handling, timeouts |
 | Monitoring | Poll interval |
-| Supervisor | Supervisor model and autonomy level |
-| Worker | Worker model, tools, thinking, spawn mode |
-| Reviewer | Reviewer model, tools, thinking |
-| Context Limits | Context window, iteration limits, progress limits |
 | Global Preferences | Dashboard port and other per-user settings |
-| Advanced (JSON Only) | Read-only listing of uncovered/non-editable fields (collections, records, arrays, and other fields not directly editable in the TUI) |
+| Advanced (JSON Only) | Read-only listing of uncovered/non-editable fields |
 
 **Example**
 
