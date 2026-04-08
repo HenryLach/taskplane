@@ -2,128 +2,10 @@
 
 This page documents Taskplane command surfaces:
 
-1. pi session slash commands (`/task`, `/orch*`, `/taskplane-settings`)
+1. pi session slash commands (`/orch*`, `/taskplane-settings`)
 2. CLI shell commands (`taskplane ...`)
 
 > Slash commands are registered by Taskplane extensions when loaded in pi.
-
----
-
-## Task Runner Commands
-
-> ⚠️ **Deprecated in v0.10.x.** The `/task*` commands below are deprecated and will be removed in a future major version. Use `/orch` for all workflows — it provides worktree isolation, dashboard, inline reviews, and supervisor monitoring.
-
-### `/task <path/to/PROMPT.md>`
-
-> **Deprecated.** Use `/orch <path/to/PROMPT.md>` instead.
-
-Start autonomous execution of a single task.
-
-**Syntax**
-
-```text
-/task <path/to/PROMPT.md>
-```
-
-**Behavior**
-
-- Resolves path from current working directory
-- Runs in the current branch/worktree (no orchestrator worktree isolation)
-- Parses `PROMPT.md`
-- Loads existing `STATUS.md` (or generates one if missing)
-- Creates `.reviews/` if needed
-- Starts worker/reviewer loop
-
-**Examples**
-
-```text
-/task taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
-/task taskplane-tasks/auth/AUTH-014-rbac/PROMPT.md
-```
-
-**Isolation note**
-
-- `/task` commits in your current working tree.
-- Avoid editing unrelated files while it runs.
-- Prefer `/orch <path/to/PROMPT.md>` when you want worktree isolation for a single task.
-
-**Common responses**
-
-- `Usage: /task <path/to/PROMPT.md>` if missing arg
-- `File not found: ...` if path is invalid
-- Warning if another task is already running
-
----
-
-### `/task-status`
-
-> **Deprecated.** Use the dashboard (`taskplane dashboard`) or `/orch-status` instead.
-
-Show current in-memory + STATUS.md task progress.
-
-**Syntax**
-
-```text
-/task-status
-```
-
-**Behavior**
-
-- Prints task ID/name, phase, iteration count, review count
-- Prints per-step checkbox totals
-- Re-reads `STATUS.md` and refreshes runner widget state
-
-**Common responses**
-
-- `No task loaded. Use /task <path/to/PROMPT.md>`
-- `STATUS.md not found`
-
----
-
-### `/task-pause`
-
-> **Deprecated.** Use `/orch-pause` instead.
-
-Pause task execution after current worker iteration completes.
-
-**Syntax**
-
-```text
-/task-pause
-```
-
-**Behavior**
-
-- Sets runner phase to paused
-- Does not force-kill worker mid-iteration
-
-**Common responses**
-
-- `No task is running`
-
----
-
-### `/task-resume`
-
-> **Deprecated.** Use `/orch-resume` instead.
-
-Resume a paused task.
-
-**Syntax**
-
-```text
-/task-resume
-```
-
-**Behavior**
-
-- Requires a paused task to be loaded in memory
-- Restarts execution loop from current STATUS state
-
-**Common responses**
-
-- `Task is not paused`
-- `No task loaded`
 
 ---
 
@@ -172,13 +54,12 @@ States are evaluated in the order shown above (active batch and completed batch 
 - Merges successful lane branches into the orch branch
 - Engine emits structured lifecycle events to `.pi/supervisor/events.jsonl` for observability
 - On completion, shows integration guidance (or auto-integrates if `integration` is set to `auto`)
-- Can be used with a single task path when you want `/task` semantics with worktree isolation
+- Can be used with a single task path when you want full orchestrator isolation for a single task
 
 **Runtime backend**
 
-`/orch` uses the **Runtime V2 backend** for orchestration. Workers are spawned
-as direct child processes (subprocess backend); TMUX is not part of the active
-runtime contract.
+`/orch` uses the **Runtime V2 backend** for orchestration. Workers, reviewers,
+and merge agents are spawned as direct child processes (subprocess backend).
 
 **Onboarding flow (no config)**
 
@@ -204,7 +85,7 @@ After starting the engine, `/orch` activates the **supervisor agent** in the sam
 
 The supervisor persists until the batch completes, fails, is stopped, or is aborted. A lockfile at `.pi/supervisor/lock.json` prevents duplicate supervisors across sessions.
 
-See also: [`/orch-takeover`](#orch-takeover) for session takeover, [Supervisor config](#supervisor-settings) for model and autonomy settings.
+See also: [`/orch-takeover`](#orch-takeover) for session takeover, [Supervisor settings](configuration/taskplane-settings.md#supervisor) for model and autonomy settings.
 
 **Orch branch model**
 
@@ -421,7 +302,7 @@ List active orchestrator sessions.
 
 **Behavior**
 
-- Lists sessions matching configured orchestrator `session_prefix`
+- Lists sessions matching configured orchestrator session prefix (`sessionPrefix`)
 - Useful for debugging/resume/cleanup in Runtime V2 subprocess mode
 
 ---
@@ -601,25 +482,25 @@ Open the interactive settings TUI for viewing and editing taskplane configuratio
 - Save destination defaults to global preferences, with explicit options for project override and remove-project-override when applicable
 - Project config changes require confirmation before writing
 - New config parameters added in future schema updates appear automatically
-- Changes take effect on next session restart
+- Changes take effect immediately — no session restart required
 
 **Sections**
 
 | Section | Description |
 |---------|-------------|
-| Orchestrator | Lanes, worktree layout, session prefix, operator ID |
+| Orchestrator | Lanes, worktree layout, session prefix, operator ID, integration mode |
+| Agent: Supervisor | Supervisor model and autonomy level |
+| Agent: Worker | Worker model, tools, thinking |
+| Agent: Reviewer | Reviewer model, tools, thinking |
+| Agent: Merge | Merge model, tools, thinking, ordering, timeout |
+| Context Limits | Context window, iteration limits, progress limits |
+| Failure Policy | Task/merge failure handling, timeouts |
 | Dependencies | Dependency source and caching |
 | Assignment | Task assignment strategy |
 | Pre-Warm | Auto-detection settings |
-| Merge | Merge model, tools, and ordering |
-| Failure Policy | Task/merge failure handling, timeouts |
 | Monitoring | Poll interval |
-| Supervisor | Supervisor model and autonomy level |
-| Worker | Worker model, tools, thinking, spawn mode |
-| Reviewer | Reviewer model, tools, thinking |
-| Context Limits | Context window, iteration limits, progress limits |
 | Global Preferences | Dashboard port and other per-user settings |
-| Advanced (JSON Only) | Read-only listing of uncovered/non-editable fields (collections, records, arrays, and other fields not directly editable in the TUI) |
+| Advanced (JSON Only) | Read-only listing of uncovered/non-editable fields |
 
 **Example**
 
@@ -652,7 +533,7 @@ Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs
 
 **Common options**
 
-- `--preset <name>` — use `minimal`, `full`, or `runner-only`
+- `--preset <name>` — use `minimal` or `full`
 - `--tasks-root <relative-path>` — use an existing task directory (for example `docs/task-management`)
 - `--no-examples` — skip example task scaffolding
 - `--include-examples` — when `--tasks-root` is used, include examples in that directory (default is skip)
@@ -664,8 +545,7 @@ Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs
 - `--tasks-root` must be relative to project root.
 - When `--tasks-root` is passed, Taskplane skips sample tasks by default to avoid polluting an existing task area.
 - Init adds required `.gitignore` entries for runtime artifacts (batch state, orchestrator logs, worktrees, etc.) and offers to untrack any that are already committed.
-- `spawn_mode` now uses the Runtime V2 subprocess backend (`"subprocess"`) as the only supported value.
-- Init generates `taskplane-config.json` (JSON) alongside YAML configs. JSON takes precedence when present; YAML is retained during the transition period.
+- Init generates `taskplane-config.json` as the project configuration file.
 - Interactive init includes provider → model → thinking selection for worker/reviewer/merger. `inherit` is option #1.
 - If model discovery is unavailable, init skips the picker and uses saved defaults (if configured) or inherit values.
 
@@ -673,7 +553,7 @@ Scaffold Taskplane project files. Auto-detects repo vs workspace layout and runs
 
 Validate installation and project configuration.
 
-Doctor no longer treats TMUX as a required dependency for `/orch` or `/task` Runtime V2 execution.
+Doctor validates that prerequisites (Node.js, Git, pi) and project configuration are correct.
 
 ### `taskplane config [options]`
 
@@ -707,7 +587,7 @@ Common options:
 - `--package` — also run `pi remove` for this scope
 - `--package-only` — remove package only, skip project cleanup
 - `--local` / `--global` — force package uninstall scope
-- `--remove-tasks` — also remove task area directories from `.pi/task-runner.yaml`
+- `--remove-tasks` — also remove task area directories (as configured in `taskRunner.taskAreas`)
 - `--all` — equivalent to `--package --remove-tasks`
 
 Notes:
@@ -719,6 +599,6 @@ Notes:
 
 ## Related
 
-- [Task Runner Config Reference](configuration/task-runner.yaml.md)
-- [Task Orchestrator Config Reference](configuration/task-orchestrator.yaml.md)
+- [Settings Reference (`/taskplane-settings`)](configuration/taskplane-settings.md)
 - [Task Format Reference](task-format.md)
+- [Task Orchestrator Config Reference](configuration/task-orchestrator.yaml.md) *(legacy YAML fallback)*

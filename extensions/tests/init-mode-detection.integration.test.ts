@@ -287,7 +287,7 @@ function initGitRepo(dir: string): void {
 function runInit(
 	cwd: string,
 	extraArgs: string[] = [],
-	options: { dryRun?: boolean; preset?: "minimal" | "full" | "runner-only" } = {},
+	options: { dryRun?: boolean; preset?: "minimal" | "full" } = {},
 ): { stdout: string; stderr: string; exitCode: number } {
 	const { dryRun = true, preset = "minimal" } = options;
 	const taskplaneMjs = resolvePath(__dirname, "../../bin/taskplane.mjs");
@@ -658,16 +658,40 @@ describe("CLI dry-run integration", () => {
 		expect(output).toContain("Mode:");
 		expect(output).toContain("Dry run");
 		expect(output).toContain(".pi/agents/task-worker.md");
-		expect(output).toContain(".pi/task-runner.yaml");
+		expect(output).toContain(".pi/taskplane-config.json");
 		expect(output).toContain(".pi/taskplane.json");
 		expect(output).toContain(".gitignore");
 	});
 
-	it("5.2 — runner-only preset omits orchestrator yaml", () => {
+	it("5.2 — runner-only preset is rejected with helpful error", () => {
+		const projectRoot = resolve(__dirname, "../..");
+		let exitCode = 0;
+		let output = "";
+		try {
+			execFileSync(
+				"node",
+				["bin/taskplane.mjs", "init", "--dry-run", "--force", "--preset", "runner-only"],
+				{
+					cwd: projectRoot,
+					encoding: "utf-8",
+					stdio: ["pipe", "pipe", "pipe"],
+					timeout: 15000,
+				}
+			);
+		} catch (e: any) {
+			exitCode = e.status;
+			output = (e.stdout || "") + (e.stderr || "");
+		}
+
+		expect(exitCode).not.toBe(0);
+		expect(output).toContain("Unknown preset");
+	});
+
+	it("5.3 — full preset generates JSON config only (no YAML)", () => {
 		const projectRoot = resolve(__dirname, "../..");
 		const output = execFileSync(
 			"node",
-			["bin/taskplane.mjs", "init", "--dry-run", "--force", "--preset", "runner-only"],
+			["bin/taskplane.mjs", "init", "--dry-run", "--force", "--preset", "full"],
 			{
 				cwd: projectRoot,
 				encoding: "utf-8",
@@ -676,11 +700,12 @@ describe("CLI dry-run integration", () => {
 			}
 		);
 
-		expect(output).toContain(".pi/task-runner.yaml");
+		expect(output).toContain("taskplane-config.json");
+		expect(output).not.toContain("task-runner.yaml");
 		expect(output).not.toContain("task-orchestrator.yaml");
 	});
 
-	it("5.3 — full preset includes orchestrator yaml", () => {
+	it("5.4 — YAML config files are NOT generated (JSON only)", () => {
 		const projectRoot = resolve(__dirname, "../..");
 		const output = execFileSync(
 			"node",
@@ -693,26 +718,10 @@ describe("CLI dry-run integration", () => {
 			}
 		);
 
-		expect(output).toContain("task-runner.yaml");
-		expect(output).toContain("task-orchestrator.yaml");
-	});
-
-	it("5.4 — YAML config files are still listed (not replaced by JSON only)", () => {
-		const projectRoot = resolve(__dirname, "../..");
-		const output = execFileSync(
-			"node",
-			["bin/taskplane.mjs", "init", "--dry-run", "--force", "--preset", "full"],
-			{
-				cwd: projectRoot,
-				encoding: "utf-8",
-				stdio: ["pipe", "pipe", "pipe"],
-				timeout: 15000,
-			}
-		);
-
-		// YAML must still be generated (PROMPT constraint)
-		expect(output).toContain("task-runner.yaml");
-		expect(output).toContain("task-orchestrator.yaml");
+		// YAML files should no longer be generated
+		expect(output).not.toContain("task-runner.yaml");
+		expect(output).not.toContain("task-orchestrator.yaml");
+		expect(output).toContain("taskplane-config.json");
 	});
 
 	it("5.5 — error mode: non-git directory with no subrepos → error exit", () => {
@@ -756,25 +765,25 @@ describe("CLI dry-run integration", () => {
 		expect(result.stdout).toContain("taskplane-pointer.json");
 	});
 
-	it("5.9 — repo init scaffolds canonical subprocess/session-prefix fields only", () => {
+	it("5.9 — repo init scaffolds JSON config only (no YAML files)", () => {
 		const repo = makeTestDir("cli-scaffold-repo");
 		initGitRepo(repo);
 
 		const result = runInit(repo, ["--no-examples"], { dryRun: false, preset: "minimal" });
 		expect(result.exitCode).toBe(0);
 
-		const orchestratorYaml = readFileSync(join(repo, ".pi", "task-orchestrator.yaml"), "utf-8");
-		expect(orchestratorYaml).toContain('spawn_mode: "subprocess"');
-		expect(orchestratorYaml).toContain("session_prefix:");
-		expect(orchestratorYaml).not.toContain("tmux_prefix");
-		expect(orchestratorYaml).not.toMatch(/spawn_mode:\s*"tmux"/);
+		// YAML files should not be generated
+		expect(existsSync(join(repo, ".pi", "task-runner.yaml"))).toBe(false);
+		expect(existsSync(join(repo, ".pi", "task-orchestrator.yaml"))).toBe(false);
 
+		// JSON config should exist
+		expect(existsSync(join(repo, ".pi", "taskplane-config.json"))).toBe(true);
 		const projectConfig = JSON.parse(readFileSync(join(repo, ".pi", "taskplane-config.json"), "utf-8"));
 		// Sparse init config: no orchestrator block unless explicitly chosen during init
 		expect(projectConfig.orchestrator).toBeUndefined();
 	});
 
-	it("5.10 — workspace init scaffolds canonical subprocess/session-prefix fields only", () => {
+	it("5.10 — workspace init scaffolds JSON config only (no YAML files)", () => {
 		const workspace = makeTestDir("cli-scaffold-workspace");
 		initGitRepo(join(workspace, "repo-a"));
 		initGitRepo(join(workspace, "repo-b"));
@@ -783,11 +792,13 @@ describe("CLI dry-run integration", () => {
 		expect(result.exitCode).toBe(0);
 
 		const configRoot = join(workspace, "repo-a", ".taskplane");
-		const orchestratorYaml = readFileSync(join(configRoot, "task-orchestrator.yaml"), "utf-8");
-		expect(orchestratorYaml).toContain('spawn_mode: "subprocess"');
-		expect(orchestratorYaml).toContain("session_prefix:");
-		expect(orchestratorYaml).not.toContain("tmux_prefix");
 
+		// YAML files should not be generated
+		expect(existsSync(join(configRoot, "task-runner.yaml"))).toBe(false);
+		expect(existsSync(join(configRoot, "task-orchestrator.yaml"))).toBe(false);
+
+		// JSON config should exist
+		expect(existsSync(join(configRoot, "taskplane-config.json"))).toBe(true);
 		const projectConfig = JSON.parse(readFileSync(join(configRoot, "taskplane-config.json"), "utf-8"));
 		// Sparse init config: no orchestrator block unless explicitly chosen during init
 		expect(projectConfig.orchestrator).toBeUndefined();

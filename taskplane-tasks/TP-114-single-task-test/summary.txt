@@ -1,5 +1,29 @@
-Runtime V2 is an architectural redesign of Taskplane's runtime control plane. While preserving the durable data plane — PROMPT.md, STATUS.md, .DONE files, batch-state.json, and the dependency DAG/waves/lanes model — it replaces the fragile TMUX-based execution infrastructure with a deterministic Node.js process hierarchy. The core problem it addresses is that the original runtime had too many overlapping layers (operator session → orchestrator extension → engine → TMUX lane session → RPC wrapper → Pi task-runner → TMUX worker session → RPC wrapper → Pi worker), leading to ambiguous process ownership, transport inversion where sibling processes communicated through file polling, and correctness dependencies on terminal infrastructure behavior.
+Runtime V2 is a fundamental redesign of Taskplane's runtime control plane. While
+Taskplane's durable data plane—PROMPT.md, STATUS.md, .DONE files, batch-state.json,
+and the dependency DAG/waves/lanes/worktrees model—remains unchanged, Runtime V2
+replaces the fragile TMUX-based control infrastructure that previously managed agent
+processes. The core problem it solves is a deeply nested process hierarchy where
+orchestration depended on terminal session liveness, file-polling between sibling
+processes, and ambiguous ownership of child processes across multiple layers.
 
-The target architecture introduces a clean ownership chain: the extension owns the engine process, the engine owns lane-runners and merge hosts, each lane-runner owns its worker and reviewer agent-hosts, and each agent-host owns its Pi RPC child process. Two new components are central to this design: the lane-runner process, which replaces the pattern of running lanes as Pi sessions loading task-runner.ts and takes responsibility for serial task execution, STATUS parsing, step progression, and reviewer orchestration within a single lane; and the agent-host process, which serves as a transport adapter around "pi --mode rpc", handling subprocess lifecycle, live telemetry parsing, mailbox polling, steering injection, and event persistence. This ensures every spawned process has exactly one deterministic owner, eliminating the need to infer liveness from TMUX server state.
+The target architecture introduces a clean, deterministic process ownership chain:
+the extension owns the engine process, the engine owns lane-runners and merge hosts,
+each lane-runner owns its worker and reviewer agent-hosts, and each agent-host owns
+its Pi subprocess. Four new core components define the runtime: the engine process
+handles discovery, DAG planning, and aggregate policy; the lane-runner process manages
+serial task execution within a single lane worktree including STATUS parsing, step
+progression, and checkpoint discipline; the agent-host process acts as a transport
+adapter around Pi RPC for lifecycle management, telemetry normalization, and mailbox
+steering; and the dashboard server reads normalized runtime artifacts for live
+visibility without requiring terminal pane capture.
 
-Runtime V2 also redefines agent identity from TMUX session names to process-registry-backed agent IDs, enables dashboard observability through structured event logs rather than pane capture, and establishes the mailbox as the sole steering path between operator, supervisor, and agents. The /orch command becomes the authoritative execution path even for single tasks, with legacy /task becoming a compatibility wrapper. Success is measured by the complete removal of TMUX dependencies for worker/reviewer/merge lifecycle, dashboard conversation rendering without pane capture, and explicit packet-path authority throughout segment execution.
+Runtime V2 enforces several key invariants: file-backed memory (STATUS.md and .DONE)
+remains authoritative, batch state remains resumable, live control uses direct process
+ownership rather than file polling, the mailbox is the only supported steering path
+between operators and agents, and no correctness dependency on terminal infrastructure
+exists. The architecture also introduces a batch-scoped runtime storage layout under
+.pi/runtime/{batchId}/ for agent manifests, event streams, and lane snapshots,
+while maintaining backward compatibility with existing durable file locations. The
+redesign is considered complete when worker, reviewer, and merge lifecycles no longer
+depend on TMUX, and the dashboard can render full agent conversations and telemetry
+from structured event logs alone.

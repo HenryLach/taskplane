@@ -4720,7 +4720,39 @@ export default function (pi: ExtensionAPI) {
 			if (!requireExecCtx(ctx)) return;
 
 			try {
-				await openSettingsTui(ctx, execCtx!.workspaceRoot, execCtx!.pointer?.configRoot);
+				// Capture the workspace root for reload consistency — use the same
+				// root the settings TUI writes to, not ctx.cwd which may differ.
+				const reloadCwd = execCtx!.workspaceRoot;
+				await openSettingsTui(ctx, execCtx!.workspaceRoot, execCtx!.pointer?.configRoot, () => {
+					// Reload live config from disk so changes take effect immediately
+					// without requiring a session restart.
+					// Build everything into temporaries first, then commit atomically
+					// so a partial failure doesn't leave mixed-generation state.
+					try {
+						const freshCtx = buildExecutionContext(reloadCwd, loadOrchestratorConfig, loadTaskRunnerConfig);
+						let freshSupervisor: SupervisorConfig;
+						try {
+							freshSupervisor = loadSupervisorConfig(
+								freshCtx.repoRoot,
+								freshCtx.pointer?.configRoot,
+							);
+						} catch {
+							freshSupervisor = { ...DEFAULT_SUPERVISOR_CONFIG };
+						}
+						// Atomic commit — all or nothing
+						execCtx = freshCtx;
+						orchConfig = freshCtx.orchestratorConfig;
+						runnerConfig = freshCtx.taskRunnerConfig;
+						supervisorConfig = freshSupervisor;
+					} catch {
+						// Non-fatal — config was saved to disk but live reload failed.
+						// Existing in-memory config is preserved unchanged.
+						ctx.ui.notify(
+							"⚠️ Saved to disk but live reload failed. Restart to apply.",
+							"warn",
+						);
+					}
+				});
 			} catch (err: any) {
 				ctx.ui.notify(`❌ Failed to load settings: ${err.message}`, "error");
 			}

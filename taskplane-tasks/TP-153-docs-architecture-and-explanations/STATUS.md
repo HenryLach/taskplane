@@ -1,50 +1,50 @@
 # TP-153: Update architecture and explanation docs — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 3: Documentation & Delivery (final)
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 0
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read all files in `docs/explanation/` and catalog every `/task` or stale reference
-- [ ] Read root `README.md` "How It Works" section for ground truth
+- [x] Read all files in `docs/explanation/` and catalog every `/task` or stale reference
+- [x] Read root `README.md` "How It Works" section for ground truth
 
 ---
 
 ### Step 1: Update docs/explanation/architecture.md
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Update ASCII diagram to remove `/task /task-status`
-- [ ] Rewrite "Task Runner extension" module description as internal orchestrator module
-- [ ] Update "Task Orchestrator extension" as sole user-facing surface
-- [ ] Update "Data and control flow" section
-- [ ] Remove any remaining `/task` or tmux references
+- [x] Update ASCII diagram to remove `/task /task-status`
+- [x] Rewrite "Task Runner extension" module description as internal orchestrator module
+- [x] Update "Task Orchestrator extension" as sole user-facing surface
+- [x] Update "Data and control flow" section
+- [x] Remove any remaining `/task` or tmux references
 
 ---
 
 ### Step 2: Scan and fix other explanation docs
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] `execution-model.md` — scan and fix `/task` references
-- [ ] `review-loop.md` — scan and fix `/task` references
-- [ ] `waves-lanes-and-worktrees.md` — scan and fix `/task` references
-- [ ] `persistence-and-resume.md` — scan and fix `/task` references
-- [ ] `package-and-template-model.md` — scan and fix `/task` references
+- [x] `execution-model.md` — scan and fix `/task` references (none found, clean)
+- [x] `review-loop.md` — scan and fix `/task` references (fixed standalone /task mention)
+- [x] `waves-lanes-and-worktrees.md` — scan and fix `/task` references (none found, clean)
+- [x] `persistence-and-resume.md` — scan and fix `/task` references (none found, clean)
+- [x] `package-and-template-model.md` — scan and fix `/task` references (none found, only file path references)
 
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Verify all internal doc links resolve correctly
-- [ ] Discoveries logged
+- [x] Verify all internal doc links resolve correctly
+- [x] Discoveries logged
 
 ---
 
@@ -59,6 +59,8 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| `package-and-template-model.md` still lists `.pi/task-runner.yaml` and `.pi/task-orchestrator.yaml` as scaffolded files; canonical config is now `taskplane-config.json` | Tech debt — separate task to update scaffolding docs | `docs/explanation/package-and-template-model.md` lines 44-45 |
+| `README.md` "How It Works" diagram shows `/task` labels inside lane boxes | Out of scope — separate task | `README.md` line 179 |
 
 ---
 
@@ -67,6 +69,10 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-07 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-04-07 18:55 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-07 18:55 | Step 0 started | Preflight |
+| 2026-04-07 19:00 | Worker iter 1 | done in 264s, tools: 66 |
+| 2026-04-07 19:00 | Task complete | .DONE created |
 
 ---
 

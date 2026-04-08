@@ -316,93 +316,6 @@ function detectStack(projectRoot) {
 
 // ─── YAML Generation ────────────────────────────────────────────────────────
 
-function generateTaskRunnerYaml(vars) {
-	return `# ═══════════════════════════════════════════════════════════════════════
-# Task Runner Configuration — ${vars.project_name}
-# ═══════════════════════════════════════════════════════════════════════
-#
-# This file configures the /task command (task-runner extension).
-# Edit freely — this file is owned by you, not the package.
-
-# ── Task Areas ────────────────────────────────────────────────────────
-# Define where tasks live. Each area has a folder path, ID prefix, and
-# a CONTEXT.md file that provides domain context to agents.
-
-task_areas:
-  ${vars.default_area}:
-    path: "${vars.tasks_root}"
-    prefix: "${vars.default_prefix}"
-    context: "${vars.tasks_root}/CONTEXT.md"
-
-# ── Reference Docs ────────────────────────────────────────────────────
-# Docs that tasks can reference in their "Context to Read First" section.
-# Add your project's architecture docs, API specs, etc.
-
-reference_docs: {}
-
-# ── Standards ─────────────────────────────────────────────────────────
-# Coding standards and rules. Agents follow these during implementation.
-
-standards: {}
-
-# ── Testing ───────────────────────────────────────────────────────────
-# Commands that agents run to verify their work.
-
-testing:
-  commands:${vars.test_cmd ? `\n    unit: "${vars.test_cmd}"` : ""}${vars.build_cmd ? `\n    build: "${vars.build_cmd}"` : ""}
-`;
-}
-
-function generateOrchestratorYaml(vars) {
-	return `# ═══════════════════════════════════════════════════════════════════════
-# Parallel Task Orchestrator Configuration — ${vars.project_name}
-# ═══════════════════════════════════════════════════════════════════════
-#
-# This file configures the /orch commands (task-orchestrator extension).
-# Edit freely — this file is owned by you, not the package.
-
-orchestrator:
-  max_lanes: ${vars.max_lanes}
-  worktree_location: "subdirectory"
-  worktree_prefix: "${vars.worktree_prefix}"
-  batch_id_format: "timestamp"
-  spawn_mode: "${vars.spawn_mode}"
-  session_prefix: "${vars.session_prefix}"
-
-dependencies:
-  source: "prompt"
-  cache: true
-
-assignment:
-  strategy: "affinity-first"
-  size_weights:
-    S: 1
-    M: 2
-    L: 4
-
-pre_warm:
-  auto_detect: false
-  commands: {}
-  always: []
-
-merge:
-  model: ""
-  tools: "read,write,edit,bash,grep,find,ls"
-  verify: []
-  order: "fewest-files-first"
-
-failure:
-  on_task_failure: "skip-dependents"
-  on_merge_failure: "pause"
-  stall_timeout: 30
-  max_worker_minutes: 30
-  abort_grace_period: 60
-
-monitoring:
-  poll_interval: 5
-`;
-}
-
 function buildTestingCommands(vars) {
 	const commands = {};
 	if (vars.test_cmd) commands.unit = vars.test_cmd;
@@ -964,6 +877,27 @@ async function autoCommitTaskFiles(projectRoot, tasksRoot) {
 }
 
 function discoverTaskAreaMetadata(projectRoot, configRoot = projectRoot, configPrefix = ".pi") {
+	// Prefer taskplane-config.json; fall back to task-runner.yaml for legacy projects
+	const jsonPath = path.join(configRoot, configPrefix, "taskplane-config.json");
+	if (fs.existsSync(jsonPath)) {
+		try {
+			const config = JSON.parse(fs.readFileSync(jsonPath, "utf8"));
+			const areas = config?.taskRunner?.taskAreas;
+			if (areas && typeof areas === "object" && !Array.isArray(areas)) {
+				const paths = new Set();
+				const contexts = new Set();
+				const areaRepoIds = {};
+				for (const [areaName, area] of Object.entries(areas)) {
+					if (!area || typeof area !== "object") continue;
+					if (typeof area.path === "string" && area.path) paths.add(area.path);
+					if (typeof area.context === "string" && area.context) contexts.add(area.context);
+					if (typeof area.repoId === "string" && area.repoId) areaRepoIds[areaName] = area.repoId;
+				}
+				return { paths: [...paths], contexts: [...contexts], areaRepoIds };
+			}
+		} catch { /* fall through to YAML */ }
+	}
+
 	const runnerPath = path.join(configRoot, configPrefix, "task-runner.yaml");
 	if (!fs.existsSync(runnerPath)) return { paths: [], contexts: [], areaRepoIds: {} };
 
@@ -1132,9 +1066,10 @@ async function cmdUninstall(args) {
 	console.log(`\n${c.bold}Taskplane Uninstall${c.reset}\n`);
 
 	const managedFiles = [
+		".pi/taskplane-config.json",
+		".pi/taskplane.json",
 		".pi/task-runner.yaml",
 		".pi/task-orchestrator.yaml",
-		".pi/taskplane.json",
 		".pi/agents/task-worker.md",
 		".pi/agents/task-reviewer.md",
 		".pi/agents/task-merger.md",
@@ -1194,7 +1129,7 @@ async function cmdUninstall(args) {
 		for (const f of sidecarsToDelete) console.log(`  - remove ${f.rel}`);
 		for (const d of taskDirsToDelete) console.log(`  - remove dir ${d.rel}`);
 		if (removeTasks && taskDirsToDelete.length === 0) {
-			console.log(`  ${c.dim}No task area directories found from .pi/task-runner.yaml.${c.reset}`);
+			console.log(`  ${c.dim}No task area directories found in config.${c.reset}`);
 		}
 		if (!removeTasks) {
 			console.log(`  ${c.dim}Task directories are preserved by default (use --remove-tasks to delete them).${c.reset}`);
@@ -1637,6 +1572,10 @@ async function cmdInit(args) {
 	const tasksRootIdx = args.indexOf("--tasks-root");
 	const tasksRootRaw = tasksRootIdx !== -1 ? args[tasksRootIdx + 1] : null;
 
+	if (preset && preset !== "minimal" && preset !== "full") {
+		die(`Unknown preset: "${preset}". Valid presets are: minimal, full`);
+	}
+
 	if (noExamplesFlag && includeExamples) {
 		die("Choose either --no-examples or --include-examples, not both.");
 	}
@@ -1670,7 +1609,7 @@ async function cmdInit(args) {
 
 	// ── Mode auto-detection ──────────────────────────────────────
 	const detection = detectInitMode(projectRoot);
-	const isPreset = preset === "minimal" || preset === "full" || preset === "runner-only";
+	const isPreset = preset === "minimal" || preset === "full";
 
 	// Error path: not a git repo and no git repos found
 	if (detection.mode === "error") {
@@ -1911,7 +1850,7 @@ async function cmdInit(args) {
 
 		// ── Gather config values (workspace mode) ───────────────────
 		let vars;
-		if (preset === "minimal" || preset === "full" || preset === "runner-only") {
+		if (preset === "minimal" || preset === "full") {
 			vars = getPresetVars(preset, projectRoot, tasksRootOverride);
 			console.log(`  Using preset: ${c.cyan}${preset}${c.reset}`);
 			if (tasksRootOverride) {
@@ -1952,22 +1891,6 @@ async function cmdInit(args) {
 				path.join(TEMPLATES_DIR, "agents", "local", agent),
 				path.join(taskplaneDir, "agents", agent),
 				{ skipIfExists, label: `${configRepoName}/.taskplane/agents/${agent}` }
-			);
-		}
-
-		// Task runner config
-		writeFile(
-			path.join(taskplaneDir, "task-runner.yaml"),
-			generateTaskRunnerYaml(vars),
-			{ skipIfExists, label: `${configRepoName}/.taskplane/task-runner.yaml` }
-		);
-
-		// Orchestrator config (skip for runner-only preset)
-		if (preset !== "runner-only") {
-			writeFile(
-				path.join(taskplaneDir, "task-orchestrator.yaml"),
-				generateOrchestratorYaml(vars),
-				{ skipIfExists, label: `${configRepoName}/.taskplane/task-orchestrator.yaml` }
 			);
 		}
 
@@ -2109,10 +2032,8 @@ async function cmdInit(args) {
 		console.log(`     git push && ${c.dim}[create PR / merge to default branch]${c.reset}\n`);
 		console.log(`${c.bold}Quick start:${c.reset}`);
 		console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
-		if (preset !== "runner-only") {
-			console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
-			console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
-		}
+		console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
+		console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
 		if (inferTaskplaneInstallScope() === "global") {
 			console.log(`  ${c.cyan}taskplane config --save-as-defaults${c.reset}             # save these agent defaults for future inits`);
 		}
@@ -2139,7 +2060,7 @@ async function cmdInit(args) {
 
 	// Gather config values
 	let vars;
-	if (preset === "minimal" || preset === "full" || preset === "runner-only") {
+	if (preset === "minimal" || preset === "full") {
 		vars = getPresetVars(preset, projectRoot, tasksRootOverride);
 		console.log(`  Using preset: ${c.cyan}${preset}${c.reset}`);
 		if (tasksRootOverride) {
@@ -2180,23 +2101,7 @@ async function cmdInit(args) {
 		);
 	}
 
-	// Task runner config
-	writeFile(
-		path.join(projectRoot, ".pi", "task-runner.yaml"),
-		generateTaskRunnerYaml(vars),
-		{ skipIfExists, label: ".pi/task-runner.yaml" }
-	);
-
-	// Orchestrator config (skip for runner-only preset)
-	if (preset !== "runner-only") {
-		writeFile(
-			path.join(projectRoot, ".pi", "task-orchestrator.yaml"),
-			generateOrchestratorYaml(vars),
-			{ skipIfExists, label: ".pi/task-orchestrator.yaml" }
-		);
-	}
-
-	// Unified project config JSON
+	// Project config JSON
 	writeFile(
 		path.join(projectRoot, ".pi", "taskplane-config.json"),
 		JSON.stringify(generateProjectConfig(vars, initAgentConfig), null, 2) + "\n",
@@ -2271,10 +2176,8 @@ async function cmdInit(args) {
 	console.log(`\n${OK} ${c.bold}Taskplane initialized!${c.reset}\n`);
 	console.log(`${c.bold}Quick start:${c.reset}`);
 	console.log(`  ${c.cyan}pi${c.reset}                                             # start pi (taskplane auto-loads)`);
-	if (preset !== "runner-only") {
-		console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
-		console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
-	}
+	console.log(`  ${c.cyan}/orch${c.reset}                                             # start the taskplane supervisor`);
+	console.log(`  ${c.cyan}/orch all${c.reset}                                        # run all open tasks`);
 	if (inferTaskplaneInstallScope() === "global") {
 		console.log(`  ${c.cyan}taskplane config --save-as-defaults${c.reset}             # save these agent defaults for future inits`);
 	}
@@ -2341,10 +2244,8 @@ function printFileList(vars, noExamples, preset, exampleTemplateDirs = [], proje
 		".pi/agents/task-reviewer.md",
 		".pi/agents/task-merger.md",
 		".pi/agents/supervisor.md",
-		".pi/task-runner.yaml",
+		".pi/taskplane-config.json",
 	];
-	if (preset !== "runner-only") files.push(".pi/task-orchestrator.yaml");
-	files.push(".pi/taskplane-config.json");
 	files.push(".pi/taskplane.json");
 	files.push(`${vars.tasks_root}/CONTEXT.md`);
 	if (!noExamples) {
@@ -2380,10 +2281,8 @@ function printWorkspaceFileList(vars, noExamples, preset, exampleTemplateDirs, c
 		`${prefix}/agents/task-reviewer.md`,
 		`${prefix}/agents/task-merger.md`,
 		`${prefix}/agents/supervisor.md`,
-		`${prefix}/task-runner.yaml`,
+		`${prefix}/taskplane-config.json`,
 	];
-	if (preset !== "runner-only") files.push(`${prefix}/task-orchestrator.yaml`);
-	files.push(`${prefix}/taskplane-config.json`);
 	files.push(`${prefix}/taskplane.json`);
 	files.push(`${prefix}/workspace.json`);
 	files.push(`${configRepoName}/${vars.tasks_root}/CONTEXT.md`);
@@ -2883,15 +2782,20 @@ function cmdDoctor() {
 	// Check project config (common — both modes)
 	console.log();
 	const hasUnifiedJson = fs.existsSync(path.join(configLocation.root, configLocation.prefix, "taskplane-config.json"));
+	const hasYamlFallback = !hasUnifiedJson && (
+		fs.existsSync(path.join(configLocation.root, configLocation.prefix, "task-runner.yaml")) ||
+		fs.existsSync(path.join(configLocation.root, configLocation.prefix, "task-orchestrator.yaml"))
+	);
 	const configFiles = [
-		{ path: "taskplane-config.json", required: false, hide: false },
-		// YAML configs are legacy fallback — hide when taskplane-config.json exists
-		{ path: "task-runner.yaml", required: !hasUnifiedJson, hide: hasUnifiedJson },
-		{ path: "task-orchestrator.yaml", required: !hasUnifiedJson, hide: hasUnifiedJson },
+		// JSON is required unless legacy YAML exists as fallback
+		{ path: "taskplane-config.json", required: !hasYamlFallback, hide: false },
+		// YAML configs are legacy fallback — only shown when JSON config is missing
+		{ path: "task-runner.yaml", required: false, hide: hasUnifiedJson },
+		{ path: "task-orchestrator.yaml", required: false, hide: hasUnifiedJson },
 		{ path: "agents/task-worker.md", required: true, hide: false },
 		{ path: "agents/task-reviewer.md", required: true, hide: false },
 		{ path: "agents/task-merger.md", required: true, hide: false },
-		// supervisor.md is created by /orch; taskplane.json is created at runtime
+		// supervisor.md is optional (scaffolded by init but may be absent in older projects); taskplane.json is created at runtime
 		{ path: "agents/supervisor.md", required: false, hide: true },
 		{ path: "taskplane.json", required: false, hide: true },
 	];
@@ -2979,7 +2883,7 @@ function cmdDoctor() {
 				console.log(`  ${OK} area '${areaName}' repo_id: ${repoId}`);
 			} else {
 				console.log(`  ${FAIL} area '${areaName}' repo_id '${repoId}' does not match any workspace repo [AREA_REPO_ID_UNKNOWN]`);
-				console.log(`     ${c.dim}→ Available repos: ${knownRepoIds.join(", ")}. Fix repo_id in ${configLocation.label}/task-runner.yaml${c.reset}`);
+				console.log(`     ${c.dim}→ Available repos: ${knownRepoIds.join(", ")}. Fix repoId in ${configLocation.label}/taskplane-config.json${c.reset}`);
 				issues++;
 			}
 		}
@@ -3239,7 +3143,7 @@ ${c.bold}Commands:${c.reset}
   ${c.cyan}help${c.reset}           Show this help message
 
 ${c.bold}Init options:${c.reset}
-  --preset <name>       Use a preset: minimal, full, runner-only
+  --preset <name>       Use a preset: minimal, full
   --tasks-root <path>   Relative tasks directory to use (e.g. docs/task-management)
   --no-examples         Skip example tasks scaffolding
   --include-examples    With --tasks-root, include example tasks (default is skip)
@@ -3261,7 +3165,7 @@ ${c.bold}Uninstall options:${c.reset}
   --package-only    Only remove installed package (skip project cleanup)
   --local           Force package uninstall from project-local scope
   --global          Force package uninstall from global scope
-  --remove-tasks    Also remove task area directories from task-runner.yaml
+  --remove-tasks    Also remove task area directories
   --all             Equivalent to --package + --remove-tasks
 
 ${c.bold}Examples:${c.reset}

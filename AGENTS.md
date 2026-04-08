@@ -263,13 +263,8 @@ When operating as the supervisor (during `/orch` execution), these tools are ava
 
 ## Practical dev commands
 
-- Run both extensions locally:
-  - `just orch`
-  - or `pi -e extensions/task-orchestrator.ts -e extensions/task-runner.ts`
-
-- Run task-runner only:
-  - `just task`
-  - or `pi -e extensions/task-runner.ts`
+- Run extensions locally:
+  - `pi -e extensions/task-orchestrator.ts -e extensions/task-runner.ts`
 
 - Run tests:
   - `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`

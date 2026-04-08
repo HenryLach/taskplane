@@ -98,11 +98,64 @@ export const SECTIONS: SectionDef[] = [
 			{ configPath: "orchestrator.orchestrator.worktreeLocation", label: "Worktree Location", control: "toggle", layer: "L1", fieldType: "enum", values: ["sibling", "subdirectory"], description: "Where lane worktree directories are created" },
 			{ configPath: "orchestrator.orchestrator.worktreePrefix", label: "Worktree Prefix", control: "input", layer: "L1", fieldType: "string", description: "Prefix for worktree directory names" },
 			{ configPath: "orchestrator.orchestrator.batchIdFormat", label: "Batch ID Format", control: "toggle", layer: "L1", fieldType: "enum", values: ["timestamp", "sequential"], description: "Batch ID format for logs/branch naming" },
-			// spawn_mode removed from Orchestrator section — Runtime V2 is subprocess-only.
-			// The user-facing spawn mode setting is under Worker (controls /task behavior).
 			{ configPath: "orchestrator.orchestrator.sessionPrefix", label: "Session Prefix", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "sessionPrefix", description: "Prefix for orchestrator session names" },
 			{ configPath: "orchestrator.orchestrator.operatorId", label: "Operator ID", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "operatorId", description: "Operator identifier (empty = auto-detect)" },
 			{ configPath: "orchestrator.orchestrator.integration", label: "Integration", control: "picker", layer: "L1", fieldType: "enum", values: ["manual", "supervised", "auto"], description: "How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking." },
+		],
+	},
+	{
+		name: "Agent: Supervisor",
+		fields: [
+			{ configPath: "orchestrator.supervisor.model", label: "Supervisor Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "supervisorModel", description: "Supervisor model (inherit = use session model)" },
+			{ configPath: "orchestrator.supervisor.autonomy", label: "Autonomy Level", control: "picker", layer: "L1", fieldType: "enum", values: ["interactive", "supervised", "autonomous"], description: "Recovery action confirmation behavior" },
+		],
+	},
+	{
+		name: "Agent: Worker",
+		fields: [
+			{ configPath: "taskRunner.worker.model", label: "Worker Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "workerModel", description: "Worker model (inherit = use session model)" },
+			{ configPath: "taskRunner.worker.tools", label: "Worker Tools", control: "input", layer: "L1", fieldType: "string", description: "Worker tool allowlist" },
+			{ configPath: "taskRunner.worker.thinking", label: "Worker Thinking", control: "picker", layer: "L1", fieldType: "string", description: "Worker thinking mode" },
+		],
+	},
+	{
+		name: "Agent: Reviewer",
+		fields: [
+			{ configPath: "taskRunner.reviewer.model", label: "Reviewer Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "reviewerModel", description: "Reviewer model (inherit = use session model)" },
+			{ configPath: "taskRunner.reviewer.tools", label: "Reviewer Tools", control: "input", layer: "L1", fieldType: "string", description: "Reviewer tool allowlist" },
+			{ configPath: "taskRunner.reviewer.thinking", label: "Reviewer Thinking", control: "picker", layer: "L1", fieldType: "string", description: "Reviewer thinking mode" },
+		],
+	},
+	{
+		name: "Agent: Merge",
+		fields: [
+			{ configPath: "orchestrator.merge.model", label: "Merge Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "mergeModel", description: "Merge-agent model (inherit = use session model)" },
+			{ configPath: "orchestrator.merge.tools", label: "Merge Tools", control: "input", layer: "L1", fieldType: "string", description: "Merge-agent tool allowlist" },
+			{ configPath: "orchestrator.merge.thinking", label: "Merge Thinking", control: "picker", layer: "L1+L2", fieldType: "string", prefsKey: "mergeThinking", description: "Merge-agent thinking mode" },
+			{ configPath: "orchestrator.merge.order", label: "Merge Order", control: "toggle", layer: "L1", fieldType: "enum", values: ["fewest-files-first", "sequential"], description: "Lane merge ordering policy" },
+			{ configPath: "orchestrator.merge.timeoutMinutes", label: "Merge Timeout (minutes)", control: "input", layer: "L1", fieldType: "number", description: "Max time for merge agent to complete. Increase for large batches (default: 10)" },
+		],
+	},
+	{
+		name: "Context Limits",
+		fields: [
+			{ configPath: "taskRunner.context.workerContextWindow", label: "Context Window", control: "input", layer: "L1", fieldType: "number", description: "Worker context window size" },
+			{ configPath: "taskRunner.context.warnPercent", label: "Warn %", control: "input", layer: "L1", fieldType: "number", description: "Context utilization warn threshold (%)" },
+			{ configPath: "taskRunner.context.killPercent", label: "Kill %", control: "input", layer: "L1", fieldType: "number", description: "Context utilization hard-stop threshold (%)" },
+			{ configPath: "taskRunner.context.maxWorkerIterations", label: "Max Iterations", control: "input", layer: "L1", fieldType: "number", description: "Max worker iterations per step" },
+			{ configPath: "taskRunner.context.maxReviewCycles", label: "Max Review Cycles", control: "input", layer: "L1", fieldType: "number", description: "Max revise loops per review stage" },
+			{ configPath: "taskRunner.context.noProgressLimit", label: "No Progress Limit", control: "input", layer: "L1", fieldType: "number", description: "Max no-progress iterations before failure" },
+			{ configPath: "taskRunner.context.maxWorkerMinutes", label: "Max Worker Min (ctx)", control: "input", layer: "L1", fieldType: "number", optional: true, description: "Per-worker wall-clock cap (minutes, empty = no cap)" },
+		],
+	},
+	{
+		name: "Failure Policy",
+		fields: [
+			{ configPath: "orchestrator.failure.onTaskFailure", label: "On Task Failure", control: "toggle", layer: "L1", fieldType: "enum", values: ["skip-dependents", "stop-wave", "stop-all"], description: "Batch behavior when a task fails" },
+			{ configPath: "orchestrator.failure.onMergeFailure", label: "On Merge Failure", control: "toggle", layer: "L1", fieldType: "enum", values: ["pause", "abort"], description: "Behavior when a merge step fails" },
+			{ configPath: "orchestrator.failure.stallTimeout", label: "Stall Timeout (min)", control: "input", layer: "L1", fieldType: "number", description: "Stall detection threshold (minutes)" },
+			{ configPath: "orchestrator.failure.maxWorkerMinutes", label: "Max Worker Min", control: "input", layer: "L1", fieldType: "number", description: "Max worker runtime budget per task (minutes)" },
+			{ configPath: "orchestrator.failure.abortGracePeriod", label: "Abort Grace (sec)", control: "input", layer: "L1", fieldType: "number", description: "Graceful abort wait time (seconds)" },
 		],
 	},
 	{
@@ -125,66 +178,9 @@ export const SECTIONS: SectionDef[] = [
 		],
 	},
 	{
-		name: "Merge",
-		fields: [
-			{ configPath: "orchestrator.merge.model", label: "Merge Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "mergeModel", description: "Merge-agent model (inherit = use session model)" },
-			{ configPath: "orchestrator.merge.tools", label: "Merge Tools", control: "input", layer: "L1", fieldType: "string", description: "Merge-agent tool allowlist" },
-			{ configPath: "orchestrator.merge.thinking", label: "Merge Thinking", control: "picker", layer: "L1+L2", fieldType: "string", prefsKey: "mergeThinking", description: "Merge-agent thinking mode" },
-			{ configPath: "orchestrator.merge.order", label: "Merge Order", control: "toggle", layer: "L1", fieldType: "enum", values: ["fewest-files-first", "sequential"], description: "Lane merge ordering policy" },
-			{ configPath: "orchestrator.merge.timeoutMinutes", label: "Merge Timeout (minutes)", control: "input", layer: "L1", fieldType: "number", description: "Max time for merge agent to complete. Increase for large batches (default: 10)" },
-		],
-	},
-	{
-		name: "Failure Policy",
-		fields: [
-			{ configPath: "orchestrator.failure.onTaskFailure", label: "On Task Failure", control: "toggle", layer: "L1", fieldType: "enum", values: ["skip-dependents", "stop-wave", "stop-all"], description: "Batch behavior when a task fails" },
-			{ configPath: "orchestrator.failure.onMergeFailure", label: "On Merge Failure", control: "toggle", layer: "L1", fieldType: "enum", values: ["pause", "abort"], description: "Behavior when a merge step fails" },
-			{ configPath: "orchestrator.failure.stallTimeout", label: "Stall Timeout (min)", control: "input", layer: "L1", fieldType: "number", description: "Stall detection threshold (minutes)" },
-			{ configPath: "orchestrator.failure.maxWorkerMinutes", label: "Max Worker Min", control: "input", layer: "L1", fieldType: "number", description: "Max worker runtime budget per task (minutes)" },
-			{ configPath: "orchestrator.failure.abortGracePeriod", label: "Abort Grace (sec)", control: "input", layer: "L1", fieldType: "number", description: "Graceful abort wait time (seconds)" },
-		],
-	},
-	{
 		name: "Monitoring",
 		fields: [
 			{ configPath: "orchestrator.monitoring.pollInterval", label: "Poll Interval (sec)", control: "input", layer: "L1", fieldType: "number", description: "Poll interval for lane/task monitoring (seconds)" },
-		],
-	},
-	{
-		name: "Supervisor",
-		fields: [
-			{ configPath: "orchestrator.supervisor.model", label: "Supervisor Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "supervisorModel", description: "Supervisor model (inherit = use session model)" },
-			{ configPath: "orchestrator.supervisor.autonomy", label: "Autonomy Level", control: "picker", layer: "L1", fieldType: "enum", values: ["interactive", "supervised", "autonomous"], description: "Recovery action confirmation behavior" },
-		],
-	},
-	{
-		name: "Worker",
-		fields: [
-			{ configPath: "taskRunner.worker.model", label: "Worker Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "workerModel", description: "Worker model (inherit = use session model)" },
-			{ configPath: "taskRunner.worker.tools", label: "Worker Tools", control: "input", layer: "L1", fieldType: "string", description: "Worker tool allowlist" },
-			{ configPath: "taskRunner.worker.thinking", label: "Worker Thinking", control: "picker", layer: "L1", fieldType: "string", description: "Worker thinking mode" },
-			// spawnMode removed — /task is deprecated, Runtime V2 is subprocess-only.
-			// { configPath: "taskRunner.worker.spawnMode" ... } was here.
-		],
-	},
-	{
-		name: "Reviewer",
-		fields: [
-			{ configPath: "taskRunner.reviewer.model", label: "Reviewer Model", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "reviewerModel", description: "Reviewer model (inherit = use session model)" },
-			{ configPath: "taskRunner.reviewer.tools", label: "Reviewer Tools", control: "input", layer: "L1", fieldType: "string", description: "Reviewer tool allowlist" },
-			{ configPath: "taskRunner.reviewer.thinking", label: "Reviewer Thinking", control: "picker", layer: "L1", fieldType: "string", description: "Reviewer thinking mode" },
-		],
-	},
-	{
-		name: "Context Limits",
-		fields: [
-			{ configPath: "taskRunner.context.workerContextWindow", label: "Context Window", control: "input", layer: "L1", fieldType: "number", description: "Worker context window size" },
-			{ configPath: "taskRunner.context.warnPercent", label: "Warn %", control: "input", layer: "L1", fieldType: "number", description: "Context utilization warn threshold (%)" },
-			{ configPath: "taskRunner.context.killPercent", label: "Kill %", control: "input", layer: "L1", fieldType: "number", description: "Context utilization hard-stop threshold (%)" },
-			{ configPath: "taskRunner.context.maxWorkerIterations", label: "Max Iterations", control: "input", layer: "L1", fieldType: "number", description: "Max worker iterations per step" },
-			{ configPath: "taskRunner.context.maxReviewCycles", label: "Max Review Cycles", control: "input", layer: "L1", fieldType: "number", description: "Max revise loops per review stage" },
-			{ configPath: "taskRunner.context.noProgressLimit", label: "No Progress Limit", control: "input", layer: "L1", fieldType: "number", description: "Max no-progress iterations before failure" },
-			{ configPath: "taskRunner.context.maxWorkerMinutes", label: "Max Worker Min (ctx)", control: "input", layer: "L1", fieldType: "number", optional: true, description: "Per-worker wall-clock cap (minutes, empty = no cap)" },
 		],
 	},
 	{
@@ -1166,9 +1162,10 @@ export async function openSettingsTui(
 	ctx: ExtensionContext,
 	configRoot: string,
 	pointerConfigRoot?: string,
+	onConfigChanged?: () => void,
 ): Promise<void> {
 	// Load current config state — refreshed each time we return to the top level
-	await showSectionSelectorLoop(ctx, configRoot, pointerConfigRoot);
+	await showSectionSelectorLoop(ctx, configRoot, pointerConfigRoot, onConfigChanged);
 }
 
 /**
@@ -1200,6 +1197,7 @@ async function showSectionSelectorLoop(
 	ctx: ExtensionContext,
 	configRoot: string,
 	pointerConfigRoot?: string,
+	onConfigChanged?: () => void,
 ): Promise<void> {
 	while (true) {
 		const state = loadConfigState(configRoot, pointerConfigRoot);
@@ -1257,7 +1255,7 @@ async function showSectionSelectorLoop(
 		if (section.readOnly) {
 			await showAdvancedSection(ctx, state.mergedConfig);
 		} else {
-			await showSectionSettingsLoop(ctx, section, configRoot, pointerConfigRoot);
+			await showSectionSettingsLoop(ctx, section, configRoot, pointerConfigRoot, onConfigChanged);
 		}
 	}
 }
@@ -1339,6 +1337,7 @@ async function showSectionSettingsLoop(
 	section: SectionDef,
 	configRoot: string,
 	pointerConfigRoot?: string,
+	onConfigChanged?: () => void,
 ): Promise<void> {
 	while (true) {
 		const state = loadConfigState(configRoot, pointerConfigRoot);
@@ -1438,9 +1437,13 @@ async function showSectionSettingsLoop(
 			} else {
 				writeGlobalPreference(toGlobalPreferencePath(field), typedValue);
 			}
+			// Notify caller to reload in-memory config from disk
+			if (onConfigChanged) {
+				try { onConfigChanged(); } catch { /* non-fatal */ }
+			}
+
 			ctx.ui.notify(
-				`✅ ${field.label} updated.\n` +
-				`ℹ Restart session to apply changes.`,
+				`✅ ${field.label} updated.`,
 				"info",
 			);
 
@@ -1494,9 +1497,38 @@ async function showSectionSettingsOnce(
 			description: field.description,
 		};
 
-		// Toggle fields get values array for cycling
+		// Toggle fields: use cycling for 2 values (boolean-like), submenu for 3+
 		if (field.control === "toggle" && field.values) {
-			item.values = field.values.map((v) => `${v}  ${sourceBadge}`);
+			if (field.values.length <= 2) {
+				item.values = field.values.map((v) => `${v}  ${sourceBadge}`);
+			} else {
+				// 3+ values: use a submenu so the user can pick any option,
+				// not just cycle to the next one and immediately commit.
+				item.submenu = (_currentValue: string, done: (selected?: string) => void) => {
+					const selectItems: SelectItem[] = field.values!.map((v) => ({
+						value: `${v}  ${sourceBadge}`,
+						label: v,
+					}));
+					// Return SelectList directly — Container doesn't forward
+					// handleInput to children, which would freeze the TUI.
+					const list = new SelectList(
+						selectItems,
+						Math.min(selectItems.length + 1, 10),
+						{
+							selectedPrefix: (t: string) => `\x1b[36m${t}\x1b[0m`,
+							selectedText: (t: string) => `\x1b[36m${t}\x1b[0m`,
+							description: (t: string) => `\x1b[2m${t}\x1b[0m`,
+							scrollInfo: (t: string) => `\x1b[2m${t}\x1b[0m`,
+							noMatch: (t: string) => `\x1b[33m${t}\x1b[0m`,
+						},
+					);
+					const currentIdx = field.values!.indexOf(displayValue);
+					if (currentIdx >= 0) list.setSelectedIndex(currentIdx);
+					list.onSelect = (selected) => done(selected.value);
+					list.onCancel = () => done();
+					return list;
+				};
+			}
 		}
 
 		// Input fields: use a single-value cycling pattern instead of a submenu.
@@ -1649,15 +1681,16 @@ function truncateLine(text: string, width: number): string {
  */
 const SECTION_CONFIG_PREFIXES: Record<string, string[]> = {
 	"Orchestrator": ["orchestrator.orchestrator"],
+	"Agent: Supervisor": ["orchestrator.supervisor"],
+	"Agent: Worker": ["taskRunner.worker"],
+	"Agent: Reviewer": ["taskRunner.reviewer"],
+	"Agent: Merge": ["orchestrator.merge"],
+	"Context Limits": ["taskRunner.context"],
+	"Failure Policy": ["orchestrator.failure"],
 	"Dependencies": ["orchestrator.dependencies"],
 	"Assignment": ["orchestrator.assignment"],
 	"Pre-Warm": ["orchestrator.preWarm"],
-	"Merge": ["orchestrator.merge"],
-	"Failure Policy": ["orchestrator.failure"],
 	"Monitoring": ["orchestrator.monitoring"],
-	"Worker": ["taskRunner.worker"],
-	"Reviewer": ["taskRunner.reviewer"],
-	"Context Limits": ["taskRunner.context"],
 };
 
 /**

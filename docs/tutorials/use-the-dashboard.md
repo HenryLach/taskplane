@@ -152,4 +152,4 @@ taskplane dashboard --port 3010
 
 ## Next step
 
-- [Use TMUX for Visibility](../how-to/use-tmux-for-visibility.md)
+- [Pause, Resume, or Abort a Batch](../how-to/pause-resume-abort-a-batch.md)

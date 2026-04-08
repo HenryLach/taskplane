@@ -1,17 +1,17 @@
-# Run Your First Task (Single-Task Mode)
+# Run Your First Task
 
-This tutorial walks through executing one task end-to-end with `/task`.
+This tutorial walks through executing a single task end-to-end using `/orch`.
 
-> `/task` is the single-task engine. Orchestrator lanes (`/orch`) execute tasks using this same task-runner model under the hood.
+Running a single task via `/orch` gives you the same infrastructure as a full batch — an isolated git worktree, the web dashboard, inline reviews, and supervisor monitoring — focused on just one task.
 
 ## Before You Start
 
-Recommended sequence:
+Complete these first:
 
 1. [Install Taskplane](install.md)
-2. [Run Your First Orchestration](run-your-first-orchestration.md)
+2. [Run Your First Orchestration](run-your-first-orchestration.md) *(recommended — shows batch mode first)*
 
-You should have this folder:
+You should have this example task folder:
 
 ```text
 taskplane-tasks/EXAMPLE-001-hello-world/
@@ -19,21 +19,7 @@ taskplane-tasks/EXAMPLE-001-hello-world/
 └── STATUS.md
 ```
 
----
-
-## Important: `/task` vs `/orch`
-
-`/task` runs in your **current branch/worktree**. This is great for focused debugging, but it means your own in-progress local edits are in the same workspace as the worker.
-
-Because worker checkpoints use git commits, unrelated local edits can be swept into checkpoints if you modify files while `/task` is running.
-
-For safer default isolation (even for one task), prefer:
-
-```text
-/orch taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
-```
-
-Use `/task` when you intentionally want direct, in-place execution on your current branch.
+If you don't see it, run `taskplane init --preset full` from your project root.
 
 ---
 
@@ -43,138 +29,156 @@ Use `/task` when you intentionally want direct, in-place execution on your curre
 
 `PROMPT.md` is the task specification:
 
-- Mission and scope
-- Step-by-step checklist
-- Constraints and completion criteria
+- **Mission** — what the task should accomplish
+- **Steps** — ordered checklist of work items
+- **Constraints** — scope boundaries, file targets, completion criteria
+- **Context** — files to read, dependencies on other tasks
 
-Treat the section above the `---` divider as immutable task definition.
+The section above the `---` divider is the immutable task definition. Amendments added during execution go below the divider.
 
 ### `STATUS.md`
 
-`STATUS.md` is runtime state and persistent memory for worker iterations:
+`STATUS.md` is runtime state and persistent memory across worker iterations:
 
 - Current step and execution status
-- Checkbox progress
-- Review metadata
-- Execution log
+- Checkbox progress (checked off as work completes)
+- Review metadata and verdicts
+- Execution log with timestamps
+- Discoveries and blockers
 
-Workers update this file after each checkbox completion.
+Workers update this file after completing each checkbox item. It serves as crash-recovery memory — if a worker's context resets, the next iteration reads STATUS.md to know exactly where to resume.
 
 ---
 
-## Start pi and Run the Task
+## Run the Task
 
-From project root:
+Start a pi session from your project root:
 
 ```bash
 pi
 ```
 
-Inside pi:
+Inside the pi session, run a single task by passing its PROMPT.md path to `/orch`:
 
+```text
+/orch taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
 ```
-/task taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
-```
 
-The task runner will:
+The orchestrator will:
 
-1. Parse `PROMPT.md`
-2. Load `STATUS.md`
-3. Spawn a worker in a fresh context
-4. Execute checklist items one by one
-5. Update `STATUS.md` after each completed item
-6. Create checkpoint commits as progress is made
-7. Mark completion by creating `.DONE`
+1. Parse the task's `PROMPT.md`
+2. Create an isolated git worktree for execution
+3. Spawn a worker agent in the worktree
+4. The worker reads `STATUS.md`, finds the first unchecked item, and starts working
+5. After each completed checkbox, the worker updates `STATUS.md`
+6. At step boundaries, the worker creates checkpoint commits
+7. When all steps are complete, the worker creates a `.DONE` file
+8. The orchestrator merges the result into the orch branch
+
+Your working branch stays untouched throughout — all changes happen in the isolated worktree.
 
 ---
 
-## Check Progress
+## Monitor Progress
 
-While the task is running (or after it completes), run:
+### Via `/orch-status`
 
+While the task is running, check progress:
+
+```text
+/orch-status
 ```
-/task-status
-```
 
-You should see step-level progress with counts like:
+You'll see the batch status with wave and lane information, including step-level progress for your task.
 
-- `Step 0: ... (2/2)`
-- `Step 1: ... (2/2)`
+### Via the Dashboard
+
+If you launched the dashboard (`taskplane dashboard` in a separate terminal), open `http://localhost:8099` in your browser. The dashboard shows real-time progress with SSE streaming — lane status, task progress, reviewer activity, and merge results.
 
 ---
 
 ## Pause and Resume
 
-To pause after the current worker iteration:
+To pause after the current worker iteration finishes:
 
-```
-/task-pause
-```
-
-To continue:
-
-```
-/task-resume
+```text
+/orch-pause
 ```
 
-> Note: the example task is intentionally small and may complete quickly before pause takes effect. That’s normal.
+To resume:
+
+```text
+/orch-resume
+```
+
+> The example task is intentionally small and may complete before a pause takes effect. That's normal.
 
 ---
 
 ## Verify Completion
 
-After completion, confirm these artifacts exist:
+After the task completes, confirm these artifacts:
 
-- `hello-taskplane.md` (project root)
-- `taskplane-tasks/EXAMPLE-001-hello-world/.DONE`
-
-Quick check from shell:
+1. **`.DONE` file exists** — the authoritative completion marker:
 
 ```bash
-ls hello-taskplane.md taskplane-tasks/EXAMPLE-001-hello-world/.DONE
+ls taskplane-tasks/EXAMPLE-001-hello-world/.DONE
 ```
 
-You can also open `STATUS.md` and verify checkboxes are marked complete.
+2. **STATUS.md shows all checkboxes complete** — open the file and verify all items are checked (`- [x]`).
+
+3. **Task deliverables exist** — for the hello-world example, check that `hello-taskplane.md` was created in the worktree and merged to the orch branch.
+
+To bring the completed work into your working branch:
+
+```text
+/orch-integrate
+```
 
 ---
 
 ## How the Worker Loop Works
 
-Taskplane's `/task` runner uses a fresh-context execution model:
+Taskplane uses a **persistent-context execution model**:
 
-- Each worker iteration starts with no memory
-- Worker rehydrates from `STATUS.md`
-- Worker resumes at the first unchecked checkbox
-- After each checkbox, worker updates `STATUS.md` and checkpoints to git
-- Loop continues until completion criteria are met
+- A single worker handles all steps within one context window
+- The worker reads `STATUS.md` to determine where to resume
+- After each checkbox item, the worker updates `STATUS.md` immediately
+- At step boundaries, the worker creates git checkpoint commits
+- If the context window fills up, a new worker iteration starts fresh — reading `STATUS.md` to pick up where the previous iteration left off
 
-This design makes execution resumable and robust against interruption.
+This design makes execution **resumable and robust against interruption**. STATUS.md is the worker's only memory — everything needed to continue is persisted there.
 
 ---
 
 ## Troubleshooting
 
-### `No task loaded. Use /task <path/to/PROMPT.md>`
+### Task doesn't start
 
-Run `/task ...` first, then `/task-status`.
+Ensure you're passing the correct path to the PROMPT.md file:
 
-### `File not found` when running `/task`
-
-Ensure you run from the project root and use the correct path:
-
-```
-/task taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
+```text
+/orch taskplane-tasks/EXAMPLE-001-hello-world/PROMPT.md
 ```
 
-### Task seems stuck
+The path should be relative to the project root.
 
-Use `/task-status` to inspect step progress, then `/task-pause` + `/task-resume`.
+### `/orch-status` shows no active batch
+
+The task may have already completed. Check for a `.DONE` file in the task folder, or review `STATUS.md` for the final status.
+
+### Worker seems stuck on a step
+
+Use `/orch-status` to inspect detailed progress. If the worker is looping on the same item, check `STATUS.md` in the worktree for blockers or errors logged in the execution log.
+
+### Merge conflicts after completion
+
+If the orch branch has conflicts with your working branch, `/orch-integrate` will guide you through resolution. The merge agent handles most conflicts automatically.
 
 ---
 
-## Next Step
+## Next Steps
 
-Continue with:
-
-- [Configure Task Runner](../how-to/configure-task-runner.md)
-- [Configure Task Orchestrator](../how-to/configure-task-orchestrator.md)
+- [Configure Worker & Reviews](../how-to/configure-task-runner.md) — customize worker model, reviewer settings, and context injection
+- [Configure Task Orchestrator](../how-to/configure-task-orchestrator.md) — adjust lanes, merge behavior, and batch settings
+- [Pause, Resume, or Abort a Batch](../how-to/pause-resume-abort-a-batch.md) — operational control for running batches

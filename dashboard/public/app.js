@@ -180,9 +180,9 @@ function showCopyToast(text) {
 }
 
 function copySessionId(sessionName) {
+  // Retained for potential future use but no longer rendered in the UI.
   navigator.clipboard.writeText(sessionName).then(() => {
     showCopyToast(`session ${sessionName}`);
-    // Flash the button
     const btn = document.querySelector(`[data-session="${sessionName}"]`);
     if (btn) {
       btn.classList.add("copied");
@@ -649,7 +649,7 @@ function renderLanesTasks(batch, sessions) {
     const laneSessionId = lane.laneSessionId;
     const v2Alive = isLaneAliveV2(lane.laneNumber);
     const alive = v2Alive !== null ? v2Alive : sessionSet.has(laneSessionId);
-    const sessionChip = `session: ${laneSessionId}`;
+
 
     // Lane header
     html += `<div class="lane-group">`;
@@ -670,11 +670,7 @@ function renderLanesTasks(batch, sessions) {
     // View button: shows conversation stream when available
     const isViewingConv = viewerMode === 'conversation' && viewerTarget === laneSessionId;
     html += `    <button class="session-view-btn${isViewingConv ? ' active' : ''}" onclick="viewConversation('${escapeHtml(laneSessionId)}')" title="View worker conversation">👁 View</button>`;
-    if (alive) {
-      html += `    <span class="session-cmd" data-session="${escapeHtml(laneSessionId)}" onclick="copySessionId('${escapeHtml(laneSessionId)}')" title="Copy session ID">${escapeHtml(sessionChip)}</span>`;
-    } else {
-      html += `    <span class="session-cmd dead-session">${escapeHtml(sessionChip)}</span>`;
-    }
+
     html += `  </div>`;
     html += `</div>`;
 
@@ -999,12 +995,7 @@ function renderMergeAgents(batch, sessions) {
     // Full telemetry cell
     html += `<td class="merge-telemetry-cell">${mergeTelemetryHtml(mergeTel, effectiveAlive)}</td>`;
     html += `<td>`;
-    if (effectiveAlive) {
-      const sessionChip = `session: ${effectiveSession}`;
-      html += `<span class="session-cmd" data-session="${escapeHtml(effectiveSession)}" onclick="copySessionId('${escapeHtml(effectiveSession)}')" title="Copy session ID">${escapeHtml(sessionChip)}</span>`;
-    } else {
-      html += '<span class="merge-no-data">—</span>';
-    }
+    html += '<span class="merge-no-data">—</span>';
     html += `</td>`;
     html += `<td class="merge-detail-cell">${mr.failureReason ? escapeHtml(mr.failureReason) : "—"}</td>`;
     html += `</tr>`;
@@ -1039,14 +1030,13 @@ function renderMergeAgents(batch, sessions) {
     if (shownSessions.has(sess)) continue;
 
     const sessTel = telemetry[sess] || null;
-    const sessionChip = `session: ${sess}`;
     html += `<tr>`;
     html += `<td class="merge-wave-cell">—</td>`;
     html += `<td><span class="status-badge status-running"><span class="status-dot running"></span> merging</span></td>`;
     html += `<td class="merge-session-cell">${escapeHtml(sess)}</td>`;
     // Full telemetry cell for active merge session
     html += `<td class="merge-telemetry-cell">${mergeTelemetryHtml(sessTel, true)}</td>`;
-    html += `<td><span class="session-cmd" data-session="${escapeHtml(sess)}" onclick="copySessionId('${escapeHtml(sess)}')" title="Copy session ID">${escapeHtml(sessionChip)}</span></td>`;
+    html += `<td>—</td>`;
     html += `<td>—</td>`;
     html += `</tr>`;
   }

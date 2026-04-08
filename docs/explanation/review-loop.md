@@ -59,9 +59,9 @@ low-risk steps don't benefit from cross-model review.
 ## Worker-driven inline reviews (v0.9.0+)
 
 Reviews are **worker-driven**: the worker agent invokes the `review_step` tool
-at step boundaries, based on the task's review level. The reviewer spawns in
-a separate tmux session with full RPC telemetry, and the worker's context is
-preserved across the tool call.
+at step boundaries, based on the task's review level. The reviewer spawns as
+a subprocess with full telemetry, and the worker's context is preserved across
+the tool call.
 
 ```text
 Worker executing all steps in one context:
@@ -81,8 +81,8 @@ Key behaviors:
 
 - **Worker keeps context** — reviews happen mid-execution via a tool call.
   The worker doesn't lose its accumulated understanding of the codebase.
-- **Reviewer spawns in tmux** — named session (e.g., `orch-lane-1-reviewer`)
-  with RPC wrapper for structured telemetry. Attachable for operator inspection.
+- **Reviewer spawns as subprocess** — a dedicated reviewer agent (e.g.,
+  `orch-lane-1-reviewer`) with structured telemetry visible in the dashboard.
 - **REVISE handled inline** — the worker reads the review file in `.reviews/`
   and addresses feedback immediately, in the same context that wrote the code.
 - **Plan reviews** run before implementation to catch design issues early.
@@ -98,11 +98,11 @@ During a review, the dashboard shows a **reviewer sub-row** below the active
 task with live metrics: elapsed time, tool count, last tool, cost, and context%.
 The worker row shows `[awaiting review]` until the reviewer finishes.
 
-### Orchestrated vs standalone mode
+### Review availability
 
-The `review_step` tool is only registered in orchestrated mode (`/orch`).
-In standalone `/task` mode, reviews are not available (the `/task` command
-is deprecated in favor of `/orch` for all workflows).
+The `review_step` tool is registered during orchestrated execution (`/orch`).
+Reviews are an integral part of the orchestrator’s worker/reviewer loop and
+are configured via the project’s `taskplane-config.json`.
 
 ---
 
@@ -115,7 +115,7 @@ previous findings (e.g., "I flagged X in Step 2's plan — checking if addressed
 
 ### How it works
 
-1. **First `review_step` call**: spawns a reviewer tmux session with the
+1. **First `review_step` call**: spawns a reviewer subprocess with the
    `reviewer-extension.ts` loaded. The extension registers a `wait_for_review`
    tool that blocks (via filesystem polling) until a review request arrives.
 2. **Subsequent calls**: the task-runner writes a request file and a signal file
