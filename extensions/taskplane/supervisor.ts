@@ -951,7 +951,7 @@ export function triggerSupervisorIntegration(
 				}],
 				display: "Integration plan ready — awaiting operator confirmation",
 			},
-			{ triggerTurn: true, deliverAs: "nextTurn" },
+			{ triggerTurn: true },
 		);
 
 		// TP-043 R004: Defer summary until after integration completes (or operator declines).
@@ -2834,7 +2834,11 @@ export async function activateSupervisor(
 				],
 				display: `Supervisor activated — ${routingContext.routingState}`,
 			},
-			{ triggerTurn: true, deliverAs: "nextTurn" },
+			// triggerTurn starts an LLM turn immediately when the agent is idle.
+			// Do NOT use deliverAs:"nextTurn" — that queues the message for a
+			// future turn instead of starting one, causing the terminal to hang
+			// until the user sends input.
+			{ triggerTurn: true },
 		);
 		return;
 	}
@@ -2886,7 +2890,9 @@ export async function activateSupervisor(
 			],
 			display: "Supervisor activated" + (batchState.batchId ? ` for batch ${batchState.batchId}` : ""),
 		},
-		{ triggerTurn: true, deliverAs: "nextTurn" },
+		// triggerTurn starts an LLM turn immediately when the agent is idle.
+		// Do NOT use deliverAs:"nextTurn" here — see routing path comment.
+		{ triggerTurn: true },
 	);
 }
 
@@ -3032,7 +3038,7 @@ export async function transitionToRoutingMode(
 			}],
 			display: `Supervisor — ${routingContext.routingState}`,
 		},
-		{ triggerTurn: true, deliverAs: "nextTurn" },
+		{ triggerTurn: true },
 	);
 }
 
@@ -4241,7 +4247,7 @@ export function startEventTailer(
 				content: [{ type: "text", text }],
 				display: text.replace(/\*\*/g, "").substring(0, 80),
 			},
-			{ triggerTurn: true, deliverAs: "nextTurn" },
+			{ triggerTurn: true },
 		);
 	};
 
