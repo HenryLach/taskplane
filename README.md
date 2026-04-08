@@ -6,13 +6,15 @@ Multi-agent AI orchestration for coding with [pi](https://github.com/badlogic/pi
 
 ## What It Does
 
-Taskplane turns ideas into high-quality code using a proven process of:
+Taskplane orchesrates batches of task to help you turn ideas into high-quality code using a proven process of:
 
 have an idea >> create a spec >> create tasks >> orchestrate tasks >> evaluate the outcome
 
+For background on Taskplane's creation see [Author's Note on Medium](https://medium.com/@henry_49934/welcome-to-taskplane-authors-note-ad3a0278fdd3).
+
 ### Taskplane has:
 - A skill for creating tasks that the Taskplane orchestrator can run
-- PROMPT.md/STATUS.md task definition for persistent memory store
+- prompt.md/status.md task definitions for persistent memory store
 - Support for both monorepo and polyrepo projects
 - Complete parallelized worktree isolation with dependency graphing and segment-level repo isolation
 - 4 agent types: supervisor, worker, reviewer, and merger
@@ -51,6 +53,8 @@ Taskplane is a pi package. You need Node.js 22+, pi and Git installed first.
 | [pi](https://github.com/badlogic/pi-mono) | Yes | Agent framework |
 | [Git](https://git-scm.com/) | Yes | Version control, worktrees |
 
+IMPORTANT: If you just installed pi, make sure you've configured at least one model provider and tested before installing Taskplane.
+
 ### Option A: Global Install (all projects - recommended)
 
 ```bash
@@ -66,17 +70,15 @@ pi install -l npm:taskplane
 
 ## Quickstart
 
-### 1. Initialize a project (scaffolds settings)
-
+### 1. Initialize a project (to scaffold settings)
+(NOTE: if 'my-project' is a monorepo, be sure to run git init first. Taskplane uses git worktrees to isolate agent coding until you're ready to merge back to your default branch.)
 ```bash
 cd my-project
 taskplane init
 ```
 You'll answer a few questions. You can usually just accept the defaults. 
 
-This creates config files in `.pi/`, agent prompts, two example tasks, and adds `.gitignore` entries for runtime artifacts. On first install, init bootstraps global preferences at `~/.pi/agent/taskplane/preferences.json` with thinking defaults set to `high` for worker & reviewer, and off for merger. Interactive init then prompts for worker/reviewer/merger model + thinking defaults (`inherit`, `off`, `minimal`, `low`, `medium`, `high`, `xhigh`). If 2+ providers are available from `pi --list-models`, init recommends cross-provider reviewer/merger selections. Init auto-detects whether you're in a single repo or a multi-repo workspace. See the [install tutorial](docs/tutorials/install.md) for workspace mode and other scenarios.
-
-Want to reuse model/thinking picks across projects? Run `taskplane config --save-as-defaults` in an initialized project.
+This creates config files in `.pi/`, agent prompts, two example tasks, and adds `.gitignore` entries for runtime artifacts. On first install, init bootstraps global preferences at `~/.pi/agent/taskplane/preferences.json` with thinking defaults set to `high` for worker & reviewer, and off for merger. Init auto-detects whether you're in a single repo or a multi-repo workspace. See the [install tutorial](docs/tutorials/install.md) for workspace mode and other scenarios.
 
 Already have a task folder (for example `docs/task-management`)? Use:
 
@@ -130,6 +132,10 @@ For a single task with full worktree isolation, dashboard, and reviews:
 ```
 
 This uses the same orchestrator infrastructure as a full batch — isolated worktree, orch branch, supervisor, dashboard, inline reviews — but for just one task.
+
+## What to do next
+
+When you're in pi, type /taskplane-settings. Near the top you'll see the 4 agents. By default, Taskplane installs with the agent models set to inherit whatever model your pi session is currently using. The best thing you can do is configure the reviewer agent to use a different model provider. If you're using Claude for coding, then consider using OpenAI for the reviews. 
 
 ## Commands
 
