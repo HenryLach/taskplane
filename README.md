@@ -4,13 +4,30 @@ Multi-agent AI orchestration for [pi](https://github.com/badlogic/pi-mono) — p
 
 > **Status:** Experimental / Early — APIs and config formats may change between releases.
 
-## What It Does
+## What It Does - 
+
+## Author's Note
+
+Just like Pi simplifies the coding-agent harness, Taskplane simplifies the agent-orchestration process for generating high-quality code at scale. I designed Taskplane after generating over 700,000 lines of code without good orchestration. I mostly used Amp and a customized Ralph Wiggum loop. Lots of lessons learned. I tended to not use Claude Code very much because it doesn't handle multi-model support easily, which you see below is critical for driving good outcomes.
+
+Along the way, I zeroed in on prompting techniques that gave me increasingly good results. That eventually led me to create a skill that I used every time I created tasks. That was my first level-up in the quality of code I was generating (unlock #1). Unlock #2 was integrating cross-model reviews into each step in a task. And not just code reviews, but pre-implementation plan reviews as well.
+
+My typical task consists of 5-8 steps and each step has 5-10 checkbox items that I expect the agent to implement. At the beginning of each step, I have the worker agent (Opus 4.6) plan out a course of action for the step, then send it to GPT 5.3 Codex for a plan review. That feedback gets incorporated into the plan and Opus writes the code for that step. Then it sends it back to GPT 5.3 Codex for a code review/revision process and potentially another review/update cycle if needed. Then on to the next step. Do I burn more tokens doing this? Absolutely. But it has been the single biggest unlock for generating high-quality code. And if you don't know this already, the number one time-sink in generating code is evaluating that generated code. So minimizing bugs during code generation is my highest priority.
+
+When I discovered Pi (thank you Mario) and realized it was extensible, I immediately began developing Taskplane with the goal of creating a coding-agent orchestration system that incorporated everything I learned using Amp and Wiggum, but with the ability to run large batches of tasks, with proper dependency-graphed parallelization, proper git worktree isolation, and support for large existing brownfield polyrepo projects. My day job is managing a SaaS company with 7 developers and an 8-year-old codebase with 26 repos! Not your run-of-the-mill simple greenfield project.
+
+I also wanted to implement Taskplane with as much deterministic code as possible and minimize the number of agent types in the system. This is because agents do the wrong thing all the time for no reason whatsoever! So the more agents you deploy, the more that will go wrong, period. If you don't believe me, you haven't generated enough code. So Taskplane has four agent types: a supervisor to supervise, workers to write code, reviewers to review plans and code, and mergers to merge. That's it for the AI agent layer. But there's an entire deterministic engine that ties those agents together in ways that keep them focused and accountable.
+
+I also wanted visibility into the process in an easily consumable way, which for me means NOT relying on a terminal-based dashboard. There's simply no way to make terminal output look great. Taskplane has a web-based dashboard that runs locally on your computer that provides an elegant view into exactly what's going on with a running batch. You see the breakdown of waves, lanes, and tasks. You see tool, context, and cost telemetry. You can click on an icon for a task to view its STATUS.md file and watch the worker check off task items as it progresses. You see real progress. I still use the terminal to work with Taskplane to kick off batches and to interact with the supervisor agent when I need to. But in general, I launch a batch of tasks, then just look at the dashboard from time to time to see how everything is progressing. Or I just go to bed.
+
+I wanted the system to be as autonomous as possible. To do that I needed to create the means for worker and merger agents to communicate with the supervisor, and vice versa. So I added a simple but effective file-based mail system. And it works great. Either party can initiate, and the other party replies at the next turn because every agent checks their mailbox at every turn. I went with a file-based system because these messages don't need to last forever. They get deleted when the batch is completed. And I didn't want the dependency weight of a database. Taskplane has only three dependencies: Pi, Node, and Git.
+
 
 ### STEP 1: Create the tasks
 Taskplane turns your coding project into an AI-managed task orchestration system. You simply ask your agent to create tasks using the built-in "create-taskplane-tasks" skill. This skill provides an opinionated task definition template designed to drive successful coding outcomes. Tasks define both the prompt.md and the status.md files that together act as the persistent memory store that allows AI coding agents to survive context resets and succeed with very long running tasks that would typically exhaust an agent's context window.
 
 ### STEP 2: Run batches of tasks
-The system works out the dependancy map for the entire batch of tasks then orchestrates them in waves, with appropriate parallelization and serialization. 
+Taskplane works out the dependency map for an entire batch of tasks then orchestrates them in waves, lanes, and tasks with appropriate parallelization and serialization. Taskplane can do this for both monorepo and polyrepo projects. For polyrepo projects, Taskplane additionally subdivides tasks into repo-aligned segments and uses a segmentation dependency map (DAG) to manage proper repo/worktree isolation and allow for dynamic segment expansion so worker agents can ask the supervisor agent to add additional segments to the dependency map in real time if required.
 
 The taskplane dashboard runs on a local port on your system and gives you elegant visibility into everything that's going on (a stark improvement over TUI-based dashboards).
 
@@ -27,9 +44,9 @@ The taskplane dashboard runs on a local port on your system and gives you elegan
 - **Checkpoint Discipline** — Step boundary commits ensure work is never lost, even if a worker crashes mid-task.
 - **Cross-Model Review** — Reviewer agent uses a different model than the worker agent (highly recommended, not enforced). Independent quality gate before merge.
 
-## Install
+## Installation
 
-Taskplane is a [pi package](https://github.com/badlogic/pi-mono). You need [Node.js](https://nodejs.org/) ≥ 22 and [pi](https://github.com/badlogic/pi-mono) installed first.
+Taskplane is a pi package. You need [Node.js](https://nodejs.org/) ≥ 22, [pi](https://github.com/badlogic/pi-mono) and Git installed first.
 
 ### Prerequisites
 
@@ -39,26 +56,28 @@ Taskplane is a [pi package](https://github.com/badlogic/pi-mono). You need [Node
 | [pi](https://github.com/badlogic/pi-mono) | Yes | Agent framework |
 | [Git](https://git-scm.com/) | Yes | Version control, worktrees |
 
-### Option A: Global Install (all projects)
+### Option A: Global Install (all projects - recommended)
 
 ```bash
 pi install npm:taskplane
 ```
 
-### Option B: Project-Local Install (recommended for teams)
+### Option B: Single Project-Local Install
 
 ```bash
 cd my-project
 pi install -l npm:taskplane
 ```
 
-Then scaffold your project:
+### Scaffold your project
+
+You'll need to initialize taskplane for each project you use it in to scaffold some settings.
 
 ```bash
 taskplane init
 ```
 
-Verify the installation:
+Verify the installation and scaffolding. You should have all green checkboxes if everything was successful:
 
 ```bash
 taskplane doctor
