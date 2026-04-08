@@ -1,0 +1,29 @@
+Runtime V2 is a fundamental redesign of Taskplane's runtime control plane. While
+Taskplane's durable data plane—PROMPT.md, STATUS.md, .DONE files, batch-state.json,
+and the dependency DAG/waves/lanes/worktrees model—remains unchanged, Runtime V2
+replaces the fragile TMUX-based control infrastructure that previously managed agent
+processes. The core problem it solves is a deeply nested process hierarchy where
+orchestration depended on terminal session liveness, file-polling between sibling
+processes, and ambiguous ownership of child processes across multiple layers.
+
+The target architecture introduces a clean, deterministic process ownership chain:
+the extension owns the engine process, the engine owns lane-runners and merge hosts,
+each lane-runner owns its worker and reviewer agent-hosts, and each agent-host owns
+its Pi subprocess. Four new core components define the runtime: the engine process
+handles discovery, DAG planning, and aggregate policy; the lane-runner process manages
+serial task execution within a single lane worktree including STATUS parsing, step
+progression, and checkpoint discipline; the agent-host process acts as a transport
+adapter around Pi RPC for lifecycle management, telemetry normalization, and mailbox
+steering; and the dashboard server reads normalized runtime artifacts for live
+visibility without requiring terminal pane capture.
+
+Runtime V2 enforces several key invariants: file-backed memory (STATUS.md and .DONE)
+remains authoritative, batch state remains resumable, live control uses direct process
+ownership rather than file polling, the mailbox is the only supported steering path
+between operators and agents, and no correctness dependency on terminal infrastructure
+exists. The architecture also introduces a batch-scoped runtime storage layout under
+.pi/runtime/{batchId}/ for agent manifests, event streams, and lane snapshots,
+while maintaining backward compatibility with existing durable file locations. The
+redesign is considered complete when worker, reviewer, and merge lifecycles no longer
+depend on TMUX, and the dashboard can render full agent conversations and telemetry
+from structured event logs alone.
