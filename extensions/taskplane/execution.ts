@@ -2126,31 +2126,20 @@ function parseAgentFile(filePath: string): { fm: Record<string, string>; body: s
  * @since TP-117
  */
 function loadBaseAgentPrompt(agentName: string): string {
-	const relPath = join("node_modules", "taskplane", "templates", "agents", `${agentName}.md`);
-	const candidates: string[] = [];
-
-	// Global npm paths
-	const home = process.env.HOME || process.env.USERPROFILE || "";
-	if (process.env.APPDATA) candidates.push(join(process.env.APPDATA, "npm", relPath));
-	if (home) {
-		candidates.push(join(home, "AppData", "Roaming", "npm", relPath));
-		candidates.push(join(home, ".npm-global", "lib", relPath));
-	}
-	candidates.push(join("/usr", "local", "lib", relPath));
-	candidates.push(join("/opt", "homebrew", "lib", relPath));
-
-	// Dynamic: npm root -g
+	// Use the same robust resolution as resolveTaskplanePackageFile, which
+	// handles all npm setups (nvm, Homebrew, volta, Windows, etc.) via
+	// npm root -g caching and well-known fallback paths.
+	// This avoids loadBaseAgentPrompt silently returning "" (which would
+	// cause the worker to skip reviews because the review_step instructions
+	// live in the base template, not the local .pi/agents/ override).
+	const relPath = join("templates", "agents", `${agentName}.md`);
 	try {
-		const result = spawnSync("npm", ["root", "-g"], { encoding: "utf-8", timeout: 5000, shell: true });
-		if (result.stdout?.trim()) {
-			candidates.push(join(result.stdout.trim(), "taskplane", "templates", "agents", `${agentName}.md`));
+		const resolved = resolveTaskplanePackageFile(process.cwd(), relPath);
+		if (existsSync(resolved)) {
+			const def = parseAgentFile(resolved);
+			if (def?.body) return def.body;
 		}
-	} catch { /* ignore */ }
-
-	for (const p of candidates) {
-		const def = parseAgentFile(p);
-		if (def?.body) return def.body;
-	}
+	} catch { /* fall through */ }
 	return "";
 }
 
