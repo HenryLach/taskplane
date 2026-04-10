@@ -20,7 +20,7 @@
  * @since TP-104
  */
 
-import { spawn, type ChildProcess } from "child_process";
+import { spawn, spawnSync, type ChildProcess } from "child_process";
 import {
 	readFileSync, writeFileSync, appendFileSync, mkdirSync,
 	existsSync, readdirSync, renameSync,
@@ -55,46 +55,54 @@ import { appendMailboxAuditEvent } from "./mailbox.ts";
  * with `shell: false`. This function resolves the underlying JS file.
  *
  * Resolution order:
- *   1. APPDATA/npm/node_modules/@mariozechner/pi-coding-agent/dist/cli.js
- *   2. HOME/.npm-global/lib/node_modules/...
- *   3. /usr/local/lib/node_modules/...
+ *   1. npm root -g (dynamic — covers nvm, Homebrew, volta, custom prefix)
+ *   2. APPDATA/npm/node_modules/... (Windows)
+ *   3. HOME/.npm-global/lib/node_modules/...
+ *   4. /usr/local/lib/node_modules/...
+ *   5. /opt/homebrew/lib/node_modules/... (macOS Homebrew)
  *
  * @returns Absolute path to the Pi CLI JS entrypoint
  * @throws Error if Pi CLI cannot be found
  *
  * @since TP-104
  */
+let _npmGlobalRootCache: string | null = null;
+function getNpmGlobalRoot(): string {
+	if (_npmGlobalRootCache !== null) return _npmGlobalRootCache;
+	try {
+		const result = spawnSync("npm", ["root", "-g"], { encoding: "utf-8", timeout: 5000, shell: true });
+		_npmGlobalRootCache = result.stdout?.trim() || "";
+	} catch {
+		_npmGlobalRootCache = "";
+	}
+	return _npmGlobalRootCache;
+}
+
 export function resolvePiCliPath(): string {
-	const relPath = join("node_modules", "@mariozechner", "pi-coding-agent", "dist", "cli.js");
+	const relPath = join("@mariozechner", "pi-coding-agent", "dist", "cli.js");
 	const candidates: string[] = [];
 
-	if (process.env.APPDATA) {
-		candidates.push(join(process.env.APPDATA, "npm", relPath));
-	}
-	const home = process.env.HOME || process.env.USERPROFILE || "";
-	if (home) {
-		candidates.push(join(home, "AppData", "Roaming", "npm", relPath));
-		candidates.push(join(home, ".npm-global", "lib", relPath));
-	}
-	candidates.push(join("/usr", "local", "lib", relPath));
-	candidates.push(join("/opt", "homebrew", "lib", relPath));
+	// Dynamic first: covers nvm, Homebrew, volta, custom npm prefix
+	const npmRoot = getNpmGlobalRoot();
+	if (npmRoot) candidates.push(join(npmRoot, relPath));
 
-	// Dynamic: npm root -g
-	try {
-		const { spawnSync } = require("child_process");
-		const result = spawnSync("npm", ["root", "-g"], { encoding: "utf-8", timeout: 5000, shell: true });
-		if (result.stdout?.trim()) {
-			candidates.push(join(result.stdout.trim(), "@mariozechner", "pi-coding-agent", "dist", "cli.js"));
-		}
-	} catch { /* ignore */ }
+	// Well-known static fallbacks
+	const home = process.env.HOME || process.env.USERPROFILE || "";
+	if (process.env.APPDATA) candidates.push(join(process.env.APPDATA, "npm", "node_modules", relPath));
+	if (home) {
+		candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", relPath));
+		candidates.push(join(home, ".npm-global", "lib", "node_modules", relPath));
+	}
+	candidates.push(join("/usr", "local", "lib", "node_modules", relPath));
+	candidates.push(join("/opt", "homebrew", "lib", "node_modules", relPath));
 
 	for (const candidate of candidates) {
 		if (existsSync(candidate)) return candidate;
 	}
 
 	throw new Error(
-		"Cannot find Pi CLI entrypoint (cli.js). Ensure pi is installed globally. " +
-		`Searched: ${candidates.slice(0, 4).join(", ")}`,
+		"Cannot find Pi CLI entrypoint (cli.js). Ensure pi is installed globally via 'pi install'. " +
+		`npm root -g: ${npmRoot || "(not found)"}`,
 	);
 }
 

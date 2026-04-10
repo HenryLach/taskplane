@@ -359,11 +359,14 @@ export default function (pi: ExtensionAPI) {
 	/**
 	 * Resolve the Pi CLI entrypoint path (same logic as agent-host.ts).
 	 */
+	let _npmRootCache: string | null = null;
 	function getNpmGlobalRoot(): string {
+		if (_npmRootCache !== null) return _npmRootCache;
 		try {
 			const result = spawnSync("npm", ["root", "-g"], { encoding: "utf-8", timeout: 5000, shell: true });
-			return result.stdout?.trim() || "";
-		} catch { return ""; }
+			_npmRootCache = result.stdout?.trim() || "";
+		} catch { _npmRootCache = ""; }
+		return _npmRootCache;
 	}
 
 	function resolvePiCli(): string {
