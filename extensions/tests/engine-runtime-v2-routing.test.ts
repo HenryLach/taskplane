@@ -560,7 +560,7 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 
 	it("14.5: stall kill uses Runtime V2 PID termination (no TMUX fallback)", () => {
 		const fnIdx = execSrc.indexOf("function resolveTaskMonitorState");
-		const block = execSrc.slice(fnIdx, fnIdx + 6000);
+		const block = execSrc.slice(fnIdx, fnIdx + 8000); // expanded window: TP-159 added ~1340 chars before stall block
 		const stallIdx = block.indexOf("stall detected");
 		expect(stallIdx).toBeGreaterThan(-1);
 		const stallBlock = block.slice(stallIdx, stallIdx + 500);
@@ -771,5 +771,95 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+
+	// TP-159: Ghost worker fast-fail tests
+	it("14.14: matching-taskId snapshot with stale updatedAt + dead registry fast-fails at stallTimeout/2", async () => {
+		const root = mkdtempSync(join(tmpdir(), "tp-159-ghost-"));
+		const stallTimeoutMs = 30 * 60_000; // 30 minutes
+		const now = Date.now();
+		const batchId = "b-ghost";
+		const taskId = "TP-GHOST";
+		try {
+			// Snapshot correctly names current task but hasn't been updated for stallTimeout/2 + 1s
+			writeLaneSnapshot(root, batchId, 1, {
+				taskId,
+				status: "running",
+				updatedAt: now - (stallTimeoutMs / 2 + 1000),
+			});
+
+			// Old tracker (>60s): startup grace elapsed
+			const oldTracker = freshTracker(taskId, now - 90_000);
+
+			// No registry in stateRoot → isV2AgentAlive returns false (confirms dead)
+			const snapshot = await resolveTaskMonitorState(
+				taskId,
+				join(root, ".DONE"),
+				"lane-1",
+				{ parsed: null, error: null },
+				oldTracker,
+				stallTimeoutMs,
+				now,
+				"v2",
+				{ stateRoot: root, batchId, laneNumber: 1 },
+			);
+
+			// Fast-fail: ghost worker confirmed — dead PID, stale snapshot
+			expect(snapshot.sessionAlive).toBe(false);
+			expect(snapshot.status).toBe("failed");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("14.15: matching-taskId snapshot with recent updatedAt does NOT fast-fail (normal running worker)", async () => {
+		const root = mkdtempSync(join(tmpdir(), "tp-159-running-"));
+		const stallTimeoutMs = 30 * 60_000;
+		const now = Date.now();
+		const batchId = "b-running-recent";
+		const taskId = "TP-RUNNING";
+		try {
+			// Snapshot updated recently (5 seconds ago) — well within stallTimeout/2
+			writeLaneSnapshot(root, batchId, 1, {
+				taskId,
+				status: "running",
+				updatedAt: now - 5_000,
+			});
+
+			// Old tracker (>60s): startup grace elapsed
+			const oldTracker = freshTracker(taskId, now - 90_000);
+
+			// No registry (simulating dead PID check returning false)
+			const snapshot = await resolveTaskMonitorState(
+				taskId,
+				join(root, ".DONE"),
+				"lane-1",
+				{ parsed: null, error: null },
+				oldTracker,
+				stallTimeoutMs,
+				now,
+				"v2",
+				{ stateRoot: root, batchId, laneNumber: 1 },
+			);
+
+			// Recent snapshot: snap.status === "running" wins — no fast-fail
+			expect(snapshot.sessionAlive).toBe(true);
+			expect(snapshot.status).toBe("running");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("14.16: monitorLanes wires orphan detection (TP-159)", () => {
+		// Source-level check: orphan detection block exists in the monitor loop
+		const monitorFnIdx = execSrc.indexOf("async function monitorLanes(");
+		expect(monitorFnIdx).toBeGreaterThan(-1);
+		const monitorBlock = execSrc.slice(monitorFnIdx, monitorFnIdx + 4000);
+		// detectOrphans is called inside the monitor loop
+		expect(monitorBlock).toContain("detectOrphans");
+		// markOrphansCrashed is called to update manifests
+		expect(monitorBlock).toContain("markOrphansCrashed");
+		// The block is wrapped in try/catch (monitor loop must never throw)
+		expect(monitorBlock).toContain("Non-fatal");
 	});
 });

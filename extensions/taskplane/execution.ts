@@ -11,7 +11,7 @@ import { userInfo } from "os";
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig, ExecutionUnit, PacketPaths, RuntimeAgentId, RuntimeAgentRole, SupervisorAlertCallback } from "./types.ts";
 import { resolvePacketPaths, buildRuntimeAgentId } from "./types.ts";
-import { readRegistrySnapshot, readLaneSnapshot, isTerminalStatus, isProcessAlive } from "./process-registry.ts";
+import { readRegistrySnapshot, readLaneSnapshot, isTerminalStatus, isProcessAlive, detectOrphans, markOrphansCrashed } from "./process-registry.ts";
 import { allocateLanes } from "./waves.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { runGit } from "./git.ts";
@@ -911,7 +911,37 @@ export async function resolveTaskMonitorState(
 				sessionAlive = true;
 			}
 		} else {
-			sessionAlive = snap.status === "running";
+			// TP-159: Fast-fail path for ghost workers (issue #461).
+			// When the snapshot belongs to the current task but the lane-runner
+			// has stopped updating it and the agent's PID is confirmed dead,
+			// immediately set sessionAlive=false instead of waiting for the full
+			// stall timeout. This handles the case where a worker dies silently
+			// (OOM, segfault, parent crash) after writing its first snapshot:
+			//   snap.status stays "running", stallTimerStart stays null
+			//   (STATUS.md never written), so Priority 2 never fires without
+			//   this explicit dead-PID check.
+			// Conditions:
+			//   1. snap.updatedAt is stale beyond stallTimeoutMs/2
+			//   2. startup grace has elapsed (trackerAgeMs >= 60s)
+			//   3. agent is confirmed dead (registry marked crashed by orphan scan)
+			const trackerAgeMs = now - tracker.firstObservedAt;
+			if (
+				snap.updatedAt &&
+				(now - snap.updatedAt) > stallTimeoutMs / 2 &&
+				trackerAgeMs >= 60_000 &&
+				!isV2AgentAlive(sessionName, runtimeBackend, v2Context?.laneNumber)
+			) {
+				// Ghost worker confirmed: PID dead, snapshot stale beyond half the stall timeout
+				execLog("monitor", taskId, "ghost worker fast-fail — dead PID + stale snapshot", {
+					session: sessionName,
+					snapStaleMs: now - snap.updatedAt,
+					trackerAgeMs,
+					halfStallTimeoutMs: stallTimeoutMs / 2,
+				});
+				sessionAlive = false;
+			} else {
+				sessionAlive = snap.status === "running";
+			}
 		}
 	} else {
 		sessionAlive = isV2AgentAlive(sessionName, "v2", v2Context?.laneNumber);
@@ -1176,6 +1206,30 @@ export async function monitorLanes(
 			}
 		} else {
 			setV2LivenessRegistryCache(null);
+		}
+
+		// TP-159: Detect and mark orphaned workers each poll cycle.
+		// When a worker subprocess dies silently (OOM kill, segfault, parent
+		// crash) without going through the normal completion handshake, its
+		// registry manifest stays in a non-terminal status indefinitely.
+		// Scanning for dead PIDs here ensures list_active_agents, read_agent_status,
+		// and the dashboard all reflect reality within one poll interval.
+		if (runtimeBackend === "v2" && batchId) {
+			try {
+				const registry = readRegistrySnapshot(stateRootForRegistry ?? repoRoot, batchId);
+				if (registry) {
+					const orphans = detectOrphans(registry);
+					if (orphans.length > 0) {
+						markOrphansCrashed(stateRootForRegistry ?? repoRoot, batchId, orphans);
+						// Refresh cache so this poll cycle sees the updated crashed status
+						setV2LivenessRegistryCache(
+							readRegistrySnapshot(stateRootForRegistry ?? repoRoot, batchId)
+						);
+					}
+				}
+			} catch {
+				// Non-fatal — monitor loop must never throw
+			}
 		}
 
 		// Check pause signal
