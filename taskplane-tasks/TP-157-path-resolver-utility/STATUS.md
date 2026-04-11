@@ -1,10 +1,10 @@
 # TP-157: Consolidate npm/package path resolution into path-resolver.ts — Status
 
-**Current Step:** Step 2: Refactor callers to use path-resolver.ts
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** M
 
@@ -40,11 +40,11 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Done
 
-- [ ] Full test suite passing
-- [ ] CLI smoke checks passing
-- [ ] Fix all failures
+- [x] Full test suite passing
+- [x] CLI smoke checks passing
+- [x] Fix all failures (2 pre-existing failures unrelated to path-resolver changes)
 
 ---
 
@@ -67,6 +67,8 @@
 ## Discoveries
 
 | Discovery | Disposition | Location |
+|-----------|-------------|----------|
+| 2 pre-existing test failures unrelated to path-resolver: auto-integration.integration.test.ts:853 (supervised mode `deliverAs`) and workspace-config.integration.test.ts:747 (line number ordering) | Not introduced by TP-157; both fail on baseline commit | tests/ |
 |-----------|-------------|----------|
 | `loadReviewerPrompt` in agent-bridge-extension.ts uses `join("taskplane", relPath)` with the npm root directly (not via resolveTaskplanePackageFile), but final paths are equivalent | Handled in refactor — use resolveTaskplaneAgentTemplate which goes through resolveTaskplanePackageFile | agent-bridge-extension.ts:399 |
 | `getNpmGlobalRoot` in agent-bridge-extension.ts is nested inside `export default function(pi)` block (locally scoped, not module-level) | Can be replaced by importing from path-resolver.ts | agent-bridge-extension.ts:362 |
@@ -97,3 +99,4 @@
 | 2026-04-11 00:14 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-11 00:17 | Review R002 | code Step 1: APPROVE |
 | 2026-04-11 00:21 | Review R003 | plan Step 2: APPROVE |
+| 2026-04-11 00:34 | Review R004 | code Step 2: APPROVE |
