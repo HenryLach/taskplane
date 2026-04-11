@@ -1,22 +1,22 @@
 # TP-158: Re-read config on /orch start to fix stale task_areas (#460) — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-04-10
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-04-11
 **Review Level:** 1
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-- [ ] Read `doOrchStart()` in `extension.ts`
-- [ ] Read the `/taskplane-settings` `onConfigChanged` callback
-- [ ] Read the `session_start` handler
-- [ ] Verify test baseline
+- [x] Read `doOrchStart()` in `extension.ts`
+- [x] Read the `/taskplane-settings` `onConfigChanged` callback
+- [x] Read the `session_start` handler
+- [x] Verify test baseline (pre-existing failure: test 5.11 in workspace-config.integration.test.ts — fragile char-index check, unrelated to this task)
 
 ---
 
@@ -65,6 +65,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-10 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-04-11 00:05 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-11 00:05 | Step 0 started | Preflight |
 
 ---
 
