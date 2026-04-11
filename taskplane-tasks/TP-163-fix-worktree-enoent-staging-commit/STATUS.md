@@ -1,23 +1,23 @@
 # TP-163: Fix ENOENT when task folders are uncommitted at batch start (#471) — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read `ensureTaskFilesCommitted` — understand staging commit flow
-- [ ] Read `executeWave` — confirm sequencing (staging before worktree creation)
-- [ ] Read orch branch creation in `engine.ts` — confirm it runs before `executeWave`
-- [ ] Confirm `baseBranch` param in `executeWave` is the orch branch name
-- [ ] Verify test baseline
+- [x] Read `ensureTaskFilesCommitted` — understand staging commit flow
+- [x] Read `executeWave` — confirm sequencing (staging before worktree creation)
+- [x] Read orch branch creation in `engine.ts` — confirm it runs before `executeWave`
+- [x] Confirm `baseBranch` param in `executeWave` is the orch branch name
+- [x] Verify test baseline
 
 ---
 
@@ -68,6 +68,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-11 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-04-11 03:43 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-11 03:43 | Step 0 started | Preflight |
 
 ---
 
