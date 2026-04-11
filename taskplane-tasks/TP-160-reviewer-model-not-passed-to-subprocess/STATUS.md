@@ -1,7 +1,7 @@
 # TP-160: Pass reviewer model/thinking/tools config to spawnReviewer subprocess — Status
 
-**Current Step:** Step 0: Preflight
-**Status:** 🟡 In Progress
+**Current Step:** Step 3: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-11
 **Review Level:** 2
 **Review Counter:** 3
@@ -45,11 +45,11 @@
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Comment in `spawnReviewer` explaining env var source
-- [ ] Check docs/reference for affected content
-- [ ] Discoveries logged
+- [x] Comment in `spawnReviewer` explaining env var source
+- [x] Check docs/reference for affected content (docs/reference/configuration/taskplane-settings.md already correct — no changes needed)
+- [x] Discoveries logged
 
 ---
 
