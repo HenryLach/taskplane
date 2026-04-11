@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 2
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
@@ -37,8 +37,10 @@
 **Status:** 🟨 In Progress
 
 - [ ] Add `onTelemetry` callback to `spawnAgent` call in `spawnMergeAgentV2`
+- [ ] Write initial `running` snapshot immediately after spawn
 - [ ] Write `running` snapshot on each telemetry update
-- [ ] Write terminal snapshot on promise completion
+- [ ] Write terminal snapshot in `.then(result)` with correct status mapping (killed||exitCode!==0||!agentEnded = "failed", else "complete")
+- [ ] Keep `.catch` as exceptional fallback writing `failed` snapshot
 - [ ] All snapshot writes wrapped in try/catch
 
 ---
@@ -100,3 +102,4 @@
 *None*
 | 2026-04-11 04:55 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-11 04:57 | Review R002 | code Step 1: APPROVE |
+| 2026-04-11 04:58 | Review R003 | plan Step 2: REVISE |
