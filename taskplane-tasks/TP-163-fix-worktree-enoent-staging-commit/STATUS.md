@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** S
 
@@ -25,9 +25,11 @@
 **Status:** 🟨 In Progress
 
 - [ ] Add `orchBranch?: string` param to `ensureTaskFilesCommitted`
-- [ ] After successful staging commit, fast-forward via `git update-ref`
-- [ ] Wrap in try/catch — non-fatal on failure
-- [ ] Pass `orchBranch` from `executeWave` to `ensureTaskFilesCommitted`
+- [ ] After staging commit: get orchBranch tip SHA + HEAD SHA
+- [ ] Check ancestry: if `merge-base --is-ancestor <orchTip> <newHead>` → FF case: `update-ref` with expected-old-sha
+- [ ] Non-FF case (orchBranch advanced with wave merges): use `git merge-tree --write-tree <orchTip> <newHead>` to compute merged tree, then `commit-tree` to create merge commit, then `update-ref` with expected-old-sha
+- [ ] Wrap entire ref-update in try/catch — non-fatal on failure (log warning)
+- [ ] Pass `orchBranch` (= `baseBranch`) from `executeWave` to `ensureTaskFilesCommitted`
 - [ ] Verify workspace mode correctness
 
 ---
@@ -53,6 +55,7 @@
 
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
+| R001 | plan | 1 | REVISE | .reviews/R001-plan-step1.md |
 
 ---
 
@@ -76,3 +79,4 @@
 ## Blockers
 
 *None*
+| 2026-04-11 03:48 | Review R001 | plan Step 1: REVISE |
