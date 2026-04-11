@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** M
 
@@ -30,13 +30,13 @@
 ---
 
 ### Step 2: Fast-fail on dead PID + stale snapshot
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Read existing grace period logic carefully
-- [ ] **AMENDED (R003)**: Target is `else` branch (`snap.taskId === taskId`), NOT null/mismatch branch. That branch does `sessionAlive = snap.status === "running"` unconditionally — the bug — because if the worker died silently the snapshot still says "running" and Priority 3 never fires.
-- [ ] Implement fast-fail in the `else` branch: when `snap.updatedAt` stale > stallTimeoutMs/2 AND trackerAgeMs >= 60s AND isV2AgentAlive returns false, set sessionAlive = false
-- [ ] Only applies after startup grace (trackerAgeMs >= 60s)
-- [ ] Null-guard snap.updatedAt to avoid false positives from old schema
+- [x] Read existing grace period logic carefully
+- [x] **AMENDED (R003)**: Target is `else` branch (`snap.taskId === taskId`), NOT null/mismatch branch. That branch does `sessionAlive = snap.status === "running"` unconditionally — the bug — because if the worker died silently the snapshot still says "running" and Priority 3 never fires.
+- [x] Implement fast-fail in the `else` branch: when `snap.updatedAt` stale > stallTimeoutMs/2 AND trackerAgeMs >= 60s AND isV2AgentAlive returns false, set sessionAlive = false
+- [x] Only applies after startup grace (trackerAgeMs >= 60s)
+- [x] Null-guard snap.updatedAt to avoid false positives from old schema
 
 ---
 
@@ -95,3 +95,4 @@
 | 2026-04-11 00:10 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-11 00:18 | Review R002 | code Step 1: APPROVE |
 | 2026-04-11 00:25 | Review R003 | plan Step 2: REVISE |
+| 2026-04-11 00:28 | Review R004 | plan Step 2: APPROVE |

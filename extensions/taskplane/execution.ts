@@ -911,7 +911,31 @@ export async function resolveTaskMonitorState(
 				sessionAlive = true;
 			}
 		} else {
-			sessionAlive = snap.status === "running";
+			// TP-159: Fast-fail path for ghost workers (issue #461).
+			// When the snapshot belongs to the current task but the lane-runner
+			// has stopped updating it and the agent's PID is confirmed dead,
+			// immediately set sessionAlive=false instead of waiting for the full
+			// stall timeout. This handles the case where a worker dies silently
+			// (OOM, segfault, parent crash) after writing its first snapshot:
+			//   snap.status stays "running", stallTimerStart stays null
+			//   (STATUS.md never written), so Priority 2 never fires without
+			//   this explicit dead-PID check.
+			// Conditions:
+			//   1. snap.updatedAt is stale beyond stallTimeoutMs/2
+			//   2. startup grace has elapsed (trackerAgeMs >= 60s)
+			//   3. agent is confirmed dead (registry marked crashed by orphan scan)
+			const trackerAgeMs = now - tracker.firstObservedAt;
+			if (
+				snap.updatedAt &&
+				(now - snap.updatedAt) > stallTimeoutMs / 2 &&
+				trackerAgeMs >= 60_000 &&
+				!isV2AgentAlive(sessionName, runtimeBackend, v2Context?.laneNumber)
+			) {
+				// Ghost worker confirmed: PID dead, snapshot stale beyond half the stall timeout
+				sessionAlive = false;
+			} else {
+				sessionAlive = snap.status === "running";
+			}
 		}
 	} else {
 		sessionAlive = isV2AgentAlive(sessionName, "v2", v2Context?.laneNumber);
