@@ -1,6 +1,6 @@
 # TP-164: Live merge agent telemetry in dashboard (#465) — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Add merge snapshot infrastructure
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 2
@@ -24,7 +24,7 @@
 ---
 
 ### Step 1: Add merge snapshot infrastructure
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Add `RuntimeMergeSnapshot` interface to `types.ts`
 - [ ] Add `runtimeMergeSnapshotPath()` to `types.ts`
