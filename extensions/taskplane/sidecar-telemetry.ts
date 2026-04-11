@@ -1,7 +1,6 @@
 /**
  * Sidecar Telemetry Utilities
  *
- * Extracted from `extensions/task-runner.ts` (TP-161).
  * Canonical home for sidecar JSONL tailing and telemetry delta parsing.
  *
  * These utilities are used by the orchestrator to poll live worker telemetry

@@ -1958,7 +1958,7 @@ function parseSupervisorTemplate(filePath: string): { fm: Record<string, string>
 /**
  * Load a supervisor template: base (from package) + local override (from project).
  *
- * Follows the same composition pattern as `loadAgentDef()` in task-runner.ts:
+ * Follows the same composition pattern as `loadAgentDef()`:
  * - Base template: shipped in `templates/agents/{name}.md`
  * - Local override: `.pi/agents/{name}.md` in the project
  * - If local has `standalone: true`, use it exclusively

@@ -29,13 +29,11 @@ cd ..
 
 ## Run extensions locally
 
-### Load both task-runner and orchestrator
+### Load the orchestrator
 
 ```bash
-pi -e extensions/task-orchestrator.ts -e extensions/task-runner.ts
+pi -e extensions/task-orchestrator.ts
 ```
-
-The orchestrator loads `task-runner.ts` internally for lane execution.
 
 ---
 
@@ -157,7 +155,6 @@ Inside pi:
 
 ## File map for core implementation
 
-- `extensions/task-runner.ts` — single-task execution engine (used internally by orchestrator lanes)
 - `extensions/task-orchestrator.ts` — orchestrator facade export
 - `extensions/taskplane/discovery.ts` — task discovery + dependency parsing
 - `extensions/taskplane/waves.ts` — DAG + wave computation + lane assignment

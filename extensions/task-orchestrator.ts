@@ -18,7 +18,7 @@
  *   .pi/task-orchestrator.yaml  — orchestrator-specific settings
  *   .pi/task-runner.yaml        — task areas, worker/reviewer config (shared)
  *
- * Usage: pi -e extensions/task-orchestrator.ts -e extensions/task-runner.ts
+ * Usage: pi -e extensions/task-orchestrator.ts
  */
 
 // Re-export all named exports for tests and other consumers

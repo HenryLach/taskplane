@@ -1,7 +1,6 @@
 /**
  * Context Window Resolution Utilities
  *
- * Extracted from `extensions/task-runner.ts` (TP-161).
  * Canonical home for context window resolution logic used when spawning workers.
  *
  * The original `resolveContextWindow(config: TaskConfig, ctx: ExtensionContext)` signature

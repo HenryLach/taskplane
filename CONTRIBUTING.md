@@ -48,32 +48,21 @@ cd ..
 Taskplane's extensions can be loaded directly from the repo using pi's `-e` flag:
 
 ```bash
-# Load both task runner and orchestrator
-pi -e extensions/task-orchestrator.ts -e extensions/task-runner.ts
+pi -e extensions/task-orchestrator.ts
 
 # Or use just (if installed)
 just orch
 ```
 
-To load only the task runner:
-
-```bash
-pi -e extensions/task-runner.ts
-
-# Or
-just task
-```
-
 ### Verify Setup
 
-Once pi starts with the extensions loaded, you should see the `/task` and `/orch` commands available. You can confirm with:
+Once pi starts with the extensions loaded, you should see the `/orch` commands available. You can confirm with:
 
 ```
-/task
 /orch
 ```
 
-Both should print usage information.
+This should print usage information.
 
 ## Running Tests
 
@@ -111,7 +100,6 @@ taskplane/
 │   ├── server.cjs                 # Zero-dep Node HTTP server with SSE
 │   └── public/                    # Static frontend (vanilla JS/CSS/HTML)
 ├── extensions/
-│   ├── task-runner.ts             # /task commands (single-task execution)
 │   ├── task-orchestrator.ts       # /orch commands (thin facade)
 │   ├── taskplane/                 # Orchestrator internals
 │   │   ├── types.ts               # All types, interfaces, constants
@@ -163,7 +151,7 @@ taskplane/
 
 | I want to... | Look at... |
 |---|---|
-| Add/modify a pi command | `extensions/task-runner.ts` or `extensions/taskplane/extension.ts` |
+| Add/modify a pi command | `extensions/taskplane/extension.ts` |
 | Change orchestrator behavior | `extensions/taskplane/` (the relevant module) |
 | Change the CLI (`taskplane init`, etc.) | `bin/taskplane.mjs` |
 | Update the dashboard | `dashboard/server.cjs` and `dashboard/public/` |
@@ -218,7 +206,6 @@ Types: `feat`, `fix`, `docs`, `refactor`, `test`, `chore`
 
 Examples:
 - `feat(orch): add load-balanced lane assignment strategy`
-- `fix(task-runner): handle missing STATUS.md gracefully`
 - `docs: add troubleshooting guide`
 - `test(persistence): add schema validation edge cases`
 

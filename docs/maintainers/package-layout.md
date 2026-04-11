@@ -15,7 +15,6 @@ taskplane/
 │       ├── app.js
 │       └── style.css
 ├── extensions/
-│   ├── task-runner.ts
 │   ├── task-orchestrator.ts
 │   └── taskplane/
 │       ├── index.ts
@@ -53,7 +52,6 @@ taskplane/
 
 Via `package.json#pi` manifest:
 
-- `extensions/task-runner.ts`
 - `extensions/task-orchestrator.ts`
 - `skills/`
 
@@ -92,7 +90,6 @@ At time of writing it includes:
 
 - `bin/`
 - `dashboard/`
-- `extensions/task-runner.ts`
 - `extensions/task-orchestrator.ts`
 - `extensions/taskplane/`
 - `skills/`

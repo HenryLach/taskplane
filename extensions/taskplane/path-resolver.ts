@@ -158,7 +158,7 @@ export function resolvePiCliPath(): string {
  *
  * @param repoRoot - Absolute path to the project root (used for local dev check)
  * @param relPath  - Relative path within the taskplane package, e.g.
- *                   `"extensions/task-runner.ts"` or `"templates/agents/task-worker.md"`
+ *                   `"extensions/task-orchestrator.ts"` or `"templates/agents/task-worker.md"`
  * @returns Absolute path to the resolved file. If not found in any location,
  *          returns the local path (`join(repoRoot, relPath)`) as a fallback — callers
  *          will fail at use time with a clear "file not found" error.

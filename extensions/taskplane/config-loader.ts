@@ -1267,11 +1267,9 @@ export function toTaskConfig(config: TaskplaneConfig): {
 	};
 }
 
-// ── Task Runner loadConfig Shim ───────────────────────────────────────
+// ── Task Runner Config Loader ───────────────────────────────────────────
 //
-// Previously exported from extensions/task-runner.ts (deleted in TP-162).
-// These functions allow test code that imported from task-runner.ts to be
-// updated to import from this module instead.
+// loadConfig and _resetPointerWarning for task execution consumers.
 
 /** Track whether a pointer warning has been logged this session (log once). */
 let _pointerWarningLogged = false;
@@ -1305,8 +1303,7 @@ export function _resetPointerWarning(): void {
  * Load task-runner config via the unified config loader.
  *
  * Returns the legacy snake_case TaskConfig shape. Wraps loadProjectConfig
- * with pointer resolution and error handling identical to the former
- * task-runner.ts loadConfig() export.
+ * with pointer resolution and error handling.
  */
 export function loadConfig(cwd: string): ReturnType<typeof toTaskConfig> {
 	try {

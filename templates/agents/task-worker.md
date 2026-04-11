@@ -360,9 +360,9 @@ anything.
 
 ### Pattern: grep-first, read-with-offset
 
-1. **Check size:** `wc -l extensions/task-runner.ts` → 4100 lines (DO NOT read fully)
-2. **Locate** the relevant section: `grep -n "function buildPrompt" extensions/task-runner.ts`
-3. **Read** just that region: `read extensions/task-runner.ts (offset: 1773, limit: 50)`
+1. **Check size:** `wc -l extensions/taskplane/engine.ts` → 4100 lines (DO NOT read fully)
+2. **Locate** the relevant section: `grep -n "function buildPrompt" extensions/taskplane/engine.ts`
+3. **Read** just that region: `read extensions/taskplane/engine.ts (offset: 1773, limit: 50)`
 4. **Edit** surgically with exact `oldText → newText`
 
 ### When to read a full file

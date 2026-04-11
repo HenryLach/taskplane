@@ -20,14 +20,7 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
 2. `docs/README.md` (full docs map)
 3. `docs/explanation/architecture.md`
 
-### 2) If your change is about `/task`
-- `extensions/task-runner.ts` (primary implementation)
-- `docs/explanation/execution-model.md`
-- `docs/reference/task-format.md`
-- `docs/reference/status-format.md`
-- `docs/reference/configuration/task-runner.yaml.md`
-
-### 3) If your change is about `/orch*`
+### 2) If your change is about `/orch*`
 - `extensions/taskplane/extension.ts` (command surface)
 - `extensions/taskplane/discovery.ts` (task discovery + deps)
 - `extensions/taskplane/waves.ts` (DAG/waves/assignment)
@@ -38,13 +31,13 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
 - `docs/reference/commands.md`
 - `docs/reference/configuration/task-orchestrator.yaml.md`
 
-### 4) If your change is about CLI/dashboard/scaffolding
+### 3) If your change is about CLI/dashboard/scaffolding
 - CLI: `bin/taskplane.mjs`
 - Dashboard: `dashboard/server.cjs`, `dashboard/public/*`
 - Templates: `templates/**`
 - Packaging: `package.json`, `docs/maintainers/package-layout.md`
 
-### 5) Tests
+### 4) Tests
 - `extensions/tests/*`
 - `docs/maintainers/testing.md`
 
@@ -61,7 +54,6 @@ When in doubt, optimize for: **determinism, recoverability, and clear operator v
    - Resume/abort flows depend on consistent state semantics.
 
 3. **Task execution and orchestration are separate concerns**
-   - `/task` behavior lives in task-runner.
    - `/orch*` behavior coordinates discovery/waves/lanes/worktrees/merge.
 
 4. **Templates are public scaffolding, not project-specific policy**
@@ -264,7 +256,7 @@ When operating as the supervisor (during `/orch` execution), these tools are ava
 ## Practical dev commands
 
 - Run extensions locally:
-  - `pi -e extensions/task-orchestrator.ts -e extensions/task-runner.ts`
+  - `pi -e extensions/task-orchestrator.ts`
 
 - Run tests:
   - `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`

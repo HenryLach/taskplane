@@ -42,22 +42,7 @@ This design keeps shipped code upgradeable while keeping project behavior custom
 
 ## Major modules
 
-### 1) Task Runner module (`extensions/task-runner.ts`)
-
-Internal module used by the orchestrator for lane execution. It is **not** a
-user-facing command surface — users interact exclusively through `/orch*`
-commands. The orchestrator spawns task-runner logic within each lane to handle
-single-task execution.
-
-Responsibilities:
-
-- parse `PROMPT.md`
-- generate/read `STATUS.md`
-- run worker/reviewer loops
-- enforce checkpoint discipline and iteration limits
-- emit lane sidecar data for dashboard
-
-### 2) Task Orchestrator extension (`extensions/task-orchestrator.ts` + `extensions/taskplane/*`)
+### 1) Task Orchestrator extension (`extensions/task-orchestrator.ts` + `extensions/taskplane/*`)
 
 The sole user-facing command surface. Owns all task execution — from single
 tasks to parallel batch execution:
@@ -87,7 +72,7 @@ the engine falls back to main-thread execution via `setTimeout(0)`. This keeps
 the pi session free for the operator to run `/orch-status`, `/orch-pause`, or
 interact with the supervisor agent while the batch executes.
 
-### 3) CLI (`bin/taskplane.mjs`)
+### 2) CLI (`bin/taskplane.mjs`)
 
 Owns project scaffolding and diagnostics:
 
@@ -98,11 +83,11 @@ Owns project scaffolding and diagnostics:
 
 It does **not** execute task logic itself; that lives in extensions.
 
-### 4) Dashboard (`dashboard/server.cjs` + `dashboard/public/*`)
+### 3) Dashboard (`dashboard/server.cjs` + `dashboard/public/*`)
 
 A standalone Node server + static frontend reading sidecar state (`.pi/*`) and streaming updates via SSE.
 
-### 5) Skills and templates
+### 4) Skills and templates
 
 - `skills/` provides reusable agent skills (e.g., task creation)
 - `templates/` provides scaffolding assets copied/generated into projects

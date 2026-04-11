@@ -1,13 +1,11 @@
 /**
  * Task Executor Core — Headless execution semantics for Runtime V2
  *
- * This module owns the deterministic task execution logic that was
- * previously embedded inside the Pi extension host (task-runner.ts).
+ * This module owns the deterministic task execution logic for headless lane execution.
  * It has NO dependency on Pi's ExtensionAPI, ExtensionContext, UI
  * widgets, session lifecycle, TMUX, or TASK_AUTOSTART.
  *
  * Consumers:
- *   - task-runner.ts (deprecated /task compatibility wrapper)
  *   - lane-runner.ts (Runtime V2 headless lane execution, TP-105)
  *
  * Design rules:
@@ -29,8 +27,7 @@ import { spawnSync } from "child_process";
 /**
  * Parsed step information from PROMPT.md or STATUS.md.
  *
- * Re-exported from the core so consumers don't need to import
- * task-runner.ts for the type definition.
+ * Re-exported from the core for downstream consumers.
  */
 export interface StepInfo {
 	number: number;

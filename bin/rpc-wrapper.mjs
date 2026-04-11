@@ -294,7 +294,6 @@ function displayProgress(state) {
  * Per RPC protocol spec: split on \n, strip optional trailing \r,
  * do NOT use Node readline (splits on U+2028/U+2029).
  *
- * Reuses the proven pattern from task-runner.ts:910-975.
  */
 function attachJsonlReader(stream, onLine) {
 	const decoder = new StringDecoder("utf8");

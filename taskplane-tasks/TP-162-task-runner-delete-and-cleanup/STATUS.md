@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 1
-**Review Counter:** 6
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** M
 
@@ -51,21 +51,21 @@
 ---
 
 ### Step 4: Update docs and templates
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] `extensions/task-orchestrator.ts` — remove dual-load comment
-- [ ] `docs/maintainers/development-setup.md` — remove task-runner load instructions
-- [ ] `docs/maintainers/package-layout.md` — remove task-runner.ts from layout
-- [ ] `docs/explanation/architecture.md` — remove task-runner.ts module description
-- [ ] `AGENTS.md` (root) — update project map and dev commands
-- [ ] `CONTRIBUTING.md` — update load commands and package structure
-- [ ] `extensions/tsconfig.json` — remove task-runner.ts from include array
-- [ ] `docs/tutorials/install-from-source.md` — remove task-runner-only run option
-- [ ] `templates/agents/task-worker.md` — update lines 363-365 (task-runner.ts examples → use task-executor-core.ts or engine.ts)
-- [ ] `bin/taskplane.mjs` — audit (no changes needed based on grep)
-- [ ] `extensions/taskplane/path-resolver.ts` — update example path in JSDoc from task-runner.ts to task-orchestrator.ts
-- [ ] `extensions/taskplane/config-loader.ts` shim comment — remove "deleted in TP-162" phrasing (write as if it never existed)
-- [ ] Final residual reference sweep across maintained files (excluding historical: CHANGELOG.md, docs/specifications/)
+- [x] `extensions/task-orchestrator.ts` — remove dual-load comment
+- [x] `docs/maintainers/development-setup.md` — remove task-runner load instructions
+- [x] `docs/maintainers/package-layout.md` — remove task-runner.ts from layout
+- [x] `docs/explanation/architecture.md` — remove task-runner.ts module description
+- [x] `AGENTS.md` (root) — update project map and dev commands
+- [x] `CONTRIBUTING.md` — update load commands and package structure
+- [x] `extensions/tsconfig.json` — remove task-runner.ts from include array
+- [x] `docs/tutorials/install-from-source.md` — remove task-runner-only run option
+- [x] `templates/agents/task-worker.md` — update lines 363-365 (task-runner.ts examples → use task-executor-core.ts or engine.ts)
+- [x] `bin/taskplane.mjs` — audit (no changes needed based on grep)
+- [x] `extensions/taskplane/path-resolver.ts` — update example path in JSDoc from task-runner.ts to task-orchestrator.ts
+- [x] `extensions/taskplane/config-loader.ts` shim comment — remove "deleted in TP-162" phrasing (write as if it never existed)
+- [x] Final residual reference sweep across maintained files (excluding historical: CHANGELOG.md, docs/specifications/)
 
 ---
 
@@ -123,3 +123,4 @@
 | 2026-04-11 06:28 | Review R004 | plan Step 3: APPROVE |
 | 2026-04-11 06:34 | Review R005 | plan Step 4: REVISE |
 | 2026-04-11 06:37 | Review R006 | plan Step 4: REVISE |
+| 2026-04-11 06:38 | Review R007 | plan Step 4: APPROVE |

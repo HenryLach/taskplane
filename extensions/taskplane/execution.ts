@@ -41,7 +41,7 @@ import { resolvePointer, loadWorkspaceConfig } from "./workspace.ts";
 /**
  * Structured log helper for lane execution.
  *
- * All execution logs go to stderr (same pattern as task-runner.ts).
+ * All execution logs go to stderr.
  * Format: [orch] {laneId}/{taskId}: {message}
  * Correlation fields: batchId, laneId, taskId, sessionName.
  * No PII — only IDs and paths.

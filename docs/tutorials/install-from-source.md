@@ -47,13 +47,7 @@ You can also run `taskplane init` if the CLI is globally installed.
 From the Taskplane repo root:
 
 ```bash
-pi -e extensions/task-orchestrator.ts -e extensions/task-runner.ts
-```
-
-Or task-runner only:
-
-```bash
-pi -e extensions/task-runner.ts
+pi -e extensions/task-orchestrator.ts
 ```
 
 ---
