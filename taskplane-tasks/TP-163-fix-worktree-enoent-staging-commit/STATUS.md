@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** S
 
@@ -22,15 +22,15 @@
 ---
 
 ### Step 1: Fast-forward orch branch after staging commit
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add `orchBranch?: string` param to `ensureTaskFilesCommitted`
-- [ ] After staging commit: get orchBranch tip SHA + HEAD SHA
-- [ ] Check ancestry: if `merge-base --is-ancestor <orchTip> <newHead>` → FF case: `update-ref` with expected-old-sha
-- [ ] Non-FF case (orchBranch advanced with wave merges): use `git merge-tree --write-tree <orchTip> <newHead>` to compute merged tree, then `commit-tree` to create merge commit, then `update-ref` with expected-old-sha
-- [ ] Wrap entire ref-update in try/catch — non-fatal on failure (log warning)
-- [ ] Pass `orchBranch` (= `baseBranch`) from `executeWave` to `ensureTaskFilesCommitted`
-- [ ] Verify workspace mode correctness
+- [x] Add `orchBranch?: string` param to `ensureTaskFilesCommitted`
+- [x] After staging commit: get orchBranch tip SHA + HEAD SHA
+- [x] Check ancestry: if `merge-base --is-ancestor <orchTip> <newHead>` → FF case: `update-ref` with expected-old-sha
+- [x] Non-FF case (orchBranch advanced with wave merges): use `git merge-tree --write-tree <orchTip> <newHead>` to compute merged tree, then `commit-tree` to create merge commit, then `update-ref` with expected-old-sha
+- [x] Wrap entire ref-update in try/catch — non-fatal on failure (log warning)
+- [x] Pass `orchBranch` (= `baseBranch`) from `executeWave` to `ensureTaskFilesCommitted`
+- [x] Verify workspace mode correctness
 
 ---
 
@@ -80,3 +80,4 @@
 
 *None*
 | 2026-04-11 03:48 | Review R001 | plan Step 1: REVISE |
+| 2026-04-11 03:51 | Review R002 | plan Step 1: APPROVE |
