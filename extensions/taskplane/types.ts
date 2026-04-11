@@ -291,6 +291,19 @@ export interface TaskRunnerConfig {
 	 * @since TP-055
 	 */
 	model_fallback?: "inherit" | "fail";
+	/**
+	 * Reviewer agent model/thinking/tools configuration.
+	 * Threaded through to `spawnReviewer()` via env vars.
+	 * @since TP-160
+	 */
+	reviewer?: {
+		/** Model string (empty = inherit session default) */
+		model: string;
+		/** Thinking mode ("on" | "off" | budget string, empty = inherit) */
+		thinking: string;
+		/** Comma-separated tool allowlist */
+		tools: string;
+	};
 }
 
 /** Result of a preflight check */
