@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 1
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** M
 
@@ -53,16 +53,16 @@
 ### Step 4: Update docs and templates
 **Status:** ⬜ Not Started
 
-> ⚠️ Hydrate: expand after Step 0 grep shows all remaining references
-
 - [ ] `extensions/task-orchestrator.ts` — remove dual-load comment
-- [ ] `docs/maintainers/development-setup.md`
-- [ ] `docs/maintainers/package-layout.md`
-- [ ] `docs/explanation/architecture.md`
-- [ ] `AGENTS.md`
-- [ ] `templates/agents/task-worker.md` — audit
-- [ ] `bin/taskplane.mjs` — audit
-- [ ] Any additional files from Step 0 grep
+- [ ] `docs/maintainers/development-setup.md` — remove task-runner load instructions
+- [ ] `docs/maintainers/package-layout.md` — remove task-runner.ts from layout
+- [ ] `docs/explanation/architecture.md` — remove task-runner.ts module description
+- [ ] `AGENTS.md` (root) — update project map and dev commands
+- [ ] `CONTRIBUTING.md` — update load commands and package structure
+- [ ] `extensions/tsconfig.json` — remove task-runner.ts from include array
+- [ ] `docs/tutorials/install-from-source.md` — remove task-runner-only run option
+- [ ] `templates/agents/task-worker.md` — audit (no changes needed based on grep)
+- [ ] `bin/taskplane.mjs` — audit (no changes needed based on grep)
 
 ---
 
@@ -118,3 +118,4 @@
 | 2026-04-11 06:22 | Review R002 | plan Step 2: APPROVE |
 | 2026-04-11 06:25 | Review R003 | plan Step 3: REVISE |
 | 2026-04-11 06:28 | Review R004 | plan Step 3: APPROVE |
+| 2026-04-11 06:34 | Review R005 | plan Step 4: REVISE |
