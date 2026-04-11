@@ -1,23 +1,23 @@
 # TP-160: Pass reviewer model/thinking/tools config to spawnReviewer subprocess — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-04-10
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-04-11
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read `executeWave()` and `executeLaneV2()` in `execution.ts`
-- [ ] Read `LaneRunnerConfig` and worker env setup in `lane-runner.ts`
-- [ ] Read `spawnReviewer()` in `agent-bridge-extension.ts`
-- [ ] Confirm `runnerConfig` in scope at `executeWave` call sites in `engine.ts`
-- [ ] Verify test baseline
+- [x] Read `executeWave()` and `executeLaneV2()` in `execution.ts`
+- [x] Read `LaneRunnerConfig` and worker env setup in `lane-runner.ts`
+- [x] Read `spawnReviewer()` in `agent-bridge-extension.ts`
+- [x] Confirm `runnerConfig` in scope at `executeWave` call sites in `engine.ts`
+- [x] Verify test baseline
 
 ---
 
@@ -63,6 +63,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| `TaskRunnerConfig` (types.ts) does NOT have `reviewer` field — it's only in config-loader's intermediate `toTaskConfig()`. Must add `reviewer` to `TaskRunnerConfig` and update `toTaskRunnerConfig()` | In-scope fix required | types.ts, config-loader.ts |
+| `executeWave` call at line 1795 is inside `attemptStaleWorktreeRecovery` which lacks `runnerConfig` in scope. Must add `runnerConfig?` param to that function. | In-scope fix required | engine.ts:1693 |
+| Pre-existing test failures (3): supervised-mode test, execCtx-reset test, worktree-lifecycle integration (timing) | Out of scope — pre-existing | extensions/tests/ |
 
 ---
 
@@ -71,6 +74,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-10 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-04-11 01:33 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-11 01:33 | Step 0 started | Preflight |
 
 ---
 
