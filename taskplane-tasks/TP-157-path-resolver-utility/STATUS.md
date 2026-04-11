@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -19,13 +19,13 @@
 ---
 
 ### Step 1: Create extensions/taskplane/path-resolver.ts
-**Status:** 🟨 In Progress
+**Status:** ✅ Done
 
-- [ ] Implement `getNpmGlobalRoot()` — cached, ESM-safe, shell:true for Windows
-- [ ] Implement `resolvePiCliPath()` — dynamic-first, all platforms, clear error
-- [ ] Implement `resolveTaskplanePackageFile()` — dynamic-first, local dev fallback
-- [ ] Implement `resolveTaskplaneAgentTemplate()` — convenience wrapper
-- [ ] Add JSDoc with platform notes to all exports
+- [x] Implement `getNpmGlobalRoot()` — cached, ESM-safe, shell:true for Windows
+- [x] Implement `resolvePiCliPath()` — dynamic-first, all platforms, clear error
+- [x] Implement `resolveTaskplanePackageFile()` — dynamic-first, local dev fallback
+- [x] Implement `resolveTaskplaneAgentTemplate()` — convenience wrapper
+- [x] Add JSDoc with platform notes to all exports
 
 ---
 
@@ -94,3 +94,4 @@
 ## Notes
 
 *Reserved for execution notes*
+| 2026-04-11 00:14 | Review R001 | plan Step 1: APPROVE |
