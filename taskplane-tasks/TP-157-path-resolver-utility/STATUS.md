@@ -1,10 +1,10 @@
 # TP-157: Consolidate npm/package path resolution into path-resolver.ts — Status
 
-**Current Step:** Step 1: Create extensions/taskplane/path-resolver.ts
+**Current Step:** Step 2: Refactor callers to use path-resolver.ts
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -30,7 +30,7 @@
 ---
 
 ### Step 2: Refactor callers to use path-resolver.ts
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] `execution.ts` — remove local functions, import from path-resolver.ts
 - [ ] `agent-host.ts` — remove local functions, import from path-resolver.ts
@@ -95,3 +95,4 @@
 
 *Reserved for execution notes*
 | 2026-04-11 00:14 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-11 00:17 | Review R002 | code Step 1: APPROVE |
