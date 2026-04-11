@@ -268,7 +268,9 @@ describe("9.x: Merge host V2 migration (TP-108)", () => {
 
 	it("9.1: spawnMergeAgentV2 exists and uses agent-host", () => {
 		expect(mergeSrc).toContain("export async function spawnMergeAgentV2");
-		expect(mergeSrc).toContain("spawnAgent(opts)");
+		// spawnAgent is called with opts as first argument; additional callback
+		// arguments (onEvent, onTelemetry) may be present (TP-164).
+		expect(mergeSrc).toContain("spawnAgent(opts");
 	});
 
 	it("9.2: spawnMergeAgentV2 sets role to merger", () => {

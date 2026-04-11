@@ -10,9 +10,9 @@ import { join, dirname, resolve, relative } from "path";
 import { execLog, isV2AgentAlive, setV2LivenessRegistryCache } from "./execution.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { MERGE_POLL_INTERVAL_MS, MERGE_RESULT_GRACE_MS, MERGE_RESULT_READ_RETRIES, MERGE_RESULT_READ_RETRY_DELAY_MS, MERGE_SPAWN_RETRY_MAX, MERGE_TIMEOUT_MAX_RETRIES, MERGE_TIMEOUT_MS, MERGE_HEALTH_POLL_INTERVAL_MS, MERGE_HEALTH_WARNING_THRESHOLD_MS, MERGE_HEALTH_STUCK_THRESHOLD_MS, MergeError, VALID_MERGE_STATUSES, buildEngineEventBase } from "./types.ts";
-import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig, MergeHealthStatus, MergeHealthEventType, MergeSessionSnapshot, MergeSessionHealthState, EngineEvent, OrchBatchPhase } from "./types.ts";
+import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, MergeResultStatus, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome, TaskRunnerConfig, TransactionRecord, TransactionStatus, VerificationBaselineResult, WaveExecutionResult, WorkspaceConfig, MergeHealthStatus, MergeHealthEventType, MergeSessionSnapshot, MergeSessionHealthState, EngineEvent, OrchBatchPhase, RuntimeMergeSnapshot, RuntimeAgentTelemetrySnapshot } from "./types.ts";
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
-import { readManifest, writeManifest, buildRegistrySnapshot, writeRegistrySnapshot, readRegistrySnapshot } from "./process-registry.ts";
+import { readManifest, writeManifest, buildRegistrySnapshot, writeRegistrySnapshot, readRegistrySnapshot, writeMergeSnapshot } from "./process-registry.ts";
 import { generateMergeWorktreePath, sleepAsync, sleepSync } from "./worktree.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
@@ -20,7 +20,7 @@ import { emitEngineEvent } from "./persistence.ts";
 import { loadOrchestratorConfig } from "./config.ts";
 import { captureBaseline, diffFingerprints, runVerificationCommands, parseTestOutput, deduplicateFingerprints } from "./verification.ts";
 import { spawnAgent } from "./agent-host.ts";
-import type { AgentHostOptions, AgentHostResult } from "./agent-host.ts";
+import type { AgentHostOptions, AgentHostResult, AgentTelemetryCallback } from "./agent-host.ts";
 import type { RuntimeBackend } from "./execution.ts";
 import type { VerificationBaseline, FingerprintDiff, TestFingerprint } from "./verification.ts";
 
@@ -614,14 +614,69 @@ export async function spawnMergeAgentV2(
 		},
 	};
 
-	const { promise, kill } = spawnAgent(opts);
+	// Derive the 1-indexed merge number from the session name
+	// (e.g. "orch-henry-merge-1" → 1, "orch-henry-merge-2" → 2).
+	const mergeNumberMatch = sessionName.match(/-merge-(\d+)$/);
+	const mergeNumber = mergeNumberMatch ? parseInt(mergeNumberMatch[1], 10) : 1;
+	const mergeStartedAt = Date.now();
+	const mergeStateRoot = stateRoot ?? repoRoot;
+
+	// Helper: build a RuntimeAgentTelemetrySnapshot from a partial AgentHostResult.
+	const buildAgentSnap = (tel: Partial<AgentHostResult>, status: RuntimeAgentTelemetrySnapshot["status"]): RuntimeAgentTelemetrySnapshot => ({
+		agentId: sessionName,
+		status,
+		elapsedMs: tel.durationMs ?? (Date.now() - mergeStartedAt),
+		toolCalls: tel.toolCalls ?? 0,
+		contextPct: tel.contextUsage?.percent ?? 0,
+		costUsd: tel.costUsd ?? 0,
+		lastTool: tel.lastTool ?? "",
+		inputTokens: tel.inputTokens ?? 0,
+		outputTokens: tel.outputTokens ?? 0,
+		cacheReadTokens: tel.cacheReadTokens ?? 0,
+		cacheWriteTokens: tel.cacheWriteTokens ?? 0,
+	});
+
+	// Telemetry callback: write a merge snapshot on every telemetry update.
+	// Non-fatal — snapshot writes must never interfere with merge execution.
+	const onMergeTelemetry: AgentTelemetryCallback = (tel) => {
+		try {
+			const snap: RuntimeMergeSnapshot = {
+				batchId: bid,
+				mergeNumber,
+				sessionName,
+				waveIndex: 0,
+				status: "running",
+				agent: buildAgentSnap(tel, "running"),
+				updatedAt: Date.now(),
+			};
+			writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, snap);
+		} catch { /* non-fatal */ }
+	};
+
+	const { promise, kill } = spawnAgent(opts, undefined, onMergeTelemetry);
+
+	// Write an initial "running" snapshot immediately so the dashboard row
+	// appears even when the first telemetry event is delayed.
+	try {
+		const initialSnap: RuntimeMergeSnapshot = {
+			batchId: bid,
+			mergeNumber,
+			sessionName,
+			waveIndex: 0,
+			status: "running",
+			agent: buildAgentSnap({}, "running"),
+			updatedAt: Date.now(),
+		};
+		writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, initialSnap);
+	} catch { /* non-fatal */ }
 
 	// Store the kill handle for external cleanup (pause/abort).
 	// The promise runs in background — caller uses waitForMergeResult()
 	// to poll for the result file, same contract as the legacy session path.
-	activeMergeAgents.set(sessionName, { promise, kill, stateRoot: stateRoot ?? repoRoot, batchId: bid });
+	activeMergeAgents.set(sessionName, { promise, kill, stateRoot: mergeStateRoot, batchId: bid });
 
-	// Fire-and-forget: the background promise handles exit logging
+	// Fire-and-forget: the background promise handles exit logging and
+	// writes a terminal snapshot ("complete" or "failed") when the agent exits.
 	promise.then(result => {
 		activeMergeAgents.delete(sessionName);
 		execLog("merge", sessionName, "merge agent exited (V2)", {
@@ -630,9 +685,39 @@ export async function spawnMergeAgentV2(
 			costUsd: result.costUsd,
 			killed: result.killed,
 		});
+		// Write terminal snapshot. Promise resolves for both successful and
+		// failed exits, so derive status from result fields rather than
+		// relying on .catch to handle failures.
+		const terminalStatus: RuntimeMergeSnapshot["status"] =
+			(result.killed || result.exitCode !== 0 || !result.agentEnded) ? "failed" : "complete";
+		try {
+			const snap: RuntimeMergeSnapshot = {
+				batchId: bid,
+				mergeNumber,
+				sessionName,
+				waveIndex: 0,
+				status: terminalStatus,
+				agent: buildAgentSnap(result, terminalStatus === "complete" ? "exited" : "crashed"),
+				updatedAt: Date.now(),
+			};
+			writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, snap);
+		} catch { /* non-fatal */ }
 	}).catch(err => {
 		activeMergeAgents.delete(sessionName);
 		execLog("merge", sessionName, `merge agent error (V2): ${err instanceof Error ? err.message : String(err)}`);
+		// Write a failed terminal snapshot on unexpected rejection.
+		try {
+			const snap: RuntimeMergeSnapshot = {
+				batchId: bid,
+				mergeNumber,
+				sessionName,
+				waveIndex: 0,
+				status: "failed",
+				agent: buildAgentSnap({}, "crashed"),
+				updatedAt: Date.now(),
+			};
+			writeMergeSnapshot(mergeStateRoot, bid, mergeNumber, snap);
+		} catch { /* non-fatal */ }
 	});
 }
 

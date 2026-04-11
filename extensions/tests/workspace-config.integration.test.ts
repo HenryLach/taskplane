@@ -747,9 +747,11 @@ describe("root-consistency regression", () => {
 	it("5.11: extension.ts resets execCtx to null before re-initialization", () => {
 		// Prevents stale execCtx if session_start fires multiple times
 		// and the second call fails — execCtx must be null, not the old value
-		const sessionStartIdx = extensionSrc.indexOf("session_start");
+		// Use pi.on("session_start" to find the actual handler, not just any mention
+		// of the string (which also appears in comments and other contexts).
+		const sessionStartIdx = extensionSrc.indexOf('pi.on("session_start"');
 		const resetIdx = extensionSrc.indexOf("execCtx = null", sessionStartIdx);
-		const buildIdx = extensionSrc.indexOf("buildExecutionContext", sessionStartIdx);
+		const buildIdx = extensionSrc.indexOf("buildExecutionContext", resetIdx);
 		expect(resetIdx).toBeGreaterThan(sessionStartIdx);
 		expect(resetIdx).toBeLessThan(buildIdx);
 	});

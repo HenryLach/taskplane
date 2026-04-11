@@ -1,6 +1,6 @@
 # Task-Runner Consolidation — Specification
 
-**Status:** Draft  
+**Status:** Ready for Implementation  
 **Created:** 2026-04-10  
 **Author:** Supervisor session  
 
@@ -130,13 +130,15 @@ export function tailSidecarJsonl(state: SidecarTailState): SidecarTelemetryDelta
 
 Extract context window resolution from `task-runner.ts`.
 
+Note: the original signature takes `TaskConfig` (a task-runner internal type). The extracted version should accept only the fields it needs, avoiding a dependency on task-runner's `TaskConfig`.
+
 **Exports:**
 ```typescript
 export const FALLBACK_CONTEXT_WINDOW: number
 export function resolveContextWindow(
-    configuredWindow: number | undefined,
-    ctx: ExtensionContext | null,
-): number
+    configuredWindow: number | undefined,  // was config.context.worker_context_window
+    ctx: ExtensionContext | null,           // for auto-detecting from pi model registry
+): { contextWindow: number; source: string }
 ```
 
 ### 4.3 Retain existing modules unchanged
@@ -157,11 +159,11 @@ export function resolveContextWindow(
 | `extensions/tests/context-pressure-cache.test.ts` | Update imports | Point to `../taskplane/sidecar-telemetry.ts` |
 | `extensions/tests/context-window-autodetect.test.ts` | Update imports | Point to `../taskplane/context-window.ts` |
 | `extensions/tests/context-window-resolution.test.ts` | Update imports | Point to `../taskplane/context-window.ts` |
-| `extensions/tests/project-config-loader.test.ts` | Update imports | `loadConfig` → `config-loader.ts`; `_loadAgentDef` → `execution.ts` or new module |
+| `extensions/tests/project-config-loader.test.ts` | Update imports | `loadConfig` → `config-loader.ts`; `_loadAgentDef` → `execution.ts` (exported alongside `loadBaseAgentPrompt`) |
 | `extensions/tests/task-runner-review-skip.test.ts` | Update imports | `isLowRiskStep` → `../taskplane/task-executor-core.ts` |
 | `extensions/tests/sidecar-tailing.test.ts` | Update imports | Point to `../taskplane/sidecar-telemetry.ts` |
 | `extensions/tests/task-runner-*.test.ts` and others | Audit → update or delete | Source-reading tests may be testing dead behavior; see Section 8 Q3 |
-| `extensions/taskplane/execution.ts` | Remove dead code | Delete `resolveTaskRunnerExtensionPath()` |
+| `extensions/taskplane/execution.ts` | Remove dead code + add export | Delete `resolveTaskRunnerExtensionPath()`; export `loadAgentDef` for test use |
 | `package.json` | Remove from BOTH `"pi".extensions` AND `"files"` | Two separate entries need removal |
 | `extensions/task-orchestrator.ts` | Update comment | Remove dual-extension loading reference |
 | `docs/maintainers/development-setup.md` | Update | Remove `pi -e extensions/task-runner.ts` instructions |
@@ -240,19 +242,21 @@ Produce a complete checklist of all references before proceeding. This step is b
 
 ---
 
-## 8. Open Questions
+## 8. Open Questions — Resolution
 
-1. **How many test files actually import or read task-runner.ts?** The spec originally said 3; Sage identified at least 6 direct importers plus additional source-reading tests. The Step 0 inventory will produce the definitive count. Do not skip this step.
+All questions have been answered before task creation. Tasks can proceed directly to implementation.
 
-2. **Does `resolveContextWindow` depend on any task-runner.ts internal state?** It may reference `state.task` or session-level variables that only exist in the pi extension context. If so, its signature may need minimal adaptation. The extraction must be verbatim where possible; any necessary changes must be documented explicitly.
+1. **How many test files actually import or read task-runner.ts?** ❓ **Step 0 will answer this.** The Step 0 preflight grep is specifically designed to produce the definitive list. Do not skip it.
 
-3. **Which source-reading tests test dead behavior vs. live behavior?** Some tests that read `task-runner.ts` as source text may be verifying behavior that no longer exists (e.g., testing that `/task` guards are in place). These can be deleted. Others may be verifying patterns that now live elsewhere and need to be pointed at the new location. Determine per-test during Step 0.
+2. **Does `resolveContextWindow` depend on any task-runner.ts internal state?** ✅ **Answered.** The function signature is `resolveContextWindow(config: TaskConfig, ctx: ExtensionContext)` — no `state.*` access. It is extractable, but `TaskConfig` is a task-runner internal type. The extracted version should accept the subset of fields it actually uses (just `config.context.worker_context_window` and `ctx.model?.contextWindow`) rather than importing the full `TaskConfig` type. This is a minimal, safe signature adaptation — document it in the task.
 
-4. **Is `getSidecarDir` or equivalent already in the taskplane library?** `execution.ts` or `lane-runner.ts` may have a similar utility. If so, the extracted module should import from there, not duplicate.
+3. **Which source-reading tests test dead behavior vs. live behavior?** ❓ **Step 0 will answer this.** Worker must audit each source-reading test individually during preflight.
 
-5. **Should `sidecar-telemetry.ts` and `context-window.ts` be one file or two?** They're small enough to combine. Decide during Step 1 based on what else they need to import and whether they form a coherent concept together.
+4. **Is `getSidecarDir` or equivalent already in the taskplane library?** ✅ **Answered.** Not present in `execution.ts` or `lane-runner.ts`. Safe to extract without duplication.
 
-6. **Does `_loadAgentDef` belong in `execution.ts` (which already has `loadBaseAgentPrompt`) or a new `agent-resolution.ts`?** The `project-config-loader.test.ts` uses it. Placing it near `loadBaseAgentPrompt` in `execution.ts` is the path of least resistance; a new module is cleaner but adds scope.
+5. **Should `sidecar-telemetry.ts` and `context-window.ts` be one file or two?** ✅ **Decision: two files.** They are conceptually unrelated: sidecar utilities only touch `fs`/`path`, while `resolveContextWindow` depends on `ExtensionContext` from pi. Combining them would create an odd import graph. Keep them separate.
+
+6. **Does `_loadAgentDef` belong in `execution.ts` or a new `agent-resolution.ts`?** ✅ **Decision: export from `execution.ts`.** `loadAgentDef` is functionally related to `loadBaseAgentPrompt` and `loadLocalAgentPrompt` which already live in `execution.ts`. Same concern area, no new file needed. The function returns `{ systemPrompt, tools, model }` parsed from agent frontmatter — export it alongside the existing agent prompt loaders.
 
 ---
 

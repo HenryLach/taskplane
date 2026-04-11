@@ -30,12 +30,14 @@ import {
 	runtimeRegistryPath,
 	runtimeAgentEventsPath,
 	runtimeLaneSnapshotPath,
+	runtimeMergeSnapshotPath,
 	validateAgentManifest,
 	type RuntimeAgentId,
 	type RuntimeAgentManifest,
 	type RuntimeAgentRole,
 	type RuntimeAgentStatus,
 	type RuntimeRegistry,
+	type RuntimeMergeSnapshot,
 	type PacketPaths,
 } from "./types.ts";
 
@@ -358,6 +360,56 @@ export function readLaneSnapshot(
 		const p = runtimeLaneSnapshotPath(stateRoot, batchId, laneNumber);
 		if (!existsSync(p)) return null;
 		return JSON.parse(readFileSync(p, "utf-8"));
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Write a V2 merge agent snapshot to disk (atomic rename).
+ *
+ * Stored in the `lanes/` directory alongside lane snapshots so the dashboard
+ * server picks it up with the same scan that reads lane-N.json files.
+ *
+ * @param stateRoot   - Repository root (where `.pi/` lives)
+ * @param batchId     - Current batch identifier
+ * @param mergeNumber - 1-indexed merge agent number
+ * @param snapshot    - Snapshot data to persist
+ *
+ * @since TP-164
+ */
+export function writeMergeSnapshot(
+	stateRoot: string,
+	batchId: string,
+	mergeNumber: number,
+	snapshot: RuntimeMergeSnapshot,
+): void {
+	const path = runtimeMergeSnapshotPath(stateRoot, batchId, mergeNumber);
+	mkdirSync(dirname(path), { recursive: true });
+	const tmpPath = path + ".tmp";
+	writeFileSync(tmpPath, JSON.stringify(snapshot, null, 2) + "\n", "utf-8");
+	renameSync(tmpPath, path);
+}
+
+/**
+ * Read a V2 merge agent snapshot from disk.
+ * Returns null if the file does not exist or is unreadable.
+ *
+ * @param stateRoot   - Repository root (where `.pi/` lives)
+ * @param batchId     - Current batch identifier
+ * @param mergeNumber - 1-indexed merge agent number
+ *
+ * @since TP-164
+ */
+export function readMergeSnapshot(
+	stateRoot: string,
+	batchId: string,
+	mergeNumber: number,
+): RuntimeMergeSnapshot | null {
+	try {
+		const p = runtimeMergeSnapshotPath(stateRoot, batchId, mergeNumber);
+		if (!existsSync(p)) return null;
+		return JSON.parse(readFileSync(p, "utf-8")) as RuntimeMergeSnapshot;
 	} catch {
 		return null;
 	}

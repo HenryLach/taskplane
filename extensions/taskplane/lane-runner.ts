@@ -92,6 +92,22 @@ export interface LaneRunnerConfig {
 	workerThinking: string;
 	/** Worker system prompt */
 	workerSystemPrompt: string;
+	/**
+	 * Reviewer model (empty string = inherit session default).
+	 * Set from TASKPLANE_REVIEWER_MODEL env var, sourced from runnerConfig.reviewer.model.
+	 * @since TP-160
+	 */
+	reviewerModel: string;
+	/**
+	 * Reviewer thinking mode (empty string = inherit).
+	 * @since TP-160
+	 */
+	reviewerThinking: string;
+	/**
+	 * Reviewer tool allowlist (comma-separated).
+	 * @since TP-160
+	 */
+	reviewerTools: string;
 	/** Supervisor autonomy level for bridge-tool guards. */
 	supervisorAutonomy?: "interactive" | "supervised" | "autonomous";
 	/** Project name (for review request context) */
@@ -331,6 +347,9 @@ export async function executeTaskV2(
 				TASKPLANE_ACTIVE_SEGMENT_ID: segmentId ?? "",
 				TASKPLANE_SUPERVISOR_AUTONOMY: config.supervisorAutonomy || "autonomous",
 				ORCH_BATCH_ID: config.batchId,
+				...(config.reviewerModel ? { TASKPLANE_REVIEWER_MODEL: config.reviewerModel } : {}),
+				...(config.reviewerThinking ? { TASKPLANE_REVIEWER_THINKING: config.reviewerThinking } : {}),
+				...(config.reviewerTools ? { TASKPLANE_REVIEWER_TOOLS: config.reviewerTools } : {}),
 			},
 		};
 

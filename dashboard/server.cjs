@@ -194,9 +194,21 @@ function parseStatusMd(taskFolder) {
 }
 
 function getActiveSessions() {
-  // Runtime V2 no longer relies on external terminal multiplexers for liveness.
-  // Dashboard session data is driven by runtime registry + persisted state.
-  return [];
+  // Runtime V2: return active merger session names from the runtime registry
+  // so the dashboard merge pane can display live telemetry for running agents.
+  // Terminal statuses indicate the agent is no longer alive.
+  const TERMINAL_STATUSES = new Set(["exited", "killed", "crashed", "timed_out"]);
+  try {
+    const state = loadBatchState();
+    if (!state || !state.batchId) return [];
+    const registry = loadRuntimeRegistry(state.batchId);
+    if (!registry || !registry.agents) return [];
+    return Object.values(registry.agents)
+      .filter(a => a.role === "merger" && !TERMINAL_STATUSES.has(a.status))
+      .map(a => a.agentId);
+  } catch {
+    return [];
+  }
 }
 
 function checkDoneFile(taskFolder) {
@@ -400,6 +412,33 @@ function loadRuntimeLaneSnapshots(batchId) {
       try {
         const data = JSON.parse(fs.readFileSync(path.join(lanesDir, file), "utf-8"));
         if (data.laneNumber != null) snapshots[data.laneNumber] = data;
+      } catch { continue; }
+    }
+  } catch { /* dir missing */ }
+  return snapshots;
+}
+
+/**
+ * Load Runtime V2 merge agent snapshots for the current batch.
+ *
+ * Reads all `merge-N.json` files from `.pi/runtime/{batchId}/lanes/`.
+ * Returns a map of mergeNumber (string) → snapshot data.
+ *
+ * Follows the same pattern as {@link loadRuntimeLaneSnapshots}.
+ *
+ * @since TP-164
+ */
+function loadRuntimeMergeSnapshots(batchId) {
+  if (!batchId) return {};
+  const lanesDir = path.join(REPO_ROOT, ".pi", "runtime", batchId, "lanes");
+  const snapshots = {};
+  try {
+    if (!fs.existsSync(lanesDir)) return snapshots;
+    const files = fs.readdirSync(lanesDir).filter(f => f.startsWith("merge-") && f.endsWith(".json"));
+    for (const file of files) {
+      try {
+        const data = JSON.parse(fs.readFileSync(path.join(lanesDir, file), "utf-8"));
+        if (data.mergeNumber != null) snapshots[data.mergeNumber] = data;
       } catch { continue; }
     }
   } catch { /* dir missing */ }
@@ -1077,6 +1116,46 @@ function buildDashboardState() {
   const runtimeLaneSnapshots = loadRuntimeLaneSnapshots(state.batchId);
   const mailboxData = loadMailboxData(state.batchId);
 
+  // TP-164: Load merge agent snapshots for live dashboard telemetry.
+  const runtimeMergeSnapshots = loadRuntimeMergeSnapshots(state.batchId);
+
+  // TP-164: Inject merge snapshot telemetry into the telemetry map so
+  // `telemetry[sessionName]` resolves for the merge pane.
+  // Only inject when a JSONL-backed entry is absent or stale — the snapshot
+  // provides real-time tool-call / cost / context data even before the
+  // JSONL accumulator has accumulated enough events.
+  for (const snap of Object.values(runtimeMergeSnapshots)) {
+    const key = snap.sessionName;
+    if (!key) continue;
+    const agent = snap.agent;
+    if (!agent) continue;
+    // Only inject if there is no existing telemetry entry, or if the snapshot
+    // is more recent than the latest accumulator update.
+    const existing = telemetry[key];
+    if (!existing || (snap.updatedAt && snap.updatedAt > (existing._updatedAt || 0))) {
+      telemetry[key] = {
+        inputTokens: agent.inputTokens || 0,
+        outputTokens: agent.outputTokens || 0,
+        cacheReadTokens: agent.cacheReadTokens || 0,
+        cacheWriteTokens: agent.cacheWriteTokens || 0,
+        cost: agent.costUsd || 0,
+        toolCalls: agent.toolCalls || 0,
+        lastTool: agent.lastTool || "",
+        currentTool: snap.status === "running" ? (agent.lastTool || "") : "",
+        contextPct: agent.contextPct || 0,
+        // startedAt is not in the snapshot; compute from elapsed if possible.
+        startedAt: agent.elapsedMs > 0 ? snap.updatedAt - agent.elapsedMs : snap.updatedAt,
+        retries: 0,
+        retryActive: false,
+        lastRetryError: "",
+        compactions: 0,
+        latestTotalTokens: (agent.inputTokens || 0) + (agent.outputTokens || 0),
+        _updatedAt: snap.updatedAt,
+        _source: "merge-snapshot",
+      };
+    }
+  }
+
   // TP-115: Synthesize laneStates from V2 snapshots so the dashboard
   // pipeline works without legacy lane-state-*.json sidecar files.
   // V2 snapshots are authoritative when present.
@@ -1099,6 +1178,8 @@ function buildDashboardState() {
     // Runtime V2 data (null/empty for legacy batches)
     runtimeRegistry,
     runtimeLaneSnapshots,
+    // TP-164: Merge agent snapshots for live dashboard telemetry.
+    runtimeMergeSnapshots,
     mailbox: mailboxData,
     batch: {
       batchId: state.batchId,

@@ -861,7 +861,8 @@ describe("14.x — Supervised mode: triggerSupervisorIntegration", () => {
 		expect(triggerFn).toContain('if (integrationMode === "supervised")');
 		expect(triggerFn).toContain("Ask the operator for confirmation");
 		expect(triggerFn).toContain("triggerTurn: true");
-		expect(triggerFn).toContain("deliverAs");
+		// Note: deliverAs:'nextTurn' was intentionally removed (it caused the terminal
+		// to hang — triggerTurn:true alone is correct for immediate LLM turn activation)
 		expect(triggerFn).toContain("/orch-integrate");
 	});
 

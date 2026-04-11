@@ -317,7 +317,7 @@ describe("5.x: Runtime behavioral emission (TP-111)", () => {
 		const callPayload = toolCall!.payload as Record<string, unknown>;
 		expect(callPayload["args"]).toBeUndefined();
 		expect(String(callPayload["path"] || "").length).toBeLessThanOrEqual(200);
-		expect(String(callPayload["argsPreview"] || "").length).toBeLessThanOrEqual(80);
+		expect(String(callPayload["argsPreview"] || "").length).toBeLessThanOrEqual(300);
 
 		const resultPayload = toolResult!.payload as Record<string, unknown>;
 		expect(String(resultPayload["summary"] || "").length).toBeLessThanOrEqual(200);

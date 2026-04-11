@@ -291,6 +291,19 @@ export interface TaskRunnerConfig {
 	 * @since TP-055
 	 */
 	model_fallback?: "inherit" | "fail";
+	/**
+	 * Reviewer agent model/thinking/tools configuration.
+	 * Threaded through to `spawnReviewer()` via env vars.
+	 * @since TP-160
+	 */
+	reviewer?: {
+		/** Model string (empty = inherit session default) */
+		model: string;
+		/** Thinking mode ("on" | "off" | budget string, empty = inherit) */
+		thinking: string;
+		/** Comma-separated tool allowlist */
+		tools: string;
+	};
 }
 
 /** Result of a preflight check */
@@ -4060,6 +4073,50 @@ export function runtimeAgentEventsPath(stateRoot: string, batchId: string, agent
  */
 export function runtimeLaneSnapshotPath(stateRoot: string, batchId: string, laneNumber: number): string {
 	return `${stateRoot}/.pi/runtime/${batchId}/lanes/lane-${laneNumber}.json`;
+}
+
+/**
+ * Telemetry snapshot for a merge agent.
+ *
+ * Written to `.pi/runtime/{batchId}/lanes/merge-{mergeNumber}.json` alongside
+ * lane snapshots so the dashboard can display live merge-phase telemetry.
+ * Follows the same file-backed pattern as {@link RuntimeLaneSnapshot} but is
+ * simpler — merge agents have no reviewer, progress tracking, or repoId.
+ *
+ * @since TP-164
+ */
+export interface RuntimeMergeSnapshot {
+	/** Batch this merge agent belongs to */
+	batchId: string;
+	/** 1-indexed merge agent number (e.g. 1 for "orch-henry-merge-1") */
+	mergeNumber: number;
+	/** Stable agent session name (e.g. "orch-henry-merge-1") */
+	sessionName: string;
+	/** Wave index this merge agent is processing (0-indexed, 0 when unknown) */
+	waveIndex: number;
+	/** Merge agent lifecycle status */
+	status: "running" | "complete" | "failed";
+	/** Live telemetry snapshot for the merge agent (null when not yet started) */
+	agent: RuntimeAgentTelemetrySnapshot | null;
+	/** Epoch ms when this snapshot was last updated */
+	updatedAt: number;
+}
+
+/**
+ * Resolve the path for a merge agent snapshot file.
+ *
+ * Snapshots are stored alongside lane snapshots in the `lanes/` directory so
+ * the dashboard server's directory scan picks them up automatically.
+ *
+ * @param stateRoot  - Repository root (where `.pi/` lives)
+ * @param batchId    - Current batch identifier
+ * @param mergeNumber - 1-indexed merge agent number
+ * @returns Absolute path to the merge snapshot JSON file
+ *
+ * @since TP-164
+ */
+export function runtimeMergeSnapshotPath(stateRoot: string, batchId: string, mergeNumber: number): string {
+	return `${stateRoot}/.pi/runtime/${batchId}/lanes/merge-${mergeNumber}.json`;
 }
 
 /**

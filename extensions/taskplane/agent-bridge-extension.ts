@@ -429,12 +429,22 @@ export default function (pi: ExtensionAPI) {
 		// Pre-clean stale reviewer state from prior interrupted review
 		removeReviewerState(taskFolder);
 		return new Promise((resolve) => {
+			// Read reviewer config from env vars set by lane-runner from runnerConfig.reviewer.
+			// Empty string means inherit from session default (no flag passed to pi CLI).
+			const reviewerModel = process.env.TASKPLANE_REVIEWER_MODEL || "";
+			const reviewerThinking = process.env.TASKPLANE_REVIEWER_THINKING || "";
+			// Fall back to the schema default reviewer tool list (read-only + bash/grep).
+			// Must match config-schema.ts reviewer.tools default to avoid capability expansion.
+			const reviewerTools = process.env.TASKPLANE_REVIEWER_TOOLS || "read,bash,grep,find,ls";
+
 			const cliPath = resolvePiCliPath();
 			const args = [
 				cliPath, "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills",
-				"--tools", "read,write,edit,bash,grep,find,ls",
+				"--tools", reviewerTools,
 				"--system-prompt", systemPrompt,
 			];
+			if (reviewerModel) args.push("--model", reviewerModel);
+			if (reviewerThinking) args.push("--thinking", reviewerThinking);
 			const proc = nodeSpawn(process.execPath, args, {
 				shell: false,
 				cwd,

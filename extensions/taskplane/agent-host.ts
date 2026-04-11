@@ -561,8 +561,8 @@ export function spawnAgent(
 					case "tool_execution_start": {
 						toolCalls++;
 						const toolName = event.toolName || "tool";
-						const argPreview = typeof event.args === "string" ? event.args.slice(0, 80) :
-							(event.args && typeof Object.values(event.args)[0] === "string" ? String(Object.values(event.args)[0]).slice(0, 80) : "");
+						const argPreview = typeof event.args === "string" ? event.args.slice(0, 300) :
+							(event.args && typeof Object.values(event.args)[0] === "string" ? String(Object.values(event.args)[0]).slice(0, 300) : "");
 						lastTool = argPreview ? `${toolName}: ${argPreview}` : toolName;
 						// TP-111: Bounded payload only — no raw args in durable event log
 						const toolPath = event.args?.path ? String(event.args.path).slice(0, 200) : "";

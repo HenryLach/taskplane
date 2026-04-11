@@ -8,7 +8,7 @@ import { join } from "path";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { runDiscovery } from "./discovery.ts";
 import { executeOrchBatch } from "./engine.ts";
-import { computeTransitiveDependents, execLog, executeLaneV2, executeWave, resolveCanonicalTaskPaths } from "./execution.ts";
+import { buildReviewerEnv, computeTransitiveDependents, execLog, executeLaneV2, executeWave, resolveCanonicalTaskPaths } from "./execution.ts";
 import type { MonitorUpdateCallback, RuntimeBackend } from "./execution.ts";
 import { selectRuntimeBackend } from "./engine.ts";
 import { readRegistrySnapshot, isTerminalStatus, isProcessAlive } from "./process-registry.ts";
@@ -1461,7 +1461,7 @@ export async function resumeOrchBatch(
 				const laneResult = await executeLaneV2(
 					lane, orchConfig, laneRepoRoot, batchState.pauseSignal,
 					workspaceRoot, !!workspaceConfig,
-					{ ORCH_BATCH_ID: batchState.batchId },
+					{ ORCH_BATCH_ID: batchState.batchId, ...buildReviewerEnv(runnerConfig.reviewer) },
 					emitAlert,
 				);
 				const taskResult = laneResult.tasks.find(t => t.taskId === task.taskId);
@@ -1543,7 +1543,7 @@ export async function resumeOrchBatch(
 				const laneResult = await executeLaneV2(
 					lane, orchConfig, reExecRepoRoot, batchState.pauseSignal,
 					workspaceRoot, !!workspaceConfig,
-					{ ORCH_BATCH_ID: batchState.batchId },
+					{ ORCH_BATCH_ID: batchState.batchId, ...buildReviewerEnv(runnerConfig.reviewer) },
 					emitAlert,
 				);
 				const taskResult = laneResult.tasks.find(t => t.taskId === task.taskId);
@@ -1994,6 +1994,7 @@ export async function resumeOrchBatch(
 			resumeBackend,
 			emitAlert,
 			supervisorAutonomy,
+			runnerConfig.reviewer,
 		);
 
 		batchState.waveResults.push(waveResult);

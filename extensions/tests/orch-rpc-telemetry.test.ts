@@ -99,7 +99,9 @@ describe("Runtime V2 merge spawn wiring (source extraction)", () => {
 
 	it("spawnMergeAgentV2 spawns via agent-host, not TMUX wrapper", () => {
 		const funcBody = extractFunctionRegion(mergeSrc, "export async function spawnMergeAgentV2(");
-		expect(funcBody).toContain("spawnAgent(opts)");
+		// spawnAgent is called with opts as first argument; additional callback
+		// arguments (onEvent, onTelemetry) may be present (TP-164).
+		expect(funcBody).toContain("spawnAgent(opts");
 		expect(funcBody).not.toContain("tmux");
 	});
 
