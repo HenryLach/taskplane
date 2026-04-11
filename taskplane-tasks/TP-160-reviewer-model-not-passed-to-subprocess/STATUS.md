@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -24,13 +24,14 @@
 ### Step 1: Thread reviewer config through the call chain
 **Status:** ⬜ Not Started
 
-> ⚠️ Hydrate: 5 sub-parts — expand based on Step 0 findings
-
-- [ ] Part A: Add `reviewerConfig?` to `executeWave` signature, pass via extraEnvVars
+- [ ] Part 0-A: Add `reviewer` field to `TaskRunnerConfig` in `types.ts`
+- [ ] Part 0-B: Update `toTaskRunnerConfig()` in `config-loader.ts` to include `reviewer`
+- [ ] Part A: Add `reviewerConfig?` to `executeWave` signature, pass via extraEnvVars in `execution.ts`
 - [ ] Part B: Add reviewer fields to `LaneRunnerConfig`, populate from extraEnvVars in `executeLaneV2`
 - [ ] Part C: Set `TASKPLANE_REVIEWER_*` env vars in worker subprocess in `lane-runner.ts`
 - [ ] Part D: Read env vars in `spawnReviewer`, pass `--model`/`--thinking`/`--tools` to pi CLI
-- [ ] Part E: Update both `executeWave` call sites in `engine.ts` to pass reviewer config
+- [ ] Part E-main: Update `executeOrchBatch` (line 2363) `executeWave` call to pass reviewer config
+- [ ] Part E-retry: Add `runnerConfig?` to `attemptStaleWorktreeRecovery`, thread through to `executeWave` call at line 1795
 
 ---
 
@@ -56,6 +57,7 @@
 
 | # | Type | Step | Verdict | File |
 |---|------|------|---------|------|
+| R001 | plan | 1 | REVISE | .reviews/R001-plan-step1.md |
 
 ---
 
@@ -82,3 +84,4 @@
 ## Blockers
 
 *None*
+| 2026-04-11 01:49 | Review R001 | plan Step 1: REVISE |
