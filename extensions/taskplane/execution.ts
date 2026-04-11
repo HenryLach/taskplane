@@ -4,102 +4,20 @@
  */
 import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync, copyFileSync } from "fs";
 import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "fs/promises";
-import { spawnSync } from "child_process";
 import { join, dirname, basename, resolve, relative, delimiter as pathDelimiter } from "path";
 import { userInfo } from "os";
 
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig, ExecutionUnit, PacketPaths, RuntimeAgentId, RuntimeAgentRole, SupervisorAlertCallback } from "./types.ts";
 import { resolvePacketPaths, buildRuntimeAgentId } from "./types.ts";
-import { readRegistrySnapshot, readLaneSnapshot, isTerminalStatus, isProcessAlive } from "./process-registry.ts";
+import { readRegistrySnapshot, readLaneSnapshot, isTerminalStatus, isProcessAlive, detectOrphans, markOrphansCrashed } from "./process-registry.ts";
 import { allocateLanes } from "./waves.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { runGit } from "./git.ts";
+import { resolveTaskplanePackageFile, resolveTaskplaneAgentTemplate } from "./path-resolver.ts";
 
 // ── Taskplane Package File Resolution ────────────────────────────────
-
-/**
- * Cached result of `npm root -g` to avoid repeated child process spawns.
- * null = not yet resolved, "" = resolution failed.
- */
-let _npmGlobalRoot: string | null = null;
-
-/**
- * Get the global npm root directory via `npm root -g`.
- * Result is cached for the process lifetime.
- */
-function getNpmGlobalRoot(): string {
-	if (_npmGlobalRoot !== null) return _npmGlobalRoot;
-	try {
-		const result = spawnSync("npm", ["root", "-g"], {
-			encoding: "utf-8",
-			timeout: 5000,
-			shell: true,
-		});
-		_npmGlobalRoot = result.stdout?.trim() || "";
-	} catch {
-		_npmGlobalRoot = "";
-	}
-	return _npmGlobalRoot;
-}
-
-/**
- * Resolve a file path within the taskplane package.
- *
- * Resolution order:
- *   1. Local project: {repoRoot}/{relPath} (for taskplane development)
- *   2. `npm root -g` based: {npmGlobalRoot}/taskplane/{relPath}
- *      (covers Homebrew, nvm, volta, pnpm, and any custom npm prefix)
- *   3. Well-known global npm paths (Windows/macOS/Linux):
- *      - {APPDATA}/npm/node_modules/taskplane/{relPath}
- *      - {HOME}/.npm-global/lib/node_modules/taskplane/{relPath}
- *      - /usr/local/lib/node_modules/taskplane/{relPath}
- *      - /opt/homebrew/lib/node_modules/taskplane/{relPath}
- *   4. Peer of pi's package: resolve from pi's binary location
- *
- * @param repoRoot - Absolute path to the project root
- * @param relPath  - Relative path within the taskplane package (e.g., "bin/rpc-wrapper.mjs")
- * @returns Absolute path to the resolved file
- */
-function resolveTaskplanePackageFile(repoRoot: string, relPath: string): string {
-	// 1. Local project (taskplane development)
-	const localPath = join(resolve(repoRoot), relPath);
-	if (existsSync(localPath)) return localPath;
-
-	const candidates: string[] = [];
-
-	// 2. Dynamic: `npm root -g` (covers ALL npm setups: nvm, Homebrew, volta, etc.)
-	const npmRoot = getNpmGlobalRoot();
-	if (npmRoot) {
-		candidates.push(join(npmRoot, "taskplane", relPath));
-	}
-
-	// 3. Well-known static paths
-	const home = process.env.HOME || process.env.USERPROFILE || "";
-	if (process.env.APPDATA) {
-		candidates.push(join(process.env.APPDATA, "npm", "node_modules", "taskplane", relPath));
-	}
-	if (home) {
-		candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", "taskplane", relPath));
-		candidates.push(join(home, ".npm-global", "lib", "node_modules", "taskplane", relPath));
-	}
-	candidates.push(join("/usr", "local", "lib", "node_modules", "taskplane", relPath));
-	candidates.push(join("/opt", "homebrew", "lib", "node_modules", "taskplane", relPath));
-
-	// 4. Peer of pi's package
-	try {
-		const piPath = process.argv[1] || "";
-		const piPkgDir = resolve(piPath, "..", "..");
-		candidates.push(join(piPkgDir, "..", "taskplane", relPath));
-	} catch { /* ignore */ }
-
-	for (const candidate of candidates) {
-		if (existsSync(candidate)) return candidate;
-	}
-
-	// Fallback: return the local path (will fail at spawn time with a clear error)
-	return localPath;
-}
+// getNpmGlobalRoot() and resolveTaskplanePackageFile() consolidated in path-resolver.ts (TP-157)
 
 // ── Task Runner Extension Path Resolution ────────────────────────────
 
@@ -911,7 +829,37 @@ export async function resolveTaskMonitorState(
 				sessionAlive = true;
 			}
 		} else {
-			sessionAlive = snap.status === "running";
+			// TP-159: Fast-fail path for ghost workers (issue #461).
+			// When the snapshot belongs to the current task but the lane-runner
+			// has stopped updating it and the agent's PID is confirmed dead,
+			// immediately set sessionAlive=false instead of waiting for the full
+			// stall timeout. This handles the case where a worker dies silently
+			// (OOM, segfault, parent crash) after writing its first snapshot:
+			//   snap.status stays "running", stallTimerStart stays null
+			//   (STATUS.md never written), so Priority 2 never fires without
+			//   this explicit dead-PID check.
+			// Conditions:
+			//   1. snap.updatedAt is stale beyond stallTimeoutMs/2
+			//   2. startup grace has elapsed (trackerAgeMs >= 60s)
+			//   3. agent is confirmed dead (registry marked crashed by orphan scan)
+			const trackerAgeMs = now - tracker.firstObservedAt;
+			if (
+				snap.updatedAt &&
+				(now - snap.updatedAt) > stallTimeoutMs / 2 &&
+				trackerAgeMs >= 60_000 &&
+				!isV2AgentAlive(sessionName, runtimeBackend, v2Context?.laneNumber)
+			) {
+				// Ghost worker confirmed: PID dead, snapshot stale beyond half the stall timeout
+				execLog("monitor", taskId, "ghost worker fast-fail — dead PID + stale snapshot", {
+					session: sessionName,
+					snapStaleMs: now - snap.updatedAt,
+					trackerAgeMs,
+					halfStallTimeoutMs: stallTimeoutMs / 2,
+				});
+				sessionAlive = false;
+			} else {
+				sessionAlive = snap.status === "running";
+			}
 		}
 	} else {
 		sessionAlive = isV2AgentAlive(sessionName, "v2", v2Context?.laneNumber);
@@ -1176,6 +1124,30 @@ export async function monitorLanes(
 			}
 		} else {
 			setV2LivenessRegistryCache(null);
+		}
+
+		// TP-159: Detect and mark orphaned workers each poll cycle.
+		// When a worker subprocess dies silently (OOM kill, segfault, parent
+		// crash) without going through the normal completion handshake, its
+		// registry manifest stays in a non-terminal status indefinitely.
+		// Scanning for dead PIDs here ensures list_active_agents, read_agent_status,
+		// and the dashboard all reflect reality within one poll interval.
+		if (runtimeBackend === "v2" && batchId) {
+			try {
+				const registry = readRegistrySnapshot(stateRootForRegistry ?? repoRoot, batchId);
+				if (registry) {
+					const orphans = detectOrphans(registry);
+					if (orphans.length > 0) {
+						markOrphansCrashed(stateRootForRegistry ?? repoRoot, batchId, orphans);
+						// Refresh cache so this poll cycle sees the updated crashed status
+						setV2LivenessRegistryCache(
+							readRegistrySnapshot(stateRootForRegistry ?? repoRoot, batchId)
+						);
+					}
+				}
+			} catch {
+				// Non-fatal — monitor loop must never throw
+			}
 		}
 
 		// Check pause signal
@@ -2126,15 +2098,11 @@ function parseAgentFile(filePath: string): { fm: Record<string, string>; body: s
  * @since TP-117
  */
 function loadBaseAgentPrompt(agentName: string): string {
-	// Use the same robust resolution as resolveTaskplanePackageFile, which
-	// handles all npm setups (nvm, Homebrew, volta, Windows, etc.) via
-	// npm root -g caching and well-known fallback paths.
-	// This avoids loadBaseAgentPrompt silently returning "" (which would
-	// cause the worker to skip reviews because the review_step instructions
-	// live in the base template, not the local .pi/agents/ override).
-	const relPath = join("templates", "agents", `${agentName}.md`);
+	// resolveTaskplaneAgentTemplate handles all npm setups (nvm, Homebrew, volta, Windows, etc.)
+	// via npm root -g caching and well-known fallback paths (see path-resolver.ts, TP-157).
+	// This avoids silently returning "" which would cause the worker to skip reviews.
 	try {
-		const resolved = resolveTaskplanePackageFile(process.cwd(), relPath);
+		const resolved = resolveTaskplaneAgentTemplate(agentName);
 		if (existsSync(resolved)) {
 			const def = parseAgentFile(resolved);
 			if (def?.body) return def.body;

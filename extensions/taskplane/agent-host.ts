@@ -20,7 +20,7 @@
  * @since TP-104
  */
 
-import { spawn, spawnSync, type ChildProcess } from "child_process";
+import { spawn, type ChildProcess } from "child_process";
 import {
 	readFileSync, writeFileSync, appendFileSync, mkdirSync,
 	existsSync, readdirSync, renameSync,
@@ -45,67 +45,12 @@ import {
 	writeRegistrySnapshot,
 } from "./process-registry.ts";
 import { appendMailboxAuditEvent } from "./mailbox.ts";
+import { resolvePiCliPath } from "./path-resolver.ts";
 
 // ── Pi CLI Resolution ────────────────────────────────────────────────
+// resolvePiCliPath() is imported from path-resolver.ts and re-exported below (TP-157)
 
-/**
- * Resolve the Pi CLI JS entrypoint for direct spawning.
- *
- * On Windows, `pi` resolves to a .CMD shim which cannot be spawned
- * with `shell: false`. This function resolves the underlying JS file.
- *
- * Resolution order:
- *   1. npm root -g (dynamic — covers nvm, Homebrew, volta, custom prefix)
- *   2. APPDATA/npm/node_modules/... (Windows)
- *   3. HOME/.npm-global/lib/node_modules/...
- *   4. /usr/local/lib/node_modules/...
- *   5. /opt/homebrew/lib/node_modules/... (macOS Homebrew)
- *
- * @returns Absolute path to the Pi CLI JS entrypoint
- * @throws Error if Pi CLI cannot be found
- *
- * @since TP-104
- */
-let _npmGlobalRootCache: string | null = null;
-function getNpmGlobalRoot(): string {
-	if (_npmGlobalRootCache !== null) return _npmGlobalRootCache;
-	try {
-		const result = spawnSync("npm", ["root", "-g"], { encoding: "utf-8", timeout: 5000, shell: true });
-		_npmGlobalRootCache = result.stdout?.trim() || "";
-	} catch {
-		_npmGlobalRootCache = "";
-	}
-	return _npmGlobalRootCache;
-}
-
-export function resolvePiCliPath(): string {
-	const relPath = join("@mariozechner", "pi-coding-agent", "dist", "cli.js");
-	const candidates: string[] = [];
-
-	// Dynamic first: covers nvm, Homebrew, volta, custom npm prefix
-	const npmRoot = getNpmGlobalRoot();
-	if (npmRoot) candidates.push(join(npmRoot, relPath));
-
-	// Well-known static fallbacks
-	const home = process.env.HOME || process.env.USERPROFILE || "";
-	if (process.env.APPDATA) candidates.push(join(process.env.APPDATA, "npm", "node_modules", relPath));
-	if (home) {
-		candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", relPath));
-		candidates.push(join(home, ".npm-global", "lib", "node_modules", relPath));
-	}
-	candidates.push(join("/usr", "local", "lib", "node_modules", relPath));
-	candidates.push(join("/opt", "homebrew", "lib", "node_modules", relPath));
-
-	for (const candidate of candidates) {
-		if (existsSync(candidate)) return candidate;
-	}
-
-	throw new Error(
-		"Cannot find Pi CLI entrypoint (cli.js). Ensure pi is installed globally via 'pi install'. " +
-		`npm root -g: ${npmRoot || "(not found)"}`,
-	);
-}
-
+export { resolvePiCliPath };
 // ── Conversation Payload Helpers (TP-111) ───────────────────────────────
 
 /** Maximum characters for conversation event text payloads. */

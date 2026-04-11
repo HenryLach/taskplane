@@ -68,14 +68,20 @@ describe("Runtime V2 lane wiring (source extraction)", () => {
 
 	// resolveRpcWrapperPath tests removed — function removed during TMUX extrication
 
-	it("resolveTaskplanePackageFile uses npm root -g for dynamic resolution", () => {
-		const funcBody = extractFunctionRegion(execSrc, "function resolveTaskplanePackageFile(");
+	it("resolveTaskplanePackageFile consolidated in path-resolver.ts (TP-157)", () => {
+		// After TP-157, resolveTaskplanePackageFile lives in path-resolver.ts, not execution.ts.
+		// Verify execution.ts imports it from path-resolver.ts.
+		const pathResolverSrc = readSource("path-resolver.ts");
+		const funcBody = extractFunctionRegion(pathResolverSrc, "export function resolveTaskplanePackageFile(");
 		expect(funcBody).toContain("getNpmGlobalRoot");
 		expect(funcBody).toContain("npmRoot");
+		expect(execSrc).toContain('from "./path-resolver.ts"');
 	});
 
-	it("getNpmGlobalRoot calls npm root -g", () => {
-		const funcBody = extractFunctionRegion(execSrc, "function getNpmGlobalRoot(");
+	it("getNpmGlobalRoot consolidated in path-resolver.ts (TP-157)", () => {
+		// After TP-157, getNpmGlobalRoot lives in path-resolver.ts, not execution.ts.
+		const pathResolverSrc = readSource("path-resolver.ts");
+		const funcBody = extractFunctionRegion(pathResolverSrc, "export function getNpmGlobalRoot(");
 		expect(funcBody).toContain("npm");
 		expect(funcBody).toContain("root");
 		expect(funcBody).toContain("-g");

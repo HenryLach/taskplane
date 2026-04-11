@@ -25,7 +25,8 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { Type } from "@mariozechner/pi-ai";
 import { writeFileSync, readFileSync, existsSync, mkdirSync, renameSync, unlinkSync } from "fs";
 import { join, dirname } from "path";
-import { spawn as nodeSpawn, spawnSync } from "child_process";
+import { spawn as nodeSpawn } from "child_process";
+import { resolvePiCliPath, resolveTaskplaneAgentTemplate } from "./path-resolver.ts";
 import { randomBytes } from "crypto";
 import { buildExpansionRequestId, type SegmentExpansionRequest } from "./types.ts";
 
@@ -356,73 +357,22 @@ export default function (pi: ExtensionAPI) {
 	// The reviewer runs as a separate Pi process, writes feedback to
 	// .reviews/, and this tool returns the verdict to the worker.
 
-	/**
-	 * Resolve the Pi CLI entrypoint path (same logic as agent-host.ts).
-	 */
-	let _npmRootCache: string | null = null;
-	function getNpmGlobalRoot(): string {
-		if (_npmRootCache !== null) return _npmRootCache;
-		try {
-			const result = spawnSync("npm", ["root", "-g"], { encoding: "utf-8", timeout: 5000, shell: true });
-			_npmRootCache = result.stdout?.trim() || "";
-		} catch { _npmRootCache = ""; }
-		return _npmRootCache;
-	}
 
-	function resolvePiCli(): string {
-		const relPath = join("@mariozechner", "pi-coding-agent", "dist", "cli.js");
-		const candidates: string[] = [];
-
-		// Dynamic: npm root -g (covers nvm, Homebrew, volta, and all custom prefixes)
-		const npmRoot = getNpmGlobalRoot();
-		if (npmRoot) candidates.push(join(npmRoot, relPath));
-
-		// Well-known static paths
-		const home = process.env.HOME || process.env.USERPROFILE || "";
-		if (process.env.APPDATA) candidates.push(join(process.env.APPDATA, "npm", "node_modules", relPath));
-		if (home) {
-			candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", relPath));
-			candidates.push(join(home, ".npm-global", "lib", "node_modules", relPath));
-		}
-		candidates.push(join("/usr", "local", "lib", "node_modules", relPath));
-		candidates.push(join("/opt", "homebrew", "lib", "node_modules", relPath));
-
-		for (const c of candidates) {
-			if (existsSync(c)) return c;
-		}
-		throw new Error("Cannot find Pi CLI entrypoint. Run: npm root -g to verify your npm global path.");
-	}
 
 	/**
 	 * Load the reviewer system prompt from base template + local override.
+	 * Uses resolveTaskplaneAgentTemplate (path-resolver.ts) for all platform support (TP-157).
 	 */
 	function loadReviewerPrompt(): string {
-		const relPath = join("taskplane", "templates", "agents", "task-reviewer.md");
-		const candidates: string[] = [];
-
-		// Dynamic: npm root -g
-		const npmRoot = getNpmGlobalRoot();
-		if (npmRoot) candidates.push(join(npmRoot, relPath));
-
-		// Well-known static paths
-		const home = process.env.HOME || process.env.USERPROFILE || "";
-		if (process.env.APPDATA) candidates.push(join(process.env.APPDATA, "npm", "node_modules", relPath));
-		if (home) {
-			candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", relPath));
-			candidates.push(join(home, ".npm-global", "lib", "node_modules", relPath));
-		}
-		candidates.push(join("/usr", "local", "lib", "node_modules", relPath));
-		candidates.push(join("/opt", "homebrew", "lib", "node_modules", relPath));
-
 		let basePrompt = "You are a code reviewer. Read the request and write your review to the specified output file.";
-		for (const p of candidates) {
-			try {
-				if (!existsSync(p)) continue;
-				const raw = readFileSync(p, "utf-8");
+		try {
+			const templatePath = resolveTaskplaneAgentTemplate("task-reviewer");
+			if (existsSync(templatePath)) {
+				const raw = readFileSync(templatePath, "utf-8");
 				const fmEnd = raw.indexOf("---", 4);
-				if (fmEnd > 0) { basePrompt = raw.slice(fmEnd + 3).trim(); break; }
-			} catch { continue; }
-		}
+				if (fmEnd > 0) basePrompt = raw.slice(fmEnd + 3).trim();
+			}
+		} catch { /* fall through to default */ }
 		// Local override
 		const localPaths = [join(process.cwd(), ".pi", "agents", "task-reviewer.md"), join(process.cwd(), "agents", "task-reviewer.md")];
 		for (const p of localPaths) {
@@ -479,7 +429,7 @@ export default function (pi: ExtensionAPI) {
 		// Pre-clean stale reviewer state from prior interrupted review
 		removeReviewerState(taskFolder);
 		return new Promise((resolve) => {
-			const cliPath = resolvePiCli();
+			const cliPath = resolvePiCliPath();
 			const args = [
 				cliPath, "--mode", "rpc", "--no-session", "--no-extensions", "--no-skills",
 				"--tools", "read,write,edit,bash,grep,find,ls",
