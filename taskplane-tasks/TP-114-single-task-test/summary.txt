@@ -1,0 +1,30 @@
+Runtime V2 is a proposed redesign of Taskplane's execution control plane. Its core
+thesis is that Taskplane's durable data plane — STATUS.md, .DONE, batch-state.json,
+dependency DAGs, worktrees, and the supervisor/dashboard concepts — is sound and
+should be preserved. What needs replacing is the fragile runtime control plane that
+currently relies on TMUX as correctness infrastructure, sidecar-file tailing as a
+live telemetry transport, and deeply nested session layers where ownership and
+liveness are ambiguous.
+
+The target architecture replaces the multi-layered TMUX hierarchy with a clean,
+deterministic process tree: the extension owns an engine process, the engine owns
+lane-runners and merge hosts, and each lane-runner owns its worker and reviewer
+via an agent-host adapter around "pi --mode rpc". Every spawned process has
+exactly one deterministic owner, eliminating the ownership ambiguity and transport
+inversion that caused recurring instability in the current system. The new
+lane-runner is a dedicated component that handles the full task execution state
+machine — STATUS parsing, step progression, checkpoint discipline, and .DONE
+handling — replacing the current pattern where a lane is a Pi session loading the
+task-runner extension.
+
+Runtime V2 defines five key invariants: file-backed memory (STATUS.md and .DONE)
+stays authoritative; batch state in .pi/batch-state.json remains resumable; live
+control uses direct parent-to-child IPC instead of file polling between siblings;
+the mailbox is the only supported steering path for operators and agents; and no
+task outcome may depend on terminal infrastructure like TMUX. A new batch-scoped
+runtime directory under .pi/runtime/{batchId}/ provides structured storage for
+agent manifests, event logs, lane snapshots, and process registries. Runtime V2
+is considered architecturally complete when worker, reviewer, and merge lifecycle
+no longer depend on TMUX, the dashboard can show full agent conversations from
+structured logs without pane capture, and workspace/segment execution uses
+explicit packet-path authority end-to-end.

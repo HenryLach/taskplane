@@ -1,0 +1,13 @@
+Analysis of extensions/taskplane/lane-runner.ts
+================================================
+
+Total exported functions: 4
+
+Exported functions:
+1. executeTaskV2          (line 169) - async function; main task execution entry point for a single lane task
+2. mapLaneTaskStatusToTerminalSnapshotStatus  (line 608) - maps lane task status to terminal snapshot status enum
+3. mapLaneSnapshotStatusToWorkerStatus        (line 616) - maps lane snapshot status to worker status enum
+4. readReviewerTelemetrySnapshot              (line 683) - reads and returns the reviewer telemetry snapshot
+
+Note: The file also exports 2 interfaces (LaneRunnerConfig at line 72,
+LaneRunnerTaskResult at line 134), which are type-level exports, not functions.
