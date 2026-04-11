@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -24,14 +24,12 @@
 ---
 
 ### Step 1: Create extensions/taskplane/sidecar-telemetry.ts
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-> ⚠️ Hydrate: expand after Step 0 confirms exact exports needed
-
-- [ ] Extract `SidecarTailState`, `SidecarTelemetryDelta` interfaces verbatim
-- [ ] Extract `getSidecarDir`, `createSidecarTailState`, `tailSidecarJsonl` verbatim
-- [ ] All exports clean (no `_` prefix)
-- [ ] File compiles
+- [x] Extract `SidecarTailState`, `SidecarTelemetryDelta` interfaces verbatim
+- [x] Extract `getSidecarDir`, `createSidecarTailState`, `tailSidecarJsonl` verbatim
+- [x] All exports clean (no `_` prefix)
+- [x] File compiles
 
 ---
 
@@ -122,3 +120,4 @@
 ## Blockers
 
 *None*
+| 2026-04-11 05:59 | Review R001 | plan Step 1: APPROVE |
