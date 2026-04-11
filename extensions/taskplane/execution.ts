@@ -10,7 +10,7 @@ import { userInfo } from "os";
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
 import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig, ExecutionUnit, PacketPaths, RuntimeAgentId, RuntimeAgentRole, SupervisorAlertCallback } from "./types.ts";
 import { resolvePacketPaths, buildRuntimeAgentId } from "./types.ts";
-import { readRegistrySnapshot, readLaneSnapshot, isTerminalStatus, isProcessAlive, detectOrphans, markOrphansCrashed } from "./process-registry.ts";
+import { readRegistrySnapshot, readLaneSnapshot, isTerminalStatus, isProcessAlive, detectOrphans, markOrphansCrashed, buildRegistrySnapshot, writeRegistrySnapshot } from "./process-registry.ts";
 import { allocateLanes } from "./waves.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { runGit } from "./git.ts";
@@ -1138,11 +1138,15 @@ export async function monitorLanes(
 				if (registry) {
 					const orphans = detectOrphans(registry);
 					if (orphans.length > 0) {
+						// Mark individual agent manifests as crashed
 						markOrphansCrashed(stateRootForRegistry ?? repoRoot, batchId, orphans);
-						// Refresh cache so this poll cycle sees the updated crashed status
-						setV2LivenessRegistryCache(
-							readRegistrySnapshot(stateRootForRegistry ?? repoRoot, batchId)
-						);
+						// Rebuild and write registry.json from the updated individual manifests.
+						// markOrphansCrashed only updates per-agent files; registry.json is a
+						// cached aggregate that must be explicitly rebuilt so readRegistrySnapshot()
+						// and the dashboard see the crashed status within this poll cycle.
+						const freshRegistry = buildRegistrySnapshot(stateRootForRegistry ?? repoRoot, batchId);
+						writeRegistrySnapshot(stateRootForRegistry ?? repoRoot, freshRegistry);
+						setV2LivenessRegistryCache(freshRegistry);
 					}
 				}
 			} catch {

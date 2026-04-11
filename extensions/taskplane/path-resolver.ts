@@ -188,11 +188,15 @@ export function resolveTaskplanePackageFile(repoRoot: string, relPath: string): 
 	candidates.push(join("/usr", "local", "lib", "node_modules", "taskplane", relPath));
 	candidates.push(join("/opt", "homebrew", "lib", "node_modules", "taskplane", relPath));
 
-	// 8. Peer of pi's package (look adjacent to pi's CLI entrypoint)
+	// 8. Peer of pi's package (look adjacent to pi's CLI entrypoint).
+	// pi is at: <npmRoot>/@mariozechner/pi-coding-agent/dist/cli.js
+	// so piPkgDir = <npmRoot>/@mariozechner/pi-coding-agent  (resolve up 2 levels from cli.js)
+	// then go up TWO more levels to reach <npmRoot>, then into taskplane/
 	try {
 		const piPath = process.argv[1] || "";
-		const piPkgDir = resolve(piPath, "..", "..");
-		candidates.push(join(piPkgDir, "..", "taskplane", relPath));
+		const piPkgDir = resolve(piPath, "..", ".."); // <npmRoot>/@mariozechner/pi-coding-agent
+		const npmRootFromPi = resolve(piPkgDir, "..", ".."); // <npmRoot>
+		candidates.push(join(npmRootFromPi, "taskplane", relPath));
 	} catch { /* ignore — process.argv[1] may be undefined in test contexts */ }
 
 	for (const candidate of candidates) {

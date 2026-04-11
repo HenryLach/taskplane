@@ -1920,8 +1920,9 @@ export default function (pi: ExtensionAPI) {
 		// "Discovery had fatal errors" on first /orch run after config creation.
 		// Skip if a batch is already active to avoid swapping config mid-run.
 		const _activePhase = orchBatchState.phase;
+		// Treat paused as active — config must not change for a resumable batch
 		const _isActiveBatch = _activePhase === "executing" || _activePhase === "launching"
-			|| _activePhase === "merging" || _activePhase === "planning";
+			|| _activePhase === "merging" || _activePhase === "planning" || _activePhase === "paused";
 		if (!_isActiveBatch) {
 			try {
 				// Build everything into temporaries first, then commit atomically
