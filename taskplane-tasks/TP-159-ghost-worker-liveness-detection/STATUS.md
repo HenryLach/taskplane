@@ -1,7 +1,7 @@
 # TP-159: Detect and recover ghost workers after silent subprocess death (#461) — Status
 
-**Current Step:** Step 1: Wire orphan detection into the monitor poll loop
-**Status:** 🟡 In Progress
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-11
 **Review Level:** 2
 **Review Counter:** 6
@@ -58,10 +58,10 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Inline comments for new logic
-- [ ] Discoveries logged
+- [x] Inline comments for new logic
+- [x] Discoveries logged
 
 ---
 
@@ -76,6 +76,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| The main ghost-worker bug (`sessionAlive` staying `true` forever) lives in the `else` branch of `resolveTaskMonitorState` (`snap.taskId === taskId`), not the null/mismatch branch as the PROMPT implied. The null/mismatch branch already falls back to `isV2AgentAlive` after 30s. | Fixed in Step 2 | `execution.ts:~913` |
+| Test 14.5 search window was only 6000 chars; Step 2 added ~1340 chars before the stall block, pushing it out of range. Fixed to 8000. | Fixed in Step 4 | `engine-runtime-v2-routing.test.ts:563` |
+| Two pre-existing test failures: `workspace-config 5.11` (extension.ts ordering) and `auto-integration 14.1` (supervised mode `deliverAs`). Both exist on the branch before this task. | Pre-existing, out-of-scope | `workspace-config.integration.test.ts:754`, `auto-integration.integration.test.ts:853` |
 
 ---
 
