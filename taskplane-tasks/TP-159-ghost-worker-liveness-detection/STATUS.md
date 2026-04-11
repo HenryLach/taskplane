@@ -49,11 +49,11 @@
 ---
 
 ### Step 4: Testing & Verification
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Full test suite passing
-- [ ] CLI smoke passing
-- [ ] Fix all failures
+- [x] Full test suite passing (3253/3255 pass; 2 pre-existing failures unrelated to TP-159)
+- [x] CLI smoke passing
+- [x] Fix all failures (14.5 window fixed; pre-existing failures verified pre-existing)
 
 ---
 
