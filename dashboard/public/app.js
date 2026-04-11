@@ -1379,6 +1379,49 @@ function renderSupervisorConversation(supervisor) {
   $supervisorConversationSection.innerHTML = html;
 }
 
+/**
+ * Human-readable labels for supervisor recovery action identifiers.
+ * The supervisor LLM writes snake_case action names to actions.jsonl.
+ * This map translates them to operator-friendly labels for the dashboard.
+ */
+const RECOVERY_ACTION_LABELS = {
+  // Conflict resolution
+  conflict_resolve_checkout_ours:   "Auto-resolved merge conflict (kept task changes)",
+  conflict_resolve_checkout_theirs: "Auto-resolved merge conflict (kept base changes)",
+  conflict_resolve_manual:          "Manual conflict resolution applied",
+
+  // Merge agent
+  merge_retry:                      "Retried merge agent",
+  merge_session_kill:               "Terminated stalled merge agent",
+  merge_force:                      "Forced merge with partial results",
+
+  // Worker / task
+  worker_wrap_up:                   "Sent wrap-up signal to stalled worker",
+  task_retry:                       "Retried failed task",
+  task_skip:                        "Skipped task — unblocked dependents",
+  wave_force_merge:                 "Force-merged wave with mixed results",
+
+  // Git / worktree
+  lock_clear:                       "Cleared stale git lock file",
+  worktree_remove:                  "Removed stale worktree",
+  worktree_prune:                   "Pruned stale worktrees",
+
+  // Batch lifecycle
+  abort_hard:                       "Hard-aborted batch",
+  batch_resume:                     "Resumed batch after recovery",
+  supervisor_handoff:               "Supervisor session handoff",
+
+  // Diagnostics (usually not shown — filtered as non-recovery)
+  initial_status_check:             "Checked initial batch status",
+  completion_status_check:          "Verified batch completion status",
+  read_state:                       "Read batch state",
+};
+
+/** Format a recovery action type string into a human-readable label. */
+function formatRecoveryActionLabel(type) {
+  return RECOVERY_ACTION_LABELS[type] || type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 /** Merge supervisor actions and Tier 0 recovery events into a unified timeline.
  *  Actions from actions.jsonl and recovery events from events.jsonl are combined
  *  and sorted chronologically (per R002: show both Tier 0 and supervisor actions).
@@ -1451,7 +1494,7 @@ function renderSupervisorActions(supervisor) {
     html += `  <div class="supervisor-action-right">`;
     html += `    <div class="supervisor-action-header">`;
     if (tier) html += `<span class="supervisor-action-tier">${tier}</span>`;
-    html += `      <span class="supervisor-action-type">${escapeHtml(type)}</span>`;
+    html += `      <span class="supervisor-action-type" title="${escapeHtml(type)}">${escapeHtml(formatRecoveryActionLabel(type))}</span>`;
     if (target) html += `<span class="supervisor-action-target">${escapeHtml(target)}</span>`;
     if (outcome) html += `<span class="supervisor-action-outcome ${outcomeCls}">${escapeHtml(outcome)}</span>`;
     html += `    </div>`;
