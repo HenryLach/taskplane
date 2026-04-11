@@ -1,22 +1,22 @@
 # TP-162: Delete task-runner.ts and clean up all references — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 1
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Confirm TP-161 complete (new modules exist, tests pass)
-- [ ] Grep all remaining task-runner references across project
-- [ ] Categorize each reference
-- [ ] Run test baseline
+- [x] Confirm TP-161 complete (new modules exist, tests pass)
+- [x] Grep all remaining task-runner references across project
+- [x] Categorize each reference
+- [x] Run test baseline (3255/3255 pass)
 
 ---
 
@@ -90,6 +90,10 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| TP-161 did NOT update all test imports — 3 test files still import `loadConfig`/`_resetPointerWarning` from task-runner.ts | Fix in Step 3: export these from config-loader.ts and update test imports | extensions/tests/ |
+| 3 test files are source-extraction tests reading task-runner.ts directly (crash-recovery, persistent-reviewer, persistent-worker) | Delete these test files in Step 3 — their contracts covered by lane-runner-v2.test.ts | extensions/tests/ |
+| mailbox.test.ts has TP-090 source-extraction block that reads task-runner.ts | Remove only the TP-090 describe block in Step 3 | extensions/tests/mailbox.test.ts |
+| config-loader.ts doesn't currently import workspace.ts — adding loadConfig will require that import | No circular dep risk (workspace.ts imports only git.ts and types.ts) | extensions/taskplane/config-loader.ts |
 
 ---
 
@@ -98,6 +102,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-11 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-04-11 06:11 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-11 06:11 | Step 0 started | Preflight |
 
 ---
 
