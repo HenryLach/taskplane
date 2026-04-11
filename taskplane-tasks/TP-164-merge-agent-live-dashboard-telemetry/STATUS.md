@@ -1,7 +1,7 @@
 # TP-164: Live merge agent telemetry in dashboard (#465) — Status
 
-**Current Step:** Step 4: Testing & Verification
-**Status:** 🟡 In Progress
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-11
 **Review Level:** 2
 **Review Counter:** 6
@@ -65,11 +65,11 @@
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] JSDoc on new types/functions
-- [ ] Comment in spawnMergeAgentV2
-- [ ] Discoveries logged
+- [x] JSDoc on new types/functions (RuntimeMergeSnapshot, runtimeMergeSnapshotPath, writeMergeSnapshot, readMergeSnapshot)
+- [x] Comment in spawnMergeAgentV2 explaining snapshot write pattern
+- [x] Discoveries logged
 
 ---
 
@@ -84,6 +84,10 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| `spawnAgent` resolves for both success and failure exits; `.catch` rarely fires. Terminal status must be derived from `AgentHostResult.killed/exitCode/agentEnded`. | Fixed in Step 2 (reviewer feedback) | `merge.ts` `spawnMergeAgentV2` |
+| Two source-extraction tests asserted literal `spawnAgent(opts)` — broken when third `onTelemetry` arg was added. Updated to `spawnAgent(opts` (prefix match). | Fixed in Step 4 | `engine-runtime-v2-routing.test.ts`, `orch-rpc-telemetry.test.ts` |
+| `loadTelemetryData` accumulator uses `cost` not `costUsd` for the cost field. Merge snapshot uses `costUsd`. Translation needed in telemetry injection. | Handled in Step 3 | `server.cjs` `buildDashboardState` |
+| `waveIndex` not easily available inside `spawnMergeAgentV2`; hardcoded to 0 per PROMPT.md guidance. Future work could pass it through. | Tech debt | `merge.ts` |
 
 ---
 
