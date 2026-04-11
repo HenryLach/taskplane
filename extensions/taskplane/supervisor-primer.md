@@ -335,6 +335,7 @@ git log --oneline orch/{branch}..task/{lane-branch}  # empty = already merged
    cd /tmp/verify && cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts
    ```
 5. Update batch state and advance.
+6. **IMPORTANT:** After any manual merge that completes the batch integration, always call `orch_integrate()` to record integration metadata (`integratedAt`, orch branch cleanup, batch history). Without this step, the dashboard will continue showing the batch in the active view rather than the history view, and `batch-state.json` will not reflect the completed integration.
 
 ### Pattern 1b: Merge Agent Stall (TP-056)
 
@@ -379,6 +380,7 @@ completion.
    - Add `mergeResults[N] = { waveIndex: N, status: "succeeded", ... }`
    - Advance `currentWaveIndex` past the merged wave
    - Set `phase = "paused"` for clean resume
+5. **IMPORTANT:** Once all waves are merged and the batch is complete, call `orch_integrate()` to record integration metadata. This ensures the dashboard moves the batch to history view and `integratedAt` is written to `batch-state.json`.
 
 ### Pattern 3: Resume Marks Pending Tasks as Failed
 
