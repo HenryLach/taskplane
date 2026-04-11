@@ -11,7 +11,7 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Read all three source files and catalog every path resolution function
 - [x] Verify test suite baseline
@@ -19,7 +19,7 @@
 ---
 
 ### Step 1: Create extensions/taskplane/path-resolver.ts
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Implement `getNpmGlobalRoot()` — cached, ESM-safe, shell:true for Windows
 - [x] Implement `resolvePiCliPath()` — dynamic-first, all platforms, clear error
@@ -30,7 +30,7 @@
 ---
 
 ### Step 2: Refactor callers to use path-resolver.ts
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] `execution.ts` — remove local functions, import from path-resolver.ts
 - [x] `agent-host.ts` — remove local functions, import from path-resolver.ts
@@ -40,7 +40,7 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Full test suite passing
 - [x] CLI smoke checks passing
@@ -49,7 +49,7 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] JSDoc file header on path-resolver.ts
 - [x] Check AGENTS.md and development-setup.md for affected references
@@ -84,6 +84,8 @@
 | 2026-04-11 00:05 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-11 00:05 | Step 0 started | Preflight |
 | 2026-04-11 00:06 | Snapshot refresh disabled | Lane 1, task TP-157: 5 consecutive emitSnapshot failures |
+| 2026-04-11 00:49 | Worker iter 1 | done in 2690s, tools: 129 |
+| 2026-04-11 00:49 | Task complete | .DONE created |
 
 ---
 
