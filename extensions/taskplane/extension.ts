@@ -1914,6 +1914,39 @@ export default function (pi: ExtensionAPI) {
 			};
 		}
 
+		// TP-158: Reload config from disk so changes made after session start
+		// (e.g. creating .pi/taskplane-config.json mid-session) take effect
+		// immediately — fixes issue #460 where stale task_areas caused
+		// "Discovery had fatal errors" on first /orch run after config creation.
+		// Skip if a batch is already active to avoid swapping config mid-run.
+		const _activePhase = orchBatchState.phase;
+		const _isActiveBatch = _activePhase === "executing" || _activePhase === "launching"
+			|| _activePhase === "merging" || _activePhase === "planning";
+		if (!_isActiveBatch) {
+			try {
+				// Build everything into temporaries first, then commit atomically
+				// so a partial failure doesn't leave mixed-generation state.
+				const freshCtx = buildExecutionContext(ctx.cwd, loadOrchestratorConfig, loadTaskRunnerConfig);
+				let freshSupervisor: SupervisorConfig;
+				try {
+					freshSupervisor = loadSupervisorConfig(
+						freshCtx.repoRoot,
+						freshCtx.pointer?.configRoot,
+					);
+				} catch {
+					freshSupervisor = { ...DEFAULT_SUPERVISOR_CONFIG };
+				}
+				// Atomic commit — all or nothing
+				execCtx = freshCtx;
+				orchConfig = freshCtx.orchestratorConfig;
+				runnerConfig = freshCtx.taskRunnerConfig;
+				supervisorConfig = freshSupervisor;
+			} catch {
+				// Non-fatal — if reload fails, proceed with existing config.
+				// The existing config guard below will handle a null execCtx.
+			}
+		}
+
 		if (!execCtx) {
 			return {
 				message: getExecCtxInitErrorMessage(),
