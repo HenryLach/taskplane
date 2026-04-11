@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -24,14 +24,14 @@
 ### Step 1: Thread reviewer config through the call chain
 **Status:** ⬜ Not Started
 
-- [ ] Part 0-A: Add `reviewer` field to `TaskRunnerConfig` in `types.ts`
-- [ ] Part 0-B: Update `toTaskRunnerConfig()` in `config-loader.ts` to include `reviewer`
-- [ ] Part A: Add `reviewerConfig?` to `executeWave` signature, pass via extraEnvVars in `execution.ts`
-- [ ] Part B: Add reviewer fields to `LaneRunnerConfig`, populate from extraEnvVars in `executeLaneV2`
-- [ ] Part C: Set `TASKPLANE_REVIEWER_*` env vars in worker subprocess in `lane-runner.ts`
-- [ ] Part D: Read env vars in `spawnReviewer`, pass `--model`/`--thinking`/`--tools` to pi CLI
-- [ ] Part E-main: Update `executeOrchBatch` (line 2363) `executeWave` call to pass reviewer config
-- [ ] Part E-retry: Add `runnerConfig?` to `attemptStaleWorktreeRecovery`, thread through to `executeWave` call at line 1795
+- [x] Part 0-A: Add `reviewer` field to `TaskRunnerConfig` in `types.ts`
+- [x] Part 0-B: Update `toTaskRunnerConfig()` in `config-loader.ts` to include `reviewer`
+- [x] Part A: Add `reviewerConfig?` to `executeWave` signature, pass via extraEnvVars in `execution.ts`
+- [x] Part B: Add reviewer fields to `LaneRunnerConfig`, populate from extraEnvVars in `executeLaneV2`
+- [x] Part C: Set `TASKPLANE_REVIEWER_*` env vars in worker subprocess in `lane-runner.ts`
+- [x] Part D: Read env vars in `spawnReviewer`, pass `--model`/`--thinking`/`--tools` to pi CLI
+- [x] Part E-main: Update `executeOrchBatch` (line 2363) `executeWave` call to pass reviewer config
+- [x] Part E-retry: Add `runnerConfig?` to `attemptStaleWorktreeRecovery`, thread through to `executeWave` call at line 1795
 
 ---
 
@@ -85,3 +85,4 @@
 
 *None*
 | 2026-04-11 01:49 | Review R001 | plan Step 1: REVISE |
+| 2026-04-11 01:51 | Review R002 | plan Step 1: APPROVE |

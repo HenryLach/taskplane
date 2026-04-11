@@ -1547,6 +1547,7 @@ export async function executeWave(
 	runtimeBackend?: RuntimeBackend,
 	onSupervisorAlert?: SupervisorAlertCallback,
 	supervisorAutonomy: "interactive" | "supervised" | "autonomous" = "autonomous",
+	reviewerConfig?: { model?: string; thinking?: string; tools?: string },
 ): Promise<WaveExecutionResult> {
 	const startedAt = Date.now();
 	const policy = config.failure.on_task_failure;
@@ -1651,6 +1652,9 @@ export async function executeWave(
 		executeLaneV2(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode, {
 			ORCH_BATCH_ID: batchId,
 			TASKPLANE_SUPERVISOR_AUTONOMY: supervisorAutonomy,
+			...(reviewerConfig?.model ? { TASKPLANE_REVIEWER_MODEL: reviewerConfig.model } : {}),
+			...(reviewerConfig?.thinking ? { TASKPLANE_REVIEWER_THINKING: reviewerConfig.thinking } : {}),
+			...(reviewerConfig?.tools ? { TASKPLANE_REVIEWER_TOOLS: reviewerConfig.tools } : {}),
 		}, onSupervisorAlert),
 	);
 
@@ -2247,6 +2251,9 @@ export async function executeLaneV2(
 			workerTools: "read,write,edit,bash,grep,find,ls",
 			workerThinking: "",
 			workerSystemPrompt,
+			reviewerModel: extraEnvVars?.TASKPLANE_REVIEWER_MODEL || "",
+			reviewerThinking: extraEnvVars?.TASKPLANE_REVIEWER_THINKING || "",
+			reviewerTools: extraEnvVars?.TASKPLANE_REVIEWER_TOOLS || "",
 			supervisorAutonomy,
 			projectName: config.project?.name || "project",
 			maxIterations: 20,

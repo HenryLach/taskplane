@@ -1706,6 +1706,7 @@ async function attemptStaleWorktreeRecovery(
 	runtimeBackend?: RuntimeBackend,
 	onSupervisorAlert?: SupervisorAlertCallback,
 	supervisorAutonomy: "interactive" | "supervised" | "autonomous" = "autonomous",
+	runnerConfig?: TaskRunnerConfig,
 ): Promise<WaveExecutionResult | null> {
 	// Only attempt recovery for ALLOC_WORKTREE_FAILED
 	if (!waveResult.allocationError || waveResult.allocationError.code !== "ALLOC_WORKTREE_FAILED") {
@@ -1808,6 +1809,11 @@ async function attemptStaleWorktreeRecovery(
 		runtimeBackend,
 		onSupervisorAlert,
 		supervisorAutonomy,
+		{
+			model: runnerConfig?.reviewer?.model || "",
+			thinking: runnerConfig?.reviewer?.thinking || "",
+			tools: runnerConfig?.reviewer?.tools || "",
+		},
 	);
 
 	return retryResult;
@@ -2376,6 +2382,11 @@ export async function executeOrchBatch(
 			selectedBackend,
 			emitAlert,
 			supervisorAutonomy,
+			{
+				model: runnerConfig?.reviewer?.model || "",
+				thinking: runnerConfig?.reviewer?.thinking || "",
+				tools: runnerConfig?.reviewer?.tools || "",
+			},
 		);
 
 		// ── TP-039: Tier 0 — Stale worktree recovery ────────────
@@ -2398,6 +2409,7 @@ export async function executeOrchBatch(
 				selectedBackend,
 				emitAlert,
 				supervisorAutonomy,
+				runnerConfig,
 			);
 			if (retryResult) {
 				const staleRecovered = !retryResult.allocationError;
