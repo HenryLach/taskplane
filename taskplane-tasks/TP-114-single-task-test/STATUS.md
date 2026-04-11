@@ -1,21 +1,21 @@
 # TP-114 Status
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-11
 **Review Level:** 0
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Confirm this PROMPT.md and STATUS.md exist
+**Status:** ✅ Complete
+- [x] Confirm this PROMPT.md and STATUS.md exist
 
 ### Step 1: Create Test Files
-**Status:** ⬜ Not Started
-- [ ] Create hello.txt
-- [ ] Create fibonacci.txt
-- [ ] Create summary.txt
+**Status:** ✅ Complete
+- [x] Create hello.txt
+- [x] Create fibonacci.txt
+- [x] Create summary.txt
 
 ### Step 2: Code Analysis
 **Status:** ⬜ Not Started
@@ -31,3 +31,5 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-11 | Task reset | Ready for regression test |
+| 2026-04-11 05:43 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-11 05:43 | Step 0 started | Preflight |
