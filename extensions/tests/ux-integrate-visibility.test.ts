@@ -153,6 +153,8 @@ describe("3.x — protection hint in merge failure messages", () => {
 		const deps: IntegrationExecDeps = {
 			runGit: (args: string[]) => {
 				if (args[0] === "status") return { ok: true, stdout: "", stderr: "" };
+				// merge-base --is-ancestor must return false so we don't short-circuit
+				if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
 				if (args[0] === "merge") {
 					return {
 						ok: false,
@@ -183,6 +185,8 @@ describe("3.x — protection hint in merge failure messages", () => {
 		const deps: IntegrationExecDeps = {
 			runGit: (args: string[]) => {
 				if (args[0] === "status") return { ok: true, stdout: "", stderr: "" };
+				// merge-base --is-ancestor must return false so we don't short-circuit
+				if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
 				if (args[0] === "merge") {
 					return {
 						ok: false,
@@ -213,6 +217,8 @@ describe("3.x — protection hint in merge failure messages", () => {
 		const deps: IntegrationExecDeps = {
 			runGit: (args: string[]) => {
 				if (args[0] === "status") return { ok: true, stdout: "", stderr: "" };
+				// merge-base --is-ancestor must return false so we don't short-circuit
+				if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
 				if (args[0] === "merge") {
 					return {
 						ok: false,

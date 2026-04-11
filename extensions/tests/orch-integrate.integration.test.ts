@@ -654,7 +654,12 @@ function makeContext(overrides: Partial<IntegrationContext> = {}): IntegrationCo
 /** Create default exec deps where everything succeeds */
 function makeExecDeps(overrides: Partial<IntegrationExecDeps> = {}): IntegrationExecDeps {
 	return {
-		runGit: () => ({ ok: true, stdout: "", stderr: "" }),
+		// merge-base --is-ancestor returns false by default so executeIntegration
+		// does not short-circuit to the already-merged cleanup path.
+		runGit: (args: string[]) => {
+			if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
+			return { ok: true, stdout: "", stderr: "" };
+		},
 		runCommand: () => ({ ok: true, stdout: "https://github.com/org/repo/pull/42", stderr: "" }),
 		deleteBatchState: () => {},
 		...overrides,
@@ -678,19 +683,24 @@ describe("executeIntegration — fast-forward mode", () => {
 		const deps = makeExecDeps({
 			runGit: (args) => {
 				gitCalls.push(args);
+				if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
 				return { ok: true, stdout: "", stderr: "" };
 			},
 		});
 		executeIntegration("ff", makeContext(), deps);
-		// First call is status --porcelain (stash check), then merge
-		expect(gitCalls[0]).toEqual(["status", "--porcelain"]);
+		// status --porcelain (stash check) must occur before merge
+		const statusIdx = gitCalls.findIndex(c => c[0] === "status");
 		const mergeCall = gitCalls.find(c => c[0] === "merge");
+		const mergeIdx = gitCalls.findIndex(c => c[0] === "merge");
+		expect(statusIdx).toBeGreaterThanOrEqual(0);
 		expect(mergeCall).toEqual(["merge", "--ff-only", "orch/henry-20260318T140000"]);
+		expect(statusIdx).toBeLessThan(mergeIdx);
 	});
 
 	it("returns error when ff fails (diverged branches)", () => {
 		const deps = makeExecDeps({
 			runGit: (args) => {
+				if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
 				if (args[0] === "merge") {
 					return { ok: false, stdout: "", stderr: "fatal: Not possible to fast-forward" };
 				}
@@ -710,6 +720,7 @@ describe("executeIntegration — fast-forward mode", () => {
 		let cleanupCalled = false;
 		const deps = makeExecDeps({
 			runGit: (args) => {
+				if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
 				if (args[0] === "merge") {
 					return { ok: false, stdout: "", stderr: "fail" };
 				}
@@ -742,19 +753,24 @@ describe("executeIntegration — merge mode", () => {
 		const deps = makeExecDeps({
 			runGit: (args) => {
 				gitCalls.push(args);
+				if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
 				return { ok: true, stdout: "", stderr: "" };
 			},
 		});
 		executeIntegration("merge", makeContext(), deps);
-		// First call is status --porcelain (stash check), then merge
-		expect(gitCalls[0]).toEqual(["status", "--porcelain"]);
+		// status --porcelain (stash check) must occur before merge
+		const statusIdx = gitCalls.findIndex(c => c[0] === "status");
 		const mergeCall = gitCalls.find(c => c[0] === "merge");
+		const mergeIdx = gitCalls.findIndex(c => c[0] === "merge");
+		expect(statusIdx).toBeGreaterThanOrEqual(0);
 		expect(mergeCall).toEqual(["merge", "orch/henry-20260318T140000", "--no-edit"]);
+		expect(statusIdx).toBeLessThan(mergeIdx);
 	});
 
 	it("returns error when merge fails (conflict)", () => {
 		const deps = makeExecDeps({
 			runGit: (args) => {
+				if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
 				if (args[0] === "merge") {
 					return { ok: false, stdout: "", stderr: "CONFLICT (content): Merge conflict in file.txt" };
 				}
@@ -773,6 +789,7 @@ describe("executeIntegration — merge mode", () => {
 		let cleanupCalled = false;
 		const deps = makeExecDeps({
 			runGit: (args) => {
+				if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
 				if (args[0] === "merge") {
 					return { ok: false, stdout: "", stderr: "fail" };
 				}
@@ -812,6 +829,7 @@ describe("executeIntegration — PR mode", () => {
 		const deps = makeExecDeps({
 			runGit: (args) => {
 				calls.push({ type: "git", args });
+				if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
 				return { ok: true, stdout: "", stderr: "" };
 			},
 			runCommand: (cmd, args) => {
@@ -820,13 +838,16 @@ describe("executeIntegration — PR mode", () => {
 			},
 		});
 		executeIntegration("pr", makeContext(), deps);
-		// First call should be git push
-		expect(calls[0].type).toBe("git");
-		expect(calls[0].args).toEqual(["push", "origin", "orch/henry-20260318T140000"]);
-		// Second call should be gh pr create
-		expect(calls[1].type).toBe("gh");
-		expect(calls[1].args).toContain("pr");
-		expect(calls[1].args).toContain("create");
+		// git push must occur before gh pr create
+		const pushCall = calls.find(c => c.type === "git" && c.args[0] === "push");
+		const prCall = calls.find(c => c.type === "gh");
+		expect(pushCall).toBeDefined();
+		expect(pushCall!.args).toEqual(["push", "origin", "orch/henry-20260318T140000"]);
+		expect(prCall).toBeDefined();
+		expect(prCall!.args).toContain("pr");
+		expect(prCall!.args).toContain("create");
+		// push must come before pr create
+		expect(calls.indexOf(pushCall!)).toBeLessThan(calls.indexOf(prCall!));
 	});
 
 	it("returns error when push fails", () => {
@@ -841,7 +862,10 @@ describe("executeIntegration — PR mode", () => {
 
 	it("returns error when gh pr create fails (after successful push)", () => {
 		const deps = makeExecDeps({
-			runGit: () => ({ ok: true, stdout: "", stderr: "" }),
+			runGit: (args) => {
+				if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
+				return { ok: true, stdout: "", stderr: "" };
+			},
 			runCommand: () => ({ ok: false, stdout: "", stderr: "gh: Not logged in" }),
 		});
 		const result = executeIntegration("pr", makeContext(), deps);
@@ -855,6 +879,7 @@ describe("executeIntegration — PR mode", () => {
 		let stateDeleted = false;
 		const deps = makeExecDeps({
 			runGit: (args) => {
+				if (args[0] === "merge-base") return { ok: false, stdout: "", stderr: "" };
 				if (args[0] === "branch" && args[1] === "-D") branchDeleted = true;
 				return { ok: true, stdout: "", stderr: "" };
 			},
@@ -893,6 +918,31 @@ describe("executeIntegration — PR mode", () => {
 		const titleIdx = prArgs.indexOf("--title");
 		expect(titleIdx).toBeGreaterThan(-1);
 		expect(prArgs[titleIdx + 1]).toContain("20260318T140000");
+	});
+});
+
+// ── Already-merged detection ────────────────────────────────────────
+
+describe("executeIntegration — already merged detection", () => {
+	it("short-circuits to cleanup when orch branch is already an ancestor of HEAD", () => {
+		let branchDeleted = false;
+		let stateDeleted = false;
+		let mergeAttempted = false;
+		const deps = makeExecDeps({
+			runGit: (args) => {
+				if (args[0] === "merge-base") return { ok: true, stdout: "", stderr: "" }; // already merged
+				if (args[0] === "merge") mergeAttempted = true;
+				if (args[0] === "branch" && args[1] === "-D") branchDeleted = true;
+				return { ok: true, stdout: "", stderr: "" };
+			},
+			deleteBatchState: () => { stateDeleted = true; },
+		});
+		const result = executeIntegration("ff", makeContext(), deps);
+		expect(result.success).toBe(true);
+		expect(mergeAttempted).toBe(false);      // no merge attempt
+		expect(branchDeleted).toBe(true);         // cleanup ran
+		expect(stateDeleted).toBe(true);          // cleanup ran
+		expect(result.message).toContain("Already integrated");
 	});
 });
 
