@@ -1774,10 +1774,10 @@ body {
 }
 .agent-status-running { color: var(--green); }
 .agent-status-spawning { color: var(--yellow); }
-.agent-status-exited { color: var(--text-faint); }
+.agent-status-exited { color: var(--text-faint); }   /* displayed as 'shutdown' */
+.agent-status-killed { color: var(--text-faint); }   /* displayed as 'shutdown' */
 .agent-status-crashed { color: var(--red); }
-.agent-status-killed { color: var(--red); }
-.agent-status-timed_out { color: var(--yellow); }
+.agent-status-timed_out { color: var(--red); }
 
 /* TP-107: Messages Panel */
 .messages-list {

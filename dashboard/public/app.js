@@ -79,7 +79,7 @@ function mergeV2LaneSnapshot(legacyLs, v2snap) {
   if (w) {
     // Map V2 agent status to legacy dashboard status strings
     if (w.status) {
-      const statusMap = { running: 'running', spawning: 'running', exited: 'done', crashed: 'error', killed: 'error', timed_out: 'error', wrapping_up: 'running' };
+      const statusMap = { running: 'running', spawning: 'running', exited: 'done', crashed: 'error', killed: 'done', timed_out: 'error', wrapping_up: 'running' };
       base.workerStatus = statusMap[w.status] || w.status;
     }
     if (w.elapsedMs != null) base.workerElapsed = w.elapsedMs;
@@ -1062,9 +1062,15 @@ function renderAgentsPanel(registry) {
   let html = '<div class="agents-grid">';
 
   for (const agent of agents) {
+    const isCrash = ['crashed', 'timed_out'].includes(agent.status);
     const isTerminal = ['exited', 'crashed', 'timed_out', 'killed'].includes(agent.status);
-    const statusClass = isTerminal ? 'agent-terminal' : 'agent-live';
-    const icon = isTerminal ? '\u{1F534}' : '\u{1F7E2}';
+    const statusClass = isTerminal ? (isCrash ? 'agent-terminal agent-crashed' : 'agent-terminal') : 'agent-live';
+    const icon = isCrash ? '\u{1F534}' : (isTerminal ? '\u26AA' : '\u{1F7E2}');
+    // Display label: exited and killed both show as 'shutdown' — the mechanism is an
+    // implementation detail. Only crashed/timed_out warrant a different label.
+    const displayStatus = (agent.status === 'exited' || agent.status === 'killed') ? 'shutdown'
+      : agent.status === 'timed_out' ? 'timed out'
+      : agent.status;
     const elapsed = agent.startedAt ? Math.round((Date.now() - agent.startedAt) / 1000) : 0;
     const elapsedStr = elapsed > 0 ? formatDuration(elapsed * 1000) : '';
 
@@ -1074,7 +1080,7 @@ function renderAgentsPanel(registry) {
     html += `<span class="agent-badge">${escapeHtml(agent.role)}</span>`;
     if (agent.laneNumber != null) html += `<span class="agent-badge">lane ${agent.laneNumber}</span>`;
     if (agent.taskId) html += `<span class="agent-badge">${escapeHtml(agent.taskId)}</span>`;
-    html += `<span class="agent-badge agent-status-${agent.status}">${escapeHtml(agent.status)}</span>`;
+    html += `<span class="agent-badge agent-status-${agent.status}">${escapeHtml(displayStatus)}</span>`;
     if (elapsedStr && !isTerminal) html += `<span class="agent-badge">${elapsedStr}</span>`;
     html += `</div>`;
     html += `</div>`;
