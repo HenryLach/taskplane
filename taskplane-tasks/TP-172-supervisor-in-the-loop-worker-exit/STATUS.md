@@ -1,11 +1,11 @@
 # TP-172: Supervisor-in-the-Loop Worker Exit Interception — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 2
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** L
 
 > **Hydration:** Checkboxes represent meaningful outcomes, not individual code
@@ -14,14 +14,14 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read agent-host.ts — `agent_end` → `closeStdin()` flow
-- [ ] Read lane-runner.ts — iteration loop and progress checking
-- [ ] Read supervisor.ts — existing alert/message IPC system
-- [ ] Read steering message delivery in agent-host.ts (mailbox polling)
-- [ ] Verify pi RPC supports new prompt after agent_end (stdin still open)
-- [ ] Document findings
+- [x] Read agent-host.ts — `agent_end` → `closeStdin()` flow
+- [x] Read lane-runner.ts — iteration loop and progress checking
+- [x] Read supervisor.ts — existing alert/message IPC system
+- [x] Read steering message delivery in agent-host.ts (mailbox polling)
+- [x] Verify pi RPC supports new prompt after agent_end (stdin still open)
+- [x] Document findings
 
 ---
 
@@ -95,6 +95,11 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Pi RPC `agent_end` does NOT exit the process — it signals turn completion. Process stays alive waiting for new `{type:"prompt"}` or stdin close. `closeStdin()` uses a delayed setTimeout (100ms default) with `stdinClosed` flag. | Key design enabler — intercepting before `closeStdin()` lets us send new prompts | agent-host.ts:603-607, 320-329 |
+| `onSupervisorAlert` callback is one-way (fire-and-forget). Supervisor→worker uses `writeMailboxMessage()` to worker inbox. | Need to poll worker mailbox inbox for supervisor reply during interception | engine-worker.ts:324-325, extension.ts:4128-4143 |
+| Lane-runner already has `noProgressCount` tracking and corrective warning prompts. | Interception hooks into agent-host level, before iteration loop advances | lane-runner.ts:420-440 |
+| `checkMailbox()` polls inbox during `message_end` events only. After `agent_end`, no more polling. Lane-runner polls independently. | Lane-runner polls inbox directly using `readInbox()` from mailbox.ts | agent-host.ts:407-410, mailbox.ts:193 |
+| `extractAssistantText()` helper already exists for capturing assistant message content. | Reuse existing helper | agent-host.ts:70-82 |
 
 ---
 
@@ -103,6 +108,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-12 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-04-12 02:52 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-12 02:52 | Step 0 started | Preflight |
 
 ---
 
