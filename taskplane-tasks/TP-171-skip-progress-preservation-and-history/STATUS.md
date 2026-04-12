@@ -23,16 +23,16 @@
 ---
 
 ### Step 1: Preserve Skipped Task Progress
-**Status:** 🟨 In Progress (REVISE)
+**Status:** ✅ Done
 
 - [x] Add skipped-lane task artifacts to mergeWave() artifact staging: include lanes with skipped tasks (but not in mergeableLanes) in the artifact staging loop so STATUS.md/reviews are copied to the merge worktree
 - [x] Handle the edge case where mergeWorkDir may not exist (all tasks skipped, no mergeable lanes) — create a lightweight artifact-only commit on the orch branch
 - [x] Verify safety-net auto-commit in engine.ts already captures skipped lane work (TP-147, line 3121-3123) — already confirmed present
 - [x] Run targeted tests: tests/merge*.test.ts
-- [ ] R002-1: Fix workspace-mode filteredWaveResult to include skipped-lane outcomes so laneOutcomeByNumber works
-- [ ] R002-2: Fix stageSkippedArtifactsToTargetBranch to use isolated worktree instead of committing to repoRoot
-- [ ] R002-3: Fix mergeWaveByRepo early return to handle all-skipped case
-- [ ] R002: Re-run targeted tests
+- [x] R002-1: Fix workspace-mode filteredWaveResult to include skipped-lane outcomes so laneOutcomeByNumber works
+- [x] R002-2: Fix stageSkippedArtifactsToTargetBranch to use isolated worktree instead of committing to repoRoot
+- [x] R002-3: Fix mergeWaveByRepo early return to handle all-skipped case
+- [x] R002: Re-run targeted tests
 
 ---
 
