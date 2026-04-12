@@ -1,25 +1,10 @@
-lane-runner.ts — Exported Symbols
-===================================
+Exported functions in extensions/taskplane/lane-runner.ts: 5
 
-Total exported symbols: 6
+1. executeTaskV2 (line 173) — async function, main task execution entry point
+2. hasPendingExpansionRequestFiles (line 802) — checks for pending segment expansion request files
+3. mapLaneTaskStatusToTerminalSnapshotStatus (line 817) — maps lane task status to terminal snapshot status
+4. mapLaneSnapshotStatusToWorkerStatus (line 825) — maps lane snapshot status to worker status
+5. readReviewerTelemetrySnapshot (line 892) — reads reviewer telemetry snapshot data
 
-Exported functions (4):
-  1. executeTaskV2 (async function, line 169)
-     - Main entry point for executing a task in a lane worktree under Runtime V2
-  2. mapLaneTaskStatusToTerminalSnapshotStatus (function, line 608)
-     - Maps lane task status values to terminal snapshot status values
-  3. mapLaneSnapshotStatusToWorkerStatus (function, line 616)
-     - Maps lane snapshot status values to worker status values
-  4. readReviewerTelemetrySnapshot (function, line 683)
-     - Reads reviewer telemetry snapshot data for a lane
-
-Exported interfaces (2):
-  5. LaneRunnerConfig (interface, line 72)
-     - Configuration object for the lane-runner process
-  6. LaneRunnerTaskResult (interface, line 134)
-     - Result object returned after executing a task in a lane
-
-Note: lane-runner.ts is 806 lines total and contains the core Runtime V2
-lane execution logic including the task state machine, STATUS.md parsing,
-step progression, checkpoint discipline, .DONE handling, and reviewer
-orchestration for a single lane worktree.
+Note: The file also exports 2 interfaces (LaneRunnerConfig at line 76, LaneRunnerTaskResult at line 138),
+but these are type exports, not function exports.

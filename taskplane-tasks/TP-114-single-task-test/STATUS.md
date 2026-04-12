@@ -27,10 +27,10 @@
 ---
 
 ### Step 2: Code Analysis
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Read `lane-runner.ts` and write exported function count + names to `analysis.txt`
-- [ ] Read `agent-host.ts` and write all emitEvent() event types to `events.txt`
+- [x] Read `lane-runner.ts` and write exported function count + names to `analysis.txt`
+- [x] Read `agent-host.ts` and write all emitEvent() event types to `events.txt`
 
 ---
 
