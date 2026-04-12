@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -42,6 +42,7 @@
 - [x] Add worker-conversation-*.jsonl to sweep
 - [x] Add lane-state-*.json to sweep
 - [x] Run targeted tests
+- [ ] R002: Fix verification cleanup to sweep per-op subdirectories (not top-level files)
 
 ---
 
@@ -108,3 +109,4 @@
 
 GitHub issue: #296
 | 2026-04-12 00:46 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-12 00:49 | Review R002 | code Step 1: REVISE |
