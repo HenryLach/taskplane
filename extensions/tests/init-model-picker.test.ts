@@ -335,4 +335,34 @@ describe("init model picker flow", () => {
 		expect(projectConfig.orchestrator.orchestrator.sessionPrefix).toBeUndefined();
 		expect(projectConfig.orchestrator.orchestrator.spawnMode).toBeUndefined();
 	});
+
+	it("normalizes backslash paths in tasks_root to forward slashes (#446)", () => {
+		const vars = {
+			project_name: "demo",
+			max_lanes: 3,
+			worktree_prefix: "demo-wt",
+			session_prefix: "demo-orch",
+			tasks_root: "shared-libs\\task-management\\platform\\general",
+			default_area: "general",
+			default_prefix: "TP",
+			test_cmd: "",
+			build_cmd: "",
+			spawn_mode: "subprocess",
+			explicit_orchestrator_overrides: {},
+		};
+
+		const projectConfig = generateProjectConfig(vars, null);
+		const expected = "shared-libs/task-management/platform/general";
+
+		// paths.tasks
+		expect(projectConfig.taskRunner.paths.tasks).toBe(expected);
+		// taskAreas path
+		expect(projectConfig.taskRunner.taskAreas.general.path).toBe(expected);
+		// taskAreas context
+		expect(projectConfig.taskRunner.taskAreas.general.context).toBe(`${expected}/CONTEXT.md`);
+
+		// Verify no backslashes anywhere in the serialized config
+		const json = JSON.stringify(projectConfig);
+		expect(json.includes("\\")).toBe(false);
+	});
 });

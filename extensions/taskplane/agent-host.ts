@@ -136,6 +136,23 @@ export interface AgentHostOptions {
 	packet?: PacketPaths | null;
 	/** Extra environment variables for the child process */
 	env?: Record<string, string>;
+	/**
+	 * Callback invoked when agent_end fires, before stdin is closed.
+	 * Receives the last assistant message text.
+	 * Return a string to send as a new prompt (re-prompt the agent),
+	 * or null to close the session normally.
+	 *
+	 * @since TP-172
+	 */
+	onPrematureExit?: (assistantMessage: string) => Promise<string | null>;
+	/**
+	 * Maximum number of exit interceptions before forcing session close.
+	 * Prevents infinite loops where the callback always returns a new prompt.
+	 * Default: 2
+	 *
+	 * @since TP-172
+	 */
+	maxExitInterceptions?: number;
 }
 
 /**
@@ -235,6 +252,7 @@ export function spawnAgent(
 	const cliPath = resolvePiCliPath();
 	const closeDelayMs = opts.closeDelayMs ?? 100;
 	const timeoutMs = opts.timeoutMs ?? 0;
+	const maxExitInterceptions = opts.maxExitInterceptions ?? 3;
 
 	// Build Pi CLI arguments
 	const piArgs: string[] = [cliPath, "--mode", "rpc", "--no-session"];
@@ -275,6 +293,12 @@ export function spawnAgent(
 	let contextUsage: AgentHostResult["contextUsage"] = null;
 	let stderrBuffer = "";
 	const STDERR_MAX = 2048;
+	/** Last assistant message text captured from message_end events (TP-172) */
+	let lastAssistantMessage = "";
+	/** Number of times exit interception has occurred (TP-172) */
+	let exitInterceptionCount = 0;
+	/** Whether the current turn had any tool calls (TP-172: text-only gate) */
+	let currentTurnHadToolCalls = false;
 
 	// Timeout
 	let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
@@ -538,6 +562,8 @@ export function spawnAgent(
 							const content = extractAssistantText(event.message);
 							if (content) {
 								emitEvent("assistant_message", { text: truncatePayload(content, MAX_CONV_PAYLOAD_CHARS) });
+								// TP-172: Track last assistant message for exit interception
+								lastAssistantMessage = content;
 							}
 						}
 						// Request session stats immediately on first assistant message,
@@ -560,6 +586,7 @@ export function spawnAgent(
 					}
 					case "tool_execution_start": {
 						toolCalls++;
+						currentTurnHadToolCalls = true;
 						const toolName = event.toolName || "tool";
 						const argPreview = typeof event.args === "string" ? event.args.slice(0, 300) :
 							(event.args && typeof Object.values(event.args)[0] === "string" ? String(Object.values(event.args)[0]).slice(0, 300) : "");
@@ -602,7 +629,79 @@ export function spawnAgent(
 					}
 					case "agent_end": {
 						agentEnded = true;
-						closeStdin();
+						// TP-172: Exit interception — intercept any exit when callback
+						// is provided and under limit. The callback (lane-runner) decides
+						// whether the worker made progress. We don't gate on tool calls
+						// because workers commonly use tools (reads/greps) then exit
+						// with a text declaration ("Now let me fix this:") without
+						// actually making the edit.
+						const shouldIntercept = opts.onPrematureExit
+							&& exitInterceptionCount < maxExitInterceptions;
+						if (shouldIntercept) {
+							exitInterceptionCount++;
+							const INTERCEPTION_TIMEOUT_MS = 120_000; // 2 minute safety timeout
+							// Wrap in Promise.resolve().then() to catch synchronous throws
+							const interceptPromise = Promise.resolve().then(() =>
+								opts.onPrematureExit!(lastAssistantMessage));
+							const timeoutPromise = new Promise<null>((res) =>
+								setTimeout(() => res(null), INTERCEPTION_TIMEOUT_MS));
+							Promise.race([interceptPromise, timeoutPromise])
+								.then(
+									(newPrompt: string | null) => {
+										if (newPrompt && !stdinClosed && proc.stdin && !proc.stdin.destroyed) {
+											// Re-prompt the agent with supervisor guidance
+											agentEnded = false; // Reset for the new turn
+											currentTurnHadToolCalls = false; // Reset for new turn
+											proc.stdin.write(JSON.stringify({ type: "prompt", message: newPrompt }) + "\n");
+											emitEvent("exit_intercepted", {
+												interceptionCount: exitInterceptionCount,
+												assistantMessage: truncatePayload(lastAssistantMessage, 500),
+												supervisorConsulted: true,
+												action: "reprompt",
+												newPromptPreview: truncatePayload(newPrompt, MAX_CONV_PAYLOAD_CHARS),
+											});
+										} else {
+											// Callback returned null or stdin already closed — close session
+											const reason = stdinClosed ? "stdin_closed"
+												: newPrompt === null ? "callback_returned_null"
+												: "unknown";
+											emitEvent("exit_intercepted", {
+												interceptionCount: exitInterceptionCount,
+												assistantMessage: truncatePayload(lastAssistantMessage, 500),
+												supervisorConsulted: true,
+												action: "close",
+												reason,
+											});
+											closeStdin();
+										}
+									},
+									(err: unknown) => {
+										// Callback rejected — emit single diagnostic event and close
+										const msg = err instanceof Error ? err.message : String(err);
+										emitEvent("exit_intercepted", {
+											interceptionCount: exitInterceptionCount,
+											assistantMessage: truncatePayload(lastAssistantMessage, 500),
+											supervisorConsulted: false,
+											action: "close",
+											reason: "callback_error",
+											error: msg,
+										});
+										closeStdin();
+									},
+								);
+						} else {
+							// No callback, had tool calls, or interception limit reached — close normally
+							if (opts.onPrematureExit && exitInterceptionCount >= maxExitInterceptions) {
+								emitEvent("exit_intercepted", {
+									interceptionCount: exitInterceptionCount,
+									assistantMessage: truncatePayload(lastAssistantMessage, 500),
+									supervisorConsulted: false,
+									action: "close",
+									reason: "max_interceptions_reached",
+								});
+							}
+							closeStdin();
+						}
 						break;
 					}
 				}

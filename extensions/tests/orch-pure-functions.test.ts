@@ -181,6 +181,7 @@ function computeTransitiveDependents(
 }
 
 // Reimplemented from source (verified by reading the actual implementation)
+// TP-170: Updated to match wave-aware lane display changes
 function buildDashboardViewModel(
 	batchState: any,
 	monitorState?: any,
@@ -194,20 +195,38 @@ function buildDashboardViewModel(
 
 	const laneCards: any[] = [];
 
-	if (monitorState && monitorState.lanes.length > 0) {
+	// TP-170: Detect stale monitor data from prior waves
+	const monitorIsFresh = monitorState && monitorState.lanes.length > 0 && (
+		(batchState.currentLanes?.length ?? 0) === 0 ||
+		monitorState.lanes.some((ml: any) =>
+			(batchState.currentLanes || []).some((cl: any) => cl.laneNumber === ml.laneNumber),
+		)
+	);
+
+	// TP-170: Build allocation index for identity reconciliation
+	const allocatedByLaneNumber = new Map<number, { laneSessionId: string; laneId: string }>();
+	for (const cl of (batchState.currentLanes || [])) {
+		allocatedByLaneNumber.set(cl.laneNumber, { laneSessionId: cl.laneSessionId, laneId: cl.laneId });
+	}
+
+	if (monitorIsFresh && monitorState) {
 		const sortedLanes = [...monitorState.lanes].sort((a: any, b: any) => a.laneNumber - b.laneNumber);
 		for (const lane of sortedLanes) {
 			const snap = lane.currentTaskSnapshot;
+			const alloc = allocatedByLaneNumber.get(lane.laneNumber);
 			let status = "idle";
 			if (lane.failedTasks.length > 0) status = "failed";
 			else if (snap?.status === "stalled") status = "stalled";
-			else if (snap?.status === "running") status = "running";
+			else if (snap?.status === "running") {
+				// TP-170: TOCTOU guard
+				status = lane.sessionAlive ? "running" : "failed";
+			}
 			else if (lane.completedTasks.length > 0 && lane.remainingTasks.length === 0 && !lane.currentTaskId) status = "succeeded";
 
 			laneCards.push({
 				laneNumber: lane.laneNumber,
-				laneId: lane.laneId,
-				sessionName: lane.sessionName,
+				laneId: alloc?.laneId || lane.laneId,
+				sessionName: alloc?.laneSessionId || lane.sessionName,
 				sessionAlive: lane.sessionAlive,
 				currentTaskId: lane.currentTaskId,
 				currentStepName: snap?.currentStepName || null,
@@ -306,6 +325,20 @@ console.log("\n─── Source Verification ───");
 	assert(fnSrc.includes("laneNumber - b.laneNumber"), "buildDashboardViewModel: sorts by laneNumber");
 	assert(fnSrc.includes("lane.laneSessionId"), "buildDashboardViewModel: uses laneSessionId from allocation");
 	assert(fnSrc.includes("failurePolicy"), "buildDashboardViewModel: includes failurePolicy");
+	// TP-170: Verify wave-aware stale monitor detection
+	assert(fnSrc.includes("monitorIsFresh"), "buildDashboardViewModel: detects stale monitor data (TP-170)");
+	// TP-170: Verify TOCTOU guard (lane.sessionAlive check when snap.status === running)
+	assert(fnSrc.includes("lane.sessionAlive") && fnSrc.includes('"running" : "failed"'), "buildDashboardViewModel: TOCTOU guard for dead session (TP-170)");
+	// TP-170: Verify session name reconciliation via allocation index
+	assert(fnSrc.includes("allocatedByLaneNumber"), "buildDashboardViewModel: reconciles lane identity from allocation (TP-170)");
+}
+
+{
+	// TP-170: Verify renderLaneCard improvements
+	const fnSrc = extractFunction(source, "renderLaneCard");
+	assert(fnSrc.includes("starting..."), "renderLaneCard: shows 'starting...' instead of 'waiting for data' (TP-170)");
+	assert(fnSrc.includes("session ended"), "renderLaneCard: softened 'session dead' to 'session ended' (TP-170)");
+	assert(fnSrc.includes("no status data"), "renderLaneCard: distinguishes dead session no-data from startup (TP-170)");
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -567,6 +600,215 @@ console.log("\n─── 7.3: buildDashboardViewModel ───");
 	assertEqual(vm.phase, "stopped", "phase=stopped");
 	assertEqual(vm.failurePolicy, "stop-wave", "failurePolicy=stop-wave");
 	assertEqual(vm.elapsed, "1m 0s", "elapsed computed from start/end");
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 7.3b: TP-170 — Wave-Aware Lane Display
+// ═══════════════════════════════════════════════════════════════════════
+
+console.log("\n─── 7.3b: TP-170 Wave-Aware Lane Display ───");
+
+{
+	console.log("  ▸ stale monitor from prior wave → falls back to currentLanes allocation");
+	// Scenario: wave 1 completed (lanes 1,2), wave 2 started (lanes 3,4).
+	// monitorState still has wave 1 lanes, batchState.currentLanes has wave 2.
+	const batch = freshBatchState({
+		phase: "executing",
+		batchId: "20260412T010000",
+		totalWaves: 2,
+		totalTasks: 4,
+		succeededTasks: 2,
+		currentWaveIndex: 1,
+		startedAt: Date.now() - 120_000,
+		currentLanes: [
+			{
+				laneNumber: 3,
+				laneId: "lane-3",
+				laneSessionId: "orch-henry-lane-3",
+				tasks: [{ taskId: "T-003" }],
+			},
+			{
+				laneNumber: 4,
+				laneId: "lane-4",
+				laneSessionId: "orch-henry-lane-4",
+				tasks: [{ taskId: "T-004" }],
+			},
+		],
+	});
+	const staleMonitor = {
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				sessionName: "orch-henry-lane-1",
+				sessionAlive: false,
+				currentTaskId: null,
+				currentTaskSnapshot: null,
+				completedTasks: ["T-001"],
+				failedTasks: [],
+				remainingTasks: [],
+			},
+			{
+				laneNumber: 2,
+				laneId: "lane-2",
+				sessionName: "orch-henry-lane-2",
+				sessionAlive: false,
+				currentTaskId: null,
+				currentTaskSnapshot: null,
+				completedTasks: ["T-002"],
+				failedTasks: [],
+				remainingTasks: [],
+			},
+		],
+	};
+	const vm = buildDashboardViewModel(batch, staleMonitor);
+	// Should fall back to wave 2 allocation, NOT show stale wave 1 lanes
+	assertEqual(vm.laneCards.length, 2, "uses allocation lanes, not stale monitor");
+	assertEqual(vm.laneCards[0].laneNumber, 3, "lane 3 from wave 2");
+	assertEqual(vm.laneCards[1].laneNumber, 4, "lane 4 from wave 2");
+	assertEqual(vm.laneCards[0].sessionName, "orch-henry-lane-3", "session from allocation");
+	assertEqual(vm.laneCards[0].status, "running", "assumed running during allocation");
+}
+
+{
+	console.log("  ▸ TOCTOU guard: dead session + running snapshot → status=failed");
+	// Scenario: task snapshot says running (from lane snapshot file lag)
+	// but lane-level sessionAlive is false (PID confirmed dead).
+	const batch = freshBatchState({
+		phase: "executing",
+		batchId: "20260412T010000",
+		totalWaves: 1,
+		totalTasks: 1,
+		currentWaveIndex: 0,
+		startedAt: Date.now() - 60_000,
+		currentLanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "orch-henry-lane-1",
+				tasks: [{ taskId: "T-001" }],
+			},
+		],
+	});
+	const monitor = {
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				sessionName: "orch-henry-lane-1",
+				sessionAlive: false, // PID dead
+				currentTaskId: "T-001",
+				currentTaskSnapshot: { status: "running", currentStepName: "Implement", totalChecked: 3, totalItems: 8 },
+				completedTasks: [],
+				failedTasks: [],
+				remainingTasks: [],
+			},
+		],
+	};
+	const vm = buildDashboardViewModel(batch, monitor);
+	assertEqual(vm.laneCards[0].status, "failed", "TOCTOU: dead session → failed, not running");
+	assertEqual(vm.laneCards[0].sessionAlive, false, "sessionAlive=false propagated");
+}
+
+{
+	console.log("  ▸ workspace identity reconciliation: alloc session name overrides monitor");
+	const batch = freshBatchState({
+		phase: "executing",
+		batchId: "20260412T010000",
+		totalWaves: 1,
+		totalTasks: 1,
+		currentWaveIndex: 0,
+		startedAt: Date.now() - 30_000,
+		currentLanes: [
+			{
+				laneNumber: 1,
+				laneId: "api-lane-1",
+				laneSessionId: "orch-henry-api-lane-1",
+				tasks: [{ taskId: "T-001" }],
+			},
+		],
+	});
+	const monitor = {
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				sessionName: "orch-henry-lane-1-worker", // stale registry name
+				sessionAlive: true,
+				currentTaskId: "T-001",
+				currentTaskSnapshot: { status: "running", currentStepName: "Step 1", totalChecked: 2, totalItems: 5 },
+				completedTasks: [],
+				failedTasks: [],
+				remainingTasks: [],
+			},
+		],
+	};
+	const vm = buildDashboardViewModel(batch, monitor);
+	assertEqual(vm.laneCards[0].sessionName, "orch-henry-api-lane-1", "session name reconciled from allocation");
+	assertEqual(vm.laneCards[0].laneId, "api-lane-1", "laneId reconciled from allocation");
+	assertEqual(vm.laneCards[0].status, "running", "status=running (session alive)");
+}
+
+{
+	console.log("  ▸ startup lane with no registry entry → not failed");
+	// Lane just allocated, no monitor data yet (monitorState is null).
+	// Widget should show allocation fallback, not "failed".
+	const batch = freshBatchState({
+		phase: "executing",
+		batchId: "20260412T010000",
+		totalWaves: 1,
+		totalTasks: 2,
+		currentWaveIndex: 0,
+		startedAt: Date.now() - 5_000,
+		currentLanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				laneSessionId: "orch-henry-lane-1",
+				tasks: [{ taskId: "T-001" }, { taskId: "T-002" }],
+			},
+		],
+	});
+	const vm = buildDashboardViewModel(batch, null);
+	assertEqual(vm.laneCards.length, 1, "1 lane card from allocation");
+	assertEqual(vm.laneCards[0].status, "running", "assumed running, not failed");
+	assertEqual(vm.laneCards[0].sessionAlive, true, "assumed alive during allocation");
+	assertEqual(vm.laneCards[0].totalLaneTasks, 2, "totalLaneTasks from allocation");
+}
+
+{
+	console.log("  ▸ completed wave lanes with no currentLanes → still shows monitor data");
+	// Terminal phase (completed/failed/stopped): no currentLanes, monitor has final state.
+	// Should use monitor data since currentLanes is empty (monitorIsFresh=true).
+	const batch = freshBatchState({
+		phase: "completed",
+		batchId: "20260412T010000",
+		totalWaves: 1,
+		totalTasks: 2,
+		succeededTasks: 2,
+		currentWaveIndex: 0,
+		startedAt: Date.now() - 300_000,
+		endedAt: Date.now() - 10_000,
+	});
+	const monitor = {
+		lanes: [
+			{
+				laneNumber: 1,
+				laneId: "lane-1",
+				sessionName: "orch-henry-lane-1",
+				sessionAlive: false,
+				currentTaskId: null,
+				currentTaskSnapshot: null,
+				completedTasks: ["T-001", "T-002"],
+				failedTasks: [],
+				remainingTasks: [],
+			},
+		],
+	};
+	const vm = buildDashboardViewModel(batch, monitor);
+	assertEqual(vm.laneCards.length, 1, "terminal phase: monitor lanes used");
+	assertEqual(vm.laneCards[0].status, "succeeded", "completed lane shows succeeded");
+	assertEqual(vm.laneCards[0].completedTasks, 2, "2 completed tasks");
 }
 
 // ═══════════════════════════════════════════════════════════════════════

@@ -15,8 +15,9 @@
  * @since TP-105
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync, readdirSync } from "fs";
 import { join, dirname, resolve, basename } from "path";
+import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 
 import {
@@ -40,6 +41,9 @@ import {
 
 import {
 	readOutbox,
+	readInbox,
+	ackMessage,
+	sessionInboxDir,
 	ackOutboxMessage,
 	appendMailboxAuditEvent,
 } from "./mailbox.ts";
@@ -299,6 +303,21 @@ export async function executeTaskV2(
 				`Completed (do not redo): ${completedSteps.map(s => `Step ${s.number}: ${s.name}`).join(", ") || "(none)"}`,
 				`Remaining (focus here): ${remainingSteps.map(s => `Step ${s.number}: ${s.name}`).join(", ")}`,
 			);
+
+			// If the worker exited without checking any boxes, add a corrective directive
+			if (noProgressCount > 0) {
+				promptLines.push(
+					``,
+					`🚨 CRITICAL: You have exited ${noProgressCount} time(s) without completing work.`,
+					`Your previous exit was premature. You said something like "Now let me fix this"`,
+					`and then STOPPED instead of actually making the edit.`,
+					``,
+					`DO NOT DO THIS AGAIN. When you know what to edit, call the edit tool IMMEDIATELY.`,
+					`Do not produce a text message describing what you plan to do. Just do it.`,
+					`Work continuously through ALL remaining checkboxes until the task is DONE.`,
+					`Do not exit between checkboxes or steps.`,
+				);
+			}
 		}
 
 		// ── Spawn worker ────────────────────────────────────────────
@@ -351,6 +370,135 @@ export async function executeTaskV2(
 				...(config.reviewerThinking ? { TASKPLANE_REVIEWER_THINKING: config.reviewerThinking } : {}),
 				...(config.reviewerTools ? { TASKPLANE_REVIEWER_TOOLS: config.reviewerTools } : {}),
 			},
+			// TP-172: Exit interception callback — escalate to supervisor when worker
+			// exits without making visible progress (no checkboxes, no blocker logged).
+			onPrematureExit: config.onSupervisorAlert
+				? async (assistantMessage: string): Promise<string | null> => {
+					// Check if the worker made visible progress during this turn:
+					// 1. Checkbox progress (more items checked)
+					// 2. Blocker logged (non-empty Blockers section)
+					try {
+						const statusContent = readFileSync(statusPath, "utf-8");
+						const midStatus = parseStatusMd(statusContent);
+						const midTotalChecked = midStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+						if (midTotalChecked > prevTotalChecked) {
+							// Worker checked off checkboxes — let it exit normally
+							return null;
+						}
+						// Check for blocker entries: extract Blockers section and see if non-empty
+						const blockerMatch = statusContent.match(/## Blockers\s*\n([\s\S]*?)(?:\n---|-$)/i);
+						if (blockerMatch) {
+							const blockerContent = blockerMatch[1].trim();
+							// If blockers section has real content (not just "*None*" or empty)
+							if (blockerContent && blockerContent !== "*None*") {
+								// Worker logged a blocker — let it exit normally
+								return null;
+							}
+						}
+					} catch { /* If we can't read STATUS.md, proceed with escalation */ }
+
+					// No visible progress — compose escalation message
+					const truncatedMsg = assistantMessage.slice(0, 500);
+					const uncheckedItems: string[] = [];
+					try {
+						const statusContent = readFileSync(statusPath, "utf-8");
+						const uncheckedMatches = statusContent.match(/^- \[ \] .+$/gm);
+						if (uncheckedMatches) {
+							for (const item of uncheckedMatches.slice(0, 5)) {
+								uncheckedItems.push(item.replace(/^- \[ \] /, "").trim());
+							}
+						}
+					} catch { /* best effort */ }
+
+					const currentStepInfo = remainingSteps.length > 0
+						? `Step ${remainingSteps[0].number}: ${remainingSteps[0].name}`
+						: "Unknown";
+
+					// Fire supervisor alert
+					try {
+						config.onSupervisorAlert!({
+							category: "worker-exit-intercept",
+							summary:
+								`🔄 Worker on lane ${config.laneNumber} wants to exit with no progress.\n` +
+								`  Task: ${taskId}\n` +
+								`  Current step: ${currentStepInfo}\n` +
+								`  Iteration: ${totalIterations}, No-progress count: ${noProgressCount + 1}\n` +
+								`  Unchecked items: ${uncheckedItems.length > 0 ? uncheckedItems.join("; ") : "(none found)"}\n` +
+								`  Worker said: "${truncatedMsg}"\n` +
+								`\nSend a steering message to ${workerAgentId} with targeted instructions,` +
+								` or reply "skip" / "let it fail" to close the session.`,
+							context: {
+								taskId,
+								laneId: `lane-${config.laneNumber}`,
+								laneNumber: config.laneNumber,
+								agentId: workerAgentId,
+								exitReason: `worker_exit_no_progress: ${truncatedMsg.slice(0, 200)}`,
+							},
+						});
+					} catch { /* best effort — don't block on alert failure */ }
+
+					// Poll worker mailbox inbox for supervisor reply (60s timeout)
+					const SUPERVISOR_REPLY_TIMEOUT_MS = 60_000;
+					const POLL_INTERVAL_MS = 2_000;
+					const escalationTimestamp = Date.now();
+					const inboxDir = sessionInboxDir(config.stateRoot, config.batchId, workerAgentId);
+
+					const supervisorReply = await new Promise<string | null>((resolve) => {
+						const deadline = Date.now() + SUPERVISOR_REPLY_TIMEOUT_MS;
+						const poll = () => {
+							if (Date.now() >= deadline) {
+								resolve(null); // Timeout — fall back to corrective re-spawn
+								return;
+							}
+							try {
+								const messages = readInbox(inboxDir, config.batchId);
+								// Only accept messages newer than escalation timestamp
+								for (const { filename, message } of messages) {
+									if (message.timestamp >= escalationTimestamp && message.from === "supervisor") {
+										// Consume the message
+										const ackDir = join(dirname(inboxDir), "ack");
+										try { ackMessage(inboxDir, filename); } catch { /* best effort */ }
+										resolve(message.content);
+										return;
+									}
+								}
+							} catch { /* inbox not ready yet */ }
+							setTimeout(poll, POLL_INTERVAL_MS);
+						};
+						poll();
+					});
+
+					if (!supervisorReply) {
+						// Timeout — let the session close, corrective re-spawn will handle it
+						logExecution(statusPath, "Exit intercept timeout",
+							`Supervisor did not respond within ${SUPERVISOR_REPLY_TIMEOUT_MS / 1000}s — closing session`);
+						return null;
+					}
+
+					// Interpret supervisor reply: close directives vs instructional content
+					const normalizedReply = supervisorReply.trim().toLowerCase();
+					const CLOSE_DIRECTIVES = ["skip", "let it fail", "close", "abort", "stop"];
+					// Only short messages (< 30 chars) can be close directives.
+					// Longer messages are always instructions even if they start with "stop".
+					const isShortEnoughForDirective = normalizedReply.length < 30;
+					if (isShortEnoughForDirective && CLOSE_DIRECTIVES.some(d =>
+						normalizedReply === d ||
+						normalizedReply.startsWith(d + ":") ||
+						normalizedReply.startsWith(d + " ") ||
+						normalizedReply.startsWith(d + ".") ||
+						normalizedReply.startsWith(d + " -")
+					)) {
+						logExecution(statusPath, "Exit intercept close",
+							`Supervisor directed session close: "${supervisorReply.slice(0, 100)}"`);
+						return null;
+					}
+
+					// Instructional reply — return as new prompt for the worker
+					logExecution(statusPath, "Exit intercept reprompt",
+						`Supervisor provided instructions (${supervisorReply.length} chars) — reprompting worker`);
+					return supervisorReply;
+				}
+				: undefined,
 		};
 
 		// Context pressure: write wrap-up signal before kill
@@ -510,13 +658,39 @@ export async function executeTaskV2(
 		const progressDelta = afterTotalChecked - prevTotalChecked;
 
 		if (progressDelta <= 0) {
-			noProgressCount++;
-			logExecution(statusPath, "No progress",
-				`Iteration ${totalIterations}: 0 new checkboxes (${noProgressCount}/${config.noProgressLimit} stall limit)`);
-			if (noProgressCount >= config.noProgressLimit) {
-				logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
-				return makeResult(taskId, segmentId, workerAgentId, "failed", startTime,
-					`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry);
+			// Check for soft progress: uncommitted changes in the worktree
+			// indicate the worker is actively editing code even if no checkbox
+			// was checked yet. This avoids false stall detection on complex
+			// steps where analysis + editing spans multiple tool calls.
+			let hasSoftProgress = false;
+			try {
+				const diffOutput = execSync("git diff --stat HEAD", {
+					cwd: unit.worktreePath,
+					timeout: 5000,
+					encoding: "utf-8",
+					stdio: ["pipe", "pipe", "pipe"],
+				}).trim();
+				// Only count source file changes as soft progress, not just STATUS.md
+				const changedFiles = diffOutput.split("\n").filter(l => l.includes("|"));
+				const sourceChanges = changedFiles.filter(l => !l.includes("STATUS.md") && !l.includes(".steering"));
+				hasSoftProgress = sourceChanges.length > 0;
+			} catch { /* git not available or timeout — treat as no soft progress */ }
+
+			if (hasSoftProgress) {
+				// Worker has uncommitted code changes — don't count toward stall.
+				// Reset the counter since the worker is actively editing.
+				logExecution(statusPath, "Soft progress",
+					`Iteration ${totalIterations}: 0 new checkboxes but uncommitted source changes detected — not counting as stall`);
+				noProgressCount = 0;
+			} else {
+				noProgressCount++;
+				logExecution(statusPath, "No progress",
+					`Iteration ${totalIterations}: 0 new checkboxes (${noProgressCount}/${config.noProgressLimit} stall limit)`);
+				if (noProgressCount >= config.noProgressLimit) {
+					logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
+					return makeResult(taskId, segmentId, workerAgentId, "failed", startTime,
+						`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry);
+				}
 			}
 		} else {
 			noProgressCount = 0;
@@ -569,7 +743,15 @@ export async function executeTaskV2(
 		&& unit.task.segmentIds.length > 1
 		&& unit.task.segmentIds[unit.task.segmentIds.length - 1] !== segmentId;
 
-	if (isNonFinalSegment) {
+	// TP-165: Check for pending expansion requests in the worker's outbox.
+	// If the worker filed expansion requests, more segments may be added by the
+	// engine at the segment boundary — .DONE must not be created even if this
+	// appears to be the final segment based on the static segmentIds list.
+	const hasPendingExpansionRequests = segmentId != null && hasPendingExpansionRequestFiles(
+		config.stateRoot, config.batchId, workerAgentId,
+	);
+
+	if (isNonFinalSegment || hasPendingExpansionRequests) {
 		// Segment succeeded but more segments remain — suppress .DONE and "✅ Complete" status.
 		// The engine will advance the frontier and dispatch the next segment.
 		// Also delete any .DONE the worker may have created directly (workers have
@@ -588,8 +770,11 @@ export async function executeTaskV2(
 			logExecution(statusPath, "Segment complete",
 				`Segment ${segmentId} succeeded (not final — .DONE suppressed)`);
 		}
+		const suppressionReason = isNonFinalSegment
+			? "non-final"
+			: "pending expansion requests";
 		return makeResult(taskId, segmentId, workerAgentId, "succeeded", startTime,
-			"Segment completed (non-final — .DONE suppressed)", false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry);
+			`Segment completed (${suppressionReason} — .DONE suppressed)`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry);
 	}
 
 	// Create .DONE if not already present (final segment or single-segment/whole-task execution)
@@ -604,6 +789,30 @@ export async function executeTaskV2(
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+/**
+ * TP-165: Check if the worker's outbox contains pending segment expansion requests.
+ *
+ * Pending expansion request files match `segment-expansion-*.json` (not renamed
+ * to `.processed`, `.rejected`, etc.). If any exist, the engine will process them
+ * at the segment boundary — and may add more segments to the task.
+ *
+ * @returns true if at least one pending expansion request file exists
+ */
+export function hasPendingExpansionRequestFiles(
+	stateRoot: string,
+	batchId: string,
+	agentId: string,
+): boolean {
+	const outboxDir = join(stateRoot, ".pi", "mailbox", batchId, agentId, "outbox");
+	if (!existsSync(outboxDir)) return false;
+	try {
+		const entries = readdirSync(outboxDir);
+		return entries.some((entry) => /^segment-expansion-.+\.json$/.test(entry));
+	} catch {
+		return false;
+	}
+}
 
 export function mapLaneTaskStatusToTerminalSnapshotStatus(
 	status: LaneTaskStatus,

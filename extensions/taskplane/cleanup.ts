@@ -1,18 +1,25 @@
 /**
  * Artifact cleanup and log rotation for orchestrator runtime files.
  *
- * Three cleanup layers prevent unbounded disk growth:
+ * Five cleanup layers prevent unbounded disk growth:
  *
  * 1. **Post-Integrate Cleanup** — Deletes batch-specific telemetry and merge
  *    result files after successful /orch-integrate. Scoped by batchId.
  *
- * 2. **Age-Based Preflight Sweep** — On /orch start, removes telemetry and
- *    merge artifacts older than 7 days. Catches files missed by Layer 1
- *    (e.g., aborted batches, manual branch deletions).
+ * 2. **Age-Based Preflight Sweep** — On /orch start, removes telemetry,
+ *    verification, conversation, lane-state, and merge artifacts older than
+ *    3 days. Catches files missed by Layer 1 (e.g., aborted batches,
+ *    manual branch deletions).
  *
  * 3. **Size-Capped Log Rotation** — Rotates append-only supervisor logs
  *    (events.jsonl, actions.jsonl) at a 5MB threshold during preflight.
  *    Keeps one .old generation.
+ *
+ * 4. **Telemetry Size Cap** — Enforces a 500MB cap on `.pi/telemetry/`
+ *    by evicting oldest files first when the directory exceeds the cap.
+ *
+ * 5. **Batch-Start Cleanup** — Removes artifacts from prior completed
+ *    batches when a new batch starts, protecting the current batch.
  *
  * All cleanup is **non-fatal** — failures warn but never block execution.
  *
@@ -177,8 +184,8 @@ export function formatPostIntegrateCleanup(result: PostIntegrateCleanupResult): 
 
 // ── Layer 2: Age-Based Preflight Sweep ──────────────────────────────
 
-/** Default max age for stale artifacts (7 days in milliseconds). */
-export const STALE_ARTIFACT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+/** Default max age for stale artifacts (3 days in milliseconds). */
+export const STALE_ARTIFACT_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 
 /**
  * Result of a preflight age-based sweep.
@@ -215,13 +222,16 @@ export interface SweepDeps {
  * - `.pi/telemetry/lane-prompt-*.txt` — temporary prompt files
  * - `.pi/merge-result-*.json` — merge result files
  * - `.pi/merge-request-*.txt` — merge request files
+ * - `.pi/verification/*` — verification snapshots
+ * - `.pi/worker-conversation-*.jsonl` — worker conversation logs
+ * - `.pi/lane-state-*.json` — lane state files
  *
  * Uses file mtime for age detection. Skips files modified within maxAgeMs.
  * If a batch is currently active (executing/merging), skips ALL cleanup.
  *
  * @param stateRoot - Root directory containing .pi/
  * @param deps - Injectable dependencies for testability
- * @param maxAgeMs - Maximum file age in milliseconds (default: 7 days)
+ * @param maxAgeMs - Maximum file age in milliseconds (default: 3 days)
  * @returns Sweep result with count and warnings
  */
 export function sweepStaleArtifacts(
@@ -289,7 +299,17 @@ export function sweepStaleArtifacts(
 		(name.startsWith("merge-request-") && name.endsWith(".txt")),
 	);
 
-	// Sweep stale batch directories under a parent (mailbox, context-snapshots)
+	// Sweep stale worker conversation logs (.pi/worker-conversation-*.jsonl)
+	sweepDir(join(stateRoot, ".pi"), (name) =>
+		name.startsWith("worker-conversation-") && name.endsWith(".jsonl"),
+	);
+
+	// Sweep stale lane state files (.pi/lane-state-*.json)
+	sweepDir(join(stateRoot, ".pi"), (name) =>
+		name.startsWith("lane-state-") && name.endsWith(".json"),
+	);
+
+	// Sweep stale batch directories under a parent (mailbox, context-snapshots, verification)
 	const sweepBatchDirs = (parentDir: string, label: string): void => {
 		if (!existsSync(parentDir)) return;
 		try {
@@ -318,6 +338,9 @@ export function sweepStaleArtifacts(
 	// Sweep stale context-snapshot batch directories (.pi/context-snapshots/{batchId}/)
 	sweepBatchDirs(join(stateRoot, ".pi", "context-snapshots"), "context-snapshots");
 
+	// Sweep stale verification snapshot directories (.pi/verification/{opId}/)
+	sweepBatchDirs(join(stateRoot, ".pi", "verification"), "verification");
+
 	return result;
 }
 
@@ -336,7 +359,7 @@ export function formatPreflightSweep(result: PreflightSweepResult): string {
 		const segments: string[] = [];
 		if (result.staleFilesDeleted > 0) segments.push(`${result.staleFilesDeleted} stale artifact(s)`);
 		if (result.staleDirsDeleted > 0) segments.push(`${result.staleDirsDeleted} stale mailbox dir(s)`);
-		parts.push(`🧹 Preflight cleanup: removed ${segments.join(" and ")} (>7 days old)`);
+		parts.push(`🧹 Preflight cleanup: removed ${segments.join(" and ")} (>3 days old)`);
 	}
 	for (const warning of result.warnings) {
 		parts.push(`  ⚠️ ${warning}`);
@@ -424,6 +447,245 @@ export function formatLogRotation(result: LogRotationResult): string {
 	return parts.join("\n");
 }
 
+// ── Layer 4: Telemetry Directory Size Cap ─────────────────────────────
+
+/** Default telemetry directory size cap: 500 MB. */
+export const TELEMETRY_SIZE_CAP_BYTES = 500 * 1024 * 1024;
+
+/**
+ * Result of telemetry size cap enforcement.
+ */
+export interface SizeCapResult {
+	/** Number of files deleted to bring directory under cap */
+	filesDeleted: number;
+	/** Total bytes freed */
+	bytesFreed: number;
+	/** Warnings from non-fatal failures */
+	warnings: string[];
+}
+
+/**
+ * Enforce a size cap on the telemetry directory by evicting oldest files first.
+ *
+ * Scans `.pi/telemetry/` and sums file sizes. If the total exceeds `capBytes`,
+ * deletes the oldest files (by mtime) until the total is under the cap.
+ *
+ * @param stateRoot - Root directory containing .pi/
+ * @param capBytes - Maximum allowed total size in bytes (default: 500MB)
+ * @returns Size cap enforcement result
+ */
+export function enforceTelemetrySizeCap(
+	stateRoot: string,
+	capBytes: number = TELEMETRY_SIZE_CAP_BYTES,
+): SizeCapResult {
+	const result: SizeCapResult = {
+		filesDeleted: 0,
+		bytesFreed: 0,
+		warnings: [],
+	};
+
+	const telemetryDir = join(stateRoot, ".pi", "telemetry");
+	if (!existsSync(telemetryDir)) return result;
+
+	// Collect all files with size and mtime
+	interface FileEntry {
+		name: string;
+		path: string;
+		size: number;
+		mtimeMs: number;
+	}
+
+	const files: FileEntry[] = [];
+	let totalSize = 0;
+
+	try {
+		const entries = readdirSync(telemetryDir);
+		for (const entry of entries) {
+			const filePath = join(telemetryDir, entry);
+			try {
+				const stat = statSync(filePath);
+				if (!stat.isFile()) continue;
+				files.push({ name: entry, path: filePath, size: stat.size, mtimeMs: stat.mtimeMs });
+				totalSize += stat.size;
+			} catch (err: unknown) {
+				result.warnings.push(`Failed to stat ${entry}: ${(err as Error).message}`);
+			}
+		}
+	} catch (err: unknown) {
+		result.warnings.push(`Failed to read telemetry directory: ${(err as Error).message}`);
+		return result;
+	}
+
+	if (totalSize <= capBytes) return result;
+
+	// Sort oldest first (lowest mtime first)
+	files.sort((a, b) => a.mtimeMs - b.mtimeMs);
+
+	// Delete oldest files until under cap
+	for (const file of files) {
+		if (totalSize <= capBytes) break;
+		try {
+			unlinkSync(file.path);
+			totalSize -= file.size;
+			result.filesDeleted++;
+			result.bytesFreed += file.size;
+		} catch (err: unknown) {
+			result.warnings.push(`Failed to delete ${file.name}: ${(err as Error).message}`);
+		}
+	}
+
+	return result;
+}
+
+/**
+ * Format size cap result for logging.
+ */
+export function formatSizeCap(result: SizeCapResult): string {
+	if (result.filesDeleted === 0 && result.warnings.length === 0) return "";
+	const parts: string[] = [];
+	if (result.filesDeleted > 0) {
+		const mbFreed = (result.bytesFreed / (1024 * 1024)).toFixed(1);
+		parts.push(`🧹 Telemetry size cap: deleted ${result.filesDeleted} file(s), freed ${mbFreed} MB`);
+	}
+	for (const warning of result.warnings) {
+		parts.push(`  ⚠️ ${warning}`);
+	}
+	return parts.join("\n");
+}
+
+// ── Layer 5: Batch-Start Cleanup of Prior Batch Artifacts ─────────────
+
+/**
+ * Result of prior-batch artifact cleanup.
+ */
+export interface PriorBatchCleanupResult {
+	/** Number of files/dirs deleted */
+	itemsDeleted: number;
+	/** Warnings from non-fatal failures */
+	warnings: string[];
+}
+
+/**
+ * Clean up artifacts from prior completed batches when a new batch starts.
+ *
+ * Removes batch-scoped files that may have been left behind by prior runs
+ * that were not integrated (e.g., aborted, crashed). Only cleans artifacts
+ * from batches that are NOT the currently active batch.
+ *
+ * Targets the same file patterns as `cleanupPostIntegrate` plus stale
+ * batch-state files.
+ *
+ * @param stateRoot - Root directory containing .pi/
+ * @param currentBatchId - The batch ID that is currently starting (will NOT be deleted)
+ * @returns Cleanup result
+ */
+export function cleanupPriorBatchArtifacts(
+	stateRoot: string,
+	currentBatchId: string,
+): PriorBatchCleanupResult {
+	const result: PriorBatchCleanupResult = {
+		itemsDeleted: 0,
+		warnings: [],
+	};
+
+	if (!currentBatchId) {
+		result.warnings.push("No currentBatchId provided — skipping prior batch cleanup");
+		return result;
+	}
+
+	const piDir = join(stateRoot, ".pi");
+	if (!existsSync(piDir)) return result;
+
+	// Helper: delete files in a directory matching a filter, skipping current batch
+	const cleanDir = (dir: string, filter: (name: string) => boolean): void => {
+		if (!existsSync(dir)) return;
+		try {
+			const entries = readdirSync(dir);
+			for (const entry of entries) {
+				if (!filter(entry)) continue;
+				if (entry.includes(currentBatchId)) continue; // Protect current batch
+				const filePath = join(dir, entry);
+				try {
+					const stat = statSync(filePath);
+					if (stat.isFile()) {
+						unlinkSync(filePath);
+						result.itemsDeleted++;
+					}
+				} catch (err: unknown) {
+					result.warnings.push(`Failed to delete ${entry}: ${(err as Error).message}`);
+				}
+			}
+		} catch (err: unknown) {
+			result.warnings.push(`Failed to read directory ${dir}: ${(err as Error).message}`);
+		}
+	};
+
+	// Clean telemetry files from prior batches
+	cleanDir(join(piDir, "telemetry"), (name) =>
+		name.endsWith(".jsonl") ||
+		name.endsWith("-exit.json") ||
+		(name.startsWith("lane-prompt-") && name.endsWith(".txt")),
+	);
+
+	// Clean merge result/request files from prior batches
+	cleanDir(piDir, (name) =>
+		(name.startsWith("merge-result-") && name.endsWith(".json")) ||
+		(name.startsWith("merge-request-") && name.endsWith(".txt")),
+	);
+
+	// Clean worker conversation logs from prior batches
+	cleanDir(piDir, (name) =>
+		name.startsWith("worker-conversation-") && name.endsWith(".jsonl"),
+	);
+
+	// Clean lane state files from prior batches
+	cleanDir(piDir, (name) =>
+		name.startsWith("lane-state-") && name.endsWith(".json"),
+	);
+
+	// Clean batch-scoped directories (mailbox, context-snapshots)
+	const cleanBatchDirs = (parentDir: string): void => {
+		if (!existsSync(parentDir)) return;
+		try {
+			const entries = readdirSync(parentDir);
+			for (const entry of entries) {
+				if (entry === currentBatchId) continue; // Protect current batch
+				const entryPath = join(parentDir, entry);
+				try {
+					const stat = statSync(entryPath);
+					if (!stat.isDirectory()) continue;
+					rmSync(entryPath, { recursive: true, force: true });
+					result.itemsDeleted++;
+				} catch (err: unknown) {
+					result.warnings.push(`Failed to delete batch dir ${entry}: ${(err as Error).message}`);
+				}
+			}
+		} catch (err: unknown) {
+			result.warnings.push(`Failed to read directory ${parentDir}: ${(err as Error).message}`);
+		}
+	};
+
+	cleanBatchDirs(join(piDir, MAILBOX_DIR_NAME));
+	cleanBatchDirs(join(piDir, "context-snapshots"));
+
+	return result;
+}
+
+/**
+ * Format prior batch cleanup result for logging.
+ */
+export function formatPriorBatchCleanup(result: PriorBatchCleanupResult): string {
+	if (result.itemsDeleted === 0 && result.warnings.length === 0) return "";
+	const parts: string[] = [];
+	if (result.itemsDeleted > 0) {
+		parts.push(`🧹 Prior batch cleanup: removed ${result.itemsDeleted} artifact(s) from previous batch(es)`);
+	}
+	for (const warning of result.warnings) {
+		parts.push(`  ⚠️ ${warning}`);
+	}
+	return parts.join("\n");
+}
+
 // ── Combined Preflight Cleanup ──────────────────────────────────────
 
 /**
@@ -466,7 +728,7 @@ export function formatPreflightCleanup(result: PreflightCleanupResult): string {
 		const segments: string[] = [];
 		if (result.sweep.staleFilesDeleted > 0) segments.push(`${result.sweep.staleFilesDeleted} stale artifact(s)`);
 		if (result.sweep.staleDirsDeleted > 0) segments.push(`${result.sweep.staleDirsDeleted} stale mailbox dir(s)`);
-		parts.push(`removed ${segments.join(" and ")} (>7 days old)`);
+		parts.push(`removed ${segments.join(" and ")} (>3 days old)`);
 	}
 
 	// Layer 3: log rotation

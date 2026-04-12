@@ -367,22 +367,71 @@ export function buildDashboardViewModel(
 	// Build lane cards from monitor state (if available) or current lanes
 	const laneCards: OrchLaneCardData[] = [];
 
-	if (monitorState && monitorState.lanes.length > 0) {
+	// TP-170: Detect stale monitor data from prior waves.
+	// When wave N+1 starts, batchState.currentLanes is updated to wave N+1's
+	// lanes, but monitorState may still hold wave N's data until the first
+	// poll of wave N+1's monitor. Detect this mismatch by checking whether
+	// the monitor's lane numbers match the current allocation.
+	const monitorIsFresh = monitorState && monitorState.lanes.length > 0 && (
+		// If no current allocation, monitor data is the best we have
+		// (covers terminal phases like completed/failed/stopped)
+		batchState.currentLanes.length === 0 ||
+		// If allocated lanes exist, verify monitor lanes match them
+		monitorState.lanes.some(ml =>
+			batchState.currentLanes.some(cl => cl.laneNumber === ml.laneNumber),
+		)
+	);
+
+	// TP-170: Build a laneNumber → AllocatedLane index for identity reconciliation.
+	// In workspace mode, the monitor’s sessionName (e.g., "orch-henry-api-lane-1")
+	// may differ from the V2 registry agentId ("orch-henry-lane-3-worker").
+	// Cross-referencing with the current allocation ensures the displayed session
+	// name matches the authoritative laneSessionId for the current wave.
+	const allocatedByLaneNumber = new Map<number, { laneSessionId: string; laneId: string }>();
+	for (const cl of batchState.currentLanes) {
+		allocatedByLaneNumber.set(cl.laneNumber, { laneSessionId: cl.laneSessionId, laneId: cl.laneId });
+	}
+
+	if (monitorIsFresh && monitorState) {
 		// Sort lanes by laneNumber (deterministic)
 		const sortedLanes = [...monitorState.lanes].sort((a, b) => a.laneNumber - b.laneNumber);
 
 		for (const lane of sortedLanes) {
 			const snap = lane.currentTaskSnapshot;
+			const alloc = allocatedByLaneNumber.get(lane.laneNumber);
+
+			// TP-170: Reconcile task-level vs lane-level sessionAlive.
+			// resolveTaskMonitorState may derive sessionAlive from the lane
+			// snapshot file (snap.status === "running") while the lane-level
+			// sessionAlive comes from isV2AgentAlive (PID check). When the
+			// task snapshot says "running" but the lane session is confirmed
+			// dead, the task is effectively failed — not still running.
 			let status: OrchLaneCardData["status"] = "idle";
-			if (lane.failedTasks.length > 0) status = "failed";
-			else if (snap?.status === "stalled") status = "stalled";
-			else if (snap?.status === "running") status = "running";
-			else if (lane.completedTasks.length > 0 && lane.remainingTasks.length === 0 && !lane.currentTaskId) status = "succeeded";
+			if (lane.failedTasks.length > 0) {
+				status = "failed";
+			} else if (snap?.status === "stalled") {
+				status = "stalled";
+			} else if (snap?.status === "running") {
+				// TP-170: TOCTOU guard — if lane session is dead but task snapshot
+				// still says "running", treat as failed instead of showing
+				// "session dead" in the card. This prevents the false positive
+				// where the lane snapshot file lags behind the PID liveness check.
+				status = lane.sessionAlive ? "running" : "failed";
+			} else if (
+				lane.completedTasks.length > 0 &&
+				lane.remainingTasks.length === 0 &&
+				!lane.currentTaskId
+			) {
+				status = "succeeded";
+			}
 
 			laneCards.push({
 				laneNumber: lane.laneNumber,
-				laneId: lane.laneId,
-				sessionName: lane.sessionName,
+				laneId: alloc?.laneId || lane.laneId,
+				// TP-170: Prefer the allocation’s laneSessionId (current-wave authority)
+				// over the monitor’s sessionName which may use a stale or workspace-local
+				// name that doesn’t match the V2 registry.
+				sessionName: alloc?.laneSessionId || lane.sessionName,
 				sessionAlive: lane.sessionAlive,
 				currentTaskId: lane.currentTaskId,
 				currentStepName: snap?.currentStepName || null,
@@ -395,7 +444,9 @@ export function buildDashboardViewModel(
 			});
 		}
 	} else if (batchState.currentLanes.length > 0) {
-		// No monitor data yet — show lanes from allocation
+		// No fresh monitor data — show lanes from allocation.
+		// This covers both initial startup (monitor hasn't polled yet)
+		// and wave transitions (monitor data is stale from prior wave).
 		const sortedLanes = [...batchState.currentLanes].sort((a, b) => a.laneNumber - b.laneNumber);
 		for (const lane of sortedLanes) {
 			laneCards.push({
@@ -495,7 +546,11 @@ export function renderLaneCard(card: OrchLaneCardData, colWidth: number, theme: 
 	if (card.currentStepName) {
 		stepInfo = trunc(card.currentStepName, w - 2);
 	} else if (card.currentTaskId && card.totalItems === 0) {
-		stepInfo = "waiting for data...";
+		// TP-170: Distinguish startup-grace (no STATUS.md yet) from
+		// genuine stale data. During startup, the lane is alive but
+		// hasn’t written STATUS.md yet — show "starting..." instead of
+		// the misleading "waiting for data..." which implies a problem.
+		stepInfo = card.sessionAlive ? "starting..." : "no status data";
 	} else if (!card.currentTaskId && card.status !== "idle") {
 		stepInfo = `${card.completedTasks}/${card.totalLaneTasks} tasks`;
 	}
@@ -512,8 +567,12 @@ export function renderLaneCard(card: OrchLaneCardData, colWidth: number, theme: 
 		extraInfo = `${card.totalChecked}/${card.totalItems} ✓`;
 		extraColor = card.totalChecked === card.totalItems ? "success" : "muted";
 	} else if (!card.sessionAlive && card.status === "running") {
-		extraInfo = "session dead";
-		extraColor = "error";
+		// TP-170: With the TOCTOU guard in buildDashboardViewModel, a lane
+		// with a dead session and task snapshot "running" now gets status
+		// "failed" instead. This branch guards any remaining edge cases
+		// (e.g., allocation-fallback lane assumed alive but actually dead).
+		extraInfo = "session ended";
+		extraColor = "warning";
 	}
 	const extraStr = theme.fg(extraColor, trunc(extraInfo, w));
 	const extraVis = Math.min(extraInfo.length, w);

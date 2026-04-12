@@ -44,19 +44,55 @@ write, or touch a `.DONE` file. The lane-runner creates it automatically
 when all segments of your task are complete. If you create `.DONE` early,
 it will cause downstream segments to be skipped and deliverables to be lost.
 
-## CRITICAL: Never Exit Without Updating STATUS.md
+## CRITICAL: Do NOT Exit — Keep Working Until Done
 
-**Every turn MUST end with a tool call.** Do NOT produce a text-only response
-and stop — the orchestrator interprets that as "session complete" and will
-terminate your process. If you have nothing left to do:
+**You must work continuously until ALL steps are complete.** Do not stop
+between checkboxes. Do not stop between steps. Do not stop to summarize.
+Keep calling tools and making progress until every step is finished and
+STATUS.md shows `✅ Complete`.
 
-1. Read STATUS.md to verify all checkboxes are checked
-2. Update the Status field to `✅ Complete`
-3. Commit your final changes
+**The ONLY reasons to stop working are:**
+1. ✅ **Task complete** — all steps done, STATUS.md set to `✅ Complete`
+2. 🚧 **Genuinely blocked** — you've tried multiple approaches and cannot
+   proceed. Log the blocker in STATUS.md with specifics (what you tried,
+   why it failed, exact error).
+
+There is NO other reason to exit. Do not exit after completing a step to
+"hand off" to the next iteration. Do not exit to report progress. Do not
+exit because you've been working for a while. Just keep going.
+
+## CRITICAL: Never Narrate What You Plan To Do — Just Do It
+
+**YOUR #1 FAILURE MODE:** Producing a message like "Now let me fix this:" or
+"Let me apply the change:" and then STOPPING. This kills your session. You
+have done this repeatedly and it wastes significant time and money.
+
+**THE RULE:** If you know what edit to make, USE THE EDIT TOOL IMMEDIATELY.
+Do not describe the edit in text first. Do not say "now I'll do X". Just
+call the tool. Your very next action after deciding what to do must be a
+tool call, never a text message.
+
+❌ **WRONG (kills your session):**
+> "Now I have everything I need. The fix is to use resolveCanonicalTaskPaths
+> instead of task.taskFolder. Let me make the fix:"
+> *(session terminates — you never made the fix)*
+
+✅ **CORRECT (keeps you alive):**
+> *(immediately calls edit tool on the file)*
+
+**Any text-only response terminates your session.** The orchestrator interprets
+text without a tool call as "session complete." Every response you produce MUST
+include at least one tool call. If you want to explain your reasoning, do it
+AFTER making the edit, not before.
 
 **After running tests:** Immediately update STATUS.md checkboxes for the
 testing step BEFORE producing any summary. Check off each item as it passes.
 Do NOT run tests and then stop — always checkpoint the results first.
+
+**If you are unsure how to proceed:** Do NOT exit. Instead, try an approach —
+even an imperfect one. Write the code, run the tests, and iterate. A failed
+attempt that checks a box and leaves code for the next iteration is infinitely
+more valuable than a clean exit with zero progress.
 
 ## Checkpoint Discipline (CRITICAL)
 
@@ -301,10 +337,16 @@ When you receive a steering message:
 
 ## Error Handling
 
-- If stuck on the same issue after 3 attempts, document the blocker in STATUS.md
-  Blockers section and move to the next checkbox
+- If stuck on a checkbox: **try an implementation approach anyway.** Write code,
+  run tests, see what happens. An imperfect attempt that moves forward is better
+  than analysis paralysis. If your first approach fails, try a different one.
+- If genuinely blocked after real attempts (not just reading): document the
+  blocker in STATUS.md Blockers section **with specifics** (what you tried, why
+  it failed, exact error) and move to the next checkbox.
 - If a test fails, fix it. If the fix is out of scope, document and continue.
 - If a dependency is missing, document in STATUS.md and stop.
+- **NEVER exit silently.** If you cannot make progress, you MUST leave evidence
+  in STATUS.md (either checked boxes or blocker entries) before your session ends.
 
 ## Test Execution Strategy
 

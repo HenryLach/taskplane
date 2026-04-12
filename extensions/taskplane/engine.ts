@@ -6,7 +6,7 @@ import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync } from "f
 import { join, resolve } from "path";
 
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
-import { buildReviewerEnv, computeTransitiveDependents, execLog, executeLaneV2, executeWave, killV2LaneAgents } from "./execution.ts";
+import { buildReviewerEnv, computeTransitiveDependents, execLog, executeLaneV2, executeWave, killV2LaneAgents, resolveCanonicalTaskPaths } from "./execution.ts";
 import type { RuntimeBackend } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 // classifyExit no longer called directly — Tier 0 uses exitDiagnostic.classification
@@ -23,7 +23,7 @@ import { buildBatchProgressSnapshot, buildEngineEventBase, buildSegmentId, build
 import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedSegmentRecord, SegmentExpansionRequest, SupervisorAlert, SupervisorAlertCallback, TaskRunnerConfig, TaskSegmentPlan, TaskSegmentPlanMap, TaskSegmentNode, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaveAssignments, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, preserveSkippedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
-import { runPreflightCleanup, formatPreflightCleanup } from "./cleanup.ts";
+import { runPreflightCleanup, formatPreflightCleanup, enforceTelemetrySizeCap, formatSizeCap, cleanupPriorBatchArtifacts, formatPriorBatchCleanup } from "./cleanup.ts";
 
 // ── Tier 0: Automatic Recovery Helpers (TP-039) ─────────────────────
 
@@ -147,17 +147,31 @@ function buildSegmentDependencyMap(plan: TaskSegmentPlan): Map<string, string[]>
 	return depsBySegmentId;
 }
 
-function resolveTaskWorkerAgentId(
+export function resolveTaskWorkerAgentId(
 	taskId: string,
 	allTaskOutcomes: LaneTaskOutcome[],
 	laneByTaskId: Map<string, AllocatedLane>,
+	agentIdPrefix?: string,
 ): string | null {
 	const outcome = allTaskOutcomes.find((candidate) => candidate.taskId === taskId);
 	if (outcome?.sessionName) {
 		return outcome.sessionName;
 	}
+	// TP-165: The fallback must derive the *worker* agent ID, not the lane
+	// session ID. The outbox lives under the worker agent ID
+	// (e.g., "orch-op-lane-2-worker"), not the lane session
+	// (e.g., "orch-op-api-lane-1"). In workspace mode these differ because
+	// laneSessionId uses repo-scoped local numbering while the worker ID
+	// uses the global laneNumber.
 	const lane = laneByTaskId.get(taskId);
-	return lane?.laneSessionId ?? null;
+	if (!lane) return null;
+	if (agentIdPrefix) {
+		// Canonical path: reconstruct the exact same ID that executeLaneV2 builds
+		// via buildRuntimeAgentId(agentIdPrefix, lane.laneNumber, "worker").
+		return `${agentIdPrefix}-lane-${lane.laneNumber}-worker`;
+	}
+	// Legacy/defensive fallback when prefix is unavailable.
+	return `${lane.laneSessionId}-worker`;
 }
 
 function listPendingSegmentExpansionRequestFiles(stateRoot: string, batchId: string, agentId: string): string[] {
@@ -2009,11 +2023,12 @@ export async function executeOrchBatch(
 		return;
 	}
 
-	// ── TP-065: Preflight artifact cleanup (Layer 2 + Layer 3) ───
-	// Sweep stale artifacts and rotate oversized logs before batch starts.
+	// ── TP-065/TP-168: Preflight artifact cleanup (Layers 2–5) ───
+	// Sweep stale artifacts, rotate oversized logs, enforce size cap,
+	// and clean prior batch artifacts before batch starts.
 	// Always non-fatal — failures warn but never block batch execution.
 	try {
-		// Layer 2: Age-based sweep of stale telemetry/merge artifacts (>7 days)
+		// Layer 2: Age-based sweep of stale telemetry/merge/verification/conversation artifacts (>3 days)
 		const sweepResult = sweepStaleArtifacts(stateRoot, {
 			isBatchActive: () => {
 				// Check persisted state — a prior batch may still be active
@@ -2037,6 +2052,21 @@ export async function executeOrchBatch(
 		const rotationMsg = formatLogRotation(rotationResult);
 		if (rotationMsg) {
 			onNotify(rotationMsg, "info");
+		}
+		// Layer 4: Telemetry directory size cap (TP-168)
+		const sizeCapResult = enforceTelemetrySizeCap(stateRoot);
+		const sizeCapMsg = formatSizeCap(sizeCapResult);
+		if (sizeCapMsg) {
+			onNotify(sizeCapMsg, "info");
+		}
+
+		// Layer 5: Clean up prior batch artifacts (TP-168)
+		if (batchState.batchId) {
+			const priorCleanup = cleanupPriorBatchArtifacts(stateRoot, batchState.batchId);
+			const priorMsg = formatPriorBatchCleanup(priorCleanup);
+			if (priorMsg) {
+				onNotify(priorMsg, "info");
+			}
 		}
 	} catch {
 		// Non-fatal — never block batch start for cleanup errors
@@ -2154,6 +2184,8 @@ export async function executeOrchBatch(
 	// The orch branch isolates all batch work from the user's current branch.
 	// Worktrees branch from it; merges target it via update-ref.
 	const opId = resolveOperatorId(orchConfig);
+	const sessionPrefix = orchConfig.orchestrator?.sessionPrefix ?? "orch";
+	const agentIdPrefix = `${sessionPrefix}-${opId}`;
 	const orchBranch = `orch/${opId}-${batchState.batchId}`;
 
 	// In workspace mode, create the orch branch in every repo that might
@@ -2579,7 +2611,7 @@ export async function executeOrchBatch(
 				segmentState.statusBySegmentId.set(activeSegmentId, "succeeded");
 				upsertTerminalSegmentRecord(batchState, task, segmentState, activeSegmentId, "succeeded", outcome, laneByTaskId.get(taskId));
 
-				const workerAgentId = resolveTaskWorkerAgentId(taskId, allTaskOutcomes, laneByTaskId);
+				const workerAgentId = resolveTaskWorkerAgentId(taskId, allTaskOutcomes, laneByTaskId, agentIdPrefix);
 				if (workerAgentId) {
 					const pendingExpansionFiles = listPendingSegmentExpansionRequestFiles(stateRoot, batchState.batchId, workerAgentId);
 					if (pendingExpansionFiles.length > 0) {
@@ -2669,16 +2701,30 @@ export async function executeOrchBatch(
 							// segments have been added and must execute first.
 							// Only delete if segments were actually inserted (avoid
 							// reopening a completed task on no-op mutations).
-							const doneDir = task.packetTaskPath || task.taskFolder;
-							if (doneDir && mutation.insertedSegmentIds.length > 0) {
-								const donePath = join(doneDir, ".DONE");
-								if (existsSync(donePath)) {
-									try {
-										unlinkSync(donePath);
-										execLog("batch", batchState.batchId, "removed premature .DONE after segment expansion", {
-											taskId, donePath, requestId,
-										});
-									} catch { /* non-fatal */ }
+							//
+							// TP-165: Resolve .DONE path via the lane worktree, not
+							// task.packetTaskPath/task.taskFolder (which may point to the
+							// workspace root, not the worktree where .DONE was created).
+							if (mutation.insertedSegmentIds.length > 0) {
+								const lane = laneByTaskId.get(taskId);
+								const doneDir = lane
+									? resolveCanonicalTaskPaths(
+										task.taskFolder,
+										lane.worktreePath,
+										repoRoot,
+										!!workspaceConfig,
+									).taskFolderResolved
+									: task.packetTaskPath || task.taskFolder;
+								if (doneDir) {
+									const donePath = join(doneDir, ".DONE");
+									if (existsSync(donePath)) {
+										try {
+											unlinkSync(donePath);
+											execLog("batch", batchState.batchId, "removed premature .DONE after segment expansion", {
+												taskId, donePath, requestId,
+											});
+										} catch { /* non-fatal */ }
+									}
 								}
 							}
 
@@ -2750,7 +2796,7 @@ export async function executeOrchBatch(
 				segmentState.statusBySegmentId.set(activeSegmentId, "failed");
 				upsertTerminalSegmentRecord(batchState, task, segmentState, activeSegmentId, "failed", failOutcome, laneByTaskId.get(taskId));
 
-				const workerAgentId = resolveTaskWorkerAgentId(taskId, allTaskOutcomes, laneByTaskId);
+				const workerAgentId = resolveTaskWorkerAgentId(taskId, allTaskOutcomes, laneByTaskId, agentIdPrefix);
 				if (workerAgentId) {
 					const pendingExpansionFiles = listPendingSegmentExpansionRequestFiles(stateRoot, batchState.batchId, workerAgentId);
 					if (pendingExpansionFiles.length > 0) {

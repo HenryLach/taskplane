@@ -787,18 +787,24 @@ export async function collectInitAgentConfig({
 	return initAgentConfig;
 }
 
+/** Normalize a path string to forward slashes (for config file output). */
+function fwdSlash(p) {
+	return typeof p === "string" ? p.replace(/\\/g, "/") : p;
+}
+
 export function generateProjectConfig(vars, _initAgentConfig = null) {
+	const tasksRoot = fwdSlash(vars.tasks_root);
 	const projectConfig = {
 		configVersion: 1,
 		taskRunner: {
 			project: { name: vars.project_name, description: "" },
-			paths: { tasks: vars.tasks_root },
+			paths: { tasks: tasksRoot },
 			testing: { commands: buildTestingCommands(vars) },
 			taskAreas: {
 				[vars.default_area]: {
-					path: vars.tasks_root,
+					path: tasksRoot,
 					prefix: vars.default_prefix,
-					context: `${vars.tasks_root}/CONTEXT.md`,
+					context: `${tasksRoot}/CONTEXT.md`,
 				},
 			},
 		},
@@ -820,10 +826,11 @@ export function generateProjectConfig(vars, _initAgentConfig = null) {
 }
 
 function generateWorkspaceYaml(repoNames, defaultRepo, tasksRoot) {
+	const normalizedTasksRoot = fwdSlash(tasksRoot);
 	const reposBlock = repoNames
 		.map((name) => `  ${name}:\n    path: "${name}"`)
 		.join("\n");
-	return `repos:\n${reposBlock}\nrouting:\n  tasks_root: "${tasksRoot}"\n  default_repo: "${defaultRepo}"\n  task_packet_repo: "${defaultRepo}"\n`;
+	return `repos:\n${reposBlock}\nrouting:\n  tasks_root: "${normalizedTasksRoot}"\n  default_repo: "${defaultRepo}"\n  task_packet_repo: "${defaultRepo}"\n`;
 }
 
 function readWorkspaceJson(configRepoRoot) {
@@ -1923,7 +1930,7 @@ async function cmdInit(args) {
 				default_branch: "main",
 			})),
 			routing: {
-				tasks_root: vars.tasks_root,
+				tasks_root: fwdSlash(vars.tasks_root),
 				default_repo: configRepoName,
 				strict: false,
 			},
