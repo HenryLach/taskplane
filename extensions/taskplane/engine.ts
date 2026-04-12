@@ -23,7 +23,7 @@ import { buildBatchProgressSnapshot, buildEngineEventBase, buildSegmentId, build
 import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedSegmentRecord, SegmentExpansionRequest, SupervisorAlert, SupervisorAlertCallback, TaskRunnerConfig, TaskSegmentPlan, TaskSegmentPlanMap, TaskSegmentNode, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaveAssignments, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, preserveSkippedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
-import { runPreflightCleanup, formatPreflightCleanup } from "./cleanup.ts";
+import { runPreflightCleanup, formatPreflightCleanup, enforceTelemetrySizeCap, formatSizeCap, cleanupPriorBatchArtifacts, formatPriorBatchCleanup } from "./cleanup.ts";
 
 // ── Tier 0: Automatic Recovery Helpers (TP-039) ─────────────────────
 
@@ -2009,8 +2009,9 @@ export async function executeOrchBatch(
 		return;
 	}
 
-	// ── TP-065: Preflight artifact cleanup (Layer 2 + Layer 3) ───
-	// Sweep stale artifacts and rotate oversized logs before batch starts.
+	// ── TP-065/TP-168: Preflight artifact cleanup (Layers 2–5) ───
+	// Sweep stale artifacts, rotate oversized logs, enforce size cap,
+	// and clean prior batch artifacts before batch starts.
 	// Always non-fatal — failures warn but never block batch execution.
 	try {
 		// Layer 2: Age-based sweep of stale telemetry/merge/verification/conversation artifacts (>3 days)
@@ -2037,6 +2038,21 @@ export async function executeOrchBatch(
 		const rotationMsg = formatLogRotation(rotationResult);
 		if (rotationMsg) {
 			onNotify(rotationMsg, "info");
+		}
+		// Layer 4: Telemetry directory size cap (TP-168)
+		const sizeCapResult = enforceTelemetrySizeCap(stateRoot);
+		const sizeCapMsg = formatSizeCap(sizeCapResult);
+		if (sizeCapMsg) {
+			onNotify(sizeCapMsg, "info");
+		}
+
+		// Layer 5: Clean up prior batch artifacts (TP-168)
+		if (batchState.batchId) {
+			const priorCleanup = cleanupPriorBatchArtifacts(stateRoot, batchState.batchId);
+			const priorMsg = formatPriorBatchCleanup(priorCleanup);
+			if (priorMsg) {
+				onNotify(priorMsg, "info");
+			}
 		}
 	} catch {
 		// Non-fatal — never block batch start for cleanup errors

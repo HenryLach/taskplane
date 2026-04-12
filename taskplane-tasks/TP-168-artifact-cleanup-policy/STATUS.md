@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** M
 
@@ -47,13 +47,13 @@
 ---
 
 ### Step 2: Add Size Cap and Batch-Start Cleanup
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Implement telemetry size cap (500MB, oldest-first eviction)
-- [ ] Wire size cap into preflight cleanup (engine.ts batch-start path)
-- [ ] Add batch-start cleanup for prior completed batch artifacts (never delete active batch)
-- [ ] Make thresholds clearly documented as named exported constants
-- [ ] Run targeted tests
+- [x] Implement telemetry size cap (500MB, oldest-first eviction)
+- [x] Wire size cap into preflight cleanup (engine.ts batch-start path)
+- [x] Add batch-start cleanup for prior completed batch artifacts (never delete active batch)
+- [x] Make thresholds clearly documented as named exported constants
+- [x] Run targeted tests
 
 ---
 
@@ -113,3 +113,4 @@ GitHub issue: #296
 | 2026-04-12 00:49 | Review R002 | code Step 1: REVISE |
 | 2026-04-12 00:51 | Review R003 | code Step 1: APPROVE |
 | 2026-04-12 00:52 | Review R004 | plan Step 2: REVISE |
+| 2026-04-12 00:53 | Review R005 | plan Step 2: APPROVE |
