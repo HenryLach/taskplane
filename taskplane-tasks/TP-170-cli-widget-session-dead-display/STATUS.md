@@ -1,6 +1,6 @@
 # TP-170: CLI Widget Session-Dead Display Fix — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Fix Wave-Aware Lane Display
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 1
@@ -22,13 +22,12 @@
 ---
 
 ### Step 1: Fix Wave-Aware Lane Display
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-> ⚠️ Hydrate: Expand based on analysis in Step 0
-
-- [ ] Make widget wave-aware (completed vs active vs pending)
-- [ ] Fix session name matching
-- [ ] Handle missing registry entries gracefully
+- [ ] Fix buildDashboardViewModel: detect stale monitor data from prior waves and fall back to currentLanes allocation data
+- [ ] Fix renderLaneCard: reconcile task-level vs lane-level sessionAlive to prevent false "session dead" display
+- [ ] Fix renderLaneCard: improve "waiting for data" message for lanes in startup grace period
+- [ ] Fix buildDashboardViewModel: derive status from lane-level sessionAlive when task snapshot status is "running" but lane session is dead
 - [ ] Run targeted tests
 
 ---
