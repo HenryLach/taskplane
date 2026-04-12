@@ -478,8 +478,10 @@ export async function executeTaskV2(
 					// Interpret supervisor reply: close directives vs instructional content
 					const normalizedReply = supervisorReply.trim().toLowerCase();
 					const CLOSE_DIRECTIVES = ["skip", "let it fail", "close", "abort", "stop"];
-					// Match directive at start, followed by end-of-string, colon, dash, period, or space
-					if (CLOSE_DIRECTIVES.some(d =>
+					// Only short messages (< 30 chars) can be close directives.
+					// Longer messages are always instructions even if they start with "stop".
+					const isShortEnoughForDirective = normalizedReply.length < 30;
+					if (isShortEnoughForDirective && CLOSE_DIRECTIVES.some(d =>
 						normalizedReply === d ||
 						normalizedReply.startsWith(d + ":") ||
 						normalizedReply.startsWith(d + " ") ||

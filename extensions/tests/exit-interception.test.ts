@@ -264,10 +264,12 @@ describe("5.x: End-to-end interception flow contracts (TP-172)", () => {
 
 	it("5.6: close directive parsing is resilient to punctuation", () => {
 		// Should match directives followed by space, colon, period, dash
+		// Also verify short-message guard exists to prevent false matches
 		const closeBlock = laneRunnerSrc.slice(
 			laneRunnerSrc.indexOf("CLOSE_DIRECTIVES"),
-			laneRunnerSrc.indexOf("CLOSE_DIRECTIVES") + 500,
+			laneRunnerSrc.indexOf("CLOSE_DIRECTIVES") + 800,
 		);
+		expect(closeBlock).toContain("isShortEnoughForDirective");
 		expect(closeBlock).toContain('startsWith(d + ":")');
 		expect(closeBlock).toContain('startsWith(d + " ")');
 		expect(closeBlock).toContain('startsWith(d + ".")');
