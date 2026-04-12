@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** L
 
@@ -42,12 +42,12 @@
 ---
 
 ### Step 2: Fix Batch History Task Gap
-**Status:** 🟨 In Progress
+**Status:** ✅ Done
 
-- [ ] Verify TP-147 gap-filling logic in engine.ts covers all cases (skipped, failed, blocked, never-started)
-- [ ] Check if dynamically expanded tasks (segment expansion) are included in wavePlan
-- [ ] Add edge-case handling for tasks that appear in allTaskOutcomes but not wavePlan (and vice versa)
-- [ ] Run targeted tests: tests/batch-history-persistence.test.ts
+- [x] Verify TP-147 gap-filling logic in engine.ts covers all cases (skipped, failed, blocked, never-started)
+- [x] Check if dynamically expanded tasks (segment expansion) are included in wavePlan — confirmed: segment expansion uses same task IDs, only adds continuation rounds to runtimeSegmentRounds (not wavePlan); task IDs are already in wavePlan from original wave computation
+- [x] Add edge-case handling: fixed invalid status cast ("running" → "pending") for tasks in non-terminal state at batch end; tasks in allTaskOutcomes but not wavePlan get wave=0 (correct); TP-147 gap-fill covers reverse case
+- [x] Run targeted tests: tests/batch-history-persistence.test.ts
 
 ---
 
@@ -107,3 +107,4 @@ GitHub issues: #453, #455
 | 2026-04-12 15:59 | Review R002 | code Step 1: REVISE |
 | 2026-04-12 16:03 | Review R003 | code Step 1: REVISE |
 | 2026-04-12 16:08 | Review R004 | code Step 1: REVISE |
+| 2026-04-12 16:11 | Review R005 | plan Step 2: APPROVE |

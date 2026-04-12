@@ -4027,10 +4027,18 @@ export async function executeOrchBatch(
 				legacyLaneTokensByKey,
 			);
 
+			// TP-171: Map outcome status to valid BatchTaskSummary status.
+			// Non-terminal statuses ("running", "pending") can appear if batch
+			// was paused/aborted mid-wave. Map them to appropriate history values.
+			const validStatuses: Set<string> = new Set(["succeeded", "failed", "skipped", "blocked", "stalled", "pending"]);
+			const historyStatus: BatchTaskSummary["status"] = validStatuses.has(to.status)
+				? (to.status as BatchTaskSummary["status"])
+				: "pending"; // "running" or unknown → "pending" in history
+
 			return {
 				taskId: to.taskId,
 				taskName: to.taskId,
-				status: to.status as BatchTaskSummary["status"],
+				status: historyStatus,
 				wave,
 				lane,
 				durationMs,
