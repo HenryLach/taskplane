@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -25,10 +25,11 @@
 ### Step 1: Fix Excessive Wave Generation
 **Status:** 🟨 In Progress
 
-- [ ] Modify `buildSegmentFrontierWaves` to not pre-expand waves into segment rounds (return task-level waves, let continuation mechanism handle segment advancement)
-- [ ] Track task-level wave count separately from segment rounds — store `taskLevelWaveCount` on batchState
-- [ ] Update wave messages to use task-level wave count for the "of N" display
-- [ ] Run targeted tests: waves*.test.ts
+- [ ] Modify `buildSegmentFrontierWaves` to return task-level wave metadata (taskLevelWaveCount + roundToTaskWave mapping) alongside expanded rounds (no behavioral change to execution/resume)
+- [ ] Store `taskLevelWaveCount` on batchState and use mapping in engine for wave display
+- [ ] Update wave messages (orchWaveStart, progress reporting) to show task-level wave numbers
+- [ ] Update engine-segment-frontier.test.ts expectations for new return shape
+- [ ] Run targeted tests: waves*.test.ts + engine-segment-frontier.test.ts
 
 ---
 
@@ -97,3 +98,4 @@
 ## Notes
 
 GitHub issues: #454, #451
+| 2026-04-12 14:47 | Review R001 | plan Step 1: REVISE |
