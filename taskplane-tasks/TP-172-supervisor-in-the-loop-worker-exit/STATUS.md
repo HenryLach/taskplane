@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** L
 
@@ -57,7 +57,7 @@
 ---
 
 ### Step 3: Add Escalation Handler to Supervisor
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > `worker-exit-intercept` category already added to types.ts in Step 2.
 > Alert is fired by lane-runner; supervisor receives it via IPC.
@@ -65,9 +65,9 @@
 > Lane-runner polls inbox for the reply. Wire is already complete.
 > This step focuses on: supervisor-primer guidance + event tailer formatting.
 
-- [ ] Add `worker-exit-intercept` to supervisor event tailer significant events list
-- [ ] Add formatting for `worker-exit-intercept` alert in supervisor prompt/primer guidance
-- [ ] Run targeted tests (supervisor-related tests)
+- [x] Add `worker-exit-intercept` to supervisor event tailer significant events list (N/A — alerts go via IPC, not event tailer)
+- [x] Add formatting for `worker-exit-intercept` alert in supervisor prompt/primer guidance (Section 13c added)
+- [x] Run targeted tests (supervisor-alerts: 32/32, mailbox: 46/46)
 
 ---
 
@@ -138,3 +138,4 @@ worker's conversation context and provides targeted guidance from the supervisor
 | 2026-04-12 02:57 | Review R002 | plan Step 1: APPROVE |
 | 2026-04-12 03:02 | Review R003 | plan Step 2: REVISE |
 | 2026-04-12 03:03 | Review R004 | plan Step 2: APPROVE |
+| 2026-04-12 03:06 | Review R005 | plan Step 3: APPROVE |
