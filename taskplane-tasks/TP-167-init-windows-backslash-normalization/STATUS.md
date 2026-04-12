@@ -1,7 +1,7 @@
 # TP-167: Init Windows Backslash Path Normalization — Status
 
 **Current Step:** Step 3: Documentation & Delivery
-**Status:** 🟡 In Progress
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-12
 **Review Level:** 1
 **Review Counter:** 1
@@ -39,9 +39,9 @@
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Discoveries logged
+- [x] Discoveries logged
 
 ---
 
@@ -56,6 +56,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Original fix (544904d2) already added caller-side normalization in `getPresetVars`, `getInteractiveVars`, and workspace reinit. This task adds defense-in-depth normalization at the output functions (`generateProjectConfig`, `generateWorkspaceYaml`, `workspace.json` write). | Implemented | `bin/taskplane.mjs` |
+| No shared path normalization utility existed. Added `fwdSlash()` helper in `bin/taskplane.mjs`. | Implemented | `bin/taskplane.mjs` line 790 |
+| `docs/tutorials/install.md` does not need Windows-specific path caveats — the normalization is fully transparent to users. | No action needed | — |
 
 ---
 
