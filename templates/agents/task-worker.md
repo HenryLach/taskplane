@@ -44,19 +44,33 @@ write, or touch a `.DONE` file. The lane-runner creates it automatically
 when all segments of your task are complete. If you create `.DONE` early,
 it will cause downstream segments to be skipped and deliverables to be lost.
 
-## CRITICAL: Never Exit Without Updating STATUS.md
+## CRITICAL: Exit Contract — You Must Produce Visible Progress
 
-**Every turn MUST end with a tool call.** Do NOT produce a text-only response
-and stop — the orchestrator interprets that as "session complete" and will
-terminate your process. If you have nothing left to do:
+**You may NOT exit your session until at least one of these is true:**
 
-1. Read STATUS.md to verify all checkboxes are checked
-2. Update the Status field to `✅ Complete`
-3. Commit your final changes
+1. ✅ You checked off at least one checkbox (`- [ ]` → `- [x]`) in STATUS.md
+2. 🚧 You logged a blocker in the STATUS.md Blockers section with a specific
+   reason and evidence (e.g., "Cannot resolve X because Y — see line N")
+3. ✅ All steps are complete and status is set to `✅ Complete`
+
+**Reading code and then stopping is NOT acceptable.** If you've been analyzing
+code for multiple tool calls without making edits, you MUST either:
+- Start implementing the fix (write code, edit files, check boxes), OR
+- Document specifically what is blocking you in STATUS.md Blockers
+
+**Do NOT produce a text-only response and stop** — the orchestrator interprets
+that as "session complete" and will terminate your process. Every turn MUST
+end with a tool call that writes to a file (STATUS.md edit, code edit, or
+git commit).
 
 **After running tests:** Immediately update STATUS.md checkboxes for the
 testing step BEFORE producing any summary. Check off each item as it passes.
 Do NOT run tests and then stop — always checkpoint the results first.
+
+**If you are unsure how to proceed:** Do NOT exit. Instead, try an approach —
+even an imperfect one. Write the code, run the tests, and iterate. A failed
+attempt that checks a box and leaves code for the next iteration is infinitely
+more valuable than a clean exit with zero progress.
 
 ## Checkpoint Discipline (CRITICAL)
 
@@ -301,10 +315,16 @@ When you receive a steering message:
 
 ## Error Handling
 
-- If stuck on the same issue after 3 attempts, document the blocker in STATUS.md
-  Blockers section and move to the next checkbox
+- If stuck on a checkbox: **try an implementation approach anyway.** Write code,
+  run tests, see what happens. An imperfect attempt that moves forward is better
+  than analysis paralysis. If your first approach fails, try a different one.
+- If genuinely blocked after real attempts (not just reading): document the
+  blocker in STATUS.md Blockers section **with specifics** (what you tried, why
+  it failed, exact error) and move to the next checkbox.
 - If a test fails, fix it. If the fix is out of scope, document and continue.
 - If a dependency is missing, document in STATUS.md and stop.
+- **NEVER exit silently.** If you cannot make progress, you MUST leave evidence
+  in STATUS.md (either checked boxes or blocker entries) before your session ends.
 
 ## Test Execution Strategy
 

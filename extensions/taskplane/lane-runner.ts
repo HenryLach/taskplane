@@ -17,6 +17,7 @@
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, unlinkSync } from "fs";
 import { join, dirname, resolve, basename } from "path";
+import { execSync } from "child_process";
 import { fileURLToPath } from "url";
 
 import {
@@ -299,6 +300,19 @@ export async function executeTaskV2(
 				`Completed (do not redo): ${completedSteps.map(s => `Step ${s.number}: ${s.name}`).join(", ") || "(none)"}`,
 				`Remaining (focus here): ${remainingSteps.map(s => `Step ${s.number}: ${s.name}`).join(", ")}`,
 			);
+
+			// If the worker exited without checking any boxes, add a corrective directive
+			if (noProgressCount > 0) {
+				promptLines.push(
+					``,
+					`⚠️ WARNING: You have exited ${noProgressCount} time(s) without checking any checkboxes.`,
+					`You MUST make visible progress this iteration. Do NOT just read files and exit.`,
+					`Either: (1) implement a fix and check off a checkbox, or (2) write a specific`,
+					`blocker in the STATUS.md Blockers section explaining exactly what is preventing progress.`,
+					`Reading code without editing anything is NOT acceptable. Try an approach — even`,
+					`an imperfect one. Write code, run tests, iterate.`,
+				);
+			}
 		}
 
 		// ── Spawn worker ────────────────────────────────────────────
@@ -510,13 +524,39 @@ export async function executeTaskV2(
 		const progressDelta = afterTotalChecked - prevTotalChecked;
 
 		if (progressDelta <= 0) {
-			noProgressCount++;
-			logExecution(statusPath, "No progress",
-				`Iteration ${totalIterations}: 0 new checkboxes (${noProgressCount}/${config.noProgressLimit} stall limit)`);
-			if (noProgressCount >= config.noProgressLimit) {
-				logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
-				return makeResult(taskId, segmentId, workerAgentId, "failed", startTime,
-					`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry);
+			// Check for soft progress: uncommitted changes in the worktree
+			// indicate the worker is actively editing code even if no checkbox
+			// was checked yet. This avoids false stall detection on complex
+			// steps where analysis + editing spans multiple tool calls.
+			let hasSoftProgress = false;
+			try {
+				const diffOutput = execSync("git diff --stat HEAD", {
+					cwd: unit.worktreePath,
+					timeout: 5000,
+					encoding: "utf-8",
+					stdio: ["pipe", "pipe", "pipe"],
+				}).trim();
+				// Only count source file changes as soft progress, not just STATUS.md
+				const changedFiles = diffOutput.split("\n").filter(l => l.includes("|"));
+				const sourceChanges = changedFiles.filter(l => !l.includes("STATUS.md") && !l.includes(".steering"));
+				hasSoftProgress = sourceChanges.length > 0;
+			} catch { /* git not available or timeout — treat as no soft progress */ }
+
+			if (hasSoftProgress) {
+				// Worker has uncommitted code changes — don't count toward stall.
+				// Reset the counter since the worker is actively editing.
+				logExecution(statusPath, "Soft progress",
+					`Iteration ${totalIterations}: 0 new checkboxes but uncommitted source changes detected — not counting as stall`);
+				noProgressCount = 0;
+			} else {
+				noProgressCount++;
+				logExecution(statusPath, "No progress",
+					`Iteration ${totalIterations}: 0 new checkboxes (${noProgressCount}/${config.noProgressLimit} stall limit)`);
+				if (noProgressCount >= config.noProgressLimit) {
+					logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
+					return makeResult(taskId, segmentId, workerAgentId, "failed", startTime,
+						`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry);
+				}
 			}
 		} else {
 			noProgressCount = 0;
