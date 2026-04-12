@@ -1,7 +1,7 @@
 # TP-170: CLI Widget Session-Dead Display Fix — Status
 
-**Current Step:** Step 2: Testing & Verification
-**Status:** 🟡 In Progress
+**Current Step:** Step 3: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-12
 **Review Level:** 1
 **Review Counter:** 2
@@ -42,9 +42,9 @@
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Discoveries logged
+- [x] Discoveries logged
 
 ---
 
@@ -60,9 +60,10 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
-| TOCTOU race: task-level sessionAlive from lane snapshot vs lane-level from PID check can diverge → "session dead" | Fix in Step 1 | `formatting.ts:renderLaneCard`, `execution.ts:monitorLanes` |
-| Stale monitor data across waves: buildDashboardViewModel uses wave N-1's monitor when wave N starts | Fix in Step 1 | `formatting.ts:buildDashboardViewModel` |
-| Session name in workspace mode doesn't match registry agent IDs | Fix in Step 1 | `formatting.ts:buildDashboardViewModel` |
+| TOCTOU race: task-level sessionAlive from lane snapshot vs lane-level from PID check can diverge → "session dead" | Fixed — TOCTOU guard in status derivation | `formatting.ts:buildDashboardViewModel` |
+| Stale monitor data across waves: buildDashboardViewModel uses wave N-1's monitor when wave N starts | Fixed — monitorIsFresh validation against currentLanes | `formatting.ts:buildDashboardViewModel` |
+| Session name in workspace mode doesn't match registry agent IDs | Fixed — allocation index reconciliation | `formatting.ts:buildDashboardViewModel` |
+| extension.ts monitor callback uses wrong property names (totalDone/totalFailed) | Tech debt — cosmetic, widget re-renders via TUI paint | `extension.ts:~2117` |
 
 ---
 
@@ -73,6 +74,10 @@
 | 2026-04-12 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-04-12 01:20 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-12 01:20 | Step 0 started | Preflight |
+| 2026-04-12 | Step 0 complete | Identified 3 root causes: stale monitor, TOCTOU, session name mismatch |
+| 2026-04-12 | Step 1 complete | Fixed buildDashboardViewModel + renderLaneCard |
+| 2026-04-12 | Step 2 complete | 3220 tests pass, 23 new TP-170 assertions |
+| 2026-04-12 | Step 3 complete | Discoveries logged, no docs update needed |
 
 ---
 
