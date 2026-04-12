@@ -118,6 +118,24 @@ Guardrails:
 
 If no progress repeats beyond limit, the task is marked blocked/error.
 
+### Supervisor-in-the-loop exit interception (TP-172)
+
+When a worker exits without making visible progress (no checkboxes checked,
+no blocker logged), the lane-runner can intercept the exit before closing the
+worker's process. The worker's conversation context is preserved while the
+lane-runner escalates to the supervisor with the worker's last assistant
+message, current step, and unchecked items.
+
+The supervisor can then:
+- Send targeted instructions via `send_agent_message` → the worker continues
+  with its full conversation context plus the new guidance
+- Reply "skip" or "let it fail" → the session closes normally
+
+Each session can be intercepted at most 2 times (configurable via
+`maxExitInterceptions`). After the limit, or if the supervisor doesn't
+respond within 60 seconds, the session closes and the normal corrective
+re-spawn mechanism takes over.
+
 ### Context window auto-detect (v0.8.0+)
 
 The worker's context window is auto-detected from pi's model registry. For

@@ -718,6 +718,7 @@ or check status manually. The engine wakes you up when you're needed.
 | `task-failure` | ⚠️ | A task failed after deterministic recovery was exhausted |
 | `merge-failure` | ⚠️ | Wave merge failed and batch paused |
 | `batch-complete` | ✅/⚠️ | Batch finished (all waves done, with or without failures) |
+| `worker-exit-intercept` | 🔄 | A worker exited without making progress — session still alive, awaiting instructions |
 
 ### Alert Format
 
@@ -1011,6 +1012,60 @@ BATCH COMPLETE: {batchId}
 | merge-failure | Agent timeout, no result | `orch_resume(force=true)` to retry | Automatic |
 | batch-complete | All succeeded | Report → suggest `orch_integrate` | Report only |
 | batch-complete | Some failed | Report with failure details | Report only |
+| worker-exit-intercept | Worker analyzing, not editing | `send_agent_message` with targeted instructions | Automatic |
+| worker-exit-intercept | Worker genuinely stuck | "skip" or "let it fail" to close session | Supervised |
+| worker-exit-intercept | Unknown reason | Read STATUS.md, diagnose, then instruct or close | Automatic |
+
+---
+
+## 13c. Worker Exit Interception (TP-172)
+
+When a worker agent produces a text-only response (no tool calls, no file
+edits) without having made visible progress (no checkbox updates), the
+lane-runner **intercepts the exit** instead of closing the session. The worker
+process remains alive with its full conversation context preserved.
+
+**You receive a `worker-exit-intercept` alert** with:
+- Lane number and task ID
+- Current step and unchecked checkboxes
+- Worker's last assistant message (truncated to 500 chars)
+- Iteration count and no-progress count
+
+### Response Protocol
+
+1. **Read the worker's message** — understand why it wants to exit.
+   Common patterns:
+   - "I've analyzed the code and I'm not sure how to proceed"
+   - "I need more information about X"
+   - Generic summary without any file edits
+
+2. **Decide** — based on diagnosis:
+   - **If the worker needs direction:** Send targeted instructions via
+     `send_agent_message(to, content)` with specific guidance on what to
+     implement, which file to edit, or which approach to take.
+   - **If the task is genuinely blocked:** Reply with `"skip"` or
+     `"let it fail"` to close the session normally.
+
+3. **Send your response** — The lane-runner polls for your reply for
+   60 seconds. If you don't respond in time, the session closes and
+   the normal corrective re-spawn mechanism takes over.
+
+### Example Instructions
+
+```
+send_agent_message(
+  to: "orch-henrylach-lane-1-worker",
+  content: "Stop analyzing and start implementing. Edit agent-host.ts line 605:
+    replace the closeStdin() call with the interception logic described in
+    PROMPT.md Step 1. Write the code now — don't read more files."
+)
+```
+
+### Interception Limits
+
+Each worker session can be intercepted at most **2 times** (configurable via
+`maxExitInterceptions`). After the limit is reached, the session closes
+normally and the stall detector handles subsequent iterations.
 
 ---
 
