@@ -158,9 +158,14 @@ export function reconstructAllocatedLanes(
 			if (persistedTask?.resolvedRepoId !== undefined) {
 				taskStub.resolvedRepoId = persistedTask.resolvedRepoId;
 			}
-			if (persistedTask?.taskFolder) {
-				taskStub.taskFolder = persistedTask.taskFolder;
-			}
+			// TP-169: Always set taskFolder on stub, even if empty string.
+			// Previously, the falsy check `if (persistedTask?.taskFolder)` skipped
+			// empty-string values, leaving taskFolder as `undefined` on the stub.
+			// This caused crashes in buildExecutionUnit and merge code when
+			// accessing `task.task.taskFolder` on dynamically-expanded segments
+			// whose persisted records had taskFolder="" (the default from
+			// serializeBatchState before enrichment).
+			taskStub.taskFolder = persistedTask?.taskFolder ?? "";
 			if ((persistedTask as any)?.packetRepoId !== undefined) {
 				(taskStub as any).packetRepoId = (persistedTask as any).packetRepoId;
 			}

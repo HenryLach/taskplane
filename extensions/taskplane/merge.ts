@@ -422,8 +422,8 @@ export function determineMergeOrder(
 
 	// fewest-files-first: count total file scope across all tasks in the lane
 	sorted.sort((a, b) => {
-		const aFiles = a.tasks.reduce((sum, t) => sum + (t.task.fileScope?.length || 0), 0);
-		const bFiles = b.tasks.reduce((sum, t) => sum + (t.task.fileScope?.length || 0), 0);
+		const aFiles = a.tasks.reduce((sum, t) => sum + (t.task?.fileScope?.length || 0), 0);
+		const bFiles = b.tasks.reduce((sum, t) => sum + (t.task?.fileScope?.length || 0), 0);
 
 		if (aFiles !== bFiles) return aFiles - bFiles;
 
@@ -460,8 +460,9 @@ export function buildMergeRequest(
 	resultFilePath: string,
 ): string {
 	const taskIds = lane.tasks.map(t => t.taskId).join(", ");
+	// TP-169: Guard against null task stubs from reconstructAllocatedLanes
 	const fileScopes = lane.tasks
-		.flatMap(t => t.task.fileScope || [])
+		.flatMap(t => t.task?.fileScope || [])
 		.filter((f, i, arr) => arr.indexOf(f) === i); // deduplicate
 
 	const mergeMessage = `merge: wave ${waveIndex} lane ${lane.laneNumber} — ${taskIds}`;
@@ -479,7 +480,7 @@ export function buildMergeRequest(
 		`${mergeMessage}`,
 		"",
 		`## Tasks Completed`,
-		...lane.tasks.map(t => `- ${t.taskId}: ${t.task.taskName}`),
+		...lane.tasks.map(t => `- ${t.taskId}: ${t.task?.taskName ?? "(unknown)"}`),
 		"",
 		`## File Scope`,
 		...(fileScopes.length > 0
@@ -1942,7 +1943,7 @@ export async function mergeWave(
 
 		for (const lane of orderedLanes) {
 			for (const allocTask of lane.tasks) {
-				if (!allocTask.task.taskFolder?.trim()) {
+				if (!allocTask.task?.taskFolder?.trim()) {
 					execLog("merge", `W${waveIndex}`, `skipping task with missing taskFolder (possibly dynamically expanded)`, {
 						taskId: allocTask.taskId,
 					});

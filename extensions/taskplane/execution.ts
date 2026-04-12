@@ -2093,8 +2093,23 @@ export function buildExecutionUnit(
 	repoRoot: string,
 	isWorkspaceMode?: boolean,
 ): ExecutionUnit {
+	// TP-169: Guard against missing taskFolder. This can happen when
+	// reconstructAllocatedLanes creates task stubs from persisted state
+	// where taskFolder enrichment failed (e.g., dynamically-expanded
+	// segments whose persisted records had empty taskFolder).
+	const taskFolder = task.task?.taskFolder;
+	if (!taskFolder) {
+		throw new ExecutionError(
+			"EXEC_MISSING_TASK_FOLDER",
+			`Cannot build execution unit for task ${task.taskId}: taskFolder is ${taskFolder === "" ? "empty" : "undefined"}. ` +
+			`This typically means the task's persisted record was not enriched with discovery data. ` +
+			`Re-run discovery or check that the task exists in the task area.`,
+			"execution",
+			task.taskId,
+		);
+	}
 	const resolved = resolveCanonicalTaskPaths(
-		task.task.taskFolder,
+		taskFolder,
 		lane.worktreePath,
 		repoRoot,
 		isWorkspaceMode,

@@ -23,13 +23,13 @@
 ---
 
 ### Step 1: Fix Segment Expansion Resume Crash
-**Status:** 🟨 In Progress
+**Status:** ✅ Done
 
-- [ ] Fix `reconstructAllocatedLanes` to always set `taskFolder` on task stubs (resume.ts)
-- [ ] Add guard in `buildExecutionUnit` for missing/empty `taskFolder` (execution.ts)
-- [ ] Add guard in `buildMergeRequest` and merge sort for null `task` stubs (merge.ts)
-- [ ] Add guard in abort.ts for null task stubs
-- [ ] Run targeted tests: resume*.test.ts
+- [x] Fix `reconstructAllocatedLanes` to always set `taskFolder` on task stubs (resume.ts)
+- [x] Add guard in `buildExecutionUnit` for missing/empty `taskFolder` (execution.ts)
+- [x] Add guard in `buildMergeRequest` and merge sort for null `task` stubs (merge.ts)
+- [x] Add guard in abort.ts for null task stubs
+- [x] Run targeted tests: resume*.test.ts (37 pass, 0 fail)
 
 ---
 

@@ -85,7 +85,8 @@ export function selectAbortTargetSessions(
 			laneId: lane.laneId,
 			taskId: currentTask?.taskId || null,
 			worktreePath: lane.worktreePath,
-			taskFolder: currentTask?.task.taskFolder || null,
+			// TP-169: Guard against null task stubs from reconstructAllocatedLanes
+			taskFolder: currentTask?.task?.taskFolder || null,
 		});
 	}
 
