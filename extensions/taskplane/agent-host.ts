@@ -632,18 +632,21 @@ export function spawnAgent(
 						if (opts.onPrematureExit && exitInterceptionCount < maxExitInterceptions) {
 							exitInterceptionCount++;
 							const INTERCEPTION_TIMEOUT_MS = 120_000; // 2 minute safety timeout
-							const interceptPromise = opts.onPrematureExit(lastAssistantMessage);
+							// Wrap in Promise.resolve().then() to catch synchronous throws
+							const interceptPromise = Promise.resolve().then(() =>
+								opts.onPrematureExit!(lastAssistantMessage));
 							const timeoutPromise = new Promise<null>((res) =>
 								setTimeout(() => res(null), INTERCEPTION_TIMEOUT_MS));
 							Promise.race([interceptPromise, timeoutPromise])
 								.catch((err: unknown) => {
-									// Callback rejected — emit diagnostic and fall through to close
+									// Callback rejected or threw synchronously — emit diagnostic and fall through to close
 									const msg = err instanceof Error ? err.message : String(err);
 									emitEvent("exit_intercepted", {
 										interceptionCount: exitInterceptionCount,
 										assistantMessage: truncatePayload(lastAssistantMessage, 500),
 										supervisorConsulted: false,
 										action: "close",
+										reason: "callback_error",
 										error: msg,
 									});
 									return null;
@@ -662,11 +665,15 @@ export function spawnAgent(
 										});
 									} else {
 										// Callback returned null or stdin already closed — close session
+										const reason = stdinClosed ? "stdin_closed"
+											: newPrompt === null ? "callback_returned_null"
+											: "unknown";
 										emitEvent("exit_intercepted", {
 											interceptionCount: exitInterceptionCount,
 											assistantMessage: truncatePayload(lastAssistantMessage, 500),
 											supervisorConsulted: newPrompt === null,
 											action: "close",
+											reason,
 										});
 										closeStdin();
 									}
