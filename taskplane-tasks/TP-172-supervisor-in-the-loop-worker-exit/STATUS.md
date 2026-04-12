@@ -26,14 +26,16 @@
 ---
 
 ### Step 1: Add Exit Interception to agent-host
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-> ⚠️ Hydrate: Expand based on RPC protocol findings in Step 0
+> RPC Protocol finding: `agent_end` keeps process alive. We intercept before `closeStdin()`,
+> call async callback, then either send `{type:"prompt"}` or `closeStdin()`.
+> Need to track last assistant message text from `message_end` events.
 
-- [ ] Add `onPrematureExit` callback to AgentHostOptions
-- [ ] Intercept agent_end: capture assistant message, call callback
-- [ ] Add `maxExitInterceptions` safety limit (default: 2)
-- [ ] Emit `exit_intercepted` telemetry event
+- [ ] Add `onPrematureExit` callback and `maxExitInterceptions` to AgentHostOptions
+- [ ] Track last assistant message text in state accumulator (capture from message_end events)
+- [ ] Modify agent_end handler: if callback provided and under limit, call callback instead of closeStdin; send new prompt or close based on result
+- [ ] Emit `exit_intercepted` telemetry event with assistant message and interception count
 - [ ] Run targeted tests
 
 ---
