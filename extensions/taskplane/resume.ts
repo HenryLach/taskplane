@@ -1405,15 +1405,13 @@ export async function resumeOrchBatch(
 						"warning",
 					);
 				} else {
-					execLog("resume", batchState.batchId, `failed to re-create orch branch in ${repoId}`, {
+					const errMsg = `Failed to re-create orch branch "${batchState.orchBranch}" in repo "${repoId}": ${createRes.stderr}. ` +
+						`Cannot resume without orch branch isolation.`;
+					execLog("resume", batchState.batchId, errMsg, {
 						orchBranch: batchState.orchBranch,
 						error: createRes.stderr,
 					});
-					onNotify(
-						`⚠️ Could not re-create orch branch in ${repoId}: ${createRes.stderr}. ` +
-						`Worktrees for this repo may use the base branch instead.`,
-						"warning",
-					);
+					throw new Error(errMsg);
 				}
 			}
 		}

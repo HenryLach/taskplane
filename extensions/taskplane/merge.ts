@@ -440,7 +440,11 @@ function stageSkippedArtifactsToTargetBranch(
 			if (!lane.worktreePath || !existsSync(lane.worktreePath)) continue;
 			for (const allocTask of lane.tasks) {
 				if (!allocTask.task?.taskFolder?.trim()) continue;
-				const absFolder = resolve(allocTask.task.taskFolder);
+				// Resolve taskFolder against the lane worktree first (workspace mode:
+				// taskFolder may be relative to the packet repo, not the execution repo).
+				// Fall back to repoRoot if worktreePath is unavailable.
+				const resolveBase = lane.worktreePath ? resolve(lane.worktreePath) : resolvedRepoRoot;
+				const absFolder = resolve(resolveBase, allocTask.task.taskFolder);
 				const relFolder = relative(resolvedRepoRoot, absFolder).replace(/\\/g, "/");
 				if (relFolder.startsWith("..") || relFolder.startsWith("/")) continue;
 

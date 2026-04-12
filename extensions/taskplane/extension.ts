@@ -1224,7 +1224,7 @@ export function startBatchInWorker(
 							blockedTasks: batchState.blockedTasks,
 							totalTasks: batchState.totalTasks,
 							currentWave: batchState.currentWaveIndex + 1,
-							totalWaves: batchState.totalWaves,
+							totalWaves: batchState.taskLevelWaveCount ?? batchState.totalWaves,
 						} : undefined,
 					},
 				});
@@ -1270,7 +1270,7 @@ export function startBatchInWorker(
 					blockedTasks: batchState.blockedTasks,
 					totalTasks: batchState.totalTasks,
 					currentWave: batchState.currentWaveIndex + 1,
-					totalWaves: batchState.totalWaves,
+					totalWaves: batchState.taskLevelWaveCount ?? batchState.totalWaves,
 				} : undefined,
 			},
 		});
@@ -1316,7 +1316,7 @@ export function startBatchInWorker(
 						blockedTasks: batchState.blockedTasks,
 						totalTasks: batchState.totalTasks,
 						currentWave: batchState.currentWaveIndex + 1,
-						totalWaves: batchState.totalWaves,
+						totalWaves: batchState.taskLevelWaveCount ?? batchState.totalWaves,
 					} : undefined,
 				},
 			});
@@ -1551,7 +1551,7 @@ export function detectOrchState(deps: OrchStateDetectionDeps): OrchStateDetectio
 				batchPhase: batchState.phase,
 				contextMessage:
 					`Batch ${batchState.batchId} is currently ${batchState.phase}. ` +
-					`Wave ${batchState.currentWaveIndex + 1}/${batchState.totalWaves ?? "?"}, ` +
+					`Wave ${batchState.currentWaveIndex + 1}/${batchState.taskLevelWaveCount ?? batchState.totalWaves ?? "?"}, ` +
 					`${batchState.succeededTasks ?? 0} succeeded, ` +
 					`${batchState.failedTasks ?? 0} failed, ` +
 					`${batchState.skippedTasks ?? 0} skipped / ` +
@@ -2282,7 +2282,7 @@ export default function (pi: ExtensionAPI) {
 
 			const lines: string[] = [
 				`📊 Batch ${diskState.batchId} — ${diskState.phase} (from disk)`,
-				`   Wave: ${diskState.currentWaveIndex + 1}/${diskState.totalWaves}`,
+				`   Wave: ${diskState.currentWaveIndex + 1}/${diskState.taskLevelWaveCount ?? diskState.totalWaves}`,
 				`   Tasks: ${diskState.succeededTasks} succeeded, ${diskState.failedTasks} failed, ${diskState.skippedTasks} skipped, ${diskState.blockedTasks} blocked / ${diskState.totalTasks} total`,
 				`   Elapsed: ${elapsedSec}s`,
 			];
@@ -2335,7 +2335,7 @@ export default function (pi: ExtensionAPI) {
 
 		const lines: string[] = [
 			`📊 Batch ${orchBatchState.batchId} — ${orchBatchState.phase}`,
-			`   Wave: ${orchBatchState.currentWaveIndex + 1}/${orchBatchState.totalWaves}`,
+			`   Wave: ${orchBatchState.currentWaveIndex + 1}/${orchBatchState.taskLevelWaveCount ?? orchBatchState.totalWaves}`,
 			`   Tasks: ${orchBatchState.succeededTasks} succeeded, ${orchBatchState.failedTasks} failed, ${orchBatchState.skippedTasks} skipped, ${orchBatchState.blockedTasks} blocked / ${orchBatchState.totalTasks} total`,
 			`   Elapsed: ${elapsedSec}s`,
 		];
