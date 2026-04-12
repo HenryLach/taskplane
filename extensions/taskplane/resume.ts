@@ -1324,8 +1324,9 @@ export async function resumeOrchBatch(
 	// Preserve pauseSignal if already set during "launching" phase (TP-040)
 	if (!batchState.pauseSignal?.paused) batchState.pauseSignal = { paused: false };
 	batchState.totalWaves = persistedState.totalWaves;
-	// TP-166: Restore task-level wave metadata for correct display
-	batchState.taskLevelWaveCount = persistedState.taskLevelWaveCount;
+	// TP-166: Restore task-level wave metadata for correct display.
+	// Normalize: fall back to totalWaves for pre-TP-166 state files.
+	batchState.taskLevelWaveCount = persistedState.taskLevelWaveCount ?? persistedState.totalWaves;
 	batchState.roundToTaskWave = persistedState.roundToTaskWave ? [...persistedState.roundToTaskWave] : undefined;
 	batchState.totalTasks = persistedState.totalTasks;
 	batchState.succeededTasks = resumePoint.completedTaskIds.length;

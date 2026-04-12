@@ -8,6 +8,7 @@ import {
 	collectProcessedSegmentExpansionRequestIds,
 	linearizeTaskSegmentPlan,
 	processSegmentExpansionRequestAtBoundary,
+	resolveDisplayWaveNumber,
 	scheduleContinuationSegmentRound,
 	upsertPendingExpandedSegmentRecords,
 } from "../taskplane/engine.ts";
@@ -647,5 +648,60 @@ describe("segment expansion graph mutation", () => {
 			},
 		} as any);
 		expect([...processed].sort()).toEqual(["exp-keep"]);
+	});
+});
+
+// TP-166: resolveDisplayWaveNumber unit tests
+describe("TP-166 resolveDisplayWaveNumber", () => {
+	it("maps segment round to task-level wave with full metadata", () => {
+		// 3 task-level waves, 5 segment rounds: [0,0,1,1,2]
+		const roundToTaskWave = [0, 0, 1, 1, 2];
+		const taskLevelWaveCount = 3;
+
+		expect(resolveDisplayWaveNumber(0, roundToTaskWave, taskLevelWaveCount)).toEqual({
+			displayWave: 1,
+			displayTotal: 3,
+		});
+		expect(resolveDisplayWaveNumber(1, roundToTaskWave, taskLevelWaveCount)).toEqual({
+			displayWave: 1,
+			displayTotal: 3,
+		});
+		expect(resolveDisplayWaveNumber(2, roundToTaskWave, taskLevelWaveCount)).toEqual({
+			displayWave: 2,
+			displayTotal: 3,
+		});
+		expect(resolveDisplayWaveNumber(4, roundToTaskWave, taskLevelWaveCount)).toEqual({
+			displayWave: 3,
+			displayTotal: 3,
+		});
+	});
+
+	it("falls back to roundIdx + 1 when mapping is undefined (legacy state)", () => {
+		expect(resolveDisplayWaveNumber(0, undefined, undefined, 5)).toEqual({
+			displayWave: 1,
+			displayTotal: 5,
+		});
+		expect(resolveDisplayWaveNumber(2, undefined, undefined, 5)).toEqual({
+			displayWave: 3,
+			displayTotal: 5,
+		});
+	});
+
+	it("falls back to roundIdx + 1 when no fallbackTotal either", () => {
+		expect(resolveDisplayWaveNumber(0, undefined, undefined)).toEqual({
+			displayWave: 1,
+			displayTotal: 1,
+		});
+		expect(resolveDisplayWaveNumber(3, undefined, undefined)).toEqual({
+			displayWave: 4,
+			displayTotal: 4,
+		});
+	});
+
+	it("prefers taskLevelWaveCount over fallbackTotal", () => {
+		expect(resolveDisplayWaveNumber(0, [0], 3, 10)).toEqual({
+			displayWave: 1,
+			displayTotal: 3,
+		});
 	});
 });

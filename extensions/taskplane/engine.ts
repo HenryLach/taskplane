@@ -1113,16 +1113,22 @@ export interface SegmentFrontierResult {
  * segment-round index. Falls back to `roundIdx + 1` when the mapping
  * is missing or out of bounds.
  *
+ * @param roundIdx           - Current segment round index (0-based)
+ * @param roundToTaskWave    - Mapping from round index to task-level wave (0-based)
+ * @param taskLevelWaveCount - Number of original task-level waves
+ * @param fallbackTotal      - Optional fallback total (e.g., batchState.totalWaves) for
+ *                             legacy state files that lack TP-166 metadata
  * @since TP-166
  */
 export function resolveDisplayWaveNumber(
 	roundIdx: number,
 	roundToTaskWave: number[] | undefined,
 	taskLevelWaveCount: number | undefined,
+	fallbackTotal?: number,
 ): { displayWave: number; displayTotal: number } {
 	const taskWaveIdx = roundToTaskWave?.[roundIdx];
 	const displayWave = (taskWaveIdx != null) ? taskWaveIdx + 1 : roundIdx + 1;
-	const displayTotal = taskLevelWaveCount ?? (roundToTaskWave?.length ?? roundIdx + 1);
+	const displayTotal = taskLevelWaveCount ?? fallbackTotal ?? (roundIdx + 1);
 	return { displayWave, displayTotal };
 }
 
