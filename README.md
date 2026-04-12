@@ -71,7 +71,10 @@ pi install -l npm:taskplane
 ## Quickstart
 
 ### 1. Initialize a project (to scaffold settings)
+This step assumes you have installed Taskplane using one of the above options. 
+
 (NOTE: if 'my-project' is a monorepo, be sure to run git init first. Taskplane uses git worktrees to isolate agent coding until you're ready to merge back to your default branch.)
+
 ```bash
 cd my-project
 taskplane init
