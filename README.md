@@ -81,7 +81,7 @@ taskplane init
 ```
 You'll answer a few questions. You can usually just accept the defaults. 
 
-This creates config files in `.pi/`, agent prompts, two example tasks, and adds `.gitignore` entries for runtime artifacts. On first install, init bootstraps global preferences at `~/.pi/agent/taskplane/preferences.json` with thinking defaults set to `high` for worker & reviewer, and off for merger. Init auto-detects whether you're in a single repo or a multi-repo workspace. See the [install tutorial](docs/tutorials/install.md) for workspace mode and other scenarios.
+This creates: config files in `.pi/`, agent prompts, two example tasks, and adds `.gitignore` entries for runtime artifacts. On first install, init bootstraps global preferences at `~/.pi/agent/taskplane/preferences.json` with thinking defaults set to `high` for worker & reviewer, and off for merger. Init auto-detects whether you're in a monorepo or a polyrepo workspace. See the [install tutorial](docs/tutorials/install.md) for workspace mode and other scenarios.
 
 Already have a task folder (for example `docs/task-management`)? Use:
 

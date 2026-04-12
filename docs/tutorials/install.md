@@ -178,11 +178,12 @@ Start pi in the project:
 pi
 ```
 
-Inside pi, run:
+Inside pi, run one of the following:
 
 ```
-/orch
-/orch-plan all
+/orch-plan all   # to see how the orchestrator will schedule task dependenies
+/orch all   # to run all open tasks that are in your defined task areas
+/orch   # to start an interactive session with the supervisor who simply ask you want you want to do next, with some suggestions
 ```
 
 This confirms orchestrator commands are registered and shows a plan preview.
