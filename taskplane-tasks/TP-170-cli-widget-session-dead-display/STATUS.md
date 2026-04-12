@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 1
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -22,13 +22,13 @@
 ---
 
 ### Step 1: Fix Wave-Aware Lane Display
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Fix buildDashboardViewModel: detect stale monitor data from prior waves and fall back to currentLanes allocation data
-- [ ] Fix buildDashboardViewModel: reconcile lane identity — normalize workspace laneSessionId to V2 registry agentId for correct liveness resolution
-- [ ] Fix buildDashboardViewModel: derive status from lane-level sessionAlive when task snapshot says "running" but lane session is dead (prevent TOCTOU)
-- [ ] Fix renderLaneCard: improve "waiting for data" / "session dead" display for startup-grace and completed lanes
-- [ ] Run targeted tests (wave-transition stale monitor, workspace identity mismatch, startup no-registry-entry)
+- [x] Fix buildDashboardViewModel: detect stale monitor data from prior waves and fall back to currentLanes allocation data
+- [x] Fix buildDashboardViewModel: reconcile lane identity — normalize workspace laneSessionId to V2 registry agentId for correct liveness resolution
+- [x] Fix buildDashboardViewModel: derive status from lane-level sessionAlive when task snapshot says "running" but lane session is dead (prevent TOCTOU)
+- [x] Fix renderLaneCard: improve "waiting for data" / "session dead" display for startup-grace and completed lanes
+- [x] Run targeted tests (wave-transition stale monitor, workspace identity mismatch, startup no-registry-entry)
 
 ---
 
@@ -86,3 +86,4 @@
 
 GitHub issue: #425
 | 2026-04-12 01:33 | Review R001 | plan Step 1: REVISE |
+| 2026-04-12 01:34 | Review R002 | plan Step 1: APPROVE |
