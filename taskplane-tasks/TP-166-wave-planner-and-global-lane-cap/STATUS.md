@@ -11,7 +11,7 @@
 ---
 
 ### Step 0: Preflight and Analysis
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Read waves.ts wave planning logic for multi-segment tasks
 - [x] Reproduce excessive-waves scenario (8 tasks → 5 waves instead of 3)
@@ -23,7 +23,7 @@
 ---
 
 ### Step 1: Fix Excessive Wave Generation
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Modify `buildSegmentFrontierWaves` to return task-level wave metadata (`taskLevelWaveCount` + `roundToTaskWave` mapping) alongside expanded rounds
 - [x] Create `resolveDisplayWaveNumber(roundIdx, roundToTaskWave, taskLevelWaveCount)` helper for consistent wave-number resolution across engine + resume
@@ -36,7 +36,7 @@
 ---
 
 ### Step 2: Fix Global Lane Cap Enforcement
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Verify `enforceGlobalLaneCap` works correctly in `allocateLanes` (already wired at waves.ts:1295, confirmed via analysis)
 - [x] Add test: workspace with 3 repos, maxLanes=4, unique file scopes → total lanes ≤ 4
@@ -46,7 +46,7 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] FULL test suite passing (3282/3282 pass, 0 failures)
 - [x] Regression test: correct wave count for small graphs (8-task graph → 3 task-level waves + single-segment 1:1 mapping)
@@ -56,7 +56,7 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Update maxLanes docs (clarified global enforcement in workspace mode)
 - [x] Discoveries logged
@@ -87,6 +87,8 @@
 | 2026-04-12 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-04-12 14:34 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-12 14:34 | Step 0 started | Preflight and Analysis |
+| 2026-04-12 15:16 | Worker iter 1 | done in 2525s, tools: 241 |
+| 2026-04-12 15:16 | Task complete | .DONE created |
 
 ---
 
