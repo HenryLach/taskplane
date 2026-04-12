@@ -33,8 +33,8 @@ describe("1.x: Agent-host exit interception (TP-172)", () => {
 		expect(agentHostSrc).toContain("maxExitInterceptions?: number");
 	});
 
-	it("1.3: maxExitInterceptions defaults to 2", () => {
-		expect(agentHostSrc).toContain("maxExitInterceptions ?? 2");
+	it("1.3: maxExitInterceptions defaults to 3", () => {
+		expect(agentHostSrc).toContain("maxExitInterceptions ?? 3");
 	});
 
 	it("1.4: agent_end handler checks onPrematureExit callback before closeStdin", () => {

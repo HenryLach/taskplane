@@ -252,7 +252,7 @@ export function spawnAgent(
 	const cliPath = resolvePiCliPath();
 	const closeDelayMs = opts.closeDelayMs ?? 100;
 	const timeoutMs = opts.timeoutMs ?? 0;
-	const maxExitInterceptions = opts.maxExitInterceptions ?? 2;
+	const maxExitInterceptions = opts.maxExitInterceptions ?? 3;
 
 	// Build Pi CLI arguments
 	const piArgs: string[] = [cliPath, "--mode", "rpc", "--no-session"];
@@ -629,11 +629,13 @@ export function spawnAgent(
 					}
 					case "agent_end": {
 						agentEnded = true;
-						// TP-172: Exit interception — only intercept text-only exits
-						// (no tool calls in this turn). Workers that used tools and
-						// exited normally should not be intercepted.
+						// TP-172: Exit interception — intercept any exit when callback
+						// is provided and under limit. The callback (lane-runner) decides
+						// whether the worker made progress. We don't gate on tool calls
+						// because workers commonly use tools (reads/greps) then exit
+						// with a text declaration ("Now let me fix this:") without
+						// actually making the edit.
 						const shouldIntercept = opts.onPrematureExit
-							&& !currentTurnHadToolCalls
 							&& exitInterceptionCount < maxExitInterceptions;
 						if (shouldIntercept) {
 							exitInterceptionCount++;

@@ -44,24 +44,46 @@ write, or touch a `.DONE` file. The lane-runner creates it automatically
 when all segments of your task are complete. If you create `.DONE` early,
 it will cause downstream segments to be skipped and deliverables to be lost.
 
-## CRITICAL: Exit Contract — You Must Produce Visible Progress
+## CRITICAL: Do NOT Exit — Keep Working Until Done
 
-**You may NOT exit your session until at least one of these is true:**
+**You must work continuously until ALL steps are complete.** Do not stop
+between checkboxes. Do not stop between steps. Do not stop to summarize.
+Keep calling tools and making progress until every step is finished and
+STATUS.md shows `✅ Complete`.
 
-1. ✅ You checked off at least one checkbox (`- [ ]` → `- [x]`) in STATUS.md
-2. 🚧 You logged a blocker in the STATUS.md Blockers section with a specific
-   reason and evidence (e.g., "Cannot resolve X because Y — see line N")
-3. ✅ All steps are complete and status is set to `✅ Complete`
+**The ONLY reasons to stop working are:**
+1. ✅ **Task complete** — all steps done, STATUS.md set to `✅ Complete`
+2. 🚧 **Genuinely blocked** — you've tried multiple approaches and cannot
+   proceed. Log the blocker in STATUS.md with specifics (what you tried,
+   why it failed, exact error).
 
-**Reading code and then stopping is NOT acceptable.** If you've been analyzing
-code for multiple tool calls without making edits, you MUST either:
-- Start implementing the fix (write code, edit files, check boxes), OR
-- Document specifically what is blocking you in STATUS.md Blockers
+There is NO other reason to exit. Do not exit after completing a step to
+"hand off" to the next iteration. Do not exit to report progress. Do not
+exit because you've been working for a while. Just keep going.
 
-**Do NOT produce a text-only response and stop** — the orchestrator interprets
-that as "session complete" and will terminate your process. Every turn MUST
-end with a tool call that writes to a file (STATUS.md edit, code edit, or
-git commit).
+## CRITICAL: Never Narrate What You Plan To Do — Just Do It
+
+**YOUR #1 FAILURE MODE:** Producing a message like "Now let me fix this:" or
+"Let me apply the change:" and then STOPPING. This kills your session. You
+have done this repeatedly and it wastes significant time and money.
+
+**THE RULE:** If you know what edit to make, USE THE EDIT TOOL IMMEDIATELY.
+Do not describe the edit in text first. Do not say "now I'll do X". Just
+call the tool. Your very next action after deciding what to do must be a
+tool call, never a text message.
+
+❌ **WRONG (kills your session):**
+> "Now I have everything I need. The fix is to use resolveCanonicalTaskPaths
+> instead of task.taskFolder. Let me make the fix:"
+> *(session terminates — you never made the fix)*
+
+✅ **CORRECT (keeps you alive):**
+> *(immediately calls edit tool on the file)*
+
+**Any text-only response terminates your session.** The orchestrator interprets
+text without a tool call as "session complete." Every response you produce MUST
+include at least one tool call. If you want to explain your reasoning, do it
+AFTER making the edit, not before.
 
 **After running tests:** Immediately update STATUS.md checkboxes for the
 testing step BEFORE producing any summary. Check off each item as it passes.

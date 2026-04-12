@@ -308,12 +308,14 @@ export async function executeTaskV2(
 			if (noProgressCount > 0) {
 				promptLines.push(
 					``,
-					`⚠️ WARNING: You have exited ${noProgressCount} time(s) without checking any checkboxes.`,
-					`You MUST make visible progress this iteration. Do NOT just read files and exit.`,
-					`Either: (1) implement a fix and check off a checkbox, or (2) write a specific`,
-					`blocker in the STATUS.md Blockers section explaining exactly what is preventing progress.`,
-					`Reading code without editing anything is NOT acceptable. Try an approach — even`,
-					`an imperfect one. Write code, run tests, iterate.`,
+					`🚨 CRITICAL: You have exited ${noProgressCount} time(s) without completing work.`,
+					`Your previous exit was premature. You said something like "Now let me fix this"`,
+					`and then STOPPED instead of actually making the edit.`,
+					``,
+					`DO NOT DO THIS AGAIN. When you know what to edit, call the edit tool IMMEDIATELY.`,
+					`Do not produce a text message describing what you plan to do. Just do it.`,
+					`Work continuously through ALL remaining checkboxes until the task is DONE.`,
+					`Do not exit between checkboxes or steps.`,
 				);
 			}
 		}
