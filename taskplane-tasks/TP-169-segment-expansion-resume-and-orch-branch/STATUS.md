@@ -1,6 +1,6 @@
 # TP-169: Segment Expansion Resume Crash and Workspace Orch Branch — Status
 
-**Current Step:** Step 1: Fix Segment Expansion Resume Crash
+**Current Step:** Step 2: Fix Workspace Orch Branch Coverage
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 2
@@ -34,13 +34,12 @@
 ---
 
 ### Step 2: Fix Workspace Orch Branch Coverage
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-> ⚠️ Hydrate: Expand based on analysis in Step 0
-
-- [ ] Ensure all repos get orch branch before execution
-- [ ] Verify worktree creation uses orch branch
-- [ ] Run targeted tests
+- [ ] Refactor `ensureTaskFilesCommitted` to commit on orch branch, not base branch (execution.ts)
+- [ ] Add `runGitWithEnv` helper to git.ts for plumbing-based orch branch commits
+- [ ] Add orch branch existence verification in resume path (resume.ts)
+- [ ] Run targeted tests: workspace*.test.ts, engine*.test.ts
 
 ---
 
