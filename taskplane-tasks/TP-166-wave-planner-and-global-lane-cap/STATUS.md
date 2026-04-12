@@ -1,6 +1,6 @@
 # TP-166: Wave Planner Excessive Waves and Global Lane Cap — Status
 
-**Current Step:** Step 1: Fix Excessive Wave Generation
+**Current Step:** Step 2: Fix Global Lane Cap Enforcement
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 2
@@ -36,13 +36,12 @@
 ---
 
 ### Step 2: Fix Global Lane Cap Enforcement
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-> ⚠️ Hydrate: Expand based on analysis in Step 0
-
-- [ ] Ensure `enforceGlobalLaneCap` is effective in workspace path
-- [ ] Add test: 3 repos, maxLanes=4 → total ≤ 4
-- [ ] Run targeted tests
+- [ ] Verify `enforceGlobalLaneCap` works correctly in `allocateLanes` (already wired, confirm with test)
+- [ ] Add test: workspace with 3 repos, maxLanes=4, unique file scopes → total lanes ≤ 4
+- [ ] Add test: allocateLanes integration test with workspace config mocked
+- [ ] Run targeted tests: waves*.test.ts
 
 ---
 
