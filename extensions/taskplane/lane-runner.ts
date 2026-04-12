@@ -369,20 +369,33 @@ export async function executeTaskV2(
 				...(config.reviewerTools ? { TASKPLANE_REVIEWER_TOOLS: config.reviewerTools } : {}),
 			},
 			// TP-172: Exit interception callback — escalate to supervisor when worker
-			// exits without making checkbox progress.
+			// exits without making visible progress (no checkboxes, no blocker logged).
 			onPrematureExit: config.onSupervisorAlert
 				? async (assistantMessage: string): Promise<string | null> => {
-					// Check if the worker made checkbox progress during this turn
+					// Check if the worker made visible progress during this turn:
+					// 1. Checkbox progress (more items checked)
+					// 2. Blocker logged (non-empty Blockers section)
 					try {
-						const midStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
+						const statusContent = readFileSync(statusPath, "utf-8");
+						const midStatus = parseStatusMd(statusContent);
 						const midTotalChecked = midStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
 						if (midTotalChecked > prevTotalChecked) {
-							// Worker made progress — let it exit normally
+							// Worker checked off checkboxes — let it exit normally
 							return null;
+						}
+						// Check for blocker entries: extract Blockers section and see if non-empty
+						const blockerMatch = statusContent.match(/## Blockers\s*\n([\s\S]*?)(?:\n---|-$)/i);
+						if (blockerMatch) {
+							const blockerContent = blockerMatch[1].trim();
+							// If blockers section has real content (not just "*None*" or empty)
+							if (blockerContent && blockerContent !== "*None*") {
+								// Worker logged a blocker — let it exit normally
+								return null;
+							}
 						}
 					} catch { /* If we can't read STATUS.md, proceed with escalation */ }
 
-					// No progress — compose escalation message
+					// No visible progress — compose escalation message
 					const truncatedMsg = assistantMessage.slice(0, 500);
 					const uncheckedItems: string[] = [];
 					try {
@@ -463,7 +476,14 @@ export async function executeTaskV2(
 					// Interpret supervisor reply: close directives vs instructional content
 					const normalizedReply = supervisorReply.trim().toLowerCase();
 					const CLOSE_DIRECTIVES = ["skip", "let it fail", "close", "abort", "stop"];
-					if (CLOSE_DIRECTIVES.some(d => normalizedReply === d || normalizedReply.startsWith(d + ":"))) {
+					// Match directive at start, followed by end-of-string, colon, dash, period, or space
+					if (CLOSE_DIRECTIVES.some(d =>
+						normalizedReply === d ||
+						normalizedReply.startsWith(d + ":") ||
+						normalizedReply.startsWith(d + " ") ||
+						normalizedReply.startsWith(d + ".") ||
+						normalizedReply.startsWith(d + " -")
+					)) {
 						logExecution(statusPath, "Exit intercept close",
 							`Supervisor directed session close: "${supervisorReply.slice(0, 100)}"`);
 						return null;
