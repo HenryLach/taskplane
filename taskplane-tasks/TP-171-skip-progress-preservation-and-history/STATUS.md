@@ -1,10 +1,10 @@
 # TP-171: Skip Progress Preservation and Batch History Gap — Status
 
-**Current Step:** Step 2: Fix Batch History Task Gap
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 1
 **Size:** L
 
@@ -52,12 +52,12 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Done
 
-- [ ] FULL test suite passing
-- [ ] Regression test: skipped task progress preserved
-- [ ] Regression test: all tasks in batch history
-- [ ] All failures fixed
+- [x] FULL test suite passing (3290/3290 pass)
+- [x] Regression test: skipped task progress preserved (13 tests in skip-progress-preservation.test.ts)
+- [x] Regression test: all tasks in batch history (included in skip-progress-preservation.test.ts)
+- [x] All failures fixed
 
 ---
 
@@ -108,3 +108,4 @@ GitHub issues: #453, #455
 | 2026-04-12 16:03 | Review R003 | code Step 1: REVISE |
 | 2026-04-12 16:08 | Review R004 | code Step 1: REVISE |
 | 2026-04-12 16:11 | Review R005 | plan Step 2: APPROVE |
+| 2026-04-12 16:17 | Review R006 | code Step 2: APPROVE |
