@@ -2020,6 +2020,7 @@ export type SupervisorAlertCategory =
 	| "merge-failure"
 	| "batch-complete"
 	| "agent-message"
+	| "worker-exit-intercept"
 	| "segment-expansion-requested"
 	| "segment-expansion-approved"
 	| "segment-expansion-rejected";

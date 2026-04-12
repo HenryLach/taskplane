@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** L
 
@@ -42,17 +42,17 @@
 ---
 
 ### Step 2: Add Supervisor Escalation to lane-runner
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > Step 1 provides `onPrematureExit: (assistantMessage: string) => Promise<string|null>` callback.
 > Lane-runner implements this callback to: check progress, escalate to supervisor via alert,
 > poll worker mailbox inbox for supervisor reply, and return the reply as new prompt.
 
-- [ ] Implement `onPrematureExit` callback in hostOpts: check checkbox progress, if no progress escalate to supervisor
-- [ ] Compose structured escalation alert with worker's last message, current step, unchecked checkboxes
-- [ ] Poll worker mailbox inbox for supervisor reply with 60s timeout, fallback to null (let corrective re-spawn handle it)
-- [ ] Interpret supervisor reply: instructional content → reprompt, close directives ("skip"/"let it fail") → return null
-- [ ] Run targeted tests (lane-runner-v2)
+- [x] Implement `onPrematureExit` callback in hostOpts: check checkbox progress, if no progress escalate to supervisor
+- [x] Compose structured escalation alert with worker's last message, current step, unchecked checkboxes
+- [x] Poll worker mailbox inbox for supervisor reply with 60s timeout, fallback to null (let corrective re-spawn handle it)
+- [x] Interpret supervisor reply: instructional content → reprompt, close directives ("skip"/"let it fail") → return null
+- [x] Run targeted tests (lane-runner-v2: 48/48 pass)
 
 ---
 
@@ -134,3 +134,4 @@ worker's conversation context and provides targeted guidance from the supervisor
 | 2026-04-12 02:56 | Review R001 | plan Step 1: REVISE |
 | 2026-04-12 02:57 | Review R002 | plan Step 1: APPROVE |
 | 2026-04-12 03:02 | Review R003 | plan Step 2: REVISE |
+| 2026-04-12 03:03 | Review R004 | plan Step 2: APPROVE |

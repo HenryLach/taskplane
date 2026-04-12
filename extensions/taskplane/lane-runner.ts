@@ -41,6 +41,9 @@ import {
 
 import {
 	readOutbox,
+	readInbox,
+	ackMessage,
+	sessionInboxDir,
 	ackOutboxMessage,
 	appendMailboxAuditEvent,
 } from "./mailbox.ts";
@@ -365,6 +368,113 @@ export async function executeTaskV2(
 				...(config.reviewerThinking ? { TASKPLANE_REVIEWER_THINKING: config.reviewerThinking } : {}),
 				...(config.reviewerTools ? { TASKPLANE_REVIEWER_TOOLS: config.reviewerTools } : {}),
 			},
+			// TP-172: Exit interception callback — escalate to supervisor when worker
+			// exits without making checkbox progress.
+			onPrematureExit: config.onSupervisorAlert
+				? async (assistantMessage: string): Promise<string | null> => {
+					// Check if the worker made checkbox progress during this turn
+					try {
+						const midStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
+						const midTotalChecked = midStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+						if (midTotalChecked > prevTotalChecked) {
+							// Worker made progress — let it exit normally
+							return null;
+						}
+					} catch { /* If we can't read STATUS.md, proceed with escalation */ }
+
+					// No progress — compose escalation message
+					const truncatedMsg = assistantMessage.slice(0, 500);
+					const uncheckedItems: string[] = [];
+					try {
+						const statusContent = readFileSync(statusPath, "utf-8");
+						const uncheckedMatches = statusContent.match(/^- \[ \] .+$/gm);
+						if (uncheckedMatches) {
+							for (const item of uncheckedMatches.slice(0, 5)) {
+								uncheckedItems.push(item.replace(/^- \[ \] /, "").trim());
+							}
+						}
+					} catch { /* best effort */ }
+
+					const currentStepInfo = remainingSteps.length > 0
+						? `Step ${remainingSteps[0].number}: ${remainingSteps[0].name}`
+						: "Unknown";
+
+					// Fire supervisor alert
+					try {
+						config.onSupervisorAlert!({
+							category: "worker-exit-intercept",
+							summary:
+								`🔄 Worker on lane ${config.laneNumber} wants to exit with no progress.\n` +
+								`  Task: ${taskId}\n` +
+								`  Current step: ${currentStepInfo}\n` +
+								`  Iteration: ${totalIterations}, No-progress count: ${noProgressCount + 1}\n` +
+								`  Unchecked items: ${uncheckedItems.length > 0 ? uncheckedItems.join("; ") : "(none found)"}\n` +
+								`  Worker said: "${truncatedMsg}"\n` +
+								`\nSend a steering message to ${workerAgentId} with targeted instructions,` +
+								` or reply "skip" / "let it fail" to close the session.`,
+							context: {
+								taskId,
+								laneId: `lane-${config.laneNumber}`,
+								laneNumber: config.laneNumber,
+								agentId: workerAgentId,
+								exitReason: `worker_exit_no_progress: ${truncatedMsg.slice(0, 200)}`,
+							},
+						});
+					} catch { /* best effort — don't block on alert failure */ }
+
+					// Poll worker mailbox inbox for supervisor reply (60s timeout)
+					const SUPERVISOR_REPLY_TIMEOUT_MS = 60_000;
+					const POLL_INTERVAL_MS = 2_000;
+					const escalationTimestamp = Date.now();
+					const inboxDir = sessionInboxDir(config.stateRoot, config.batchId, workerAgentId);
+
+					const supervisorReply = await new Promise<string | null>((resolve) => {
+						const deadline = Date.now() + SUPERVISOR_REPLY_TIMEOUT_MS;
+						const poll = () => {
+							if (Date.now() >= deadline) {
+								resolve(null); // Timeout — fall back to corrective re-spawn
+								return;
+							}
+							try {
+								const messages = readInbox(inboxDir, config.batchId);
+								// Only accept messages newer than escalation timestamp
+								for (const { filename, message } of messages) {
+									if (message.timestamp >= escalationTimestamp && message.from === "supervisor") {
+										// Consume the message
+										const ackDir = join(dirname(inboxDir), "ack");
+										try { ackMessage(inboxDir, filename); } catch { /* best effort */ }
+										resolve(message.content);
+										return;
+									}
+								}
+							} catch { /* inbox not ready yet */ }
+							setTimeout(poll, POLL_INTERVAL_MS);
+						};
+						poll();
+					});
+
+					if (!supervisorReply) {
+						// Timeout — let the session close, corrective re-spawn will handle it
+						logExecution(statusPath, "Exit intercept timeout",
+							`Supervisor did not respond within ${SUPERVISOR_REPLY_TIMEOUT_MS / 1000}s — closing session`);
+						return null;
+					}
+
+					// Interpret supervisor reply: close directives vs instructional content
+					const normalizedReply = supervisorReply.trim().toLowerCase();
+					const CLOSE_DIRECTIVES = ["skip", "let it fail", "close", "abort", "stop"];
+					if (CLOSE_DIRECTIVES.some(d => normalizedReply === d || normalizedReply.startsWith(d + ":"))) {
+						logExecution(statusPath, "Exit intercept close",
+							`Supervisor directed session close: "${supervisorReply.slice(0, 100)}"`);
+						return null;
+					}
+
+					// Instructional reply — return as new prompt for the worker
+					logExecution(statusPath, "Exit intercept reprompt",
+						`Supervisor provided instructions (${supervisorReply.length} chars) — reprompting worker`);
+					return supervisorReply;
+				}
+				: undefined,
 		};
 
 		// Context pressure: write wrap-up signal before kill
