@@ -23,10 +23,13 @@ import {
 	groupTasksByRepo,
 	generateLaneId,
 	generateLaneSessionId,
+	buildDependencyGraph,
+	computeWaves,
 	buildTaskSegmentPlans,
 	inferTaskRepoOrder,
 	enforceGlobalLaneCap,
 } from "../taskplane/waves.ts";
+import { buildSegmentFrontierWaves } from "../taskplane/engine.ts";
 
 import type {
 	WorkspaceConfig,
@@ -541,5 +544,82 @@ describe("TP-166 global lane cap regression", () => {
 		expect(entries.length).toBe(3);
 		const allTaskIds = entries.flatMap(e => e.assignments.map(a => a.taskId)).sort();
 		expect(allTaskIds.length).toBe(6);
+	});
+});
+
+// TP-166: Regression test for correct wave count (#454)
+describe("TP-166 wave count regression", () => {
+	it("8-task graph with 3 dependency levels → exactly 3 task-level waves", () => {
+		// Wave 1: TP-001, TP-002, TP-003 (no deps)
+		// Wave 2: TP-004 (depends on 001,002), TP-005 (depends on 002,003)
+		// Wave 3: TP-006 (depends on 004), TP-007 (depends on 004,005), TP-008 (depends on 005)
+		const pending = new Map<string, ParsedTask>();
+		pending.set("TP-001", makeParsedTask("TP-001", { resolvedRepoId: "api", fileScope: ["api/src/a.ts"] }));
+		pending.set("TP-002", makeParsedTask("TP-002", { resolvedRepoId: "web", fileScope: ["web/src/b.ts"] }));
+		pending.set("TP-003", makeParsedTask("TP-003", { resolvedRepoId: "api", fileScope: ["api/src/c.ts"] }));
+		pending.set("TP-004", makeParsedTask("TP-004", { resolvedRepoId: "api", dependencies: ["TP-001", "TP-002"], fileScope: ["api/src/d.ts", "web/src/d.ts"] }));
+		pending.set("TP-005", makeParsedTask("TP-005", { resolvedRepoId: "web", dependencies: ["TP-002", "TP-003"], fileScope: ["web/src/e.ts", "api/src/e.ts"] }));
+		pending.set("TP-006", makeParsedTask("TP-006", { resolvedRepoId: "api", dependencies: ["TP-004"], fileScope: ["api/src/f.ts"] }));
+		pending.set("TP-007", makeParsedTask("TP-007", { resolvedRepoId: "web", dependencies: ["TP-004", "TP-005"], fileScope: ["web/src/g.ts", "api/src/g.ts"] }));
+		pending.set("TP-008", makeParsedTask("TP-008", { resolvedRepoId: "api", dependencies: ["TP-005"], fileScope: ["api/src/h.ts", "web/src/h.ts"] }));
+
+		const completed = new Set<string>();
+		const graph = buildDependencyGraph(pending, completed);
+		const { waves, errors } = computeWaves(graph, completed, pending);
+
+		// Verify: exactly 3 task-level waves
+		expect(errors.length).toBe(0);
+		expect(waves.length).toBe(3);
+		expect(waves[0]).toEqual(["TP-001", "TP-002", "TP-003"]);
+		expect(waves[1]).toEqual(["TP-004", "TP-005"]);
+		expect(waves[2]).toEqual(["TP-006", "TP-007", "TP-008"]);
+
+		// Build segment plans (workspace mode with 2 repos)
+		const segmentPlans = buildTaskSegmentPlans(pending, {
+			workspaceRepoIds: ["api", "web"],
+		});
+
+		// Build segment frontier
+		const frontier = buildSegmentFrontierWaves(waves, pending, segmentPlans);
+
+		// TP-166: taskLevelWaveCount should be 3 (matching dependency graph depth)
+		expect(frontier.taskLevelWaveCount).toBe(3);
+
+		// The expanded segment rounds may be more than 3, but the mapping
+		// correctly maps each round back to its parent task-level wave
+		expect(frontier.roundToTaskWave.length).toBe(frontier.waves.length);
+
+		// All round-to-wave mappings should be 0, 1, or 2
+		for (const tw of frontier.roundToTaskWave) {
+			expect(tw).toBeGreaterThanOrEqual(0);
+			expect(tw).toBeLessThan(3);
+		}
+
+		// Verify the mapping is monotonically non-decreasing (wave order preserved)
+		for (let i = 1; i < frontier.roundToTaskWave.length; i++) {
+			expect(frontier.roundToTaskWave[i]).toBeGreaterThanOrEqual(frontier.roundToTaskWave[i - 1]);
+		}
+	});
+
+	it("single-segment tasks produce 1:1 wave-to-round mapping", () => {
+		// 4 tasks, 2 dependency levels, all single-segment
+		const pending = new Map<string, ParsedTask>();
+		pending.set("TP-001", makeParsedTask("TP-001", { resolvedRepoId: "default" }));
+		pending.set("TP-002", makeParsedTask("TP-002", { resolvedRepoId: "default" }));
+		pending.set("TP-003", makeParsedTask("TP-003", { resolvedRepoId: "default", dependencies: ["TP-001"] }));
+		pending.set("TP-004", makeParsedTask("TP-004", { resolvedRepoId: "default", dependencies: ["TP-002"] }));
+
+		const completed = new Set<string>();
+		const graph = buildDependencyGraph(pending, completed);
+		const { waves } = computeWaves(graph, completed, pending);
+
+		expect(waves.length).toBe(2);
+
+		const frontier = buildSegmentFrontierWaves(waves, pending);
+
+		// No segment expansion → rounds = waves
+		expect(frontier.taskLevelWaveCount).toBe(2);
+		expect(frontier.waves.length).toBe(2);
+		expect(frontier.roundToTaskWave).toEqual([0, 1]);
 	});
 });

@@ -1,10 +1,10 @@
 # TP-166: Wave Planner Excessive Waves and Global Lane Cap — Status
 
-**Current Step:** Step 2: Fix Global Lane Cap Enforcement
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 6
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** M
 
@@ -46,12 +46,12 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Done
 
-- [ ] FULL test suite passing
-- [ ] Regression test: correct wave count for small graphs
-- [ ] Regression test: global lane cap enforcement
-- [ ] All failures fixed
+- [x] FULL test suite passing (3282/3282 pass, 0 failures)
+- [x] Regression test: correct wave count for small graphs (8-task graph → 3 task-level waves + single-segment 1:1 mapping)
+- [x] Regression test: global lane cap enforcement (workspace 3 repos → ≤4 lanes + single-repo mode)
+- [x] All failures fixed (full suite: 3282/3282 pass)
 
 ---
 
@@ -105,3 +105,4 @@ GitHub issues: #454, #451
 | 2026-04-12 15:03 | Review R004 | code Step 1: REVISE |
 | 2026-04-12 15:07 | Review R005 | code Step 1: REVISE |
 | 2026-04-12 15:09 | Review R006 | plan Step 2: APPROVE |
+| 2026-04-12 15:11 | Review R007 | code Step 2: APPROVE |
