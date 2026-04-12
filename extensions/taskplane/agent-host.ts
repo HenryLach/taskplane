@@ -297,6 +297,8 @@ export function spawnAgent(
 	let lastAssistantMessage = "";
 	/** Number of times exit interception has occurred (TP-172) */
 	let exitInterceptionCount = 0;
+	/** Whether the current turn had any tool calls (TP-172: text-only gate) */
+	let currentTurnHadToolCalls = false;
 
 	// Timeout
 	let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
@@ -584,6 +586,7 @@ export function spawnAgent(
 					}
 					case "tool_execution_start": {
 						toolCalls++;
+						currentTurnHadToolCalls = true;
 						const toolName = event.toolName || "tool";
 						const argPreview = typeof event.args === "string" ? event.args.slice(0, 300) :
 							(event.args && typeof Object.values(event.args)[0] === "string" ? String(Object.values(event.args)[0]).slice(0, 300) : "");
@@ -626,10 +629,13 @@ export function spawnAgent(
 					}
 					case "agent_end": {
 						agentEnded = true;
-						// TP-172: Exit interception — if callback provided and under limit,
-						// consult callback before closing stdin. The callback decides whether
-						// to send a new prompt (re-prompt) or close the session.
-						if (opts.onPrematureExit && exitInterceptionCount < maxExitInterceptions) {
+						// TP-172: Exit interception — only intercept text-only exits
+						// (no tool calls in this turn). Workers that used tools and
+						// exited normally should not be intercepted.
+						const shouldIntercept = opts.onPrematureExit
+							&& !currentTurnHadToolCalls
+							&& exitInterceptionCount < maxExitInterceptions;
+						if (shouldIntercept) {
 							exitInterceptionCount++;
 							const INTERCEPTION_TIMEOUT_MS = 120_000; // 2 minute safety timeout
 							// Wrap in Promise.resolve().then() to catch synchronous throws
@@ -638,48 +644,51 @@ export function spawnAgent(
 							const timeoutPromise = new Promise<null>((res) =>
 								setTimeout(() => res(null), INTERCEPTION_TIMEOUT_MS));
 							Promise.race([interceptPromise, timeoutPromise])
-								.catch((err: unknown) => {
-									// Callback rejected or threw synchronously — emit diagnostic and fall through to close
-									const msg = err instanceof Error ? err.message : String(err);
-									emitEvent("exit_intercepted", {
-										interceptionCount: exitInterceptionCount,
-										assistantMessage: truncatePayload(lastAssistantMessage, 500),
-										supervisorConsulted: false,
-										action: "close",
-										reason: "callback_error",
-										error: msg,
-									});
-									return null;
-								})
-								.then((newPrompt: string | null) => {
-									if (newPrompt && !stdinClosed && proc.stdin && !proc.stdin.destroyed) {
-										// Re-prompt the agent with supervisor guidance
-										agentEnded = false; // Reset for the new turn
-										proc.stdin.write(JSON.stringify({ type: "prompt", message: newPrompt }) + "\n");
+								.then(
+									(newPrompt: string | null) => {
+										if (newPrompt && !stdinClosed && proc.stdin && !proc.stdin.destroyed) {
+											// Re-prompt the agent with supervisor guidance
+											agentEnded = false; // Reset for the new turn
+											currentTurnHadToolCalls = false; // Reset for new turn
+											proc.stdin.write(JSON.stringify({ type: "prompt", message: newPrompt }) + "\n");
+											emitEvent("exit_intercepted", {
+												interceptionCount: exitInterceptionCount,
+												assistantMessage: truncatePayload(lastAssistantMessage, 500),
+												supervisorConsulted: true,
+												action: "reprompt",
+												newPromptPreview: truncatePayload(newPrompt, MAX_CONV_PAYLOAD_CHARS),
+											});
+										} else {
+											// Callback returned null or stdin already closed — close session
+											const reason = stdinClosed ? "stdin_closed"
+												: newPrompt === null ? "callback_returned_null"
+												: "unknown";
+											emitEvent("exit_intercepted", {
+												interceptionCount: exitInterceptionCount,
+												assistantMessage: truncatePayload(lastAssistantMessage, 500),
+												supervisorConsulted: true,
+												action: "close",
+												reason,
+											});
+											closeStdin();
+										}
+									},
+									(err: unknown) => {
+										// Callback rejected — emit single diagnostic event and close
+										const msg = err instanceof Error ? err.message : String(err);
 										emitEvent("exit_intercepted", {
 											interceptionCount: exitInterceptionCount,
 											assistantMessage: truncatePayload(lastAssistantMessage, 500),
-											supervisorConsulted: true,
-											action: "reprompt",
-											newPromptPreview: truncatePayload(newPrompt, MAX_CONV_PAYLOAD_CHARS),
-										});
-									} else {
-										// Callback returned null or stdin already closed — close session
-										const reason = stdinClosed ? "stdin_closed"
-											: newPrompt === null ? "callback_returned_null"
-											: "unknown";
-										emitEvent("exit_intercepted", {
-											interceptionCount: exitInterceptionCount,
-											assistantMessage: truncatePayload(lastAssistantMessage, 500),
-											supervisorConsulted: newPrompt === null,
+											supervisorConsulted: false,
 											action: "close",
-											reason,
+											reason: "callback_error",
+											error: msg,
 										});
 										closeStdin();
-									}
-								});
+									},
+								);
 						} else {
-							// No callback, or interception limit reached — close normally
+							// No callback, had tool calls, or interception limit reached — close normally
 							if (opts.onPrematureExit && exitInterceptionCount >= maxExitInterceptions) {
 								emitEvent("exit_intercepted", {
 									interceptionCount: exitInterceptionCount,
