@@ -1,6 +1,6 @@
 # TP-170: CLI Widget Session-Dead Display Fix — Status
 
-**Current Step:** Step 1: Fix Wave-Aware Lane Display
+**Current Step:** Step 2: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 1
@@ -33,11 +33,11 @@
 ---
 
 ### Step 2: Testing & Verification
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] FULL test suite passing
-- [ ] Tests for lane status display correctness
-- [ ] All failures fixed
+- [x] FULL test suite passing
+- [x] Tests for lane status display correctness (23 new assertions in orch-pure-functions.test.ts)
+- [x] All failures fixed (0 failures across full suite)
 
 ---
 
