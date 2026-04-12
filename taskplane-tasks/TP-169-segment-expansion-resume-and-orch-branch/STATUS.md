@@ -11,7 +11,7 @@
 ---
 
 ### Step 0: Preflight and Root Cause Analysis
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Read resume.ts — task allocation reconstruction from persisted state
 - [x] Read engine.ts — how expanded segments are persisted
@@ -23,7 +23,7 @@
 ---
 
 ### Step 1: Fix Segment Expansion Resume Crash
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Fix `reconstructAllocatedLanes` to always set `taskFolder` on task stubs (resume.ts)
 - [x] Add guard in `buildExecutionUnit` for missing/empty `taskFolder` (execution.ts)
@@ -34,7 +34,7 @@
 ---
 
 ### Step 2: Fix Workspace Orch Branch Coverage
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Refactor `ensureTaskFilesCommitted` to commit on orch branch, not base branch (execution.ts)
 - [x] Add `runGitWithEnv` helper to git.ts for plumbing-based orch branch commits
@@ -44,7 +44,7 @@
 ---
 
 ### Step 3: Testing & Verification
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] FULL test suite passing (3290 tests, 0 failures)
 - [x] Regression test: resume after segment expansion (3 tests in resume-segment-frontier.test.ts)
@@ -54,7 +54,7 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Discoveries logged
 
@@ -84,6 +84,8 @@
 | 2026-04-12 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-04-12 15:16 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-12 15:16 | Step 0 started | Preflight and Root Cause Analysis |
+| 2026-04-12 15:47 | Worker iter 1 | done in 1881s, tools: 226 |
+| 2026-04-12 15:47 | Task complete | .DONE created |
 
 ---
 
