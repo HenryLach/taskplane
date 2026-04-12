@@ -6,9 +6,10 @@
  * 1. **Post-Integrate Cleanup** — Deletes batch-specific telemetry and merge
  *    result files after successful /orch-integrate. Scoped by batchId.
  *
- * 2. **Age-Based Preflight Sweep** — On /orch start, removes telemetry and
- *    merge artifacts older than 7 days. Catches files missed by Layer 1
- *    (e.g., aborted batches, manual branch deletions).
+ * 2. **Age-Based Preflight Sweep** — On /orch start, removes telemetry,
+ *    verification, conversation, lane-state, and merge artifacts older than
+ *    3 days. Catches files missed by Layer 1 (e.g., aborted batches,
+ *    manual branch deletions).
  *
  * 3. **Size-Capped Log Rotation** — Rotates append-only supervisor logs
  *    (events.jsonl, actions.jsonl) at a 5MB threshold during preflight.
@@ -177,8 +178,8 @@ export function formatPostIntegrateCleanup(result: PostIntegrateCleanupResult): 
 
 // ── Layer 2: Age-Based Preflight Sweep ──────────────────────────────
 
-/** Default max age for stale artifacts (7 days in milliseconds). */
-export const STALE_ARTIFACT_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+/** Default max age for stale artifacts (3 days in milliseconds). */
+export const STALE_ARTIFACT_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 
 /**
  * Result of a preflight age-based sweep.
@@ -215,13 +216,16 @@ export interface SweepDeps {
  * - `.pi/telemetry/lane-prompt-*.txt` — temporary prompt files
  * - `.pi/merge-result-*.json` — merge result files
  * - `.pi/merge-request-*.txt` — merge request files
+ * - `.pi/verification/*` — verification snapshots
+ * - `.pi/worker-conversation-*.jsonl` — worker conversation logs
+ * - `.pi/lane-state-*.json` — lane state files
  *
  * Uses file mtime for age detection. Skips files modified within maxAgeMs.
  * If a batch is currently active (executing/merging), skips ALL cleanup.
  *
  * @param stateRoot - Root directory containing .pi/
  * @param deps - Injectable dependencies for testability
- * @param maxAgeMs - Maximum file age in milliseconds (default: 7 days)
+ * @param maxAgeMs - Maximum file age in milliseconds (default: 3 days)
  * @returns Sweep result with count and warnings
  */
 export function sweepStaleArtifacts(
@@ -289,6 +293,19 @@ export function sweepStaleArtifacts(
 		(name.startsWith("merge-request-") && name.endsWith(".txt")),
 	);
 
+	// Sweep stale verification snapshots (.pi/verification/)
+	sweepDir(join(stateRoot, ".pi", "verification"), () => true);
+
+	// Sweep stale worker conversation logs (.pi/worker-conversation-*.jsonl)
+	sweepDir(join(stateRoot, ".pi"), (name) =>
+		name.startsWith("worker-conversation-") && name.endsWith(".jsonl"),
+	);
+
+	// Sweep stale lane state files (.pi/lane-state-*.json)
+	sweepDir(join(stateRoot, ".pi"), (name) =>
+		name.startsWith("lane-state-") && name.endsWith(".json"),
+	);
+
 	// Sweep stale batch directories under a parent (mailbox, context-snapshots)
 	const sweepBatchDirs = (parentDir: string, label: string): void => {
 		if (!existsSync(parentDir)) return;
@@ -336,7 +353,7 @@ export function formatPreflightSweep(result: PreflightSweepResult): string {
 		const segments: string[] = [];
 		if (result.staleFilesDeleted > 0) segments.push(`${result.staleFilesDeleted} stale artifact(s)`);
 		if (result.staleDirsDeleted > 0) segments.push(`${result.staleDirsDeleted} stale mailbox dir(s)`);
-		parts.push(`🧹 Preflight cleanup: removed ${segments.join(" and ")} (>7 days old)`);
+		parts.push(`🧹 Preflight cleanup: removed ${segments.join(" and ")} (>3 days old)`);
 	}
 	for (const warning of result.warnings) {
 		parts.push(`  ⚠️ ${warning}`);
@@ -466,7 +483,7 @@ export function formatPreflightCleanup(result: PreflightCleanupResult): string {
 		const segments: string[] = [];
 		if (result.sweep.staleFilesDeleted > 0) segments.push(`${result.sweep.staleFilesDeleted} stale artifact(s)`);
 		if (result.sweep.staleDirsDeleted > 0) segments.push(`${result.sweep.staleDirsDeleted} stale mailbox dir(s)`);
-		parts.push(`removed ${segments.join(" and ")} (>7 days old)`);
+		parts.push(`removed ${segments.join(" and ")} (>3 days old)`);
 	}
 
 	// Layer 3: log rotation

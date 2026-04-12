@@ -1,10 +1,10 @@
 # TP-168: Artifact Cleanup Policy — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Expand Age Sweep Scope
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -35,13 +35,13 @@
 ---
 
 ### Step 1: Expand Age Sweep Scope
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Reduce telemetry age to 3 days
-- [ ] Add verification/ to sweep
-- [ ] Add worker-conversation-*.jsonl to sweep
-- [ ] Add lane-state-*.json to sweep
-- [ ] Run targeted tests
+- [x] Reduce telemetry age to 3 days
+- [x] Add verification/ to sweep
+- [x] Add worker-conversation-*.jsonl to sweep
+- [x] Add lane-state-*.json to sweep
+- [x] Run targeted tests
 
 ---
 
@@ -107,3 +107,4 @@
 ## Notes
 
 GitHub issue: #296
+| 2026-04-12 00:46 | Review R001 | plan Step 1: APPROVE |

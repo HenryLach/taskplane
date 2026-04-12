@@ -2013,7 +2013,7 @@ export async function executeOrchBatch(
 	// Sweep stale artifacts and rotate oversized logs before batch starts.
 	// Always non-fatal — failures warn but never block batch execution.
 	try {
-		// Layer 2: Age-based sweep of stale telemetry/merge artifacts (>7 days)
+		// Layer 2: Age-based sweep of stale telemetry/merge/verification/conversation artifacts (>3 days)
 		const sweepResult = sweepStaleArtifacts(stateRoot, {
 			isBatchActive: () => {
 				// Check persisted state — a prior batch may still be active
