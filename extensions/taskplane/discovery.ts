@@ -359,6 +359,28 @@ function parseSegmentDagMetadata(
  */
 export const SEGMENT_FALLBACK_REPO_PLACEHOLDER = "__primary__";
 
+/**
+ * Simple suggestion helper: find known repo IDs that share a prefix or
+ * have small edit distance from the unknown repo ID.
+ */
+function suggestRepoMatches(unknown: string, known: string[]): string[] {
+	const suggestions: string[] = [];
+	for (const k of known) {
+		// Prefix match (either direction)
+		if (k.startsWith(unknown) || unknown.startsWith(k)) {
+			suggestions.push(k);
+			continue;
+		}
+		// Simple overlap: share at least 3 chars of a common substring
+		const shorter = unknown.length < k.length ? unknown : k;
+		const longer = unknown.length < k.length ? k : unknown;
+		if (shorter.length >= 3 && longer.includes(shorter.slice(0, 3))) {
+			suggestions.push(k);
+		}
+	}
+	return suggestions;
+}
+
 interface StepSegmentParseResult {
 	mapping: StepSegmentMapping[];
 	warnings: DiscoveryError[];
@@ -450,7 +472,11 @@ export function parseStepSegmentMapping(
 			}
 
 			// Track seen repoIds for duplicate detection
+			// Include fallback repo if pre-segment checkboxes exist and it's a concrete ID
 			const seenRepoIds = new Set<string>();
+			if (preCheckboxes.length > 0 && fallbackRepoId !== SEGMENT_FALLBACK_REPO_PLACEHOLDER) {
+				seenRepoIds.add(fallbackRepoId);
+			}
 			let hasDuplicateError = false;
 
 			for (let j = 0; j < segmentHeaders.length; j++) {
@@ -1538,14 +1564,40 @@ export function resolveTaskRouting(
 					}
 					// Validate explicit segment repoIds against workspace repos
 					if (!validRepoIds.has(seg.repoId)) {
+						const knownRepos = [...validRepoIds.keys()];
+						const suggestions = suggestRepoMatches(seg.repoId, knownRepos);
+						const suggestionHint = suggestions.length > 0
+							? ` Did you mean: ${suggestions.join(", ")}?`
+							: "";
 						errors.push({
 							code: "SEGMENT_STEP_REPO_INVALID",
 							message:
 								`Task ${task.taskId} Step ${step.stepNumber} has segment repo "${seg.repoId}" ` +
-								`which is not in the workspace config. Known repos: ${knownRepoList}`,
+								`which is not in the workspace config. Known repos: ${knownRepoList}.${suggestionHint}`,
 							taskId: task.taskId,
 							taskPath: task.promptPath,
 						});
+					}
+				}
+				// Post-placeholder-resolution duplicate check
+				const stepRepoIds = step.segments.map(s => s.repoId);
+				const stepRepoSet = new Set(stepRepoIds);
+				if (stepRepoSet.size < stepRepoIds.length) {
+					// Find the duplicate
+					const seen = new Set<string>();
+					for (const rid of stepRepoIds) {
+						if (seen.has(rid)) {
+							errors.push({
+								code: "SEGMENT_STEP_DUPLICATE_REPO",
+								message:
+									`Task ${task.taskId} Step ${step.stepNumber} has duplicate segment repo ID "${rid}" ` +
+									`(after resolving primary repo fallback). A repoId may appear at most once within a step.`,
+								taskId: task.taskId,
+								taskPath: task.promptPath,
+							});
+							break;
+						}
+						seen.add(rid);
 					}
 				}
 			}
@@ -1655,6 +1707,20 @@ export function runDiscovery(
 	if (workspaceConfig && workspaceConfig.mode === "workspace") {
 		const routingErrors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
 		discovery.errors.push(...routingErrors);
+	} else {
+		// Repo mode: resolve any placeholder fallback repo IDs to "default"
+		// (single-repo mode has no workspace routing, so the placeholder
+		// must be normalized here for backward compatibility).
+		for (const task of discovery.pending.values()) {
+			if (!task.stepSegmentMap) continue;
+			for (const step of task.stepSegmentMap) {
+				for (const seg of step.segments) {
+					if (seg.repoId === SEGMENT_FALLBACK_REPO_PLACEHOLDER) {
+						seg.repoId = "default";
+					}
+				}
+			}
+		}
 	}
 
 	return discovery;
