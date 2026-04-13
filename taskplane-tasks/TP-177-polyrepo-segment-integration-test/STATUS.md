@@ -1,25 +1,25 @@
 # TP-177: Polyrepo Segment Integration Test — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
-**Last Updated:** 2026-04-12
+**Current Step:** Step 1: Add Segment Markers to Test Tasks
+**Status:** 🟡 In Progress
+**Last Updated:** 2026-04-13
 **Review Level:** 0
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
-- [ ] Verify test workspace exists and is clean
-- [ ] Verify all 3 repos on initial state
-- [ ] Identify multi-segment tasks
+**Status:** ✅ Complete
+- [x] Verify test workspace exists and is clean
+- [x] Verify all 3 repos on initial state (shared-libs=develop, api-service=develop, web-client=develop)
+- [x] Identify multi-segment tasks (TP-004: shared-libs→web-client, TP-005: shared-libs→api-service, TP-006: shared-libs→api-service+web-client)
 
 ---
 
 ### Step 1: Add Segment Markers to Test Tasks
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update TP-004 PROMPT.md with segment markers
 - [ ] Update TP-005 PROMPT.md with segment markers
 - [ ] Update TP-006 PROMPT.md with segment markers
@@ -74,6 +74,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-12 | Task staged | PROMPT.md and STATUS.md created |
+| 2026-04-13 17:31 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-13 17:31 | Step 0 started | Preflight |
 
 ---
 
