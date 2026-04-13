@@ -1,10 +1,10 @@
 # TP-174: Lane-Runner Segment Scoping — Status
 
-**Current Step:** Step 2: Segment-Scoped Progress and Stall Detection
+**Current Step:** Step 3: Segment Exit Condition
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 2
-**Review Counter:** 6
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** L
 
@@ -44,10 +44,10 @@
 ---
 
 ### Step 3: Segment Exit Condition
-**Status:** ⬜ Not Started
-- [ ] Add isSegmentComplete helper
-- [ ] Step advancement for multi-step segments
-- [ ] Correct return status for non-final segments
+**Status:** 🟨 In Progress
+- [ ] Use isSegmentComplete (already added in Step 1) in the step completion and loop exit logic to detect when all segment checkboxes are checked
+- [ ] When segment is complete for current step: advance to next step if more steps for this repoId, or break loop if no more
+- [ ] Legacy fallback unchanged — allComplete check uses full-task isStepComplete for non-segment tasks
 - [ ] Run targeted tests
 
 ---
@@ -151,3 +151,4 @@ Specification: docs/specifications/taskplane/segment-aware-steps.md
 | 2026-04-13 16:58 | Review R004 | code Step 1: APPROVE |
 | 2026-04-13 17:00 | Review R005 | plan Step 2: APPROVE |
 | 2026-04-13 17:02 | Review R006 | code Step 2: REVISE |
+| 2026-04-13 17:05 | Review R007 | code Step 2: APPROVE |
