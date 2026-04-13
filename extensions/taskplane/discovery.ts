@@ -482,7 +482,7 @@ export function parseStepSegmentMapping(
 			for (let j = 0; j < segmentHeaders.length; j++) {
 				const seg = segmentHeaders[j];
 
-				// Validate repo ID format
+				// Validate repo ID format (warning only — keep checkboxes for safety)
 				if (!SEGMENT_REPO_ID_PATTERN.test(seg.repoId)) {
 					warnings.push({
 						code: "SEGMENT_STEP_REPO_INVALID",
@@ -491,7 +491,7 @@ export function parseStepSegmentMapping(
 							`Repo IDs must match /^[a-z0-9][a-z0-9-]*$/.`,
 						taskId,
 					});
-					continue;
+					// Still extract checkboxes — don't drop work
 				}
 
 				// Check for duplicates
