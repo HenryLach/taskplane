@@ -62,9 +62,128 @@ import {
 	type LaneTaskOutcome,
 	type LaneTaskStatus,
 	type SupervisorAlertCallback,
+	type StepSegmentMapping,
 } from "./types.ts";
 
 const LANE_RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
+
+// ── Segment Scoping Helpers (Phase A, TP-174) ────────────────────────
+
+/**
+ * Extract the repoId component from a structured segment ID.
+ *
+ * Segment IDs follow the format `<taskId>::<repoId>` or `<taskId>::<repoId>::<N>`.
+ * This helper extracts the repoId by splitting on `::` and taking the second element.
+ *
+ * @param segmentId - Structured segment ID string
+ * @returns The repoId portion, or null if the format is unexpected
+ * @since TP-174
+ */
+export function getRepoIdFromSegmentId(segmentId: string): string | null {
+	const parts = segmentId.split("::");
+	return parts.length >= 2 ? parts[1] : null;
+}
+
+/**
+ * Get the set of step numbers that have segments for a given repoId.
+ *
+ * Used to filter the "remaining steps" view so the worker only sees steps
+ * that contain work for its repo.
+ *
+ * @param stepSegmentMap - Parsed step-segment mapping from PROMPT.md
+ * @param repoId - Repo ID to filter by
+ * @returns Set of step numbers that have at least one segment for this repoId
+ * @since TP-174
+ */
+export function getStepsForRepoId(
+	stepSegmentMap: StepSegmentMapping[],
+	repoId: string,
+): Set<number> {
+	const stepNumbers = new Set<number>();
+	for (const step of stepSegmentMap) {
+		if (step.segments.some(seg => seg.repoId === repoId)) {
+			stepNumbers.add(step.stepNumber);
+		}
+	}
+	return stepNumbers;
+}
+
+/**
+ * Extract a segment's checkbox block from STATUS.md content for a given step and repoId.
+ *
+ * Looks for `#### Segment: <repoId>` headers within `### Step N:` sections,
+ * then returns the checkbox lines belonging to that segment block.
+ *
+ * @param statusContent - Raw STATUS.md content
+ * @param stepNumber - Step number to look in
+ * @param repoId - Repo ID of the segment
+ * @returns Object with checked/unchecked counts, or null if no segment block found
+ * @since TP-174
+ */
+export function getSegmentCheckboxes(
+	statusContent: string,
+	stepNumber: number,
+	repoId: string,
+): { checked: number; unchecked: number; total: number; uncheckedTexts: string[] } | null {
+	const text = statusContent.replace(/\r\n/g, "\n");
+
+	// Find the step section
+	const stepHeaderPattern = new RegExp(`^###\\s+Step\\s+${stepNumber}:`, "m");
+	const stepMatch = text.match(stepHeaderPattern);
+	if (!stepMatch || stepMatch.index === undefined) return null;
+
+	// Find the end of this step section (next ### or end of file)
+	const afterStep = text.slice(stepMatch.index + stepMatch[0].length);
+	const nextStepMatch = afterStep.search(/^###\s+Step\s+\d+:/m);
+	const stepContent = nextStepMatch !== -1 ? afterStep.slice(0, nextStepMatch) : afterStep;
+
+	// Find the segment header within this step
+	const segHeaderPattern = new RegExp(`^####\\s+Segment:\\s*${repoId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "m");
+	const segMatch = stepContent.match(segHeaderPattern);
+	if (!segMatch || segMatch.index === undefined) return null;
+
+	// Extract content from segment header to next #### header or ### header or ---
+	const afterSeg = stepContent.slice(segMatch.index + segMatch[0].length);
+	const nextSectionMatch = afterSeg.search(/^(?:####\s|###\s|---)/m);
+	const segContent = nextSectionMatch !== -1 ? afterSeg.slice(0, nextSectionMatch) : afterSeg;
+
+	// Count checkboxes
+	let checked = 0;
+	let unchecked = 0;
+	const uncheckedTexts: string[] = [];
+	const cbRegex = /^\s*-\s*\[([ xX])\]\s*(.*)/gm;
+	let m;
+	while ((m = cbRegex.exec(segContent)) !== null) {
+		if (m[1].toLowerCase() === "x") {
+			checked++;
+		} else {
+			unchecked++;
+			uncheckedTexts.push(m[2].trim());
+		}
+	}
+
+	return { checked, unchecked, total: checked + unchecked, uncheckedTexts };
+}
+
+/**
+ * Check if all checkboxes in a segment block are checked.
+ *
+ * @param statusContent - Raw STATUS.md content
+ * @param stepNumber - Step number to check
+ * @param repoId - Repo ID of the segment
+ * @returns true when all checkboxes in the segment block are checked
+ * @since TP-174
+ */
+export function isSegmentComplete(
+	statusContent: string,
+	stepNumber: number,
+	repoId: string,
+): boolean {
+	const result = getSegmentCheckboxes(statusContent, stepNumber, repoId);
+	if (!result) return false;
+	if (result.total === 0) return false;
+	return result.unchecked === 0;
+}
 
 // ── Types ────────────────────────────────────────────────────────────
 
@@ -227,9 +346,20 @@ export async function executeTaskV2(
 		// Determine remaining steps
 		const currentStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
 		const parsed = parsePromptMd(readFileSync(promptPath, "utf-8"), promptPath);
+
+		// TP-174: Resolve segment-scoped step filtering
+		const stepSegmentMap = unit.task.stepSegmentMap;
+		const currentRepoId = segmentId ? getRepoIdFromSegmentId(segmentId) : null;
+		const repoStepNumbers = (stepSegmentMap && currentRepoId)
+			? getStepsForRepoId(stepSegmentMap, currentRepoId)
+			: null;
+
 		const remainingSteps = parsed.steps.filter(step => {
 			const ss = currentStatus.steps.find(s => s.number === step.number);
-			return !isStepComplete(ss);
+			if (isStepComplete(ss)) return false;
+			// TP-174: When segment-scoped, only show steps that have work for this repoId
+			if (repoStepNumbers && !repoStepNumbers.has(step.number)) return false;
+			return true;
 		});
 
 		if (remainingSteps.length === 0) break; // All done
@@ -292,6 +422,62 @@ export async function executeTaskV2(
 				`- Repos: ${segmentDag.repoIds.join(", ")}`,
 				`- Edges: ${edgeSummary}`,
 			);
+		}
+
+		// TP-174: Segment-scoped prompt — show only this segment's checkboxes
+		if (stepSegmentMap && currentRepoId && remainingSteps.length > 0) {
+			const currentStepNum = remainingSteps[0].number;
+			const currentStepMapping = stepSegmentMap.find(s => s.stepNumber === currentStepNum);
+
+			if (currentStepMapping) {
+				const mySegment = currentStepMapping.segments.find(seg => seg.repoId === currentRepoId);
+				const otherSegments = currentStepMapping.segments.filter(seg => seg.repoId !== currentRepoId);
+
+				// Count total segments for this repo across all steps
+				const totalStepsForRepo = repoStepNumbers ? repoStepNumbers.size : 0;
+				const segmentIndexInStep = currentStepMapping.segments.findIndex(seg => seg.repoId === currentRepoId) + 1;
+				const totalSegmentsInStep = currentStepMapping.segments.length;
+
+				promptLines.push(
+					``,
+					`Segment-scoped context (Phase A):`,
+					`Active segment: ${segmentId} (Step ${currentStepNum}, segment ${segmentIndexInStep} of ${totalSegmentsInStep})`,
+					`Your repo: ${currentRepoId}`,
+					``,
+				);
+
+				if (mySegment && mySegment.checkboxes.length > 0) {
+					promptLines.push(`Your checkboxes for this step:`);
+					for (const cb of mySegment.checkboxes) {
+						promptLines.push(`  ${cb}`);
+					}
+				}
+
+				if (otherSegments.length > 0) {
+					promptLines.push(``);
+					promptLines.push(`Other segments in this step (NOT yours — do not attempt):`);
+					for (const seg of otherSegments) {
+						promptLines.push(`  - ${seg.repoId}: ${seg.checkboxes.length} checkbox(es) (will run in a separate segment)`);
+					}
+				}
+
+				// List completed steps for this repo
+				const completedForRepo = parsed.steps.filter(step => {
+					if (!repoStepNumbers || !repoStepNumbers.has(step.number)) return false;
+					const ss = currentStatus.steps.find(s => s.number === step.number);
+					return isStepComplete(ss);
+				});
+				if (completedForRepo.length > 0) {
+					promptLines.push(``);
+					promptLines.push(`Prior steps completed: ${completedForRepo.map(s => `Step ${s.number} (${s.name})`).join(", ")}`);
+				}
+
+				promptLines.push(
+					``,
+					`When all YOUR checkboxes are checked, your segment is done — exit successfully.`,
+					`Do NOT attempt work in other repos.`,
+				);
+			}
 		}
 
 		if (totalIterations > 1 && remainingSteps.length > 0) {

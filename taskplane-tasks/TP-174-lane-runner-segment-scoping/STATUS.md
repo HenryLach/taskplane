@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** L
 
@@ -21,13 +21,13 @@
 ---
 
 ### Step 1: Segment-Scoped Iteration Prompt
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Add helper `getRepoIdFromSegmentId(segmentId)` to extract repoId from segment ID
-- [ ] Add helper `getStepsForRepoId(stepSegmentMap, repoId)` to get step numbers with segments for a given repoId
-- [ ] Add segment-scoped prompt block: when stepSegmentMap exists and segmentId is present, inject segment context showing only current segment's checkboxes, listing other segments as "not yours", and filtering remaining steps to only those with this repoId
-- [ ] Legacy fallback: when stepSegmentMap is undefined or segmentId is null, no change to prompt (backward compatible)
-- [ ] Run targeted tests
+- [x] Add helper `getRepoIdFromSegmentId(segmentId)` to extract repoId from segment ID
+- [x] Add helper `getStepsForRepoId(stepSegmentMap, repoId)` to get step numbers with segments for a given repoId
+- [x] Add segment-scoped prompt block: when stepSegmentMap exists and segmentId is present, inject segment context showing only current segment's checkboxes, listing other segments as "not yours", and filtering remaining steps to only those with this repoId
+- [x] Legacy fallback: when stepSegmentMap is undefined or segmentId is null, no change to prompt (backward compatible)
+- [x] Run targeted tests (48/48 pass)
 
 ---
 
@@ -145,3 +145,4 @@ Specification: docs/specifications/taskplane/segment-aware-steps.md
 - Need to parse STATUS.md for segment blocks (#### Segment: repoId) to count segment-specific checkboxes
 - For prompt scoping, use `unit.task.stepSegmentMap` (from PROMPT.md parsing)
 - For progress counting, parse STATUS.md directly (since worker modifies STATUS.md)
+| 2026-04-13 16:42 | Review R001 | plan Step 1: APPROVE |
