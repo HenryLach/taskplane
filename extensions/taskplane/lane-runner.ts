@@ -568,8 +568,15 @@ export async function executeTaskV2(
 					// 2. Blocker logged (non-empty Blockers section)
 					try {
 						const statusContent = readFileSync(statusPath, "utf-8");
-						const midStatus = parseStatusMd(statusContent);
-						const midTotalChecked = midStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+						// TP-174: Use same scope as prevTotalChecked (segment or global)
+						let midTotalChecked: number;
+						if (repoStepNumbers && currentRepoId) {
+							const segCbs = getSegmentCheckboxes(statusContent, firstStep.number, currentRepoId);
+							midTotalChecked = segCbs ? segCbs.checked : 0;
+						} else {
+							const midStatus = parseStatusMd(statusContent);
+							midTotalChecked = midStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+						}
 						if (midTotalChecked > prevTotalChecked) {
 							// Worker checked off checkboxes — let it exit normally
 							return null;
