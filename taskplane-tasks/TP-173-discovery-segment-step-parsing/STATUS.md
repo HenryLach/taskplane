@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** M
 
@@ -29,7 +29,7 @@
 ---
 
 ### Step 2: Implement Segment Parsing
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress (R005 revisions)
 
 > ⚠️ Hydrated (R003 revision): Parser adds segment parsing into parsePromptForOrchestrator after step extraction.
 
@@ -37,6 +37,8 @@
 - [x] Integrate helper into parsePromptForOrchestrator to populate stepSegmentMap on ParsedTask and return diagnostics alongside the mapping
 - [x] Handle edge cases: empty segments (non-fatal warning), duplicate repoId in step (discovery error), unknown repoId (non-fatal warning with suggested matches from workspace repos)
 - [x] Run targeted tests (discovery-routing tests + verify new parser path)
+- [ ] R005-1: Fix fallback repo — use placeholder token replaced during routing resolution instead of hardcoded "default"
+- [ ] R005-2: Add unknown step-segment repoId validation against workspace repos in resolveTaskRouting, emitting non-fatal warnings
 
 ---
 
@@ -95,3 +97,4 @@ Specification: docs/specifications/taskplane/segment-aware-steps.md
 | 2026-04-13 16:04 | Review R002 | code Step 1: APPROVE |
 | 2026-04-13 16:07 | Review R003 | plan Step 2: REVISE |
 | 2026-04-13 16:08 | Review R004 | plan Step 2: APPROVE |
+| 2026-04-13 16:14 | Review R005 | code Step 2: REVISE |
