@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** L
 
@@ -21,13 +21,14 @@
 ---
 
 ### Step 1: Segment-Scoped Iteration Prompt
-**Status:** ✅ Complete
+**Status:** 🟨 In Progress (R002 revisions)
 
 - [x] Add helper `getRepoIdFromSegmentId(segmentId)` to extract repoId from segment ID
 - [x] Add helper `getStepsForRepoId(stepSegmentMap, repoId)` to get step numbers with segments for a given repoId
 - [x] Add segment-scoped prompt block: when stepSegmentMap exists and segmentId is present, inject segment context showing only current segment's checkboxes, listing other segments as "not yours", and filtering remaining steps to only those with this repoId
 - [x] Legacy fallback: when stepSegmentMap is undefined or segmentId is null, no change to prompt (backward compatible)
 - [x] Run targeted tests (48/48 pass)
+- [ ] R002: Use `config.repoId` instead of parsing opaque segmentId; add fallback when repoStepNumbers is empty (legacy multi-segment without markers)
 
 ---
 
@@ -146,3 +147,4 @@ Specification: docs/specifications/taskplane/segment-aware-steps.md
 - For prompt scoping, use `unit.task.stepSegmentMap` (from PROMPT.md parsing)
 - For progress counting, parse STATUS.md directly (since worker modifies STATUS.md)
 | 2026-04-13 16:42 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-13 16:50 | Review R002 | code Step 1: REVISE |
