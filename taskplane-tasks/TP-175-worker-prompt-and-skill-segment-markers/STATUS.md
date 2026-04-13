@@ -1,6 +1,6 @@
 # TP-175: Worker Prompt and Skill Segment Markers — Status
 
-**Current Step:** Step 1: Update Worker Prompt
+**Current Step:** Step 2: Update Skill for Segment Markers
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 1
@@ -27,7 +27,7 @@
 ---
 
 ### Step 2: Update Skill for Segment Markers
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Update SKILL.md with segment marker guidance
 - [ ] Update prompt-template.md with segment format
 - [ ] Add step ordering, explicit markers, and max segments guidance
