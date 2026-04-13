@@ -701,13 +701,21 @@ function renderLanesTasks(batch, sessions) {
       // Progress cell
       // TP-174: Prefer V2 snapshot progress (segment-scoped when available)
       // over full STATUS.md counts when the task is actively running on this lane.
+      // TP-176: Succeeded tasks always show 100% regardless of sidecar/statusData (#491).
       let progressHtml = "";
       const v2p = ls && ls._v2Progress;
       const useV2 = v2p && v2p.total > 0 && ls.taskId === task.taskId;
-      const displayChecked = useV2 ? v2p.checked : (sd ? sd.checked : 0);
-      const displayTotal = useV2 ? v2p.total : (sd ? sd.total : 0);
-      const displayProgress = displayTotal > 0 ? Math.round((displayChecked / displayTotal) * 100) : 0;
-      if (sd || useV2) {
+      if (task.status === "succeeded") {
+        // #491 fix: succeeded tasks always show 100%
+        progressHtml = `
+          <div class="task-progress">
+            <div class="task-progress-bar"><div class="task-progress-fill pct-hi" style="width:100%"></div></div>
+            <span class="task-progress-text">100%</span>
+          </div>`;
+      } else if (sd || useV2) {
+        const displayChecked = useV2 ? v2p.checked : (sd ? sd.checked : 0);
+        const displayTotal = useV2 ? v2p.total : (sd ? sd.total : 0);
+        const displayProgress = displayTotal > 0 ? Math.round((displayChecked / displayTotal) * 100) : 0;
         const fillClass = pctClass(displayProgress);
         progressHtml = `
           <div class="task-progress">
@@ -715,12 +723,6 @@ function renderLanesTasks(batch, sessions) {
               <div class="task-progress-fill ${fillClass}" style="width:${displayProgress}%"></div>
             </div>
             <span class="task-progress-text">${displayProgress}% ${displayChecked}/${displayTotal}</span>
-          </div>`;
-      } else if (task.status === "succeeded") {
-        progressHtml = `
-          <div class="task-progress">
-            <div class="task-progress-bar"><div class="task-progress-fill pct-hi" style="width:100%"></div></div>
-            <span class="task-progress-text">100%</span>
           </div>`;
       } else if (task.status === "pending") {
         progressHtml = `
@@ -1888,6 +1890,127 @@ function renderV2Event(evt) {
   }
 }
 
+// ── Segment-Scoped STATUS.md Helpers (TP-176) ──────────────────────────────
+
+/**
+ * Resolve the active segment repoId for a given task.
+ * Uses runtimeLaneSnapshots (active segment) and falls back to
+ * taskSegmentProgress (batch state).
+ * Returns { repoId, segmentInfo } or null if single-segment / unresolvable.
+ */
+function resolveActiveSegmentForTask(taskId) {
+  if (!currentData) return null;
+  const batch = currentData.batch;
+  if (!batch) return null;
+  const task = (batch.tasks || []).find(t => t.taskId === taskId);
+  if (!task) return null;
+  const segmentIds = Array.isArray(task.segmentIds) ? task.segmentIds.filter(id => typeof id === "string") : [];
+  if (segmentIds.length <= 1) return null; // single-segment or no segments
+
+  // Try to get active segment from runtime lane snapshots
+  const v2Snapshots = currentData.runtimeLaneSnapshots || {};
+  for (const snap of Object.values(v2Snapshots)) {
+    if (snap && snap.taskId === taskId && snap.segmentId) {
+      const parsed = parseSegmentId(snap.segmentId);
+      if (parsed) {
+        const idx = segmentIds.indexOf(snap.segmentId);
+        return {
+          repoId: parsed.repoId,
+          segmentInfo: {
+            index: idx >= 0 ? idx + 1 : null,
+            total: segmentIds.length,
+            repoId: parsed.repoId,
+            segmentId: snap.segmentId,
+          },
+        };
+      }
+    }
+  }
+
+  // Fallback: use taskSegmentProgress (batch state)
+  const segmentStatusMap = buildSegmentStatusMap(batch);
+  const info = taskSegmentProgress(task, segmentStatusMap, null);
+  if (info && info.repoId) {
+    return { repoId: info.repoId, segmentInfo: info };
+  }
+  return null;
+}
+
+/**
+ * Filter STATUS.md content to show only the active segment's blocks.
+ * Within each `### Step N:` section, removes `#### Segment: <otherRepo>` blocks
+ * and keeps only the block matching `activeRepoId`.
+ * Non-step content (metadata, notes, reviews, etc.) is preserved.
+ *
+ * Returns the filtered markdown string, or the original if no segment markers found.
+ */
+function filterStatusMdForSegment(markdown, activeRepoId) {
+  if (!activeRepoId) return markdown;
+  const lines = markdown.split('\n');
+  const result = [];
+  let inStep = false;          // inside a ### Step section
+  let inSegmentBlock = false;  // inside a #### Segment: <repo> block
+  let segmentMatch = false;    // current segment block matches active repo
+  let foundAnySegmentHeader = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    // Detect step headers: ### Step N: ...
+    if (/^###\s+Step\s+\d+/.test(line)) {
+      inStep = true;
+      inSegmentBlock = false;
+      segmentMatch = false;
+      result.push(line);
+      continue;
+    }
+
+    // Detect non-step ### headers (e.g., ### Reviews, ### Notes)
+    if (/^###\s+/.test(line) && !/^###\s+Step\s+\d+/.test(line)) {
+      inStep = false;
+      inSegmentBlock = false;
+      segmentMatch = false;
+      result.push(line);
+      continue;
+    }
+
+    // Inside a step section, detect #### Segment: <repoId> headers
+    if (inStep && /^####\s+Segment:\s*/.test(line)) {
+      foundAnySegmentHeader = true;
+      const segRepo = line.replace(/^####\s+Segment:\s*/, '').trim();
+      inSegmentBlock = true;
+      segmentMatch = (segRepo === activeRepoId);
+      if (segmentMatch) {
+        result.push(line);
+      }
+      continue;
+    }
+
+    // Detect any other #### header (ends current segment block)
+    if (/^####\s+/.test(line)) {
+      inSegmentBlock = false;
+      segmentMatch = false;
+      result.push(line);
+      continue;
+    }
+
+    // If we're in a segment block, only include matching lines
+    if (inSegmentBlock) {
+      if (segmentMatch) {
+        result.push(line);
+      }
+      continue;
+    }
+
+    // Outside segment blocks: keep the line
+    result.push(line);
+  }
+
+  // If no segment headers were found, return original (fallback for single-segment)
+  if (!foundAnySegmentHeader) return markdown;
+  return result.join('\n');
+}
+
 // ── Open STATUS.md viewer ───────────────────────────────────────────────────
 
 function viewStatusMd(taskId) {
@@ -1904,7 +2027,15 @@ function viewStatusMd(taskId) {
   autoScrollOn = false;
   lastStatusMdText = '';
 
-  $terminalTitle.textContent = `STATUS.md — ${taskId}`;
+  // TP-176: Include segment context in title for multi-segment tasks
+  const segData = resolveActiveSegmentForTask(taskId);
+  if (segData && segData.segmentInfo) {
+    const label = segmentProgressText(segData.segmentInfo);
+    $terminalTitle.textContent = `STATUS.md — ${taskId} · ${label}`;
+  } else {
+    $terminalTitle.textContent = `STATUS.md — ${taskId}`;
+  }
+
   $autoScrollText.textContent = 'Track progress';
   $autoScrollCheckbox.checked = false;
   $terminalPanel.style.display = '';
@@ -1923,11 +2054,22 @@ function pollStatusMd() {
       return r.text();
     })
     .then(text => {
-      // Diff-and-skip: no change, no DOM update
-      if (text === lastStatusMdText) return;
-      lastStatusMdText = text;
+      // TP-176: Apply segment-scoped filtering for multi-segment tasks.
+      // Re-resolve on each poll since the active segment may change.
+      const segData = resolveActiveSegmentForTask(viewerTarget);
+      let displayText = text;
+      if (segData && segData.repoId) {
+        displayText = filterStatusMdForSegment(text, segData.repoId);
+        // Update title with current segment context (may change between polls)
+        const label = segmentProgressText(segData.segmentInfo);
+        $terminalTitle.textContent = `STATUS.md \u2014 ${viewerTarget} \u00b7 ${label}`;
+      }
 
-      const { html, hasLastChecked } = renderStatusMd(text);
+      // Diff-and-skip: no change, no DOM update
+      if (displayText === lastStatusMdText) return;
+      lastStatusMdText = displayText;
+
+      const { html, hasLastChecked } = renderStatusMd(displayText);
       $terminalBody.innerHTML = html;
 
       // Update tracking highlight
