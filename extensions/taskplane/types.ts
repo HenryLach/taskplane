@@ -125,6 +125,11 @@ export interface ParsedTask {
 	 * Null when no segment is active.
 	 */
 	activeSegmentId?: string | null;
+	/**
+	 * Step-to-segment checkbox mapping parsed from PROMPT.md `#### Segment:` markers.
+	 * Populated by discovery (Phase A, TP-173). Undefined if not yet parsed.
+	 */
+	stepSegmentMap?: StepSegmentMapping[];
 }
 
 /** Build a stable segment ID from task + repo identity (`<taskId>::<repoId>[::N]`). */
@@ -150,6 +155,21 @@ export function buildExpansionRequestId(timestamp = Date.now()): string {
 	const base = Math.random().toString(36).slice(2).toLowerCase().replace(/[^a-z0-9]/g, "");
 	const random5 = (base + "00000").slice(0, 5);
 	return `exp-${ts}-${random5}`;
+}
+
+// ── Step-Segment Mapping (Phase A: segment-scoped worker visibility) ────
+
+/** A group of checkboxes scoped to a single repo within a step. */
+export interface SegmentCheckboxGroup {
+	repoId: string;
+	checkboxes: string[];
+}
+
+/** Maps a step to its repo-scoped checkbox groups. */
+export interface StepSegmentMapping {
+	stepNumber: number;
+	stepName: string;
+	segments: SegmentCheckboxGroup[];
 }
 
 /** One repo-scoped segment node for a task. */

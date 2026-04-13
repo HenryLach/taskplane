@@ -1,10 +1,10 @@
 # TP-173: Discovery Segment-Step Parsing — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Add Types
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
@@ -20,11 +20,11 @@
 ---
 
 ### Step 1: Add Types
-**Status:** ⬜ Not Started
-- [ ] Add SegmentCheckboxGroup interface
-- [ ] Add StepSegmentMapping interface
-- [ ] Add stepSegmentMap to ParsedTask
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Add SegmentCheckboxGroup interface
+- [x] Add StepSegmentMapping interface
+- [x] Add stepSegmentMap to ParsedTask
+- [x] Run targeted tests
 
 ---
 
@@ -92,3 +92,4 @@
 
 Phase A foundation task. All other Phase A tasks depend on this.
 Specification: docs/specifications/taskplane/segment-aware-steps.md
+| 2026-04-13 16:03 | Review R001 | plan Step 1: APPROVE |
