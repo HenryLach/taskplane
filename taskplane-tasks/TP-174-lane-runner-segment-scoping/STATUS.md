@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 2
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** L
 
@@ -33,13 +33,13 @@
 ---
 
 ### Step 2: Segment-Scoped Progress and Stall Detection
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Replace full-task progress delta with segment-scoped delta when segment markers are present (use getSegmentCheckboxes from Step 1 already added)
-- [ ] Stall detection uses segment-scoped prevChecked/afterChecked counts
-- [ ] Corrective re-spawn prompt references segment-specific unchecked items
-- [ ] Legacy fallback: no change to progress/stall when no markers
-- [ ] Run targeted tests
+- [x] Replace full-task progress delta with segment-scoped delta when segment markers are present (use getSegmentCheckboxes from Step 1 already added)
+- [x] Stall detection uses segment-scoped prevChecked/afterChecked counts
+- [x] Corrective re-spawn prompt references segment-specific unchecked items
+- [x] Legacy fallback: no change to progress/stall when no markers
+- [x] Run targeted tests (48/48 pass)
 
 ---
 
@@ -149,3 +149,4 @@ Specification: docs/specifications/taskplane/segment-aware-steps.md
 | 2026-04-13 16:50 | Review R002 | code Step 1: REVISE |
 | 2026-04-13 16:53 | Review R003 | code Step 1: REVISE |
 | 2026-04-13 16:58 | Review R004 | code Step 1: APPROVE |
+| 2026-04-13 17:00 | Review R005 | plan Step 2: APPROVE |

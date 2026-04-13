@@ -369,7 +369,15 @@ export async function executeTaskV2(
 		}
 
 		// Count checkboxes before worker runs
-		const prevTotalChecked = currentStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+		// TP-174: When segment-scoped, count only this segment's checkboxes
+		let prevTotalChecked: number;
+		if (repoStepNumbers && currentRepoId) {
+			const preStatusContent = readFileSync(statusPath, "utf-8");
+			const segCbs = getSegmentCheckboxes(preStatusContent, firstStep.number, currentRepoId);
+			prevTotalChecked = segCbs ? segCbs.checked : 0;
+		} else {
+			prevTotalChecked = currentStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+		}
 
 		// ── Build worker prompt ─────────────────────────────────────
 		const wrapUpFile = join(taskFolder, ".task-wrap-up");
@@ -583,10 +591,20 @@ export async function executeTaskV2(
 					const uncheckedItems: string[] = [];
 					try {
 						const statusContent = readFileSync(statusPath, "utf-8");
-						const uncheckedMatches = statusContent.match(/^- \[ \] .+$/gm);
-						if (uncheckedMatches) {
-							for (const item of uncheckedMatches.slice(0, 5)) {
-								uncheckedItems.push(item.replace(/^- \[ \] /, "").trim());
+						// TP-174: When segment-scoped, report only this segment's unchecked items
+						if (repoStepNumbers && currentRepoId) {
+							const segCbs = getSegmentCheckboxes(statusContent, firstStep.number, currentRepoId);
+							if (segCbs) {
+								for (const text of segCbs.uncheckedTexts.slice(0, 5)) {
+									uncheckedItems.push(text);
+								}
+							}
+						} else {
+							const uncheckedMatches = statusContent.match(/^- \[ \] .+$/gm);
+							if (uncheckedMatches) {
+								for (const item of uncheckedMatches.slice(0, 5)) {
+									uncheckedItems.push(item.replace(/^- \[ \] /, "").trim());
+								}
 							}
 						}
 					} catch { /* best effort */ }
@@ -834,8 +852,16 @@ export async function executeTaskV2(
 			`${statusMsg} in ${Math.round(workerResult.durationMs / 1000)}s, tools: ${workerResult.toolCalls}`);
 
 		// ── Check progress ──────────────────────────────────────────
-		const afterStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
-		const afterTotalChecked = afterStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+		const afterStatusContent = readFileSync(statusPath, "utf-8");
+		const afterStatus = parseStatusMd(afterStatusContent);
+		// TP-174: Segment-scoped progress delta
+		let afterTotalChecked: number;
+		if (repoStepNumbers && currentRepoId) {
+			const segCbs = getSegmentCheckboxes(afterStatusContent, firstStep.number, currentRepoId);
+			afterTotalChecked = segCbs ? segCbs.checked : 0;
+		} else {
+			afterTotalChecked = afterStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+		}
 		const progressDelta = afterTotalChecked - prevTotalChecked;
 
 		if (progressDelta <= 0) {
