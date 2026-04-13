@@ -1723,6 +1723,31 @@ export function runDiscovery(
 		}
 	}
 
+	// Step 7: Post-normalization duplicate segment detection (TP-173)
+	// After all placeholder resolution (workspace or repo mode), check each
+	// step for duplicate repoIds that may have emerged from placeholder → real ID.
+	for (const task of discovery.pending.values()) {
+		if (!task.stepSegmentMap) continue;
+		for (const step of task.stepSegmentMap) {
+			const stepRepoIds = step.segments.map(s => s.repoId);
+			const seen = new Set<string>();
+			for (const rid of stepRepoIds) {
+				if (seen.has(rid)) {
+					discovery.errors.push({
+						code: "SEGMENT_STEP_DUPLICATE_REPO",
+						message:
+							`Task ${task.taskId} Step ${step.stepNumber} has duplicate segment repo ID "${rid}" ` +
+							`(after resolving primary repo fallback). A repoId may appear at most once within a step.`,
+						taskId: task.taskId,
+						taskPath: task.promptPath,
+					});
+					break;
+				}
+				seen.add(rid);
+			}
+		}
+	}
+
 	return discovery;
 }
 
