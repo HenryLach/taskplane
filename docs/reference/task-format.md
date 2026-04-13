@@ -118,6 +118,31 @@ Checklist items must use markdown checkbox syntax:
 
 Task-runner executes by scanning for the first unchecked checkbox in current scope.
 
+### Segment markers (multi-repo tasks)
+
+When a task spans multiple repos, use level-4 headings within each step to
+assign checkboxes to specific repos:
+
+```md
+### Step 1: Create utilities and API client
+
+#### Segment: shared-libs
+
+- [ ] Create string utility module
+- [ ] Export from package index
+
+#### Segment: web-client
+
+- [ ] Add API client wrapper
+- [ ] Wire into app initialization
+```
+
+Rules:
+- Marker format: `#### Segment: <repoId>` (case-sensitive, must match workspace config)
+- Single-repo tasks do not need segment markers (the engine applies a default)
+- Every step in a multi-repo task should have explicit segment markers
+- The final documentation/delivery step uses the packet repo (the repo containing PROMPT.md)
+
 ---
 
 ## Dependency notation

@@ -1,7 +1,7 @@
 # TP-175: Worker Prompt and Skill Segment Markers — Status
 
-**Current Step:** Step 3: Testing & Verification
-**Status:** 🟡 In Progress
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-13
 **Review Level:** 1
 **Review Counter:** 2
@@ -43,8 +43,8 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Discoveries logged
+**Status:** ✅ Complete
+- [x] Discoveries logged
 
 ---
 
@@ -59,6 +59,7 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| docs/reference/task-format.md lacked `#### Segment:` marker docs | Added segment markers subsection under Step/checklist expectations | docs/reference/task-format.md |
 
 ---
 
