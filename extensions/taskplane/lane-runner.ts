@@ -347,11 +347,18 @@ export async function executeTaskV2(
 		const currentStatus = parseStatusMd(readFileSync(statusPath, "utf-8"));
 		const parsed = parsePromptMd(readFileSync(promptPath, "utf-8"), promptPath);
 
-		// TP-174: Resolve segment-scoped step filtering
+		// TP-174: Resolve segment-scoped step filtering.
+		// Use config.repoId (structured identity) instead of parsing opaque segmentId.
 		const stepSegmentMap = unit.task.stepSegmentMap;
-		const currentRepoId = segmentId ? getRepoIdFromSegmentId(segmentId) : null;
-		const repoStepNumbers = (stepSegmentMap && currentRepoId)
+		const currentRepoId = segmentId ? config.repoId : null;
+		const rawRepoStepNumbers = (stepSegmentMap && currentRepoId)
 			? getStepsForRepoId(stepSegmentMap, currentRepoId)
+			: null;
+		// TP-174 legacy fallback: If no steps have segments for this repoId
+		// (multi-segment task without explicit markers, where all checkboxes
+		// are assigned to the fallback/packet repo), disable segment filtering.
+		const repoStepNumbers = (rawRepoStepNumbers && rawRepoStepNumbers.size > 0)
+			? rawRepoStepNumbers
 			: null;
 
 		const remainingSteps = parsed.steps.filter(step => {
