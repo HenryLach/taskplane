@@ -7,6 +7,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-04-12
+
+### Breaking
+
+- Worker prompt rewritten: workers must not exit voluntarily between steps.
+  Workers that previously exited after partial progress may now behave
+  differently (they keep working instead of stopping).
+
+### New
+
+- **Supervisor-in-the-loop exit interception (TP-172):** When a worker exits
+  without progress, the lane-runner holds the session alive and escalates to
+  the supervisor. The supervisor can send targeted instructions to continue
+  the worker's session with full conversation context preserved.
+- **Soft progress detection:** Stall detector checks `git diff` for uncommitted
+  source changes before counting an iteration as stalled. Workers editing code
+  but not yet checking boxes get credit for progress.
+- **Corrective re-spawn prompt:** When a worker is re-spawned after no-progress
+  exit, the iteration prompt explicitly warns about the previous failure pattern
+  and demands action.
+- **Worker exit contract:** Worker prompt rewritten with "Do NOT Exit — Keep
+  Working Until Done" and "Never Narrate What You Plan To Do" sections,
+  addressing the #1 failure mode of workers saying "Now let me fix this:" and
+  then stopping.
+
+### Fixed
+
+- **Segment .DONE guard (TP-165, #457):** `.DONE` is no longer created after
+  the first segment of a multi-segment task. The lane-runner checks for pending
+  expansion requests in the worker outbox before creating `.DONE`.
+- **Expansion consumption (TP-165, #452):** Engine correctly resolves worker
+  agent IDs for outbox lookup in workspace mode. `.DONE` removal path now uses
+  `resolveCanonicalTaskPaths` with worktree-relative paths.
+- **Wave planner phantom waves (TP-166, #454):** Wave count matches the actual
+  dependency graph depth. Operator-facing displays use `taskLevelWaveCount`.
+- **Global lane cap (TP-166, #451):** `enforceGlobalLaneCap` is wired into the
+  workspace execution path. `maxLanes` is now a global cap, not per-repo.
+- **Init Windows backslash (TP-167, #446):** `taskplane init` normalizes all
+  paths to forward slashes before writing to YAML and JSON config files.
+- **Artifact cleanup (TP-168, #296):** Telemetry age sweep reduced from 7 to 3
+  days. Verification, conversation, and lane-state files included in sweep.
+  Telemetry directory size cap (500MB) with oldest-first eviction.
+- **Resume crash after expansion (TP-169, #441):** `taskFolder` populated for
+  dynamically-added segments during resume reconstruction.
+- **Workspace orch branch (TP-169, #458):** All workspace repos get an orch
+  branch at batch start. Missing branch on resume is now fatal (throws) instead
+  of warning-and-continue.
+- **CLI widget session-dead (TP-170, #425):** Widget is wave-aware — completed
+  lanes from prior waves show succeeded, active lanes show progress. Session
+  name reconciliation fixed.
+- **Skipped task progress (TP-171, #453):** STATUS.md and worker commits from
+  skipped tasks are cherry-picked to the orch branch via isolated worktree.
+  `.DONE` excluded from skipped staging.
+- **Batch history gap (TP-171, #455):** All wave-planned tasks recorded in
+  batch history including skipped, failed, and never-started tasks.
+- **Close-directive parser:** Long supervisor instructions (>30 chars) starting
+  with "stop" are no longer misinterpreted as close directives.
+- **Skipped artifact paths (Sage):** `taskFolder` resolved against lane worktree
+  path in workspace mode for correct cross-repo artifact staging.
+
+### Docs
+
+- Segment-aware steps specification (draft v4) for multi-repo task execution
+- Supervisor primer: Section 13c for worker exit interception alerts
+
+## [0.26.1] - 2026-04-11
+
+### Fixed
+
+- `orch-integrate` detects already-merged orch branch and runs cleanup only
+- Supervisor primer: always call `orch_integrate()` after manual merge
+- Dashboard: human-readable labels for supervisor recovery actions
+- Broken link to deleted `task-runner.ts` in spec doc
+
 ## [0.26.0] - 2026-04-11
 
 ### Breaking
