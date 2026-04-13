@@ -662,6 +662,27 @@ export function parseWorktreeStatusMd(
  *
  * @since TP-070
  */
+
+/**
+ * Parse STATUS.md directly from a known absolute path.
+ * Unlike parseWorktreeStatusMdAsync, this does NOT re-resolve the path —
+ * it reads exactly the file you point it to. Use this when the caller
+ * already has the authoritative statusPath (e.g., from buildExecutionUnit).
+ *
+ * @since TP-501
+ */
+export async function parseStatusMdAtPath(
+	statusPath: string,
+): Promise<{ parsed: ParsedWorktreeStatus | null; error: string | null }> {
+	return parseStatusMdContent(statusPath);
+}
+
+/**
+ * Parse STATUS.md by resolving the path from taskFolder + worktree context.
+ * Use parseStatusMdAtPath instead when the caller already has the authoritative path.
+ *
+ * @since TP-070
+ */
 export async function parseWorktreeStatusMdAsync(
 	taskFolder: string,
 	worktreePath: string,
@@ -669,8 +690,13 @@ export async function parseWorktreeStatusMdAsync(
 	isWorkspaceMode?: boolean,
 ): Promise<{ parsed: ParsedWorktreeStatus | null; error: string | null }> {
 	const resolved = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot, isWorkspaceMode);
-	const statusPath = resolved.statusPath;
+	return parseStatusMdContent(resolved.statusPath);
+}
 
+/** Shared STATUS.md content parser — reads and parses from a known path. Handles file-not-found. */
+async function parseStatusMdContent(
+	statusPath: string,
+): Promise<{ parsed: ParsedWorktreeStatus | null; error: string | null }> {
 	if (!(await fileExistsAsync(statusPath))) {
 		return { parsed: null, error: `STATUS.md not found at ${statusPath}` };
 	}
@@ -1188,7 +1214,7 @@ export async function monitorLanes(
 					const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode);
 					const donePath = unit.packet.donePath;
 					const statusPath = unit.packet.statusPath;
-					const statusResult = await parseWorktreeStatusMdAsync(dirname(statusPath), lane.worktreePath, repoRoot, false);
+					const statusResult = await parseStatusMdAtPath(statusPath);
 
 					const snapshot = await resolveTaskMonitorState(
 						task.taskId,
