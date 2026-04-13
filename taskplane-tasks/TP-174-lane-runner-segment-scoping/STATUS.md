@@ -1,6 +1,6 @@
 # TP-174: Lane-Runner Segment Scoping — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Segment-Scoped Iteration Prompt
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 2
@@ -21,14 +21,12 @@
 ---
 
 ### Step 1: Segment-Scoped Iteration Prompt
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-> ⚠️ Hydrate: Expand based on lane-runner prompt structure found in Step 0
-
-- [ ] Extract current segment's checkboxes from stepSegmentMap
-- [ ] Inject segment context into prompt
-- [ ] Filter remaining steps to current repoId
-- [ ] Legacy fallback for tasks without markers
+- [ ] Add helper `getRepoIdFromSegmentId(segmentId)` to extract repoId from segment ID
+- [ ] Add helper `getStepsForRepoId(stepSegmentMap, repoId)` to get step numbers with segments for a given repoId
+- [ ] Add segment-scoped prompt block: when stepSegmentMap exists and segmentId is present, inject segment context showing only current segment's checkboxes, listing other segments as "not yours", and filtering remaining steps to only those with this repoId
+- [ ] Legacy fallback: when stepSegmentMap is undefined or segmentId is null, no change to prompt (backward compatible)
 - [ ] Run targeted tests
 
 ---
