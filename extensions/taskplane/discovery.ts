@@ -353,6 +353,12 @@ function parseSegmentDagMetadata(
 
 // ── Step-Segment Mapping (Phase A) ───────────────────────────────────
 
+/**
+ * Sentinel repo ID used when the task's primary repo is not yet known at parse time.
+ * Replaced by the resolved repo during routing (resolveTaskRouting).
+ */
+export const SEGMENT_FALLBACK_REPO_PLACEHOLDER = "__primary__";
+
 interface StepSegmentParseResult {
 	mapping: StepSegmentMapping[];
 	warnings: DiscoveryError[];
@@ -733,9 +739,9 @@ export function parsePromptForOrchestrator(
 	const explicitSegmentDag = segmentDagResult.metadata;
 
 	// ── Parse step-segment mapping (Phase A, TP-173) ────────
-	// Use promptRepoId as fallback; if not set, use "default" as a
-	// placeholder — routing will resolve the real repo later.
-	const segFallbackRepo = promptRepoId || "default";
+	// Use promptRepoId as fallback; if not set, use a placeholder
+	// sentinel that resolveTaskRouting replaces with the actual resolved repo.
+	const segFallbackRepo = promptRepoId || SEGMENT_FALLBACK_REPO_PLACEHOLDER;
 	const stepSegResult = parseStepSegmentMapping(content, taskId, segFallbackRepo);
 
 	// Duplicate repoId in a step is a hard error — fail the task.
@@ -1519,6 +1525,31 @@ export function resolveTaskRouting(
 
 		// Attach resolved repo to the task
 		task.resolvedRepoId = resolvedId;
+
+		// ── Step-segment mapping: resolve placeholders and validate repo IDs (TP-173) ──
+		if (task.stepSegmentMap) {
+			const knownRepoList = [...validRepoIds.keys()].join(", ");
+			for (const step of task.stepSegmentMap) {
+				for (const seg of step.segments) {
+					// Replace placeholder with resolved primary repo
+					if (seg.repoId === SEGMENT_FALLBACK_REPO_PLACEHOLDER) {
+						seg.repoId = resolvedId;
+						continue;
+					}
+					// Validate explicit segment repoIds against workspace repos
+					if (!validRepoIds.has(seg.repoId)) {
+						errors.push({
+							code: "SEGMENT_STEP_REPO_INVALID",
+							message:
+								`Task ${task.taskId} Step ${step.stepNumber} has segment repo "${seg.repoId}" ` +
+								`which is not in the workspace config. Known repos: ${knownRepoList}`,
+							taskId: task.taskId,
+							taskPath: task.promptPath,
+						});
+					}
+				}
+			}
+		}
 	}
 
 	return errors;
