@@ -1,6 +1,6 @@
 # TP-176: Dashboard Segment-Scoped Progress — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Segment-Scoped STATUS.md Viewer
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 1
@@ -18,9 +18,10 @@
 ---
 
 ### Step 1: Segment-Scoped STATUS.md Viewer
-**Status:** ⬜ Not Started
-- [ ] Extract and show current segment's block
-- [ ] Legacy fallback for single-segment tasks
+**Status:** 🟨 In Progress
+- [ ] Client-side: determine active repoId from task segment data and filter STATUS.md to segment blocks
+- [ ] Render segment header context (e.g., "Segment 2/3: shared-libs") in viewer title
+- [ ] Preserve full STATUS.md for single-segment tasks (no markers)
 
 ---
 
