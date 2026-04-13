@@ -1,7 +1,7 @@
 # TP-174: Lane-Runner Segment Scoping — Status
 
-**Current Step:** Step 5: Testing & Verification
-**Status:** 🟡 In Progress
+**Current Step:** Step 6: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-13
 **Review Level:** 2
 **Review Counter:** 14
@@ -75,8 +75,8 @@
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Discoveries logged
+**Status:** ✅ Complete
+- [x] Discoveries logged
 
 ---
 
@@ -91,6 +91,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| sidecar-telemetry.ts handles JSONL streaming, not STATUS.md progress — telemetry update goes in emitSnapshot within lane-runner.ts | Documented | lane-runner.ts |
+| Dashboard progress bar was not consuming V2 snapshot progress (_v2Progress stored but unused) — wired it in dashboard/public/app.js | Fixed in Step 4 | dashboard/public/app.js |
+| Dashboard server.cjs parseStatusMd does simple regex count of all checkboxes — not segment-aware; relying on V2 snapshot progress for segment-scoped display | Tech debt — could be revisited | dashboard/server.cjs |
 
 ---
 
