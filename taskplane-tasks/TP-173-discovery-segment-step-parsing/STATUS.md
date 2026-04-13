@@ -1,10 +1,10 @@
 # TP-173: Discovery Segment-Step Parsing — Status
 
-**Current Step:** Step 1: Add Types
+**Current Step:** Step 2: Implement Segment Parsing
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 2
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -29,15 +29,14 @@
 ---
 
 ### Step 2: Implement Segment Parsing
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
-> ⚠️ Hydrate: Expand based on parser structure found in Step 0
+> ⚠️ Hydrated: Parser adds segment parsing into parsePromptForOrchestrator after step extraction.
 
-- [ ] Parse `#### Segment: <repoId>` within step sections
-- [ ] Collect checkboxes per segment
-- [ ] Handle fallback (no markers → primary repoId)
-- [ ] Handle edge cases (empty, duplicate, unknown repoId)
-- [ ] Run targeted tests
+- [ ] Add parseStepSegmentMapping helper function that extracts steps and their segment groups from PROMPT content
+- [ ] Integrate helper into parsePromptForOrchestrator to populate stepSegmentMap on ParsedTask
+- [ ] Handle edge cases: empty segments (warning), duplicate repoId in step (error), unknown repoId deferred to routing
+- [ ] Run targeted tests (discovery-routing tests)
 
 ---
 
@@ -93,3 +92,4 @@
 Phase A foundation task. All other Phase A tasks depend on this.
 Specification: docs/specifications/taskplane/segment-aware-steps.md
 | 2026-04-13 16:03 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-13 16:04 | Review R002 | code Step 1: APPROVE |
