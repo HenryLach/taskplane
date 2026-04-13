@@ -415,12 +415,15 @@ export function parseStepSegmentMapping(
 	}
 
 	const stepsStart = stepsSectionMatch.index;
-	// Get body from ## Steps to next ## (non-step section) or end
+	// Get body from ## Steps to next ## top-level section or --- divider
 	const afterStepsHeader = content.indexOf("\n", stepsStart);
 	if (afterStepsHeader === -1) {
 		return { mapping, warnings, errors };
 	}
-	const stepsBody = content.slice(afterStepsHeader + 1);
+	const rest = content.slice(afterStepsHeader + 1);
+	// Find the next top-level section (## but not ###) or --- divider
+	const nextSectionMatch = rest.search(/^##\s+[^#]|^---/m);
+	const stepsBody = nextSectionMatch !== -1 ? rest.slice(0, nextSectionMatch) : rest;
 
 	// Split into step sections by ### Step N: headers
 	const stepHeaderRegex = /^###\s+Step\s+(\d+):\s*(.+)$/gm;
@@ -1579,27 +1582,8 @@ export function resolveTaskRouting(
 						});
 					}
 				}
-				// Post-placeholder-resolution duplicate check
-				const stepRepoIds = step.segments.map(s => s.repoId);
-				const stepRepoSet = new Set(stepRepoIds);
-				if (stepRepoSet.size < stepRepoIds.length) {
-					// Find the duplicate
-					const seen = new Set<string>();
-					for (const rid of stepRepoIds) {
-						if (seen.has(rid)) {
-							errors.push({
-								code: "SEGMENT_STEP_DUPLICATE_REPO",
-								message:
-									`Task ${task.taskId} Step ${step.stepNumber} has duplicate segment repo ID "${rid}" ` +
-									`(after resolving primary repo fallback). A repoId may appear at most once within a step.`,
-								taskId: task.taskId,
-								taskPath: task.promptPath,
-							});
-							break;
-						}
-						seen.add(rid);
-					}
-				}
+				// Duplicate detection for post-placeholder resolution is handled
+				// by the shared pass in runDiscovery() (Step 7).
 			}
 		}
 	}
