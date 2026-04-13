@@ -154,10 +154,11 @@ describe("5.x: Lane-runner terminal snapshot emission", () => {
 	});
 
 	it("5.3: all makeResult calls pass config, statusPath, reviewerStatePath, and telemetry", () => {
-		// Every return makeResult(...) should end with config, statusPath, reviewerStatePath[, lastTelemetry]
+		// Every return makeResult(...) should end with config, statusPath, reviewerStatePath[, lastTelemetry[, snapshotSegmentCtx]]
 		const calls = laneRunnerSrc.match(/return makeResult\(/g);
-		// Worker-result calls pass lastTelemetry; skipped calls don't (no agent ran)
-		const callsWithTelemetry = laneRunnerSrc.match(/config, statusPath, reviewerStatePath, lastTelemetry\)/g);
+		// Worker-result calls pass lastTelemetry; skipped calls don't (no agent ran).
+		// TP-174: Calls may additionally pass snapshotSegmentCtx after lastTelemetry.
+		const callsWithTelemetry = laneRunnerSrc.match(/config, statusPath, reviewerStatePath, lastTelemetry[^)]*\)/g);
 		expect(calls).not.toBe(null);
 		// At least 3 calls pass telemetry (failed, max-iter-failed, succeeded)
 		expect(callsWithTelemetry).not.toBe(null);

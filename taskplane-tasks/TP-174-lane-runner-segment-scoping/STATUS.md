@@ -1,10 +1,10 @@
 # TP-174: Lane-Runner Segment Scoping — Status
 
-**Current Step:** Step 4: Sidecar Telemetry Update
+**Current Step:** Step 5: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 2
-**Review Counter:** 13
+**Review Counter:** 14
 **Iteration:** 1
 **Size:** L
 
@@ -62,11 +62,15 @@
 ---
 
 ### Step 5: Testing & Verification
-**Status:** ⬜ Not Started
-- [ ] FULL test suite passing
-- [ ] Segment-scoped prompt, progress, stall, exit tests
-- [ ] Legacy regression tests
-- [ ] All failures fixed
+**Status:** ✅ Complete
+- [x] Run FULL test suite (3316/3317 pass, 1 failure)
+- [x] Fix engine-runtime-v2-routing.test.ts 5.3 regex to accept optional snapshotSegmentCtx param
+- [x] Add test: segment-scoped prompt shows only current segment's checkboxes (tests 4.1-4.6)
+- [x] Add test: segment-scoped progress counts only segment's checkboxes (tests 2.1-2.7, 5.1-5.4)
+- [x] Add test: stall detection uses segment-scoped delta (tests 5.1-5.4)
+- [x] Add test: segment exit condition detects completion correctly (tests 3.1-3.6, 6.1-6.4)
+- [x] Add test: legacy task without markers — no behavior change (tests 7.1-7.6)
+- [x] Final full test suite run — all 3363 tests passing
 
 ---
 
@@ -159,3 +163,4 @@ Specification: docs/specifications/taskplane/segment-aware-steps.md
 | 2026-04-13 17:14 | Review R011 | plan Step 4: REVISE |
 | 2026-04-13 17:16 | Review R012 | plan Step 4: REVISE |
 | 2026-04-13 17:20 | Review R013 | code Step 4: REVISE |
+| 2026-04-13 17:23 | Review R014 | code Step 4: APPROVE |
