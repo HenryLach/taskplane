@@ -699,15 +699,22 @@ function renderLanesTasks(batch, sessions) {
       const showPacketHome = !!packetHomeRepo && packetHomeRepo !== (tRepo || lane.repoId || "");
 
       // Progress cell
+      // TP-174: Prefer V2 snapshot progress (segment-scoped when available)
+      // over full STATUS.md counts when the task is actively running on this lane.
       let progressHtml = "";
-      if (sd) {
-        const fillClass = pctClass(sd.progress);
+      const v2p = ls && ls._v2Progress;
+      const useV2 = v2p && v2p.total > 0 && ls.taskId === task.taskId;
+      const displayChecked = useV2 ? v2p.checked : (sd ? sd.checked : 0);
+      const displayTotal = useV2 ? v2p.total : (sd ? sd.total : 0);
+      const displayProgress = displayTotal > 0 ? Math.round((displayChecked / displayTotal) * 100) : 0;
+      if (sd || useV2) {
+        const fillClass = pctClass(displayProgress);
         progressHtml = `
           <div class="task-progress">
             <div class="task-progress-bar">
-              <div class="task-progress-fill ${fillClass}" style="width:${sd.progress}%"></div>
+              <div class="task-progress-fill ${fillClass}" style="width:${displayProgress}%"></div>
             </div>
-            <span class="task-progress-text">${sd.progress}% ${sd.checked}/${sd.total}</span>
+            <span class="task-progress-text">${displayProgress}% ${displayChecked}/${displayTotal}</span>
           </div>`;
       } else if (task.status === "succeeded") {
         progressHtml = `

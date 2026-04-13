@@ -321,6 +321,18 @@ export async function executeTaskV2(
 	// TP-115: carry latest worker telemetry across iterations and into post-loop terminal snapshots
 	let lastTelemetry: Partial<AgentHostResult> = {};
 
+	// TP-174: Build segment context once for emitSnapshot calls.
+	// Available outside the loop so it can be passed to makeResult too.
+	const snapshotSegmentCtx: { stepSegmentMap: StepSegmentMapping[]; repoId: string } | null =
+		(segmentId && unit.task.stepSegmentMap && config.repoId)
+			? (() => {
+				const repoSteps = getStepsForRepoId(unit.task.stepSegmentMap!, config.repoId);
+				return repoSteps.size > 0
+					? { stepSegmentMap: unit.task.stepSegmentMap!, repoId: config.repoId }
+					: null;
+			})()
+			: null;
+
 	for (let iter = 0; iter < config.maxIterations; iter++) {
 		if (pauseSignal.paused) {
 			logExecution(statusPath, "Paused", `User paused at iteration ${totalIterations}`);
@@ -735,7 +747,7 @@ export async function executeTaskV2(
 				iterationTelemetry = telemetry;
 				lastTelemetry = telemetry;
 				// Emit lane snapshot
-				emitSnapshot(config, taskId, segmentId, "running", telemetry, statusPath, reviewerStatePath);
+				emitSnapshot(config, taskId, segmentId, "running", telemetry, statusPath, reviewerStatePath, snapshotSegmentCtx);
 			} catch { /* non-fatal: telemetry callback must never crash the engine */ }
 		});
 
@@ -745,7 +757,7 @@ export async function executeTaskV2(
 		let reviewerSnapshotFailures = 0;
 		const reviewerRefreshFailureThreshold = 5;
 		const reviewerRefresh = setInterval(() => {
-			const ok = emitSnapshot(config, taskId, segmentId, "running", iterationTelemetry, statusPath, reviewerStatePath);
+			const ok = emitSnapshot(config, taskId, segmentId, "running", iterationTelemetry, statusPath, reviewerStatePath, snapshotSegmentCtx);
 			if (ok) {
 				reviewerSnapshotFailures = 0;
 				return;
@@ -1152,7 +1164,7 @@ function makeResult(
 	// TP-115: Emit terminal snapshot with real telemetry from agent-host result
 	if (config && statusPath && reviewerStatePath) {
 		const terminalStatus = mapLaneTaskStatusToTerminalSnapshotStatus(status);
-		emitSnapshot(config, taskId, segmentId, terminalStatus, finalTelemetry ?? {}, statusPath, reviewerStatePath);
+		emitSnapshot(config, taskId, segmentId, terminalStatus, finalTelemetry ?? {}, statusPath, reviewerStatePath, snapshotSegmentCtx);
 	}
 
 	return result;
@@ -1229,6 +1241,8 @@ function emitSnapshot(
 	telemetry: Partial<AgentHostResult>,
 	statusPath: string,
 	reviewerStatePath: string,
+	/** TP-174: Optional segment context for segment-scoped progress reporting */
+	segmentContext?: { stepSegmentMap: StepSegmentMapping[]; repoId: string } | null,
 ): boolean {
 	try {
 		// Parse progress from STATUS.md
@@ -1237,8 +1251,30 @@ function emitSnapshot(
 			const content = readFileSync(statusPath, "utf-8");
 			const parsed = parseStatusMd(content);
 			const currentStepMatch = content.match(/\*\*Current Step:\*\*\s*(.+)/);
-			const checked = parsed.steps.reduce((sum, s) => sum + s.totalChecked, 0);
-			const total = parsed.steps.reduce((sum, s) => sum + s.totalItems, 0);
+
+			// TP-174: Segment-scoped progress when segment markers are present.
+			// Only count checkboxes from steps that belong to this segment's repoId.
+			let checked: number;
+			let total: number;
+			if (segmentContext) {
+				const { stepSegmentMap, repoId } = segmentContext;
+				const repoSteps = getStepsForRepoId(stepSegmentMap, repoId);
+				let segChecked = 0;
+				let segTotal = 0;
+				for (const stepNum of repoSteps) {
+					const segCbs = getSegmentCheckboxes(content, stepNum, repoId);
+					if (segCbs) {
+						segChecked += segCbs.checked;
+						segTotal += segCbs.total;
+					}
+				}
+				checked = segChecked;
+				total = segTotal;
+			} else {
+				checked = parsed.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+				total = parsed.steps.reduce((sum, s) => sum + s.totalItems, 0);
+			}
+
 			progress = {
 				currentStep: currentStepMatch?.[1]?.trim() || "Unknown",
 				checked,

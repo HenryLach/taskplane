@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 2
-**Review Counter:** 11
+**Review Counter:** 12
 **Iteration:** 1
 **Size:** L
 
@@ -53,11 +53,11 @@
 ---
 
 ### Step 4: Sidecar Telemetry Update
-**Status:** 🟨 In Progress
-- [ ] Update emitSnapshot() in lane-runner.ts to accept segment context and report segment-scoped checked/total in the snapshot progress when segment markers are present
-- [ ] Legacy fallback: full-task progress for tasks without markers (emitSnapshot unchanged when no segment context)
-- [ ] Note: dashboard rendering uses statusData.progress (full STATUS.md), not the snapshot progress; wiring dashboard to prefer V2 snapshot progress is out of scope (dashboard/public/app.js is outside file scope) — log as discovery
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Update emitSnapshot() in lane-runner.ts to accept segment context and report segment-scoped checked/total in the snapshot progress when segment markers are present
+- [x] Legacy fallback: full-task progress for tasks without markers (emitSnapshot unchanged when no segment context)
+- [x] Updated dashboard/public/app.js to prefer V2 snapshot progress (segment-scoped) over full STATUS.md counts when available
+- [x] Run targeted tests (48/48 pass)
 
 ---
 
@@ -157,3 +157,4 @@ Specification: docs/specifications/taskplane/segment-aware-steps.md
 | 2026-04-13 17:09 | Review R009 | code Step 3: REVISE |
 | 2026-04-13 17:11 | Review R010 | code Step 3: APPROVE |
 | 2026-04-13 17:14 | Review R011 | plan Step 4: REVISE |
+| 2026-04-13 17:16 | Review R012 | plan Step 4: REVISE |
