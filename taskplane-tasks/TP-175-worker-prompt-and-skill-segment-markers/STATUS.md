@@ -1,6 +1,6 @@
 # TP-175: Worker Prompt and Skill Segment Markers — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Update Worker Prompt
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 1
@@ -19,7 +19,7 @@
 ---
 
 ### Step 1: Update Worker Prompt
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 - [ ] Add multi-segment rules section
 - [ ] Integrate with existing prompt structure
 - [ ] Run targeted tests
