@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-13
 **Review Level:** 1
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -27,11 +27,11 @@
 ---
 
 ### Step 2: Update Skill for Segment Markers
-**Status:** 🟨 In Progress
-- [ ] Update SKILL.md with segment marker guidance
-- [ ] Update prompt-template.md with segment format
-- [ ] Add step ordering, explicit markers, and max segments guidance
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Update SKILL.md with segment marker guidance
+- [x] Update prompt-template.md with segment format
+- [x] Add step ordering, explicit markers, and max segments guidance
+- [x] Run targeted tests (no skill-related tests exist)
 
 ---
 
@@ -83,3 +83,4 @@
 Can run in parallel with TP-173/TP-174 — template/skill changes only.
 Specification: docs/specifications/taskplane/segment-aware-steps.md
 | 2026-04-13 16:03 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-13 16:05 | Review R002 | plan Step 2: APPROVE |

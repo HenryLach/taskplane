@@ -369,6 +369,64 @@ files and make sure their file scopes reflect that.
 
 ---
 
+## Multi-Repo Segment Markers
+
+When a task spans multiple repos (e.g., shared-libs + web-client), the skill
+must generate **segment markers** inside each step so the orchestrator can
+route checkboxes to the correct repo's worker.
+
+### Workflow
+
+1. Read workspace config to identify available repos and their roles
+2. Analyze the task description and file scope — determine which repos are involved
+3. Group work into steps by logical goal, with segments per repo within each step
+4. Write PROMPT.md with `#### Segment: <repoId>` markers in every step
+5. Write STATUS.md with matching structure
+
+### Marker Format
+
+Within each step, use level-4 headings to separate work by repo:
+
+```markdown
+### Step 1: Create utilities and API client
+
+#### Segment: shared-libs
+
+- [ ] Create string utility module
+- [ ] Export from package index
+
+#### Segment: web-client
+
+- [ ] Add API client wrapper
+- [ ] Wire into app initialization
+```
+
+### Ordering Rules
+
+Order steps so that dependencies flow correctly:
+
+1. **Shared/common work** → early steps (e.g., shared libraries, schemas)
+2. **Per-repo implementation** → middle steps (consumers of shared work)
+3. **Integration/documentation** → final steps (always in the packet repo)
+
+The final documentation/delivery step always uses `#### Segment: <packet-repo>`
+where `<packet-repo>` is the repo that contains the task's PROMPT.md.
+
+### Guidelines
+
+- **Always write explicit markers.** Never rely on the engine's single-segment
+  fallback for multi-repo tasks. Every step must have at least one
+  `#### Segment: <repoId>` marker.
+- **Max 10 segments per task.** Tasks spanning more repos should be split into
+  separate tasks with dependencies.
+- **Single-repo tasks do not need segment markers.** The engine's fallback
+  handles them correctly. Only add markers when file scope spans multiple repos.
+- **When pre-decomposition isn't possible** (e.g., the worker must discover
+  which repos are affected), include guidance about using
+  `request_segment_expansion` for dynamic expansion at runtime.
+
+---
+
 ## Preventing Empty Completions
 
 Workers can shortcut tasks by observing that existing code "already satisfies"
