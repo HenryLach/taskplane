@@ -29,8 +29,8 @@
 ### Step 2: Code Analysis
 **Status:** ⬜ Not Started
 
-- [ ] Read `extensions/taskplane/lane-runner.ts` and count exported functions. Write to `analysis.txt`
-- [ ] Read `extensions/taskplane/agent-host.ts` and list all event types emitted by `emitEvent()`. Write to `events.txt`
+- [x] Read `extensions/taskplane/lane-runner.ts` and count exported functions. Write to `analysis.txt`
+- [x] Read `extensions/taskplane/agent-host.ts` and list all event types emitted by `emitEvent()`. Write to `events.txt`
 
 ---
 
