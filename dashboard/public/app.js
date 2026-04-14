@@ -1476,6 +1476,8 @@ function buildRecoveryTimeline(supervisor) {
     target: a.target || a.lane || a.taskId || "",
     outcome: a.outcome || a.result || "",
     reason: a.reason || "",
+    context: a.context || "",
+    detail: a.detail || "",
     source: "action"
   }));
 
@@ -1489,6 +1491,8 @@ function buildRecoveryTimeline(supervisor) {
       target: e.target || e.lane || e.taskId || "",
       outcome: e.outcome || e.result || "",
       reason: e.reason || e.message || "",
+      context: e.context || "",
+      detail: e.detail || "",
       source: "event"
     }));
 
@@ -1521,6 +1525,7 @@ function renderSupervisorActions(supervisor) {
     const target = entry.target;
     const outcome = entry.outcome;
     const reason = entry.reason;
+    const description = entry.context || entry.detail || "";
 
     const outcomeCls = outcome === "success" || outcome === "recovered"
       ? "action-success"
@@ -1540,6 +1545,11 @@ function renderSupervisorActions(supervisor) {
     if (target) html += `<span class="supervisor-action-target">${escapeHtml(target)}</span>`;
     if (outcome) html += `<span class="supervisor-action-outcome ${outcomeCls}">${escapeHtml(outcome)}</span>`;
     html += `    </div>`;
+    if (description) {
+      const fullDesc = escapeHtml(description);
+      const truncated = description.length > 100 ? escapeHtml(description.slice(0, 100)) + "\u2026" : fullDesc;
+      html += `<div class="supervisor-action-description" title="${fullDesc}">${truncated}</div>`;
+    }
     if (reason) {
       html += `<div class="supervisor-action-reason">${escapeHtml(reason)}</div>`;
     }

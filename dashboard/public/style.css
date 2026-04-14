@@ -1579,6 +1579,18 @@ body {
   color: var(--yellow);
 }
 
+.supervisor-action-description {
+  font-size: 0.8rem;
+  color: var(--text-secondary, #b0b0b0);
+  margin-top: 3px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 600px;
+  cursor: default;
+}
+
 .supervisor-action-reason {
   font-size: 0.78rem;
   color: var(--text-muted);

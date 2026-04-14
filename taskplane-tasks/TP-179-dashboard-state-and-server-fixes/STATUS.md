@@ -1,10 +1,10 @@
 # TP-179: Dashboard State and Server Fixes — Status
 
-**Current Step:** Step 1: Fix integratedAt lifecycle (#499)
+**Current Step:** Step 2: Add description column to supervisor actions (#497)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-14
 **Review Level:** 1
-**Review Counter:** 1
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
@@ -29,11 +29,11 @@
 ---
 
 ### Step 2: Add description column to supervisor actions (#497)
-**Status:** ⬜ Not Started
-- [ ] Include context/detail in server API response
-- [ ] Add description column to dashboard table
-- [ ] Truncate long descriptions
-- [ ] Verify display
+**Status:** ✅ Done
+- [x] Include context/detail in server API response (already included — tailSupervisorJsonl passes all fields)
+- [x] Add description column to dashboard table
+- [x] Truncate long descriptions
+- [x] Verify display
 
 ---
 
@@ -86,3 +86,4 @@
 GitHub issues: #497, #499
 TP-179 touches both dashboard and extension code (integration lifecycle).
 | 2026-04-14 02:21 | Review R001 | plan Step 1: APPROVE |
+| 2026-04-14 02:24 | Review R002 | plan Step 2: APPROVE |
