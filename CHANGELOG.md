@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.1] - 2026-04-13
+
+### Fixed
+
+- **Dashboard: stale STATUS.md viewer across batches (#487):** Viewer clears
+  when a new batch starts instead of showing previous batch's content.
+- **Dashboard: lane step label never updates (#488):** Step name re-read from
+  sidecar on every poll instead of caching the initial value.
+- **Dashboard: succeeded tasks show 0% progress (#491):** Override to 100%
+  and "Complete" when task status is succeeded.
+- **Dashboard: wave indicators flash green during merge (#493):** Only
+  completed waves show green during merge phase; merging wave shows pulse.
+- **Dashboard: no progress for non-final segments (#494):** Segment-scoped
+  progress displayed during execution.
+- **Dashboard: merge telemetry duplicated across waves (#498):** Merge agent
+  telemetry associated with correct wave via waveIndex.
+- **Dashboard: supervisor actions lack descriptions (#497):** Context/detail
+  fields from JSONL now displayed in recovery actions table.
+- **orch-integrate doesn't set integratedAt (#499):** Integration timestamp
+  written to batch history before cleanup. Dashboard correctly transitions
+  completed batches to history view in workspace mode.
+- **Dependency parser: **Task:** format (#486):** Parser now matches both
+  `**Requires:**` and `**Task:**` label formats from the skill template.
+
 ## [0.28.0] - 2026-04-13
 
 ### New
