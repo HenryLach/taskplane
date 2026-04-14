@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-04-13
+
+### New
+
+- **Phase A: Segment-aware steps (TP-173, TP-174, TP-175, TP-176, TP-177):**
+  Multi-repo polyrepo tasks now support `#### Segment: <repoId>` markers in
+  PROMPT.md steps. Workers only see checkboxes for their current segment.
+  - Discovery parser extracts step-segment mappings from PROMPT.md
+  - Lane-runner filters iteration prompt, progress tracking, and stall
+    detection to the current segment's checkboxes
+  - Workers exit cleanly when their segment's checkboxes are complete
+  - Dashboard shows segment-scoped progress bars and STATUS.md viewer
+  - create-taskplane-task skill generates segment markers for multi-repo tasks
+  - Worker prompt template updated with multi-segment guidance
+  - Single-segment tasks completely unaffected (backward compatible)
+
+- **Hard mode separation for worker prompts:** Two separate prompt files
+  (`task-worker.md` for full-task, `task-worker-segment.md` for segment-scoped)
+  instead of conditional prose in one prompt. In FULL_TASK mode, all segment
+  signals are stripped: no segment env vars, no segment ID in prompt, no
+  segment tools. Workers cannot self-scope on signals that don't exist.
+
+### Fixed
+
+- **Monitor STATUS.md path resolution (#501):** Monitor poll was re-resolving
+  STATUS.md path with `isWorkspaceMode=false`, reading stale files from the
+  main checkout instead of the worktree. Added `parseStatusMdAtPath()` that
+  reads directly from the authoritative path. Fixes 0% progress display for
+  all workspace-mode tasks.
+
+- **Worker self-scoping in workspace mode:** Workers exited after one step
+  because: (a) multi-segment rules applied to all tasks, (b) segment ID
+  metadata triggered self-scoping behavior, (c) discovery fallback created
+  stepSegmentMap entries without explicit markers. Fixed by hard mode
+  separation and `hasExplicitMarkers` gate.
+
+- **Segment env var inheritance:** `TASKPLANE_ACTIVE_SEGMENT_ID` and
+  `TASKPLANE_SEGMENT_ID` hard-cleared to empty string in FULL_TASK mode
+  to prevent parent process env inheritance from leaking segment cues.
+
+### Docs
+
+- Segment-aware steps specification updated to v4 (Phase A fully specified,
+  Phases B-F strategy outlined with Sage architectural review findings)
+
 ## [0.27.0] - 2026-04-12
 
 ### Breaking
