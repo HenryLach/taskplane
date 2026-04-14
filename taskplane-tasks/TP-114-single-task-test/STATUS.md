@@ -1,6 +1,6 @@
 # TP-114: Single Task Test — Status
 
-**Current Step:** Step 2: Code Analysis
+**Current Step:** Step 3: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-14
 **Review Level:** 0
@@ -27,10 +27,10 @@
 ---
 
 ### Step 2: Code Analysis
-**Status:** ⬜ Not Started
+**Status:** ✅ Done
 
-- [ ] Read `extensions/taskplane/lane-runner.ts` and count exported functions; write to `analysis.txt`
-- [ ] Read `extensions/taskplane/agent-host.ts` and list all emitEvent() event types; write to `events.txt`
+- [x] Read `extensions/taskplane/lane-runner.ts` and count exported functions; write to `analysis.txt`
+- [x] Read `extensions/taskplane/agent-host.ts` and list all emitEvent() event types; write to `events.txt`
 
 ---
 

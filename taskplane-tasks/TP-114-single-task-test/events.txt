@@ -1,0 +1,18 @@
+Event types emitted by emitEvent() in extensions/taskplane/agent-host.ts:
+
+1.  agent_started       — emitted when the agent process launches (line 734)
+2.  prompt_sent         — emitted after sending the initial prompt (line 736)
+3.  message_delivered   — emitted when a mailbox/steering message is delivered (line 435)
+4.  assistant_message   — emitted for each assistant message content (line 564)
+5.  tool_call           — emitted when a tool is invoked (line 596)
+6.  tool_result         — emitted when a tool returns a result (line 603)
+7.  retry_started       — emitted when an API retry begins (line 608)
+8.  compaction_started  — emitted when context compaction begins (line 613)
+9.  context_usage       — emitted with context window usage data (line 622)
+10. exit_intercepted    — emitted when an exit attempt is intercepted (lines 656, 668, 681, 695)
+11. agent_exited        — emitted on clean agent exit (exitCode 0) (line 518, via exitEventType)
+12. agent_crashed       — emitted on unexpected agent exit (line 518, via exitEventType)
+13. agent_timeout       — emitted when agent times out (line 518, via exitEventType)
+14. agent_killed        — emitted when agent is killed (line 518, via exitEventType)
+
+Total: 14 unique event types
