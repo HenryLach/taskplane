@@ -11,14 +11,14 @@
 ---
 
 ### Step 0: Preflight
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Confirm this PROMPT.md and STATUS.md exist
 
 ---
 
 ### Step 1: Create Test Files
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Create `hello.txt` in this task folder with content "Runtime V2 works!"
 - [x] Create `fibonacci.txt` with the first 20 Fibonacci numbers, one per line
@@ -27,7 +27,7 @@
 ---
 
 ### Step 2: Code Analysis
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Read `extensions/taskplane/lane-runner.ts` and count exported functions; write to `analysis.txt`
 - [x] Read `extensions/taskplane/agent-host.ts` and list all emitEvent() event types; write to `events.txt`
@@ -35,7 +35,7 @@
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** ✅ Done
+**Status:** ✅ Complete
 
 - [x] Log completion in STATUS.md with a summary of all files created
 
@@ -66,6 +66,8 @@
 | 2026-04-14 | Step 1 completed | Created hello.txt, fibonacci.txt, summary.txt |
 | 2026-04-14 | Step 2 completed | Created analysis.txt (8 exported fns in lane-runner.ts), events.txt (14 event types in agent-host.ts) |
 | 2026-04-14 | Step 3 completed | Final delivery — all 5 output files created |
+| 2026-04-14 03:21 | Worker iter 1 | done in 158s, tools: 41 |
+| 2026-04-14 03:21 | Task complete | .DONE created |
 
 ---
 
