@@ -1,7 +1,7 @@
 # TP-179: Dashboard State and Server Fixes — Status
 
-**Current Step:** Step 3: Testing & Verification
-**Status:** 🟡 In Progress
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-14
 **Review Level:** 1
 **Review Counter:** 2
@@ -46,8 +46,8 @@
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Discoveries logged
+**Status:** ✅ Done
+- [x] Discoveries logged
 
 ---
 
@@ -62,6 +62,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| server.cjs already passes all JSONL fields — no server-side change needed | Verified | dashboard/server.cjs tailSupervisorJsonl |
+| Batch history lives at stateRoot (workspaceRoot) not repoRoot in workspace mode | Used for correct path in updateBatchHistoryIntegration | extensions/taskplane/extension.ts doOrchIntegrate |
+| performCleanup deleteBatchState is no-op in workspace mode (handled once after loop) | No change needed | extensions/taskplane/extension.ts L3256 |
 
 ---
 
