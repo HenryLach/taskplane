@@ -727,6 +727,16 @@ body {
 .task-progress-fill.pct-mid { background: var(--cyan); }
 .task-progress-fill.pct-hi  { background: var(--green); }
 
+/* TP-178: Pulsing indicator for executing tasks without sidecar progress (#494) */
+.task-progress-executing {
+  opacity: 0.4;
+  animation: executing-pulse 2s ease-in-out infinite;
+}
+@keyframes executing-pulse {
+  0%, 100% { opacity: 0.25; }
+  50% { opacity: 0.55; }
+}
+
 .task-progress-text {
   font-family: var(--font-mono);
   font-size: 0.75rem;

@@ -1,10 +1,10 @@
 # TP-178: Dashboard Display Fixes — Status
 
-**Current Step:** Step 5: Merge telemetry duplicated across waves (#498)
+**Current Step:** Step 6: No progress for non-final segments (#494)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-14
 **Review Level:** 1
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 1
 **Size:** L
 
@@ -54,9 +54,9 @@
 ---
 
 ### Step 6: No progress for non-final segments (#494)
-**Status:** ⬜ Not Started
-- [ ] Segment-scoped progress from sidecar
-- [ ] Fallback "executing" indicator
+**Status:** ✅ Complete
+- [x] Segment-scoped progress from sidecar
+- [x] Fallback "executing" indicator
 
 ---
 
@@ -128,3 +128,4 @@ All fixes in dashboard/public/app.js — no runtime code changes.
 | 2026-04-14 02:02 | Review R003 | plan Step 3: APPROVE |
 | 2026-04-14 02:03 | Review R004 | plan Step 4: APPROVE |
 | 2026-04-14 02:06 | Review R005 | plan Step 5: APPROVE |
+| 2026-04-14 02:09 | Review R006 | plan Step 6: APPROVE |

@@ -737,6 +737,14 @@ function renderLanesTasks(batch, sessions) {
             <div class="task-progress-bar"><div class="task-progress-fill pct-0" style="width:0%"></div></div>
             <span class="task-progress-text">0%</span>
           </div>`;
+      } else if (task.status === "running") {
+        // TP-178: Show executing indicator for running tasks without sidecar data (#494)
+        // This covers non-final segment execution where the sidecar hasn't started yet.
+        progressHtml = `
+          <div class="task-progress">
+            <div class="task-progress-bar"><div class="task-progress-fill pct-low task-progress-executing" style="width:100%"></div></div>
+            <span class="task-progress-text">executing…</span>
+          </div>`;
       } else {
         progressHtml = '<span style="color:var(--text-faint)">—</span>';
       }
