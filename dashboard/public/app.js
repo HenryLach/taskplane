@@ -1000,15 +1000,27 @@ function renderMergeAgents(batch, sessions) {
     const effectiveAlive = !!effectiveSession;
     if (effectiveSession) shownSessions.add(effectiveSession);
 
-    // Find merge telemetry: try sessions by lane number first
+    // TP-178: Find merge telemetry precisely using waveIndex (#498).
+    // First try matching by waveIndex from the telemetry entries (injected from merge snapshots).
+    // Then fall back to session-based matching (lane numbers), but never use a
+    // catch-all fallback that grabs any merge session's telemetry.
     let mergeTel = null;
-    for (const ln of waveLaneNums) {
-      const candidate = getMergeSessionName(ln);
-      if (telemetry[candidate]) { mergeTel = telemetry[candidate]; break; }
+    // Priority 1: Match by waveIndex in telemetry entries
+    for (const [telKey, tel] of Object.entries(telemetry)) {
+      if (tel._source === "merge-snapshot" && tel.waveIndex === mr.waveIndex) {
+        mergeTel = tel;
+        break;
+      }
     }
-    // Fallback: effective session telemetry or any merge session
+    // Priority 2: Match by lane number session
+    if (!mergeTel) {
+      for (const ln of waveLaneNums) {
+        const candidate = getMergeSessionName(ln);
+        if (telemetry[candidate]) { mergeTel = telemetry[candidate]; break; }
+      }
+    }
+    // Priority 3: Effective session telemetry only (no catch-all fallback)
     if (!mergeTel && effectiveSession) mergeTel = telemetry[effectiveSession] || null;
-    if (!mergeTel) mergeTel = mergeSessions.reduce((found, ms) => found || telemetry[ms] || null, null);
 
     html += `<tr>`;
     html += `<td class="merge-wave-cell">Wave ${mr.waveIndex + 1}</td>`;

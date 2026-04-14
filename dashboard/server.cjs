@@ -1153,6 +1153,8 @@ function buildDashboardState() {
         latestTotalTokens: (agent.inputTokens || 0) + (agent.outputTokens || 0),
         _updatedAt: snap.updatedAt,
         _source: "merge-snapshot",
+        // TP-178: Include waveIndex for precise wave-telemetry association (#498)
+        waveIndex: snap.waveIndex != null ? snap.waveIndex : undefined,
       };
     }
   }

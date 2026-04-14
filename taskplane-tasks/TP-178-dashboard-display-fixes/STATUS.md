@@ -1,10 +1,10 @@
 # TP-178: Dashboard Display Fixes — Status
 
-**Current Step:** Step 4: Wave indicators flash green during merge (#493)
+**Current Step:** Step 5: Merge telemetry duplicated across waves (#498)
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-14
 **Review Level:** 1
-**Review Counter:** 4
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** L
 
@@ -47,9 +47,9 @@
 ---
 
 ### Step 5: Merge telemetry duplicated across waves (#498)
-**Status:** ⬜ Not Started
-- [ ] Associate telemetry with correct wave via waveIndex
-- [ ] Only display on matching wave
+**Status:** ✅ Complete
+- [x] Associate telemetry with correct wave via waveIndex
+- [x] Only display on matching wave
 
 ---
 
@@ -127,3 +127,4 @@ All fixes in dashboard/public/app.js — no runtime code changes.
 | 2026-04-14 02:01 | Review R002 | plan Step 2: APPROVE |
 | 2026-04-14 02:02 | Review R003 | plan Step 3: APPROVE |
 | 2026-04-14 02:03 | Review R004 | plan Step 4: APPROVE |
+| 2026-04-14 02:06 | Review R005 | plan Step 5: APPROVE |
