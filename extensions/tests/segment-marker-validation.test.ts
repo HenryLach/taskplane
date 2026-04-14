@@ -22,7 +22,9 @@ function readPrompt(taskFolder: string): string {
 	return readFileSync(promptPath, "utf-8");
 }
 
-describe("TP-177: Polyrepo segment marker validation", () => {
+const WORKSPACE_EXISTS = existsSync(TASKS_ROOT);
+
+describe("TP-177: Polyrepo segment marker validation", { skip: !WORKSPACE_EXISTS && "polyrepo test workspace not available" }, () => {
 	// ── Single-segment tasks should have NO segment markers ──
 	describe("Single-segment tasks (no segment markers expected)", () => {
 		for (const task of [
