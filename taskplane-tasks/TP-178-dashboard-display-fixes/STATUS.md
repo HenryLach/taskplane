@@ -1,7 +1,7 @@
 # TP-178: Dashboard Display Fixes — Status
 
-**Current Step:** Step 7: Testing & Verification
-**Status:** 🟡 In Progress
+**Current Step:** Step 8: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-14
 **Review Level:** 1
 **Review Counter:** 6
@@ -68,8 +68,8 @@
 ---
 
 ### Step 8: Documentation & Delivery
-**Status:** ⬜ Not Started
-- [ ] Discoveries logged
+**Status:** ✅ Complete
+- [x] Discoveries logged
 
 ---
 
@@ -84,6 +84,9 @@
 
 | Discovery | Disposition | Location |
 |-----------|-------------|----------|
+| Step 3 (#491) was already partially fixed by TP-176 (progress cell). Step label fix was included in Step 2's implementation by reordering the succeeded check. | Resolved in-scope | dashboard/public/app.js |
+| server.cjs merge snapshot injection didn't include waveIndex, needed for precise wave-telemetry association | Fixed in Step 5 | dashboard/server.cjs |
+| style.css needed new animations for merge-pulse and executing-pulse states | Added in Steps 4 & 6 | dashboard/public/style.css |
 
 ---
 
@@ -94,6 +97,16 @@
 | 2026-04-13 | Task staged | PROMPT.md and STATUS.md created |
 | 2026-04-14 01:55 | Task started | Runtime V2 lane-runner execution |
 | 2026-04-14 01:55 | Step 0 started | Preflight |
+| 2026-04-14 | Step 0 complete | Architecture analysis documented |
+| 2026-04-14 | Step 1 complete | Stale viewer cleared on batch change (#487) |
+| 2026-04-14 | Step 2 complete | V2 snapshot step label preferred (#488) |
+| 2026-04-14 | Step 3 complete | Succeeded tasks show 100% and Complete (#491) |
+| 2026-04-14 | Step 4 complete | Wave indicators show merging state (#493) |
+| 2026-04-14 | Step 5 complete | Merge telemetry associated by waveIndex (#498) |
+| 2026-04-14 | Step 6 complete | Executing indicator for non-final segments (#494) |
+| 2026-04-14 | Step 7 complete | All 3379 tests passing |
+| 2026-04-14 | Step 8 complete | Discoveries logged |
+| 2026-04-14 | Task complete | All 6 display bugs fixed |
 
 ---
 
