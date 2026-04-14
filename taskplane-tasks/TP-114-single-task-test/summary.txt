@@ -1,0 +1,27 @@
+Runtime V2 is a redesign of Taskplane's runtime control plane that replaces the
+fragile TMUX-based process management with a deterministic Node.js process
+hierarchy. The core motivation is that the original architecture layered too many
+overlapping processes—operator sessions spawning orchestrator extensions spawning
+TMUX lane sessions spawning RPC wrappers spawning Pi workers—leading to ambiguous
+ownership, transport inversion, and correctness dependencies on terminal
+infrastructure. Runtime V2 keeps the durable data plane (PROMPT.md, STATUS.md,
+.DONE, batch-state.json, dependency DAG, waves, lanes, and worktrees) while
+replacing the control plane with a clean parent-child process tree.
+
+The new architecture introduces four key components: the extension (command
+surface and supervisor routing), the engine process (discovery, DAG planning,
+lane allocation, and aggregate policy), the lane-runner process (deterministic
+per-lane task execution, STATUS parsing, step progression, and reviewer
+orchestration), and the agent-host process (Pi subprocess lifecycle, RPC event
+parsing, telemetry normalization, and mailbox injection). The fundamental
+invariant is that every spawned process has exactly one deterministic owner,
+eliminating the need to infer liveness from TMUX server state.
+
+Runtime V2 also introduces a batch-scoped runtime storage layout under
+.pi/runtime/{batchId}/ for agent manifests, event streams, and lane snapshots.
+Steering flows through the mailbox system rather than terminal manipulation, and
+the dashboard renders conversations from structured event logs instead of pane
+capture. The /task command path is deprecated in favor of /orch as the
+authoritative execution path, even for single tasks. Success is defined by
+eliminating all TMUX dependencies for worker/reviewer/merge lifecycle, dashboard
+visibility, agent messaging, and lane execution.
