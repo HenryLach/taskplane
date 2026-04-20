@@ -756,7 +756,6 @@ export async function spawnMergeAgentV2(
 	}
 	const mergeNumber = mergeNumberMatch ? parseInt(mergeNumberMatch[1], 10) : 1;
 	const mergeStartedAt = Date.now();
-	const mergeStateRoot = stateRoot ?? repoRoot;
 
 	// Helper: build a RuntimeAgentTelemetrySnapshot from a partial AgentHostResult.
 	const buildAgentSnap = (tel: Partial<AgentHostResult>, status: RuntimeAgentTelemetrySnapshot["status"]): RuntimeAgentTelemetrySnapshot => ({

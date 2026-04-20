@@ -456,7 +456,12 @@ export default function (pi: ExtensionAPI) {
 			let reviewerExclusions: string[] = [];
 			try {
 				const rawExclude = process.env.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS;
-				if (rawExclude) reviewerExclusions = JSON.parse(rawExclude);
+				if (rawExclude) {
+					const parsed = JSON.parse(rawExclude);
+					if (Array.isArray(parsed)) {
+						reviewerExclusions = parsed.filter((v: unknown): v is string => typeof v === "string");
+					}
+				}
 			} catch { /* ignore malformed */ }
 			const filteredReviewerPackages = filterExcludedExtensions(reviewerPackages, reviewerExclusions);
 			for (const pkg of filteredReviewerPackages) {
