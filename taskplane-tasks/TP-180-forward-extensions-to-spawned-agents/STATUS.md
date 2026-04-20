@@ -1,10 +1,10 @@
 # TP-180: Forward Project and Global Extensions to Spawned Agents — Status
 
-**Current Step:** Step 2: Add per-agent-type exclusion config
+**Current Step:** Step 3: Wire extensions into all three spawn points
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-20
 **Review Level:** 2
-**Review Counter:** 3
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** L
 
@@ -44,7 +44,7 @@
 ---
 
 ### Step 3: Wire extensions into all three spawn points
-**Status:** ⬜ Not Started
+**Status:** 🟨 In Progress
 
 - [ ] Worker: inject packages into `extensions` array in lane-runner.ts
 - [ ] Reviewer: add `-e` flags to spawn args in agent-bridge-extension.ts
@@ -119,3 +119,4 @@
 | 2026-04-20 21:44 | Review R001 | plan Step 1: APPROVE |
 | 2026-04-20 21:46 | Review R002 | code Step 1: APPROVE |
 | 2026-04-20 21:48 | Review R003 | plan Step 2: APPROVE |
+| 2026-04-20 21:52 | Review R004 | code Step 2: APPROVE |
