@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-20
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** L
 
@@ -21,14 +21,14 @@
 ---
 
 ### Step 1: Create settings-loader utility
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Implement `loadPiSettingsPackages(stateRoot)` — project `.pi/settings.json`
-- [ ] Implement global packages loading from `~/.pi/agent/settings.json`
-- [ ] Merge: union, deduplicated, project first
-- [ ] Filter out taskplane packages
-- [ ] Return `string[]` specifiers or empty array
-- [ ] Handle missing/malformed files gracefully
+- [x] Implement `loadPiSettingsPackages(stateRoot)` — project `.pi/settings.json`
+- [x] Implement global packages loading from `~/.pi/agent/settings.json`
+- [x] Merge: union, deduplicated, project first
+- [x] Filter out taskplane packages
+- [x] Return `string[]` specifiers or empty array
+- [x] Handle missing/malformed files gracefully
 
 ---
 
@@ -116,3 +116,4 @@
 ## Notes
 
 *Reserved for execution notes*
+| 2026-04-20 21:44 | Review R001 | plan Step 1: APPROVE |
