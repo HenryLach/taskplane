@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-20
 **Review Level:** 2
-**Review Counter:** 5
+**Review Counter:** 6
 **Iteration:** 1
 **Size:** L
 
@@ -44,12 +44,12 @@
 ---
 
 ### Step 3: Wire extensions into all three spawn points
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Worker: inject packages into `extensions` array in lane-runner.ts
-- [ ] Reviewer: thread state root via env for settings resolution, add `-e` flags in agent-bridge-extension.ts
-- [ ] Merge agent: add `extensions` field to opts in merge.ts
-- [ ] Thread exclusion config to each spawn point
+- [x] Worker: inject packages into `extensions` array in lane-runner.ts
+- [x] Reviewer: thread state root via env for settings resolution, add `-e` flags in agent-bridge-extension.ts
+- [x] Merge agent: add `extensions` field to opts in merge.ts
+- [x] Thread exclusion config to each spawn point
 
 ---
 
@@ -121,3 +121,4 @@
 | 2026-04-20 21:48 | Review R003 | plan Step 2: APPROVE |
 | 2026-04-20 21:52 | Review R004 | code Step 2: APPROVE |
 | 2026-04-20 21:55 | Review R005 | plan Step 3: REVISE |
+| 2026-04-20 21:56 | Review R006 | plan Step 3: APPROVE |

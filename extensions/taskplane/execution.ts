@@ -1754,7 +1754,8 @@ export async function executeWave(
 	runtimeBackend?: RuntimeBackend,
 	onSupervisorAlert?: SupervisorAlertCallback,
 	supervisorAutonomy: "interactive" | "supervised" | "autonomous" = "autonomous",
-	reviewerConfig?: { model?: string; thinking?: string; tools?: string },
+	reviewerConfig?: { model?: string; thinking?: string; tools?: string; excludeExtensions?: string[] },
+	workerExcludeExtensions?: string[],
 ): Promise<WaveExecutionResult> {
 	const startedAt = Date.now();
 	const policy = config.failure.on_task_failure;
@@ -1862,6 +1863,7 @@ export async function executeWave(
 			ORCH_BATCH_ID: batchId,
 			TASKPLANE_SUPERVISOR_AUTONOMY: supervisorAutonomy,
 			...buildReviewerEnv(reviewerConfig),
+			...buildWorkerExcludeEnv(workerExcludeExtensions),
 		}, onSupervisorAlert),
 	);
 
@@ -2503,13 +2505,44 @@ import { executeTaskV2, type LaneRunnerConfig, type LaneRunnerTaskResult } from 
  *
  * @since TP-160
  */
+/**
+ * Parse a JSON string array from an env var value, returning empty array on failure.
+ * @since TP-180
+ */
+function parseJsonArrayEnv(value?: string): string[] {
+	if (!value) return [];
+	try {
+		const parsed = JSON.parse(value);
+		if (Array.isArray(parsed)) return parsed.filter((v: unknown): v is string => typeof v === "string");
+	} catch { /* ignore malformed */ }
+	return [];
+}
+
 export function buildReviewerEnv(
-	reviewerConfig?: { model?: string; thinking?: string; tools?: string } | null,
+	reviewerConfig?: { model?: string; thinking?: string; tools?: string; excludeExtensions?: string[] } | null,
 ): Record<string, string> {
 	const env: Record<string, string> = {};
 	if (reviewerConfig?.model) env.TASKPLANE_REVIEWER_MODEL = reviewerConfig.model;
 	if (reviewerConfig?.thinking) env.TASKPLANE_REVIEWER_THINKING = reviewerConfig.thinking;
 	if (reviewerConfig?.tools) env.TASKPLANE_REVIEWER_TOOLS = reviewerConfig.tools;
+	// TP-180: Forward reviewer extension exclusions as JSON array
+	if (reviewerConfig?.excludeExtensions && reviewerConfig.excludeExtensions.length > 0) {
+		env.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS = JSON.stringify(reviewerConfig.excludeExtensions);
+	}
+	return env;
+}
+
+/**
+ * Build worker extension exclusion env vars from config.
+ * @since TP-180
+ */
+export function buildWorkerExcludeEnv(
+	workerExcludeExtensions?: string[] | null,
+): Record<string, string> {
+	const env: Record<string, string> = {};
+	if (workerExcludeExtensions && workerExcludeExtensions.length > 0) {
+		env.TASKPLANE_WORKER_EXCLUDE_EXTENSIONS = JSON.stringify(workerExcludeExtensions);
+	}
 	return env;
 }
 
@@ -2606,6 +2639,9 @@ export async function executeLaneV2(
 			reviewerModel: extraEnvVars?.TASKPLANE_REVIEWER_MODEL || "",
 			reviewerThinking: extraEnvVars?.TASKPLANE_REVIEWER_THINKING || "",
 			reviewerTools: extraEnvVars?.TASKPLANE_REVIEWER_TOOLS || "",
+			// TP-180: Extension exclusion lists from config
+			workerExcludeExtensions: parseJsonArrayEnv(extraEnvVars?.TASKPLANE_WORKER_EXCLUDE_EXTENSIONS),
+			reviewerExcludeExtensions: parseJsonArrayEnv(extraEnvVars?.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS),
 			supervisorAutonomy,
 			projectName: config.project?.name || "project",
 			maxIterations: 20,

@@ -33,6 +33,7 @@ import {
 } from "./task-executor-core.ts";
 
 import { spawnAgent, type AgentHostOptions, type AgentHostResult } from "./agent-host.ts";
+import { loadPiSettingsPackages, filterExcludedExtensions } from "./settings-loader.ts";
 
 import {
 	appendAgentEvent,
@@ -222,6 +223,10 @@ export interface LaneRunnerConfig {
 	supervisorAutonomy?: "interactive" | "supervised" | "autonomous";
 	/** Project name (for review request context) */
 	projectName?: string;
+	/** Package specifiers to exclude from worker extension forwarding (exact match). @since TP-180 */
+	workerExcludeExtensions?: string[];
+	/** Package specifiers to exclude from reviewer extension forwarding (exact match). @since TP-180 */
+	reviewerExcludeExtensions?: string[];
 	/** Max worker iterations before giving up */
 	maxIterations: number;
 	/** No-progress stall limit */
@@ -555,6 +560,10 @@ export async function executeTaskV2(
 		const outboxDir = join(config.stateRoot, ".pi", "mailbox", config.batchId, workerAgentId, "outbox");
 		const bridgeExtensionPath = join(LANE_RUNNER_DIR, "agent-bridge-extension.ts");
 
+		// TP-180: Forward user-installed extensions to worker agent
+		const allPackages = loadPiSettingsPackages(config.stateRoot);
+		const workerPackages = filterExcludedExtensions(allPackages, config.workerExcludeExtensions ?? []);
+
 		const hostOpts: AgentHostOptions = {
 			agentId: workerAgentId,
 			role: "worker",
@@ -577,7 +586,7 @@ export async function executeTaskV2(
 			timeoutMs: config.maxWorkerMinutes * 60_000,
 			stateRoot: config.stateRoot,
 			packet: unit.packet,
-			extensions: [bridgeExtensionPath],
+			extensions: [bridgeExtensionPath, ...workerPackages],
 			env: {
 				TASKPLANE_OUTBOX_DIR: outboxDir,
 				TASKPLANE_AGENT_ID: workerAgentId,
@@ -597,6 +606,11 @@ export async function executeTaskV2(
 				...(config.reviewerModel ? { TASKPLANE_REVIEWER_MODEL: config.reviewerModel } : {}),
 				...(config.reviewerThinking ? { TASKPLANE_REVIEWER_THINKING: config.reviewerThinking } : {}),
 				...(config.reviewerTools ? { TASKPLANE_REVIEWER_TOOLS: config.reviewerTools } : {}),
+				// TP-180: Pass state root and reviewer exclusions for extension forwarding
+				TASKPLANE_STATE_ROOT: config.stateRoot,
+				...(config.reviewerExcludeExtensions && config.reviewerExcludeExtensions.length > 0
+					? { TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS: JSON.stringify(config.reviewerExcludeExtensions) }
+					: {}),
 			},
 			// TP-172: Exit interception callback — escalate to supervisor when worker
 			// exits without making visible progress (no checkboxes, no blocker logged).

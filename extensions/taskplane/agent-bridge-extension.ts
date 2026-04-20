@@ -27,6 +27,7 @@ import { writeFileSync, readFileSync, existsSync, mkdirSync, renameSync, unlinkS
 import { join, dirname } from "path";
 import { spawn as nodeSpawn } from "child_process";
 import { resolvePiCliPath, resolveTaskplaneAgentTemplate } from "./path-resolver.ts";
+import { loadPiSettingsPackages, filterExcludedExtensions } from "./settings-loader.ts";
 import { randomBytes } from "crypto";
 import { buildExpansionRequestId, type SegmentExpansionRequest } from "./types.ts";
 
@@ -445,6 +446,22 @@ export default function (pi: ExtensionAPI) {
 			];
 			if (reviewerModel) args.push("--model", reviewerModel);
 			if (reviewerThinking) args.push("--thinking", reviewerThinking);
+
+			// TP-180: Forward user-installed extensions to reviewer agent
+			// Use TASKPLANE_STATE_ROOT (canonical project root) for settings resolution,
+			// falling back to cwd (which may be a worktree without .pi/settings.json).
+			const settingsRoot = process.env.TASKPLANE_STATE_ROOT || cwd;
+			const reviewerPackages = loadPiSettingsPackages(settingsRoot);
+			// Apply reviewer-specific exclusions from config (JSON array via env)
+			let reviewerExclusions: string[] = [];
+			try {
+				const rawExclude = process.env.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS;
+				if (rawExclude) reviewerExclusions = JSON.parse(rawExclude);
+			} catch { /* ignore malformed */ }
+			const filteredReviewerPackages = filterExcludedExtensions(reviewerPackages, reviewerExclusions);
+			for (const pkg of filteredReviewerPackages) {
+				args.push("-e", pkg);
+			}
 			const proc = nodeSpawn(process.execPath, args, {
 				shell: false,
 				cwd,

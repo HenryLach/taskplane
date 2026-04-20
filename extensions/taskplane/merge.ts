@@ -21,6 +21,7 @@ import { loadOrchestratorConfig } from "./config.ts";
 import { captureBaseline, diffFingerprints, runVerificationCommands, parseTestOutput, deduplicateFingerprints } from "./verification.ts";
 import { spawnAgent } from "./agent-host.ts";
 import type { AgentHostOptions, AgentHostResult, AgentTelemetryCallback } from "./agent-host.ts";
+import { loadPiSettingsPackages, filterExcludedExtensions } from "./settings-loader.ts";
 import type { RuntimeBackend } from "./execution.ts";
 import type { VerificationBaseline, FingerprintDiff, TestFingerprint } from "./verification.ts";
 
@@ -716,6 +717,12 @@ export async function spawnMergeAgentV2(
 		mkdirSync(join(mailboxDir, "inbox"), { recursive: true });
 	}
 
+	// TP-180: Forward user-installed extensions to merge agent
+	const mergeStateRoot = stateRoot ?? repoRoot;
+	const allMergePackages = loadPiSettingsPackages(mergeStateRoot);
+	const mergeExclusions = config.merge.exclude_extensions ?? [];
+	const mergePackages = filterExcludedExtensions(allMergePackages, mergeExclusions);
+
 	const opts: AgentHostOptions = {
 		agentId: sessionName,
 		role: "merger",
@@ -733,8 +740,9 @@ export async function spawnMergeAgentV2(
 		eventsPath,
 		exitSummaryPath,
 		timeoutMs: (config.merge.timeout_minutes ?? 10) * 60 * 1000,
-		stateRoot: stateRoot ?? repoRoot,
+		stateRoot: mergeStateRoot,
 		packet: null,
+		...(mergePackages.length > 0 ? { extensions: mergePackages } : {}),
 		env: {
 			ORCH_BATCH_ID: bid,
 		},
