@@ -4,7 +4,7 @@
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-20
 **Review Level:** 2
-**Review Counter:** 8
+**Review Counter:** 9
 **Iteration:** 1
 **Size:** L
 
@@ -54,13 +54,13 @@
 ---
 
 ### Step 4: Add Settings TUI submenu
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
-- [ ] Discover installed packages via `loadPiSettingsPackages()`
-- [ ] Display toggle list per agent type (Worker, Reviewer, Merger)
-- [ ] Toggle off → add to `excludeExtensions`; toggle on → remove
-- [ ] Save to `taskplane-config.json`
-- [ ] Follow existing settings-tui save/reload patterns
+- [x] Discover installed packages via `loadPiSettingsPackages()`
+- [x] Display toggle list per agent type (Worker, Reviewer, Merger)
+- [x] Toggle off → add to `excludeExtensions`; toggle on → remove
+- [x] Save to `taskplane-config.json`
+- [x] Follow existing settings-tui save/reload patterns
 
 ---
 
@@ -124,3 +124,4 @@
 | 2026-04-20 21:56 | Review R006 | plan Step 3: APPROVE |
 | 2026-04-20 22:05 | Review R007 | code Step 3: REVISE |
 | 2026-04-20 22:10 | Review R008 | code Step 3: APPROVE |
+| 2026-04-20 22:12 | Review R009 | plan Step 4: APPROVE |

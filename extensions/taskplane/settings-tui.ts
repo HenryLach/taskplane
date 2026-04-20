@@ -2,7 +2,7 @@
  * Settings TUI — interactive configuration viewer and editor.
  *
  * Provides a `/taskplane-settings` command that renders a two-level navigation:
- *   1. Section selector (13 sections)
+ *   1. Section selector (14 sections)
  *   2. Per-section SettingsList with field display, source badges,
  *      and inline editing for enum/boolean/string/number fields
  *
@@ -38,6 +38,7 @@ import {
 	resolveConfigRoot,
 	resolveGlobalPreferencesPath,
 } from "./config-loader.ts";
+import { loadPiSettingsPackages } from "./settings-loader.ts";
 
 
 // ── Types ────────────────────────────────────────────────────────────
@@ -87,7 +88,7 @@ export interface SectionDef {
 // ── Section & Field Definitions ──────────────────────────────────────
 
 /**
- * Canonical navigation map — 13 sections.
+ * Canonical navigation map — 14 sections.
  * Order matches the Step 1 design in STATUS.md.
  */
 export const SECTIONS: SectionDef[] = [
@@ -135,6 +136,11 @@ export const SECTIONS: SectionDef[] = [
 			{ configPath: "orchestrator.merge.order", label: "Merge Order", control: "toggle", layer: "L1", fieldType: "enum", values: ["fewest-files-first", "sequential"], description: "Lane merge ordering policy" },
 			{ configPath: "orchestrator.merge.timeoutMinutes", label: "Merge Timeout (minutes)", control: "input", layer: "L1", fieldType: "number", description: "Max time for merge agent to complete. Increase for large batches (default: 10)" },
 		],
+	},
+	{
+		name: "Agent Extensions",
+		readOnly: true,  // Dynamically handled — no fixed fields
+		fields: [],
 	},
 	{
 		name: "Context Limits",
@@ -1252,7 +1258,9 @@ async function showSectionSelectorLoop(
 		const sectionIndex = parseInt(selectedSection, 10);
 		const section = SECTIONS[sectionIndex];
 
-		if (section.readOnly) {
+		if (section.name === "Agent Extensions") {
+			await showExtensionsSection(ctx, configRoot, pointerConfigRoot, onConfigChanged);
+		} else if (section.readOnly) {
 			await showAdvancedSection(ctx, state.mergedConfig);
 		} else {
 			await showSectionSettingsLoop(ctx, section, configRoot, pointerConfigRoot, onConfigChanged);
@@ -1310,6 +1318,142 @@ async function showAdvancedSection(
 			handleInput: (data: string) => { settingsList.handleInput?.(data); tui.requestRender(); },
 		};
 	});
+}
+
+/**
+ * TP-180: Agent Extensions section — toggle extensions per agent type.
+ *
+ * Discovers all installed Pi extension packages from project + global settings,
+ * shows per-agent-type toggles (Worker, Reviewer, Merger), and saves
+ * exclusion changes to project taskplane-config.json.
+ */
+async function showExtensionsSection(
+	ctx: ExtensionContext,
+	configRoot: string,
+	pointerConfigRoot?: string,
+	onConfigChanged?: () => void,
+): Promise<void> {
+	while (true) {
+		const resolvedRoot = resolveConfigRoot(configRoot, pointerConfigRoot);
+		const mergedConfig = loadProjectConfig(configRoot, pointerConfigRoot);
+
+		// Discover installed packages (excluding taskplane itself)
+		const packages = loadPiSettingsPackages(resolvedRoot);
+
+		if (packages.length === 0) {
+			await ctx.ui.custom((_tui, theme, _kb, done) => {
+				const container = new Container();
+				container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+				container.addChild(new Text(theme.fg("accent", theme.bold("Agent Extensions")), 1, 0));
+				container.addChild(new Text("", 0, 0));
+				container.addChild(new Text(theme.fg("dim", "No third-party extensions found."), 1, 0));
+				container.addChild(new Text(theme.fg("dim", "Install extensions via pi settings to see them here."), 1, 0));
+				container.addChild(new Text("", 0, 0));
+				container.addChild(new Text(theme.fg("dim", "esc back"), 1, 0));
+				container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+				return {
+					render: (w: number) => container.render(w),
+					invalidate: () => container.invalidate(),
+					handleInput: (data: string) => { if (data === "\x1b" || data === "\x1b\x1b") done(undefined); },
+				};
+			});
+			return;
+		}
+
+		// Read current exclusion lists
+		const workerExclude = new Set(mergedConfig.taskRunner.worker.excludeExtensions ?? []);
+		const reviewerExclude = new Set(mergedConfig.taskRunner.reviewer.excludeExtensions ?? []);
+		const mergeExclude = new Set(mergedConfig.orchestrator.merge.excludeExtensions ?? []);
+
+		const agentTypes = [
+			{ name: "Worker", exclude: workerExclude, configPath: "taskRunner.worker.excludeExtensions" },
+			{ name: "Reviewer", exclude: reviewerExclude, configPath: "taskRunner.reviewer.excludeExtensions" },
+			{ name: "Merger", exclude: mergeExclude, configPath: "orchestrator.merge.excludeExtensions" },
+		];
+
+		// Build toggle items: one per package per agent type
+		const settingsItems: SettingItem[] = [];
+		for (const pkg of packages) {
+			for (const agentType of agentTypes) {
+				const isExcluded = agentType.exclude.has(pkg);
+				const enabled = !isExcluded;
+				settingsItems.push({
+					id: `${agentType.configPath}::${pkg}`,
+					label: `${pkg}`,
+					currentValue: enabled ? "✅ enabled" : "❌ disabled",
+					description: agentType.name,
+					values: [enabled ? "❌ disabled" : "✅ enabled"],
+				});
+			}
+		}
+
+		const result = await ctx.ui.custom<{ id: string; value: string } | null>((tui, theme, _kb, done) => {
+			const container = new Container();
+			container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+			container.addChild(new Text(theme.fg("accent", theme.bold("Agent Extensions")), 1, 0));
+			container.addChild(new Text(theme.fg("dim", "Toggle extensions on/off per agent type"), 1, 0));
+			container.addChild(new Text("", 0, 0));
+
+			const settingsList = new SettingsList(
+				settingsItems,
+				Math.min(settingsItems.length + 2, 20),
+				getSettingsListTheme(),
+				(id, newValue) => done({ id, value: newValue }),
+				() => done(null),
+			);
+			container.addChild(settingsList);
+
+			container.addChild(new Text("", 0, 0));
+			container.addChild(new Text(theme.fg("dim", "↑↓ navigate • space toggle • esc back"), 1, 0));
+			container.addChild(new DynamicBorder((s: string) => theme.fg("accent", s)));
+
+			return {
+				render: (w: number) => container.render(w),
+				invalidate: () => container.invalidate(),
+				handleInput: (data: string) => { settingsList.handleInput?.(data); tui.requestRender(); },
+			};
+		});
+
+		if (!result) return; // User pressed Esc
+
+		// Parse the toggle result
+		const [configPath, pkg] = result.id.split("::", 2);
+		if (!configPath || !pkg) continue;
+
+		const enabling = result.value.includes("enabled");
+
+		// Read current exclusion array from config
+		const currentExcludeList: string[] = getNestedValue(
+			readRawProjectJson(resolvedRoot) ?? {},
+			configPath,
+		) ?? [];
+
+		let newExcludeList: string[];
+		if (enabling) {
+			// Remove from exclusions → enable
+			newExcludeList = currentExcludeList.filter((e: string) => e !== pkg);
+		} else {
+			// Add to exclusions → disable
+			newExcludeList = currentExcludeList.includes(pkg)
+				? currentExcludeList
+				: [...currentExcludeList, pkg];
+		}
+
+		try {
+			writeProjectConfigField(configRoot, configPath, newExcludeList, pointerConfigRoot);
+			if (onConfigChanged) {
+				try { onConfigChanged(); } catch { /* non-fatal */ }
+			}
+			ctx.ui.notify(
+				`${enabling ? "✅ Enabled" : "❌ Disabled"} ${pkg} for ${configPath.includes("worker") ? "Worker" : configPath.includes("reviewer") ? "Reviewer" : "Merger"}`,
+				"info",
+			);
+		} catch (err: any) {
+			ctx.ui.notify(`❌ Failed to save: ${err.message}`, "error");
+		}
+
+		// Loop continues → re-render with fresh state
+	}
 }
 
 /**
