@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.4] - 2026-04-20
+
+### Fixed
+
+- **Settings TUI: Agent Extensions description:** Shows "Toggle extensions per
+  agent type" instead of generic "Read-only collection/record fields" label.
+
 ## [0.28.3] - 2026-04-20
 
 ### New
