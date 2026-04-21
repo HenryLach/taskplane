@@ -102,6 +102,7 @@ export const SECTIONS: SectionDef[] = [
 			{ configPath: "orchestrator.orchestrator.sessionPrefix", label: "Session Prefix", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "sessionPrefix", description: "Prefix for orchestrator session names" },
 			{ configPath: "orchestrator.orchestrator.operatorId", label: "Operator ID", control: "input", layer: "L1+L2", fieldType: "string", prefsKey: "operatorId", description: "Operator identifier (empty = auto-detect)" },
 			{ configPath: "orchestrator.orchestrator.integration", label: "Integration", control: "picker", layer: "L1", fieldType: "enum", values: ["manual", "supervised", "auto"], description: "How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking." },
+			{ configPath: "orchestrator.orchestrator.submoduleRepoIdStrategy", label: "Submodule Repo IDs", control: "picker", layer: "L1", fieldType: "enum", values: ["path-basename"], description: "How workspace repo IDs are derived when importing undeclared submodules." },
 		],
 	},
 	{
@@ -159,6 +160,8 @@ export const SECTIONS: SectionDef[] = [
 		fields: [
 			{ configPath: "orchestrator.failure.onTaskFailure", label: "On Task Failure", control: "toggle", layer: "L1", fieldType: "enum", values: ["skip-dependents", "stop-wave", "stop-all"], description: "Batch behavior when a task fails" },
 			{ configPath: "orchestrator.failure.onMergeFailure", label: "On Merge Failure", control: "toggle", layer: "L1", fieldType: "enum", values: ["pause", "abort"], description: "Behavior when a merge step fails" },
+			{ configPath: "orchestrator.failure.submoduleFailureMode", label: "Submodule Failure Mode", control: "toggle", layer: "L1", fieldType: "enum", values: ["permissive", "strict"], description: "Whether submodule findings warn or block orchestrator startup" },
+			{ configPath: "orchestrator.failure.onSubmoduleDrift", label: "On Submodule Drift", control: "picker", layer: "L1", fieldType: "enum", values: ["manual", "init-only", "recursive-on-drift"], description: "How planner sync should reconcile submodule drift and init gaps" },
 			{ configPath: "orchestrator.failure.stallTimeout", label: "Stall Timeout (min)", control: "input", layer: "L1", fieldType: "number", description: "Stall detection threshold (minutes)" },
 			{ configPath: "orchestrator.failure.maxWorkerMinutes", label: "Max Worker Min", control: "input", layer: "L1", fieldType: "number", description: "Max worker runtime budget per task (minutes)" },
 			{ configPath: "orchestrator.failure.abortGracePeriod", label: "Abort Grace (sec)", control: "input", layer: "L1", fieldType: "number", description: "Graceful abort wait time (seconds)" },
@@ -576,6 +579,13 @@ function getNestedValue(obj: any, path: string): any {
 	return current;
 }
 
+function getDefaultFieldValue(field: FieldDef): any {
+	const explicitDefault = getNestedValue(DEFAULT_PROJECT_CONFIG, field.configPath);
+	if (explicitDefault !== undefined) return explicitDefault;
+
+	return undefined;
+}
+
 /**
  * Determine the source of a field's current value.
  *
@@ -615,8 +625,11 @@ export function getFieldDisplayValue(
 
 	const val = getNestedValue(mergedConfig, field.configPath);
 
-	// Optional fields may be undefined
 	if (val === undefined) {
+		const defaultVal = getDefaultFieldValue(field);
+		if (defaultVal !== undefined) {
+			return String(defaultVal);
+		}
 		return "(not set)";
 	}
 

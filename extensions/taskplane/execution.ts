@@ -208,6 +208,64 @@ function laneSessionIdOf(lane: Pick<AllocatedLane, "laneSessionId">): string {
 	return lane.laneSessionId;
 }
 
+function appendRepoIdCandidate(
+	orderedRepoIds: string[],
+	seenRepoIds: Set<string>,
+	repoId: string | undefined,
+): void {
+	if (!repoId || seenRepoIds.has(repoId)) return;
+	seenRepoIds.add(repoId);
+	orderedRepoIds.push(repoId);
+}
+
+export function buildExecutionRepoPaths(
+	task: ParsedTask,
+	executionRepoId: string,
+	packetHomeRepoId: string,
+	worktreePath: string,
+	repoRoot: string,
+	workspaceConfig?: WorkspaceConfig | null,
+): Record<string, string> {
+	const orderedRepoIds: string[] = [];
+	const seenRepoIds = new Set<string>();
+
+	for (const repoId of task.participatingRepoIds ?? []) {
+		appendRepoIdCandidate(orderedRepoIds, seenRepoIds, repoId);
+	}
+	for (const repoId of task.promptRepoIds ?? []) {
+		appendRepoIdCandidate(orderedRepoIds, seenRepoIds, repoId);
+	}
+	for (const repoId of task.explicitSegmentDag?.repoIds ?? []) {
+		appendRepoIdCandidate(orderedRepoIds, seenRepoIds, repoId);
+	}
+	appendRepoIdCandidate(orderedRepoIds, seenRepoIds, task.promptRepoId);
+	appendRepoIdCandidate(orderedRepoIds, seenRepoIds, task.resolvedRepoId);
+	appendRepoIdCandidate(orderedRepoIds, seenRepoIds, packetHomeRepoId);
+	appendRepoIdCandidate(orderedRepoIds, seenRepoIds, executionRepoId);
+
+	const repoPaths: Record<string, string> = {};
+	for (const repoId of orderedRepoIds) {
+		if (repoId === executionRepoId) {
+			repoPaths[repoId] = worktreePath;
+			continue;
+		}
+		const repoPath = workspaceConfig?.repos.get(repoId)?.path;
+		if (repoPath) {
+			repoPaths[repoId] = repoPath;
+			continue;
+		}
+		if (!workspaceConfig && repoId === packetHomeRepoId) {
+			repoPaths[repoId] = repoRoot;
+		}
+	}
+
+	if (!repoPaths[executionRepoId]) {
+		repoPaths[executionRepoId] = worktreePath;
+	}
+
+	return repoPaths;
+}
+
 /**
  * Resolve the lane session log path for a task execution.
  *
@@ -331,6 +389,14 @@ export interface ResolvedTaskPaths {
 	statusPath: string;
 }
 
+function normalizePortablePath(pathValue: string): string {
+	const normalized = pathValue.replace(/\\/g, "/");
+	if (/^[A-Za-z]:\//.test(normalized)) {
+		return normalized;
+	}
+	return resolve(normalized).replace(/\\/g, "/");
+}
+
 /**
  * Canonical task-folder path resolver.
  *
@@ -362,8 +428,9 @@ export function resolveCanonicalTaskPaths(
 	repoRoot: string,
 	isWorkspaceMode?: boolean,
 ): ResolvedTaskPaths {
-	const repoRootNorm = resolve(repoRoot).replace(/\\/g, "/");
-	const folderNorm = resolve(taskFolder).replace(/\\/g, "/");
+	const repoRootNorm = normalizePortablePath(repoRoot);
+	const folderNorm = normalizePortablePath(taskFolder);
+	const worktreeRootNorm = normalizePortablePath(worktreePath);
 
 	let resolvedFolder: string;
 
@@ -373,21 +440,21 @@ export function resolveCanonicalTaskPaths(
 		// the worktree, so the engine must look there too.
 		if (folderNorm.startsWith(repoRootNorm + "/")) {
 			const relPath = folderNorm.slice(repoRootNorm.length + 1);
-			resolvedFolder = join(worktreePath, relPath);
+			resolvedFolder = join(worktreeRootNorm, relPath);
 		} else {
 			// Cross-repo: task files were copied into the worktree under
 			// .taskplane-tasks/<taskDirName>/ by buildLaneEnvVars
-			const taskDirName = basename(resolve(taskFolder));
-			resolvedFolder = join(worktreePath, ".taskplane-tasks", taskDirName);
+			const taskDirName = basename(folderNorm);
+			resolvedFolder = join(worktreeRootNorm, ".taskplane-tasks", taskDirName);
 		}
 	} else if (folderNorm.startsWith(repoRootNorm + "/")) {
 		// Repo mode: task folder is inside the repo root.
 		// Translate to equivalent path in the worktree.
 		const relativePath = folderNorm.slice(repoRootNorm.length + 1);
-		resolvedFolder = join(worktreePath, relativePath);
+		resolvedFolder = join(worktreeRootNorm, relativePath);
 	} else {
 		// Fallback: use absolute path directly.
-		resolvedFolder = resolve(taskFolder);
+		resolvedFolder = folderNorm;
 	}
 
 	// Check primary location
@@ -403,7 +470,7 @@ export function resolveCanonicalTaskPaths(
 
 	// Archive fallback: worker may have archived the task folder during the
 	// "Documentation & Delivery" step, moving it under `.../archive/TASK-ID/`.
-	const resolvedNorm = resolve(resolvedFolder).replace(/\\/g, "/");
+	const resolvedNorm = normalizePortablePath(resolvedFolder);
 	const parts = resolvedNorm.split("/");
 	const taskDirName = parts[parts.length - 1];
 	const parentDir = parts.slice(0, -1).join("/");
@@ -1211,7 +1278,7 @@ export async function monitorLanes(
 					currentTaskId = task.taskId;
 
 					const tracker = getOrCreateTracker(task.taskId, now);
-					const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode);
+						const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode);
 					const donePath = unit.packet.donePath;
 					const statusPath = unit.packet.statusPath;
 					const statusResult = await parseStatusMdAtPath(statusPath);
@@ -2195,6 +2262,7 @@ export function buildExecutionUnit(
 	task: AllocatedTask,
 	repoRoot: string,
 	isWorkspaceMode?: boolean,
+	workspaceConfig?: WorkspaceConfig | null,
 ): ExecutionUnit {
 	// TP-169: Guard against missing taskFolder. This can happen when
 	// reconstructAllocatedLanes creates task stubs from persisted state
@@ -2220,6 +2288,14 @@ export function buildExecutionUnit(
 
 	const executionRepoId = lane.repoId ?? "default";
 	const packetHomeRepoId = task.task.packetRepoId ?? executionRepoId;
+	const repoPaths = buildExecutionRepoPaths(
+		task.task,
+		executionRepoId,
+		packetHomeRepoId,
+		lane.worktreePath,
+		repoRoot,
+		workspaceConfig,
+	);
 
 	// Build a segment-style ID if this is a segment execution,
 	// otherwise use the plain task ID.
@@ -2249,6 +2325,7 @@ export function buildExecutionUnit(
 		segmentId,
 		executionRepoId,
 		packetHomeRepoId,
+		repoPaths,
 		worktreePath: lane.worktreePath,
 		packet,
 		task: task.task,
@@ -2562,6 +2639,9 @@ export async function executeLaneV2(
 	let shouldSkipRemaining = false;
 
 	const stateRoot = resolveRuntimeStateRoot(repoRoot, workspaceRoot);
+	const workspaceConfig = (isWorkspaceMode && workspaceRoot)
+		? loadWorkspaceConfig(workspaceRoot)
+		: null;
 	const batchId = config.orchestrator?.batchId || extraEnvVars?.ORCH_BATCH_ID || String(Date.now());
 
 	// Build agent ID prefix — must match the wave planner's naming (TP-115).
@@ -2615,7 +2695,7 @@ export async function executeLaneV2(
 		}
 
 		// Build execution unit
-		const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode);
+		const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode, workspaceConfig);
 
 		const rawAutonomy = String(extraEnvVars?.TASKPLANE_SUPERVISOR_AUTONOMY ?? "autonomous").toLowerCase();
 		const supervisorAutonomy: LaneRunnerConfig["supervisorAutonomy"] =
@@ -2630,6 +2710,7 @@ export async function executeLaneV2(
 			worktreePath: lane.worktreePath,
 			branch: lane.branch,
 			repoId: lane.repoId ?? "default",
+			repoPaths: unit.repoPaths,
 			stateRoot,
 			workerModel: "",
 			workerTools: "read,write,edit,bash,grep,find,ls",

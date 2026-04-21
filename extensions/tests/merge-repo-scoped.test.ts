@@ -14,6 +14,7 @@
 import {
 	groupLanesByRepo,
 	determineMergeOrder,
+	formatRepoAtomicFailureSummary,
 	formatRepoMergeSummary,
 	computeMergeFailurePolicy,
 	ORCH_MESSAGES,
@@ -273,8 +274,9 @@ function runAllTests(): void {
 	console.log("\n── 9. Status rollup: lane-level + repo-level evidence ──");
 	{
 		// Helper: simulate the status rollup logic from mergeWaveByRepo().
-		// Uses BOTH lane-level evidence (anyLaneSucceeded) and repo-level evidence
-		// (anyRepoFailed) to match the actual implementation.
+		// Single-repo groups preserve the legacy partial behavior.
+		// Multi-repo groups are atomic: any repo failure means the aggregate fails
+		// after already-advanced repo refs are rolled back.
 		//
 		// Parameters:
 		//   laneResults: simulated MergeLaneResult[] with result status
@@ -284,11 +286,13 @@ function runAllTests(): void {
 			laneResults: Array<{ resultStatus: string | null; error: string | null }>,
 			repoStatuses: Array<"succeeded" | "failed" | "partial">,
 		): "succeeded" | "failed" | "partial" {
+			const strictAtomicCrossRepo = repoStatuses.length > 1;
 			const anyLaneSucceeded = laneResults.some(
 				r => r.resultStatus === "SUCCESS" || r.resultStatus === "CONFLICT_RESOLVED",
 			);
 			const anyRepoFailed = repoStatuses.some(s => s !== "succeeded");
 			if (!anyRepoFailed) return "succeeded";
+			if (strictAtomicCrossRepo) return "failed";
 			if (anyLaneSucceeded) return "partial";
 			return "failed";
 		}
@@ -321,9 +325,8 @@ function runAllTests(): void {
 		);
 
 		// Case D: All repos partial (some succeed in each repo, each has a failure)
-		// This is the edge case from R002 finding #2.
-		// Each repo is "partial" (has both succeeded and failed lanes), but globally
-		// there ARE successful merges, so aggregate should be "partial", not "failed".
+		// In strict multi-repo mode, those succeeded refs are rolled back, so the
+		// aggregate is failed rather than partial.
 		assert(
 			computeAggregateStatus(
 				[
@@ -333,8 +336,8 @@ function runAllTests(): void {
 					{ resultStatus: "BUILD_FAILURE", error: null },              // repo-b lane 2 (failure)
 				],
 				["partial", "partial"],
-			) === "partial",
-			"rollup: all repos partial → global partial (not failed)",
+			) === "failed",
+			"rollup: all repos partial → global failed after atomic rollback",
 		);
 
 		// Case E: No lanes at all (vacuous) → succeeded
@@ -373,15 +376,14 @@ function runAllTests(): void {
 			"rollup: repo setup failure with no lanes → failed",
 		);
 
-		// Case I: One repo setup-fails, another succeeds → partial
-		// Repo A: setup failure (no lanes merged)
-		// Repo B: all lanes merged successfully
+		// Case I: One repo setup-fails, another succeeds → failed
+		// Repo B's ref is rolled back because cross-repo merge is atomic.
 		assert(
 			computeAggregateStatus(
 				[{ resultStatus: "SUCCESS", error: null }], // only repo B's lanes
 				["failed", "succeeded"], // repo A failed setup, repo B succeeded
-			) === "partial",
-			"rollup: repo setup failure + other repo success → partial",
+			) === "failed",
+			"rollup: repo setup failure + other repo success → failed after rollback",
 		);
 
 		// Case J: All repos setup-fail → failed
@@ -393,9 +395,9 @@ function runAllTests(): void {
 			"rollup: all repos setup failure → failed",
 		);
 
-		// Case K: One repo setup-fails, another is partial → partial
+		// Case K: One repo setup-fails, another is partial → failed
 		// Repo A: setup failure (no lanes)
-		// Repo B: partial (some lanes succeeded, some failed)
+		// Repo B: partial (some lanes succeeded, some failed), then rolled back
 		assert(
 			computeAggregateStatus(
 				[
@@ -403,8 +405,8 @@ function runAllTests(): void {
 					{ resultStatus: "BUILD_FAILURE", error: null },        // repo B lane 2
 				],
 				["failed", "partial"], // repo A setup fail, repo B partial
-			) === "partial",
-			"rollup: repo setup failure + other repo partial → partial",
+			) === "failed",
+			"rollup: repo setup failure + other repo partial → failed after rollback",
 		);
 	}
 
@@ -651,8 +653,73 @@ function runAllTests(): void {
 		assert(templateOutput.includes("web"), "template: includes repo lines");
 	}
 
-	// ─── 18. formatRepoMergeSummary: mixed-outcome-lane partial (no repo divergence) ──
-	console.log("\n── 18. formatRepoMergeSummary: mixed-outcome-lane partial → no repo summary ──");
+	// ─── 18. formatRepoAtomicFailureSummary: atomic rollback failure summary ──
+	console.log("\n── 18. formatRepoAtomicFailureSummary: atomic rollback failure summary ──");
+	{
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 2,
+			status: "failed",
+			laneResults: [],
+			failedLane: 2,
+			failureReason: "[repo:web] merge conflict. Cross-repo atomic merge rolled back 1 repo group(s).",
+			totalDurationMs: 4000,
+			repoResults: [
+				{
+					repoId: "api",
+					status: "failed",
+					laneResults: [{
+						laneNumber: 1, laneId: "api/lane-1", sourceBranch: "task/lane-1",
+						targetBranch: "main", result: { status: "SUCCESS", source_branch: "task/lane-1", target_branch: "main", merge_commit: "abc1234", conflicts: [], verification: { ran: true, passed: true, output: "" } },
+						error: null, durationMs: 5000, repoId: "api",
+					}],
+					failedLane: null,
+					failureReason: "cross_repo_atomic_rollback: rolled back because another repo in the wave failed",
+				},
+				{
+					repoId: "web",
+					status: "failed",
+					laneResults: [{
+						laneNumber: 2, laneId: "web/lane-2", sourceBranch: "task/lane-2",
+						targetBranch: "main", result: { status: "CONFLICT_UNRESOLVED", source_branch: "task/lane-2", target_branch: "main", merge_commit: "", conflicts: [{ file: "index.ts", type: "content", resolved: false }], verification: { ran: false, passed: false, output: "" } },
+						error: null, durationMs: 3000, repoId: "web",
+					}],
+					failedLane: 2,
+					failureReason: "merge conflict",
+				},
+			],
+		};
+
+		const summary = formatRepoAtomicFailureSummary(mergeResult);
+		assert(summary !== null, "atomic-failure: produces summary when a repo was rolled back");
+		assert(summary!.includes("rolled back atomically"), "atomic-failure: summary mentions atomic rollback");
+		assert(summary!.includes("api"), "atomic-failure: summary mentions rolled-back repo");
+		assert(summary!.includes("web"), "atomic-failure: summary mentions directly failed repo");
+		assert(summary!.includes("↩"), "atomic-failure: rolled-back repo uses rollback icon");
+		assert(summary!.includes("❌"), "atomic-failure: direct failure repo uses failure icon");
+	}
+
+	// ─── 19. formatRepoAtomicFailureSummary: no summary without atomic rollback ──
+	console.log("\n── 19. formatRepoAtomicFailureSummary: no summary without atomic rollback ──");
+	{
+		const mergeResult: MergeWaveResult = {
+			waveIndex: 2,
+			status: "failed",
+			laneResults: [],
+			failedLane: 2,
+			failureReason: "merge conflict",
+			totalDurationMs: 2000,
+			repoResults: [
+				{ repoId: "api", status: "failed", laneResults: [], failedLane: 1, failureReason: "merge conflict" },
+				{ repoId: "web", status: "failed", laneResults: [], failedLane: 2, failureReason: "merge conflict" },
+			],
+		};
+
+		const summary = formatRepoAtomicFailureSummary(mergeResult);
+		assert(summary === null, "atomic-failure: no summary when no repo was rolled back");
+	}
+
+	// ─── 20. formatRepoMergeSummary: mixed-outcome-lane partial (no repo divergence) ──
+	console.log("\n── 20. formatRepoMergeSummary: mixed-outcome-lane partial → no repo summary ──");
 	{
 		// Partial caused by mixed-outcome lanes within a single repo, both repos ended up "partial"
 		// This should NOT produce a repo-divergence summary because no repos diverge

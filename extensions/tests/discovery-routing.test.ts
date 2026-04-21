@@ -6,8 +6,8 @@
  *
  * Test categories:
  *   1.x — Prompt with no execution target (backward compat)
- *   2.x — Section-based `## Execution Target` with `Repo:` line
- *   3.x — Inline `**Repo:** <id>` declaration
+ *   2.x — Section-based `## Execution Target` with `Repo:` or `Repos:` line
+ *   3.x — Inline `**Repo:** <id>` or `**Repos:** ...` declaration
  *   4.x — Whitespace/case/markdown decoration variants
  *   5.x — Both section + inline present (section wins)
  *   6.x — Invalid repo ID format (non-matching = undefined)
@@ -220,6 +220,53 @@ Repo: my-cool-service-2
 		expect(result.error).toBeNull();
 		expect(result.task!.promptRepoId).toBe("my-cool-service-2");
 	});
+
+	it("2.5: parses ordered repo list from Repos: line", () => {
+		const dir = makeTestDir("section-repos");
+		const content = minimalPrompt(`
+## Execution Target
+
+Repos: dashboard, administration
+`);
+		const promptPath = writePrompt(dir, content);
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+
+		expect(result.error).toBeNull();
+		expect(result.task!.promptRepoId).toBe("dashboard");
+		expect(result.task!.promptRepoIds).toEqual(["dashboard", "administration"]);
+	});
+
+	it("2.6: normalizes and de-duplicates Repos: values", () => {
+		const dir = makeTestDir("section-repos-normalized");
+		const content = minimalPrompt(`
+## Execution Target
+
+**Repos:** API, frontend-app, api
+`);
+		const promptPath = writePrompt(dir, content);
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+
+		expect(result.error).toBeNull();
+		expect(result.task!.promptRepoId).toBe("api");
+		expect(result.task!.promptRepoIds).toEqual(["api", "frontend-app"]);
+	});
+
+	it("2.7: parses ordered repo list from Repos bullet list", () => {
+		const dir = makeTestDir("section-repos-bullets");
+		const content = minimalPrompt(`
+## Execution Target
+
+Repos:
+- dashboard
+- administration
+`);
+		const promptPath = writePrompt(dir, content);
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+
+		expect(result.error).toBeNull();
+		expect(result.task!.promptRepoId).toBe("dashboard");
+		expect(result.task!.promptRepoIds).toEqual(["dashboard", "administration"]);
+	});
 });
 
 // ── 3.x: Inline `**Repo:** <id>` declaration ────────────────────────
@@ -276,6 +323,34 @@ describe("3.x: Inline repo declaration", () => {
 
 		expect(result.error).toBeNull();
 		expect(result.task!.promptRepoId).toBe("frontend");
+	});
+
+	it("3.3: parses inline **Repos:** field", () => {
+		const dir = makeTestDir("inline-repos");
+		const content = `# Task: TP-100 - Test Task
+
+**Created:** 2026-03-15
+**Size:** M
+**Repos:** api, frontend
+
+## Dependencies
+
+**None**
+
+## Steps
+
+### Step 0: Do something
+
+- [ ] Something
+
+---
+`;
+		const promptPath = writePrompt(dir, content);
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+
+		expect(result.error).toBeNull();
+		expect(result.task!.promptRepoId).toBe("api");
+		expect(result.task!.promptRepoIds).toEqual(["api", "frontend"]);
 	});
 });
 
@@ -671,6 +746,7 @@ function makeWorkspaceConfig(
 		routing: {
 			tasksRoot: "/workspace/tasks",
 			defaultRepo,
+			taskPacketRepo: defaultRepo,
 		},
 		configPath: "/workspace/.pi/taskplane-workspace.yaml",
 	};
@@ -1076,6 +1152,7 @@ describe("13.x: TASK_REPO_UNRESOLVED when all sources are undefined", () => {
 			routing: {
 				tasksRoot: "/workspace/tasks",
 				defaultRepo: "", // empty default
+				taskPacketRepo: "api",
 			},
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
@@ -1269,7 +1346,7 @@ describe("16.x: Routing errors appear as fatal errors in formatted output", () =
 		const workspaceConfig: WorkspaceConfig = {
 			mode: "workspace",
 			repos: repoMap,
-			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "" },
+			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "", taskPacketRepo: "api" },
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
 		const taskAreas: Record<string, TaskArea> = {
@@ -1620,7 +1697,7 @@ Repo: nonexistent
 		const workspaceConfig: WorkspaceConfig = {
 			mode: "workspace",
 			repos: repoMap,
-			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "" }, // empty default
+			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "", taskPacketRepo: "api" }, // empty default
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
 
@@ -1900,6 +1977,7 @@ describe("17.x: Actionable routing error guidance", () => {
 			routing: {
 				tasksRoot: "/workspace/tasks",
 				defaultRepo: "", // empty = unresolvable
+				taskPacketRepo: "api",
 			},
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
@@ -2178,6 +2256,62 @@ describe("20.x: Strict mode — accepts tasks with explicit execution target", (
 		expect(task1.resolvedRepoId).toBe("api");
 		expect(task2.resolvedRepoId).toBeUndefined();
 		expect(task3.resolvedRepoId).toBe("frontend");
+	});
+
+	it("20.4: strict mode accepts explicit promptRepoIds and routes to the first declared repo", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-110",
+			areaName: "default",
+			promptRepoId: "api",
+			promptRepoIds: ["api", "frontend"],
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api");
+	});
+
+	it("20.5: strict mode rejects promptRepoIds containing an unknown repo", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-111",
+			areaName: "default",
+			promptRepoId: "api",
+			promptRepoIds: ["api", "ghost"],
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_REPO_UNKNOWN");
+		expect(errors[0].message).toContain("Execution Target Repos");
+		expect(errors[0].message).toContain("ghost");
 	});
 });
 

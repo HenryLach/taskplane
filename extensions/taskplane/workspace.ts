@@ -108,6 +108,16 @@ function isPathWithinContainer(childPath: string, parentPath: string): boolean {
 	return child === parent || child.startsWith(`${parent}/`);
 }
 
+function isCrossPlatformAbsolutePath(rawPath: string): boolean {
+	const trimmed = rawPath.trim();
+	const normalized = trimmed.replace(/\\/g, "/");
+	return (
+		isAbsolute(trimmed) ||
+		isAbsolute(normalized) ||
+		/^[A-Za-z]:\//.test(normalized)
+	);
+}
+
 
 // ── Pointer Resolution ───────────────────────────────────────────────
 
@@ -228,7 +238,7 @@ export function resolvePointer(
 	const normalizedConfigPath = configPath.trim().replace(/\\/g, "/");
 
 	// Reject absolute paths (POSIX `/...` and Windows `C:/...`, `\\...`)
-	if (isAbsolute(normalizedConfigPath) || isAbsolute(configPath.trim())) {
+	if (isCrossPlatformAbsolutePath(configPath)) {
 		return {
 			used: false,
 			configRoot: fallbackConfigRoot,

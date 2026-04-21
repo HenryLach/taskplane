@@ -3,7 +3,7 @@
  * @module orch/engine
  */
 import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync } from "fs";
-import { join, resolve } from "path";
+import { dirname, join, resolve } from "path";
 
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
 import { buildReviewerEnv, buildWorkerExcludeEnv, computeTransitiveDependents, execLog, executeLaneV2, executeWave, killV2LaneAgents, resolveCanonicalTaskPaths } from "./execution.ts";
@@ -13,7 +13,7 @@ import type { MonitorUpdateCallback } from "./execution.ts";
 // from the diagnostic-reports pipeline (populated by assembleDiagnosticInput).
 import { getCurrentBranch, runGit } from "./git.ts";
 import { killAllMergeAgentsV2, mergeWaveByRepo, MergeHealthMonitor } from "./merge.ts";
-import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoAtomicFailureSummary, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { resolveOperatorId } from "./naming.ts";
@@ -24,6 +24,7 @@ import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummar
 import { buildDependencyGraph, computeWaveAssignments, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, preserveSkippedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
 import { runPreflightCleanup, formatPreflightCleanup, enforceTelemetrySizeCap, formatSizeCap, cleanupPriorBatchArtifacts, formatPriorBatchCleanup } from "./cleanup.ts";
+import { buildWorkspaceSyncBadgeStatus, collectWorkspaceSyncSummary } from "./workspace-sync.ts";
 
 // ── Tier 0: Automatic Recovery Helpers (TP-039) ─────────────────────
 
@@ -733,6 +734,19 @@ function ensureSegmentRecords(batchState: OrchBatchRuntimeState): PersistedSegme
 	return batchState.segments;
 }
 
+function collectOrderedSegmentRepoIds(
+	orderedSegments: Array<{ repoId: string }>,
+): string[] {
+	const seen = new Set<string>();
+	const repoIds: string[] = [];
+	for (const segment of orderedSegments) {
+		if (!segment.repoId || seen.has(segment.repoId)) continue;
+		seen.add(segment.repoId);
+		repoIds.push(segment.repoId);
+	}
+	return repoIds;
+}
+
 /**
  * Persist pending segment records for an approved expansion and resync dependency
  * metadata for existing pending records touched by subsequent rewires.
@@ -1157,6 +1171,7 @@ export function buildSegmentFrontierWaves(
 		const orderedSegments = linearizeTaskSegmentPlan(plan);
 		const dependsOnBySegmentId = buildSegmentDependencyMap(plan);
 		task.segmentIds = orderedSegments.map((segment) => segment.segmentId);
+		task.participatingRepoIds = collectOrderedSegmentRepoIds(orderedSegments);
 		task.activeSegmentId = null;
 		if (packetRepoId) {
 			task.packetRepoId = packetRepoId;
@@ -2073,9 +2088,20 @@ export async function executeOrchBatch(
 	encounteredRepoRoots.set(repoRoot, undefined); // always include primary
 
 	execLog("batch", batchState.batchId, "starting batch planning");
+	batchState.workspaceSyncStatus = buildWorkspaceSyncBadgeStatus(
+		collectWorkspaceSyncSummary(repoRoot, workspaceConfig, {
+			failureMode: orchConfig.failure.submodule_failure_mode,
+			onSubmoduleDrift: orchConfig.failure.on_submodule_drift,
+			repoIdStrategy: orchConfig.orchestrator.submodule_repo_id_strategy,
+		}, args),
+	);
 
 	// Preflight
-	const preflight = runPreflight(orchConfig, repoRoot);
+	const preflight = runPreflight(orchConfig, repoRoot, {
+		workspaceRoot,
+		pointerConfigRoot: agentRoot ? dirname(agentRoot) : undefined,
+		workspaceConfig,
+	});
 	onNotify(formatPreflightResults(preflight), preflight.passed ? "info" : "error");
 	if (!preflight.passed) {
 		batchState.phase = "failed";
@@ -2168,7 +2194,7 @@ export async function executeOrchBatch(
 		if (hasStrictErrors) {
 			onNotify(
 				"💡 Strict routing is enabled (routing.strict: true). Every task must declare an explicit execution target.\n" +
-				"   Add a `## Execution Target` section with `Repo: <id>` to each task's PROMPT.md.\n" +
+				"   Add a `## Execution Target` section with `Repo: <id>` or `Repos: <id-a>, <id-b>` to each task's PROMPT.md.\n" +
 				"   To disable strict routing, set `routing.strict: false` in workspace config.",
 				"info",
 			);
@@ -2365,6 +2391,7 @@ export async function executeOrchBatch(
 			}
 
 			task.segmentIds = segmentState.orderedSegments.map((segment) => segment.segmentId);
+			task.participatingRepoIds = collectOrderedSegmentRepoIds(segmentState.orderedSegments);
 			const activeSegment = segmentState.orderedSegments[segmentState.nextSegmentIndex] ?? null;
 			if (!activeSegment) {
 				segmentState.terminalStatus = "succeeded";
@@ -2759,6 +2786,7 @@ export async function executeOrchBatch(
 								segmentState,
 							);
 							task.segmentIds = segmentState.orderedSegments.map((segment) => segment.segmentId);
+							task.participatingRepoIds = collectOrderedSegmentRepoIds(segmentState.orderedSegments);
 							const afterSegmentIds = [...task.segmentIds];
 							const persistedInsertedSegments = upsertPendingExpandedSegmentRecords(
 								batchState,
@@ -3277,6 +3305,11 @@ export async function executeOrchBatch(
 						ORCH_MESSAGES.orchMergeFailed(resolveDisplayWaveNumber(waveIdx, roundToTaskWave, taskLevelWaveCount).displayWave, mergeResult.failedLane ?? 0, mergeResult.failureReason || "unknown"),
 						"error",
 					);
+
+					const atomicRepoSummary = formatRepoAtomicFailureSummary(mergeResult);
+					if (atomicRepoSummary) {
+						onNotify(atomicRepoSummary, "warning");
+					}
 
 					// TP-040: Emit merge_failed event
 					emitEvent(stateRoot, {

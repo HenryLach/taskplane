@@ -191,6 +191,8 @@ export interface LaneRunnerConfig {
 	branch: string;
 	/** Repo ID */
 	repoId: string;
+	/** Repo ID -> absolute path map for all repos participating in the task. */
+	repoPaths?: Record<string, string>;
 	/** State root for runtime artifacts (workspace root or repo root) */
 	stateRoot: string;
 	/** Worker model (empty string = inherit from session) */
@@ -433,6 +435,11 @@ export async function executeTaskV2(
 				? [`- Active segment ID: ${segmentId}`]
 				: []),
 			``,
+			`Task repo map:`,
+			...Object.entries(config.repoPaths ?? unit.repoPaths)
+				.sort((a, b) => a[0].localeCompare(b[0]))
+				.map(([repoId, repoPath]) => `- ${repoId}: ${repoPath}`),
+			``,
 			`Packet home context:`,
 			`- Packet home repo ID: ${unit.packetHomeRepoId}`,
 			`- Packet task folder: ${taskFolder}`,
@@ -597,6 +604,7 @@ export async function executeTaskV2(
 				TASKPLANE_REVIEWER_STATE_PATH: reviewerStatePath,
 				TASKPLANE_PROJECT_NAME: config.projectName || "project",
 				TASKPLANE_TASK_ID: taskId,
+				TASKPLANE_REPO_PATHS: JSON.stringify(config.repoPaths ?? unit.repoPaths),
 				// Hard-set segment env vars based on mode. In FULL_TASK mode,
 				// explicitly clear them to prevent env inheritance leaking segment cues.
 				TASKPLANE_ACTIVE_SEGMENT_ID: isSegmentScoped ? (segmentId ?? "") : "",

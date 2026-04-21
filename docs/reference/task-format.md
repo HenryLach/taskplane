@@ -72,6 +72,7 @@ Canonical folder:
 - `## Dependencies`
 - `## Context to Read First`
 - `## File Scope`
+- `## Execution Target` (`Repo:` / `Repos:` for repo targeting)
 - `## Segment DAG` (optional, for explicit multi-repo segment ordering)
 - `## Completion Criteria`
 
@@ -138,6 +139,7 @@ assign checkboxes to specific repos:
 ```
 
 Rules:
+
 - Marker format: `#### Segment: <repoId>` (case-sensitive, must match workspace config)
 - Single-repo tasks do not need segment markers (the engine applies a default)
 - Every step in a multi-repo task should have explicit segment markers
@@ -217,9 +219,44 @@ Describe intended modification surface to improve planning/review quality.
 
 ---
 
+## `Execution Target` (repo targeting)
+
+Use `## Execution Target` to declare which repo or repos a task runs against.
+
+Single-repo example:
+
+```md
+## Execution Target
+Repo: api
+```
+
+Multi-repo example:
+
+```md
+## Execution Target
+Repos:
+- api
+- web-client
+```
+
+Inline forms are also accepted:
+
+```md
+## Execution Target
+**Repo:** api
+**Repos:** api, web-client
+```
+
+Notes:
+
+- `Repo:` targets one repo.
+- `Repos:` targets multiple repos and enables workspace-mode multi-repo routing.
+- Repo IDs are normalized to lowercase.
+- Repo IDs must exist in the workspace configuration.
+
 ## `Segment DAG` (optional explicit multi-repo ordering)
 
-Use when a task intentionally spans multiple repos and needs explicit intra-task ordering.
+Use `## Segment DAG` only when a task already targets multiple repos and needs explicit intra-task ordering.
 
 ```md
 ## Segment DAG
@@ -233,9 +270,11 @@ Edges:
 ```
 
 Notes:
-- Optional section — omission keeps legacy behavior.
+
+- Optional section — omission keeps planner-selected ordering.
 - `Repos:` and `Edges:` keys may be markdown-decorated (e.g. `**Repos:**`).
 - Repo IDs are normalized to lowercase.
+- `Repos:` should match the repo set already declared in `## Execution Target`.
 - Edge endpoints must appear in `Repos:`.
 - Self-edges and cycles are invalid and fail discovery.
 

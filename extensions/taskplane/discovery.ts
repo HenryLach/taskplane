@@ -65,6 +65,60 @@ function normalizeSegmentRepoToken(raw: string): string {
 	return token.toLowerCase();
 }
 
+function parseExecutionTargetRepoList(raw: string, repoIdPattern: RegExp): string[] | undefined {
+	const repoIds: string[] = [];
+	const seen = new Set<string>();
+
+	for (const entry of raw.split(",")) {
+		const candidate = normalizeSegmentRepoToken(entry);
+		if (!candidate) continue;
+		if (!repoIdPattern.test(candidate)) {
+			return undefined;
+		}
+		if (!seen.has(candidate)) {
+			seen.add(candidate);
+			repoIds.push(candidate);
+		}
+	}
+
+	return repoIds.length > 0 ? repoIds : undefined;
+}
+
+function parseExecutionTargetReposSection(raw: string, repoIdPattern: RegExp): string[] | undefined {
+	const inlineMatch = raw.match(/^[ \t]*\*?\*?(?:Repos):?\*?\*?[ \t]+(.+)$/mi);
+	if (inlineMatch) {
+		return parseExecutionTargetRepoList(inlineMatch[1], repoIdPattern);
+	}
+
+	const lines = raw.split(/\r?\n/);
+	for (let index = 0; index < lines.length; index++) {
+		const trimmed = lines[index].trim();
+		if (!/^\*?\*?Repos:?\*?\*?\s*$/i.test(trimmed)) {
+			continue;
+		}
+
+		const entries: string[] = [];
+		for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex++) {
+			const nextLine = lines[nextIndex];
+			const bulletMatch = nextLine.match(/^\s*[-*]\s+(.+)$/);
+			if (bulletMatch) {
+				entries.push(bulletMatch[1]);
+				continue;
+			}
+			if (!nextLine.trim()) {
+				continue;
+			}
+			break;
+		}
+
+		return entries.length > 0
+			? parseExecutionTargetRepoList(entries.join(","), repoIdPattern)
+			: undefined;
+	}
+
+	return undefined;
+}
+
 interface ParsedSegmentDagBody {
 	metadata: PromptSegmentDagMetadata | null;
 	error: DiscoveryError | null;
@@ -692,11 +746,12 @@ export function parsePromptForOrchestrator(
 		}
 	}
 
-	// ── Extract execution target (repo ID) ──────────────────────
+	// ── Extract execution target (repo ID / repo IDs) ───────────
 	// Repo ID validation: lowercase alphanumeric + hyphens, starting with alnum
 	const REPO_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
 	let promptRepoId: string | undefined;
+	let promptRepoIds: string[] | undefined;
 
 	// Priority 1: Section-based "## Execution Target" with "Repo: <id>" line
 	// Capture everything from section header to the next heading or --- divider.
@@ -715,20 +770,38 @@ export function parsePromptForOrchestrator(
 		}
 	}
 	if (execTargetSectionBody !== null) {
+		const sectionRepoIds = parseExecutionTargetReposSection(execTargetSectionBody, REPO_ID_PATTERN);
+		if (sectionRepoIds) {
+			promptRepoIds = sectionRepoIds;
+			promptRepoId = sectionRepoIds[0];
+		}
+
 		// Match "Repo: api" or "**Repo:** api" or "Workspace: api" with whitespace
-		const repoLineMatch = execTargetSectionBody.match(
-			/^\s*\*?\*?(?:Repo|Workspace):?\*?\*?\s+(\S+)/mi,
-		);
-		if (repoLineMatch) {
-			const candidate = repoLineMatch[1].trim().toLowerCase();
-			if (REPO_ID_PATTERN.test(candidate)) {
-				promptRepoId = candidate;
+		if (!promptRepoIds) {
+			const repoLineMatch = execTargetSectionBody.match(
+				/^\s*\*?\*?(?:Repo|Workspace):?\*?\*?\s+(\S+)/mi,
+			);
+			if (repoLineMatch) {
+				const candidate = repoLineMatch[1].trim().toLowerCase();
+				if (REPO_ID_PATTERN.test(candidate)) {
+					promptRepoId = candidate;
+				}
 			}
 		}
 	}
 
-	// Priority 2 (fallback): Inline "**Repo:** <id>" or "**Workspace:** <id>" anywhere in content
-	if (!promptRepoId) {
+	// Priority 2 (fallback): Inline "**Repos:** <a>, <b>" or "**Repo:** <id>"
+	if (!promptRepoId && !promptRepoIds) {
+		const inlineReposMatch = content.match(/^\*\*(?:Repos):\*\*\s+(.+)$/m);
+		if (inlineReposMatch) {
+			const candidateRepoIds = parseExecutionTargetRepoList(inlineReposMatch[1], REPO_ID_PATTERN);
+			if (candidateRepoIds) {
+				promptRepoIds = candidateRepoIds;
+				promptRepoId = candidateRepoIds[0];
+			}
+		}
+	}
+	if (!promptRepoId && !promptRepoIds) {
 		const inlineRepoMatch = content.match(
 			/^\*\*(?:Repo|Workspace):\*\*\s+(\S+)/m,
 		);
@@ -804,6 +877,7 @@ export function parsePromptForOrchestrator(
 			areaName,
 			status: "pending",
 			...(promptRepoId ? { promptRepoId } : {}),
+			...(promptRepoIds ? { promptRepoIds } : {}),
 			...(explicitSegmentDag ? { explicitSegmentDag } : {}),
 			...(stepSegmentMap ? { stepSegmentMap } : {}),
 		},
@@ -1454,11 +1528,26 @@ export function resolveTaskRouting(
 			}
 		}
 
+		if (task.promptRepoIds && task.promptRepoIds.length > 0) {
+			const unknownPromptRepos = task.promptRepoIds.filter((repoId) => !validRepoIds.has(repoId));
+			if (unknownPromptRepos.length > 0) {
+				errors.push({
+					code: "TASK_REPO_UNKNOWN",
+					message:
+						`Task ${task.taskId} declares unknown repo ID(s) in ## Execution Target Repos: ${unknownPromptRepos.join(", ")}. ` +
+						`Known repos: ${[...validRepoIds.keys()].join(", ")}`,
+					taskId: task.taskId,
+					taskPath: task.promptPath,
+				});
+				continue;
+			}
+		}
+
 		// ── Strict mode enforcement ──────────────────────────────
 		// When strict routing is enabled, every task MUST declare an
 		// explicit execution target in PROMPT.md. Area-level and
 		// workspace-default fallbacks are NOT used for resolution.
-		if (strictMode && !task.promptRepoId) {
+		if (strictMode && !task.promptRepoId && !(task.promptRepoIds && task.promptRepoIds.length > 0)) {
 			errors.push({
 				code: "TASK_ROUTING_STRICT",
 				message:
@@ -1469,6 +1558,8 @@ export function resolveTaskRouting(
 					`  ## Execution Target\n` +
 					`\n` +
 					`  Repo: <repo-id>\n` +
+					`  or\n` +
+					`  Repos: <repo-a>, <repo-b>\n` +
 					`\n` +
 					`Available repos: ${[...validRepoIds.keys()].join(", ")}`,
 				taskId: task.taskId,
@@ -1478,8 +1569,8 @@ export function resolveTaskRouting(
 		}
 
 		// Precedence 1: prompt-declared repo
-		let resolvedId = task.promptRepoId;
-		let source = "prompt";
+		let resolvedId = task.promptRepoIds?.[0] ?? task.promptRepoId;
+		let source = task.promptRepoIds && task.promptRepoIds.length > 0 ? "prompt:repos" : "prompt";
 
 		// Precedence 2: area-level repo
 		if (!resolvedId) {

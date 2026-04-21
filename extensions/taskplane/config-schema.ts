@@ -272,6 +272,8 @@ export interface OrchestratorCoreConfig {
 	operatorId: string;
 	/** How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking. */
 	integration: "manual" | "supervised" | "auto";
+	/** Strategy used when deriving workspace repo IDs from submodule paths. */
+	submoduleRepoIdStrategy: "path-basename";
 }
 
 /** Dependency resolution settings */
@@ -324,6 +326,10 @@ export interface FailureConfig {
 	onTaskFailure: "skip-dependents" | "stop-wave" | "stop-all";
 	/** Behavior when a merge step fails */
 	onMergeFailure: "pause" | "abort";
+	/** Whether submodule findings warn or block orchestrator startup. */
+	submoduleFailureMode: "permissive" | "strict";
+	/** How submodule drift/uninitialized state should be reconciled. */
+	onSubmoduleDrift: "manual" | "init-only" | "recursive-on-drift";
 	/** Stall detection threshold (minutes) */
 	stallTimeout: number;
 	/** Max worker runtime budget per task in orchestrated mode (minutes) */
@@ -447,10 +453,10 @@ export interface WorkspaceRoutingSectionConfig {
 
 /** Optional workspace section in taskplane-config.json. */
 export interface WorkspaceSectionConfig {
-	/** Repo map keyed by repo ID. */
-	repos: Record<string, WorkspaceRepoSectionConfig>;
-	/** Routing contract for workspace mode. */
-	routing: WorkspaceRoutingSectionConfig;
+	/** Repo map keyed by repo ID. Present when JSON config carries workspace routing metadata. */
+	repos?: Record<string, WorkspaceRepoSectionConfig>;
+	/** Routing contract for workspace mode. Present when JSON config carries workspace routing metadata. */
+	routing?: WorkspaceRoutingSectionConfig;
 }
 
 
@@ -630,6 +636,7 @@ export const DEFAULT_ORCHESTRATOR_SECTION: OrchestratorSection = {
 		sessionPrefix: "orch",
 		operatorId: "",
 		integration: "manual",
+		submoduleRepoIdStrategy: "path-basename",
 	},
 	dependencies: {
 		source: "prompt",
@@ -656,6 +663,8 @@ export const DEFAULT_ORCHESTRATOR_SECTION: OrchestratorSection = {
 	failure: {
 		onTaskFailure: "skip-dependents",
 		onMergeFailure: "pause",
+		submoduleFailureMode: "permissive",
+		onSubmoduleDrift: "manual",
 		stallTimeout: 60,
 		maxWorkerMinutes: 120,
 		abortGracePeriod: 60,

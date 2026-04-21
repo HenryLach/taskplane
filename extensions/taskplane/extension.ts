@@ -32,6 +32,7 @@ import { runMigrations } from "./migrations.ts";
 import { executeAbort } from "./abort.ts";
 import { serializeWorkspaceConfig, applySerializedState, deserializeWorkspaceConfig } from "./engine-worker.ts";
 import type { EngineWorkerData, WorkerToMainMessage } from "./engine-worker.ts";
+import { applyWorkspaceSync, collectWorkspaceSyncSummary } from "./workspace-sync.ts";
 import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, formatPreflightSweep, rotateSupervisorLogs, formatLogRotation } from "./cleanup.ts";
 import {
 	writeMailboxMessage,
@@ -1706,6 +1707,64 @@ export default function (pi: ExtensionAPI) {
 		return false;
 	}
 
+	function resolveRuntimeSubmodulePolicy() {
+		return {
+			failureMode: orchConfig.failure.submodule_failure_mode ?? "permissive",
+			onSubmoduleDrift: orchConfig.failure.on_submodule_drift ?? "manual",
+			repoIdStrategy: orchConfig.orchestrator.submodule_repo_id_strategy ?? "path-basename",
+		};
+	}
+
+	function collectCurrentWorkspaceSyncSummary(targetLabel: string) {
+		if (!execCtx) return null;
+		return collectWorkspaceSyncSummary(
+			execCtx.repoRoot,
+			execCtx.workspaceConfig,
+			resolveRuntimeSubmodulePolicy(),
+			targetLabel,
+		);
+	}
+
+	function formatWorkspaceSyncApplyResult(result: ReturnType<typeof applyWorkspaceSync>): string {
+		const lines: string[] = [];
+		if (result.importedRepoIds.length === 0 && result.initializedPaths.length === 0 && result.updatedPaths.length === 0) {
+			lines.push("ℹ️ Workspace sync made no changes.");
+		} else {
+			lines.push("🔧 Workspace sync applied.");
+		}
+		if (result.importedRepoIds.length > 0) {
+			lines.push(`   Imported repos: ${result.importedRepoIds.join(", ")}`);
+		}
+		if (result.initializedPaths.length > 0) {
+			lines.push(`   Initialized: ${result.initializedPaths.join(", ")}`);
+		}
+		if (result.updatedPaths.length > 0) {
+			lines.push(`   Realigned: ${result.updatedPaths.join(", ")}`);
+		}
+		for (const warning of result.warnings) {
+			lines.push(`   ⚠ ${warning}`);
+		}
+		return lines.join("\n");
+	}
+
+	function formatWorkspaceSyncBlocker(
+		targetLabel: string,
+		summary: ReturnType<typeof collectWorkspaceSyncSummary>,
+		afterSync = false,
+	): string {
+		const syncCmd = `/orch-plan ${targetLabel} --sync`;
+		const headline = afterSync
+			? "⚠️ Workspace sync is still incomplete."
+			: "⚠️ Workspace sync is required before continuing.";
+		const findings = summary.findings.slice(0, 5).map((finding) => `   • ${finding.message}`);
+		return [
+			headline,
+			`Run ${syncCmd} and resolve the reported findings before retrying.`,
+			findings.length > 0 ? "" : undefined,
+			...findings,
+		].filter(Boolean).join("\n");
+	}
+
 	// ── Commands ─────────────────────────────────────────────────────
 
 	pi.registerCommand("orch", {
@@ -1800,17 +1859,19 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("orch-plan", {
-		description: "Preview execution plan: /orch-plan <areas|paths|all> [--refresh]",
+		description: "Preview execution plan: /orch-plan <areas|paths|all> [--refresh] [--sync]",
 		handler: async (args, ctx) => {
 			if (!args?.trim()) {
 				ctx.ui.notify(
-					"Usage: /orch-plan <areas|paths|all> [--refresh]\n\n" +
+					"Usage: /orch-plan <areas|paths|all> [--refresh] [--sync]\n\n" +
 					"Shows the execution plan (tasks, waves, lane assignments)\n" +
 					"without actually executing anything.\n\n" +
 					"Options:\n" +
-					"  --refresh   Force re-scan of areas (bypass dependency cache)\n\n" +
+					"  --refresh   Force re-scan of areas (bypass dependency cache)\n" +
+					"  --sync      Reconcile workspace repo imports and submodule state before planning\n\n" +
 					"Examples:\n" +
 					"  /orch-plan all\n" +
+					"  /orch-plan all --sync\n" +
 					"  /orch-plan time-off notifications\n" +
 					"  /orch-plan docs/task-management/domains/time-off/tasks\n" +
 					"  /orch-plan all --refresh",
@@ -1821,12 +1882,13 @@ export default function (pi: ExtensionAPI) {
 
 			if (!requireExecCtx(ctx)) return;
 
-			// Parse --refresh flag
-			const hasRefresh = /--refresh/.test(args);
-			const cleanArgs = args.replace(/--refresh/g, "").trim();
+			// Parse planner flags
+			const hasRefresh = /(^|\s)--refresh(?=\s|$)/.test(args);
+			const hasSync = /(^|\s)--sync(?=\s|$)/.test(args);
+			const cleanArgs = args.replace(/(^|\s)--refresh(?=\s|$)/g, " ").replace(/(^|\s)--sync(?=\s|$)/g, " ").trim();
 			if (!cleanArgs) {
 				ctx.ui.notify(
-					"Usage: /orch-plan <areas|paths|all> [--refresh]\n" +
+					"Usage: /orch-plan <areas|paths|all> [--refresh] [--sync]\n" +
 					"Error: target argument required (e.g., 'all', area name, or path)",
 					"error",
 				);
@@ -1835,11 +1897,40 @@ export default function (pi: ExtensionAPI) {
 			if (hasRefresh) {
 				ctx.ui.notify("🔄 Refresh mode: re-scanning all areas (cache bypassed)", "info");
 			}
+			if (hasSync) {
+				ctx.ui.notify("🔧 Sync mode: reconciling workspace repo imports and submodule state before planning", "info");
+			}
 
 			// ── Section 1: Preflight ─────────────────────────────────
 			ctx.ui.notify("ℹ️ Runtime V2 is the default backend (subprocess-only).", "info");
-			const preflight = runPreflight(orchConfig, execCtx!.repoRoot);
+			let workspaceSyncSummary = collectCurrentWorkspaceSyncSummary(cleanArgs);
+			if (hasSync && workspaceSyncSummary) {
+				const syncResult = applyWorkspaceSync(
+					execCtx!.workspaceRoot,
+					execCtx!.repoRoot,
+					execCtx!.workspaceConfig,
+					resolveRuntimeSubmodulePolicy(),
+					workspaceSyncSummary,
+				);
+				ctx.ui.notify(
+					formatWorkspaceSyncApplyResult(syncResult),
+					syncResult.warnings.length > 0 ? "warning" : "info",
+				);
+				workspaceSyncSummary = collectCurrentWorkspaceSyncSummary(cleanArgs);
+			}
+			const preflight = runPreflight(orchConfig, execCtx!.repoRoot, {
+				workspaceRoot: execCtx!.workspaceRoot,
+				pointerConfigRoot: execCtx!.pointer?.configRoot,
+				workspaceConfig: execCtx!.workspaceConfig,
+			});
 			ctx.ui.notify(formatPreflightResults(preflight), preflight.passed ? "info" : "error");
+			if (workspaceSyncSummary && workspaceSyncSummary.findings.length > 0) {
+				ctx.ui.notify(
+					formatWorkspaceSyncBlocker(cleanArgs, workspaceSyncSummary, hasSync),
+					hasSync ? "warning" : "info",
+				);
+				return;
+			}
 			if (!preflight.passed) return;
 
 			// ── Section 2: Discovery ─────────────────────────────────
@@ -1873,7 +1964,7 @@ export default function (pi: ExtensionAPI) {
 				if (hasStrictErrors) {
 					ctx.ui.notify(
 						"💡 Strict routing is enabled (routing.strict: true). Every task must declare an explicit execution target.\n" +
-						"   Add a `## Execution Target` section with `Repo: <id>` to each task's PROMPT.md.\n" +
+						"   Add a `## Execution Target` section with `Repo: <id>` or `Repos: <id-a>, <id-b>` to each task's PROMPT.md.\n" +
 						"   To disable strict routing, set `routing.strict: false` in workspace config.",
 						"info",
 					);
@@ -2067,6 +2158,14 @@ export default function (pi: ExtensionAPI) {
 				message: `❌ Cannot start batch — ${modelFailures.length} model(s) not found: ` +
 					modelFailures.map(f => `${f.role} (${f.modelStr})`).join(", ") +
 					`.\n\nFix the model configuration and try again.`,
+				error: true,
+			};
+		}
+
+		const workspaceSyncSummary = collectCurrentWorkspaceSyncSummary(trimmedTarget);
+		if (workspaceSyncSummary && workspaceSyncSummary.findings.length > 0) {
+			return {
+				message: formatWorkspaceSyncBlocker(trimmedTarget, workspaceSyncSummary),
 				error: true,
 			};
 		}

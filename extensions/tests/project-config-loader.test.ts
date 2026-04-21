@@ -204,6 +204,22 @@ describe("loadProjectConfig precedence/error matrix", () => {
 		expect(config.orchestrator.orchestrator.maxLanes).toBe(11);
 	});
 
+	it("1.5b: stray taskplane-settings.json is ignored in favor of canonical config resolution", () => {
+		const dir = makeTestDir("ignore-taskplane-settings-json");
+
+		writePiFile(dir, "taskplane-settings.json", JSON.stringify({
+			configVersion: 999,
+			taskRunner: {
+				project: { name: "WrongFile" },
+			},
+		}, null, 2));
+		writeTaskRunnerYaml(dir, "project:\n  name: YamlStillWins\n");
+
+		const config = loadProjectConfig(dir);
+		expect(config.configVersion).toBe(CONFIG_VERSION);
+		expect(config.taskRunner.project.name).toBe("YamlStillWins");
+	});
+
 	it("1.6: YAML-only fallback works when JSON is absent", () => {
 		const dir = makeTestDir("yaml-only");
 
@@ -1823,8 +1839,8 @@ describe("workspace section threading (TP-079)", () => {
 
 		const config = loadProjectConfig(dir);
 		expect(config.workspace).toBeDefined();
-		expect(config.workspace!.routing.taskPacketRepo).toBe("api");
-		expect(config.workspace!.routing.strict).toBe(true);
+		expect(config.workspace?.routing?.taskPacketRepo).toBe("api");
+		expect(config.workspace?.routing?.strict).toBe(true);
 	});
 
 	it("8.2: JSON workspace section missing taskPacketRepo falls back to defaultRepo", () => {
@@ -1844,7 +1860,7 @@ describe("workspace section threading (TP-079)", () => {
 
 		const config = loadProjectConfig(dir);
 		expect(config.workspace).toBeDefined();
-		expect(config.workspace!.routing.taskPacketRepo).toBe("docs");
+		expect(config.workspace?.routing?.taskPacketRepo).toBe("docs");
 	});
 
 	it("8.3: legacy taskplane-workspace.yaml maps snake_case fields to workspace section", () => {
@@ -1863,11 +1879,11 @@ describe("workspace section threading (TP-079)", () => {
 
 		const config = loadProjectConfig(dir);
 		expect(config.workspace).toBeDefined();
-		expect(config.workspace!.repos.api.defaultBranch).toBe("develop");
-		expect(config.workspace!.routing.tasksRoot).toBe("api-repo/taskplane-tasks");
-		expect(config.workspace!.routing.defaultRepo).toBe("api");
-		expect(config.workspace!.routing.taskPacketRepo).toBe("api");
-		expect(config.workspace!.routing.strict).toBe(true);
+		expect(config.workspace?.repos?.api?.defaultBranch).toBe("develop");
+		expect(config.workspace?.routing?.tasksRoot).toBe("api-repo/taskplane-tasks");
+		expect(config.workspace?.routing?.defaultRepo).toBe("api");
+		expect(config.workspace?.routing?.taskPacketRepo).toBe("api");
+		expect(config.workspace?.routing?.strict).toBe(true);
 	});
 
 	it("8.4: legacy workspace YAML missing task_packet_repo falls back to default_repo", () => {
@@ -1883,8 +1899,8 @@ describe("workspace section threading (TP-079)", () => {
 
 		const config = loadProjectConfig(dir);
 		expect(config.workspace).toBeDefined();
-		expect(config.workspace!.routing.defaultRepo).toBe("infra");
-		expect(config.workspace!.routing.taskPacketRepo).toBe("infra");
+		expect(config.workspace?.routing?.defaultRepo).toBe("infra");
+		expect(config.workspace?.routing?.taskPacketRepo).toBe("infra");
 	});
 
 	it("8.5: JSON workspace section takes precedence over legacy workspace YAML", () => {
@@ -1914,9 +1930,67 @@ describe("workspace section threading (TP-079)", () => {
 
 		const config = loadProjectConfig(dir);
 		expect(config.workspace).toBeDefined();
-		expect(config.workspace!.routing.defaultRepo).toBe("jsonrepo");
-		expect(config.workspace!.repos).toHaveProperty("jsonrepo");
-		expect(config.workspace!.repos).not.toHaveProperty("yamlrepo");
+		expect(config.workspace?.routing?.defaultRepo).toBe("jsonrepo");
+		expect(config.workspace?.repos).toHaveProperty("jsonrepo");
+		expect(config.workspace?.repos).not.toHaveProperty("yamlrepo");
+	});
+
+	it("8.6: orchestrator submodule settings load without workspace metadata", () => {
+		const dir = makeTestDir("orchestrator-submodules-only");
+		writeJsonConfig(dir, {
+			configVersion: CONFIG_VERSION,
+			orchestrator: {
+				orchestrator: {
+					submoduleRepoIdStrategy: "path-basename",
+				},
+				failure: {
+					submoduleFailureMode: "strict",
+					onSubmoduleDrift: "recursive-on-drift",
+				},
+			},
+		});
+
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.failure.submoduleFailureMode).toBe("strict");
+		expect(config.orchestrator.failure.onSubmoduleDrift).toBe("recursive-on-drift");
+		expect(config.orchestrator.orchestrator.submoduleRepoIdStrategy).toBe("path-basename");
+		expect(config.workspace).toBeUndefined();
+	});
+
+	it("8.7: global orchestrator submodule defaults merge with project overrides", () => {
+		const dir = makeTestDir("orchestrator-submodules-merge");
+		const agentDir = makeTestDir("orchestrator-submodules-agent");
+		const previousAgentDir = process.env.PI_CODING_AGENT_DIR;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+		mkdirSync(join(agentDir, "taskplane"), { recursive: true });
+		writeFileSync(join(agentDir, "taskplane", "preferences.json"), JSON.stringify({
+			orchestrator: {
+				failure: {
+					submoduleFailureMode: "strict",
+					onSubmoduleDrift: "init-only",
+				},
+			},
+		}, null, 2));
+
+		writeJsonConfig(dir, {
+			configVersion: CONFIG_VERSION,
+			orchestrator: {
+				orchestrator: {
+					submoduleRepoIdStrategy: "path-basename",
+				},
+			},
+		});
+
+		const config = loadProjectConfig(dir);
+		expect(config.orchestrator.failure.submoduleFailureMode).toBe("strict");
+		expect(config.orchestrator.failure.onSubmoduleDrift).toBe("init-only");
+		expect(config.orchestrator.orchestrator.submoduleRepoIdStrategy).toBe("path-basename");
+
+		if (previousAgentDir === undefined) {
+			delete process.env.PI_CODING_AGENT_DIR;
+		} else {
+			process.env.PI_CODING_AGENT_DIR = previousAgentDir;
+		}
 	});
 });
 

@@ -313,6 +313,22 @@ function validatePersistedState(data: unknown): any {
 			throw new StateFileError("STATE_SCHEMA_INVALID",
 				`mergeResults[${i}].status is invalid: "${m.status}" (expected one of: ${[...VALID_PERSISTED_MERGE_STATUSES].join(", ")})`);
 		}
+		if (m.rollbackFailed !== undefined && typeof m.rollbackFailed !== "boolean") {
+			throw new StateFileError("STATE_SCHEMA_INVALID",
+				`mergeResults[${i}].rollbackFailed is not a boolean (got ${typeof m.rollbackFailed})`);
+		}
+		if (m.persistenceErrors !== undefined) {
+			if (!Array.isArray(m.persistenceErrors)) {
+				throw new StateFileError("STATE_SCHEMA_INVALID",
+					`mergeResults[${i}].persistenceErrors is not an array (got ${typeof m.persistenceErrors})`);
+			}
+			for (let j = 0; j < (m.persistenceErrors as unknown[]).length; j++) {
+				if (typeof (m.persistenceErrors as unknown[])[j] !== "string") {
+					throw new StateFileError("STATE_SCHEMA_INVALID",
+						`mergeResults[${i}].persistenceErrors[${j}] is not a string`);
+				}
+			}
+		}
 	}
 
 	// Validate lastError
@@ -1446,12 +1462,30 @@ function serializeBatchState(
 	// Clamp to 0 minimum: resume re-exec merges use sentinel waveIndex -1,
 	// which would produce -2 without clamping.
 	const mergeResults = (state.mergeResults || [])
-		.map((mr: any) => ({
-			waveIndex: Math.max(0, mr.waveIndex - 1),
-			status: mr.status,
-			failedLane: mr.failedLane,
-			failureReason: mr.failureReason,
-		}));
+		.map((mr: any) => {
+			const record: Record<string, unknown> = {
+				waveIndex: Math.max(0, mr.waveIndex - 1),
+				status: mr.status,
+				failedLane: mr.failedLane,
+				failureReason: mr.failureReason,
+			};
+			if (mr.rollbackFailed) {
+				record.rollbackFailed = true;
+			}
+			if (Array.isArray(mr.persistenceErrors) && mr.persistenceErrors.length > 0) {
+				record.persistenceErrors = [...mr.persistenceErrors];
+			}
+			if (Array.isArray(mr.repoResults) && mr.repoResults.length > 0) {
+				record.repoResults = mr.repoResults.map((rr: any) => ({
+					repoId: rr.repoId,
+					status: rr.status,
+					laneNumbers: Array.isArray(rr.laneResults) ? rr.laneResults.map((lr: any) => lr.laneNumber) : [],
+					failedLane: rr.failedLane,
+					failureReason: rr.failureReason,
+				}));
+			}
+			return record;
+		});
 
 	const persisted = {
 		schemaVersion: BATCH_STATE_SCHEMA_VERSION,
@@ -5856,6 +5890,46 @@ function collectAllRepoRoots(
 	assertEqual(ta.resolvedRepoId, "api", "mixed-repo: TA resolvedRepoId");
 	assertEqual(tf.repoId, "frontend", "mixed-repo: TF repoId");
 	assertEqual(tf.resolvedRepoId, "frontend", "mixed-repo: TF resolvedRepoId");
+}
+
+// 2.18: Transactional merge warnings persist through batch-state serialization
+{
+	console.log("  ▸ merge checkpoint: rollbackFailed, persistenceErrors, and repoResults survive serialize");
+	const state: MinimalBatchState = {
+		phase: "paused", batchId: "B-merge-state", baseBranch: "main", mode: "workspace",
+		startedAt: Date.now(), endedAt: null, currentWaveIndex: 1, totalWaves: 2,
+		totalTasks: 2, succeededTasks: 1, failedTasks: 1, skippedTasks: 0,
+		blockedTasks: 0, blockedTaskIds: new Set(),
+		errors: ["merge failed"],
+		mergeResults: [
+			{
+				waveIndex: 2,
+				status: "failed",
+				failedLane: 2,
+				failureReason: "[repo:web] conflict. Cross-repo atomic merge rolled back 1 repo group(s).",
+				rollbackFailed: true,
+				persistenceErrors: ["lane 2 (repo: web): ENOSPC"],
+				totalDurationMs: 2500,
+				laneResults: [],
+				repoResults: [
+					{ repoId: "api", status: "failed", failedLane: null, failureReason: "cross_repo_atomic_rollback: rolled back", laneResults: [{ laneNumber: 1 }] },
+					{ repoId: "web", status: "failed", failedLane: 2, failureReason: "merge conflict", laneResults: [{ laneNumber: 2 }] },
+				],
+			},
+		],
+	};
+
+	const json = serializeBatchState(state, [["T1", "T2"]], [], []);
+	const parsed = JSON.parse(json);
+
+	assertEqual(parsed.mergeResults.length, 1, "merge-state: one persisted merge result");
+	assertEqual(parsed.mergeResults[0].waveIndex, 1, "merge-state: wave index normalized to 0-based");
+	assertEqual(parsed.mergeResults[0].rollbackFailed, true, "merge-state: rollbackFailed persisted");
+	assertEqual(parsed.mergeResults[0].persistenceErrors.length, 1, "merge-state: persistenceErrors persisted");
+	assertEqual(parsed.mergeResults[0].persistenceErrors[0], "lane 2 (repo: web): ENOSPC", "merge-state: persistence error content preserved");
+	assertEqual(parsed.mergeResults[0].repoResults.length, 2, "merge-state: repoResults persisted");
+	assertEqual(parsed.mergeResults[0].repoResults[0].laneNumbers[0], 1, "merge-state: api lane numbers serialized");
+	assertEqual(parsed.mergeResults[0].repoResults[1].laneNumbers[0], 2, "merge-state: web lane numbers serialized");
 }
 
 // ═══════════════════════════════════════════════════════════════════════

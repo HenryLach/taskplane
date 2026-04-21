@@ -494,4 +494,51 @@ describe("6.x — Engine/resume parity for safe-stop", () => {
 		// And is set on the aggregate result
 		expect(mergeSource).toContain("aggregateResult.rollbackFailed = true");
 	});
+
+	it("6.6: multi-repo failures capture each repo target head before mergeWave runs", () => {
+		const mergeSource = readSource("merge.ts");
+
+		expect(mergeSource).toContain("const groupInitialTargetHead = readBranchHead(groupRepoRoot, groupBaseBranch)");
+		expect(mergeSource).toContain('initialTargetHead: groupInitialTargetHead?.slice(0, 8) ?? "unknown"');
+	});
+
+	it("6.7: cross-repo failure triggers atomic rollback of advanced repo refs", () => {
+		const mergeSource = readSource("merge.ts");
+
+		expect(mergeSource).toContain("cross-repo atomic merge failure detected");
+		expect(mergeSource).toContain("rollbackRepoBranchToHead");
+		expect(mergeSource).toContain("Cross-repo atomic merge rolled back");
+	});
+
+	it("6.8: atomic rollback rewrites committed transaction records for affected repos", () => {
+		const mergeSource = readSource("merge.ts");
+
+		expect(mergeSource).toContain("rewriteCommittedTransactionsAfterAtomicRollback");
+		expect(mergeSource).toContain('record.status = rollbackSucceeded ? "rolled_back" : "rollback_failed"');
+		expect(mergeSource).toContain("record.rollbackAttempted = true");
+	});
+
+	it("6.9: multi-repo aggregate status becomes failed instead of partial", () => {
+		const mergeSource = readSource("merge.ts");
+
+		expect(mergeSource).toContain("const strictAtomicCrossRepo = repoContexts.length > 1");
+		expect(mergeSource).toContain("} else if (strictAtomicCrossRepo) {");
+		expect(mergeSource).toContain('status = "failed"');
+	});
+
+	it("6.10: engine.ts emits atomic repo failure summaries for failed multi-repo merges", () => {
+		const engineSource = readSource("engine.ts");
+
+		expect(engineSource).toContain("formatRepoAtomicFailureSummary");
+		expect(engineSource).toContain("const atomicRepoSummary = formatRepoAtomicFailureSummary(mergeResult)");
+		expect(engineSource).toContain("onNotify(atomicRepoSummary, \"warning\")");
+	});
+
+	it("6.11: resume.ts emits atomic repo failure summaries for failed multi-repo merges", () => {
+		const resumeSource = readSource("resume.ts");
+
+		expect(resumeSource).toContain("formatRepoAtomicFailureSummary");
+		expect(resumeSource).toContain("const atomicRepoSummary = formatRepoAtomicFailureSummary(mergeResult)");
+		expect(resumeSource).toContain("onNotify(atomicRepoSummary, \"warning\")");
+	});
 });

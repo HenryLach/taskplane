@@ -6,11 +6,13 @@ import { existsSync, mkdirSync, readdirSync, realpathSync, rmdirSync, rmSync } f
 import { execSync } from "child_process";
 import { join, basename, resolve } from "path";
 
+import { loadProjectConfig } from "./config-loader.ts";
 import { execLog } from "./execution.ts";
 import { runGit } from "./git.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { DEFAULT_ORCHESTRATOR_CONFIG, WorktreeError } from "./types.ts";
-import type { AllocatedLane, BulkWorktreeError, CreateLaneWorktreesResult, CreateWorktreeOptions, LaneTaskOutcome, OrchestratorConfig, PreflightCheck, PreflightResult, RemoveAllWorktreesResult, RemoveWorktreeOutcome, RemoveWorktreeResult, WorktreeInfo } from "./types.ts";
+import type { AllocatedLane, BulkWorktreeError, CreateLaneWorktreesResult, CreateWorktreeOptions, LaneTaskOutcome, OrchestratorConfig, PreflightCheck, PreflightResult, RemoveAllWorktreesResult, RemoveWorktreeOutcome, RemoveWorktreeResult, WorktreeInfo, WorkspaceConfig } from "./types.ts";
+import { DEFAULT_SUBMODULE_POLICY, collectWorkspaceSyncSummary, workspaceSyncSummaryToChecks } from "./workspace-sync.ts";
 
 // ── Worktree Helpers ─────────────────────────────────────────────────
 
@@ -1646,6 +1648,41 @@ export function meetsMinVersion(actual: [number, number], minimum: [number, numb
 	return false;
 }
 
+interface PreflightOptions {
+	workspaceRoot?: string;
+	pointerConfigRoot?: string;
+	workspaceConfig?: WorkspaceConfig | null;
+}
+
+type PreflightSubmodulePolicy = {
+	failureMode: "permissive" | "strict";
+	onSubmoduleDrift: "manual" | "init-only" | "recursive-on-drift";
+	repoIdStrategy: "path-basename";
+};
+
+function resolvePreflightSubmodulePolicy(repoRoot?: string, options?: PreflightOptions): PreflightSubmodulePolicy {
+	const configCwd = options?.workspaceRoot ?? repoRoot ?? process.cwd();
+	try {
+		const fullConfig = loadProjectConfig(configCwd, options?.pointerConfigRoot);
+		return {
+			failureMode: fullConfig.orchestrator.failure.submoduleFailureMode ?? DEFAULT_SUBMODULE_POLICY.failureMode,
+			onSubmoduleDrift: fullConfig.orchestrator.failure.onSubmoduleDrift ?? DEFAULT_SUBMODULE_POLICY.onSubmoduleDrift,
+			repoIdStrategy: fullConfig.orchestrator.orchestrator.submoduleRepoIdStrategy ?? DEFAULT_SUBMODULE_POLICY.repoIdStrategy,
+		};
+	} catch {
+		return { ...DEFAULT_SUBMODULE_POLICY };
+	}
+}
+
+function collectSubmoduleChecks(
+	repoRoot: string | undefined,
+	options: PreflightOptions | undefined,
+	policy: PreflightSubmodulePolicy,
+): PreflightCheck[] {
+	const summary = collectWorkspaceSyncSummary(repoRoot, options?.workspaceConfig, policy);
+	return workspaceSyncSummaryToChecks(summary);
+}
+
 /**
  * Run preflight checks for all orchestrator dependencies.
  *
@@ -1656,8 +1693,9 @@ export function meetsMinVersion(actual: [number, number], minimum: [number, numb
  *
  * Compatibility checks:
  *   - Runtime backend mode visibility (subprocess-only)
+ *   - Workspace submodule policy / drift visibility
  */
-export function runPreflight(config: OrchestratorConfig, repoRoot?: string): PreflightResult {
+export function runPreflight(config: OrchestratorConfig, repoRoot?: string, options?: PreflightOptions): PreflightResult {
 	const checks: PreflightCheck[] = [];
 
 	// ── Git version ──────────────────────────────────────────────
@@ -1727,6 +1765,9 @@ export function runPreflight(config: OrchestratorConfig, repoRoot?: string): Pre
 			hint: "Install Pi: npm install -g @mariozechner/pi-coding-agent",
 		});
 	}
+
+	const submodulePolicy = resolvePreflightSubmodulePolicy(repoRoot, options);
+	checks.push(...collectSubmoduleChecks(repoRoot, options, submodulePolicy));
 
 	return {
 		passed: checks.every((c) => c.status !== "fail"),

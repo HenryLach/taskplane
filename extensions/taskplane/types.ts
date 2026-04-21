@@ -20,6 +20,7 @@ export interface OrchestratorConfig {
 		operator_id: string;
 		/** How completed batches are integrated. manual = user runs /orch-integrate. supervised = supervisor proposes plan, asks confirmation. auto = supervisor executes without asking. */
 		integration: "manual" | "supervised" | "auto";
+		submodule_repo_id_strategy: "path-basename";
 	};
 	dependencies: {
 		source: "prompt" | "agent";
@@ -49,6 +50,8 @@ export interface OrchestratorConfig {
 	failure: {
 		on_task_failure: "skip-dependents" | "stop-wave" | "stop-all";
 		on_merge_failure: "pause" | "abort";
+		submodule_failure_mode: "permissive" | "strict";
+		on_submodule_drift: "manual" | "init-only" | "recursive-on-drift";
 		stall_timeout: number;
 		max_worker_minutes: number;
 		abort_grace_period: number;
@@ -103,6 +106,10 @@ export interface ParsedTask {
 	status: "pending" | "complete";
 	/** Repo ID declared in the PROMPT metadata (e.g., "api", "frontend"). Undefined if not declared. */
 	promptRepoId?: string;
+	/** Ordered repo IDs declared via `## Execution Target` `Repos:` metadata. */
+	promptRepoIds?: string[];
+	/** Ordered repo IDs participating in the current segment frontier for this task. */
+	participatingRepoIds?: string[];
 	/** Resolved repo ID after routing precedence (workspace mode only). Undefined in repo mode. */
 	resolvedRepoId?: string;
 	/** Optional explicit segment DAG metadata from `## Segment DAG`. */
@@ -359,6 +366,7 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 		sessionPrefix: "orch",
 		operator_id: "",
 		integration: "manual",
+		submodule_repo_id_strategy: "path-basename",
 	},
 	dependencies: {
 		source: "prompt",
@@ -384,6 +392,8 @@ export const DEFAULT_ORCHESTRATOR_CONFIG: OrchestratorConfig = {
 	failure: {
 		on_task_failure: "skip-dependents",
 		on_merge_failure: "pause",
+		submodule_failure_mode: "permissive",
+		on_submodule_drift: "manual",
 		stall_timeout: 30,
 		max_worker_minutes: 30,
 		abort_grace_period: 60,
@@ -1113,6 +1123,13 @@ export interface WaveExecutionResult {
  */
 export type OrchBatchPhase = "idle" | "launching" | "planning" | "executing" | "merging" | "paused" | "stopped" | "completed" | "failed";
 
+export interface OrchWorkspaceSyncStatus {
+	state: "none" | "clean";
+	trackedSubmodules: number;
+	label: string;
+	detail: string;
+}
+
 /**
  * Runtime state for a batch execution.
  *
@@ -1193,6 +1210,8 @@ export interface OrchBatchRuntimeState {
 	 * and repo-mode batches.
 	 */
 	segments?: PersistedSegmentRecord[];
+	/** Workspace repo/submodule sync snapshot captured before execution starts. */
+	workspaceSyncStatus?: OrchWorkspaceSyncStatus;
 	/**
 	 * Unknown top-level fields from loaded persisted state.
 	 * Carried forward so they survive serialization roundtrips.
@@ -2693,6 +2712,13 @@ export interface PersistedTaskRecord {
 	 */
 	resolvedRepoId?: string;
 	/**
+	 * Ordered repo IDs participating in this task's current segment frontier.
+	 *
+	 * Used to restore cross-repo worker context on resume, including
+	 * dynamically-expanded segments that are not recoverable from prompt metadata.
+	 */
+	participatingRepoIds?: string[];
+	/**
 	 * Number of commits preserved as partial progress for a failed task (TP-028).
 	 * Undefined when no partial progress was saved (succeeded tasks, no commits, etc.).
 	 * Optional for backward compatibility with pre-TP-028 state files.
@@ -2870,6 +2896,10 @@ export interface PersistedMergeResult {
 	failedLane: number | null;
 	/** Failure reason (null if all succeeded) */
 	failureReason: string | null;
+	/** True when merge-safe-stop was triggered by rollback failure. */
+	rollbackFailed?: boolean;
+	/** Persisted warnings from transaction record persistence. */
+	persistenceErrors?: string[];
 	/**
 	 * Per-repo merge outcomes (v2, TP-009).
 	 * Populated in workspace mode when MergeWaveResult.repoResults is available.
@@ -3014,6 +3044,8 @@ export interface PersistedBatchState {
 	 * Required in v4. Migration from v1/v2/v3 fills empty array.
 	 */
 	segments: PersistedSegmentRecord[];
+	/** Optional workspace repo/submodule sync snapshot for dashboard rendering. */
+	workspaceSyncStatus?: OrchWorkspaceSyncStatus;
 	/**
 	 * Unknown top-level fields captured during deserialization.
 	 * Preserved on roundtrip to avoid data loss from future schema extensions
@@ -3856,6 +3888,13 @@ export interface ExecutionUnit {
 	executionRepoId: string;
 	/** Repo ID that owns the packet files (may differ in workspace mode) */
 	packetHomeRepoId: string;
+	/**
+	 * Repo ID → absolute path map for repos participating in this task.
+	 *
+	 * The active execution repo resolves to the lane worktree so edits land on
+	 * the orch branch. Sibling repos resolve to their workspace repo roots.
+	 */
+	repoPaths: Record<string, string>;
 	/** Absolute path to the execution worktree */
 	worktreePath: string;
 	/** Authoritative packet file paths */

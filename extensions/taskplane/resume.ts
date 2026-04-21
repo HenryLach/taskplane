@@ -34,7 +34,7 @@ function terminateAliveV2Agents(stateRoot: string, batchId: string, sessionName:
 }
 import { getCurrentBranch, runGit } from "./git.ts";
 import { mergeWaveByRepo } from "./merge.ts";
-import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
+import { applyMergeRetryLoop, computeCleanupGatePolicy, computeMergeFailurePolicy, extractFailedRepoId, formatRepoAtomicFailureSummary, formatRepoMergeSummary, ORCH_MESSAGES } from "./messages.ts";
 import type { CleanupGateRepoFailure } from "./messages.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { applyPartialProgressToOutcomes, deleteBatchState, hasTaskDoneMarker, loadBatchState, persistRuntimeState, seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, upsertTaskOutcome } from "./persistence.ts";
@@ -157,6 +157,9 @@ export function reconstructAllocatedLanes(
 			}
 			if (persistedTask?.resolvedRepoId !== undefined) {
 				taskStub.resolvedRepoId = persistedTask.resolvedRepoId;
+			}
+			if ((persistedTask as any)?.participatingRepoIds !== undefined) {
+				(taskStub as any).participatingRepoIds = (persistedTask as any).participatingRepoIds;
 			}
 			// TP-169: Always set taskFolder on stub, even if empty string.
 			// Previously, the falsy check `if (persistedTask?.taskFolder)` skipped
@@ -1433,12 +1436,15 @@ export async function resumeOrchBatch(
 
 	// Rehydrate discovered tasks with persisted segment metadata.
 	// Dynamically expanded segments may reference tasks that have segment-level
-	// fields (segmentIds, activeSegmentId, packetRepoId, packetTaskPath) set
+	// fields (participatingRepoIds, segmentIds, activeSegmentId, packetRepoId, packetTaskPath) set
 	// during the prior run. Merge these back into discovered ParsedTask records
 	// so execution can resume with correct segment context.
 	for (const persistedTask of persistedState.tasks) {
 		const parsed = discovery.pending.get(persistedTask.taskId);
 		if (!parsed) continue;
+		if (persistedTask.participatingRepoIds?.length) {
+			parsed.participatingRepoIds = persistedTask.participatingRepoIds;
+		}
 		if (persistedTask.segmentIds?.length) {
 			parsed.segmentIds = persistedTask.segmentIds;
 		}
@@ -2260,6 +2266,11 @@ export async function resumeOrchBatch(
 						ORCH_MESSAGES.orchMergeFailed(resolveDisplayWaveNumber(waveIdx, roundToTaskWave, taskLevelWaveCount).displayWave, mergeResult.failedLane ?? 0, mergeResult.failureReason || "unknown"),
 						"error",
 					);
+
+					const atomicRepoSummary = formatRepoAtomicFailureSummary(mergeResult);
+					if (atomicRepoSummary) {
+						onNotify(atomicRepoSummary, "warning");
+					}
 
 					// Emit repo-divergence summary when partial is caused by cross-repo outcome differences
 					if (mergeResult.status === "partial") {

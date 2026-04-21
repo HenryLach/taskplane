@@ -114,6 +114,13 @@ Optional pre-run commands (disabled by default).
 - `verify` — commands run after each merge (add only safe, deterministic checks).
 - `order` — lane merge order policy.
 
+Workspace mode note:
+
+- Merge attempts still run per repo, but the wave commits atomically across participating repos.
+- A repo-local merge success is provisional until every repo group in the wave succeeds.
+- If any repo group fails, Taskplane rolls already-advanced repo refs back to their pre-wave heads and reports the wave as failed.
+- If rollback itself fails, Taskplane forces a pause-safe-stop so the partial recovery state can be inspected manually.
+
 ### `orchestrator.failure`
 
 ```json
@@ -137,6 +144,7 @@ Optional pre-run commands (disabled by default).
 - `onMergeFailure`:
   - `"pause"` (recommended)
   - `"abort"`
+- In workspace mode, `onMergeFailure` applies after atomic rollback is attempted. A rollback failure always forces a pause so refs and worktrees are preserved for recovery.
 - `stallTimeout` — minutes before a task is considered stalled.
 - `maxWorkerMinutes` — task-runner timeout budget in orchestrated runs.
 - `abortGracePeriod` — graceful abort wait (seconds) before force kill.
@@ -186,6 +194,7 @@ Start conservative, then increase parallelism after stable runs.
 
 - Increase `maxLanes` only if your tests/CI and machine can handle it.
 - In workspace mode, `maxLanes` is enforced as a **global cap** across all repos — not per-repo. With `maxLanes: 4` and 3 repos, each repo gets at least 1 lane, with remaining lanes allocated proportionally.
+- Multi-repo tasks should declare their target repos in `## Execution Target` using `Repo:` or `Repos:`. Use `## Segment DAG` only when you need explicit ordering between those repos.
 - Keep `onMergeFailure: "pause"` so humans can resolve conflicts and `/orch-resume`.
 - Keep `verify` short and deterministic to avoid slow merge bottlenecks.
 

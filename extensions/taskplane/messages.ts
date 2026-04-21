@@ -143,6 +143,8 @@ export const ORCH_MESSAGES = {
 	// /orch merge — repo-scoped partial summary (TP-005 Step 1)
 	orchMergePartialRepoSummary: (waveNum: number, repoLines: string[]) =>
 		`⚠️ [Wave ${waveNum}] Merge partially succeeded — repo outcomes diverged:\n${repoLines.join("\n")}`,
+	orchMergeAtomicRepoFailureSummary: (waveNum: number, repoLines: string[]) =>
+		`❌ [Wave ${waveNum}] Merge failed — repo changes were rolled back atomically:\n${repoLines.join("\n")}`,
 
 	// /orch integration — post-batch integration guidance (TP-022 Step 4)
 	orchIntegrationAutoSuccess: (orchBranch: string, baseBranch: string) =>
@@ -233,6 +235,51 @@ export function formatRepoMergeSummary(mergeResult: MergeWaveResult): string | n
 	});
 
 	return ORCH_MESSAGES.orchMergePartialRepoSummary(mergeResult.waveIndex, repoLines);
+}
+
+function isAtomicRollbackFailureReason(reason: string | null): boolean {
+	return !!reason && reason.startsWith("cross_repo_atomic_rollback");
+}
+
+/**
+ * Format a repo-scoped failure summary for strict atomic multi-repo merges.
+ *
+ * Returns null unless all of the following are true:
+ * - mergeResult.status is "failed"
+ * - repoResults exists with at least 2 repos
+ * - at least one repo failureReason indicates atomic rollback
+ * - the wave was not a rollback safe-stop (that has dedicated messaging)
+ */
+export function formatRepoAtomicFailureSummary(mergeResult: MergeWaveResult): string | null {
+	const repoResults = mergeResult.repoResults;
+	if (mergeResult.status !== "failed" || mergeResult.rollbackFailed) {
+		return null;
+	}
+	if (!repoResults || repoResults.length < 2) {
+		return null;
+	}
+	if (!repoResults.some(result => isAtomicRollbackFailureReason(result.failureReason))) {
+		return null;
+	}
+
+	const repoLines = repoResults.map(result => {
+		const repoLabel = result.repoId ?? "(default)";
+		const rolledBack = isAtomicRollbackFailureReason(result.failureReason);
+		const icon = rolledBack ? "↩" : "❌";
+		const mergedCount = result.laneResults.filter(
+			lane => !lane.error && (lane.result?.status === "SUCCESS" || lane.result?.status === "CONFLICT_RESOLVED"),
+		).length;
+		const totalCount = result.laneResults.length;
+		let detail = rolledBack
+			? `${mergedCount}/${totalCount} lane(s) rolled back`
+			: `${mergedCount}/${totalCount} lane(s) attempted`;
+		if (result.failureReason) {
+			detail += ` — ${result.failureReason.slice(0, 150)}`;
+		}
+		return `   ${icon} ${repoLabel}: ${detail}`;
+	});
+
+	return ORCH_MESSAGES.orchMergeAtomicRepoFailureSummary(mergeResult.waveIndex, repoLines);
 }
 
 

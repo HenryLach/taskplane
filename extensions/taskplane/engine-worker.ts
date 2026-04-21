@@ -24,6 +24,7 @@ import type {
 	OrchestratorConfig,
 	SupervisorAlert,
 	TaskRunnerConfig,
+	OrchWorkspaceSyncStatus,
 	WorkspaceConfig,
 	WorkspaceRepoConfig,
 } from "./types.ts";
@@ -74,6 +75,7 @@ export interface SerializedBatchState {
 	errors: string[];
 	/** Active lanes for the current wave (synced so /orch-sessions works). */
 	currentLanes: AllocatedLane[];
+	workspaceSyncStatus?: OrchWorkspaceSyncStatus;
 }
 
 /**
@@ -168,6 +170,7 @@ function serializeBatchState(state: OrchBatchRuntimeState): SerializedBatchState
 		endedAt: state.endedAt,
 		errors: [...state.errors],
 		currentLanes: state.currentLanes,
+		workspaceSyncStatus: state.workspaceSyncStatus,
 	};
 }
 
@@ -197,6 +200,7 @@ export function applySerializedState(
 	batchState.endedAt = serialized.endedAt;
 	batchState.errors = [...serialized.errors];
 	batchState.currentLanes = serialized.currentLanes ?? [];
+	batchState.workspaceSyncStatus = serialized.workspaceSyncStatus;
 }
 
 // ── Engine main (runs when launched as a forked child process) ───────

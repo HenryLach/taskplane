@@ -365,6 +365,19 @@ describe("10. getFieldDisplayValue", () => {
 		const field = makeL1Field(); // maxLanes defaults to 3
 		expect(getFieldDisplayValue(field, config, emptyPrefs)).toBe("3");
 	});
+
+	it("10.9 displays submodule drift defaults when no overrides exist", () => {
+		const config = cloneConfig();
+		const field: FieldDef = {
+			configPath: "orchestrator.failure.onSubmoduleDrift",
+			label: "On Submodule Drift",
+			control: "picker",
+			layer: "L1",
+			fieldType: "enum",
+			values: ["manual", "init-only", "recursive-on-drift"],
+		};
+		expect(getFieldDisplayValue(field, config, emptyPrefs)).toBe("manual");
+	});
 });
 
 
@@ -578,6 +591,19 @@ describe("12. SECTIONS schema coverage", () => {
 		expect(mergeThinking!.prefsKey).toBe("mergeThinking");
 		expect(getDefaultWriteDestination(mergeThinking!)).toBe("prefs");
 	});
+
+	it("12.9 keeps submodule controls under Orchestrator and Failure Policy", () => {
+		expect(SECTIONS.find((section) => section.name === "Submodules")).toBeUndefined();
+
+		const orchestrator = SECTIONS.find((section) => section.name === "Orchestrator");
+		expect(orchestrator).toBeDefined();
+		expect(orchestrator!.fields.some((field) => field.configPath === "orchestrator.orchestrator.submoduleRepoIdStrategy")).toBe(true);
+
+		const failure = SECTIONS.find((section) => section.name === "Failure Policy");
+		expect(failure).toBeDefined();
+		expect(failure!.fields.some((field) => field.configPath === "orchestrator.failure.submoduleFailureMode")).toBe(true);
+		expect(failure!.fields.some((field) => field.configPath === "orchestrator.failure.onSubmoduleDrift")).toBe(true);
+	});
 });
 
 
@@ -733,6 +759,24 @@ describe("14. writeProjectConfigField", () => {
 		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
 		expect(result.orchestrator.orchestrator.maxLanes).toBe(5);
 		expect(result.configVersion).toBe(CONFIG_VERSION);
+	});
+
+	it("14.1b ignores taskplane-settings.json and writes the canonical project config", () => {
+		const dir = makeWriteTestDir("ignore-taskplane-settings-json");
+		writePiFile(dir, "taskplane-settings.json", JSON.stringify({
+			configVersion: CONFIG_VERSION,
+			orchestrator: { orchestrator: { maxLanes: 99 } },
+		}, null, 2));
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.maxLanes", 5);
+
+		const canonicalPath = join(dir, ".pi", PROJECT_CONFIG_FILENAME);
+		expect(existsSync(canonicalPath)).toBe(true);
+		const canonical = readJsonFile(canonicalPath);
+		expect(canonical.orchestrator.orchestrator.maxLanes).toBe(5);
+
+		const stray = readJsonFile(join(dir, ".pi", "taskplane-settings.json"));
+		expect(stray.orchestrator.orchestrator.maxLanes).toBe(99);
 	});
 
 	it("14.2 creates nested path that doesn't exist yet", () => {
@@ -926,6 +970,20 @@ routing:
 
 		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
 		expect(result.orchestrator.dependencies.cache).toBe(false);
+	});
+
+	it("14.10b writes submodule policy settings to taskplane-config.json", () => {
+		const dir = makeWriteTestDir("submodule-policy");
+		writeJsonConfig(dir, { configVersion: CONFIG_VERSION });
+
+		writeProjectConfigField(dir, "orchestrator.orchestrator.submoduleRepoIdStrategy", "path-basename");
+		writeProjectConfigField(dir, "orchestrator.failure.submoduleFailureMode", "strict");
+		writeProjectConfigField(dir, "orchestrator.failure.onSubmoduleDrift", "recursive-on-drift");
+
+		const result = readJsonFile(join(dir, ".pi", PROJECT_CONFIG_FILENAME));
+		expect(result.orchestrator.orchestrator.submoduleRepoIdStrategy).toBe("path-basename");
+		expect(result.orchestrator.failure.submoduleFailureMode).toBe("strict");
+		expect(result.orchestrator.failure.onSubmoduleDrift).toBe("recursive-on-drift");
 	});
 
 	it("14.11 writes to pointer-resolved flat layout (no .pi subdir)", () => {

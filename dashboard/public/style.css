@@ -201,6 +201,26 @@ body {
   color: var(--accent);
 }
 
+.badge-workspace {
+  background: var(--accent-tint-bg);
+  border: 1px solid var(--border);
+  color: var(--accent);
+}
+
+.badge-sync {
+  border: 1px solid var(--border);
+}
+
+.sync-clean {
+  background: var(--green-tint-bg);
+  color: var(--green);
+}
+
+.sync-none {
+  background: var(--badge-pending-bg);
+  color: var(--text-muted);
+}
+
 .badge-phase {
   font-weight: 600;
   text-transform: uppercase;

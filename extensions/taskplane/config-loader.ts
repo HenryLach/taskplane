@@ -360,7 +360,6 @@ function mapOrchestratorYaml(raw: any): Partial<OrchestratorSection> {
 
 	return result;
 }
-
 /**
  * Normalize a workspace section loaded from JSON/YAML into camelCase shape.
  *
@@ -375,55 +374,51 @@ function normalizeWorkspaceSection(
 		return undefined;
 	}
 
+	const normalized: WorkspaceSectionConfig = {};
+
 	const rawRepos = rawWorkspace.repos;
-	if (!rawRepos || typeof rawRepos !== "object" || Array.isArray(rawRepos)) {
-		return undefined;
-	}
-
 	const rawRouting = rawWorkspace.routing;
-	if (!rawRouting || typeof rawRouting !== "object" || Array.isArray(rawRouting)) {
-		return undefined;
+	if (
+		rawRepos && typeof rawRepos === "object" && !Array.isArray(rawRepos) &&
+		rawRouting && typeof rawRouting === "object" && !Array.isArray(rawRouting)
+	) {
+		const repos: NonNullable<WorkspaceSectionConfig["repos"]> = {};
+		for (const [repoId, repoVal] of Object.entries(rawRepos as Record<string, any>)) {
+			if (!repoVal || typeof repoVal !== "object" || Array.isArray(repoVal)) continue;
+			const repoObj = repoVal as Record<string, any>;
+			if (typeof repoObj.path !== "string" || repoObj.path.trim() === "") continue;
+			repos[repoId] = {
+				path: repoObj.path,
+				...(typeof repoObj.defaultBranch === "string" && repoObj.defaultBranch.trim()
+					? { defaultBranch: repoObj.defaultBranch }
+					: {}),
+			};
+		}
+
+		const defaultRepo = typeof rawRouting.defaultRepo === "string" ? rawRouting.defaultRepo.trim() : "";
+		const tasksRoot = typeof rawRouting.tasksRoot === "string" ? rawRouting.tasksRoot.trim() : "";
+		let taskPacketRepo = typeof rawRouting.taskPacketRepo === "string" ? rawRouting.taskPacketRepo.trim() : "";
+
+		if (!taskPacketRepo && defaultRepo) {
+			taskPacketRepo = defaultRepo;
+			console.error(
+				`[taskplane] config compatibility: workspace.routing.taskPacketRepo is missing in ${sourcePath}; defaulting to workspace.routing.defaultRepo ('${defaultRepo}'). Add workspace.routing.taskPacketRepo explicitly.`,
+			);
+		}
+
+		if (tasksRoot && defaultRepo && taskPacketRepo && Object.keys(repos).length > 0) {
+			const strict = rawRouting.strict === true;
+			normalized.repos = repos;
+			normalized.routing = {
+				tasksRoot,
+				defaultRepo,
+				taskPacketRepo,
+				...(strict ? { strict: true } : {}),
+			};
+		}
 	}
 
-	const repos: WorkspaceSectionConfig["repos"] = {};
-	for (const [repoId, repoVal] of Object.entries(rawRepos as Record<string, any>)) {
-		if (!repoVal || typeof repoVal !== "object" || Array.isArray(repoVal)) continue;
-		const repoObj = repoVal as Record<string, any>;
-		if (typeof repoObj.path !== "string" || repoObj.path.trim() === "") continue;
-		repos[repoId] = {
-			path: repoObj.path,
-			...(typeof repoObj.defaultBranch === "string" && repoObj.defaultBranch.trim()
-				? { defaultBranch: repoObj.defaultBranch }
-				: {}),
-		};
-	}
-
-	const defaultRepo = typeof rawRouting.defaultRepo === "string" ? rawRouting.defaultRepo.trim() : "";
-	const tasksRoot = typeof rawRouting.tasksRoot === "string" ? rawRouting.tasksRoot.trim() : "";
-	let taskPacketRepo = typeof rawRouting.taskPacketRepo === "string" ? rawRouting.taskPacketRepo.trim() : "";
-
-	if (!taskPacketRepo && defaultRepo) {
-		taskPacketRepo = defaultRepo;
-		console.error(
-			`[taskplane] config compatibility: workspace.routing.taskPacketRepo is missing in ${sourcePath}; defaulting to workspace.routing.defaultRepo ('${defaultRepo}'). Add workspace.routing.taskPacketRepo explicitly.`,
-		);
-	}
-
-	if (!tasksRoot || !defaultRepo || !taskPacketRepo) {
-		return undefined;
-	}
-
-	const strict = rawRouting.strict === true;
-
-	return {
-		repos,
-		routing: {
-			tasksRoot,
-			defaultRepo,
-			taskPacketRepo,
-			...(strict ? { strict: true } : {}),
-		},
-	};
+	return Object.keys(normalized).length > 0 ? normalized : undefined;
 }
 
 
@@ -781,7 +776,10 @@ function extractAllowlistedPreferences(raw: Record<string, any>, prefsPath: stri
 
 	const workspaceOverrides = extractConfigOverrideSection(raw.workspace);
 	if (workspaceOverrides) {
-		prefs.workspace = workspaceOverrides as GlobalPreferences["workspace"];
+		const normalizedWorkspace = normalizeWorkspaceSection(workspaceOverrides, prefsPath);
+		if (normalizedWorkspace) {
+			prefs.workspace = normalizedWorkspace as GlobalPreferences["workspace"];
+		}
 	}
 
 	// Legacy flat aliases (backward compatibility for existing preferences.json files)
@@ -838,10 +836,6 @@ export function applyGlobalPreferences(config: TaskplaneConfig, prefs: GlobalPre
 
 	// spawnMode: enum — apply if defined (not a string-empty check)
 	if (prefs.spawnMode !== undefined) {
-		if (prefs.spawnMode === "tmux") {
-			prefs.spawnMode = "subprocess";
-			console.error(`[taskplane] Auto-migrated runtime preference: spawnMode "tmux" → "subprocess"`);
-		}
 		config.orchestrator.orchestrator.spawnMode = prefs.spawnMode;
 	}
 
@@ -956,7 +950,7 @@ function migrateProjectOverrides(overrides: Partial<TaskplaneConfig>, configRoot
 	if (_projectMigrationDone) return false;
 
 	let migrated = false;
-	const orchestratorCore = overrides.orchestrator?.orchestrator as Record<string, unknown> | undefined;
+	const orchestratorCore = overrides.orchestrator?.orchestrator as unknown as Record<string, unknown> | undefined;
 	if (orchestratorCore && hasOwn(orchestratorCore, "tmuxPrefix")) {
 		const currentPrefix = orchestratorCore.sessionPrefix;
 		const isDefault = currentPrefix === undefined || currentPrefix === "orch";
@@ -973,7 +967,7 @@ function migrateProjectOverrides(overrides: Partial<TaskplaneConfig>, configRoot
 		migrated = true;
 	}
 
-	const workerConfig = overrides.taskRunner?.worker as Record<string, unknown> | undefined;
+	const workerConfig = overrides.taskRunner?.worker as unknown as Record<string, unknown> | undefined;
 	if (workerConfig?.spawnMode === "tmux") {
 		(workerConfig as any).spawnMode = "subprocess";
 		console.error(`[taskplane] Auto-migrated: taskRunner.worker.spawnMode "tmux" → "subprocess"`);
@@ -1024,8 +1018,8 @@ export function loadProjectOverrides(configRoot: string): Partial<TaskplaneConfi
 	const workspace = loadWorkspaceYaml(configRoot);
 
 	const overrides: Partial<TaskplaneConfig> = {};
-	if (Object.keys(taskRunner).length > 0) overrides.taskRunner = taskRunner;
-	if (Object.keys(orchestrator).length > 0) overrides.orchestrator = orchestrator;
+	if (Object.keys(taskRunner).length > 0) overrides.taskRunner = taskRunner as TaskplaneConfig["taskRunner"];
+	if (Object.keys(orchestrator).length > 0) overrides.orchestrator = orchestrator as TaskplaneConfig["orchestrator"];
 	if (workspace) overrides.workspace = workspace;
 	return overrides;
 }
@@ -1054,7 +1048,6 @@ export function loadProjectConfig(cwd: string, pointerConfigRoot?: string): Task
 	_projectMigrationDone = false;
 	migrateProjectOverrides(overrides, configRoot);
 	mergeProjectOverrides(config, overrides);
-
 	normalizeInheritanceAliases(config);
 	return config;
 }
@@ -1072,7 +1065,6 @@ export function loadLayer1Config(cwd: string, pointerConfigRoot?: string): Taskp
 	_projectMigrationDone = false;
 	migrateProjectOverrides(overrides, configRoot);
 	mergeProjectOverrides(config, overrides);
-
 	normalizeInheritanceAliases(config);
 	return config;
 }
@@ -1102,6 +1094,7 @@ export function toOrchestratorConfig(config: TaskplaneConfig): import("./types.t
 			sessionPrefix: o.orchestrator.sessionPrefix,
 			operator_id: o.orchestrator.operatorId,
 			integration: o.orchestrator.integration,
+			submodule_repo_id_strategy: o.orchestrator.submoduleRepoIdStrategy,
 		},
 		dependencies: {
 			source: o.dependencies.source,
@@ -1130,6 +1123,8 @@ export function toOrchestratorConfig(config: TaskplaneConfig): import("./types.t
 		failure: {
 			on_task_failure: o.failure.onTaskFailure,
 			on_merge_failure: o.failure.onMergeFailure,
+			submodule_failure_mode: o.failure.submoduleFailureMode,
+			on_submodule_drift: o.failure.onSubmoduleDrift,
 			stall_timeout: o.failure.stallTimeout,
 			max_worker_minutes: o.failure.maxWorkerMinutes,
 			abort_grace_period: o.failure.abortGracePeriod,

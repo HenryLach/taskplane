@@ -805,6 +805,32 @@ export function buildSegmentPlanForTask(
 		};
 	}
 
+	const declaredRepoIds: string[] = [];
+	const declaredRepoSet = new Set<string>();
+	for (const repoIdRaw of task.promptRepoIds ?? []) {
+		const repoId = normalizeRepoIdCandidate(repoIdRaw);
+		if (!repoId || declaredRepoSet.has(repoId)) continue;
+		declaredRepoSet.add(repoId);
+		declaredRepoIds.push(repoId);
+	}
+	if (declaredRepoIds.length > 0) {
+		const segments = buildSegmentNodes(task.taskId, declaredRepoIds);
+		const edges = sortSegmentEdges(
+			segments.slice(0, -1).map((segment, idx) => ({
+				fromSegmentId: segment.segmentId,
+				toSegmentId: segments[idx + 1].segmentId,
+				provenance: "inferred" as const,
+				reason: "prompt:execution-target-repos",
+			})),
+		);
+		return {
+			taskId: task.taskId,
+			segments,
+			edges,
+			mode: declaredRepoIds.length === 1 ? "repo-singleton" : "inferred-sequential",
+		};
+	}
+
 	const inferred = inferTaskRepoOrder(task, pending, knownRepoIds);
 	const segments = buildSegmentNodes(task.taskId, inferred.repoIds);
 	const edges = sortSegmentEdges(

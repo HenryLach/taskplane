@@ -4,6 +4,13 @@
  */
 import { execFileSync } from "child_process";
 
+export interface GitSubmoduleStatus {
+	path: string;
+	state: "ok" | "uninitialized" | "drifted" | "conflict";
+	commit: string;
+	description?: string;
+}
+
 
 // ── Branch Helpers ───────────────────────────────────────────────────
 
@@ -86,5 +93,89 @@ export function runGitWithEnv(
 			stderr: (e.stderr ?? e.message ?? "unknown error").toString().trim(),
 		};
 	}
+}
+
+function uniqueSorted(values: Iterable<string>): string[] {
+	return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+/** List submodule paths declared in .gitmodules. */
+export function listConfiguredSubmodulePaths(cwd: string): string[] {
+	const result = runGit(["config", "-f", ".gitmodules", "--get-regexp", "^submodule\\..*\\.path$"], cwd);
+	if (!result.ok || !result.stdout.trim()) return [];
+
+	const paths: string[] = [];
+	for (const line of result.stdout.split(/\r?\n/)) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		const value = trimmed.replace(/^submodule\.[^.]+\.path\s+/, "").trim();
+		if (value) paths.push(value);
+	}
+
+	return uniqueSorted(paths);
+}
+
+/** List gitlink entries tracked by the current repository. */
+export function listGitlinkPaths(cwd: string): string[] {
+	const result = runGit(["ls-files", "--stage"], cwd);
+	if (!result.ok || !result.stdout.trim()) return [];
+
+	const paths: string[] = [];
+	for (const line of result.stdout.split(/\r?\n/)) {
+		const match = line.match(/^160000\s+[0-9a-f]+\s+\d+\t(.+)$/i);
+		if (match?.[1]) {
+			paths.push(match[1]);
+		}
+	}
+
+	return uniqueSorted(paths);
+}
+
+function parseSubmoduleStatusLine(line: string): GitSubmoduleStatus | undefined {
+	if (!line) return undefined;
+	const prefix = line[0];
+	const trimmed = line.slice(1).trim();
+	if (!trimmed) return undefined;
+
+	const firstSpace = trimmed.indexOf(" ");
+	if (firstSpace <= 0) return undefined;
+
+	const commit = trimmed.slice(0, firstSpace).trim();
+	let pathAndDescription = trimmed.slice(firstSpace + 1).trim();
+	let description: string | undefined;
+
+	const descriptionMatch = pathAndDescription.match(/^(.*)\s+\((.*)\)$/);
+	if (descriptionMatch) {
+		pathAndDescription = descriptionMatch[1].trim();
+		description = descriptionMatch[2].trim();
+	}
+
+	if (!pathAndDescription) return undefined;
+
+	const state =
+		prefix === "-" ? "uninitialized" :
+		prefix === "+" ? "drifted" :
+		prefix === "U" ? "conflict" :
+		"ok";
+
+	return {
+		path: pathAndDescription,
+		state,
+		commit,
+		...(description ? { description } : {}),
+	};
+}
+
+/** List recursive submodule status entries for the repository. */
+export function listSubmoduleStatus(cwd: string): GitSubmoduleStatus[] {
+	const result = runGit(["submodule", "status", "--recursive"], cwd);
+	if (!result.ok || !result.stdout.trim()) return [];
+
+	const statuses = result.stdout
+		.split(/\r?\n/)
+		.map(parseSubmoduleStatusLine)
+		.filter((entry): entry is GitSubmoduleStatus => !!entry);
+
+	return statuses.sort((left, right) => left.path.localeCompare(right.path));
 }
 

@@ -208,6 +208,8 @@ const $ = (id) => document.getElementById(id);
 
 const $batchId        = $("batch-id");
 const $batchPhase     = $("batch-phase");
+const $workspaceMode  = $("workspace-mode");
+const $submoduleStatus = $("submodule-status");
 const $connDot        = $("conn-dot");
 const $lastUpdate     = $("last-update");
 const $progressBarBg  = $("progress-bar-bg");
@@ -247,9 +249,8 @@ let lastBatchId = null;  // TP-178: track batchId for stale viewer detection (#4
 
 /**
  * Build a sorted, deduplicated list of repo IDs from the batch payload.
- * Returns empty array when mode !== "workspace" or when fewer than 2 repos.
  */
-function buildRepoSet(batch) {
+function collectRepoIds(batch) {
   if (!batch || batch.mode !== "workspace") return [];
 
   const repos = new Set();
@@ -266,6 +267,15 @@ function buildRepoSet(batch) {
     }
   }
   const sorted = Array.from(repos).sort();
+  return sorted;
+}
+
+/**
+ * Build the repo set used by the filter dropdown.
+ * Returns empty array when mode !== "workspace" or when fewer than 2 repos.
+ */
+function buildRepoSet(batch) {
+  const sorted = collectRepoIds(batch);
   return sorted.length >= 2 ? sorted : [];
 }
 
@@ -424,11 +434,34 @@ function renderHeader(batch) {
     $batchId.textContent = "—";
     $batchPhase.textContent = "No batch";
     $batchPhase.className = "header-badge badge-phase";
+    $workspaceMode.style.display = "none";
+    $submoduleStatus.style.display = "none";
     return;
   }
   $batchId.textContent = batch.batchId;
   $batchPhase.textContent = batch.phase;
   $batchPhase.className = `header-badge badge-phase phase-${batch.phase}`;
+
+  if (batch.mode === "workspace") {
+    const repoIds = collectRepoIds(batch);
+    const repoCount = repoIds.length;
+    $workspaceMode.style.display = "";
+    $workspaceMode.textContent = `${repoCount} repo${repoCount === 1 ? "" : "s"}`;
+    $workspaceMode.title = repoCount > 0
+      ? `Workspace batch spanning ${repoCount} repo${repoCount === 1 ? "" : "s"}`
+      : "Workspace batch";
+  } else {
+    $workspaceMode.style.display = "none";
+  }
+
+  if (batch.workspaceSyncStatus) {
+    $submoduleStatus.style.display = "";
+    $submoduleStatus.textContent = batch.workspaceSyncStatus.label;
+    $submoduleStatus.title = batch.workspaceSyncStatus.detail || "Workspace repo/submodule sync status";
+    $submoduleStatus.className = `header-badge badge-sync sync-${batch.workspaceSyncStatus.state}`;
+  } else {
+    $submoduleStatus.style.display = "none";
+  }
 }
 
 // ─── Render: Summary ────────────────────────────────────────────────────────
