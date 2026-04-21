@@ -1211,9 +1211,11 @@ async function showSectionSelectorLoop(
 		const sectionItems: SelectItem[] = SECTIONS.map((section, i) => ({
 			value: String(i),
 			label: section.name,
-			description: section.readOnly
-				? "Read-only collection/record fields"
-				: `${section.fields.length} setting${section.fields.length === 1 ? "" : "s"}`,
+			description: section.name === "Agent Extensions"
+				? "Toggle extensions per agent type"
+				: section.readOnly
+					? "Read-only collection/record fields"
+					: `${section.fields.length} setting${section.fields.length === 1 ? "" : "s"}`,
 		}));
 
 		const selectedSection = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
