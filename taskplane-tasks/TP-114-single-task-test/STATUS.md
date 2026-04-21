@@ -1,6 +1,6 @@
 # TP-114: Single Task Test — Status
 
-**Current Step:** Step 1: Create Test Files
+**Current Step:** Step 2: Code Analysis
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-21
 **Review Level:** 0
@@ -27,10 +27,10 @@
 ---
 
 ### Step 2: Code Analysis
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Count exported functions in lane-runner.ts → `analysis.txt`
-- [ ] List event types from agent-host.ts → `events.txt`
+- [x] Count exported functions in lane-runner.ts → `analysis.txt`
+- [x] List event types from agent-host.ts → `events.txt`
 
 ---
 
