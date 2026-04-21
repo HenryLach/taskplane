@@ -13,6 +13,7 @@ import { DEFAULT_ORCHESTRATOR_CONFIG, DEFAULT_TASK_RUNNER_CONFIG, FATAL_DISCOVER
 import type { AbortMode, ExecutionContext, MonitorState, OrchestratorConfig, PersistedBatchState, TaskRunnerConfig } from "./types.ts";
 import {
 	ORCH_MESSAGES,
+	buildOrchPlanWidgetLines,
 	computeIntegrateCleanupResult,
 	formatWorkspaceSyncPresentation,
 	getBlockingWorkspaceSyncFindings,
@@ -1695,6 +1696,11 @@ export default function (pi: ExtensionAPI) {
 		);
 	}
 
+	function setOrchPlanWidget(ctx: ExtensionContext, sections: Array<string | null | undefined>) {
+		const lines = buildOrchPlanWidgetLines(sections);
+		ctx.ui.setWidget("task-orch-plan", lines.length > 0 ? lines : undefined);
+	}
+
 	// ── Command Guard ────────────────────────────────────────────────
 
 	function getExecCtxInitErrorMessage(): string {
@@ -1887,8 +1893,23 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("orch-plan", {
 		description: "Preview execution plan: /orch-plan <areas|paths|all> [--refresh] [--sync]",
 		handler: async (args, ctx) => {
+			const orchPlanSections: string[] = [];
+			const publishOrchPlanSection = (
+				message: string,
+				level: "info" | "warning" | "error",
+				persist = true,
+			) => {
+				if (persist && message.trim().length > 0) {
+					orchPlanSections.push(message);
+					setOrchPlanWidget(ctx, orchPlanSections);
+				}
+				ctx.ui.notify(message, level);
+			};
+
+			setOrchPlanWidget(ctx, []);
+
 			if (!args?.trim()) {
-				ctx.ui.notify(
+				publishOrchPlanSection(
 					"Usage: /orch-plan <areas|paths|all> [--refresh] [--sync]\n\n" +
 					"Shows the execution plan (tasks, waves, lane assignments)\n" +
 					"without actually executing anything.\n\n" +
@@ -1913,7 +1934,7 @@ export default function (pi: ExtensionAPI) {
 			const hasSync = /(^|\s)--sync(?=\s|$)/.test(args);
 			const cleanArgs = args.replace(/(^|\s)--refresh(?=\s|$)/g, " ").replace(/(^|\s)--sync(?=\s|$)/g, " ").trim();
 			if (!cleanArgs) {
-				ctx.ui.notify(
+				publishOrchPlanSection(
 					"Usage: /orch-plan <areas|paths|all> [--refresh] [--sync]\n" +
 					"Error: target argument required (e.g., 'all', area name, or path)",
 					"error",
@@ -1933,7 +1954,7 @@ export default function (pi: ExtensionAPI) {
 					syncOutcome.syncResult,
 					syncOutcome.refreshedSummary,
 				);
-				ctx.ui.notify(syncPresentation.message, syncPresentation.notificationLevel);
+				publishOrchPlanSection(syncPresentation.message, syncPresentation.notificationLevel);
 				workspaceSyncSummary = syncOutcome.refreshedSummary;
 			}
 			const preflight = runPreflight(orchConfig, execCtx!.repoRoot, {
@@ -1941,9 +1962,9 @@ export default function (pi: ExtensionAPI) {
 				pointerConfigRoot: execCtx!.pointer?.configRoot,
 				workspaceConfig: execCtx!.workspaceConfig,
 			});
-			ctx.ui.notify(formatPreflightResults(preflight), preflight.passed ? "info" : "error");
+			publishOrchPlanSection(formatPreflightResults(preflight), preflight.passed ? "info" : "error");
 			if (hasBlockingWorkspaceSyncFindings(workspaceSyncSummary)) {
-				ctx.ui.notify(
+				publishOrchPlanSection(
 					formatWorkspaceSyncBlocker(cleanArgs, workspaceSyncSummary, hasSync),
 					hasSync ? "warning" : "info",
 				);
@@ -1960,18 +1981,18 @@ export default function (pi: ExtensionAPI) {
 				useDependencyCache: orchConfig.dependencies.cache,
 				workspaceConfig: execCtx!.workspaceConfig,
 			});
-			ctx.ui.notify(formatDiscoveryResults(discovery), discovery.errors.length > 0 ? "warning" : "info");
+			publishOrchPlanSection(formatDiscoveryResults(discovery), discovery.errors.length > 0 ? "warning" : "info");
 
 			// Check for fatal errors
 			const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
 			const fatalErrors = discovery.errors.filter((e) => fatalCodes.has(e.code));
 			if (fatalErrors.length > 0) {
-				ctx.ui.notify("❌ Cannot compute plan due to discovery errors above.", "error");
+				publishOrchPlanSection("❌ Cannot compute plan due to discovery errors above.", "error");
 				const hasRoutingErrors = fatalErrors.some(
 					(e) => e.code === "TASK_REPO_UNRESOLVED" || e.code === "TASK_REPO_UNKNOWN",
 				);
 				if (hasRoutingErrors) {
-					ctx.ui.notify(
+					publishOrchPlanSection(
 						"💡 Check PROMPT Repo: fields, area repo_id config, and routing.default_repo in workspace config.",
 						"info",
 					);
@@ -1980,7 +2001,7 @@ export default function (pi: ExtensionAPI) {
 					(e) => e.code === "TASK_ROUTING_STRICT",
 				);
 				if (hasStrictErrors) {
-					ctx.ui.notify(
+					publishOrchPlanSection(
 						"💡 Strict routing is enabled (routing.strict: true). Every task must declare an explicit execution target.\n" +
 						"   Add a `## Execution Target` section with `Repo: <id>` or `Repos: <id-a>, <id-b>` to each task's PROMPT.md.\n" +
 						"   To disable strict routing, set `routing.strict: false` in workspace config.",
@@ -1991,12 +2012,12 @@ export default function (pi: ExtensionAPI) {
 			}
 
 			if (discovery.pending.size === 0) {
-				ctx.ui.notify("No pending tasks found. Nothing to plan.", "info");
+				publishOrchPlanSection("No pending tasks found. Nothing to plan.", "info");
 				return;
 			}
 
 			// ── Section 3: Dependency Graph ──────────────────────────
-			ctx.ui.notify(
+			publishOrchPlanSection(
 				formatDependencyGraph(discovery.pending, discovery.completed),
 				"info",
 			);
@@ -2014,7 +2035,7 @@ export default function (pi: ExtensionAPI) {
 				},
 			);
 
-			ctx.ui.notify(
+			publishOrchPlanSection(
 				formatWavePlan(waveResult, orchConfig.assignment.size_weights),
 				waveResult.errors.length > 0 ? "error" : "info",
 			);

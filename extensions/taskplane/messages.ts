@@ -180,6 +180,17 @@ export const ORCH_MESSAGES = {
 	},
 } as const;
 
+export function buildOrchPlanWidgetLines(sections: Array<string | null | undefined>): string[] {
+	const lines: string[] = [];
+	for (const section of sections) {
+		const normalized = section?.replace(/\r\n/g, "\n").trimEnd();
+		if (!normalized) continue;
+		if (lines.length > 0) lines.push("");
+		lines.push(...normalized.split("\n"));
+	}
+	return lines;
+}
+
 
 // ── Workspace Messages ──────────────────────────────────────────────
 
