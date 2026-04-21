@@ -58,6 +58,8 @@
 | 2026-04-21 | Steps 0-1 complete | Preflight confirmed; created hello.txt, fibonacci.txt, summary.txt |
 | 2026-04-21 | Step 2 complete | Created analysis.txt (8 exported functions in lane-runner.ts) and events.txt (14 event types in agent-host.ts) |
 | 2026-04-21 | Step 3 complete | All files created, task complete |
+| 2026-04-21 00:05 | Worker iter 1 | done in 166s, tools: 37 |
+| 2026-04-21 00:05 | Task complete | .DONE created |
 
 ---
 
