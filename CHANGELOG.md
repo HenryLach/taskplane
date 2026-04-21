@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.3] - 2026-04-20
+
+### New
+
+- **Forward project and global extensions to spawned agents (#511, #513):**
+  Third-party pi extensions installed via `.pi/settings.json` (project-level or
+  global) are now forwarded to worker, reviewer, and merge agents as explicit
+  `-e` flags. Previously, `--no-extensions` blocked all auto-discovered packages
+  from loading in spawned subprocesses.
+  - New `settings-loader.ts` reads and merges packages from project and global
+    settings files, deduplicates, and filters out taskplane itself.
+  - Per-agent-type exclusions via `excludeExtensions` config arrays on
+    `taskRunner.worker`, `taskRunner.reviewer`, and `orchestrator.merge`.
+  - New **Agent Extensions** submenu in `/taskplane-settings` TUI — toggle
+    extensions on/off per agent type with auto-discovered package list.
+  - All three spawn points wired: worker (lane-runner), reviewer
+    (agent-bridge-extension), merge agent (merge.ts).
+  - Exclusions threaded through engine retry paths (crash retry, model
+    fallback, stale worktree recovery) and resume flows.
+  - 27 new tests covering settings loading, exclusion filtering, and
+    spawn arg injection.
+
+### Fixed
+
+- **Taskplane exclusion filter tightened:** Extension filter now uses exact
+  package name matching instead of substring. Packages like `npm:taskplane-utils`
+  are no longer incorrectly filtered out.
+
+### Docs
+
+- Added hybrid IPC architecture specification (`docs/specifications/taskplane/`).
+- Updated `docs/how-to/configure-task-runner.md` with `excludeExtensions` config.
+
+## [0.28.2] - 2026-04-14
+
+### Fixed
+
+- **Dashboard: split `useV2` into `useV2Progress`/`useV2Step`:** Fixes edge
+  case where step label and progress bar could reference stale data from
+  different render cycles.
+- **Dashboard: segmented bar isDone excludes merge phase:** Progress bar no
+  longer shows "complete" prematurely during wave merging.
+- **Dashboard: running task with 0 total shows "executing...":** Instead of
+  displaying 0/0 (0%), shows a descriptive status while checkboxes are being
+  discovered.
+- **`buildCiDeps` accepts `stateRoot` param:** Fixes workspace-mode path
+  resolution for CI dependency checking during PR lifecycle.
+
 ## [0.28.1] - 2026-04-13
 
 ### Fixed
