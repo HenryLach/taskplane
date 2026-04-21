@@ -2,7 +2,21 @@
  * User-facing message templates (ORCH_MESSAGES)
  * @module orch/messages
  */
-import type { AbortMode, MergeFailureClassification, MergeRetryCallbacks, MergeRetryDecision, MergeRetryLoopOutcome, MergeRetryPolicy, MergeWaveResult, OrchestratorConfig, RepoMergeOutcome } from "./types.ts";
+import type {
+	AbortMode,
+	MergeFailureClassification,
+	MergeRetryCallbacks,
+	MergeRetryDecision,
+	MergeRetryLoopOutcome,
+	MergeRetryPolicy,
+	MergeWaveResult,
+	OrchestratorConfig,
+	RepoMergeOutcome,
+	SubmodulePolicy,
+	WorkspaceSyncApplyResult,
+	WorkspaceSyncPresentation,
+	WorkspaceSyncSummary,
+} from "./types.ts";
 import { MERGE_RETRY_POLICY_MATRIX } from "./types.ts";
 
 // ── Message Templates ────────────────────────────────────────────────
@@ -164,6 +178,179 @@ export const ORCH_MESSAGES = {
 		return lines.join("\n");
 	},
 } as const;
+
+
+// ── Workspace Messages ──────────────────────────────────────────────
+
+export const WORKSPACE_MESSAGES = {
+	pointerNotFound: (filePath: string) => `Pointer file not found: ${filePath}. Run 'taskplane init' to create it.`,
+	pointerReadError: (filePath: string, message: string) => `Cannot read pointer file ${filePath}: ${message}`,
+	pointerInvalidJson: (filePath: string) => `Pointer file ${filePath} contains invalid JSON.`,
+	pointerInvalidShape: (filePath: string) => `Pointer file ${filePath} must be a JSON object.`,
+	pointerMissingConfigRepo: (filePath: string) => `Pointer file ${filePath} is missing required field 'config_repo'.`,
+	pointerMissingConfigPath: (filePath: string) => `Pointer file ${filePath} is missing required field 'config_path'.`,
+	pointerAbsoluteConfigPath: (filePath: string, configPath: string) =>
+		`Pointer file ${filePath} has invalid config_path '${configPath}' (absolute paths not allowed).`,
+	pointerTraversalConfigPath: (filePath: string, configPath: string) =>
+		`Pointer file ${filePath} has invalid config_path '${configPath}' (path traversal not allowed).`,
+	pointerUnknownConfigRepo: (filePath: string, repoId: string, availableRepos: string) =>
+		`Pointer file ${filePath}: config_repo '${repoId}' not found in workspace repos. Available repos: ${availableRepos}`,
+	pointerEscapedConfigPath: (filePath: string, configPath: string) =>
+		`Pointer file ${filePath} has invalid config_path '${configPath}' (resolved path escapes config repo root).`,
+	pointerWarningLog: (warning: string) => `[taskplane] pointer warning: ${warning}`,
+	workspaceConfigReadError: (message: string) => `Cannot read workspace config file: ${message}`,
+	workspaceConfigParseError: (message: string) => `Invalid YAML in workspace config: ${message}`,
+	workspaceConfigMustBeMapping: () => "Workspace config must be a YAML mapping (object), not a scalar or sequence.",
+	workspaceConfigMissingReposMapping: () => "Workspace config must contain a 'repos' mapping.",
+	workspaceConfigMissingRoutingMapping: () => "Workspace config must contain a 'routing' mapping.",
+	workspaceConfigMissingRepos: () => "Workspace config must define at least one repo under 'repos'.",
+	workspaceConfigInvalidRepoEntry: (repoId: string) => `Repo '${repoId}' must be a YAML mapping with at least a 'path' field.`,
+	workspaceConfigMissingRepoPath: (repoId: string) => `Repo '${repoId}' is missing a 'path' field.`,
+	workspaceConfigRepoPathNotFound: (repoId: string, absolutePath: string) => `Repo '${repoId}' path does not exist: ${absolutePath}`,
+	workspaceConfigRepoNotGit: (repoId: string, absolutePath: string) => `Repo '${repoId}' path is not a git repository: ${absolutePath}`,
+	workspaceConfigRepoNotRoot: (repoId: string, expectedRoot: string, absolutePath: string) =>
+		`Repo '${repoId}' path is a subdirectory of a git repo, not the repo root. Expected root: ${expectedRoot}, got: ${absolutePath}`,
+	workspaceConfigDuplicateRepoPath: (existingRepoId: string | undefined, repoId: string, absolutePath: string) =>
+		`Repos '${existingRepoId}' and '${repoId}' share the same path: ${absolutePath}`,
+	workspaceConfigMissingTasksRoot: () => "Workspace config 'routing.tasks_root' is missing or empty.",
+	workspaceConfigTasksRootNotFound: (tasksRoot: string) => `routing.tasks_root path does not exist: ${tasksRoot}`,
+	workspaceConfigMissingDefaultRepo: () => "Workspace config 'routing.default_repo' is missing or empty.",
+	workspaceConfigUnknownDefaultRepo: (defaultRepoId: string, availableRepos: string) =>
+		`routing.default_repo '${defaultRepoId}' does not match any repo ID. Available repos: ${availableRepos}`,
+	workspaceConfigInvalidTaskPacketRepo: () => "Workspace config 'routing.task_packet_repo' must be a non-empty string when provided.",
+	workspaceConfigCompatibilityTaskPacketRepo: (configFile: string, defaultRepoId: string) =>
+		`[taskplane] workspace compatibility: 'routing.task_packet_repo' is missing in ${configFile}; defaulting to routing.default_repo ('${defaultRepoId}'). Add 'routing.task_packet_repo' explicitly.`,
+	workspaceConfigUnknownTaskPacketRepo: (taskPacketRepoId: string, availableRepos: string) =>
+		`routing.task_packet_repo '${taskPacketRepoId}' does not match any repo ID. Available repos: ${availableRepos}`,
+	workspaceConfigTasksRootOutsidePacketRepo: (tasksRoot: string, taskPacketRepoId: string, packetRepoPath: string) =>
+		`routing.tasks_root '${tasksRoot}' must be inside packet-home repo '${taskPacketRepoId}' (${packetRepoPath}). Update routing.tasks_root or routing.task_packet_repo.`,
+	workspaceConfigInvalidStrict: (rawStrict: unknown) =>
+		`routing.strict must be a boolean (true/false)${rawStrict === null ? ", got null (use true or false explicitly)" : `, got ${typeof rawStrict}: ${JSON.stringify(rawStrict)}`}`,
+	workspaceTaskAreaOutsideTasksRoot: (areaName: string, areaPath: string, tasksRoot: string) =>
+		`Task area '${areaName}' path '${areaPath}' must be inside routing.tasks_root '${tasksRoot}'. Move the area under tasks_root or update task_areas.${areaName}.path.`,
+	workspaceSetupRequired: (configFile: string, cwd: string) =>
+		`No workspace config found at ${configFile}, and current directory is not a git repository: ${cwd}. Run Taskplane from a git repository, or create ${configFile} (taskplane init) to use workspace mode.`,
+	plannerSyncCommand: (targetLabel = "<target>") => `/orch-plan ${targetLabel} --sync`,
+	workspaceRepoIdPolicyMessage: (repoId: string) =>
+		`Workspace repo ID '${repoId}' does not match the lowercase letters/digits/hyphen policy.`,
+	workspaceRepoIdPolicyHint: () => "Rename the repo ID to use lowercase letters, digits, and hyphens before relying on workspace routing.",
+	workspaceInvalidDerivedRepoIdMessage: (repoLabel: string, submodulePath: string, derivedRepoId: string) =>
+		`${repoLabel}: submodule '${submodulePath}' is not declared in workspace.repos and basename import would derive invalid repo ID '${derivedRepoId}'.`,
+	workspaceInvalidDerivedRepoIdHint: (targetLabel: string | undefined, submodulePath: string) =>
+		`Rename the submodule path or add an explicit workspace.repos entry with a valid repo ID, then rerun ${WORKSPACE_MESSAGES.plannerSyncCommand(targetLabel)}.`,
+	workspaceRepoIdCollisionMessage: (repoLabel: string, submodulePath: string, derivedRepoId: string, existingPath: string) =>
+		`${repoLabel}: submodule '${submodulePath}' would reuse repo ID '${derivedRepoId}', which is already assigned to '${existingPath}'.`,
+	workspaceRepoIdCollisionHint: (targetLabel: string | undefined, submodulePath: string) =>
+		`Add an explicit workspace.repos entry for '${submodulePath}' with a unique repo ID, then rerun ${WORKSPACE_MESSAGES.plannerSyncCommand(targetLabel)}.`,
+	workspaceMissingRepoMessage: (repoLabel: string, submodulePath: string) =>
+		`${repoLabel}: submodule '${submodulePath}' is not declared in workspace.repos.`,
+	workspaceMissingRepoHint: (targetLabel: string | undefined, submodulePath: string, derivedRepoId: string) =>
+		`Run ${WORKSPACE_MESSAGES.plannerSyncCommand(targetLabel)} to add a workspace.repos entry for '${submodulePath}' (repo ID '${derivedRepoId}').`,
+	workspaceUninitializedSubmoduleMessage: (repoLabel: string, submodulePath: string) =>
+		`${repoLabel}: submodule '${submodulePath}' is not initialized.`,
+	workspaceDriftedSubmoduleMessage: (repoLabel: string, submodulePath: string, isConflict: boolean) =>
+		`${repoLabel}: submodule '${submodulePath}' is ${isConflict ? "in conflict" : "drifted from the recorded gitlink commit"}.`,
+	workspaceRepoCollisionMessage: (derivedRepoId: string) =>
+		`Multiple undeclared submodules would map to repo ID '${derivedRepoId}'.`,
+	workspaceRepoCollisionHint: (
+		targetLabel: string | undefined,
+		candidates: Array<{ repoLabel: string; submodulePath: string | undefined }>,
+	) =>
+		`Add explicit workspace.repos entries for ${candidates.map((candidate) => `${candidate.repoLabel}:${candidate.submodulePath}`).join(", ")} instead of relying on path-basename imports, then rerun ${WORKSPACE_MESSAGES.plannerSyncCommand(targetLabel)}.`,
+	workspaceNoSubmoduleIssues: (trackedSubmodules: number) => `No submodule issues detected (${trackedSubmodules} tracked)`,
+	workspaceNoSubmodules: () => "No submodules detected",
+	workspaceSyncBadgeNoneLabel: () => "No submodules",
+	workspaceSyncBadgeNoneDetail: () => "No tracked submodules were detected when the batch started.",
+	workspaceSyncBadgeCleanLabel: (trackedSubmodules: number) => `${trackedSubmodules} synced`,
+	workspaceSyncBadgeCleanDetail: () => "Workspace repos and tracked submodules were synchronized before orchestration.",
+	workspaceSyncInitFailure: (repoRoot: string, detail: string) => `Failed to initialize submodules in '${repoRoot}': ${detail}`,
+	workspaceSyncRecursiveFailure: (repoRoot: string, detail: string) => `Failed to synchronize submodules in '${repoRoot}': ${detail}`,
+	workspaceSyncManualModeWarning: () => "On Submodule Drift is manual, so planner sync did not run git submodule update commands.",
+	workspaceSyncFailedHeadline: () => "❌ Workspace sync failed.",
+	workspaceSyncIncompleteHeadline: () => "❌ Workspace sync is still incomplete.",
+	workspaceSyncNoChangesHeadline: () => "ℹ️ Workspace sync made no changes.",
+	workspaceSyncAppliedHeadline: () => "✅ Workspace sync applied.",
+	workspaceSyncImportedReposLine: (repoIds: string[]) => `   Imported repos: ${repoIds.join(", ")}`,
+	workspaceSyncInitializedLine: (paths: string[]) => `   Initialized: ${paths.join(", ")}`,
+	workspaceSyncRealignedLine: (paths: string[]) => `   Realigned: ${paths.join(", ")}`,
+	workspaceSyncWarningLine: (warning: string) => `   ⚠ ${warning}`,
+	uninitializedSubmoduleHint: (
+		policy: SubmodulePolicy,
+		repoPath: string,
+		submodulePath: string,
+		targetLabel?: string,
+	) => {
+		const planner = WORKSPACE_MESSAGES.plannerSyncCommand(targetLabel);
+		const initCmd = `git -C "${repoPath}" submodule update --init -- "${submodulePath}"`;
+		const recursiveCmd = `git -C "${repoPath}" submodule update --init --recursive -- "${submodulePath}"`;
+		if (policy.onSubmoduleDrift === "manual") {
+			return `Run ${planner} after setting On Submodule Drift to init-only or recursive-on-drift, or run ${initCmd}.`;
+		}
+		if (policy.onSubmoduleDrift === "init-only") {
+			return `Run ${planner} to initialize it, or run ${initCmd}.`;
+		}
+		return `Run ${planner} to initialize it recursively, or run ${recursiveCmd}.`;
+	},
+	driftedSubmoduleHint: (
+		policy: SubmodulePolicy,
+		repoPath: string,
+		submodulePath: string,
+		targetLabel?: string,
+	) => {
+		const planner = WORKSPACE_MESSAGES.plannerSyncCommand(targetLabel);
+		const updateCmd = `git -C "${repoPath}" submodule update --init --recursive -- "${submodulePath}"`;
+		if (policy.onSubmoduleDrift === "manual") {
+			return `Run ${planner} after setting On Submodule Drift to recursive-on-drift, or run ${updateCmd}.`;
+		}
+		if (policy.onSubmoduleDrift === "init-only") {
+			return `Configured On Submodule Drift is init-only, which does not repair drift. Switch to recursive-on-drift and rerun ${planner}, or run ${updateCmd}.`;
+		}
+		return `Run ${planner} to realign the checkout, or run ${updateCmd}.`;
+	},
+} as const;
+
+function hasBlockingWorkspaceSyncFindings(summary: WorkspaceSyncSummary | null | undefined): boolean {
+	return summary?.findings.some((finding) => finding.status === "fail") ?? false;
+}
+
+export function formatWorkspaceSyncPresentation(
+	result: WorkspaceSyncApplyResult,
+	summary: WorkspaceSyncSummary | null | undefined,
+): WorkspaceSyncPresentation {
+	const lines: string[] = [];
+	const executionFailed = result.warnings.length > 0;
+	const blockingFindingsRemain = hasBlockingWorkspaceSyncFindings(summary);
+	const madeChanges = result.importedRepoIds.length > 0 || result.initializedPaths.length > 0 || result.updatedPaths.length > 0;
+
+	if (executionFailed) {
+		lines.push(WORKSPACE_MESSAGES.workspaceSyncFailedHeadline());
+	} else if (blockingFindingsRemain) {
+		lines.push(WORKSPACE_MESSAGES.workspaceSyncIncompleteHeadline());
+	} else if (!madeChanges) {
+		lines.push(WORKSPACE_MESSAGES.workspaceSyncNoChangesHeadline());
+	} else {
+		lines.push(WORKSPACE_MESSAGES.workspaceSyncAppliedHeadline());
+	}
+
+	if (result.importedRepoIds.length > 0) {
+		lines.push(WORKSPACE_MESSAGES.workspaceSyncImportedReposLine(result.importedRepoIds));
+	}
+	if (result.initializedPaths.length > 0) {
+		lines.push(WORKSPACE_MESSAGES.workspaceSyncInitializedLine(result.initializedPaths));
+	}
+	if (result.updatedPaths.length > 0) {
+		lines.push(WORKSPACE_MESSAGES.workspaceSyncRealignedLine(result.updatedPaths));
+	}
+	for (const warning of result.warnings) {
+		lines.push(WORKSPACE_MESSAGES.workspaceSyncWarningLine(warning));
+	}
+
+	return {
+		status: executionFailed || blockingFindingsRemain ? "failure" : "success",
+		notificationLevel: executionFailed || blockingFindingsRemain ? "error" : "info",
+		message: lines.join("\n"),
+	};
+}
 
 
 // ── Repo-Scoped Merge Summary (TP-005) ──────────────────────────────

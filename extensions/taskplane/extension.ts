@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import { BorderedLoader, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "@mariozechner/pi-ai";
 
 import { execSync, execFileSync } from "child_process";
@@ -11,7 +11,7 @@ import { fork, type ChildProcess } from "child_process";
 // Each import targets the specific module where the symbol is defined.
 import { DEFAULT_ORCHESTRATOR_CONFIG, DEFAULT_TASK_RUNNER_CONFIG, FATAL_DISCOVERY_CODES, StateFileError, WorkspaceConfigError, freshOrchBatchState } from "./types.ts";
 import type { AbortMode, ExecutionContext, MonitorState, OrchestratorConfig, PersistedBatchState, TaskRunnerConfig } from "./types.ts";
-import { ORCH_MESSAGES, computeIntegrateCleanupResult } from "./messages.ts";
+import { ORCH_MESSAGES, computeIntegrateCleanupResult, formatWorkspaceSyncPresentation } from "./messages.ts";
 import type { IntegrateCleanupRepoFindings } from "./messages.ts";
 import { computeWaveAssignments } from "./waves.ts";
 import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
@@ -25,14 +25,13 @@ import { getCurrentBranch, runGit } from "./git.ts";
 import { hasConfigFiles, resolveConfigRoot, loadOrchestratorConfig, loadSupervisorConfig, loadTaskRunnerConfig } from "./config.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { reconstructAllocatedLanes, resumeOrchBatch } from "./resume.ts";
-import { buildExecutionContext } from "./workspace.ts";
+import { applyWorkspaceSync, buildExecutionContext, collectWorkspaceSyncSummary } from "./workspace.ts";
 import { openSettingsTui } from "./settings-tui.ts";
 import { loadProjectConfig } from "./config-loader.ts";
 import { runMigrations } from "./migrations.ts";
 import { executeAbort } from "./abort.ts";
 import { serializeWorkspaceConfig, applySerializedState, deserializeWorkspaceConfig } from "./engine-worker.ts";
 import type { EngineWorkerData, WorkerToMainMessage } from "./engine-worker.ts";
-import { applyWorkspaceSync, collectWorkspaceSyncSummary } from "./workspace-sync.ts";
 import { cleanupPostIntegrate, formatPostIntegrateCleanup, sweepStaleArtifacts, formatPreflightSweep, rotateSupervisorLogs, formatLogRotation } from "./cleanup.ts";
 import {
 	writeMailboxMessage,
@@ -1643,6 +1642,18 @@ export function detectOrchState(deps: OrchStateDetectionDeps): OrchStateDetectio
 	};
 }
 
+export function getBlockingWorkspaceSyncFindings(
+	summary: ReturnType<typeof collectWorkspaceSyncSummary> | null | undefined,
+) {
+	return (summary?.findings ?? []).filter((finding) => finding.status === "fail");
+}
+
+export function hasBlockingWorkspaceSyncFindings(
+	summary: ReturnType<typeof collectWorkspaceSyncSummary> | null | undefined,
+): boolean {
+	return getBlockingWorkspaceSyncFindings(summary).length > 0;
+}
+
 // ── Extension ────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
@@ -1725,26 +1736,45 @@ export default function (pi: ExtensionAPI) {
 		);
 	}
 
-	function formatWorkspaceSyncApplyResult(result: ReturnType<typeof applyWorkspaceSync>): string {
-		const lines: string[] = [];
-		if (result.importedRepoIds.length === 0 && result.initializedPaths.length === 0 && result.updatedPaths.length === 0) {
-			lines.push("ℹ️ Workspace sync made no changes.");
-		} else {
-			lines.push("🔧 Workspace sync applied.");
+	function executeWorkspaceSync(targetLabel: string) {
+		try {
+			const syncResult = applyWorkspaceSync(
+				execCtx!.workspaceRoot,
+				execCtx!.repoRoot,
+				execCtx!.workspaceConfig,
+				resolveRuntimeSubmodulePolicy(),
+				collectCurrentWorkspaceSyncSummary(targetLabel)!,
+			);
+			return {
+				syncResult,
+				refreshedSummary: collectCurrentWorkspaceSyncSummary(targetLabel),
+			};
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			return {
+				syncResult: {
+					importedRepoIds: [],
+					initializedPaths: [],
+					updatedPaths: [],
+					warnings: [`Workspace sync crashed: ${message}`],
+					changed: false,
+				},
+				refreshedSummary: collectCurrentWorkspaceSyncSummary(targetLabel),
+			};
 		}
-		if (result.importedRepoIds.length > 0) {
-			lines.push(`   Imported repos: ${result.importedRepoIds.join(", ")}`);
-		}
-		if (result.initializedPaths.length > 0) {
-			lines.push(`   Initialized: ${result.initializedPaths.join(", ")}`);
-		}
-		if (result.updatedPaths.length > 0) {
-			lines.push(`   Realigned: ${result.updatedPaths.join(", ")}`);
-		}
-		for (const warning of result.warnings) {
-			lines.push(`   ⚠ ${warning}`);
-		}
-		return lines.join("\n");
+	}
+
+	async function runWorkspaceSyncWithUi(targetLabel: string, ctx: ExtensionContext) {
+		if (!ctx.hasUI) return executeWorkspaceSync(targetLabel);
+		return ctx.ui.custom<ReturnType<typeof executeWorkspaceSync>>((tui, theme, _keybindings, done) => {
+			const loader = new BorderedLoader(tui, theme, "Running workspace sync before planning...", {
+				cancellable: false,
+			});
+			setImmediate(() => {
+				done(executeWorkspaceSync(targetLabel));
+			});
+			return loader;
+		});
 	}
 
 	function formatWorkspaceSyncBlocker(
@@ -1756,7 +1786,9 @@ export default function (pi: ExtensionAPI) {
 		const headline = afterSync
 			? "⚠️ Workspace sync is still incomplete."
 			: "⚠️ Workspace sync is required before continuing.";
-		const findings = summary.findings.slice(0, 5).map((finding) => `   • ${finding.message}`);
+		const findings = getBlockingWorkspaceSyncFindings(summary)
+			.slice(0, 5)
+			.map((finding) => `   • ${finding.message}`);
 		return [
 			headline,
 			`Run ${syncCmd} and resolve the reported findings before retrying.`,
@@ -1897,26 +1929,18 @@ export default function (pi: ExtensionAPI) {
 			if (hasRefresh) {
 				ctx.ui.notify("🔄 Refresh mode: re-scanning all areas (cache bypassed)", "info");
 			}
-			if (hasSync) {
-				ctx.ui.notify("🔧 Sync mode: reconciling workspace repo imports and submodule state before planning", "info");
-			}
 
 			// ── Section 1: Preflight ─────────────────────────────────
 			ctx.ui.notify("ℹ️ Runtime V2 is the default backend (subprocess-only).", "info");
 			let workspaceSyncSummary = collectCurrentWorkspaceSyncSummary(cleanArgs);
 			if (hasSync && workspaceSyncSummary) {
-				const syncResult = applyWorkspaceSync(
-					execCtx!.workspaceRoot,
-					execCtx!.repoRoot,
-					execCtx!.workspaceConfig,
-					resolveRuntimeSubmodulePolicy(),
-					workspaceSyncSummary,
+				const syncOutcome = await runWorkspaceSyncWithUi(cleanArgs, ctx);
+				const syncPresentation = formatWorkspaceSyncPresentation(
+					syncOutcome.syncResult,
+					syncOutcome.refreshedSummary,
 				);
-				ctx.ui.notify(
-					formatWorkspaceSyncApplyResult(syncResult),
-					syncResult.warnings.length > 0 ? "warning" : "info",
-				);
-				workspaceSyncSummary = collectCurrentWorkspaceSyncSummary(cleanArgs);
+				ctx.ui.notify(syncPresentation.message, syncPresentation.notificationLevel);
+				workspaceSyncSummary = syncOutcome.refreshedSummary;
 			}
 			const preflight = runPreflight(orchConfig, execCtx!.repoRoot, {
 				workspaceRoot: execCtx!.workspaceRoot,
@@ -1924,7 +1948,7 @@ export default function (pi: ExtensionAPI) {
 				workspaceConfig: execCtx!.workspaceConfig,
 			});
 			ctx.ui.notify(formatPreflightResults(preflight), preflight.passed ? "info" : "error");
-			if (workspaceSyncSummary && workspaceSyncSummary.findings.length > 0) {
+			if (hasBlockingWorkspaceSyncFindings(workspaceSyncSummary)) {
 				ctx.ui.notify(
 					formatWorkspaceSyncBlocker(cleanArgs, workspaceSyncSummary, hasSync),
 					hasSync ? "warning" : "info",
@@ -2163,7 +2187,7 @@ export default function (pi: ExtensionAPI) {
 		}
 
 		const workspaceSyncSummary = collectCurrentWorkspaceSyncSummary(trimmedTarget);
-		if (workspaceSyncSummary && workspaceSyncSummary.findings.length > 0) {
+		if (hasBlockingWorkspaceSyncFindings(workspaceSyncSummary)) {
 			return {
 				message: formatWorkspaceSyncBlocker(trimmedTarget, workspaceSyncSummary),
 				error: true,

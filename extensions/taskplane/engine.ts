@@ -23,8 +23,8 @@ import { buildBatchProgressSnapshot, buildEngineEventBase, buildSegmentId, build
 import type { AllocatedLane, AllocatedTask, BatchHistorySummary, BatchTaskSummary, BatchWaveSummary, DiscoveryResult, EngineEventCallback, EscalationContext, LaneExecutionResult, LaneTaskOutcome, MergeWaveResult, OrchBatchPhase, OrchBatchRuntimeState, OrchestratorConfig, ParsedTask, PersistedSegmentRecord, SegmentExpansionRequest, SupervisorAlert, SupervisorAlertCallback, TaskRunnerConfig, TaskSegmentPlan, TaskSegmentPlanMap, TaskSegmentNode, Tier0EscalationPattern, Tier0RecoveryPattern, TokenCounts, WaveExecutionResult, WorkspaceConfig } from "./types.ts";
 import { buildDependencyGraph, computeWaveAssignments, resolveBaseBranch, resolveRepoRoot, validateGraph } from "./waves.ts";
 import { deleteBranchBestEffort, forceCleanupWorktree, formatPreflightResults, listWorktrees, preserveFailedLaneProgress, preserveSkippedLaneProgress, removeAllWorktrees, removeWorktree, runPreflight, safeResetWorktree, sleepSync } from "./worktree.ts";
-import { runPreflightCleanup, formatPreflightCleanup, enforceTelemetrySizeCap, formatSizeCap, cleanupPriorBatchArtifacts, formatPriorBatchCleanup } from "./cleanup.ts";
-import { buildWorkspaceSyncBadgeStatus, collectWorkspaceSyncSummary } from "./workspace-sync.ts";
+import { runPreflightCleanup, formatPreflightCleanup, enforceTelemetrySizeCap, formatSizeCap, cleanupPriorBatchArtifacts, formatPriorBatchCleanup, sweepStaleArtifacts, formatLogRotation, rotateSupervisorLogs, formatPreflightSweep } from "./cleanup.ts";
+import { buildWorkspaceSyncBadgeStatus, collectWorkspaceSyncSummary } from "./workspace.ts";
 
 // ── Tier 0: Automatic Recovery Helpers (TP-039) ─────────────────────
 

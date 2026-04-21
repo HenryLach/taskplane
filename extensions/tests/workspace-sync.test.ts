@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { expect } from "./expect.ts";
-import { applyWorkspaceSync, collectWorkspaceSyncSummary, DEFAULT_SUBMODULE_POLICY } from "../taskplane/workspace-sync.ts";
+import { applyWorkspaceSync, collectWorkspaceSyncSummary, DEFAULT_SUBMODULE_POLICY } from "../taskplane/workspace.ts";
 
 let testRoot: string;
 
@@ -110,6 +110,57 @@ describe("workspace sync helper", () => {
 
 		const after = collectWorkspaceSyncSummary(cloneRepo, null, policy, "all");
 		expect(after.findings.some((finding) => finding.kind === "uninitialized-submodule")).toBe(false);
+		} finally {
+			if (originalGitAllowProtocol === undefined) {
+				delete process.env.GIT_ALLOW_PROTOCOL;
+			} else {
+				process.env.GIT_ALLOW_PROTOCOL = originalGitAllowProtocol;
+			}
+		}
+	});
+
+	it("syncs nested submodule findings through the nearest tracked parent path", () => {
+		const originalGitAllowProtocol = process.env.GIT_ALLOW_PROTOCOL;
+		process.env.GIT_ALLOW_PROTOCOL = "file";
+		try {
+			const superRepo = join(testRoot, "repo-with-nested-submodule");
+			const childRepo = join(testRoot, "rebof3-simple");
+			const nestedRepo = join(testRoot, "private-assets");
+			const cloneRepo = join(testRoot, "repo-clone");
+
+			initRepo(superRepo);
+			initRepo(childRepo);
+			initRepo(nestedRepo);
+			addSubmodule(childRepo, nestedRepo, "external/private-assets");
+			addSubmodule(superRepo, childRepo, "third_party/references/rebof3-simple");
+
+			runGit(testRoot, ["clone", superRepo, cloneRepo]);
+			runGit(cloneRepo, ["config", "protocol.file.allow", "always"]);
+			runGit(cloneRepo, ["submodule", "update", "--init", "--", "third_party/references/rebof3-simple"]);
+
+			const policy = {
+				failureMode: "strict",
+				onSubmoduleDrift: "recursive-on-drift",
+				repoIdStrategy: "path-basename",
+			} as const;
+
+			const before = collectWorkspaceSyncSummary(cloneRepo, null, policy, "all");
+			expect(before.findings.some((finding) =>
+				finding.kind === "uninitialized-submodule" &&
+				finding.submodulePath === "third_party/references/rebof3-simple/external/private-assets"
+			)).toBe(true);
+
+			const result = applyWorkspaceSync(cloneRepo, cloneRepo, null, policy, before);
+			expect(result.warnings).toEqual([]);
+			expect(result.initializedPaths).toContain(
+				"repo-clone:third_party/references/rebof3-simple/external/private-assets",
+			);
+
+			const after = collectWorkspaceSyncSummary(cloneRepo, null, policy, "all");
+			expect(after.findings.some((finding) =>
+				finding.kind === "uninitialized-submodule" &&
+				finding.submodulePath === "third_party/references/rebof3-simple/external/private-assets"
+			)).toBe(false);
 		} finally {
 			if (originalGitAllowProtocol === undefined) {
 				delete process.env.GIT_ALLOW_PROTOCOL;

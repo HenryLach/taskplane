@@ -12,7 +12,7 @@ import { runGit } from "./git.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { DEFAULT_ORCHESTRATOR_CONFIG, WorktreeError } from "./types.ts";
 import type { AllocatedLane, BulkWorktreeError, CreateLaneWorktreesResult, CreateWorktreeOptions, LaneTaskOutcome, OrchestratorConfig, PreflightCheck, PreflightResult, RemoveAllWorktreesResult, RemoveWorktreeOutcome, RemoveWorktreeResult, WorktreeInfo, WorkspaceConfig } from "./types.ts";
-import { DEFAULT_SUBMODULE_POLICY, collectWorkspaceSyncSummary, workspaceSyncSummaryToChecks } from "./workspace-sync.ts";
+import { DEFAULT_SUBMODULE_POLICY, collectWorkspaceSyncSummary, workspaceSyncSummaryToChecks } from "./workspace.ts";
 
 // ── Worktree Helpers ─────────────────────────────────────────────────
 

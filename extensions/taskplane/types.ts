@@ -3478,6 +3478,71 @@ export interface ExecutionContext {
 	pointer: PointerResolution | null;
 }
 
+export type SubmoduleFailureMode = "permissive" | "strict";
+export type SubmoduleDriftMode = "manual" | "init-only" | "recursive-on-drift";
+export type SubmoduleRepoIdStrategy = "path-basename";
+
+export interface SubmodulePolicy {
+	failureMode: SubmoduleFailureMode;
+	onSubmoduleDrift: SubmoduleDriftMode;
+	repoIdStrategy: SubmoduleRepoIdStrategy;
+}
+
+export interface WorkspaceSyncFinding {
+	name: string;
+	kind:
+		| "workspace-repo-id"
+		| "missing-workspace-repo"
+		| "invalid-derived-repo-id"
+		| "repo-id-collision"
+		| "uninitialized-submodule"
+		| "drifted-submodule"
+		| "conflicted-submodule";
+	status: PreflightCheck["status"];
+	repoLabel: string;
+	repoRoot: string;
+	submodulePath?: string;
+	absolutePath?: string;
+	derivedRepoId?: string;
+	message: string;
+	hint?: string;
+}
+
+export interface WorkspaceRepoImportCandidate {
+	repoLabel: string;
+	repoRoot: string;
+	submodulePath: string;
+	absolutePath: string;
+	derivedRepoId: string;
+}
+
+export interface WorkspaceSyncSummary {
+	trackedSubmodules: number;
+	findings: WorkspaceSyncFinding[];
+	importCandidates: WorkspaceRepoImportCandidate[];
+}
+
+export interface WorkspaceSyncApplyResult {
+	importedRepoIds: string[];
+	initializedPaths: string[];
+	updatedPaths: string[];
+	warnings: string[];
+	changed: boolean;
+}
+
+export interface WorkspaceSyncBadgeStatus {
+	state: "none" | "clean";
+	trackedSubmodules: number;
+	label: string;
+	detail: string;
+}
+
+export interface WorkspaceSyncPresentation {
+	status: "success" | "failure";
+	notificationLevel: "info" | "error";
+	message: string;
+}
+
 
 // ── Workspace Validation Error Types ─────────────────────────────────
 
