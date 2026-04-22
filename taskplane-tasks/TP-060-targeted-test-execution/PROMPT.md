@@ -68,6 +68,15 @@ This gives workers fast feedback loops without sacrificing the full-suite safety
 - **Workspace:** `templates/`, `skills/`
 - **Services required:** None
 
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## File Scope
 
 - `templates/agents/task-worker.md`

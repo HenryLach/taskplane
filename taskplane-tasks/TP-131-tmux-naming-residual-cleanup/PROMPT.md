@@ -51,6 +51,21 @@ Clean up remaining TMUX naming artifacts across the published package. TP-128 re
 **Audit script (`scripts/tmux-reference-audit.mjs`):**
 - Add `skills/` to scan roots (it's a published directory)
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Dependencies
 
 - None

@@ -43,6 +43,15 @@ Implement the core agent mailbox system (Phase 1 of the agent-mailbox-steering s
 - **Workspace:** `bin/`, `extensions/taskplane/`, `extensions/task-runner.ts`
 - **Services required:** None
 
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## File Scope
 
 - `bin/rpc-wrapper.mjs`

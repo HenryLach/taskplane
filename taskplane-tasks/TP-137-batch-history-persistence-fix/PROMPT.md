@@ -38,6 +38,21 @@ Other possible causes to investigate:
 - `extension.ts`: `orch_integrate` merges orch branch into main (or creates PR)
 - Dashboard `server.cjs`: `loadHistory()` reads `.pi/batch-history.json`
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Dependencies
 
 - None

@@ -12,6 +12,21 @@ dependencies: []
 ## Objective
 Eliminate fragile string-key matching in the batch history writer by embedding telemetry directly into `LaneTaskOutcome`. The lane-runner already has authoritative telemetry from `AgentHostResult` — it should attach it to the outcome at emission time, not require the engine to reconstruct it later via lane snapshot lookups.
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Background
 The batch history writer in `engine.ts` reads V2 lane snapshots and tries to match them to task outcomes via lane number parsing from sessionName strings. This has caused multiple bugs:
 - `batchState.lanes` undefined → TypeError (v0.23.10)

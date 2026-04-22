@@ -22,6 +22,21 @@ taskplane-tasks/TP-119-remove-tmux-abort-fallbacks/
 
 Remove the TMUX abort/cleanup fallback paths that run alongside V2 registry-based cleanup. After TP-117 removes dead execution code and TP-118 cleans up naming, these fallback paths are the last TMUX coupling. They check for TMUX sessions that no longer exist in V2 — the checks always return false and the fallback code never activates.
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Dependencies
 
 - **Task:** TP-117 (dead code removal)

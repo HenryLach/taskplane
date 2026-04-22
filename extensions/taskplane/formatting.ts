@@ -5,7 +5,6 @@
 import { join } from "path";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
-import { buildOrchPlanWidgetLines, type OrchPlanWidgetState } from "./messages.ts";
 import { parseDependencyReference } from "./discovery.ts";
 import type { LaneAssignment, MonitorState, OrchBatchRuntimeState, OrchDashboardViewModel, OrchLaneCardData, OrchSummaryCounts, ParsedTask, WaveComputationResult } from "./types.ts";
 import { getTaskDurationMinutes, SIZE_DURATION_MINUTES } from "./types.ts";
@@ -837,59 +836,4 @@ export function createOrchWidget(
 	};
 }
 
-export function createOrchPlanWidget(
-	state: OrchPlanWidgetState,
-): ((_tui: any, theme: any) => { render(width: number): string[]; invalidate(): void }) | undefined {
-	if (!state.title && state.sections.length === 0 && !state.phase) return undefined;
-	return (_tui: any, theme: any) => ({
-		render(width: number): string[] {
-			const safeWidth = Math.max(6, width);
-			const padding = Math.max(0, state.padding ?? 1);
-			const innerWidth = Math.max(1, safeWidth - (padding * 2));
-			const outerPad = " ".repeat(padding);
-			const tone = state.status === "success"
-				? "success"
-				: state.status === "error"
-					? "error"
-					: state.status === "warning"
-						? "warning"
-						: "warning";
-			const dot = typeof theme.fg === "function" ? theme.fg(tone, "●") : "●";
-			const title = typeof theme.bold === "function" ? theme.bold(state.title) : state.title;
-			const phase = state.phase
-				|| (state.status === "success"
-					? "Plan ready"
-					: state.status === "error"
-						? "Plan failed"
-						: state.status === "warning"
-							? "Needs attention"
-							: "Running");
-			const sectionLines = buildOrchPlanWidgetLines(state.sections);
-			const contentLines = [
-				`${dot} ${title}`,
-				`${dot} ${phase}`,
-				...(sectionLines.length > 0 ? ["", ...sectionLines] : []),
-			];
-			const rendered: string[] = [];
-			for (let index = 0; index < padding; index += 1) rendered.push(" ".repeat(safeWidth));
-			for (const contentLine of contentLines) {
-				if (contentLine.length === 0) {
-					rendered.push(" ".repeat(safeWidth));
-					continue;
-				}
-				for (const wrappedLine of wrapTextWithAnsi(contentLine, innerWidth)) {
-					const visible = visibleWidth(wrappedLine);
-					rendered.push(truncateToWidth(
-						`${outerPad}${wrappedLine}${" ".repeat(Math.max(0, innerWidth - visible))}${outerPad}`,
-						safeWidth,
-						"",
-					));
-				}
-			}
-			for (let index = 0; index < padding; index += 1) rendered.push(" ".repeat(safeWidth));
-			return rendered;
-		},
-		invalidate() {},
-	});
-}
 

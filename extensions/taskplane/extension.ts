@@ -1,5 +1,6 @@
 import { BorderedLoader, type ExtensionAPI, type ExtensionContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "@mariozechner/pi-ai";
+import { Box } from "@mariozechner/pi-tui";
 
 import { execSync, execFileSync } from "child_process";
 import { writeFileSync, unlinkSync, mkdirSync, existsSync, readdirSync, readFileSync, statSync, createWriteStream, renameSync } from "fs";
@@ -18,10 +19,10 @@ import {
 	getBlockingWorkspaceSyncFindings,
 	hasBlockingWorkspaceSyncFindings,
 } from "./messages.ts";
-import type { OrchPlanWidgetState } from "./messages.ts";
 import type { IntegrateCleanupRepoFindings } from "./messages.ts";
 import { computeWaveAssignments } from "./waves.ts";
-import { createOrchPlanWidget, createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
+import { createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
+import { CollapsibleRibbonWidget, type CollapsibleRibbonWidgetState } from "./widgets/collapsible-ribbon.ts";
 import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions, updateBatchHistoryIntegration } from "./persistence.ts";
 import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, runPreflight } from "./worktree.ts";
 import { computeTransitiveDependents, resolveCanonicalTaskPaths } from "./execution.ts";
@@ -1678,9 +1679,14 @@ export function detectOrchState(deps: OrchStateDetectionDeps): OrchStateDetectio
 
 export default function (pi: ExtensionAPI) {
 	pi.registerMessageRenderer(ORCH_PLAN_MESSAGE_TYPE, (message, { expanded }, theme) => {
-		const state = message.details as OrchPlanWidgetState | undefined;
+		const state = message.details as CollapsibleRibbonWidgetState | undefined;
 		if (!state) return undefined;
-		return createOrchPlanWidget(state)?.(undefined, theme);
+		const ribbon = new CollapsibleRibbonWidget(state);
+		const component = (expanded ? ribbon.open() : ribbon.close()).factory()?.(undefined, theme);
+		if (!component) return undefined;
+		const box = new Box(0, 0, (text) => theme.bg("customMessageBg", text));
+		box.addChild(component);
+		return box;
 	});
 
 	let orchBatchState = freshOrchBatchState();
@@ -2001,25 +2007,51 @@ export default function (pi: ExtensionAPI) {
 		handler: async (args, ctx) => {
 			resetRootWidget(ctx);
 			const commandTitle = args?.trim() ? `/orch-plan ${args.trim()}` : "/orch-plan";
-			const orchPlanState: OrchPlanWidgetState = {
+			const orchPlanWidget = new CollapsibleRibbonWidget({
 				title: commandTitle,
 				status: "running",
 				phase: "Preparing plan",
 				sections: [],
+				viewState: "running",
 				padding: 1,
-			};
+			});
+			const getOrchPlanState = () => orchPlanWidget.state;
 			const renderOrchPlan = () => {
-				ctx.ui.setWidget(ORCH_PLAN_WIDGET_KEY, createOrchPlanWidget(orchPlanState));
+				ctx.ui.setWidget(ORCH_PLAN_WIDGET_KEY, orchPlanWidget.factory());
+			};
+			const updateOrchPlan = (patch: Partial<CollapsibleRibbonWidgetState>) => {
+				orchPlanWidget.update(patch);
+				renderOrchPlan();
 			};
 			const setOrchPlanPhase = (phase: string) => {
-				orchPlanState.status = orchPlanState.status === "error" ? "error" : "running";
-				orchPlanState.phase = phase;
-				renderOrchPlan();
+				const currentStatus = getOrchPlanState().status;
+				updateOrchPlan({
+					status: currentStatus === "error" ? "error" : "running",
+					phase,
+					collapsed: false,
+					viewState: "running",
+				});
 			};
-			const finalizeOrchPlan = (status: OrchPlanWidgetState["status"], phase: string) => {
-				orchPlanState.status = status;
-				orchPlanState.phase = phase;
-				renderOrchPlan();
+			const finalizeOrchPlan = (status: CollapsibleRibbonWidgetState["status"], phase: string) => {
+				const collapsedMessage = orchPlanWidget.message({
+					status,
+					phase,
+					collapsed: false,
+					viewState: "opened",
+				});
+				pi.sendMessage(
+					{
+						customType: ORCH_PLAN_MESSAGE_TYPE,
+						content: [{
+							type: "text",
+							text: collapsedMessage.text,
+						}],
+						display: true,
+						details: collapsedMessage.details,
+					},
+					{ triggerTurn: false },
+				);
+				resetRootWidget(ctx);
 			};
 			const publishOrchPlanSection = (
 				message: string,
@@ -2027,10 +2059,16 @@ export default function (pi: ExtensionAPI) {
 				persist = true,
 			) => {
 				if (persist && message.trim().length > 0) {
-					if (level === "warning" && orchPlanState.status === "running") orchPlanState.status = "warning";
-					if (level === "error") orchPlanState.status = "error";
-					orchPlanState.sections.push(message);
-					renderOrchPlan();
+					const currentState = getOrchPlanState();
+					const nextStatus = level === "error"
+						? "error"
+						: level === "warning" && currentState.status === "running"
+							? "warning"
+							: currentState.status;
+					updateOrchPlan({
+						status: nextStatus,
+						sections: [...currentState.sections, message],
+					});
 					return;
 				}
 				ctx.ui.notify(message, level);

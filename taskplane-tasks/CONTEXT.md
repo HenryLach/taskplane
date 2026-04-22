@@ -1,6 +1,6 @@
 # General — Context
 
-**Last Updated:** 2026-04-02
+**Last Updated:** 2026-04-21
 **Status:** Active
 **Next Task ID:** TP-181
 
@@ -36,6 +36,43 @@ Taskplane is an AI agent orchestration system built as a pi package. It provides
 | Dashboard | `dashboard/` |
 | Templates | `templates/` |
 | Skills | `skills/` |
+
+---
+
+## Submodule Policy
+
+This task area lives inside the **taskplane** submodule of the bof3-decomp project.
+All tasks in this folder must declare their execution target to prevent conflicts
+when the orchestrator runs across multiple submodules concurrently.
+
+### Submodule identity
+
+| Field | Value |
+|-------|-------|
+| Repo ID | `taskplane` |
+| Git path (relative) | `.pi/git/github.com/loopyd/taskplane` |
+| Absolute path | `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane` |
+| Upstream URL | `https://github.com/loopyd/taskplane.git` |
+
+### Task declaration requirement
+
+Every `PROMPT.md` must include an **Execution Target** section declaring the repo ID:
+
+```markdown
+## Execution Target
+
+- **Repo:** taskplane
+```
+
+This is enforced by the orchestrator's workspace submodule policy. Tasks without a
+declared execution target will be flagged during preflight and blocked until fixed.
+
+### Conflict avoidance rules
+
+1. Tasks targeting different submodules run on separate lanes (parallel-safe).
+2. Tasks within the same submodule run serially unless explicitly lane-allocated by batch planning.
+3. File scope declarations in `## File Scope` are validated against the declared repo root.
+4. Git operations must use the submodule's working tree, not the bof3-decomp parent repo.
 
 ---
 

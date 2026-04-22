@@ -29,6 +29,21 @@ Complete the TMUX extrication across the entire taskplane package. The orch runt
 
 After this task, no file in the published package should contain functional TMUX code. The only acceptable TMUX references are migration comments and the `tmux-compat.ts` shim.
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Dependencies
 
 - **Task:** TP-126 (final compat removal — done)

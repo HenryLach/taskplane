@@ -180,59 +180,6 @@ export const ORCH_MESSAGES = {
 	},
 } as const;
 
-export type OrchPlanWidgetStatus = "running" | "success" | "error" | "warning";
-export type CollapsibleRibbonViewState = "opened" | "running" | "closed";
-export type CollapsibleRibbonThemeState = "in-progress" | "success" | "error" | "warning";
-
-export interface CollapsibleRibbonWidgetState {
-	title: string;
-	status: OrchPlanWidgetStatus;
-	phase?: string;
-	sections: Array<string | null | undefined>;
-	collapsed?: boolean;
-	viewState?: CollapsibleRibbonViewState;
-	themeState?: CollapsibleRibbonThemeState;
-	showScrollbar?: boolean;
-	maxBodyHeight?: number;
-	scrollOffset?: number;
-	padding?: number;
-}
-
-export type OrchPlanWidgetState = CollapsibleRibbonWidgetState;
-
-export function buildOrchPlanWidgetLines(sections: Array<string | null | undefined>): string[] {
-	const lines: string[] = [];
-	for (const section of sections) {
-		const normalized = section?.replace(/\r\n/g, "\n").trimEnd();
-		if (!normalized) continue;
-		if (lines.length > 0) lines.push("");
-		lines.push(...normalized.split("\n"));
-	}
-	return lines;
-}
-
-export function serializeOrchPlanWidgetLines(state: OrchPlanWidgetState): string[] {
-	const statusLine =
-		state.status === "success"
-			? `✓ ${state.phase || "Plan ready"}`
-			: state.status === "error"
-				? `✗ ${state.phase || "Plan failed"}`
-				: state.status === "warning"
-					? `! ${state.phase || "Needs attention"}`
-				: `● ${state.phase || "Running"}`;
-	if (state.collapsed) {
-		const collapsedPrefix = state.status === "success"
-			? "▼ ●"
-			: state.status === "error"
-				? "▼ ●"
-				: "▼ ●";
-		return [`${collapsedPrefix} ${state.title}`, statusLine];
-	}
-	const sectionLines = buildOrchPlanWidgetLines(state.sections);
-	return [state.title, statusLine, ...(sectionLines.length > 0 ? ["", ...sectionLines] : [])];
-}
-
-
 // ── Workspace Messages ──────────────────────────────────────────────
 
 export const WORKSPACE_MESSAGES = {

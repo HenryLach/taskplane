@@ -22,6 +22,21 @@ taskplane-tasks/TP-125-centralize-legacy-tmux-compat-shim/
 
 Centralize all remaining required TMUX compatibility behavior into one module so runtime files no longer carry scattered TMUX conditionals. This preserves backward compatibility while making final removal safe and auditable.
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Dependencies
 
 - **Task:** TP-122 (audit + guardrails)

@@ -22,6 +22,21 @@ taskplane-tasks/TP-117-tmux-deprecation-messaging-and-dead-code-removal/
 
 Remove dead TMUX backend code and add deprecation messaging. Since `selectRuntimeBackend()` always returns `"v2"`, the legacy TMUX execution paths are never called. This task removes them cleanly while preserving the `tmuxSessionName` naming (deferred to TP-118) and TMUX abort fallbacks (deferred to TP-119).
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Dependencies
 
 - None (V2 is already the only backend)
