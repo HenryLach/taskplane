@@ -1,84 +1,84 @@
 # TP-161: Extract task-runner utilities into taskplane library — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 6: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight — full reference inventory (BLOCKING)
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Grep: `grep -rn "from.*task-runner" extensions/tests/`
-- [ ] Grep: `grep -rn "task-runner\.ts" extensions/tests/` (source-reading tests)
-- [ ] Grep: `grep -rn "task-runner" extensions/taskplane/ extensions/task-orchestrator.ts`
-- [ ] Verify `isLowRiskStep` in `task-executor-core.ts`
-- [ ] Verify `getSidecarDir` NOT in `execution.ts` / `lane-runner.ts`
-- [ ] Run test baseline: `cd extensions && npm run test:fast`
-- [ ] Document ALL findings in Discoveries table
+- [x] Grep: `grep -rn "from.*task-runner" extensions/tests/`
+- [x] Grep: `grep -rn "task-runner\.ts" extensions/tests/` (source-reading tests)
+- [x] Grep: `grep -rn "task-runner" extensions/taskplane/ extensions/task-orchestrator.ts`
+- [x] Verify `isLowRiskStep` in `task-executor-core.ts`
+- [x] Verify `getSidecarDir` NOT in `execution.ts` / `lane-runner.ts`
+- [x] Run test baseline: `cd extensions && npm run test:fast`
+- [x] Document ALL findings in Discoveries table
 
 ---
 
 ### Step 1: Create extensions/taskplane/sidecar-telemetry.ts
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Extract `SidecarTailState`, `SidecarTelemetryDelta` interfaces verbatim
-- [ ] Extract `getSidecarDir`, `createSidecarTailState`, `tailSidecarJsonl` verbatim
-- [ ] All exports clean (no `_` prefix)
-- [ ] File compiles
+- [x] Extract `SidecarTailState`, `SidecarTelemetryDelta` interfaces verbatim
+- [x] Extract `getSidecarDir`, `createSidecarTailState`, `tailSidecarJsonl` verbatim
+- [x] All exports clean (no `_` prefix)
+- [x] File compiles
 
 ---
 
 ### Step 2: Create extensions/taskplane/context-window.ts
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Export `FALLBACK_CONTEXT_WINDOW = 200_000`
-- [ ] Export `resolveContextWindow(configuredWindow: number | undefined, ctx: ExtensionContext | null)`
-- [ ] Same behavior as original, adapted signature
-- [ ] No task-runner type imports
+- [x] Export `FALLBACK_CONTEXT_WINDOW = 200_000`
+- [x] Export `resolveContextWindow(configuredWindow: number | undefined, ctx: ExtensionContext | null)`
+- [x] Same behavior as original, adapted signature
+- [x] No task-runner type imports
 
 ---
 
 ### Step 3: Export loadAgentDef from execution.ts
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read `loadAgentDef` in `task-runner.ts` — understand signature and behavior
-- [ ] Export equivalent from `execution.ts` near `loadBaseAgentPrompt`
-- [ ] Signature: `(cwd: string, name: string) => { systemPrompt: string; tools: string; model: string } | null`
+- [x] Read `loadAgentDef` in `task-runner.ts` — understand signature and behavior
+- [x] Export equivalent from `execution.ts` near `loadBaseAgentPrompt`
+- [x] Signature: `(cwd: string, name: string) => { systemPrompt: string; tools: string; model: string } | null`
 
 ---
 
 ### Step 4: Update all test imports
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] `context-pressure-cache.test.ts` → import sidecar utils from `../taskplane/sidecar-telemetry`
-- [ ] `context-window-autodetect.test.ts` → import `resolveContextWindow`, `FALLBACK_CONTEXT_WINDOW` from `../taskplane/context-window`; update all `resolveContextWindow(config, ctx)` call sites to `resolveContextWindow(config.context.worker_context_window, ctx)`; keep `loadConfig as taskRunnerLoadConfig` from `task-runner.ts`
-- [ ] `context-window-resolution.test.ts` → import `resolveContextWindow`, `FALLBACK_CONTEXT_WINDOW` from `../taskplane/context-window`; update all call sites; keep `loadConfig` from `task-runner.ts`
-- [ ] `sidecar-tailing.test.ts` → import from `../taskplane/sidecar-telemetry`
-- [ ] `project-config-loader.test.ts` → change `_loadAgentDef` to `loadAgentDef` from `../taskplane/execution`; keep `_resetPointerWarning` from `task-runner.ts` (tests 6.4-6.6 test task-runner.ts state which stays in TP-162); keep `loadConfig as taskRunnerLoadConfig` from `task-runner.ts`
-- [ ] `task-runner-review-skip.test.ts` → `isLowRiskStep` from `../taskplane/task-executor-core`
-- [ ] Source-reading legacy tests: intentionally left unchanged in TP-161 (task-runner.ts not deleted until TP-162)
+- [x] `context-pressure-cache.test.ts` → import sidecar utils from `../taskplane/sidecar-telemetry`
+- [x] `context-window-autodetect.test.ts` → import `resolveContextWindow`, `FALLBACK_CONTEXT_WINDOW` from `../taskplane/context-window`; update all `resolveContextWindow(config, ctx)` call sites to `resolveContextWindow(config.context.worker_context_window, ctx)`; keep `loadConfig as taskRunnerLoadConfig` from `task-runner.ts`
+- [x] `context-window-resolution.test.ts` → import `resolveContextWindow`, `FALLBACK_CONTEXT_WINDOW` from `../taskplane/context-window`; update all call sites; keep `loadConfig` from `task-runner.ts`
+- [x] `sidecar-tailing.test.ts` → import from `../taskplane/sidecar-telemetry`
+- [x] `project-config-loader.test.ts` → change `_loadAgentDef` to `loadAgentDef` from `../taskplane/execution`; keep `_resetPointerWarning` from `task-runner.ts` (tests 6.4-6.6 test task-runner.ts state which stays in TP-162); keep `loadConfig as taskRunnerLoadConfig` from `task-runner.ts`
+- [x] `task-runner-review-skip.test.ts` → `isLowRiskStep` from `../taskplane/task-executor-core`
+- [x] Source-reading legacy tests: intentionally left unchanged in TP-161 (task-runner.ts not deleted until TP-162)
 
 ---
 
 ### Step 5: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Full test suite passing (3255 tests, 0 failures)
-- [ ] Same pass rate as Step 0 baseline (3255 pass in both)
-- [ ] Fix all failures (none needed)
+- [x] Full test suite passing (3255 tests, 0 failures)
+- [x] Same pass rate as Step 0 baseline (3255 pass in both)
+- [x] Fix all failures (none needed)
 
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] JSDoc headers on both new files (sidecar-telemetry.ts, context-window.ts)
-- [ ] Discoveries logged (full inventory in Discoveries table)
+- [x] JSDoc headers on both new files (sidecar-telemetry.ts, context-window.ts)
+- [x] Discoveries logged (full inventory in Discoveries table)
 
 ---
 

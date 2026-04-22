@@ -1,6 +1,6 @@
 # TP-087: Dynamic Segment Expansion Graph Mutation and Resume — Status
 
-**Current Step:** None
+**Current Step:** N/A
 **Status:** ⏸️ Superseded
 **Last Updated:** 2026-04-03
 **Superseded Reason:** Runtime V2 architectural changes (TP-100–TP-131) invalidated the implementation approach. Goals remain valid but tasks must be restaged with V2-native file scopes, dependency chains, and implementation patterns.

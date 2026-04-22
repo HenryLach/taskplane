@@ -1,6 +1,6 @@
 # TP-061: Add orch_start Tool — Status
 
-**Current Step:** None
+**Current Step:** Not Started
 **Status:** 🔵 Ready for Execution
 **Last Updated:** 2026-03-25
 **Review Level:** 1

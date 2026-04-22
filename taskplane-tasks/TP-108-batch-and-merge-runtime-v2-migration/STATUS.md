@@ -1,6 +1,6 @@
 # TP-108: Batch and Merge Runtime V2 Migration — Status
 
-**Current Step:** None
+**Current Step:** Step 1 — Backend Selection Expansion
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-30
 **Review Level:** 3

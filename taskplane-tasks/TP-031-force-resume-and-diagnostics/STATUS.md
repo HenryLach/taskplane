@@ -1,82 +1,82 @@
 # TP-031: Force-Resume Policy & Diagnostic Reports — Status
 
-**Current Step:** None
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 11
 **Iteration:** 5
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read resume eligibility logic
-- [ ] Read /orch-resume command handler
-- [ ] Read phase transition logic
-- [ ] Read roadmap Phase 3 sections
-- [ ] Read CONTEXT.md and verify TP-030 dependency contracts (resilience/diagnostics types, persistence serialization)
-- [ ] Read messages.ts computeMergeFailurePolicy and identify merge failure phase transition insertion points
-- [ ] Record preflight findings: insertion points, force-resume contract, and resume eligibility matrix in Notes
-- [ ] R002 fix: Deduplicate Reviews table — keep one canonical row per review ID with correct verdict
-- [ ] R002 fix: Deduplicate Execution Log — single chronological sequence, no duplicate events
-- [ ] R002 fix: Make status header consistent with step completion state
+**Status:** ✅ Complete
+- [x] Read resume eligibility logic
+- [x] Read /orch-resume command handler
+- [x] Read phase transition logic
+- [x] Read roadmap Phase 3 sections
+- [x] Read CONTEXT.md and verify TP-030 dependency contracts (resilience/diagnostics types, persistence serialization)
+- [x] Read messages.ts computeMergeFailurePolicy and identify merge failure phase transition insertion points
+- [x] Record preflight findings: insertion points, force-resume contract, and resume eligibility matrix in Notes
+- [x] R002 fix: Deduplicate Reviews table — keep one canonical row per review ID with correct verdict
+- [x] R002 fix: Deduplicate Execution Log — single chronological sequence, no duplicate events
+- [x] R002 fix: Make status header consistent with step completion state
 
 ---
 
 ### Step 1: Implement Force-Resume Policy
-**Status:** Pending
-- [ ] Add `parseResumeArgs()` in extension.ts with --force flag parsing, unknown-flag rejection, and usage guidance
-- [ ] Update `checkResumeEligibility()` in resume.ts to accept `force: boolean` — stopped/failed become eligible with force, completed always rejected
-- [ ] Add pre-resume diagnostics function in resume.ts: worktree health, branch consistency, state coherence (repo-aware for workspace mode); block resume if diagnostics fail with operator-facing reason
-- [ ] Wire up: extension.ts handler calls parseResumeArgs → passes force to resumeOrchBatch → checkResumeEligibility(state, force) → run diagnostics → set resilience.resumeForced → reset phase to paused → continue
-- [ ] Update ORCH_MESSAGES for force-resume notifications (force started, diagnostics failed, etc.)
+**Status:** ✅ Complete
+- [x] Add `parseResumeArgs()` in extension.ts with --force flag parsing, unknown-flag rejection, and usage guidance
+- [x] Update `checkResumeEligibility()` in resume.ts to accept `force: boolean` — stopped/failed become eligible with force, completed always rejected
+- [x] Add pre-resume diagnostics function in resume.ts: worktree health, branch consistency, state coherence (repo-aware for workspace mode); block resume if diagnostics fail with operator-facing reason
+- [x] Wire up: extension.ts handler calls parseResumeArgs → passes force to resumeOrchBatch → checkResumeEligibility(state, force) → run diagnostics → set resilience.resumeForced → reset phase to paused → continue
+- [x] Update ORCH_MESSAGES for force-resume notifications (force started, diagnostics failed, etc.)
 
 ---
 
 ### Step 2: Default Merge Failure to Paused
-**Status:** Pending
-- [ ] Change engine.ts end-of-batch finalization: `failedTasks > 0` → `"paused"` (not `"failed"`) when phase is `"executing"`/`"merging"`, add `preserveWorktreesForResume = true` so worktrees survive for resume
-- [ ] Change resume.ts end-of-batch finalization (parity): same `failedTasks > 0` → `"paused"` transition with worktree preservation
-- [ ] Reserve `"failed"` for future unrecoverable invariant violations — add code comments documenting this intent at both sites
-- [ ] Verify downstream: `isTerminalPhase` checks, completion banners, state cleanup, auto-integration gates all handle new `"paused"` outcome correctly (no functional change needed if they already handle paused)
-- [ ] Add expected final-phase matrix to STATUS.md Notes section
-- [ ] R006 fix: Move `failedTasks > 0 → paused` + `preserveWorktreesForResume = true` determination BEFORE cleanup in engine.ts so worktrees are preserved when tasks fail
-- [ ] R006 fix: Same ordering fix in resume.ts — compute preservation intent before section 11 cleanup
+**Status:** ✅ Complete
+- [x] Change engine.ts end-of-batch finalization: `failedTasks > 0` → `"paused"` (not `"failed"`) when phase is `"executing"`/`"merging"`, add `preserveWorktreesForResume = true` so worktrees survive for resume
+- [x] Change resume.ts end-of-batch finalization (parity): same `failedTasks > 0` → `"paused"` transition with worktree preservation
+- [x] Reserve `"failed"` for future unrecoverable invariant violations — add code comments documenting this intent at both sites
+- [x] Verify downstream: `isTerminalPhase` checks, completion banners, state cleanup, auto-integration gates all handle new `"paused"` outcome correctly (no functional change needed if they already handle paused)
+- [x] Add expected final-phase matrix to STATUS.md Notes section
+- [x] R006 fix: Move `failedTasks > 0 → paused` + `preserveWorktreesForResume = true` determination BEFORE cleanup in engine.ts so worktrees are preserved when tasks fail
+- [x] R006 fix: Same ordering fix in resume.ts — compute preservation intent before section 11 cleanup
 
 ---
 
 ### Step 3: Diagnostic Reports
-**Status:** Pending
-- [ ] Create `extensions/taskplane/diagnostic-reports.ts` with JSONL event log generator and human-readable markdown summary generator; resolve opId via `resolveOperatorId(orchConfig)`; create `.pi/diagnostics/` dir; write failures are non-fatal (log + don't crash)
-- [ ] JSONL events: one JSON line per task from `state.tasks[]` enriched with `state.diagnostics.taskExits{}`; fallback to task record fields when taskExits entry missing; deterministic sort by taskId; fields: batchId, taskId, phase, mode, status, classification, cost, durationSec, retries, repoId, exitReason
-- [ ] Human-readable summary: markdown with batch overview (batchId, phase, duration, total cost), per-task table, per-repo breakdown when `mode === "workspace"`; graceful fallback when diagnostic data is sparse/empty
-- [ ] Wire emission into engine.ts and resume.ts after `persistRuntimeState("batch-terminal", ...)` — call report generator with orchConfig, batchState, allTaskOutcomes, stateRoot; engine/resume parity
-- [ ] R008 fix: Refactor `assembleDiagnosticInput()` to build tasks from `wavePlan` + `lanes` + `allTaskOutcomes` (like `serializeBatchState`), including pending/blocked tasks and repo attribution fields (`repoId`, `resolvedRepoId`); update both engine.ts and resume.ts call sites to pass `wavePlan` and `lanes`
-- [ ] R008 fix: Fix `emitDiagnosticReports` docstring — remove incorrect reference to `batchState.errors` (function has no access to batchState)
+**Status:** ✅ Complete
+- [x] Create `extensions/taskplane/diagnostic-reports.ts` with JSONL event log generator and human-readable markdown summary generator; resolve opId via `resolveOperatorId(orchConfig)`; create `.pi/diagnostics/` dir; write failures are non-fatal (log + don't crash)
+- [x] JSONL events: one JSON line per task from `state.tasks[]` enriched with `state.diagnostics.taskExits{}`; fallback to task record fields when taskExits entry missing; deterministic sort by taskId; fields: batchId, taskId, phase, mode, status, classification, cost, durationSec, retries, repoId, exitReason
+- [x] Human-readable summary: markdown with batch overview (batchId, phase, duration, total cost), per-task table, per-repo breakdown when `mode === "workspace"`; graceful fallback when diagnostic data is sparse/empty
+- [x] Wire emission into engine.ts and resume.ts after `persistRuntimeState("batch-terminal", ...)` — call report generator with orchConfig, batchState, allTaskOutcomes, stateRoot; engine/resume parity
+- [x] R008 fix: Refactor `assembleDiagnosticInput()` to build tasks from `wavePlan` + `lanes` + `allTaskOutcomes` (like `serializeBatchState`), including pending/blocked tasks and repo attribution fields (`repoId`, `resolvedRepoId`); update both engine.ts and resume.ts call sites to pass `wavePlan` and `lanes`
+- [x] R008 fix: Fix `emitDiagnosticReports` docstring — remove incorrect reference to `batchState.errors` (function has no access to batchState)
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] Force-resume eligibility tests: phase×force matrix (paused/executing/merging normal, stopped/failed with --force, completed always rejected, idle/planning rejected), parseResumeArgs (empty, --force, --help, unknown flag, positional arg)
-- [ ] Merge failure phase tests: failedTasks>0 yields "paused" not "failed"; completed when 0 failures; engine/resume parity on this behavior
-- [ ] Diagnostic report tests: buildDiagnosticEvents deterministic ordering, taskExits fallback precedence, workspace per-repo breakdown, sparse/empty data graceful fallback, eventsToJsonl correct format, buildMarkdownReport covers batch overview + per-task table + workspace repo sections + empty events
-- [ ] Diagnostic emission robustness: emitDiagnosticReports non-fatal on write failure (mock writeFileSync throw)
-- [ ] Full test suite passes (`cd extensions && npx vitest run`) — 33/35 suites pass, 2 pre-existing failures (cleanup-resilience, worktree-lifecycle) are Windows `git init` temp dir issues unrelated to TP-031; all 59 TP-031 tests pass
-- [ ] R010 fix: Add `expect(preCleanupIdx).toBeLessThan(cleanupIdx)` ordering assertion in resume.ts parity test
-- [ ] R010 fix: Add force-resume runtime path tests — diagnostics failure blocks resume, diagnostics success allows forced resume, `resilience.resumeForced` persisted only on success
-- [ ] R010 fix: Improve emission robustness tests — assert spy call counts for write-failure paths, add success-path emission test verifying both files written with expected filenames
-- [ ] R010 fix: Deduplicate STATUS.md review rows and execution log entries
-- [ ] Full test suite green after R010 fixes — 35/35 suites, 1399 tests pass
+**Status:** ✅ Complete
+- [x] Force-resume eligibility tests: phase×force matrix (paused/executing/merging normal, stopped/failed with --force, completed always rejected, idle/planning rejected), parseResumeArgs (empty, --force, --help, unknown flag, positional arg)
+- [x] Merge failure phase tests: failedTasks>0 yields "paused" not "failed"; completed when 0 failures; engine/resume parity on this behavior
+- [x] Diagnostic report tests: buildDiagnosticEvents deterministic ordering, taskExits fallback precedence, workspace per-repo breakdown, sparse/empty data graceful fallback, eventsToJsonl correct format, buildMarkdownReport covers batch overview + per-task table + workspace repo sections + empty events
+- [x] Diagnostic emission robustness: emitDiagnosticReports non-fatal on write failure (mock writeFileSync throw)
+- [x] Full test suite passes (`cd extensions && npx vitest run`) — 33/35 suites pass, 2 pre-existing failures (cleanup-resilience, worktree-lifecycle) are Windows `git init` temp dir issues unrelated to TP-031; all 59 TP-031 tests pass
+- [x] R010 fix: Add `expect(preCleanupIdx).toBeLessThan(cleanupIdx)` ordering assertion in resume.ts parity test
+- [x] R010 fix: Add force-resume runtime path tests — diagnostics failure blocks resume, diagnostics success allows forced resume, `resilience.resumeForced` persisted only on success
+- [x] R010 fix: Improve emission robustness tests — assert spy call counts for write-failure paths, add success-path emission test verifying both files written with expected filenames
+- [x] R010 fix: Deduplicate STATUS.md review rows and execution log entries
+- [x] Full test suite green after R010 fixes — 35/35 suites, 1399 tests pass
 
 ---
 
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
-- [ ] Update `docs/reference/commands.md` — `/orch-resume [--force]` syntax, force-only phases, normal phases, completed rejection, example invocations
-- [ ] Evaluate README.md command table — updated `/orch-resume` row to show `[--force]` flag and expanded description
+- [x] Update `docs/reference/commands.md` — `/orch-resume [--force]` syntax, force-only phases, normal phases, completed rejection, example invocations
+- [x] Evaluate README.md command table — updated `/orch-resume` row to show `[--force]` flag and expanded description
 - [ ] Final delivery: create `.DONE`, mark step complete in STATUS.md, log completion
 
 ---

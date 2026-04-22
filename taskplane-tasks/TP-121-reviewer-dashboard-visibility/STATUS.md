@@ -1,60 +1,60 @@
 # TP-121: Reviewer Dashboard Visibility — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 6: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 11
 **Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read review_step in bridge extension
-- [ ] Read onTelemetry callback in lane-runner
-- [ ] Read dashboard reviewer sub-row rendering
-- [ ] Read V2 snapshot → laneStates synthesis
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read review_step in bridge extension
+- [x] Read onTelemetry callback in lane-runner
+- [x] Read dashboard reviewer sub-row rendering
+- [x] Read V2 snapshot → laneStates synthesis
 
 ### Step 1: Bridge extension — write reviewer telemetry to file
-**Status:** Pending
-- [ ] Parse reviewer stdout for RPC events
-- [ ] Accumulate telemetry (tokens, cost, tools, elapsed)
-- [ ] Write to .reviewer-state.json on each message_end
-- [ ] Write final state on exit
-- [ ] Cleanup after reading output
+**Status:** ✅ Complete
+- [x] Parse reviewer stdout for RPC events
+- [x] Accumulate telemetry (tokens, cost, tools, elapsed)
+- [x] Write to .reviewer-state.json on each message_end
+- [x] Write final state on exit
+- [x] Cleanup after reading output
 
 ### Step 2: Lane-runner — read reviewer state into snapshot
-**Status:** Pending
-- [ ] Add snapshot refresh path independent of worker message_end cadence
-- [ ] Check for .reviewer-state.json in onTelemetry callback
-- [ ] Populate snapshot.reviewer when running
-- [ ] Set null when absent or done
+**Status:** ✅ Complete
+- [x] Add snapshot refresh path independent of worker message_end cadence
+- [x] Check for .reviewer-state.json in onTelemetry callback
+- [x] Populate snapshot.reviewer when running
+- [x] Set null when absent or done
 
 ### Step 3: Dashboard server — reviewer in laneStates synthesis
-**Status:** Pending
-- [ ] Map snap.reviewer to legacy reviewer format
-- [ ] Ensure frontend rendering activates
+**Status:** ✅ Complete
+- [x] Map snap.reviewer to legacy reviewer format
+- [x] Ensure frontend rendering activates
 
 ### Step 4: Dashboard frontend — verify reviewer sub-row
-**Status:** Pending
-- [ ] Verify reviewerActive check works with V2 data
-- [ ] Adjust if needed
-- [ ] Test appearance/disappearance
+**Status:** ✅ Complete
+- [x] Verify reviewerActive check works with V2 data
+- [x] Adjust if needed
+- [x] Test appearance/disappearance
 
 ### Step 5: Tests
-**Status:** Pending
-- [ ] Test: reviewer data in snapshot → correct dashboard state
-- [ ] Test: no reviewer-state → null
-- [ ] Run full suite
-- [ ] Fix failures
+**Status:** ✅ Complete
+- [x] Test: reviewer data in snapshot → correct dashboard state
+- [x] Test: no reviewer-state → null
+- [x] Run full suite
+- [x] Fix failures
 
 ### Step 6: Documentation & Delivery
-**Status:** Pending
-- [ ] Update STATUS.md with completion summary
-- [ ] Log discoveries
+**Status:** ✅ Complete
+- [x] Update STATUS.md with completion summary
+- [x] Log discoveries
 
 ---
 

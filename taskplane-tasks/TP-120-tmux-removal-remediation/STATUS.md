@@ -1,78 +1,78 @@
 # TP-120: TMUX Removal Remediation — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 6: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 11
 **Iteration:** 4
 **Size:** M
 
 ---
 
 ### Step 0: Preflight — Inventory remaining TMUX code
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Count remaining TMUX refs
-- [ ] Identify TMUX functions in execution.ts
-- [ ] Identify TMUX usage in merge.ts
-- [ ] Identify TMUX usage in abort.ts
-- [ ] Log inventory
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Count remaining TMUX refs
+- [x] Identify TMUX functions in execution.ts
+- [x] Identify TMUX usage in merge.ts
+- [x] Identify TMUX usage in abort.ts
+- [x] Log inventory
 
 ### Step 1: Remove TMUX helper functions from execution.ts
-**Status:** Pending
-- [ ] Remove tmuxHasSessionAsync()
-- [ ] Remove tmuxKillSessionAsync()
-- [ ] Remove captureTmuxPaneTailAsync()
-- [ ] Remove captureTmuxPaneTail()
-- [ ] Remove toTmuxPath()
-- [ ] Remove other TMUX-only helpers
-- [ ] Update imports — remove TMUX references
-- [ ] Remove fallback branches, keep V2-only paths
-- [ ] R002: Seed/clear V2 liveness registry cache in MergeHealthMonitor.poll()
-- [ ] R002: Update supervisor-merge-monitoring test expectations for V2 liveness path
+**Status:** ✅ Complete
+- [x] Remove tmuxHasSessionAsync()
+- [x] Remove tmuxKillSessionAsync()
+- [x] Remove captureTmuxPaneTailAsync()
+- [x] Remove captureTmuxPaneTail()
+- [x] Remove toTmuxPath()
+- [x] Remove other TMUX-only helpers
+- [x] Update imports — remove TMUX references
+- [x] Remove fallback branches, keep V2-only paths
+- [x] R002: Seed/clear V2 liveness registry cache in MergeHealthMonitor.poll()
+- [x] R002: Update supervisor-merge-monitoring test expectations for V2 liveness path
 
 ### Step 2: Remove merge health monitor TMUX polling
-**Status:** Pending
-- [ ] Replace or remove tmuxHasSessionAsync in MergeHealthMonitor.poll()
-- [ ] Remove captureTmuxPaneTail* calls
-- [ ] Remove tmuxHasSessionAsync import from merge.ts
-- [ ] Evaluate if entire health monitor is legacy dead code
-- [ ] R004: Remove merge.ts TMUX capture helpers and all functional `spawn("tmux"` / `spawnSync("tmux"` calls
-- [ ] R004: Replace pane-output-based health semantics with V2-safe liveness/result-file semantics
-- [ ] R004: Update merge-monitor tests for V2 liveness + no TMUX capture behavior
+**Status:** ✅ Complete
+- [x] Replace or remove tmuxHasSessionAsync in MergeHealthMonitor.poll()
+- [x] Remove captureTmuxPaneTail* calls
+- [x] Remove tmuxHasSessionAsync import from merge.ts
+- [x] Evaluate if entire health monitor is legacy dead code
+- [x] R004: Remove merge.ts TMUX capture helpers and all functional `spawn("tmux"` / `spawnSync("tmux"` calls
+- [x] R004: Replace pane-output-based health semantics with V2-safe liveness/result-file semantics
+- [x] R004: Update merge-monitor tests for V2 liveness + no TMUX capture behavior
 
 ### Step 3: Remove abort.ts TMUX code
-**Status:** Pending
-- [ ] Remove execSync('tmux list-sessions') from abort.ts
-- [ ] Replace with V2 registry or remove
-- [ ] Ensure V2 abort is only path
-- [ ] Remove `/orch-abort` TMUX list/kill path from extension.ts by routing to V2-only abort behavior
-- [ ] Implement concrete non-TMUX session discovery that still aborts correctly when only persisted state exists
-- [ ] Add/adjust abort tests for graceful/hard V2 targeting and no-batch/no-session handling without TMUX
+**Status:** ✅ Complete
+- [x] Remove execSync('tmux list-sessions') from abort.ts
+- [x] Replace with V2 registry or remove
+- [x] Ensure V2 abort is only path
+- [x] Remove `/orch-abort` TMUX list/kill path from extension.ts by routing to V2-only abort behavior
+- [x] Implement concrete non-TMUX session discovery that still aborts correctly when only persisted state exists
+- [x] Add/adjust abort tests for graceful/hard V2 targeting and no-batch/no-session handling without TMUX
 
 ### Step 4: Config rename — tmux_prefix → sessionPrefix
-**Status:** Pending
-- [ ] Rename in config-schema.ts
-- [ ] Update config-loader.ts (keep backward-compat alias)
-- [ ] Rename generateLaneSessionId parameter
-- [ ] Update all call sites
-- [ ] Update settings-tui.ts
-- [ ] Update template YAML
-- [ ] Update dashboard
+**Status:** ✅ Complete
+- [x] Rename in config-schema.ts
+- [x] Update config-loader.ts (keep backward-compat alias)
+- [x] Rename generateLaneSessionId parameter
+- [x] Update all call sites
+- [x] Update settings-tui.ts
+- [x] Update template YAML
+- [x] Update dashboard
 
 ### Step 5: Tests
-**Status:** Pending
-- [ ] Update test references
-- [ ] Run full suite
-- [ ] Fix all failures
-- [ ] Verify zero functional TMUX code
+**Status:** ✅ Complete
+- [x] Update test references
+- [x] Run full suite
+- [x] Fix all failures
+- [x] Verify zero functional TMUX code
 
 ### Step 6: Documentation & Delivery
-**Status:** Pending
-- [ ] Update STATUS.md
-- [ ] Final TMUX reference count
-- [ ] Log before/after count
+**Status:** ✅ Complete
+- [x] Update STATUS.md
+- [x] Final TMUX reference count
+- [x] Log before/after count
 
 ---
 

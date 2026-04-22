@@ -1,0 +1,21 @@
+DONE — 2026-03-25
+
+## Summary
+
+Fixed dashboard crash (`ERR_STRING_TOO_LONG`) when telemetry JSONL files exceed ~512MB.
+
+### Changes
+
+**`dashboard/server.cjs` — `tailJsonlFile()`:**
+
+1. **Capped read size per tick** — Added `MAX_TAIL_BYTES = 10MB`. Each SSE tick reads at most 10MB; remaining data is picked up on subsequent ticks.
+
+2. **Skip-to-tail on fresh start** — When `offset === 0` and file > 10MB, skip to `fileSize - MAX_TAIL_BYTES`. Shows recent telemetry immediately instead of processing entire history. Partial-line handling already discards the first incomplete line.
+
+3. **Safe offset tracking** — Changed `tailState.offset = fileSize` to `tailState.offset += bytesToRead` so incremental reads advance correctly.
+
+### Verification
+
+- 2626/2626 tests passed (1 pre-existing timeout in orch-direct-implementation.test.ts, unrelated)
+- CLI smoke test: `node bin/taskplane.mjs help` works correctly
+- No changes to telemetry format, SSE protocol, or other dashboard functionality

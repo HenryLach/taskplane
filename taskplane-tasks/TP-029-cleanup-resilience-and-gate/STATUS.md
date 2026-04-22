@@ -1,103 +1,103 @@
 # TP-029: Cleanup Resilience & Post-Merge Gate — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 11
 **Iteration:** 5
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read CONTEXT.md (Tier 2 context)
-- [ ] Read worktree cleanup flow (engine → worktree.ts)
-- [ ] Read merge worktree lifecycle (merge.ts)
-- [ ] Understand issue #93 root cause: why only last-wave repos get cleanup
-- [ ] Read roadmap Phase 2 sections 2b, 2c, 2d
-- [ ] Read /orch-integrate flow in extension.ts (autostash, cleanup touchpoints)
-- [ ] Read resume.ts per-repo cleanup pattern for parity (R001 issue 3)
-- [ ] Inventory existing test surface for cleanup/worktree/integrate paths
-- [ ] Record preflight findings: insertion points, expected failure-path behavior
-- [ ] R002: Fix Reviews table separator row placement (moved after header)
-- [ ] R002: Remove duplicate R002 row from Reviews table
-- [ ] R002: Verify no out-of-scope TP-028 edits in checkpoint
+- [x] Read CONTEXT.md (Tier 2 context)
+- [x] Read worktree cleanup flow (engine → worktree.ts)
+- [x] Read merge worktree lifecycle (merge.ts)
+- [x] Understand issue #93 root cause: why only last-wave repos get cleanup
+- [x] Read roadmap Phase 2 sections 2b, 2c, 2d
+- [x] Read /orch-integrate flow in extension.ts (autostash, cleanup touchpoints)
+- [x] Read resume.ts per-repo cleanup pattern for parity (R001 issue 3)
+- [x] Inventory existing test surface for cleanup/worktree/integrate paths
+- [x] Record preflight findings: insertion points, expected failure-path behavior
+- [x] R002: Fix Reviews table separator row placement (moved after header)
+- [x] R002: Remove duplicate R002 row from Reviews table
+- [x] R002: Verify no out-of-scope TP-028 edits in checkpoint
 
 ---
 
 ### Step 1: Fix Per-Wave Cleanup Across All Repos
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Inter-wave reset: collect all repo roots from allocated lanes and iterate per-repo (following resume.ts encounteredRepoRoots pattern); per-repo target branch resolution (primary=orchBranch, secondary=resolveBaseBranch)
-- [ ] Terminal cleanup: iterate all encountered repo roots for removeAllWorktrees (not just primary repoRoot); follow same pattern as resume.ts:1475-1507
-- [ ] Force cleanup fallback: apply forceCleanupWorktree to both merge.ts stale-prep cleanup (~577) and end-of-wave merge worktree cleanup (~887)
-- [ ] .worktrees parent cleanup: only remove empty .worktrees base dirs in subdirectory mode; never force-remove non-empty parents (R003 safety rule)
-- [ ] Remove duplicate execution-log rows at STATUS.md:110-113 (R003 housekeeping)
-- [ ] R004: Remove unused `resolveRepoIdFromRoot` import from engine.ts (fixes circular dep engine→resume→engine)
-- [ ] R004-v2: Remove duplicate .worktrees base-dir cleanup from engine.ts (keep single owner in removeAllWorktrees)
-- [ ] R004-v2: Add behavioral test for merge worktree force cleanup fallback (forceRemoveMergeWorktree)
-- [ ] R004-v2: Add engine-level behavioral test for multi-repo terminal cleanup (not just structural assertions)
-- [ ] R004: Add behavioral tests for multi-repo terminal cleanup (repos active in earlier waves but not final wave)
-- [ ] R004: Add behavioral test for merge worktree force cleanup fallback path
-- [ ] R004: Add behavioral test for .worktrees base-dir cleanup safety split by mode (subdirectory vs sibling)
-- [ ] R004-v2: Run full test suite and confirm green (998 tests, 26 files, all pass)
+- [x] Inter-wave reset: collect all repo roots from allocated lanes and iterate per-repo (following resume.ts encounteredRepoRoots pattern); per-repo target branch resolution (primary=orchBranch, secondary=resolveBaseBranch)
+- [x] Terminal cleanup: iterate all encountered repo roots for removeAllWorktrees (not just primary repoRoot); follow same pattern as resume.ts:1475-1507
+- [x] Force cleanup fallback: apply forceCleanupWorktree to both merge.ts stale-prep cleanup (~577) and end-of-wave merge worktree cleanup (~887)
+- [x] .worktrees parent cleanup: only remove empty .worktrees base dirs in subdirectory mode; never force-remove non-empty parents (R003 safety rule)
+- [x] Remove duplicate execution-log rows at STATUS.md:110-113 (R003 housekeeping)
+- [x] R004: Remove unused `resolveRepoIdFromRoot` import from engine.ts (fixes circular dep engine→resume→engine)
+- [x] R004-v2: Remove duplicate .worktrees base-dir cleanup from engine.ts (keep single owner in removeAllWorktrees)
+- [x] R004-v2: Add behavioral test for merge worktree force cleanup fallback (forceRemoveMergeWorktree)
+- [x] R004-v2: Add engine-level behavioral test for multi-repo terminal cleanup (not just structural assertions)
+- [x] R004: Add behavioral tests for multi-repo terminal cleanup (repos active in earlier waves but not final wave)
+- [x] R004: Add behavioral test for merge worktree force cleanup fallback path
+- [x] R004: Add behavioral test for .worktrees base-dir cleanup safety split by mode (subdirectory vs sibling)
+- [x] R004-v2: Run full test suite and confirm green (998 tests, 26 files, all pass)
 
 ---
 
 ### Step 2: Post-Merge Cleanup Gate
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] R005: Add `cleanup_post_merge_failed` classification to messages.ts (pure function like computeMergeFailurePolicy) — returns targetPhase "paused", errorMessage, persistTrigger, notification with per-repo failure details and recovery commands (`/orch-resume`, manual cleanup)
-- [ ] R005: In engine.ts, after inter-wave reset loop, verify no registered worktrees remain for any repo that should be clean; collect per-repo failure payloads (repo path + stale worktree list); if any failures → call cleanup gate policy → set phase="paused", persist state, emit diagnostic, break wave loop
-- [ ] R005: Add parity cleanup gate to resume.ts inter-wave reset (same verification + pause + persist pattern)
-- [ ] R005: Add tests — (a) cleanup failure pauses batch and blocks wave N+1 start, (b) cleanup success still advances normally (regression guard)
-- [ ] R005: Run full test suite and confirm green (998 tests, 26 files, all pass)
-- [ ] R006: Fix cleanup gate to only detect true stale worktrees (reset/remove failures), not successfully-reset reusable worktrees — track failures during reset loop and gate on those, not on post-hoc listWorktrees
-- [ ] R006: Align persistTrigger to `cleanup_post_merge_failed` (underscore) matching spec classification naming
-- [ ] R006: Add regression tests — successful wave-1 merge+reset in 2-wave batch does NOT pause; pause only on actual unrecoverable stale state
-- [ ] R006: Run full test suite and confirm green (1014 tests, 26 files, all pass)
+- [x] R005: Add `cleanup_post_merge_failed` classification to messages.ts (pure function like computeMergeFailurePolicy) — returns targetPhase "paused", errorMessage, persistTrigger, notification with per-repo failure details and recovery commands (`/orch-resume`, manual cleanup)
+- [x] R005: In engine.ts, after inter-wave reset loop, verify no registered worktrees remain for any repo that should be clean; collect per-repo failure payloads (repo path + stale worktree list); if any failures → call cleanup gate policy → set phase="paused", persist state, emit diagnostic, break wave loop
+- [x] R005: Add parity cleanup gate to resume.ts inter-wave reset (same verification + pause + persist pattern)
+- [x] R005: Add tests — (a) cleanup failure pauses batch and blocks wave N+1 start, (b) cleanup success still advances normally (regression guard)
+- [x] R005: Run full test suite and confirm green (998 tests, 26 files, all pass)
+- [x] R006: Fix cleanup gate to only detect true stale worktrees (reset/remove failures), not successfully-reset reusable worktrees — track failures during reset loop and gate on those, not on post-hoc listWorktrees
+- [x] R006: Align persistTrigger to `cleanup_post_merge_failed` (underscore) matching spec classification naming
+- [x] R006: Add regression tests — successful wave-1 merge+reset in 2-wave batch does NOT pause; pause only on actual unrecoverable stale state
+- [x] R006: Run full test suite and confirm green (1014 tests, 26 files, all pass)
 
 ---
 
 ### Step 3: Integrate Cleanup into /orch-integrate
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add `computeIntegrateCleanupResult()` pure function to messages.ts — takes per-repo findings (stale worktrees, lane branches, orch branches, autostash entries, .worktrees containers) and produces cleanup report + overall pass/fail + recovery commands. Covers ALL workspace repos (not just reposToIntegrate).
-- [ ] In extension.ts, after all repos integrated + batch state deleted: (a) drop batch-scoped autostash entries (`orch-integrate-autostash-{batchId}` and `merge-agent-autostash-w*-{batchId}`) per repo, (b) run acceptance checks across all workspace repos (or repoRoot in repo mode), (c) call the pure function, (d) append cleanup status to summary notification. Acceptance runs BEFORE final state cleanup.
-- [ ] Add tests: (a) autostash entries for current batch are dropped, non-batch stashes preserved; (b) acceptance check detects stale lane branches/worktrees and reports them; (c) clean pass produces green summary with no warnings
-- [ ] Run full test suite and confirm green (1014 tests, 26 files, all pass)
-- [ ] R008: Fix PR-mode regression — skip orch branch from cleanup findings when mode is "pr" (integratedLocally=false), so preserved orch branch is not flagged as stale
-- [ ] R008: Use "warning" notification level when cleanupResult.clean === false (instead of always "info")
-- [ ] R008: Add test — /orch-integrate --pr does not report orch branch as stale (mode-specific cleanup semantics)
-- [ ] R008: Run full test suite and confirm green (1016 tests, 26 files, all pass)
+- [x] Add `computeIntegrateCleanupResult()` pure function to messages.ts — takes per-repo findings (stale worktrees, lane branches, orch branches, autostash entries, .worktrees containers) and produces cleanup report + overall pass/fail + recovery commands. Covers ALL workspace repos (not just reposToIntegrate).
+- [x] In extension.ts, after all repos integrated + batch state deleted: (a) drop batch-scoped autostash entries (`orch-integrate-autostash-{batchId}` and `merge-agent-autostash-w*-{batchId}`) per repo, (b) run acceptance checks across all workspace repos (or repoRoot in repo mode), (c) call the pure function, (d) append cleanup status to summary notification. Acceptance runs BEFORE final state cleanup.
+- [x] Add tests: (a) autostash entries for current batch are dropped, non-batch stashes preserved; (b) acceptance check detects stale lane branches/worktrees and reports them; (c) clean pass produces green summary with no warnings
+- [x] Run full test suite and confirm green (1014 tests, 26 files, all pass)
+- [x] R008: Fix PR-mode regression — skip orch branch from cleanup findings when mode is "pr" (integratedLocally=false), so preserved orch branch is not flagged as stale
+- [x] R008: Use "warning" notification level when cleanupResult.clean === false (instead of always "info")
+- [x] R008: Add test — /orch-integrate --pr does not report orch branch as stale (mode-specific cleanup semantics)
+- [x] R008: Run full test suite and confirm green (1016 tests, 26 files, all pass)
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] R008 residual: Run full test suite to confirm Step 3 R008 changes are green (1016 tests, 26 files, all pass)
-- [ ] Verify PR-mode semantics: `/orch-integrate --pr` does NOT flag preserved orch branch as stale
-- [ ] Verify notification severity: warning level when cleanup findings are present, info when clean
-- [ ] Verify polyrepo acceptance criteria: cross-repo assertion of all 5 dimensions (worktrees, lane branches, orch branches, autostash, .worktrees containers) after /orch-integrate
-- [ ] Run full test suite (`cd extensions && npx vitest run`) — ZERO failures (1020 tests, 26 files, all pass)
-- [ ] Fix any failures found (none — all 1020 tests passed)
-- [ ] R010: Replace tautological notification-severity assertions with tests that verify actual `ctx.ui.notify` severity argument from production code path (dirty→"warning", clean→"info")
-- [ ] R010: Run full test suite and confirm green
+- [x] R008 residual: Run full test suite to confirm Step 3 R008 changes are green (1016 tests, 26 files, all pass)
+- [x] Verify PR-mode semantics: `/orch-integrate --pr` does NOT flag preserved orch branch as stale
+- [x] Verify notification severity: warning level when cleanup findings are present, info when clean
+- [x] Verify polyrepo acceptance criteria: cross-repo assertion of all 5 dimensions (worktrees, lane branches, orch branches, autostash, .worktrees containers) after /orch-integrate
+- [x] Run full test suite (`cd extensions && npx vitest run`) — ZERO failures (1020 tests, 26 files, all pass)
+- [x] Fix any failures found (none — all 1020 tests passed)
+- [x] R010: Replace tautological notification-severity assertions with tests that verify actual `ctx.ui.notify` severity argument from production code path (dirty→"warning", clean→"info")
+- [x] R010: Run full test suite and confirm green
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] R011: Complete residual R010 items from Step 4 — replace tautological notification-severity tests with direct `result.notifyLevel` assertions; run full test suite
-- [ ] R011: Docs-impact check — review `/orch-integrate` message changes from Step 3 and decide if `docs/reference/commands.md` needs updating (decision: no update needed — existing docs already say "Cleanup failures are non-fatal (shown as warnings)"; our changes make cleanup more thorough but don't change the command interface, flags, or modes)
-- [ ] R011: Close issue #93 with commit/PR reference (closed via gh issue close 93 with comment referencing TP-029 branch)
-- [ ] R011: Verify all completion criteria from PROMPT.md are satisfied (all steps complete, all tests passing, cleanup works across all repos, cleanup gate blocks on failure)
-- [ ] `.DONE` created
+- [x] R011: Complete residual R010 items from Step 4 — replace tautological notification-severity tests with direct `result.notifyLevel` assertions; run full test suite
+- [x] R011: Docs-impact check — review `/orch-integrate` message changes from Step 3 and decide if `docs/reference/commands.md` needs updating (decision: no update needed — existing docs already say "Cleanup failures are non-fatal (shown as warnings)"; our changes make cleanup more thorough but don't change the command interface, flags, or modes)
+- [x] R011: Close issue #93 with commit/PR reference (closed via gh issue close 93 with comment referencing TP-029 branch)
+- [x] R011: Verify all completion criteria from PROMPT.md are satisfied (all steps complete, all tests passing, cleanup works across all repos, cleanup gate blocks on failure)
+- [x] `.DONE` created
 
 ---
 

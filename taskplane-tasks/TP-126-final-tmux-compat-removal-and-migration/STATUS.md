@@ -1,20 +1,20 @@
 # TP-126: Final TMUX Compatibility Removal and Migration — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Final verification & delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-02
 **Review Level:** 3
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 2
 **Size:** L
 
 ---
 
 ### Step 0: Removal plan and migration contract
-**Status:** Pending
-- [ ] Define exact legacy inputs to retire
-- [ ] Choose migration policy per input (normalize/error/grace period)
-- [ ] Document policy in STATUS.md before code changes
+**Status:** ✅ Complete
+- [x] Define exact legacy inputs to retire
+- [x] Choose migration policy per input (normalize/error/grace period)
+- [x] Document policy in STATUS.md before code changes
 
 #### Step 0 Working Notes (legacy input inventory)
 - `orchestrator.orchestrator.tmuxPrefix` alias ingress in JSON config loading (`loadJsonConfig()` in `config-loader.ts`).
@@ -28,34 +28,34 @@
 - `spawn_mode: "tmux"` (orchestrator/task-runner/user preferences): **hard error with fix hint**. Runtime V2 contract is subprocess-only; reject `tmux` deterministically and point to `subprocess`.
 
 ### Step 1: Remove remaining compatibility paths
-**Status:** Pending
-- [ ] Remove/retire `tmuxPrefix` config alias handling
-- [ ] Remove/retire `tmuxSessionName` persisted-lane ingress handling
-- [ ] [R001] Preserve one-release migration-only handling for `lanes[].tmuxSessionName` (warn + normalize to `laneSessionId` + canonical rewrite on save)
-- [ ] Remove/retire `spawnMode: "tmux"` acceptance paths
-- [ ] Keep explicit migration guidance in errors/warnings
-- [ ] [R003] Enforce hard failure in `/task` config loading for `CONFIG_LEGACY_FIELD` (no silent fallback to defaults) and add regression tests
+**Status:** ✅ Complete
+- [x] Remove/retire `tmuxPrefix` config alias handling
+- [x] Remove/retire `tmuxSessionName` persisted-lane ingress handling
+- [x] [R001] Preserve one-release migration-only handling for `lanes[].tmuxSessionName` (warn + normalize to `laneSessionId` + canonical rewrite on save)
+- [x] Remove/retire `spawnMode: "tmux"` acceptance paths
+- [x] Keep explicit migration guidance in errors/warnings
+- [x] [R003] Enforce hard failure in `/task` config loading for `CONFIG_LEGACY_FIELD` (no silent fallback to defaults) and add regression tests
 
 ### Step 2: Update schema/types/docs/templates
-**Status:** Pending
-- [ ] Update schema/types to canonical non-TMUX contract
-- [ ] Align settings/UI metadata with no-TMUX schema values
-- [ ] Update templates/config docs to canonical keys
-- [ ] Update command/doctor docs to final no-TMUX contract
-- [ ] [R006] Update `taskplane init` scaffolding to emit canonical subprocess/session-prefix fields only and add CLI regression coverage
+**Status:** ✅ Complete
+- [x] Update schema/types to canonical non-TMUX contract
+- [x] Align settings/UI metadata with no-TMUX schema values
+- [x] Update templates/config docs to canonical keys
+- [x] Update command/doctor docs to final no-TMUX contract
+- [x] [R006] Update `taskplane init` scaffolding to emit canonical subprocess/session-prefix fields only and add CLI regression coverage
 
 ### Step 3: Tests and migration coverage
-**Status:** Pending
-- [ ] Update fixtures using TMUX-era fields
-- [ ] Add migration/failure tests for legacy input detection and guidance
-- [ ] Run full extension suite
-- [ ] Run CLI smoke tests (`help`, `doctor`)
+**Status:** ✅ Complete
+- [x] Update fixtures using TMUX-era fields
+- [x] Add migration/failure tests for legacy input detection and guidance
+- [x] Run full extension suite
+- [x] Run CLI smoke tests (`help`, `doctor`)
 
 ### Step 4: Final verification & delivery
-**Status:** Pending
-- [ ] Re-run TMUX reference audit and record final counts
-- [ ] Confirm no functional TMUX runtime logic remains
-- [ ] Publish migration notes in docs and STATUS.md
+**Status:** ✅ Complete
+- [x] Re-run TMUX reference audit and record final counts
+- [x] Confirm no functional TMUX runtime logic remains
+- [x] Publish migration notes in docs and STATUS.md
 
 ---
 

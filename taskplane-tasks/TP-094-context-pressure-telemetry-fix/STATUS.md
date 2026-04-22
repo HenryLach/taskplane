@@ -1,63 +1,63 @@
 # TP-094: Context Pressure and Telemetry Accuracy Fix — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 5
 **Iteration:** 4
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Verify field name mismatch in real sidecar data
-- [ ] Trace all percentUsed code paths
-- [ ] Identify manual fallback removal points
+- [x] Verify field name mismatch in real sidecar data
+- [x] Trace all percentUsed code paths
+- [x] Identify manual fallback removal points
 
 ---
 
 ### Step 1: Fix field name mismatch in sidecar tailing
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] 1a. Type: renamed `percentUsed` → `percent` in `SidecarTelemetryDelta.contextUsage`
-- [ ] 1b. Parser: reads `cu.percent ?? cu.percentUsed` for backward compat
-- [ ] 1c. Worker consumer: updated to `.percent`
-- [ ] 1d. Reviewer consumers (both paths): updated to `.percent`
-- [ ] 1e. Manual token fallback removed from worker + both reviewer paths
-- [ ] 1f. One-shot warning: gated on `sawStatsResponseWithoutContextUsage` flag (not hadEvents)
-- [ ] 1g. rpc-wrapper verified: passes through correctly, no changes needed
+- [x] 1a. Type: renamed `percentUsed` → `percent` in `SidecarTelemetryDelta.contextUsage`
+- [x] 1b. Parser: reads `cu.percent ?? cu.percentUsed` for backward compat
+- [x] 1c. Worker consumer: updated to `.percent`
+- [x] 1d. Reviewer consumers (both paths): updated to `.percent`
+- [x] 1e. Manual token fallback removed from worker + both reviewer paths
+- [x] 1f. One-shot warning: gated on `sawStatsResponseWithoutContextUsage` flag (not hadEvents)
+- [x] 1g. rpc-wrapper verified: passes through correctly, no changes needed
 
 ---
 
 ### Step 2: Context % snapshots at iteration boundaries
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Write JSONL snapshot at worker iteration end (`writeContextSnapshot()` after `runWorker()`)
-- [ ] Add to batch artifact cleanup (post-integrate + preflight age sweep)
+- [x] Write JSONL snapshot at worker iteration end (`writeContextSnapshot()` after `runWorker()`)
+- [x] Add to batch artifact cleanup (post-integrate + preflight age sweep)
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Tests updated: `percent` field extracted correctly from real pi response format
-- [ ] Tests added: backward-compatible `percentUsed` fallback works
-- [ ] Tests added: `percent` takes precedence over `percentUsed`
-- [ ] Tests added: `sawStatsResponseWithoutContextUsage` flag behavior
-- [ ] 240 targeted tests pass (sidecar, rpc-wrapper, cleanup, reviewer context)
-- [ ] 37 state persistence tests pass
+- [x] Tests updated: `percent` field extracted correctly from real pi response format
+- [x] Tests added: backward-compatible `percentUsed` fallback works
+- [x] Tests added: `percent` takes precedence over `percentUsed`
+- [x] Tests added: `sawStatsResponseWithoutContextUsage` flag behavior
+- [x] 240 targeted tests pass (sidecar, rpc-wrapper, cleanup, reviewer context)
+- [x] 37 state persistence tests pass
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Log discoveries in STATUS.md
-- [ ] Inline comments updated (TP-094 references in all changed locations)
-- [ ] No external doc updates needed (resilience-architecture.md doesn't reference field names)
+- [x] Log discoveries in STATUS.md
+- [x] Inline comments updated (TP-094 references in all changed locations)
+- [x] No external doc updates needed (resilience-architecture.md doesn't reference field names)
 
 ---
 

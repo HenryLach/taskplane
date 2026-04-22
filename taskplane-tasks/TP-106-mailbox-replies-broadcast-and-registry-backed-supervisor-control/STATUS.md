@@ -1,7 +1,7 @@
 # TP-106: Mailbox Replies, Broadcast, and Registry-Backed Supervisor Control — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-30
 **Review Level:** 2
 **Review Counter:** 0
@@ -11,53 +11,53 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Review current mailbox implementation and identify which assumptions are session/TMUX-specific rather than agent-ID/registry-based
-- [ ] Trace the current supervisor tools (`send_agent_message`, `list_active_agents`, `read_agent_status`) and outline the Runtime V2 source of truth for each
+- [x] Review current mailbox implementation and identify which assumptions are session/TMUX-specific rather than agent-ID/registry-based
+- [x] Trace the current supervisor tools (`send_agent_message`, `list_active_agents`, `read_agent_status`) and outline the Runtime V2 source of truth for each
 
 ---
 
 ### Step 1: Registry-Backed Supervisor Tools
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Rework supervisor-facing agent tools to validate and resolve against the runtime registry instead of TMUX
-- [ ] Preserve familiar agent IDs while severing the assumption that they are terminal/session names
-- [ ] Ensure delivery and liveness errors are surfaced from registry/runtime state, not terminal state
+- [x] Rework supervisor-facing agent tools to validate and resolve against the runtime registry instead of TMUX
+- [x] Preserve familiar agent IDs while severing the assumption that they are terminal/session names
+- [x] Ensure delivery and liveness errors are surfaced from registry/runtime state, not terminal state
 
 ---
 
 ### Step 2: Agent Replies, Broadcast, and Rate Limiting
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Implement agent→supervisor replies/escalations on the new runtime flow
-- [ ] Implement broadcast and per-agent rate limiting on top of the mailbox model
-- [ ] Keep auditability intact for sent, delivered, replied, and rate-limited messages
+- [x] Implement agent→supervisor replies/escalations on the new runtime flow
+- [x] Implement broadcast and per-agent rate limiting on top of the mailbox model
+- [x] Keep auditability intact for sent, delivered, replied, and rate-limited messages
 
 ---
 
 ### Step 3: Bridge Contact Tools
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add minimal agent-side bridge/contact tools for reply/escalate flows where generic file writes would be brittle
-- [ ] Document how these tools fit with future review and segment-expansion bridge work
+- [x] Add minimal agent-side bridge/contact tools for reply/escalate flows where generic file writes would be brittle
+- [x] Document how these tools fit with future review and segment-expansion bridge work
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add or update behavioral tests for registry-backed tool behavior, reply flow, broadcast, and rate limiting
-- [ ] Run the full suite (3312 pass, 0 fail)
-- [ ] Fix all failures
+- [x] Add or update behavioral tests for registry-backed tool behavior, reply flow, broadcast, and rate limiting
+- [x] Run the full suite (3312 pass, 0 fail)
+- [x] Fix all failures
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update mailbox and command docs for the new Runtime V2 control model
-- [ ] Log discoveries in STATUS.md
+- [x] Update mailbox and command docs for the new Runtime V2 control model
+- [x] Log discoveries in STATUS.md
 
 ---
 

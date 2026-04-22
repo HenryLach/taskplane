@@ -1,65 +1,65 @@
 # TP-166: Wave Planner Excessive Waves and Global Lane Cap — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight and Analysis
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read waves.ts wave planning logic for multi-segment tasks
-- [ ] Reproduce excessive-waves scenario (8 tasks → 5 waves instead of 3)
-- [ ] Read `enforceGlobalLaneCap` and trace call sites
-- [ ] Identify root cause of phantom waves
-- [ ] Identify per-repo vs global maxLanes gap
-- [ ] Document findings in STATUS.md
+- [x] Read waves.ts wave planning logic for multi-segment tasks
+- [x] Reproduce excessive-waves scenario (8 tasks → 5 waves instead of 3)
+- [x] Read `enforceGlobalLaneCap` and trace call sites
+- [x] Identify root cause of phantom waves
+- [x] Identify per-repo vs global maxLanes gap
+- [x] Document findings in STATUS.md
 
 ---
 
 ### Step 1: Fix Excessive Wave Generation
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Modify `buildSegmentFrontierWaves` to return task-level wave metadata (`taskLevelWaveCount` + `roundToTaskWave` mapping) alongside expanded rounds
-- [ ] Create `resolveDisplayWaveNumber(roundIdx, roundToTaskWave, taskLevelWaveCount)` helper for consistent wave-number resolution across engine + resume
-- [ ] Store `taskLevelWaveCount` on batchState; maintain `roundToTaskWave` alongside `runtimeSegmentRounds` in engine, updating it when `scheduleContinuationSegmentRound` inserts rounds
-- [ ] Apply task-level wave display mapping in engine.ts execution path (orchWaveStart, progress messages, merge messages, batch summary)
-- [ ] Apply task-level wave display mapping in resume.ts flow (wave progress, wave-start output, merge messages, batch summary)
-- [ ] Update engine-segment-frontier.test.ts expectations for new return shape
-- [ ] Run targeted tests: waves*.test.ts + engine-segment-frontier.test.ts (50/50 pass)
+- [x] Modify `buildSegmentFrontierWaves` to return task-level wave metadata (`taskLevelWaveCount` + `roundToTaskWave` mapping) alongside expanded rounds
+- [x] Create `resolveDisplayWaveNumber(roundIdx, roundToTaskWave, taskLevelWaveCount)` helper for consistent wave-number resolution across engine + resume
+- [x] Store `taskLevelWaveCount` on batchState; maintain `roundToTaskWave` alongside `runtimeSegmentRounds` in engine, updating it when `scheduleContinuationSegmentRound` inserts rounds
+- [x] Apply task-level wave display mapping in engine.ts execution path (orchWaveStart, progress messages, merge messages, batch summary)
+- [x] Apply task-level wave display mapping in resume.ts flow (wave progress, wave-start output, merge messages, batch summary)
+- [x] Update engine-segment-frontier.test.ts expectations for new return shape
+- [x] Run targeted tests: waves*.test.ts + engine-segment-frontier.test.ts (50/50 pass)
 
 ---
 
 ### Step 2: Fix Global Lane Cap Enforcement
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Verify `enforceGlobalLaneCap` works correctly in `allocateLanes` (already wired at waves.ts:1295, confirmed via analysis)
-- [ ] Add test: workspace with 3 repos, maxLanes=4, unique file scopes → total lanes ≤ 4
-- [ ] Add test: allocateLanes integration test — covered by enforceGlobalLaneCap unit tests (allocateLanes requires real git worktree creation, cap logic is the same function)
-- [ ] Run targeted tests: waves*.test.ts (31/31 pass)
+- [x] Verify `enforceGlobalLaneCap` works correctly in `allocateLanes` (already wired at waves.ts:1295, confirmed via analysis)
+- [x] Add test: workspace with 3 repos, maxLanes=4, unique file scopes → total lanes ≤ 4
+- [x] Add test: allocateLanes integration test — covered by enforceGlobalLaneCap unit tests (allocateLanes requires real git worktree creation, cap logic is the same function)
+- [x] Run targeted tests: waves*.test.ts (31/31 pass)
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] FULL test suite passing (3282/3282 pass, 0 failures)
-- [ ] Regression test: correct wave count for small graphs (8-task graph → 3 task-level waves + single-segment 1:1 mapping)
-- [ ] Regression test: global lane cap enforcement (workspace 3 repos → ≤4 lanes + single-repo mode)
-- [ ] All failures fixed (full suite: 3282/3282 pass)
+- [x] FULL test suite passing (3282/3282 pass, 0 failures)
+- [x] Regression test: correct wave count for small graphs (8-task graph → 3 task-level waves + single-segment 1:1 mapping)
+- [x] Regression test: global lane cap enforcement (workspace 3 repos → ≤4 lanes + single-repo mode)
+- [x] All failures fixed (full suite: 3282/3282 pass)
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update maxLanes docs (clarified global enforcement in workspace mode)
-- [ ] Discoveries logged
+- [x] Update maxLanes docs (clarified global enforcement in workspace mode)
+- [x] Discoveries logged
 
 ---
 

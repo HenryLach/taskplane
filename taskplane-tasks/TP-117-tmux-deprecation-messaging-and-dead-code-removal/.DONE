@@ -1,0 +1,23 @@
+DONE — 2026-04-02
+
+## Summary
+
+Completed TMUX deprecation cleanup follow-through by updating/removing stale tests that still referenced deleted legacy orchestration helpers.
+
+### Test updates
+
+- Reworked `extensions/tests/orch-rpc-telemetry.test.ts` to validate Runtime V2 lane/merge wiring (`executeLaneV2`, `spawnMergeAgentV2`) instead of removed TMUX spawners.
+- Updated `extensions/tests/runtime-model-fallback.test.ts` extra-env threading assertions to target `executeLaneV2`.
+- Updated `extensions/tests/supervisor-merge-monitoring.test.ts` merge monitor integration assertion to current Runtime V2 deregistration behavior.
+- Updated `extensions/tests/workspace-config.integration.test.ts` function-signature assertion from `spawnMergeAgent` to `spawnMergeAgentV2`.
+- Removed obsolete `buildTmuxSpawnArgs` structural assertions from `extensions/tests/crash-recovery-spawn-reliability.test.ts`.
+
+## Verification
+
+- Targeted tests passed:
+  - `tests/orch-rpc-telemetry.test.ts`
+  - `tests/runtime-model-fallback.test.ts`
+  - `tests/supervisor-merge-monitoring.test.ts`
+  - `tests/workspace-config.integration.test.ts`
+  - `tests/crash-recovery-spawn-reliability.test.ts`
+- Full suite passed: **3398 passed, 0 failed**

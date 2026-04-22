@@ -1,45 +1,45 @@
 # TP-125: Centralize Legacy TMUX Compatibility Shim — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 5
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Inventory compatibility call sites
-**Status:** Pending
-- [ ] Identify every remaining runtime call site for TMUX-shaped legacy inputs
-- [ ] Confirm each site is ingress compatibility only
-- [ ] Log list in STATUS.md
+**Status:** ✅ Complete
+- [x] Identify every remaining runtime call site for TMUX-shaped legacy inputs
+- [x] Confirm each site is ingress compatibility only
+- [x] Log list in STATUS.md
 
 ### Step 1: Introduce compatibility shim module
-**Status:** Pending
-- [ ] Create `extensions/taskplane/tmux-compat.ts`
-- [ ] Add config alias normalization helpers
-- [ ] Add persisted lane alias normalization helpers
-- [ ] Add spawnMode legacy classification/deprecation helper
+**Status:** ✅ Complete
+- [x] Create `extensions/taskplane/tmux-compat.ts`
+- [x] Add config alias normalization helpers
+- [x] Add persisted lane alias normalization helpers
+- [x] Add spawnMode legacy classification/deprecation helper
 
 ### Step 2: Replace scattered compatibility logic
-**Status:** Pending
-- [ ] Update `config-loader.ts` to use shim helpers
-- [ ] Update `persistence.ts` normalization to use shim helpers
-- [ ] Update other ingress paths to use shim helpers
-- [ ] Keep behavior identical
+**Status:** ✅ Complete
+- [x] Update `config-loader.ts` to use shim helpers
+- [x] Update `persistence.ts` normalization to use shim helpers
+- [x] Update other ingress paths to use shim helpers
+- [x] Keep behavior identical
 
 ### Step 3: Tests
-**Status:** Pending
-- [ ] Add/adjust compatibility tests via shim
-- [ ] Run full extension suite
-- [ ] Fix failures
+**Status:** ✅ Complete
+- [x] Add/adjust compatibility tests via shim
+- [x] Run full extension suite
+- [x] Fix failures
 
 ### Step 4: Delivery
-**Status:** Pending
-- [ ] Record TMUX-reference count delta
-- [ ] Document exactly which legacy inputs remain supported
+**Status:** ✅ Complete
+- [x] Record TMUX-reference count delta
+- [x] Document exactly which legacy inputs remain supported
 
 ---
 

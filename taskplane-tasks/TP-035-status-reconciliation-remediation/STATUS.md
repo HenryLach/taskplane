@@ -1,64 +1,64 @@
 # TP-035: STATUS.md Reconciliation & Artifact Staging Scope — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 6
 **Iteration:** 6
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read quality gate verdict structure
-- [ ] Read artifact staging code
-- [ ] Read task templates
-- [ ] Read roadmap Phase 5 sections
+**Status:** ✅ Complete
+- [x] Read quality gate verdict structure
+- [x] Read artifact staging code
+- [x] Read task templates
+- [x] Read roadmap Phase 5 sections
 
 ---
 
 ### Step 1: STATUS.md Reconciliation
-**Status:** Pending
-- [ ] Implement `applyStatusReconciliation()` in quality-gate.ts: reads STATUS.md, matches reconciliation entries to checkboxes by normalized text, toggles checked/unchecked, handles partial→unchecked+note, handles duplicates/unmatched deterministically, returns change count
-- [ ] Integrate reconciliation call in task-runner.ts after `readAndEvaluateVerdict()` — only when quality gate enabled and verdict has reconciliation entries with a real delta (idempotent across cycles)
-- [ ] Log reconciliation actions to Execution Log via `logExecution()` with payload: changed count, skipped/unmatched count
-- [ ] Acceptance: given a verdict with reconciliation entries, STATUS checkbox states are corrected deterministically and reconciliation actions are auditable in logs
+**Status:** ✅ Complete
+- [x] Implement `applyStatusReconciliation()` in quality-gate.ts: reads STATUS.md, matches reconciliation entries to checkboxes by normalized text, toggles checked/unchecked, handles partial→unchecked+note, handles duplicates/unmatched deterministically, returns change count
+- [x] Integrate reconciliation call in task-runner.ts after `readAndEvaluateVerdict()` — only when quality gate enabled and verdict has reconciliation entries with a real delta (idempotent across cycles)
+- [x] Log reconciliation actions to Execution Log via `logExecution()` with payload: changed count, skipped/unmatched count
+- [x] Acceptance: given a verdict with reconciliation entries, STATUS checkbox states are corrected deterministically and reconciliation actions are auditable in logs
 
 ---
 
 ### Step 2: Tighten Artifact Staging Scope
-**Status:** Pending
-- [ ] Refactor artifact staging in merge.ts to use per-task-folder allowlist (`.DONE`, `STATUS.md`, `REVIEW_VERDICT.json`) with resolve+relative path containment (reject `..` escapes), operator logging for skipped candidates, and no-op when no allowlisted artifacts changed
-- [ ] Add REVIEW_VERDICT.json to the known artifact filenames alongside .DONE and STATUS.md (stage only when present)
+**Status:** ✅ Complete
+- [x] Refactor artifact staging in merge.ts to use per-task-folder allowlist (`.DONE`, `STATUS.md`, `REVIEW_VERDICT.json`) with resolve+relative path containment (reject `..` escapes), operator logging for skipped candidates, and no-op when no allowlisted artifacts changed
+- [x] Add REVIEW_VERDICT.json to the known artifact filenames alongside .DONE and STATUS.md (stage only when present)
 
 ---
 
 ### Step 3: Clean Up System-Owned Template Items
-**Status:** Pending
-- [ ] Audit all template surfaces for system-owned checkboxes: `templates/tasks/EXAMPLE-*/`, `templates/agents/`, and `skills/create-taskplane-task/references/prompt-template.md`
-- [ ] Remove or reword non-worker-actionable items (e.g., "Archive and push", "Task archived (auto — handled by task-runner extension)")
-- [ ] Verify: grep templates for banned phrases ("Archive and push", "Task archived") confirms zero matches after cleanup
+**Status:** ✅ Complete
+- [x] Audit all template surfaces for system-owned checkboxes: `templates/tasks/EXAMPLE-*/`, `templates/agents/`, and `skills/create-taskplane-task/references/prompt-template.md`
+- [x] Remove or reword non-worker-actionable items (e.g., "Archive and push", "Task archived (auto — handled by task-runner extension)")
+- [x] Verify: grep templates for banned phrases ("Archive and push", "Task archived") confirms zero matches after cleanup
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] Reconciliation happy-path tests: check→uncheck, uncheck→check, partial→uncheck+annotation, already-correct idempotent (in `tests/status-reconciliation.test.ts`)
-- [ ] Reconciliation edge-case tests: duplicate-match consumption (first match wins), unmatched entries when no checkbox matches, empty/null input, missing STATUS.md, partial annotation on already-unchecked item
-- [ ] Reconciliation guard tests: reconciliation only runs when quality gate enabled and verdict has entries (verify integration point in task-runner.ts)
-- [ ] Artifact staging positive tests: accepts .DONE, STATUS.md, REVIEW_VERDICT.json within task folder
-- [ ] Artifact staging negative tests: rejects paths outside task folder (repo-escape `..`), no-op commit when no allowlisted files changed
-- [ ] Full test suite passes: `cd extensions && npx vitest run` with zero failures (38/39 files pass; 1 pre-existing worktree-lifecycle.test.ts failure due to Windows temp dir `git init` issue — not TP-035-related)
+**Status:** ✅ Complete
+- [x] Reconciliation happy-path tests: check→uncheck, uncheck→check, partial→uncheck+annotation, already-correct idempotent (in `tests/status-reconciliation.test.ts`)
+- [x] Reconciliation edge-case tests: duplicate-match consumption (first match wins), unmatched entries when no checkbox matches, empty/null input, missing STATUS.md, partial annotation on already-unchecked item
+- [x] Reconciliation guard tests: reconciliation only runs when quality gate enabled and verdict has entries (verify integration point in task-runner.ts)
+- [x] Artifact staging positive tests: accepts .DONE, STATUS.md, REVIEW_VERDICT.json within task folder
+- [x] Artifact staging negative tests: rejects paths outside task folder (repo-escape `..`), no-op commit when no allowlisted files changed
+- [x] Full test suite passes: `cd extensions && npx vitest run` with zero failures (38/39 files pass; 1 pre-existing worktree-lifecycle.test.ts failure due to Windows temp dir `git init` issue — not TP-035-related)
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] Doc-impact verification: review `docs/reference/task-format.md` and `docs/reference/status-format.md` for needed updates; record decision
-- [ ] Completion-criteria verification: confirm all PROMPT.md criteria met (or record justified exceptions)
-- [ ] `.DONE` created
+**Status:** ✅ Complete
+- [x] Doc-impact verification: review `docs/reference/task-format.md` and `docs/reference/status-format.md` for needed updates; record decision
+- [x] Completion-criteria verification: confirm all PROMPT.md criteria met (or record justified exceptions)
+- [x] `.DONE` created
 
 ---
 

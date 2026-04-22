@@ -1,50 +1,50 @@
 # TP-136: Segment Observability and Supervisor Alerts — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Check segment data in lane snapshots
-- [ ] Check segment data in batch state
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Check segment data in lane snapshots
+- [x] Check segment data in batch state
 
 ### Step 1: Dashboard segment visibility
-**Status:** Pending
-- [ ] Show active segment per lane
-- [ ] Show segment progress per task
-- [ ] Show packet home repo
-- [ ] Handle repo-singleton gracefully
+**Status:** ✅ Complete
+- [x] Show active segment per lane
+- [x] Show segment progress per task
+- [x] Show packet home repo
+- [x] Handle repo-singleton gracefully
 
 ### Step 2: Supervisor segment alerts
-**Status:** Pending
-- [ ] Add segmentId/repoId to alert payloads
-- [ ] Add frontier snapshot to context
-- [ ] Update supervisor primer
+**Status:** ✅ Complete
+- [x] Add segmentId/repoId to alert payloads
+- [x] Add frontier snapshot to context
+- [x] Update supervisor primer
 
 ### Step 3: Status and summary
-**Status:** Pending
-- [ ] orch-status shows active segment
-- [ ] Batch summary with segment outcomes
-- [ ] read_agent_status segment info
+**Status:** ✅ Complete
+- [x] orch-status shows active segment
+- [x] Batch summary with segment outcomes
+- [x] read_agent_status segment info
 
 ### Step 4: Tests and verification
-**Status:** Pending
-- [ ] Test dashboard segment rendering
-- [ ] Test supervisor alert context
-- [ ] Test repo-singleton clean display
-- [ ] Run full suite, fix failures
+**Status:** ✅ Complete
+- [x] Test dashboard segment rendering
+- [x] Test supervisor alert context
+- [x] Test repo-singleton clean display
+- [x] Run full suite, fix failures
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] Update STATUS.md
+**Status:** ✅ Complete
+- [x] Update STATUS.md
 
 ---
 

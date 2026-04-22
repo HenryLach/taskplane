@@ -1,95 +1,95 @@
 # TP-143: Engine Segment Graph Mutation — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 7: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 20
 **Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read spec sections 3, 3a, 4, 5, 6, 7
-- [ ] Read engine.ts segment frontier logic
-- [ ] Read resume.ts reconstruction
-- [ ] Understand segment lifecycle
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read spec sections 3, 3a, 4, 5, 6, 7
+- [x] Read engine.ts segment frontier logic
+- [x] Read resume.ts reconstruction
+- [x] Understand segment lifecycle
 
 ### Step 1: Outbox consumption
-**Status:** Pending
-- [ ] Check for request files after segment completes
-- [ ] Parse SegmentExpansionRequest
-- [ ] Handle malformed files (.invalid)
-- [ ] Discard on failed segment (.discarded)
-- [ ] Process in requestId order
-- [ ] R002: consume sorted valid requests through a concrete boundary-processing path
-- [ ] R002: scope failed-segment discard to matching taskId/fromSegmentId only
-- [ ] R002: reject empty requestedRepoIds as malformed (.invalid)
+**Status:** ✅ Complete
+- [x] Check for request files after segment completes
+- [x] Parse SegmentExpansionRequest
+- [x] Handle malformed files (.invalid)
+- [x] Discard on failed segment (.discarded)
+- [x] Process in requestId order
+- [x] R002: consume sorted valid requests through a concrete boundary-processing path
+- [x] R002: scope failed-segment discard to matching taskId/fromSegmentId only
+- [x] R002: reject empty requestedRepoIds as malformed (.invalid)
 
 ### Step 2: Engine validation
-**Status:** Pending
-- [ ] Repo existence check
-- [ ] Cycle detection
-- [ ] Task not terminal
-- [ ] Placement valid
-- [ ] Idempotency guard
-- [ ] Validation failure path: rename to .rejected and emit segment-expansion-rejected alert
-- [ ] Validation success path: hand off to graph-mutation path
-- [ ] Validation branch smoke coverage (reject + accept)
+**Status:** ✅ Complete
+- [x] Repo existence check
+- [x] Cycle detection
+- [x] Task not terminal
+- [x] Placement valid
+- [x] Idempotency guard
+- [x] Validation failure path: rename to .rejected and emit segment-expansion-rejected alert
+- [x] Validation success path: hand off to graph-mutation path
+- [x] Validation branch smoke coverage (reject + accept)
 
 ### Step 3: DAG mutation with rewiring
-**Status:** Pending
-- [ ] Formal rewiring algorithm (roots/sinks/S_old)
-- [ ] after-current rewiring
-- [ ] end placement
-- [ ] Repeat-repo disambiguated IDs
-- [ ] Re-topologize orderedSegments
-- [ ] Update SegmentFrontierTaskState
-- [ ] Post-mutation scheduling continuity (expanded pending segments remain executable)
-- [ ] Step 3 scheduling continuity test intent (targeted coverage)
+**Status:** ✅ Complete
+- [x] Formal rewiring algorithm (roots/sinks/S_old)
+- [x] after-current rewiring
+- [x] end placement
+- [x] Repeat-repo disambiguated IDs
+- [x] Re-topologize orderedSegments
+- [x] Update SegmentFrontierTaskState
+- [x] Post-mutation scheduling continuity (expanded pending segments remain executable)
+- [x] Step 3 scheduling continuity test intent (targeted coverage)
 
 ### Step 4: Persistence and alerts
-**Status:** Pending
-- [ ] Persist new segments to batch state
-- [ ] Persist expansion provenance (`expandedFrom`, `expansionRequestId`) on new segment records
-- [ ] Update segmentIds[]
-- [ ] Record processed requestId
-- [ ] Crash-safe approval ordering: durable persistence + idempotency audit before `.processed` rename
-- [ ] Emit supervisor alert (include before/after segment lists)
-- [ ] Rename request file
-- [ ] Worktree provisioning
-- [ ] Step 4 approval-path persistence/lifecycle targeted test intent
-- [ ] R012: resync persisted segment dependency records after each approved mutation (multi-request same boundary) and cover with runtime test
+**Status:** ✅ Complete
+- [x] Persist new segments to batch state
+- [x] Persist expansion provenance (`expandedFrom`, `expansionRequestId`) on new segment records
+- [x] Update segmentIds[]
+- [x] Record processed requestId
+- [x] Crash-safe approval ordering: durable persistence + idempotency audit before `.processed` rename
+- [x] Emit supervisor alert (include before/after segment lists)
+- [x] Rename request file
+- [x] Worktree provisioning
+- [x] Step 4 approval-path persistence/lifecycle targeted test intent
+- [x] R012: resync persisted segment dependency records after each approved mutation (multi-request same boundary) and cover with runtime test
 
 ### Step 5: Resume compatibility
-**Status:** Pending
-- [ ] Resume reconstructs expanded segments
-- [ ] Expanded segments are behaviorally indistinguishable from original segments after resume (deps/lifecycle/metadata parity)
-- [ ] Approved-but-unexecuted expansion resumes
-- [ ] Idempotency on resume (processed request files/request IDs do not replay)
-- [ ] Step 5 resume-specific targeted test intent (approved-but-unexecuted + processed-file replay)
-- [ ] R016: rebuild resume continuation rounds in grouped wave form (multi-task parity) and add multi-task/idempotency resume tests
+**Status:** ✅ Complete
+- [x] Resume reconstructs expanded segments
+- [x] Expanded segments are behaviorally indistinguishable from original segments after resume (deps/lifecycle/metadata parity)
+- [x] Approved-but-unexecuted expansion resumes
+- [x] Idempotency on resume (processed request files/request IDs do not replay)
+- [x] Step 5 resume-specific targeted test intent (approved-but-unexecuted + processed-file replay)
+- [x] R016: rebuild resume continuation rounds in grouped wave form (multi-task parity) and add multi-task/idempotency resume tests
 
 ### Step 6: Testing & Verification
-**Status:** Pending
-- [ ] Create/extend `extensions/tests/segment-expansion-engine.test.ts` coverage target
-- [ ] All mutation tests (linear, fan-out, end, repeat-repo)
-- [ ] Deterministic ordering for multiple requests at the same boundary
-- [ ] End placement with multiple current terminals
-- [ ] Rejection tests (unknown repo, cycle, duplicate)
-- [ ] Failed-origin segment requests are discarded without frontier mutation
-- [ ] Edge cases (malformed, multi-request, idempotency)
-- [ ] Resume after expansion
-- [ ] Full test suite passing
-- [ ] Polyrepo regression check
+**Status:** ✅ Complete
+- [x] Create/extend `extensions/tests/segment-expansion-engine.test.ts` coverage target
+- [x] All mutation tests (linear, fan-out, end, repeat-repo)
+- [x] Deterministic ordering for multiple requests at the same boundary
+- [x] End placement with multiple current terminals
+- [x] Rejection tests (unknown repo, cycle, duplicate)
+- [x] Failed-origin segment requests are discarded without frontier mutation
+- [x] Edge cases (malformed, multi-request, idempotency)
+- [x] Resume after expansion
+- [x] Full test suite passing
+- [x] Polyrepo regression check
 
 ### Step 7: Documentation & Delivery
-**Status:** Pending
-- [ ] JSDoc
-- [ ] Update STATUS.md
+**Status:** ✅ Complete
+- [x] JSDoc
+- [x] Update STATUS.md
 
 ---
 

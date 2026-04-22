@@ -1,13 +1,15 @@
 # General — Context
 
-**Last Updated:** 2026-04-22  
-**Status:** Active  
+**Last Updated:** 2026-04-21
+**Status:** Active
+**Next Task ID:** TP-181
 
 ---
 
-## Scope
+## Current State
 
-Taskplane internal development tasks. Tasks for building and improving the Taskplane package itself are created here.
+This is the default task area for Taskplane. Tasks for developing and improving
+the Taskplane package itself are created here.
 
 Taskplane is an AI agent orchestration system built as a pi package. It provides:
 - Single-task autonomous execution (`/task`)
@@ -20,18 +22,13 @@ Taskplane is an AI agent orchestration system built as a pi package. It provides
 
 ---
 
-## Current Tasks
-
-_(none pending — all reset to fresh state)_
-
----
-
 ## Key Files
 
 | Category | Path |
 |----------|------|
 | Tasks | `taskplane-tasks/` |
-| Config | `.pi/task-runner.yaml`, `.pi/task-orchestrator.yaml` |
+| Config | `.pi/task-runner.yaml` |
+| Config | `.pi/task-orchestrator.yaml` |
 | Extensions | `extensions/task-runner.ts`, `extensions/task-orchestrator.ts` |
 | Orchestrator modules | `extensions/taskplane/` |
 | Tests | `extensions/tests/` |
@@ -42,6 +39,49 @@ _(none pending — all reset to fresh state)_
 
 ---
 
-## Completed Tasks (archival)
+## Submodule Policy
 
-All tasks from TP-001 through TP-182 have been executed and their results merged into the extension source. This context is kept for historical reference only.
+This task area lives inside the **taskplane** submodule of the bof3-decomp project.
+All tasks in this folder must declare their execution target to prevent conflicts
+when the orchestrator runs across multiple submodules concurrently.
+
+### Submodule identity
+
+| Field | Value |
+|-------|-------|
+| Repo ID | `taskplane` |
+| Git path (relative) | `.pi/git/github.com/loopyd/taskplane` |
+| Absolute path | `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane` |
+| Upstream URL | `https://github.com/loopyd/taskplane.git` |
+
+### Task declaration requirement
+
+Every `PROMPT.md` must include an **Execution Target** section declaring the repo ID:
+
+```markdown
+## Execution Target
+
+- **Repo:** taskplane
+```
+
+This is enforced by the orchestrator's workspace submodule policy. Tasks without a
+declared execution target will be flagged during preflight and blocked until fixed.
+
+### Conflict avoidance rules
+
+1. Tasks targeting different submodules run on separate lanes (parallel-safe).
+2. Tasks within the same submodule run serially unless explicitly lane-allocated by batch planning.
+3. File scope declarations in `## File Scope` are validated against the declared repo root.
+4. Git operations must use the submodule's working tree, not the bof3-decomp parent repo.
+
+---
+
+## Technical Debt / Future Work
+
+_Items discovered during task execution are logged here by agents._
+
+- [ ] **Update worktree naming in taskplane-settings.md** — `docs/reference/configuration/taskplane-settings.md` still describes old `{prefix}-{opId}-{N}` naming. TP-021 changed to batch-scoped `{opId}-{batchId}/lane-{N}`. Deferred to TP-024. (discovered during TP-021)
+- [ ] **Intermittent orch-state-persistence test failure** — `orch-state-persistence.test.ts` occasionally fails when run in full suite (WS-010 task record not found) but passes in isolation. Likely temp directory collision between parallel tests. (discovered during TP-022)
+- [ ] **Runtime V2 implementation program** — Use `docs/specifications/framework/taskplane-runtime-v2/` plus task packets `TP-100` through `TP-109` as the authoritative staging area for the no-TMUX / no-`/task` redesign. Re-scope legacy open tasks `TP-082` through `TP-093` against Runtime V2 before implementing them. (staged 2026-03-30)
+- [ ] **buildIntegrationExecutor workspace gap** — `buildIntegrationExecutor` (extension.ts:1329) is scoped to primary repo only. Supervisor auto-integration never integrates secondary workspace repos. Should iterate `workspaceConfig.repos` like `doOrchIntegrate` does. (discovered during TP-146)
+- [ ] **Non-atomic /orch-integrate per-repo loop** — `doOrchIntegrate` (extension.ts:3170-3208) processes repos sequentially; partial success deletes orch branch in early repos while leaving later repos untouched. Consider rollback on failure or clearer partial-success reporting. (discovered during TP-146)

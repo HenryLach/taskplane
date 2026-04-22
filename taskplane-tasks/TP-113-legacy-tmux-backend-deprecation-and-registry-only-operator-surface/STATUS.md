@@ -1,6 +1,6 @@
 # TP-113: Legacy TMUX Backend Deprecation and Registry-Only Operator Surface — Status
 
-**Current Step:** None
+**Current Step:** Not Started
 **Status:** 🔵 Ready for Execution
 **Last Updated:** 2026-03-31
 **Review Level:** 3

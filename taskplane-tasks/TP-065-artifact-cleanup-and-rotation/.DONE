@@ -1,0 +1,5 @@
+Task completed. All 3 cleanup layers implemented:
+- Layer 1: Post-integrate cleanup (cleanupPostIntegrate)
+- Layer 2: Age-based sweep on preflight (sweepStaleArtifacts)
+- Layer 3: Size-capped log rotation (rotateSupervisorLogs)
+Steps 1-3 completed by worker. Steps 4-5 completed manually after worker context exhaustion.

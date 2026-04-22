@@ -1,7 +1,7 @@
 # TP-102: Runtime V2 ExecutionUnit and Packet-Path Contracts — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-30
 **Review Level:** 2
 **Review Counter:** 0
@@ -11,45 +11,45 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Trace the current task/lane runtime contracts through engine, execution, and resume
-- [ ] Identify where packet paths, runtime identity, and live artifacts are currently implicit or TMUX-derived
+- [x] Trace the current task/lane runtime contracts through engine, execution, and resume
+- [x] Identify where packet paths, runtime identity, and live artifacts are currently implicit or TMUX-derived
 
 ---
 
 ### Step 1: Define Runtime V2 Contracts
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add ExecutionUnit, packet-path, registry manifest, and normalized event type contracts to `types.ts`
-- [ ] Add validation helpers and naming rules that preserve repo/workspace correctness
-- [ ] Document compatibility shims where legacy task/lane records still need to coexist during migration
+- [x] Add ExecutionUnit, packet-path, registry manifest, and normalized event type contracts to `types.ts`
+- [x] Add validation helpers and naming rules that preserve repo/workspace correctness
+- [x] Document compatibility shims where legacy task/lane records still need to coexist during migration
 
 ---
 
 ### Step 2: Thread Contracts into Orchestrator Interfaces
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update engine/execution/resume signatures to accept explicit packet-path and runtime identity data where needed
-- [ ] Add helper functions for resolving runtime artifact roots without TMUX/session assumptions
-- [ ] Ensure new contracts are additive and do not yet force the full backend cutover
+- [x] Update engine/execution/resume signatures to accept explicit packet-path and runtime identity data where needed
+- [x] Add helper functions for resolving runtime artifact roots without TMUX/session assumptions
+- [x] Ensure new contracts are additive and do not yet force the full backend cutover
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add or update behavioral tests covering ExecutionUnit shape, packet-path authority precedence, and runtime artifact naming
-- [ ] Run the full suite (3185 pass, 0 fail)
-- [ ] Fix all failures
+- [x] Add or update behavioral tests covering ExecutionUnit shape, packet-path authority precedence, and runtime artifact naming
+- [x] Run the full suite (3185 pass, 0 fail)
+- [x] Fix all failures
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update the Runtime V2 docs if implementation naming diverges from the spec suite
-- [ ] Log discoveries in STATUS.md
+- [x] Update the Runtime V2 docs if implementation naming diverges from the spec suite
+- [x] Log discoveries in STATUS.md
 
 ---
 

@@ -1,7 +1,7 @@
 # TP-040: Non-Blocking Engine Refactor — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-23
 **Review Level:** 2
 **Review Counter:** 0
@@ -11,55 +11,55 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Map full control flow from /orch to wave loop
-- [ ] Identify all blocking await points
-- [ ] Read spec target architecture
-- [ ] Understand dashboard widget update mechanism
+**Status:** ✅ Complete
+- [x] Map full control flow from /orch to wave loop
+- [x] Identify all blocking await points
+- [x] Read spec target architecture
+- [x] Understand dashboard widget update mechanism
 
 ---
 
 ### Step 1: Engine Event Infrastructure
-**Status:** Pending
-- [ ] Define engine event types
-- [ ] Add event callback interface
-- [ ] Engine emits events at state transitions
-- [ ] Events written to supervisor events JSONL
+**Status:** ✅ Complete
+- [x] Define engine event types
+- [x] Add event callback interface
+- [x] Engine emits events at state transitions
+- [x] Events written to supervisor events JSONL
 
 ---
 
 ### Step 2: Make Engine Non-Blocking
-**Status:** Pending
-- [ ] Refactor wave loop to not block caller
-- [ ] Command handler starts engine and returns
-- [ ] State communicated via events, not return value
-- [ ] Dashboard updates continue working
+**Status:** ✅ Complete
+- [x] Refactor wave loop to not block caller
+- [x] Command handler starts engine and returns
+- [x] State communicated via events, not return value
+- [x] Dashboard updates continue working
 
 ---
 
 ### Step 3: Preserve Existing Behavior
-**Status:** Pending
-- [ ] /orch all still works
-- [ ] /orch-status, /orch-pause, /orch-resume, /orch-abort still work
-- [ ] Dashboard shows live progress
-- [ ] Existing tests pass
+**Status:** ✅ Complete
+- [x] /orch all still works
+- [x] /orch-status, /orch-pause, /orch-resume, /orch-abort still work
+- [x] Dashboard shows live progress
+- [x] Existing tests pass
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] Non-blocking handler test
-- [ ] Event emission tests
-- [ ] Completion/failure event tests
-- [ ] Command compatibility tests
-- [ ] Full test suite passes
+**Status:** ✅ Complete
+- [x] Non-blocking handler test
+- [x] Event emission tests
+- [x] Completion/failure event tests
+- [x] Command compatibility tests
+- [x] Full test suite passes
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] Architecture docs updated
-- [ ] `.DONE` created
+**Status:** ✅ Complete
+- [x] Architecture docs updated
+- [x] `.DONE` created
 
 ---
 

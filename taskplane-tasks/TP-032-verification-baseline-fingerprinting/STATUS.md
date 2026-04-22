@@ -1,78 +1,78 @@
 # TP-032: Verification Baseline & Fingerprinting — Status
 
-**Current Step:** None
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 11
 **Iteration:** 6
 **Size:** L
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read merge flow and verification execution
-- [ ] Read roadmap Phase 4 section 4a
-- [ ] Understand vitest output format
-- [ ] R002-1: Read CONTEXT.md and verify TP-030 dependency; add insertion-point findings
-- [ ] R002-2: Fix reviews table (header/separator order, deduplicate R001, remove contradictory verdicts)
-- [ ] R002-3: Deduplicate execution log entries
-- [ ] R002-4: Revert unrelated TP-031 STATUS.md edits
+**Status:** ✅ Complete
+- [x] Read merge flow and verification execution
+- [x] Read roadmap Phase 4 section 4a
+- [x] Understand vitest output format
+- [x] R002-1: Read CONTEXT.md and verify TP-030 dependency; add insertion-point findings
+- [x] R002-2: Fix reviews table (header/separator order, deduplicate R001, remove contradictory verdicts)
+- [x] R002-3: Deduplicate execution log entries
+- [x] R002-4: Revert unrelated TP-031 STATUS.md edits
 
 ---
 
 ### Step 1: Verification Command Runner & Fingerprint Parser
-**Status:** Pending
-- [ ] Create verification.ts with typed interfaces and exports: VerificationCommand, CommandResult, TestFingerprint, VerificationBaseline, FingerprintDiff
-- [ ] Implement runVerificationCommands(): execute commands with repo-scoped cwd, stable commandId from config key, capture exitCode/stdout/stderr, error classification (spawn_error, timeout, nonzero_exit)
-- [ ] Implement parseTestOutput(): vitest JSON adapter extracting file/case/kind/messageNorm; fallback parser for non-JSON/malformed/non-test commands emitting command_error fingerprints; normalization: ANSI strip, whitespace collapse, path separator normalize, duration/timestamp removal
-- [ ] Implement diffFingerprints(baseline, postMerge): set-based equality on composite key (commandId+file+case+kind+messageNorm), dedup before subtraction, return new failures only
-- [ ] R003: Design notes added documenting runner contract, fingerprint equality key, and error-path behaviors
-- [ ] R004-1: Fix parseVitestOutput to handle suite-level failures (testResults[].status==="failed" with empty assertionResults) — emit runtime_error fingerprints from testResults[].message; ensure parseTestOutput falls back to command_error when exitCode!==0 and vitest returns empty fingerprints
-- [ ] R004-2: Fix duplicate R003 review row in STATUS.md
+**Status:** ✅ Complete
+- [x] Create verification.ts with typed interfaces and exports: VerificationCommand, CommandResult, TestFingerprint, VerificationBaseline, FingerprintDiff
+- [x] Implement runVerificationCommands(): execute commands with repo-scoped cwd, stable commandId from config key, capture exitCode/stdout/stderr, error classification (spawn_error, timeout, nonzero_exit)
+- [x] Implement parseTestOutput(): vitest JSON adapter extracting file/case/kind/messageNorm; fallback parser for non-JSON/malformed/non-test commands emitting command_error fingerprints; normalization: ANSI strip, whitespace collapse, path separator normalize, duration/timestamp removal
+- [x] Implement diffFingerprints(baseline, postMerge): set-based equality on composite key (commandId+file+case+kind+messageNorm), dedup before subtraction, return new failures only
+- [x] R003: Design notes added documenting runner contract, fingerprint equality key, and error-path behaviors
+- [x] R004-1: Fix parseVitestOutput to handle suite-level failures (testResults[].status==="failed" with empty assertionResults) — emit runtime_error fingerprints from testResults[].message; ensure parseTestOutput falls back to command_error when exitCode!==0 and vitest returns empty fingerprints
+- [x] R004-2: Fix duplicate R003 review row in STATUS.md
 
 ---
 
 ### Step 2: Baseline Capture & Comparison in Merge Flow
-**Status:** Pending
-- [ ] R005-1: Decouple orchestrator-side baseline verification from merge-agent verification (merge-agent verify remains for agent-side revert logic; orchestrator-side baseline diff gates merge advancement separately)
-- [ ] R005-2: Implement orchestrator-side baseline capture/post-merge/diff in mergeWave() with persistence to `.pi/verification/{opId}/` and per-repo naming
-- [ ] R005-3: Implement flaky re-run (failed commands only, once) with classification: verification_new_failure blocks lane, flaky_suspected is warning-only
-- [ ] R005-4: Add decision note in STATUS.md documenting verification command source and integration architecture
-- [ ] R006-1: Fix baseline artifact naming to include repo attribution in workspace mode (include repoId in filename to prevent overwrites when mergeWave() called per repo group)
-- [ ] R006-2: Fix rollback failure on verification_new_failure — treat reset failure as merge-fatal (set laneResult.error, gate target-branch advancement on successful rollback)
-- [ ] R006-3: Mark verification_new_failure lanes as failed in laneResult (set laneResult.error, exclude from success counters in anySuccess/mergedCount/branch-cleanup paths in engine.ts and resume.ts)
+**Status:** ✅ Complete
+- [x] R005-1: Decouple orchestrator-side baseline verification from merge-agent verification (merge-agent verify remains for agent-side revert logic; orchestrator-side baseline diff gates merge advancement separately)
+- [x] R005-2: Implement orchestrator-side baseline capture/post-merge/diff in mergeWave() with persistence to `.pi/verification/{opId}/` and per-repo naming
+- [x] R005-3: Implement flaky re-run (failed commands only, once) with classification: verification_new_failure blocks lane, flaky_suspected is warning-only
+- [x] R005-4: Add decision note in STATUS.md documenting verification command source and integration architecture
+- [x] R006-1: Fix baseline artifact naming to include repo attribution in workspace mode (include repoId in filename to prevent overwrites when mergeWave() called per repo group)
+- [x] R006-2: Fix rollback failure on verification_new_failure — treat reset failure as merge-fatal (set laneResult.error, gate target-branch advancement on successful rollback)
+- [x] R006-3: Mark verification_new_failure lanes as failed in laneResult (set laneResult.error, exclude from success counters in anySuccess/mergedCount/branch-cleanup paths in engine.ts and resume.ts)
 
 ---
 
 ### Step 3: Configuration & Modes
-**Status:** Pending
-- [ ] R007-1: Add VerificationConfig interface to config-schema.ts, defaults in DEFAULT_ORCHESTRATOR_SECTION, YAML→unified mapping in config-loader.ts (mapOrchestratorYaml), legacy adapter in toOrchestratorConfig, and legacy type in types.ts OrchestratorConfig
-- [ ] R007-2: Wire verification.enabled as explicit feature flag — gating in merge.ts/engine.ts/resume.ts so that testing_commands presence alone does not enable fingerprinting; only `enabled: true` triggers it. Wire flakyReruns (including 0 = no reruns) through runPostMergeVerification
-- [ ] R007-3: Implement strict/permissive mode behavior for baseline unavailable — strict: set failedLane + error (merge failure policy applies), permissive: log warning, continue without baseline. Precedence: verification.mode gates baseline-unavailable handling; failure.on_merge_failure gates how the resulting merge failure is handled (pause vs abort)
-- [ ] R007-4: Add Step 3 decision note documenting precedence between verification.mode and failure.on_merge_failure, and behavior when enabled but commands empty
-- [ ] R008-1: Add config-loader regression tests for verification section — defaults, YAML→camelCase mapping, toOrchestratorConfig() snake_case round-trip in project-config-loader.test.ts
-- [ ] R008-2: Add merge-flow tests for verification mode behavior — (a) enabled+strict+no commands → merge failure, (b) enabled+permissive+no commands → continues, (c) enabled=false → no baseline capture, (d) flakyReruns=0 → no rerun attempt
+**Status:** ✅ Complete
+- [x] R007-1: Add VerificationConfig interface to config-schema.ts, defaults in DEFAULT_ORCHESTRATOR_SECTION, YAML→unified mapping in config-loader.ts (mapOrchestratorYaml), legacy adapter in toOrchestratorConfig, and legacy type in types.ts OrchestratorConfig
+- [x] R007-2: Wire verification.enabled as explicit feature flag — gating in merge.ts/engine.ts/resume.ts so that testing_commands presence alone does not enable fingerprinting; only `enabled: true` triggers it. Wire flakyReruns (including 0 = no reruns) through runPostMergeVerification
+- [x] R007-3: Implement strict/permissive mode behavior for baseline unavailable — strict: set failedLane + error (merge failure policy applies), permissive: log warning, continue without baseline. Precedence: verification.mode gates baseline-unavailable handling; failure.on_merge_failure gates how the resulting merge failure is handled (pause vs abort)
+- [x] R007-4: Add Step 3 decision note documenting precedence between verification.mode and failure.on_merge_failure, and behavior when enabled but commands empty
+- [x] R008-1: Add config-loader regression tests for verification section — defaults, YAML→camelCase mapping, toOrchestratorConfig() snake_case round-trip in project-config-loader.test.ts
+- [x] R008-2: Add merge-flow tests for verification mode behavior — (a) enabled+strict+no commands → merge failure, (b) enabled+permissive+no commands → continues, (c) enabled=false → no baseline capture, (d) flakyReruns=0 → no rerun attempt
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] R009-1: Parser edge cases — suite-level vitest failures (no assertionResults), non-zero exit with empty parsed output → command_error fallback
-- [ ] R009-2: Rollback/advancement safety — (a) successful rollback on verification_new_failure, (b) rollback failure / no preLaneHead blocks ALL advancement, (c) engine.ts + resume.ts counting + cleanup parity (exclude lr.error lanes)
-- [ ] R009-3: Workspace mode artifact naming — per-repo repoId suffix prevents filename collisions
-- [ ] Diff algorithm + pre-existing vs new failure tests (including deduplication, fixed detection)
-- [ ] Flaky handling tests (flakyReruns=0 immediate block, cleared re-run → flaky_suspected)
-- [ ] Mode behavior tests (strict/permissive on missing baseline and no-commands)
-- [ ] Full test suite passes (`cd extensions && npx vitest run`)
+**Status:** ✅ Complete
+- [x] R009-1: Parser edge cases — suite-level vitest failures (no assertionResults), non-zero exit with empty parsed output → command_error fallback
+- [x] R009-2: Rollback/advancement safety — (a) successful rollback on verification_new_failure, (b) rollback failure / no preLaneHead blocks ALL advancement, (c) engine.ts + resume.ts counting + cleanup parity (exclude lr.error lanes)
+- [x] R009-3: Workspace mode artifact naming — per-repo repoId suffix prevents filename collisions
+- [x] Diff algorithm + pre-existing vs new failure tests (including deduplication, fixed detection)
+- [x] Flaky handling tests (flakyReruns=0 immediate block, cleared re-run → flaky_suspected)
+- [x] Mode behavior tests (strict/permissive on missing baseline and no-commands)
+- [x] Full test suite passes (`cd extensions && npx vitest run`)
 
 ---
 
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
-- [ ] Update task-orchestrator.yaml.md: add `verification` section to schema overview, field table, key mapping table, section mapping table, and JSON example
-- [ ] Check commands.md for merge output changes — no change needed: verification baseline fingerprinting is internal to the merge flow, gated by config; no command syntax, arguments, or documented output format changes
+- [x] Update task-orchestrator.yaml.md: add `verification` section to schema overview, field table, key mapping table, section mapping table, and JSON example
+- [x] Check commands.md for merge output changes — no change needed: verification baseline fingerprinting is internal to the merge flow, gated by config; no command syntax, arguments, or documented output format changes
 - [ ] `.DONE` created
 
 ---

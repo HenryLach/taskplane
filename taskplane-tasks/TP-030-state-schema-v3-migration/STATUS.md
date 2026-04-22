@@ -1,79 +1,79 @@
 # TP-030: State Schema v3 & Migration — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 10
 **Iteration:** 5
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read CONTEXT.md (Tier 2 context)
-- [ ] Read current v2 schema in types.ts
-- [ ] Read persistence read/write flow
-- [ ] Read resume validation
-- [ ] Read roadmap Phase 3 section 3a
-- [ ] Verify TP-025 dependency: confirm TaskExitDiagnostic exists in diagnostics.ts
-- [ ] Record key migration constraints in Discoveries/Notes
+**Status:** ✅ Complete
+- [x] Read CONTEXT.md (Tier 2 context)
+- [x] Read current v2 schema in types.ts
+- [x] Read persistence read/write flow
+- [x] Read resume validation
+- [x] Read roadmap Phase 3 section 3a
+- [x] Verify TP-025 dependency: confirm TaskExitDiagnostic exists in diagnostics.ts
+- [x] Record key migration constraints in Discoveries/Notes
 
 ---
 
 ### Step 1: Define v3 Schema
-**Status:** Pending
-- [ ] Add `ResilienceState` interface and `PersistedRepairRecord` interface with all fields from roadmap 3a
-- [ ] Add `BatchDiagnostics` and `PersistedTaskExitSummary` interfaces for diagnostics section
-- [ ] Add **required** `resilience: ResilienceState` and `diagnostics: BatchDiagnostics` to `PersistedBatchState` (required in v3; migration fills defaults for v1/v2)
-- [ ] Add optional `exitDiagnostic?: TaskExitDiagnostic` to both `LaneTaskOutcome` (runtime) and `PersistedTaskRecord` (persisted) alongside legacy `exitReason`
-- [ ] Bump `BATCH_STATE_SCHEMA_VERSION` to 3 and update version-history JSDoc
-- [ ] Add v3 type contract table to STATUS.md Notes
-- [ ] Verify types compile cleanly (no TS errors)
-- [ ] R004-1: Fix `upconvertV1toV2()` to set literal `2` instead of `BATCH_STATE_SCHEMA_VERSION` (3)
-- [ ] R004-2: Fix `validatePersistedState()` to accept v2 alongside v1 and v3 (accept 1, 2, and 3)
-- [ ] R004-3: Fix `serializeBatchState()` to emit `resilience` and `diagnostics` with defaults
-- [ ] R004-4: Verify 16 previously-failing regression tests now pass
+**Status:** ✅ Complete
+- [x] Add `ResilienceState` interface and `PersistedRepairRecord` interface with all fields from roadmap 3a
+- [x] Add `BatchDiagnostics` and `PersistedTaskExitSummary` interfaces for diagnostics section
+- [x] Add **required** `resilience: ResilienceState` and `diagnostics: BatchDiagnostics` to `PersistedBatchState` (required in v3; migration fills defaults for v1/v2)
+- [x] Add optional `exitDiagnostic?: TaskExitDiagnostic` to both `LaneTaskOutcome` (runtime) and `PersistedTaskRecord` (persisted) alongside legacy `exitReason`
+- [x] Bump `BATCH_STATE_SCHEMA_VERSION` to 3 and update version-history JSDoc
+- [x] Add v3 type contract table to STATUS.md Notes
+- [x] Verify types compile cleanly (no TS errors)
+- [x] R004-1: Fix `upconvertV1toV2()` to set literal `2` instead of `BATCH_STATE_SCHEMA_VERSION` (3)
+- [x] R004-2: Fix `validatePersistedState()` to accept v2 alongside v1 and v3 (accept 1, 2, and 3)
+- [x] R004-3: Fix `serializeBatchState()` to emit `resilience` and `diagnostics` with defaults
+- [x] R004-4: Verify 16 previously-failing regression tests now pass
 
 ---
 
 ### Step 2: Implement Migration
-**Status:** Pending
-- [ ] Auto-detect & upconvert: `validatePersistedState` already chains v1→v2→v3; verify roundtrip defaults are correct for loaded v1/v2 states
-- [ ] Corrupt state → paused (not auto-delete): Change `analyzeOrchestratorStartupState` for invalid/io-error with no orphans to recommend "paused-corrupt" instead of "cleanup-stale"; update extension.ts handler to enter paused phase with diagnostic
-- [ ] v3 non-default fields survive serialization: Update `serializeBatchState` to carry forward loaded resilience/diagnostics/exitDiagnostic values from runtime state instead of always emitting defaults
-- [ ] Unknown-field preservation on read/write roundtrip: Store extra top-level keys from loaded JSON, merge them back in `serializeBatchState`
-- [ ] Version mismatch error text includes upgrade guidance (already done in validatePersistedState — verified)
-- [ ] R006-1: Only backfill resilience/diagnostics during true migration (schemaVersion < 3); for schemaVersion === 3, reject missing sections via validation
-- [ ] R006-2: Deep-validate v3 nested structures (retryCountByScope values, repairHistory record shapes, taskExits entry shapes)
-- [ ] R006-3: Corrupt-state handler in extension.ts sets orchBatchState.phase to "paused" and refreshes widget before returning
+**Status:** ✅ Complete
+- [x] Auto-detect & upconvert: `validatePersistedState` already chains v1→v2→v3; verify roundtrip defaults are correct for loaded v1/v2 states
+- [x] Corrupt state → paused (not auto-delete): Change `analyzeOrchestratorStartupState` for invalid/io-error with no orphans to recommend "paused-corrupt" instead of "cleanup-stale"; update extension.ts handler to enter paused phase with diagnostic
+- [x] v3 non-default fields survive serialization: Update `serializeBatchState` to carry forward loaded resilience/diagnostics/exitDiagnostic values from runtime state instead of always emitting defaults
+- [x] Unknown-field preservation on read/write roundtrip: Store extra top-level keys from loaded JSON, merge them back in `serializeBatchState`
+- [x] Version mismatch error text includes upgrade guidance (already done in validatePersistedState — verified)
+- [x] R006-1: Only backfill resilience/diagnostics during true migration (schemaVersion < 3); for schemaVersion === 3, reject missing sections via validation
+- [x] R006-2: Deep-validate v3 nested structures (retryCountByScope values, repairHistory record shapes, taskExits entry shapes)
+- [x] R006-3: Corrupt-state handler in extension.ts sets orchBatchState.phase to "paused" and refreshes widget before returning
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
-- [ ] Create `extensions/tests/state-migration.test.ts` with migration happy-path tests (v1→v3, v2→v3, v3 clean read) including defaults verification for resilience/diagnostics
-- [ ] Add strict v3 validation rejection tests (missing resilience/diagnostics, bad retryCountByScope values, bad repairHistory entries, bad diagnostics.taskExits entries, malformed exitDiagnostic on tasks)
-- [ ] Add unknown-field roundtrip preservation test (top-level only) and exitDiagnostic survives serialize roundtrip test
-- [ ] Add corrupt-state / paused-corrupt test: verify `analyzeOrchestratorStartupState` recommends "paused-corrupt" for invalid/io-error state with no orphans, does NOT auto-delete
-- [ ] Add version-mismatch error message test: unsupported schema version (v99) includes upgrade guidance text
-- [ ] Run full test suite (`cd extensions && npx vitest run`) — all TP-030-related tests pass; pre-existing flaky tests noted in R008-4
-- [ ] R008-1: Add true read/write roundtrip test for unknown-field preservation (validate → serialize → parse → assert unknown fields present)
-- [ ] R008-2: Add exitDiagnostic serialization roundtrip test (serialize task with exitDiagnostic → revalidate/parse → assert field integrity)
-- [ ] R008-3: Add integration-level corrupt-state test that verifies runtime state actually enters "paused" phase (not just recommendation)
-- [ ] R008-4: Re-run full test suite — 26/27 test files pass, 1079/1080 tests pass. Only failure: `orch-direct-implementation.test.ts` timeout at 60s (ran 87s) — pre-existing flaky test unrelated to TP-030
+**Status:** ✅ Complete
+- [x] Create `extensions/tests/state-migration.test.ts` with migration happy-path tests (v1→v3, v2→v3, v3 clean read) including defaults verification for resilience/diagnostics
+- [x] Add strict v3 validation rejection tests (missing resilience/diagnostics, bad retryCountByScope values, bad repairHistory entries, bad diagnostics.taskExits entries, malformed exitDiagnostic on tasks)
+- [x] Add unknown-field roundtrip preservation test (top-level only) and exitDiagnostic survives serialize roundtrip test
+- [x] Add corrupt-state / paused-corrupt test: verify `analyzeOrchestratorStartupState` recommends "paused-corrupt" for invalid/io-error state with no orphans, does NOT auto-delete
+- [x] Add version-mismatch error message test: unsupported schema version (v99) includes upgrade guidance text
+- [x] Run full test suite (`cd extensions && npx vitest run`) — all TP-030-related tests pass; pre-existing flaky tests noted in R008-4
+- [x] R008-1: Add true read/write roundtrip test for unknown-field preservation (validate → serialize → parse → assert unknown fields present)
+- [x] R008-2: Add exitDiagnostic serialization roundtrip test (serialize task with exitDiagnostic → revalidate/parse → assert field integrity)
+- [x] R008-3: Add integration-level corrupt-state test that verifies runtime state actually enters "paused" phase (not just recommendation)
+- [x] R008-4: Re-run full test suite — 26/27 test files pass, 1079/1080 tests pass. Only failure: `orch-direct-implementation.test.ts` timeout at 60s (ran 87s) — pre-existing flaky test unrelated to TP-030
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
-- [ ] JSDoc for v3 schema interfaces and version constant in types.ts
-- [ ] Review `docs/reference/configuration/task-orchestrator.yaml.md` for schema-version references; update or record no-change rationale (No change needed: the doc's "Schema overview" refers to the YAML config structure, not batch-state.json schema version. No mention of schemaVersion, BATCH_STATE_SCHEMA_VERSION, or batch-state.json anywhere in the file.)
-- [ ] Final test-gate validation: run full suite and record pass/fail disposition (24/24 non-flaky test files pass, 1000/1000 tests pass. 3 pre-existing flaky files excluded: polyrepo-fixture.test.ts and polyrepo-regression.test.ts hook timeouts, orch-direct-implementation.test.ts 60s timeout. All pre-existing, none TP-030-related. TP-030 specific tests: 61/61 pass.)
-- [ ] `.DONE` created
-- [ ] R010-1: Re-run full test suite and record green 24/24, 1000/1000 result excluding 3 pre-existing flaky files; update `.DONE` and STATUS.md final-gate text accordingly
-- [ ] R010-2: Clean up duplicate review rows (R009) and duplicate execution-log entries in STATUS.md
+**Status:** ✅ Complete
+- [x] JSDoc for v3 schema interfaces and version constant in types.ts
+- [x] Review `docs/reference/configuration/task-orchestrator.yaml.md` for schema-version references; update or record no-change rationale (No change needed: the doc's "Schema overview" refers to the YAML config structure, not batch-state.json schema version. No mention of schemaVersion, BATCH_STATE_SCHEMA_VERSION, or batch-state.json anywhere in the file.)
+- [x] Final test-gate validation: run full suite and record pass/fail disposition (24/24 non-flaky test files pass, 1000/1000 tests pass. 3 pre-existing flaky files excluded: polyrepo-fixture.test.ts and polyrepo-regression.test.ts hook timeouts, orch-direct-implementation.test.ts 60s timeout. All pre-existing, none TP-030-related. TP-030 specific tests: 61/61 pass.)
+- [x] `.DONE` created
+- [x] R010-1: Re-run full test suite and record green 24/24, 1000/1000 result excluding 3 pre-existing flaky files; update `.DONE` and STATUS.md final-gate text accordingly
+- [x] R010-2: Clean up duplicate review rows (R009) and duplicate execution-log entries in STATUS.md
 
 ---
 

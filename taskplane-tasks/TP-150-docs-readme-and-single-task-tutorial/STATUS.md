@@ -1,7 +1,7 @@
 # TP-150: Update docs README and rewrite single-task tutorial — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 3: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 0
 **Review Counter:** 0
@@ -11,42 +11,42 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read `docs/README.md` and identify all `/task` references and stale content
-- [ ] Read `docs/tutorials/run-your-first-task.md` and understand current structure
-- [ ] Read root `README.md` sections on single-task execution via `/orch` for ground truth
+- [x] Read `docs/README.md` and identify all `/task` references and stale content
+- [x] Read `docs/tutorials/run-your-first-task.md` and understand current structure
+- [x] Read root `README.md` sections on single-task execution via `/orch` for ground truth
 
 ---
 
 ### Step 1: Update docs/README.md
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update "New Users" tutorial links — reframe "Run Your First Task" description
-- [ ] Update "Operators" section — fix "Configure Task Runner" link text
-- [ ] Remove all `/task` references throughout file
-- [ ] Verify all links resolve to valid files
+- [x] Update "New Users" tutorial links — reframe "Run Your First Task" description
+- [x] Update "Operators" section — fix "Configure Task Runner" link text
+- [x] Remove all `/task` references throughout file
+- [x] Verify all links resolve to valid files
 
 ---
 
 ### Step 2: Rewrite docs/tutorials/run-your-first-task.md
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Rewrite tutorial for `/orch`-based single task execution
-- [ ] Show running `/orch <path/to/PROMPT.md>` workflow
-- [ ] Explain PROMPT.md and STATUS.md
-- [ ] Show monitoring via `/orch-status` and dashboard
-- [ ] Show pause/resume via `/orch-pause` and `/orch-resume`
-- [ ] Show completion verification
-- [ ] Update troubleshooting and "Next Step" links
+- [x] Rewrite tutorial for `/orch`-based single task execution
+- [x] Show running `/orch <path/to/PROMPT.md>` workflow
+- [x] Explain PROMPT.md and STATUS.md
+- [x] Show monitoring via `/orch-status` and dashboard
+- [x] Show pause/resume via `/orch-pause` and `/orch-resume`
+- [x] Show completion verification
+- [x] Update troubleshooting and "Next Step" links
 
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Verify all internal doc links resolve correctly
-- [ ] Discoveries logged
+- [x] Verify all internal doc links resolve correctly
+- [x] Discoveries logged
 
 ---
 

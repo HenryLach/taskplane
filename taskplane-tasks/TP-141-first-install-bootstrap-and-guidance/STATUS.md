@@ -1,69 +1,69 @@
 # TP-141: First-Install Bootstrap and Cross-Provider Guidance — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Verify TP-140 complete
-- [ ] Read init flow and model discovery
-- [ ] Read thinking picker
-- [ ] Check pi --list-models format
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Verify TP-140 complete
+- [x] Read init flow and model discovery
+- [x] Read thinking picker
+- [x] Check pi --list-models format
 
 ### Step 1: First-install detection and global prefs bootstrap
-**Status:** Pending
-- [ ] Detect missing prefs file → bootstrap from schema defaults
-- [ ] Default thinking to "high" for all agents
-- [ ] Return bootstrap flag for downstream guidance
-- [ ] Atomic write (temp + rename)
-- [ ] Handle empty/corrupt prefs
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Detect missing prefs file → bootstrap from schema defaults
+- [x] Default thinking to "high" for all agents
+- [x] Return bootstrap flag for downstream guidance
+- [x] Atomic write (temp + rename)
+- [x] Handle empty/corrupt prefs
+- [x] Run targeted tests
 
 ### Step 2: Cross-provider model guidance in first init
-**Status:** Pending
-- [ ] Detect first-init condition
-- [ ] Query models, count providers
-- [ ] 2+ providers: show guidance + cross-provider picker
-- [ ] 1 provider: skip with info message
-- [ ] Save to global prefs
-- [ ] Skip on subsequent inits
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Detect first-init condition
+- [x] Query models, count providers
+- [x] 2+ providers: show guidance + cross-provider picker
+- [x] 1 provider: skip with info message
+- [x] Save to global prefs
+- [x] Skip on subsequent inits
+- [x] Run targeted tests
 
 ### Step 3: Thinking level picker enhancement
-**Status:** Pending
-- [ ] Settings TUI: all pi levels (off→xhigh) + inherit
-- [ ] CLI init: same levels
-- [ ] Default selection: high
-- [ ] Thinking column from pi --list-models
-- [ ] Unsupported-thinking models: show info note only (do not block selection)
-- [ ] Add targeted test for unsupported-thinking permissive behavior
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Settings TUI: all pi levels (off→xhigh) + inherit
+- [x] CLI init: same levels
+- [x] Default selection: high
+- [x] Thinking column from pi --list-models
+- [x] Unsupported-thinking models: show info note only (do not block selection)
+- [x] Add targeted test for unsupported-thinking permissive behavior
+- [x] Run targeted tests
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] Full test suite passing
-- [ ] Bootstrap creates prefs with thinking: high
-- [ ] No re-bootstrap on existing prefs
-- [ ] Cross-provider guidance triggers correctly
-- [ ] Thinking picker shows all levels
-- [ ] Single-provider skips guidance
-- [ ] CLI smoke tests
-- [ ] All failures fixed
+**Status:** ✅ Complete
+- [x] Full test suite passing
+- [x] Bootstrap creates prefs with thinking: high
+- [x] No re-bootstrap on existing prefs
+- [x] Cross-provider guidance triggers correctly
+- [x] Thinking picker shows all levels
+- [x] Single-provider skips guidance
+- [x] CLI smoke tests
+- [x] All failures fixed
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] Update config docs
-- [ ] Update README if needed
-- [ ] Document bootstrap behavior
-- [ ] Update STATUS.md
+**Status:** ✅ Complete
+- [x] Update config docs
+- [x] Update README if needed
+- [x] Document bootstrap behavior
+- [x] Update STATUS.md
 
 ---
 

@@ -1,0 +1,13 @@
+Task TP-066 completed at 2026-03-25T15:27:00Z
+
+## Summary
+Fixed context pressure safety net to include cache read tokens in context percentage calculation.
+Added worker template guidance for targeted file reading to prevent context bloat.
+
+## Changes
+- extensions/task-runner.ts: Added cacheRead to latestTotalTokens in tailSidecarJsonl (tmux) and spawnAgent (subprocess)
+- dashboard/server.cjs: Added cacheRead to latestTotalTokens in telemetry accumulator
+- templates/agents/task-worker.md: Added "File Reading Strategy" section
+- templates/agents/local/task-worker.md: Updated comments to mention file reading strategy
+- extensions/tests/sidecar-tailing.test.ts: Added 4 cache-inclusive context pressure tests
+- extensions/tests/context-pressure-cache.test.ts: Added 11 dedicated cache-inclusive tests

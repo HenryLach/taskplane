@@ -1,75 +1,75 @@
 # TP-178: Dashboard Display Fixes — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 8: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-14
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 6
 **Iteration:** 1
 **Size:** L
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read app.js rendering architecture
-- [ ] Read all 6 linked issues
-- [ ] Document findings
+**Status:** ✅ Complete
+- [x] Read app.js rendering architecture
+- [x] Read all 6 linked issues
+- [x] Document findings
 
 ---
 
 ### Step 1: Stale STATUS.md viewer across batches (#487)
-**Status:** Pending
-- [ ] Detect batchId change → clear viewer
-- [ ] Auto-select or show placeholder
+**Status:** ✅ Complete
+- [x] Detect batchId change → clear viewer
+- [x] Auto-select or show placeholder
 
 ---
 
 ### Step 2: Lane step label never updates (#488)
-**Status:** Pending
-- [ ] Re-read step name on every poll
-- [ ] Fallback to STATUS.md Current Step field
+**Status:** ✅ Complete
+- [x] Re-read step name on every poll
+- [x] Fallback to STATUS.md Current Step field
 
 ---
 
 ### Step 3: Succeeded tasks show 0% (#491)
-**Status:** Pending
-- [ ] Override to 100% when succeeded
-- [ ] Show "Complete" as step label
+**Status:** ✅ Complete
+- [x] Override to 100% when succeeded
+- [x] Show "Complete" as step label
 
 ---
 
 ### Step 4: Wave indicators flash green during merge (#493)
-**Status:** Pending
-- [ ] Only completed waves green during merge
-- [ ] Current merging wave shows merging indicator
+**Status:** ✅ Complete
+- [x] Only completed waves green during merge
+- [x] Current merging wave shows merging indicator
 
 ---
 
 ### Step 5: Merge telemetry duplicated across waves (#498)
-**Status:** Pending
-- [ ] Associate telemetry with correct wave via waveIndex
-- [ ] Only display on matching wave
+**Status:** ✅ Complete
+- [x] Associate telemetry with correct wave via waveIndex
+- [x] Only display on matching wave
 
 ---
 
 ### Step 6: No progress for non-final segments (#494)
-**Status:** Pending
-- [ ] Segment-scoped progress from sidecar
-- [ ] Fallback "executing" indicator
+**Status:** ✅ Complete
+- [x] Segment-scoped progress from sidecar
+- [x] Fallback "executing" indicator
 
 ---
 
 ### Step 7: Testing & Verification
-**Status:** Pending
-- [ ] Full test suite passing
-- [ ] Manual dashboard testing
+**Status:** ✅ Complete
+- [x] Full test suite passing
+- [x] Manual dashboard testing
 
 ---
 
 ### Step 8: Documentation & Delivery
-**Status:** Pending
-- [ ] Discoveries logged
+**Status:** ✅ Complete
+- [x] Discoveries logged
 
 ---
 

@@ -1,31 +1,31 @@
 # TP-089: Agent Mailbox Core and RPC Steering Injection — Status
 
-**Current Step:** None
+**Current Step:** Step 5: Batch cleanup for mailbox directory
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 17
 **Iteration:** 4
 **Size:** L
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read the agent-mailbox-steering spec (Architecture + Delivery sections)
-- [ ] Read current rpc-wrapper handleEvent/message_end flow
-- [ ] Read spawnAgentTmux() in task-runner.ts and spawnMergeAgent() in merge.ts
-- [ ] Read existing supervisor tool registration pattern (orch_retry_task)
+- [x] Read the agent-mailbox-steering spec (Architecture + Delivery sections)
+- [x] Read current rpc-wrapper handleEvent/message_end flow
+- [x] Read spawnAgentTmux() in task-runner.ts and spawnMergeAgent() in merge.ts
+- [x] Read existing supervisor tool registration pattern (orch_retry_task)
 
 ---
 
 ### Step 1: Mailbox message format and write utilities
-**Status:** Pending
+**Status:** ✅ Complete
 
 #### 1a. Message schema in `extensions/taskplane/types.ts`
-- [ ] Define `MailboxMessageType` as string union: `"steer" | "query" | "abort" | "info" | "reply" | "escalate"`
-- [ ] Define `MailboxMessage` interface with fields:
+- [x] Define `MailboxMessageType` as string union: `"steer" | "query" | "abort" | "info" | "reply" | "escalate"`
+- [x] Define `MailboxMessage` interface with fields:
   - `id: string` — format: `{timestamp}-{5char-hex-nonce}` (e.g., `"1774744971303-a7f2c"`)
   - `batchId: string` — must match current batch ID
   - `from: string` — sender identifier (`"supervisor"` or session name)
@@ -35,136 +35,136 @@
   - `content: string` — the message body (max 4KB UTF-8 bytes)
   - `expectsReply?: boolean` — optional, default false
   - `replyTo?: string | null` — optional, reference to a previous message ID
-- [ ] Define `MAILBOX_MAX_CONTENT_BYTES = 4096` constant
-- [ ] Define `MAILBOX_DIR_NAME = "mailbox"` constant
+- [x] Define `MAILBOX_MAX_CONTENT_BYTES = 4096` constant
+- [x] Define `MAILBOX_DIR_NAME = "mailbox"` constant
 
 #### 1b. Path helpers in new `extensions/taskplane/mailbox.ts`
-- [ ] Create `extensions/taskplane/mailbox.ts` module
-- [ ] `mailboxRoot(stateRoot: string, batchId: string): string` → `.pi/mailbox/{batchId}/`
-- [ ] `sessionInboxDir(stateRoot: string, batchId: string, sessionName: string): string` → `.../{sessionName}/inbox/`
-- [ ] `sessionAckDir(stateRoot: string, batchId: string, sessionName: string): string` → `.../{sessionName}/ack/`
-- [ ] `broadcastInboxDir(stateRoot: string, batchId: string): string` → `.../_broadcast/inbox/`
+- [x] Create `extensions/taskplane/mailbox.ts` module
+- [x] `mailboxRoot(stateRoot: string, batchId: string): string` → `.pi/mailbox/{batchId}/`
+- [x] `sessionInboxDir(stateRoot: string, batchId: string, sessionName: string): string` → `.../{sessionName}/inbox/`
+- [x] `sessionAckDir(stateRoot: string, batchId: string, sessionName: string): string` → `.../{sessionName}/ack/`
+- [x] `broadcastInboxDir(stateRoot: string, batchId: string): string` → `.../_broadcast/inbox/`
 
 #### 1c. `writeMailboxMessage(stateRoot, batchId, to, opts)` utility
-- [ ] Input type `WriteMailboxMessageOpts`: `{ from: string; type: MailboxMessageType; content: string; expectsReply?: boolean; replyTo?: string | null }`
-- [ ] Generated inside utility: `id` (timestamp+nonce), `batchId` (from arg), `to` (from arg), `timestamp` (Date.now())
-- [ ] Defaults: `expectsReply` → `false`, `replyTo` → `null`
-- [ ] Generate message ID: `{Date.now()}-{crypto.randomBytes(3).toString('hex').slice(0,5)}`
-- [ ] Build full `MailboxMessage` object with all fields
-- [ ] Validate content size: `Buffer.byteLength(content, 'utf8') <= MAILBOX_MAX_CONTENT_BYTES`, throw descriptive error if exceeded
-- [ ] Ensure inbox directory exists: `mkdirSync({sessionInboxDir}, { recursive: true })`
-- [ ] Atomic write: write to temp file `{id}.msg.json.tmp` (does NOT match `*.msg.json` glob) in **same directory** as inbox, then `renameSync()` to final `{id}.msg.json`
-- [ ] On write/rename failure: attempt cleanup of temp file, then re-throw
-- [ ] Return the written `MailboxMessage` object (including generated ID)
+- [x] Input type `WriteMailboxMessageOpts`: `{ from: string; type: MailboxMessageType; content: string; expectsReply?: boolean; replyTo?: string | null }`
+- [x] Generated inside utility: `id` (timestamp+nonce), `batchId` (from arg), `to` (from arg), `timestamp` (Date.now())
+- [x] Defaults: `expectsReply` → `false`, `replyTo` → `null`
+- [x] Generate message ID: `{Date.now()}-{crypto.randomBytes(3).toString('hex').slice(0,5)}`
+- [x] Build full `MailboxMessage` object with all fields
+- [x] Validate content size: `Buffer.byteLength(content, 'utf8') <= MAILBOX_MAX_CONTENT_BYTES`, throw descriptive error if exceeded
+- [x] Ensure inbox directory exists: `mkdirSync({sessionInboxDir}, { recursive: true })`
+- [x] Atomic write: write to temp file `{id}.msg.json.tmp` (does NOT match `*.msg.json` glob) in **same directory** as inbox, then `renameSync()` to final `{id}.msg.json`
+- [x] On write/rename failure: attempt cleanup of temp file, then re-throw
+- [x] Return the written `MailboxMessage` object (including generated ID)
 
 #### 1d. `readInbox(inboxDir, expectedBatchId)` utility
-- [ ] `readdirSync(inboxDir)` — return empty array if dir doesn't exist (ENOENT)
-- [ ] Filter: only files ending with `.msg.json` (excludes `.msg.json.tmp` temp files)
-- [ ] Read each file, parse JSON, validate shape:
+- [x] `readdirSync(inboxDir)` — return empty array if dir doesn't exist (ENOENT)
+- [x] Filter: only files ending with `.msg.json` (excludes `.msg.json.tmp` temp files)
+- [x] Read each file, parse JSON, validate shape:
   - Required: `id` (string), `batchId` (string), `to` (string), `type` (string in MailboxMessageType set), `content` (string), `timestamp` (finite number), `from` (string)
   - Invalid shape → warn to stderr, skip, leave in inbox (no throw/crash)
-- [ ] Reject messages where `batchId !== expectedBatchId` — log warning to stderr, skip (leave in inbox)
-- [ ] Skip files with malformed JSON — log warning, skip (leave in inbox)
-- [ ] Sort: primary by `timestamp` (numeric ascending), tie-break by filename lexical order
-- [ ] Return `Array<{ filename: string; message: MailboxMessage }>`
+- [x] Reject messages where `batchId !== expectedBatchId` — log warning to stderr, skip (leave in inbox)
+- [x] Skip files with malformed JSON — log warning, skip (leave in inbox)
+- [x] Sort: primary by `timestamp` (numeric ascending), tie-break by filename lexical order
+- [x] Return `Array<{ filename: string; message: MailboxMessage }>`
 
 #### 1e. `ackMessage(inboxDir, filename)` utility
-- [ ] Derive ack directory structurally: `join(dirname(inboxDir), 'ack')` — NOT string replacement (cross-platform safe)
-- [ ] Ensure ack directory exists: `mkdirSync(ackDir, { recursive: true })`
-- [ ] Atomic move: `renameSync(join(inboxDir, filename), join(ackDir, filename))`
-- [ ] Handle ENOENT race gracefully (another process already acked) — return false
-- [ ] Return true on success
+- [x] Derive ack directory structurally: `join(dirname(inboxDir), 'ack')` — NOT string replacement (cross-platform safe)
+- [x] Ensure ack directory exists: `mkdirSync(ackDir, { recursive: true })`
+- [x] Atomic move: `renameSync(join(inboxDir, filename), join(ackDir, filename))`
+- [x] Handle ENOENT race gracefully (another process already acked) — return false
+- [x] Return true on success
 
 #### 1f. Error handling and module export
-- [ ] Write failures throw with descriptive messages
-- [ ] Read/ack failures are best-effort (log, don't crash)
-- [ ] All file ops use sync variants (matching rpc-wrapper pattern)
-- [ ] Module: `extensions/taskplane/mailbox.ts` — direct imports by consumers (Step 2/4), NOT re-exported via index.ts (keeps surface minimal)
+- [x] Write failures throw with descriptive messages
+- [x] Read/ack failures are best-effort (log, don't crash)
+- [x] All file ops use sync variants (matching rpc-wrapper pattern)
+- [x] Module: `extensions/taskplane/mailbox.ts` — direct imports by consumers (Step 2/4), NOT re-exported via index.ts (keeps surface minimal)
 
 ---
 
 ### Step 2: rpc-wrapper mailbox check and steer injection
-**Status:** Pending
+**Status:** ✅ Complete
 
 #### 2a. CLI argument parsing
-- [ ] Add `--mailbox-dir <path>` to `parseArgs()` in rpc-wrapper.mjs
-- [ ] Store as `args.mailboxDir` (null when not provided)
-- [ ] Update printUsage() help text
+- [x] Add `--mailbox-dir <path>` to `parseArgs()` in rpc-wrapper.mjs
+- [x] Store as `args.mailboxDir` (null when not provided)
+- [x] Update printUsage() help text
 
 #### 2b. Steering mode at session startup
-- [ ] After sending prompt command, if mailboxDir is set, send `{"type": "set_steering_mode", "mode": "all"}` to pi via proc.stdin
-- [ ] Only when mailboxDir is provided (backward compatible)
+- [x] After sending prompt command, if mailboxDir is set, send `{"type": "set_steering_mode", "mode": "all"}` to pi via proc.stdin
+- [x] Only when mailboxDir is provided (backward compatible)
 
 #### 2c. Inbox check on message_end
-- [ ] In handleEvent `message_end` case, after displayProgress and querySessionStats, call `checkMailboxAndSteer()`
-- [ ] `checkMailboxAndSteer()`: readdirSync on `{mailboxDir}/inbox/` for `*.msg.json` files
-- [ ] **Broadcast is deferred to TP-092 (Phase 4)** — do NOT consume `_broadcast/inbox` in this task
-- [ ] Derive paths: `inboxDir = join(mailboxDir, 'inbox')`, `expectedSessionName = basename(mailboxDir)`, `expectedBatchId = basename(dirname(mailboxDir))`
-- [ ] ENOENT on inbox readdirSync is quiet no-op (inbox dir may not exist yet)
-- [ ] Read each `*.msg.json` file, parse JSON, validate:
+- [x] In handleEvent `message_end` case, after displayProgress and querySessionStats, call `checkMailboxAndSteer()`
+- [x] `checkMailboxAndSteer()`: readdirSync on `{mailboxDir}/inbox/` for `*.msg.json` files
+- [x] **Broadcast is deferred to TP-092 (Phase 4)** — do NOT consume `_broadcast/inbox` in this task
+- [x] Derive paths: `inboxDir = join(mailboxDir, 'inbox')`, `expectedSessionName = basename(mailboxDir)`, `expectedBatchId = basename(dirname(mailboxDir))`
+- [x] ENOENT on inbox readdirSync is quiet no-op (inbox dir may not exist yet)
+- [x] Read each `*.msg.json` file, parse JSON, validate:
   - `batchId` matches `expectedBatchId` (derived from path, not message content)
   - `to` matches `expectedSessionName` (no misdelivery)
   - `id` (string), `content` (string), `type` (string in MAILBOX_MESSAGE_TYPES set)
   - `timestamp` is finite number (required for deterministic sort)
   - Invalid messages: log warning, skip, leave in inbox
-- [ ] **Sort messages by timestamp ascending, filename lexical as tie-break** before injection
-- [ ] For each valid message: `proc.stdin.write(JSON.stringify({ type: 'steer', message: content }) + '\n')`
-- [ ] Move delivered messages from inbox/ to ack/ via rename (create ack/ dir if needed, ENOENT non-fatal)
-- [ ] Log to stderr: `[STEERING] Delivered message {id}`
-- [ ] Skip silently when mailboxDir is null (backward compatible)
-- [ ] Wrap in try/catch — never crash on mailbox I/O errors
+- [x] **Sort messages by timestamp ascending, filename lexical as tie-break** before injection
+- [x] For each valid message: `proc.stdin.write(JSON.stringify({ type: 'steer', message: content }) + '\n')`
+- [x] Move delivered messages from inbox/ to ack/ via rename (create ack/ dir if needed, ENOENT non-fatal)
+- [x] Log to stderr: `[STEERING] Delivered message {id}`
+- [x] Skip silently when mailboxDir is null (backward compatible)
+- [x] Wrap in try/catch — never crash on mailbox I/O errors
 
 #### 2d. Export for testing
-- [ ] Export checkMailboxAndSteer and isValidMailboxMessageShape for unit testing
+- [x] Export checkMailboxAndSteer and isValidMailboxMessageShape for unit testing
 
 ---
 
 ### Step 3: Thread mailbox-dir through spawn paths
-**Status:** Pending
+**Status:** ✅ Complete
 
 #### 3a. task-runner spawnAgentTmux() — auto-derive mailbox dir inside
-- [ ] Inside spawnAgentTmux(): read `ORCH_BATCH_ID` from `process.env` (set by execution.ts)
-- [ ] If present, derive mailbox dir: `join(getSidecarDir(), 'mailbox', batchId, sessionName)` — using sidecar dir (already `.pi/`), NOT stateRoot, to avoid `.pi/.pi/` double nesting
-- [ ] Add `--mailbox-dir {quoteArg(mailboxDir)}` to wrapperArgs before `--`
-- [ ] `mkdirSync(join(mailboxDir, 'inbox'), { recursive: true })` before spawn
-- [ ] When `ORCH_BATCH_ID` is absent (standalone `/task` mode), skip mailbox entirely
+- [x] Inside spawnAgentTmux(): read `ORCH_BATCH_ID` from `process.env` (set by execution.ts)
+- [x] If present, derive mailbox dir: `join(getSidecarDir(), 'mailbox', batchId, sessionName)` — using sidecar dir (already `.pi/`), NOT stateRoot, to avoid `.pi/.pi/` double nesting
+- [x] Add `--mailbox-dir {quoteArg(mailboxDir)}` to wrapperArgs before `--`
+- [x] `mkdirSync(join(mailboxDir, 'inbox'), { recursive: true })` before spawn
+- [x] When `ORCH_BATCH_ID` is absent (standalone `/task` mode), skip mailbox entirely
 
 #### 3b. merge.ts spawnMergeAgent() — accept batchId as explicit parameter
-- [ ] Add `batchId` as explicit parameter (thread from existing caller context in mergeWaveByRepo)
-- [ ] Construct mailbox dir: `join(sidecarRoot, 'mailbox', batchId, sessionName)`
-- [ ] Pass `--mailbox-dir {shellQuote(mailboxDir)}` in wrapperParts
-- [ ] `mkdirSync(join(mailboxDir, 'inbox'), { recursive: true })` before spawn
+- [x] Add `batchId` as explicit parameter (thread from existing caller context in mergeWaveByRepo)
+- [x] Construct mailbox dir: `join(sidecarRoot, 'mailbox', batchId, sessionName)`
+- [x] Pass `--mailbox-dir {shellQuote(mailboxDir)}` in wrapperParts
+- [x] `mkdirSync(join(mailboxDir, 'inbox'), { recursive: true })` before spawn
 
 #### 3c. Update merge callers to pass batchId
-- [ ] In merge.ts `mergeWave()`, pass batchId through to both spawnMergeAgent callsites
+- [x] In merge.ts `mergeWave()`, pass batchId through to both spawnMergeAgent callsites
 
 #### 3d. Fix ORCH_BATCH_ID propagation for retry/re-exec spawns
-- [ ] In engine.ts Tier 0 retry callsite: add `ORCH_BATCH_ID: batchState.batchId` to executeLane extraEnvVars
-- [ ] In engine.ts model-fallback retry callsite: merge `ORCH_BATCH_ID: batchState.batchId` with existing `TASKPLANE_MODEL_FALLBACK` env var
+- [x] In engine.ts Tier 0 retry callsite: add `ORCH_BATCH_ID: batchState.batchId` to executeLane extraEnvVars
+- [x] In engine.ts model-fallback retry callsite: merge `ORCH_BATCH_ID: batchState.batchId` with existing `TASKPLANE_MODEL_FALLBACK` env var
 
 ---
 
 ### Step 4: Supervisor send_agent_message tool
-**Status:** Pending
+**Status:** ✅ Complete
 
 #### 4a. Tool registration in extension.ts
-- [ ] Register `send_agent_message` tool with pi.registerTool() (same pattern as orch_retry_task)
-- [ ] Parameters: `to` (string, required), `content` (string, required), `type` (string, optional, default 'steer')
-- [ ] Description: send a steering message to a running agent
+- [x] Register `send_agent_message` tool with pi.registerTool() (same pattern as orch_retry_task)
+- [x] Parameters: `to` (string, required), `content` (string, required), `type` (string, optional, default 'steer')
+- [x] Description: send a steering message to a running agent
 
 #### 4b. Session resolution and validation
-- [ ] Resolve stateRoot: `execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd` (same as doOrchRetryTask)
-- [ ] Load batch state from `{stateRoot}/.pi/batch-state.json`
-- [ ] Build valid session names with explicit derivation:
+- [x] Resolve stateRoot: `execCtx?.workspaceRoot ?? execCtx?.repoRoot ?? ctx.cwd` (same as doOrchRetryTask)
+- [x] Load batch state from `{stateRoot}/.pi/batch-state.json`
+- [x] Build valid session names with explicit derivation:
   - Worker: `${lane.tmuxSessionName}-worker`
   - Reviewer: `${lane.tmuxSessionName}-reviewer`
   - Merger: `${tmuxPrefix}-${opId}-merge-${lane.laneNumber}` (NOT lane-level sessions)
-- [ ] Validate `to` is in the known agent session set (error if not found)
+- [x] Validate `to` is in the known agent session set (error if not found)
 
 #### 4c. Write message
-- [ ] Validate `type` against outbound allowlist: `steer | query | abort | info` (default: steer). Reject `reply`/`escalate`.
-- [ ] Call `writeMailboxMessage(stateRoot, batchId, to, { from: 'supervisor', ... })` from mailbox.ts
-- [ ] Return confirmation with message ID, target, type, and batchId
+- [x] Validate `type` against outbound allowlist: `steer | query | abort | info` (default: steer). Reject `reply`/`escalate`.
+- [x] Call `writeMailboxMessage(stateRoot, batchId, to, { from: 'supervisor', ... })` from mailbox.ts
+- [x] Return confirmation with message ID, target, type, and batchId
 
 ---
 

@@ -1,10 +1,10 @@
 # TP-018: /settings TUI Command — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 12
 **Iteration:** 6
 **Size:** L
 
@@ -15,42 +15,42 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read pi's `ctx.ui` API capabilities
-- [ ] Read config schema from TP-014
-- [ ] Review Layer 2 allowlist and preferences boundary (R001 item 2)
-- [ ] Review config root/path semantics in workspace mode (R001 item)
-- [ ] Review JSON-first + YAML fallback behavior for write-back alignment (R001 item)
-- [ ] Produce preflight findings: field/source inventory with UI control types + layer mapping (R001 item 3)
-- [ ] R002: Record CONTEXT.md review in preflight and add missing fields (worker.spawnMode, context.maxWorkerMinutes, preWarm.autoDetect) to inventory with explicit categorizations
+- [x] Read pi's `ctx.ui` API capabilities
+- [x] Read config schema from TP-014
+- [x] Review Layer 2 allowlist and preferences boundary (R001 item 2)
+- [x] Review config root/path semantics in workspace mode (R001 item)
+- [x] Review JSON-first + YAML fallback behavior for write-back alignment (R001 item)
+- [x] Produce preflight findings: field/source inventory with UI control types + layer mapping (R001 item 3)
+- [x] R002: Record CONTEXT.md review in preflight and add missing fields (worker.spawnMode, context.maxWorkerMinutes, preWarm.autoDetect) to inventory with explicit categorizations
 
 ---
 
 ### Step 1: Design Settings Navigation
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Final section taxonomy, ordering, and field-to-section assignment documented in STATUS.md
-- [ ] Source-indicator behavior rules for project/user/default (including dual-layer L1+L2 fields) documented
-- [ ] Schema coverage validation: every scalar field in config-schema.ts is either in navigation map or explicitly excluded with rationale
-- [ ] R003 fix: worker.spawnMode corrected to L1-only, non-editable field surfacing defined, field contract table with source/clear semantics added
-- [ ] R004 fix: Consolidate canonical navigation map (12 sections including Advanced), fix all references to section count
-- [ ] R004 fix: Align source-badge rules with actual merge semantics — string prefs require non-empty, enum prefs require defined, add empty-string edge case examples
+- [x] Final section taxonomy, ordering, and field-to-section assignment documented in STATUS.md
+- [x] Source-indicator behavior rules for project/user/default (including dual-layer L1+L2 fields) documented
+- [x] Schema coverage validation: every scalar field in config-schema.ts is either in navigation map or explicitly excluded with rationale
+- [x] R003 fix: worker.spawnMode corrected to L1-only, non-editable field surfacing defined, field contract table with source/clear semantics added
+- [x] R004 fix: Consolidate canonical navigation map (12 sections including Advanced), fix all references to section count
+- [x] R004 fix: Align source-badge rules with actual merge semantics — string prefs require non-empty, enum prefs require defined, add empty-string edge case examples
 
 ---
 
 ### Step 2: Implement /settings Command
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Create settings-tui.ts with section navigation, field display, source badges, and field editing (validation: enum whitelist, number parsing with range, optional-field unset)
-- [ ] Register /settings command in extension.ts using execCtx.repoRoot (not ctx.cwd), handle null execCtx gracefully
-- [ ] Verify tests pass (existing workspace-config test 5.5 ctx.cwd constraint)
-- [ ] R006 fix #1: Use execCtx.workspaceRoot (not repoRoot) for config reads — workspace mode reads config from workspace root
-- [ ] R006 fix #2: Generate Advanced section items dynamically from schema/default config instead of hardcoded list
-- [ ] R006 fix #3: Source detection must use same type guards as extractAllowlistedPreferences (reject invalid pref types)
-- [ ] R006 fix #4: Number validation must enforce num > 0 (not num >= 0) to match "positive integers" contract
-- [ ] R006 fix #5: Add unit tests for detectFieldSource, getFieldDisplayValue, validateFieldInput (58 tests in settings-tui.test.ts)
-- [ ] Verify tests still pass after R006 fixes (598 total: 540 existing + 58 new)
+- [x] Create settings-tui.ts with section navigation, field display, source badges, and field editing (validation: enum whitelist, number parsing with range, optional-field unset)
+- [x] Register /settings command in extension.ts using execCtx.repoRoot (not ctx.cwd), handle null execCtx gracefully
+- [x] Verify tests pass (existing workspace-config test 5.5 ctx.cwd constraint)
+- [x] R006 fix #1: Use execCtx.workspaceRoot (not repoRoot) for config reads — workspace mode reads config from workspace root
+- [x] R006 fix #2: Generate Advanced section items dynamically from schema/default config instead of hardcoded list
+- [x] R006 fix #3: Source detection must use same type guards as extractAllowlistedPreferences (reject invalid pref types)
+- [x] R006 fix #4: Number validation must enforce num > 0 (not num >= 0) to match "positive integers" contract
+- [x] R006 fix #5: Add unit tests for detectFieldSource, getFieldDisplayValue, validateFieldInput (58 tests in settings-tui.test.ts)
+- [x] Verify tests still pass after R006 fixes (598 total: 540 existing + 58 new)
 
 **Step 2 Implementation Contract (R005):**
 - Config root: uses `execCtx!.repoRoot` for config reads. When `execCtx` is null (startup failure), command shows error via `requireExecCtx()` guard.
@@ -61,43 +61,43 @@
 ---
 
 ### Step 3: Implement Write-Back
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Implement write-back destination matrix: L1-only → project JSON, L2-only → prefs JSON, L1+L2 → user chooses destination via ctx.ui.select(); clear/unset semantics match Step 1 field contract (optional fields: delete key; string prefs: set "" to clear)
-- [ ] Layer 1 writes always target `<resolveConfigRoot(...)>/.pi/taskplane-config.json` (JSON-first); when source config is YAML-only, create new JSON file alongside YAML (YAML preserved, JSON takes precedence on next load); atomic tmp+rename write pattern
-- [ ] Layer 2 writes target `resolveUserPreferencesPath()` with mkdir -p; atomic tmp+rename; reuse existing loadUserPreferences auto-create pattern
-- [ ] Confirmation gate for project config writes (`ctx.ui.confirm`); no side effects on cancel; L2 writes need no confirmation; post-write notification with "restart session to apply"
-- [ ] R007 fix: YAML-only bootstrap writes full L1 snapshot — export loadLayer1Config from config-loader.ts; writeProjectConfigField seeds JSON from full L1 config (YAML+defaults) before applying edit, not partial skeleton
-- [ ] Verify write-back: run tests, confirm no regressions (598 tests)
-- [ ] R008 fix #1: Malformed JSON fallback in writeProjectConfigField — loadLayer1Config re-throws on same malformed JSON; replace with explicit error or bypass JSON and read YAML/defaults directly
-- [ ] R008 fix #2: Temp-file cleanup uses renameSync(tmpPath, tmpPath) (no-op) — replace with unlinkSync(tmpPath) in try/catch
-- [ ] R008 fix #3: Add unit tests for writeProjectConfigField, writeUserPreference, coerceValueForWrite, and cancel paths (zero mutation)
+- [x] Implement write-back destination matrix: L1-only → project JSON, L2-only → prefs JSON, L1+L2 → user chooses destination via ctx.ui.select(); clear/unset semantics match Step 1 field contract (optional fields: delete key; string prefs: set "" to clear)
+- [x] Layer 1 writes always target `<resolveConfigRoot(...)>/.pi/taskplane-config.json` (JSON-first); when source config is YAML-only, create new JSON file alongside YAML (YAML preserved, JSON takes precedence on next load); atomic tmp+rename write pattern
+- [x] Layer 2 writes target `resolveUserPreferencesPath()` with mkdir -p; atomic tmp+rename; reuse existing loadUserPreferences auto-create pattern
+- [x] Confirmation gate for project config writes (`ctx.ui.confirm`); no side effects on cancel; L2 writes need no confirmation; post-write notification with "restart session to apply"
+- [x] R007 fix: YAML-only bootstrap writes full L1 snapshot — export loadLayer1Config from config-loader.ts; writeProjectConfigField seeds JSON from full L1 config (YAML+defaults) before applying edit, not partial skeleton
+- [x] Verify write-back: run tests, confirm no regressions (598 tests)
+- [x] R008 fix #1: Malformed JSON fallback in writeProjectConfigField — loadLayer1Config re-throws on same malformed JSON; replace with explicit error or bypass JSON and read YAML/defaults directly
+- [x] R008 fix #2: Temp-file cleanup uses renameSync(tmpPath, tmpPath) (no-op) — replace with unlinkSync(tmpPath) in try/catch
+- [x] R008 fix #3: Add unit tests for writeProjectConfigField, writeUserPreference, coerceValueForWrite, and cancel paths (zero mutation)
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] R009: Add YAML-only and JSON+YAML source-badge tests (JSON-only, YAML-only, JSON+YAML precedence scenarios)
-- [ ] R009: Add interaction-level tests for L1+L2 destination selection, project confirm decline, and cancel zero-mutation paths
-- [ ] R009: Add discoverability regression test ensuring uncovered/new fields appear in Advanced section
-- [ ] Full test suite passes: `cd extensions && npx vitest run` (669 tests, 21 files, all green)
-- [ ] R010 fix #1: Extract destination/confirmation decision logic into testable pure helper (resolveWriteAction), add tests exercising Cancel short-circuit and confirm-decline branches with real function calls
-- [ ] R010 fix #2: Update STATUS test count to match actual suite output
+- [x] R009: Add YAML-only and JSON+YAML source-badge tests (JSON-only, YAML-only, JSON+YAML precedence scenarios)
+- [x] R009: Add interaction-level tests for L1+L2 destination selection, project confirm decline, and cancel zero-mutation paths
+- [x] R009: Add discoverability regression test ensuring uncovered/new fields appear in Advanced section
+- [x] Full test suite passes: `cd extensions && npx vitest run` (669 tests, 21 files, all green)
+- [x] R010 fix #1: Extract destination/confirmation decision logic into testable pure helper (resolveWriteAction), add tests exercising Cancel short-circuit and confirm-decline branches with real function calls
+- [x] R010 fix #2: Update STATUS test count to match actual suite output
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Commands reference updated (`docs/reference/commands.md` — add `/settings` section)
-- [ ] Check-if-affected: Update `README.md` command table with `/settings` row
-- [ ] Check-if-affected: Review `docs/tutorials/install.md` — add `/settings` mention if appropriate
-- [ ] Normalize STATUS.md top-level status field to match actual step state
-- [ ] `.DONE` created in task folder
-- [ ] R012 fix #1: Fix /settings "Common responses" to match actual error paths (requireExecCtx + load failure)
-- [ ] R012 fix #2: Update commands.md intro to include /settings, move Configuration Commands above CLI Commands to group all slash commands
-- [ ] R012 fix #3: Add Example block to /settings section for consistency with other command entries
+- [x] Commands reference updated (`docs/reference/commands.md` — add `/settings` section)
+- [x] Check-if-affected: Update `README.md` command table with `/settings` row
+- [x] Check-if-affected: Review `docs/tutorials/install.md` — add `/settings` mention if appropriate
+- [x] Normalize STATUS.md top-level status field to match actual step state
+- [x] `.DONE` created in task folder
+- [x] R012 fix #1: Fix /settings "Common responses" to match actual error paths (requireExecCtx + load failure)
+- [x] R012 fix #2: Update commands.md intro to include /settings, move Configuration Commands above CLI Commands to group all slash commands
+- [x] R012 fix #3: Add Example block to /settings section for consistency with other command entries
 
 ---
 

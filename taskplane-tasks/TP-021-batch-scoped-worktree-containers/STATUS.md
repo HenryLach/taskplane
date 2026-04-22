@@ -1,85 +1,85 @@
 # TP-021: Batch-Scoped Worktree Containers — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 10
 **Iteration:** 6
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read `worktree.ts` — understand all worktree functions and their signatures
-- [ ] Read `waves.ts` — understand `allocateLanes()` worktree creation
-- [ ] Read `engine.ts` — understand worktree reset and cleanup flows
-- [ ] Read `merge.ts` — understand merge worktree creation
-- [ ] Read `resume.ts` — understand worktree listing/cleanup in resume flows (R001)
-- [ ] Read relevant test files — `worktree-lifecycle.test.ts`, `naming-collision.test.ts` for old naming patterns (R001)
-- [ ] Grep-based caller inventory: log all callers of `generateWorktreePath`, `listWorktrees`, `removeAllWorktrees` in STATUS.md Discoveries (R001)
-- [ ] Note transition behavior needs for `listWorktrees()` old+new naming support (R001)
+- [x] Read `worktree.ts` — understand all worktree functions and their signatures
+- [x] Read `waves.ts` — understand `allocateLanes()` worktree creation
+- [x] Read `engine.ts` — understand worktree reset and cleanup flows
+- [x] Read `merge.ts` — understand merge worktree creation
+- [x] Read `resume.ts` — understand worktree listing/cleanup in resume flows (R001)
+- [x] Read relevant test files — `worktree-lifecycle.test.ts`, `naming-collision.test.ts` for old naming patterns (R001)
+- [x] Grep-based caller inventory: log all callers of `generateWorktreePath`, `listWorktrees`, `removeAllWorktrees` in STATUS.md Discoveries (R001)
+- [x] Note transition behavior needs for `listWorktrees()` old+new naming support (R001)
 
 ---
 
 ### Step 1: Refactor Worktree Path Generation
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add `generateBatchContainerPath()` shared helper: `{basePath}/{opId}-{batchId}` using `resolveWorktreeBasePath()` (preserves sibling/subdirectory mode)
-- [ ] Update `generateWorktreePath()` signature to include `batchId`, output `{basePath}/{opId}-{batchId}/lane-{N}` via the shared helper
-- [ ] Add `generateMergeWorktreePath()` using the same shared helper: `{basePath}/{opId}-{batchId}/merge` (config-aware, base-path-consistent)
-- [ ] Verify `CreateWorktreeOptions` already has `batchId` (no schema change needed — R003 item)
-- [ ] Update `createWorktree()` to pass `batchId` to `generateWorktreePath()` and ensure container dir is auto-created (`mkdirSync recursive`)
-- [ ] R004-1: Add transitional matching in `listWorktrees()` for new nested `lane-{N}` pattern inside `{opId}-{batchId}/` containers (while retaining legacy flat pattern matching)
-- [ ] R004-2: Move `ensureBatchContainerDir()` call in `createWorktree()` to after pre-checks (before `git worktree add`), preventing empty container dirs on validation failure
+- [x] Add `generateBatchContainerPath()` shared helper: `{basePath}/{opId}-{batchId}` using `resolveWorktreeBasePath()` (preserves sibling/subdirectory mode)
+- [x] Update `generateWorktreePath()` signature to include `batchId`, output `{basePath}/{opId}-{batchId}/lane-{N}` via the shared helper
+- [x] Add `generateMergeWorktreePath()` using the same shared helper: `{basePath}/{opId}-{batchId}/merge` (config-aware, base-path-consistent)
+- [x] Verify `CreateWorktreeOptions` already has `batchId` (no schema change needed — R003 item)
+- [x] Update `createWorktree()` to pass `batchId` to `generateWorktreePath()` and ensure container dir is auto-created (`mkdirSync recursive`)
+- [x] R004-1: Add transitional matching in `listWorktrees()` for new nested `lane-{N}` pattern inside `{opId}-{batchId}/` containers (while retaining legacy flat pattern matching)
+- [x] R004-2: Move `ensureBatchContainerDir()` call in `createWorktree()` to after pre-checks (before `git worktree add`), preventing empty container dirs on validation failure
 
 ---
 
 ### Step 2: Update Worktree Listing and Cleanup
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add optional `batchId` parameter to `listWorktrees()` — when provided, scope discovery to only `{opId}-{batchId}/lane-{N}` entries (batch isolation); when omitted, retain current all-operator behavior (backward compat). Preserve legacy flat-path matching for transition support.
-- [ ] Add optional `batchId` parameter to `removeAllWorktrees()` — pass through to `listWorktrees()` for batch-scoped cleanup. After removing worktrees, attempt to remove the empty batch container directory (only if it exists and is empty; never force-remove non-empty containers).
-- [ ] Add `removeBatchContainerIfEmpty()` helper — safely removes `{basePath}/{opId}-{batchId}/` only when empty. Used by `removeAllWorktrees()` after per-worktree removals. No-op on partial failure (non-empty dir).
-- [ ] Update `forceCleanupWorktree()` to also attempt container cleanup after force-removing a worktree (per-container, empty-only check)
-- [ ] Add Step 3 dependency note: `resume.ts` must be updated when list/remove signatures change (R005 item)
+- [x] Add optional `batchId` parameter to `listWorktrees()` — when provided, scope discovery to only `{opId}-{batchId}/lane-{N}` entries (batch isolation); when omitted, retain current all-operator behavior (backward compat). Preserve legacy flat-path matching for transition support.
+- [x] Add optional `batchId` parameter to `removeAllWorktrees()` — pass through to `listWorktrees()` for batch-scoped cleanup. After removing worktrees, attempt to remove the empty batch container directory (only if it exists and is empty; never force-remove non-empty containers).
+- [x] Add `removeBatchContainerIfEmpty()` helper — safely removes `{basePath}/{opId}-{batchId}/` only when empty. Used by `removeAllWorktrees()` after per-worktree removals. No-op on partial failure (non-empty dir).
+- [x] Update `forceCleanupWorktree()` to also attempt container cleanup after force-removing a worktree (per-container, empty-only check)
+- [x] Add Step 3 dependency note: `resume.ts` must be updated when list/remove signatures change (R005 item)
 
 ---
 
 ### Step 3: Update All Callers
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update `ensureLaneWorktrees()` in `worktree.ts` — pass `batchId` to `listWorktrees()` for batch-scoped lane reuse (R006 critical: prevents cross-batch collision in concurrent same-operator batches)
-- [ ] Update `waves.ts` — pass `batchId` and `config` to rollback `removeAllWorktrees()` call in `allocateLanes()` for batch-scoped cleanup (R006: rollback must not delete other batches)
-- [ ] Update `engine.ts` Phase 2 — pass `batchId` to `listWorktrees()` in worktree reset loop for batch-scoped discovery
-- [ ] Update `engine.ts` Phase 3 — pass `batchId` and `config` to `removeAllWorktrees()` in final cleanup for batch-scoped removal
-- [ ] Update `merge.ts` — use `generateMergeWorktreePath()` instead of ad-hoc path construction; pass `batchId` and `config` for config-aware container resolution
-- [ ] Update `resume.ts` — pass `batchId` to `listWorktrees()` and `removeAllWorktrees()` for batch-scoped operations (R005 dependency)
-- [ ] Verify: no opId-only list/remove calls remain in active batch flows (done criteria per R006)
+- [x] Update `ensureLaneWorktrees()` in `worktree.ts` — pass `batchId` to `listWorktrees()` for batch-scoped lane reuse (R006 critical: prevents cross-batch collision in concurrent same-operator batches)
+- [x] Update `waves.ts` — pass `batchId` and `config` to rollback `removeAllWorktrees()` call in `allocateLanes()` for batch-scoped cleanup (R006: rollback must not delete other batches)
+- [x] Update `engine.ts` Phase 2 — pass `batchId` to `listWorktrees()` in worktree reset loop for batch-scoped discovery
+- [x] Update `engine.ts` Phase 3 — pass `batchId` and `config` to `removeAllWorktrees()` in final cleanup for batch-scoped removal
+- [x] Update `merge.ts` — use `generateMergeWorktreePath()` instead of ad-hoc path construction; pass `batchId` and `config` for config-aware container resolution
+- [x] Update `resume.ts` — pass `batchId` to `listWorktrees()` and `removeAllWorktrees()` for batch-scoped operations (R005 dependency)
+- [x] Verify: no opId-only list/remove calls remain in active batch flows (done criteria per R006)
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Run existing test suite — confirm no regressions from Steps 1-3 (worktree-lifecycle, naming-collision, orch-pure-functions, full vitest)
-- [ ] Add batch-scoped isolation test: same opId, two different batchIds — `listWorktrees(batchId=A)` returns only A's lanes, `removeAllWorktrees(batchId=A)` does not touch B's lanes
-- [ ] Add transition compatibility test: legacy flat worktrees + new nested worktrees coexist; `listWorktrees()` without batchId finds both; `listWorktrees(batchId=X)` excludes legacy
-- [ ] Add merge path and cleanup edge-case tests: `generateMergeWorktreePath()` produces correct `{basePath}/{opId}-{batchId}/merge`; empty-container cleanup after worktree removal; no empty container left after pre-check failure
-- [ ] Verify subdirectory vs sibling mode still works with new batch-scoped naming (path assertions in both modes)
-- [ ] Fix all test failures — ZERO failures allowed in our changed test files (fixed `removeBatchContainerIfEmpty` to use `rmdirSync` instead of `rmSync({recursive:false})` for empty-dir removal on Windows)
+- [x] Run existing test suite — confirm no regressions from Steps 1-3 (worktree-lifecycle, naming-collision, orch-pure-functions, full vitest)
+- [x] Add batch-scoped isolation test: same opId, two different batchIds — `listWorktrees(batchId=A)` returns only A's lanes, `removeAllWorktrees(batchId=A)` does not touch B's lanes
+- [x] Add transition compatibility test: legacy flat worktrees + new nested worktrees coexist; `listWorktrees()` without batchId finds both; `listWorktrees(batchId=X)` excludes legacy
+- [x] Add merge path and cleanup edge-case tests: `generateMergeWorktreePath()` produces correct `{basePath}/{opId}-{batchId}/merge`; empty-container cleanup after worktree removal; no empty container left after pre-check failure
+- [x] Verify subdirectory vs sibling mode still works with new batch-scoped naming (path assertions in both modes)
+- [x] Fix all test failures — ZERO failures allowed in our changed test files (fixed `removeBatchContainerIfEmpty` to use `rmdirSync` instead of `rmSync({recursive:false})` for empty-dir removal on Windows)
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Check docs impact: assess `docs/reference/configuration/taskplane-settings.md` for stale worktree naming references; log disposition (updated or deferred to TP-024) in Discoveries
-- [ ] Discoveries logged
-- [ ] Verify all PROMPT.md completion criteria are satisfied (batch-scoped paths, merge in container, no collisions, all callers updated, all tests passing — 753/753 tests pass)
-- [ ] `.DONE` created
+- [x] Check docs impact: assess `docs/reference/configuration/taskplane-settings.md` for stale worktree naming references; log disposition (updated or deferred to TP-024) in Discoveries
+- [x] Discoveries logged
+- [x] Verify all PROMPT.md completion criteria are satisfied (batch-scoped paths, merge in container, no collisions, all callers updated, all tests passing — 753/753 tests pass)
+- [x] `.DONE` created
 
 ---
 

@@ -1,57 +1,57 @@
 # TP-111: Runtime V2 Conversation Event Fidelity — Status
 
-**Current Step:** None
+**Current Step:** Complete
 **Status:** 🟢 Completed
 **Last Updated:** 2026-04-01
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 2
 **Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Completed
 
-- [ ] Trace current Runtime V2 event emission and payloads
-- [ ] Compare against dashboard renderer and observability spec expectations
+- [x] Trace current Runtime V2 event emission and payloads
+- [x] Compare against dashboard renderer and observability spec expectations
 
 ---
 
 ### Step 1: Runtime V2 conversation event emission
-**Status:** Pending
+**Status:** ✅ Completed
 
-- [ ] Emit `prompt_sent` with bounded payload
-- [ ] Emit `assistant_message` with bounded payload
-- [ ] Preserve existing lifecycle/tool/telemetry events
-- [ ] Validate payload bounds and compatibility
+- [x] Emit `prompt_sent` with bounded payload
+- [x] Emit `assistant_message` with bounded payload
+- [x] Preserve existing lifecycle/tool/telemetry events
+- [x] Validate payload bounds and compatibility
 
 ---
 
 ### Step 2: Dashboard rendering parity
-**Status:** Pending
+**Status:** ✅ Completed
 
-- [ ] Align `renderV2Event(...)` mappings to emitted payload contracts
-- [ ] Ensure coherent normalized-event conversation rendering
-- [ ] Keep legacy fallback secondary
+- [x] Align `renderV2Event(...)` mappings to emitted payload contracts
+- [x] Ensure coherent normalized-event conversation rendering
+- [x] Keep legacy fallback secondary
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Completed
 
-- [ ] Add/extend tests for prompt/assistant normalized events
-- [ ] Run targeted tests
-- [ ] Run full suite
-- [ ] Fix all failures
+- [x] Add/extend tests for prompt/assistant normalized events
+- [x] Run targeted tests
+- [x] Run full suite
+- [x] Fix all failures
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Completed
 
-- [ ] Update Runtime V2 observability docs
-- [ ] Log discoveries in STATUS.md
+- [x] Update Runtime V2 observability docs
+- [x] Log discoveries in STATUS.md
 
 ---
 

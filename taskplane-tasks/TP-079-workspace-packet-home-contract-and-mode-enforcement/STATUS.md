@@ -1,21 +1,21 @@
 # TP-079: Workspace Packet-Home Contract and Mode Enforcement — Status
 
-**Current Step:** None
+**Current Step:** Step 1: Add packet-home routing contract
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-28
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 3
 **Iteration:** 4
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read current workspace config validation and mode-detection flow
-- [ ] Confirm existing behavior for non-git cwd + missing workspace config
-- [ ] Identify all call-sites that rely on `routing.tasksRoot` and `routing.defaultRepo`
+- [x] Read current workspace config validation and mode-detection flow
+- [x] Confirm existing behavior for non-git cwd + missing workspace config
+- [x] Identify all call-sites that rely on `routing.tasksRoot` and `routing.defaultRepo`
 
 ---
 

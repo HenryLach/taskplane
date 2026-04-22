@@ -1,46 +1,46 @@
 # TP-147: Skipped Task Progress and Batch History — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read engine.ts cleanup logic
-- [ ] Read merge.ts lane selection
-- [ ] Read persistence.ts history serialization
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read engine.ts cleanup logic
+- [x] Read merge.ts lane selection
+- [x] Read persistence.ts history serialization
 
 ### Step 1: Preserve skipped task branches
-**Status:** Pending
-- [ ] Safety-net for skipped lanes
-- [ ] Save branch instead of delete
-- [ ] Log saved branch
-- [ ] Don't merge skipped lanes (already excluded by merge.ts mergeableLanes filter — requires hasSucceeded)
-- [ ] Run targeted tests (742 pass, 0 fail)
+**Status:** ✅ Complete
+- [x] Safety-net for skipped lanes
+- [x] Save branch instead of delete
+- [x] Log saved branch
+- [x] Don't merge skipped lanes (already excluded by merge.ts mergeableLanes filter — requires hasSucceeded)
+- [x] Run targeted tests (742 pass, 0 fail)
 
 ### Step 2: Fix batch history completeness
-**Status:** Pending
-- [ ] Include all wave plan tasks in history
-- [ ] Pending/blocked tasks recorded
-- [ ] totalTasks matches array length
-- [ ] Run targeted tests (742 pass, 0 fail)
+**Status:** ✅ Complete
+- [x] Include all wave plan tasks in history
+- [x] Pending/blocked tasks recorded
+- [x] totalTasks matches array length
+- [x] Run targeted tests (742 pass, 0 fail)
 
 ### Step 3: Testing & Verification
-**Status:** Pending
-- [ ] Branch saved test (4 preserveSkippedLaneProgress tests pass)
-- [ ] History completeness test (2 TP-147 pending/blocked status tests pass)
-- [ ] Full suite passing (3245 pass, 0 fail)
+**Status:** ✅ Complete
+- [x] Branch saved test (4 preserveSkippedLaneProgress tests pass)
+- [x] History completeness test (2 TP-147 pending/blocked status tests pass)
+- [x] Full suite passing (3245 pass, 0 fail)
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
-- [ ] Update STATUS.md
+**Status:** ✅ Complete
+- [x] Update STATUS.md
 
 ---
 

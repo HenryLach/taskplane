@@ -1,10 +1,10 @@
 # TP-016: Pointer File Resolution Chain — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 6: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 13
 **Iteration:** 7
 **Size:** M
 
@@ -15,80 +15,80 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Inventory all config/agent/state resolution call sites (resolution map)
-- [ ] Document mode matrix: repo mode vs workspace mode (pointer present/missing/invalid)
-- [ ] Document env-var precedence interactions (TASKPLANE_WORKSPACE_ROOT, ORCH_SIDECAR_DIR, pointer)
-- [ ] R002 revision: Unify pointer failure semantics (warn+fallback for all failure modes) and fix STATUS.md table/log formatting
+- [x] Inventory all config/agent/state resolution call sites (resolution map)
+- [x] Document mode matrix: repo mode vs workspace mode (pointer present/missing/invalid)
+- [x] Document env-var precedence interactions (TASKPLANE_WORKSPACE_ROOT, ORCH_SIDECAR_DIR, pointer)
+- [x] R002 revision: Unify pointer failure semantics (warn+fallback for all failure modes) and fix STATUS.md table/log formatting
 
 ---
 
 ### Step 1: Implement Pointer Resolution
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] `resolvePointer()` function in workspace.ts: reads pointer JSON, validates fields, resolves config_repo against WorkspaceConfig.repos, normalizes config_path (reject traversal), returns result with resolved absolute paths + used/fallback status + warning reason. Non-fatal: never throws on pointer failures, always returns fallback paths with warning.
-- [ ] Return contract separates config/agent roots (follow pointer) from state root (always workspace root `.pi/`). Repo mode returns null (pointer ignored entirely).
-- [ ] Types added for pointer result (PointerResolution) in types.ts
-- [ ] R004: Fix config_path containment — reject absolute paths (Windows drive letters, `path.isAbsolute()`), then verify resolved path is within repo root using `relative()` check
-- [ ] R004: Add `resolvePointer()` test suite in workspace-config.test.ts covering: repo mode null, missing pointer, malformed JSON, missing fields, unknown config_repo, traversal rejection, Windows absolute path rejection
+- [x] `resolvePointer()` function in workspace.ts: reads pointer JSON, validates fields, resolves config_repo against WorkspaceConfig.repos, normalizes config_path (reject traversal), returns result with resolved absolute paths + used/fallback status + warning reason. Non-fatal: never throws on pointer failures, always returns fallback paths with warning.
+- [x] Return contract separates config/agent roots (follow pointer) from state root (always workspace root `.pi/`). Repo mode returns null (pointer ignored entirely).
+- [x] Types added for pointer result (PointerResolution) in types.ts
+- [x] R004: Fix config_path containment — reject absolute paths (Windows drive letters, `path.isAbsolute()`), then verify resolved path is within repo root using `relative()` check
+- [x] R004: Add `resolvePointer()` test suite in workspace-config.test.ts covering: repo mode null, missing pointer, malformed JSON, missing fields, unknown config_repo, traversal rejection, Windows absolute path rejection
 
 ---
 
 ### Step 2: Thread Through Task-Runner
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Thread pointer into `resolveConfigRoot()` in config-loader.ts: insert pointer configRoot between cwd-local and TASKPLANE_WORKSPACE_ROOT in precedence chain (cwd → pointer → wsRoot → defaults). Non-fatal: resolvePointer warn+fallback, never throws.
-- [ ] Thread pointer into `loadAgentDef()` in task-runner.ts: insert pointer agentRoot between cwd-local paths and base package (cwd/.pi/agents → cwd/agents → pointer agentRoot → base package). Non-fatal: pointer fallback transparent.
-- [ ] Repo mode parity: verify no behavior change when workspaceConfig is null (pointer returns null, existing code paths unchanged)
-- [ ] Add Step 2 tests in project-config-loader.test.ts (5.x series): config resolution with valid pointer, pointer precedence over wsRoot, cwd override over pointer, fallback when pointer has no config, repo-mode parity, task-runner loadConfig integration, YAML pointer config
-- [ ] R006: Fix pointer config root layout mismatch — config-loader looks for `<root>/.pi/*` but pointer roots use flat layout `<root>/*`. Add dual-layout support in `hasConfigFiles`, `loadJsonConfig`, `loadTaskRunnerYaml`, `loadOrchestratorYaml`.
-- [ ] R006: Surface pointer warnings — log `pointer.warning` via console.error in task-runner.ts `resolveTaskRunnerPointer()` (once per session via `_pointerWarningLogged` flag).
-- [ ] R006: Consolidate duplicate 5.x test suites into single canonical suite. Add flat-layout tests (5.10–5.15) for real `.taskplane` pointer directory. All 591 tests passing.
+- [x] Thread pointer into `resolveConfigRoot()` in config-loader.ts: insert pointer configRoot between cwd-local and TASKPLANE_WORKSPACE_ROOT in precedence chain (cwd → pointer → wsRoot → defaults). Non-fatal: resolvePointer warn+fallback, never throws.
+- [x] Thread pointer into `loadAgentDef()` in task-runner.ts: insert pointer agentRoot between cwd-local paths and base package (cwd/.pi/agents → cwd/agents → pointer agentRoot → base package). Non-fatal: pointer fallback transparent.
+- [x] Repo mode parity: verify no behavior change when workspaceConfig is null (pointer returns null, existing code paths unchanged)
+- [x] Add Step 2 tests in project-config-loader.test.ts (5.x series): config resolution with valid pointer, pointer precedence over wsRoot, cwd override over pointer, fallback when pointer has no config, repo-mode parity, task-runner loadConfig integration, YAML pointer config
+- [x] R006: Fix pointer config root layout mismatch — config-loader looks for `<root>/.pi/*` but pointer roots use flat layout `<root>/*`. Add dual-layout support in `hasConfigFiles`, `loadJsonConfig`, `loadTaskRunnerYaml`, `loadOrchestratorYaml`.
+- [x] R006: Surface pointer warnings — log `pointer.warning` via console.error in task-runner.ts `resolveTaskRunnerPointer()` (once per session via `_pointerWarningLogged` flag).
+- [x] R006: Consolidate duplicate 5.x test suites into single canonical suite. Add flat-layout tests (5.10–5.15) for real `.taskplane` pointer directory. All 591 tests passing.
 
 ---
 
 ### Step 3: Thread Through Orchestrator
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] `buildExecutionContext()` resolves pointer once and passes `pointer.configRoot` to config loaders. Repo mode (null pointer) unchanged.
-- [ ] `spawnMergeAgent()` uses pointer's `agentRoot` for merge agent prompt path (separate from `stateRoot` used for state files). Merge request/result files stay at `stateRoot/.pi/`.
-- [ ] Pointer warning logged once at orchestrator startup (non-fatal, warn+fallback).
-- [ ] State/sidecar paths invariant: `ORCH_SIDECAR_DIR`, abort signal, batch state, merge request/result files all remain at `<workspaceRoot>/.pi/` — never follow pointer.
-- [ ] Add orchestrator pointer tests: buildExecutionContext with pointer, merge agent path via pointer, state paths unchanged, repo-mode parity.
-- [ ] R008: Thread `workspaceRoot` into `resumeOrchBatch()` — add parameter, use as stateRoot for `loadBatchState`, `persistRuntimeState`, `mergeWaveByRepo`, `deleteBatchState`. Update extension.ts call site.
-- [ ] R008: Replace source-text assertions in test 7.11 with behavioral test validating workspace-mode state root consistency between orch and orch-resume paths.
+- [x] `buildExecutionContext()` resolves pointer once and passes `pointer.configRoot` to config loaders. Repo mode (null pointer) unchanged.
+- [x] `spawnMergeAgent()` uses pointer's `agentRoot` for merge agent prompt path (separate from `stateRoot` used for state files). Merge request/result files stay at `stateRoot/.pi/`.
+- [x] Pointer warning logged once at orchestrator startup (non-fatal, warn+fallback).
+- [x] State/sidecar paths invariant: `ORCH_SIDECAR_DIR`, abort signal, batch state, merge request/result files all remain at `<workspaceRoot>/.pi/` — never follow pointer.
+- [x] Add orchestrator pointer tests: buildExecutionContext with pointer, merge agent path via pointer, state paths unchanged, repo-mode parity.
+- [x] R008: Thread `workspaceRoot` into `resumeOrchBatch()` — add parameter, use as stateRoot for `loadBatchState`, `persistRuntimeState`, `mergeWaveByRepo`, `deleteBatchState`. Update extension.ts call site.
+- [x] R008: Replace source-text assertions in test 7.11 with behavioral test validating workspace-mode state root consistency between orch and orch-resume paths.
 
 ---
 
 ### Step 4: Thread Through Dashboard
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Verify and document that all dashboard `.pi/` paths (batch-state, lane-state, conversation logs, batch-history, fs.watch) use `REPO_ROOT` (= workspace root) and do NOT follow pointer. Add clarifying code comment at the REPO_ROOT initialization site.
-- [ ] Verify STATUS.md and task-folder resolution (`resolveTaskFolder`, `parseStatusMd`, `serveStatusMd`) works correctly in workspace mode — task folders live in repos/worktrees, not config repo, so no pointer needed.
-- [ ] Confirm repo-mode parity: dashboard behavior is completely unchanged when no workspace/pointer exists (REPO_ROOT = repo root, all paths at `<repoRoot>/.pi/`). All 608 tests passing.
+- [x] Verify and document that all dashboard `.pi/` paths (batch-state, lane-state, conversation logs, batch-history, fs.watch) use `REPO_ROOT` (= workspace root) and do NOT follow pointer. Add clarifying code comment at the REPO_ROOT initialization site.
+- [x] Verify STATUS.md and task-folder resolution (`resolveTaskFolder`, `parseStatusMd`, `serveStatusMd`) works correctly in workspace mode — task folders live in repos/worktrees, not config repo, so no pointer needed.
+- [x] Confirm repo-mode parity: dashboard behavior is completely unchanged when no workspace/pointer exists (REPO_ROOT = repo root, all paths at `<repoRoot>/.pi/`). All 608 tests passing.
 
 ---
 
 ### Step 5: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Close Step 3 open item: verify test 7.11 is behavioral (not source-text) and check off the Step 3 checkbox
-- [ ] Verify pointer failure/parity matrix coverage: existing tests cover missing, malformed, unknown config_repo (warn+fallback), valid pointer, and repo-mode (pointer ignored) scenarios
-- [ ] Verify integration split invariant: config/agent paths follow pointer while state paths (batch, sidecar, merge) stay at workspaceRoot/.pi
-- [ ] Run full test suite: `cd extensions && npx vitest run` — 609 tests passing (20 test files)
-- [ ] R012: Replace signature/shape tests 7.11 and 7.12 with behavioral tests that verify state operations use workspaceRoot in both orch and orch-resume paths (loadBatchState, persistRuntimeState, deleteBatchState all called with workspace-root-derived path when workspaceRoot differs from repoRoot)
-- [ ] R012: Run full test suite passing after revision — 609 tests passing (20 test files)
-- [ ] R012: Add committed test artifact (VERIFICATION.md with full test coverage matrix) so the review delta is non-empty and verifiable
+- [x] Close Step 3 open item: verify test 7.11 is behavioral (not source-text) and check off the Step 3 checkbox
+- [x] Verify pointer failure/parity matrix coverage: existing tests cover missing, malformed, unknown config_repo (warn+fallback), valid pointer, and repo-mode (pointer ignored) scenarios
+- [x] Verify integration split invariant: config/agent paths follow pointer while state paths (batch, sidecar, merge) stay at workspaceRoot/.pi
+- [x] Run full test suite: `cd extensions && npx vitest run` — 609 tests passing (20 test files)
+- [x] R012: Replace signature/shape tests 7.11 and 7.12 with behavioral tests that verify state operations use workspaceRoot in both orch and orch-resume paths (loadBatchState, persistRuntimeState, deleteBatchState all called with workspace-root-derived path when workspaceRoot differs from repoRoot)
+- [x] R012: Run full test suite passing after revision — 609 tests passing (20 test files)
+- [x] R012: Add committed test artifact (VERIFICATION.md with full test coverage matrix) so the review delta is non-empty and verifiable
 
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Architecture doc impact check: review `docs/explanation/architecture.md` and confirm no update needed (pointer is internal plumbing, doesn't change high-level architecture) or update if impacted
-- [ ] Final acceptance reconciliation: verify all PROMPT.md completion criteria are met (all steps complete, pointer works end-to-end in workspace mode, repo-mode unchanged, all tests passing per Step 5 VERIFICATION.md)
-- [ ] `.DONE` created in task folder
+- [x] Architecture doc impact check: review `docs/explanation/architecture.md` and confirm no update needed (pointer is internal plumbing, doesn't change high-level architecture) or update if impacted
+- [x] Final acceptance reconciliation: verify all PROMPT.md completion criteria are met (all steps complete, pointer works end-to-end in workspace mode, repo-mode unchanged, all tests passing per Step 5 VERIFICATION.md)
+- [x] `.DONE` created in task folder
 
 ---
 

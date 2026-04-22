@@ -1,0 +1,10 @@
+TP-028: Partial Progress Preservation — Complete
+
+All steps completed:
+- Step 0: Preflight — read cleanup logic, outcome recording, roadmap, saved-branch logic
+- Step 1: Detect and Save — savePartialProgress(), preserveFailedLaneProgress(), inter-wave + terminal integration in engine.ts/resume.ts, unsafeBranches safety mechanism
+- Step 2: Record in Outcome — partialProgressCommits/partialProgressBranch on LaneTaskOutcome + PersistedTaskRecord, serialization, validation, backward-compat
+- Step 3: Testing — 997/997 tests pass, unit + integration tests for branch preservation and state contract
+- Step 4: Documentation — inline comments verified, /orch-status docs unchanged (summary-only output)
+
+Completed: 2026-03-19

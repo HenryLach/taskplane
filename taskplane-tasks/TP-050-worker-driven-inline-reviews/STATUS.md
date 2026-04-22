@@ -1,6 +1,6 @@
 # TP-050: Worker-Driven Inline Reviews — Status
 
-**Current Step:** None
+**Current Step:** Not Started
 **Status:** 🔵 Ready for Execution
 **Last Updated:** 2026-03-24
 **Review Level:** 2

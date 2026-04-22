@@ -1,85 +1,85 @@
 # TP-026: Task-Runner RPC Wrapper Integration — Status
 
-**Current Step:** None
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 11
 **Iteration:** 6
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read spawnAgentTmux() in task-runner.ts
-- [ ] Read poll loop implementation
-- [ ] Read TP-025 artifacts
-- [ ] Verify RPC wrapper runs
-- [ ] R002: Fix Reviews table markdown formatting (separator row placement, deduplicate entries)
-- [ ] R002: Deduplicate Execution Log entries
-- [ ] R002: Add preflight findings to Discoveries/Notes (edit targets, no-change guardrails, wrapper help outcome)
+- [x] Read spawnAgentTmux() in task-runner.ts
+- [x] Read poll loop implementation
+- [x] Read TP-025 artifacts
+- [x] Verify RPC wrapper runs
+- [x] R002: Fix Reviews table markdown formatting (separator row placement, deduplicate entries)
+- [x] R002: Deduplicate Execution Log entries
+- [x] R002: Add preflight findings to Discoveries/Notes (edit targets, no-change guardrails, wrapper help outcome)
 
 ---
 
 ### Step 1: Update spawnAgentTmux to Use RPC Wrapper
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add resolveRpcWrapperPath() using findPackageRoot() pattern
-- [ ] Generate telemetry file paths with naming contract (sessionName + timestamp, using getSidecarDir() for workspace-awareness)
-- [ ] Build rpc-wrapper.mjs command with correct args and passthrough of existing pi flags (--thinking, --no-session, --no-extensions, --no-skills)
-- [ ] Replace pi -p command in tmux new-session with node rpc-wrapper.mjs command (preserve quoteArg shell-quoting for Windows/MSYS paths)
-- [ ] R003: Deduplicate execution log entries and add Step 1 design notes subsection
-- [ ] R004: Add extension-file-relative fallback to resolveRpcWrapperPath() (use findPackageRoot result dirname or walk up from extension file path)
-- [ ] R004: Fix return-shape comment — document that function now returns { promise, kill, sidecarPath, exitSummaryPath }
-- [ ] R004: Enrich telemetry filenames with available contract identifiers (tmuxPrefix, taskId from TASK_AUTOSTART) where present
+- [x] Add resolveRpcWrapperPath() using findPackageRoot() pattern
+- [x] Generate telemetry file paths with naming contract (sessionName + timestamp, using getSidecarDir() for workspace-awareness)
+- [x] Build rpc-wrapper.mjs command with correct args and passthrough of existing pi flags (--thinking, --no-session, --no-extensions, --no-skills)
+- [x] Replace pi -p command in tmux new-session with node rpc-wrapper.mjs command (preserve quoteArg shell-quoting for Windows/MSYS paths)
+- [x] R003: Deduplicate execution log entries and add Step 1 design notes subsection
+- [x] R004: Add extension-file-relative fallback to resolveRpcWrapperPath() (use findPackageRoot result dirname or walk up from extension file path)
+- [x] R004: Fix return-shape comment — document that function now returns { promise, kill, sidecarPath, exitSummaryPath }
+- [x] R004: Enrich telemetry filenames with available contract identifiers (tmuxPrefix, taskId from TASK_AUTOSTART) where present
 
 ---
 
 ### Step 2: Read Sidecar Telemetry During Polling
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Implement sidecar JSONL tailing helper (incremental byte-offset reads, partial-line handling, malformed-line resilience)
-- [ ] Integrate tailing into tmux poll loop: on each 2s tick, read new sidecar lines and update state (tokens, cost, context%, tool calls, retries)
-- [ ] Derive workerContextPct from message_end usage.totalTokens against config.context.worker_context_window (parity with subprocess mode)
-- [ ] Expose retry telemetry: add retry tracking fields to TaskState and lane-state payload so dashboard can consume them
-- [ ] Handle missing/empty sidecar gracefully (file not yet created, empty reads, partial trailing lines)
-- [ ] R006: Fix retry-active state persistence across ticks — move retryActive into SidecarTailState, update on auto_retry_start/end events, dispatch telemetry on any parsed event (not just truthy numeric fields)
-- [ ] R006: Add tests for tailSidecarJsonl + poll integration (retry lifecycle across ticks, partial-line buffering, missing-file, final-tail-on-session-end)
+- [x] Implement sidecar JSONL tailing helper (incremental byte-offset reads, partial-line handling, malformed-line resilience)
+- [x] Integrate tailing into tmux poll loop: on each 2s tick, read new sidecar lines and update state (tokens, cost, context%, tool calls, retries)
+- [x] Derive workerContextPct from message_end usage.totalTokens against config.context.worker_context_window (parity with subprocess mode)
+- [x] Expose retry telemetry: add retry tracking fields to TaskState and lane-state payload so dashboard can consume them
+- [x] Handle missing/empty sidecar gracefully (file not yet created, empty reads, partial trailing lines)
+- [x] R006: Fix retry-active state persistence across ticks — move retryActive into SidecarTailState, update on auto_retry_start/end events, dispatch telemetry on any parsed event (not just truthy numeric fields)
+- [x] R006: Add tests for tailSidecarJsonl + poll integration (retry lifecycle across ticks, partial-line buffering, missing-file, final-tail-on-session-end)
 
 ---
 
 ### Step 3: Produce Structured Exit Diagnostic
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read exit summary JSON after tmux session exit (non-fatal parse with deterministic fallback for missing/malformed files)
-- [ ] Build ExitClassificationInput with all signals: exitSummary, doneFileFound, timerKilled (wall-clock timeout flag), stallDetected (stall timer), userKilled (manual kill), contextPct (from sidecar tail state)
-- [ ] Call classifyExit() and build full TaskExitDiagnostic (with progress metadata: partialProgressCommits, lastKnownStep, repoId, durationSec)
-- [ ] Add exitDiagnostic as optional field to PersistedTaskRecord and LaneTaskOutcome (additive, preserve legacy exitReason, update serialization + validation)
-- [ ] Preserve telemetry files by default (no cleanup — dashboard may read them; add log of paths for operator visibility)
-- [ ] R008: Wire contextKilled into classifyExit — add contextKilled field to ExitClassificationInput, handle in classifyExit() before process_crash, update buildExitDiagnostic to pass it, update existing classification tests
-- [ ] R008: Tighten exitDiagnostic validation — reject arrays (Array.isArray), add minimal shape check (classification is string)
-- [ ] R008: Add Step 3 helper tests — _readExitSummary (missing, malformed, valid), _buildExitDiagnostic (timer/context/user kill mapping, missing summary), persistence round-trip (exitDiagnostic present/absent/invalid shapes)
+- [x] Read exit summary JSON after tmux session exit (non-fatal parse with deterministic fallback for missing/malformed files)
+- [x] Build ExitClassificationInput with all signals: exitSummary, doneFileFound, timerKilled (wall-clock timeout flag), stallDetected (stall timer), userKilled (manual kill), contextPct (from sidecar tail state)
+- [x] Call classifyExit() and build full TaskExitDiagnostic (with progress metadata: partialProgressCommits, lastKnownStep, repoId, durationSec)
+- [x] Add exitDiagnostic as optional field to PersistedTaskRecord and LaneTaskOutcome (additive, preserve legacy exitReason, update serialization + validation)
+- [x] Preserve telemetry files by default (no cleanup — dashboard may read them; add log of paths for operator visibility)
+- [x] R008: Wire contextKilled into classifyExit — add contextKilled field to ExitClassificationInput, handle in classifyExit() before process_crash, update buildExitDiagnostic to pass it, update existing classification tests
+- [x] R008: Tighten exitDiagnostic validation — reject arrays (Array.isArray), add minimal shape check (classification is string)
+- [x] R008: Add Step 3 helper tests — _readExitSummary (missing, malformed, valid), _buildExitDiagnostic (timer/context/user kill mapping, missing summary), persistence round-trip (exitDiagnostic present/absent/invalid shapes)
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Verify existing TP-026 test coverage (rpc-wrapper.test.ts, sidecar-tailing.test.ts, task-runner-exit-diagnostic.test.ts) — all pass, covers command gen, sidecar tailing, exit classification, crash scenarios, persistence round-trip
-- [ ] Create task-runner-rpc-integration.test.ts: (1) workspace telemetry path tests — getSidecarDir with ORCH_SIDECAR_DIR, source pattern for telemetry dir; (2) /orch subprocess non-regression — source-extract spawnAgent() asserting `pi -p --mode json` (not rpc-wrapper), pollUntilTaskComplete unmodified; (3) exitDiagnostic persistence/resume round-trip — build→upsert→sync→serialize→validate, completed + failed + legacy scenarios. 10 tests pass.
-- [ ] Run full vitest suite — 1107 tests pass across 29 files; 1 pre-existing failure (worktree-lifecycle.test.ts: TP-029 git init issues, not TP-026)
+- [x] Verify existing TP-026 test coverage (rpc-wrapper.test.ts, sidecar-tailing.test.ts, task-runner-exit-diagnostic.test.ts) — all pass, covers command gen, sidecar tailing, exit classification, crash scenarios, persistence round-trip
+- [x] Create task-runner-rpc-integration.test.ts: (1) workspace telemetry path tests — getSidecarDir with ORCH_SIDECAR_DIR, source pattern for telemetry dir; (2) /orch subprocess non-regression — source-extract spawnAgent() asserting `pi -p --mode json` (not rpc-wrapper), pollUntilTaskComplete unmodified; (3) exitDiagnostic persistence/resume round-trip — build→upsert→sync→serialize→validate, completed + failed + legacy scenarios. 10 tests pass.
+- [x] Run full vitest suite — 1107 tests pass across 29 files; 1 pre-existing failure (worktree-lifecycle.test.ts: TP-029 git init issues, not TP-026)
 
 ---
 
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] R011: Check `docs/explanation/architecture.md` for affected descriptions — no change needed (docs describe spawn/sidecar at architecture level without mechanism details; PROMPT defers doc updates to TP-027)
-- [ ] R011: Run full test suite as closure gate — 171/171 TP-026 tests pass; 25 pre-existing failures in cleanup-resilience.test.ts (3) and worktree-lifecycle.test.ts (22) due to git init temp dir issues on Windows worktree, not TP-026 related
-- [ ] R011: Verify completion criteria — /orch subprocess path unchanged (pollUntilTaskComplete + spawnAgent untouched), exitDiagnostic in task outcomes (persistence + validation + round-trip tested), sidecar/exit summary produced in tmux mode (sidecarPath + exitSummaryPath wired through spawnAgentTmux)
-- [ ] Inline comments updated in spawnAgentTmux explaining RPC wrapper flow (already comprehensive: 30+ line doc block on spawnAgentTmux, full doc blocks on sidecar tailing + exit diagnostic helpers, inline comments in poll loop and exit classification section)
+- [x] R011: Check `docs/explanation/architecture.md` for affected descriptions — no change needed (docs describe spawn/sidecar at architecture level without mechanism details; PROMPT defers doc updates to TP-027)
+- [x] R011: Run full test suite as closure gate — 171/171 TP-026 tests pass; 25 pre-existing failures in cleanup-resilience.test.ts (3) and worktree-lifecycle.test.ts (22) due to git init temp dir issues on Windows worktree, not TP-026 related
+- [x] R011: Verify completion criteria — /orch subprocess path unchanged (pollUntilTaskComplete + spawnAgent untouched), exitDiagnostic in task outcomes (persistence + validation + round-trip tested), sidecar/exit summary produced in tmux mode (sidecarPath + exitSummaryPath wired through spawnAgentTmux)
+- [x] Inline comments updated in spawnAgentTmux explaining RPC wrapper flow (already comprehensive: 30+ line doc block on spawnAgentTmux, full doc blocks on sidecar tailing + exit diagnostic helpers, inline comments in poll loop and exit classification section)
 - [ ] `.DONE` created and STATUS.md marked complete
 
 ---

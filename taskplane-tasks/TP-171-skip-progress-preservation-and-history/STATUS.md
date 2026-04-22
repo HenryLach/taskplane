@@ -1,70 +1,70 @@
 # TP-171: Skip Progress Preservation and Batch History Gap — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 6
 **Iteration:** 1
 **Size:** L
 
 ---
 
 ### Step 0: Preflight and Analysis
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read merge.ts — succeeded-only lane filter
-- [ ] Read engine.ts — skip propagation to lane state
-- [ ] Read persistence.ts — batch history population (`saveBatchHistory`)
-- [ ] Identify skipped-lane merge exclusion path
-- [ ] Identify batch history task gap root cause
-- [ ] Document findings
+- [x] Read merge.ts — succeeded-only lane filter
+- [x] Read engine.ts — skip propagation to lane state
+- [x] Read persistence.ts — batch history population (`saveBatchHistory`)
+- [x] Identify skipped-lane merge exclusion path
+- [x] Identify batch history task gap root cause
+- [x] Document findings
 
 ---
 
 ### Step 1: Preserve Skipped Task Progress
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add skipped-lane task artifacts to mergeWave() artifact staging: include lanes with skipped tasks (but not in mergeableLanes) in the artifact staging loop so STATUS.md/reviews are copied to the merge worktree
-- [ ] Handle the edge case where mergeWorkDir may not exist (all tasks skipped, no mergeable lanes) — create a lightweight artifact-only commit on the orch branch
-- [ ] Verify safety-net auto-commit in engine.ts already captures skipped lane work (TP-147, line 3121-3123) — already confirmed present
-- [ ] Run targeted tests: tests/merge*.test.ts
-- [ ] R002-1: Fix workspace-mode filteredWaveResult to include skipped-lane outcomes so laneOutcomeByNumber works
-- [ ] R002-2: Fix stageSkippedArtifactsToTargetBranch to use isolated worktree instead of committing to repoRoot
-- [ ] R002-3: Fix mergeWaveByRepo early return to handle all-skipped case
-- [ ] R002: Re-run targeted tests
-- [ ] R003-1: Fix workspace-mode multi-repo gap — skipped-only repos bypassed when other repos have mergeable lanes
-- [ ] R003: Re-run targeted tests
-- [ ] R004-1: Remove .DONE from skipped-artifact staging allowlist (only STATUS.md, REVIEW_VERDICT.json, .reviews)
-- [ ] R004-2: Gate post-loop skipped-only staging behind !anyRollbackFailed in mergeWaveByRepo
-- [ ] R004: Re-run targeted tests
+- [x] Add skipped-lane task artifacts to mergeWave() artifact staging: include lanes with skipped tasks (but not in mergeableLanes) in the artifact staging loop so STATUS.md/reviews are copied to the merge worktree
+- [x] Handle the edge case where mergeWorkDir may not exist (all tasks skipped, no mergeable lanes) — create a lightweight artifact-only commit on the orch branch
+- [x] Verify safety-net auto-commit in engine.ts already captures skipped lane work (TP-147, line 3121-3123) — already confirmed present
+- [x] Run targeted tests: tests/merge*.test.ts
+- [x] R002-1: Fix workspace-mode filteredWaveResult to include skipped-lane outcomes so laneOutcomeByNumber works
+- [x] R002-2: Fix stageSkippedArtifactsToTargetBranch to use isolated worktree instead of committing to repoRoot
+- [x] R002-3: Fix mergeWaveByRepo early return to handle all-skipped case
+- [x] R002: Re-run targeted tests
+- [x] R003-1: Fix workspace-mode multi-repo gap — skipped-only repos bypassed when other repos have mergeable lanes
+- [x] R003: Re-run targeted tests
+- [x] R004-1: Remove .DONE from skipped-artifact staging allowlist (only STATUS.md, REVIEW_VERDICT.json, .reviews)
+- [x] R004-2: Gate post-loop skipped-only staging behind !anyRollbackFailed in mergeWaveByRepo
+- [x] R004: Re-run targeted tests
 
 ---
 
 ### Step 2: Fix Batch History Task Gap
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Verify TP-147 gap-filling logic in engine.ts covers all cases (skipped, failed, blocked, never-started)
-- [ ] Check if dynamically expanded tasks (segment expansion) are included in wavePlan — confirmed: segment expansion uses same task IDs, only adds continuation rounds to runtimeSegmentRounds (not wavePlan); task IDs are already in wavePlan from original wave computation
-- [ ] Add edge-case handling: fixed invalid status cast ("running" → "pending") for tasks in non-terminal state at batch end; tasks in allTaskOutcomes but not wavePlan get wave=0 (correct); TP-147 gap-fill covers reverse case
-- [ ] Run targeted tests: tests/batch-history-persistence.test.ts
+- [x] Verify TP-147 gap-filling logic in engine.ts covers all cases (skipped, failed, blocked, never-started)
+- [x] Check if dynamically expanded tasks (segment expansion) are included in wavePlan — confirmed: segment expansion uses same task IDs, only adds continuation rounds to runtimeSegmentRounds (not wavePlan); task IDs are already in wavePlan from original wave computation
+- [x] Add edge-case handling: fixed invalid status cast ("running" → "pending") for tasks in non-terminal state at batch end; tasks in allTaskOutcomes but not wavePlan get wave=0 (correct); TP-147 gap-fill covers reverse case
+- [x] Run targeted tests: tests/batch-history-persistence.test.ts
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] FULL test suite passing (3290/3290 pass)
-- [ ] Regression test: skipped task progress preserved (13 tests in skip-progress-preservation.test.ts)
-- [ ] Regression test: all tasks in batch history (included in skip-progress-preservation.test.ts)
-- [ ] All failures fixed
+- [x] FULL test suite passing (3290/3290 pass)
+- [x] Regression test: skipped task progress preserved (13 tests in skip-progress-preservation.test.ts)
+- [x] Regression test: all tasks in batch history (included in skip-progress-preservation.test.ts)
+- [x] All failures fixed
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Discoveries logged
+- [x] Discoveries logged
 
 ---
 

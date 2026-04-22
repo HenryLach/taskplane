@@ -1,68 +1,68 @@
 # TP-020: Orch-Managed Branch Schema & Config — Status
 
-**Current Step:** None
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-18
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 5
 **Iteration:** 5
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read `types.ts` — locate runtime state, persisted state, config interfaces, defaults
-- [ ] Read `config-schema.ts` — understand config field definitions
-- [ ] Read `config-loader.ts` — understand camelCase↔snake_case mappings and legacy snake_case adapter
-- [ ] Read `settings-tui.ts` — understand TUI field declarations
-- [ ] Read `persistence.ts` — locate backward-compat defaults for new persisted fields, serialization/deserialization paths
-- [ ] Read `settings-tui.test.ts` — scan test coverage for section schema constraints, Advanced discoverability
-- [ ] Record preflight discoveries (file+line anchors) in STATUS.md Notes
+- [x] Read `types.ts` — locate runtime state, persisted state, config interfaces, defaults
+- [x] Read `config-schema.ts` — understand config field definitions
+- [x] Read `config-loader.ts` — understand camelCase↔snake_case mappings and legacy snake_case adapter
+- [x] Read `settings-tui.ts` — understand TUI field declarations
+- [x] Read `persistence.ts` — locate backward-compat defaults for new persisted fields, serialization/deserialization paths
+- [x] Read `settings-tui.test.ts` — scan test coverage for section schema constraints, Advanced discoverability
+- [x] Record preflight discoveries (file+line anchors) in STATUS.md Notes
 
 ---
 
 ### Step 1: Add `orchBranch` to Runtime + Persisted State
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add `orchBranch: string` to `OrchBatchRuntimeState` and `PersistedBatchState` with JSDoc
-- [ ] Initialize to `""` in `freshOrchBatchState()`
-- [ ] Serialize `orchBranch` in `serializeBatchState()` (persistence.ts)
-- [ ] Default `orchBranch` to `""` in `validatePersistedState()` for backward compat (v2 files missing field)
-- [ ] Carry `orchBranch` from persisted state during resume reconstruction in `resume.ts`
-- [ ] Fix any PersistedBatchState object literal compile errors in tests
+- [x] Add `orchBranch: string` to `OrchBatchRuntimeState` and `PersistedBatchState` with JSDoc
+- [x] Initialize to `""` in `freshOrchBatchState()`
+- [x] Serialize `orchBranch` in `serializeBatchState()` (persistence.ts)
+- [x] Default `orchBranch` to `""` in `validatePersistedState()` for backward compat (v2 files missing field)
+- [x] Carry `orchBranch` from persisted state during resume reconstruction in `resume.ts`
+- [x] Fix any PersistedBatchState object literal compile errors in tests
 
 ---
 
 ### Step 2: Add `integration` to Orchestrator Config
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add `integration: "manual" | "auto"` to legacy `OrchestratorConfig.orchestrator` in `types.ts` + default `"manual"` in `DEFAULT_ORCHESTRATOR_CONFIG`
-- [ ] Add `integration: "manual" | "auto"` to unified `OrchestratorCoreConfig` in `config-schema.ts` + default `"manual"` in `DEFAULT_ORCHESTRATOR_SECTION`
-- [ ] Add `integration` mapping in `toOrchestratorConfig()` in `config-loader.ts`
-- [ ] Add test coverage: extend adapter assertions in `project-config-loader.test.ts` for `integration` (default, override, YAML mapping)
+- [x] Add `integration: "manual" | "auto"` to legacy `OrchestratorConfig.orchestrator` in `types.ts` + default `"manual"` in `DEFAULT_ORCHESTRATOR_CONFIG`
+- [x] Add `integration: "manual" | "auto"` to unified `OrchestratorCoreConfig` in `config-schema.ts` + default `"manual"` in `DEFAULT_ORCHESTRATOR_SECTION`
+- [x] Add `integration` mapping in `toOrchestratorConfig()` in `config-loader.ts`
+- [x] Add test coverage: extend adapter assertions in `project-config-loader.test.ts` for `integration` (default, override, YAML mapping)
 
 ---
 
 ### Step 3: Add Integration Toggle to Settings TUI
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add Integration field to Orchestrator section in `settings-tui.ts` with exact contract: configPath `orchestrator.orchestrator.integration`, label `Integration`, control `toggle`, layer `L1`, fieldType `enum`, values `["manual", "auto"]`, description per PROMPT.md
-- [ ] Verify field is editable L1 toggle and COVERED_PATHS auto-includes it (no manual edits needed)
-- [ ] Verify `integration` does NOT appear in Advanced section (covered by SECTIONS → COVERED_PATHS rebuild)
+- [x] Add Integration field to Orchestrator section in `settings-tui.ts` with exact contract: configPath `orchestrator.orchestrator.integration`, label `Integration`, control `toggle`, layer `L1`, fieldType `enum`, values `["manual", "auto"]`, description per PROMPT.md
+- [x] Verify field is editable L1 toggle and COVERED_PATHS auto-includes it (no manual edits needed)
+- [x] Verify `integration` does NOT appear in Advanced section (covered by SECTIONS → COVERED_PATHS rebuild)
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Run `cd extensions && npx vitest run` — all tests must pass (zero failures) ✅ 21 files, 742 tests passed
-- [ ] Verify `freshOrchBatchState()` returns `orchBranch: ""` (inspect types.ts) ✅ line 916
-- [ ] Verify `DEFAULT_ORCHESTRATOR_CONFIG.orchestrator.integration === "manual"` (inspect types.ts) ✅ line 156
-- [ ] Verify backward-compat: `validatePersistedState()` defaults missing `orchBranch` to `""` for older v2 state files (inspect persistence.ts) ✅ lines 369-379 (validation + default) and line 791 (serialization)
-- [ ] Verify Settings TUI: `integration` field is editable L1 toggle in Orchestrator section and does NOT appear in Advanced section (confirm via settings-tui.test.ts coverage at tests 18.2, 18.8) ✅ settings-tui.ts line 105, tests 18.2+18.8 pass
-- [ ] Fix all failures if any, re-run tests until green ✅ No failures — 21 files, 742 tests all green
+- [x] Run `cd extensions && npx vitest run` — all tests must pass (zero failures) ✅ 21 files, 742 tests passed
+- [x] Verify `freshOrchBatchState()` returns `orchBranch: ""` (inspect types.ts) ✅ line 916
+- [x] Verify `DEFAULT_ORCHESTRATOR_CONFIG.orchestrator.integration === "manual"` (inspect types.ts) ✅ line 156
+- [x] Verify backward-compat: `validatePersistedState()` defaults missing `orchBranch` to `""` for older v2 state files (inspect persistence.ts) ✅ lines 369-379 (validation + default) and line 791 (serialization)
+- [x] Verify Settings TUI: `integration` field is editable L1 toggle in Orchestrator section and does NOT appear in Advanced section (confirm via settings-tui.test.ts coverage at tests 18.2, 18.8) ✅ settings-tui.ts line 105, tests 18.2+18.8 pass
+- [x] Fix all failures if any, re-run tests until green ✅ No failures — 21 files, 742 tests all green
 
 ---
 

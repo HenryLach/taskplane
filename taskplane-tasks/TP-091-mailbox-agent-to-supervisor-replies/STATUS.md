@@ -1,7 +1,7 @@
 # TP-091: Agent-to-Supervisor Mailbox Replies — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-30
 **Review Level:** 2
 **Review Counter:** 0
@@ -11,17 +11,17 @@
 ---
 
 ### Step 0–4: All Complete
-**Status:** Pending
+**Status:** ✅ Complete
 
 Core implementation delivered under TP-106 (Runtime V2 mailbox rollout).
 TP-091 delta closure completed as part of combined remediation.
 
 **Delta items addressed:**
-- [ ] Reply lifecycle truth model: `readOutboxHistory()` reads pending + processed for non-lossy visibility
-- [ ] `read_agent_replies` is explicitly non-consuming (read-only, durable history)
-- [ ] Registry-first identity contract verified in all targeting/discovery code
-- [ ] Supervisor alert parity: reply/escalation fanout surfaced consistently
-- [ ] Tool semantics/docs parity: description, guidelines, commands.md all aligned
+- [x] Reply lifecycle truth model: `readOutboxHistory()` reads pending + processed for non-lossy visibility
+- [x] `read_agent_replies` is explicitly non-consuming (read-only, durable history)
+- [x] Registry-first identity contract verified in all targeting/discovery code
+- [x] Supervisor alert parity: reply/escalation fanout surfaced consistently
+- [x] Tool semantics/docs parity: description, guidelines, commands.md all aligned
 
 ---
 

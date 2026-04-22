@@ -1,7 +1,7 @@
 # TP-093: Dashboard Mailbox Panel — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-30
 **Review Level:** 2
 **Review Counter:** 0
@@ -11,18 +11,18 @@
 ---
 
 ### Step 0–4: All Complete
-**Status:** Pending
+**Status:** ✅ Complete
 
 Initial implementation delivered under TP-107 (dashboard Runtime V2).
 TP-093 delta closure completed as part of combined remediation.
 
 **Delta items addressed:**
-- [ ] Event-authoritative model: primary source is events.jsonl audit trail
-- [ ] Directory scan is explicit fallback for legacy batches
-- [ ] Reply durability: outbox/processed/ included so replies don't disappear
-- [ ] Broadcast correctness: per-recipient state with _isBroadcast flag
-- [ ] Rate-limit visibility: message_rate_limited events rendered in timeline
-- [ ] Migration precedence documented (V2 events → directory scan fallback)
+- [x] Event-authoritative model: primary source is events.jsonl audit trail
+- [x] Directory scan is explicit fallback for legacy batches
+- [x] Reply durability: outbox/processed/ included so replies don't disappear
+- [x] Broadcast correctness: per-recipient state with _isBroadcast flag
+- [x] Rate-limit visibility: message_rate_limited events rendered in timeline
+- [x] Migration precedence documented (V2 events → directory scan fallback)
 
 ---
 

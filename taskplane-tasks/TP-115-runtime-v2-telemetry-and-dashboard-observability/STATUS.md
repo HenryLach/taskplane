@@ -1,44 +1,44 @@
 # TP-115: Runtime V2 Telemetry and Dashboard Observability — Status
 
-**Current Step:** None
+**Current Step:** Complete
 **Status:** 🟢 Completed
 **Last Updated:** 2026-04-01
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Lane snapshot zeros verified from TP-114 artifacts
-- [ ] Telemetry data flow traced
+- [x] Lane snapshot zeros verified from TP-114 artifacts
+- [x] Telemetry data flow traced
 
 ---
 
 ### Step 1: Lane Snapshot Telemetry
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Populate lane snapshot worker fields from AgentHostResult
-- [ ] Write updated snapshot after worker exit
+- [x] Populate lane snapshot worker fields from AgentHostResult
+- [x] Write updated snapshot after worker exit
 
 ---
 
 ### Step 2: Dashboard V2 Live Data
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] buildDashboardState() returns V2 data during execution
-- [ ] SSE polling picks up V2 artifacts
+- [x] buildDashboardState() returns V2 data during execution
+- [x] SSE polling picks up V2 artifacts
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Full suite passes
-- [ ] Fix all failures
+- [x] Full suite passes
+- [x] Fix all failures
 
 ---
 

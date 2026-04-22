@@ -1,0 +1,8 @@
+TP-146 complete.
+
+Root cause: resolveBaseBranch (waves.ts:564) silently falls back to repo's current branch when orch branch not found in secondary workspace repo. Contributing factors include buildIntegrationExecutor (extension.ts:1329) only handling primary repo and doOrchIntegrate's non-atomic per-repo loop.
+
+Changes:
+- waves.ts: Added structured WARNING log in resolveBaseBranch when orch branch fallback occurs
+- CONTEXT.md: Added 2 tech debt items for buildIntegrationExecutor workspace gap and /orch-integrate atomicity
+- PROMPT.md: Documented root cause analysis in amendments section

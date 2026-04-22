@@ -1,10 +1,10 @@
 # TP-002: Task-to-Repo Routing and Execution Target Parsing — Status
 
-**Current Step:** None
-​**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+​**Status:** ✅ Step 3 Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 7
 **Iteration:** 4
 **Size:** M
 
@@ -14,7 +14,7 @@
 ---
 
 ### Step 0: Parse execution target metadata
-**Status:** Pending
+**Status:** ✅ Complete
 
 **Parse grammar:**
 - Section header: `## Execution Target` (with optional body containing `Repo: <id>`)
@@ -31,23 +31,23 @@
 - No changes to existing ID/dependency/file-scope parsing behavior
 - No new fatal discovery errors introduced in Step 0
 
-- [ ] Add `promptRepoId?: string` field to `ParsedTask` in `types.ts`
-- [ ] Implement section-based parser: `## Execution Target` with `Repo:` line
-- [ ] Implement inline parser: `**Repo:** <id>` in front-matter area
-- [ ] Apply precedence rule (section > inline) and repo ID validation
-- [ ] Preserve backward compat: missing metadata = `undefined`, no error
-- [ ] Add tests: prompt with no execution target
-- [ ] Add tests: section-based `## Execution Target` with `Repo: api`
-- [ ] Add tests: inline `**Repo:** frontend` declaration
-- [ ] Add tests: whitespace/case/markdown decoration variants
-- [ ] Add tests: both section + inline present (section wins)
-- [ ] Add tests: invalid repo ID format (non-matching = undefined)
-- [ ] Add tests: existing dependency/file-scope parsing unchanged
+- [x] Add `promptRepoId?: string` field to `ParsedTask` in `types.ts`
+- [x] Implement section-based parser: `## Execution Target` with `Repo:` line
+- [x] Implement inline parser: `**Repo:** <id>` in front-matter area
+- [x] Apply precedence rule (section > inline) and repo ID validation
+- [x] Preserve backward compat: missing metadata = `undefined`, no error
+- [x] Add tests: prompt with no execution target
+- [x] Add tests: section-based `## Execution Target` with `Repo: api`
+- [x] Add tests: inline `**Repo:** frontend` declaration
+- [x] Add tests: whitespace/case/markdown decoration variants
+- [x] Add tests: both section + inline present (section wins)
+- [x] Add tests: invalid repo ID format (non-matching = undefined)
+- [x] Add tests: existing dependency/file-scope parsing unchanged
 
 ---
 
 ### Step 1: Implement routing precedence chain
-**Status:** Pending
+**Status:** ✅ Complete
 
 **Routing contract:**
 - In **repo mode** (`workspaceConfig === null`): routing is a no-op. No `resolvedRepoId` is set. Single-repo semantics are preserved.
@@ -87,29 +87,29 @@
    - Multiple tasks with different routing sources
 
 **Checklist:**
-- [ ] Add `repoId?: string` to `TaskArea` in `types.ts`
-- [ ] Add `resolvedRepoId?: string` to `ParsedTask` in `types.ts`
-- [ ] Add `TASK_REPO_UNRESOLVED` and `TASK_REPO_UNKNOWN` to `DiscoveryError.code` union
-- [ ] Export `FATAL_DISCOVERY_CODES` array for DRY fatal-error filtering
-- [ ] Add `workspaceConfig` to `DiscoveryOptions` in `discovery.ts`
-- [ ] Implement `resolveTaskRouting()` function in `discovery.ts`
-- [ ] Call `resolveTaskRouting()` from `runDiscovery` pipeline
-- [ ] Update `extension.ts` call sites to pass `workspaceConfig` and use `FATAL_DISCOVERY_CODES`
-- [ ] Update `engine.ts` call sites to pass `workspaceConfig` and use `FATAL_DISCOVERY_CODES`
-- [ ] Update `formatDiscoveryResults` to include new fatal codes
-- [ ] Add test: repo mode (no workspace config) → no routing applied
-- [ ] Add test: prompt repo wins over area and default
-- [ ] Add test: area repo fallback when prompt has no repo
-- [ ] Add test: default repo fallback when prompt + area have no repo
-- [ ] Add test: TASK_REPO_UNKNOWN when resolved ID not in workspace repos
-- [ ] Add test: TASK_REPO_UNRESOLVED when all sources are undefined
-- [ ] Add test: multiple tasks with mixed routing sources
-- [ ] All existing tests still pass (38 routing tests + 40 workspace tests = 78 pass)
+- [x] Add `repoId?: string` to `TaskArea` in `types.ts`
+- [x] Add `resolvedRepoId?: string` to `ParsedTask` in `types.ts`
+- [x] Add `TASK_REPO_UNRESOLVED` and `TASK_REPO_UNKNOWN` to `DiscoveryError.code` union
+- [x] Export `FATAL_DISCOVERY_CODES` array for DRY fatal-error filtering
+- [x] Add `workspaceConfig` to `DiscoveryOptions` in `discovery.ts`
+- [x] Implement `resolveTaskRouting()` function in `discovery.ts`
+- [x] Call `resolveTaskRouting()` from `runDiscovery` pipeline
+- [x] Update `extension.ts` call sites to pass `workspaceConfig` and use `FATAL_DISCOVERY_CODES`
+- [x] Update `engine.ts` call sites to pass `workspaceConfig` and use `FATAL_DISCOVERY_CODES`
+- [x] Update `formatDiscoveryResults` to include new fatal codes
+- [x] Add test: repo mode (no workspace config) → no routing applied
+- [x] Add test: prompt repo wins over area and default
+- [x] Add test: area repo fallback when prompt has no repo
+- [x] Add test: default repo fallback when prompt + area have no repo
+- [x] Add test: TASK_REPO_UNKNOWN when resolved ID not in workspace repos
+- [x] Add test: TASK_REPO_UNRESOLVED when all sources are undefined
+- [x] Add test: multiple tasks with mixed routing sources
+- [x] All existing tests still pass (38 routing tests + 40 workspace tests = 78 pass)
 
 ---
 
 ### Step 2: Annotate discovery outputs
-**Status:** Pending
+**Status:** ✅ Complete
 
 **Output annotation contract:**
 - In workspace mode: each pending task line in `formatDiscoveryResults` shows `→ repo: <id>` after deps (if `resolvedRepoId` is set)
@@ -126,25 +126,25 @@
 - This is required for the area-level fallback in the routing chain to work at runtime
 
 **Checklist:**
-- [ ] Parse `repo_id` from task area YAML config into `TaskArea.repoId` in `config.ts`
-- [ ] Annotate pending task lines in `formatDiscoveryResults()` with `→ repo: <id>` when `resolvedRepoId` is set
-- [ ] Add routing-specific guidance to `/orch-plan` fatal abort message in `extension.ts`
-- [ ] Add routing-specific guidance to `/orch` fatal abort message in `engine.ts`
-- [ ] Add test: `loadTaskRunnerConfig` parses `repo_id` into `TaskArea.repoId`
-- [ ] Add test: `formatDiscoveryResults` shows repo annotation for tasks with `resolvedRepoId`
-- [ ] Add test: `formatDiscoveryResults` omits repo annotation when `resolvedRepoId` absent
-- [ ] Add test: fatal routing errors produce actionable guidance text
-- [ ] All existing tests still pass (68 routing + 40 workspace = 108 pass; 4 pre-existing failures in other suites unchanged)
+- [x] Parse `repo_id` from task area YAML config into `TaskArea.repoId` in `config.ts`
+- [x] Annotate pending task lines in `formatDiscoveryResults()` with `→ repo: <id>` when `resolvedRepoId` is set
+- [x] Add routing-specific guidance to `/orch-plan` fatal abort message in `extension.ts`
+- [x] Add routing-specific guidance to `/orch` fatal abort message in `engine.ts`
+- [x] Add test: `loadTaskRunnerConfig` parses `repo_id` into `TaskArea.repoId`
+- [x] Add test: `formatDiscoveryResults` shows repo annotation for tasks with `resolvedRepoId`
+- [x] Add test: `formatDiscoveryResults` omits repo annotation when `resolvedRepoId` absent
+- [x] Add test: fatal routing errors produce actionable guidance text
+- [x] All existing tests still pass (68 routing + 40 workspace = 108 pass; 4 pre-existing failures in other suites unchanged)
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing
-- [ ] Targeted tests for changed modules passing
-- [ ] All failures fixed
-- [ ] CLI smoke checks passing
+- [x] Unit/regression tests passing
+- [x] Targeted tests for changed modules passing
+- [x] All failures fixed
+- [x] CLI smoke checks passing
 
 **Results:**
 - Targeted tests: 68 routing tests pass, 40 workspace tests pass (108 total, 0 failures)

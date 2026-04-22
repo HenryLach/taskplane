@@ -1,7 +1,7 @@
 # TP-116: Outcome-Embedded Telemetry — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 6: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-02
 **Review Level:** 0
 **Review Counter:** 0
@@ -11,47 +11,47 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and confirm understanding
-- [ ] Read LaneTaskOutcome type in types.ts
-- [ ] Read batch history writer in engine.ts
-- [ ] Read makeResult in lane-runner.ts
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and confirm understanding
+- [x] Read LaneTaskOutcome type in types.ts
+- [x] Read batch history writer in engine.ts
+- [x] Read makeResult in lane-runner.ts
 
 ### Step 1: Extend LaneTaskOutcome Type
-**Status:** Pending
-- [ ] Add laneNumber to LaneTaskOutcome
-- [ ] Add telemetry to LaneTaskOutcome
-- [ ] Both optional for backward compatibility
+**Status:** ✅ Complete
+- [x] Add laneNumber to LaneTaskOutcome
+- [x] Add telemetry to LaneTaskOutcome
+- [x] Both optional for backward compatibility
 
 ### Step 2: Populate in Lane-Runner
-**Status:** Pending
-- [ ] Populate outcome.laneNumber from config.laneNumber
-- [ ] Populate outcome.telemetry from finalTelemetry
-- [ ] Skipped tasks: leave telemetry undefined
+**Status:** ✅ Complete
+- [x] Populate outcome.laneNumber from config.laneNumber
+- [x] Populate outcome.telemetry from finalTelemetry
+- [x] Skipped tasks: leave telemetry undefined
 
 ### Step 3: Populate in executeLaneV2
-**Status:** Pending
-- [ ] Outcomes carry through laneNumber and telemetry
-- [ ] Skipped outcomes: set laneNumber, no telemetry
+**Status:** ✅ Complete
+- [x] Outcomes carry through laneNumber and telemetry
+- [x] Skipped outcomes: set laneNumber, no telemetry
 
 ### Step 4: Simplify Batch History Writer
-**Status:** Pending
-- [ ] Read telemetry from to.telemetry when available
-- [ ] Fall back to lane snapshot for legacy
-- [ ] Remove batchState.lanes.find() dependency
-- [ ] Keep legacy sidecar fallback
+**Status:** ✅ Complete
+- [x] Read telemetry from to.telemetry when available
+- [x] Fall back to lane snapshot for legacy
+- [x] Remove batchState.lanes.find() dependency
+- [x] Keep legacy sidecar fallback
 
 ### Step 5: Tests
-**Status:** Pending
-- [ ] Test: outcome with telemetry → correct history tokens
-- [ ] Test: outcome without telemetry → snapshot fallback
-- [ ] Test: skipped task → zero tokens
-- [ ] All existing tests pass
+**Status:** ✅ Complete
+- [x] Test: outcome with telemetry → correct history tokens
+- [x] Test: outcome without telemetry → snapshot fallback
+- [x] Test: skipped task → zero tokens
+- [x] All existing tests pass
 
 ### Step 6: Documentation & Delivery
-**Status:** Pending
-- [ ] Update STATUS.md
-- [ ] Log discoveries
+**Status:** ✅ Complete
+- [x] Update STATUS.md
+- [x] Log discoveries
 
 ---
 

@@ -1,0 +1,10 @@
+Task TP-010 completed: 2026-03-15
+
+Summary:
+- Implemented collision-resistant naming contract for team-scale orchestration
+- Created naming.ts with resolveOperatorId(), sanitizeNameComponent(), resolveRepoSlug()
+- Updated all artifact naming: TMUX sessions, worktrees, branches, merge sessions/sidecars
+- Added operator_id config field with env/config/username/fallback resolution chain
+- 83 collision resistance tests (naming-collision.test.ts)
+- 290 total tests passing across 12 test files
+- Updated docs: task-orchestrator.yaml.md, lane-agent-design.md, polyrepo-support-spec.md, polyrepo-execution-backlog.md

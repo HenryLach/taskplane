@@ -1,6 +1,6 @@
 # TP-081: State Schema v4 for Segment Execution — Status
 
-**Current Step:** None
+**Current Step:** Not Started
 **Status:** 🔵 Ready for Execution
 **Last Updated:** 2026-03-28
 **Review Level:** 3

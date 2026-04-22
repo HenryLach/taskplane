@@ -1,75 +1,75 @@
 # TP-164: Live merge agent telemetry in dashboard (#465) — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 6
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read `runtimeLaneSnapshotPath` and `writeLaneSnapshot` in types.ts / process-registry.ts
-- [ ] Read `emitSnapshot` in lane-runner.ts — understand onTelemetry pattern
-- [ ] Read `spawnMergeAgentV2` in merge.ts — understand spawnAgent call
-- [ ] Read `loadRuntimeLaneSnapshots` and `buildDashboardState` in server.cjs
-- [ ] Read how merge pane uses `sessions` and `telemetry` in app.js
-- [ ] Read `spawnAgent` onTelemetry callback signature in agent-host.ts
-- [ ] Verify test baseline (3254/3255 pass; 1 pre-existing failure in worktree-lifecycle.integration.test.ts)
+- [x] Read `runtimeLaneSnapshotPath` and `writeLaneSnapshot` in types.ts / process-registry.ts
+- [x] Read `emitSnapshot` in lane-runner.ts — understand onTelemetry pattern
+- [x] Read `spawnMergeAgentV2` in merge.ts — understand spawnAgent call
+- [x] Read `loadRuntimeLaneSnapshots` and `buildDashboardState` in server.cjs
+- [x] Read how merge pane uses `sessions` and `telemetry` in app.js
+- [x] Read `spawnAgent` onTelemetry callback signature in agent-host.ts
+- [x] Verify test baseline (3254/3255 pass; 1 pre-existing failure in worktree-lifecycle.integration.test.ts)
 
 ---
 
 ### Step 1: Add merge snapshot infrastructure
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add `RuntimeMergeSnapshot` interface to `types.ts`
-- [ ] Add `runtimeMergeSnapshotPath()` to `types.ts`
-- [ ] Add `writeMergeSnapshot()` to `process-registry.ts`
-- [ ] Add `readMergeSnapshot()` to `process-registry.ts`
+- [x] Add `RuntimeMergeSnapshot` interface to `types.ts`
+- [x] Add `runtimeMergeSnapshotPath()` to `types.ts`
+- [x] Add `writeMergeSnapshot()` to `process-registry.ts`
+- [x] Add `readMergeSnapshot()` to `process-registry.ts`
 
 ---
 
 ### Step 2: Write snapshots from spawnMergeAgentV2
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add `onTelemetry` callback to `spawnAgent` call in `spawnMergeAgentV2`
-- [ ] Write initial `running` snapshot immediately after spawn
-- [ ] Write `running` snapshot on each telemetry update
-- [ ] Write terminal snapshot in `.then(result)` with correct status mapping (killed||exitCode!==0||!agentEnded = "failed", else "complete")
-- [ ] Keep `.catch` as exceptional fallback writing `failed` snapshot
-- [ ] All snapshot writes wrapped in try/catch
+- [x] Add `onTelemetry` callback to `spawnAgent` call in `spawnMergeAgentV2`
+- [x] Write initial `running` snapshot immediately after spawn
+- [x] Write `running` snapshot on each telemetry update
+- [x] Write terminal snapshot in `.then(result)` with correct status mapping (killed||exitCode!==0||!agentEnded = "failed", else "complete")
+- [x] Keep `.catch` as exceptional fallback writing `failed` snapshot
+- [x] All snapshot writes wrapped in try/catch
 
 ---
 
 ### Step 3: Load and expose merge snapshots in dashboard server
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add `loadRuntimeMergeSnapshots(batchId)` to `server.cjs`
-- [ ] Update `getActiveSessions()` to return active merger session names from registry
-- [ ] Add merge snapshot telemetry to `telemetry` map in `buildDashboardState`
-- [ ] Expose `runtimeMergeSnapshots` in response
+- [x] Add `loadRuntimeMergeSnapshots(batchId)` to `server.cjs`
+- [x] Update `getActiveSessions()` to return active merger session names from registry
+- [x] Add merge snapshot telemetry to `telemetry` map in `buildDashboardState`
+- [x] Expose `runtimeMergeSnapshots` in response
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Full test suite passing (3255/3255 — 2 test assertions updated for new spawnAgent signature)
-- [ ] CLI smoke passing
-- [ ] Fix all failures
+- [x] Full test suite passing (3255/3255 — 2 test assertions updated for new spawnAgent signature)
+- [x] CLI smoke passing
+- [x] Fix all failures
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] JSDoc on new types/functions (RuntimeMergeSnapshot, runtimeMergeSnapshotPath, writeMergeSnapshot, readMergeSnapshot)
-- [ ] Comment in spawnMergeAgentV2 explaining snapshot write pattern
-- [ ] Discoveries logged
+- [x] JSDoc on new types/functions (RuntimeMergeSnapshot, runtimeMergeSnapshotPath, writeMergeSnapshot, readMergeSnapshot)
+- [x] Comment in spawnMergeAgentV2 explaining snapshot write pattern
+- [x] Discoveries logged
 
 ---
 

@@ -1,0 +1,13 @@
+TP-068 complete — persistent reviewer reliability fix
+
+Changes:
+1. Reviewer template + spawn prompt: explicit "REGISTERED EXTENSION TOOL" instructions
+2. Early-exit detection: 30s threshold triggers immediate fallback
+3. extractVerdict tolerance: non-standard formats ("Changes requested" → REVISE)
+4. Graceful double-failure skip with clear operator notification
+5. Shutdown signal written on all exit paths (orphan prevention)
+6. docs/explanation/review-loop.md updated with reliability defenses section
+7. 16 new tests (sections 13.x-16.x) in persistent-reviewer-context.test.ts
+
+All 101 persistent-reviewer-context tests passing.
+Full suite: 2659/2660 (1 pre-existing timeout).

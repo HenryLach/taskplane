@@ -1,7 +1,7 @@
 # TP-153: Update architecture and explanation docs — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 3: Documentation & Delivery (final)
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 0
 **Review Counter:** 0
@@ -11,40 +11,40 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read all files in `docs/explanation/` and catalog every `/task` or stale reference
-- [ ] Read root `README.md` "How It Works" section for ground truth
+- [x] Read all files in `docs/explanation/` and catalog every `/task` or stale reference
+- [x] Read root `README.md` "How It Works" section for ground truth
 
 ---
 
 ### Step 1: Update docs/explanation/architecture.md
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update ASCII diagram to remove `/task /task-status`
-- [ ] Rewrite "Task Runner extension" module description as internal orchestrator module
-- [ ] Update "Task Orchestrator extension" as sole user-facing surface
-- [ ] Update "Data and control flow" section
-- [ ] Remove any remaining `/task` or tmux references
+- [x] Update ASCII diagram to remove `/task /task-status`
+- [x] Rewrite "Task Runner extension" module description as internal orchestrator module
+- [x] Update "Task Orchestrator extension" as sole user-facing surface
+- [x] Update "Data and control flow" section
+- [x] Remove any remaining `/task` or tmux references
 
 ---
 
 ### Step 2: Scan and fix other explanation docs
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] `execution-model.md` — scan and fix `/task` references (none found, clean)
-- [ ] `review-loop.md` — scan and fix `/task` references (fixed standalone /task mention)
-- [ ] `waves-lanes-and-worktrees.md` — scan and fix `/task` references (none found, clean)
-- [ ] `persistence-and-resume.md` — scan and fix `/task` references (none found, clean)
-- [ ] `package-and-template-model.md` — scan and fix `/task` references (none found, only file path references)
+- [x] `execution-model.md` — scan and fix `/task` references (none found, clean)
+- [x] `review-loop.md` — scan and fix `/task` references (fixed standalone /task mention)
+- [x] `waves-lanes-and-worktrees.md` — scan and fix `/task` references (none found, clean)
+- [x] `persistence-and-resume.md` — scan and fix `/task` references (none found, clean)
+- [x] `package-and-template-model.md` — scan and fix `/task` references (none found, only file path references)
 
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Verify all internal doc links resolve correctly
-- [ ] Discoveries logged
+- [x] Verify all internal doc links resolve correctly
+- [x] Discoveries logged
 
 ---
 

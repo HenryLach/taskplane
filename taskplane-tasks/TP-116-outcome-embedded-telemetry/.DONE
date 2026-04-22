@@ -1,0 +1,3 @@
+Completed: 2026-04-02T03:18:00Z
+Task: TP-116
+Summary: Embedded telemetry into LaneTaskOutcome, simplified batch history token resolution to prefer outcome telemetry, added legacy fallbacks, and added TP-116 unit tests.

@@ -1,0 +1,11 @@
+TP-032 — Verification Baseline & Fingerprinting
+Completed: 2026-03-20
+
+Summary:
+- Created extensions/taskplane/verification.ts with fingerprint parser, diff algorithm, and command runner
+- Integrated baseline capture and post-merge comparison into merge.ts (mergeWave/mergeWaveByRepo)
+- Added VerificationConfig to config-schema.ts with enabled/mode/flakyReruns fields
+- Wired config loading through config-loader.ts with YAML/JSON/legacy support
+- Added comprehensive tests in extensions/tests/verification-baseline.test.ts
+- Updated docs/reference/configuration/task-orchestrator.yaml.md with verification section
+- Full test suite passes (1534/1534)

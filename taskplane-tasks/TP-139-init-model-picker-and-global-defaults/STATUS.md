@@ -1,67 +1,67 @@
 # TP-139: Init Model Picker and Global Defaults — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read bin/taskplane.mjs init flow
-- [ ] Read config-loader.ts preferences functions
-- [ ] Read config-schema.ts UserPreferences
-- [ ] Understand settings-tui.ts pickModel pattern
-- [ ] Determine model registry CLI access approach
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read bin/taskplane.mjs init flow
+- [x] Read config-loader.ts preferences functions
+- [x] Read config-schema.ts UserPreferences
+- [x] Understand settings-tui.ts pickModel pattern
+- [x] Determine model registry CLI access approach
 
 ### Step 1: Model registry access from CLI
-**Status:** Pending
+**Status:** ✅ Complete
 > ⚠️ Hydrate: Approach depends on Step 0 investigation of pi's model registry API
 
-- [ ] Implement CLI model discovery helper using `pi --list-models`
-- [ ] Parse provider/model output into `{ provider, id, displayName }[]`
-- [ ] Handle missing `pi`/query failures with graceful fallback behavior
-- [ ] Add targeted tests for model discovery parsing + fallback
-- [ ] R002 fix: make CLI direct-execution guard symlink-safe and add regression test
+- [x] Implement CLI model discovery helper using `pi --list-models`
+- [x] Parse provider/model output into `{ provider, id, displayName }[]`
+- [x] Handle missing `pi`/query failures with graceful fallback behavior
+- [x] Add targeted tests for model discovery parsing + fallback
+- [x] R002 fix: make CLI direct-execution guard symlink-safe and add regression test
 
 ### Step 2: Interactive model selection in init
-**Status:** Pending
-- [ ] Add provider → model picker to init flow
-- [ ] "Inherit" as default first option
-- [ ] Per-agent or "same for all" selection
-- [ ] Thinking mode prompt after model
-- [ ] Write to generated config
-- [ ] Graceful fallback if unavailable
+**Status:** ✅ Complete
+- [x] Add provider → model picker to init flow
+- [x] "Inherit" as default first option
+- [x] Per-agent or "same for all" selection
+- [x] Thinking mode prompt after model
+- [x] Write to generated config
+- [x] Graceful fallback if unavailable
 
 ### Step 3: Global defaults infrastructure
-**Status:** Pending
-- [ ] Extend UserPreferences schema
-- [ ] Pre-populate from defaults during init
-- [ ] Add `taskplane config --save-as-defaults` command
-- [ ] Detect global vs local install
-- [ ] Show save confirmation
+**Status:** ✅ Complete
+- [x] Extend UserPreferences schema
+- [x] Pre-populate from defaults during init
+- [x] Add `taskplane config --save-as-defaults` command
+- [x] Detect global vs local install
+- [x] Show save confirmation
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] Full test suite passing
-- [ ] Init with no defaults → inherit
-- [ ] Init with defaults → pre-populated
-- [ ] save-as-defaults writes correctly
-- [ ] Graceful degradation without model list
-- [ ] CLI smoke tests
-- [ ] All failures fixed
+**Status:** ✅ Complete
+- [x] Full test suite passing
+- [x] Init with no defaults → inherit
+- [x] Init with defaults → pre-populated
+- [x] save-as-defaults writes correctly
+- [x] Graceful degradation without model list
+- [x] CLI smoke tests
+- [x] All failures fixed
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] Update commands.md
-- [ ] Update README if needed
-- [ ] Update STATUS.md
-- [ ] Discoveries logged
+**Status:** ✅ Complete
+- [x] Update commands.md
+- [x] Update README if needed
+- [x] Update STATUS.md
+- [x] Discoveries logged
 
 ---
 

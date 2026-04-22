@@ -1,0 +1,21 @@
+TP-148 complete.
+
+## Summary of Changes
+
+### Issue 1: Wave Display with Segment Context (#454)
+- **dashboard/server.cjs**: Pass `segments` data from batch state to dashboard client
+- **dashboard/public/app.js**: Build `waveSegmentLabels` mapping to show segment context (e.g., "TP-006 (segment 2/3: api-service)") in wave progress bar tooltips
+- **extensions/taskplane/engine.ts**: Include `segmentContext` array in `wave_start` events with per-task segment index, total, repoId, and segmentId
+
+### Issue 2: Global maxLanes Cap (#451)
+- **extensions/taskplane/waves.ts**: Added `enforceGlobalLaneCap()` function that reduces total lanes across all repos to fit within the global maxLanes budget. Consolidates excess lanes in repos with most headroom while preserving at least 1 lane per repo.
+- Integrated into `allocateLanes()` after per-repo assignment (Stage 2b).
+
+### Issue 3: Session Naming Mismatch (#425)
+- **extensions/taskplane/execution.ts**: Enhanced `isV2AgentAlive()` with optional `laneNumber` parameter for workspace-mode fallback. When session name lookup fails (due to repoId/lane-number mismatch), scans registry by global lane number.
+- Enhanced `killV2LaneAgents()` with same laneNumber fallback for reliable agent termination in workspace mode.
+- Updated all callers in monitor loop, stall detection, and stop-all paths to pass `laneNumber`.
+
+### Tests
+- Added 5 tests for `enforceGlobalLaneCap` (no-op, reduce, preserve minimum, renumber, reduce-from-largest)
+- Full test suite: 3250 pass, 0 fail

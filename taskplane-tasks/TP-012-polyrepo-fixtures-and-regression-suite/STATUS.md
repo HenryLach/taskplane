@@ -1,10 +1,10 @@
 # TP-012: Polyrepo Integration Fixtures and Regression Test Suite — Status
 
-**Current Step:** None
-​**Status:** Pending
+**Current Step:** Complete
+​**Status:** ✅ Done
 **Last Updated:** 2026-03-16
 **Review Level:** 3
-**Review Counter:** 0
+**Review Counter:** 8
 **Iteration:** 5
 **Size:** L
 
@@ -15,52 +15,52 @@
 ---
 
 ### Step 0: Build polyrepo fixture workspace
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Create shared polyrepo fixture builder in `extensions/tests/fixtures/polyrepo-builder.ts`
-- [ ] Define canonical fixture topology: non-git workspace root, docs repo (task root), api repo, frontend repo, with `.pi/taskplane-workspace.yaml`
-- [ ] Define task packet matrix: 6 tasks across 3 repos with cross-repo dependency graph spanning 3 waves
-- [ ] Add static batch-state fixture for workspace-mode polyrepo resume (`batch-state-v2-polyrepo.json`)
-- [ ] Add acceptance checks: workspace root is non-git, all repos are git-initialized, routing resolves correctly, dependency graph produces expected wave shape
+- [x] Create shared polyrepo fixture builder in `extensions/tests/fixtures/polyrepo-builder.ts`
+- [x] Define canonical fixture topology: non-git workspace root, docs repo (task root), api repo, frontend repo, with `.pi/taskplane-workspace.yaml`
+- [x] Define task packet matrix: 6 tasks across 3 repos with cross-repo dependency graph spanning 3 waves
+- [x] Add static batch-state fixture for workspace-mode polyrepo resume (`batch-state-v2-polyrepo.json`)
+- [x] Add acceptance checks: workspace root is non-git, all repos are git-initialized, routing resolves correctly, dependency graph produces expected wave shape
 
 ---
 
 ### Step 1: Add end-to-end polyrepo regression tests
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Cover /task routing, /orch-plan, /orch execution, per-repo merge outcomes, and resume
-- [ ] Assert collision-safe naming artifacts and repo-aware persisted state fields
+- [x] Cover /task routing, /orch-plan, /orch execution, per-repo merge outcomes, and resume
+- [x] Assert collision-safe naming artifacts and repo-aware persisted state fields
 
 ---
 
 ### Step 2: Protect monorepo compatibility
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Create `monorepo-compat-regression.test.ts` with explicit monorepo-mode contract guards covering: v1→v2 persistence (no repo fields), repo-mode discovery (no routing), repo-mode naming (no repoId segments), repo-mode merge (no per-repo grouping), and repo-mode resume (mode-agnostic resume eligibility)
-- [ ] Verify monorepo compat tests pass alongside polyrepo tests (full suite green)
-- [ ] Update `docs/maintainers/testing.md` with polyrepo fixture usage, when to use polyrepo vs monorepo tests, and fixture limitations
-- [ ] Targeted verification: `npx vitest run tests/monorepo-compat-regression.test.ts` and full suite
+- [x] Create `monorepo-compat-regression.test.ts` with explicit monorepo-mode contract guards covering: v1→v2 persistence (no repo fields), repo-mode discovery (no routing), repo-mode naming (no repoId segments), repo-mode merge (no per-repo grouping), and repo-mode resume (mode-agnostic resume eligibility)
+- [x] Verify monorepo compat tests pass alongside polyrepo tests (full suite green)
+- [x] Update `docs/maintainers/testing.md` with polyrepo fixture usage, when to use polyrepo vs monorepo tests, and fixture limitations
+- [x] Targeted verification: `npx vitest run tests/monorepo-compat-regression.test.ts` and full suite
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing (15 files, 398 tests, all green)
-- [ ] Targeted tests for changed modules passing (3 files, 108 tests — polyrepo-fixture, polyrepo-regression, monorepo-compat-regression)
-- [ ] All failures fixed (zero failures)
-- [ ] CLI smoke checks passing (`taskplane help` and `taskplane doctor` both run correctly)
+- [x] Unit/regression tests passing (15 files, 398 tests, all green)
+- [x] Targeted tests for changed modules passing (3 files, 108 tests — polyrepo-fixture, polyrepo-regression, monorepo-compat-regression)
+- [x] All failures fixed (zero failures)
+- [x] CLI smoke checks passing (`taskplane help` and `taskplane doctor` both run correctly)
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] "Must Update" docs modified
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
-- [ ] `.DONE` created
-- [ ] Archive and push
+- [x] "Must Update" docs modified
+- [x] "Check If Affected" docs reviewed
+- [x] Discoveries logged
+- [x] `.DONE` created
+- [x] Archive and push
 
 ---
 

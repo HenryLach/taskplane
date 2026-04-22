@@ -1,57 +1,57 @@
 # TP-105: Headless Lane Runner and Single-Task /orch Runtime V2 — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-31
 **Review Level:** 3
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 0
 **Size:** L
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Trace current single-task `/orch` execution through engine, execution helpers, lane sessions, and task-runner autostart
-- [ ] Identify every place the current path still depends on TMUX sessions, `TASK_AUTOSTART`, or `/task` semantics
-- [ ] Review Runtime V2 planning docs for architecture alignment (01-architecture, 02-process-model, 08-workpackages)
+- [x] Trace current single-task `/orch` execution through engine, execution helpers, lane sessions, and task-runner autostart
+- [x] Identify every place the current path still depends on TMUX sessions, `TASK_AUTOSTART`, or `/task` semantics
+- [x] Review Runtime V2 planning docs for architecture alignment (01-architecture, 02-process-model, 08-workpackages)
 
 ---
 
 ### Step 1: Implement Headless Lane Runner
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add a lane-runner process/module that owns one lane's execution lifecycle using the shared executor core and direct agent host
-- [ ] Define the lane-runner launch contract, control signals, and lane snapshot outputs
-- [ ] Keep worktree/orch-branch semantics intact while changing the runtime host
+- [x] Add a lane-runner process/module that owns one lane's execution lifecycle using the shared executor core and direct agent host
+- [x] Define the lane-runner launch contract, control signals, and lane snapshot outputs
+- [x] Keep worktree/orch-branch semantics intact while changing the runtime host
 
 ---
 
 ### Step 2: Cut Over Single-Task `/orch`
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Route `/orch <PROMPT.md>` through the lane-runner backend via executeLaneV2()
-- [ ] Remove mission-critical dependence on `TASK_AUTOSTART` and lane Pi session startup hooks for this path
-- [ ] Ensure no part of the single-task Runtime V2 flow requires `/task` or TMUX
+- [x] Route `/orch <PROMPT.md>` through the lane-runner backend via executeLaneV2()
+- [x] Remove mission-critical dependence on `TASK_AUTOSTART` and lane Pi session startup hooks for this path
+- [x] Ensure no part of the single-task Runtime V2 flow requires `/task` or TMUX
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add or update tests for lane-runner launch, single-task `/orch` execution, and new backend lifecycle behavior
-- [ ] Run the full suite (3288 pass, 0 fail)
-- [ ] Run CLI smoke checks (help + doctor pass)
-- [ ] Fix all failures
+- [x] Add or update tests for lane-runner launch, single-task `/orch` execution, and new backend lifecycle behavior
+- [x] Run the full suite (3288 pass, 0 fail)
+- [x] Run CLI smoke checks (help + doctor pass)
+- [x] Fix all failures
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update architecture and command docs for the new single-task Runtime V2 path
-- [ ] Log discoveries in STATUS.md
+- [x] Update architecture and command docs for the new single-task Runtime V2 path
+- [x] Log discoveries in STATUS.md
 
 ---
 

@@ -1,55 +1,55 @@
 # TP-077: Supervisor Recovery Tools — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Done
 **Last Updated:** 2026-03-27
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read spec Phase 2, tool registration pattern, types, IPC flow
+- [x] Read spec Phase 2, tool registration pattern, types, IPC flow
 
 ---
 
 ### Step 1: Implement orch_retry_task
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Register tool with taskId parameter
-- [ ] Validate task exists and is failed
-- [ ] Reset state, adjust counters, persist
-- [ ] Forward retry signal to engine if running
+- [x] Register tool with taskId parameter
+- [x] Validate task exists and is failed
+- [x] Reset state, adjust counters, persist
+- [x] Forward retry signal to engine if running
 
 ---
 
 ### Step 2: Implement orch_skip_task
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Register tool with taskId parameter
-- [ ] Validate task exists and is failed/pending
-- [ ] Update state, unblock dependents, persist
+- [x] Register tool with taskId parameter
+- [x] Validate task exists and is failed/pending
+- [x] Update state, unblock dependents, persist
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Create supervisor-recovery-tools.test.ts (42 tests)
-- [ ] Test retry, skip, validation, counters
-- [ ] FULL test suite passing
+- [x] Create supervisor-recovery-tools.test.ts (42 tests)
+- [x] Test retry, skip, validation, counters
+- [x] FULL test suite passing
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update spec and commands docs
-- [ ] Discoveries logged
+- [x] Update spec and commands docs
+- [x] Discoveries logged
 
 ---
 

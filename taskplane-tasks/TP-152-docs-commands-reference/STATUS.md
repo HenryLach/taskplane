@@ -1,7 +1,7 @@
 # TP-152: Remove /task commands from commands reference — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 2: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 0
 **Review Counter:** 0
@@ -11,29 +11,29 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read `docs/reference/commands.md` and identify all `/task`-related content
-- [ ] Read root `README.md` command table for ground truth
+- [x] Read `docs/reference/commands.md` and identify all `/task`-related content
+- [x] Read root `README.md` command table for ground truth
 
 ---
 
 ### Step 1: Update docs/reference/commands.md
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Remove entire "Task Runner Commands" section
-- [ ] Update intro paragraph to remove `/task` reference
-- [ ] Clean up "Related" section links
-- [ ] Scan and fix remaining `/task` mentions in `/orch` sections
-- [ ] Verify section flow and numbering after removal
+- [x] Remove entire "Task Runner Commands" section
+- [x] Update intro paragraph to remove `/task` reference
+- [x] Clean up "Related" section links
+- [x] Scan and fix remaining `/task` mentions in `/orch` sections
+- [x] Verify section flow and numbering after removal
 
 ---
 
 ### Step 2: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Verify all internal doc links resolve correctly
-- [ ] Discoveries logged
+- [x] Verify all internal doc links resolve correctly
+- [x] Discoveries logged
 
 ---
 

@@ -1,7 +1,7 @@
 # TP-075: Migrate Mock Tests + Remove Vitest — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Done
 **Last Updated:** 2026-03-26
 **Review Level:** 2
 **Review Counter:** 0
@@ -11,12 +11,12 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read 5 mock-heavy files and understand mock patterns
-- [ ] Verify mock.module() availability in Node.js (requires --experimental-test-module-mocks)
-- [ ] Verify mock.timers availability
-- [ ] Verify mock.fn() and mock.method() APIs
-- [ ] Identify unmappable patterns — none found, all patterns mappable
+**Status:** ✅ Complete
+- [x] Read 5 mock-heavy files and understand mock patterns
+- [x] Verify mock.module() availability in Node.js (requires --experimental-test-module-mocks)
+- [x] Verify mock.timers availability
+- [x] Verify mock.fn() and mock.method() APIs
+- [x] Identify unmappable patterns — none found, all patterns mappable
 
 **Discoveries:**
 - `mock.module()` requires `--experimental-test-module-mocks` flag
@@ -45,43 +45,43 @@
 ---
 
 ### Step 1: Migrate Mock-Heavy Test Files
-**Status:** Pending
-- [ ] Migrate diagnostic-reports.test.ts (22 mock calls)
-- [ ] Migrate non-blocking-engine.test.ts (21 mock calls)
-- [ ] Migrate auto-integration-deterministic.integration.test.ts (4 mock calls)
-- [ ] Migrate project-config-loader.test.ts (2 mock calls)
-- [ ] Migrate supervisor.test.ts (1 mock call)
+**Status:** ✅ Complete
+- [x] Migrate diagnostic-reports.test.ts (22 mock calls)
+- [x] Migrate non-blocking-engine.test.ts (21 mock calls)
+- [x] Migrate auto-integration-deterministic.integration.test.ts (4 mock calls)
+- [x] Migrate project-config-loader.test.ts (2 mock calls)
+- [x] Migrate supervisor.test.ts (1 mock call)
 
 ---
 
 ### Step 2: Remove Vitest
-**Status:** Pending
-- [ ] Delete vitest.config.ts
-- [ ] Remove vitest/vite from devDependencies
-- [ ] Clean npm lockfile
+**Status:** ✅ Complete
+- [x] Delete vitest.config.ts
+- [x] Remove vitest/vite from devDependencies
+- [x] Clean npm lockfile
 
 ---
 
 ### Step 3: Update CI
-**Status:** Pending
-- [ ] Update ci.yml test command to node --test
+**Status:** ✅ Complete
+- [x] Update ci.yml test command to node --test
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] ALL 2690 tests pass with node --test only (0 failures)
-- [ ] vitest fully removed from devDependencies and lockfile
-- [ ] Benchmark: 256s with node:test (vs ~156s vitest baseline)
+**Status:** ✅ Complete
+- [x] ALL 2690 tests pass with node --test only (0 failures)
+- [x] vitest fully removed from devDependencies and lockfile
+- [x] Benchmark: 256s with node:test (vs ~156s vitest baseline)
   - Note: node:test runs sequentially per-file, no Vite transform cache
   - Individual file execution is 10-100x faster (no vite startup)
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] Update maintainer docs — removed vitest references, added node:test mock patterns
-- [ ] Discoveries logged
+**Status:** ✅ Complete
+- [x] Update maintainer docs — removed vitest references, added node:test mock patterns
+- [x] Discoveries logged
 
 ---
 

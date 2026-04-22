@@ -1,10 +1,10 @@
 # TP-006: Persisted State Schema v2 with Repo-Aware Records — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Step 3 Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 6
 **Size:** M
 
@@ -14,13 +14,13 @@
 ---
 
 ### Step 0: Define schema v2
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Bump batch-state schema version and add repo-aware fields on lane/task records
-- [ ] Document field contracts and compatibility expectations
-- [ ] R002 fix: `mode` validation strict for v2 (missing mode → STATE_SCHEMA_INVALID)
-- [ ] R002 fix: `mode` set from execution context in engine.ts (fresh run) and resume.ts (resume)
-- [ ] R002 fix: v2 fixtures updated with `mode` field; v1 upconversion test added
+- [x] Bump batch-state schema version and add repo-aware fields on lane/task records
+- [x] Document field contracts and compatibility expectations
+- [x] R002 fix: `mode` validation strict for v2 (missing mode → STATE_SCHEMA_INVALID)
+- [x] R002 fix: `mode` set from execution context in engine.ts (fresh run) and resume.ts (resume)
+- [x] R002 fix: v2 fixtures updated with `mode` field; v1 upconversion test added
 
 #### Schema v2 Contract
 
@@ -80,15 +80,15 @@
 ---
 
 ### Step 1: Implement serialization and validation
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Confirm all runtime write triggers route through `persistRuntimeState()` (engine, resume, abort)
-- [ ] Ensure `serializeBatchState()` writes lane/task repo-aware fields for allocated tasks
-- [ ] Ensure `persistRuntimeState()` enrichment writes repo-aware fields for unallocated tasks
-- [ ] Add/adjust v2 validation rules for malformed repo-aware records with explicit `STATE_SCHEMA_INVALID` errors
-- [ ] Add/update fixtures for malformed v2 repo-aware states
-- [ ] Add/update persistence tests for checkpoint serialization and validator failures
-- [ ] R004 fix: Align test reimplementations with source (mode, mergeResults, re-execute, worktreeExists)
+- [x] Confirm all runtime write triggers route through `persistRuntimeState()` (engine, resume, abort)
+- [x] Ensure `serializeBatchState()` writes lane/task repo-aware fields for allocated tasks
+- [x] Ensure `persistRuntimeState()` enrichment writes repo-aware fields for unallocated tasks
+- [x] Add/adjust v2 validation rules for malformed repo-aware records with explicit `STATE_SCHEMA_INVALID` errors
+- [x] Add/update fixtures for malformed v2 repo-aware states
+- [x] Add/update persistence tests for checkpoint serialization and validator failures
+- [x] R004 fix: Align test reimplementations with source (mode, mergeResults, re-execute, worktreeExists)
 
 #### Step 1 Audit Notes
 
@@ -130,26 +130,26 @@
 ---
 
 ### Step 2: Handle schema v1 compatibility
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Confirm and lock compatibility policy (v1 in-memory upconvert, no implicit rewrite, v2 write-on-save, reject unsupported versions)
-- [ ] Implement/verify migration path in `persistence.ts` (`validatePersistedState` + `loadBatchState`) with explicit guardrail errors
-- [ ] Add `loadBatchState` regression tests for v1 fixture upconversion (assert schemaVersion=2, mode="repo", baseBranch="", records preserved)
-- [ ] Add `loadBatchState` regression tests for v2 fixtures (batch-state-valid.json, batch-state-v2-workspace.json)
-- [ ] Add regression test proving v1 file is not rewritten on load (on-disk content unchanged)
-- [ ] Add/verify negative-path tests for unsupported version, malformed JSON, and v2 missing required mode
+- [x] Confirm and lock compatibility policy (v1 in-memory upconvert, no implicit rewrite, v2 write-on-save, reject unsupported versions)
+- [x] Implement/verify migration path in `persistence.ts` (`validatePersistedState` + `loadBatchState`) with explicit guardrail errors
+- [x] Add `loadBatchState` regression tests for v1 fixture upconversion (assert schemaVersion=2, mode="repo", baseBranch="", records preserved)
+- [x] Add `loadBatchState` regression tests for v2 fixtures (batch-state-valid.json, batch-state-v2-workspace.json)
+- [x] Add regression test proving v1 file is not rewritten on load (on-disk content unchanged)
+- [x] Add/verify negative-path tests for unsupported version, malformed JSON, and v2 missing required mode
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Run targeted persistence regression tests: `cd extensions && npx vitest run tests/orch-state-persistence.test.ts`
-- [ ] If targeted tests fail, fix failures and rerun targeted tests until green
-- [ ] Run full extension suite: `cd extensions && npx vitest run`
-- [ ] If full suite fails, fix failures and rerun full suite until green
-- [ ] Run CLI smoke from repo root: `node bin/taskplane.mjs help`
-- [ ] Record exact verification evidence in STATUS.md (files/tests count, failures=0, CLI smoke pass)
+- [x] Run targeted persistence regression tests: `cd extensions && npx vitest run tests/orch-state-persistence.test.ts`
+- [x] If targeted tests fail, fix failures and rerun targeted tests until green
+- [x] Run full extension suite: `cd extensions && npx vitest run`
+- [x] If full suite fails, fix failures and rerun full suite until green
+- [x] Run CLI smoke from repo root: `node bin/taskplane.mjs help`
+- [x] Record exact verification evidence in STATUS.md (files/tests count, failures=0, CLI smoke pass)
 
 #### Step 3 Verification Evidence
 
@@ -175,23 +175,23 @@
 #### 4.1 — Update "Must Update" doc: `polyrepo-implementation-plan.md`
 **Target:** `C:\dev\taskplane\.pi\local\docs\taskplane\polyrepo-implementation-plan.md` (outside worktree)
 
-- [ ] Update WS-F section with final delivered v2 schema contract:
+- [x] Update WS-F section with final delivered v2 schema contract:
   - Fields: `mode` (top-level), `repoId`/`resolvedRepoId` (task records), `repoId` (lane records)
   - `BATCH_STATE_SCHEMA_VERSION` bumped from 1 → 2
   - v1→v2 in-memory upconvert (no on-disk rewrite), v2 write-on-save
   - Validation: strict `mode` for v2, type checks on repo fields, unsupported version rejection
-- [ ] Update Section 10 (Implementation Readiness Checklist): mark "Persistence schema v2 approved" as done
-- [ ] Update Section 14 (Migration Plan Phase 1): N/A — Phase 1 section is in spec, not impl plan (handled in 4.2)
-- [ ] Log evidence of update in STATUS.md
+- [x] Update Section 10 (Implementation Readiness Checklist): mark "Persistence schema v2 approved" as done
+- [x] Update Section 14 (Migration Plan Phase 1): N/A — Phase 1 section is in spec, not impl plan (handled in 4.2)
+- [x] Log evidence of update in STATUS.md
 
 #### 4.2 — Review "Check If Affected" doc: `polyrepo-support-spec.md`
 **Target:** `C:\dev\taskplane\.pi\local\docs\taskplane\polyrepo-support-spec.md` (outside worktree)
 
-- [ ] Review Section 11 (Persistence / Resume Schema Changes) against delivered TP-006 behavior
-- [ ] Record decision: **updated**, with rationale, in STATUS.md
+- [x] Review Section 11 (Persistence / Resume Schema Changes) against delivered TP-006 behavior
+- [x] Record decision: **updated**, with rationale, in STATUS.md
 
 #### 4.3 — Discoveries
-- [ ] Confirm all discoveries from Steps 0–3 are logged in STATUS.md Discoveries table (5 entries total)
+- [x] Confirm all discoveries from Steps 0–3 are logged in STATUS.md Discoveries table (5 entries total)
 
 #### 4.4 — Closeout
 - [ ] Create `.DONE` file in task folder

@@ -1,63 +1,63 @@
 # TP-142: Segment Expansion Tool and File IPC — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-06
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 10
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read spec sections 0, 1, 2
-- [ ] Read agent-bridge-extension.ts
-- [ ] Read types.ts SegmentId/buildSegmentId
-- [ ] Read mailbox.ts outbox layout
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read spec sections 0, 1, 2
+- [x] Read agent-bridge-extension.ts
+- [x] Read types.ts SegmentId/buildSegmentId
+- [x] Read mailbox.ts outbox layout
 
 ### Step 1: Extend SegmentId grammar
-**Status:** Pending
-- [ ] buildSegmentId with optional sequence
-- [ ] parseSegmentIdRepo helper (structured, not string-split)
-- [ ] SegmentExpansionRequest interface
-- [ ] buildExpansionRequestId helper
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] buildSegmentId with optional sequence
+- [x] parseSegmentIdRepo helper (structured, not string-split)
+- [x] SegmentExpansionRequest interface
+- [x] buildExpansionRequestId helper
+- [x] Run targeted tests
 
 ### Step 2: Implement tool
-**Status:** Pending
-- [ ] Register request_segment_expansion
-- [ ] Workspace mode + autonomous guard
-- [ ] Input validation
-- [ ] Write request file on success
-- [ ] Return rejection on failure
-- [ ] Run targeted tests
-- [ ] R004: Wire lane-runner env for segment context + supervisor autonomy
-- [ ] R004: Add regression tests for segment-context registration and non-autonomous rejection
-- [ ] R005: Thread supervisor autonomy from loaded supervisor config into worker env
-- [ ] R005: Add autonomy propagation regression coverage
+**Status:** ✅ Complete
+- [x] Register request_segment_expansion
+- [x] Workspace mode + autonomous guard
+- [x] Input validation
+- [x] Write request file on success
+- [x] Return rejection on failure
+- [x] Run targeted tests
+- [x] R004: Wire lane-runner env for segment context + supervisor autonomy
+- [x] R004: Add regression tests for segment-context registration and non-autonomous rejection
+- [x] R005: Thread supervisor autonomy from loaded supervisor config into worker env
+- [x] R005: Add autonomy propagation regression coverage
 
 ### Step 3: Request file writing
-**Status:** Pending
-- [ ] Correct mailbox path
-- [ ] Schema matches SegmentExpansionRequest
-- [ ] Atomic write (temp + rename)
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Correct mailbox path
+- [x] Schema matches SegmentExpansionRequest
+- [x] Atomic write (temp + rename)
+- [x] Run targeted tests
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] Create segment-expansion-tool.test.ts
-- [ ] All tool validation tests
-- [ ] SegmentId grammar tests
-- [ ] Non-autonomous guard test
-- [ ] Full test suite passing
+**Status:** ✅ Complete
+- [x] Create segment-expansion-tool.test.ts
+- [x] All tool validation tests
+- [x] SegmentId grammar tests
+- [x] Non-autonomous guard test
+- [x] Full test suite passing
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] JSDoc on new types/tool
-- [ ] Update STATUS.md
+**Status:** ✅ Complete
+- [x] JSDoc on new types/tool
+- [x] Update STATUS.md
 
 ---
 

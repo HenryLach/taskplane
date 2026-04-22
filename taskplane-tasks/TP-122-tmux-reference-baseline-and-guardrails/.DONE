@@ -1,0 +1,11 @@
+TP-122 complete (2026-04-02)
+
+Delivered:
+- scripts/tmux-reference-audit.mjs with deterministic JSON output and strict functional TMUX guard (exit code 2)
+- extensions/tests/tmux-reference-guard.test.ts covering deterministic/parseable output and no functional TMUX execution
+- migration doc update: docs/specifications/framework/taskplane-runtime-v2/06-migration-and-rollout.md
+- STATUS.md baseline, contracts, review log, and delivery summary
+
+Validation:
+- Targeted: tests/tmux-reference-guard.test.ts (pass)
+- Full suite: extensions tests/*.test.ts (3390 pass, 0 fail)

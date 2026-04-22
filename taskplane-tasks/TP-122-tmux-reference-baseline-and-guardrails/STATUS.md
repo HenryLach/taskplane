@@ -1,46 +1,46 @@
 # TP-122: TMUX Reference Baseline and Guardrails — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 7
 **Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Baseline inventory
-**Status:** Pending
-- [ ] Record current TMUX reference counts by file for `extensions/taskplane/*.ts`
-- [ ] Classify references into buckets: compat-code, user-facing strings, comments/docs, types/contracts
-- [ ] Capture baseline in STATUS.md for future tasks
+**Status:** ✅ Complete
+- [x] Record current TMUX reference counts by file for `extensions/taskplane/*.ts`
+- [x] Classify references into buckets: compat-code, user-facing strings, comments/docs, types/contracts
+- [x] Capture baseline in STATUS.md for future tasks
 
 ### Step 1: Add audit script
-**Status:** Pending
-- [ ] Define strict-mode functional TMUX detection scope and explicit exclusions
-- [ ] Define deterministic JSON output contract (schema + stable ordering + normalized paths)
-- [ ] Create `scripts/tmux-reference-audit.mjs`
-- [ ] Emit machine-readable summary (total + by-file + by-category)
-- [ ] Support strict mode failure on functional TMUX usage with explicit exit-code + diagnostics contract
-- [ ] Fix Windows path normalization so output paths are always POSIX-style
+**Status:** ✅ Complete
+- [x] Define strict-mode functional TMUX detection scope and explicit exclusions
+- [x] Define deterministic JSON output contract (schema + stable ordering + normalized paths)
+- [x] Create `scripts/tmux-reference-audit.mjs`
+- [x] Emit machine-readable summary (total + by-file + by-category)
+- [x] Support strict mode failure on functional TMUX usage with explicit exit-code + diagnostics contract
+- [x] Fix Windows path normalization so output paths are always POSIX-style
 
 ### Step 2: Add regression guard test
-**Status:** Pending
-- [ ] Add `extensions/tests/tmux-reference-guard.test.ts`
-- [ ] Assert no functional TMUX command execution remains in `extensions/taskplane/*.ts`
-- [ ] Assert audit script output stays parseable and deterministic
+**Status:** ✅ Complete
+- [x] Add `extensions/tests/tmux-reference-guard.test.ts`
+- [x] Assert no functional TMUX command execution remains in `extensions/taskplane/*.ts`
+- [x] Assert audit script output stays parseable and deterministic
 
 ### Step 3: Tests and validation
-**Status:** Pending
-- [ ] Run targeted tests including new guard test
-- [ ] Run full extension suite
-- [ ] Fix failures
+**Status:** ✅ Complete
+- [x] Run targeted tests including new guard test
+- [x] Run full extension suite
+- [x] Fix failures
 
 ### Step 4: Documentation & delivery
-**Status:** Pending
-- [ ] Update migration doc with guardrail usage
-- [ ] Update STATUS.md summary with baseline numbers and commands
+**Status:** ✅ Complete
+- [x] Update migration doc with guardrail usage
+- [x] Update STATUS.md summary with baseline numbers and commands
 
 ---
 

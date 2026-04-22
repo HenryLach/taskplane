@@ -1,10 +1,10 @@
 # TP-014: JSON Config Schema and Loader — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 5
 **Size:** M
 
@@ -15,58 +15,58 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read current config loading paths
-- [ ] Read YAML config reference docs
+- [x] Read current config loading paths
+- [x] Read YAML config reference docs
 
 ---
 
 ### Step 1: Define JSON Schema
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] TypeScript interfaces for unified `TaskplaneConfig` schema defined in `extensions/taskplane/config-schema.ts`
-- [ ] Schema covers all 13 task-runner sections + 7 orchestrator sections with JSON camelCase naming
-- [ ] `configVersion` field with v1 semantics (required, initial value 1, unknown future versions rejected)
-- [ ] Centralized defaults for the unified config (single source of truth)
-- [ ] Section mapping documented in STATUS.md Discoveries table
+- [x] TypeScript interfaces for unified `TaskplaneConfig` schema defined in `extensions/taskplane/config-schema.ts`
+- [x] Schema covers all 13 task-runner sections + 7 orchestrator sections with JSON camelCase naming
+- [x] `configVersion` field with v1 semantics (required, initial value 1, unknown future versions rejected)
+- [x] Centralized defaults for the unified config (single source of truth)
+- [x] Section mapping documented in STATUS.md Discoveries table
 
 ---
 
 ### Step 2: Implement Unified Config Loader
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] `loadProjectConfig()` implemented: reads `.pi/taskplane-config.json` first, falls back to both YAML files, respects `TASKPLANE_WORKSPACE_ROOT`, validates `configVersion`, errors on malformed JSON/unsupported version
-- [ ] YAML-to-camelCase mapping: snake_case keys from both YAML files mapped to unified `TaskplaneConfig` shape with deep merge + cloned defaults (non-mutating)
-- [ ] Backward-compatible adapter functions: `loadOrchestratorConfig()` and `loadTaskRunnerConfig()` in `config.ts` become thin wrappers over unified loader, returning existing snake_case shapes unchanged; task-runner's `loadConfig()` also wraps the unified loader
-- [ ] All existing consumers unaffected: `buildExecutionContext()`, `extension.ts`, task-runner command handlers produce identical runtime behavior
-- [ ] R006-fix: `resolveConfigRoot()` uses per-file precedence (check for actual config files, not just `.pi/` dir), prefer `TASKPLANE_WORKSPACE_ROOT` when target config files missing in cwd
-- [ ] R006-fix: Replace generic recursive `convertKeysToSnake()` in `toOrchestratorConfig()` with explicit field mapping that preserves record/dictionary keys verbatim (sizeWeights S/M/L, preWarm.commands, etc.)
-- [ ] R006-fix: `convertKeysToCamel()` only converts structural keys; preserves user-defined keys in record-valued sections (taskAreas, standardsOverrides, referenceDocs, selfDocTargets, etc.)
+- [x] `loadProjectConfig()` implemented: reads `.pi/taskplane-config.json` first, falls back to both YAML files, respects `TASKPLANE_WORKSPACE_ROOT`, validates `configVersion`, errors on malformed JSON/unsupported version
+- [x] YAML-to-camelCase mapping: snake_case keys from both YAML files mapped to unified `TaskplaneConfig` shape with deep merge + cloned defaults (non-mutating)
+- [x] Backward-compatible adapter functions: `loadOrchestratorConfig()` and `loadTaskRunnerConfig()` in `config.ts` become thin wrappers over unified loader, returning existing snake_case shapes unchanged; task-runner's `loadConfig()` also wraps the unified loader
+- [x] All existing consumers unaffected: `buildExecutionContext()`, `extension.ts`, task-runner command handlers produce identical runtime behavior
+- [x] R006-fix: `resolveConfigRoot()` uses per-file precedence (check for actual config files, not just `.pi/` dir), prefer `TASKPLANE_WORKSPACE_ROOT` when target config files missing in cwd
+- [x] R006-fix: Replace generic recursive `convertKeysToSnake()` in `toOrchestratorConfig()` with explicit field mapping that preserves record/dictionary keys verbatim (sizeWeights S/M/L, preWarm.commands, etc.)
+- [x] R006-fix: `convertKeysToCamel()` only converts structural keys; preserves user-defined keys in record-valued sections (taskAreas, standardsOverrides, referenceDocs, selfDocTargets, etc.)
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Create `extensions/tests/project-config-loader.test.ts` with loader precedence/error matrix (valid JSON, malformed JSON, missing configVersion, unsupported configVersion, JSON+YAML present uses JSON, YAML-only fallback, neither present returns defaults)
-- [ ] Workspace root resolution tests: cwd has `.pi` but no config → falls back to TASKPLANE_WORKSPACE_ROOT with config files
-- [ ] Key-preservation and adapter regression tests: record keys preserved (sizeWeights S/M/L, preWarm.commands, taskAreas IDs), snake_case adapters produce correct shapes, repoId trim/drop behavior
-- [ ] Defaults cloned/non-mutating across multiple calls + backward-compat wrappers (loadOrchestratorConfig, loadTaskRunnerConfig, task-runner loadConfig)
-- [ ] Existing tests pass: `cd extensions && npx vitest run` (16 files, 434 tests, all green)
-- [ ] R008-fix: Test 4.5 reworked to exercise actual `loadProjectConfig` throw on malformed JSON + verify `toTaskConfig` default shape (both halves of task-runner error-swallowing contract)
-- [ ] R008-fix: Export task-runner's `loadConfig()` and add a real failure-path test with malformed JSON that verifies default fallback behavior
-- [ ] R008-fix: All tests still green after changes
+- [x] Create `extensions/tests/project-config-loader.test.ts` with loader precedence/error matrix (valid JSON, malformed JSON, missing configVersion, unsupported configVersion, JSON+YAML present uses JSON, YAML-only fallback, neither present returns defaults)
+- [x] Workspace root resolution tests: cwd has `.pi` but no config → falls back to TASKPLANE_WORKSPACE_ROOT with config files
+- [x] Key-preservation and adapter regression tests: record keys preserved (sizeWeights S/M/L, preWarm.commands, taskAreas IDs), snake_case adapters produce correct shapes, repoId trim/drop behavior
+- [x] Defaults cloned/non-mutating across multiple calls + backward-compat wrappers (loadOrchestratorConfig, loadTaskRunnerConfig, task-runner loadConfig)
+- [x] Existing tests pass: `cd extensions && npx vitest run` (16 files, 434 tests, all green)
+- [x] R008-fix: Test 4.5 reworked to exercise actual `loadProjectConfig` throw on malformed JSON + verify `toTaskConfig` default shape (both halves of task-runner error-swallowing contract)
+- [x] R008-fix: Export task-runner's `loadConfig()` and add a real failure-path test with malformed JSON that verifies default fallback behavior
+- [x] R008-fix: All tests still green after changes
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update `docs/reference/configuration/task-runner.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
-- [ ] Update `docs/reference/configuration/task-orchestrator.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
-- [ ] Check `docs/tutorials/install.md` — update or explicitly no-op references to YAML scaffolding (lines mentioning `.pi/task-runner.yaml` / `.pi/task-orchestrator.yaml`) — NO-OP: `taskplane init` still scaffolds YAML files, JSON config is an opt-in alternative, so YAML references in the install tutorial remain correct
-- [ ] `.DONE` created
+- [x] Update `docs/reference/configuration/task-runner.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
+- [x] Update `docs/reference/configuration/task-orchestrator.yaml.md` — add JSON alternative section with precedence semantics, example JSON snippet, camelCase key mapping, and error behavior
+- [x] Check `docs/tutorials/install.md` — update or explicitly no-op references to YAML scaffolding (lines mentioning `.pi/task-runner.yaml` / `.pi/task-orchestrator.yaml`) — NO-OP: `taskplane init` still scaffolds YAML files, JSON config is an opt-in alternative, so YAML references in the install tutorial remain correct
+- [x] `.DONE` created
 
 ---
 

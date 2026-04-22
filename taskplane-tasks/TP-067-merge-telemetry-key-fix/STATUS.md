@@ -1,26 +1,26 @@
 # TP-067: Fix Merge Agent Telemetry Key Mismatch — Status
 
-**Current Step:** None
+**Current Step:** Step 2: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-25
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read parseTelemetryFilename() and merge key construction in server.cjs
-- [ ] Read merge telemetry lookups in app.js
+**Status:** ✅ Complete
+- [x] Read parseTelemetryFilename() and merge key construction in server.cjs
+- [x] Read merge telemetry lookups in app.js
 
 ---
 
 ### Step 1: Fix Telemetry Key for Merge Agents
-**Status:** Pending
-- [ ] Derive merge telemetry prefix from lane session naming
-- [ ] Fix any remaining hardcoded patterns in app.js (none needed — client already derives prefix correctly)
+**Status:** ✅ Complete
+- [x] Derive merge telemetry prefix from lane session naming
+- [x] Fix any remaining hardcoded patterns in app.js (none needed — client already derives prefix correctly)
 
 ---
 

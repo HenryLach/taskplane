@@ -1,7 +1,7 @@
 # TP-110: Runtime V2 Assumption Lab — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-30
 **Review Level:** 1
 **Review Counter:** 0
@@ -11,48 +11,48 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Confirm the local environment can invoke `pi` directly
-- [ ] Define the minimum viable assumption matrix and success criteria before writing the harness
+- [x] Confirm the local environment can invoke `pi` directly
+- [x] Define the minimum viable assumption matrix and success criteria before writing the harness
 
 ---
 
 ### Step 1: Build the Lab Harness
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Create standalone scripts under `scripts/runtime-v2-lab/` for direct child spawn, RPC event capture, and mailbox injection experiments
-- [ ] Keep the harness independent from TMUX and the current `/task` production path
-- [ ] Make the harness cheap to run repeatedly with tiny prompts and bounded iterations
+- [x] Create standalone scripts under `scripts/runtime-v2-lab/` for direct child spawn, RPC event capture, and mailbox injection experiments
+- [x] Keep the harness independent from TMUX and the current `/task` production path
+- [x] Make the harness cheap to run repeatedly with tiny prompts and bounded iterations
 
 ---
 
 ### Step 2: Run Core Assumption Experiments
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Run direct-spawn reliability experiments (sequential and limited parallel)
-- [ ] Run direct-host RPC event/usage capture experiments
-- [ ] Run mailbox steering experiments without TMUX
-- [ ] Run at least one explicit packet-path / `cwd != packet home` experiment
-- [ ] If feasible within the harness, run one minimal bridge-style request/response experiment
+- [x] Run direct-spawn reliability experiments (sequential and limited parallel)
+- [x] Run direct-host RPC event/usage capture experiments
+- [x] Run mailbox steering experiments without TMUX
+- [x] Run at least one explicit packet-path / `cwd != packet home` experiment
+- [x] If feasible within the harness, run one minimal bridge-style request/response experiment
 
 ---
 
 ### Step 3: Analyze and Document Results
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Write a durable report summarizing environment, experiment design, results, and interpretation
-- [ ] Record which Runtime V2 assumptions are validated, partially validated, or still open
-- [ ] Record recommended adjustments to the implementation roadmap before TP-102+ proceeds
+- [x] Write a durable report summarizing environment, experiment design, results, and interpretation
+- [x] Record which Runtime V2 assumptions are validated, partially validated, or still open
+- [x] Record recommended adjustments to the implementation roadmap before TP-102+ proceeds
 
 ---
 
 ### Step 4: Verification & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Re-run the harness after any fixes to confirm the final conclusions
-- [ ] Ensure the report references concrete script paths and captured evidence
-- [ ] Log discoveries in STATUS.md and mark the task complete
+- [x] Re-run the harness after any fixes to confirm the final conclusions
+- [x] Ensure the report references concrete script paths and captured evidence
+- [x] Log discoveries in STATUS.md and mark the task complete
 
 ---
 

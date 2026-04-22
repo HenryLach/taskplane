@@ -1,10 +1,10 @@
 # TP-019: Doctor Enhancements: Gitignore, Artifact, and Workspace Validation — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 5
 **Iteration:** 8
 **Size:** M
 
@@ -15,55 +15,55 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read current `cmdDoctor()`, spec doctor checks, and reusable helpers — capture baseline and patterns
-- [ ] Document preflight findings in STATUS Notes (baseline output, helper inventory, spec acceptance criteria)
+- [x] Read current `cmdDoctor()`, spec doctor checks, and reusable helpers — capture baseline and patterns
+- [x] Document preflight findings in STATUS Notes (baseline output, helper inventory, spec acceptance criteria)
 
 ---
 
 ### Step 1: Gitignore and Tracked Artifact Checks
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Gitignore entry validation implemented
-- [ ] Tracked artifact detection with remediation
+- [x] Gitignore entry validation implemented
+- [x] Tracked artifact detection with remediation
 
 ---
 
 ### Step 2: Workspace Pointer Chain Validation
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Pointer → config repo → `.taskplane/` chain validated
-- [ ] Default branch check for config presence
+- [x] Pointer → config repo → `.taskplane/` chain validated
+- [x] Default branch check for config presence
 
 ---
 
 ### Step 3: Legacy Config Migration Warning
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] YAML-without-JSON detection and migration warning
+- [x] YAML-without-JSON detection and migration warning
 
 ---
 
 ### Step 4: tmux vs spawn_mode Check
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Mismatch detection with `install-tmux` suggestion
+- [x] Mismatch detection with `install-tmux` suggestion
 
 ---
 
 ### Step 5: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Doctor output verified for all new checks
+- [x] Doctor output verified for all new checks
 - [ ] `node bin/taskplane.mjs doctor`
 
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] `.DONE` created
+- [x] `.DONE` created
 - [ ] Archive and push
 
 ---

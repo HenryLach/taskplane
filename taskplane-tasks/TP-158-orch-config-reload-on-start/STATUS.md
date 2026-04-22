@@ -1,48 +1,48 @@
 # TP-158: Re-read config on /orch start to fix stale task_areas (#460) — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 3: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-11
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read `doOrchStart()` in `extension.ts`
-- [ ] Read the `/taskplane-settings` `onConfigChanged` callback
-- [ ] Read the `session_start` handler
-- [ ] Verify test baseline (pre-existing failure: test 5.11 in workspace-config.integration.test.ts — fragile char-index check, unrelated to this task)
+- [x] Read `doOrchStart()` in `extension.ts`
+- [x] Read the `/taskplane-settings` `onConfigChanged` callback
+- [x] Read the `session_start` handler
+- [x] Verify test baseline (pre-existing failure: test 5.11 in workspace-config.integration.test.ts — fragile char-index check, unrelated to this task)
 
 ---
 
 ### Step 1: Add config reload at the top of doOrchStart()
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Implement reload block before the execCtx guard
-- [ ] Phase guard: skip reload during active batch
-- [ ] Verify atomic assignment pattern matches settings reload
+- [x] Implement reload block before the execCtx guard
+- [x] Phase guard: skip reload during active batch
+- [x] Verify atomic assignment pattern matches settings reload
 
 ---
 
 ### Step 2: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Full test suite passing (206/207 pass; 1 pre-existing failure: test 5.11 fragile char-index check, present before this change)
-- [ ] CLI smoke passing
-- [ ] Fix all failures (none introduced by this change)
+- [x] Full test suite passing (206/207 pass; 1 pre-existing failure: test 5.11 fragile char-index check, present before this change)
+- [x] CLI smoke passing
+- [x] Fix all failures (none introduced by this change)
 
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Inline comment explaining the reload (references TP-158, issue #460, and the guard rationale)
-- [ ] Discoveries logged
+- [x] Inline comment explaining the reload (references TP-158, issue #460, and the guard rationale)
+- [x] Discoveries logged
 
 ---
 

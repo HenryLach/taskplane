@@ -1,7 +1,7 @@
 # TP-037: Resume Bug Fixes & State Coherence — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-23
 **Review Level:** 1
 **Review Counter:** 0
@@ -11,41 +11,41 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read reconcileTaskStates() logic
-- [ ] Read computeResumePoint() logic
-- [ ] Read engine wave advancement
-- [ ] Identify code paths for both bugs
+**Status:** ✅ Complete
+- [x] Read reconcileTaskStates() logic
+- [x] Read computeResumePoint() logic
+- [x] Read engine wave advancement
+- [x] Identify code paths for both bugs
 
 ---
 
 ### Step 1: Fix Resume Merge Skip (Bug #102)
-**Status:** Pending
-- [ ] Verify mergeResults before skipping completed wave
-- [ ] Flag wave for merge retry when merge missing/failed
-- [ ] Add state coherence validation
+**Status:** ✅ Complete
+- [x] Verify mergeResults before skipping completed wave
+- [x] Flag wave for merge retry when merge missing/failed
+- [x] Add state coherence validation
 
 ---
 
 ### Step 2: Fix Stale Session Names (Bug #102b)
-**Status:** Pending
-- [ ] Relax Precedence 5 condition for pending tasks with dead sessions
-- [ ] Clear stale sessionName and laneNumber
+**Status:** ✅ Complete
+- [x] Relax Precedence 5 condition for pending tasks with dead sessions
+- [x] Clear stale sessionName and laneNumber
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
-- [ ] Merge skip detection test
-- [ ] Stale session name test
-- [ ] State coherence test
-- [ ] Full test suite passes
+**Status:** ✅ Complete
+- [x] Merge skip detection test
+- [x] Stale session name test
+- [x] State coherence test
+- [x] Full test suite passes
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
-- [ ] `.DONE` created
+**Status:** ✅ Complete
+- [x] `.DONE` created
 
 ---
 

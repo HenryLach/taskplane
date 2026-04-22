@@ -1,45 +1,45 @@
 # TP-146: Investigate Missing Orch Branch in Workspace Mode — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Testing & Verification
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read engine.ts orch branch creation
-- [ ] Read worktree.ts provisioning
-- [ ] Read waves.ts per-repo allocation
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read engine.ts orch branch creation
+- [x] Read worktree.ts provisioning
+- [x] Read waves.ts per-repo allocation
 
 ### Step 1: Trace orch branch creation
-**Status:** Pending
-- [ ] Identify orch branch creation per-repo (engine.ts:2137-2155) — ALL repos in workspaceConfig.repos get orch branch; failure is atomic (batch stops)
-- [ ] Trace resolveBaseBranch fallback chain — SILENT fallback to getCurrentBranch (develop) if orch branch missing in repo (waves.ts:575-594)
-- [ ] Analyze merge target resolution — YES, mergeWaveByRepo ALWAYS uses raw baseBranch=orchBranch (merge.ts:2281), never resolveBaseBranch
-- [ ] Check doOrchIntegrate per-repo loop — YES, extension.ts:3170-3208 iterates repos and executeIntegration calls performCleanup which deletes orch branch PER REPO; partial failure leaves some repos integrated and others not
-- [ ] Check ensureTaskFilesCommitted — commits to primary repo's checked-out branch (develop), NOT orch branch; but this affects ALL repos equally and is handled by absolute paths for cross-repo segments; NOT the root cause of api-service-specific issue
+**Status:** ✅ Complete
+- [x] Identify orch branch creation per-repo (engine.ts:2137-2155) — ALL repos in workspaceConfig.repos get orch branch; failure is atomic (batch stops)
+- [x] Trace resolveBaseBranch fallback chain — SILENT fallback to getCurrentBranch (develop) if orch branch missing in repo (waves.ts:575-594)
+- [x] Analyze merge target resolution — YES, mergeWaveByRepo ALWAYS uses raw baseBranch=orchBranch (merge.ts:2281), never resolveBaseBranch
+- [x] Check doOrchIntegrate per-repo loop — YES, extension.ts:3170-3208 iterates repos and executeIntegration calls performCleanup which deletes orch branch PER REPO; partial failure leaves some repos integrated and others not
+- [x] Check ensureTaskFilesCommitted — commits to primary repo's checked-out branch (develop), NOT orch branch; but this affects ALL repos equally and is handled by absolute paths for cross-repo segments; NOT the root cause of api-service-specific issue
 
 ### Step 2: Analyze batch evidence
-**Status:** Pending
-- [ ] Analyzed code paths — found 3 contributing factors: (1) resolveBaseBranch silent fallback, (2) buildIntegrationExecutor only handles primary repo, (3) doOrchIntegrate non-atomic per-repo loop
-- [ ] Traced git history: fix 6294209f had TWO bugs (check.status instead of check.ok + missing runGit import), fixed in 31842846 and 55ba4dcb; both fixes present in v0.24.30 used by e2e test
-- [ ] Confirmed buildIntegrationExecutor (extension.ts:1329) scoped to single repoRoot — supervisor auto-integration misses secondary workspace repos
+**Status:** ✅ Complete
+- [x] Analyzed code paths — found 3 contributing factors: (1) resolveBaseBranch silent fallback, (2) buildIntegrationExecutor only handles primary repo, (3) doOrchIntegrate non-atomic per-repo loop
+- [x] Traced git history: fix 6294209f had TWO bugs (check.status instead of check.ok + missing runGit import), fixed in 31842846 and 55ba4dcb; both fixes present in v0.24.30 used by e2e test
+- [x] Confirmed buildIntegrationExecutor (extension.ts:1329) scoped to single repoRoot — supervisor auto-integration misses secondary workspace repos
 
 ### Step 3: Document findings
-**Status:** Pending
-- [ ] Write root cause analysis in STATUS.md Discoveries table (D1-D5)
-- [ ] Add resolveBaseBranch warning log for silent fallback (code fix) — replaced debug console.error with structured WARNING in waves.ts:582-590
-- [ ] Document recommended follow-up tasks — added 2 tech debt items to CONTEXT.md + amendments in PROMPT.md
+**Status:** ✅ Complete
+- [x] Write root cause analysis in STATUS.md Discoveries table (D1-D5)
+- [x] Add resolveBaseBranch warning log for silent fallback (code fix) — replaced debug console.error with structured WARNING in waves.ts:582-590
+- [x] Document recommended follow-up tasks — added 2 tech debt items to CONTEXT.md + amendments in PROMPT.md
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] Full test suite passing — 3231 tests, 0 failures
+**Status:** ✅ Complete
+- [x] Full test suite passing — 3231 tests, 0 failures
 
 ---
 

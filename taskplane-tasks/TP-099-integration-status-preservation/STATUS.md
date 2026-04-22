@@ -1,33 +1,33 @@
 # TP-099: Integration STATUS.md Preservation ��� Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Done
 **Last Updated:** 2026-03-29
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 5
 **Iteration:** 0
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read checkpoint commit and orch_integrate flow
-- [ ] Read GitHub issue #356
+- [x] Read checkpoint commit and orch_integrate flow
+- [x] Read GitHub issue #356
 
 ---
 
 ### Step 1: Diagnose rebase/merge conflict
-**Status:** Pending
+**Status:** ✅ Complete
 
 **Root cause: H2 CONFIRMED — merge.ts artifact staging overwrite**
 
 Diagnosis results:
-- [ ] **Case A (FF)**: STATUS.md preserved ✅ — no issue with direct FF
-- [ ] **Case B3 (Rebase conflict)**: REBASE CONFLICT when both branches modify STATUS.md
-- [ ] **Case C2 (Squash after overwrite)**: STATUS.md LOST, .DONE MISSING — artifact staging overwrote
-- [ ] **Case D (Isolation)**: ROOT CAUSE CONFIRMED — `copyFileSync` from `repoRoot` overwrites correct STATUS.md
+- [x] **Case A (FF)**: STATUS.md preserved ✅ — no issue with direct FF
+- [x] **Case B3 (Rebase conflict)**: REBASE CONFLICT when both branches modify STATUS.md
+- [x] **Case C2 (Squash after overwrite)**: STATUS.md LOST, .DONE MISSING — artifact staging overwrote
+- [x] **Case D (Isolation)**: ROOT CAUSE CONFIRMED — `copyFileSync` from `repoRoot` overwrites correct STATUS.md
 
 **Authoritative drop point:** `merge.ts` line ~1841, artifact staging copies from `repoRoot` (main working dir) into merge worktree, overwriting correctly-merged STATUS.md from lane branches.
 
@@ -53,26 +53,26 @@ Diagnosis results:
 
 **Path safety:** All sources use `resolve()` + `relative()` containment (TP-035 hardening preserved).
 
-- [ ] Fix merge.ts artifact staging to skip files already present from lane merge
-- [ ] Add lane worktree backfill for missing artifacts (.DONE, REVIEW_VERDICT.json)
-- [ ] Maintain path containment checks for all source paths
+- [x] Fix merge.ts artifact staging to skip files already present from lane merge
+- [x] Add lane worktree backfill for missing artifacts (.DONE, REVIEW_VERDICT.json)
+- [x] Maintain path containment checks for all source paths
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Integration tests for STATUS.md preservation
-- [ ] Integration tests for .DONE preservation
-- [ ] Integration tests for .reviews/ preservation (.reviews/ not in TP-035 allowlist, not applicable)
-- [ ] Full test suite passing (3090/3090 pass)
+- [x] Integration tests for STATUS.md preservation
+- [x] Integration tests for .DONE preservation
+- [x] Integration tests for .reviews/ preservation (.reviews/ not in TP-035 allowlist, not applicable)
+- [x] Full test suite passing (3090/3090 pass)
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Log discoveries
+- [x] Log discoveries
 
 ---
 

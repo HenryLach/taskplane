@@ -1,0 +1,14 @@
+TP-022: Orch Branch Lifecycle & Merge Redirect — Complete
+Completed: 2026-03-18
+Tests: 753/753 pass (21/21 test files)
+
+Summary:
+- Orch branch (orch/{opId}-{batchId}) created at batch start
+- All worktrees branch from orch branch (not user branch)
+- Merge updates orch branch via update-ref (non-checked-out) or ff-only (checked-out)
+- User's branch/checkout never touched during batch execution
+- Auto-integration attempts ff of baseBranch to orchBranch when configured
+- Orch branch preserved for manual integration by default
+- Completion message shows integration instructions
+- Full resume parity maintained (engine.ts + resume.ts)
+- Shared attemptAutoIntegration helper extracted to merge.ts

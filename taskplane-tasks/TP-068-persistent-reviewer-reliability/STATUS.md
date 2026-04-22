@@ -1,6 +1,6 @@
 # TP-068: Fix Persistent Reviewer Reliability — Status
 
-**Current Step:** None
+**Current Step:** Not Started
 **Status:** 🔵 Ready for Execution
 **Last Updated:** 2026-03-25
 **Review Level:** 2

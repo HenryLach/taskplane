@@ -1,86 +1,86 @@
 # TP-140: Global Preferences Architecture — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 7: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 19
 **Iteration:** 2
 **Size:** L
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read config-loader.ts merge chain
-- [ ] Read config-schema.ts UserPreferences and defaults
-- [ ] Read settings-tui.ts source detection and save logic
-- [ ] Map all UserPreferences references across codebase
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read config-loader.ts merge chain
+- [x] Read config-schema.ts UserPreferences and defaults
+- [x] Read settings-tui.ts source detection and save logic
+- [x] Map all UserPreferences references across codebase
 
 ### Step 1: Rename user preferences → global preferences
-**Status:** Pending
-- [ ] Rename UserPreferences → GlobalPreferences
-- [ ] Rename load/resolve/apply functions
-- [ ] Update all imports and references
-- [ ] Update variable names, comments, JSDoc
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Rename UserPreferences → GlobalPreferences
+- [x] Rename load/resolve/apply functions
+- [x] Update all imports and references
+- [x] Update variable names, comments, JSDoc
+- [x] Run targeted tests
 
 ### Step 2: Expand global preferences schema
-**Status:** Pending
-- [ ] Expand GlobalPreferences to cover all configurable fields
-- [ ] Add backward-compatible support for legacy flat-key global preferences files
-- [ ] Preserve preferences-only fields (dashboardPort, initAgentDefaults) during schema expansion
-- [ ] Update extractAllowlistedPreferences for expanded fields
-- [ ] Update applyGlobalPreferences for all new fields
-- [ ] Add targeted tests for legacy flat keys + expanded nested preference parsing
-- [ ] Normalize nested legacy spawnMode values (tmux → subprocess) during global preference application
-- [ ] Add regression tests for nested orchestrator/worker spawnMode migration and update stale migration comment
+**Status:** ✅ Complete
+- [x] Expand GlobalPreferences to cover all configurable fields
+- [x] Add backward-compatible support for legacy flat-key global preferences files
+- [x] Preserve preferences-only fields (dashboardPort, initAgentDefaults) during schema expansion
+- [x] Update extractAllowlistedPreferences for expanded fields
+- [x] Update applyGlobalPreferences for all new fields
+- [x] Add targeted tests for legacy flat keys + expanded nested preference parsing
+- [x] Normalize nested legacy spawnMode values (tmux → subprocess) during global preference application
+- [x] Add regression tests for nested orchestrator/worker spawnMode migration and update stale migration comment
 
 ### Step 3: Flip config loading precedence
-**Status:** Pending
-- [ ] Rewrite loadProjectConfig: schema → global → project
-- [ ] Implement deep merge for sparse project config
-- [ ] Update loadLayer1Config similarly
-- [ ] Update tests for new precedence
+**Status:** ✅ Complete
+- [x] Rewrite loadProjectConfig: schema → global → project
+- [x] Implement deep merge for sparse project config
+- [x] Update loadLayer1Config similarly
+- [x] Update tests for new precedence
 
 ### Step 4: Settings TUI — source badges and save behavior
-**Status:** Pending
-- [ ] Source badges: (global) and (project) only
-- [ ] Default save: global preferences
-- [ ] Sparse write for project overrides
-- [ ] "Remove project override" option
-- [ ] Update field layers
-- [ ] Treat destination-picker cancel/escape as skip (no write)
-- [ ] Add tests for cancel semantics and resolveWriteAction remove-project route
-- [ ] Preserve existing YAML project overrides when first project JSON override is written
-- [ ] Add regression tests for YAML-only write/remove-project compatibility
-- [ ] Seed first project JSON write from canonical loader YAML overrides (including supervisor/verification/qualityGate/modelFallback/workspace)
-- [ ] Add regression tests for preserving non-source-detection YAML keys and workspace YAML on first write
+**Status:** ✅ Complete
+- [x] Source badges: (global) and (project) only
+- [x] Default save: global preferences
+- [x] Sparse write for project overrides
+- [x] "Remove project override" option
+- [x] Update field layers
+- [x] Treat destination-picker cancel/escape as skip (no write)
+- [x] Add tests for cancel semantics and resolveWriteAction remove-project route
+- [x] Preserve existing YAML project overrides when first project JSON override is written
+- [x] Add regression tests for YAML-only write/remove-project compatibility
+- [x] Seed first project JSON write from canonical loader YAML overrides (including supervisor/verification/qualityGate/modelFallback/workspace)
+- [x] Add regression tests for preserving non-source-detection YAML keys and workspace YAML on first write
 
 ### Step 5: Sparse project config in taskplane init
-**Status:** Pending
-- [ ] generateProjectConfig writes only project-specific fields
-- [ ] Agent settings NOT included
-- [ ] Persist only explicit init-time orchestrator overrides (non-default/user-chosen values)
-- [ ] Existing full configs continue working
-- [ ] Update init integration tests to sparse orchestrator contract and preserve legacy migration coverage
+**Status:** ✅ Complete
+- [x] generateProjectConfig writes only project-specific fields
+- [x] Agent settings NOT included
+- [x] Persist only explicit init-time orchestrator overrides (non-default/user-chosen values)
+- [x] Existing full configs continue working
+- [x] Update init integration tests to sparse orchestrator contract and preserve legacy migration coverage
 
 ### Step 6: Testing & Verification
-**Status:** Pending
-- [ ] Full test suite passing
-- [ ] Sparse config merge tests
-- [ ] Precedence tests
-- [ ] Settings TUI tests
-- [ ] CLI smoke tests
-- [ ] All failures fixed
+**Status:** ✅ Complete
+- [x] Full test suite passing
+- [x] Sparse config merge tests
+- [x] Precedence tests
+- [x] Settings TUI tests
+- [x] CLI smoke tests
+- [x] All failures fixed
 
 ### Step 7: Documentation & Delivery
-**Status:** Pending
-- [ ] Update config docs
-- [ ] Update settings docs
-- [ ] Rename "user preferences" in all docs
-- [ ] Update STATUS.md
+**Status:** ✅ Complete
+- [x] Update config docs
+- [x] Update settings docs
+- [x] Rename "user preferences" in all docs
+- [x] Update STATUS.md
 
 ---
 

@@ -1,83 +1,83 @@
 # TP-023: `/orch-integrate` Command — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-18
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 12
 **Iteration:** 6
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read `extension.ts` — command registration patterns
-- [ ] Read `persistence.ts` — batch state loading
-- [ ] Read `git.ts` — git helpers
-- [ ] Verify TP-022 artifacts present
-- [ ] R001: Document TP-022 invariants, failure modes, and test intent in Discoveries
-- [ ] R002: Document state-lifetime contract (state deleted after clean completion) and design decision for /orch-integrate
-- [ ] R002: Map concrete test files for command registration/parsing and branch-safety
-- [ ] R002: Fix malformed review table and deduplicate execution log entries
-- [ ] R002: Document --merge + --pr conflict handling decision
+- [x] Read `extension.ts` — command registration patterns
+- [x] Read `persistence.ts` — batch state loading
+- [x] Read `git.ts` — git helpers
+- [x] Verify TP-022 artifacts present
+- [x] R001: Document TP-022 invariants, failure modes, and test intent in Discoveries
+- [x] R002: Document state-lifetime contract (state deleted after clean completion) and design decision for /orch-integrate
+- [x] R002: Map concrete test files for command registration/parsing and branch-safety
+- [x] R002: Fix malformed review table and deduplicate execution log entries
+- [x] R002: Document --merge + --pr conflict handling decision
 
 ---
 
 ### Step 1: Register `/orch-integrate` Command
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Extract `parseIntegrateArgs()` pure helper returning `{ mode: "ff"|"merge"|"pr", force: boolean, orchBranchArg?: string }` with mutual-exclusion validation
-- [ ] Register `/orch-integrate` command with description, usage text (incl. optional branch arg), and handler calling parseIntegrateArgs
-- [ ] Update session-start command list to include `/orch-integrate`
-- [ ] Verify parsing: default mode, force flag, conflict rejection, optional branch arg capture
-- [ ] R004: Add unit tests for `parseIntegrateArgs()` covering: default mode, --merge, --pr, --force, mutual exclusion conflict, unknown flags, single optional branch arg, >1 positional rejection
-- [ ] R004: Fix duplicate R003 row in reviews table
+- [x] Extract `parseIntegrateArgs()` pure helper returning `{ mode: "ff"|"merge"|"pr", force: boolean, orchBranchArg?: string }` with mutual-exclusion validation
+- [x] Register `/orch-integrate` command with description, usage text (incl. optional branch arg), and handler calling parseIntegrateArgs
+- [x] Update session-start command list to include `/orch-integrate`
+- [x] Verify parsing: default mode, force flag, conflict rejection, optional branch arg capture
+- [x] R004: Add unit tests for `parseIntegrateArgs()` covering: default mode, --merge, --pr, --force, mutual exclusion conflict, unknown flags, single optional branch arg, >1 positional rejection
+- [x] R004: Fix duplicate R003 row in reviews table
 
 ---
 
 ### Step 2: Implement Integration Logic
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Resolve orch branch + baseBranch: (1) try loadBatchState → use orchBranch/baseBranch from state, (2) if null use positional `<orch-branch>` arg, (3) if neither list candidate `orch/*` branches and guide user. Handle StateFileError exceptions (IO/parse/schema) with user-facing messages.
-- [ ] Branch safety check: getCurrentBranch(repoRoot) with detached HEAD null-check, compare to baseBranch (or infer baseBranch from current branch when state unavailable), --force bypass. All git/state reads use execCtx!.repoRoot.
-- [ ] Pre-integration summary: show orch branch name, baseBranch, commits ahead, files changed via git rev-list/diff --stat
-- [ ] R006: Add `phase === "completed"` validation gate after loading batch state — if phase is not completed, show batchId + current phase and suggest waiting or running /orch-status, then return
-- [ ] R006: Fix duplicate R005 row in reviews table
-- [ ] R006: Add unit tests for handler-level logic — extract `resolveIntegrationContext()` pure helper and test: phase gating (completed vs executing/paused/failed), state fallback branches (no state + 0/1/many orch branches, StateFileError paths), detached HEAD, --force branch-safety bypass
+- [x] Resolve orch branch + baseBranch: (1) try loadBatchState → use orchBranch/baseBranch from state, (2) if null use positional `<orch-branch>` arg, (3) if neither list candidate `orch/*` branches and guide user. Handle StateFileError exceptions (IO/parse/schema) with user-facing messages.
+- [x] Branch safety check: getCurrentBranch(repoRoot) with detached HEAD null-check, compare to baseBranch (or infer baseBranch from current branch when state unavailable), --force bypass. All git/state reads use execCtx!.repoRoot.
+- [x] Pre-integration summary: show orch branch name, baseBranch, commits ahead, files changed via git rev-list/diff --stat
+- [x] R006: Add `phase === "completed"` validation gate after loading batch state — if phase is not completed, show batchId + current phase and suggest waiting or running /orch-status, then return
+- [x] R006: Fix duplicate R005 row in reviews table
+- [x] R006: Add unit tests for handler-level logic — extract `resolveIntegrationContext()` pure helper and test: phase gating (completed vs executing/paused/failed), state fallback branches (no state + 0/1/many orch branches, StateFileError paths), detached HEAD, --force branch-safety bypass
 
 ---
 
 ### Step 3: Implement Integration Modes
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Extract `executeIntegration()` pure-ish helper with DI for git/gh ops; returns `IntegrationResult` with `{ success, integratedLocally, commitCount, message, error? }`. Mode-specific failure handling: ff diverged → suggest --merge/--pr; merge conflict → suggest resolve or --pr; push/gh failure → show stderr. No cleanup on any failure path.
-- [ ] Fast-forward mode: `git merge --ff-only {orchBranch}` — success sets integratedLocally=true; failure (exit code ≠ 0) returns error suggesting --merge or --pr
-- [ ] Merge mode: `git merge {orchBranch} --no-edit` — success sets integratedLocally=true; conflict/failure returns error with stderr
-- [ ] PR mode: `git push origin {orchBranch}` then `gh pr create --base {currentBranch} --head {orchBranch} --title "..." --fill` — success sets integratedLocally=false (branch must survive); push failure or gh failure returns error with stderr
-- [ ] Cleanup gated on integratedLocally===true only: delete local orch branch (`git branch -D`), delete batch state file. PR mode never cleans up. Any cleanup failure is non-fatal (warn, don't error).
-- [ ] Wire executeIntegration into handler, show success summary with commit count and mode-specific message
-- [ ] Add unit tests for executeIntegration: ff success, ff diverged, merge success, merge conflict, pr success, pr push-fail, pr gh-fail, cleanup only when integratedLocally, PR title fallback when batchId unavailable
+- [x] Extract `executeIntegration()` pure-ish helper with DI for git/gh ops; returns `IntegrationResult` with `{ success, integratedLocally, commitCount, message, error? }`. Mode-specific failure handling: ff diverged → suggest --merge/--pr; merge conflict → suggest resolve or --pr; push/gh failure → show stderr. No cleanup on any failure path.
+- [x] Fast-forward mode: `git merge --ff-only {orchBranch}` — success sets integratedLocally=true; failure (exit code ≠ 0) returns error suggesting --merge or --pr
+- [x] Merge mode: `git merge {orchBranch} --no-edit` — success sets integratedLocally=true; conflict/failure returns error with stderr
+- [x] PR mode: `git push origin {orchBranch}` then `gh pr create --base {currentBranch} --head {orchBranch} --title "..." --fill` — success sets integratedLocally=false (branch must survive); push failure or gh failure returns error with stderr
+- [x] Cleanup gated on integratedLocally===true only: delete local orch branch (`git branch -D`), delete batch state file. PR mode never cleans up. Any cleanup failure is non-fatal (warn, don't error).
+- [x] Wire executeIntegration into handler, show success summary with commit count and mode-specific message
+- [x] Add unit tests for executeIntegration: ff success, ff diverged, merge success, merge conflict, pr success, pr push-fail, pr gh-fail, cleanup only when integratedLocally, PR title fallback when batchId unavailable
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Run full vitest suite (`cd extensions && npx vitest run`) — 828/828 tests pass, 22 test files
-- [ ] Verify orch-integrate.test.ts coverage: 75/75 tests pass. parseIntegrateArgs (24 tests: defaults, modes, force, mutual exclusion, unknown flags, branch args, multi-positional, combined), resolveIntegrationContext (30 tests: phase gating incl. 7 non-completed phases, legacy merge mode, state→arg→scan fallback, StateFileError IO/parse/schema with+without arg fallback, branch existence, detached HEAD, branch safety same/different/force/inferred, happy path e2e), executeIntegration (21 tests: ff success/diverged/no-cleanup, merge success/conflict/no-cleanup, pr success/URL/push-order/push-fail/gh-fail/no-cleanup/title-fallback/title-batchId, cleanup ff+merge/branch-warn/state-warn/both-warn)
-- [ ] Verify command registration + session-start list includes /orch-integrate in extension.ts — registered at line 1072, session-start at line 1282
-- [ ] Verify error messages for: missing state ("No completed batch found"), wrong phase ("Integration requires a completed batch" for all 7 non-completed phases), legacy orchBranch ("legacy merge mode"), detached HEAD ("HEAD is detached"), branch mismatch ("Batch was started from"), ff diverged ("Fast-forward failed"+"diverged"+"--merge"+"--pr"), merge conflict ("Merge failed"+"conflicts"+"--pr"), push fail ("Failed to push"), gh fail ("PR creation failed"+"create the PR manually")
-- [ ] Fix all test failures if any — no failures found, all 828/828 tests pass including 75 orch-integrate tests
+- [x] Run full vitest suite (`cd extensions && npx vitest run`) — 828/828 tests pass, 22 test files
+- [x] Verify orch-integrate.test.ts coverage: 75/75 tests pass. parseIntegrateArgs (24 tests: defaults, modes, force, mutual exclusion, unknown flags, branch args, multi-positional, combined), resolveIntegrationContext (30 tests: phase gating incl. 7 non-completed phases, legacy merge mode, state→arg→scan fallback, StateFileError IO/parse/schema with+without arg fallback, branch existence, detached HEAD, branch safety same/different/force/inferred, happy path e2e), executeIntegration (21 tests: ff success/diverged/no-cleanup, merge success/conflict/no-cleanup, pr success/URL/push-order/push-fail/gh-fail/no-cleanup/title-fallback/title-batchId, cleanup ff+merge/branch-warn/state-warn/both-warn)
+- [x] Verify command registration + session-start list includes /orch-integrate in extension.ts — registered at line 1072, session-start at line 1282
+- [x] Verify error messages for: missing state ("No completed batch found"), wrong phase ("Integration requires a completed batch" for all 7 non-completed phases), legacy orchBranch ("legacy merge mode"), detached HEAD ("HEAD is detached"), branch mismatch ("Batch was started from"), ff diverged ("Fast-forward failed"+"diverged"+"--merge"+"--pr"), merge conflict ("Merge failed"+"conflicts"+"--pr"), push fail ("Failed to push"), gh fail ("PR creation failed"+"create the PR manually")
+- [x] Fix all test failures if any — no failures found, all 828/828 tests pass including 75 orch-integrate tests
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Discoveries logged
-- [ ] `.DONE` created
+- [x] Discoveries logged
+- [x] `.DONE` created
 
 ---
 

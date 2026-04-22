@@ -1,43 +1,43 @@
 # TP-123: Runtime V2 Operator Messaging De-TMUX — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 6
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight copy inventory
-**Status:** Pending
-- [ ] List all user-facing strings containing `tmux` in extension + dashboard runtime files
-- [ ] Classify each as hint/status/diagnostic/compat-note
-- [ ] Log inventory in STATUS.md
+**Status:** ✅ Complete
+- [x] List all user-facing strings containing `tmux` in extension + dashboard runtime files
+- [x] Classify each as hint/status/diagnostic/compat-note
+- [x] Log inventory in STATUS.md
 
 ### Step 1: Replace operator guidance strings
-**Status:** Pending
-- [ ] Replace `tmux attach ...` hints with Runtime V2 guidance
-- [ ] Update "TMUX sessions" wording to backend-neutral terminology
-- [ ] Keep historical migration context only where needed
+**Status:** ✅ Complete
+- [x] Replace `tmux attach ...` hints with Runtime V2 guidance
+- [x] Update "TMUX sessions" wording to backend-neutral terminology
+- [x] Keep historical migration context only where needed
 
 ### Step 2: Dashboard label cleanup
-**Status:** Pending
-- [ ] Update dashboard labels/tooltips that imply tmux is active
-- [ ] Preserve compatibility behavior for data shape fields
-- [ ] Ensure merge/lane liveness indicators still render correctly
+**Status:** ✅ Complete
+- [x] Update dashboard labels/tooltips that imply tmux is active
+- [x] Preserve compatibility behavior for data shape fields
+- [x] Ensure merge/lane liveness indicators still render correctly
 
 ### Step 3: Tests
-**Status:** Pending
-- [ ] Update/extend tests asserting old TMUX wording
-- [ ] Run full extension suite
-- [ ] Fix failures
+**Status:** ✅ Complete
+- [x] Update/extend tests asserting old TMUX wording
+- [x] Run full extension suite
+- [x] Fix failures
 
 ### Step 4: Documentation & delivery
-**Status:** Pending
-- [ ] Update migration docs with messaging changes
-- [ ] Record before/after inventory in STATUS.md
+**Status:** ✅ Complete
+- [x] Update migration docs with messaging changes
+- [x] Record before/after inventory in STATUS.md
 
 ---
 

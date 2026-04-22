@@ -1,0 +1,4 @@
+TP-046 complete — async merge polling
+All sleepSync calls in merge.ts converted to sleepAsync.
+waitForMergeResult, mergeWave, mergeWaveByRepo, spawnMergeAgent all async.
+All 2151 tests passing.

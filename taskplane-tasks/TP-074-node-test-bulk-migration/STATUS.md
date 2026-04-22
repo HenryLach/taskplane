@@ -1,6 +1,6 @@
 # TP-074: Migrate Tests to Node.js Native Test Runner (Bulk) — Status
 
-**Current Step:** None
+**Current Step:** Not Started
 **Status:** 🔵 Ready for Execution
 **Last Updated:** 2026-03-26
 **Review Level:** 1

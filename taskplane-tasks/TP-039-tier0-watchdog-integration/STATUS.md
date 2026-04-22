@@ -1,7 +1,7 @@
 # TP-039: Tier 0 Watchdog Engine Integration — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-23
 **Review Level:** 2
 **Review Counter:** 0
@@ -11,55 +11,55 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read engine wave loop failure handling
-- [ ] Read retry matrix from TP-033
-- [ ] Read partial progress code from TP-028
-- [ ] Read spec Sections 5.1-5.4
+**Status:** ✅ Complete
+- [x] Read engine wave loop failure handling
+- [x] Read retry matrix from TP-033
+- [x] Read partial progress code from TP-028
+- [x] Read spec Sections 5.1-5.4
 
 ---
 
 ### Step 1: Wire Automatic Recovery into Engine
-**Status:** Pending
-- [ ] Merge timeout → automatic retry
-- [ ] Session crash → partial progress save + retry if retryable
-- [ ] Stale worktree → force cleanup + retry
-- [ ] Cleanup failure → retry once, then wave gate
-- [ ] Persist retry counters
+**Status:** ✅ Complete
+- [x] Merge timeout → automatic retry
+- [x] Session crash → partial progress save + retry if retryable
+- [x] Stale worktree → force cleanup + retry
+- [x] Cleanup failure → retry once, then wave gate
+- [x] Persist retry counters
 
 ---
 
 ### Step 2: Tier 0 Event Logging
-**Status:** Pending
-- [ ] Create .pi/supervisor/ directory
-- [ ] Write JSONL events for recovery attempts/success/exhaustion
-- [ ] Include full context in events
+**Status:** ✅ Complete
+- [x] Create .pi/supervisor/ directory
+- [x] Write JSONL events for recovery attempts/success/exhaustion
+- [x] Include full context in events
 
 ---
 
 ### Step 3: Escalation Interface
-**Status:** Pending
-- [ ] Define EscalationContext interface
-- [ ] Emit escalation event on retry exhaustion
-- [ ] Fall through to pause behavior
+**Status:** ✅ Complete
+- [x] Define EscalationContext interface
+- [x] Emit escalation event on retry exhaustion
+- [x] Fall through to pause behavior
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] Auto-retry test
-- [ ] Exhaustion-pauses test
-- [ ] Partial progress save test
-- [ ] Worktree cleanup retry test
-- [ ] Event logging test
-- [ ] Happy path unaffected test
-- [ ] Full test suite passes
+**Status:** ✅ Complete
+- [x] Auto-retry test
+- [x] Exhaustion-pauses test
+- [x] Partial progress save test
+- [x] Worktree cleanup retry test
+- [x] Event logging test
+- [x] Happy path unaffected test
+- [x] Full test suite passes
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] `.DONE` created
+**Status:** ✅ Complete
+- [x] `.DONE` created
 
 ---
 

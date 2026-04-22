@@ -1,0 +1,7 @@
+TP-129 complete on 2026-04-03.
+
+Summary:
+- Added periodic get_session_stats refresh in agent-host (first assistant message + every 5 assistant message_end events).
+- Added reviewer telemetry parity badges in dashboard UI (elapsed, token summary, context, tools, last tool).
+- Added structural test coverage for bounded stats refresh cadence.
+- Ran full extensions test suite successfully (3120 passed, 0 failed).

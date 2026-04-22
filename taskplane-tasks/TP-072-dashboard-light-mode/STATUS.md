@@ -1,45 +1,45 @@
 # TP-072: Dashboard Light Mode with Theme Toggle — Status
 
-**Current Step:** None
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-26
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 1
 **Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read style.css color definitions
-- [ ] Read index.html header structure
-- [ ] Read server.cjs project root resolution
-- [ ] Verify both logo SVGs exist
+**Status:** ✅ Complete
+- [x] Read style.css color definitions
+- [x] Read index.html header structure
+- [x] Read server.cjs project root resolution
+- [x] Verify both logo SVGs exist
 
 ---
 
 ### Step 1: Refactor CSS for Theme Variables
-**Status:** Pending
-- [ ] Create dark theme variable set (current colors)
-- [ ] Create light theme variable set
-- [ ] Convert any hardcoded colors to CSS variables
+**Status:** ✅ Complete
+- [x] Create dark theme variable set (current colors)
+- [x] Create light theme variable set
+- [x] Convert any hardcoded colors to CSS variables
 
 ---
 
 ### Step 2: Add Theme Toggle to Header
-**Status:** Pending
-- [ ] Add sun/moon toggle button in header
-- [ ] Toggle sets data-theme attribute and swaps logo src
-- [ ] Smooth CSS transition on color properties
+**Status:** ✅ Complete
+- [x] Add sun/moon toggle button in header
+- [x] Toggle sets data-theme attribute and swaps logo src
+- [x] Smooth CSS transition on color properties
 
 ---
 
 ### Step 3: Persist Theme Preference at Project Level
-**Status:** Pending
-- [ ] Add GET/POST /api/preferences endpoints to server.cjs
-- [ ] Load preference on dashboard start, save on toggle
-- [ ] Store in .pi/dashboard-preferences.json
+**Status:** ✅ Complete
+- [x] Add GET/POST /api/preferences endpoints to server.cjs
+- [x] Load preference on dashboard start, save on toggle
+- [x] Store in .pi/dashboard-preferences.json
 
 ---
 

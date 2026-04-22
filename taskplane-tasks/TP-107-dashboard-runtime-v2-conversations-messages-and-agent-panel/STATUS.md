@@ -1,7 +1,7 @@
 # TP-107: Dashboard Runtime V2 Conversations, Messages, and Agent Panel — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-30
 **Review Level:** 2
 **Review Counter:** 0
@@ -11,45 +11,45 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Audit the dashboard's current dependence on lane-state files, worker-conversation logs, and TMUX pane capture
-- [ ] Map each panel to its Runtime V2 source of truth: registry, lane snapshots, normalized agent events, and mailbox state
+- [x] Audit the dashboard's current dependence on lane-state files, worker-conversation logs, and TMUX pane capture
+- [x] Map each panel to its Runtime V2 source of truth: registry, lane snapshots, normalized agent events, and mailbox state
 
 ---
 
 ### Step 1: Runtime V2 Data Loading
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add Runtime V2 loaders for registry, per-agent events, and lane snapshots while retaining temporary compatibility shims only where necessary
-- [ ] Define clear precedence when both legacy and Runtime V2 artifacts exist during migration
+- [x] Add Runtime V2 loaders for registry, per-agent events, and lane snapshots while retaining temporary compatibility shims only where necessary
+- [x] Define clear precedence when both legacy and Runtime V2 artifacts exist during migration
 
 ---
 
 ### Step 2: Conversations, Messages, and Agent Panel
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Render conversation streams from normalized event logs instead of pane capture
-- [ ] Add/update the mailbox messages panel on top of Runtime V2 mailbox + delivery events
-- [ ] Add an agent/process panel driven by the runtime registry
+- [x] Render conversation streams from normalized event logs instead of pane capture
+- [x] Add/update the mailbox messages panel on top of Runtime V2 mailbox + delivery events
+- [x] Add an agent/process panel driven by the runtime registry
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Run dashboard/server sanity checks (node --check passes)
-- [ ] Perform manual dashboard verification for conversations, messages, and agent health on a Runtime V2 run
-- [ ] Run the full suite (3331 pass, 0 fail)
-- [ ] Fix all failures
+- [x] Run dashboard/server sanity checks (node --check passes)
+- [x] Perform manual dashboard verification for conversations, messages, and agent health on a Runtime V2 run
+- [x] Run the full suite (3331 pass, 0 fail)
+- [x] Fix all failures
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update observability spec docs with implementation notes
-- [ ] Log discoveries in STATUS.md
+- [x] Update observability spec docs with implementation notes
+- [x] Log discoveries in STATUS.md
 
 ---
 

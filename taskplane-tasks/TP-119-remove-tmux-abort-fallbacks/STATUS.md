@@ -1,55 +1,55 @@
 # TP-119: Remove TMUX Abort Fallbacks — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 10
 **Iteration:** 2
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Inventory remaining TMUX helper call sites
-- [ ] Classify each call site
-- [ ] Log inventory in STATUS.md
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Inventory remaining TMUX helper call sites
+- [x] Classify each call site
+- [x] Log inventory in STATUS.md
 
 ### Step 1: Remove abort TMUX fallbacks
-**Status:** Pending
-- [ ] abort.ts TMUX liveness polling in waitForSessionExit
-- [ ] abort.ts TMUX kill paths
-- [ ] execution.ts TMUX fallbacks in stop-all and stall kill
-- [ ] merge.ts dual kill paths
+**Status:** ✅ Complete
+- [x] abort.ts TMUX liveness polling in waitForSessionExit
+- [x] abort.ts TMUX kill paths
+- [x] execution.ts TMUX fallbacks in stop-all and stall kill
+- [x] merge.ts dual kill paths
 
 ### Step 2: Remove resume TMUX fallbacks
-**Status:** Pending
-- [ ] resume.ts TMUX reconnect paths
-- [ ] Ensure V2 reconnect is only path
+**Status:** ✅ Complete
+- [x] resume.ts TMUX reconnect paths
+- [x] Ensure V2 reconnect is only path
 
 ### Step 3: Remove dead TMUX helpers
-**Status:** Pending
-- [ ] Migrate engine.ts and extension.ts off tmuxHasSession/tmuxKillSession imports
-- [ ] Re-home tmuxAsync consumers (execution async wrappers + merge capture helper)
-- [ ] Remove tmuxHasSession, tmuxKillSession, tmuxAsync
-- [ ] Remove sessions.ts helpers
-- [ ] Remove TMUX imports
-- [ ] Derive lingering cleanup targets from Runtime V2 registry/handles (not currentLanes only)
-- [ ] Add cleanup-safe V2 lane kill path that does not depend on monitor cache
-- [ ] Ensure final cleanup kills actual merge agents (use merge IDs or kill-all)
+**Status:** ✅ Complete
+- [x] Migrate engine.ts and extension.ts off tmuxHasSession/tmuxKillSession imports
+- [x] Re-home tmuxAsync consumers (execution async wrappers + merge capture helper)
+- [x] Remove tmuxHasSession, tmuxKillSession, tmuxAsync
+- [x] Remove sessions.ts helpers
+- [x] Remove TMUX imports
+- [x] Derive lingering cleanup targets from Runtime V2 registry/handles (not currentLanes only)
+- [x] Add cleanup-safe V2 lane kill path that does not depend on monitor cache
+- [x] Ensure final cleanup kills actual merge agents (use merge IDs or kill-all)
 
 ### Step 4: Tests
-**Status:** Pending
-- [ ] Update tests
-- [ ] Run full suite
-- [ ] Fix all failures
+**Status:** ✅ Complete
+- [x] Update tests
+- [x] Run full suite
+- [x] Fix all failures
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] Update STATUS.md
-- [ ] Update migration docs
+**Status:** ✅ Complete
+- [x] Update STATUS.md
+- [x] Update migration docs
 
 ---
 

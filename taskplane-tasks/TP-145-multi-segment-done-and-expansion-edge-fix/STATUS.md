@@ -1,49 +1,49 @@
 # TP-145: Multi-Segment .DONE Timing and Expansion Edge Fix — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery (Complete)
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read lane-runner .DONE creation
-- [ ] Read engine monitor and segment frontier
-- [ ] Read edge validation
-- [ ] Understand segment context in ExecutionUnit
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read lane-runner .DONE creation
+- [x] Read engine monitor and segment frontier
+- [x] Read edge validation
+- [x] Understand segment context in ExecutionUnit
 
 ### Step 1: Fix .DONE timing
-**Status:** Pending
-- [ ] Determine segment awareness in lane-runner
-- [ ] Gate .DONE when more segments remain
-- [ ] .DONE on last segment only
-- [ ] Single-segment unaffected
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Determine segment awareness in lane-runner
+- [x] Gate .DONE when more segments remain
+- [x] .DONE on last segment only
+- [x] Single-segment unaffected
+- [x] Run targeted tests
 
 ### Step 2: Fix expansion edge validation
-**Status:** Pending
-- [ ] Allow anchor repo in edge from
-- [ ] Allow completed segment repos in edges
-- [ ] Strip redundant edges (handled by mutation — silently dropped via segmentIdByRequestedRepoId lookup)
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Allow anchor repo in edge from
+- [x] Allow completed segment repos in edges
+- [x] Strip redundant edges (handled by mutation — silently dropped via segmentIdByRequestedRepoId lookup)
+- [x] Run targeted tests
 
 ### Step 3: Testing & Verification
-**Status:** Pending
-- [ ] Multi-segment .DONE timing tests
-- [ ] Single-segment regression
-- [ ] Edge validation tests
-- [ ] Full test suite passing (3239/3239 pass, 0 fail)
+**Status:** ✅ Complete
+- [x] Multi-segment .DONE timing tests
+- [x] Single-segment regression
+- [x] Edge validation tests
+- [x] Full test suite passing (3239/3239 pass, 0 fail)
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
-- [ ] Update spec if needed (updated dynamic-segment-expansion.md edge validation rules)
-- [ ] Update STATUS.md
+**Status:** ✅ Complete
+- [x] Update spec if needed (updated dynamic-segment-expansion.md edge validation rules)
+- [x] Update STATUS.md
 
 ---
 

@@ -1,91 +1,91 @@
 # TP-025: RPC Wrapper Script & Exit Classification Types — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 5
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read pi RPC docs to understand protocol
-- [ ] Read current task outcome types
-- [ ] Read naming contract
-- [ ] Read roadmap Phase 1 sections
-- [ ] R002 fix: Normalize top-level state metadata to be consistent with step states
-- [ ] R002 fix: Deduplicate and fix Reviews table markdown formatting
-- [ ] R002 fix: Deduplicate Execution Log rows and add Step 0 complete event
-- [ ] R002 fix: Add preflight findings to Discoveries/Notes for downstream traceability
+- [x] Read pi RPC docs to understand protocol
+- [x] Read current task outcome types
+- [x] Read naming contract
+- [x] Read roadmap Phase 1 sections
+- [x] R002 fix: Normalize top-level state metadata to be consistent with step states
+- [x] R002 fix: Deduplicate and fix Reviews table markdown formatting
+- [x] R002 fix: Deduplicate Execution Log rows and add Step 0 complete event
+- [x] R002 fix: Add preflight findings to Discoveries/Notes for downstream traceability
 
 ---
 
 ### Step 1: Define TaskExitDiagnostic Type & Classification Logic
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] ExitClassification string-literal union (9 values) and TokenCounts interface
-- [ ] ExitClassificationInput structured input type with all runtime signals (exit summary, .DONE, timeout/stall/user-kill flags, context %)
-- [ ] TaskExitDiagnostic interface with all fields, using ExitClassification return type
-- [ ] classifyExit(input: ExitClassificationInput) with roadmap precedence: .DONE → api_error → context_overflow → wall_clock_timeout → process_crash → session_vanished → stall_timeout → user_killed → unknown
-- [ ] JSDoc precedence table on classifyExit and types
-- [ ] Re-export from extensions/taskplane/index.ts barrel
-- [ ] R004 fix: Remove TokenCounts re-export from diagnostics.ts to avoid duplicate export via barrel index.ts
-- [ ] R004 fix: Correct ExitSummary JSDoc — mark required non-nullable fields accurately or make them optional for crash tolerance
+- [x] ExitClassification string-literal union (9 values) and TokenCounts interface
+- [x] ExitClassificationInput structured input type with all runtime signals (exit summary, .DONE, timeout/stall/user-kill flags, context %)
+- [x] TaskExitDiagnostic interface with all fields, using ExitClassification return type
+- [x] classifyExit(input: ExitClassificationInput) with roadmap precedence: .DONE → api_error → context_overflow → wall_clock_timeout → process_crash → session_vanished → stall_timeout → user_killed → unknown
+- [x] JSDoc precedence table on classifyExit and types
+- [x] Re-export from extensions/taskplane/index.ts barrel
+- [x] R004 fix: Remove TokenCounts re-export from diagnostics.ts to avoid duplicate export via barrel index.ts
+- [x] R004 fix: Correct ExitSummary JSDoc — mark required non-nullable fields accurately or make them optional for crash tolerance
 
 ---
 
 ### Step 2: Build RPC Wrapper Script
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] R005: Align exit-summary schema — `ExitSummary` is wrapper output (no classification field); classification deferred to `classifyExit()` consumer
-- [ ] R005: Single-write finalization — guard ensures exit summary written exactly once across close/error/signal handlers; deterministic precedence for exitCode/exitSignal/error
-- [ ] CLI arg parsing (--sidecar-path, --exit-summary-path, --model, --system-prompt-file, --prompt-file, --tools, --extensions, plus passthrough)
-- [ ] Spawn pi --mode rpc --no-session and send prompt via JSONL framing (split on \n only, NOT readline)
-- [ ] Route and capture RPC events to sidecar JSONL with redaction (strip *_KEY/*_TOKEN/*_SECRET env vars, truncate large tool args to 500 chars)
-- [ ] Live progress display on stderr (current tool, cumulative tokens, cost)
-- [ ] Exit summary JSON on process exit with single-write guard
-- [ ] Signal forwarding (SIGTERM/SIGINT → abort RPC command) and crash handling (non-zero exit, no agent_end)
-- [ ] R006 fix: Close stdin after agent_end/terminal response to prevent pi from hanging indefinitely
-- [ ] R006 fix: Use shell:true in spawn() to match task-runner.ts pattern and ensure Windows compatibility (pi.cmd shim)
-- [ ] R006 fix: Apply redaction to exit summary fields (error, lastToolCall) before writing — add redactSummary helper
-- [ ] R006 fix: Use --tools (comma-list) instead of repeated --tool flags to match task-runner.ts pattern
-- [ ] R006 fix: Normalize exit codes (negative/NaN/non-finite → 1) in both exit summary and process.exitCode
+- [x] R005: Align exit-summary schema — `ExitSummary` is wrapper output (no classification field); classification deferred to `classifyExit()` consumer
+- [x] R005: Single-write finalization — guard ensures exit summary written exactly once across close/error/signal handlers; deterministic precedence for exitCode/exitSignal/error
+- [x] CLI arg parsing (--sidecar-path, --exit-summary-path, --model, --system-prompt-file, --prompt-file, --tools, --extensions, plus passthrough)
+- [x] Spawn pi --mode rpc --no-session and send prompt via JSONL framing (split on \n only, NOT readline)
+- [x] Route and capture RPC events to sidecar JSONL with redaction (strip *_KEY/*_TOKEN/*_SECRET env vars, truncate large tool args to 500 chars)
+- [x] Live progress display on stderr (current tool, cumulative tokens, cost)
+- [x] Exit summary JSON on process exit with single-write guard
+- [x] Signal forwarding (SIGTERM/SIGINT → abort RPC command) and crash handling (non-zero exit, no agent_end)
+- [x] R006 fix: Close stdin after agent_end/terminal response to prevent pi from hanging indefinitely
+- [x] R006 fix: Use shell:true in spawn() to match task-runner.ts pattern and ensure Windows compatibility (pi.cmd shim)
+- [x] R006 fix: Apply redaction to exit summary fields (error, lastToolCall) before writing — add redactSummary helper
+- [x] R006 fix: Use --tools (comma-list) instead of repeated --tool flags to match task-runner.ts pattern
+- [x] R006 fix: Normalize exit codes (negative/NaN/non-finite → 1) in both exit summary and process.exitCode
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Unit tests for classifyExit() — all 9 classifications + precedence collisions (table-driven)
-- [ ] Unit tests for redaction logic — sidecar events AND exit summary, including *_KEY/*_TOKEN/*_SECRET + truncation
-- [ ] Unit tests for exit summary accumulation (token totals, retry aggregation, single-write guard)
-- [ ] Unit tests for JSONL framing (split on \n, optional \r, trailing partial buffer)
-- [ ] Integration test: mock pi process (scripted fixture stdout), verify sidecar + summary artifacts
-- [ ] Full test suite passes: `cd extensions && npx vitest run`
-- [ ] rpc-wrapper.mjs runs: `node bin/rpc-wrapper.mjs --help`
-- [ ] R008 fix: Real integration test — run rpc-wrapper.mjs with mock pi script, assert sidecar JSONL entries and exit summary JSON contents
-- [ ] R008 fix: Process-level tests for exit summary lifecycle — spawn error fallback, crash without agent_end, exit code normalization (null/negative → 1), single-write guard
-- [ ] R008 fix: Remove dead/placeholder code from integration test (unused imports, no-op assertions)
-- [ ] R008 fix: Full test suite passes after changes
-- [ ] R008 fix: Replace no-op integration test with real subprocess integration (spawn mock-pi fixture, verify sidecar JSONL + exit summary JSON contents)
-- [ ] R008 fix: Add lifecycle finalization tests — multi-message_end token accumulation, retry/compaction aggregation, single-write guard across close/error/signal, spawn-error summary persistence
-- [ ] R008 fix: Full test suite passes after additions
+- [x] Unit tests for classifyExit() — all 9 classifications + precedence collisions (table-driven)
+- [x] Unit tests for redaction logic — sidecar events AND exit summary, including *_KEY/*_TOKEN/*_SECRET + truncation
+- [x] Unit tests for exit summary accumulation (token totals, retry aggregation, single-write guard)
+- [x] Unit tests for JSONL framing (split on \n, optional \r, trailing partial buffer)
+- [x] Integration test: mock pi process (scripted fixture stdout), verify sidecar + summary artifacts
+- [x] Full test suite passes: `cd extensions && npx vitest run`
+- [x] rpc-wrapper.mjs runs: `node bin/rpc-wrapper.mjs --help`
+- [x] R008 fix: Real integration test — run rpc-wrapper.mjs with mock pi script, assert sidecar JSONL entries and exit summary JSON contents
+- [x] R008 fix: Process-level tests for exit summary lifecycle — spawn error fallback, crash without agent_end, exit code normalization (null/negative → 1), single-write guard
+- [x] R008 fix: Remove dead/placeholder code from integration test (unused imports, no-op assertions)
+- [x] R008 fix: Full test suite passes after changes
+- [x] R008 fix: Replace no-op integration test with real subprocess integration (spawn mock-pi fixture, verify sidecar JSONL + exit summary JSON contents)
+- [x] R008 fix: Add lifecycle finalization tests — multi-message_end token accumulation, retry/compaction aggregation, single-write guard across close/error/signal, spawn-error summary persistence
+- [x] R008 fix: Full test suite passes after additions
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] JSDoc on exported types and functions in diagnostics.ts
-- [ ] Usage comment at top of rpc-wrapper.mjs
-- [ ] package.json files array — verified: bin/ glob already covers bin/rpc-wrapper.mjs (24.9kB in npm pack --dry-run)
-- [ ] R009: Evaluate docs/explanation/architecture.md and README.md for impact — NOT AFFECTED: rpc-wrapper is internal infra not yet integrated (TP-026); README covers user-facing features only
-- [ ] R009: Completion gate — all 47 prior checkboxes checked, 955/955 tests pass, rpc-wrapper.mjs --help OK, npm pack --dry-run confirms packaging
-- [ ] `.DONE` created
+- [x] JSDoc on exported types and functions in diagnostics.ts
+- [x] Usage comment at top of rpc-wrapper.mjs
+- [x] package.json files array — verified: bin/ glob already covers bin/rpc-wrapper.mjs (24.9kB in npm pack --dry-run)
+- [x] R009: Evaluate docs/explanation/architecture.md and README.md for impact — NOT AFFECTED: rpc-wrapper is internal infra not yet integrated (TP-026); README covers user-facing features only
+- [x] R009: Completion gate — all 47 prior checkboxes checked, 955/955 tests pass, rpc-wrapper.mjs --help OK, npm pack --dry-run confirms packaging
+- [x] `.DONE` created
 
 ---
 

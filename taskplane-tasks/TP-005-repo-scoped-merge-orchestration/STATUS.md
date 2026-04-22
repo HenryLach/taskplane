@@ -1,10 +1,10 @@
 # TP-005: Repo-Scoped Merge Orchestration with Explicit Partial Outcomes — Status
 
-**Current Step:** None
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 5
 **Size:** L
 
@@ -14,32 +14,32 @@
 ---
 
 ### Step 0: Partition merge flow by repo
-**Status:** Pending
+**Status:** ✅ Complete
 
 **Contract:** Lanes are grouped by `repoId` (from `AllocatedLane.repoId`). Groups are sorted alphabetically by repoId (undefined → `""` sorts first, preserving mono-repo behavior). Within each group, the existing fewest-files-first or sequential order is preserved. Each group's merge runs against `resolveRepoRoot(repoId)` with `resolveBaseBranch(repoId)`. Mono-repo mode (no repoId) produces one group with `repoId=undefined`, preserving current behavior exactly.
 
 **Failure semantics (Step 0):** On per-repo failure, continue merging remaining repos (best-effort). Aggregate `MergeWaveResult.status`: if ALL repos succeed → `"succeeded"`, if SOME fail → `"partial"`, if ALL fail → `"failed"`. `failedLane` / `failureReason` are set to the first failure across all repos (deterministic due to sorted repo group order).
 
-- [ ] Define repo-scoped merge contract: grouping key, ordering, fallback (documented above)
-- [ ] Add `groupMergeableLanesByRepo()` helper in `merge.ts`
-- [ ] Refactor `mergeWave()` to iterate per-repo groups with correct `repoRoot` / `baseBranch`
-- [ ] Aggregate per-repo merge outcomes into single `MergeWaveResult`
-- [ ] Update engine.ts `/orch` call site to pass `workspaceConfig` to `mergeWave()`
-- [ ] Update resume.ts `/orch-resume` call sites (both re-exec merge and wave merge) to pass `workspaceConfig`
-- [ ] Add unit tests: multi-repo grouping determinism
-- [ ] Add unit tests: mono-repo no-regression (single group, same behavior)
-- [ ] Add unit tests: deterministic failure aggregation across repos
-- [ ] Fix messages.ts misleading "into develop" text
-- [ ] R002 fix: propagate `repoId` on `MergeLaneResult` in both success and error paths
-- [ ] R002 fix: aggregate status uses lane-level evidence (not repo-level) to fix all-partial misclassification
-- [ ] R002 fix: add status rollup edge case tests and repoId propagation tests (10 new assertions)
-- [ ] R002 fix (iter 2): detect repo-level setup failures via anyRepoFailed flag (not just failedLane)
-- [ ] R002 fix (iter 2): update test helper to use repo-level statuses, add 4 setup-failure test cases
+- [x] Define repo-scoped merge contract: grouping key, ordering, fallback (documented above)
+- [x] Add `groupMergeableLanesByRepo()` helper in `merge.ts`
+- [x] Refactor `mergeWave()` to iterate per-repo groups with correct `repoRoot` / `baseBranch`
+- [x] Aggregate per-repo merge outcomes into single `MergeWaveResult`
+- [x] Update engine.ts `/orch` call site to pass `workspaceConfig` to `mergeWave()`
+- [x] Update resume.ts `/orch-resume` call sites (both re-exec merge and wave merge) to pass `workspaceConfig`
+- [x] Add unit tests: multi-repo grouping determinism
+- [x] Add unit tests: mono-repo no-regression (single group, same behavior)
+- [x] Add unit tests: deterministic failure aggregation across repos
+- [x] Fix messages.ts misleading "into develop" text
+- [x] R002 fix: propagate `repoId` on `MergeLaneResult` in both success and error paths
+- [x] R002 fix: aggregate status uses lane-level evidence (not repo-level) to fix all-partial misclassification
+- [x] R002 fix: add status rollup edge case tests and repoId propagation tests (10 new assertions)
+- [x] R002 fix (iter 2): detect repo-level setup failures via anyRepoFailed flag (not just failedLane)
+- [x] R002 fix (iter 2): update test helper to use repo-level statuses, add 4 setup-failure test cases
 
 ---
 
 ### Step 1: Update outcome modeling
-**Status:** Pending
+**Status:** ✅ Complete
 
 **Contract:** Step 0 already added `repoId` on `MergeLaneResult`, `RepoMergeOutcome` type, and `repoResults` on `MergeWaveResult`. Step 1 adds explicit partial-success summary reporting when repos diverge in merge outcome.
 
@@ -50,19 +50,19 @@
 - Both engine.ts and resume.ts use the same shared formatter for parity.
 - Notification level: `"warning"` for the partial summary (since some repos succeeded).
 
-- [ ] Add `formatRepoMergeSummary()` shared helper in `messages.ts`
-- [ ] Add `orchMergePartialRepoSummary` template to `ORCH_MESSAGES`
-- [ ] Wire partial-summary emission in `engine.ts` after merge result handling
-- [ ] Wire partial-summary emission in `resume.ts` after merge result handling (parity)
-- [ ] Add tests: deterministic repo partial-summary formatting
-- [ ] Add tests: no repo-divergence text when partial is from mixed-outcome lanes only
-- [ ] Add tests: engine vs resume message parity (same formatter used)
-- [ ] Add tests: mono-repo (empty repoResults) produces no repo summary
+- [x] Add `formatRepoMergeSummary()` shared helper in `messages.ts`
+- [x] Add `orchMergePartialRepoSummary` template to `ORCH_MESSAGES`
+- [x] Wire partial-summary emission in `engine.ts` after merge result handling
+- [x] Wire partial-summary emission in `resume.ts` after merge result handling (parity)
+- [x] Add tests: deterministic repo partial-summary formatting
+- [x] Add tests: no repo-divergence text when partial is from mixed-outcome lanes only
+- [x] Add tests: engine vs resume message parity (same formatter used)
+- [x] Add tests: mono-repo (empty repoResults) produces no repo summary
 
 ---
 
 ### Step 2: Harden failure behavior
-**Status:** Pending
+**Status:** ✅ Complete
 
 **Contract:**
 
@@ -85,27 +85,27 @@
 - Lane state files (`.pi/lane-state-*.json`) and worker conversation files remain for debugging.
 - On success: all artifacts are cleaned up in Phase 3 (engine.ts) / step 11 (resume.ts).
 
-- [ ] Extract shared `computeMergeFailurePolicy()` pure function in messages.ts
-- [ ] Refactor engine.ts merge-failure handler to use `computeMergeFailurePolicy()`
-- [ ] Refactor resume.ts merge-failure handler to use `computeMergeFailurePolicy()` (parity)
-- [ ] Add tests: pause policy produces correct phase/trigger/message (test 19)
-- [ ] Add tests: abort policy produces correct phase/trigger/message (test 20)
-- [ ] Add tests: setup-failure attribution with failedLane=null (test 21)
-- [ ] Add tests: multi-lane failure attribution (test 22)
-- [ ] Add tests: engine vs resume parity — same function, same output (test 23)
-- [ ] Add tests: reason truncation in notifications vs full in errors (test 24)
-- [ ] Add tests: deterministic first-failure across repos (test 25)
-- [ ] Add repo-level fallback in `computeMergeFailurePolicy()` for setup failures with `repoResults`
-- [ ] Add tests: repo-level fallback for single-repo setup failure (test 26)
-- [ ] Add tests: multi-repo setup failure fallback (test 27)
-- [ ] Add tests: lane-level priority over repo-level fallback (test 28)
-- [ ] Add tests: preserveWorktrees contract structural verification (test 29)
-- [ ] Verify all 207 tests pass (11 files)
+- [x] Extract shared `computeMergeFailurePolicy()` pure function in messages.ts
+- [x] Refactor engine.ts merge-failure handler to use `computeMergeFailurePolicy()`
+- [x] Refactor resume.ts merge-failure handler to use `computeMergeFailurePolicy()` (parity)
+- [x] Add tests: pause policy produces correct phase/trigger/message (test 19)
+- [x] Add tests: abort policy produces correct phase/trigger/message (test 20)
+- [x] Add tests: setup-failure attribution with failedLane=null (test 21)
+- [x] Add tests: multi-lane failure attribution (test 22)
+- [x] Add tests: engine vs resume parity — same function, same output (test 23)
+- [x] Add tests: reason truncation in notifications vs full in errors (test 24)
+- [x] Add tests: deterministic first-failure across repos (test 25)
+- [x] Add repo-level fallback in `computeMergeFailurePolicy()` for setup failures with `repoResults`
+- [x] Add tests: repo-level fallback for single-repo setup failure (test 26)
+- [x] Add tests: multi-repo setup failure fallback (test 27)
+- [x] Add tests: lane-level priority over repo-level fallback (test 28)
+- [x] Add tests: preserveWorktrees contract structural verification (test 29)
+- [x] Verify all 207 tests pass (11 files)
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
 **Verification matrix (maps to Step 0–2 contracts):**
 
@@ -117,13 +117,13 @@
 
 **Evidence requirement:** Record exact commands + pass counts in Execution Log for each checkpoint.
 
-- [ ] 3.1 Targeted: `cd extensions && npx vitest run tests/merge-repo-scoped.test.ts` → 1 file, 1 test passed (all 29 internal assertion groups green)
-- [ ] 3.2 Targeted: `cd extensions && npx vitest run tests/orch-state-persistence.test.ts` → 1 file, 1 test passed
-- [ ] 3.3 Targeted: `cd extensions && npx vitest run tests/orch-direct-implementation.test.ts` → 1 file, 1 test passed
-- [ ] 3.4 Full regression: `cd extensions && npx vitest run` → 11 files, 207 tests passed, 0 failures
-- [ ] 3.5 CLI smoke: `node bin/taskplane.mjs help` — exit 0, clean output, v0.1.17
-- [ ] 3.6 All failures triaged and fixed (if any) — no failures found, N/A
-- [ ] 3.7 Final full regression green after any fixes — 3.4 was already the final green run (no fixes needed)
+- [x] 3.1 Targeted: `cd extensions && npx vitest run tests/merge-repo-scoped.test.ts` → 1 file, 1 test passed (all 29 internal assertion groups green)
+- [x] 3.2 Targeted: `cd extensions && npx vitest run tests/orch-state-persistence.test.ts` → 1 file, 1 test passed
+- [x] 3.3 Targeted: `cd extensions && npx vitest run tests/orch-direct-implementation.test.ts` → 1 file, 1 test passed
+- [x] 3.4 Full regression: `cd extensions && npx vitest run` → 11 files, 207 tests passed, 0 failures
+- [x] 3.5 CLI smoke: `node bin/taskplane.mjs help` — exit 0, clean output, v0.1.17
+- [x] 3.6 All failures triaged and fixed (if any) — no failures found, N/A
+- [x] 3.7 Final full regression green after any fixes — 3.4 was already the final green run (no fixes needed)
 
 ---
 
@@ -137,10 +137,10 @@
 
 **R008 REVISE resolution:** R008 findings (deduped review row, CLI command format, execution log cleanup) were addressed in commit `6499df8` during Step 3 iteration. No further action needed — structural fixes already applied.
 
-- [ ] 4.1 Update `polyrepo-support-spec.md` Section 9 (Merge): add per-repo merge sequencing, deterministic ordering, non-atomic outcomes, partial/failure rollup semantics as delivered by TP-005
-- [ ] 4.2 Update `polyrepo-support-spec.md` Section 14 (Phase 2): mark repo-scoped merge flow as delivered (TP-005)
-- [ ] 4.3 Review `docs/reference/commands.md`: **not updated** — command syntax, flags, and documented behavior are unchanged. TP-005 adds internal merge orchestration changes (repo-scoped grouping) and a new partial-success notification (`⚠️ Merge partially succeeded — repo outcomes diverged`), but this is a runtime notification in workspace mode only, not a change to command surface or documented output format. No operator-facing merge output format change that would require doc updates.
-- [ ] 4.4 Log discoveries in STATUS.md Discoveries table
+- [x] 4.1 Update `polyrepo-support-spec.md` Section 9 (Merge): add per-repo merge sequencing, deterministic ordering, non-atomic outcomes, partial/failure rollup semantics as delivered by TP-005
+- [x] 4.2 Update `polyrepo-support-spec.md` Section 14 (Phase 2): mark repo-scoped merge flow as delivered (TP-005)
+- [x] 4.3 Review `docs/reference/commands.md`: **not updated** — command syntax, flags, and documented behavior are unchanged. TP-005 adds internal merge orchestration changes (repo-scoped grouping) and a new partial-success notification (`⚠️ Merge partially succeeded — repo outcomes diverged`), but this is a runtime notification in workspace mode only, not a change to command surface or documented output format. No operator-facing merge output format change that would require doc updates.
+- [x] 4.4 Log discoveries in STATUS.md Discoveries table
 - [ ] 4.5 Create `.DONE` in task folder
 
 ---

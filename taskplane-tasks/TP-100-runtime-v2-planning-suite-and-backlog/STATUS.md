@@ -1,7 +1,7 @@
 # TP-100: Runtime V2 Planning Suite and Implementation Backlog — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-30
 **Review Level:** 1
 **Review Counter:** 0
@@ -11,35 +11,35 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Review the spawn-telemetry investigation and existing architecture docs
-- [ ] Review the unimplemented mailbox and polyrepo/segment task horizon before staging the new plan
+- [x] Review the spawn-telemetry investigation and existing architecture docs
+- [x] Review the unimplemented mailbox and polyrepo/segment task horizon before staging the new plan
 
 ---
 
 ### Step 1: Author Runtime V2 Planning Suite
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Create the Runtime V2 architecture, process model, mailbox/bridge, observability, polyrepo compatibility, rollout, and crosswalk docs
-- [ ] Document the no-TMUX, no-`/task`, mailbox-first direction clearly enough for future sessions to pick up without conversation context
+- [x] Create the Runtime V2 architecture, process model, mailbox/bridge, observability, polyrepo compatibility, rollout, and crosswalk docs
+- [x] Document the no-TMUX, no-`/task`, mailbox-first direction clearly enough for future sessions to pick up without conversation context
 
 ---
 
 ### Step 2: Restage the Backlog
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Map open work (`TP-082` through `TP-093`) onto the Runtime V2 foundation
-- [ ] Stage new implementation tasks required to reach a usable Runtime V2 foundation
+- [x] Map open work (`TP-082` through `TP-093`) onto the Runtime V2 foundation
+- [x] Stage new implementation tasks required to reach a usable Runtime V2 foundation
 
 ---
 
 ### Step 3: Validation and Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Index the new docs from the specifications README
-- [ ] Update the investigation doc to point at the follow-on architecture suite
-- [ ] Record the staging outcome in task memory and mark the planning suite complete
+- [x] Index the new docs from the specifications README
+- [x] Update the investigation doc to point at the follow-on architecture suite
+- [x] Record the staging outcome in task memory and mark the planning suite complete
 
 ---
 

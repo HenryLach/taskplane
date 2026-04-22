@@ -1,0 +1,2 @@
+Superseded: 2026-04-02
+Reason: Split into TP-117 (dead code removal), TP-118 (naming cleanup), TP-119 (abort fallbacks)

@@ -1,61 +1,61 @@
 # TP-173: Discovery Segment-Step Parsing — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-13
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 10
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read discovery.ts PROMPT.md parser
-- [ ] Read types.ts ParsedTask interface
-- [ ] Read spec sections A.1 and A.10
-- [ ] Document findings
+**Status:** ✅ Complete
+- [x] Read discovery.ts PROMPT.md parser
+- [x] Read types.ts ParsedTask interface
+- [x] Read spec sections A.1 and A.10
+- [x] Document findings
 
 ---
 
 ### Step 1: Add Types
-**Status:** Pending
-- [ ] Add SegmentCheckboxGroup interface
-- [ ] Add StepSegmentMapping interface
-- [ ] Add stepSegmentMap to ParsedTask
-- [ ] Run targeted tests
+**Status:** ✅ Complete
+- [x] Add SegmentCheckboxGroup interface
+- [x] Add StepSegmentMapping interface
+- [x] Add stepSegmentMap to ParsedTask
+- [x] Run targeted tests
 
 ---
 
 ### Step 2: Implement Segment Parsing
-**Status:** Pending
+**Status:** ✅ Complete
 
 > ⚠️ Hydrated (R003 revision): Parser adds segment parsing into parsePromptForOrchestrator after step extraction.
 
-- [ ] Add parseStepSegmentMapping helper function that extracts steps and their segment groups from PROMPT content, including fallback grouping: checkboxes before any `#### Segment:` marker (or in steps with no markers) map to the task's primary repoId (packetRepo fallback)
-- [ ] Integrate helper into parsePromptForOrchestrator to populate stepSegmentMap on ParsedTask and return diagnostics alongside the mapping
-- [ ] Handle edge cases: empty segments (non-fatal warning), duplicate repoId in step (discovery error), unknown repoId (non-fatal warning with suggested matches from workspace repos)
-- [ ] Run targeted tests (discovery-routing tests + verify new parser path)
-- [ ] R005-1: Fix fallback repo — use SEGMENT_FALLBACK_REPO_PLACEHOLDER sentinel replaced during routing resolution
-- [ ] R005-2: Add unknown step-segment repoId validation against workspace repos in resolveTaskRouting, emitting SEGMENT_STEP_REPO_INVALID warnings
-- [ ] R006-1: Fix duplicate repo detection for pre-segment fallback group + post-placeholder resolution
-- [ ] R006-2: Resolve SEGMENT_FALLBACK_REPO_PLACEHOLDER in repo mode (not just workspace mode)
-- [ ] R006-3: Add best-effort suggested matches to unknown-repo warnings
+- [x] Add parseStepSegmentMapping helper function that extracts steps and their segment groups from PROMPT content, including fallback grouping: checkboxes before any `#### Segment:` marker (or in steps with no markers) map to the task's primary repoId (packetRepo fallback)
+- [x] Integrate helper into parsePromptForOrchestrator to populate stepSegmentMap on ParsedTask and return diagnostics alongside the mapping
+- [x] Handle edge cases: empty segments (non-fatal warning), duplicate repoId in step (discovery error), unknown repoId (non-fatal warning with suggested matches from workspace repos)
+- [x] Run targeted tests (discovery-routing tests + verify new parser path)
+- [x] R005-1: Fix fallback repo — use SEGMENT_FALLBACK_REPO_PLACEHOLDER sentinel replaced during routing resolution
+- [x] R005-2: Add unknown step-segment repoId validation against workspace repos in resolveTaskRouting, emitting SEGMENT_STEP_REPO_INVALID warnings
+- [x] R006-1: Fix duplicate repo detection for pre-segment fallback group + post-placeholder resolution
+- [x] R006-2: Resolve SEGMENT_FALLBACK_REPO_PLACEHOLDER in repo mode (not just workspace mode)
+- [x] R006-3: Add best-effort suggested matches to unknown-repo warnings
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
-- [ ] FULL test suite passing (3303/3303)
-- [ ] Tests for segment markers, fallback, mixed, errors (14 tests in discovery-segment-steps.test.ts)
-- [ ] All failures fixed (3317/3317 pass)
+**Status:** ✅ Complete
+- [x] FULL test suite passing (3303/3303)
+- [x] Tests for segment markers, fallback, mixed, errors (14 tests in discovery-segment-steps.test.ts)
+- [x] All failures fixed (3317/3317 pass)
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
-- [ ] Discoveries logged
+**Status:** ✅ Complete
+- [x] Discoveries logged
 
 ---
 

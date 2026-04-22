@@ -1,38 +1,38 @@
 # TP-127: Fix Wave Transition Stale Snapshot — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 3: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-03
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read resolveTaskMonitorState in execution.ts
-- [ ] Understand current liveness check
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read resolveTaskMonitorState in execution.ts
+- [x] Understand current liveness check
 
 ### Step 1: Fix the stale snapshot check
-**Status:** Pending
-- [ ] Check snap.taskId matches monitored taskId
-- [ ] Stale snapshot → assume alive
-- [ ] Ensure readLaneSnapshot returns taskId
+**Status:** ✅ Complete
+- [x] Check snap.taskId matches monitored taskId
+- [x] Stale snapshot → assume alive
+- [x] Ensure readLaneSnapshot returns taskId
 
 ### Step 2: Tests
-**Status:** Pending
-- [ ] Test: stale snapshot → alive
-- [ ] Test: current running snapshot → alive
-- [ ] Test: current complete snapshot → dead
-- [ ] Run full suite
-- [ ] Fix failures
+**Status:** ✅ Complete
+- [x] Test: stale snapshot → alive
+- [x] Test: current running snapshot → alive
+- [x] Test: current complete snapshot → dead
+- [x] Run full suite
+- [x] Fix failures
 
 ### Step 3: Documentation & Delivery
-**Status:** Pending
-- [ ] Update STATUS.md
+**Status:** ✅ Complete
+- [x] Update STATUS.md
 
 ---
 

@@ -1,65 +1,65 @@
 # TP-027: Dashboard Real-Time Telemetry — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-20
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 5
 **Iteration:** 5
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read dashboard server data flow
-- [ ] Read dashboard frontend rendering
-- [ ] Read roadmap Phase 1 section 1d
-- [ ] Read Tier 2 context (CONTEXT.md) and capture constraints
-- [ ] Record preflight findings in Discoveries/Notes with file+line anchors and implementation guardrails
+- [x] Read dashboard server data flow
+- [x] Read dashboard frontend rendering
+- [x] Read roadmap Phase 1 section 1d
+- [x] Read Tier 2 context (CONTEXT.md) and capture constraints
+- [x] Record preflight findings in Discoveries/Notes with file+line anchors and implementation guardrails
 
 ---
 
 ### Step 1: Dashboard Server — Serve Telemetry Data
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Implement loadTelemetryData() — read .pi/telemetry/*.jsonl with incremental byte-offset tailing, partial-line buffering, malformed-line skipping, and file-disappearance cleanup
-- [ ] Map telemetry files to lanes — parse filename pattern {opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.jsonl to extract lane number; merge worker+reviewer files per lane; key by lane tmux prefix using batch-state lane records
-- [ ] Parse JSONL events for metrics not in lane-state: compaction count (auto_compaction_start), and provide fallback tokens/cost/retry data for lanes where lane-state is absent
-- [ ] Compute batch total cost from lane-state (primary) + telemetry JSONL (supplementary); avoid double-counting
-- [ ] Include telemetry in buildDashboardState() response as additive field alongside existing laneStates; degrade gracefully when .pi/telemetry/ is missing (pre-RPC sessions)
-- [ ] Verify server.cjs loads cleanly: node --check dashboard/server.cjs
+- [x] Implement loadTelemetryData() — read .pi/telemetry/*.jsonl with incremental byte-offset tailing, partial-line buffering, malformed-line skipping, and file-disappearance cleanup
+- [x] Map telemetry files to lanes — parse filename pattern {opId}-{batchId}-{repoId}[-{taskId}][-lane-{N}]-{role}.jsonl to extract lane number; merge worker+reviewer files per lane; key by lane tmux prefix using batch-state lane records
+- [x] Parse JSONL events for metrics not in lane-state: compaction count (auto_compaction_start), and provide fallback tokens/cost/retry data for lanes where lane-state is absent
+- [x] Compute batch total cost from lane-state (primary) + telemetry JSONL (supplementary); avoid double-counting
+- [x] Include telemetry in buildDashboardState() response as additive field alongside existing laneStates; degrade gracefully when .pi/telemetry/ is missing (pre-RPC sessions)
+- [x] Verify server.cjs loads cleanly: node --check dashboard/server.cjs
 
 ---
 
 ### Step 2: Dashboard Frontend — Display Telemetry
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Consume `currentData.telemetry[tmuxPrefix]` in renderLanesTasks() — show retry badge (active/count), compaction badge, and telemetry-sourced lastTool for all task states (running, done, error), not just running
-- [ ] Use `currentData.batchTotalCost` in renderSummary() with backward-compatible fallback to lane-state aggregation when batchTotalCost is absent
-- [ ] Add CSS for telemetry badges (.telem-badge, .telem-retry-active, .telem-compaction) as compact chips in .worker-stats — secondary to existing lane-state display
-- [ ] Graceful "—" fallback: lanes/tasks without telemetry show no telemetry badges (no empty containers, no layout shift)
+- [x] Consume `currentData.telemetry[tmuxPrefix]` in renderLanesTasks() — show retry badge (active/count), compaction badge, and telemetry-sourced lastTool for all task states (running, done, error), not just running
+- [x] Use `currentData.batchTotalCost` in renderSummary() with backward-compatible fallback to lane-state aggregation when batchTotalCost is absent
+- [x] Add CSS for telemetry badges (.telem-badge, .telem-retry-active, .telem-compaction) as compact chips in .worker-stats — secondary to existing lane-state display
+- [x] Graceful "—" fallback: lanes/tasks without telemetry show no telemetry badges (no empty containers, no layout shift)
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Syntax check: `node --check dashboard/server.cjs` and `node --check dashboard/public/app.js` pass
-- [ ] API contract: Create mock telemetry JSONL + batch-state, verify buildDashboardState() returns `telemetry` and `batchTotalCost` fields with correct values (retry lifecycle, compaction count, cost dedup)
-- [ ] Fallback/edge cases: Verify graceful behavior with missing .pi/telemetry/, malformed JSONL lines, file deletion mid-read, and pre-RPC sessions (no telemetry files)
-- [ ] Full test suite: `cd extensions && npx vitest run` passes with zero failures (32 files, 1321 tests)
-- [ ] Fix any issues discovered during verification (fixed: telemetry accumulators were not persisted across poll ticks — added module-level telemetryAccumulators Map + telemetryPrefixFiles for file rotation detection)
+- [x] Syntax check: `node --check dashboard/server.cjs` and `node --check dashboard/public/app.js` pass
+- [x] API contract: Create mock telemetry JSONL + batch-state, verify buildDashboardState() returns `telemetry` and `batchTotalCost` fields with correct values (retry lifecycle, compaction count, cost dedup)
+- [x] Fallback/edge cases: Verify graceful behavior with missing .pi/telemetry/, malformed JSONL lines, file deletion mid-read, and pre-RPC sessions (no telemetry files)
+- [x] Full test suite: `cd extensions && npx vitest run` passes with zero failures (32 files, 1321 tests)
+- [x] Fix any issues discovered during verification (fixed: telemetry accumulators were not persisted across poll ticks — added module-level telemetryAccumulators Map + telemetryPrefixFiles for file rotation detection)
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Review docs/reference/commands.md dashboard section and record decision (update or no-change rationale)
-- [ ] Finalize STATUS.md: mark Step 4 complete, update top-level status, add execution-log entry
-- [ ] Confirm .DONE file exists as final action (reconcile with STATUS.md completion)
+- [x] Review docs/reference/commands.md dashboard section and record decision (update or no-change rationale)
+- [x] Finalize STATUS.md: mark Step 4 complete, update top-level status, add execution-log entry
+- [x] Confirm .DONE file exists as final action (reconcile with STATUS.md completion)
 
 ---
 

@@ -1,10 +1,10 @@
 # TP-165: Segment Boundary .DONE Guard and Expansion Consumption — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 4
 **Iteration:** 3
 **Size:** L
 
@@ -14,14 +14,14 @@
 ---
 
 ### Step 0: Preflight and Root Cause Analysis
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read engine.ts segment lifecycle: how `.DONE` is created after task completion
-- [ ] Read task-executor-core.ts / lane-runner.ts: where `.DONE` is written
-- [ ] Read engine.ts `processSegmentExpansionRequestAtBoundary` and its call site
-- [ ] Identify exact condition causing premature .DONE
-- [ ] Identify why expansion requests are not consumed
-- [ ] Document findings in STATUS.md
+- [x] Read engine.ts segment lifecycle: how `.DONE` is created after task completion
+- [x] Read task-executor-core.ts / lane-runner.ts: where `.DONE` is written
+- [x] Read engine.ts `processSegmentExpansionRequestAtBoundary` and its call site
+- [x] Identify exact condition causing premature .DONE
+- [x] Identify why expansion requests are not consumed
+- [x] Document findings in STATUS.md
 
 **Findings:**
 
@@ -34,39 +34,39 @@ The `resolveTaskWorkerAgentId` function falls back to `lane.laneSessionId` (e.g.
 ---
 
 ### Step 1: Fix Premature .DONE Creation
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add outbox expansion-request check in lane-runner before .DONE creation — suppress .DONE if pending requests exist
-- [ ] Fix engine .DONE removal safety net to use worktree-resolved path (via laneByTaskId)
-- [ ] Run targeted tests
+- [x] Add outbox expansion-request check in lane-runner before .DONE creation — suppress .DONE if pending requests exist
+- [x] Fix engine .DONE removal safety net to use worktree-resolved path (via laneByTaskId)
+- [x] Run targeted tests
 
 ---
 
 ### Step 2: Fix Segment Expansion Consumption
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Fix `resolveTaskWorkerAgentId` fallback: append `-worker` role to `lane.laneSessionId` so outbox lookup uses correct agent ID
-- [ ] Verify `.processed` renaming already works (markSegmentExpansionRequestFile call at line ~2724)
-- [ ] Add test for `resolveTaskWorkerAgentId` returning correct worker agent ID
-- [ ] Run targeted tests
+- [x] Fix `resolveTaskWorkerAgentId` fallback: append `-worker` role to `lane.laneSessionId` so outbox lookup uses correct agent ID
+- [x] Verify `.processed` renaming already works (markSegmentExpansionRequestFile call at line ~2724)
+- [x] Add test for `resolveTaskWorkerAgentId` returning correct worker agent ID
+- [x] Run targeted tests
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] FULL test suite passing (3268 tests, 0 failures)
-- [ ] Regression test: multi-segment .DONE guard (5 tests in segment-boundary-done-guard.test.ts)
-- [ ] Regression test: expansion request consumption (3 tests + 6 tests in segment-expansion-engine.test.ts)
-- [ ] All failures fixed (none found)
+- [x] FULL test suite passing (3268 tests, 0 failures)
+- [x] Regression test: multi-segment .DONE guard (5 tests in segment-boundary-done-guard.test.ts)
+- [x] Regression test: expansion request consumption (3 tests + 6 tests in segment-expansion-engine.test.ts)
+- [x] All failures fixed (none found)
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Docs reviewed for segment lifecycle references (no updates needed — internal engine behavior)
-- [ ] Discoveries logged
+- [x] Docs reviewed for segment lifecycle references (no updates needed — internal engine behavior)
+- [x] Discoveries logged
 
 ---
 

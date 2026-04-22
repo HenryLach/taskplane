@@ -1,68 +1,68 @@
 # TP-144: Segment Expansion Acceptance Tests — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 6: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-06
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 3
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read spec section 8
-- [ ] Verify workspace clean state
-- [ ] Verify TP-142 and TP-143 complete
-- [ ] Establish regression baseline
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read spec section 8
+- [x] Verify workspace clean state
+- [x] Verify TP-142 and TP-143 complete
+- [x] Establish regression baseline
 
 ### Step 1: Regression verification
-**Status:** Pending
-- [ ] Reset workspace
-- [ ] Run 6 existing tasks
-- [ ] All pass unchanged
-- [ ] Document baseline
+**Status:** ✅ Complete
+- [x] Reset workspace
+- [x] Run 6 existing tasks
+- [x] All pass unchanged
+- [x] Document baseline
 
 ### Step 2: Expansion test task
-**Status:** Pending
-- [ ] Create expansion test task
-- [ ] Verify TP-007 PROMPT explicitly instructs: api change → discover web dependency → call `request_segment_expansion` → finish api segment
-- [ ] Verify TP-007 starts with only `api-service` segment before runtime expansion
-- [ ] Worker expands to new repo
-- [ ] Add unit coverage that `request_segment_expansion` writes the expected outbox request payload for TP-007-style api→web expansion
-- [ ] Add unit coverage that expansion DAG mutation enforces `api-service` predecessor and schedules `web-client` continuation segment execution order
-- [ ] Add unit coverage that approved expansion upserts/persists pending segment records for the inserted web segment
-- [ ] Run targeted expansion unit tests and capture passing evidence for Step 2
+**Status:** ✅ Complete
+- [x] Create expansion test task
+- [x] Verify TP-007 PROMPT explicitly instructs: api change → discover web dependency → call `request_segment_expansion` → finish api segment
+- [x] Verify TP-007 starts with only `api-service` segment before runtime expansion
+- [x] Worker expands to new repo
+- [x] Add unit coverage that `request_segment_expansion` writes the expected outbox request payload for TP-007-style api→web expansion
+- [x] Add unit coverage that expansion DAG mutation enforces `api-service` predecessor and schedules `web-client` continuation segment execution order
+- [x] Add unit coverage that approved expansion upserts/persists pending segment records for the inserted web segment
+- [x] Run targeted expansion unit tests and capture passing evidence for Step 2
 
 ### Step 3: Repeat-repo expansion test
-**Status:** Pending
-- [ ] Formalize steering-based scope amendment in PROMPT.md (defer live TP-008 polyrepo e2e due merge-agent issue #439 and align Step 3 acceptance wording)
-- [ ] Add unit coverage for repeat-repo expansion that creates `shared-libs::2` after `api-service` second-pass request
-- [ ] Add unit coverage for repeat-repo dependency wiring so second-pass segment depends on `api-service` and rewires downstream dependents
-- [ ] Add unit coverage for repeat-repo persistence metadata using orch-branch provisioning for the `::2` segment
-- [ ] Run targeted repeat-repo expansion unit tests and capture passing evidence
+**Status:** ✅ Complete
+- [x] Formalize steering-based scope amendment in PROMPT.md (defer live TP-008 polyrepo e2e due merge-agent issue #439 and align Step 3 acceptance wording)
+- [x] Add unit coverage for repeat-repo expansion that creates `shared-libs::2` after `api-service` second-pass request
+- [x] Add unit coverage for repeat-repo dependency wiring so second-pass segment depends on `api-service` and rewires downstream dependents
+- [x] Add unit coverage for repeat-repo persistence metadata using orch-branch provisioning for the `::2` segment
+- [x] Run targeted repeat-repo expansion unit tests and capture passing evidence
 
 ### Step 4: Resume after expansion
-**Status:** Pending
-- [ ] Add unit coverage for persisted state where expansion is approved before expanded segment execution
-- [ ] Add unit coverage that resume reconstruction reactivates expanded segment execution frontier
-- [ ] Add unit coverage that processed expansion request IDs prevent duplicate processing on resume
-- [ ] Run targeted resume + expansion unit tests and capture passing evidence
+**Status:** ✅ Complete
+- [x] Add unit coverage for persisted state where expansion is approved before expanded segment execution
+- [x] Add unit coverage that resume reconstruction reactivates expanded segment execution frontier
+- [x] Add unit coverage that processed expansion request IDs prevent duplicate processing on resume
+- [x] Run targeted resume + expansion unit tests and capture passing evidence
 
 ### Step 5: Testing & Verification
-**Status:** Pending
-- [ ] Expansion-focused unit tests pass (tool + engine + frontier coverage)
-- [ ] Regression validation captured via unit test pass/fail status (live `/orch` TP-001..TP-006 deferred for issue #439)
-- [ ] Resume-after-expansion unit coverage passes
-- [ ] Full unit suite passing
+**Status:** ✅ Complete
+- [x] Expansion-focused unit tests pass (tool + engine + frontier coverage)
+- [x] Regression validation captured via unit test pass/fail status (live `/orch` TP-001..TP-006 deferred for issue #439)
+- [x] Resume-after-expansion unit coverage passes
+- [x] Full unit suite passing
 
 ### Step 6: Documentation & Delivery
-**Status:** Pending
-- [ ] Document results
-- [ ] Update spec if needed
-- [ ] Update STATUS.md
+**Status:** ✅ Complete
+- [x] Document results
+- [x] Update spec if needed
+- [x] Update STATUS.md
 
 ---
 

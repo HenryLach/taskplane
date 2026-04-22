@@ -1,54 +1,54 @@
 # TP-148: Wave Display, MaxLanes, Session Naming — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery (Final)
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-07
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 4
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read waves.ts per-repo allocation
-- [ ] Read engine.ts wave display
-- [ ] Read extension.ts widget session lookup
-- [ ] Read dashboard wave display
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read waves.ts per-repo allocation
+- [x] Read engine.ts wave display
+- [x] Read extension.ts widget session lookup
+- [x] Read dashboard wave display
 
 ### Step 1: Wave display with segment context
-**Status:** Pending
-- [ ] Add segment context to wavePlan in persisted state (segment index/total/repoId per task in each wave)
-- [ ] Dashboard: show segment info (e.g. "TP-006 (segment 2/3: api-service)") in wave tooltip and task rows
-- [ ] Engine: include segment context in wave_start events
-- [ ] Run targeted tests (49 pass, 0 fail)
+**Status:** ✅ Complete
+- [x] Add segment context to wavePlan in persisted state (segment index/total/repoId per task in each wave)
+- [x] Dashboard: show segment info (e.g. "TP-006 (segment 2/3: api-service)") in wave tooltip and task rows
+- [x] Engine: include segment context in wave_start events
+- [x] Run targeted tests (49 pass, 0 fail)
 
 ### Step 2: Global maxLanes cap
-**Status:** Pending
-- [ ] Add enforceGlobalLaneCap function in waves.ts that reduces lanes across repos when total exceeds maxLanes
-- [ ] Integrate global cap into allocateLanes after per-repo assignment
-- [ ] Add test: maxLanes=4 with 3 repos produces at most 4 total lanes
-- [ ] Run targeted tests (29 pass, 0 fail)
+**Status:** ✅ Complete
+- [x] Add enforceGlobalLaneCap function in waves.ts that reduces lanes across repos when total exceeds maxLanes
+- [x] Integrate global cap into allocateLanes after per-repo assignment
+- [x] Add test: maxLanes=4 with 3 repos produces at most 4 total lanes
+- [x] Run targeted tests (29 pass, 0 fail)
 
 ### Step 3: Fix session naming
-**Status:** Pending
-- [ ] Fix isV2AgentAlive to handle workspace-mode lane session IDs (laneSessionId includes repoId but agentId uses global lane number)
-- [ ] Also fix killV2LaneAgents with laneNumber fallback for workspace mode (same root cause)
-- [ ] Verify formatting.ts widget already uses sessionAlive from monitor (fixed upstream) and dashboard isLaneAliveV2 already uses laneNumber
-- [ ] Run targeted tests (125 pass, 0 fail)
+**Status:** ✅ Complete
+- [x] Fix isV2AgentAlive to handle workspace-mode lane session IDs (laneSessionId includes repoId but agentId uses global lane number)
+- [x] Also fix killV2LaneAgents with laneNumber fallback for workspace mode (same root cause)
+- [x] Verify formatting.ts widget already uses sessionAlive from monitor (fixed upstream) and dashboard isLaneAliveV2 already uses laneNumber
+- [x] Run targeted tests (125 pass, 0 fail)
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] Wave display segment context verified (server passes segments, dashboard builds waveSegmentLabels, tooltip shows segment info)
-- [ ] maxLanes=4 with 3 repos produces at most 4 total lanes verified (enforceGlobalLaneCap test passes)
-- [ ] Session naming fix verified (isV2AgentAlive and killV2LaneAgents use laneNumber fallback)
-- [ ] Full test suite passing (3250 pass, 0 fail)
+**Status:** ✅ Complete
+- [x] Wave display segment context verified (server passes segments, dashboard builds waveSegmentLabels, tooltip shows segment info)
+- [x] maxLanes=4 with 3 repos produces at most 4 total lanes verified (enforceGlobalLaneCap test passes)
+- [x] Session naming fix verified (isV2AgentAlive and killV2LaneAgents use laneNumber fallback)
+- [x] Full test suite passing (3250 pass, 0 fail)
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] Update STATUS.md and create .DONE
+**Status:** ✅ Complete
+- [x] Update STATUS.md and create .DONE
 
 ---
 

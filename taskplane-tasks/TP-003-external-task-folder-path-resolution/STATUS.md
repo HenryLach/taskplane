@@ -1,10 +1,10 @@
 # TP-003: External Task Folder .DONE and STATUS Path Resolution — Status
 
-**Current Step:** None
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 5
 **Size:** M
 
@@ -14,62 +14,62 @@
 ---
 
 ### Step 0: Introduce canonical task-path resolver
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Define resolver contract: `resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot)` — returns `{donePath, statusPath, taskFolderResolved}` with two-branch logic: (a) task folder inside repoRoot → `<worktree>/<relative>/...`, (b) task folder outside repoRoot → absolute `<taskFolder>/...` directly
-- [ ] Implement `resolveCanonicalTaskPaths` helper in `execution.ts` with archive fallback for both branches
-- [ ] Refactor `resolveTaskDonePath` to delegate to the new canonical resolver
-- [ ] Refactor `parseWorktreeStatusMd` to delegate to the new canonical resolver (eliminate duplicated translation logic)
-- [ ] Refactor `pollUntilTaskComplete` to use canonical resolver for both donePath and statusPath (was deriving statusPath via `dirname(donePath)`)
-- [ ] Identify abort.ts `selectAbortTargetSessions` as deferred call-site (Step 1 scope, noted here for traceability)
-- [ ] Verify monorepo compatibility: repo-contained task folders still resolve to `<worktree>/<relative-task-folder>/...`; archive fallback preserved; no behavior change for existing monorepo tasks (3 passing test suites confirmed)
+- [x] Define resolver contract: `resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot)` — returns `{donePath, statusPath, taskFolderResolved}` with two-branch logic: (a) task folder inside repoRoot → `<worktree>/<relative>/...`, (b) task folder outside repoRoot → absolute `<taskFolder>/...` directly
+- [x] Implement `resolveCanonicalTaskPaths` helper in `execution.ts` with archive fallback for both branches
+- [x] Refactor `resolveTaskDonePath` to delegate to the new canonical resolver
+- [x] Refactor `parseWorktreeStatusMd` to delegate to the new canonical resolver (eliminate duplicated translation logic)
+- [x] Refactor `pollUntilTaskComplete` to use canonical resolver for both donePath and statusPath (was deriving statusPath via `dirname(donePath)`)
+- [x] Identify abort.ts `selectAbortTargetSessions` as deferred call-site (Step 1 scope, noted here for traceability)
+- [x] Verify monorepo compatibility: repo-contained task folders still resolve to `<worktree>/<relative-task-folder>/...`; archive fallback preserved; no behavior change for existing monorepo tasks (3 passing test suites confirmed)
 
 ---
 
 ### Step 1: Fix completion probing
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Refactor `abort.ts::selectAbortTargetSessions` to use `resolveCanonicalTaskPaths` instead of manual repo-relative path translation (fixes invalid `taskFolderInWorktree` for external task folders)
-- [ ] Verify `writeWrapUpFiles` correctly resolves wrap-up signal file paths for external task folders (dependent on `taskFolderInWorktree` fix above — uses `taskFolderInWorktree` unchanged, works correctly with canonical resolved path)
-- [ ] Verify `buildLaneEnvVars` TASK_AUTOSTART handles external prompt paths correctly (uses absolute path as-is — no change needed, out of scope for completion probing)
-- [ ] Acceptance: monorepo tasks still resolve `taskFolderInWorktree` to `<worktree>/<relative-path>` — verified via `resolveCanonicalTaskPaths` case 1 logic
-- [ ] Acceptance: external task-root tasks resolve `taskFolderInWorktree` to absolute canonical path (not re-joined under worktree) — verified via `resolveCanonicalTaskPaths` case 2 logic
-- [ ] Acceptance: archive fallback works for both repo-contained and external task folders in abort flow — `resolveCanonicalTaskPaths` handles archive fallback for both branches
+- [x] Refactor `abort.ts::selectAbortTargetSessions` to use `resolveCanonicalTaskPaths` instead of manual repo-relative path translation (fixes invalid `taskFolderInWorktree` for external task folders)
+- [x] Verify `writeWrapUpFiles` correctly resolves wrap-up signal file paths for external task folders (dependent on `taskFolderInWorktree` fix above — uses `taskFolderInWorktree` unchanged, works correctly with canonical resolved path)
+- [x] Verify `buildLaneEnvVars` TASK_AUTOSTART handles external prompt paths correctly (uses absolute path as-is — no change needed, out of scope for completion probing)
+- [x] Acceptance: monorepo tasks still resolve `taskFolderInWorktree` to `<worktree>/<relative-path>` — verified via `resolveCanonicalTaskPaths` case 1 logic
+- [x] Acceptance: external task-root tasks resolve `taskFolderInWorktree` to absolute canonical path (not re-joined under worktree) — verified via `resolveCanonicalTaskPaths` case 2 logic
+- [x] Acceptance: archive fallback works for both repo-contained and external task folders in abort flow — `resolveCanonicalTaskPaths` handles archive fallback for both branches
 
 ---
 
 ### Step 2: Add regression coverage
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Create `extensions/tests/external-task-path-resolution.test.ts` with 29 tests (commit 9629986)
-- [ ] Test `resolveCanonicalTaskPaths` Branch 1: repo-contained → worktree-relative (3 cases: basic, nested, no-files)
-- [ ] Test `resolveCanonicalTaskPaths` Branch 2: external → canonical absolute (4 cases: basic, deep-nested, prefix-substring edge, no-files)
-- [ ] Test `resolveCanonicalTaskPaths` Branch 3: archive fallback (3 cases: repo-contained, external, primary-preferred)
-- [ ] Test `resolveCanonicalTaskPaths` Branch 4: primary-path fallback when nothing exists (2 cases: repo, external)
-- [ ] Test `resolveTaskDonePath` delegation (3 cases: repo-contained, external, archive)
-- [ ] Test `parseWorktreeStatusMd` canonical path usage (4 cases: repo, external, missing-file, archive)
-- [ ] Test `selectAbortTargetSessions` abort-flow regression (6 cases: repo, external, archived-external, archived-repo, no-task, persisted-only)
-- [ ] Test monorepo completion detection end-to-end (4 cases: .DONE worktree, STATUS.md worktree, .DONE external, coexistence)
-- [ ] Verify no regressions: 3 existing suites pass (worktree-lifecycle, workspace-config, discovery-routing — 109 tests)
+- [x] Create `extensions/tests/external-task-path-resolution.test.ts` with 29 tests (commit 9629986)
+- [x] Test `resolveCanonicalTaskPaths` Branch 1: repo-contained → worktree-relative (3 cases: basic, nested, no-files)
+- [x] Test `resolveCanonicalTaskPaths` Branch 2: external → canonical absolute (4 cases: basic, deep-nested, prefix-substring edge, no-files)
+- [x] Test `resolveCanonicalTaskPaths` Branch 3: archive fallback (3 cases: repo-contained, external, primary-preferred)
+- [x] Test `resolveCanonicalTaskPaths` Branch 4: primary-path fallback when nothing exists (2 cases: repo, external)
+- [x] Test `resolveTaskDonePath` delegation (3 cases: repo-contained, external, archive)
+- [x] Test `parseWorktreeStatusMd` canonical path usage (4 cases: repo, external, missing-file, archive)
+- [x] Test `selectAbortTargetSessions` abort-flow regression (6 cases: repo, external, archived-external, archived-repo, no-task, persisted-only)
+- [x] Test monorepo completion detection end-to-end (4 cases: .DONE worktree, STATUS.md worktree, .DONE external, coexistence)
+- [x] Verify no regressions: 3 existing suites pass (worktree-lifecycle, workspace-config, discovery-routing — 109 tests)
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing — 139/139 tests pass across 5 suites (external-task-path-resolution, worktree-lifecycle, workspace-config, discovery-routing, execution-path-resolution)
-- [ ] Targeted tests for changed modules passing — 29/29 TP-003 tests pass; all 5 passing suites green
-- [ ] All failures fixed — 22 pre-existing failures in 4 other suites confirmed unrelated (identical failures on pre-TP-003 commit 63f99e1)
-- [ ] CLI smoke checks passing — `taskplane help` and `taskplane doctor` both run correctly
+- [x] Unit/regression tests passing — 139/139 tests pass across 5 suites (external-task-path-resolution, worktree-lifecycle, workspace-config, discovery-routing, execution-path-resolution)
+- [x] Targeted tests for changed modules passing — 29/29 TP-003 tests pass; all 5 passing suites green
+- [x] All failures fixed — 22 pre-existing failures in 4 other suites confirmed unrelated (identical failures on pre-TP-003 commit 63f99e1)
+- [x] CLI smoke checks passing — `taskplane help` and `taskplane doctor` both run correctly
 
 ---
 
 ### Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Update `.pi/local/docs/taskplane/polyrepo-implementation-plan.md` with final canonical path-resolution strategy and fallback behavior
-- [ ] Review `docs/explanation/waves-lanes-and-worktrees.md`; reviewed, no update required — doc describes high-level wave/lane/worktree concepts and does not cover internal path-resolution mechanics; TP-003 changes are implementation-internal and do not alter operator-facing behavior
-- [ ] Record discoveries in STATUS.md Discoveries table (or explicitly note none)
+- [x] Update `.pi/local/docs/taskplane/polyrepo-implementation-plan.md` with final canonical path-resolution strategy and fallback behavior
+- [x] Review `docs/explanation/waves-lanes-and-worktrees.md`; reviewed, no update required — doc describes high-level wave/lane/worktree concepts and does not cover internal path-resolution mechanics; TP-003 changes are implementation-internal and do not alter operator-facing behavior
+- [x] Record discoveries in STATUS.md Discoveries table (or explicitly note none)
 - [ ] Create `.DONE` in `taskplane-tasks/TP-003-external-task-folder-path-resolution/`
 - [ ] Confirm archive is task-runner-managed (no manual action needed)
 

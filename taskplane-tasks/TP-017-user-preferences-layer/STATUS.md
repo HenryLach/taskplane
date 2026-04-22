@@ -1,10 +1,10 @@
 # TP-017: User Preferences Layer — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 3: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 4
 **Iteration:** 4
 **Size:** S
 
@@ -15,39 +15,39 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Confirm path convention: resolve `PI_CODING_AGENT_DIR` override, cross-platform home dir, and document decision in Discoveries
+- [x] Confirm path convention: resolve `PI_CODING_AGENT_DIR` override, cross-platform home dir, and document decision in Discoveries
 
 ---
 
 ### Step 1: Implement Preferences Loader
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Preferences schema + Layer 2 allowlist defined (interface, defaults, snake→camelCase mapping, explicit field allowlist for merge)
-- [ ] `resolveUserPreferencesPath()` + `loadUserPreferences()` implemented (read/auto-create, malformed fallback, unknown keys ignored)
-- [ ] Merge function `applyUserPreferences()` integrates into `loadProjectConfig()` — only allowlisted fields override, Layer 1 untouched
-- [ ] Exports wired up and existing tests still pass
+- [x] Preferences schema + Layer 2 allowlist defined (interface, defaults, snake→camelCase mapping, explicit field allowlist for merge)
+- [x] `resolveUserPreferencesPath()` + `loadUserPreferences()` implemented (read/auto-create, malformed fallback, unknown keys ignored)
+- [x] Merge function `applyUserPreferences()` integrates into `loadProjectConfig()` — only allowlisted fields override, Layer 1 untouched
+- [x] Exports wired up and existing tests still pass
 
 ---
 
 ### Step 2: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Tests: path resolution (default + PI_CODING_AGENT_DIR override), auto-creation, malformed JSON fallback, unknown-key dropping, empty-string "not set" semantics
-- [ ] Tests: Layer 2 guardrails — non-allowlisted keys ignored, allowlisted fields applied; dashboardPort is preferences-only (not merged into config)
-- [ ] Tests: applyUserPreferences merge integration on both JSON-backed and YAML-backed Layer 1 inputs; loadProjectConfig e2e with prefs
-- [ ] `cd extensions && npx vitest run` — full suite passes (17 files, 461 tests)
+- [x] Tests: path resolution (default + PI_CODING_AGENT_DIR override), auto-creation, malformed JSON fallback, unknown-key dropping, empty-string "not set" semantics
+- [x] Tests: Layer 2 guardrails — non-allowlisted keys ignored, allowlisted fields applied; dashboardPort is preferences-only (not merged into config)
+- [x] Tests: applyUserPreferences merge integration on both JSON-backed and YAML-backed Layer 1 inputs; loadProjectConfig e2e with prefs
+- [x] `cd extensions && npx vitest run` — full suite passes (17 files, 461 tests)
 
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Verify completion criteria: all prior steps complete, preferences auto-created on first load, user values override project defaults for Layer 2 fields, tests pass
-- [ ] Documentation impact check: confirm no docs need updating (internal plumbing per PROMPT)
-- [ ] Create `.DONE` in task folder
-- [ ] Final commit with `feat(TP-017): ...` prefix and push
+- [x] Verify completion criteria: all prior steps complete, preferences auto-created on first load, user values override project defaults for Layer 2 fields, tests pass
+- [x] Documentation impact check: confirm no docs need updating (internal plumbing per PROMPT)
+- [x] Create `.DONE` in task folder
+- [x] Final commit with `feat(TP-017): ...` prefix and push
 
 ---
 

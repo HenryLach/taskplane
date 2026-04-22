@@ -1,10 +1,10 @@
 # TP-001: Workspace Config and Execution Context Foundations — Status
 
-**Current Step:** None
-​**Status:** Pending
+**Current Step:** Complete
+​**Status:** ✅ Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 10
 **Iteration:** 5
 **Size:** M
 
@@ -14,126 +14,126 @@
 ---
 
 ### Step 0: Define workspace/runtime contracts
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add WorkspaceMode union type ("repo" | "workspace") in types.ts
-- [ ] Add WorkspaceRepoConfig interface (repo ID → path + optional branch) in types.ts
-- [ ] Add WorkspaceRoutingConfig interface (tasks_root, default_repo) in types.ts
-- [ ] Add WorkspaceConfig interface (mode, repos map, routing, raw file path) in types.ts
-- [ ] Add ExecutionContext interface (workspaceRoot, repoRoot, mode, workspaceConfig, taskRunnerConfig, orchestratorConfig) in types.ts
-- [ ] Add WorkspaceConfigErrorCode union with stable codes for validation failures in types.ts
-- [ ] Add WorkspaceConfigError typed error class in types.ts
-- [ ] Add createRepoModeContext() factory for repo-mode defaults in types.ts
-- [ ] Document mode behavior invariants as JSDoc: no file → repo mode, file + invalid → fatal, file + valid → workspace mode
-- [ ] Verify all new types compile cleanly (vitest imports succeed, no new failures)
+- [x] Add WorkspaceMode union type ("repo" | "workspace") in types.ts
+- [x] Add WorkspaceRepoConfig interface (repo ID → path + optional branch) in types.ts
+- [x] Add WorkspaceRoutingConfig interface (tasks_root, default_repo) in types.ts
+- [x] Add WorkspaceConfig interface (mode, repos map, routing, raw file path) in types.ts
+- [x] Add ExecutionContext interface (workspaceRoot, repoRoot, mode, workspaceConfig, taskRunnerConfig, orchestratorConfig) in types.ts
+- [x] Add WorkspaceConfigErrorCode union with stable codes for validation failures in types.ts
+- [x] Add WorkspaceConfigError typed error class in types.ts
+- [x] Add createRepoModeContext() factory for repo-mode defaults in types.ts
+- [x] Document mode behavior invariants as JSDoc: no file → repo mode, file + invalid → fatal, file + valid → workspace mode
+- [x] Verify all new types compile cleanly (vitest imports succeed, no new failures)
 
 ---
 
 ### Step 1: Implement workspace config loading
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Create extensions/taskplane/workspace.ts with canonicalizePath() helper reusing worktree.ts normalizePath pattern
-- [ ] Implement YAML file reading with WORKSPACE_FILE_READ_ERROR on I/O failure
-- [ ] Implement YAML parsing with WORKSPACE_FILE_PARSE_ERROR on invalid YAML
-- [ ] Implement top-level schema validation (repos object, routing object) with WORKSPACE_SCHEMA_INVALID
-- [ ] Implement repos validation: WORKSPACE_MISSING_REPOS if no repos defined
-- [ ] Implement per-repo validation: WORKSPACE_REPO_PATH_MISSING, WORKSPACE_REPO_PATH_NOT_FOUND, WORKSPACE_REPO_NOT_GIT (via git rev-parse)
-- [ ] Implement duplicate repo path detection with WORKSPACE_DUPLICATE_REPO_PATH (after canonicalization)
-- [ ] Implement routing.tasks_root validation: WORKSPACE_MISSING_TASKS_ROOT, WORKSPACE_TASKS_ROOT_NOT_FOUND
-- [ ] Implement routing.default_repo validation: WORKSPACE_MISSING_DEFAULT_REPO, WORKSPACE_DEFAULT_REPO_NOT_FOUND
-- [ ] Implement loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | null — returns null when no config file (repo mode), throws WorkspaceConfigError on present+invalid
-- [ ] Verify workspace.ts compiles cleanly and exports are importable
+- [x] Create extensions/taskplane/workspace.ts with canonicalizePath() helper reusing worktree.ts normalizePath pattern
+- [x] Implement YAML file reading with WORKSPACE_FILE_READ_ERROR on I/O failure
+- [x] Implement YAML parsing with WORKSPACE_FILE_PARSE_ERROR on invalid YAML
+- [x] Implement top-level schema validation (repos object, routing object) with WORKSPACE_SCHEMA_INVALID
+- [x] Implement repos validation: WORKSPACE_MISSING_REPOS if no repos defined
+- [x] Implement per-repo validation: WORKSPACE_REPO_PATH_MISSING, WORKSPACE_REPO_PATH_NOT_FOUND, WORKSPACE_REPO_NOT_GIT (via git rev-parse)
+- [x] Implement duplicate repo path detection with WORKSPACE_DUPLICATE_REPO_PATH (after canonicalization)
+- [x] Implement routing.tasks_root validation: WORKSPACE_MISSING_TASKS_ROOT, WORKSPACE_TASKS_ROOT_NOT_FOUND
+- [x] Implement routing.default_repo validation: WORKSPACE_MISSING_DEFAULT_REPO, WORKSPACE_DEFAULT_REPO_NOT_FOUND
+- [x] Implement loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | null — returns null when no config file (repo mode), throws WorkspaceConfigError on present+invalid
+- [x] Verify workspace.ts compiles cleanly and exports are importable
 
 ---
 
 ### Step 2: Wire orchestrator startup context
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add module-level `execCtx` variable in extension.ts to hold the loaded ExecutionContext
-- [ ] Call `buildExecutionContext(ctx.cwd, loadOrchestratorConfig, loadTaskRunnerConfig)` in `session_start` handler
-- [ ] Catch `WorkspaceConfigError` in `session_start` — emit fatal notification with error code + message + actionable guidance, skip command registration
-- [ ] Populate `orchConfig` and `runnerConfig` from `execCtx` fields instead of standalone calls
-- [ ] Replace `ctx.cwd` usages in extension.ts with `execCtx.repoRoot` for all operations (state, discovery, orphan, abort, engine) — consistent with engine.ts/resume.ts/execution.ts root semantics
-- [ ] Pass `execCtx.repoRoot` (instead of `ctx.cwd`) into `executeOrchBatch()` cwd parameter
-- [ ] Pass `execCtx.repoRoot` (instead of `ctx.cwd`) into `resumeOrchBatch()` cwd parameter
-- [ ] Pass `execCtx.repoRoot` (instead of `ctx.cwd`) into discovery, orphan detection, batch state load/delete, and abort signal paths (R006 fix: use repoRoot not workspaceRoot for consistency with engine/resume)
-- [ ] Add startup guard: if `execCtx` is null (workspace config error), commands return early with "Orchestrator not initialized" notification
-- [ ] Verify repo-mode parity: no workspace config file → workspaceRoot === repoRoot === cwd, behavior unchanged
-- [ ] Verify all changes compile cleanly via vitest
+- [x] Add module-level `execCtx` variable in extension.ts to hold the loaded ExecutionContext
+- [x] Call `buildExecutionContext(ctx.cwd, loadOrchestratorConfig, loadTaskRunnerConfig)` in `session_start` handler
+- [x] Catch `WorkspaceConfigError` in `session_start` — emit fatal notification with error code + message + actionable guidance, skip command registration
+- [x] Populate `orchConfig` and `runnerConfig` from `execCtx` fields instead of standalone calls
+- [x] Replace `ctx.cwd` usages in extension.ts with `execCtx.repoRoot` for all operations (state, discovery, orphan, abort, engine) — consistent with engine.ts/resume.ts/execution.ts root semantics
+- [x] Pass `execCtx.repoRoot` (instead of `ctx.cwd`) into `executeOrchBatch()` cwd parameter
+- [x] Pass `execCtx.repoRoot` (instead of `ctx.cwd`) into `resumeOrchBatch()` cwd parameter
+- [x] Pass `execCtx.repoRoot` (instead of `ctx.cwd`) into discovery, orphan detection, batch state load/delete, and abort signal paths (R006 fix: use repoRoot not workspaceRoot for consistency with engine/resume)
+- [x] Add startup guard: if `execCtx` is null (workspace config error), commands return early with "Orchestrator not initialized" notification
+- [x] Verify repo-mode parity: no workspace config file → workspaceRoot === repoRoot === cwd, behavior unchanged
+- [x] Verify all changes compile cleanly via vitest
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
 #### 3.1: Triage pre-existing test failures (no-regression baseline)
-- [ ] Run full `cd extensions && npx vitest run` and capture baseline failure list
-- [ ] Confirm all failures are pre-existing (not caused by TP-001 changes): verified TP-001 diff doesn't touch any test files; all failures are source-verification tests looking for patterns in old task-orchestrator.ts monolith
-- [ ] Document pre-existing failure count and suites in execution log
+- [x] Run full `cd extensions && npx vitest run` and capture baseline failure list
+- [x] Confirm all failures are pre-existing (not caused by TP-001 changes): verified TP-001 diff doesn't touch any test files; all failures are source-verification tests looking for patterns in old task-orchestrator.ts monolith
+- [x] Document pre-existing failure count and suites in execution log
 
 #### 3.2: Write targeted workspace config tests (`extensions/tests/workspace-config.test.ts`)
-- [ ] Test loadWorkspaceConfig returns null when no config file (repo mode)
-- [ ] Test loadWorkspaceConfig throws WORKSPACE_FILE_PARSE_ERROR on invalid YAML
-- [ ] Test loadWorkspaceConfig throws WORKSPACE_SCHEMA_INVALID on missing repos/routing (2 tests: no repos, no routing)
-- [ ] Test loadWorkspaceConfig throws WORKSPACE_SCHEMA_INVALID on scalar/array YAML (2 tests)
-- [ ] Test loadWorkspaceConfig throws WORKSPACE_MISSING_REPOS on empty repos map
-- [ ] Test loadWorkspaceConfig throws WORKSPACE_REPO_PATH_MISSING on repo without path
-- [ ] Test loadWorkspaceConfig throws WORKSPACE_REPO_PATH_NOT_FOUND on non-existent repo path
-- [ ] Test loadWorkspaceConfig throws WORKSPACE_REPO_NOT_GIT on non-git directory
-- [ ] Test loadWorkspaceConfig throws WORKSPACE_DUPLICATE_REPO_PATH on duplicate paths
-- [ ] Test loadWorkspaceConfig throws WORKSPACE_MISSING_TASKS_ROOT on missing routing.tasks_root
-- [ ] Test loadWorkspaceConfig throws WORKSPACE_TASKS_ROOT_NOT_FOUND on non-existent tasks root
-- [ ] Test loadWorkspaceConfig throws WORKSPACE_MISSING_DEFAULT_REPO on missing routing.default_repo
-- [ ] Test loadWorkspaceConfig throws WORKSPACE_DEFAULT_REPO_NOT_FOUND on invalid default_repo ID
-- [ ] Test loadWorkspaceConfig returns valid WorkspaceConfig for well-formed config with git repos
-- [ ] Test loadWorkspaceConfig handles multiple repos in valid config
+- [x] Test loadWorkspaceConfig returns null when no config file (repo mode)
+- [x] Test loadWorkspaceConfig throws WORKSPACE_FILE_PARSE_ERROR on invalid YAML
+- [x] Test loadWorkspaceConfig throws WORKSPACE_SCHEMA_INVALID on missing repos/routing (2 tests: no repos, no routing)
+- [x] Test loadWorkspaceConfig throws WORKSPACE_SCHEMA_INVALID on scalar/array YAML (2 tests)
+- [x] Test loadWorkspaceConfig throws WORKSPACE_MISSING_REPOS on empty repos map
+- [x] Test loadWorkspaceConfig throws WORKSPACE_REPO_PATH_MISSING on repo without path
+- [x] Test loadWorkspaceConfig throws WORKSPACE_REPO_PATH_NOT_FOUND on non-existent repo path
+- [x] Test loadWorkspaceConfig throws WORKSPACE_REPO_NOT_GIT on non-git directory
+- [x] Test loadWorkspaceConfig throws WORKSPACE_DUPLICATE_REPO_PATH on duplicate paths
+- [x] Test loadWorkspaceConfig throws WORKSPACE_MISSING_TASKS_ROOT on missing routing.tasks_root
+- [x] Test loadWorkspaceConfig throws WORKSPACE_TASKS_ROOT_NOT_FOUND on non-existent tasks root
+- [x] Test loadWorkspaceConfig throws WORKSPACE_MISSING_DEFAULT_REPO on missing routing.default_repo
+- [x] Test loadWorkspaceConfig throws WORKSPACE_DEFAULT_REPO_NOT_FOUND on invalid default_repo ID
+- [x] Test loadWorkspaceConfig returns valid WorkspaceConfig for well-formed config with git repos
+- [x] Test loadWorkspaceConfig handles multiple repos in valid config
 
 #### 3.3: Write targeted execution context tests (`extensions/tests/workspace-config.test.ts`)
-- [ ] Test buildExecutionContext in repo mode: workspaceRoot === repoRoot === cwd, mode === "repo"
-- [ ] Test buildExecutionContext in workspace mode: workspaceRoot !== repoRoot, mode === "workspace", repoRoot === default repo path
-- [ ] Test buildExecutionContext propagates WorkspaceConfigError from invalid config
+- [x] Test buildExecutionContext in repo mode: workspaceRoot === repoRoot === cwd, mode === "repo"
+- [x] Test buildExecutionContext in workspace mode: workspaceRoot !== repoRoot, mode === "workspace", repoRoot === default repo path
+- [x] Test buildExecutionContext propagates WorkspaceConfigError from invalid config
 
 #### 3.4: Write type/contract unit tests
-- [ ] Test canonicalizePath normalizes backslashes to forward slashes
-- [ ] Test canonicalizePath lowercases results
-- [ ] Test canonicalizePath resolves relative paths against base
-- [ ] Test canonicalizePath handles absolute paths
-- [ ] Test WorkspaceConfigError has correct code, message, repoId, relatedPath
-- [ ] Test WorkspaceConfigError repoId and relatedPath are optional
-- [ ] Test createRepoModeContext returns correct shape (workspaceRoot === repoRoot, mode === "repo")
-- [ ] Test workspaceConfigPath returns expected path
+- [x] Test canonicalizePath normalizes backslashes to forward slashes
+- [x] Test canonicalizePath lowercases results
+- [x] Test canonicalizePath resolves relative paths against base
+- [x] Test canonicalizePath handles absolute paths
+- [x] Test WorkspaceConfigError has correct code, message, repoId, relatedPath
+- [x] Test WorkspaceConfigError repoId and relatedPath are optional
+- [x] Test createRepoModeContext returns correct shape (workspaceRoot === repoRoot, mode === "repo")
+- [x] Test workspaceConfigPath returns expected path
 
 #### 3.5: Root-consistency regression verification (source-verified in tests + manual code review)
-- [ ] Verify extension.ts /orch uses execCtx.repoRoot for discovery, orphan detection, batch state, executeOrchBatch cwd — confirmed via source verification tests (5.1–5.5) and manual grep
-- [ ] Verify extension.ts /orch-plan uses execCtx.repoRoot for discovery — confirmed L260 `execCtx!.repoRoot`
-- [ ] Verify extension.ts /orch-deps uses execCtx.repoRoot for discovery — confirmed L594 `execCtx!.repoRoot`
-- [ ] Verify extension.ts /orch-resume uses execCtx.repoRoot for resumeOrchBatch cwd — confirmed L374 `execCtx!.repoRoot`
-- [ ] Verify extension.ts /orch-abort uses execCtx.repoRoot (with ctx.cwd fallback) for state/abort signal — confirmed L404 `execCtx?.repoRoot ?? ctx.cwd`, source verification test 5.6
-- [ ] Verify engine.ts maps cwd → repoRoot and uses it consistently for discovery, state, abort — confirmed L45 `const repoRoot = cwd`, source verification test 5.7
-- [ ] Verify resume.ts maps cwd → repoRoot and uses it consistently for state, discovery, DONE checks — confirmed L339 `const repoRoot = cwd`, source verification test 5.8
-- [ ] Verify no remaining raw ctx.cwd usage in extension.ts except in session_start (buildExecutionContext), orch-abort fallback, and orch-abort comment — confirmed 3 matches: L401 comment, L404 fallback code, L634 session_start
+- [x] Verify extension.ts /orch uses execCtx.repoRoot for discovery, orphan detection, batch state, executeOrchBatch cwd — confirmed via source verification tests (5.1–5.5) and manual grep
+- [x] Verify extension.ts /orch-plan uses execCtx.repoRoot for discovery — confirmed L260 `execCtx!.repoRoot`
+- [x] Verify extension.ts /orch-deps uses execCtx.repoRoot for discovery — confirmed L594 `execCtx!.repoRoot`
+- [x] Verify extension.ts /orch-resume uses execCtx.repoRoot for resumeOrchBatch cwd — confirmed L374 `execCtx!.repoRoot`
+- [x] Verify extension.ts /orch-abort uses execCtx.repoRoot (with ctx.cwd fallback) for state/abort signal — confirmed L404 `execCtx?.repoRoot ?? ctx.cwd`, source verification test 5.6
+- [x] Verify engine.ts maps cwd → repoRoot and uses it consistently for discovery, state, abort — confirmed L45 `const repoRoot = cwd`, source verification test 5.7
+- [x] Verify resume.ts maps cwd → repoRoot and uses it consistently for state, discovery, DONE checks — confirmed L339 `const repoRoot = cwd`, source verification test 5.8
+- [x] Verify no remaining raw ctx.cwd usage in extension.ts except in session_start (buildExecutionContext), orch-abort fallback, and orch-abort comment — confirmed 3 matches: L401 comment, L404 fallback code, L634 session_start
 
 #### 3.6: Run targeted workspace tests
-- [ ] Run `cd extensions && npx vitest run tests/workspace-config.test.ts` — all 38 tests pass
-- [ ] Fixed 3 initial test failures (invalid YAML test input, ctx.cwd count)
+- [x] Run `cd extensions && npx vitest run tests/workspace-config.test.ts` — all 38 tests pass
+- [x] Fixed 3 initial test failures (invalid YAML test input, ctx.cwd count)
 
 #### 3.7: Full suite regression run
-- [ ] Run `cd extensions && npx vitest run` — 4 failed files (all pre-existing), 2 passed files (worktree-lifecycle + workspace-config), no new failures
-- [ ] Confirm worktree-lifecycle.test.ts still passes
+- [x] Run `cd extensions && npx vitest run` — 4 failed files (all pre-existing), 2 passed files (worktree-lifecycle + workspace-config), no new failures
+- [x] Confirm worktree-lifecycle.test.ts still passes
 
 #### 3.8: CLI smoke checks
-- [ ] Run `node bin/taskplane.mjs help` — exits 0 with valid output
-- [ ] Run `node bin/taskplane.mjs doctor` — runs successfully (exit 1 expected: worktree lacks config files, not a regression)
+- [x] Run `node bin/taskplane.mjs help` — exits 0 with valid output
+- [x] Run `node bin/taskplane.mjs doctor` — runs successfully (exit 1 expected: worktree lacks config files, not a regression)
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] "Must Update" docs modified: Updated `polyrepo-support-spec.md` (status, §5 impl notes, §6 schema adjustments, §14 Phase 1 checklist) and `polyrepo-implementation-plan.md` (status, WS-A marked delivered, PR-1 marked delivered, readiness checklist updated)
-- [ ] "Check If Affected" docs reviewed: `docs/reference/commands.md` — no user-visible command or option changes in TP-001, no update needed
-- [ ] Discoveries logged
-- [ ] `.DONE` created
+- [x] "Must Update" docs modified: Updated `polyrepo-support-spec.md` (status, §5 impl notes, §6 schema adjustments, §14 Phase 1 checklist) and `polyrepo-implementation-plan.md` (status, WS-A marked delivered, PR-1 marked delivered, readiness checklist updated)
+- [x] "Check If Affected" docs reviewed: `docs/reference/commands.md` — no user-visible command or option changes in TP-001, no update needed
+- [x] Discoveries logged
+- [x] `.DONE` created
 - [ ] Archive and push (orchestrator handles post-merge)
 
 ---

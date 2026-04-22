@@ -1,7 +1,7 @@
 # TP-104: Direct Agent Host, Process Registry, and Normalized Events — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Complete
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-30
 **Review Level:** 3
 **Review Counter:** 0
@@ -11,45 +11,45 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Trace the current rpc-wrapper responsibilities and identify which belong in a Runtime V2 host versus higher-level runtime code
-- [ ] Define the manifest, registry, and normalized event flow before cutting code
+- [x] Trace the current rpc-wrapper responsibilities and identify which belong in a Runtime V2 host versus higher-level runtime code
+- [x] Define the manifest, registry, and normalized event flow before cutting code
 
 ---
 
 ### Step 1: Implement Process Registry and Manifests
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Create the runtime registry and per-agent manifest helpers
-- [ ] Persist enough metadata to replace TMUX-based liveness and cleanup checks
-- [ ] Define deterministic state transitions for running, wrapping up, exited, crashed, timed out, and killed agents
+- [x] Create the runtime registry and per-agent manifest helpers
+- [x] Persist enough metadata to replace TMUX-based liveness and cleanup checks
+- [x] Define deterministic state transitions for running, wrapping up, exited, crashed, timed out, and killed agents
 
 ---
 
 ### Step 2: Implement Direct Agent Host
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Implement or evolve the host so it spawns `pi --mode rpc` directly with `shell: false` and no TMUX dependency
-- [ ] Normalize RPC events into durable per-agent event logs and parent-facing updates
-- [ ] Preserve mailbox inbox delivery and exit summaries on the new host
+- [x] Implement or evolve the host so it spawns `pi --mode rpc` directly with `shell: false` and no TMUX dependency
+- [x] Normalize RPC events into durable per-agent event logs and parent-facing updates
+- [x] Preserve mailbox inbox delivery and exit summaries on the new host
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add or update behavioral tests for direct-child hosting, registry lifecycle, normalized event persistence, and mailbox delivery
-- [ ] Run the full suite (3215 pass, 0 fail)
-- [ ] Fix all failures
+- [x] Add or update behavioral tests for direct-child hosting, registry lifecycle, normalized event persistence, and mailbox delivery
+- [x] Run the full suite (3215 pass, 0 fail)
+- [x] Fix all failures
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update Runtime V2 docs if host/registry naming differs from plan
-- [ ] Log discoveries in STATUS.md
+- [x] Update Runtime V2 docs if host/registry naming differs from plan
+- [x] Log discoveries in STATUS.md
 
 ---
 

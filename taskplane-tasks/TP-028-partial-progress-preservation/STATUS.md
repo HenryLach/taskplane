@@ -1,78 +1,78 @@
 # TP-028: Partial Progress Preservation — Status
 
-**Current Step:** None
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-19
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 6
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read worktree cleanup logic
-- [ ] Read task outcome recording
-- [ ] Read roadmap Phase 2 section 2a
-- [ ] Understand existing saved-branch logic
-- [ ] R001: Read CONTEXT.md (Tier 2) and persistence.ts serialization contract
-- [ ] R001: Read naming.ts and diagnostics.ts partialProgress fields for naming alignment
-- [ ] R001: Identify all cleanup call sites and document insertion points for Steps 1-2
-- [ ] R002: Fix Reviews table format and remove inconsistent duplicate entries
-- [ ] R002: Fix top-level metadata to reflect actual state
+- [x] Read worktree cleanup logic
+- [x] Read task outcome recording
+- [x] Read roadmap Phase 2 section 2a
+- [x] Understand existing saved-branch logic
+- [x] R001: Read CONTEXT.md (Tier 2) and persistence.ts serialization contract
+- [x] R001: Read naming.ts and diagnostics.ts partialProgress fields for naming alignment
+- [x] R001: Identify all cleanup call sites and document insertion points for Steps 1-2
+- [x] R002: Fix Reviews table format and remove inconsistent duplicate entries
+- [x] R002: Fix top-level metadata to reflect actual state
 
 ---
 
 ### Step 1: Detect and Save Partial Progress
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Implement `savePartialProgress()` helper in worktree.ts: counts commits on lane branch vs target, creates saved branch with task-ID naming, handles collisions via resolveSavedBranchCollision, returns partial progress info
-- [ ] Add `preserveFailedLaneProgress()` orchestration function in worktree.ts: iterates task outcomes, finds failed tasks with lane branches, calls savePartialProgress for each, returns set of preserved branch names
-- [ ] Insert preservation call before inter-wave reset in engine.ts (R003 critical: prevents commit loss during between-wave resets)
-- [ ] Insert preservation call before terminal cleanup in engine.ts removeAllWorktrees
-- [ ] Insert preservation call before terminal cleanup in resume.ts removeAllWorktrees
-- [ ] Pass preserved branch names to cleanup so ensureBranchDeleted skips them (R003: exemption mechanism) — Design decision: NOT NEEDED. savePartialProgress() creates a separate saved branch (saved/{opId}-{taskId}-{batchId}) at the lane branch SHA BEFORE cleanup. The lane branch can be safely deleted during cleanup since the saved branch preserves the commits independently. Existing ensureBranchDeleted may also create saved/task/... which is redundant but harmless.
-- [ ] R004: Log explicit warnings for failed preservation attempts (per-task: taskId, laneBranch, repoId, error, commitCount) at all call sites in engine.ts and resume.ts
-- [ ] R004: Handle failed-preservation-with-commits in inter-wave reset: skip worktree reset for lanes where preservation failed but commits existed (prevents commit loss)
-- [ ] R004: Fix `preservedBranches` contract mismatch — update comments/interface to document that lane branches ARE still deleted (saved branch independently preserves commits), removing misleading "should NOT be deleted" language
+- [x] Implement `savePartialProgress()` helper in worktree.ts: counts commits on lane branch vs target, creates saved branch with task-ID naming, handles collisions via resolveSavedBranchCollision, returns partial progress info
+- [x] Add `preserveFailedLaneProgress()` orchestration function in worktree.ts: iterates task outcomes, finds failed tasks with lane branches, calls savePartialProgress for each, returns set of preserved branch names
+- [x] Insert preservation call before inter-wave reset in engine.ts (R003 critical: prevents commit loss during between-wave resets)
+- [x] Insert preservation call before terminal cleanup in engine.ts removeAllWorktrees
+- [x] Insert preservation call before terminal cleanup in resume.ts removeAllWorktrees
+- [x] Pass preserved branch names to cleanup so ensureBranchDeleted skips them (R003: exemption mechanism) — Design decision: NOT NEEDED. savePartialProgress() creates a separate saved branch (saved/{opId}-{taskId}-{batchId}) at the lane branch SHA BEFORE cleanup. The lane branch can be safely deleted during cleanup since the saved branch preserves the commits independently. Existing ensureBranchDeleted may also create saved/task/... which is redundant but harmless.
+- [x] R004: Log explicit warnings for failed preservation attempts (per-task: taskId, laneBranch, repoId, error, commitCount) at all call sites in engine.ts and resume.ts
+- [x] R004: Handle failed-preservation-with-commits in inter-wave reset: skip worktree reset for lanes where preservation failed but commits existed (prevents commit loss)
+- [x] R004: Fix `preservedBranches` contract mismatch — update comments/interface to document that lane branches ARE still deleted (saved branch independently preserves commits), removing misleading "should NOT be deleted" language
 
 ---
 
 ### Step 2: Record Partial Progress in Task Outcome
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add optional `partialProgressCommits` (number) and `partialProgressBranch` (string|null) to `LaneTaskOutcome` and `PersistedTaskRecord` in types.ts, with backward-compat defaults (0 / undefined)
-- [ ] Update `upsertTaskOutcome()` change detection in persistence.ts to include the new fields
-- [ ] Update all outcome construction sites (seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, resume.ts reconstitution) to carry/default the new fields
-- [ ] Update `serializeBatchState()` in persistence.ts to map the new fields from `LaneTaskOutcome` → `PersistedTaskRecord`
-- [ ] Add validation for the new optional fields in the state-file validation block in persistence.ts (backward-compatible: allow undefined)
-- [ ] Populate fields at all 4 `preserveFailedLaneProgress()` call sites: engine.ts inter-wave, engine.ts terminal, resume.ts inter-wave, resume.ts terminal — update task outcomes with ppResult data after preservation
-- [ ] R006: Fix nullability contract mismatch — normalize `partialProgressBranch` to `string | undefined` across LaneTaskOutcome, PersistedTaskRecord, serialization, and validation (currently typed as `string | null` in LaneTaskOutcome but validation rejects null)
-- [ ] R006: Ensure serialization skips writing `partialProgressBranch` when undefined, and validate round-trip correctness at all boundaries
+- [x] Add optional `partialProgressCommits` (number) and `partialProgressBranch` (string|null) to `LaneTaskOutcome` and `PersistedTaskRecord` in types.ts, with backward-compat defaults (0 / undefined)
+- [x] Update `upsertTaskOutcome()` change detection in persistence.ts to include the new fields
+- [x] Update all outcome construction sites (seedPendingOutcomesForAllocatedLanes, syncTaskOutcomesFromMonitor, resume.ts reconstitution) to carry/default the new fields
+- [x] Update `serializeBatchState()` in persistence.ts to map the new fields from `LaneTaskOutcome` → `PersistedTaskRecord`
+- [x] Add validation for the new optional fields in the state-file validation block in persistence.ts (backward-compatible: allow undefined)
+- [x] Populate fields at all 4 `preserveFailedLaneProgress()` call sites: engine.ts inter-wave, engine.ts terminal, resume.ts inter-wave, resume.ts terminal — update task outcomes with ppResult data after preservation
+- [x] R006: Fix nullability contract mismatch — normalize `partialProgressBranch` to `string | undefined` across LaneTaskOutcome, PersistedTaskRecord, serialization, and validation (currently typed as `string | null` in LaneTaskOutcome but validation rejects null)
+- [x] R006: Ensure serialization skips writing `partialProgressBranch` when undefined, and validate round-trip correctness at all boundaries
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Branch preservation behavior tests: savePartialProgress (repo/workspace naming, no-commits skip, collision idempotency same-SHA, collision different-SHA suffixed), preserveFailedLaneProgress (happy path, unsafeBranches for failed preservation with commits, error handling for missing branches)
-- [ ] State contract tests: persistence round-trip with partialProgress fields present/absent, validation accepts/rejects correct types, serialization skips undefined fields
-- [ ] Full test suite passes (`cd extensions && npx vitest run`) — 997/997 tests, 25/25 files
-- [ ] R008: Fix flaky "no change when fields are identical" test — use fixed timestamps instead of Date.now()
-- [ ] R008: Add integration tests with disposable git repos for savePartialProgress and preserveFailedLaneProgress (lane with commits → saved branch, no commits → skip, collision handling, unsafeBranches population)
-- [ ] R008: Update STATUS.md test count evidence to match actual output
+- [x] Branch preservation behavior tests: savePartialProgress (repo/workspace naming, no-commits skip, collision idempotency same-SHA, collision different-SHA suffixed), preserveFailedLaneProgress (happy path, unsafeBranches for failed preservation with commits, error handling for missing branches)
+- [x] State contract tests: persistence round-trip with partialProgress fields present/absent, validation accepts/rejects correct types, serialization skips undefined fields
+- [x] Full test suite passes (`cd extensions && npx vitest run`) — 997/997 tests, 25/25 files
+- [x] R008: Fix flaky "no change when fields are identical" test — use fixed timestamps instead of Date.now()
+- [x] R008: Add integration tests with disposable git repos for savePartialProgress and preserveFailedLaneProgress (lane with commits → saved branch, no commits → skip, collision handling, unsafeBranches population)
+- [x] R008: Update STATUS.md test count evidence to match actual output
 
 ---
 
 ### Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
 
-- [ ] Inline comments updated in worktree.ts, engine.ts, resume.ts, types.ts, persistence.ts for partial progress preservation
-- [ ] Docs-impact decision: `/orch-status` output is summary-only (counts, phase, wave, elapsed) — does NOT expose saved branch names or per-task partial progress data. No docs/reference/commands.md update needed.
-- [ ] Closeout evidence note recorded in Execution Log
-- [ ] `.DONE` created
+- [x] Inline comments updated in worktree.ts, engine.ts, resume.ts, types.ts, persistence.ts for partial progress preservation
+- [x] Docs-impact decision: `/orch-status` output is summary-only (counts, phase, wave, elapsed) — does NOT expose saved branch names or per-task partial progress data. No docs/reference/commands.md update needed.
+- [x] Closeout evidence note recorded in Execution Log
+- [x] `.DONE` created
 
 ---
 

@@ -1,10 +1,10 @@
 # TP-172: Supervisor-in-the-Loop Worker Exit Interception — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-12
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 10
 **Iteration:** 1
 **Size:** L
 
@@ -14,50 +14,50 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read agent-host.ts — `agent_end` → `closeStdin()` flow
-- [ ] Read lane-runner.ts — iteration loop and progress checking
-- [ ] Read supervisor.ts — existing alert/message IPC system
-- [ ] Read steering message delivery in agent-host.ts (mailbox polling)
-- [ ] Verify pi RPC supports new prompt after agent_end (stdin still open)
-- [ ] Document findings
+- [x] Read agent-host.ts — `agent_end` → `closeStdin()` flow
+- [x] Read lane-runner.ts — iteration loop and progress checking
+- [x] Read supervisor.ts — existing alert/message IPC system
+- [x] Read steering message delivery in agent-host.ts (mailbox polling)
+- [x] Verify pi RPC supports new prompt after agent_end (stdin still open)
+- [x] Document findings
 
 ---
 
 ### Step 1: Add Exit Interception to agent-host
-**Status:** Pending
+**Status:** ✅ Complete
 
 > RPC Protocol finding: `agent_end` keeps process alive. We intercept before `closeStdin()`,
 > call async callback, then either send `{type:"prompt"}` or `closeStdin()`.
 > Need to track last assistant message text from `message_end` events.
 
-- [ ] Add `onPrematureExit` callback and `maxExitInterceptions` to AgentHostOptions
-- [ ] Track last assistant message text in state accumulator (capture from message_end events)
-- [ ] Modify agent_end handler: if callback provided and under limit, call callback instead of closeStdin; send new prompt or close based on result
-- [ ] Emit `exit_intercepted` telemetry event with full payload: assistantMessage, interceptionCount, supervisorConsulted, action (reprompt|close)
-- [ ] Add async callback safety: bounded internal timeout + try/catch fallback to closeStdin with diagnostic telemetry
-- [ ] Run targeted tests (lane-runner-v2: 48/48, conversation-event-fidelity: 19/19, exit-classification: 46/46)
+- [x] Add `onPrematureExit` callback and `maxExitInterceptions` to AgentHostOptions
+- [x] Track last assistant message text in state accumulator (capture from message_end events)
+- [x] Modify agent_end handler: if callback provided and under limit, call callback instead of closeStdin; send new prompt or close based on result
+- [x] Emit `exit_intercepted` telemetry event with full payload: assistantMessage, interceptionCount, supervisorConsulted, action (reprompt|close)
+- [x] Add async callback safety: bounded internal timeout + try/catch fallback to closeStdin with diagnostic telemetry
+- [x] Run targeted tests (lane-runner-v2: 48/48, conversation-event-fidelity: 19/19, exit-classification: 46/46)
 
 ---
 
 ### Step 2: Add Supervisor Escalation to lane-runner
-**Status:** Pending
+**Status:** ✅ Complete
 
 > Step 1 provides `onPrematureExit: (assistantMessage: string) => Promise<string|null>` callback.
 > Lane-runner implements this callback to: check progress, escalate to supervisor via alert,
 > poll worker mailbox inbox for supervisor reply, and return the reply as new prompt.
 
-- [ ] Implement `onPrematureExit` callback in hostOpts: check checkbox progress, if no progress escalate to supervisor
-- [ ] Compose structured escalation alert with worker's last message, current step, unchecked checkboxes
-- [ ] Poll worker mailbox inbox for supervisor reply with 60s timeout, fallback to null (let corrective re-spawn handle it)
-- [ ] Interpret supervisor reply: instructional content → reprompt, close directives ("skip"/"let it fail") → return null
-- [ ] Run targeted tests (lane-runner-v2: 48/48 pass)
+- [x] Implement `onPrematureExit` callback in hostOpts: check checkbox progress, if no progress escalate to supervisor
+- [x] Compose structured escalation alert with worker's last message, current step, unchecked checkboxes
+- [x] Poll worker mailbox inbox for supervisor reply with 60s timeout, fallback to null (let corrective re-spawn handle it)
+- [x] Interpret supervisor reply: instructional content → reprompt, close directives ("skip"/"let it fail") → return null
+- [x] Run targeted tests (lane-runner-v2: 48/48 pass)
 
 ---
 
 ### Step 3: Add Escalation Handler to Supervisor
-**Status:** Pending
+**Status:** ✅ Complete
 
 > `worker-exit-intercept` category already added to types.ts in Step 2.
 > Alert is fired by lane-runner; supervisor receives it via IPC.
@@ -65,30 +65,30 @@
 > Lane-runner polls inbox for the reply. Wire is already complete.
 > This step focuses on: supervisor-primer guidance + event tailer formatting.
 
-- [ ] Add `worker-exit-intercept` to supervisor event tailer significant events list (N/A — alerts go via IPC, not event tailer)
-- [ ] Add formatting for `worker-exit-intercept` alert in supervisor prompt/primer guidance (Section 13c added)
-- [ ] Run targeted tests (supervisor-alerts: 32/32, mailbox: 46/46)
+- [x] Add `worker-exit-intercept` to supervisor event tailer significant events list (N/A — alerts go via IPC, not event tailer)
+- [x] Add formatting for `worker-exit-intercept` alert in supervisor prompt/primer guidance (Section 13c added)
+- [x] Run targeted tests (supervisor-alerts: 32/32, mailbox: 46/46)
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] FULL test suite passing (3220/3220 pass, 0 failures)
-- [ ] Test: agent-host interception callback (13 tests in suite 1.x)
-- [ ] Test: maxExitInterceptions enforcement (test 1.7)
-- [ ] Test: lane-runner supervisor escalation + timeout fallback (14 tests in suite 2.x)
-- [ ] Test: end-to-end interception flow (7 tests in suite 5.x + suites 3.x, 4.x)
-- [ ] All failures fixed (0 failures in full suite of 3262 tests)
+- [x] FULL test suite passing (3220/3220 pass, 0 failures)
+- [x] Test: agent-host interception callback (13 tests in suite 1.x)
+- [x] Test: maxExitInterceptions enforcement (test 1.7)
+- [x] Test: lane-runner supervisor escalation + timeout fallback (14 tests in suite 2.x)
+- [x] Test: end-to-end interception flow (7 tests in suite 5.x + suites 3.x, 4.x)
+- [x] All failures fixed (0 failures in full suite of 3262 tests)
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update supervisor-primer.md with new alert category (Section 13c added in Step 3)
-- [ ] Check execution-model.md and architecture.md (added TP-172 section to execution-model.md; architecture.md unchanged — no structural changes)
-- [ ] Discoveries logged
+- [x] Update supervisor-primer.md with new alert category (Section 13c added in Step 3)
+- [x] Check execution-model.md and architecture.md (added TP-172 section to execution-model.md; architecture.md unchanged — no structural changes)
+- [x] Discoveries logged
 
 ---
 

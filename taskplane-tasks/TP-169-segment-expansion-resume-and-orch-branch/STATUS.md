@@ -1,7 +1,7 @@
 # TP-169: Segment Expansion Resume Crash and Workspace Orch Branch — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-12
 **Review Level:** 2
 **Review Counter:** 0
@@ -11,52 +11,52 @@
 ---
 
 ### Step 0: Preflight and Root Cause Analysis
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read resume.ts — task allocation reconstruction from persisted state
-- [ ] Read engine.ts — how expanded segments are persisted
-- [ ] Read execution.ts — orch branch creation per-repo in workspace mode
-- [ ] Trace `allocTask.task.taskFolder undefined` crash
-- [ ] Trace workspace orch branch gaps
-- [ ] Document findings
+- [x] Read resume.ts — task allocation reconstruction from persisted state
+- [x] Read engine.ts — how expanded segments are persisted
+- [x] Read execution.ts — orch branch creation per-repo in workspace mode
+- [x] Trace `allocTask.task.taskFolder undefined` crash
+- [x] Trace workspace orch branch gaps
+- [x] Document findings
 
 ---
 
 ### Step 1: Fix Segment Expansion Resume Crash
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Fix `reconstructAllocatedLanes` to always set `taskFolder` on task stubs (resume.ts)
-- [ ] Add guard in `buildExecutionUnit` for missing/empty `taskFolder` (execution.ts)
-- [ ] Add guard in `buildMergeRequest` and merge sort for null `task` stubs (merge.ts)
-- [ ] Add guard in abort.ts for null task stubs
-- [ ] Run targeted tests: resume*.test.ts (37 pass, 0 fail)
+- [x] Fix `reconstructAllocatedLanes` to always set `taskFolder` on task stubs (resume.ts)
+- [x] Add guard in `buildExecutionUnit` for missing/empty `taskFolder` (execution.ts)
+- [x] Add guard in `buildMergeRequest` and merge sort for null `task` stubs (merge.ts)
+- [x] Add guard in abort.ts for null task stubs
+- [x] Run targeted tests: resume*.test.ts (37 pass, 0 fail)
 
 ---
 
 ### Step 2: Fix Workspace Orch Branch Coverage
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Refactor `ensureTaskFilesCommitted` to commit on orch branch, not base branch (execution.ts)
-- [ ] Add `runGitWithEnv` helper to git.ts for plumbing-based orch branch commits
-- [ ] Add orch branch existence verification in resume path (resume.ts)
-- [ ] Run targeted tests: workspace*.test.ts (94 pass), engine*.test.ts (78 pass)
+- [x] Refactor `ensureTaskFilesCommitted` to commit on orch branch, not base branch (execution.ts)
+- [x] Add `runGitWithEnv` helper to git.ts for plumbing-based orch branch commits
+- [x] Add orch branch existence verification in resume path (resume.ts)
+- [x] Run targeted tests: workspace*.test.ts (94 pass), engine*.test.ts (78 pass)
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] FULL test suite passing (3290 tests, 0 failures)
-- [ ] Regression test: resume after segment expansion (3 tests in resume-segment-frontier.test.ts)
-- [ ] Regression test: workspace all repos have orch branch (3 tests in engine-segment-frontier.test.ts)
-- [ ] All failures fixed (zero failures in full suite)
+- [x] FULL test suite passing (3290 tests, 0 failures)
+- [x] Regression test: resume after segment expansion (3 tests in resume-segment-frontier.test.ts)
+- [x] Regression test: workspace all repos have orch branch (3 tests in engine-segment-frontier.test.ts)
+- [x] All failures fixed (zero failures in full suite)
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Discoveries logged
+- [x] Discoveries logged
 
 ---
 

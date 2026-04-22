@@ -1,61 +1,61 @@
 # TP-118: Lane Session Naming Cleanup — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-02
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 13
 **Iteration:** 2
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Count tmuxSessionName references
-- [ ] Identify type definitions to update
-- [ ] Plan alias-first approach
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Count tmuxSessionName references
+- [x] Identify type definitions to update
+- [x] Plan alias-first approach
 
 ### Step 1: Type alias introduction
-**Status:** Pending
-- [ ] Add laneSessionId alias to types
-- [ ] Rename generateTmuxSessionName → generateLaneSessionId (keep alias)
-- [ ] Backward-compat state reading
+**Status:** ✅ Complete
+- [x] Add laneSessionId alias to types
+- [x] Rename generateTmuxSessionName → generateLaneSessionId (keep alias)
+- [x] Backward-compat state reading
 
 ### Step 2: Rename in production code
-**Status:** Pending
-- [ ] execution.ts
-- [ ] engine.ts, merge.ts, extension.ts, persistence.ts, resume.ts
-- [ ] Dashboard server.cjs and app.js
-- [ ] naming.ts
-- [ ] Sweep remaining production modules (`abort.ts`, `formatting.ts`, `diagnostic-reports.ts`, `sessions.ts`, and any additional non-test references)
-- [ ] Verify non-test `tmuxSessionName` references are removed or explicitly compatibility-scoped
-- [ ] Fix `laneSessionIdOf()` recursion bug in `execution.ts` fallback path
-- [ ] Add regression coverage for compatibility-shaped lanes (tmux-only field) in runtime execution tests
+**Status:** ✅ Complete
+- [x] execution.ts
+- [x] engine.ts, merge.ts, extension.ts, persistence.ts, resume.ts
+- [x] Dashboard server.cjs and app.js
+- [x] naming.ts
+- [x] Sweep remaining production modules (`abort.ts`, `formatting.ts`, `diagnostic-reports.ts`, `sessions.ts`, and any additional non-test references)
+- [x] Verify non-test `tmuxSessionName` references are removed or explicitly compatibility-scoped
+- [x] Fix `laneSessionIdOf()` recursion bug in `execution.ts` fallback path
+- [x] Add regression coverage for compatibility-shaped lanes (tmux-only field) in runtime execution tests
 
 ### Step 3: Rename in tests
-**Status:** Pending
-- [ ] Update non-compat test references to `laneSessionId` naming
-- [ ] Preserve/add explicit compatibility tests for tmux-only persisted lane inputs
-- [ ] Verify remaining test `tmuxSessionName` references are compatibility-scoped
-- [ ] Run full suite
-- [ ] Fix all failures
+**Status:** ✅ Complete
+- [x] Update non-compat test references to `laneSessionId` naming
+- [x] Preserve/add explicit compatibility tests for tmux-only persisted lane inputs
+- [x] Verify remaining test `tmuxSessionName` references are compatibility-scoped
+- [x] Run full suite
+- [x] Fix all failures
 
 ### Step 4: Remove aliases
-**Status:** Pending
-- [ ] Remove tmuxSessionName from types
-- [ ] Remove generateTmuxSessionName alias
-- [ ] Restrict legacy `tmuxSessionName` compatibility to ingress-only parsing/normalization paths
-- [ ] Verify non-test production `tmuxSessionName` leftovers are eliminated or explicitly compatibility-ingress scoped
-- [ ] Validate legacy state files with tmux-only lane records still load into laneSessionId canonical runtime shape
-- [ ] Verify full suite
-- [ ] Restore dashboard ingress compatibility for tmux-only persisted lane records and add regression coverage
+**Status:** ✅ Complete
+- [x] Remove tmuxSessionName from types
+- [x] Remove generateTmuxSessionName alias
+- [x] Restrict legacy `tmuxSessionName` compatibility to ingress-only parsing/normalization paths
+- [x] Verify non-test production `tmuxSessionName` leftovers are eliminated or explicitly compatibility-ingress scoped
+- [x] Validate legacy state files with tmux-only lane records still load into laneSessionId canonical runtime shape
+- [x] Verify full suite
+- [x] Restore dashboard ingress compatibility for tmux-only persisted lane records and add regression coverage
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] Update STATUS.md
-- [ ] Log rename count
+**Status:** ✅ Complete
+- [x] Update STATUS.md
+- [x] Log rename count
 
 ---
 

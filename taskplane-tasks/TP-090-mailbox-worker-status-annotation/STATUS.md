@@ -1,6 +1,6 @@
 # TP-090: Mailbox Worker STATUS.md Annotation — Status
 
-**Current Step:** None
+**Current Step:** Not Started
 **Status:** 🔵 Ready for Execution
 **Last Updated:** 2026-03-28
 **Review Level:** 2

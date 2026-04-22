@@ -1,50 +1,50 @@
 # TP-170: CLI Widget Session-Dead Display Fix — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 3: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-12
 **Review Level:** 1
-**Review Counter:** 0
+**Review Counter:** 2
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read formatting.ts lane rendering
-- [ ] Read process-registry.ts session lookup
-- [ ] Understand lane list derivation (batch state vs registry)
-- [ ] Identify session name mismatch
-- [ ] Document findings
+- [x] Read formatting.ts lane rendering
+- [x] Read process-registry.ts session lookup
+- [x] Understand lane list derivation (batch state vs registry)
+- [x] Identify session name mismatch
+- [x] Document findings
 
 ---
 
 ### Step 1: Fix Wave-Aware Lane Display
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Fix buildDashboardViewModel: detect stale monitor data from prior waves and fall back to currentLanes allocation data
-- [ ] Fix buildDashboardViewModel: reconcile lane identity — normalize workspace laneSessionId to V2 registry agentId for correct liveness resolution
-- [ ] Fix buildDashboardViewModel: derive status from lane-level sessionAlive when task snapshot says "running" but lane session is dead (prevent TOCTOU)
-- [ ] Fix renderLaneCard: improve "waiting for data" / "session dead" display for startup-grace and completed lanes
-- [ ] Run targeted tests (wave-transition stale monitor, workspace identity mismatch, startup no-registry-entry)
+- [x] Fix buildDashboardViewModel: detect stale monitor data from prior waves and fall back to currentLanes allocation data
+- [x] Fix buildDashboardViewModel: reconcile lane identity — normalize workspace laneSessionId to V2 registry agentId for correct liveness resolution
+- [x] Fix buildDashboardViewModel: derive status from lane-level sessionAlive when task snapshot says "running" but lane session is dead (prevent TOCTOU)
+- [x] Fix renderLaneCard: improve "waiting for data" / "session dead" display for startup-grace and completed lanes
+- [x] Run targeted tests (wave-transition stale monitor, workspace identity mismatch, startup no-registry-entry)
 
 ---
 
 ### Step 2: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] FULL test suite passing
-- [ ] Tests for lane status display correctness (23 new assertions in orch-pure-functions.test.ts)
-- [ ] All failures fixed (0 failures across full suite)
+- [x] FULL test suite passing
+- [x] Tests for lane status display correctness (23 new assertions in orch-pure-functions.test.ts)
+- [x] All failures fixed (0 failures across full suite)
 
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Discoveries logged
+- [x] Discoveries logged
 
 ---
 

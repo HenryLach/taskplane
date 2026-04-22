@@ -1,130 +1,130 @@
 # TP-080: Segment Model and Optional Explicit DAG Syntax — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-28
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 12
 **Iteration:** 4
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read current task parsing and routing flow from discovery to waves
-- [ ] Identify where file-scope/repo attribution can seed segment inference
-- [ ] Confirm existing parser behavior for unknown metadata blocks in `PROMPT.md`
+- [x] Read current task parsing and routing flow from discovery to waves
+- [x] Identify where file-scope/repo attribution can seed segment inference
+- [x] Confirm existing parser behavior for unknown metadata blocks in `PROMPT.md`
 
 ---
 
 ### Step 1: Add segment contracts
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Define additive segment contracts in `extensions/taskplane/types.ts`
-  - [ ] `SegmentId` helper contract + `buildSegmentId(taskId, repoId)` rule: `<taskId>::<repoId>`
-  - [ ] `TaskSegmentNode` (`segmentId`, `taskId`, `repoId`, deterministic `order`)
-  - [ ] `TaskSegmentEdge` (`fromSegmentId`, `toSegmentId`, `provenance`)
-  - [ ] `TaskSegmentPlan` (`taskId`, ordered `segments`, ordered `edges`, `mode`)
-- [ ] Define explicit metadata contract on parsed tasks
-  - [ ] `PromptSegmentDagMetadata` with ordered `repoIds` + `edges` (`fromRepoId`, `toRepoId`)
-  - [ ] ParsedTask field remains optional to preserve backward compatibility
-- [ ] Lock deterministic ordering semantics in contract comments
-  - [ ] Segments sorted by `order` then `repoId`
-  - [ ] Edges sorted by `fromSegmentId` then `toSegmentId`
-  - [ ] Task-level map iteration sorted by `taskId`
-- [ ] Add edge provenance typing for observability
-  - [ ] `SegmentEdgeProvenance = "explicit" | "inferred"`
-  - [ ] Optional `reason` string for debug/telemetry context
-- [ ] Clarify repo-mode handling
-  - [ ] Segment planning is workspace-oriented in TP-080; repo mode yields a single synthetic repo segment using `task.resolvedRepoId ?? "default"`
+- [x] Define additive segment contracts in `extensions/taskplane/types.ts`
+  - [x] `SegmentId` helper contract + `buildSegmentId(taskId, repoId)` rule: `<taskId>::<repoId>`
+  - [x] `TaskSegmentNode` (`segmentId`, `taskId`, `repoId`, deterministic `order`)
+  - [x] `TaskSegmentEdge` (`fromSegmentId`, `toSegmentId`, `provenance`)
+  - [x] `TaskSegmentPlan` (`taskId`, ordered `segments`, ordered `edges`, `mode`)
+- [x] Define explicit metadata contract on parsed tasks
+  - [x] `PromptSegmentDagMetadata` with ordered `repoIds` + `edges` (`fromRepoId`, `toRepoId`)
+  - [x] ParsedTask field remains optional to preserve backward compatibility
+- [x] Lock deterministic ordering semantics in contract comments
+  - [x] Segments sorted by `order` then `repoId`
+  - [x] Edges sorted by `fromSegmentId` then `toSegmentId`
+  - [x] Task-level map iteration sorted by `taskId`
+- [x] Add edge provenance typing for observability
+  - [x] `SegmentEdgeProvenance = "explicit" | "inferred"`
+  - [x] Optional `reason` string for debug/telemetry context
+- [x] Clarify repo-mode handling
+  - [x] Segment planning is workspace-oriented in TP-080; repo mode yields a single synthetic repo segment using `task.resolvedRepoId ?? "default"`
 
 ---
 
 ### Step 2: Support optional explicit segment DAG metadata
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add parser support for optional `## Segment DAG` metadata in `PROMPT.md`
-  - [ ] Accept `Repos:` list lines (`- api`, `- web-client`) and `Edges:` lines (`- api -> web-client`)
-  - [ ] Accept markdown decoration/whitespace variants (`**Repos:**`, indented bullets)
-  - [ ] Keep existing section-boundary parsing style (slice to next `##` / `---`)
-- [ ] Normalize and persist parsed metadata deterministically
-  - [ ] Repo IDs normalized to lowercase with routing-equivalent ID validation
-  - [ ] De-duplicate repo IDs and edges
-  - [ ] Sort edges by `fromRepoId`, then `toRepoId` before attaching to task metadata
-- [ ] Validate explicit DAG with fail-fast discovery errors
-  - [ ] `SEGMENT_REPO_UNKNOWN` when edge endpoint is not in explicit repo list
-  - [ ] `SEGMENT_DAG_INVALID` for malformed lines, self-edge, or cycles
-  - [ ] Keep `parsePromptForOrchestrator` contract (`task: null`, `error` set) for malformed section syntax
-- [ ] Preserve backward compatibility
-  - [ ] If `## Segment DAG` is absent, `explicitSegmentDag` stays undefined
-  - [ ] Unknown non-segment metadata sections remain ignored
-- [ ] Hydrate tests in `extensions/tests/discovery-routing.test.ts`
-  - [ ] Valid explicit DAG parse + normalization
-  - [ ] Metadata absent non-regression
-  - [ ] Unknown edge repo fatal (`SEGMENT_REPO_UNKNOWN`)
-  - [ ] Cycle/self-cycle fatal (`SEGMENT_DAG_INVALID`)
+- [x] Add parser support for optional `## Segment DAG` metadata in `PROMPT.md`
+  - [x] Accept `Repos:` list lines (`- api`, `- web-client`) and `Edges:` lines (`- api -> web-client`)
+  - [x] Accept markdown decoration/whitespace variants (`**Repos:**`, indented bullets)
+  - [x] Keep existing section-boundary parsing style (slice to next `##` / `---`)
+- [x] Normalize and persist parsed metadata deterministically
+  - [x] Repo IDs normalized to lowercase with routing-equivalent ID validation
+  - [x] De-duplicate repo IDs and edges
+  - [x] Sort edges by `fromRepoId`, then `toRepoId` before attaching to task metadata
+- [x] Validate explicit DAG with fail-fast discovery errors
+  - [x] `SEGMENT_REPO_UNKNOWN` when edge endpoint is not in explicit repo list
+  - [x] `SEGMENT_DAG_INVALID` for malformed lines, self-edge, or cycles
+  - [x] Keep `parsePromptForOrchestrator` contract (`task: null`, `error` set) for malformed section syntax
+- [x] Preserve backward compatibility
+  - [x] If `## Segment DAG` is absent, `explicitSegmentDag` stays undefined
+  - [x] Unknown non-segment metadata sections remain ignored
+- [x] Hydrate tests in `extensions/tests/discovery-routing.test.ts`
+  - [x] Valid explicit DAG parse + normalization
+  - [x] Metadata absent non-regression
+  - [x] Unknown edge repo fatal (`SEGMENT_REPO_UNKNOWN`)
+  - [x] Cycle/self-cycle fatal (`SEGMENT_DAG_INVALID`)
 
 ---
 
 ### Step 3: Deterministic inference fallback
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Wire segment plans into planner output (`waves.ts`)
-  - [ ] `computeWaveAssignments()` always returns additive `segmentPlans`
-  - [ ] Existing `waves` lane assignment output remains behaviorally unchanged
-  - [ ] Populate map in deterministic `taskId` sort order
-- [ ] Define deterministic inference input precedence for tasks without explicit DAG
-  - [ ] Parse repo touches from `fileScope` first path segment (normalized separators/case)
-  - [ ] Preserve first-seen order while de-duping repo touches
-  - [ ] Use dependency task repo IDs as stabilization signal (deterministic tie-break)
-  - [ ] Fallback to `task.resolvedRepoId`, else repo-mode synthetic `default`
-  - [ ] Explicitly out-of-scope: checklist prose parsing (not in `ParsedTask` contract)
-- [ ] Represent one-active-segment policy in plan edges
-  - [ ] Build linear chain edges for inferred multi-segment plans (`s0 -> s1 -> ...`)
-  - [ ] Mark inferred edges with `provenance: "inferred"` and stable `reason` text
-  - [ ] Sort edges by `fromSegmentId`, then `toSegmentId`
-- [ ] Preserve explicit DAG authority in mixed batches
-  - [ ] Tasks with `explicitSegmentDag` map to `mode: "explicit-dag"`
-  - [ ] Inference must not overwrite explicit repo/edge definitions
-  - [ ] Repo-singleton fallback uses `mode: "repo-singleton"`
-- [ ] Hydrate tests in `extensions/tests/waves-repo-scoped.test.ts`
-  - [ ] Deterministic inference from file-scope multi-repo hints
-  - [ ] Singleton fallback with no fileScope hints
-  - [ ] One-active-segment chain edge generation
-  - [ ] Deterministic map output across different input map insertion orders
-  - [ ] Mixed explicit + inferred plans with stable `mode` + provenance
+- [x] Wire segment plans into planner output (`waves.ts`)
+  - [x] `computeWaveAssignments()` always returns additive `segmentPlans`
+  - [x] Existing `waves` lane assignment output remains behaviorally unchanged
+  - [x] Populate map in deterministic `taskId` sort order
+- [x] Define deterministic inference input precedence for tasks without explicit DAG
+  - [x] Parse repo touches from `fileScope` first path segment (normalized separators/case)
+  - [x] Preserve first-seen order while de-duping repo touches
+  - [x] Use dependency task repo IDs as stabilization signal (deterministic tie-break)
+  - [x] Fallback to `task.resolvedRepoId`, else repo-mode synthetic `default`
+  - [x] Explicitly out-of-scope: checklist prose parsing (not in `ParsedTask` contract)
+- [x] Represent one-active-segment policy in plan edges
+  - [x] Build linear chain edges for inferred multi-segment plans (`s0 -> s1 -> ...`)
+  - [x] Mark inferred edges with `provenance: "inferred"` and stable `reason` text
+  - [x] Sort edges by `fromSegmentId`, then `toSegmentId`
+- [x] Preserve explicit DAG authority in mixed batches
+  - [x] Tasks with `explicitSegmentDag` map to `mode: "explicit-dag"`
+  - [x] Inference must not overwrite explicit repo/edge definitions
+  - [x] Repo-singleton fallback uses `mode: "repo-singleton"`
+- [x] Hydrate tests in `extensions/tests/waves-repo-scoped.test.ts`
+  - [x] Deterministic inference from file-scope multi-repo hints
+  - [x] Singleton fallback with no fileScope hints
+  - [x] One-active-segment chain edge generation
+  - [x] Deterministic map output across different input map insertion orders
+  - [x] Mixed explicit + inferred plans with stable `mode` + provenance
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Create `extensions/tests/segment-model.test.ts` with behavioral contract tests
-  - [ ] Task-segment ID contract (`<taskId>::<repoId>`) and deterministic ordering checks
-  - [ ] `computeWaveAssignments()` segment-plan shape on success and error paths
-- [ ] Extend parser coverage in `extensions/tests/discovery-routing.test.ts`
-  - [ ] Explicit `## Segment DAG` parse + normalization + fail-fast validation
-  - [ ] Backward compatibility when metadata is absent
-- [ ] Extend inference/planner coverage in `extensions/tests/waves-repo-scoped.test.ts`
-  - [ ] Deterministic inferred ordering + one-active linear edge chain
-  - [ ] Explicit DAG authority in mixed explicit/inferred batches
-  - [ ] Repo-mode singleton fallback guard (including noisy file-scope prefixes)
-- [ ] Add non-regression guard in `extensions/tests/polyrepo-regression.test.ts`
-  - [ ] Segment-plan map presence without changing existing wave/lane behavior
-- [ ] Run required full suite command from prompt
-  - [ ] `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
-- [ ] Fix all failures
+- [x] Create `extensions/tests/segment-model.test.ts` with behavioral contract tests
+  - [x] Task-segment ID contract (`<taskId>::<repoId>`) and deterministic ordering checks
+  - [x] `computeWaveAssignments()` segment-plan shape on success and error paths
+- [x] Extend parser coverage in `extensions/tests/discovery-routing.test.ts`
+  - [x] Explicit `## Segment DAG` parse + normalization + fail-fast validation
+  - [x] Backward compatibility when metadata is absent
+- [x] Extend inference/planner coverage in `extensions/tests/waves-repo-scoped.test.ts`
+  - [x] Deterministic inferred ordering + one-active linear edge chain
+  - [x] Explicit DAG authority in mixed explicit/inferred batches
+  - [x] Repo-mode singleton fallback guard (including noisy file-scope prefixes)
+- [x] Add non-regression guard in `extensions/tests/polyrepo-regression.test.ts`
+  - [x] Segment-plan map presence without changing existing wave/lane behavior
+- [x] Run required full suite command from prompt
+  - [x] `cd extensions && node --experimental-strip-types --experimental-test-module-mocks --no-warnings --import ./tests/loader.mjs --test tests/*.test.ts`
+- [x] Fix all failures
 
 ---
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update spec wording if implementation reveals syntax or validation constraints
-- [ ] Log discoveries in STATUS.md
-- [ ] Create `.DONE`
+- [x] Update spec wording if implementation reveals syntax or validation constraints
+- [x] Log discoveries in STATUS.md
+- [x] Create `.DONE`
 
 ---
 

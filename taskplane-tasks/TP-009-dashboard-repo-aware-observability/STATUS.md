@@ -1,10 +1,10 @@
 # TP-009: Dashboard Repo-Aware Lanes, Tasks, and Merge Panels — Status
 
-**Current Step:** None
-​**Status:** Pending
+**Current Step:** Complete
+​**Status:** ✅ Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 10
 **Iteration:** 5
 **Size:** M
 
@@ -15,7 +15,7 @@
 ---
 
 ### Step 0: Extend dashboard data model
-**Status:** Pending
+**Status:** ✅ Complete
 
 **Payload contract (additive-only — no field renames or removals):**
 
@@ -32,16 +32,16 @@
 
 **Merge attribution strategy:** `PersistedMergeResult` currently lacks repo data. We enrich it in `serializeBatchState()` by serializing `MergeWaveResult.repoResults` into a new `repoResults` field on the persisted record. This is additive — v1/v2 state files without this field remain valid.
 
-- [ ] Add `mode` field to the `batch` object in `buildDashboardState()` (server.cjs)
-- [ ] Enrich persisted merge results with `repoResults` from `MergeWaveResult` in `serializeBatchState()` (persistence.ts)
-- [ ] Pass enriched merge results through to dashboard payload (server.cjs — already passes through)
-- [ ] Verify lane/task repo fields already flow through (server.cjs spreads all persisted fields)
-- [ ] Maintain backward compatibility — repo-mode payloads valid when repo fields undefined/absent
+- [x] Add `mode` field to the `batch` object in `buildDashboardState()` (server.cjs)
+- [x] Enrich persisted merge results with `repoResults` from `MergeWaveResult` in `serializeBatchState()` (persistence.ts)
+- [x] Pass enriched merge results through to dashboard payload (server.cjs — already passes through)
+- [x] Verify lane/task repo fields already flow through (server.cjs spreads all persisted fields)
+- [x] Maintain backward compatibility — repo-mode payloads valid when repo fields undefined/absent
 
 ---
 
 ### Step 1: Implement repo-aware UI
-**Status:** Pending
+**Status:** ✅ Complete
 
 **Repo derivation rules:**
 - Lane label: `lane.repoId` (with fallback: omit label when undefined)
@@ -71,16 +71,16 @@
 - `formatting.ts` (TUI) is explicitly out of scope for Step 1
 
 **Implementation outcomes:**
-- [ ] Add repo filter controls to `index.html` and filter styles to `style.css`
-- [ ] Implement repo-aware label rendering in `renderLanesTasks()` gated by mode/availability
-- [ ] Implement merge panel per-repo grouping in `renderMergeAgents()` with backward-compatible fallback
-- [ ] Implement repo filter logic: build repo set, filter lanes/tasks/merge, handle disappearing repos
-- [ ] Gate all repo UI by mode + repo count so monorepo views remain unchanged
+- [x] Add repo filter controls to `index.html` and filter styles to `style.css`
+- [x] Implement repo-aware label rendering in `renderLanesTasks()` gated by mode/availability
+- [x] Implement merge panel per-repo grouping in `renderMergeAgents()` with backward-compatible fallback
+- [x] Implement repo filter logic: build repo set, filter lanes/tasks/merge, handle disappearing repos
+- [x] Gate all repo UI by mode + repo count so monorepo views remain unchanged
 
 ---
 
 ### Step 2: Preserve existing UX guarantees
-**Status:** Pending
+**Status:** ✅ Complete
 
 **Verification approach:** Code trace + test suite confirmation.
 
@@ -102,13 +102,13 @@
 - CSS styles for `.conv-*`, `.status-md-*`, `.terminal-panel`, `.viewer-eye-btn`: all intact
 - 290/290 tests pass
 
-- [ ] Ensure monorepo views remain clear and unchanged by default
-- [ ] Verify no regressions in conversation/sidecar panels
+- [x] Ensure monorepo views remain clear and unchanged by default
+- [x] Verify no regressions in conversation/sidecar panels
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
 **Verification commands:**
 1. Full suite: `cd extensions && npx vitest run` → 12 files, 290/290 pass
@@ -133,22 +133,22 @@
 - 2026-03-15: Full suite 290/290 pass, targeted 67/67 pass, CLI help exit 0, doctor runs correctly
 - All dashboard scenarios verified via code trace (no runtime dashboard available in worktree)
 
-- [ ] Unit/regression tests passing — 290/290 (12 test files, all green)
-- [ ] Targeted tests for changed modules passing — persistence, merge-repo-scoped, waves-repo-scoped, workspace-config: 67/67
-- [ ] All failures fixed — no failures encountered
-- [ ] CLI smoke checks passing — `help` exit 0, `doctor` runs correctly
-- [ ] Dashboard scenario matrix verified — 7/7 scenarios confirmed via code trace
+- [x] Unit/regression tests passing — 290/290 (12 test files, all green)
+- [x] Targeted tests for changed modules passing — persistence, merge-repo-scoped, waves-repo-scoped, workspace-config: 67/67
+- [x] All failures fixed — no failures encountered
+- [x] CLI smoke checks passing — `help` exit 0, `doctor` runs correctly
+- [x] Dashboard scenario matrix verified — 7/7 scenarios confirmed via code trace
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] "Must Update" docs modified — created `.pi/local/docs/taskplane/polyrepo-implementation-plan.md` documenting final dashboard repo-grouping behavior (data model, frontend behavior, mode gating, backward compatibility, persistence changes, files changed)
-- [ ] "Check If Affected" docs reviewed — `docs/tutorials/use-the-dashboard.md` reviewed; no update needed now (PROMPT specifies "Update once repo-aware UI ships publicly"); current tutorial covers basic usage which remains unchanged
-- [ ] Discoveries logged — all 3 discoveries from execution already recorded in Discoveries table
-- [ ] `.DONE` created
-- [ ] Archive and push — deferred to orchestrator (orchestrated run)
+- [x] "Must Update" docs modified — created `.pi/local/docs/taskplane/polyrepo-implementation-plan.md` documenting final dashboard repo-grouping behavior (data model, frontend behavior, mode gating, backward compatibility, persistence changes, files changed)
+- [x] "Check If Affected" docs reviewed — `docs/tutorials/use-the-dashboard.md` reviewed; no update needed now (PROMPT specifies "Update once repo-aware UI ships publicly"); current tutorial covers basic usage which remains unchanged
+- [x] Discoveries logged — all 3 discoveries from execution already recorded in Discoveries table
+- [x] `.DONE` created
+- [x] Archive and push — deferred to orchestrator (orchestrated run)
 
 ---
 

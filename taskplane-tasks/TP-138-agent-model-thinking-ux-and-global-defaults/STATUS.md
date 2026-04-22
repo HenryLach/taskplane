@@ -1,61 +1,61 @@
 # TP-138: Agent Inherit Defaults and Thinking Picker — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-05
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Read config-schema.ts defaults
-- [ ] Read settings-tui.ts thinking fields
-- [ ] Read lane-runner.ts and agent-host.ts thinking handling
-- [ ] Read task-runner.ts fallback patterns
-- [ ] Grep for thinking fallbacks across codebase
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Read config-schema.ts defaults
+- [x] Read settings-tui.ts thinking fields
+- [x] Read lane-runner.ts and agent-host.ts thinking handling
+- [x] Read task-runner.ts fallback patterns
+- [x] Grep for thinking fallbacks across codebase
 
 ### Step 1: Fix defaults to inherit
-**Status:** Pending
-- [ ] Worker thinking "off" → "" (inherit)
-- [ ] Reviewer model hardcode → "" (inherit)
-- [ ] Normalize "inherit" to "" in config-loader
-- [ ] Update templates
-- [ ] Verify existing configs unaffected
+**Status:** ✅ Complete
+- [x] Worker thinking "off" → "" (inherit)
+- [x] Reviewer model hardcode → "" (inherit)
+- [x] Normalize "inherit" to "" in config-loader
+- [x] Update templates
+- [x] Verify existing configs unaffected
 
 ### Step 2: Audit and fix runtime fallbacks
-**Status:** Pending
-- [ ] Check lane-runner.ts thinking fallback
-- [ ] Check agent-host.ts flag passing
-- [ ] Check task-runner.ts /task path
-- [ ] Check merge.ts (verify v0.24.18 wiring)
-- [ ] Verify empty thinking = session inheritance
+**Status:** ✅ Complete
+- [x] Check lane-runner.ts thinking fallback
+- [x] Check agent-host.ts flag passing
+- [x] Check task-runner.ts /task path
+- [x] Check merge.ts (verify v0.24.18 wiring)
+- [x] Verify empty thinking = session inheritance
 
 ### Step 3: Thinking picker in /taskplane-settings
-**Status:** Pending
-- [ ] Change thinking fields to picker control
-- [ ] Options: inherit/on/off
-- [ ] Reuse selectScrollable
-- [ ] Current value marked with ✓
-- [ ] Save to correct destination
-- [ ] Suggest enabling thinking when model changes to a thinking-capable model
+**Status:** ✅ Complete
+- [x] Change thinking fields to picker control
+- [x] Options: inherit/on/off
+- [x] Reuse selectScrollable
+- [x] Current value marked with ✓
+- [x] Save to correct destination
+- [x] Suggest enabling thinking when model changes to a thinking-capable model
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] Test empty thinking = no flag
-- [ ] Test "inherit" normalization
-- [ ] Test thinking picker save/load
-- [ ] Test reviewer model inheritance
-- [ ] Run full test suite
+**Status:** ✅ Complete
+- [x] Test empty thinking = no flag
+- [x] Test "inherit" normalization
+- [x] Test thinking picker save/load
+- [x] Test reviewer model inheritance
+- [x] Run full test suite
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] Update config docs
-- [ ] Update STATUS.md
+**Status:** ✅ Complete
+- [x] Update config docs
+- [x] Update STATUS.md
 
 ---
 

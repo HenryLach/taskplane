@@ -1,87 +1,87 @@
 # TP-034: Quality Gate Structured Review — Status
 
-**Current Step:** None
+**Current Step:** Step 5: Documentation & Delivery
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-03-20
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 11
 **Iteration:** 6
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read task completion flow
-- [ ] Read review agent spawn pattern
-- [ ] Read roadmap Phase 5 sections
-- [ ] (R001) Record preflight findings with file/line anchors in Notes section
-- [ ] (R001) Record risk/compatibility notes from roadmap Phase 5 in Notes section
-- [ ] (R001) Clean up duplicate execution log rows
-- [ ] (R002) Revert TP-026 STATUS.md changes from this branch scope
-- [ ] (R002) Add Tier-2 context read evidence (CONTEXT.md takeaways) to Notes
+**Status:** ✅ Complete
+- [x] Read task completion flow
+- [x] Read review agent spawn pattern
+- [x] Read roadmap Phase 5 sections
+- [x] (R001) Record preflight findings with file/line anchors in Notes section
+- [x] (R001) Record risk/compatibility notes from roadmap Phase 5 in Notes section
+- [x] (R001) Clean up duplicate execution log rows
+- [x] (R002) Revert TP-026 STATUS.md changes from this branch scope
+- [x] (R002) Add Tier-2 context read evidence (CONTEXT.md takeaways) to Notes
 
 ---
 
 ### Step 1: Define Configuration & Verdict Schema
-**Status:** Pending
-- [ ] Add QualityGateConfig interface to config-schema.ts and wire into TaskRunnerSection with defaults (enabled: false, reviewModel: "", maxReviewCycles: 2, maxFixCycles: 1, passThreshold: "no_critical")
-- [ ] Add quality_gate mapping to toTaskConfig() adapter in config-loader.ts and TaskConfig interface in task-runner.ts
-- [ ] Create quality-gate.ts with ReviewVerdict, ReviewFinding, StatusReconciliation interfaces and PassThreshold type
-- [ ] Add verdict evaluation logic: applyVerdictRules() implementing critical/important/status_mismatch rules
-- [ ] Add parseVerdict() with fail-open behavior for malformed/missing JSON
-- [ ] Add config-loader test coverage for quality gate defaults and adapter mapping
+**Status:** ✅ Complete
+- [x] Add QualityGateConfig interface to config-schema.ts and wire into TaskRunnerSection with defaults (enabled: false, reviewModel: "", maxReviewCycles: 2, maxFixCycles: 1, passThreshold: "no_critical")
+- [x] Add quality_gate mapping to toTaskConfig() adapter in config-loader.ts and TaskConfig interface in task-runner.ts
+- [x] Create quality-gate.ts with ReviewVerdict, ReviewFinding, StatusReconciliation interfaces and PassThreshold type
+- [x] Add verdict evaluation logic: applyVerdictRules() implementing critical/important/status_mismatch rules
+- [x] Add parseVerdict() with fail-open behavior for malformed/missing JSON
+- [x] Add config-loader test coverage for quality gate defaults and adapter mapping
 
 ---
 
 ### Step 2: Implement Structured Review
-**Status:** Pending
-- [ ] Add `runQualityGate()` function in quality-gate.ts: generates review prompt with evidence (PROMPT.md, STATUS.md, git diff, file list), instructs agent to write `REVIEW_VERDICT.json` to task folder
-- [ ] Add `doQualityGateReview()` in task-runner.ts: spawns review agent (using quality_gate.review_model with fallback chain), reads/parses REVIEW_VERDICT.json, applies verdict rules with configured pass_threshold
-- [ ] Integrate quality gate into executeTask(): after all steps complete, if quality_gate.enabled, call quality gate before .DONE; if disabled, keep existing .DONE path unchanged
-- [ ] Handle all fail-open paths: missing verdict file, agent crash/non-zero exit, malformed JSON → synthetic PASS so task is never blocked by gate bugs
-- [ ] (R006) Fix prompt verdict rules to be threshold-aware: generate rules from passThreshold instead of hardcoded "3+ important => NEEDS_FIXES" that conflicts with `no_critical` threshold runtime logic
-- [ ] (R006) Fix buildGitDiff() to compute robust diff range (merge-base with main or bounded fallback) instead of hardcoded HEAD~20
+**Status:** ✅ Complete
+- [x] Add `runQualityGate()` function in quality-gate.ts: generates review prompt with evidence (PROMPT.md, STATUS.md, git diff, file list), instructs agent to write `REVIEW_VERDICT.json` to task folder
+- [x] Add `doQualityGateReview()` in task-runner.ts: spawns review agent (using quality_gate.review_model with fallback chain), reads/parses REVIEW_VERDICT.json, applies verdict rules with configured pass_threshold
+- [x] Integrate quality gate into executeTask(): after all steps complete, if quality_gate.enabled, call quality gate before .DONE; if disabled, keep existing .DONE path unchanged
+- [x] Handle all fail-open paths: missing verdict file, agent crash/non-zero exit, malformed JSON → synthetic PASS so task is never blocked by gate bugs
+- [x] (R006) Fix prompt verdict rules to be threshold-aware: generate rules from passThreshold instead of hardcoded "3+ important => NEEDS_FIXES" that conflicts with `no_critical` threshold runtime logic
+- [x] (R006) Fix buildGitDiff() to compute robust diff range (merge-base with main or bounded fallback) instead of hardcoded HEAD~20
 
 ---
 
 ### Step 3: Remediation Cycle
-**Status:** Pending
-- [ ] Add `generateFeedbackMd()` to quality-gate.ts: deterministic template with cycle number, blocking findings (critical+important only), concrete remediation actions; file is intentionally staged (aligns with 5e artifact scope)
-- [ ] Add `buildFixAgentPrompt()` to quality-gate.ts: generates prompt instructing fix agent to address REVIEW_FEEDBACK.md findings in same worktree
-- [ ] Implement remediation loop in task-runner.ts: write REVIEW_FEEDBACK.md, spawn fix agent (reusing worker spawn pattern), re-run doQualityGateReview after fix completes; replace the current Step 3 placeholder break
-- [ ] Handle fix-agent abnormal exits deterministically: crash/non-zero/timeout consumes fix budget, logs reason, proceeds to next review cycle (or fails if budget exhausted); no ambiguous looping
-- [ ] On max cycles exhaustion: persist blocking findings summary (critical+important items + cycle count) into STATUS.md execution log and set error state
-- [ ] Log per-cycle remediation outcomes in STATUS.md execution log for operator visibility (fix attempt, review rerun result, terminal reason)
-- [ ] (R008) Make generateFeedbackMd() threshold-aware: include suggestion findings in REVIEW_FEEDBACK.md when passThreshold is `all_clear`, and include suggestion counts in terminal failure summaries
-- [ ] (R008) Add explicit wall-clock timeout handling for fix agent: kill agent on timeout, return non-zero exit code to consume fix budget deterministically
-- [ ] (R008) Update terminal failure findings summary to include suggestion counts when threshold is `all_clear`
+**Status:** ✅ Complete
+- [x] Add `generateFeedbackMd()` to quality-gate.ts: deterministic template with cycle number, blocking findings (critical+important only), concrete remediation actions; file is intentionally staged (aligns with 5e artifact scope)
+- [x] Add `buildFixAgentPrompt()` to quality-gate.ts: generates prompt instructing fix agent to address REVIEW_FEEDBACK.md findings in same worktree
+- [x] Implement remediation loop in task-runner.ts: write REVIEW_FEEDBACK.md, spawn fix agent (reusing worker spawn pattern), re-run doQualityGateReview after fix completes; replace the current Step 3 placeholder break
+- [x] Handle fix-agent abnormal exits deterministically: crash/non-zero/timeout consumes fix budget, logs reason, proceeds to next review cycle (or fails if budget exhausted); no ambiguous looping
+- [x] On max cycles exhaustion: persist blocking findings summary (critical+important items + cycle count) into STATUS.md execution log and set error state
+- [x] Log per-cycle remediation outcomes in STATUS.md execution log for operator visibility (fix attempt, review rerun result, terminal reason)
+- [x] (R008) Make generateFeedbackMd() threshold-aware: include suggestion findings in REVIEW_FEEDBACK.md when passThreshold is `all_clear`, and include suggestion counts in terminal failure summaries
+- [x] (R008) Add explicit wall-clock timeout handling for fix agent: kill agent on timeout, return non-zero exit code to consume fix budget deterministically
+- [x] (R008) Update terminal failure findings summary to include suggestion counts when threshold is `all_clear`
 
 ---
 
 ### Step 4: Testing & Verification
-**Status:** Pending
-- [ ] Fail-open coverage: reviewer non-zero exit, reviewer crash, missing/unreadable verdict file each produce synthetic PASS
-- [ ] Disabled behavior test: quality gate disabled → .DONE created normally (no gate logic runs)
-- [ ] PASS verdict test: quality gate enabled, PASS verdict → .DONE created with quality gate metadata
-- [ ] NEEDS_FIXES remediation test: NEEDS_FIXES triggers feedback generation and fix cycle
-- [ ] Max cycles exhaustion test: cycles exhausted → task error state, .DONE NOT created, findings summary in log
-- [ ] Fix-agent timeout/crash/non-zero tests: each consumes fix budget deterministically
-- [ ] Verdict rules tests: threshold matrix covering no_critical, no_important, all_clear (suggestions blocking)
-- [ ] generateFeedbackMd threshold-aware tests: suggestions included under all_clear, excluded otherwise
-- [ ] Full test suite passes: `cd extensions && npx vitest run` zero failures
-- [ ] (R010) Remove duplicated test blocks (4.x-7.x after section 10.x, lines 1304-1759) and remove unused FEEDBACK_FILENAME import
-- [ ] (R010) Add integration-level tests: composed gate decision logic with .DONE file I/O assertions — PASS creates .DONE, NEEDS_FIXES leaves .DONE absent, cycle/budget progression determinism, fail-open on missing verdict after fix crash
-- [ ] (R010) Full test suite passes after changes: `cd extensions && npx vitest run` zero failures
+**Status:** ✅ Complete
+- [x] Fail-open coverage: reviewer non-zero exit, reviewer crash, missing/unreadable verdict file each produce synthetic PASS
+- [x] Disabled behavior test: quality gate disabled → .DONE created normally (no gate logic runs)
+- [x] PASS verdict test: quality gate enabled, PASS verdict → .DONE created with quality gate metadata
+- [x] NEEDS_FIXES remediation test: NEEDS_FIXES triggers feedback generation and fix cycle
+- [x] Max cycles exhaustion test: cycles exhausted → task error state, .DONE NOT created, findings summary in log
+- [x] Fix-agent timeout/crash/non-zero tests: each consumes fix budget deterministically
+- [x] Verdict rules tests: threshold matrix covering no_critical, no_important, all_clear (suggestions blocking)
+- [x] generateFeedbackMd threshold-aware tests: suggestions included under all_clear, excluded otherwise
+- [x] Full test suite passes: `cd extensions && npx vitest run` zero failures
+- [x] (R010) Remove duplicated test blocks (4.x-7.x after section 10.x, lines 1304-1759) and remove unused FEEDBACK_FILENAME import
+- [x] (R010) Add integration-level tests: composed gate decision logic with .DONE file I/O assertions — PASS creates .DONE, NEEDS_FIXES leaves .DONE absent, cycle/budget progression determinism, fail-open on missing verdict after fix crash
+- [x] (R010) Full test suite passes after changes: `cd extensions && npx vitest run` zero failures
 
 ---
 
 ### Step 5: Documentation & Delivery
 **Status:** 🟨 In Progress
-- [ ] Add `quality_gate` / `qualityGate` section to `docs/reference/configuration/task-runner.yaml.md`: field table with defaults, YAML→JSON key mappings, section mapping, and example JSON snippet
-- [ ] Update `docs/explanation/execution-model.md` to describe opt-in quality gate between step completion and .DONE creation
-- [ ] Assess `docs/reference/status-format.md` — no changes needed: REVIEW_VERDICT.json and REVIEW_FEEDBACK.md are task-folder artifacts (like .DONE), not STATUS.md fields; quality gate logs to existing execution log table, adds no new STATUS.md sections or header fields
-- [ ] Final doc/code consistency check: defaults, threshold semantics, fail-open match implementation (fixed no_important doc to say "fewer than 3 important" matching code; added status_mismatch note)
+- [x] Add `quality_gate` / `qualityGate` section to `docs/reference/configuration/task-runner.yaml.md`: field table with defaults, YAML→JSON key mappings, section mapping, and example JSON snippet
+- [x] Update `docs/explanation/execution-model.md` to describe opt-in quality gate between step completion and .DONE creation
+- [x] Assess `docs/reference/status-format.md` — no changes needed: REVIEW_VERDICT.json and REVIEW_FEEDBACK.md are task-folder artifacts (like .DONE), not STATUS.md fields; quality gate logs to existing execution log table, adds no new STATUS.md sections or header fields
+- [x] Final doc/code consistency check: defaults, threshold semantics, fail-open match implementation (fixed no_important doc to say "fewer than 3 important" matching code; added status_mismatch note)
 - [ ] `.DONE` created
 
 ---

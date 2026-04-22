@@ -1,10 +1,10 @@
 # TP-015: Init v2: Mode Detection, Gitignore, and Artifact Cleanup — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 7: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-17
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 16
 **Iteration:** 8
 **Size:** L
 
@@ -15,104 +15,104 @@
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read current `cmdInit()` implementation
-- [ ] Read spec auto-detection and gitignore sections
-- [ ] Verify spec reachability and record source path
-- [ ] Verify TP-014 config loader/schema contract (JSON output shape, YAML fallback expectations)
-- [ ] Record current `cmdInit()` behavior to preserve (--preset, YAML continuity, --tasks-root, --dry-run, --force, --no-examples)
-- [ ] Identify downstream validation (existing tests, CLI checks for init regressions)
-- [ ] R002: Revert TP-014 file changes from TP-015 commits (scope drift fix)
-- [ ] R002: Fix malformed STATUS.md tables (separator placement, deduplicate review rows and log entries)
+- [x] Read current `cmdInit()` implementation
+- [x] Read spec auto-detection and gitignore sections
+- [x] Verify spec reachability and record source path
+- [x] Verify TP-014 config loader/schema contract (JSON output shape, YAML fallback expectations)
+- [x] Record current `cmdInit()` behavior to preserve (--preset, YAML continuity, --tasks-root, --dry-run, --force, --no-examples)
+- [x] Identify downstream validation (existing tests, CLI checks for init regressions)
+- [x] R002: Revert TP-014 file changes from TP-015 commits (scope drift fix)
+- [x] R002: Fix malformed STATUS.md tables (separator placement, deduplicate review rows and log entries)
 
 ---
 
 ### Step 1: Mode Auto-Detection
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Detection logic implemented (git repo check, subdirectory git repo scan, mode determination)
-- [ ] Error path: no git repo and no git repo subdirectories → clear error message and exit
-- [ ] Ambiguous case handled with prompt; preset/non-interactive mode defaults to repo mode (no prompt)
-- [ ] "Already initialized" detection for Scenario B (existing config check before topology detection)
-- [ ] Validate: repo mode, workspace mode, ambiguous prompt, no-repo error, preset bypass all covered
-- [ ] R004: Fix `findSubdirectoryGitRepos()` — must check for actual nested repo roots (`.git` entry + `git rev-parse --show-toplevel` matching child), not just "inside work tree"
-- [ ] R004: Fix `existingConfigPath` mismatch — when ambiguous mode resolves to workspace, recompute workspace-specific existing-config detection instead of reusing monorepo `.pi` path
+- [x] Detection logic implemented (git repo check, subdirectory git repo scan, mode determination)
+- [x] Error path: no git repo and no git repo subdirectories → clear error message and exit
+- [x] Ambiguous case handled with prompt; preset/non-interactive mode defaults to repo mode (no prompt)
+- [x] "Already initialized" detection for Scenario B (existing config check before topology detection)
+- [x] Validate: repo mode, workspace mode, ambiguous prompt, no-repo error, preset bypass all covered
+- [x] R004: Fix `findSubdirectoryGitRepos()` — must check for actual nested repo roots (`.git` entry + `git rev-parse --show-toplevel` matching child), not just "inside work tree"
+- [x] R004: Fix `existingConfigPath` mismatch — when ambiguous mode resolves to workspace, recompute workspace-specific existing-config detection instead of reusing monorepo `.pi` path
 
 ---
 
 ### Step 2: Gitignore Enforcement
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Define required gitignore entries as a reusable constant (for Step 4 reuse)
-- [ ] Implement `ensureGitignoreEntries()` helper — idempotent: creates file if needed, skips existing entries, respects dry-run
-- [ ] Integrate gitignore enforcement into `cmdInit()` repo-mode flow (after scaffolding, before auto-commit)
-- [ ] Implement tracked-artifact detection (`git ls-files`) and `git rm --cached` offer — isolated from auto-commit staging, respects dry-run and non-interactive modes
-- [ ] Update `printFileList()` dry-run output to show gitignore entries that would be added
-- [ ] R006: Fix `patternToRegex()` — directory patterns (trailing `/`) must be prefix matches; switch `git rm --cached` to `execFileSync` for shell-safety
-- [ ] R006: Remove unused `buildGitignoreBlock()` function
-- [ ] R006: Add test coverage for tracked-artifact pattern matching (directories, wildcards)
+- [x] Define required gitignore entries as a reusable constant (for Step 4 reuse)
+- [x] Implement `ensureGitignoreEntries()` helper — idempotent: creates file if needed, skips existing entries, respects dry-run
+- [x] Integrate gitignore enforcement into `cmdInit()` repo-mode flow (after scaffolding, before auto-commit)
+- [x] Implement tracked-artifact detection (`git ls-files`) and `git rm --cached` offer — isolated from auto-commit staging, respects dry-run and non-interactive modes
+- [x] Update `printFileList()` dry-run output to show gitignore entries that would be added
+- [x] R006: Fix `patternToRegex()` — directory patterns (trailing `/`) must be prefix matches; switch `git rm --cached` to `execFileSync` for shell-safety
+- [x] R006: Remove unused `buildGitignoreBlock()` function
+- [x] R006: Add test coverage for tracked-artifact pattern matching (directories, wildcards)
 
 ---
 
 ### Step 3: tmux and Environment Detection
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Implement `detectSpawnMode()` reusable helper that returns `{ spawnMode, hasTmux }` — reusable for Step 4 workspace init
-- [ ] Wire detected spawn_mode into `generateOrchestratorYaml()` via init vars (replace hardcoded `"subprocess"`)
-- [ ] Show guidance message when tmux not found; silent when present. Skip message for runner-only preset (no orchestrator). Respect dry-run output.
-- [ ] Verify: preset/dry-run/runner-only compatibility; tmux-present and tmux-absent branches
+- [x] Implement `detectSpawnMode()` reusable helper that returns `{ spawnMode, hasTmux }` — reusable for Step 4 workspace init
+- [x] Wire detected spawn_mode into `generateOrchestratorYaml()` via init vars (replace hardcoded `"subprocess"`)
+- [x] Show guidance message when tmux not found; silent when present. Skip message for runner-only preset (no orchestrator). Respect dry-run output.
+- [x] Verify: preset/dry-run/runner-only compatibility; tmux-present and tmux-absent branches
 
 ---
 
 ### Step 4: Workspace Mode Init (Scenario C)
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Config repo selection prompt and workspace interactive/preset vars gathering
-- [ ] Scaffold `.taskplane/` in config repo (config JSON, workspace.json, agents, version tracker, CONTEXT.md, examples)
-- [ ] Gitignore enforcement in config repo with `.taskplane/`-scoped prefix; tracked-artifact detection
-- [ ] Pointer file creation (`taskplane-pointer.json`) in workspace root `.pi/`
-- [ ] Dry-run/preset/force/non-interactive compatibility for workspace mode
-- [ ] Post-init merge guidance and auto-commit in config repo
-- [ ] R010: Pass `prefix: ".taskplane/"` to `ensureGitignoreEntries()` and extend tracked-artifact detection with prefix-aware scanning
-- [ ] R010: Include `.gitignore` in workspace auto-commit staging alongside `.taskplane/`
-- [ ] R010: Fix overwrite confirmation — track user confirmation to set `skipIfExists` accordingly
+- [x] Config repo selection prompt and workspace interactive/preset vars gathering
+- [x] Scaffold `.taskplane/` in config repo (config JSON, workspace.json, agents, version tracker, CONTEXT.md, examples)
+- [x] Gitignore enforcement in config repo with `.taskplane/`-scoped prefix; tracked-artifact detection
+- [x] Pointer file creation (`taskplane-pointer.json`) in workspace root `.pi/`
+- [x] Dry-run/preset/force/non-interactive compatibility for workspace mode
+- [x] Post-init merge guidance and auto-commit in config repo
+- [x] R010: Pass `prefix: ".taskplane/"` to `ensureGitignoreEntries()` and extend tracked-artifact detection with prefix-aware scanning
+- [x] R010: Include `.gitignore` in workspace auto-commit staging alongside `.taskplane/`
+- [x] R010: Fix overwrite confirmation — track user confirmation to set `skipIfExists` accordingly
 
 ---
 
 ### Step 5: Workspace Join (Scenario D)
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Scenario D early-return branch: when existing `.taskplane/` is detected, skip Scenario C scaffolding/prompts/gitignore/auto-commit and create pointer only
-- [ ] Pointer idempotency: handle existing `.pi/taskplane-pointer.json` (overwrite prompt, --force semantics, dry-run output)
-- [ ] User confirmation messaging: show which config repo was found and what was created
-- [ ] Scenario C preservation: verify Scenario C flow is unbroken when no existing `.taskplane/` is found
-- [ ] R012: Fix control-flow bug — `--force` must not bypass Scenario D; separate Scenario D detection from `!force` gate, apply `force` only to pointer overwrite
-- [ ] R012: Wrap pointer JSON.parse in try/catch — malformed pointer should prompt overwrite, not crash
+- [x] Scenario D early-return branch: when existing `.taskplane/` is detected, skip Scenario C scaffolding/prompts/gitignore/auto-commit and create pointer only
+- [x] Pointer idempotency: handle existing `.pi/taskplane-pointer.json` (overwrite prompt, --force semantics, dry-run output)
+- [x] User confirmation messaging: show which config repo was found and what was created
+- [x] Scenario C preservation: verify Scenario C flow is unbroken when no existing `.taskplane/` is found
+- [x] R012: Fix control-flow bug — `--force` must not bypass Scenario D; separate Scenario D detection from `!force` gate, apply `force` only to pointer overwrite
+- [x] R012: Wrap pointer JSON.parse in try/catch — malformed pointer should prompt overwrite, not crash
 
 ---
 
 ### Step 6: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Baseline validation gates pass (`cd extensions && npx vitest run`, `node bin/taskplane.mjs help`, `node bin/taskplane.mjs doctor`)
-- [ ] Scenario A (repo mode, fresh init) dry-run works: `node bin/taskplane.mjs init --dry-run --force --preset full`
-- [ ] Preset compatibility verified: `--preset minimal`, `--preset full`, `--preset runner-only` all work with `--dry-run --force`
-- [ ] YAML output still generated alongside JSON (constraint from PROMPT)
-- [ ] Mode detection edge cases and regression coverage: add init-focused automated test file covering mode detection, gitignore enforcement, and scenario branching
-- [ ] R014: Fix mirrored `isGitRepoRoot()` in test to include `fs.realpathSync.native()` normalization matching production code, and add regression case for path-canonicalization mismatch
-- [ ] R014: Re-run vitest to confirm all tests pass after fix
+- [x] Baseline validation gates pass (`cd extensions && npx vitest run`, `node bin/taskplane.mjs help`, `node bin/taskplane.mjs doctor`)
+- [x] Scenario A (repo mode, fresh init) dry-run works: `node bin/taskplane.mjs init --dry-run --force --preset full`
+- [x] Preset compatibility verified: `--preset minimal`, `--preset full`, `--preset runner-only` all work with `--dry-run --force`
+- [x] YAML output still generated alongside JSON (constraint from PROMPT)
+- [x] Mode detection edge cases and regression coverage: add init-focused automated test file covering mode detection, gitignore enforcement, and scenario branching
+- [x] R014: Fix mirrored `isGitRepoRoot()` in test to include `fs.realpathSync.native()` normalization matching production code, and add regression case for path-canonicalization mismatch
+- [x] R014: Re-run vitest to confirm all tests pass after fix
 
 ---
 
 ### Step 7: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Update `docs/tutorials/install.md` — document init-v2 flow: mode auto-detection (repo vs workspace), gitignore enforcement + tracked artifact cleanup, tmux-based spawn_mode defaulting, JSON config output with YAML transition note
-- [ ] Check/update `docs/reference/commands.md` — verify `taskplane init` section reflects new behavior
-- [ ] Check/update `README.md` — verify install/quickstart section is consistent with new init flow
-- [ ] Final verification: commits use TP-015 prefix, all tests pass
-- [ ] `.DONE` created in task folder
+- [x] Update `docs/tutorials/install.md` — document init-v2 flow: mode auto-detection (repo vs workspace), gitignore enforcement + tracked artifact cleanup, tmux-based spawn_mode defaulting, JSON config output with YAML transition note
+- [x] Check/update `docs/reference/commands.md` — verify `taskplane init` section reflects new behavior
+- [x] Check/update `README.md` — verify install/quickstart section is consistent with new init flow
+- [x] Final verification: commits use TP-015 prefix, all tests pass
+- [x] `.DONE` created in task folder
 
 ---
 

@@ -1,10 +1,10 @@
 # TP-010: Team-Scale Session and Worktree Naming Hardening — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 4: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-03-15
 **Review Level:** 3
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 5
 **Size:** M
 
@@ -14,87 +14,87 @@
 ---
 
 ### Step 0: Define naming contract
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Design deterministic naming including repo slug + operator identifier + batch components
-- [ ] Document fallback rules when operator metadata is unavailable
+- [x] Design deterministic naming including repo slug + operator identifier + batch components
+- [x] Document fallback rules when operator metadata is unavailable
 
 ---
 
 ### Step 1: Apply naming contract consistently
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Create `naming.ts` with `resolveOperatorId()`, `sanitizeNameComponent()`, `resolveRepoSlug()`
-- [ ] Add `operator_id` field to `OrchestratorConfig` and `DEFAULT_ORCHESTRATOR_CONFIG`
-- [ ] Add `opId` field to `CreateWorktreeOptions`
-- [ ] Update `generateTmuxSessionName()` in `waves.ts`: `{prefix}-{opId}-lane-{N}` (repo mode) / `{prefix}-{opId}-{repoId}-lane-{N}` (workspace mode)
-- [ ] Update `generateBranchName()` in `worktree.ts`: `task/{opId}-lane-{N}-{batchId}`
-- [ ] Update `generateWorktreePath()` in `worktree.ts`: `{prefix}-{opId}-{N}`
-- [ ] Update `createWorktree()` to destructure and pass `opId`
-- [ ] Update `listWorktrees()` to accept `opId` and match `{prefix}-{opId}-{N}` (operator-scoped discovery)
-- [ ] Add legacy pattern fallback for `listWorktrees()` (only when opId="op")
-- [ ] Update `createLaneWorktrees()` to resolve `opId` internally
-- [ ] Update `ensureLaneWorktrees()` to resolve `opId` and pass through
-- [ ] Update `removeAllWorktrees()` to accept `opId` parameter
-- [ ] Update `allocateLanes()` in `waves.ts` to resolve `opId` and pass to `generateTmuxSessionName()`
-- [ ] Update merge temp branch: `_merge-temp-{opId}-{batchId}`
-- [ ] Update merge workspace dir: `merge-workspace-{opId}` (operator-scoped)
-- [ ] Update merge session names: `{prefix}-{opId}-merge-{N}`
-- [ ] Update merge sidecar files: `merge-result-w{W}-lane{L}-{opId}-{batchId}.json` / `.txt`
-- [ ] Update call sites in `engine.ts` (cleanup, worktree reset)
-- [ ] Update call sites in `resume.ts` (cleanup, worktree reset)
-- [ ] Add `naming.ts` to barrel export in `index.ts`
-- [ ] Add `operator_id` to template config `task-orchestrator.yaml`
-- [ ] Ensure log/sidecar file naming aligns with new identifiers (lane log inherits from session name)
-- [ ] Update tests: `orch-pure-functions.test.ts` (generateWorktreePath, listWorktrees regex)
-- [ ] All 207 vitest tests passing + 54 lifecycle tests + 160 pure function tests
-- [ ] Update tests: `waves-repo-scoped.test.ts` (generateTmuxSessionName with opId)
-- [ ] Update tests: `worktree-lifecycle.test.ts` (opId in createWorktree, branch names, listWorktrees, removeAllWorktrees)
+- [x] Create `naming.ts` with `resolveOperatorId()`, `sanitizeNameComponent()`, `resolveRepoSlug()`
+- [x] Add `operator_id` field to `OrchestratorConfig` and `DEFAULT_ORCHESTRATOR_CONFIG`
+- [x] Add `opId` field to `CreateWorktreeOptions`
+- [x] Update `generateTmuxSessionName()` in `waves.ts`: `{prefix}-{opId}-lane-{N}` (repo mode) / `{prefix}-{opId}-{repoId}-lane-{N}` (workspace mode)
+- [x] Update `generateBranchName()` in `worktree.ts`: `task/{opId}-lane-{N}-{batchId}`
+- [x] Update `generateWorktreePath()` in `worktree.ts`: `{prefix}-{opId}-{N}`
+- [x] Update `createWorktree()` to destructure and pass `opId`
+- [x] Update `listWorktrees()` to accept `opId` and match `{prefix}-{opId}-{N}` (operator-scoped discovery)
+- [x] Add legacy pattern fallback for `listWorktrees()` (only when opId="op")
+- [x] Update `createLaneWorktrees()` to resolve `opId` internally
+- [x] Update `ensureLaneWorktrees()` to resolve `opId` and pass through
+- [x] Update `removeAllWorktrees()` to accept `opId` parameter
+- [x] Update `allocateLanes()` in `waves.ts` to resolve `opId` and pass to `generateTmuxSessionName()`
+- [x] Update merge temp branch: `_merge-temp-{opId}-{batchId}`
+- [x] Update merge workspace dir: `merge-workspace-{opId}` (operator-scoped)
+- [x] Update merge session names: `{prefix}-{opId}-merge-{N}`
+- [x] Update merge sidecar files: `merge-result-w{W}-lane{L}-{opId}-{batchId}.json` / `.txt`
+- [x] Update call sites in `engine.ts` (cleanup, worktree reset)
+- [x] Update call sites in `resume.ts` (cleanup, worktree reset)
+- [x] Add `naming.ts` to barrel export in `index.ts`
+- [x] Add `operator_id` to template config `task-orchestrator.yaml`
+- [x] Ensure log/sidecar file naming aligns with new identifiers (lane log inherits from session name)
+- [x] Update tests: `orch-pure-functions.test.ts` (generateWorktreePath, listWorktrees regex)
+- [x] All 207 vitest tests passing + 54 lifecycle tests + 160 pure function tests
+- [x] Update tests: `waves-repo-scoped.test.ts` (generateTmuxSessionName with opId)
+- [x] Update tests: `worktree-lifecycle.test.ts` (opId in createWorktree, branch names, listWorktrees, removeAllWorktrees)
 
 ---
 
 ### Step 2: Validate collision resistance
-**Status:** Pending
+**Status:** ✅ Complete
 
 #### 2a — Collision test matrix (new test file: `naming-collision.test.ts`)
-- [ ] Same operator + same tmux_prefix + different repos: TMUX sessions must differ (repo slug differentiates)
-- [ ] Different operators + same repo + same prefix: TMUX sessions, worktree paths, branch names, merge sessions must differ
-- [ ] Concurrent batches (same operator, different batchIds, overlapping lane numbers): branches and merge sidecars must differ
-- [ ] Same operator + same repo + workspace mode: sessions include repoId, no cross-repo collision
-- [ ] opId fallback ("op") combined with legacy worktree patterns: listWorktrees discovers both
+- [x] Same operator + same tmux_prefix + different repos: TMUX sessions must differ (repo slug differentiates)
+- [x] Different operators + same repo + same prefix: TMUX sessions, worktree paths, branch names, merge sessions must differ
+- [x] Concurrent batches (same operator, different batchIds, overlapping lane numbers): branches and merge sidecars must differ
+- [x] Same operator + same repo + workspace mode: sessions include repoId, no cross-repo collision
+- [x] opId fallback ("op") combined with legacy worktree patterns: listWorktrees discovers both
 
 #### 2b — Ownership-safe consumer validation (extend `naming-collision.test.ts`)
-- [ ] `parseOrchSessionNames()` with mixed-operator session list: prefix-only filtering returns ALL operators' sessions (expected behavior)
-- [ ] `listOrchSessions()` prefix filtering: verify all sessions matching prefix returned regardless of opId (batch-state enrichment distinguishes ownership)
-- [ ] Sidecar cleanup (`engine.ts` cleanup logic): verify prefix-based cleanup deletes all operators' sidecars (document as known cross-operator behavior in discoveries)
-- [ ] `/orch-abort` session kill: verify prefix-based kill hits all sessions (document as intended team behavior)
+- [x] `parseOrchSessionNames()` with mixed-operator session list: prefix-only filtering returns ALL operators' sessions (expected behavior)
+- [x] `listOrchSessions()` prefix filtering: verify all sessions matching prefix returned regardless of opId (batch-state enrichment distinguishes ownership)
+- [x] Sidecar cleanup (`engine.ts` cleanup logic): verify prefix-based cleanup deletes all operators' sidecars (document as known cross-operator behavior in discoveries)
+- [x] `/orch-abort` session kill: verify prefix-based kill hits all sessions (document as intended team behavior)
 
 #### 2c — Human-readability validation (extend `naming-collision.test.ts`)
-- [ ] TMUX session names ≤ 64 chars for worst-case component lengths
-- [ ] Branch names ≤ 100 chars for worst-case
-- [ ] Generated names contain all expected tokens in correct order (snapshot assertions)
-- [ ] `/orch-sessions` display format: verify session names are parseable and supervision-friendly (token order: prefix → opId → [repoId] → lane-N)
+- [x] TMUX session names ≤ 64 chars for worst-case component lengths
+- [x] Branch names ≤ 100 chars for worst-case
+- [x] Generated names contain all expected tokens in correct order (snapshot assertions)
+- [x] `/orch-sessions` display format: verify session names are parseable and supervision-friendly (token order: prefix → opId → [repoId] → lane-N)
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing
-- [ ] Targeted tests for changed modules passing
-- [ ] All failures fixed
-- [ ] CLI smoke checks passing
+- [x] Unit/regression tests passing
+- [x] Targeted tests for changed modules passing
+- [x] All failures fixed
+- [x] CLI smoke checks passing
 
 ---
 
 ### Step 4: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] "Must Update" docs modified
-- [ ] "Check If Affected" docs reviewed
-- [ ] Discoveries logged
-- [ ] `.DONE` created
-- [ ] Archive and push
+- [x] "Must Update" docs modified
+- [x] "Check If Affected" docs reviewed
+- [x] Discoveries logged
+- [x] `.DONE` created
+- [x] Archive and push
 
 ---
 

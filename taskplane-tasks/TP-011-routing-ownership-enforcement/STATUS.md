@@ -1,10 +1,10 @@
 # TP-011: Routing Ownership Enforcement and Strict Workspace Policy — Status
 
-**Current Step:** None
+**Current Step:** Step 4: Documentation & Delivery
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 9
 **Iteration:** 5
 **Size:** M
 
@@ -14,27 +14,27 @@
 ---
 
 ### Step 0: Add strict-routing policy controls
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add `strict?: boolean` field to `WorkspaceRoutingConfig` type in `types.ts` (default: `false`)
-- [ ] Update `loadWorkspaceConfig()` in `workspace.ts` to parse `routing.strict` from YAML
-- [ ] Add `TASK_ROUTING_STRICT` error code to `DiscoveryError.code` union and `FATAL_DISCOVERY_CODES` in `types.ts`
-- [ ] Update `resolveTaskRouting()` in `discovery.ts` to enforce strict mode: error when `promptRepoId` is absent
-- [ ] Add remediation guidance in strict-mode error messages (actionable text pointing to `## Execution Target`)
-- [ ] Thread `strict` flag from `WorkspaceConfig` through `DiscoveryOptions` into `resolveTaskRouting()`
-- [ ] Add targeted unit tests in `discovery-routing.test.ts` for strict routing policy (19 tests: 19.x–24.x)
+- [x] Add `strict?: boolean` field to `WorkspaceRoutingConfig` type in `types.ts` (default: `false`)
+- [x] Update `loadWorkspaceConfig()` in `workspace.ts` to parse `routing.strict` from YAML
+- [x] Add `TASK_ROUTING_STRICT` error code to `DiscoveryError.code` union and `FATAL_DISCOVERY_CODES` in `types.ts`
+- [x] Update `resolveTaskRouting()` in `discovery.ts` to enforce strict mode: error when `promptRepoId` is absent
+- [x] Add remediation guidance in strict-mode error messages (actionable text pointing to `## Execution Target`)
+- [x] Thread `strict` flag from `WorkspaceConfig` through `DiscoveryOptions` into `resolveTaskRouting()`
+- [x] Add targeted unit tests in `discovery-routing.test.ts` for strict routing policy (19 tests: 19.x–24.x)
 
 ---
 
 ### Step 1: Enforce policy during discovery
-**Status:** Pending
+**Status:** ✅ Complete
 **Scope:** Verification-only — all runtime behavior was implemented in Step 0. Step 1 confirms correctness and documents the validation matrix.
 
-- [ ] Verify strict mode enforcement already applied in `runDiscovery()` → `resolveTaskRouting()` (workspace mode Step 6 in pipeline)
-- [ ] Add `TASK_ROUTING_STRICT` to command-surface helper hints in `extension.ts` (`/orch-plan` fatal error block)
-- [ ] Add `TASK_ROUTING_STRICT` to command-surface helper hints in `engine.ts` (`/orch` fatal error block)
-- [ ] Validate `routing.strict` type in `workspace.ts` — reject non-boolean values with `WORKSPACE_SCHEMA_INVALID` (close fail-open gap)
-- [ ] Add targeted tests for Step 1 changes:
+- [x] Verify strict mode enforcement already applied in `runDiscovery()` → `resolveTaskRouting()` (workspace mode Step 6 in pipeline)
+- [x] Add `TASK_ROUTING_STRICT` to command-surface helper hints in `extension.ts` (`/orch-plan` fatal error block)
+- [x] Add `TASK_ROUTING_STRICT` to command-surface helper hints in `engine.ts` (`/orch` fatal error block)
+- [x] Validate `routing.strict` type in `workspace.ts` — reject non-boolean values with `WORKSPACE_SCHEMA_INVALID` (close fail-open gap)
+- [x] Add targeted tests for Step 1 changes:
   - Strict config validation: workspace-config.test.ts 1.15–1.19 (5 tests: true/false/omitted/string/number)
   - Command-surface hint verification: discovery-routing.test.ts 25.x (6 tests: source verification of extension.ts + engine.ts handling)
   - Strict routing fatal behavior: discovery-routing.test.ts 19.x–22.x (13 tests from Step 0)
@@ -45,7 +45,7 @@
 ---
 
 ### Step 2: Cover governance scenarios
-**Status:** Pending
+**Status:** ✅ Complete
 **Scope:** Incremental — fix `routing.strict: null` fail-open gap, add governance edge-case tests, document coverage matrix.
 
 **Coverage Matrix (acceptance → test IDs):**
@@ -63,22 +63,22 @@
 | Config → runtime strict pipeline | 1.15–1.19 | 1.20 (null edge case) |
 | TASK_ROUTING_STRICT fatal classification | 22.1–22.3 | — (verified) |
 
-- [ ] Fix `routing.strict: null` fail-open gap in `workspace.ts` — reject null with `WORKSPACE_SCHEMA_INVALID`
-- [ ] Add test 1.20 in `workspace-config.test.ts`: `routing.strict: null` (bare YAML value) throws `WORKSPACE_SCHEMA_INVALID`
-- [ ] Add test 26.1 in `discovery-routing.test.ts`: repo-mode `runDiscovery` with strict-like task areas still skips routing
-- [ ] Add tests 27.1–27.5 in `discovery-routing.test.ts`: governance scenarios (strict+unknown, permissive+default, mixed pipeline, strict blocks area fallback, permissive allows area fallback)
-- [ ] Verify all existing governance tests pass (19.x–27.x, 1.15–1.20)
-- [ ] Run full test suite: 145/145 (discovery-routing + workspace-config); pre-existing failures only in unrelated modules
+- [x] Fix `routing.strict: null` fail-open gap in `workspace.ts` — reject null with `WORKSPACE_SCHEMA_INVALID`
+- [x] Add test 1.20 in `workspace-config.test.ts`: `routing.strict: null` (bare YAML value) throws `WORKSPACE_SCHEMA_INVALID`
+- [x] Add test 26.1 in `discovery-routing.test.ts`: repo-mode `runDiscovery` with strict-like task areas still skips routing
+- [x] Add tests 27.1–27.5 in `discovery-routing.test.ts`: governance scenarios (strict+unknown, permissive+default, mixed pipeline, strict blocks area fallback, permissive allows area fallback)
+- [x] Verify all existing governance tests pass (19.x–27.x, 1.15–1.20)
+- [x] Run full test suite: 145/145 (discovery-routing + workspace-config); pre-existing failures only in unrelated modules
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing — 202/205 pass; 3 failures are pre-existing in unrelated modules (orch-state-persistence, task-runner-orchestration, orch-pure-functions, orch-direct-implementation)
-- [ ] Targeted tests for changed modules passing — 145/145 pass (99 discovery-routing + 46 workspace-config)
-- [ ] All failures fixed — all TP-011-related tests pass; pre-existing failures documented in Discoveries
-- [ ] CLI smoke checks passing — `taskplane help` and `taskplane doctor` both execute successfully
+- [x] Unit/regression tests passing — 202/205 pass; 3 failures are pre-existing in unrelated modules (orch-state-persistence, task-runner-orchestration, orch-pure-functions, orch-direct-implementation)
+- [x] Targeted tests for changed modules passing — 145/145 pass (99 discovery-routing + 46 workspace-config)
+- [x] All failures fixed — all TP-011-related tests pass; pre-existing failures documented in Discoveries
+- [x] CLI smoke checks passing — `taskplane help` and `taskplane doctor` both execute successfully
 
 ---
 
@@ -86,22 +86,22 @@
 **Status:** 🟨 In Progress
 
 **4.1 — Update `.pi/local/docs/taskplane/polyrepo-support-spec.md` (Must Update)**
-- [ ] Add new section documenting `routing.strict` semantics (workspace-mode only, default `false`)
-- [ ] Document strict enforcement behavior during discovery (`TASK_ROUTING_STRICT` error when prompt target missing)
-- [ ] Document config validation guardrails (`routing.strict` must be boolean; `null` rejected as `WORKSPACE_SCHEMA_INVALID`)
-- [ ] Document recommended team policy: require explicit `## Execution Target` in PROMPT.md for multi-team workspaces
+- [x] Add new section documenting `routing.strict` semantics (workspace-mode only, default `false`)
+- [x] Document strict enforcement behavior during discovery (`TASK_ROUTING_STRICT` error when prompt target missing)
+- [x] Document config validation guardrails (`routing.strict` must be boolean; `null` rejected as `WORKSPACE_SCHEMA_INVALID`)
+- [x] Document recommended team policy: require explicit `## Execution Target` in PROMPT.md for multi-team workspaces
 
 **4.2 — Review `docs/reference/configuration/task-orchestrator.yaml.md` (Check If Affected)**
-- [ ] Record decision: **NOT updated** — `routing.strict` is a workspace config field (`WorkspaceRoutingConfig` in `types.ts`, parsed in `workspace.ts` from `.pi/taskplane-workspace.yaml`), not an orchestrator config field. `task-orchestrator.yaml.md` documents `.pi/task-orchestrator.yaml` schema only. No changes needed.
+- [x] Record decision: **NOT updated** — `routing.strict` is a workspace config field (`WorkspaceRoutingConfig` in `types.ts`, parsed in `workspace.ts` from `.pi/taskplane-workspace.yaml`), not an orchestrator config field. `task-orchestrator.yaml.md` documents `.pi/task-orchestrator.yaml` schema only. No changes needed.
 
 **4.3 — Finalize STATUS.md**
-- [ ] Discoveries table complete (all findings from Steps 0–4)
+- [x] Discoveries table complete (all findings from Steps 0–4)
 - [ ] Execution log updated with Step 4 completion
 
 **4.4 — Pre-`.DONE` gate**
-- [ ] Confirm all TP-011-related tests pass (targeted: 145/145 — 99 discovery-routing + 46 workspace-config)
-- [ ] Confirm pre-existing failures are documented in Discoveries and not caused by TP-011 (3 pre-existing failures in unrelated modules)
-- [ ] Confirm prompt completion criteria met: all steps complete, docs updated, tests passing
+- [x] Confirm all TP-011-related tests pass (targeted: 145/145 — 99 discovery-routing + 46 workspace-config)
+- [x] Confirm pre-existing failures are documented in Discoveries and not caused by TP-011 (3 pre-existing failures in unrelated modules)
+- [x] Confirm prompt completion criteria met: all steps complete, docs updated, tests passing
 
 **4.5 — Create `.DONE`**
 - [ ] `.DONE` created in task folder

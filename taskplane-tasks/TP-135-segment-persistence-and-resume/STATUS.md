@@ -1,63 +1,63 @@
 # TP-135: Segment Persistence and Resume — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 5: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 10
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Trace persistence task outcome flow
-- [ ] Trace resume reconciliation algorithm
-- [ ] Read PersistedSegmentRecord
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Trace persistence task outcome flow
+- [x] Trace resume reconciliation algorithm
+- [x] Read PersistedSegmentRecord
 
 ### Step 1: Populate segments during execution
-**Status:** Pending
-- [ ] Segment start → running
-- [ ] Segment complete → succeeded
-- [ ] Segment failure → failed + diagnostic
-- [ ] Persist in batch-state.json
-- [ ] Maintain activeSegmentId
+**Status:** ✅ Complete
+- [x] Segment start → running
+- [x] Segment complete → succeeded
+- [x] Segment failure → failed + diagnostic
+- [x] Persist in batch-state.json
+- [x] Maintain activeSegmentId
 
 ### Step 2: Resume reconstruction
-**Status:** Pending
-- [ ] Read persisted segments for frontier
-- [ ] Identify completed segments
-- [ ] Identify in-flight segments
-- [ ] Identify pending segments
-- [ ] Reconstruct DAG
-- [ ] Resume from first incomplete
-- [ ] R004: Preserve .DONE authority even when segment frontier is incomplete
-- [ ] R004: Fall back to task-level reconciliation when wave segment record is missing
-- [ ] R004: Add regression tests for .DONE authority + missing-segment fallback
-- [ ] R005: Preserve terminal task status when segmentIds exist but segments[] records are missing
-- [ ] R005: Add integration-order regression test (reconstructSegmentFrontier → reconcileTaskStates)
+**Status:** ✅ Complete
+- [x] Read persisted segments for frontier
+- [x] Identify completed segments
+- [x] Identify in-flight segments
+- [x] Identify pending segments
+- [x] Reconstruct DAG
+- [x] Resume from first incomplete
+- [x] R004: Preserve .DONE authority even when segment frontier is incomplete
+- [x] R004: Fall back to task-level reconciliation when wave segment record is missing
+- [x] R004: Add regression tests for .DONE authority + missing-segment fallback
+- [x] R005: Preserve terminal task status when segmentIds exist but segments[] records are missing
+- [x] R005: Add integration-order regression test (reconstructSegmentFrontier → reconcileTaskStates)
 
 ### Step 3: Reconciliation edge cases
-**Status:** Pending
-- [ ] Mid-segment crash
-- [ ] Between-segment crash
-- [ ] All segments complete
-- [ ] Segment failure + dependents
+**Status:** ✅ Complete
+- [x] Mid-segment crash
+- [x] Between-segment crash
+- [x] All segments complete
+- [x] Segment failure + dependents
 
 ### Step 4: Tests
-**Status:** Pending
-- [ ] Test segments in batch-state
-- [ ] Test resume frontier reconstruction
-- [ ] Test mid-segment crash resume
-- [ ] Test between-segment crash resume
-- [ ] Test repo-singleton unchanged
-- [ ] Run full suite, fix failures
+**Status:** ✅ Complete
+- [x] Test segments in batch-state
+- [x] Test resume frontier reconstruction
+- [x] Test mid-segment crash resume
+- [x] Test between-segment crash resume
+- [x] Test repo-singleton unchanged
+- [x] Run full suite, fix failures
 
 ### Step 5: Documentation & Delivery
-**Status:** Pending
-- [ ] Update STATUS.md
+**Status:** ✅ Complete
+- [x] Update STATUS.md
 
 ---
 

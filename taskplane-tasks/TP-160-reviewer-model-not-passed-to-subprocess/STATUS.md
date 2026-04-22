@@ -1,55 +1,55 @@
 # TP-160: Pass reviewer model/thinking/tools config to spawnReviewer subprocess — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 3: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-11
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 3
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Read `executeWave()` and `executeLaneV2()` in `execution.ts`
-- [ ] Read `LaneRunnerConfig` and worker env setup in `lane-runner.ts`
-- [ ] Read `spawnReviewer()` in `agent-bridge-extension.ts`
-- [ ] Confirm `runnerConfig` in scope at `executeWave` call sites in `engine.ts`
-- [ ] Verify test baseline
+- [x] Read `executeWave()` and `executeLaneV2()` in `execution.ts`
+- [x] Read `LaneRunnerConfig` and worker env setup in `lane-runner.ts`
+- [x] Read `spawnReviewer()` in `agent-bridge-extension.ts`
+- [x] Confirm `runnerConfig` in scope at `executeWave` call sites in `engine.ts`
+- [x] Verify test baseline
 
 ---
 
 ### Step 1: Thread reviewer config through the call chain
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Part 0-A: Add `reviewer` field to `TaskRunnerConfig` in `types.ts`
-- [ ] Part 0-B: Update `toTaskRunnerConfig()` in `config-loader.ts` to include `reviewer`
-- [ ] Part A: Add `reviewerConfig?` to `executeWave` signature, pass via extraEnvVars in `execution.ts`
-- [ ] Part B: Add reviewer fields to `LaneRunnerConfig`, populate from extraEnvVars in `executeLaneV2`
-- [ ] Part C: Set `TASKPLANE_REVIEWER_*` env vars in worker subprocess in `lane-runner.ts`
-- [ ] Part D: Read env vars in `spawnReviewer`, pass `--model`/`--thinking`/`--tools` to pi CLI
-- [ ] Part E-main: Update `executeOrchBatch` (line 2363) `executeWave` call to pass reviewer config
-- [ ] Part E-retry: Add `runnerConfig?` to `attemptStaleWorktreeRecovery`, thread through to `executeWave` call at line 1795
+- [x] Part 0-A: Add `reviewer` field to `TaskRunnerConfig` in `types.ts`
+- [x] Part 0-B: Update `toTaskRunnerConfig()` in `config-loader.ts` to include `reviewer`
+- [x] Part A: Add `reviewerConfig?` to `executeWave` signature, pass via extraEnvVars in `execution.ts`
+- [x] Part B: Add reviewer fields to `LaneRunnerConfig`, populate from extraEnvVars in `executeLaneV2`
+- [x] Part C: Set `TASKPLANE_REVIEWER_*` env vars in worker subprocess in `lane-runner.ts`
+- [x] Part D: Read env vars in `spawnReviewer`, pass `--model`/`--thinking`/`--tools` to pi CLI
+- [x] Part E-main: Update `executeOrchBatch` (line 2363) `executeWave` call to pass reviewer config
+- [x] Part E-retry: Add `runnerConfig?` to `attemptStaleWorktreeRecovery`, thread through to `executeWave` call at line 1795
 
 ---
 
 ### Step 2: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Full test suite passing
-- [ ] CLI smoke passing
-- [ ] Fix all failures
+- [x] Full test suite passing
+- [x] CLI smoke passing
+- [x] Fix all failures
 
 ---
 
 ### Step 3: Documentation & Delivery
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Comment in `spawnReviewer` explaining env var source
-- [ ] Check docs/reference for affected content (docs/reference/configuration/taskplane-settings.md already correct — no changes needed)
-- [ ] Discoveries logged
+- [x] Comment in `spawnReviewer` explaining env var source
+- [x] Check docs/reference for affected content (docs/reference/configuration/taskplane-settings.md already correct — no changes needed)
+- [x] Discoveries logged
 
 ---
 

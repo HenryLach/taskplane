@@ -1,82 +1,82 @@
 # TP-174: Lane-Runner Segment Scoping — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 6: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-13
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 14
 **Iteration:** 1
 **Size:** L
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read lane-runner.ts prompt construction and progress logic
-- [ ] Read sidecar-telemetry.ts STATUS.md parsing
-- [ ] Understand stepSegmentMap availability from TP-173
-- [ ] Read spec sections A.2–A.5
-- [ ] Document findings
+**Status:** ✅ Complete
+- [x] Read lane-runner.ts prompt construction and progress logic
+- [x] Read sidecar-telemetry.ts STATUS.md parsing
+- [x] Understand stepSegmentMap availability from TP-173
+- [x] Read spec sections A.2–A.5
+- [x] Document findings
 
 ---
 
 ### Step 1: Segment-Scoped Iteration Prompt
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Add helper `getRepoIdFromSegmentId(segmentId)` to extract repoId from segment ID
-- [ ] Add helper `getStepsForRepoId(stepSegmentMap, repoId)` to get step numbers with segments for a given repoId
-- [ ] Add segment-scoped prompt block: when stepSegmentMap exists and segmentId is present, inject segment context showing only current segment's checkboxes, listing other segments as "not yours", and filtering remaining steps to only those with this repoId
-- [ ] Legacy fallback: when stepSegmentMap is undefined or segmentId is null, no change to prompt (backward compatible)
-- [ ] Run targeted tests (48/48 pass)
-- [ ] R002: Use `config.repoId` instead of parsing opaque segmentId; add fallback when repoStepNumbers is empty (legacy multi-segment without markers)
+- [x] Add helper `getRepoIdFromSegmentId(segmentId)` to extract repoId from segment ID
+- [x] Add helper `getStepsForRepoId(stepSegmentMap, repoId)` to get step numbers with segments for a given repoId
+- [x] Add segment-scoped prompt block: when stepSegmentMap exists and segmentId is present, inject segment context showing only current segment's checkboxes, listing other segments as "not yours", and filtering remaining steps to only those with this repoId
+- [x] Legacy fallback: when stepSegmentMap is undefined or segmentId is null, no change to prompt (backward compatible)
+- [x] Run targeted tests (48/48 pass)
+- [x] R002: Use `config.repoId` instead of parsing opaque segmentId; add fallback when repoStepNumbers is empty (legacy multi-segment without markers)
 
 ---
 
 ### Step 2: Segment-Scoped Progress and Stall Detection
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Replace full-task progress delta with segment-scoped delta when segment markers are present (use getSegmentCheckboxes from Step 1 already added)
-- [ ] Stall detection uses segment-scoped prevChecked/afterChecked counts
-- [ ] Corrective re-spawn prompt references segment-specific unchecked items
-- [ ] Legacy fallback: no change to progress/stall when no markers
-- [ ] Run targeted tests (48/48 pass)
+- [x] Replace full-task progress delta with segment-scoped delta when segment markers are present (use getSegmentCheckboxes from Step 1 already added)
+- [x] Stall detection uses segment-scoped prevChecked/afterChecked counts
+- [x] Corrective re-spawn prompt references segment-specific unchecked items
+- [x] Legacy fallback: no change to progress/stall when no markers
+- [x] Run targeted tests (48/48 pass)
 
 ---
 
 ### Step 3: Segment Exit Condition
-**Status:** Pending
-- [ ] Use isSegmentComplete (already added in Step 1) in the step completion and loop exit logic to detect when all segment checkboxes are checked
-- [ ] When segment is complete for current step: advance to next step if more steps for this repoId, or break loop if no more
-- [ ] Legacy fallback unchanged — allComplete check uses full-task isStepComplete for non-segment tasks
-- [ ] Run targeted tests (48/48 pass)
+**Status:** ✅ Complete
+- [x] Use isSegmentComplete (already added in Step 1) in the step completion and loop exit logic to detect when all segment checkboxes are checked
+- [x] When segment is complete for current step: advance to next step if more steps for this repoId, or break loop if no more
+- [x] Legacy fallback unchanged — allComplete check uses full-task isStepComplete for non-segment tasks
+- [x] Run targeted tests (48/48 pass)
 
 ---
 
 ### Step 4: Sidecar Telemetry Update
-**Status:** Pending
-- [ ] Update emitSnapshot() in lane-runner.ts to accept segment context and report segment-scoped checked/total in the snapshot progress when segment markers are present
-- [ ] Legacy fallback: full-task progress for tasks without markers (emitSnapshot unchanged when no segment context)
-- [ ] Updated dashboard/public/app.js to prefer V2 snapshot progress (segment-scoped) over full STATUS.md counts when available
-- [ ] Run targeted tests (48/48 pass)
+**Status:** ✅ Complete
+- [x] Update emitSnapshot() in lane-runner.ts to accept segment context and report segment-scoped checked/total in the snapshot progress when segment markers are present
+- [x] Legacy fallback: full-task progress for tasks without markers (emitSnapshot unchanged when no segment context)
+- [x] Updated dashboard/public/app.js to prefer V2 snapshot progress (segment-scoped) over full STATUS.md counts when available
+- [x] Run targeted tests (48/48 pass)
 
 ---
 
 ### Step 5: Testing & Verification
-**Status:** Pending
-- [ ] Run FULL test suite (3316/3317 pass, 1 failure)
-- [ ] Fix engine-runtime-v2-routing.test.ts 5.3 regex to accept optional snapshotSegmentCtx param
-- [ ] Add test: segment-scoped prompt shows only current segment's checkboxes (tests 4.1-4.6)
-- [ ] Add test: segment-scoped progress counts only segment's checkboxes (tests 2.1-2.7, 5.1-5.4)
-- [ ] Add test: stall detection uses segment-scoped delta (tests 5.1-5.4)
-- [ ] Add test: segment exit condition detects completion correctly (tests 3.1-3.6, 6.1-6.4)
-- [ ] Add test: legacy task without markers — no behavior change (tests 7.1-7.6)
-- [ ] Final full test suite run — all 3363 tests passing
+**Status:** ✅ Complete
+- [x] Run FULL test suite (3316/3317 pass, 1 failure)
+- [x] Fix engine-runtime-v2-routing.test.ts 5.3 regex to accept optional snapshotSegmentCtx param
+- [x] Add test: segment-scoped prompt shows only current segment's checkboxes (tests 4.1-4.6)
+- [x] Add test: segment-scoped progress counts only segment's checkboxes (tests 2.1-2.7, 5.1-5.4)
+- [x] Add test: stall detection uses segment-scoped delta (tests 5.1-5.4)
+- [x] Add test: segment exit condition detects completion correctly (tests 3.1-3.6, 6.1-6.4)
+- [x] Add test: legacy task without markers — no behavior change (tests 7.1-7.6)
+- [x] Final full test suite run — all 3363 tests passing
 
 ---
 
 ### Step 6: Documentation & Delivery
-**Status:** Pending
-- [ ] Discoveries logged
+**Status:** ✅ Complete
+- [x] Discoveries logged
 
 ---
 

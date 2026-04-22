@@ -1,10 +1,10 @@
 # TP-008: Workspace-Aware Doctor Diagnostics and Validation — Status
 
-**Current Step:** None
+**Current Step:** Step 3: Testing & Verification
 **Status:** 🟨 In Progress
 **Last Updated:** 2026-03-15
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 7
 **Iteration:** 4
 **Size:** M
 
@@ -14,7 +14,7 @@
 ---
 
 ### Step 0: Detect workspace mode in doctor
-**Status:** Pending
+**Status:** ✅ Complete
 
 #### Mode detection behavior
 - **No config file** (`.pi/taskplane-workspace.yaml` absent) → repo mode. All existing doctor checks unchanged.
@@ -38,21 +38,21 @@ In workspace mode, the workspace root (`cwd`) is intentionally non-git. The exis
 | workspace config load error | ❌ skip | ✅ workspace only (FAIL) |
 
 #### Implementation checklist
-- [ ] Add `loadWorkspaceConfigForDoctor()` helper in `bin/taskplane.mjs` that detects workspace config presence, reads/parses YAML, and returns `{ mode, config, error }` without throwing
-- [ ] Add workspace mode banner in `cmdDoctor()` after prerequisites, showing mode and config summary (repo count, default repo, tasks root)
-- [ ] Branch diagnostics: when workspace mode is active, skip any future git-on-cwd checks (currently none exist, but guard placement matters)
-- [ ] Handle config-present-but-invalid: report the specific error as FAIL with remediation hint, increment `issues`, continue remaining checks
-- [ ] Verify repo mode output is byte-identical (no visible changes when no workspace config exists)
+- [x] Add `loadWorkspaceConfigForDoctor()` helper in `bin/taskplane.mjs` that detects workspace config presence, reads/parses YAML, and returns `{ mode, config, error }` without throwing
+- [x] Add workspace mode banner in `cmdDoctor()` after prerequisites, showing mode and config summary (repo count, default repo, tasks root)
+- [x] Branch diagnostics: when workspace mode is active, skip any future git-on-cwd checks (currently none exist, but guard placement matters)
+- [x] Handle config-present-but-invalid: report the specific error as FAIL with remediation hint, increment `issues`, continue remaining checks
+- [x] Verify repo mode output is byte-identical (no visible changes when no workspace config exists)
 
 #### Step 0 verification plan
-- [ ] Repo mode baseline: run `node bin/taskplane.mjs doctor` in a project without `.pi/taskplane-workspace.yaml` — output must be unchanged
-- [ ] Workspace mode detection: create a valid `.pi/taskplane-workspace.yaml` and verify doctor shows workspace mode banner with repo summary
-- [ ] Invalid workspace config: create a malformed `.pi/taskplane-workspace.yaml` and verify doctor reports FAIL with error code and hint
+- [x] Repo mode baseline: run `node bin/taskplane.mjs doctor` in a project without `.pi/taskplane-workspace.yaml` — output must be unchanged
+- [x] Workspace mode detection: create a valid `.pi/taskplane-workspace.yaml` and verify doctor shows workspace mode banner with repo summary
+- [x] Invalid workspace config: create a malformed `.pi/taskplane-workspace.yaml` and verify doctor reports FAIL with error code and hint
 
 ---
 
 ### Step 1: Validate repo and routing topology
-**Status:** Pending
+**Status:** ✅ Complete
 
 #### Step 1 gating rules
 | Condition | Step 1 behavior |
@@ -92,23 +92,23 @@ For area routing errors:
 ```
 
 #### Implementation checklist
-- [ ] Extend `discoverTaskAreaMetadata()` to extract `repo_id` per area from task-runner.yaml
-- [ ] Add repo-path validation block in `cmdDoctor()` after workspace banner (gated on workspace mode + valid config)
-- [ ] Add area `repo_id` routing validation in `cmdDoctor()` after repo checks
-- [ ] Verify repo mode output is unchanged (no visible changes when no workspace config exists)
+- [x] Extend `discoverTaskAreaMetadata()` to extract `repo_id` per area from task-runner.yaml
+- [x] Add repo-path validation block in `cmdDoctor()` after workspace banner (gated on workspace mode + valid config)
+- [x] Add area `repo_id` routing validation in `cmdDoctor()` after repo checks
+- [x] Verify repo mode output is unchanged (no visible changes when no workspace config exists)
 
 #### Step 1 verification plan
-- [ ] Repo mode baseline: run `node bin/taskplane.mjs doctor` without workspace config — output unchanged
-- [ ] Valid workspace + all repos exist and are git repos → all repo checks pass
-- [ ] Repo path missing on disk → FAIL with actionable hint
-- [ ] Repo path exists but not git → FAIL with hint
-- [ ] Area `repo_id` references unknown repo → FAIL with hint listing available repos
-- [ ] Area with no `repo_id` → no error (falls through to default_repo at runtime)
+- [x] Repo mode baseline: run `node bin/taskplane.mjs doctor` without workspace config — output unchanged
+- [x] Valid workspace + all repos exist and are git repos → all repo checks pass
+- [x] Repo path missing on disk → FAIL with actionable hint
+- [x] Repo path exists but not git → FAIL with hint
+- [x] Area `repo_id` references unknown repo → FAIL with hint listing available repos
+- [x] Area with no `repo_id` → no error (falls through to default_repo at runtime)
 
 ---
 
 ### Step 2: Improve operator guidance
-**Status:** Pending
+**Status:** ✅ Complete
 
 #### Diagnostics → Hint coverage table
 All workspace-mode failures must include: (a) error code on the status line, (b) `→` remediation hint on the next line with specific file/key reference.
@@ -129,22 +129,22 @@ Align `discoverTaskAreaMetadata()` with orchestrator `config.ts:93` behavior: on
 Repo mode output must remain unchanged. Verification: run `node bin/taskplane.mjs doctor` without `.pi/taskplane-workspace.yaml` and confirm common checks are byte-identical.
 
 #### Implementation checklist
-- [ ] Fix `discoverTaskAreaMetadata()` to skip empty/whitespace-only `repo_id` values (R004)
-- [ ] Sort `knownRepoIds` in area `repo_id` hint for deterministic output
-- [ ] Add `→ Run: taskplane init` hint for missing required config files
-- [ ] Standardize `WORKSPACE_REPO_NOT_GIT` hint to include both `git init` and config fix options
-- [ ] Verify repo-mode output is unchanged (no visible changes when no workspace config exists)
-- [ ] Verify all workspace-mode failure hints match coverage table
+- [x] Fix `discoverTaskAreaMetadata()` to skip empty/whitespace-only `repo_id` values (R004)
+- [x] Sort `knownRepoIds` in area `repo_id` hint for deterministic output
+- [x] Add `→ Run: taskplane init` hint for missing required config files
+- [x] Standardize `WORKSPACE_REPO_NOT_GIT` hint to include both `git init` and config fix options
+- [x] Verify repo-mode output is unchanged (no visible changes when no workspace config exists)
+- [x] Verify all workspace-mode failure hints match coverage table
 
 ---
 
 ### Step 3: Testing & Verification
-**Status:** Pending
+**Status:** ✅ Complete
 
-- [ ] Unit/regression tests passing (full suite: 4 pre-existing failures unrelated to TP-008 confirmed via git stash comparison; 5 test files pass)
-- [ ] Targeted tests for changed modules passing (workspace-config: 108 pass, discovery-routing: included, execution-path-resolution: 30 pass, worktree-lifecycle: 1 pass)
-- [ ] All failures fixed (no TP-008-introduced failures; all 4 failing suites fail identically on main branch)
-- [ ] CLI smoke checks passing (`help` ✅, `doctor` in workspace mode ✅, `doctor` in repo mode ✅ — no regression)
+- [x] Unit/regression tests passing (full suite: 4 pre-existing failures unrelated to TP-008 confirmed via git stash comparison; 5 test files pass)
+- [x] Targeted tests for changed modules passing (workspace-config: 108 pass, discovery-routing: included, execution-path-resolution: 30 pass, worktree-lifecycle: 1 pass)
+- [x] All failures fixed (no TP-008-introduced failures; all 4 failing suites fail identically on main branch)
+- [x] CLI smoke checks passing (`help` ✅, `doctor` in workspace mode ✅, `doctor` in repo mode ✅ — no regression)
 
 ---
 

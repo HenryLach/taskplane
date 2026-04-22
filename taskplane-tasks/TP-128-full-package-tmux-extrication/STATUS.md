@@ -1,62 +1,62 @@
 # TP-128: Full Package TMUX Extrication — Status
 
-**Current Step:** None
-**Status:** Pending
+**Current Step:** Step 6: Documentation & Delivery
+**Status:** ✅ Complete
 **Last Updated:** 2026-04-03
 **Review Level:** 2
-**Review Counter:** 0
+**Review Counter:** 15
 **Iteration:** 1
 **Size:** M
 
 ---
 
 ### Step 0: Preflight
-**Status:** Pending
-- [ ] Read PROMPT.md and STATUS.md
-- [ ] Count TMUX refs in task-runner.ts, CLI, templates, supervisor
-- [ ] Log inventory
+**Status:** ✅ Complete
+- [x] Read PROMPT.md and STATUS.md
+- [x] Count TMUX refs in task-runner.ts, CLI, templates, supervisor
+- [x] Log inventory
 
 ### Step 1: Remove TMUX from task-runner.ts
-**Status:** Pending
-- [ ] Remove spawnAgentTmux
-- [ ] Remove spawn_mode: "tmux" branch
-- [ ] Remove TMUX session helpers
-- [ ] Keep subprocess path working
-- [ ] Update tests
-- [ ] R002: Migrate persistent-worker-context test expectations to subprocess-only behavior
-- [ ] R002: Reconcile mailbox steering tests with subprocess task-runner behavior
-- [ ] R003: Remove accidental `.tmp-fulltest.log` artifact and prevent re-commit
+**Status:** ✅ Complete
+- [x] Remove spawnAgentTmux
+- [x] Remove spawn_mode: "tmux" branch
+- [x] Remove TMUX session helpers
+- [x] Keep subprocess path working
+- [x] Update tests
+- [x] R002: Migrate persistent-worker-context test expectations to subprocess-only behavior
+- [x] R002: Reconcile mailbox steering tests with subprocess task-runner behavior
+- [x] R003: Remove accidental `.tmp-fulltest.log` artifact and prevent re-commit
 
 ### Step 2: Remove TMUX from CLI
-**Status:** Pending
-- [ ] Remove doctor TMUX checks
-- [ ] Remove install-tmux guidance
-- [ ] Remove install-tmux command implementation and dispatch path
-- [ ] Update help text
-- [ ] Validate CLI surface for removed install-tmux command
+**Status:** ✅ Complete
+- [x] Remove doctor TMUX checks
+- [x] Remove install-tmux guidance
+- [x] Remove install-tmux command implementation and dispatch path
+- [x] Update help text
+- [x] Validate CLI surface for removed install-tmux command
 
 ### Step 3: De-TMUX supervisor templates and primer
-**Status:** Pending
-- [ ] Clean templates/agents/supervisor.md
-- [ ] Clean supervisor-primer.md
-- [ ] Remove TMUX references from supervisor.ts runtime prompt text
+**Status:** ✅ Complete
+- [x] Clean templates/agents/supervisor.md
+- [x] Clean supervisor-primer.md
+- [x] Remove TMUX references from supervisor.ts runtime prompt text
 
 ### Step 4: Expand audit script scope
-**Status:** Pending
-- [ ] Update audit to scan full package
-- [ ] Expand strict functional detection for JS/CJS/MJS exec+shell tmux patterns
-- [ ] Update guard test for expanded scope and deterministic ordering
+**Status:** ✅ Complete
+- [x] Update audit to scan full package
+- [x] Expand strict functional detection for JS/CJS/MJS exec+shell tmux patterns
+- [x] Update guard test for expanded scope and deterministic ordering
 
 ### Step 5: Tests and verification
-**Status:** Pending
-- [ ] Run full suite
-- [ ] Fix failures
-- [ ] Run expanded audit
+**Status:** ✅ Complete
+- [x] Run full suite
+- [x] Fix failures
+- [x] Run expanded audit
 
 ### Step 6: Documentation & Delivery
 **Status:** 🟨 In Progress
-- [ ] Update STATUS.md
-- [ ] Log final count
+- [x] Update STATUS.md
+- [x] Log final count
 
 ---
 
