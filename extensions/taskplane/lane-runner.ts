@@ -661,6 +661,29 @@ export async function executeTaskV2(
 								return null;
 							}
 						}
+				// Check if task is fully complete — all checkboxes checked across all steps.
+				// This handles tasks already completed by prior batch runs where no new
+				// checkboxes need to be marked, but the worker legitimately finished.
+				let totalChecked: number;
+				if (repoStepNumbers && currentRepoId) {
+					const segCbs = getSegmentCheckboxes(statusContent, firstStep.number, currentRepoId);
+					totalChecked = segCbs ? segCbs.checked : 0;
+				} else {
+					const midStatus = parseStatusMd(statusContent);
+					totalChecked = midStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+				}
+				let totalSteps: number;
+				if (repoStepNumbers && currentRepoId) {
+					const segCbs = getSegmentCheckboxes(statusContent, firstStep.number, currentRepoId);
+					totalSteps = segCbs ? segCbs.total : 0;
+				} else {
+					const midStatus = parseStatusMd(statusContent);
+					totalSteps = midStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+				}
+				if (totalSteps > 0 && totalChecked >= totalSteps) {
+					// All task items are checked — worker completed an already-done or just-completed task.
+					return null;
+				}
 					} catch { /* If we can't read STATUS.md, proceed with escalation */ }
 
 					// No visible progress — compose escalation message
