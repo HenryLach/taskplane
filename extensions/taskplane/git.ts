@@ -295,7 +295,14 @@ export function captureSubmoduleStatusSnapshot(
 			continue;
 		}
 
-		const lines = statusResult.stdout
+		// Build a set of known submodule paths for gitlink-only dirty detection.
+		// When the parent repo stages a gitlink change, every shared-worktree
+		// submodule reports "M <other-submodule-path>" as dirty — these are
+		// transient index artifacts from checkpointing, not real code changes.
+		const knownSubmodulePaths = new Set(submodulePaths);
+		// Filter out task-plane artifact paths (and gitlink-only state) before counting as dirty
+		const filteredStdout = filterArtifactStatusLines(statusResult.stdout, knownSubmodulePaths);
+		const lines = filteredStdout
 			.split(/\r?\n/)
 			.map((line) => line.trimEnd())
 			.filter(Boolean);
@@ -377,10 +384,59 @@ function isCommitReachableOnRemoteFromGitDir(gitDir: string, remoteName: string,
 }
 
 /**
+ * Check if a git status porcelain line refers to a task-plane artifact path
+ * that should be excluded from unsafe-submodule detection. These paths are
+ * expected to change during task execution and don't represent lost submodule work.
+ *
+ * Matches patterns like:
+ *   .pi/tasks/.../STATUS.md
+ *   .pi/tasks/.../.DONE
+ *   .pi/orch-logs/...
+ *   .reviewer-state.json (task review artifacts)
+ */
+function isArtifactStatusLine(line: string, submodulePaths: Set<string>): boolean {
+	// Extract the file path from porcelain format (e.g., "M .pi/tasks/foo/STATUS.md")
+	const parts = line.trim().split(/[\t ]+/);
+	if (parts.length < 2) return false;
+	const filePath = parts[1]; // path starts after status codes
+	// Check if the file is a known task-plane artifact location
+	return (
+		filePath.startsWith(".pi/tasks/") ||
+		filePath.startsWith(".pi/orch-logs/") ||
+		filePath === ".reviewer-state.json" ||
+		filePath.endsWith("/.DONE") ||
+		filePath.endsWith("/STATUS.md") ||
+		filePath.endsWith("/CONTEXT.md") ||
+		// Gitlink-only dirty state: line points to another known submodule.
+		// During checkpointing, the parent repo's index update bleeds into every
+		// shared-worktree submodule as "M <other-submodule-path>" — this is an
+		// expected transient artifact, not real code changes inside that submodule.
+		submodulePaths.has(filePath)
+	);
+}
+
+/**
+ * Filter git status porcelain output to exclude task-plane artifact paths
+ * and gitlink-only dirty states.
+ *
+ * Gitlink-only dirty state: when the parent repo stages a gitlink change,
+ * every shared-worktree submodule reports "M <other-submodule-path>" as dirty.
+ * These are transient index-level artifacts, not actual code changes inside
+ * the submodule. Filter them out to avoid false positives during checkpointing.
+ */
+function filterArtifactStatusLines(rawOutput: string, submodulePaths: Set<string>): string {
+	return rawOutput
+		.split(/\r?\n/)
+		.map((line) => line.trimEnd())
+		.filter((line) => line && !isArtifactStatusLine(line, submodulePaths))
+		.join("\n");
+}
+
+/**
  * Detect submodule states that cannot be safely checkpointed in the superproject.
  *
  * Blocking cases:
- * - submodule worktree still has uncommitted changes
+ * - submodule worktree still has uncommitted code changes (excluding task artifacts)
  * - submodule HEAD differs from the recorded gitlink commit, but that HEAD is
  *   not reachable from the submodule's preferred remote
  */
@@ -397,10 +453,18 @@ export function detectUnsafeSubmoduleStates(cwd: string): UnsafeSubmoduleState[]
 
 		const dirtyStatus = runGit(["status", "--porcelain"], absolutePath);
 		if (dirtyStatus.ok && dirtyStatus.stdout.trim()) {
-			findings.push({
-				path: submodulePath,
-				kind: "dirty-worktree",
-			});
+			// Build a set of known submodule paths for gitlink-only dirty detection.
+			// During checkpointing, parent repo index updates bleed into every
+			// shared-worktree submodule as "M <other-submodule-path>" — this is an
+			// expected transient artifact, not actual code changes inside that submodule.
+			const knownSubmodulePaths = new Set(submodulePaths);
+			const filteredStatus = filterArtifactStatusLines(dirtyStatus.stdout, knownSubmodulePaths);
+			if (filteredStatus.trim()) {
+				findings.push({
+					path: submodulePath,
+					kind: "dirty-worktree",
+				});
+			}
 			continue;
 		}
 
