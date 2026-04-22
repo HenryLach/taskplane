@@ -21,6 +21,23 @@ export interface UnsafeSubmoduleState {
 	remoteName?: string;
 }
 
+export interface SubmoduleStatusPreview {
+	path: string;
+	statusLines: string[];
+	lineCount: number;
+	truncated: boolean;
+	dirty: boolean;
+	error?: string;
+}
+
+export interface SubmoduleStatusSnapshot {
+	capturedAt: number;
+	worktreePath: string;
+	totalSubmodules: number;
+	dirtySubmodules: number;
+	entries: SubmoduleStatusPreview[];
+}
+
 export interface UnreachableGitlinkState {
 	path: string;
 	gitlinkCommit: string;
@@ -238,6 +255,69 @@ function ensureSubmoduleCheckout(cwd: string, submodulePath: string): void {
 		: { ok: false, stdout: "", stderr: "" };
 	if (repoCheck.ok && repoCheck.stdout.trim() === "true") return;
 	runGit(["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--", submodulePath], cwd);
+}
+
+export function captureSubmoduleStatusSnapshot(
+	cwd: string,
+	maxLinesPerSubmodule = 12,
+): SubmoduleStatusSnapshot {
+	const submodulePaths = uniqueSorted([
+		...listGitlinkPaths(cwd),
+		...listConfiguredSubmodulePaths(cwd),
+	]);
+	const entries: SubmoduleStatusPreview[] = [];
+	let dirtySubmodules = 0;
+
+	for (const submodulePath of submodulePaths) {
+		const absolutePath = join(cwd, submodulePath);
+		if (!existsSync(absolutePath)) {
+			entries.push({
+				path: submodulePath,
+				statusLines: [],
+				lineCount: 0,
+				truncated: false,
+				dirty: false,
+				error: "submodule path does not exist on disk",
+			});
+			continue;
+		}
+
+		const statusResult = runGit(["status", "--porcelain"], absolutePath);
+		if (!statusResult.ok) {
+			entries.push({
+				path: submodulePath,
+				statusLines: [],
+				lineCount: 0,
+				truncated: false,
+				dirty: false,
+				error: statusResult.stderr || statusResult.stdout || "git status failed",
+			});
+			continue;
+		}
+
+		const lines = statusResult.stdout
+			.split(/\r?\n/)
+			.map((line) => line.trimEnd())
+			.filter(Boolean);
+		const dirty = lines.length > 0;
+		if (dirty) dirtySubmodules += 1;
+
+		entries.push({
+			path: submodulePath,
+			statusLines: lines.slice(0, maxLinesPerSubmodule),
+			lineCount: lines.length,
+			truncated: lines.length > maxLinesPerSubmodule,
+			dirty,
+		});
+	}
+
+	return {
+		capturedAt: Date.now(),
+		worktreePath: cwd,
+		totalSubmodules: submodulePaths.length,
+		dirtySubmodules,
+		entries,
+	};
 }
 
 function resolvePreferredRemote(cwd: string): string | null {

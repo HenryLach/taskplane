@@ -56,15 +56,19 @@ import {
 	type ExecutionUnit,
 	type RuntimeAgentId,
 	type RuntimeLaneSnapshot,
+	type RuntimeLaneSubmoduleDiagnostics,
 	type RuntimeAgentTelemetrySnapshot,
 	type RuntimeTaskProgress,
 	type RuntimeAgentStatus,
+	type RuntimeSubmoduleSnapshot,
 	type PacketPaths,
 	type LaneTaskOutcome,
 	type LaneTaskStatus,
 	type SupervisorAlertCallback,
 	type StepSegmentMapping,
 } from "./types.ts";
+
+import { captureSubmoduleStatusSnapshot } from "./git.ts";
 
 const LANE_RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -297,6 +301,9 @@ export async function executeTaskV2(
 	const taskId = unit.taskId;
 	const segmentId = unit.segmentId;
 	const workerAgentId = buildRuntimeAgentId(config.agentIdPrefix, config.laneNumber, "worker");
+	const submoduleDiagnostics: RuntimeLaneSubmoduleDiagnostics = {
+		preTask: captureTaskSubmoduleSnapshot(taskId, "pre-task", config.worktreePath),
+	};
 
 	// ── 1. Ensure STATUS.md exists ──────────────────────────────────
 	if (!existsSync(statusPath)) {
@@ -342,11 +349,13 @@ export async function executeTaskV2(
 			})()
 			: null;
 
+	emitSnapshot(config, taskId, segmentId, "running", {}, statusPath, reviewerStatePath, snapshotSegmentCtx, submoduleDiagnostics);
+
 	for (let iter = 0; iter < config.maxIterations; iter++) {
 		if (pauseSignal.paused) {
 			logExecution(statusPath, "Paused", `User paused at iteration ${totalIterations}`);
 			return makeResult(taskId, segmentId, workerAgentId, "skipped", startTime,
-				"Paused by user", false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, undefined, snapshotSegmentCtx);
+				"Paused by user", false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, undefined, submoduleDiagnostics, snapshotSegmentCtx);
 		}
 
 		// Determine remaining steps
@@ -790,7 +799,7 @@ export async function executeTaskV2(
 				iterationTelemetry = telemetry;
 				lastTelemetry = telemetry;
 				// Emit lane snapshot
-				emitSnapshot(config, taskId, segmentId, "running", telemetry, statusPath, reviewerStatePath, snapshotSegmentCtx);
+				emitSnapshot(config, taskId, segmentId, "running", telemetry, statusPath, reviewerStatePath, snapshotSegmentCtx, submoduleDiagnostics);
 			} catch { /* non-fatal: telemetry callback must never crash the engine */ }
 		});
 
@@ -800,7 +809,7 @@ export async function executeTaskV2(
 		let reviewerSnapshotFailures = 0;
 		const reviewerRefreshFailureThreshold = 5;
 		const reviewerRefresh = setInterval(() => {
-			const ok = emitSnapshot(config, taskId, segmentId, "running", iterationTelemetry, statusPath, reviewerStatePath, snapshotSegmentCtx);
+			const ok = emitSnapshot(config, taskId, segmentId, "running", iterationTelemetry, statusPath, reviewerStatePath, snapshotSegmentCtx, submoduleDiagnostics);
 			if (ok) {
 				reviewerSnapshotFailures = 0;
 				return;
@@ -963,8 +972,9 @@ export async function executeTaskV2(
 					`Iteration ${totalIterations}: 0 new checkboxes (${noProgressCount}/${config.noProgressLimit} stall limit)`);
 				if (noProgressCount >= config.noProgressLimit) {
 					logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
+					submoduleDiagnostics.postTask = captureTaskSubmoduleSnapshot(taskId, "post-task", config.worktreePath);
 					return makeResult(taskId, segmentId, workerAgentId, "failed", startTime,
-						`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, snapshotSegmentCtx);
+						`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, submoduleDiagnostics, snapshotSegmentCtx);
 				}
 			}
 		} else {
@@ -1056,9 +1066,10 @@ export async function executeTaskV2(
 				.join(", ");
 		}
 		logExecution(statusPath, "Task incomplete", `Max iterations reached. Incomplete: ${incomplete}`);
+		submoduleDiagnostics.postTask = captureTaskSubmoduleSnapshot(taskId, "post-task", config.worktreePath);
 		return makeResult(taskId, segmentId, workerAgentId, "failed", startTime,
 			`Max iterations (${config.maxIterations}) reached with incomplete steps: ${incomplete}`,
-			false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, snapshotSegmentCtx);
+			false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, submoduleDiagnostics, snapshotSegmentCtx);
 	}
 
 	// TP-145: Determine if this is a non-final segment of a multi-segment task.
@@ -1100,8 +1111,9 @@ export async function executeTaskV2(
 		const suppressionReason = isNonFinalSegment
 			? "non-final"
 			: "pending expansion requests";
+		submoduleDiagnostics.postTask = captureTaskSubmoduleSnapshot(taskId, "post-task", config.worktreePath);
 		return makeResult(taskId, segmentId, workerAgentId, "succeeded", startTime,
-			`Segment completed (${suppressionReason} — .DONE suppressed)`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, snapshotSegmentCtx);
+			`Segment completed (${suppressionReason} — .DONE suppressed)`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, submoduleDiagnostics, snapshotSegmentCtx);
 	}
 
 	// Create .DONE if not already present (final segment or single-segment/whole-task execution)
@@ -1110,9 +1122,10 @@ export async function executeTaskV2(
 	}
 	updateStatusField(statusPath, "Status", "✅ Complete");
 	logExecution(statusPath, "Task complete", ".DONE created");
+	submoduleDiagnostics.postTask = captureTaskSubmoduleSnapshot(taskId, "post-task", config.worktreePath);
 
 	return makeResult(taskId, segmentId, workerAgentId, "succeeded", startTime,
-		".DONE file created by lane-runner", true, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, snapshotSegmentCtx);
+		".DONE file created by lane-runner", true, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, submoduleDiagnostics, snapshotSegmentCtx);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -1173,6 +1186,7 @@ function makeResult(
 	statusPath?: string,
 	reviewerStatePath?: string,
 	finalTelemetry?: Partial<AgentHostResult>,
+	submoduleDiagnostics?: RuntimeLaneSubmoduleDiagnostics,
 	/** TP-174: Segment context for segment-scoped snapshot progress */
 	segmentCtx?: { stepSegmentMap: StepSegmentMapping[]; repoId: string } | null,
 ): LaneRunnerTaskResult {
@@ -1209,7 +1223,7 @@ function makeResult(
 	// TP-115: Emit terminal snapshot with real telemetry from agent-host result
 	if (config && statusPath && reviewerStatePath) {
 		const terminalStatus = mapLaneTaskStatusToTerminalSnapshotStatus(status);
-		emitSnapshot(config, taskId, segmentId, terminalStatus, finalTelemetry ?? {}, statusPath, reviewerStatePath, segmentCtx);
+		emitSnapshot(config, taskId, segmentId, terminalStatus, finalTelemetry ?? {}, statusPath, reviewerStatePath, segmentCtx, submoduleDiagnostics);
 	}
 
 	return result;
@@ -1288,6 +1302,7 @@ function emitSnapshot(
 	reviewerStatePath: string,
 	/** TP-174: Optional segment context for segment-scoped progress reporting */
 	segmentContext?: { stepSegmentMap: StepSegmentMapping[]; repoId: string } | null,
+	submoduleDiagnostics?: RuntimeLaneSubmoduleDiagnostics,
 ): boolean {
 	try {
 		// Parse progress from STATUS.md
@@ -1354,6 +1369,7 @@ function emitSnapshot(
 			},
 			reviewer: reviewerSnapshot,
 			progress,
+			submoduleDiagnostics,
 			updatedAt: Date.now(),
 		};
 
@@ -1364,5 +1380,22 @@ function emitSnapshot(
 		// Swallow to prevent uncaughtException crash in setInterval/callback contexts.
 		return false;
 	}
+}
+
+function captureTaskSubmoduleSnapshot(
+	taskId: string,
+	phase: "pre-task" | "post-task",
+	worktreePath: string,
+): RuntimeSubmoduleSnapshot {
+	const snapshot = captureSubmoduleStatusSnapshot(worktreePath);
+	return {
+		taskId,
+		phase,
+		capturedAt: snapshot.capturedAt,
+		worktreePath: snapshot.worktreePath,
+		totalSubmodules: snapshot.totalSubmodules,
+		dirtySubmodules: snapshot.dirtySubmodules,
+		entries: snapshot.entries,
+	};
 }
 

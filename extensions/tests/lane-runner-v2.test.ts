@@ -140,6 +140,11 @@ describe("2.x: Lane-runner execution contract", () => {
 		expect(laneRunnerSrc).toContain("`Task repo map:`");
 		expect(laneRunnerSrc).toContain("Object.entries(config.repoPaths ?? unit.repoPaths)");
 	});
+
+	it("2.16: captures pre-task submodule diagnostics before worker execution", () => {
+		expect(laneRunnerSrc).toContain('preTask: captureTaskSubmoduleSnapshot(taskId, "pre-task", config.worktreePath)');
+		expect(laneRunnerSrc).toContain("submoduleDiagnostics,");
+	});
 });
 
 // ── 3. executeLaneV2 integration ────────────────────────────────────
@@ -177,7 +182,7 @@ describe("3.x: executeLaneV2 integration in execution.ts", () => {
 
 	it("3.6: executeLaneV2 preserves commitTaskArtifacts and worktree reset", () => {
 		const start = executionSrc.indexOf("export async function executeLaneV2(");
-		const bodySection = executionSrc.slice(start, start + 5000);
+		const bodySection = executionSrc.slice(start, start + 6500);
 		expect(bodySection).toContain("commitTaskArtifacts(");
 		expect(bodySection).toContain("runGit(");
 	});

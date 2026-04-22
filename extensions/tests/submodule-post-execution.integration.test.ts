@@ -8,7 +8,7 @@
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import { expect } from "./expect.ts";
 import { execFileSync } from "child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -23,7 +23,7 @@ mock.module(laneRunnerModuleUrl, {
 
 const { detectUnsafeSubmoduleStates, detectUnreachableGitlinks } = await import("../taskplane/git.ts");
 const { executeLaneV2 } = await import("../taskplane/execution.ts");
-const { DEFAULT_ORCHESTRATOR_CONFIG } = await import("../taskplane/types.ts");
+const { DEFAULT_ORCHESTRATOR_CONFIG, runtimeLaneSnapshotPath } = await import("../taskplane/types.ts");
 
 type AllocatedLane = import("../taskplane/types.ts").AllocatedLane;
 type AllocatedTask = import("../taskplane/types.ts").AllocatedTask;
@@ -170,12 +170,16 @@ describe("post-execution submodule safety", () => {
 	});
 
 	it("marks an otherwise successful task failed before checkpointing an unsafe submodule gitlink", async () => {
+		const batchId = "20260422T043635-test";
 		const lane = makeAllocatedLane(laneRepo, join(laneRepo, "tasks", "TP-001"));
 		const result = await executeLaneV2(
 			lane,
 			DEFAULT_ORCHESTRATOR_CONFIG,
 			laneRepo,
 			{ paused: false },
+			undefined,
+			undefined,
+			{ ORCH_BATCH_ID: batchId },
 		);
 
 		expect(mockExecuteTaskV2.mock.calls.length).toBe(1);
@@ -187,6 +191,63 @@ describe("post-execution submodule safety", () => {
 
 		const checkpointLog = git(laneRepo, ["log", "--oneline", "--grep", "checkpoint: TP-001 task artifacts"]);
 		expect(checkpointLog).toBe("");
+
+		const laneSnapshot = JSON.parse(
+			readFileSync(runtimeLaneSnapshotPath(laneRepo, batchId, 1), "utf-8"),
+		) as {
+			submoduleDiagnostics?: {
+				preTask?: { taskId: string; phase: string; entries: Array<{ path: string }> };
+				postTask?: { taskId: string; phase: string; entries: Array<{ path: string }> };
+				unsafeCheckpoint?: {
+					taskId: string;
+					findings: Array<{ path: string; kind: string; summary: string }>;
+				};
+			};
+		};
+		expect(laneSnapshot.submoduleDiagnostics?.postTask?.taskId).toBe("TP-001");
+		expect(laneSnapshot.submoduleDiagnostics?.postTask?.phase).toBe("post-task");
+		expect(laneSnapshot.submoduleDiagnostics?.unsafeCheckpoint?.taskId).toBe("TP-001");
+		expect(laneSnapshot.submoduleDiagnostics?.unsafeCheckpoint?.findings[0]?.path).toBe("libs/my_lib");
+		expect(laneSnapshot.submoduleDiagnostics?.unsafeCheckpoint?.findings[0]?.kind).toBe("unpublished-commit");
+		expect(laneSnapshot.submoduleDiagnostics?.postTask?.entries.some((entry) => entry.path === "libs/my_lib")).toBe(true);
+	});
+
+	it("records modified file previews for dirty submodule worktrees before checkpoint failure", async () => {
+		const batchId = "20260422T043635-dirty";
+		writeFileSync(join(laneRepo, "libs", "my_lib", "lib.txt"), "base\nlocal change\ndirty change\n", "utf-8");
+
+		const lane = makeAllocatedLane(laneRepo, join(laneRepo, "tasks", "TP-001"));
+		const result = await executeLaneV2(
+			lane,
+			DEFAULT_ORCHESTRATOR_CONFIG,
+			laneRepo,
+			{ paused: false },
+			undefined,
+			undefined,
+			{ ORCH_BATCH_ID: batchId },
+		);
+
+		expect(result.overallStatus).toBe("failed");
+		expect(result.tasks[0].exitReason).toContain("Unsafe submodule state after task success");
+
+		const laneSnapshot = JSON.parse(
+			readFileSync(runtimeLaneSnapshotPath(laneRepo, batchId, 1), "utf-8"),
+		) as {
+			submoduleDiagnostics?: {
+				unsafeCheckpoint?: {
+					findings: Array<{
+						path: string;
+						kind: string;
+						statusLines: string[];
+					}>;
+				};
+			};
+		};
+		const dirtyFinding = laneSnapshot.submoduleDiagnostics?.unsafeCheckpoint?.findings.find(
+			(finding) => finding.path === "libs/my_lib",
+		);
+		expect(dirtyFinding?.kind).toBe("dirty-worktree");
+		expect(dirtyFinding?.statusLines.some((line) => line.includes("lib.txt"))).toBe(true);
 	});
 
 	it("allows a published submodule commit to checkpoint cleanly", async () => {

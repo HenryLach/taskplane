@@ -4225,6 +4225,8 @@ export interface RuntimeLaneSnapshot {
 	reviewer: RuntimeAgentTelemetrySnapshot | null;
 	/** Task progress derived from STATUS.md */
 	progress: RuntimeTaskProgress | null;
+	/** Optional submodule diagnostics for inherited-vs-introduced dirt analysis */
+	submoduleDiagnostics?: RuntimeLaneSubmoduleDiagnostics | null;
 	/** Epoch ms when this snapshot was last updated */
 	updatedAt: number;
 }
@@ -4275,6 +4277,75 @@ export interface RuntimeTaskProgress {
 	iteration: number;
 	/** Number of reviews performed */
 	reviews: number;
+}
+
+export interface RuntimeSubmoduleStatusPreview {
+	/** Top-level submodule path relative to the lane worktree */
+	path: string;
+	/** Captured `git status --porcelain` preview lines */
+	statusLines: string[];
+	/** Total status line count before truncation */
+	lineCount: number;
+	/** Whether the preview was truncated */
+	truncated: boolean;
+	/** Whether the submodule worktree is dirty */
+	dirty: boolean;
+	/** Optional capture error instead of status output */
+	error?: string;
+}
+
+export interface RuntimeSubmoduleSnapshot {
+	/** Task this snapshot was captured for */
+	taskId: string;
+	/** Capture phase relative to worker execution */
+	phase: "pre-task" | "post-task";
+	/** Epoch ms when the snapshot was captured */
+	capturedAt: number;
+	/** Absolute lane worktree path used for capture */
+	worktreePath: string;
+	/** Total top-level submodules discovered */
+	totalSubmodules: number;
+	/** Number of dirty submodules in this capture */
+	dirtySubmodules: number;
+	/** Per-submodule status previews */
+	entries: RuntimeSubmoduleStatusPreview[];
+}
+
+export interface RuntimeUnsafeSubmoduleFinding {
+	/** Top-level submodule path relative to the lane worktree */
+	path: string;
+	/** Unsafe finding classification from checkpoint validation */
+	kind: "dirty-worktree" | "unpublished-commit";
+	/** Human-readable per-finding summary */
+	summary: string;
+	/** Preview of `git status --porcelain` for this submodule */
+	statusLines: string[];
+	/** Total status line count before truncation */
+	lineCount: number;
+	/** Whether the preview was truncated */
+	truncated: boolean;
+	/** Optional capture error when status preview failed */
+	error?: string;
+	/** Current submodule HEAD when relevant */
+	headCommit?: string;
+	/** Indexed gitlink commit when relevant */
+	indexCommit?: string;
+	/** Preferred remote name when relevant */
+	remoteName?: string;
+}
+
+export interface RuntimeLaneSubmoduleDiagnostics {
+	/** Snapshot captured before the worker begins task execution */
+	preTask?: RuntimeSubmoduleSnapshot | null;
+	/** Snapshot captured after the worker finishes task execution */
+	postTask?: RuntimeSubmoduleSnapshot | null;
+	/** Unsafe checkpoint findings recorded before commitTaskArtifacts throws */
+	unsafeCheckpoint?: {
+		taskId: string;
+		capturedAt: number;
+		summary: string;
+		findings: RuntimeUnsafeSubmoduleFinding[];
+	} | null;
 }
 
 /**
