@@ -10,6 +10,67 @@ import { parseDependencyReference } from "./discovery.ts";
 import type { LaneAssignment, MonitorState, OrchBatchRuntimeState, OrchDashboardViewModel, OrchLaneCardData, OrchSummaryCounts, ParsedTask, WaveComputationResult } from "./types.ts";
 import { getTaskDurationMinutes, SIZE_DURATION_MINUTES } from "./types.ts";
 
+function renderMergePanel(panel: NonNullable<OrchBatchRuntimeState["mergePanel"]>, width: number, theme: any): string[] {
+	const availableWidth = Math.max(8, width - 2);
+	const innerWidth = Math.max(1, availableWidth - 2);
+	const indent = "  ";
+	const tone = panel.status === "success"
+		? "success"
+		: panel.status === "error"
+			? "error"
+			: panel.status === "warning"
+				? "warning"
+				: "accent";
+	const headerLabel = typeof theme.bold === "function" ? theme.bold("Merge Status") : "Merge Status";
+	const statusText = panel.status === "success"
+		? "Complete"
+		: panel.status === "error"
+			? "Failed"
+			: panel.status === "warning"
+				? "Warnings"
+				: "Running";
+	const statusLine = `${panel.waveLabel || "Merge"} · ${statusText}`;
+	const contentLines = [
+		`${typeof theme.fg === "function" ? theme.fg(tone, "🔀") : "🔀"} ${headerLabel}`,
+		statusLine,
+		...(panel.events.length > 0 ? [""] : []),
+		...panel.events.map((event) => {
+			const marker = event.level === "success"
+				? "✓"
+				: event.level === "error"
+					? "✗"
+					: event.level === "warning"
+						? "!"
+						: "•";
+			const eventTone = event.level === "success"
+				? "success"
+				: event.level === "error"
+					? "error"
+					: event.level === "warning"
+						? "warning"
+						: "muted";
+			const prefix = typeof theme.fg === "function" ? theme.fg(eventTone, marker) : marker;
+			return `${prefix} ${event.message}`;
+		}),
+	];
+	const lines = [truncateToWidth(`${indent}┌${"─".repeat(innerWidth)}┐`, width)];
+	for (const contentLine of contentLines) {
+		if (contentLine.length === 0) {
+			lines.push(truncateToWidth(`${indent}│${" ".repeat(innerWidth)}│`, width));
+			continue;
+		}
+		for (const wrappedLine of wrapTextWithAnsi(contentLine, innerWidth)) {
+			const visible = visibleWidth(wrappedLine);
+			lines.push(truncateToWidth(
+				`${indent}│${wrappedLine}${" ".repeat(Math.max(0, innerWidth - visible))}│`,
+				width,
+			));
+		}
+	}
+	lines.push(truncateToWidth(`${indent}└${"─".repeat(innerWidth)}┘`, width));
+	return lines;
+}
+
 // ── Wave Output Formatting ───────────────────────────────────────────
 
 // ── Dependency Graph Formatting ──────────────────────────────────────
@@ -748,6 +809,10 @@ export function createOrchWidget(
 						theme.fg("accent", `  🔀 Merging lane branches into ${vm.orchBranch || "orch branch"}...`),
 						width,
 					));
+					if (batchState.mergePanel) {
+						lines.push("");
+						lines.push(...renderMergePanel(batchState.mergePanel, width, theme));
+					}
 				} else if (vm.phase === "paused") {
 					lines.push("");
 					lines.push(truncateToWidth(
@@ -775,48 +840,56 @@ export function createOrchWidget(
 export function createOrchPlanWidget(
 	state: OrchPlanWidgetState,
 ): ((_tui: any, theme: any) => { render(width: number): string[]; invalidate(): void }) | undefined {
-	const lines = buildOrchPlanWidgetLines(state.sections);
-	const statusColor =
-		state.status === "success"
-			? "success"
-			: state.status === "error"
-				? "error"
-				: "warning";
-	const statusIcon =
-		state.status === "success"
-			? "✓"
-			: state.status === "error"
-				? "✗"
-				: "●";
-	const statusLine = `${statusIcon} ${state.phase || (state.status === "success" ? "Plan ready" : state.status === "error" ? "Plan failed" : "Running")}`;
-	if (lines.length === 0 && !state.phase) return undefined;
-
-	return (_tui: any, theme: any) => {
-		return {
-			render: (width: number) => {
-				const safeWidth = Math.max(6, width);
-				const innerWidth = Math.max(1, safeWidth - 4);
-				const border = (text: string) => theme.fg("border", text);
-				const bodyLines = [
-					theme.fg("accent", theme.bold(state.commandTitle)),
-					theme.fg(statusColor, statusLine),
-					...(lines.length > 0 ? ["", ...lines] : []),
-				];
-				const rendered = [border(`┌${"─".repeat(safeWidth - 2)}┐`)];
-
-				for (const bodyLine of bodyLines) {
-					const wrappedLines = wrapTextWithAnsi(bodyLine, innerWidth);
-					for (const wrappedLine of wrappedLines) {
-						const padding = " ".repeat(Math.max(0, innerWidth - visibleWidth(wrappedLine)));
-						rendered.push(`${border("│")} ${wrappedLine}${padding} ${border("│")}`);
-					}
+	if (!state.title && state.sections.length === 0 && !state.phase) return undefined;
+	return (_tui: any, theme: any) => ({
+		render(width: number): string[] {
+			const safeWidth = Math.max(6, width);
+			const padding = Math.max(0, state.padding ?? 1);
+			const innerWidth = Math.max(1, safeWidth - (padding * 2));
+			const outerPad = " ".repeat(padding);
+			const tone = state.status === "success"
+				? "success"
+				: state.status === "error"
+					? "error"
+					: state.status === "warning"
+						? "warning"
+						: "warning";
+			const dot = typeof theme.fg === "function" ? theme.fg(tone, "●") : "●";
+			const title = typeof theme.bold === "function" ? theme.bold(state.title) : state.title;
+			const phase = state.phase
+				|| (state.status === "success"
+					? "Plan ready"
+					: state.status === "error"
+						? "Plan failed"
+						: state.status === "warning"
+							? "Needs attention"
+							: "Running");
+			const sectionLines = buildOrchPlanWidgetLines(state.sections);
+			const contentLines = [
+				`${dot} ${title}`,
+				`${dot} ${phase}`,
+				...(sectionLines.length > 0 ? ["", ...sectionLines] : []),
+			];
+			const rendered: string[] = [];
+			for (let index = 0; index < padding; index += 1) rendered.push(" ".repeat(safeWidth));
+			for (const contentLine of contentLines) {
+				if (contentLine.length === 0) {
+					rendered.push(" ".repeat(safeWidth));
+					continue;
 				}
-
-				rendered.push(border(`└${"─".repeat(safeWidth - 2)}┘`));
-				return rendered;
-			},
-			invalidate: () => {},
-		};
-	};
+				for (const wrappedLine of wrapTextWithAnsi(contentLine, innerWidth)) {
+					const visible = visibleWidth(wrappedLine);
+					rendered.push(truncateToWidth(
+						`${outerPad}${wrappedLine}${" ".repeat(Math.max(0, innerWidth - visible))}${outerPad}`,
+						safeWidth,
+						"",
+					));
+				}
+			}
+			for (let index = 0; index < padding; index += 1) rendered.push(" ".repeat(safeWidth));
+			return rendered;
+		},
+		invalidate() {},
+	});
 }
 

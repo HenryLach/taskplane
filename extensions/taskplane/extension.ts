@@ -10,21 +10,20 @@ import { fork, type ChildProcess } from "child_process";
 // Direct imports — avoid barrel (index.ts) to prevent loading the entire module graph.
 // Each import targets the specific module where the symbol is defined.
 import { DEFAULT_ORCHESTRATOR_CONFIG, DEFAULT_TASK_RUNNER_CONFIG, FATAL_DISCOVERY_CODES, StateFileError, WorkspaceConfigError, freshOrchBatchState } from "./types.ts";
-import type { AbortMode, ExecutionContext, MonitorState, OrchestratorConfig, PersistedBatchState, TaskRunnerConfig } from "./types.ts";
+import type { AbortMode, ExecutionContext, MonitorState, OrchestratorConfig, PersistedBatchState, PreflightCheck, PreflightResult, TaskRunnerConfig, WorkspaceSyncApplyResult } from "./types.ts";
 import {
 	ORCH_MESSAGES,
 	computeIntegrateCleanupResult,
 	formatWorkspaceSyncPresentation,
 	getBlockingWorkspaceSyncFindings,
 	hasBlockingWorkspaceSyncFindings,
-	serializeOrchPlanWidgetLines,
-	type OrchPlanWidgetState,
 } from "./messages.ts";
+import type { OrchPlanWidgetState } from "./messages.ts";
 import type { IntegrateCleanupRepoFindings } from "./messages.ts";
 import { computeWaveAssignments } from "./waves.ts";
 import { createOrchPlanWidget, createOrchWidget, formatDependencyGraph, formatWavePlan } from "./formatting.ts";
 import { deleteBatchState, loadBatchState, saveBatchState, detectOrphanSessions, updateBatchHistoryIntegration } from "./persistence.ts";
-import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, formatPreflightResults, runPreflight } from "./worktree.ts";
+import { deleteStaleBranches, listWorktrees, resolveWorktreeBasePath, runPreflight } from "./worktree.ts";
 import { computeTransitiveDependents, resolveCanonicalTaskPaths } from "./execution.ts";
 import { executeOrchBatch } from "./engine.ts";
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
@@ -75,6 +74,32 @@ import {
 import type { SupervisorConfig, SupervisorRoutingContext, IntegrationExecutor, CiDeps, SummaryDeps } from "./supervisor.ts";
 
 // ── Integrate Args Parsing ────────────────────────────────────────────
+
+const ORCH_PLAN_MESSAGE_TYPE = "taskplane-orch-plan";
+const ORCH_PLAN_WIDGET_KEY = "task-orch-plan";
+
+function isMergeStatusNotification(message: string): boolean {
+	const normalized = message.trimStart();
+	return normalized.startsWith("🔀 [Wave ")
+		|| /^✅ Lane \d+ merged/.test(normalized)
+		|| /^⚡ Lane \d+ merged/.test(normalized)
+		|| /^❌ Lane \d+ merge failed:/.test(normalized)
+		|| (normalized.startsWith("❌ [Wave ") && normalized.includes("Merge"))
+		|| (normalized.startsWith("⚠️ [Wave ") && normalized.includes("Merge"))
+		|| normalized.startsWith("📝 [Wave ");
+}
+
+function dispatchOrchNotify(
+	ctx: ExtensionContext,
+	message: string,
+	level: "info" | "warning" | "error",
+	updateWidget: () => void,
+): void {
+	if (!isMergeStatusNotification(message)) {
+		ctx.ui.notify(message, level);
+	}
+	updateWidget();
+}
 
 export type IntegrateMode = "ff" | "merge" | "pr";
 
@@ -1053,7 +1078,7 @@ export function startBatchInWorker(
 				wkData.runnerConfig,
 				wkData.cwd,
 				batchState,
-				(msg: string, lvl: "info" | "warning" | "error") => { ctx.ui.notify(msg, lvl); updateWidget(); },
+				(msg: string, lvl: "info" | "warning" | "error") => { dispatchOrchNotify(ctx, msg, lvl, updateWidget); },
 				(monState: import("./types.ts").MonitorState) => { onMonitorUpdate?.(monState); },
 				wsConfig,
 				wkData.workspaceRoot,
@@ -1068,7 +1093,7 @@ export function startBatchInWorker(
 				wkData.runnerConfig,
 				wkData.cwd,
 				batchState,
-				(msg: string, lvl: "info" | "warning" | "error") => { ctx.ui.notify(msg, lvl); updateWidget(); },
+				(msg: string, lvl: "info" | "warning" | "error") => { dispatchOrchNotify(ctx, msg, lvl, updateWidget); },
 				(monState: import("./types.ts").MonitorState) => { onMonitorUpdate?.(monState); },
 				wsConfig,
 				wkData.workspaceRoot,
@@ -1162,8 +1187,7 @@ export function startBatchInWorker(
 	child.on("message", (msg: WorkerToMainMessage) => {
 		switch (msg.type) {
 			case "notify":
-				ctx.ui.notify(msg.msg, msg.level);
-				updateWidget();
+				dispatchOrchNotify(ctx, msg.msg, msg.level, updateWidget);
 				break;
 
 			case "monitor-update":
@@ -1653,6 +1677,12 @@ export function detectOrchState(deps: OrchStateDetectionDeps): OrchStateDetectio
 // ── Extension ────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
+	pi.registerMessageRenderer(ORCH_PLAN_MESSAGE_TYPE, (message, { expanded }, theme) => {
+		const state = message.details as OrchPlanWidgetState | undefined;
+		if (!state) return undefined;
+		return createOrchPlanWidget(state)?.(undefined, theme);
+	});
+
 	let orchBatchState = freshOrchBatchState();
 	let orchConfig: OrchestratorConfig = { ...DEFAULT_ORCHESTRATOR_CONFIG };
 	let runnerConfig: TaskRunnerConfig = { ...DEFAULT_TASK_RUNNER_CONFIG };
@@ -1697,21 +1727,10 @@ export default function (pi: ExtensionAPI) {
 		);
 	}
 
-	function supportsRichOrchPlanWidget(ctx: ExtensionContext): boolean {
-		const ui = ctx.ui as ExtensionContext["ui"] & { getAllThemes?: () => unknown[] };
-		return typeof ui.getAllThemes === "function"
-			? ui.getAllThemes().length > 0
-			: ctx.hasUI;
-	}
-
-	function setOrchPlanWidget(ctx: ExtensionContext, state: OrchPlanWidgetState) {
-		if (supportsRichOrchPlanWidget(ctx)) {
-			ctx.ui.setWidget("task-orch-plan", createOrchPlanWidget(state));
-			return;
+	function resetRootWidget(ctx?: ExtensionContext, key = ORCH_PLAN_WIDGET_KEY) {
+		if (ctx) {
+			ctx.ui.setWidget(key, undefined);
 		}
-
-		const lines = serializeOrchPlanWidgetLines(state);
-		ctx.ui.setWidget("task-orch-plan", lines.length > 0 ? lines : undefined);
 	}
 
 	// ── Command Guard ────────────────────────────────────────────────
@@ -1810,6 +1829,80 @@ export default function (pi: ExtensionAPI) {
 		].filter(Boolean).join("\n");
 	}
 
+	function formatDetectedSubmodulesSection(
+		summary: ReturnType<typeof collectWorkspaceSyncSummary>,
+	): string {
+		if (!summary || summary.detectedSubmodules.length === 0) {
+			return "🧩 Detected Submodules (0):\n   • none";
+		}
+		return [
+			`🧩 Detected Submodules (${summary.trackedSubmodules}):`,
+			...summary.detectedSubmodules.map((submodule) => {
+				const stateLabel = submodule.state === "clean"
+					? "clean"
+					: submodule.state === "uninitialized"
+						? "uninitialized"
+						: submodule.state === "drifted"
+							? "drifted"
+							: "conflict";
+				const marker = submodule.state === "clean" ? "•" : "!";
+				return `   ${marker} ${submodule.repoLabel}:${submodule.submodulePath} [${stateLabel}]`;
+			}),
+		].join("\n");
+	}
+
+	function isWorkspaceSyncCheck(check: PreflightCheck): boolean {
+		return check.name === "submodules" || check.name.startsWith("submodule-");
+	}
+
+	function formatOrchPlanPreflightSection(
+		result: PreflightResult,
+		summary: ReturnType<typeof collectWorkspaceSyncSummary>,
+		options?: { showWorkspaceSyncStatus?: boolean; workspaceSyncResult?: WorkspaceSyncApplyResult | null },
+	): string {
+		const visibleChecks = result.checks.filter((check) => !isWorkspaceSyncCheck(check));
+		const lines: string[] = ["Preflight Check:"];
+
+		for (const check of visibleChecks) {
+			const icon =
+				check.status === "pass" ? "✅" :
+				check.status === "warn" ? "⚠️ " :
+				"❌";
+			const nameCol = check.name.padEnd(18);
+			lines.push(`  ${icon} ${nameCol} ${check.message}`);
+			if (check.hint && check.status !== "pass") {
+				for (const hintLine of check.hint.split("\n")) {
+					lines.push(`      ${" ".repeat(18)} ${hintLine}`);
+				}
+			}
+		}
+
+		if (options?.showWorkspaceSyncStatus ?? true) {
+			const workspaceSyncResult = options?.workspaceSyncResult;
+			const workspaceWarnings = summary?.detectedSubmodules.filter((submodule) => submodule.state !== "clean") ?? [];
+			const syncNameCol = "sync".padEnd(18);
+			if (workspaceWarnings.length > 0 || (workspaceSyncResult?.warnings.length ?? 0) > 0) {
+				lines.push(`  ⚠️  ${syncNameCol} Workspace sync delivered warnings`);
+			} else {
+				lines.push(`  ✅ ${syncNameCol} Workspace synced successfully`);
+			}
+			lines.push("");
+		}
+		const visiblePassed = visibleChecks.every((check) => check.status !== "fail");
+		if (visiblePassed) {
+			lines.push("All required checks passed.");
+		} else {
+			const failedNames = visibleChecks
+				.filter((check) => check.status === "fail")
+				.map((check) => check.name)
+				.join(", ");
+			lines.push(`❌ Preflight FAILED: ${failedNames}`);
+			lines.push("Fix the issues above before running the orchestrator.");
+		}
+
+		return lines.join("\n");
+	}
+
 	// ── Commands ─────────────────────────────────────────────────────
 
 	pi.registerCommand("orch", {
@@ -1906,21 +1999,27 @@ export default function (pi: ExtensionAPI) {
 	pi.registerCommand("orch-plan", {
 		description: "Preview execution plan: /orch-plan <areas|paths|all> [--refresh] [--sync]",
 		handler: async (args, ctx) => {
+			resetRootWidget(ctx);
 			const commandTitle = args?.trim() ? `/orch-plan ${args.trim()}` : "/orch-plan";
 			const orchPlanState: OrchPlanWidgetState = {
-				commandTitle,
+				title: commandTitle,
 				status: "running",
 				phase: "Preparing plan",
 				sections: [],
+				padding: 1,
+			};
+			const renderOrchPlan = () => {
+				ctx.ui.setWidget(ORCH_PLAN_WIDGET_KEY, createOrchPlanWidget(orchPlanState));
 			};
 			const setOrchPlanPhase = (phase: string) => {
+				orchPlanState.status = orchPlanState.status === "error" ? "error" : "running";
 				orchPlanState.phase = phase;
-				setOrchPlanWidget(ctx, orchPlanState);
+				renderOrchPlan();
 			};
 			const finalizeOrchPlan = (status: OrchPlanWidgetState["status"], phase: string) => {
 				orchPlanState.status = status;
 				orchPlanState.phase = phase;
-				setOrchPlanWidget(ctx, orchPlanState);
+				renderOrchPlan();
 			};
 			const publishOrchPlanSection = (
 				message: string,
@@ -1928,162 +2027,162 @@ export default function (pi: ExtensionAPI) {
 				persist = true,
 			) => {
 				if (persist && message.trim().length > 0) {
+					if (level === "warning" && orchPlanState.status === "running") orchPlanState.status = "warning";
+					if (level === "error") orchPlanState.status = "error";
 					orchPlanState.sections.push(message);
-					setOrchPlanWidget(ctx, orchPlanState);
+					renderOrchPlan();
+					return;
 				}
 				ctx.ui.notify(message, level);
 			};
 
-			setOrchPlanWidget(ctx, orchPlanState);
+			renderOrchPlan();
 
-			if (!args?.trim()) {
-				publishOrchPlanSection(
-					"Usage: /orch-plan <areas|paths|all> [--refresh] [--sync]\n\n" +
-					"Shows the execution plan (tasks, waves, lane assignments)\n" +
-					"without actually executing anything.\n\n" +
-					"Options:\n" +
-					"  --refresh   Force re-scan of areas (bypass dependency cache)\n" +
-					"  --sync      Reconcile workspace repo imports and submodule state before planning\n\n" +
-					"Examples:\n" +
-					"  /orch-plan all\n" +
-					"  /orch-plan all --sync\n" +
-					"  /orch-plan time-off notifications\n" +
-					"  /orch-plan docs/task-management/domains/time-off/tasks\n" +
-					"  /orch-plan all --refresh",
-					"info",
-				);
-				finalizeOrchPlan("error", "Usage error");
-				return;
-			}
+			try {
+					if (!args?.trim()) {
+						publishOrchPlanSection(
+							"Usage: /orch-plan <areas|paths|all> [--refresh] [--sync]\n\n" +
+							"Shows the execution plan (tasks, waves, lane assignments)\n" +
+							"without actually executing anything.\n\n" +
+							"Options:\n" +
+							"  --refresh   Force re-scan of areas (bypass dependency cache)\n" +
+							"  --sync      Reconcile workspace repo imports and submodule state before planning\n\n" +
+							"Examples:\n" +
+							"  /orch-plan all\n" +
+							"  /orch-plan all --sync\n" +
+							"  /orch-plan time-off notifications\n" +
+							"  /orch-plan docs/task-management/domains/time-off/tasks\n" +
+							"  /orch-plan all --refresh",
+							"info",
+						);
+						finalizeOrchPlan("error", "Usage error");
+						return;
+					}
 
-			if (!requireExecCtx(ctx)) {
-				finalizeOrchPlan("error", "Initialization failed");
-				return;
-			}
+					if (!requireExecCtx(ctx)) {
+						finalizeOrchPlan("error", "Initialization failed");
+						return;
+					}
 
-			// Parse planner flags
-			const hasRefresh = /(^|\s)--refresh(?=\s|$)/.test(args);
-			const hasSync = /(^|\s)--sync(?=\s|$)/.test(args);
-			const cleanArgs = args.replace(/(^|\s)--refresh(?=\s|$)/g, " ").replace(/(^|\s)--sync(?=\s|$)/g, " ").trim();
-			if (!cleanArgs) {
-				publishOrchPlanSection(
-					"Usage: /orch-plan <areas|paths|all> [--refresh] [--sync]\n" +
-					"Error: target argument required (e.g., 'all', area name, or path)",
-					"error",
-				);
-				finalizeOrchPlan("error", "Target required");
-				return;
-			}
-			if (hasRefresh) {
-				ctx.ui.notify("🔄 Refresh mode: re-scanning all areas (cache bypassed)", "info");
-			}
+					const hasRefresh = /(^|\s)--refresh(?=\s|$)/.test(args);
+					const hasSync = /(^|\s)--sync(?=\s|$)/.test(args);
+					const cleanArgs = args.replace(/(^|\s)--refresh(?=\s|$)/g, " ").replace(/(^|\s)--sync(?=\s|$)/g, " ").trim();
+					if (!cleanArgs) {
+						publishOrchPlanSection(
+							"Usage: /orch-plan <areas|paths|all> [--refresh] [--sync]\n" +
+							"Error: target argument required (e.g., 'all', area name, or path)",
+							"error",
+						);
+						finalizeOrchPlan("error", "Target required");
+						return;
+					}
+					if (hasRefresh) {
+						ctx.ui.notify("🔄 Refresh mode: re-scanning all areas (cache bypassed)", "info");
+					}
 
-			// ── Section 1: Preflight ─────────────────────────────────
-			ctx.ui.notify("ℹ️ Runtime V2 is the default backend (subprocess-only).", "info");
-			let workspaceSyncSummary = collectCurrentWorkspaceSyncSummary(cleanArgs);
-			if (hasSync && workspaceSyncSummary) {
-				setOrchPlanPhase("Syncing workspace");
-				const syncOutcome = await runWorkspaceSyncWithUi(cleanArgs, ctx);
-				const syncPresentation = formatWorkspaceSyncPresentation(
-					syncOutcome.syncResult,
-					syncOutcome.refreshedSummary,
-				);
-				publishOrchPlanSection(syncPresentation.message, syncPresentation.notificationLevel);
-				workspaceSyncSummary = syncOutcome.refreshedSummary;
-			}
-			setOrchPlanPhase("Running preflight");
-			const preflight = runPreflight(orchConfig, execCtx!.repoRoot, {
-				workspaceRoot: execCtx!.workspaceRoot,
-				pointerConfigRoot: execCtx!.pointer?.configRoot,
-				workspaceConfig: execCtx!.workspaceConfig,
-			});
-			publishOrchPlanSection(formatPreflightResults(preflight), preflight.passed ? "info" : "error");
-			if (hasBlockingWorkspaceSyncFindings(workspaceSyncSummary)) {
-				publishOrchPlanSection(
-					formatWorkspaceSyncBlocker(cleanArgs, workspaceSyncSummary, hasSync),
-					hasSync ? "warning" : "info",
-				);
-				finalizeOrchPlan("error", "Workspace sync required");
-				return;
-			}
-			if (!preflight.passed) {
-				finalizeOrchPlan("error", "Preflight failed");
-				return;
-			}
-
-			// ── Section 2: Discovery ─────────────────────────────────
-			setOrchPlanPhase("Discovering tasks");
-			// Discovery resolves task area paths relative to workspaceRoot (not repoRoot),
-			// because task_areas in task-runner.yaml are workspace-relative paths.
-			const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, execCtx!.workspaceRoot, {
-				refreshDependencies: hasRefresh,
-				dependencySource: orchConfig.dependencies.source,
-				useDependencyCache: orchConfig.dependencies.cache,
-				workspaceConfig: execCtx!.workspaceConfig,
-			});
-			publishOrchPlanSection(formatDiscoveryResults(discovery), discovery.errors.length > 0 ? "warning" : "info");
-
-			// Check for fatal errors
-			const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
-			const fatalErrors = discovery.errors.filter((e) => fatalCodes.has(e.code));
-			if (fatalErrors.length > 0) {
-				publishOrchPlanSection("❌ Cannot compute plan due to discovery errors above.", "error");
-				const hasRoutingErrors = fatalErrors.some(
-					(e) => e.code === "TASK_REPO_UNRESOLVED" || e.code === "TASK_REPO_UNKNOWN",
-				);
-				if (hasRoutingErrors) {
+					ctx.ui.notify("ℹ️ Runtime V2 is the default backend (subprocess-only).", "info");
+					let workspaceSyncSummary = collectCurrentWorkspaceSyncSummary(cleanArgs);
+					let orchPlanWorkspaceSyncResult: WorkspaceSyncApplyResult | null = null;
+					if (hasSync && workspaceSyncSummary) {
+						setOrchPlanPhase("Syncing workspace");
+						const syncOutcome = await runWorkspaceSyncWithUi(cleanArgs, ctx);
+						orchPlanWorkspaceSyncResult = syncOutcome.syncResult;
+						workspaceSyncSummary = syncOutcome.refreshedSummary;
+					}
+					setOrchPlanPhase("Running preflight");
+					const preflight = runPreflight(orchConfig, execCtx!.repoRoot, {
+						workspaceRoot: execCtx!.workspaceRoot,
+						pointerConfigRoot: execCtx!.pointer?.configRoot,
+						workspaceConfig: execCtx!.workspaceConfig,
+					});
 					publishOrchPlanSection(
-						"💡 Check PROMPT Repo: fields, area repo_id config, and routing.default_repo in workspace config.",
+						formatOrchPlanPreflightSection(preflight, workspaceSyncSummary, {
+							showWorkspaceSyncStatus: true,
+							workspaceSyncResult: orchPlanWorkspaceSyncResult,
+						}),
+						preflight.passed ? "info" : "error",
+					);
+					publishOrchPlanSection(formatDetectedSubmodulesSection(workspaceSyncSummary), "info");
+					if (hasBlockingWorkspaceSyncFindings(workspaceSyncSummary)) {
+						finalizeOrchPlan("error", "Workspace sync required");
+						return;
+					}
+					if (!preflight.passed) {
+						finalizeOrchPlan("error", "Preflight failed");
+						return;
+					}
+
+					setOrchPlanPhase("Discovering tasks");
+					const discovery = runDiscovery(cleanArgs, runnerConfig.task_areas, execCtx!.workspaceRoot, {
+						refreshDependencies: hasRefresh,
+						dependencySource: orchConfig.dependencies.source,
+						useDependencyCache: orchConfig.dependencies.cache,
+						workspaceConfig: execCtx!.workspaceConfig,
+					});
+					publishOrchPlanSection(formatDiscoveryResults(discovery), discovery.errors.length > 0 ? "warning" : "info");
+
+					const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+					const fatalErrors = discovery.errors.filter((e) => fatalCodes.has(e.code));
+					if (fatalErrors.length > 0) {
+						publishOrchPlanSection("❌ Cannot compute plan due to discovery errors above.", "error");
+						const hasRoutingErrors = fatalErrors.some(
+							(e) => e.code === "TASK_REPO_UNRESOLVED" || e.code === "TASK_REPO_UNKNOWN",
+						);
+						if (hasRoutingErrors) {
+							publishOrchPlanSection(
+								"💡 Check PROMPT Repo: fields, area repo_id config, and routing.default_repo in workspace config.",
+								"info",
+							);
+						}
+						const hasStrictErrors = fatalErrors.some(
+							(e) => e.code === "TASK_ROUTING_STRICT",
+						);
+						if (hasStrictErrors) {
+							publishOrchPlanSection(
+								"💡 Strict routing is enabled (routing.strict: true). Every task must declare an explicit execution target.\n" +
+								"   Add a `## Execution Target` section with `Repo: <id>` or `Repos: <id-a>, <id-b>` to each task's PROMPT.md.\n" +
+								"   To disable strict routing, set `routing.strict: false` in workspace config.",
+								"info",
+							);
+						}
+						finalizeOrchPlan("error", "Discovery failed");
+						return;
+					}
+
+					if (discovery.pending.size === 0) {
+						publishOrchPlanSection("No pending tasks found. Nothing to plan.", "info");
+						finalizeOrchPlan("success", "No pending tasks");
+						return;
+					}
+
+					setOrchPlanPhase("Rendering dependency graph");
+					publishOrchPlanSection(
+						formatDependencyGraph(discovery.pending, discovery.completed),
 						"info",
 					);
-				}
-				const hasStrictErrors = fatalErrors.some(
-					(e) => e.code === "TASK_ROUTING_STRICT",
-				);
-				if (hasStrictErrors) {
-					publishOrchPlanSection(
-						"💡 Strict routing is enabled (routing.strict: true). Every task must declare an explicit execution target.\n" +
-						"   Add a `## Execution Target` section with `Repo: <id>` or `Repos: <id-a>, <id-b>` to each task's PROMPT.md.\n" +
-						"   To disable strict routing, set `routing.strict: false` in workspace config.",
-						"info",
+
+					setOrchPlanPhase("Computing waves");
+					const waveResult = computeWaveAssignments(
+						discovery.pending,
+						discovery.completed,
+						orchConfig,
+						{
+							workspaceRepoIds: execCtx!.workspaceConfig
+								? execCtx!.workspaceConfig.repos.keys()
+								: undefined,
+						},
 					);
-				}
-				finalizeOrchPlan("error", "Discovery failed");
-				return;
+
+					publishOrchPlanSection(
+						formatWavePlan(waveResult, orchConfig.assignment.size_weights),
+						waveResult.errors.length > 0 ? "error" : "info",
+					);
+					finalizeOrchPlan(waveResult.errors.length > 0 ? "error" : "success", waveResult.errors.length > 0 ? "Plan failed" : "Plan ready");
+			} catch (err: unknown) {
+				const errMsg = err instanceof Error ? err.message : String(err);
+				publishOrchPlanSection(`❌ Orchestrator plan crashed: ${errMsg}`, "error");
+				finalizeOrchPlan("error", "Plan failed");
 			}
-
-			if (discovery.pending.size === 0) {
-				publishOrchPlanSection("No pending tasks found. Nothing to plan.", "info");
-				finalizeOrchPlan("success", "No pending tasks");
-				return;
-			}
-
-			// ── Section 3: Dependency Graph ──────────────────────────
-			setOrchPlanPhase("Rendering dependency graph");
-			publishOrchPlanSection(
-				formatDependencyGraph(discovery.pending, discovery.completed),
-				"info",
-			);
-
-			// ── Section 4: Waves + Estimate ──────────────────────────
-			setOrchPlanPhase("Computing waves");
-			// Uses computeWaveAssignments pipeline only — NO re-parsing
-			const waveResult = computeWaveAssignments(
-				discovery.pending,
-				discovery.completed,
-				orchConfig,
-				{
-					workspaceRepoIds: execCtx!.workspaceConfig
-						? execCtx!.workspaceConfig.repos.keys()
-						: undefined,
-				},
-			);
-
-			publishOrchPlanSection(
-				formatWavePlan(waveResult, orchConfig.assignment.size_weights),
-				waveResult.errors.length > 0 ? "error" : "info",
-			);
-			finalizeOrchPlan(waveResult.errors.length > 0 ? "error" : "success", waveResult.errors.length > 0 ? "Plan failed" : "Plan ready");
 		},
 	});
 
@@ -5232,6 +5331,7 @@ export default function (pi: ExtensionAPI) {
 		} catch {
 			// Best effort only — session is already ending.
 		}
+		resetRootWidget();
 	});
 }
 

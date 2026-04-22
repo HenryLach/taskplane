@@ -1130,6 +1130,19 @@ export interface OrchWorkspaceSyncStatus {
 	detail: string;
 }
 
+export type OrchMergePanelLevel = "info" | "success" | "warning" | "error";
+
+export interface OrchMergePanelEvent {
+	level: OrchMergePanelLevel;
+	message: string;
+}
+
+export interface OrchMergePanelState {
+	status: "running" | "success" | "warning" | "error";
+	waveLabel: string;
+	events: OrchMergePanelEvent[];
+}
+
 /**
  * Runtime state for a batch execution.
  *
@@ -1212,6 +1225,8 @@ export interface OrchBatchRuntimeState {
 	segments?: PersistedSegmentRecord[];
 	/** Workspace repo/submodule sync snapshot captured before execution starts. */
 	workspaceSyncStatus?: OrchWorkspaceSyncStatus;
+	/** Merge-phase panel state rendered into the orchestrator widget. */
+	mergePanel?: OrchMergePanelState;
 	/**
 	 * Unknown top-level fields from loaded persisted state.
 	 * Carried forward so they survive serialization roundtrips.
@@ -1280,6 +1295,7 @@ export function freshOrchBatchState(): OrchBatchRuntimeState {
 		currentLanes: [],
 		dependencyGraph: null,
 		mergeResults: [],
+		mergePanel: undefined,
 	};
 }
 
@@ -3046,6 +3062,8 @@ export interface PersistedBatchState {
 	segments: PersistedSegmentRecord[];
 	/** Optional workspace repo/submodule sync snapshot for dashboard rendering. */
 	workspaceSyncStatus?: OrchWorkspaceSyncStatus;
+	/** Optional merge-phase panel state for dashboard rendering. */
+	mergePanel?: OrchMergePanelState;
 	/**
 	 * Unknown top-level fields captured during deserialization.
 	 * Preserved on roundtrip to avoid data loss from future schema extensions
@@ -3516,8 +3534,18 @@ export interface WorkspaceRepoImportCandidate {
 	derivedRepoId: string;
 }
 
+export interface WorkspaceDetectedSubmodule {
+	repoLabel: string;
+	repoRoot: string;
+	submodulePath: string;
+	absolutePath: string;
+	mappedRepoId?: string;
+	state: "clean" | "uninitialized" | "drifted" | "conflict";
+}
+
 export interface WorkspaceSyncSummary {
 	trackedSubmodules: number;
+	detectedSubmodules: WorkspaceDetectedSubmodule[];
 	findings: WorkspaceSyncFinding[];
 	importCandidates: WorkspaceRepoImportCandidate[];
 }

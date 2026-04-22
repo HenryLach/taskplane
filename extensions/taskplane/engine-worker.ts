@@ -20,6 +20,7 @@ import type {
 	EngineEvent,
 	MonitorState,
 	OrchBatchPhase,
+	OrchMergePanelState,
 	OrchBatchRuntimeState,
 	OrchestratorConfig,
 	SupervisorAlert,
@@ -76,6 +77,7 @@ export interface SerializedBatchState {
 	/** Active lanes for the current wave (synced so /orch-sessions works). */
 	currentLanes: AllocatedLane[];
 	workspaceSyncStatus?: OrchWorkspaceSyncStatus;
+	mergePanel?: OrchMergePanelState;
 }
 
 /**
@@ -171,6 +173,7 @@ function serializeBatchState(state: OrchBatchRuntimeState): SerializedBatchState
 		errors: [...state.errors],
 		currentLanes: state.currentLanes,
 		workspaceSyncStatus: state.workspaceSyncStatus,
+		mergePanel: state.mergePanel,
 	};
 }
 
@@ -201,6 +204,7 @@ export function applySerializedState(
 	batchState.errors = [...serialized.errors];
 	batchState.currentLanes = serialized.currentLanes ?? [];
 	batchState.workspaceSyncStatus = serialized.workspaceSyncStatus;
+	batchState.mergePanel = serialized.mergePanel;
 }
 
 // ── Engine main (runs when launched as a forked child process) ───────

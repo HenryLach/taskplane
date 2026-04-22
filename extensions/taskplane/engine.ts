@@ -2036,6 +2036,49 @@ export async function executeOrchBatch(
 		}
 	};
 
+	const openMergePanel = (waveLabel: string, laneCount: number): void => {
+		batchState.mergePanel = {
+			status: "running",
+			waveLabel: `Wave ${waveLabel}`,
+			events: [{
+				level: "info",
+				message: `Merging ${laneCount} lane(s) into ${batchState.orchBranch || batchState.baseBranch || "target branch"}...`,
+			}],
+		};
+	};
+
+	const pushMergePanelEvent = (
+		level: "info" | "success" | "warning" | "error",
+		message: string,
+	): void => {
+		if (!batchState.mergePanel) return;
+		const normalizedLines = message
+			.replace(/\r\n/g, "\n")
+			.split("\n")
+			.map((line) => line.trim())
+			.filter(Boolean);
+		for (const normalizedLine of normalizedLines) {
+			batchState.mergePanel.events.push({ level, message: normalizedLine });
+		}
+		if (batchState.mergePanel.events.length > 8) {
+			batchState.mergePanel.events.splice(0, batchState.mergePanel.events.length - 8);
+		}
+		if (level === "error") {
+			batchState.mergePanel.status = "error";
+		} else if (level === "warning" && batchState.mergePanel.status === "running") {
+			batchState.mergePanel.status = "warning";
+		} else if (level === "success" && batchState.mergePanel.status === "running") {
+			batchState.mergePanel.status = "success";
+		}
+	};
+
+	const closeMergePanel = (waveLabel: string, emitSync = false): void => {
+		batchState.mergePanel = undefined;
+		if (emitSync) {
+			onNotify(`🔀 [Wave ${waveLabel}] Merge status sync`, "info");
+		}
+	};
+
 	// ── Phase 1: Planning ────────────────────────────────────────
 	batchState.phase = "planning";
 	batchState.batchId = generateBatchId();
@@ -2045,6 +2088,7 @@ export async function executeOrchBatch(
 	// — e.g., /orch-pause issued between /orch return and engine start
 	if (!batchState.pauseSignal?.paused) batchState.pauseSignal = { paused: false };
 	batchState.mergeResults = [];
+	batchState.mergePanel = undefined;
 	batchState.mode = workspaceConfig ? "workspace" : "repo";
 
 	// Capture the current branch as the base for worktrees and merge target
@@ -3192,10 +3236,12 @@ export async function executeOrchBatch(
 			}).length;
 
 			if (mergeableLaneCount > 0) {
+				const { displayWave: mergeDisplayWave } = resolveDisplayWaveNumber(waveIdx, roundToTaskWave, taskLevelWaveCount);
 				batchState.phase = "merging";
+				openMergePanel(String(mergeDisplayWave), mergeableLaneCount);
 				// ── TS-009: Persist state on executing→merging transition ──
 				persistRuntimeState("merge-start", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
-				onNotify(ORCH_MESSAGES.orchMergeStart(resolveDisplayWaveNumber(waveIdx, roundToTaskWave, taskLevelWaveCount).displayWave, mergeableLaneCount), "info");
+				onNotify(ORCH_MESSAGES.orchMergeStart(mergeDisplayWave, mergeableLaneCount), "info");
 				// TP-040: Emit merge_start event
 				emitEvent(stateRoot, {
 					...buildEngineEventBase("merge_start", batchState.batchId, waveIdx, batchState.phase),
@@ -3251,12 +3297,16 @@ export async function executeOrchBatch(
 					// TP-032 R006-3: Check lr.error first — verification_new_failure lanes
 					// have error set even though lr.result.status may be SUCCESS/CONFLICT_RESOLVED.
 					if (lr.error) {
+						pushMergePanelEvent("error", ORCH_MESSAGES.orchMergeLaneFailed(lr.laneNumber, lr.error));
 						onNotify(ORCH_MESSAGES.orchMergeLaneFailed(lr.laneNumber, lr.error), "error");
 					} else if (lr.result?.status === "SUCCESS") {
+						pushMergePanelEvent("success", ORCH_MESSAGES.orchMergeLaneSuccess(lr.laneNumber, lr.result.merge_commit, durationSec));
 						onNotify(ORCH_MESSAGES.orchMergeLaneSuccess(lr.laneNumber, lr.result.merge_commit, durationSec), "info");
 					} else if (lr.result?.status === "CONFLICT_RESOLVED") {
+						pushMergePanelEvent("success", ORCH_MESSAGES.orchMergeLaneConflictResolved(lr.laneNumber, lr.result.conflicts.length, durationSec));
 						onNotify(ORCH_MESSAGES.orchMergeLaneConflictResolved(lr.laneNumber, lr.result.conflicts.length, durationSec), "info");
 					} else if (lr.result?.status === "CONFLICT_UNRESOLVED" || lr.result?.status === "BUILD_FAILURE") {
+						pushMergePanelEvent("error", ORCH_MESSAGES.orchMergeLaneFailed(lr.laneNumber, lr.result.status));
 						onNotify(ORCH_MESSAGES.orchMergeLaneFailed(lr.laneNumber, lr.result.status), "error");
 					}
 				}
@@ -3290,7 +3340,7 @@ export async function executeOrchBatch(
 				const mergeTotalSec = Math.round(mergeResult.totalDurationMs / 1000);
 
 				if (mergeResult.status === "succeeded") {
-					const { displayWave: mergeDisplayWave } = resolveDisplayWaveNumber(waveIdx, roundToTaskWave, taskLevelWaveCount);
+					pushMergePanelEvent("success", ORCH_MESSAGES.orchMergeComplete(mergeDisplayWave, mergedCount, mergeTotalSec));
 					onNotify(ORCH_MESSAGES.orchMergeComplete(mergeDisplayWave, mergedCount, mergeTotalSec), "info");
 
 					// TP-040: Emit merge_success event
@@ -3301,13 +3351,18 @@ export async function executeOrchBatch(
 						totalWaves: taskLevelWaveCount,
 					}, onEngineEvent);
 				} else {
+					pushMergePanelEvent(
+						"error",
+						ORCH_MESSAGES.orchMergeFailed(mergeDisplayWave, mergeResult.failedLane ?? 0, mergeResult.failureReason || "unknown"),
+					);
 					onNotify(
-						ORCH_MESSAGES.orchMergeFailed(resolveDisplayWaveNumber(waveIdx, roundToTaskWave, taskLevelWaveCount).displayWave, mergeResult.failedLane ?? 0, mergeResult.failureReason || "unknown"),
+						ORCH_MESSAGES.orchMergeFailed(mergeDisplayWave, mergeResult.failedLane ?? 0, mergeResult.failureReason || "unknown"),
 						"error",
 					);
 
 					const atomicRepoSummary = formatRepoAtomicFailureSummary(mergeResult);
 					if (atomicRepoSummary) {
+						pushMergePanelEvent("warning", atomicRepoSummary);
 						onNotify(atomicRepoSummary, "warning");
 					}
 
@@ -3322,6 +3377,7 @@ export async function executeOrchBatch(
 					if (mergeResult.status === "partial") {
 						const repoSummary = formatRepoMergeSummary(mergeResult);
 						if (repoSummary) {
+							pushMergePanelEvent("warning", repoSummary);
 							onNotify(repoSummary, "warning");
 						}
 					}
@@ -3329,8 +3385,10 @@ export async function executeOrchBatch(
 
 				// Restore phase to executing (may be overridden below by failure handling)
 				batchState.phase = "executing";
+				closeMergePanel(String(mergeDisplayWave));
 				// ── TS-009: Persist state after merge (merging→executing) ──
 				persistRuntimeState("merge-complete", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+				closeMergePanel(String(mergeDisplayWave), true);
 			} else if (mixedOutcomeLanes.length > 0) {
 				const mixedIds = mixedOutcomeLanes.map(l => `lane-${l.laneNumber}`).join(", ");
 				mergeResult = {
@@ -3386,6 +3444,7 @@ export async function executeOrchBatch(
 			});
 
 			batchState.phase = "paused";
+			closeMergePanel(String(waveIdx + 1));
 			batchState.errors.push(
 				`Safe-stop at wave ${waveIdx + 1}: verification rollback failed. ` +
 				`Merge worktree and temp branch preserved for recovery. ` +
@@ -3447,6 +3506,7 @@ export async function executeOrchBatch(
 				batchState.resilience.retryCountByScope,
 				{
 					performMerge: async () => {
+						openMergePanel(String(resolveDisplayWaveNumber(waveIdx, roundToTaskWave, taskLevelWaveCount).displayWave), mergeableLaneCount);
 						batchState.phase = "merging";
 						return await mergeWaveByRepo(
 							waveResult.allocatedLanes,
@@ -3491,7 +3551,9 @@ export async function executeOrchBatch(
 			if (retryOutcome.kind === "retry_succeeded") {
 				mergeResult = retryOutcome.mergeResult;
 				batchState.phase = "executing";
+				closeMergePanel(String(waveIdx + 1));
 				persistRuntimeState("merge-retry-succeeded", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
+				closeMergePanel(String(waveIdx + 1), true);
 
 				// Emit merge retry success event
 				emitTier0Event(stateRoot, {
@@ -3507,6 +3569,7 @@ export async function executeOrchBatch(
 			} else if (retryOutcome.kind === "safe_stop") {
 				mergeResult = retryOutcome.mergeResult;
 				batchState.phase = "paused";
+				closeMergePanel(String(waveIdx + 1));
 				batchState.errors.push(retryOutcome.errorMessage);
 				persistRuntimeState("merge-rollback-safe-stop", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(retryOutcome.notifyMessage, "error");
@@ -3583,6 +3646,7 @@ export async function executeOrchBatch(
 				);
 
 				batchState.phase = "paused";
+				closeMergePanel(String(waveIdx + 1));
 				batchState.errors.push(exhaustionMsg);
 				persistRuntimeState("merge-retry-exhausted", batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(retryOutcome.notifyMessage, "error");
@@ -3622,6 +3686,7 @@ export async function executeOrchBatch(
 				execLog("batch", batchState.batchId, `merge failure — applying ${policyResult.policy} policy${classNote}`, policyResult.logDetails);
 
 				batchState.phase = policyResult.targetPhase;
+				closeMergePanel(String(waveIdx + 1));
 				batchState.errors.push(policyResult.errorMessage + classNote);
 				persistRuntimeState(policyResult.persistTrigger, batchState, wavePlan, latestAllocatedLanes, allTaskOutcomes, discoveryRef, stateRoot);
 				onNotify(policyResult.notifyMessage + classNote, policyResult.notifyLevel);

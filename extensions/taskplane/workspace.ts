@@ -52,6 +52,7 @@ import {
 	type WorkspaceConfig,
 	WorkspaceConfigError,
 	type WorkspaceRepoConfig,
+	type WorkspaceDetectedSubmodule,
 	type WorkspaceRepoImportCandidate,
 	type WorkspaceRoutingConfig,
 	type WorkspaceSyncApplyResult,
@@ -741,6 +742,7 @@ export function collectWorkspaceSyncSummary(
 	}
 
 	const collisionCandidates = new Map<string, WorkspaceRepoImportCandidate[]>();
+	const detectedSubmodules: WorkspaceDetectedSubmodule[] = [];
 	let trackedSubmodules = 0;
 
 	for (const { label, root } of [...repoEntries.values()].sort((left, right) => left.label.localeCompare(right.label))) {
@@ -756,6 +758,21 @@ export function collectWorkspaceSyncSummary(
 		for (const submodulePath of allPaths) {
 			const absolutePath = resolve(root, submodulePath);
 			const mappedRepoId = workspaceRepoPaths.get(normalizeWorkspaceSyncPath(absolutePath));
+			const status = statusByPath.get(submodulePath);
+			detectedSubmodules.push({
+				repoLabel: label,
+				repoRoot: root,
+				submodulePath,
+				absolutePath,
+				mappedRepoId,
+				state: status?.state === "conflict"
+					? "conflict"
+					: status?.state === "drifted"
+						? "drifted"
+						: status?.state === "uninitialized"
+							? "uninitialized"
+							: "clean",
+			});
 
 			if (workspaceConfig && !mappedRepoId && policy.repoIdStrategy === "path-basename") {
 				const derivedRepoId = basename(submodulePath).trim().toLowerCase();
@@ -814,7 +831,6 @@ export function collectWorkspaceSyncSummary(
 				}
 			}
 
-			const status = statusByPath.get(submodulePath);
 			if (status?.state === "uninitialized") {
 				findings.push({
 					name: `submodule-state:${label}:${submodulePath}`,
@@ -865,10 +881,15 @@ export function collectWorkspaceSyncSummary(
 	}
 
 	findings.sort((left, right) => left.name.localeCompare(right.name));
+	detectedSubmodules.sort((left, right) => {
+		const repoComparison = left.repoLabel.localeCompare(right.repoLabel);
+		return repoComparison !== 0 ? repoComparison : left.submodulePath.localeCompare(right.submodulePath);
+	});
 	importCandidates.sort((left, right) => left.derivedRepoId.localeCompare(right.derivedRepoId));
 
 	return {
 		trackedSubmodules,
+		detectedSubmodules,
 		findings,
 		importCandidates,
 	};

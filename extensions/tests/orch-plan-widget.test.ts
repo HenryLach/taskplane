@@ -41,9 +41,9 @@ describe("orch plan widget lines", () => {
 		]);
 	});
 
-	it("renders a component widget so content is not capped at ten lines", () => {
+	it("renders a simple orch-plan box so content is not capped at ten lines", () => {
 		const factory = createOrchPlanWidget({
-			commandTitle: "/orch-plan all --sync",
+			title: "/orch-plan all --sync",
 			status: "running",
 			phase: "Computing waves",
 			sections: [Array.from({ length: 12 }, (_, index) => `Line ${index + 1}`).join("\n")],
@@ -63,45 +63,65 @@ describe("orch plan widget lines", () => {
 		expect(rendered).not.toContain("... (widget truncated)");
 	});
 
-	it("renders a solid bordered box and wraps to the inner box width", () => {
+	it("renders a simple orch-plan box and wraps to the inner width", () => {
 		const factory = createOrchPlanWidget({
-			commandTitle: "/orch-plan all",
+			title: "/orch-plan all",
 			status: "success",
 			phase: "Plan ready",
 			sections: ["This line is long enough to wrap across multiple rows in the widget body."],
+			padding: 1,
 		});
 
 		expect(factory).toBeDefined();
 
 		const widget = factory!(undefined, {
+			bg: (_color: string, text: string) => text,
 			fg: (_color: string, text: string) => text,
 			bold: (text: string) => text,
 		});
 		const rendered = widget.render(20);
 
-		expect(rendered[0]).toBe(`┌${"─".repeat(18)}┐`);
-		expect(rendered[rendered.length - 1]).toBe(`└${"─".repeat(18)}┘`);
+		expect(rendered.length > 5).toBeTruthy();
+		expect(rendered[0].trim()).toBe("");
+		expect(rendered[1].trim()).toBe("● /orch-plan all");
+		expect(rendered[2].trim()).toBe("● Plan ready");
+		expect(rendered[rendered.length - 1].trim()).toBe("");
 
-		for (const line of rendered.slice(1, -1)) {
+		for (const line of rendered) {
 			expect(line).toHaveLength(20);
-			expect(line.startsWith("│ ")).toBeTruthy();
-			expect(line.endsWith(" │")).toBeTruthy();
 		}
 	});
 
 	it("serializes a plain fallback header with title and terminal status", () => {
 		const lines = serializeOrchPlanWidgetLines({
-			commandTitle: "/orch-plan all --sync",
-			status: "error",
-			phase: "Workspace sync required",
-			sections: ["⚠️ Workspace sync is required before continuing."],
+			title: "/orch-plan all",
+			status: "success",
+			phase: "Plan ready",
+			sections: ["Wave 1", "Wave 2"],
 		});
 
 		expect(lines).toEqual([
-			"/orch-plan all --sync",
-			"✗ Workspace sync required",
+			"/orch-plan all",
+			"✓ Plan ready",
 			"",
-			"⚠️ Workspace sync is required before continuing.",
+			"Wave 1",
+			"",
+			"Wave 2",
+		]);
+	});
+
+	it("serializes a collapsed ribbon summary for fallback surfaces", () => {
+		const lines = serializeOrchPlanWidgetLines({
+			title: "/orch-plan all",
+			status: "running",
+			phase: "Computing waves",
+			sections: ["Wave 1"],
+			collapsed: true,
+		});
+
+		expect(lines).toEqual([
+			"▼ ● /orch-plan all",
+			"● Computing waves",
 		]);
 	});
 });
