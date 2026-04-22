@@ -2905,6 +2905,20 @@ export interface PersistedTaskRecord {
 	 * Undefined for pre-v4 state files.
 	 */
 	activeSegmentId?: string | null;
+	/**
+	 * Explicit segment DAG metadata parsed from the task prompt.
+	 *
+	 * Preserved so resume flows can rebuild repo-scoped segment execution
+	 * without rediscovery when a batch is paused mid-frontier.
+	 */
+	explicitSegmentDag?: PromptSegmentDagMetadata;
+	/**
+	 * Repo-scoped step/checkbox mapping parsed from prompt segment markers.
+	 *
+	 * Preserved so resumed segment-scoped workers retain the same filtered
+	 * step visibility they had before the interruption.
+	 */
+	stepSegmentMap?: StepSegmentMapping[];
 }
 
 // ── Segment-Level Persisted State (v4, TP-081) ──────────────────────

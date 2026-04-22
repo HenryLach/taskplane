@@ -198,6 +198,12 @@ export function reconstructAllocatedLanes(
 			if ((persistedTask as any)?.activeSegmentId !== undefined) {
 				(taskStub as any).activeSegmentId = (persistedTask as any).activeSegmentId;
 			}
+			if ((persistedTask as any)?.explicitSegmentDag !== undefined) {
+				(taskStub as any).explicitSegmentDag = (persistedTask as any).explicitSegmentDag;
+			}
+			if ((persistedTask as any)?.stepSegmentMap !== undefined) {
+				(taskStub as any).stepSegmentMap = (persistedTask as any).stepSegmentMap;
+			}
 			return {
 				taskId,
 				order: 0,
@@ -210,6 +216,71 @@ export function reconstructAllocatedLanes(
 		estimatedMinutes: 0,
 		...(lr.repoId !== undefined ? { repoId: lr.repoId } : {}),
 	}));
+}
+
+function recoverSegmentIdsFromRecords(
+	taskId: string,
+	persistedSegments: ReadonlyArray<PersistedSegmentRecord>,
+): string[] {
+	const taskSegments = persistedSegments.filter((segment) => segment.taskId === taskId);
+	if (taskSegments.length === 0) return [];
+
+	const segmentIds = new Set(taskSegments.map((segment) => segment.segmentId));
+	const indegree = new Map<string, number>();
+	const outgoing = new Map<string, string[]>();
+	for (const segment of taskSegments) {
+		indegree.set(segment.segmentId, 0);
+		outgoing.set(segment.segmentId, []);
+	}
+
+	for (const segment of taskSegments) {
+		for (const dep of segment.dependsOnSegmentIds) {
+			if (!segmentIds.has(dep)) continue;
+			indegree.set(segment.segmentId, (indegree.get(segment.segmentId) ?? 0) + 1);
+			outgoing.set(dep, [...(outgoing.get(dep) ?? []), segment.segmentId]);
+		}
+	}
+
+	const compareSegmentIds = (left: string, right: string): number => {
+		const leftRecord = taskSegments.find((segment) => segment.segmentId === left);
+		const rightRecord = taskSegments.find((segment) => segment.segmentId === right);
+		const leftStarted = leftRecord?.startedAt ?? Number.MAX_SAFE_INTEGER;
+		const rightStarted = rightRecord?.startedAt ?? Number.MAX_SAFE_INTEGER;
+		if (leftStarted !== rightStarted) return leftStarted - rightStarted;
+		return left.localeCompare(right);
+	};
+
+	const queue = [...taskSegments.map((segment) => segment.segmentId)]
+		.filter((segmentId) => (indegree.get(segmentId) ?? 0) === 0)
+		.sort(compareSegmentIds);
+	const ordered: string[] = [];
+
+	while (queue.length > 0) {
+		const current = queue.shift()!;
+		ordered.push(current);
+		const nextIds = [...(outgoing.get(current) ?? [])].sort(compareSegmentIds);
+		for (const nextId of nextIds) {
+			const nextDegree = (indegree.get(nextId) ?? 0) - 1;
+			indegree.set(nextId, nextDegree);
+			if (nextDegree === 0) {
+				queue.push(nextId);
+				queue.sort(compareSegmentIds);
+			}
+		}
+	}
+
+	if (ordered.length === taskSegments.length) return ordered;
+	return [...segmentIds].sort(compareSegmentIds);
+}
+
+function resolveTaskSegmentIds(
+	task: PersistedBatchState["tasks"][number],
+	persistedSegments: ReadonlyArray<PersistedSegmentRecord>,
+): string[] {
+	if (Array.isArray(task.segmentIds) && task.segmentIds.length > 0) {
+		return task.segmentIds;
+	}
+	return recoverSegmentIdsFromRecords(task.taskId, persistedSegments);
 }
 
 /**
@@ -473,8 +544,11 @@ export function reconstructSegmentFrontier(
 	}
 
 	for (const task of persistedState.tasks) {
-		const segmentIds = task.segmentIds ?? [];
+		const segmentIds = resolveTaskSegmentIds(task, persistedState.segments ?? []);
 		if (segmentIds.length === 0) continue;
+		if (!Array.isArray(task.segmentIds) || task.segmentIds.length === 0) {
+			task.segmentIds = segmentIds;
+		}
 
 		const dependencyBySegmentId = new Map<string, string[]>();
 		const completedSegmentIds: string[] = [];
@@ -712,8 +786,9 @@ export function buildResumeRuntimeWavePlan(persistedState: PersistedBatchState):
 	const runtimeWavePlan = [...baseWavePlan];
 	const segmentCountByTaskId = new Map<string, number>();
 	for (const task of persistedState.tasks) {
-		if (Array.isArray(task.segmentIds) && task.segmentIds.length > 0) {
-			segmentCountByTaskId.set(task.taskId, task.segmentIds.length);
+		const segmentIds = resolveTaskSegmentIds(task, persistedState.segments ?? []);
+		if (segmentIds.length > 0) {
+			segmentCountByTaskId.set(task.taskId, segmentIds.length);
 		}
 	}
 
@@ -817,8 +892,9 @@ export function computeResumePoint(
 		: [];
 	const segmentIdsByTaskId = new Map<string, string[]>();
 	for (const task of persistedTasks) {
-		if (task.segmentIds && task.segmentIds.length > 0) {
-			segmentIdsByTaskId.set(task.taskId, task.segmentIds);
+		const segmentIds = resolveTaskSegmentIds(task, persistedState.segments ?? []);
+		if (segmentIds.length > 0) {
+			segmentIdsByTaskId.set(task.taskId, segmentIds);
 		}
 	}
 	const waveSegmentIdByTaskOccurrence = new Map<string, string>();

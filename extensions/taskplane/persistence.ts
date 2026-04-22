@@ -337,6 +337,12 @@ export function persistRuntimeState(
 					if ((taskRecord as any).activeSegmentId === undefined && parsedTask.activeSegmentId !== undefined) {
 						(taskRecord as any).activeSegmentId = parsedTask.activeSegmentId;
 					}
+					if ((taskRecord as any).explicitSegmentDag === undefined && parsedTask.explicitSegmentDag !== undefined) {
+						(taskRecord as any).explicitSegmentDag = parsedTask.explicitSegmentDag;
+					}
+					if ((taskRecord as any).stepSegmentMap === undefined && parsedTask.stepSegmentMap !== undefined) {
+						(taskRecord as any).stepSegmentMap = parsedTask.stepSegmentMap;
+					}
 				}
 			}
 			const enrichedJson = JSON.stringify(parsed, null, 2);
@@ -1174,6 +1180,68 @@ export function validatePersistedState(data: unknown): PersistedBatchState {
 				`tasks[${i}].activeSegmentId is not a string or null (got ${typeof t.activeSegmentId})`,
 			);
 		}
+		// v4 optional field: explicitSegmentDag ({ repoIds: string[], edges: {fromRepoId,toRepoId}[] } | undefined)
+		if (t.explicitSegmentDag !== undefined) {
+			const dag = t.explicitSegmentDag as Record<string, unknown>;
+			if (!dag || typeof dag !== "object" || !Array.isArray(dag.repoIds) || !Array.isArray(dag.edges)) {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`tasks[${i}].explicitSegmentDag is not a valid segment DAG object`,
+				);
+			}
+			for (let j = 0; j < (dag.repoIds as unknown[]).length; j++) {
+				if (typeof (dag.repoIds as unknown[])[j] !== "string") {
+					throw new StateFileError(
+						"STATE_SCHEMA_INVALID",
+						`tasks[${i}].explicitSegmentDag.repoIds[${j}] is not a string`,
+					);
+				}
+			}
+			for (let j = 0; j < (dag.edges as unknown[]).length; j++) {
+				const edge = (dag.edges as unknown[])[j] as Record<string, unknown>;
+				if (!edge || typeof edge !== "object" || typeof edge.fromRepoId !== "string" || typeof edge.toRepoId !== "string") {
+					throw new StateFileError(
+						"STATE_SCHEMA_INVALID",
+						`tasks[${i}].explicitSegmentDag.edges[${j}] is not a valid edge`,
+					);
+				}
+			}
+		}
+		// v4 optional field: stepSegmentMap (StepSegmentMapping[] | undefined)
+		if (t.stepSegmentMap !== undefined) {
+			if (!Array.isArray(t.stepSegmentMap)) {
+				throw new StateFileError(
+					"STATE_SCHEMA_INVALID",
+					`tasks[${i}].stepSegmentMap is not an array (got ${typeof t.stepSegmentMap})`,
+				);
+			}
+			for (let j = 0; j < (t.stepSegmentMap as unknown[]).length; j++) {
+				const step = (t.stepSegmentMap as unknown[])[j] as Record<string, unknown>;
+				if (!step || typeof step !== "object" || typeof step.stepNumber !== "number" || typeof step.stepName !== "string" || !Array.isArray(step.segments)) {
+					throw new StateFileError(
+						"STATE_SCHEMA_INVALID",
+						`tasks[${i}].stepSegmentMap[${j}] is not a valid step-segment mapping`,
+					);
+				}
+				for (let k = 0; k < (step.segments as unknown[]).length; k++) {
+					const seg = (step.segments as unknown[])[k] as Record<string, unknown>;
+					if (!seg || typeof seg !== "object" || typeof seg.repoId !== "string" || !Array.isArray(seg.checkboxes)) {
+						throw new StateFileError(
+							"STATE_SCHEMA_INVALID",
+							`tasks[${i}].stepSegmentMap[${j}].segments[${k}] is not a valid checkbox group`,
+						);
+					}
+					for (let m = 0; m < (seg.checkboxes as unknown[]).length; m++) {
+						if (typeof (seg.checkboxes as unknown[])[m] !== "string") {
+							throw new StateFileError(
+								"STATE_SCHEMA_INVALID",
+								`tasks[${i}].stepSegmentMap[${j}].segments[${k}].checkboxes[${m}] is not a string`,
+							);
+						}
+					}
+				}
+			}
+		}
 	}
 
 	// ── Validate v4 segments array ───────────────────────────────
@@ -1410,6 +1478,12 @@ export function serializeBatchState(
 			}
 			if (allocated?.allocatedTask.task?.activeSegmentId !== undefined) {
 				(record as any).activeSegmentId = allocated.allocatedTask.task.activeSegmentId;
+			}
+			if (allocated?.allocatedTask.task?.explicitSegmentDag !== undefined) {
+				(record as any).explicitSegmentDag = allocated.allocatedTask.task.explicitSegmentDag;
+			}
+			if (allocated?.allocatedTask.task?.stepSegmentMap !== undefined) {
+				(record as any).stepSegmentMap = allocated.allocatedTask.task.stepSegmentMap;
 			}
 
 			return record;

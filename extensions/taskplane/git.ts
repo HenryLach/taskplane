@@ -3,12 +3,28 @@
  * @module orch/git
  */
 import { execFileSync } from "child_process";
+import { existsSync } from "fs";
+import { join } from "path";
 
 export interface GitSubmoduleStatus {
 	path: string;
 	state: "ok" | "uninitialized" | "drifted" | "conflict";
 	commit: string;
 	description?: string;
+}
+
+export interface UnsafeSubmoduleState {
+	path: string;
+	kind: "dirty-worktree" | "unpublished-commit";
+	headCommit?: string;
+	indexCommit?: string;
+	remoteName?: string;
+}
+
+export interface UnreachableGitlinkState {
+	path: string;
+	gitlinkCommit: string;
+	remoteName?: string;
 }
 
 
@@ -83,6 +99,27 @@ export function runGitWithEnv(
 			cwd,
 			stdio: ["pipe", "pipe", "pipe"],
 			env: { ...process.env, ...env },
+		}).trim();
+		return { ok: true, stdout, stderr: "" };
+	} catch (err: unknown) {
+		const e = err as { stdout?: string; stderr?: string; message?: string };
+		return {
+			ok: false,
+			stdout: (e.stdout ?? "").toString().trim(),
+			stderr: (e.stderr ?? e.message ?? "unknown error").toString().trim(),
+		};
+	}
+}
+
+function runGitWithDir(
+	gitDir: string,
+	args: string[],
+): { ok: boolean; stdout: string; stderr: string } {
+	try {
+		const stdout = execFileSync("git", ["--git-dir", gitDir, ...args], {
+			encoding: "utf-8",
+			timeout: 30_000,
+			stdio: ["pipe", "pipe", "pipe"],
 		}).trim();
 		return { ok: true, stdout, stderr: "" };
 	} catch (err: unknown) {
@@ -177,5 +214,169 @@ export function listSubmoduleStatus(cwd: string): GitSubmoduleStatus[] {
 		.filter((entry): entry is GitSubmoduleStatus => !!entry);
 
 	return statuses.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function readGitlinkCommit(cwd: string, submodulePath: string): string | null {
+	const result = runGit(["ls-files", "--stage", "--", submodulePath], cwd);
+	if (!result.ok || !result.stdout.trim()) return null;
+	const line = result.stdout.split(/\r?\n/).find(Boolean)?.trim();
+	const match = line?.match(/^160000\s+([0-9a-f]+)\s+\d+\t/i);
+	return match?.[1] ?? null;
+}
+
+function resolveSubmoduleGitDir(cwd: string, submodulePath: string): string | null {
+	const commonDirResult = runGit(["rev-parse", "--path-format=absolute", "--git-common-dir"], cwd);
+	if (!commonDirResult.ok || !commonDirResult.stdout.trim()) return null;
+	const gitDir = join(commonDirResult.stdout.trim(), "modules", ...submodulePath.split("/"));
+	return existsSync(gitDir) ? gitDir : null;
+}
+
+function ensureSubmoduleCheckout(cwd: string, submodulePath: string): void {
+	const absolutePath = join(cwd, submodulePath);
+	const repoCheck = existsSync(absolutePath)
+		? runGit(["rev-parse", "--is-inside-work-tree"], absolutePath)
+		: { ok: false, stdout: "", stderr: "" };
+	if (repoCheck.ok && repoCheck.stdout.trim() === "true") return;
+	runGit(["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--", submodulePath], cwd);
+}
+
+function resolvePreferredRemote(cwd: string): string | null {
+	const result = runGit(["remote"], cwd);
+	if (!result.ok || !result.stdout.trim()) return null;
+	const remotes = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+	if (remotes.includes("origin")) return "origin";
+	return remotes[0] ?? null;
+}
+
+function resolvePreferredRemoteFromGitDir(gitDir: string): string | null {
+	const result = runGitWithDir(gitDir, ["remote"]);
+	if (!result.ok || !result.stdout.trim()) return null;
+	const remotes = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+	if (remotes.includes("origin")) return "origin";
+	return remotes[0] ?? null;
+}
+
+function isCommitReachableOnRemote(cwd: string, remoteName: string, commit: string): boolean {
+	const refsResult = runGit(["ls-remote", remoteName, "refs/heads/*", "refs/tags/*"], cwd);
+	if (!refsResult.ok || !refsResult.stdout.trim()) return false;
+
+	const remoteTips = uniqueSorted(
+		refsResult.stdout
+			.split(/\r?\n/)
+			.map((line) => line.trim().split(/\s+/)[0] ?? "")
+			.filter((sha) => /^[0-9a-f]{40}$/i.test(sha)),
+	);
+
+	for (const tip of remoteTips) {
+		if (tip === commit) return true;
+		const ancestorResult = runGit(["merge-base", "--is-ancestor", commit, tip], cwd);
+		if (ancestorResult.ok) return true;
+	}
+
+	return false;
+}
+
+function isCommitReachableOnRemoteFromGitDir(gitDir: string, remoteName: string, commit: string): boolean {
+	const refsResult = runGitWithDir(gitDir, ["ls-remote", remoteName, "refs/heads/*", "refs/tags/*"]);
+	if (!refsResult.ok || !refsResult.stdout.trim()) return false;
+
+	const remoteTips = uniqueSorted(
+		refsResult.stdout
+			.split(/\r?\n/)
+			.map((line) => line.trim().split(/\s+/)[0] ?? "")
+			.filter((sha) => /^[0-9a-f]{40}$/i.test(sha)),
+	);
+
+	for (const tip of remoteTips) {
+		if (tip === commit) return true;
+		const ancestorResult = runGitWithDir(gitDir, ["merge-base", "--is-ancestor", commit, tip]);
+		if (ancestorResult.ok) return true;
+	}
+
+	return false;
+}
+
+/**
+ * Detect submodule states that cannot be safely checkpointed in the superproject.
+ *
+ * Blocking cases:
+ * - submodule worktree still has uncommitted changes
+ * - submodule HEAD differs from the recorded gitlink commit, but that HEAD is
+ *   not reachable from the submodule's preferred remote
+ */
+export function detectUnsafeSubmoduleStates(cwd: string): UnsafeSubmoduleState[] {
+	const submodulePaths = uniqueSorted([
+		...listGitlinkPaths(cwd),
+		...listConfiguredSubmodulePaths(cwd),
+	]);
+	const findings: UnsafeSubmoduleState[] = [];
+
+	for (const submodulePath of submodulePaths) {
+		const absolutePath = join(cwd, submodulePath);
+		if (!existsSync(absolutePath)) continue;
+
+		const dirtyStatus = runGit(["status", "--porcelain"], absolutePath);
+		if (dirtyStatus.ok && dirtyStatus.stdout.trim()) {
+			findings.push({
+				path: submodulePath,
+				kind: "dirty-worktree",
+			});
+			continue;
+		}
+
+		const headResult = runGit(["rev-parse", "HEAD"], absolutePath);
+		if (!headResult.ok || !headResult.stdout.trim()) continue;
+		const headCommit = headResult.stdout.trim();
+		const indexCommit = readGitlinkCommit(cwd, submodulePath);
+		if (!indexCommit || indexCommit === headCommit) continue;
+
+		const remoteName = resolvePreferredRemote(absolutePath);
+		if (!remoteName || !isCommitReachableOnRemote(absolutePath, remoteName, headCommit)) {
+			findings.push({
+				path: submodulePath,
+				kind: "unpublished-commit",
+				headCommit,
+				indexCommit,
+				...(remoteName ? { remoteName } : {}),
+			});
+		}
+	}
+
+	return findings.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+/**
+ * Detect gitlinks in the current superproject index whose target commit is not
+ * reachable from the submodule's preferred remote.
+ *
+ * Used as a merge-time backstop: even if an unsafe submodule gitlink reaches the
+ * merge worktree via a legacy or manual path, Taskplane can still refuse to
+ * advance the branch to a commit that downstream clones cannot fetch.
+ */
+export function detectUnreachableGitlinks(cwd: string): UnreachableGitlinkState[] {
+	const findings: UnreachableGitlinkState[] = [];
+	for (const submodulePath of listGitlinkPaths(cwd)) {
+		const gitlinkCommit = readGitlinkCommit(cwd, submodulePath);
+		if (!gitlinkCommit) continue;
+		ensureSubmoduleCheckout(cwd, submodulePath);
+		const absolutePath = join(cwd, submodulePath);
+		const remoteName = existsSync(absolutePath) ? resolvePreferredRemote(absolutePath) : null;
+		const submoduleGitDir = resolveSubmoduleGitDir(cwd, submodulePath);
+		const gitDirRemoteName = submoduleGitDir ? resolvePreferredRemoteFromGitDir(submoduleGitDir) : null;
+		const resolvedRemoteName = remoteName ?? gitDirRemoteName;
+		const reachable = remoteName
+			? isCommitReachableOnRemote(absolutePath, remoteName, gitlinkCommit)
+			: (submoduleGitDir && gitDirRemoteName
+				? isCommitReachableOnRemoteFromGitDir(submoduleGitDir, gitDirRemoteName, gitlinkCommit)
+				: false);
+		if (!resolvedRemoteName || !reachable) {
+			findings.push({
+				path: submodulePath,
+				gitlinkCommit,
+				...(resolvedRemoteName ? { remoteName: resolvedRemoteName } : {}),
+			});
+		}
+	}
+	return findings.sort((left, right) => left.path.localeCompare(right.path));
 }
 

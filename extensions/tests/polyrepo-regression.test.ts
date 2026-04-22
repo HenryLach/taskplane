@@ -1075,6 +1075,82 @@ describe("7.x: Repo-aware persisted state — validation and upconversion", () =
 		expect((ap001Task.task as any)?.resolvedRepoIds).toEqual(["api", "shared"]);
 	});
 
+	it("7.1c: serialize + validate + reconstruct preserve explicit segment metadata for resumed frontier lanes", () => {
+		const state = freshOrchBatchState("20260422T160000", "main", 1, "workspace", "orch/test");
+		state.phase = "paused";
+
+		const task: ParsedTask = {
+			taskId: "SEG-001",
+			taskName: "Task SEG-001",
+			reviewLevel: 1,
+			size: "M",
+			dependencies: [],
+			fileScope: [],
+			taskFolder: "/workspace/tasks/SEG-001",
+			promptPath: "/workspace/tasks/SEG-001/PROMPT.md",
+			areaName: "default",
+			status: "pending",
+			promptRepoIds: ["api", "frontend"],
+			resolvedRepoIds: ["api", "frontend"],
+			resolvedRepoId: "api",
+			segmentIds: ["SEG-001::api", "SEG-001::frontend"],
+			activeSegmentId: "SEG-001::frontend",
+			explicitSegmentDag: {
+				repoIds: ["api", "frontend"],
+				edges: [{ fromRepoId: "api", toRepoId: "frontend" }],
+			},
+			stepSegmentMap: [
+				{
+					stepNumber: 1,
+					stepName: "Wire API",
+					segments: [{ repoId: "api", checkboxes: ["Add endpoint"] }],
+				},
+				{
+					stepNumber: 2,
+					stepName: "Hook UI",
+					segments: [{ repoId: "frontend", checkboxes: ["Connect form"] }],
+				},
+			],
+		};
+
+		const allocated: AllocatedLane[] = [{
+			laneNumber: 1,
+			laneId: "api/lane-1",
+			laneSessionId: "orch-op-api-lane-1",
+			worktreePath: "/tmp/taskplane-wt-1-api",
+			branch: "task/op-api-lane-1-20260422T160000",
+			repoId: "api",
+			repoWorktrees: {
+				api: { path: "/tmp/taskplane-wt-1-api", branch: "task/op-api-lane-1-20260422T160000", laneNumber: 1, repoId: "api" },
+				frontend: { path: "/tmp/taskplane-wt-1-frontend", branch: "task/op-api-lane-1-20260422T160000", laneNumber: 1, repoId: "frontend" },
+			},
+			tasks: [{ taskId: "SEG-001", order: 0, task, estimatedMinutes: 5 }],
+			strategy: "affinity-first",
+			estimatedLoad: 1,
+			estimatedMinutes: 5,
+		}];
+
+		const outcomes: LaneTaskOutcome[] = [{
+			taskId: "SEG-001",
+			status: "running",
+			startTime: Date.now() - 5_000,
+			endTime: null,
+			exitReason: "",
+			sessionName: "orch-op-api-lane-1",
+			doneFileFound: false,
+		}];
+
+		const json = serializeBatchState(state, [["SEG-001"]], allocated, outcomes);
+		const validated = validatePersistedState(JSON.parse(json));
+		const lanes = reconstructAllocatedLanes(validated.lanes, validated.tasks);
+		const resumedTask = lanes[0].tasks[0].task as ParsedTask;
+
+		expect(resumedTask.explicitSegmentDag).toEqual(task.explicitSegmentDag);
+		expect(resumedTask.stepSegmentMap).toEqual(task.stepSegmentMap);
+		expect(resumedTask.segmentIds).toEqual(task.segmentIds);
+		expect(resumedTask.activeSegmentId).toBe("SEG-001::frontend");
+	});
+
 	it("7.2: v1→v2 upconversion adds mode=repo and preserves fields", () => {
 		const v1State: Record<string, unknown> = {
 			schemaVersion: 1,

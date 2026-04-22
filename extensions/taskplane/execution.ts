@@ -13,7 +13,7 @@ import { resolvePacketPaths, buildRuntimeAgentId } from "./types.ts";
 import { readRegistrySnapshot, readLaneSnapshot, isTerminalStatus, isProcessAlive, detectOrphans, markOrphansCrashed, buildRegistrySnapshot, writeRegistrySnapshot } from "./process-registry.ts";
 import { allocateLanes } from "./waves.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { runGit, runGitWithEnv } from "./git.ts";
+import { detectUnsafeSubmoduleStates, runGit, runGitWithEnv } from "./git.ts";
 import { resolveTaskplanePackageFile, resolveTaskplaneAgentTemplate } from "./path-resolver.ts";
 import { resolvePointer, loadWorkspaceConfig } from "./workspace.ts";
 
@@ -572,6 +572,26 @@ function commitTaskArtifacts(
 	if (!statusResult.ok || !statusResult.stdout.trim()) {
 		// Nothing to commit (worker already committed everything, or git error)
 		return;
+	}
+
+	const unsafeSubmodules = detectUnsafeSubmoduleStates(worktreePath);
+	if (unsafeSubmodules.length > 0) {
+		const summary = unsafeSubmodules
+			.slice(0, 3)
+			.map((finding) =>
+				finding.kind === "dirty-worktree"
+					? `${finding.path} has uncommitted submodule changes`
+					: `${finding.path} points to local commit ${finding.headCommit?.slice(0, 8)} not reachable on ${finding.remoteName ?? "any remote"}`,
+			)
+			.join("; ");
+		const remainder = unsafeSubmodules.length > 3
+			? ` (+${unsafeSubmodules.length - 3} more)`
+			: "";
+		const message =
+			`Unsafe submodule state after task success: ${summary}${remainder}. ` +
+			`Taskplane refused to checkpoint a superproject gitlink that could lose or orphan submodule work.`;
+		execLog(laneId, task.taskId, message);
+		throw new Error(message);
 	}
 
 	// Stage all changes in the worktree
@@ -2746,22 +2766,30 @@ export async function executeLaneV2(
 
 		try {
 			const result = await executeTaskV2(unit, laneRunnerConfig, pauseSignal);
-			outcomes.push({
+			const outcome: LaneTaskOutcome = {
 				...result.outcome,
 				laneNumber: result.outcome.laneNumber ?? lane.laneNumber,
-			});
+			};
 
 			// Commit artifacts after success (same as legacy path)
-			if (result.outcome.status === "succeeded") {
-				commitTaskArtifacts(lane, task, laneId);
-				// Reset worktree for next task
-				if (lane.tasks.indexOf(task) < lane.tasks.length - 1) {
-					runGit(["checkout", "--", "."], lane.worktreePath);
-					runGit(["clean", "-fd"], lane.worktreePath);
+			if (outcome.status === "succeeded") {
+				try {
+					commitTaskArtifacts(lane, task, laneId);
+					// Reset worktree for next task
+					if (lane.tasks.indexOf(task) < lane.tasks.length - 1) {
+						runGit(["checkout", "--", "."], lane.worktreePath);
+						runGit(["clean", "-fd"], lane.worktreePath);
+					}
+				} catch (err: unknown) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					outcome.status = "failed";
+					outcome.exitReason = errMsg;
 				}
 			}
 
-			if (result.outcome.status === "failed" || result.outcome.status === "stalled") {
+			outcomes.push(outcome);
+
+			if (outcome.status === "failed" || outcome.status === "stalled") {
 				shouldSkipRemaining = true;
 			}
 		} catch (err: unknown) {

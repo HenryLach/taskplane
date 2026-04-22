@@ -413,6 +413,76 @@ describe("TP-135 resume segment fallback behavior", () => {
 		expect(point.pendingTaskIds).toContain("TP-050");
 	});
 
+	it("reconstructs inferred continuation rounds from segments when task.segmentIds is missing", () => {
+		const state = makeState({
+			wavePlan: [["TP-080"]],
+			totalWaves: 1,
+			mergeResults: [{ waveIndex: 0, status: "succeeded" }] as any,
+			tasks: [{
+				taskId: "TP-080",
+				laneNumber: 1,
+				sessionName: "",
+				status: "pending",
+				taskFolder: "/tmp/tasks/TP-080",
+				startedAt: null,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+				activeSegmentId: null,
+			}],
+			segments: [
+				makeSegment({ taskId: "TP-080", segmentId: "TP-080::api", status: "succeeded", endedAt: Date.now() - 100 }),
+				makeSegment({ taskId: "TP-080", segmentId: "TP-080::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-080::api"] }),
+				makeSegment({ taskId: "TP-080", segmentId: "TP-080::docs", repoId: "docs", status: "pending", dependsOnSegmentIds: ["TP-080::web"] }),
+			],
+		});
+
+		const frontier = reconstructSegmentFrontier(state);
+		expect(state.tasks[0].segmentIds).toEqual(["TP-080::api", "TP-080::web", "TP-080::docs"]);
+		expect(state.tasks[0].activeSegmentId).toBe("TP-080::web");
+		expect(frontier.get("TP-080")!.pendingSegmentIds).toEqual(["TP-080::web", "TP-080::docs"]);
+
+		const runtimeWavePlan = buildResumeRuntimeWavePlan(state);
+		expect(runtimeWavePlan).toEqual([["TP-080"], ["TP-080"], ["TP-080"]]);
+
+		const reconciled = reconcileTaskStates(state, new Set(), new Set(), new Set(["TP-080"]));
+		const point = computeResumePoint(state, reconciled, runtimeWavePlan);
+		expect(point.resumeWaveIndex).toBe(1);
+		expect(point.pendingTaskIds).toContain("TP-080");
+	});
+
+	it("computeResumePoint honors degraded persisted segments even before frontier reconstruction", () => {
+		const state = makeState({
+			wavePlan: [["TP-081"], ["TP-081"]],
+			totalWaves: 2,
+			mergeResults: [{ waveIndex: 0, status: "succeeded" }] as any,
+			tasks: [{
+				taskId: "TP-081",
+				laneNumber: 1,
+				sessionName: "",
+				status: "succeeded",
+				taskFolder: "/tmp/tasks/TP-081",
+				startedAt: Date.now() - 1000,
+				endedAt: Date.now() - 100,
+				doneFileFound: false,
+				exitReason: "",
+				activeSegmentId: null,
+			}],
+			segments: [
+				makeSegment({ taskId: "TP-081", segmentId: "TP-081::api", status: "succeeded", endedAt: Date.now() - 200 }),
+				makeSegment({ taskId: "TP-081", segmentId: "TP-081::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-081::api"] }),
+			],
+		});
+
+		const reconciled = reconcileTaskStates(state, new Set(), new Set(), new Set(["TP-081"]));
+		const runtimeWavePlan = buildResumeRuntimeWavePlan(state);
+		const point = computeResumePoint(state, reconciled, runtimeWavePlan);
+
+		expect(runtimeWavePlan).toEqual([["TP-081"], ["TP-081"]]);
+		expect(point.resumeWaveIndex).toBe(1);
+		expect(point.pendingTaskIds).toEqual(["TP-081"]);
+	});
+
 	it("resume wave-plan expansion groups continuation rounds for multi-task wave parity", () => {
 		const state = makeState({
 			wavePlan: [["TP-060", "TP-061"], ["TP-062"]],

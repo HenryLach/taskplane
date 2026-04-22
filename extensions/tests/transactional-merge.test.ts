@@ -227,6 +227,22 @@ describe("2.x — Rollback: verification_new_failure triggers rollback", () => {
 		expect(successRollbackSection).not.toContain("blockAdvancement = true");
 	});
 
+	it("2.3b: merge.ts validates unreachable submodule gitlinks before branch advancement", () => {
+		const mergeSource = readSource("merge.ts");
+
+		expect(mergeSource).toContain("detectUnreachableGitlinks(mergeWorkDir)");
+		expect(mergeSource).toContain("post-merge submodule gitlink validation failed");
+		expect(mergeSource).toContain("Post-merge submodule gitlink validation failed in lane");
+	});
+
+	it("2.3c: unreachable submodule gitlink validation reuses rollback-to-preLaneHead", () => {
+		const mergeSource = readSource("merge.ts");
+
+		expect(mergeSource).toContain("rolling back temp branch after submodule gitlink validation failure");
+		expect(mergeSource).toContain('git", ["reset", "--hard", preLaneHead]');
+		expect(mergeSource).toContain('txnStatus = "rolled_back"');
+	});
+
 	it("2.4: lane error annotation includes verification_new_failure details", () => {
 		const mergeSource = readSource("merge.ts");
 

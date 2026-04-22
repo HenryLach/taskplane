@@ -15,7 +15,7 @@ import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, 
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { readManifest, writeManifest, buildRegistrySnapshot, writeRegistrySnapshot, readRegistrySnapshot, writeMergeSnapshot } from "./process-registry.ts";
 import { generateMergeWorktreePath, sleepAsync, sleepSync } from "./worktree.ts";
-import { getCurrentBranch, runGit } from "./git.ts";
+import { detectUnreachableGitlinks, getCurrentBranch, runGit } from "./git.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
 import { emitEngineEvent } from "./persistence.ts";
 import { loadOrchestratorConfig } from "./config.ts";
@@ -1862,6 +1862,70 @@ export async function mergeWave(
 			let txnRollbackAttempted = false;
 			let txnRollbackResult: string | null = null;
 			let txnRecoveryCommands: string[] = [];
+
+			// ── Post-merge submodule gitlink reachability validation ─────
+			// Defense in depth for issue #517: block branch advancement if the merged
+			// superproject points at submodule commits that are not reachable on the
+			// configured remote. This protects against legacy/manual paths that bypass
+			// Runtime V2 checkpoint safeguards.
+			if (
+				failedLane === null &&
+				(mergeResult.status === "SUCCESS" || mergeResult.status === "CONFLICT_RESOLVED")
+			) {
+				const unreachableGitlinks = detectUnreachableGitlinks(mergeWorkDir);
+				if (unreachableGitlinks.length > 0) {
+					const summary = unreachableGitlinks
+						.slice(0, 3)
+						.map((finding) => `${finding.path}@${finding.gitlinkCommit.slice(0, 8)} on ${finding.remoteName ?? "any remote"}`)
+						.join(", ");
+					execLog("merge", sessionName, "post-merge submodule gitlink validation failed", {
+						count: unreachableGitlinks.length,
+						summary,
+					});
+
+					laneResult.error = `submodule_unreachable_ref: ${summary}`;
+
+					if (preLaneHead) {
+						txnRollbackAttempted = true;
+						execLog("merge", sessionName, "rolling back temp branch after submodule gitlink validation failure", {
+							preLaneHead: preLaneHead.slice(0, 8),
+						});
+						const resetResult = spawnSync("git", ["reset", "--hard", preLaneHead], { cwd: mergeWorkDir });
+						if (resetResult.status === 0) {
+							txnStatus = "rolled_back";
+							txnRollbackResult = "success";
+						} else {
+							const resetErr = resetResult.stderr?.toString().trim() || "unknown error";
+							laneResult.error = `submodule_unreachable_ref: rollback reset failed (${resetErr}) — temp branch may contain unreachable gitlink refs`;
+							blockAdvancement = true;
+							txnStatus = "rollback_failed";
+							txnRollbackResult = `reset failed: ${resetErr}`;
+							txnRecoveryCommands = [
+								`# Recovery: manually reset merge worktree to pre-lane HEAD`,
+								`cd "${mergeWorkDir}"`,
+								`git reset --hard ${preLaneHead}`,
+								`# Then inspect submodule refs before re-running merge`,
+							];
+							rollbackFailed = true;
+						}
+					} else {
+						blockAdvancement = true;
+						txnStatus = "rollback_failed";
+						txnRollbackAttempted = false;
+						txnRollbackResult = "no baseHEAD captured — rollback impossible";
+						txnRecoveryCommands = [
+							`# Recovery: no baseHEAD was captured for rollback`,
+							`cd "${mergeWorkDir}"`,
+							`git log --oneline -5`,
+							`# Determine the correct pre-merge commit and reset manually`,
+						];
+						rollbackFailed = true;
+					}
+
+					failedLane = lane.laneNumber;
+					failureReason = `Post-merge submodule gitlink validation failed in lane ${lane.laneNumber}: ${summary}`;
+				}
+			}
 
 			// ── Orchestrator-side post-merge verification (TP-032) ──────
 			// After a successful merge (SUCCESS/CONFLICT_RESOLVED), capture

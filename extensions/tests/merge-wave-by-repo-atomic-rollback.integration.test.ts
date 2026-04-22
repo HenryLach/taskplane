@@ -41,7 +41,7 @@ const mockSpawnAgent = mock.fn((opts: Record<string, unknown>) => {
 	const resultFilePath = extractResultFile(prompt);
 
 	const result = (() => {
-		if (sourceBranch.includes("lane-api")) {
+		if (!sourceBranch.includes("lane-web")) {
 			git(cwd, ["merge", "--no-ff", "--no-edit", sourceBranch]);
 			const mergeCommit = git(cwd, ["rev-parse", "HEAD"]);
 			return {
@@ -120,6 +120,23 @@ function initRepo(name: string, taskId: string): string {
 	git(repoDir, ["add", "."]);
 	git(repoDir, ["commit", "-m", "initial commit"]);
 	return repoDir;
+}
+
+function initPlainRepo(repoDir: string): void {
+	mkdirSync(repoDir, { recursive: true });
+	git(repoDir, ["init", "--initial-branch=main"]);
+	git(repoDir, ["config", "user.email", "test@example.com"]);
+	git(repoDir, ["config", "user.name", "Taskplane Test"]);
+}
+
+function commitAll(repoDir: string, message: string): void {
+	git(repoDir, ["add", "."]);
+	git(repoDir, ["commit", "-m", message]);
+}
+
+function addSubmodule(superRepo: string, subRepo: string, submodulePath: string): void {
+	git(superRepo, ["-c", "protocol.file.allow=always", "submodule", "add", subRepo, submodulePath]);
+	commitAll(superRepo, `add ${submodulePath}`);
 }
 
 function createLaneBranch(repoDir: string, branchName: string, relPath: string, content: string): string {
@@ -294,5 +311,207 @@ describe("mergeWaveByRepo cross-repo atomic rollback", () => {
 		expect(persistedApiTxn.status).toBe("rolled_back");
 		expect(persistedApiTxn.rollbackAttempted).toBe(true);
 		expect(result.persistenceErrors).toBeUndefined();
+	});
+
+	it("merges a published submodule gitlink update without tripping the safety guard", async () => {
+		const repo = initRepo("submodule-host", "TP-710");
+		const submoduleOrigin = join(fixtureRoot, "submodule-origin");
+		initPlainRepo(submoduleOrigin);
+		git(submoduleOrigin, ["config", "receive.denyCurrentBranch", "updateInstead"]);
+		writeFileSync(join(submoduleOrigin, "lib.txt"), "base\n", "utf-8");
+		commitAll(submoduleOrigin, "initial submodule commit");
+
+		addSubmodule(repo, submoduleOrigin, "libs/my_lib");
+		git(join(repo, "libs", "my_lib"), ["config", "user.email", "test@example.com"]);
+		git(join(repo, "libs", "my_lib"), ["config", "user.name", "Taskplane Test"]);
+
+		const initialHead = git(repo, ["rev-parse", "refs/heads/main"]);
+
+		git(repo, ["checkout", "-b", "task/lane-submodule"]);
+		writeFileSync(join(repo, "libs", "my_lib", "lib.txt"), "base\npublished change\n", "utf-8");
+		git(join(repo, "libs", "my_lib"), ["add", "lib.txt"]);
+		git(join(repo, "libs", "my_lib"), ["commit", "-m", "published submodule commit"]);
+		const publishedCommit = git(join(repo, "libs", "my_lib"), ["rev-parse", "HEAD"]);
+		git(join(repo, "libs", "my_lib"), ["push", "origin", "HEAD:main"]);
+		git(repo, ["add", "libs/my_lib"]);
+		git(repo, ["commit", "-m", "advance submodule gitlink"]);
+		git(repo, ["checkout", "main"]);
+		git(repo, ["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--recursive"]);
+
+		const allocatedLanes = [
+			makeLane(1, "submodule", repo, "task/lane-submodule", "TP-710"),
+		];
+
+		const waveResult = {
+			waveIndex: 0,
+			startedAt: Date.now(),
+			endedAt: Date.now(),
+			laneResults: [
+				{ laneNumber: 1, laneId: "submodule/lane-1", tasks: [{ taskId: "TP-710", status: "succeeded" }], overallStatus: "succeeded", startTime: Date.now(), endTime: Date.now() },
+			],
+			policyApplied: "skip-dependents",
+			stoppedEarly: false,
+			failedTaskIds: [],
+			skippedTaskIds: [],
+			succeededTaskIds: ["TP-710"],
+			blockedTaskIds: [],
+			laneCount: 1,
+			overallStatus: "succeeded",
+			finalMonitorState: null,
+			allocatedLanes,
+		} as any;
+
+		const workspaceConfig = {
+			repos: new Map([
+				["submodule", { path: repo }],
+			]),
+		} as any;
+
+		const config = {
+			...DEFAULT_ORCHESTRATOR_CONFIG,
+			merge: {
+				...DEFAULT_ORCHESTRATOR_CONFIG.merge,
+				verify: [],
+			},
+			verification: {
+				...DEFAULT_ORCHESTRATOR_CONFIG.verification,
+				enabled: false,
+			},
+		};
+
+		const result = await mergeWaveByRepo(
+			allocatedLanes as any,
+			waveResult,
+			0,
+			config,
+			repo,
+			"20260422T130000",
+			"main",
+			workspaceConfig,
+			fixtureRoot,
+			fixtureRoot,
+			undefined,
+			null,
+			false,
+			"v2",
+		);
+
+		expect(result.status).toBe("succeeded");
+		expect(result.failureReason).toBeNull();
+		expect(result.repoResults).toHaveLength(1);
+		expect(result.repoResults[0].status).toBe("succeeded");
+
+		const transactionRecords = result.transactionRecords ?? [];
+		expect(transactionRecords).toHaveLength(1);
+		expect(transactionRecords[0].status).toBe("committed");
+
+		const currentHead = git(repo, ["rev-parse", "refs/heads/main"]);
+		expect(currentHead).not.toBe(initialHead);
+
+		const mergedGitlink = git(repo, ["rev-parse", "refs/heads/main:libs/my_lib"]);
+		expect(mergedGitlink).toBe(publishedCommit);
+	});
+
+	it("rolls back an unpublished submodule gitlink update after merge-time validation fails", async () => {
+		const repo = initRepo("submodule-host-unpublished", "TP-711");
+		const submoduleOrigin = join(fixtureRoot, "submodule-origin-unpublished");
+		initPlainRepo(submoduleOrigin);
+		git(submoduleOrigin, ["config", "receive.denyCurrentBranch", "updateInstead"]);
+		writeFileSync(join(submoduleOrigin, "lib.txt"), "base\n", "utf-8");
+		commitAll(submoduleOrigin, "initial submodule commit");
+
+		addSubmodule(repo, submoduleOrigin, "libs/my_lib");
+		git(join(repo, "libs", "my_lib"), ["config", "user.email", "test@example.com"]);
+		git(join(repo, "libs", "my_lib"), ["config", "user.name", "Taskplane Test"]);
+
+		const initialHead = git(repo, ["rev-parse", "refs/heads/main"]);
+		const initialGitlink = git(repo, ["rev-parse", "refs/heads/main:libs/my_lib"]);
+
+		git(repo, ["checkout", "-b", "task/lane-submodule-unpublished"]);
+		writeFileSync(join(repo, "libs", "my_lib", "lib.txt"), "base\nunpublished change\n", "utf-8");
+		git(join(repo, "libs", "my_lib"), ["add", "lib.txt"]);
+		git(join(repo, "libs", "my_lib"), ["commit", "-m", "unpublished submodule commit"]);
+		const unpublishedCommit = git(join(repo, "libs", "my_lib"), ["rev-parse", "HEAD"]);
+		git(repo, ["add", "libs/my_lib"]);
+		git(repo, ["commit", "-m", "advance unpublished submodule gitlink"]);
+		git(repo, ["checkout", "main"]);
+		git(repo, ["-c", "protocol.file.allow=always", "submodule", "update", "--init", "--recursive"]);
+
+		const allocatedLanes = [
+			makeLane(1, "submodule", repo, "task/lane-submodule-unpublished", "TP-711"),
+		];
+
+		const waveResult = {
+			waveIndex: 0,
+			startedAt: Date.now(),
+			endedAt: Date.now(),
+			laneResults: [
+				{ laneNumber: 1, laneId: "submodule/lane-1", tasks: [{ taskId: "TP-711", status: "succeeded" }], overallStatus: "succeeded", startTime: Date.now(), endTime: Date.now() },
+			],
+			policyApplied: "skip-dependents",
+			stoppedEarly: false,
+			failedTaskIds: [],
+			skippedTaskIds: [],
+			succeededTaskIds: ["TP-711"],
+			blockedTaskIds: [],
+			laneCount: 1,
+			overallStatus: "succeeded",
+			finalMonitorState: null,
+			allocatedLanes,
+		} as any;
+
+		const workspaceConfig = {
+			repos: new Map([
+				["submodule", { path: repo }],
+			]),
+		} as any;
+
+		const config = {
+			...DEFAULT_ORCHESTRATOR_CONFIG,
+			merge: {
+				...DEFAULT_ORCHESTRATOR_CONFIG.merge,
+				verify: [],
+			},
+			verification: {
+				...DEFAULT_ORCHESTRATOR_CONFIG.verification,
+				enabled: false,
+			},
+		};
+
+		const result = await mergeWaveByRepo(
+			allocatedLanes as any,
+			waveResult,
+			0,
+			config,
+			repo,
+			"20260422T131000",
+			"main",
+			workspaceConfig,
+			fixtureRoot,
+			fixtureRoot,
+			undefined,
+			null,
+			false,
+			"v2",
+		);
+
+		expect(result.status).toBe("failed");
+		expect(result.failureReason).toContain("Post-merge submodule gitlink validation failed");
+		expect(result.repoResults).toHaveLength(1);
+		expect(result.repoResults[0].status).toBe("failed");
+		expect(result.repoResults[0].failureReason).toContain("Post-merge submodule gitlink validation failed");
+
+		const transactionRecords = result.transactionRecords ?? [];
+		expect(transactionRecords).toHaveLength(1);
+		expect(transactionRecords[0].status).toBe("rolled_back");
+		expect(transactionRecords[0].rollbackAttempted).toBe(true);
+		expect(transactionRecords[0].rollbackResult).toBe("success");
+
+		const currentHead = git(repo, ["rev-parse", "refs/heads/main"]);
+		expect(currentHead).toBe(initialHead);
+
+		const currentGitlink = git(repo, ["rev-parse", "refs/heads/main:libs/my_lib"]);
+		expect(currentGitlink).toBe(initialGitlink);
+		expect(currentGitlink).not.toBe(unpublishedCommit);
 	});
 });
