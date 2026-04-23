@@ -464,7 +464,17 @@ function isArtifactStatusLine(line: string, submodulePaths: Set<string>): boolea
 		// During checkpointing, the parent repo's index update bleeds into every
 		// shared-worktree submodule as "M <other-submodule-path>" — this is an
 		// expected transient artifact, not real code changes inside that submodule.
-		submodulePaths.has(filePath)
+		submodulePaths.has(filePath) ||
+		// Transient Python build artifacts — these are created by Python tooling
+		// during task execution and should not block checkpointing.
+		filePath.includes("__pycache__") ||
+		filePath.includes(".pytest_cache") ||
+		filePath.includes(".mypy_cache") ||
+		filePath.includes("node_modules") ||
+		filePath.includes("build/") ||
+		filePath.includes("dist/") ||
+		filePath.endsWith(".pyc") ||
+		filePath.endsWith(".egg-info")
 	);
 }
 
