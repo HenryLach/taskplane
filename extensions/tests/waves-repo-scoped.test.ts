@@ -17,10 +17,15 @@
 // Import the functions under test directly from waves.ts
 import { describe, it } from "node:test";
 import { expect } from "./expect.ts";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
 	resolveRepoRoot,
 	resolveBaseBranch,
 	groupTasksByRepo,
+	allocateLanes,
 	generateLaneId,
 	generateLaneSessionId,
 	buildDependencyGraph,
@@ -50,6 +55,7 @@ function makeWorkspaceConfig(repos: Record<string, { path: string; defaultBranch
 		routing: {
 			tasksRoot: "/workspace/tasks",
 			defaultRepo: Object.keys(repos)[0] || "default",
+			taskPacketRepo: Object.keys(repos)[0] || "default",
 		},
 		configPath: "/workspace/.pi/taskplane-workspace.yaml",
 	};
@@ -59,10 +65,13 @@ function makeParsedTask(
 	taskId: string,
 	opts?: {
 		resolvedRepoId?: string;
+		resolvedRepoIds?: string[];
+		participatingRepoIds?: string[];
 		size?: string;
 		dependencies?: string[];
 		fileScope?: string[];
 		explicitSegmentDag?: ParsedTask["explicitSegmentDag"];
+		activeSegmentId?: string | null;
 	},
 ): ParsedTask {
 	return {
@@ -77,7 +86,41 @@ function makeParsedTask(
 		areaName: "default",
 		status: "pending",
 		resolvedRepoId: opts?.resolvedRepoId,
+		resolvedRepoIds: opts?.resolvedRepoIds,
+		participatingRepoIds: opts?.participatingRepoIds,
 		explicitSegmentDag: opts?.explicitSegmentDag,
+		activeSegmentId: opts?.activeSegmentId,
+	};
+}
+
+function makeConfig(): import("../taskplane/types.ts").OrchestratorConfig {
+	return {
+		orchestrator: {
+			max_lanes: 4,
+			worktree_location: "sibling",
+			worktree_prefix: "orch",
+			batch_id_format: "timestamp",
+			spawn_mode: "subprocess",
+			sessionPrefix: "orch",
+			operator_id: "testop",
+			integration: "manual",
+			submodule_repo_id_strategy: "path-basename",
+		},
+		dependencies: { source: "prompt", cache: true },
+		assignment: { strategy: "affinity-first", size_weights: { S: 1, M: 2, L: 4 } },
+		pre_warm: { auto_detect: false, commands: {}, always: [] },
+		merge: { model: "", tools: "", thinking: "", verify: [], order: "fewest-files-first", timeout_minutes: 10 },
+		failure: {
+			on_task_failure: "skip-dependents",
+			on_merge_failure: "pause",
+			submodule_failure_mode: "permissive",
+			on_submodule_drift: "manual",
+			stall_timeout: 30,
+			max_worker_minutes: 30,
+			abort_grace_period: 30,
+		},
+		monitoring: { poll_interval: 5 },
+		verification: { enabled: false, mode: "permissive", flaky_reruns: 0 },
 	};
 }
 
@@ -178,6 +221,50 @@ describe("groupTasksByRepo", () => {
 		expect(groups[1].taskIds).toEqual(["T-002"]);
 	});
 
+	it("keeps unsplit multi-repo tasks on a dedicated lane-planning contract", () => {
+		const pending = new Map<string, ParsedTask>([
+			[
+				"T-001",
+				makeParsedTask("T-001", {
+					resolvedRepoId: "api",
+					resolvedRepoIds: ["api", "web"],
+				}),
+			],
+			["T-002", makeParsedTask("T-002", { resolvedRepoId: "api" })],
+			["T-003", makeParsedTask("T-003", { resolvedRepoId: "web" })],
+		]);
+
+		const groups = groupTasksByRepo(["T-001", "T-002", "T-003"], pending);
+		expect(groups).toHaveLength(3);
+		expect(groups.map((group) => `${group.repoId ?? "default"}:${group.taskIds.join(",")}`)).toEqual([
+			"api:T-002",
+			"api:T-001",
+			"web:T-003",
+		]);
+		expect(groups[1].repoIds).toEqual(["api", "web"]);
+	});
+
+	it("uses the active segment repo as the grouping key for segment-frontier rounds", () => {
+		const pending = new Map<string, ParsedTask>([
+			[
+				"T-001",
+				makeParsedTask("T-001", {
+					resolvedRepoId: "web",
+					resolvedRepoIds: ["api", "web", "docs"],
+					participatingRepoIds: ["api", "web", "docs"],
+					activeSegmentId: "T-001::web",
+				}),
+			],
+			["T-002", makeParsedTask("T-002", { resolvedRepoId: "web" })],
+		]);
+
+		const groups = groupTasksByRepo(["T-001", "T-002"], pending);
+		expect(groups).toHaveLength(1);
+		expect(groups[0].repoId).toBe("web");
+		expect(groups[0].repoIds).toEqual(["web"]);
+		expect(groups[0].taskIds).toEqual(["T-001", "T-002"]);
+	});
+
 	it("sorts tasks within each group alphabetically", () => {
 		const pending = new Map<string, ParsedTask>([
 			["Z-001", makeParsedTask("Z-001", { resolvedRepoId: "api" })],
@@ -210,6 +297,71 @@ describe("groupTasksByRepo", () => {
 		const pending = new Map<string, ParsedTask>();
 		const groups = groupTasksByRepo([], pending);
 		expect(groups).toEqual([]);
+	});
+});
+
+describe("allocateLanes", () => {
+	it("keeps a multi-repo task on one lane contract while singleton repo tasks parallelize separately", () => {
+		const workspaceRoot = mkdtempSync(join(tmpdir(), "taskplane-waves-"));
+		const initRepo = (repoId: string): string => {
+			const repoRoot = join(workspaceRoot, repoId);
+			mkdirSync(repoRoot, { recursive: true });
+			writeFileSync(join(repoRoot, "README.md"), `# ${repoId}\n`, "utf-8");
+			spawnSync("git", ["init", "--initial-branch=main"], { cwd: repoRoot, encoding: "utf-8" });
+			spawnSync("git", ["add", "README.md"], { cwd: repoRoot, encoding: "utf-8" });
+			spawnSync(
+				"git",
+				["-c", "user.name=Taskplane Test", "-c", "user.email=taskplane@example.com", "commit", "-m", "init"],
+				{ cwd: repoRoot, encoding: "utf-8" },
+			);
+			return repoRoot;
+		};
+
+		const apiRoot = initRepo("api");
+		const webRoot = initRepo("web");
+
+		try {
+		const pending = new Map<string, ParsedTask>([
+			[
+				"T-001",
+				makeParsedTask("T-001", {
+					resolvedRepoId: "api",
+					resolvedRepoIds: ["api", "web"],
+				}),
+			],
+			["T-002", makeParsedTask("T-002", { resolvedRepoId: "api" })],
+			["T-003", makeParsedTask("T-003", { resolvedRepoId: "web" })],
+		]);
+
+		const result = allocateLanes(
+			["T-001", "T-002", "T-003"],
+			pending,
+			makeConfig(),
+			workspaceRoot,
+			"batch-001",
+			"main",
+			makeWorkspaceConfig({
+				api: { path: apiRoot, defaultBranch: "main" },
+				web: { path: webRoot, defaultBranch: "main" },
+			}),
+		);
+
+		expect(result.success).toBe(true);
+		expect(result.lanes).toHaveLength(3);
+		expect(result.lanes.map((lane) => ({ repoId: lane.repoId, taskIds: lane.tasks.map((task) => task.taskId) }))).toEqual([
+			{ repoId: "api", taskIds: ["T-002"] },
+			{ repoId: "api", taskIds: ["T-001"] },
+			{ repoId: "web", taskIds: ["T-003"] },
+		]);
+
+		const multiRepoLane = result.lanes.find((lane) => lane.tasks.some((task) => task.taskId === "T-001"));
+		expect(multiRepoLane).toBeDefined();
+		expect(Object.keys(multiRepoLane!.repoWorktrees || {}).sort()).toEqual(["api", "web"]);
+		expect(multiRepoLane!.repoWorktrees?.api?.path).toBe(multiRepoLane!.worktreePath);
+		expect(multiRepoLane!.repoWorktrees?.web?.path.includes("lane-2")).toBe(true);
+		} finally {
+			rmSync(workspaceRoot, { recursive: true, force: true });
+		}
 	});
 });
 

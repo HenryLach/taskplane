@@ -10,7 +10,7 @@
     "allowImportingTsExtensions": true,
     "noImplicitAny": false,
     "typeRoots": ["../web/node_modules/@types"],
-    "baseUrl": "."
+    "baseUrl": ".",
   },
   "include": ["task-orchestrator.ts"],
   "exclude": ["tests"]

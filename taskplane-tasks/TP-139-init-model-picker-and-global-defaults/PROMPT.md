@@ -48,6 +48,15 @@ Currently `taskplane init` does not offer model selection — users must manuall
 - **Workspace:** `bin/taskplane.mjs`, `extensions/taskplane/config-loader.ts`
 - **Services required:** None
 
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## File Scope
 
 - `bin/taskplane.mjs`

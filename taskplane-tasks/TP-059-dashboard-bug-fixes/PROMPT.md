@@ -45,6 +45,15 @@ Fix three small dashboard/formatting bugs discovered during the v0.12.0–v0.14.
 - **Workspace:** `extensions/`, `dashboard/`
 - **Services required:** None
 
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## File Scope
 
 - `extensions/taskplane/formatting.ts`

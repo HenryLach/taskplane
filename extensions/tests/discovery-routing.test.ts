@@ -6,8 +6,8 @@
  *
  * Test categories:
  *   1.x — Prompt with no execution target (backward compat)
- *   2.x — Section-based `## Execution Target` with `Repo:` line
- *   3.x — Inline `**Repo:** <id>` declaration
+ *   2.x — Section-based `## Execution Target` with `Repo:` or `Repos:` line
+ *   3.x — Inline `**Repo:** <id>` or `**Repos:** ...` declaration
  *   4.x — Whitespace/case/markdown decoration variants
  *   5.x — Both section + inline present (section wins)
  *   6.x — Invalid repo ID format (non-matching = undefined)
@@ -220,6 +220,53 @@ Repo: my-cool-service-2
 		expect(result.error).toBeNull();
 		expect(result.task!.promptRepoId).toBe("my-cool-service-2");
 	});
+
+	it("2.5: parses ordered repo list from Repos: line", () => {
+		const dir = makeTestDir("section-repos");
+		const content = minimalPrompt(`
+## Execution Target
+
+Repos: dashboard, administration
+`);
+		const promptPath = writePrompt(dir, content);
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+
+		expect(result.error).toBeNull();
+		expect(result.task!.promptRepoId).toBe("dashboard");
+		expect(result.task!.promptRepoIds).toEqual(["dashboard", "administration"]);
+	});
+
+	it("2.6: normalizes and de-duplicates Repos: values", () => {
+		const dir = makeTestDir("section-repos-normalized");
+		const content = minimalPrompt(`
+## Execution Target
+
+**Repos:** API, frontend-app, api
+`);
+		const promptPath = writePrompt(dir, content);
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+
+		expect(result.error).toBeNull();
+		expect(result.task!.promptRepoId).toBe("api");
+		expect(result.task!.promptRepoIds).toEqual(["api", "frontend-app"]);
+	});
+
+	it("2.7: parses ordered repo list from Repos bullet list", () => {
+		const dir = makeTestDir("section-repos-bullets");
+		const content = minimalPrompt(`
+## Execution Target
+
+Repos:
+- dashboard
+- administration
+`);
+		const promptPath = writePrompt(dir, content);
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+
+		expect(result.error).toBeNull();
+		expect(result.task!.promptRepoId).toBe("dashboard");
+		expect(result.task!.promptRepoIds).toEqual(["dashboard", "administration"]);
+	});
 });
 
 // ── 3.x: Inline `**Repo:** <id>` declaration ────────────────────────
@@ -276,6 +323,34 @@ describe("3.x: Inline repo declaration", () => {
 
 		expect(result.error).toBeNull();
 		expect(result.task!.promptRepoId).toBe("frontend");
+	});
+
+	it("3.3: parses inline **Repos:** field", () => {
+		const dir = makeTestDir("inline-repos");
+		const content = `# Task: TP-100 - Test Task
+
+**Created:** 2026-03-15
+**Size:** M
+**Repos:** api, frontend
+
+## Dependencies
+
+**None**
+
+## Steps
+
+### Step 0: Do something
+
+- [ ] Something
+
+---
+`;
+		const promptPath = writePrompt(dir, content);
+		const result = parsePromptForOrchestrator(promptPath, dir, "default");
+
+		expect(result.error).toBeNull();
+		expect(result.task!.promptRepoId).toBe("api");
+		expect(result.task!.promptRepoIds).toEqual(["api", "frontend"]);
 	});
 });
 
@@ -671,6 +746,7 @@ function makeWorkspaceConfig(
 		routing: {
 			tasksRoot: "/workspace/tasks",
 			defaultRepo,
+			taskPacketRepo: defaultRepo,
 		},
 		configPath: "/workspace/.pi/taskplane-workspace.yaml",
 	};
@@ -743,6 +819,29 @@ describe("9.x: Prompt repo wins over area and default", () => {
 
 		expect(errors).toHaveLength(0);
 		expect(task.resolvedRepoId).toBe("api");
+		expect(task.resolvedRepoIds).toEqual(["api"]);
+	});
+
+	it("9.1b: promptRepoIds are preserved after routing while primary repo stays first", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				dashboard: { path: "/repos/dashboard" },
+				administration: { path: "/repos/administration" },
+				shared: { path: "/repos/shared" },
+			},
+			"shared",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "", repoId: "shared" },
+		};
+		const task = makeTask({ taskId: "TP-101", areaName: "default", promptRepoIds: ["dashboard", "administration"] });
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("dashboard");
+		expect(task.resolvedRepoIds).toEqual(["dashboard", "administration"]);
 	});
 
 	it("9.2: promptRepoId overrides area repoId", () => {
@@ -763,6 +862,7 @@ describe("9.x: Prompt repo wins over area and default", () => {
 
 		expect(errors).toHaveLength(0);
 		expect(task.resolvedRepoId).toBe("api");
+		expect(task.resolvedRepoIds).toEqual(["api"]);
 	});
 });
 
@@ -849,6 +949,7 @@ describe("11.x: Default repo fallback when prompt + area have no repo", () => {
 
 		expect(errors).toHaveLength(0);
 		expect(task.resolvedRepoId).toBe("api");
+		expect(task.resolvedRepoIds).toEqual(["api"]);
 	});
 
 	it("11.2: area without repoId and no promptRepoId falls to default", () => {
@@ -947,7 +1048,7 @@ describe("11.5x: File scope inference routes task to matching repo", () => {
 		expect(task.resolvedRepoId).toBe("api-service"); // falls to default
 	});
 
-	it("11.54: prompt repo still wins over file scope", () => {
+	it("11.54: explicit execution target conflicting with file scope returns a mismatch error", () => {
 		const workspaceConfig = makeWorkspaceConfig(
 			{
 				"api-service": { path: "/repos/api-service" },
@@ -968,8 +1069,11 @@ describe("11.5x: File scope inference routes task to matching repo", () => {
 
 		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
 
-		expect(errors).toHaveLength(0);
-		expect(task.resolvedRepoId).toBe("api-service"); // prompt wins
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_REPO_SCOPE_MISMATCH");
+		expect(errors[0].message).toContain("api-service");
+		expect(errors[0].message).toContain("web-client");
+		expect(task.resolvedRepoId).toBeUndefined();
 	});
 
 	it("11.55: empty file scope falls through to default", () => {
@@ -993,6 +1097,36 @@ describe("11.5x: File scope inference routes task to matching repo", () => {
 
 		expect(errors).toHaveLength(0);
 		expect(task.resolvedRepoId).toBe("api-service");
+	});
+
+	it("11.56: mixed repo-prefixed file scope preserves ordered multi-repo routing", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				"api-service": { path: "/repos/api-service" },
+				"web-client": { path: "/repos/web-client" },
+				"shared-libs": { path: "/repos/shared-libs" },
+			},
+			"shared-libs",
+		);
+		const taskAreas: Record<string, TaskArea> = {
+			general: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-009",
+			areaName: "general",
+			fileScope: [
+				"web-client/src/App.js",
+				"api-service/src/routes/status.js",
+				"web-client/src/components/Nav.js",
+			],
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("web-client");
+		expect(task.resolvedRepoIds).toEqual(["web-client", "api-service"]);
 	});
 });
 
@@ -1076,6 +1210,7 @@ describe("13.x: TASK_REPO_UNRESOLVED when all sources are undefined", () => {
 			routing: {
 				tasksRoot: "/workspace/tasks",
 				defaultRepo: "", // empty default
+				taskPacketRepo: "api",
 			},
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
@@ -1269,7 +1404,7 @@ describe("16.x: Routing errors appear as fatal errors in formatted output", () =
 		const workspaceConfig: WorkspaceConfig = {
 			mode: "workspace",
 			repos: repoMap,
-			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "" },
+			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "", taskPacketRepo: "api" },
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
 		const taskAreas: Record<string, TaskArea> = {
@@ -1620,7 +1755,7 @@ Repo: nonexistent
 		const workspaceConfig: WorkspaceConfig = {
 			mode: "workspace",
 			repos: repoMap,
-			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "" }, // empty default
+			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "", taskPacketRepo: "api" }, // empty default
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
 
@@ -1839,6 +1974,19 @@ describe("16.x: formatDiscoveryResults repo annotation", () => {
 		expect(output).toContain("→ repo: api");
 	});
 
+	it("16.1b: shows plural repo annotation for tasks with resolvedRepoIds", () => {
+		const task = makeTask({ taskId: "TP-101", areaName: "default" });
+		task.resolvedRepoId = "api";
+		task.resolvedRepoIds = ["api", "frontend"];
+		const discovery = makeDiscoveryResult([task]);
+
+		const output = formatDiscoveryResults(discovery);
+
+		expect(output).toContain("TP-101");
+		expect(output).toContain("→ repos: api, frontend");
+		expect(output).not.toContain("→ repo: api");
+	});
+
 	it("16.2: omits repo annotation when resolvedRepoId is absent", () => {
 		const task = makeTask({ taskId: "TP-100", areaName: "default" });
 		// no resolvedRepoId
@@ -1900,6 +2048,7 @@ describe("17.x: Actionable routing error guidance", () => {
 			routing: {
 				tasksRoot: "/workspace/tasks",
 				defaultRepo: "", // empty = unresolvable
+				taskPacketRepo: "api",
 			},
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
@@ -2179,6 +2328,95 @@ describe("20.x: Strict mode — accepts tasks with explicit execution target", (
 		expect(task2.resolvedRepoId).toBeUndefined();
 		expect(task3.resolvedRepoId).toBe("frontend");
 	});
+
+	it("20.4: strict mode accepts explicit promptRepoIds and routes to the first declared repo", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-110",
+			areaName: "default",
+			promptRepoId: "api",
+			promptRepoIds: ["api", "frontend"],
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(0);
+		expect(task.resolvedRepoId).toBe("api");
+		expect(task.resolvedRepoIds).toEqual(["api", "frontend"]);
+	});
+
+	it("20.5: strict mode rejects promptRepoIds containing an unknown repo", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+			},
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-111",
+			areaName: "default",
+			promptRepoId: "api",
+			promptRepoIds: ["api", "ghost"],
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_REPO_UNKNOWN");
+		expect(errors[0].message).toContain("Execution Target Repos");
+		expect(errors[0].message).toContain("ghost");
+	});
+
+	it("20.6: explicit execution targets must cover repo-prefixed file scope entries", () => {
+		const workspaceConfig = makeWorkspaceConfig(
+			{
+				api: { path: "/repos/api" },
+				frontend: { path: "/repos/frontend" },
+				docs: { path: "/repos/docs" },
+			},
+			"api",
+		);
+		workspaceConfig.routing.strict = true;
+
+		const taskAreas: Record<string, TaskArea> = {
+			default: { path: "/workspace/tasks", prefix: "TP", context: "" },
+		};
+		const task = makeTask({
+			taskId: "TP-112",
+			areaName: "default",
+			promptRepoId: "api",
+			promptRepoIds: ["api", "frontend"],
+			fileScope: ["api/src/server.ts", "docs/content/index.md"],
+		});
+		const discovery = makeDiscoveryResult([task]);
+
+		const errors = resolveTaskRouting(discovery, taskAreas, workspaceConfig);
+
+		expect(errors).toHaveLength(1);
+		expect(errors[0].code).toBe("TASK_REPO_SCOPE_MISMATCH");
+		expect(errors[0].message).toContain("api, frontend");
+		expect(errors[0].message).toContain("docs");
+		expect(task.resolvedRepoId).toBeUndefined();
+	});
 });
 
 // ── 21.x: Permissive mode — unchanged behavior (non-regression) ─────
@@ -2255,6 +2493,11 @@ describe("22.x: TASK_ROUTING_STRICT is classified as fatal", () => {
 	it("22.1: TASK_ROUTING_STRICT is in FATAL_DISCOVERY_CODES", () => {
 		const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
 		expect(fatalCodes.has("TASK_ROUTING_STRICT")).toBe(true);
+	});
+
+	it("22.1b: TASK_REPO_SCOPE_MISMATCH is in FATAL_DISCOVERY_CODES", () => {
+		const fatalCodes = new Set<string>(FATAL_DISCOVERY_CODES);
+		expect(fatalCodes.has("TASK_REPO_SCOPE_MISMATCH")).toBe(true);
 	});
 
 	it("22.2: formatDiscoveryResults classifies TASK_ROUTING_STRICT as error not warning", () => {
@@ -2557,6 +2800,24 @@ describe("25.x: Command surface TASK_ROUTING_STRICT remediation hints", () => {
 		);
 		expect(engineSrc).toContain("hasRoutingErrors");
 		expect(engineSrc).toContain("hasStrictErrors");
+	});
+
+	it("25.7: extension.ts treats TASK_REPO_SCOPE_MISMATCH as a routing error", () => {
+		const extensionSrc = readFileSync(
+			join(__dirname, "..", "taskplane", "extension.ts"),
+			"utf-8",
+		);
+		expect(extensionSrc).toContain('"TASK_REPO_SCOPE_MISMATCH"');
+		expect(extensionSrc).toContain("repo-prefixed file scope entries");
+	});
+
+	it("25.8: engine.ts treats TASK_REPO_SCOPE_MISMATCH as a routing error", () => {
+		const engineSrc = readFileSync(
+			join(__dirname, "..", "taskplane", "engine.ts"),
+			"utf-8",
+		);
+		expect(engineSrc).toContain('"TASK_REPO_SCOPE_MISMATCH"');
+		expect(engineSrc).toContain("repo-prefixed file scope entries");
 	});
 });
 

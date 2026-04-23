@@ -58,6 +58,7 @@ describe("TP-133 segment frontier helpers", () => {
 
 		const task = pending.get("TP-001")!;
 		expect(task.segmentIds).toEqual(["TP-001::api"]);
+		expect(task.resolvedRepoIds).toEqual(["api"]);
 		expect(task.activeSegmentId).toBeNull();
 	});
 
@@ -106,6 +107,7 @@ describe("TP-133 segment frontier helpers", () => {
 		expect(frontier.taskLevelWaveCount).toBe(1);
 		expect(frontier.roundToTaskWave).toEqual([0, 0, 0]);
 		const state = frontier.taskStateById.get("TP-010")!;
+		expect(pending.get("TP-010")!.resolvedRepoIds).toEqual(["api", "web", "docs"]);
 		expect(state.orderedSegments.map((s) => s.segmentId)).toEqual([
 			"TP-010::api",
 			"TP-010::web",
@@ -131,6 +133,42 @@ describe("TP-133 segment frontier helpers", () => {
 		const order = linearizeTaskSegmentPlan(plan).map((s) => s.segmentId);
 		expect(order[order.length - 1]).toBe("TP-020::docs");
 		expect(order.slice(0, 2).sort()).toEqual(["TP-020::api", "TP-020::web"]);
+	});
+
+	it("frontier expansion honors explicit DAG dependencies even when segment order conflicts", () => {
+		const pending = new Map<string, ParsedTask>([
+			["TP-021", makeTask("TP-021", "api")],
+		]);
+
+		const plan: TaskSegmentPlan = {
+			taskId: "TP-021",
+			mode: "explicit-dag",
+			segments: [
+				{ segmentId: "TP-021::docs", taskId: "TP-021", repoId: "docs", order: 0 },
+				{ segmentId: "TP-021::api", taskId: "TP-021", repoId: "api", order: 1 },
+				{ segmentId: "TP-021::web", taskId: "TP-021", repoId: "web", order: 2 },
+			],
+			edges: [
+				{ fromSegmentId: "TP-021::api", toSegmentId: "TP-021::docs", provenance: "explicit", reason: "explicit" },
+				{ fromSegmentId: "TP-021::web", toSegmentId: "TP-021::docs", provenance: "explicit", reason: "explicit" },
+			],
+		};
+
+		const frontier = buildSegmentFrontierWaves(
+			[["TP-021"]],
+			pending,
+			new Map([["TP-021", plan]]),
+		);
+
+		expect(frontier.waves).toEqual([["TP-021"], ["TP-021"], ["TP-021"]]);
+		const state = frontier.taskStateById.get("TP-021")!;
+		expect(state.orderedSegments.map((segment) => segment.segmentId)).toEqual([
+			"TP-021::api",
+			"TP-021::web",
+			"TP-021::docs",
+		]);
+		expect(pending.get("TP-021")!.participatingRepoIds).toEqual(["api", "web", "docs"]);
+		expect(pending.get("TP-021")!.resolvedRepoIds).toEqual(["api", "web", "docs"]);
 	});
 
 	it("buildExecutionUnit uses packet-home STATUS/.DONE paths when provided", () => {

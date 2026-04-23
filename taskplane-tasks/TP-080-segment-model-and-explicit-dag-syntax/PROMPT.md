@@ -42,6 +42,15 @@ Introduce the v1 segment planning model for multi-repo task execution. Each task
 - **Workspace:** `extensions/taskplane/`
 - **Services required:** None
 
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## File Scope
 
 - `extensions/taskplane/types.ts`

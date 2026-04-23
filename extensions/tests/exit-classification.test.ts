@@ -144,6 +144,30 @@ describe("classifyExit — all 9 classification paths", () => {
 			expected: "process_crash",
 		},
 		{
+			name: "unsafe_submodule_dirty — explicit dirty submodule rejection",
+			input: makeInput({
+				unsafeSubmoduleKind: "dirty-worktree",
+				exitSummary: makeSummary({ exitCode: 1, error: "Unsafe submodule state after task success: repo has uncommitted submodule changes" }),
+			}),
+			expected: "unsafe_submodule_dirty",
+		},
+		{
+			name: "unsafe_submodule_unpublished_commit — explicit local-only submodule commit rejection",
+			input: makeInput({
+				unsafeSubmoduleKind: "unpublished-commit",
+				exitSummary: makeSummary({ exitCode: 1, error: "Unsafe submodule state after task success: repo points to local commit abcdef12 not reachable on origin" }),
+			}),
+			expected: "unsafe_submodule_unpublished_commit",
+		},
+		{
+			name: "unsafe_submodule_unreachable_ref — explicit unreachable gitlink rejection",
+			input: makeInput({
+				unsafeSubmoduleKind: "unreachable-ref",
+				exitSummary: makeSummary({ exitCode: 1, error: "submodule_unreachable_ref: libs/my_lib@abcdef12 on origin" }),
+			}),
+			expected: "unsafe_submodule_unreachable_ref",
+		},
+		{
 			name: "wall_clock_timeout — timer killed the session",
 			input: makeInput({ timerKilled: true }),
 			expected: "wall_clock_timeout",
@@ -341,6 +365,33 @@ describe("classifyExit — precedence collisions", () => {
 			rationale: "API error (priority 2) beats context kill (priority 3b)",
 		},
 		{
+			name: "unsafe_submodule_unpublished_commit beats process_crash",
+			input: makeInput({
+				unsafeSubmoduleKind: "unpublished-commit",
+				exitSummary: makeSummary({ exitCode: 1, error: "Unsafe submodule state after task success: repo points to local commit abcdef12 not reachable on origin" }),
+			}),
+			expected: "unsafe_submodule_unpublished_commit",
+			rationale: "Explicit runtime safety rejection is more specific than a generic non-zero exit",
+		},
+		{
+			name: "unsafe_submodule_dirty beats wall_clock_timeout",
+			input: makeInput({
+				unsafeSubmoduleKind: "dirty-worktree",
+				timerKilled: true,
+			}),
+			expected: "unsafe_submodule_dirty",
+			rationale: "Runtime safety rejection is the root cause when both signals appear",
+		},
+		{
+			name: "unsafe_submodule_unreachable_ref beats session_vanished",
+			input: makeInput({
+				unsafeSubmoduleKind: "unreachable-ref",
+				exitSummary: null,
+			}),
+			expected: "unsafe_submodule_unreachable_ref",
+			rationale: "Explicit unsafe-submodule classification is authoritative even without a wrapper summary",
+		},
+		{
 			name: "wall_clock_timeout beats process_crash (non-zero exit)",
 			input: makeInput({
 				exitSummary: makeSummary({ exitCode: 137 }),
@@ -477,13 +528,14 @@ describe("classifyExit — edge cases", () => {
 // ── 4. Constants Verification ────────────────────────────────────────
 
 describe("EXIT_CLASSIFICATIONS constant", () => {
-	it("contains exactly 10 values", () => {
-		expect(EXIT_CLASSIFICATIONS).toHaveLength(10);
+	it("contains exactly 13 values", () => {
+		expect(EXIT_CLASSIFICATIONS).toHaveLength(13);
 	});
 
 	it("includes all expected values", () => {
 		const expected: ExitClassification[] = [
 			"completed", "api_error", "model_access_error", "context_overflow",
+			"unsafe_submodule_dirty", "unsafe_submodule_unpublished_commit", "unsafe_submodule_unreachable_ref",
 			"wall_clock_timeout", "process_crash", "session_vanished",
 			"stall_timeout", "user_killed", "unknown",
 		];

@@ -24,6 +24,21 @@ Restore reviewer agent visibility in the dashboard during V2 execution. When a w
 
 **Approach:** The bridge extension's `review_step` tool writes reviewer telemetry to a `.reviewer-state.json` file in the task folder during reviewer execution. The lane-runner's `onTelemetry` callback reads this file and populates the `reviewer` field in the lane snapshot. The dashboard already renders reviewer sub-rows when `snapshot.reviewer` is non-null — it just needs real data.
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Dependencies
 
 - None (builds on existing bridge extension review_step from v0.23.15)

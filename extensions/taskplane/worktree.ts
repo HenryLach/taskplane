@@ -6,11 +6,13 @@ import { existsSync, mkdirSync, readdirSync, realpathSync, rmdirSync, rmSync } f
 import { execSync } from "child_process";
 import { join, basename, resolve } from "path";
 
+import { loadProjectConfig } from "./config-loader.ts";
 import { execLog } from "./execution.ts";
 import { runGit } from "./git.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { DEFAULT_ORCHESTRATOR_CONFIG, WorktreeError } from "./types.ts";
-import type { AllocatedLane, BulkWorktreeError, CreateLaneWorktreesResult, CreateWorktreeOptions, LaneTaskOutcome, OrchestratorConfig, PreflightCheck, PreflightResult, RemoveAllWorktreesResult, RemoveWorktreeOutcome, RemoveWorktreeResult, WorktreeInfo } from "./types.ts";
+import type { AllocatedLane, BulkWorktreeError, CreateLaneWorktreesResult, CreateWorktreeOptions, LaneTaskOutcome, OrchestratorConfig, PreflightCheck, PreflightResult, RemoveAllWorktreesResult, RemoveWorktreeOutcome, RemoveWorktreeResult, WorktreeInfo, WorkspaceConfig } from "./types.ts";
+import { DEFAULT_SUBMODULE_POLICY, collectWorkspaceSyncSummary, workspaceSyncSummaryToChecks } from "./workspace.ts";
 
 // ── Worktree Helpers ─────────────────────────────────────────────────
 
@@ -66,8 +68,8 @@ export function resolveWorktreeBasePath(
  * @param opId    - Operator identifier (sanitized, e.g., "henrylach")
  * @param batchId - Batch ID timestamp (e.g. "20260308T111750")
  */
-export function generateBatchContainerName(opId: string, batchId: string): string {
-	return `${opId}-${batchId}`;
+export function generateBatchContainerName(opId: string, batchId: string, repoId?: string): string {
+	return repoId ? `${opId}-${batchId}-${repoId}` : `${opId}-${batchId}`;
 }
 
 /**
@@ -92,10 +94,11 @@ export function generateBatchContainerPath(
 	batchId: string,
 	repoRoot: string,
 	config?: OrchestratorConfig,
+	repoId?: string,
 ): string {
 	const effectiveConfig = config || DEFAULT_ORCHESTRATOR_CONFIG;
 	const basePath = resolveWorktreeBasePath(repoRoot, effectiveConfig);
-	return resolve(basePath, generateBatchContainerName(opId, batchId));
+	return resolve(basePath, generateBatchContainerName(opId, batchId, repoId));
 }
 
 /**
@@ -127,10 +130,11 @@ export function generateWorktreePath(
 	opId: string,
 	config?: OrchestratorConfig,
 	batchId?: string,
+	repoId?: string,
 ): string {
 	if (batchId) {
 		// New batch-scoped container layout
-		const containerPath = generateBatchContainerPath(opId, batchId, repoRoot, config);
+		const containerPath = generateBatchContainerPath(opId, batchId, repoRoot, config, repoId);
 		return resolve(containerPath, `lane-${laneNumber}`);
 	}
 
@@ -160,8 +164,9 @@ export function generateMergeWorktreePath(
 	opId: string,
 	batchId: string,
 	config?: OrchestratorConfig,
+	repoId?: string,
 ): string {
-	const containerPath = generateBatchContainerPath(opId, batchId, repoRoot, config);
+	const containerPath = generateBatchContainerPath(opId, batchId, repoRoot, config, repoId);
 	return resolve(containerPath, "merge");
 }
 
@@ -331,10 +336,10 @@ export function isRegisteredWorktree(targetPath: string, cwd: string): boolean {
  * @throws         - WorktreeError with stable error code on failure
  */
 export function createWorktree(opts: CreateWorktreeOptions, repoRoot: string): WorktreeInfo {
-	const { laneNumber, batchId, baseBranch, prefix, opId, config } = opts;
+	const { laneNumber, batchId, baseBranch, prefix, opId, config, repoId } = opts;
 
 	const branch = generateBranchName(laneNumber, batchId, opId);
-	const worktreePath = generateWorktreePath(prefix, laneNumber, repoRoot, opId, config, batchId);
+	const worktreePath = generateWorktreePath(prefix, laneNumber, repoRoot, opId, config, batchId, repoId);
 
 	// ── Pre-check 1: Validate base branch exists ─────────────────
 	const baseBranchCheck = runGit(
@@ -441,6 +446,7 @@ export function createWorktree(opts: CreateWorktreeOptions, repoRoot: string): W
 		path: resolve(worktreePath),
 		branch,
 		laneNumber,
+		repoId,
 	};
 }
 
@@ -1211,7 +1217,7 @@ export function preserveBranch(
  *                   only returns worktrees inside the `{opId}-{batchId}/` container
  * @returns        - WorktreeInfo[] sorted by laneNumber (ascending)
  */
-export function listWorktrees(prefix: string, repoRoot: string, opId: string, batchId?: string): WorktreeInfo[] {
+export function listWorktrees(prefix: string, repoRoot: string, opId: string, batchId?: string, repoId?: string): WorktreeInfo[] {
 	const entries = parseWorktreeList(repoRoot);
 	const results: WorktreeInfo[] = [];
 
@@ -1234,7 +1240,11 @@ export function listWorktrees(prefix: string, repoRoot: string, opId: string, ba
 	// When batchId is provided, match only the exact container for batch isolation.
 	// When omitted, match any container belonging to this operator (all batches).
 	const containerPattern = batchId
-		? new RegExp(`^${escapeRegex(generateBatchContainerName(opId, batchId))}$`)
+		? new RegExp(
+			repoId
+				? `^${escapeRegex(generateBatchContainerName(opId, batchId, repoId))}$`
+				: `^${escapeRegex(generateBatchContainerName(opId, batchId))}(?:-.+)?$`,
+		)
 		: new RegExp(`^${escapeRegex(opId)}-\\S+$`);
 
 	for (const entry of entries) {
@@ -1323,6 +1333,7 @@ export function createLaneWorktrees(
 	config: OrchestratorConfig,
 	repoRoot: string,
 	baseBranch: string,
+	repoId?: string,
 ): CreateLaneWorktreesResult {
 	const prefix = config.orchestrator.worktree_prefix;
 	const opId = resolveOperatorId(config);
@@ -1332,7 +1343,7 @@ export function createLaneWorktrees(
 	for (let lane = 1; lane <= count; lane++) {
 		try {
 			const wt = createWorktree(
-				{ laneNumber: lane, batchId, baseBranch, prefix, opId, config },
+				{ laneNumber: lane, batchId, baseBranch, prefix, opId, repoId, config },
 				repoRoot,
 			);
 			created.push(wt);
@@ -1399,11 +1410,12 @@ export function ensureLaneWorktrees(
 	config: OrchestratorConfig,
 	repoRoot: string,
 	baseBranch: string,
+	repoId?: string,
 ): CreateLaneWorktreesResult {
 	const prefix = config.orchestrator.worktree_prefix;
 	const opId = resolveOperatorId(config);
 
-	const existing = listWorktrees(prefix, repoRoot, opId, batchId);
+	const existing = listWorktrees(prefix, repoRoot, opId, batchId, repoId);
 	const existingByLane = new Map<number, WorktreeInfo>();
 	for (const wt of existing) {
 		existingByLane.set(wt.laneNumber, wt);
@@ -1435,7 +1447,7 @@ export function ensureLaneWorktrees(
 
 		try {
 			const wt = createWorktree(
-				{ laneNumber: lane, batchId, baseBranch, prefix, opId, config },
+				{ laneNumber: lane, batchId, baseBranch, prefix, opId, repoId, config },
 				repoRoot,
 			);
 			createdNow.push(wt);
@@ -1646,6 +1658,41 @@ export function meetsMinVersion(actual: [number, number], minimum: [number, numb
 	return false;
 }
 
+interface PreflightOptions {
+	workspaceRoot?: string;
+	pointerConfigRoot?: string;
+	workspaceConfig?: WorkspaceConfig | null;
+}
+
+type PreflightSubmodulePolicy = {
+	failureMode: "permissive" | "strict";
+	onSubmoduleDrift: "manual" | "init-only" | "recursive-on-drift";
+	repoIdStrategy: "path-basename";
+};
+
+function resolvePreflightSubmodulePolicy(repoRoot?: string, options?: PreflightOptions): PreflightSubmodulePolicy {
+	const configCwd = options?.workspaceRoot ?? repoRoot ?? process.cwd();
+	try {
+		const fullConfig = loadProjectConfig(configCwd, options?.pointerConfigRoot);
+		return {
+			failureMode: fullConfig.orchestrator.failure.submoduleFailureMode ?? DEFAULT_SUBMODULE_POLICY.failureMode,
+			onSubmoduleDrift: fullConfig.orchestrator.failure.onSubmoduleDrift ?? DEFAULT_SUBMODULE_POLICY.onSubmoduleDrift,
+			repoIdStrategy: fullConfig.orchestrator.orchestrator.submoduleRepoIdStrategy ?? DEFAULT_SUBMODULE_POLICY.repoIdStrategy,
+		};
+	} catch {
+		return { ...DEFAULT_SUBMODULE_POLICY };
+	}
+}
+
+function collectSubmoduleChecks(
+	repoRoot: string | undefined,
+	options: PreflightOptions | undefined,
+	policy: PreflightSubmodulePolicy,
+): PreflightCheck[] {
+	const summary = collectWorkspaceSyncSummary(repoRoot, options?.workspaceConfig, policy);
+	return workspaceSyncSummaryToChecks(summary);
+}
+
 /**
  * Run preflight checks for all orchestrator dependencies.
  *
@@ -1656,8 +1703,9 @@ export function meetsMinVersion(actual: [number, number], minimum: [number, numb
  *
  * Compatibility checks:
  *   - Runtime backend mode visibility (subprocess-only)
+ *   - Workspace submodule policy / drift visibility
  */
-export function runPreflight(config: OrchestratorConfig, repoRoot?: string): PreflightResult {
+export function runPreflight(config: OrchestratorConfig, repoRoot?: string, options?: PreflightOptions): PreflightResult {
 	const checks: PreflightCheck[] = [];
 
 	// ── Git version ──────────────────────────────────────────────
@@ -1727,6 +1775,9 @@ export function runPreflight(config: OrchestratorConfig, repoRoot?: string): Pre
 			hint: "Install Pi: npm install -g @mariozechner/pi-coding-agent",
 		});
 	}
+
+	const submodulePolicy = resolvePreflightSubmodulePolicy(repoRoot, options);
+	checks.push(...collectSubmoduleChecks(repoRoot, options, submodulePolicy));
 
 	return {
 		passed: checks.every((c) => c.status !== "fail"),

@@ -440,12 +440,12 @@ describe("8.x: Snapshot segment-scoped progress (emitSnapshot)", () => {
 	});
 
 	it("8.3: all emitSnapshot calls pass snapshotSegmentCtx", () => {
-		const calls = laneRunnerSrc.match(/emitSnapshot\(config,.*snapshotSegmentCtx\)/g);
+		const calls = laneRunnerSrc.match(/emitSnapshot\(config,[\s\S]*?snapshotSegmentCtx[\s\S]*?\)/g);
 		expect(calls).not.toBe(null);
 		expect(calls!.length).toBeGreaterThanOrEqual(2);
 	});
 
 	it("8.4: makeResult passes segmentCtx to emitSnapshot", () => {
-		expect(laneRunnerSrc).toContain("emitSnapshot(config, taskId, segmentId, terminalStatus, finalTelemetry ?? {}, statusPath, reviewerStatePath, segmentCtx)");
+		expect(laneRunnerSrc).toContain("emitSnapshot(config, taskId, segmentId, terminalStatus, finalTelemetry ?? {}, statusPath, reviewerStatePath, segmentCtx, submoduleDiagnostics)");
 	});
 });

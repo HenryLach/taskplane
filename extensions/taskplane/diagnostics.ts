@@ -47,6 +47,9 @@ export interface SessionTokenCounts {
  * | `api_error`          | API returned error (auth, rate limit, overload)      |
  * | `model_access_error` | Model unavailable (401/403/429, model not found)     |
  * | `context_overflow`   | Hit context window limit (compactions + high ctx %)  |
+ * | `unsafe_submodule_dirty` | Task left a submodule worktree with uncommitted changes |
+ * | `unsafe_submodule_unpublished_commit` | Task advanced a submodule to a local-only commit |
+ * | `unsafe_submodule_unreachable_ref` | Task/merge introduced a submodule gitlink clones cannot fetch |
  * | `wall_clock_timeout` | Killed by task-runner's max_worker_minutes timer     |
  * | `process_crash`      | Non-zero exit code with no API error indicators      |
  * | `session_vanished`   | Session disappeared without exit summary             |
@@ -59,6 +62,9 @@ export type ExitClassification =
 	| "api_error"
 	| "model_access_error"
 	| "context_overflow"
+	| "unsafe_submodule_dirty"
+	| "unsafe_submodule_unpublished_commit"
+	| "unsafe_submodule_unreachable_ref"
 	| "wall_clock_timeout"
 	| "process_crash"
 	| "session_vanished"
@@ -74,6 +80,9 @@ export const EXIT_CLASSIFICATIONS: readonly ExitClassification[] = [
 	"api_error",
 	"model_access_error",
 	"context_overflow",
+	"unsafe_submodule_dirty",
+	"unsafe_submodule_unpublished_commit",
+	"unsafe_submodule_unreachable_ref",
 	"wall_clock_timeout",
 	"process_crash",
 	"session_vanished",
@@ -172,6 +181,8 @@ export interface ExitClassificationInput {
 	timerKilled: boolean;
 	/** Whether the task-runner explicitly killed the session due to context limit (TP-026) */
 	contextKilled?: boolean;
+	/** Explicit unsafe-submodule failure category when runtime safety checks reject the result */
+	unsafeSubmoduleKind?: "dirty-worktree" | "unpublished-commit" | "unreachable-ref" | null;
 	/** Whether monitoring detected a stall (no STATUS.md progress) */
 	stallDetected: boolean;
 	/** Whether the user manually killed the session */
@@ -288,12 +299,13 @@ export function isModelAccessError(errorMessage: string): boolean {
  * | 2c       | Error message has model-access pattern (no retries)   | `model_access_error` |
  * | 3        | Compactions > 0 AND contextPct ≥ 90%                  | `context_overflow`   |
  * | 3b       | Task-runner explicitly context-killed                  | `context_overflow`   |
- * | 4        | Timer killed the session                              | `wall_clock_timeout` |
- * | 5        | Non-zero exit code, no API error                      | `process_crash`      |
- * | 6        | No exit summary file (session vanished)               | `session_vanished`   |
- * | 7        | Stall detected (no STATUS.md progress)                | `stall_timeout`      |
- * | 8        | User manually killed the session                      | `user_killed`        |
- * | 9        | None of the above                                    | `unknown`            |
+ * | 4        | Runtime safety rejected unsafe submodule state        | `unsafe_submodule_*` |
+ * | 5        | Timer killed the session                              | `wall_clock_timeout` |
+ * | 6        | Non-zero exit code, no API error                      | `process_crash`      |
+ * | 7        | No exit summary file (session vanished)               | `session_vanished`   |
+ * | 8        | Stall detected (no STATUS.md progress)                | `stall_timeout`      |
+ * | 9        | User manually killed the session                      | `user_killed`        |
+ * | 10       | None of the above                                    | `unknown`            |
  *
  * **Tie-break rationale:**
  * - `.DONE` always wins because the task succeeded regardless of how messy
@@ -302,6 +314,8 @@ export function isModelAccessError(errorMessage: string): boolean {
  *   and enables targeted fallback (retry with session model).
  * - `api_error` beats `context_overflow` because API failures are more
  *   actionable (auth fix, rate limit backoff).
+ * - Explicit unsafe-submodule failures beat generic process crashes because
+ *   the runtime safety guard already knows why the task was rejected.
  * - `wall_clock_timeout` beats `process_crash` because the timer kill
  *   explains the non-zero exit code.
  * - `session_vanished` (no summary) is checked after exit-code-based
@@ -315,6 +329,7 @@ export function isModelAccessError(errorMessage: string): boolean {
 export function classifyExit(input: ExitClassificationInput): ExitClassification {
 	const { exitSummary, doneFileFound, timerKilled, stallDetected, userKilled, contextPct } = input;
 	const contextKilled = input.contextKilled ?? false;
+	const unsafeSubmoduleKind = input.unsafeSubmoduleKind ?? null;
 
 	// 1. .DONE file found → completed (task succeeded, regardless of session state)
 	if (doneFileFound) {
@@ -354,32 +369,43 @@ export function classifyExit(input: ExitClassificationInput): ExitClassification
 		return "context_overflow";
 	}
 
-	// 4. Task-runner's wall-clock timer killed the session → wall_clock_timeout
+	// 4. Runtime safety rejected an unsafe submodule/gitlink state.
+	if (unsafeSubmoduleKind === "dirty-worktree") {
+		return "unsafe_submodule_dirty";
+	}
+	if (unsafeSubmoduleKind === "unpublished-commit") {
+		return "unsafe_submodule_unpublished_commit";
+	}
+	if (unsafeSubmoduleKind === "unreachable-ref") {
+		return "unsafe_submodule_unreachable_ref";
+	}
+
+	// 5. Task-runner's wall-clock timer killed the session → wall_clock_timeout
 	if (timerKilled) {
 		return "wall_clock_timeout";
 	}
 
-	// 5. Non-zero exit code, no API error indicators → process_crash
+	// 6. Non-zero exit code, no API error indicators → process_crash
 	// Guard with typeof to handle partial summaries where exitCode may be undefined
 	if (exitSummary && typeof exitSummary.exitCode === "number" && exitSummary.exitCode !== 0) {
 		return "process_crash";
 	}
 
-	// 6. No exit summary file found → session_vanished
+	// 7. No exit summary file found → session_vanished
 	if (exitSummary === null) {
 		return "session_vanished";
 	}
 
-	// 7. Stall detected (no STATUS.md progress) → stall_timeout
+	// 8. Stall detected (no STATUS.md progress) → stall_timeout
 	if (stallDetected) {
 		return "stall_timeout";
 	}
 
-	// 8. User manually killed the session → user_killed
+	// 9. User manually killed the session → user_killed
 	if (userKilled) {
 		return "user_killed";
 	}
 
-	// 9. None of the above → unknown
+	// 10. None of the above → unknown
 	return "unknown";
 }

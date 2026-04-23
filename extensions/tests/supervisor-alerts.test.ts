@@ -17,7 +17,7 @@ import { expect } from "./expect.ts";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { buildBatchProgressSnapshot, buildSupervisorSegmentFrontierSnapshot, freshOrchBatchState } from "../taskplane/types.ts";
+import { buildBatchProgressSnapshot, buildSupervisorSegmentFrontierSnapshot, buildSupervisorTaskFailureAlert, freshOrchBatchState } from "../taskplane/types.ts";
 import type {
 	SupervisorAlert,
 	SupervisorAlertCategory,
@@ -44,6 +44,7 @@ describe("1.x — SupervisorAlert type structure", () => {
 			summary: "⚠️ Task failure: TP-001",
 			context: {
 				taskId: "TP-001",
+				failurePolicy: "skip-dependents",
 				segmentId: "TP-001::api",
 				repoId: "api",
 				laneId: "lane-1",
@@ -62,11 +63,13 @@ describe("1.x — SupervisorAlert type structure", () => {
 					],
 				},
 				partialProgress: false,
+				blockedTaskIds: ["TP-002", "TP-003"],
+				continueUnaffected: true,
 				batchProgress: {
 					succeededTasks: 2,
 					failedTasks: 1,
 					skippedTasks: 0,
-					blockedTasks: 0,
+					blockedTasks: 2,
 					totalTasks: 3,
 					currentWave: 1,
 					totalWaves: 2,
@@ -76,6 +79,7 @@ describe("1.x — SupervisorAlert type structure", () => {
 		expect(alert.category).toBe("task-failure");
 		expect(alert.summary).toContain("TP-001");
 		expect(alert.context.taskId).toBe("TP-001");
+		expect(alert.context.failurePolicy).toBe("skip-dependents");
 		expect(alert.context.segmentId).toBe("TP-001::api");
 		expect(alert.context.repoId).toBe("api");
 		expect(alert.context.laneId).toBe("lane-1");
@@ -84,6 +88,8 @@ describe("1.x — SupervisorAlert type structure", () => {
 		expect(alert.context.segmentFrontier).toBeDefined();
 		expect(alert.context.segmentFrontier!.totalSegments).toBe(3);
 		expect(alert.context.partialProgress).toBe(false);
+		expect(alert.context.blockedTaskIds).toEqual(["TP-002", "TP-003"]);
+		expect(alert.context.continueUnaffected).toBe(true);
 		expect(alert.context.batchProgress).toBeDefined();
 		expect(alert.context.batchProgress!.totalTasks).toBe(3);
 	});
@@ -284,6 +290,75 @@ describe("2.x — buildBatchProgressSnapshot", () => {
 		expect(snapshot!.terminalSegments).toBe(2);
 		expect(snapshot!.segments[2].status).toBe("pending");
 	});
+
+	it("2.6 — buildSupervisorTaskFailureAlert builds structured skip-dependents alert data", () => {
+		const state = freshOrchBatchState();
+		state.succeededTasks = 2;
+		state.failedTasks = 1;
+		state.blockedTasks = 2;
+		state.totalTasks = 5;
+		state.currentWaveIndex = 0;
+		state.totalWaves = 3;
+
+		const alert = buildSupervisorTaskFailureAlert({
+			taskId: "TP-005",
+			failurePolicy: "skip-dependents",
+			exitReason: "TMUX session exited without .DONE",
+			partialProgress: true,
+			laneId: "lane-2",
+			laneNumber: 2,
+			laneRepoId: "api",
+			taskSegmentIds: ["TP-005::api", "TP-005::web", "TP-005::docs"],
+			taskActiveSegmentId: "TP-005::api",
+			persistedSegments: [
+				{
+					segmentId: "TP-005::api",
+					taskId: "TP-005",
+					repoId: "api",
+					status: "failed",
+					laneId: "lane-2",
+					sessionName: "orch-op-api-lane-2",
+					worktreePath: "/tmp/lane-2-api",
+					branch: "task/op-api-lane-2",
+					startedAt: 1,
+					endedAt: 2,
+					retries: 0,
+					dependsOnSegmentIds: [],
+					exitReason: "TMUX session exited without .DONE",
+				},
+				{
+					segmentId: "TP-005::web",
+					taskId: "TP-005",
+					repoId: "web",
+					status: "pending",
+					laneId: "",
+					sessionName: "",
+					worktreePath: "",
+					branch: "",
+					startedAt: null,
+					endedAt: null,
+					retries: 0,
+					dependsOnSegmentIds: ["TP-005::api"],
+					exitReason: "",
+				},
+			],
+			outcomeSegmentId: "TP-005::api",
+			blockedTaskIds: ["TP-006", "TP-007"],
+			batchProgress: buildBatchProgressSnapshot(state),
+			displayWave: 1,
+			totalDisplayWaves: 3,
+		});
+
+		expect(alert.category).toBe("task-failure");
+		expect(alert.context.failurePolicy).toBe("skip-dependents");
+		expect(alert.context.segmentId).toBe("TP-005::api");
+		expect(alert.context.repoId).toBe("api");
+		expect(alert.context.blockedTaskIds).toEqual(["TP-006", "TP-007"]);
+		expect(alert.context.continueUnaffected).toBe(true);
+		expect(alert.summary).toContain("Failure policy: skip-dependents");
+		expect(alert.summary).toContain("Newly blocked dependents: TP-006, TP-007");
+		expect(alert.summary).toContain("Unrelated ready tasks continue under skip-dependents");
+	});
 });
 
 // ══════════════════════════════════════════════════════════════════════
@@ -299,6 +374,9 @@ describe("3.x — Alert message formatting", () => {
 			`  Segment frontier: 1/3 terminal\n` +
 			`  Lane: lane-2 (lane 2)\n` +
 			`  Partial progress preserved: yes\n` +
+			`  Failure policy: skip-dependents\n` +
+			`  Newly blocked dependents: TP-006, TP-007\n` +
+			`  Unrelated ready tasks continue under skip-dependents.\n` +
 			`  Batch: wave 1/3, 2 succeeded, 1 failed\n\n` +
 			`Available actions:\n` +
 			`  - orch_status() to inspect current state\n` +
@@ -309,6 +387,9 @@ describe("3.x — Alert message formatting", () => {
 		expect(summary).toContain("TMUX session exited without .DONE");
 		expect(summary).toContain("Segment: TP-005::api");
 		expect(summary).toContain("Segment frontier: 1/3 terminal");
+		expect(summary).toContain("Failure policy: skip-dependents");
+		expect(summary).toContain("Newly blocked dependents: TP-006, TP-007");
+		expect(summary).toContain("Unrelated ready tasks continue under skip-dependents");
 		expect(summary).toContain("lane-2");
 		expect(summary).toContain("orch_status()");
 		expect(summary).toContain("orch_resume");
@@ -397,7 +478,7 @@ describe("4.x — Source-based verification of IPC wiring", () => {
 
 	it("4.7 — engine.ts emits task-failure alerts", () => {
 		const src = readSource("engine.ts");
-		expect(src).toContain('category: "task-failure"');
+		expect(src).toContain("buildSupervisorTaskFailureAlert(");
 		expect(src).toContain("emitAlert(");
 	});
 
@@ -413,19 +494,28 @@ describe("4.x — Source-based verification of IPC wiring", () => {
 
 	it("4.10 — resume.ts emits task-failure alerts", () => {
 		const src = readSource("resume.ts");
-		expect(src).toContain('category: "task-failure"');
+		expect(src).toContain("buildSupervisorTaskFailureAlert(");
 		expect(src).toContain("emitAlert(");
 	});
 
-	it("4.11 — task-failure alerts include segment fields + frontier snapshot", () => {
+	it("4.10b — resume.ts derives failed-task alert metadata from persistedState.tasks", () => {
+		const src = readSource("resume.ts");
+		expect(src).toContain("persistedState.tasks.find((task) => task.taskId === taskId)");
+		expect(src).not.toContain("batchState.tasks.find((task) => task.taskId === taskId)");
+	});
+
+	it("4.11 — task-failure alert details are built in shared helper and used by engine/resume", () => {
 		const engineSrc = readSource("engine.ts");
 		const resumeSrc = readSource("resume.ts");
-		expect(engineSrc).toContain("segmentFrontier");
-		expect(engineSrc).toContain("segmentId");
-		expect(engineSrc).toContain("repoId");
-		expect(resumeSrc).toContain("segmentFrontier");
-		expect(resumeSrc).toContain("segmentId");
-		expect(resumeSrc).toContain("repoId");
+		const typesSrc = readSource("types.ts");
+		expect(engineSrc).toContain("buildSupervisorTaskFailureAlert(");
+		expect(resumeSrc).toContain("buildSupervisorTaskFailureAlert(");
+		expect(typesSrc).toContain('category: "task-failure"');
+		expect(typesSrc).toContain("segmentFrontier");
+		expect(typesSrc).toContain("segmentId");
+		expect(typesSrc).toContain("repoId");
+		expect(typesSrc).toContain("blockedTaskIds");
+		expect(typesSrc).toContain("continueUnaffected");
 	});
 
 	it("4.12 — resume.ts emits merge-failure alerts", () => {

@@ -23,7 +23,7 @@ Contains (high level):
 - wave plan and current wave index
 - per-lane records (session/worktree/branch/task IDs, repo ID)
 - per-task records (status, folder, session, timings, done marker, repo attribution)
-- merge summaries (grouped by repo in workspace mode)
+- merge summaries (grouped by repo in workspace mode, including rollback and persistence warnings for merge safe-stops)
 - aggregate counters and error history
 
 ### Lane sidecars (`.pi/lane-state-*.json`)
@@ -62,6 +62,11 @@ During `/orch` execution, state is persisted at key transitions, including:
 - pause events
 - resume reconciliation points
 
+Merge persistence note:
+
+- Workspace-mode merge checkpoints also preserve repo-scoped merge outcomes.
+- If Taskplane rolls back a failed multi-repo wave, the persisted merge result records which repos were rolled back and whether any rollback or persistence warning requires manual inspection before resume.
+
 This keeps recovery point close to live execution.
 
 ---
@@ -70,14 +75,14 @@ This keeps recovery point close to live execution.
 
 `/orch-resume` resumes batches based on their phase:
 
-| Phase | Resumable | Notes |
-|-------|-----------|-------|
-| `paused` | ✅ | Standard resume |
-| `executing` | ✅ | Crash recovery — reconciles in-flight tasks |
-| `merging` | ✅ | Interrupted merge recovery |
-| `stopped` | ⚠️ | Requires `--force` (planned) |
-| `failed` | ⚠️ | Requires `--force` (planned) |
-| `completed` | ❌ | Terminal — start a new batch |
+| Phase       | Resumable | Notes                                       |
+| ----------- | --------- | ------------------------------------------- |
+| `paused`    | ✅        | Standard resume                             |
+| `executing` | ✅        | Crash recovery — reconciles in-flight tasks |
+| `merging`   | ✅        | Interrupted merge recovery                  |
+| `stopped`   | ⚠️        | Requires `--force` (planned)                |
+| `failed`    | ⚠️        | Requires `--force` (planned)                |
+| `completed` | ❌        | Terminal — start a new batch                |
 
 ---
 

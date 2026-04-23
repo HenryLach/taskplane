@@ -28,6 +28,21 @@ Currently `get_session_stats` is requested once (after the first assistant messa
 ### 2. Full reviewer telemetry parity
 The reviewer sub-row in the dashboard currently shows only tool count, cost, and last tool. The worker row shows elapsed time, token counts, context %, and token summary badges. The reviewer should show the same telemetry fields.
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Dependencies
 
 - **Task:** TP-121 (reviewer dashboard visibility — done)

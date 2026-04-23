@@ -22,6 +22,21 @@ taskplane-tasks/TP-123-runtime-v2-operator-messaging-detmux/
 
 Remove TMUX-centric wording from operator surfaces while preserving behavior. Replace attach/session guidance with Runtime V2 equivalents so users are not instructed to use tmux commands in a no-TMUX runtime.
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Dependencies
 
 - **Task:** TP-122 (baseline + guardrails)

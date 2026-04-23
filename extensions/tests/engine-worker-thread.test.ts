@@ -173,6 +173,43 @@ describe("2.x — Batch state serialization (applySerializedState)", () => {
 		expect(target.pauseSignal.paused).toBe(true);
 		expect(target.dependencyGraph).not.toBeNull();
 	});
+
+	it("2.3: applySerializedState copies merge panel state for widget updates", () => {
+		const target = freshOrchBatchState();
+		const serialized: SerializedBatchState = {
+			phase: "merging",
+			batchId: "20260326T140000",
+			baseBranch: "main",
+			orchBranch: "orch/op-20260326T140000",
+			mode: "repo",
+			currentWaveIndex: 1,
+			totalWaves: 3,
+			totalTasks: 8,
+			succeededTasks: 4,
+			failedTasks: 0,
+			skippedTasks: 0,
+			blockedTasks: 0,
+			startedAt: 4000,
+			endedAt: null,
+			errors: [],
+			currentLanes: [],
+			mergePanel: {
+				status: "warning",
+				waveLabel: "Wave 2",
+				events: [
+					{ level: "info", message: "Lane 1 merged" },
+					{ level: "warning", message: "Lane 2 needs attention" },
+				],
+			},
+		};
+
+		applySerializedState(target, serialized);
+
+		expect(target.mergePanel).not.toBeUndefined();
+		expect(target.mergePanel?.status).toBe("warning");
+		expect(target.mergePanel?.waveLabel).toBe("Wave 2");
+		expect(target.mergePanel?.events).toEqual(serialized.mergePanel?.events);
+	});
 });
 
 // ══════════════════════════════════════════════════════════════════════

@@ -65,6 +65,60 @@ function normalizeSegmentRepoToken(raw: string): string {
 	return token.toLowerCase();
 }
 
+function parseExecutionTargetRepoList(raw: string, repoIdPattern: RegExp): string[] | undefined {
+	const repoIds: string[] = [];
+	const seen = new Set<string>();
+
+	for (const entry of raw.split(",")) {
+		const candidate = normalizeSegmentRepoToken(entry);
+		if (!candidate) continue;
+		if (!repoIdPattern.test(candidate)) {
+			return undefined;
+		}
+		if (!seen.has(candidate)) {
+			seen.add(candidate);
+			repoIds.push(candidate);
+		}
+	}
+
+	return repoIds.length > 0 ? repoIds : undefined;
+}
+
+function parseExecutionTargetReposSection(raw: string, repoIdPattern: RegExp): string[] | undefined {
+	const inlineMatch = raw.match(/^[ \t]*\*?\*?(?:Repos):?\*?\*?[ \t]+(.+)$/mi);
+	if (inlineMatch) {
+		return parseExecutionTargetRepoList(inlineMatch[1], repoIdPattern);
+	}
+
+	const lines = raw.split(/\r?\n/);
+	for (let index = 0; index < lines.length; index++) {
+		const trimmed = lines[index].trim();
+		if (!/^\*?\*?Repos:?\*?\*?\s*$/i.test(trimmed)) {
+			continue;
+		}
+
+		const entries: string[] = [];
+		for (let nextIndex = index + 1; nextIndex < lines.length; nextIndex++) {
+			const nextLine = lines[nextIndex];
+			const bulletMatch = nextLine.match(/^\s*[-*]\s+(.+)$/);
+			if (bulletMatch) {
+				entries.push(bulletMatch[1]);
+				continue;
+			}
+			if (!nextLine.trim()) {
+				continue;
+			}
+			break;
+		}
+
+		return entries.length > 0
+			? parseExecutionTargetRepoList(entries.join(","), repoIdPattern)
+			: undefined;
+	}
+
+	return undefined;
+}
+
 interface ParsedSegmentDagBody {
 	metadata: PromptSegmentDagMetadata | null;
 	error: DiscoveryError | null;
@@ -692,11 +746,12 @@ export function parsePromptForOrchestrator(
 		}
 	}
 
-	// ── Extract execution target (repo ID) ──────────────────────
+	// ── Extract execution target (repo ID / repo IDs) ───────────
 	// Repo ID validation: lowercase alphanumeric + hyphens, starting with alnum
 	const REPO_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
 	let promptRepoId: string | undefined;
+	let promptRepoIds: string[] | undefined;
 
 	// Priority 1: Section-based "## Execution Target" with "Repo: <id>" line
 	// Capture everything from section header to the next heading or --- divider.
@@ -715,20 +770,38 @@ export function parsePromptForOrchestrator(
 		}
 	}
 	if (execTargetSectionBody !== null) {
+		const sectionRepoIds = parseExecutionTargetReposSection(execTargetSectionBody, REPO_ID_PATTERN);
+		if (sectionRepoIds) {
+			promptRepoIds = sectionRepoIds;
+			promptRepoId = sectionRepoIds[0];
+		}
+
 		// Match "Repo: api" or "**Repo:** api" or "Workspace: api" with whitespace
-		const repoLineMatch = execTargetSectionBody.match(
-			/^\s*\*?\*?(?:Repo|Workspace):?\*?\*?\s+(\S+)/mi,
-		);
-		if (repoLineMatch) {
-			const candidate = repoLineMatch[1].trim().toLowerCase();
-			if (REPO_ID_PATTERN.test(candidate)) {
-				promptRepoId = candidate;
+		if (!promptRepoIds) {
+			const repoLineMatch = execTargetSectionBody.match(
+				/^\s*\*?\*?(?:Repo|Workspace):?\*?\*?\s+(\S+)/mi,
+			);
+			if (repoLineMatch) {
+				const candidate = repoLineMatch[1].trim().toLowerCase();
+				if (REPO_ID_PATTERN.test(candidate)) {
+					promptRepoId = candidate;
+				}
 			}
 		}
 	}
 
-	// Priority 2 (fallback): Inline "**Repo:** <id>" or "**Workspace:** <id>" anywhere in content
-	if (!promptRepoId) {
+	// Priority 2 (fallback): Inline "**Repos:** <a>, <b>" or "**Repo:** <id>"
+	if (!promptRepoId && !promptRepoIds) {
+		const inlineReposMatch = content.match(/^\*\*(?:Repos):\*\*\s+(.+)$/m);
+		if (inlineReposMatch) {
+			const candidateRepoIds = parseExecutionTargetRepoList(inlineReposMatch[1], REPO_ID_PATTERN);
+			if (candidateRepoIds) {
+				promptRepoIds = candidateRepoIds;
+				promptRepoId = candidateRepoIds[0];
+			}
+		}
+	}
+	if (!promptRepoId && !promptRepoIds) {
 		const inlineRepoMatch = content.match(
 			/^\*\*(?:Repo|Workspace):\*\*\s+(\S+)/m,
 		);
@@ -804,6 +877,7 @@ export function parsePromptForOrchestrator(
 			areaName,
 			status: "pending",
 			...(promptRepoId ? { promptRepoId } : {}),
+			...(promptRepoIds ? { promptRepoIds } : {}),
 			...(explicitSegmentDag ? { explicitSegmentDag } : {}),
 			...(stepSegmentMap ? { stepSegmentMap } : {}),
 		},
@@ -1413,6 +1487,35 @@ export function resolveDependencies(
 /** Repo ID validation: lowercase alphanumeric + hyphens, starting with alnum */
 const ROUTING_REPO_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
 
+function extractRoutingRepoPrefix(fileScopeEntry: string): string | null {
+	const normalized = fileScopeEntry.replace(/\\/g, "/").trim();
+	if (!normalized) return null;
+	const firstSegment = normalized.split("/")[0]?.trim().toLowerCase();
+	if (!firstSegment || !ROUTING_REPO_ID_PATTERN.test(firstSegment)) {
+		return null;
+	}
+	return firstSegment;
+}
+
+function collectRoutingRepoIdsFromFileScope(
+	fileScope: string[],
+	validRepoIds: ReadonlyMap<string, unknown>,
+): string[] {
+	const repoIds: string[] = [];
+	const seen = new Set<string>();
+
+	for (const fileScopeEntry of fileScope) {
+		const repoId = extractRoutingRepoPrefix(fileScopeEntry);
+		if (!repoId || !validRepoIds.has(repoId) || seen.has(repoId)) {
+			continue;
+		}
+		seen.add(repoId);
+		repoIds.push(repoId);
+	}
+
+	return repoIds;
+}
+
 /**
  * Resolve the target repo for each discovered task using the routing
  * precedence chain:
@@ -1454,11 +1557,26 @@ export function resolveTaskRouting(
 			}
 		}
 
+		if (task.promptRepoIds && task.promptRepoIds.length > 0) {
+			const unknownPromptRepos = task.promptRepoIds.filter((repoId) => !validRepoIds.has(repoId));
+			if (unknownPromptRepos.length > 0) {
+				errors.push({
+					code: "TASK_REPO_UNKNOWN",
+					message:
+						`Task ${task.taskId} declares unknown repo ID(s) in ## Execution Target Repos: ${unknownPromptRepos.join(", ")}. ` +
+						`Known repos: ${[...validRepoIds.keys()].join(", ")}`,
+					taskId: task.taskId,
+					taskPath: task.promptPath,
+				});
+				continue;
+			}
+		}
+
 		// ── Strict mode enforcement ──────────────────────────────
 		// When strict routing is enabled, every task MUST declare an
 		// explicit execution target in PROMPT.md. Area-level and
 		// workspace-default fallbacks are NOT used for resolution.
-		if (strictMode && !task.promptRepoId) {
+		if (strictMode && !task.promptRepoId && !(task.promptRepoIds && task.promptRepoIds.length > 0)) {
 			errors.push({
 				code: "TASK_ROUTING_STRICT",
 				message:
@@ -1469,6 +1587,8 @@ export function resolveTaskRouting(
 					`  ## Execution Target\n` +
 					`\n` +
 					`  Repo: <repo-id>\n` +
+					`  or\n` +
+					`  Repos: <repo-a>, <repo-b>\n` +
 					`\n` +
 					`Available repos: ${[...validRepoIds.keys()].join(", ")}`,
 				taskId: task.taskId,
@@ -1477,9 +1597,36 @@ export function resolveTaskRouting(
 			continue;
 		}
 
+		const declaredExecutionRepoIds = task.promptRepoIds && task.promptRepoIds.length > 0
+			? [...task.promptRepoIds]
+			: task.promptRepoId
+				? [task.promptRepoId]
+				: [];
+		const fileScopeRepoIds = collectRoutingRepoIdsFromFileScope(task.fileScope ?? [], validRepoIds);
+		if (declaredExecutionRepoIds.length > 0 && fileScopeRepoIds.length > 0) {
+			const unexpectedFileScopeRepos = fileScopeRepoIds.filter(
+				(repoId) => !declaredExecutionRepoIds.includes(repoId),
+			);
+			if (unexpectedFileScopeRepos.length > 0) {
+				errors.push({
+					code: "TASK_REPO_SCOPE_MISMATCH",
+					message:
+						`Task ${task.taskId} declares execution target repo ID(s) ${declaredExecutionRepoIds.join(", ")}, ` +
+						`but repo-prefixed file scope entries reference ${unexpectedFileScopeRepos.join(", ")}. ` +
+						`Align ## Execution Target with ## File Scope so every repo-prefixed path belongs to a declared target repo.`,
+					taskId: task.taskId,
+					taskPath: task.promptPath,
+				});
+				continue;
+			}
+		}
+
 		// Precedence 1: prompt-declared repo
-		let resolvedId = task.promptRepoId;
-		let source = "prompt";
+		let resolvedRepoIds = task.promptRepoIds && task.promptRepoIds.length > 0
+			? [...task.promptRepoIds]
+			: undefined;
+		let resolvedId = task.promptRepoIds?.[0] ?? task.promptRepoId;
+		let source = task.promptRepoIds && task.promptRepoIds.length > 0 ? "prompt:repos" : "prompt";
 
 		// Precedence 2: area-level repo
 		if (!resolvedId) {
@@ -1493,37 +1640,12 @@ export function resolveTaskRouting(
 			}
 		}
 
-		// Precedence 3: file scope inference — match file path prefixes against
-		// known workspace repo IDs. If file scope entries like "web-client/src/..."
-		// start with a repo name, route the task to that repo.
-		if (!resolvedId && task.fileScope && task.fileScope.length > 0) {
-			const repoIds = [...validRepoIds.keys()];
-			const repoCounts = new Map<string, number>();
-			for (const filePath of task.fileScope) {
-				const normalized = filePath.replace(/\\/g, "/");
-				for (const repoId of repoIds) {
-					if (normalized.startsWith(repoId + "/") || normalized === repoId) {
-						repoCounts.set(repoId, (repoCounts.get(repoId) || 0) + 1);
-						break; // first matching repo wins for this path
-					}
-				}
-			}
-			// Use the repo with the most file scope matches (majority vote)
-			if (repoCounts.size === 1) {
-				resolvedId = repoCounts.keys().next().value!;
-				source = "file-scope";
-			} else if (repoCounts.size > 1) {
-				// Multiple repos in file scope — pick the one with most entries.
-				// (Future: #51 will handle multi-repo tasks properly)
-				let maxCount = 0;
-				for (const [repoId, count] of repoCounts) {
-					if (count > maxCount) {
-						maxCount = count;
-						resolvedId = repoId;
-					}
-				}
-				source = "file-scope";
-			}
+		// Precedence 3: file scope inference — preserve first-appearance repo order
+		// from repo-prefixed file scope entries like "web-client/src/...".
+		if (!resolvedId && fileScopeRepoIds.length > 0) {
+			resolvedId = fileScopeRepoIds[0];
+			resolvedRepoIds = fileScopeRepoIds;
+			source = "file-scope";
 		}
 
 		// Precedence 4: workspace default repo
@@ -1560,7 +1682,8 @@ export function resolveTaskRouting(
 			continue;
 		}
 
-		// Attach resolved repo to the task
+		// Attach resolved repo(s) to the task
+		task.resolvedRepoIds = resolvedRepoIds ?? [resolvedId];
 		task.resolvedRepoId = resolvedId;
 
 		// ── Step-segment mapping: resolve placeholders and validate repo IDs (TP-173) ──
@@ -1779,9 +1902,11 @@ export function formatDiscoveryResults(result: DiscoveryResult): string {
 						? ` → depends on: ${task.dependencies.join(", ")}`
 						: "";
 				const repo =
-					task.resolvedRepoId
-						? ` → repo: ${task.resolvedRepoId}`
-						: "";
+					task.resolvedRepoIds && task.resolvedRepoIds.length > 1
+						? ` → repos: ${task.resolvedRepoIds.join(", ")}`
+						: task.resolvedRepoId
+							? ` → repo: ${task.resolvedRepoId}`
+							: "";
 				lines.push(
 					`    ${task.taskId} [${task.size}] ${task.taskName}${deps}${repo}`,
 				);

@@ -84,6 +84,57 @@ describe("task segment plan determinism", () => {
 		expect(plan.segments.map((s) => s.segmentId)).toEqual(["TP-300::default"]);
 		expect(plan.edges).toEqual([]);
 	});
+
+	it("uses declared promptRepoIds order before fallback inference", () => {
+		const pending = new Map<string, ParsedTask>([
+			[
+				"TP-350",
+				makeTask("TP-350", {
+					promptRepoId: "dashboard",
+					promptRepoIds: ["dashboard", "administration"],
+					resolvedRepoId: "dashboard",
+					fileScope: ["administration/src/view.tsx", "dashboard/src/report.ts"],
+				}),
+			],
+		]);
+
+		const plans = buildTaskSegmentPlans(pending, {
+			workspaceRepoIds: ["dashboard", "administration"],
+		});
+		const plan = plans.get("TP-350")!;
+		expect(plan.mode).toBe("inferred-sequential");
+		expect(plan.segments.map((s) => s.repoId)).toEqual(["dashboard", "administration"]);
+		expect(plan.edges.map((e) => `${e.fromSegmentId}->${e.toSegmentId}`)).toEqual([
+			"TP-350::dashboard->TP-350::administration",
+		]);
+		expect(plan.edges.every((e) => e.reason === "prompt:execution-target-repos")).toBe(true);
+	});
+
+	it("uses dependency resolvedRepoIds order when inferring cross-repo segments", () => {
+		const pending = new Map<string, ParsedTask>([
+			[
+				"TP-360",
+				makeTask("TP-360", {
+					resolvedRepoId: "dashboard",
+					resolvedRepoIds: ["dashboard", "administration"],
+				}),
+			],
+			[
+				"TP-361",
+				makeTask("TP-361", {
+					dependencies: ["TP-360"],
+				}),
+			],
+		]);
+
+		const plans = buildTaskSegmentPlans(pending);
+		const plan = plans.get("TP-361")!;
+		expect(plan.mode).toBe("inferred-sequential");
+		expect(plan.segments.map((s) => s.repoId)).toEqual(["dashboard", "administration"]);
+		expect(plan.edges.map((e) => `${e.fromSegmentId}->${e.toSegmentId}`)).toEqual([
+			"TP-361::dashboard->TP-361::administration",
+		]);
+	});
 });
 
 describe("computeWaveAssignments segment plan wiring", () => {

@@ -293,6 +293,8 @@ describe("5.x: Static batch-state fixture (v2-polyrepo)", () => {
 		expect(resolvedRepos.has("docs")).toBe(true);
 		expect(resolvedRepos.has("api")).toBe(true);
 		expect(resolvedRepos.has("frontend")).toBe(true);
+		expect(fixtureData.tasks.every((t: any) => Array.isArray(t.resolvedRepoIds))).toBe(true);
+		expect(fixtureData.tasks.every((t: any) => t.resolvedRepoIds.length === 1)).toBe(true);
 	});
 
 	it("5.3: fixture has 3-wave plan", () => {
@@ -325,6 +327,7 @@ describe("5.x: Static batch-state fixture (v2-polyrepo)", () => {
 	it("5.6: merge results include per-repo outcomes", () => {
 		expect(fixtureData.mergeResults.length).toBe(1); // wave 0 completed
 		const merge = fixtureData.mergeResults[0];
+		expect(merge.waveTransactionId).toBe("wave-20260316T120000-w1-fixture");
 		expect(merge.status).toBe("succeeded");
 		expect(merge.repoResults).toBeDefined();
 		expect(merge.repoResults.length).toBe(3);
@@ -355,6 +358,12 @@ describe("5.x: Static batch-state fixture (v2-polyrepo)", () => {
 			expect(typeof task.exitReason).toBe("string");
 			if (task.resolvedRepoId !== undefined) {
 				expect(typeof task.resolvedRepoId).toBe("string");
+			}
+			if (task.resolvedRepoIds !== undefined) {
+				expect(Array.isArray(task.resolvedRepoIds)).toBe(true);
+				for (const repoId of task.resolvedRepoIds) {
+					expect(typeof repoId).toBe("string");
+				}
 			}
 		}
 
@@ -387,6 +396,7 @@ describe("6.x: ParsedTask builder", () => {
 		const tasks = buildFixtureParsedTasks(fixture);
 		for (const [taskId, expectedRepo] of Object.entries(fixture.expectedRouting)) {
 			expect(tasks.get(taskId)!.resolvedRepoId).toBe(expectedRepo);
+			expect(tasks.get(taskId)!.resolvedRepoIds).toEqual([expectedRepo]);
 		}
 	});
 

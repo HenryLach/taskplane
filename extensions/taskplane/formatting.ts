@@ -3,11 +3,72 @@
  * @module orch/formatting
  */
 import { join } from "path";
-import { truncateToWidth } from "@mariozechner/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@mariozechner/pi-tui";
 
 import { parseDependencyReference } from "./discovery.ts";
 import type { LaneAssignment, MonitorState, OrchBatchRuntimeState, OrchDashboardViewModel, OrchLaneCardData, OrchSummaryCounts, ParsedTask, WaveComputationResult } from "./types.ts";
 import { getTaskDurationMinutes, SIZE_DURATION_MINUTES } from "./types.ts";
+
+function renderMergePanel(panel: NonNullable<OrchBatchRuntimeState["mergePanel"]>, width: number, theme: any): string[] {
+	const availableWidth = Math.max(8, width - 2);
+	const innerWidth = Math.max(1, availableWidth - 2);
+	const indent = "  ";
+	const tone = panel.status === "success"
+		? "success"
+		: panel.status === "error"
+			? "error"
+			: panel.status === "warning"
+				? "warning"
+				: "accent";
+	const headerLabel = typeof theme.bold === "function" ? theme.bold("Merge Status") : "Merge Status";
+	const statusText = panel.status === "success"
+		? "Complete"
+		: panel.status === "error"
+			? "Failed"
+			: panel.status === "warning"
+				? "Warnings"
+				: "Running";
+	const statusLine = `${panel.waveLabel || "Merge"} · ${statusText}`;
+	const contentLines = [
+		`${typeof theme.fg === "function" ? theme.fg(tone, "🔀") : "🔀"} ${headerLabel}`,
+		statusLine,
+		...(panel.events.length > 0 ? [""] : []),
+		...panel.events.map((event) => {
+			const marker = event.level === "success"
+				? "✓"
+				: event.level === "error"
+					? "✗"
+					: event.level === "warning"
+						? "!"
+						: "•";
+			const eventTone = event.level === "success"
+				? "success"
+				: event.level === "error"
+					? "error"
+					: event.level === "warning"
+						? "warning"
+						: "muted";
+			const prefix = typeof theme.fg === "function" ? theme.fg(eventTone, marker) : marker;
+			return `${prefix} ${event.message}`;
+		}),
+	];
+	const lines = [truncateToWidth(`${indent}┌${"─".repeat(innerWidth)}┐`, width)];
+	for (const contentLine of contentLines) {
+		if (contentLine.length === 0) {
+			lines.push(truncateToWidth(`${indent}│${" ".repeat(innerWidth)}│`, width));
+			continue;
+		}
+		for (const wrappedLine of wrapTextWithAnsi(contentLine, innerWidth)) {
+			const visible = visibleWidth(wrappedLine);
+			lines.push(truncateToWidth(
+				`${indent}│${wrappedLine}${" ".repeat(Math.max(0, innerWidth - visible))}│`,
+				width,
+			));
+		}
+	}
+	lines.push(truncateToWidth(`${indent}└${"─".repeat(innerWidth)}┘`, width));
+	return lines;
+}
 
 // ── Wave Output Formatting ───────────────────────────────────────────
 
@@ -747,6 +808,10 @@ export function createOrchWidget(
 						theme.fg("accent", `  🔀 Merging lane branches into ${vm.orchBranch || "orch branch"}...`),
 						width,
 					));
+					if (batchState.mergePanel) {
+						lines.push("");
+						lines.push(...renderMergePanel(batchState.mergePanel, width, theme));
+					}
 				} else if (vm.phase === "paused") {
 					lines.push("");
 					lines.push(truncateToWidth(
@@ -770,4 +835,5 @@ export function createOrchWidget(
 		};
 	};
 }
+
 

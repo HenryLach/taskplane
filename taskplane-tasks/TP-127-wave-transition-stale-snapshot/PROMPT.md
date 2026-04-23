@@ -28,6 +28,21 @@ The startup grace (snap == null → assume alive) doesn't help because the snaps
 
 **Fix:** In `resolveTaskMonitorState`, when the V2 lane snapshot exists but its `taskId` doesn't match the task being monitored, treat it as stale (same as null → assume alive). The lane-runner will overwrite it with the new task's snapshot shortly.
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Dependencies
 
 - None

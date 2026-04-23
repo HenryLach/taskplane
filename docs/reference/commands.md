@@ -105,19 +105,28 @@ See also: [`/orch-integrate`](#orch-integrate-orch-branch---merge---pr---force)
 
 ---
 
-### `/orch-plan <areas|paths|all> [--refresh]`
+### `/orch-plan <areas|paths|all> [--refresh] [--sync]`
 
 Preview execution plan without running tasks.
 
 **Syntax**
 
 ```text
-/orch-plan <areas|paths|all> [--refresh]
+/orch-plan <areas|paths|all> [--refresh] [--sync]
 ```
 
 **Options**
 
 - `--refresh` — bypass dependency cache and force re-scan
+- `--sync` — reconcile workspace repo imports and submodule state before planning
+
+When Taskplane detects workspace repo import gaps or submodule drift, `/orch-plan`
+stops before discovery until those findings are resolved. Re-run the same target with
+`--sync` to:
+
+- add auto-derivable repo entries to `.pi/taskplane-workspace.yaml`
+- run `git submodule update ...` according to the configured **On Submodule Drift** policy
+- re-run preflight before showing the plan
 
 **Output includes**
 
@@ -131,6 +140,7 @@ Preview execution plan without running tasks.
 ```text
 /orch-plan all
 /orch-plan auth billing
+/orch-plan all --sync
 /orch-plan all --refresh
 ```
 
@@ -474,7 +484,7 @@ Open the interactive settings TUI for viewing and editing taskplane configuratio
 **Behavior**
 
 - Shows a two-level navigation: section selector → field list
-- Displays 14 sections covering orchestrator, supervisor, task-runner, agent extensions, global preferences, and advanced (JSON-only) fields
+- Displays 15 sections covering orchestrator, supervisor, task-runner, workspace submodule policy, agent extensions, global preferences, and advanced (JSON-only) fields
 - Each field shows its current value and source indicator: `(project)` or `(global)`
 - Enum and boolean fields use toggleable controls; strings and numbers use text input
 - Global-preference changes write to `~/.pi/agent/taskplane/preferences.json`
@@ -500,6 +510,7 @@ Open the interactive settings TUI for viewing and editing taskplane configuratio
 | Assignment | Task assignment strategy |
 | Pre-Warm | Auto-detection settings |
 | Monitoring | Poll interval |
+| Submodules | Workspace submodule policy, sync mode, and repo ID derivation |
 | Global Preferences | Dashboard port and other per-user settings |
 | Advanced (JSON Only) | Read-only listing of uncovered/non-editable fields |
 

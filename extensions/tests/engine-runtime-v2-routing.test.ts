@@ -10,7 +10,7 @@
 
 import { describe, it } from "node:test";
 import { expect } from "./expect.ts";
-import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -27,6 +27,7 @@ const {
 } = await import("../taskplane/lane-runner.ts");
 const {
 	resolveTaskMonitorState,
+	parseStatusMdAtPath,
 } = await import("../taskplane/execution.ts");
 const {
 	writeLaneSnapshot,
@@ -662,6 +663,88 @@ describe("14.x: Monitor de-TMUX for V2 (TP-112)", () => {
 
 			expect(snapshot.sessionAlive).toBe(true);
 			expect(snapshot.status).toBe("running");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("14.10b: parseStatusMdAtPath extracts authoritative Current Step header", async () => {
+		const root = mkdtempSync(join(tmpdir(), "tp-127-status-"));
+		const statusPath = join(root, "STATUS.md");
+		try {
+			writeFileSync(statusPath, [
+				"# TP-127: Status",
+				"",
+				"**Current Step:** Step 1: Implement feature",
+				"**Status:** 🟡 In Progress",
+				"**Review Counter:** 2",
+				"**Iteration:** 3",
+				"",
+				"### Step 0: Preflight",
+				"**Status:** Pending",
+				"- [x] Verify files",
+				"",
+				"### Step 1: Implement feature",
+				"**Status:** Pending",
+				"- [ ] Ship fix",
+			].join("\n"));
+
+			const parsed = await parseStatusMdAtPath(statusPath);
+			expect(parsed.error).toBe(null);
+			expect(parsed.parsed?.currentStepLabel).toBe("Step 1: Implement feature");
+			expect(parsed.parsed?.currentStepName).toBe("Implement feature");
+			expect(parsed.parsed?.currentStepNumber).toBe(1);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("14.10c: resolveTaskMonitorState prefers Current Step header over stale step statuses", async () => {
+		const root = mkdtempSync(join(tmpdir(), "tp-127-current-step-"));
+		const now = Date.now();
+		const batchId = "b-current-step";
+		const taskId = "TP-127";
+		const statusPath = join(root, "STATUS.md");
+		try {
+			writeFileSync(statusPath, [
+				"# TP-127: Status",
+				"",
+				"**Current Step:** Step 1: Implement feature",
+				"**Status:** 🟡 In Progress",
+				"**Review Counter:** 0",
+				"**Iteration:** 1",
+				"",
+				"### Step 0: Preflight",
+				"**Status:** Pending",
+				"- [x] Verify files",
+				"",
+				"### Step 1: Implement feature",
+				"**Status:** Pending",
+				"- [ ] Ship fix",
+			].join("\n"));
+
+			writeLaneSnapshot(root, batchId, 1, {
+				taskId,
+				status: "running",
+				updatedAt: now,
+			});
+
+			const statusResult = await parseStatusMdAtPath(statusPath);
+			const snapshot = await resolveTaskMonitorState(
+				taskId,
+				join(root, ".DONE"),
+				"lane-1",
+				statusResult,
+				freshTracker(taskId, now),
+				30 * 60_000,
+				now,
+				"v2",
+				{ stateRoot: root, batchId, laneNumber: 1 },
+			);
+
+			expect(snapshot.status).toBe("running");
+			expect(snapshot.currentStepName).toBe("Implement feature");
+			expect(snapshot.currentStepNumber).toBe(1);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

@@ -7,7 +7,7 @@ import { join } from "path";
 import { parseDependencyReference } from "./discovery.ts";
 import { resolveOperatorId } from "./naming.ts";
 import { AllocationError, buildSegmentId, getTaskDurationMinutes } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, AllocateLanesResult, AllocationErrorCode, DependencyGraph, DiscoveryError, GraphValidationResult, LaneAssignment, OrchestratorConfig, ParsedTask, TaskSegmentPlan, TaskSegmentPlanMap, WaveAssignment, WaveComputationResult, WorkspaceConfig, WorktreeInfo } from "./types.ts";
+import type { AllocatedLane, AllocatedTask, AllocationErrorCode, DependencyGraph, DiscoveryError, GraphValidationResult, LaneAssignment, OrchestratorConfig, ParsedTask, TaskSegmentPlan, TaskSegmentPlanMap, WaveAssignment, WaveComputationResult, WorkspaceConfig, WorktreeInfo } from "./types.ts";
 import { getCurrentBranch, runGit } from "./git.ts";
 import { ensureLaneWorktrees, removeAllWorktrees, removeWorktree } from "./worktree.ts";
 
@@ -415,16 +415,59 @@ export function applyFileScopeAffinity(
 export interface RepoTaskGroup {
 	/** Repo ID (undefined for repo mode / tasks without resolvedRepoId) */
 	repoId: string | undefined;
+	/** Ordered repo membership for this lane-planning group. */
+	repoIds?: string[];
 	/** Task IDs in this group (sorted alphabetically) */
 	taskIds: string[];
 }
 
+function normalizeRepoGroupIds(task: ParsedTask | undefined): string[] {
+	if (!task) return [];
+
+	const uniqueRepoIds = (repoIds: string[] | undefined): string[] => {
+		const result: string[] = [];
+		const seen = new Set<string>();
+		for (const rawRepoId of repoIds ?? []) {
+			const repoId = normalizeRepoIdCandidate(rawRepoId);
+			if (!repoId || seen.has(repoId)) continue;
+			seen.add(repoId);
+			result.push(repoId);
+		}
+		return result;
+	};
+
+	// Once the engine binds an active segment, the current round is repo-singleton
+	// even if the task retains broader multi-repo membership metadata.
+	if (task.activeSegmentId) {
+		const activeRepoId = normalizeRepoIdCandidate(task.resolvedRepoId ?? "");
+		return activeRepoId ? [activeRepoId] : [];
+	}
+
+	const participatingRepoIds = uniqueRepoIds(task.participatingRepoIds);
+	if (participatingRepoIds.length > 0) {
+		return participatingRepoIds;
+	}
+
+	const resolvedRepoIds = uniqueRepoIds(task.resolvedRepoIds);
+	if (resolvedRepoIds.length > 0) {
+		return resolvedRepoIds;
+	}
+
+	const resolvedRepoId = normalizeRepoIdCandidate(task.resolvedRepoId ?? "");
+	return resolvedRepoId ? [resolvedRepoId] : [];
+}
+
 /**
- * Group wave tasks by their resolved repo ID.
+ * Group wave tasks by their current lane-planning repo contract.
  *
- * In workspace mode, tasks carry `resolvedRepoId` from the discovery/routing
- * phase. This function groups them so each repo gets independent lane
- * allocation (own affinity groups, own max_lanes budget).
+ * In workspace mode, repo-singleton tasks group by `resolvedRepoId`, while
+ * unsplit multi-repo tasks stay on one dedicated lane contract keyed by their
+ * ordered repo membership. This prevents a multi-repo task from being merged
+ * into a primary-repo singleton lane before multi-repo worktree maps exist.
+ *
+ * When the engine binds an `activeSegmentId`, the task becomes repo-singleton
+ * again for that execution round, so segment-frontier waves continue to group
+ * by the active repo only.
  *
  * In repo mode, all tasks have `resolvedRepoId === undefined`, so they all
  * land in a single group keyed by `""` (empty string). This preserves
@@ -442,14 +485,18 @@ export function groupTasksByRepo(
 	waveTasks: string[],
 	pending: Map<string, ParsedTask>,
 ): RepoTaskGroup[] {
-	const groupMap = new Map<string, string[]>();
+	const groupMap = new Map<string, RepoTaskGroup>();
 
 	for (const taskId of waveTasks) {
 		const task = pending.get(taskId);
-		// Use resolvedRepoId or empty string as group key (undefined → "" for Map key)
-		const key = task?.resolvedRepoId ?? "";
-		const existing = groupMap.get(key) || [];
-		existing.push(taskId);
+		const repoIds = normalizeRepoGroupIds(task);
+		const key = repoIds.length > 0 ? repoIds.join("|") : "";
+		const existing = groupMap.get(key) || {
+			repoId: repoIds[0],
+			repoIds: repoIds.length > 0 ? [...repoIds] : undefined,
+			taskIds: [],
+		};
+		existing.taskIds.push(taskId);
 		groupMap.set(key, existing);
 	}
 
@@ -457,11 +504,12 @@ export function groupTasksByRepo(
 	const groups: RepoTaskGroup[] = [];
 	const sortedKeys = [...groupMap.keys()].sort();
 	for (const key of sortedKeys) {
-		const taskIds = groupMap.get(key)!;
-		taskIds.sort(); // Deterministic task order within group
+		const group = groupMap.get(key)!;
+		group.taskIds.sort(); // Deterministic task order within group
 		groups.push({
-			repoId: key || undefined, // Convert "" back to undefined for repo mode
-			taskIds,
+			repoId: group.repoId,
+			repoIds: group.repoIds,
+			taskIds: group.taskIds,
 		});
 	}
 
@@ -661,6 +709,10 @@ function collectKnownRepoIds(
 	}
 
 	for (const task of pending.values()) {
+		for (const repoIdRaw of task.resolvedRepoIds ?? []) {
+			const repoId = normalizeRepoIdCandidate(repoIdRaw);
+			if (repoId) known.add(repoId);
+		}
 		if (task.resolvedRepoId) {
 			const repoId = normalizeRepoIdCandidate(task.resolvedRepoId);
 			if (repoId) known.add(repoId);
@@ -732,7 +784,16 @@ export function inferTaskRepoOrder(
 	for (const depRaw of task.dependencies) {
 		const depId = parseDependencyReference(depRaw).taskId;
 		const depTask = pending.get(depId);
-		if (depTask?.resolvedRepoId && record(depTask.resolvedRepoId, true) !== null) {
+		let sawDependencyRepo = false;
+		for (const repoIdRaw of depTask?.resolvedRepoIds ?? []) {
+			if (record(repoIdRaw, true) !== null) {
+				sawDependencyRepo = true;
+			}
+		}
+		if (!sawDependencyRepo && depTask?.resolvedRepoId && record(depTask.resolvedRepoId, true) !== null) {
+			sawDependencyRepo = true;
+		}
+		if (sawDependencyRepo) {
 			hasPrimarySignal = true;
 		}
 	}
@@ -802,6 +863,32 @@ export function buildSegmentPlanForTask(
 			segments,
 			edges,
 			mode: "explicit-dag",
+		};
+	}
+
+	const declaredRepoIds: string[] = [];
+	const declaredRepoSet = new Set<string>();
+	for (const repoIdRaw of task.promptRepoIds ?? []) {
+		const repoId = normalizeRepoIdCandidate(repoIdRaw);
+		if (!repoId || declaredRepoSet.has(repoId)) continue;
+		declaredRepoSet.add(repoId);
+		declaredRepoIds.push(repoId);
+	}
+	if (declaredRepoIds.length > 0) {
+		const segments = buildSegmentNodes(task.taskId, declaredRepoIds);
+		const edges = sortSegmentEdges(
+			segments.slice(0, -1).map((segment, idx) => ({
+				fromSegmentId: segment.segmentId,
+				toSegmentId: segments[idx + 1].segmentId,
+				provenance: "inferred" as const,
+				reason: "prompt:execution-target-repos",
+			})),
+		);
+		return {
+			taskId: task.taskId,
+			segments,
+			edges,
+			mode: declaredRepoIds.length === 1 ? "repo-singleton" : "inferred-sequential",
 		};
 	}
 
@@ -1242,6 +1329,7 @@ export function allocateLanes(
 		globalLane: number;
 		localLane: number;
 		repoId: string | undefined;
+		repoIds: string[];
 		assignments: LaneAssignment[];
 	}> = [];
 
@@ -1280,6 +1368,7 @@ export function allocateLanes(
 				globalLane: localToGlobal.get(localLane)!,
 				localLane,
 				repoId: group.repoId,
+				repoIds: group.repoIds ?? (group.repoId ? [group.repoId] : []),
 				assignments: byLocalLane.get(localLane) || [],
 			});
 		}
@@ -1320,16 +1409,22 @@ export function allocateLanes(
 	const repoLaneGroups = new Map<string, number[]>(); // key → global lane numbers
 	const repoIdForGroup = new Map<string, string | undefined>(); // key → repoId
 	for (const entry of globalLaneEntries) {
-		const key = entry.repoId ?? "";
-		const existing = repoLaneGroups.get(key) || [];
-		existing.push(entry.globalLane);
-		repoLaneGroups.set(key, existing);
-		repoIdForGroup.set(key, entry.repoId);
+		const desiredRepoIds = entry.repoIds.length > 0 ? entry.repoIds : [entry.repoId];
+		for (const desiredRepoId of desiredRepoIds) {
+			const key = desiredRepoId ?? "";
+			const existing = repoLaneGroups.get(key) || [];
+			existing.push(entry.globalLane);
+			repoLaneGroups.set(key, existing);
+			repoIdForGroup.set(key, desiredRepoId);
+		}
+	}
+	for (const [key, laneNumbers] of repoLaneGroups) {
+		repoLaneGroups.set(key, [...new Set(laneNumbers)].sort((a, b) => a - b));
 	}
 	const sortedGroupKeys = [...repoLaneGroups.keys()].sort();
 
 	// Track all worktrees created across all repo groups for cross-repo rollback
-	const allWorktrees = new Map<number, WorktreeInfo>(); // global lane → worktree
+	const allWorktreesByLane = new Map<number, Map<string, WorktreeInfo>>();
 	const createdGroupKeys: string[] = []; // groups that succeeded (for rollback tracking)
 
 	for (const groupKey of sortedGroupKeys) {
@@ -1344,6 +1439,7 @@ export function allocateLanes(
 			config,
 			groupRepoRoot,
 			groupBaseBranch,
+			groupRepoId,
 		);
 
 		if (!worktreeResult.success) {
@@ -1354,7 +1450,7 @@ export function allocateLanes(
 				const prevRepoRoot = resolveRepoRoot(prevRepoId, repoRoot, workspaceConfig);
 				const prevLanes = repoLaneGroups.get(prevKey)!;
 				for (const lane of prevLanes) {
-					const wt = allWorktrees.get(lane);
+					const wt = allWorktreesByLane.get(lane)?.get(prevRepoId ?? "");
 					if (wt) {
 						try {
 							removeWorktree(wt, prevRepoRoot);
@@ -1397,7 +1493,9 @@ export function allocateLanes(
 
 		// Record successful worktrees
 		for (const wt of worktreeResult.worktrees) {
-			allWorktrees.set(wt.laneNumber, wt);
+			const laneWorktrees = allWorktreesByLane.get(wt.laneNumber) || new Map<string, WorktreeInfo>();
+			laneWorktrees.set(groupRepoId ?? "", { ...wt, repoId: groupRepoId });
+			allWorktreesByLane.set(wt.laneNumber, laneWorktrees);
 		}
 		createdGroupKeys.push(groupKey);
 	}
@@ -1411,7 +1509,8 @@ export function allocateLanes(
 	const allocatedLanes: AllocatedLane[] = [];
 
 	for (const entry of globalLaneEntries) {
-		const wt = allWorktrees.get(entry.globalLane);
+		const laneWorktrees = allWorktreesByLane.get(entry.globalLane);
+		const wt = laneWorktrees?.get(entry.repoId ?? "");
 		if (!wt) {
 			// This should never happen if ensureLaneWorktrees and assignTasksToLanes
 			// agree on lane numbers, but handle defensively.
@@ -1453,12 +1552,21 @@ export function allocateLanes(
 		);
 
 		const laneSessionId = generateLaneSessionId(sessionPrefix, entry.localLane, opId, entry.repoId);
+		const repoWorktrees = laneWorktrees
+			? Object.fromEntries(
+				[...laneWorktrees.entries()]
+					.filter(([repoKey]) => repoKey !== "")
+					.map(([repoKey, worktree]) => [repoKey, worktree]),
+			)
+			: undefined;
+
 		allocatedLanes.push({
 			laneNumber: entry.globalLane,
 			laneId: generateLaneId(entry.localLane, entry.repoId),
 			laneSessionId,
 			worktreePath: wt.path,
 			branch: wt.branch,
+			repoWorktrees: repoWorktrees && Object.keys(repoWorktrees).length > 0 ? repoWorktrees : undefined,
 			tasks: allocatedTasks,
 			strategy,
 			estimatedLoad,

@@ -56,9 +56,11 @@ import {
 	type ExecutionUnit,
 	type RuntimeAgentId,
 	type RuntimeLaneSnapshot,
+	type RuntimeLaneSubmoduleDiagnostics,
 	type RuntimeAgentTelemetrySnapshot,
 	type RuntimeTaskProgress,
 	type RuntimeAgentStatus,
+	type RuntimeSubmoduleSnapshot,
 	type PacketPaths,
 	type LaneTaskOutcome,
 	type LaneTaskStatus,
@@ -66,7 +68,165 @@ import {
 	type StepSegmentMapping,
 } from "./types.ts";
 
+import { captureSubmoduleStatusSnapshot } from "./git.ts";
+import { classifyExit, type TaskExitDiagnostic } from "./diagnostics.ts";
+
 const LANE_RUNNER_DIR = dirname(fileURLToPath(import.meta.url));
+
+export function readGitHead(cwd: string): string | null {
+	try {
+		return execSync("git rev-parse HEAD", {
+			cwd,
+			timeout: 5000,
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+		}).trim() || null;
+	} catch {
+		return null;
+	}
+}
+
+export function detectSoftProgress(
+	worktreePath: string,
+	previousHead: string | null,
+): { hasProgress: boolean; reason: string | null } {
+	const currentHead = readGitHead(worktreePath);
+	if (previousHead && currentHead && previousHead !== currentHead) {
+		return {
+			hasProgress: true,
+			reason: `HEAD advanced from ${previousHead.slice(0, 8)} to ${currentHead.slice(0, 8)}`,
+		};
+	}
+
+	try {
+		const diffOutput = execSync("git diff --stat HEAD", {
+			cwd: worktreePath,
+			timeout: 5000,
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+		}).trim();
+		const changedFiles = diffOutput.split("\n").filter(line => line.includes("|"));
+		const sourceChanges = changedFiles.filter(line => !line.includes("STATUS.md") && !line.includes(".steering"));
+		if (sourceChanges.length > 0) {
+			return {
+				hasProgress: true,
+				reason: `uncommitted worktree changes in ${sourceChanges.length} file(s)`,
+			};
+		}
+	} catch {
+		// Treat command failures as no soft progress.
+	}
+
+	return { hasProgress: false, reason: null };
+}
+
+export function getStatusProgressTotals(statusContent: string): { checked: number; total: number } {
+	const parsed = parseStatusMd(statusContent);
+	return {
+		checked: parsed.steps.reduce((sum, step) => sum + step.totalChecked, 0),
+		total: parsed.steps.reduce((sum, step) => sum + step.totalItems, 0),
+	};
+}
+
+function readLastKnownProgress(statusPath?: string): { lastKnownStep: number | null; lastKnownCheckbox: string | null } {
+	if (!statusPath || !existsSync(statusPath)) {
+		return { lastKnownStep: null, lastKnownCheckbox: null };
+	}
+
+	try {
+		const parsed = parseStatusMd(readFileSync(statusPath, "utf-8"));
+		const lastStep = parsed.steps[parsed.steps.length - 1] ?? null;
+		const lastCheckbox = lastStep?.checkboxes[lastStep.checkboxes.length - 1] ?? null;
+		return {
+			lastKnownStep: lastStep?.number ?? null,
+			lastKnownCheckbox: lastCheckbox?.text ?? null,
+		};
+	} catch {
+		return { lastKnownStep: null, lastKnownCheckbox: null };
+	}
+}
+
+function detectUnsafeSubmoduleKind(exitReason: string): "dirty-worktree" | "unpublished-commit" | "unreachable-ref" | null {
+	if (/submodule_unreachable_ref/i.test(exitReason) || /unreachable gitlink refs/i.test(exitReason)) {
+		return "unreachable-ref";
+	}
+	if (/Unsafe submodule state after task success:/i.test(exitReason)) {
+		if (/has uncommitted submodule changes/i.test(exitReason)) {
+			return "dirty-worktree";
+		}
+		if (/points to local commit .* not reachable on /i.test(exitReason)) {
+			return "unpublished-commit";
+		}
+	}
+	return null;
+}
+
+export function buildLaneExitDiagnostic(
+	status: LaneTaskStatus,
+	exitReason: string,
+	doneFileFound: boolean,
+	finalTelemetry?: Partial<AgentHostResult>,
+	statusPath?: string,
+	repoId = "default",
+): TaskExitDiagnostic | undefined {
+	if (status === "skipped") return undefined;
+
+	const stallDetected = /No progress after \d+ iterations?/i.test(exitReason);
+	const timerKilled = /wall-clock timeout/i.test(exitReason);
+	const contextKilled = /context limit/i.test(exitReason);
+	const userKilled = /paused by user|aborted by user|killed by user/i.test(exitReason);
+	const unsafeSubmoduleKind = detectUnsafeSubmoduleKind(exitReason);
+	const telemetryExitCode = finalTelemetry?.exitCode ?? null;
+	const syntheticExitCode = stallDetected
+		? 0
+		: (telemetryExitCode ?? (status === "failed" ? 1 : 0));
+	const syntheticSummary = {
+		exitCode: syntheticExitCode,
+		exitSignal: finalTelemetry?.signal ?? null,
+		tokens: {
+			input: finalTelemetry?.inputTokens ?? 0,
+			output: finalTelemetry?.outputTokens ?? 0,
+			cacheRead: finalTelemetry?.cacheReadTokens ?? 0,
+			cacheWrite: finalTelemetry?.cacheWriteTokens ?? 0,
+		},
+		cost: finalTelemetry?.costUsd ?? 0,
+		toolCalls: finalTelemetry?.toolCalls ?? 0,
+		retries: [],
+		compactions: finalTelemetry?.compactions ?? 0,
+		durationSec: Math.max(0, Math.round((finalTelemetry?.durationMs ?? 0) / 1000)),
+		lastToolCall: finalTelemetry?.lastTool ?? null,
+		error: status === "failed"
+			? (finalTelemetry?.error ?? exitReason)
+			: (finalTelemetry?.error ?? null),
+	};
+	const classification = classifyExit({
+		exitSummary: syntheticSummary,
+		doneFileFound: doneFileFound || status === "succeeded",
+		timerKilled,
+		contextKilled,
+		unsafeSubmoduleKind,
+		stallDetected,
+		userKilled,
+		contextPct: finalTelemetry?.contextUsage?.percent ?? null,
+	});
+	const { lastKnownStep, lastKnownCheckbox } = readLastKnownProgress(statusPath);
+
+	return {
+		classification,
+		exitCode: syntheticExitCode,
+		errorMessage: status === "failed"
+			? (finalTelemetry?.error ?? exitReason)
+			: (finalTelemetry?.error ?? null),
+		tokensUsed: syntheticSummary.tokens,
+		contextPct: finalTelemetry?.contextUsage?.percent ?? null,
+		partialProgressCommits: 0,
+		partialProgressBranch: null,
+		durationSec: syntheticSummary.durationSec,
+		lastKnownStep,
+		lastKnownCheckbox,
+		repoId,
+	};
+}
 
 // ── Segment Scoping Helpers (Phase A, TP-174) ────────────────────────
 
@@ -114,13 +274,13 @@ export function getSegmentCheckboxes(
 	const text = statusContent.replace(/\r\n/g, "\n");
 
 	// Find the step section
-	const stepHeaderPattern = new RegExp(`^###\\s+Step\\s+${stepNumber}:`, "m");
+	const stepHeaderPattern = new RegExp(`^#{2,6}\\s+Step\\s+${stepNumber}(?::\\s*|\\s+)`, "m");
 	const stepMatch = text.match(stepHeaderPattern);
 	if (!stepMatch || stepMatch.index === undefined) return null;
 
 	// Find the end of this step section (next ### or end of file)
 	const afterStep = text.slice(stepMatch.index + stepMatch[0].length);
-	const nextStepMatch = afterStep.search(/^###\s+Step\s+\d+:/m);
+	const nextStepMatch = afterStep.search(/^#{2,6}\s+Step\s+\d+(?::\s*|\s+)/m);
 	const stepContent = nextStepMatch !== -1 ? afterStep.slice(0, nextStepMatch) : afterStep;
 
 	// Find the segment header within this step
@@ -130,7 +290,7 @@ export function getSegmentCheckboxes(
 
 	// Extract content from segment header to next #### header or ### header or ---
 	const afterSeg = stepContent.slice(segMatch.index + segMatch[0].length);
-	const nextSectionMatch = afterSeg.search(/^(?:####\s|###\s|---)/m);
+	const nextSectionMatch = afterSeg.search(/^(?:####\s|###\s|##\s|---)/m);
 	const segContent = nextSectionMatch !== -1 ? afterSeg.slice(0, nextSectionMatch) : afterSeg;
 
 	// Count checkboxes
@@ -191,6 +351,8 @@ export interface LaneRunnerConfig {
 	branch: string;
 	/** Repo ID */
 	repoId: string;
+	/** Repo ID -> absolute path map for all repos participating in the task. */
+	repoPaths?: Record<string, string>;
 	/** State root for runtime artifacts (workspace root or repo root) */
 	stateRoot: string;
 	/** Worker model (empty string = inherit from session) */
@@ -295,6 +457,9 @@ export async function executeTaskV2(
 	const taskId = unit.taskId;
 	const segmentId = unit.segmentId;
 	const workerAgentId = buildRuntimeAgentId(config.agentIdPrefix, config.laneNumber, "worker");
+	const submoduleDiagnostics: RuntimeLaneSubmoduleDiagnostics = {
+		preTask: captureTaskSubmoduleSnapshot(taskId, "pre-task", config.worktreePath),
+	};
 
 	// ── 1. Ensure STATUS.md exists ──────────────────────────────────
 	if (!existsSync(statusPath)) {
@@ -340,11 +505,13 @@ export async function executeTaskV2(
 			})()
 			: null;
 
+	emitSnapshot(config, taskId, segmentId, "running", {}, statusPath, reviewerStatePath, snapshotSegmentCtx, submoduleDiagnostics);
+
 	for (let iter = 0; iter < config.maxIterations; iter++) {
 		if (pauseSignal.paused) {
 			logExecution(statusPath, "Paused", `User paused at iteration ${totalIterations}`);
 			return makeResult(taskId, segmentId, workerAgentId, "skipped", startTime,
-				"Paused by user", false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, undefined, snapshotSegmentCtx);
+				"Paused by user", false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, undefined, submoduleDiagnostics, snapshotSegmentCtx);
 		}
 
 		// Determine remaining steps
@@ -403,6 +570,7 @@ export async function executeTaskV2(
 		} else {
 			prevTotalChecked = currentStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
 		}
+		const prevHeadCommit = readGitHead(unit.worktreePath);
 
 		// ── Build worker prompt ─────────────────────────────────────
 		const wrapUpFile = join(taskFolder, ".task-wrap-up");
@@ -432,6 +600,11 @@ export async function executeTaskV2(
 			...(isSegmentScoped
 				? [`- Active segment ID: ${segmentId}`]
 				: []),
+			``,
+			`Task repo map:`,
+			...Object.entries(config.repoPaths ?? unit.repoPaths)
+				.sort((a, b) => a[0].localeCompare(b[0]))
+				.map(([repoId, repoPath]) => `- ${repoId}: ${repoPath}`),
 			``,
 			`Packet home context:`,
 			`- Packet home repo ID: ${unit.packetHomeRepoId}`,
@@ -597,6 +770,7 @@ export async function executeTaskV2(
 				TASKPLANE_REVIEWER_STATE_PATH: reviewerStatePath,
 				TASKPLANE_PROJECT_NAME: config.projectName || "project",
 				TASKPLANE_TASK_ID: taskId,
+				TASKPLANE_REPO_PATHS: JSON.stringify(config.repoPaths ?? unit.repoPaths),
 				// Hard-set segment env vars based on mode. In FULL_TASK mode,
 				// explicitly clear them to prevent env inheritance leaking segment cues.
 				TASKPLANE_ACTIVE_SEGMENT_ID: isSegmentScoped ? (segmentId ?? "") : "",
@@ -627,11 +801,14 @@ export async function executeTaskV2(
 							const segCbs = getSegmentCheckboxes(statusContent, firstStep.number, currentRepoId);
 							midTotalChecked = segCbs ? segCbs.checked : 0;
 						} else {
-							const midStatus = parseStatusMd(statusContent);
-							midTotalChecked = midStatus.steps.reduce((sum, s) => sum + s.totalChecked, 0);
+							midTotalChecked = getStatusProgressTotals(statusContent).checked;
 						}
 						if (midTotalChecked > prevTotalChecked) {
 							// Worker checked off checkboxes — let it exit normally
+							return null;
+						}
+						const softProgress = detectSoftProgress(unit.worktreePath, prevHeadCommit);
+						if (softProgress.hasProgress) {
 							return null;
 						}
 						// Check for blocker entries: extract Blockers section and see if non-empty
@@ -644,6 +821,27 @@ export async function executeTaskV2(
 								return null;
 							}
 						}
+				// Check if task is fully complete — all checkboxes checked across all steps.
+				// This handles tasks already completed by prior batch runs where no new
+				// checkboxes need to be marked, but the worker legitimately finished.
+				let totalChecked: number;
+				if (repoStepNumbers && currentRepoId) {
+					const segCbs = getSegmentCheckboxes(statusContent, firstStep.number, currentRepoId);
+					totalChecked = segCbs ? segCbs.checked : 0;
+				} else {
+					totalChecked = getStatusProgressTotals(statusContent).checked;
+				}
+				let totalSteps: number;
+				if (repoStepNumbers && currentRepoId) {
+					const segCbs = getSegmentCheckboxes(statusContent, firstStep.number, currentRepoId);
+					totalSteps = segCbs ? segCbs.total : 0;
+				} else {
+					totalSteps = getStatusProgressTotals(statusContent).total;
+				}
+				if (totalSteps > 0 && totalChecked >= totalSteps) {
+					// All task items are checked — worker completed an already-done or just-completed task.
+					return null;
+				}
 					} catch { /* If we can't read STATUS.md, proceed with escalation */ }
 
 					// No visible progress — compose escalation message
@@ -782,7 +980,7 @@ export async function executeTaskV2(
 				iterationTelemetry = telemetry;
 				lastTelemetry = telemetry;
 				// Emit lane snapshot
-				emitSnapshot(config, taskId, segmentId, "running", telemetry, statusPath, reviewerStatePath, snapshotSegmentCtx);
+				emitSnapshot(config, taskId, segmentId, "running", telemetry, statusPath, reviewerStatePath, snapshotSegmentCtx, submoduleDiagnostics);
 			} catch { /* non-fatal: telemetry callback must never crash the engine */ }
 		});
 
@@ -792,7 +990,7 @@ export async function executeTaskV2(
 		let reviewerSnapshotFailures = 0;
 		const reviewerRefreshFailureThreshold = 5;
 		const reviewerRefresh = setInterval(() => {
-			const ok = emitSnapshot(config, taskId, segmentId, "running", iterationTelemetry, statusPath, reviewerStatePath, snapshotSegmentCtx);
+			const ok = emitSnapshot(config, taskId, segmentId, "running", iterationTelemetry, statusPath, reviewerStatePath, snapshotSegmentCtx, submoduleDiagnostics);
 			if (ok) {
 				reviewerSnapshotFailures = 0;
 				return;
@@ -925,29 +1123,13 @@ export async function executeTaskV2(
 		const progressDelta = afterTotalChecked - prevTotalChecked;
 
 		if (progressDelta <= 0) {
-			// Check for soft progress: uncommitted changes in the worktree
-			// indicate the worker is actively editing code even if no checkbox
-			// was checked yet. This avoids false stall detection on complex
-			// steps where analysis + editing spans multiple tool calls.
-			let hasSoftProgress = false;
-			try {
-				const diffOutput = execSync("git diff --stat HEAD", {
-					cwd: unit.worktreePath,
-					timeout: 5000,
-					encoding: "utf-8",
-					stdio: ["pipe", "pipe", "pipe"],
-				}).trim();
-				// Only count source file changes as soft progress, not just STATUS.md
-				const changedFiles = diffOutput.split("\n").filter(l => l.includes("|"));
-				const sourceChanges = changedFiles.filter(l => !l.includes("STATUS.md") && !l.includes(".steering"));
-				hasSoftProgress = sourceChanges.length > 0;
-			} catch { /* git not available or timeout — treat as no soft progress */ }
+			const softProgress = detectSoftProgress(unit.worktreePath, prevHeadCommit);
 
-			if (hasSoftProgress) {
+			if (softProgress.hasProgress) {
 				// Worker has uncommitted code changes — don't count toward stall.
 				// Reset the counter since the worker is actively editing.
 				logExecution(statusPath, "Soft progress",
-					`Iteration ${totalIterations}: 0 new checkboxes but uncommitted source changes detected — not counting as stall`);
+					`Iteration ${totalIterations}: 0 new checkboxes but ${softProgress.reason ?? "durable progress detected"} — not counting as stall`);
 				noProgressCount = 0;
 			} else {
 				noProgressCount++;
@@ -955,8 +1137,9 @@ export async function executeTaskV2(
 					`Iteration ${totalIterations}: 0 new checkboxes (${noProgressCount}/${config.noProgressLimit} stall limit)`);
 				if (noProgressCount >= config.noProgressLimit) {
 					logExecution(statusPath, "Task blocked", `No progress after ${noProgressCount} iterations`);
+					submoduleDiagnostics.postTask = captureTaskSubmoduleSnapshot(taskId, "post-task", config.worktreePath);
 					return makeResult(taskId, segmentId, workerAgentId, "failed", startTime,
-						`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, snapshotSegmentCtx);
+						`No progress after ${noProgressCount} iterations`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, submoduleDiagnostics, snapshotSegmentCtx);
 				}
 			}
 		} else {
@@ -1048,9 +1231,10 @@ export async function executeTaskV2(
 				.join(", ");
 		}
 		logExecution(statusPath, "Task incomplete", `Max iterations reached. Incomplete: ${incomplete}`);
+		submoduleDiagnostics.postTask = captureTaskSubmoduleSnapshot(taskId, "post-task", config.worktreePath);
 		return makeResult(taskId, segmentId, workerAgentId, "failed", startTime,
 			`Max iterations (${config.maxIterations}) reached with incomplete steps: ${incomplete}`,
-			false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, snapshotSegmentCtx);
+			false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, submoduleDiagnostics, snapshotSegmentCtx);
 	}
 
 	// TP-145: Determine if this is a non-final segment of a multi-segment task.
@@ -1092,8 +1276,9 @@ export async function executeTaskV2(
 		const suppressionReason = isNonFinalSegment
 			? "non-final"
 			: "pending expansion requests";
+		submoduleDiagnostics.postTask = captureTaskSubmoduleSnapshot(taskId, "post-task", config.worktreePath);
 		return makeResult(taskId, segmentId, workerAgentId, "succeeded", startTime,
-			`Segment completed (${suppressionReason} — .DONE suppressed)`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, snapshotSegmentCtx);
+			`Segment completed (${suppressionReason} — .DONE suppressed)`, false, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, submoduleDiagnostics, snapshotSegmentCtx);
 	}
 
 	// Create .DONE if not already present (final segment or single-segment/whole-task execution)
@@ -1102,9 +1287,10 @@ export async function executeTaskV2(
 	}
 	updateStatusField(statusPath, "Status", "✅ Complete");
 	logExecution(statusPath, "Task complete", ".DONE created");
+	submoduleDiagnostics.postTask = captureTaskSubmoduleSnapshot(taskId, "post-task", config.worktreePath);
 
 	return makeResult(taskId, segmentId, workerAgentId, "succeeded", startTime,
-		".DONE file created by lane-runner", true, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, snapshotSegmentCtx);
+		".DONE file created by lane-runner", true, totalIterations, cumulativeCostUsd, cumulativeTokens, config, statusPath, reviewerStatePath, lastTelemetry, submoduleDiagnostics, snapshotSegmentCtx);
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -1165,6 +1351,7 @@ function makeResult(
 	statusPath?: string,
 	reviewerStatePath?: string,
 	finalTelemetry?: Partial<AgentHostResult>,
+	submoduleDiagnostics?: RuntimeLaneSubmoduleDiagnostics,
 	/** TP-174: Segment context for segment-scoped snapshot progress */
 	segmentCtx?: { stepSegmentMap: StepSegmentMapping[]; repoId: string } | null,
 ): LaneRunnerTaskResult {
@@ -1192,6 +1379,14 @@ function makeResult(
 			doneFileFound,
 			laneNumber: config?.laneNumber,
 			telemetry,
+			exitDiagnostic: buildLaneExitDiagnostic(
+				status,
+				exitReason,
+				doneFileFound,
+				finalTelemetry,
+				statusPath,
+				config?.repoId ?? "default",
+			),
 		},
 		iterations,
 		costUsd,
@@ -1201,7 +1396,7 @@ function makeResult(
 	// TP-115: Emit terminal snapshot with real telemetry from agent-host result
 	if (config && statusPath && reviewerStatePath) {
 		const terminalStatus = mapLaneTaskStatusToTerminalSnapshotStatus(status);
-		emitSnapshot(config, taskId, segmentId, terminalStatus, finalTelemetry ?? {}, statusPath, reviewerStatePath, segmentCtx);
+		emitSnapshot(config, taskId, segmentId, terminalStatus, finalTelemetry ?? {}, statusPath, reviewerStatePath, segmentCtx, submoduleDiagnostics);
 	}
 
 	return result;
@@ -1280,6 +1475,7 @@ function emitSnapshot(
 	reviewerStatePath: string,
 	/** TP-174: Optional segment context for segment-scoped progress reporting */
 	segmentContext?: { stepSegmentMap: StepSegmentMapping[]; repoId: string } | null,
+	submoduleDiagnostics?: RuntimeLaneSubmoduleDiagnostics,
 ): boolean {
 	try {
 		// Parse progress from STATUS.md
@@ -1346,6 +1542,7 @@ function emitSnapshot(
 			},
 			reviewer: reviewerSnapshot,
 			progress,
+			submoduleDiagnostics,
 			updatedAt: Date.now(),
 		};
 
@@ -1356,5 +1553,22 @@ function emitSnapshot(
 		// Swallow to prevent uncaughtException crash in setInterval/callback contexts.
 		return false;
 	}
+}
+
+function captureTaskSubmoduleSnapshot(
+	taskId: string,
+	phase: "pre-task" | "post-task",
+	worktreePath: string,
+): RuntimeSubmoduleSnapshot {
+	const snapshot = captureSubmoduleStatusSnapshot(worktreePath);
+	return {
+		taskId,
+		phase,
+		capturedAt: snapshot.capturedAt,
+		worktreePath: snapshot.worktreePath,
+		totalSubmodules: snapshot.totalSubmodules,
+		dirtySubmodules: snapshot.dirtySubmodules,
+		entries: snapshot.entries,
+	};
 }
 

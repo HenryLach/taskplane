@@ -47,6 +47,15 @@ Build an integration-grade polyrepo fixture and automated regression suite that 
 - **Workspace:** Taskplane extension and dashboard codebase
 - **Services required:** None
 
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## File Scope
 
 > The orchestrator uses this to avoid merge conflicts: tasks with overlapping

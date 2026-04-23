@@ -39,19 +39,28 @@
  *
  * @module orch/workspace
  */
-import { readFileSync, existsSync, realpathSync } from "fs";
-import { resolve, relative, isAbsolute } from "path";
-import { parse as yamlParse } from "yaml";
+import { existsSync, mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "fs";
+import { basename, dirname, isAbsolute, relative, resolve } from "path";
+import { parse as yamlParse, stringify as yamlStringify } from "yaml";
 
-import { runGit } from "./git.ts";
+import { listConfiguredSubmodulePaths, listGitlinkPaths, listSubmoduleStatus, runGit } from "./git.ts";
+import { WORKSPACE_MESSAGES } from "./messages.ts";
 import {
-	WorkspaceConfigError,
-	workspaceConfigPath,
-	pointerFilePath,
-	type WorkspaceConfig,
-	type WorkspaceRepoConfig,
-	type WorkspaceRoutingConfig,
+	type PreflightCheck,
 	type PointerResolution,
+	type SubmodulePolicy,
+	type WorkspaceConfig,
+	WorkspaceConfigError,
+	type WorkspaceRepoConfig,
+	type WorkspaceDetectedSubmodule,
+	type WorkspaceRepoImportCandidate,
+	type WorkspaceRoutingConfig,
+	type WorkspaceSyncApplyResult,
+	type WorkspaceSyncBadgeStatus,
+	type WorkspaceSyncFinding,
+	type WorkspaceSyncSummary,
+	pointerFilePath,
+	workspaceConfigPath,
 } from "./types.ts";
 
 
@@ -108,6 +117,16 @@ function isPathWithinContainer(childPath: string, parentPath: string): boolean {
 	return child === parent || child.startsWith(`${parent}/`);
 }
 
+function isCrossPlatformAbsolutePath(rawPath: string): boolean {
+	const trimmed = rawPath.trim();
+	const normalized = trimmed.replace(/\\/g, "/");
+	return (
+		isAbsolute(trimmed) ||
+		isAbsolute(normalized) ||
+		/^[A-Za-z]:\//.test(normalized)
+	);
+}
+
 
 // ── Pointer Resolution ───────────────────────────────────────────────
 
@@ -161,7 +180,7 @@ export function resolvePointer(
 			used: false,
 			configRoot: fallbackConfigRoot,
 			agentRoot: fallbackAgentRoot,
-			warning: `Pointer file not found: ${filePath}. Run 'taskplane init' to create it.`,
+			warning: WORKSPACE_MESSAGES.pointerNotFound(filePath),
 		};
 	}
 
@@ -175,7 +194,7 @@ export function resolvePointer(
 			used: false,
 			configRoot: fallbackConfigRoot,
 			agentRoot: fallbackAgentRoot,
-			warning: `Cannot read pointer file ${filePath}: ${msg}`,
+			warning: WORKSPACE_MESSAGES.pointerReadError(filePath, msg),
 		};
 	}
 
@@ -188,7 +207,7 @@ export function resolvePointer(
 			used: false,
 			configRoot: fallbackConfigRoot,
 			agentRoot: fallbackAgentRoot,
-			warning: `Pointer file ${filePath} contains invalid JSON.`,
+			warning: WORKSPACE_MESSAGES.pointerInvalidJson(filePath),
 		};
 	}
 
@@ -198,7 +217,7 @@ export function resolvePointer(
 			used: false,
 			configRoot: fallbackConfigRoot,
 			agentRoot: fallbackAgentRoot,
-			warning: `Pointer file ${filePath} must be a JSON object.`,
+			warning: WORKSPACE_MESSAGES.pointerInvalidShape(filePath),
 		};
 	}
 
@@ -211,7 +230,7 @@ export function resolvePointer(
 			used: false,
 			configRoot: fallbackConfigRoot,
 			agentRoot: fallbackAgentRoot,
-			warning: `Pointer file ${filePath} is missing required field 'config_repo'.`,
+			warning: WORKSPACE_MESSAGES.pointerMissingConfigRepo(filePath),
 		};
 	}
 
@@ -220,7 +239,7 @@ export function resolvePointer(
 			used: false,
 			configRoot: fallbackConfigRoot,
 			agentRoot: fallbackAgentRoot,
-			warning: `Pointer file ${filePath} is missing required field 'config_path'.`,
+			warning: WORKSPACE_MESSAGES.pointerMissingConfigPath(filePath),
 		};
 	}
 
@@ -228,12 +247,12 @@ export function resolvePointer(
 	const normalizedConfigPath = configPath.trim().replace(/\\/g, "/");
 
 	// Reject absolute paths (POSIX `/...` and Windows `C:/...`, `\\...`)
-	if (isAbsolute(normalizedConfigPath) || isAbsolute(configPath.trim())) {
+	if (isCrossPlatformAbsolutePath(configPath)) {
 		return {
 			used: false,
 			configRoot: fallbackConfigRoot,
 			agentRoot: fallbackAgentRoot,
-			warning: `Pointer file ${filePath} has invalid config_path '${configPath}' (absolute paths not allowed).`,
+			warning: WORKSPACE_MESSAGES.pointerAbsoluteConfigPath(filePath, configPath),
 		};
 	}
 
@@ -247,7 +266,7 @@ export function resolvePointer(
 			used: false,
 			configRoot: fallbackConfigRoot,
 			agentRoot: fallbackAgentRoot,
-			warning: `Pointer file ${filePath} has invalid config_path '${configPath}' (path traversal not allowed).`,
+			warning: WORKSPACE_MESSAGES.pointerTraversalConfigPath(filePath, configPath),
 		};
 	}
 
@@ -260,7 +279,7 @@ export function resolvePointer(
 			used: false,
 			configRoot: fallbackConfigRoot,
 			agentRoot: fallbackAgentRoot,
-			warning: `Pointer file ${filePath}: config_repo '${repoId}' not found in workspace repos. Available repos: ${available}`,
+			warning: WORKSPACE_MESSAGES.pointerUnknownConfigRepo(filePath, repoId, available),
 		};
 	}
 
@@ -274,7 +293,7 @@ export function resolvePointer(
 			used: false,
 			configRoot: fallbackConfigRoot,
 			agentRoot: fallbackAgentRoot,
-			warning: `Pointer file ${filePath} has invalid config_path '${configPath}' (resolved path escapes config repo root).`,
+			warning: WORKSPACE_MESSAGES.pointerEscapedConfigPath(filePath, configPath),
 		};
 	}
 
@@ -318,7 +337,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		const msg = err instanceof Error ? err.message : String(err);
 		throw new WorkspaceConfigError(
 			"WORKSPACE_FILE_READ_ERROR",
-			`Cannot read workspace config file: ${msg}`,
+			WORKSPACE_MESSAGES.workspaceConfigReadError(msg),
 			undefined,
 			configFile,
 		);
@@ -332,7 +351,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		const msg = err instanceof Error ? err.message : String(err);
 		throw new WorkspaceConfigError(
 			"WORKSPACE_FILE_PARSE_ERROR",
-			`Invalid YAML in workspace config: ${msg}`,
+			WORKSPACE_MESSAGES.workspaceConfigParseError(msg),
 			undefined,
 			configFile,
 		);
@@ -342,7 +361,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 	if (parsed == null || typeof parsed !== "object" || Array.isArray(parsed)) {
 		throw new WorkspaceConfigError(
 			"WORKSPACE_SCHEMA_INVALID",
-			"Workspace config must be a YAML mapping (object), not a scalar or sequence.",
+			WORKSPACE_MESSAGES.workspaceConfigMustBeMapping(),
 			undefined,
 			configFile,
 		);
@@ -352,7 +371,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 	if (!doc.repos || typeof doc.repos !== "object" || Array.isArray(doc.repos)) {
 		throw new WorkspaceConfigError(
 			"WORKSPACE_SCHEMA_INVALID",
-			"Workspace config must contain a 'repos' mapping.",
+			WORKSPACE_MESSAGES.workspaceConfigMissingReposMapping(),
 			undefined,
 			configFile,
 		);
@@ -360,7 +379,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 	if (!doc.routing || typeof doc.routing !== "object" || Array.isArray(doc.routing)) {
 		throw new WorkspaceConfigError(
 			"WORKSPACE_SCHEMA_INVALID",
-			"Workspace config must contain a 'routing' mapping.",
+			WORKSPACE_MESSAGES.workspaceConfigMissingRoutingMapping(),
 			undefined,
 			configFile,
 		);
@@ -372,7 +391,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 	if (repoKeys.length === 0) {
 		throw new WorkspaceConfigError(
 			"WORKSPACE_MISSING_REPOS",
-			"Workspace config must define at least one repo under 'repos'.",
+			WORKSPACE_MESSAGES.workspaceConfigMissingRepos(),
 			undefined,
 			configFile,
 		);
@@ -387,7 +406,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		if (rawRepo == null || typeof rawRepo !== "object" || Array.isArray(rawRepo)) {
 			throw new WorkspaceConfigError(
 				"WORKSPACE_SCHEMA_INVALID",
-				`Repo '${repoId}' must be a YAML mapping with at least a 'path' field.`,
+				WORKSPACE_MESSAGES.workspaceConfigInvalidRepoEntry(repoId),
 				repoId,
 				configFile,
 			);
@@ -399,7 +418,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		if (!rawPath || typeof rawPath !== "string" || rawPath.trim() === "") {
 			throw new WorkspaceConfigError(
 				"WORKSPACE_REPO_PATH_MISSING",
-				`Repo '${repoId}' is missing a 'path' field.`,
+				WORKSPACE_MESSAGES.workspaceConfigMissingRepoPath(repoId),
 				repoId,
 				configFile,
 			);
@@ -411,7 +430,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		if (!existsSync(absolutePath)) {
 			throw new WorkspaceConfigError(
 				"WORKSPACE_REPO_PATH_NOT_FOUND",
-				`Repo '${repoId}' path does not exist: ${absolutePath}`,
+				WORKSPACE_MESSAGES.workspaceConfigRepoPathNotFound(repoId, absolutePath),
 				repoId,
 				absolutePath,
 			);
@@ -422,7 +441,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		if (!gitDirCheck.ok) {
 			throw new WorkspaceConfigError(
 				"WORKSPACE_REPO_NOT_GIT",
-				`Repo '${repoId}' path is not a git repository: ${absolutePath}`,
+				WORKSPACE_MESSAGES.workspaceConfigRepoNotGit(repoId, absolutePath),
 				repoId,
 				absolutePath,
 			);
@@ -434,7 +453,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 			if (toplevelNormalized !== normalizedPath) {
 				throw new WorkspaceConfigError(
 					"WORKSPACE_REPO_NOT_GIT",
-					`Repo '${repoId}' path is a subdirectory of a git repo, not the repo root. Expected root: ${toplevelCheck.stdout.trim()}, got: ${absolutePath}`,
+					WORKSPACE_MESSAGES.workspaceConfigRepoNotRoot(repoId, toplevelCheck.stdout.trim(), absolutePath),
 					repoId,
 					absolutePath,
 				);
@@ -445,7 +464,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		if (normalizedPaths.has(normalizedPath)) {
 			throw new WorkspaceConfigError(
 				"WORKSPACE_DUPLICATE_REPO_PATH",
-				`Repos '${normalizedPaths.get(normalizedPath)}' and '${repoId}' share the same path: ${absolutePath}`,
+				WORKSPACE_MESSAGES.workspaceConfigDuplicateRepoPath(normalizedPaths.get(normalizedPath), repoId, absolutePath),
 				repoId,
 				absolutePath,
 			);
@@ -472,7 +491,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 	if (!rawTasksRoot || typeof rawTasksRoot !== "string" || rawTasksRoot.trim() === "") {
 		throw new WorkspaceConfigError(
 			"WORKSPACE_MISSING_TASKS_ROOT",
-			"Workspace config 'routing.tasks_root' is missing or empty.",
+			WORKSPACE_MESSAGES.workspaceConfigMissingTasksRoot(),
 			undefined,
 			configFile,
 		);
@@ -483,7 +502,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 	if (!existsSync(tasksRootAbsolute)) {
 		throw new WorkspaceConfigError(
 			"WORKSPACE_TASKS_ROOT_NOT_FOUND",
-			`routing.tasks_root path does not exist: ${tasksRootAbsolute}`,
+			WORKSPACE_MESSAGES.workspaceConfigTasksRootNotFound(tasksRootAbsolute),
 			undefined,
 			tasksRootAbsolute,
 		);
@@ -494,7 +513,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 	if (!rawDefaultRepo || typeof rawDefaultRepo !== "string" || rawDefaultRepo.trim() === "") {
 		throw new WorkspaceConfigError(
 			"WORKSPACE_MISSING_DEFAULT_REPO",
-			"Workspace config 'routing.default_repo' is missing or empty.",
+			WORKSPACE_MESSAGES.workspaceConfigMissingDefaultRepo(),
 			undefined,
 			configFile,
 		);
@@ -505,7 +524,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 	if (!repos.has(defaultRepoId)) {
 		throw new WorkspaceConfigError(
 			"WORKSPACE_DEFAULT_REPO_NOT_FOUND",
-			`routing.default_repo '${defaultRepoId}' does not match any repo ID. Available repos: ${Array.from(repos.keys()).join(", ")}`,
+			WORKSPACE_MESSAGES.workspaceConfigUnknownDefaultRepo(defaultRepoId, Array.from(repos.keys()).join(", ")),
 			undefined,
 			configFile,
 		);
@@ -522,22 +541,20 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		if (typeof rawTaskPacketRepo !== "string" || rawTaskPacketRepo.trim() === "") {
 			throw new WorkspaceConfigError(
 				"WORKSPACE_SCHEMA_INVALID",
-				"Workspace config 'routing.task_packet_repo' must be a non-empty string when provided.",
+				WORKSPACE_MESSAGES.workspaceConfigInvalidTaskPacketRepo(),
 				undefined,
 				configFile,
 			);
 		}
 		taskPacketRepoId = rawTaskPacketRepo.trim();
 	} else {
-		console.error(
-			`[taskplane] workspace compatibility: 'routing.task_packet_repo' is missing in ${configFile}; defaulting to routing.default_repo ('${defaultRepoId}'). Add 'routing.task_packet_repo' explicitly.`,
-		);
+		console.error(WORKSPACE_MESSAGES.workspaceConfigCompatibilityTaskPacketRepo(configFile, defaultRepoId));
 	}
 
 	if (!repos.has(taskPacketRepoId)) {
 		throw new WorkspaceConfigError(
 			"WORKSPACE_TASK_PACKET_REPO_NOT_FOUND",
-			`routing.task_packet_repo '${taskPacketRepoId}' does not match any repo ID. Available repos: ${Array.from(repos.keys()).join(", ")}`,
+			WORKSPACE_MESSAGES.workspaceConfigUnknownTaskPacketRepo(taskPacketRepoId, Array.from(repos.keys()).join(", ")),
 			undefined,
 			configFile,
 		);
@@ -548,7 +565,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 	if (!isPathWithinContainer(tasksRootAbsolute, packetRepoPath)) {
 		throw new WorkspaceConfigError(
 			"WORKSPACE_TASKS_ROOT_OUTSIDE_PACKET_REPO",
-			`routing.tasks_root '${tasksRootAbsolute}' must be inside packet-home repo '${taskPacketRepoId}' (${packetRepoPath}). Update routing.tasks_root or routing.task_packet_repo.`,
+			WORKSPACE_MESSAGES.workspaceConfigTasksRootOutsidePacketRepo(tasksRootAbsolute, taskPacketRepoId, packetRepoPath),
 			undefined,
 			tasksRootAbsolute,
 		);
@@ -562,7 +579,7 @@ export function loadWorkspaceConfig(workspaceRoot: string): WorkspaceConfig | nu
 		if (rawStrict === null || typeof rawStrict !== "boolean") {
 			throw new WorkspaceConfigError(
 				"WORKSPACE_SCHEMA_INVALID",
-				`routing.strict must be a boolean (true/false)${rawStrict === null ? ", got null (use true or false explicitly)" : `, got ${typeof rawStrict}: ${JSON.stringify(rawStrict)}`}`,
+				WORKSPACE_MESSAGES.workspaceConfigInvalidStrict(rawStrict),
 				undefined,
 				configFile,
 			);
@@ -612,12 +629,404 @@ export function validateTaskAreasWithinTasksRoot(
 		if (!isPathWithinContainer(areaAbsolute, tasksRoot)) {
 			throw new WorkspaceConfigError(
 				"WORKSPACE_TASK_AREA_OUTSIDE_TASKS_ROOT",
-				`Task area '${areaName}' path '${areaAbsolute}' must be inside routing.tasks_root '${tasksRoot}'. Move the area under tasks_root or update task_areas.${areaName}.path.`,
+				WORKSPACE_MESSAGES.workspaceTaskAreaOutsideTasksRoot(areaName, areaAbsolute, tasksRoot),
 				undefined,
 				areaAbsolute,
 			);
 		}
 	}
+}
+
+
+// ── Workspace Sync Helpers ──────────────────────────────────────────
+
+export const DEFAULT_SUBMODULE_POLICY: SubmodulePolicy = {
+	failureMode: "permissive",
+	onSubmoduleDrift: "manual",
+	repoIdStrategy: "path-basename",
+};
+
+export const WORKSPACE_REPO_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
+function normalizeWorkspaceSyncPath(pathValue: string): string {
+	return resolve(pathValue).replace(/\\/g, "/");
+}
+
+function plannerSyncCommand(targetLabel = "<target>"): string {
+	return `/orch-plan ${targetLabel} --sync`;
+}
+
+function workspaceSyncFindingStatus(policy: SubmodulePolicy): PreflightCheck["status"] {
+	return policy.failureMode === "strict" ? "fail" : "warn";
+}
+
+function relativeWorkspacePath(workspaceRoot: string, absolutePath: string): string {
+	const rel = relative(workspaceRoot, absolutePath).replace(/\\/g, "/");
+	if (rel && rel !== "." && !rel.startsWith("../") && rel !== "..") {
+		return rel;
+	}
+	return absolutePath.replace(/\\/g, "/");
+}
+
+function writeYamlFileAtomically(filePath: string, content: string): void {
+	mkdirSync(dirname(filePath), { recursive: true });
+	const tmpPath = `${filePath}.tmp`;
+	writeFileSync(tmpPath, content, "utf-8");
+	renameSync(tmpPath, filePath);
+}
+
+function groupPathsByRepo(findings: WorkspaceSyncFinding[], kinds: WorkspaceSyncFinding["kind"][]): Map<string, string[]> {
+	const grouped = new Map<string, string[]>();
+	const kindSet = new Set(kinds);
+	for (const finding of findings) {
+		if (!finding.submodulePath || !kindSet.has(finding.kind)) continue;
+		const paths = grouped.get(finding.repoRoot) ?? [];
+		paths.push(finding.submodulePath);
+		grouped.set(finding.repoRoot, paths);
+	}
+	for (const [repoRoot, paths] of grouped) {
+		grouped.set(repoRoot, [...new Set(paths)].sort((left, right) => left.localeCompare(right)));
+	}
+	return grouped;
+}
+
+function collapseToTrackedSubmoduleRoots(repoRoot: string, paths: string[]): string[] {
+	const trackedPaths = [...new Set([...listConfiguredSubmodulePaths(repoRoot), ...listGitlinkPaths(repoRoot)])]
+		.sort((left, right) => right.length - left.length || left.localeCompare(right));
+	if (trackedPaths.length === 0) {
+		return [...new Set(paths)].sort((left, right) => left.localeCompare(right));
+	}
+
+	const collapsed = paths.map((pathValue) => {
+		for (const trackedPath of trackedPaths) {
+			if (pathValue === trackedPath || pathValue.startsWith(`${trackedPath}/`)) {
+				return trackedPath;
+			}
+		}
+		return pathValue;
+	});
+
+	return [...new Set(collapsed)].sort((left, right) => left.localeCompare(right));
+}
+
+export function collectWorkspaceSyncSummary(
+	repoRoot: string | undefined,
+	workspaceConfig: WorkspaceConfig | null | undefined,
+	policy: SubmodulePolicy,
+	targetLabel?: string,
+): WorkspaceSyncSummary {
+	const findings: WorkspaceSyncFinding[] = [];
+	const repoEntries = new Map<string, { label: string; root: string }>();
+	const workspaceRepoPaths = new Map<string, string>();
+	const workspaceRepoIds = new Map<string, WorkspaceRepoConfig>();
+
+	if (workspaceConfig) {
+		for (const [repoId, repoConfig] of workspaceConfig.repos) {
+			repoEntries.set(normalizeWorkspaceSyncPath(repoConfig.path), { label: repoId, root: repoConfig.path });
+			workspaceRepoPaths.set(normalizeWorkspaceSyncPath(repoConfig.path), repoId);
+			workspaceRepoIds.set(repoId, repoConfig);
+			if (!WORKSPACE_REPO_ID_PATTERN.test(repoId)) {
+				findings.push({
+					name: `workspace-repo-id:${repoId}`,
+					kind: "workspace-repo-id",
+					status: workspaceSyncFindingStatus(policy),
+					repoLabel: repoId,
+					repoRoot: repoConfig.path,
+					message: WORKSPACE_MESSAGES.workspaceRepoIdPolicyMessage(repoId),
+					hint: WORKSPACE_MESSAGES.workspaceRepoIdPolicyHint(),
+				});
+			}
+		}
+	} else if (repoRoot) {
+		repoEntries.set(normalizeWorkspaceSyncPath(repoRoot), { label: basename(repoRoot), root: repoRoot });
+	}
+
+	const collisionCandidates = new Map<string, WorkspaceRepoImportCandidate[]>();
+	const detectedSubmodules: WorkspaceDetectedSubmodule[] = [];
+	let trackedSubmodules = 0;
+
+	for (const { label, root } of [...repoEntries.values()].sort((left, right) => left.label.localeCompare(right.label))) {
+		const configuredPaths = listConfiguredSubmodulePaths(root);
+		const gitlinkPaths = listGitlinkPaths(root);
+		const statuses = listSubmoduleStatus(root);
+		const statusByPath = new Map(statuses.map((entry) => [entry.path, entry]));
+		const allPaths = [...new Set([...configuredPaths, ...gitlinkPaths, ...statuses.map((entry) => entry.path)])]
+			.sort((left, right) => left.localeCompare(right));
+
+		trackedSubmodules += allPaths.length;
+
+		for (const submodulePath of allPaths) {
+			const absolutePath = resolve(root, submodulePath);
+			const mappedRepoId = workspaceRepoPaths.get(normalizeWorkspaceSyncPath(absolutePath));
+			const status = statusByPath.get(submodulePath);
+			detectedSubmodules.push({
+				repoLabel: label,
+				repoRoot: root,
+				submodulePath,
+				absolutePath,
+				mappedRepoId,
+				state: status?.state === "conflict"
+					? "conflict"
+					: status?.state === "drifted"
+						? "drifted"
+						: status?.state === "uninitialized"
+							? "uninitialized"
+							: "clean",
+			});
+
+			if (workspaceConfig && !mappedRepoId && policy.repoIdStrategy === "path-basename") {
+				const derivedRepoId = basename(submodulePath).trim().toLowerCase();
+				if (!WORKSPACE_REPO_ID_PATTERN.test(derivedRepoId)) {
+					findings.push({
+						name: `submodule-import:${label}:${submodulePath}`,
+						kind: "invalid-derived-repo-id",
+						status: workspaceSyncFindingStatus(policy),
+						repoLabel: label,
+						repoRoot: root,
+						submodulePath,
+						absolutePath,
+						derivedRepoId,
+						message: WORKSPACE_MESSAGES.workspaceInvalidDerivedRepoIdMessage(label, submodulePath, derivedRepoId),
+						hint: WORKSPACE_MESSAGES.workspaceInvalidDerivedRepoIdHint(targetLabel, submodulePath),
+					});
+				} else {
+					const existingRepo = workspaceRepoIds.get(derivedRepoId);
+					if (existingRepo && normalizeWorkspaceSyncPath(existingRepo.path) !== normalizeWorkspaceSyncPath(absolutePath)) {
+						findings.push({
+							name: `submodule-repo-id:${derivedRepoId}:${label}:${submodulePath}`,
+							kind: "repo-id-collision",
+							status: workspaceSyncFindingStatus(policy),
+							repoLabel: label,
+							repoRoot: root,
+							submodulePath,
+							absolutePath,
+							derivedRepoId,
+							message: WORKSPACE_MESSAGES.workspaceRepoIdCollisionMessage(label, submodulePath, derivedRepoId, existingRepo.path),
+							hint: WORKSPACE_MESSAGES.workspaceRepoIdCollisionHint(targetLabel, submodulePath),
+						});
+					} else {
+						const candidate: WorkspaceRepoImportCandidate = {
+							repoLabel: label,
+							repoRoot: root,
+							submodulePath,
+							absolutePath,
+							derivedRepoId,
+						};
+						const candidates = collisionCandidates.get(derivedRepoId) ?? [];
+						candidates.push(candidate);
+						collisionCandidates.set(derivedRepoId, candidates);
+						findings.push({
+							name: `submodule-import:${label}:${submodulePath}`,
+							kind: "missing-workspace-repo",
+							status: workspaceSyncFindingStatus(policy),
+							repoLabel: label,
+							repoRoot: root,
+							submodulePath,
+							absolutePath,
+							derivedRepoId,
+							message: WORKSPACE_MESSAGES.workspaceMissingRepoMessage(label, submodulePath),
+							hint: WORKSPACE_MESSAGES.workspaceMissingRepoHint(targetLabel, submodulePath, derivedRepoId),
+						});
+					}
+				}
+			}
+
+			if (status?.state === "uninitialized") {
+				findings.push({
+					name: `submodule-state:${label}:${submodulePath}`,
+					kind: "uninitialized-submodule",
+					status: workspaceSyncFindingStatus(policy),
+					repoLabel: label,
+					repoRoot: root,
+					submodulePath,
+					absolutePath,
+					message: WORKSPACE_MESSAGES.workspaceUninitializedSubmoduleMessage(label, submodulePath),
+					hint: WORKSPACE_MESSAGES.uninitializedSubmoduleHint(policy, root, submodulePath, targetLabel),
+				});
+				continue;
+			}
+
+			if (status?.state === "drifted" || status?.state === "conflict") {
+				findings.push({
+					name: `submodule-state:${label}:${submodulePath}`,
+					kind: status.state === "conflict" ? "conflicted-submodule" : "drifted-submodule",
+					status: workspaceSyncFindingStatus(policy),
+					repoLabel: label,
+					repoRoot: root,
+					submodulePath,
+					absolutePath,
+					message: WORKSPACE_MESSAGES.workspaceDriftedSubmoduleMessage(label, submodulePath, status.state === "conflict"),
+					hint: WORKSPACE_MESSAGES.driftedSubmoduleHint(policy, root, submodulePath, targetLabel),
+				});
+			}
+		}
+	}
+
+	const importCandidates: WorkspaceRepoImportCandidate[] = [];
+	for (const [derivedRepoId, candidates] of [...collisionCandidates.entries()].sort((left, right) => left[0].localeCompare(right[0]))) {
+		if (candidates.length === 1) {
+			importCandidates.push(candidates[0]);
+			continue;
+		}
+		findings.push({
+			name: `submodule-repo-id:${derivedRepoId}`,
+			kind: "repo-id-collision",
+			status: workspaceSyncFindingStatus(policy),
+			repoLabel: derivedRepoId,
+			repoRoot: candidates[0]?.repoRoot ?? repoRoot ?? process.cwd(),
+			derivedRepoId,
+			message: WORKSPACE_MESSAGES.workspaceRepoCollisionMessage(derivedRepoId),
+			hint: WORKSPACE_MESSAGES.workspaceRepoCollisionHint(targetLabel, candidates),
+		});
+	}
+
+	findings.sort((left, right) => left.name.localeCompare(right.name));
+	detectedSubmodules.sort((left, right) => {
+		const repoComparison = left.repoLabel.localeCompare(right.repoLabel);
+		return repoComparison !== 0 ? repoComparison : left.submodulePath.localeCompare(right.submodulePath);
+	});
+	importCandidates.sort((left, right) => left.derivedRepoId.localeCompare(right.derivedRepoId));
+
+	return {
+		trackedSubmodules,
+		detectedSubmodules,
+		findings,
+		importCandidates,
+	};
+}
+
+export function workspaceSyncSummaryToChecks(summary: WorkspaceSyncSummary): PreflightCheck[] {
+	if (summary.findings.length === 0) {
+		return [{
+			name: "submodules",
+			status: "pass",
+			message: summary.trackedSubmodules > 0
+				? WORKSPACE_MESSAGES.workspaceNoSubmoduleIssues(summary.trackedSubmodules)
+				: WORKSPACE_MESSAGES.workspaceNoSubmodules(),
+		}];
+	}
+	return summary.findings.map((finding) => ({
+		name: finding.name,
+		status: finding.status,
+		message: finding.message,
+		hint: finding.hint,
+	}));
+}
+
+export function buildWorkspaceSyncBadgeStatus(summary: WorkspaceSyncSummary): WorkspaceSyncBadgeStatus {
+	if (summary.trackedSubmodules === 0) {
+		return {
+			state: "none",
+			trackedSubmodules: 0,
+			label: WORKSPACE_MESSAGES.workspaceSyncBadgeNoneLabel(),
+			detail: WORKSPACE_MESSAGES.workspaceSyncBadgeNoneDetail(),
+		};
+	}
+	return {
+		state: "clean",
+		trackedSubmodules: summary.trackedSubmodules,
+		label: WORKSPACE_MESSAGES.workspaceSyncBadgeCleanLabel(summary.trackedSubmodules),
+		detail: WORKSPACE_MESSAGES.workspaceSyncBadgeCleanDetail(),
+	};
+}
+
+export function applyWorkspaceSync(
+	workspaceRoot: string,
+	_repoRoot: string,
+	workspaceConfig: WorkspaceConfig | null | undefined,
+	policy: SubmodulePolicy,
+	summary: WorkspaceSyncSummary,
+): WorkspaceSyncApplyResult {
+	const result: WorkspaceSyncApplyResult = {
+		importedRepoIds: [],
+		initializedPaths: [],
+		updatedPaths: [],
+		warnings: [],
+		changed: false,
+	};
+
+	if (summary.importCandidates.length > 0 && workspaceConfig?.configPath) {
+		const parsed = yamlParse(readFileSync(workspaceConfig.configPath, "utf-8")) as Record<string, unknown> | null;
+		const document = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+			? { ...parsed }
+			: {};
+		const existingRepos = document.repos && typeof document.repos === "object" && !Array.isArray(document.repos)
+			? { ...(document.repos as Record<string, unknown>) }
+			: {};
+
+		for (const candidate of summary.importCandidates) {
+			if (existingRepos[candidate.derivedRepoId] !== undefined) continue;
+			existingRepos[candidate.derivedRepoId] = {
+				path: relativeWorkspacePath(workspaceRoot, candidate.absolutePath),
+			};
+			workspaceConfig.repos.set(candidate.derivedRepoId, {
+				id: candidate.derivedRepoId,
+				path: candidate.absolutePath,
+			});
+			result.importedRepoIds.push(candidate.derivedRepoId);
+			result.changed = true;
+		}
+
+		if (result.importedRepoIds.length > 0) {
+			const sortedRepos: Record<string, unknown> = {};
+			for (const [repoId, repoValue] of Object.entries(existingRepos).sort((left, right) => left[0].localeCompare(right[0]))) {
+				sortedRepos[repoId] = repoValue;
+			}
+			document.repos = sortedRepos;
+			writeYamlFileAtomically(workspaceConfig.configPath, `${yamlStringify(document)}`.trimEnd() + "\n");
+		}
+	}
+
+	const initGroups = groupPathsByRepo(summary.findings, ["uninitialized-submodule"]);
+	const updateGroups = groupPathsByRepo(summary.findings, ["drifted-submodule", "conflicted-submodule"]);
+
+	if (policy.onSubmoduleDrift === "init-only") {
+		for (const [root, paths] of initGroups) {
+			if (paths.length === 0) continue;
+			const commandPaths = collapseToTrackedSubmoduleRoots(root, paths);
+			const gitResult = runGit(["submodule", "update", "--init", "--", ...commandPaths], root);
+			if (!gitResult.ok) {
+				result.warnings.push(WORKSPACE_MESSAGES.workspaceSyncInitFailure(root, gitResult.stderr || gitResult.stdout || "git submodule update failed"));
+				continue;
+			}
+			result.initializedPaths.push(...paths.map((pathValue) => `${basename(root)}:${pathValue}`));
+			result.changed = true;
+		}
+	} else if (policy.onSubmoduleDrift === "recursive-on-drift") {
+		const recursiveGroups = new Map<string, string[]>();
+		for (const [root, paths] of initGroups) {
+			recursiveGroups.set(root, [...paths]);
+		}
+		for (const [root, paths] of updateGroups) {
+			const current = recursiveGroups.get(root) ?? [];
+			recursiveGroups.set(root, [...current, ...paths]);
+		}
+		for (const [root, paths] of recursiveGroups) {
+			const uniquePaths = [...new Set(paths)].sort((left, right) => left.localeCompare(right));
+			if (uniquePaths.length === 0) continue;
+			const commandPaths = collapseToTrackedSubmoduleRoots(root, uniquePaths);
+			const gitResult = runGit(["submodule", "update", "--init", "--recursive", "--", ...commandPaths], root);
+			if (!gitResult.ok) {
+				result.warnings.push(WORKSPACE_MESSAGES.workspaceSyncRecursiveFailure(root, gitResult.stderr || gitResult.stdout || "git submodule update failed"));
+				continue;
+			}
+			const rootLabel = basename(root);
+			for (const pathValue of uniquePaths) {
+				const key = `${rootLabel}:${pathValue}`;
+				if (initGroups.get(root)?.includes(pathValue)) {
+					result.initializedPaths.push(key);
+				}
+				if (updateGroups.get(root)?.includes(pathValue)) {
+					result.updatedPaths.push(key);
+				}
+			}
+			result.changed = true;
+		}
+	} else if (initGroups.size > 0 || updateGroups.size > 0) {
+		result.warnings.push(WORKSPACE_MESSAGES.workspaceSyncManualModeWarning());
+	}
+
+	return result;
 }
 
 
@@ -655,8 +1064,7 @@ export function buildExecutionContext(
 			const wsConfigFile = workspaceConfigPath(cwd);
 			throw new WorkspaceConfigError(
 				"WORKSPACE_SETUP_REQUIRED",
-				`No workspace config found at ${wsConfigFile}, and current directory is not a git repository: ${cwd}. ` +
-				`Run Taskplane from a git repository, or create ${wsConfigFile} (taskplane init) to use workspace mode.`,
+				WORKSPACE_MESSAGES.workspaceSetupRequired(wsConfigFile, cwd),
 				undefined,
 				cwd,
 			);
@@ -682,7 +1090,7 @@ export function buildExecutionContext(
 
 	// Log pointer warning once at startup (non-fatal).
 	if (pointer && pointer.warning) {
-		console.error(`[taskplane] pointer warning: ${pointer.warning}`);
+		console.error(WORKSPACE_MESSAGES.pointerWarningLog(pointer.warning));
 	}
 
 	const pointerConfigRoot = pointer?.configRoot;

@@ -63,6 +63,7 @@ import {
 } from "../taskplane/resume.ts";
 import { generateBranchName, generateWorktreePath } from "../taskplane/worktree.ts";
 import { sanitizeNameComponent, resolveOperatorId } from "../taskplane/naming.ts";
+import { buildExecutionUnit } from "../taskplane/execution.ts";
 import {
 	freshOrchBatchState,
 	BATCH_STATE_SCHEMA_VERSION,
@@ -796,6 +797,7 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 		const ui001Task = frontendLane.tasks.find(t => t.taskId === "UI-001");
 		expect(ui001Task).toBeDefined();
 		expect(ui001Task!.task?.resolvedRepoId).toBe("frontend");
+		expect((ui001Task!.task as any)?.resolvedRepoIds).toEqual(["frontend"]);
 	});
 
 	it("5.8: collectRepoRoots returns unique repo roots from persisted lanes", () => {
@@ -805,18 +807,36 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 				["docs", { id: "docs", path: "/repos/docs" }],
 				["api", { id: "api", path: "/repos/api" }],
 				["frontend", { id: "frontend", path: "/repos/frontend" }],
+				["shared", { id: "shared", path: "/repos/shared" }],
 			]),
 			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "docs" },
 			configPath: "/workspace/.pi/taskplane-workspace.yaml",
 		};
 
-		const roots = collectRepoRoots(fixtureState, "/workspace", workspaceConfig);
+		const state = JSON.parse(JSON.stringify(fixtureState)) as PersistedBatchState;
+		state.lanes[1].repoWorktrees = {
+			api: {
+				path: "/tmp/taskplane-wt-2",
+				branch: "task/op-api-lane-2-20260316T120000",
+				laneNumber: 2,
+				repoId: "api",
+			},
+			shared: {
+				path: "/tmp/taskplane-wt-2-shared",
+				branch: "task/op-api-lane-2-20260316T120000",
+				laneNumber: 2,
+				repoId: "shared",
+			},
+		};
 
-		// Should include all 3 repo roots + default workspace root
-		expect(roots.length).toBeGreaterThanOrEqual(3);
+		const roots = collectRepoRoots(state, "/workspace", workspaceConfig);
+
+		// Should include all 3 primary repo roots + secondary repoWorktree root + default workspace root
+		expect(roots.length).toBeGreaterThanOrEqual(4);
 		expect(roots).toContain("/repos/docs");
 		expect(roots).toContain("/repos/api");
 		expect(roots).toContain("/repos/frontend");
+		expect(roots).toContain("/repos/shared");
 	});
 
 	it("5.9: full resume scenario — wave-1 done, wave-2 partial, all sessions dead", () => {
@@ -866,6 +886,53 @@ describe("5.x: Resume — polyrepo workspace-mode resume", () => {
 		expect(resumePoint.resumeWaveIndex).toBe(1);
 		expect(resumePoint.reconnectTaskIds).toContain("AP-002");
 		expect(resumePoint.completedTaskIds).toContain("UI-002");
+	});
+
+	it("5.11: reconstructed multi-repo lane builds execution in the secondary repoWorktree", () => {
+		const state = JSON.parse(JSON.stringify(fixtureState)) as PersistedBatchState;
+		const laneRecord = state.lanes.find((lane) => lane.taskIds.includes("AP-002"))!;
+		laneRecord.repoId = "frontend";
+		laneRecord.worktreePath = "/tmp/taskplane-wt-2-api";
+		laneRecord.repoWorktrees = {
+			api: {
+				path: "/tmp/taskplane-wt-2-api",
+				branch: laneRecord.branch,
+				laneNumber: laneRecord.laneNumber,
+				repoId: "api",
+			},
+			frontend: {
+				path: "/tmp/taskplane-wt-2-frontend",
+				branch: laneRecord.branch,
+				laneNumber: laneRecord.laneNumber,
+				repoId: "frontend",
+			},
+		};
+
+		const taskRecord = state.tasks.find((task) => task.taskId === "AP-002")!;
+		taskRecord.activeSegmentId = "AP-002::frontend";
+		taskRecord.segmentIds = ["AP-002::api", "AP-002::frontend"];
+		taskRecord.resolvedRepoId = "api";
+		taskRecord.resolvedRepoIds = ["api", "frontend"];
+
+		const lanes = reconstructAllocatedLanes(state.lanes, state.tasks);
+		const lane = lanes.find((candidate) => candidate.tasks.some((task) => task.taskId === "AP-002"))!;
+		const task = lane.tasks.find((candidate) => candidate.taskId === "AP-002")!;
+		const workspaceConfig: WorkspaceConfig = {
+			mode: "workspace",
+			repos: new Map([
+				["api", { id: "api", path: "/repos/api" }],
+				["frontend", { id: "frontend", path: "/repos/frontend" }],
+			]),
+			routing: { tasksRoot: "/workspace/tasks", defaultRepo: "api" },
+			configPath: "/workspace/.pi/taskplane-workspace.yaml",
+		};
+
+		const unit = buildExecutionUnit(lane, task, "/repos/api", true, workspaceConfig);
+
+		expect(unit.executionRepoId).toBe("frontend");
+		expect(unit.worktreePath).toBe("/tmp/taskplane-wt-2-frontend");
+		expect(unit.repoPaths.frontend).toBe("/tmp/taskplane-wt-2-frontend");
+		expect(unit.repoPaths.api).toBe("/tmp/taskplane-wt-2-api");
 	});
 });
 
@@ -969,7 +1036,119 @@ describe("7.x: Repo-aware persisted state — validation and upconversion", () =
 		expect(validated.schemaVersion).toBe(BATCH_STATE_SCHEMA_VERSION);
 		expect(validated.mode).toBe("workspace");
 		expect(validated.tasks.every(t => t.resolvedRepoId !== undefined)).toBe(true);
+		expect(validated.tasks.every(t => JSON.stringify((t as any).resolvedRepoIds) === JSON.stringify([t.resolvedRepoId]))).toBe(true);
 		expect(validated.lanes.every(l => l.repoId !== undefined)).toBe(true);
+		expect(validated.mergeResults[0].waveTransactionId).toBe("wave-20260316T120000-w1-fixture");
+	});
+
+	it("7.1b: validatePersistedState + reconstructAllocatedLanes preserve repoWorktrees for multi-repo lanes", () => {
+		const data = JSON.parse(
+			readFileSync(join(__dirname, "fixtures", "batch-state-v2-polyrepo.json"), "utf-8"),
+		);
+
+		data.lanes[1].repoWorktrees = {
+			api: {
+				path: "/tmp/taskplane-wt-2",
+				branch: "task/op-api-lane-2-20260316T120000",
+				laneNumber: 2,
+				repoId: "api",
+			},
+			shared: {
+				path: "/tmp/taskplane-wt-2-shared",
+				branch: "task/op-api-lane-2-20260316T120000",
+				laneNumber: 2,
+				repoId: "shared",
+			},
+		};
+		data.tasks[1].resolvedRepoIds = ["api", "shared"];
+		data.tasks[3].resolvedRepoIds = ["api", "shared"];
+
+		const validated = validatePersistedState(data);
+		const lanes = reconstructAllocatedLanes(validated.lanes, validated.tasks);
+		const apiLane = lanes.find((lane) => lane.repoId === "api")!;
+
+		expect(apiLane.repoWorktrees).toBeDefined();
+		expect(apiLane.repoWorktrees!.api.path).toBe("/tmp/taskplane-wt-2");
+		expect(apiLane.repoWorktrees!.shared.path).toBe("/tmp/taskplane-wt-2-shared");
+
+		const ap001Task = apiLane.tasks.find((task) => task.taskId === "AP-001")!;
+		expect((ap001Task.task as any)?.resolvedRepoIds).toEqual(["api", "shared"]);
+	});
+
+	it("7.1c: serialize + validate + reconstruct preserve explicit segment metadata for resumed frontier lanes", () => {
+		const state = freshOrchBatchState("20260422T160000", "main", 1, "workspace", "orch/test");
+		state.phase = "paused";
+
+		const task: ParsedTask = {
+			taskId: "SEG-001",
+			taskName: "Task SEG-001",
+			reviewLevel: 1,
+			size: "M",
+			dependencies: [],
+			fileScope: [],
+			taskFolder: "/workspace/tasks/SEG-001",
+			promptPath: "/workspace/tasks/SEG-001/PROMPT.md",
+			areaName: "default",
+			status: "pending",
+			promptRepoIds: ["api", "frontend"],
+			resolvedRepoIds: ["api", "frontend"],
+			resolvedRepoId: "api",
+			segmentIds: ["SEG-001::api", "SEG-001::frontend"],
+			activeSegmentId: "SEG-001::frontend",
+			explicitSegmentDag: {
+				repoIds: ["api", "frontend"],
+				edges: [{ fromRepoId: "api", toRepoId: "frontend" }],
+			},
+			stepSegmentMap: [
+				{
+					stepNumber: 1,
+					stepName: "Wire API",
+					segments: [{ repoId: "api", checkboxes: ["Add endpoint"] }],
+				},
+				{
+					stepNumber: 2,
+					stepName: "Hook UI",
+					segments: [{ repoId: "frontend", checkboxes: ["Connect form"] }],
+				},
+			],
+		};
+
+		const allocated: AllocatedLane[] = [{
+			laneNumber: 1,
+			laneId: "api/lane-1",
+			laneSessionId: "orch-op-api-lane-1",
+			worktreePath: "/tmp/taskplane-wt-1-api",
+			branch: "task/op-api-lane-1-20260422T160000",
+			repoId: "api",
+			repoWorktrees: {
+				api: { path: "/tmp/taskplane-wt-1-api", branch: "task/op-api-lane-1-20260422T160000", laneNumber: 1, repoId: "api" },
+				frontend: { path: "/tmp/taskplane-wt-1-frontend", branch: "task/op-api-lane-1-20260422T160000", laneNumber: 1, repoId: "frontend" },
+			},
+			tasks: [{ taskId: "SEG-001", order: 0, task, estimatedMinutes: 5 }],
+			strategy: "affinity-first",
+			estimatedLoad: 1,
+			estimatedMinutes: 5,
+		}];
+
+		const outcomes: LaneTaskOutcome[] = [{
+			taskId: "SEG-001",
+			status: "running",
+			startTime: Date.now() - 5_000,
+			endTime: null,
+			exitReason: "",
+			sessionName: "orch-op-api-lane-1",
+			doneFileFound: false,
+		}];
+
+		const json = serializeBatchState(state, [["SEG-001"]], allocated, outcomes);
+		const validated = validatePersistedState(JSON.parse(json));
+		const lanes = reconstructAllocatedLanes(validated.lanes, validated.tasks);
+		const resumedTask = lanes[0].tasks[0].task as ParsedTask;
+
+		expect(resumedTask.explicitSegmentDag).toEqual(task.explicitSegmentDag);
+		expect(resumedTask.stepSegmentMap).toEqual(task.stepSegmentMap);
+		expect(resumedTask.segmentIds).toEqual(task.segmentIds);
+		expect(resumedTask.activeSegmentId).toBe("SEG-001::frontend");
 	});
 
 	it("7.2: v1→v2 upconversion adds mode=repo and preserves fields", () => {

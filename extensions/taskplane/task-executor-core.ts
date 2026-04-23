@@ -64,6 +64,29 @@ export interface ParsedStatus {
 	iteration: number;
 }
 
+function parseStatusStepHeader(line: string): { number: number; name: string } | null {
+	const match = line.match(/^#{2,6}\s+Step\s+(\d+)(?::\s*|\s+)(.+)$/);
+	if (!match) return null;
+	return {
+		number: parseInt(match[1], 10),
+		name: match[2].trim(),
+	};
+}
+
+function isNonStepSectionHeading(line: string): boolean {
+	if (!/^#{1,6}\s+/.test(line)) return false;
+	if (parseStatusStepHeader(line)) return false;
+	if (/^####\s+Segment:\s*/.test(line)) return false;
+	return true;
+}
+
+function pushParsedStep(steps: StepInfo[], step: StepInfo | null): void {
+	if (!step) return;
+	step.totalChecked = step.checkboxes.filter(c => c.checked).length;
+	step.totalItems = step.checkboxes.length;
+	steps.push(step);
+}
+
 // ── PROMPT.md Parsing ────────────────────────────────────────────────
 
 /**
@@ -146,21 +169,35 @@ export function parseStatusMd(content: string): ParsedStatus {
 	const steps: StepInfo[] = [];
 	let currentStep: StepInfo | null = null;
 	let reviewCounter = 0, iteration = 0;
+	let inCodeFence = false;
 
 	for (const line of text.split("\n")) {
+		if (/^```/.test(line.trim())) {
+			inCodeFence = !inCodeFence;
+			continue;
+		}
 		const rcMatch = line.match(/\*\*Review Counter:\*\*\s*(\d+)/);
 		if (rcMatch) reviewCounter = parseInt(rcMatch[1]);
 		const itMatch = line.match(/\*\*Iteration:\*\*\s*(\d+)/);
 		if (itMatch) iteration = parseInt(itMatch[1]);
+		if (inCodeFence) continue;
 
-		const stepMatch = line.match(/^###\s+Step\s+(\d+):\s*(.+)/);
-		if (stepMatch) {
-			if (currentStep) {
-				currentStep.totalChecked = currentStep.checkboxes.filter(c => c.checked).length;
-				currentStep.totalItems = currentStep.checkboxes.length;
-				steps.push(currentStep);
-			}
-			currentStep = { number: parseInt(stepMatch[1]), name: stepMatch[2].trim(), status: "not-started", checkboxes: [], totalChecked: 0, totalItems: 0 };
+		const stepHeader = parseStatusStepHeader(line);
+		if (stepHeader) {
+			pushParsedStep(steps, currentStep);
+			currentStep = {
+				number: stepHeader.number,
+				name: stepHeader.name,
+				status: "not-started",
+				checkboxes: [],
+				totalChecked: 0,
+				totalItems: 0,
+			};
+			continue;
+		}
+		if (currentStep && isNonStepSectionHeading(line)) {
+			pushParsedStep(steps, currentStep);
+			currentStep = null;
 			continue;
 		}
 		if (currentStep) {
@@ -174,11 +211,7 @@ export function parseStatusMd(content: string): ParsedStatus {
 			if (cb) currentStep.checkboxes.push({ text: cb[2].trim(), checked: cb[1].toLowerCase() === "x" });
 		}
 	}
-	if (currentStep) {
-		currentStep.totalChecked = currentStep.checkboxes.filter(c => c.checked).length;
-		currentStep.totalItems = currentStep.checkboxes.length;
-		steps.push(currentStep);
-	}
+	pushParsedStep(steps, currentStep);
 	return { steps, reviewCounter, iteration };
 }
 
@@ -252,8 +285,9 @@ export function updateStepStatus(statusPath: string, stepNum: number, status: "n
 	const lines = content.split("\n");
 	let inTarget = false;
 	for (let i = 0; i < lines.length; i++) {
-		const sm = lines[i].match(/^###\s+Step\s+(\d+):/);
-		if (sm) inTarget = parseInt(sm[1]) === stepNum;
+		const stepHeader = parseStatusStepHeader(lines[i]);
+		if (stepHeader) inTarget = stepHeader.number === stepNum;
+		if (/^```/.test(lines[i].trim())) continue;
 		if (inTarget && lines[i].match(/^\*\*Status:\*\*/)) {
 			lines[i] = `**Status:** ${emoji}`;
 			break;

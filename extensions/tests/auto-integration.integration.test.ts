@@ -1564,6 +1564,62 @@ describe("16.x — presentBatchSummary", () => {
 		const text = pi.messages[0].opts.content[0].text;
 		expect(text).toContain("3 task(s)");
 	});
+
+	it("16.29: summary file preserves rollback safe-stop reason and persistence warning after resume", () => {
+		const pi = makeMockPi();
+		const now = Date.now();
+		const batchState = makeIntegrationBatchState({
+			phase: "paused",
+			failedTasks: 1,
+			succeededTasks: 0,
+			totalTasks: 1,
+			waveResults: [
+				{
+					waveIndex: 0,
+					startedAt: now - 5_000,
+					endedAt: now - 4_000,
+					laneResults: [],
+					policyApplied: "skip-dependents",
+					stoppedEarly: false,
+					failedTaskIds: ["TP-001"],
+					skippedTaskIds: [],
+					succeededTaskIds: [],
+					blockedTaskIds: [],
+					laneCount: 1,
+					overallStatus: "failed",
+					finalMonitorState: null,
+					allocatedLanes: [],
+				},
+			] as any,
+		});
+
+		presentBatchSummary(
+			pi as any,
+			batchState,
+			tmpDir,
+			"op1",
+			undefined,
+			[
+				{
+					waveIndex: 0,
+					status: "failed",
+					failedLane: 1,
+					failureReason:
+						"Safe-stop at wave 1: verification rollback failed. WARNING: 1 transaction record(s) failed to persist — recovery file(s) may be missing.",
+				},
+			],
+		);
+
+		expect(pi.messages.length).toBe(1);
+		expect(pi.messages[0].opts.content[0].text).toContain("📊 **Batch Summary**");
+		expect(pi.messages[0].opts.content[0].text).toContain("1 task(s)");
+
+		const filepath = join(tmpDir, ".pi", "supervisor", "op1-20260322T120000-summary.md");
+		const summary = readFileSync(filepath, "utf-8");
+		expect(summary).toContain("merge failed: Safe-stop at wave 1: verification rollback failed.");
+		expect(summary).toContain("transaction record(s) failed to persist");
+		expect(summary).toContain("recovery file(s) may be missing");
+	});
 });
 
 // ═════════════════════════════════════════════════════════════════════

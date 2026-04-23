@@ -5,6 +5,7 @@
 import { readFileSync, writeFileSync, existsSync, unlinkSync, copyFileSync, mkdirSync, rmSync, readdirSync } from "fs";
 import { readFile as fsReadFile } from "fs/promises";
 import { execSync, spawnSync } from "child_process";
+import { randomUUID } from "crypto";
 import { join, dirname, resolve, relative } from "path";
 
 import { execLog, isV2AgentAlive, setV2LivenessRegistryCache } from "./execution.ts";
@@ -14,7 +15,7 @@ import type { AllocatedLane, LaneExecutionResult, MergeLaneResult, MergeResult, 
 import { resolveBaseBranch, resolveRepoRoot } from "./waves.ts";
 import { readManifest, writeManifest, buildRegistrySnapshot, writeRegistrySnapshot, readRegistrySnapshot, writeMergeSnapshot } from "./process-registry.ts";
 import { generateMergeWorktreePath, sleepAsync, sleepSync } from "./worktree.ts";
-import { getCurrentBranch, runGit } from "./git.ts";
+import { detectUnreachableGitlinks, getCurrentBranch, runGit } from "./git.ts";
 import { ORCH_MESSAGES } from "./messages.ts";
 import { emitEngineEvent } from "./persistence.ts";
 import { loadOrchestratorConfig } from "./config.ts";
@@ -1154,7 +1155,7 @@ function persistTransactionRecord(record: TransactionRecord, stateRoot: string):
 			: "default";
 		const verifyDir = join(stateRoot, ".pi", "verification", record.opId);
 		mkdirSync(verifyDir, { recursive: true });
-		const fileName = `txn-b${record.batchId}-repo-${repoSlug}-wave-${record.waveIndex}-lane-${record.laneNumber}.json`;
+		const fileName = `txn-${record.waveTransactionId}-repo-${repoSlug}-lane-${record.laneNumber}.json`;
 		writeFileSync(
 			join(verifyDir, fileName),
 			JSON.stringify(record, null, 2),
@@ -1404,11 +1405,14 @@ export async function mergeWave(
 	healthMonitor?: MergeHealthMonitor | null,
 	forceMixedOutcome?: boolean,
 	runtimeBackend?: RuntimeBackend,
+	waveTransactionId?: string,
+	repoAttemptSequence = 0,
 ): Promise<MergeWaveResult> {
 	const startTime = Date.now();
 	const sessionPrefix = config.orchestrator.sessionPrefix;
 	const opId = resolveOperatorId(config);
 	const targetBranch = baseBranch;
+	const effectiveWaveTransactionId = waveTransactionId ?? `wave-${batchId}-w${waveIndex}-${randomUUID()}`;
 	const laneResults: MergeLaneResult[] = [];
 
 	// Build lane outcome lookup for merge eligibility checks.
@@ -1462,6 +1466,7 @@ export async function mergeWave(
 		execLog("merge", `W${waveIndex}`, "no mergeable lanes (all failed or empty)");
 		return {
 			waveIndex,
+			waveTransactionId: effectiveWaveTransactionId,
 			status: "succeeded", // vacuous success — nothing to merge
 			laneResults: [],
 			failedLane: null,
@@ -1500,7 +1505,7 @@ export async function mergeWave(
 	// The merge worktree lives inside the batch container alongside lane worktrees:
 	// {basePath}/{opId}-{batchId}/merge
 	const tempBranch = `_merge-temp-${opId}-${batchId}`;
-	const mergeWorkDir = generateMergeWorktreePath(repoRoot, opId, batchId, config);
+	const mergeWorkDir = generateMergeWorktreePath(repoRoot, opId, batchId, config, repoId);
 
 	// Clean up stale merge worktree/branch from prior failed attempt.
 	// TP-029: Apply forceRemoveMergeWorktree fallback so stale merge worktrees
@@ -1858,6 +1863,70 @@ export async function mergeWave(
 			let txnRollbackResult: string | null = null;
 			let txnRecoveryCommands: string[] = [];
 
+			// ── Post-merge submodule gitlink reachability validation ─────
+			// Defense in depth for issue #517: block branch advancement if the merged
+			// superproject points at submodule commits that are not reachable on the
+			// configured remote. This protects against legacy/manual paths that bypass
+			// Runtime V2 checkpoint safeguards.
+			if (
+				failedLane === null &&
+				(mergeResult.status === "SUCCESS" || mergeResult.status === "CONFLICT_RESOLVED")
+			) {
+				const unreachableGitlinks = detectUnreachableGitlinks(mergeWorkDir);
+				if (unreachableGitlinks.length > 0) {
+					const summary = unreachableGitlinks
+						.slice(0, 3)
+						.map((finding) => `${finding.path}@${finding.gitlinkCommit.slice(0, 8)} on ${finding.remoteName ?? "any remote"}`)
+						.join(", ");
+					execLog("merge", sessionName, "post-merge submodule gitlink validation failed", {
+						count: unreachableGitlinks.length,
+						summary,
+					});
+
+					laneResult.error = `submodule_unreachable_ref: ${summary}`;
+
+					if (preLaneHead) {
+						txnRollbackAttempted = true;
+						execLog("merge", sessionName, "rolling back temp branch after submodule gitlink validation failure", {
+							preLaneHead: preLaneHead.slice(0, 8),
+						});
+						const resetResult = spawnSync("git", ["reset", "--hard", preLaneHead], { cwd: mergeWorkDir });
+						if (resetResult.status === 0) {
+							txnStatus = "rolled_back";
+							txnRollbackResult = "success";
+						} else {
+							const resetErr = resetResult.stderr?.toString().trim() || "unknown error";
+							laneResult.error = `submodule_unreachable_ref: rollback reset failed (${resetErr}) — temp branch may contain unreachable gitlink refs`;
+							blockAdvancement = true;
+							txnStatus = "rollback_failed";
+							txnRollbackResult = `reset failed: ${resetErr}`;
+							txnRecoveryCommands = [
+								`# Recovery: manually reset merge worktree to pre-lane HEAD`,
+								`cd "${mergeWorkDir}"`,
+								`git reset --hard ${preLaneHead}`,
+								`# Then inspect submodule refs before re-running merge`,
+							];
+							rollbackFailed = true;
+						}
+					} else {
+						blockAdvancement = true;
+						txnStatus = "rollback_failed";
+						txnRollbackAttempted = false;
+						txnRollbackResult = "no baseHEAD captured — rollback impossible";
+						txnRecoveryCommands = [
+							`# Recovery: no baseHEAD was captured for rollback`,
+							`cd "${mergeWorkDir}"`,
+							`git log --oneline -5`,
+							`# Determine the correct pre-merge commit and reset manually`,
+						];
+						rollbackFailed = true;
+					}
+
+					failedLane = lane.laneNumber;
+					failureReason = `Post-merge submodule gitlink validation failed in lane ${lane.laneNumber}: ${summary}`;
+				}
+			}
+
 			// ── Orchestrator-side post-merge verification (TP-032) ──────
 			// After a successful merge (SUCCESS/CONFLICT_RESOLVED), capture
 			// post-merge fingerprints and diff against baseline. New failures
@@ -1982,7 +2051,9 @@ export async function mergeWave(
 			const txnRecord: TransactionRecord = {
 				opId,
 				batchId,
+				waveTransactionId: effectiveWaveTransactionId,
 				waveIndex,
+				repoAttemptSequence,
 				laneNumber: lane.laneNumber,
 				repoId: repoId ?? null,
 				baseHEAD,
@@ -2033,7 +2104,9 @@ export async function mergeWave(
 			const errorTxnRecord: TransactionRecord = {
 				opId,
 				batchId,
+				waveTransactionId: effectiveWaveTransactionId,
 				waveIndex,
+				repoAttemptSequence,
 				laneNumber: lane.laneNumber,
 				repoId: repoId ?? null,
 				baseHEAD,
@@ -2363,6 +2436,7 @@ export async function mergeWave(
 
 	const result: MergeWaveResult = {
 		waveIndex,
+		waveTransactionId: effectiveWaveTransactionId,
 		status,
 		laneResults,
 		failedLane,
@@ -2418,6 +2492,123 @@ export function groupLanesByRepo(
 	}));
 }
 
+function readBranchHead(repoRoot: string, branch: string): string | null {
+	const headResult = spawnSync("git", ["rev-parse", `refs/heads/${branch}`], {
+		cwd: repoRoot,
+		encoding: "utf-8",
+	});
+	if (headResult.status !== 0) {
+		return null;
+	}
+	return headResult.stdout.trim();
+}
+
+type RepoAtomicRollbackResult = {
+	ok: boolean;
+	error: string | null;
+	recoveryCommands: string[];
+};
+
+function rollbackRepoBranchToHead(
+	repoRoot: string,
+	targetBranch: string,
+	restoreHead: string,
+	waveIndex: number,
+	repoId: string | undefined,
+): RepoAtomicRollbackResult {
+	const repoLabel = repoId ?? "default";
+	const currentHead = readBranchHead(repoRoot, targetBranch);
+	const checkedOutBranch = getCurrentBranch(repoRoot);
+	const targetIsCheckedOut = checkedOutBranch === targetBranch;
+
+	if (targetIsCheckedOut) {
+		const resetResult = spawnSync("git", ["reset", "--hard", restoreHead], {
+			cwd: repoRoot,
+			encoding: "utf-8",
+		});
+		if (resetResult.status === 0) {
+			execLog("merge", `W${waveIndex}`, `cross-repo atomic rollback restored checked-out branch ${targetBranch}`, {
+				repoId: repoLabel,
+				restoreHead: restoreHead.slice(0, 8),
+			});
+			return { ok: true, error: null, recoveryCommands: [] };
+		}
+
+		const err = resetResult.stderr?.toString().trim()
+			|| resetResult.stdout?.toString().trim()
+			|| "unknown error";
+		return {
+			ok: false,
+			error: `failed to reset checked-out branch ${targetBranch}: ${err}`,
+			recoveryCommands: [
+				`cd "${repoRoot}"`,
+				`git checkout ${targetBranch}`,
+				`git reset --hard ${restoreHead}`,
+			],
+		};
+	}
+
+	const updateRefArgs = currentHead
+		? ["update-ref", `refs/heads/${targetBranch}`, restoreHead, currentHead]
+		: ["update-ref", `refs/heads/${targetBranch}`, restoreHead];
+	const updateRefResult = spawnSync("git", updateRefArgs, {
+		cwd: repoRoot,
+		encoding: "utf-8",
+	});
+	if (updateRefResult.status === 0) {
+		execLog("merge", `W${waveIndex}`, `cross-repo atomic rollback restored ${targetBranch}`, {
+			repoId: repoLabel,
+			restoreHead: restoreHead.slice(0, 8),
+		});
+		return { ok: true, error: null, recoveryCommands: [] };
+	}
+
+	const err = updateRefResult.stderr?.toString().trim()
+		|| updateRefResult.stdout?.toString().trim()
+		|| "unknown error";
+	return {
+		ok: false,
+		error: `failed to restore ${targetBranch} to ${restoreHead.slice(0, 8)}: ${err}`,
+		recoveryCommands: [
+			`cd "${repoRoot}"`,
+			currentHead
+				? `git update-ref refs/heads/${targetBranch} ${restoreHead} ${currentHead}`
+				: `git update-ref refs/heads/${targetBranch} ${restoreHead}`,
+		],
+	};
+}
+
+function rewriteCommittedTransactionsAfterAtomicRollback(
+	transactionRecords: TransactionRecord[],
+	repoId: string | undefined,
+	rollbackSucceeded: boolean,
+	rollbackDetail: string,
+	recoveryCommands: string[],
+	stateRoot: string,
+): string[] {
+	const persistErrors: string[] = [];
+	const recordRepoId = repoId ?? null;
+
+	for (const record of transactionRecords) {
+		if (record.repoId !== recordRepoId || record.status !== "committed") {
+			continue;
+		}
+
+		record.status = rollbackSucceeded ? "rolled_back" : "rollback_failed";
+		record.rollbackAttempted = true;
+		record.rollbackResult = rollbackDetail;
+		record.recoveryCommands = rollbackSucceeded ? [] : recoveryCommands;
+		record.completedAt = new Date().toISOString();
+
+		const persistError = persistTransactionRecord(record, stateRoot);
+		if (persistError) {
+			persistErrors.push(persistError);
+		}
+	}
+
+	return persistErrors;
+}
+
 /**
  * Merge a wave's lanes partitioned by repository.
  *
@@ -2437,9 +2628,10 @@ export function groupLanesByRepo(
  * Failure semantics:
  * - A failure in one repo does NOT stop merging in other repos.
  * - The aggregate status is "succeeded" only if all repos succeeded.
- * - If any repo failed and any succeeded, status is "partial".
- * - `repoResults` field carries per-repo attribution for downstream
- *   reporting (Step 1 will use this for explicit partial-success summaries).
+ * - In multi-repo waves, any repo failure triggers cross-repo atomic rollback
+ *   for already-advanced repo refs and the aggregate status becomes "failed".
+ * - `repoResults` field still carries per-repo attribution for downstream
+ *   reporting and recovery guidance.
  *
  * @param completedLanes   - Lanes that completed execution (from wave result)
  * @param waveResult       - The wave execution result (for lane status filtering)
@@ -2468,6 +2660,7 @@ export async function mergeWaveByRepo(
 	runtimeBackend?: RuntimeBackend,
 ): Promise<MergeWaveResult> {
 	const startTime = Date.now();
+	const waveTransactionId = `wave-${batchId}-w${waveIndex}-${randomUUID()}`;
 
 	// Build lane outcome lookup for merge eligibility (same logic as mergeWave).
 	const laneOutcomeByNumber = new Map<number, LaneExecutionResult>();
@@ -2509,6 +2702,7 @@ export async function mergeWaveByRepo(
 		execLog("merge", `W${waveIndex}`, "no mergeable lanes (all failed or empty)");
 		return {
 			waveIndex,
+			waveTransactionId,
 			status: "succeeded",
 			laneResults: [],
 			failedLane: null,
@@ -2544,6 +2738,8 @@ export async function mergeWaveByRepo(
 			healthMonitor,
 			forceMixedOutcome,
 			runtimeBackend,
+			waveTransactionId,
+			0,
 		);
 		// Attach empty repoResults for consistent shape
 		return { ...result, repoResults: [] };
@@ -2553,6 +2749,14 @@ export async function mergeWaveByRepo(
 	const allLaneResults: MergeLaneResult[] = [];
 	const repoOutcomes: RepoMergeOutcome[] = [];
 	const allTransactionRecords: TransactionRecord[] = [];
+	type RepoMergeContext = {
+		repoId: string | undefined;
+		repoRoot: string;
+		targetBranch: string;
+		initialTargetHead: string | null;
+		outcome: RepoMergeOutcome;
+	};
+	const repoContexts: RepoMergeContext[] = [];
 	// TP-033 R004-2: Accumulate persistence errors across all repo groups
 	const allPersistenceErrors: string[] = [];
 	let firstFailedLane: number | null = null;
@@ -2565,17 +2769,19 @@ export async function mergeWaveByRepo(
 	// TP-033: Track rollback failures across all repo groups
 	let anyRollbackFailed = false;
 
-	for (const group of repoGroups) {
+	for (const [groupIndex, group] of repoGroups.entries()) {
 		const groupRepoRoot = resolveRepoRoot(group.repoId, repoRoot, workspaceConfig);
 		// In workspace mode with orch branch, always merge into the orch branch
 		// (passed as baseBranch from engine.ts). Do NOT use resolveBaseBranch()
 		// which returns the repo's current branch (e.g., develop), bypassing
 		// the orch branch model entirely.
 		const groupBaseBranch = baseBranch;
+		const groupInitialTargetHead = readBranchHead(groupRepoRoot, groupBaseBranch);
 
 		execLog("merge", `W${waveIndex}`, `merging repo group: ${group.repoId ?? "(default)"}`, {
 			repoRoot: groupRepoRoot,
 			baseBranch: groupBaseBranch,
+			initialTargetHead: groupInitialTargetHead?.slice(0, 8) ?? "unknown",
 			laneCount: group.lanes.length,
 			lanes: group.lanes.map(l => l.laneNumber).join(","),
 		});
@@ -2609,6 +2815,8 @@ export async function mergeWaveByRepo(
 			healthMonitor,
 			forceMixedOutcome,
 			runtimeBackend,
+			waveTransactionId,
+			groupIndex,
 		);
 
 		// Accumulate lane results
@@ -2635,6 +2843,13 @@ export async function mergeWaveByRepo(
 			failureReason: groupResult.failureReason,
 		};
 		repoOutcomes.push(repoOutcome);
+		repoContexts.push({
+			repoId: group.repoId,
+			repoRoot: groupRepoRoot,
+			targetBranch: groupBaseBranch,
+			initialTargetHead: groupInitialTargetHead,
+			outcome: repoOutcome,
+		});
 
 		// Track failures across repos (but continue to merge other repos).
 		// Check groupResult.status (not just failedLane) to catch setup failures
@@ -2666,6 +2881,94 @@ export async function mergeWaveByRepo(
 		}
 	}
 
+	if (!anyRollbackFailed && anyRepoFailed && repoContexts.length > 1) {
+		const rollbackContexts = repoContexts.filter(context => {
+			if (context.outcome.status !== "succeeded" && context.outcome.status !== "partial") {
+				return false;
+			}
+			const currentTargetHead = readBranchHead(context.repoRoot, context.targetBranch);
+			if (!context.initialTargetHead || !currentTargetHead) {
+				return true;
+			}
+			return currentTargetHead !== context.initialTargetHead;
+		});
+
+		if (rollbackContexts.length > 0) {
+			execLog("merge", `W${waveIndex}`, `cross-repo atomic merge failure detected — rolling back ${rollbackContexts.length} repo group(s)`, {
+				repos: rollbackContexts.map(context => context.repoId ?? "(default)").join(", "),
+			});
+		}
+
+		const atomicRollbackFailures: string[] = [];
+		for (const context of rollbackContexts) {
+			const repoLabel = context.repoId ?? "default";
+			const originalReason = context.outcome.failureReason;
+
+			if (!context.initialTargetHead) {
+				const rollbackError = `no pre-merge target HEAD captured for repo ${repoLabel}`;
+				const recoveryCommands = [
+					`cd "${context.repoRoot}"`,
+					`git log --oneline refs/heads/${context.targetBranch} -5`,
+					`# Reset refs/heads/${context.targetBranch} to the correct pre-wave commit`,
+				];
+				allPersistenceErrors.push(...rewriteCommittedTransactionsAfterAtomicRollback(
+					allTransactionRecords,
+					context.repoId,
+					false,
+					`cross_repo_atomic_rollback failed: ${rollbackError}`,
+					recoveryCommands,
+					stateRoot ?? context.repoRoot,
+				));
+				context.outcome.status = "failed";
+				context.outcome.failureReason = `cross_repo_atomic_rollback_failed: ${rollbackError}`;
+				atomicRollbackFailures.push(`[repo:${repoLabel}] ${rollbackError}`);
+				anyRollbackFailed = true;
+				continue;
+			}
+
+			const rollbackResult = rollbackRepoBranchToHead(
+				context.repoRoot,
+				context.targetBranch,
+				context.initialTargetHead,
+				waveIndex,
+				context.repoId,
+			);
+			allPersistenceErrors.push(...rewriteCommittedTransactionsAfterAtomicRollback(
+				allTransactionRecords,
+				context.repoId,
+				rollbackResult.ok,
+				rollbackResult.ok
+					? `cross_repo_atomic_rollback to ${context.initialTargetHead.slice(0, 8)}`
+					: `cross_repo_atomic_rollback failed: ${rollbackResult.error}`,
+				rollbackResult.recoveryCommands,
+				stateRoot ?? context.repoRoot,
+			));
+
+			context.outcome.status = "failed";
+			if (rollbackResult.ok) {
+				context.outcome.failureReason = originalReason
+					? `cross_repo_atomic_rollback: ${originalReason}`
+					: "cross_repo_atomic_rollback: rolled back because another repo in the wave failed";
+			} else {
+				context.outcome.failureReason = `cross_repo_atomic_rollback_failed: ${rollbackResult.error}`;
+				atomicRollbackFailures.push(`[repo:${repoLabel}] ${rollbackResult.error}`);
+				anyRollbackFailed = true;
+			}
+		}
+
+		if (rollbackContexts.length > 0) {
+			const rollbackSummary = `Cross-repo atomic merge rolled back ${rollbackContexts.length} repo group(s).`;
+			firstFailureReason = firstFailureReason
+				? `${firstFailureReason} ${rollbackSummary}`
+				: rollbackSummary;
+		}
+		if (atomicRollbackFailures.length > 0) {
+			firstFailureReason = firstFailureReason
+				? `${firstFailureReason} Rollback failures: ${atomicRollbackFailures.join("; ")}`
+				: `Rollback failures: ${atomicRollbackFailures.join("; ")}`;
+		}
+	}
+
 	// TP-171: Stage artifacts for repos that have only skipped lanes but were
 	// not included in the mergeable repoGroups.
 	const processedRepoIds = new Set(repoGroups.map(g => g.repoId));
@@ -2678,8 +2981,9 @@ export async function mergeWaveByRepo(
 		return outcome.tasks.some(t => t.status === "skipped");
 	});
 	// TP-171 R004: Gate artifact staging behind safe-stop — do not advance
-	// any branch refs when a rollback failure has been detected.
-	if (skippedOnlyRepoLanes.length > 0 && !anyRollbackFailed) {
+	// any branch refs when a rollback failure or cross-repo merge failure
+	// has been detected.
+	if (skippedOnlyRepoLanes.length > 0 && !anyRollbackFailed && !anyRepoFailed) {
 		const skippedRepoGroups = groupLanesByRepo(skippedOnlyRepoLanes);
 		for (const group of skippedRepoGroups) {
 			const groupRepoRoot = resolveRepoRoot(group.repoId, repoRoot, workspaceConfig);
@@ -2696,10 +3000,13 @@ export async function mergeWaveByRepo(
 	const anyLaneSucceeded = allLaneResults.some(
 		r => !r.error && (r.result?.status === "SUCCESS" || r.result?.status === "CONFLICT_RESOLVED"),
 	);
+	const strictAtomicCrossRepo = repoContexts.length > 1;
 
 	let status: MergeWaveResult["status"];
 	if (!anyRepoFailed) {
 		status = "succeeded";
+	} else if (strictAtomicCrossRepo) {
+		status = "failed";
 	} else if (anyLaneSucceeded) {
 		status = "partial";
 	} else {
@@ -2717,6 +3024,7 @@ export async function mergeWaveByRepo(
 
 	const aggregateResult: MergeWaveResult = {
 		waveIndex,
+		waveTransactionId,
 		status,
 		laneResults: allLaneResults,
 		failedLane: firstFailedLane,

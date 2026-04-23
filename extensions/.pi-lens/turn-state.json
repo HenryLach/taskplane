@@ -1,0 +1,17 @@
+{
+  "files": {
+    "taskplane/execution.ts": {
+      "modifiedRanges": [
+        {
+          "start": 574,
+          "end": 602
+        }
+      ],
+      "importsChanged": false,
+      "lastEdit": "2026-04-23T00:23:10.988Z"
+    }
+  },
+  "turnCycles": 0,
+  "maxCycles": 3,
+  "lastUpdated": "2026-04-23T00:23:10.988Z"
+}

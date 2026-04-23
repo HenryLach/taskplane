@@ -9,7 +9,7 @@ Parallel orchestration (`/orch`) is built on three concepts:
 Together with the **orch-managed branch model**, these concepts enable safe
 parallel task execution without touching the user's working branch.
 
-### Single-repo mode vs workspace mode
+## Single-repo mode vs workspace mode
 
 Taskplane operates in one of two modes depending on your project structure:
 
@@ -90,11 +90,11 @@ configured `max_lanes` limit.
 
 ### Assignment strategies
 
-| Strategy | Behavior |
-|----------|----------|
+| Strategy                   | Behavior                                                                                                  |
+| -------------------------- | --------------------------------------------------------------------------------------------------------- |
 | `affinity-first` (default) | Tasks sharing overlapping `## File Scope` entries are grouped onto the same lane to avoid merge conflicts |
-| `round-robin` | Tasks distributed evenly across lanes |
-| `load-balanced` | Tasks distributed by estimated size (`size_weights`: S=1, M=2, L=4) |
+| `round-robin`              | Tasks distributed evenly across lanes                                                                     |
+| `load-balanced`            | Tasks distributed by estimated size (`size_weights`: S=1, M=2, L=4)                                       |
 
 ### Why affinity matters
 
@@ -265,6 +265,7 @@ performs the merge intelligently:
    - Instructions for conflict resolution
 
 2. The merge agent runs in a temporary **merge worktree**:
+
    ```
    .worktrees/{batchId}/merge/
    ```
@@ -290,6 +291,7 @@ they're complementary, and produces a correct resolution that includes both.
 
 This is critical for parallel task execution. Without intelligent merge, you'd
 need to either:
+
 - Serialize all tasks (slow)
 - Manually resolve every conflict (defeats automation)
 - Hope file scopes don't overlap (fragile)
@@ -305,6 +307,7 @@ agent every 2 minutes:
   detect stalls
 
 Escalation thresholds:
+
 - **Stale** (10 min no output): emits `merge_health_stale` event
 - **Stuck** (20 min no output): emits `merge_health_stuck` event with a
   recommendation to kill and retry
@@ -332,27 +335,31 @@ failures from merge resolution errors) before reporting failure.
 
 When a merge fails (timeout, unresolvable conflict, verification failure):
 
-| Policy | Behavior |
-|--------|----------|
+| Policy                              | Behavior                                                       |
+| ----------------------------------- | -------------------------------------------------------------- |
 | `on_merge_failure: pause` (default) | Batch pauses, preserving all state for supervisor intervention |
-| `on_merge_failure: abort` | Batch stops entirely |
+| `on_merge_failure: abort`           | Batch stops entirely                                           |
 
 The supervisor can then:
+
 1. Inspect merge diagnostics (`read_lane_logs`, event log)
 2. Manually resolve in the merge worktree if needed
 3. Resume the batch with `orch_resume()`
 
 ### Per-repo merge (workspace mode)
 
-In workspace mode, merges happen independently per repository:
+In workspace mode, merge work still runs per repository, but the wave outcome is atomic across all participating repos:
 
 1. For each repo that had lanes in this wave:
    - Create a temporary merge worktree on the orch branch
    - Merge each lane branch sequentially
    - Run verification commands per repo
    - Stage task artifacts
-   - Update the orch branch ref
+   - Tentatively update the repo's orch branch ref
    - Clean up
+2. If every repo group succeeds, the wave is finalized.
+3. If any repo group fails, Taskplane rolls every already-advanced repo ref back to its pre-wave head and reports the wave as failed instead of partially succeeded.
+4. If a rollback fails, the batch safe-stops in `paused` state with recovery guidance so the operator can inspect the affected repos manually.
 
 ### Artifact staging
 
@@ -380,6 +387,7 @@ In workspace mode, `/orch-integrate` loops over all repos that have an orch
 branch and integrates each one.
 
 After successful integration:
+
 - The local orch branch is deleted
 - Batch state is preserved (for diagnostics) but marked completed
 
@@ -390,11 +398,11 @@ After successful integration:
 The `on_task_failure` policy controls what happens to tasks that depend on a
 failed task:
 
-| Policy | Behavior |
-|--------|----------|
+| Policy                      | Behavior                                                   |
+| --------------------------- | ---------------------------------------------------------- |
 | `skip-dependents` (default) | Failed task's dependents are blocked; other tasks continue |
-| `stop-wave` | Remaining tasks in the current wave are cancelled |
-| `stop-all` | Entire batch stops immediately |
+| `stop-wave`                 | Remaining tasks in the current wave are cancelled          |
+| `stop-all`                  | Entire batch stops immediately                             |
 
 Blocked and skipped tasks are tracked in batch state counters and visible in the
 dashboard.
@@ -405,15 +413,15 @@ dashboard.
 
 Compared to running many agents in one working directory:
 
-| Concern | Taskplane | Shared directory |
-|---------|-----------|-----------------|
-| **File conflicts** | Impossible — worktree isolation | Frequent — agents overwrite each other |
-| **Merge safety** | LLM merge agent resolves conflicts semantically, with test verification | No merge step — conflicts accumulate silently |
-| **Conflict resolution** | AI understands both sides' intent, produces correct combined code | Manual resolution or corrupted output |
-| **User branch safety** | Untouched until `/orch-integrate` | Modified directly, no rollback |
-| **Debugging** | Each lane has its own branch, worktree, and commit history | One tangled history |
-| **Resumability** | File-backed state survives any crash | Lost on restart |
-| **Parallelism** | Bounded by lanes, safe by design | Unbounded and unsafe |
+| Concern                 | Taskplane                                                               | Shared directory                              |
+| ----------------------- | ----------------------------------------------------------------------- | --------------------------------------------- |
+| **File conflicts**      | Impossible — worktree isolation                                         | Frequent — agents overwrite each other        |
+| **Merge safety**        | LLM merge agent resolves conflicts semantically, with test verification | No merge step — conflicts accumulate silently |
+| **Conflict resolution** | AI understands both sides' intent, produces correct combined code       | Manual resolution or corrupted output         |
+| **User branch safety**  | Untouched until `/orch-integrate`                                       | Modified directly, no rollback                |
+| **Debugging**           | Each lane has its own branch, worktree, and commit history              | One tangled history                           |
+| **Resumability**        | File-backed state survives any crash                                    | Lost on restart                               |
+| **Parallelism**         | Bounded by lanes, safe by design                                        | Unbounded and unsafe                          |
 
 ---
 

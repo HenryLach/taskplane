@@ -29,6 +29,7 @@ import {
 	buildMergeRetryScopeKey,
 	extractFailedRepoId,
 	applyMergeRetryLoop,
+	mergeRequiresRollbackSafeStop,
 } from "../taskplane/messages.ts";
 import type { MergeRetryCallbacks } from "../taskplane/types.ts";
 import {
@@ -836,6 +837,49 @@ describe("9.x — Workspace-scoped counters (repoId in scope key)", () => {
 		// All three keys are different
 		expect(new Set([key1, key2, key3]).size).toBe(3);
 	});
+
+	it("9.6: mergeRequiresRollbackSafeStop infers rollback failure from stale transaction metadata", () => {
+		const result = makeWaveResult({
+			rollbackFailed: undefined,
+			transactionRecords: [
+				{
+					laneNumber: 1,
+					waveTransactionId: "wave-test",
+					opId: "op-test",
+					repoId: "api",
+					sourceBranch: "task/lane-1",
+					targetBranch: "main",
+					worktreePath: "/tmp/worktree",
+					preMergeHead: "abc123",
+					mergeCommit: null,
+					status: "rollback_failed",
+					rollbackAttempted: true,
+					rollbackResult: "reset failed: simulated",
+					recoveryCommands: ["git reset --hard abc123"],
+				},
+			] as any,
+		});
+
+		expect(mergeRequiresRollbackSafeStop(result)).toBe(true);
+	});
+
+	it("9.7: mergeRequiresRollbackSafeStop infers rollback failure from repo-level atomic rollback errors", () => {
+		const result = makeWaveResult({
+			rollbackFailed: undefined,
+			failedLane: null,
+			repoResults: [
+				{
+					repoId: "api",
+					status: "failed",
+					laneResults: [],
+					failedLane: null,
+					failureReason: "cross_repo_atomic_rollback_failed: unable to reset main",
+				},
+			] as any,
+		});
+
+		expect(mergeRequiresRollbackSafeStop(result)).toBe(true);
+	});
 });
 
 // ══════════════════════════════════════════════════════════════════════
@@ -890,7 +934,43 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		}
 	});
 
-	it("10.3: classification changes between retries are handled correctly", async () => {
+	it("10.3: safe-stop during retry also triggers from stale rollback metadata without rollbackFailed flag", async () => {
+		const failResult = makeWaveResult({
+			laneResults: [
+				makeLaneResult({ error: "verification_new_failure: 1 failure" }),
+			],
+		});
+		const rollbackFailResult = makeWaveResult({
+			status: "failed",
+			rollbackFailed: undefined,
+			transactionRecords: [
+				{
+					laneNumber: 1,
+					waveTransactionId: "wave-test",
+					opId: "op-test",
+					repoId: "api",
+					sourceBranch: "task/lane-1",
+					targetBranch: "main",
+					worktreePath: "/tmp/worktree",
+					preMergeHead: "abc123",
+					mergeCommit: null,
+					status: "rollback_failed",
+					rollbackAttempted: true,
+					rollbackResult: "reset failed: simulated",
+					recoveryCommands: ["git reset --hard abc123"],
+				},
+			] as any,
+		});
+
+		const counters: Record<string, number> = {};
+		const mock = makeMockCallbacks({ performMergeResults: [rollbackFailResult] });
+
+		const outcome = await applyMergeRetryLoop(failResult, 0, counters, mock.callbacks);
+
+		expect(outcome.kind).toBe("safe_stop");
+	});
+
+	it("10.4: classification changes between retries are handled correctly", async () => {
 		// First failure: lock file. Retry returns: cleanup failure.
 		const lockFailResult = makeWaveResult({
 			failureReason: "lock file error",
@@ -913,7 +993,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		}
 	});
 
-	it("10.4: retry loop emits notifications for each attempt", async () => {
+	it("10.5: retry loop emits notifications for each attempt", async () => {
 		const failResult = makeWaveResult({
 			failureReason: "lock file error",
 		});
@@ -935,7 +1015,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		expect(successNotifs.length).toBe(1);
 	});
 
-	it("10.5: retry loop persists state at correct points (increment, start, complete)", async () => {
+	it("10.6: retry loop persists state at correct points (increment, start, complete)", async () => {
 		const failResult = makeWaveResult({
 			laneResults: [
 				makeLaneResult({ error: "verification_new_failure: 1 failure" }),
@@ -958,7 +1038,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		expect(idx_complete).toBeGreaterThan(idx_start);
 	});
 
-	it("10.6: all five merge failure classifications are covered in matrix", () => {
+	it("10.7: all five merge failure classifications are covered in matrix", () => {
 		expect(MERGE_FAILURE_CLASSIFICATIONS).toEqual([
 			"verification_new_failure",
 			"merge_conflict_unresolved",
@@ -972,7 +1052,7 @@ describe("10.x — applyMergeRetryLoop shared loop semantics", () => {
 		}
 	});
 
-	it("10.7: policy matrix values match roadmap specification", () => {
+	it("10.8: policy matrix values match roadmap specification", () => {
 		const m = MERGE_RETRY_POLICY_MATRIX;
 
 		// verification_new_failure: 1 retry, 0ms cooldown

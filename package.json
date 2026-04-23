@@ -42,7 +42,7 @@
   },
   "dependencies": {
     "jiti": "^2.6.1",
-    "yaml": "^2.4.0"
+    "yaml": "^2.8.3"
   },
   "license": "MIT",
   "repository": {

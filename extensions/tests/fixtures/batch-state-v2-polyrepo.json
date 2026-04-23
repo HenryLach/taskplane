@@ -54,6 +54,7 @@
       "endedAt": 1741478500000,
       "doneFileFound": true,
       "exitReason": "Task completed successfully",
+      "resolvedRepoIds": ["docs"],
       "resolvedRepoId": "docs"
     },
     {
@@ -66,6 +67,7 @@
       "endedAt": 1741478520000,
       "doneFileFound": true,
       "exitReason": "Task completed successfully",
+      "resolvedRepoIds": ["api"],
       "resolvedRepoId": "api"
     },
     {
@@ -79,6 +81,7 @@
       "doneFileFound": true,
       "exitReason": "Task completed successfully",
       "repoId": "frontend",
+      "resolvedRepoIds": ["frontend"],
       "resolvedRepoId": "frontend"
     },
     {
@@ -91,6 +94,7 @@
       "endedAt": null,
       "doneFileFound": false,
       "exitReason": "",
+      "resolvedRepoIds": ["api"],
       "resolvedRepoId": "api"
     },
     {
@@ -104,6 +108,7 @@
       "doneFileFound": false,
       "exitReason": "",
       "repoId": "frontend",
+      "resolvedRepoIds": ["frontend"],
       "resolvedRepoId": "frontend"
     },
     {
@@ -116,12 +121,14 @@
       "endedAt": null,
       "doneFileFound": false,
       "exitReason": "",
+      "resolvedRepoIds": ["docs"],
       "resolvedRepoId": "docs"
     }
   ],
   "mergeResults": [
     {
       "waveIndex": 0,
+      "waveTransactionId": "wave-20260316T120000-w1-fixture",
       "status": "succeeded",
       "failedLane": null,
       "failureReason": null,

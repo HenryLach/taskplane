@@ -131,6 +131,20 @@ describe("2.x: Lane-runner execution contract", () => {
 	it("2.13: empty thinking is forwarded as undefined to inherit session defaults", () => {
 		expect(laneRunnerSrc).toContain("thinking: config.workerThinking || undefined");
 	});
+
+	it("2.14: forwards TASKPLANE_REPO_PATHS to workers", () => {
+		expect(laneRunnerSrc).toContain("TASKPLANE_REPO_PATHS: JSON.stringify(config.repoPaths ?? unit.repoPaths)");
+	});
+
+	it("2.15: worker prompt includes the task repo map", () => {
+		expect(laneRunnerSrc).toContain("`Task repo map:`");
+		expect(laneRunnerSrc).toContain("Object.entries(config.repoPaths ?? unit.repoPaths)");
+	});
+
+	it("2.16: captures pre-task submodule diagnostics before worker execution", () => {
+		expect(laneRunnerSrc).toContain('preTask: captureTaskSubmoduleSnapshot(taskId, "pre-task", config.worktreePath)');
+		expect(laneRunnerSrc).toContain("submoduleDiagnostics,");
+	});
 });
 
 // ── 3. executeLaneV2 integration ────────────────────────────────────
@@ -168,7 +182,7 @@ describe("3.x: executeLaneV2 integration in execution.ts", () => {
 
 	it("3.6: executeLaneV2 preserves commitTaskArtifacts and worktree reset", () => {
 		const start = executionSrc.indexOf("export async function executeLaneV2(");
-		const bodySection = executionSrc.slice(start, start + 5000);
+		const bodySection = executionSrc.slice(start, start + 6500);
 		expect(bodySection).toContain("commitTaskArtifacts(");
 		expect(bodySection).toContain("runGit(");
 	});
@@ -183,6 +197,12 @@ describe("3.x: executeLaneV2 integration in execution.ts", () => {
 		const start = executionSrc.indexOf("export async function executeLaneV2(");
 		const bodySection = executionSrc.slice(start, start + 5000);
 		expect(bodySection).toContain("buildRuntimeAgentId(");
+	});
+
+	it("3.9: executeLaneV2 forwards unit.repoPaths into laneRunnerConfig", () => {
+		const start = executionSrc.indexOf("export async function executeLaneV2(");
+		const bodySection = executionSrc.slice(start, start + 5000);
+		expect(bodySection).toContain("repoPaths: unit.repoPaths");
 	});
 });
 
@@ -225,6 +245,7 @@ describe("5.x: LaneRunnerConfig fields", () => {
 		expect(laneRunnerSrc).toContain("worktreePath: string");
 		expect(laneRunnerSrc).toContain("branch: string");
 		expect(laneRunnerSrc).toContain("repoId: string");
+		expect(laneRunnerSrc).toContain("repoPaths?: Record<string, string>");
 	});
 
 	it("5.3: includes worker config fields", () => {

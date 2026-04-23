@@ -2560,6 +2560,177 @@ function resolveDoctorConfigLocation(projectRoot, isWorkspaceMode) {
 	};
 }
 
+const DOCTOR_WORKSPACE_REPO_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/;
+
+function normalizeDoctorPath(value) {
+	try {
+		return fs.realpathSync.native(path.resolve(value)).replace(/\\/g, "/").toLowerCase();
+	} catch {
+		return path.resolve(value).replace(/\\/g, "/").toLowerCase();
+	}
+}
+
+function runGitForDoctor(args, cwd) {
+	try {
+		const stdout = execFileSync("git", args, {
+			cwd,
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+			timeout: 5000,
+		}).trim();
+		return { ok: true, stdout };
+	} catch (error) {
+		const stderr = error && typeof error === "object" && error.stderr
+			? String(error.stderr).trim()
+			: "";
+		return { ok: false, stdout: "", stderr };
+	}
+}
+
+function uniqueSorted(values) {
+	return [...new Set(values)].sort((left, right) => left.localeCompare(right));
+}
+
+function listConfiguredSubmodulePathsForDoctor(repoRoot) {
+	const result = runGitForDoctor(["config", "-f", ".gitmodules", "--get-regexp", "^submodule\\..*\\.path$"], repoRoot);
+	if (!result.ok || !result.stdout) return [];
+
+	const paths = [];
+	for (const line of result.stdout.split(/\r?\n/)) {
+		const trimmed = line.trim();
+		if (!trimmed) continue;
+		const value = trimmed.replace(/^submodule\.[^.]+\.path\s+/, "").trim();
+		if (value) paths.push(value);
+	}
+	return uniqueSorted(paths);
+}
+
+function listGitlinkPathsForDoctor(repoRoot) {
+	const result = runGitForDoctor(["ls-files", "--stage"], repoRoot);
+	if (!result.ok || !result.stdout) return [];
+
+	const paths = [];
+	for (const line of result.stdout.split(/\r?\n/)) {
+		const match = line.match(/^160000\s+[0-9a-f]+\s+\d+\t(.+)$/i);
+		if (match?.[1]) paths.push(match[1]);
+	}
+	return uniqueSorted(paths);
+}
+
+function parseSubmoduleStatusLineForDoctor(line) {
+	if (!line) return null;
+	const prefix = line[0];
+	const trimmed = line.slice(1).trim();
+	if (!trimmed) return null;
+	const firstSpace = trimmed.indexOf(" ");
+	if (firstSpace <= 0) return null;
+
+	let pathAndDescription = trimmed.slice(firstSpace + 1).trim();
+	const descriptionMatch = pathAndDescription.match(/^(.*)\s+\((.*)\)$/);
+	if (descriptionMatch) {
+		pathAndDescription = descriptionMatch[1].trim();
+	}
+	if (!pathAndDescription) return null;
+
+	return {
+		path: pathAndDescription,
+		state:
+			prefix === "-" ? "uninitialized" :
+			prefix === "+" ? "drifted" :
+			prefix === "U" ? "conflict" :
+			"ok",
+	};
+}
+
+function listSubmoduleStatusForDoctor(repoRoot) {
+	const result = runGitForDoctor(["submodule", "status", "--recursive"], repoRoot);
+	if (!result.ok || !result.stdout) return [];
+	return result.stdout
+		.split(/\r?\n/)
+		.map(parseSubmoduleStatusLineForDoctor)
+		.filter(Boolean)
+		.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+function applyDoctorSubmodulePolicy(target, rawOrchestrator) {
+	if (!rawOrchestrator || typeof rawOrchestrator !== "object" || Array.isArray(rawOrchestrator)) return;
+	const rawFailure = rawOrchestrator.failure;
+	const rawCore = rawOrchestrator.orchestrator;
+	if (rawFailure?.submoduleFailureMode === "permissive" || rawFailure?.submoduleFailureMode === "strict") {
+		target.failureMode = rawFailure.submoduleFailureMode;
+	}
+	if (["manual", "init-only", "recursive-on-drift"].includes(rawFailure?.onSubmoduleDrift)) {
+		target.onSubmoduleDrift = rawFailure.onSubmoduleDrift;
+	}
+	if (rawCore?.submoduleRepoIdStrategy === "path-basename") {
+		target.repoIdStrategy = rawCore.submoduleRepoIdStrategy;
+	}
+}
+
+function loadDoctorSubmodulePolicy(configLocation) {
+	const policy = {
+		failureMode: "permissive",
+		onSubmoduleDrift: "manual",
+		repoIdStrategy: "path-basename",
+	};
+
+	try {
+		const { raw } = readGlobalPreferencesForCli();
+		applyDoctorSubmodulePolicy(policy, raw?.orchestrator);
+	} catch {
+		// ignore preferences parse failures here; doctor remains read-only best effort
+	}
+
+	const configPath = path.join(configLocation.root, configLocation.prefix, "taskplane-config.json");
+	if (!fs.existsSync(configPath)) return policy;
+
+	try {
+		const raw = JSON.parse(fs.readFileSync(configPath, "utf-8"));
+		applyDoctorSubmodulePolicy(policy, raw?.orchestrator);
+	} catch {
+		// malformed project config is surfaced elsewhere; keep default policy here
+	}
+
+	return policy;
+}
+
+function doctorPlannerSyncCommand() {
+	return "/orch-plan <areas|all> --sync";
+}
+
+function buildDoctorUninitializedHint(policy, repoRoot, submodulePath) {
+	const syncCmd = doctorPlannerSyncCommand();
+	const initCmd = `git -C "${repoRoot}" submodule update --init -- "${submodulePath}"`;
+	const recursiveCmd = `git -C "${repoRoot}" submodule update --init --recursive -- "${submodulePath}"`;
+	if (policy.onSubmoduleDrift === "manual") {
+		return `On Submodule Drift is manual. Switch it to init-only or recursive-on-drift, then run ${syncCmd}, or run ${initCmd}.`;
+	}
+	if (policy.onSubmoduleDrift === "init-only") {
+		return `Run ${syncCmd} to initialize it, or run ${initCmd}.`;
+	}
+	return `Run ${syncCmd} to initialize it recursively, or run ${recursiveCmd}.`;
+}
+
+function buildDoctorDriftHint(policy, repoRoot, submodulePath) {
+	const syncCmd = doctorPlannerSyncCommand();
+	const updateCmd = `git -C "${repoRoot}" submodule update --init --recursive -- "${submodulePath}"`;
+	if (policy.onSubmoduleDrift === "manual") {
+		return `On Submodule Drift is manual. Switch it to recursive-on-drift, then run ${syncCmd}, or run ${updateCmd}.`;
+	}
+	if (policy.onSubmoduleDrift === "init-only") {
+		return `On Submodule Drift is init-only, which does not repair drift. Switch it to recursive-on-drift and rerun ${syncCmd}, or run ${updateCmd}.`;
+	}
+	return `Run ${syncCmd} to realign the checkout, or run ${updateCmd}.`;
+}
+
+function reportDoctorSubmoduleFinding(strictMode, message, hint) {
+	console.log(`  ${strictMode ? FAIL : WARN} ${message}`);
+	if (hint) {
+		console.log(`     ${c.dim}→ ${hint}${c.reset}`);
+	}
+	return strictMode ? 1 : 0;
+}
+
 function cmdDoctor() {
 	const projectRoot = process.cwd();
 	let issues = 0;
@@ -2784,6 +2955,105 @@ function cmdDoctor() {
 				issues++;
 			}
 		}
+	}
+
+	// ── Submodule policy + advisory checks (read-only) ─────────────────
+	console.log();
+	const submodulePolicy = loadDoctorSubmodulePolicy(configLocation);
+	const strictSubmoduleMode = submodulePolicy.failureMode === "strict";
+	console.log(
+		`  ${INFO} submodule policy ${c.dim}(failure: ${submodulePolicy.failureMode}, on drift: ${submodulePolicy.onSubmoduleDrift}, repo IDs: ${submodulePolicy.repoIdStrategy})${c.reset}`,
+	);
+
+	const workspaceRepoPaths = new Map();
+	const repoRootsForSubmoduleScan = [];
+	if (wsResult.config) {
+		for (const repoId of [...wsResult.config.repos.keys()].sort()) {
+			const repo = wsResult.config.repos.get(repoId);
+			const resolvedPath = path.resolve(projectRoot, repo.path);
+			repoRootsForSubmoduleScan.push({ label: repoId, root: resolvedPath });
+			workspaceRepoPaths.set(normalizeDoctorPath(resolvedPath), repoId);
+			if (!DOCTOR_WORKSPACE_REPO_ID_PATTERN.test(repoId)) {
+				issues += reportDoctorSubmoduleFinding(
+					strictSubmoduleMode,
+					`workspace repo ID '${repoId}' does not match the lowercase letters/digits/hyphen policy`,
+					"Rename the repo ID before relying on workspace routing or future submodule imports.",
+				);
+			}
+		}
+	} else if (isInsideGitRepo(projectRoot)) {
+		repoRootsForSubmoduleScan.push({ label: path.basename(projectRoot), root: projectRoot });
+	}
+
+	let trackedSubmodules = 0;
+	const collisionCandidates = new Map();
+	for (const { label, root } of repoRootsForSubmoduleScan) {
+		const configuredPaths = listConfiguredSubmodulePathsForDoctor(root);
+		const gitlinkPaths = listGitlinkPathsForDoctor(root);
+		const statuses = listSubmoduleStatusForDoctor(root);
+		const statusByPath = new Map(statuses.map((entry) => [entry.path, entry]));
+		const allPaths = [...new Set([...configuredPaths, ...gitlinkPaths, ...statuses.map((entry) => entry.path)])]
+			.sort((left, right) => left.localeCompare(right));
+
+		trackedSubmodules += allPaths.length;
+
+		for (const submodulePath of allPaths) {
+			const absolutePath = path.resolve(root, submodulePath);
+			const mappedRepoId = workspaceRepoPaths.get(normalizeDoctorPath(absolutePath));
+
+			if (wsResult.config && !mappedRepoId && submodulePolicy.repoIdStrategy === "path-basename") {
+				const derivedRepoId = path.basename(submodulePath).trim().toLowerCase();
+				if (!DOCTOR_WORKSPACE_REPO_ID_PATTERN.test(derivedRepoId)) {
+					issues += reportDoctorSubmoduleFinding(
+						strictSubmoduleMode,
+						`${label}: submodule '${submodulePath}' is not declared in workspace.repos and basename import would derive invalid repo ID '${derivedRepoId}'`,
+						"Rename the submodule path or add an explicit workspace.repos entry with a valid repo ID, then rerun /orch-plan <areas|all> --sync.",
+					);
+				} else {
+					const candidates = collisionCandidates.get(derivedRepoId) ?? [];
+					candidates.push(`${label}:${submodulePath}`);
+					collisionCandidates.set(derivedRepoId, candidates);
+					issues += reportDoctorSubmoduleFinding(
+						strictSubmoduleMode,
+						`${label}: submodule '${submodulePath}' is not declared in workspace.repos`,
+						`Run ${doctorPlannerSyncCommand()} to import it, or add a workspace.repos entry for '${submodulePath}' (repo ID '${derivedRepoId}' under path-basename strategy).`,
+					);
+				}
+			}
+
+			const status = statusByPath.get(submodulePath);
+			if (status?.state === "uninitialized" || (!fs.existsSync(absolutePath) && (configuredPaths.includes(submodulePath) || gitlinkPaths.includes(submodulePath)))) {
+				issues += reportDoctorSubmoduleFinding(
+					strictSubmoduleMode,
+					`${label}: submodule '${submodulePath}' is not initialized`,
+					buildDoctorUninitializedHint(submodulePolicy, root, submodulePath),
+				);
+				continue;
+			}
+
+			if (status?.state === "drifted" || status?.state === "conflict") {
+				issues += reportDoctorSubmoduleFinding(
+					strictSubmoduleMode,
+					`${label}: submodule '${submodulePath}' is ${status.state === "conflict" ? "in conflict" : "drifted from the recorded gitlink commit"}`,
+					buildDoctorDriftHint(submodulePolicy, root, submodulePath),
+				);
+			}
+		}
+	}
+
+	for (const [derivedRepoId, candidates] of collisionCandidates) {
+		if (candidates.length < 2) continue;
+		issues += reportDoctorSubmoduleFinding(
+			strictSubmoduleMode,
+			`multiple undeclared submodules would map to repo ID '${derivedRepoId}'`,
+			`Add explicit workspace.repos entries for ${candidates.join(", ")} instead of relying on path-basename imports, then rerun ${doctorPlannerSyncCommand()}.`,
+		);
+	}
+
+	if (trackedSubmodules === 0) {
+		console.log(`  ${OK} no submodules detected`);
+	} else if (issues === 0 || !strictSubmoduleMode) {
+		console.log(`  ${OK} submodule scan complete ${c.dim}(${trackedSubmodules} tracked)${c.reset}`);
 	}
 
 	// Check project config (common — both modes)

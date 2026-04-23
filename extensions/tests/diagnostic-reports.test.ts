@@ -372,8 +372,9 @@ describe("buildMarkdownReport", () => {
 		const report = buildMarkdownReport(input, events);
 
 		expect(report).toContain("## Per-Task Results");
-		expect(report).toContain("| TP-001 | succeeded | completed | $0.1000 |");
-		expect(report).toContain("| TP-002 | failed | crash | $0.0500 |");
+		expect(report).toContain("| Task | Status | Classification | Reason |");
+		expect(report).toContain("| TP-001 | succeeded | completed | completed normally | $0.1000 |");
+		expect(report).toContain("| TP-002 | failed | crash | crash | $0.0500 |");
 	});
 
 	it("shows empty message when no tasks", () => {
@@ -407,10 +408,31 @@ describe("buildMarkdownReport", () => {
 		expect(report).toContain("## Per-Repo Breakdown");
 		expect(report).toContain("### backend");
 		expect(report).toContain("### frontend");
+		expect(report).toContain("| Task | Status | Classification | Reason | Cost | Duration |");
 		// frontend has 2 tasks (1 succeeded, 1 failed)
 		expect(report).toContain("Tasks: 2 (1 succeeded, 1 failed)");
 		// backend has 1 task (1 succeeded, 0 failed)
 		expect(report).toContain("Tasks: 1 (1 succeeded, 0 failed)");
+	});
+
+	it("includes exit reasons in the per-task report output", () => {
+		const input = makeInput({
+			tasks: [
+				makeTask("TP-009", {
+					status: "failed",
+					exitReason: "Unsafe submodule state after task success: third_party/tools/bof3-disk has uncommitted submodule changes",
+				}),
+			],
+			diagnostics: {
+				taskExits: {
+					"TP-009": { classification: "process_crash", cost: 0, durationSec: 12, retries: 0 },
+				},
+				batchCost: 0,
+			},
+		});
+		const report = buildMarkdownReport(input, buildDiagnosticEvents(input));
+
+		expect(report).toContain("Unsafe submodule state after task success");
 	});
 
 	it("does NOT include per-repo breakdown in repo mode", () => {

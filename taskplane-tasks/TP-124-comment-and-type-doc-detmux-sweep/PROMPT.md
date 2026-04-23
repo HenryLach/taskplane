@@ -22,6 +22,21 @@ taskplane-tasks/TP-124-comment-and-type-doc-detmux-sweep/
 
 Clean residual TMUX wording in code comments, JSDoc, and type descriptions so the Runtime V2 codebase reads consistently. Preserve compatibility behavior and literal external contracts where required.
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Dependencies
 
 - **Task:** TP-122 (reference audit/guard)

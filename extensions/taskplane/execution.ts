@@ -8,12 +8,12 @@ import { join, dirname, basename, resolve, relative, delimiter as pathDelimiter 
 import { userInfo } from "os";
 
 import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig, ExecutionUnit, PacketPaths, RuntimeAgentId, RuntimeAgentRole, SupervisorAlertCallback } from "./types.ts";
-import { resolvePacketPaths, buildRuntimeAgentId } from "./types.ts";
-import { readRegistrySnapshot, readLaneSnapshot, isTerminalStatus, isProcessAlive, detectOrphans, markOrphansCrashed, buildRegistrySnapshot, writeRegistrySnapshot } from "./process-registry.ts";
+import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig, ExecutionUnit, PacketPaths, RuntimeAgentId, RuntimeAgentRole, SupervisorAlertCallback, RuntimeLaneSnapshot, RuntimeLaneSubmoduleDiagnostics, RuntimeUnsafeSubmoduleFinding, RuntimeSubmoduleSnapshot } from "./types.ts";
+import { resolvePacketPaths, buildRuntimeAgentId, runtimeLaneSnapshotPath } from "./types.ts";
+import { readRegistrySnapshot, readLaneSnapshot, isTerminalStatus, isProcessAlive, detectOrphans, markOrphansCrashed, buildRegistrySnapshot, writeRegistrySnapshot, writeLaneSnapshot } from "./process-registry.ts";
 import { allocateLanes } from "./waves.ts";
 import { resolveOperatorId } from "./naming.ts";
-import { runGit, runGitWithEnv } from "./git.ts";
+import { captureSubmoduleStatusSnapshot, detectUnsafeSubmoduleStates, runGit, runGitWithEnv } from "./git.ts";
 import { resolveTaskplanePackageFile, resolveTaskplaneAgentTemplate } from "./path-resolver.ts";
 import { resolvePointer, loadWorkspaceConfig } from "./workspace.ts";
 
@@ -208,6 +208,73 @@ function laneSessionIdOf(lane: Pick<AllocatedLane, "laneSessionId">): string {
 	return lane.laneSessionId;
 }
 
+function appendRepoIdCandidate(
+	orderedRepoIds: string[],
+	seenRepoIds: Set<string>,
+	repoId: string | undefined,
+): void {
+	if (!repoId || seenRepoIds.has(repoId)) return;
+	seenRepoIds.add(repoId);
+	orderedRepoIds.push(repoId);
+}
+
+export function buildExecutionRepoPaths(
+	task: ParsedTask,
+	executionRepoId: string,
+	packetHomeRepoId: string,
+	worktreePath: string,
+	repoRoot: string,
+	workspaceConfig?: WorkspaceConfig | null,
+	repoWorktrees?: Record<string, { path: string }>,
+): Record<string, string> {
+	const orderedRepoIds: string[] = [];
+	const seenRepoIds = new Set<string>();
+
+	for (const repoId of task.participatingRepoIds ?? []) {
+		appendRepoIdCandidate(orderedRepoIds, seenRepoIds, repoId);
+	}
+	for (const repoId of task.promptRepoIds ?? []) {
+		appendRepoIdCandidate(orderedRepoIds, seenRepoIds, repoId);
+	}
+	for (const repoId of task.resolvedRepoIds ?? []) {
+		appendRepoIdCandidate(orderedRepoIds, seenRepoIds, repoId);
+	}
+	for (const repoId of task.explicitSegmentDag?.repoIds ?? []) {
+		appendRepoIdCandidate(orderedRepoIds, seenRepoIds, repoId);
+	}
+	appendRepoIdCandidate(orderedRepoIds, seenRepoIds, task.promptRepoId);
+	appendRepoIdCandidate(orderedRepoIds, seenRepoIds, task.resolvedRepoId);
+	appendRepoIdCandidate(orderedRepoIds, seenRepoIds, packetHomeRepoId);
+	appendRepoIdCandidate(orderedRepoIds, seenRepoIds, executionRepoId);
+
+	const repoPaths: Record<string, string> = {};
+	for (const repoId of orderedRepoIds) {
+		if (repoId === executionRepoId) {
+			repoPaths[repoId] = repoWorktrees?.[repoId]?.path ?? worktreePath;
+			continue;
+		}
+		const laneRepoWorktreePath = repoWorktrees?.[repoId]?.path;
+		if (laneRepoWorktreePath) {
+			repoPaths[repoId] = laneRepoWorktreePath;
+			continue;
+		}
+		const repoPath = workspaceConfig?.repos.get(repoId)?.path;
+		if (repoPath) {
+			repoPaths[repoId] = repoPath;
+			continue;
+		}
+		if (!workspaceConfig && repoId === packetHomeRepoId) {
+			repoPaths[repoId] = repoRoot;
+		}
+	}
+
+	if (!repoPaths[executionRepoId]) {
+		repoPaths[executionRepoId] = repoWorktrees?.[executionRepoId]?.path ?? worktreePath;
+	}
+
+	return repoPaths;
+}
+
 /**
  * Resolve the lane session log path for a task execution.
  *
@@ -331,6 +398,14 @@ export interface ResolvedTaskPaths {
 	statusPath: string;
 }
 
+function normalizePortablePath(pathValue: string): string {
+	const normalized = pathValue.replace(/\\/g, "/");
+	if (/^[A-Za-z]:\//.test(normalized)) {
+		return normalized;
+	}
+	return resolve(normalized).replace(/\\/g, "/");
+}
+
 /**
  * Canonical task-folder path resolver.
  *
@@ -362,8 +437,9 @@ export function resolveCanonicalTaskPaths(
 	repoRoot: string,
 	isWorkspaceMode?: boolean,
 ): ResolvedTaskPaths {
-	const repoRootNorm = resolve(repoRoot).replace(/\\/g, "/");
-	const folderNorm = resolve(taskFolder).replace(/\\/g, "/");
+	const repoRootNorm = normalizePortablePath(repoRoot);
+	const folderNorm = normalizePortablePath(taskFolder);
+	const worktreeRootNorm = normalizePortablePath(worktreePath);
 
 	let resolvedFolder: string;
 
@@ -373,21 +449,21 @@ export function resolveCanonicalTaskPaths(
 		// the worktree, so the engine must look there too.
 		if (folderNorm.startsWith(repoRootNorm + "/")) {
 			const relPath = folderNorm.slice(repoRootNorm.length + 1);
-			resolvedFolder = join(worktreePath, relPath);
+			resolvedFolder = join(worktreeRootNorm, relPath);
 		} else {
 			// Cross-repo: task files were copied into the worktree under
 			// .taskplane-tasks/<taskDirName>/ by buildLaneEnvVars
-			const taskDirName = basename(resolve(taskFolder));
-			resolvedFolder = join(worktreePath, ".taskplane-tasks", taskDirName);
+			const taskDirName = basename(folderNorm);
+			resolvedFolder = join(worktreeRootNorm, ".taskplane-tasks", taskDirName);
 		}
 	} else if (folderNorm.startsWith(repoRootNorm + "/")) {
 		// Repo mode: task folder is inside the repo root.
 		// Translate to equivalent path in the worktree.
 		const relativePath = folderNorm.slice(repoRootNorm.length + 1);
-		resolvedFolder = join(worktreePath, relativePath);
+		resolvedFolder = join(worktreeRootNorm, relativePath);
 	} else {
 		// Fallback: use absolute path directly.
-		resolvedFolder = resolve(taskFolder);
+		resolvedFolder = folderNorm;
 	}
 
 	// Check primary location
@@ -403,7 +479,7 @@ export function resolveCanonicalTaskPaths(
 
 	// Archive fallback: worker may have archived the task folder during the
 	// "Documentation & Delivery" step, moving it under `.../archive/TASK-ID/`.
-	const resolvedNorm = resolve(resolvedFolder).replace(/\\/g, "/");
+	const resolvedNorm = normalizePortablePath(resolvedFolder);
 	const parts = resolvedNorm.split("/");
 	const taskDirName = parts[parts.length - 1];
 	const parentDir = parts.slice(0, -1).join("/");
@@ -488,14 +564,82 @@ function commitTaskArtifacts(
 	lane: AllocatedLane,
 	task: AllocatedTask,
 	laneId: string,
+	v2Context?: { stateRoot: string; batchId: string; laneNumber: number; repoId: string },
 ): void {
 	const worktreePath = lane.worktreePath;
 
 	// Check if there are any uncommitted changes in the worktree
 	const statusResult = runGit(["status", "--porcelain"], worktreePath);
 	if (!statusResult.ok || !statusResult.stdout.trim()) {
+		// Worker may have already committed everything. Check for untracked .DONE file.
+		// If .DONE exists but is untracked, we must stage+commit it so it survives
+		// worktree reset and appears in the main repo after merge.
+		const donePath = resolveTaskDonePath(task.task.taskFolder, worktreePath, lane.worktreePath);
+		if (existsSync(donePath)) {
+			const untrackedResult = runGit(["status", "--porcelain", "--untracked-files=all"], worktreePath);
+			const hasUntracked = untrackedResult.ok && untrackedResult.stdout.includes("??");
+			if (hasUntracked) {
+				// Stage .DONE specifically
+				const addResult = runGit(["add", donePath], worktreePath);
+				if (!addResult.ok) {
+					execLog(laneId, task.taskId, `post-task stage .DONE failed (non-fatal): ${addResult.stderr.slice(0, 200)}`);
+				}
+				// Commit with task ID for traceability
+				const commitResult = runGit(
+					["commit", "-m", `checkpoint: ${task.taskId} task artifacts (.DONE, STATUS.md)`],
+					worktreePath,
+				);
+				if (!commitResult.ok && !commitResult.stderr.includes("nothing to commit")) {
+					execLog(laneId, task.taskId, `post-task commit .DONE failed (non-fatal): ${commitResult.stderr.slice(0, 200)}`);
+				}
+				if (commitResult.ok) {
+					execLog(laneId, task.taskId, `committed untracked .DONE to lane branch`, {
+						commit: commitResult.stdout.trim().split("\n")[0],
+					});
+				}
+				return;
+			}
+		}
 		// Nothing to commit (worker already committed everything, or git error)
 		return;
+	}
+
+	const unsafeSubmodules = detectUnsafeSubmoduleStates(worktreePath);
+	if (unsafeSubmodules.length > 0) {
+		const statusSnapshot = captureSubmoduleStatusSnapshot(worktreePath);
+		const summary = unsafeSubmodules
+			.slice(0, 3)
+			.map((finding) =>
+				finding.kind === "dirty-worktree"
+					? `${finding.path} has uncommitted submodule changes`
+					: `${finding.path} points to local commit ${finding.headCommit?.slice(0, 8)} not reachable on ${finding.remoteName ?? "any remote"}`,
+			)
+			.join("; ");
+		const remainder = unsafeSubmodules.length > 3
+			? ` (+${unsafeSubmodules.length - 3} more)`
+			: "";
+		const findingDetails = buildUnsafeSubmoduleFindingDetails(unsafeSubmodules, statusSnapshot);
+		recordUnsafeSubmoduleDiagnostics(
+			v2Context,
+			task.taskId,
+			toRuntimeSubmoduleSnapshot(task.taskId, "post-task", statusSnapshot),
+			summary,
+			remainder,
+			findingDetails,
+		);
+		for (const detail of findingDetails) {
+			const preview = detail.statusLines.length > 0
+				? detail.statusLines.join(" | ")
+				: detail.error
+					? `[status unavailable: ${detail.error}]`
+					: "[no modified files reported by git status --porcelain]";
+			execLog(laneId, task.taskId, `unsafe submodule detail: ${detail.path}: ${detail.summary} :: ${preview}`);
+		}
+		const message =
+			`Unsafe submodule state after task success: ${summary}${remainder}. ` +
+			`Taskplane refused to checkpoint a superproject gitlink that could lose or orphan submodule work.`;
+		execLog(laneId, task.taskId, message);
+		throw new Error(message);
 	}
 
 	// Stage all changes in the worktree
@@ -523,6 +667,94 @@ function commitTaskArtifacts(
 	});
 }
 
+function toRuntimeSubmoduleSnapshot(
+	taskId: string,
+	phase: "pre-task" | "post-task",
+	snapshot: ReturnType<typeof captureSubmoduleStatusSnapshot>,
+): RuntimeSubmoduleSnapshot {
+	return {
+		taskId,
+		phase,
+		capturedAt: snapshot.capturedAt,
+		worktreePath: snapshot.worktreePath,
+		totalSubmodules: snapshot.totalSubmodules,
+		dirtySubmodules: snapshot.dirtySubmodules,
+		entries: snapshot.entries,
+	};
+}
+
+function buildUnsafeSubmoduleFindingDetails(
+	unsafeSubmodules: ReturnType<typeof detectUnsafeSubmoduleStates>,
+	snapshot: ReturnType<typeof captureSubmoduleStatusSnapshot>,
+): RuntimeUnsafeSubmoduleFinding[] {
+	const previewByPath = new Map(snapshot.entries.map((entry) => [entry.path, entry]));
+	return unsafeSubmodules.map((finding) => {
+		const preview = previewByPath.get(finding.path);
+		const summary = finding.kind === "dirty-worktree"
+			? `${finding.path} has uncommitted submodule changes`
+			: `${finding.path} points to local commit ${finding.headCommit?.slice(0, 8)} not reachable on ${finding.remoteName ?? "any remote"}`;
+		return {
+			path: finding.path,
+			kind: finding.kind,
+			summary,
+			statusLines: preview?.statusLines ?? [],
+			lineCount: preview?.lineCount ?? 0,
+			truncated: preview?.truncated ?? false,
+			...(preview?.error ? { error: preview.error } : {}),
+			...(finding.headCommit ? { headCommit: finding.headCommit } : {}),
+			...(finding.indexCommit ? { indexCommit: finding.indexCommit } : {}),
+			...(finding.remoteName ? { remoteName: finding.remoteName } : {}),
+		};
+	});
+}
+
+function recordUnsafeSubmoduleDiagnostics(
+	v2Context: { stateRoot: string; batchId: string; laneNumber: number; repoId: string } | undefined,
+	taskId: string,
+	postTaskSnapshot: RuntimeSubmoduleSnapshot,
+	summary: string,
+	remainder: string,
+	findings: RuntimeUnsafeSubmoduleFinding[],
+): void {
+	if (!v2Context) return;
+	const snapshotPath = runtimeLaneSnapshotPath(v2Context.stateRoot, v2Context.batchId, v2Context.laneNumber);
+
+	try {
+		const current = existsSync(snapshotPath)
+			? JSON.parse(readFileSync(snapshotPath, "utf-8")) as RuntimeLaneSnapshot
+			: {
+				batchId: v2Context.batchId,
+				laneNumber: v2Context.laneNumber,
+				laneId: `lane-${v2Context.laneNumber}`,
+				repoId: v2Context.repoId,
+				taskId,
+				segmentId: null,
+				status: "failed",
+				worker: null,
+				reviewer: null,
+				progress: null,
+				updatedAt: Date.now(),
+			} satisfies RuntimeLaneSnapshot;
+		const nextDiagnostics: RuntimeLaneSubmoduleDiagnostics = {
+			...(current.submoduleDiagnostics ?? {}),
+			postTask: postTaskSnapshot,
+			unsafeCheckpoint: {
+				taskId,
+				capturedAt: Date.now(),
+				summary: `${summary}${remainder}`,
+				findings,
+			},
+		};
+		writeLaneSnapshot(v2Context.stateRoot, v2Context.batchId, v2Context.laneNumber, {
+			...(current as Record<string, unknown>),
+			submoduleDiagnostics: nextDiagnostics,
+			updatedAt: Date.now(),
+		});
+	} catch {
+		// Best effort only: lane snapshots are telemetry, not execution critical.
+	}
+}
+
 
 
 
@@ -547,8 +779,164 @@ export interface ParsedWorktreeStatus {
 	reviewCounter: number;
 	/** Iteration number from STATUS.md */
 	iteration: number;
+	/** Raw Current Step header value from STATUS.md */
+	currentStepLabel: string | null;
+	/** Normalized current step name derived from the header when possible */
+	currentStepName: string | null;
+	/** Normalized current step number derived from the header when possible */
+	currentStepNumber: number | null;
 	/** File modification time (epoch ms) */
 	mtime: number;
+}
+
+function normalizeCurrentStepHeader(
+	rawLabel: string | null,
+	steps: ParsedWorktreeStatus["steps"],
+): Pick<ParsedWorktreeStatus, "currentStepLabel" | "currentStepName" | "currentStepNumber"> {
+	const label = rawLabel?.trim() || null;
+	if (!label) {
+		return {
+			currentStepLabel: null,
+			currentStepName: null,
+			currentStepNumber: null,
+		};
+	}
+
+	const numbered = label.match(/^Step\s+(\d+)(?::\s*(.+))?$/i);
+	if (numbered) {
+		const currentStepNumber = parseInt(numbered[1], 10);
+		const namedMatch = numbered[2]?.trim() || null;
+		const matchingStep = steps.find((step) => step.number === currentStepNumber) || null;
+		return {
+			currentStepLabel: label,
+			currentStepName: namedMatch || matchingStep?.name || null,
+			currentStepNumber,
+		};
+	}
+
+	const normalized = label.toLowerCase();
+	if (
+		normalized.includes("all steps complete")
+		|| normalized === "complete"
+		|| normalized === "done"
+	) {
+		const last = steps[steps.length - 1] || null;
+		return {
+			currentStepLabel: label,
+			currentStepName: last?.name || null,
+			currentStepNumber: last?.number ?? null,
+		};
+	}
+
+	if (normalized === "not started" || normalized === "none") {
+		return {
+			currentStepLabel: label,
+			currentStepName: null,
+			currentStepNumber: null,
+		};
+	}
+
+	const matchingByName = steps.find((step) => step.name === label) || null;
+	return {
+		currentStepLabel: label,
+		currentStepName: matchingByName?.name || label,
+		currentStepNumber: matchingByName?.number ?? null,
+	};
+}
+
+function parseStatusMdText(text: string, mtime: number): ParsedWorktreeStatus {
+	const normalizedText = text.replace(/\r\n/g, "\n");
+	const steps: ParsedWorktreeStatus["steps"] = [];
+	let currentStep: {
+		number: number;
+		name: string;
+		status: "not-started" | "in-progress" | "complete";
+		checkboxes: boolean[];
+	} | null = null;
+	let reviewCounter = 0;
+	let iteration = 0;
+	let currentStepLabel: string | null = null;
+	let inCodeFence = false;
+
+	for (const line of normalizedText.split("\n")) {
+		if (/^```/.test(line.trim())) {
+			inCodeFence = !inCodeFence;
+			continue;
+		}
+		const rcMatch = line.match(/\*\*Review Counter:\*\*\s*(\d+)/);
+		if (rcMatch) reviewCounter = parseInt(rcMatch[1], 10);
+		const itMatch = line.match(/\*\*Iteration:\*\*\s*(\d+)/);
+		if (itMatch) iteration = parseInt(itMatch[1], 10);
+		const currentStepMatch = line.match(/\*\*Current Step:\*\*\s*(.+)/);
+		if (currentStepMatch) currentStepLabel = currentStepMatch[1].trim();
+		if (inCodeFence) continue;
+
+		const stepMatch = line.match(/^#{2,6}\s+Step\s+(\d+)(?::\s*|\s+)(.+)$/);
+		if (stepMatch) {
+			if (currentStep) {
+				const totalChecked = currentStep.checkboxes.filter(c => c).length;
+				steps.push({
+					number: currentStep.number,
+					name: currentStep.name,
+					status: currentStep.status,
+					totalChecked,
+					totalItems: currentStep.checkboxes.length,
+				});
+			}
+			currentStep = {
+				number: parseInt(stepMatch[1], 10),
+				name: stepMatch[2].trim(),
+				status: "not-started",
+				checkboxes: [],
+			};
+			continue;
+		}
+		if (currentStep && /^#{1,6}\s+/.test(line) && !/^####\s+Segment:\s*/.test(line)) {
+			const totalChecked = currentStep.checkboxes.filter(c => c).length;
+			steps.push({
+				number: currentStep.number,
+				name: currentStep.name,
+				status: currentStep.status,
+				totalChecked,
+				totalItems: currentStep.checkboxes.length,
+			});
+			currentStep = null;
+			continue;
+		}
+		if (currentStep) {
+			const ss = line.match(/\*\*Status:\*\*\s*(.*)/);
+			if (ss) {
+				const statusText = ss[1];
+				if (statusText.includes("✅") || statusText.toLowerCase().includes("complete")) {
+					currentStep.status = "complete";
+				} else if (statusText.includes("🟨") || statusText.includes("🟡") || statusText.toLowerCase().includes("progress")) {
+					currentStep.status = "in-progress";
+				}
+			}
+			const cb = line.match(/^\s*-\s*\[([ xX])\]\s*(.*)/);
+			if (cb) {
+				currentStep.checkboxes.push(cb[1].toLowerCase() === "x");
+			}
+		}
+	}
+	if (currentStep) {
+		const totalChecked = currentStep.checkboxes.filter(c => c).length;
+		steps.push({
+			number: currentStep.number,
+			name: currentStep.name,
+			status: currentStep.status,
+			totalChecked,
+			totalItems: currentStep.checkboxes.length,
+		});
+	}
+
+	return {
+		steps,
+		reviewCounter,
+		iteration,
+		...normalizeCurrentStepHeader(currentStepLabel, steps),
+		mtime,
+	};
 }
 
 /**
@@ -585,73 +973,8 @@ export function parseWorktreeStatusMd(
 		return { parsed: null, error: `Cannot read STATUS.md: ${err instanceof Error ? err.message : String(err)}` };
 	}
 
-	// Parse using same regex patterns as task-runner's parseStatusMd
-	const text = content.replace(/\r\n/g, "\n");
-	const steps: ParsedWorktreeStatus["steps"] = [];
-	let currentStep: {
-		number: number;
-		name: string;
-		status: "not-started" | "in-progress" | "complete";
-		checkboxes: boolean[];
-	} | null = null;
-	let reviewCounter = 0;
-	let iteration = 0;
-
-	for (const line of text.split("\n")) {
-		const rcMatch = line.match(/\*\*Review Counter:\*\*\s*(\d+)/);
-		if (rcMatch) reviewCounter = parseInt(rcMatch[1]);
-		const itMatch = line.match(/\*\*Iteration:\*\*\s*(\d+)/);
-		if (itMatch) iteration = parseInt(itMatch[1]);
-
-		const stepMatch = line.match(/^###\s+Step\s+(\d+):\s*(.+)/);
-		if (stepMatch) {
-			if (currentStep) {
-				const totalChecked = currentStep.checkboxes.filter(c => c).length;
-				steps.push({
-					number: currentStep.number,
-					name: currentStep.name,
-					status: currentStep.status,
-					totalChecked,
-					totalItems: currentStep.checkboxes.length,
-				});
-			}
-			currentStep = {
-				number: parseInt(stepMatch[1]),
-				name: stepMatch[2].trim(),
-				status: "not-started",
-				checkboxes: [],
-			};
-			continue;
-		}
-		if (currentStep) {
-			const ss = line.match(/\*\*Status:\*\*\s*(.*)/);
-			if (ss) {
-				const s = ss[1];
-				if (s.includes("✅") || s.toLowerCase().includes("complete")) {
-					currentStep.status = "complete";
-				} else if (s.includes("🟨") || s.includes("🟡") || s.toLowerCase().includes("progress")) {
-					currentStep.status = "in-progress";
-				}
-			}
-			const cb = line.match(/^\s*-\s*\[([ xX])\]\s*(.*)/);
-			if (cb) {
-				currentStep.checkboxes.push(cb[1].toLowerCase() === "x");
-			}
-		}
-	}
-	if (currentStep) {
-		const totalChecked = currentStep.checkboxes.filter(c => c).length;
-		steps.push({
-			number: currentStep.number,
-			name: currentStep.name,
-			status: currentStep.status,
-			totalChecked,
-			totalItems: currentStep.checkboxes.length,
-		});
-	}
-
 	return {
-		parsed: { steps, reviewCounter, iteration, mtime },
+		parsed: parseStatusMdText(content, mtime),
 		error: null,
 	};
 }
@@ -710,73 +1033,8 @@ async function parseStatusMdContent(
 		return { parsed: null, error: `Cannot read STATUS.md: ${err instanceof Error ? err.message : String(err)}` };
 	}
 
-	// Parse logic is identical to the sync version
-	const text = content.replace(/\r\n/g, "\n");
-	const steps: ParsedWorktreeStatus["steps"] = [];
-	let currentStep: {
-		number: number;
-		name: string;
-		status: "not-started" | "in-progress" | "complete";
-		checkboxes: boolean[];
-	} | null = null;
-	let reviewCounter = 0;
-	let iteration = 0;
-
-	for (const line of text.split("\n")) {
-		const rcMatch = line.match(/\*\*Review Counter:\*\*\s*(\d+)/);
-		if (rcMatch) reviewCounter = parseInt(rcMatch[1]);
-		const itMatch = line.match(/\*\*Iteration:\*\*\s*(\d+)/);
-		if (itMatch) iteration = parseInt(itMatch[1]);
-
-		const stepMatch = line.match(/^###\s+Step\s+(\d+):\s*(.+)/);
-		if (stepMatch) {
-			if (currentStep) {
-				const totalChecked = currentStep.checkboxes.filter(c => c).length;
-				steps.push({
-					number: currentStep.number,
-					name: currentStep.name,
-					status: currentStep.status,
-					totalChecked,
-					totalItems: currentStep.checkboxes.length,
-				});
-			}
-			currentStep = {
-				number: parseInt(stepMatch[1]),
-				name: stepMatch[2].trim(),
-				status: "not-started",
-				checkboxes: [],
-			};
-			continue;
-		}
-		if (currentStep) {
-			const ss = line.match(/\*\*Status:\*\*\s*(.*)/);
-			if (ss) {
-				const s = ss[1];
-				if (s.includes("✅") || s.toLowerCase().includes("complete")) {
-					currentStep.status = "complete";
-				} else if (s.includes("🟨") || s.includes("🟡") || s.toLowerCase().includes("progress")) {
-					currentStep.status = "in-progress";
-				}
-			}
-			const cb = line.match(/^\s*-\s*\[([ xX])\]\s*(.*)/);
-			if (cb) {
-				currentStep.checkboxes.push(cb[1].toLowerCase() === "x");
-			}
-		}
-	}
-	if (currentStep) {
-		const totalChecked = currentStep.checkboxes.filter(c => c).length;
-		steps.push({
-			number: currentStep.number,
-			name: currentStep.name,
-			status: currentStep.status,
-			totalChecked,
-			totalItems: currentStep.checkboxes.length,
-		});
-	}
-
 	return {
-		parsed: { steps, reviewCounter, iteration, mtime },
+		parsed: parseStatusMdText(content, mtime),
 		error: null,
 	};
 }
@@ -903,22 +1161,24 @@ export async function resolveTaskMonitorState(
 			totalItems += step.totalItems;
 		}
 
-		// Find the current step (first in-progress, or first not-started after last complete)
-		const inProgress = steps.find(s => s.status === "in-progress");
-		if (inProgress) {
-			currentStepName = inProgress.name;
-			currentStepNumber = inProgress.number;
-		} else {
-			// Find first not-started step
-			const notStarted = steps.find(s => s.status === "not-started");
-			if (notStarted) {
-				currentStepName = notStarted.name;
-				currentStepNumber = notStarted.number;
-			} else if (steps.length > 0) {
-				// All complete
-				const last = steps[steps.length - 1];
-				currentStepName = last.name;
-				currentStepNumber = last.number;
+		currentStepName = statusResult.parsed.currentStepName;
+		currentStepNumber = statusResult.parsed.currentStepNumber;
+		if (!currentStepName) {
+			// Fall back to per-step status inference for older STATUS.md variants
+			const inProgress = steps.find(s => s.status === "in-progress");
+			if (inProgress) {
+				currentStepName = inProgress.name;
+				currentStepNumber = inProgress.number;
+			} else {
+				const notStarted = steps.find(s => s.status === "not-started");
+				if (notStarted) {
+					currentStepName = notStarted.name;
+					currentStepNumber = notStarted.number;
+				} else if (steps.length > 0) {
+					const last = steps[steps.length - 1];
+					currentStepName = last.name;
+					currentStepNumber = last.number;
+				}
 			}
 		}
 
@@ -1211,7 +1471,7 @@ export async function monitorLanes(
 					currentTaskId = task.taskId;
 
 					const tracker = getOrCreateTracker(task.taskId, now);
-					const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode);
+						const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode);
 					const donePath = unit.packet.donePath;
 					const statusPath = unit.packet.statusPath;
 					const statusResult = await parseStatusMdAtPath(statusPath);
@@ -2195,6 +2455,7 @@ export function buildExecutionUnit(
 	task: AllocatedTask,
 	repoRoot: string,
 	isWorkspaceMode?: boolean,
+	workspaceConfig?: WorkspaceConfig | null,
 ): ExecutionUnit {
 	// TP-169: Guard against missing taskFolder. This can happen when
 	// reconstructAllocatedLanes creates task stubs from persisted state
@@ -2211,15 +2472,25 @@ export function buildExecutionUnit(
 			task.taskId,
 		);
 	}
+	const executionRepoId = lane.repoId ?? "default";
+	const executionWorktreePath = lane.repoWorktrees?.[executionRepoId]?.path ?? lane.worktreePath;
 	const resolved = resolveCanonicalTaskPaths(
 		taskFolder,
-		lane.worktreePath,
+		executionWorktreePath,
 		repoRoot,
 		isWorkspaceMode,
 	);
 
-	const executionRepoId = lane.repoId ?? "default";
 	const packetHomeRepoId = task.task.packetRepoId ?? executionRepoId;
+	const repoPaths = buildExecutionRepoPaths(
+		task.task,
+		executionRepoId,
+		packetHomeRepoId,
+		executionWorktreePath,
+		repoRoot,
+		workspaceConfig,
+		lane.repoWorktrees,
+	);
 
 	// Build a segment-style ID if this is a segment execution,
 	// otherwise use the plain task ID.
@@ -2249,7 +2520,8 @@ export function buildExecutionUnit(
 		segmentId,
 		executionRepoId,
 		packetHomeRepoId,
-		worktreePath: lane.worktreePath,
+		repoPaths,
+		worktreePath: executionWorktreePath,
 		packet,
 		task: task.task,
 	};
@@ -2562,6 +2834,9 @@ export async function executeLaneV2(
 	let shouldSkipRemaining = false;
 
 	const stateRoot = resolveRuntimeStateRoot(repoRoot, workspaceRoot);
+	const workspaceConfig = (isWorkspaceMode && workspaceRoot)
+		? loadWorkspaceConfig(workspaceRoot)
+		: null;
 	const batchId = config.orchestrator?.batchId || extraEnvVars?.ORCH_BATCH_ID || String(Date.now());
 
 	// Build agent ID prefix — must match the wave planner's naming (TP-115).
@@ -2615,7 +2890,7 @@ export async function executeLaneV2(
 		}
 
 		// Build execution unit
-		const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode);
+		const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode, workspaceConfig);
 
 		const rawAutonomy = String(extraEnvVars?.TASKPLANE_SUPERVISOR_AUTONOMY ?? "autonomous").toLowerCase();
 		const supervisorAutonomy: LaneRunnerConfig["supervisorAutonomy"] =
@@ -2630,6 +2905,7 @@ export async function executeLaneV2(
 			worktreePath: lane.worktreePath,
 			branch: lane.branch,
 			repoId: lane.repoId ?? "default",
+			repoPaths: unit.repoPaths,
 			stateRoot,
 			workerModel: "",
 			workerTools: "read,write,edit,bash,grep,find,ls",
@@ -2654,22 +2930,30 @@ export async function executeLaneV2(
 
 		try {
 			const result = await executeTaskV2(unit, laneRunnerConfig, pauseSignal);
-			outcomes.push({
+			const outcome: LaneTaskOutcome = {
 				...result.outcome,
 				laneNumber: result.outcome.laneNumber ?? lane.laneNumber,
-			});
+			};
 
 			// Commit artifacts after success (same as legacy path)
-			if (result.outcome.status === "succeeded") {
-				commitTaskArtifacts(lane, task, laneId);
-				// Reset worktree for next task
-				if (lane.tasks.indexOf(task) < lane.tasks.length - 1) {
-					runGit(["checkout", "--", "."], lane.worktreePath);
-					runGit(["clean", "-fd"], lane.worktreePath);
+			if (outcome.status === "succeeded") {
+				try {
+					commitTaskArtifacts(lane, task, laneId, { stateRoot, batchId, laneNumber: lane.laneNumber, repoId: lane.repoId ?? "default" });
+					// Reset worktree for next task
+					if (lane.tasks.indexOf(task) < lane.tasks.length - 1) {
+						runGit(["checkout", "--", "."], lane.worktreePath);
+						runGit(["clean", "-fd"], lane.worktreePath);
+					}
+				} catch (err: unknown) {
+					const errMsg = err instanceof Error ? err.message : String(err);
+					outcome.status = "failed";
+					outcome.exitReason = errMsg;
 				}
 			}
 
-			if (result.outcome.status === "failed" || result.outcome.status === "stalled") {
+			outcomes.push(outcome);
+
+			if (outcome.status === "failed" || outcome.status === "stalled") {
 				shouldSkipRemaining = true;
 			}
 		} catch (err: unknown) {

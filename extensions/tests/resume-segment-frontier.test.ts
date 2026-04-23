@@ -124,6 +124,61 @@ describe("TP-135 resume segment fallback behavior", () => {
 		}
 	});
 
+	it("finds .DONE in a secondary repoWorktree when the primary lane worktree lacks it", () => {
+		const root = join(tmpdir(), `tp135-secondary-done-${Date.now()}`);
+		const primaryWorktree = join(root, "wt-primary");
+		const secondaryWorktree = join(root, "wt-secondary");
+		const taskFolder = join(root, "tasks", "TP-001");
+		mkdirSync(primaryWorktree, { recursive: true });
+		mkdirSync(secondaryWorktree, { recursive: true });
+		mkdirSync(join(secondaryWorktree, "tasks", "TP-001"), { recursive: true });
+		writeFileSync(join(secondaryWorktree, "tasks", "TP-001", ".DONE"), "", "utf8");
+
+		try {
+			const state = makeState({
+				mode: "workspace",
+				lanes: [{
+					laneNumber: 1,
+					laneId: "api/lane-1",
+					laneSessionId: "orch-api-lane-1",
+					worktreePath: primaryWorktree,
+					repoWorktrees: {
+						api: { path: primaryWorktree, branch: "task/api-lane-1", laneNumber: 1, repoId: "api" },
+						docs: { path: secondaryWorktree, branch: "task/api-lane-1", laneNumber: 1, repoId: "docs" },
+					},
+					branch: "task/api-lane-1",
+					repoId: "api",
+					taskIds: ["TP-001"],
+				}],
+				tasks: [{
+					taskId: "TP-001",
+					laneNumber: 1,
+					sessionName: "orch-api-lane-1",
+					status: "running",
+					taskFolder,
+					startedAt: Date.now() - 1000,
+					endedAt: null,
+					doneFileFound: false,
+					exitReason: "",
+				}],
+			});
+
+			const doneTaskIds = collectDoneTaskIdsForResume(state, root, {
+				mode: "workspace",
+				repos: new Map([
+					["api", { id: "api", path: join(root, "api") }],
+					["docs", { id: "docs", path: join(root, "docs") }],
+				]),
+				routing: { tasksRoot: join(root, "tasks"), defaultRepo: "docs" },
+				configPath: join(root, ".pi", "taskplane-workspace.yaml"),
+			} as any);
+
+			expect([...doneTaskIds]).toContain("TP-001");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("falls back to task-level resume logic when mapped segment record is missing", () => {
 		const state = makeState({
 			wavePlan: [["TP-010"], ["TP-010"]],
@@ -358,6 +413,76 @@ describe("TP-135 resume segment fallback behavior", () => {
 		expect(point.pendingTaskIds).toContain("TP-050");
 	});
 
+	it("reconstructs inferred continuation rounds from segments when task.segmentIds is missing", () => {
+		const state = makeState({
+			wavePlan: [["TP-080"]],
+			totalWaves: 1,
+			mergeResults: [{ waveIndex: 0, status: "succeeded" }] as any,
+			tasks: [{
+				taskId: "TP-080",
+				laneNumber: 1,
+				sessionName: "",
+				status: "pending",
+				taskFolder: "/tmp/tasks/TP-080",
+				startedAt: null,
+				endedAt: null,
+				doneFileFound: false,
+				exitReason: "",
+				activeSegmentId: null,
+			}],
+			segments: [
+				makeSegment({ taskId: "TP-080", segmentId: "TP-080::api", status: "succeeded", endedAt: Date.now() - 100 }),
+				makeSegment({ taskId: "TP-080", segmentId: "TP-080::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-080::api"] }),
+				makeSegment({ taskId: "TP-080", segmentId: "TP-080::docs", repoId: "docs", status: "pending", dependsOnSegmentIds: ["TP-080::web"] }),
+			],
+		});
+
+		const frontier = reconstructSegmentFrontier(state);
+		expect(state.tasks[0].segmentIds).toEqual(["TP-080::api", "TP-080::web", "TP-080::docs"]);
+		expect(state.tasks[0].activeSegmentId).toBe("TP-080::web");
+		expect(frontier.get("TP-080")!.pendingSegmentIds).toEqual(["TP-080::web", "TP-080::docs"]);
+
+		const runtimeWavePlan = buildResumeRuntimeWavePlan(state);
+		expect(runtimeWavePlan).toEqual([["TP-080"], ["TP-080"], ["TP-080"]]);
+
+		const reconciled = reconcileTaskStates(state, new Set(), new Set(), new Set(["TP-080"]));
+		const point = computeResumePoint(state, reconciled, runtimeWavePlan);
+		expect(point.resumeWaveIndex).toBe(1);
+		expect(point.pendingTaskIds).toContain("TP-080");
+	});
+
+	it("computeResumePoint honors degraded persisted segments even before frontier reconstruction", () => {
+		const state = makeState({
+			wavePlan: [["TP-081"], ["TP-081"]],
+			totalWaves: 2,
+			mergeResults: [{ waveIndex: 0, status: "succeeded" }] as any,
+			tasks: [{
+				taskId: "TP-081",
+				laneNumber: 1,
+				sessionName: "",
+				status: "succeeded",
+				taskFolder: "/tmp/tasks/TP-081",
+				startedAt: Date.now() - 1000,
+				endedAt: Date.now() - 100,
+				doneFileFound: false,
+				exitReason: "",
+				activeSegmentId: null,
+			}],
+			segments: [
+				makeSegment({ taskId: "TP-081", segmentId: "TP-081::api", status: "succeeded", endedAt: Date.now() - 200 }),
+				makeSegment({ taskId: "TP-081", segmentId: "TP-081::web", repoId: "web", status: "pending", dependsOnSegmentIds: ["TP-081::api"] }),
+			],
+		});
+
+		const reconciled = reconcileTaskStates(state, new Set(), new Set(), new Set(["TP-081"]));
+		const runtimeWavePlan = buildResumeRuntimeWavePlan(state);
+		const point = computeResumePoint(state, reconciled, runtimeWavePlan);
+
+		expect(runtimeWavePlan).toEqual([["TP-081"], ["TP-081"]]);
+		expect(point.resumeWaveIndex).toBe(1);
+		expect(point.pendingTaskIds).toEqual(["TP-081"]);
+	});
+
 	it("resume wave-plan expansion groups continuation rounds for multi-task wave parity", () => {
 		const state = makeState({
 			wavePlan: [["TP-060", "TP-061"], ["TP-062"]],
@@ -463,6 +588,7 @@ describe("TP-169 resume after segment expansion — no crash, taskFolder populat
 				endedAt: null,
 				doneFileFound: false,
 				exitReason: "",
+				resolvedRepoIds: ["api", "web"],
 				segmentIds: ["TP-070::api", "TP-070::web"],
 				activeSegmentId: "TP-070::web",
 			}],
@@ -479,6 +605,7 @@ describe("TP-169 resume after segment expansion — no crash, taskFolder populat
 		expect(typeof task.task.taskFolder).toBe("string");
 		// taskFolder should be "" (the persisted value), NOT undefined
 		expect(task.task.taskFolder).toBe("");
+		expect((task.task as any).resolvedRepoIds).toEqual(["api", "web"]);
 		// Segment metadata should be carried forward
 		expect(task.task.segmentIds).toEqual(["TP-070::api", "TP-070::web"]);
 		expect(task.task.activeSegmentId).toBe("TP-070::web");

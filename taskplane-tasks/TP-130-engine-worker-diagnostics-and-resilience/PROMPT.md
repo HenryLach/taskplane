@@ -33,6 +33,21 @@ In `extension.ts` where the engine-worker child is forked, capture the child's s
 ### 3. Snapshot failure counter with graceful degradation (P2)
 In the `reviewerRefresh` interval in `lane-runner.ts`, count consecutive `emitSnapshot` failures. After a threshold (e.g., 5 consecutive), disable the reviewer refresh interval for that task and log a warning. This prevents a broken snapshot path from generating thousands of silent errors per run.
 
+## Environment
+
+- **Workspace:** `extensions/taskplane/`, `dashboard/`, `bin/`
+- **Services required:** None
+- **Submodule workspace:** `.pi/git/github.com/loopyd/taskplane` (absolute: `/mnt/PROJECTS/repos/bof3-decomp/.pi/git/github.com/loopyd/taskplane`)
+
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## Dependencies
 
 - None

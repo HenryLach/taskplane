@@ -203,6 +203,12 @@ function formatCost(cost: number): string {
 	return `$${cost.toFixed(4)}`;
 }
 
+function formatReason(reason: string): string {
+	const normalized = reason.replace(/\r?\n/g, " / ").replace(/\|/g, "\\|").trim();
+	if (!normalized) return "-";
+	return normalized.length > 96 ? `${normalized.slice(0, 93)}...` : normalized;
+}
+
 /**
  * Generate a human-readable markdown summary report.
  */
@@ -244,11 +250,11 @@ export function buildMarkdownReport(input: DiagnosticReportInput, events: Diagno
 		lines.push(`_No task records available._`);
 		lines.push(``);
 	} else {
-		lines.push(`| Task | Status | Classification | Cost | Duration | Retries |`);
-		lines.push(`|------|--------|---------------|------|----------|---------|`);
+		lines.push(`| Task | Status | Classification | Reason | Cost | Duration | Retries |`);
+		lines.push(`|------|--------|---------------|--------|------|----------|---------|`);
 		for (const evt of events) {
 			lines.push(
-				`| ${evt.taskId} | ${evt.status} | ${evt.classification} | ${formatCost(evt.cost)} | ${formatDuration(evt.durationSec)} | ${evt.retries} |`
+				`| ${evt.taskId} | ${evt.status} | ${evt.classification} | ${formatReason(evt.exitReason)} | ${formatCost(evt.cost)} | ${formatDuration(evt.durationSec)} | ${evt.retries} |`
 			);
 		}
 		lines.push(``);
@@ -286,11 +292,11 @@ export function buildMarkdownReport(input: DiagnosticReportInput, events: Diagno
 				lines.push(`- Cost: ${formatCost(repoCost)}`);
 				lines.push(``);
 
-				lines.push(`| Task | Status | Classification | Cost | Duration |`);
-				lines.push(`|------|--------|---------------|------|----------|`);
+				lines.push(`| Task | Status | Classification | Reason | Cost | Duration |`);
+				lines.push(`|------|--------|---------------|--------|------|----------|`);
 				for (const evt of repoEvents) {
 					lines.push(
-						`| ${evt.taskId} | ${evt.status} | ${evt.classification} | ${formatCost(evt.cost)} | ${formatDuration(evt.durationSec)} |`
+						`| ${evt.taskId} | ${evt.status} | ${evt.classification} | ${formatReason(evt.exitReason)} | ${formatCost(evt.cost)} | ${formatDuration(evt.durationSec)} |`
 					);
 				}
 				lines.push(``);

@@ -47,6 +47,15 @@ worktrees, lane branches, or stale autostashes remain in any workspace repo.
 - **Workspace:** `extensions/taskplane/`
 - **Services required:** None
 
+
+## Execution Target
+
+- **Repo:** taskplane
+- **Submodule path:** `.pi/git/github.com/loopyd/taskplane`
+- **Upstream URL:** `https://github.com/loopyd/taskplane.git`
+
+> This task operates within the `taskplane` submodule. All file paths, git operations, and worktrees are scoped to this submodule's repository root.
+
 ## File Scope
 
 - `extensions/taskplane/worktree.ts`

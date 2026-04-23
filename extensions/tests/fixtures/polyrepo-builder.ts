@@ -457,6 +457,7 @@ export function buildFixtureParsedTasks(fixture: PolyrepoFixture): Map<string, P
 			areaName: packet.areaName,
 			status: "pending",
 			promptRepoId: packet.repoId,
+			resolvedRepoIds: [fixture.expectedRouting[packet.taskId]],
 			resolvedRepoId: fixture.expectedRouting[packet.taskId],
 		};
 		tasks.set(packet.taskId, task);
