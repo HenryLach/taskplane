@@ -504,11 +504,51 @@ function filterArtifactStatusLines(rawOutput: string, submodulePaths: Set<string
  *   not reachable from the submodule's preferred remote
  */
 /**
+ * Resolve the superproject's root .gitignore path from a submodule's cwd.
+ * Walks up the directory tree from cwd to find the repository root, then
+ * returns the path to .gitignore at that level.
+ *
+ * @param submoduleCwd - The current working directory of the submodule
+ * @returns Path to the superproject's root .gitignore, or null if not found
+ */
+function resolveSuperprojectGitignore(submoduleCwd: string): string | null {
+	// Use git rev-parse to find the repository root from the submodule's cwd
+	const result = runGit(["rev-parse", "--show-toplevel"], submoduleCwd);
+	if (!result.ok || !result.stdout.trim()) return null;
+
+	const repoRoot = result.stdout.trim();
+	const gitignorePath = join(repoRoot, ".gitignore");
+	return existsSync(gitignorePath) ? gitignorePath : null;
+}
+
+/**
+ * Check if a path matches any pattern in the given .gitignore file.
+ * Uses git check-ignore with the -f flag to force reading from the specified file.
+ *
+ * @param filePath - The file path to check (relative to cwd)
+ * @param gitignorePath - Path to the .gitignore file
+ * @param cwd - The current working directory
+ * @returns true if the path is ignored, false otherwise
+ */
+function checkIgnoreInFile(filePath: string, gitignorePath: string, cwd: string): boolean {
+	// Use git check-ignore with -f to force reading from the specified file
+	const result = runGit(["check-ignore", "-f", gitignorePath, "--no-index", filePath], cwd);
+	return result.ok && result.stdout.trim() !== "";
+}
+
+/**
  * Filter git status porcelain output to remove paths that are ignored by .gitignore.
  * Uses `git check-ignore --no-index` — respects ALL .gitignore rules at every level,
  * avoiding the need to hardcode artifact patterns like __pycache__ or node_modules.
+ *
+ * Additionally checks the superproject's root .gitignore when called from a submodule,
+ * ensuring that patterns like __pycache__/ defined in the root are properly applied
+ * to paths within submodules.
  */
 function filterGitIgnoredStatusLines(statusOutput: string, cwd: string): string {
+	// Resolve the superproject's root .gitignore once (cached for all checks)
+	const superprojectGitignore = resolveSuperprojectGitignore(cwd);
+
 	return statusOutput
 		.split(/\r?\n/)
 		.filter((line) => {
@@ -524,6 +564,15 @@ function filterGitIgnoredStatusLines(statusOutput: string, cwd: string): string 
 					return false; // Path is ignored → skip it
 				}
 			} catch { /* fall through — keep line if check fails */ }
+
+			// Additional check: if we have a superproject .gitignore, also check against it.
+			// This handles cases where patterns like __pycache__/ are defined in the root
+			// but not in the submodule's local .gitignore.
+			if (superprojectGitignore) {
+				if (checkIgnoreInFile(filePath, superprojectGitignore, cwd)) {
+					return false; // Path is ignored by superproject .gitignore → skip it
+				}
+			}
 
 			return true;
 		})
