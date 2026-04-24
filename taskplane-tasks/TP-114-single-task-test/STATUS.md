@@ -1,6 +1,6 @@
 # TP-114: Single Task Test — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 1: Create Test Files
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-04-24
 **Review Level:** 0
@@ -18,11 +18,11 @@
 ---
 
 ### Step 1: Create Test Files
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Create `hello.txt` with content "Runtime V2 works!"
-- [ ] Create `fibonacci.txt` with first 20 Fibonacci numbers
-- [ ] Create `summary.txt` with Runtime V2 summary
+- [x] Create `hello.txt` with content "Runtime V2 works!"
+- [x] Create `fibonacci.txt` with first 20 Fibonacci numbers
+- [x] Create `summary.txt` with Runtime V2 summary
 
 ---
 
