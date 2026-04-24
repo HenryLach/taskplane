@@ -1,19 +1,19 @@
 # TP-114: Single Task Test — Status
 
-**Current Step:** Not Started
-**Status:** 🔵 Ready for Execution
+**Current Step:** Step 0: Preflight
+**Status:** 🟡 In Progress
 **Last Updated:** 2026-04-24
 **Review Level:** 0
 **Review Counter:** 0
-**Iteration:** 0
+**Iteration:** 1
 **Size:** S
 
 ---
 
 ### Step 0: Preflight
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] Confirm this PROMPT.md and STATUS.md exist
+- [x] Confirm this PROMPT.md and STATUS.md exist
 
 ---
 
@@ -53,6 +53,8 @@
 | Timestamp | Action | Outcome |
 |-----------|--------|---------|
 | 2026-04-24 | Task reset | Pi v0.70.2 compatibility test |
+| 2026-04-24 16:59 | Task started | Runtime V2 lane-runner execution |
+| 2026-04-24 16:59 | Step 0 started | Preflight |
 
 ---
 
