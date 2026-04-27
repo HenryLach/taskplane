@@ -95,12 +95,17 @@ export function getNpmGlobalRoot(): string {
  * `node` directly, without a shell intermediary.
  *
  * Resolution order:
- *   1. `npm root -g` result (dynamic — covers all setups: nvm, Homebrew, volta, etc.)
- *   2. `%APPDATA%\npm\node_modules\...` (Windows, APPDATA env var)
- *   3. `%USERPROFILE%\AppData\Roaming\npm\node_modules\...` (Windows, HOME-relative)
- *   4. `~/.npm-global/lib/node_modules/...` (macOS/Linux custom global prefix)
- *   5. `/usr/local/lib/node_modules/...` (macOS system Node, Linux)
- *   6. `/opt/homebrew/lib/node_modules/...` (macOS Homebrew)
+ *   1. `process.argv[1]` — when taskplane runs as a Pi extension, this process IS
+ *      the Pi CLI (`node dist/cli.js`), so argv[1] is already the exact path we need.
+ *      This covers Nix, custom node wrappers, and any non-standard install location.
+ *   2. `npm root -g` result (dynamic — covers all setups: nvm, Homebrew, volta, etc.)
+ *   3. `%APPDATA%\npm\node_modules\...` (Windows, APPDATA env var)
+ *   4. `%USERPROFILE%\AppData\Roaming\npm\node_modules\...` (Windows, HOME-relative)
+ *   5. `~/.npm-global/lib/node_modules/...` (macOS/Linux custom global prefix)
+ *   6. `~/.nix-profile/lib/node_modules/...` (Nix — single-user profile)
+ *   7. `/run/current-system/sw/lib/node_modules/...` (NixOS — system profile)
+ *   8. `/usr/local/lib/node_modules/...` (macOS system Node, Linux)
+ *   9. `/opt/homebrew/lib/node_modules/...` (macOS Homebrew)
  *
  * @returns Absolute path to `@mariozechner/pi-coding-agent/dist/cli.js`
  * @throws  {Error} If the CLI entrypoint cannot be found in any known location.
@@ -110,23 +115,36 @@ export function resolvePiCliPath(): string {
 	const relPath = join("@mariozechner", "pi-coding-agent", "dist", "cli.js");
 	const candidates: string[] = [];
 
-	// 1. Dynamic: npm root -g (covers nvm, Homebrew, volta, custom npm prefix, etc.)
+	// 1. Direct: process.argv[1] is the Pi CLI entrypoint when taskplane is running
+	// as a Pi extension — the current process was spawned as `node dist/cli.js`.
+	// This is the most reliable candidate for non-standard installs (Nix, custom
+	// node wrappers, symlinked binaries, etc.) and avoids subprocess overhead.
+	// Consistent with how resolveTaskplanePackageFile() already uses process.argv[1]
+	// to locate taskplane's own package files.
+	const argv1 = process.argv[1] || "";
+	if (argv1 && existsSync(argv1)) return argv1;
+
+	// 2. Dynamic: npm root -g (covers nvm, Homebrew, volta, custom npm prefix, etc.)
 	const npmRoot = getNpmGlobalRoot();
 	if (npmRoot) candidates.push(join(npmRoot, relPath));
 
-	// 2-3. Static Windows fallbacks
+	// 3-4. Static Windows fallbacks
 	const home = process.env.HOME || process.env.USERPROFILE || "";
 	if (process.env.APPDATA) {
 		candidates.push(join(process.env.APPDATA, "npm", "node_modules", relPath));
 	}
 	if (home) {
 		candidates.push(join(home, "AppData", "Roaming", "npm", "node_modules", relPath));
-		// 4. macOS/Linux custom global prefix
+		// 5. macOS/Linux custom global prefix
 		candidates.push(join(home, ".npm-global", "lib", "node_modules", relPath));
+		// 6. Nix single-user profile
+		candidates.push(join(home, ".nix-profile", "lib", "node_modules", relPath));
 	}
-	// 5. macOS system Node / Linux
+	// 7. NixOS system profile
+	candidates.push(join("/run", "current-system", "sw", "lib", "node_modules", relPath));
+	// 8. macOS system Node / Linux
 	candidates.push(join("/usr", "local", "lib", "node_modules", relPath));
-	// 6. macOS Homebrew
+	// 9. macOS Homebrew
 	candidates.push(join("/opt", "homebrew", "lib", "node_modules", relPath));
 
 	for (const candidate of candidates) {
