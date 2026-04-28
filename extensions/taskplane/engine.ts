@@ -1640,7 +1640,7 @@ async function attemptModelFallbackRetry(
 			// Pass TASKPLANE_MODEL_FALLBACK=1 as extra env var to signal
 			// the task-runner to use the session model instead of configured model.
 			// TP-089: Also include ORCH_BATCH_ID so mailbox steering works for retries.
-			const modelFallbackEnv = { TASKPLANE_MODEL_FALLBACK: "1", ORCH_BATCH_ID: batchState.batchId, ...buildWorkerEnv(runnerConfig?.worker), ...buildReviewerEnv(runnerConfig?.reviewer), ...buildWorkerExcludeEnv(runnerConfig?.workerExcludeExtensions) };
+			const modelFallbackEnv = { TASKPLANE_MODEL_FALLBACK: "1", ORCH_BATCH_ID: batchState.batchId, ...buildReviewerEnv(runnerConfig?.reviewer), ...buildWorkerExcludeEnv(runnerConfig?.workerExcludeExtensions) };
 			const retryResult = await executeLaneV2(
 				retryLane,
 				orchConfig,

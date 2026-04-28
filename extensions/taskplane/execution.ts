@@ -2549,9 +2549,7 @@ export function buildWorkerEnv(
 	if (workerConfig?.model) env.TASKPLANE_WORKER_MODEL = workerConfig.model;
 	if (workerConfig?.thinking) env.TASKPLANE_WORKER_THINKING = workerConfig.thinking;
 	if (workerConfig?.tools) env.TASKPLANE_WORKER_TOOLS = workerConfig.tools;
-	if (workerConfig?.excludeExtensions && workerConfig.excludeExtensions.length > 0) {
-		env.TASKPLANE_WORKER_EXCLUDE_EXTENSIONS = JSON.stringify(workerConfig.excludeExtensions);
-	}
+
 	return env;
 }
 
