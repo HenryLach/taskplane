@@ -70,7 +70,9 @@ export interface OrchestratorConfig {
  * SegmentId is opaque — never parse by string-splitting.
  * Use structured node/record fields (`repoId`, `taskId`) instead.
  */
-export type SegmentId = `${string}::${string}` | `${string}::${string}::${number}`;
+export type SegmentId =
+	| `${string}::${string}`
+	| `${string}::${string}::${number}`;
 
 /** How an intra-task segment edge was produced (for observability/debugging). */
 export type SegmentEdgeProvenance = "explicit" | "inferred";
@@ -135,8 +137,16 @@ export interface ParsedTask {
 }
 
 /** Build a stable segment ID from task + repo identity (`<taskId>::<repoId>[::N]`). */
-export function buildSegmentId(taskId: string, repoId: string, sequence?: number): SegmentId {
-	if (typeof sequence === "number" && Number.isFinite(sequence) && sequence >= 2) {
+export function buildSegmentId(
+	taskId: string,
+	repoId: string,
+	sequence?: number,
+): SegmentId {
+	if (
+		typeof sequence === "number" &&
+		Number.isFinite(sequence) &&
+		sequence >= 2
+	) {
 		return `${taskId}::${repoId}::${Math.floor(sequence)}` as SegmentId;
 	}
 	return `${taskId}::${repoId}` as SegmentId;
@@ -154,7 +164,11 @@ export function parseSegmentIdRepo(segment: { repoId: string }): string {
 /** Build a dynamic segment expansion request ID (`exp-{timestamp}-{random5}`). */
 export function buildExpansionRequestId(timestamp = Date.now()): string {
 	const ts = Number.isFinite(timestamp) ? Math.floor(timestamp) : Date.now();
-	const base = Math.random().toString(36).slice(2).toLowerCase().replace(/[^a-z0-9]/g, "");
+	const base = Math.random()
+		.toString(36)
+		.slice(2)
+		.toLowerCase()
+		.replace(/[^a-z0-9]/g, "");
 	const random5 = (base + "00000").slice(0, 5);
 	return `exp-${ts}-${random5}`;
 }
@@ -267,7 +281,15 @@ export interface LaneAssignment {
 
 /** Runtime state of the entire batch execution */
 export interface BatchState {
-	phase: "idle" | "planning" | "running" | "paused" | "merging" | "complete" | "error" | "aborted";
+	phase:
+		| "idle"
+		| "planning"
+		| "running"
+		| "paused"
+		| "merging"
+		| "complete"
+		| "error"
+		| "aborted";
 	batchId: string;
 	waves: WaveAssignment[];
 	currentWave: number;
@@ -328,6 +350,21 @@ export interface TaskRunnerConfig {
 		/** Package specifiers to exclude from extension forwarding (exact match). @since TP-180 */
 		excludeExtensions?: string[];
 	};
+	/**
+	 * Worker agent model/thinking/tools configuration.
+	 * Threaded through to `spawnAgent()` via env vars.
+	 * @since TP-183
+	 */
+	worker?: {
+		/** Model string (empty = inherit session default) */
+		model: string;
+		/** Thinking mode ("on" | "off" | budget string, empty = inherit) */
+		thinking: string;
+		/** Comma-separated tool allowlist */
+		tools: string;
+		/** Package specifiers to exclude from extension forwarding (exact match). @since TP-180 */
+		excludeExtensions?: string[];
+	};
 	/** Worker agent extension exclusion list. @since TP-180 */
 	workerExcludeExtensions?: string[];
 }
@@ -345,7 +382,6 @@ export interface PreflightCheck {
 	message: string;
 	hint?: string;
 }
-
 
 // ── Defaults ─────────────────────────────────────────────────────────
 
@@ -403,7 +439,6 @@ export const DEFAULT_TASK_RUNNER_CONFIG: TaskRunnerConfig = {
 	reference_docs: {},
 	model_fallback: "inherit",
 };
-
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -574,7 +609,12 @@ export interface RemoveAllWorktreesResult {
 	/** All per-worktree outcomes in order */
 	outcomes: RemoveWorktreeOutcome[];
 	/** Branches preserved (had unmerged commits) */
-	preserved: Array<{ branch: string; savedBranch: string; laneNumber: number; unmergedCount?: number }>;
+	preserved: Array<{
+		branch: string;
+		savedBranch: string;
+		laneNumber: number;
+		unmergedCount?: number;
+	}>;
 }
 
 // ── Discovery Types ──────────────────────────────────────────────────
@@ -632,7 +672,6 @@ export interface DiscoveryResult {
 	errors: DiscoveryError[];
 }
 
-
 // ── Wave Computation Types ───────────────────────────────────────────
 
 /** Dependency graph: adjacency list (task → tasks it depends on) */
@@ -658,7 +697,6 @@ export interface WaveComputationResult {
 	/** Optional task→segment planning map (TP-080, additive contract). */
 	segmentPlans?: TaskSegmentPlanMap;
 }
-
 
 // ── Lane Allocation (Phase 3) ────────────────────────────────────────
 
@@ -736,7 +774,6 @@ export interface AllocatedLane {
 	repoId?: string;
 }
 
-
 // ── Execution Types & Contracts ──────────────────────────────────────
 
 /**
@@ -748,7 +785,13 @@ export interface AllocatedLane {
  *                     → stalled
  *   pending → skipped  (pause/abort before task starts, or prior task failed)
  */
-export type LaneTaskStatus = "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped";
+export type LaneTaskStatus =
+	| "pending"
+	| "running"
+	| "succeeded"
+	| "failed"
+	| "stalled"
+	| "skipped";
 
 /**
  * Embedded telemetry attached to a lane task outcome.
@@ -905,7 +948,12 @@ export class ExecutionError extends Error {
 	laneId?: string;
 	taskId?: string;
 
-	constructor(code: ExecutionErrorCode, message: string, laneId?: string, taskId?: string) {
+	constructor(
+		code: ExecutionErrorCode,
+		message: string,
+		laneId?: string,
+		taskId?: string,
+	) {
 		super(message);
 		this.name = "ExecutionError";
 		this.code = code;
@@ -913,7 +961,6 @@ export class ExecutionError extends Error {
 		this.taskId = taskId;
 	}
 }
-
 
 // ── Monitoring Types & Contracts ─────────────────────────────────────
 
@@ -930,7 +977,14 @@ export interface TaskMonitorSnapshot {
 	/** Task ID (e.g., "TO-014") */
 	taskId: string;
 	/** Resolved monitoring status */
-	status: "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped" | "unknown";
+	status:
+		| "pending"
+		| "running"
+		| "succeeded"
+		| "failed"
+		| "stalled"
+		| "skipped"
+		| "unknown";
 	/** Current step name (e.g., "Implement Service Layer"), null if not parsed */
 	currentStepName: string | null;
 	/** Current step number, null if not parsed */
@@ -1026,7 +1080,6 @@ export interface MtimeTracker {
 	stallTimerStart: number | null;
 }
 
-
 // ── Wave Execution Types & Contracts ─────────────────────────────────
 
 /**
@@ -1098,7 +1151,6 @@ export interface WaveExecutionResult {
 	} | null;
 }
 
-
 // ── Orchestrator Runtime State ───────────────────────────────────────
 
 /**
@@ -1111,7 +1163,16 @@ export interface WaveExecutionResult {
  *                   → paused (via /orch-pause)
  *   Any active state → idle (via cleanup after completion/failure)
  */
-export type OrchBatchPhase = "idle" | "launching" | "planning" | "executing" | "merging" | "paused" | "stopped" | "completed" | "failed";
+export type OrchBatchPhase =
+	| "idle"
+	| "launching"
+	| "planning"
+	| "executing"
+	| "merging"
+	| "paused"
+	| "stopped"
+	| "completed"
+	| "failed";
 
 /**
  * Runtime state for a batch execution.
@@ -1264,14 +1325,17 @@ export function freshOrchBatchState(): OrchBatchRuntimeState {
 	};
 }
 
-
 // ── Merge Types ──────────────────────────────────────────────────────
 
 /**
  * Valid merge result statuses.
  * Matches the contract in .pi/agents/task-merger.md.
  */
-export type MergeResultStatus = "SUCCESS" | "CONFLICT_RESOLVED" | "CONFLICT_UNRESOLVED" | "BUILD_FAILURE";
+export type MergeResultStatus =
+	| "SUCCESS"
+	| "CONFLICT_RESOLVED"
+	| "CONFLICT_UNRESOLVED"
+	| "BUILD_FAILURE";
 
 /** All valid status strings for runtime validation. */
 export const VALID_MERGE_STATUSES: ReadonlySet<string> = new Set([
@@ -1405,7 +1469,11 @@ export interface RepoMergeOutcome {
  *
  * @since TP-033
  */
-export type TransactionStatus = "committed" | "rolled_back" | "rollback_failed" | "merge_failed";
+export type TransactionStatus =
+	| "committed"
+	| "rolled_back"
+	| "rollback_failed"
+	| "merge_failed";
 
 /**
  * Transactional record for a single lane merge attempt.
@@ -1662,7 +1730,6 @@ export interface MergeSessionHealthState {
 	deadEmitted: boolean;
 }
 
-
 // ── Merge Retry Policy Matrix (TP-033 Step 2) ───────────────────────
 
 /**
@@ -1719,7 +1786,9 @@ export interface MergeRetryPolicy {
  *
  * @since TP-033
  */
-export const MERGE_RETRY_POLICY_MATRIX: Readonly<Record<MergeFailureClassification, MergeRetryPolicy>> = {
+export const MERGE_RETRY_POLICY_MATRIX: Readonly<
+	Record<MergeFailureClassification, MergeRetryPolicy>
+> = {
 	verification_new_failure: {
 		retriable: true,
 		maxAttempts: 1,
@@ -1756,14 +1825,14 @@ export const MERGE_RETRY_POLICY_MATRIX: Readonly<Record<MergeFailureClassificati
  * All merge failure classifications as a readonly array, for iteration/validation.
  * @since TP-033
  */
-export const MERGE_FAILURE_CLASSIFICATIONS: readonly MergeFailureClassification[] = [
-	"verification_new_failure",
-	"merge_conflict_unresolved",
-	"cleanup_post_merge_failed",
-	"git_worktree_dirty",
-	"git_lock_file",
-] as const;
-
+export const MERGE_FAILURE_CLASSIFICATIONS: readonly MergeFailureClassification[] =
+	[
+		"verification_new_failure",
+		"merge_conflict_unresolved",
+		"cleanup_post_merge_failed",
+		"git_worktree_dirty",
+		"git_lock_file",
+	] as const;
 
 // ── Tier 0 Watchdog Recovery Types (TP-039) ──────────────────────────
 
@@ -1824,7 +1893,9 @@ export interface Tier0RetryBudget {
  *
  * @since TP-039
  */
-export const TIER0_RETRY_BUDGETS: Readonly<Record<Tier0RecoveryPattern, Tier0RetryBudget>> = {
+export const TIER0_RETRY_BUDGETS: Readonly<
+	Record<Tier0RecoveryPattern, Tier0RetryBudget>
+> = {
 	worker_crash: {
 		maxRetries: 1,
 		cooldownMs: 5_000,
@@ -1894,7 +1965,11 @@ export interface EscalationContext {
  *
  * @since TP-039
  */
-export function tier0ScopeKey(pattern: Tier0RecoveryPattern, taskId: string, waveIndex: number): string {
+export function tier0ScopeKey(
+	pattern: Tier0RecoveryPattern,
+	taskId: string,
+	waveIndex: number,
+): string {
 	return `t0:${pattern}:${taskId}:w${waveIndex}`;
 }
 
@@ -1906,7 +1981,10 @@ export function tier0ScopeKey(pattern: Tier0RecoveryPattern, taskId: string, wav
  *
  * @since TP-039
  */
-export function tier0WaveScopeKey(pattern: Tier0RecoveryPattern, waveIndex: number): string {
+export function tier0WaveScopeKey(
+	pattern: Tier0RecoveryPattern,
+	waveIndex: number,
+): string {
 	return `t0:${pattern}:w${waveIndex}`;
 }
 
@@ -2036,7 +2114,6 @@ export interface EngineEvent {
  * @since TP-040
  */
 export type EngineEventCallback = (event: EngineEvent) => void;
-
 
 // ── Supervisor Alert Types (TP-076) ──────────────────────────────────
 
@@ -2206,7 +2283,10 @@ export function buildSupervisorSegmentFrontierSnapshot(
 	preferredSegmentId?: string | null,
 ): SupervisorSegmentFrontierSnapshot | undefined {
 	const orderedSegmentIds = Array.isArray(segmentIds)
-		? segmentIds.filter((segmentId): segmentId is string => typeof segmentId === "string" && segmentId.trim().length > 0)
+		? segmentIds.filter(
+				(segmentId): segmentId is string =>
+					typeof segmentId === "string" && segmentId.trim().length > 0,
+			)
 		: [];
 	if (orderedSegmentIds.length === 0) return undefined;
 
@@ -2217,16 +2297,18 @@ export function buildSupervisorSegmentFrontierSnapshot(
 		}
 	}
 
-	const resolvedActiveSegmentId = (activeSegmentId && orderedSegmentIds.includes(activeSegmentId))
-		? activeSegmentId
-		: (preferredSegmentId && orderedSegmentIds.includes(preferredSegmentId)
-			? preferredSegmentId
-			: null);
+	const resolvedActiveSegmentId =
+		activeSegmentId && orderedSegmentIds.includes(activeSegmentId)
+			? activeSegmentId
+			: preferredSegmentId && orderedSegmentIds.includes(preferredSegmentId)
+				? preferredSegmentId
+				: null;
 
 	const segments = orderedSegmentIds.map((segmentId) => {
 		const persisted = bySegmentId.get(segmentId);
-		const status: PersistedSegmentStatus = persisted?.status
-			?? (resolvedActiveSegmentId === segmentId ? "running" : "pending");
+		const status: PersistedSegmentStatus =
+			persisted?.status ??
+			(resolvedActiveSegmentId === segmentId ? "running" : "pending");
 		return {
 			segmentId,
 			repoId: persisted ? parseSegmentIdRepo(persisted) : "unknown",
@@ -2235,11 +2317,12 @@ export function buildSupervisorSegmentFrontierSnapshot(
 		};
 	});
 
-	const terminalSegments = segments.filter((segment) =>
-		segment.status === "succeeded"
-		|| segment.status === "failed"
-		|| segment.status === "stalled"
-		|| segment.status === "skipped",
+	const terminalSegments = segments.filter(
+		(segment) =>
+			segment.status === "succeeded" ||
+			segment.status === "failed" ||
+			segment.status === "stalled" ||
+			segment.status === "skipped",
 	).length;
 
 	return {
@@ -2273,7 +2356,6 @@ export function buildEngineEventBase(
 		phase,
 	};
 }
-
 
 /**
  * Decision output from the merge retry policy evaluator.
@@ -2311,50 +2393,50 @@ export interface MergeRetryDecision {
  */
 export type MergeRetryLoopOutcome =
 	| {
-		/** Retry succeeded — caller should continue normal post-merge flow */
-		kind: "retry_succeeded";
-		mergeResult: MergeWaveResult;
-		/** Classification of the failure that was retried */
-		classification: MergeFailureClassification | null;
-		/** Scope key used for retry counter tracking */
-		scopeKey: string;
-		/** Last retry decision (carries attempt/maxAttempts for event emission) */
-		lastDecision: MergeRetryDecision;
-	}
+			/** Retry succeeded — caller should continue normal post-merge flow */
+			kind: "retry_succeeded";
+			mergeResult: MergeWaveResult;
+			/** Classification of the failure that was retried */
+			classification: MergeFailureClassification | null;
+			/** Scope key used for retry counter tracking */
+			scopeKey: string;
+			/** Last retry decision (carries attempt/maxAttempts for event emission) */
+			lastDecision: MergeRetryDecision;
+	  }
 	| {
-		/** Safe-stop triggered during retry — caller should break the wave loop */
-		kind: "safe_stop";
-		mergeResult: MergeWaveResult;
-		/** Classification of the failure that was retried */
-		classification: MergeFailureClassification | null;
-		/** Scope key used for retry counter tracking */
-		scopeKey: string;
-		/** Last retry decision (carries attempt/maxAttempts for event emission) */
-		lastDecision: MergeRetryDecision;
-		errorMessage: string;
-		notifyMessage: string;
-	}
+			/** Safe-stop triggered during retry — caller should break the wave loop */
+			kind: "safe_stop";
+			mergeResult: MergeWaveResult;
+			/** Classification of the failure that was retried */
+			classification: MergeFailureClassification | null;
+			/** Scope key used for retry counter tracking */
+			scopeKey: string;
+			/** Last retry decision (carries attempt/maxAttempts for event emission) */
+			lastDecision: MergeRetryDecision;
+			errorMessage: string;
+			notifyMessage: string;
+	  }
 	| {
-		/**
-		 * Retry exhausted or failure is non-retriable — caller should
-		 * force `paused` regardless of on_merge_failure config.
-		 */
-		kind: "exhausted";
-		mergeResult: MergeWaveResult;
-		classification: MergeFailureClassification | null;
-		scopeKey: string;
-		lastDecision: MergeRetryDecision;
-		errorMessage: string;
-		notifyMessage: string;
-	}
+			/**
+			 * Retry exhausted or failure is non-retriable — caller should
+			 * force `paused` regardless of on_merge_failure config.
+			 */
+			kind: "exhausted";
+			mergeResult: MergeWaveResult;
+			classification: MergeFailureClassification | null;
+			scopeKey: string;
+			lastDecision: MergeRetryDecision;
+			errorMessage: string;
+			notifyMessage: string;
+	  }
 	| {
-		/** No retry attempted (unclassifiable or non-retriable with 0 attempts).
-		 *  Caller should fall through to standard on_merge_failure policy. */
-		kind: "no_retry";
-		mergeResult: MergeWaveResult;
-		classification: MergeFailureClassification | null;
-		scopeKey: string;
-	};
+			/** No retry attempted (unclassifiable or non-retriable with 0 attempts).
+			 *  Caller should fall through to standard on_merge_failure policy. */
+			kind: "no_retry";
+			mergeResult: MergeWaveResult;
+			classification: MergeFailureClassification | null;
+			scopeKey: string;
+	  };
 
 /**
  * Callbacks provided to `applyMergeRetryLoop()` for side effects
@@ -2437,7 +2519,6 @@ export interface OrchDashboardViewModel {
 	errors: string[];
 	failurePolicy: string | null; // e.g., "stop-wave" if stopped by policy
 }
-
 
 // ── State Persistence Types (TS-009) ─────────────────────────────────
 
@@ -2760,7 +2841,13 @@ export interface PersistedTaskRecord {
  *
  * @since v4 (TP-081)
  */
-export type PersistedSegmentStatus = "pending" | "running" | "succeeded" | "failed" | "stalled" | "skipped";
+export type PersistedSegmentStatus =
+	| "pending"
+	| "running"
+	| "succeeded"
+	| "failed"
+	| "stalled"
+	| "skipped";
 
 /**
  * Persisted record of a single segment's execution state.
@@ -3023,7 +3110,6 @@ export interface PersistedBatchState {
 	_extraFields?: Record<string, unknown>;
 }
 
-
 // ── Resume (TS-009 Step 4) ───────────────────────────────────────────
 
 /**
@@ -3081,7 +3167,13 @@ export interface ReconciledTaskState {
 	/** Whether the lane worktree still exists on disk */
 	worktreeExists: boolean;
 	/** Action the resume engine should take */
-	action: "reconnect" | "mark-complete" | "mark-failed" | "re-execute" | "skip" | "pending";
+	action:
+		| "reconnect"
+		| "mark-complete"
+		| "mark-failed"
+		| "re-execute"
+		| "skip"
+		| "pending";
 }
 
 /**
@@ -3252,7 +3344,6 @@ export function getTaskDurationMinutes(
 	return weight * DURATION_BASE_MINUTES;
 }
 
-
 // ── Batch History ────────────────────────────────────────────────────
 
 /** Token counts for a task, wave, or batch. */
@@ -3268,9 +3359,15 @@ export interface TokenCounts {
 export interface BatchTaskSummary {
 	taskId: string;
 	taskName: string;
-	status: "succeeded" | "failed" | "skipped" | "blocked" | "stalled" | "pending";
-	wave: number;      // 1-based
-	lane: number;      // 1-based
+	status:
+		| "succeeded"
+		| "failed"
+		| "skipped"
+		| "blocked"
+		| "stalled"
+		| "pending";
+	wave: number; // 1-based
+	lane: number; // 1-based
 	durationMs: number;
 	tokens: TokenCounts;
 	exitReason: string | null;
@@ -3278,8 +3375,8 @@ export interface BatchTaskSummary {
 
 /** Per-wave summary for history. */
 export interface BatchWaveSummary {
-	wave: number;      // 1-based
-	tasks: string[];   // task IDs
+	wave: number; // 1-based
+	tasks: string[]; // task IDs
 	mergeStatus: "succeeded" | "failed" | "partial" | "skipped";
 	durationMs: number;
 	tokens: TokenCounts;
@@ -3307,7 +3404,6 @@ export interface BatchHistorySummary {
 
 /** Max number of batch history entries to retain. */
 export const BATCH_HISTORY_MAX_ENTRIES = 100;
-
 
 // ── Workspace Mode Types ─────────────────────────────────────────────
 
@@ -3446,7 +3542,6 @@ export interface ExecutionContext {
 	pointer: PointerResolution | null;
 }
 
-
 // ── Workspace Validation Error Types ─────────────────────────────────
 
 /**
@@ -3488,7 +3583,7 @@ export type WorkspaceConfigErrorCode =
 	| "WORKSPACE_TASK_AREA_OUTSIDE_TASKS_ROOT"
 	| "WORKSPACE_SETUP_REQUIRED"
 	| "WORKSPACE_DUPLICATE_REPO_PATH"
-	| "WORKSPACE_SCHEMA_INVALID";/**
+	| "WORKSPACE_SCHEMA_INVALID"; /**
  * Typed error class for workspace configuration failures.
  *
  * Thrown during workspace config loading/validation when the config file
@@ -3505,7 +3600,12 @@ export class WorkspaceConfigError extends Error {
 	/** Optional filesystem path related to the error */
 	relatedPath?: string;
 
-	constructor(code: WorkspaceConfigErrorCode, message: string, repoId?: string, relatedPath?: string) {
+	constructor(
+		code: WorkspaceConfigErrorCode,
+		message: string,
+		repoId?: string,
+		relatedPath?: string,
+	) {
 		super(message);
 		this.name = "WorkspaceConfigError";
 		this.code = code;
@@ -3513,7 +3613,6 @@ export class WorkspaceConfigError extends Error {
 		this.relatedPath = relatedPath;
 	}
 }
-
 
 // ── Pointer Resolution Types ─────────────────────────────────────────
 
@@ -3581,7 +3680,6 @@ export interface PointerResolution {
 	warning?: string;
 }
 
-
 // ── Workspace Defaults ───────────────────────────────────────────────
 
 /**
@@ -3625,7 +3723,6 @@ export function createRepoModeContext(
 	};
 }
 
-
 // ── Agent Mailbox Types (TP-089) ─────────────────────────────────────
 
 /**
@@ -3656,15 +3753,27 @@ export const MAILBOX_MAX_CONTENT_BYTES = 4096;
  *
  * @since TP-089
  */
-export type MailboxMessageType = "steer" | "query" | "abort" | "info" | "reply" | "escalate";
+export type MailboxMessageType =
+	| "steer"
+	| "query"
+	| "abort"
+	| "info"
+	| "reply"
+	| "escalate";
 
 /**
  * Set of valid mailbox message types for runtime validation.
  * @since TP-089
  */
-export const MAILBOX_MESSAGE_TYPES: ReadonlySet<string> = new Set<MailboxMessageType>([
-	"steer", "query", "abort", "info", "reply", "escalate",
-]);
+export const MAILBOX_MESSAGE_TYPES: ReadonlySet<string> =
+	new Set<MailboxMessageType>([
+		"steer",
+		"query",
+		"abort",
+		"info",
+		"reply",
+		"escalate",
+	]);
 
 /**
  * Message format for the file-based agent mailbox.
@@ -3765,9 +3874,9 @@ export type RuntimeAgentStatus =
 	| "killed";
 
 /** Set of terminal agent statuses (process is no longer alive). @since TP-102 */
-export const TERMINAL_AGENT_STATUSES: ReadonlySet<RuntimeAgentStatus> = new Set([
-	"exited", "crashed", "timed_out", "killed",
-]);
+export const TERMINAL_AGENT_STATUSES: ReadonlySet<RuntimeAgentStatus> = new Set(
+	["exited", "crashed", "timed_out", "killed"],
+);
 
 /**
  * Stable agent identity for Runtime V2.
@@ -4101,7 +4210,11 @@ export function runtimeRoot(stateRoot: string, batchId: string): string {
  *
  * @since TP-102
  */
-export function runtimeAgentDir(stateRoot: string, batchId: string, agentId: RuntimeAgentId): string {
+export function runtimeAgentDir(
+	stateRoot: string,
+	batchId: string,
+	agentId: RuntimeAgentId,
+): string {
 	return `${stateRoot}/.pi/runtime/${batchId}/agents/${agentId}`;
 }
 
@@ -4110,7 +4223,11 @@ export function runtimeAgentDir(stateRoot: string, batchId: string, agentId: Run
  *
  * @since TP-102
  */
-export function runtimeManifestPath(stateRoot: string, batchId: string, agentId: RuntimeAgentId): string {
+export function runtimeManifestPath(
+	stateRoot: string,
+	batchId: string,
+	agentId: RuntimeAgentId,
+): string {
 	return `${runtimeAgentDir(stateRoot, batchId, agentId)}/manifest.json`;
 }
 
@@ -4119,7 +4236,11 @@ export function runtimeManifestPath(stateRoot: string, batchId: string, agentId:
  *
  * @since TP-102
  */
-export function runtimeAgentEventsPath(stateRoot: string, batchId: string, agentId: RuntimeAgentId): string {
+export function runtimeAgentEventsPath(
+	stateRoot: string,
+	batchId: string,
+	agentId: RuntimeAgentId,
+): string {
 	return `${runtimeAgentDir(stateRoot, batchId, agentId)}/events.jsonl`;
 }
 
@@ -4128,7 +4249,11 @@ export function runtimeAgentEventsPath(stateRoot: string, batchId: string, agent
  *
  * @since TP-102
  */
-export function runtimeLaneSnapshotPath(stateRoot: string, batchId: string, laneNumber: number): string {
+export function runtimeLaneSnapshotPath(
+	stateRoot: string,
+	batchId: string,
+	laneNumber: number,
+): string {
 	return `${stateRoot}/.pi/runtime/${batchId}/lanes/lane-${laneNumber}.json`;
 }
 
@@ -4172,7 +4297,11 @@ export interface RuntimeMergeSnapshot {
  *
  * @since TP-164
  */
-export function runtimeMergeSnapshotPath(stateRoot: string, batchId: string, mergeNumber: number): string {
+export function runtimeMergeSnapshotPath(
+	stateRoot: string,
+	batchId: string,
+	mergeNumber: number,
+): string {
 	return `${stateRoot}/.pi/runtime/${batchId}/lanes/merge-${mergeNumber}.json`;
 }
 
@@ -4181,7 +4310,10 @@ export function runtimeMergeSnapshotPath(stateRoot: string, batchId: string, mer
  *
  * @since TP-102
  */
-export function runtimeRegistryPath(stateRoot: string, batchId: string): string {
+export function runtimeRegistryPath(
+	stateRoot: string,
+	batchId: string,
+): string {
 	return `${stateRoot}/.pi/runtime/${batchId}/registry.json`;
 }
 
@@ -4232,22 +4364,47 @@ export function validateAgentManifest(manifest: unknown): string[] {
 	}
 	const m = manifest as Record<string, unknown>;
 
-	if (typeof m.batchId !== "string" || !m.batchId) errors.push("batchId must be a non-empty string");
-	if (typeof m.agentId !== "string" || !m.agentId) errors.push("agentId must be a non-empty string");
+	if (typeof m.batchId !== "string" || !m.batchId)
+		errors.push("batchId must be a non-empty string");
+	if (typeof m.agentId !== "string" || !m.agentId)
+		errors.push("agentId must be a non-empty string");
 	if (typeof m.role !== "string") errors.push("role must be a string");
 	else {
-		const validRoles: ReadonlySet<string> = new Set(["worker", "reviewer", "merger", "lane-runner"]);
-		if (!validRoles.has(m.role as string)) errors.push(`role must be one of: ${[...validRoles].join(", ")}`);
+		const validRoles: ReadonlySet<string> = new Set([
+			"worker",
+			"reviewer",
+			"merger",
+			"lane-runner",
+		]);
+		if (!validRoles.has(m.role as string))
+			errors.push(`role must be one of: ${[...validRoles].join(", ")}`);
 	}
-	if (typeof m.pid !== "number" || !Number.isFinite(m.pid) || m.pid <= 0) errors.push("pid must be a positive finite number");
-	if (typeof m.parentPid !== "number" || !Number.isFinite(m.parentPid) || m.parentPid <= 0) errors.push("parentPid must be a positive finite number");
-	if (typeof m.startedAt !== "number" || !Number.isFinite(m.startedAt)) errors.push("startedAt must be a finite number");
+	if (typeof m.pid !== "number" || !Number.isFinite(m.pid) || m.pid <= 0)
+		errors.push("pid must be a positive finite number");
+	if (
+		typeof m.parentPid !== "number" ||
+		!Number.isFinite(m.parentPid) ||
+		m.parentPid <= 0
+	)
+		errors.push("parentPid must be a positive finite number");
+	if (typeof m.startedAt !== "number" || !Number.isFinite(m.startedAt))
+		errors.push("startedAt must be a finite number");
 	if (typeof m.status !== "string") errors.push("status must be a string");
 	else {
-		const validStatuses: ReadonlySet<string> = new Set(["spawning", "running", "wrapping_up", "exited", "crashed", "timed_out", "killed"]);
-		if (!validStatuses.has(m.status as string)) errors.push(`status must be one of: ${[...validStatuses].join(", ")}`);
+		const validStatuses: ReadonlySet<string> = new Set([
+			"spawning",
+			"running",
+			"wrapping_up",
+			"exited",
+			"crashed",
+			"timed_out",
+			"killed",
+		]);
+		if (!validStatuses.has(m.status as string))
+			errors.push(`status must be one of: ${[...validStatuses].join(", ")}`);
 	}
-	if (typeof m.cwd !== "string" || !m.cwd) errors.push("cwd must be a non-empty string");
+	if (typeof m.cwd !== "string" || !m.cwd)
+		errors.push("cwd must be a non-empty string");
 	if (typeof m.repoId !== "string") errors.push("repoId must be a string");
 
 	return errors;
@@ -4267,7 +4424,13 @@ export function validatePacketPaths(packet: unknown): string[] {
 	}
 	const p = packet as Record<string, unknown>;
 
-	for (const field of ["promptPath", "statusPath", "donePath", "reviewsDir", "taskFolder"] as const) {
+	for (const field of [
+		"promptPath",
+		"statusPath",
+		"donePath",
+		"reviewsDir",
+		"taskFolder",
+	] as const) {
 		if (typeof p[field] !== "string" || !(p[field] as string)) {
 			errors.push(`${field} must be a non-empty string`);
 		}
@@ -4275,4 +4438,3 @@ export function validatePacketPaths(packet: unknown): string[] {
 
 	return errors;
 }
-

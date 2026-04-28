@@ -2,20 +2,76 @@
  * Lane execution, monitoring, wave execution loop
  * @module orch/execution
  */
-import { readFileSync, existsSync, statSync, unlinkSync, mkdirSync, writeFileSync, copyFileSync } from "fs";
-import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "fs/promises";
-import { join, dirname, basename, resolve, relative, delimiter as pathDelimiter } from "path";
+import {
+	copyFileSync,
+	existsSync,
+	mkdirSync,
+	readFileSync,
+	statSync,
+	unlinkSync,
+	writeFileSync,
+} from "fs";
+import {
+	access as fsAccess,
+	readFile as fsReadFile,
+	stat as fsStat,
+} from "fs/promises";
 import { userInfo } from "os";
-
-import { DONE_GRACE_MS, EXECUTION_POLL_INTERVAL_MS, ExecutionError, SESSION_SPAWN_RETRY_MAX } from "./types.ts";
-import type { AllocatedLane, AllocatedTask, DependencyGraph, LaneExecutionResult, LaneMonitorSnapshot, LaneTaskOutcome, LaneTaskStatus, MonitorState, MtimeTracker, OrchestratorConfig, ParsedTask, TaskMonitorSnapshot, WaveExecutionResult, WorkspaceConfig, ExecutionUnit, PacketPaths, RuntimeAgentId, RuntimeAgentRole, SupervisorAlertCallback } from "./types.ts";
-import { resolvePacketPaths, buildRuntimeAgentId } from "./types.ts";
-import { readRegistrySnapshot, readLaneSnapshot, isTerminalStatus, isProcessAlive, detectOrphans, markOrphansCrashed, buildRegistrySnapshot, writeRegistrySnapshot } from "./process-registry.ts";
-import { allocateLanes } from "./waves.ts";
-import { resolveOperatorId } from "./naming.ts";
+import {
+	basename,
+	dirname,
+	join,
+	delimiter as pathDelimiter,
+	relative,
+	resolve,
+} from "path";
 import { runGit, runGitWithEnv } from "./git.ts";
-import { resolveTaskplanePackageFile, resolveTaskplaneAgentTemplate } from "./path-resolver.ts";
-import { resolvePointer, loadWorkspaceConfig } from "./workspace.ts";
+import { resolveOperatorId } from "./naming.ts";
+import {
+	resolveTaskplaneAgentTemplate,
+	resolveTaskplanePackageFile,
+} from "./path-resolver.ts";
+import {
+	buildRegistrySnapshot,
+	detectOrphans,
+	isProcessAlive,
+	isTerminalStatus,
+	markOrphansCrashed,
+	readLaneSnapshot,
+	readRegistrySnapshot,
+	writeRegistrySnapshot,
+} from "./process-registry.ts";
+import type {
+	AllocatedLane,
+	AllocatedTask,
+	DependencyGraph,
+	ExecutionUnit,
+	LaneExecutionResult,
+	LaneMonitorSnapshot,
+	LaneTaskOutcome,
+	LaneTaskStatus,
+	MonitorState,
+	MtimeTracker,
+	OrchestratorConfig,
+	PacketPaths,
+	ParsedTask,
+	RuntimeAgentId,
+	RuntimeAgentRole,
+	SupervisorAlertCallback,
+	TaskMonitorSnapshot,
+	WaveExecutionResult,
+	WorkspaceConfig,
+} from "./types.ts";
+import {
+	buildRuntimeAgentId,
+	DONE_GRACE_MS,
+	EXECUTION_POLL_INTERVAL_MS,
+	ExecutionError,
+	resolvePacketPaths,
+	SESSION_SPAWN_RETRY_MAX,
+} from "./types.ts";
+import { allocateLanes } from "./waves.ts";
+import { loadWorkspaceConfig, resolvePointer } from "./workspace.ts";
 
 // ── Taskplane Package File Resolution ────────────────────────────────
 // getNpmGlobalRoot() and resolveTaskplanePackageFile() consolidated in path-resolver.ts (TP-157)
@@ -73,7 +129,11 @@ export function execLog(
  * @returns true if agent is alive
  * @since TP-112
  */
-export function isV2AgentAlive(agentIdOrSessionName: string, _runtimeBackend?: RuntimeBackend, laneNumber?: number): boolean {
+export function isV2AgentAlive(
+	agentIdOrSessionName: string,
+	_runtimeBackend?: RuntimeBackend,
+	laneNumber?: number,
+): boolean {
 	// Read the registry from the global state root.
 	// Since this is a pure liveness check, we scan for matching agentId
 	// patterns: direct match, or lane-session + "-worker" suffix.
@@ -81,18 +141,32 @@ export function isV2AgentAlive(agentIdOrSessionName: string, _runtimeBackend?: R
 	const agents = _v2LivenessRegistryCache.agents;
 	// Direct match
 	const manifest = agents[agentIdOrSessionName];
-	if (manifest && !isTerminalStatus(manifest.status) && isProcessAlive(manifest.pid)) return true;
+	if (
+		manifest &&
+		!isTerminalStatus(manifest.status) &&
+		isProcessAlive(manifest.pid)
+	)
+		return true;
 	// Try worker suffix (monitor uses lane session name, registry uses agentId)
 	const workerManifest = agents[`${agentIdOrSessionName}-worker`];
-	if (workerManifest && !isTerminalStatus(workerManifest.status) && isProcessAlive(workerManifest.pid)) return true;
+	if (
+		workerManifest &&
+		!isTerminalStatus(workerManifest.status) &&
+		isProcessAlive(workerManifest.pid)
+	)
+		return true;
 	// TP-148: In workspace mode, laneSessionId includes repoId and uses a local
 	// lane number (e.g., "orch-henry-api-lane-1") while the V2 registry uses
 	// global lane numbers without repoId (e.g., "orch-henry-lane-3-worker").
 	// Fall back to scanning the registry by global lane number when provided.
 	if (laneNumber != null) {
 		for (const agent of Object.values(agents)) {
-			if (agent.laneNumber === laneNumber && agent.role === "worker" &&
-				!isTerminalStatus(agent.status) && isProcessAlive(agent.pid)) {
+			if (
+				agent.laneNumber === laneNumber &&
+				agent.role === "worker" &&
+				!isTerminalStatus(agent.status) &&
+				isProcessAlive(agent.pid)
+			) {
 				return true;
 			}
 		}
@@ -101,14 +175,18 @@ export function isV2AgentAlive(agentIdOrSessionName: string, _runtimeBackend?: R
 }
 
 /** Cached registry for V2 liveness checks within a monitor cycle. @since TP-112 */
-let _v2LivenessRegistryCache: import("./process-registry.ts").RuntimeRegistry | null = null;
+let _v2LivenessRegistryCache:
+	| import("./process-registry.ts").RuntimeRegistry
+	| null = null;
 
 /**
  * Set the V2 liveness registry cache for the current monitor cycle.
  * Called at the start of each monitor poll to avoid re-reading the file per-task.
  * @since TP-112
  */
-export function setV2LivenessRegistryCache(registry: import("./process-registry.ts").RuntimeRegistry | null): void {
+export function setV2LivenessRegistryCache(
+	registry: import("./process-registry.ts").RuntimeRegistry | null,
+): void {
 	_v2LivenessRegistryCache = registry;
 }
 
@@ -122,13 +200,18 @@ export function setV2LivenessRegistryCache(registry: import("./process-registry.
  */
 export function killV2LaneAgents(
 	sessionName: string,
-	options?: { stateRoot?: string; batchId?: string; logContext?: string; laneNumber?: number },
+	options?: {
+		stateRoot?: string;
+		batchId?: string;
+		logContext?: string;
+		laneNumber?: number;
+	},
 ): void {
-	const registry = _v2LivenessRegistryCache ?? (
-		options?.stateRoot && options?.batchId
+	const registry =
+		_v2LivenessRegistryCache ??
+		(options?.stateRoot && options?.batchId
 			? readRegistrySnapshot(options.stateRoot, options.batchId)
-			: null
-	);
+			: null);
 	if (!registry) return;
 
 	const agents = registry.agents;
@@ -137,32 +220,48 @@ export function killV2LaneAgents(
 	for (const suffix of ["-worker", "-reviewer", ""]) {
 		const key = `${sessionName}${suffix}`;
 		const manifest = agents[key];
-		if (manifest && !isTerminalStatus(manifest.status) && isProcessAlive(manifest.pid) && !killedPids.has(manifest.pid)) {
+		if (
+			manifest &&
+			!isTerminalStatus(manifest.status) &&
+			isProcessAlive(manifest.pid) &&
+			!killedPids.has(manifest.pid)
+		) {
 			try {
 				process.kill(manifest.pid, "SIGTERM");
 				killedPids.add(manifest.pid);
 				execLog(logContext, key, `killed V2 agent (PID ${manifest.pid})`);
-			} catch { /* already dead */ }
+			} catch {
+				/* already dead */
+			}
 		}
 	}
 	// TP-148: Workspace-mode fallback — match by global lane number when
 	// session name lookup misses (repoId/local-vs-global lane mismatch).
 	if (options?.laneNumber != null) {
 		for (const agent of Object.values(agents)) {
-			if (agent.laneNumber === options.laneNumber &&
-				!isTerminalStatus(agent.status) && isProcessAlive(agent.pid) && !killedPids.has(agent.pid)) {
+			if (
+				agent.laneNumber === options.laneNumber &&
+				!isTerminalStatus(agent.status) &&
+				isProcessAlive(agent.pid) &&
+				!killedPids.has(agent.pid)
+			) {
 				try {
 					process.kill(agent.pid, "SIGTERM");
 					killedPids.add(agent.pid);
-					execLog(logContext, agent.agentId, `killed V2 agent by lane number (PID ${agent.pid})`);
-				} catch { /* already dead */ }
+					execLog(
+						logContext,
+						agent.agentId,
+						`killed V2 agent by lane number (PID ${agent.pid})`,
+					);
+				} catch {
+					/* already dead */
+				}
 			}
 		}
 	}
 }
 
 // ── Async File/Status Helpers (TP-070) ───────────────────────────────
-
 
 /**
  * Async version of readTaskStatusTail — reads STATUS.md tail without
@@ -186,7 +285,9 @@ export async function readTaskStatusTailAsync(
 		return "";
 	}
 	try {
-		const raw = (await fsReadFile(statusPath, "utf-8")).replace(/\r\n/g, "\n").trim();
+		const raw = (await fsReadFile(statusPath, "utf-8"))
+			.replace(/\r\n/g, "\n")
+			.trim();
 		if (!raw) return "";
 		const tail = raw.split("\n").slice(-maxLines).join("\n").trim();
 		if (!tail) return "";
@@ -218,7 +319,12 @@ export function resolveLaneLogPath(
 	lane: AllocatedLane,
 	task: AllocatedTask,
 ): string {
-	return join(lane.worktreePath, ".pi", "orch-logs", `${laneSessionIdOf(lane)}-${task.taskId}.log`);
+	return join(
+		lane.worktreePath,
+		".pi",
+		"orch-logs",
+		`${laneSessionIdOf(lane)}-${task.taskId}.log`,
+	);
 }
 
 /**
@@ -230,7 +336,11 @@ export function resolveLaneLogRelativePath(
 	lane: AllocatedLane,
 	task: AllocatedTask,
 ): string {
-	return join(".pi", "orch-logs", `${laneSessionIdOf(lane)}-${task.taskId}.log`).replace(/\\/g, "/");
+	return join(
+		".pi",
+		"orch-logs",
+		`${laneSessionIdOf(lane)}-${task.taskId}.log`,
+	).replace(/\\/g, "/");
 }
 
 /**
@@ -445,9 +555,13 @@ export function resolveTaskDonePath(
 	repoRoot: string,
 	isWorkspaceMode?: boolean,
 ): string {
-	return resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot, isWorkspaceMode).donePath;
+	return resolveCanonicalTaskPaths(
+		taskFolder,
+		worktreePath,
+		repoRoot,
+		isWorkspaceMode,
+	).donePath;
 }
-
 
 /*
  * Removed in TP-120 while decommissioning the legacy session backend.
@@ -456,7 +570,7 @@ export function resolveTaskDonePath(
  * Runtime V2 completion detection now lives in lane-runner + agent-host.
  */
 // pollUntilTaskComplete function body removed — was ~170 lines of legacy .DONE polling.
-// @ts-ignore — export kept as stub for test compatibility
+// @ts-expect-error — export kept as stub for test compatibility
 export async function pollUntilTaskComplete(
 	_lane: AllocatedLane,
 	_task: AllocatedTask,
@@ -464,8 +578,16 @@ export async function pollUntilTaskComplete(
 	_repoRoot: string,
 	_pauseSignal: { paused: boolean },
 	_isWorkspaceMode?: boolean,
-): Promise<{ status: LaneTaskStatus; exitReason: string; doneFileFound: boolean }> {
-	return { status: "failed", exitReason: "Legacy pollUntilTaskComplete removed — use V2 lane-runner", doneFileFound: false };
+): Promise<{
+	status: LaneTaskStatus;
+	exitReason: string;
+	doneFileFound: boolean;
+}> {
+	return {
+		status: "failed",
+		exitReason: "Legacy pollUntilTaskComplete removed — use V2 lane-runner",
+		doneFileFound: false,
+	};
 }
 
 // ── Post-Task Commit ─────────────────────────────────────────────────
@@ -501,19 +623,31 @@ function commitTaskArtifacts(
 	// Stage all changes in the worktree
 	const addResult = runGit(["add", "-A"], worktreePath);
 	if (!addResult.ok) {
-		execLog(laneId, task.taskId, `post-task stage failed (non-fatal): ${addResult.stderr.slice(0, 200)}`);
+		execLog(
+			laneId,
+			task.taskId,
+			`post-task stage failed (non-fatal): ${addResult.stderr.slice(0, 200)}`,
+		);
 		return;
 	}
 
 	// Commit with task ID for traceability
 	const commitResult = runGit(
-		["commit", "-m", `checkpoint: ${task.taskId} task artifacts (.DONE, STATUS.md)`],
+		[
+			"commit",
+			"-m",
+			`checkpoint: ${task.taskId} task artifacts (.DONE, STATUS.md)`,
+		],
 		worktreePath,
 	);
 	if (!commitResult.ok) {
 		// "nothing to commit" is not an error — worker may have already committed
 		if (!commitResult.stderr.includes("nothing to commit")) {
-			execLog(laneId, task.taskId, `post-task commit failed (non-fatal): ${commitResult.stderr.slice(0, 200)}`);
+			execLog(
+				laneId,
+				task.taskId,
+				`post-task commit failed (non-fatal): ${commitResult.stderr.slice(0, 200)}`,
+			);
 		}
 		return;
 	}
@@ -522,9 +656,6 @@ function commitTaskArtifacts(
 		commit: commitResult.stdout.trim().split("\n")[0],
 	});
 }
-
-
-
 
 // ── STATUS.md Parsing for Worktree ───────────────────────────────────
 
@@ -569,7 +700,12 @@ export function parseWorktreeStatusMd(
 	isWorkspaceMode?: boolean,
 ): { parsed: ParsedWorktreeStatus | null; error: string | null } {
 	// Use canonical resolver for consistent path translation
-	const resolved = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot, isWorkspaceMode);
+	const resolved = resolveCanonicalTaskPaths(
+		taskFolder,
+		worktreePath,
+		repoRoot,
+		isWorkspaceMode,
+	);
 	const statusPath = resolved.statusPath;
 
 	if (!existsSync(statusPath)) {
@@ -582,7 +718,10 @@ export function parseWorktreeStatusMd(
 		content = readFileSync(statusPath, "utf-8");
 		mtime = statSync(statusPath).mtimeMs;
 	} catch (err: unknown) {
-		return { parsed: null, error: `Cannot read STATUS.md: ${err instanceof Error ? err.message : String(err)}` };
+		return {
+			parsed: null,
+			error: `Cannot read STATUS.md: ${err instanceof Error ? err.message : String(err)}`,
+		};
 	}
 
 	// Parse using same regex patterns as task-runner's parseStatusMd
@@ -606,7 +745,7 @@ export function parseWorktreeStatusMd(
 		const stepMatch = line.match(/^###\s+Step\s+(\d+):\s*(.+)/);
 		if (stepMatch) {
 			if (currentStep) {
-				const totalChecked = currentStep.checkboxes.filter(c => c).length;
+				const totalChecked = currentStep.checkboxes.filter((c) => c).length;
 				steps.push({
 					number: currentStep.number,
 					name: currentStep.name,
@@ -629,7 +768,11 @@ export function parseWorktreeStatusMd(
 				const s = ss[1];
 				if (s.includes("✅") || s.toLowerCase().includes("complete")) {
 					currentStep.status = "complete";
-				} else if (s.includes("🟨") || s.includes("🟡") || s.toLowerCase().includes("progress")) {
+				} else if (
+					s.includes("🟨") ||
+					s.includes("🟡") ||
+					s.toLowerCase().includes("progress")
+				) {
 					currentStep.status = "in-progress";
 				}
 			}
@@ -640,7 +783,7 @@ export function parseWorktreeStatusMd(
 		}
 	}
 	if (currentStep) {
-		const totalChecked = currentStep.checkboxes.filter(c => c).length;
+		const totalChecked = currentStep.checkboxes.filter((c) => c).length;
 		steps.push({
 			number: currentStep.number,
 			name: currentStep.name,
@@ -689,7 +832,12 @@ export async function parseWorktreeStatusMdAsync(
 	repoRoot: string,
 	isWorkspaceMode?: boolean,
 ): Promise<{ parsed: ParsedWorktreeStatus | null; error: string | null }> {
-	const resolved = resolveCanonicalTaskPaths(taskFolder, worktreePath, repoRoot, isWorkspaceMode);
+	const resolved = resolveCanonicalTaskPaths(
+		taskFolder,
+		worktreePath,
+		repoRoot,
+		isWorkspaceMode,
+	);
 	return parseStatusMdContent(resolved.statusPath);
 }
 
@@ -707,7 +855,10 @@ async function parseStatusMdContent(
 		content = await fsReadFile(statusPath, "utf-8");
 		mtime = (await fsStat(statusPath)).mtimeMs;
 	} catch (err: unknown) {
-		return { parsed: null, error: `Cannot read STATUS.md: ${err instanceof Error ? err.message : String(err)}` };
+		return {
+			parsed: null,
+			error: `Cannot read STATUS.md: ${err instanceof Error ? err.message : String(err)}`,
+		};
 	}
 
 	// Parse logic is identical to the sync version
@@ -731,7 +882,7 @@ async function parseStatusMdContent(
 		const stepMatch = line.match(/^###\s+Step\s+(\d+):\s*(.+)/);
 		if (stepMatch) {
 			if (currentStep) {
-				const totalChecked = currentStep.checkboxes.filter(c => c).length;
+				const totalChecked = currentStep.checkboxes.filter((c) => c).length;
 				steps.push({
 					number: currentStep.number,
 					name: currentStep.name,
@@ -754,7 +905,11 @@ async function parseStatusMdContent(
 				const s = ss[1];
 				if (s.includes("✅") || s.toLowerCase().includes("complete")) {
 					currentStep.status = "complete";
-				} else if (s.includes("🟨") || s.includes("🟡") || s.toLowerCase().includes("progress")) {
+				} else if (
+					s.includes("🟨") ||
+					s.includes("🟡") ||
+					s.toLowerCase().includes("progress")
+				) {
 					currentStep.status = "in-progress";
 				}
 			}
@@ -765,7 +920,7 @@ async function parseStatusMdContent(
 		}
 	}
 	if (currentStep) {
-		const totalChecked = currentStep.checkboxes.filter(c => c).length;
+		const totalChecked = currentStep.checkboxes.filter((c) => c).length;
 		steps.push({
 			number: currentStep.number,
 			name: currentStep.name,
@@ -780,7 +935,6 @@ async function parseStatusMdContent(
 		error: null,
 	};
 }
-
 
 // ── State Resolution ─────────────────────────────────────────────────
 
@@ -823,12 +977,16 @@ export async function resolveTaskMonitorState(
 	// Legacy: check lane-session liveness.
 	let sessionAlive: boolean;
 	if (runtimeBackend === "v2" && v2Context) {
-		const snap = readLaneSnapshot(v2Context.stateRoot, v2Context.batchId, v2Context.laneNumber);
+		const snap = readLaneSnapshot(
+			v2Context.stateRoot,
+			v2Context.batchId,
+			v2Context.laneNumber,
+		);
 		if (snap == null || snap.taskId !== taskId) {
 			// Snapshot not written yet OR snapshot still points to a prior task.
 			// Assume alive initially, but if stale for >30s consult the registry
 			// to avoid indefinite false "running" if the lane-runner died.
-			const staleMs = snap?.updatedAt ? (now - snap.updatedAt) : 0;
+			const staleMs = snap?.updatedAt ? now - snap.updatedAt : 0;
 			if (staleMs > 30_000) {
 				// Snapshot hasn't been updated for 30s+ — check registry as fallback.
 				// But also check if the tracker just started (firstObservedAt within
@@ -839,7 +997,11 @@ export async function resolveTaskMonitorState(
 					// New task, stale snapshot — give the worker startup grace period
 					sessionAlive = true;
 				} else {
-					sessionAlive = isV2AgentAlive(sessionName, runtimeBackend, v2Context?.laneNumber);
+					sessionAlive = isV2AgentAlive(
+						sessionName,
+						runtimeBackend,
+						v2Context?.laneNumber,
+					);
 				}
 			} else {
 				sessionAlive = true;
@@ -861,17 +1023,22 @@ export async function resolveTaskMonitorState(
 			const trackerAgeMs = now - tracker.firstObservedAt;
 			if (
 				snap.updatedAt &&
-				(now - snap.updatedAt) > stallTimeoutMs / 2 &&
+				now - snap.updatedAt > stallTimeoutMs / 2 &&
 				trackerAgeMs >= 60_000 &&
 				!isV2AgentAlive(sessionName, runtimeBackend, v2Context?.laneNumber)
 			) {
 				// Ghost worker confirmed: PID dead, snapshot stale beyond half the stall timeout
-				execLog("monitor", taskId, "ghost worker fast-fail — dead PID + stale snapshot", {
-					session: sessionName,
-					snapStaleMs: now - snap.updatedAt,
-					trackerAgeMs,
-					halfStallTimeoutMs: stallTimeoutMs / 2,
-				});
+				execLog(
+					"monitor",
+					taskId,
+					"ghost worker fast-fail — dead PID + stale snapshot",
+					{
+						session: sessionName,
+						snapStaleMs: now - snap.updatedAt,
+						trackerAgeMs,
+						halfStallTimeoutMs: stallTimeoutMs / 2,
+					},
+				);
 				sessionAlive = false;
 			} else {
 				sessionAlive = snap.status === "running";
@@ -890,7 +1057,7 @@ export async function resolveTaskMonitorState(
 	let totalItems = 0;
 	let iteration = 0;
 	let reviewCounter = 0;
-	let parseError = statusResult.error;
+	const parseError = statusResult.error;
 
 	if (statusResult.parsed) {
 		const { steps } = statusResult.parsed;
@@ -904,13 +1071,13 @@ export async function resolveTaskMonitorState(
 		}
 
 		// Find the current step (first in-progress, or first not-started after last complete)
-		const inProgress = steps.find(s => s.status === "in-progress");
+		const inProgress = steps.find((s) => s.status === "in-progress");
 		if (inProgress) {
 			currentStepName = inProgress.name;
 			currentStepNumber = inProgress.number;
 		} else {
 			// Find first not-started step
-			const notStarted = steps.find(s => s.status === "not-started");
+			const notStarted = steps.find((s) => s.status === "not-started");
 			if (notStarted) {
 				currentStepName = notStarted.name;
 				currentStepNumber = notStarted.number;
@@ -965,7 +1132,7 @@ export async function resolveTaskMonitorState(
 		sessionAlive &&
 		tracker.statusFileSeenOnce &&
 		tracker.stallTimerStart !== null &&
-		(now - tracker.stallTimerStart) >= stallTimeoutMs
+		now - tracker.stallTimerStart >= stallTimeoutMs
 	) {
 		const stallMinutes = Math.round((now - tracker.stallTimerStart) / 60_000);
 		const stallReason = `STATUS.md unchanged for ${stallMinutes} minutes (threshold: ${Math.round(stallTimeoutMs / 60_000)} min)`;
@@ -1037,7 +1204,6 @@ export async function resolveTaskMonitorState(
 		reviewCounter,
 	};
 }
-
 
 // ── Core Monitor Loop ────────────────────────────────────────────────
 
@@ -1122,10 +1288,15 @@ export async function monitorLanes(
 	// Build the total task count
 	const tasksTotal = lanes.reduce((sum, lane) => sum + lane.tasks.length, 0);
 
-	execLog("monitor", "ALL", `starting monitoring for ${lanes.length} lane(s), ${tasksTotal} task(s)`, {
-		pollIntervalMs,
-		stallTimeoutMin: Math.round(stallTimeoutMs / 60_000),
-	});
+	execLog(
+		"monitor",
+		"ALL",
+		`starting monitoring for ${lanes.length} lane(s), ${tasksTotal} task(s)`,
+		{
+			pollIntervalMs,
+			stallTimeoutMin: Math.round(stallTimeoutMs / 60_000),
+		},
+	);
 
 	while (true) {
 		const now = Date.now();
@@ -1134,7 +1305,9 @@ export async function monitorLanes(
 		// TP-112: Refresh V2 liveness registry cache once per poll cycle
 		if (runtimeBackend === "v2" && batchId) {
 			try {
-				setV2LivenessRegistryCache(readRegistrySnapshot(stateRootForRegistry ?? repoRoot, batchId));
+				setV2LivenessRegistryCache(
+					readRegistrySnapshot(stateRootForRegistry ?? repoRoot, batchId),
+				);
 			} catch {
 				setV2LivenessRegistryCache(null);
 			}
@@ -1150,18 +1323,31 @@ export async function monitorLanes(
 		// and the dashboard all reflect reality within one poll interval.
 		if (runtimeBackend === "v2" && batchId) {
 			try {
-				const registry = readRegistrySnapshot(stateRootForRegistry ?? repoRoot, batchId);
+				const registry = readRegistrySnapshot(
+					stateRootForRegistry ?? repoRoot,
+					batchId,
+				);
 				if (registry) {
 					const orphans = detectOrphans(registry);
 					if (orphans.length > 0) {
 						// Mark individual agent manifests as crashed
-						markOrphansCrashed(stateRootForRegistry ?? repoRoot, batchId, orphans);
+						markOrphansCrashed(
+							stateRootForRegistry ?? repoRoot,
+							batchId,
+							orphans,
+						);
 						// Rebuild and write registry.json from the updated individual manifests.
 						// markOrphansCrashed only updates per-agent files; registry.json is a
 						// cached aggregate that must be explicitly rebuilt so readRegistrySnapshot()
 						// and the dashboard see the crashed status within this poll cycle.
-						const freshRegistry = buildRegistrySnapshot(stateRootForRegistry ?? repoRoot, batchId);
-						writeRegistrySnapshot(stateRootForRegistry ?? repoRoot, freshRegistry);
+						const freshRegistry = buildRegistrySnapshot(
+							stateRootForRegistry ?? repoRoot,
+							batchId,
+						);
+						writeRegistrySnapshot(
+							stateRootForRegistry ?? repoRoot,
+							freshRegistry,
+						);
 						setV2LivenessRegistryCache(freshRegistry);
 					}
 				}
@@ -1211,7 +1397,12 @@ export async function monitorLanes(
 					currentTaskId = task.taskId;
 
 					const tracker = getOrCreateTracker(task.taskId, now);
-					const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode);
+					const unit = buildExecutionUnit(
+						lane,
+						task,
+						repoRoot,
+						isWorkspaceMode,
+					);
 					const donePath = unit.packet.donePath;
 					const statusPath = unit.packet.statusPath;
 					const statusResult = await parseStatusMdAtPath(statusPath);
@@ -1225,17 +1416,23 @@ export async function monitorLanes(
 						stallTimeoutMs,
 						now,
 						runtimeBackend,
-						(runtimeBackend === "v2" && batchId) ? {
-							stateRoot: stateRootForRegistry ?? repoRoot,
-							batchId,
-							laneNumber: lane.laneNumber,
-						} : undefined,
+						runtimeBackend === "v2" && batchId
+							? {
+									stateRoot: stateRootForRegistry ?? repoRoot,
+									batchId,
+									laneNumber: lane.laneNumber,
+								}
+							: undefined,
 					);
 
 					currentTaskSnapshot = snapshot;
 
 					// Check if this task just became terminal
-					if (snapshot.status === "succeeded" || snapshot.status === "failed" || snapshot.status === "stalled") {
+					if (
+						snapshot.status === "succeeded" ||
+						snapshot.status === "failed" ||
+						snapshot.status === "stalled"
+					) {
 						terminalTasks.set(task.taskId, snapshot);
 						if (snapshot.status === "succeeded") {
 							completedTasks.push(task.taskId);
@@ -1270,7 +1467,11 @@ export async function monitorLanes(
 
 			// TP-112: Backend-aware lane liveness for snapshot
 			// TP-148: Pass global laneNumber for workspace-mode fallback lookup
-			const sessionAlive = isV2AgentAlive(laneSessionIdOf(lane), "v2", lane.laneNumber);
+			const sessionAlive = isV2AgentAlive(
+				laneSessionIdOf(lane),
+				"v2",
+				lane.laneNumber,
+			);
 
 			laneSnapshots.push({
 				laneId: lane.laneId,
@@ -1308,8 +1509,12 @@ export async function monitorLanes(
 		// Log summary only on state changes (lane completes or fails) — not every poll
 		const currentStateKey = `${totalDone}/${totalFailed}`;
 		if (currentStateKey !== lastMonitorStateKey) {
-			const activeLanes = laneSnapshots.filter(l => l.currentTaskId !== null);
-			execLog("monitor", "ALL", `poll #${pollCount}: ${totalDone}/${tasksTotal} done, ${totalFailed} failed, ${activeLanes.length} active lane(s)`);
+			const activeLanes = laneSnapshots.filter((l) => l.currentTaskId !== null);
+			execLog(
+				"monitor",
+				"ALL",
+				`poll #${pollCount}: ${totalDone}/${tasksTotal} done, ${totalFailed} failed, ${activeLanes.length} active lane(s)`,
+			);
 			lastMonitorStateKey = currentStateKey;
 		}
 
@@ -1326,12 +1531,12 @@ export async function monitorLanes(
 		}
 
 		// Wait for next poll cycle
-		await new Promise(r => setTimeout(r, pollIntervalMs));
+		await new Promise((r) => setTimeout(r, pollIntervalMs));
 	}
 
 	// Reached here due to pause signal — return current state
 	const now = Date.now();
-	const laneSnapshots: LaneMonitorSnapshot[] = lanes.map(lane => ({
+	const laneSnapshots: LaneMonitorSnapshot[] = lanes.map((lane) => ({
 		laneId: lane.laneId,
 		laneNumber: lane.laneNumber,
 		sessionName: laneSessionIdOf(lane),
@@ -1340,7 +1545,7 @@ export async function monitorLanes(
 		currentTaskSnapshot: null,
 		completedTasks: [],
 		failedTasks: [],
-		remainingTasks: lane.tasks.map(t => t.taskId),
+		remainingTasks: lane.tasks.map((t) => t.taskId),
 	}));
 
 	setV2LivenessRegistryCache(null);
@@ -1355,7 +1560,6 @@ export async function monitorLanes(
 		allTerminal: false,
 	};
 }
-
 
 // ── Transitive Dependent Computation ─────────────────────────────────
 
@@ -1399,7 +1603,6 @@ export function computeTransitiveDependents(
 
 	return blocked;
 }
-
 
 // ── Pre-flight: Commit Untracked Task Files ─────────────────────────
 
@@ -1452,10 +1655,15 @@ export function ensureTaskFilesCommitted(
 	for (const { taskId, relPath } of foldersToCheck) {
 		const status = runGit(["status", "--porcelain", "--", relPath], repoRoot);
 		if (status.ok && status.stdout.trim()) {
-			execLog("wave", `W${waveIndex}`, `task ${taskId} has uncommitted files, staging`, {
-				folder: relPath,
-				status: status.stdout.trim().split("\n").slice(0, 5).join("; "),
-			});
+			execLog(
+				"wave",
+				`W${waveIndex}`,
+				`task ${taskId} has uncommitted files, staging`,
+				{
+					folder: relPath,
+					status: status.stdout.trim().split("\n").slice(0, 5).join("; "),
+				},
+			);
 			foldersToStage.push(relPath);
 		}
 	}
@@ -1478,36 +1686,49 @@ export function ensureTaskFilesCommitted(
 	// Fallback: if orch branch plumbing fails or orchBranch is not provided,
 	// fall back to the legacy path of committing on HEAD.
 	if (orchBranch) {
-		const orchTipRes = runGit(["rev-parse", `refs/heads/${orchBranch}`], repoRoot);
+		const orchTipRes = runGit(
+			["rev-parse", `refs/heads/${orchBranch}`],
+			repoRoot,
+		);
 		if (orchTipRes.ok) {
 			const orchTip = orchTipRes.stdout.trim();
-			const tmpIdx = join(repoRoot, ".git", `tmp-staging-idx-wave-${waveIndex}`);
+			const tmpIdx = join(
+				repoRoot,
+				".git",
+				`tmp-staging-idx-wave-${waveIndex}`,
+			);
 
 			try {
 				// Read orch branch tree into temporary index
-				const readTreeRes = runGitWithEnv(
-					["read-tree", orchTip],
-					repoRoot,
-					{ GIT_INDEX_FILE: tmpIdx },
-				);
+				const readTreeRes = runGitWithEnv(["read-tree", orchTip], repoRoot, {
+					GIT_INDEX_FILE: tmpIdx,
+				});
 				if (!readTreeRes.ok) {
-					execLog("wave", `W${waveIndex}`, `orch branch staging: read-tree failed, falling back to HEAD commit`, {
-						error: readTreeRes.stderr,
-					});
+					execLog(
+						"wave",
+						`W${waveIndex}`,
+						`orch branch staging: read-tree failed, falling back to HEAD commit`,
+						{
+							error: readTreeRes.stderr,
+						},
+					);
 					// Fall through to legacy path
 				} else {
 					// Add task files to temporary index
 					let addFailed = false;
 					for (const folder of foldersToStage) {
-						const addRes = runGitWithEnv(
-							["add", "--", folder],
-							repoRoot,
-							{ GIT_INDEX_FILE: tmpIdx },
-						);
+						const addRes = runGitWithEnv(["add", "--", folder], repoRoot, {
+							GIT_INDEX_FILE: tmpIdx,
+						});
 						if (!addRes.ok) {
-							execLog("wave", `W${waveIndex}`, `orch branch staging: git add failed for ${folder}, falling back`, {
-								error: addRes.stderr,
-							});
+							execLog(
+								"wave",
+								`W${waveIndex}`,
+								`orch branch staging: git add failed for ${folder}, falling back`,
+								{
+									error: addRes.stderr,
+								},
+							);
 							addFailed = true;
 							break;
 						}
@@ -1515,15 +1736,15 @@ export function ensureTaskFilesCommitted(
 
 					if (!addFailed) {
 						// Write tree from temporary index
-						const writeTreeRes = runGitWithEnv(
-							["write-tree"],
-							repoRoot,
-							{ GIT_INDEX_FILE: tmpIdx },
-						);
+						const writeTreeRes = runGitWithEnv(["write-tree"], repoRoot, {
+							GIT_INDEX_FILE: tmpIdx,
+						});
 
 						if (writeTreeRes.ok) {
 							const tree = writeTreeRes.stdout.trim();
-							const taskIds = foldersToStage.map(f => f.split("/").pop() || f).join(", ");
+							const taskIds = foldersToStage
+								.map((f) => f.split("/").pop() || f)
+								.join(", ");
 							const commitMsg = `chore: stage task files for orchestrator wave ${waveIndex} (${taskIds})`;
 
 							// Create commit directly on orch branch
@@ -1535,43 +1756,81 @@ export function ensureTaskFilesCommitted(
 							if (commitTreeRes.ok) {
 								const newCommit = commitTreeRes.stdout.trim();
 								const refUpdateRes = runGit(
-									["update-ref", `refs/heads/${orchBranch}`, newCommit, orchTip],
+									[
+										"update-ref",
+										`refs/heads/${orchBranch}`,
+										newCommit,
+										orchTip,
+									],
 									repoRoot,
 								);
 
 								if (refUpdateRes.ok) {
-									execLog("wave", `W${waveIndex}`, `committed ${foldersToStage.length} task folder(s) directly on orch branch`, {
-										orchBranch,
-										folders: foldersToStage,
-										from: orchTip.slice(0, 8),
-										to: newCommit.slice(0, 8),
-									});
+									execLog(
+										"wave",
+										`W${waveIndex}`,
+										`committed ${foldersToStage.length} task folder(s) directly on orch branch`,
+										{
+											orchBranch,
+											folders: foldersToStage,
+											from: orchTip.slice(0, 8),
+											to: newCommit.slice(0, 8),
+										},
+									);
 									// Clean up temp index and return — no need for legacy path
-									try { unlinkSync(tmpIdx); } catch { /* best effort */ }
+									try {
+										unlinkSync(tmpIdx);
+									} catch {
+										/* best effort */
+									}
 									return;
 								}
-								execLog("wave", `W${waveIndex}`, `orch branch staging: ref update failed, falling back`, {
-									error: refUpdateRes.stderr,
-								});
+								execLog(
+									"wave",
+									`W${waveIndex}`,
+									`orch branch staging: ref update failed, falling back`,
+									{
+										error: refUpdateRes.stderr,
+									},
+								);
 							} else {
-								execLog("wave", `W${waveIndex}`, `orch branch staging: commit-tree failed, falling back`, {
-									error: commitTreeRes.stderr,
-								});
+								execLog(
+									"wave",
+									`W${waveIndex}`,
+									`orch branch staging: commit-tree failed, falling back`,
+									{
+										error: commitTreeRes.stderr,
+									},
+								);
 							}
 						} else {
-							execLog("wave", `W${waveIndex}`, `orch branch staging: write-tree failed, falling back`, {
-								error: writeTreeRes.stderr,
-							});
+							execLog(
+								"wave",
+								`W${waveIndex}`,
+								`orch branch staging: write-tree failed, falling back`,
+								{
+									error: writeTreeRes.stderr,
+								},
+							);
 						}
 					}
 				}
 			} catch (err: unknown) {
-				execLog("wave", `W${waveIndex}`, `orch branch staging: unexpected error, falling back to HEAD commit`, {
-					error: err instanceof Error ? err.message : String(err),
-				});
+				execLog(
+					"wave",
+					`W${waveIndex}`,
+					`orch branch staging: unexpected error, falling back to HEAD commit`,
+					{
+						error: err instanceof Error ? err.message : String(err),
+					},
+				);
 			} finally {
 				// Always clean up temp index
-				try { unlinkSync(tmpIdx); } catch { /* best effort */ }
+				try {
+					unlinkSync(tmpIdx);
+				} catch {
+					/* best effort */
+				}
 			}
 		}
 	}
@@ -1584,7 +1843,12 @@ export function ensureTaskFilesCommitted(
 	for (const folder of foldersToStage) {
 		const addResult = runGit(["add", "--", folder], repoRoot);
 		if (!addResult.ok) {
-			execLog("wave", `W${waveIndex}`, `failed to stage task files: ${addResult.stderr}`, { folder });
+			execLog(
+				"wave",
+				`W${waveIndex}`,
+				`failed to stage task files: ${addResult.stderr}`,
+				{ folder },
+			);
 			throw new ExecutionError(
 				"EXEC_TASK_STAGE_FAILED",
 				`Failed to stage task files in "${folder}": ${addResult.stderr}`,
@@ -1595,11 +1859,15 @@ export function ensureTaskFilesCommitted(
 	}
 
 	// Commit
-	const taskIds = foldersToStage.map(f => f.split("/").pop() || f).join(", ");
+	const taskIds = foldersToStage.map((f) => f.split("/").pop() || f).join(", ");
 	const commitMsg = `chore: stage task files for orchestrator wave ${waveIndex} (${taskIds})`;
 	const commitResult = runGit(["commit", "-m", commitMsg], repoRoot);
 	if (!commitResult.ok) {
-		execLog("wave", `W${waveIndex}`, `failed to commit task files: ${commitResult.stderr}`);
+		execLog(
+			"wave",
+			`W${waveIndex}`,
+			`failed to commit task files: ${commitResult.stderr}`,
+		);
 		throw new ExecutionError(
 			"EXEC_TASK_COMMIT_FAILED",
 			`Failed to commit task files for wave ${waveIndex}: ${commitResult.stderr}`,
@@ -1608,10 +1876,15 @@ export function ensureTaskFilesCommitted(
 		);
 	}
 
-	execLog("wave", `W${waveIndex}`, `committed ${foldersToStage.length} task folder(s) to ensure worktree visibility`, {
-		folders: foldersToStage,
-		commit: commitResult.stdout.trim().split("\n")[0],
-	});
+	execLog(
+		"wave",
+		`W${waveIndex}`,
+		`committed ${foldersToStage.length} task folder(s) to ensure worktree visibility`,
+		{
+			folders: foldersToStage,
+			commit: commitResult.stdout.trim().split("\n")[0],
+		},
+	);
 
 	// Fast-forward (or merge) the orch branch to include the staging commit so
 	// that worktrees—which branch from orchBranch—see the new task files and
@@ -1619,7 +1892,10 @@ export function ensureTaskFilesCommitted(
 	if (orchBranch) {
 		try {
 			const headRes = runGit(["rev-parse", "HEAD"], repoRoot);
-			const orchTipRes = runGit(["rev-parse", `refs/heads/${orchBranch}`], repoRoot);
+			const orchTipRes = runGit(
+				["rev-parse", `refs/heads/${orchBranch}`],
+				repoRoot,
+			);
 
 			if (headRes.ok && orchTipRes.ok) {
 				const newHead = headRes.stdout.trim();
@@ -1636,16 +1912,26 @@ export function ensureTaskFilesCommitted(
 						repoRoot,
 					);
 					if (ffResult.ok) {
-						execLog("wave", `W${waveIndex}`, `fast-forwarded orch branch to include staging commit`, {
-							orchBranch,
-							from: orchTip.slice(0, 8),
-							to: newHead.slice(0, 8),
-						});
+						execLog(
+							"wave",
+							`W${waveIndex}`,
+							`fast-forwarded orch branch to include staging commit`,
+							{
+								orchBranch,
+								from: orchTip.slice(0, 8),
+								to: newHead.slice(0, 8),
+							},
+						);
 					} else {
-						execLog("wave", `W${waveIndex}`, `warning: failed to fast-forward orch branch (non-fatal)`, {
-							orchBranch,
-							error: ffResult.stderr,
-						});
+						execLog(
+							"wave",
+							`W${waveIndex}`,
+							`warning: failed to fast-forward orch branch (non-fatal)`,
+							{
+								orchBranch,
+								error: ffResult.stderr,
+							},
+						);
 					}
 				} else {
 					const mergeTreeRes = runGit(
@@ -1657,20 +1943,39 @@ export function ensureTaskFilesCommitted(
 						if (/^[0-9a-f]{40}$/i.test(mergedTree)) {
 							const mergeMsg = `merge: include staged task files for wave ${waveIndex} into orch branch`;
 							const commitTreeRes = runGit(
-								["commit-tree", mergedTree, "-p", orchTip, "-p", newHead, "-m", mergeMsg],
+								[
+									"commit-tree",
+									mergedTree,
+									"-p",
+									orchTip,
+									"-p",
+									newHead,
+									"-m",
+									mergeMsg,
+								],
 								repoRoot,
 							);
 							if (commitTreeRes.ok) {
 								const mergeCommitSha = commitTreeRes.stdout.trim();
 								const refUpdateRes = runGit(
-									["update-ref", `refs/heads/${orchBranch}`, mergeCommitSha, orchTip],
+									[
+										"update-ref",
+										`refs/heads/${orchBranch}`,
+										mergeCommitSha,
+										orchTip,
+									],
 									repoRoot,
 								);
 								if (refUpdateRes.ok) {
-									execLog("wave", `W${waveIndex}`, `merged staging commit into orch branch (non-FF wave)`, {
-										orchBranch,
-										mergeCommit: mergeCommitSha.slice(0, 8),
-									});
+									execLog(
+										"wave",
+										`W${waveIndex}`,
+										`merged staging commit into orch branch (non-FF wave)`,
+										{
+											orchBranch,
+											mergeCommit: mergeCommitSha.slice(0, 8),
+										},
+									);
 								}
 							}
 						}
@@ -1678,10 +1983,15 @@ export function ensureTaskFilesCommitted(
 				}
 			}
 		} catch (refErr: unknown) {
-			execLog("wave", `W${waveIndex}`, `warning: orch branch ref update threw unexpectedly (non-fatal)`, {
-				orchBranch,
-				error: refErr instanceof Error ? refErr.message : String(refErr),
-			});
+			execLog(
+				"wave",
+				`W${waveIndex}`,
+				`warning: orch branch ref update threw unexpectedly (non-fatal)`,
+				{
+					orchBranch,
+					error: refErr instanceof Error ? refErr.message : String(refErr),
+				},
+			);
 		}
 	}
 }
@@ -1753,8 +2063,22 @@ export async function executeWave(
 	workspaceConfig?: WorkspaceConfig | null,
 	runtimeBackend?: RuntimeBackend,
 	onSupervisorAlert?: SupervisorAlertCallback,
-	supervisorAutonomy: "interactive" | "supervised" | "autonomous" = "autonomous",
-	reviewerConfig?: { model?: string; thinking?: string; tools?: string; excludeExtensions?: string[] },
+	supervisorAutonomy:
+		| "interactive"
+		| "supervised"
+		| "autonomous" = "autonomous",
+	reviewerConfig?: {
+		model?: string;
+		thinking?: string;
+		tools?: string;
+		excludeExtensions?: string[];
+	},
+	workerConfig?: {
+		model?: string;
+		thinking?: string;
+		tools?: string;
+		excludeExtensions?: string[];
+	} | null,
 	workerExcludeExtensions?: string[],
 ): Promise<WaveExecutionResult> {
 	const startedAt = Date.now();
@@ -1773,7 +2097,13 @@ export async function executeWave(
 	// Pass orchBranch so the staging commit is reflected in the orch branch
 	// before worktrees are allocated from it.
 	try {
-		ensureTaskFilesCommitted(waveTasks, pending, repoRoot, waveIndex, orchBranch);
+		ensureTaskFilesCommitted(
+			waveTasks,
+			pending,
+			repoRoot,
+			waveIndex,
+			orchBranch,
+		);
 	} catch (err: unknown) {
 		const errMsg = err instanceof Error ? err.message : String(err);
 		execLog("wave", `W${waveIndex}`, `task file commit failed: ${errMsg}`);
@@ -1788,7 +2118,9 @@ export async function executeWave(
 			failedTaskIds: waveTasks,
 			skippedTaskIds: [],
 			succeededTaskIds: [],
-			blockedTaskIds: [...computeTransitiveDependents(new Set(waveTasks), dependencyGraph)],
+			blockedTaskIds: [
+				...computeTransitiveDependents(new Set(waveTasks), dependencyGraph),
+			],
 			laneCount: 0,
 			overallStatus: "failed",
 			finalMonitorState: null,
@@ -1797,7 +2129,15 @@ export async function executeWave(
 	}
 
 	// ── Stage 1: Allocate lanes ──────────────────────────────────
-	const allocResult = allocateLanes(waveTasks, pending, config, repoRoot, batchId, orchBranch, workspaceConfig);
+	const allocResult = allocateLanes(
+		waveTasks,
+		pending,
+		config,
+		repoRoot,
+		batchId,
+		orchBranch,
+		workspaceConfig,
+	);
 
 	if (!allocResult.success) {
 		const errMsg = allocResult.error?.message || "Unknown allocation failure";
@@ -1813,7 +2153,9 @@ export async function executeWave(
 			failedTaskIds: waveTasks, // All tasks in the wave are considered failed
 			skippedTaskIds: [],
 			succeededTaskIds: [],
-			blockedTaskIds: [...computeTransitiveDependents(new Set(waveTasks), dependencyGraph)],
+			blockedTaskIds: [
+				...computeTransitiveDependents(new Set(waveTasks), dependencyGraph),
+			],
 			laneCount: 0,
 			overallStatus: "failed",
 			finalMonitorState: null,
@@ -1838,11 +2180,17 @@ export async function executeWave(
 	// Start lane execution promises
 	// In workspace mode, pass the workspace root so lane sessions can find .pi/ config.
 	// configPath is .pi/taskplane-workspace.yaml → parent of parent is workspace root.
-	const wsRoot = workspaceConfig ? dirname(dirname(workspaceConfig.configPath)) : undefined;
+	const wsRoot = workspaceConfig
+		? dirname(dirname(workspaceConfig.configPath))
+		: undefined;
 	const isWsMode = !!workspaceConfig;
 	const backend: RuntimeBackend = "v2";
 	if (runtimeBackend && runtimeBackend !== "v2") {
-		execLog("wave", `W${waveIndex}`, `legacy runtime backend '${runtimeBackend}' requested but ignored; using Runtime V2`);
+		execLog(
+			"wave",
+			`W${waveIndex}`,
+			`legacy runtime backend '${runtimeBackend}' requested but ignored; using Runtime V2`,
+		);
 	}
 	execLog("wave", `W${waveIndex}`, "using Runtime V2 backend (executeLaneV2)");
 
@@ -1853,18 +2201,37 @@ export async function executeWave(
 	const snapshotStateRoot = resolveRuntimeStateRoot(repoRoot, wsRoot);
 	for (const lane of lanes) {
 		try {
-			const snapPath = join(snapshotStateRoot, ".pi", "runtime", batchId, "lanes", `lane-${lane.laneNumber}.json`);
+			const snapPath = join(
+				snapshotStateRoot,
+				".pi",
+				"runtime",
+				batchId,
+				"lanes",
+				`lane-${lane.laneNumber}.json`,
+			);
 			if (existsSync(snapPath)) unlinkSync(snapPath);
-		} catch { /* best effort */ }
+		} catch {
+			/* best effort */
+		}
 	}
 
-	const lanePromises = lanes.map(lane =>
-		executeLaneV2(lane, config, repoRoot, wavePauseSignal, wsRoot, isWsMode, {
-			ORCH_BATCH_ID: batchId,
-			TASKPLANE_SUPERVISOR_AUTONOMY: supervisorAutonomy,
-			...buildReviewerEnv(reviewerConfig),
-			...buildWorkerExcludeEnv(workerExcludeExtensions),
-		}, onSupervisorAlert),
+	const lanePromises = lanes.map((lane) =>
+		executeLaneV2(
+			lane,
+			config,
+			repoRoot,
+			wavePauseSignal,
+			wsRoot,
+			isWsMode,
+			{
+				ORCH_BATCH_ID: batchId,
+				TASKPLANE_SUPERVISOR_AUTONOMY: supervisorAutonomy,
+				...buildWorkerEnv(workerConfig),
+				...buildReviewerEnv(reviewerConfig),
+				...buildWorkerExcludeEnv(workerExcludeExtensions),
+			},
+			onSupervisorAlert,
+		),
 	);
 
 	// Start monitoring as a sibling async loop
@@ -1894,7 +2261,12 @@ export async function executeWave(
 	if (policy === "stop-all") {
 		// For stop-all: race detection — as soon as any lane reports failure,
 		// kill all sessions immediately.
-		laneResults = await executeWithStopAll(lanes, lanePromises, wavePauseSignal, waveIndex);
+		laneResults = await executeWithStopAll(
+			lanes,
+			lanePromises,
+			wavePauseSignal,
+			waveIndex,
+		);
 	} else {
 		// For skip-dependents and stop-wave:
 		// Let all lanes run to completion (or until pauseSignal stops them).
@@ -1906,12 +2278,19 @@ export async function executeWave(
 				return result.value;
 			}
 			// Rejected promise — shouldn't normally happen (executeLane catches errors)
-			const errMsg = result.reason instanceof Error ? result.reason.message : String(result.reason);
-			execLog("wave", `W${waveIndex}`, `lane ${lanes[idx].laneId} promise rejected: ${errMsg}`);
+			const errMsg =
+				result.reason instanceof Error
+					? result.reason.message
+					: String(result.reason);
+			execLog(
+				"wave",
+				`W${waveIndex}`,
+				`lane ${lanes[idx].laneId} promise rejected: ${errMsg}`,
+			);
 			return {
 				laneNumber: lanes[idx].laneNumber,
 				laneId: lanes[idx].laneId,
-				tasks: lanes[idx].tasks.map(t => ({
+				tasks: lanes[idx].tasks.map((t) => ({
 					taskId: t.taskId,
 					status: "failed" as LaneTaskStatus,
 					startTime: null,
@@ -1929,12 +2308,16 @@ export async function executeWave(
 
 		// For stop-wave: if any task failed, set pause to prevent next wave
 		if (policy === "stop-wave") {
-			const hasFailure = laneResults.some(lr =>
-				lr.tasks.some(t => t.status === "failed" || t.status === "stalled"),
+			const hasFailure = laneResults.some((lr) =>
+				lr.tasks.some((t) => t.status === "failed" || t.status === "stalled"),
 			);
 			if (hasFailure) {
 				wavePauseSignal.paused = true;
-				execLog("wave", `W${waveIndex}`, `stop-wave policy triggered — pausing after this wave`);
+				execLog(
+					"wave",
+					`W${waveIndex}`,
+					`stop-wave policy triggered — pausing after this wave`,
+				);
 			}
 		}
 	}
@@ -1979,15 +2362,21 @@ export async function executeWave(
 		);
 		blockedTaskIds = [...blocked].sort();
 		if (blockedTaskIds.length > 0) {
-			execLog("wave", `W${waveIndex}`, `skip-dependents: ${blockedTaskIds.length} task(s) blocked for future waves`, {
-				blocked: blockedTaskIds.join(","),
-			});
+			execLog(
+				"wave",
+				`W${waveIndex}`,
+				`skip-dependents: ${blockedTaskIds.length} task(s) blocked for future waves`,
+				{
+					blocked: blockedTaskIds.join(","),
+				},
+			);
 		}
 	}
 
 	// Determine overall wave status
-	const stoppedEarly = policy === "stop-all" && failedTaskIds.length > 0
-		|| policy === "stop-wave" && failedTaskIds.length > 0;
+	const stoppedEarly =
+		(policy === "stop-all" && failedTaskIds.length > 0) ||
+		(policy === "stop-wave" && failedTaskIds.length > 0);
 
 	let overallStatus: WaveExecutionResult["overallStatus"];
 	if (policy === "stop-all" && failedTaskIds.length > 0) {
@@ -2003,14 +2392,19 @@ export async function executeWave(
 	const endedAt = Date.now();
 	const elapsedSec = Math.round((endedAt - startedAt) / 1000);
 
-	execLog("wave", `W${waveIndex}`, `wave execution complete: ${overallStatus}`, {
-		succeeded: succeededTaskIds.length,
-		failed: failedTaskIds.length,
-		skipped: skippedTaskIds.length,
-		blocked: blockedTaskIds.length,
-		elapsed: `${elapsedSec}s`,
-		stoppedEarly,
-	});
+	execLog(
+		"wave",
+		`W${waveIndex}`,
+		`wave execution complete: ${overallStatus}`,
+		{
+			succeeded: succeededTaskIds.length,
+			failed: failedTaskIds.length,
+			skipped: skippedTaskIds.length,
+			blocked: blockedTaskIds.length,
+			elapsed: `${elapsedSec}s`,
+			stoppedEarly,
+		},
+	);
 
 	return {
 		waveIndex,
@@ -2055,7 +2449,9 @@ export async function executeWithStopAll(
 	waveIndex: number,
 ): Promise<LaneExecutionResult[]> {
 	// Track results as they complete
-	const results: (LaneExecutionResult | null)[] = new Array(lanes.length).fill(null);
+	const results: (LaneExecutionResult | null)[] = new Array(lanes.length).fill(
+		null,
+	);
 	let abortTriggered = false;
 
 	// Create a promise that resolves when all lanes are done
@@ -2068,7 +2464,7 @@ export async function executeWithStopAll(
 			// Check if any task failed
 			if (!abortTriggered) {
 				const hasFailure = result.tasks.some(
-					t => t.status === "failed" || t.status === "stalled",
+					(t) => t.status === "failed" || t.status === "stalled",
 				);
 				if (hasFailure) {
 					// First failure detected — trigger stop-all
@@ -2077,7 +2473,7 @@ export async function executeWithStopAll(
 
 					// Determine which task failed first for logging
 					const firstFailed = result.tasks
-						.filter(t => t.status === "failed" || t.status === "stalled")
+						.filter((t) => t.status === "failed" || t.status === "stalled")
 						.sort((a, b) => {
 							// Sort by startTime, then by taskId for deterministic tie-break
 							const timeA = a.startTime || 0;
@@ -2086,13 +2482,20 @@ export async function executeWithStopAll(
 							return a.taskId.localeCompare(b.taskId);
 						})[0];
 
-					execLog("wave", `W${waveIndex}`, `stop-all triggered by ${firstFailed?.taskId || "unknown"} in ${lanes[idx].laneId}`, {
-						session: laneSessionIdOf(lanes[idx]),
-					});
+					execLog(
+						"wave",
+						`W${waveIndex}`,
+						`stop-all triggered by ${firstFailed?.taskId || "unknown"} in ${lanes[idx].laneId}`,
+						{
+							session: laneSessionIdOf(lanes[idx]),
+						},
+					);
 
 					// Kill ALL lane sessions immediately
 					for (const lane of lanes) {
-						killV2LaneAgents(laneSessionIdOf(lane), { laneNumber: lane.laneNumber });
+						killV2LaneAgents(laneSessionIdOf(lane), {
+							laneNumber: lane.laneNumber,
+						});
 					}
 				}
 			}
@@ -2104,9 +2507,15 @@ export async function executeWithStopAll(
 			if (!abortTriggered) {
 				abortTriggered = true;
 				pauseSignal.paused = true;
-				execLog("wave", `W${waveIndex}`, `stop-all triggered by lane error in ${lanes[idx].laneId}: ${errMsg}`);
+				execLog(
+					"wave",
+					`W${waveIndex}`,
+					`stop-all triggered by lane error in ${lanes[idx].laneId}: ${errMsg}`,
+				);
 				for (const lane of lanes) {
-					killV2LaneAgents(laneSessionIdOf(lane), { laneNumber: lane.laneNumber });
+					killV2LaneAgents(laneSessionIdOf(lane), {
+						laneNumber: lane.laneNumber,
+					});
 				}
 			}
 
@@ -2114,7 +2523,7 @@ export async function executeWithStopAll(
 			const failedResult: LaneExecutionResult = {
 				laneNumber: lanes[idx].laneNumber,
 				laneId: lanes[idx].laneId,
-				tasks: lanes[idx].tasks.map(t => ({
+				tasks: lanes[idx].tasks.map((t) => ({
 					taskId: t.taskId,
 					status: "failed" as LaneTaskStatus,
 					startTime: null,
@@ -2137,14 +2546,17 @@ export async function executeWithStopAll(
 	await Promise.allSettled(wrappedPromises);
 
 	// Fill in any null results (shouldn't happen, but defensive)
-	return results.map((r, idx) => r || {
-		laneNumber: lanes[idx].laneNumber,
-		laneId: lanes[idx].laneId,
-		tasks: [],
-		overallStatus: "failed" as const,
-		startTime: Date.now(),
-		endTime: Date.now(),
-	});
+	return results.map(
+		(r, idx) =>
+			r || {
+				laneNumber: lanes[idx].laneNumber,
+				laneId: lanes[idx].laneId,
+				tasks: [],
+				overallStatus: "failed" as const,
+				startTime: Date.now(),
+				endTime: Date.now(),
+			},
+	);
 }
 
 // ── Runtime V2 Bridge Helpers (TP-102) ─────────────────────────────────────
@@ -2205,8 +2617,8 @@ export function buildExecutionUnit(
 		throw new ExecutionError(
 			"EXEC_MISSING_TASK_FOLDER",
 			`Cannot build execution unit for task ${task.taskId}: taskFolder is ${taskFolder === "" ? "empty" : "undefined"}. ` +
-			`This typically means the task's persisted record was not enriched with discovery data. ` +
-			`Re-run discovery or check that the task exists in the task area.`,
+				`This typically means the task's persisted record was not enriched with discovery data. ` +
+				`Re-run discovery or check that the task exists in the task area.`,
 			"execution",
 			task.taskId,
 		);
@@ -2230,18 +2642,18 @@ export function buildExecutionUnit(
 	// the execution repo (cross-repo segment). When they're the same repo,
 	// resolve packet paths inside the worktree so .DONE, STATUS.md etc. are
 	// written to the worktree (not the original repo outside the worktree).
-	const useAbsolutePacketPath = task.task.packetTaskPath
-		&& packetHomeRepoId !== executionRepoId;
+	const useAbsolutePacketPath =
+		task.task.packetTaskPath && packetHomeRepoId !== executionRepoId;
 
 	const packet = useAbsolutePacketPath
 		? resolvePacketPaths(task.task.packetTaskPath!)
 		: {
-			promptPath: resolved.taskFolderResolved + "/PROMPT.md",
-			statusPath: resolved.statusPath,
-			donePath: resolved.donePath,
-			reviewsDir: resolved.taskFolderResolved + "/.reviews",
-			taskFolder: resolved.taskFolderResolved,
-		};
+				promptPath: resolved.taskFolderResolved + "/PROMPT.md",
+				statusPath: resolved.statusPath,
+				donePath: resolved.donePath,
+				reviewsDir: resolved.taskFolderResolved + "/.reviews",
+				taskFolder: resolved.taskFolderResolved,
+			};
 
 	return {
 		id,
@@ -2308,7 +2720,9 @@ export function buildAgentIdFromLane(
  * Returns null if file doesn't exist or is malformed.
  * @since TP-117
  */
-function parseAgentFile(filePath: string): { fm: Record<string, string>; body: string } | null {
+function parseAgentFile(
+	filePath: string,
+): { fm: Record<string, string>; body: string } | null {
 	try {
 		if (!existsSync(filePath)) return null;
 		const raw = readFileSync(filePath, "utf-8");
@@ -2321,7 +2735,9 @@ function parseAgentFile(filePath: string): { fm: Record<string, string>; body: s
 			if (m) fm[m[1]] = m[2].trim();
 		}
 		return { fm, body: raw.slice(fmEnd + 3).trim() };
-	} catch { return null; }
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -2339,7 +2755,9 @@ function loadBaseAgentPrompt(agentName: string): string {
 			const def = parseAgentFile(resolved);
 			if (def?.body) return def.body;
 		}
-	} catch { /* fall through */ }
+	} catch {
+		/* fall through */
+	}
 	return "";
 }
 
@@ -2415,7 +2833,10 @@ function resolveAgentPointerRoot(): string | null {
  * @returns Composed agent definition, or null if no base and no local file found
  * @since TP-161
  */
-export function loadAgentDef(cwd: string, name: string): { systemPrompt: string; tools: string; model: string } | null {
+export function loadAgentDef(
+	cwd: string,
+	name: string,
+): { systemPrompt: string; tools: string; model: string } | null {
 	const localPaths = [
 		join(cwd, ".pi", "agents", `${name}.md`),
 		join(cwd, "agents", `${name}.md`),
@@ -2434,7 +2855,9 @@ export function loadAgentDef(cwd: string, name: string): { systemPrompt: string;
 		if (existsSync(basePath)) {
 			baseDef = parseAgentFile(basePath);
 		}
-	} catch { /* fall through */ }
+	} catch {
+		/* fall through */
+	}
 
 	// Load local override (first found wins)
 	let localDef: { fm: Record<string, string>; body: string } | null = null;
@@ -2478,7 +2901,11 @@ export function resolveRuntimeStateRoot(
 
 // ── Runtime V2 Lane Execution (TP-105) ────────────────────────────
 
-import { executeTaskV2, type LaneRunnerConfig, type LaneRunnerTaskResult } from "./lane-runner.ts";
+import {
+	executeTaskV2,
+	type LaneRunnerConfig,
+	type LaneRunnerTaskResult,
+} from "./lane-runner.ts";
 
 /**
  * Execute a lane using the Runtime V2 headless backend.
@@ -2513,21 +2940,69 @@ function parseJsonArrayEnv(value?: string): string[] {
 	if (!value) return [];
 	try {
 		const parsed = JSON.parse(value);
-		if (Array.isArray(parsed)) return parsed.filter((v: unknown): v is string => typeof v === "string");
-	} catch { /* ignore malformed */ }
+		if (Array.isArray(parsed))
+			return parsed.filter((v: unknown): v is string => typeof v === "string");
+	} catch {
+		/* ignore malformed */
+	}
 	return [];
 }
 
 export function buildReviewerEnv(
-	reviewerConfig?: { model?: string; thinking?: string; tools?: string; excludeExtensions?: string[] } | null,
+	reviewerConfig?: {
+		model?: string;
+		thinking?: string;
+		tools?: string;
+		excludeExtensions?: string[];
+	} | null,
 ): Record<string, string> {
 	const env: Record<string, string> = {};
-	if (reviewerConfig?.model) env.TASKPLANE_REVIEWER_MODEL = reviewerConfig.model;
-	if (reviewerConfig?.thinking) env.TASKPLANE_REVIEWER_THINKING = reviewerConfig.thinking;
-	if (reviewerConfig?.tools) env.TASKPLANE_REVIEWER_TOOLS = reviewerConfig.tools;
+	if (reviewerConfig?.model)
+		env.TASKPLANE_REVIEWER_MODEL = reviewerConfig.model;
+	if (reviewerConfig?.thinking)
+		env.TASKPLANE_REVIEWER_THINKING = reviewerConfig.thinking;
+	if (reviewerConfig?.tools)
+		env.TASKPLANE_REVIEWER_TOOLS = reviewerConfig.tools;
 	// TP-180: Forward reviewer extension exclusions as JSON array
-	if (reviewerConfig?.excludeExtensions && reviewerConfig.excludeExtensions.length > 0) {
-		env.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS = JSON.stringify(reviewerConfig.excludeExtensions);
+	if (
+		reviewerConfig?.excludeExtensions &&
+		reviewerConfig.excludeExtensions.length > 0
+	) {
+		env.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS = JSON.stringify(
+			reviewerConfig.excludeExtensions,
+		);
+	}
+	return env;
+}
+
+/**
+ * Build worker env vars from config.
+ *
+ * Threads worker model/thinking/tools through to the lane runner
+ * via env vars, mirroring the reviewer pattern (buildReviewerEnv).
+ *
+ * @since TP-183
+ */
+export function buildWorkerEnv(
+	workerConfig?: {
+		model?: string;
+		thinking?: string;
+		tools?: string;
+		excludeExtensions?: string[];
+	} | null,
+): Record<string, string> {
+	const env: Record<string, string> = {};
+	if (workerConfig?.model) env.TASKPLANE_WORKER_MODEL = workerConfig.model;
+	if (workerConfig?.thinking)
+		env.TASKPLANE_WORKER_THINKING = workerConfig.thinking;
+	if (workerConfig?.tools) env.TASKPLANE_WORKER_TOOLS = workerConfig.tools;
+	if (
+		workerConfig?.excludeExtensions &&
+		workerConfig.excludeExtensions.length > 0
+	) {
+		env.TASKPLANE_WORKER_EXCLUDE_EXTENSIONS = JSON.stringify(
+			workerConfig.excludeExtensions,
+		);
 	}
 	return env;
 }
@@ -2541,7 +3016,9 @@ export function buildWorkerExcludeEnv(
 ): Record<string, string> {
 	const env: Record<string, string> = {};
 	if (workerExcludeExtensions && workerExcludeExtensions.length > 0) {
-		env.TASKPLANE_WORKER_EXCLUDE_EXTENSIONS = JSON.stringify(workerExcludeExtensions);
+		env.TASKPLANE_WORKER_EXCLUDE_EXTENSIONS = JSON.stringify(
+			workerExcludeExtensions,
+		);
 	}
 	return env;
 }
@@ -2562,7 +3039,10 @@ export async function executeLaneV2(
 	let shouldSkipRemaining = false;
 
 	const stateRoot = resolveRuntimeStateRoot(repoRoot, workspaceRoot);
-	const batchId = config.orchestrator?.batchId || extraEnvVars?.ORCH_BATCH_ID || String(Date.now());
+	const batchId =
+		config.orchestrator?.batchId ||
+		extraEnvVars?.ORCH_BATCH_ID ||
+		String(Date.now());
 
 	// Build agent ID prefix — must match the wave planner's naming (TP-115).
 	// Uses resolveOperatorId() so agent registry keys align with lane session IDs.
@@ -2574,13 +3054,17 @@ export async function executeLaneV2(
 	// The base template (templates/agents/task-worker.md) contains critical behavioral
 	// rules: checkpoint discipline, STATUS.md resume algorithm, review_step instructions.
 	// The local file (.pi/agents/task-worker.md) adds project-specific guidance.
-	let workerSystemPrompt = "You are a task execution agent. Read STATUS.md first, find unchecked items, work on them, checkpoint after each.";
+	let workerSystemPrompt =
+		"You are a task execution agent. Read STATUS.md first, find unchecked items, work on them, checkpoint after each.";
 	let workerSegmentPrompt = "";
 	try {
 		const basePrompt = loadBaseAgentPrompt("task-worker");
 		const localPrompt = loadLocalAgentPrompt(stateRoot, "task-worker");
 		if (basePrompt && localPrompt) {
-			workerSystemPrompt = basePrompt + "\n\n---\n\n## Project-Specific Guidance\n\n" + localPrompt;
+			workerSystemPrompt =
+				basePrompt +
+				"\n\n---\n\n## Project-Specific Guidance\n\n" +
+				localPrompt;
 		} else if (basePrompt) {
 			workerSystemPrompt = basePrompt;
 		} else if (localPrompt) {
@@ -2589,17 +3073,26 @@ export async function executeLaneV2(
 		// Load segment-scoped prompt overlay (appended when isSegmentScoped)
 		const segPrompt = loadBaseAgentPrompt("task-worker-segment");
 		if (segPrompt) workerSegmentPrompt = segPrompt;
-	} catch { /* use default */ }
+	} catch {
+		/* use default */
+	}
 
-	execLog(laneId, "LANE", `starting Runtime V2 execution of ${lane.tasks.length} task(s)`, {
-		worktree: lane.worktreePath,
-		agentPrefix: agentIdPrefix,
-	});
+	execLog(
+		laneId,
+		"LANE",
+		`starting Runtime V2 execution of ${lane.tasks.length} task(s)`,
+		{
+			worktree: lane.worktreePath,
+			agentPrefix: agentIdPrefix,
+		},
+	);
 
 	for (const task of lane.tasks) {
 		const taskSegmentId = task.task.activeSegmentId ?? null;
 		if (shouldSkipRemaining || pauseSignal.paused) {
-			const reason = pauseSignal.paused ? "Skipped due to pause signal" : "Skipped due to prior task failure in lane";
+			const reason = pauseSignal.paused
+				? "Skipped due to pause signal"
+				: "Skipped due to prior task failure in lane";
 			outcomes.push({
 				taskId: task.taskId,
 				status: "skipped",
@@ -2607,7 +3100,11 @@ export async function executeLaneV2(
 				startTime: null,
 				endTime: null,
 				exitReason: reason,
-				sessionName: buildRuntimeAgentId(agentIdPrefix, lane.laneNumber, "worker"),
+				sessionName: buildRuntimeAgentId(
+					agentIdPrefix,
+					lane.laneNumber,
+					"worker",
+				),
 				doneFileFound: false,
 				laneNumber: lane.laneNumber,
 			});
@@ -2617,10 +3114,14 @@ export async function executeLaneV2(
 		// Build execution unit
 		const unit = buildExecutionUnit(lane, task, repoRoot, isWorkspaceMode);
 
-		const rawAutonomy = String(extraEnvVars?.TASKPLANE_SUPERVISOR_AUTONOMY ?? "autonomous").toLowerCase();
+		const rawAutonomy = String(
+			extraEnvVars?.TASKPLANE_SUPERVISOR_AUTONOMY ?? "autonomous",
+		).toLowerCase();
 		const supervisorAutonomy: LaneRunnerConfig["supervisorAutonomy"] =
-			(rawAutonomy === "interactive" || rawAutonomy === "supervised" || rawAutonomy === "autonomous")
-				? rawAutonomy as LaneRunnerConfig["supervisorAutonomy"]
+			rawAutonomy === "interactive" ||
+			rawAutonomy === "supervised" ||
+			rawAutonomy === "autonomous"
+				? (rawAutonomy as LaneRunnerConfig["supervisorAutonomy"])
 				: "autonomous";
 
 		const laneRunnerConfig: LaneRunnerConfig = {
@@ -2631,17 +3132,23 @@ export async function executeLaneV2(
 			branch: lane.branch,
 			repoId: lane.repoId ?? "default",
 			stateRoot,
-			workerModel: "",
-			workerTools: "read,write,edit,bash,grep,find,ls",
-			workerThinking: "",
+			workerModel: extraEnvVars?.TASKPLANE_WORKER_MODEL || "",
+			workerTools:
+				extraEnvVars?.TASKPLANE_WORKER_TOOLS ||
+				"read,write,edit,bash,grep,find,ls",
+			workerThinking: extraEnvVars?.TASKPLANE_WORKER_THINKING || "",
 			workerSystemPrompt,
 			workerSegmentPrompt,
 			reviewerModel: extraEnvVars?.TASKPLANE_REVIEWER_MODEL || "",
 			reviewerThinking: extraEnvVars?.TASKPLANE_REVIEWER_THINKING || "",
 			reviewerTools: extraEnvVars?.TASKPLANE_REVIEWER_TOOLS || "",
 			// TP-180: Extension exclusion lists from config
-			workerExcludeExtensions: parseJsonArrayEnv(extraEnvVars?.TASKPLANE_WORKER_EXCLUDE_EXTENSIONS),
-			reviewerExcludeExtensions: parseJsonArrayEnv(extraEnvVars?.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS),
+			workerExcludeExtensions: parseJsonArrayEnv(
+				extraEnvVars?.TASKPLANE_WORKER_EXCLUDE_EXTENSIONS,
+			),
+			reviewerExcludeExtensions: parseJsonArrayEnv(
+				extraEnvVars?.TASKPLANE_REVIEWER_EXCLUDE_EXTENSIONS,
+			),
 			supervisorAutonomy,
 			projectName: config.project?.name || "project",
 			maxIterations: 20,
@@ -2669,7 +3176,10 @@ export async function executeLaneV2(
 				}
 			}
 
-			if (result.outcome.status === "failed" || result.outcome.status === "stalled") {
+			if (
+				result.outcome.status === "failed" ||
+				result.outcome.status === "stalled"
+			) {
 				shouldSkipRemaining = true;
 			}
 		} catch (err: unknown) {
@@ -2682,7 +3192,11 @@ export async function executeLaneV2(
 				startTime: Date.now(),
 				endTime: Date.now(),
 				exitReason: `Runtime V2 execution error: ${errMsg}`,
-				sessionName: buildRuntimeAgentId(agentIdPrefix, lane.laneNumber, "worker"),
+				sessionName: buildRuntimeAgentId(
+					agentIdPrefix,
+					lane.laneNumber,
+					"worker",
+				),
 				doneFileFound: false,
 				laneNumber: lane.laneNumber,
 			});
@@ -2691,8 +3205,10 @@ export async function executeLaneV2(
 	}
 
 	const endTime = Date.now();
-	const succeeded = outcomes.every(o => o.status === "succeeded");
-	const failed = outcomes.some(o => o.status === "failed" || o.status === "stalled");
+	const succeeded = outcomes.every((o) => o.status === "succeeded");
+	const failed = outcomes.some(
+		(o) => o.status === "failed" || o.status === "stalled",
+	);
 
 	return {
 		laneNumber: lane.laneNumber,
@@ -2705,4 +3221,3 @@ export async function executeLaneV2(
 }
 
 // ── /orch Command — Full Execution (Step 5) ─────────────────────────
-
