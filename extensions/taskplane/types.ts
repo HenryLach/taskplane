@@ -328,6 +328,21 @@ export interface TaskRunnerConfig {
 		/** Package specifiers to exclude from extension forwarding (exact match). @since TP-180 */
 		excludeExtensions?: string[];
 	};
+	/**
+	 * Worker agent model/thinking/tools configuration.
+	 * Threaded through to `spawnAgent()` via env vars.
+	 * @since TP-183
+	 */
+	worker?: {
+		/** Model string (empty = inherit session default) */
+		model: string;
+		/** Thinking mode ("on" | "off" | budget string, empty = inherit) */
+		thinking: string;
+		/** Comma-separated tool allowlist */
+		tools: string;
+		/** Package specifiers to exclude from extension forwarding (exact match). @since TP-180 */
+		excludeExtensions?: string[];
+	};
 	/** Worker agent extension exclusion list. @since TP-180 */
 	workerExcludeExtensions?: string[];
 }

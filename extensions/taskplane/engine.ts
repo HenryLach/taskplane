@@ -6,7 +6,7 @@ import { existsSync, readdirSync, readFileSync, renameSync, unlinkSync } from "f
 import { join, resolve } from "path";
 
 import { formatDiscoveryResults, runDiscovery } from "./discovery.ts";
-import { buildReviewerEnv, buildWorkerExcludeEnv, computeTransitiveDependents, execLog, executeLaneV2, executeWave, killV2LaneAgents, resolveCanonicalTaskPaths } from "./execution.ts";
+import { buildReviewerEnv, buildWorkerEnv, buildWorkerExcludeEnv, computeTransitiveDependents, execLog, executeLaneV2, executeWave, killV2LaneAgents, resolveCanonicalTaskPaths } from "./execution.ts";
 import type { RuntimeBackend } from "./execution.ts";
 import type { MonitorUpdateCallback } from "./execution.ts";
 // classifyExit no longer called directly — Tier 0 uses exitDiagnostic.classification
@@ -1381,7 +1381,7 @@ async function attemptWorkerCrashRetry(
 				retryPauseSignal,
 				wsRoot,
 				isWsMode,
-				{ ORCH_BATCH_ID: batchState.batchId, ...buildReviewerEnv(runnerConfig?.reviewer), ...buildWorkerExcludeEnv(runnerConfig?.workerExcludeExtensions) }, // TP-089: ensure mailbox works for retries
+				{ ORCH_BATCH_ID: batchState.batchId, ...buildWorkerEnv(runnerConfig?.worker), ...buildReviewerEnv(runnerConfig?.reviewer), ...buildWorkerExcludeEnv(runnerConfig?.workerExcludeExtensions) }, // TP-089: ensure mailbox works for retries
 			);
 
 			const retryOutcome = retryResult.tasks[0];
@@ -1889,6 +1889,12 @@ async function attemptStaleWorktreeRecovery(
 			tools: runnerConfig?.reviewer?.tools || "",
 			excludeExtensions: runnerConfig?.reviewer?.excludeExtensions ?? [],
 		},
+		runnerConfig?.worker ? {
+			model: runnerConfig.worker.model || "",
+			thinking: runnerConfig.worker.thinking || "",
+			tools: runnerConfig.worker.tools || "",
+			excludeExtensions: runnerConfig.worker.excludeExtensions ?? [],
+		} : undefined,
 		runnerConfig?.workerExcludeExtensions ?? [],
 	);
 
@@ -2494,6 +2500,12 @@ export async function executeOrchBatch(
 				tools: runnerConfig?.reviewer?.tools || "",
 				excludeExtensions: runnerConfig?.reviewer?.excludeExtensions ?? [],
 			},
+			runnerConfig?.worker ? {
+				model: runnerConfig.worker.model || "",
+				thinking: runnerConfig.worker.thinking || "",
+				tools: runnerConfig.worker.tools || "",
+				excludeExtensions: runnerConfig.worker.excludeExtensions ?? [],
+			} : undefined,
 			runnerConfig?.workerExcludeExtensions ?? [],
 		);
 
