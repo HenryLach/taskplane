@@ -65,6 +65,7 @@ import {
 	resolveModelFromString,
 } from "./supervisor.ts";
 import type { SupervisorConfig, SupervisorRoutingContext, IntegrationExecutor, CiDeps, SummaryDeps } from "./supervisor.ts";
+import { initI18n, t } from "./i18n.ts";
 
 // ── Integrate Args Parsing ────────────────────────────────────────────
 
@@ -152,11 +153,11 @@ export function parseResumeArgs(raw: string | undefined): ResumeArgs | { error: 
 		if (token === "--force") {
 			force = true;
 		} else if (token === "--help") {
-			return { error: "Usage: /orch-resume [--force]\n\n  --force   Resume from stopped or failed state (runs pre-resume diagnostics first)" };
+			return { error: t("orch.resume.usage", "Usage: /orch-resume [--force]\n\n  --force   Resume from stopped or failed state (runs pre-resume diagnostics first)") };
 		} else if (token.startsWith("--")) {
-			return { error: `Unknown flag: ${token}\n\nUsage: /orch-resume [--force]` };
+			return { error: t("orch.resume.unknownFlag", "Unknown flag: {flag}\n\nUsage: /orch-resume [--force]", { flag: token }) };
 		} else {
-			return { error: `Unexpected argument: ${token}\n\nUsage: /orch-resume [--force]` };
+			return { error: t("orch.resume.unexpectedArg", "Unexpected argument: {arg}\n\nUsage: /orch-resume [--force]", { arg: token }) };
 		}
 	}
 
@@ -1645,6 +1646,7 @@ export function detectOrchState(deps: OrchStateDetectionDeps): OrchStateDetectio
 // ── Extension ────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
+	initI18n(pi);
 	let orchBatchState = freshOrchBatchState();
 	let orchConfig: OrchestratorConfig = { ...DEFAULT_ORCHESTRATOR_CONFIG };
 	let runnerConfig: TaskRunnerConfig = { ...DEFAULT_TASK_RUNNER_CONFIG };
