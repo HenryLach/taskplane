@@ -65,6 +65,7 @@ import {
 	resolveModelFromString,
 } from "./supervisor.ts";
 import type { SupervisorConfig, SupervisorRoutingContext, IntegrationExecutor, CiDeps, SummaryDeps } from "./supervisor.ts";
+import { initI18n, t } from "./i18n.ts";
 
 // ── Integrate Args Parsing ────────────────────────────────────────────
 
@@ -1645,6 +1646,7 @@ export function detectOrchState(deps: OrchStateDetectionDeps): OrchStateDetectio
 // ── Extension ────────────────────────────────────────────────────────
 
 export default function (pi: ExtensionAPI) {
+	initI18n(pi);
 	let orchBatchState = freshOrchBatchState();
 	let orchConfig: OrchestratorConfig = { ...DEFAULT_ORCHESTRATOR_CONFIG };
 	let runnerConfig: TaskRunnerConfig = { ...DEFAULT_TASK_RUNNER_CONFIG };
@@ -1709,7 +1711,7 @@ export default function (pi: ExtensionAPI) {
 	// ── Commands ─────────────────────────────────────────────────────
 
 	pi.registerCommand("orch", {
-		description: "Start batch execution or supervisor: /orch [<areas|paths|all>]",
+		description: t("cmd.orch.description", "Start batch execution or supervisor: /orch [<areas|paths|all>]"),
 		handler: async (args, ctx) => {
 			// ── TP-042: No-args → supervisor routing ─────────────────
 			// When /orch is called without arguments, detect project state
@@ -1800,7 +1802,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("orch-plan", {
-		description: "Preview execution plan: /orch-plan <areas|paths|all> [--refresh]",
+		description: t("cmd.orchPlan.description", "Preview execution plan: /orch-plan <areas|paths|all> [--refresh]"),
 		handler: async (args, ctx) => {
 			if (!args?.trim()) {
 				ctx.ui.notify(
@@ -3381,7 +3383,7 @@ export default function (pi: ExtensionAPI) {
 	}
 
 	pi.registerCommand("orch-status", {
-		description: "Show current batch progress",
+		description: t("cmd.orchStatus.description", "Show current batch progress"),
 		handler: async (_args, ctx) => {
 			const result = doOrchStatus(ctx.cwd);
 			ctx.ui.notify(result, "info");
@@ -3389,7 +3391,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("orch-pause", {
-		description: "Pause batch after current tasks finish",
+		description: t("cmd.orchPause.description", "Pause batch after current tasks finish"),
 		handler: async (_args, ctx) => {
 			const result = doOrchPause();
 			// Determine notification level from result content
@@ -3399,7 +3401,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("orch-resume", {
-		description: "Resume a paused or interrupted batch: /orch-resume [--force]",
+		description: t("cmd.orchResume.description", "Resume a paused or interrupted batch: /orch-resume [--force]"),
 		handler: async (args, ctx) => {
 			if (!requireExecCtx(ctx)) return;
 
@@ -3416,7 +3418,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("orch-abort", {
-		description: "Abort batch: /orch-abort [--hard]",
+		description: t("cmd.orchAbort.description", "Abort batch: /orch-abort [--hard]"),
 		handler: async (args, ctx) => {
 			try {
 				const hard = args?.trim() === "--hard";
@@ -3434,7 +3436,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("orch-deps", {
-		description: "Show dependency graph: /orch-deps <areas|paths|all> [--refresh] [--task <id>]",
+		description: t("cmd.orchDeps.description", "Show dependency graph: /orch-deps <areas|paths|all> [--refresh] [--task <id>]"),
 		handler: async (args, ctx) => {
 			if (!args?.trim()) {
 				ctx.ui.notify(
@@ -3512,7 +3514,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("orch-sessions", {
-		description: "List active orchestrator sessions",
+		description: t("cmd.orchSessions.description", "List active orchestrator sessions"),
 		handler: async (_args, ctx) => {
 			const sessions = listOrchSessions(orchConfig.orchestrator.sessionPrefix, orchBatchState);
 			ctx.ui.notify(formatOrchSessions(sessions), "info");
@@ -3521,7 +3523,7 @@ export default function (pi: ExtensionAPI) {
 
 	// ── TP-041 Step 2: /orch-takeover — force supervisor takeover ────
 	pi.registerCommand("orch-takeover", {
-		description: "Force takeover supervisor from another session: /orch-takeover",
+		description: t("cmd.orchTakeover.description", "Force takeover supervisor from another session: /orch-takeover"),
 		handler: async (_args, ctx) => {
 			// Use workspaceRoot so supervisor state root matches engine (R006-1).
 			const stateRoot = execCtx.workspaceRoot;
@@ -3650,7 +3652,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("orch-integrate", {
-		description: "Integrate completed orch batch into your working branch",
+		description: t("cmd.orchIntegrate.description", "Integrate completed orch batch into your working branch"),
 		handler: async (args, ctx) => {
 			// Show usage if no args and no active batch state to infer from
 			if (args?.trim() === "--help" || args?.trim() === "-h") {
@@ -4779,7 +4781,7 @@ export default function (pi: ExtensionAPI) {
 	// ── Settings TUI ─────────────────────────────────────────────────
 
 	pi.registerCommand("taskplane-settings", {
-		description: "View and edit taskplane configuration",
+		description: t("cmd.settings.description", "View and edit taskplane configuration"),
 		handler: async (_args, ctx) => {
 			if (!requireExecCtx(ctx)) return;
 
