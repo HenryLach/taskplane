@@ -1,0 +1,4 @@
+TP-181 complete: 2026-05-04
+PR #522 merged into main as commit 91cd4c87 (thanks @NerfEko).
+Worker model/thinking/tools from preferences now flow through to spawned workers.
+Executed manually by supervisor (not via /orch).
