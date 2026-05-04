@@ -8,7 +8,7 @@ import { join } from "path";
 import { assembleDiagnosticInput, emitDiagnosticReports } from "./diagnostic-reports.ts";
 import { runDiscovery } from "./discovery.ts";
 import { executeOrchBatch, resolveDisplayWaveNumber } from "./engine.ts";
-import { buildReviewerEnv, buildWorkerExcludeEnv, computeTransitiveDependents, execLog, executeLaneV2, executeWave, resolveCanonicalTaskPaths } from "./execution.ts";
+import { buildReviewerEnv, buildWorkerEnv, buildWorkerExcludeEnv, computeTransitiveDependents, execLog, executeLaneV2, executeWave, resolveCanonicalTaskPaths } from "./execution.ts";
 import type { MonitorUpdateCallback, RuntimeBackend } from "./execution.ts";
 import { selectRuntimeBackend } from "./engine.ts";
 import { readRegistrySnapshot, isTerminalStatus, isProcessAlive } from "./process-registry.ts";
@@ -2048,6 +2048,7 @@ export async function resumeOrchBatch(
 			emitAlert,
 			supervisorAutonomy,
 			runnerConfig.reviewer,
+			runnerConfig.worker,
 			runnerConfig.workerExcludeExtensions ?? [],
 		);
 
