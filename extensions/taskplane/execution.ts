@@ -2540,7 +2540,7 @@ export function buildReviewerEnv(
  * Threads worker model/thinking/tools through to the lane runner
  * via env vars, mirroring the reviewer pattern (buildReviewerEnv).
  *
- * @since TP-183
+ * @since TP-181
  */
 export function buildWorkerEnv(
 	workerConfig?: { model?: string; thinking?: string; tools?: string; excludeExtensions?: string[] } | null,

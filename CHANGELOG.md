@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Worker model/thinking/tools from preferences now flow through to spawned
+  workers (TP-181, #522):** `taskRunner.worker.{model,thinking,tools}` in
+  `preferences.json` (and project config) are now threaded from
+  `TaskRunnerConfig` through `executeWave` → `executeLaneV2` to the worker
+  subprocess via `TASKPLANE_WORKER_{MODEL,THINKING,TOOLS}` env vars. Previously
+  `LaneRunnerConfig.workerModel` was hardcoded to `""` and the user-configured
+  worker model was silently ignored. Mirrors the existing reviewer pipeline
+  established in TP-160. New `buildWorkerEnv()` helper, plumbed through
+  `engine.ts`, `execution.ts`, and `resume.ts`. 11 new tests in
+  `worker-model.test.ts`. Thanks to @NerfEko.
+
 ## [0.28.4] - 2026-04-20
 
 ### Fixed

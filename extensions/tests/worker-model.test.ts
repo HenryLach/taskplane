@@ -1,5 +1,5 @@
 /**
- * Tests for worker model/thinking/tools env var wiring — TP-183
+ * Tests for worker model/thinking/tools env var wiring — TP-181
  *
  * Covers:
  * - buildWorkerEnv emits correct env vars for each worker config field

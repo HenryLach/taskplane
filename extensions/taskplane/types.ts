@@ -331,7 +331,7 @@ export interface TaskRunnerConfig {
 	/**
 	 * Worker agent model/thinking/tools configuration.
 	 * Threaded through to `spawnAgent()` via env vars.
-	 * @since TP-183
+	 * @since TP-181
 	 */
 	worker?: {
 		/** Model string (empty = inherit session default) */
