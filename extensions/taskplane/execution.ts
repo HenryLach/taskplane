@@ -2481,6 +2481,7 @@ export function resolveRuntimeStateRoot(
 // ── Runtime V2 Lane Execution (TP-105) ────────────────────────────
 
 import { executeTaskV2, type LaneRunnerConfig, type LaneRunnerTaskResult } from "./lane-runner.ts";
+import { DEFAULT_WORKER_USER_TOOLS } from "./agent-host.ts";
 
 /**
  * Execute a lane using the Runtime V2 headless backend.
@@ -2653,7 +2654,10 @@ export async function executeLaneV2(
 			repoId: lane.repoId ?? "default",
 			stateRoot,
 			workerModel: extraEnvVars?.TASKPLANE_WORKER_MODEL || "",
-			workerTools: extraEnvVars?.TASKPLANE_WORKER_TOOLS || "read,write,edit,bash,grep,find,ls",
+			// TP-184: This is the user-tools default. Engine bridge tools are NOT
+			// added here — buildWorkerToolsAllowlist() at the lane-runner spawn
+			// site appends ENGINE_BRIDGE_TOOLS exactly once, regardless of source.
+			workerTools: extraEnvVars?.TASKPLANE_WORKER_TOOLS || DEFAULT_WORKER_USER_TOOLS,
 			workerThinking: extraEnvVars?.TASKPLANE_WORKER_THINKING || "",
 			workerSystemPrompt,
 			workerSegmentPrompt,

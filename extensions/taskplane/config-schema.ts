@@ -594,6 +594,13 @@ export const DEFAULT_TASK_RUNNER_SECTION: TaskRunnerSection = {
 	testing: { commands: {} },
 	standards: { docs: [], rules: [] },
 	standardsOverrides: {},
+	// NOTE (TP-184): The user-tools default literal here mirrors
+	// `DEFAULT_WORKER_USER_TOOLS` in `agent-host.ts`. We keep the literal
+	// instead of importing the constant because this file is currently
+	// import-free (pure schema/defaults) and importing from agent-host.ts
+	// would pull child_process/fs into the schema layer. If you change the
+	// default, update both copies. Engine bridge tools are appended at the
+	// lane-runner spawn site by `buildWorkerToolsAllowlist()`, not here.
 	worker: { model: "", tools: "read,write,edit,bash,grep,find,ls", thinking: "", excludeExtensions: [] },
 	reviewer: { model: "", tools: "read,bash,grep,find,ls", thinking: "on", excludeExtensions: [] },
 	context: {
@@ -646,6 +653,9 @@ export const DEFAULT_ORCHESTRATOR_SECTION: OrchestratorSection = {
 	},
 	merge: {
 		model: "",
+		// NOTE (TP-184): Mirrors `DEFAULT_WORKER_USER_TOOLS`. Merge agent does
+		// not run through `buildWorkerToolsAllowlist()` (no bridge-tool needs)
+		// so this literal is independent of the worker allowlist plumbing.
 		tools: "read,write,edit,bash,grep,find,ls",
 		thinking: "off",
 		verify: [],
