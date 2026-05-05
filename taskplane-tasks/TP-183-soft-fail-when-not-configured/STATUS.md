@@ -1,6 +1,6 @@
 # TP-183: Soft-fail orchestrator startup when Taskplane is not configured — Status
 
-**Current Step:** Step 0: Preflight
+**Current Step:** Step 4: Testing & Verification
 **Status:** 🟡 In Progress
 **Last Updated:** 2026-05-05
 **Review Level:** 2
@@ -24,7 +24,7 @@
 ---
 
 ### Step 1: Decide and document the soft-fail policy
-**Status:** 🟨 In Progress
+**Status:** ✅ Complete
 
 > ⚠️ Plan-review checkpoint. Decision logged in Discoveries before code changes.
 
@@ -36,23 +36,23 @@
 ---
 
 ### Step 2: Implement the soft-fail branch
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] `extension.ts` setupError branch updated: no error notify, quiet status line
-- [ ] Non-setupError branch (config invalid) untouched and still loud
-- [ ] Orchestrator commands still gracefully disabled (existing short-circuit preserved)
+- [x] `extension.ts` setupError branch updated: no error notify, quiet status line `"🔀 Orchestrator · disabled (no taskplane config in workspace)"`
+- [x] Non-setupError branch (config invalid) untouched and still loud
+- [x] Orchestrator commands still gracefully disabled — `execCtx` stays `null`, `execCtxInitError` stays populated, `requireExecCtx` / `getExecCtxInitErrorMessage` short-circuit preserved
 
 ---
 
 ### Step 3: Add tests for the new behavior
-**Status:** ⬜ Not Started
+**Status:** ✅ Complete
 
-- [ ] New `orchestrator-startup-uxv2.test.ts` created with three scenarios:
-   - [ ] `WORKSPACE_SETUP_REQUIRED` → no error notify, quiet status, commands disabled
-   - [ ] `WORKSPACE_CONFIG_INVALID` → loud notify still fires (regression guard)
-   - [ ] Successful config load → no notify, ready status (sanity baseline)
-- [ ] Existing `workspace-config.integration.test.ts` throw test still passes
-- [ ] Targeted test run is green
+- [x] New `orchestrator-startup-uxv2.test.ts` created with three scenarios (split into 6 fine-grained checks):
+   - [x] `WORKSPACE_SETUP_REQUIRED` → no error notify, quiet status, commands disabled (3 checks)
+   - [x] `WORKSPACE_CONFIG_INVALID` → loud notify still fires (regression guard) (2 checks)
+   - [x] Successful config load → success path bypasses catch arm (sanity baseline) (1 check)
+- [x] Existing `workspace-config.integration.test.ts` throw test still passes (94/94 unchanged)
+- [x] Targeted test run is green: 100/100 (94 existing + 6 new)
 
 ---
 
