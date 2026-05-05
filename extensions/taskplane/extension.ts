@@ -4837,8 +4837,22 @@ export default function (pi: ExtensionAPI) {
 			execCtx = buildExecutionContext(ctx.cwd, loadOrchestratorConfig, loadTaskRunnerConfig);
 		} catch (err: unknown) {
 			if (err instanceof WorkspaceConfigError) {
-				// Startup is fatal when workspace config is invalid OR repo-mode setup
-				// requirements are not met (non-git cwd without workspace config).
+				// Two display modes:
+				//
+				//   * `WORKSPACE_SETUP_REQUIRED` (no workspace config AND cwd is
+				//     not a git repo) is the "user clearly did not intend to use
+				//     Taskplane here" case. Many users only run Taskplane in
+				//     some projects, so a hard red error on every pi launch
+				//     elsewhere is wrong UX (TP-183 / GitHub #523). Soft-fail:
+				//     no error notify, quiet status line. `execCtxInitError` is
+				//     still populated so command guards (`requireExecCtx`,
+				//     `getExecCtxInitErrorMessage`) can explain the situation if
+				//     the user actually invokes an /orch command.
+				//
+				//   * Every other code (workspace config present but malformed,
+				//     missing repos, schema invalid, etc.) is a real
+				//     misconfiguration in a project that DID set Taskplane up
+				//     and must surface loudly so the user fixes it.
 				const setupError = err.code === "WORKSPACE_SETUP_REQUIRED";
 				execCtxInitError = setupError
 					? (
@@ -4853,13 +4867,20 @@ export default function (pi: ExtensionAPI) {
 						`Orchestrator commands are disabled until this is resolved.`
 					);
 
-				ctx.ui.notify(execCtxInitError, "error");
-				ctx.ui.setStatus(
-					"task-orchestrator",
-					setupError
-						? "🔀 Orchestrator · ❌ startup failed (setup required)"
-						: "🔀 Orchestrator · ❌ startup failed (workspace config error)",
-				);
+				if (setupError) {
+					// Soft-fail: no notify, quiet status line.
+					ctx.ui.setStatus(
+						"task-orchestrator",
+						"🔀 Orchestrator · disabled (no taskplane config in workspace)",
+					);
+				} else {
+					// Real misconfiguration — keep loud.
+					ctx.ui.notify(execCtxInitError, "error");
+					ctx.ui.setStatus(
+						"task-orchestrator",
+						"🔀 Orchestrator · ❌ startup failed (workspace config error)",
+					);
+				}
 				return;
 			}
 			throw err; // Re-throw unexpected errors
